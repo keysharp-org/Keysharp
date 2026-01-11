@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Keysharp
+Exec=/usr/local/bin/keysharp %u
+Icon=keysharp
+Terminal=false
+MimeType=application/x-keysharp;
+NoDisplay=true

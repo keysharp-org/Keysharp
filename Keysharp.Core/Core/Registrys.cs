@@ -22,6 +22,7 @@ namespace Keysharp.Core
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static object RegDelete(object keyName = null, object valueName = null)
 		{
+			ThreadAccessors.A_LastError = 0;
 			var keyname = keyName.As();
 			var valname = valueName.As();
 
@@ -53,6 +54,7 @@ namespace Keysharp.Core
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error deleting registry key {keyname} and value {valname}");
 			}
 		}
@@ -69,6 +71,7 @@ namespace Keysharp.Core
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static object RegDeleteKey(object keyName = null)
 		{
+			ThreadAccessors.A_LastError = 0;
 			var keyname = keyName.As();
 
 			try
@@ -83,6 +86,7 @@ namespace Keysharp.Core
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error deleting registry key {keyname}");
 			}
 		}
@@ -106,6 +110,7 @@ namespace Keysharp.Core
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static object RegRead(object keyName = null, object valueName = null, object @default = null)
 		{
+			ThreadAccessors.A_LastError = 0;
 			var keyname = keyName.As();
 			var valname = valueName.As();
 			var def = @default.As();
@@ -148,6 +153,7 @@ namespace Keysharp.Core
 					if (!string.IsNullOrEmpty(def))
 						return def;
 
+					ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 					return Errors.OSErrorOccurred("", $"Registry key {keyname} and value {valname} was not found and no default was specified.");
 				}
 
@@ -155,6 +161,7 @@ namespace Keysharp.Core
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error reading registry key {keyname} and value {valname}");
 			}
 		}
@@ -179,6 +186,7 @@ namespace Keysharp.Core
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static object RegWrite(object value, object valueType = null, object keyName = null, object valueName = null)
 		{
+			ThreadAccessors.A_LastError = 0;
 			var val = value;
 			var valtype = valueType.As();
 			var keyname = keyName.As();
@@ -239,6 +247,7 @@ namespace Keysharp.Core
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error writing registry key {keyname} and value {valname}");
 			}
 		}

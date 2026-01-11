@@ -278,39 +278,6 @@ namespace Keysharp.Core.Common.Keyboard
 			return AddHotkey(_callback, _hookAction, _name, ref b);
 		}
 
-		public static object HotIf(object obj0 = null)
-		{
-			var script = Script.TheScript;
-
-			if (obj0 != null)
-			{
-				var funcobj = Functions.GetFuncObj(obj0, null, true);
-				var cp = FindHotkeyIfExpr(funcobj);
-
-				if (cp == null && funcobj != null)
-					AddHotkeyIfExpr(cp = funcobj);
-
-				script.Threads.CurrentThread.hotCriterion = cp;
-			}
-			else
-				script.Threads.CurrentThread.hotCriterion = null;
-
-			return DefaultObject;
-		}
-
-		public static object HotIfWinActive(object obj0 = null, object obj1 = null) => SetupHotIfWin("HotIfWinActivePrivate", obj0, obj1);
-
-		public static object HotIfWinExist(object obj0 = null, object obj1 = null) => SetupHotIfWin("HotIfWinExistPrivate", obj0, obj1);
-
-		public static object HotIfWinNotActive(object obj0 = null, object obj1 = null) => SetupHotIfWin("HotIfWinNotActivePrivate", obj0, obj1);
-
-		public static object HotIfWinNotExist(object obj0 = null, object obj1 = null) => SetupHotIfWin("HotIfWinNotExistPrivate", obj0, obj1);
-
-		/// <summary>
-		/// Get the hotkey descriptions and put them in the Vars tab of the main window.
-		/// </summary>
-		public static object ListHotkeys() => Script.TheScript.mainWindow?.ListHotkeys();
-
 		/// <summary>
 		/// This function examines all hotkeys and hotstrings to determine:
 		/// - Which hotkeys to register/unregister, or activate/deactivate in the hook.
@@ -483,6 +450,29 @@ namespace Keysharp.Core.Common.Keyboard
 				}
 			} // End of second pass loop.
 
+#if !WINDOWS
+			// On Linux we always rely on the hooks (XGrabKey lacks callbacks), so force hook handling
+			// for all active hotkeys rather than attempting RegisterHotkey-style optimization.
+			hkd.whichHookNeeded = 0;
+			for (i = 0; i < shk.Count; ++i)
+			{
+				if (hkIsInactive[i])
+					continue;
+
+				var hot = shk[i];
+				if (HK_TYPE_CAN_BECOME_KEYBD_HOOK(hot.type))
+					hot.type = HotkeyTypeEnum.KeyboardHook;
+
+				switch (hot.type)
+				{
+					case HotkeyTypeEnum.KeyboardHook: hkd.whichHookNeeded |= HookType.Keyboard; break;
+					case HotkeyTypeEnum.MouseHook: hkd.whichHookNeeded |= HookType.Mouse; break;
+					case HotkeyTypeEnum.BothHook: hkd.whichHookNeeded |= HookType.Keyboard | HookType.Mouse; break;
+				}
+			}
+
+#else
+
 			// THIRD PASS THROUGH THE HOTKEYS:
 			// v1.0.42: Reset sWhichHookNeeded because it's now possible that the hook was on before but no longer
 			// needed due to changing of a hotkey from hook to registered (for various reasons described above):
@@ -549,8 +539,8 @@ namespace Keysharp.Core.Common.Keyboard
 							// when it happens while the while key is down (though it does disguise a Win-up).
 							|| ((hot.modifiersConsolidatedLR & (MOD_LWIN | MOD_RWIN)) != 0 && (hot.modifiersConsolidatedLR & (MOD_LALT | MOD_RALT)) == 0)
 							// For v1.0.30, above has been expanded to include Win+Shift and Win+Control modifiers.
-							|| (hot.vk != 0 && !ht.IsMouseVK(hot.vk)) // e.g. "RButton & Space"
-							|| (hot.modifierVK != 0 && !ht.IsMouseVK(hot.modifierVK)))) // e.g. "Space & RButton"
+							|| (hot.vk != 0 && !MouseUtils.IsMouseVK(hot.vk)) // e.g. "RButton & Space"
+							|| (hot.modifierVK != 0 && !MouseUtils.IsMouseVK(hot.modifierVK)))) // e.g. "Space & RButton"
 					hot.type = HotkeyTypeEnum.BothHook;  // Needed by ChangeHookState().
 
 				// For the above, the following types of mouse hotkeys do not need the keyboard hook:
@@ -587,6 +577,7 @@ namespace Keysharp.Core.Common.Keyboard
 				}
 			} // for()
 
+#endif
 			// Check if anything else requires the hook.
 			// But do this part outside of the above block because these values may have changed since
 			// this function was first called.  By design, the Num/Scroll/CapsLock AlwaysOn/Off setting
@@ -857,7 +848,7 @@ namespace Keysharp.Core.Common.Keyboard
 							&& hk2.hookAction == 0// Might be unnecessary to check this; but just in case.
 							&& hk2.id != hotkeyId // Don't consider the original hotkey because it was already found ineligible.
 							&& (hk2.modifiers & ~modifiers) == 0 // All neutral modifiers required by the candidate are pressed.
-							&& (hk2.modifiersLR & ~kbdMouseSender.modifiersLRLogicalNonIgnored) != 0 // All left-right specific modifiers required by the candidate are pressed.
+							&& (hk2.modifiersLR & ~kbdMouseSender.modifiersLRLogicalNonIgnored) == 0 // All left-right specific modifiers required by the candidate are pressed.
 							//&& hk2.mType != HK_JOYSTICK // Seems unnecessary since joystick hotkeys don't call us and even if they did, probably shouldn't be included.
 							//&& hk2.mParentEnabled   ) // CriterionAllowsFiring() will check this for us.
 					   )
@@ -1562,7 +1553,7 @@ namespace Keysharp.Core.Common.Keyboard
 			{
 				if (isModifier)
 				{
-					if (ht.IsWheelVK(tempVk))
+					if (MouseUtils.IsWheelVK(tempVk))
 						return (ResultType)Errors.ValueErrorOccurred("Unsupported prefix key.", text, ResultType.Fail);
 				}
 				else
@@ -1572,7 +1563,7 @@ namespace Keysharp.Core.Common.Keyboard
 					if (thisHotkey != null)
 						thisHotkey.vkWasSpecifiedByNumber = text.StartsWith("VK", StringComparison.OrdinalIgnoreCase);
 
-				isMouse = ht.IsMouseVK(tempVk);
+				isMouse = MouseUtils.IsMouseVK(tempVk);
 
 				if ((modifiersLR.Value & (MOD_LSHIFT | MOD_RSHIFT)) != 0)
 					if (tempVk >= 'A' && tempVk <= 'Z')  // VK of an alpha char is the same as the ASCII code of its uppercase version.
@@ -1904,7 +1895,7 @@ namespace Keysharp.Core.Common.Keyboard
 					// those that aren't kept queued due to the message filter) prior to returning to its caller.
 					// But for maintainability, it seems best to change this to g_hWnd vs. NULL to make joystick
 					// hotkeys behave more like standard hotkeys.
-					_ = script.PlatformProvider.Manager.PostHotkeyMessage(script.MainWindowHandle, (uint)i, 0u);
+					_ = PostHotkeyMessage(script.MainWindowHandle, (uint)i, 0u);
 				}
 
 				//else continue the loop in case the user has newly pressed more than one joystick button.
@@ -2145,7 +2136,7 @@ namespace Keysharp.Core.Common.Keyboard
 
 			VariadicFunction vf = (o) =>
 			{
-				if (ht.IsWheelVK(vk)) // If this is true then also: msg.message==AHK_HOOK_HOTKEY
+				if (MouseUtils.IsWheelVK(vk)) // If this is true then also: msg.message==AHK_HOOK_HOTKEY
 					A_EventInfo = (long)Conversions.LowWord(lParamVal); // v1.0.43.03: Override the thread default of 0 with the number of notches by which the wheel was turned.
 
 				A_SendLevel = variant.inputLevel;
@@ -2179,7 +2170,7 @@ namespace Keysharp.Core.Common.Keyboard
 						// affect response time (this feature is rarely used anyway).
 						//Some hotkeys will be using the hook and others will be using the built in Windows hotkey handler.
 						//Sending a message will work for both cases.
-						_ = script.PlatformProvider.Manager.PostHotkeyMessage(script.MainWindowHandle, id, 0);
+						_ = PostHotkeyMessage(script.MainWindowHandle, id, 0);
 					}
 
 					//else it was posted too long ago, so don't do it.  This is because most users wouldn't
@@ -2207,7 +2198,7 @@ namespace Keysharp.Core.Common.Keyboard
 			}
 			catch (Error ex)
 			{
-				_ = Dialogs.MsgBox($"Exception thrown during hotkey handler.\n\n{ex}", null, (int)MessageBoxIcon.Hand);
+				_ = Dialogs.MsgBox($"Exception thrown during hotkey handler.\n\n{ex}", null, "iconx");
 			}
 		}
 
@@ -2242,7 +2233,7 @@ namespace Keysharp.Core.Common.Keyboard
 			// otherwise any modal dialogs, such as MessageBox(), that call DispatchMessage()
 			// internally wouldn't be able to find anyone to send hotkey messages to, so they
 			// would probably be lost:
-			return (isRegistered = script.PlatformProvider.Manager.RegisterHotKey(script.MainWindowHandle, id, (KeyModifiers)modifiersToRegister, vk))
+			return (isRegistered = RegisterHotKey(script.MainWindowHandle, id, (KeyModifiers)modifiersToRegister, vk))
 				   ? ResultType.Ok
 				   : ResultType.Fail;
 			// Above: On failure, reset the modifiers in case this function changed them.  This is
@@ -2342,7 +2333,7 @@ namespace Keysharp.Core.Common.Keyboard
 			var handle = script.MainWindowHandle;
 			mw?.Invoke(() =>
 			{
-				_ = Script.TheScript.PlatformProvider.Manager.UnregisterHotKey(handle, id);
+				_ = UnregisterHotKey(handle, id);
 			});
 			return isRegistered ? ResultType.Ok : ResultType.Fail;//I've see it fail in one rare case.
 		}
@@ -2392,15 +2383,15 @@ namespace Keysharp.Core.Common.Keyboard
 			return null;
 		}
 
-		private static bool HotIfWinActivePrivate(object title, object text, object hotkey) => WindowSearch.SearchWindow(title, text, null, null, false) is WindowItem win&& win.Active;
+		private static bool HotIfWinActivePrivate(object title, object text, object hotkey) => WindowSearch.SearchWindow(title, text, null, null, false) is WindowItemBase win && win.Active;
 
-		private static bool HotIfWinExistPrivate(object title, object text, object hotkey) => WindowSearch.SearchWindow(title, text, null, null, false) is WindowItem win&& win.Exists;
+		private static bool HotIfWinExistPrivate(object title, object text, object hotkey) => WindowSearch.SearchWindow(title, text, null, null, false) is WindowItemBase win && win.Exists;
 
 		private static bool HotIfWinNotActivePrivate(object title, object text, object hotkey) => !HotIfWinActivePrivate(title, text, hotkey);
 
 		private static bool HotIfWinNotExistPrivate(object title, object text, object hotkey) => !HotIfWinExistPrivate(title, text, hotkey);
 
-		private static object SetupHotIfWin(string funcname, object obj0 = null, object obj1 = null)
+		internal static object SetupHotIfWin(string funcname, object obj0 = null, object obj1 = null)
 		{
 			var script = Script.TheScript;
 

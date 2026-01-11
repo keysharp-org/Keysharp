@@ -48,7 +48,8 @@ options {
 
 tokens {
     DerefStart,
-    DerefEnd
+    DerefEnd,
+    ConcatDot
 }
 
 SingleLineBlockComment  : '/*' NonEOLCharacter*? '*/' -> skip;
@@ -87,7 +88,6 @@ Colon                      : ':';
 DoubleColon                : '::';
 Ellipsis                   : '...';
 Dot                        : '.';
-ConcatDot                  : (WS | EOL)+ '.' (WS | EOL)+; // Keep Dot and ConcatDot separate for easier parsing
 PlusPlus                   : '++';
 MinusMinus                 : '--';
 Plus                       : '+';
@@ -277,6 +277,7 @@ Requires               : 'requires' WhiteSpace   -> channel(DIRECTIVE), mode(DIR
 SingleInstance         : 'singleinstance' WhiteSpace?      -> channel(DIRECTIVE), mode(DIRECTIVE_TEXT);
 Persistent             : 'persistent' WhiteSpace?          -> channel(DIRECTIVE);
 Warn                   : 'warn' WhiteSpace?                -> channel(DIRECTIVE), mode(DIRECTIVE_TEXT);
+HookMutexName          : 'hookmutexname' WhiteSpace        -> channel(DIRECTIVE), mode(DIRECTIVE_TEXT);
 NoDynamicVars          : 'nodynamicvars'         -> channel(DIRECTIVE);
 ErrorStdOut            : 'errorstdout'           -> channel(DIRECTIVE);
 ClipboardTimeout       : 'clipboardtimeout' WhiteSpace     -> channel(DIRECTIVE);
@@ -350,9 +351,9 @@ fragment NonWSCharacter: ~[\t\u000B\u000C\u0020\u00A0];
 
 fragment WhiteSpace: WSCharacter+;
 
-fragment DoubleStringCharacter: ~["`] | '`' EscapeSequence;
+fragment DoubleStringCharacter: ~["`\r\n\u2028\u2029] | '`' EscapeSequence;
 
-fragment SingleStringCharacter: ~['`] | '`' EscapeSequence;
+fragment SingleStringCharacter: ~['`\r\n\u2028\u2029] | '`' EscapeSequence;
 
 fragment NonColonStringCharacter: ~[;:`\r\n] | '`' EscapeSequence;
 

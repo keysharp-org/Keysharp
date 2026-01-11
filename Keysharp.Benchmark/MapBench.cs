@@ -19,7 +19,7 @@ namespace Keysharp.Benchmark
 	public class MapReadBenchmark : BaseTest
 	{
 		private Dictionary<object, object> dkt = [];
-		private Map? map, mapScript;
+		private Map map = null!, mapScript = null!;
 		private List<string> strings = [];
 
 		[Params(100000)]
@@ -27,8 +27,8 @@ namespace Keysharp.Benchmark
 
 		public MapReadBenchmark()
 		{
-			map = Collections.Map();
-			mapScript = Collections.Map();
+			map = new Keysharp.Core.Map();
+			mapScript = new Keysharp.Core.Map();
 		}
 
 		[Benchmark]
@@ -69,7 +69,7 @@ namespace Keysharp.Benchmark
 	public class MapWriteBenchmark : BaseTest
 	{
 		private readonly Dictionary<object, object> dkt = [];
-		private readonly Map? map, mapScript;
+		private readonly Map map = null!, mapScript = null!;
 		private readonly List<string> strings = [];
 
 		[Params(100000)]
@@ -77,8 +77,8 @@ namespace Keysharp.Benchmark
 
 		public MapWriteBenchmark()
 		{
-			map = Collections.Map();
-			mapScript = Collections.Map();
+			map = new Keysharp.Core.Map();
+			mapScript = new Keysharp.Core.Map();
 		}
 
 		[Benchmark]
@@ -96,7 +96,7 @@ namespace Keysharp.Benchmark
 			mapScript!.Clear();
 
 			for (var i = 0; i < Size; i++)
-				_ = SetObject(strings[i], mapScript, i);
+				_ = SetObject(mapScript, i, strings[i]);
 		}
 
 		[Benchmark(Baseline = true)]

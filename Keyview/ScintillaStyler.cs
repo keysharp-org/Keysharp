@@ -1,4 +1,5 @@
-﻿namespace Keyview
+﻿#if WINDOWS
+namespace Keyview
 {
 	public abstract class ScintillaStyler
 	{
@@ -78,3 +79,4 @@
 		public abstract void SetKeywords(ScintillaNET.Scintilla scintilla);
 	}
 }
+#endif

@@ -1,5 +1,8 @@
 namespace Keysharp.Core
 {
+#if !WINDOWS
+		using Keys = Eto.Forms.Keys;
+#endif
 	internal class HotkeyBox : TextBox
 	{
 		private Keys key, mod;
@@ -11,10 +14,17 @@ namespace Keysharp.Core
 		{
 			key = mod = Keys.None;
 			Limit = Limits.None;
+			Text = "";
+#if WINDOWS
 			Multiline = false;
 			ContextMenuStrip = new ContextMenuStrip();
-			Text = Enum.GetName(typeof(Keys), key);
+			PreviewKeyDown += (sender, e) =>
+			{
+				if (e.KeyCode == Keys.Tab)
+					e.IsInputKey = true;
+			};
 			KeyPress += (sender, e) => e.Handled = true;
+#endif
 			KeyUp += (sender, e) =>
 			{
 				if (e.KeyCode == Keys.None && e.Modifiers == Keys.None)
@@ -33,91 +43,94 @@ namespace Keysharp.Core
 					mod = e.Modifiers;
 					Validate();
 				}
-				SetText();
-			};
-			PreviewKeyDown += (sender, e) =>
-			{
-				if (e.KeyCode == Keys.Tab)
-					e.IsInputKey = true;
+				Text = null;
 			};
 		}
 
-		public string GetText()
+		public override string Text
 		{
-			var str = "";
-
-			if ((mod & Keys.Control) == Keys.Control)
-				str += Keyword_ModifierCtrl;
-
-			if ((mod & Keys.Shift) == Keys.Shift)
-				str += Keyword_ModifierShift;
-
-			if ((mod & Keys.Alt) == Keys.Alt)
-				str += Keyword_ModifierAlt;
-
-			return str + key.ToString();
-		}
-
-		internal void SetText(string text)
-		{
-			Keys keys = Keys.None, mods = Keys.None;
-
-			foreach (var ch in text)
+			get
 			{
-				switch (ch)
+				var str = "";
+
+				if ((mod & Keys.Control) == Keys.Control)
+					str += Keyword_ModifierCtrl;
+
+				if ((mod & Keys.Shift) == Keys.Shift)
+					str += Keyword_ModifierShift;
+
+				if ((mod & Keys.Alt) == Keys.Alt)
+					str += Keyword_ModifierAlt;
+
+				return str + key.ToString();
+			}
+			set
+			{
+				if (value != null) 
 				{
-					case Keyword_ModifierAlt: mods |= Keys.Alt; break;
+					Keys keys = Keys.None, mods = Keys.None;
 
-					case Keyword_ModifierCtrl: mods |= Keys.Control; break;
-
-					case Keyword_ModifierShift: mods |= Keys.Shift; break;
-
-					default:
+					if (!value.Equals("None", StringComparison.OrdinalIgnoreCase))
 					{
-						if (Enum.TryParse(ch.ToString(), true, out Keys k))
-							keys = k;
+						foreach (var ch in value)
+						{
+							switch (ch)
+							{
+								case Keyword_ModifierAlt: mods |= Keys.Alt; break;
 
-						break;
+								case Keyword_ModifierCtrl: mods |= Keys.Control; break;
+
+								case Keyword_ModifierShift: mods |= Keys.Shift; break;
+
+								default:
+								{
+									if (Enum.TryParse(ch.ToString(), true, out Keys k))
+										keys = k;
+
+									break;
+								}
+							}
+						}
 					}
+
+					key = keys;
+					mod = mods;
+					Validate();
 				}
+
+				var buf = new StringBuilder(45);
+				const string sep = " + ";
+
+				if ((mod & Keys.Control) == Keys.Control)
+				{
+					_ = buf.Append(Enum.GetName(typeof(Keys), Keys.Control));
+					_ = buf.Append(sep);
+				}
+
+				if ((mod & Keys.Shift) == Keys.Shift)
+				{
+					_ = buf.Append(Enum.GetName(typeof(Keys), Keys.Shift));
+					_ = buf.Append(sep);
+				}
+
+				if ((mod & Keys.Alt) == Keys.Alt)
+				{
+					_ = buf.Append(Enum.GetName(typeof(Keys), Keys.Alt));
+					_ = buf.Append(sep);
+				}
+
+				_ = buf.Append(key.ToString());
+				base.Text = buf.ToString();
 			}
-
-			key = keys;
-			mod = mods;
-			Validate();
-			SetText();
-		}
-
-		private void SetText()
-		{
-			var buf = new StringBuilder(45);
-			const string sep = " + ";
-
-			if ((mod & Keys.Control) == Keys.Control)
-			{
-				_ = buf.Append(Enum.GetName(typeof(Keys), Keys.Control));
-				_ = buf.Append(sep);
-			}
-
-			if ((mod & Keys.Shift) == Keys.Shift)
-			{
-				_ = buf.Append(Enum.GetName(typeof(Keys), Keys.Shift));
-				_ = buf.Append(sep);
-			}
-
-			if ((mod & Keys.Alt) == Keys.Alt)
-			{
-				_ = buf.Append(Enum.GetName(typeof(Keys), Keys.Alt));
-				_ = buf.Append(sep);
-			}
-
-			_ = buf.Append(key.ToString());
-			Text = buf.ToString();
 		}
 
 		private void Validate()
 		{
+#if WINDOWS
 			Keys[,] sym = { { Keys.Control, Keys.ControlKey }, { Keys.Shift, Keys.ShiftKey }, { Keys.Alt, Keys.Menu } };
+#else
+			Keys[,] sym = { { Keys.Control, Keys.Control }, { Keys.Shift, Keys.Shift }, { Keys.Alt, Keys.RightAlt } };
+#endif
 
 			for (var i = 0; i < 3; i++)
 			{

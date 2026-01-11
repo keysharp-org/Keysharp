@@ -6,6 +6,7 @@ namespace Keysharp.Core.Linux.Proxies
 	/// </summary>
 	internal class XDisplay : IDisposable
 	{
+		[ThreadStatic]
 		private static nint _defaultDisp = 0;
 		private int screenNumber;
 		internal nint WM_PROTOCOLS;
@@ -81,18 +82,23 @@ namespace Keysharp.Core.Linux.Proxies
 		internal nint AsyncAtom;      // Support for async messages
 		internal nint HoverAtom;       // PostMessage atom
 
+		[ThreadStatic] // According to StackOverflow, each thread should have its own XDisplay instance.
+		private static XDisplay _default = null;
 		internal static XDisplay Default
 		{
 			get
 			{
 				if (_defaultDisp == 0)
+				{
 					_defaultDisp = Xlib.XOpenDisplay(0);
+					_default = new XDisplay(_defaultDisp);
+				}
 
-				return new XDisplay(_defaultDisp);
+				return _default;
 			}
 		}
 
-		internal nint Handle { get; } = 0;
+		internal nint Handle { get; private set; } = 0;
 
 		internal XWindow Root => new XWindow(this, Xlib.XDefaultRootWindow(Handle));
 
@@ -105,10 +111,18 @@ namespace Keysharp.Core.Linux.Proxies
 			SetupAtoms();
 		}
 
+		~XDisplay()
+		{
+			Dispose();
+		}
+
 		public void Dispose()
 		{
-			if (Handle != 0 && Handle != _defaultDisp)
+			if (Handle != 0 && Handle != _defaultDisp) 
+			{
 				Xlib.XCloseDisplay(Handle);
+				Handle = 0;
+			}
 		}
 
 		/// <summary>
@@ -390,6 +404,18 @@ namespace Keysharp.Core.Linux.Proxies
 			//  KeysharpEnhancements.OutputDebugLine($"Atom {atom_names[i]} = {atoms[i].ToInt64()}.");
 		}
 
+
+		internal uint XKeycodeToKeysym(int keycode, int index) => Xlib.XKeycodeToKeysym(Handle, keycode, index);
+		internal uint XKeysymToKeycode(IntPtr keysym) => Xlib.XKeysymToKeycode(Handle, keysym);
+		internal int XQueryKeymap(byte[] keys_return) => Xlib.XQueryKeymap(Handle, keys_return);
+		internal int XGrabKey(uint keycode, uint modifiers, nint grab_window, bool owner_events, int pointer_mode, int keyboard_mode)
+			=> Xlib.XGrabKey(Handle, keycode, modifiers, grab_window, owner_events, pointer_mode, keyboard_mode);
+		internal int XUngrabKey(uint keycode, uint modifiers, long? grab_window = default)
+			=> Xlib.XUngrabKey(Handle, keycode, modifiers, (nint)(grab_window ?? Root.ID));
+		internal int XUngrabKeyboard(ulong time) => Xlib.XUngrabKeyboard(Handle, time);
+		internal int XSync(bool discard) => Xlib.XSync(Handle, discard);
+		internal int XFlush() => Xlib.XFlush(Handle);
+		internal bool XTestFakeKeyEvent(uint keycode, bool isPress, ulong delay) => Xlib.XTestFakeKeyEvent(Handle, keycode, isPress, delay);
 	}
 }
 #endif

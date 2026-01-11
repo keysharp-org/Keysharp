@@ -9,7 +9,7 @@
 	</PropertyGroup>
 
 	<PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-		<TargetFramework>net9.0</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework>
 		<OutputType>WinExe</OutputType>
 	</PropertyGroup>
 	
@@ -17,11 +17,11 @@
 		<StartupObject>Keysharp.Main.Program</StartupObject>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<ApplicationIcon>..\Keysharp.ico</ApplicationIcon>
-		<AssemblyVersion>0.0.0.11</AssemblyVersion>
-		<FileVersion>0.0.0.11</FileVersion>
-		<Version>0.0.0.11</Version>
+		<AssemblyVersion>0.0.0.13</AssemblyVersion>
+		<FileVersion>0.0.0.13</FileVersion>
+		<Version>0.0.0.13</Version>
 		<Authors>Matt Feemster + legacy IronAHK developers</Authors>
-		<Description>A C# port and enhancement of the Autohotkey program</Description>
+		<Description>A C# port and enhancement of the AutoHotkey program</Description>
 		<Company>Keysharp</Company>
 		<PreserveCompilationContext>true</PreserveCompilationContext>
 		<SignAssembly>False</SignAssembly>
@@ -29,20 +29,20 @@
 		<PlatformTarget>x64</PlatformTarget>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<WarningLevel>8</WarningLevel>
-	<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-	<PublishSingleFile>true</PublishSingleFile>
-	<IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+		<!-- <PublishSingleFile>true</PublishSingleFile>
+		<IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract> -->
 	</PropertyGroup>
 	
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-		<OutputPath>..\bin\debug\</OutputPath>
+		<OutputPath>../bin/Debug/</OutputPath>
 		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">DEBUG;TRACE;LEGACY;WINDOWS</DefineConstants>
 		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">DEBUG;TRACE;LEGACY;LINUX</DefineConstants>
 		<NoWarn>1701;1702;8981;0164;8974</NoWarn>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-		<OutputPath>..\bin\release\</OutputPath>
+		<OutputPath>../bin/Release/</OutputPath>
 		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">TRACE;LEGACY;WINDOWS</DefineConstants>
 		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">TRACE;LEGACY;LINUX</DefineConstants>
 		<NoWarn>1701;1702;8981;0164;8974</NoWarn>
@@ -56,13 +56,28 @@
 	<ItemGroup>
 		<Content Include="..\license.txt" Link="license.txt">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
 		</Content>
 		<Content Include="Keysharp.manifest">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
 		</Content>
 		<Content Include="Scripts\WindowSpy.ks">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
 		</Content>
+		<Content Include="Scripts\AtSpi.ks" Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+		</Content>
+		<None Include="..\Keysharp.ico" Link="Keysharp.ico">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+		</None>
+		<None Include="..\Keysharp.png" Link="Keysharp.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+		</None>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -70,7 +85,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.NET.HostModel" Version="5.0.0-preview.1.20120.5" />
+	  <PackageReference Include="Microsoft.NET.HostModel" Version="3.1.16" />
 	</ItemGroup>
 	
 	<ItemGroup>

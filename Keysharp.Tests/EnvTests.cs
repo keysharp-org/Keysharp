@@ -145,14 +145,14 @@ namespace Keysharp.Tests
 			//Monitors
 			var val = Env.SysGet(80);
 			Assert.IsTrue(val.Ai() > 0);
+			//SM_CXSCREEN
+			val = Env.SysGet(0);
+			Assert.IsTrue(val.Ai() == A_ScreenWidth);
 			//Mouse buttons
 			val = Env.SysGet(43);
 			Assert.IsTrue(val.Ai() > 0);
 			//Mouse present
 			val = Env.SysGet(19);
-			Assert.IsTrue(val.Ai() > 0);
-			//Mouse wheel present
-			val = Env.SysGet(75);
 			Assert.IsTrue(val.Ai() > 0);
 			Assert.IsTrue(TestScript("env-sysget", true));
 		}

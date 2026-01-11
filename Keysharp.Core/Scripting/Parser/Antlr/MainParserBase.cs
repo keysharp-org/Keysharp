@@ -1,9 +1,11 @@
-using Antlr4.Runtime;
 using System.Collections.Generic;
 using System.IO;
-using static MainParser;
-using Antlr4.Runtime.Atn;
 using System.Threading.Channels;
+using Antlr4.Runtime;
+using Antlr4.Runtime.Atn;
+using Antlr4.Runtime.Misc;
+using Keysharp.Core;
+using static MainParser;
 
 public class MainParserErrorListener : IAntlrErrorListener<IToken>
 {
@@ -16,11 +18,11 @@ public class MainParserErrorListener : IAntlrErrorListener<IToken>
         string msg,
         RecognitionException e)
     {
-		string fullPath = offendingSymbol.InputStream?.SourceName ?? "<unknown file>";
-		string fileName = Path.GetFileName(fullPath);
-
-		// Throw an exception to stop parsing
-		throw new InvalidOperationException($"Syntax error{(fileName != "" ? " in file " + fileName : "")} at line {line}:{charPositionInLine} \"{offendingSymbol.Text}\" - {msg}", e);
+		string fullPath = offendingSymbol?.InputStream?.SourceName ?? "<unknown file>";
+		string fileName = fullPath == "<unknown file>" ? "" : Path.GetFileName(fullPath);
+		
+        // Throw an exception to stop parsing
+        throw new InvalidOperationException($"Syntax error{(fileName != "" ? " in file " + fileName : "")} at line {line}:{charPositionInLine} \"{offendingSymbol.Text}\" - {msg}", e);
     }
 }
 
@@ -32,6 +34,11 @@ public abstract class MainParserBase : Antlr4.Runtime.Parser
 {
     private readonly Stack<string> _tagNames = new Stack<string>();
     private uint _derefDepth = 0;
+	internal string LastSyntaxErrorMessage { get; private set; }
+	internal int LastSyntaxErrorLine { get; private set; }
+	internal int LastSyntaxErrorColumn { get; private set; }
+	internal string LastSyntaxErrorFile { get; private set; }
+	internal string LastSyntaxErrorCode { get; private set; }
 
     public static HashSet<int> flowKeywords = new HashSet<int> {
         MainLexer.If,
@@ -65,6 +72,15 @@ public abstract class MainParserBase : Antlr4.Runtime.Parser
         RemoveErrorListeners();
         AddErrorListener(new MainParserErrorListener());
     }
+
+	internal void SetSyntaxError(string message, int line, int column, string file, string code)
+	{
+		LastSyntaxErrorMessage = message;
+		LastSyntaxErrorLine = line;
+		LastSyntaxErrorColumn = column;
+		LastSyntaxErrorFile = file == "<unknown file>" ? "" : file;
+		LastSyntaxErrorCode = code ?? "";
+	}
 
     /// <summary>
     /// Short form for prev(String str)
@@ -166,10 +182,11 @@ public abstract class MainParserBase : Antlr4.Runtime.Parser
         //var objectLiteralIdentifierPassed = false;
         var enclosableDepth = 0;
         var i = 0;
-        int nextToken = int.MinValue;
+        int nextToken = int.MinValue, prevToken = int.MinValue;
         while (nextToken != MainLexer.Eof)
         {
             i++;
+            prevToken = nextToken;
             nextToken = InputStream.LA(i);
             /*
             if (validateObjectLiteral)
@@ -245,6 +262,7 @@ public abstract class MainParserBase : Antlr4.Runtime.Parser
                 case MainLexer.WS:
                 case MainLexer.EOL:
                 case MainLexer.Eof:
+                    if (prevToken == MainLexer.CloseBracket) return false;
                     return true;
                 case MainLexer.Comma:
                     if (i == 2) {
@@ -258,7 +276,22 @@ public abstract class MainParserBase : Antlr4.Runtime.Parser
         }
         return false;
     }
-    protected bool isValidExpressionStatement(ParserRuleContext ctx) {
+
+    protected bool isValidLabel()
+    {
+        if (InputStream.LA(1) != MainLexer.Default) return true;
+        var ctx = this.Context;
+        while (ctx != null)
+        {
+            if (ctx.RuleIndex == MainParser.RULE_caseClause) return false;
+            if (ctx.RuleIndex == MainParser.RULE_block) return true;
+            ctx = (ctx.Parent as ParserRuleContext) ?? null;
+        }
+        return true;
+    }
+
+    protected bool isValidExpressionStatement(ParserRuleContext ctx)
+    {
         return !(ctx is ConcatenateExpressionContext || ctx is PrimaryExpressionContext);
     }
 

@@ -65,7 +65,7 @@ namespace Keysharp.Core
 		{
 			//DoDelayedFunc(() =>
 			{
-				if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+				if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 				{
 					var rect = client ? win.ClientLocation : win.Location;
 
@@ -101,7 +101,7 @@ namespace Keysharp.Core
 											   object excludeTitle = null,
 											   object excludeText = null)
 		{
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
 				var val = value;
 
@@ -159,7 +159,7 @@ namespace Keysharp.Core
 		{
 			var val = value.Ai();
 
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
 				if (val == 0)
 					set(win, false);

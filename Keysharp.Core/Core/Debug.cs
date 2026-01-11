@@ -17,7 +17,7 @@ namespace Keysharp.Core
 			tv.titleMatchMode = 2L;//Match anywhere.
 			var hwnd = WindowX.WinExist(A_ScriptName, "", title, "");
 			tv.titleMatchMode = mm;
-			var wi = Script.TheScript.WindowProvider.Manager.CreateWindow((nint)hwnd);
+			var wi = WindowManager.CreateWindow((nint)hwnd);
 			var classname = wi.ClassName;//Logic taken from AHK.
 
 			if (classname == "#32770" || classname == "AutoHotkey" || classname == "Keysharp")//MessageBox(), InputBox(), FileSelect(), or GUI/script-owned window.
@@ -32,7 +32,8 @@ namespace Keysharp.Core
 
 				try
 				{
-					ed = Registrys.RegRead(@"HKCR\KeysharpScript\Shell\Edit\Command") as string;
+					using (new Errors.SuppressErrors()) //Suppress internal error processing
+						ed = Registrys.RegRead(@"HKCR\KeysharpScript\Shell\Edit\Command") as string;
 				}
 				catch
 				{
@@ -77,6 +78,14 @@ namespace Keysharp.Core
 			var script = Script.TheScript;
 			var typesToProps = new SortedDictionary<string, List<PropertyInfo>>();
 			_ = sb.AppendLine($"**User defined**\n");
+
+			foreach (var fieldKv in script.Vars.globalVars.Where(kv => kv.Value is FieldInfo))
+			{
+					FieldInfo fi2 = fieldKv.Value as FieldInfo;
+					var val = fi2.GetValue(null);
+					var fieldType = val != null ? val.GetType().Name : fi2.FieldType.Name;
+					_ = Misc.PrintProps(val, fieldKv.Key, sb, ref tabLevel);
+			}
 
 			foreach (var typeKv in script.ReflectionsData.staticFields.Where(tkv => tkv.Key.Name.StartsWith("program", StringComparison.OrdinalIgnoreCase)))
 			{
@@ -137,7 +146,7 @@ namespace Keysharp.Core
 		{
 			var sb = new StringBuilder(2048);
 			var script = Script.TheScript;
-			var target_window = script.WindowProvider.Manager.ActiveWindow;
+			var target_window = WindowManager.ActiveWindow;
 			var win_title = target_window.IsSpecified ? target_window.Title : "";
 			var enabledTimers = 0;
 			var ht = script.HookThread;
@@ -193,9 +202,22 @@ namespace Keysharp.Core
 			return sb.ToString();
 		}
 
-		public static object ListLines(params object[] obj) => OutputDebugLine("ListLines() is not supported in Keysharp because it's a compiled program, not an interpreted one.");
+		private static bool _listLinesMessageEmitted = false;
+		public static object ListLines(params object[] obj)
+		{
+			if (!_listLinesMessageEmitted)
+			{
+				_ = OutputDebugLine("ListLines() is not supported in Keysharp because it's a compiled program, not an interpreted one.");
+				_listLinesMessageEmitted = true;
+			}
+			return DefaultObject;
+		}
 
-		public static object ListVars() => Script.TheScript.mainWindow?.ShowInternalVars(true);
+		public static object ListVars()
+		{
+			Script.TheScript.mainWindow?.ShowInternalVars(true);
+			return DefaultObject;
+		}
 
 		/// <summary>
 		/// Sends a string to the debugger (if any) for display.
@@ -217,15 +239,6 @@ namespace Keysharp.Core
 
 			var script = Script.TheScript;
 			System.Diagnostics.Debug.Write(text);//Will print only in debug mode to the debugger so we can see it in Visual Studio.
-
-			//This will throw when running tests.
-			try
-			{
-				Console.Out.Write(text);//Will print to the console when piped to | more, even though this is a windows application.
-			}
-			catch
-			{
-			}
 
 			if (!script.IsMainWindowClosing)
 				if (clear)

@@ -10,6 +10,12 @@
 #endif
 			;
 
+#if WINDOWS
+		public const string LibraryExtension = ".dll";
+#else
+		public const string LibraryExtension = ".so";
+#endif
+
 		public static readonly char[] BothBraces = "{}".ToCharArray();
 		public static readonly char[] BothParens = "()".ToCharArray();
 		public static readonly char[] BothBrackets = "[]".ToCharArray();
@@ -62,14 +68,14 @@
         internal const string AnonymousLambdaPrefix = InternalPrefix + "AnonLambda_";
         internal const string AnonymousFatArrowLambdaPrefix = InternalPrefix + "AnonFatArrowLambda_";
 
+		public const string MainNamespaceName = "Keysharp.CompiledMain";
 		public const string MainClassName = "Program";
+		public const string UserDeclaredClassesContainerName = "UserDeclaredClasses";
 		public const string AutoExecSectionName = "AutoExecSection";
 		public const string MainScriptVariableName = "MainScript";
 
 		public static Dictionary<string, string> TypeNameAliases = new(StringComparer.OrdinalIgnoreCase)
 		{
-			{ "int64", "Integer" },
-			{ "double", "Float" },
 			{ "KeysharpObject", "Object" },
 			{ "FuncObj", "Func" }
 		};

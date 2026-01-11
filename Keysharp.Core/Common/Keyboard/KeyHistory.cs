@@ -50,8 +50,8 @@
 
 		internal KeyHistoryItem NextItem()
 		{
-			var next = Interlocked.Increment(ref keyHistoryNext) % keyHistory.Count;
-			var item = keyHistory[next];
+			var next = Interlocked.Increment(ref keyHistoryNext);
+			var item = keyHistory[(next - 1) % keyHistory.Count];
 			UpdateTimestamp(item);
 			return item;
 		}
@@ -92,7 +92,7 @@
 			item.vk = vk;
 			item.sc = sc;
 			item.eventType = 'i'; // Callers all want this.
-			var win = Script.TheScript.WindowProvider.Manager.ActiveWindow;
+			var win = WindowManager.ActiveWindow;
 			var forewin = win.Handle;
 
 			if (forewin != 0)

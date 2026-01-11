@@ -1,4 +1,5 @@
-﻿using Assert = NUnit.Framework.Legacy.ClassicAssert;
+﻿using Keysharp.Core.Common.Threading;
+using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests
 {
@@ -7,7 +8,7 @@ namespace Keysharp.Tests
 		protected string path = string.Format("..{0}..{0}..{0}Keysharp.Tests{0}Code{0}", Path.DirectorySeparatorChar);
 		private const string ext = ".ahk";
 		protected Script s;
-		protected HotstringManager hsm;
+		internal HotstringManager hsm;
 
 		[SetUp]
 		public void SetupBeforeEachTest()
@@ -73,10 +74,10 @@ namespace Keysharp.Tests
 							throw new Exception("Compilation failed.");
 
 						//Environment.SetEnvironmentVariable("SCRIPT", script);
-						var program = CompilerHelper.compiledasm.GetType($"Keysharp.CompiledMain.{Keywords.MainClassName}");
+						var program = CompilerHelper.compiledasm.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
 						var main = program.GetMethod("Main");
 						var temp = new string[] { };
-						var result = main.Invoke(null, [temp]);
+						var result = StaTask.RunSync(() => main.Invoke(null, [temp]));
 
 						if (exitCode.HasValue)
 						{

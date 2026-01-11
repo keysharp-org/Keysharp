@@ -202,7 +202,7 @@ namespace Keysharp.Core.Windows
 		[FieldOffset(8)] internal nint pointerValue; //LPWSTR
 
 		//IUnknown* punkVal;
-		/*  IDispatch* pdispVal;
+		/*  IDispatch* ptrVal;
 		    IStream* pStream;
 		    IStorage* pStorage;
 		    LPVERSIONEDSTREAM pVersionedStream;
@@ -246,9 +246,9 @@ namespace Keysharp.Core.Windows
 		    DATE* pdate;
 		    BSTR* pbstrVal;
 		    IUnknown** ppunkVal;
-		    IDispatch** ppdispVal;
-		    LPSAFEARRAY* pparray;
-		    PROPVARIANT* pvarVal;
+		    IDispatch** pptrVal;
+		    LPSAFEARRAY* ptrVal;
+		    PROPVARIANT* ptrVal;
 		*/
 
 		/// <summary>
@@ -1448,13 +1448,13 @@ namespace Keysharp.Core.Windows
 		}
 	}
 
-	internal class PropVariantNative
+	internal partial class PropVariantNative
 	{
-		[DllImport("ole32.dll", CharSet = CharSet.Unicode)]
+		[DllImport(WindowsAPI.ole32)]
 		internal static extern int PropVariantClear(ref PropVariant pvar);
 
-		[DllImport("ole32.dll", CharSet = CharSet.Unicode)]
-		internal static extern int PropVariantClear(nint pvar);
+		[LibraryImport(WindowsAPI.ole32, EntryPoint = "PropVariantClear")]
+		internal static partial int PropVariantClear(nint pvar);
 	}
 
 	/// <summary>
@@ -1679,7 +1679,7 @@ namespace Keysharp.Core.Windows
 	}
 
 	/// <summary>
-	/// Connector Type
+	/// Connector type
 	/// </summary>
 	internal enum ConnectorType
 	{

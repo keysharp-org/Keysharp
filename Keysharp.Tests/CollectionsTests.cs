@@ -72,7 +72,7 @@ namespace Keysharp.Tests
 		[Test, Category("Collections")]
 		public void Map()
 		{
-			var arr = Keysharp.Core.Collections.Map(
+			var arr = new Map(
 						  [
 							  "one", 1L,
 							  "two", 2L,

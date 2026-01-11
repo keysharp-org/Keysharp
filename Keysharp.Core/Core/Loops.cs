@@ -548,6 +548,28 @@ namespace Keysharp.Core
 		}
 
 		/// <summary>
+		/// Allows using PushTry and PopTry with an using block
+		/// </summary>
+		internal sealed class TryScope : IDisposable
+		{
+			private bool disposed;
+
+			public TryScope(params Type[] exceptionTypes)
+			{
+				PushTry(exceptionTypes);
+			}
+
+			public void Dispose()
+			{
+				if (disposed)
+					return;
+
+				PopTry();   // Again, reuse your existing helper
+				disposed = true;
+			}
+		}
+
+		/// <summary>
 		/// Determines whether an exception type will be caught in any of the surrounding try blocks.
 		/// </summary>
 		public static bool IsExceptionCaught(Type exceptionType)
@@ -640,9 +662,9 @@ namespace Keysharp.Core
 		internal static string GetShortPath(string filename)
 		{
 #if WINDOWS
-			var buffer = new StringBuilder(1024);
-			_ = WindowsAPI.GetShortPathName(filename, buffer, buffer.Capacity);
-			return buffer.ToString();
+			var buffer = new char[1024];
+			var len = WindowsAPI.GetShortPathName(filename, buffer, buffer.Length);
+			return new string(buffer, 0, len);
 #else
 			return DefaultObject;
 #endif
@@ -866,7 +888,7 @@ namespace Keysharp.Core
 		public object file;
 		public string filename = string.Empty;
 		public long index;
-		public DateTime lastIter = DateTime.UtcNow;
+		//public DateTime lastIter = DateTime.UtcNow;
 		public string line;
 		public string path;
 		public object regDate;

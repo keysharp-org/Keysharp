@@ -140,14 +140,26 @@
 		public static long HasMethod(object value, object name = null, object paramCount = null)
 		{
 			var n = name.As();
+			if (n == "") n = "Call";
 			var count = paramCount.Ai(-1);
-			if (value is FuncObj)
-				return 1L;
-			else if (value is KeysharpObject kso)
-                return n == "" ? HasProp(value, "Call") : (kso.op != null && Script.TryGetOwnPropsMap(kso, n, out var opm) && opm != null && opm.Call != null ? 1L : 0L);
-				
-			var mph = Reflections.FindAndCacheMethod(value.GetType(), n.Length > 0 ? n : "Call", count);
-			return mph != null && mph.mi != null ? 1L : 0L;
+
+			var mitup = GetMethodOrProperty(value, n, count, checkBase: true, throwIfMissing: false, invokeMeta: false);
+			if (mitup.Item2 == null) return 0L;
+			switch (mitup.Item2)
+			{
+				case FuncObj fn:
+					if (count != -1)
+					{
+						bool hasThis = value is FuncObj ? false : value is KeysharpObject ? true : fn.IsMethod;
+						if (count < (fn.MinParams - (hasThis ? 1 : 0))) return 0L;
+						if (count > (fn.MaxParams - (hasThis ? 1 : 0)) && !fn.IsVariadic) return 0L;
+					}
+					return 1L;
+				case KeysharpObject callable:
+				case MethodPropertyHolder mph:
+					return 1L;
+			}
+			return 0L;
 		}
 
 		/// <summary>
@@ -181,6 +193,8 @@
 							return 1L;
                     }
                 }
+
+				return 0L;
 			}
 
 			var mph = Reflections.FindAndCacheProperty(val.GetType(), n, count);
@@ -199,17 +213,17 @@
 			var o = obj;
 			var n = name.As("Call");
 
-			if (obj is KeysharpObject kso && Script.TryGetPropertyValue(kso, name, out object oifo) && oifo is IFuncObj ifo && ifo != null)
-				return ifo.Bind([obj, ..args]);
+			if (obj is Any)
+				return new BoundFunc(new MethodPropertyHolder(n), args, o);
 			else if (Reflections.FindAndCacheMethod(o.GetType(), n, -1) is MethodPropertyHolder mph && mph.mi != null)
-				return new BoundFunc(mph.mi, [obj, ..args], o);
+				return new BoundFunc(mph, [obj, .. args], o);
 
-			return Errors.ErrorOccurred($"Unable to retrieve method {name} for object.");
+			return Errors.ErrorOccurred($"Unable to retrieve method {n} for object.");
 		}
 	}
 
 	internal class FunctionData
 	{
-		internal ConcurrentLfu<object, IFuncObj> cachedFuncObj = new (2000, Environment.ProcessorCount, new ThreadPoolScheduler(), new CaseEqualityComp(eCaseSense.Off));
+		internal ConcurrentLfu<object, IFuncObj> cachedFuncObj = new (Environment.ProcessorCount, 2000, new ThreadPoolScheduler(), new CaseEqualityComp(eCaseSense.Off));
 	}
 }

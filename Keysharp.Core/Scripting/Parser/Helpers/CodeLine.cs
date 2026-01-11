@@ -1,7 +1,6 @@
 namespace Keysharp.Core.Scripting.Parser.Helpers
 {
-    [PublicForTestOnly]
-    public class CodeLine : CodeLinePragma
+    internal class CodeLine : CodeLinePragma
     {
         public string Code { get; set; }
 

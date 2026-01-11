@@ -1,4 +1,10 @@
-﻿namespace System.Windows.Forms
+﻿#if !WINDOWS
+using Gtk;
+
+namespace Eto.Forms
+#else
+namespace System.Windows.Forms
+#endif
 {
 	/// <summary>
 	/// Extension methods for various WinForms Control classes.<br/>
@@ -9,6 +15,119 @@
 	/// </summary>
 	internal static class ControlExtensions
 	{
+		internal static void SetLocation(this Control control, Point location)
+		{
+#if WINDOWS
+			control.Location = location;
+#else
+			if (control is Window window)
+				window.Location = location;
+			else if (control.Parent is PixelLayout pixel)
+				pixel.Move(control, location);
+			control.Properties["RequestedLocation"] = location;
+#endif
+		}
+
+		internal static Point GetLocation(this Control control)
+		{
+#if WINDOWS
+			return control.Location;
+#else
+			if (control.Loaded)
+			{
+				var actual = PixelLayout.GetLocation(control);
+				if (actual != Point.Empty && actual != new Point(1, 1))
+					return actual;
+			}
+
+			if (control.Properties.TryGetValue("RequestedLocation", out var obj) && obj is Point stored)
+				return stored;
+
+			return PixelLayout.GetLocation(control);
+#endif
+		}
+
+		internal static Size GetSize(this Control control)
+		{
+#if WINDOWS
+			return control.Size;
+#else
+			if (control.Loaded && control.Size is Size size && size != new Size(1, 1))
+				return control.Size;
+			Size prefSize;
+			control.ToNative().GetPreferredSize(out var minSize, out var nativePrefSize);
+			if (nativePrefSize.Width <= 1 && nativePrefSize.Height <= 1)
+			{
+				var etoPrefSize = control.GetPreferredSize();
+				prefSize = new Size(etoPrefSize.Width.Ai(), etoPrefSize.Height.Ai());
+			}
+			else
+				prefSize = new Size(nativePrefSize.Width, nativePrefSize.Height);
+			if (control.Properties.TryGetValue("AssignedSize", out var obj))
+			{
+				var existingSize = (Size)obj;
+				bool allowAutoSizeWidth = false, allowAutoSizeHeight = false;
+				if (control.Properties.TryGetValue("RequestedSize", out var requestedSize))
+				{
+					allowAutoSizeWidth = ((Size)requestedSize).Width == -1;
+					allowAutoSizeHeight = ((Size)requestedSize).Height == -1;
+				}
+				var newWidth = allowAutoSizeWidth ? existingSize.Width : Math.Max(existingSize.Width, prefSize.Width);
+				var newHeight = allowAutoSizeHeight ? existingSize.Height : Math.Max(existingSize.Height, prefSize.Height);
+				if (newWidth != existingSize.Width || newHeight != existingSize.Height)
+					control.Properties["AssignedSize"] = new Size(newWidth, newHeight);
+			}
+			return (Size)control.Properties.GetOrAdd("AssignedSize", prefSize);
+#endif
+		}
+
+		internal static void SetSize(this Control control, Size newSize)
+		{
+#if WINDOWS
+			control.Size = newSize;
+#else
+			control.ToNative().GetPreferredSize(out var minSize, out var prefSize);
+			var requestedSize = new Size(newSize.Width == int.MinValue ? -1 : newSize.Width, newSize.Height == int.MinValue ? -1 : newSize.Height);
+			var width = requestedSize.Width == -1 ? prefSize.Width : newSize.Width;
+			var height = requestedSize.Height == -1 ? prefSize.Height : newSize.Height;
+			var assignSize = new Size(width, height);
+			control.Size = assignSize;
+			control.Properties["RequestedSize"] = requestedSize;
+			control.Properties["AssignedSize"] = assignSize;
+#endif
+		}
+
+		internal static Control GetLogicalParent(this Control control)
+		{
+#if WINDOWS
+			return control.Parent;
+#else
+			var parent = control?.Parent;
+			while (parent is Layout layout && layout.Parent != null)
+				parent = layout.Parent;
+
+			return parent;
+#endif
+		}
+
+		internal static Control GetLayoutContainer(this Control control)
+		{
+#if WINDOWS
+			return control;
+#else
+			return control?.EnsureLayoutContainer();
+#endif
+		}
+
+		internal static IEnumerable<Control> GetControls(this Form form)
+		{
+#if WINDOWS
+			return form.Controls.OfType<Control>();
+#else
+			return form.Children;
+#endif
+		}
+
 		/// <summary>
 		/// Calls an <see cref="Action"/> inside of <see cref="Control.BeginInvoke"/> with various checks/options.<br/>
 		/// Before invoking on the control, ensure it's not null, has been created and is not disposing/disposed.
@@ -17,7 +136,7 @@
 		/// <param name="action">The <see cref="Action"/> to invoke.</param>
 		/// <param name="runIfNull">True to call action inline if control is null, else don't call action.</param>
 		/// <param name="forceInvoke">True to call BeginInvoke() on control, even if it's not required.</param>
-		internal static void CheckedBeginInvoke(this Control control, Action action, bool runIfNull, bool forceInvoke)
+		internal static void CheckedBeginInvoke(this Control control, System.Action action, bool runIfNull, bool forceInvoke)
 		{
 			if (control == null)
 			{
@@ -43,7 +162,7 @@
 		/// <param name="control">The <see cref="Control"/> to call Invoke() on.</param>
 		/// <param name="action">The <see cref="Action"/> to invoke.</param>
 		/// <param name="runIfNull">True to call action inline if control is null, else don't call action.</param>
-		internal static void CheckedInvoke(this Control control, Action action, bool runIfNull)
+		internal static void CheckedInvoke(this Control control, System.Action action, bool runIfNull)
 		{
 			if (control == null)
 			{
@@ -155,7 +274,7 @@
 		/// <typeparam name="T">The type of the controls to find.</typeparam>
 		/// <param name="control">The <see cref="Control"/> whose children will be matched.</param>
 		/// <returns>A <see cref="HashSet{T}"/> of children whose type matched <typeparamref name="T"/>.</returns>
-		internal static HashSet<T> GetAllControlsRecursive<T>(this Control control) where T : class, new ()
+		internal static HashSet<T> GetAllControlsRecursive<T>(this Control control) where T : class
 		{
 			var rtn = new HashSet<T>();
 
@@ -230,10 +349,12 @@
 		{
 #if LINUX
 			control.ResumeLayout();
+			if (control is TreeGridView tgv)
+				tgv.ReloadData();
 #elif WINDOWS
 			_ = WindowsAPI.SendMessage(control.Handle, WindowsAPI.WM_SETREDRAW, 1, 0);
-#endif
 			control.Refresh();
+#endif
 		}
 
 		/// <summary>
@@ -245,14 +366,36 @@
 			if (control is Form)
 				return Point.Empty;
 
-			Point p = control.Location;
+			Form form;
+
+#if !WINDOWS
+			if ((form = control.FindForm()) != null && form.Visible)
+			{
+				try
+				{
+					var controlScreen = control.PointToScreen(Point.Empty);
+					var formScreen = form.PointToScreen(Point.Empty);
+					return new Point((controlScreen.X - formScreen.X).Ai(), (controlScreen.Y - formScreen.Y).Ai());
+				}
+				catch
+				{
+				}
+			}
+#endif
+
+			Point p = control.GetLocation();
 			Control parent = control.Parent;
+
+#if !WINDOWS
+			if (form != null)
+				p.Offset(form.Margin.Left, form.Margin.Top);
+#endif
 
 			// This is done like this because Control.PointToScreen and similar functions
 			// apparently don't always work correctly if the Form is hidden.
 			while (parent != null && parent is not Form)
 			{
-				p.Offset(parent.Location);
+				p.Offset(parent.GetLocation());
 				parent = parent.Parent;
 			}
 
@@ -269,6 +412,9 @@
 		/// </returns>
 		internal static (Control, Control) RightBottomMost(this Control control)
 		{
+			control = control.GetLayoutContainer();
+			if (control == null)
+				return (null, null);
 			var maxx = 0;
 			var maxy = 0;
 			(Control right, Control bottom) p = (null, null);
@@ -310,6 +456,9 @@
 		/// </returns>
 		internal static (Control, Control) RightBottomMostSince(this Control control, Control since)
 		{
+			control = control.GetLayoutContainer();
+			if (control == null)
+				return (null, null);
 			var maxx = 0;
 			var maxy = 0;
 			(Control right, Control bottom) p = (null, null);
@@ -354,6 +503,7 @@
 		/// <param name="clear">True to deselect the item. Default: false.</param>
 		internal static void SelectItem(this ListBox lb, string text, bool clear = false)
 		{
+#if WINDOWS
 			if (lb.SelectionMode == SelectionMode.One)
 			{
 				var index = lb.FindString(text);
@@ -369,6 +519,14 @@
 					if (lb.Items[i] is string s)
 						lb.SetSelected(i, s.StartsWith(text, StringComparison.CurrentCultureIgnoreCase));
 			}
+#else
+			var index = lb.FindString(text);
+
+			if (index >= 0)
+				lb.SelectedIndex = index;
+			else if (clear)
+				lb.SelectedIndex = -1;
+#endif
 		}
 
 		/// <summary>
@@ -382,10 +540,10 @@
 		{
 			var index = cb.FindString(text);
 
-			if (index != ListBox.NoMatches)
+			if (index >= 0)
 				cb.SelectedIndex = index;
 			else if (clear)
-				cb.SelectedIndex = ListBox.NoMatches;
+				cb.SelectedIndex = -1;
 		}
 
 		/// <summary>
@@ -397,11 +555,11 @@
 		internal static void SetFont(this Control control, object options = null, object family = null)
 		{
 			var opts = options.As();
-			control.Font = Conversions.ParseFont(control.Font, opts, family.As());
+			control.Font = Keysharp.Core.Common.Strings.Conversions.ParseFont(control.Font, opts, family.As());
 			var c = Control.DefaultForeColor;
 
 			//Special processing is required to set the ForeColor that is not present in Conversions.ParseFont().
-			foreach (Range r in opts.AsSpan().SplitAny(Spaces))
+			foreach (System.Range r in opts.AsSpan().SplitAny(Spaces))
 			{
 				var opt = opts.AsSpan(r).Trim();
 
@@ -421,7 +579,7 @@
 		internal static void SetFormat(this DateTimePicker dtp, object format)
 		{
 			var fmt = format.As();
-
+#if WINDOWS
 			if (string.Compare(fmt, "shortdate", true) == 0)
 				dtp.Format = DateTimePickerFormat.Short;
 			else if (string.Compare(fmt, "longdate", true) == 0)
@@ -433,6 +591,14 @@
 				dtp.Format = DateTimePickerFormat.Custom;
 				dtp.CustomFormat = fmt;
 			}
+#else
+			if (string.Compare(fmt, "shortdate", true) == 0)
+				dtp.Mode = DateTimePickerMode.Date;
+			else if (string.Compare(fmt, "longdate", true) == 0)
+				dtp.Mode = DateTimePickerMode.DateTime;
+			else if (string.Compare(fmt, "time", true) == 0)
+				dtp.Mode = DateTimePickerMode.Time;
+#endif
 		}
 
 		/// <summary>
@@ -458,12 +624,16 @@
 		/// <returns>The height of the tabs if found, else 0.</returns>
 		internal static int TabHeight(this TabControl control)
 		{
+#if WINDOWS
 			if (control.TabPages.Count > 0)
 			{
 				if (control.Alignment == TabAlignment.Top || control.Alignment == TabAlignment.Bottom)
 					return control.GetTabRect(0).Height;//GetTabRect() works, tc.ItemSize.Height does not.
 			}
-
+#else
+			if (control.TabPosition == DockPosition.Top || control.TabPosition == DockPosition.Bottom)
+				return control.Size.Height - control.ClientSize.Height;
+#endif
 			return 0;
 		}
 
@@ -477,11 +647,16 @@
 		/// <returns>The width of the tabs if found, else 0.</returns>
 		internal static int TabWidth(this TabControl control)
 		{
+#if WINDOWS
 			if (control.TabPages.Count > 0)
 			{
 				if (control.Alignment == TabAlignment.Left || control.Alignment == TabAlignment.Right)
 					return control.GetTabRect(0).Width;
 			}
+#else
+			if (control.TabPosition == DockPosition.Left || control.TabPosition == DockPosition.Right)
+				return control.Size.Width - control.ClientSize.Width;
+#endif
 
 			return 0;
 		}
@@ -497,9 +672,14 @@
 		/// <param name="add">The <see cref="Control"/> to tag and add to control.</param>
 		internal static void TagAndAdd(this Control control, Control add)
 		{
+#if WINDOWS
 			add.Tag = new GuiTag { Index = control.Controls.Count };
 			control.Controls.Add(add);
 			control.Controls.SetChildIndex(add, 0);//Required for proper Z ordering so that this control is on top.
+#else
+			add.Tag = new GuiTag { Index = GetChildCount(control) };
+			AddChildControl(control, add);
+#endif
 		}
 
 		/// <summary>
@@ -513,9 +693,25 @@
 		/// <param name="add">The <see cref="GuiControl"/> to tag and add to control.</param>
 		internal static void TagAndAdd(this Control control, Gui.Control add)
 		{
-			((GuiTag)add.Ctrl.Tag).Index = control.Controls.Count;//The reference to the control was set in the constructor, so set the index here.
+#if WINDOWS
+			var childIndex = control.Controls.Count;
+#else
+			var childIndex = GetChildCount(control);
+#endif
+			if (add.Ctrl.Tag is not GuiTag tag)
+			{
+				add.Ctrl.Tag = new GuiTag { GuiControl = add, Index = childIndex };
+			}
+			else
+			{
+				tag.Index = childIndex;
+			}
+#if WINDOWS
 			control.Controls.Add(add.Ctrl);
 			control.Controls.SetChildIndex(add.Ctrl, 0);//Required for proper Z ordering so that this control is on top.
+#else
+			AddChildControl(control, add.Ctrl);
+#endif
 		}
 
 		/// <summary>
@@ -538,5 +734,189 @@
 				}
 			}
 		}
+
+		internal static Rectangle GetBounds(this Forms.Control ctrl)
+		{
+#if WINDOWS
+			return ctrl.Bounds;
+#else
+			var loc = ctrl.GetLocation();
+			var size = ctrl.GetSize();
+			return new Rectangle(loc.X, loc.Y, size.Width, size.Height);
+#endif
+		}
+
+		internal static void SetBounds(this Forms.Control ctrl, Rectangle rect)
+		{
+#if WINDOWS
+			ctrl.Bounds = rect;
+#else
+			ctrl.SetLocation(new Point(rect.X, rect.Y));
+			ctrl.SetSize(new Size(rect.Width, rect.Height));
+#endif
+		}
+
+#if WINDOWS
+		internal static int Count(this System.Windows.Forms.Control.ControlCollection collection) => collection.Count;
+
+#else
+		private static int GetChildCount(Control parent)
+		{
+			parent = parent.EnsureLayoutContainer();
+
+			if (parent is Panel panel && panel.Content is Control panelContent)
+				return GetChildCount(panelContent);
+
+			if (parent is GroupBox groupBox && groupBox.Content is Control groupContent)
+				return GetChildCount(groupContent);
+
+			if (parent is Form form && form.Content is Control content)
+				return GetChildCount(content);
+
+			if (parent is TabPage tabPage)
+				return GetChildCount(tabPage.Content);
+
+			if (parent is Container container)
+			{
+				return container.Controls.Count();
+			}
+
+			return 0;
+		}
+
+		internal static Control EnsureLayoutContainer(this Control control)
+		{
+			if (control == null)
+				return null;
+
+			if (control is PixelLayout)
+				return control;
+
+			if (control is Panel panel)
+			{
+				if (panel.Content is Control panelContent)
+					return EnsureLayoutContainer(panelContent);
+
+				var layout = new PixelLayout();
+				panel.Content = layout;
+				return layout;
+			}
+
+			if (control is GroupBox groupBox)
+			{
+				if (groupBox.Content is Control groupContent)
+					return EnsureLayoutContainer(groupContent);
+
+				var layout = new PixelLayout();
+				groupBox.Content = layout;
+				return layout;
+			}
+
+			if (control is Form form)
+			{
+				if (form.Content is Control formContent)
+					return EnsureLayoutContainer(formContent);
+
+				var layout = new PixelLayout();
+				form.Content = layout;
+				return layout;
+			}
+
+			if (control is TabPage tabPage)
+			{
+				if (tabPage.Content is Control tabContent)
+				{
+					if (tabContent is PixelLayout)
+						return tabContent;
+
+					var layout = new PixelLayout();
+					layout.Add(tabContent, new Point(tabContent.Left, tabContent.Top));
+					tabPage.Content = layout;
+					return layout;
+				}
+
+				var layoutPage = new PixelLayout();
+				tabPage.Content = layoutPage;
+				return layoutPage;
+			}
+
+			return control;
+		}
+
+		private static void AddChildControl(Control parent, Control child)
+		{
+			parent = parent.EnsureLayoutContainer();
+
+			if (parent is Panel panel)
+			{
+				if (panel.Content is not Control panelContent)
+				{
+					panelContent = new PixelLayout();
+					panel.Content = panelContent;
+				}
+
+				AddChildControl(panelContent, child);
+				return;
+			}
+
+			if (parent is GroupBox groupBox)
+			{
+				if (groupBox.Content is not Control groupContent)
+				{
+					groupContent = new PixelLayout();
+					groupBox.Content = groupContent;
+				}
+
+				AddChildControl(groupContent, child);
+				return;
+			}
+
+			if (parent is Form form)
+			{
+				if (form.Content is not Control content)
+				{
+					content = new PixelLayout();
+					form.Content = content;
+				}
+
+				AddChildControl(content, child);
+				return;
+			}
+
+			if (parent is TabPage tabPage)
+			{
+				AddChildControl(tabPage, child);
+				return;
+			}
+
+			if (parent is PixelLayout dl)
+			{
+				dl.Add(child, new Point(child.Left, child.Top));
+				return;
+			}
+			else if (parent is Container container)
+			{
+				var controlsProp = container.GetType().GetProperty("Controls");
+				if (controlsProp?.GetValue(container) is System.Collections.IList list)
+				{
+					if (!list.IsReadOnly && !list.IsFixedSize)
+					{
+						list.Add(child);
+						return;
+					}
+				}
+
+				if (controlsProp?.GetValue(container) is ICollection<Control> controlList)
+				{
+					controlList.Add(child);
+					return;
+				}
+			}
+
+			var contentProp = parent.GetType().GetProperty("Content");
+			if (contentProp != null && contentProp.CanWrite)
+				contentProp.SetValue(parent, child);
+		}
+#endif
 	}
 }

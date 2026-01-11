@@ -11,10 +11,7 @@ namespace Keysharp.Benchmark
 {
 	public class ParserBench : BaseTest
 	{
-		private Keysharp.Scripting.Script _ks_s;
-		private CompilerHelper _ch;
-		private string _filePath;
-		private string _outputDir;
+		private new Keysharp.Scripting.Script _ks_s = default!;
 
 		[Params(1000)]
 		public int Size { get; set; }

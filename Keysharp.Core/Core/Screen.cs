@@ -25,7 +25,7 @@ namespace Keysharp.Core
 		/// <param name="height">The height of the clip rectangle.</param>
 		/// <param name="filename">An optional filename to save the clip to. Default: empty, no saving done.</param>
 		/// <returns>The clipped region as a <see cref="Bitmap"/>.</returns>
-		public static Bitmap GetScreenClip(object left, object top, object width, object height, object filename = null)
+		public static object ImageCapture(object left, object top, object width, object height, object filename = null)
 		{
 			var x = left.Ai();
 			var y = top.Ai();
@@ -33,27 +33,17 @@ namespace Keysharp.Core
 			var h = height.Ai();
 			var f = filename.As();
 
-			var format = System.Windows.Forms.Screen.PrimaryScreen.BitsPerPixel switch
-		{
-				8 or 16 => PixelFormat.Format16bppRgb565,
-				24 => PixelFormat.Format24bppRgb,
-				32 => PixelFormat.Format32bppArgb,
-				_ => PixelFormat.Format32bppArgb,
-		};
+			CoordToScreen(ref x, ref y, CoordMode.Pixel);
+			
+			var bmp = GuiHelper.GetScreen(x, y, w, h);
 
-		var bmp = new Bitmap(w, h, format);
+			if (f.Length > 0)
+				bmp?.Save(f);
 
-			Mouse.AdjustPoint(ref x, ref y);
+			if (bmp != null && ImageHandleManager.TryAddBitmap(bmp, ImageHandleKind.Bitmap, out var handle))
+				return handle.ToInt64();
 
-			using (var g = Graphics.FromImage(bmp))
-			{
-				g.CopyFromScreen(x, y, 0, 0, new Size(w, h), CopyPixelOperation.SourceCopy);
-
-				if (f.Length > 0)
-					bmp.Save(f);
-			}
-
-			return bmp;
+			return 0L;
 		}
 
 		/// <summary>
@@ -153,31 +143,41 @@ namespace Keysharp.Core
 			if (bmp == null)
 				return Errors.ValueErrorOccurred($"Loading icon or bitmap from {filename} failed.");
 
-			Mouse.AdjustRect(ref _x1, ref _y1, ref _x2, ref _y2);
-			var start = new Point(_x1, _y1);
-			//Ensure we're not trying to search outside of the screen bounds,
-			//because X11 will throw an exception if we do.
-			var maxX = Math.Min(A_TotalScreenWidth.Ai(), _x2) - start.X;
-			var maxY = Math.Min(A_TotalScreenHeight.Ai(), _y2) - start.Y;
-			var bound = new Size(maxX, maxY);
-			var source = GuiHelper.GetScreen(new Rectangle(start, bound));
-			var searchImg = new ImageFinder(source) { Variation = variation };
 			Point? location;
+			Bitmap source = null;
 
 			try
 			{
+				int _px1 = _x1, _py1 = _y1;
+				CoordToScreen(ref _x1, ref _y1, CoordMode.Pixel);
+				_x2 += _x1 - _px1; _y2 += _y1 - _py1;
+
+				var start = new Point(_x1, _y1);
+				//Ensure we're not trying to search outside of the screen bounds,
+				//because X11 will throw an exception if we do.
+				var maxX = Math.Min(A_TotalScreenWidth.Ai(), _x2) - start.X;
+				var maxY = Math.Min(A_TotalScreenHeight.Ai(), _y2) - start.Y;
+				source = GuiHelper.GetScreen(_x1, _y1, maxX, maxY);
+				var searchImg = new ImageFinder(source) { Variation = variation };
+
 				location = searchImg.Find(bmp, trans);
 			}
 			catch (Exception ex)
 			{
 				return Errors.OSErrorOccurred(ex, "Error searching the screen for an image.");
 			}
+			finally
+			{
+				source?.Dispose();
+				bmp?.Dispose();
+			}
 
 			if (location.HasValue)
 			{
-				location = Mouse.RevertPoint(location.Value, ThreadAccessors.A_CoordModePixel);
-				Script.SetPropertyValue(outX, "__Value", (long)location.Value.X);
-                Script.SetPropertyValue(outY, "__Value", (long)location.Value.Y);
+				int x = location.Value.X + _x1, y = location.Value.Y + _y1;
+				ScreenToCoord(ref x, ref y, CoordMode.Pixel);
+				Script.SetPropertyValue(outX, "__Value", (long)x);
+                Script.SetPropertyValue(outY, "__Value", (long)y);
 			}
 			else
 			{
@@ -200,32 +200,16 @@ namespace Keysharp.Core
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if an internal function call fails.</exception>
 		public static string PixelGetColor(object x, object y, object unsed = null)
 		{
-			PixelFormat format;
 			int pixel;
 			var _x = x.Ai();
 			var _y = y.Ai();
 
 			try
 			{
+				CoordToScreen(ref _x, ref _y, CoordMode.Pixel);
 
-				format = System.Windows.Forms.Screen.PrimaryScreen.BitsPerPixel switch
-			{
-					8 or 16 => PixelFormat.Format16bppRgb565,
-					24 => PixelFormat.Format24bppRgb,
-					32 => PixelFormat.Format32bppArgb,
-					_ => PixelFormat.Format32bppArgb,
-			};
-
-			using (var bmp = new Bitmap(1, 1, format))
-				{
-					Mouse.AdjustPoint(ref _x, ref _y);
-
-					using (var g = Graphics.FromImage(bmp))
-					{
-						g.CopyFromScreen(_x, _y, 0, 0, size1, CopyPixelOperation.SourceCopy);
-						pixel = bmp.GetPixel(0, 0).ToArgb() & 0xffffff;
-					}
-				}
+				using (var bmp = GuiHelper.GetScreen(_x, _y, 1, 1))
+					pixel = (bmp?.GetPixel(0, 0).ToArgb() & 0xffffff) ?? 0;
 
 				return $"0x{pixel:X6}";
 			}
@@ -266,7 +250,11 @@ namespace Keysharp.Core
 			var colorID = obj4.Al();
 			var variation = obj5.Al();
 			variation = Math.Clamp(variation, byte.MinValue, byte.MaxValue);
-			Mouse.AdjustRect(ref x1, ref y1, ref x2, ref y2);
+
+			int px1 = x1, py1 = y1;
+			CoordToScreen(ref x1, ref y1, CoordMode.Pixel);
+			x2 += x1 - px1; y2 += y1 - py1;
+
 			var ltr = x1 <= x2;
 			var ttb = y1 <= y2;
 			var x1temp = Math.Min(x1, x2);
@@ -277,25 +265,32 @@ namespace Keysharp.Core
 			x2 = x2temp;
 			y1 = y1temp;
 			y2 = y2temp;
-			var region = new Rectangle(x1, y1, x2 - x1, y2 - y1);
-			var finder = new ImageFinder(GuiHelper.GetScreen(region)) { Variation = (byte)variation };
+			Bitmap source = null;
+			ImageFinder finder = null;
 			var needle = Color.FromArgb((int)((uint)colorID | 0xFF000000));
 			Point? location;
 
 			try
 			{
+				source = GuiHelper.GetScreen(x1, y1, x2 - x1, y2 - y1);
+				finder = new ImageFinder(source) { Variation = (byte)variation };
 				location = finder.Find(needle, ltr, ttb);
 			}
 			catch (Exception ex)
 			{
 				return (long)Errors.OSErrorOccurred(ex, "Error searching a region of the screen for a pixel color.", DefaultErrorLong);
 			}
+			finally
+			{
+				source?.Dispose();
+			}
 
 			if (location.HasValue)
 			{
-				location = Mouse.RevertPoint(location.Value, ThreadAccessors.A_CoordModePixel);
-				Script.SetPropertyValue(outX, "__Value", (long)location.Value.X);
-                Script.SetPropertyValue(outY, "__Value", (long)location.Value.Y);
+				int x = location.Value.X + x1, y = location.Value.Y + y1;
+				ScreenToCoord(ref x, ref y, CoordMode.Pixel);
+				Script.SetPropertyValue(outX, "__Value", (long)x);
+                Script.SetPropertyValue(outY, "__Value", (long)y);
 				return 1L;
 			}
 			else

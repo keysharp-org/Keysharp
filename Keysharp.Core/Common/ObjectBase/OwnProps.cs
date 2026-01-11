@@ -116,6 +116,19 @@
 		public object Set;
 		public object Call;
 
+		internal OwnPropsMapType Type
+		{
+			get
+			{
+				var desc = OwnPropsMapType.None;
+				if (Value != null) desc |= OwnPropsMapType.Value;
+				if (Get != null) desc |= OwnPropsMapType.Get;
+				if (Set != null) desc |= OwnPropsMapType.Set;
+				if (Call != null) desc |= OwnPropsMapType.Call;
+				return desc;
+			}
+		}
+
 		public OwnPropsDesc()
 		{
 			Parent = null;
@@ -253,19 +266,19 @@
 		public KeysharpObject GetDesc()
 		{
 			var map = new KeysharpObject();
-			map.op = new Dictionary<string, OwnPropsDesc>(StringComparer.OrdinalIgnoreCase);
+			map.EnsureOwnProps();
 
 			if (Value != null)
-				map.op["value"] = new OwnPropsDesc(map, Value);
+				map.DefinePropInternal("value", new OwnPropsDesc(map, Value));
 
 			if (Get != null)
-				map.op["get"] = new OwnPropsDesc(map, Get);
+				map.DefinePropInternal("get", new OwnPropsDesc(map, Get));
 
 			if (Set != null)
-				map.op["set"] = new OwnPropsDesc(map, Set);
+				map.DefinePropInternal("set", new OwnPropsDesc(map, Set));
 
 			if (Call != null)
-				map.op["call"] = new OwnPropsDesc(map, Call);
+				map.DefinePropInternal("call", new OwnPropsDesc(map, Call));
 
 			return map;
 		}

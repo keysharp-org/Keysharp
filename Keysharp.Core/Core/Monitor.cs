@@ -5,6 +5,12 @@
 	/// </summary>
 	public static class Monitor
 	{
+
+#if WINDOWS
+		private static Forms.Screen[] AllScreens => Forms.Screen.AllScreens;
+#else
+		private static Forms.Screen[] AllScreens => Forms.Screen.Screens.ToArray();
+#endif
 		/// <summary>
 		/// <see cref="MonitorGet(object, object, object, object, object)"/>
 		/// </summary>
@@ -63,12 +69,12 @@
 		{
 			left ??= VarRef.Empty; top ??= VarRef.Empty; right ??= VarRef.Empty; bottom ??= VarRef.Empty;
 			var monitorIndex = n.Al(-1L);
-			System.Windows.Forms.Screen screen;
+			Forms.Screen screen;
 
-			if (monitorIndex > 0 && monitorIndex <= System.Windows.Forms.Screen.AllScreens.Length)
-				screen = System.Windows.Forms.Screen.AllScreens[monitorIndex - 1];
+			if (monitorIndex > 0 && monitorIndex <= AllScreens.Length)
+				screen = AllScreens[monitorIndex - 1];
 			else
-				screen = System.Windows.Forms.Screen.PrimaryScreen;
+				screen = Forms.Screen.PrimaryScreen;
 
 			Script.SetPropertyValue(left, "__Value", (long)screen.Bounds.Left);
             Script.SetPropertyValue(top, "__Value", (long)screen.Bounds.Top);
@@ -81,7 +87,7 @@
 		/// Returns the total number of monitors.
 		/// </summary>
 		/// <returns>The total number of monitors.</returns>
-		public static long MonitorGetCount() => System.Windows.Forms.Screen.AllScreens.Length;
+		public static long MonitorGetCount() => AllScreens.Length;
 
 		/// <summary>
 		/// Returns the operating system's name of the specified monitor.
@@ -91,11 +97,17 @@
 		public static string MonitorGetName(object n = null)
 		{
 			var monitorIndex = n.Al(-1L);
-
-			if (monitorIndex > 0 && monitorIndex <= System.Windows.Forms.Screen.AllScreens.Length)
-				return System.Windows.Forms.Screen.AllScreens[monitorIndex - 1].DeviceName;
+#if WINDOWS
+			if (monitorIndex > 0 && monitorIndex <= AllScreens.Length)
+				return AllScreens[monitorIndex - 1].DeviceName ?? "";
 
 			return System.Windows.Forms.Screen.PrimaryScreen.DeviceName;
+#else
+			if (monitorIndex > 0 && monitorIndex <= AllScreens.Length)
+				return AllScreens[monitorIndex - 1].ID ?? "";
+
+			return Forms.Screen.PrimaryScreen.ID ?? "";
+#endif
 		}
 
 		/// <summary>
@@ -106,9 +118,10 @@
 		{
 			long i;
 
-			for (i = 0L; i < System.Windows.Forms.Screen.AllScreens.Length; i++)
+			var allScreens = AllScreens;
+			for (i = 0L; i < allScreens.Length; i++)
 			{
-				if (System.Windows.Forms.Screen.AllScreens[i] == System.Windows.Forms.Screen.PrimaryScreen)
+				if (allScreens[i] == Forms.Screen.PrimaryScreen)
 					break;
 			}
 
@@ -172,12 +185,12 @@
 		public static object MonitorGetWorkArea(object n, [ByRef] object left, [ByRef] object top, [ByRef] object right, [ByRef] object bottom)
 		{
 			var monitorIndex = n.Al(-1L);
-			System.Windows.Forms.Screen screen;
+			Forms.Screen screen;
 
-			if (monitorIndex > 0 && monitorIndex <= System.Windows.Forms.Screen.AllScreens.Length)
-				screen = System.Windows.Forms.Screen.AllScreens[monitorIndex - 1];
+			if (monitorIndex > 0 && monitorIndex <= AllScreens.Length)
+				screen = AllScreens[monitorIndex - 1];
 			else
-				screen = System.Windows.Forms.Screen.PrimaryScreen;
+				screen = Forms.Screen.PrimaryScreen;
 
 			Script.SetPropertyValue(left, "__Value", (long)screen.WorkingArea.Left);
             Script.SetPropertyValue(top, "__Value", (long)screen.WorkingArea.Top);

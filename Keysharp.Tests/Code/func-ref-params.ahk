@@ -114,7 +114,7 @@ If (arr[2] == 100)
 else
 	FileAppend "fail", "*"
 
-m := { "one" : 1, "two" : 2, "three" : 3 }
+m := { one : 1, two : 2, three : 3 }
 
 reffunc1(&m.one)
 
@@ -362,7 +362,7 @@ If (arr[2] == 4)
 else
 	FileAppend "fail", "*"
 
-m := { "one" : 1, "two" : 2, "three" : 3 }
+m := { one : 1, two : 2, three : 3 }
 val := myclassobj.member1.Call(m.one, &m.two)
 
 If (val == 4)
@@ -436,7 +436,7 @@ If (arr[2] == 2)
 else
 	FileAppend "fail", "*"
 
-m := { "one" : 1, "two" : 2, "three" : 3 }
+m := { one : 1, two : 2, three : 3 }
 val := myclassobj.member2.Call(&m.one, m.two)
 
 If (val == 4)
@@ -499,7 +499,7 @@ If (arr[1] == 2)
 else
 	FileAppend "fail", "*"
 	
-m := { "one" : 1, "two" : 2, "three" : 3 }
+m := { one : 1, two : 2, three : 3 }
 val := myclassobj.member3.Call(&m.one)
 
 If (val == 2)

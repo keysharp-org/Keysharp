@@ -16,8 +16,8 @@ namespace Keysharp.Benchmark
 
 		public IndexBench()
 		{
-			dynamickeysharparray = new Array();
-			keysharparray = Collections.Array();
+			dynamickeysharparray = new Keysharp.Core.Array();
+			keysharparray = new Keysharp.Core.Array();
 		}
 
 		[Benchmark]
@@ -158,7 +158,7 @@ namespace Keysharp.Benchmark
 
 		public ListAddBench()
 		{
-			keysharparray = Collections.Array();
+			keysharparray = new Keysharp.Core.Array();
 		}
 
 		[Benchmark]
@@ -192,7 +192,7 @@ namespace Keysharp.Benchmark
 			keysharparray.Clear();
 
 			for (var i = 0; i < Size; i++)
-				_ = Invoke(GetMethodOrProperty(keysharparray, "Add", 1), o);
+				_ = Invoke(keysharparray, "Add", o);
 
 			if (keysharparray.Count != Size)
 				throw new Exception($"Native list size of {keysharparray.Count} was not equal to Size {Size}.");
@@ -205,7 +205,7 @@ namespace Keysharp.Benchmark
 			keysharparray.Capacity = Size;
 
 			for (var i = 0; i < Size; i++)
-				_ = Invoke(GetMethodOrProperty(keysharparray, "Add", 1), o);
+				_ = Invoke(keysharparray, "Add", o);
 
 			if (keysharparray.Count != Size)
 				throw new Exception($"Native list size of {keysharparray.Count} was not equal to Size {Size}.");

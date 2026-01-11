@@ -32,7 +32,8 @@ preprocessor_directive
       | IncludeAgain
       | DllLoad
       | Requires
-      | Assembly ) Text directive_new_line_or_sharp                                                                          # preprocessorTextualDirective
+      | Assembly
+      | HookMutexName ) Text directive_new_line_or_sharp                                                                          # preprocessorTextualDirective
     | Persistent (True | False | Digits)? directive_new_line_or_sharp                                                        # preprocessorPersistent
     | ( Warn
       | SingleInstance ) Text? directive_new_line_or_sharp                                                                   # preprocessorOptionalTextualDirective

@@ -102,16 +102,16 @@ namespace Keysharp.Core
                 return false;
 			}
 
-			var pt = new Point
+			var pt = new POINT
 			{
 				X = info.rcCaret.Left,
 				Y = info.rcCaret.Top
 			};
 			var script = Script.TheScript;
-			var caretWnd = script.WindowProvider.Manager.CreateWindow(info.hwndCaret);
+			var caretWnd = WindowManager.CreateWindow(info.hwndCaret);
 			caretWnd.ClientToScreen(ref pt);// Unconditionally convert to screen coordinates, for simplicity.
 			int x = 0, y = 0;
-			script.PlatformProvider.Manager.CoordToScreen(ref x, ref y, CoordMode.Caret);// Now convert back to whatever is expected for the current mode.
+			CoordToScreen(ref x, ref y, CoordMode.Caret);// Now convert back to whatever is expected for the current mode.
 			pt.X -= x;
 			pt.Y -= y;
             Script.SetPropertyValue(outputVarX, "__Value", (long)pt.X);
@@ -168,7 +168,7 @@ namespace Keysharp.Core
 			JoyControls joy;
 			uint? joystickid = 0u;
 			uint? dummy = null;
-			var vk = ht.TextToVK(keyname, ref dummy, false, true, script.PlatformProvider.Manager.GetKeyboardLayout(0));
+			var vk = ht.TextToVK(keyname, ref dummy, false, true, GetKeyboardLayout(0));
 
 			if (vk == 0)
 			{
@@ -497,7 +497,7 @@ break_twice:;
 		/// that can be recorded for display in the window (limit 500).<br/>
 		/// The key history is also reset, but the main window is not shown or refreshed.
 		/// Specify 0 to disable key history entirely.</param>
-		public static object KeyHistory(object maxEvents)
+		public static object KeyHistory(object maxEvents = null)
 		{
 			var script = Script.TheScript;
 
@@ -571,7 +571,7 @@ break_twice:;
 			var kbdMouseSender = ht.kbdMsSender;
 			uint? modLR = null;
 
-			if ((vk = ht.TextToVK(keyname, ref modLR, false, true, script.PlatformProvider.Manager.GetKeyboardLayout(0))) == 0)
+			if ((vk = ht.TextToVK(keyname, ref modLR, false, true, GetKeyboardLayout(0))) == 0)
 			{
 				joy = Joystick.ConvertJoy(keyname, ref joystickId);
 
@@ -832,6 +832,43 @@ break_twice:;
 			return old;
 		}
 
+		public static object HotIf(object obj0 = null)
+		{
+			var script = Script.TheScript;
+
+			if (obj0 != null)
+			{
+				var funcobj = Functions.GetFuncObj(obj0, null, true);
+				var cp = HotkeyDefinition.FindHotkeyIfExpr(funcobj);
+
+				if (cp == null && funcobj != null)
+					HotkeyDefinition.AddHotkeyIfExpr(cp = funcobj);
+
+				script.Threads.CurrentThread.hotCriterion = cp;
+			}
+			else
+				script.Threads.CurrentThread.hotCriterion = null;
+
+			return DefaultObject;
+		}
+
+		public static object HotIfWinActive(object obj0 = null, object obj1 = null) => HotkeyDefinition.SetupHotIfWin("HotIfWinActivePrivate", obj0, obj1);
+
+		public static object HotIfWinExist(object obj0 = null, object obj1 = null) => HotkeyDefinition.SetupHotIfWin("HotIfWinExistPrivate", obj0, obj1);
+
+		public static object HotIfWinNotActive(object obj0 = null, object obj1 = null) => HotkeyDefinition.SetupHotIfWin("HotIfWinNotActivePrivate", obj0, obj1);
+
+		public static object HotIfWinNotExist(object obj0 = null, object obj1 = null) => HotkeyDefinition.SetupHotIfWin("HotIfWinNotExistPrivate", obj0, obj1);
+
+		/// <summary>
+		/// Get the hotkey descriptions and put them in the Vars tab of the main window.
+		/// </summary>
+		public static object ListHotkeys()
+		{
+			Script.TheScript.mainWindow?.ListHotkeys();
+			return DefaultObject;
+		}
+
 		/// <summary>
 		/// Internal helper to convert an input mode from a string to a <see cref="ToggleValueType"/>.
 		/// </summary>
@@ -881,7 +918,7 @@ break_twice:;
 
 			// Check SC first to properly differentiate between Home/NumpadHome, End/NumpadEnd, etc.
 			// v1.0.43: WheelDown/Up store the notch/turn count in SC, so don't consider that to be a valid SC.
-			if (sc != 0 && !ht.IsWheelVK(vk) && ht.SCtoKeyName(sc, false) != "")
+			if (sc != 0 && !MouseUtils.IsWheelVK(vk) && ht.SCtoKeyName(sc, false) != "")
 			{
 				return buf;
 				// Otherwise this key is probably one we can handle by VK.
@@ -935,7 +972,7 @@ break_twice:;
 					return ht.IsKeyToggledOn(vk); // This also works for non-"lock" keys, but in that case the toggle state can be out of sync with other processes/
 
 				case KeyStateTypes.Physical: // Physical state of key.
-					if (ht.IsMouseVK(vk)) // mouse button
+					if (MouseUtils.IsMouseVK(vk)) // mouse button
 					{
 						return ht.HasMouseHook() ? (ht.physicalKeyState[vk] & KeyboardMouseSender.StateDown) != 0 : ht.IsKeyDownAsync(vk); // mouse hook is installed, so use it's tracking of physical state.
 					}
@@ -984,7 +1021,7 @@ break_twice:;
 			var vk = 0u;
 			var sc = 0u;
 			uint? modLR = null;
-			_ = ht.TextToVKandSC(keyname, ref vk, ref sc, ref modLR, script.PlatformProvider.Manager.GetKeyboardLayout(0));//Need to make cross platform.
+			_ = ht.TextToVKandSC(keyname, ref vk, ref sc, ref modLR, GetKeyboardLayout(0));//Need to make cross platform.
 
 			return callid switch
 		{

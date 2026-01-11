@@ -511,14 +511,6 @@ namespace Keysharp.Tests
 
 			if (System.IO.File.Exists("./testshortcut.lnk"))
 				System.IO.File.Delete("./testshortcut.lnk");
-
-			VarRef outTarget = new(null);
-            VarRef outDir = new(null);
-            VarRef outArgs = new(null);
-            VarRef outDescription = new(null);
-            VarRef outIcon = new(null);
-            VarRef outIconNum = new(null);
-            VarRef outRunState = new(null);
 #endif
             Files.FileCreateShortcut
 			(
@@ -1111,8 +1103,8 @@ groupkey13=groupval13
 			Assert.AreEqual("txt", ext.__Value);
 			Assert.AreEqual("file1", namenoext.__Value);
 #if WINDOWS
-			Assert.AreEqual("D:\\Dev\\keysharp\\Keysharp.Tests\\Code\\DirCopy".ToLower(), dir.__Value.ToString().ToLower());//This will be different on other dev machines.
-			Assert.AreEqual("D:", drive.__Value);
+			Assert.AreEqual(true, dir.__Value.ToString().EndsWith("Keysharp.Tests\\Code\\DirCopy"));
+			Assert.AreEqual(true, drive.__Value.ToString().Equals("C:") || drive.__Value.ToString().Equals("D:"));
 			Keysharp.Core.Dir.SplitPath("C:\\Windows", filename, dir, ext, namenoext, drive);
 			Assert.AreEqual("C:", drive.__Value);
 			Assert.AreEqual("C:", dir.__Value);

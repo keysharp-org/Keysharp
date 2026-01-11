@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <!-- Put all Keysharp project outputs under a shared bin folder (e.g., bin/Debug/net9.0) -->
+    <BaseOutputPath>$(MSBuildThisFileDirectory)bin/</BaseOutputPath>
+    <!-- Keep framework-specific subfolders to avoid collisions when targeting multiple TFMs -->
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>true</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+</Project>

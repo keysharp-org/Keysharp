@@ -98,7 +98,7 @@ namespace Keysharp.Core
 		/// PID: The Process ID, which is a number that uniquely identifies one specific process (this number is valid only during the lifetime of that process).<br/>
 		/// The PID of a newly launched process can be determined via the Run function. Similarly, the PID of a window can be determined with <see cref="WinGetPID"/>. <see cref="ProcessExist"/> can also be used to discover a PID.<br/>
 		/// Name: The name of a process is usually the same as its executable (without path), e.g. notepad.exe or winword.exe. Since a name might match multiple running processes, only the first process will be operated upon. The name is not case-sensitive.<br/>
-		/// If omitted, the script’s own process is used.
+		/// If omitted, the scriptï¿½s own process is used.
 		/// </param>
 		/// <returns>
 		/// The executable name of the specified process, for example: <c>notepad.exe</c>.<br/>
@@ -127,17 +127,17 @@ namespace Keysharp.Core
 		}
 
 		/// <summary>
-		/// Returns the full path of the specified process’s executable.
+		/// Returns the full path of the specified processï¿½s executable.
 		/// </summary>
 		/// <param name="pidOrName">
 		/// Specify either a number (the PID) or a process name:<br/>
 		/// PID: The Process ID, which is a number that uniquely identifies one specific process (this number is valid only during the lifetime of that process).<br/>
 		/// The PID of a newly launched process can be determined via the Run function. Similarly, the PID of a window can be determined with <see cref="WinGetPID"/>. <see cref="ProcessExist"/> can also be used to discover a PID.<br/>
 		/// Name: The name of a process is usually the same as its executable (without path), e.g. notepad.exe or winword.exe. Since a name might match multiple running processes, only the first process will be operated upon. The name is not case-sensitive.<br/>
-		/// If omitted, the script’s own process is used.
+		/// If omitted, the scriptï¿½s own process is used.
 		/// </param>
 		/// <returns>
-		/// The full path of the specified process’s executable, for example: <c>C:\Windows\notepad.exe</c>.<br/>
+		/// The full path of the specified processï¿½s executable, for example: <c>C:\Windows\notepad.exe</c>.<br/>
 		/// Throws a TargetError if the process could not be found, or an OSError if the path could not be retrieved.
 		/// </returns>
 		public static string ProcessGetPath(object pidOrName = null)
@@ -415,7 +415,7 @@ namespace Keysharp.Core
 		/// </summary>
 		public static object Shutdown(object obj)
 		{
-			_ = Script.TheScript.PlatformProvider.Manager.ExitProgram((uint)obj.Al(), 0);
+			_ = ExitProgram((uint)obj.Al(), 0);
 			return DefaultObject;
 		}
 
@@ -467,7 +467,7 @@ namespace Keysharp.Core
 		{
 			const int MAX_PATH = 1024;
 			result = DefaultErrorString;
-			var buf = new StringBuilder(MAX_PATH);
+			var buf = new char[MAX_PATH];
 			nint hProc = WindowsAPI.OpenProcess(ProcessAccessTypes.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
 
 			if (hProc == 0)
@@ -475,12 +475,12 @@ namespace Keysharp.Core
 
 			try
 			{
-				uint len = WindowsAPI.GetProcessImageFileName(hProc, buf, (uint)buf.Capacity);
+				uint len = WindowsAPI.GetProcessImageFileName(hProc, buf, (uint)buf.Length);
 
 				if (len == 0)
 					return 0;
 
-				string path = buf.ToString(0, (int)len);
+				string path = new string(buf, 0, (int)len);
 
 				if (getNameOnly)
 				{
@@ -489,19 +489,19 @@ namespace Keysharp.Core
 					return (uint)result.Length;
 				}
 
-				// convert device path (\Device\HarddiskVolumeX\...) to drive letter C:\…
-				var device = new StringBuilder(MAX_PATH);
+				// convert device path (\Device\HarddiskVolumeX\...) to drive letter C:\ï¿½
+				var device = new char[MAX_PATH];
 				var logicalPath = path;
 
 				for (char drv = 'A'; drv <= 'Z'; drv++)
 				{
 					string drive = drv + ":";
-					uint rc = WindowsAPI.QueryDosDevice(drive, device, (uint)device.Capacity);
+					uint rc = WindowsAPI.QueryDosDevice(drive, device, (uint)device.Length);
 
 					if (rc == 0)
 						continue;
 
-					string devPath = device.ToString();
+					string devPath = new string(device, 0, (int)rc);
 
 					if (path.StartsWith(devPath + "\\", StringComparison.OrdinalIgnoreCase))
 					{
@@ -534,6 +534,7 @@ namespace Keysharp.Core
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown on failure.</exception>
 		private static long RunInternal(string target, string workingDir, string showMode, [ByRef] object outputVarPID, string args, bool wait = false)
 		{
+			ThreadAccessors.A_LastError = 0;
 			outputVarPID ??= VarRef.Empty;
 			var pid = 0;
 			var useRunAs = RunAsSpecified();
@@ -729,6 +730,7 @@ namespace Keysharp.Core
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return (long)Errors.ErrorOccurred(ex.Message, DefaultErrorLong);
 			}
 

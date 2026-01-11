@@ -1,16 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.IO;
 using System.Reflection;
 using System.Runtime.Serialization;
 using System.Xml.Linq;
 using Antlr4.Runtime;
 using Antlr4.Runtime.Misc;
 using Antlr4.Runtime.Tree;
+using Keysharp.Core;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement.Tab;
 using static Keysharp.Scripting.Parser;
 using static MainParser;
 
@@ -24,7 +26,7 @@ namespace Keysharp.Scripting
             parser = _parser;
         }
 
-        public override SyntaxNode VisitProgram([NotNull] ProgramContext context)
+		public override SyntaxNode VisitProgram([NotNull] ProgramContext context)
         {
             var usingDirectives = BuildUsingDirectiveSyntaxList(CompilerHelper.GlobalUsingStr);
 
@@ -36,7 +38,7 @@ namespace Keysharp.Scripting
             // Create using directives
             var usings = BuildUsingDirectiveSyntaxList(CompilerHelper.NamespaceUsingStr);
 
-			parser.namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(CreateQualifiedName("Keysharp.CompiledMain"))
+			parser.namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(CreateQualifiedName(Keywords.MainNamespaceName))
                 .AddUsings(usings.ToArray());
 
             parser.currentClass = new Parser.Class(Keywords.MainClassName, null);
@@ -67,79 +69,56 @@ namespace Keysharp.Scripting
                     SyntaxFactory.IdentifierName("HotstringManager")
                 )
             );
-            var mainScriptVarDeclaration = Parser.CreateFieldDeclaration(
+            var mainClassType = SyntaxFactory.TypeOfExpression(SyntaxFactory.IdentifierName(Keywords.MainClassName));
+            object[] mainScriptVarDeclarationArgs = parser.hookMutexName == "" ? [mainClassType] : [mainClassType, SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(parser.hookMutexName))];
+
+			var mainScriptVarDeclaration = Parser.CreateFieldDeclaration(
 				modifierList,
                 CreateQualifiedName("Keysharp.Scripting.Script"),
 				MainScriptVariableName,
 				SyntaxFactory.ObjectCreationExpression(
 	                CreateQualifiedName("Keysharp.Scripting.Script"),    // the type to construct
-	                CreateArgumentList(SyntaxFactory.TypeOfExpression(SyntaxFactory.IdentifierName(Keywords.MainClassName))),          // the argument list
+	                CreateArgumentList(mainScriptVarDeclarationArgs),          // the argument list
 	                null           // no initializer
                 )
 			);
 			parser.mainClass.Body.Add(mainScriptVarDeclaration);
 			parser.mainClass.Body.Add(hsManagerDeclaration);
 
-			parser.mainFuncInitial.Add($"{MainScriptVariableName}.SetName(@\"{(parser.fileName == "*" ? "*" : Path.GetFullPath(parser.fileName))}\");");
-            foreach (var (p, s) in parser.reader.PreloadedDlls)
+            parser.mainFuncInitial.Add(
+                SyntaxFactory.ExpressionStatement(
+			        SyntaxFactory.InvocationExpression(
+                        CreateMemberAccess(MainScriptVariableName, "SetName"),
+				        Parser.CreateArgumentList(
+					        SyntaxFactory.LiteralExpression(
+						        SyntaxKind.StringLiteralExpression,
+						        SyntaxFactory.Literal(parser.fileName == "*" ? "*" : Path.GetFullPath(parser.fileName))
+					        )
+                        )
+                    )
+			    )
+		    );
+
+			foreach (var (p, s) in parser.reader.PreloadedDlls)
             {
-                parser.mainFuncInitial.Add($"{Keywords.MainScriptVariableName}.LoadDll(\"{p}\", {s.ToString().ToLower()});");
+                parser.mainFuncInitial.Add(
+				    SyntaxFactory.ExpressionStatement(
+				        SyntaxFactory.InvocationExpression(
+                            CreateMemberAccess(MainScriptVariableName, "LoadDll"),
+					        CreateArgumentList(
+						        SyntaxFactory.LiteralExpression(
+							        SyntaxKind.StringLiteralExpression,
+							        SyntaxFactory.Literal(p)
+						        ),
+						        SyntaxFactory.LiteralExpression(s ? SyntaxKind.TrueLiteralExpression : SyntaxKind.FalseLiteralExpression)
+					        )
+                        )
+				    )
+			    );
             }
 
-            string mainBodyCode = $$"""
-		{
-			try
-			{
-				{{String.Join(Environment.NewLine, parser.mainFuncInitial)}}
-				if (Keysharp.Scripting.Script.HandleSingleInstance(Accessors.A_ScriptName, eScriptInstance.{{System.Enum.GetName(typeof(eScriptInstance), parser.reader.SingleInstance)}}))
-				{
-					return 0;
-				}
-				Keysharp.Core.Env.HandleCommandLineParams(args);
-				{{MainScriptVariableName}}.CreateTrayMenu();
-				{{MainScriptVariableName}}.RunMainWindow(Accessors.A_ScriptName, {{Keywords.AutoExecSectionName}}, false);
-				{{MainScriptVariableName}}.WaitThreads();
-			}
-			catch (Keysharp.Core.Flow.UserRequestedExitException)
-			{
-			}
-			catch (Keysharp.Core.Error kserr)
-			{
-				if (ErrorOccurred(kserr))
-				{
-					var (_ks_pushed, _ks_btv) = {{MainScriptVariableName}}.Threads.BeginThread();
-					MsgBox("Uncaught Keysharp exception:\r\n" + kserr, $"{Accessors.A_ScriptName}: Unhandled exception", "iconx");
-					{{MainScriptVariableName}}.Threads.EndThread((_ks_pushed, _ks_btv));
-				}
-				Keysharp.Core.Flow.ExitApp(1);
-			}
-			catch (System.Exception mainex)
-			{
-				var ex = mainex.InnerException ?? mainex;
-
-				if (ex is Keysharp.Core.Error kserr)
-				{
-					if (ErrorOccurred(kserr))
-					{
-						var (_ks_pushed, _ks_btv) = {{MainScriptVariableName}}.Threads.BeginThread();
-						MsgBox("Uncaught Keysharp exception:\r\n" + kserr, $"{Accessors.A_ScriptName}: Unhandled exception", "iconx");
-						{{MainScriptVariableName}}.Threads.EndThread((_ks_pushed, _ks_btv));
-					}
-				}
-				else
-				{
-					var (_ks_pushed, _ks_btv) = {{MainScriptVariableName}}.Threads.BeginThread();
-					MsgBox("Uncaught exception:\r\n" + "Message: " + ex.Message + "\r\nStack: " + ex.StackTrace, $"{Accessors.A_ScriptName}: Unhandled exception", "iconx");
-					{{MainScriptVariableName}}.Threads.EndThread((_ks_pushed, _ks_btv));
-				}
-				Keysharp.Core.Flow.ExitApp(1);
-			}
-			return Environment.ExitCode;
-		}
-""";
-
-            var mainBodyBlock = SyntaxFactory.ParseStatement(mainBodyCode) as BlockSyntax;
-            mainFunc.Body = mainBodyBlock.Statements.ToList();
+			var mainBodyBlock = CreateMainMethod(Keywords.MainScriptVariableName, Keywords.AutoExecSectionName, System.Enum.GetName(typeof(eScriptInstance), parser.reader.SingleInstance), parser.mainFuncInitial);
+			mainFunc.Body = mainBodyBlock.Statements.ToList();
 
             parser.autoExecFunc = new Function(Keywords.AutoExecSectionName, SyntaxFactory.PredefinedType(Parser.PredefinedKeywords.Object));
             parser.currentFunc = parser.autoExecFunc;
@@ -164,10 +143,35 @@ namespace Keysharp.Scripting
             // Create global FuncObj variables for all functions here, because otherwise during parsing
             // we might not know how to case the name.
             var scopeFunctionDeclarations = parser.GetScopeFunctions(context, this);
-            foreach (var funcName in scopeFunctionDeclarations)
+			var mainClassBody = parser.mainClass.Body;
+			foreach (var funcName in scopeFunctionDeclarations)
             {
+                if (funcName.Name == "") continue;
                 parser.UserFuncs.Add(funcName.Name);
-                parser.AddGlobalFuncObjVariable(funcName.Name.ToLowerInvariant());
+
+				var funcObjVariable = SyntaxFactory.FieldDeclaration(
+	                CreateFuncObjDelegateVariable(CultureInfo.CurrentCulture.TextInfo.ToTitleCase(funcName.Name))
+                )
+                .WithModifiers(
+	                SyntaxFactory.TokenList(
+		                Parser.PredefinedKeywords.PublicToken,
+		                Parser.PredefinedKeywords.StaticToken
+	                )
+                );
+				string funcObjName = funcObjVariable.Declaration.Variables.First().Identifier.Text;
+
+				for (int i = 0; i < mainClassBody.Count; i++)
+				{
+					if (mainClassBody[i] is FieldDeclarationSyntax fds && fds.Declaration.Variables.First().Identifier.Text == funcObjName)
+					{
+                        mainClassBody[i] = funcObjVariable;
+                        funcObjVariable = null;
+						break;
+					}
+				}
+
+                if (funcObjVariable != null)
+				    parser.mainClass.Body.Add(funcObjVariable);
             }
 
             if (context.sourceElements() != null)
@@ -193,9 +197,21 @@ namespace Keysharp.Scripting
                 parser.generalDirectiveStatements.Concat(parser.DHHR)
                 .Concat(parser.autoExecFunc.Body)
                 .ToList();
-    
-            // Return "" by default
-            parser.autoExecFunc.Body.Add(PredefinedKeywords.DefaultReturnStatement);
+
+			ClassDeclarationSyntax userClasses =
+	            SyntaxFactory.ClassDeclaration(UserDeclaredClassesContainerName)
+		            .WithModifiers(
+						SyntaxFactory.TokenList(
+				            SyntaxFactory.Token(SyntaxKind.InternalKeyword), 
+                            SyntaxFactory.Token(SyntaxKind.StaticKeyword)
+			            )
+		            )
+		            .AddMembers(parser.declaredTopLevelClasses.ToArray());
+
+            parser.mainClass.Body.Insert(0, userClasses);
+
+			// Return "" by default
+			parser.autoExecFunc.Body.Add(PredefinedKeywords.DefaultReturnStatement);
             parser.autoExecFunc.Method = parser.autoExecFunc.Assemble();
 
 			mainFunc.Method = mainFunc.Assemble();
@@ -212,12 +228,206 @@ namespace Keysharp.Scripting
             parser.compilationUnit = parser.compilationUnit
                 .AddMembers(parser.namespaceDeclaration)
                 .AddAttributeLists(attributeList);
-            //.NormalizeWhitespace("\t");
+            //.NormalizeWhitespace("\t", Environment.NewLine);
 
 			return parser.compilationUnit;
         }
 
-        public override SyntaxNode VisitSourceElements([NotNull] SourceElementsContext context)
+		internal static BlockSyntax CreateMainMethod(
+			string mainScriptVarName,            // e.g. "MainScript"
+			string autoExecName,                 // e.g. "AutoExecSection"
+			string singleInstanceMemberName,      // e.g. Enum.GetName(typeof(eScriptInstance), parser.reader.SingleInstance)
+			List<StatementSyntax> tryStatements = null
+		)
+		{
+			// ---- local helpers (closures) ----
+			static NameSyntax Q(string dotted) => Keysharp.Scripting.Parser.CreateQualifiedName(dotted); // VisitorHelper
+			static MemberAccessExpressionSyntax MA(ExpressionSyntax left, string right) =>
+				SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, left, SyntaxFactory.IdentifierName(right));
+			static MemberAccessExpressionSyntax SMA(string leftQ, string right) =>
+				SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, Q(leftQ), SyntaxFactory.IdentifierName(right));
+			static InvocationExpressionSyntax Call(ExpressionSyntax target, params ExpressionSyntax[] args) =>
+				SyntaxFactory.InvocationExpression(target, Keysharp.Scripting.Parser.CreateArgumentList(args)); // VisitorHelper
+			static LiteralExpressionSyntax S(string s) =>
+				SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(s));
+			static LiteralExpressionSyntax N(int i) =>
+				SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(i));
+			static ExpressionSyntax Not(ExpressionSyntax e) =>
+				SyntaxFactory.PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, e);
+			static BinaryExpressionSyntax AndAlso(ExpressionSyntax a, ExpressionSyntax b) =>
+				SyntaxFactory.BinaryExpression(SyntaxKind.LogicalAndExpression, a, b);
+			static ExpressionSyntax Plus(ExpressionSyntax a, ExpressionSyntax b) =>
+				SyntaxFactory.BinaryExpression(SyntaxKind.AddExpression, a, b);
+
+			// common symbols
+			var mainScriptId = SyntaxFactory.IdentifierName(mainScriptVarName);                       // MainScript
+			var autoExecId = SyntaxFactory.IdentifierName(autoExecName);                            // AutoExecSection
+			var aScriptName = SMA("Keysharp.Core.Accessors", "A_ScriptName");                         // Accessors.A_ScriptName
+			var suppressDialog = MA(mainScriptId, "SuppressErrorOccurredDialog");                       // MainScript.SuppressErrorOccurredDialog
+
+			// ---- try { ... } ----
+			tryStatements ??= new List<StatementSyntax>();
+
+			// if (Script.HandleSingleInstance(A_ScriptName, eScriptInstance.<member>)) { return 0; }
+			var singleInstanceGate = SyntaxFactory.IfStatement(
+				Call(
+					SMA("Keysharp.Scripting.Script", "HandleSingleInstance"),
+					aScriptName,
+					SyntaxFactory.MemberAccessExpression(
+						SyntaxKind.SimpleMemberAccessExpression,
+						Q("Keysharp.Scripting.eScriptInstance"),
+						SyntaxFactory.IdentifierName(singleInstanceMemberName)
+					)
+				),
+				SyntaxFactory.ReturnStatement(N(0))
+			);
+			tryStatements.Add(singleInstanceGate);
+
+			// Keysharp.Core.Env.HandleCommandLineParams(args);
+			tryStatements.Add(
+				SyntaxFactory.ExpressionStatement(
+					Call(SMA("Keysharp.Core.Env", "HandleCommandLineParams"), SyntaxFactory.IdentifierName("args"))
+				)
+			);
+
+			// MainScript.CreateTrayMenu();
+			tryStatements.Add(
+				SyntaxFactory.ExpressionStatement(
+					Call(MA(mainScriptId, "CreateTrayMenu"))
+				)
+			);
+
+			// MainScript.RunMainWindow(A_ScriptName, AutoExecSection, false);
+			tryStatements.Add(
+				SyntaxFactory.ExpressionStatement(
+					Call(MA(mainScriptId, "RunMainWindow"),
+						 aScriptName,
+						 autoExecId,
+						 SyntaxFactory.LiteralExpression(SyntaxKind.FalseLiteralExpression))
+				)
+			);
+
+			// MainScript.WaitThreads();
+			tryStatements.Add(
+				SyntaxFactory.ExpressionStatement(
+					Call(MA(mainScriptId, "WaitThreads"))
+				)
+			);
+
+			var tryBlock = SyntaxFactory.Block(tryStatements);
+
+			// ---- catch (Keysharp.Core.Flow.UserRequestedExitException) { } ----
+			var catchUserRequestedExit =
+				SyntaxFactory.CatchClause()
+					.WithDeclaration(SyntaxFactory.CatchDeclaration(Q("Keysharp.Core.Flow.UserRequestedExitException")))
+					.WithBlock(SyntaxFactory.Block());
+
+			// ---- catch (Keysharp.Core.Error kserr) { ... } ----
+			var kserrId = SyntaxFactory.Identifier("kserr");
+
+			// if (!kserr.Processed) Keysharp.Core.Errors.ErrorOccurred(kserr);
+			var processedExpr = MA(SyntaxFactory.IdentifierName(kserrId), "Processed");
+			var handledExpr = MA(SyntaxFactory.IdentifierName(kserrId), "Handled");
+
+			var errorOccurredCall = Call(SMA("Keysharp.Core.Errors", "ErrorOccurred"), SyntaxFactory.IdentifierName(kserrId));
+			var errorOccurredStmt = SyntaxFactory.ExpressionStatement(errorOccurredCall);
+
+			var ifNotProcessed = SyntaxFactory.IfStatement(Not(processedExpr), errorOccurredStmt);
+
+			// if (!kserr.Handled && !MainScript.SuppressErrorOccurredDialog) MsgBox("Uncaught Keysharp exception:\r\n" + kserr, A_ScriptName + ": Unhandled exception", "iconx");
+			var showKeysharpMsgCond = AndAlso(Not(handledExpr), Not(suppressDialog));
+			var keysharpMsg =
+				Plus(S("Uncaught Keysharp exception:\r\n"), SyntaxFactory.IdentifierName(kserrId));
+			var keysharpTitle =
+				Plus(aScriptName, S(": Unhandled exception"));
+			var msgBoxKeysharp = SyntaxFactory.ExpressionStatement(
+				Call(SMA("Keysharp.Core.Dialogs", "MsgBox"), keysharpMsg, keysharpTitle, S("iconx"))
+			);
+			var ifShowKeysharpMsg = SyntaxFactory.IfStatement(showKeysharpMsgCond, msgBoxKeysharp);
+
+			// ExitApp(1);
+			var exitApp1 = SyntaxFactory.ExpressionStatement(
+				Call(SMA("Keysharp.Core.Flow", "ExitApp"), N(1))
+			);
+
+			var catchKserr =
+				SyntaxFactory.CatchClause()
+					.WithDeclaration(SyntaxFactory.CatchDeclaration(Q("Keysharp.Core.Error"), kserrId))
+					.WithBlock(SyntaxFactory.Block(ifNotProcessed, ifShowKeysharpMsg, exitApp1));
+
+			// ---- catch (System.Exception mainex) { ... } ----
+			var mainexId = SyntaxFactory.Identifier("mainex");
+
+			// var ex = mainex.InnerException ?? mainex;
+			var exDecl = SyntaxFactory.LocalDeclarationStatement(
+				SyntaxFactory.VariableDeclaration(SyntaxFactory.IdentifierName("var"))
+					.WithVariables(
+						SyntaxFactory.SingletonSeparatedList(
+							SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("ex"))
+								.WithInitializer(
+									SyntaxFactory.EqualsValueClause(
+										SyntaxFactory.BinaryExpression(
+											SyntaxKind.CoalesceExpression,
+											MA(SyntaxFactory.IdentifierName(mainexId), "InnerException"),
+											SyntaxFactory.IdentifierName(mainexId)
+										)
+									)
+								)
+						)
+					)
+			);
+
+			// if (ex is Keysharp.Core.Error kserr) { ... } else if (!MainScript.SuppressErrorOccurredDialog) { MsgBox(...); }
+			var isKsErrorPattern = SyntaxFactory.IsPatternExpression(
+				SyntaxFactory.IdentifierName("ex"),
+				SyntaxFactory.DeclarationPattern(
+					Q("Keysharp.Core.Error"),
+					SyntaxFactory.SingleVariableDesignation(kserrId)
+				)
+			);
+
+			var ifIsKeysharpError = SyntaxFactory.IfStatement(
+				isKsErrorPattern,
+				SyntaxFactory.Block(ifNotProcessed, ifShowKeysharpMsg)
+			);
+
+			// else if (!MainScript.SuppressErrorOccurredDialog) { MsgBox("Uncaught exception:\r\n" + "Message: " + ex.Message + "\r\nStack: " + ex.StackTrace, A_ScriptName + ": Unhandled exception", "iconx"); }
+			var genericMsg =
+				Plus(S("Uncaught exception:\r\n"),
+					Plus(S("Message: "),
+						Plus(MA(SyntaxFactory.IdentifierName("ex"), "Message"),
+							Plus(S("\r\nStack: "),
+								MA(SyntaxFactory.IdentifierName("ex"), "StackTrace")))));
+
+			var msgBoxElse = SyntaxFactory.ExpressionStatement(
+				Call(SMA("Keysharp.Core.Dialogs", "MsgBox"), genericMsg, keysharpTitle, S("iconx"))
+			);
+
+			var elseIfShowGeneric = SyntaxFactory.ElseClause(
+				SyntaxFactory.IfStatement(Not(suppressDialog), msgBoxElse)
+			);
+
+			var ifIsKsErrorWithElse = ifIsKeysharpError.WithElse(elseIfShowGeneric);
+
+			var exitApp2 = SyntaxFactory.ExpressionStatement(Call(SMA("Keysharp.Core.Flow", "ExitApp"), N(1)));
+
+			var catchMainEx =
+				SyntaxFactory.CatchClause()
+					.WithDeclaration(SyntaxFactory.CatchDeclaration(Q("System.Exception"), mainexId))
+					.WithBlock(SyntaxFactory.Block(exDecl, ifIsKsErrorWithElse, exitApp2));
+
+			// try/catches
+			var tryStatement = SyntaxFactory.TryStatement(tryBlock, SyntaxFactory.List(new[] { catchUserRequestedExit, catchKserr, catchMainEx }), default);
+
+			// return System.Environment.ExitCode;
+			var returnExitCode = SyntaxFactory.ReturnStatement(MA(MA(Q("System"), "Environment"), "ExitCode"));
+
+			return SyntaxFactory.Block(
+				tryStatement,
+				returnExitCode);
+		}
+
+		public override SyntaxNode VisitSourceElements([NotNull] SourceElementsContext context)
         {
             parser.autoExecFunc.Body.AddRange(HandleSourceElements(context.sourceElement()));
             return parser.mainClass.Declaration;
@@ -782,6 +992,7 @@ namespace Keysharp.Scripting
             var properties = new List<ExpressionSyntax>();
             foreach (var propertyAssignmentContext in context.propertyAssignment())
             {
+                if (propertyAssignmentContext == null) continue;
                 // Visit the property assignment to get key-value pairs
                 var initializer = (InitializerExpressionSyntax)Visit(propertyAssignmentContext);
                 properties.AddRange(initializer.Expressions);
@@ -805,13 +1016,11 @@ namespace Keysharp.Scripting
                 )
             );
 
-            // Wrap the array in Keysharp.Core.Objects.ObjectType
-            var objectCreationExpression = SyntaxFactory.InvocationExpression(
-                CreateMemberAccess("Keysharp.Core.Objects", "Object"),
-				CreateArgumentList(arrayExpression)
+			return SyntaxFactory.ObjectCreationExpression(
+	            CreateQualifiedName("KeysharpObject"),
+				CreateArgumentList(arrayExpression),
+	            null // No object initializers
             );
-
-            return objectCreationExpression;
         }
 
         public override SyntaxNode VisitPropertyExpressionAssignment([NotNull] PropertyExpressionAssignmentContext context)
@@ -1210,7 +1419,22 @@ namespace Keysharp.Scripting
                         updatedModifiers.Add(Parser.PredefinedKeywords.StaticToken);
 
                     modifiers = SyntaxFactory.TokenList(updatedModifiers);
-                }
+
+                    // Modify the top-level field declaration to not assign the closure
+                    var mainClassBody = parser.mainClass.Body;
+					for (int i = 0; i < mainClassBody.Count; i++)
+					{
+						if (mainClassBody[i] is FieldDeclarationSyntax fds && fds.Declaration.Variables.First().Identifier.Text == variableName)
+						{
+							var declarator = fds.Declaration.Variables.First();
+							mainClassBody[i] = fds.ReplaceNode(
+								declarator.Initializer.Value,
+								SyntaxFactory.LiteralExpression(SyntaxKind.NullLiteralExpression)
+							);
+							break;
+						}
+					}
+				}
 
                 // Create a delegate or closure and add it to the current function's body
                 var delegateSyntax = SyntaxFactory.LocalFunctionStatement(
@@ -1224,7 +1448,7 @@ namespace Keysharp.Scripting
 
 				InvocationExpressionSyntax funcObj = CreateFuncObj(
                     SyntaxFactory.CastExpression(
-                        SyntaxFactory.IdentifierName("Delegate"),
+                        CreateQualifiedName("System.Delegate"),
                         SyntaxFactory.IdentifierName(methodName)
                     ),
                     !isStatic
@@ -1250,7 +1474,7 @@ namespace Keysharp.Scripting
                 {
 					ExpressionSyntax initializerValue = CreateFuncObj(
 	                    SyntaxFactory.CastExpression(
-		                    SyntaxFactory.IdentifierName("Delegate"),
+							CreateQualifiedName("System.Delegate"),
 		                    SyntaxFactory.IdentifierName(CultureInfo.CurrentCulture.TextInfo.ToTitleCase(methodName))
 	                    )
                     );
@@ -1450,8 +1674,8 @@ namespace Keysharp.Scripting
                                 SyntaxFactory.EqualsValueClause(
 									PredefinedKeywords.EqualsToken,
 									SyntaxFactory.ObjectCreationExpression(
-                                        SyntaxFactory.IdentifierName("Array")
-                                    )
+										CreateQualifiedName("Keysharp.Core.Array")
+									)
                                     .WithArgumentList(
                                         CreateArgumentList(SyntaxFactory.IdentifierName(substitute))
                                     )
@@ -1573,10 +1797,11 @@ namespace Keysharp.Scripting
         {
             ArgumentListSyntax argumentList = (ArgumentListSyntax)Visit(context.mapElementList());
 
-            return SyntaxFactory.InvocationExpression(
-                CreateMemberAccess("Keysharp.Core.Collections", "Map"),
-                argumentList
-            );
+			return SyntaxFactory.ObjectCreationExpression(
+				CreateQualifiedName("Keysharp.Core.Map"), // Class name: Keysharp.Core.Map
+				argumentList,
+				null // No object initializers
+			);
         }
 
         public override SyntaxNode VisitMapElementList([NotNull] MapElementListContext context)

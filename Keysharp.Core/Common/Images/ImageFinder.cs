@@ -41,6 +41,7 @@
 
 				try
 				{
+#if WINDOWS
 					var srcColor = new FastColor();
 					var fndColor = new FastColor();
 					srcdata = sourceImage.LockBits(new Rectangle(0, 0, sourceImage.Width, sourceImage.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
@@ -93,6 +94,58 @@
 							}
 						}
 					}
+#else
+					using var srcData = sourceImage.Lock();
+					using var fndData = findImage.Lock();
+
+					unsafe
+					{
+						var srcColor = new FastColor();
+						var fndColor = new FastColor();
+						var srcPtr = (byte*)srcData.Data;
+						var fndPtr = (byte*)fndData.Data;
+						var srcStride = srcData.ScanWidth;
+						var fndStride = fndData.ScanWidth;
+						var srcBpp = srcData.BytesPerPixel;
+						var fndBpp = fndData.BytesPerPixel;
+
+						for (int row = 0; row < maxMovement.Height; row++)
+						{
+							for (int col = 0; col < maxMovement.Width; col++)
+							{
+								for (int dr = 0; dr < findImage.Height; dr++)
+								{
+									var srcLine = srcPtr + ((row + dr) * srcStride) + (col * srcBpp);
+									var fndLine = fndPtr + (dr * fndStride);
+
+									for (int dc = 0; dc < findImage.Width; dc++)
+									{
+										var srcPixel = *(int*)(srcLine + dc * srcBpp);
+										var fndPixel = *(int*)(fndLine + dc * fndBpp);
+
+										var srcArgb = srcData.TranslateDataToArgb(srcPixel);
+										var fndArgb = fndData.TranslateDataToArgb(fndPixel);
+
+										srcColor.Value = (uint)srcArgb;
+										fndColor.Value = (uint)fndArgb;
+
+										if (trans != -1 && fndColor.Value == transCol.Value)
+											continue;
+
+										if (!fndColor.CompareWithVar(srcColor, Variation))
+											goto NOFIND;
+									}
+								}
+
+								ret = new Point(col, row);
+								return ret;
+								NOFIND:
+								;
+							}
+						}
+					}
+
+#endif
 				}
 				catch (Exception ex)
 				{
@@ -100,8 +153,10 @@
 				}
 				finally
 				{
+#if WINDOWS
 					sourceImage.UnlockBits(srcdata);
 					findImage.UnlockBits(fnddata);
+#endif
 				}
 			}
 
@@ -151,7 +206,11 @@
 				Variation = variation;
 			}
 
+#if WINDOWS
 			public PixelMask() : this(Color.Black, 0)
+#else
+			public PixelMask() : this(Colors.Black, 0)
+#endif
 			{
 			}
 

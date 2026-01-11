@@ -21,7 +21,7 @@
 			for (int i = 0; i < match.Groups.Count; i++)
 			{
 				_ = DefineProp(i,
-							   Objects.Object(
+							   new KeysharpObject(
 								   [
 									   "get",
 									   Functions.GetFuncObj("GetWrapper", this, 2, true).Bind(i)
@@ -32,7 +32,7 @@
 			{
 				if (match.Groups[name] != null)
 					_ = DefineProp(name,
-								   Objects.Object(
+								   new KeysharpObject(
 									   [
 										   "get",
 										   Functions.GetFuncObj("GetWrapper", this, 2, true).Bind(name)
@@ -51,6 +51,8 @@
 
 		public object GetWrapper(object obj1, object obj2) => this[obj1];
 
+		public long get_Len(object obj = null) => Len(obj);
+
 		public long Len(object obj)
 		{
 			var g = GetGroup(obj);
@@ -62,6 +64,8 @@
 			var g = GetGroup(obj);
 			return g != null && g.Success ? (obj is string o ? o : holder.groupNames[obj.Ai()]) : "";
 		}
+
+		public long get_Pos(object obj = null) => Pos(obj);
 
 		public long Pos(object obj = null)
 		{

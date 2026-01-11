@@ -9,6 +9,8 @@ namespace Keysharp.Scripting
 
 			if (input is bool b)
 				return b;
+			else if (input is Any a)
+				return true;
 
 			var pb = input.ParseBool();
 

@@ -2,15 +2,7 @@
 {
 	internal class ControlProvider
 	{
-		internal ControlManagerBase Manager { get; } =
-#if WINDOWS
-			new ControlManager()
-#elif LINUX
-			new Linux.ControlManager()
-#else
-			null
-#endif
-		;
+		internal ControlManagerBase Manager { get; } = new ControlManager();
 	}
 
 	internal static class DriveProvider
@@ -54,26 +46,12 @@
 		/// <returns></returns>
 		internal static StatusBarBase CreateStatusBar(nint hwnd)
 		{
-#if WINDOWS
 			return new StatusBar(hwnd);
-#elif LINUX
-			return new Linux.StatusBar(hwnd);
-#else
-			return null;
-#endif
 		}
 	}
 
 	internal class WindowProvider
 	{
-		internal WindowManagerBase Manager { get; } =
-#if WINDOWS
-			new WindowManager()
-#elif LINUX
-			new Linux.WindowManager()
-#else
-			null
-#endif
-		;
+		internal WindowManagerBase Manager { get; } = new WindowManager();
 	}
 }

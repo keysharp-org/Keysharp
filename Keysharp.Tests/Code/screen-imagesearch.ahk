@@ -1,7 +1,7 @@
 x :=
 y := 0 
 CoordMode("Mouse", "Screen")
-GetScreenClip(10, 10, 500, 500, "./imagesearch.bmp")
+ImageCapture(10, 10, 500, 500, "./imagesearch.bmp")
 
 l :=
 t :=

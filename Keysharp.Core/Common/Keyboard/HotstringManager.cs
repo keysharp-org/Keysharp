@@ -2,6 +2,7 @@
 
 namespace Keysharp.Core.Common.Keyboard
 {
+	[PublicHiddenFromUser]
 	public class HotstringManager
 	{
 		internal string defEndChars = "-()[]{}:;'\"/\\,.?!\r\n \t";//Should this be a platform specific newline instead of \r\n?//TODO
@@ -25,7 +26,6 @@ namespace Keysharp.Core.Common.Keyboard
 		private readonly Dictionary<char, List<HotstringDefinition>> shsDkt = new (new CharNoCaseEqualityComp());
 		//private Stopwatch sw = new Stopwatch();
 
-		[PublicForTestOnly]
 		public string CurrentInputBuffer => new (hsBuf.ToArray());
 
 		/// <summary>
@@ -55,14 +55,12 @@ namespace Keysharp.Core.Common.Keyboard
 			return hs;
 		}
 
-		[PublicForTestOnly]
 		public void AddChars(string s)
 		{
 			foreach (var ch in s)
 				hsBuf.Add(ch);
 		}
 
-		[PublicForTestOnly]
 		public void ClearHotstrings()
 		{
 			hsBuf.Clear();
@@ -70,7 +68,6 @@ namespace Keysharp.Core.Common.Keyboard
 			shsDkt.Clear();
 		}
 
-		[PublicForTestOnly]
 		public HotstringDefinition MatchHotstring()
 		{
 			var found = false;
@@ -184,7 +181,6 @@ namespace Keysharp.Core.Common.Keyboard
 			return found ? hs : null;
 		}
 
-		[PublicForTestOnly]
 		public void RestoreDefaults(bool doNonPositional = false)
 		{
 			if (doNonPositional)

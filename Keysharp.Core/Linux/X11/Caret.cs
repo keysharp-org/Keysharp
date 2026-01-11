@@ -5,7 +5,7 @@ namespace Keysharp.Core.Linux.X11
 {
 	internal struct CaretStruct
 	{
-		internal System.Windows.Forms.Timer Timert;  // Blink interval
+		internal UITimer Timert;  // Blink interval
 		internal nint Hwnd;                // Window owning the caret
 		internal nint Window;                // Actual X11 handle of the window
 		internal int X;                // X position of the caret

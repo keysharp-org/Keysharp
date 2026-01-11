@@ -38,6 +38,7 @@
 		public static object FileAppend(object text, object filename = null, object options = null)
 		{
 			var file = filename.As();
+			ThreadAccessors.A_LastError = 0;
 
 			//if (text.ToString() != "pass")
 			//  Console.WriteLine(text);
@@ -179,6 +180,7 @@
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error appending text to file {file}");
 			}
 		}
@@ -497,6 +499,7 @@
 		public static string FileGetAttrib(object filename)
 		{
 			var s = filename.As();
+			ThreadAccessors.A_LastError = 0;
 
 			try
 			{
@@ -507,7 +510,8 @@
 			}
 			catch (Exception ex)
 			{
-				return (string)Errors.OSErrorOccurred(ex, $"Error getting file attributes for file {s}", DefaultErrorString);
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
+				_ = (string)Errors.OSErrorOccurred(ex, $"Error getting file attributes for file {s}", DefaultErrorString);
 			}
 
 			return DefaultObject;
@@ -755,7 +759,7 @@
 				Script.SetPropertyValue(outIcon, "__Value", sc.Get("Icon"));
 				Script.SetPropertyValue(outType, "__Value", sc.Get("Type"));
 
-				if ((GetPropertyValue(outTarget, "__Value") is string s && s.Length > 0)
+				if (GetPropertyValue(outTarget, "__Value") is string s && s.Length > 0)
 				{
 					if (s[0] != '"' && s[0] != '\'')
 					{
@@ -841,6 +845,7 @@
 			long result;
 			var file = filename.As();
 			var u = units.As();
+			ThreadAccessors.A_LastError = 0;
 
 			if (file?.Length == 0)
 				file = A_LoopFileFullPath;
@@ -880,6 +885,7 @@
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return (long)Errors.OSErrorOccurred(ex, $"Error getting file size for file {file}", DefaultErrorLong);
 			}
 
@@ -903,6 +909,7 @@
 		public static string FileGetTime(object filename = null, object whichTime = null)
 		{
 			var file = filename.As();
+			ThreadAccessors.A_LastError = 0;
 
 			try
 			{
@@ -918,16 +925,17 @@
 				var info = new FileInfo(file);
 
 				date = time[0] switch
-			{
+				{
 					'c' or 'C' => info.CreationTime,
 					'a' or 'A' => info.LastAccessTime,
 					_ => info.LastWriteTime,
-			};
+				};
 
-			return Conversions.ToYYYYMMDDHH24MISS(date);
+				return Conversions.ToYYYYMMDDHH24MISS(date);
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return (string)Errors.OSErrorOccurred(ex, $"Error getting file time for file {file}", DefaultErrorString);
 			}
 		}
@@ -943,6 +951,7 @@
 		public static string FileGetVersion(object filename)
 		{
 			var file = filename.As();
+			ThreadAccessors.A_LastError = 0;
 
 			try
 			{
@@ -954,6 +963,7 @@
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return (string)Errors.OSErrorOccurred(ex, $"Error getting file version for file {file}", DefaultErrorString);
 			}
 		}
@@ -1004,6 +1014,7 @@
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static object FileOpen(object filename, object flags, object encoding = null)
 		{
+			ThreadAccessors.A_LastError = 0;
 			var file = filename.As();
 			var f = flags.As();
 			var e = encoding.As();
@@ -1127,6 +1138,7 @@
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error opening file {file}");
 			}
 		}
@@ -1160,6 +1172,7 @@
 			var file = filename.As();
 			var opts = options.As();
 			var enc = ThreadAccessors.A_FileEncodingRaw;
+			ThreadAccessors.A_LastError = 0;
 
 			if (string.IsNullOrEmpty(file))
 				return DefaultErrorObject;
@@ -1200,6 +1213,7 @@
 				}
 				catch (Exception ex)
 				{
+					ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 					return Errors.OSErrorOccurred(ex, $"Error reading file {file}");
 				}
 			}
@@ -1225,6 +1239,7 @@
 				}
 				catch (Exception ex)
 				{
+					ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 					return Errors.OSErrorOccurred(ex, $"Error reading file {file}");
 				}
 
@@ -1252,6 +1267,7 @@
 		public static object FileRecycle(object filePattern)
 		{
 			var s = filePattern.As();
+			ThreadAccessors.A_LastError = 0;
 
 			try
 			{
@@ -1270,6 +1286,7 @@
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error recycling file(s) with pattern {s}");
 			}
 		}
@@ -1331,6 +1348,7 @@
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown on failure.</exception>
 		public static object FileSetAttrib(object attributes, object filePattern = null, object mode = null)
 		{
+			ThreadAccessors.A_LastError = 0;
 			var attr = attributes.As();
 			var file = filePattern.As(A_LoopFileFullPath);
 			var m = mode.As();
@@ -1362,9 +1380,10 @@
 					failures++;
 				}
 			}
-
+			
 			if (failures != 0)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.ErrorOccurred($"Failed {failures} times setting file attributes.", "", failures);
 			}
 
@@ -1400,6 +1419,7 @@
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown on failure.</exception>
 		public static object FileSetTime(object yyyymmddhh24miss = null, object filePattern = null, object whichTime = null, object mode = null)
 		{
+			ThreadAccessors.A_LastError = 0;
 			var YYYYMMDDHH24MISS = yyyymmddhh24miss.As();
 			var file = filePattern.As();
 			var whichtime = whichTime.As("M");
@@ -1444,6 +1464,7 @@
 							break;
 
 						default:
+							ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 							return Errors.ErrorOccurred($"WhichTime value of {whichTime} was not m, c or a.");
 					}
 
@@ -1454,7 +1475,10 @@
 			}
 
 			if (failures != 0)
+			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.ErrorOccurred($"Failed {failures} times setting file time.", "", failures);
+			}
 
 			return DefaultObject;
 		}
@@ -1537,6 +1561,7 @@
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown on failure.</exception>
 		private static void FileCopyMove(string source, string dest, bool flag, bool move)
 		{
+			ThreadAccessors.A_LastError = 0;
 			var failures = 0;
 			var dfull = Path.GetFullPath(dest).TrimEnd(Path.DirectorySeparatorChar);
 			var sfull = Path.GetFullPath(source).TrimEnd(Path.DirectorySeparatorChar);
@@ -1555,12 +1580,14 @@
 
 			if (files.Length == 0 && sfull.AsSpan().IndexOfAny(wildcardsSv) == -1)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				_ = Errors.ErrorOccurred($"{sfull} did not contain any files.");
 				return;
 			}
 
 			if (!Directory.Exists(ddname))
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				_ = Errors.ErrorOccurred($"Folder {ddname} did not exist.");
 				return;
 			}
@@ -1587,6 +1614,7 @@
 
 			if (failures > 0)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				_ = Errors.ErrorOccurred($"Failed {failures} times moving or copying files.", "", failures);
 				return;
 			}

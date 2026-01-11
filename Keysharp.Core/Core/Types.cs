@@ -1,5 +1,3 @@
-﻿using System.Windows.Forms;
-
 namespace Keysharp.Core
 {
 	/// <summary>
@@ -30,25 +28,29 @@ namespace Keysharp.Core
 		/// Same as <see cref="IsAlpha"/> except that integers and characters 0 through 9 are also allowed.
 		/// </summary>
 		/// <param name="value">The object to examine.</param>
+		/// <param name="locale">If set to "Locale" then Unicode letters are considered as well.</param>
 		/// <returns>1 if the object was a string which contained all alpha numeric characters, else 0.</returns>
-		public static long IsAlnum(object value)
+		public static long IsAlnum(object value, object locale = null)
 		{
 			var s = value.As();
-			return s?.Length == 0 || s.All(ch => char.IsLetter(ch) || char.IsNumber(ch)) ? 1L : 0L;
+			Func<char, bool> predicate = locale != null && locale.As().Equals("locale", StringComparison.OrdinalIgnoreCase) ? char.IsLetterOrDigit : char.IsAsciiLetterOrDigit;
+			return s?.Length == 0 || s.All(predicate) ? 1L : 0L;
 		}
 
 		/// <summary>
 		/// Returns 1 if value is a string and is empty or contains only alphabetic characters. 0 if there are any digits, spaces, tabs, punctuation,<br/>
 		/// or other non-alphabetic characters anywhere in the string.<br/>
 		/// For example, if Value contains a space followed by a letter, it is not considered to be alpha.<br/>
-		/// Locale is always considered.
+		/// By default only ASCII letters are considered.
 		/// </summary>
 		/// <param name="value">The object to examine.</param>
+		/// <param name="locale">If set to "Locale" then Unicode letters are considered as well.</param>
 		/// <returns>1 if the object was a string which contained all alpha characters, else 0.</returns>
-		public static long IsAlpha(object value)
+		public static long IsAlpha(object value, object locale = null)
 		{
 			var s = value.As();
-			return s?.Length == 0 || s.All(char.IsLetter) ? 1L : 0L;
+			Func<char, bool> predicate = locale != null && locale.As().Equals("locale", StringComparison.OrdinalIgnoreCase) ? char.IsLetter : char.IsAsciiLetter;
+			return s?.Length == 0 || s.All(predicate) ? 1L : 0L;
 		}
 
 		/// <summary>
@@ -74,7 +76,7 @@ namespace Keysharp.Core
 			var o = value;
 
 			if (o is double)// || o is float || o is decimal)
-				return 1;
+				return 1L;
 
 			double? val;
 
@@ -85,14 +87,6 @@ namespace Keysharp.Core
 
 			return val.HasValue ? 1L : 0L;
 		}
-
-		/// <summary>
-		/// Returns 1 if the specified function exists in the script, else 0.
-		/// </summary>
-		/// <param name="name">The name of the function to search for.</param>
-		/// <param name="paramCount">The parameter count of the function to search for. Default: return the first function found.</param>
-		/// <returns>1 if the function was found, else 0.</returns>
-		public static long IsFunc(object name, object paramCount = null) => Reflections.FindMethod(name.ToString(), paramCount.Ai(-1)) is MethodPropertyHolder mph && mph.mi != null ? 1L : 0L;
 
 		/// <summary>
 		/// Returns 1 if Value is an integer or a purely numeric string (decimal or hexadecimal) without a decimal point.<br/>
@@ -132,18 +126,27 @@ namespace Keysharp.Core
 		/// <summary>
 		/// Returns 1 if value is a string and is empty or contains only lowercase characters.<br/>
 		/// 0 if there are any digits, spaces, tabs, punctuation, or other non-lowercase characters anywhere in the string.
-		/// Locale is always considered.
+		/// By default only ASCII letters are considered.
 		/// </summary>
 		/// <param name="value">The object to examine.</param>
+		/// <param name="locale">If set to "Locale" then Unicode letters are considered as well.</param>
 		/// <returns>1 if value contained all lowercase characters, else 0.</returns>
 		public static long IsLower(object value, object locale = null)
 		{
 			var s = value.As();
-			if (s.Any((c) => !char.IsLetter(c)))
-				return 0L;
 			if (locale != null && locale.As().Equals("locale", StringComparison.OrdinalIgnoreCase))
-				return s.ToLower() == s ? 1L : 0L;
-			return s.ToLower(CultureInfo.InvariantCulture) == s ? 1L : 0L;
+			{
+				foreach (var ch in s)
+					if (!char.IsLower(ch))
+						return 0L;
+			}
+			else
+			{
+				foreach (var ch in s)
+					if (!char.IsAsciiLetterLower(ch))
+						return 0L;
+			}
+			return 1L;
 		}
 
 		/// <summary>
@@ -166,6 +169,18 @@ namespace Keysharp.Core
 		/// <param name="value">The object to examine.</param>
 		/// <returns>1 if value is not null, else 0.</returns>
 		public static long IsSet(object value) => value != null ? 1L : 0L;
+
+		/// <summary>
+		/// Returns 1 if the specified VarRef target has been assigned a value, meaning it is not null, else 0.
+		/// </summary>
+		/// <param name="value">The object to examine.</param>
+		/// <returns>1 if value is not null, else 0.</returns>
+		public static long IsSetRef(object value)
+		{
+			Any val = value as Any;
+			if (val == null) return (long)Errors.ErrorOccurred("IsSetRef requires a VarRef parameter.", DefaultErrorLong);
+			return TryGetPropertyValue(out object refvalue, val, "__Value") && refvalue != null ? 1L : 0L;
+		}
 
 		/// <summary>
 		/// 1 if value is a string and is empty or contains only whitespace consisting of the following characters, else false:<br/>
@@ -210,18 +225,27 @@ namespace Keysharp.Core
 		/// <summary>
 		/// Returns 1 if value is a string and is empty or contains only uppercase characters.<br/>
 		/// 0 if there are any digits, spaces, tabs, punctuation, or other non-lowercase characters anywhere in the string.
-		/// Locale is always considered.
+		/// By default only ASCII letters are considered.
 		/// </summary>
 		/// <param name="value">The object to examine.</param>
+		/// <param name="locale">If set to "Locale" then Unicode letters are considered as well.</param>
 		/// <returns>1 if value contained all uppercase characters, else 0.</returns>
 		public static long IsUpper(object value, object locale = null)
 		{
 			var s = value.As();
-			if (s.Any((c) => !char.IsLetter(c)))
-				return 0L;
 			if (locale != null && locale.As().Equals("locale", StringComparison.OrdinalIgnoreCase))
-				return s.ToUpper() == s ? 1L : 0L;
-			return s.ToUpper(CultureInfo.InvariantCulture) == s ? 1L : 0L;
+			{
+				foreach (var ch in s)
+					if (!char.IsUpper(ch))
+						return 0L;
+			}
+			else
+			{
+				foreach (var ch in s)
+					if (!char.IsAsciiLetterUpper(ch))
+						return 0L;
+			}
+			return 1L;
 		}
 
 		/// <summary>
@@ -238,7 +262,7 @@ namespace Keysharp.Core
 				sp = sp.Slice(2);
 
 			foreach (var ch in sp)
-				if (!((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f')))
+				if (!char.IsAsciiHexDigit(ch))
 					return 0L;
 
 			return 1L;
@@ -264,7 +288,7 @@ namespace Keysharp.Core
 				if (value is KeysharpObject kso && kso.op != null) {
 					if (kso.op.ContainsKey("__Class"))
 						return "Prototype";
-                    else if (Script.TryGetPropertyValue(kso, "__Class", out object oname) && oname is string name && name != null)
+                    else if (Script.TryGetPropertyValue(out object oname, kso, "__Class") && oname is string name && name != null)
 						type = name;
                     else
 						return "Object";
@@ -275,6 +299,7 @@ namespace Keysharp.Core
 			{
 					"Double" => "Float",
 					"Int64" => "Integer",
+					"Boolean" => "Integer",
 					"KeysharpObject" => "Object",
 					_ => type,
 			};

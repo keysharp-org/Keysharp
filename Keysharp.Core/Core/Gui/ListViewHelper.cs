@@ -1,4 +1,5 @@
-﻿namespace Keysharp.Core
+﻿#if WINDOWS
+namespace Keysharp.Core
 {
 	internal static class ListViewHelper
 	{
@@ -334,3 +335,4 @@
 		}
 	}
 }
+#endif

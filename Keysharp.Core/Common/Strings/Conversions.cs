@@ -1,4 +1,5 @@
 using SearchOption = System.IO.SearchOption;
+using Calendar = System.Globalization.Calendar;
 
 namespace Keysharp.Core.Common.Strings
 {
@@ -27,8 +28,7 @@ namespace Keysharp.Core.Common.Strings
 		/// </summary>
 		/// <param name="time"></param>
 		/// <returns></returns>
-		[PublicForTestOnly]
-		public static DateTime ToDateTime(string time)
+		internal static DateTime ToDateTime(string time)
 		{
 			switch (time.Length)
 			{
@@ -83,22 +83,7 @@ namespace Keysharp.Core.Common.Strings
 #if WINDOWS
 			return font;
 #else
-			//This is needed to properly set bold/italic fonts in linux.
-			//https://github.com/mono/mono/issues/17314
-			var tempFont = new Font(font.FontFamily, font.Size, font.Style);
-			var validFontFamily = tempFont.FontFamily;
-
-			foreach (FontFamily ff in FontFamily.Families)
-			{
-				if (ff.Name == tempFont.FontFamily.Name)
-				{
-					validFontFamily = ff;
-					break;
-				}
-			}
-
-			var regularfont = new Font(validFontFamily, font.Size, FontStyle.Regular);
-			return new Font(regularfont, font.Style);
+			return font;
 #endif
 		}
 
@@ -252,8 +237,9 @@ namespace Keysharp.Core.Common.Strings
 			_ => StringComparison.OrdinalIgnoreCase,
 	};
 
-	internal static Font ParseFont(Font standard, string styles, string family = null)
-		{
+#if WINDOWS
+		internal static Font ParseFont(Font standard, string styles, string family = null)
+	{
 			family = string.IsNullOrEmpty(family) ? standard.FontFamily.Name : family;
 			var size = standard.Size;
 			var display = standard.Style;
@@ -317,6 +303,75 @@ namespace Keysharp.Core.Common.Strings
 
 			return ConvertFont(new Font(fam, size, display));
 		}
+#else
+		internal static Font ParseFont(Font standard, string styles, string family = null)
+		{
+			string resolvedFamily = family;
+			try {
+				if (string.IsNullOrEmpty(family))
+					resolvedFamily = standard.FamilyName;
+			} 
+			catch
+			{
+				return standard;
+			}
+			var size = standard.Size;
+			var display = standard.FontStyle;
+			var weight = 400;
+			var quality = 0;
+			var decorations = FontDecoration.None;
+
+			foreach (Range r in styles.AsSpan().SplitAny(Spaces))
+			{
+				var opt = styles.AsSpan(r).Trim();
+
+				if (opt.Length > 0)
+				{
+					if (Options.TryParse(opt, "s", ref size)) { }
+					else if (Options.TryParse(opt, "q", ref quality)) { }
+					else if (Options.TryParse(opt, "w", ref weight))
+					{
+						if (weight <= 400)
+							display &= ~FontStyle.Bold;
+						else if (weight >= 700)
+							display |= FontStyle.Bold;
+					}
+
+					switch (opt)
+					{
+						case var b when opt.Equals(Keyword_Bold, StringComparison.OrdinalIgnoreCase):
+							display |= FontStyle.Bold;
+							break;
+
+						case var b when opt.Equals(Keyword_Italic, StringComparison.OrdinalIgnoreCase):
+							display |= FontStyle.Italic;
+							break;
+
+						case var b when opt.Equals(Keyword_Strike, StringComparison.OrdinalIgnoreCase):
+							decorations |= FontDecoration.Strikethrough;
+							break;
+
+						case var b when opt.Equals(Keyword_Underline, StringComparison.OrdinalIgnoreCase):
+							decorations |= FontDecoration.Underline;
+							break;
+
+						case var b when opt.Equals(Keyword_Norm, StringComparison.OrdinalIgnoreCase):
+							decorations = FontDecoration.None;
+							break;
+					}
+				}
+			}
+
+			try
+			{
+				return ConvertFont(new Font(resolvedFamily, size, display, decorations));
+			}
+			catch
+			{
+				return standard;
+			}
+		}
+#endif
 
 		internal static List<int> ParseRange(string[] splits)
 		{

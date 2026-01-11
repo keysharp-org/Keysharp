@@ -1,3 +1,4 @@
+using Keysharp.Core.Scripting.Script;
 using static Keysharp.Core.Errors;
 
 using Timer1 = System.Timers.Timer;
@@ -120,7 +121,7 @@ namespace Keysharp.Core
 			{
 				script.mainWindow.CheckedInvoke(() =>
 				{
-					_ = ExitAppInternal(ExitReasons.Exit, exitCode);
+					_ = ExitAppInternal(ExitReasons.Exit, exitCode, true);
 				}, true);
 				var start = DateTime.UtcNow;
 
@@ -233,13 +234,18 @@ namespace Keysharp.Core
 		public static object Reload()
 		{
 			var script = Script.TheScript;
-			//Just calling Application.Restart will trigger ExitAppInternal().
-			//So it doesn't need to be called directly. Further, it will cause problems if called
-			//so just let the natural chain of closing events handle it.
+			if (script.scriptName == "*")
+				return DefaultObject;
+			//Just calling Application.Restart will not always trigger ExitAppInternal().
 			script.mainWindow.CheckedBeginInvoke(() =>
 			{
 				A_ExitReason = ExitReasons.Reload;
+#if WINDOWS
 				Application.Restart();//This will pass the same command line args to the new instance that were passed to this instance.
+#else
+				Application.Instance.Restart();
+#endif
+				ExitAppInternal(ExitReasons.Reload);
 			}, true, true);
 			var start = DateTime.UtcNow;
 
@@ -341,7 +347,8 @@ namespace Keysharp.Core
 					}
 					else
 					{
-						timer.Interval = int.MaxValue;
+						if (timer.Interval == p)
+							timer.Interval = int.MaxValue;
 						timer.Interval = (int)p;
 					}
 
@@ -441,7 +448,11 @@ namespace Keysharp.Core
 			{
 				try
 				{
-					Application.DoEvents();//Can sometimes throw on linux.
+#if WINDOWS
+					Application.DoEvents();
+#else
+					Application.Instance.RunIteration();
+#endif
 				}
 				catch (UserRequestedExitException)
 				{
@@ -455,7 +466,11 @@ namespace Keysharp.Core
 			{
 				try
 				{
-					Application.DoEvents();//Can sometimes throw on linux.
+#if WINDOWS
+					Application.DoEvents();
+#else
+					Application.Instance.RunIteration();
+#endif
 				}
 				catch
 				{
@@ -466,6 +481,9 @@ namespace Keysharp.Core
 				//0 tells this thread to relinquish the remainder of its time slice to any thread of equal priority that is ready to run.
 				//If there are no other threads of equal priority that are ready to run, execution of the current thread is not suspended.
 				System.Threading.Thread.Sleep(1);
+
+			if (script.hasExited)
+				throw new UserRequestedExitException();
 		}
 
 		/// <summary>
@@ -477,14 +495,13 @@ namespace Keysharp.Core
 			var d = delay.Al(-1L);
 			var script = Script.TheScript;
 
-			if (script.hasExited)
-				throw new UserRequestedExitException();
-
 			//Be careful with Application.DoEvents(), it has caused spurious crashes in my years of programming experience.
 			if (d == 0L)
 			{
-				TryDoEvents();
-				System.Threading.Thread.Sleep(0);
+				var tc = Environment.TickCount;
+				TryDoEvents(true, false);
+				if (Environment.TickCount - tc == 0)
+					System.Threading.Thread.Sleep(0);
 			}
 			else if (d == -1L)
 			{
@@ -527,8 +544,44 @@ namespace Keysharp.Core
 			fd.suspended = state == ToggleValueType.Toggle ? !fd.suspended : (state == ToggleValueType.On);
 
 			if (!(bool)A_IconFrozen && !script.NoTrayIcon)
-				script.Tray.Icon = fd.suspended ? Properties.Resources.Keysharp_s_ico : Properties.Resources.Keysharp_ico;
+				script.Tray.Icon = fd.suspended ? script.suspendedIcon : script.normalIcon;
 
+			return DefaultObject;
+		}
+
+		/// <summary>
+		/// Pauses the current thread, or pauses/unpauses the underlying thread.
+		/// </summary>
+		/// <param name="threadState">
+		/// If omitted, it pauses the current thread. Otherwise, specify one of the following values:<br/>
+		///     1: Pauses the underlying thread.<br/>
+		///     0: Unpauses the underlying thread.<br/>
+		///    -1: Changes the underlying thread paused state to the opposite of its previous state (On or Off).
+		/// </param>
+		public static object Pause(object threadState = null)
+		{
+			if (threadState == null)
+			{
+				var tv = TheScript.Threads.CurrentThread;
+				tv.isPaused = true;
+				var prevAllowTimers = A_AllowTimers;
+				A_AllowTimers = false;
+
+				while (tv.isPaused)
+					Flow.TryDoEvents();
+
+				A_AllowTimers = prevAllowTimers;
+			}
+			else
+			{
+				var state = Conversions.ConvertOnOffToggle(threadState);
+				switch (state)
+				{
+					case ToggleValueType.Toggle: ThreadAccessors.A_IsPaused = !ThreadAccessors.A_IsPaused; break;
+					case ToggleValueType.Off: ThreadAccessors.A_IsPaused = false; break;
+					default: ThreadAccessors.A_IsPaused = true; break;
+				}
+			}
 			return DefaultObject;
 		}
 
@@ -562,6 +615,23 @@ namespace Keysharp.Core
 		}
 
 		/// <summary>
+		/// Throws the specified error object.
+		/// </summary>
+		/// <param name="errorObject">The error object to throw.<br/>
+		/// </param>
+		[StackTraceHidden]
+		public static object Throw(object errorObject = null)
+		{
+			if (errorObject is Exception ex)
+				ExceptionDispatchInfo.Capture(ex).Throw();
+			else if (errorObject == null)
+			{
+				throw new Error();
+			} 
+			throw new Error("Invalid error object");
+		}
+
+		/// <summary>
 		/// Internal helper to handle exiting the Script.TheScript.
 		/// </summary>
 		/// <param name="exitReason">The <see cref="ExitReason"/> for exiting the Script.TheScript.</param>
@@ -577,6 +647,7 @@ namespace Keysharp.Core
 
 			script.tickTimer.Stop();
 			Dialogs.CloseMessageBoxes();
+			Dialogs.CloseToolTips();
 			var ec = exitCode.Ai();
 			A_ExitReason = exitReason.ToString();
 			var allowInterruption_prev = fd.allowInterruption;//Save current setting.
@@ -593,8 +664,39 @@ namespace Keysharp.Core
 			else
 				script.onExitHandlers.Clear();
 
-			script.hasExited = true;//At this point, we are clear to exit, so do not allow any more calls to this function.
+			// Do this here so if destructors throw then no dialogs are shown
 			script.SuppressErrorOccurredDialog = true;
+
+			GC.Collect();
+			GC.WaitForPendingFinalizers();
+			DestructorPump.RunPendingDestructors();
+
+			foreach (var t in Reflections.GetNestedTypes([script.ProgramType])
+				.OrderBy(Reflections.GetInheritanceDepth))
+			{
+				var fields = t.GetFields(BindingFlags.Static | BindingFlags.Public);
+
+				foreach (var val in fields.Select(f => f.GetValue(null)))
+				{
+					if (val is Any kso) CallDeleteSilent(kso);
+				}
+
+				if (script.Vars.Statics.TryGetValue(t, out Any kso2) && kso2.HasOwnPropInternal("__Delete"))
+					CallDeleteSilent(kso2);
+			}
+
+			void CallDeleteSilent(Any kso)
+			{
+				try
+				{
+					kso.HasFinalizer = false;
+					InvokeMeta(kso, "__Delete");
+					if (kso is IDisposable dis) dis.Dispose();
+				}
+				catch { }
+			}
+
+			script.hasExited = true;//At this point, we are clear to exit, so do not allow any more calls to this function.
 			fd.allowInterruption = allowInterruption_prev;
 			HotkeyDefinition.AllDestruct();
 			StopMainTimer();
@@ -605,11 +707,11 @@ namespace Keysharp.Core
 			Gui.DestroyAll();
 			script.Stop();
 			Environment.ExitCode = ec;
+			script.mainWindow?.Close();
 
 			if (useThrow)
 				throw new UserRequestedExitException();
-			else
-				return false;
+			return false;
 		}
 
 		/// <summary>
@@ -736,8 +838,8 @@ namespace Keysharp.Core
 		}
 
         /// <summary>
-        /// Special exception class to signal that the user has requested exiting the script
-        /// via ExitApp().
+        /// Special exception class to signal that the user has requested exiting the currently running
+		/// pseudothread with Exit().
         /// Note this does not derive from Error so that it can be properly distinguished in
         /// catch statements.
         /// </summary>
@@ -762,16 +864,7 @@ namespace Keysharp.Core
 		/// Iterates through all timers in existence and returns the number of them which are enabled.
 		/// </summary>
 		/// <returns>The number of currently enabled timers.</returns>
-		public static long EnabledTimerCount()
-		{
-			var ct = 0L;
-
-			foreach (var kv in Script.TheScript.FlowData.timers)
-				if (kv.Value.Enabled)//This won't work if we're enabling and disabling timers in the tick event.//TODO
-					ct++;
-
-			return ct;
-		}
+		public static long EnabledTimerCount() => Script.TheScript.FlowData.timers.Count(kv => kv.Value.Enabled);
 	}
 
 	internal class FlowData

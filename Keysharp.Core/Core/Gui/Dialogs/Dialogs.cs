@@ -36,13 +36,12 @@ namespace Keysharp.Core
 			var opts = options.Al();
 			var p = prompt.As();
 			var str = "";
+#if WINDOWS
 			var select = new FolderBrowserDialog
 			{
 				ShowNewFolderButton = (opts & 1) == 1//The 1, 3 and 5 options seem to not apply to this class and the New Folder button will always be shown.
 			};
-#if WINDOWS
 			select.UseDescriptionForTitle = true;
-#endif
 			select.Description = p != "" ? p : "Select Folder - " + A_ScriptName;
 			select.RootFolder = Environment.SpecialFolder.MyComputer;
 
@@ -50,33 +49,9 @@ namespace Keysharp.Core
 			{
 				var guidStr = folder.Trim([':', '{', '}']).ToLower();
 				var guid = new Guid(guidStr);
-#if LINUX
-
-				if (guid == computer)
-					select.SelectedPath = "/";
-				else if (guid == desktop)
-					select.SelectedPath = "~/Desktop";
-				else if (guid == documents)
-					select.SelectedPath = "~/Documents";
-				else if (guid == downloads)
-					select.SelectedPath = "~/Downloads";
-				else if (guid == music)
-					select.SelectedPath = "~/Music";
-				else if (guid == pictures)
-					select.SelectedPath = "~/Pictures";
-				else if (guid == @public)
-					select.SelectedPath = "~/Public";
-				else if (guid == userprofile)
-					select.SelectedPath = "~/";
-				else if (guid == userprofiles)
-					select.SelectedPath = "/home";
-
-#elif WINDOWS
 
 				if (WindowsAPI.SHGetKnownFolderPath(new Guid(guidStr)) is string s)
 					select.SelectedPath = s;
-
-#endif
 			}
 			else if (Options.TryParseString(folder, "*", ref str))
 				select.SelectedPath = str;
@@ -85,6 +60,54 @@ namespace Keysharp.Core
 
 			var selected = Script.TheScript.mainWindow.CheckedInvoke(() => GuiHelper.DialogOwner == null ? select.ShowDialog() : select.ShowDialog(GuiHelper.DialogOwner), true);
 			return selected == DialogResult.OK ? select.SelectedPath : "";
+#else
+			var select = new Eto.Forms.SelectFolderDialog();
+
+				if (folder.StartsWith("::"))
+				{
+					var guidStr = folder.Trim([':', '{', '}']).ToLower();
+					var guid = new Guid(guidStr);
+
+					string folderPath = null;
+					if (guid == computer)
+						folderPath = ToFileDialogPath("/");
+					else if (guid == desktop)
+						folderPath = ToFileDialogPath("~/Desktop");
+					else if (guid == documents)
+						folderPath = ToFileDialogPath("~/Documents");
+					else if (guid == downloads)
+						folderPath = ToFileDialogPath("~/Downloads");
+					else if (guid == music)
+						folderPath = ToFileDialogPath("~/Music");
+					else if (guid == pictures)
+						folderPath = ToFileDialogPath("~/Pictures");
+					else if (guid == @public)
+						folderPath = ToFileDialogPath("~/Public");
+					else if (guid == userprofile)
+						folderPath = ToFileDialogPath("~/");
+					else if (guid == userprofiles)
+						folderPath = ToFileDialogPath("/home");
+
+					if (folderPath != null)
+						select.Directory = folderPath;
+				}
+				else if (Options.TryParseString(folder, "*", ref str))
+				{
+					var folderPath = ToFileDialogPath(str);
+					if (folderPath != null)
+						select.Directory = folderPath;
+				}
+				else if (folder.Length != 0)
+				{
+					var folderPath = ToFileDialogPath(folder);
+					if (folderPath != null)
+						select.Directory = folderPath;
+				}
+
+				var selected = (Eto.Forms.DialogResult)Script.TheScript.mainWindow.CheckedInvoke(
+					() => select.ShowDialog(GetEtoDialogOwner()), true);
+				return selected == Eto.Forms.DialogResult.Ok ? select.Directory ?? "" : "";
+#endif
 		}
 
 		/// <summary>
@@ -188,6 +211,7 @@ namespace Keysharp.Core
 				if (t?.Length == 0)
 					t = $"Select File - {A_ScriptName}";
 
+#if WINDOWS
 				var saveas = new SaveFileDialog
 				{
 					CheckPathExists = check,
@@ -197,10 +221,24 @@ namespace Keysharp.Core
 					Filter = f,
 					Title = t,
 					InitialDirectory = Path.GetDirectoryName(rootdir),
-					FileName = Path.GetFileName(rootdir)
+					FileName = Path.GetFileName(rootdir),
 				};
 				var selected = script.mainWindow.CheckedInvoke(() => GuiHelper.DialogOwner == null ? saveas.ShowDialog() : saveas.ShowDialog(GuiHelper.DialogOwner), true);
 				files = selected == DialogResult.OK ? saveas.FileName : "";
+#else
+				var saveas = new Eto.Forms.SaveFileDialog
+				{
+					Title = t,
+					FileName = Path.GetFileName(rootdir) ?? ""
+				};
+				var saveDir = ToFileDialogPath(Path.GetDirectoryName(rootdir));
+				if (saveDir != null)
+					saveas.Directory = new Uri(saveDir);
+				ApplyEtoFilters(saveas.Filters, f);
+				var selected = (Eto.Forms.DialogResult)script.mainWindow.CheckedInvoke(
+					() => saveas.ShowDialog(GetEtoDialogOwner()), true);
+				files = selected == Eto.Forms.DialogResult.Ok ? saveas.FileName : "";
+#endif
 			}
 			else
 			{
@@ -209,24 +247,36 @@ namespace Keysharp.Core
 					if (t?.Length == 0)
 						t = $"Select Folder - {A_ScriptName}";
 
+#if WINDOWS
 					var select = new FolderBrowserDialog()
 					{
 						RootFolder = Environment.SpecialFolder.MyComputer,
 						SelectedPath = rootdir + Path.DirectorySeparatorChar,
-#if WINDOWS
 						UseDescriptionForTitle = true,
-#endif
 						Description = t,
 						ShowNewFolderButton = true//Seems to be visible regardless of this property.
 					};
 					var selected = script.mainWindow.CheckedInvoke(() => GuiHelper.DialogOwner == null ? select.ShowDialog() : select.ShowDialog(GuiHelper.DialogOwner), true);
 					files = selected == DialogResult.OK ? select.SelectedPath : "";
+#else
+					var select = new Eto.Forms.SelectFolderDialog
+					{
+						Title = t
+					};
+					var selectDir = ToFileDialogPath(rootdir + Path.DirectorySeparatorChar);
+					if (selectDir != null)
+						select.Directory = selectDir;
+					var selected = (Eto.Forms.DialogResult)script.mainWindow.CheckedInvoke(
+						() => select.ShowDialog(GetEtoDialogOwner()), true);
+					files = selected == Eto.Forms.DialogResult.Ok ? select.Directory ?? "" : "";
+#endif
 				}
 				else
 				{
 					if (t?.Length == 0)
 						t = $"Select File - {A_ScriptName}";
 
+#if WINDOWS
 					var open = new OpenFileDialog
 					{
 						Multiselect = multi,
@@ -241,6 +291,25 @@ namespace Keysharp.Core
 					files = selected == DialogResult.OK
 							? multi ? new Array(open.FileNames.Cast<object>()) : open.FileName
 							: multi ? new Array() : "";
+#else
+					var open = new Eto.Forms.OpenFileDialog
+					{
+						MultiSelect = multi,
+						Title = t,
+						FileName = Path.GetFileName(rootdir) ?? ""
+					};
+					var openDir = ToFileDialogPath(Path.GetDirectoryName(rootdir));
+					if (openDir != null)
+						open.Directory = new Uri(openDir);
+					ApplyEtoFilters(open.Filters, f);
+					var selected = (Eto.Forms.DialogResult)script.mainWindow.CheckedInvoke(
+						() => open.ShowDialog(GetEtoDialogOwner()), true);
+					var filenames = open.Filenames.Select(file => file?.ToString());
+					if (selected == Eto.Forms.DialogResult.Ok)
+						files = multi ? new Array(filenames.Cast<object>()) : filenames.FirstOrDefault() ?? "";
+					else
+						files = multi ? new Array() : "";
+#endif
 				}
 			}
 
@@ -298,6 +367,7 @@ namespace Keysharp.Core
 		///     Value (String): The text entered by the user.<br/>
 		///     Result (String): One of the following words indicating how the input box was closed: OK, Cancel, or Timeout.
 		/// </returns>
+#if WINDOWS
 		public static DialogResultReturn InputBox(object prompt = null, object title = null, object options = null, object @default = null)
 		{
 			var p = prompt.As();
@@ -359,6 +429,74 @@ namespace Keysharp.Core
 				Result = input.Result
 			};
 		}
+#else
+		public static DialogResultReturn InputBox(object prompt = null, object title = null, object options = null, object @default = null)
+		{
+			var p = prompt.As();
+			var t = title.As();
+			var opts = options.As();
+			var def = @default.As();
+			var pw = "";
+
+			foreach (Range r in opts.AsSpan().SplitAny(Spaces))
+			{
+				var opt = opts.AsSpan(r).Trim();
+				if (opt.Length > 0)
+					_ = Options.TryParseString(opt, "Password", ref pw, StringComparison.OrdinalIgnoreCase, true);
+			}
+
+			var dlg = new Eto.Forms.Dialog<Eto.Forms.DialogResult>
+			{
+				Title = t?.Length == 0 ? A_ScriptName : t,
+				Resizable = false,
+				Topmost = true
+			};
+			Eto.Forms.TextBox textBox = null;
+			Eto.Forms.PasswordBox passwordBox = null;
+			Eto.Forms.Control inputControl;
+			if (pw.Length > 0)
+			{
+				passwordBox = new Eto.Forms.PasswordBox { Text = def };
+				inputControl = passwordBox;
+			}
+			else
+			{
+				textBox = new Eto.Forms.TextBox { Text = def };
+				inputControl = textBox;
+			}
+
+			var layout = new Eto.Forms.DynamicLayout
+			{
+				Padding = new Eto.Drawing.Padding(10),
+				DefaultSpacing = new Eto.Drawing.Size(5, 5)
+			};
+			if (p.Length > 0)
+				layout.AddRow(new Eto.Forms.Label { Text = p, Wrap = WrapMode.Word });
+			layout.AddRow(inputControl);
+
+			var ok = new Eto.Forms.Button { Text = "OK" };
+			ok.Click += (_, _) => dlg.Close(Eto.Forms.DialogResult.Ok);
+			var cancel = new Eto.Forms.Button { Text = "Cancel" };
+			cancel.Click += (_, _) => dlg.Close(Eto.Forms.DialogResult.Cancel);
+			dlg.DefaultButton = ok;
+			dlg.AbortButton = cancel;
+
+			layout.AddRow(new Eto.Forms.StackLayout
+			{
+				Orientation = Orientation.Horizontal,
+				HorizontalContentAlignment = HorizontalAlignment.Right,
+				Items = { ok, cancel }
+			});
+
+			dlg.Content = layout;
+			var result = (Eto.Forms.DialogResult)dlg.ShowModal();
+			return new DialogResultReturn
+			{
+				Value = pw.Length > 0 ? passwordBox.Text : textBox.Text,
+				Result = result == Eto.Forms.DialogResult.Ok ? "OK" : "Cancel"
+			};
+		}
+#endif
 
 		/// <summary>
 		/// Displays the specified text in a small window containing one or more buttons (such as Yes and No).
@@ -394,13 +532,15 @@ namespace Keysharp.Core
 			var txt = text.As().Truncate(8192); // 8192 is AHK MSGBOX_TEXT_SIZE
 			var caption = title.As().Truncate(1024); // 1024 is AHK DIALOG_TITLE_SIZE
 			var buttons = MessageBoxButtons.OK;
-			var icon = MessageBoxIcon.None;
-			var defaultbutton = MessageBoxDefaultButton.Button1;
 			var script = Script.TheScript;
 #if WINDOWS
+			var icon = MessageBoxIcon.None;
+			var defaultbutton = MessageBoxDefaultButton.Button1;
 			var mbopts = (MessageBoxOptions)WindowsAPI.MB_SETFOREGROUND;//For some reason this constant is not available in C#, but it works and is required to make the message box take the focus.
 #else
-			var mbopts = MessageBoxOptions.ServiceNotification;
+			var icon = MessageBoxType.Information;
+			var defaultbutton = MessageBoxDefaultButton.Default;
+			int defaultbuttonindex = 1;
 #endif
 			Control owner = GuiHelper.DialogOwner;
 			var timeout = 0.0;
@@ -415,23 +555,12 @@ namespace Keysharp.Core
 
 			void HandleNumericOptions(int itemp)
 			{
+#if WINDOWS
 				switch (itemp & 0xf0000)
 				{
 					case 524288: mbopts |= MessageBoxOptions.RightAlign; break;
 
 					case 1048576: mbopts |= MessageBoxOptions.RtlReading; break;
-				}
-
-				//switch (itemp & 0xf000)
-				//{
-				//  case 16384: help = true; break;
-				//}
-
-				switch (itemp & 0xf00)
-				{
-					case 256: defaultbutton = MessageBoxDefaultButton.Button2; break;
-
-					case 512: defaultbutton = MessageBoxDefaultButton.Button3; break;
 				}
 
 				switch (itemp & 0xf0)
@@ -445,20 +574,39 @@ namespace Keysharp.Core
 					case 64: icon = MessageBoxIcon.Asterisk; break;
 				}
 
+				//switch (itemp & 0xf000)
+				//{
+				//  case 16384: help = true; break;
+				//}
+
+				switch (itemp & 0xf00)
+				{
+					case 256: defaultbutton = MessageBoxDefaultButton.Button2; break;
+
+					case 512: defaultbutton = MessageBoxDefaultButton.Button3; break;
+				}
+#else
+				switch (itemp & 0xf00)
+				{
+					case 256: defaultbuttonindex = 2; break;
+
+					case 512: defaultbuttonindex = 3; break;
+				}
+#endif
+
 				switch (itemp & 0xf)
 				{
 					case 0: buttons = MessageBoxButtons.OK; break;
 
 					case 1: buttons = MessageBoxButtons.OKCancel; break;
 
-					case 2: buttons = MessageBoxButtons.AbortRetryIgnore; break;
-
 					case 3: buttons = MessageBoxButtons.YesNoCancel; break;
 
 					case 4: buttons = MessageBoxButtons.YesNo; break;
+#if WINDOWS
+					case 2: buttons = MessageBoxButtons.AbortRetryIgnore; break;
 
 					case 5: buttons = MessageBoxButtons.RetryCancel; break;
-#if WINDOWS
 
 					case 6: buttons = MessageBoxButtons.CancelTryContinue; break;
 #endif
@@ -506,12 +654,6 @@ namespace Keysharp.Core
 									buttons = MessageBoxButtons.OKCancel;
 									break;
 
-								case var b when opt.Equals("abortretryignore", StringComparison.OrdinalIgnoreCase):
-								case var b2 when opt.Equals("a/r/i", StringComparison.OrdinalIgnoreCase):
-								case var b3 when opt.Equals("ari", StringComparison.OrdinalIgnoreCase):
-									buttons = MessageBoxButtons.AbortRetryIgnore;
-									break;
-
 								case var b when opt.Equals("yesnocancel", StringComparison.OrdinalIgnoreCase):
 								case var b2 when opt.Equals("y/n/c", StringComparison.OrdinalIgnoreCase):
 								case var b3 when opt.Equals("ync", StringComparison.OrdinalIgnoreCase):
@@ -524,19 +666,24 @@ namespace Keysharp.Core
 									buttons = MessageBoxButtons.YesNo;
 									break;
 
+#if WINDOWS
 								case var b when opt.Equals("retrycancel", StringComparison.OrdinalIgnoreCase):
 								case var b2 when opt.Equals("r/c", StringComparison.OrdinalIgnoreCase):
 								case var b3 when opt.Equals("rc", StringComparison.OrdinalIgnoreCase):
 									buttons = MessageBoxButtons.RetryCancel;
 									break;
-#if WINDOWS
+
+								case var b when opt.Equals("abortretryignore", StringComparison.OrdinalIgnoreCase):
+								case var b2 when opt.Equals("a/r/i", StringComparison.OrdinalIgnoreCase):
+								case var b3 when opt.Equals("ari", StringComparison.OrdinalIgnoreCase):
+									buttons = MessageBoxButtons.AbortRetryIgnore;
+									break;
 
 								case var b when opt.Equals("canceltryagaincontinue", StringComparison.OrdinalIgnoreCase):
 								case var b2 when opt.Equals("c/t/c", StringComparison.OrdinalIgnoreCase):
 								case var b3 when opt.Equals("ctc", StringComparison.OrdinalIgnoreCase):
 									buttons = MessageBoxButtons.CancelTryContinue;
 									break;
-#endif
 
 								case var b when opt.Equals("iconx", StringComparison.OrdinalIgnoreCase):
 									icon = MessageBoxIcon.Hand;
@@ -561,10 +708,37 @@ namespace Keysharp.Core
 								case var b when opt.Equals("default3", StringComparison.OrdinalIgnoreCase):
 									defaultbutton = MessageBoxDefaultButton.Button3;
 									break;
-#if WINDOWS
 
 								case var b when opt.Equals("default4", StringComparison.OrdinalIgnoreCase):
 									defaultbutton = MessageBoxDefaultButton.Button4;
+									break;
+#else
+								case var b when opt.Equals("iconx", StringComparison.OrdinalIgnoreCase):
+									icon = MessageBoxType.Error;
+									break;
+
+								case var b when opt.Equals("icon?", StringComparison.OrdinalIgnoreCase):
+									icon = MessageBoxType.Question;
+									break;
+
+								case var b when opt.Equals("icon!", StringComparison.OrdinalIgnoreCase):
+									icon = MessageBoxType.Warning;
+									break;
+
+								case var b when opt.Equals("iconi", StringComparison.OrdinalIgnoreCase):
+									icon = MessageBoxType.Information;
+									break;
+
+								case var b when opt.Equals("default2", StringComparison.OrdinalIgnoreCase):
+									defaultbuttonindex = 2;
+									break;
+
+								case var b when opt.Equals("default3", StringComparison.OrdinalIgnoreCase):
+									defaultbuttonindex = 3;
+									break;
+
+								case var b when opt.Equals("default4", StringComparison.OrdinalIgnoreCase):
+									defaultbuttonindex = 4;
 									break;
 #endif
 							}
@@ -576,11 +750,35 @@ namespace Keysharp.Core
 					HandleNumericOptions(iopt);
 			}
 
+#if !WINDOWS
+			switch (buttons)
+			{
+				case MessageBoxButtons.OK: defaultbutton = MessageBoxDefaultButton.Default; break;
+				case MessageBoxButtons.OKCancel: 
+					if (defaultbuttonindex == 1)
+						defaultbutton = MessageBoxDefaultButton.OK;
+					else if (defaultbuttonindex == 2) 
+						defaultbutton = MessageBoxDefaultButton.Cancel;
+					break;
+				case MessageBoxButtons.YesNo:
+				case MessageBoxButtons.YesNoCancel:
+					if (defaultbuttonindex == 1)
+						defaultbutton = MessageBoxDefaultButton.Yes;
+					else if (defaultbuttonindex == 2) 
+						defaultbutton = MessageBoxDefaultButton.No;
+					else if (defaultbuttonindex == 3 && buttons == MessageBoxButtons.YesNoCancel)
+						defaultbutton = MessageBoxDefaultButton.Cancel;
+					break;
+			}
+#endif
+
 			if (timeout != 0)
 			{
+				
+				script.nMessageBoxes++;
+#if WINDOWS
 				var timeoutclosed = false;
 				var w = new Form() { Size = new Size(0, 0) };//Gotten from https://stackoverflow.com/a/26418199
-				script.nMessageBoxes++;
 				//No need to show the form, it will work while hidden.
 				_ = Task.Delay(TimeSpan.FromSeconds(timeout))
 					.ContinueWith(t =>
@@ -591,7 +789,33 @@ namespace Keysharp.Core
 				var ret = MessageBox.Show(w, txt, caption, buttons, icon, defaultbutton, mbopts);
 				script.nMessageBoxes--;
 				return timeoutclosed ? "Timeout" : ret.ToString();
-			}
+	#else
+					using var showCts = new CancellationTokenSource();
+					showCts.CancelAfter(TimeSpan.FromSeconds(timeout));
+					var ownerControl = owner ?? Application.Instance?.MainForm;
+					Task<DialogResult> showTask;
+
+					try {
+						showTask = MessageBox.ShowAsync(ownerControl, txt, caption, buttons, icon, defaultbutton, showCts.Token);
+						while (!showTask.IsCompleted)
+						{
+							Flow.TryDoEvents();
+						}
+
+						if (showTask.IsCanceled)
+						{
+							return "Timeout";
+						}
+
+						var ret = showTask.Result;
+						return ret.ToString();
+					}
+					finally
+					{
+						script.nMessageBoxes--;
+					}
+	#endif
+				}
 			else
 			{
 				script.nMessageBoxes++;
@@ -602,20 +826,30 @@ namespace Keysharp.Core
 				//blocks that thread.
 				if (owner != null)
 				{
-					_ = owner.Invoke(() => ret = MessageBox.Show(owner, txt, caption, buttons, icon, defaultbutton, mbopts).ToString());
+					_ = owner.Invoke(() => 
+#if WINDOWS
+						ret = MessageBox.Show(owner, txt, caption, buttons, icon, defaultbutton, mbopts).ToString()
+#else
+						ret = MessageBox.Show(owner, txt, caption, buttons, icon, defaultbutton).ToString()
+#endif
+					);
 				}
 				else
 				{
+#if WINDOWS
 					var tsk = StaTask.Run(() =>
-										  MessageBox.Show(null, txt, caption, buttons, icon, defaultbutton, mbopts).ToString());
-
+						ret = MessageBox.Show(null, txt, caption, buttons, icon, defaultbutton, mbopts).ToString());
+#else
+					var tsk = Application.Instance.InvokeAsync(() => {
+						ret = MessageBox.Show(Application.Instance.MainForm, txt, caption, buttons, icon, defaultbutton).ToString();
+					});
+#endif
 					while (!tsk.IsCompleted)
 					{
 						Flow.TryDoEvents();
 					}
 
 					//tsk.Wait();
-					ret = tsk.Result;
 				}
 
 				//ret = Script.mainWindow.CheckedInvoke(() => MessageBox.Show(null, txt, caption, buttons, icon, defaultbutton, mbopts).ToString(), true);
@@ -623,6 +857,59 @@ namespace Keysharp.Core
 				return ret;
 			}
 		}
+
+#if !WINDOWS
+		private static void ApplyEtoFilters(ICollection<FileFilter> filters, string filter)
+		{
+			if (string.IsNullOrWhiteSpace(filter))
+				return;
+
+			var parts = filter.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+			for (var i = 0; i + 1 < parts.Length; i += 2)
+			{
+				var name = parts[i];
+				var patterns = parts[i + 1];
+				var extensions = new List<string>();
+
+				foreach (var rawPattern in patterns.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+				{
+					var pattern = rawPattern;
+					if (pattern == "*.*" || pattern == "*")
+					{
+						extensions.Add("*");
+						continue;
+					}
+
+					if (pattern.StartsWith("*."))
+						pattern = pattern[2..];
+					else if (pattern.StartsWith("."))
+						pattern = pattern[1..];
+
+					if (pattern.Length > 0)
+						extensions.Add("." + pattern);
+				}
+
+				if (extensions.Count > 0)
+					filters.Add(new FileFilter(name, extensions.ToArray()));
+			}
+		}
+
+		private static Eto.Forms.Window GetEtoDialogOwner() => Eto.Forms.Application.Instance?.MainForm;
+
+		private static string ToFileDialogPath(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+				return null;
+
+			if (path.StartsWith("~/", StringComparison.Ordinal))
+			{
+				var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+				path = Path.Combine(home, path[2..]);
+			}
+
+			return Path.GetFullPath(path);
+		}
+#endif
 
 		/// <summary>
 		/// Internal helper to close all message boxes.
@@ -646,6 +933,17 @@ namespace Keysharp.Core
 				}
 			}
 
+#endif
+		}
+
+		internal static void CloseToolTips()
+		{
+#if !WINDOWS
+			foreach (var tt in TheScript.ToolTipData.persistentTooltips)
+			{
+				if (tt != null)
+					tt.Dispose();
+			}
 #endif
 		}
 

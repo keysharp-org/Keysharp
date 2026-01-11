@@ -26,6 +26,6 @@ Acknowledgements:
 
 		private void okButton_Click(object sender, EventArgs e) => Close();
 
-		private void linkLabel_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e) => _ = Process.Start(new ProcessStartInfo(linkLabel.Text) { UseShellExecute = true });
+		private void linkLabel_LinkClicked(object sender, System.Windows.Forms.LinkLabelLinkClickedEventArgs e) => _ = Process.Start(new ProcessStartInfo(linkLabel.Text) { UseShellExecute = true });
 	}
 }

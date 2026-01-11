@@ -1,5 +1,44 @@
 namespace Keysharp.Core.Common.Platform
 {
+	internal interface IWindowManager
+	{
+		internal static abstract WindowItemBase ActiveWindow { get; }
+		internal static abstract IEnumerable<WindowItemBase> AllWindows { get; }
+		internal static abstract WindowItemBase LastFound { get; set; }
+
+		internal static abstract WindowItemBase CreateWindow(nint id);
+
+		internal static abstract IEnumerable<WindowItemBase> FilterForGroups(IEnumerable<WindowItemBase> windows);
+
+		internal static abstract WindowItemBase FindWindow(SearchCriteria criteria, bool last = false);
+
+		internal static abstract WindowItemBase FindWindow(object winTitle, object winText, object excludeTitle, object excludeText, bool last = false, bool ignorePureID = false);
+
+		internal static abstract List<WindowItemBase> FindWindowGroup(SearchCriteria criteria, bool forceAll = false, bool ignorePureID = false);
+
+		internal static abstract (List<WindowItemBase>, SearchCriteria) FindWindowGroup(object winTitle,
+				object winText,
+				object excludeTitle,
+				object excludeText,
+				bool forceAll = false,
+				bool ignorePureID = false);
+
+		internal static abstract uint GetFocusedCtrlThread(ref nint apControl, nint aWindow);
+
+		internal static abstract nint GetForegroundWindowHandle();
+
+		internal static abstract bool IsWindow(nint handle);
+
+		internal static abstract void MaximizeAll();
+
+		internal static abstract void MinimizeAll();
+
+		internal static abstract void MinimizeAllUndo();
+
+		internal static abstract WindowItemBase WindowFromPoint(POINT location);
+
+		internal static abstract WindowItemBase ChildWindowFromPoint(POINT location);
+	}
 	internal class WindowGroup
 	{
 		internal Stack<long> activated = new ();
@@ -13,28 +52,37 @@ namespace Keysharp.Core.Common.Platform
 	/// </summary>
 	internal abstract class WindowManagerBase
 	{
-		internal abstract WindowItemBase ActiveWindow { get; }
-		internal abstract IEnumerable<WindowItemBase> AllWindows { get; }
 		internal Dictionary<string, WindowGroup> Groups { get; } = new Dictionary<string, WindowGroup>(StringComparer.OrdinalIgnoreCase);
 
-		internal virtual WindowItemBase LastFound
+		public static WindowItemBase LastFound
 		{
-			get => CreateWindow((nint)Script.TheScript.HwndLastUsed);
+			get => WindowManager.CreateWindow((nint)Script.TheScript.HwndLastUsed);
 			set => Script.TheScript.HwndLastUsed = value.Handle;
 		}
 
-		internal abstract WindowItemBase CreateWindow(nint id);
-
-		internal abstract IEnumerable<WindowItemBase> FilterForGroups(IEnumerable<WindowItemBase> windows);
-
-		internal virtual WindowItemBase FindWindow(SearchCriteria criteria, bool last = false)
+		public static WindowItemBase FindWindow(SearchCriteria criteria, bool last = false)
 		{
 			WindowItemBase found = null;
 
 			if (criteria.IsEmpty)
 				return found;
 
-			foreach (var window in AllWindows)
+			if (criteria.ID != 0)
+			{
+				if (WindowManager.IsWindow(criteria.ID) && WindowManager.CreateWindow(criteria.ID) is WindowItemBase temp && temp.Equals(criteria))
+					return temp;
+				return null;
+			}
+
+			if (criteria.Title.Equals("A", StringComparison.OrdinalIgnoreCase))
+			{
+				var active = WindowManager.ActiveWindow;
+				if (active.Equals(criteria))
+					found = active;
+				return found;
+			}
+
+			foreach (var window in WindowManager.AllWindows)
 			{
 				if (window.Equals(criteria))
 				{
@@ -48,14 +96,20 @@ namespace Keysharp.Core.Common.Platform
 			return found;
 		}
 
-		internal WindowItemBase FindWindow(object winTitle, object winText, object excludeTitle, object excludeText, bool last = false, bool ignorePureID = false)
+		public static WindowItemBase FindWindow(object winTitle, object winText, object excludeTitle, object excludeText, bool last = false, bool ignorePureID = false)
 		{
 			WindowItemBase foundWindow = null;
 			var (parsed, ptr) = WindowHelper.CtrlTonint(winTitle);
 
 			if (parsed)
-				if (!ignorePureID && IsWindow(ptr))
-					return LastFound = CreateWindow(ptr);
+			{
+				if (!ignorePureID && WindowManager.IsWindow(ptr))
+					return LastFound = WindowManager.CreateWindow(ptr);
+#if !WINDOWS
+				if (Control.FromHandle(ptr) is Control ctrl)
+					return LastFound = new ControlItem(ctrl);
+#endif
+			}
 
 			var text = winText.As();
 			var exclTitle = excludeTitle.As();
@@ -63,7 +117,7 @@ namespace Keysharp.Core.Common.Platform
 
 			if (winTitle is Gui gui)
 			{
-				return LastFound = CreateWindow((nint)gui.Hwnd);
+				return LastFound = WindowManager.CreateWindow((nint)gui.Hwnd);
 			}
 			else if ((winTitle == null || winTitle is string s && string.IsNullOrEmpty(s)) &&
 					 string.IsNullOrEmpty(text) &&
@@ -84,15 +138,15 @@ namespace Keysharp.Core.Common.Platform
 			return foundWindow;
 		}
 
-		internal virtual List<WindowItemBase> FindWindowGroup(SearchCriteria criteria, bool forceAll = false, bool ignorePureID = false)
+		public static List<WindowItemBase> FindWindowGroup(SearchCriteria criteria, bool forceAll = false, bool ignorePureID = false)
 		{
 			var found = new List<WindowItemBase>();
 
 			if (!ignorePureID && criteria.IsPureID)
 			{
-				if (IsWindow(criteria.ID))
+				if (WindowManager.IsWindow(criteria.ID))
 				{
-					var window = CreateWindow(criteria.ID);
+					var window = WindowManager.CreateWindow(criteria.ID);
 
 					if (window.Equals(criteria)) // Other criteria may be present such as ExcludeTitle etc
 						found.Add(window);
@@ -103,7 +157,7 @@ namespace Keysharp.Core.Common.Platform
 
 			//KeysharpEnhancements.OutputDebugLine($"About to iterate AllWindows in FindWindowGroup()");
 
-			foreach (var window in AllWindows)
+			foreach (var window in WindowManager.AllWindows)
 			{
 				//KeysharpEnhancements.OutputDebugLine($"FindWindowGroup(): about to examine window: {window.Title}");
 				if (criteria.IsEmpty || window.Equals(criteria))
@@ -118,7 +172,7 @@ namespace Keysharp.Core.Common.Platform
 			return found;
 		}
 
-		internal (List<WindowItemBase>, SearchCriteria) FindWindowGroup(object winTitle,
+		public static (List<WindowItemBase>, SearchCriteria) FindWindowGroup(object winTitle,
 				object winText,
 				object excludeTitle,
 				object excludeText,
@@ -150,19 +204,5 @@ namespace Keysharp.Core.Common.Platform
 
 			return (foundWindows, criteria);
 		}
-
-		internal abstract uint GetFocusedCtrlThread(ref nint apControl, nint aWindow);
-
-		internal abstract nint GetForeGroundWindowHwnd();
-
-		internal abstract bool IsWindow(nint handle);
-
-		internal abstract void MaximizeAll();
-
-		internal abstract void MinimizeAll();
-
-		internal abstract void MinimizeAllUndo();
-
-		internal abstract WindowItemBase WindowFromPoint(Point location);
 	}
 }

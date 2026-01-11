@@ -8,8 +8,7 @@
 	/// of the stack index.
 	/// </summary>
 	/// <typeparam name="T">The type of object to hold in each element of the stack.</typeparam>
-	[PublicForTestOnly]
-	public class SlimStack<T> where T : class
+	internal class SlimStack<T> where T : class
 	{
 		/// <summary>
 		/// The internal list used to contain the stack elements.
@@ -108,6 +107,24 @@
 
 			return Volatile.Read(ref list[cnt - 1]);
 		}
+
+		/// <summary>
+		/// Returns the second most recent element in the stack if it exists.<br/>
+		/// In the unlikely case this is called on another thread between the <see cref="Interlocked.Increment"/> and <see cref="Interlocked.Decrement"/>
+		/// calls in <see cref="TryPush"/>,<br/>and all available space in the list has been used,
+		/// it will return null.
+		/// </summary>
+		/// <returns>The second most recent element, else null if empty.</returns>
+		public T TryPeekSecond()
+		{
+			int cnt = Volatile.Read(ref index);
+
+			if (cnt <= 1 || cnt > list.Length)
+				return null;
+
+			return Volatile.Read(ref list[cnt - 2]);
+		}
+
 		/// <summary>
 		/// Removes and returns the most recent element in the stack if it exists.
 		/// Any clearing/destruction of the object's internal state must be done by the caller after this function exits.

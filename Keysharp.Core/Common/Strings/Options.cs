@@ -91,30 +91,42 @@ namespace Keysharp.Core.Common.Strings
 		internal static bool OptionContains(string options, params string[] keys)
 		{
 			foreach (var key in keys)
-				if (!OptionContains(options, key))
-					return false;
+				if (OptionContains(options, key))
+					return true;
 
-			return true;
+			return false;
 		}
 
 		internal static bool OptionContains(string options, string key, bool casesensitive = false)
 		{
+			if (string.IsNullOrEmpty(options) || string.IsNullOrEmpty(key))
+				return false;
+
 			var comp = casesensitive ? StringComparison.CurrentCulture : StringComparison.OrdinalIgnoreCase;
 			var i = 0;
 
 			while (i < options.Length)
 			{
 				var z = options.IndexOf(key, i, comp);
-				var p = z == 0 || !char.IsLetter(options, z - 1);
-				z += key.Length;
+				if (z < 0)
+					return false;
 
-				if (!p)
+				var startOk = z == 0 || !char.IsLetter(options, z - 1);
+				var end = z + key.Length;
+
+				if (!startOk)
+				{
+					i = z + 1;
 					continue;
+				}
 
-				p = z == options.Length || !char.IsLetter(options, z + 1);
+				var endOk = end >= options.Length || !char.IsLetter(options[end]);
 
-				if (!p)
+				if (!endOk)
+				{
+					i = z + 1;
 					continue;
+				}
 
 				return true;
 			}

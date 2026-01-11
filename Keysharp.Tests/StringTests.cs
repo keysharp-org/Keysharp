@@ -553,13 +553,13 @@ namespace Keysharp.Tests
 		public void String()
 		{
 			object x = 123;
-			var y = Strings.String(x);
+			var y = Core.String.Call(null, x);
 			Assert.AreEqual(y, "123");
 			x = "123";
-			y = Strings.String(x);
+			y = Core.String.Call(null, x);
 			Assert.AreEqual(y, "123");
 			x = 1.234;
-			y = Strings.String(x);
+			y = Core.String.Call(null, x);
 			Assert.AreEqual(y, "1.234");
 			Assert.IsTrue(TestScript("string-string", true));
 		}
@@ -606,7 +606,7 @@ namespace Keysharp.Tests
 		[Test, Category("String")]
 		public void StrPutStrGet()
 		{
-			var buf1 = Collections.Buffer(32);
+			var buf1 = new Keysharp.Core.Buffer(32);
 			var s = "tester";
 			//Unicode test.
 			var testlen = StrPut(s);
@@ -615,8 +615,8 @@ namespace Keysharp.Tests
 			var gotten = StrGet(buf1, -s.Length);
 			Assert.AreEqual(s, gotten);
 			//ASCII test.
-			testlen = StrPut(s, null, null, "ASCII");
-			lenwritten = StrPut(s, buf1, null, "ASCII");
+			testlen = StrPut(s, "ASCII");
+			lenwritten = StrPut(s, buf1, "ASCII");
 			Assert.AreEqual(testlen, lenwritten);
 			gotten = StrGet(buf1, s.Length, "ASCII");
 			Assert.AreEqual(s, gotten);
@@ -670,7 +670,7 @@ namespace Keysharp.Tests
 		{
 			var x = "a,b,c,d";
 			var y = Strings.StrSplit(x, ",");
-			var exp = Collections.Array(["a", "b", "c", "d"]);
+			var exp = new Keysharp.Core.Array(["a", "b", "c", "d"]);
 			Assert.AreEqual(exp, y);
 			x = "abcd";
 			y = Strings.StrSplit(x);
@@ -685,27 +685,27 @@ namespace Keysharp.Tests
 			Assert.AreEqual(exp, y);
 			x = "abcd";
 			y = Strings.StrSplit(x, null, null, 1);
-			exp = Collections.Array(["abcd"]);
+			exp = new Keysharp.Core.Array(["abcd"]);
 			Assert.AreEqual(exp, y);
 			y = Strings.StrSplit(x, null, null, 2);
-			exp = Collections.Array(["a", "bcd"]);
+			exp = new Keysharp.Core.Array(["a", "bcd"]);
 			Assert.AreEqual(exp, y);
 			y = Strings.StrSplit(x, null, null, 3);
-			exp = Collections.Array(["a", "b", "cd"]);
+			exp = new Keysharp.Core.Array(["a", "b", "cd"]);
 			Assert.AreEqual(exp, y);
 			y = Strings.StrSplit(x, null, null, 4);
-			exp = Collections.Array(["a", "b", "c", "d"]);
+			exp = new Keysharp.Core.Array(["a", "b", "c", "d"]);
 			Assert.AreEqual(exp, y);
 			y = Strings.StrSplit(x, null, null, 5);
-			exp = Collections.Array(["a", "b", "c", "d"]);
+			exp = new Keysharp.Core.Array(["a", "b", "c", "d"]);
 			Assert.AreEqual(exp, y);
 			x = "a,b,c,d";
 			y = Strings.StrSplit(x, ",", null, 3);
-			exp = Collections.Array(["a", "b", "c,d"]);
+			exp = new Keysharp.Core.Array(["a", "b", "c,d"]);
 			Assert.AreEqual(exp, y);
 			x = "	a, b-c _d	";
 			y = Strings.StrSplit(x, new string[] { ",", "-", "_" }, "\t ", 3);
-			exp = Collections.Array(["a", "b", "c _d"]);
+			exp = new Keysharp.Core.Array(["a", "b", "c _d"]);
 			Assert.AreEqual(exp, y);
 			Assert.IsTrue(TestScript("string-strsplit", true));
 		}

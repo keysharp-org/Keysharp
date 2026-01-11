@@ -1,5 +1,6 @@
 ﻿namespace Keysharp.Core.Common.Keyboard
 {
+	[PublicHiddenFromUser]
 	public class HotstringDefinition
 	{
 		internal const int HOTSTRING_BLOCK_SIZE = 1024;
@@ -31,31 +32,26 @@
 
 		public bool DoReset => doReset;
 
-		[PublicForTestOnly]
 		public bool Enabled { get; set; }
 
-		[PublicForTestOnly]
 		public Options EnabledOptions { get; set; }
 
 		public bool EndCharRequired => endCharRequired;
 
 		public long KeyDelay => keyDelay;
 
-		[PublicForTestOnly]
 		public string Name { get; set; }
 
 		public bool OmitEndChar => omitEndChar;
 
 		public long Priority => priority;
 
-		[PublicForTestOnly]
 		public string Replacement => replacement;
 
 		public SendModes SendMode => sendMode;
 
 		public SendRawModes SendRaw => sendRaw;
 
-		[PublicForTestOnly]
 		public string Sequence { get; }
 
 		public bool SuspendExempt => suspendExempt;
@@ -286,6 +282,7 @@
 						backspaceCount--;
 					}
 
+#if WINDOWS
 				// Subtract 1 from backspaces because the final key pressed by the user to make a
 				// match was already suppressed by the hook (it wasn't sent through to the active
 				// window).  So what we do is backspace over all the other keys prior to that one,
@@ -294,6 +291,7 @@
 
 				if (!endCharRequired)
 					--backspaceCount;
+#endif
 
 				for (var i = 0; i < backspaceCount; ++i)
 				{
@@ -383,6 +381,8 @@
 			if (!(doBackspace || omitEndChar) && sendMode != SendModes.Event) // The final character of the abbreviation (or its EndChar) was not suppressed by the hook.
 				Thread.Sleep(0);
 
+			ht.PrepareToSendHotstringReplacement(endChar);
+
 			kbdMouseSender.SendKeys(sendBuf, sendRaw, sendMode, 0); // Send the backspaces and/or replacement.
 			// Restore original values.
 			tv.keyDelay = oldDelay;
@@ -451,7 +451,7 @@
 			}
 			catch (Error ex)
 			{
-				_ = Dialogs.MsgBox($"Exception thrown during hotstring handler.\n\n{ex}", null, (int)MessageBoxIcon.Hand);
+				_ = Dialogs.MsgBox($"Exception thrown during hotstring handler.\n\n{ex}", null, "iconx");
 			}
 
 			return ResultType.Ok;

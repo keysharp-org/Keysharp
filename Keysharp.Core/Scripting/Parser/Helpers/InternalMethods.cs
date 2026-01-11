@@ -38,7 +38,6 @@ namespace Keysharp.Scripting
 			internal static MethodReference AddHotkey => new (typeof(HotkeyDefinition), "AddHotkey");
 			internal static MethodReference AddHotstring => new (typeof(HotstringManager), "AddHotstring");
 			internal static MethodReference CreateTrayMenu => new (typeof(Script), "CreateTrayMenu");
-			internal static MethodReference Dictionary => new (typeof(Collections), "Dictionary");
 			internal static MethodReference Exit => new (typeof(Flow), "Exit");
 			internal static MethodReference ExitApp => new (typeof(Flow), "ExitApp");
 			internal static MethodReference ExitIfNotPersistent => new (typeof(Script), "ExitIfNotPersistent");
@@ -51,11 +50,12 @@ namespace Keysharp.Scripting
             internal static MethodReference GetMethodOrProperty => new (typeof(Script), "GetMethodOrProperty");
 			internal static MethodReference GetPropertyValue => new (typeof(Script), "GetPropertyValue");
 			internal static MethodReference HandleSingleInstance => new (typeof(Script), "HandleSingleInstance");
-			internal static MethodReference HotIf => new (typeof(HotkeyDefinition), "HotIf");
+			internal static MethodReference HotIf => new (typeof(Keyboard), "HotIf");
 			internal static MethodReference Hotkey => new (typeof(Keyboard), "Hotkey");
 			internal static MethodReference Hotstring => new (typeof(Keyboard), "Hotstring");
-            internal static MethodReference IfElse => new (typeof(Script), "IfTest");
+            internal static MethodReference IfTest => new (typeof(Script), "IfTest");
 			internal static MethodReference IfLegacy => new (typeof(Script), "IfLegacy");
+			internal static MethodReference IsTrueAndRunning => new (typeof(Flow), "IsTrueAndRunning");
 			internal static MethodReference Inc => new (typeof(Loops), "Inc");
 			internal static MethodReference Index => new (typeof(Script), "Index");
 			internal static MethodReference Invoke => new (typeof(Script), "Invoke");

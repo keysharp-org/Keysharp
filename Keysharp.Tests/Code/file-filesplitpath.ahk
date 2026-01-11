@@ -37,12 +37,12 @@ else
 	FileAppend "fail", "*"
 
 #if WINDOWS
-	if (StrLower("D:\Dev\keysharp\Keysharp.Tests\Code\DirCopy") == StrLower(dir))
+	if ("Keysharp.Tests\Code\DirCopy" == SubStr(dir, -StrLen("Keysharp.Tests\Code\DirCopy")))
 		FileAppend "pass", "*"
 	else
 		FileAppend "fail", "*"
 
-	if (StrLower("D:") == StrLower(drive))
+	if (StrLower("C:") == StrLower(drive) || StrLower("D:") == StrLower(drive))
 		FileAppend "pass", "*"
 	else
 		FileAppend "fail", "*"

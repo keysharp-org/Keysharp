@@ -4,6 +4,7 @@ namespace Keysharp.Core
 	/// Miscellaneous public facing functions which don't fit anywhere else.
 	/// Add to this class sparingly because functions should be well organized.
 	/// </summary>
+	[PublicHiddenFromUser]
 	public static class Misc
 	{
 		/// <summary>

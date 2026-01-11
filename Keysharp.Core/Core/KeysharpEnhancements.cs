@@ -77,13 +77,23 @@
 		/// attempts to provide such functionality.
 		/// </summary>
 		/// <returns>True if empty, else false.</returns>
-		public static bool IsClipboardEmpty() => !dataFormats.Any(Clipboard.ContainsData);
+		public static bool IsClipboardEmpty() => !dataFormats.Any(
+#if WINDOWS
+			Clipboard.ContainsData
+#else
+			Clipboard.Instance.Contains
+#endif
+		);
 
 		/// <summary>
 		/// Shows the debug tab in the main window.
 		/// Using this anywhere in the script will also make it persistent.
 		/// </summary>
-		public static object ShowDebug() => Script.TheScript.mainWindow?.ShowDebug();
+		public static object ShowDebug()
+		{
+			Script.TheScript.mainWindow?.ShowDebug();
+			return DefaultObject;
+		}
 
 		/// <summary>
 		/// Sends a string followed by a newline to the debugger (if any) for display.
@@ -103,5 +113,22 @@
 		/// </param>
 		/// <returns>A new <see cref="Map"/> object.</returns>
 		public static HashMap HashMap(params object[] obj) => new HashMap(obj);
+
+
+		/// <summary>
+		/// Returns the handle of the window located at the given screen coordinates.
+		/// </summary>
+		/// <param name="x">The X screen coordinate.</param>
+		/// <param name="y">The Y screen coordinate.</param>
+		/// <returns>The window handle at the specified point, or 0 if none is found.</returns>
+		public static long WinFromPoint(object x, object y)
+		{
+			if (x == null || y == null)
+			{
+				GetCursorPos(out var point);
+				x ??= point.X; y ??= point.Y;
+			}
+			return WindowManager.WindowFromPoint(new Common.Window.POINT(x.Ai(), y.Ai())).Handle;
+		}
 	}
 }

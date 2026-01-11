@@ -64,7 +64,7 @@ namespace Keysharp.Core.COM
 
 			try
 			{
-				newEnum = Keysharp.Scripting.Script.Invoke(Script.GetMethodOrProperty(com, "_NewEnum", 0));
+				newEnum = Keysharp.Scripting.Script.Invoke(com, "_NewEnum");
 				enumerator = (IEnumerator)newEnum;
 			}
 			catch (Keysharp.Core.Error ex)

@@ -187,3 +187,60 @@ if (!HasProp(t1, "__Item") && !t1.HasProp("__Item"))
 	FileAppend "pass", "*"
 else
 	FileAppend "fail", "*"
+
+
+class Test {
+    Len[Param?] {
+        get {
+			global x
+			if IsSet(Param)
+				x := 3
+			else
+				x := 4
+        }
+    }
+    Len(Param?) {
+		global x
+		if IsSet(Param)
+			x := 1
+		else
+			x := 2
+    }
+}
+
+T := Test()
+
+x := 0
+T.Len      ; .call without param
+if (x == 2)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+x := 0
+_ := T.Len ; .get without param
+if (x == 4)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+x := 0
+_ := T.Len[1]   ; .get with param
+if (x == 3)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+x := 0
+T.Len()    ; .call without param
+if (x == 2)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+x := 0
+T.Len(1)   ; .call with param
+if (x == 1)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"

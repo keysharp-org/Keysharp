@@ -12,7 +12,7 @@ namespace Keysharp.Tests
 		{
 			_ = CoordMode("Mouse", "Screen");
 			var screen = System.Windows.Forms.Screen.PrimaryScreen;
-			_ = GetScreenClip(10, 10, 500, 500, "./imagesearch.bmp");
+			_ = ImageCapture(10, 10, 500, 500, "./imagesearch.bmp");
 			VarRef x = new(null), y = new(null);
 			_ = Core.Screen.ImageSearch(x, y, 0, 0, screen.Bounds.Width, screen.Bounds.Height, "./imagesearch.bmp"); //This implies this pattern won't be present before 1000,1000.
 

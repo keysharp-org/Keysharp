@@ -1,16 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.Extensions.Primitives;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement.TextBox;
+﻿using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Keysharp.Scripting
 {
-	[PublicForTestOnly]
-	public class PrettyPrinter : CSharpSyntaxWalker
+	internal class PrettyPrinter : CSharpSyntaxWalker
 	{
 		readonly StringBuilder _sb;
 		int _indent;
@@ -180,17 +172,22 @@ namespace Keysharp.Scripting
 			WriteIndent();
 			_sb.AppendLine("{");
 			_indent++;
-			foreach (var m in node.Members)
+			for (int i = 0; i < node.Members.Count; i++)
 			{
+				var m = node.Members[i];
 				Visit(m);
-				if (m is not FieldDeclarationSyntax)
+				if (i < node.Members.Count - 1 && NeedsMemberSpacer(m))
 					_sb.AppendLine();
 			}
-			TrimTrailingNewLine();
+			//TrimTrailingNewLine();
 			_indent--;
 			WriteIndent();
 			_sb.AppendLine("}");
 		}
+
+		static bool NeedsMemberSpacer(MemberDeclarationSyntax m) =>
+			   m is not FieldDeclarationSyntax
+			&& m is not PropertyDeclarationSyntax;
 
 		public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
 		{
@@ -625,7 +622,9 @@ namespace Keysharp.Scripting
 
 		public override void VisitIfStatement(IfStatementSyntax node)
 		{
-			WriteIndent();
+			if (node.Parent is not ElseClauseSyntax)
+				WriteIndent();
+
 			_sb.Append("if (");
 			Visit(node.Condition);
 			_sb.AppendLine(")");
@@ -642,16 +641,24 @@ namespace Keysharp.Scripting
 			if (node.Else != null)
 			{
 				WriteIndent();
-				_sb.AppendLine("else");
-				if (node.Else.Statement is BlockSyntax)
+				if (node.Else.Statement is IfStatementSyntax)
 				{
+					_sb.Append("else ");
 					Visit(node.Else.Statement);
 				}
 				else
 				{
-					_indent++;
-					Visit(node.Else.Statement);
-					_indent--;
+					_sb.AppendLine("else");
+					if (node.Else.Statement is BlockSyntax)
+					{
+						Visit(node.Else.Statement);
+					}
+					else
+					{
+						_indent++;
+						Visit(node.Else.Statement);
+						_indent--;
+					}
 				}
 			}
 		}
@@ -1240,13 +1247,13 @@ namespace Keysharp.Scripting
 			{
 				// if … else { … }
 				IfStatementSyntax ifs
-					when ifs.Else?.Statement is BlockSyntax
-					=> true,
+					when ifs.Else?.Statement is StatementSyntax
+					=> EndsWithBlock(ifs.Else.Statement),
 
 				// if { … } (even without else)
 				IfStatementSyntax ifs2
-					when ifs2.Statement is BlockSyntax
-					=> true,
+					when ifs2.Statement is StatementSyntax
+					=> EndsWithBlock(ifs2.Statement),
 
 				// try / catch / finally all printed as one TryStatementSyntax
 				TryStatementSyntax _

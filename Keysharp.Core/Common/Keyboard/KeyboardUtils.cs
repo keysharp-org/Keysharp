@@ -29,6 +29,11 @@ namespace Keysharp.Core.Common.Keyboard
 		internal const uint MODLR_RMASK = MOD_RCONTROL | MOD_RALT | MOD_RSHIFT | MOD_RWIN;
 		internal const uint MODLR_MASK = MODLR_LMASK | MODLR_RMASK;
 
+		internal const int KEYEVENTF_EXTENDEDKEY = 1;
+		internal const int KEYEVENTF_KEYUP = 2;
+		internal const int KEYEVENTF_UNICODE = 4;
+		internal const int KEYEVENTF_SCANCODE = 8;
+
 		internal static string[] SEND_MODES = ["Event", "Input", "Play", "InputThenPlay"]; // Must match the SendModes enum.
 
 		internal static uint MakeLong(short lowPart, short highPart) => ((ushort)lowPart) | (uint)(highPart << 16);
@@ -140,6 +145,14 @@ namespace Keysharp.Core.Common.Keyboard
 			return modifiers;
 		}
 
+		internal static bool IsModifierVk(uint vk) => vk switch
+		{
+			VK_LSHIFT or VK_RSHIFT or VK_SHIFT or
+			VK_LCONTROL or VK_RCONTROL or VK_CONTROL or
+			VK_LMENU or VK_RMENU or VK_MENU or
+			VK_LWIN or VK_RWIN => true,
+			_ => false
+		};
 	}
 
 	[Flags]
@@ -183,6 +196,8 @@ namespace Keysharp.Core.Common.Keyboard
 		Raw,
 		RawText
 	}
+
+
 
 	internal enum Actions
 	{
@@ -399,6 +414,18 @@ namespace Keysharp.Core.Common.Keyboard
 		internal const uint VK_LAUNCH_MEDIA_SELECT = 0xB5;
 		internal const uint VK_LAUNCH_APP1 = 0xB6;
 		internal const uint VK_LAUNCH_APP2 = 0xB7;
+		internal const uint VK_OEM_1 = 0xBA;
+		internal const uint VK_OEM_PLUS = 0xBB;
+		internal const uint VK_OEM_COMMA = 0xBC;
+		internal const uint VK_OEM_MINUS = 0xBD;
+		internal const uint VK_OEM_PERIOD = 0xBE;
+		internal const uint VK_OEM_2 = 0xBF;
+		internal const uint VK_OEM_3 = 0xC0;
+		internal const uint VK_OEM_4 = 0xDB;
+		internal const uint VK_OEM_5 = 0xDC;
+		internal const uint VK_OEM_6 = 0xDD;
+		internal const uint VK_OEM_7 = 0xDE;
+		internal const uint VK_OEM_8 = 0xDF;
 		internal const uint VK_BACK = 0x08;
 		internal const uint VK_TAB = 0x09;
 		internal const uint VK_CLEAR = 0x0C;

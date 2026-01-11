@@ -1,6 +1,8 @@
-﻿using System.Diagnostics.CodeAnalysis;
-
+﻿#if WINDOWS
 namespace System.Drawing
+#else
+namespace Eto.Drawing
+#endif
 {
 	/// <summary>
 	/// An improved color structure that allows the values to be set after construction.<br/>
@@ -104,25 +106,51 @@ namespace System.Drawing
 		/// <param name="width">The new width to use. Use a number less than 0 to maintain the aspect ratio.</param>
 		/// <param name="height">The new height to use. Use a number less than 0 to maintain the aspect ratio.</param>
 		/// <returns>A new <see cref="Bitmap"> with the specified size.</returns>
-		internal static Bitmap Resize(this Bitmap bmp, int width, int height)
+		internal static Bitmap Resize(this Bitmap src, int width, int height)
 		{
-			//AHK used these formulas and rounded.
+			// Keep aspect if one dimension is negative
 			if (width < 0)
-				width = (int)(((double)bmp.Width / bmp.Height * height) + 0.5);
+				width = (int)((double)src.Width / src.Height * height + 0.5);
 			else if (height < 0)
-				height = (int)(((double)bmp.Height / bmp.Width * width) + 0.5);
+				height = (int)((double)src.Height / src.Width * width + 0.5);
 
-			var srcRect = new Rectangle(0, 0, bmp.Width, bmp.Height);
-			var destRect = new Rectangle(0, 0, width, height);
-			var bmp2 = new Bitmap(width, height);
+			// If same size, return a copy so callers can safely dispose the original
+			if (src.Width == width && src.Height == height)
+				return new Bitmap(src);
 
-			using (var gr = Graphics.FromImage(bmp2))
+#if WINDOWS
+			// Use premultiplied ARGB for best compositing behavior
+			var dst = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+
+			using (var g = Graphics.FromImage(dst))
+			using (var ia = new ImageAttributes())
 			{
-				gr.InterpolationMode = InterpolationMode.HighQualityBicubic;
-				gr.DrawImage(bmp, destRect, srcRect, GraphicsUnit.Pixel);
+				// High-quality sampling + edge-safe wrap
+				g.CompositingMode = CompositingMode.SourceOver;
+				g.CompositingQuality = CompositingQuality.HighQuality;
+				g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+				g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+				// Prevent sampling transparent/out-of-bounds pixels at the edges
+				ia.SetWrapMode(WrapMode.TileFlipXY);
+
+				// Start from a transparent canvas
+				g.Clear(Color.Transparent);
+
+				// Draw using ImageAttributes
+				g.DrawImage(
+					src,
+					new Rectangle(0, 0, width, height),
+					0, 0, src.Width, src.Height,
+					GraphicsUnit.Pixel,
+					ia
+				);
 			}
 
-			return bmp2;
+			return dst;
+#else
+			return new Bitmap(src, width, height, ImageInterpolation.High);
+#endif
 		}
 	}
 }

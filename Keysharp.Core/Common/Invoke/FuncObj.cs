@@ -4,7 +4,17 @@
 	{
 		public long Ptr { get; }
 	}
-    public interface IFuncObj
+
+	public interface IMetaObject
+	{
+		object Get(string name, object[] args);
+		void Set(string name, object[] args, object value);
+		object Call(string name, object[] args);
+		object get_Item(object[] indexArgs);
+		void set_Item(object[] indexArgs, object value);
+	}
+
+	public interface IFuncObj
     {
         public object Inst { get; set; }
 		public bool IsBuiltIn { get; }
@@ -27,7 +37,7 @@
 	{
 		internal object[] boundargs;
 
-		internal BoundFunc(MethodInfo m, object[] ba, object o = null)
+		internal BoundFunc(MethodPropertyHolder m, object[] ba, object o = null)
 			: base(m, o)
 		{
 			boundargs = ba;
@@ -87,7 +97,7 @@
 			{
 				System.Array.Copy(args, args.Length - leftCount, newbound, boundargs.Length, leftCount);
 			}
-			return new BoundFunc(mi, newbound, Inst);
+			return new BoundFunc(mph, newbound, Inst);
 		}
 
 		/// <summary>
@@ -96,8 +106,8 @@
 		/// </summary>
 		/// <param name="args">Forwarded on to <see cref="CallWithRefs(object[])"/></param>
 		/// <returns>The return value of the bound function.</returns>
-		public override object Call(params object[] args) => base.Call(CreateArgs(args).ToArray());
-		public override object CallInst(object inst, params object[] args) => base.Call(CreateArgs([inst, ..args]).ToArray());
+		public override object Call(params object[] args) => mi == null ? Script.Invoke(Inst, Name, CreateArgs(args).ToArray()) : base.Call(CreateArgs(args).ToArray());
+		public override object CallInst(object inst, params object[] args) => mi == null ? Script.Invoke(Inst, Name, CreateArgs(args.Prepend(inst)).ToArray()) : base.Call(CreateArgs(args.Prepend(inst)).ToArray());
 
         public override object CallWithRefs(params object[] args)
 		{
@@ -141,7 +151,7 @@
 		private List<object> CreateArgs(params object[] args)
 		{
 			int i = 0, argsused = 0;
-			var argsList = new List<object>(mph.parameters.Length);
+			var argsList = new List<object>(mph.parameters?.Length ?? 4);
 
 			for (; i < boundargs.Length; i++)
 			{
@@ -161,7 +171,7 @@
 			for (; argsused < args.Length; argsused++)
 				argsList.Add(args[argsused]);
 
-			while (argsList.Count < mph.parameters.Length)
+			while (argsList.Count < (mph.parameters?.Length ?? 0))
 			{
 				var param = mph.parameters[argsList.Count];
 
@@ -183,14 +193,15 @@
 	public class FuncObj : KeysharpObject, IFuncObj
 	{
 		protected MethodInfo mi;
-		protected MethodPropertyHolder mph;
+		internal MethodPropertyHolder mph;
 
-		[PublicForTestOnly]
+		[PublicHiddenFromUser]
 		public object Inst { get; set; }
-		public Type DeclaringType => mi.DeclaringType;
+		[PublicHiddenFromUser]
+		public Type DeclaringType => mi?.DeclaringType;
 		public bool IsClosure => Inst != null && mi.DeclaringType?.DeclaringType == Inst.GetType();
-
-		public bool IsBuiltIn => mi.DeclaringType.Namespace != TheScript.ProgramType.Namespace;
+		public bool IsMethod => (mi != null && !mi.IsStatic) || (mph != null && mph.parameters?.First().Name == "@this");
+		public bool IsBuiltIn => mi?.DeclaringType.Namespace != TheScript.ProgramType.Namespace;
 		public bool IsValid => mi != null && mph != null && mph.CallFunc != null;
 		public string Name => mph.Name;
 		public (Type, object) super => (typeof(KeysharpObject), this);
@@ -237,8 +248,22 @@
         }
 
         internal FuncObj(MethodPropertyHolder m, object o = null)
-			: this(m?.mi, o)
 		{
+			mph = m;
+			mi = m?.mi;
+			Inst = o;
+
+			if (Script.TheScript.Vars.Prototypes.Count > 1)
+			{
+				Script.TheScript.Vars.Prototypes.TryGetValue(GetType(), out Any value);
+				SetBaseInternal(value);
+			}
+
+			if (mph != null)
+			{
+				MinParams = mph.MinParams;
+				MaxParams = mph.MaxParams;
+			}
 		}
 
 		internal FuncObj(Delegate m, object o = null)
@@ -247,38 +272,23 @@
 			this.Inst = o ?? m.Target;
         }
 
-		internal FuncObj(MethodInfo m, object o = null)
+		internal FuncObj(MethodInfo m, object o = null) : this(m == null ? null : MethodPropertyHolder.GetOrAdd(m), o)
 		{
-			mi = m;
-			Inst = o;
-
-			if (Script.TheScript.Vars.Prototypes.Count > 1)
-			{
-				Script.TheScript.Vars.Prototypes.TryGetValue(GetType(), out Any value);
-				_base = value;
-			}
-
-			if (mi != null)
-				Init();
 		}
 
 		public virtual IFuncObj Bind(params object[] args)
-		=> new BoundFunc(mi, args, Inst);
+		=> new BoundFunc(mph, args, Inst);
 
 		public virtual object Call(params object[] obj) => mph.CallFunc(Inst, obj);
-		public virtual object CallInst(object inst, params object[] obj)
+		public virtual object CallInst(object inst, params object[] args)
 		{
 			if (Inst == null)
 			{
-				return mph.CallFunc(inst, obj);
+				return mph.CallFunc(inst, args);
 			}
 			else
 			{
-				int count = obj.Length;
-				object[] args = new object[count + 1];
-				args[0] = inst;
-				System.Array.Copy(obj, 0, args, 1, count);
-				return mph.CallFunc(Inst, args);
+				return mph.CallFunc(Inst, args.Prepend(inst));
 			}
 		}
         public virtual object CallWithRefs(params object[] args)
@@ -372,13 +382,6 @@
 			}
 
 			return false;
-		}
-
-		private void Init()
-		{
-			mph = MethodPropertyHolder.GetOrAdd(mi);
-			MinParams = mph.MinParams;
-			MaxParams = mph.MaxParams;
 		}
 	}
 

@@ -1,6 +1,6 @@
 ﻿namespace Keysharp.Core.Common.Invoke
 {
-	[PublicForTestOnly]
+	[PublicHiddenFromUser]
 	public class RefHolder
 	{
 		internal int index;

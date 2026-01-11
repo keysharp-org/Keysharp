@@ -1,4 +1,5 @@
-﻿using Label = System.Windows.Forms.Label;
+﻿#if WINDOWS
+using Label = System.Windows.Forms.Label;
 
 namespace Keysharp.Core
 {
@@ -176,7 +177,7 @@ namespace Keysharp.Core
 	}
 
 #if WINDOWS
-	public class KeysharpCustomControl : Control
+	public partial class KeysharpCustomControl : Control
 	{
 		private static readonly int ICC_ANIMATE_CLASS      = 0x00000080;
 		private static readonly int ICC_BAR_CLASSES        = 0x00000004;
@@ -256,8 +257,9 @@ namespace Keysharp.Core
 				base.WndProc(ref m);
 		}
 
-		[DllImport("comctl32.dll", SetLastError = true)]
-		private static extern bool InitCommonControlsEx(ref INITCOMMONCONTROLSEX icce);
+		[LibraryImport("comctl32.dll", EntryPoint = "InitCommonControlsEx", SetLastError = true)]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		private static partial bool InitCommonControlsEx(ref INITCOMMONCONTROLSEX icce);
 
 		// comboex
 		[StructLayout(LayoutKind.Sequential)]
@@ -349,6 +351,14 @@ namespace Keysharp.Core
 			}
 		}
 #endif
+	}
+
+	public class KeysharpPasswordBox : KeysharpTextBox
+	{
+		public KeysharpPasswordBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
+			: base(_addStyle, _addExStyle, _removeStyle, _removeExStyle)
+		{
+		}
 	}
 
 	public class KeysharpGroupBox : GroupBox
@@ -1364,3 +1374,4 @@ namespace Keysharp.Core
 #endif
 	}
 }
+#endif

@@ -1,4 +1,5 @@
-﻿namespace Keysharp.Core.Common.Threading
+﻿#if WINDOWS
+namespace Keysharp.Core.Common.Threading
 {
 	/// <summary>
 	/// Creates an STA thread which also has a message queue.
@@ -26,9 +27,7 @@
 				{
 					IsBackground = true
 				};
-#if WINDOWS
 				thread.SetApartmentState(ApartmentState.STA);
-#endif
 				thread.Start();
 				mre.Wait();
 			}
@@ -69,3 +68,4 @@
 		}
 	}
 }
+#endif

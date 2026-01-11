@@ -15,7 +15,7 @@ namespace Keysharp.Tests
 		[Test, Category("Drive")]
 		public void DriveGetSpaceFree()
 		{
-			var free = Drive.DriveGetSpaceFree(drive);
+			var free = Core.Drive.DriveGetSpaceFree(drive);
 			Assert.IsTrue(free > 10);//Assume anyone who is running this has at least 10MB of disk space left.
 			Assert.IsTrue(TestScript("drive-getspacefree", true));
 		}
@@ -23,7 +23,7 @@ namespace Keysharp.Tests
 		[Test, Category("Drive")]
 		public void DriveGetCapacity()
 		{
-			var free = Drive.DriveGetCapacity(drive);
+			var free = Core.Drive.DriveGetCapacity(drive);
 			Assert.IsTrue(free > 1000);//Assume anyone who is running this has at least 1MB of total disk space.
 			Assert.IsTrue(TestScript("drive-getcapacity", true));
 		}
@@ -31,7 +31,7 @@ namespace Keysharp.Tests
 		[Test, Category("Drive")]
 		public void DriveGetFileSystem()
 		{
-			var sys = Drive.DriveGetFileSystem(drive);
+			var sys = Core.Drive.DriveGetFileSystem(drive);
 			Assert.IsTrue(sys == "NTFS" || sys == "FAT32" || sys == "FAT" || sys == "CDFS" || sys == "UDF" || sys == "udev");//Assume it's at least one of the common file system types.
 			Assert.IsTrue(TestScript("drive-getfilesystem", true));
 		}
@@ -39,7 +39,7 @@ namespace Keysharp.Tests
 		[Test, Category("Drive")]
 		public void DriveGetList()
 		{
-			var sys = Drive.DriveGetList();
+			var sys = Core.Drive.DriveGetList();
 			Assert.IsTrue(sys.StartsWith(driveStart));//Assume it's at least one of the common drive names.
 			Assert.IsTrue(TestScript("drive-getlist", true));
 		}
@@ -47,7 +47,7 @@ namespace Keysharp.Tests
 		[Test, Category("Drive")]
 		public void DriveGetSerial()
 		{
-			var sys = Drive.DriveGetSerial(drive);
+			var sys = Core.Drive.DriveGetSerial(drive);
 #if WINDOWS
 			Assert.IsTrue(sys > 1);//It will be some large hex number.
 #else
@@ -59,7 +59,7 @@ namespace Keysharp.Tests
 		[Test, Category("Drive")]
 		public void DriveGetType()
 		{
-			var type = Drive.DriveGetType(drive);
+			var type = Core.Drive.DriveGetType(drive);
 			Assert.IsTrue(type == "Fixed" || type == "RAMDisk");
 			Assert.IsTrue(TestScript("drive-gettype", true));
 		}
@@ -67,7 +67,7 @@ namespace Keysharp.Tests
 		[Test, Category("Drive")]
 		public void DriveGetStatus()
 		{
-			var ready = Drive.DriveGetStatus(drive);
+			var ready = Core.Drive.DriveGetStatus(drive);
 			Assert.AreEqual("Ready", ready);
 			Assert.IsTrue(TestScript("drive-getstatus", true));
 		}
@@ -96,12 +96,12 @@ namespace Keysharp.Tests
 		[Test, Category("Drive")]
 		public void DriveGetSetLabel()
 		{
-			var origlabel = Drive.DriveGetLabel("C:\\");
-			_ = Drive.DriveSetLabel("C:\\", "a test label"); //Visual Studio needs to be running as administrator for this to work.
-			var newlabel = Drive.DriveGetLabel("C:\\");
+			var origlabel = Core.Drive.DriveGetLabel("C:\\");
+			_ = Core.Drive.DriveSetLabel("C:\\", "a test label"); //Visual Studio needs to be running as administrator for this to work.
+			var newlabel = Core.Drive.DriveGetLabel("C:\\");
 			Assert.AreEqual("a test label", newlabel);
-			_ = Drive.DriveSetLabel("C:\\", origlabel);
-			newlabel = Drive.DriveGetLabel("C:\\");
+			_ = Core.Drive.DriveSetLabel("C:\\", origlabel);
+			newlabel = Core.Drive.DriveGetLabel("C:\\");
 			Assert.AreEqual(origlabel, newlabel);
 			Assert.IsTrue(TestScript("drive-getsetlabel", true));
 		}

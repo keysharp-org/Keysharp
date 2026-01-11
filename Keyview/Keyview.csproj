@@ -6,7 +6,8 @@
 	</PropertyGroup>
 
 	<PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-		<TargetFramework>net9.0</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework>
+		<DefineConstants>$(DefineConstants);LINUX</DefineConstants>
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -14,9 +15,9 @@
 		<StartupObject>Keyview.Program</StartupObject>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<ApplicationIcon>..\Keysharp.ico</ApplicationIcon>
-		<AssemblyVersion>0.0.0.11</AssemblyVersion>
-		<FileVersion>0.0.0.11</FileVersion>
-		<Version>0.0.0.11</Version>
+		<AssemblyVersion>0.0.0.13</AssemblyVersion>
+		<FileVersion>0.0.0.13</FileVersion>
+		<Version>0.0.0.13</Version>
 		<Authors>Matt Feemster</Authors>
 		<Description>A viewer which shows the C# code that is generated from compiling Keysharp script code</Description>
 		<Company>Keysharp</Company>
@@ -32,16 +33,18 @@
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-		<OutputPath>..\bin\debug\</OutputPath>
-		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">DEBUG;TRACE;LEGACY;WINDOWS</DefineConstants>
-		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">DEBUG;TRACE;LEGACY;LINUX</DefineConstants>
+		<!-- Emit all Debug binaries to a shared bin folder so projects can load each other's outputs -->
+		<OutputPath>../bin/Debug/</OutputPath>
+		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(DefineConstants);DEBUG;TRACE;LEGACY;WINDOWS</DefineConstants>
+		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">$(DefineConstants);DEBUG;TRACE;LEGACY;LINUX</DefineConstants>
 		<NoWarn>1701;1702;8981;0164;8974</NoWarn>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-		<OutputPath>..\bin\release\</OutputPath>
-		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">TRACE;LEGACY;WINDOWS</DefineConstants>
-		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">TRACE;LEGACY;LINUX</DefineConstants>
+		<!-- Emit all Release binaries to the same shared bin folder -->
+		<OutputPath>../bin/Release/</OutputPath>
+		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(DefineConstants);TRACE;LEGACY;WINDOWS</DefineConstants>
+		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">$(DefineConstants);TRACE;LEGACY;LINUX</DefineConstants>
 		<NoWarn>1701;1702;8981;0164;8974</NoWarn>
 	</PropertyGroup>
 
@@ -57,20 +60,30 @@
 		</Content>
 	</ItemGroup>
 
-	<ItemGroup>
+	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
 		<PackageReference Include="Scintilla5.NET" Version="6.0.1" />
+		<None Remove="$(USERPROFILE)\.nuget\packages\scintilla5.net\5.6.1\runtimes\win-x64\native\Lexilla.dll" />
+		<None Remove="$(USERPROFILE)\.nuget\packages\scintilla5.net\5.6.1\runtimes\win-x64\native\Scintilla.dll" />
 	</ItemGroup>
+
+	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+<!--
+		<PackageReference Include="Eto.Forms" Version="2.10.2" />
+		<PackageReference Include="Eto.Platform.Gtk" Version="2.10.2" />
+-->
+		<ProjectReference Include="..\..\Eto\src\Eto\Eto.csproj" />
+		<ProjectReference Include="..\..\Eto\src\Eto.Gtk\Eto.Gtk.csproj" />
+	</ItemGroup> 
 
 	<ItemGroup>
 		<ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
 	</ItemGroup>
 
-	<ItemGroup>
-		<None Remove="$(USERPROFILE)\.nuget\packages\scintilla5.net\5.6.1\runtimes\win-x64\native\Lexilla.dll" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<None Remove="$(USERPROFILE)\.nuget\packages\scintilla5.net\5.6.1\runtimes\win-x64\native\Scintilla.dll" />
+	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+		<Compile Remove="Keyview.Designer.cs" />
+		<Compile Remove="HotKeyManager.cs" />
+		<Compile Remove="SearchManager.cs" />
+		<EmbeddedResource Remove="Keyview.resx" />
 	</ItemGroup>
 
 </Project>

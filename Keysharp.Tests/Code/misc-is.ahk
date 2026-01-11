@@ -1,7 +1,7 @@
 
 
 x := 1
-m := { x : 1, "two" : 2, "three" : 3 }
+m := { x : 1, two : 2, three : 3 }
 a := [10, 20, 30]
 
 if (IsInteger(x))

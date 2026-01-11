@@ -1,6 +1,8 @@
-﻿using System.Drawing;
-using System.Drawing.Interop;
-
+﻿#if LINUX
+using Eto.GtkSharp;
+using Keysharp.Core.Linux.Proxies;
+using Keysharp.Core.Linux.X11;
+#endif
 namespace Keysharp.Core
 {
 	public static class GuiHelper
@@ -83,7 +85,7 @@ namespace Keysharp.Core
 			return DefaultObject;
 		}
 
-		internal static bool CallMessageHandler(Control control, ref Message m)
+		internal static bool CallMessageHandler(Control control, ref System.Windows.Forms.Message m)
 		{
 			if (m.HWnd == control.Handle)
 			{
@@ -98,10 +100,10 @@ namespace Keysharp.Core
 
 #if WINDOWS
 
-			// WinForms controls don't respond to window messages, so handle some of them here
+			// WinForms controls mostly don't respond to window messages, so handle some of them here
 			switch (m.Msg)
 			{
-				case WindowsAPI.PBM_SETBKCOLOR:
+				case WindowsAPI.PBM_SETBKCOLOR or WindowsAPI.EM_SETBKGNDCOLOR:
 					int colorValue = m.LParam.ToInt32();
 					Color requestedColor = Color.FromArgb(
 											   (colorValue & 0xFF),
@@ -144,29 +146,41 @@ namespace Keysharp.Core
 #endif
 		}
 
-		internal static Bitmap GetScreen(Rectangle rect)
+		internal static Bitmap GetScreen(int x, int y, int w, int h)
 		{
+			Bitmap bmp;
+			try {
+#if WINDOWS
+				var format = Forms.Screen.PrimaryScreen.BitsPerPixel switch
+				{
+					8 or 16 => PixelFormat.Format16bppRgb565,
+					24 => PixelFormat.Format24bppRgb,
+					32 => PixelFormat.Format32bppArgb,
+					_ => PixelFormat.Format32bppArgb,
+				};
 
-			var pFormat = System.Windows.Forms.Screen.PrimaryScreen.BitsPerPixel switch
-		{
-				8 or 16 => PixelFormat.Format16bppRgb565,
-				24 => PixelFormat.Format24bppRgb,
-				32 => PixelFormat.Format32bppArgb,
-				_ => PixelFormat.Format32bppArgb,
-		};
+				bmp = new Bitmap(w, h, format);
 
-		try
-		{
-			var bmp = new Bitmap(rect.Width, rect.Height, pFormat);
-				var g = Graphics.FromImage(bmp);
-				g.CopyFromScreen(rect.Left, rect.Top, 0, 0, rect.Size);
-				return bmp;
-			}
+				using (var g = Graphics.FromImage(bmp))
+				{
+					g.CopyFromScreen(x, y, 0, 0, new Size(w, h), CopyPixelOperation.SourceCopy);
+				}
+#else
+				var format = Forms.Screen.PrimaryScreen.BitsPerPixel switch
+				{
+					24 => PixelFormat.Format24bppRgb,
+					32 => PixelFormat.Format32bppRgb,
+					_ => PixelFormat.Format32bppRgb,
+				};
+				bmp = Eto.Forms.Screen.PrimaryScreen.GetImage(new RectangleF(x, y, w, h)) as Bitmap;
+#endif
+			} 
 			catch
 			{
-				var bmp2 = new Bitmap(0, 0, PixelFormat.Format24bppRgb);
-				return bmp2;
+				return null;
 			}
+
+			return bmp;
 		}
 
 		internal static string GuiId(ref string command)
@@ -261,12 +275,15 @@ namespace Keysharp.Core
             {
                 //Get an .ico file in memory, then split it into separate icons and bitmaps.
                 byte[] src = null;
-
+#if WINDOWS
                 using (var stream = new MemoryStream())
                 {
                     icon.Save(stream);
                     src = stream.ToArray();
                 }
+#else
+				src = icon.ToGdk().PixelBytes.Data;
+#endif
 
                 int count = BitConverter.ToInt16(src, 4);
                 var splitIcons = new List<(Icon, Bitmap)>(count);
@@ -287,9 +304,6 @@ namespace Keysharp.Core
 						dst.Write(src, offset, length);//Copy the image data. This can either be in uncompressed ARGB bitmap format with no header, or compressed PNG with a header.
 						_ = dst.BaseStream.Seek(0, SeekOrigin.Begin);//Create an icon from the in-memory file.
 						var icon2 = new Icon(dst.BaseStream);
-#if LINUX
-						var bmp = icon2.BuildBitmapOnWin32();
-#else
 						var bmp = icon2.ToBitmap();
 
 						//If there is an alpha channel on this icon, it needs to be applied here,
@@ -302,13 +316,16 @@ namespace Keysharp.Core
 								{
 									var originalColor = bmp.GetPixel(x, y);
 									var alpha = originalColor.A / 255.0;
-									var newColor = Color.FromArgb(originalColor.A, (int)Math.Round(alpha * originalColor.R), (int)Math.Round(alpha * originalColor.G), (int)Math.Round(alpha * originalColor.B));
+#if WINDOWS
+									var newColor = Color.FromArgb((int)originalColor.A, (int)Math.Round(alpha * originalColor.R), (int)Math.Round(alpha * originalColor.G), (int)Math.Round(alpha * originalColor.B));
+#else
+									var newColor = Color.FromArgb(originalColor.Ab, (int)Math.Round(alpha * originalColor.Rb), (int)Math.Round(alpha * originalColor.Gb), (int)Math.Round(alpha * originalColor.Bb));
+#endif
 									bmp.SetPixel(x, y, newColor);
 								}
 							}
 						}
 
-#endif
 						splitIcons.Add((icon2, bmp));
 					}
 				}
@@ -328,7 +345,11 @@ namespace Keysharp.Core
 			{
 				if (child.Focused)
 					return child;
+#if WINDOWS
 				else if (child.Controls.Count != 0)
+#else
+				else if (child.Controls.Count() != 0)
+#endif
 				{
 					var item = GuiControlGetFocused(child);
 
@@ -365,69 +386,70 @@ namespace Keysharp.Core
 		//      e.Handled = true;
 		//  }
 		//}
+	}
 
 #if WINDOWS
-		internal static class HFontCache
+	internal static partial class HFontCache
+	{
+		private sealed class Entry : IDisposable
 		{
-			private sealed class Entry : IDisposable
-			{
-				public Font Font { get; }
-				public nint HFont { get; private set; }
+			public Font Font { get; }
+			public nint HFont { get; private set; }
 
-				public Entry(Font f) { Font = f; HFont = f.ToHfont(); }
-				public void Dispose()
+			public Entry(Font f) { Font = f; HFont = f.ToHfont(); }
+			public void Dispose()
+			{
+				if (HFont != 0)
 				{
-					if (HFont != 0)
-					{
-						DeleteObject(HFont);
-						HFont = 0;
-					}
+					DeleteObject(HFont);
+					HFont = 0;
 				}
 			}
-
-			private static readonly ConditionalWeakTable<Control, Entry> table = new();
-
-			public static nint Get(Control c)
-			{
-				if (!table.TryGetValue(c, out var e) || !ReferenceEquals(e.Font, c.Font))
-				{
-					e?.Dispose();
-					e = new Entry(c.Font);
-					table.Remove(c);
-					table.Add(c, e);
-
-					// ensure cleanup on change/dispose
-					c.FontChanged -= OnFontChanged;
-					c.Disposed -= OnDisposed;
-					c.HandleDestroyed -= OnDisposed;
-
-					c.FontChanged += OnFontChanged;
-					c.Disposed += OnDisposed;
-					c.HandleDestroyed += OnDisposed;
-				}
-				return e.HFont;
-			}
-
-			private static void OnFontChanged(object sender, EventArgs e) => Release((Control)sender);
-			private static void OnDisposed(object sender, EventArgs e) => Release((Control)sender);
-
-			public static void Release(Control c)
-			{
-				if (table.TryGetValue(c, out var e))
-				{
-					e.Dispose();
-					table.Remove(c);
-				}
-			}
-
-			[DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
-			public static extern int GetObject(nint hgdiobj, int cbBuffer, out LOGFONT lpvObject);
-
-			[System.Runtime.InteropServices.DllImport("gdi32.dll")]
-			internal static extern bool DeleteObject(nint hObject);
-
-
 		}
-#endif
+
+		private static readonly ConditionalWeakTable<Control, Entry> table = new();
+
+		public static nint Get(Control c)
+		{
+			if (!table.TryGetValue(c, out var e) || !ReferenceEquals(e.Font, c.Font))
+			{
+				e?.Dispose();
+				e = new Entry(c.Font);
+				table.Remove(c);
+				table.Add(c, e);
+
+				// ensure cleanup on change/dispose
+				c.FontChanged -= OnFontChanged;
+				c.Disposed -= OnDisposed;
+				c.HandleDestroyed -= OnDisposed;
+
+				c.FontChanged += OnFontChanged;
+				c.Disposed += OnDisposed;
+				c.HandleDestroyed += OnDisposed;
+			}
+			return e.HFont;
+		}
+
+		private static void OnFontChanged(object sender, EventArgs e) => Release((Control)sender);
+		private static void OnDisposed(object sender, EventArgs e) => Release((Control)sender);
+
+		public static void Release(Control c)
+		{
+			if (table.TryGetValue(c, out var e))
+			{
+				e.Dispose();
+				table.Remove(c);
+			}
+		}
+
+		[DllImport(WindowsAPI.gdi32)]
+		public static extern int GetObject(nint hgdiobj, int cbBuffer, out System.Drawing.Interop.LOGFONT lpvObject);
+
+		[LibraryImport(WindowsAPI.gdi32, EntryPoint = "DeleteObject")]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		internal static partial bool DeleteObject(nint hObject);
+
+
 	}
+#endif
 }

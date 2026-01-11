@@ -138,6 +138,22 @@ namespace Keysharp.Scripting
 					if (alias != null)
 						test = alias;
 
+					if (subject is Any kso)
+					{
+						var protos = TheScript.Vars.Prototypes;
+						var matchingProtoKey = protos.Keys.FirstOrDefault(t => TypePathNoNamespace(t).Equals(test, StringComparison.OrdinalIgnoreCase));
+						if (matchingProtoKey == null)
+							return false;
+						var targetProto = protos[matchingProtoKey];
+
+						for (Any proto = kso; proto != null; proto = proto.Base)
+						{
+							if (proto == targetProto)
+								return true;
+						}
+						return false;
+					}
+
                     //Traverse class hierarchy to see if there is a match.
                     if (subject != null)
 					{
@@ -156,6 +172,20 @@ namespace Keysharp.Scripting
 			done:
 			return !not ? ret : !ret;
 		}
+		static string TypePathNoNamespace(Type t)
+		{
+			while (t.HasElementType) t = t.GetElementType();
+
+			var script = TheScript;
+
+			// Build "Outer.Inner" from declaring types (namespaces are not included here).
+			var names = new List<string>();
+			for (var cur = t; cur != null && cur != script.ProgramType; cur = cur.DeclaringType)
+				names.Add(cur.Name);
+			names.Reverse();
+			return string.Join('.', names);
+		}
+
 
 		public static BoolResult IfTest(object result) => new (ForceBool(result), result);
 
@@ -164,7 +194,7 @@ namespace Keysharp.Scripting
 		public static object PostfixIncDecIndex(object obj, object index, object val)
 		{
 			var orig = Index(obj, index);
-			_ = SetObject(Operate(Operator.Add, orig, val), obj, index);
+			_ = SetObject(obj, index, Operate(Operator.Add, orig, val));
 			return orig;
 		}
 
@@ -352,8 +382,12 @@ namespace Keysharp.Scripting
 					if (right == null)
 						return (bool)Errors.UnsetErrorOccurred($"Right side operand of concat", false);
 
-						return string.Concat(ForceString(left), ForceString(right));
-					}
+					// Guard agains accidental function object concatenation (likely used function call statement in an expression context)
+					if (left is FuncObj)
+						return Errors.TypeErrorOccurred(left, typeof(string));
+
+					return string.Concat(ForceString(left), ForceString(right));
+				}
 
 				case Operator.RegEx:
 				{
@@ -364,8 +398,7 @@ namespace Keysharp.Scripting
 						return (bool)Errors.UnsetErrorOccurred($"Right side operand of regular expression", false);
 
                         VarRef outvar = new VarRef(null);
-						_ = RegEx.RegExMatch(ForceString(left), ForceString(right), outvar, 1);
-						return outvar.__Value;
+						return RegEx.RegExMatch(ForceString(left), ForceString(right), outvar, 1);
 					}
 
 				case Operator.FloorDivide:
@@ -844,6 +877,8 @@ namespace Keysharp.Scripting
 		{
 			switch (op)
 			{
+				case Operator.Add:
+					return right;
 				case Operator.Minus:
 				case Operator.Subtract:
 				{

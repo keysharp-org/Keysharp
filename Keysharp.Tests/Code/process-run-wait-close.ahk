@@ -1,6 +1,6 @@
 #if WINDOWS
 	pid := 0
-	Run("notepad.exe", "", "max", &pid)
+	Run("cmd.exe", "", "max", &pid)
 	ProcessWait(pid)
 	ProcessSetPriority("H", pid)
 	exists := ProcessExist(pid)
@@ -12,16 +12,16 @@
 	}
 
 	Sleep(1000)
-	exists := ProcessExist("notepad.exe")
+	exists := ProcessExist("cmd.exe")
 
 	if (exists == 0)
 		FileAppend "pass", "*"
 	else
 		FileAppend "fail", "*"
 
-	pid := RunWait("notepad.exe", "", "max")
+	pid := RunWait("cmd.exe", "", "max")
 	Sleep(1000)
-	exists := ProcessExist("notepad.exe")
+	exists := ProcessExist("cmd.exe")
 
 	if (exists == 0)
 		FileAppend "pass", "*"

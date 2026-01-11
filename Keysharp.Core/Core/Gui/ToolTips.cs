@@ -1,6 +1,4 @@
-﻿using static Antlr4.Runtime.Atn.SemanticContext;
-
-namespace Keysharp.Core
+﻿namespace Keysharp.Core
 {
 	internal class ToolTipData
 	{
@@ -119,22 +117,19 @@ namespace Keysharp.Core
 			var coordModeToolTip = ThreadAccessors.A_CoordModeToolTip;
 			tooltipInvokerForm.CheckedBeginInvoke(() =>
 			{
-#if LINUX
-				tt.Active = true;
-				tt.SetToolTip(tooltipInvokerForm, text.As());//Setting position is not possible on linux.
-#elif WINDOWS
+#if WINDOWS
 				//We use SetTool() via reflection in this function because it bypasses ToolTip.Show()'s check for whether or not the window
 				//is active.
 				var mSetTrackPosition = tt.GetType().GetMethod("SetTrackPosition", BindingFlags.Instance | BindingFlags.NonPublic);
 				var mSetTool = tt.GetType().GetMethod("SetTool", BindingFlags.Instance | BindingFlags.NonPublic);
-				var script = Script.TheScript;
-
 				if (!tt.Active) // If this is the first run then invoke the ToolTip once before displaying it, otherwise it shows at the mouse position
 					_ = mSetTool.Invoke(tt, [tooltipInvokerForm, t, 2, new Point(0, 0)]);
+#endif
 
 				tt.Active = true;
 				var tempx = _x;
 				var tempy = _y;
+				POINT temppt;
 
 				if (one_or_both_coords_specified && coordModeToolTip != CoordModeType.Screen)
 				{
@@ -149,16 +144,13 @@ namespace Keysharp.Core
 					//  var m = tt.GetType().GetMethod("SetTool", BindingFlags.Instance | BindingFlags.NonPublic);
 					//  _ = m.Invoke(tt, new object[] { tooltipInvokerForm, text, 2, new Point(tempx, tempy) });
 					//}
-					var foreground = script.WindowProvider.Manager.ActiveWindow;
-
-					if (foreground.Handle != 0)
-						script.PlatformProvider.Manager.CoordToScreen(ref tempx, ref tempy, CoordMode.Tooltip);
+					CoordToScreen(ref tempx, ref tempy, CoordMode.Tooltip);
 				}
 
 				if (_x == int.MinValue || _y == int.MinValue) //At least one coordinate was missing, so default it to the mouse position
 				{
 					coordModeToolTip = CoordModeType.Screen;
-					var temppt = Cursor.Position;
+					_ = GetCursorPos(out temppt);
 
 					if (_x == int.MinValue)
 						tempx = temppt.X + 10;
@@ -171,8 +163,12 @@ namespace Keysharp.Core
 					return;
 
 				persistentTooltipsPositions[id] = new Point(tempx, tempy);
+#if WINDOWS
 				_ = mSetTrackPosition.Invoke(tt, [tempx, tempy]);
 				_ = mSetTool.Invoke(tt, [tooltipInvokerForm, t, 2, persistentTooltipsPositions[id]]);
+#else
+				var formPos = tooltipInvokerForm.Location;
+				tt.Show(t, tooltipInvokerForm, tempx, tempy);
 #endif
 				//KeysharpEnhancements.OutputDebugLine("invoked tooltip");
 				//AHK did a large amount of work to make sure the tooltip didn't go off screen
@@ -221,6 +217,7 @@ namespace Keysharp.Core
 
 				if (bmp != null)
 				{
+#if WINDOWS
 					var ptr = bmp.GetHicon();
 
 					try
@@ -239,15 +236,24 @@ namespace Keysharp.Core
 					}
 					finally
 					{
-						_ =  script.PlatformProvider.Manager.DestroyIcon(ptr);
+						_ =  DestroyIcon(ptr);
 					}
+#else
+					var icon = temp as Icon ?? new Icon(1f, bmp);
+					if (icon != null)
+					{
+						A_IconFile = filename;
+						A_IconNumber = iconNumber;
+						script.mainWindow.CheckedBeginInvoke(() => script.Tray.Icon = script.mainWindow.Icon = icon, false, false);
+					}
+#endif
 				}
 			}
 			else
 			{
 				A_IconFile = "";
 				A_IconNumber = 1;
-				script.mainWindow.CheckedBeginInvoke(() => script.Tray.Icon = script.mainWindow.Icon = Properties.Resources.Keysharp_ico, false, false);
+				script.mainWindow.CheckedBeginInvoke(() => script.Tray.Icon = script.mainWindow.Icon = script.normalIcon, false, false);
 			}
 
 			return DefaultObject;
@@ -291,13 +297,23 @@ namespace Keysharp.Core
 				return DefaultObject;
 			}
 
+#if WINDOWS
 			var icon = ToolTipIcon.None;
+#else
+			Image icon = null;
+#endif
 			void HandleInt(int? i)
 			{
 				if ((i & 4) == 4) { }//tray icon
+#if WINDOWS
 				else if ((i & 3) == 3) { icon = ToolTipIcon.Error; }
 				else if ((i & 2) == 2) { icon = ToolTipIcon.Warning; }
 				else if ((i & 1) == 1) { icon = ToolTipIcon.Info; }
+#else
+				else if ((i & 3) == 3) { icon = SystemIcons.Get(SystemIconType.Error, SystemIconSize.Large); }
+				else if ((i & 2) == 2) { icon = SystemIcons.Get(SystemIconType.Warning, SystemIconSize.Large); }
+				else if ((i & 1) == 1) { icon = SystemIcons.Get(SystemIconType.Information, SystemIconSize.Large); }
+#endif
 				else if ((i & 16) == 16) { }
 				else if ((i & 32) == 32) { }
 			}
@@ -310,9 +326,15 @@ namespace Keysharp.Core
 
 					if (opt.Length > 0)
 					{
+#if WINDOWS
 						if (opt.Equals("iconi", StringComparison.OrdinalIgnoreCase)) icon = ToolTipIcon.Info;
 						else if (opt.Equals("icon!", StringComparison.OrdinalIgnoreCase)) icon = ToolTipIcon.Warning;
 						else if (opt.Equals("iconx", StringComparison.OrdinalIgnoreCase)) icon = ToolTipIcon.Error;
+#else
+						if (opt.Equals("iconi", StringComparison.OrdinalIgnoreCase)) icon = SystemIcons.Get(SystemIconType.Information, SystemIconSize.Large);
+						else if (opt.Equals("icon!", StringComparison.OrdinalIgnoreCase)) icon = SystemIcons.Get(SystemIconType.Warning, SystemIconSize.Large);
+						else if (opt.Equals("iconx", StringComparison.OrdinalIgnoreCase)) icon = SystemIcons.Get(SystemIconType.Error, SystemIconSize.Large);
+#endif
 						else if (opt.Equals("mute", StringComparison.OrdinalIgnoreCase)) { }
 						else HandleInt(int.Parse(opt));
 					}
@@ -321,8 +343,18 @@ namespace Keysharp.Core
 			else if (opts != null)
 				HandleInt(opts.ParseInt());
 
+#if WINDOWS
 			script.Tray.Visible = true;
 			script.Tray.ShowBalloonTip(1000, _title, _text, icon);//Duration is now ignored by Windows.
+#else
+			var notification = new Notification
+			{
+				Title = _title,
+				Message = _text,
+				ContentImage = icon,
+			};
+			notification.Show();
+#endif
 			return DefaultObject;
 		}
 	}

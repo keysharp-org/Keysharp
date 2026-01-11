@@ -9,13 +9,13 @@
 		/// <summary>
 		/// The function object to use in the comparison.
 		/// </summary>
-		private readonly IFuncObj ifo;
+		private readonly Any ifo;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="FuncObjComparer"/> class.
 		/// </summary>
 		/// <param name="f">The <see cref="IFuncObj"/> to use in the comparison.</param>
-		public FuncObjComparer(IFuncObj f) => ifo = f;
+		public FuncObjComparer(Any f) => ifo = f;
 
 		/// <summary>
 		/// The implementation for <see cref="IComparer.Compare"/> which internally calls the
@@ -24,7 +24,7 @@
 		/// <param name="left">The left object to compare.</param>
 		/// <param name="right">The right object to compare.</param>
 		/// <returns>An <see cref="int"/>-1 if left is less than right, 0 if left equals right, otherwise 1.</returns>
-		public int Compare(object left, object right) => ifo.Call(left, right).Ai();
+		public int Compare(object left, object right) => Script.Invoke(ifo, "Call", left, right).Ai();
 	}
 
 	/// <summary>
@@ -32,9 +32,10 @@
 	/// Internally the list uses 0-based indexing, however the public interface expects 1-based indexing.<br/>
 	/// A negative index can be used to address elements in reverse, so -1 is the last element, -2 is the second last element, and so on.
 	/// </summary>
-	public class Array : KeysharpObject, I__Enum, IEnumerable<(object, object)>, IList
+	public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(object, object)>, IList
 	{
-		private int capacity = 4;
+		private const int DefaultCapacity = 4;
+		private int capacity = DefaultCapacity;
 
 		/// <summary>
 		/// The underlying <see cref="List"/> that holds the values.
@@ -192,35 +193,49 @@
 		/// <returns>Empty string, unused.</returns>
 		public override object __New(params object[] args)
 		{
-			array = new List<object>(capacity);
-
-			if (args == null || args.Length == 0)
+			if (args is null || args.Length == 0)
 			{
+				array = new List<object>(capacity);
 			}
-			else if (args.Length == 1) {
-				if (args[0] is object[] objarr)
+			else if (args.Length == 1)
+			{
+				switch (args[0])
 				{
-					array.AddRange(objarr);
+					case object[] objarr:
+						array = new List<object>(objarr); // single copy
+						break;
+					case List<object> objlist:
+						array = new List<object>(objlist); // single copy
+						break;
+					case IEnumerable e when e is not string && e is not Any:
+						array = new List<object>(e.Cast<object>()); // enumerate once
+						break;
+					default:
+						array = new List<object>(1) { args[0] };
+						break;
 				}
-				else if (args[0] is List<object> objlist)
-				{
-					array.AddRange(objlist);
-				}
-				else if (args[0] is IEnumerable c && c is not string && c is not KeysharpObject)
-				{
-					array.AddRange(c.Cast<object>());
-				}
-				else
-				{
-					array.Add(args[0]);
-				}
+				if (array.Count < capacity) array.Capacity = capacity;
 			}
 			else
 			{
-				array.AddRange(args);
+				array = new List<object>(args); // single copy
+				if (array.Count < capacity) array.Capacity = capacity;
 			}
 
 			return DefaultObject;
+		}
+
+		internal override List<Any> GetEnumerableMembersOrEmpty()
+		{
+			var list = base.GetEnumerableMembersOrEmpty();
+			if (array != null)
+			{
+				for (var i = 0; i < array.Count; i++)
+				{
+					if (array[i] is Any a) list.Add(a);
+				}
+			}
+			return list;
 		}
 
 		/// <summary>
@@ -294,14 +309,14 @@
 		{
 			var index = startIndex.Ai(1);
 
-			if (callback is IFuncObj ifo)
+			if (callback is Any fo)
 			{
 				if (index < 0)
 				{
 					var i = array.Count + index + 1;
 
 					if (i >= 0 && i <= array.Count)
-						return new Array(((IEnumerable<object>)array).Reverse().Skip(Math.Abs(index + 1)).Where(x => Script.ForceBool(ifo.Call(x, i--))).ToList());
+						return new Array(((IEnumerable<object>)array).Reverse().Skip(Math.Abs(index + 1)).Where(x => Script.ForceBool(Script.Invoke(fo, "Call", x, i--))).ToList());
 					else
 						return Errors.ValueErrorOccurred($"Invalid find start index of {index}.");
 				}
@@ -310,7 +325,7 @@
 					var i = index - 1;
 
 					if (i >= 0 && i < array.Count)
-						return new Array(array.Skip(i).Where(x => Script.ForceBool(ifo.Call(x, ++i))).ToList());
+						return new Array(array.Skip(i).Where(x => Script.ForceBool(Script.Invoke(fo, "Call", x, ++i))).ToList());
 					else
 						return Errors.ValueErrorOccurred($"Invalid find start index of {index}.");
 				}
@@ -332,7 +347,7 @@
 		{
 			var index = startIndex.Ai(1);
 
-			if (callback is IFuncObj ifo)
+			if (callback is Any fo)
 			{
 				if (index <  0)
 				{
@@ -344,7 +359,7 @@
 						{
 							var startIndexPlus1 = i + 1L;
 
-							if (Script.ForceBool(ifo.Call(array[i], startIndexPlus1)))
+							if (Script.ForceBool(Script.Invoke(fo, "Call", array[i], startIndexPlus1)))
 								return startIndexPlus1;
 
 							i--;
@@ -361,7 +376,7 @@
 
 					if (i >= 0 && i < array.Count)
 					{
-						var found = array.FindIndex(i, x => Script.ForceBool(ifo.Call(x, (long)++i)));
+						var found = array.FindIndex(i, x => Script.ForceBool(Script.Invoke(fo, "Call", x, (long)++i)));
 						return found != -1L ? found + 1L : 0L;
 					}
 					else
@@ -406,10 +421,11 @@
 		}
 
 		/// <summary>
-		/// The implementation for <see cref="IEnumerable{(object, object)}.GetEnumerator()"/> which returns an <see cref="ArrayIndexValueIterator"/>.
+		/// The implementation for <see cref="IEnumerable{object}.GetEnumerator()"/> which returns an <see cref="ArrayIndexValueIterator"/>.
 		/// </summary>
 		/// <returns>An <see cref="IEnumerator{(object, object)}"/> which is an <see cref="ArrayIndexValueIterator"/>.</returns>
-		public IEnumerator<(object, object)> GetEnumerator() => new ArrayIndexValueIterator(array, 2);
+		public IEnumerator<object> GetEnumerator() => new ArrayIndexValueIterator(array, 1);
+		IEnumerator<(object, object)> IEnumerable<(object, object)>.GetEnumerator() => new ArrayIndexValueIterator(array, 2);
 
 		/// <summary>
 		/// Returns a non-zero number if the index is valid and there is a value at that position.
@@ -638,7 +654,7 @@
 					_ = sb.AppendLine($"{indent}{name}: [] ({GetType().Name})");
 			}
 
-			var opi = (OwnPropsIterator)((FuncObj)OwnProps(true, false)).Inst;
+			var opi = (OwnPropsIterator)((FuncObj)OwnProps(true)).Inst;
 			tabLevel++;
 			indent = new string('\t', tabLevel);
 
@@ -672,14 +688,25 @@
 		/// Appends values to the end of an array.
 		/// </summary>
 		/// <param name="args">One or more values to append.</param>
-		public void Push(params object[] args) => array.AddRange(args);
+		public object Push(params object[] args)
+		{
+			if (args.Length == 1) array.Add(args[0]);
+			else
+				array.AddRange(args);
+			return DefaultObject;
+		}
 
 		/// <summary>
 		/// Implementation of <see cref="IList.Remove"/> which removes the first occurrence of value
 		/// from the array.
 		/// </summary>
 		/// <param name="value">The value to remove.</param>
-		public void Remove(object value) => array.Remove(value);
+		public object Remove(object value)
+		{
+			array.Remove(value);
+			return DefaultObject;
+		}
+		void IList.Remove(object value) => array.Remove(value);
 
 		/// <summary>
 		/// Removes one or more items from the array and returns the removed item.<br/>
@@ -731,9 +758,9 @@
 		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if callback is not of type <see cref="FuncObj"/>.</exception>
 		public object Sort(object callback)
 		{
-			if (callback is IFuncObj ifo)
+			if (callback is Any fo)
 			{
-				array.Sort(new FuncObjComparer(ifo));
+				array.Sort(new FuncObjComparer(fo));
 				return this;
 			}
 			else
@@ -849,7 +876,7 @@
 	/// A two component iterator for <see cref="Array"/> which returns the value and the 1-based index the
 	/// value was at as a tuple.
 	/// </summary>
-	internal class ArrayIndexValueIterator : KeysharpEnumerator, IEnumerator<(object, object)>
+	internal class ArrayIndexValueIterator : KeysharpEnumerator, IEnumerator<object>, IEnumerator<(object, object)>
 	{
 		/// <summary>
 		/// The internal array to be iterated over.
@@ -864,16 +891,13 @@
 		/// <summary>
 		/// The implementation for <see cref="IEnumerator.Current"/> which gets the index,value tuple at the current iterator position.
 		/// </summary>
-		public (object, object) Current
+		public object Current
 		{
 			get
 			{
 				try
 				{
-					if (Count == 1)
-						return (arr[position], null);
-					else
-						return ((long)position + 1, arr[position]);
+					return arr[position];
 				}
 				catch (IndexOutOfRangeException)
 				{
@@ -886,6 +910,7 @@
 		/// The <see cref="IEnumerator.Current"/> implementation that just returns <see cref="Current"/>.
 		/// </summary>
 		object IEnumerator.Current => Current;
+		(object, object) IEnumerator<(object, object)>.Current => (position + 1, Current);
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="ArrayIndexValueIterator"/> class.
@@ -910,7 +935,7 @@
 		{
 			if (MoveNext())
 			{
-				Script.SetPropertyValue(pos, "__Value", Current.Item1);
+				Script.SetPropertyValue(pos, "__Value", Current);
 				return true;
 			}
 
@@ -927,8 +952,8 @@
 		{
 			if (MoveNext())
 			{
-				Script.SetPropertyValue(pos, "__Value", Current.Item1);
-				Script.SetPropertyValue(val, "__Value", Current.Item2);
+				Script.SetPropertyValue(pos, "__Value", position + 1);
+				Script.SetPropertyValue(val, "__Value", Current);
 				return true;
 			}
 

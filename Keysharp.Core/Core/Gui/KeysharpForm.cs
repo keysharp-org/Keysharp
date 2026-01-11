@@ -1,6 +1,4 @@
-﻿using System.Windows.Forms;
-
-namespace Keysharp.Core
+﻿namespace Keysharp.Core
 {
 	public class KeysharpForm : Form
 	{
@@ -18,11 +16,13 @@ namespace Keysharp.Core
 		private bool closingFromDestroy;
 		internal bool BeenShown => beenShown;
 
+#if WINDOWS
 		protected override CreateParams CreateParams
 		{
 			get
 			{
 				var cp = base.CreateParams;
+				//cp.ExStyle |= 0x02000000; // Add WS_EX_COMPOSITED
 				cp.Style |= addStyle;
 				cp.ExStyle |= addExStyle;
 				cp.Style &= ~removeStyle;
@@ -65,6 +65,25 @@ namespace Keysharp.Core
 
 		[Browsable(false)]
 		protected override bool ShowWithoutActivation => showWithoutActivation;
+#else
+		[Browsable(false)]
+		protected bool ShowWithoutActivation => showWithoutActivation;
+
+		[Browsable(false)]
+		protected new bool ShowActivated => !showWithoutActivation;
+
+		public override bool Visible
+		{
+			get => base.Visible;
+			set
+			{
+				var prev = base.Visible;
+				base.Visible = value;
+				if (beenShown && !value && prev != value)
+					Form_VisibleChanged(this, EventArgs.Empty);
+			}
+		}
+#endif
 
 		public KeysharpForm(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -72,6 +91,7 @@ namespace Keysharp.Core
 			addExStyle = _addExStyle;
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
+#if WINDOWS
 			AutoScaleDimensions = new SizeF(96F, 96F);
 			AutoScaleMode = AutoScaleMode.Dpi;
 			//See Gui.Show() for where the remainder of the properties get set, such as scaling values.
@@ -81,15 +101,24 @@ namespace Keysharp.Core
 			DoubleBuffered = true;
 			SetStyle(ControlStyles.StandardClick, true);
 			SetStyle(ControlStyles.StandardDoubleClick, true);
+#else
+			this.Font = MainWindow.OurDefaultFont;
+#endif
 
             if (this is not MainWindow)
 			{
+#if WINDOWS
 				FormClosing += Form_FormClosing;
+				Resize += Form_Resize;
+				VisibleChanged += Form_VisibleChanged;
+#else
+				Closing += Form_FormClosing;
+				SizeChanged += Form_Resize;
+				Shown += Form_VisibleChanged;
+#endif
 				DragDrop += Form_DragDrop;
 				KeyDown += Form_KeyDown;
 				MouseDown += Form_MouseDown;
-				Resize += Form_Resize;
-				VisibleChanged += Form_VisibleChanged;
 			}
 
 			Shown += (o, e) => beenShown = true;
@@ -99,28 +128,31 @@ namespace Keysharp.Core
 		{
 			if (Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
 			{
-				var control = ActiveControl;
+				var control = this.ActiveControl;
 
 				if (control is ListBox lb)
 					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(g, control, lb.SelectedIndex + 1L, wasRightClick, (long)x, (long)y));
-				else if (control is ListView lv)
+				else if (control is KeysharpListView lv)
 					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(g, control, lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L, wasRightClick, (long)x, (long)y));
-				else if (control is TreeView tv)
+				else if (control is KeysharpTreeView tv)
 					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(g, control, tv.SelectedNode.Handle, wasRightClick, (long)x, (long)y));
 				else
 					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(g, control, control != null ? control.Handle.ToInt64().ToString() : "", wasRightClick, (long)x, (long)y));//Unsure what to pass for Item, so just pass handle.
 			}
 		}
 
-		internal void ClearThis()
+		internal void ClearThis(bool isClosing = true)
 		{
 			//This will be called when a window is either hidden or destroyed. In both cases,
 			//we must check if there are any remaining visible windows. If not, and the script
 			//has not been explicitly marked persistent, then exit the program.
-			var handle = Handle.ToInt64();
+			var handle = this.Handle.ToInt64();
 			var script = Script.TheScript;
-			_ = script.GuiData.allGuiHwnds.TryRemove(handle, out _);
-			script.mainWindow?.CheckedBeginInvoke(new Action(() => GC.Collect()), true, true);
+			if (isClosing)
+			{
+				_ = script.GuiData.allGuiHwnds.TryRemove(handle, out _);
+				script.mainWindow?.CheckedBeginInvoke(new Action(() => GC.Collect()), true, true);
+			}
 			script.ExitIfNotPersistent();//Also does BeginInvoke(), so it will come after the GC.Collect() above.
 		}
 
@@ -139,15 +171,28 @@ namespace Keysharp.Core
 
 		internal void Form_DragDrop(object sender, DragEventArgs e)
 		{
+#if WINDOWS
 			if (e.Data.GetDataPresent(DataFormats.FileDrop) && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
 			{
 				var coords = PointToClient(new Point(e.X, e.Y));
 				var files = (string[])e.Data.GetData(DataFormats.FileDrop);
 				_ = dropFilesHandlers?.InvokeEventHandlers(g, ActiveControl, new Array(files), coords.X, coords.Y);
 			}
+#else
+			if (e.Data.ContainsUris && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
+			{
+				var coords = PointFromScreen(e.Location);
+				var files = (string[])e.Data.Uris.Select(uri => uri.ToString());
+				_ = dropFilesHandlers?.InvokeEventHandlers(g, sender, new Array(files), coords.X, coords.Y);
+			}
+#endif
 		}
 
+#if WINDOWS
 		internal void Form_FormClosing(object sender, FormClosingEventArgs e)
+#else
+		internal void Form_FormClosing(object sender, CancelEventArgs e)
+#endif
 		{
 			if (Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))//This will be null when the form is actually being destroyed.
 			{
@@ -159,7 +204,7 @@ namespace Keysharp.Core
 					if (Script.ForceLong(result) != 0L)
 						return;
 
-					Hide();
+					this.Hide();
 				}
 				else
 				{
@@ -170,16 +215,28 @@ namespace Keysharp.Core
 
 		internal void Form_KeyDown(object sender, KeyEventArgs e)
 		{
-			if (e.KeyCode == Keys.Apps || (e.KeyCode == Keys.F10 && ((ModifierKeys & Keys.Shift) == Keys.Shift)))
-				CallContextMenuChangeHandlers(true, Cursor.Position.X, Cursor.Position.Y);
+#if WINDOWS
+			if ((e.KeyCode == Keys.Apps || (e.KeyCode == Keys.F10 && ((ModifierKeys & Keys.Shift) == Keys.Shift))) && GetCursorPos(out POINT pt))
+				CallContextMenuChangeHandlers(true, pt.X, pt.Y);
 			else if (e.KeyCode == Keys.Escape && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
 				_ = escapeHandlers?.InvokeEventHandlers(g);
+#else
+			if ((e.Key == Forms.Keys.Application || (e.Key == Forms.Keys.F10 && ((e.Modifiers & Forms.Keys.Shift) == Forms.Keys.Shift))) && GetCursorPos(out POINT pt))
+				CallContextMenuChangeHandlers(true, pt.X, pt.Y);
+			else if (e.Key == Forms.Keys.Escape && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
+				_ = escapeHandlers?.InvokeEventHandlers(g);
+#endif
 		}
 
 		internal void Form_MouseDown(object sender, MouseEventArgs e)
 		{
+#if WINDOWS
 			if (e.Button == MouseButtons.Right)
 				CallContextMenuChangeHandlers(false, e.X, e.Y);
+#else
+			if (e.Buttons == MouseButtons.Alternate)
+				CallContextMenuChangeHandlers(false, e.Location.X.Ai(), e.Location.Y.Ai());
+#endif
 		}
 
 		internal void Form_Resize(object sender, EventArgs e)
@@ -202,6 +259,8 @@ namespace Keysharp.Core
 				else
 					_ = sizeHandlers?.InvokeEventHandlers(g, state, (long)client.Width, (long)client.Height);
 			}
+
+			UpdateStatusStripLayout();
 		}
 
 		internal object OnEvent(object obj0, object obj1, object obj2 = null)
@@ -211,6 +270,8 @@ namespace Keysharp.Core
 			var i = obj2.Al(1);
 			e = e.ToLower();
 			var del = Functions.GetFuncObj(h, eventObj, true);
+			if (!((FuncObj)del).IsClosure)
+				del.Inst = null;
 
 			if (e == "close")
 			{
@@ -251,22 +312,53 @@ namespace Keysharp.Core
 			return DefaultObject;
 		}
 
+#if WINDOWS
 		protected override void SetVisibleCore(bool value)
 		{
 			base.SetVisibleCore(AllowShowDisplay ? value : AllowShowDisplay);
 		}
+#endif
 
         private void Form_VisibleChanged(object sender, EventArgs e)
 		{
 			if (Visible)
 			{
 				if (Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
-					Script.TheScript.GuiData.allGuiHwnds[Handle.ToInt64()] = g;
+					Script.TheScript.GuiData.allGuiHwnds[this.Handle.ToInt64()] = g;
+
+				UpdateStatusStripLayout();
 			}
 			else
-				ClearThis();
+				ClearThis(false);
 		}
 
+		internal void UpdateStatusStripLayout()
+		{
+#if !WINDOWS
+			KeysharpStatusStrip statusStrip = null;
+
+			foreach (var ctrl in Content.Controls)
+			{
+				if (ctrl is KeysharpStatusStrip ss && ss.Visible)
+				{
+					statusStrip = ss;
+					break;
+				}
+			}
+
+			if (statusStrip == null)
+				return;
+
+			var client = ClientSize;
+			var currentSize = statusStrip.GetSize();
+			var height = currentSize.Height < 0 ? 1 : currentSize.Height;
+			var padding = this.Padding;
+			var width = Math.Max(1, client.Width);
+
+			statusStrip.SetSize(new Size(width, height));
+			statusStrip.SetLocation(new Point(0, client.Height - height));
+#endif
+		}
 
 	}
 }

@@ -21,7 +21,7 @@ namespace Keysharp.Core.Common.Window
 		public string AxText { get; set; }
 
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-		internal ComObject Iid { get; private set; }
+		internal ComValue Iid { get; private set; }
 
 		protected override CreateParams CreateParams
 		{
@@ -57,26 +57,34 @@ namespace Keysharp.Core.Common.Window
 			string lpszName,
 			nint hWnd,
 			nint pStream,
-			[MarshalAs(UnmanagedType.IDispatch)] out object ppUnkContainer);
+			out nint ppUnkContainer);
 
 		[DllImport("atl.dll", CharSet = CharSet.Unicode)]
 		public static extern int AtlAxWinInit();
 
+		[DllImport("atl.dll")]
+		private static extern int AtlAxGetControl(nint hWnd, out nint ppUnkControl);
+
 		internal void Init()
 		{
-			if (loadedDll)
+			if (!loadedDll) return;
+
+			// Create the host (container) – ignore its IUnknown; we’ll fetch the control next.
+			_ = AtlAxCreateControl(AxText, Handle, IntPtr.Zero, out var pUnkContainer);
+			if (pUnkContainer != 0) Marshal.Release(pUnkContainer); // not needed
+
+			// Get the hosted control’s IUnknown
+			if (AtlAxGetControl(Handle, out var pCtrl) >= 0 && pCtrl != 0)
 			{
-				var hInstance = Marshal.GetHINSTANCE(GetType().Module);
-
-				if (AtlAxCreateControl(AxText, Handle, 0, out ob) >= 0)
-					//if (axHandle != 0)
+				// Prefer IDispatch for late-binding:
+				if (Marshal.QueryInterface(pCtrl, in Com.IID_IDispatch, out var pDisp) == 0)
 				{
-					Console.WriteLine("AtlAxCreateControl() succeeded.");
-
-					if (ob is IDispatch iid)
-						Iid = new ComObject(VarEnum.VT_VARIANT, iid);
-					else
-						Iid = new ComObject(VarEnum.VT_UNKNOWN, ob);
+					// Wrap the control, not the container:
+					Iid = new Keysharp.Core.ComObject(VarEnum.VT_DISPATCH, (long)pDisp);
+				}
+				else
+				{
+					Iid = new Keysharp.Core.ComValue(VarEnum.VT_UNKNOWN, (long)pCtrl);
 				}
 			}
 		}

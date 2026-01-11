@@ -65,7 +65,12 @@
 			number = Number(number);
 			if (number is long ll)
 				return Math.Abs(ll);
-			return Math.Abs((double)number);
+			else if (number is bool bl)
+				return bl;
+			else if (number is double dd)
+				return Math.Abs(dd);
+			else
+				return Errors.ErrorOccurred($"Abs() argument of {number} was not numeric");
 		}
 
 		/// <summary>
@@ -204,44 +209,11 @@
 		public static object Exp(object n) => Math.Exp(n is double d ? d : n.Ad());
 
 		/// <summary>
-		/// Converts a numeric string or integer value to a floating-point number.
-		/// </summary>
-		/// <param name="value">The object to be converted</param>
-		/// <returns>The converted value as a double.</returns>
-		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if the conversion failed.</exception>
-		public static object Float(object value)
-		{
-			try
-			{
-				return value is double d ? d : value.Ad();
-			}
-			catch (Exception)
-			{
-				return Errors.TypeErrorOccurred(value, typeof(double));
-			}
-		}
-
-		/// <summary>
 		/// Returns the largest integer less than or equal to the specified double number.
 		/// </summary>
 		/// <param name="number">A number.</param>
 		/// <returns>The largest integer less than or equal to <paramref name="n"/>.</returns>
 		public static object Floor(object number) => (long)Math.Floor(number is double d ? d : number.Ad());
-
-		/// <summary>
-		/// Converts a numeric string or floating-point value to an integer.
-		/// </summary>
-		/// <param name="value">The object to be converted</param>
-		/// <returns>The converted value as a long.</returns>
-		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if the conversion failed.</exception>
-		public static object Integer(object value)
-		{
-			if (value.ParseLong(out long l))
-				return l;
-			else if (value.ParseDouble(out double d, false, true))
-				return (long)d;
-			return Errors.TypeErrorOccurred(value, typeof(double));
-		}
 
 		/// <summary>
 		/// Returns the natural (base e) logarithm of a specified number.

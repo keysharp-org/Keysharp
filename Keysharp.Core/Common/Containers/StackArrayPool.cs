@@ -8,8 +8,7 @@
 	/// The arrays aren't actually created until the moment they are first rented.
 	/// </summary>
 	/// <typeparam name="T"/>
-	[PublicForTestOnly]
-	public class ConcurrentStackArrayPool<T>
+	internal class ConcurrentStackArrayPool<T>
 	{
 		/// <summary>
 		/// The size of each array.

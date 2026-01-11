@@ -1,4 +1,9 @@
 using static Keysharp.Core.Misc;
+#if LINUX
+using System.Linq;
+using Eto.Forms;
+using Keysharp.Core.Linux;
+#endif
 
 namespace Keysharp.Core
 {
@@ -230,19 +235,22 @@ namespace Keysharp.Core
 										 object flag = null)
 		{
 			var mode = flag.Al(0L);
-			var pos = Cursor.Position;
+			GetCursorPos(out POINT pos);
 			var aX = 0;
 			var aY = 0;
 			var script = Script.TheScript;
-			script.PlatformProvider.Manager.CoordToScreen(ref aX, ref aY, Core.CoordMode.Mouse);//Determine where 0,0 in window or client coordinates are on the screen.
+			CoordToScreen(ref aX, ref aY, Core.CoordMode.Mouse);//Determine where 0,0 in window or client coordinates are on the screen.
 			if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", (long)(pos.X - aX));//Convert the mouse position in screen coordinates to window coordinates.
 			if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", (long)(pos.Y - aY));
-			if (outputVarWin != null) Script.SetPropertyValue(outputVarWin, "__Value", DefaultObject);
-			if (outputVarControl != null) Script.SetPropertyValue(outputVarControl, "__Value", DefaultObject);
-            var child = script.WindowProvider.Manager.WindowFromPoint(pos);
 
-			if (child == null || child.Handle == 0)
+            var child = WindowManager.ChildWindowFromPoint(pos);
+
+			if (child == null || child.Handle == 0) 
+			{
+				if (outputVarWin != null) Script.SetPropertyValue(outputVarWin, "__Value", DefaultObject);
+				if (outputVarControl != null) Script.SetPropertyValue(outputVarControl, "__Value", DefaultObject);
 				return DefaultErrorObject;
+			}
 
 			var parent = child.NonChildParentWindow;
 			if (outputVarWin != null) Script.SetPropertyValue(outputVarWin, "__Value", (long)parent.Handle);
@@ -256,13 +264,54 @@ namespace Keysharp.Core
 				parent.ChildFindPoint(pah);
 
 				if (pah.hwndFound != 0)
-					child = script.WindowProvider.Manager.CreateWindow(pah.hwndFound);
+					child = WindowManager.CreateWindow(pah.hwndFound);
 			}
 
+#else
+
+			if (outputVarControl != null && Control.FromHandle(parent.Handle) is Control ksForm)
+			{
+				Control FindDeepest(Control ctrl)
+				{
+					Control best = null;
+
+					foreach (var visualChild in ctrl.VisualControls.Reverse())
+					{
+						var origin = visualChild.PointToScreen(Point.Empty);
+						var size = visualChild.GetSize();
+						var rect = new Eto.Drawing.Rectangle(origin.X.Ai(), origin.Y.Ai(), size.Width, size.Height);
+						if (!rect.Contains(pos.X, pos.Y))
+							continue;
+
+						var deeper = FindDeepest(visualChild);
+						best = deeper ?? visualChild;
+						break;
+					}
+
+					if (best != null)
+						return best;
+
+					var selfOrigin = ctrl.PointToScreen(Point.Empty);
+					var selfSize = ctrl.GetSize();
+					var selfRect = new Eto.Drawing.Rectangle(selfOrigin.X.Ai(), selfOrigin.Y.Ai(), selfSize.Width, selfSize.Height);
+					if (selfRect.Contains(pos.X, pos.Y))
+						return ctrl;
+
+					return null;
+				}
+
+				var hit = FindDeepest(ksForm);
+
+				if (hit != null)
+					child = new ControlItem(hit);
+			}
 #endif
 
 			if (child.Handle == parent.Handle)//If there's no control per se, make it blank.
+			{
+				if (outputVarControl != null) Script.SetPropertyValue(outputVarControl, "__Value", DefaultObject);
 				return DefaultObject;
+			}
 
 			if ((mode & 0x02) != 0)
 			{
@@ -336,78 +385,6 @@ namespace Keysharp.Core
 		}
 
 		/// <summary>
-		/// Internal helper to adjust a point from being relative to the active window to relative to the top left of the screen.
-		/// The adjustment will only be done if the current mouse coordinate mode is <see cref="CoordModeType.Window"/> or <see cref="CoordModeType.Client"/>.
-		/// </summary>
-		/// <param name="x">The x point to adjust.</param>
-		/// <param name="y">The y point to adjust.</param>
-		internal static void AdjustPoint(ref int x, ref int y)
-		{
-			var script = Script.TheScript;
-
-			if (ThreadAccessors.A_CoordModeMouse == CoordModeType.Window)
-			{
-				var rect = script.WindowProvider.Manager.ActiveWindow.Location;
-				x += rect.Left;
-				y += rect.Top;
-			}
-			else if (ThreadAccessors.A_CoordModeMouse == CoordModeType.Client)
-			{
-				var pt = script.WindowProvider.Manager.ActiveWindow.ClientToScreen();
-				x += pt.X;
-				y += pt.Y;
-			}
-		}
-
-		/// <summary>
-		/// Internal helper to adjust a rect from being relative to the active window to relative to the top left of the screen.
-		/// The adjustment will only be done if the current mouse coordinate mode is <see cref="CoordModeType.Window"/> or <see cref="CoordModeType.Client"/>.
-		/// </summary>
-		/// <param name="x1">The left of the rect to adjust.</param>
-		/// <param name="y1">The top of the rect to adjust.</param>
-		/// <param name="x2">The right of the rect to adjust.</param>
-		/// <param name="y2">The bottom of the rect to adjust.</param>
-		internal static void AdjustRect(ref int x1, ref int y1, ref int x2, ref int y2)
-		{
-			var script = Script.TheScript;
-
-			if (ThreadAccessors.A_CoordModeMouse == CoordModeType.Window)
-			{
-				var rect = script.WindowProvider.Manager.ActiveWindow.Location;
-				x1 += rect.Left;
-				y1 += rect.Top;
-				x2 += rect.Left;
-				y2 += rect.Top;
-			}
-			else if (ThreadAccessors.A_CoordModeMouse == CoordModeType.Client)
-			{
-				var pt = script.WindowProvider.Manager.ActiveWindow.ClientToScreen();
-				x1 += pt.X;
-				y1 += pt.Y;
-				x2 += pt.X;
-				y2 += pt.Y;
-			}
-		}
-
-		/// <summary>
-		/// Internal helper to adjust a point from being relative to the top left of the screen to being relative to the active window.
-		/// </summary>
-		/// <param name="p">The point to adjust.</param>
-		/// <param name="modeType">The current coordinate mode, which must be <see cref="CoordModeType.Window"/> for the adjustment to take place.</param>
-		/// <returns>The adjusted point.</returns>
-		internal static Point RevertPoint(Point p, CoordModeType modeType)
-		{
-			//for cross platform purposes, should use something like Form.ActiveForm.PointToScreen() etc...
-			if (modeType == CoordModeType.Window)//This does not account for the mode value of other coord settings, like menu.//TODO
-			{
-				var rect = Script.TheScript.WindowProvider.Manager.ActiveWindow.Location;
-				return new Point(p.X - rect.Left, p.Y - rect.Top);
-			}
-
-			return p;
-		}
-
-		/// <summary>
 		/// Internal helper to carry out various mouse operations.
 		/// See the mouse functions for descriptions of the parameters.
 		/// </summary>
@@ -430,7 +407,7 @@ namespace Keysharp.Core
 
 			if (actionType == Actions.ACT_MOUSEMOVE)
 				vk = 0;
-			else if ((vk = ht.ConvertMouseButton(button, actionType == Actions.ACT_MOUSECLICK)) == 0)
+			else if ((vk = HookThread.ConvertMouseButton(button, actionType == Actions.ACT_MOUSECLICK)) == 0)
 			{
 				_ = Errors.ValueErrorOccurred($"Invalid mouse button type of {button}.");
 				return;

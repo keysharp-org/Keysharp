@@ -363,6 +363,27 @@
 		public static IList L(this object[] args) => args.Flatten(true).Cast<object>().ToList();
 
 		/// <summary>
+		/// Skips the first element of an array and returns the rest as a new array.
+		/// </summary>
+		public static T[] SkipFirst<T>(this T[] array)
+		{
+			T[] newArray = new T[array.Length - 1];
+			System.Array.Copy(array, 1, newArray, 0, newArray.Length);
+			return newArray;
+		}
+
+		/// <summary>
+		/// Prepends an item to an array and returns the new array.
+		/// </summary>
+		public static T[] Prepend<T>(this T[] array, T item)
+		{
+			var newArray = new T[array.Length + 1];
+			newArray[0] = item;
+			Array.Copy(array, 0, newArray, 1, array.Length);
+			return newArray;
+		}
+
+		/// <summary>
 		/// Returns a recursively flattened <see cref="IEnumerable"/> of objects as an <see cref="IList"/>.
 		/// </summary>
 		/// <param name="obj">The <see cref="IEnumerable"/> of objects to flatten.</param>
@@ -686,7 +707,7 @@
 			{
 				arr = new List<byte>(list.Count);
 
-				foreach (var (index, val) in array)
+				foreach (var val in array)
 				{
 					if (val is byte b)
 						arr.Add(b);

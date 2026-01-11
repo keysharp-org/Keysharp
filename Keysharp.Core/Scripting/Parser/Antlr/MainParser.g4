@@ -284,16 +284,16 @@ caseBlock
     ;
 
 caseClause
-    : (Case WS* expressionSequence | Default) WS* ':' (s* statementList | EOL)
+    : (Case WS* expressionSequence | Default) WS* ':' s* statementList?
     ;
 
 labelledStatement
-    : identifier ':'
+    : {this.isValidLabel()}? identifier ':'
     ;
 
 gotoStatement
     : Goto WS* propertyName
-    | Goto WS* '(' propertyName ')'
+    | Goto '(' WS* singleExpression WS* ')'
     ;
 
 throwStatement
@@ -378,7 +378,7 @@ formalParameterList
     ;
 
 formalParameterArg
-    : BitAnd? identifier (':=' expression | QuestionMark)? // expression instead of singleExpression because it's always enclosed in parenthesis and thus function expressions can be unambiguously parsed
+    : BitAnd? identifier (':=' expression | WS* QuestionMark)? // expression instead of singleExpression because it's always enclosed in parenthesis and thus function expressions can be unambiguously parsed
     ;
 
 lastFormalParameterArg
@@ -415,8 +415,7 @@ propertyAssignment
 propertyName
     : identifier
     | reservedWord
-    | StringLiteral // Multi-line strings not supported
-    | numericLiteral
+    | numericLiteral identifier?
     ;
 
 dereference
@@ -508,7 +507,7 @@ primaryExpression
     ;
 
 accessSuffix
-    : modifier = ('.' | '?.') memberIdentifier
+    : modifier = ('.' | '?.') memberIdentifier memberIndexArguments?
     | (modifier = '?.')? (memberIndexArguments | '(' arguments? ')')
     | modifier = '?'
     ;
@@ -520,10 +519,8 @@ memberDot
     ;
 
 memberIdentifier
-    : identifier
+    : propertyName
     | dynamicIdentifier
-    | keyword
-    | literal
     ;
 
 // A combination of identifiers and derefs, such as `a%b%`
@@ -541,7 +538,7 @@ assignable
     ;
 
 objectLiteral
-    : '{' s* (propertyAssignment (WS* ',' propertyAssignment)* s*)? '}'
+    : '{' s* (propertyAssignment (WS* ',' propertyAssignment?)* s*)? '}'
     ;
 
 functionHead
@@ -647,7 +644,11 @@ identifier
     | Parse
     | Reg
     | Read
-    | Files)
+    | Files
+    | Throw
+    | Yield  
+    | Async
+    | Await)
     ;
 
 // None of these can be used as a variable name
@@ -689,10 +690,7 @@ keyword
     | Instanceof
     | Import
     | Export
-    | Delete
-    | Yield  
-    | Async
-    | Await)
+    | Delete)
     ;
 
 s

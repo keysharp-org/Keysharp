@@ -23,7 +23,7 @@
 			{
 				var g = match.Groups[i];
 				_ = DefineProp(g.Name,
-							   Objects.Object(
+							   new KeysharpObject(
 								   [
 									   "get",
 									   Functions.GetFuncObj("GetWrapper", this, 2, true).Bind(g.Name)
@@ -31,7 +31,7 @@
 
 				if (i.ToString() != g.Name)//No need to add it twice if the name matches the index.
 					_ = DefineProp(i,
-								   Objects.Object(
+								   new KeysharpObject(
 									   [
 										   "get",
 										   Functions.GetFuncObj("GetWrapper", this, 2, true).Bind(g.Name)

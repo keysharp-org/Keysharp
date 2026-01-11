@@ -43,13 +43,13 @@ namespace Keysharp.Tests
 			var loadedAssemblies = GetLoadedAssemblies();
 			var types = loadedAssemblies.Values.Where(asm => asm.FullName.StartsWith("Keysharp.Core,"))
 						.SelectMany(t => GetNestedTypes(t.GetExportedTypes()))
-						.Where(t => t.GetCustomAttribute<PublicForTestOnly>() == null && t.Namespace != null && t.Namespace.StartsWith("Keysharp.Core")
+						.Where(t => t.GetCustomAttribute<PublicHiddenFromUser>() == null && t.Namespace != null && t.Namespace.StartsWith("Keysharp.Core")
 							   && t.Namespace != "Keysharp.Core.Properties"
 							   && t.IsClass && (t.IsPublic || t.IsNestedPublic));
 
 			foreach (var method in types
 					 .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
-					 .Where(m => !m.IsSpecialName && m.GetCustomAttribute<PublicForTestOnly>() == null))
+					 .Where(m => !m.IsSpecialName && m.GetCustomAttribute<PublicHiddenFromUser>() == null))
 			{
 				Assert.IsTrue(method.ReturnType != typeof(void), $"Method {method.DeclaringType?.FullName}.{method.Name} should not return void.");
 			}

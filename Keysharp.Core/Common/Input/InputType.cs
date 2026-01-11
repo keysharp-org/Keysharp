@@ -13,7 +13,7 @@ namespace Keysharp.Core.Common.Input
 
 	internal class InputData
 	{
-		internal System.Windows.Forms.Timer inputTimer;
+		internal UITimer inputTimer;
 	}
 
 	internal class InputType//This is also Windows specific, and needs to eventually be made into a common base with derived OS specific classes.//TODO
@@ -219,11 +219,11 @@ namespace Keysharp.Core.Common.Input
 							// between a key press and a key release. The scan code is used for translating ALT+
 							// number key combinations.
 							var state = new byte[256];
-							var sb = new StringBuilder();
+							var ch = new char[2];
 							state[(int)Keys.ShiftKey] |= 0x80; // Indicate that the neutral shift key is down for conversion purposes.
 							var active_window_keybd_layout = hook.kbdMsSender.GetFocusedKeybdLayout(0);
-							var count = script.PlatformProvider.Manager.ToUnicodeEx(endingVK, hook.MapVkToSc(endingVK), state // Nothing is done about ToAsciiEx's dead key side-effects here because it seems to rare to be worth it (assuming its even a problem).
-										, sb, 2, script.menuIsVisible != MenuType.None ? 1u : 0u, active_window_keybd_layout); // v1.0.44.03: Changed to call ToAsciiEx() so that active window's layout can be specified (see hook.cpp for details).
+							var count = ToUnicode(endingVK, hook.MapVkToSc(endingVK), state // Nothing is done about ToAsciiEx's dead key side-effects here because it seems to rare to be worth it (assuming its even a problem).
+										, ch, script.menuIsVisible != MenuType.None ? 1u : 0u, active_window_keybd_layout); // v1.0.44.03: Changed to call ToAsciiEx() so that active window's layout can be specified (see hook.cpp for details).
 							keyName = keyName.Substring(0, count);
 						}
 						else
@@ -515,7 +515,7 @@ namespace Keysharp.Core.Common.Input
 						// Otherwise, for any key name which has a VK shared by two possible SCs
 						// (such as Up and NumpadUp), handle it by SC so it's identified correctly.
 						var nextkey = sub.Slice(0, endPos).ToString();
-						vk = ht.TextToVK(nextkey, ref modifiersLR, true, true, script.PlatformProvider.Manager.GetKeyboardLayout(0));
+						vk = ht.TextToVK(nextkey, ref modifiersLR, true, true, GetKeyboardLayout(0));
 
 						if (vk != 0)
 						{
@@ -544,7 +544,7 @@ namespace Keysharp.Core.Common.Input
 
 						singleCharString = ch.ToString();
 						modifiersLR = 0u;  // Init prior to below.
-						vk = ht.TextToVK(singleCharString, ref modifiersLR, true, true, script.PlatformProvider.Manager.GetKeyboardLayout(0));
+						vk = ht.TextToVK(singleCharString, ref modifiersLR, true, true, GetKeyboardLayout(0));
 						vkByNumber = false;
 						scByNumber = false;
 						break;
@@ -642,8 +642,12 @@ namespace Keysharp.Core.Common.Input
 
 				if (inputTimer == null)
 				{
-					inputTimer = new System.Windows.Forms.Timer();
+					inputTimer = new UITimer();
+#if WINDOWS
 					inputTimer.Tick += InputTimer_Tick;
+#else
+					inputTimer.Elapsed += InputTimer_Tick;
+#endif
 					script.InputData.inputTimer = inputTimer;
 				}
 

@@ -1,4 +1,6 @@
-﻿#if LINUX
+﻿#if !WINDOWS
+using static Keysharp.Core.Common.Keyboard.VirtualKeys;
+using static Keysharp.Core.KeysharpListView;
 
 namespace Keysharp.Core.Linux
 {
@@ -7,17 +9,33 @@ namespace Keysharp.Core.Linux
 	/// </summary>
 	internal class ControlManager : ControlManagerBase
 	{
+		private static int FindDataStoreIndex(IEnumerable dataStore, string value)
+		{
+			if (dataStore == null || string.IsNullOrEmpty(value))
+				return -1;
+
+			var index = 0;
+			foreach (var item in dataStore)
+			{
+				if (string.Equals(item?.ToString(), value, StringComparison.OrdinalIgnoreCase))
+					return index;
+				index++;
+			}
+
+			return -1;
+		}
+
 		internal override long ControlAddItem(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
 				var res = 0L;
-				var ctrl2 = Control.FromHandle(item.Handle);
-
-				if (ctrl2 is ComboBox cb)
-					res = cb.Items.Add(str);
-				else if (ctrl2 is ListBox lb)
-					res = lb.Items.Add(str);
+				var ctrl2 = item.Control;
+				if (ctrl2 is ListControl cb)
+				{
+					res = cb.Items.Count;
+					cb.Items.Add(str);
+				}
 				else
 				{
 					//How to do the equivalent of what the Windows derivation does, but on linux?
@@ -32,9 +50,9 @@ namespace Keysharp.Core.Linux
 
 		internal override void ControlChooseIndex(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
+				var ctrl2 = item.Control;
 				n--;
 
 				if (ctrl2 is ComboBox cb)
@@ -73,9 +91,9 @@ namespace Keysharp.Core.Linux
 		{
 			var index = 0L;
 
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
+				var ctrl2 = item.Control;
 
 				if (ctrl2 is ComboBox cb)
 				{
@@ -106,13 +124,152 @@ namespace Keysharp.Core.Linux
 
 		internal override void ControlClick(object ctrlorpos, object title, object text, string whichButton, int clickCount, string options, object excludeTitle, object excludeText)
 		{
+			var winx = int.MinValue;
+			var winy = int.MinValue;
+			var ctrlx = int.MinValue;
+			var ctrly = int.MinValue;
+			var vk = HookThread.ConvertMouseButton(whichButton);
+			var posoverride = options?.Contains("pos", StringComparison.OrdinalIgnoreCase) ?? false;
+			bool d = false, u = false;
+			var posAppliedToChild = false;
+
+			if (!string.IsNullOrEmpty(options))
+			{
+				foreach (Range r in options.AsSpan().SplitAny(Spaces))
+				{
+					var opt = options.AsSpan(r).Trim();
+
+					if (opt.Length > 0)
+					{
+						if (opt.Equals("d", StringComparison.OrdinalIgnoreCase))
+							d = true;
+						else if (opt.Equals("u", StringComparison.OrdinalIgnoreCase))
+							u = true;
+						else if (Options.TryParse(opt, "x", ref ctrlx)) { }
+						else if (Options.TryParse(opt, "y", ref ctrly)) { }
+					}
+				}
+			}
+
+			if (d) u = false;
+			if (u) d = false;
+
+			if (ctrlorpos is string s && s.StartsWith("x", StringComparison.OrdinalIgnoreCase) && s.Contains(' ') && s.Contains('y', StringComparison.OrdinalIgnoreCase))
+			{
+				foreach (Range r in s.AsSpan().SplitAny(Spaces))
+				{
+					var opt = s.AsSpan(r).Trim();
+
+					if (opt.Length > 0)
+					{
+						if (Options.TryParse(opt, "x", ref winx)) { }
+						else if (Options.TryParse(opt, "y", ref winy)) { }
+					}
+				}
+			}
+
+			WindowItemBase item = null;
+			var getctrlbycoords = false;
+
+			if (ctrlorpos.IsNullOrEmpty())
+			{
+				item = WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
+			}
+			else if (!posoverride)
+			{
+				item = WindowSearch.SearchControl(ctrlorpos, title, text, excludeTitle, excludeText, false);
+
+				if (item == null)
+				{
+					if (winx != int.MinValue && winy != int.MinValue)
+						getctrlbycoords = true;
+					else
+						_ = Errors.TargetErrorOccurred($"Could not get control {ctrlorpos}", title, text, excludeTitle, excludeText);
+				}
+			}
+			else
+			{
+				if (winx != int.MinValue && winy != int.MinValue)
+					getctrlbycoords = true;
+			}
+
+			if (getctrlbycoords)
+			{
+				item = WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
+				if (item != null)
+				{
+					var pt = new POINT(winx, winy);
+					item.ClientToScreen(ref pt);
+					var pah = new PointAndHwnd(pt);
+					item.ChildFindPoint(pah);
+					if (pah.hwndFound != 0)
+					{
+						item = WindowManager.CreateWindow(pah.hwndFound);
+						if (ctrlx == int.MinValue || ctrly == int.MinValue)
+						{
+							ctrlx = pt.X - pah.rectFound.Left;
+							ctrly = pt.Y - pah.rectFound.Top;
+						}
+						posAppliedToChild = true;
+					}
+				}
+			}
+
+			if (item == null || clickCount < 1)
+				return;
+
+			var target = item as WindowItem;
+			if (target == null)
+				return;
+
+			var size = target.Size;
+			var clickX = ctrlx != int.MinValue ? ctrlx : size.Width / 2;
+			var clickY = ctrly != int.MinValue ? ctrly : size.Height / 2;
+
+			if (!posAppliedToChild && winx != int.MinValue && winy != int.MinValue)
+			{
+				clickX = winx;
+				clickY = winy;
+			}
+
+			var clickPoint = new Point(clickX, clickY);
+			var vkIsWheel = MouseUtils.IsWheelVK(vk);
+
+			Buttons button;
+			if (vk == VK_LBUTTON) button = Buttons.Left;
+			else if (vk == VK_RBUTTON) button = Buttons.Right;
+			else if (vk == VK_MBUTTON) button = Buttons.Middle;
+			else if (vk == VK_XBUTTON1) button = Buttons.Four;
+			else if (vk == VK_XBUTTON2) button = Buttons.Five;
+			else if (vk == VK_WHEEL_UP) button = Buttons.Four;
+			else if (vk == VK_WHEEL_DOWN) button = Buttons.Five;
+			else if (vk == VK_WHEEL_LEFT) button = (Buttons)6;
+			else if (vk == VK_WHEEL_RIGHT) button = (Buttons)7;
+			else return;
+
+			for (var i = 0; i < clickCount; i++)
+			{
+				if (vkIsWheel || !u)
+				{
+					target.SendMouseEvent(XEventName.ButtonPress, EventMasks.ButtonPress, button, clickPoint);
+					_ = Xlib.XFlush(XDisplay.Default.Handle);
+					WindowItemBase.DoControlDelay();
+				}
+
+				if (vkIsWheel || !d)
+				{
+					target.SendMouseEvent(XEventName.ButtonRelease, EventMasks.ButtonRelease, button, clickPoint);
+					_ = Xlib.XFlush(XDisplay.Default.Handle);
+					WindowItemBase.DoControlDelay();
+				}
+			}
 		}
 
 		internal override void ControlDeleteItem(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
+				var ctrl2 = item.Control;
 				n--;
 
 				if (ctrl2 is ComboBox cb)
@@ -135,14 +292,14 @@ namespace Keysharp.Core.Linux
 
 		internal override long ControlFindItem(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
+				var ctrl2 = item.Control;
 
 				if (ctrl2 is ComboBox cb)
-					return cb.Items.IndexOf(str) + 1L;
+					return FindDataStoreIndex(cb.DataStore, str) + 1L;
 				else if (ctrl2 is ListBox lb)
-					return lb.Items.IndexOf(str) + 1L;
+					return FindDataStoreIndex(lb.DataStore, str) + 1L;
 				else
 				{
 					//How to do the equivalent of what the Windows derivation does, but on linux?
@@ -154,9 +311,9 @@ namespace Keysharp.Core.Linux
 
 		internal override void ControlFocus(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				if (Control.FromHandle(item.Handle) is Control ctrl2)
+				if (item.Control is Control ctrl2)
 					ctrl2.Focus();
 				else
 					item.Active = true;//Will not work for X11.//TODO
@@ -165,12 +322,16 @@ namespace Keysharp.Core.Linux
 
 		internal override long ControlGetChecked(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
+				var ctrl2 = item.Control;
 
 				if (ctrl2 is CheckBox cb)
+#if WINDOWS
 					return cb.Checked ? 1L : 0L;
+#else
+					return cb.Checked == null ? -1L : cb.Checked.Value ? 1L : 0L;
+#endif
 				else
 				{
 					//How to do the equivalent of what the Windows derivation does, but on linux?
@@ -182,14 +343,11 @@ namespace Keysharp.Core.Linux
 
 		internal override string ControlGetChoice(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
-
-				if (ctrl2 is ComboBox cb)
-					return cb.SelectedItem != null ? cb.SelectedItem.ToString() : "";
-				else if (ctrl2 is ListBox lb)
-					return lb.SelectedItem != null ? lb.SelectedItem.ToString() : "";
+				var ctrl2 = item.Control;
+				if (ctrl2 is ListControl lc)
+					return lc.SelectedValue?.ToString() ?? "";
 				else
 				{
 					//How to do the equivalent of what the Windows derivation does, but on linux?
@@ -205,7 +363,7 @@ namespace Keysharp.Core.Linux
 
 		internal override long ControlGetFocus(object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is WindowItem item)
+			if (WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is WindowItemBase item)
 			{
 				if (Control.FromHandle(item.Handle) is Form form)
 				{
@@ -221,9 +379,9 @@ namespace Keysharp.Core.Linux
 		{
 			long index = -1;
 
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
+				var ctrl2 = item.Control;
 
 				if (ctrl2 is ComboBox cb)
 					index = cb.SelectedIndex;
@@ -242,9 +400,9 @@ namespace Keysharp.Core.Linux
 
 		internal override object ControlGetItems(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
+				var ctrl2 = item.Control;
 
 				if (ctrl2 is ComboBox cb)
 					return new Keysharp.Core.Array(cb.Items.Cast<object>().Select(item => (object)item.ToString()));
@@ -261,9 +419,9 @@ namespace Keysharp.Core.Linux
 
 		internal override void ControlGetPos(ref object outX, ref object outY, ref object outWidth, ref object outHeight, object ctrl = null, object title = null, object text = null, object excludeTitle = null, object excludeText = null)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				if (Control.FromHandle(item.Handle) is Control ctrl2)
+				if (item.Control is Control ctrl2)
 				{
 					outX = ctrl2.Left;
 					outY = ctrl2.Top;
@@ -290,8 +448,11 @@ namespace Keysharp.Core.Linux
 		{
 			var val = "";
 
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
-				val = Control.FromHandle(item.Handle) is Control ctrl2 ? ctrl2.Text : item.Title;
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
+			{
+				var ctrl2 = item.Control;
+				val = ctrl2 != null ? ctrl2.Text : item.Title;
+			}
 
 			return val;
 		}
@@ -301,18 +462,20 @@ namespace Keysharp.Core.Linux
 
 		internal override void ControlSend(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
+			ControlSendHelper(str, ctrl, title, text, excludeTitle, excludeText, SendRawModes.NotRaw);
 		}
 
 		internal override void ControlSendText(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
+			ControlSendHelper(str, ctrl, title, text, excludeTitle, excludeText, SendRawModes.RawText);
 		}
 
 		internal override void ControlSetChecked(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
 				var onoff = Conversions.ConvertOnOffToggle(val);
-				var ctrl2 = Control.FromHandle(item.Handle);
+				var ctrl2 = item.Control;
 
 				if (ctrl2 is CheckBox cb)
 					cb.Checked = onoff == ToggleValueType.Toggle ? !cb.Checked : onoff == ToggleValueType.On;
@@ -327,11 +490,11 @@ namespace Keysharp.Core.Linux
 
 		internal override void ControlSetEnabled(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
 				var onoff = Conversions.ConvertOnOffToggle(val);
 
-				if (Control.FromHandle(item.Handle) is Control ctrl2)
+				if (item.Control is Control ctrl2)
 					ctrl2.Enabled = onoff == ToggleValueType.Toggle ? !ctrl2.Enabled : onoff == ToggleValueType.On;
 				else
 				{
@@ -344,10 +507,48 @@ namespace Keysharp.Core.Linux
 
 		internal override void ControlSetExStyle(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
+			{
+				if (val is long l)
+					item.ExStyle = l;
+				else if (val is double d)
+					item.ExStyle = (long)d;
+				else if (val is string s)
+				{
+					long temp = 0;
+
+					if (Options.TryParse(s, "+", ref temp)) { item.ExStyle |= temp; }
+					else if (Options.TryParse(s, "-", ref temp)) { item.ExStyle &= ~temp; }
+					else if (Options.TryParse(s, "^", ref temp)) { item.ExStyle ^= temp; }
+					else item.ExStyle = val.ParseLong(true).Value;
+				}
+			}
 		}
 
 		internal override void ControlSetStyle(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
+			{
+				if (val is long l)
+					item.Style = l;
+				else if (val is double d)
+					item.Style = (long)d;
+				else if (val is string s)
+				{
+					long temp = 0;
+
+					if (Options.TryParse(s, "+", ref temp)) { item.Style |= temp; }
+					else if (Options.TryParse(s, "-", ref temp)) { item.Style &= ~temp; }
+					else if (Options.TryParse(s, "^", ref temp)) { item.Style ^= temp; }
+					else item.Style = val.ParseLong(true).Value;
+				}
+			}
+		}
+
+		private static void ControlSendHelper(string str, object ctrl, object title, object text, object excludeTitle, object excludeText, SendRawModes mode)
+		{
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
+				Script.TheScript.HookThread.kbdMsSender.SendKeys(str, mode, SendModes.Event, item.Handle);
 		}
 
 		internal override void ControlShowDropDown(object ctrl, object title, object text, object excludeTitle, object excludeText) =>
@@ -355,9 +556,9 @@ namespace Keysharp.Core.Linux
 
 		internal override long EditGetCurrentCol(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
+				var ctrl2 = item.Control;
 
 				if (ctrl2 is TextBoxBase txt)
 					return txt.SelectionStart + 1;
@@ -372,9 +573,9 @@ namespace Keysharp.Core.Linux
 
 		internal override long EditGetCurrentLine(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
+				var ctrl2 = item.Control;
 
 				if (ctrl2 is TextBoxBase txt)
 					return txt.GetLineFromCharIndex(txt.SelectionStart);//On linux the line index is 1-based, so don't add 1 to it.
@@ -389,9 +590,9 @@ namespace Keysharp.Core.Linux
 
 		internal override string EditGetLine(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
+				var ctrl2 = item.Control;
 				n--;
 
 				if (ctrl2 is TextBoxBase txt)
@@ -414,9 +615,9 @@ namespace Keysharp.Core.Linux
 
 		internal override long EditGetLineCount(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				if (Control.FromHandle(item.Handle) is TextBoxBase txt)
+				if (item.Control is TextBoxBase txt)
 				{
 					var val = txt.Lines.LongLength;
 					return val == 0L ? 1L : val;
@@ -432,9 +633,9 @@ namespace Keysharp.Core.Linux
 
 		internal override string EditGetSelectedText(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				if (Control.FromHandle(item.Handle) is TextBoxBase ctrl2)
+				if (item.Control is TextBoxBase ctrl2)
 					return ctrl2.SelectedText;
 			}
 
@@ -443,9 +644,9 @@ namespace Keysharp.Core.Linux
 
 		internal override void EditPaste(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				if (Control.FromHandle(item.Handle) is TextBox ctrl2)
+				if (item.Control is TextBox ctrl2)
 					ctrl2.Paste(str);
 			}
 		}
@@ -454,7 +655,7 @@ namespace Keysharp.Core.Linux
 		{
 			object ret = null;
 
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
 				var focused = false;
 				var count = false;
@@ -472,7 +673,7 @@ namespace Keysharp.Core.Linux
 					else if (Options.TryParse(opt, "col", ref col)) { col--; }
 				}
 
-				if (Control.FromHandle(item.Handle) is ListView lv)
+				if (item.Control is KeysharpListView lv)
 				{
 					if (count && sel)
 						ret = (long)lv.SelectedItems.Count;
@@ -523,7 +724,7 @@ namespace Keysharp.Core.Linux
 
 		internal override void MenuSelect(object title, object text, object menu, object sub1, object sub2, object sub3, object sub4, object sub5, object sub6, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is WindowItem win)
+			if (WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
 				if (Control.FromHandle(win.Handle) is Form form)
 				{
@@ -546,9 +747,9 @@ namespace Keysharp.Core.Linux
 
 		private static void DropdownHelper(bool val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlItem item)
 			{
-				if (Control.FromHandle(item.Handle) is ComboBox ctrl2)
+				if (item.Control is ComboBox ctrl2)
 				{
 					ctrl2.DroppedDown = val;
 				}

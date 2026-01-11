@@ -4,25 +4,24 @@ namespace Keysharp.Core.Windows
 	/// <summary>
 	/// Concrete implementation of WindowManager for the Windows platfrom.
 	/// </summary>
-	internal class WindowManager : WindowManagerBase
+	internal class WindowManager : WindowManagerBase, IWindowManager
 	{
-		internal override WindowItemBase ActiveWindow => TheScript.WindowProvider.Manager.CreateWindow(WindowsAPI.GetForegroundWindow());
-		private int lastWindowCount = 64;
+		public static WindowItemBase ActiveWindow => CreateWindow(WindowsAPI.GetForegroundWindow());
+		private static int lastWindowCount = 64;
 
 		/// <summary>
 		/// Return all top level windows. This does not recurse into child windows.
 		/// </summary>
-		internal override IEnumerable<WindowItemBase> AllWindows
+		public static IEnumerable<WindowItemBase> AllWindows
 		{
 			get
 			{
 				var windows = new List<WindowItemBase>(lastWindowCount);
 				var doHidden = ThreadAccessors.A_DetectHiddenWindows;
-				var mgr = Script.TheScript.WindowProvider.Manager;
 				_ = WindowsAPI.EnumWindows(delegate (nint hwnd, int lParam)
 				{
 					if (doHidden || WindowsAPI.IsWindowVisible(hwnd))
-						windows.Add(mgr.CreateWindow(hwnd));
+						windows.Add(CreateWindow(hwnd));
 
 					return true;
 				}, 0);
@@ -33,9 +32,9 @@ namespace Keysharp.Core.Windows
 
 		internal WindowManager() => Script.TheScript.ProcessesData.CurrentThreadID = WindowsAPI.GetCurrentThreadId();
 
-		internal override WindowItemBase CreateWindow(nint id) => new WindowItem(id);
+		public static WindowItemBase CreateWindow(nint id) => new WindowItem(id);
 
-		internal override IEnumerable<WindowItemBase> FilterForGroups(IEnumerable<WindowItemBase> windows)
+		public static IEnumerable<WindowItemBase> FilterForGroups(IEnumerable<WindowItemBase> windows)
 		{
 			return windows.Where((w) =>
 			{
@@ -53,12 +52,19 @@ namespace Keysharp.Core.Windows
 			});
 		}
 
-		internal override WindowItemBase FindWindow(SearchCriteria criteria, bool last = false)
+		public static WindowItemBase FindWindow(SearchCriteria criteria, bool last = false)
 		{
 			WindowItemBase found = null;
 
 			if (criteria.IsEmpty)
 				return found;
+
+			if (criteria.ID != 0)
+			{
+				if (IsWindow(criteria.ID) && CreateWindow(criteria.ID) is WindowItemBase temp && temp.Equals(criteria))
+					return temp;
+				return null;
+			}
 
 			var mm = ThreadAccessors.A_TitleMatchMode;
 
@@ -73,9 +79,9 @@ namespace Keysharp.Core.Windows
 					if (hwnd == 0) //If there is no match with FindWindow then there can't be a match among AllWindows
 						return found;
 
-					found = Script.TheScript.WindowProvider.Manager.CreateWindow(hwnd);
+					found = WindowManager.CreateWindow(hwnd);
 
-					if (found.Equals(criteria)) //Evaluate any other criteria as well before accepting the match
+					if (found.Detectable && found.Equals(criteria)) //Evaluate any other criteria as well before accepting the match
 						return found;
 
 					found = null;
@@ -96,7 +102,7 @@ namespace Keysharp.Core.Windows
 			return found;
 		}
 
-		internal override uint GetFocusedCtrlThread(ref nint apControl, nint aWindow)
+		public static uint GetFocusedCtrlThread(ref nint apControl, nint aWindow)
 		{
 			// Determine the thread for which we want the keyboard layout.
 			// When no foreground window, the script's own layout seems like the safest default.
@@ -128,38 +134,52 @@ namespace Keysharp.Core.Windows
 			return thread_id;
 		}
 
-		internal override nint GetForeGroundWindowHwnd() => WindowsAPI.GetForegroundWindow();
+		public static nint GetForegroundWindowHandle() => WindowsAPI.GetForegroundWindow();
 
-		internal override bool IsWindow(nint handle) => WindowsAPI.IsWindow(handle) || handle == WindowsAPI.HWND_BROADCAST;
+		public static bool IsWindow(nint handle) => WindowsAPI.IsWindow(handle) || handle == WindowsAPI.HWND_BROADCAST;
 
-		internal override void MaximizeAll()
+		public static void MaximizeAll()
 		{
 			foreach (var window in AllWindows)
 				window.WindowState = FormWindowState.Maximized;
 		}
 
-		internal override void MinimizeAll()
+		public static void MinimizeAll()
 		{
 			var window = FindWindow(new SearchCriteria { ClassName = "Shell_TrayWnd" });
 			_ = WindowsAPI.PostMessage(window.Handle, WindowsAPI.WM_COMMAND, new nint(419), 0);
 			WindowItemBase.DoWinDelay();
 		}
 
-		internal override void MinimizeAllUndo()
+		public static void MinimizeAllUndo()
 		{
 			var window = FindWindow(new SearchCriteria { ClassName = "Shell_TrayWnd" });
 			_ = WindowsAPI.PostMessage(window.Handle, WindowsAPI.WM_COMMAND, new nint(416), 0);
 			WindowItemBase.DoWinDelay();
 		}
 
-		internal override WindowItemBase WindowFromPoint(Point location)
+		public static WindowItemBase ChildWindowFromPoint(POINT location)
 		{
 			var ctrl = WindowsAPI.WindowFromPoint(location);
 
 			if (ctrl != 0)
-				return Script.TheScript.WindowProvider.Manager.CreateWindow(ctrl);
+				return CreateWindow(ctrl);
 
 			return null;
+		}
+
+		public static WindowItemBase WindowFromPoint(POINT location)
+		{
+			var child = WindowsAPI.WindowFromPoint(location);
+
+			if (child == 0)
+				return null;
+
+			var top = WindowsAPI.GetAncestor(child, gaFlags.GA_ROOT);
+			if (top == 0)
+				top = child;
+
+			return CreateWindow(top);
 		}
 	}
 }

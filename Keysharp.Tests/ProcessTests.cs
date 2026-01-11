@@ -10,7 +10,7 @@ namespace Keysharp.Tests
 		{
 			VarRef pid = new(null);
 #if WINDOWS
-			_ = Run("notepad.exe", "", "max", pid);
+			_ = Run("cmd.exe", "", "max", pid);
 			_ = ProcessWait(pid.__Value);
 			_ = ProcessSetPriority("H", pid.__Value);
 
@@ -22,11 +22,11 @@ namespace Keysharp.Tests
 			}
 
 			Thread.Sleep(1000);
-			pid.__Value = ProcessExist("notepad.exe");
+			pid.__Value = ProcessExist("cmd.exe");
 			Assert.AreEqual(0L, pid.__Value);
-			_ = RunWait("notepad.exe", "", "max");
+			_ = RunWait("cmd.exe", "", "max");
 			Thread.Sleep(1000);
-			Assert.AreEqual(0L, ProcessExist("notepad.exe"));
+			Assert.AreEqual(0L, ProcessExist("cmd.exe"));
 			//Admin tools.
 			Run("shell:::{D20EA4E1-3957-11D2-A40B-0C5020524153}");
 			//This PC.
@@ -36,7 +36,12 @@ namespace Keysharp.Tests
 			//explore verb.
 			Run("explore " + Accessors.A_ProgramFiles.ToString());
 			//find verb.
-			Run("find D:\\");
+			if (Directory.Exists("D:\\"))
+				Run("find D:\\");
+			else if (Directory.Exists("C:\\"))
+				Run("find C:\\");
+			else
+				throw new Exception("Cannot test find verb");
 			//Open file with default.
 			Run("..\\..\\..\\Keysharp.Tests\\Code\\test-text-file.txt");
 			//Run program as admin to open file.
@@ -58,20 +63,20 @@ namespace Keysharp.Tests
 			//Can't really test RunAs() or Shutdown(), but they have been manually tested individually.
 #else
 			_ = Run("xed", "", "max", pid);
-			_ = ProcessWait(pid);
+			_ = ProcessWait(pid.__Value);
 
 			//Skip process priority raising on linux, it can't be raised
 			//above normal without being root.
-			if (ProcessExist(pid) != 0)
+			if (ProcessExist(pid.__Value) != 0)
 			{
 				System.Threading.Thread.Sleep(2000);
-				_ = ProcessClose(pid);
-				_ = ProcessWaitClose(pid);
+				_ = ProcessClose(pid.__Value);
+				_ = ProcessWaitClose(pid.__Value);
 			}
 
 			System.Threading.Thread.Sleep(1000);
-			pid = ProcessExist("xed");
-			Assert.AreEqual(0L, pid);
+			pid.__Value = ProcessExist("xed");
+			Assert.AreEqual(0L, pid.__Value);
 			_ = RunWait("xed", "", "max");
 			System.Threading.Thread.Sleep(1000);
 			Assert.AreEqual(0L, ProcessExist("xed"));

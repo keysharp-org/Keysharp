@@ -69,8 +69,13 @@
 			TxtSearch = new TextBox();
 			openFileDialog = new OpenFileDialog();
 			splitContainer = new SplitContainer();
+#if WINDOWS
 			txtIn = new Scintilla();
 			txtOut = new Scintilla();
+#else
+			txtIn = new RichTextBox();
+			txtOut = new RichTextBox();
+#endif
 			toolStrip1 = new ToolStrip();
 			tslCodeStatus = new ToolStripLabel();
 			tssCode = new ToolStripSeparator();
@@ -423,34 +428,50 @@
 			//
 			// txtIn
 			//
+#if WINDOWS
 			txtIn.AutocompleteListSelectedBackColor = Color.FromArgb(0, 120, 215);
 			txtIn.CaretLineBackColor = Color.AliceBlue;
+#endif
 			txtIn.Dock = DockStyle.Fill;
 			txtIn.Font = new Font("Consolas", 10F);
-			txtIn.LexerName = null;
+#if !WINDOWS
+			txtIn.BorderStyle = BorderStyle.None;
+#endif
 			txtIn.Location = new Point(1, 0);
 			txtIn.Margin = new Padding(0);
 			txtIn.Name = "txtIn";
 			txtIn.Size = new Size(858, 404);
 			txtIn.TabIndex = 1;
+#if WINDOWS
 			txtIn.WrapMode = WrapMode.Word;
+#else
+			txtIn.WordWrap = true;
+#endif
 			txtIn.TextChanged += txtIn_TextChanged;
 			txtIn.KeyDown += txtIn_KeyDown;
 			//
 			// txtOut
 			//
+#if WINDOWS
 			txtOut.AutocompleteListSelectedBackColor = Color.FromArgb(0, 120, 215);
 			txtOut.CaretLineBackColor = Color.AliceBlue;
+#endif
 			txtOut.Dock = DockStyle.Fill;
 			txtOut.Font = new Font("Consolas", 10F);
-			txtOut.LexerName = null;
+#if !WINDOWS
+			txtOut.BorderStyle = BorderStyle.None;
+#endif
 			txtOut.Location = new Point(1, 0);
 			txtOut.Margin = new Padding(0);
 			txtOut.Name = "txtOut";
 			txtOut.ReadOnly = true;
 			txtOut.Size = new Size(816, 404);
 			txtOut.TabIndex = 2;
+#if WINDOWS
 			txtOut.WrapMode = WrapMode.Word;
+#else
+			txtOut.WordWrap = true;
+#endif
 			txtOut.KeyDown += txtOut_KeyDown;
 			//
 			// toolStrip1
@@ -565,8 +586,12 @@
 		private System.Windows.Forms.ToolStripLabel tslCodeCompile;
 		private System.Windows.Forms.ToolStripSeparator tssCode;
 		private System.Windows.Forms.ToolStripLabel tslCodeStatus;
+#if WINDOWS
 		private ScintillaNET.Scintilla txtIn;
 		private ScintillaNET.Scintilla txtOut;
+#else
+		private System.Windows.Forms.RichTextBox txtIn;
+		private System.Windows.Forms.RichTextBox txtOut;
+#endif
 	}
 }
-

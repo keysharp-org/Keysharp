@@ -14,7 +14,7 @@ namespace Keysharp.Benchmark
 	[HideColumns("Error", "StdDev", "RatioSD", "Gen0", "Gen1", "Gen2")]
 	public class BaseTest
 	{
-		private static Keysharp.Scripting.Script _ks_s = new ();
+		internal static Keysharp.Scripting.Script _ks_s = new ();
 
 		public BaseTest()
 		{

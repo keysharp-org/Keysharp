@@ -1,6 +1,6 @@
 ﻿namespace Keysharp.Core.Common.Containers
 {
-	[PublicForTestOnly]
+	[PublicHiddenFromUser]
 	public class LazyDictionary<TKey, TValue>
 	{
 		// internal map: TValue or Func<TValue>
@@ -10,6 +10,45 @@
 		public LazyDictionary(IEqualityComparer<TKey> comparer)
 		{
 			_inner = new Dictionary<TKey, object>(comparer ?? EqualityComparer<TKey>.Default);
+		}
+
+		public IEnumerable<TValue> Values
+		{
+			get
+			{
+				foreach (var boxed in _inner.Values)
+				{
+					if (boxed is Lazy<TValue> lv)
+					{
+						continue;
+					}
+					else
+					{
+						yield return (TValue)boxed;
+					}
+				}
+			}
+		}
+
+		public Dictionary<TKey, object>.KeyCollection Keys => _inner.Keys;
+
+		public bool ContainsKey(TKey key) => _inner.ContainsKey(key);
+
+		public bool ContainsValue(TValue value)
+		{
+			foreach (var boxed in _inner.Values)
+			{
+				if (boxed is Lazy<TValue> lv)
+				{
+					continue;
+				}
+				else
+				{
+					if (EqualityComparer<TValue>.Default.Equals((TValue)boxed, value))
+						return true;
+				}
+			}
+			return false;
 		}
 
 		/// <summary>

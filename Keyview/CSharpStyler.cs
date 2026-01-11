@@ -1,4 +1,5 @@
-﻿namespace Keyview
+﻿#if WINDOWS
+namespace Keyview
 {
 	public class CSharpStyler : ScintillaStyler
 	{
@@ -51,3 +52,4 @@
 		}
 	}
 }
+#endif

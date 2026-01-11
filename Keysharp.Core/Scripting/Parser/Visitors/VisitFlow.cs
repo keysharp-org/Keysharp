@@ -72,18 +72,18 @@ namespace Keysharp.Scripting
             );
 
             // Generate the loop condition
-            var loopCondition = SyntaxFactory.InvocationExpression(
-                SyntaxFactory.IdentifierName("IsTrueAndRunning"),
-				CreateArgumentList(
-					SyntaxFactory.InvocationExpression(
-                        SyntaxFactory.MemberAccessExpression(
-                            SyntaxKind.SimpleMemberAccessExpression,
-                            enumeratorVariable,
-                            SyntaxFactory.IdentifierName("MoveNext")
+            var loopCondition = ((InvocationExpressionSyntax)InternalMethods.IsTrueAndRunning)
+                .WithArgumentList(
+				    CreateArgumentList(
+					    SyntaxFactory.InvocationExpression(
+                            SyntaxFactory.MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                enumeratorVariable,
+                                SyntaxFactory.IdentifierName("MoveNext")
+                            )
                         )
                     )
-                )
-            );
+                );
 
             // Ensure the loop body is a block
             BlockSyntax loopBody = EnsureBlockSyntax(loopBodyNode);
@@ -91,8 +91,8 @@ namespace Keysharp.Scripting
             // Add the `Until` condition, if provided
             StatementSyntax untilStatement = untilCondition != null
                 ? SyntaxFactory.IfStatement(
-                    SyntaxFactory.InvocationExpression(
-						CreateMemberAccess("Keysharp.Scripting.Script", "IfTest"),
+                    ((InvocationExpressionSyntax)InternalMethods.IfTest)
+                    .WithArgumentList(
 						CreateArgumentList(untilCondition)
                     ),
                     SyntaxFactory.Block(SyntaxFactory.BreakStatement())
@@ -558,10 +558,8 @@ namespace Keysharp.Scripting
             );
 
             // Generate the loop condition: IsTrueAndRunning(IfTest(...))
-            var loopCondition = SyntaxFactory.InvocationExpression(
-                SyntaxFactory.IdentifierName("IsTrueAndRunning"),
-				CreateArgumentList(conditionWrapped)
-            );
+            var loopCondition = ((InvocationExpressionSyntax)InternalMethods.IsTrueAndRunning)
+                .WithArgumentList(CreateArgumentList(conditionWrapped));
 
             // Generate the loop body
             BlockSyntax loopBody = (BlockSyntax)Visit(context.flowBlock());
@@ -1018,7 +1016,10 @@ namespace Keysharp.Scripting
         public override SyntaxNode VisitSwitchStatement([NotNull] SwitchStatementContext context)
         {
             // Extract the switch value (SwitchValue)
-            switchValueExists = context.singleExpression() != null;
+            bool prevSwitchValue = switchValueExists;
+            bool prevSwitchCaseSense = switchCaseSense;
+
+			switchValueExists = context.singleExpression() != null;
             var switchValue = switchValueExists
                 ? (ExpressionSyntax)Visit(context.singleExpression())
                 : SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression);
@@ -1065,8 +1066,11 @@ namespace Keysharp.Scripting
                 )
             );
 
-            // Combine the SwitchHelper invocation and the case block
-            return caseBlock.WithExpression(switchValueToString);
+            switchValueExists = prevSwitchValue;
+			switchCaseSense = prevSwitchCaseSense;
+
+			// Combine the SwitchHelper invocation and the case block
+			return caseBlock.WithExpression(switchValueToString);
         }
 
         public override SyntaxNode VisitCaseBlock([NotNull] CaseBlockContext context)
@@ -1080,51 +1084,7 @@ namespace Keysharp.Scripting
 				foreach (var caseClause in context.caseClause())
 				{
                     SwitchSectionSyntax fullSection = (SwitchSectionSyntax)VisitCaseClause(caseClause);
-
-					var stmts = fullSection.Statements;
-					int idx = stmts
-						.Select((s, i) => (stmt: s, idx: i + 1))
-						.FirstOrDefault(t =>
-							t.stmt is LabeledStatementSyntax ls &&
-							ls.Identifier.Text.Equals("default", StringComparison.OrdinalIgnoreCase))
-						.idx;
-
-
-					if (idx > 0)
-					{
-						// 1) Everything *before* that `default:` stays in the original labels
-						var before = stmts.Take(idx - 1).Append(SyntaxFactory.BreakStatement());
-						var preSection = fullSection
-							.WithStatements(SyntaxFactory.List(before));
-						sections.Add(preSection);
-
-						// 2) Everything *after* becomes the real default‐section
-						var after = stmts.Skip(idx);
-						var defaultLabel = SyntaxFactory.DefaultSwitchLabel();
-						var defaultSection = SyntaxFactory.SwitchSection(
-							labels: SyntaxFactory.SingletonList<SwitchLabelSyntax>(defaultLabel),
-							statements: SyntaxFactory.List(after)
-						);
-						defaultClause = defaultSection;
-					}
-					else if (fullSection.Labels.Any(l =>
-								 l.IsKind(SyntaxKind.DefaultSwitchLabel)))
-					{
-						// It really was a default‐section as given by caseClause
-						defaultClause = fullSection;
-					}
-					else
-					{
-						// A normal case‐section
-						sections.Add(fullSection);
-
-						// And collect its case‐expressions as usual:
-						var exprs = caseClause
-							.expressionSequence()
-							.expression()
-							.Select(e => (ExpressionSyntax)Visit(e));
-						caseExpressions.AddRange(exprs);
-					}
+					sections.Add(fullSection);
 				}
 			}
 
@@ -1258,7 +1218,7 @@ namespace Keysharp.Scripting
         public override SyntaxNode VisitLabelledStatement([NotNull] LabelledStatementContext context)
         {
             // Get the label identifier
-            var labelName = context.identifier().GetText().Trim('"');
+            var labelName = parser.ToValidIdentifier(context.identifier().GetText().Trim('"'));
 
             // Return a labeled statement with an empty statement as the body
             return SyntaxFactory.LabeledStatement(
@@ -1267,20 +1227,93 @@ namespace Keysharp.Scripting
             );
         }
 
-        public override SyntaxNode VisitGotoStatement([NotNull] GotoStatementContext context)
+		internal IReadOnlyList<LabelInfo> GetValidTargetsForGoto(MainParser.GotoStatementContext gotoCtx)
+		{
+            if (!parser.functionParserData.TryGetValue(parser.currentFunc.RootContext, out var functionData))
+                return new List<LabelInfo>();
+            
+			if (!functionData.Index.GotoSitePaths.TryGetValue(gotoCtx, out var sitePath))
+				sitePath = System.Array.Empty<int>(); // fallback; should not happen if pre-pass saw it
+
+			// Only labels whose region path is a prefix of the goto site’s path.
+			return functionData.Index.Labels.Where(l => IsPrefix(l.Path, sitePath)).ToList();
+
+		    bool IsPrefix(int[] prefix, int[] full)
+		    {
+			    if (prefix.Length > full.Length) return false;
+			    for (int i = 0; i < prefix.Length; i++)
+				    if (prefix[i] != full[i]) return false;
+			    return true;
+		    }
+		}
+
+		public override SyntaxNode VisitGotoStatement([NotNull] GotoStatementContext context)
         {
-            // Get the target label
-            var labelName = context.propertyName()?.GetText().Trim('"');
-
-            if (labelName == null)
+            if (context.propertyName() != null)
             {
-                throw new ArgumentException("Goto target label is missing.");
-            }
+                // Get the target label
+                var labelName = parser.ToValidIdentifier(context.propertyName().GetText().Trim('"'));
 
-            // Return the Goto statement
-            return SyntaxFactory.GotoStatement(SyntaxKind.GotoStatement, SyntaxFactory.IdentifierName(labelName));
+				if (labelName == null)
+                    throw new ArgumentException("Goto target label is missing.");
+
+				// Return the Goto statement
+				return SyntaxFactory.GotoStatement(SyntaxKind.GotoStatement, SyntaxFactory.IdentifierName(labelName));
+			}
+
+			var labels = GetValidTargetsForGoto(context);
+			var expr = Visit(context.singleExpression());
+            var exprString = ((InvocationExpressionSyntax)InternalMethods.ForceString)
+                .WithArgumentList(CreateArgumentList(expr));
+
+			var tempVar = parser.PushTempVar();
+
+			// switch (ForceString(expr).ToLowerInvariant()) { case "foo": goto foo; ... default: throw; }
+			ExpressionSyntax selector = SyntaxFactory.AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, tempVar, SyntaxFactory.InvocationExpression(
+				SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression,
+					exprString,
+					SyntaxFactory.IdentifierName("ToLowerInvariant"))));
+
+			var sections = new List<SwitchSectionSyntax>(labels.Count + 1);
+			foreach (var li in labels)
+			{
+				sections.Add(
+					SyntaxFactory.SwitchSection(
+						SyntaxFactory.SingletonList<SwitchLabelSyntax>(
+							SyntaxFactory.CaseSwitchLabel(
+								SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression,
+									SyntaxFactory.Literal(li.Raw.ToLowerInvariant())))),
+						SyntaxFactory.SingletonList<StatementSyntax>(
+							SyntaxFactory.GotoStatement(SyntaxKind.GotoStatement, SyntaxFactory.IdentifierName(parser.ToValidIdentifier(li.Raw))))));
+			}
+
+			sections.Add(
+	            SyntaxFactory.SwitchSection(
+		            SyntaxFactory.SingletonList<SwitchLabelSyntax>(SyntaxFactory.DefaultSwitchLabel()),
+		            SyntaxFactory.SingletonList<StatementSyntax>(
+			            SyntaxFactory.ThrowStatement(CreateErrorWihMessage("Invalid goto target: {0}", tempVar)))));
+
+            parser.PopTempVar();
+
+			return SyntaxFactory.SwitchStatement(selector, SyntaxFactory.List(sections));
         }
 
+		private static ObjectCreationExpressionSyntax CreateErrorWihMessage(string fmt, ExpressionSyntax arg) =>
+	    SyntaxFactory.ObjectCreationExpression(SyntaxFactory.IdentifierName("Error"))
+	    .WithArgumentList(
+		    SyntaxFactory.ArgumentList(
+			    SyntaxFactory.SingletonSeparatedList(
+				    SyntaxFactory.Argument(
+					    SyntaxFactory.InvocationExpression(CreateQualifiedName("System.String.Format"))
+					    .WithArgumentList(
+						    SyntaxFactory.ArgumentList(
+							    SyntaxFactory.SeparatedList(new[]
+							    {
+								    SyntaxFactory.Argument(SyntaxFactory.LiteralExpression(
+									    SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(fmt))),
+								    SyntaxFactory.Argument(arg)
+							    })))))));
 
-    }
+
+	}
 }

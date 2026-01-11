@@ -159,7 +159,7 @@
 				if (Control.FromHandle(item.Handle) is Control ctrl2)
 					return ctrl2.Visible ? 1L : 0L;
 				else
-					_ = item.Visible;
+					return item.Visible ? 1L : 0L;
 			}
 
 			return 0L;
@@ -176,7 +176,7 @@
 			{
 				if (Control.FromHandle(item.Handle) is Control ctrl2)
 				{
-					ctrl2.Location = new Point(x == int.MinValue ? ctrl2.Location.X : x, y == int.MinValue ? ctrl2.Location.Y : y);
+					ctrl2.SetLocation(new Point(x == int.MinValue ? ctrl2.Location.X : x, y == int.MinValue ? ctrl2.Location.Y : y));
 					ctrl2.Size = new Size(width == int.MinValue ? ctrl2.Size.Width : width, height == int.MinValue ? ctrl2.Size.Height : height);
 				}
 				else

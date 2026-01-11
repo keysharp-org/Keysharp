@@ -15,6 +15,8 @@
 
 		internal ThreadVariables CurrentThread;
 
+		internal ThreadVariables UnderlyingThread => tvm.threadVars.TryPeekSecond();
+
 		int _timersPaused = 0;
 
 		public Threads()
@@ -49,7 +51,6 @@
 			return null;
 		}
 
-		[PublicForTestOnly]
 		public (bool, ThreadVariables) PushThreadVariables(long priority, bool skipUninterruptible,
 				bool isCritical = false, bool onlyIfEmpty = false, bool inc = false)
 		{
@@ -172,6 +173,37 @@
 			return tv.allowThreadToBeInterrupted;
 		}
 
+		internal void LaunchThreadInMain(Action act, long priority = 0, bool skipUninterruptible = false,
+							 bool isCritical = false)//Determine later the optimal threading model.//TODO
+		{
+			try
+			{
+				var existingTv = GetThreadVariables();
+				existingTv.WaitForCriticalToFinish();//Cannot launch a new task while a critical one is running.
+				Script.TheScript.mainWindow.CheckedBeginInvoke(() =>
+				{
+					var threads = Script.TheScript.Threads;
+					var btv = threads.PushThreadVariables(priority, skipUninterruptible, isCritical, false, true);//Always start each thread with one entry.
+
+					if (btv.Item1)
+					{
+						_ = Flow.TryCatch(() =>
+						{
+							act();
+							_ = threads.EndThread(btv);
+						}, true, btv);//Pop on exception because EndThread() above won't be called.
+					}
+				}, true, false);
+			}
+			catch (Exception ex)
+			{
+				if (ex.InnerException != null)
+					throw ex.InnerException;
+				else
+					throw;//Do not pass ex because it will reset the stack information.
+			}
+		}
+
 		internal void LaunchInThread(long priority, bool skipUninterruptible,
 									 bool isCritical, object func, object[] o, bool tryCatch)//Determine later the optimal threading model.//TODO
 		{
@@ -182,8 +214,8 @@
 				Script.TheScript.mainWindow.CheckedBeginInvoke(() =>
 				{
 					object ret = null;
-					var script = Script.TheScript;
-					var btv = PushThreadVariables(priority, skipUninterruptible, isCritical, false, true);//Always start each thread with one entry.
+					var threads = Script.TheScript.Threads;
+					var btv = threads.PushThreadVariables(priority, skipUninterruptible, isCritical, false, true);//Always start each thread with one entry.
 
 					if (btv.Item1)
 					{
@@ -198,7 +230,7 @@
 								else
 									ret = "";
 
-								_ = EndThread(btv);
+								_ = threads.EndThread(btv);
 							}, true, btv);//Pop on exception because EndThread() above won't be called.
 						}
 						else
@@ -212,7 +244,7 @@
 							else
 								ret = "";
 
-							_ = EndThread(btv);
+							_ = threads.EndThread(btv);
 						}
 					}
 				}, true, false);

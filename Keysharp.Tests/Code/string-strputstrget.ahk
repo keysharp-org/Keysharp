@@ -20,8 +20,8 @@ else
 	FileAppend "fail", "*"
 	
 ; ASCII test.
-testlen := StrPut(s, null, null, "ASCII")
-lenwritten := StrPut(s, buf, null, "ASCII")
+testlen := StrPut(s, "ASCII")
+lenwritten := StrPut(s, buf, "ASCII")
 
 if (testlen == lenwritten)
 	FileAppend "pass", "*"

@@ -76,14 +76,5 @@ namespace Keysharp.Core.Linux.X11
 
 		public static XClassHint Zero = new XClassHint();
 	}
-
-	[StructLayout(LayoutKind.Sequential)]
-	internal struct XClassHintStr
-	{
-		[MarshalAs(UnmanagedType.LPStr)] public string resName;
-		[MarshalAs(UnmanagedType.LPStr)] public string resClass;
-
-		public static XClassHintStr Zero = new XClassHintStr();
-	}
 }
 #endif

@@ -1085,32 +1085,6 @@ namespace Keysharp.Core
 		}
 
 		/// <summary>
-		/// Converts a value to a string.
-		/// </summary>
-		/// <param name="value">The value to convert.</param>
-		/// <returns>The result of converting value to a string, or value itself if it was a string.</returns>
-		public static string String(object value) => value.As();
-
-		/// <summary>
-		/// Creates a <see cref="StringBuffer"/> object with a capacity of 256.
-		/// This should be used in place of pointers when calling a raw API function that takes a pointer argument
-		/// which will be written to.
-		/// </summary>
-		/// <param name="str">An initial value to place inside of the buffer. Default: empty.</param>
-		/// <returns>The newly created <see cref="StringBuffer"/>.</returns>
-		public static StringBuffer StringBuffer(object str = null) => new (str.As(), 256);
-
-		/// <summary>
-		/// Creates a <see cref="StringBuffer"/> object.
-		/// This should be used in place of pointers when calling a raw API function that takes a pointer argument
-		/// which will be written to.
-		/// </summary>
-		/// <param name="str">An initial value to place inside of the buffer. Default: empty.</param>
-		/// <param name="capacity">An initial capacity for the <see cref="StringBuffer"/>'s internal buffer. Default: 256.</param>
-		/// <returns>The newly created <see cref="StringBuffer"/>.</returns>
-		public static StringBuffer StringBuffer(object str, object capacity) => new (str.As(), capacity.Ai(256));
-
-		/// <summary>
 		/// Retrieves the count of how many characters are in a string.
 		/// </summary>
 		/// <param name="str">The string whose contents will be measured.</param>
@@ -1135,11 +1109,13 @@ namespace Keysharp.Core
 		public static object StrPtr(object value)
 		{
 			if (value is StringBuffer sb) {
-				return sb;
+				return sb.Ptr;
 			} 
 			else if (value is KeysharpObject kso)
 			{
 				var str = Script.GetPropertyValue(kso, "__Value");
+				if (str is StringBuffer sb2)
+					return sb2.Ptr;
 				var sbr = new StringBuffer(str);
 				sbr.EntangledString = kso;
 				return sbr;
@@ -1178,71 +1154,156 @@ namespace Keysharp.Core
 		{
 			if (obj.Length > 0 && obj[0] != null)
 			{
-				var s = obj.As(0) + char.MinValue;
+				// Raw string (no terminator here; we handle it explicitly below).
+				var s = obj.As(0);
 				var len = long.MinValue;
 				var encoding = Encoding.Unicode;
 				nint ptr = 0;
-				Buffer buf = null;
+				Any buf = null;
+				var lengthProvided = false;
+
+				if (obj.Length == 1)
+					return (long)encoding.GetByteCount(s) + encoding.GetByteCount("\0");
 
 				if (obj.Length > 1)
 				{
-					buf = obj[1] as Buffer;
+					buf = obj[1] as Any;
 
-					if (obj[1] is IPointable)
-						ptr = (nint)buf.Ptr;
+					if (obj[1] is IPointable ip)
+						ptr = (nint)ip.Ptr;
+					else if (buf != null && Reflections.GetPtrProperty(buf) is long lp)
+						ptr = new nint(lp);
 					else if (obj[1] is long l)
 						ptr = new nint(l);
 					else if (obj[1] is string ec)
 					{
-						encoding = Files.GetEncoding(ec);
-						return encoding.GetBytes(s).Length;
+						var enc = Files.GetEncoding(ec);
+						return enc.GetByteCount(s) + enc.GetByteCount("\0");
 					}
 				}
 
-				if (ptr != 0 && ptr.ToInt64() < 65536)//65536 is the first valid address.
+				if (ptr.ToInt64() < 65536)//65536 is the first valid address.
 					return (long)Errors.ValueErrorOccurred($"Address of {ptr.ToInt64()} is less than the minimum allowable address of 65,536.", null, DefaultErrorLong);
 
-				if (obj.Length > 2 && !obj[2].IsNullOrEmpty())
+				if (obj.Length > 2)
 				{
-					if (obj[2] is string ec)
+					if (obj.Length == 4)
+					{
+						encoding = Files.GetEncoding(obj[3]);
+						var lengthChars = obj[2].Al(0);
+						lengthProvided = true;
+
+						if (lengthChars <= 0)
+							return (long)Errors.ValueErrorOccurred(
+								"Length must be greater than zero.", null, DefaultErrorLong);
+
+						// Convert characters to bytes according to target encoding "char" width
+						len = lengthChars * CharSize(encoding);
+					}
+					// 3-parameter with Length (String, Target, Length) – native encoding
+					else if ((obj[2].ParseLong(false, true) ?? long.MinValue) is long ll && ll != long.MinValue)
+					{
+						lengthProvided = true;
+						var lengthChars = ll;
+
+						if (lengthChars <= 0)
+							return (long)Errors.ValueErrorOccurred(
+								"Length must be greater than zero.", null, DefaultErrorLong);
+
+						len = lengthChars * CharSize(encoding);
+					}
+					// 3-parameter with Encoding (String, Target, Encoding)
+					else
 					{
 						encoding = Files.GetEncoding(obj[2]);
-						len = s.Length;
+						len = long.MinValue;
 					}
-					else
-						len = Math.Abs(obj.Al(2));
 				}
 
-				if (obj.Length > 3)
-					encoding = Files.GetEncoding(obj[3]);
+				// Convert the string *without* the terminator.
+				byte[] dataBytes;
+				try
+				{
+					dataBytes = encoding.GetBytes(s);
+				}
+				catch (Exception ex)
+				{
+					// Per docs: throw OSError if conversion failed.
+					return (long)Errors.OSErrorOccurred(
+						$"String conversion failed for the specified encoding: {ex.Message}", null, DefaultErrorLong);
+				}
+				var terminatorSize = encoding.GetByteCount("\0");
 
-				var bytes = encoding.GetBytes(s);
-				var written = 0;
+				// Determine capacity in BYTES.
+				long capacity = (len == long.MinValue) ? long.MaxValue : len;
 
+				// If Target is a buffer-like object, cap capacity to its Size and enforce rules.
 				if (buf != null)
 				{
-					written = (int)Math.Min((long)buf.Size, bytes.Length);
+					var hasSize = TryGetPropertyValue(out object sz, buf, "Size");
+					var bufSize = hasSize ? sz.Al() : 0L;
+
+					if (!hasSize)
+						return (long)Errors.ValueErrorOccurred(
+							"Target object is missing a valid Size property.", null, DefaultErrorLong);
+
+					// If Length was supplied, it must NOT exceed Target.Size (error even if data would fit).
+					if (lengthProvided && capacity > bufSize)
+						return (long)Errors.ValueErrorOccurred(
+							"Specified Length exceeds Target.Size.", null, DefaultErrorLong);
+
+					// Effective capacity is the smaller of (Length-in-bytes if supplied) and Target.Size.
+					capacity = Math.Min(capacity, bufSize);
 				}
-				else
+
+				// If we have a known capacity (buffer or Length given), ensure the converted string fits.
+				if (capacity != long.MaxValue && dataBytes.Length > capacity)
 				{
-					if (len != long.MinValue)
-					{
-						if (len < s.Length || len < bytes.Length)
-							return (long)Errors.ValueErrorOccurred($"Length of {len} is less than the either the length of the string {s.Length} or the length of the converted buffer {bytes.Length}.", null, DefaultErrorLong);
-					}
-					else if (ptr == 0)
-						return bytes.Length;
-					else if (len == long.MinValue)
-						return (long)Errors.ValueErrorOccurred($"Length was not specified, but the target was not a Buffer object. Either pass a Buffer, or specify a Length.", null, DefaultErrorLong);
-
-					written = Math.Min((int)len, bytes.Length);
+					// Per docs: throw ValueError if the converted string would be longer than allowed.
+					return (long)Errors.ValueErrorOccurred(
+						"Converted string is longer than allowed by Length or Target.Size.",
+						null, DefaultErrorLong);
 				}
 
-				Marshal.Copy(bytes, 0, ptr, written);
-				return written;
+				// Decide whether we can include the null-terminator.
+				var canWriteNull = capacity - dataBytes.Length >= terminatorSize;
+
+				// Write data (and null if it fits).
+				var bytesWritten = dataBytes.Length;
+
+				if (dataBytes.Length > 0)
+					Marshal.Copy(dataBytes, 0, ptr, dataBytes.Length);
+
+				if (canWriteNull)
+				{
+					// Write a zero terminator of the correct width (1/2/4 bytes of zero).
+					var zeros = new byte[terminatorSize];
+					Marshal.Copy(zeros, 0, ptr + dataBytes.Length, terminatorSize);
+					bytesWritten += terminatorSize;
+				}
+
+				return bytesWritten;
 			}
 
 			return 0L;
+
+			// Helper: size in bytes of one "character" unit for the target encoding.
+			static int CharSize(Encoding enc)
+			{
+				// CodePage: 1200/1201 = UTF-16 LE/BE, 12000/12001 = UTF-32 LE/BE
+				switch (enc.CodePage)
+				{
+					case 1200: // UTF-16LE
+					case 1201: // UTF-16BE
+						return 2;
+					case 12000: // UTF-32LE
+					case 12001: // UTF-32BE
+						return 4;
+					default:
+						// UTF-8 and ANSI/multibyte code pages: "character" size is 1 byte for buffer sizing.
+						return 1;
+				}
+			}
 		}
 
 		/// <summary>

@@ -28,12 +28,12 @@
 		{
 			var file = filename.As();
 			var opts = options.As();
-			nint handle = 0;
 			var width = int.MinValue;
 			var height = int.MinValue;
 			var icon = "";
 			object iconnumber = 0L;
-			var disposeHandle = false;
+			var wantType = outImageType != null;
+			long handleValue = 0;
 
 			foreach (Range r in opts.AsSpan().SplitAny(Spaces))
 			{
@@ -48,38 +48,86 @@
 			}
 
 			var ext = Path.GetExtension(file).ToLower();
-			(Bitmap, object) ret;
 
 			if (ext == ".cur")
 			{
+#if WINDOWS
+				if (wantType)
+				{
+					var cur = new Cursor(file);
+
+					if (ImageHandleManager.TryAddCursor(cur, out var cursorHandle))
+					{
+						handleValue = cursorHandle.ToInt64();
+						Script.SetPropertyValue(outImageType, "__Value", 2L);
+						return handleValue;
+					}
+
+					cur.Dispose();
+				}
+
+				using (var cur = new Cursor(file))
+				{
+					var cursorBmp = ImageHelper.ConvertCursorToBitmap(cur);
+
+					if (ImageHandleManager.TryAddBitmap(cursorBmp, ImageHandleKind.Bitmap, out var bmpHandle))
+						handleValue = bmpHandle.ToInt64();
+				}
+
+				if (wantType)
+					Script.SetPropertyValue(outImageType, "__Value", 0L);
+#else
 				var cur = new Cursor(file);
-				handle = cur.Handle;
-				if (outImageType != null) Script.SetPropertyValue(outImageType, "__Value", 2L);
-			}
-			else if ((ret = ImageHelper.LoadImage(file, width, height, iconnumber)).Item1 is Bitmap bmp)
-			{
-				//Calling GetHbitmap() and GetHicon() creates a persistent handle that keeps the bitmap in memory, and must be destroyed later.
-				if (ret.Item2 is Icon ic)
+
+				try
 				{
-					handle = ic.Handle;
-					disposeHandle = false;
-					if (outImageType != null) Script.SetPropertyValue(outImageType, "__Value", 1L);
+					var cursorBmp = ImageHelper.ConvertCursorToBitmap(cur);
+					var kind = wantType ? ImageHandleKind.Cursor : ImageHandleKind.Bitmap;
+
+					if (ImageHandleManager.TryAddBitmap(cursorBmp, kind, out var bmpHandle))
+						handleValue = bmpHandle.ToInt64();
 				}
-				else if (ImageHelper.IsIcon(file))
+				finally
 				{
-					handle = ret.Item1.GetHicon();
-					disposeHandle = true;
-					if (outImageType != null) Script.SetPropertyValue(outImageType, "__Value", 1L);
+					if (cur is IDisposable id)
+						id.Dispose();
 				}
-				else
-				{
-					handle = bmp.GetHbitmap();
-					disposeHandle = true;
-					if (outImageType != null) Script.SetPropertyValue(outImageType, "__Value", 0L);
-				}
+
+				if (wantType)
+					Script.SetPropertyValue(outImageType, "__Value", 2L);
+#endif
+				return handleValue;
 			}
 
-			return new GdiHandleHolder(handle, disposeHandle);
+			var ret = ImageHelper.LoadImage(file, width, height, iconnumber);
+
+			if (ret.Item1 is Bitmap bmp)
+			{
+				var isHandleIcon = file.StartsWith("HICON:", StringComparison.OrdinalIgnoreCase);
+				var isIcon = isHandleIcon || ret.Item2 is Icon || ImageHelper.IsIcon(file);
+
+#if !WINDOWS
+				if (ret.Item2 is Icon)
+				{
+					var clone = bmp.Clone();
+					bmp.Dispose();
+					bmp = clone;
+				}
+#endif
+
+				var kind = wantType && isIcon ? ImageHandleKind.Icon : ImageHandleKind.Bitmap;
+
+				if (ImageHandleManager.TryAddBitmap(bmp, kind, out var bmpHandle))
+					handleValue = bmpHandle.ToInt64();
+
+				if (wantType)
+					Script.SetPropertyValue(outImageType, "__Value", isIcon ? 1L : 0L);
+
+				if (ret.Item2 is IDisposable disposable && !ReferenceEquals(ret.Item2, bmp))
+					disposable.Dispose();
+			}
+
+			return handleValue;
 		}
 	}
 }

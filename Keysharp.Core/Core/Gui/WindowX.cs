@@ -8,14 +8,14 @@ namespace Keysharp.Core
 
 		public static object WinMaximizeAll()
 		{
-			DoDelayedAction(Script.TheScript.WindowProvider.Manager.MaximizeAll);
+			DoDelayedAction(WindowManager.MaximizeAll);
 			return DefaultObject;
 		}
 
 		public static long WinGetAlwaysOnTop(object winTitle = null,
 											 object winText = null,
 											 object excludeTitle = null,
-											 object excludeText = null) => (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win && win.AlwaysOnTop) ? 1L : 0L;
+											 object excludeText = null) => (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win && win.AlwaysOnTop) ? 1L : 0L;
 	}
 
 	public static class WindowX
@@ -50,7 +50,7 @@ namespace Keysharp.Core
 				if (windows.Count != 0 && windows.Count == group.activated.Count)
 					group.activated.Clear();
 
-				if (windows.Count == 1 && windows[0].Handle.ToInt64() == script.WindowProvider.Manager.GetForeGroundWindowHwnd().ToInt64())
+				if (windows.Count == 1 && windows[0].Handle.ToInt64() == WindowManager.GetForegroundWindowHandle().ToInt64())
 					return 0L;
 
 				if (!m.Equals(Keyword_R, StringComparison.OrdinalIgnoreCase) && !windows.Any(w => w.Active))
@@ -80,7 +80,7 @@ namespace Keysharp.Core
 									  object excludeText = null)
 		{
 			var name = groupName.As();
-			var windowGroups = Script.TheScript.WindowProvider.Manager.Groups;
+			var windowGroups = TheScript.WindowProvider.Manager.Groups;
 
 			if (string.IsNullOrEmpty(name))
 				return DefaultErrorObject;
@@ -118,26 +118,26 @@ namespace Keysharp.Core
 				{
 					case Keyword_A:
 						while (stack.Count != 0)
-							_ = mgr.CreateWindow(new nint(stack.Pop())).Close();
+							_ = WindowManager.CreateWindow(new nint(stack.Pop())).Close();
 
 						_ = windowGroups.Remove(name);
 						break;
 
 					case Keyword_R:
 						if (stack.Count > 0)
-							_ = mgr.CreateWindow(new nint(stack.Pop())).Close();
+							_ = WindowManager.CreateWindow(new nint(stack.Pop())).Close();
 
 						if (stack.Count > 0 && !windows.Any(w => w.Active))
-							_ = mgr.CreateWindow(new nint(stack.Peek())).Active = true;
+							_ = WindowManager.CreateWindow(new nint(stack.Peek())).Active = true;
 
 						break;
 
 					case "":
 						if (stack.Count > 0)
-							_ = mgr.CreateWindow(new nint(stack.Pop())).Close();
+							_ = WindowManager.CreateWindow(new nint(stack.Pop())).Close();
 
 						if (stack.Count > 0)
-							mgr.CreateWindow(new nint(stack.ToArray()[stack.Count - 1])).Active = true;
+							WindowManager.CreateWindow(new nint(stack.ToArray()[stack.Count - 1])).Active = true;
 
 						break;
 				}
@@ -159,12 +159,12 @@ namespace Keysharp.Core
 					return DefaultErrorObject;
 
 				var windows = SearchWindows($"ahk_group {name}");
-				var allwindows = script.WindowProvider.Manager.FilterForGroups(script.WindowProvider.Manager.AllWindows.Where(w => !windows.Any(ww => ww.Handle.ToInt64() == w.Handle.ToInt64()))).ToList();
+				var allwindows = WindowManager.FilterForGroups(WindowManager.AllWindows.Where(w => !windows.Any(ww => ww.Handle.ToInt64() == w.Handle.ToInt64()))).ToList();
 
 				if (allwindows.Count != 0 && windows.Count == group.deactivated.Count)
 					group.deactivated.Clear();
 
-				if (allwindows.Count == 1 && allwindows[0].Handle.ToInt64() == script.WindowProvider.Manager.GetForeGroundWindowHwnd().ToInt64())
+				if (allwindows.Count == 1 && allwindows[0].Handle.ToInt64() == WindowManager.GetForegroundWindowHandle().ToInt64())
 					return DefaultObject;
 
 				if (!m.Equals(Keyword_R, StringComparison.OrdinalIgnoreCase) && windows.Any(w => w.Active))
@@ -278,7 +278,9 @@ namespace Keysharp.Core
 		{
 #if LINUX//Don't have Gtk working on Windows yet, but just in case we ever get it working.//TODO
 			Environment.SetEnvironmentVariable("MONO_VISUAL_STYLES", "gtkplus");//This used to need to come first, but I'm not sure what it does now. It seems to have no effect.
+			//Update: This seems to be needed to get GTK styles on Linux with Mono, but causes some tearing issues with Keyview. Need to investigate more.//TODO.
 #endif
+#if WINDOWS
 			Application.EnableVisualStyles();
 
 			if (!Script.dpimodeset)
@@ -292,7 +294,6 @@ namespace Keysharp.Core
 				catch { } // Fails if a window already exists, like when running from Keyview
 			}
 
-#if WINDOWS
 			_ = Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
 			//_ = Application.SetHighDpiMode(HighDpiMode.SystemAware);
 #endif
@@ -464,7 +465,7 @@ namespace Keysharp.Core
 										 object excludeTitle = null,
 										 object excludeText = null)
 		{
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 				win.Active = true;
 
 			return DefaultObject;
@@ -475,7 +476,7 @@ namespace Keysharp.Core
 											   object excludeTitle = null,
 											   object excludeText = null)
 		{
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true, true) is WindowItemBase win)
 				win.Active = true;
 
 			return DefaultObject;
@@ -495,7 +496,7 @@ namespace Keysharp.Core
 									 object excludeText = null)
 		{
 			var criteria = SearchCriteria.FromString(winTitle, winText, excludeTitle, excludeText);
-			var window = Script.TheScript.WindowProvider.Manager.ActiveWindow;
+			var window = WindowManager.ActiveWindow;
 			return (window != null && window.Equals(criteria)) ? window.Handle.ToInt64() : 0L;
 		}
 
@@ -514,7 +515,7 @@ namespace Keysharp.Core
 		{
 			var seconds = secondsToWait.Ad(double.MinValue);
 			var script = Script.TheScript;
-			var (windows, crit) = script.WindowProvider.Manager.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
+			var (windows, crit) = WindowManager.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
 
 			if (crit == null && string.IsNullOrEmpty(crit.Group) && windows.Count == 0 && !script.IsMainWindowClosing)
 				return Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText);
@@ -551,7 +552,7 @@ namespace Keysharp.Core
 		public static string WinGetClass(object winTitle = null,
 										 object winText = null,
 										 object excludeTitle = null,
-										 object excludeText = null) => SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win ? win.ClassName : "";
+										 object excludeText = null) => SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win ? win.ClassName : "";
 
 		public static object WinGetClientPos([ByRef][Optional()][DefaultParameterValue(null)] object outX,
 											 [ByRef][Optional()][DefaultParameterValue(null)] object outY,
@@ -591,13 +592,13 @@ namespace Keysharp.Core
 										 object winText = null,
 										 object excludeTitle = null,
 										 object excludeText = null) =>
-		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win ? win.ExStyle : 0L;
+		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win ? win.ExStyle : 0L;
 
 		public static object WinGetID(object winTitle = null,
 									  object winText = null,
 									  object excludeTitle = null,
 									  object excludeText = null) =>
-		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win ? win.Handle.ToInt64() : 0L;
+		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win ? win.Handle.ToInt64() : 0L;
 
 		public static long WinGetIDLast(object winTitle = null,
 										object winText = null,
@@ -605,7 +606,7 @@ namespace Keysharp.Core
 										object excludeText = null)
 		{
 			var script = Script.TheScript;
-			var (windows, criteria) = script.WindowProvider.Manager.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
+			var (windows, criteria) = WindowManager.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
 
 			if (windows != null && windows.Count > 0)
 			{
@@ -626,7 +627,7 @@ namespace Keysharp.Core
 					  && winText.IsNullOrEmpty()
 					  && excludeTitle.IsNullOrEmpty()
 					  && excludeText.IsNullOrEmpty()
-					  ? Script.TheScript.WindowProvider.Manager.AllWindows
+					  ? WindowManager.AllWindows
 					  : SearchWindows(winTitle, winText, excludeTitle, excludeText)).Select(item => item.Handle.ToInt64()).ToList());
 
 		public static long WinGetMinMax(object winTitle = null,
@@ -636,7 +637,7 @@ namespace Keysharp.Core
 		{
 			var val = 0L;
 
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
 				var state = win.WindowState;
 
@@ -655,7 +656,7 @@ namespace Keysharp.Core
 									   object winText = null,
 									   object excludeTitle = null,
 									   object excludeText = null) =>
-		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win ? win.PID : 0L;
+		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win ? win.PID : 0L;
 
 		public static object WinGetPos([Optional()][DefaultParameterValue(null)] object outX,
 									   [Optional()][DefaultParameterValue(null)] object outY,
@@ -678,42 +679,46 @@ namespace Keysharp.Core
 											   object winText = null,
 											   object excludeTitle = null,
 											   object excludeText = null) =>
-		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win ? win.ProcessName : "";
+		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win ? win.ProcessName : "";
 
 		public static string WinGetProcessPath(object winTitle = null,
 											   object winText = null,
 											   object excludeTitle = null,
 											   object excludeText = null) =>
-		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win ? win.Path : "";
+		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win ? win.Path : "";
 
 		public static long WinGetStyle(object winTitle = null,
 									   object winText = null,
 									   object excludeTitle = null,
 									   object excludeText = null) =>
-		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win ? win.Style : 0L;
+		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win ? win.Style : 0L;
 
 		public static string WinGetText(object winTitle = null,
 										object winText = null,
 										object excludeTitle = null,
 										object excludeText = null) =>
-		string.Join(Keyword_Linefeed, SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win ? win.Text : [""]);
+		string.Join(Keyword_Linefeed, SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win ? win.Text : [""]);
 
 		public static string WinGetTitle(object winTitle = null,
 										 object winText = null,
 										 object excludeTitle = null,
 										 object excludeText = null) =>
-		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win ? win.Title : "";
+		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win ? win.Title : "";
 
 		public static string WinGetTransColor(object winTitle = null,
 											  object winText = null,
 											  object excludeTitle = null,
 											  object excludeText = null)
 		{
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
 				var color = (int)win.TransparentColor.Al();
 				var tempbgr = Color.FromArgb(color);
+#if WINDOWS
 				color = Color.FromArgb(tempbgr.A, tempbgr.B, tempbgr.G, tempbgr.R).ToArgb();
+#else
+				color = Color.FromArgb(tempbgr.Ab, tempbgr.Bb, tempbgr.Gb, tempbgr.Rb).ToArgb();
+#endif
 				return color != int.MinValue ? $"0x{color:X6}" : "";
 			}
 
@@ -725,7 +730,7 @@ namespace Keysharp.Core
 											   object excludeTitle = null,
 											   object excludeText = null)
 		{
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
 				var color = win.Transparency.Al();
 				return color != -1 ? color : "";
@@ -751,7 +756,7 @@ namespace Keysharp.Core
 		{
 			var seconds = secondsToWait.Ad(double.MinValue);
 			var script = Script.TheScript;
-			var (windows, crit) = script.WindowProvider.Manager.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
+			var (windows, crit) = WindowManager.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
 
 			if (crit == null && string.IsNullOrEmpty(crit.Group) && windows.Count == 0 && !script.IsMainWindowClosing)
 				return Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText, DefaultErrorLong);
@@ -788,13 +793,13 @@ namespace Keysharp.Core
 
 		public static object WinMinimizeAll()
 		{
-			DoDelayedAction(Script.TheScript.WindowProvider.Manager.MinimizeAll);
+			DoDelayedAction(WindowManager.MinimizeAll);
 			return DefaultObject;
 		}
 
 		public static object WinMinimizeAllUndo(params object[] obj)
 		{
-			DoDelayedAction(Script.TheScript.WindowProvider.Manager.MinimizeAllUndo);
+			DoDelayedAction(WindowManager.MinimizeAllUndo);
 			return DefaultObject;
 		}
 
@@ -812,26 +817,33 @@ namespace Keysharp.Core
 			var w = width.Ai(int.MinValue);
 			var h = height.Ai(int.MinValue);
 
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
-				var loc = win.Location;
+				if (_x != int.MinValue || _y != int.MinValue)
+				{
+					var loc = win.Location;
 
-				if (_x != int.MinValue)
-					loc.X = _x;
+					if (_x != int.MinValue)
+						loc.X = _x;
 
-				if (_y != int.MinValue)
-					loc.Y = _y;
+					if (_y != int.MinValue)
+						loc.Y = _y;
 
-				var size = win.Size;
+					win.Location = loc;
+				}
 
-				if (w != int.MinValue)
-					size.Width = w;
+				if (w != int.MinValue || h != int.MinValue)
+				{
+					var size = win.Size;
 
-				if (h != int.MinValue)
-					size.Height = h;
+					if (w != int.MinValue)
+						size.Width = w;
 
-				win.Location = loc;
-				win.Size = size;
+					if (h != int.MinValue)
+						size.Height = h;
+					
+					win.Size = size;
+				}
 				WindowItemBase.DoWinDelay();
 			}
 
@@ -843,7 +855,7 @@ namespace Keysharp.Core
 										   object excludeTitle = null,
 										   object excludeText = null)
 		{
-			DoDelayedAction(() => { if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win) win.Bottom = true; });
+			DoDelayedAction(() => { if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win) win.Bottom = true; });
 			return DefaultObject;
 		}
 
@@ -852,7 +864,7 @@ namespace Keysharp.Core
 										object excludeTitle = null,
 										object excludeText = null)
 		{
-			DoDelayedAction(() => { if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win) win.Bottom = false; });
+			DoDelayedAction(() => { if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win) win.Bottom = false; });
 			return DefaultObject;
 		}
 
@@ -861,7 +873,7 @@ namespace Keysharp.Core
 									   object excludeTitle = null,
 									   object excludeText = null)
 		{
-			DoDelayedAction(() => { if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win) _ = win.Redraw(); });
+			DoDelayedAction(() => { if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win) _ = win.Redraw(); });
 			return DefaultObject;
 		}
 
@@ -913,7 +925,7 @@ namespace Keysharp.Core
 		{
 			var opts = options.As();
 
-			if (!(SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win))
+			if (!(SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win))
 				return DefaultObject;
 
 			var w = int.MinValue;
@@ -922,7 +934,7 @@ namespace Keysharp.Core
 			var rh = 30;
 			var ellipse = false;
 			var wind = false;
-			var points = new List<Point>(16);
+			var points = new List<POINT>(16);
 
 			foreach (Range r in opts.AsSpan().SplitAny(SpaceTabSv))
 			{
@@ -950,7 +962,7 @@ namespace Keysharp.Core
 					var vals = Conversions.ParseRange(splits);
 
 					if (vals.Count > 1)
-						points.Add(new Point(vals[0], vals[1]));
+						points.Add(new POINT(vals[0], vals[1]));
 				}
 			}
 
@@ -977,7 +989,7 @@ namespace Keysharp.Core
 					hrgn = WindowsAPI.CreateRectRgn(points[0].X, points[0].Y, w, h);
 			}
 			else
-				hrgn = WindowsAPI.CreatePolygonRgn(points.Select(p => new POINT { x = p.X, y = p.Y }).ToArray(), points.Count, wind ? WindowsAPI.WINDING : WindowsAPI.ALTERNATE);
+				hrgn = WindowsAPI.CreatePolygonRgn(points.Select(p => new POINT { X = p.X, Y = p.Y }).ToArray(), points.Count, wind ? WindowsAPI.WINDING : WindowsAPI.ALTERNATE);
 
 			if (hrgn != 0)
 			{
@@ -1010,7 +1022,7 @@ namespace Keysharp.Core
 										 object excludeTitle = null,
 										 object excludeText = null)
 		{
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
 				win.Title = newTitle.As();
 				WindowItemBase.DoWinDelay();
@@ -1025,7 +1037,7 @@ namespace Keysharp.Core
 											  object excludeTitle = null,
 											  object excludeText = null)
 		{
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
 				win.TransparentColor = color;
 				WindowItemBase.DoWinDelay();
@@ -1040,7 +1052,7 @@ namespace Keysharp.Core
 											   object excludeTitle = null,
 											   object excludeText = null)
 		{
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
 				win.Transparency = n;
 				WindowItemBase.DoWinDelay();
@@ -1084,7 +1096,7 @@ namespace Keysharp.Core
 			} while (win == null);
 
 			if (win != null)
-				Script.TheScript.WindowProvider.Manager.LastFound = win;
+				WindowManager.LastFound = win;
 
 			WindowItemBase.DoWinDelay();
 			return win != null ? win.Handle.ToInt64() : 0L;
@@ -1105,13 +1117,13 @@ namespace Keysharp.Core
 
 			while (!b && (seconds == 0 || (DateTime.UtcNow - start).TotalSeconds < seconds))
 			{
-				var windows = script.WindowProvider.Manager.FindWindowGroup(criteria, true);//Pass true because we must inspect all matching windows to see if any of them are active.
+				var windows = WindowManager.FindWindowGroup(criteria, true);//Pass true because we must inspect all matching windows to see if any of them are active.
 
 				foreach (var win in windows)
 				{
 					if (win.Active)
 					{
-						script.WindowProvider.Manager.LastFound = win;
+						WindowManager.LastFound = win;
 						hwnd = win.Handle.ToInt64();
 						b = true;
 						break;
@@ -1137,14 +1149,14 @@ namespace Keysharp.Core
 			var start = DateTime.UtcNow;
 			var script = Script.TheScript;
 			var criteria = SearchCriteria.FromString(winTitle, winText, excludeTitle, excludeText);
-			var windows = script.WindowProvider.Manager.FindWindowGroup(criteria, false, true);
+			var windows = WindowManager.FindWindowGroup(criteria, false, true);
 
 			if (windows.Count == 0)
 				return 1L;
 
 			foreach (var win in windows)//In the case of WinWaitClose(), this loop won't execute and the function will return 1.
 			{
-				script.WindowProvider.Manager.LastFound = win;
+				WindowManager.LastFound = win;
 
 				while (seconds == 0 || (DateTime.UtcNow - start).TotalSeconds < seconds)
 				{
@@ -1172,11 +1184,11 @@ namespace Keysharp.Core
 			var seconds = timeout.Ad();
 			var start = DateTime.UtcNow;
 
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItem win)
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
 				//KeysharpEnhancements.OutputDebugLine($"The window to wait for is: {win.Handle.ToInt64()}, {win.Title}");
 				//Keysharp.Core.File.FileAppend($"The window to wait for is: {win.Handle.ToInt64()}, {win.Title}\n", "out.txt");
-				Script.TheScript.WindowProvider.Manager.LastFound = win;
+				WindowManager.LastFound = win;
 
 				while (!b && (seconds == 0 || (DateTime.UtcNow - start).TotalSeconds < seconds))
 				{
@@ -1195,7 +1207,7 @@ namespace Keysharp.Core
 		}
 
 #if LINUX
-		[PublicForTestOnly]
+		[PublicHiddenFromUser]
 		public static long zzzLinuxTester(params object[] obj)
 		{
 			return 1L;

@@ -249,7 +249,7 @@ namespace Keysharp.Tests
 		public void Integer()
 		{
 			foreach (var n in new[] { -1, -2.1, 0, -0, 0.5, 1.000001 })
-				Assert.AreEqual((double)(long)(n), Maths.Integer(n));
+				Assert.AreEqual((double)(long)(n), Core.Integer.Call(null, n));
 			Assert.IsTrue(TestScript("math-integer", true));
 		}
 
@@ -257,7 +257,7 @@ namespace Keysharp.Tests
 		public void Float()
 		{
 			foreach (var n in new object[] { -1, 1, -2.1, 0, -0, 0.5, 1.000001 })
-				Assert.AreEqual(n, Maths.Float(n));
+				Assert.AreEqual(n, Core.Float.Call(null, n));
 			Assert.IsTrue(TestScript("math-float", true));
 		}
 

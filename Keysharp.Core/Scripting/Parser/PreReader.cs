@@ -163,13 +163,16 @@ namespace Keysharp.Scripting
                     // if true than next code is valid and not ignored.
                     compiliedTokens = directive.value;
 
-                    String directiveStr = tokens[index + 1].Text.Trim().ToUpper();
+                    String directiveStr = directiveTokens[0].Text.Trim().ToUpper();
                     String conditionalSymbol = null;
                     var lineNumber = token.Line;
                     var code = codeLines[lineNumber - 1];
                     var includeOnce = false;
 
-                    switch (directiveStr)
+					index = directiveTokenIndex;
+                    SkipWhitespaces(index);
+
+					switch (directiveStr)
 					{
                         case "IF":
                         case "ELIF":
@@ -181,12 +184,12 @@ namespace Keysharp.Scripting
                             break;
                         case "DEFINE":
                             // add to the conditional symbols 
-                            conditionalSymbol = tokens[index + 2].Text;
+							conditionalSymbol = directiveTokens[1].Text;
                             preprocessorParser.ConditionalSymbols.Add(conditionalSymbol);
                             compiliedTokens = true;
                             break;
                         case "UNDEF":
-                            conditionalSymbol = tokens[index + 2].Text;
+                            conditionalSymbol = directiveTokens[1].Text;
                             preprocessorParser.ConditionalSymbols.Remove(conditionalSymbol);
                             compiliedTokens = true;
                             break;
@@ -200,7 +203,7 @@ namespace Keysharp.Scripting
 					{
                         case "DLLLOAD":
                             {
-                                var p1 = tokens[index + 2].Text;
+                                var p1 = directiveTokens[1].Text;
                                 var silent = false;
                                 p1 = p1.Trim('"');//Quotes throw off the system file/path functions, so remove them.
 
@@ -224,7 +227,7 @@ namespace Keysharp.Scripting
 
                         case "INCLUDEAGAIN":
                             {
-								var p1 = tokens[index + 2].Text;
+								var p1 = directiveTokens[1].Text;
                                 var silent = false;
                                 var isLib = false;
                                 p1 = p1.RemoveAll("\"");//Quotes throw off the system file/path functions, so remove them.
@@ -288,7 +291,7 @@ namespace Keysharp.Scripting
                                     }
 
                                     if (!found && !silent)
-                                        throw new ParseException($"Include file {p1} not found at any of the locations: {string.Join(Environment.NewLine, paths)}", token.Line, tokens[index].Text + tokens[index + 1].Text + tokens[index + 2].Text);
+                                        throw new ParseException($"Include file {p1} not found at any of the locations: {string.Join(Environment.NewLine, paths)}", token.Line, '#' + directiveTokens[0].Text + ' ' + directiveTokens[1].Text, token.TokenSource.SourceName);
                                 }
                                 else
                                 {
@@ -329,7 +332,7 @@ namespace Keysharp.Scripting
                             break;
                         case "REQUIRES":
                         {
-                            var p1 = tokens[index + 2].Text;
+                            var p1 = directiveTokens[1].Text;
                             var reqAhk = p1.StartsWith("AutoHotkey", StringComparison.OrdinalIgnoreCase);
 
                             if (reqAhk || p1.StartsWith("Keysharp", StringComparison.OrdinalIgnoreCase))
@@ -352,14 +355,36 @@ namespace Keysharp.Scripting
                                     Script.TheScript.VerifyVersion(ver, plus, lineNumber, code);
 
 									//In addition to being checked here, it must be added to the code for when it runs as a compiled exe.
-									parser.mainFuncInitial.Add($"Keysharp.Scripting.Script.VerifyVersion({ver}, {plus}, 0, name);");
+									parser.mainFuncInitial.Add(
+                                        SyntaxFactory.ExpressionStatement(
+		                                    SyntaxFactory.InvocationExpression(
+                                                CreateMemberAccess(Keywords.MainScriptVariableName, "VerifyVersion"),
+			                                    // (ver, plus, 0, name)
+			                                    Parser.CreateArgumentList(
+				                                    SyntaxFactory.LiteralExpression(
+					                                    SyntaxKind.StringLiteralExpression,
+					                                    SyntaxFactory.Literal(ver)
+				                                    ),
+				                                    SyntaxFactory.LiteralExpression(plus ? SyntaxKind.TrueLiteralExpression : SyntaxKind.FalseLiteralExpression),
+				                                    SyntaxFactory.LiteralExpression(
+					                                    SyntaxKind.NumericLiteralExpression,
+					                                    SyntaxFactory.Literal(lineNumber)
+				                                    ),
+													SyntaxFactory.LiteralExpression(
+														SyntaxKind.StringLiteralExpression,
+														SyntaxFactory.Literal("")
+													)
+												)
+		                                    )
+                                        )
+	                                );
                                     //Sub release designators such as "-alpha", "-beta" are not supported in C#. Only the assembly version is supported.
-                                }
+								}
                             }
 							break;
                         }
 						case "SINGLEINSTANCE":
-                            switch (tokens[index + 2].Text.ToUpperInvariant())
+                            switch ((directiveTokens.Count > 1 ? directiveTokens[1].Text : "FORCE").ToUpperInvariant())
                             {
                                 case "FORCE":
                                     SingleInstance = eScriptInstance.Force;
@@ -387,14 +412,17 @@ namespace Keysharp.Scripting
                             break;
 
                         case "PERSISTENT":
-							var nextTokenText = tokens[index + 2].Text.ToLowerInvariant().Trim();
+							var nextTokenText = (directiveTokens.Count > 1 ? directiveTokens[1].Text : "1").ToLowerInvariant().Trim();
                             parser.persistent = !(nextTokenText == "false" || nextTokenText == "0");
                             break;
 
                         case "ERRORSTDOUT":
 							parser.errorStdOut = true;
 							break;
-                        case "CLIPBOARDTIMEOUT":
+						case "HOOKMUTEXNAME":
+                            parser.hookMutexName = directiveTokens[1].Text.Trim();
+                            break;
+						case "CLIPBOARDTIMEOUT":
                         case "HOTIFTIMEOUT":
                         case "MAXTHREADS":
                         case "MAXTHREADSBUFFER":
@@ -407,7 +435,7 @@ namespace Keysharp.Scripting
                         case "ASSEMBLYCOPYRIGHT":
                         case "ASSEMBLYTRADEMARK":
 						case "ASSEMBLYVERSION":
-							parser.generalDirectives[directiveStr] = tokens[index + 2].Text.Trim();
+							parser.generalDirectives[directiveStr] = directiveTokens[1].Text.Trim();
                             break;
                         case "WINACTIVATEFORCE":
                         case "NOTRAYICON":
@@ -417,20 +445,12 @@ namespace Keysharp.Scripting
                             Console.WriteLine("Not implemented");
                             break;
                     }
-                    index = directiveTokenIndex - 1;
                 }
                 else if (token.Channel == Lexer.DefaultTokenChannel && compiliedTokens)
                 {
                     int i;
                     switch (token.Type)
                     {
-                        case MainLexer.OpenBrace:
-							PopWhitespaces(codeTokens.Count, false);
-                            /*
-							if (enclosableDepth > 0 || (codeTokens.Count > 0 && MainLexerBase.lineContinuationOperators.Contains(codeTokens[^1].Type)))
-								enclosableDepth++;
-                            */
-							break;
 						case MainLexer.OpenBracket:
                         case MainLexer.DerefStart:
 							//enclosableDepth++;
@@ -490,7 +510,21 @@ namespace Keysharp.Scripting
 							//    maybeIsFunctionCallStatement = -2;
 							break;
 						case MainLexer.Dot:
-                        case MainLexer.Assign:
+                            int previndex = index, prevCount = codeTokens.Count;
+                            var popped = PopWhitespaces(codeTokens.Count);
+
+							if ((SkipWhitespaces(index) - 1) != previndex && prevCount != codeTokens.Count)
+                            { // Any skipped and popped
+								var dottoken = new CommonToken(MainLexer.ConcatDot)
+								{
+									Line = token.Line,
+									Column = token.Column
+								};
+                                codeTokens.Add(dottoken);
+								goto SkipAdd;
+							}
+							break;
+						case MainLexer.Assign:
                         case MainLexer.Divide:
                         case MainLexer.IntegerDivide:
                         case MainLexer.Power:
@@ -591,7 +625,7 @@ namespace Keysharp.Scripting
                             bool eolPresent = false;
                             while (++i < tokens.Count)
                             {
-                                if (tokens[i].Channel == MainLexer.DIRECTIVE)
+                                if (tokens[i].Channel == MainLexer.DIRECTIVE || tokens[i].Channel == MainLexer.ERROR)
                                     break;
                                 if (tokens[i].Channel != Lexer.DefaultTokenChannel)
                                     continue;
@@ -615,7 +649,7 @@ namespace Keysharp.Scripting
 							i = index;
                             while (++i < tokens.Count)
                             {
-                                if (tokens[i].Channel == MainLexer.DIRECTIVE)
+                                if (tokens[i].Channel == MainLexer.DIRECTIVE || tokens[i].Channel == MainLexer.ERROR)
                                     break;
                                 if (tokens[i].Channel != Lexer.DefaultTokenChannel)
                                     index++;
@@ -786,7 +820,7 @@ namespace Keysharp.Scripting
             {
                 while (++i < tokens.Count)
                 {
-                    if (tokens[i].Channel == MainLexer.DIRECTIVE)
+                    if (tokens[i].Channel == MainLexer.DIRECTIVE || tokens[i].Channel == MainLexer.ERROR)
                         break;
                     if ((tokens[i].Channel != Lexer.DefaultTokenChannel) || tokens[i].Type == MainLexer.WS || (linebreaks && tokens[i].Type == MainLexer.EOL))
                         index++;
@@ -800,7 +834,7 @@ namespace Keysharp.Scripting
             {
 				while (++i < tokens.Count)
 				{
-					if (tokens[i].Channel == MainLexer.DIRECTIVE)
+					if (tokens[i].Channel == MainLexer.DIRECTIVE || tokens[i].Channel == MainLexer.ERROR)
 						break;
 					if ((tokens[i].Channel != Lexer.DefaultTokenChannel) || (tokens[i].Type == MainLexer.EOL && condition))
 						index++;

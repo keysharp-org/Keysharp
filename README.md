@@ -8,7 +8,7 @@
 * [Code acknowledgements](#markdown-header-code-acknowledgements)
 
 ## How do I get set up? ##
-* If .NET 9 is not installed on your machine, you need to download and run the x64 ".NET Desktop Runtime" installer from [here](https://dotnet.microsoft.com/en-us/download/dotnet/9.0).
+* If .NET 9 (or .NET 10 on Linux) is not installed on your machine, you need to download and run the x64 ".NET Desktop Runtime" installer from [here](https://dotnet.microsoft.com/en-us/download/dotnet/9.0).
 
 ### Installing on Windows ###
 * Download and run the Keysharp installer from the [Releases](https://github.com/mfeemster/keysharp/releases) page.
@@ -20,6 +20,14 @@
 * Download and unzip the zip file from the [Releases](https://github.com/mfeemster/keysharp/releases) page.
 	+ CD to the unzipped folder.
 	+ Run `.\Keysharp.exe yourfilename.ahk`
+
+### Installing on Linux ###
+* Download and extract the Keysharp installer tarball from the [Releases](https://github.com/mfeemster/keysharp/releases) page.
++ Run the install.sh script with sudo: `sudo sh ./install.sh` which does the following:
+	+ Installs all necessary dependencies except .NET 10 runtime. You need to install that manually.
+		+ Instructions for installing .NET on Linux can be found [here](https://learn.microsoft.com/en-us/dotnet/core/install/linux).
+	+ Registers Keysharp as the default program to open `.ks` files. So after installing, double click any `.ks` file to run it.
+	+ Creates a symlink at `/usr/local/bin/keysharp` so you can run it from the command line from anywhere.
 	
 ### Building from source on Windows ###
 * Download the latest version of [Visual Studio 2022](https://visualstudio.microsoft.com/vs/community/).
@@ -33,7 +41,7 @@
 
 Keysharp is a fork and improvement of the abandoned IronAHK project, which itself was a C# re-write of the C++ AutoHotkey project.
 
-The intent is for Keysharp to run on Windows, Linux and eventually Mac. For now, only Windows is supported.
+The intent is for Keysharp to run on Windows, Linux and eventually Mac. For now, only Windows is supported and partial support for Linux.
 
 This project is in the alpha testing stage and is not yet recommended for production systems.
 
@@ -65,11 +73,13 @@ Despite our best efforts to remain compatible with the AHK v2 spec, there are di
 ###	Behaviors/Functionality: ###
 * Keysharp follows the .NET memory model.
 	+ There is no variable caching with strings vs numbers. All variables are C# objects.
-	+ Values not stored in variables are, like regular variables, only eligible to be freed once they go out of scope.
+	+ Values not stored in variables are like regular variables, only eligible to be freed once they go out of scope.
 ```
 	FileOpen("test.txt", "w").Write("hello") ; The temporary file object does not get deleted at the end of the line, only possibly at the end of the current scope.
 ```
 	+ Object destructors/finalizers are called at a random point in time, and `Collect()` should be used if they need to be invoked predictably.
+	+ Object destructors (`__Delete`) are implemented with C# finalizers, which are quite heavy-weight and are not automatically present for all objects. The finalizer state is determined at object creation based on whether `__Delete` is present in the prototype chain, or at the point `__Delete` is defined. If `__Delete` is defined later in the prototype chain then instance finalizers are not automatically activated; the activation can be forced manually by temporarily reassigning a different base for the instance.
+	+ On script exit all non-local variables are enumerated, finalizers disabled, and `__Delete` called if present. This also includes class static variables.
 * AHK says about the inc/dec ++/-- operators on empty variables: "Due to backward compatibility, the operators ++ and -- treat blank variables as zero, but only when they are alone on a line".
 	+ Keysharp breaks this and will instead create a variable, initialize it to zero, then increment it.
 	+ For example, a file with nothing but the line `x++` in it, will end with a variable named x which has the value of 1.
@@ -98,9 +108,8 @@ Despite our best efforts to remain compatible with the AHK v2 spec, there are di
 	+ `StrPtr("literal")` with a literal string will pin the string from garbage collection and return the actual address of the string. This string must not be modified, and should be freed after use with `ObjFree()`.
 	+ Instead of `StrPtr` it is recommended to use a `StringBuffer` instance instead.
 * `CallbackCreate()` does not support the `CDecl/C` option because the program will be run in 64-bit mode.
-	+ The `paramCount` parameter is unused. The callback that gets created supports passing up to 31 parameters and the number that actually gets passed is adjusted internally.
 	+ Passing string pointers to `DllCall()` when passing a created callback is recommended against. See explanation above under `StrPtr()`.
-	+ Usage of the created callback will be extremely inefficient, so usage of `CallbackCreate()` is discouraged.
+	+ Usage of the created callback will be inefficient, so usage of `CallbackCreate()` is discouraged.
 * Deleting a tab via `GuiCtrl.Delete()` does not reassociate the controls that it contains with the next tab. Instead, they are all deleted.
 * The size and positioning of some GUI components will be slightly different than AHK because WinForms uses different defaults.
 	+ There is an additional positioning option `xc` and `yc` which position the control relative to the container. For example inside a tab `xc+10` would position the control 10 pixels from the left side of the tab control. 
@@ -131,26 +140,14 @@ Despite our best efforts to remain compatible with the AHK v2 spec, there are di
 	+ `SetWinDelay()`, `A_WinDelay`, `SetControlDelay` and `A_ControlDelay` exist but have no effect.
 * Function objects are much slower than direct function calls due to the need to use reflection. So for repeated function calls, such as those involving math, it's best to use the functions directly.
 * The `File` object is internally named `KeysharpFile` so that it doesn't conflict with `System.IO.File`.
-* `obj.OwnProps()/ObjOwnProps()` take an optional second/third parameter as a boolean (default: `True`). Pass `True` to only return the properties defined by the user, else `False` to also return properties defined internally by Keysharp.
 * In `SetTimer()`, the priority is not in the range -2147483648 and 2147483647, instead it is only 0-4.
 * If a `ComObject` with `VarType` of `VT_DISPATCH` and a null pointer value is assinged a non-null pointer value, its type does not change. The `Ptr` member remains available.
 * `A_LineNumber` is not a reliable indicator of the line number because the preprocessor condenses the code before parsing and compiling it.
-* Loop counter variables for `for in` loops declared inside of a function cannot have the same name as a local variable declared inside of that same function.
-```
-testfunc()
-{
-    arr := [10, 20, 30]
-    loopvar := 0 ; Either change the name of this variable, the loop variable, or move this declaration outside of the function.
-
-    for (loopvar in arr)
-    {
-    }
-}
-```
-* `ObjPtr()` returns an IUnknown `ComObject` with the pointer wrapped in it, whereas `ObjPtrAddRef()` returns a raw pointer.
+* `ObjPtr()` returns an IUnknown `ComValue` with the pointer wrapped in it, whereas `ObjPtrAddRef()` returns a raw pointer.
 * Pointers returned by `StrPtr()` must be freed by passing the value to a new function named `ObjFree()`.
 	+ `StrPtr()` does not return the address of the string, instead it returns the address of a copy of the bytes of the string.
 * `Sleep()` will not do any sleeping if shutdown has been initiated.
+* The concat-assign operator `.=` is not optimized to modify the left operand inplace, meaning calling it in a loop will be very slow. If many concats are required then use a `StringBuffer` instead.
 * `/Debug` command line switch is not implemented.  
 * If a script is compiled then none of Keysharp or AutoHotkey command parameters apply. 
 	
@@ -160,13 +157,6 @@ testfunc()
 * `ImageSearch()` takes an options string as a fifth parameter, rather than inserted in the string before the `imageFile` parameter.
 * A leading plus sign on numeric values, such as `+123` or `+0x123` is not supported. It has no effect anyway, so just omit it.
 * AHK `unset` is implemented as `null`. `IsSet(x)` is equivalent to `x == null`.
-* Leading spaces and tabs are not omitted from the strings in continuation strings. They will be parsed as is, according to the options specified. Trailing spaces and tabs will not be trimmed unless `RTrim` is specified.
-* In continuation statements, the smart behavior logic for left trimming each line is disabled. Lines are not left trimmed by default and are only left trimmed if `LTrim` is specified.
-* Because a comma at the end of a line indicates a continuation statement, command style syntax with a trailing comma is not supported:
-	+ `MouseGetPos &mrX, &mrY, , ; not supported`
-	+ `MouseGetPos &mrX, &mrY ; omitting the trailing commas is supported`
-	+ `MouseGetPos(&mrX, &mrY) ; using parens is preferred`
-	+ `MouseGetPos(&mrX, &mrY, , ) ; trailing commas can be used with parens`
 * Use of the dereference syntax `%expression%` inside functions is highly discouraged. This is because using it will cause every function call to construct an object which captures all local variables, and depending on the number of variables the performance loss may be significant.
 * `Goto` statements cannot use any type of variable. They must be labels known at compile time and function just like goto statements in C#.
 * `Goto` statements being called as a function like `Goto("Label")` are not supported. Instead, just use `goto Label`.
@@ -175,13 +165,13 @@ testfunc()
 	+ Sub versions such as -alpha and -beta are not supported. Only the four numerical values values contained in the assembly version in the form of `0.0.0.0` are supported.	
 * Global variables can be accessed from anywhere by using the `Program.` prefix: `program.a := 123`.
 * For any `__Enum()` class method, it should have a parameter value of 2 when returning `Array` or `Map`, since their enumerators have two fields.
-* Auto-generated variables and functions will have the prefix `_ks_`, so to avoid naming collisions you shouldn't create variables/functions with that same prefix.
 * RegEx uses PCRE2 engine powered by the PCRE.NET library. There are a few limitations compared to the AutoHotkey implementation:
 	+ The following options are different:
 		+ S: Studies the pattern to try improve its performance.
 			+ This is not supported. All RegEx objects are internally created with the `PcreOptions.Compiled` option specified, so performance should be reasonable.
 		+ u: This new option disables optimizations PCRE2_NO_AUTO_POSSESS, PCRE2_NO_START_OPTIMIZE, and PCRE2_NO_DOTSTAR_ANCHOR. This option can be useful when using callouts, since these optimizations might prevent some callouts from happening.
 	+ Callouts differ in a few ways:
+		+ The callout function cannot be a closure, it must be a top-level function
 		+ Callouts do not set `A_EventInfo`
 		+ The callout function must be a top-level function
 		+ A named callout must be enclosed in "", '', or {}
@@ -242,6 +232,7 @@ testfunc()
 	+ `FileDirName(filename) => String` to return the full path to filename, without the actual filename or trailing directory separator character.
 	+ `FileFullPath(filename) => String` to return the full path to filename.
 * New window functions:
+	+ `WinFromPoint(x, y)` to get the window at a specific screen position.
 	+ `WinMaximizeAll()` to maximize all windows.
 	+ `WinGetAlwaysOnTop([winTitle, winText, excludeTitle, excludeText]) => Integer` to determine whether a window will always stay on top of other windows.
 * `Run/RunWait()` can take an extra string for the argument instead of appending it to the program name string. However, the original functionality still works too.
@@ -312,7 +303,7 @@ testfunc()
 		+ `\K` is not supported, instead, try using `(?<=abc)`.
 		
 * The v1 `Map` methods `MaxIndex()` and `MinIndex()` are still supported. They are also supported for `Array`.
-* New function `GetScreenClip(x, y, width, height [, filename]) => Bitmap` can be used to return a bitmap screenshot of an area of the screen and optionally save it to file.
+* New function `ImageCapture(x, y, width, height [, filename]) => Bitmap` can be used to return a bitmap screenshot of an area of the screen and optionally save it to file.
 * Rich text boxes are supported by passing `RichEdit` to `Gui.Add()`. The same options from `Edit` are supported with the following caveats:
 	+ `Multiline` is true by default.
 	+ `WantReturn` and `Password` are not supported.
@@ -382,13 +373,6 @@ testfunc()
 	+ This allows the handler to alter the timer by passing the function object back to another call to `SetTimer()`.
 	+ Timers are not disabled when the program menu is shown.
 * A new timer function `EnabledTimerCount()` which returns the number of currently enabled timers in existence.
-* Using an underscore `_` to discard the result of an expression is supported the same way it is in C# like:
-	+ `_ := myfunc()`
-* `super` is not restricted to being used within a class's code. It can be accessed outside of the class like so:
-```
-	classobj := myclass()
-	classobj.super.a := 123
-```
 * Reference parameters for functions using `&` are supported with the following improvements and caveats:
 	+ Passing class members, array indexes and map values by reference is supported.
 		+ `func(&classobj.classprop)`
@@ -494,6 +478,25 @@ testfunc()
 			MsgBox("True because of new definition")
 		#endif
 ```
+* New preprocessor directives have been added.
+	+ `#HookMutexName <name>` allows renaming the mutex objects created to detect keyboard and mouse hooks in other running scripts. The default name is "Keysharp".
+	+ Assembly description attributes may be changed with the following directives (with the desired value as the only argument of the directive):
+		+ `#AssemblyName`
+		+ `#AssemblyDescription`
+		+ `#AssemblyConfiguration`
+		+ `#AssemblyCompany`
+		+ `#AssemblyProduct`
+		+ `#AssemblyCopyright`
+		+ `#AssemblyTrademark`
+		+ `#AssemblyVersion`
+* Experimental `Clr` class has been added which aims to provide CLR interop with regular AutoHotkey syntax, meaning easy access to CLR libraries.
+	+ `Clr.Load(asmOrPath)` loads a CLR assembly from a dll file or assembly name, and returns a `ManagedAssembly` or `ManagedNamespace` object. Example: `System := Clr.Load("System")`
+		+ `ManagedNamespace` can be accessed with property access syntax to get namespaces and types (`ManagedType`). Example: `linq := System.Linq.Enumerable`
+		+ `ManagedType` may be accessed for static methods/properties, or called to create a new `ManagedInstance`. 
+		+ `ManagedInstance` may be accessed with normal AutoHotkey syntax for properties, methods, and indexer access. Example: `linq.Where(nums, isOdd)`
+		+ Basic type marshalling between AutoHotkey and CLR is supported (including function objects), more complicated types may not currently work. 
+	+ `Clr.GetNamespaceName(ManagedNamespace)` returns the full intenal namespace name of the namespace wrapped by `ManagedNamespace`.
+	+ `Clr.GetTypeName(ManagedType)` returns the full internal type name of the type wrapped by `ManagedType`.
 * Command line switches may start with either `/` (Windows-only), `-` or `--`. 
 * Command line switches
     - `--script`    
@@ -514,13 +517,10 @@ testfunc()
 	
 ###	Removals: ###
 * `ListLines()` is non-functional because C# doesn't support it.
-* `ObjPtr()` is not implemented because objects can be moved by the GC.
-* There is no such thing as dereferencing in C#, so the `*` dereferencing operator is not supported.		
-* The `R`, `Dn` or `Tn` parameters in `FormatDateTime()` are not supported, except for 0x80000000 to disallow user overrides.
+* The `R`, `Dn` or `Tn` parameters in `FormatTime()` are not supported, except for 0x80000000 to disallow user overrides.
 	+ If you want to specify a particular format or order, do it in the format argument. There is no need or reason to have one argument alter the other.
 	+ [Here](https://docs.microsoft.com/en-us/dotnet/standard/base-types/custom-date-and-time-format-strings) is a list of the C# style DateTime formatters which are supported.
 * Static text controls do not send the Windows `API WM_CTLCOLORSTATIC (0x0138)` message to their parent controls like they do in AHK.
-* `IsAlpha()`, `IsUpper()`, `IsLower()` do not accept a locale parameter because all strings are Unicode.
 * Double click handlers for buttons are not supported.
 * UpDown controls with paired buddy controls are not supported. Keysharp just uses the regular NumericUpDown control in C#.
 	+ The options `16`, `Horz` and `Wrap` have no effect.

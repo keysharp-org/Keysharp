@@ -6,16 +6,18 @@
 	</PropertyGroup>
 
 	<PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-		<TargetFramework>net9.0</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework> <!-- net10.0 required so VSCode debugger doesn't crash on exceptions -->
+		<DefineConstants>$(DefineConstants);LINUX</DefineConstants>
+		<LangVersion>14.0</LangVersion>
 	</PropertyGroup>
 	
 	<PropertyGroup>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<ApplicationIcon>..\Keysharp.ico</ApplicationIcon>
 		<AssemblyName>Keysharp.Core</AssemblyName>
-		<Version>0.0.0.11</Version>
-		<AssemblyVersion>0.0.0.11</AssemblyVersion>
-		<FileVersion>0.0.0.11</FileVersion>
+		<Version>0.0.0.13</Version>
+		<AssemblyVersion>0.0.0.13</AssemblyVersion>
+		<FileVersion>0.0.0.13</FileVersion>
 		<SignAssembly>False</SignAssembly>
 		<DelaySign>False</DelaySign>
 		<PlatformTarget>x64</PlatformTarget>
@@ -25,16 +27,16 @@
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-		<OutputPath>..\bin\debug\</OutputPath>
-		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">DEBUG;LEGACY;WINDOWS</DefineConstants>
-		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">DEBUG;LEGACY;LINUX</DefineConstants>
+		<OutputPath>../bin/Debug/</OutputPath>
+		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(DefineConstants);DEBUG;LEGACY;WINDOWS</DefineConstants>
+		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">$(DefineConstants);DEBUG;LEGACY;LINUX</DefineConstants>
 		<NoWarn>1701;1702;8981;0164;8974</NoWarn>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-		<OutputPath>..\bin\release\</OutputPath>
-				<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">LEGACY;WINDOWS</DefineConstants>
-		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">LEGACY;LINUX</DefineConstants>
+		<OutputPath>../bin/Release/</OutputPath>
+		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(DefineConstants);LEGACY;WINDOWS</DefineConstants>
+		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">$(DefineConstants);LEGACY;LINUX</DefineConstants>
 		<NoWarn>1701;1702;8981;0164;8974</NoWarn>
 	</PropertyGroup>
 
@@ -50,21 +52,35 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-		<ProjectReference Include="..\..\system.windows.forms\System.Windows.Forms\System.Windows.Forms.csproj" />
-		<PackageReference Include="GtkSharp" Version="3.24.24.95" />
-		<PackageReference Include="EvDevSharpWrapper" Version="0.3.0" />
+<!--
+		<PackageReference Include="Eto.Forms" Version="2.10.2" />
+		<PackageReference Include="Eto.Platform.Gtk" Version="2.10.2" />
+-->
+		<!-- This custom branch fixes a bug with image functions not working if a tray menu is created in Linux,
+		as well as allows implementing the MsgBox timeout feature. Available here: https://github.com/Descolada/Eto/tree/MessgeBoxShowAsync  -->
+		<ProjectReference Include="..\..\Eto\src\Eto\Eto.csproj" />
+		<ProjectReference Include="..\..\Eto\src\Eto.Gtk\Eto.Gtk.csproj" />
+
+		<PackageReference Include="SharpHook" Version="7.1.1" />
+		<PackageReference Include="Tmds.DBus" Version="0.22.0" />
+
+		<Compile Remove="Common\Window\AboutBox.Designer.cs" />
 		<Compile Remove="Common\Window\KeysharpActiveX.cs" />
+		<Compile Remove="Windows\Window\MainWindow.Designer.cs" />
+		<Compile Remove="Windows\Gui\Dialogs\InputDialog.resx" />
 		<EmbeddedResource Remove="Common\Window\KeysharpActiveX.resx" />
+		<EmbeddedResource Remove="Common\Window\AboutBox.resx" />
+		<EmbeddedResource Remove="Windows\Window\MainWindow.resx" />
 	</ItemGroup>
 	
 	<ItemGroup>
 		<PackageReference Include="Antlr4.Runtime.Standard" Version="4.13.1" />
-		<PackageReference Include="BitFaster.Caching" Version="2.5.3" />
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
-		<PackageReference Include="Microsoft.CodeDom.Providers.DotNetCompilerPlatform" Version="4.1.0" />
-		<PackageReference Include="PCRE.NET" Version="1.2.0" />
+		<PackageReference Include="BitFaster.Caching" Version="2.5.4" />
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0-2.final" />
+		<PackageReference Include="PCRE.NET" Version="1.2.2" />
 		<PackageReference Include="Semver" Version="3.0.0" />
-		<PackageReference Include="System.Management" Version="10.0.0-preview.2.25163.2" />
+		<PackageReference Include="System.Resources.Extensions" Version="9.0.0" />
+		<PackageReference Include="System.Management" Version="10.0.0-rc.2.25502.107" />
 	</ItemGroup>
 	
 	<ItemGroup>

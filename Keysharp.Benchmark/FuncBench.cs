@@ -1,5 +1,4 @@
-﻿using System.Windows.Forms;
-using static Keysharp.Core.Flow;
+﻿using static Keysharp.Core.Flow;
 using static Keysharp.Core.Loops;
 using static Keysharp.Scripting.Script;
 using static Keysharp.Scripting.Script.Operator;
@@ -10,7 +9,6 @@ namespace Keysharp.Benchmark
 	{
 		private Myclass? cl;
 		private long totalSum;
-		private static Keysharp.Scripting.Script? _ks_s;
 
 		[Params(500000L)]
 		public long Size { get; set; }
@@ -26,7 +24,7 @@ namespace Keysharp.Benchmark
 		[Benchmark]
 		public void KeysharpClassFuncLoopIncrement()
 		{
-			_ = SetPropertyValue(cl, "x", 0);
+			_ = SetPropertyValue(0L, cl, "x");
 			_ = Invoke(cl, "ClassIncTestFuncScript");
 
 			if ((long)GetPropertyValue(cl, "x") != totalSum)
@@ -157,14 +155,14 @@ namespace Keysharp.Benchmark
 			{
 				object _ks_temp1 = null;
 				object _ks_temp2 = null;
-				return Keysharp.Scripting.Script.MultiStatement(_ks_temp1 = @this, _ks_temp2 = "x", Keysharp.Scripting.Script.SetPropertyValue(_ks_temp1, _ks_temp2, Keysharp.Scripting.Script.Operate(Keysharp.Scripting.Script.Operator.Add, Keysharp.Scripting.Script.GetPropertyValue(_ks_temp1, _ks_temp2), 1L)));
+				return Keysharp.Scripting.Script.MultiStatement(_ks_temp1 = @this, _ks_temp2 = "x", Keysharp.Scripting.Script.SetPropertyValue(Keysharp.Scripting.Script.Operate(Keysharp.Scripting.Script.Operator.Add, Keysharp.Scripting.Script.GetPropertyValue(_ks_temp1, _ks_temp2), 1L), _ks_temp1, _ks_temp2));
 			}
 
 			public static object Classinctestfuncscript(object @this)
 			{
 				object size = null;
 				size = 500000L;
-				Keysharp.Scripting.Script.SetPropertyValue(@this, "x", 0L);
+				Keysharp.Scripting.Script.SetPropertyValue(0L, @this, "x");
 				{
 					System.Collections.IEnumerator _ks_e1 = Keysharp.Core.Loops.Loop(size).GetEnumerator();
 					Keysharp.Core.Loops.Push(Keysharp.Core.LoopType.Normal);
@@ -192,12 +190,12 @@ namespace Keysharp.Benchmark
 			public static void __Init(object @this)
 			{
 				Keysharp.Scripting.Script.Invoke((object)(_ks_s.Vars.Prototypes[typeof(KeysharpObject)], @this), "__Init");
-				Keysharp.Scripting.Script.SetPropertyValue(@this, "x", 0L);
+				Keysharp.Scripting.Script.SetPropertyValue(0L, @this, "x");
 			}
 
 			public static void static__Init(object @this)
 			{
-				Keysharp.Scripting.Script.SetPropertyValue(_ks_s.Vars.Prototypes[typeof(Myclass)], "__Class", "myclass", true);
+				Keysharp.Scripting.Script.SetPropertyValue("myclass", _ks_s.Vars.Prototypes[typeof(Myclass)], "__Class");
 			}
 
 			static Myclass()

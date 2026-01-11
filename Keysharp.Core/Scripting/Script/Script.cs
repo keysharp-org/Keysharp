@@ -1,5 +1,9 @@
 ﻿//#define SEPARATE_KB_THREAD
 
+[assembly: InternalsVisibleTo("Keysharp.Tests")]
+[assembly: InternalsVisibleTo("Keysharp.Benchmark")]
+[assembly: InternalsVisibleTo("Keyview")]
+
 namespace Keysharp.Scripting
 {
 	/// <summary>
@@ -36,6 +40,8 @@ namespace Keysharp.Scripting
 		//Some unit tests use try..catch in non-script code, which causes ErrorOccurred to display the error dialog.
 		//This allows to suppress it, but only inside ErrorOccurred (not in TryCatch etc).
 		public bool SuppressErrorOccurredDialog = AppDomain.CurrentDomain.FriendlyName == "testhost";
+		//This allows to suppress all error processing
+		public uint SuppressErrorOccurred = 0;
 		internal const double DefaultErrorDouble = double.NaN;
 		internal const int DefaultErrorInt = int.MinValue;
 		internal const long DefaultErrorLong = long.MinValue;
@@ -63,12 +69,26 @@ namespace Keysharp.Scripting
 		internal int nMessageBoxes;
 		internal List<IFuncObj> onErrorHandlers;
 		internal List<IFuncObj> onExitHandlers = [];
-		internal Icon pausedIcon;
+		private Icon _normalIcon = null;
+		public Icon normalIcon
+		{
+			get
+			{
+#if WINDOWS
+				if (_normalIcon == null)
+					_normalIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+#endif
+				return _normalIcon ??= ImageHelper.IconFromByteArray(Core.Properties.Resources.Keysharp_ico);
+			}
+		}
+		private Icon _pausedIcon;
+		internal Icon pausedIcon => _pausedIcon ??= ImageHelper.IconFromByteArray(Core.Properties.Resources.Keysharp_p_ico);
+		private Icon _suspendedIcon;
+		internal Icon suspendedIcon => _suspendedIcon ??= ImageHelper.IconFromByteArray(Core.Properties.Resources.Keysharp_s_ico);
 		internal bool persistent;
 		internal nint playbackHook = 0;
 		internal DateTime priorHotkeyStartTime = DateTime.UtcNow;
 		public string scriptName = "";
-		internal Icon suspendedIcon;
 		internal string thisHotkeyName, priorHotkeyName;
 		internal DateTime thisHotkeyStartTime;
 		internal ThreadLocal<Threads> threads;
@@ -80,15 +100,14 @@ namespace Keysharp.Scripting
 		private static int instanceCount;
 		private AccessorData accessorData;
 		private ArrayIndexValueIteratorData arrayIndexValueIteratorData;
+		private ClrIteratorData managedDotNetIteratorData;
 #if WINDOWS
 		private ComArrayIndexValueEnumeratorData comArrayIndexValueEnumeratorData;
 		private ComEnumeratorData comEnumeratorData;
 		private ComMethodData comMethodData;
 #endif
 		private ControlProvider controlProvider;
-#if WINDOWS
 		private DllData dllData;
-#endif
 		private DriveTypeMapper driveTypeMapper;
 		private ExecutableMemoryPoolManager exeMemoryPoolManager;
 		private FlowData flowData;
@@ -115,23 +134,22 @@ namespace Keysharp.Scripting
 		private ToolTipData toolTipData;
 		private WindowProvider windowProvider;
 
-		[PublicForTestOnly]
 		public static Keysharp.Scripting.Script TheScript { get; private set; }
 		public Type ProgramType;
+		public string ProgramNamespace = Keywords.MainNamespaceName;
 		public HotstringManager HotstringManager => hotstringManager ?? (hotstringManager = new ());
 		public Threads Threads => threads.Value;
 		public Variables Vars { get; private set; }
 		internal AccessorData AccessorData => accessorData ?? (accessorData = new ());
 		internal ArrayIndexValueIteratorData ArrayIndexValueIteratorData => arrayIndexValueIteratorData ?? (arrayIndexValueIteratorData = new ());
+		internal ClrIteratorData ManagedDotNetIteratorData => managedDotNetIteratorData ?? (managedDotNetIteratorData = new());
 #if WINDOWS
 		internal ComArrayIndexValueEnumeratorData ComArrayIndexValueEnumeratorData => comArrayIndexValueEnumeratorData ?? (comArrayIndexValueEnumeratorData = new ());
 		internal ComEnumeratorData ComEnumeratorData => comEnumeratorData ?? (comEnumeratorData = new ());
 		internal ComMethodData ComMethodData => comMethodData ?? (comMethodData = new ());
 #endif
 		internal ControlProvider ControlProvider => controlProvider ?? (controlProvider = new ());
-#if WINDOWS
 		internal DllData DllData => dllData ?? (dllData = new ());
-#endif
 		internal DriveTypeMapper DriveTypeMapper => driveTypeMapper ?? (driveTypeMapper = new ());
 		internal ExecutableMemoryPoolManager ExecutableMemoryPoolManager => exeMemoryPoolManager ?? (exeMemoryPoolManager = new ());
 		internal FlowData FlowData => flowData ?? (flowData = new ());
@@ -188,19 +206,96 @@ namespace Keysharp.Scripting
 
 		static Script()
 		{
+			// Needed for string and file encodings such as Windows-1252
+			Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+#if WINDOWS
+			Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+
+			Application.ThreadException += (s, e) =>
+			{
+				if (e.Exception is Flow.UserRequestedExitException) return; // silence during shutdown
+				System.Diagnostics.Debug.Write("ThreadException caught: " + e.Exception);
+			};
+#endif
+
+			AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+			{
+				var ex = e.ExceptionObject as Exception;
+				if (Script.TheScript?.hasExited == true || ex is Flow.UserRequestedExitException) return; // silence during shutdown
+				System.Diagnostics.Debug.WriteLine("Exception caught in current domain: " + ex);
+			};
+
 			WindowX.SetProcessDPIAware();
 			CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 			CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 #if LINUX
 			Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);//For some reason, linux needs this for rich text to work.
 			enc1252 = Encoding.GetEncoding(1252);
+			if (Application.Instance == null)
+			{
+				try
+				{
+					_ = new Application();
+					while (Application.Instance == null)
+						System.Threading.Thread.Sleep(1);
+				}
+				catch (Exception ex)
+				{
+					System.Diagnostics.Debug.WriteLine("Failed to initialize Eto Application: " + ex);
+				}
+			}
+
+			Application.Instance.UnhandledException += (s, e) =>
+			{
+				if (e.ExceptionObject is Flow.UserRequestedExitException) return; // silence during shutdown
+				System.Diagnostics.Debug.Write("ThreadException caught: " + e.ExceptionObject);
+			};
+
+			try
+			{
+				var settings = Gtk.Settings.Default;
+				if (settings != null)
+				{
+					settings.SetProperty("gtk-menu-images", new GLib.Value(true));
+					settings.SetProperty("gtk-button-images", new GLib.Value(true));
+				}
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine("Failed to enable GTK menu images: " + ex);
+			}
 #endif
 			SetInitialFloatFormat();//This must be done intially and not just when A_FormatFloat is referenced for the first time.
+
+#if WINDOWS
+			// Temporary patch to override the GdiPlus initialization settings used by WinForms
+			// (or more specifically System.Drawing). If StartupParameters is not 4 then external
+			// codecs such as webp cannot be used.
+			EnsureGdiPlus();
+#endif
 		}
 
-		public Script(Type program = null)
+#if WINDOWS
+		static nint _gdiToken;
+		public static void EnsureGdiPlus()
+		{
+			if (_gdiToken != 0) return;
+			var si = new WindowsAPI.GdiplusStartupInputEx
+			{
+				GdiplusVersion = 2,
+				SuppressBackgroundThread = false,
+				SuppressExternalCodecs = false,
+				StartupParameters = 4
+			};
+			int s = WindowsAPI.GdiplusStartup(out _gdiToken, ref si, IntPtr.Zero);
+			if (s != 0) throw new ExternalException($"GdiplusStartup failed: {s}");
+		}
+#endif
+
+		public Script(Type program = null, string hookMutexName = null)
 		{
 			ProgramType = program ?? GetCallingType();
+			ProgramNamespace = ProgramType.Namespace;
 			Script.TheScript = this;//Everywhere in the script will reference this.
 			timeLastInputPhysical = DateTime.UtcNow;
 			timeLastInputKeyboard = timeLastInputPhysical;
@@ -215,17 +310,17 @@ namespace Keysharp.Scripting
 
 			_ = Script.TheScript.Threads.PushThreadVariables(0, true, false, true);//Ensure there is always one thread in existence for reference purposes, but do not increment the actual thread counter.
 			var pd = this.ProcessesData;
-			mgr = this.PlatformProvider.Manager;
-			pd.MainThreadID = mgr.CurrentThreadId();
+			pd.MainThreadID = CurrentThreadId();
 			pd.ManagedMainThreadID = Thread.CurrentThread.ManagedThreadId;//Figure out how to do this on linux.//TODO
-			//If we're running via passing in a script and are not in a unit test, then set the working directory to that of the script file.
-			var path = Path.GetFileName(Application.ExecutablePath).ToLowerInvariant();
 
-			if (path != "testhost.exe" && path != "testhost.dll" && !A_IsCompiled)
-				_ = Dir.SetWorkingDir(A_ScriptDir);
-
+#if WINDOWS
 			msgFilter = new MessageFilter(this);
 			Application.AddMessageFilter(msgFilter);
+#else
+			msgFilter = new MessageFilter(this);
+			msgFilter.Attach();
+#endif
+			if (hookMutexName != null && hookMutexName != "") HookThread.MutexName = hookMutexName;
 			_ = InitHook();//Why is this always being initialized even when there are no hooks? This is very inefficient.//TODO
 			//Init the data objects that the API classes will use.
 			SetInitialFloatFormat();//This must be done intially and not just when A_FormatFloat is referenced for the first time.
@@ -237,7 +332,11 @@ namespace Keysharp.Scripting
 		~Script()
 		{
 			tickTimer?.Dispose();
+#if WINDOWS
 			Application.RemoveMessageFilter(msgFilter);
+#elif LINUX
+			msgFilter?.Detach();
+#endif
 		}
 
 		[MethodImpl(MethodImplOptions.NoInlining)]  // prevent inlining from collapsing frames
@@ -263,36 +362,38 @@ namespace Keysharp.Scripting
 		/// </summary>
 		/// <param name="p"></param>
 		/// <param name="s"></param>
-		public void LoadDll(string dll, bool throwOnFailure = true)
+		public void LoadDll(string library, bool throwOnFailure = true)
 		{
-			if (dll.Length == 0)
+			if (library.Length == 0)
 			{
-				if (!mgr.SetDllDirectory(null))//An empty #DllLoad restores the default search order.
+				if (!SetDllDirectory(null))//An empty #DllLoad restores the default search order.
 					if (throwOnFailure)
 					{
-						_ = Errors.ErrorOccurred("PlatformProvider.Manager.SetDllDirectory(null) failed.", null, Keyword_ExitApp);
+						_ = Errors.ErrorOccurred("PlatformManager.SetDllDirectory(null) failed.", null, Keyword_ExitApp);
 						return;
 					}
 			}
-			else if (Directory.Exists(dll))
+			else if (Directory.Exists(library))
 			{
-				if (!mgr.SetDllDirectory(dll))
+				if (!SetDllDirectory(library))
 					if (throwOnFailure)
 					{
-						_ = Errors.ErrorOccurred($"PlatformProvider.Manager.SetDllDirectory({dll}) failed.", null, Keyword_ExitApp);
+						_ = Errors.ErrorOccurred($"PlatformManager.SetDllDirectory({library}) failed.", null, Keyword_ExitApp);
 						return;
 					}
 			}
 			else
 			{
-				var dllname = dll;
-#if WINDOWS
-
-				if (!dllname.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-					dllname += ".dll";
-
+				var libraryName = library;
+				if (libraryName.Length != 0 && !Path.HasExtension(libraryName)
+#if !WINDOWS
+					&& !File.Exists(libraryName)
 #endif
-				var hmodule = mgr.LoadLibrary(dllname);
+				)
+					libraryName += Keywords.LibraryExtension;
+
+			
+				var hmodule = LoadLibrary(libraryName);
 
 				if (hmodule != 0)
 				{
@@ -300,12 +401,12 @@ namespace Keysharp.Scripting
 					// "Pin" the dll so that the script cannot unload it with FreeLibrary.
 					// This is done to avoid undefined behavior when DllCall optimizations
 					// resolves a proc address in a dll loaded by this directive.
-					_ = WindowsAPI.GetModuleHandleEx(WindowsAPI.GET_MODULE_HANDLE_EX_FLAG_PIN, dllname, out hmodule);  // MSDN regarding hmodule: "If the function fails, this parameter is NULL."
+					_ = WindowsAPI.GetModuleHandleEx(WindowsAPI.GET_MODULE_HANDLE_EX_FLAG_PIN, libraryName, out hmodule);  // MSDN regarding hmodule: "If the function fails, this parameter is NULL."
 #endif
 				}
 				else if (throwOnFailure)
 				{
-					_ = Errors.ErrorOccurred($"Failed to load DLL {dllname}.", null, Keyword_ExitApp);
+					_ = Errors.ErrorOccurred($"Failed to load DLL {libraryName}.", null, Keyword_ExitApp);
 					return;
 				}
 			}
@@ -367,12 +468,14 @@ namespace Keysharp.Scripting
 		{
 			//Must use BeginInvoke() because this might be called from _ks_UserMainCode(),
 			//so it needs to run after that thread has exited.
-			if (!IsMainWindowClosing)
-				mainWindow?.CheckedBeginInvoke(() =>
+			if (!IsMainWindowClosing && totalExistingThreads == 0)
 			{
-				if (!IsMainWindowClosing && !AnyPersistent())
-					_ = Flow.ExitAppInternal(exitReason, Environment.ExitCode, false);
-			}, true, true);
+				mainWindow?.CheckedBeginInvoke(() =>
+				{
+					if (!IsMainWindowClosing && !AnyPersistent())
+						_ = Flow.ExitAppInternal(exitReason, Environment.ExitCode, false);
+				}, true, false);
+			}
 		}
 
 		public string GetPublicStaticPropertyNames()
@@ -391,15 +494,15 @@ namespace Keysharp.Scripting
 				mainWindow.Text = title;
 
 			mainWindow.ClipboardUpdate += PrivateClipboardUpdate;
-			mainWindow.Icon = Core.Properties.Resources.Keysharp_ico;
+			if (normalIcon != null)
+				mainWindow.Icon = normalIcon;
 			persistent = _persistent;
 			mainWindowGui = new Gui(null, null, null, mainWindow);
 			//Only do these on Windows, because it seems to have the opposite effect on linux:
 			//The main window is always shown on startup, but in a broken non-drawn state.
-#if WINDOWS
 			mainWindow.AllowShowDisplay = false; // Prevent show on script startup
 			mainWindow.ShowInTaskbar = true; // Without this the main window won't have a taskbar icon
-#endif
+			
 			_ = mainWindow.BeginInvoke(() =>
 			{
 				var ret = Threads.BeginThread();
@@ -430,10 +533,29 @@ namespace Keysharp.Scripting
 
 				ExitIfNotPersistent();
 			});
+#if WINDOWS
 			Application.Run(mainWindow);
+#else
+			Application.Instance.Run(mainWindow);
+#endif
 		}
 
-		public void SetName(string s) => scriptName = s;
+		public void SetName(string s)
+        {
+			scriptName = s;
+
+			//If we're running via passing in a script and are not in a unit test, then set the working directory to that of the script file.
+			var path = Path.GetFileName(
+#if WINDOWS
+				Application.ExecutablePath
+#else
+				Environment.ProcessPath ?? string.Empty
+#endif
+				).ToLowerInvariant();
+
+			if (path != "testhost.exe" && path != "testhost.dll" && !A_IsCompiled)
+				_ = Dir.SetWorkingDir(A_ScriptDir);
+        } 
 
 		public void SetReady() => isReadyToExecute = true;
 
@@ -551,7 +673,6 @@ namespace Keysharp.Scripting
 		    }
 		*/
 
-		[PublicForTestOnly]
 		public void SimulateKeyPress(uint key) => HookThread.SimulateKeyPress(key);
 
 		public void Stop()
@@ -568,6 +689,7 @@ namespace Keysharp.Scripting
 				}, false);
 			}
 
+#if WINDOWS
 			if (Tray != null && Tray.ContextMenuStrip != null)
 			{
 				Tray.ContextMenuStrip.CheckedInvoke(() =>
@@ -577,6 +699,7 @@ namespace Keysharp.Scripting
 					Tray = null;
 				}, true);
 			}
+#endif
 		}
 
 		public override string ToString()
@@ -648,6 +771,9 @@ namespace Keysharp.Scripting
 
 		internal bool AnyPersistent()
 		{
+			if (totalExistingThreads > 0)
+				return true;
+
 			if (Gui.AnyExistingVisibleWindows())
 				return true;
 
@@ -661,9 +787,6 @@ namespace Keysharp.Scripting
 				return true;
 
 			if (ClipFunctions.Count > 0)
-				return true;
-
-			if (totalExistingThreads > 0)
 				return true;
 
 			if (FlowData.persistentValueSetByUser)
@@ -740,13 +863,35 @@ namespace Keysharp.Scripting
 		{
 			var i = 0;
 			var b = false;//False means keep going, true means stop.
-
+#if WINDOWS
 			if (Clipboard.ContainsText() || Clipboard.ContainsFileDropList())
+#else
+			if (Clipboard.Instance.ContainsText)
+#endif
 				while (!b && i < ClipFunctions.Count) b = IfTest(ClipFunctions[i++].Call(1));//Can't use foreach because the collection could be modified by the event.
 			else if (!KeysharpEnhancements.IsClipboardEmpty())
 				while (!b && i < ClipFunctions.Count) b = IfTest(ClipFunctions[i++].Call(2));
 			else
 				while (!b && i < ClipFunctions.Count) b = IfTest(ClipFunctions[i++].Call(0));
+		}
+
+		internal Type GetNativeType(Any obj)
+		{
+			while (obj != null)
+			{
+				var t = obj.GetType();
+				if (!string.Equals(t.Namespace, ProgramNamespace, StringComparison.OrdinalIgnoreCase))
+				{
+					// we found a built‑in prototype object
+					if (t == typeof(Class)) return typeof(KeysharpObject);
+					return t;
+				}
+
+				// follow the “base” link:
+				obj = obj.Base;
+			}
+			// fallback?
+			return typeof(Any);
 		}
 	}
 }

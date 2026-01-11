@@ -8,12 +8,15 @@ namespace Keysharp.Core
 		{
 			var (parsed, ptr) = CtrlTonint(ctrl);
 			var script = Script.TheScript;
-			var mgr = script.WindowProvider.Manager;
 
 			if (parsed)
 			{
-				if (mgr.IsWindow(ptr))
-					return mgr.CreateWindow(ptr);
+#if !WINDOWS
+				if (Control.FromHandle(ptr) is Control ks)
+					return new ControlItem(ks);
+#endif
+				if (WindowManager.IsWindow(ptr))
+					return WindowManager.CreateWindow(ptr);
 				else if (throwifnull && !script.IsMainWindowClosing)
 					_ = Errors.TargetErrorOccurred($"Could not find child control with handle: {ptr}");
 
@@ -99,7 +102,7 @@ namespace Keysharp.Core
 				bool ignorePureID = false)
 		{
 			var script = Script.TheScript;
-			var win = script.WindowProvider.Manager.FindWindow(winTitle, winText, excludeTitle, excludeText, last, ignorePureID);
+			var win = WindowManager.FindWindow(winTitle, winText, excludeTitle, excludeText, last, ignorePureID);
 
 			if (win == null && throwifnull && !script.IsMainWindowClosing)
 			{
@@ -115,7 +118,7 @@ namespace Keysharp.Core
 				object excludeTitle = null,
 				object excludeText = null)
 		{
-			var (windows, crit) = Script.TheScript.WindowProvider.Manager.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
+			var (windows, crit) = WindowManager.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
 			return windows;
 		}
 
@@ -126,7 +129,7 @@ namespace Keysharp.Core
 				object excludeText)
 		{
 			var script = Script.TheScript;
-			var win = script.WindowProvider.Manager.FindWindow(winTitle, winText, excludeTitle, excludeText);
+			var win = WindowManager.FindWindow(winTitle, winText, excludeTitle, excludeText);
 
 			if (win != null)
 			{

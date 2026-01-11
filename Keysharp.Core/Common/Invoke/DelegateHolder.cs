@@ -15,7 +15,7 @@
 	/// </summary>
 	public class DelegateHolder : KeysharpObject, IPointable, IDisposable
 	{
-		internal IFuncObj funcObj;
+		internal Any funcObj;
 		readonly bool _fast, _reference;
 		readonly int _arity;
 		private int _slotId;
@@ -28,7 +28,7 @@
 		/// <summary>
 		/// Creates a holder and receiving a delegate.
 		/// </summary>
-		public DelegateHolder(IFuncObj function, int arity, bool fast, bool reference)
+		public DelegateHolder(Any function, int arity, bool fast, bool reference)
 		{
 			funcObj = function;
 			_fast = fast;
@@ -171,7 +171,10 @@
 		{
 			var (dh, gen) = AritySlots.Get(args.Length, slotId);
 			if (dh == null || gen != dh._assignedGeneration)
+			{
+				if (Script.TheScript.hasExited) return 0L;
 				throw new Error("Stale callback pointer");
+			}
 
 			object val = null;
 			var state = (false, (ThreadVariables)null);
@@ -191,18 +194,20 @@
 						unsafe
 						{
 							long* ptr = (long*)gh.AddrOfPinnedObject().ToPointer();
-							val = dh.funcObj.Call((long)ptr);
+							val = Script.Invoke(dh.funcObj, "Call", (long)ptr);
 						}
 					}
 					finally { gh.Free(); }
 				}
 				else
 				{
-					val = dh.funcObj.Call(System.Array.ConvertAll(args, item => (object)item));
+					val = Script.Invoke(dh.funcObj, "Call", System.Array.ConvertAll(args, item => (object)item));
 				}
 
 				if (state.Item1)
 					_ = script.Threads.EndThread(state);
+
+				script.ExitIfNotPersistent();
 			}, !state.Item1, state);
 			return ConvertResult(val);
 		}

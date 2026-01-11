@@ -35,6 +35,7 @@
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if any failure happens while attempting to perform the operation.</exception>
 		public static object DirCreate(object dirName)
 		{
+			ThreadAccessors.A_LastError = 0;
 			try
 			{
 				_ = Directory.CreateDirectory(dirName.As());
@@ -42,6 +43,7 @@
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error creating directory {dirName}");
 			}
 		}
@@ -57,6 +59,7 @@
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if any failure happens while attempting to perform the operation.</exception>
 		public static object DirDelete(object dirName, object recurse = null)
 		{
+			ThreadAccessors.A_LastError = 0;
 			try
 			{
 				Directory.Delete(dirName.As(), recurse.Ab());
@@ -64,6 +67,7 @@
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error creating directory {dirName}");
 			}
 		}
@@ -120,6 +124,7 @@
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if any failure happens while attempting to perform the operation.</exception>
 		public static object DirMove(object source, object dest, object overwriteOrRename = null)
 		{
+			ThreadAccessors.A_LastError = 0;
 			var s = source.As();
 			var d = dest.As();
 			var flag = overwriteOrRename.As();
@@ -128,7 +133,10 @@
 
 			//If dest exists as a file, never copy.
 			if (File.Exists(d))
+			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred("", $"Cannot move {s} to {d} because destination is a file.");
+			}
 
 			switch (flag.ToUpperInvariant())
 			{
@@ -309,10 +317,10 @@
 			}
 			else
 			{
-				var input = Path.GetFullPath(p);
-                Script.SetPropertyValue(outFileName, "__Value", Path.GetFileName(input));
-                Script.SetPropertyValue(outExtension, "__Value", Path.GetExtension(input).Trim('.'));
-                Script.SetPropertyValue(outNameNoExt, "__Value", Path.GetFileNameWithoutExtension(input));
+				var input = p == "" ? DefaultObject : Path.GetFullPath(p);
+                Script.SetPropertyValue(outFileName, "__Value", Path.GetFileName(input) ?? DefaultObject);
+                Script.SetPropertyValue(outExtension, "__Value", Path.GetExtension(input)?.Trim('.') ?? DefaultObject);
+                Script.SetPropertyValue(outNameNoExt, "__Value", Path.GetFileNameWithoutExtension(input) ?? DefaultObject);
 
 				if (p.StartsWith(@"\\"))
 				{
@@ -337,8 +345,8 @@
 				}
 				else
 				{
-                    Script.SetPropertyValue(outDir, "__Value", Path.GetDirectoryName(input).TrimEnd('\\'));
-                    Script.SetPropertyValue(outDrive, "__Value", Path.GetPathRoot(input).TrimEnd('\\'));
+                    Script.SetPropertyValue(outDir, "__Value", Path.GetDirectoryName(input)?.TrimEnd('\\') ?? DefaultObject);
+                    Script.SetPropertyValue(outDrive, "__Value", Path.GetPathRoot(input)?.TrimEnd('\\') ?? DefaultObject);
 				}
 			}
 

@@ -1,21 +1,21 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Xml.Linq;
+using Antlr4.Runtime;
 using Antlr4.Runtime.Misc;
+using Keysharp.Core.Common.Invoke;
+using Keysharp.Scripting;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Keysharp.Scripting.Parser;
 using static MainParser;
-using Microsoft.CodeAnalysis;
-using System.Drawing.Imaging;
-using Antlr4.Runtime;
-using System.IO;
-using System.Collections;
-using static System.Windows.Forms.AxHost;
-using System.Xml.Linq;
-using Keysharp.Scripting;
-using System.Reflection;
 
 namespace Keysharp.Scripting
 {
@@ -83,10 +83,7 @@ namespace Keysharp.Scripting
                         ((InvocationExpressionSyntax)InternalMethods.HotIf)
                         .WithArgumentList(
 							CreateArgumentList(
-                                ((InvocationExpressionSyntax)InternalMethods.Func)
-                                    .WithArgumentList(
-										CreateArgumentList(SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(hotIfFunctionName)))
-                                    )
+								GenerateFuncObjArgument(hotIfFunctionName)
                             )
                         )
                     )
@@ -263,10 +260,7 @@ namespace Keysharp.Scripting
                     ((InvocationExpressionSyntax)InternalMethods.AddHotkey)
                     .WithArgumentList(
 						CreateArgumentList(
-							((InvocationExpressionSyntax)InternalMethods.Func)
-                            .WithArgumentList(
-								CreateArgumentList(SyntaxFactory.IdentifierName(hotkeyFunctionName))
-                            ),
+                            GenerateFuncObjArgument(hotkeyFunctionName),
                             SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(0u)),
                             SyntaxFactory.LiteralExpression(
                                 SyntaxKind.StringLiteralExpression,
@@ -364,10 +358,7 @@ namespace Keysharp.Scripting
 							SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(trigger)),
                             hasExpansion
                                 ? SyntaxFactory.LiteralExpression(SyntaxKind.NullLiteralExpression)
-                                : ((InvocationExpressionSyntax)InternalMethods.Func)
-                                .WithArgumentList(
-									CreateArgumentList(SyntaxFactory.IdentifierName(functionName))
-                                ),
+                                : GenerateFuncObjArgument(functionName),
                             SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal($"{options}:{hotstringKey}")),
                             SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(hotstringKey)),
                             SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(expansionText)),
@@ -452,17 +443,17 @@ namespace Keysharp.Scripting
             string tempcp1, remapSource, remapDest, remapDestModifiers; // Must fit the longest key name (currently Browser_Favorites [17]), but buffer overflow is checked just in case.
             bool remapSourceIsCombo, remapSourceIsMouse, remapDestIsMouse, remapKeybdToMouse, remapWheel;
             var ht = Script.TheScript.HookThread;
-            var kbLayout = Script.TheScript.PlatformProvider.Manager.GetKeyboardLayout(0);
+            var kbLayout = GetKeyboardLayout(0);
 
             ht.TextToVKandSC(remapName = HotkeyDefinition.TextToModifiers(remapName, null), ref remapDestVk, ref remapDestSc, ref modLR, kbLayout);
 
             // These will be ignored in other stages if it turns out not to be a remap later below:
             remapSourceVk = ht.TextToVK(tempcp1 = HotkeyDefinition.TextToModifiers(hotName, null), ref modifiersLR, false, true, kbLayout);//An earlier stage verified that it's a valid hotkey, though VK could be zero.
             remapSourceIsCombo = tempcp1.Contains(HotkeyDefinition.COMPOSITE_DELIMITER);
-            remapSourceIsMouse = ht.IsMouseVK(remapSourceVk);
-            remapDestIsMouse = ht.IsMouseVK(remapDestVk);
+            remapSourceIsMouse = MouseUtils.IsMouseVK(remapSourceVk);
+            remapDestIsMouse = MouseUtils.IsMouseVK(remapDestVk);
             remapKeybdToMouse = !remapSourceIsMouse && remapDestIsMouse;
-            remapWheel = ht.IsWheelVK(remapSourceVk) || ht.IsWheelVK(remapDestVk);
+            remapWheel = MouseUtils.IsWheelVK(remapSourceVk) || MouseUtils.IsWheelVK(remapDestVk);
             remapSource = (remapSourceIsCombo ? "" : "*") +// v1.1.27.01: Omit * when the remap source is a custom combo.
                             (tempcp1.Length == 1 && char.IsUpper(tempcp1[0]) ? "+" : "") +// Allow A::b to be different than a::b.
                             hotName;// Include any modifiers too, e.g. ^b::c.
@@ -560,8 +551,8 @@ namespace Keysharp.Scripting
 					CreateArgumentList(SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(remapDest)))
                 );
 
-                // Generate the IfElse method invocation
-                var ifElseInvocation = ((InvocationExpressionSyntax)InternalMethods.IfElse)
+                // Generate the IfTest method invocation
+                var ifElseInvocation = ((InvocationExpressionSyntax)InternalMethods.IfTest)
                     .WithArgumentList(
 						CreateArgumentList(getKeyStateInvocation)
                     );
@@ -718,7 +709,10 @@ namespace Keysharp.Scripting
                 ((InvocationExpressionSyntax)InternalMethods.Func)
                 .WithArgumentList(
                     CreateArgumentList(
-                        SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(functionName))
+						SyntaxFactory.CastExpression(
+							CreateQualifiedName("System.Delegate"),
+							SyntaxFactory.IdentifierName(functionName)
+						)
                     )
                 )
             );

@@ -219,8 +219,22 @@ namespace Keysharp.Core
 		/// <returns>Empty string, unused.</returns>
 		public override object __New(params object[] args)
 		{
-			Set(args);
+			_ = Set(args);
 			return DefaultObject;
+		}
+
+		internal override List<Any> GetEnumerableMembersOrEmpty()
+		{
+			var list = base.GetEnumerableMembersOrEmpty();
+			if (enumerableMap != null)
+			{
+				foreach (var kv in enumerableMap)
+				{
+					if (kv.Key is Any a1) list.Add(a1);
+					if (kv.Value is Any a2) list.Add(a2);
+				}
+			}
+			return list;
 		}
 
 		/// <summary>
@@ -230,7 +244,7 @@ namespace Keysharp.Core
 		{
 			var clone = (Map)MemberwiseClone();
 			clone.map = new Dictionary<object, object>(clone.map);
-			clone.map.EnsureCapacity(map.Capacity);
+			_ = clone.map.EnsureCapacity(map.Capacity);
 			clone.enumerableMap = null;
 			return clone;
 		}
@@ -260,7 +274,7 @@ namespace Keysharp.Core
 		/// </summary>
 		/// <param name="array">The <see cref="System.Array"/> to copy elements to.</param>
 		/// <param name="index">The index in the array to start copying to.</param>
-		[PublicForTestOnly]
+		[PublicHiddenFromUser]
 		public void CopyTo(System.Array array, int index)
 		{
 			var kvs = new List<object>(map.Count * 2);
@@ -446,7 +460,7 @@ namespace Keysharp.Core
 				else
 					_ = sb.AppendLine($"{indent}{name}: {{}} ({GetType().Name})");
 			}
-			var opi = (OwnPropsIterator)((FuncObj)OwnProps(true, false)).Inst;
+			var opi = (OwnPropsIterator)((FuncObj)OwnProps(true)).Inst;
 			tabLevel++;
 			indent = new string('\t', tabLevel);
 
@@ -481,7 +495,7 @@ namespace Keysharp.Core
 		/// </summary>
 		/// <param name="args">The values to set, arranged as key,value,key2,value2,etc...</param>
 		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if values was not of a supported type.</exception>
-		public void Set(params object[] args)
+		public Map Set(params object[] args)
 		{
 			if (enumerableMap != null)
 				enumerableMap = null;
@@ -501,7 +515,6 @@ namespace Keysharp.Core
 					{
 						map = m.map;
 						caseSense = m.caseSense;
-						return;
 					}
 					else if (args[0] is Dictionary<object, object> dkt)
 					{
@@ -529,21 +542,23 @@ namespace Keysharp.Core
 					{
 						if (map == null)
 							map = new Dictionary<object, object>(new CaseEqualityComp(caseSense));
+
 						bool isKey = true;
 						object key = null;
+
 						foreach (var k in ie)
 						{
 							if (isKey)
 								key = k;
 							else
 								Insert(key, k);
+
 							isKey = !isKey;
 						}
 					}
 					else
 					{
 						_ = Errors.ValueErrorOccurred($"Improper object type of {args[0].GetType()} passed to Map constructor.");
-						return;
 					}
 				}
 				else
@@ -557,6 +572,8 @@ namespace Keysharp.Core
 						Insert(args[i], args[i + 1]);
 				}
 			}
+
+			return this;
 		}
 		/// <summary>
 		/// Returns the string representation of all elements in the map.
@@ -687,6 +704,7 @@ namespace Keysharp.Core
 		public MapComparer(eCaseSense caseSense)
 		{
 			CaseSense = caseSense;
+
 			stringComparer = caseSense switch
 			{
 				eCaseSense.On => StringComparer.Ordinal,

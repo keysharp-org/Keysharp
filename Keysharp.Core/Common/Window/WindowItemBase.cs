@@ -1,14 +1,25 @@
 ﻿namespace Keysharp.Core.Common.Window
 {
+	[StructLayout(LayoutKind.Sequential)]
+	internal struct POINT
+	{
+		internal int X;
+		internal int Y;
+
+		internal POINT(int x, int y) { X = x; Y = y; }
+		internal POINT(Point p) { X = p.X; Y = p.Y; }
+	}
+
 	internal class PointAndHwnd
 	{
 		internal double distanceFound = 0.0;
 		internal nint hwndFound = 0;
 		internal bool ignoreDisabled = false;
-		internal Point pt;
+		internal POINT pt;
 		internal Rectangle rectFound = new ();
 
-		internal PointAndHwnd(Point p) => pt = p;
+		internal PointAndHwnd(POINT p) => pt = p;
+		internal PointAndHwnd(Point p) => pt = new POINT(p);
 	}
 
 	/// <summary>
@@ -157,6 +168,7 @@
 		internal abstract object Transparency { get; set; }
 		internal abstract object TransparentColor { get; set; }
 		internal abstract bool Visible { get; set; }
+		internal bool Detectable => ThreadAccessors.A_DetectHiddenWindows || Visible;
 		internal abstract FormWindowState WindowState { get; set; }
 
 		internal WindowItemBase(nint handle) => Handle = handle;
@@ -193,9 +205,9 @@
 		/// <param name="location"></param>
 		internal abstract void ClickRight(Point? location = null);
 
-		internal abstract Point ClientToScreen();
+		internal abstract POINT ClientToScreen();
 
-		internal virtual void ClientToScreen(ref Point pt)
+		internal virtual void ClientToScreen(ref POINT pt)
 		{
 			var screenPt = ClientToScreen();
 			pt.X += screenPt.X;
@@ -272,7 +284,7 @@
 			//Potentially the slowest, so match it last
 			if (!string.IsNullOrEmpty(criteria.Group))
 			{
-				if (Script.TheScript.WindowProvider.Manager.Groups.TryGetValue(criteria.Group, out var stack))
+				if (TheScript.WindowProvider.Manager.Groups.TryGetValue(criteria.Group, out var stack))
 				{
 					if (stack.sc.Count > 0)//An empty group is assumed to want to match all windows.
 					{
@@ -296,7 +308,7 @@
 			return true;
 		}
 
-		internal WindowItemBase FirstChild(SearchCriteria sc)
+		internal virtual WindowItemBase FirstChild(SearchCriteria sc)
 		{
 			WindowItemBase item = null;
 
@@ -383,10 +395,7 @@
 
 				case 4:
 				{
-					VarRef outvar = new VarRef(null);
-					_ = RegEx.RegExMatch(a, b, outvar, 1);
-					RegExMatchInfo output = (RegExMatchInfo)(outvar.__Value);
-					return output.Count.Ai() > 0 && !string.IsNullOrEmpty(output[0]);
+					return RegEx.RegExMatch(a, b) is long ll && ll > 0L;
 				}
 			}
 

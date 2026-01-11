@@ -231,6 +231,15 @@ if (m2.c == 789)
 	FileAppend "pass", "*"
 else
 	FileAppend "fail", "*"
+
+m["one"] := 4
+
+if (m2["one"] == 1)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+m["one"] := 1
 	
 len := m2.Count
 

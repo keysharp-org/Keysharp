@@ -1,4 +1,6 @@
 ﻿#if WINDOWS
+using static Keysharp.Core.Common.Mouse.MouseUtils;
+
 namespace Keysharp.Core.Windows
 {
 	/// <summary>
@@ -8,7 +10,7 @@ namespace Keysharp.Core.Windows
 	{
 		internal override long ControlAddItem(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				var res = 0L;
 				var ctrl2 = Control.FromHandle(item.Handle);
@@ -50,7 +52,7 @@ namespace Keysharp.Core.Windows
 
 		internal override void ControlChooseIndex(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				uint msg = 0, x_msg = 0, y_msg = 0;
 				n--;
@@ -115,7 +117,7 @@ namespace Keysharp.Core.Windows
 
 		internal override long ControlChooseString(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				uint msg = 0, x_msg = 0, y_msg = 0;
 
@@ -175,7 +177,7 @@ namespace Keysharp.Core.Windows
 			var winy = int.MinValue;
 			var ctrlx = int.MinValue;
 			var ctrly = int.MinValue;
-			var vk = TheScript.HookThread.ConvertMouseButton(whichButton);
+			var vk = HookThread.ConvertMouseButton(whichButton);
 			var posoverride = options.Contains("pos", StringComparison.OrdinalIgnoreCase);
 			bool d = false, u = false, na = false;
 
@@ -246,11 +248,11 @@ namespace Keysharp.Core.Windows
 			if (getctrlbycoords)
 			{
 				item = WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
-				var rect = new Point(winx, winx);
+				var rect = new POINT(winx, winx);
 				_ = WindowsAPI.ClientToScreen(item.Handle, ref rect);
 				var pah = new PointAndHwnd(rect);
 				item.ChildFindPoint(pah);
-				item = pah.hwndFound != 0 ? TheScript.WindowProvider.Manager.CreateWindow(pah.hwndFound) : item;
+				item = pah.hwndFound != 0 ? WindowManager.CreateWindow(pah.hwndFound) : item;
 			}
 
 			if (item == null)
@@ -284,12 +286,12 @@ namespace Keysharp.Core.Windows
 
 			if (vk_is_wheel)
 			{
-				wparam = (uint)(clickCount * ((vk == VirtualKeys.VK_WHEEL_UP) ? WindowsAPI.WHEEL_DELTA : -WindowsAPI.WHEEL_DELTA)) << 16;  // High order word contains the delta.
+				wparam = (uint)(clickCount * ((vk == VirtualKeys.VK_WHEEL_UP) ? WHEEL_DELTA : -WHEEL_DELTA)) << 16;  // High order word contains the delta.
 				msg_down = WindowsAPI.WM_MOUSEWHEEL;
 			}
 			else if (vk_is_hwheel)  // Lexikos: Support horizontal scrolling in Windows Vista and later.
 			{
-				wparam = (uint)(clickCount * ((vk == VirtualKeys.VK_WHEEL_LEFT) ? -WindowsAPI.WHEEL_DELTA : WindowsAPI.WHEEL_DELTA)) << 16;
+				wparam = (uint)(clickCount * ((vk == VirtualKeys.VK_WHEEL_LEFT) ? -WHEEL_DELTA : WHEEL_DELTA)) << 16;
 				msg_down = WindowsAPI.WM_MOUSEHWHEEL;
 			}
 			else
@@ -304,7 +306,7 @@ namespace Keysharp.Core.Windows
 
 					case VirtualKeys.VK_XBUTTON1: msg_down = WindowsAPI.WM_XBUTTONDOWN; msg_up = WindowsAPI.WM_XBUTTONUP; wparam_up = VirtualKeys.VK_XBUTTON1 << 16; wparam = WindowsAPI.MK_XBUTTON1 | wparam_up; break;
 
-					case VirtualKeys.VK_XBUTTON2: msg_down = WindowsAPI.WM_XBUTTONDOWN; msg_up = WindowsAPI.WM_XBUTTONUP; wparam_up = WindowsAPI.XBUTTON2 << 16; wparam = WindowsAPI.MK_XBUTTON2 | wparam_up; break;
+					case VirtualKeys.VK_XBUTTON2: msg_down = WindowsAPI.WM_XBUTTONDOWN; msg_up = WindowsAPI.WM_XBUTTONUP; wparam_up = XBUTTON2 << 16; wparam = WindowsAPI.MK_XBUTTON2 | wparam_up; break;
 				}
 			}
 
@@ -344,7 +346,7 @@ namespace Keysharp.Core.Windows
 
 		internal override void ControlDeleteItem(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				uint msg;
 				var ctrl2 = Control.FromHandle(item.Handle);
@@ -389,7 +391,7 @@ namespace Keysharp.Core.Windows
 
 		internal override long ControlFindItem(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				uint msg = 0;
 				var ctrl2 = Control.FromHandle(item.Handle);
@@ -418,7 +420,7 @@ namespace Keysharp.Core.Windows
 
 		internal override void ControlFocus(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				var thinfo = WindowsAPI.AttachThreadInput(item.Handle, true);
 				_ = WindowsAPI.SetFocus(item.Handle);
@@ -429,7 +431,7 @@ namespace Keysharp.Core.Windows
 
 		internal override long ControlGetChecked(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				var ctrl2 = Control.FromHandle(item.Handle);
 
@@ -445,7 +447,7 @@ namespace Keysharp.Core.Windows
 
 		internal override string ControlGetChoice(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				uint msg = 0, x_msg = 0, y_msg = 0;
 
@@ -470,23 +472,23 @@ namespace Keysharp.Core.Windows
 						|| length.ToInt64() == WindowsAPI.CB_ERR)  // CB_ERR == LB_ERR
 					return (string)Errors.ErrorOccurred($"Could not get selected item string for combo or list box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorString);
 
-				var sb = new StringBuilder(length.ToInt32());
+				var buffer = new char[length.ToInt32()];
 
-				if (WindowsAPI.SendMessageTimeout(item.Handle, y_msg, index, sb, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out length) == 0
+				if (WindowsAPI.SendMessageTimeout(item.Handle, y_msg, index, buffer, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out length) == 0
 						|| length.ToInt64() == WindowsAPI.CB_ERR)//Probably impossible given the way it was called above. Also, CB_ERR == LB_ERR. Relies on short-circuit boolean order.
 					return (string)Errors.ErrorOccurred($"Could not get selected item string for combo or list box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorString);
 
-				return sb.ToString();
+				return new string(buffer, 0, length.ToInt32());
 			}
 
 			return DefaultObject;
 		}
 
-		internal override long ControlGetExStyle(object ctrl, object title, object text, object excludeTitle, object excludeText) => WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item ? item.ExStyle : 0L;
+		internal override long ControlGetExStyle(object ctrl, object title, object text, object excludeTitle, object excludeText) => WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item ? item.ExStyle : 0L;
 
 		internal override long ControlGetFocus(object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is WindowItem item)
+			if (WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is WindowItemBase item)
 			{
 				var h = WindowsAPI.GetWindowThreadProcessId(item.Handle, out var pid);
 				var info = GUITHREADINFO.Default;//Must be initialized this way because the size field must be populated.
@@ -516,7 +518,7 @@ namespace Keysharp.Core.Windows
 
 		internal override long ControlGetIndex(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				uint msg = 0;
 
@@ -541,7 +543,7 @@ namespace Keysharp.Core.Windows
 
 		internal override object ControlGetItems(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				uint msg = 0, x_msg = 0;
 
@@ -560,13 +562,14 @@ namespace Keysharp.Core.Windows
 
 				var cnt = (int)WindowsAPI.SendMessage(item.Handle, msg, 0, 0);
 				var listBoxContent = new List<object>(cnt);
-				var sb = new StringBuilder(256);
+				var chars = new char[256];
 
 				for (var i = 0; i < cnt; i++)
 				{
-					_ = sb.Clear();
-					_ = WindowsAPI.SendMessage(item.Handle, x_msg, i, sb);
-					listBoxContent.Add(sb.ToString());
+					System.Array.Clear(chars, 0, chars.Length);
+					int len = WindowsAPI.SendMessage(item.Handle, x_msg, i, chars);
+					if (len > 0)
+						listBoxContent.Add(new string(chars, 0, len));
 				}
 
 				return new Keysharp.Core.Array(listBoxContent);
@@ -585,7 +588,7 @@ namespace Keysharp.Core.Windows
 											 object excludeTitle = null,
 											 object excludeText = null)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				var coordParent = item.ParentWindow.Handle;
 
@@ -609,11 +612,11 @@ namespace Keysharp.Core.Windows
 			outHeight = 0L;
 		}
 
-		internal override long ControlGetStyle(object ctrl, object title, object text, object excludeTitle, object excludeText) => WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item ? item.Style : 0;
+		internal override long ControlGetStyle(object ctrl, object title, object text, object excludeTitle, object excludeText) => WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item ? item.Style : 0;
 
 		internal override string ControlGetText(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			return WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item
+			return WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item
 				   ? Control.FromHandle(item.Handle) is Control ctrl2 ? ctrl2.Text : WindowsAPI.GetWindowTextTimeout(item.Handle, 5000)
 				   : "";
 		}
@@ -625,7 +628,7 @@ namespace Keysharp.Core.Windows
 
 		internal void ControlSendHelper(string str, object ctrl, object title, object text, object excludeTitle, object excludeText, SendRawModes mode)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				Script.TheScript.HookThread.kbdMsSender.SendKeys(str, mode, SendModes.Event, item.Handle);
 			}
@@ -635,7 +638,7 @@ namespace Keysharp.Core.Windows
 
 		internal override void ControlSetChecked(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				var onoff = Conversions.ConvertOnOffToggle(val);
 				var ctrl2 = Control.FromHandle(item.Handle);
@@ -670,7 +673,7 @@ namespace Keysharp.Core.Windows
 
 		internal override void ControlSetEnabled(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				var onoff = Conversions.ConvertOnOffToggle(val);
 
@@ -685,7 +688,7 @@ namespace Keysharp.Core.Windows
 
 		internal override void ControlSetExStyle(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				if (val is long l)
 					item.ExStyle = l;
@@ -710,7 +713,7 @@ namespace Keysharp.Core.Windows
 
 		internal override void ControlSetStyle(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				if (val is long l)
 					item.Style = l;
@@ -738,7 +741,7 @@ namespace Keysharp.Core.Windows
 
 		internal override long EditGetCurrentCol(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				_ = WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.EM_GETSEL, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result);
 				var val = result & 0xFFFF;
@@ -760,7 +763,7 @@ namespace Keysharp.Core.Windows
 
 		internal override long EditGetCurrentLine(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.EM_LINEFROMCHAR, -1, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result) == 0)
 					return (long)Errors.ErrorOccurred($"Could not get current line index for text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorLong);
@@ -773,16 +776,16 @@ namespace Keysharp.Core.Windows
 
 		internal override string EditGetLine(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
-				var buffer = new StringBuilder(32767);
+				var buffer = new char[32767];
 				n--;
-				_ = buffer.Append((char)buffer.Capacity);
+				buffer[0] = (char)buffer.Length;
 
-				if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.EM_GETLINE, n, buffer, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out _) == 0)
+				if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.EM_GETLINE, n, buffer, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out nint result) == 0 && result < 0)
 					return (string)Errors.ErrorOccurred($"Could not get line for text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorString);
 
-				if (buffer.Length == 0)
+				if (result == 0)
 				{
 					if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.EM_GETLINECOUNT, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var linecount) == 0)
 						return (string)Errors.ErrorOccurred($"Could not get line count for text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorString);
@@ -791,7 +794,7 @@ namespace Keysharp.Core.Windows
 						return (string)Errors.ValueErrorOccurred($"Requested line of {n + 1} is greater than the number of lines ({linecount.ToInt32()}) in the text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", null, DefaultErrorString);
 				}
 
-				return buffer.ToString();
+				return new string(buffer, 0, result.ToInt32());
 			}
 
 			return DefaultObject;
@@ -799,7 +802,7 @@ namespace Keysharp.Core.Windows
 
 		internal override long EditGetLineCount(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 
 				//Don't try to cast to TextBox control here because it handles lines differently: wordwrapping doesn't count as a new line, whereas it does with EM_GETLINECOUNT;
@@ -814,7 +817,7 @@ namespace Keysharp.Core.Windows
 
 		internal override string EditGetSelectedText(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				if (Control.FromHandle(item.Handle) is TextBoxBase ctrl2)
 					return ctrl2.SelectedText;
@@ -837,7 +840,7 @@ namespace Keysharp.Core.Windows
 
 		internal override void EditPaste(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.EM_REPLACESEL, 1, str, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result) == 0)
 					_ = Errors.ErrorOccurred($"Could not paste into text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}");
@@ -850,7 +853,7 @@ namespace Keysharp.Core.Windows
 		{
 			object ret = null;
 
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				var focused = false;
 				var count = false;
@@ -1118,7 +1121,7 @@ namespace Keysharp.Core.Windows
 
 		internal override void MenuSelect(object title, object text, object menu, object sub1, object sub2, object sub3, object sub4, object sub5, object sub6, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is WindowItem win)
+			if (WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is WindowItemBase win)
 			{
 				var menuStr = menu.As();
 				var sysMenu = menuStr == "0&";
@@ -1133,9 +1136,9 @@ namespace Keysharp.Core.Windows
 							_ = Errors.ValueErrorOccurred($"Could not find menu.", $"{title}, {text}, {menu}, {sub1}, {sub2}, {sub3}, {sub4}, {sub5}, {sub6}, {excludeTitle}, {excludeText}");
 					}
 				}
-				else
+				else if (win is WindowItem win2)
 				{
-					var menuId = win.GetMenuItemId(menu, sub1, sub2, sub3, sub4, sub5, sub6);
+					var menuId = win2.GetMenuItemId(menu, sub1, sub2, sub3, sub4, sub5, sub6);
 
 					if (menuId != 0xFFFFFFFF)
 					{
@@ -1249,7 +1252,7 @@ namespace Keysharp.Core.Windows
 
 		private static void DropdownHelper(bool val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItem item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowItemBase item)
 			{
 				if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.CB_SHOWDROPDOWN, val ? 1 : 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var _) == 0)
 					_ = Errors.ErrorOccurred($"Could not hide combo box drop down for in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}");

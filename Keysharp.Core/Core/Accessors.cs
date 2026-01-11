@@ -11,7 +11,11 @@
 		internal bool iconHidden;
 		internal long inputLevel;
 		internal string menuMaskKey = "";
+#if WINDOWS
 		internal Icon prevTrayIcon;
+#else
+		internal Image prevTrayIcon;
+#endif
 		internal ThreadConfigData threadConfigDataPrototype = new(); // Used (and set by) the auto-execute section
 	}
 
@@ -38,7 +42,12 @@
 		/// <summary>
 		/// The full path of the assembly that is currently executing.
 		/// </summary>
-		public static string A_AhkPath => Application.ExecutablePath;
+		public static string A_AhkPath =>
+#if WINDOWS
+		Application.ExecutablePath;
+#else
+		Environment.ProcessPath ?? "";
+#endif
 
 		/// <summary>
 		/// The version of Keysharp.Core.dll
@@ -208,11 +217,9 @@
 				var act = () =>
 				{
 #if WINDOWS
-
 					if (WindowsAPI.OpenClipboard(A_ClipboardTimeout.Al()))//Will need a cross platform version of this.//TODO
 					{
 						_ = WindowsAPI.CloseClipboard();//Need to close it for it to work
-#endif
 
 						if (Clipboard.GetData(DataFormats.Text) is string text)
 							return text;
@@ -237,12 +244,11 @@
 
 						if (Clipboard.GetData(DataFormats.FileDrop) is string[] files)
 							return string.Join(DefaultNewLine, files);
-
-#if WINDOWS
 					}
-
-#endif
 					return DefaultObject;
+#else
+					return Clipboard.Instance.Text ?? DefaultObject;
+#endif
 				};
 				var ret = "";
 				Script.TheScript.mainWindow.CheckedInvoke(() => ret = act(), true);
@@ -252,19 +258,19 @@
 			{
 				Script.TheScript.mainWindow.CheckedInvoke(() =>
 				{
-#if LINUX
+#if !WINDOWS
 
 					if (value == null || (value is string s && s?.Length == 0))
 					{
 						//Clipboard.Clear();//For some reason this doesn't work on linux. Bug reported here: https://github.com/DanielVanNoord/System.Windows.Forms/issues/17
-						Clipboard.SetDataObject("", true);
+						Clipboard.Instance.Clear();
 					}
 					else if (value is ClipboardAll arr)
 						Env.RestoreClipboardAll(arr, 0L);
 					else
-						Clipboard.SetDataObject(value.ToString(), true);
+						Clipboard.Instance.Text = value.ToString();
 
-#elif WINDOWS
+#else
 
 					if (WindowsAPI.OpenClipboard(A_ClipboardTimeout.Al()))
 					{
@@ -447,14 +453,19 @@
 		/// The acronyms used with the size-type cursors are compass directions, e.g. NESW = NorthEast+SouthWest.<br/>
 		/// The hand-shaped cursors (pointing and grabbing) are classified as Unknown.
 		/// </summary>
-		public static string A_Cursor =>
-		Cursor.Current is Cursor cur ?
-#if LINUX
-		cur.ToString().Trim(BothBrackets).Split(':', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)[1]
-#elif WINDOWS
-		cur.ToString().Trim(BothBrackets).Split(' ', StringSplitOptions.RemoveEmptyEntries)[1].Replace("Cursor", "")
+		public static string A_Cursor
+		{
+			get
+			{
+#if WINDOWS
+				return Cursor.Current is Cursor cur
+					? cur.ToString().Trim(BothBrackets).Split(' ', StringSplitOptions.RemoveEmptyEntries)[1].Replace("Cursor", "")
+					: "Default---";
+#else
+				return "Default---";
 #endif
-		: "Default---";
+			}
+		}
 
 		/// <summary>
 		/// See <see cref="A_MDay"/>.
@@ -549,6 +560,21 @@
 		{
 			get => ThreadAccessors.A_EventInfo;
 			set => ThreadAccessors.A_EventInfo = value;
+		}
+
+		/// <summary>
+		/// The result from last Windows GetLastError() function call which is stored after certain
+		/// function calls such as DllCall and file functions.
+		/// </summary>
+		public static object A_LastError
+		{
+			get => (long)ThreadAccessors.A_LastError;
+			set
+			{
+				var val = value.Ai();
+				Marshal.SetLastSystemError(val);
+				ThreadAccessors.A_LastError = val;
+			}
 		}
 
 		/// <summary>
@@ -740,7 +766,13 @@
 		{
 			get
 			{
-				var path = Path.GetFileName(Application.ExecutablePath).ToLowerInvariant();
+				var path = Path.GetFileName(
+#if WINDOWS
+					Application.ExecutablePath
+#else
+					Environment.ProcessPath ?? string.Empty
+#endif
+					).ToLowerInvariant();
 				return path != "keysharp.dll" && path != "keysharp.exe" && path != "testhost.exe"
 					   && path != "keysharp" && path != "testhost" && path != "testhost.dll";
 			}
@@ -762,6 +794,20 @@
 		/// True if the script's hotkeys and hotstrings are suspended, else false.
 		/// </summary>
 		public static bool A_IsSuspended => Script.TheScript.FlowData.suspended;
+
+		/// <summary>
+		/// True if the thread immediately underneath the current thread is paused, otherwise false.
+		/// </summary>
+		public static bool A_IsPaused => ThreadAccessors.A_IsPaused;
+
+		/// <summary>
+		/// True if the script is persistent.
+		/// </summary>
+		public static object A_IsPersistent
+		{
+			get => TheScript.persistent;
+			set => TheScript.persistent = ForceBool(value);
+		}
 
 		/// <summary>
 		/// Only for compatibility with AHK, C# programs are always unicode.
@@ -819,11 +865,6 @@
 		/// <see cref="A_AhkPath"/>.
 		/// </summary>
 		public static string A_KeysharpPath => A_AhkPath;
-
-		/// <summary>
-		/// The result from the Windows GetLastError() function.
-		/// </summary>
-		public static long A_LastError => Marshal.GetLastPInvokeError();//This apparently works on linux too.
 
 		/// <summary>
 		/// ListLines is never true.
@@ -1434,24 +1475,35 @@
 		{
 			get
 			{
+#if WINDOWS
 				using (var graphics = Graphics.FromHwnd(0))//This will only get the DPI for the first screen.
 				{
 					var x = graphics.DpiX;
 					//var y = graphics.DpiY;
 					return x;
 				}
+#else
+				try 
+				{
+					return Forms.Screen.PrimaryScreen.RealDPI;
+				} 
+				catch 
+				{
+					return 96.0;
+				}
+#endif
 			}
 		}
 
 		/// <summary>
 		/// The height of the primary monitor in pixels.
 		/// </summary>
-		public static long A_ScreenHeight => System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height;
+		public static long A_ScreenHeight => Forms.Screen.PrimaryScreen.Bounds.Height.Al();
 
 		/// <summary>
 		/// The width of the primary monitor in pixels.
 		/// </summary>
-		public static long A_ScreenWidth => System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width;
+		public static long A_ScreenWidth => Forms.Screen.PrimaryScreen.Bounds.Width.Al();
 
 		/// <summary>
 		/// The directory the script is running in.
@@ -1894,7 +1946,12 @@
 		{
 			get
 			{
-				var exe = Application.ExecutablePath;
+				var exe =
+#if WINDOWS
+					Application.ExecutablePath;
+#else
+					Environment.ProcessPath ?? string.Empty;
+#endif
 
 				if (exe.Contains(' '))
 				{
@@ -2111,12 +2168,22 @@
 		/// <summary>
 		/// The total height in pixels of the virtual screen.
 		/// </summary>
-		public static long A_TotalScreenHeight => SystemInformation.VirtualScreen.Height;
+		public static long A_TotalScreenHeight =>
+#if WINDOWS
+			SystemInformation.VirtualScreen.Height;
+#else
+			Forms.Screen.DisplayBounds.Height.Al();
+#endif
 
 		/// <summary>
 		/// The total width in pixels of the virtual screen.
 		/// </summary>
-		public static long A_TotalScreenWidth => SystemInformation.VirtualScreen.Width;
+		public static long A_TotalScreenWidth =>
+#if WINDOWS
+			SystemInformation.VirtualScreen.Width;
+#else
+			Forms.Screen.DisplayBounds.Width.Al();
+#endif
 
 		/// <summary>
 		/// The value specified by #UseHook.
@@ -2131,12 +2198,12 @@
 		/// <summary>
 		/// The height of the working area of the primary screen.
 		/// </summary>
-		public static long A_WorkAreaHeight => System.Windows.Forms.Screen.PrimaryScreen.WorkingArea.Height;
+		public static long A_WorkAreaHeight => Forms.Screen.PrimaryScreen.WorkingArea.Height.Al();
 
 		/// <summary>
 		/// The width of the working area of the primary screen.
 		/// </summary>
-		public static long A_WorkAreaWidth => System.Windows.Forms.Screen.PrimaryScreen.WorkingArea.Width;
+		public static long A_WorkAreaWidth => Forms.Screen.PrimaryScreen.WorkingArea.Width.Al();
 	}
 
 	/// <summary>
@@ -2219,14 +2286,19 @@
 		/// The acronyms used with the size-type cursors are compass directions, e.g. NESW = NorthEast+SouthWest.<br/>
 		/// The hand-shaped cursors (pointing and grabbing) are classified as Unknown.
 		/// </summary>
-		public static string A_Cursor =>
-		Cursor.Current is Cursor cur ?
-#if LINUX
-		cur.ToString().Trim(BothBrackets).Split(':', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)[1]
-#elif WINDOWS
-		cur.ToString().Trim(BothBrackets).Split(' ', StringSplitOptions.RemoveEmptyEntries)[1].Replace("Cursor", "")
+		public static string A_Cursor
+		{
+			get
+			{
+#if WINDOWS
+				return Cursor.Current is Cursor cur
+					? cur.ToString().Trim(BothBrackets).Split(' ', StringSplitOptions.RemoveEmptyEntries)[1].Replace("Cursor", "")
+					: "Default---";
+#else
+				return "Default---";
 #endif
-		: "Default---";
+			}
+		}
 
 		/// <summary>
 		/// See <see cref="A_MDay"/>.
@@ -2242,6 +2314,19 @@
 		/// Current day of the week's full name in the current user's language, e.g. Sunday.
 		/// </summary>
 		public static string A_DDDD => DateTime.Now.ToString("dddd");
+
+		/// <summary>
+		/// True if the thread immediately underneath the current thread is paused, otherwise false.
+		/// </summary>
+		public static bool A_IsPaused
+		{
+			get => Script.TheScript.Threads.UnderlyingThread?.isPaused ?? false;
+			set
+			{
+				var underlyingThread = Script.TheScript.Threads.UnderlyingThread;
+				if (underlyingThread != null) underlyingThread.isPaused = value;
+			}
+		}
 
 		/// <summary>
 		/// Sets the mouse speed that will be used if unspecified in <see cref="Click"/>.
@@ -2287,6 +2372,16 @@
 		{
 			get => Script.TheScript.Threads.CurrentThread.eventInfo;
 			set => Script.TheScript.Threads.CurrentThread.eventInfo = value;
+		}
+
+		/// <summary>
+		/// The result from last Windows GetLastError() function call which is stored after certain
+		/// function calls such as DllCall and file functions.
+		/// </summary>
+		internal static int A_LastError
+		{
+			get => Script.TheScript.Threads.CurrentThread.lastError;
+			set => Script.TheScript.Threads.CurrentThread.lastError = value;
 		}
 
 		/// <summary>

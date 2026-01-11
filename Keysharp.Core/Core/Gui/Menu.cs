@@ -44,9 +44,18 @@
 					defaultItem = item;
 
 					foreach (var defitem in allitems)
+#if WINDOWS
 						defitem.Font = defitem == item
 									   ? new Font(item.Font, item.Font.Style | FontStyle.Bold)
 									   : new Font(item.Font, item.Font.Style & ~FontStyle.Bold);
+#else
+						try 
+						{
+							defitem.Font = defitem == item
+									   ? new Font(item.Font.Family.Name, item.Font.Size, item.Font.FontStyle | FontStyle.Bold)
+									   : new Font(item.Font.Family.Name, item.Font.Size, item.Font.FontStyle & ~FontStyle.Bold);
+						} catch {}
+#endif
 				}
 				else
 					defaultItem = null;
@@ -161,7 +170,7 @@
 			};
 			var exitfunc = (params object[] args) =>
 			{
-				_ = Flow.ExitAppInternal(Flow.ExitReasons.Menu, null, false);
+				_ = Flow.ExitAppInternal(Flow.ExitReasons.Menu, null, true);
 				return DefaultObject;
 			};
 			//Won't be a gui target, so won't be marked as IsGui internally, but it's ok because it's only ever called on the gui thread in response to gui events.
@@ -190,7 +199,7 @@
 
 			_ = menu.Items.Add(new ToolStripSeparator());
 			script.suspendMenuItem = (ToolStripMenuItem)Add("&Suspend Hotkeys", new FuncObj(suspend.Method, suspend.Target));
-			_ = Add("&Exit", new FuncObj(exitfunc.Method, exitfunc.Target));
+			_ = Add("E&xit", new FuncObj(exitfunc.Method, exitfunc.Target));
 			return DefaultObject;
 		}
 
@@ -371,13 +380,13 @@
 		/// </param>
 		public object Show(object x = null, object y = null)
 		{
-			var _x = x.Ai(Cursor.Position.X);
-			var _y = y.Ai(Cursor.Position.Y);
-			var pt = new Point(_x, _y);
-
-			if (ThreadAccessors.A_CoordModeMenu == CoordModeType.Screen)
-				if (Form.ActiveForm is Form form)
-					pt = form.PointToClient(pt);
+			_ = GetCursorPos(out POINT def);
+			var _x = x.Ai();
+			var _y = y.Ai();
+			if (x != null || y != null) CoordToScreen(ref _x, ref _y, Core.CoordMode.Menu);
+			if (x == null) _x = def.X;
+			if (y == null) _y = def.Y;
+			var pt = new Point(_x, _y);					
 
 			MenuItem.Show(pt);
 			return DefaultObject;
@@ -535,10 +544,16 @@
 						_ = item.DropDownItems.Add(moveItem);
 #else
 						//Windows automatically removes a menu item from one collection when it is added to another, but linux doesn't.
-						//So it must be done manually here by reassigning the owner.
+						//So it must be done manually here by moving the item between collections.
+						fromMenuItems.RemoveAt(0);
+						moveItem.ResetEtoItemRecursive();
+						item.DropDownItems.Add(moveItem);
 						moveItem.Owner = item.DropDown;
 #endif
 					}
+#if !WINDOWS
+					item.Owner?.SyncEtoItems();
+#endif
 				}
 				else
 					clickHandlers.GetOrAdd(item).ModifyEventHandlers(Functions.GetFuncObj(funcorsub, null, true), 1);
@@ -654,7 +669,14 @@
 		/// Gets the <see cref="MenuStrip"/>.
 		/// </summary>
 		/// <returns>A <see cref="ToolStrip"/></returns>
-		protected internal override ToolStrip GetMenu() => MenuStrip;
+		protected internal override ToolStrip GetMenu()
+		{
+#if WINDOWS
+			return MenuStrip;
+#else
+			return MenuStrip.ToolStrip;
+#endif
+		}
 
 		/// <summary>
 		/// Gets the index of the passed in <see cref="ToolStripItem"/> within <see cref="MenuStrip"/>.

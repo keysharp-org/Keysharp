@@ -26,10 +26,13 @@ namespace Keysharp.Core
 		public static bool ErrorOccurred(Error err, string excType = Keyword_Return)
 		{
 			var exitThread = true;
+			var script = Script.TheScript;
+
+			if (script.SuppressErrorOccurred != 0)
+				return false;
 
 			if (!err.Processed && !Loops.IsExceptionCaught(err.GetType()))
 			{
-				var script = Script.TheScript;
 				err.ExcType = excType;
 
 				if (script.onErrorHandlers != null)
@@ -64,9 +67,28 @@ namespace Keysharp.Core
 			}
 
 			if (err.ExcType == Keyword_ExitApp)
-				_ = Flow.ExitAppInternal(Flow.ExitReasons.Critical, null, false);
+				_ = Flow.ExitAppInternal(Flow.ExitReasons.Critical, null, true);
 
 			return exitThread;
+		}
+
+		//Used internally to suppress error processing, dialogs, and exiting via errors
+		internal sealed class SuppressErrors : IDisposable
+		{
+			private bool disposed;
+			public SuppressErrors()
+			{
+				TheScript.SuppressErrorOccurred++;
+			}
+
+			public void Dispose()
+			{
+				if (disposed)
+					return;
+
+				TheScript.SuppressErrorOccurred--;
+				disposed = true;
+			}
 		}
 
 		/// <summary>
@@ -722,10 +744,10 @@ namespace Keysharp.Core
 				w32ex = e.InnerException as Win32Exception;
 			}
 
-			Number = w32ex != null ? w32ex.ErrorCode : A_LastError;
+			Number = w32ex != null ? w32ex.ErrorCode : Marshal.GetLastPInvokeError();
 			message = new Win32Exception((int)Number).Message;
 #else
-			Number = A_LastError;
+			Number = (long)A_LastError;
 #endif
 		}
 	}
@@ -733,7 +755,7 @@ namespace Keysharp.Core
 	/// <summary>
 	/// An exception class for parsing errors.
 	/// </summary>
-	public class ParseException : Error
+	internal class ParseException : Error
 	{
 		public int Column = 0;
 		/// <summary>
@@ -912,6 +934,7 @@ namespace Keysharp.Core
 		}
 	}
 
+#if WINDOWS
 	internal class ErrorDialog : Form
 	{
 		internal enum ErrorDialogResult
@@ -1124,4 +1147,245 @@ namespace Keysharp.Core
 			return dlg.Result;
 		}
 	}
+#else
+	internal class ErrorDialog : Eto.Forms.Dialog
+	{
+		internal enum ErrorDialogResult
+		{
+			Abort,
+			Continue,
+			Exit,
+			Reload,
+		}
+
+		internal ErrorDialogResult Result { get; private set; } = ErrorDialogResult.Exit;
+
+		internal ErrorDialog(string errorText, bool allowContinue = false)
+		{
+			if (!allowContinue)
+				errorText += $"{Environment.NewLine}The current thread will exit.";
+
+			var scale = A_ScaledScreenDPI;
+			Title = A_ScriptName;
+			ClientSize = new Eto.Drawing.Size((int)(550 * scale), (int)(300 * scale));
+			MinimumSize = new Eto.Drawing.Size((int)(400 * scale), (int)(200 * scale));
+			Resizable = true;
+			Topmost = true;
+
+			var contentText = errorText.Replace(Environment.NewLine, "\n").Replace("Stack:\n", "Stack:\n▶");
+			var richText = new Eto.Forms.RichTextArea
+			{
+				Text = contentText,
+				ReadOnly = true,
+				Wrap = false,
+				BackgroundColor = Eto.Drawing.Colors.White,
+			};
+			richText.KeyDown += (_, e) =>
+			{
+				if ((e.Modifiers & Eto.Forms.Keys.Control) == Eto.Forms.Keys.Control && e.Key == Eto.Forms.Keys.C)
+				{
+					var selected = GetSelectedText(richText);
+					if (!string.IsNullOrEmpty(selected))
+						Eto.Forms.Clipboard.Instance.Text = selected;
+					e.Handled = true;
+				}
+			};
+			ApplyFormatting(richText);
+			var scrollable = new Eto.Forms.Scrollable
+			{
+				Content = richText,
+				BackgroundColor = Eto.Drawing.Colors.White,
+			};
+			richText.ContextMenu = BuildCopyContextMenu(richText);
+
+			var btnAbort = new Eto.Forms.Button { Text = "&Abort" };
+			var btnContinue = new Eto.Forms.Button { Text = "&Continue" };
+			var btnExit = new Eto.Forms.Button { Text = "E&xitApp" };
+			var btnReload = new Eto.Forms.Button { Text = "&Reload" };
+
+			var uniformSize = GetUniformButtonSize(btnAbort, btnContinue, btnExit, btnReload);
+			btnAbort.Size = uniformSize;
+			btnContinue.Size = uniformSize;
+			btnExit.Size = uniformSize;
+			btnReload.Size = uniformSize;
+
+			btnAbort.Click += (_, _) => { Result = ErrorDialogResult.Abort; Close(); };
+			btnExit.Click += (_, _) => { Result = ErrorDialogResult.Exit; Close(); };
+			btnReload.Click += (_, _) => { Result = ErrorDialogResult.Reload; Close(); };
+			btnContinue.Click += (_, _) => { Result = ErrorDialogResult.Continue; Close(); };
+
+			var leftButtons = new Eto.Forms.StackLayout
+			{
+				Orientation = Eto.Forms.Orientation.Horizontal,
+				Spacing = 5,
+				HorizontalContentAlignment = Eto.Forms.HorizontalAlignment.Left,
+				Items = { btnExit, btnReload },
+			};
+			var rightButtons = new Eto.Forms.StackLayout
+			{
+				Orientation = Eto.Forms.Orientation.Horizontal,
+				Spacing = 5,
+				HorizontalContentAlignment = Eto.Forms.HorizontalAlignment.Right,
+				Items = { btnAbort },
+			};
+
+			if (allowContinue)
+				rightButtons.Items.Add(btnContinue);
+
+			var spacer = new Eto.Forms.Panel();
+			var buttonsRow = new Eto.Forms.TableLayout
+			{
+				Rows =
+				{
+					new Eto.Forms.TableRow(
+						new Eto.Forms.TableCell(leftButtons, false),
+						new Eto.Forms.TableCell(spacer, true),
+						new Eto.Forms.TableCell(rightButtons, false)
+					)
+				}
+			};
+
+			Content = new Eto.Forms.TableLayout
+			{
+				Padding = 10,
+				Spacing = new Eto.Drawing.Size(5, 5),
+				Rows =
+				{
+					new Eto.Forms.TableRow(scrollable) { ScaleHeight = true },
+					new Eto.Forms.TableRow(buttonsRow)
+				}
+			};
+
+			DefaultButton = btnAbort;
+		}
+
+		internal void ShowDialog()
+		{
+			ShowModal();
+		}
+
+		private static Eto.Drawing.Size GetUniformButtonSize(params Eto.Forms.Button[] buttons)
+		{
+			int width = 0;
+			int height = 0;
+			foreach (var button in buttons)
+			{
+				var preferred = button.PreferredSize;
+				width = Math.Max(width, preferred.Width);
+				height = Math.Max(height, preferred.Height);
+			}
+			return new Eto.Drawing.Size(width + 24, height + 12);
+		}
+
+		private void ApplyFormatting(Eto.Forms.RichTextArea box)
+		{
+			string text = box.Text ?? string.Empty;
+			var lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+
+			if (lines.Length >= 2)
+			{
+				int firstLineStart = 0;
+				int firstLineLength = lines[0].Length;
+				int secondLineStart = firstLineLength + 1;
+				int secondLineLength = lines[1].Length;
+				box.Selection = new Eto.Forms.Range<int>(firstLineStart, firstLineStart + firstLineLength - 1);
+				box.SelectionBold = true;
+				box.SelectionForeground = Eto.Drawing.Colors.DarkOrange;
+				box.Selection = new Eto.Forms.Range<int>(secondLineStart, secondLineStart + secondLineLength - 1);
+				box.SelectionBold = true;
+				box.SelectionForeground = Eto.Drawing.Colors.DarkOrange;
+			}
+
+			int fullStackIndex = text.IndexOf("Stack:\n", StringComparison.Ordinal);
+
+			if (fullStackIndex >= 0)
+			{
+				int startOfLine = text.IndexOf('\n', fullStackIndex);
+
+				if (startOfLine >= 0)
+				{
+					int nextLineStart = startOfLine + 1;
+					int nextLineEnd = text.IndexOf('\n', nextLineStart);
+
+					if (nextLineEnd < 0) nextLineEnd = text.Length;
+
+					int highlightLength = nextLineEnd - startOfLine;
+					box.Selection = new Eto.Forms.Range<int>(startOfLine, startOfLine + highlightLength - 1);
+					box.SelectionBackground = Eto.Drawing.Colors.Yellow;
+				}
+			}
+
+			ClearSelection(box);
+		}
+
+		private static void ClearSelection(Eto.Forms.RichTextArea box)
+		{
+			var caret = box.CaretIndex;
+			box.Selection = new Eto.Forms.Range<int>(caret, caret - 1);
+		}
+
+		private static Eto.Forms.ContextMenu BuildCopyContextMenu(Eto.Forms.RichTextArea box)
+		{
+			var copyItem = new Eto.Forms.ButtonMenuItem { Text = "Copy" };
+			copyItem.Click += (_, _) =>
+			{
+				var selected = GetSelectedText(box);
+				if (!string.IsNullOrEmpty(selected))
+					Eto.Forms.Clipboard.Instance.Text = selected;
+			};
+			return new Eto.Forms.ContextMenu(copyItem);
+		}
+
+		private static string GetSelectedText(Eto.Forms.RichTextArea box)
+		{
+			var selection = box.Selection;
+			if (selection.End < selection.Start)
+				return string.Empty;
+
+			var text = box.Text ?? string.Empty;
+			if (text.Length == 0)
+				return string.Empty;
+
+			int start = Math.Clamp(selection.Start, 0, text.Length - 1);
+			int end = Math.Clamp(selection.End, 0, text.Length - 1);
+			if (end < start)
+				return string.Empty;
+
+			return text.Substring(start, end - start + 1);
+		}
+
+		/// <summary>
+		/// Displays an error dialog for the given exception and returns whether execution should abort.
+		/// </summary>
+		/// <param name="ex">The exception to show.</param>
+		/// <param name="allowContinue">
+		/// If <c>true</c>, the dialog will offer a “Continue” button (only enabled for KeysharpException of type Return).
+		/// Otherwise, only Abort/Exit/Reload options are shown.
+		/// </param>
+		/// <returns>
+		/// The ErrorDialogResult value corresponding to the option the user chose.
+		/// </returns>
+		[StackTraceHidden]
+		internal static ErrorDialogResult Show(Exception ex, bool allowContinue = true)
+		{
+			KeysharpException kex = ex as KeysharpException;
+			string msg = kex != null ? kex.ToString() : $"Message: {ex.Message}{Environment.NewLine}Stack: {ex.StackTrace}";
+			using var dlg = new ErrorDialog(msg, allowContinue && kex != null ? kex.ExcType == Keyword_Return : false);
+			dlg.ShowDialog();
+
+			switch (dlg.Result)
+			{
+				case ErrorDialogResult.Exit:
+					_ = Flow.ExitAppInternal(Flow.ExitReasons.Critical, null, false);
+					break;
+
+				case ErrorDialogResult.Reload:
+					_ = Flow.Reload();
+					break;
+			}
+
+			return dlg.Result;
+		}
+	}
+#endif
 }

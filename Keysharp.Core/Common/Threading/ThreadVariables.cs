@@ -75,6 +75,7 @@ namespace Keysharp.Core.Common.Threading
 		//internal Task<object> task = null;
 		internal bool task = false;
 		internal bool isCritical = false;
+		internal bool isPaused = false;
 		internal bool allowThreadToBeInterrupted = true;
 		internal int UninterruptibleDuration = 17;
 		internal DateTime threadStartTime = DateTime.MinValue;
@@ -89,6 +90,7 @@ namespace Keysharp.Core.Common.Threading
 		private StringBuilder regsb = null;
 		internal long priority;
 		internal int threadId;
+		internal int lastError = 0;
 
 		// These describe the configuration defaults of the pseudo-thread,
 		// inherited from (and set by) the auto-execute section thread
@@ -141,12 +143,14 @@ namespace Keysharp.Core.Common.Threading
 			_ = (regsb?.Clear());
 			priority = 0L;
 			threadId = 0;
+			lastError = 0;
 		}
 
 		public void Init()
 		{
 			task = false;// null;
 			isCritical = false;
+			isPaused = false;
 			allowThreadToBeInterrupted = true;
 			UninterruptibleDuration = Script.TheScript.uninterruptibleTime;
 			threadStartTime = DateTime.MinValue;
@@ -161,6 +165,7 @@ namespace Keysharp.Core.Common.Threading
 			_ = (regsb?.Clear());
 			priority = (long)A_Priority;
 			threadId = 0;
+			lastError = 0;
 			// Instead of cloning the instance, copy the data because
 			// allocating the memory for new instances is expensive
 			configData.CopyFromPrototypeConfigData();

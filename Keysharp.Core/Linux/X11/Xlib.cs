@@ -7,8 +7,20 @@ namespace Keysharp.Core.Linux.X11
 		private const string libDlName = "libdl.so";
 		private const string libGdiPlusName = "libgdiplus";
 		private const string libPthreadName = "libpthread.so.0";
-		private const string libX11Name = "libX11";
-		private const string libXfixesName = "libXfixes";//"libXfixes.so.3",
+		private const string libX11Name = "libX11.so.6";
+		private const string libXfixesName = "libXfixes.so.3";
+		private const string libXtstName = "libXtst.so.6";
+
+		internal const ulong CurrentTime = 0UL;  // Xlib constant
+
+		internal const int GrabModeAsync = 1;
+		internal const uint AnyModifier = 1 << 15;
+		internal const uint ShiftMask = 1 << 0;
+		internal const uint LockMask = 1 << 1;
+		internal const uint ControlMask = 1 << 2;
+		internal const uint Mod1Mask = 1 << 3; // Alt
+		internal const uint Mod2Mask = 1 << 4; // often NumLock
+		internal const uint Mod4Mask = 1 << 6; // Super/Win
 
 		[DllImport(libXfixesName)]
 		internal static extern void XFixesSelectSelectionInput(nint display, nint root, nint atom, SelectionNotifyMask mask);
@@ -17,12 +29,12 @@ namespace Keysharp.Core.Linux.X11
 		internal static extern void XCloseDisplay(nint display);
 
 		[DllImport(libX11Name)]
-		internal static extern long XDefaultRootWindow(nint display);
+		internal static extern nint XDefaultRootWindow(nint display);
 
 		[DllImport(libX11Name)]
 		internal static extern int XDefaultScreen(nint display);
 
-		[DllImport("X11")]
+		[DllImport(libX11Name)]
 		internal static extern int XFree(nint ptr);
 
 		[DllImport(libX11Name)]
@@ -41,6 +53,15 @@ namespace Keysharp.Core.Linux.X11
 		internal static extern int XGetWindowAttributes(nint display, long window, ref XWindowAttributes attributes);
 
 		[DllImport(libX11Name)]
+		internal static extern IntPtr XGetImage(nint display, long drawable, int x, int y, uint width, uint height, ulong plane_mask, int format);
+
+		[DllImport(libX11Name)]
+		internal static extern ulong XGetPixel(IntPtr ximage, int x, int y);
+
+		[DllImport(libX11Name)]
+		internal static extern int XDestroyImage(IntPtr ximage);
+
+		[DllImport(libX11Name)]
 		internal static extern int XRaiseWindow(nint display, long window);
 
 		[DllImport(libX11Name)]
@@ -49,35 +70,33 @@ namespace Keysharp.Core.Linux.X11
 		[DllImport(libX11Name)]
 		internal static extern int XGetClassHint(nint display, long window, ref XClassHint classHint);
 
-		internal static int GetClassHint(nint display, long window, ref XClassHintStr classHint)
+		internal static bool TryGetClassHint(nint display, long window, out string resName, out string resClass)
 		{
+			resName = string.Empty;
+			resClass = string.Empty;
+
 			var localClassHint = XClassHint.Zero;
 
 			if (XGetClassHint(display, window, ref localClassHint) == 0)
+				return false;
+
+			try
 			{
-				// Clean up unmanaged memory.
-				// --------------------------
-				// Typically: _classHint.res_name == 0
-				// Freeing a 0 is not prohibited.
-				// Use first member (at offset 0) to free the structure itself.
-				_ = XFree(localClassHint.resName);
-				classHint = XClassHintStr.Zero;
-				return 0;
+				if (localClassHint.resName != 0)
+					resName = Marshal.PtrToStringAuto(localClassHint.resName) ?? string.Empty;
+
+				if (localClassHint.resClass != 0)
+					resClass = Marshal.PtrToStringAuto(localClassHint.resClass) ?? string.Empty;
 			}
-			else
+			finally
 			{
-				classHint = new XClassHintStr();
-				// Marshal data from an unmanaged block of memory to a managed object.
-				classHint.resName  = Marshal.PtrToStringAuto(localClassHint.resName);
-				classHint.resClass = Marshal.PtrToStringAuto(localClassHint.resClass);
-				// Clean up unmanaged memory.
-				// --------------------------
-				// Freeing a 0 is not prohibited.
-				// First structure member (at offset 0) frees  the structure itself as well.
-				_ = XFree(localClassHint.resName);
-				_ = XFree(localClassHint.resClass);
-				return 1;
+				if (localClassHint.resName != 0)
+					_ = XFree(localClassHint.resName);
+				if (localClassHint.resClass != 0)
+					_ = XFree(localClassHint.resClass);
 			}
+
+			return true;
 		}
 
 		[DllImport(libX11Name)]
@@ -143,7 +162,7 @@ namespace Keysharp.Core.Linux.X11
 			{
 				var title = "";
 
-				if (titleNameProp.value == 0 || titleNameProp.format != 8 || titleNameProp.nitems > 0)
+				if (titleNameProp.value != 0 && titleNameProp.format == 8 && titleNameProp.nitems > 0)
 					title = Marshal.PtrToStringAuto(titleNameProp.value);
 
 				_ = XFree(titleNameProp.value);
@@ -205,7 +224,7 @@ namespace Keysharp.Core.Linux.X11
 		internal static extern int XTextPropertyToStringList(nint prop, ref byte[] listReturn, out int countReturn);
 
 		[DllImport(libX11Name)]
-		internal static extern uint XStringToKeysym(string convert);
+		internal static extern ulong XStringToKeysym(string convert);
 
 		[DllImport(libX11Name)]
 		internal extern static bool XTranslateCoordinates(nint display, long srcWin, long destWin, int srcX, int srcY, out int destXreturn, out int destYreturn, out nint childReturn);
@@ -213,8 +232,8 @@ namespace Keysharp.Core.Linux.X11
 		[DllImport(libX11Name)]
 		internal extern static bool XGetGeometry(nint display, long window, out nint root, out int x, out int y, out int width, out int height, out int borderWidth, out int depth);
 
-		[DllImport("libXtst.so.6")]
-		internal static extern void XTestFakeKeyEvent(nint display, uint keyCode, bool isPress, ulong delay);
+		[DllImport(libXtstName)]
+		internal static extern bool XTestFakeKeyEvent(nint display, uint keyCode, bool isPress, ulong delay);
 
 		[DllImport(libCName)]
 		internal static extern int getpid();
@@ -236,6 +255,33 @@ namespace Keysharp.Core.Linux.X11
 
 		[DllImport(libDlName)]
 		internal static extern nint dlsym(nint handle, string symbol);
+
+		[DllImport(libX11Name)] internal static extern int XGrabKey(nint display, uint keycode, uint modifiers, nint grab_window, bool owner_events, int pointer_mode, int keyboard_mode);
+		[DllImport(libX11Name)] internal static extern int XUngrabKey(nint display, uint keycode, uint modifiers, nint grab_window);
+		[DllImport(libX11Name)] internal static extern uint XKeysymToKeycode(nint display, nint keysym);
+		[DllImport(libX11Name)] internal static extern uint XKeycodeToKeysym(nint display, int keycode, int index);
+		[DllImport(libX11Name)] internal static extern int XQueryKeymap(nint display, byte[] keys_return);
+		[DllImport(libX11Name)] internal static extern bool XQueryPointer(nint display, nint w, out nint root_return, out nint child_return, 
+			out int root_x_return, out int root_y_return, out int win_x_return, out int win_y_return, out uint mask_return);
+		[DllImport(libX11Name)] internal static extern int XSync(nint display, bool discard);
+		[DllImport(libX11Name)] internal static extern int XUngrabKeyboard(nint display, ulong time);
+		[DllImport(libX11Name)] internal static extern int XkbGetIndicatorState(nint display, uint device_spec, out uint state_return);
+		[StructLayout(LayoutKind.Sequential)]
+		internal struct XKeyboardState { public int key_click_percent, bell_percent, bell_pitch, bell_duration, led_mask; /* rest omitted */ }
+		[DllImport(libX11Name)] internal static extern int XGetKeyboardControl(nint display, out XKeyboardState state);
+		[DllImport(libX11Name)] internal static extern int XkbGetState(nint dpy, uint deviceSpec, out XkbStateRec state);
+		[DllImport(libX11Name)] internal static extern uint XkbKeysymToModifiers(nint dpy, uint keysym);
+		[DllImport(libX11Name)] internal static extern int XGetPointerMapping(nint display, byte[] map, int nmap);
+
+		[StructLayout(LayoutKind.Sequential)]
+		internal struct XkbStateRec
+		{
+			public byte group, locked_group;
+			public ushort base_group, latched_group;
+			public byte mods, base_mods, latched_mods, locked_mods;
+			public byte compat_state, grab_mods, compat_grab_mods, lookup_mods, compat_lookup_mods;
+			public ushort ptr_buttons;
+		}
 
 		internal const int RTLD_LAZY = 1;
 		internal const int RTLD_NOW = 2;

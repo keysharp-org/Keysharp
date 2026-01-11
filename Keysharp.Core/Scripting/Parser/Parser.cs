@@ -1,5 +1,6 @@
 using Antlr4.Runtime;
 using Antlr4.Runtime.Atn;
+using Antlr4.Runtime.Misc;
 using Keysharp.Core.Scripting.Parser.Helpers;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -143,8 +144,9 @@ namespace Keysharp.Scripting
 
 		internal bool errorStdOut;
 		internal CodeStatementCollection initial = [];//These are placed at the very beginning of Main().
-		internal List<string> mainFuncInitial = new();
+		internal List<StatementSyntax> mainFuncInitial = new();
 		internal string name = string.Empty;
+        internal string hookMutexName = string.Empty;
 
 		internal bool persistent;
 		private const string args = "args";
@@ -178,7 +180,7 @@ namespace Keysharp.Scripting
         public CompilationUnitSyntax compilationUnit;
         public NamespaceDeclarationSyntax namespaceDeclaration;
         public Class mainClass;
-        public Function mainFunc;
+        public List<MemberDeclarationSyntax> declaredTopLevelClasses = new();
         public Function autoExecFunc;
         public Function currentFunc;
         public SeparatedSyntaxList<AttributeSyntax> assemblies = new();
@@ -320,8 +322,9 @@ namespace Keysharp.Scripting
             public HashSet<string> Statics = new HashSet<string>();
             public HashSet<string> VarRefs = new HashSet<string>();
             public eScope Scope = eScope.Local;
+            public ParserRuleContext RootContext;
 
-            public bool Void = false;
+			public bool Void = false;
             public bool Async = false;
 			public bool Public = true;
 			public bool Static = true;
@@ -387,33 +390,7 @@ namespace Keysharp.Scripting
                             )
                         ).WithInitializer(arrayInitializer);
 
-                        // Create the object creation expression:
-                        // new HashSet<string>( new string[] { ... }, StringComparer.OrdinalIgnoreCase )
-                        var objectCreation = SyntaxFactory.ObjectCreationExpression(
-                            // Use a generic name for HashSet<string>
-                            SyntaxFactory.GenericName(
-                                SyntaxFactory.Identifier("HashSet")
-                            ).WithTypeArgumentList(
-                                SyntaxFactory.TypeArgumentList(
-                                    SyntaxFactory.SingletonSeparatedList<TypeSyntax>(
-                                        SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.StringKeyword))
-                                    )
-                                )
-                            )
-                        ).WithArgumentList(
-							CreateArgumentList(
-								// First argument: the string array we just created.
-								arrayCreation,
-                                // Second argument: StringComparer.OrdinalIgnoreCase
-                                SyntaxFactory.MemberAccessExpression(
-                                    SyntaxKind.SimpleMemberAccessExpression,
-                                    SyntaxFactory.IdentifierName("StringComparer"),
-                                    SyntaxFactory.IdentifierName("OrdinalIgnoreCase")
-                                )
-                            )
-                        );
-
-                        arguments.Add(SyntaxFactory.Argument(objectCreation));
+                        arguments.Add(SyntaxFactory.Argument(arrayCreation));
                     }
 
                     foreach (string localName in Locals.Keys) {
@@ -595,7 +572,7 @@ namespace Keysharp.Scripting
 
             //var profilingATNSimulator = new ProfilingATNSimulator(mainParser);
 
-            MainParser.ProgramContext programContext = mainParser.program();
+			MainParser.ProgramContext programContext = mainParser.program();
 
             //ProfileParser(mainParser);
             //Console.WriteLine("End");
@@ -650,7 +627,6 @@ namespace Keysharp.Scripting
             }
         }
 
-        [PublicForTestOnly]
         public static string EscapeHotkeyTrigger(ReadOnlySpan<char> s)
         {
             var escaped = false;

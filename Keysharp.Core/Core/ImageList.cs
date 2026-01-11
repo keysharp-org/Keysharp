@@ -8,6 +8,52 @@
 		internal ConcurrentDictionary<long, ImageList> imageLists = new ();
 	}
 
+#if !WINDOWS
+	internal class ImageList
+	{
+		private static long nextHandle = 0;
+
+		internal ImageList()
+		{
+			Handle = new nint(Interlocked.Increment(ref nextHandle));
+		}
+
+		internal ImageCollection Images { get; } = new ();
+
+		internal Size ImageSize { get; set; }
+
+		internal nint Handle { get; }
+
+		internal sealed class ImageCollection : IEnumerable<Bitmap>
+		{
+			private readonly List<Bitmap> items = new ();
+
+			internal int Add(Bitmap bmp)
+			{
+				items.Add(bmp);
+				return items.Count - 1;
+			}
+
+			internal int Add(Bitmap bmp, Color transparentColor)
+			{
+				_ = transparentColor;
+				items.Add(bmp);
+				return items.Count - 1;
+			}
+
+			internal int Count => items.Count;
+
+			internal Bitmap this[int index] => items[index];
+
+			internal void Clear() => items.Clear();
+
+			public IEnumerator<Bitmap> GetEnumerator() => items.GetEnumerator();
+
+			IEnumerator IEnumerable.GetEnumerator() => items.GetEnumerator();
+		}
+	}
+#endif
+
 	/// <summary>
 	/// Public interface for ImageList-related functions and classes.
 	/// </summary>
@@ -40,7 +86,7 @@
 			var filename = picFileName.As();
 			var iconnumber = ImageHelper.PrepareIconNumber(maskColor);
 			var resizeNonIcon = resize.Ab();
-			var il = Script.TheScript.ImageListData.imageLists.GetOrAdd(id);
+			var il = Script.TheScript.ImageListData.imageLists.GetOrAdd(id, _ => new ImageList());
 
 			if (ImageHelper.LoadImage(filename, 0, 0, iconnumber).Item1 is Bitmap bmp)
 			{
@@ -56,7 +102,7 @@
 							_ = il.Images.Add(newbmp, color);
 					}
 					else
-						bmp = bmp.Resize(il.ImageSize.Width, il.ImageSize.Height);
+						bmp = ImageHelper.ResizeBitmap(bmp, il.ImageSize.Width, il.ImageSize.Height);
 
 					_ = il.Images.Add(bmp, color);
 				}

@@ -1,3 +1,4 @@
+#if WINDOWS
 using Label = System.Windows.Forms.Label;
 
 namespace Keysharp.Core
@@ -107,3 +108,4 @@ namespace Keysharp.Core
 		}
 	}
 }
+#endif

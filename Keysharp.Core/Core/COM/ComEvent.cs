@@ -1,4 +1,7 @@
 ﻿#if WINDOWS
+using Antlr4.Runtime.Misc;
+using Keysharp.Core.Common.Keyboard;
+
 namespace Keysharp.Core.COM
 {
 	internal class ComEvent
@@ -14,7 +17,7 @@ namespace Keysharp.Core.COM
 		{
 			var script = Script.TheScript;
 			dispatcher = disp;
-			thisArg = [this];
+			thisArg = [disp.Co!];
 			logAll = log;
 
 			if (sink is string s)
@@ -40,29 +43,8 @@ namespace Keysharp.Core.COM
 			}
 			else if (sink is KeysharpObject ko)
 			{
-				if (!script.ReflectionsData.typeToStringMethods.TryGetValue(ko.GetType(), out var methDkt))
-				{
-					_ = Reflections.FindAndCacheInstanceMethod(ko.GetType(), "", 0);
-					_ = script.ReflectionsData.typeToStringMethods.TryGetValue(ko.GetType(), out methDkt);
-				}
-
-				if (methDkt != null)
-				{
-					foreach (var methkv in methDkt)
-					{
-						foreach (var meth in methkv.Value)
-						{
-							methodMapper[methkv.Key] = methkv.Value.First().Value;
-						}
-					}
-
-					sinkObj = ko;
-				}
-
-				if (methodMapper.Count > 0)
-					dispatcher.EventReceived += Dispatcher_EventReceivedObjectMethod;
-				else
-					_ = KeysharpEnhancements.OutputDebugLine($"No suitable methods were found on the passed in object of type {sink.GetType()} which could be used as COM event handlers. No COM event handlers will be triggered.");
+				sinkObj = ko;
+				dispatcher.EventReceived += Dispatcher_EventReceivedObjectMethod;
 			}
 			else
 				_ = Errors.ValueErrorOccurred($"The passed in sink object of type {sink.GetType()} was not either a string or a Keysharp object.");
@@ -100,11 +82,35 @@ namespace Keysharp.Core.COM
 					args[i] = (long)b;
 				else if (arg is nint ip)
 					args[i] = ip.ToInt64();
+				else if (Marshal.IsComObject(arg))
+				{
+					if (arg is IDispatch)
+					{
+						var punk = Marshal.GetIDispatchForObject(arg);
+						args[i] =  new ComObject()
+						{
+							vt = VarEnum.VT_DISPATCH,
+							Ptr = punk
+						};
+					} 
+					else
+					{
+						var punk = Marshal.GetIUnknownForObject(arg);
+						args[i] = new ComValue()
+						{
+							vt = VarEnum.VT_UNKNOWN,
+							Ptr = punk
+						};
+					}
+
+					Marshal.ReleaseComObject(arg);
+				}
 			}
 		}
 
 		private void Dispatcher_EventReceivedGlobalFunc(object sender, DispatcherEventArgs e)
 		{
+			if (prefix is null) return;
 			if (logAll)
 				_ = KeysharpEnhancements.OutputDebugLine($"Dispatch ID {e.DispId}: {e.Name} received to be dispatched to a global function with {e.Arguments.Length} + 1 args.");
 
@@ -112,33 +118,34 @@ namespace Keysharp.Core.COM
 
 			if (thisObj != null && methodMapper.TryGetValue(e.Name, out var mph))
 			{
-				FixArgs(e.Arguments);
-				var result = mph.CallFunc(null, e.Arguments.Concat(thisArg));
-
-				if (result is ComObject co)
-					result = co.Ptr;
-
-				e.Result = result;
+				var args = e.Arguments.Concat(thisArg);
+				TheScript.Threads.LaunchThreadInMain(() =>
+				{
+					e.IsHandled = true;
+					e.Result = mph.CallFunc(null, args);
+				});
 			}
 		}
 
 		private void Dispatcher_EventReceivedObjectMethod(object sender, DispatcherEventArgs e)
 		{
+			e.IsHandled = false;
+			if (sinkObj is null) return;
 			if (logAll)
 				_ = KeysharpEnhancements.OutputDebugLine($"Dispatch ID {e.DispId}: {e.Name} received to be dispatched to an object method with {e.Arguments.Length} + 1 args.");
 
-			var thisObj = thisArg[0];
+			var (obj, target) = Script.GetMethodOrProperty(sinkObj, e.Name, -1, checkBase: true, throwIfMissing: false, invokeMeta: true);
+			if (target == null) return;
 
-			if (thisObj != null && methodMapper.TryGetValue(e.Name, out var mph))
+			var allArgs = new object[e.Arguments.Length + 1];
+			System.Array.Copy(e.Arguments, allArgs, e.Arguments.Length);
+			allArgs[^1] = thisArg[0];
+
+			TheScript.Threads.LaunchThreadInMain(() =>
 			{
-				FixArgs(e.Arguments);
-				var result = mph.CallFunc(sinkObj, e.Arguments.Concat(thisArg));
-
-				if (result is ComObject co)
-					result = co.Ptr;
-
-				e.Result = result;
-			}
+				e.IsHandled = true;
+				e.Result = Script.Invoke(sinkObj, e.Name, allArgs);
+			});
 		}
 	}
 }

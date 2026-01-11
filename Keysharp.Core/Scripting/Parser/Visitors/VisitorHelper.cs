@@ -72,6 +72,7 @@ namespace Keysharp.Scripting
 
         internal static Dictionary<int, string> unaryOperators = new Dictionary<int, string>()
         {
+            {MainParser.Plus, "Add" },
             {MainParser.Minus, "Minus"},
             {MainParser.Not, "LogicalNot"},
             {MainParser.VerbalNot, "LogicalNot"},
@@ -108,7 +109,7 @@ namespace Keysharp.Scripting
         {
 			var result = new List<ClassDeclarationContext>();
 
-			foreach (var se in program.sourceElements().sourceElement())
+			foreach (var se in program.sourceElements()?.sourceElement() ?? [])
 			{
 				var topClass = se.classDeclaration();
 				if (topClass != null)
@@ -137,12 +138,47 @@ namespace Keysharp.Scripting
             public string Name;
             public bool Static;
         }
-        internal class VisitFunction : MainParserBaseVisitor<object>
+		public enum RegionKind
+		{
+			Block,          // {...}
+			FlowBody,       // if/loop body when not a {...} block
+			Switch,         // whole switch
+			SwitchSection,  // each 'case ...:' section
+			Try, Catch, Finally
+		}
+
+		public readonly struct Region
+		{
+			public readonly RegionKind Kind;
+			public readonly int Id;           // unique per region instance
+			public Region(RegionKind kind, int id) { Kind = kind; Id = id; }
+		}
+		public readonly struct LabelInfo
+		{
+			public readonly string Raw;       // Label text
+			public readonly int[] Path;       // region path at the label (ancestor->descendant)
+			public readonly MainParser.LabelledStatementContext Node;
+			public LabelInfo(string raw, int[] path, MainParser.LabelledStatementContext node)
+			{ Raw = raw; Path = path; Node = node; }
+		}
+		/// Per-function index built by the pre-pass.
+		public sealed class LabelIndex
+		{
+			public readonly List<LabelInfo> Labels = new();
+			public readonly Dictionary<MainParser.GotoStatementContext, int[]> GotoSitePaths = new();
+		}
+		internal class VisitFunction : MainParserBaseVisitor<object>
         {
             internal List<FunctionInfo> functionInfos = new();
             private VisitMain mainVisitor;
             private Parser parser;
 			private Function currentFunc;
+
+			private readonly Stack<Region> stack = new();
+			private int nextRegionId = 1;
+			private readonly HashSet<string> seenLabels = new(StringComparer.OrdinalIgnoreCase);
+
+			internal readonly LabelIndex Index = new();
 
 			public VisitFunction(VisitMain visitor)
             {
@@ -151,15 +187,26 @@ namespace Keysharp.Scripting
 				currentFunc = parser.currentFunc;
 			}
 
+			private IDisposable PushRegion(RegionKind kind)
+			{
+				var r = new Region(kind, nextRegionId++);
+				stack.Push(r);
+				return new RegionPopper(() => stack.Pop());
+			}
+			private sealed class RegionPopper : IDisposable
+			{
+				private readonly Action a; public RegionPopper(Action a) => this.a = a;
+				public void Dispose() => a();
+			}
+			private int[] SnapshotPath()
+			{
+				// Path ancestor->descendant for simple prefix checks.
+				return stack.Reverse().Select(r => r.Id).ToArray();
+			}
+
             // Skip some rules
-			public override object VisitClassDeclaration([NotNull] ClassDeclarationContext context)
-			{
-				return null;
-			}
-			public override object VisitLiteral([NotNull] LiteralContext context)
-			{
-				return null;
-			}
+            public override object VisitClassDeclaration([NotNull] ClassDeclarationContext context) => null;
+            public override object VisitLiteral([NotNull] LiteralContext context) => null;
 			public override object VisitIdentifier([NotNull] IdentifierContext context)
 			{
 				return base.VisitIdentifier(context);
@@ -197,12 +244,12 @@ namespace Keysharp.Scripting
 				var info = new FunctionInfo
 				{
 					Name = head.identifierName().GetText(),
-					Static = head.functionHeadPrefix()?.Static() != null
+					Static = head.functionHeadPrefix()?.Static() != null,
 				};
 				functionInfos.Add(info);
 			}
 
-            // Gather all variable declarations
+			// Gather all variable declarations
 			public override object VisitVariableStatement([NotNull] VariableStatementContext context)
 			{
 				var prevScope = currentFunc.Scope;
@@ -264,24 +311,46 @@ namespace Keysharp.Scripting
 
 			public override object VisitVarRefExpression([NotNull] VarRefExpressionContext context)
 			{
-				if (context.primaryExpression() is IdentifierExpressionContext iec)
-                {
-					SyntaxNode result = mainVisitor.Visit(iec);
-					if (result is IdentifierNameSyntax identifierNameSyntax)
-						_ = parser.MaybeAddVariableDeclaration(identifierNameSyntax.Identifier.Text);
-				}
+				MaybeAddExpressionDeclaration(context.primaryExpression());
                 return base.VisitVarRefExpression(context);
 			}
 
 			public override object VisitAssignmentExpression([NotNull] AssignmentExpressionContext context)
 			{
-                if (context.left is IdentifierExpressionContext iec)
-                {
-                    SyntaxNode result = mainVisitor.Visit(iec);
-                    if (result is IdentifierNameSyntax identifierNameSyntax)
-                        _ = parser.MaybeAddVariableDeclaration(identifierNameSyntax.Identifier.Text);
-                }
+                MaybeAddExpressionDeclaration(context.left);
 				return base.VisitAssignmentExpression(context);
+			}
+
+			public override object VisitCoalesceExpression([NotNull] CoalesceExpressionContext context)
+			{
+				MaybeAddExpressionDeclaration(context.left);
+				return base.VisitCoalesceExpression(context);
+			}
+			public override object VisitCoalesceExpressionDuplicate([NotNull] CoalesceExpressionDuplicateContext context)
+			{
+				MaybeAddExpressionDeclaration(context.left);
+				return base.VisitCoalesceExpressionDuplicate(context);
+			}
+
+            private void MaybeAddExpressionDeclaration(ParserRuleContext context)
+            {
+                IdentifierExpressionContext iec = null;
+                while (context != null && context is not ITerminalNode) {
+                    if (context is IdentifierExpressionContext iec2)
+                    {
+                        iec = iec2;
+                        break;
+                    }
+                    if (context.ChildCount != 1) break;
+                    context = context.GetChild(0) as ParserRuleContext;
+                }
+
+				if (iec != null)
+				{
+					SyntaxNode result = mainVisitor.Visit(iec);
+					if (result is IdentifierNameSyntax identifierNameSyntax)
+						_ = parser.MaybeAddVariableDeclaration(identifierNameSyntax.Identifier.Text);
+				}
 			}
 
 			public override object VisitAssignmentExpressionDuplicate([NotNull] AssignmentExpressionDuplicateContext context)
@@ -294,10 +363,84 @@ namespace Keysharp.Scripting
 				}
 				return base.VisitAssignmentExpressionDuplicate(context);
 			}
+
+			// ---------- label & goto capture ----------
+			public override object VisitLabelledStatement([NotNull] MainParser.LabelledStatementContext ctx)
+			{
+				var raw = ctx.identifier().GetText().Trim('"');
+				if (!seenLabels.Add(raw))
+					throw new Exception($"Duplicate label: {raw}");
+
+				Index.Labels.Add(new LabelInfo(raw, SnapshotPath(), ctx));
+				return null;
+			}
+
+			public override object VisitGotoStatement([NotNull] MainParser.GotoStatementContext ctx)
+			{
+				Index.GotoSitePaths[ctx] = SnapshotPath();
+				return base.VisitGotoStatement(ctx); // keep walking to find more labels/sites
+			}
+
+			// ---------- regions ----------
+			public override object VisitBlock([NotNull] MainParser.BlockContext ctx)
+			{
+				using (PushRegion(RegionKind.Block))
+					return base.VisitBlock(ctx);
+			}
+
+			public override object VisitSwitchStatement([NotNull] MainParser.SwitchStatementContext ctx)
+			{
+				using (PushRegion(RegionKind.Switch))
+					return base.VisitSwitchStatement(ctx);
+			}
+
+			public override object VisitCaseClause([NotNull] MainParser.CaseClauseContext ctx)
+			{
+				using (PushRegion(RegionKind.SwitchSection))
+					return base.VisitCaseClause(ctx);
+			}
+
+			public override object VisitTryStatement([NotNull] MainParser.TryStatementContext ctx)
+			{
+				// try part:
+				using (PushRegion(RegionKind.Try))
+					Visit(ctx.statement());
+
+				// zero or more catches:
+				foreach (var c in ctx.catchProduction())
+					Visit(c);
+
+				// finally part:
+				var fin = ctx.finallyProduction();
+				if (fin != null)
+					Visit(fin);
+
+				return null;
+			}
+
+			public override object VisitCatchProduction([NotNull] MainParser.CatchProductionContext ctx)
+			{
+				using (PushRegion(RegionKind.Catch))
+					return base.VisitCatchProduction(ctx); // visits flowBlock inside
+			}
+
+			public override object VisitFinallyProduction([NotNull] MainParser.FinallyProductionContext ctx)
+			{
+				using (PushRegion(RegionKind.Finally))
+					return base.VisitFinallyProduction(ctx);
+			}
+
+			// Any “flow body” (if/loop) that isn’t a block still creates a boundary we shouldn’t jump into.
+			public override object VisitFlowBlock([NotNull] MainParser.FlowBlockContext ctx)
+			{
+				using (PushRegion(RegionKind.FlowBody))
+					return base.VisitFlowBlock(ctx);
+			}
 		}
 
 		internal List<FunctionInfo> GetScopeFunctions(ParserRuleContext context, VisitMain mainVisitor)
         {
+            currentFunc.RootContext = context;
             hasVisitedIdentifiers = false;
 			var visitor = functionParserData.GetOrAdd(context, () => {
                 var v = new VisitFunction(mainVisitor);
@@ -570,6 +713,9 @@ namespace Keysharp.Scripting
 						if (parameterMatch != null)
 							return parameterMatch.Identifier.Text;
 					}
+
+                    if (func.Static)
+                        break;
 				}
             }
 
@@ -759,16 +905,22 @@ namespace Keysharp.Scripting
             return match.Key;
         }
 
-        internal string IsBuiltInMethod(string name, bool caseSense = false)
-        {
-            MethodPropertyHolder mph = Reflections.FindBuiltInMethod(name, -1);
-            if (mph?.mi == null || (caseSense && mph.mi.Name != name))
-                return null;
-            return mph.mi.Name;
-        }
+		internal string IsBuiltInMethod(string name, bool caseSense = false)
+		{
+			var rd = Script.TheScript.ReflectionsData;
 
-        // Either adds a new global variable declaration, or returns a previously declared ones name
-        internal string MaybeAddGlobalVariableDeclaration(string name, bool caseSense = true)
+			// Fast O(1): this is filled in Initialize() from Keysharp.* static classes.
+			if (rd.flatPublicStaticMethods.TryGetValue(name, out var mi))
+			{
+				// If exact case is required, confirm it (dictionary is OrdinalIgnoreCase).
+				if (!caseSense || mi.Name.Equals(name, StringComparison.Ordinal))
+					return mi.Name; // canonical casing
+			}
+			return null;
+		}
+
+		// Either adds a new global variable declaration, or returns a previously declared ones name
+		internal string MaybeAddGlobalVariableDeclaration(string name, bool caseSense = true)
         {
             string match = IsVarDeclaredGlobally(name, caseSense);
             if (match != null)
@@ -1001,7 +1153,7 @@ namespace Keysharp.Scripting
 								PredefinedKeywords.EqualsToken,
 								CreateFuncObj(
                                     SyntaxFactory.CastExpression(
-                                        SyntaxFactory.IdentifierName("Delegate"),
+										CreateQualifiedName("System.Delegate"),
                                         SyntaxFactory.IdentifierName(functionName)
                                     )
                                 )
@@ -1069,7 +1221,7 @@ namespace Keysharp.Scripting
             );
         }
 
-        /*
+		/*
         Converts an ExpressionSyntax to a function InvocationExpressionSyntax. 
         1. Built-in functions get called with the fully qualified name, eg MsgBox -> Keysharp.Core.Dialogs.MsgBox
         EXCEPT if the argument list contains variadic arguments, in which case Invoke is used.
@@ -1078,7 +1230,7 @@ namespace Keysharp.Scripting
         4. GetStaticMemberValueT gets converted to Invoke(GetStaticMethodT<typeName>(methodName, -1))
         5. Anything else is converted to Invoke(targetExpression, "Call", arguments)
         */
-        public ExpressionSyntax GenerateFunctionInvocation(
+		public ExpressionSyntax GenerateFunctionInvocation(
             ExpressionSyntax targetExpression,
             ArgumentListSyntax argumentList,
             string methodName)
@@ -1086,7 +1238,7 @@ namespace Keysharp.Scripting
             // 1. Built-in functions: Directly invoke the built-in method
             // except in the case of a variadic function call
             if (!string.IsNullOrEmpty(methodName)
-				&& Reflections.FindBuiltInMethod(methodName, -1) is MethodPropertyHolder mph && mph.mi != null
+				&& TheScript.ReflectionsData.flatPublicStaticMethods.TryGetValue(methodName, out var mi)
 				&& !UserFuncs.Contains(methodName)
                 && IsVarDeclaredLocally(methodName) == null
                 )
@@ -1100,7 +1252,7 @@ namespace Keysharp.Scripting
                 } else
                     // Fully qualified method invocation
                     return SyntaxFactory.InvocationExpression(
-						CreateMemberAccess(mph.mi.DeclaringType.ToString(), mph.mi.Name),
+						CreateMemberAccess(mi.DeclaringType.ToString(), mi.Name),
                         argumentList
                     );
             }
@@ -1110,15 +1262,15 @@ namespace Keysharp.Scripting
                 UserTypes.ContainsKey(identifierName.Identifier.Text))
             {
                 // Convert to Invoke(targetExpression, "Call", arguments)
-                return SyntaxFactory.InvocationExpression(
-                    SyntaxFactory.IdentifierName("Invoke"),
+				return ((InvocationExpressionSyntax)InternalMethods.Invoke)
+                    .WithArgumentList(
 					CreateArgumentList(
-					    targetExpression,
+						targetExpression,
                         SyntaxFactory.LiteralExpression(
                             SyntaxKind.StringLiteralExpression,
                             SyntaxFactory.Literal("Call")
                         ),
-                        argumentList.Arguments // Include additional arguments
+						argumentList.Arguments // Include additional arguments
                     )
                 );
             }
@@ -1141,7 +1293,7 @@ namespace Keysharp.Scripting
                             CreateArgumentList(
                                 baseExpression,
                                 propertyNameExpression,
-                                argumentList.Arguments // Pass additional arguments (args)
+								argumentList.Arguments // Pass additional arguments (args)
                             )
                         );
                 }
@@ -1178,8 +1330,8 @@ namespace Keysharp.Scripting
                     );
 
                     // Wrap in Script.Invoke
-                    return SyntaxFactory.InvocationExpression(
-                        CreateMemberAccess("Keysharp.Scripting.Script", "Invoke"),
+                    return ((InvocationExpressionSyntax)InternalMethods.Invoke)
+                        .WithArgumentList(
                         CreateArgumentList(
                             getStaticMethodInvocation,
                             argumentList.Arguments
@@ -1189,17 +1341,17 @@ namespace Keysharp.Scripting
             }
 
             // 5. Default behavior: Treat as callable object and invoke .Call
-            return SyntaxFactory.InvocationExpression(
-                SyntaxFactory.IdentifierName("Invoke"),
+            return ((InvocationExpressionSyntax)InternalMethods.Invoke)
+            .WithArgumentList(
                 CreateArgumentList(
-                    targetExpression,
+					targetExpression,
                     SyntaxFactory.LiteralExpression(
                         SyntaxKind.StringLiteralExpression,
                         SyntaxFactory.Literal("Call")
                     ),
-                    argumentList.Arguments // Include additional arguments
+					argumentList.Arguments // Include additional arguments
                 )
-            );
+           );
         }
 
 
@@ -1327,6 +1479,14 @@ namespace Keysharp.Scripting
             }
             return text;
         }
+
+        internal static void UserTypeNameToKeysharp(ref string text)
+        {
+            var buf = text;
+			string alias = Keywords.TypeNameAliases.SingleOrDefault(kv => kv.Value.Equals(buf, StringComparison.OrdinalIgnoreCase)).Key;
+			if (alias != null)
+				text = alias;
+		}
 
         internal string PropertyExistsInBuiltinBase(string name)
         {
@@ -1527,7 +1687,7 @@ namespace Keysharp.Scripting
 
         // Creates `new VarRef(() => identifier, value => identifier = value)`
         // In the case of index or property access, it uses the appropriate get/set methods.
-        public ExpressionSyntax ConstructVarRef(ExpressionSyntax targetExpression)
+        public ExpressionSyntax ConstructVarRef(ExpressionSyntax targetExpression, bool throwIfInvalid = true)
         {
             // Handle the different cases of singleExpression
             if (targetExpression is IdentifierNameSyntax identifierName)
@@ -1616,22 +1776,15 @@ namespace Keysharp.Scripting
             else if (targetExpression is InvocationExpressionSyntax invocationExpression)
             {
                 // Handle Keysharp.Scripting.Script.Index(varname, index)
-                if (CheckInvocationExpressionName(invocationExpression, "Index") &&
-                    invocationExpression.ArgumentList.Arguments.Count == 2)
+                if (CheckInvocationExpressionName(invocationExpression, "Index", true))
                 {
-                    var varName = invocationExpression.ArgumentList.Arguments[0].Expression;
-                    var index = invocationExpression.ArgumentList.Arguments[1].Expression;
-
                     return SyntaxFactory.ObjectCreationExpression(
                         SyntaxFactory.IdentifierName("VarRef"),
                         CreateArgumentList(
                         // Getter lambda: () => Keysharp.Scripting.Script.Index(varname, index)
                             SyntaxFactory.ParenthesizedLambdaExpression(
                                 SyntaxFactory.ParameterList(),
-                                ((InvocationExpressionSyntax)InternalMethods.Index)
-                                .WithArgumentList(
-                                    CreateArgumentList(varName, index)
-                                )
+                                invocationExpression
                             ),
                         // Setter lambda: value => Keysharp.Scripting.Script.SetObject(value, varname, index)
                             SyntaxFactory.ParenthesizedLambdaExpression(
@@ -1643,9 +1796,8 @@ namespace Keysharp.Scripting
                                 ((InvocationExpressionSyntax)InternalMethods.SetObject)
                                 .WithArgumentList(
                                     CreateArgumentList(
-										SyntaxFactory.IdentifierName("value"),
-										varName,
-										index
+										invocationExpression.ArgumentList.Arguments,
+										SyntaxFactory.IdentifierName("value")
 									)
                                 )
                             )
@@ -1654,21 +1806,16 @@ namespace Keysharp.Scripting
                     );
                 }
                 // Handle Keysharp.Scripting.Script.GetPropertyValue(obj, field)
-                else if (CheckInvocationExpressionName(invocationExpression, "GetPropertyValue") &&
-                    invocationExpression.ArgumentList.Arguments.Count == 2)
+                else if (CheckInvocationExpressionName(invocationExpression, "GetPropertyValue", true))
                 {
-                    var obj = invocationExpression.ArgumentList.Arguments[0].Expression;
-                    var field = invocationExpression.ArgumentList.Arguments[1].Expression;
-
                     return SyntaxFactory.ObjectCreationExpression(
                         SyntaxFactory.IdentifierName("VarRef"),
                         CreateArgumentList(
                         // Getter lambda: () => Keysharp.Scripting.Script.GetPropertyValue(obj, field)
                             SyntaxFactory.ParenthesizedLambdaExpression(
                                 SyntaxFactory.ParameterList(),
-                                ((InvocationExpressionSyntax)InternalMethods.GetPropertyValue)
-                                .WithArgumentList(CreateArgumentList(obj, field))
-                            ),
+								invocationExpression
+							),
                         // Setter lambda: value => Keysharp.Scripting.Script.SetPropertyValue(obj, field, value)
                             SyntaxFactory.ParenthesizedLambdaExpression(
                                 SyntaxFactory.ParameterList(
@@ -1678,7 +1825,10 @@ namespace Keysharp.Scripting
                                 ),
                                 ((InvocationExpressionSyntax)InternalMethods.SetPropertyValue)
                                 .WithArgumentList(
-                                    CreateArgumentList(obj, field, SyntaxFactory.IdentifierName("value"))
+                                    CreateArgumentList(
+                                        invocationExpression.ArgumentList.Arguments, 
+                                        SyntaxFactory.IdentifierName("value")
+                                    )
                                 )
                             )
                         ),
@@ -1696,6 +1846,23 @@ namespace Keysharp.Scripting
             {
                 return oces;
             }
+
+            if (!throwIfInvalid)
+            {
+                var temp = PushTempVar();
+                var varRef = ConstructVarRef(temp);
+				var multiStatement = ((InvocationExpressionSyntax)InternalMethods.MultiStatement)
+	            .WithArgumentList(
+		            CreateArgumentList(
+                        SyntaxFactory.AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, temp, targetExpression),
+                        varRef
+                    )
+	            );
+				PopTempVar();
+
+                return multiStatement;
+
+			}
 
             throw new InvalidOperationException("Unsupported singleExpression type for VarRefExpression.");
         }

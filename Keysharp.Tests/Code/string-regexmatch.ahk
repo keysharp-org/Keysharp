@@ -245,21 +245,12 @@ if (match == 1)
 else
 	FileAppend "fail", "*"
 
-if (match.Pos() == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
-
-CheckMatches(match, "0", "abc123")
-
 match := "abc123123" ~= "123$"
 
 if (match == 7)
 	FileAppend "pass", "*"
 else
 	FileAppend "fail", "*"
-
-CheckMatches(match, "0", "123")
 
 match := "xxxabc123xyz" ~= "abc.*xyz"
 
@@ -268,16 +259,12 @@ if (match == 4)
 else
 	FileAppend "fail", "*"
 
-CheckMatches(match, "0", "abc123xyz")
-
 match := "abc123123" ~= "123$"
 
-if (match.Pos() == 7)
+if (match == 7)
 	FileAppend "pass", "*"
 else
 	FileAppend "fail", "*"
-
-CheckMatches(match, "0", "123")
 
 match := "abc123" ~= "i)^ABC"
 
@@ -285,41 +272,6 @@ if (match == 1)
 	FileAppend "pass", "*"
 else
 	FileAppend "fail", "*"
-
-CheckMatches(match, "0", "abc")
-
-match := "abcXYZ123" ~= "abc(.*)123"
-
-if (match[1] == "XYZ")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
-
-if (match.Pos(1) == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
-
-CheckMatches(match, "01", "abcXYZ123XYZ")
-
-match := "abcXYZ123" ~= "abc(?<testname>.*)123"
-
-if (match["testname"] == "XYZ")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
-
-if (match.Pos("testname") == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
-
-if (match.Name("testname") == "testname")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
-
-CheckMatches(match, "0testname", "abcXYZ123XYZ")
 
 RegExMatch("C:\Foo\Bar\Baz.txt", "\w+$", &match:="")
 

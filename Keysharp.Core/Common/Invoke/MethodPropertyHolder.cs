@@ -1,11 +1,15 @@
 ﻿//#define CONCURRENT
+using System.Collections.Generic;
+using System.Linq.Expressions;
 using Antlr4.Runtime.Misc;
 using Label = System.Reflection.Emit.Label;
 
 namespace Keysharp.Core.Common.Invoke
 {
-    [PublicForTestOnly]
-	public class MethodPropertyHolder
+#if !INTERNALDEBUG
+	[DebuggerStepThrough]
+#endif
+	internal class MethodPropertyHolder
 	{
 		public Func<object, object[], object> _callFunc;
 		public Func<object, object[], object> CallFunc
@@ -17,25 +21,21 @@ namespace Keysharp.Core.Common.Invoke
 
 				var del = DelegateFactory.CreateDelegate(this);
 
-				if (isGuiType)
-				{
-					_callFunc = (inst, args) =>
-					{
-						var ctrl = (inst ?? args[0]).GetControl();
-						object ret = null;
-                        ValidateArgCount(inst, args);
-						ctrl.CheckedInvoke(() =>
-						{
-							ret = del(inst, args);
-						}, true);
-						return ret;
-					};
-				}
-				else
-					_callFunc = (inst, args) => {
-                        ValidateArgCount(inst, args);
-                        return del(inst, args);
+                if (isGuiType)
+                {
+                    _callFunc = (inst, args) =>
+                    {
+                        var ctrl = (inst ?? args[0]).GetControl();
+                        object ret = null;
+                        ctrl.CheckedInvoke(() =>
+                        {
+                            ret = del(inst, args);
+                        }, true);
+                        return ret;
                     };
+                }
+                else
+                    _callFunc = del;
 
                 return _callFunc;
 			}
@@ -50,6 +50,7 @@ namespace Keysharp.Core.Common.Invoke
 		internal readonly bool isSetter;
 		internal readonly bool isItemSetter;
 		internal readonly int variadicParamIndex = -1;
+		internal readonly int[] requiredIdx;
 
 #if CONCURRENT
         internal static ConcurrentDictionary<MethodInfo, MethodPropertyHolder> methodCache = new();
@@ -60,6 +61,8 @@ namespace Keysharp.Core.Common.Invoke
 #endif
 
 		internal bool IsBind { get; private set; }
+		internal bool IsStatic { get; private set; }
+		internal bool IsCompilerGenerated { get; private set; }
 		internal bool IsStaticFunc { get; private set; }
 		internal bool IsStaticProp { get; private set; }
 		internal bool IsVariadic => variadicParamIndex != -1;
@@ -67,7 +70,9 @@ namespace Keysharp.Core.Common.Invoke
 		internal int MinParams = 0;
 		internal int MaxParams = 0;
 
-        private const string setterPrefix = "set_";
+        internal const int DotNetMaxParams = 8192; // https://www.tabsoverspaces.com/233892-whats-the-maximum-number-of-arguments-for-method-in-csharp-and-in-net
+
+		private const string setterPrefix = "set_";
         private const string classSetterPrefix = Keywords.ClassStaticPrefix + setterPrefix;
 
 		string _name = null;
@@ -137,15 +142,23 @@ namespace Keysharp.Core.Common.Invoke
         {
             mi = m;
 
+            IsStatic = mi.IsStatic;
 			IsStaticFunc = mi.Attributes.HasFlag(MethodAttributes.Static);
 			isGuiType = Gui.IsGuiType(mi.DeclaringType);
+			IsCompilerGenerated = mi.DeclaringType.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false);
+			var hasHiddenThis = !IsStatic && !IsCompilerGenerated;
+			if (hasHiddenThis) // Built-in instance method, so account for the implicit "this"
+			{
+				MinParams++; MaxParams++;
+			}
 
 			parameters = mi.GetParameters();
 			ParamLength = parameters.Length;
 
 			// Determine if the method is a set_Item overload.
 			isSetter = mi.Name.StartsWith(setterPrefix) || mi.Name.StartsWith(classSetterPrefix);
-			isItemSetter = mi.Name == "set_Item";
+			isItemSetter = isSetter && (mi.Name == "set_Item" || mi.Name.Equals("set___Item", StringComparison.OrdinalIgnoreCase));
+			var req = new List<int>(ParamLength);
 
 			for (var i = 0; i < parameters.Length; i++)
 			{
@@ -156,14 +169,18 @@ namespace Keysharp.Core.Common.Invoke
                 else
                 {
 					if (!pmi.IsOptional)
+					{
 						MinParams++;
+						req.Add(i);
+					}
 				}
 			}
+			requiredIdx = req.ToArray();
 
-            if (isSetter) // Allow value to be unset
+			if (isSetter) // Allow value to be unset
                 MinParams--;
 
-			MaxParams = parameters.Length - (variadicParamIndex == -1 ? 0 : 1);
+			MaxParams = parameters.Length + (hasHiddenThis ? 1 : 0) - (variadicParamIndex == -1 ? 0 : 1);
 
 			anyOptional = variadicParamIndex != -1 || MinParams != MaxParams;
 
@@ -277,33 +294,18 @@ namespace Keysharp.Core.Common.Invoke
 				}
 			}
 		}
+
+		// Allow creating a "fake" MPH for ObjBindMethod
+		public MethodPropertyHolder(string name)
+		{
+			_name = name;
+			variadicParamIndex = 1;
+		}
+
 		internal static void ClearCache()
 		{
 			methodCache.Clear();
             propertyCache.Clear();
-		}
-
-		internal void ValidateArgCount(object inst, object[] args)
-		{
-            int lastProvided = args?.Length ?? 0;
-			var provided = lastProvided + (inst == null ? 0 : 1);
-
-            if (!mi.IsStatic)
-                provided--;
-
-            for (int i = lastProvided - 1; i >= 0; i--)
-            {
-                if (args[i] == null)
-                    provided--;
-                else
-                    break;
-            }
-
-			if (provided < MinParams)
-				throw new ValueError($"Too few arguments provided for function {Name}");
-
-			if (!IsVariadic && provided > MaxParams)
-				throw new ValueError($"Too many arguments provided for function {Name}");
 		}
 	}
     public class ArgumentError : Error
@@ -314,518 +316,314 @@ namespace Keysharp.Core.Common.Invoke
         }
     }
 
-	[PublicForTestOnly]
-	public static class DelegateFactory
-    {
-        public static Func<object, object[], object> CreateDelegate(MethodInfo mi) => CreateDelegate(new MethodPropertyHolder(mi));
-		/// <summary>
-		/// Creates a delegate of type Func<object, object[], object></object>that will call the given MethodInfo.
-		/// It will check for missing parameters and if the parameter is optional, it uses its DefaultValue.
-		/// </summary>
+	/**
+	 * As of 10/2025 I've investigated multiple approaches on how to best do function invokes:
+	 * 1) MethodBase.Invoke: slow, throws TargetInvocationExceptions which need to be upwrapped and rethrown (slow)
+	 * 2) MethodInvoker.Invoke: not much faster than MethodBase.Invoke, but doesn't wrap exceptions in TargetInvocationException.
+	 * 3) Code generation: complex, usually requires writing a separate package/project, is not applicable to user code
+	 *		since it is often dynamically generated too.
+	 * 4) IL.Emit: just as fast as expression trees (the current approach), but more complex to implement and maintain.
+	 *      Additionally, expression trees can be interpreted in environments that don't allow dynamic code generation.
+	 *      Downside is that IL.Emit and expression trees have a bit more overhead during the initial compilation,
+	 *      and require loading large dlls. 
+	 */
+#if !INTERNALDEBUG
+	[DebuggerStepThrough]
+#endif
+	internal static class DelegateFactory
+	{
+		public static Func<object, object[], object> CreateDelegate(MethodInfo mi)
+			=> CreateDelegate(MethodPropertyHolder.GetOrAdd(mi));
+
+		public static Func<object, object[], object> CreateDelegate(PropertyInfo property)
+		{
+			if (property == null) throw new ArgumentNullException(nameof(property));
+			var getter = property.GetGetMethod(true) ?? throw new ArgumentException("The provided property does not have a getter.", nameof(property));
+			return CreateDelegate(MethodPropertyHolder.GetOrAdd(getter));
+		}
+
 		public static Func<object, object[], object> CreateDelegate(MethodPropertyHolder mph)
-        {
-            var method = mph.mi;
+		{
+			var mi = mph.mi ?? throw new ArgumentNullException(nameof(mph.mi));
+			var ps = mph.parameters;
+			var isInstance = !mph.IsStatic;
+			var isCompilerGenerated = mph.IsCompilerGenerated;
+			var isVariadic = mph.IsVariadic;
+			int paramCount = ps.Length;
 
-            if (method == null)
-                throw new ArgumentNullException(nameof(method));
+			// Precompute "soft optional" + boxed defaults once.
+			var isSoft = new bool[paramCount];
+			var defaults = new object[paramCount];
 
-            ParameterInfo[] parameters = method.GetParameters();
+			for (int i = 0; i < paramCount; i++)
+			{
+				// Treat the final "value" of any setter (including set_Item) as soft-optional
+				bool soft =
+					ps[i].IsOptional ||
+					ps[i].HasDefaultValue ||
+					(mph.isSetter && i == paramCount - 1);
 
-            string dynamicMethodName = "DynamicInvoke_" + (method.DeclaringType != null ? method.DeclaringType.Name + "." : "") + method.Name;
+				isSoft[i] = soft;
+				defaults[i] = soft ? MaterializeDefault(ps[i]) : null;
+			}
 
-            DynamicMethod dm = new DynamicMethod(
-                dynamicMethodName,
-                typeof(object),
-                new Type[] { typeof(object), typeof(object[]) },
-                method.Module,
-                true);
+			// Compile the small "core" once.
+			var core = CompileCore(mi, ps, isSoft, defaults);
 
-            ILGenerator il = dm.GetILGenerator();
+			return NormalInvoke;
 
-            // --- Declare unified locals ---
-            LocalBuilder paramOffset = il.DeclareLocal(typeof(int));   // will be 0 for static or for instance when ldarg0 is non-null; 1 for instance if ldarg0 is null.
-            LocalBuilder argsLocal = il.DeclareLocal(typeof(object[]));  // the effective arguments array
+			// The returned delegate performs:
+			//  - exact arg-count validation
+			//  - instance splicing convention
+			//  - params packing (incl. set_Item)
+			//  - then calls the compiled core (which handles defaults & per-slot null checks)
+#if !INTERNALDEBUG
+			[DebuggerStepThrough]
+#endif
+			object NormalInvoke(object instance, object[] args)
+			{
+				args ??= System.Array.Empty<object>();
 
-            // Ensure that the caller-supplied argument array is not null.
-            Label argsNonNull = il.DefineLabel();
-            il.Emit(OpCodes.Ldarg_1);        // load ldarg1
-            il.Emit(OpCodes.Brtrue_S, argsNonNull); // if not null, branch
-                                                    // Otherwise, create an empty object array.
-            il.Emit(OpCodes.Ldc_I4_0);
-            il.Emit(OpCodes.Newarr, typeof(object));
-            il.Emit(OpCodes.Starg_S, 1);       // store the empty array into ldarg1 (or into a local)
-            il.MarkLabel(argsNonNull);
+				// ---- validate the argument count ----
+				int lastProvided = args.Length;
+				int provided = lastProvided + (instance == null ? 0 : 1);
+				if (isInstance && isCompilerGenerated) provided--; // account for Inst-provided 'this', which does not count as argument
 
-            // --- Compute paramOffset and argsLocal ---
-            if (!method.IsStatic)
-            {
-                // Instance method:
-                // Use ldarg0 if non-null; otherwise use args[0] and set offset=1.
-                LocalBuilder target = il.DeclareLocal(typeof(object));
-                Label useArg0 = il.DefineLabel();
-                Label afterTarget = il.DefineLabel();
+				for (int i = lastProvided - 1; i >= 0; i--)
+				{
+					if (args[i] == null) provided--;
+					else break;
+				}
 
-                il.Emit(OpCodes.Ldarg_0);
-                il.Emit(OpCodes.Brtrue_S, useArg0);
-                // ldarg0 is null: set paramOffset = 1 and target = args[0].
-                il.Emit(OpCodes.Ldc_I4_1);
-                il.Emit(OpCodes.Stloc, paramOffset);
-                il.Emit(OpCodes.Ldarg_1);
-                il.Emit(OpCodes.Ldc_I4_0);
-                il.Emit(OpCodes.Ldelem_Ref);
-                il.Emit(OpCodes.Stloc, target);
-                il.Emit(OpCodes.Br_S, afterTarget);
-                il.MarkLabel(useArg0);
-                il.Emit(OpCodes.Ldc_I4_0);
-                il.Emit(OpCodes.Stloc, paramOffset);
-                il.Emit(OpCodes.Ldarg_0);
-                il.Emit(OpCodes.Stloc, target);
-                il.MarkLabel(afterTarget);
-                // Push the target (cast as needed) for the eventual call.
-                il.Emit(OpCodes.Ldloc, target);
-                if (method.DeclaringType.IsValueType)
-                    il.Emit(OpCodes.Unbox_Any, method.DeclaringType);
-                else
-                    il.Emit(OpCodes.Castclass, method.DeclaringType);
+				if (provided < mph.MinParams)
+					throw new ValueError($"Too few arguments provided for function {mph.Name}");
 
-                // For instance methods, we use the caller's argument array unchanged.
-                il.Emit(OpCodes.Ldarg_1);
-                il.Emit(OpCodes.Stloc, argsLocal);
-            }
-            else
-            {
-                // Static method: always set paramOffset = 0.
-                il.Emit(OpCodes.Ldc_I4_0);
-                il.Emit(OpCodes.Stloc, paramOffset);
-                // Set argsLocal = ldarg_1.
-                il.Emit(OpCodes.Ldarg_1);
-                il.Emit(OpCodes.Stloc, argsLocal);
+				if (!isVariadic && provided > mph.MaxParams)
+					throw new ValueError($"Too many arguments provided for function {mph.Name}");
 
-                // If the delegate's instance (ldarg0) is non-null, inject it into the argument array.
-                Label useOriginal = il.DefineLabel();
-                Label afterCombine = il.DefineLabel();
-                il.Emit(OpCodes.Ldarg_0);
-                il.Emit(OpCodes.Brfalse_S, useOriginal);
+				// ---- instance splicing ----
+				object target;
+				int start = 0;
+				object[] working = args;
 
-                LocalBuilder origLen = il.DeclareLocal(typeof(int));
-                il.Emit(OpCodes.Ldloc, argsLocal);
-                il.Emit(OpCodes.Ldlen);
-                il.Emit(OpCodes.Conv_I4);
-                il.Emit(OpCodes.Stloc, origLen);
+				if (isInstance)
+				{
+					if (instance != null)
+					{
+						target = instance;
+					}
+					else
+					{
+						if (working.Length == 0)
+							throw new ValueError($"Too few arguments provided for function {mph.Name}");
 
-                // length = origLen + 1.
-                LocalBuilder newLen = il.DeclareLocal(typeof(int));
-                il.Emit(OpCodes.Ldloc, origLen);
-                il.Emit(OpCodes.Ldc_I4_1);
-                il.Emit(OpCodes.Add);
-                il.Emit(OpCodes.Stloc, newLen);
+						target = working[0];
+						start = 1;
+					}
+				}
+				else
+				{
+					target = null;
+					if (instance != null)
+					{
+						var combined = new object[working.Length + 1];
+						combined[0] = instance;
+						System.Array.Copy(working, 0, combined, 1, working.Length);
+						working = combined;
+					}
+				}
 
-                // Allocate new array of length newLen.
-                il.Emit(OpCodes.Ldloc, newLen);
-                il.Emit(OpCodes.Newarr, typeof(object));
-                LocalBuilder combined = il.DeclareLocal(typeof(object[]));
-                il.Emit(OpCodes.Stloc, combined);
+				int eff = Math.Max(0, working.Length - start);
 
-                // combined[0] = ldarg0.
-                il.Emit(OpCodes.Ldloc, combined);
-                il.Emit(OpCodes.Ldc_I4_0);
-                il.Emit(OpCodes.Ldarg_0);
-                il.Emit(OpCodes.Stelem_Ref);
+				// ---- params packing (if any) ----
+				if (isVariadic)
+				{
+					int k = mph.variadicParamIndex;
 
-                // If newLen > 1, copy original arguments from argsLocal into combined starting at index 1.
-                Label skipCopy = il.DefineLabel();
-                il.Emit(OpCodes.Ldloc, newLen);
-                il.Emit(OpCodes.Ldc_I4_1);
-                il.Emit(OpCodes.Ble_S, skipCopy);
-                LocalBuilder idx = il.DeclareLocal(typeof(int));
-                il.Emit(OpCodes.Ldc_I4_0);
-                il.Emit(OpCodes.Stloc, idx);
-                Label loopStart = il.DefineLabel();
-                Label loopEnd = il.DefineLabel();
-                il.MarkLabel(loopStart);
-                il.Emit(OpCodes.Ldloc, idx);
-                il.Emit(OpCodes.Ldloc, origLen);
-                il.Emit(OpCodes.Bge_S, loopEnd);
-                // combined[idx + 1] = argsLocal[idx]
-                il.Emit(OpCodes.Ldloc, combined);
-                il.Emit(OpCodes.Ldloc, idx);
-                il.Emit(OpCodes.Ldc_I4_1);
-                il.Emit(OpCodes.Add);
-                il.Emit(OpCodes.Ldloc, argsLocal);
-                il.Emit(OpCodes.Ldloc, idx);
-                il.Emit(OpCodes.Ldelem_Ref);
-                il.Emit(OpCodes.Stelem_Ref);
-                il.Emit(OpCodes.Ldloc, idx);
-                il.Emit(OpCodes.Ldc_I4_1);
-                il.Emit(OpCodes.Add);
-                il.Emit(OpCodes.Stloc, idx);
-                il.Emit(OpCodes.Br_S, loopStart);
-                il.MarkLabel(loopEnd);
-                il.MarkLabel(skipCopy);
-                // Update argsLocal with the combined array.
-                il.Emit(OpCodes.Ldloc, combined);
-                il.Emit(OpCodes.Stloc, argsLocal);
-                il.MarkLabel(useOriginal);
-            }
+					if (mph.isItemSetter)
+					{
+						// set_Item(params object[] keys, object value)
+						// formal shape: [ .. fixed .., k = keys[], k+1 = value ]
+						int needed = paramCount; // k + 2
+						if (eff >= needed)
+						{
+							// Already enough to rewrite in-place
+							if (!(eff == needed && working[start + k] is object[]))
+							{
+								int keyCount = eff - 1 - k;
+								var keys = keyCount <= 0 ? System.Array.Empty<object>() : new object[keyCount];
+								for (int j = 0; j < keyCount; j++)
+									keys[j] = working[start + k + j];
 
+								working[start + k] = keys;
+								working[start + k + 1] = working[start + eff - 1];
+							}
 
-            // --------------------------------------------------
-            // Pre-check: compute the combined argument count.
-            // argsLocal was created earlier and holds the combined arguments.
-            LocalBuilder providedCountLocal = il.DeclareLocal(typeof(int));
-            il.Emit(OpCodes.Ldloc, argsLocal);
-            il.Emit(OpCodes.Ldlen);
-            il.Emit(OpCodes.Conv_I4);
-            il.Emit(OpCodes.Stloc, providedCountLocal);
+							return core(target, working, start);
+						}
+						else
+						{
+							// Expand and synthesize keys[] + optional value
+							var expanded = new object[start + needed];
+							System.Array.Copy(working, 0, expanded, 0, Math.Min(working.Length, expanded.Length));
 
-            // --- Parameter Processing ---
-            // For each formal parameter at index i, load the effective argument from:
-            //    argsLocal[paramOffset + i]
-            // If no argument is present, load the default (or for params, an empty array) or throw.
-            for (int i = 0; i < parameters.Length; i++)
-            {
-                ParameterInfo pi = parameters[i];
+							int avail = eff;
+							if (avail <= k)
+								throw new ArgumentError(); // missing required head
 
-                // Determine special flags.
-                // For set_Item, the final parameter ("value") should come from the last argument.
-                bool isSetItemValue = mph.isItemSetter && (i == parameters.Length - 1);
-                // For non-set_Item methods, a normal params parameter is the last parameter marked with [ParamArray].
-                bool isParams = i == mph.variadicParamIndex;
+							int keysAvail = Math.Max(0, avail - 1 - k);
+							var keys = keysAvail == 0 ? System.Array.Empty<object>() : new object[keysAvail];
+							for (int j = 0; j < keysAvail; j++)
+								keys[j] = working[start + k + j];
 
-                // --- Branch for Params (or special set_Item params) ---
-                if (isParams)
-                {
-                    // Compute count: the number of arguments to pack.
-                    // For special params, reserve one argument for the final "value":
-                    //    count = argsLocal.Length - (paramOffset + i) - 1
-                    // For normal params:
-                    //    count = argsLocal.Length - (paramOffset + i)
-                    LocalBuilder countLocal = il.DeclareLocal(typeof(int));
-                    if (mph.isItemSetter)
-                    {
-                        il.Emit(OpCodes.Ldloc, argsLocal);   // push argsLocal
-                        il.Emit(OpCodes.Ldlen);                // push argsLocal.Length
-                        il.Emit(OpCodes.Conv_I4);
-                        il.Emit(OpCodes.Ldloc, paramOffset);
-                        il.Emit(OpCodes.Ldc_I4, i);
-                        il.Emit(OpCodes.Add);                  // compute (paramOffset + i)
-                        il.Emit(OpCodes.Sub);                  // argsLocal.Length - (paramOffset + i)
-                        il.Emit(OpCodes.Ldc_I4_1);
-                        il.Emit(OpCodes.Sub);                  // subtract 1 for the final "value"
-                    }
-                    else
-                    {
-                        il.Emit(OpCodes.Ldloc, argsLocal);
-                        il.Emit(OpCodes.Ldlen);
-                        il.Emit(OpCodes.Conv_I4);
-                        il.Emit(OpCodes.Ldloc, paramOffset);
-                        il.Emit(OpCodes.Ldc_I4, i);
-                        il.Emit(OpCodes.Add);
-                        il.Emit(OpCodes.Sub);                  // argsLocal.Length - (paramOffset + i)
-                    }
-                    il.Emit(OpCodes.Stloc, countLocal);
+							expanded[start + k] = keys;
+							expanded[start + k + 1] = (avail > k) ? working[start + avail - 1] : null;
 
-                    // Repack the remaining arguments into a new array.
-                    Label doRepack = il.DefineLabel();
-                    Label repackEnd = il.DefineLabel();
-                    il.Emit(OpCodes.Ldloc, countLocal);
-                    il.Emit(OpCodes.Ldc_I4_0);
-                    il.Emit(OpCodes.Bgt_S, doRepack);
-                    {
-                        // If count is 0, push an empty array.
-                        Type elemType = pi.ParameterType.GetElementType();
-                        il.Emit(OpCodes.Ldc_I4_0);
-                        il.Emit(OpCodes.Newarr, elemType);
-                        il.Emit(OpCodes.Br_S, repackEnd);
-                    }
-                    il.MarkLabel(doRepack);
-                    LocalBuilder newArray = il.DeclareLocal(pi.ParameterType);
-                    il.Emit(OpCodes.Ldloc, countLocal);
-                    il.Emit(OpCodes.Newarr, pi.ParameterType.GetElementType());
-                    il.Emit(OpCodes.Stloc, newArray);
-                    LocalBuilder loopIndex = il.DeclareLocal(typeof(int));
-                    il.Emit(OpCodes.Ldc_I4_0);
-                    il.Emit(OpCodes.Stloc, loopIndex);
-                    Label loopStart = il.DefineLabel();
-                    Label loopCheck = il.DefineLabel();
-                    il.Emit(OpCodes.Br_S, loopCheck);
-                    il.MarkLabel(loopStart);
-                    il.Emit(OpCodes.Ldloc, newArray);
-                    il.Emit(OpCodes.Ldloc, loopIndex);
-                    il.Emit(OpCodes.Ldloc, argsLocal);
-                    il.Emit(OpCodes.Ldloc, paramOffset);
-                    il.Emit(OpCodes.Ldc_I4, i);
-                    il.Emit(OpCodes.Add);                  // starting index: paramOffset + i
-                    il.Emit(OpCodes.Ldloc, loopIndex);
-                    il.Emit(OpCodes.Add);                  // add loop index
-                    il.Emit(OpCodes.Ldelem_Ref);
-                    il.Emit(OpCodes.Stelem_Ref);
-                    il.Emit(OpCodes.Ldloc, loopIndex);
-                    il.Emit(OpCodes.Ldc_I4_1);
-                    il.Emit(OpCodes.Add);
-                    il.Emit(OpCodes.Stloc, loopIndex);
-                    il.MarkLabel(loopCheck);
-                    il.Emit(OpCodes.Ldloc, loopIndex);
-                    il.Emit(OpCodes.Ldloc, countLocal);
-                    il.Emit(OpCodes.Blt_S, loopStart);
-                    il.Emit(OpCodes.Ldloc, newArray);
-                    il.MarkLabel(repackEnd);
-                }
-                else
-                {
-                    // --- For non-params parameters, load a single element.
-                    // Compute effective index: normally paramOffset + i,
-                    // except for set_Item value parameter, where it's providedCountLocal - 1.
-                    LocalBuilder effectiveIndex = il.DeclareLocal(typeof(int));
-                    if (isSetItemValue)
-                    {
-                        il.Emit(OpCodes.Ldloc, providedCountLocal);
-                        il.Emit(OpCodes.Ldc_I4_1);
-                        il.Emit(OpCodes.Sub);
-                        il.Emit(OpCodes.Stloc, effectiveIndex);
-                    }
-                    else
-                    {
-                        il.Emit(OpCodes.Ldloc, paramOffset);
-                        il.Emit(OpCodes.Ldc_I4, i);
-                        il.Emit(OpCodes.Add);
-                        il.Emit(OpCodes.Stloc, effectiveIndex);
-                    }
+							return core(target, expanded, start);
+						}
+					}
+					else
+					{
+						// Normal params at [k]
+						int final = paramCount;
 
-                    // Check if an argument was provided.
-                    Label argProvided = il.DefineLabel();
-                    Label afterLoad = il.DefineLabel();
-                    il.Emit(OpCodes.Ldloc, effectiveIndex);  // load effective index
-                    il.Emit(OpCodes.Ldloc, providedCountLocal);  // load providedCountLocal
-                    il.Emit(OpCodes.Blt_S, argProvided);
+						if (paramCount == 1 && start == 0)
+							return core(target, [working], start);
 
-                    // No argument provided for this parameter.
-                    if (pi.IsOptional || (mph.isSetter && i == (parameters.Length - 1)))
-                    {
-                        // Load the default value.
-                        object defVal = pi.DefaultValue;
-                        if (defVal == null || defVal == System.Reflection.Missing.Value)
-                        {
-                            il.Emit(OpCodes.Ldnull);
-                        }
-                        else
-                        {
-                            EmitLoadConstant(il, defVal);
-                            if (!pi.ParameterType.IsValueType && defVal.GetType().IsValueType)
-                                il.Emit(OpCodes.Box, defVal.GetType());
-                        }
-                        il.Emit(OpCodes.Br_S, afterLoad);
-                    }
-                    else
-                    {
-                        // Not optional: throw exception.
-                        ConstructorInfo exCtor = typeof(ArgumentError)
-                                                    .GetConstructor(Type.EmptyTypes);
-                        il.Emit(OpCodes.Newobj, exCtor);
-                        il.Emit(OpCodes.Throw);
-                    }
-                    il.MarkLabel(argProvided);
+						if (eff > final)
+						{
+							int tail = eff - k;
+							var packed = tail <= 0 ? System.Array.Empty<object>() : new object[tail];
+							for (int j = 0; j < tail; j++)
+								packed[j] = working[start + k + j];
 
-                    // Load the argument from the effective index.
-                    il.Emit(OpCodes.Ldloc, argsLocal);
-                    il.Emit(OpCodes.Ldloc, effectiveIndex);
-                    il.Emit(OpCodes.Ldelem_Ref);
+							working[start + k] = packed;
+							return core(target, working, start);
+						}
 
-                    // Now, check if the loaded value is null.
-                    Label notNull = il.DefineLabel();
-                    il.Emit(OpCodes.Dup);         // duplicate the loaded argument for the test
-                    il.Emit(OpCodes.Brtrue_S, notNull); // if not null, jump to notNull
+						if (eff == final)
+						{
+							if (working[start + k] is not object[])
+								working[start + k] = new object[] { working[start + k] };
+							return core(target, working, start);
+						}
 
-                    // It is null: remove the null value.
-                    il.Emit(OpCodes.Pop);
-                    if (pi.IsOptional || (mph.isSetter && i == (parameters.Length - 1)))
-                    {
-                        // Load the default value.
-                        object defVal = pi.DefaultValue;
-                        if (defVal == null || defVal == System.Reflection.Missing.Value)
-                            il.Emit(OpCodes.Ldnull);
-                        else
-                        {
-                            EmitLoadConstant(il, defVal);
-                            if (!pi.ParameterType.IsValueType && defVal.GetType().IsValueType)
-                                il.Emit(OpCodes.Box, defVal.GetType());
-                        }
-                        il.Emit(OpCodes.Br_S, afterLoad);
-                    }
-                    else
-                    {
-                        // If not optional, throw an exception.
-                        ConstructorInfo exCtor2 = typeof(ArgumentError)
-                                                    .GetConstructor(Type.EmptyTypes);
-                        il.Emit(OpCodes.Newobj, exCtor2);
-                        il.Emit(OpCodes.Throw);
-                    }
-                    il.MarkLabel(notNull);
+						// eff < final → synthesize empty params
+						var expanded = new object[start + final];
+						System.Array.Copy(working, 0, expanded, 0, Math.Min(working.Length, expanded.Length));
+						expanded[start + k] = System.Array.Empty<object>();
+						return core(target, expanded, start);
+					}
+				}
 
-                    il.MarkLabel(afterLoad);
-                }
+				// No params → just run the compiled core (which fills defaults & validates per-slot nulls).
+				return core(target, working, start);
+			};
+		}
 
-                // Finally, if the formal parameter is a value type, unbox/cast as needed.
-                if (pi.ParameterType.IsValueType)
-                    il.Emit(OpCodes.Unbox_Any, pi.ParameterType);
-                else
-                    il.Emit(OpCodes.Castclass, pi.ParameterType);
-            }
+		// ----------------- Expression core -----------------
 
-            // --- Call the underlying method ---
-            if (method.IsStatic)
-                il.Emit(OpCodes.Call, method);
-            else
-                il.Emit(OpCodes.Callvirt, method);
-            if (method.ReturnType == typeof(void))
-                il.Emit(OpCodes.Ldnull);
-            else if (method.ReturnType.IsValueType)
-                il.Emit(OpCodes.Box, method.ReturnType);
-            il.Emit(OpCodes.Ret);
+		private static Func<object, object[], int, object> CompileCore(
+			MethodInfo mi,
+			ParameterInfo[] ps,
+			bool[] isSoft,
+			object[] defaults)
+		{
+			var pTarget = Expression.Parameter(typeof(object), "target");
+			var pArgs = Expression.Parameter(typeof(object[]), "args");
+			var pStart = Expression.Parameter(typeof(int), "start");
+			var argsLen = Expression.ArrayLength(pArgs);
 
-            return (Func<object, object[], object>)dm.CreateDelegate(typeof(Func<object, object[], object>));
-        }
+			var a = new Expression[ps.Length];
 
-        /// <summary>
-        /// Creates a delegate from a PropertyInfo by using its getter method.
-        /// </summary>
-        public static Func<object, object[], object> CreateDelegate(PropertyInfo property)
-        {
-            if (property == null)
-                throw new ArgumentNullException(nameof(property));
+			// new ArgumentError() for non-optional missing/null
+			var throwArgErr = Expression.Throw(Expression.New(typeof(ArgumentError)), typeof(object));
 
-            MethodInfo getter = property.GetGetMethod(true);
-            if (getter == null)
-                throw new ArgumentException("The provided property does not have a getter.", nameof(property));
+			for (int i = 0; i < ps.Length; i++)
+			{
+				var idx = Expression.Add(pStart, Expression.Constant(i));
+				var inRange = Expression.LessThan(idx, argsLen);
+				var elem = Expression.ArrayIndex(pArgs, idx);
+				var valOrNull = Expression.Condition(inRange, elem, Expression.Constant(null, typeof(object)));
 
-            return CreateDelegate(new MethodPropertyHolder(getter));
-        }
+				Expression chosen = isSoft[i]
+					? Expression.Condition(
+						Expression.Equal(valOrNull, Expression.Constant(null, typeof(object))),
+						Expression.Constant(defaults[i], typeof(object)),
+						valOrNull)
+					: Expression.Condition(
+						Expression.Equal(valOrNull, Expression.Constant(null, typeof(object))),
+						throwArgErr,
+						valOrNull);
 
-        public static void EmitThrowError(ILGenerator il, string errorMessage, string methodName, LocalBuilder code)
-        {
-            // Create a new object[3]
-            il.Emit(OpCodes.Ldc_I4_3);                  // push constant 3 (array size)
-            il.Emit(OpCodes.Newarr, typeof(object));    // create new object[3]
+				a[i] = Expression.Convert(chosen, ps[i].ParameterType);
+			}
 
-            // Store errorMessage at index 0
-            il.Emit(OpCodes.Dup);                       // duplicate array reference
-            il.Emit(OpCodes.Ldc_I4_0);                  // index 0
-            il.Emit(OpCodes.Ldstr, errorMessage);       // push errorMessage string
-            il.Emit(OpCodes.Stelem_Ref);                // array[0] = errorMessage
+			Expression call;
+			if (mi.IsStatic)
+			{
+				call = Expression.Call(mi, a);
+			}
+			else
+			{
+				var decl = mi.DeclaringType!;
+				var inst = Expression.Convert(pTarget, decl); // castclass/unbox.any semantics
+				call = Expression.Call(inst, mi, a);
+			}
 
-            
-            // Store methodName at index 1
-            il.Emit(OpCodes.Dup);                       // duplicate array reference
-            il.Emit(OpCodes.Ldc_I4_1);                  // index 1
-            il.Emit(OpCodes.Ldstr, methodName);         // push methodName string
-            il.Emit(OpCodes.Stelem_Ref);                // array[1] = methodName
+			Expression body =
+				mi.ReturnType == typeof(void)
+					? Expression.Block(call, Expression.Constant(null, typeof(object)))
+					: Expression.Convert(call, typeof(object));
 
+			return Expression.Lambda<Func<object, object[], int, object>>(body, pTarget, pArgs, pStart)
+							 .Compile();
+		}
 
-            // Store code at index 2
-            il.Emit(OpCodes.Dup);                       // duplicate array reference
-            il.Emit(OpCodes.Ldc_I4_2);                  // index 2
-            il.Emit(OpCodes.Ldloc, code);               // push code (int)
-            il.Emit(OpCodes.Box, typeof(int));          // box the int value
-            il.Emit(OpCodes.Stelem_Ref);                // array[2] = code
+		private static object MaterializeDefault(ParameterInfo p)
+		{
+			var def = p.DefaultValue;
+			return (def is DBNull || def == System.Reflection.Missing.Value) ? null : def;
+		}
+	}
 
-            // Get the constructor: Error(object[] args)
-            ConstructorInfo errorCtor = typeof(Error).GetConstructor(new[] { typeof(object[]) });
-            // Create a new Error instance using the array
-            il.Emit(OpCodes.Newobj, errorCtor);
-            // Throw the error.
-            il.Emit(OpCodes.Throw);
-        }
+#if !INTERNALDEBUG
+	[DebuggerStepThrough]
+#endif
+	internal static class FastCtor
+	{
+#if CONCURRENT
+		private static readonly ConcurrentDictionary<System.Type, Func<object[], object>> Cache = new();
+#else
+		private static readonly Dictionary<System.Type, Func<object[], object>> Cache = new();
+#endif
 
-        /// <summary>
-        /// Emits IL to load the specified constant onto the evaluation stack.
-        /// Supports common primitives, strings, booleans, and enums.
-        /// </summary>
-        private static void EmitLoadConstant(ILGenerator il, object value)
-        {
-            if (value == null)
-            {
-                il.Emit(OpCodes.Ldnull);
-                return;
-            }
+		// Semantics: always call a public ctor like:  new T(object[] args)
+		public static object Call(Type type, params object[] args)
+		{
+			args ??= System.Array.Empty<object>();
 
-            Type type = value.GetType();
-            if (type == typeof(int))
-            {
-                il.Emit(OpCodes.Ldc_I4, (int)value);
-            }
-            else if (type == typeof(long))
-            {
-                il.Emit(OpCodes.Ldc_I8, (long)value);
-            }
-            else if (type == typeof(float))
-            {
-                il.Emit(OpCodes.Ldc_R4, (float)value);
-            }
-            else if (type == typeof(double))
-            {
-                il.Emit(OpCodes.Ldc_R8, (double)value);
-            }
-            else if (type == typeof(string))
-            {
-                il.Emit(OpCodes.Ldstr, (string)value);
-            }
-            else if (type == typeof(bool))
-            {
-                il.Emit((bool)value ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
-            }
-            else if (type == typeof(DBNull))
-            {
-                //FieldInfo dbNullField = typeof(DBNull).GetField("Value", BindingFlags.Public | BindingFlags.Static);
-                //il.Emit(OpCodes.Ldsfld, dbNullField);
-                il.Emit(OpCodes.Ldnull);
-            }
-            else if (type.IsEnum)
-            {
-                // For enums, load the underlying value and box the enum type.
-                Type underlying = Enum.GetUnderlyingType(type);
-                if (underlying == typeof(int))
-                {
-                    il.Emit(OpCodes.Ldc_I4, (int)value);
-                }
-                else if (underlying == typeof(long))
-                {
-                    il.Emit(OpCodes.Ldc_I8, (long)value);
-                }
-                else
-                {
-                    throw new NotSupportedException("Enum underlying type not supported: " + underlying);
-                }
-                il.Emit(OpCodes.Box, type);
-            }
-            else if (type == typeof(decimal))
-            {
-                // Decompose the decimal into its 4 int bits.
-                decimal d = (decimal)value;
-                int[] bits = decimal.GetBits(d);
-                int lo = bits[0];
-                int mid = bits[1];
-                int hi = bits[2];
-                int flags = bits[3];
-                bool isNegative = (flags & 0x80000000) != 0;
-                byte scale = (byte)((flags >> 16) & 0x7F);
+#if CONCURRENT
+			var activator = Cache.GetOrAdd(type, BuildFactory);
+#else
+			if (!Cache.TryGetValue(type, out var activator))
+				Cache[type] = activator = BuildFactory(type);
+#endif
+			return activator(args);
+		}
 
-                // Load the constants and call the decimal constructor (int lo, int mid, int hi, bool isNegative, byte scale)
-                il.Emit(OpCodes.Ldc_I4, lo);
-                il.Emit(OpCodes.Ldc_I4, mid);
-                il.Emit(OpCodes.Ldc_I4, hi);
-                il.Emit(isNegative ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
-                il.Emit(OpCodes.Conv_U1); // Convert the top int to a byte for scale
+		private static Func<object[], object> BuildFactory(System.Type type)
+		{
+			// Look for a single public instance ctor with signature (object[])
+			var ctor = type.GetConstructor(new[] { typeof(object[]) });
+			if (ctor is null)
+			{
+				return a => System.Activator.CreateInstance(type, a)!;
+			}
 
-                ConstructorInfo ctor = typeof(decimal).GetConstructor(new Type[] { typeof(int), typeof(int), typeof(int), typeof(bool), typeof(byte) });
-                if (ctor == null)
-                    throw new InvalidOperationException("The required Decimal constructor was not found.");
-                il.Emit(OpCodes.Newobj, ctor);
-            }
-            else
-            {
-                throw new NotSupportedException("Constant type not supported: " + type.FullName);
-            }
-        }
-    }
-
+			var a = System.Linq.Expressions.Expression.Parameter(typeof(object[]), "args");
+			var body = System.Linq.Expressions.Expression.Convert(System.Linq.Expressions.Expression.New(ctor, a), typeof(object));
+			return System.Linq.Expressions.Expression.Lambda<Func<object[], object>>(body, a).Compile();
+		}
+	}
 }

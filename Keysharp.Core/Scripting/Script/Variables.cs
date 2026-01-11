@@ -11,16 +11,22 @@ namespace Keysharp.Scripting
 		public LazyDictionary<Type, Any> Statics = new();
         internal List<(string, bool)> preloadedDlls = [];
 		internal DateTime startTime = DateTime.UtcNow;
-		private readonly Dictionary<string, MemberInfo> globalVars = new (StringComparer.OrdinalIgnoreCase);
+		internal readonly Dictionary<string, MemberInfo> globalVars = new (StringComparer.OrdinalIgnoreCase);
 
 		public Variables()
 		{
-			var fields = TheScript.ProgramType.GetFields(BindingFlags.Static |
-										BindingFlags.NonPublic |
-										BindingFlags.Public);
-			var props = TheScript.ProgramType.GetProperties(BindingFlags.Static |
-											BindingFlags.NonPublic |
-											BindingFlags.Public);
+			var flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
+			var fields = TheScript.ProgramType.GetFields(flags);
+			var props = TheScript.ProgramType.GetProperties(flags);
+
+			// If ProgramType has a nested type called "UserDeclaredClasses", include its members too.
+			var udc = TheScript.ProgramType.GetNestedType(Keywords.UserDeclaredClassesContainerName, flags);
+			if (udc != null)
+			{
+				fields = fields.Concat(udc.GetFields(flags));
+				props = props.Concat(udc.GetProperties(flags));
+			}
+
 			_ = globalVars.EnsureCapacity(fields.Length + props.Length);
 
 			foreach (var field in fields)
@@ -32,9 +38,6 @@ namespace Keysharp.Scripting
 
 		public void InitClasses()
 		{
-			// Initialize prototypes 
-			Dictionary<Type, KeysharpObject> protos = new();
-
 			var anyType = typeof(Any);
 			var script = Script.TheScript;
 			var types = script.ReflectionsData.stringToTypes.Values
@@ -62,43 +65,47 @@ namespace Keysharp.Scripting
 			{
 				var opm = op.Value;
 				if (opm.Value is FuncObj fov && fov != null)
-					fov._base = fop;
+				{
+					fov.SetBaseInternal(fop);
+				}
 				if (opm.Get is FuncObj fog && fog != null)
-					fog._base = fop;
+				{
+					fog.SetBaseInternal(fop);
+				}
 				if (opm.Set is FuncObj fos && fos != null)
-					fos._base = fop;
+				{
+					fos.SetBaseInternal(fop);
+				}
 				if (opm.Call is FuncObj foc && foc != null)
-					foc._base = fop;
+				{
+					foc.SetBaseInternal(fop);
+				}
 			}
 			InitClass(typeof(Any));
 			InitClass(typeof(KeysharpObject));
 			InitClass(typeof(Class));
 
-			// The static instance of Object is copied from Object prototype
-			Statics[typeof(KeysharpObject)] = (Any)Prototypes[typeof(KeysharpObject)].Clone();
 			// Class.Base == Object
-			Statics[typeof(Class)]._base = Statics[typeof(KeysharpObject)];
+			Statics[typeof(Class)].SetBaseInternal(Statics[typeof(KeysharpObject)]);
 			// Any.Base == Class.Prototype
-			Statics[typeof(Any)]._base = Prototypes[typeof(Class)];
+			Statics[typeof(Any)].SetBaseInternal(Prototypes[typeof(Class)]);
 
 			// Remove __New because it's only for internal overrides
 			Prototypes[typeof(Any)].op.Remove("__New");
 
 			// Manually define Object static instance prototype property to be the Object prototype
 			var ksoStatic = Statics[typeof(KeysharpObject)];
-			if (ksoStatic.op == null)
-				ksoStatic.op = new Dictionary<string, OwnPropsDesc>(StringComparer.OrdinalIgnoreCase);
-			ksoStatic.op["prototype"] = new OwnPropsDesc(ksoStatic, Prototypes[typeof(KeysharpObject)]);
+			ksoStatic.DefinePropInternal("prototype", new OwnPropsDesc(ksoStatic, Prototypes[typeof(KeysharpObject)]));
 			// Object.Base == Any
-			ksoStatic._base = Statics[typeof(Any)];
+			ksoStatic.SetBaseInternal(Statics[typeof(Any)]);
 
 			//FuncObj was initialized when Object wasn't, so define the bases
-			Prototypes[typeof(FuncObj)]._base = Prototypes[typeof(KeysharpObject)];
-			Statics[typeof(FuncObj)]._base = Prototypes[typeof(Class)];
+			Prototypes[typeof(FuncObj)].SetBaseInternal(Prototypes[typeof(KeysharpObject)]);
+			Statics[typeof(FuncObj)].SetBaseInternal(Statics[typeof(Class)]);
 
 			// Do not initialize the core types again
 			var typesToRemoveSet = new HashSet<Type>(new[] { typeof(Any), typeof(FuncObj), typeof(KeysharpObject), typeof(Class) });
-			var orderedTypes = types.Where(type => !typesToRemoveSet.Contains(type)).OrderBy(GetInheritanceDepth);
+			var orderedTypes = types.Where(type => !typesToRemoveSet.Contains(type)).OrderBy(Reflections.GetInheritanceDepth);
 
 			// Lazy-initialize all other classes
 			foreach (var t in orderedTypes)
@@ -106,17 +113,6 @@ namespace Keysharp.Scripting
 				Script.InitClass(t);
 			}
 		}
-
-        private static int GetInheritanceDepth(Type type)
-        {
-            int depth = 0;
-            while (type.BaseType != null)
-            {
-                depth++;
-                type = type.BaseType;
-            }
-            return depth;
-        }
 
 		public bool HasVariable(string key) =>
 			globalVars.ContainsKey(key)
@@ -186,7 +182,7 @@ namespace Keysharp.Scripting
 
 		public object this[object key]
         {
-			get => TryGetPropertyValue(key, "__Value", out object val) ? val : GetVariable(key.ToString()) ?? "";
+			get => TryGetPropertyValue(out object val, key, "__Value") ? val : GetVariable(key.ToString()) ?? "";
 			set => _ = (key is KeysharpObject kso && Functions.HasProp(kso, "__Value") == 1) ? Script.SetPropertyValue(kso, "__Value", value) : SetVariable(key.ToString(), value);
 		}
 
@@ -195,10 +191,10 @@ namespace Keysharp.Scripting
             private readonly Dictionary<string, object> vars = new(StringComparer.OrdinalIgnoreCase);
 			private eScope scope = eScope.Local;
 			private HashSet<string> globals;
-            public Dereference(eScope funcScope, HashSet<string> funcGlobals, params object[] args)
+            public Dereference(eScope funcScope, string[] funcGlobals, params object[] args)
 			{
 				scope = funcScope;
-				globals = funcGlobals;
+				globals = funcGlobals == null ? null : new HashSet<string>(funcGlobals, StringComparer.OrdinalIgnoreCase);
 
 				for (int i = 0; i < args.Length; i += 2)
 				{

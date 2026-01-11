@@ -1,8 +1,6 @@
 ﻿//#define CONCURRENT
 #define TL
 
-#if WINDOWS
-
 namespace Keysharp.Core
 {
 	internal class DllData
@@ -41,62 +39,13 @@ namespace Keysharp.Core
 		/// </summary>
 		private static readonly Dictionary<string, nint> loadedDlls = new ()
 		{
+#if WINDOWS
 			{ "user32", NativeLibrary.Load("user32") },
 			{ "kernel32", NativeLibrary.Load("kernel32") },
 			{ "comctl32", NativeLibrary.Load("comctl32") },
 			{ "gdi32", NativeLibrary.Load("gdi32") }
+#endif
 		};
-
-		/// <summary>
-		/// Creates a <see cref="DelegateHolder"/> object that wraps a <see cref="FuncObj"/>.
-		/// Passing string pointers to <see cref="DllCall"/> when passing a created callback is strongly recommended against.<br/>
-		/// This is because the string pointer cannot remain pinned, and is likely to crash the program if the pointer gets moved by the GC.
-		/// </summary>
-		/// <param name="function">
-		/// A function object to call automatically whenever the <see cref="DelegateHolder"/> is called, optionally passing arguments.<br/>
-		/// A closure or bound function can be used to differentiate between multiple callbacks which all call the same script function.<br/>
-		/// The callback retains a reference to the function object, and releases it when the script calls <see cref="CallbackFree"/>.
-		/// </param>
-		/// <param name="options">
-		/// If blank or omitted, a new thread will be started each time function is called, the standard calling convention will be used, and the parameters will be passed individually to function.<br/>
-		/// Otherwise, specify one or more of the following options. Separate each option from the next with a space (e.g. "C Fast").<br/>
-		///     Fast or F: Avoids starting a new thread each time function is called.Although this performs better, it must be avoided whenever the thread from which Address is called varies (e.g.when the callback is triggered by an incoming message).<br/>
-		///     This is because function will be able to change global settings such as <see cref="A_LastError"/> and the last-found window for whichever thread happens to be running at the time it is called.<br/>
-		///     <![CDATA[&]]>: Causes the address of the parameter list (a single integer) to be passed to function instead of the individual parameters. Parameter values can be retrieved by using <see cref="External.NumGet"/>.<br/>
-		/// </param>
-		/// <param name="paramCount">
-		/// If omitted, it defaults to 0, which is usually the number of mandatory parameters in the definition of function.<br/>
-		/// Otherwise, specify the number of parameters that Address's caller will pass to it.<br/>
-		/// In either case, ensure that the caller passes exactly this number of parameters.
-		/// </param>
-		/// <returns>A <see cref="DelegateHolder"/> object which internally holds a function pointer.<br/>
-		/// This is typically passed to an external function via <see cref="DllCall"/> or placed in a struct using <see cref="NumPut"/>, but can also be called directly by <see cref="DllCall"/>.
-		/// </returns>
-		public static object CallbackCreate(object function, object options = null, object paramCount = null)
-		{
-			var fo = Functions.GetFuncObj(function, null, true);
-
-			var o = options.As();
-			bool fast = o.Contains('f', StringComparison.OrdinalIgnoreCase);
-			bool reference = o.Contains('&');
-			int arity = Math.Clamp(paramCount.Ai(-1) < 0
-								   ? (!reference && fo is FuncObj f ? (int)f.MinParams : 32)
-								   : paramCount.Ai(-1), 0, 32);
-
-			return new DelegateHolder(fo, arity, fast, reference);
-		}
-
-		/// <summary>
-		/// Frees the specified callback.
-		/// </summary>
-		/// <param name="address">The <see cref="DelegateHolder"/> to be freed.</param>
-		public static object CallbackFree(object address)
-		{
-			if (address is DelegateHolder dh)
-				dh.Dispose();
-
-			return DefaultObject;
-		}
 
 		/// <summary>
 		/// Calls a function inside a DLL, such as a standard Windows API function.
@@ -158,42 +107,41 @@ namespace Keysharp.Core
 
 #endif
 
-					if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+					foreach (var dll in loadedDlls)
 					{
-						foreach (var dll in loadedDlls)
+						if (NativeLibrary.TryGetExport(dll.Value, name, out address))
 						{
-							if (NativeLibrary.TryGetExport(dll.Value, name, out address))
-							{
 #if TL
-								procAddressCache.Value[name] = address;
-								procAddressCache.Value[dll.Key + Path.DirectorySeparatorChar + name] = address;
+							procAddressCache.Value[name] = address;
+							procAddressCache.Value[dll.Key + Path.DirectorySeparatorChar + name] = address;
 #else
-								procAddressCache[name] = address;
-								procAddressCache[dll.Key + Path.DirectorySeparatorChar + name] = address;
+							procAddressCache[name] = address;
+							procAddressCache[dll.Key + Path.DirectorySeparatorChar + name] = address;
 #endif
-								goto AddressFound;
-							}
-						}
-
-						var nameW = name + "W";
-
-						foreach (var dll in loadedDlls)
-						{
-							if (NativeLibrary.TryGetExport(dll.Value, nameW, out address))
-							{
-#if TL
-								procAddressCache.Value[name] = address;
-								procAddressCache.Value[dll.Key + Path.DirectorySeparatorChar + name] = address;
-#else
-								procAddressCache[name] = address;
-								procAddressCache[dll.Key + Path.DirectorySeparatorChar + name] = address;
-#endif
-								goto AddressFound;
-							}
+							goto AddressFound;
 						}
 					}
 
-					return Errors.ErrorOccurred($"Unable to locate dll with path {path}.");
+#if WINDOWS
+					var nameW = name + "W";
+
+					foreach (var dll in loadedDlls)
+					{
+						if (NativeLibrary.TryGetExport(dll.Value, nameW, out address))
+						{
+#if TL
+							procAddressCache.Value[name] = address;
+							procAddressCache.Value[dll.Key + Path.DirectorySeparatorChar + name] = address;
+#else
+							procAddressCache[name] = address;
+							procAddressCache[dll.Key + Path.DirectorySeparatorChar + name] = address;
+#endif
+							goto AddressFound;
+						}
+					}
+#endif
+
+					return Errors.ErrorOccurred($"Unable to locate {LibraryExtension} with path {path}.");
 				}
 				else if (loadedDlls.Keys.FirstOrDefault(n => path.StartsWith(n, StringComparison.OrdinalIgnoreCase)) is string moduleName && moduleName != null)
 				{
@@ -217,7 +165,7 @@ namespace Keysharp.Core
 					}
 
 					if (address == 0)
-						return Errors.ErrorOccurred($"Unable to locate dll with path {path}.");
+						return Errors.ErrorOccurred($"Unable to locate {LibraryExtension} with path {path}.");
 					else
 					{
 #if TL
@@ -239,13 +187,21 @@ namespace Keysharp.Core
 					name = path.Substring(z);
 					path = path.Substring(0, z - 1);
 
-					if (Environment.OSVersion.Platform == PlatformID.Win32NT && path.Length != 0 && !Path.HasExtension(path))
-						path += ".dll";
+					if (path.Length != 0 && !Path.HasExtension(path)
+#if !WINDOWS
+						&& !File.Exists(path)
+#endif
+					)
+						path += LibraryExtension;
 
 					NativeLibrary.TryLoad(path, out handle);
-
+#if WINDOWS
 					if (handle != 0 && !NativeLibrary.TryGetExport(handle, name, out address))
 						NativeLibrary.TryGetExport(handle, name + "W", out address);
+#else
+					if (handle != 0)
+						_ = NativeLibrary.TryGetExport(handle, name, out address);
+#endif
 				}
 			}
 			else
@@ -271,7 +227,7 @@ namespace Keysharp.Core
 			}
 			catch (Exception ex)
 			{
-				return Errors.ErrorOccurred($"An error occurred when calling {function}(): {ex.Message}", "", "0x" + A_LastError.ToString("X"));
+				return Errors.ErrorOccurred($"An error occurred when calling {function}(): {ex.Message}", "", "0x" + ThreadAccessors.A_LastError.ToString("X"));
 			}
 			finally
 			{
@@ -370,12 +326,65 @@ namespace Keysharp.Core
 			else
 				result = ((Func<nint, long[], long>)del)(fnPtr, args);
 
-			Marshal.SetLastPInvokeError(Marshal.GetLastSystemError());
+			ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 
 			if (shim != 0)
 				script.ExecutableMemoryPoolManager.Return(shim);
 
 			return result;
+		}
+
+		/// <summary>
+		/// Creates a <see cref="DelegateHolder"/> object that wraps a <see cref="FuncObj"/>.
+		/// Passing string pointers to <see cref="DllCall"/> when passing a created callback is strongly recommended against.<br/>
+		/// This is because the string pointer cannot remain pinned, and is likely to crash the program if the pointer gets moved by the GC.
+		/// </summary>
+		/// <param name="function">
+		/// A function object to call automatically whenever the <see cref="DelegateHolder"/> is called, optionally passing arguments.<br/>
+		/// A closure or bound function can be used to differentiate between multiple callbacks which all call the same script function.<br/>
+		/// The callback retains a reference to the function object, and releases it when the script calls <see cref="CallbackFree"/>.
+		/// </param>
+		/// <param name="options">
+		/// If blank or omitted, a new thread will be started each time function is called, the standard calling convention will be used, and the parameters will be passed individually to function.<br/>
+		/// Otherwise, specify one or more of the following options. Separate each option from the next with a space (e.g. "C Fast").<br/>
+		///     Fast or F: Avoids starting a new thread each time function is called.Although this performs better, it must be avoided whenever the thread from which Address is called varies (e.g.when the callback is triggered by an incoming message).<br/>
+		///     This is because function will be able to change global settings such as <see cref="A_LastError"/> and the last-found window for whichever thread happens to be running at the time it is called.<br/>
+		///     <![CDATA[&]]>: Causes the address of the parameter list (a single integer) to be passed to function instead of the individual parameters. Parameter values can be retrieved by using <see cref="External.NumGet"/>.<br/>
+		/// </param>
+		/// <param name="paramCount">
+		/// If omitted, it defaults to 0, which is usually the number of mandatory parameters in the definition of function.<br/>
+		/// Otherwise, specify the number of parameters that Address's caller will pass to it.<br/>
+		/// In either case, ensure that the caller passes exactly this number of parameters.
+		/// </param>
+		/// <returns>A <see cref="DelegateHolder"/> object which internally holds a function pointer.<br/>
+		/// This is typically passed to an external function via <see cref="DllCall"/> or placed in a struct using <see cref="NumPut"/>, but can also be called directly by <see cref="DllCall"/>.
+		/// </returns>
+		public static object CallbackCreate(object function, object options = null, object paramCount = null)
+		{
+			Any fo = function is Any a ? a : (FuncObj)Functions.GetFuncObj(function, null, true);
+			if (fo == null)
+				return Errors.ErrorOccurred("Invalid function");
+
+			var o = options.As();
+			bool fast = o.Contains('f', StringComparison.OrdinalIgnoreCase);
+			bool reference = o.Contains('&');
+			int arity = Math.Clamp(paramCount.Ai(-1) < 0
+								   ? (!reference && fo is FuncObj f ? (int)f.MinParams : 32)
+								   : paramCount.Ai(-1), 0, 32);
+
+			return new DelegateHolder(fo, arity, fast, reference);
+		}
+
+		/// <summary>
+		/// Frees the specified callback.
+		/// </summary>
+		/// <param name="address">The <see cref="DelegateHolder"/> to be freed.</param>
+		public static object CallbackFree(object address)
+		{
+			if (address is DelegateHolder dh)
+				dh.Dispose();
+
+			return DefaultObject;
 		}
 
 		/// <summary>
@@ -555,7 +564,7 @@ namespace Keysharp.Core
 					sb.UpdateEntangledStringFromBuffer();
 					parameters[pi] = sb.EntangledString;
 				}
-				else if (parameters[pi] is KeysharpObject kso)
+				else if (parameters[pi] is Any kso)
 				{
 					object temp = arg;
 					FixParamTypeAndCopyBack(ref temp, pair.Value.Item1, (nint)arg);
@@ -588,5 +597,3 @@ namespace Keysharp.Core
 		}
 	}
 }
-
-#endif

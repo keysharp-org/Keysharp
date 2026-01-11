@@ -1,8 +1,4 @@
-﻿using System;
-using System.Configuration;
-using System.Drawing;
-
-namespace Keysharp.Core.Common.Strings
+﻿namespace Keysharp.Core.Common.Strings
 {
 	unsafe public class StringBuffer : KeysharpObject, IPointable
 	{

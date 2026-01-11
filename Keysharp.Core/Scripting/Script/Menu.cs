@@ -20,22 +20,12 @@
 			trayIcon.Tag = trayMenu;
 			trayIcon.MouseClick += TrayIcon_MouseClick;
 			trayIcon.MouseDoubleClick += TrayIcon_MouseDoubleClick;
-			Icon icon = null;
-#if WINDOWS
-			icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-#endif
 
-			if (A_IsCompiled || icon == null)//For some reason this is needed when running as a compiled exe.
-				icon = Core.Properties.Resources.Keysharp_ico;
-
-			if (icon != null)
+			if (normalIcon is Icon icon)
 			{
 				trayIcon.Icon = icon;
 				trayIcon.Visible = true;
 			}
-
-			pausedIcon = Core.Properties.Resources.Keysharp_p_ico;//Pause isn't really needed since pausing is not supported. Perhaps it can be used for something else some day.
-			suspendedIcon = Core.Properties.Resources.Keysharp_s_ico;
 		}
 
 		internal static void SuspendHotkeys()
@@ -48,6 +38,7 @@
 				_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(); //Update the state of all hotkeys based on the complex interdependencies hotkeys have with each another.
 				script.suspendMenuItem.Checked = suspended;
 				script.mainWindow.SuspendHotkeysToolStripMenuItem.Checked = suspended;
+				script.Tray.Icon = suspended ? script.suspendedIcon : script.normalIcon;
 			}, false);
 		}
 

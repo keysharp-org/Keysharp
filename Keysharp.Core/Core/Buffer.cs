@@ -2,7 +2,7 @@
 {
 	/// <summary>
 	/// Encapsulates a block of memory for use with advanced techniques such as DllCall, structures, StrPut and raw file I/O.<br/>
-	/// Buffer objects are typically created by calling <see cref="Collections.Buffer"/>,<br/>
+	/// Buffer objects are typically created by calling <see cref="Buffer"/>,<br/>
 	/// but can also be returned by <see cref="Files.FileRead"/> with the "RAW" option.
 	/// </summary>
 	public class Buffer : KeysharpObject, IDisposable, IPointable
@@ -76,23 +76,19 @@
 		/// <param name="args">The data to initially store in the buffer</param>
 		public Buffer(params object[] args) : base(args) { }
 
-		public static object Call(object @this, object byteCount = null, object fillByte = null)
-		{
-			Type t = @this.GetType();
-			return Activator.CreateInstance(t, [byteCount, fillByte]);
-			//new Buffer(byteCount, fillByte);
-		}
-
 		/// <summary>
-		/// Initializes a new instance of the <see cref="Buffer"/> class.
+		/// Creates a new <see cref="Buffer"/> object.
 		/// </summary>
-		/// <param name="obj">The optional data to initialize the <see cref="Buffer"/> with. This can be:<br/>
-		///     empty: Ptr remains null.<br/>
-		///     byte[]: Copied one byte at a time to the pointer.<br/>
-		///     <see cref="Array"/>: Convert each element to a byte and copy one at a time to the pointer.<br/>
-		///     Integer[, Integer]: Sets length to the first value and optionally sets each byte to the second value.
+		/// <param name="byteCount">The number of bytes to allocate. Corresponds to <see cref="Buffer.Size"/>.<br/>
+		/// If omitted, the <see cref="Buffer"/> is created with a null (zero) Ptr and zero Size.<br/>
+		/// This can optionally be a byte[] or an <see cref="Array"/> object.<br/>
 		/// </param>
-		/// <returns>Empty string, unused.</returns>
+		/// <param name="fillByte">Specify a number between 0 and 255 to set each byte in the buffer to that number.<br/>
+		/// This should generally be omitted in cases where the buffer will be written into without first being read,<br/>
+		/// as it has a time-cost proportionate to the number of bytes.<br/>
+		/// If omitted, the memory of the buffer is not initialized; the value of each byte is arbitrary.
+		/// </param>
+		/// <returns>A new <see cref="Buffer"/> object.</returns>
 		public override unsafe object __New(params object[] obj)
 		{
 			if (obj == null || obj.Length == 0)
@@ -137,15 +133,6 @@
 		}
 
 		/// <summary>
-		/// Destructor that manually calls <see cref="Dispose"/> to free the raw memory contained in the buffer.
-		/// </summary>
-		public override object __Delete()
-		{
-			Dispose(true);
-			return DefaultObject;
-		}
-
-		/// <summary>
 		/// Dispose the object and set a flag so it doesn't get disposed twice.
 		/// </summary>
 		/// <param name="disposing">If true, disposing already, so skip, else dispose.</param>
@@ -166,7 +153,7 @@
 		void IDisposable.Dispose()
 		{
 			Dispose(true);
-			GC.SuppressFinalize(this);
+			HasFinalizer = false;
 		}
 
 		/// <summary>
@@ -229,14 +216,20 @@
 	/// set up to clean resources up (eg VariantClear). Without using SafeHandle the Buffer finalizer
 	/// may be called first causing the resource-cleanup to fail.
 	/// </summary>
-	sealed class NativeMemoryHandle : SafeHandleZeroOrMinusOneIsInvalid
+	sealed class NativeMemoryHandle : SafeHandle
 	{
-		public NativeMemoryHandle() : base(ownsHandle: true) { }
-
-		public NativeMemoryHandle(nint p, bool owns = true) : base(owns)
+		public NativeMemoryHandle() 
+			: base(invalidHandleValue: 0, ownsHandle: true)
 		{
-			SetHandle(p);
 		}
+
+		public NativeMemoryHandle(nint handle, bool ownsHandle = true) 
+			: base(invalidHandleValue: 0, ownsHandle: ownsHandle)
+		{
+			SetHandle(handle);
+		}
+
+		public override bool IsInvalid => handle == -1 || handle == 0;
 
 		protected override bool ReleaseHandle()
 		{

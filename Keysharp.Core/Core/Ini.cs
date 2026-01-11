@@ -22,26 +22,31 @@
 			file = Path.GetFullPath(file);
 
 			if (!File.Exists(file))
+			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return DefaultErrorObject;
+			}
 
 #if WINDOWS
 			// Pass null for key to delete whole section; or pass the key to delete only that entry
 			bool ok = WindowsAPI.WritePrivateProfileString(s, string.IsNullOrEmpty(k) ? null : k, null, file);
 			// Flush the in-memory cache
 			WindowsAPI.WritePrivateProfileString(null, null, null, file);
+			ThreadAccessors.A_LastError = Marshal.GetLastWin32Error();
 
 			if (ok)
 				return DefaultObject;
 			else
 			{
-				var err = Marshal.GetLastWin32Error();
 				return Errors.OSErrorOccurred(
-						   new Win32Exception(err),
+						   new Win32Exception(unchecked((int)ThreadAccessors.A_LastError)),
 						   $"Error deleting {(string.IsNullOrEmpty(k) ? "section" : "key")} '{k}' from INI '{file}'"
 					   );
 			}
 
 #else
+
+			ThreadAccessors.A_LastError = 0;
 
 			if (s != "")
 				s = string.Format(Keyword_IniSectionOpen + "{0}]", s);
@@ -90,6 +95,7 @@
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.ErrorOccurred(ex.Message);
 			}
 
@@ -114,7 +120,10 @@
 			file = Path.GetFullPath(file);
 
 			if (!File.Exists(file))
-				return DefaultErrorObject;
+			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
+				return def ?? DefaultErrorObject;
+			}
 
 #if WINDOWS
 			const uint BUF_SIZE = 65535;
@@ -128,16 +137,17 @@
 				if (!hasSec)
 					return Errors.OSErrorOccurred("", "Section name required when reading a single key.");
 
-				var sb = new StringBuilder((int)BUF_SIZE);
+				var chars = new char[BUF_SIZE];
 				// lpAppName = section (no brackets), wParam default = def
-				read = WindowsAPI.GetPrivateProfileString(s, k, def, sb, BUF_SIZE, file);
+				read = WindowsAPI.GetPrivateProfileString(s, k, def, chars, BUF_SIZE, file);
 				// error or not found?
 				var err = Marshal.GetLastWin32Error();
+				ThreadAccessors.A_LastError = err;
 
-				if (err != 0)
+				if (err != 0 || read < 0)
 					return @default != null ? def : Errors.OSErrorOccurred(new Win32Exception(err), $"Failed to read key '{k}' in section '{s}' from '{file}' (0x{err:X}).");
 
-				result = sb.ToString();
+				result = new string(chars, 0, (int)read);
 			}
 			else if (hasSec)
 			{
@@ -145,6 +155,7 @@
 				var buf = new char[BUF_SIZE];
 				read = WindowsAPI.GetPrivateProfileSection(s, buf, BUF_SIZE, file);
 				var err = Marshal.GetLastWin32Error();
+				ThreadAccessors.A_LastError = err;
 
 				if (err != 0)
 					return @default != null ? def : Errors.OSErrorOccurred(new Win32Exception(err), $"Failed to read section '{s}' from '{file}' (0x{err:X}).");
@@ -158,6 +169,7 @@
 				var buf = new char[BUF_SIZE];
 				read = WindowsAPI.GetPrivateProfileSectionNames(buf, BUF_SIZE, file);
 				var err = Marshal.GetLastWin32Error();
+				ThreadAccessors.A_LastError = err;
 
 				if (err != 0)
 					return @default != null ? def : Errors.OSErrorOccurred(new Win32Exception(err), $"Failed to list sections in '{file}' (0x{err:X}).");
@@ -168,6 +180,7 @@
 			return result;
 #else
 
+			ThreadAccessors.A_LastError = 0;
 			if (s != "")
 				s = $"[{s}]";
 
@@ -192,8 +205,11 @@
 				}
 				else if (def.Length > 0)
 					_ = sb.Append(def);
-				else
+				else 
+				{
+					ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 					return Errors.OSErrorOccurred("", $"Failed to find key {k} in section {s} in INI file {file}.");
+				}
 			}
 			else if (hassec)
 			{
@@ -295,11 +311,13 @@
 			{
 				// flush the cache
 				WindowsAPI.WritePrivateProfileString(null, null, null, file);
+				ThreadAccessors.A_LastError = Marshal.GetLastWin32Error();
 				return DefaultObject;
 			}
 			else
 			{
 				var err = Marshal.GetLastWin32Error();
+				ThreadAccessors.A_LastError = err;
 				return Errors.OSErrorOccurred(
 					new System.ComponentModel.Win32Exception(err),
 					$"Error writing {(string.IsNullOrEmpty(k) ? "section" : "key")} to INI '{file}'"
@@ -307,6 +325,7 @@
 			}
 
 #else
+			ThreadAccessors.A_LastError = 0;
 			var within = string.IsNullOrEmpty(s);
 			s = string.Format("[{0}]", s ?? string.Empty);
 			var haskey = !string.IsNullOrEmpty(k);
@@ -384,12 +403,13 @@
 			}
 			catch (Exception ex)
 			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error writing key {k} with value {v} in section {s} to INI file {file}.");
 			}
 
 #endif
 		}
-		
+
 #if !WINDOWS
 		/// <summary>
 		/// Private helper to load an .ini file.

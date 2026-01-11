@@ -2,7 +2,7 @@
 
 namespace Keysharp.Scripting
 {
-	[PublicForTestOnly]
+	[PublicHiddenFromUser]
 	public class CompilerHelper
 	{
 		//CodeEntryPointMethod entryPoint;
@@ -17,7 +17,6 @@ namespace Keysharp.Scripting
 		public static readonly string GlobalUsingStr =
 			@"using static Keysharp.Core.Accessors;
 using static Keysharp.Core.COM.Com;
-using static Keysharp.Core.Collections;
 using static Keysharp.Core.Common.Keyboard.HotkeyDefinition;
 using static Keysharp.Core.Common.Keyboard.HotstringDefinition;
 using static Keysharp.Core.Common.Keyboard.HotstringManager;
@@ -63,9 +62,8 @@ using static Keysharp.Scripting.Script;
 ";
 
 #else
-		public static readonly string UsingStr =
+		public static readonly string GlobalUsingStr =
 			@"using static Keysharp.Core.Accessors;
-using static Keysharp.Core.Collections;
 using static Keysharp.Core.Common.Keyboard.HotkeyDefinition;
 using static Keysharp.Core.Common.Keyboard.HotstringDefinition;
 using static Keysharp.Core.Common.Keyboard.HotstringManager;
@@ -73,7 +71,7 @@ using static Keysharp.Core.ControlX;
 using static Keysharp.Core.Debug;
 using static Keysharp.Core.Dialogs;
 using static Keysharp.Core.Dir;
-//using static Keysharp.Core.Dll;
+using static Keysharp.Core.Dll;
 using static Keysharp.Core.Drive;
 using static Keysharp.Core.EditX;
 using static Keysharp.Core.Env;
@@ -109,17 +107,9 @@ using static Keysharp.Scripting.Script;
 ";
 #endif
 
-		public static readonly string NamespaceUsingStr = @"
+		public static readonly string NamespaceUsingStr = $@"
 using System
-using System.Collections
-using System.Collections.Generic
-using System.Data
-using System.IO
-using System.Reflection
 using System.Runtime.InteropServices
-using System.Text
-using System.Threading.Tasks
-using System.Windows.Forms
 using Keysharp.Core
 using Keysharp.Core.Common
 using Keysharp.Core.Common.File
@@ -130,6 +120,8 @@ using Keysharp.Core.Common.Threading
 using Keysharp.Scripting
 using Array = Keysharp.Core.Array
 using Buffer = Keysharp.Core.Buffer
+using String = Keysharp.Core.String
+using static {MainClassName}.{UserDeclaredClassesContainerName}
 ";
 
 		/// <summary>
@@ -145,7 +137,10 @@ using Buffer = Keysharp.Core.Buffer
 			"Keysharp.Core.dll",
 			"System.CodeDom.dll",
 			"PCRE.NET.dll",
-			"BitFaster.Caching.dll"
+			"BitFaster.Caching.dll",
+#if !WINDOWS
+			"Eto.dll",
+#endif
 		};
 		public static readonly string[] requiredNativeDependencies = new[]
 		{
@@ -158,12 +153,17 @@ using Buffer = Keysharp.Core.Buffer
 			"System.Collections",
 			"System.Collections.Generic",
 			"System.Data",
+#if WINDOWS
 			"System.Drawing",
+			"System.Windows.Forms",
+#else
+			"Eto.Drawing",
+			"Eto.Forms",
+#endif
 			"System.IO",
 			"System.Linq",
 			"System.Reflection",
 			"System.Runtime",
-			"System.Windows.Forms",
 			"System.Runtime.InteropServices",
 			"Keysharp.Core",
 		};
@@ -391,7 +391,9 @@ using Buffer = Keysharp.Core.Buffer
 			IEnumerable<ResourceDescription> resourceDescriptions = null;
 			HashSet<string> allDependencies = null;
 			var coreDir = Path.GetDirectoryName(typeof(object).GetTypeInfo().Assembly.Location);
+#if WINDOWS
 			var desktopDir = Path.GetDirectoryName(typeof(Form).GetTypeInfo().Assembly.Location);
+#endif
 			var ksCoreDir = Path.GetDirectoryName(A_KeysharpCorePath);
 
 			if (minimalexeout)
@@ -452,8 +454,10 @@ using Buffer = Keysharp.Core.Buffer
 				MetadataReference.CreateFromFile(Path.Combine(coreDir, "System.Reflection.dll")),
 				MetadataReference.CreateFromFile(Path.Combine(coreDir, "System.Runtime.dll")),
 				MetadataReference.CreateFromFile(Path.Combine(coreDir, "System.Private.CoreLib.dll")),
+#if WINDOWS
 				MetadataReference.CreateFromFile(Path.Combine(desktopDir, "System.Drawing.Common.dll")),
 				MetadataReference.CreateFromFile(Path.Combine(desktopDir, "System.Windows.Forms.dll")),
+#endif
 			};
 
 			// Do not load metadata from all dependencies, but just a select few. We need the metadata
@@ -513,6 +517,15 @@ using Buffer = Keysharp.Core.Buffer
 				            <longPathAware xmlns=""http://schemas.microsoft.com/SMI/2016/WindowsSettings"">true</longPathAware>
 				        </asmv3:windowsSettings>
 				    </asmv3:application>
+					<compatibility xmlns=""urn:schemas-microsoft-com:compatibility.v1"">
+						<application>
+					        <!-- Earliest XAML Islands build (Win10 1903) -->
+						    <maxversiontested Id=""10.0.18362.0""/>
+						    <!-- Newer target for wider support range (Win11 23H2) -->
+						    <maxversiontested Id=""10.0.22631.0""/>
+						    <supportedOS Id=""{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}""/>
+						</application>
+					</compatibility>
 				</assembly>";
 			EmitResult compilationResult = null;
 
@@ -558,7 +571,11 @@ using Buffer = Keysharp.Core.Buffer
             var enc = Encoding.Default;
             var x = Env.FindCommandLineArg("cp");
 			var script = Script.TheScript;
-            var (pushed, btv) = script.Threads.BeginThread();//Some internal parsing uses Accessors, so a thread must be present.
+			bool needsThread = script.totalExistingThreads == 0;
+			bool pushed = true;
+			ThreadVariables btv = null;
+			if (needsThread)
+				(pushed, btv) = script.Threads.BeginThread();//Some internal parsing uses Accessors, so a thread must be present.
 
             if (pushed)
             {
@@ -598,7 +615,8 @@ using Buffer = Keysharp.Core.Buffer
                     finally { }
                 }
 
-				_ = script.Threads.EndThread((pushed, btv));
+				if (needsThread)
+					_ = script.Threads.EndThread((pushed, btv));
 			}
 
             return (units, errors);
@@ -615,7 +633,11 @@ using Buffer = Keysharp.Core.Buffer
 				if (stdout)
 					Console.WriteLine(s);
 				else
+#if WINDOWS
 					_ = MessageBox.Show(s, "Keysharp", MessageBoxButtons.OK, MessageBoxIcon.Error);
+#else
+					_ = MessageBox.Show(s, "Keysharp", MessageBoxButtons.OK, MessageBoxType.Error);
+#endif
 			}
 		}
 
@@ -658,7 +680,7 @@ using Buffer = Keysharp.Core.Buffer
 
 			var code = PrettyPrinter.Print(units[0]);
 #if DEBUG
-			var normalized = units[0].NormalizeWhitespace("\t").ToString();
+			var normalized = units[0].NormalizeWhitespace("\t", Environment.NewLine).ToString();
 			if (code != normalized)
 			{
 				throw new Exception("Code formatting mismatch");

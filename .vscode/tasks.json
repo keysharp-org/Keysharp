@@ -4,9 +4,7 @@
         {
             "label": "build",
             "type": "shell",
-            "windows": {
-                "command": "msbuild"
-            },
+            "command": "msbuild",
             "args": [
                 "Keysharp.sln",
                 "/p:Configuration=Debug",

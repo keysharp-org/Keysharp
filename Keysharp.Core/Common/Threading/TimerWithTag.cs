@@ -1,7 +1,29 @@
 ﻿namespace Keysharp.Core.Common.Threading
 {
-	internal class TimerWithTag : System.Windows.Forms.Timer
+	internal class TimerWithTag : UITimer
 	{
+#if !WINDOWS
+		public bool Enabled 
+		{
+			get => Started;
+			set {
+				if (value)
+					Start();
+				else
+					Stop();
+			}
+		}
+		public new int Interval
+		{
+			get => (int)(base.Interval * 1000);
+			set => base.Interval = (float)value / 1000;
+		}
+		public event EventHandler<EventArgs> Tick
+		{
+			add => Elapsed += value;
+			remove => Elapsed -= value;
+		}
+#endif
 		/// <summary>
 		/// When the timer was last (re)started.
 		/// </summary>
@@ -51,7 +73,7 @@
 			base.Stop(); //Prevent timer from pushing another tick onto the message queue while we are queued.
 			Script.TheScript.mainWindow.CheckedBeginInvoke(() =>
 			{
-				pushPending = false; //Delegate is now running → clear the pending-flag.
+				pushPending = false; //Delegate is now running -> clear the pending-flag.
 				OnTick(EventArgs.Empty);
 				base.Start(); //Reset the internal counter, because we called the tick manually.
 			}, false, true);
@@ -96,6 +118,7 @@
 		/// <summary>
 		/// Suppress ticks while paused, otherwise raise them and afterwards reset the start time.
 		/// </summary>
+#if WINDOWS
 		protected override void OnTick(EventArgs e)
 		{
 			if (IsPaused)
@@ -104,5 +127,16 @@
 			base.OnTick(e);
 			lastStart = DateTime.UtcNow;
 		}
+#else
+		protected void OnTick(EventArgs e) => OnElapsed(e);
+		protected override void OnElapsed(EventArgs e)
+		{
+			if (IsPaused)
+				return;
+
+			base.OnElapsed(e);
+			lastStart = DateTime.UtcNow;
+		}
+#endif
 	}
 }

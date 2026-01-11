@@ -1,19 +1,13 @@
-﻿namespace Keysharp.Scripting
+﻿#if WINDOWS
+namespace Keysharp.Scripting
 {
 	public partial class MainWindow : KeysharpForm
 	{
 		public static Font OurDefaultFont = new ("MS Shell Dlg", 8F);
 		internal FormWindowState lastWindowState = FormWindowState.Normal;
-#if WINDOWS
 		private readonly bool clipSuccess;
-#endif
 		private AboutBox about;
 		private bool callingInternalVars = false;
-
-#if LINUX
-		//private static Gdk.Atom clipAtom = Gdk.Atom.Intern("CLIPBOARD", false);
-		//private Gtk.Clipboard gtkClipBoard = Gtk.Clipboard.Get(clipAtom);
-#endif
 
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public bool IsClosing { get; private set; }
@@ -27,11 +21,7 @@
 			SetStyle(ControlStyles.StandardClick, true);
 			SetStyle(ControlStyles.StandardDoubleClick, true);
 			SetStyle(ControlStyles.EnableNotifyMessage, true);
-#if LINUX
-			//gtkClipBoard.OwnerChange += gtkClipBoard_OwnerChange;
-#elif WINDOWS
 			clipSuccess = WindowsAPI.AddClipboardFormatListener(Handle);//Need a cross platform way to do this.//TODO
-#endif
 			tpVars.HandleCreated += TpVars_HandleCreated;
 			editScriptToolStripMenuItem.Visible = !A_IsCompiled;
 		}
@@ -43,7 +33,6 @@
 			this.CheckedBeginInvoke(() =>
 			{
 				GetText(tab).AppendText($"{s.ReplaceLineEndings(Environment.NewLine)}");//This should scroll to the bottom, if not, try this:
-
 				if (focus)
 				{
 					var sel = GetTab(tab);
@@ -122,8 +111,6 @@
 
 		protected override void WndProc(ref Message m)
 		{
-#if WINDOWS
-
 			switch (m.Msg)
 			{
 				case WindowsAPI.WM_CLIPBOARDUPDATE:
@@ -147,7 +134,6 @@
 					break;
 			}
 
-#endif
 			base.WndProc(ref m);
 		}
 
@@ -172,29 +158,29 @@
 		{
 
 			return tab switch
-		{
-				MainFocusedTab.Debug => tpDebug,
-				MainFocusedTab.Vars => tpVars,
-				MainFocusedTab.Hotkeys => tpHotkeys,
-				MainFocusedTab.History => tpHistory,
-				_ => tpDebug,
-		};
-	}
+			{
+					MainFocusedTab.Debug => tpDebug,
+					MainFocusedTab.Vars => tpVars,
+					MainFocusedTab.Hotkeys => tpHotkeys,
+					MainFocusedTab.History => tpHistory,
+					_ => tpDebug,
+			};
+		}
 
-	private TextBox GetText(MainFocusedTab tab)
+		private TextBox GetText(MainFocusedTab tab)
 		{
 
-			return tab switch
-		{
-				MainFocusedTab.Debug => txtDebug,
-				MainFocusedTab.Vars => txtVars,
-				MainFocusedTab.Hotkeys => txtHotkeys,
-				MainFocusedTab.History => txtHistory,
-				_ => txtDebug,
-		};
-	}
+				return tab switch
+			{
+					MainFocusedTab.Debug => txtDebug,
+					MainFocusedTab.Vars => txtVars,
+					MainFocusedTab.Hotkeys => txtHotkeys,
+					MainFocusedTab.History => txtHistory,
+					_ => txtDebug,
+			};
+		}
 
-	private void hotkeysAndTheirMethodsToolStripMenuItem_Click(object sender, EventArgs e) => ListHotkeys();
+		private void hotkeysAndTheirMethodsToolStripMenuItem_Click(object sender, EventArgs e) => ListHotkeys();
 
 		private void keyHistoryAndScriptInfoToolStripMenuItem_Click(object sender, EventArgs e) => ShowHistory();
 
@@ -209,7 +195,7 @@
 			if (string.IsNullOrEmpty(A_ExitReason as string) && e.CloseReason == CloseReason.UserClosing)
 			{
 				e.Cancel = true;
-				Hide();
+				this.Hide();
 				return;
 			}
 
@@ -222,23 +208,11 @@
 				return;
 			}
 
-#if WINDOWS
-
 			if (clipSuccess)
 				_ = WindowsAPI.RemoveClipboardFormatListener(Handle);
 
-#elif LINUX
-			//gtkClipBoard.OwnerChange -= gtkClipBoard_OwnerChange;
-#endif
 			about?.Close();
 		}
-
-#if LINUX
-		//private void gtkClipBoard_OwnerChange(object o, Gtk.OwnerChangeArgs args)
-		//{
-		//  ClipboardUpdate?.Invoke(null);
-		//}
-#endif
 
 		private void MainWindow_Load(object sender, EventArgs e)
 		{
@@ -255,7 +229,7 @@
 			//Cannot call ShowInTaskbar at all here because it causes a full re-creation of the window.
 			//So anything that previously used the window handle, including hotkeys, will no longer work.
 			if (WindowState == FormWindowState.Minimized)
-				Hide();
+				this.Hide();
 			else
 				lastWindowState = WindowState;
 		}
@@ -322,11 +296,7 @@
 		private void windowSpyToolStripMenuItem_Click(object sender, EventArgs e)
 		{
 			var path = Path.GetDirectoryName(A_KeysharpPath);
-#if WINDOWS
 			var exe = path + "/Keysharp.exe";
-#else
-			var exe = path + "/Keysharp";
-#endif
 			var opt = path + "/Scripts/WindowSpy.ks";
 			object pid = VarRef.Empty;
 			//Keysharp.Core.Dialogs.MsgBox(exe + "\r\n" + path + "\r\n" + opt);
@@ -359,3 +329,4 @@
 		}
 	}
 }
+#endif

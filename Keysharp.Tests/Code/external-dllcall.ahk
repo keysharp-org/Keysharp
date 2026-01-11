@@ -1,4 +1,4 @@
-desktop := GetDesktopWindow()
+desktop := DllCall("GetDesktopWindow", "ptr")
 buf := Buffer(16, 0)
 DllCall("user32.dll\GetWindowRect", "ptr", desktop, "ptr", buf)
 l := NumGet(buf, 0, "UInt")

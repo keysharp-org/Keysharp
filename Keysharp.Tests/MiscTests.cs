@@ -10,8 +10,8 @@ namespace Keysharp.Tests
 		public void MiscIs()
 		{
 			var x = 1;
-			var o = Collections.Array(10, 20, 30);
-			var map = Collections.Map("one", 1, "two", 2, "three", 3);
+			var o = new Keysharp.Core.Array(10, 20, 30);
+			var map = new Keysharp.Core.Map("one", 1, "two", 2, "three", 3);
 			Assert.IsTrue(IsInteger(x) == 1);
 			x = -1;
 			Assert.IsTrue(IsInteger(x) == 1);
@@ -175,7 +175,7 @@ namespace Keysharp.Tests
 		[Test, Category("Misc"), NonParallelizable]
 		public void MiscObject()
 		{
-			var a = Collections.Array(10, 20, 30);
+			var a = new Keysharp.Core.Array(10, 20, 30);
 			var fo = (IFuncObj)a.GetMethod("Clear");
 			_ = fo.Call(a);
 			Assert.AreEqual(0L, a.Length);

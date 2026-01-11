@@ -1,8 +1,5 @@
 ﻿#if LINUX
-//#define DPI
-using WindowStyles = System.Windows.Forms.WindowStyles;
-using WindowExStyles = System.Windows.Forms.WindowExStyles;
-
+#define DPI
 namespace Keysharp.Core.Linux
 {
 	/// <summary>
@@ -20,7 +17,7 @@ namespace Keysharp.Core.Linux
 		{
 			get
 			{
-				if (IsSpecified && manager.ActiveWindow is WindowItem item)
+				if (IsSpecified && WindowManager.ActiveWindow is WindowItemBase item)
 				{
 					//KeysharpEnhancements.OutputDebugLine($"item.Handle: {item.Handle.ToInt64()}, item.Title: {item.Title}, Handle: {Handle.ToInt64()}, Title: {Title}");
 					if (item.Handle.ToInt64() == Handle.ToInt64())
@@ -33,7 +30,7 @@ namespace Keysharp.Core.Linux
 			{
 				if (IsSpecified)
 				{
-					if (manager.ActiveWindow.Handle.ToInt64() != Handle.ToInt64())
+					if (WindowManager.ActiveWindow.Handle.ToInt64() != Handle.ToInt64())
 					{
 						if (IsIconic)
 						{
@@ -130,7 +127,7 @@ namespace Keysharp.Core.Linux
 
 					return false;
 				};
-				windows.AddRange(xwindow.XDisplay.XQueryTreeRecursive(xwindow, filter).Select(w => manager.CreateWindow((nint)w.ID)));
+				windows.AddRange(xwindow.XDisplay.XQueryTreeRecursive(xwindow, filter).Select(w => WindowManager.CreateWindow((nint)w.ID)));
 				return windows;
 			}
 		}
@@ -142,11 +139,99 @@ namespace Keysharp.Core.Linux
 				if (!IsSpecified)
 					return DefaultErrorString;
 
-				var hint = new XClassHintStr();
-
-				if (Xlib.GetClassHint(xwindow.XDisplay.Handle, xwindow.ID, ref hint) != 0)
+				static string PickClassName(string resClass, string resName)
 				{
-					return hint.resClass;
+					if (!string.IsNullOrEmpty(resClass))
+						return resClass;
+
+					if (!string.IsNullOrEmpty(resName))
+						return resName;
+
+						return null;
+				}
+
+				bool TryGetWmClass(long windowId, out string resClass, out string resName)
+				{
+					resClass = null;
+					resName = null;
+
+					var wmClassAtom = Xlib.XInternAtom(xwindow.XDisplay.Handle, "WM_CLASS", true);
+					if (wmClassAtom == 0 || windowId == 0)
+						return false;
+
+					nint prop = 0;
+					var result = Xlib.XGetWindowProperty(xwindow.XDisplay.Handle,
+						windowId,
+						wmClassAtom,
+						0,
+						new nint(256),
+						false,
+						(nint)XAtom.AnyPropertyType,
+						out _,
+						out _,
+						out var nitems,
+						out _,
+						ref prop);
+
+					try
+					{
+						if (result != 0 || prop == 0 || nitems.ToInt64() == 0)
+							return false;
+
+						var bytes = new byte[nitems.ToInt64()];
+						Marshal.Copy(prop, bytes, 0, bytes.Length);
+						var firstNull = System.Array.IndexOf(bytes, (byte)0);
+						if (firstNull < 0)
+							firstNull = bytes.Length;
+
+						resName = firstNull > 0 ? Encoding.ASCII.GetString(bytes, 0, firstNull) : string.Empty;
+
+						var secondStart = Math.Min(firstNull + 1, bytes.Length);
+						var secondNull = System.Array.IndexOf(bytes, (byte)0, secondStart);
+						if (secondNull < 0)
+							secondNull = bytes.Length;
+
+						if (secondStart < bytes.Length && secondNull > secondStart)
+							resClass = Encoding.ASCII.GetString(bytes, secondStart, secondNull - secondStart);
+
+						return true;
+					}
+					finally
+					{
+						if (prop != 0)
+							_ = Xlib.XFree(prop);
+					}
+				}
+
+				if (Xlib.TryGetClassHint(xwindow.XDisplay.Handle, xwindow.ID, out var resName, out var resClass))
+				{
+					var className = PickClassName(resClass, resName);
+					if (!string.IsNullOrEmpty(className))
+						return className;
+				}
+
+				if (TryGetWmClass(xwindow.ID, out var wmClass, out var wmName))
+				{
+					var className = PickClassName(wmClass, wmName);
+					if (!string.IsNullOrEmpty(className))
+						return className;
+				}
+
+				if (Control.FromHandle(Handle) is Control ctrl)
+					return ctrl.GetType().Name;
+
+				var tempParent = ParentWindow;
+				var depth = 0;
+				while (tempParent != null && depth++ < 16 && tempParent.Handle.ToInt64() != xwindow.XDisplay.Root.ID)
+				{
+					if (TryGetWmClass(tempParent.Handle.ToInt64(), out wmClass, out wmName))
+					{
+						var className = PickClassName(wmClass, wmName);
+						if (!string.IsNullOrEmpty(className))
+							return className;
+					}
+
+					tempParent = tempParent.ParentWindow;
 				}
 
 				return DefaultObject;
@@ -198,20 +283,7 @@ namespace Keysharp.Core.Linux
 		{
 			get
 			{
-				if (!IsSpecified)
-					return 0L;
-
-				var ctrl = Control.FromHandle(Handle);
-
-				if (ctrl == null)
-				{
-					KeysharpEnhancements.OutputDebugLine($"Window with handle {Handle} was not a .NET Form or Control, so the ex style could not be retrieved. Returning 0.");
-					return 0;
-				}
-				else if (ctrl is Form form)
-					return ConvertFormPropsToCreateParams(form).ExStyle;
-				else
-					return ConvertControlPropsToCreateParams(ctrl).ExStyle;
+				return 0L;
 			}
 			set
 			{
@@ -250,20 +322,37 @@ namespace Keysharp.Core.Linux
 			{
 				if (IsSpecified)
 				{
-					var loc = Location;
-					var x = loc.X;
-					var y = loc.Y;
+					int x = value.X, y = value.Y;
 
-					if (value.X != int.MinValue)
-						x = value.X;
+					if (x == int.MinValue || y == int.MinValue)
+					{
+						var loc = Location;
 
-					if (value.Y != int.MinValue)
-						y = value.Y;
+						if (value.X == int.MinValue)
+							x = loc.X;
+
+						if (value.Y == int.MinValue)
+							y = loc.Y;
+					}		
+					
+#if DPI
+					var scale = Accessors.A_ScaledScreenDPI;
+					int scaledX = (int)(scale * x), scaledY = (int)(scale * y);
+#else
+					int scaledX = x, scaledY = y;
+#endif
 
 					if (Control.FromHandle((nint)xwindow.ID) is Control ctrl)
-						ctrl.Location = new Point(x, y);
+					{
+						if (ctrl is Window window)
+							window.Location = new Point(x, y);
+						else if (ctrl.Parent is PixelLayout pixel)
+							PixelLayout.SetLocation(ctrl, new Point(x, y));
+						else
+							_ = Xlib.XMoveWindow(xwindow.XDisplay.Handle, xwindow.ID, scaledX, scaledY);
+					}
 					else
-						_ = Xlib.XMoveWindow(xwindow.XDisplay.Handle, xwindow.ID, x, y);//This is smart enough not to need manual processing for the title bar.
+						_ = Xlib.XMoveWindow(xwindow.XDisplay.Handle, xwindow.ID, scaledX, scaledY);//This is smart enough not to need manual processing for the title bar.
 
 					_  = Xlib.XFlush(xwindow.XDisplay.Handle);
 				}
@@ -277,16 +366,51 @@ namespace Keysharp.Core.Linux
 				if (!IsSpecified)
 					return null;
 
-				var parent = ParentWindow;
-				var tempParent = parent;
+				var parent = (WindowItemBase)this;
+				WindowItemBase wmStateCandidate = null;
+				var tempParent = (WindowItemBase)this;
+				var wmStateAtom = Xlib.XInternAtom(xwindow.XDisplay.Handle, "WM_STATE", true);
 
+				bool HasWmState(WindowItemBase item)
+				{
+					if (wmStateAtom == 0 || item == null || item.Handle == 0)
+						return false;
+
+					nint prop = 0;
+					var result = Xlib.XGetWindowProperty(xwindow.XDisplay.Handle,
+						item.Handle.ToInt64(),
+						wmStateAtom,
+						0,
+						new nint(2),
+						false,
+						(nint)XAtom.AnyPropertyType,
+						out _,
+						out _,
+						out var nitems,
+						out _,
+						ref prop);
+
+					if (prop != 0)
+						_ = Xlib.XFree(prop);
+
+					return result == 0 && nitems.ToInt64() > 0;
+				}
+
+				if (HasWmState(tempParent))
+					wmStateCandidate = tempParent;
+
+				tempParent = ParentWindow;
 				while (tempParent != null && tempParent.Handle.ToInt64() != xwindow.XDisplay.Root.ID)
 				{
 					parent = tempParent;
+
+					if (wmStateCandidate == null && HasWmState(tempParent))
+						wmStateCandidate = tempParent;
+
 					tempParent = parent.ParentWindow;
 				}
 
-				return parent;
+				return wmStateCandidate ?? parent;
 			}
 		}
 
@@ -359,13 +483,16 @@ namespace Keysharp.Core.Linux
 				if (IsSpecified)
 				{
 #if DPI
-					var scale = 1.0 / Accessors.A_ScaledScreenDPI;//Unsure if we need to use this.
+					var scale = Accessors.A_ScaledScreenDPI;//Unsure if we need to use this.
+					int w = (int)(value.Width * scale), h = (int)(value.Height * scale);
+#else
+					int w = value.Width, h = value.Height;
 #endif
 
 					if (Control.FromHandle((nint)xwindow.ID) is Control ctrl)
 						ctrl.Size = new Size(value.Width, value.Height);
 					else
-						_ = Xlib.XResizeWindow(xwindow.XDisplay.Handle, xwindow.ID, value.Width, value.Height);
+						_ = Xlib.XResizeWindow(xwindow.XDisplay.Handle, xwindow.ID, w, h);
 
 					_  = Xlib.XFlush(xwindow.XDisplay.Handle);
 				}
@@ -381,15 +508,13 @@ namespace Keysharp.Core.Linux
 
 				var ctrl = Control.FromHandle(Handle);
 
-				if (ctrl == null)
+				if (ctrl is Eto.Forms.Form form)
+					return (long)form.WindowStyle;
+				else
 				{
 					KeysharpEnhancements.OutputDebugLine($"Window with handle {Handle} was not a .NET Form or Control, so the style could not be retrieved. Returning 0.");
 					return 0;
 				}
-				else if (ctrl is Form form)
-					return ConvertFormPropsToCreateParams(form).Style;
-				else
-					return ConvertControlPropsToCreateParams(ctrl).Style;
 			}
 			set
 			{
@@ -411,7 +536,7 @@ namespace Keysharp.Core.Linux
 				var filter = (long id) =>
 				{
 					if (Xlib.XGetWindowAttributes(xwindow.XDisplay.Handle, id, ref attr) != 0)
-						if (tv.detectHiddenText || attr.map_state == MapState.IsViewable)
+						if (tv.configData.detectHiddenText || attr.map_state == MapState.IsViewable)
 							return true;
 
 					return false;
@@ -442,7 +567,24 @@ namespace Keysharp.Core.Linux
 
 				try
 				{
-					return Xlib.GetWMName(xwindow.XDisplay.Handle, xwindow.ID);
+					var wmName = Xlib.GetWMName(xwindow.XDisplay.Handle, xwindow.ID);
+					if (!string.IsNullOrEmpty(wmName))
+						return wmName;
+
+					var prop = new XTextProperty();
+					if (Xlib.XGetTextProperty(xwindow.XDisplay.Handle, xwindow.ID, ref prop, (XAtom)xwindow.XDisplay._NET_WM_NAME) != 0)
+					{
+						if (prop.value != 0 && prop.format == 8 && prop.nitems > 0)
+						{
+							var title = prop.encoding == xwindow.XDisplay.UTF8_STRING
+								? Marshal.PtrToStringUTF8(prop.value)
+								: Marshal.PtrToStringAuto(prop.value);
+							prop.Free();
+							return title;
+						}
+
+						prop.Free();
+					}
 				}
 				catch (Exception ex)
 				{
@@ -684,7 +826,63 @@ namespace Keysharp.Core.Linux
 		{
 		}
 
-		internal override void ChildFindPoint(PointAndHwnd pah) => throw new NotImplementedException();
+		internal override void ChildFindPoint(PointAndHwnd pah)
+		{
+			if (!IsSpecified)
+				return;
+
+			var root = xwindow.XDisplay.Root.ID;
+
+			foreach (var child in xwindow.XDisplay.XQueryTreeRecursive(xwindow, id =>
+			{
+				var attr = new XWindowAttributes();
+				if (Xlib.XGetWindowAttributes(xwindow.XDisplay.Handle, id, ref attr) == 0)
+					return false;
+
+				if (attr.map_state != MapState.IsViewable)
+					return false;
+
+				if (pah.ignoreDisabled && Control.FromHandle(new nint(id)) is Control ctrl && !ctrl.Enabled)
+					return false;
+
+				return true;
+			}))
+			{
+				var attr = new XWindowAttributes();
+				if (Xlib.XGetWindowAttributes(xwindow.XDisplay.Handle, child.ID, ref attr) == 0)
+					continue;
+
+				if (!Xlib.XTranslateCoordinates(xwindow.XDisplay.Handle, child.ID, root, 0, 0, out var absX, out var absY, out _))
+					continue;
+
+				var rect = new Rectangle(absX, absY, attr.width, attr.height);
+				if (pah.pt.X < rect.Left || pah.pt.X >= rect.Right || pah.pt.Y < rect.Top || pah.pt.Y >= rect.Bottom)
+					continue;
+
+				var centerx = rect.Left + ((double)rect.Width / 2);
+				var centery = rect.Top + ((double)rect.Height / 2);
+				var distance = Math.Sqrt(Math.Pow(pah.pt.X - centerx, 2.0) + Math.Pow(pah.pt.Y - centery, 2.0));
+				var updateIt = pah.hwndFound == 0;
+
+				if (!updateIt)
+				{
+					if (rect.Left >= pah.rectFound.Left && rect.Right <= pah.rectFound.Right
+							&& rect.Top >= pah.rectFound.Top && rect.Bottom <= pah.rectFound.Bottom)
+						updateIt = true;
+					else if (distance < pah.distanceFound &&
+							 (pah.rectFound.Left < rect.Left || pah.rectFound.Right > rect.Right
+							  || pah.rectFound.Top < rect.Top || pah.rectFound.Bottom > rect.Bottom))
+						updateIt = true;
+				}
+
+				if (updateIt)
+				{
+					pah.hwndFound = new nint(child.ID);
+					pah.rectFound = rect;
+					pah.distanceFound = distance;
+				}
+			}
+		}
 
 		/// <summary>
 		/// Left-Clicks on this window/control
@@ -710,7 +908,7 @@ namespace Keysharp.Core.Linux
 			SendMouseEvent(XEventName.ButtonRelease, EventMasks.ButtonRelease, Buttons.Right, location);
 		}
 
-		internal override System.Drawing.Point ClientToScreen()
+		internal override Keysharp.Core.Common.Window.POINT ClientToScreen()
 		{
 			if (IsSpecified)
 			{
@@ -721,7 +919,7 @@ namespace Keysharp.Core.Linux
 				else
 					_ = Xlib.XTranslateCoordinates(xwindow.XDisplay.Handle, xwindow.ID, xwindow.XDisplay.Root.ID, 0, 0, out x, out y, out var dummy);
 
-				var pt = new System.Drawing.Point(x, y);
+				var pt = new Keysharp.Core.Common.Window.POINT(x, y);
 #if DPI
 				var scale = 1.0 / Accessors.A_ScaledScreenDPI;
 				pt.X = (int)(scale * pt.X);
@@ -730,7 +928,7 @@ namespace Keysharp.Core.Linux
 				return pt;
 			}
 			else
-				return new System.Drawing.Point(0, 0);
+				return new Keysharp.Core.Common.Window.POINT(0, 0);
 		}
 
 		internal override bool Close()
@@ -847,7 +1045,7 @@ namespace Keysharp.Core.Linux
 			return Xlib.XClearWindow(xwindow.XDisplay.Handle, xwindow.ID) != 0;
 		}
 
-		internal void SendMouseEvent(XEventName evName, EventMasks evMask, Buttons button, System.Drawing.Point? location = null)
+		internal void SendMouseEvent(XEventName evName, EventMasks evMask, Buttons button, Eto.Drawing.Point? location = null)
 		{
 			var click = new Point();
 
@@ -893,363 +1091,6 @@ namespace Keysharp.Core.Linux
 			}
 
 			return Xlib.XMapWindow(xwindow.XDisplay.Handle, xwindow.ID) != 0;
-		}
-
-		private enum ClassStyle
-		{
-			CS_VREDRAW = 0x00000001,
-			CS_HREDRAW = 0x00000002,
-			CS_KEYCVTWINDOW = 0x00000004,
-			CS_DBLCLKS = 0x00000008,
-			CS_OWNDC = 0x00000020,
-			CS_CLASSDC = 0x00000040,
-			CS_PARENTDC = 0x00000080,
-			CS_NOKEYCVT = 0x00000100,
-			CS_NOCLOSE = 0x00000200,
-			CS_SAVEBITS = 0x00000800,
-			CS_BYTEALIGNCLIENT = 0x00001000,
-			CS_BYTEALIGNWINDOW = 0x00002000,
-			CS_GLOBALCLASS = 0x00004000,
-			CS_IME = 0x00010000,
-			// Windows XP+
-			CS_DROPSHADOW = 0x00020000
-		}
-
-		/// <summary>
-		/// Translate the various properties of a control to the equivalent Windows style.
-		/// Copied this from Control.cs in Mono.
-		/// </summary>
-		/// <returns></returns>
-		private CreateParams ConvertControlPropsToCreateParams(Control control)
-		{
-			CreateParams cp = new CreateParams();
-
-			try
-			{
-				cp.Caption = control.Text;
-			}
-			catch
-			{
-				cp.Caption = "";
-			}
-
-			try
-			{
-				cp.X = control.Left;
-			}
-			catch
-			{
-			}
-
-			try
-			{
-				cp.Y = control.Top;
-			}
-			catch
-			{
-			}
-
-			try
-			{
-				cp.Width = control.Width;
-			}
-			catch
-			{
-			}
-
-			try
-			{
-				cp.Height = control.Height;
-			}
-			catch
-			{
-			}
-
-			cp.ClassName = "SWFClass" + Thread.GetDomainID().ToString() + "." + control.GetType().ToString();
-			cp.ClassStyle = (int)(ClassStyle.CS_OWNDC | ClassStyle.CS_DBLCLKS);
-			cp.ExStyle = 0;
-			cp.Param = 0;
-
-			if (control.AllowDrop)
-			{
-				cp.ExStyle |= (int)WindowExStyles.WS_EX_ACCEPTFILES;
-			}
-
-			if ((control.Parent != null) && (control.Parent.IsHandleCreated))
-			{
-				cp.Parent = control.Parent.Handle;
-			}
-
-			cp.Style = (int)WindowStyles.WS_CHILD | (int)WindowStyles.WS_CLIPCHILDREN | (int)WindowStyles.WS_CLIPSIBLINGS;
-
-			if (control.Visible)
-			{
-				cp.Style |= (int)WindowStyles.WS_VISIBLE;
-			}
-
-			if (!control.Enabled)
-			{
-				cp.Style |= (int)WindowStyles.WS_DISABLED;
-			}
-
-			var props = control.GetType().GetProperties(BindingFlags.NonPublic | BindingFlags.Instance);
-			var prop = props.FirstOrDefault(p => p.Name == "InternalBorderStyle");
-			var borderStyle = (BorderStyle)prop.GetValue(control, null);
-
-			switch (borderStyle)
-			{
-				case BorderStyle.FixedSingle:
-					cp.Style |= (int)WindowStyles.WS_BORDER;
-					break;
-
-				case BorderStyle.Fixed3D:
-					cp.ExStyle |= (int)WindowExStyles.WS_EX_CLIENTEDGE;
-					break;
-			}
-
-			return cp;
-		}
-
-		/// <summary>
-		/// Translate the various properties of a window to the equivalent Windows style.
-		/// Copied this from Form.cs in Mono.
-		/// </summary>
-		/// <returns></returns>
-		private CreateParams ConvertFormPropsToCreateParams(Form form)
-		{
-			CreateParams cp = new CreateParams();
-
-			if (form.Text != null)
-				cp.Caption = form.Text.Replace(Environment.NewLine, string.Empty);
-
-			cp.ClassName = "SWFClass" + Thread.GetDomainID().ToString() + "." + form.GetType().ToString();
-			cp.ClassStyle = 0;
-			cp.Style = 0;
-			cp.ExStyle = 0;
-			cp.Param = 0;
-			cp.Parent = 0;
-
-			if (((form.Parent != null || !form.TopLevel) && !form.IsMdiChild))
-			{
-				// Parented forms and non-toplevel forms always gets the specified location, no matter what
-				cp.X = form.Left;
-				cp.Y = form.Top;
-			}
-			else
-			{
-				switch (form.StartPosition)
-				{
-					case FormStartPosition.Manual:
-						cp.X = form.Left;
-						cp.Y = form.Top;
-						break;
-
-					case FormStartPosition.CenterScreen:
-						if (form.IsMdiChild)
-						{
-							var mdiContainer = form.MdiParent.Controls.Cast<Control>().FirstOrDefault(c => c is MdiClient);
-
-							if (mdiContainer != null)
-							{
-								cp.X = Math.Max((mdiContainer.ClientSize.Width - form.Width) / 2, 0);
-								cp.Y = Math.Max((mdiContainer.ClientSize.Height - form.Height) / 2, 0);
-							}
-						}
-						else
-						{
-							cp.X = Math.Max((System.Windows.Forms.Screen.PrimaryScreen.WorkingArea.Width - form.Width) / 2, 0);
-							cp.Y = Math.Max((System.Windows.Forms.Screen.PrimaryScreen.WorkingArea.Height - form.Height) / 2, 0);
-						}
-
-						break;
-
-					case FormStartPosition.CenterParent:
-					case FormStartPosition.WindowsDefaultBounds:
-					case FormStartPosition.WindowsDefaultLocation:
-						cp.X = int.MinValue;
-						cp.Y = int.MinValue;
-						break;
-				}
-			}
-
-			cp.Width = form.Width;
-			cp.Height = form.Height;
-			cp.Style = (int)WindowStyles.WS_CLIPCHILDREN;
-
-			if (!form.Modal)
-			{
-				cp.WindowStyle |= WindowStyles.WS_CLIPSIBLINGS;
-			}
-
-			if (form.Parent != null && form.Parent.IsHandleCreated)
-			{
-				cp.Parent = form.Parent.Handle;
-				cp.Style |= (int)WindowStyles.WS_CHILD;
-			}
-
-			if (form.IsMdiChild)
-			{
-				cp.Style |= (int)(WindowStyles.WS_CHILD | WindowStyles.WS_CAPTION);
-
-				if (form.Parent != null)
-				{
-					cp.Parent = form.Parent.Handle;
-				}
-
-				cp.ExStyle |= (int)(WindowExStyles.WS_EX_WINDOWEDGE | WindowExStyles.WS_EX_MDICHILD);
-
-				switch (form.FormBorderStyle)
-				{
-					case FormBorderStyle.None:
-						break;
-
-					case FormBorderStyle.FixedToolWindow:
-					case FormBorderStyle.SizableToolWindow:
-						cp.ExStyle |= (int)WindowExStyles.WS_EX_TOOLWINDOW;
-						goto default;
-
-					default:
-						cp.Style |= (int)WindowStyles.WS_OVERLAPPEDWINDOW;
-						break;
-				}
-			}
-			else
-			{
-				switch (form.FormBorderStyle)
-				{
-					case FormBorderStyle.Fixed3D:
-					{
-						cp.Style |= (int)(WindowStyles.WS_CAPTION | WindowStyles.WS_BORDER);
-						cp.ExStyle |= (int)WindowExStyles.WS_EX_CLIENTEDGE;
-						break;
-					}
-
-					case FormBorderStyle.FixedDialog:
-					{
-						cp.Style |= (int)(WindowStyles.WS_CAPTION | WindowStyles.WS_BORDER);
-						cp.ExStyle |= (int)(WindowExStyles.WS_EX_DLGMODALFRAME | WindowExStyles.WS_EX_CONTROLPARENT);
-						break;
-					}
-
-					case FormBorderStyle.FixedSingle:
-					{
-						cp.Style |= (int)(WindowStyles.WS_CAPTION | WindowStyles.WS_BORDER);
-						break;
-					}
-
-					case FormBorderStyle.FixedToolWindow:
-					{
-						cp.Style |= (int)(WindowStyles.WS_CAPTION | WindowStyles.WS_BORDER);
-						cp.ExStyle |= (int)WindowExStyles.WS_EX_TOOLWINDOW;
-						break;
-					}
-
-					case FormBorderStyle.Sizable:
-					{
-						cp.Style |= (int)(WindowStyles.WS_BORDER | WindowStyles.WS_THICKFRAME | WindowStyles.WS_CAPTION);
-						break;
-					}
-
-					case FormBorderStyle.SizableToolWindow:
-					{
-						cp.Style |= (int)(WindowStyles.WS_BORDER | WindowStyles.WS_THICKFRAME | WindowStyles.WS_CAPTION);
-						cp.ExStyle |= (int)WindowExStyles.WS_EX_TOOLWINDOW;
-						break;
-					}
-
-					case FormBorderStyle.None:
-					{
-						break;
-					}
-				}
-			}
-
-			switch (form.WindowState)
-			{
-				case FormWindowState.Maximized:
-				{
-					cp.Style |= (int)WindowStyles.WS_MAXIMIZE;
-					break;
-				}
-
-				case FormWindowState.Minimized:
-				{
-					cp.Style |= (int)WindowStyles.WS_MINIMIZE;
-					break;
-				}
-			}
-
-			if (form.TopMost)
-			{
-				cp.ExStyle |= (int)WindowExStyles.WS_EX_TOPMOST;
-			}
-
-			if (form.ShowInTaskbar)
-			{
-				cp.ExStyle |= (int)WindowExStyles.WS_EX_APPWINDOW;
-			}
-
-			if (form.MaximizeBox)
-			{
-				cp.Style |= (int)WindowStyles.WS_MAXIMIZEBOX;
-			}
-
-			if (form.MinimizeBox)
-			{
-				cp.Style |= (int)WindowStyles.WS_MINIMIZEBOX;
-			}
-
-			if (form.ControlBox)
-			{
-				cp.Style |= (int)WindowStyles.WS_SYSMENU;
-			}
-
-			if (!form.ShowIcon)
-			{
-				cp.ExStyle |= (int)WindowExStyles.WS_EX_DLGMODALFRAME;
-			}
-
-			cp.ExStyle |= (int)WindowExStyles.WS_EX_CONTROLPARENT;
-
-			if (form.HelpButton && !form.MaximizeBox && !form.MinimizeBox)
-			{
-				cp.ExStyle |= (int)WindowExStyles.WS_EX_CONTEXTHELP;
-			}
-
-			// bug 80775:
-			//don't set WS_VISIBLE if we're changing visibility. We can't create forms visible,
-			//since we have to set the owner before making the form visible
-			//(otherwise Win32 will do strange things with task bar icons).
-			//The problem is that we set the internal is_visible to true before creating the control,
-			//so is_changing_visible_state is the only way of determining if we're
-			//in the process of creating the form due to setting Visible=true.
-			//This works because SetVisibleCore explicitly makes the form visibile afterwards anyways.
-			// bug 81957:
-			//only do this when on Windows, since X behaves weirdly otherwise
-			//modal windows appear below their parent/owner/ancestor.
-			//(confirmed on several window managers, so it's not a wm bug).
-			//int p = (int)Environment.OSVersion.Platform;
-			//bool is_unix = (p == 128) || (p == 4) || (p == 6);
-
-			//if ((Visible && (is_changing_visible_state == 0 || is_unix)) || form.IsRecreating)
-			//  cp.Style |= (int)WindowStyles.WS_VISIBLE;
-
-			if (form.Opacity < 1.0 || form.TransparencyKey != Color.Empty)
-			{
-				cp.ExStyle |= (int)WindowExStyles.WS_EX_LAYERED;
-			}
-
-			if (!form.Enabled/* && context == null*/)
-			{
-				cp.Style |= (int)WindowStyles.WS_DISABLED;
-			}
-
-			if (!form.ControlBox && form.Text == string.Empty)
-			{
-				cp.WindowStyle &= ~WindowStyles.WS_DLGFRAME;
-			}
-
-			return cp;
 		}
 
 		private Rectangle FrameExtents()

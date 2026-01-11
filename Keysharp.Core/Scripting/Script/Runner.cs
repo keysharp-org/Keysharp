@@ -26,7 +26,7 @@
 				var exeDir = Path.GetFullPath(Path.GetDirectoryName(exePath));
 				var codeout = false;
 				var assembly = false;
-				var assemblyType = $"Keysharp.CompiledMain.{Keywords.MainClassName}";
+				var assemblyType = $"{Keywords.MainNamespaceName}.{Keywords.MainClassName}";
 				var assemblyMethod = "Main";
 				var scriptName = string.Empty;
 				var gotscript = false;
@@ -207,7 +207,7 @@
 				if (CompilerHelper.compiledasm == null)
 					throw new Exception("Compilation failed.");
 
-				var program = CompilerHelper.compiledasm.GetType($"Keysharp.CompiledMain.{Keywords.MainClassName}");
+				var program = CompilerHelper.compiledasm.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
 				var main = program.GetMethod("Main");
 				return main.Invoke(null, [script.ScriptArgs]).Ai();
 			}

@@ -18,7 +18,9 @@ WinSpyGui() {
    
     try TraySetIcon "inc\spy.ico"
 
+#if WINDOWS
     DllCall("shell32\SetCurrentProcessExplicitAppUserModelID", "wstr", "AutoHotkey.WindowSpy")
+#endif
      
     oGui := Gui("AlwaysOnTop Resize MinSize +DPIScale","Window Spy for Keysharp")
     oGui.OnEvent("Close","WinSpyClose")
@@ -35,7 +37,11 @@ WinSpyGui() {
     oGui.Add("Edit","w320 r3 ReadOnly -Wrap vCtrl_Pos")
     oGui.Add("Text",,"Status Bar Text:")
     oGui.Add("Edit","w320 r3 ReadOnly -Wrap vCtrl_SBText")
-    oGui.Add("Checkbox","vCtrl_IsSlow","Slow TitleMatchMode")
+    oCB := oGui.Add("Checkbox","vCtrl_IsSlow","Slow TitleMatchMode")
+#if !WINDOWS
+    oCB.Enabled := 0
+    oCB.Value := 1
+#endif
     oGui.Add("Text",,"Visible Text:")
     oGui.Add("Edit","w320 r3 ReadOnly -Wrap vCtrl_VisText")
     oGui.Add("Text",,"All Text:")
@@ -122,7 +128,9 @@ TryUpdate() {
     MouseGetPos &mrX, &mrY
     CoordMode "Mouse", "Client"
     MouseGetPos &mcX, &mcY
-    mClr := PixelGetColor(msX,msY,"RGB")
+    try mClr := PixelGetColor(msX,msY,"RGB")
+    catch
+        mClr := ""
     mClr := SubStr(mClr, 3)
     
     mpText := "Screen:`t" msX ", " msY "`n"
@@ -188,7 +196,7 @@ TryUpdate() {
 ; to retrieve the text of each control.
 ; ===========================================================================================
 WinGetTextFast(detect_hidden) {   
-
+#if WINDOWS
     controls := WinGetControlsHwnd()
     
     static WINDOW_TEXT_SIZE := 32767 ; Defined in AutoHotkey source.
@@ -211,6 +219,7 @@ WinGetTextFast(detect_hidden) {
     }
 
     return text
+#endif
 }
 
 ; ===========================================================================================

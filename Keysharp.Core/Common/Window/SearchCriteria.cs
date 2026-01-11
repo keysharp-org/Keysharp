@@ -9,9 +9,9 @@
 		internal string ExcludeTitle { get; set; }
 		internal string Group { get; set; }
 		internal bool HasExcludes => !string.IsNullOrEmpty(ExcludeTitle) || !string.IsNullOrEmpty(ExcludeText);
-		internal bool HasID => ID != 0 || PID != 0;
+		internal bool HasID => ID != 0;
 		internal nint ID { get; set; }
-		internal bool IsEmpty => !HasID&& !HasExcludes&& string.IsNullOrEmpty(Group)&& string.IsNullOrEmpty(Title)&& string.IsNullOrEmpty(Text)&& string.IsNullOrEmpty(ClassName)&& string.IsNullOrEmpty(Path);
+		internal bool IsEmpty => !HasID && PID == 0 && !HasExcludes && string.IsNullOrEmpty(Group) && string.IsNullOrEmpty(Title) && string.IsNullOrEmpty(Text) && string.IsNullOrEmpty(ClassName) && string.IsNullOrEmpty(Path);
 		internal string Path { get; set; }
 		internal long PID { get; set; }
 		internal string Text { get; set; }
@@ -33,7 +33,7 @@
 
 			object hwnd = null;
 
-			if (Script.TryGetPropertyValue(obj, "Hwnd", out hwnd) && hwnd != null)
+			if (Script.TryGetPropertyValue(out hwnd, obj, "Hwnd") && hwnd != null)
 			{
 				if (hwnd is long ll)
 				{

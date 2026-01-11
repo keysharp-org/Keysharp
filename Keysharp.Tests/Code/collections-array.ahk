@@ -377,6 +377,12 @@ if (arr2.c == 789)
 else
 	FileAppend "fail", "*"
 
+arr[1] := 4
+if (arr2[1] == 1)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
 arr2.a := "abc"
 arr2.b := "def"
 arr2.c := "ghi"

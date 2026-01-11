@@ -6,7 +6,12 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+#if WINDOWS
 using System.Windows.Forms;
+#else
+using Eto.Forms;
+using MessageBoxIcon = Eto.Forms.MessageBoxType;
+#endif
 using Keysharp.Core;
 using Keysharp.Scripting;
 using Microsoft.CodeAnalysis;
@@ -33,7 +38,6 @@ namespace Keysharp.Main
 			Task writeExeTask = null;
 			Task writeCodeTask = null;
 
-
 			try
 			{
 				var script = new Script();//One Script object will exist here, then another will be created when the script runs.
@@ -50,7 +54,7 @@ namespace Keysharp.Main
 				var exeout = false;
 				var minimalexeout = false;
 				var assembly = false;
-				var assemblyType = "Keysharp.CompiledMain." + Keywords.MainClassName;
+				var assemblyType = $"{Keywords.MainNamespaceName}.{Keywords.MainClassName}";
 				var assemblyMethod = "Main";
 				var scriptName = string.Empty;
 				var gotscript = false;
@@ -219,9 +223,6 @@ namespace Keysharp.Main
 				string result = null;
 				(arr, result) = ch.CompileCodeToByteArray([scriptName], namenoext, exeDir, minimalexeout);
 
-				if (arr == null)
-					return Message(result, true);
-
 				//If they want to write out the code, place it in the same folder as the script, with the same name, and .cs extension.
 				if (codeout)
 				{
@@ -242,6 +243,9 @@ namespace Keysharp.Main
 						}
 					});
 				}
+
+				if (arr == null)
+					return Message(result, true);
 
 				if (exeout)
 				{
@@ -321,7 +325,7 @@ namespace Keysharp.Main
 				if (CompilerHelper.compiledasm == null)
 					throw new Exception("Compilation failed.");
 
-				var program = CompilerHelper.compiledasm.GetType($"Keysharp.CompiledMain.{Keywords.MainClassName}");
+				var program = CompilerHelper.compiledasm.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
 				var main = program.GetMethod("Main");
 #if DEBUG
 				KeysharpEnhancements.OutputDebugLine("Running compiled code.");

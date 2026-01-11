@@ -1,5 +1,5 @@
 ﻿#if WINDOWS
-namespace Keysharp.Core.COM
+namespace Keysharp.Core
 {
 	/// <summary>
 	/// Describes the bounds (element count and lower bound) of a single dimension of a SAFEARRAY.
@@ -20,7 +20,7 @@ namespace Keysharp.Core.COM
 	/// <summary>
 	/// Contains P/Invoke declarations for OLE Automation SafeArray APIs.
 	/// </summary>
-	static class OleAuto
+	static partial class OleAuto
 	{
 		/// <summary>
 		/// Creates a new SafeArray of the specified variant type and dimensions.
@@ -29,47 +29,55 @@ namespace Keysharp.Core.COM
 		/// <param name="cDims">The number of dimensions (1-8).</param>
 		/// <param name="rgsabound">Array of bounds for each dimension.</param>
 		/// <returns>A pointer to the new SAFEARRAY; IntPtr.Zero on failure.</returns>
-		[DllImport(WindowsAPI.oleaut)]
-		public static extern nint SafeArrayCreate(
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayCreate")]
+		public static partial nint SafeArrayCreate(
 			short vt,
 			uint cDims,
 			[In] SAFEARRAYBOUND[] rgsabound);
+
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayCreateVectorEx")]
+		public static partial nint SafeArrayCreateVectorEx(ushort vt, int lLbound, uint cElements, nint pvExtra);
 		/// <summary>
 		/// Retrieves the number of dimensions in a SafeArray.
 		/// </summary>
 		/// <param name="psa">Pointer to the SAFEARRAY.</param>
 		/// <returns>The number of dimensions, or a negative error code.</returns>
-		[DllImport(WindowsAPI.oleaut)]
-		public static extern int SafeArrayGetDim(
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayGetDim")]
+		public static partial int SafeArrayGetDim(
 			nint psa);
 		/// <summary>
 		/// Retrieves the upper bound (max index) for a specified dimension.
 		/// </summary>
-		[DllImport(WindowsAPI.oleaut)]
-		public static extern int SafeArrayGetUBound(
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayGetUBound")]
+		public static partial int SafeArrayGetUBound(
 			nint psa,
 			uint nDim,
 			out int plUbound);
 		/// <summary>
 		/// Retrieves the lower bound for a specified dimension.
 		/// </summary>
-		[DllImport(WindowsAPI.oleaut)]
-		public static extern int SafeArrayGetLBound(
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayGetLBound")]
+		public static partial int SafeArrayGetLBound(
 			nint psa,
 			uint nDim,
 			out int plLbound);
+
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayGetVartype")]
+		public static partial int SafeArrayGetVartype(
+			nint psa,
+			out ushort vt);
 		/// <summary>
 		/// Creates a copy of a SafeArray.
 		/// </summary>
-		[DllImport(WindowsAPI.oleaut)]
-		public static extern int SafeArrayCopy(
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayCopy")]
+		public static partial int SafeArrayCopy(
 			nint psa,
 			out nint ppsaOut);
 		/// <summary>
 		/// Destroys a SafeArray, releasing its memory.
 		/// </summary>
-		[DllImport(WindowsAPI.oleaut)]
-		public static extern int SafeArrayDestroy(
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayDestroy")]
+		public static partial int SafeArrayDestroy(
 			nint psa);
 		/// <summary>
 		/// Retrieves an element from a SafeArray by index.
@@ -90,17 +98,29 @@ namespace Keysharp.Core.COM
 		);
 
 		// Raw-pointer version: for all non-VARIANT base types.
-		[DllImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayGetElement")]
-		public static extern int SafeArrayGetElementPtr(nint psa, [In] int[] rgIndices, IntPtr pv);
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayGetElement")]
+		public static partial int SafeArrayGetElementPtr(nint psa, [In] int[] rgIndices, IntPtr pv);
 
-		[DllImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayPutElement")]
-		public static extern int SafeArrayPutElementPtr(nint psa, [In] int[] rgIndices, IntPtr pv);
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayPutElement")]
+		public static partial int SafeArrayPutElementPtr(nint psa, [In] int[] rgIndices, IntPtr pv);
+
+		[LibraryImport(WindowsAPI.oleaut)] 
+		public static partial int SysStringLen(nint bstr);
+
+		[LibraryImport(WindowsAPI.oleaut)]
+		public static partial nint SysAllocStringLen(nint src, int len);
+
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayAccessData")]
+		internal static partial int SafeArrayAccessData(nint psa, out nint ppvData);
+
+		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayUnaccessData")]
+		internal static partial int SafeArrayUnaccessData(nint psa);
 	}
 
 	/// <summary>
 	/// Enumerator for iterating (index, value) pairs in a COM SafeArray.
 	/// </summary>
-	public class ComArrayIndexValueEnumerator : KeysharpEnumerator, IEnumerator<(object, object)>
+	public class ComArrayIndexValueEnumerator : KeysharpEnumerator, IEnumerator<object>
 	{
 		private readonly ComObjArray _owner;
 		private readonly int _count;
@@ -108,6 +128,7 @@ namespace Keysharp.Core.COM
 		private readonly int[] _flows; // upper bounds per dimension
 		private readonly int[] _lows;  // lower bounds per dimension
 		private bool _done;
+		private int _idx = -1;
 
 		/// <summary>
 		/// Initializes a new enumerator over the specified ComObjArray.
@@ -148,7 +169,7 @@ namespace Keysharp.Core.COM
 		{
 			if (MoveNext())
 			{
-				Script.SetPropertyValue(pos, "__Value", Current.Item1);
+				Script.SetPropertyValue(pos, "__Value", Current);
 				return true;
 			}
 
@@ -159,21 +180,19 @@ namespace Keysharp.Core.COM
 		{
 			if (MoveNext())
 			{
-				Script.SetPropertyValue(pos, "__Value", Current.Item1);
-				Script.SetPropertyValue(val, "__Value", Current.Item2);
+				Script.SetPropertyValue(pos, "__Value", (long)_idx);
+				Script.SetPropertyValue(val, "__Value", Current);
 				return true;
 			}
 
 			return false;
 		}
 
-		public (object, object) Current
+		public object Current
 		{
 			get
 			{
-				long idx0 = (long)(_indices[0] - _lows[0]);
-				object val = _owner.GetElementAtIndices(_indices);
-				return (idx0, val);
+				return _owner.GetElementAtIndices(_indices);
 			}
 		}
 
@@ -196,6 +215,8 @@ namespace Keysharp.Core.COM
 					// Reset trailing dimensions to their low bound.
 					for (int j = dim + 1; j < d; j++)
 						_indices[j] = _lows[j];
+
+					_idx = _indices[0] - _lows[0];
 
 					return true;
 				}
@@ -232,7 +253,7 @@ namespace Keysharp.Core.COM
 	/// <summary>
 	/// A COM wrapper around a native SAFEARRAY, exposing AHK-friendly APIs.
 	/// </summary>
-	public class ComObjArray : ComObject, I__Enum, IEnumerable<(object, object)>
+	public class ComObjArray : ComValue, I__Enum, IEnumerable<object>
 	{
 		internal nint _psa;         // pointer to the native SAFEARRAY
 		internal int _dimensions;   // number of dimensions
@@ -281,7 +302,6 @@ namespace Keysharp.Core.COM
 			this.Ptr = _psa.ToInt64();
 		}
 
-		
 		public ComObjArray(VarEnum baseType, nint psa, bool takeOwnership)
 		{
 			_baseType = baseType;
@@ -292,9 +312,27 @@ namespace Keysharp.Core.COM
 			this.Ptr = _psa.ToInt64();
 		}
 
+		public static object Call(object @this, object varType, object count1, params object[] args)
+		{
+			var vt = (VarEnum)varType.Ai();
+			var dim1Size = count1.Ai();
+			var lengths = new int[args != null ? args.Length + 1 : 1];
+			var t = typeof(object);
+
+			if (lengths.Length > 8)
+				return Errors.ErrorOccurred($"COM array dimensions of {lengths.Length} is greater than the maximum allowed number of 8.");
+
+			lengths[0] = dim1Size;
+
+			for (var i = 0; i < args.Length; i++)
+				lengths[i + 1] = args[i].Ai();
+
+			return new ComObjArray(vt, lengths);
+		}
+
 		public IFuncObj __Enum(object count) => new ComArrayIndexValueEnumerator(this, count.Ai()).fo;
 
-		public IEnumerator<(object, object)> GetEnumerator() => new ComArrayIndexValueEnumerator(this, 2);
+		public IEnumerator<object> GetEnumerator() => new ComArrayIndexValueEnumerator(this, 1);
 
 		IEnumerator IEnumerable.GetEnumerator() => new ComArrayIndexValueEnumerator(this, 2);
 
@@ -413,13 +451,6 @@ namespace Keysharp.Core.COM
 
 		internal object GetElementAtIndices(int[] idx)
 		{
-			if (_baseType == VarEnum.VT_VARIANT)
-			{
-				int hrVar = OleAuto.SafeArrayGetElement(_psa, idx, out object val);
-				return Errors.OSErrorOccurredForHR(hrVar, val);
-			}
-
-			// Non-VARIANT element types: use pointer variant and marshal manually.
 			int bytes = ByteSizeForVarType(_baseType);
 			IntPtr pv = Marshal.AllocCoTaskMem(bytes);
 
@@ -430,7 +461,7 @@ namespace Keysharp.Core.COM
 				if (hr < 0)
 					return Errors.OSErrorOccurredForHR(hr);
 
-				return ReadVariant(pv, _baseType);
+				return VariantHelper.ReadVariant(pv, _baseType);
 			}
 			finally
 			{
@@ -438,11 +469,66 @@ namespace Keysharp.Core.COM
 			}
 		}
 
+		// Build a VARIANT for storing into a VT_VARIANT SAFEARRAY element.
+		// Returns a flag telling you whether it's safe to VariantClear(&v) afterwards.
+		private static VARIANT BuildVariantForElement(object value, out bool canClearAfterPut)
+		{
+			// Default: we can clear (to release BSTRs/interfaces we allocate)
+			canClearAfterPut = true;
+
+			if (value is null)
+				return new VARIANT { vt = (ushort)VarEnum.VT_EMPTY };
+
+			// If it's a ComObjArray, encode as VT_ARRAY|baseType pointing to its SAFEARRAY.
+			// DO NOT clear this later, or you'd destroy the caller's array.
+			if (value is ComObjArray coa)
+			{
+				canClearAfterPut = false; // we don't own coa._psa
+				return new VARIANT
+				{
+					vt = (ushort)(VarEnum.VT_ARRAY | coa._baseType),
+					ptrVal = coa._psa
+				};
+			}
+
+			// If it's a ComValue that already represents a SAFEARRAY, use it as-is (we don't own it).
+			if (value is ComValue cv && (cv.vt & VarEnum.VT_ARRAY) != 0)
+			{
+				nint psa = cv.Ptr is nint ip ? ip
+						 : cv.Ptr is long lp ? (nint)lp
+						 : 0;
+				canClearAfterPut = false; // don't destroy external SAFEARRAY
+				return new VARIANT
+				{
+					vt = (ushort)cv.vt,
+					ptrVal = psa
+				};
+			}
+
+			// Otherwise, let your existing builder create a proper VARIANT.
+			// This allocates BSTRs / grabs interface pointers etc.
+			// We DO want to VariantClear this after SafeArrayPutElement to avoid leaks.
+			return VariantHelper.ValueToVariant(value);
+		}
+
 		internal int PutElementAtIndices(int[] idx, object value)
 		{
 			// VT_VARIANT arrays, let the marshaller coerce the type
 			if (_baseType == VarEnum.VT_VARIANT)
-				return OleAuto.SafeArrayPutElement(_psa, idx, value);
+			{
+				unsafe
+				{
+					VARIANT v = BuildVariantForElement(value, out bool canClear);
+					int hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, (nint)(&v));
+
+					// Only clear when safe: never clear a VARIANT that aliases a caller-owned SAFEARRAY.
+					if (canClear)
+						_ = VariantHelper.VariantClear((nint)(&v));
+
+					_ = Errors.OSErrorOccurredForHR(hr);
+					return hr;
+				}
+			}
 
 			// Pointer element types: pass the pointer value directly (no staging buffer).
 			if (_baseType == VarEnum.VT_UNKNOWN || _baseType == VarEnum.VT_DISPATCH)
@@ -453,7 +539,7 @@ namespace Keysharp.Core.COM
 				// Accept Ptr properties or a plain RCW
 				if (Marshal.IsComObject(value))
 				{
-					object src = value is ComObject c ? c.Ptr : value;
+					object src = value is ComValue c ? c.Ptr : value;
 					// Get a temporary COM pointer we own; SafeArray will AddRef its own copy.
 					pIface = (_baseType == VarEnum.VT_DISPATCH)
 							 ? Marshal.GetIDispatchForObject(src)
@@ -536,6 +622,8 @@ namespace Keysharp.Core.COM
 				case VarEnum.VT_UNKNOWN:
 				case VarEnum.VT_DISPATCH:
 					return IntPtr.Size; // pointer-sized storage
+				case VarEnum.VT_VARIANT:
+					return Marshal.SizeOf<VARIANT>();
 				default:
 					// Fallback for other pointer-like types if ever needed.
 					return IntPtr.Size;

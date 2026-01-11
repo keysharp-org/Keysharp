@@ -51,7 +51,7 @@
 		/// <param name="obj">The object to convert.</param>
 		/// <param name="def">A default value to use if obj is null.</param>
 		/// <returns>The object as a string if it was not null, else def.</returns>
-		public static string As(this object obj, string def = "") => obj?.ToString() ?? def;
+		public static string As(this object obj, string def = "") => (obj is Any kso && Functions.HasMethod(kso, "ToString") != 0L ? Invoke(kso, "ToString")?.ToString() : obj?.ToString()) ?? def;
 
 		/// <summary>
 		/// Converts an object to an unsigned int.
@@ -94,8 +94,10 @@
 				return gui.form;
 			else if (obj is Gui.Control ctrl)
 				return ctrl.Ctrl;
+#if WINDOWS
 			else if (obj is Keysharp.Core.Menu menu)
 				return menu.GetMenu();
+#endif
 			else if (obj is Control control)//Final check in the event it's some kind of native control or form.
 				return control;
 
@@ -141,6 +143,9 @@
 		{
 			if (obj is bool b)
 				return b;
+
+			if (obj is long l && (l == 0 || l == 1))
+				return l != 0;
 
 			if (obj is BoolResult br)
 				return br.o.ParseBool();
@@ -217,6 +222,7 @@
 
 			if (obj is long l)
 			{
+				if (requiredot) { outvar = default; return false; }
 				outvar = l;
 				return true;
 			}
@@ -228,6 +234,7 @@
 
 			if (obj is int i)//int is seldom used in Keysharp, so check last.
 			{
+				if (requiredot) { outvar = default; return false; }
 				outvar = i;
 				return true;
 			}

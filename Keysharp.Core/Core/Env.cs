@@ -1,4 +1,8 @@
+#if WINDOWS
 using static System.Windows.Forms.DataFormats;
+#else
+using static Eto.Forms.DataFormats;
+#endif
 
 namespace Keysharp.Core
 {
@@ -20,9 +24,9 @@ namespace Keysharp.Core
 		public static ClipboardAll ClipboardAll(object data = null, object size = null)
 		{
 			//Need to see if this should be put on the main thread like A_Clipboard.//TODO
-#if LINUX
+#if !WINDOWS
 			return new ClipboardAll();
-#elif WINDOWS
+#else
 			var d = data;
 			var s = size.Al(long.MinValue);
 
@@ -105,8 +109,6 @@ namespace Keysharp.Core
 			}
 
 			return new ClipboardAll(System.Array.Empty<byte>());
-#else
-			return null;
 #endif
 		}
 
@@ -133,9 +135,11 @@ namespace Keysharp.Core
 
 			for (var i = 0L; !checktime || i < time; i += frequency)
 			{
-				if (!type ? Clipboard.ContainsText()
 #if WINDOWS
+				if (!type ? Clipboard.ContainsText()
 						|| Clipboard.ContainsFileDropList()
+#else
+				if (!type ? Clipboard.Instance.ContainsText
 #endif
 						: !KeysharpEnhancements.IsClipboardEmpty())
 					return true;
@@ -274,6 +278,40 @@ namespace Keysharp.Core
 			return info;
 		}
 
+		///
+		/// <summary>
+		/// Parses the provided script source or filename and validates it by invoking the parser.
+		/// On success this method returns <c>""</c>. On failure it returns a string containing
+		/// the formatted compiler errors.
+		/// </summary>
+		/// <param name="code">The script source or filename to parse.</param>
+		/// <returns>
+		/// Returns <see cref=""/> when parsing completes with no compiler errors and a valid compilation unit.
+		/// If the compiler reports errors or the first compilation unit is null, a string containing compiler error messages
+		/// (and warnings if present) is returned.
+		/// </returns>
+		/// <exception cref="Exception">
+		/// Any unexpected exception thrown by the underlying <see cref="CompilerHelper"/> APIs will propagate to the caller.
+		/// </exception>
+		public static object ParseScript(object code)
+		{
+			var ch = new CompilerHelper();
+			var (units, errs) = ch.CreateCompilationUnitFromFile([code.As()]);
+
+			if (errs.HasErrors || units[0] == null)
+			{
+				var (errors, warnings) = CompilerHelper.GetCompilerErrors(errs);
+
+				var sb = new StringBuilder(1024);
+
+				if (!string.IsNullOrEmpty(errors))
+					_ = sb.Append(errors);
+
+				return sb.ToString();
+			}
+			return DefaultObject;
+		}
+
 		/// <summary>
 		/// Registers a function to be called automatically whenever the clipboard's content changes.
 		/// </summary>
@@ -306,195 +344,40 @@ namespace Keysharp.Core
 		/// <returns>This function returns the value of the specified system property.</returns>
 		public static object SysGet(object property)
 		{
-#if LINUX
+#if !WINDOWS
 			var sm = property is Keysharp.Core.Common.Platform.SystemMetric en ? en : (SystemMetric)property.Ai();
+			var screen = Eto.Forms.Screen.PrimaryScreen;
+			var bounds = screen?.Bounds ?? new Rectangle(0, 0, 0, 0);
+			var working = screen?.WorkingArea ?? bounds;
 
 			switch (sm)
 			{
 				case SystemMetric.SM_CXSCREEN:
-					return (long)SystemInformation.WorkingArea.Width;
+					return (long)bounds.Width;
 
 				case SystemMetric.SM_CYSCREEN:
-					return (long)SystemInformation.WorkingArea.Height;
-
-				case SystemMetric.SM_CXVSCROLL:
-					return (long)SystemInformation.VerticalScrollBarWidth;
-
-				case SystemMetric.SM_CYHSCROLL:
-					return (long)SystemInformation.HorizontalScrollBarHeight;
-
-				case SystemMetric.SM_CYCAPTION:
-					return (long)SystemInformation.CaptionHeight;
-
-				case SystemMetric.SM_CXBORDER:
-					return (long)SystemInformation.BorderSize.Width;
-
-				case SystemMetric.SM_CYBORDER:
-					return (long)SystemInformation.BorderSize.Height;
-
-				case SystemMetric.SM_CXDLGFRAME:
-					return (long)SystemInformation.FixedFrameBorderSize.Width;
-
-				//case SystemMetric.SM_CXFIXEDFRAME:
-				//break;
-				case SystemMetric.SM_CYDLGFRAME:
-					return (long)SystemInformation.FixedFrameBorderSize.Height;
-
-				//case SystemMetric.SM_CYFIXEDFRAME:
-				//break;
-				case SystemMetric.SM_CYVTHUMB:
-					return 0L;
-
-				case SystemMetric.SM_CXHTHUMB:
-					return 0L;
-
-				case SystemMetric.SM_CXICON:
-					return (long)SystemInformation.IconSize.Width;
-
-				case SystemMetric.SM_CYICON:
-					return (long)SystemInformation.IconSize.Height;
-
-				case SystemMetric.SM_CXCURSOR:
-					return (long)SystemInformation.CursorSize.Width;
-
-				case SystemMetric.SM_CYCURSOR:
-					return (long)SystemInformation.CursorSize.Height;
-
-				case SystemMetric.SM_CYMENU:
-					return (long)SystemInformation.MenuHeight;
+					return (long)bounds.Height;
 
 				case SystemMetric.SM_CXFULLSCREEN:
-					return 0L;
+					return (long)working.Width;
 
 				case SystemMetric.SM_CYFULLSCREEN:
-					return 0L;
+					return (long)working.Height;
 
-				case SystemMetric.SM_CYKANJIWINDOW:
-					return 0L;
+				case SystemMetric.SM_CXMAXIMIZED:
+					return (long)working.Width;
+
+				case SystemMetric.SM_CYMAXIMIZED:
+					return (long)working.Height;
 
 				case SystemMetric.SM_MOUSEPRESENT:
-					return SystemInformation.MousePresent ? 1L : 0L;
-
-				case SystemMetric.SM_CYVSCROLL:
-					return (long)SystemInformation.VerticalScrollBarArrowHeight;
-
-				case SystemMetric.SM_CXHSCROLL:
-					return (long)SystemInformation.HorizontalScrollBarArrowWidth;
-
-				case SystemMetric.SM_DEBUG:
-					return 0L;
+					return 1L;
 
 				case SystemMetric.SM_SWAPBUTTON:
 					return MouseButtonsSwapped() ? 1L : 0L;
 
-				case SystemMetric.SM_CXMIN:
-					return (long)SystemInformation.MinimumWindowSize.Width;
-
-				case SystemMetric.SM_CYMIN:
-					return (long)SystemInformation.MinimumWindowSize.Height;
-
-				case SystemMetric.SM_CXSIZE:
-					return (long)SystemInformation.CaptionButtonSize.Width;
-
-				case SystemMetric.SM_CYSIZE:
-					return (long)SystemInformation.CaptionButtonSize.Height;
-
-				case SystemMetric.SM_CXSIZEFRAME:
-					return (long)SystemInformation.HorizontalResizeBorderThickness;
-
-				//case SystemMetric.SM_CXFRAME:
-				//break;
-				case SystemMetric.SM_CYSIZEFRAME:
-					return (long)SystemInformation.VerticalResizeBorderThickness;
-
-				//case SystemMetric.SM_CYFRAME:
-				//break;
-				case SystemMetric.SM_CXMINTRACK:
-					return (long)SystemInformation.MinWindowTrackSize.Width;
-
-				case SystemMetric.SM_CYMINTRACK:
-					return (long)SystemInformation.MinWindowTrackSize.Height;
-
-				case SystemMetric.SM_CXDOUBLECLK:
-					return (long)SystemInformation.DoubleClickSize.Width;
-
-				case SystemMetric.SM_CYDOUBLECLK:
-					return (long)SystemInformation.DoubleClickSize.Height;
-
-				case SystemMetric.SM_CXICONSPACING:
-					return 0L;
-
-				case SystemMetric.SM_CYICONSPACING:
-					return 0L;
-
-				case SystemMetric.SM_MENUDROPALIGNMENT:
-					return 0L;
-
-				case SystemMetric.SM_PENWINDOWS:
-					return 0L;
-
-				case SystemMetric.SM_DBCSENABLED:
-					return 1L;
-
 				case SystemMetric.SM_CMOUSEBUTTONS:
 					return MouseButtonCount();
-
-				case SystemMetric.SM_SECURE:
-					return 1L;
-
-				case SystemMetric.SM_CXEDGE:
-					return (long)SystemInformation.Border3DSize.Width;
-
-				case SystemMetric.SM_CYEDGE:
-					return (long)SystemInformation.Border3DSize.Height;
-
-				case SystemMetric.SM_CXMINSPACING:
-					return (long)SystemInformation.MinimizedWindowSpacingSize.Width;
-
-				case SystemMetric.SM_CYMINSPACING:
-					return (long)SystemInformation.MinimizedWindowSpacingSize.Height;
-
-				case SystemMetric.SM_CXSMICON:
-					return (long)SystemInformation.SmallIconSize.Width;
-
-				case SystemMetric.SM_CYSMICON:
-					return (long)SystemInformation.SmallIconSize.Height;
-
-				case SystemMetric.SM_CYSMCAPTION:
-					return (long)SystemInformation.ToolWindowCaptionHeight;
-
-				case SystemMetric.SM_CXSMSIZE:
-					return (long)SystemInformation.ToolWindowCaptionButtonSize.Width;
-
-				case SystemMetric.SM_CYSMSIZE:
-					return (long)SystemInformation.ToolWindowCaptionButtonSize.Height;
-
-				case SystemMetric.SM_CXMENUSIZE:
-					return (long)SystemInformation.MenuBarButtonSize.Width;
-
-				case SystemMetric.SM_CYMENUSIZE:
-					return (long)SystemInformation.MenuBarButtonSize.Height;
-
-				case SystemMetric.SM_ARRANGE:
-					return 0L;
-
-				case SystemMetric.SM_CXMINIMIZED:
-					return (long)SystemInformation.MinimizedWindowSize.Width;
-
-				case SystemMetric.SM_CYMINIMIZED:
-					return (long)SystemInformation.MinimizedWindowSize.Height;
-
-				case SystemMetric.SM_CXMAXTRACK:
-					return (long)SystemInformation.MaxWindowTrackSize.Width;
-
-				case SystemMetric.SM_CYMAXTRACK:
-					return (long)SystemInformation.MaxWindowTrackSize.Height;
-
-				case SystemMetric.SM_CXMAXIMIZED:
-					return System.Windows.Forms.Screen.PrimaryScreen.WorkingArea.Width;
-
-				case SystemMetric.SM_CYMAXIMIZED:
-					return System.Windows.Forms.Screen.PrimaryScreen.WorkingArea.Height;
 
 				case SystemMetric.SM_NETWORK:
 					return NetworkUp() ? 1L : 0L;
@@ -512,80 +395,8 @@ namespace Keysharp.Core
 					return 0L;
 				}
 
-				case SystemMetric.SM_CXDRAG:
-					return (long)SystemInformation.DragSize.Width;
-
-				case SystemMetric.SM_CYDRAG:
-					return (long)SystemInformation.DragSize.Height;
-
-				case SystemMetric.SM_SHOWSOUNDS:
-					return 0L;
-
-				case SystemMetric.SM_CXMENUCHECK:
-					return 0L;
-
-				case SystemMetric.SM_CYMENUCHECK:
-					return 0L;
-
-				case SystemMetric.SM_SLOWMACHINE:
-					return 0L;
-
-				case SystemMetric.SM_MIDEASTENABLED:
-					return 0L;
-
 				case SystemMetric.SM_MOUSEWHEELPRESENT:
 					return "xinput --list --long".Bash().Contains("button wheel", StringComparison.OrdinalIgnoreCase) ? 1L : 0L;
-
-				case SystemMetric.SM_XVIRTUALSCREEN:
-					return (long)SystemInformation.VirtualScreen.Left;
-
-				case SystemMetric.SM_YVIRTUALSCREEN:
-					return (long)SystemInformation.VirtualScreen.Top;
-
-				case SystemMetric.SM_CXVIRTUALSCREEN:
-					return (long)SystemInformation.VirtualScreen.Width;
-
-				case SystemMetric.SM_CYVIRTUALSCREEN:
-					return (long)SystemInformation.VirtualScreen.Height;
-
-				case SystemMetric.SM_CMONITORS:
-					return (long)SystemInformation.MonitorCount;
-
-				case SystemMetric.SM_SAMEDISPLAYFORMAT:
-					return 1L;
-
-				case SystemMetric.SM_IMMENABLED:
-					return 0L;
-
-				case SystemMetric.SM_CXFOCUSBORDER:
-					return 0L;
-
-				case SystemMetric.SM_CYFOCUSBORDER:
-					return 0L;
-
-				case SystemMetric.SM_TABLETPC:
-					return 0L;
-
-				case SystemMetric.SM_MEDIACENTER:
-					return 0L;
-
-				case SystemMetric.SM_STARTER:
-					return 0L;
-
-				case SystemMetric.SM_SERVERR2:
-					return 0L;
-
-				case SystemMetric.SM_MOUSEHORIZONTALWHEELPRESENT:
-					return 0L;
-
-				case SystemMetric.SM_CXPADDEDBORDER:
-					return 0L;
-
-				case SystemMetric.SM_DIGITIZER:
-					return 0L;
-
-				case SystemMetric.SM_MAXIMUMTOUCHES:
-					return 0L;
 
 				case SystemMetric.SM_REMOTESESSION:
 					return "echo $SSH_TTY".Bash() != "" ? 1L : 0L;
@@ -596,17 +407,9 @@ namespace Keysharp.Core
 				case SystemMetric.SM_REMOTECONTROL:
 					return "echo $SSH_TTY".Bash() != "" ? 1L : 0L;
 
-				case SystemMetric.SM_CONVERTIBLESLATEMODE:
-					return 0L;
-
-				case SystemMetric.SM_SYSTEMDOCKED:
-					return 0L;
-
 				default:
-					break;
+					throw new NotImplementedException($"SysGet({sm}) has no Linux/Eto equivalent.");
 			}
-
-			return 0L;
 #elif WINDOWS
 
 			if (property is SystemMetric en)
@@ -623,7 +426,11 @@ namespace Keysharp.Core
 		/// </summary>
 		/// <param name="fmt">The format to convert.</param>
 		/// <returns>The string representation of the specified clipboard format.</returns>
+#if WINDOWS
 		internal static int ClipFormatStringToInt(string fmt) => GetFormat(fmt) is Format d ? d.Id : 0;
+#else
+		internal static int ClipFormatStringToInt(string fmt) => 0;
+#endif
 
 		/// <summary>
 		/// Internal helper to search the command line arguments for a specified string.
@@ -863,15 +670,15 @@ namespace Keysharp.Core
 			}
 		}
 	}
-#if LINUX
+#if !WINDOWS
 	/// <summary>
 	/// Gotten from: https://stackoverflow.com/questions/6262454/c-sharp-backing-up-and-restoring-clipboard
 	/// </summary>
 	public class ClipboardAll : KeysharpObject
 	{
-		Dictionary<string, object> backup = new Dictionary<string, object>();
-		IDataObject dataObject = Clipboard.GetDataObject();
-		string[] formats;
+		private Dictionary<string, object> backup = new Dictionary<string, object>();
+		private IDataObject dataObject = Clipboard.Instance;
+		private string[] formats;
 
 		public ClipboardAll(params object[] args) : base(args) { }
 
@@ -884,11 +691,15 @@ namespace Keysharp.Core
 		internal void Save()
 		{
 			backup = new Dictionary<string, object>();
-			dataObject = Clipboard.GetDataObject();
-			formats = dataObject.GetFormats(false);
+			dataObject = Clipboard.Instance;
+			formats = dataObject?.Types?.ToArray() ?? System.Array.Empty<string>();
 
-			foreach (var lFormat in formats)
-				backup.Add(lFormat, dataObject.GetData(lFormat, false));
+			foreach (var format in formats)
+			{
+				var value = dataObject.GetObject(format);
+				if (value != null)
+					backup[format] = value;
+			}
 		}
 
 		internal void Restore()
@@ -896,9 +707,16 @@ namespace Keysharp.Core
 			dataObject = new DataObject();
 
 			foreach (var format in formats)
-				dataObject.SetData(format, backup[format]);
+			{
+				if (backup.TryGetValue(format, out var value) && value != null)
+					dataObject.SetObject(value, format);
+			}
 
-			Clipboard.SetDataObject(dataObject);
+			foreach (var format in formats)
+			{
+				if (backup.TryGetValue(format, out var value) && value != null)
+					Clipboard.Instance.SetObject(value, format);
+			}
 		}
 	}
 #elif WINDOWS
