@@ -1,4 +1,4 @@
-$net = "net9.0-windows"
+$net = "net10.0-windows"
 $FullPath = [System.IO.Path]::GetFullPath("$PWD\bin\release\$net\Keysharp.dll")
 $DLLBytes = [System.IO.File]::ReadAllBytes($FullPath)
 $Assembly = [System.Reflection.Assembly]::Load($DLLBytes)
@@ -47,11 +47,7 @@ $z = [System.IO.Compression.ZipFile]::Open($zfile, [System.IO.Compression.ZipArc
 [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, ".\bin\release\$net\PCRE.NET.dll", "PCRE.NET.dll")
 [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, ".\bin\release\$net\Scintilla.NET.dll", "Scintilla.NET.dll")
 [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, ".\bin\release\$net\Semver.dll", "Semver.dll")
-[System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, ".\bin\release\$net\System.CodeDom.dll", "System.CodeDom.dll")
-[System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, ".\bin\release\$net\System.IO.Pipelines.dll", "System.IO.Pipelines.dll")
 [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, ".\bin\release\$net\System.Management.dll", "System.Management.dll")
-[System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, ".\bin\release\$net\System.Text.Encodings.Web.dll", "System.Text.Encodings.Web.dll")
-[System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, ".\bin\release\$net\System.Text.Json.dll", "System.Text.Json.dll")
 
 [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, ".\bin\release\$net\Keysharp.Core.deps.json", "Keysharp.Core.deps.json")
 [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z, ".\bin\release\$net\Keysharp.deps.json", "Keysharp.deps.json")

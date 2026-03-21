@@ -52,7 +52,7 @@ using static Keysharp.Scripting.Script;
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-[assembly: Keysharp.Scripting.AssemblyBuildVersionAttribute("0.0.0.11")]
+[assembly: Keysharp.Scripting.AssemblyBuildVersionAttribute("0.0.0.12")]
 
 namespace Keysharp.CompiledMain
 {

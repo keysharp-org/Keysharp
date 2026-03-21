@@ -1,69 +1,69 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <TargetFramework>net9.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
-    <Platforms>x64</Platforms>
-    <ApplicationManifest>Keysharp.OutputTest.manifest</ApplicationManifest>
+	<TargetFramework>net10.0-windows</TargetFramework>
+	<UseWindowsForms>true</UseWindowsForms>
+	<Platforms>x64</Platforms>
+	<ApplicationManifest>Keysharp.OutputTest.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-    <TargetFramework>net9.0</TargetFramework>
+	<TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <StartupObject>Keysharp.CompiledMain.program</StartupObject>
-    <ApplicationIcon>..\Keysharp.ico</ApplicationIcon>
-    <Version>0.0.0.11</Version>
-    <Authors>Matt Feemster</Authors>
-    <Company>Keysharp</Company>
-    <Description>A simple test program to paste generated code into for debugging</Description>
-    <SignAssembly>False</SignAssembly>
-    <DelaySign>False</DelaySign>
-    <PlatformTarget>x64</PlatformTarget>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <WarningLevel>8</WarningLevel>
-    <NoWin32Manifest>true</NoWin32Manifest>
+	<OutputType>WinExe</OutputType>
+	<StartupObject>Keysharp.CompiledMain.program</StartupObject>
+	<ApplicationIcon>..\Keysharp.ico</ApplicationIcon>
+	<Version>0.0.0.12</Version>
+	<Authors>Matt Feemster</Authors>
+	<Company>Keysharp</Company>
+	<Description>A simple test program to paste generated code into for debugging</Description>
+	<SignAssembly>False</SignAssembly>
+	<DelaySign>False</DelaySign>
+	<PlatformTarget>x64</PlatformTarget>
+	<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	<WarningLevel>8</WarningLevel>
+	<NoWin32Manifest>true</NoWin32Manifest>
 	<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
   <!-- Specifying the output path on linux is broken, it can't be placed in a parent folder, and Debug is required to be capitalized. -->
-    <OutputPath Condition="$([MSBuild]::IsOSPlatform('Linux'))">./bin/Debug/</OutputPath>
-    <OutputPath Condition="$([MSBuild]::IsOSPlatform('Windows'))">..\bin\debug\</OutputPath>
-    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">DEBUG;TRACE;LEGACY;WINDOWS</DefineConstants>
-    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">DEBUG;TRACE;LEGACY;LINUX</DefineConstants>
-    <NoWarn>1701;1702;8981;0164;8974</NoWarn>
+	<OutputPath Condition="$([MSBuild]::IsOSPlatform('Linux'))">./bin/Debug/</OutputPath>
+	<OutputPath Condition="$([MSBuild]::IsOSPlatform('Windows'))">..\bin\debug\</OutputPath>
+	<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">DEBUG;TRACE;LEGACY;WINDOWS</DefineConstants>
+	<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">DEBUG;TRACE;LEGACY;LINUX</DefineConstants>
+	<NoWarn>1701;1702;8981;0164;8974</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
   <!-- Specifying the output path on linux is broken, it can't be placed in a parent folder, and Release is required to be capitalized. -->
-    <OutputPath Condition="$([MSBuild]::IsOSPlatform('Linux'))">./bin/Release/</OutputPath>
-    <OutputPath Condition="$([MSBuild]::IsOSPlatform('Windows'))">..\bin\release\</OutputPath>
-    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">TRACE;LEGACY;WINDOWS</DefineConstants>
-    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">TRACE;LEGACY;LINUX</DefineConstants>
-    <NoWarn>1701;1702;8981;0164;8974</NoWarn>
+	<OutputPath Condition="$([MSBuild]::IsOSPlatform('Linux'))">./bin/Release/</OutputPath>
+	<OutputPath Condition="$([MSBuild]::IsOSPlatform('Windows'))">..\bin\release\</OutputPath>
+	<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">TRACE;LEGACY;WINDOWS</DefineConstants>
+	<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">TRACE;LEGACY;LINUX</DefineConstants>
+	<NoWarn>1701;1702;8981;0164;8974</NoWarn>
   </PropertyGroup>
 
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <COMReference Include="IWshRuntimeLibrary.dll">
-      <Guid>f935dc20-1cf0-11d0-adb9-00c04fd58a0b</Guid>
-      <VersionMajor>1</VersionMajor>
-      <VersionMinor>0</VersionMinor>
-      <WrapperTool>tlbimp</WrapperTool>
-      <Lcid>0</Lcid>
-      <Isolated>false</Isolated>
-    </COMReference>
+	<COMReference Include="IWshRuntimeLibrary.dll">
+	  <Guid>f935dc20-1cf0-11d0-adb9-00c04fd58a0b</Guid>
+	  <VersionMajor>1</VersionMajor>
+	  <VersionMinor>0</VersionMinor>
+	  <WrapperTool>tlbimp</WrapperTool>
+	  <Lcid>0</Lcid>
+	  <Isolated>false</Isolated>
+	</COMReference>
   </ItemGroup>
   
   <ItemGroup>
-    <Content Include="..\Keysharp.ico" Link="Keysharp.ico" />
-    <Content Include="Keysharp.OutputTest.manifest">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+	<Content Include="..\Keysharp.ico" Link="Keysharp.ico" />
+	<Content Include="Keysharp.OutputTest.manifest">
+	  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	</Content>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
+	<ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
   </ItemGroup>
 
 </Project>

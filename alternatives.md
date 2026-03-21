@@ -286,7 +286,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Site: https://github.com/sezanzeb/input-remapper
 	
 	
-	
+https://nutjs.dev/	
 https://sharphook.tolik.io/v5.3.6/ https://sharphook.tolik.io/articles/native.html (this is probably what we'll use)
 
 https://pythonawesome.com/hook-and-simulate-global-keyboard-events-on-windows-and-linux/

@@ -1,12 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-		<TargetFramework>net9.0-windows</TargetFramework>
+		<TargetFramework>net10.0-windows</TargetFramework>
 		<UseWindowsForms>true</UseWindowsForms>
 		<Platforms>x64</Platforms>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-		<TargetFramework>net9.0</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework>
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -14,9 +14,9 @@
 		<StartupObject>Keyview.Program</StartupObject>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<ApplicationIcon>..\Keysharp.ico</ApplicationIcon>
-		<AssemblyVersion>0.0.0.11</AssemblyVersion>
-		<FileVersion>0.0.0.11</FileVersion>
-		<Version>0.0.0.11</Version>
+		<AssemblyVersion>0.0.0.12</AssemblyVersion>
+		<FileVersion>0.0.0.12</FileVersion>
+		<Version>0.0.0.12</Version>
 		<Authors>Matt Feemster</Authors>
 		<Description>A viewer which shows the C# code that is generated from compiling Keysharp script code</Description>
 		<Company>Keysharp</Company>
@@ -49,16 +49,16 @@
 		<Content Include="..\Keysharp.ico" Link="Keysharp.ico" />
 	</ItemGroup>
 	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-		<Content Include="$(USERPROFILE)\.nuget\packages\scintilla5.net\5.6.1\runtimes\win-x64\native\Lexilla.dll">
+		<Content Include="$(USERPROFILE)\.nuget\packages\scintilla5.net\6.1.2\runtimes\win-x64\native\Lexilla.dll">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
-		<Content Include="$(USERPROFILE)\.nuget\packages\scintilla5.net\5.6.1\runtimes\win-x64\native\Scintilla.dll">
+		<Content Include="$(USERPROFILE)\.nuget\packages\scintilla5.net\6.1.2\runtimes\win-x64\native\Scintilla.dll">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Scintilla5.NET" Version="6.0.1" />
+		<PackageReference Include="Scintilla5.NET" Version="6.1.2" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -66,11 +66,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<None Remove="$(USERPROFILE)\.nuget\packages\scintilla5.net\5.6.1\runtimes\win-x64\native\Lexilla.dll" />
+		<None Remove="$(USERPROFILE)\.nuget\packages\scintilla5.net\6.1.2\runtimes\win-x64\native\Lexilla.dll" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<None Remove="$(USERPROFILE)\.nuget\packages\scintilla5.net\5.6.1\runtimes\win-x64\native\Scintilla.dll" />
+		<None Remove="$(USERPROFILE)\.nuget\packages\scintilla5.net\6.1.2\runtimes\win-x64\native\Scintilla.dll" />
 	</ItemGroup>
 
 </Project>
