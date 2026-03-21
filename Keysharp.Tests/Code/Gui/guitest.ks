@@ -52,7 +52,7 @@ MyMenuBar := MenuBar()
 MyMenuBar.Add("&Menu Icon Test", FileMenu)
 MyMenuBar.Add("&Image Search", ImgSrchMenu)
 
-MyGui := Gui(, "KEYSHARP TESTS")
+MyGui := Gui("-E0x02000000", "KEYSHARP TESTS") ; Disabling 0x02000000 is WS_EX_COMPOSITED, which must be removed for the ActiveX control to animate.
 MyGui.OnEvent("Close", "CloseApp")
 
 CloseApp() {
