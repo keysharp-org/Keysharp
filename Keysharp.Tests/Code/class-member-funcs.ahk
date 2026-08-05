@@ -570,3 +570,29 @@ if (val == 6 && a == 6)
 	FileAppend "pass", "*"
 else
 	FileAppend "fail", "*"
+
+; Accessing class members dynamically:
+temp := 0
+class mydynclass
+{
+	x := 11
+	y11 := 123
+
+	mydynclassreffunc(&val)
+	{
+		global temp := val
+	}
+
+	callmydynclassreffunc()
+	{
+		this.mydynclassreffunc(&this.y%this.x%) ; Use this.
+	}
+}
+
+dc := mydynclass()
+dc.callmydynclassreffunc()
+
+if (temp == 123)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"

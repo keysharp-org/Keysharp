@@ -4,6 +4,7 @@ namespace Keysharp.Builtins
 	/// Public interface for Ini-related functions.<br/>
 	/// Although the Windows API does provide functions for manipulating INI files, they are not cross platform.<br/>
 	/// So the code here provides cross platform INI manipulation functions in pure C#.
+	/// Gotten from: https://www.codeproject.com/articles/20053/a-complete-win-ini-file-utility-class
 	/// </summary>
 	public static class Ini
 	{
