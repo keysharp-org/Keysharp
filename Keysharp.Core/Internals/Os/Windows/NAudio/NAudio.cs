@@ -1139,7 +1139,9 @@ namespace Keysharp.Internals.Os.Windows
 		{
 			get
 			{
-				_ = mmDeviceCollection.Item(index, out var result);
+				//Now that Item carries [PreserveSig], a failure returns a status instead of throwing;
+				//ignoring it would hand a null device to MMDevice and fail later and less clearly.
+				Marshal.ThrowExceptionForHR(mmDeviceCollection.Item(index, out var result));
 				return new MMDevice(result);
 			}
 		}

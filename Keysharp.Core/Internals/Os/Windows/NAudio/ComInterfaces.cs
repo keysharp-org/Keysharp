@@ -2,29 +2,45 @@ using Keysharp.Builtins;
 #if WINDOWS
 namespace Keysharp.Internals.Os.Windows
 {
+	// Every client-called method below declares an int return and MUST carry [PreserveSig].
+	//
+	// Without it the CLR treats the declared int as the [retval] out-parameter, so it calls
+	// `HRESULT M(args..., int* retval)` - one argument more than the interface actually has - and
+	// returns the contents of its own zero-filled retval local instead of the HRESULT. Two things
+	// follow: every `if (x.M(...) < 0)` check in this codebase silently tests a constant 0 and can
+	// never observe a failure, and a real failure surfaces as a thrown COMException from a place
+	// that looks like it returns a status code. The extra argument is benign under the x64/ARM64
+	// calling conventions this project ships, but it is not benign on __stdcall x86.
+	//
+	// Callback interfaces that Keysharp *implements* (IAudioEndpointVolumeCallback,
+	// IMMNotificationClient) are the opposite case: a managed `void` method is the correct CCW
+	// shape, because the runtime maps it to a native HRESULT return automatically.
+	//
+	// Interface member order is vtable order. It, the IIDs, and the signatures were verified
+	// against the Windows SDK headers (devicetopology.h, mmdeviceapi.h, endpointvolume.h).
 	[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"),
 	 InterfaceType(ComInterfaceType.InterfaceIsIUnknown),
 	 ComImport]
 	internal interface IAudioEndpointVolume
 	{
-		int RegisterControlChangeNotify(IAudioEndpointVolumeCallback pNotify);
-		int UnregisterControlChangeNotify(IAudioEndpointVolumeCallback pNotify);
-		int GetChannelCount(out int pnChannelCount);
-		int SetMasterVolumeLevel(float fLevelDB, ref Guid pguidEventContext);
-		int SetMasterVolumeLevelScalar(float fLevel, ref Guid pguidEventContext);
-		int GetMasterVolumeLevel(out float pfLevelDB);
-		int GetMasterVolumeLevelScalar(out float pfLevel);
-		int SetChannelVolumeLevel(uint nChannel, float fLevelDB, ref Guid pguidEventContext);
-		int SetChannelVolumeLevelScalar(uint nChannel, float fLevel, ref Guid pguidEventContext);
-		int GetChannelVolumeLevel(uint nChannel, out float pfLevelDB);
-		int GetChannelVolumeLevelScalar(uint nChannel, out float pfLevel);
-		int SetMute([MarshalAs(UnmanagedType.Bool)] Boolean bMute, ref Guid pguidEventContext);
-		int GetMute(out bool pbMute);
-		int GetVolumeStepInfo(out uint pnStep, out uint pnStepCount);
-		int VolumeStepUp(ref Guid pguidEventContext);
-		int VolumeStepDown(ref Guid pguidEventContext);
-		int QueryHardwareSupport(out uint pdwHardwareSupportMask);
-		int GetVolumeRange(out float pflVolumeMindB, out float pflVolumeMaxdB, out float pflVolumeIncrementdB);
+		[PreserveSig] int RegisterControlChangeNotify(IAudioEndpointVolumeCallback pNotify);
+		[PreserveSig] int UnregisterControlChangeNotify(IAudioEndpointVolumeCallback pNotify);
+		[PreserveSig] int GetChannelCount(out int pnChannelCount);
+		[PreserveSig] int SetMasterVolumeLevel(float fLevelDB, ref Guid pguidEventContext);
+		[PreserveSig] int SetMasterVolumeLevelScalar(float fLevel, ref Guid pguidEventContext);
+		[PreserveSig] int GetMasterVolumeLevel(out float pfLevelDB);
+		[PreserveSig] int GetMasterVolumeLevelScalar(out float pfLevel);
+		[PreserveSig] int SetChannelVolumeLevel(uint nChannel, float fLevelDB, ref Guid pguidEventContext);
+		[PreserveSig] int SetChannelVolumeLevelScalar(uint nChannel, float fLevel, ref Guid pguidEventContext);
+		[PreserveSig] int GetChannelVolumeLevel(uint nChannel, out float pfLevelDB);
+		[PreserveSig] int GetChannelVolumeLevelScalar(uint nChannel, out float pfLevel);
+		[PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] Boolean bMute, ref Guid pguidEventContext);
+		[PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
+		[PreserveSig] int GetVolumeStepInfo(out uint pnStep, out uint pnStepCount);
+		[PreserveSig] int VolumeStepUp(ref Guid pguidEventContext);
+		[PreserveSig] int VolumeStepDown(ref Guid pguidEventContext);
+		[PreserveSig] int QueryHardwareSupport(out uint pdwHardwareSupportMask);
+		[PreserveSig] int GetVolumeRange(out float pflVolumeMindB, out float pflVolumeMaxdB, out float pflVolumeIncrementdB);
 	}
 
 	[Guid("657804FA-D6AD-4496-8A60-352752AF4F89"),
@@ -40,10 +56,10 @@ namespace Keysharp.Internals.Os.Windows
 	 ComImport]
 	internal interface IAudioMeterInformation
 	{
-		int GetPeakValue(out float pfPeak);
-		int GetMeteringChannelCount(out int pnChannelCount);
-		int GetChannelsPeakValues(int u32ChannelCount, [In] nint afPeakValues);
-		int QueryHardwareSupport(out int pdwHardwareSupportMask);
+		[PreserveSig] int GetPeakValue(out float pfPeak);
+		[PreserveSig] int GetMeteringChannelCount(out int pnChannelCount);
+		[PreserveSig] int GetChannelsPeakValues(int u32ChannelCount, [In] nint afPeakValues);
+		[PreserveSig] int QueryHardwareSupport(out int pdwHardwareSupportMask);
 	};
 
 	///// <summary>
@@ -379,13 +395,17 @@ namespace Keysharp.Internals.Os.Windows
 	internal interface IMMDevice
 	{
 		// activationParams is a propvariant
+		[PreserveSig]
 		int Activate(ref Guid id, ClsCtx clsCtx, nint activationParams,
 					 [MarshalAs(UnmanagedType.IUnknown)] out object interfacePointer);
 
+		[PreserveSig]
 		int OpenPropertyStore(StorageAccessMode stgmAccess, out IPropertyStore properties);
 
+		[PreserveSig]
 		int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
 
+		[PreserveSig]
 		int GetState(out DeviceState state);
 	}
 
@@ -394,8 +414,8 @@ namespace Keysharp.Internals.Os.Windows
 	 ComImport]
 	internal interface IMMDeviceCollection
 	{
-		int GetCount(out int numDevices);
-		int Item(int deviceNumber, out IMMDevice device);
+		[PreserveSig] int GetCount(out int numDevices);
+		[PreserveSig] int Item(int deviceNumber, out IMMDevice device);
 	}
 
 	[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"),
@@ -403,16 +423,20 @@ namespace Keysharp.Internals.Os.Windows
 	 ComImport]
 	internal interface IMMDeviceEnumerator
 	{
+		[PreserveSig]
 		int EnumAudioEndpoints(DataFlow dataFlow, DeviceState stateMask,
 							   out IMMDeviceCollection devices);
 
 		[PreserveSig]
 		int GetDefaultAudioEndpoint(DataFlow dataFlow, Role role, out IMMDevice endpoint);
 
-		int GetDevice(string id, out IMMDevice deviceName);
+		[PreserveSig]
+		int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice deviceName);
 
+		[PreserveSig]
 		int RegisterEndpointNotificationCallback(IMMNotificationClient client);
 
+		[PreserveSig]
 		int UnregisterEndpointNotificationCallback(IMMNotificationClient client);
 	}
 
@@ -429,6 +453,8 @@ namespace Keysharp.Internals.Os.Windows
 	 ComImport]
 	internal interface IControlInterface
 	{
+		[PreserveSig] int GetName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+		[PreserveSig] int GetIID(out Guid iid);
 	}
 
 	/// <summary>
@@ -440,11 +466,13 @@ namespace Keysharp.Internals.Os.Windows
 	 ComImport]
 	internal interface IPartsList
 	{
-		int GetCount(out uint count);
-		int GetPart(uint index, out IPart part);
+		[PreserveSig] int GetCount(out uint count);
+		[PreserveSig] int GetPart(uint index, out IPart part);
 	}
 
-	[Guid("9c2c4058-23f5-41de-877a-df3af236a09e"),
+	//IID_IControlChangeNotify per devicetopology.h. This previously carried IConnector's IID, so a
+	//QueryInterface for it would have handed back an IConnector and called it through this vtable.
+	[Guid("A09513ED-C709-4D21-BD7B-5F34C47F3947"),
 	 InterfaceType(ComInterfaceType.InterfaceIsIUnknown),
 	 ComImport]
 	interface IControlChangeNotify
@@ -464,27 +492,34 @@ namespace Keysharp.Internals.Os.Windows
 	 ComImport]
 	internal interface IPart
 	{
+		[PreserveSig]
 		int GetName(
 			[Out, MarshalAs(UnmanagedType.LPWStr)] out string name);
 
+		[PreserveSig]
 		int GetLocalId(
 			[Out] out uint id);
 
+		[PreserveSig]
 		int GetGlobalId(
 			[Out, MarshalAs(UnmanagedType.LPWStr)] out string id);
 
+		[PreserveSig]
 		int GetPartType(
 			[Out] out PartTypeEnum partType);
 
+		[PreserveSig]
 		int GetSubType(
 			out Guid subType);
 
+		[PreserveSig]
 		int GetControlInterfaceCount(
 			[Out] out uint count);
 
+		[PreserveSig]
 		int GetControlInterface(
 			[In] uint index,
-			[Out, MarshalAs(UnmanagedType.IUnknown)] out IControlInterface controlInterface);
+			[Out, MarshalAs(UnmanagedType.Interface)] out IControlInterface controlInterface);
 
 		[PreserveSig]
 		int EnumPartsIncoming(
@@ -494,8 +529,9 @@ namespace Keysharp.Internals.Os.Windows
 		int EnumPartsOutgoing(
 			[Out] out IPartsList parts);
 
+		[PreserveSig]
 		int GetTopologyObject(
-			[Out] out object topologyObject);
+			[Out, MarshalAs(UnmanagedType.IUnknown)] out object topologyObject);
 
 		[PreserveSig]
 		int Activate(
@@ -503,10 +539,12 @@ namespace Keysharp.Internals.Os.Windows
 			[In] ref Guid refiid,
 			[MarshalAs(UnmanagedType.IUnknown)] out object interfacePointer);
 
+		[PreserveSig]
 		int RegisterControlChangeCallback(
 			[In] ref Guid refiid,
 			[In] IControlChangeNotify notify);
 
+		[PreserveSig]
 		int UnregisterControlChangeCallback(
 			[In] IControlChangeNotify notify);
 	}
@@ -520,13 +558,13 @@ namespace Keysharp.Internals.Os.Windows
 	 ComImport]
 	internal interface IDeviceTopology
 	{
-		int GetConnectorCount(out uint count);
-		int GetConnector(uint index, out IConnector connector);
-		int GetSubunitCount(out uint count);
-		int GetSubunit(uint index, out ISubunit subunit);
-		int GetPartById(uint id, out IPart part);
-		int GetDeviceId([MarshalAs(UnmanagedType.LPWStr)] out string id);
-		int GetSignalPath(IPart from, IPart to, bool rejectMixedPaths, out IPartsList parts);
+		[PreserveSig] int GetConnectorCount(out uint count);
+		[PreserveSig] int GetConnector(uint index, out IConnector connector);
+		[PreserveSig] int GetSubunitCount(out uint count);
+		[PreserveSig] int GetSubunit(uint index, out ISubunit subunit);
+		[PreserveSig] int GetPartById(uint id, out IPart part);
+		[PreserveSig] int GetDeviceId([MarshalAs(UnmanagedType.LPWStr)] out string id);
+		[PreserveSig] int GetSignalPath(IPart from, IPart to, [MarshalAs(UnmanagedType.Bool)] bool rejectMixedPaths, out IPartsList parts);
 	}
 
 	/// <summary>
@@ -538,14 +576,14 @@ namespace Keysharp.Internals.Os.Windows
 	 ComImport]
 	internal interface IConnector
 	{
-		int GetType(out ConnectorType type);
-		int GetDataFlow(out DataFlow flow);
-		int ConnectTo([In] IConnector connectTo);
-		int Disconnect();
-		int IsConnected(out bool connected);
-		int GetConnectedTo(out IConnector conTo);
-		int GetConnectorIdConnectedTo([MarshalAs(UnmanagedType.LPWStr)] out string id);
-		int GetDeviceIdConnectedTo([MarshalAs(UnmanagedType.LPWStr)] out string id);
+		[PreserveSig] int GetType(out ConnectorType type);
+		[PreserveSig] int GetDataFlow(out DataFlow flow);
+		[PreserveSig] int ConnectTo([In] IConnector connectTo);
+		[PreserveSig] int Disconnect();
+		[PreserveSig] int IsConnected([MarshalAs(UnmanagedType.Bool)] out bool connected);
+		[PreserveSig] int GetConnectedTo(out IConnector conTo);
+		[PreserveSig] int GetConnectorIdConnectedTo([MarshalAs(UnmanagedType.LPWStr)] out string id);
+		[PreserveSig] int GetDeviceIdConnectedTo([MarshalAs(UnmanagedType.LPWStr)] out string id);
 	}
 
 	/// <summary>
@@ -592,11 +630,11 @@ namespace Keysharp.Internals.Os.Windows
 	 ComImport]
 	internal interface IPropertyStore
 	{
-		int GetCount(out int propCount);
-		int GetAt(int property, out PropertyKey key);
-		int GetValue(ref PropertyKey key, out PropVariant value);
-		int SetValue(ref PropertyKey key, ref PropVariant value);
-		int Commit();
+		[PreserveSig] int GetCount(out int propCount);
+		[PreserveSig] int GetAt(int property, out PropertyKey key);
+		[PreserveSig] int GetValue(ref PropertyKey key, out PropVariant value);
+		[PreserveSig] int SetValue(ref PropertyKey key, ref PropVariant value);
+		[PreserveSig] int Commit();
 	}
 
 	[Guid("DF45AEEA-B74A-4B6B-AFAD-2366B6AA012E"),
@@ -604,27 +642,35 @@ namespace Keysharp.Internals.Os.Windows
 	 ComImport]
 	internal interface IAudioMute
 	{
-		[PreserveSig]
-		int GetMute(
-			[Out, MarshalAs(UnmanagedType.Bool)] out bool mute);
-
+		//Declaration order is the vtable order: devicetopology.h puts SetMute before GetMute.
+		//Swapping them made GetMute call native SetMute (so the out value was never written and
+		//mute always read as 0) and SetMute call native GetMute, which wrote through the BOOL
+		//value as if it were a pointer - hence E_POINTER / ERROR_NOACCESS from address 0 and 1.
 		[PreserveSig]
 		int SetMute(
 			[In, MarshalAs(UnmanagedType.Bool)] bool mute,
 			[In] ref Guid eventContext);
+
+		[PreserveSig]
+		int GetMute(
+			[Out, MarshalAs(UnmanagedType.Bool)] out bool mute);
 	}
 
-	[Guid("7FB7B48F-531D-44A2-BCB3-5AD5A134B3DC"),
+	//IID_IPerChannelDbLevel per devicetopology.h. This previously carried IAudioVolumeLevel's IID
+	//(the interface derived from it), so a direct QueryInterface for it asked for the wrong type.
+	[Guid("C2F8E001-F205-4BC9-99BC-C13B1E048CCB"),
 	 InterfaceType(ComInterfaceType.InterfaceIsIUnknown),
 	 ComImport]
 	internal interface IPerChannelDbLevel
 	{
-		int GetChannelCount(out uint channels);
-		int GetLevelRange(uint channel, out float minLevelDb, out float maxLevelDb, out float stepping);
-		int GetLevel(uint channel, out float levelDb);
-		int SetLevel(uint channel, float levelDb, ref Guid eventGuidContext);
-		int SetLevelUniform(float levelDb, ref Guid eventGuidContext);
-		int SetLevelAllChannel(float[] levelsDb, uint channels, ref Guid eventGuidContext);
+		[PreserveSig] int GetChannelCount(out uint channels);
+		[PreserveSig] int GetLevelRange(uint channel, out float minLevelDb, out float maxLevelDb, out float stepping);
+		[PreserveSig] int GetLevel(uint channel, out float levelDb);
+		[PreserveSig] int SetLevel(uint channel, float levelDb, ref Guid eventGuidContext);
+		[PreserveSig] int SetLevelUniform(float levelDb, ref Guid eventGuidContext);
+		//LPArray is required: array parameters on a COM interface default to SafeArray, which the
+		//native SetLevelAllChannels reads as a float* and interprets the SAFEARRAY header as levels.
+		[PreserveSig] int SetLevelAllChannel([MarshalAs(UnmanagedType.LPArray)] float[] levelsDb, uint channels, ref Guid eventGuidContext);
 	}
 
 	[Guid("7FB7B48F-531D-44A2-BCB3-5AD5A134B3DC"),
@@ -651,7 +697,7 @@ namespace Keysharp.Internals.Os.Windows
 	 ComImport]
 	internal interface IMMEndpoint
 	{
-		int GetDataFlow(out DataFlow dataFlow);
+		[PreserveSig] int GetDataFlow(out DataFlow dataFlow);
 	}
 }
 #endif

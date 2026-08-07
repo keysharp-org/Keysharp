@@ -441,15 +441,37 @@ namespace Keysharp.Builtins
 			{
 				if (search.targetControl == SoundControlType.IID)
 				{
-					_ = mmDev.deviceInterface.Activate(ref search.targetIid, ClsCtx.ALL, 0, out var result);
-					//Need the specific interface pointer, else ComCall() will fail when using IAudioMeterInformation.
-					var iptr = Marshal.GetIUnknownForObject(result);
+					//Query the device itself first and only then Activate(), matching AHK: an interface the
+					//device implements directly (IMMEndpoint, IPropertyStore, ...) is not reachable via Activate.
+					var devPtr = Marshal.GetIUnknownForObject(mmDev.deviceInterface);
+					nint resultPtr;
 
-					if (Marshal.QueryInterface(iptr, in search.targetIid, out var ptr) >= 0)
-						result = ptr.ToInt64();
+					try
+					{
+						if (Marshal.QueryInterface(devPtr, in search.targetIid, out resultPtr) < 0)
+						{
+							resultPtr = 0;
 
-					_ = Marshal.Release(iptr);
-					return result;
+							//An IID the device does not support is an expected outcome here, not an error.
+							if (mmDev.deviceInterface.Activate(ref search.targetIid, ClsCtx.ALL, 0, out var activated) >= 0 && activated != null)
+							{
+								//Need the specific interface pointer, else ComCall() will fail when using IAudioMeterInformation.
+								var iptr = Marshal.GetIUnknownForObject(activated);
+
+								if (Marshal.QueryInterface(iptr, in search.targetIid, out var ptr) >= 0)
+									resultPtr = ptr;
+
+								_ = Marshal.Release(iptr);
+							}
+						}
+					}
+					finally
+					{
+						_ = Marshal.Release(devPtr);
+					}
+
+					//For consistency with ComObjQuery, the result is returned even on failure.
+					return resultPtr.ToInt64();
 				}
 				else if (search.targetControl == SoundControlType.Name)
 				{
@@ -487,31 +509,35 @@ namespace Keysharp.Builtins
 						if (soundSet)
 							aev.Mute = adjust ? !resultBool : settingScalar > 0;
 						else
-							return resultBool;
+							return resultBool ? 1L : 0L;
 					}
 				}
 			}
 			else
 			{
-				if (comp is string cs && cs.Length > 0)
-				{
-					var splits = search.targetName.Split(':');
+				//Mirrors AHK's SoundConvertComponent(): a component which parses as an integer is an instance
+				//index with no name filter, otherwise it is Name[:Instance] split at the *last* colon.
+				var cs = comp as string ?? comp.ToString();
 
-					if (splits.Length > 1)
-					{
-						search.targetName = splits[0];
-						search.targetInstance = splits[1].Ai();
-					}
-					else
-					{
-						search.name = cs;
-						search.targetInstance = 1;
-					}
+				if (int.TryParse(cs, out var compInstance))
+				{
+					search.targetName = "";
+					search.targetInstance = compInstance;
 				}
 				else
 				{
-					search.targetName = "";
-					search.targetInstance = comp.Ai();
+					var colon = cs.LastIndexOf(':');
+
+					if (colon != -1)
+					{
+						search.targetName = cs[..colon];
+						search.targetInstance = cs[(colon + 1)..].Ai();
+					}
+					else
+					{
+						search.targetName = cs;
+						search.targetInstance = 1;
+					}
 				}
 
 				if (!FindComponent(mmDev, search))
@@ -528,7 +554,8 @@ namespace Keysharp.Builtins
 				}
 				else if (search.control == null)
 				{
-					//Throw?
+					//AHK raises ERR_SOUND_CONTROLTYPE here; returning 0 silently reports a real volume.
+					return Errors.TargetErrorOccurred($"Component {comp} doesn't support this control type.");
 				}
 				else if (search.targetControl == SoundControlType.Volume)
 				{
@@ -537,20 +564,27 @@ namespace Keysharp.Builtins
 					if (comobj is IAudioVolumeLevel avl)
 					{
 						if (avl.GetChannelCount(out var channelCount) < 0)
+						{
+							ReleaseControl(search);
 							return Errors.ErrorOccurred("Could not get channel count.");
+						}
 
+						//One block holding three per-channel slices, matching AHK's level/level_min/level_range.
 						float[] level = new float[3 * channelCount];
 						float f, maxLevel = 0;
 
-						for (var ii = 0u; ii < 0; ++ii)
+						for (var ii = 0u; ii < channelCount; ++ii)
 						{
 							if (avl.GetLevel(ii, out var db) < 0 ||
 									avl.GetLevelRange(ii, out var minDb, out var maxDb, out f) < 0)
+							{
+								ReleaseControl(search);
 								return Errors.ErrorOccurred("Could not get level or level range.");
+							}
 
 							//Convert dB to scalar.
-							var levelMin = 0 + ii;
-							var levelRange = levelMin + 0;
+							var levelMin = channelCount + ii;
+							var levelRange = (channelCount * 2) + ii;
 							level[levelMin] = (float)Math.Pow(10.0, minDb / 20.0);
 							level[levelRange] = (float)Math.Pow(10.0, maxDb / 20.0) - level[levelMin];
 							//Compensate for differing level ranges. (No effect if range is -96..0 dB.)
@@ -566,21 +600,30 @@ namespace Keysharp.Builtins
 							if (adjust)
 								settingScalar = Math.Clamp(settingScalar + maxLevel, 0.0f, 1.0f);
 
-							for (var ii = 0; ii < (uint)0; ++ii)
+							for (var ii = 0u; ii < channelCount; ++ii)
 							{
-								var levelMin = (uint)0 + ii;
-								var levelRange = levelMin + 0;
+								var levelMin = channelCount + ii;
+								var levelRange = (channelCount * 2) + ii;
 								f = settingScalar;
 
 								if (maxLevel != 0)
 									f *= level[ii] / maxLevel;//Preserve balance.
 
 								f = level[levelMin] + f * level[levelRange];//Compensate for differing level ranges.
-								level[ii] = 20 * (float)Math.Log(10.0, f);//Convert scalar to dB.
+								level[ii] = 20 * (float)Math.Log10(f);//Convert scalar to dB.
 							}
 
+							//SetLevelAllChannel used to throw from the marshaller on failure; now that it carries
+							//[PreserveSig] the status has to be raised here, or a failed set looks like success.
+							//AHK assigns hr here too and raises an OSError from it, so this matches.
 							Guid guid = Guid.Empty;
-							_ = avl.SetLevelAllChannel(level, 0, ref guid);
+							var setHr = avl.SetLevelAllChannel(level, channelCount, ref guid);
+
+							if (setHr < 0)
+							{
+								ReleaseControl(search);
+								return Errors.OSErrorOccurredForHR(setHr);
+							}
 						}
 						else
 							resultFloat = maxLevel * 100;
@@ -600,18 +643,43 @@ namespace Keysharp.Builtins
 						if (soundSet && res >= 0)
 						{
 							Guid guid = Guid.Empty;
-							_ = am.SetMute(adjust ? !resultBool : settingScalar > 0, ref guid);
+							res = am.SetMute(adjust ? !resultBool : settingScalar > 0, ref guid);
+						}
+
+						//AHK assigns hr for both calls and raises an OSError from it before returning.
+						if (res < 0)
+						{
+							ReleaseControl(search);
+							return Errors.OSErrorOccurredForHR(res);
 						}
 					}
 				}
+
+				ReleaseControl(search);
 			}
 
+			//Mute is documented as returning 0 or 1, and Linux/macOS already do. Returning a bool made
+			//SoundSetMute(SoundGetMute()) a no-op, because a bool does not convert back to a number.
 			return search.targetControl switch
 		{
 				SoundControlType.Volume => (double)resultFloat,
-					SoundControlType.Mute => resultBool,
+					SoundControlType.Mute => resultBool ? 1L : 0L,
 					_ => null,
 			};
+		}
+
+		/// <summary>
+		/// Internal helper to release the interface pointer <see cref="FindComponent(MMDevice, SoundComponentSearch)"/>
+		/// took a reference on. Not called for <see cref="SoundControlType.IID"/>, which deliberately
+		/// transfers ownership of the pointer to the script.
+		/// </summary>
+		/// <param name="search">The completed search holding the control.</param>
+		private static void ReleaseControl(SoundComponentSearch search)
+		{
+			if (search.control is long ptr && ptr != 0)
+				_ = Marshal.Release((nint)ptr);
+
+			search.control = null;
 		}
 
 		/// <summary>
@@ -630,7 +698,9 @@ namespace Keysharp.Builtins
 
 			if (top.GetConnector(0, out var conn) >= 0)
 			{
-				if (conn.GetDataFlow(out var flow) >= 0)
+				//The endpoint's data flow decides which direction FindComponent walks, so it must be
+				//recorded on the search rather than discarded, or capture devices search the wrong way.
+				if (conn.GetDataFlow(out search.dataFlow) >= 0)
 				{
 					if (conn.GetConnectedTo(out var conTo) >= 0)
 					{
@@ -666,13 +736,17 @@ namespace Keysharp.Builtins
 				if (partsList.GetPart(i, out var part) < 0)
 					continue;
 
-				if (root.GetPartType(out var partType) >= 0)
+				//The type of the enumerated child decides Connector vs Subunit, not the type of the
+				//part being recursed from; testing root here classified every child as its parent.
+				if (part.GetPartType(out var partType) >= 0)
 				{
 					if (partType == PartTypeEnum.Connector)
 					{
+						//An empty target name matches any connector; otherwise the name must match in full,
+						//as AHK compares with _wcsicmp (prefix matching is used for devices, not components).
 						if (partCount == 1//Ignore Connectors with no Subunits of their own.
-								&& (!string.IsNullOrEmpty(search.targetName) ||
-									(part.GetName(out var partName) >= 0 && partName.StartsWith(search.targetName, StringComparison.OrdinalIgnoreCase))
+								&& (string.IsNullOrEmpty(search.targetName) ||
+									(part.GetName(out var partName) >= 0 && string.Equals(partName, search.targetName, StringComparison.OrdinalIgnoreCase))
 								   )
 						   )
 						{
@@ -712,20 +786,23 @@ namespace Keysharp.Builtins
 								return true;
 							}
 						}
-						else//Subunit.
+					}
+					else//Subunit.
+					{
+						//Recursively find the Connector nodes linked to this part.
+						if (FindComponent(part, search))
 						{
-							//Recursively find the Connector nodes linked to this part.
-							if (FindComponent(part, search))
+							//A matching connector part has been found with this part as one of the nodes used
+							//to reach it.  Therefore, if this part supports the requested control interface,
+							//it can in theory be used to control the component.  An example path might be:
+							//   Output < Master Mute < Master Volume < Sum < Mute < Volume < CD Audio
+							//Parts are considered from right to left, as we return from recursion.
+							if (search.control == null && !search.ignoreRemainingSubunits)
 							{
-								//A matching connector part has been found with this part as one of the nodes used
-								//to reach it.  Therefore, if this part supports the requested control interface,
-								//it can in theory be used to control the component.  An example path might be:
-								//   Output < Master Mute < Master Volume < Sum < Mute < Volume < CD Audio
-								//Parts are considered from right to left, as we return from recursion.
-								if (search.control == null && !search.ignoreRemainingSubunits)
+								//Query this part for the requested interface and let caller check the result.
+								//Most subunits do not support it, which is expected and must not throw.
+								if (part.Activate(ClsCtx.ALL, ref search.targetIid, out search.control) >= 0 && search.control != null)
 								{
-									//Query this part for the requested interface and let caller check the result.
-									_ = part.Activate(ClsCtx.ALL, ref search.targetIid, out search.control);
 									//Need the specific interface pointer, else ComCall() will fail when using IAudioMeterInformation.
 									var iptr = Marshal.GetIUnknownForObject(search.control);
 
@@ -736,15 +813,15 @@ namespace Keysharp.Builtins
 									}
 
 									_ = Marshal.Release(iptr);
-
-									//If this subunit has siblings, ignore any controls further up the line
-									//as they're likely shared by other components (i.e. master controls).
-									if (partCount > 1)
-										search.ignoreRemainingSubunits = true;
 								}
 
-								return true;
+								//If this subunit has siblings, ignore any controls further up the line
+								//as they're likely shared by other components (i.e. master controls).
+								if (partCount > 1)
+									search.ignoreRemainingSubunits = true;
 							}
+
+							return true;
 						}
 					}
 				}
@@ -772,23 +849,23 @@ namespace Keysharp.Builtins
 				var targetIndex = 0;
 				var targetName = "";
 
-				if (obj0 is string ds && ds.Length > 0)
-				{
-					var splits = ds.Split(':');
+				//Mirrors AHK's SoundSetGet_GetDevice(): Name:Index (split at the *last* colon), else a bare
+				//index, else a name. A numeric string is an index, exactly as a numeric value is.
+				var ds = obj0 as string ?? obj0.ToString();
+				var colon = ds.LastIndexOf(':');
 
-					if (splits.Length > 1)
-					{
-						targetName = splits[0];
-						targetIndex = splits[1].Ai() - 1;
-					}
-					else
-						targetName = ds;
+				if (colon != -1)
+				{
+					targetName = ds[..colon];
+					targetIndex = ds[(colon + 1)..].Ai() - 1;
 				}
-				else
+				else if (int.TryParse(ds, out targetIndex))
 				{
 					targetName = "";
-					targetIndex = obj0.Ai() - 1;
+					--targetIndex;
 				}
+				else
+					targetName = ds;
 
 				var devices = deviceEnum.EnumerateAudioEndPoints(DataFlow.All, DeviceState.Active | DeviceState.Unplugged).ToList();
 
