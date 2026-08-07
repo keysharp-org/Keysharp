@@ -361,7 +361,7 @@ CoordText := MyGui.Add("Text", "xc+10 y+10 cLime s16 bold", "")
 SetTimer("UpdateOSD", 200)
 UpdateOSD()  ; Make the first update immediate rather than waiting for the timer.
 
-; (The ImageSearch killbill fixture is on the Image tab — see imgSearchBtn / the killbill picture in imgGroup.)
+; (ImageSearch runs on the Image tab against the colour swatch in pixelGroup — see imgSearchBtn / ImgSrch.)
 ; ┌────────────────────────┐
 ; │  End of Tab 2 Group 1  │
 ; └────────────────────────┘
@@ -2511,18 +2511,50 @@ MoveGuiBack(*) {
 ; │  Image Search functions  │
 ; └──────────────────────────┘
 
+; Checks that a live screen capture agrees with the Gui's own coordinate system. That is the one thing the
+; headless tests cannot reach: ImageTests (ImageSearchFindsSubImage and friends) already cover the matcher
+; against rich pixel content in memory, and ScreenTests.ImageSearch already covers capturing a region and
+; finding it again, so neither is repeated here.
+;
+; The needle is authored below rather than loaded from killbill.png, and it is deliberately a block of one
+; colour. A Picture control does NOT put an image file's own pixels on screen: macOS renders the image at
+; the display's backing scale and converts it into the display's colour profile (Wayland scales it too), so
+; a needle read from the file can never match its own on-screen rendering - not at any variation, and not
+; with *w/*h scaling. Gui-drawn solid colours do survive the capture byte-for-byte, and a solid block stays
+; solid however the display scales it, so this needle is valid at 1x, 2x and fractional scaling without the
+; script having to know the scale.
 ImgSrch(*) {
-	CoordMode("Pixel", "Screen")  ; report screen coordinates and match the on-screen killbill fixture
+	global MyGui, pixelSwatch
+
+	CoordMode("Pixel", "Screen")  ; the swatch's screen rect below is in screen coordinates too
 
 	try {
-		resultX := ""
-		resultY := 0
-		if ImageSearch(&resultX, &resultY, 0, 0, A_ScreenWidth, A_ScreenHeight, "killbill.png") {
-			SetStatus("image_main", "Image status: PASS - found killbill.png at " resultX "," resultY)
-			AppendLog("ImageSearch found killbill.png at " resultX "," resultY ".")
+		MyGui.GetClientPos(&clientX, &clientY, &clientW, &clientH)
+		pixelSwatch.GetPos(&swatchX, &swatchY, &swatchW, &swatchH)
+		expectedX := clientX + swatchX, expectedY := clientY + swatchY
+
+		needle := Image.Create(8, 8, 0xCC5533).ToBitmap()
+		resultX := "", resultY := ""
+
+		; Bounded to the window rather than the whole desktop, so a same-coloured pixel in some other
+		; window cannot win the top-left-first scan. It also exercises the search-rectangle path.
+		if !ImageSearch(&resultX, &resultY, clientX, clientY, clientX + clientW, clientY + clientH, "HBITMAP:" needle) {
+			SetStatus("image_main", "Image status: FAIL - colour swatch not found inside the window")
+			AppendLog("ImageSearch did not find the swatch fixture within the Gui client area.")
+			return
+		}
+
+		; Two independent checks on the reported position. It must be the swatch's own top-left corner as
+		; the Gui reports it, and reading that point back must give the colour searched for - PixelGetColor
+		; maps screen->pixel where ImageSearch mapped pixel->screen, so a HiDPI scale slip breaks one or both.
+		colour := PixelGetColor(resultX, resultY)
+
+		if resultX = expectedX && resultY = expectedY && colour = 0xCC5533 {
+			SetStatus("image_main", "Image status: PASS - swatch found at " resultX "," resultY " (matches GetPos)")
+			AppendLog("ImageSearch found the swatch at " resultX "," resultY ", matching GetPos, and PixelGetColor there reads " colour ".")
 		} else {
-			SetStatus("image_main", "Image status: FAIL - killbill.png not found on screen")
-			AppendLog("ImageSearch did not find killbill.png on screen.")
+			SetStatus("image_main", "Image status: FAIL - found " resultX "," resultY " " colour ", expected " expectedX "," expectedY " 0xCC5533")
+			AppendLog("ImageSearch reported " resultX "," resultY " but GetPos puts the swatch at " expectedX "," expectedY "; PixelGetColor there reads " colour ".")
 		}
 	} catch as e {
 		SetStatus("image_main", "Image status: FAIL - ImageSearch error: " e.Message)
@@ -3018,18 +3050,18 @@ DoWav(*)
 Tab.UseTab("Image")
 imgGroup := MyGui.AddGroupBox("xc+10 yc+10 w500", "Images (Picture / ImageSearch / ScreenClip)")
 MyGui.UseGroup(imgGroup)
-MyGui.AddText("xc+16 yc+24 w468 h44", "Display loads monkey/icon/svg Picture controls then destroys them; ImageSearch finds killbill.png on screen; ScreenClip captures a region and shows it. Pictures render on this tab.")
+MyGui.AddText("xc+16 yc+24 w468 h44", "Display loads monkey/icon/svg Picture controls then destroys them; ImageSearch locates the colour swatch on screen and checks the coordinates against GetPos; ScreenClip captures a region and shows it. Pictures render on this tab.")
 imgDisplayBtn := MyGui.AddButton("xc+16 y+10 w150 h28", "Display Pictures")
 imgDisplayBtn.OnEvent("Click", "LoadPic")
 imgDestroyBtn := MyGui.AddButton("x+10 yp w150 h28", "Destroy Pictures")
 imgDestroyBtn.OnEvent("Click", "DestroyPic")
-imgSearchBtn := MyGui.AddButton("xc+16 y+10 w180 h28", "Image Search (killbill)")
+imgSearchBtn := MyGui.AddButton("xc+16 y+10 w180 h28", "Image Search (swatch)")
 imgSearchBtn.OnEvent("Click", "ImgSrch")
 imgScreenClipBtn := MyGui.AddButton("x+10 yp w120 h28", "Screen Clip")
 imgScreenClipBtn.OnEvent("Click", "LoadSC")
 imgOverlayBtn := MyGui.AddButton("xc+16 y+10 w230 h28", "Overlay Test (corner shapes + text)")
 imgOverlayBtn.OnEvent("Click", (*) => RunOverlayTest())
-MyGui.AddText("xc+16 y+12 w468", "ImageSearch fixture (killbill.png, native size) — Image Search finds this on screen:")
+MyGui.AddText("xc+16 y+12 w468", "Picture control render test (killbill.png, native size). NOTE: a rendered image file is not searchable — macOS/Wayland rescale it and macOS converts its colours — so Image Search uses the colour swatch instead:")
 SrchPic := MyGui.Add("Picture", "xc+16 y+6 w-1 h-1", A_WorkingDir . A_DirSeparator . "killbill.png")
 imgSearchStatus := MyGui.AddText("xc+16 yc+330 w468 h40", "Image status: Not run")
 gStatus["image_main"] := imgSearchStatus
