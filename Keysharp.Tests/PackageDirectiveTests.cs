@@ -422,8 +422,12 @@ namespace Keysharp.Tests
 		[Test, Category("Directives")]
 		public void NativeLibraryAliasesCoverTheSpellingsPInvokeUses()
 		{
-			var win = Keysharp.Internals.Os.NuGetPackageLoader.NativeAliasesFor(@"C:\p\runtimes\win-x64\native\e_sqlite3.dll");
-			CollectionAssert.AreEquivalent(new[] { "e_sqlite3.dll", "e_sqlite3" }, win);
+			// Composed with Path.Combine rather than written as a literal Windows path: a native asset path always
+			// reaches this function in the host platform's own separator style, and '\' is not a separator on Unix —
+			// a hard-coded "C:\...\e_sqlite3.dll" makes GetFileName there return the whole string, not the file name.
+			var dll = Keysharp.Internals.Os.NuGetPackageLoader.NativeAliasesFor(
+				Path.Combine("p", "runtimes", "win-x64", "native", "e_sqlite3.dll"));
+			CollectionAssert.AreEquivalent(new[] { "e_sqlite3.dll", "e_sqlite3" }, dll);
 
 			// On Unix the "lib" prefix and the version suffix are both conventionally omitted in DllImport.
 			var so = Keysharp.Internals.Os.NuGetPackageLoader.NativeAliasesFor("/p/runtimes/linux-x64/native/libfoo.so.1");

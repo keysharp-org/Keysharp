@@ -97,24 +97,40 @@
 		<ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
 	</ItemGroup>
 
+	<!-- Populates the Keyview.app in the *build* output with Keysharp's runtime files, purely so Keyview can be
+	     run/debugged from the IDE. Shipping bundles never come from here - the packagers publish both projects
+	     into dist/publish/<rid>/ (see Keysharp.Install/package-macos.sh).
+	     RuntimeIdentifier is deliberately not forwarded: on macOS Directory.Build.targets gives every shipping
+	     project a default RID, and passing that on as a *global* property would push the inner build into a
+	     bin/<cfg>/<tfm>/<rid>/ tree of its own - a second output tree that only macOS would have. An explicitly
+	     requested RID (-r) is already a global property and still reaches the inner build on its own, so both
+	     builds land in the same place either way, exactly as on Windows and Linux. -->
 	<Target Name="BuildAndCopyKeysharpForMac" AfterTargets="Build" Condition="$([MSBuild]::IsOSPlatform('OSX')) AND '$(MacIsBuildingBundle)' != 'True'">
 		<MSBuild
 			Projects="..\Keysharp\Keysharp.csproj"
 			Targets="Build"
-			Properties="Configuration=$(Configuration);Platform=AnyCPU;RuntimeIdentifier=$(RuntimeIdentifier);Restore=false" />
+			Properties="Configuration=$(Configuration);Platform=AnyCPU;Restore=false">
+			<Output TaskParameter="TargetOutputs" ItemName="_KeysharpBuiltAssembly" />
+		</MSBuild>
 
 		<PropertyGroup>
-			<_KeysharpOutputDir>$(MSBuildThisFileDirectory)../bin/$(Configuration)/$(TargetFramework)/$(RuntimeIdentifier)</_KeysharpOutputDir>
+			<!-- Taken from what the build just produced rather than recomposed as bin/<cfg>/<tfm>[/<rid>]:
+			     whether the RID is part of that path depends on how the build was invoked, and this target
+			     has no business encoding either layout. -->
+			<_KeysharpOutputDir>%(_KeysharpBuiltAssembly.RootDir)%(_KeysharpBuiltAssembly.Directory)</_KeysharpOutputDir>
 			<_FinalMacBundleDir>$(TargetDir)Keyview.app/Contents/MacOS</_FinalMacBundleDir>
 		</PropertyGroup>
 
 		<ItemGroup>
-			<!-- Prefer files from Keysharp.app bundle when present -->
+			<!-- Prefer files from Keysharp.app bundle when present: its MacOS folder holds exactly Keysharp's
+			     own runtime files. -->
 			<_KeysharpRuntimeFiles Include="$(_KeysharpOutputDir)/Keysharp.app/Contents/MacOS/Keysharp*" />
 			<_KeysharpRuntimeFiles Include="$(_KeysharpOutputDir)/Keysharp.app/Contents/MacOS/Scripts/**" />
-			<!-- Fallback to flat output folder -->
-			<_KeysharpRuntimeFiles Include="$(_KeysharpOutputDir)/Keysharp*" />
-			<_KeysharpRuntimeFiles Include="$(_KeysharpOutputDir)/Scripts/**" />
+			<!-- Fallback to the flat output folder, and only with no bundle to take files from: that folder is
+			     shared with every other project in the repo, so "Keysharp*" also matches Keysharp.Tests and
+			     Keysharp.Benchmark there. -->
+			<_KeysharpRuntimeFiles Condition="!Exists('$(_KeysharpOutputDir)/Keysharp.app')" Include="$(_KeysharpOutputDir)/Keysharp*" />
+			<_KeysharpRuntimeFiles Condition="!Exists('$(_KeysharpOutputDir)/Keysharp.app')" Include="$(_KeysharpOutputDir)/Scripts/**" />
 			<_KeysharpRuntimeFiles Remove="@(_KeysharpRuntimeFiles)" Condition="'%(Extension)' == '.pdb' or '%(Extension)' == '.ico' or '%(Extension)' == '.png' or '%(Extension)' == '.manifest'" />
 			<_KeysharpRuntimeFiles Remove="@(_KeysharpRuntimeFiles)" Condition="'%(Filename)' == 'Keysharp.OutputTest' or '%(Filename)' == 'Keysharp.OutputTest.deps' or '%(Filename)' == 'Keysharp.OutputTest.runtimeconfig' or '%(Filename)' == 'Keysharp.OutputTest.dll'" />
 		</ItemGroup>

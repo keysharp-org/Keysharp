@@ -16,8 +16,8 @@
                 // "DISPLAY": ":0"
             },
             "osx": {
-                "program": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/osx-arm64/Keysharp.app/Contents/MacOS/Keysharp",
-                "cwd": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/osx-arm64/Keysharp.app/Contents/MacOS"
+                "program": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/Keysharp.app/Contents/MacOS/Keysharp",
+                "cwd": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/Keysharp.app/Contents/MacOS"
             },
             "windows": {
                 "program": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0-windows/Keysharp.exe",
@@ -41,8 +41,8 @@
                 // "DISPLAY": ":0"
             },
             "osx": {
-                "program": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/osx-arm64/Keyview.app/Contents/MacOS/Keyview",
-                "cwd": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/osx-arm64/Keyview.app/Contents/MacOS"
+                "program": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/Keyview.app/Contents/MacOS/Keyview",
+                "cwd": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/Keyview.app/Contents/MacOS"
             },
             "windows": {
                 "program": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0-windows/Keyview.exe",
@@ -66,8 +66,8 @@
                 // "DISPLAY": ":0"
             },
             "osx": {
-                "program": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/osx-arm64/Keysharp.OutputTest.app/Contents/MacOS/Keysharp.OutputTest",
-                "cwd": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/osx-arm64/Keysharp.OutputTest.app/Contents/MacOS"
+                "program": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/Keysharp.OutputTest.app/Contents/MacOS/Keysharp.OutputTest",
+                "cwd": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0/Keysharp.OutputTest.app/Contents/MacOS"
             },
             "windows": {
                 "program": "${workspaceFolder}/bin/${config:keysharp.buildConfiguration}/net10.0-windows/Keysharp.OutputTest.exe",

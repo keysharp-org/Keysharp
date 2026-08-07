@@ -190,12 +190,27 @@ namespace Keysharp.Tests
 
 				// The switch itself: accepted forms, comma lists, and rejection of a value-looking argument. The
 				// parsed symbols ride on the command, like every other switch — nothing is published process-wide.
-				foreach (var form in new[] { "--define:A_SYM", "-define:A_SYM", "/define:A_SYM" })
+				// "/" is a switch prefix on Windows only: elsewhere a leading "/" begins an absolute path, so just the
+				// AutoHotkey-compatible run options (/force, /restart, ...) are matched there, and --define is a
+				// Keysharp addition rather than one of those.
+				var forms = new List<string> { "--define:A_SYM", "-define:A_SYM" };
+#if WINDOWS
+				forms.Add("/define:A_SYM");
+#endif
+
+				foreach (var form in forms)
 				{
 					var cmd = Keysharp.Internals.Scripting.Runner.Parse([form, script]);
 					Assert.IsNull(cmd.ErrorText, $"{form} should parse; got: {cmd.ErrorText}");
 					Assert.Contains("A_SYM", cmd.Defines, $"{form} should define A_SYM");
 				}
+
+#if !WINDOWS
+				// The other half of that rule: the slash spelling must NOT be swallowed as a switch where it is a
+				// legitimate path, otherwise a script named like a switch could never be run.
+				Assert.IsEmpty(Keysharp.Internals.Scripting.Runner.Parse(["/define:A_SYM", script]).Defines,
+					"/define: must not be treated as a switch on a platform where it is a valid path");
+#endif
 
 				// A comma list and a repeated switch both accumulate.
 				var multi = Keysharp.Internals.Scripting.Runner.Parse(["--define:P,Q", "--define:R", script]);
@@ -258,10 +273,18 @@ namespace Keysharp.Tests
 				return (d.ToArray(), r.ToArray(), err);
 			}
 
+			// SplitDefines has to agree with Runner.Parse about what is a switch at all, so the slash form is
+			// extracted only where Parse would also have accepted it — on Windows. Elsewhere "/define:A,B" is an
+			// ordinary path-shaped argument and must be forwarded verbatim rather than silently eaten.
 			var mixed = Split("--define:FEATURE_X", "--force", "/define:A,B", "--errorstdout");
 			Assert.IsNull(mixed.error);
+#if WINDOWS
 			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "FEATURE_X", "A", "B" }, mixed.defines, "every --define form should be extracted");
 			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--force", "--errorstdout" }, mixed.rest, "other switches must be forwarded untouched");
+#else
+			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "FEATURE_X" }, mixed.defines, "only the dash forms are switches here");
+			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--force", "/define:A,B", "--errorstdout" }, mixed.rest, "a path-shaped argument must be forwarded untouched");
+#endif
 
 			// Nothing to extract: the whole command line is forwarded.
 			var none = Split("--force", "--restart");

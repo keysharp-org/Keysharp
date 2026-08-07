@@ -162,8 +162,12 @@ publish_projects() {
 
 resolve_app_source() {
   local name="$1"
+  # The publish tree is what this script builds and ships; the build tree is only a fallback for a
+  # hand-built bundle. A plain build puts that in bin/<config>/<tfm>/ on every platform, and only adds
+  # a <rid>/ level when one was passed explicitly (-r), so accept both.
   local candidates=(
     "${PUBLISH_DIR}/${name}/${name}.app"
+    "${ROOT}/bin/${CONFIG}/net10.0/${name}.app"
     "${ROOT}/bin/${CONFIG}/net10.0/${RID}/${name}.app"
   )
 
