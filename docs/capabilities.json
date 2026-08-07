@@ -7707,7 +7707,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the selected monitor index and writes its native screen-coordinate bounds to the supplied output variables.",
+                     "notes":  "Returns the selected monitor index and writes its native screen-coordinate bounds to the supplied output variables. An omitted index or 0 selects the primary monitor; any other out-of-range index raises a ValueError, matching AutoHotkey v2, rather than silently substituting the primary. Image.FromMonitor() resolves the monitor the same way and inherits that validation.",
                      "tested-by":  "monitor-monitorget.ahk"
                  },
                  {
@@ -7805,8 +7805,8 @@
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
-                     "macos":  "unknown",
-                     "notes":  "Re-reads this monitor's topology and metadata in place and returns the same object. Matches by name first so the monitor is still tracked after the display order changes, falling back to the index.",
+                     "macos":  "full",
+                     "notes":  "Re-reads this monitor's topology and metadata in place and returns the same object. Matches by name first so the monitor is still tracked after the display order changes, falling back to the index. Returns blank (falsy) instead, leaving the object's last-known values untouched, when the monitor is no longer attached - the state a Monitor.OnChange 'topology' handler is in after the display it was holding is unplugged, so it reports the loss the same way FromId does rather than throwing.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {
@@ -7905,7 +7905,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Get or set the monitor's brightness as a percentage (0-100). Each access is a real device transaction (tens of milliseconds over DDC/CI) and is deliberately not cached, because the monitor's own buttons can change the value too. Windows uses WMI for the built-in panel and DDC/CI for external monitors. Linux uses the kernel backlight class for the built-in panel (a direct sysfs write where permitted, else logind's SetBrightness) and DDC/CI over /dev/i2c-* for external monitors, which needs i2c-dev loaded and access to the bus - hence partial. macOS uses the private DisplayServices framework for the built-in panel and Apple's own displays, and DDC/CI for every other external monitor: on Apple Silicon over the private IOAVService (the only option, since IOFramebuffer does not exist under the DCP architecture), on Intel over the public IOKit I2C API - the Intel path is implemented but untested. Throws an OSError naming the reason where unsupported; test HasBrightness to branch without an exception.",
+                     "notes":  "Get or set the monitor's brightness as a percentage (0-100). Each access is a real device transaction (tens of milliseconds over DDC/CI) and is deliberately not cached, because the monitor's own buttons can change the value too. Windows uses WMI for the built-in panel and DDC/CI for external monitors. Linux uses the kernel backlight class for the built-in panel (a direct sysfs write where permitted, else logind's SetBrightness) and DDC/CI over /dev/i2c-* for external monitors, which needs i2c-dev loaded and access to the bus (a root install adds a udev rule granting the local-seat user access to display-controller i2c buses only; ddcutil's own rule works too) - hence partial. macOS uses the private DisplayServices framework for the built-in panel and Apple's own displays, and DDC/CI for every other external monitor: on Apple Silicon over the private IOAVService (the only option, since IOFramebuffer does not exist under the DCP architecture), on Intel over the public IOKit I2C API - the Intel path is implemented but untested. Throws an OSError naming the reason where unsupported; test HasBrightness to branch without an exception.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {
@@ -7927,7 +7927,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Read or write a raw DDC/CI VCP feature (MCCS): 0x10 brightness, 0x12 contrast, 0x60 input source, 0x62 speaker volume, 0xD6 power mode. GetVCP returns {current, max}. SetVCP drives the monitor's firmware directly - an input-source or power code will switch the monitor away from this computer, and some displays mishandle codes they document, so verify a code against the monitor's MCCS documentation first. Windows uses dxva2; Linux talks to /dev/i2c-* directly, which needs i2c-dev loaded and bus access. macOS reaches external monitors over DDC/CI - the private IOAVService on Apple Silicon, the public IOKit I2C API on Intel (implemented but untested) - and cannot reach the built-in panel at all, which has no DDC/CI connection.",
+                     "notes":  "Read or write a raw DDC/CI VCP feature (MCCS): 0x10 brightness, 0x12 contrast, 0x60 input source, 0x62 speaker volume, 0xD6 power mode. GetVCP returns {current, max}. SetVCP drives the monitor's firmware directly - an input-source or power code will switch the monitor away from this computer, and some displays mishandle codes they document, so verify a code against the monitor's MCCS documentation first. SetVCP reads the feature back before writing it, on the transport it already has open, so a code the monitor does not implement raises an OSError instead of reporting a success the display silently ignored - a DDC/CI write is unacknowledged, so that read is the only evidence the code exists. Windows uses dxva2; Linux talks to /dev/i2c-* directly, which needs i2c-dev loaded and bus access (granted by the udev rule a root install adds). macOS reaches external monitors over DDC/CI - the private IOAVService on Apple Silicon, the public IOKit I2C API on Intel (implemented but untested) - and cannot reach the built-in panel at all, which has no DDC/CI connection.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {
@@ -7949,7 +7949,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the operating system\u0027s name of the specified monitor.",
+                     "notes":  "Returns the operating system\u0027s name of the specified monitor. An out-of-range monitor index raises a ValueError, matching AutoHotkey v2.",
                      "tested-by":  "monitor-monitorgetname.ahk"
                  },
                  {
@@ -7971,7 +7971,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the selected monitor index and writes its native screen-coordinate work area to the supplied output variables.",
+                     "notes":  "Returns the selected monitor index and writes its native screen-coordinate work area to the supplied output variables. An out-of-range monitor index raises a ValueError, matching AutoHotkey v2.",
                      "tested-by":  "monitor-monitorgetworkarea.ahk"
                  },
                  {
