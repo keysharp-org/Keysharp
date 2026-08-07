@@ -7717,8 +7717,8 @@
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
-                     "macos":  "unknown",
-                     "notes":  "Keysharp-specific Ks class for one display: identity and metadata beyond the AHK MonitorGet* functions, plus brightness and DDC/CI control. A Monitor is a snapshot of the topology (call Refresh() to re-read) plus a live handle to the device. macOS is unverified: it is implemented against CoreGraphics and NSScreen but has not been run on a Mac.",
+                     "macos":  "partial",
+                     "notes":  "Keysharp-specific Ks class for one display: identity and metadata beyond the AHK MonitorGet* functions, plus brightness and DDC/CI control. A Monitor is a snapshot of the topology (call Refresh() to re-read) plus a live handle to the device. On macOS the geometry, identity and change events are verified, but Model and Adapter are always empty (CoreGraphics exposes no product-name or adapter API) and Connection only distinguishes the built-in panel.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {
@@ -7904,8 +7904,8 @@
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
-                     "macos":  "unknown",
-                     "notes":  "Get or set the monitor's brightness as a percentage (0-100). Each access is a real device transaction (tens of milliseconds over DDC/CI) and is deliberately not cached, because the monitor's own buttons can change the value too. Windows uses WMI for the built-in panel and DDC/CI for external monitors. Linux uses the kernel backlight class for the built-in panel (a direct sysfs write where permitted, else logind's SetBrightness) and DDC/CI over /dev/i2c-* for external monitors, which needs i2c-dev loaded and access to the bus - hence partial. macOS uses the private DisplayServices framework for the built-in display only and is unverified. Throws an OSError naming the reason where unsupported; test HasBrightness to branch without an exception.",
+                     "macos":  "partial",
+                     "notes":  "Get or set the monitor's brightness as a percentage (0-100). Each access is a real device transaction (tens of milliseconds over DDC/CI) and is deliberately not cached, because the monitor's own buttons can change the value too. Windows uses WMI for the built-in panel and DDC/CI for external monitors. Linux uses the kernel backlight class for the built-in panel (a direct sysfs write where permitted, else logind's SetBrightness) and DDC/CI over /dev/i2c-* for external monitors, which needs i2c-dev loaded and access to the bus - hence partial. macOS uses the private DisplayServices framework for the built-in panel and Apple's own displays, and DDC/CI for every other external monitor: on Apple Silicon over the private IOAVService (the only option, since IOFramebuffer does not exist under the DCP architecture), on Intel over the public IOKit I2C API - the Intel path is implemented but untested. Throws an OSError naming the reason where unsupported; test HasBrightness to branch without an exception.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {
@@ -7915,7 +7915,7 @@
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
-                     "macos":  "unknown",
+                     "macos":  "partial",
                      "notes":  "Whether Brightness works for this monitor. This is a real probe of the device rather than a platform guess, so it costs one brightness read.",
                      "tested-by":  "MonitorTests.cs"
                  },
@@ -7926,8 +7926,8 @@
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
-                     "macos":  "unsupported",
-                     "notes":  "Read or write a raw DDC/CI VCP feature (MCCS): 0x10 brightness, 0x12 contrast, 0x60 input source, 0x62 speaker volume, 0xD6 power mode. GetVCP returns {current, max}. SetVCP drives the monitor's firmware directly - an input-source or power code will switch the monitor away from this computer, and some displays mishandle codes they document, so verify a code against the monitor's MCCS documentation first. Windows uses dxva2; Linux talks to /dev/i2c-* directly, which needs i2c-dev loaded and bus access. macOS has no supported interface: DDC/CI there requires the private IOAVService, which differs between Apple Silicon and Intel.",
+                     "macos":  "partial",
+                     "notes":  "Read or write a raw DDC/CI VCP feature (MCCS): 0x10 brightness, 0x12 contrast, 0x60 input source, 0x62 speaker volume, 0xD6 power mode. GetVCP returns {current, max}. SetVCP drives the monitor's firmware directly - an input-source or power code will switch the monitor away from this computer, and some displays mishandle codes they document, so verify a code against the monitor's MCCS documentation first. Windows uses dxva2; Linux talks to /dev/i2c-* directly, which needs i2c-dev loaded and bus access. macOS reaches external monitors over DDC/CI - the private IOAVService on Apple Silicon, the public IOKit I2C API on Intel (implemented but untested) - and cannot reach the built-in panel at all, which has no DDC/CI connection.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {

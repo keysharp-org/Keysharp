@@ -684,6 +684,32 @@ namespace Keysharp.Internals
 		}
 
 		/// <summary>
+		/// The display's EDID identity triple as CoreGraphics reports it. Exposed for <see cref="MacDdc"/>, which
+		/// has to pair a display with its DDC/CI endpoint in the IORegistry: the registry's
+		/// <c>ProductAttributes</c> keys (<c>LegacyManufacturerID</c>, <c>ProductID</c>, <c>SerialNumber</c>) carry
+		/// exactly these three values, so they match without a second EDID parse.
+		/// </summary>
+		internal static bool TryGetIdentity(DisplayInfo display, out uint vendor, out uint model, out uint serial)
+		{
+			vendor = model = serial = 0;
+
+			if (!TryResolveDisplayId(display, out var id))
+				return false;
+
+			try
+			{
+				vendor = CGDisplayVendorNumber(id);
+				model = CGDisplayModelNumber(id);
+				serial = CGDisplaySerialNumber(id);
+				return true;
+			}
+			catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+			{
+				return false;
+			}
+		}
+
+		/// <summary>
 		/// Finds the CGDirectDisplayID whose bounds match this display. Matching on geometry rather than asking
 		/// AppKit for NSScreenNumber keeps the lookup on the thread-safe CoreGraphics path.
 		/// </summary>

@@ -97,6 +97,7 @@ macOS support is in active development. The following table summarises what work
 | Cursor confinement | Partial | `ClipCursor` suppresses out-of-bounds movement; requires **Input Monitoring** and **Accessibility** permissions |
 | GUI windows | Working | Eto.Forms backend; some controls differ from Windows |
 | Screen capture / pixel functions | Working | Requires **Screen Recording** permission on first use |
+| Monitor brightness / DDC-CI | Partial | Built-in panel (and Apple's own displays) via DisplayServices; other external monitors over DDC/CI. No permission needed. Apple Silicon only — the Intel path is implemented but untested, and some USB-C hubs and docks do not carry the DDC channel. `Monitor.GetVCP()`/`SetVCP()` work on external monitors only, as a built-in panel has no DDC/CI connection |
 | Window management | Partial | Accessibility API; foreign-app control requires permission |
 | Registry APIs | Not supported | Windows-only |
 | COM APIs | Not supported | Windows-only |

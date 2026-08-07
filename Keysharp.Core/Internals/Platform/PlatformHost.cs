@@ -140,6 +140,7 @@ namespace Keysharp.Internals
 		internal override IKeyboard Keyboard => keyboard;
 		internal override IOverlay Overlay => overlay;
 		internal override IScreen Screen => screen;
+		internal override IMonitorControl MonitorControl => monitorControl;
 		internal override IClipboard Clipboard => clipboard;
 		internal override IWindowEvents Events => events;
 		internal override IMonitorEvents MonitorEvents => monitorEvents;

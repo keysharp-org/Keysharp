@@ -611,10 +611,10 @@ namespace Keysharp.Internals
 	}
 #elif OSX
 	/// <summary>
-	/// macOS brightness. The built-in panel (and Apple's own displays) go through the private DisplayServices
-	/// framework, which is what every macOS brightness utility ends up using because there is no public API.
-	/// External displays are NOT supported: DDC/CI on macOS needs IOAVService, which is private, undocumented and
-	/// different on Apple Silicon versus Intel — so this reports an honest failure instead of pretending.
+	/// macOS brightness and VCP control. The built-in panel — and Apple's own external displays, which is why this
+	/// is tried first for every display rather than only for internal ones — goes through the private
+	/// DisplayServices framework, the only thing that drives an Apple backlight. Every other external display goes
+	/// through DDC/CI, via <see cref="MacDdc"/>.
 	/// </summary>
 	internal sealed class MacMonitorControl : IMonitorControl
 	{
@@ -628,6 +628,79 @@ namespace Keysharp.Internals
 		private static extern int DisplayServicesSetBrightness(uint display, float brightness);
 
 		public bool TryGetBrightness(DisplayInfo display, DisplayDetails details, out int percent)
+		{
+			percent = 0;
+
+			if (TryGetDisplayServicesBrightness(display, out var value))
+			{
+				percent = value;
+				return true;
+			}
+
+			// The built-in panel has no DDC channel, so there is nothing to fall back to; going further would only
+			// mean an I2C round-trip that cannot succeed.
+			if (details.IsInternal)
+				return false;
+
+			if (MacDdc.TryGetVcp(display, MacDdc.VcpBrightness, out var current, out var max) && max > 0)
+			{
+				percent = (int)Math.Round(current * 100.0 / max);
+				return true;
+			}
+
+			return false;
+		}
+
+		public bool TrySetBrightness(DisplayInfo display, DisplayDetails details, int percent)
+		{
+			percent = Math.Clamp(percent, 0, 100);
+
+			// DisplayServicesSetBrightness returns success for a display it cannot actually drive — it silently
+			// does nothing on a third-party external monitor — so its return value cannot decide the transport.
+			// The GETTER does fail honestly on those displays, so it is used as the capability probe instead;
+			// without this the setter would report success and change nothing.
+			if (TryGetDisplayServicesBrightness(display, out _)
+				&& MacMonitorDetails.TryResolveDisplayId(display, out var id))
+				try
+				{
+					if (DisplayServicesSetBrightness(id, percent / 100f) == 0)
+						return true;
+				}
+				catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+				{
+				}
+
+			if (details.IsInternal)
+				return false;
+
+			// The percentage has to be scaled by the monitor's own maximum, so a set costs a read first; MacDdc
+			// sequences both on one open transport with the settle delay the standard requires between them.
+			return MacDdc.TrySetVcpScaled(display, MacDdc.VcpBrightness, percent / 100.0);
+		}
+
+		public bool TryGetVcp(DisplayInfo display, DisplayDetails details, byte code, out int current, out int max)
+		{
+			current = max = 0;
+			// DisplayServices is a brightness-only interface with no notion of VCP, so unlike brightness there is
+			// no non-DDC path here — not even for the built-in panel.
+			return !details.IsInternal && MacDdc.TryGetVcp(display, code, out current, out max);
+		}
+
+		public bool TrySetVcp(DisplayInfo display, DisplayDetails details, byte code, int value)
+			=> !details.IsInternal && MacDdc.TrySetVcp(display, code, value);
+
+		public string UnsupportedReason(DisplayInfo display, DisplayDetails details)
+		{
+			if (details.IsInternal)
+				return "this is the built-in panel - DisplayServices did not accept the request, and a built-in "
+					+ "panel has no DDC/CI connection to fall back to";
+
+			return MacDdc.TransportUnavailableReason(display)
+				?? "the monitor did not respond to DDC/CI - check that it is enabled in the monitor's own "
+					+ "on-screen menu (often called DDC/CI or MCCS)";
+		}
+
+		private static bool TryGetDisplayServicesBrightness(DisplayInfo display, out int percent)
 		{
 			percent = 0;
 
@@ -647,15 +720,134 @@ namespace Keysharp.Internals
 				return false;
 			}
 		}
+	}
 
-		public bool TrySetBrightness(DisplayInfo display, DisplayDetails details, int percent)
+	/// <summary>
+	/// DDC/CI for macOS. The packet layer is the same VESA framing <see cref="LinuxDdc"/> speaks — the monitor is a
+	/// slave at 0x37, each transaction is length-prefixed and checksummed, and the standard mandates a settle delay
+	/// — but macOS has no i2c-dev character device, so the bytes have to reach the wire through one of two very
+	/// different transports, picked per display:
+	/// <list type="bullet">
+	/// <item><description><b>Apple Silicon</b> — <c>IOAVService</c>. Private and undocumented, and the only option:
+	/// under the DCP display architecture <c>IOFramebuffer</c> does not exist at all, so the public I2C API below
+	/// has nothing to attach to. This is the same transport m1ddc, MonitorControl and BetterDisplay use.</description></item>
+	/// <item><description><b>Intel</b> — <c>IOFBCopyI2CInterfaceForBus</c> + <c>IOI2CSendRequest</c>, which are
+	/// public, documented IOKit (<c>IOKit/i2c/IOI2CInterface.h</c>).</description></item>
+	/// </list>
+	/// <para>Both are attempted regardless of the process architecture rather than switched on
+	/// <c>ProcessArchitecture</c>: that would answer the wrong question under Rosetta, where an x64 process is
+	/// running on a machine that only has the Apple Silicon transport.</para>
+	/// <para>No transport handle is cached, for the reason given at the top of this file: a DDC transaction costs
+	/// far more than opening the handle around it, and a cached handle would need a display-hotplug invalidation
+	/// signal to stay correct.</para>
+	/// </summary>
+	internal static class MacDdc
+	{
+		internal const byte VcpBrightness = 0x10;
+
+		private const string IOKitFramework = "/System/Library/Frameworks/IOKit.framework/IOKit";
+		private const string CoreFoundation =
+			"/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
+
+		private const byte SlaveAddress = 0x37;    // DDC/CI, 7-bit
+		private const byte SourceAddress = 0x51;   // host, as it appears on the wire
+		private const byte HostAddress = 0x6E;     // 8-bit write address; also the checksum seed
+		private const int SettleMs = 40;           // DDC/CI requires >= 40 ms between transactions
+		private const int ReplyLength = 12;        // an 11-byte VCP feature reply, plus slack
+
+		// ---- public entry points -------------------------------------------------------------------------
+
+		internal static bool TryGetVcp(DisplayInfo display, byte code, out int current, out int max)
 		{
-			if (!MacMonitorDetails.TryResolveDisplayId(display, out var id))
+			int gotCurrent = 0, gotMax = 0;
+			var ok = WithTransport(display, t => ReadFeature(t, code, out gotCurrent, out gotMax));
+			current = gotCurrent;
+			max = gotMax;
+			return ok;
+		}
+
+		internal static bool TrySetVcp(DisplayInfo display, byte code, int value)
+			=> WithTransport(display, t => WriteFeature(t, code, value));
+
+		/// <summary>Sets a feature to a fraction (0..1) of the monitor's own reported maximum. Scaling needs that
+		/// maximum, so this is a read followed by a write, sequenced on ONE open transport so the settle delay
+		/// between them is actually observed.</summary>
+		internal static bool TrySetVcpScaled(DisplayInfo display, byte code, double fraction)
+			=> WithTransport(display, t =>
+			{
+				if (!ReadFeature(t, code, out _, out var max) || max <= 0)
+					return false;
+
+				Thread.Sleep(SettleMs);
+				return WriteFeature(t, code, (int)Math.Round(Math.Clamp(fraction, 0.0, 1.0) * max));
+			});
+
+		/// <summary>
+		/// A reason no DDC transport could be opened for this display, or null when one opened fine (in which case
+		/// the failure was the monitor's own answer, not the transport). Used to make the OSError say what to
+		/// change instead of just "not supported".
+		/// </summary>
+		internal static string TransportUnavailableReason(DisplayInfo display)
+		{
+			using var transport = OpenTransport(display);
+
+			if (transport != null)
+				return null;
+
+			return HasFramebuffers()
+				? "no I2C bus was found for this display's connector - the graphics device does not route DDC/CI "
+					+ "for it"
+				: "no DDC/CI transport could be opened for this display - on Apple Silicon the display must be "
+					+ "attached to a port that exposes an AV service, which some USB-C hubs and docks do not";
+		}
+
+		// ---- DDC/CI packet layer -------------------------------------------------------------------------
+
+		private static bool ReadFeature(IDdcTransport transport, byte code, out int current, out int max)
+		{
+			current = max = 0;
+			var reply = new byte[ReplyLength];
+
+			// Get VCP feature: opcode 0x01 followed by the VCP code.
+			if (!transport.Transact([0x01, code], reply))
 				return false;
+
+			// Reply: [dest, 0x88, 0x02, result, code, type, maxHi, maxLo, curHi, curLo, checksum]. The two
+			// transports hand back the frame at slightly different offsets, so the marker is located rather than
+			// assumed.
+			for (var i = 0; i + 8 < reply.Length; i++)
+			{
+				if (reply[i] != 0x88 || reply[i + 1] != 0x02)
+					continue;
+
+				// A non-zero result byte means the monitor understood the request but does not support the code.
+				if (reply[i + 2] != 0x00 || reply[i + 3] != code)
+					return false;
+
+				max = (reply[i + 5] << 8) | reply[i + 6];
+				current = (reply[i + 7] << 8) | reply[i + 8];
+				return max > 0;
+			}
+
+			return false;
+		}
+
+		private static bool WriteFeature(IDdcTransport transport, byte code, int value)
+		{
+			var clamped = Math.Clamp(value, 0, ushort.MaxValue);
+			// Set VCP feature: opcode 0x03, VCP code, then the value big-endian.
+			var ok = transport.Transact([0x03, code, (byte)(clamped >> 8), (byte)(clamped & 0xFF)], null);
+			Thread.Sleep(SettleMs);
+			return ok;
+		}
+
+		private static bool WithTransport(DisplayInfo display, Func<IDdcTransport, bool> transaction)
+		{
+			using var transport = OpenTransport(display);
 
 			try
 			{
-				return DisplayServicesSetBrightness(id, Math.Clamp(percent, 0, 100) / 100f) == 0;
+				return transport != null && transaction(transport);
 			}
 			catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
 			{
@@ -663,18 +855,502 @@ namespace Keysharp.Internals
 			}
 		}
 
-		public bool TryGetVcp(DisplayInfo display, DisplayDetails details, byte code, out int current, out int max)
+		/// <summary>Apple Silicon's AV service first, then Intel's framebuffer I2C bus; null when neither answers
+		/// for this display.</summary>
+		private static IDdcTransport OpenTransport(DisplayInfo display)
 		{
-			current = max = 0;
-			return false;
+			if (!MacMonitorDetails.TryGetIdentity(display, out var vendor, out var model, out var serial))
+				return null;
+
+			try
+			{
+				return AvServiceTransport.TryOpen(vendor, model, serial)
+					?? (IDdcTransport)FramebufferTransport.TryOpen(vendor, model, serial);
+			}
+			catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+			{
+				return null;
+			}
 		}
 
-		public bool TrySetVcp(DisplayInfo display, DisplayDetails details, byte code, int value) => false;
+		/// <summary>One open DDC channel to a monitor. <c>Transact</c> frames <paramref name="payload"/> for its own
+		/// transport, so callers deal only in VESA payloads; a null or empty reply buffer means write-only.</summary>
+		private interface IDdcTransport : IDisposable
+		{
+			bool Transact(byte[] payload, byte[] reply);
+		}
 
-		public string UnsupportedReason(DisplayInfo display, DisplayDetails details)
-			=> details.IsInternal
-				? "the DisplayServices framework did not accept the request for the built-in display"
-				: "macOS exposes no supported interface for controlling an external display's brightness or DDC/CI features";
+		/// <summary>Checksum over a framed packet, XOR-seeded as the standard specifies.</summary>
+		private static byte Checksum(byte seed, ReadOnlySpan<byte> bytes)
+		{
+			var checksum = seed;
+
+			foreach (var b in bytes)
+				checksum ^= b;
+
+			return checksum;
+		}
+
+		// ---- Apple Silicon: IOAVService ------------------------------------------------------------------
+
+		private sealed class AvServiceTransport : IDdcTransport
+		{
+			private nint service;
+
+			private AvServiceTransport(nint service) => this.service = service;
+
+			/// <summary>Finds the external display's AV service and wraps it. Each candidate is paired with a
+			/// display through the IORegistry's ProductAttributes rather than by enumeration order, which would
+			/// pick the wrong monitor as soon as two are attached.</summary>
+			internal static AvServiceTransport TryOpen(uint vendor, uint model, uint serial)
+			{
+				if (IOServiceGetMatchingServices(0, IOServiceMatching("DCPAVServiceProxy"), out var iterator) != 0)
+					return null;
+
+				var singleExternal = 0u;
+				var externals = 0;
+				var matched = 0u;
+
+				try
+				{
+					for (var entry = IOIteratorNext(iterator); entry != 0; entry = IOIteratorNext(iterator))
+					{
+						if (!IsExternal(entry))
+						{
+							_ = IOObjectRelease(entry);
+							continue;
+						}
+
+						externals++;
+
+						if (Matches(entry, vendor, model, serial))
+						{
+							matched = entry;
+							break;
+						}
+
+						// Keep the last external as a fallback for a monitor that publishes no ProductAttributes;
+						// it is only usable if it turns out to be the ONLY external, checked below.
+						if (singleExternal != 0)
+							_ = IOObjectRelease(singleExternal);
+
+						singleExternal = entry;
+					}
+				}
+				finally
+				{
+					_ = IOObjectRelease(iterator);
+				}
+
+				var chosen = matched != 0 ? matched : externals == 1 ? singleExternal : 0;
+
+				if (matched != 0 && singleExternal != 0)
+					_ = IOObjectRelease(singleExternal);
+
+				if (chosen == 0)
+				{
+					if (singleExternal != 0)
+						_ = IOObjectRelease(singleExternal);
+
+					return null;
+				}
+
+				var service = IOAVServiceCreateWithService(0, chosen);
+				_ = IOObjectRelease(chosen);
+				return service != 0 ? new AvServiceTransport(service) : null;
+			}
+
+			public bool Transact(byte[] payload, byte[] reply)
+			{
+				// The source address travels as the transaction's data address here, not as a byte in the buffer,
+				// so it is XORed into the checksum seed instead.
+				var packet = new byte[payload.Length + 2];
+				packet[0] = (byte)(0x80 | payload.Length);
+				payload.CopyTo(packet, 1);
+				packet[^1] = Checksum((byte)(HostAddress ^ SourceAddress), packet.AsSpan(0, packet.Length - 1));
+
+				if (IOAVServiceWriteI2C(service, SlaveAddress, SourceAddress, packet, (uint)packet.Length) != 0)
+					return false;
+
+				if (reply == null || reply.Length == 0)
+					return true;
+
+				Thread.Sleep(SettleMs);
+				return IOAVServiceReadI2C(service, SlaveAddress, SourceAddress, reply, (uint)reply.Length) == 0;
+			}
+
+			public void Dispose()
+			{
+				if (service != 0)
+				{
+					CFRelease(service);
+					service = 0;
+				}
+			}
+
+			private static bool IsExternal(uint entry)
+			{
+				var location = IORegistryEntryCreateCFProperty(entry, keyLocation, 0, 0);
+
+				if (location == 0)
+					return false;
+
+				try
+				{
+					return CFStringCompare(location, valueExternal, 0) == 0;
+				}
+				finally
+				{
+					CFRelease(location);
+				}
+			}
+
+			/// <summary>
+			/// Compares the display identity CoreGraphics reports against the IORegistry's ProductAttributes, which
+			/// live on an ancestor of the AV service (the framebuffer node), hence the parent-walking search.
+			/// </summary>
+			private static bool Matches(uint entry, uint vendor, uint model, uint serial)
+			{
+				var attributes = IORegistryEntrySearchCFProperty(entry, "IOService", keyDisplayAttributes, 0,
+					KIORegistryIterateRecursively | KIORegistryIterateParents);
+
+				if (attributes == 0)
+					return false;
+
+				try
+				{
+					var product = CFDictionaryGetValue(attributes, keyProductAttributes);
+
+					if (product == 0)
+						return false;
+
+					// A panel that reports no serial (identical units from one batch often do not) still matches on
+					// vendor + product; requiring an exact serial match would reject it outright.
+					var registrySerial = ReadNumber(product, keySerialNumber);
+					return ReadNumber(product, keyLegacyManufacturerId) == vendor
+						&& ReadNumber(product, keyProductId) == model
+						&& (serial == 0 || registrySerial <= 0 || registrySerial == serial);
+				}
+				finally
+				{
+					CFRelease(attributes);
+				}
+			}
+		}
+
+		// ---- Intel: the public IOFramebuffer I2C API -----------------------------------------------------
+
+		/// <summary>
+		/// The documented IOKit I2C path. It is dead code on Apple Silicon — <c>IOFramebuffer</c> instances do not
+		/// exist there, so <see cref="TryOpen"/> simply finds nothing — and is reached only on Intel Macs.
+		/// </summary>
+		private sealed class FramebufferTransport : IDdcTransport
+		{
+			private const uint SimpleTransaction = 1;
+			private const uint DdcCiReplyTransaction = 2;
+			private const uint ReplyAddress = HostAddress | 1;
+
+			private nint connect;
+
+			private FramebufferTransport(nint connect) => this.connect = connect;
+
+			internal static FramebufferTransport TryOpen(uint vendor, uint model, uint serial)
+			{
+				if (IOServiceGetMatchingServices(0, IOServiceMatching("IODisplayConnect"), out var iterator) != 0)
+					return null;
+
+				try
+				{
+					for (var entry = IOIteratorNext(iterator); entry != 0; entry = IOIteratorNext(iterator))
+					{
+						try
+						{
+							if (!Matches(entry, vendor, model, serial)
+								|| IORegistryEntryGetParentEntry(entry, "IOService", out var framebuffer) != 0)
+								continue;
+
+							try
+							{
+								if (TryOpenBus(framebuffer) is FramebufferTransport transport)
+									return transport;
+							}
+							finally
+							{
+								_ = IOObjectRelease(framebuffer);
+							}
+						}
+						finally
+						{
+							_ = IOObjectRelease(entry);
+						}
+					}
+				}
+				finally
+				{
+					_ = IOObjectRelease(iterator);
+				}
+
+				return null;
+			}
+
+			public bool Transact(byte[] payload, byte[] reply)
+			{
+				// Here the source address IS the first byte on the wire, so the checksum seed is the bare host
+				// address and the packet carries one extra leading byte compared with the AV service framing.
+				var packet = new byte[payload.Length + 3];
+				packet[0] = SourceAddress;
+				packet[1] = (byte)(0x80 | payload.Length);
+				payload.CopyTo(packet, 2);
+				packet[^1] = Checksum(HostAddress, packet.AsSpan(0, packet.Length - 1));
+
+				var wants = reply != null && reply.Length > 0;
+				var sendHandle = GCHandle.Alloc(packet, GCHandleType.Pinned);
+				var replyHandle = wants ? GCHandle.Alloc(reply, GCHandleType.Pinned) : default;
+
+				try
+				{
+					var request = new IOI2CRequest
+					{
+						SendTransactionType = SimpleTransaction,
+						SendAddress = HostAddress,
+						SendBuffer = sendHandle.AddrOfPinnedObject(),
+						SendBytes = (uint)packet.Length,
+						MinReplyDelay = (ulong)SettleMs * 1_000_000,   // nanoseconds
+					};
+
+					if (wants)
+					{
+						request.ReplyTransactionType = DdcCiReplyTransaction;
+						request.ReplyAddress = ReplyAddress;
+						request.ReplyBuffer = replyHandle.AddrOfPinnedObject();
+						request.ReplyBytes = (uint)reply.Length;
+					}
+
+					// The outer result only reports whether the transaction started; the bus result is in the
+					// struct the driver wrote back.
+					return IOI2CSendRequest(connect, 0, ref request) == 0 && request.Result == 0;
+				}
+				finally
+				{
+					sendHandle.Free();
+
+					if (wants)
+						replyHandle.Free();
+				}
+			}
+
+			public void Dispose()
+			{
+				if (connect != 0)
+				{
+					_ = IOI2CInterfaceClose(connect, 0);
+					connect = 0;
+				}
+			}
+
+			/// <summary>The first bus on this framebuffer that opens. A connector's DDC channel is normally bus 0,
+			/// but a device that routes several connectors through one framebuffer exposes more.</summary>
+			private static FramebufferTransport TryOpenBus(uint framebuffer)
+			{
+				if (IOFBGetI2CInterfaceCount(framebuffer, out var count) != 0)
+					return null;
+
+				for (var bus = 0u; bus < count; bus++)
+				{
+					if (IOFBCopyI2CInterfaceForBus(framebuffer, bus, out var iface) != 0)
+						continue;
+
+					try
+					{
+						if (IOI2CInterfaceOpen(iface, 0, out var connect) == 0)
+							return new FramebufferTransport(connect);
+					}
+					finally
+					{
+						_ = IOObjectRelease(iface);
+					}
+				}
+
+				return null;
+			}
+
+			private static bool Matches(uint entry, uint vendor, uint model, uint serial)
+			{
+				var info = IODisplayCreateInfoDictionary(entry, 0);
+
+				if (info == 0)
+					return false;
+
+				try
+				{
+					var registrySerial = ReadNumber(info, keyDisplaySerialNumber);
+					return ReadNumber(info, keyDisplayVendorId) == vendor
+						&& ReadNumber(info, keyDisplayProductId) == model
+						&& (serial == 0 || registrySerial <= 0 || registrySerial == serial);
+				}
+				finally
+				{
+					CFRelease(info);
+				}
+			}
+		}
+
+		/// <summary>Whether this machine has any IOFramebuffer at all — false on Apple Silicon, which is what makes
+		/// the two "no transport" explanations distinguishable.</summary>
+		private static bool HasFramebuffers()
+		{
+			try
+			{
+				if (IOServiceGetMatchingServices(0, IOServiceMatching("IOFramebuffer"), out var iterator) != 0)
+					return false;
+
+				var entry = IOIteratorNext(iterator);
+				var any = entry != 0;
+
+				if (any)
+					_ = IOObjectRelease(entry);
+
+				_ = IOObjectRelease(iterator);
+				return any;
+			}
+			catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+			{
+				return false;
+			}
+		}
+
+		// ---- interop -------------------------------------------------------------------------------------
+
+		[StructLayout(LayoutKind.Sequential, Pack = 4)]
+		private struct IOI2CRequest
+		{
+			internal uint SendTransactionType;
+			internal uint ReplyTransactionType;
+			internal uint SendAddress;
+			internal uint ReplyAddress;
+			internal byte SendSubAddress;
+			internal byte ReplySubAddress;
+			private readonly ushort reservedA;
+			internal ulong MinReplyDelay;
+			internal int Result;
+			internal uint CommFlags;
+			private readonly uint padA;
+			internal uint SendBytes;
+			private readonly ulong reservedB;
+			private readonly uint padB;
+			internal uint ReplyBytes;
+			internal nint Completion;
+			internal nint SendBuffer;
+			internal nint ReplyBuffer;
+			private readonly uint reservedC0, reservedC1, reservedC2, reservedC3, reservedC4;
+			private readonly uint reservedC5, reservedC6, reservedC7, reservedC8, reservedC9;
+		}
+
+		private const uint KIORegistryIterateRecursively = 1;
+		private const uint KIORegistryIterateParents = 2;
+		private const nint KCFNumberSInt64Type = 4;
+		private const uint EncodingUtf8 = 0x08000100;
+
+		[DllImport(IOKitFramework)]
+		private static extern nint IOServiceMatching([MarshalAs(UnmanagedType.LPStr)] string name);
+
+		[DllImport(IOKitFramework)]
+		private static extern int IOServiceGetMatchingServices(uint mainPort, nint matching, out uint iterator);
+
+		[DllImport(IOKitFramework)]
+		private static extern uint IOIteratorNext(uint iterator);
+
+		[DllImport(IOKitFramework)]
+		private static extern int IOObjectRelease(uint obj);
+
+		[DllImport(IOKitFramework)]
+		private static extern nint IORegistryEntryCreateCFProperty(uint entry, nint key, nint allocator,
+			uint options);
+
+		[DllImport(IOKitFramework)]
+		private static extern nint IORegistryEntrySearchCFProperty(uint entry,
+			[MarshalAs(UnmanagedType.LPStr)] string plane, nint key, nint allocator, uint options);
+
+		[DllImport(IOKitFramework)]
+		private static extern int IORegistryEntryGetParentEntry(uint entry,
+			[MarshalAs(UnmanagedType.LPStr)] string plane, out uint parent);
+
+		[DllImport(IOKitFramework)]
+		private static extern nint IODisplayCreateInfoDictionary(uint framebuffer, uint options);
+
+		// Private, Apple Silicon only. Declared here rather than resolved through dlsym because a missing entry
+		// point raises EntryPointNotFoundException, which every call path above already treats as "no transport".
+		[DllImport(IOKitFramework)]
+		private static extern nint IOAVServiceCreateWithService(nint allocator, uint service);
+
+		[DllImport(IOKitFramework)]
+		private static extern int IOAVServiceWriteI2C(nint service, uint chipAddress, uint dataAddress,
+			byte[] buffer, uint size);
+
+		[DllImport(IOKitFramework)]
+		private static extern int IOAVServiceReadI2C(nint service, uint chipAddress, uint offset,
+			byte[] buffer, uint size);
+
+		[DllImport(IOKitFramework)]
+		private static extern int IOFBGetI2CInterfaceCount(uint framebuffer, out uint count);
+
+		[DllImport(IOKitFramework)]
+		private static extern int IOFBCopyI2CInterfaceForBus(uint framebuffer, uint bus, out uint iface);
+
+		[DllImport(IOKitFramework)]
+		private static extern int IOI2CInterfaceOpen(uint iface, uint options, out nint connect);
+
+		[DllImport(IOKitFramework)]
+		private static extern int IOI2CInterfaceClose(nint connect, uint options);
+
+		[DllImport(IOKitFramework)]
+		private static extern int IOI2CSendRequest(nint connect, uint options, ref IOI2CRequest request);
+
+		[DllImport(CoreFoundation)]
+		private static extern void CFRelease(nint cf);
+
+		[DllImport(CoreFoundation)]
+		private static extern nint CFStringCreateWithCString(nint allocator,
+			[MarshalAs(UnmanagedType.LPStr)] string cStr, uint encoding);
+
+		[DllImport(CoreFoundation)]
+		private static extern int CFStringCompare(nint a, nint b, uint options);
+
+		[DllImport(CoreFoundation)]
+		private static extern nint CFDictionaryGetValue(nint dictionary, nint key);
+
+		[DllImport(CoreFoundation)]
+		private static extern nuint CFGetTypeID(nint cf);
+
+		[DllImport(CoreFoundation)]
+		private static extern nuint CFNumberGetTypeID();
+
+		[DllImport(CoreFoundation)]
+		[return: MarshalAs(UnmanagedType.I1)]
+		private static extern bool CFNumberGetValue(nint number, nint type, out long value);
+
+		// Interned for the process lifetime: these are looked up per DDC call, and each one is a fixed key name.
+		private static readonly nint keyLocation = CFStr("Location");
+		private static readonly nint valueExternal = CFStr("External");
+		private static readonly nint keyDisplayAttributes = CFStr("DisplayAttributes");
+		private static readonly nint keyProductAttributes = CFStr("ProductAttributes");
+		private static readonly nint keyLegacyManufacturerId = CFStr("LegacyManufacturerID");
+		private static readonly nint keyProductId = CFStr("ProductID");
+		private static readonly nint keySerialNumber = CFStr("SerialNumber");
+		private static readonly nint keyDisplayVendorId = CFStr("DisplayVendorID");
+		private static readonly nint keyDisplayProductId = CFStr("DisplayProductID");
+		private static readonly nint keyDisplaySerialNumber = CFStr("DisplaySerialNumber");
+
+		private static nint CFStr(string value) => CFStringCreateWithCString(0, value, EncodingUtf8);
+
+		/// <summary>A numeric dictionary entry, or -1 when it is absent or not a number. The type check matters:
+		/// CFNumberGetValue on a non-number is undefined behaviour, and these dictionaries are driver-supplied.</summary>
+		private static long ReadNumber(nint dictionary, nint key)
+		{
+			var value = CFDictionaryGetValue(dictionary, key);
+			return value != 0 && CFGetTypeID(value) == CFNumberGetTypeID()
+				&& CFNumberGetValue(value, KCFNumberSInt64Type, out var number) ? number : -1;
+		}
 	}
 #endif
 }
