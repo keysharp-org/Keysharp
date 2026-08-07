@@ -242,6 +242,36 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
+		/// Refresh() must not throw when the monitor it is holding has been unplugged: that is exactly the state a
+		/// Monitor.OnChange "topology" handler is in, and OnChange's own documentation tells such a handler to call
+		/// Refresh(). It reports the loss as a falsy return, the same way FromId reports a monitor that is not
+		/// attached. The matching rule itself is pure logic over a snapshot, so it is tested directly.
+		/// </summary>
+		[Test, Category("Monitor")]
+		public void MonitorRefreshMatching()
+		{
+			DisplayInfo[] two =
+			[
+				new("DP-1", new ScreenRect(0, 0, 2560, 1440), new ScreenRect(0, 0, 2560, 1440), 1.0, true),
+				new("HDMI-1", new ScreenRect(2560, 0, 1920, 1080), new ScreenRect(2560, 0, 1920, 1080), 1.0, false),
+			];
+			// Name wins over the remembered index, so a monitor stays tracked when the display order changes.
+			Assert.AreEqual(2L, Builtins.Ks.KeysharpMonitor.MatchIndex(two, "HDMI-1", 1L));
+			Assert.AreEqual(1L, Builtins.Ks.KeysharpMonitor.MatchIndex(two, "DP-1", 2L));
+
+			// No usable name (Xinerama, a toolkit fallback): the index is the fallback while it is in range.
+			Assert.AreEqual(2L, Builtins.Ks.KeysharpMonitor.MatchIndex(two, "", 2L));
+			Assert.AreEqual(0L, Builtins.Ks.KeysharpMonitor.MatchIndex(two, "", 3L));
+
+			// The monitor was unplugged: gone, and reported as gone rather than as some other monitor.
+			DisplayInfo[] one = [two[0]];
+			Assert.AreEqual(0L, Builtins.Ks.KeysharpMonitor.MatchIndex(one, "HDMI-1", 2L));
+			Assert.AreEqual(0L, Builtins.Ks.KeysharpMonitor.MatchIndex([], "DP-1", 1L));
+			// ...but a rename that keeps the position still resolves through the index rather than dropping it.
+			Assert.AreEqual(1L, Builtins.Ks.KeysharpMonitor.MatchIndex(one, "HDMI-1", 1L));
+		}
+
+		/// <summary>
 		/// Id exists to be persisted and looked up again, so the round trip is the property that matters: whatever
 		/// Id a monitor reports must find that same monitor. An unknown id must be falsy rather than an error.
 		/// </summary>
@@ -514,6 +544,42 @@ namespace Keysharp.Tests
 			Assert.AreEqual("", info.SerialText);
 			Assert.AreEqual("DEL41C1-01020304", info.Key);
 			Assert.IsTrue(info.KeyIsUnique);
+		}
+
+		/// <summary>
+		/// EDID 1.4 overloads the coarse size bytes: when exactly one of them is zero, the other holds an ASPECT
+		/// RATIO rather than a size. Reading it as centimetres reported a 16:9 panel as 790 mm wide, which then
+		/// produced a nonsense Dpi. Such a block has to report no physical size at all.
+		/// </summary>
+		[Test, Category("Monitor")]
+		public void RejectsTheAspectRatioEncodingAsASize()
+		{
+			var edid = BuildBlock();
+			edid[54] = 0;                                 // drop the detailed timing that carries the real size
+			edid[54 + 12] = edid[54 + 13] = edid[54 + 14] = 0;
+			edid[21] = 0x4F;                              // landscape aspect ratio (16:9), NOT 79 cm
+			edid[22] = 0;
+			Fix(edid);
+
+			Assert.IsTrue(Keysharp.Internals.Edid.TryParse(edid, out var info));
+			Assert.AreEqual(0, info.WidthMm, "An aspect-ratio byte must not be reported as a physical width.");
+			Assert.AreEqual(0, info.HeightMm);
+
+			// The portrait spelling puts the ratio in the other byte; it must be rejected the same way.
+			edid[21] = 0;
+			edid[22] = 0x4F;
+			Fix(edid);
+			Assert.IsTrue(Keysharp.Internals.Edid.TryParse(edid, out var portrait));
+			Assert.AreEqual(0, portrait.WidthMm);
+			Assert.AreEqual(0, portrait.HeightMm);
+
+			// A genuine size — both bytes set — still reads as centimetres when no detailed timing overrides it.
+			edid[21] = 60;
+			edid[22] = 34;
+			Fix(edid);
+			Assert.IsTrue(Keysharp.Internals.Edid.TryParse(edid, out var real));
+			Assert.AreEqual(600, real.WidthMm);
+			Assert.AreEqual(340, real.HeightMm);
 		}
 
 		/// <summary>A panel reporting no serial at all cannot identify one physical unit, so the caller must be

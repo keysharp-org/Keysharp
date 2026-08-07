@@ -516,6 +516,11 @@ namespace Keysharp.Internals
 	/// keeps this path off binding surface that varies between MonoMac/Xamarin.Mac versions — the same reasoning
 	/// <c>MacNativeWindows</c> applies to <c>ActivateIgnoringOtherApps</c>. Anything unexpected yields "" and the
 	/// caller falls back.
+	/// <para>The result is cached per NSScreen, because unlike everything else in this file this runs during plain
+	/// topology enumeration — <c>MonitorGetName</c> needs it, so it cannot move behind <c>GetDisplayDetails</c> —
+	/// and that path carries every <c>A_ScreenWidth</c>, <c>MonitorGet</c>, overlay placement and capture. It is
+	/// also the one AppKit call among these; keeping it to once per screen keeps the message send off the hot
+	/// path as well as the allocations.</para>
 	/// </summary>
 	internal static class MacScreenNames
 	{
@@ -545,18 +550,49 @@ namespace Keysharp.Internals
 		private static readonly nint localizedName = SelRegisterName("localizedName");
 		private static readonly nint respondsToSelector = SelRegisterName("respondsToSelector:");
 
+		// NSScreen pointer -> its localized name. AppKit keeps one NSScreen per attached display and rebuilds the
+		// array on reconfiguration, so a pointer that is still being handed out still denotes the same display; a
+		// re-plug or rearrangement produces new objects, which simply miss. Bounded by the number of displays the
+		// session has ever shown at once, i.e. a handful of short strings.
+		private static readonly Dictionary<nint, string> names = new();
+
 		internal static string LocalizedName(Forms.Screen screen)
 		{
+			nint handle;
+
 			try
 			{
 				// Eto's Cocoa screen handler wraps an NSScreen; Handle is the ObjC object the selector goes to.
+				// Reaching it is inside the try as well: a handler whose native peer is gone throws here.
 				if (screen?.ControlObject is not MonoMac.Foundation.NSObject native || native.Handle == 0)
 					return "";
 
-				if (!MsgSendRespondsTo(native.Handle, respondsToSelector, localizedName))
+				handle = native.Handle;
+			}
+			catch
+			{
+				return "";
+			}
+
+			lock (names)
+			{
+				if (names.TryGetValue(handle, out var cached))
+					return cached;
+
+				var name = Query(handle);
+				names[handle] = name;
+				return name;
+			}
+		}
+
+		private static string Query(nint handle)
+		{
+			try
+			{
+				if (!MsgSendRespondsTo(handle, respondsToSelector, localizedName))
 					return "";
 
-				var value = MsgSend(native.Handle, localizedName);
+				var value = MsgSend(handle, localizedName);
 
 				if (value == 0)
 					return "";

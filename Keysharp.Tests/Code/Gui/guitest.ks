@@ -3625,7 +3625,15 @@ RefreshSelectedMonitor() {
 	if (!(m := SelectedMonitor()))
 		return
 
-	m.Refresh()
+	; Refresh() returns falsy when this monitor has been unplugged since the object was built, which is the
+	; state a Monitor.OnChange "topology" handler is in — it reports the loss instead of throwing.
+	if (!m.Refresh()) {
+		SetStatus("monitor_list", "Monitors: monitor " m.Index " (" m.Name ") is no longer attached")
+		AppendLog("Monitor.Refresh() reported monitor " m.Index " (" m.Name ") as detached.")
+		RefreshMonitorList()
+		return
+	}
+
 	ShowSelectedMonitor()
 	SetStatus("monitor_list", "Monitors: refreshed monitor " m.Index " in place")
 	AppendLog("Monitor.Refresh() on monitor " m.Index " (" m.Name ").")

@@ -43,9 +43,9 @@ namespace Keysharp.Builtins
 			/// <c>MonitorGet</c>/<c>MonitorGetCount</c> use. <c>Monitor()</c> selects the primary monitor. An index
 			/// outside the current monitor count throws a ValueError.
 			/// </summary>
-			public object __New(object N = null)
+			public object __New(object n = null)
 			{
-				var (info, monitorIndex) = Monitor.ResolveDisplay(N, Monitor.AllDisplays);
+				var (info, monitorIndex) = Monitor.ResolveDisplay(n, Monitor.AllDisplays);
 				display = info;
 				index = monitorIndex;
 				return DefaultObject;
@@ -78,8 +78,8 @@ namespace Keysharp.Builtins
 			/// <summary>The monitor containing a native screen point, or the nearest one when the point falls in a
 			/// gap between monitors (script: <c>Monitor.FromPoint(x, y)</c>).</summary>
 			[Static]
-			public static object FromPoint(object @this, object X, object Y)
-				=> From(Monitor.ResolveDisplayForPoint(X.Ai(), Y.Ai()));
+			public static object FromPoint(object @this, object x, object y)
+				=> From(Monitor.ResolveDisplayForPoint(x.Ai(), y.Ai()));
 
 			/// <summary>The monitor the mouse cursor is on (script: <c>Monitor.FromMouse()</c>).</summary>
 			[Static]
@@ -93,12 +93,12 @@ namespace Keysharp.Builtins
 			/// decides which monitor "owns" a window (script: <c>Monitor.FromWindow("A")</c>).
 			/// </summary>
 			[Static]
-			public static object FromWindow(object @this, object WinTitle = null, object WinText = null,
-				object ExcludeTitle = null, object ExcludeText = null)
+			public static object FromWindow(object @this, object winTitle = null, object winText = null,
+				object excludeTitle = null, object excludeText = null)
 			{
 				// SearchWindow reports its own TargetError when nothing matches; a null here only happens when the
 				// script's OnError handler swallowed that, in which case there is no monitor to report.
-				if (WindowSearch.SearchWindow(WinTitle, WinText, ExcludeTitle, ExcludeText, true) is not
+				if (WindowSearch.SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is not
 						Keysharp.Internals.Window.WindowInfoBase win)
 					return DefaultObject;
 
@@ -113,9 +113,9 @@ namespace Keysharp.Builtins
 			/// part of the topology snapshot; it costs one metadata query per attached display.</para>
 			/// </summary>
 			[Static]
-			public static object FromId(object @this, object Id)
+			public static object FromId(object @this, object id)
 			{
-				var wanted = Id.As();
+				var wanted = id.As();
 
 				if (wanted.Length == 0)
 					return "";
@@ -134,7 +134,7 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Calls <paramref name="Callback"/> whenever the display configuration changes, and returns a
+			/// Calls <paramref name="callback"/> whenever the display configuration changes, and returns a
 			/// <see cref="MonitorHook"/> whose <c>Stop()</c> cancels the subscription
 			/// (script: <c>hook := Monitor.OnChange(MyCallback)</c>).
 			/// <para>The callback takes <c>(hook, kind)</c>, where <c>kind</c> is <c>"topology"</c> when the set of
@@ -142,20 +142,21 @@ namespace Keysharp.Builtins
 			/// <c>"settings"</c> when the same monitors are attached but something about them changed — resolution,
 			/// position, scale, or which one is primary. <c>A_EventInfo</c> holds the monitor count after the
 			/// change.</para>
-			/// <para><c>Count</c> limits how many times it fires (default -1 = unlimited), matching
+			/// <para><c>count</c> limits how many times it fires (default -1 = unlimited), matching
 			/// <c>Ks.WinEvent</c>. Because the monitor objects a script already holds are snapshots, a handler that
-			/// keeps one should call its <c>Refresh()</c> — or just re-read <c>Monitor.All</c>, which is what the
-			/// layout looks like *now* rather than at event time.</para>
+			/// keeps one should call its <c>Refresh()</c> — which returns falsy if that monitor is the one that was
+			/// just unplugged — or just re-read <c>Monitor.All</c>, which is what the layout looks like *now* rather
+			/// than at event time.</para>
 			/// </summary>
 			[Static]
-			public static object OnChange(object @this, object Callback, object Count = null)
+			public static object OnChange(object @this, object callback, object count = null)
 			{
-				var fo = Functions.GetKeysharpFunc(Callback, null, null, true);
+				var fo = Functions.GetKeysharpFunc(callback, null, null, true);
 
 				if (fo == null)
-					return Errors.TypeErrorOccurred(Callback, typeof(KeysharpFunc));
+					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));
 
-				var reg = new MonitorEventRegistration(fo, Count.Al(-1L), Script.TheScript.EventScheduler);
+				var reg = new MonitorEventRegistration(fo, count.Al(-1L), Script.TheScript.EventScheduler);
 				var hook = new MonitorHook { reg = reg };
 				reg.scriptObject = hook;
 				Script.TheScript.MonitorEventManager.Register(reg);
@@ -271,26 +272,40 @@ namespace Keysharp.Builtins
 			/// Re-reads this monitor's topology and metadata in place, then returns the same object so it can be
 			/// chained. The monitor is matched by name first so it is still tracked after the display order changes,
 			/// falling back to the index.
+			/// <para>Returns "" (falsy) instead, leaving this object's last-known values untouched, when the monitor
+			/// is no longer attached — which is exactly what a <c>Monitor.OnChange</c> handler sees after the display
+			/// it was holding is unplugged, so the recommended pattern there must not be an exception. Use
+			/// <c>if !m.Refresh()</c> to branch on it; <see cref="FromId"/> reports a missing monitor the same way.</para>
 			/// </summary>
 			public object Refresh()
 			{
 				var displays = Monitor.AllDisplays;
-				var name = display.Name;
+				var matched = MatchIndex(displays, display.Name, index);
 
-				for (var i = 0; i < displays.Length; i++)
-					if (!string.IsNullOrEmpty(name) && displays[i].Name == name)
-					{
-						display = displays[i];
-						index = i + 1L;
-						details = null;
-						return this;
-					}
+				if (matched == 0)
+					return "";
 
-				var (info, monitorIndex) = Monitor.ResolveDisplay(index, displays);
-				display = info;
-				index = monitorIndex;
-				details = null;
+				display = displays[(int)matched - 1];
+				index = matched;
+				details = null;                                   // re-resolved on the next property that needs it
 				return this;
+			}
+
+			/// <summary>
+			/// Where a monitor identified by <paramref name="name"/> (and previously at <paramref name="index"/>)
+			/// sits in a fresh snapshot, as a 1-based index, or 0 when it is no longer attached. Name wins so the
+			/// monitor stays tracked when the display order changes; the index is the fallback for platforms that
+			/// report no usable name (Xinerama, a toolkit fallback) or report the same name twice, and is only
+			/// trusted while it is still in range.
+			/// </summary>
+			internal static long MatchIndex(DisplayInfo[] displays, string name, long index)
+			{
+				if (!string.IsNullOrEmpty(name))
+					for (var i = 0; i < displays.Length; i++)
+						if (displays[i].Name == name)
+							return i + 1L;
+
+				return index >= 1 && index <= displays.Length ? index : 0L;
 			}
 
 			// ---- device control ----------------------------------------------------------------------------
@@ -325,12 +340,12 @@ namespace Keysharp.Builtins
 			/// standard: <c>0x10</c> brightness, <c>0x12</c> contrast, <c>0x60</c> input source, <c>0x62</c> speaker
 			/// volume, <c>0xD6</c> power mode. Throws an OSError when the monitor does not answer.
 			/// </summary>
-			public object GetVCP(object Code)
+			public object GetVCP(object code)
 			{
-				var code = (byte)Math.Clamp(Code.Al(), 0L, 255L);
+				var feature = (byte)Math.Clamp(code.Al(), 0L, 255L);
 
-				if (!Platform.MonitorControl.TryGetVcp(display, Details, code, out var current, out var max))
-					return Errors.OSErrorOccurredWithMessage(VcpError($"read VCP feature 0x{code:X2} from"));
+				if (!Platform.MonitorControl.TryGetVcp(display, Details, feature, out var current, out var max))
+					return Errors.OSErrorOccurredWithMessage(VcpError($"read VCP feature 0x{feature:X2} from"));
 
 				var result = new KeysharpObject();
 				result.DefinePropInternal("current", new OwnPropsDesc(result, (long)current));
@@ -342,13 +357,16 @@ namespace Keysharp.Builtins
 			/// Writes one DDC/CI VCP feature. This drives the monitor's firmware directly: setting an input-source
 			/// or power code will switch the monitor away from this computer, and a few displays react badly to
 			/// codes they document but mishandle. Verify a code against the monitor's MCCS documentation first.
+			/// <para>The feature is read before it is written, so a code the monitor does not implement raises an
+			/// OSError rather than reporting a success the display silently ignored — DDC/CI writes are
+			/// unacknowledged, so the preceding read is the only evidence the code exists.</para>
 			/// </summary>
-			public object SetVCP(object Code, object Value)
+			public object SetVCP(object code, object value)
 			{
-				var code = (byte)Math.Clamp(Code.Al(), 0L, 255L);
+				var feature = (byte)Math.Clamp(code.Al(), 0L, 255L);
 
-				if (!Platform.MonitorControl.TrySetVcp(display, Details, code, (int)Value.Al()))
-					return Errors.OSErrorOccurredWithMessage(VcpError($"write VCP feature 0x{code:X2} to"));
+				if (!Platform.MonitorControl.TrySetVcp(display, Details, feature, (int)value.Al()))
+					return Errors.OSErrorOccurredWithMessage(VcpError($"write VCP feature 0x{feature:X2} to"));
 
 				return DefaultObject;
 			}

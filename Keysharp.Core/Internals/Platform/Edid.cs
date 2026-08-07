@@ -70,8 +70,12 @@ namespace Keysharp.Internals
 			var serialNumber = (uint)(edid[12] | (edid[13] << 8) | (edid[14] << 16) | (edid[15] << 24));
 			// Bytes 21/22 are the maximum image size in CENTIMETRES — a coarse fallback. The first detailed timing
 			// descriptor carries the same size in millimetres, which is what a DPI calculation actually wants.
-			var widthMm = edid[21] * 10;
-			var heightMm = edid[22] * 10;
+			// EDID 1.4 overloads this pair: when exactly ONE of the two is zero, the other holds an ASPECT RATIO
+			// (landscape in byte 21, portrait in byte 22), not a size — reading it as centimetres reports a 16:9
+			// panel as 790 mm wide and yields a nonsense DPI. Only a pair with both bytes set is a real size.
+			var haveCoarseSize = edid[21] != 0 && edid[22] != 0;
+			var widthMm = haveCoarseSize ? edid[21] * 10 : 0;
+			var heightMm = haveCoarseSize ? edid[22] * 10 : 0;
 			string modelName = "", serialText = "";
 			var haveDetailedSize = false;
 

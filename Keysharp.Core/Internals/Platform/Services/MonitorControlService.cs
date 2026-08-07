@@ -124,7 +124,16 @@ namespace Keysharp.Internals
 		public bool TrySetVcp(DisplayInfo display, DisplayDetails details, byte code, int value)
 		{
 			var applied = false;
-			WithPhysicalMonitor(display, handle => applied = SetVCPFeature(handle, code, (uint)Math.Max(0, value)));
+			WithPhysicalMonitor(display, handle =>
+			{
+				// Read the feature first, on the handle that is already open: DDC/CI writes are unacknowledged, so
+				// a monitor that does not implement this code would otherwise report a silent success. The read is
+				// the only evidence the code exists.
+				if (!GetVCPFeatureAndVCPFeatureReply(handle, code, 0, out _, out _))
+					return;
+
+				applied = SetVCPFeature(handle, code, (uint)Math.Clamp(value, 0, ushort.MaxValue));
+			});
 			return applied;
 		}
 
@@ -584,8 +593,20 @@ namespace Keysharp.Internals
 			return ok;
 		}
 
+		/// <summary>
+		/// Writes one feature, after reading it back on the same open bus to confirm the monitor implements it.
+		/// A DDC/CI write is unacknowledged, so without the preceding read a code the display does not support
+		/// would report success and do nothing.
+		/// </summary>
 		internal static bool TrySetVcp(string outputName, byte code, int value)
-			=> WithBus(outputName, fd => WriteFeature(fd, code, value));
+			=> WithBus(outputName, fd =>
+			{
+				if (!ReadFeature(fd, code, out _, out _))
+					return false;
+
+				Thread.Sleep(SettleMs);
+				return WriteFeature(fd, code, value);
+			});
 
 		/// <summary>
 		/// Sets a feature to a fraction (0..1) of the value the monitor reports as its maximum. Scaling needs the
@@ -859,8 +880,18 @@ namespace Keysharp.Internals
 			return ok;
 		}
 
+		/// <summary>Writes one feature, after reading it back on the same open transport to confirm the monitor
+		/// implements it. A DDC/CI write is unacknowledged, so without the preceding read a code the display does
+		/// not support would report success and do nothing.</summary>
 		internal static bool TrySetVcp(DisplayInfo display, byte code, int value)
-			=> WithTransport(display, t => WriteFeature(t, code, value));
+			=> WithTransport(display, t =>
+			{
+				if (!ReadFeature(t, code, out _, out _))
+					return false;
+
+				Thread.Sleep(SettleMs);
+				return WriteFeature(t, code, value);
+			});
 
 		/// <summary>Sets a feature to a fraction (0..1) of the monitor's own reported maximum. Scaling needs that
 		/// maximum, so this is a read followed by a write, sequenced on ONE open transport so the settle delay

@@ -307,6 +307,28 @@ namespace Keysharp.Internals.Window.Linux.X11
 			return result;
 		}
 
+		// Atom -> name, for the RandR monitor names read on every topology enumeration. GetDisplays() deliberately
+		// skips the conversion cache below, so without this every A_ScreenWidth, MonitorGet, overlay placement and
+		// capture would pay one synchronous XGetAtomName round trip PER MONITOR. An atom's name is immutable for
+		// the life of the server, so the only risk a cache carries is holding a handful of short strings.
+		private static readonly Dictionary<nint, string> atomNames = new();
+
+		private static string AtomName(nint display, nint atom)
+		{
+			if (atom == 0)
+				return "";
+
+			lock (atomNames)
+			{
+				if (atomNames.TryGetValue(atom, out var cached))
+					return cached;
+
+				var name = Xlib.GetAtomName(display, atom) ?? "";
+				atomNames[atom] = name;
+				return name;
+			}
+		}
+
 		private static List<NativeMonitor> QueryNativeScreens()
 		{
 			var result = new List<NativeMonitor>();
@@ -331,7 +353,7 @@ namespace Keysharp.Internals.Window.Linux.X11
 
 					// The monitor's name is an Atom ("DP-1", "eDP-1"), and its first output is the RandR object
 					// that owns the current mode and rotation.
-					var name = info.Name != 0 ? Xlib.GetAtomName(display.Handle, info.Name) ?? "" : "";
+					var name = AtomName(display.Handle, info.Name);
 					nuint output = 0;
 
 					if (info.Outputs != 0 && info.OutputCount > 0)
