@@ -803,6 +803,28 @@ namespace System.Windows.Forms
 #endif
 		}
 
+#if !WINDOWS
+		/// <summary>
+		/// Returns the control's outer rectangle in screen coordinates - what the window functions report for
+		/// every target (see WinPosHelper: both Bounds and ClientBounds are screen-relative on every platform).
+		/// Deliberately not <see cref="GetBounds"/>, which is parent-relative for a child control: that is what
+		/// <c>Gui.Control.GetPos</c> wants, but reporting it from <c>WinGetPos</c> puts the control at the wrong
+		/// place on the desktop. Windows has no need for this - it reads any HWND's screen rect via GetWindowRect.
+		/// </summary>
+		/// <param name="control">The <see cref="Control"/> whose screen rectangle to return.</param>
+		internal static Rectangle GetScreenBounds(this Forms.Control control)
+		{
+			// A window's own bounds are already absolute and include the title bar/borders, both of which
+			// PointToScreen would drop - it maps the *client* origin.
+			if (control is Forms.Window window)
+				return window.Bounds;
+
+			var sp = control.PointToScreen(Point.Empty);
+			var size = control.GetSize();
+			return new Rectangle((int)Math.Round(sp.X), (int)Math.Round(sp.Y), size.Width, size.Height);
+		}
+#endif
+
 #if WINDOWS
 		internal static int Count(this System.Windows.Forms.Control.ControlCollection collection) => collection.Count;
 

@@ -100,7 +100,7 @@ namespace Keysharp.Internals.Window.Unix
 			}
 		}
 
-		internal override Rectangle ClientBounds => Bounds;
+		internal override Rectangle ClientBounds => control?.GetClientScreenRect() ?? Rectangle.Empty;
 
 		internal override bool Enabled => control?.Enabled ?? false;
 
@@ -110,7 +110,9 @@ namespace Keysharp.Internals.Window.Unix
 
 		internal override bool IsHung => false;
 
-		internal override Rectangle Bounds => control?.GetBounds() ?? Rectangle.Empty;
+		// Screen-relative, matching WindowInfo (see WinPosHelper). Eto's own bounds are relative to the parent,
+		// so WinGetPos on a control used to report its Gui-relative offset as if it were a desktop position.
+		internal override Rectangle Bounds => control?.GetScreenBounds() ?? Rectangle.Empty;
 
 		internal override WindowInfoBase NonChildParentWindow => ParentWindow;
 
@@ -181,7 +183,7 @@ namespace Keysharp.Internals.Window.Unix
 					if (child is Layout || child.Handle == 0)
 						continue;
 
-					var rect = ScreenBounds(child);
+					var rect = child.GetScreenBounds();
 
 					if (pah.pt.X < rect.Left || pah.pt.X >= rect.Right || pah.pt.Y < rect.Top || pah.pt.Y >= rect.Bottom)
 						continue;
@@ -213,13 +215,6 @@ namespace Keysharp.Internals.Window.Unix
 
 			Visit(root);
 			return pah.hwndFound != 0;
-		}
-
-		private static Rectangle ScreenBounds(Control control)
-		{
-			var pt = control.PointToScreen(Point.Empty);
-			var size = control.GetSize();
-			return new Rectangle((int)Math.Round(pt.X), (int)Math.Round(pt.Y), size.Width, size.Height);
 		}
 
 		// === control-specific mutators (Platform.Control drives these on the concrete ControlInfo) ===

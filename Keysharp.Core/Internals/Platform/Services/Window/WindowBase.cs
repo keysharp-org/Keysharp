@@ -171,8 +171,10 @@ namespace Keysharp.Internals
 		public virtual Rectangle GetBounds(nint h)
 		{
 #if !WINDOWS
+			// Screen-relative, like GetClientBounds below: own *windows* are resolved by the platform backend
+			// before they reach here, so this branch is an own child control, whose Eto bounds are parent-relative.
 			if (TryOwnControl(h, out var control))
-				return control.GetBounds();
+				return control.GetScreenBounds();
 #endif
 			return NotYet<Rectangle>();
 		}
