@@ -7,7 +7,18 @@ namespace Keysharp.Builtins
 	{
 		// Platform.Screen is the only monitor-topology source. It returns a fresh snapshot because monitor
 		// identity, bounds, work areas and scale can all change while a script is running.
-		private static DisplayInfo[] AllDisplays => Platform.Screen.GetDisplays().ToArray();
+		internal static DisplayInfo[] AllDisplays => Platform.Screen.GetDisplays().ToArray();
+
+		/// <summary>The 1-based monitor number of one display within a snapshot it came from, or 1 when it somehow
+		/// is not in there. Every monitor lookup ends with this step, so it lives in one place.</summary>
+		internal static long IndexOf(DisplayInfo[] displays, DisplayInfo display)
+		{
+			for (var i = 0; i < displays.Length; i++)
+				if (displays[i].Equals(display))
+					return i + 1L;
+
+			return 1L;
+		}
 
 		private static DisplayInfo ResolvePrimaryDisplay(DisplayInfo[] displays)
 		{
@@ -28,34 +39,46 @@ namespace Keysharp.Builtins
 		}
 
 		internal static (DisplayInfo Display, long MonitorIndex) ResolveDisplay(object n)
+			=> ResolveDisplay(n, AllDisplays);
+
+		/// <summary>
+		/// Selects one display out of an already-taken snapshot. Unset or 0 selects the primary monitor;
+		/// any other out-of-range index is a ValueError, matching AHK's <c>FR_E_ARG(0)</c> in
+		/// <c>MonitorGet</c>/<c>MonitorGetName</c> rather than silently substituting the primary.
+		/// </summary>
+		internal static (DisplayInfo Display, long MonitorIndex) ResolveDisplay(object n, DisplayInfo[] displays)
 		{
-			var monitorIndex = n.Al(-1L);
-			var displays = AllDisplays;
+			var monitorIndex = n.Al(0L);
 
 			if (monitorIndex > 0 && monitorIndex <= displays.Length)
 				return (displays[monitorIndex - 1], monitorIndex);
 
+			// A script may install an OnError handler that swallows the error and continues, so keep the old
+			// primary-monitor fallback on that path rather than leaving the caller with nothing.
+			if (monitorIndex != 0)
+				_ = Errors.ValueErrorOccurred(displays.Length == 0
+					? $"Invalid monitor index of {monitorIndex}. No monitors are available."
+					: $"Invalid monitor index of {monitorIndex}. Valid monitor indices are 1 to {displays.Length}.");
+
 			var primary = ResolvePrimaryDisplay(displays);
-
-			for (var i = 0; i < displays.Length; i++)
-				if (displays[i].Equals(primary))
-					return (primary, i + 1L);
-
-			return (primary, 1L);
+			return (primary, IndexOf(displays, primary));
 		}
 
 		internal static (DisplayInfo Display, long MonitorIndex) ResolveDisplayForPoint(int x, int y)
-		{
-			var displays = AllDisplays;
+			=> ResolveDisplayForRect(new ScreenRect(x, y, 0, 0), AllDisplays);
 
-			if (!DisplayTopology.TryFind(displays, new ScreenRect(x, y, 0, 0), out var selected))
+		/// <summary>
+		/// The display a rectangle belongs to — the one it overlaps most, or the nearest when it overlaps none
+		/// (which is what makes a bare point in a gap between monitors resolve sensibly). Takes the snapshot so a
+		/// caller that already enumerated does not enumerate again.
+		/// </summary>
+		internal static (DisplayInfo Display, long MonitorIndex) ResolveDisplayForRect(ScreenRect rect,
+			DisplayInfo[] displays)
+		{
+			if (!DisplayTopology.TryFind(displays, rect, out var selected))
 				throw new InvalidOperationException("No monitors are available.");
 
-			for (var i = 0; i < displays.Length; i++)
-				if (displays[i].Equals(selected))
-					return (selected, i + 1L);
-
-			return (selected, 1L);
+			return (selected, IndexOf(displays, selected));
 		}
 
 		internal static (long Width, long Height) GetPrimaryScreenSize()
@@ -136,13 +159,7 @@ namespace Keysharp.Builtins
 		public static long MonitorGetPrimary()
 		{
 			var displays = AllDisplays;
-			var primary = ResolvePrimaryDisplay(displays);
-
-			for (var i = 0; i < displays.Length; i++)
-				if (displays[i].Equals(primary))
-					return i + 1L;
-
-			return 1L;
+			return IndexOf(displays, ResolvePrimaryDisplay(displays));
 		}
 
 		/// <summary>Gets one monitor's work-area bounds in native screen coordinates.</summary>
@@ -160,17 +177,4 @@ namespace Keysharp.Builtins
 		}
 	}
 
-	/// <summary>Keysharp monitor extensions which are not part of the AutoHotkey v2 global function set.</summary>
-	public partial class Ks
-	{
-		/// <summary>Returns the monitor containing a native virtual-desktop point, or the nearest monitor when the
-		/// point lies in a gap between displays. Import from the KS module.</summary>
-		public static long MonitorFromPoint(object x, object y)
-			=> Monitor.ResolveDisplayForPoint(x.Ai(), y.Ai()).MonitorIndex;
-
-		/// <summary>Returns one monitor's authored-size scale. 1.0 is 100%, 1.5 is 150%. The value maps
-		/// deliberately authored UI sizes into native screen units and must never be applied to absolute positions.</summary>
-		public static double MonitorGetScale(object n = null)
-			=> ScaleFactor.Normalize(Monitor.ResolveDisplay(n).Display.SizeScale);
-	}
 }

@@ -9,9 +9,11 @@ namespace Keysharp.Internals
 		internal abstract IWindow Window { get; }
 		internal abstract IMouse Mouse { get; }
 		internal abstract IScreen Screen { get; }
+		internal abstract IMonitorControl MonitorControl { get; }
 		internal abstract IOverlay Overlay { get; }
 		internal abstract IClipboard Clipboard { get; }
 		internal abstract IWindowEvents Events { get; }
+		internal abstract IMonitorEvents MonitorEvents { get; }
 		internal abstract ISession Session { get; }
 		internal abstract IHotkeys Hotkeys { get; }
 		internal abstract IInput Input { get; }
@@ -45,8 +47,10 @@ namespace Keysharp.Internals
 		private readonly IKeyboard keyboard = new WindowsKeyboard();
 		private readonly IOverlay overlay = new WindowsOverlay();
 		private readonly IScreen screen = new WindowsScreen();
+		private readonly IMonitorControl monitorControl = new WindowsMonitorControl();
 		private readonly IClipboard clipboard = new WindowsClipboard();
 		private readonly IWindowEvents events = new WindowsEvents();
+		private readonly IMonitorEvents monitorEvents = new WindowsMonitorEvents();
 		private readonly ISession session = new WindowsSession();
 		private readonly IHotkeys hotkeys = new WindowsHotkeys();
 		private readonly IPermissionManager permissions = new DefaultPermissionManager();
@@ -57,8 +61,10 @@ namespace Keysharp.Internals
 		internal override IKeyboard Keyboard => keyboard;
 		internal override IOverlay Overlay => overlay;
 		internal override IScreen Screen => screen;
+		internal override IMonitorControl MonitorControl => monitorControl;
 		internal override IClipboard Clipboard => clipboard;
 		internal override IWindowEvents Events => events;
+		internal override IMonitorEvents MonitorEvents => monitorEvents;
 		internal override ISession Session => session;
 		internal override IHotkeys Hotkeys => hotkeys;
 		internal override IPermissionManager Permissions => permissions;
@@ -78,7 +84,11 @@ namespace Keysharp.Internals
 		// Lazy for the same reason as screen, plus the choice inspects Eto's resolved clipboard handler, which is
 		// only meaningful once the toolkit is up.
 		private readonly Lazy<IClipboard> clipboard = new (LinuxClipboards.Resolve);
+		// Not lazy and not per-compositor: DDC/CI over i2c and logind's backlight interface are kernel/session
+		// facilities, identical under X11 and every Wayland compositor.
+		private readonly IMonitorControl monitorControl = new LinuxMonitorControl();
 		private readonly IWindowEvents events = new LinuxEvents();
+		private readonly IMonitorEvents monitorEvents = new LinuxMonitorEvents();
 		private readonly ISession session = new LinuxSession();
 		private readonly IHotkeys hotkeys = new LinuxHotkeys();
 		private readonly IWindow window = LinuxWindows.Resolve();
@@ -89,8 +99,10 @@ namespace Keysharp.Internals
 		internal override IKeyboard Keyboard => keyboard;
 		internal override IOverlay Overlay => overlay;
 		internal override IScreen Screen => screen.Value;
+		internal override IMonitorControl MonitorControl => monitorControl;
 		internal override IClipboard Clipboard => clipboard.Value;
 		internal override IWindowEvents Events => events;
+		internal override IMonitorEvents MonitorEvents => monitorEvents;
 		internal override ISession Session => session;
 		internal override IHotkeys Hotkeys => hotkeys;
 		internal override IWindow Window => window;
@@ -113,9 +125,11 @@ namespace Keysharp.Internals
 		private readonly IKeyboard keyboard = new MacKeyboard();
 		private readonly IOverlay overlay = new MacOverlay();
 		private readonly IScreen screen = new MacScreen();
+		private readonly IMonitorControl monitorControl = new MacMonitorControl();
 		// macOS uses the shared Eto (Cocoa) clipboard — no focus gating, no data-control question, so no override.
 		private readonly IClipboard clipboard = new EtoClipboard();
 		private readonly IWindowEvents events = new MacEvents();
+		private readonly IMonitorEvents monitorEvents = new MacMonitorEvents();
 		private readonly ISession session = new MacSession();
 		private readonly IHotkeys hotkeys = new MacHotkeys();
 		private readonly IPermissionManager permissions = new MacPermissionManager();
@@ -128,6 +142,7 @@ namespace Keysharp.Internals
 		internal override IScreen Screen => screen;
 		internal override IClipboard Clipboard => clipboard;
 		internal override IWindowEvents Events => events;
+		internal override IMonitorEvents MonitorEvents => monitorEvents;
 		internal override ISession Session => session;
 		internal override IHotkeys Hotkeys => hotkeys;
 		internal override IPermissionManager Permissions => permissions;

@@ -8,17 +8,12 @@ namespace Keysharp.Internals.Window
 	/// criteria, the script callback, a remaining-fire counter, and a persistence registration. The script-facing
 	/// <c>Ks.WinEvent</c> object wraps one of these, mirroring how <c>InputHook</c> wraps <c>InputType</c>.
 	/// </summary>
-	internal sealed class WinEventRegistration
+	internal sealed class WinEventRegistration : EventSubscriptionBase
 	{
 		internal readonly WindowEventType type;
 		internal readonly SearchCriteria criteria;            // null => match any window
 		internal readonly WindowSearchOptions inheritedOptions;
 		internal readonly bool detectHidden;                  // effective DetectHiddenWindows for this subscription
-		internal readonly KeysharpFunc callback;
-		internal readonly ScriptEventScheduler ownerScheduler;
-		internal readonly CallbackRegistration registration;
-		internal object scriptObject;                         // the Ks.WinEvent wrapper (callback arg 1)
-		internal volatile bool paused;                        // a paused hook stays registered but doesn't fire
 		internal nint activeReported;                         // Active subs: hwnd last reported active, so a
 		                                                      // title-change re-fire of the same window doesn't duplicate
 		internal Rectangle? lastCaretRect;                    // CaretMove subs: last caret rectangle seen, so a native
@@ -32,9 +27,6 @@ namespace Keysharp.Internals.Window
 		internal readonly HashSet<nint> matchingWindows;
 		internal readonly Lock matchGate;
 
-		private long remaining;                               // -1 => unlimited
-		internal volatile bool active;
-
 		/// <summary>True for an Exist subscription (fires when a matching window appears).</summary>
 		internal bool IsExist => type == WindowEventType.Exist;
 		/// <summary>True for a NotExist subscription (fires when a matching window disappears).</summary>
@@ -43,14 +35,10 @@ namespace Keysharp.Internals.Window
 		internal bool TracksMembership => matchingWindows != null;
 
 		internal WinEventRegistration(WindowEventType type, SearchCriteria criteria, KeysharpFunc callback, long count, ScriptEventScheduler ownerScheduler)
+			: base(callback, count, ownerScheduler)
 		{
 			this.type = type;
 			this.criteria = criteria;
-			this.callback = callback;
-			this.ownerScheduler = ownerScheduler;
-			remaining = count;
-			active = true;
-			registration = new CallbackRegistration(callback, ownerScheduler, true);
 
 			if (type is WindowEventType.Exist or WindowEventType.NotExist)
 			{
@@ -73,34 +61,6 @@ namespace Keysharp.Internals.Window
 			};
 		}
 
-		internal long Remaining => Interlocked.Read(ref remaining);
-
-		/// <summary>
-		/// Atomically decides whether this subscription may fire once more, consuming one unit of the
-		/// remaining-fire budget. Returns false once the budget is exhausted or the subscription is stopped.
-		/// </summary>
-		internal bool TryConsumeFire()
-		{
-			if (!active)
-				return false;
-
-			while (true)
-			{
-				var cur = Interlocked.Read(ref remaining);
-
-				if (cur == 0)
-					return false;
-
-				if (cur < 0)
-					return true;                              // unlimited
-
-				if (Interlocked.CompareExchange(ref remaining, cur - 1, cur) == cur)
-					return true;
-			}
-		}
-
-		/// <summary>True once the fire budget has just been exhausted (so the manager can auto-stop).</summary>
-		internal bool IsExhausted => Interlocked.Read(ref remaining) == 0;
 	}
 
 	/// <summary>
@@ -589,12 +549,7 @@ namespace Keysharp.Internals.Window
 		private static object BuildRectEventInfo(Rectangle? bounds)
 		{
 			var r = bounds ?? Rectangle.Empty;
-			var info = new KeysharpObject();
-			info.DefinePropInternal("x", new OwnPropsDesc(info, (long)r.X));
-			info.DefinePropInternal("y", new OwnPropsDesc(info, (long)r.Y));
-			info.DefinePropInternal("w", new OwnPropsDesc(info, (long)r.Width));
-			info.DefinePropInternal("h", new OwnPropsDesc(info, (long)r.Height));
-			return info;
+			return Keysharp.Builtins.Objects.RectObject(r.X, r.Y, r.Width, r.Height);
 		}
 
 		private ScriptEventExecutionResult RunOnSchedulerThread(ScriptEventScheduler scheduler, WinEventRegistration reg, nint hwnd, long timeMs, object[] args, Rectangle? eventBounds)

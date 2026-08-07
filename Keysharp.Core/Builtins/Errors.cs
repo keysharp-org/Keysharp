@@ -224,6 +224,21 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
+		/// Internal helper for an OS-level failure that carries no OS error code — a device that did not answer, a
+		/// facility this platform does not expose. Unlike <see cref="OSErrorOccurred"/>, the supplied text becomes
+		/// the exception's <c>Message</c>: <see cref="OSError"/> derives Message from an error NUMBER, so a failure
+		/// with no number would otherwise report whatever was last in <c>GetLastError</c> — usually the actively
+		/// misleading "The operation completed successfully."
+		/// </summary>
+		[StackTraceHidden]
+		internal static object OSErrorOccurredWithMessage(string message, object ret = null)
+		{
+			var err = new OSError(0L);
+			err.Message = message;
+			return ErrorOccurred(err, Keywords.Keyword_ExitThread) ? throw err : ret ?? DefaultObject;
+		}
+
+		/// <summary>
 		/// Internal helper to conditionally throw/handle an <see cref="OSError"/> for a given HR.
 		/// If HR is 0 or positive then returns <see cref="ret"/> or <see cref="hr"/> (cast to long).
 		/// If HR is negative then throws a <see cref="OSError"/> or returns <see cref="DefaultObject"/>.

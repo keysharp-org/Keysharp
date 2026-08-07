@@ -2006,7 +2006,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The primary monitor's authored-size scale in native screen units. 1.0 is 100%; Windows and X11 can return a larger value, while macOS and Wayland return 1.0 because their native coordinate spaces already account for UI scaling. Apply it to deliberately scalable dimensions, never absolute positions; use MonitorGetScale for mixed-monitor layouts."
+                     "notes":  "The primary monitor's authored-size scale in native screen units. 1.0 is 100%; Windows and X11 can return a larger value, while macOS and Wayland return 1.0 because their native coordinate spaces already account for UI scaling. Apply it to deliberately scalable dimensions, never absolute positions; use Monitor.Scale for mixed-monitor layouts."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -7712,13 +7712,223 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "MonitorFromPoint()",
-                     "syntax":  "#import KS { MonitorFromPoint }",
+                     "feature":  "Monitor",
+                     "syntax":  "#import KS { Monitor }",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns the monitor containing a native screen point, or the nearest monitor when the point lies in a gap."
+                     "macos":  "unknown",
+                     "notes":  "Keysharp-specific Ks class for one display: identity and metadata beyond the AHK MonitorGet* functions, plus brightness and DDC/CI control. A Monitor is a snapshot of the topology (call Refresh() to re-read) plus a live handle to the device. macOS is unverified: it is implemented against CoreGraphics and NSScreen but has not been run on a Mac.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.All",
+                     "syntax":  "for m in Monitor.All",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Every monitor in index order, built from one topology enumeration. Preferred over a loop of Monitor(i), which re-enumerates per monitor and can be shifted by a hotplug midway through.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.Count",
+                     "syntax":  "n := Monitor.Count",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "The number of monitors; the same value as MonitorGetCount().",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.Primary",
+                     "syntax":  "m := Monitor.Primary",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "The primary monitor.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.FromPoint()",
+                     "syntax":  "m := Monitor.FromPoint(x, y)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "The monitor containing a native screen point, or the nearest monitor when the point lies in a gap. Replaces the removed Ks.MonitorFromPoint() function, which returned an index instead of a Monitor.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.FromWindow()",
+                     "syntax":  "m := Monitor.FromWindow(winTitle?, winText?, exclTitle?, exclText?)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "The monitor a window overlaps most. Inherits the platform's foreign-window geometry support, so on Wayland it needs a compositor backend (KWin/GNOME/Cinnamon) to locate the window at all.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.FromId()",
+                     "syntax":  "m := Monitor.FromId(savedId)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "The monitor whose Id matches, or blank when that monitor is not attached - the lookup that makes a persisted Id useful. Unlike the other factories this must resolve metadata for every attached display, since an id is not part of the topology snapshot.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.FromMouse()",
+                     "syntax":  "m := Monitor.FromMouse()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "The monitor the cursor is on. On Wayland the cursor position is only available through a compositor backend, matching MouseGetPos.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.Refresh()",
+                     "syntax":  "m.Refresh()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Re-reads this monitor's topology and metadata in place and returns the same object. Matches by name first so the monitor is still tracked after the display order changes, falling back to the index.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.X / .Y / .W / .H / .Bounds / .WorkArea",
+                     "syntax":  "m.X, m.WorkArea.w",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Geometry in native screen coordinates, the same space MonitorGet reports. Bounds and WorkArea are objects with x, y, w and h.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.Scale",
+                     "syntax":  "s := m.Scale",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "The monitor's authored-size scale; 1.0 is 100%. It scales dimensions, never absolute positions. Replaces the removed Ks.MonitorGetScale() function. Wayland and macOS always report 1.0 because their native coordinate spaces already account for UI scaling, so the value only varies on Windows and X11.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.Model / .Manufacturer / .Serial / .Id",
+                     "syntax":  "id := m.Id",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "partial",
+                     "notes":  "Panel identity from EDID. Id survives reboots and re-plugging and is the value to persist (for example to restore a window layout per monitor set); panels that report no serial are disambiguated by connector, making Id stable per port rather than per panel. Windows reads the EDID Windows cached under the monitor's registry key; Linux reads /sys/class/drm/*/edid under both X11 and Wayland. macOS answers from CoreGraphics vendor/model/serial numbers and has no product-name API, so Model is always blank there. Every field is blank when the display reports nothing.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.RefreshRate",
+                     "syntax":  "hz := m.RefreshRate",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "partial",
+                     "notes":  "Vertical refresh in Hz as a float (59.94, not 59), or blank when unknown. Windows uses the DisplayConfig rational rate, X11 computes it from the RandR mode's pixel clock, Wayland uses wl_output's mode refresh. macOS returns 0 for some built-in panels, which is reported as blank.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.PhysicalWidth / .PhysicalHeight / .Dpi",
+                     "syntax":  "mm := m.PhysicalWidth",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "The panel's physical size in millimetres, and the resulting dots per inch. Dpi is expressed in the same units as W and H, so it is a physical pixel density on Windows and X11 but a logical one on Wayland and macOS. Blank when the display reports no physical size.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.OnChange()",
+                     "syntax":  "hook := Monitor.OnChange(Callback [, Count])",
+                     "windows":  "full",
+                     "linux_x11":  "unknown",
+                     "linux_wayland":  "unknown",
+                     "macos":  "unknown",
+                     "notes":  "Calls Callback(hook, kind) whenever the display configuration changes, returning a MonitorHook whose Stop() cancels it (Count limits the number of fires, default -1 = unlimited). kind is 'topology' when the set of attached monitors changed (plug/unplug, dock/undock) and 'settings' when the same monitors are attached but their resolution, position, scale or primary assignment changed; A_EventInfo holds the monitor count after the change. The classification is done by diffing topology snapshots rather than by decoding native change flags, so it is identical on every platform and duplicate notifications that change nothing are dropped. Windows listens to SystemEvents.DisplaySettingsChanged, Linux to GDK's monitor signals (which cover X11 and Wayland alike), macOS to CGDisplayRegisterReconfigurationCallback. The Linux and macOS backends are written but have never been run against a real display change - hence unknown.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.Orientation",
+                     "syntax":  "deg := m.Orientation",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Clockwise rotation of the desktop content in degrees: 0, 90, 180 or 270.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.Connection / .IsInternal / .Adapter",
+                     "syntax":  "kind := m.Connection",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "partial",
+                     "notes":  "How the monitor is attached (HDMI, DisplayPort, eDP, DVI, VGA, Internal, or blank), whether it is a built-in panel, and the adapter driving it. Windows reports the DisplayConfig output technology and the adapter's marketing name; Linux derives the kind from the DRM connector name and reports the DRM driver as the adapter. macOS distinguishes only built-in from external and exposes no adapter name.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.Brightness",
+                     "syntax":  "m.Brightness := 50",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "Get or set the monitor's brightness as a percentage (0-100). Each access is a real device transaction (tens of milliseconds over DDC/CI) and is deliberately not cached, because the monitor's own buttons can change the value too. Windows uses WMI for the built-in panel and DDC/CI for external monitors. Linux uses the kernel backlight class for the built-in panel (a direct sysfs write where permitted, else logind's SetBrightness) and DDC/CI over /dev/i2c-* for external monitors, which needs i2c-dev loaded and access to the bus - hence partial. macOS uses the private DisplayServices framework for the built-in display only and is unverified. Throws an OSError naming the reason where unsupported; test HasBrightness to branch without an exception.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.HasBrightness",
+                     "syntax":  "if m.HasBrightness",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "Whether Brightness works for this monitor. This is a real probe of the device rather than a platform guess, so it costs one brightness read.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.GetVCP() / .SetVCP()",
+                     "syntax":  "v := m.GetVCP(0x60)",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unsupported",
+                     "notes":  "Read or write a raw DDC/CI VCP feature (MCCS): 0x10 brightness, 0x12 contrast, 0x60 input source, 0x62 speaker volume, 0xD6 power mode. GetVCP returns {current, max}. SetVCP drives the monitor's firmware directly - an input-source or power code will switch the monitor away from this computer, and some displays mishandle codes they document, so verify a code against the monitor's MCCS documentation first. Windows uses dxva2; Linux talks to /dev/i2c-* directly, which needs i2c-dev loaded and bus access. macOS has no supported interface: DDC/CI there requires the private IOAVService, which differs between Apple Silicon and Intel.",
+                     "tested-by":  "MonitorTests.cs"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7752,16 +7962,6 @@
                      "macos":  "full",
                      "notes":  "Returns the number of the primary monitor.",
                      "tested-by":  "monitor-monitorgetprimary.ahk"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "MonitorGetScale()",
-                     "syntax":  "#import KS { MonitorGetScale }",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns the monitor\u0027s authored-size scale in native screen units; 1.0 is 100%. It scales dimensions, never absolute positions."
                  },
                  {
                      "category":  "Windowing/GUI",

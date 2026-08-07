@@ -159,6 +159,17 @@ namespace Keysharp.Internals
 		/// </summary>
 		IReadOnlyList<DisplayInfo> GetDisplays();
 
+		/// <summary>
+		/// The expensive per-display metadata for one display out of a <see cref="GetDisplays"/> snapshot — EDID
+		/// identity, model, refresh rate, physical size, orientation, connection kind. Separate from
+		/// <see cref="GetDisplays"/> on purpose: topology enumeration is on the path of every <c>MonitorGet</c>,
+		/// <c>A_ScreenWidth</c>, overlay placement and capture, so it must not start paying for registry/sysfs/
+		/// DisplayConfig round-trips that only the monitor-metadata API needs.
+		/// <para>Never returns null: a backend that can answer nothing returns <see cref="DisplayDetails.Empty"/>,
+		/// whose empty/zero fields the caller reports as unset.</para>
+		/// </summary>
+		DisplayDetails GetDisplayDetails(DisplayInfo display);
+
 		/// <summary>Captures one rectangle expressed in native screen coordinates as one linearly-mapped bitmap.
 		/// A backend may compose or resample display captures internally, but the final bitmap must cover the
 		/// complete requested rectangle with one uniform pixel-to-screen transform.</summary>
@@ -170,6 +181,35 @@ namespace Keysharp.Internals
 		/// handshake); returns NotApplicable where capture needs no separate grant. Resolved per-compositor, so
 		/// no <c>is …Backend</c> test at the call site.</summary>
 		Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt);
+	}
+
+	/// <summary>
+	/// Monitor DEVICE control — brightness and raw DDC/CI VCP features. Deliberately its own service rather than
+	/// more of <see cref="IScreen"/>: this is hardware control, not topology, and (unlike IScreen) it has no
+	/// per-compositor variation on Linux at all — DDC/CI over i2c and logind's backlight interface are kernel and
+	/// session facilities that work identically under X11 and every Wayland compositor. Folding it into the
+	/// per-compositor IScreen hierarchy would duplicate one implementation across five subclasses.
+	/// <para>Follows the <see cref="IWindowControl"/> convention: <c>Try*</c> returning false means "this platform
+	/// or this monitor cannot do it", which the script layer turns into an OSError naming the limitation. A native
+	/// call that is supported but fails should surface its own error rather than degrade to false.</para>
+	/// </summary>
+	internal interface IMonitorControl
+	{
+		/// <summary>Current brightness as a percentage (0-100).</summary>
+		bool TryGetBrightness(DisplayInfo display, DisplayDetails details, out int percent);
+
+		/// <summary>Sets brightness as a percentage (0-100); the implementation clamps.</summary>
+		bool TrySetBrightness(DisplayInfo display, DisplayDetails details, int percent);
+
+		/// <summary>Reads one DDC/CI VCP feature, returning its current and maximum value.</summary>
+		bool TryGetVcp(DisplayInfo display, DisplayDetails details, byte code, out int current, out int max);
+
+		/// <summary>Writes one DDC/CI VCP feature.</summary>
+		bool TrySetVcp(DisplayInfo display, DisplayDetails details, byte code, int value);
+
+		/// <summary>A short, actionable reason the operations above are unavailable for this display — used verbatim
+		/// in the OSError so the user learns what to install/permit instead of just "not supported".</summary>
+		string UnsupportedReason(DisplayInfo display, DisplayDetails details);
 	}
 
 	/// <summary>Click-through image overlays — the single cross-platform overlay primitive. The user-facing
@@ -261,6 +301,15 @@ namespace Keysharp.Internals
 	internal interface IWindowEvents
 	{
 		Keysharp.Internals.Window.IWindowEventBackend Backend { get; }
+	}
+
+	/// <summary>Display-configuration change notifications, behind <c>Ks.Monitor.OnChange</c>. Its own service
+	/// rather than another property on <see cref="IWindowEvents"/>: the native sources have nothing in common with
+	/// the window-event ones (SystemEvents / GDK monitor signals / CoreGraphics reconfiguration), and on Linux this
+	/// one needs no per-compositor selection at all.</summary>
+	internal interface IMonitorEvents
+	{
+		Keysharp.Internals.Window.IMonitorEventBackend Backend { get; }
 	}
 
 	/// <summary>Session control (logout/shutdown/reboot), DE-keyed on Linux. <paramref name="flags"/> follows

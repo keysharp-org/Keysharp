@@ -103,7 +103,7 @@ class WindowGrab {
         dragged := false
         lastAlpha := ""                            ; skip re-applying an unchanged opacity every tick
         ; Convert the native cursor distance into authored UI units using the display where the drag began.
-		scale := MonitorGetScale(MonitorFromPoint(sx, sy))
+		scale := Monitor.FromPoint(sx, sy).Scale
 
         while GetKeyState("RButton", "P") {
             if GetKeyState("Escape", "P") {          ; Esc aborts the fade: restore the opacity we started with

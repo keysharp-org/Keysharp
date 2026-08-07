@@ -138,6 +138,36 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
+		/// <summary>
+		/// The per-output metadata wl_output already delivered (physical size, make/model, current mode refresh and
+		/// transform), keyed by the registry name carried in <see cref="DisplayInfo.NativeId"/>. Nothing is queried
+		/// here — these values arrive with the geometry/mode events and were previously discarded.
+		/// </summary>
+		internal bool TryGetOutputMetrics(uint registryName, out double refreshRate, out int orientation,
+			out int physicalWidthMm, out int physicalHeightMm, out string make, out string model)
+		{
+			lock (sync)
+			{
+				if (outputs.TryGetValue(registryName, out var output) && output.Proxy != 0)
+				{
+					// wl_output reports refresh in mHz; 59940 mHz is the 59.94 Hz a script expects to see.
+					refreshRate = output.RefreshMilliHertz > 0 ? output.RefreshMilliHertz / 1000.0 : 0.0;
+					orientation = output.Orientation;
+					physicalWidthMm = output.PhysicalWidthMm;
+					physicalHeightMm = output.PhysicalHeightMm;
+					make = output.Make ?? "";
+					model = output.Model ?? "";
+					return true;
+				}
+			}
+
+			refreshRate = 0.0;
+			orientation = 0;
+			physicalWidthMm = physicalHeightMm = 0;
+			make = model = "";
+			return false;
+		}
+
 		internal bool TryResolveOutput(ScreenRect bounds, out OutputTarget target)
 		{
 			lock (sync)

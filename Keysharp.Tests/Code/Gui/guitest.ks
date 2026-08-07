@@ -44,6 +44,17 @@ global gWinEventHooks := []
 global gWinEventCount := 0
 global gWinEventMoveCount := 0
 global gWinEventCaretCount := 0
+global gMonitorHook := ""
+global gMonitorChangeCount := 0
+global gMonitorList := ""
+global gMonitorDetails := ""
+global gMonitorObjects := []
+global gBrightnessSlider := ""
+global gBrightnessApplying := false   ; a device write is in flight; never start a second on top of it
+global gBrightnessSuppress := false   ; the slider is being positioned by code, so don't write it back
+global gBrightnessLastSet := -1       ; last value written, to skip a redundant device transaction
+global gVcpCodeEdit := ""
+global gVcpValueEdit := ""
 global gMouseHookObj := ""
 global gMouseDownCount := 0
 global gMouseUpCount := 0
@@ -139,7 +150,7 @@ MySB := MyGui.Add("StatusBar", "h36", "                       ")
 ; │  Start TAB  │
 ; └─────────────┘
 
-Tab := MyGui.Add("Tab3", , ["Lists, Menus && Styles", "Edits && Messages", "Pickers && Sliders", "ControlZoo", "Send && Hotkey", "Dll && COM", "Image", "Windows", "Clipboard", "Sound"])
+Tab := MyGui.Add("Tab3", , ["Lists, Menus && Styles", "Edits && Messages", "Pickers && Sliders", "ControlZoo", "Send && Hotkey", "Dll && COM", "Image", "Windows", "Monitors", "Clipboard", "Sound"])
 
 Tab.UseTab("Lists, Menus & Styles")
 
@@ -3095,6 +3106,62 @@ gStatus["window_winevent"] := winEventStatus
 MyGui.UseGroup()
 Tab.UseTab()
 
+; ── Monitors tab: the Ks.Monitor class — listing + metadata, per-monitor device control, change events ──
+Tab.UseTab("Monitors")
+monListGroup := MyGui.AddGroupBox("xc+16 yc+10 w560", "Monitors (Ks.Monitor)")
+MyGui.UseGroup(monListGroup)
+MyGui.AddText("xc+16 yc+24 w528 h30", "Every attached display and what it reports about itself. Select one to see its full metadata; a field the display does not report is shown as (not reported) rather than a made-up value.")
+gMonitorList := MyGui.Add("ListBox", "xc+16 y+8 w528 r5")
+gMonitorList.OnEvent("Change", (*) => ShowSelectedMonitor())
+btnRefreshMonitors := MyGui.AddButton("xc+16 y+10 w170 h28", "Refresh Monitor List")
+btnRefreshMonitors.OnEvent("Click", (*) => RefreshMonitorList())
+btnMonitorFromMouse := MyGui.AddButton("x+10 yp w170 h28", "Select Monitor Under Mouse")
+btnMonitorFromMouse.OnEvent("Click", (*) => SelectMonitorUnderMouse())
+btnMonitorRefreshObj := MyGui.AddButton("x+10 yp w160 h28", "Refresh() Selected")
+btnMonitorRefreshObj.OnEvent("Click", (*) => RefreshSelectedMonitor())
+gMonitorDetails := MyGui.AddEdit("xc+16 y+10 w528 h210 +ReadOnly -Wrap", "")
+monitorListStatus := MyGui.AddText("xc+16 y+10 w528 h24", "Monitors: not listed yet")
+gStatus["monitor_list"] := monitorListStatus
+MyGui.UseGroup()
+Tab.UseTab()
+
+Tab.UseTab("Monitors")
+monCtlGroup := MyGui.AddGroupBox("xc+590 yc+10 w540", "Monitor Control (brightness / DDC-CI) && Change Events")
+MyGui.UseGroup(monCtlGroup)
+MyGui.AddText("xc+16 yc+24 w508 h44", "Acts on the monitor selected in the list. These talk to the hardware, so each one takes tens of milliseconds and can fail on a display or platform that does not support it — a failure is reported as an OSError naming the reason, which is the expected result on unsupported hardware.")
+btnReadBrightness := MyGui.AddButton("xc+16 y+8 w170 h28", "Read Brightness")
+btnReadBrightness.OnEvent("Click", (*) => ReadSelectedBrightness())
+btnHasBrightness := MyGui.AddButton("x+10 yp w170 h28", "Probe HasBrightness")
+btnHasBrightness.OnEvent("Click", (*) => ProbeSelectedBrightnessSupport())
+MyGui.AddText("xc+16 y+10 w508 h20 cBlue", "Dragging the slider changes the selected monitor's brightness:")
+gBrightnessSlider := MyGui.Add("Slider", "xc+16 y+6 w508 +AltSubmit Page10 ToolTip Range0-100", 50)
+gBrightnessSlider.OnEvent("Change", (*) => BrightnessSliderMoved())
+brightnessStatus := MyGui.AddText("xc+16 y+10 w508 h24", "Brightness: not read")
+gStatus["monitor_brightness"] := brightnessStatus
+
+MyGui.AddText("xc+16 y+14 w508 h30", "Raw DDC/CI VCP features (MCCS): 10 brightness, 12 contrast, 60 input source, 62 speaker volume, D6 power. Codes are hex.")
+MyGui.AddText("xc+16 y+8 w70 h22", "VCP code:")
+gVcpCodeEdit := MyGui.AddEdit("x+4 yp-2 w60 h24", "10")
+MyGui.AddText("x+10 yp+2 w40 h22", "Value:")
+gVcpValueEdit := MyGui.AddEdit("x+4 yp-2 w60 h24", "50")
+btnGetVcp := MyGui.AddButton("x+12 yp-2 w90 h28", "Get VCP")
+btnGetVcp.OnEvent("Click", (*) => GetSelectedVcp())
+btnSetVcp := MyGui.AddButton("x+8 yp w90 h28", "Set VCP")
+btnSetVcp.OnEvent("Click", (*) => SetSelectedVcp())
+vcpStatus := MyGui.AddText("xc+16 y+10 w508 h24", "VCP: not read")
+gStatus["monitor_vcp"] := vcpStatus
+MyGui.AddText("xc+16 y+6 w508 h28", "Writing an input-source or power code will switch the monitor away from this computer. Verify a code against the monitor's own documentation first.")
+
+MyGui.AddText("xc+16 y+14 w508 h44", "Monitor.OnChange subscribes to display-configuration changes. After starting, plug or unplug a monitor (or dock/undock) for a 'topology' event, and change resolution, scale, arrangement or the primary monitor for a 'settings' event. The list above refreshes itself on every event.")
+btnStartMonitorChange := MyGui.AddButton("xc+16 y+8 w200 h28", "Start Monitor Change Probe")
+btnStartMonitorChange.OnEvent("Click", (*) => StartMonitorChangeProbe())
+btnStopMonitorChange := MyGui.AddButton("x+10 yp w200 h28", "Stop Monitor Change Probe")
+btnStopMonitorChange.OnEvent("Click", (*) => StopMonitorChangeProbe())
+monitorChangeStatus := MyGui.AddText("xc+16 y+10 w508 h24", "Monitor.OnChange: not started")
+gStatus["monitor_change"] := monitorChangeStatus
+MyGui.UseGroup()
+Tab.UseTab()
+
 ; This-window tests (they manipulate whole windows). "Move GUI" moves THIS window only; arbitrary-title
 ; moves live in the Window Capture / Activate / Move group above.
 Tab.UseTab("Windows")
@@ -3289,6 +3356,9 @@ gLogEdit := MyGui.Add("Edit", "xm y" (_tabY + _tabH + 16) " w" (_tabW - clearLog
 clearLogBtn := MyGui.Add("Button", "x+6 yp w" clearLogBtnW " h28", "Clear Log")
 clearLogBtn.OnEvent("Click", (*) => ClearLog())
 RegisterInputProbes()
+; Populate the Monitors tab up front: it is pure enumeration with no device I/O, so it costs nothing at
+; startup and the tab is useful the moment it is opened.
+RefreshMonitorList()
 AppendLog("Manual suite ready.")
 MyGui.Show("Autosize")
 
@@ -3453,6 +3523,327 @@ StopWinEventProbe() {
 	AppendLog("WinEvent probe stopped.")
 }
 
+; ── Ks.Monitor: listing, metadata, and per-monitor device control ─────────────────────────────────────────
+; Everything here is hardware-dependent, so the probes report what the display actually says rather than
+; asserting anything: a field a display does not report reads as "(not reported)", and brightness/VCP failures
+; are shown as the OSError they throw, which is the correct outcome on a monitor or platform without support.
+
+; One enumeration builds both the list and the objects behind it. Monitor.All is used rather than a loop of
+; Monitor(i) so every row comes from the same snapshot.
+RefreshMonitorList() {
+	global gMonitorObjects, gMonitorList
+
+	previous := gMonitorList.Value      ; keep the selection across a refresh where possible
+
+	try {
+		gMonitorObjects := Monitor.All
+	} catch as err {
+		SetStatus("monitor_list", "Monitors: ENUMERATION FAILED")
+		AppendLog("Monitor.All failed: " err.Message)
+		return
+	}
+
+	entries := []
+
+	for m in gMonitorObjects
+		entries.Push(m.Index ": " m.Name
+			. (m.Model != "" ? " — " m.Model : "")
+			. (m.IsPrimary ? " (primary)" : "")
+			. (m.IsInternal ? " (internal)" : ""))
+
+	gMonitorList.Delete()
+	gMonitorList.Add(entries)
+
+	if (entries.Length > 0)
+		gMonitorList.Value := (previous >= 1 && previous <= entries.Length) ? previous : 1
+
+	SetStatus("monitor_list", "Monitors: " entries.Length " listed")
+	AppendLog("Monitor list refreshed: " entries.Length " monitor(s).")
+	ShowSelectedMonitor()
+}
+
+; The Monitor the list has selected, or "" when nothing is selected. Every control below goes through this so
+; there is one definition of "the selected monitor".
+SelectedMonitor() {
+	global gMonitorObjects, gMonitorList
+
+	index := gMonitorList.Value
+
+	if (!index || index < 1 || index > gMonitorObjects.Length) {
+		SetStatus("monitor_list", "Monitors: select a monitor first")
+		return ""
+	}
+
+	return gMonitorObjects[index]
+}
+
+; Formats a possibly-unset property. The class returns "" for anything the display does not report, and the
+; whole point of that contract is that it must not be shown as a plausible-looking value.
+MonitorField(value, suffix := "") {
+	return (value = "") ? "(not reported)" : value suffix
+}
+
+ShowSelectedMonitor() {
+	global gMonitorDetails, gBrightnessLastSet
+
+	m := SelectedMonitor()
+
+	; The slider still shows whatever the previous monitor read, so forget the cached value — otherwise the
+	; first drag on a newly selected monitor could match it and skip the write.
+	gBrightnessLastSet := -1
+
+	if (!m) {
+		gMonitorDetails.Value := ""
+		return
+	}
+
+	; Pure metadata only — no brightness probe here, because that is a real device transaction and would make
+	; merely clicking through the list talk to the hardware.
+	b := m.Bounds, w := m.WorkArea
+	text := "Index:            " m.Index (m.IsPrimary ? "  (primary)" : "") "`r`n"
+	text .= "Name:             " m.Name "`r`n"
+	text .= "Model:            " MonitorField(m.Model) "`r`n"
+	text .= "Manufacturer:     " MonitorField(m.Manufacturer) "`r`n"
+	text .= "Serial:           " MonitorField(m.Serial) "`r`n"
+	text .= "Id:               " MonitorField(m.Id) "`r`n"
+	text .= "Adapter:          " MonitorField(m.Adapter) "`r`n"
+	text .= "Connection:       " MonitorField(m.Connection) (m.IsInternal ? "  (internal panel)" : "") "`r`n"
+	text .= "`r`n"
+	text .= "Bounds:           " b.x ", " b.y "  " b.w "x" b.h "`r`n"
+	text .= "Work area:        " w.x ", " w.y "  " w.w "x" w.h "`r`n"
+	text .= "Scale:            " m.Scale " (" Round(m.Scale * 100) "%)`r`n"
+	text .= "DPI:              " MonitorField(m.Dpi) "`r`n"
+	text .= "Physical size:    " MonitorField(m.PhysicalWidth, " mm") " x " MonitorField(m.PhysicalHeight, " mm") "`r`n"
+	text .= "Refresh rate:     " MonitorField(m.RefreshRate, " Hz") "`r`n"
+	text .= "Orientation:      " m.Orientation "°"
+	gMonitorDetails.Value := text
+}
+
+; Re-reads the selected monitor in place. Useful after changing its resolution from the OS settings, to show
+; that a Monitor object is a snapshot until Refresh() is called.
+RefreshSelectedMonitor() {
+	if (!(m := SelectedMonitor()))
+		return
+
+	m.Refresh()
+	ShowSelectedMonitor()
+	SetStatus("monitor_list", "Monitors: refreshed monitor " m.Index " in place")
+	AppendLog("Monitor.Refresh() on monitor " m.Index " (" m.Name ").")
+}
+
+SelectMonitorUnderMouse() {
+	global gMonitorList, gMonitorObjects
+
+	if (gMonitorObjects.Length = 0)
+		RefreshMonitorList()
+
+	try {
+		m := Monitor.FromMouse()
+	} catch as err {
+		SetStatus("monitor_list", "Monitors: FromMouse FAILED")
+		AppendLog("Monitor.FromMouse failed: " err.Message)
+		return
+	}
+
+	gMonitorList.Value := m.Index
+	ShowSelectedMonitor()
+	SetStatus("monitor_list", "Monitors: cursor is on monitor " m.Index " (" m.Name ")")
+	AppendLog("Monitor.FromMouse -> monitor " m.Index " (" m.Name ").")
+}
+
+; HasBrightness is a real probe of the device rather than a platform guess, so it costs one brightness read —
+; hence its own button rather than being folded into the metadata pane.
+ProbeSelectedBrightnessSupport() {
+	if (!(m := SelectedMonitor()))
+		return
+
+	try {
+		supported := m.HasBrightness
+		SetStatus("monitor_brightness", "Brightness: monitor " m.Index (supported ? " SUPPORTS" : " does NOT support") " brightness control")
+		AppendLog("Monitor " m.Index " (" m.Name ") HasBrightness = " (supported ? 1 : 0) ".")
+	} catch as err {
+		SetStatus("monitor_brightness", "Brightness: probe ERROR")
+		AppendLog("HasBrightness on monitor " m.Index " failed: " err.Message)
+	}
+}
+
+ReadSelectedBrightness() {
+	global gBrightnessSlider, gBrightnessSuppress, gBrightnessLastSet
+
+	if (!(m := SelectedMonitor()))
+		return
+
+	try {
+		percent := m.Brightness
+		; Moving the slider from code must not be mistaken for the user dragging it, or reading the brightness
+		; would immediately write it straight back.
+		gBrightnessSuppress := true
+
+		try
+			gBrightnessSlider.Value := percent
+		finally
+			gBrightnessSuppress := false
+
+		gBrightnessLastSet := percent
+		SetStatus("monitor_brightness", "Brightness: monitor " m.Index " reads " percent "%")
+		AppendLog("Monitor " m.Index " (" m.Name ") brightness = " percent "%.")
+	} catch as err {
+		; Expected on a monitor or platform without brightness support; the message names the reason.
+		SetStatus("monitor_brightness", "Brightness: UNSUPPORTED/ERROR (see log)")
+		AppendLog("Reading brightness of monitor " m.Index " failed: " err.Message)
+	}
+}
+
+; Moving the slider changes the monitor's brightness directly — but a drag emits a Change per step, and every
+; write is a real device transaction (tens of milliseconds, and on DDC/CI up to a couple of hundred). Writing
+; each one would flood the monitor and stall the drag, so the moves are debounced: re-arming a one-shot timer
+; collapses a whole drag into a single write once the slider settles.
+BrightnessSliderMoved() {
+	global gBrightnessSuppress, gBrightnessSlider
+
+	if (gBrightnessSuppress)   ; positioned by ReadSelectedBrightness, not by the user — nothing to write back
+		return
+
+	; Immediate feedback, because the write itself is deliberately deferred.
+	SetStatus("monitor_brightness", "Brightness: " gBrightnessSlider.Value "% (applying...)")
+	SetTimer(ApplyBrightnessFromSlider, -120)
+}
+
+ApplyBrightnessFromSlider() {
+	global gBrightnessSlider, gBrightnessApplying, gBrightnessLastSet
+
+	; A slow DDC write can outlast the debounce window; let it finish rather than stacking a second write on it.
+	if (gBrightnessApplying) {
+		SetTimer(ApplyBrightnessFromSlider, -120)
+		return
+	}
+
+	if (!(m := SelectedMonitor()))
+		return
+
+	target := gBrightnessSlider.Value
+
+	if (target = gBrightnessLastSet)   ; the drag ended where it started; no need to touch the hardware
+		return
+
+	gBrightnessApplying := true
+
+	try {
+		m.Brightness := target
+		gBrightnessLastSet := target
+		; Read it back: the monitor is free to clamp or round, and only a read shows what it actually did.
+		actual := m.Brightness
+		SetStatus("monitor_brightness", "Brightness: monitor " m.Index " set to " target "%, reads back " actual "%")
+		AppendLog("Monitor " m.Index " (" m.Name ") brightness set to " target "%, read back " actual "%.")
+	} catch as err {
+		SetStatus("monitor_brightness", "Brightness: SET UNSUPPORTED/ERROR (see log)")
+		AppendLog("Setting brightness of monitor " m.Index " failed: " err.Message)
+	} finally {
+		gBrightnessApplying := false
+	}
+}
+
+GetSelectedVcp() {
+	global gVcpCodeEdit, gVcpValueEdit
+
+	if (!(m := SelectedMonitor()))
+		return
+
+	code := VcpCode()
+
+	try {
+		feature := m.GetVCP(code)
+		gVcpValueEdit.Value := feature.current
+		SetStatus("monitor_vcp", "VCP: 0x" Format("{:02X}", code) " = " feature.current " (max " feature.max ")")
+		AppendLog("Monitor " m.Index " GetVCP(0x" Format("{:02X}", code) ") -> current=" feature.current ", max=" feature.max ".")
+	} catch as err {
+		SetStatus("monitor_vcp", "VCP: read UNSUPPORTED/ERROR (see log)")
+		AppendLog("GetVCP(0x" Format("{:02X}", code) ") on monitor " m.Index " failed: " err.Message)
+	}
+}
+
+SetSelectedVcp() {
+	global gVcpValueEdit
+
+	if (!(m := SelectedMonitor()))
+		return
+
+	code := VcpCode()
+	value := Integer(gVcpValueEdit.Value)
+
+	; Input-source and power codes switch the monitor away from this computer, so they are confirmed first.
+	if (code = 0x60 || code = 0xD6)
+		if (MsgBox("Writing VCP 0x" Format("{:02X}", code) " can switch this monitor's input or power it off,"
+			. " which may leave you with no picture.`n`nContinue?", "Confirm VCP write", "YesNo Icon!") != "Yes")
+			return
+
+	try {
+		m.SetVCP(code, value)
+		SetStatus("monitor_vcp", "VCP: wrote 0x" Format("{:02X}", code) " = " value)
+		AppendLog("Monitor " m.Index " SetVCP(0x" Format("{:02X}", code) ", " value ") succeeded.")
+	} catch as err {
+		SetStatus("monitor_vcp", "VCP: write UNSUPPORTED/ERROR (see log)")
+		AppendLog("SetVCP(0x" Format("{:02X}", code) ", " value ") on monitor " m.Index " failed: " err.Message)
+	}
+}
+
+; The VCP code box is hex, matching how the MCCS standard and every monitor datasheet write these.
+VcpCode() {
+	global gVcpCodeEdit
+
+	text := Trim(gVcpCodeEdit.Value)
+	return Integer(SubStr(text, 1, 2) = "0x" ? text : "0x" text)
+}
+
+; Monitor.OnChange cannot be exercised by a unit test — it needs a real display reconfiguration — so it gets a
+; manual probe. Start it, then plug/unplug a monitor (or dock/undock) to see "topology", and change resolution,
+; scale, arrangement or the primary monitor to see "settings".
+StartMonitorChangeProbe() {
+	global gMonitorHook, gMonitorChangeCount
+
+	StopMonitorChangeProbe()
+	gMonitorChangeCount := 0
+
+	try {
+		gMonitorHook := Monitor.OnChange(OnMonitorChange)
+		SetStatus("monitor_change", "Monitor.OnChange: watching — now re-plug a monitor or change resolution")
+		AppendLog("Monitor.OnChange probe started with " Monitor.Count " monitor(s). Plug/unplug a display for "
+			. "'topology'; change resolution, scale, arrangement or the primary display for 'settings'.")
+	} catch as err {
+		SetStatus("monitor_change", "Monitor.OnChange: BLOCKED/ERROR")
+		AppendLog("Monitor.OnChange probe failed: " err.Message)
+	}
+}
+
+StopMonitorChangeProbe() {
+	global gMonitorHook
+
+	if (!IsSet(gMonitorHook) || !gMonitorHook)
+		return
+
+	try gMonitorHook.Stop()
+	gMonitorHook := ""
+	SetStatus("monitor_change", "Monitor.OnChange: stopped")
+	AppendLog("Monitor.OnChange probe stopped.")
+}
+
+OnMonitorChange(hook, kind) {
+	global gMonitorChangeCount
+
+	gMonitorChangeCount += 1
+	; A_EventInfo carries the monitor count after the change; Monitor.All re-reads the layout as it is now.
+	names := ""
+
+	for m in Monitor.All
+		names .= (names = "" ? "" : ", ") m.Name " " m.W "x" m.H (m.IsPrimary ? " (primary)" : "")
+
+	SetStatus("monitor_change", "Monitor.OnChange: " gMonitorChangeCount " event(s), last=" kind)
+	AppendLog("Monitor.OnChange #" gMonitorChangeCount ": kind=" kind ", count=" A_EventInfo " [" names "]")
+	; The listing above is a snapshot taken before the change, so bring it up to date — which also shows the
+	; new layout without anyone having to click Refresh.
+	RefreshMonitorList()
+}
+
 ; Self-contained visual probe for the KS.Overlay builtin (and Highlight, which rides on it): draws a
 ; differently-styled shape in each screen corner (filled rect + label, outlined rect + disc, ellipse +
 ; line, filled ellipse + big text), a mouse-following banner, and a centre Highlight frame — all
@@ -3471,8 +3862,7 @@ RunOverlayTest() {
 	sh := A_ScreenHeight
 	; Screen geometry stays in the platform's native coordinate space. The KS scale converts deliberately authored
 	; UI sizes into that space; backing pixels are selected by the overlay renderer.
-	monitor := MonitorFromPoint(sw // 2, sh // 2)
-	ui := MonitorGetScale(monitor)
+	ui := Monitor.FromPoint(sw // 2, sh // 2).Scale
 	mrg := 24
 	bw := 150
 	bh := 110

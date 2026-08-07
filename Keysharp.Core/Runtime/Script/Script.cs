@@ -301,6 +301,7 @@ namespace Keysharp.Runtime
 		private ToolTipData toolTipData;
 		private Dictionary<string, WindowGroup> windowGroups;
 		private WinEventManager winEventManager;
+		private MonitorEventManager monitorEventManager;
 		private ClrEventManager clrEventManager;
 		private int disposeStarted;
 
@@ -382,6 +383,13 @@ namespace Keysharp.Runtime
 
 		/// <summary>The WinEvent manager if one has been created, else null (used by cleanup paths that must not create it).</summary>
 		internal WinEventManager WinEventManagerIfExists => winEventManager;
+
+		/// <summary>Lazily-created per-script engine for <c>Ks.Monitor.OnChange</c> subscriptions; owns the platform
+		/// monitor-event backend, which stays uninstalled until the first subscription.</summary>
+		internal MonitorEventManager MonitorEventManager => monitorEventManager ?? (monitorEventManager = new (this));
+
+		/// <summary>The monitor-event manager if one has been created, else null (used by cleanup paths that must not create it).</summary>
+		internal MonitorEventManager MonitorEventManagerIfExists => monitorEventManager;
 
 		/// <summary>Lazily-created registry of live CLR event subscriptions made through <c>Clr</c>'s <c>OnEvent</c>.</summary>
 		internal ClrEventManager ClrEventManager => clrEventManager ?? (clrEventManager = new ());
@@ -1278,6 +1286,9 @@ namespace Keysharp.Runtime
 
 			HookThread?.Stop();
 			winEventManager?.Dispose();
+			// Same reasoning as clrEventManager below on Windows: the monitor backend hangs off the *static*
+			// SystemEvents.DisplaySettingsChanged, so it has to be detached explicitly or it roots this Script.
+			monitorEventManager?.Dispose();
 			// Before anything else managed goes away: a subscription to a *static* CLR event is a root the runtime
 			// holds indefinitely, so leaving one attached keeps the callback -- and the engine behind it -- alive past
 			// dispose. This is the orphaned-callback case teardown has to cover.

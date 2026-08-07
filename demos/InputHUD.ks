@@ -663,8 +663,7 @@ class InputHUD {
 	; Refresh one HUD's monitor scale. Backing density is renderer-owned and never enters the script's geometry.
 	static RefreshDisplayMetrics(o, x := "", y := "") {
 		local px := x = "" ? o.cx : x, py := y = "" ? o.cy : y
-		local monitor := MonitorFromPoint(px, py)
-		local scale := MonitorGetScale(monitor)
+		local scale := Monitor.FromPoint(px, py).Scale
 		if (Abs(scale - o.scale) < 0.001)
 			return false
 		o.scale := scale

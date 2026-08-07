@@ -124,6 +124,12 @@ namespace Keysharp.Internals
 			return result;
 		}
 
+		// The DRM connector (EDID, model, serial, physical size, connection kind) is readable from sysfs under
+		// every Linux session type, so the shared base answers it. Refresh rate and rotation are session-specific
+		// and stay 0/unknown here; X11Screen and WaylandScreen override to supply them.
+		public virtual DisplayDetails GetDisplayDetails(DisplayInfo display)
+			=> LinuxMonitorDetails.Get(display, 0.0, 0);
+
 		public virtual bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 			=> EtoScreenCapture.TryCapture(bounds.X, bounds.Y, bounds.Width, bounds.Height, out bmp);
 
@@ -149,6 +155,13 @@ namespace Keysharp.Internals
 		{
 			var displays = X11DisplayTopology.GetDisplays();
 			return displays.Count > 0 ? displays : base.GetDisplays();
+		}
+
+		// NativeId carries the RandR output XID for this display, which owns the current mode and rotation.
+		public override DisplayDetails GetDisplayDetails(DisplayInfo display)
+		{
+			var (refresh, orientation) = X11DisplayTopology.GetOutputMode((nuint)display.NativeId);
+			return LinuxMonitorDetails.Get(display, refresh, orientation);
 		}
 
 		// X11 lets any client grab the screen without asking, so routing capture through keysharp-helper is
@@ -237,6 +250,31 @@ namespace Keysharp.Internals
 			return displays;
 		}
 
+		/// <summary>
+		/// Wayland already delivered this output's physical size, make/model, mode refresh and transform in its
+		/// geometry/mode events, so those need no extra query. The panel's EDID identity still comes from the DRM
+		/// connector, which is readable regardless of compositor.
+		/// </summary>
+		public override DisplayDetails GetDisplayDetails(DisplayInfo display)
+		{
+			var client = Wl.WaylandLayerShellClient.Current;
+
+			if (client == null || !client.TryGetOutputMetrics((uint)display.NativeId, out var refresh,
+					out var orientation, out var mmWidth, out var mmHeight, out var make, out var model))
+				return base.GetDisplayDetails(display);
+
+			var details = LinuxMonitorDetails.Get(display, refresh, orientation);
+
+			// wl_output's make/model fill in for a connector whose EDID could not be read (a compositor running
+			// on a driver that exposes no sysfs edid), but never override the EDID values when those exist.
+			return details with
+			{
+				Model = details.Model.Length > 0 ? details.Model : model,
+				Manufacturer = details.Manufacturer.Length > 0 ? details.Manufacturer : make,
+				PhysicalWidthMm = details.PhysicalWidthMm > 0 ? details.PhysicalWidthMm : mmWidth,
+				PhysicalHeightMm = details.PhysicalHeightMm > 0 ? details.PhysicalHeightMm : mmHeight,
+			};
+		}
 	}
 
 	/// <summary>KWin Wayland via the keysharp-helper: region grabs through the ScreenShot2 interface,
@@ -439,6 +477,8 @@ namespace Keysharp.Internals
 			return result;
 		}
 
+		public DisplayDetails GetDisplayDetails(DisplayInfo display) => WindowsMonitorDetails.Get(display);
+
 		private static double GetScale(ScreenRect bounds)
 		{
 			var rect = new RECT
@@ -511,12 +551,19 @@ namespace Keysharp.Internals
 				ScreenRect workArea;
 				try { workArea = ScreenRect.FromRectangle(screen.WorkingArea); }
 				catch { workArea = bounds; }
-				result.Add(new DisplayInfo(screen.ID ?? $"display-{i + 1}", bounds, workArea,
-					1.0, screen.IsPrimary));
+				// NSScreen's localizedName ("Built-in Retina Display", "DELL U2720Q") is the name macOS itself
+				// shows for a display. Eto's Screen.ID is kept only as the fallback: no Cocoa screen handler sets
+				// it, so before this it was always the synthetic display-N that reached scripts.
+				var name = MacScreenNames.LocalizedName(screen);
+				result.Add(new DisplayInfo(
+					name.Length > 0 ? name : screen.ID is { Length: > 0 } id ? id : $"display-{i + 1}",
+					bounds, workArea, 1.0, screen.IsPrimary));
 			}
 
 			return result;
 		}
+
+		public DisplayDetails GetDisplayDetails(DisplayInfo display) => MacMonitorDetails.Get(display);
 
 		public bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 			=> EtoScreenCapture.TryCapture(bounds.X, bounds.Y, bounds.Width, bounds.Height, out bmp);
