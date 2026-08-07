@@ -551,6 +551,14 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 		+ When scrolling up, the value will be positive, and negative when scrolling down.
 * New accessors:
 	+ `A_AllowTimers` returns whether timers are allowed or not. It's also easier to set this value rather than call `Thread("NoTimers")`.
+	+ `A_AssemblyCompany` returns the value set by the `#AssemblyCompany` directive.
+	+ `A_AssemblyConfiguration` returns the value set by the `#AssemblyConfiguration` directive.
+	+ `A_AssemblyCopyright` returns the value set by the `#AssemblyCopyright` directive.
+	+ `A_AssemblyDescription` returns the value set by the `#AssemblyDescription` directive.
+	+ `A_AssemblyName` returns the value set by the `#AssemblyName` directive.
+	+ `A_AssemblyProduct` returns the value set by the `#AssemblyProduct` directive.
+	+ `A_AssemblyTrademark` returns the value set by the `#AssemblyTrademark` directive.
+	+ `A_AssemblyVersion` returns the value set by the `#AssemblyVersion` directive.
 	+ `A_PeekFrequency` gets or sets the current thread's message-check interval in milliseconds. It is available from the `Ks` module.
 	+ `A_ClipboardTimeout` can be used at any point in the program to get or set the value normally specified by `#ClipboardTimeout`.
 	+ `A_CommandLine` returns the command line string. This is preferred over passing `GetCommandLine` to `DllCall()` as noted above.
