@@ -159,6 +159,12 @@ if [[ "${ROOT_INSTALL}" == "true" ]]; then
     rm -f /etc/udev/rules.d/99-keysharp-inputd.rules
     removed_udev_rule=true
   fi
+  # The DDC/CI i2c uaccess rule. No binary owns it (it is a plain data file
+  # installed by install.sh), so it is always removed directly here.
+  if [[ -e /etc/udev/rules.d/70-keysharp-i2c-uaccess.rules ]]; then
+    rm -f /etc/udev/rules.d/70-keysharp-i2c-uaccess.rules
+    removed_udev_rule=true
+  fi
   if [[ "${removed_udev_rule}" == "true" ]]; then
     maybe_run udevadm control --reload-rules || true
   fi

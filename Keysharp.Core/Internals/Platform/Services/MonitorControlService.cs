@@ -342,8 +342,13 @@ namespace Keysharp.Internals
 			if (bus.Length == 0)
 				return "no DDC/CI i2c bus was found for this connector - load the i2c-dev module (modprobe i2c-dev)";
 
-			return $"{bus} could not be opened - add your user to the 'i2c' group, or install a udev rule granting "
-				+ "access to the DDC/CI bus, then log out and back in";
+			// Deliberately does NOT suggest the 'i2c' group: that grants every i2c bus, including the
+			// motherboard SMBus ones (DIMM SPD, PMICs). The uaccess rule a root install adds
+			// (70-keysharp-i2c-uaccess.rules, or ddcutil's equivalent 60-ddcutil-i2c.rules) is scoped to
+			// display-controller buses and needs no group membership or re-login.
+			return $"{bus} could not be opened - the DDC/CI uaccess udev rule is not installed or has not been "
+				+ "applied yet; install Keysharp as root (or install ddcutil), then run "
+				+ "'sudo udevadm trigger --subsystem-match=i2c-dev'";
 		}
 
 		/// <summary>The first backlight device the kernel exposes. Laptops have exactly one; the "raw" ACPI/GPU

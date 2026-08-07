@@ -1,0 +1,43 @@
+# Keysharp DDC/CI uaccess rule - grants the user at the local seat an ACL on the
+# i2c buses that carry DDC/CI, so Monitor.Brightness / Monitor.GetVCP /
+# Monitor.SetVCP can talk to external monitors without the script running as root.
+#
+# WHY NOT THE 'i2c' GROUP:
+#   The usual advice is "add your user to the i2c group", which grants EVERY
+#   /dev/i2c-* node - including the motherboard SMBus buses that carry the DIMM
+#   SPD EEPROMs, PMICs and battery controllers, where a stray write can brick
+#   hardware. That grant is permanent, applies to every process the user runs,
+#   and is far wider than DDC/CI needs.
+#
+#   This rule instead matches only i2c adapters that sit behind a display
+#   controller, and hands them to the logged-in user via systemd-logind's ACL:
+#   no group membership, no logout/login to take effect, and the grant is
+#   dropped when the session ends.
+#
+# MATCHING:
+#   ATTRS{} walks UP from the i2c-dev node, so ATTRS{class}=="0x03*" matches any
+#   adapter whose ancestor is a PCI display controller (class 0x03xxxx) - both
+#   the GMBUS adapters exposed under a DRM connector (HDMI/VGA/older DP) and the
+#   DisplayPort AUX adapters the same drivers register for native DP and
+#   USB-C/Thunderbolt monitors. SMBus controllers are class 0x0c05 and do not
+#   match. The wildcard (rather than an exact "0x030000") is deliberate: some
+#   adapters report a longer class string.
+#
+#   The second line covers GPUs that are not PCI devices at all (SoC/ARM), where
+#   there is no class attribute to match but the adapter still lives under the
+#   DRM card in sysfs.
+#
+#   The tag must be applied before systemd's 73-seat-late.rules runs the uaccess
+#   builtin, hence the 70- prefix.
+#
+# ddcutil ships an equivalent rule (60-ddcutil-i2c.rules). Both being present is
+# harmless - TAG+= on an already-tagged device is a no-op - so this is installed
+# unconditionally rather than probing for it.
+ACTION!="add|change", GOTO="keysharp_i2c_uaccess_end"
+SUBSYSTEM!="i2c-dev", GOTO="keysharp_i2c_uaccess_end"
+KERNEL!="i2c-[0-9]*", GOTO="keysharp_i2c_uaccess_end"
+
+ATTRS{class}=="0x03*", TAG+="uaccess"
+DEVPATH=="*/drm/card*", TAG+="uaccess"
+
+LABEL="keysharp_i2c_uaccess_end"
