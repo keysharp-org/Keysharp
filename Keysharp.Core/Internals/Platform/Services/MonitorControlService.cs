@@ -254,6 +254,14 @@ namespace Keysharp.Internals
 	{
 		Task SetBrightnessAsync(string subsystem, string name, uint brightness);
 	}
+
+	/// <summary>logind's manager interface, used only to find the caller's own session by enumeration — see
+	/// <see cref="LinuxMonitorControl.ResolveOwnSessionPath"/> for why <c>session/self</c> alone is not enough.</summary>
+	[DBusInterface("org.freedesktop.login1.Manager")]
+	public interface ILogindManager : IDBusObject
+	{
+		Task<(string Id, uint Uid, string UserName, string Seat, ObjectPath Path)[]> ListSessionsAsync();
+	}
 #pragma warning restore IDE1006
 
 	/// <summary>
@@ -397,12 +405,11 @@ namespace Keysharp.Internals
 
 			try
 			{
-				// logind lives on the SYSTEM bus (the rest of Keysharp's D-Bus use is session-bus). "session/self"
-				// resolves to the caller's own session, so no session id lookup is needed.
+				// logind lives on the SYSTEM bus (the rest of Keysharp's D-Bus use is session-bus).
 				connection = new Connection(Tmds.DBus.Address.System);
 				connection.ConnectAsync().GetAwaiter().GetResult();
-				var session = connection.CreateProxy<ILogindSession>("org.freedesktop.login1",
-					new ObjectPath("/org/freedesktop/login1/session/self"));
+				var path = ResolveOwnSessionPath(connection) ?? new ObjectPath("/org/freedesktop/login1/session/self");
+				var session = connection.CreateProxy<ILogindSession>("org.freedesktop.login1", path);
 				session.SetBrightnessAsync(subsystem, device, (uint)Math.Max(0, raw)).GetAwaiter().GetResult();
 				return true;
 			}
@@ -413,6 +420,47 @@ namespace Keysharp.Internals
 			finally
 			{
 				connection?.Dispose();
+			}
+		}
+
+		/// <summary>
+		/// The current user's logind session, found by asking logind directly rather than trusting
+		/// <c>session/self</c> to resolve. <c>self</c> only works when the CALLING PROCESS is itself tracked in the
+		/// session's cgroup (<c>sd_pid_get_session</c> on the connecting PID) — true for a process descended
+		/// straight from <c>gnome-session</c>, false for a great many perfectly normal ways of running a script:
+		/// a detached/backgrounded process, a terminal or IDE that reparents its children outside the session
+		/// scope, a remote-dev or containerized shell. In every one of those cases the desktop session itself is
+		/// alive and its <c>SetBrightness</c> works fine — logind just cannot find it FROM the calling process, so
+		/// this looks it up by username instead. A session with a seat (a real, locally-attached graphical/console
+		/// login) is preferred over a seat-less manager/lingering session; failing that, any session for this user
+		/// beats none.
+		/// </summary>
+		private static ObjectPath? ResolveOwnSessionPath(Connection connection)
+		{
+			try
+			{
+				var manager = connection.CreateProxy<ILogindManager>("org.freedesktop.login1",
+					new ObjectPath("/org/freedesktop/login1"));
+				var sessions = manager.ListSessionsAsync().GetAwaiter().GetResult();
+				var user = Environment.UserName;
+				ObjectPath? anyForUser = null;
+
+				foreach (var s in sessions)
+				{
+					if (!string.Equals(s.UserName, user, StringComparison.Ordinal))
+						continue;
+
+					if (s.Seat.Length > 0)
+						return s.Path;
+
+					anyForUser ??= s.Path;
+				}
+
+				return anyForUser;
+			}
+			catch
+			{
+				return null;
 			}
 		}
 	}
@@ -449,7 +497,11 @@ namespace Keysharp.Internals
 
 		/// <summary>
 		/// The i2c bus node that carries this connector's DDC channel. The kernel exposes it as an
-		/// <c>i2c-N</c> entry under the DRM connector directory (newer kernels nest it under <c>ddc/i2c-dev</c>).
+		/// <c>i2c-N</c> entry under the DRM connector directory (newer kernels nest it under <c>ddc/i2c-dev</c>) —
+		/// for a connector whose DDC goes through the classic GMBUS mux (HDMI, VGA, and DP on older/simpler
+		/// GPU generations). A connector driven over the DisplayPort AUX channel instead (the common case for a
+		/// native DP or USB-C/Thunderbolt external monitor on a modern Intel/AMD GPU) has neither: only a
+		/// <c>drm_dp_auxN</c> companion device, with no symlink back to its i2c adapter at all.
 		/// </summary>
 		internal static string FindBus(string outputName)
 		{
@@ -474,12 +526,48 @@ namespace Keysharp.Internals
 					foreach (var dir in Directory.EnumerateDirectories(connectorDir))
 						if (Path.GetFileName(dir).StartsWith("i2c-", StringComparison.Ordinal))
 							return $"/dev/{Path.GetFileName(dir)}";
+
+				// DisplayPort AUX-channel DDC: the driver still registers the AUX transport as an ordinary i2c
+				// adapter (DDC-over-AUX-CH, as the DP spec requires) — it is just not nested under the connector
+				// directory. It is found instead by matching the connector's drm_dp_auxN device against the
+				// system's i2c adapters on the one thing they share: the driver names both identically
+				// (e.g. drm_dp_aux3's "name" is "AUX C/DDI C/PHY C" or "DPMST", exactly matching the "name" of
+				// the i2c-dev adapter the same driver registered for that same AUX transport).
+				if (Directory.Exists(connectorDir))
+					foreach (var auxDir in Directory.EnumerateDirectories(connectorDir))
+					{
+						if (!Path.GetFileName(auxDir).StartsWith("drm_dp_aux", StringComparison.Ordinal))
+							continue;
+
+						var auxName = ReadTrimmed(Path.Combine(auxDir, "name"));
+
+						if (auxName.Length == 0 || !Directory.Exists(I2cDevRoot))
+							continue;
+
+						foreach (var i2cDir in Directory.EnumerateDirectories(I2cDevRoot))
+							if (ReadTrimmed(Path.Combine(i2cDir, "name")) == auxName)
+								return $"/dev/{Path.GetFileName(i2cDir)}";
+					}
 			}
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 			{
 			}
 
 			return "";
+		}
+
+		private const string I2cDevRoot = "/sys/class/i2c-dev";
+
+		private static string ReadTrimmed(string path)
+		{
+			try
+			{
+				return File.Exists(path) ? File.ReadAllText(path).Trim() : "";
+			}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+			{
+				return "";
+			}
 		}
 
 		internal static bool TryGetVcp(string outputName, byte code, out int current, out int max)

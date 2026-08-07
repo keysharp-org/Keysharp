@@ -85,7 +85,10 @@ namespace Keysharp.Internals
 				Wl.WaylandBackend.KWinBackend kwin => new KWinScreen(kwin),
 				Wl.WaylandBackend.GnomeBackend gnome => new GnomeScreen(gnome),
 				Wl.CinnamonBackend cinnamon => new CinnamonScreen(cinnamon),
-				null => new EtoScreen(),                      // Wayland without a compositor helper: GDK topology/capture
+				// Wayland without a recognized compositor helper: no compositor-specific capture/overlay, but
+				// wl_output/xdg-output (core protocols every compositor advertises) still give real monitor
+				// topology and metadata through WaylandLayerShellClient, so this is not plain EtoScreen.
+				null => new GenericWaylandScreen(),
 				var other => new WlrootsScreen(other),        // sway/Hyprland/wlroots: tries zwlr, else Eto
 			};
 		}
@@ -457,6 +460,16 @@ namespace Keysharp.Internals
 		// (RequestCapabilities with no request) which must never prompt — peek the cached decision instead.
 		public override Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt)
 			=> prompt ? Wl.HelperClient.AuthorizeCapture(true) : Wl.HelperClient.PeekCaptureConsent();
+	}
+
+	/// <summary>Wayland session whose compositor matched none of the known helpers (KWin/GNOME/Cinnamon/wlroots
+	/// signatures). No compositor-specific capture, work area or overlay support — those inherit EtoScreen's
+	/// GDK-based defaults, exactly as plain <c>EtoScreen</c> behaved before — but <see cref="WaylandScreen"/>'s
+	/// wl_output/xdg-output topology still applies, because every Wayland compositor advertises those core
+	/// protocols regardless of which (if any) compositor-specific extension it also speaks.</summary>
+	internal sealed class GenericWaylandScreen : WaylandScreen
+	{
+		internal GenericWaylandScreen() : base(null) { }
 	}
 #elif WINDOWS
 	internal sealed class WindowsScreen : IScreen
