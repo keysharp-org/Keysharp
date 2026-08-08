@@ -360,11 +360,20 @@ namespace Keysharp.Parsing.Syntax
 					{
 						// The module file is parsed on its own, so this compilation's symbols have to be handed to it
 						// explicitly — its #if branches must resolve the same way they do in the main script.
-						var (p, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(System.IO.File.ReadAllText(file), fileDir, null, _defines);
+						// `file` (not null) stamps its tokens with their real path, so %A_LineFile% resolves to the
+						// module file rather than its directory, and #Warn/diagnostics raised inside it name it.
+						var (p, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(System.IO.File.ReadAllText(file), fileDir, file, _defines);
 						// A parse error in the imported module file is surfaced as the script's error (prefixed with the
 						// module file name), not swallowed — otherwise the user would only see a misleading "module not
 						// found" for a file that does exist. BuildMultiModule aborts as soon as a diagnostic is recorded.
-						if (diags.Count > 0) { foreach (var d in diags) Diag($"{fileName}:{d}"); continue; }
+						// Parser diagnostics already carry the file name now that tokens are stamped (ErrorAt); lexer
+						// diagnostics do not, so prefix only what is missing rather than doubling it up.
+						if (diags.Count > 0)
+						{
+							foreach (var d in diags)
+								Diag(d.StartsWith(fileName + ":", System.StringComparison.OrdinalIgnoreCase) ? d : $"{fileName}:{d}");
+							continue;
+						}
 						fileProg = p;
 					}
 					catch (System.Exception ex) { Diag($"#Import: failed to read module '{modName}' from {fileName}: {ex.Message}"); continue; }

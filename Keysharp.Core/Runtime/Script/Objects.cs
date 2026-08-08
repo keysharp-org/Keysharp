@@ -246,6 +246,11 @@ namespace Keysharp.Runtime
 					if (Struct.IsAutoPointerClass(nestedType))
 						continue;
 
+					// Same opt-out the method loop above honors. Without it a public nested type is always
+					// registered, and its getter indexes Vars.Statics with a type that was never initialized.
+					if (nestedType.GetCustomAttribute<PublicHiddenFromUser>() != null)
+						continue;
+
 					staticInst.DefinePropInternal(GetUserDeclaredName(nestedType) ?? nestedType.Name,
 						new OwnPropsDesc(staticInst, null,
 							new KeysharpFunc((params object[] args) => script.Vars.Statics[nestedType]),

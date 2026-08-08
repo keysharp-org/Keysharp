@@ -144,7 +144,10 @@ namespace Keysharp.Internals
 
 			foreach (var t in Reflections.GetNestedTypes([script.ProgramType]).OrderBy(Reflections.GetInheritanceDepth))
 			{
-				var fields = t.GetFields(BindingFlags.Static | BindingFlags.Public);
+				// [PublicHiddenFromUser] fields are not part of the script's variable space, so reading them here
+				// would force an initializer to run at exit for a field the script could never have touched.
+				var fields = t.GetFields(BindingFlags.Static | BindingFlags.Public)
+							  .Where(f => f.GetCustomAttribute<PublicHiddenFromUser>() == null);
 
 				foreach (var val in fields.Select(f => f.GetValue(null)))
 				{

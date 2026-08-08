@@ -119,8 +119,10 @@ namespace Keysharp.Builtins
 		/// <c>Is</c> prefix marks a read-only predicate (<see cref="IsActive"/>, <see cref="IsInterruptible"/>),
 		/// and a settable mode reads as the mode itself. <c>A_IsCritical</c> keeps its AHK spelling.
 		/// </summary>
-		// Settable script properties are object-typed and convert in the setter: a script's `true` arrives as an
-		// Integer, and a bool-typed setter would fail the dynamic invoke with an InvalidCastException.
+		// Settable script properties are object-typed and convert in the setter. Historically they had to be: a
+		// script's `true` arrives as an Integer, and a bool-typed setter would fail the dynamic invoke with an
+		// InvalidCastException. ArgCoercer lifted that constraint; these stay object-typed by choice, because
+		// several of them accept more than a Boolean.
 		public object Critical
 		{
 			get => Live().isCritical;

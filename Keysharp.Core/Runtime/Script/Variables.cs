@@ -48,7 +48,11 @@ namespace Keysharp.Runtime
 
 		internal static Dictionary<string, MethodPropertyHolder> GatherTypeVariables(Type t, VariableType vartypes = VariableType.Field | VariableType.Property | VariableType.NormalName, string funcName = null)
 		{
-			var flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
+			// Public only. Everything the lowerer emits into a module class is `public static` (see ObjField),
+			// including the SL_ static-local backing fields, so NonPublic could only ever reach members no script
+			// wrote -- Program's own `MainScript`, and any private helper. It also made C# accessibility meaningless
+			// inside a `#CSharp` block, where `private static long[] scratch` still became a script global.
+			var flags = BindingFlags.Static | BindingFlags.Public;
 			PropertyInfo[] props = null;
 			FieldInfo[] fields = null;
 
@@ -383,7 +387,10 @@ namespace Keysharp.Runtime
 
 			if (set)
 			{
-				value = Script.ForceType(prop.PropertyType, value);
+				// The same policy typed parameters, properties and fields get, rather than the narrower one this
+				// used to have of its own (Script.ForceType, which handled only long/double/string and passed
+				// everything else straight to the reflection binder below to reject).
+				value = ArgCoercer.CoerceValue(value, prop.PropertyType);
 				prop.SetValue(null, value);
 			}
 

@@ -12,6 +12,16 @@ public class ReflectionBench : BaseTest
 		public int Method10(int a, int b, int c, int d, int e,
 							int f, int g, int h, int i, int j)
 			=> a + b + c + d + e + f + g + h + i + j;
+
+		// The typed methods above measure only the coercing path. Almost every member a script can
+		// actually reach — every builtin, and every lowered script function — is all-`object`, which
+		// DelegateFactory passes through untouched. Without these, a change to the conversion policy
+		// would be benchmarked exclusively on the case it slows down and never on the common one.
+		public object ObjMethod1(object a) => a;
+		public object ObjMethod5(object a, object b, object c, object d, object e) => e;
+		public object ObjMethod10(object a, object b, object c, object d, object e,
+								  object f, object g, object h, object i, object j)
+			=> j;
 	}
 
 	private Target _instance = default!;
@@ -19,6 +29,7 @@ public class ReflectionBench : BaseTest
 	private MethodInvoker _miv0 = default!, _miv1 = default!, _miv5 = default!, _miv10 = default!;
 	private object[] _args0 = default!, _args1 = default!, _args5 = default!, _args10 = default!;
 	private Func<object, object[], object> _del0 = default!, _del1 = default!, _del5 = default!, _del10 = default!;
+	private Func<object, object[], object> _odel1 = default!, _odel5 = default!, _odel10 = default!;
 
 	[GlobalSetup]
 	public void Setup()
@@ -39,6 +50,10 @@ public class ReflectionBench : BaseTest
 		_del1 = DelegateFactory.CreateDelegate(_mi1);
 		_del5 = DelegateFactory.CreateDelegate(_mi5);
 		_del10 = DelegateFactory.CreateDelegate(_mi10);
+
+		_odel1 = DelegateFactory.CreateDelegate(t.GetMethod(nameof(Target.ObjMethod1)) ?? throw new NullReferenceException());
+		_odel5 = DelegateFactory.CreateDelegate(t.GetMethod(nameof(Target.ObjMethod5)) ?? throw new NullReferenceException());
+		_odel10 = DelegateFactory.CreateDelegate(t.GetMethod(nameof(Target.ObjMethod10)) ?? throw new NullReferenceException());
 
 		_args0 = [];
 		_args1 = [1];
@@ -83,4 +98,13 @@ public class ReflectionBench : BaseTest
 
 	[Benchmark(Description = "Delegate invoke 10 params")]
 	public void DelegateInvoke10() => _sink = _del10.Invoke(_instance, _args10);
+
+	[Benchmark(Description = "Delegate invoke 1 object param")]
+	public void DelegateInvokeObj1() => _sink = _odel1.Invoke(_instance, _args1);
+
+	[Benchmark(Description = "Delegate invoke 5 object params")]
+	public void DelegateInvokeObj5() => _sink = _odel5.Invoke(_instance, _args5);
+
+	[Benchmark(Description = "Delegate invoke 10 object params")]
+	public void DelegateInvokeObj10() => _sink = _odel10.Invoke(_instance, _args10);
 }

@@ -93,5 +93,16 @@ namespace Keysharp.Tests
 		/// </summary>
 		[Test, Category("Types"), NonParallelizable]
 		public void TypesConversions() => Assert.IsTrue(TestScript("types-conversions", true));
+
+		/// <summary>
+		/// Verifies that a value reaching a <em>typed</em> CLR parameter, property or field through the
+		/// dynamic-invoke path is converted with AutoHotkey's rules rather than unboxed. Every case here used
+		/// to raise an InvalidCastException/ArgumentException out of the compiled core, which is not a
+		/// KeysharpException and therefore killed the process past any script try/catch.
+		/// Also pins the two things the conversion must NOT do: touch the packed variadic slot, or leave a
+		/// non-canonical numeric type (a boxed Int32) visible to the script.
+		/// </summary>
+		[Test, Category("Types"), NonParallelizable]
+		public void TypesTypedParams() => Assert.IsTrue(TestScript("types-typed-params", true));
 	}
 }

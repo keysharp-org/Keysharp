@@ -118,8 +118,14 @@ namespace Keysharp.Internals.ExtensionMethods
 			if (obj is string s)
 				return s;
 
-			if (obj is double)
-				return Script.ForceString(obj);//Canonical Float formatting, e.g. 380.0 => "380.0" to match AHK, rather than ToString()'s "380".
+			//Canonical formatting for the two types whose ToString() does not match AutoHotkey: a Float keeps its
+			//point (380.0 => "380.0", not "380"), and a Boolean is an Integer to a script (true => "1", not "True").
+			//The Boolean case only fires for a CLR bool -- a script's own `true`/`false` lower to the Integer
+			//literals 1 and 0 (Lowerer: `case "true": return Num("1")`) and were always rendered "1"/"0". So this
+			//reaches values that ORIGINATE in the CLR: a `bool` accessor such as A_IsSuspended assigned into a
+			//string context, and anything coming back through the Ks.Clr boundary.
+			if (obj is double or bool)
+				return Script.ForceString(obj);
 
 			//A ToString() which returns no value yields def, rather than raising an UnsetError. [v2.1-alpha.30+]
 			return (obj is Any kso && Functions.HasMethod(kso, "ToString") != 0L ? Script.InvokeOrNull(kso, "ToString")?.ToString() : obj?.ToString()) ?? def;
@@ -167,28 +173,6 @@ namespace Keysharp.Internals.ExtensionMethods
 		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if the conversion failed.</exception>
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public static double ToDouble(this object obj) => obj is double d ? d : obj.TryParseDouble(out double dd) ? dd : (double)Errors.TypeErrorOccurred(obj, typeof(double), 0.0);
-
-		/// <summary>
-		/// Wrapper around casting an object to a type <typeparamref name="T"/>.
-		/// </summary>
-		/// <typeparam name="T">The type to cast the object to.</typeparam>
-		/// <param name="obj">The object to cast.</param>
-		/// <returns>The object casted to <typeparamref name="T"/>.</returns>
-		public static T CastTo<T>(this object obj) => (T)obj;
-
-		/// <summary>
-		/// Casts an object to a type using reflection.
-		/// </summary>
-		/// <param name="obj">The object to cast.</param>
-		/// <param name="type">The type to cast obj to.</param>
-		/// <returns>obj casted to type.</returns>
-		public static object CastToReflected(this object obj, Type type)
-		{
-			var methodInfo = typeof(ObjectExtensions).GetMethod(nameof(CastTo), BindingFlags.Static | BindingFlags.Public);
-			var genericArguments = new[] { type };
-			var genericMethodInfo = methodInfo?.MakeGenericMethod(genericArguments);
-			return genericMethodInfo?.Invoke(null, [obj]);
-		}
 
 		/// <summary>
 		/// Attempts to convert an object to a <see cref="Control"/>.

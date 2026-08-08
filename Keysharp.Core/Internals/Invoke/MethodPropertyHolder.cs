@@ -422,50 +422,50 @@ namespace Keysharp.Internals.Invoke
 			ParamLength = parameters.Length;
 			MinParams = MaxParams = ParamLength;
 
+			// Decided once here rather than per get/set: a property whose type is not one AutoHotkey has needs its
+			// value widened on the way out, and an `object`-typed one -- the overwhelming majority -- needs no
+			// conversion in either direction, so it keeps the bare reflection setter it had before this policy.
+			var kind = ArgCoercer.KindOf(pi.PropertyType);
+			var normalize = ArgCoercer.IsNarrow(kind);
+			var coerce = kind != ArgCoercer.Kind.None;
+
 			if (pi.GetAccessors().Any(x => x.IsStatic))
 			{
 				IsStaticProp = true;
 
 				if (isGuiType)
 				{
-                    _callFunc = (inst, obj) =>//Gui calls aren't worth optimizing further.
-                    {
-                        object ret = null;
-                        var ctrl = (inst ?? obj[0]).GetControl();//If it's a gui control, then invoke on the gui thread.
-                        ctrl.CheckedInvoke(() =>
-                        {
-                            ret = pi.GetValue(null);
-                        }, true);//This can be null if called before a Gui object is fully initialized.
-
-                        if (ret is int i)
-                            ret = (long)i;//Try to keep everything as long.
-
-							return ret;
-						};
-						SetProp = (inst, arg) =>
-						{
-							var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
-							ctrl.CheckedInvoke(() => pi.SetValue(null, arg), true);//This can be null if called before a Gui object is fully initialized.
-						};
-					}
-					else
+					_callFunc = (inst, obj) =>//Gui calls aren't worth optimizing further.
 					{
-						if (pi.PropertyType == typeof(int))
+						object ret = null;
+						var ctrl = (inst ?? obj[0]).GetControl();//If it's a gui control, then invoke on the gui thread.
+						ctrl.CheckedInvoke(() =>
 						{
-							_callFunc = (inst, arg) =>
-							{
-								var ret = pi.GetValue(null);
+							ret = pi.GetValue(null);
+						}, true);//This can be null if called before a Gui object is fully initialized.
 
-							if (ret is int i)
-								ret = (long)i;//Try to keep everything as long.
-
-							return ret;
-						};
-					}
+						return normalize ? ArgCoercer.NormalizeScalar(ret) : ret;
+					};
+					// Coerce on the calling thread, so a conversion TypeError is raised there rather than marshaled.
+					// This is what makes `gui.MarginX := 5.5` survivable: reflection's own binder is stricter than the
+					// script language and rejects a Float for the Int64 property with an ArgumentException, which is
+					// not a KeysharpException and so killed the process past any try/catch.
+					SetProp = (inst, arg) =>
+					{
+						arg = ArgCoercer.CoerceValue(arg, pi.PropertyType);
+						var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
+						ctrl.CheckedInvoke(() => pi.SetValue(null, arg), true);//This can be null if called before a Gui object is fully initialized.
+					};
+				}
+				else
+				{
+					if (normalize)
+						_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValue(null));
 					else
 						_callFunc = (inst, obj) => pi.GetValue(null);
 
-					SetProp = (inst, obj) => pi.SetValue(null, obj);
+					SetProp = coerce ? (inst, obj) => pi.SetValue(null, ArgCoercer.CoerceValue(obj, pi.PropertyType))
+									 : (inst, obj) => pi.SetValue(null, obj);
 				}
 			}
 			else
@@ -481,35 +481,30 @@ namespace Keysharp.Internals.Invoke
 							ret = pi.GetValue(inst ?? args[0]);
 						}, true);//This can be null if called before a Gui object is fully initialized.
 
-						if (ret is int i)
-							ret = (long)i;//Try to keep everything as long.
-
-							return ret;
-						};
-						SetProp = (inst, obj) =>
-						{
-							var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
-							ctrl.CheckedInvoke(() => pi.SetValue(inst, obj), true);//This can be null if called before a Gui object is fully initialized.
-						};
-					}
-					else
+						return normalize ? ArgCoercer.NormalizeScalar(ret) : ret;
+					};
+					// See the static branch above for why the coercion happens here rather than inside CheckedInvoke.
+					SetProp = (inst, obj) =>
 					{
-						if (pi.PropertyType == typeof(int))
-						{
-							_callFunc = (inst, obj) =>
-							{
-								var ret = pi.GetValue(inst);
-
-							if (ret is int i)
-								ret = (long)i;//Try to keep everything as long.
-
-							return ret;
-						};
-					}
+						obj = ArgCoercer.CoerceValue(obj, pi.PropertyType);
+						var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
+						ctrl.CheckedInvoke(() => pi.SetValue(inst, obj), true);//This can be null if called before a Gui object is fully initialized.
+					};
+				}
+				else
+				{
+					if (normalize)
+						_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValue(inst));
 					else
 						_callFunc = (inst, obj) => pi.GetValue(inst);
 
-					SetProp = pi.SetValue;
+					// Deliberately still reflection, unlike the compiled setter the FieldInfo constructor builds:
+					// FindAndCacheProperty creates an MPH for EVERY property of a type the first time any one of
+					// them is named, so compiling here would pay an Expression.Compile per property of every type a
+					// script touches -- for a delegate that is usually never called, since an Any-derived builtin
+					// resolves an assignment through its prototype's set_X accessor and never reaches SetProp.
+					SetProp = coerce ? (inst, obj) => pi.SetValue(inst, ArgCoercer.CoerceValue(obj, pi.PropertyType))
+									 : pi.SetValue;
 				}
 			}
 		}
@@ -529,10 +524,13 @@ namespace Keysharp.Internals.Invoke
 				var instParam = Expression.Parameter(typeof(object), "inst");
 				var valParam = Expression.Parameter(typeof(object), "value");
 				Expression assignExpr;
+				// Same conversion policy as parameters and properties: a script assigning to a typed field must
+				// not be able to raise an uncatchable InvalidCastException out of the compiled setter.
+				var coercedVal = ArgCoercer.Coerce(valParam, fi.FieldType);
 				if (fi.IsStatic)
-					assignExpr = Expression.Assign(Expression.Field(null, fi), Expression.Convert(valParam, fi.FieldType));
+					assignExpr = Expression.Assign(Expression.Field(null, fi), coercedVal);
 				else
-					assignExpr = Expression.Assign(Expression.Field(Expression.Convert(instParam, fi.DeclaringType), fi), Expression.Convert(valParam, fi.FieldType));
+					assignExpr = Expression.Assign(Expression.Field(Expression.Convert(instParam, fi.DeclaringType), fi), coercedVal);
 				SetProp = Expression.Lambda<Action<object, object>>(assignExpr, instParam, valParam).Compile();
 			}
 		}
@@ -622,8 +620,9 @@ namespace Keysharp.Internals.Invoke
 				defaults[i] = soft ? MaterializeDefault(ps[i]) : null;
 			}
 
-			// Compile the small "core" once.
-			var core = CompileCore(mi, ps, isSoft, defaults);
+			// Compile the small "core" once. The variadic index has to go along: by the time the core runs,
+			// NormalInvoke has already packed a real object[] into that slot, and it must not be coerced.
+			var core = CompileCore(mi, ps, isSoft, defaults, mph.variadicParamIndex);
 
 			return NormalInvoke;
 
@@ -793,7 +792,8 @@ namespace Keysharp.Internals.Invoke
 			MethodInfo mi,
 			ParameterInfo[] ps,
 			bool[] isSoft,
-			object[] defaults)
+			object[] defaults,
+			int variadicParamIndex = -1)
 		{
 			var pTarget = Expression.Parameter(typeof(object), "target");
 			var pArgs = Expression.Parameter(typeof(object[]), "args");
@@ -835,7 +835,11 @@ namespace Keysharp.Internals.Invoke
 						valOrNull);
 				}
 
-				a[i] = Expression.Convert(chosen, ps[i].ParameterType);
+				// The packed variadic slot is handed over as-is; everything else goes through the one conversion
+				// policy, which is an identity for `object` (the overwhelming majority of members).
+				a[i] = i == variadicParamIndex
+					   ? Expression.Convert(chosen, ps[i].ParameterType)
+					   : ArgCoercer.Coerce(chosen, ps[i].ParameterType);
 			}
 
 			Expression call;
@@ -853,7 +857,7 @@ namespace Keysharp.Internals.Invoke
 			Expression body =
 				mi.ReturnType == typeof(void)
 					? Expression.Block(call, Expression.Constant(null, typeof(object)))
-					: Expression.Convert(call, typeof(object));
+					: ArgCoercer.NormalizeReturn(call, mi.ReturnType);
 
 			return Expression.Lambda<Func<object, object[], int, object>>(body, pTarget, pArgs, pStart)
 							 .Compile();
@@ -871,7 +875,7 @@ namespace Keysharp.Internals.Invoke
 			else
 				fieldExpr = Expression.Field(Expression.Convert(instParam, fi.DeclaringType), fi);
 
-			var boxedField = Expression.Convert(fieldExpr, typeof(object));
+			var boxedField = ArgCoercer.NormalizeReturn(fieldExpr, fi.FieldType);
 			var getter = Expression.Lambda<Func<object, object>>(boxedField, instParam).Compile();
 
 			return (inst, args) =>

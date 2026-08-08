@@ -154,19 +154,5 @@ namespace Keysharp.Runtime
 			}
 			return input.ToString();
 		}
-
-		internal static object ForceType(Type requested, object value)
-		{
-			if (requested == typeof(object) || requested.IsAssignableFrom(value.GetType()))
-				return value;
-
-			if (requested == typeof(double))
-				return value.ToDouble();//Throws a TypeError on non-numeric input, matching AHK.
-
-			if (requested == typeof(long))
-				return value.ToLong();//Throws a TypeError on non-numeric input, matching AHK.
-
-			return requested == typeof(string) ? ForceString(value) : value;
-		}
 	}
 }

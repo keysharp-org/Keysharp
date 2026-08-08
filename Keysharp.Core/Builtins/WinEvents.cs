@@ -111,8 +111,10 @@ namespace Keysharp.Builtins
 			public long Count => reg?.Remaining ?? 0L;
 
 			/// <summary>Gets or sets whether this hook is paused (paused hooks stay registered but don't fire).</summary>
-			// object-typed, not bool: a script's `true` arrives as an Integer, and a bool-typed setter fails the
-			// dynamic invoke with an InvalidCastException that no script try/catch can intercept.
+			// Historical: a script's `true` arrives as an Integer, and a bool-typed setter used to fail the dynamic
+			// invoke with an InvalidCastException that no script try/catch could intercept. ArgCoercer lifted that
+			// constraint, so a bool-typed member would be safe now; this stays object-typed only to keep the
+			// property accepting the same range of values it always has.
 			public object Paused
 			{
 				get => reg?.paused ?? false;

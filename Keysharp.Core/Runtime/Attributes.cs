@@ -98,7 +98,15 @@ namespace Keysharp.Runtime
 		{ }
 	}
 
-	[AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Class | AttributeTargets.Interface, Inherited = false)]
+	/// <summary>
+	/// Marks a public member or type as invisible to scripts. Consumers: <see cref="Variables.GatherTypeVariables"/>
+	/// (fields and properties), <see cref="Script.InitClass"/> (methods and nested types) and the exit-time
+	/// destructor sweep in <c>Flow</c>.
+	/// <para><c>Field</c>/<c>Struct</c>/<c>Enum</c> are included because the field loop already tested for this
+	/// attribute while <c>AttributeUsage</c> forbade putting it on a field, making that test unreachable.</para>
+	/// </summary>
+	[AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Class | AttributeTargets.Interface
+					| AttributeTargets.Field | AttributeTargets.Struct | AttributeTargets.Enum, Inherited = false)]
 	public sealed class PublicHiddenFromUser : Attribute
 	{
 		public PublicHiddenFromUser()

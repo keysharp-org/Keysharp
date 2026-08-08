@@ -1,4 +1,4 @@
-using Keysharp.Builtins;
+﻿using Keysharp.Builtins;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
@@ -15,104 +15,6 @@ namespace Keysharp.Parsing
 		/// </summary>
 		//CodeMemberMethod entryPoint;
 		//System.Web.Configuration.WebConfigurationManager cfg = new System.Web.Configuration.WebConfigurationManager();
-		//Need to manually add the using static statements.
-#if WINDOWS
-
-		public static readonly string GlobalUsingStr =
-			@"using static Keysharp.Builtins.Accessors;
-using static Keysharp.Builtins.COM.Com;
-using static Keysharp.Builtins.ControlX;
-using static Keysharp.Builtins.Debug;
-using static Keysharp.Builtins.Dialogs;
-using static Keysharp.Builtins.Dir;
-using static Keysharp.Builtins.Dll;
-using static Keysharp.Builtins.Drive;
-using static Keysharp.Builtins.EditX;
-using static Keysharp.Builtins.Env;
-using static Keysharp.Builtins.Errors;
-using static Keysharp.Builtins.External;
-using static Keysharp.Builtins.Files;
-using static Keysharp.Builtins.Flow;
-using static Keysharp.Builtins.Functions;
-using static Keysharp.Builtins.GuiHelper;
-using static Keysharp.Builtins.ImageLists;
-using static Keysharp.Builtins.Images;
-using static Keysharp.Builtins.Ini;
-using static Keysharp.Builtins.Input;
-using static Keysharp.Builtins.Keyboard;
-using static Keysharp.Builtins.Maths;
-using static Keysharp.Builtins.Menu;
-using static Keysharp.Builtins.Misc;
-using static Keysharp.Builtins.Monitor;
-using static Keysharp.Builtins.Mouse;
-using static Keysharp.Builtins.Network;
-using static Keysharp.Builtins.Processes;
-using static Keysharp.Builtins.RegEx;
-using static Keysharp.Builtins.Registrys;
-using static Keysharp.Builtins.Screen;
-using static Keysharp.Builtins.Sound;
-using static Keysharp.Builtins.Strings;
-using static Keysharp.Builtins.ToolTips;
-using static Keysharp.Builtins.Types;
-using static Keysharp.Builtins.WindowX;
-using static Keysharp.Runtime.Keyboard.HotkeyDefinition;
-using static Keysharp.Runtime.Keyboard.HotstringManager;
-using static Keysharp.Runtime.Script.Operator;
-using static Keysharp.Runtime.Script;
-";
-
-#else
-		public static readonly string GlobalUsingStr =
-			@"using static Keysharp.Builtins.Accessors;
-using static Keysharp.Builtins.ControlX;
-using static Keysharp.Builtins.Debug;
-using static Keysharp.Builtins.Dialogs;
-using static Keysharp.Builtins.Dir;
-using static Keysharp.Builtins.Dll;
-using static Keysharp.Builtins.Drive;
-using static Keysharp.Builtins.EditX;
-using static Keysharp.Builtins.Env;
-using static Keysharp.Builtins.Errors;
-using static Keysharp.Builtins.External;
-using static Keysharp.Builtins.Files;
-using static Keysharp.Builtins.Flow;
-using static Keysharp.Builtins.Functions;
-using static Keysharp.Builtins.GuiHelper;
-using static Keysharp.Builtins.ImageLists;
-using static Keysharp.Builtins.Images;
-using static Keysharp.Builtins.Ini;
-using static Keysharp.Builtins.Input;
-using static Keysharp.Builtins.Keyboard;
-using static Keysharp.Builtins.Maths;
-using static Keysharp.Builtins.Menu;
-using static Keysharp.Builtins.Misc;
-using static Keysharp.Builtins.Monitor;
-using static Keysharp.Builtins.Mouse;
-using static Keysharp.Builtins.Network;
-using static Keysharp.Builtins.Processes;
-using static Keysharp.Builtins.RegEx;
-using static Keysharp.Builtins.Screen;
-using static Keysharp.Builtins.Sound;
-using static Keysharp.Builtins.Strings;
-using static Keysharp.Builtins.ToolTips;
-using static Keysharp.Builtins.Types;
-using static Keysharp.Builtins.WindowX;
-using static Keysharp.Runtime.Keyboard.HotkeyDefinition;
-using static Keysharp.Runtime.Keyboard.HotstringManager;
-using static Keysharp.Runtime.Script.Operator;
-using static Keysharp.Runtime.Script;
-";
-#endif
-
-		public static readonly string NamespaceUsingStr = $@"
-using System
-using System.Runtime.InteropServices
-using Keysharp.Builtins
-using Keysharp.Runtime
-using Array = Keysharp.Builtins.Array
-using Buffer = Keysharp.Builtins.Buffer
-using String = Keysharp.Builtins.String
-";
 
 		/// <summary>
 		/// Needed as a static here so it can be accessed in other areas of Keysharp.Builtins, such as in Accessors,
@@ -154,27 +56,6 @@ using String = Keysharp.Builtins.String
 		public static readonly string[] requiredNativeDependencies = new[]
 		{
 			"PCRE.NET.Native" + EmbeddedDependencyLoader.dllExt,
-		};
-
-		private static readonly string[] usings = new[]  //These aren't what show up in the output .cs file. See Parser.GenerateCompileUnit() for that.
-		{
-			"System",
-			"System.Collections",
-			"System.Collections.Generic",
-			"System.Data",
-#if WINDOWS
-			"System.Drawing",
-			"System.Windows.Forms",
-#else
-			"Eto.Drawing",
-			"Eto.Forms",
-#endif
-			"System.IO",
-			"System.Linq",
-			"System.Reflection",
-			"System.Runtime",
-			"System.Runtime.InteropServices",
-			"Keysharp.Builtins",
 		};
 
 		// Cache of parsed deps.json results, keyed by the deps.json path. Instance-scoped (not static) so a
@@ -563,8 +444,10 @@ using String = Keysharp.Builtins.String
 			const Microsoft.CodeAnalysis.Platform compiledPlatform = Microsoft.CodeAnalysis.Platform.AnyCpu;
 			var compilation = CSharpCompilation.Create(outputname)
 								.WithOptions(
+									// No .WithUsings(): CSharpCompilationOptions.Usings applies only to
+									// SourceCodeKind.Script submissions, and this tree is Regular. The lowered code
+									// is fully qualified and needs no imports (see Lowerer.AssembleProgram).
 									new CSharpCompilationOptions(OutputKind.WindowsApplication)
-									.WithUsings(usings)
 									.WithOptimizationLevel(OptimizationLevel.Release)
 									.WithPlatform(compiledPlatform)
 									.WithConcurrentBuild(true)
@@ -911,10 +794,6 @@ using String = Keysharp.Builtins.String
 		internal object EvaluateCode(string code)
 		{
 			var coreDir = Path.GetDirectoryName(typeof(object).GetTypeInfo().Assembly.Location);
-			var usings = new List<string>()//These aren't what show up in the output .cs file.
-			{
-				"System"
-			};
 			var references = new List<MetadataReference>
 			{
 				MetadataReference.CreateFromFile(Path.Combine(coreDir, "mscorlib.dll")),
@@ -940,7 +819,6 @@ namespace Dyn
 			var compilation = CSharpCompilation.Create("DynamicCode")
 							  .WithOptions(
 								  new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-								  .WithUsings(usings)
 								  .WithOptimizationLevel(OptimizationLevel.Debug)//Quick evaluations don't need to be optimized.
 								  .WithPlatform(Microsoft.CodeAnalysis.Platform.AnyCpu)
 								  .WithConcurrentBuild(true)

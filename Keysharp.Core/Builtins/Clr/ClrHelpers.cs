@@ -1291,17 +1291,23 @@ namespace Keysharp.Builtins
 			if (value is string && (target == typeof(char[]) || target.FullName == "System.ReadOnlySpan`1[System.Char]"))
 				return value;
 
+			// Scalars go through the ONE conversion policy the dynamic-invoke path uses (ArgCoercer), so the two
+			// CLR boundaries cannot disagree on the same input. It is deliberately outside the try below: these
+			// raise a TypeError for a genuinely non-numeric value, and that is the answer, not something to
+			// swallow and retry. (Before this, `.Al()`/`.Ad()` returned 0 for "abc" and the call proceeded with a
+			// silently wrong argument.) Numeric strings still convert, matching `"1" == 1`.
+			// NOTE: this can throw from inside the candidate loop in InvokeMethod, which uses a false return from
+			// TryBuildArguments as its "this overload does not fit, try the next" signal, so a throw here skips the
+			// remaining candidates. Nothing is lost as things stand: TryBuildArguments only ever returns false for a
+			// missing required argument, which is an arity question a conversion could not have answered anyway. If
+			// it ever learns to reject a candidate on argument TYPE, this has to move inside the try below.
+			var kind = ArgCoercer.KindOf(target);
+
+			if (kind != ArgCoercer.Kind.None && kind != ArgCoercer.Kind.Cast)
+				return ArgCoercer.CoerceValue(value, target);
+
 			try
 			{
-				if (target == typeof(string)) return value?.As() ?? "";
-				if (target == typeof(bool)) return ForceBool(value);
-				if (target == typeof(int)) return value.Ai();
-				if (target == typeof(uint)) return value.Aui();
-				if (target == typeof(long)) return value.Al();
-				if (target == typeof(ulong)) return (ulong)value.Al();
-				if (target == typeof(double)) return value.Ad();
-				if (target == typeof(float)) return (float)value.Ad();
-
 				if (target.IsByRef) return ConvertScalarToCLR(value, target.GetElementType());
 
 				return Convert.ChangeType(value, target, CultureInfo.InvariantCulture);
@@ -1316,25 +1322,19 @@ namespace Keysharp.Builtins
 		{
 			if (value == null) return null;
 
-			switch (value)
-			{
-				case string s: return s;
-				case bool b: return b;
-				case int i: return (long)i;
-				case uint ui: return (long)ui;
-				case long l: return l;
-				case ulong ul: return unchecked((long)ul);
-				case short sh: return (long)sh;
-				case ushort ush: return (long)ush;
-				case byte by: return (long)by;
-				case sbyte sb: return (long)sb;
-				case double d: return d;
-				case float f: return (double)f;
-				case Type t: return new Clr.ManagedType(t);
-			}
+			// The types a script already has, first: between them they are the overwhelming majority of returns.
+			if (value is string or bool or long or double) return value;
+
+			if (value is Type t) return new Clr.ManagedType(t);
+
+			// Every other numeric gets the same widening ArgCoercer applies to a typed return on the script side, so
+			// the two directions of this boundary cannot disagree about what an Int32 or a Single looks like.
+			// NormalizeScalar hands back the value itself when there is nothing to widen, which is how a CLR object
+			// is told apart here.
+			var widened = ArgCoercer.NormalizeScalar(value);
 
 			// Wrap any CLR object as a ManagedInstance for AHK-like behavior
-			return new Clr.ManagedInstance(value.GetType(), value);
+			return ReferenceEquals(widened, value) ? new Clr.ManagedInstance(value.GetType(), value) : widened;
 		}
 
 		// -------- Overload group cache --------
