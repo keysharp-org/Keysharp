@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!-- Everything the "install" switch of Keysharp.exe used to do, authored declaratively.
+
+       The vdproj ran the shipped Keysharp.exe as a deferred, non-impersonated custom action to write these
+       keys, and ran the "uninstall" switch to delete them. That had three problems this file fixes:
+
+         * the .ks/.cks associations were ALSO registered by the MSI's own Extension/ProgId/Verb tables, so
+           two mechanisms wrote the same keys and only an ordering coincidence made uninstall work;
+         * neither action had a rollback counterpart, so a failure part-way through an install left PATH
+           and the whole Software\Classes tree modified with no way back;
+         * on a major upgrade the binary on disk when the action runs is the *old* build.
+
+       Written as raw registry values rather than <ProgId>/<Extension>/<Verb> because that is a faithful
+       one-to-one port of RegisterShellIntegration in Keysharp/Program.cs (which writes plain, unadvertised
+       keys and a superset of what the MSI tables covered), and because it keeps every value visible next
+       to the code it mirrors.
+
+       Root="HKMU" resolves to HKLM for a per-machine install and HKCU for a per-user one. The package is
+       per-machine only (see the scope note in Package.wxs), so these all land in HKLM today, exactly where
+       RegisterShellIntegration put them; HKMU is kept because it costs nothing and is what a future
+       dual-scope package on WiX v6 would need.
+
+       The install and uninstall switches remain in the Keysharp CLI: portable-zip users still need them. -->
+
+  <Fragment>
+    <ComponentGroup Id="ShellIntegrationComponents" Directory="INSTALLFOLDER">
+
+      <!-- ForceDeleteOnUninstall throughout, because the switch this replaces removed these with
+           DeleteSubKeyTree. Without it Windows Installer removes only the individual values it wrote and
+           leaves the keys themselves behind - and an empty subkey such as .ks\OpenWithList is enough to
+           stop .ks itself being pruned, so uninstall would not be clean.
+           Note which keys are NOT tree-deleted: .ahk keeps its own default handler (usually AutoHotkey's),
+           so only the single OpenWithList entry below is removed from it. -->
+
+      <!-- .ks -> Keysharp -->
+      <Component Id="Assoc_Ks">
+        <RegistryKey Root="HKMU" Key="Software\Classes\.ks" ForceDeleteOnUninstall="yes">
+          <RegistryValue Value="Keysharp" Type="string" KeyPath="yes" />
+        </RegistryKey>
+        <RegistryKey Root="HKMU" Key="Software\Classes\Keysharp" ForceDeleteOnUninstall="yes">
+          <RegistryValue Value="Keysharp script" Type="string" />
+          <RegistryValue Key="DefaultIcon" Value="&quot;[INSTALLFOLDER]Keysharp.exe&quot;,0" Type="string" />
+          <RegistryValue Key="shell\open\command" Value="&quot;[INSTALLFOLDER]Keysharp.exe&quot; &quot;%1&quot;" Type="string" />
+        </RegistryKey>
+        <!-- Older builds registered an iconless "compile" verb under this ProgId, and RegisterShellIntegration
+             deleted it on every run. A machine that used the portable zip's install switch before upgrading to
+             the MSI still has it, pointing at whatever directory that copy was extracted to, which shows up as
+             a second, dangling Compile entry on the .ks context menu. -->
+        <RemoveRegistryKey Action="removeOnInstall" Root="HKMU" Key="Software\Classes\Keysharp\shell\compile" />
+      </Component>
+
+      <!-- .cks -> Keysharp.CompiledScript -->
+      <Component Id="Assoc_Cks">
+        <RegistryKey Root="HKMU" Key="Software\Classes\.cks" ForceDeleteOnUninstall="yes">
+          <RegistryValue Value="Keysharp.CompiledScript" Type="string" KeyPath="yes" />
+        </RegistryKey>
+        <RegistryKey Root="HKMU" Key="Software\Classes\Keysharp.CompiledScript" ForceDeleteOnUninstall="yes">
+          <RegistryValue Value="Compiled Keysharp script" Type="string" />
+          <RegistryValue Key="DefaultIcon" Value="&quot;[INSTALLFOLDER]Keysharp.exe&quot;,0" Type="string" />
+          <RegistryValue Key="shell\open\command" Value="&quot;[INSTALLFOLDER]Keysharp.exe&quot; &quot;%1&quot;" Type="string" />
+        </RegistryKey>
+      </Component>
+
+      <!-- "Compile" context-menu verb, on both .ahk and .ks. Registered under SystemFileAssociations so it
+           applies to the extension regardless of which application owns the ProgId - .ahk in particular
+           usually belongs to AutoHotkey itself, and must keep its own default handler. -->
+      <Component Id="Verb_Compile_Ahk">
+        <RegistryKey Root="HKMU" Key="Software\Classes\SystemFileAssociations\.ahk\shell\KeysharpCompile" ForceDeleteOnUninstall="yes">
+          <RegistryValue Value="Compile" Type="string" KeyPath="yes" />
+          <RegistryValue Name="Icon" Value="&quot;[INSTALLFOLDER]Keysharp.exe&quot;,0" Type="string" />
+          <RegistryValue Key="command" Value="&quot;[INSTALLFOLDER]Keysharp.exe&quot; --compile &quot;%1&quot;" Type="string" />
+        </RegistryKey>
+      </Component>
+
+      <Component Id="Verb_Compile_Ks">
+        <RegistryKey Root="HKMU" Key="Software\Classes\SystemFileAssociations\.ks\shell\KeysharpCompile" ForceDeleteOnUninstall="yes">
+          <RegistryValue Value="Compile" Type="string" KeyPath="yes" />
+          <RegistryValue Name="Icon" Value="&quot;[INSTALLFOLDER]Keysharp.exe&quot;,0" Type="string" />
+          <RegistryValue Key="command" Value="&quot;[INSTALLFOLDER]Keysharp.exe&quot; --compile &quot;%1&quot;" Type="string" />
+        </RegistryKey>
+      </Component>
+
+      <!-- "Edit with Keyview" context-menu verb. -->
+      <Component Id="Verb_Edit_Ahk">
+        <RegistryKey Root="HKMU" Key="Software\Classes\SystemFileAssociations\.ahk\shell\KeyviewEdit" ForceDeleteOnUninstall="yes">
+          <RegistryValue Value="Edit with Keyview" Type="string" KeyPath="yes" />
+          <RegistryValue Name="Icon" Value="&quot;[INSTALLFOLDER]Keyview.exe&quot;,0" Type="string" />
+          <RegistryValue Key="command" Value="&quot;[INSTALLFOLDER]Keyview.exe&quot; &quot;%1&quot;" Type="string" />
+        </RegistryKey>
+      </Component>
+
+      <Component Id="Verb_Edit_Ks">
+        <RegistryKey Root="HKMU" Key="Software\Classes\SystemFileAssociations\.ks\shell\KeyviewEdit" ForceDeleteOnUninstall="yes">
+          <RegistryValue Value="Edit with Keyview" Type="string" KeyPath="yes" />
+          <RegistryValue Name="Icon" Value="&quot;[INSTALLFOLDER]Keyview.exe&quot;,0" Type="string" />
+          <RegistryValue Key="command" Value="&quot;[INSTALLFOLDER]Keyview.exe&quot; &quot;%1&quot;" Type="string" />
+        </RegistryKey>
+      </Component>
+
+      <!-- Offers Keyview under "Open with" for script files WITHOUT making it the default handler: .ks keeps
+           the Keysharp ProgId above, so double-clicking still runs the script. SupportedTypes scopes Keyview
+           to the recommended list; the per-extension OpenWithList entries make it appear deterministically.
+           The .ks OpenWithList entry lives under the .ks key, which Assoc_Ks owns, so it is listed here only
+           for .ahk plus the shared Applications\Keyview.exe registration. -->
+      <Component Id="OpenWith_Keyview">
+        <RegistryKey Root="HKMU" Key="Software\Classes\Applications\Keyview.exe" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="FriendlyAppName" Value="Keyview" Type="string" KeyPath="yes" />
+          <RegistryValue Key="DefaultIcon" Value="&quot;[INSTALLFOLDER]Keyview.exe&quot;,0" Type="string" />
+          <RegistryValue Key="shell\open\command" Value="&quot;[INSTALLFOLDER]Keyview.exe&quot; &quot;%1&quot;" Type="string" />
+          <RegistryValue Key="SupportedTypes" Name=".ahk" Value="" Type="string" />
+          <RegistryValue Key="SupportedTypes" Name=".ks" Value="" Type="string" />
+        </RegistryKey>
+        <!-- Only the single Keyview entry is removed from each extension's OpenWithList; .ahk keeps its own
+             key and default handler, and .ks is tree-deleted by Assoc_Ks. -->
+        <RegistryKey Root="HKMU" Key="Software\Classes\.ahk\OpenWithList\Keyview.exe" ForceCreateOnInstall="yes" ForceDeleteOnUninstall="yes" />
+        <RegistryKey Root="HKMU" Key="Software\Classes\.ks\OpenWithList\Keyview.exe" ForceCreateOnInstall="yes" ForceDeleteOnUninstall="yes" />
+      </Component>
+
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <!-- PATH.
+         MSI owns the add and the remove, including rollback, which the old custom action did not.
+         Part="last" appends; Action="set" with Permanent="no" means uninstall removes exactly this entry
+         and leaves the rest of PATH alone.
+
+         System="yes" writes the machine environment block, matching what Keysharp.exe's install switch did
+         (HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment). This was briefly split into a
+         machine and a user component conditioned on ALLUSERS, back when the package tried to be
+         dual-scope; the package is per-machine only now (see Package.wxs), so there is one component. -->
+    <ComponentGroup Id="PathComponents" Directory="INSTALLFOLDER">
+
+      <Component Id="Path_Machine">
+        <Environment Id="PathMachine" Name="PATH" Value="[INSTALLFOLDER]" Action="set" Part="last" System="yes" Permanent="no" />
+        <RegistryValue Root="HKLM" Key="Software\Keysharp\Keysharp" Name="PathEntry" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+  </Fragment>
+
+</Wix>

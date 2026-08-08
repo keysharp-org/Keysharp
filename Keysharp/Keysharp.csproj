@@ -25,7 +25,13 @@
 		<Authors>Matt Feemster, Descolada + legacy IronAHK developers</Authors>
 		<Description>A cross-platform C# port and enhancement of the AutoHotkey program</Description>
 		<Company>Keysharp</Company>
-		<PreserveCompilationContext>true</PreserveCompilationContext>
+		<!-- Deliberately off. This would emit a refs/ folder of ~194 reference assemblies (10.5 MB, a third
+		     of the release download) plus a "compile" section in the deps.json, for consumers that build a
+		     Roslyn compilation from Microsoft.Extensions.DependencyModel. Keysharp is not one: script
+		     compilation resolves its metadata references from the shared framework directory
+		     (CompilerHelper.CreateCompilation), and GetCompiledScriptDependencies reads only the deps.json
+		     "targets" runtime/native groups. -->
+		<PreserveCompilationContext>false</PreserveCompilationContext>
 		<SignAssembly>False</SignAssembly>
 		<DelaySign>False</DelaySign>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -72,7 +78,9 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
 		</Content>
-		<Content Include="..\Keyview\Icon.icns" Link="Icon.icns" Condition="Exists('..\Keyview\Icon.icns')">
+		<!-- The .app bundle icon named by Info.plist's CFBundleIconFile. Content items publish on every
+		     platform by default, which put 400 KB of Mach-O icon data in the Windows and Linux packages. -->
+		<Content Include="..\Keyview\Icon.icns" Link="Icon.icns" Condition="$([MSBuild]::IsOSPlatform('OSX')) And Exists('..\Keyview\Icon.icns')">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
 		<Content Include="Keysharp.manifest">

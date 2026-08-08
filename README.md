@@ -103,7 +103,10 @@ Keysharp targets .NET 10. Linux and macOS builds also need the sibling [Keysharp
 | Linux | `bash ./Keysharp.Install/package-linux.sh` → output in `dist/` |
 | macOS | `bash ./Keysharp.Install/package-macos.sh` → output in `dist/` |
 
-Building the Windows MSI requires the *Microsoft Visual Studio Installer Projects* extension. Full step-by-step instructions for each platform are in the [detailed reference](docs/reference.md#building-from-source-on-windows).
+The Windows MSI is built with [WiX v5](https://wixtoolset.org/), whose toolset restores from NuGet, so the
+.NET SDK is the only prerequisite — Visual Studio is not needed to package. Pass
+`-RuntimeIdentifier win-arm64` for an ARM64 build. Full step-by-step instructions for each platform are in
+the [detailed reference](docs/reference.md#building-from-source-on-windows).
 
 ## Documentation
 

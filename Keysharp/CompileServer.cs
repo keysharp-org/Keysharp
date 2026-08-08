@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
@@ -62,12 +63,49 @@ namespace Keysharp.Main
 		private static readonly string LockFile = Path.Combine(Path.GetTempPath(), $"keysharp-compile-server-{Environment.UserName}.lock");
 		private static readonly string MutexName = $@"Local\keysharp-compile-coord-{Environment.UserName}";
 
+		/// <summary>
+		/// Acquires the coordination mutex, or reports that it could not be had. The result of WaitOne must
+		/// never be discarded: on timeout the caller would otherwise run the compare-and-kill critical section
+		/// with no mutual exclusion at all, and then throw from ReleaseMutex on the way out.
+		/// </summary>
+		private static bool TryAcquire(Mutex mutex, TimeSpan timeout, out bool acquired)
+		{
+			acquired = false;
+
+			try
+			{
+				acquired = mutex.WaitOne(timeout);
+			}
+			catch (AbandonedMutexException)
+			{
+				acquired = true; // A previous owner died holding it; ownership passes to us.
+			}
+			catch
+			{
+				return false;
+			}
+
+			return acquired;
+		}
+
+		private static void Release(Mutex mutex, bool acquired)
+		{
+			if (acquired)
+				try { mutex.ReleaseMutex(); } catch { }
+		}
+
 		internal static bool TryBecomeOwner(string pipeName)
 		{
 			using var mutex = new Mutex(false, MutexName);
 
-			try { _ = mutex.WaitOne(TimeSpan.FromSeconds(10)); }
-			catch (AbandonedMutexException) { /* previous owner crashed holding it; we now hold it */ }
+			// Deliberately shorter than the client's SpawnWaitTimeout. The mutex is held across TryKill's
+			// WaitForExit, so multi-second holds are normal rather than pathological; but if this wait were as
+			// long as the client's whole budget, a contended startup could never finish in time to be used.
+			if (!TryAcquire(mutex, TimeSpan.FromSeconds(4), out var acquired))
+			{
+				CompileServer.Log("could not acquire the coordination mutex; another daemon is starting, so exiting.");
+				return false;
+			}
 
 			try
 			{
@@ -81,22 +119,33 @@ namespace Keysharp.Main
 					TryKill(owner.Pid); // Any different build: replace it so only one runs.
 				}
 
-				Write(pipeName);
+				// A lock file we cannot write is not fatal: this daemon still serves its pipe, and a second one
+				// that reaches the same conclusion simply fails to create the single-instance pipe and exits.
+				// Crashing here instead would take the daemon down at startup - with its stderr going nowhere,
+				// since it was spawned detached - and silently cost every later run the full client timeout.
+				if (!Write(pipeName))
+					CompileServer.Log("could not record daemon ownership; continuing without it.");
+
 				return true;
 			}
 			finally
 			{
-				try { mutex.ReleaseMutex(); } catch { }
+				Release(mutex, acquired);
 			}
 		}
 
-		internal static void ReleaseOwnership()
+		/// <param name="timeout">
+		/// Kept short on the shutdown path. This runs inside the WM_ENDSESSION handler, and Windows' default
+		/// HungAppTimeout is five seconds - spending that long waiting on a mutex gets the daemon classed as
+		/// not responding and listed, captionless, on the "these apps are preventing shutdown" screen.
+		/// Releasing ownership is only tidiness: a lock file left behind is recognised as stale by IsLiveDaemon.
+		/// </param>
+		internal static void ReleaseOwnership(TimeSpan? timeout = null)
 		{
 			using var mutex = new Mutex(false, MutexName);
 
-			try { _ = mutex.WaitOne(TimeSpan.FromSeconds(5)); }
-			catch (AbandonedMutexException) { }
-			catch { return; }
+			if (!TryAcquire(mutex, timeout ?? TimeSpan.FromSeconds(5), out var acquired))
+				return;
 
 			try
 			{
@@ -108,7 +157,7 @@ namespace Keysharp.Main
 			catch { }
 			finally
 			{
-				try { mutex.ReleaseMutex(); } catch { }
+				Release(mutex, acquired);
 			}
 		}
 
@@ -116,24 +165,30 @@ namespace Keysharp.Main
 		{
 			using var mutex = new Mutex(false, MutexName);
 
-			try { _ = mutex.WaitOne(TimeSpan.FromSeconds(5)); }
-			catch (AbandonedMutexException) { }
-			catch { return; }
+			if (!TryAcquire(mutex, TimeSpan.FromSeconds(5), out var acquired))
+				return;
 
 			try
 			{
 				var owner = Read();
+				var killed = true;
 
 				if (owner != null && owner.Pid != Environment.ProcessId && IsLiveDaemon(owner))
+				{
 					TryKill(owner.Pid);
+					// Only drop the record once the process is actually gone. Deleting it after a failed kill -
+					// a daemon running as another user, say - would hide a live daemon from the next one, which
+					// would then start alongside it instead of replacing it.
+					killed = !IsLiveDaemon(owner);
+				}
 
-				if (File.Exists(LockFile))
+				if (killed && File.Exists(LockFile))
 					File.Delete(LockFile);
 			}
 			catch { }
 			finally
 			{
-				try { mutex.ReleaseMutex(); } catch { }
+				Release(mutex, acquired);
 			}
 		}
 
@@ -141,10 +196,11 @@ namespace Keysharp.Main
 		{
 			internal int Pid;
 			internal string ProcName;
+			internal long StartedAtTicks;
 			internal string Pipe;
 		}
 
-		// Lock file is a single line: "pid|procName|pipeName".
+		// Lock file is a single line: "pid|procName|startTimeUtcTicks|pipeName".
 		private static Owner Read()
 		{
 			try
@@ -154,28 +210,51 @@ namespace Keysharp.Main
 
 				var parts = File.ReadAllText(LockFile).Split('|');
 
-				if (parts.Length >= 3 && int.TryParse(parts[0], out var pid))
-					return new Owner { Pid = pid, ProcName = parts[1], Pipe = parts[2] };
+				// Anything shorter is either corrupt or written by a build that recorded no start time. Both
+				// are treated as no owner at all, which is safe: the worst case is that this daemon takes over
+				// a slot that was already free.
+				if (parts.Length >= 4
+						&& int.TryParse(parts[0], out var pid)
+						&& long.TryParse(parts[2], out var startedAt))
+					return new Owner { Pid = pid, ProcName = parts[1], StartedAtTicks = startedAt, Pipe = parts[3] };
 			}
 			catch { }
 
 			return null;
 		}
 
-		private static void Write(string pipeName)
+		private static bool Write(string pipeName)
 		{
-			var procName = Process.GetCurrentProcess().ProcessName;
-			File.WriteAllText(LockFile, $"{Environment.ProcessId}|{procName}|{pipeName}");
+			try
+			{
+				using var self = Process.GetCurrentProcess();
+				File.WriteAllText(LockFile, $"{Environment.ProcessId}|{self.ProcessName}|{self.StartTime.ToUniversalTime().Ticks}|{pipeName}");
+				return true;
+			}
+			catch
+			{
+				return false;
+			}
 		}
 
-		// A recorded PID counts as a live daemon only if it is running AND its process name matches the
-		// recorded one, guarding against killing an unrelated process that reused the PID.
+		// A recorded PID counts as a live daemon only if it is running AND is the same process instance that
+		// wrote the record.
+		//
+		// The process NAME is nowhere near enough on its own: every script the user launches is also a process
+		// called "Keysharp", so a lock file left behind by a hard kill - the MSI closing the daemon, Task
+		// Manager, a crash - whose PID Windows later hands to one of those scripts would satisfy a name check
+		// and get the user's own running script killed as an "older daemon". Start time is what actually
+		// identifies the instance; a recycled PID cannot match it.
 		private static bool IsLiveDaemon(Owner owner)
 		{
 			try
 			{
 				using var p = Process.GetProcessById(owner.Pid);
-				return !p.HasExited && string.Equals(p.ProcessName, owner.ProcName, StringComparison.OrdinalIgnoreCase);
+
+				if (p.HasExited || !string.Equals(p.ProcessName, owner.ProcName, StringComparison.OrdinalIgnoreCase))
+					return false;
+
+				return p.StartTime.ToUniversalTime().Ticks == owner.StartedAtTicks;
 			}
 			catch
 			{
@@ -220,8 +299,15 @@ namespace Keysharp.Main
 		// Idle shutdown so an abandoned daemon does not linger forever (mirrors VBCSCompiler behavior).
 		private static readonly TimeSpan IdleTimeout = TimeSpan.FromHours(4);
 
-		// All daemon-side diagnostics go to stderr with a common prefix.
-		internal static void Log(string message) => Console.Error.WriteLine($"[keysharp --daemon] {message}");
+		// All daemon-side diagnostics go to stderr with a common prefix, which reaches a console only when the
+		// daemon was started by hand: a client-spawned one inherits no standard handles at all (see
+		// SuppressStandardHandleInheritance). Logging must never be able to take the daemon down, whatever it
+		// is or is not attached to.
+		internal static void Log(string message)
+		{
+			try { Console.Error.WriteLine($"[keysharp --daemon] {message}"); }
+			catch { }
+		}
 
 		/// <summary>
 		/// Pipe name keyed on protocol + build fingerprint + user, so a client never connects to a daemon
@@ -266,7 +352,13 @@ namespace Keysharp.Main
 			var ch = new CompilerHelper();
 			var exeDir = Path.GetFullPath(Path.GetDirectoryName(Environment.ProcessPath));
 			SetDaemonWorkingDirectory(exeDir);
+#if WINDOWS
+			StartShutdownListener();
+#endif
 
+			// Deliberately no priority tuning here. Lowering the process to BelowNormal for the duration of
+			// the warmup - on the theory that it should yield to the client compiling the same script in the
+			// foreground - measured consistently SLOWER (4.4 s cold against 3.5 s), so it was removed.
 			Warmup(ch, exeDir);
 
 			Log($"listening on pipe '{PipeName}' (idle timeout {IdleTimeout.TotalHours:0} h).");
@@ -341,6 +433,117 @@ namespace Keysharp.Main
 				Log($"could not set daemon working directory to '{exeDir}': {ex.Message}");
 			}
 		}
+
+#if WINDOWS
+
+		/// <summary>
+		/// Lets Windows shut the daemon down cleanly instead of having it killed.
+		///
+		/// The daemon holds Keysharp.exe and Keysharp.Core.dll open, so an installer replacing or removing
+		/// them has to close it first. The Restart Manager, which every modern MSI uses, does that by
+		/// *asking* a process to exit: it enumerates the process's top-level windows and sends
+		/// WM_QUERYENDSESSION / WM_ENDSESSION. A daemon with no window has nothing to ask, so the Restart
+		/// Manager reports it as blocking the operation and then leaves it running - which is exactly how
+		/// an uninstall came to fail until the daemon was killed by hand.
+		///
+		/// Two details matter, and both are easy to get wrong:
+		///
+		///  * the window must be a genuine TOP-LEVEL window. A message-only window (HWND_MESSAGE parent) is
+		///    not returned by EnumWindows and never receives session messages, so it would look right and
+		///    silently do nothing. Default CreateParams gives a top-level window; it is never shown, so
+		///    without WS_VISIBLE it stays out of the taskbar and Alt-Tab anyway.
+		///  * session messages are SENT to windows, not posted to the thread queue, so a bare message loop
+		///    on a window-less thread would never see them either.
+		///
+		/// The window lives on its own thread because Listen() blocks on the pipe from the warm parse-context
+		/// STA thread and must keep doing so - compilation depends on running there.
+		///
+		/// This also covers WM_CLOSE, which is what the installer's util:CloseApplication sends before it
+		/// resorts to terminating the process, so an up-to-date daemon now exits on its own during an
+		/// upgrade or uninstall and never reaches the force-kill path.
+		/// </summary>
+		private static void StartShutdownListener()
+		{
+			// Nothing downstream reads the window, so there is nothing to wait for: the pump thread is started
+			// and the caller goes straight on to warm up. An earlier version blocked here for up to five
+			// seconds, which at best only ordered the log lines and at worst spent half the client's patience
+			// before the daemon had begun its warmup.
+			var thread = new Thread(() =>
+			{
+				try
+				{
+					shutdownWindow = new ShutdownWindow();
+					shutdownWindow.CreateHandle(new System.Windows.Forms.CreateParams());
+					Log($"shutdown window ready (hwnd 0x{shutdownWindow.Handle:X}).");
+					System.Windows.Forms.Application.Run(); // Pumps until the process exits.
+					Log("shutdown window message loop returned unexpectedly.");
+				}
+				catch (Exception ex)
+				{
+					// Best effort: a daemon without the window still works, it just has to be terminated
+					// rather than asked to leave, which is what every build before this one did.
+					Log($"could not create the shutdown window ({ex.Message}); the daemon will have to be terminated to close it.");
+				}
+			})
+			{ IsBackground = true, Name = "Keysharp compile daemon shutdown listener" };
+			thread.SetApartmentState(ApartmentState.STA);
+
+			try
+			{
+				thread.Start();
+			}
+			catch (Exception ex)
+			{
+				Log($"could not start the shutdown listener ({ex.Message}); the daemon will have to be terminated to close it.");
+			}
+		}
+
+		/// <summary>
+		/// Roots the shutdown window for the life of the process. NativeWindow destroys its handle from its
+		/// finalizer, and the local in <see cref="StartShutdownListener"/> is dead the moment CreateHandle
+		/// returns - Application.Run does not reference it - so without this the window is collected and
+		/// silently unregistered. The warmup compile allocates enough to make that a certainty rather than
+		/// a race, and the symptom is invisible: the handle is logged, the message loop keeps running, and
+		/// the window is simply gone from EnumWindows.
+		/// </summary>
+		private static ShutdownWindow shutdownWindow;
+
+		private sealed class ShutdownWindow : System.Windows.Forms.NativeWindow
+		{
+			private const int WM_CLOSE = 0x0010;
+			private const int WM_QUERYENDSESSION = 0x0011;
+			private const int WM_ENDSESSION = 0x0016;
+
+			protected override void WndProc(ref System.Windows.Forms.Message m)
+			{
+				switch (m.Msg)
+				{
+					case WM_QUERYENDSESSION:
+						// Non-zero means "nothing here needs saving, go ahead". Returning without calling
+						// base keeps DefWindowProc from answering for us.
+						m.Result = (nint)1;
+						return;
+
+					case WM_ENDSESSION:
+					case WM_CLOSE:
+						Log("shutdown requested; exiting.");
+						// The daemon holds nothing that needs unwinding - it is respawned on demand, and a lock
+						// file left behind by a hard kill is already recognised as stale. Releasing ownership is
+						// therefore a courtesy, and it is given a deliberately tiny slice of the shutdown budget:
+						// the default five-second wait is exactly Windows' HungAppTimeout, so a contended mutex
+						// here would get the daemon reported as hung and listed on the shutdown-blocking screen
+						// as a captionless entry.
+						try { DaemonCoordinator.ReleaseOwnership(TimeSpan.FromMilliseconds(250)); } catch { }
+
+						Environment.Exit(0);
+						return;
+				}
+
+				base.WndProc(ref m);
+			}
+		}
+
+#endif
 
 		private static bool WaitForConnection(NamedPipeServerStream server, TimeSpan timeout)
 		{
@@ -427,12 +630,34 @@ namespace Keysharp.Main
 	/// </summary>
 	internal static class CompileClient
 	{
-		// How long to wait for a freshly spawned daemon to finish warmup and start listening.
-		private static readonly TimeSpan SpawnWaitTimeout = TimeSpan.FromSeconds(30);
+		// How long to wait for a freshly spawned daemon to finish warmup and start listening before giving up
+		// and compiling in-process instead. The warmup is one Roslyn compile, ~2 s, so this is generous; the
+		// cap exists so that a daemon which never becomes healthy cannot hold the user's script hostage. It
+		// was 30 s, which is long enough that a stuck daemon looks like a hang.
+		private static readonly TimeSpan SpawnWaitTimeout = TimeSpan.FromSeconds(10);
 
 		/// <summary>
-		/// Compiles <paramref name="scriptPath"/> via a running daemon, spawning one if none is reachable.
-		/// Falls back to <see cref="CompileDaemonStatus.Unreachable"/> only if no daemon can be started.
+		/// Compiles <paramref name="scriptPath"/> via a running daemon, spawning one and waiting for it when
+		/// none is reachable. Returns <see cref="CompileDaemonStatus.Unreachable"/> if no daemon can be
+		/// started or one does not become ready within <see cref="SpawnWaitTimeout"/>, and the caller then
+		/// compiles in-process.
+		///
+		/// Waiting is deliberate, and was measured against the alternative of spawning the daemon and
+		/// immediately compiling in-process instead (8 cores):
+		///
+		///   single cold start (n=5, median)   wait 3 636 ms | no wait 3 710 ms | no daemon 3 041 ms
+		///   4 concurrent cold (n=4, mean)     wait 5 167 ms | no wait 7 464 ms
+		///
+		/// Not waiting is no faster for one script and markedly slower for several at once, because waiting
+		/// funnels every client through the one warm daemon - whose accept loop is single-threaded, so the
+		/// compiles serialise and share warm Roslyn - whereas not waiting has every client run its own
+		/// Roslyn compile at the same time, alongside the daemon's warmup, all competing for cores.
+		///
+		/// Concurrency is safe: several clients starting at once each spawn a daemon, but DaemonCoordinator
+		/// arbitrates with a named mutex and a pid/procname lock file and the losers exit inside
+		/// TryBecomeOwner, before Listen and therefore before any warmup work. The winner does not create its
+		/// pipe until warmup has finished, so no client can reach a half-initialised daemon; it just fails to
+		/// connect and keeps polling.
 		/// </summary>
 		internal static CompileDaemonStatus CompileViaServer(string scriptPath, out byte[] bytes, out string error, out string warnings)
 		{
@@ -444,7 +669,7 @@ namespace Keysharp.Main
 			if (!TrySpawnServer(out error))
 				return CompileDaemonStatus.Unreachable;
 
-			// Poll until the spawned daemon finishes warmup and begins listening, or we give up.
+			// Poll until the daemon (ours, or one another client spawned at the same moment) begins listening.
 			var sw = Stopwatch.StartNew();
 
 			while (sw.Elapsed < SpawnWaitTimeout)
@@ -519,6 +744,63 @@ namespace Keysharp.Main
 		// Launches "<this host> --daemon" detached so it outlives the current process. The spawned daemon runs
 		// DaemonCoordinator.TryBecomeOwner at startup, which kills any different-build daemon and defers to an
 		// identical one, so racing spawns converge on a single owner.
+#if WINDOWS
+
+		private const int STD_INPUT_HANDLE = -10;
+		private const int STD_OUTPUT_HANDLE = -11;
+		private const int STD_ERROR_HANDLE = -12;
+		private const int HANDLE_FLAG_INHERIT = 1;
+
+		[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+		private static extern nint GetStdHandle(int nStdHandle);
+
+		[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+		private static extern bool GetHandleInformation(nint hObject, out int lpdwFlags);
+
+		[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+		private static extern bool SetHandleInformation(nint hObject, int dwMask, int dwFlags);
+
+		/// <summary>
+		/// Clears the inheritable flag on this process's standard handles, restoring it on dispose. Scoped as
+		/// tightly as possible around the spawn, since it is process-global state.
+		/// </summary>
+		private static IDisposable SuppressStandardHandleInheritance()
+		{
+			var restore = new List<(nint Handle, int Flags)>(3);
+
+			foreach (var id in new[] { STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE })
+			{
+				var handle = GetStdHandle(id);
+
+				// A GUI process launched from Explorer has no standard handles at all; nothing to do.
+				if (handle == 0 || handle == -1)
+					continue;
+
+				if (GetHandleInformation(handle, out var flags) && (flags & HANDLE_FLAG_INHERIT) != 0)
+					if (SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0))
+						restore.Add((handle, flags));
+			}
+
+			return new HandleInheritanceScope(restore);
+		}
+
+		private sealed class HandleInheritanceScope(List<(nint Handle, int Flags)> restore) : IDisposable
+		{
+			public void Dispose()
+			{
+				foreach (var (handle, flags) in restore)
+					_ = SetHandleInformation(handle, HANDLE_FLAG_INHERIT, flags & HANDLE_FLAG_INHERIT);
+			}
+		}
+
+#else
+
+		// Only Windows needs this. On Unix, .NET opens descriptors close-on-exec, so an exec'd child does not
+		// inherit anything beyond the three standard ones it is explicitly given.
+		private static IDisposable SuppressStandardHandleInheritance() => null;
+
+#endif
+
 		private static bool TrySpawnServer(out string error)
 		{
 			error = null;
@@ -550,7 +832,26 @@ namespace Keysharp.Main
 					psi.ArgumentList.Add(entryDll);
 
 				psi.ArgumentList.Add("--daemon");
-				return Process.Start(psi) != null;
+
+				// The daemon must not inherit this process's standard handles. It outlives us by up to four
+				// hours, so a handle it keeps open is a pipe that never reaches end-of-stream: piping a
+				// Keysharp run and reading to EOF hangs long after the script exited (`keysharp x.ks | more`
+				// never returns), and redirecting to a file leaves that file locked.
+				//
+				// Redirecting the child's streams does NOT fix this, which is worth recording because it is
+				// the obvious thing to try. .NET calls CreateProcess with bInheritHandles=TRUE, so the child
+				// receives a copy of *every* inheritable handle we hold, whatever its own std handles are set
+				// to - including the pipe someone handed us as our stdout. The handles have to stop being
+				// inheritable instead, which is what this does, restoring them immediately afterwards so
+				// nothing else in the process is affected.
+				//
+				// Scope, precisely: this covers the three standard handles, which are the ones that cause the
+				// visible hang. Any OTHER inheritable handle open at this moment is still copied into the
+				// daemon. That is acceptable only because of where this runs - Program.Main, before any script
+				// is loaded, so the process holds little else - and because the flags are process-global, this
+				// must stay on a path with no concurrent Process.Start.
+				using (SuppressStandardHandleInheritance())
+					return Process.Start(psi) != null;
 			}
 			catch (Exception ex)
 			{

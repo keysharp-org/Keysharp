@@ -1,0 +1,94 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <!-- Builds the Windows MSI. Deliberately NOT a member of Keysharp.sln: its payload is a staged
+       directory that does not exist until package-windows.ps1 has published and staged, so a plain
+       `dotnet build Keysharp.sln` must not try to build it.
+
+       Invoked as:
+         dotnet build Keysharp.Install/windows/Keysharp.Installer.wixproj -c Release -p:Platform=x64 \
+           -p:PayloadDir=<abs path to ...\Keysharp-win-x64\app> -p:KeysharpVersion=0.0.0.16 -->
+
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <Platforms>x64;arm64</Platforms>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+
+    <!-- The RID whose staged tree is being packaged, and therefore the runtimes\<rid>\native folder
+         name inside the payload. Derived from the platform so the two can never disagree. -->
+    <KeysharpRid Condition="'$(Platform)' == 'arm64'">win-arm64</KeysharpRid>
+    <KeysharpRid Condition="'$(KeysharpRid)' == ''">win-x64</KeysharpRid>
+
+    <OutputName>Keysharp-$(KeysharpRid)</OutputName>
+    <OutputPath>$(MSBuildThisFileDirectory)..\..\dist\</OutputPath>
+    <IntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\obj\Keysharp.Installer\$(Platform)\</IntermediateOutputPath>
+
+    <!-- Four-part product version, converted to the three-field MSI ProductVersion. Windows Installer only
+         compares major.minor.build, so the historical mapping folds patch and revision together: assembly
+         0.0.0.16 becomes MSI 0.0.16, matching every release the vdproj produced. -->
+    <!-- No default for KeysharpVersion here on purpose: Directory.Build.props already sets it, and a second
+         copy of the literal would only rot.
+
+         The shape is checked before anything indexes into it. Properties are evaluated long before any
+         target runs, so a malformed version cannot be caught by an Error task - splitting "1.2.3" would
+         already have failed evaluation with "Index was outside the bounds of the array", naming neither the
+         property nor the offending value. Guarding the assignments keeps the diagnosis in ValidateVersion
+         below, where it can say something useful. -->
+    <_VerIsFourPart>$([System.Text.RegularExpressions.Regex]::IsMatch($(KeysharpVersion), '^\d+\.\d+\.\d+\.\d+$'))</_VerIsFourPart>
+    <_VerMajor Condition="'$(_VerIsFourPart)' == 'true'">$(KeysharpVersion.Split('.')[0])</_VerMajor>
+    <_VerMinor Condition="'$(_VerIsFourPart)' == 'true'">$(KeysharpVersion.Split('.')[1])</_VerMinor>
+    <_VerPatch Condition="'$(_VerIsFourPart)' == 'true'">$(KeysharpVersion.Split('.')[2])</_VerPatch>
+    <_VerRevision Condition="'$(_VerIsFourPart)' == 'true'">$(KeysharpVersion.Split('.')[3])</_VerRevision>
+    <_VerBuildField Condition="'$(_VerIsFourPart)' == 'true'">$([MSBuild]::Add($([MSBuild]::Multiply($(_VerPatch), 1000)), $(_VerRevision)))</_VerBuildField>
+    <KeysharpMsiVersion Condition="'$(_VerIsFourPart)' == 'true'">$(_VerMajor).$(_VerMinor).$(_VerBuildField)</KeysharpMsiVersion>
+
+    <!-- The architecture name .NET uses under HKLM\SOFTWARE\dotnet\Setup\InstalledVersions. -->
+    <NetRegArch Condition="'$(Platform)' == 'arm64'">arm64</NetRegArch>
+    <NetRegArch Condition="'$(NetRegArch)' == ''">x64</NetRegArch>
+
+    <!-- WixToolset.Util suffixes its custom action ids with the architecture of the CA dll, spelled its own
+         way: Wix4CloseApplications_X64 / _A64. Package.wxs has to name the action to re-sequence it, so the
+         suffix is resolved here rather than guessed per-platform in the authoring. -->
+    <UtilCaSuffix Condition="'$(Platform)' == 'arm64'">A64</UtilCaSuffix>
+    <UtilCaSuffix Condition="'$(UtilCaSuffix)' == ''">X64</UtilCaSuffix>
+
+    <!-- Which Window Spy file the Start Menu shortcut runs. The precompiled .cks is preferred, but it only
+         exists when the publish could run its own host: a cross-architecture publish (arm64 staged on an
+         x64 build machine) leaves only the .ks. Resolved here so the shortcut can never dangle. -->
+    <WindowSpyScript Condition="Exists('$(PayloadDir)\Scripts\WindowSpy.cks')">WindowSpy.cks</WindowSpyScript>
+    <WindowSpyScript Condition="'$(WindowSpyScript)' == ''">WindowSpy.ks</WindowSpyScript>
+
+    <!-- ICE validation is on by default and is wanted here; it is what catches the component/keypath
+         mistakes that a hand-authored installer makes. Only these two are suppressed, each deliberately:
+
+         ICE61 - MajorUpgrade allows same-version upgrades on purpose, because the build stamps a fresh
+                 ProductCode every time (see Package.wxs).
+         ICE63 - "some action falls between InstallInitialize and RemoveExistingProducts", which is exactly
+                 where WixCloseApplications has to sit: it must be inside the transaction (a deferred
+                 action cannot be scheduled before InstallInitialize) and it must run before
+                 RemoveExistingProducts takes an older build apart, or that removal hits files the old
+                 build's compile daemon still holds open. The warning guards against actions that change
+                 machine state before the old product is removed and might not roll back cleanly; closing
+                 a process installs nothing and has no rollback to get wrong. -->
+    <SuppressIces>ICE61;ICE63</SuppressIces>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- ProjectDir is already declared by the WiX SDK and must not be redefined here. -->
+    <DefineConstants>PayloadDir=$(PayloadDir);RepoRoot=$(MSBuildThisFileDirectory)..\..\;KeysharpRid=$(KeysharpRid);KeysharpMsiVersion=$(KeysharpMsiVersion);NetRegArch=$(NetRegArch);WindowSpyScript=$(WindowSpyScript);UtilCaSuffix=$(UtilCaSuffix)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+  <!-- Input validation deliberately lives in package-windows.ps1 (Assert-PackagableVersion) rather than in
+       a target here. Targets hooked with BeforeTargets on Build, Compile or BuildCompile were all tried and
+       none of them ran during `dotnet build` of this project - the targets are defined, but the WiX SDK's
+       pipeline never invokes them, so the Error tasks silently never fired. A guard that looks protective
+       and is not is worse than no guard, and every bad input still fails the build loudly on WiX's own
+       terms: a malformed version leaves Package/@Version empty (WIX0006), and an out-of-range one is caught
+       by ICE24. The packager just says it earlier and more clearly. -->
+
+</Project>

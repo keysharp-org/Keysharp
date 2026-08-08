@@ -28,7 +28,9 @@
 		<Authors>Matt Feemster</Authors>
 		<Description>A suite of unit tests to verify Keysharp functionality</Description>
 		<Company>Keysharp</Company>
-		<PreserveCompilationContext>true</PreserveCompilationContext>
+		<!-- Off for the same reason as Keysharp.csproj. Kept in step with the shipping projects so the tests
+		     exercise the same deps.json shape a release actually has. -->
+		<PreserveCompilationContext>false</PreserveCompilationContext>
 		<ProduceReferenceAssembly>true</ProduceReferenceAssembly>
 		<SignAssembly>False</SignAssembly>
 		<DelaySign>False</DelaySign>

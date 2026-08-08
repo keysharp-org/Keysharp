@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="Keysharp"
+           Manufacturer="Keysharp"
+           Version="$(KeysharpMsiVersion)"
+           UpgradeCode="E99D4BE3-7101-4C11-8719-A75ED137BD66"
+           Language="1033"
+           Codepage="1252"
+           InstallerVersion="500"
+           Compressed="yes"
+           Scope="perMachine">
+
+    <!-- The UpgradeCode is carried over verbatim from the Visual Studio setup project. It is the only
+         identifier that ties this package to every previously shipped Keysharp MSI; changing it would make
+         a new release install alongside an old one instead of upgrading it. -->
+
+    <!-- Replaces the two hand-rolled Upgrade rows, the ERRCA_CANCELNEWERVERSION action, and the post-build
+         re-sequencing of RemoveExistingProducts that package-windows.ps1 used to inject.
+         AllowSameVersionUpgrades: the build stamps a fresh ProductCode every time, so without it two builds
+         of the same version install side by side and both appear in Programs and Features.
+         afterInstallInitialize: the old product is fully removed before InstallFiles runs, so InstallFiles
+         cannot skip a same-version file that the subsequent removal then deletes. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  Schedule="afterInstallInitialize"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed. Setup will now exit." />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- ==================== Closing running Keysharp processes ====================
+         Windows refuses to overwrite a running image or a loaded DLL, so an upgrade or uninstall performed
+         while Keysharp is running fails to replace or delete Keysharp.exe / Keysharp.Core.dll.
+
+         The vdproj could not sequence a custom action before InstallValidate, so package-windows.ps1 built
+         the MSI and then injected a VBScript action into its tables with the WindowsInstaller COM API.
+         Two mechanisms replace it here.
+
+         The Restart Manager, enabled for free by InstallerVersion 500, handles the graceful path. It scopes
+         itself perfectly - it looks only at processes holding the files THIS package installs, so a second
+         Keysharp installation elsewhere is untouched - and it drives the standard MsiRMFilesInUse dialog.
+
+         The Restart Manager alone is NOT enough, which a real uninstall proved: it correctly detected the
+         compile daemon and reported it, then could not close it, and the uninstall failed until the daemon
+         was killed by hand. The reason is structural - the Restart Manager shuts an application down by
+         *asking* it to exit (WM_QUERYENDSESSION / WM_ENDSESSION to top-level windows, or a service stop).
+         The compile daemon is a background process with no window and no message loop, so there is nothing
+         to ask, and Windows Installer does not pass RmForceShutdown. Detected-but-unclosable is precisely
+         the case the Restart Manager reports and then leaves alone.
+
+         So util:CloseApplication supplies the force-kill. WixCloseApplications is a native custom action
+         from WixToolset.Util, a supported component - not the deprecated VBScript host that WIX1163 warns
+         about, which is why the old script was not ported verbatim.
+
+         Accepted limitation: util:CloseApplication matches on image name only, so unlike the old script it
+         cannot restrict itself to processes under this install directory, and a second Keysharp
+         installation would also be closed. That is why it was rejected on the first pass - but an
+         uninstall that cannot complete is a worse defect than an over-broad close during an uninstall, and
+         the directory scoping was defensive polish rather than a reported scenario.
+
+         These live under Package, not in a Fragment: an unreferenced Fragment is silently discarded, which
+         produced a perfectly clean build whose MSI contained no close logic at all. -->
+    <util:CloseApplication Id="CloseKeysharp"
+                           Target="Keysharp.exe"
+                           Description="Keysharp is running and must be closed before Setup can continue."
+                           CloseMessage="yes"
+                           TerminateProcess="0"
+                           RebootPrompt="no"
+                           Condition="REMOVE=&quot;ALL&quot; OR WIX_UPGRADE_DETECTED" />
+    <util:CloseApplication Id="CloseKeyview"
+                           Target="Keyview.exe"
+                           Description="The Keyview editor is running and must be closed before Setup can continue."
+                           CloseMessage="yes"
+                           TerminateProcess="0"
+                           RebootPrompt="no"
+                           Condition="REMOVE=&quot;ALL&quot; OR WIX_UPGRADE_DETECTED" />
+
+    <!-- WixToolset.Util schedules WixCloseApplications at 3999, just before InstallFiles. That suits an
+         install, but on an UNINSTALL it lands after RemoveFiles (3500), so the files are still locked when
+         Windows Installer tries to delete them.
+
+         It must therefore move earlier - but NOT before InstallInitialize. WixCloseApplications is an
+         immediate action whose real work is done by a companion DEFERRED action it schedules through
+         MsiDoAction, and a deferred action can only be written into the execution script once
+         InstallInitialize has opened the transaction. Scheduling it before InstallValidate, where the old
+         injected VBScript ran, aborts every uninstall with error 2762, "cannot write script record,
+         transaction not started". (The old script could sit there because it was immediate and did the
+         killing itself; this one cannot.) A fresh install was unaffected only because the condition below
+         is false unless something is being removed.
+
+         So it goes in the earliest legal slot: just after InstallInitialize opens the transaction and just
+         before RemoveExistingProducts, giving 1500 / 1501 / 1502. Ordering ahead of
+         RemoveExistingProducts matters on an upgrade - that action takes the older build apart, and its
+         files are still locked if the old daemon has not been closed yet. Actions between
+         InstallInitialize and InstallFinalize are written to the script in sequence order and executed in
+         that order, so this also lands before RemoveFiles (3500).
+
+         InstallValidate (1400) still runs first and may raise the in-use dialog. For a daemon that answers
+         shutdown requests (see StartShutdownListener in CompileServer.cs) the Restart Manager resolves it
+         there and this action finds nothing left to do; for an older daemon the dialog appears and this
+         action is what actually clears the lock. -->
+    <InstallExecuteSequence>
+      <Custom Action="override Wix4CloseApplications_$(UtilCaSuffix)" Before="RemoveExistingProducts" />
+    </InstallExecuteSequence>
+
+
+    <SummaryInformation Description="Keysharp - a cross-platform C# port of AutoHotkey v2"
+                        Manufacturer="Keysharp" />
+
+    <!-- Add/Remove Programs metadata (the vdproj's ARP* properties). -->
+    <Icon Id="Keysharp.ico" SourceFile="$(PayloadDir)\Keysharp.ico" />
+    <Property Id="ARPPRODUCTICON" Value="Keysharp.ico" />
+    <Property Id="ARPCONTACT" Value="Matt Feemster, Descolada et al" />
+    <Property Id="ARPCOMMENTS" Value="A cross platform C# port of AutoHotkey V2" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/keysharp-org/keysharp" />
+    <!-- No ARPNOREPAIR here. Windows Installer keys the ARP "Repair" button off that property's PRESENCE,
+         not its value, so setting it to 0 does not "enable repair" - it risks disabling it. The vdproj
+         package never set it either. -->
+    <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" Sequence="both" />
+
+    <!-- ============================ .NET prerequisite ============================
+         The publish is framework-dependent. Without the runtime the apphost shows Microsoft's own
+         "install the .NET Desktop Runtime" dialog on first launch, so this check is not the difference
+         between working and silently failing - it moves the diagnosis to install time.
+
+         That framing matters, because the error asymmetry here is brutal: failing to detect a present
+         runtime HARD-BLOCKS a completely valid install, while failing to notice an absent one merely
+         defers to Microsoft's dialog, which offers a download link. So this deliberately detects only
+         "no Windows Desktop runtime is installed at all" and does NOT try to assert a minimum version.
+
+         An earlier attempt read a Version value from
+         ...\InstalledVersions\<arch>\sharedfx\Microsoft.WindowsDesktop.App and required it to contain
+         "10.". That key does not exist on machines whose .NET arrived with the SDK or Visual Studio - it
+         was absent on a machine running Desktop Runtime 10.0.9 - so it blocked a perfectly good install.
+         Per-runtime versions are not reliably discoverable from the registry; do not reintroduce a
+         version assertion here. Gating on a specific version is what a Burn bundle is for, since a bundle
+         can install the runtime rather than merely refusing.
+
+         sharedhost is written by the .NET host itself on every install path, and its Path value points at
+         the real dotnet root - so anchoring the directory search there also handles a non-default install
+         location, which a hard-coded [ProgramFiles64Folder] would not.
+
+         The registry search alone is still not quite enough: dotnet-install.ps1 and DOTNET_ROOT layouts
+         write no InstalledVersions key at all, and would be hard-blocked despite being perfectly able to
+         run Keysharp. The second search covers that by looking in the default location directly. A machine
+         with no .NET whatsoever satisfies neither and is correctly blocked; anything that satisfies either
+         is let through, which is the right way round given the asymmetry above. -->
+    <Property Id="NETDESKTOPRUNTIME">
+      <RegistrySearch Id="DotnetSharedHostPath"
+                      Root="HKLM"
+                      Key="SOFTWARE\dotnet\Setup\InstalledVersions\$(NetRegArch)\sharedhost"
+                      Name="Path"
+                      Type="directory"
+                      Bitness="always64">
+        <DirectorySearch Id="WindowsDesktopAppDir" Path="shared\Microsoft.WindowsDesktop.App" />
+      </RegistrySearch>
+    </Property>
+    <Property Id="NETDESKTOPRUNTIMEDIR">
+      <DirectorySearch Id="DotnetDefaultRoot" Path="[ProgramFiles64Folder]dotnet">
+        <DirectorySearch Id="WindowsDesktopAppDefaultDir" Path="shared\Microsoft.WindowsDesktop.App" />
+      </DirectorySearch>
+    </Property>
+    <Launch Condition="Installed OR NETDESKTOPRUNTIME OR NETDESKTOPRUNTIMEDIR"
+            Message="[ProductName] needs the .NET Desktop Runtime ($(NetRegArch)), and no version of it was found on this machine. Install .NET Desktop Runtime 10 from https://dotnet.microsoft.com/download/dotnet/10.0 and run Setup again." />
+
+    <!-- Remember where this was installed, so an upgrade stays put. Without it, a user who installed to a
+         non-default folder gets silently relocated back to Program Files by the next version -
+         RemoveExistingProducts then dismantles the old location - and a /qn upgrade gives no chance to
+         notice. The vdproj had the same gap, but this package offers a folder browser, so honouring the
+         choice matters more. The search only fires when the value exists, so a fresh install still takes
+         the Directory default below. -->
+    <Property Id="INSTALLFOLDER">
+      <RegistrySearch Id="PreviousInstallFolder"
+                      Root="HKLM"
+                      Key="Software\Keysharp\Keysharp"
+                      Name="InstallFolder"
+                      Type="raw"
+                      Bitness="always64" />
+    </Property>
+
+    <!-- ============================ Install scope ============================
+         Per-machine, and ONLY per-machine.
+
+         Q1 asked for a per-machine default plus an optional per-user install needing no administrator
+         rights. WiX v5 cannot express that, and the attempt shipped a broken installer, so it is dropped:
+
+           * Package/@Scope accepts only perMachine and perUser; perUserOrPerMachine arrived in v6.
+           * Declaring perUser to dodge the forced ALLUSERS=1 sets bit 3 of the summary WordCount,
+             "elevated privileges are not required". Windows Installer takes that literally and never
+             elevates - so a per-machine install writing to Program Files and HKLM fails outright, with no
+             UAC prompt and no fallback to a per-user install. That is exactly what happened in testing.
+           * Declaring perMachine and overriding ALLUSERS to 2 by hand does not compile: perMachine emits
+             its own ALLUSERS symbol and WiX rejects the duplicate.
+
+         So the classic dual-purpose ALLUSERS=2 model has no supported expression in WiX v5. A working
+         per-machine installer beats a clever broken one, and the no-administrator case is already served
+         by the portable ZIP. If a real per-user install is wanted later, WiX v6's perUserOrPerMachine is
+         the clean route - not a hand-rolled ALLUSERS hack.
+
+         perMachine also means the summary WordCount elevation bit is clear, so Setup prompts for UAC. -->
+
+    <!-- ============================ Directories ============================
+         Scripts\, Lib\ and runtimes\<rid>\native\ are created implicitly by the payload harvest. -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Keysharp" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShortcutFolder" Name="Keysharp" />
+    </StandardDirectory>
+
+    <!-- ============================ Features ============================
+         Splitting PATH and shell integration out of the always-installed core is what replaces the vdproj's
+         single "Add to path" checkbox. Unlike that checkbox - which a silent install could not turn off,
+         because its SetProperty action re-set CHECKBOXREG=1 in the execute sequence - these respond to
+         ADDLOCAL/REMOVE, so `msiexec /qn ADDLOCAL=Core` really does install neither. -->
+    <Feature Id="Core" Title="Keysharp" Description="Keysharp, the Keyview editor and the bundled scripts." Level="1" AllowAbsent="no" Display="expand" ConfigurableDirectory="INSTALLFOLDER">
+      <ComponentGroupRef Id="PayloadComponents" />
+      <ComponentGroupRef Id="ShortcutComponents" />
+      <ComponentGroupRef Id="DocumentationComponents" />
+
+      <Feature Id="PathEntry" Title="Add to PATH" Description="Add the install folder to PATH, so scripts can be run as `keysharp` from a command line." Level="1">
+        <ComponentGroupRef Id="PathComponents" />
+      </Feature>
+
+      <Feature Id="ShellIntegration" Title="Shell integration" Description="Associate .ks and .cks files with Keysharp, and add the Compile and Edit with Keyview context-menu commands." Level="1">
+        <ComponentGroupRef Id="ShellIntegrationComponents" />
+      </Feature>
+    </Feature>
+
+    <!-- ============================ User interface ============================
+         Welcome -> Licence -> Customize -> Confirm -> Progress -> Finish.
+
+         CustomizeDlg carries both the feature tree and a folder browser, which together restore the two
+         things the vdproj's UI offered: an install-location choice and an opt-out for adding Keysharp to
+         PATH. The browser is driven by Core/@ConfigurableDirectory above, not by WIXUI_INSTALLDIR, which
+         belongs to WixUI_InstallDir and WixUI_Advanced and would be inert here.
+
+         The other dialog sets were each tried and rejected: WixUI_Advanced only made sense while the
+         package was dual-scope, for its per-user/per-machine chooser, and has no feature page at all;
+         WixUI_InstallDir has the folder page but no feature tree; WixUI_Mondo has both, but fronts them
+         with a Typical/Custom/Complete page whose Typical and Complete are indistinguishable here - every
+         feature is Level=1, so both install everything. -->
+    <ui:WixUI Id="WixUI_FeatureTree" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(ProjectDir)assets\license.rtf" />
+    <WixVariable Id="WixUIBannerBmp" Value="$(ProjectDir)assets\banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(ProjectDir)assets\dialog.bmp" />
+
+  </Package>
+
+  <Fragment>
+    <!-- README.md is the one installed file that does not come from the staged publish tree, so it is
+         authored explicitly rather than harvested. The vdproj also installed assets\InstallerBanner.bmp
+         into the application folder; that is a Setup UI asset and is deliberately not shipped any more. -->
+    <ComponentGroup Id="DocumentationComponents" Directory="INSTALLFOLDER">
+      <Component>
+        <File Source="$(RepoRoot)README.md" Name="README.md" />
+      </Component>
+
+      <!-- Records the chosen location for the next version's INSTALLFOLDER search, so an upgrade installs
+           where this one did rather than snapping back to Program Files. -->
+      <Component Id="RecordInstallFolder">
+        <RegistryValue Root="HKLM" Key="Software\Keysharp\Keysharp" Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <!-- Non-advertised shortcuts, targeted by path rather than by file key, so the payload can stay a
+         wholesale harvest with no hand-maintained file IDs. The vdproj's shortcuts were advertised, which
+         made Windows run a repair check on every click; these behave like ordinary shortcuts.
+         Window Spy points at the precompiled WindowSpy.cks (the vdproj pointed at WindowSpy.ks, so the
+         .cks that ships alongside it was never the thing the shortcut ran). -->
+    <ComponentGroup Id="ShortcutComponents" Directory="ShortcutFolder">
+      <Component>
+        <Shortcut Id="KeyviewShortcut"
+                  Name="Keyview"
+                  Description="The Keysharp script editor"
+                  Target="[INSTALLFOLDER]Keyview.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="Keysharp.ico" />
+        <!-- Prefer the precompiled .cks, which starts without an on-the-fly compile. It is produced by the
+             PrecompileBundledScripts target in Keysharp.csproj, which runs the just-published host - so it
+             is absent whenever the publish was cross-architecture (an arm64 Keysharp.exe cannot execute on
+             an x64 build machine; the target is ContinueOnError and simply leaves the .ks behind). Falling
+             back keeps the shortcut working instead of pointing at a file that was never built.
+             WindowSpy.ks ships either way, for source inspection.
+             WindowSpyScript is resolved from the staged tree by the .wixproj. -->
+        <Shortcut Id="WindowSpyShortcut"
+                  Name="Window Spy"
+                  Description="Inspect windows, controls and the mouse position"
+                  Target="[INSTALLFOLDER]Keysharp.exe"
+                  Arguments="&quot;[INSTALLFOLDER]Scripts\$(WindowSpyScript)&quot;"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="Keysharp.ico" />
+        <RemoveFolder Id="RemoveShortcutFolder" On="uninstall" />
+        <!-- Shortcut components must key off HKCU, not HKMU: the Start Menu folder is per-user data, and
+             ICE57 rejects pairing that with a keypath that could resolve to HKLM. The vdproj's shortcut
+             component did the same thing (its Registry rows were HKCU). -->
+        <RegistryValue Root="HKCU" Key="Software\Keysharp\Keysharp" Name="Shortcuts" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+</Wix>

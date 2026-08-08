@@ -48,7 +48,9 @@
 
   <ItemGroup>
     <Content Include="..\assets\Keysharp.ico" Link="Keysharp.ico" />
-    <Content Include="..\Keyview\Icon.icns" Link="Icon.icns" Condition="Exists('..\Keyview\Icon.icns')" />
+    <!-- macOS bundle icon only; see Keysharp.csproj. Never packaged, but no reason to copy 400 KB into
+         every Windows and Linux dev build. -->
+    <Content Include="..\Keyview\Icon.icns" Link="Icon.icns" Condition="$([MSBuild]::IsOSPlatform('OSX')) And Exists('..\Keyview\Icon.icns')" />
     <Content Include="Keysharp.OutputTest.manifest">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

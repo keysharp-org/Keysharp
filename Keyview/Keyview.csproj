@@ -22,7 +22,8 @@
 		<Authors>Matt Feemster, Descolada</Authors>
 		<Description>A viewer which shows the C# code that is generated from compiling Keysharp script code</Description>
 		<Company>Keysharp</Company>
-		<PreserveCompilationContext>true</PreserveCompilationContext>
+		<!-- Off for the same reason as Keysharp.csproj: nothing reads the refs/ folder it would emit. -->
+		<PreserveCompilationContext>false</PreserveCompilationContext>
 		<ProduceReferenceAssembly>true</ProduceReferenceAssembly>
 		<SignAssembly>False</SignAssembly>
 		<DelaySign>False</DelaySign>
@@ -52,7 +53,8 @@
 
 	<ItemGroup>
 		<Content Include="..\assets\Keysharp.ico" Link="Keysharp.ico" />
-		<Content Include="Icon.icns" />
+		<!-- The .app bundle icon named by Info.plist's CFBundleIconFile; see Keysharp.csproj. -->
+		<Content Include="Icon.icns" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
 	</ItemGroup>
 	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
 		<!-- Scintilla.NET loads Scintilla.dll/Lexilla.dll from <appbase>\runtimes\win-<arch>\native\ and never

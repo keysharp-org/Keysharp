@@ -229,11 +229,18 @@ namespace Keysharp.Internals.Scripting
 						return CliCommand.Error("--define requires a symbol, as --define:NAME[,NAME...].");
 #if WINDOWS
 
+					// Register/unregister the shell integration and the PATH entry. An optional trailing
+					// "user" or "machine" picks the scope; without one it follows what this process can
+					// actually do - machine-wide when elevated, otherwise the current user only.
 					case "install":
-						return CliCommand.Simple(CliCommandKind.Install, asm, exeDir);
-
 					case "uninstall":
-						return CliCommand.Simple(CliCommandKind.Uninstall, asm, exeDir);
+						return new CliCommand
+						{
+							Kind = opt == "install" ? CliCommandKind.Install : CliCommandKind.Uninstall,
+							EntryAssembly = asm,
+							ExeDir = exeDir,
+							ScriptArgs = [.. args.Skip(i + 1)],
+						};
 
 					// Closes every running process of this install (scripts launched via Keysharp.exe, the
 					// compile daemon, and Keyview) so a locked Keysharp.exe / Keysharp.Core.dll can be replaced
@@ -510,7 +517,7 @@ namespace Keysharp.Internals.Scripting
 		private static string HelpText(Assembly asm)
 		{
 #if WINDOWS
-			const string platformHelp = "  --install, --uninstall  Register/unregister Keysharp shell integration (used by the installer).\n  --close-instances       Close every running Keysharp process of this install (used by the installer).\n";
+			const string platformHelp = "  --install [user|machine]    Register Keysharp shell integration and add it to PATH. Defaults to\n                              machine-wide when elevated, otherwise the current user only.\n  --uninstall [user|machine]  Reverse --install.\n  --close-instances           Close every running Keysharp process of this install (used by the installer).\n";
 #else
 			const string platformHelp = "";
 #endif

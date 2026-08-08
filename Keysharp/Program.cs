@@ -111,8 +111,8 @@ namespace Keysharp.Main
 				CliCommandKind.CompileExe => CompileToExe(command),
 				CliCommandKind.Daemon => HandleDaemon(command.DaemonArgs),
 #if WINDOWS
-				CliCommandKind.Install => InstallToPath(command.ExeDir),
-				CliCommandKind.Uninstall => RemoveFromPath(command.ExeDir),
+				CliCommandKind.Install => InstallToPath(command.ExeDir, command.ScriptArgs),
+				CliCommandKind.Uninstall => RemoveFromPath(command.ExeDir, command.ScriptArgs),
 				CliCommandKind.CloseInstances => CloseRunningInstances(command.ExeDir, command.ScriptArgs),
 #endif
 				_ => Runner.Execute(command),
@@ -483,26 +483,155 @@ namespace Keysharp.Main
 
 #if WINDOWS
 
-		private static int InstallToPath(string path)
+		/// <summary>
+		/// Where a manual install writes. Per-machine needs administrator rights; per-user needs none, which
+		/// is what makes the portable zip usable without them - the MSI is per-machine only, because WiX v5
+		/// cannot build a package that is both (see docs/design-wix-installer-migration.md, D1).
+		/// </summary>
+		private enum InstallScope
 		{
-			var keyName = @"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
-			var oldPath = (string)Registry.LocalMachine.CreateSubKey(keyName).GetValue("PATH", "", RegistryValueOptions.DoNotExpandEnvironmentNames);//Get non-expanded PATH environment variable.
-
-			if (!oldPath.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Any(s => string.Compare(s, path, true) == 0))
-				Registry.LocalMachine.CreateSubKey(keyName).SetValue("PATH", oldPath + (oldPath.EndsWith(';') ? path : $";{path}"), RegistryValueKind.ExpandString);//Set the path as an an expandable string with the passed in value included.
-
-			RegisterShellIntegration(path);
-			return 0;
+			Machine,
+			User
 		}
 
-		private static int RemoveFromPath(string path)
+		private static bool IsElevated()
 		{
+			try
+			{
+				using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+				return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+			}
+			catch
+			{
+				return false;
+			}
+		}
+
+		/// <summary>
+		/// Reads an explicit "user" / "machine" argument, falling back to what this process can actually do.
+		/// Defaulting by elevation keeps the old behaviour for an administrator while letting an ordinary
+		/// user run the same command instead of failing with an access-denied exception part-way through.
+		/// </summary>
+		private static bool TryResolveScope(string[] args, out InstallScope scope, out string error)
+		{
+			error = null;
+			var requested = args?.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a))?.Trim();
+
+			if (string.IsNullOrEmpty(requested))
+			{
+				scope = IsElevated() ? InstallScope.Machine : InstallScope.User;
+				return true;
+			}
+
+			if (string.Equals(requested, "machine", StringComparison.OrdinalIgnoreCase))
+			{
+				scope = InstallScope.Machine;
+
+				if (!IsElevated())
+				{
+					error = "A machine-wide install needs administrator rights. Run this from an elevated prompt, or omit \"machine\" to install for the current user only.";
+					return false;
+				}
+
+				return true;
+			}
+
+			if (string.Equals(requested, "user", StringComparison.OrdinalIgnoreCase))
+			{
+				scope = InstallScope.User;
+				return true;
+			}
+
+			scope = InstallScope.User;
+			error = $"Unrecognized scope '{requested}'. Use \"user\" or \"machine\", or pass nothing to choose automatically.";
+			return false;
+		}
+
+		// The two hives the scope selects between. HKCU\Software\Classes is a genuine per-user class store -
+		// the same place the MSI's HKMU-rooted rows land when a package installs per-user - so the key paths
+		// below are identical in both cases and only the root differs.
+		private static RegistryKey RootFor(InstallScope scope) => scope == InstallScope.Machine ? Registry.LocalMachine : Registry.CurrentUser;
+
+		// Machine PATH lives under Session Manager and is spelled PATH; the per-user one is a top-level
+		// Environment key and is conventionally spelled Path. Both are written back as REG_EXPAND_SZ so
+		// entries such as %SystemRoot% in the existing value keep working.
+		private static (RegistryKey Root, string Key, string Name) PathLocationFor(InstallScope scope) =>
+			scope == InstallScope.Machine
+			? (Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Environment", "PATH")
+			: (Registry.CurrentUser, "Environment", "Path");
+
+		// Trailing separators are ignored when matching, so an entry written by the MSI - which resolves
+		// [INSTALLFOLDER] with a trailing backslash - is still recognised as the same directory here.
+		private static bool SamePathEntry(string a, string b) =>
+			string.Equals(a?.TrimEnd('\\', '/'), b?.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
+
+		private static int InstallToPath(string path, string[] args)
+		{
+			if (!TryResolveScope(args, out var scope, out var scopeError))
+			{
+				Console.Error.WriteLine(scopeError);
+				return 1;
+			}
+
+			try
+			{
+				var (root, keyName, valueName) = PathLocationFor(scope);
+				using var key = root.CreateSubKey(keyName);
+				var oldPath = (string)key.GetValue(valueName, "", RegistryValueOptions.DoNotExpandEnvironmentNames);
+
+				if (!oldPath.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Any(s => SamePathEntry(s, path)))
+					key.SetValue(valueName, oldPath.Length == 0 ? path : oldPath + (oldPath.EndsWith(';') ? path : $";{path}"), RegistryValueKind.ExpandString);
+
+				RegisterShellIntegration(path, RootFor(scope));
+				Console.WriteLine($"Registered Keysharp at '{path}' for {(scope == InstallScope.Machine ? "all users" : "the current user")}.");
+				return 0;
+			}
+			catch (UnauthorizedAccessException)
+			{
+				Console.Error.WriteLine("Access denied writing the registry. Run from an elevated prompt for a machine-wide install, or pass \"user\" to install for the current user only.");
+				return 1;
+			}
+		}
+
+		private static int RemoveFromPath(string path, string[] args)
+		{
+			if (!TryResolveScope(args, out var scope, out var scopeError))
+			{
+				Console.Error.WriteLine(scopeError);
+				return 1;
+			}
+
 			DaemonCoordinator.StopOwner();
-			var keyName = @"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
-			var oldPath = (string)Registry.LocalMachine.CreateSubKey(keyName).GetValue("PATH", "", RegistryValueOptions.DoNotExpandEnvironmentNames);//Get non-expanded PATH environment variable.
-			var newPath = string.Join(';', oldPath.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(s => string.Compare(s, path, true) != 0));
-			Registry.LocalMachine.CreateSubKey(keyName).SetValue("PATH", newPath, RegistryValueKind.ExpandString);//Restore the old path to what it was without the passed in value included.
-			UnregisterShellIntegration();
+
+			// An administrator may have registered either way round, so clean both hives; an ordinary user can
+			// only have written their own, and the machine attempt is skipped rather than failed. Removing what
+			// is not there is a no-op, so this cannot damage the other scope's registration.
+			var scopes = scope == InstallScope.Machine
+						 ? new[] { InstallScope.Machine, InstallScope.User }
+						 : new[] { InstallScope.User };
+
+			foreach (var target in scopes)
+			{
+				try
+				{
+					var (root, keyName, valueName) = PathLocationFor(target);
+					using var key = root.CreateSubKey(keyName);
+					var oldPath = (string)key.GetValue(valueName, "", RegistryValueOptions.DoNotExpandEnvironmentNames);
+					var newPath = string.Join(';', oldPath.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(s => !SamePathEntry(s, path)));
+
+					if (!string.Equals(newPath, oldPath, StringComparison.Ordinal))
+						key.SetValue(valueName, newPath, RegistryValueKind.ExpandString);
+
+					UnregisterShellIntegration(RootFor(target));
+				}
+				catch (UnauthorizedAccessException)
+				{
+					// Only reachable for the machine hive, and only if rights were lost between the check and
+					// here; the per-user half still completed.
+				}
+			}
+
+			Console.WriteLine($"Unregistered Keysharp for {(scope == InstallScope.Machine ? "all users and the current user" : "the current user")}.");
 			return 0;
 		}
 
@@ -577,7 +706,7 @@ namespace Keysharp.Main
 			return 0;
 		}
 
-		private static void RegisterShellIntegration(string path)
+		private static void RegisterShellIntegration(string path, RegistryKey root)
 		{
 			var exe = Path.Combine(path, "Keysharp.exe");
 			var keyviewExe = Path.Combine(path, "Keyview.exe");
@@ -585,41 +714,41 @@ namespace Keysharp.Main
 			var compileCommand = $"\"{exe}\" --compile \"%1\"";
 			var editCommand = $"\"{keyviewExe}\" \"%1\"";
 
-			using (var ext = Registry.LocalMachine.CreateSubKey(@"Software\Classes\.ks"))
+			using (var ext = root.CreateSubKey(@"Software\Classes\.ks"))
 				ext.SetValue("", "Keysharp");
 
-			using (var type = Registry.LocalMachine.CreateSubKey(@"Software\Classes\Keysharp"))
+			using (var type = root.CreateSubKey(@"Software\Classes\Keysharp"))
 				type.SetValue("", "Keysharp script");
 
-			using (var icon = Registry.LocalMachine.CreateSubKey(@"Software\Classes\Keysharp\DefaultIcon"))
+			using (var icon = root.CreateSubKey(@"Software\Classes\Keysharp\DefaultIcon"))
 				icon.SetValue("", $"\"{exe}\",0");
 
-			using (var open = Registry.LocalMachine.CreateSubKey(@"Software\Classes\Keysharp\shell\open\command"))
+			using (var open = root.CreateSubKey(@"Software\Classes\Keysharp\shell\open\command"))
 				open.SetValue("", command);
 
-			using (var ext = Registry.LocalMachine.CreateSubKey(@"Software\Classes\.cks"))
+			using (var ext = root.CreateSubKey(@"Software\Classes\.cks"))
 				ext.SetValue("", "Keysharp.CompiledScript");
 
-			using (var type = Registry.LocalMachine.CreateSubKey(@"Software\Classes\Keysharp.CompiledScript"))
+			using (var type = root.CreateSubKey(@"Software\Classes\Keysharp.CompiledScript"))
 				type.SetValue("", "Compiled Keysharp script");
 
-			using (var icon = Registry.LocalMachine.CreateSubKey(@"Software\Classes\Keysharp.CompiledScript\DefaultIcon"))
+			using (var icon = root.CreateSubKey(@"Software\Classes\Keysharp.CompiledScript\DefaultIcon"))
 				icon.SetValue("", $"\"{exe}\",0");
 
-			using (var open = Registry.LocalMachine.CreateSubKey(@"Software\Classes\Keysharp.CompiledScript\shell\open\command"))
+			using (var open = root.CreateSubKey(@"Software\Classes\Keysharp.CompiledScript\shell\open\command"))
 				open.SetValue("", command);
 
 			// Older installers registered this iconless verb under the .ks ProgID. Remove it so only the
 			// SystemFileAssociations verb below remains.
-			Registry.LocalMachine.DeleteSubKeyTree(@"Software\Classes\Keysharp\shell\compile", false);
-			RegisterCompileVerb(".ahk", compileCommand, exe);
-			RegisterCompileVerb(".ks", compileCommand, exe);
+			root.DeleteSubKeyTree(@"Software\Classes\Keysharp\shell\compile", false);
+			RegisterCompileVerb(".ahk", compileCommand, exe, root);
+			RegisterCompileVerb(".ks", compileCommand, exe, root);
 
 			if (File.Exists(keyviewExe))
 			{
-				RegisterEditVerb(".ahk", editCommand, keyviewExe);
-				RegisterEditVerb(".ks", editCommand, keyviewExe);
-				RegisterKeyviewOpenWith(keyviewExe);
+				RegisterEditVerb(".ahk", editCommand, keyviewExe, root);
+				RegisterEditVerb(".ks", editCommand, keyviewExe, root);
+				RegisterKeyviewOpenWith(keyviewExe, root);
 			}
 		}
 
@@ -627,30 +756,30 @@ namespace Keysharp.Main
 		// it the default handler: .ks keeps its "Keysharp" ProgID (set above), so double-clicking still runs the
 		// script through Keysharp.exe. SupportedTypes scopes Keyview to the recommended list for these extensions,
 		// and the per-extension OpenWithList entries make it show deterministically.
-		private static void RegisterKeyviewOpenWith(string keyviewExe)
+		private static void RegisterKeyviewOpenWith(string keyviewExe, RegistryKey root)
 		{
-			using (var app = Registry.LocalMachine.CreateSubKey(@"Software\Classes\Applications\Keyview.exe"))
+			using (var app = root.CreateSubKey(@"Software\Classes\Applications\Keyview.exe"))
 				app.SetValue("FriendlyAppName", "Keyview");
 
-			using (var icon = Registry.LocalMachine.CreateSubKey(@"Software\Classes\Applications\Keyview.exe\DefaultIcon"))
+			using (var icon = root.CreateSubKey(@"Software\Classes\Applications\Keyview.exe\DefaultIcon"))
 				icon.SetValue("", $"\"{keyviewExe}\",0");
 
-			using (var open = Registry.LocalMachine.CreateSubKey(@"Software\Classes\Applications\Keyview.exe\shell\open\command"))
+			using (var open = root.CreateSubKey(@"Software\Classes\Applications\Keyview.exe\shell\open\command"))
 				open.SetValue("", $"\"{keyviewExe}\" \"%1\"");
 
-			using (var supported = Registry.LocalMachine.CreateSubKey(@"Software\Classes\Applications\Keyview.exe\SupportedTypes"))
+			using (var supported = root.CreateSubKey(@"Software\Classes\Applications\Keyview.exe\SupportedTypes"))
 			{
 				supported.SetValue(".ahk", "");
 				supported.SetValue(".ks", "");
 			}
 
-			using (Registry.LocalMachine.CreateSubKey(@"Software\Classes\.ahk\OpenWithList\Keyview.exe")) { }
-			using (Registry.LocalMachine.CreateSubKey(@"Software\Classes\.ks\OpenWithList\Keyview.exe")) { }
+			using (root.CreateSubKey(@"Software\Classes\.ahk\OpenWithList\Keyview.exe")) { }
+			using (root.CreateSubKey(@"Software\Classes\.ks\OpenWithList\Keyview.exe")) { }
 		}
 
-		private static void RegisterCompileVerb(string extension, string command, string exe)
+		private static void RegisterCompileVerb(string extension, string command, string exe, RegistryKey root)
 		{
-			using var shell = Registry.LocalMachine.CreateSubKey($@"Software\Classes\SystemFileAssociations\{extension}\shell\KeysharpCompile");
+			using var shell = root.CreateSubKey($@"Software\Classes\SystemFileAssociations\{extension}\shell\KeysharpCompile");
 			shell.SetValue("", "Compile");
 			shell.SetValue("Icon", $"\"{exe}\",0");
 
@@ -658,9 +787,9 @@ namespace Keysharp.Main
 			commandKey.SetValue("", command);
 		}
 
-		private static void RegisterEditVerb(string extension, string command, string exe)
+		private static void RegisterEditVerb(string extension, string command, string exe, RegistryKey root)
 		{
-			using var shell = Registry.LocalMachine.CreateSubKey($@"Software\Classes\SystemFileAssociations\{extension}\shell\KeyviewEdit");
+			using var shell = root.CreateSubKey($@"Software\Classes\SystemFileAssociations\{extension}\shell\KeyviewEdit");
 			shell.SetValue("", "Edit with Keyview");
 			shell.SetValue("Icon", $"\"{exe}\",0");
 
@@ -668,21 +797,21 @@ namespace Keysharp.Main
 			commandKey.SetValue("", command);
 		}
 
-		private static void UnregisterShellIntegration()
+		private static void UnregisterShellIntegration(RegistryKey root)
 		{
-			Registry.LocalMachine.DeleteSubKeyTree(@"Software\Classes\.cks", false);
-			Registry.LocalMachine.DeleteSubKeyTree(@"Software\Classes\.ks", false);
-			Registry.LocalMachine.DeleteSubKeyTree(@"Software\Classes\Keysharp", false);
-			Registry.LocalMachine.DeleteSubKeyTree(@"Software\Classes\Keysharp.CompiledScript", false);
-			Registry.LocalMachine.DeleteSubKeyTree(@"Software\Classes\SystemFileAssociations\.ahk\shell\KeysharpCompile", false);
-			Registry.LocalMachine.DeleteSubKeyTree(@"Software\Classes\SystemFileAssociations\.ks\shell\KeysharpCompile", false);
-			Registry.LocalMachine.DeleteSubKeyTree(@"Software\Classes\SystemFileAssociations\.ahk\shell\KeyviewEdit", false);
-			Registry.LocalMachine.DeleteSubKeyTree(@"Software\Classes\SystemFileAssociations\.ks\shell\KeyviewEdit", false);
+			root.DeleteSubKeyTree(@"Software\Classes\.cks", false);
+			root.DeleteSubKeyTree(@"Software\Classes\.ks", false);
+			root.DeleteSubKeyTree(@"Software\Classes\Keysharp", false);
+			root.DeleteSubKeyTree(@"Software\Classes\Keysharp.CompiledScript", false);
+			root.DeleteSubKeyTree(@"Software\Classes\SystemFileAssociations\.ahk\shell\KeysharpCompile", false);
+			root.DeleteSubKeyTree(@"Software\Classes\SystemFileAssociations\.ks\shell\KeysharpCompile", false);
+			root.DeleteSubKeyTree(@"Software\Classes\SystemFileAssociations\.ahk\shell\KeyviewEdit", false);
+			root.DeleteSubKeyTree(@"Software\Classes\SystemFileAssociations\.ks\shell\KeyviewEdit", false);
 			// Keyview "Open with" registration. The .ks OpenWithList entry is removed with the .ks tree above; the
 			// .ahk entry and the shared Applications\Keyview.exe registration must be removed explicitly (.ahk keeps
 			// its own default ProgID, so we never delete the whole .ahk key).
-			Registry.LocalMachine.DeleteSubKeyTree(@"Software\Classes\Applications\Keyview.exe", false);
-			Registry.LocalMachine.DeleteSubKeyTree(@"Software\Classes\.ahk\OpenWithList\Keyview.exe", false);
+			root.DeleteSubKeyTree(@"Software\Classes\Applications\Keyview.exe", false);
+			root.DeleteSubKeyTree(@"Software\Classes\.ahk\OpenWithList\Keyview.exe", false);
 		}
 
 #endif

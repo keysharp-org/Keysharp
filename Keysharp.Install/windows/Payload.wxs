@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Fragment>
+    <!-- The entire staged publish tree, harvested wholesale. This replaces the vdproj's hand-maintained
+         list of 24 files, which had drifted from what `dotnet publish` actually produces: it was missing
+         Keysharp.png (Keyview prefers it over Keysharp.ico for its window icon) and it shipped
+         assets\InstallerBanner.bmp, a Setup UI asset, into the application folder.
+
+         Harvesting is only correct because the staged tree now contains exactly what should ship - see the
+         payload cleanup in Directory.Build.props (no Release .pdb), Keysharp.csproj / Keyview.csproj
+         (PreserveCompilationContext off, so no refs/ folder; Icon.icns is macOS-only). There is
+         deliberately no Exclude list here: anything that should not ship must be kept out of the staged
+         tree, so that the zip and the MSI cannot disagree again.
+
+         Component GUIDs are generated from each file's target path and are therefore stable across
+         releases as long as the layout is. Subdirectories (Scripts\, Lib\, runtimes\<rid>\native\) are
+         created implicitly. -->
+    <ComponentGroup Id="PayloadComponents" Directory="INSTALLFOLDER">
+      <Files Include="$(PayloadDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+</Wix>

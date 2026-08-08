@@ -43,7 +43,19 @@ Windows has the best feature implementation rate and very high AutoHotkey v2 com
 * CD to bin\release\net10.0-windows (or \debug\, depending whether using Debug or Release mode)
 * Run `.\Keysharp.exe yourtestfile.ahk`
 
-To build the release MSI installer and portable ZIP, run `Keysharp.Install\package-windows.ps1` from PowerShell. Packaging output is written to `dist\`. Building the MSI requires Visual Studio with the **Microsoft Visual Studio Installer Projects** extension; the portable ZIP is produced regardless.
+To build the release MSI installer and portable ZIP, run `Keysharp.Install\package-windows.ps1` from PowerShell. Packaging output is written to `dist\`.
+
+The MSI is built by `Keysharp.Install\windows\Keysharp.Installer.wixproj` ([WiX v5](https://wixtoolset.org/)), whose toolset restores from NuGet — the .NET SDK is the only prerequisite. The project is deliberately not a member of `Keysharp.sln`, because it packages a staged directory that does not exist until the script has published and staged; build it through the script, or by hand with `-p:PayloadDir=<staged app folder>`.
+
+| Switch | Effect |
+|---|---|
+| `-RuntimeIdentifier win-x64` \| `win-arm64` | Target architecture; defaults to the build machine's. Both produce an MSI and a ZIP. |
+| `-SkipPublish` | Re-stage and repackage the existing publish output. |
+| `-SkipMsi` | Produce only the portable ZIP. |
+
+The MSI is per-machine and installs to `%ProgramFiles%\Keysharp`, so it requires administrator rights — WiX v5 has no supported way to build a package that can install either way. Without admin rights, use the portable ZIP and run `Keysharp.exe --install`, which registers the file associations, the context-menu verbs and the PATH entry for the current user only. It writes to `HKCU` and needs no elevation; `Keysharp.exe --uninstall` reverses it. Add `machine` to either command to force the machine-wide variant, which does require elevation.
+
+PATH and shell integration are separate MSI features. The Customize page lets you deselect either, and an unattended install can do the same, for example `msiexec /i keysharp.msi /qn ADDLOCAL=Core` to install neither.
 
 ## Linux Platform Support
 Linux support is in active development. The following table summarises what works and what requires user action.

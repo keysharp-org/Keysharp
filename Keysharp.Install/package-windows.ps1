@@ -1,12 +1,12 @@
 param(
     # Defaults to this machine's architecture. Pass -RuntimeIdentifier explicitly to cross-target,
-    # e.g. -RuntimeIdentifier win-x64 from an ARM64 box.
+    # e.g. -RuntimeIdentifier win-arm64 from an x64 box.
     [string] $Configuration = "Release",
     [ValidateSet("", "win-x64", "win-arm64")]
     [string] $RuntimeIdentifier = "",
     [string] $Version = "",
-    [string] $DevenvPath = "",
-    [switch] $SkipPublish
+    [switch] $SkipPublish,
+    [switch] $SkipMsi
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,7 +22,6 @@ if (-not $RuntimeIdentifier) {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = (Resolve-Path (Join-Path $scriptDir "..")).Path
 $solution = Join-Path $root "Keysharp.sln"
-$installerProject = "Keysharp.Install"
 $distDir = Join-Path $root "dist"
 $publishRoot = Join-Path $distDir "publish\$RuntimeIdentifier"
 $stagingDir = Join-Path $distDir "staging\$RuntimeIdentifier"
@@ -30,24 +29,17 @@ $packageName = "Keysharp-$RuntimeIdentifier"
 $packageDir = Join-Path $stagingDir $packageName
 $appDir = Join-Path $packageDir "app"
 $zipPath = Join-Path $distDir "$packageName.zip"
+$msiPath = Join-Path $distDir "$packageName.msi"
+$installerProject = Join-Path $root "Keysharp.Install\windows\Keysharp.Installer.wixproj"
 $etoDir = Join-Path (Split-Path -Parent $root) "Eto"
 $pathMap = "$root=/_/keysharp"
 if (Test-Path $etoDir) {
     $etoDir = (Resolve-Path $etoDir).Path
     $pathMap = "$pathMap%2c$etoDir=/_/Eto"
 }
-$installerProjectPath = Join-Path $root "Keysharp.Install\Keysharp.Install.vdproj"
-$installerProjectOriginalContent = $null
 
-# The Visual Studio installer project hard-codes its source paths (dist\staging\win-x64\...), its output
-# name (Keysharp-win-x64.msi) and an x64 .NET Desktop Runtime prerequisite, so only win-x64 can produce an
-# MSI. Other architectures still publish, stage and zip - they just skip the MSI rather than failing, which
-# is what makes packaging usable on Windows on ARM.
-$msiPath = Join-Path $root "dist\Keysharp-win-x64.msi"
-$buildMsi = $RuntimeIdentifier -eq "win-x64"
-if (-not $buildMsi) {
-    Write-Warning "The installer project only supports win-x64, so no MSI will be produced for $RuntimeIdentifier; the zip package will still be created."
-}
+# The MSI platform name WiX expects, which is not spelled the same as the RID.
+$msiPlatform = if ($RuntimeIdentifier -eq "win-arm64") { "arm64" } else { "x64" }
 
 function Resolve-KeysharpVersion {
     param([string] $ExplicitVersion)
@@ -68,49 +60,27 @@ function Resolve-KeysharpVersion {
     throw "Could not determine KeysharpVersion. Pass -Version explicitly."
 }
 
-function Convert-ToMsiProductVersion {
-    param([string] $AssemblyVersion)
+function Assert-PackagableVersion {
+    param([string] $Version)
 
-    $parts = $AssemblyVersion.Split(".")
-    if ($parts.Length -ne 4) {
-        throw "Windows package version must have four numeric parts, for example 0.0.0.15. Got '$AssemblyVersion'."
+    # The MSI ProductVersion is major.minor.build with build folded as patch*1000 + revision, and Windows
+    # Installer caps those fields at 255 / 255 / 65535. Checked here because the .wixproj cannot: MSBuild
+    # evaluates its properties before any target runs, so a malformed version fails while computing the
+    # version itself, and an over-range one only surfaces later as ICE24 against the already-folded number.
+    if ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+        throw "Version must have four numeric parts, for example 0.0.0.16. Got '$Version'."
     }
 
-    foreach ($part in $parts) {
-        if ($part -notmatch '^\d+$') {
-            throw "Windows package version must have four numeric parts, for example 0.0.0.15. Got '$AssemblyVersion'."
-        }
+    $parts = $Version.Split('.')
+    $build = ([int] $parts[2]) * 1000 + [int] $parts[3]
+
+    if ([int] $parts[0] -gt 255 -or [int] $parts[1] -gt 255) {
+        throw "Version '$Version' exceeds the MSI limit of 255 for the major and minor fields."
     }
 
-    # Windows Installer ProductVersion has three fields. Preserve the historical
-    # mapping from assembly 0.0.0.14 to MSI 0.0.14 by folding patch+revision.
-    return "$($parts[0]).$($parts[1]).$([int]$parts[2] * 1000 + [int]$parts[3])"
-}
-
-function Update-InstallerProjectVersion {
-    param(
-        [string] $ProjectPath,
-        [string] $AssemblyVersion
-    )
-
-    if (-not (Test-Path $ProjectPath)) {
-        throw "Installer project was not found: $ProjectPath"
+    if ($build -gt 65535) {
+        throw "Version '$Version' folds to MSI version $($parts[0]).$($parts[1]).$build, and Windows Installer allows at most 65535 in the build field. The patch*1000+revision mapping runs out at patch 65."
     }
-
-    $msiVersion = Convert-ToMsiProductVersion $AssemblyVersion
-    $content = Get-Content -LiteralPath $ProjectPath -Raw
-    $content = [regex]::Replace($content, '"ProductVersion" = "8:[^"]+"', """ProductVersion"" = ""8:$msiVersion""")
-    $content = [regex]::Replace($content, '"ProductCode" = "8:\{[^}]+\}"', """ProductCode"" = ""8:{$([guid]::NewGuid().ToString().ToUpperInvariant())}""")
-    $content = [regex]::Replace($content, '"PackageCode" = "8:\{[^}]+\}"', """PackageCode"" = ""8:{$([guid]::NewGuid().ToString().ToUpperInvariant())}""")
-
-    # The Keysharp/Keysharp.Core/Keyview product assemblies are packaged from their SourcePath, but the
-    # setup project also stores a cached fusion display name whose Version is the assembly version captured
-    # at authoring time. Left stale, a release built at a newer version registers a mismatched version string
-    # in the MsiAssemblyName table, so rewrite the Version token for exactly those three (matched by name;
-    # the framework/third-party entries keep their own, unrelated versions).
-    $content = [regex]::Replace($content, '("AssemblyAsmDisplayName" = "8:(?:Keysharp\.Core|Keysharp|Keyview), Version=)[^,]+', "`${1}$AssemblyVersion")
-
-    Set-Content -LiteralPath $ProjectPath -Value $content -NoNewline
 }
 
 function Assert-NoLocalPaths {
@@ -132,64 +102,6 @@ function Assert-NoLocalPaths {
 
         throw "Package payload contains local absolute paths. Rebuild with path mapping before packaging."
     }
-}
-
-function Find-Devenv {
-    param([string] $ExplicitPath)
-
-    if ($ExplicitPath) {
-        if (Test-Path $ExplicitPath) {
-            return (Resolve-Path $ExplicitPath).Path
-        }
-
-        throw "The supplied devenv.com path does not exist: $ExplicitPath"
-    }
-
-    if ($env:VSINSTALLDIR) {
-        $candidate = Join-Path $env:VSINSTALLDIR "Common7\IDE\devenv.com"
-        if (Test-Path $candidate) {
-            return $candidate
-        }
-    }
-
-    $programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
-    if (-not $programFilesX86) {
-        $programFilesX86 = ${env:ProgramFiles(x86)}
-    }
-
-    if ($programFilesX86) {
-        $vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
-        if (Test-Path $vswhere) {
-            $installPaths = & $vswhere -all -products * -requires Microsoft.Component.MSBuild -property installationPath
-            foreach ($installPath in $installPaths) {
-                if (-not $installPath) {
-                    continue
-                }
-
-                $candidate = Join-Path $installPath "Common7\IDE\devenv.com"
-                if (Test-Path $candidate) {
-                    return $candidate
-                }
-            }
-        }
-    }
-
-    $commonPaths = @()
-    if ($env:ProgramFiles) {
-        $commonPaths += @(
-            "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.com",
-            "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional\Common7\IDE\devenv.com",
-            "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\devenv.com"
-        )
-    }
-
-    foreach ($candidate in $commonPaths) {
-        if (Test-Path $candidate) {
-            return $candidate
-        }
-    }
-
-    throw "Could not find devenv.com. Install Visual Studio 2022 with Microsoft Visual Studio Installer Projects 2022, or pass -DevenvPath."
 }
 
 function Copy-DirectoryContents {
@@ -274,8 +186,8 @@ function Relocate-LibraryScripts {
 
     # OCR.ks is a pure "#include <OCR>" library (no entry point, no .cks), so it ships in Lib\ rather than
     # Scripts\ so the library-include resolver finds it. WindowSpy.ks/.cks stay in Scripts\ (an app, not a
-    # library). This must run before the MSI build: the vdproj references app\Lib\OCR.ks, and the zip is
-    # produced from this same staged tree.
+    # library). This must run before the MSI build: the installer harvests this same staged tree, and the
+    # zip is produced from it too.
     $scriptsOcr = Join-Path $AppRoot "Scripts\OCR.ks"
     if (Test-Path $scriptsOcr) {
         $libDir = Join-Path $AppRoot "Lib"
@@ -284,6 +196,167 @@ function Relocate-LibraryScripts {
     }
     # Defensive: OCR is never precompiled, so a stray OCR.cks must not ship.
     Remove-Item -Path (Join-Path $AppRoot "Scripts\OCR.cks") -Force -ErrorAction SilentlyContinue
+}
+
+function Assert-PayloadIsShippable {
+    param([string] $AppRoot)
+
+    # The MSI harvests this tree wholesale (Keysharp.Install/windows/Payload.wxs) and the zip is compressed
+    # from it, so the tree IS the package contents and nothing filters it afterwards. These are the classes
+    # of file that used to leak in and are now suppressed at their source; catch a regression here rather
+    # than in a release.
+    $strays = @()
+    $strays += Get-ChildItem -Path $AppRoot -Recurse -Directory -Filter "refs" -ErrorAction SilentlyContinue
+    $strays += Get-ChildItem -Path $AppRoot -Recurse -File -Include "*.pdb", "*.icns" -ErrorAction SilentlyContinue
+
+    if ($strays) {
+        # Write-Host, not Write-Error: $ErrorActionPreference is Stop, so Write-Error terminates on the first
+        # item and the explanatory throw below would never be reached - leaving one filename and no guidance
+        # for what is often a hundred-plus files.
+        $strays | ForEach-Object { Write-Host "  unshippable artefact staged into the package: $($_.FullName)" }
+        throw "Staged payload contains $($strays.Count) build artefact(s) that must not ship. See PreserveCompilationContext / DebugType in Directory.Build.props and the csproj files."
+    }
+
+    # WindowSpy.cks is produced by the PrecompileBundledScripts target, which cannot run on a
+    # cross-architecture publish (an arm64 host will not execute on an x64 build machine). That is tolerated
+    # - the installer falls back to the .ks - but it is worth saying out loud, because it silently costs
+    # startup time for everyone on that architecture.
+    if (-not (Test-Path (Join-Path $AppRoot "Scripts\WindowSpy.cks"))) {
+        Write-Warning "Scripts\WindowSpy.cks was not produced (cross-architecture publish?); the Window Spy shortcut will run WindowSpy.ks and compile it on every launch."
+    }
+}
+
+function Assert-MsiMatchesPayload {
+    param(
+        [string] $MsiPath,
+        [string] $AppRoot
+    )
+
+    # The MSI harvests $AppRoot wholesale and the zip is compressed from it, so the two must contain the
+    # same files. Verified explicitly rather than assumed, because the ways this can drift are all silent:
+    # an incremental link that missed an added file, a harvest that stopped matching, or a payload written
+    # after the build. README.md is the one installed file that is authored rather than harvested.
+    $expected = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    Get-ChildItem -LiteralPath $AppRoot -Recurse -File | ForEach-Object { [void] $expected.Add($_.Name) }
+    [void] $expected.Add("README.md")
+
+    $actual = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $db = $null
+    $view = $null
+    try {
+        $db = $installer.OpenDatabase($MsiPath, 0)
+        $view = $db.OpenView('SELECT `FileName` FROM `File`')
+        $view.Execute()
+        while ($null -ne ($record = $view.Fetch())) {
+            # FileName is "SHORTNAME|Long Name" when a short name was generated; keep the long one.
+            $name = [string] $record.StringData(1)
+            if ($name -match '\|') { $name = $name.Split('|')[1] }
+            [void] $actual.Add($name)
+            [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($record)
+        }
+        $view.Close()
+    }
+    finally {
+        if ($null -ne $view) { [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) }
+        if ($null -ne $db) { [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($db) }
+        [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
+        [GC]::Collect()
+        [GC]::WaitForPendingFinalizers()
+    }
+
+    $missing = @($expected | Where-Object { -not $actual.Contains($_) } | Sort-Object)
+    $extra = @($actual | Where-Object { -not $expected.Contains($_) } | Sort-Object)
+
+    if ($missing.Count -gt 0 -or $extra.Count -gt 0) {
+        $missing | ForEach-Object { Write-Host "  staged but MISSING from the MSI: $_" }
+        $extra | ForEach-Object { Write-Host "  in the MSI but not staged: $_" }
+        throw "The MSI payload does not match the staged tree ($($missing.Count) missing, $($extra.Count) extra). The zip is built from that tree, so the two artefacts would ship different contents."
+    }
+
+    Write-Host ("  MSI payload matches the staged tree ({0} files)." -f $actual.Count)
+}
+
+function Assert-MsiSequencing {
+    param([string] $MsiPath)
+
+    # Cheap invariants on the built MSI, checked because none of these show up as a build error - WiX and
+    # ICE validation pass happily, and the failure only appears when a user runs the thing.
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $db = $null
+    $view = $null
+    try {
+        $db = $installer.OpenDatabase($MsiPath, 0)
+
+        $seq = @{}
+        $view = $db.OpenView('SELECT `Action`,`Sequence` FROM `InstallExecuteSequence`')
+        $view.Execute()
+        # IntegerData, not [int]StringData: Sequence is an integer column and is nullable, and a null would
+        # otherwise surface as an unhelpful "cannot convert value to System.Int32".
+        while ($null -ne ($record = $view.Fetch())) {
+            $seq[[string]$record.StringData(1)] = [int]$record.IntegerData(2)
+            [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($record)
+        }
+        $view.Close()
+
+        foreach ($required in @('InstallInitialize', 'InstallValidate')) {
+            if (-not $seq.ContainsKey($required)) {
+                throw "InstallExecuteSequence has no $required action; the package is malformed."
+            }
+        }
+
+        # The close-applications action is what makes an in-use upgrade or uninstall work at all, so its
+        # absence is itself a failure - otherwise checks 1 and 2 below would pass vacuously on a package
+        # that had silently lost util:CloseApplication or the WixToolset.Util reference.
+        $closeActions = @($seq.Keys | Where-Object { $_ -like 'Wix*CloseApplications*' -and $_ -notlike '*Deferred*' })
+        if ($closeActions.Count -eq 0) {
+            throw "No WixCloseApplications action is scheduled. An upgrade or uninstall with Keysharp running would fail to replace or delete its files."
+        }
+
+        # 1. Custom actions that schedule deferred work must sit inside the transaction. A deferred action
+        #    cannot be written to the execution script before InstallInitialize opens it, and the result is
+        #    error 2762 ("cannot write script record, transaction not started") on every uninstall.
+        $initialize = $seq['InstallInitialize']
+        foreach ($action in $closeActions) {
+            if ($seq[$action] -lt $initialize) {
+                throw "$action is sequenced at $($seq[$action]), before InstallInitialize ($initialize). It schedules a deferred action, so this fails every uninstall with error 2762."
+            }
+        }
+
+        # 2. Running processes must be closed before anything removes files. RemoveExistingProducts takes an
+        #    older build apart on an upgrade, and RemoveFiles deletes on uninstall; both fail on a locked file.
+        foreach ($action in $closeActions) {
+            foreach ($after in @('RemoveExistingProducts', 'RemoveFiles')) {
+                if ($seq.ContainsKey($after) -and $seq[$action] -gt $seq[$after]) {
+                    throw "$action is sequenced at $($seq[$action]), after $after ($($seq[$after])). Files are still locked when $after runs."
+                }
+            }
+        }
+
+        # 3. Property-driven launch conditions need their AppSearch to have run first.
+        if ($seq.ContainsKey('LaunchConditions') -and $seq.ContainsKey('AppSearch') -and $seq['AppSearch'] -gt $seq['LaunchConditions']) {
+            throw "AppSearch ($($seq['AppSearch'])) runs after LaunchConditions ($($seq['LaunchConditions'])); any property-based launch condition would evaluate empty."
+        }
+
+        # 4. A per-machine package must not declare that it never needs elevation, or Windows Installer
+        #    silently refuses to prompt and the install fails with no UAC dialog and no fallback.
+        $summary = $db.SummaryInformation(0)
+        if (([int]$summary.Property(15) -band 8) -ne 0) {
+            throw "The summary WordCount has the 'elevated privileges not required' bit set, so Setup will never prompt for UAC and a per-machine install cannot write to Program Files."
+        }
+    }
+    finally {
+        # Every RCW has to go, and the finalizers have to run, before this function returns. A leaked view or
+        # record keeps the database - and therefore the .msi file handle - open, so a second packaging run in
+        # the same console cannot overwrite the file it just inspected.
+        if ($null -ne $view) { [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) }
+        if ($null -ne $db) { [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($db) }
+        [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
+        [GC]::Collect()
+        [GC]::WaitForPendingFinalizers()
+    }
+
+    Write-Host "  MSI sequencing invariants OK."
 }
 
 function Compress-WindowsPackage {
@@ -300,242 +373,18 @@ function Compress-WindowsPackage {
     Compress-Archive -Path (Join-Path $SourceRoot "*") -DestinationPath $DestinationPath -Force
 }
 
-function Open-MsiForUpdate {
-    # A just-built MSI is frequently held for a second or two by antivirus real-time scanning (or a lingering
-    # build handle), so OpenDatabase in transact (read/write) mode can fail with a sharing violation. Retry briefly.
-    param($Installer, [string] $MsiPath, [int] $Retries = 20, [int] $DelayMs = 500)
-
-    for ($i = 0; $i -lt $Retries; $i++) {
-        try {
-            return $Installer.OpenDatabase($MsiPath, 1)  # msiOpenDatabaseModeTransact
-        }
-        catch {
-            if ($i -eq ($Retries - 1)) { throw }
-            Start-Sleep -Milliseconds $DelayMs
-        }
-    }
-}
-
-function Add-CloseInstancesCustomAction {
-    # Windows refuses to overwrite a running .exe or a loaded .dll, so an upgrade or uninstall performed while
-    # any Keysharp process is running (a script launched through Keysharp.exe, the compile daemon, or Keyview)
-    # fails to replace Keysharp.exe / Keysharp.Core.dll, or defers them to a reboot - which can leave a
-    # stale-version compile daemon serving against the new binaries. The Visual Studio setup project can only
-    # sequence its managed custom actions after InstallFinalize (too late), so we inject an immediate custom
-    # action directly into the built MSI, sequenced before InstallValidate, that closes those processes first.
-    #
-    # The action is an inline VBScript that terminates by image name via WMI rather than invoking the installed
-    # Keysharp.exe: on an upgrade the binary on disk at this point is still the OLD build, and older builds do
-    # not understand "--close-instances" (they would treat it as a missing script and pop a modal error,
-    # hanging an unattended upgrade). Terminating by name is version-independent and never blocks.
-    #
-    # The invisible compile daemon ("Keysharp.exe --daemon") is always closed without prompting. The user's
-    # visible processes (running scripts and the Keyview editor) are confirmed first in a full-UI install via
-    # Session.Message; choosing No fails the action (it runs before InstallValidate, so nothing has changed yet),
-    # and Windows Installer ends Setup with its own message - no extra dialog of our own. Silent/unattended
-    # installs (UILevel < 5) cannot show a dialog, so they close everything unconditionally.
-    param([string] $MsiPath)
-
-    if (-not (Test-Path $MsiPath)) {
-        throw "Built MSI not found for custom-action injection: $MsiPath"
-    }
-
-    Write-Host "Injecting close-instances custom action into $MsiPath..."
-
-    # Set a 1-based MSI record field, choosing the integer or string overload by value type. Indexed COM
-    # properties must be set through InvokeMember (PowerShell cannot assign them directly).
-    $setField = {
-        param($Record, [int] $Index, $Value)
-        if ($Value -is [int]) {
-            [void] $Record.GetType().InvokeMember('IntegerData', [System.Reflection.BindingFlags]::SetProperty, $null, $Record, @([int] $Index, [int] $Value))
-        } else {
-            [void] $Record.GetType().InvokeMember('StringData', [System.Reflection.BindingFlags]::SetProperty, $null, $Record, @([int] $Index, [string] $Value))
-        }
-    }
-
-    # Run an INSERT/DELETE whose values are bound via '?' markers and an MSI Record, so nothing has to be
-    # escaped into the SQL text. (The VBScript Target has newlines and quotes that MSI's SQL literal parser
-    # rejects, which is why literal VALUES(...) fail here.)
-    $exec = {
-        param($Database, $Installer, [string] $Sql, [object[]] $Values)
-        $view = $Database.OpenView($Sql)
-        if ($Values -and $Values.Count -gt 0) {
-            $record = $Installer.CreateRecord($Values.Count)
-            for ($i = 0; $i -lt $Values.Count; $i++) { & $setField $record ($i + 1) $Values[$i] }
-            $view.Execute($record)
-            [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) | Out-Null
-        } else {
-            $view.Execute()
-        }
-        $view.Close()
-        [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) | Out-Null
-    }
-
-    # NOTE: the MSI script-CA host does not expose WScript, so no Sleep/wait is available; Win32_Process.Terminate
-    # tears the process down synchronously enough that its file locks are released before InstallValidate runs.
-    # Match by ExecutablePath under TARGETDIR when available, not just by image name/CommandLine. CommandLine can
-    # be null/unavailable in elevated uninstall contexts, and the directory match avoids closing another Keysharp
-    # install that happens to be running.
-    # The prompt text is passed as record field 1 and emitted via the "[1]" template, NOT placed in the template
-    # (field 0) itself - MsiFormatRecord would otherwise reparse it and drop part of the message. Session.Message
-    # with INSTALLMESSAGE_USER (0x03000000) only shows the box when there is real UI; in silent installs it
-    # returns without displaying, so the script closes everything unconditionally.
-    $vbs = @'
-On Error Resume Next
-Dim wmi, procs, p, userCount, ui, rec, answer, targetDir, targetDirLower, cmd
-Set wmi = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2")
-Set procs = wmi.ExecQuery("SELECT ProcessId, Name, ExecutablePath, CommandLine FROM Win32_Process WHERE Name='Keysharp.exe' OR Name='Keyview.exe'")
-targetDir = Session.Property("TARGETDIR")
-If Len(targetDir) > 0 Then
-  If Right(targetDir, 1) <> "\" Then targetDir = targetDir & "\"
-End If
-targetDirLower = LCase(targetDir)
-
-' The compile daemon ("Keysharp.exe --daemon") is an invisible background process that must always match the
-' installed binary, so close it unconditionally and without prompting. Count the visible user-facing processes
-' (running scripts and the Keyview editor) so only those gate on the confirmation below.
-userCount = 0
-For Each p In procs
-  If ShouldCloseProcess(p, targetDirLower) Then
-    cmd = ""
-    If Not IsNull(p.CommandLine) Then cmd = CStr(p.CommandLine)
-    If (LCase(p.Name) = "keysharp.exe") And (InStr(1, cmd, " --daemon", 1) > 0) Then
-      p.Terminate
-    Else
-      userCount = userCount + 1
-    End If
-  End If
-Next
-
-If userCount > 0 Then
-  ui = 0
-  ui = CLng(Session.Property("UILevel"))
-  If ui >= 5 Then
-    Set rec = Session.Installer.CreateRecord(1)
-    rec.StringData(0) = "[1]"
-    rec.StringData(1) = "One or more Keysharp scripts (or the Keyview editor) are still running and must be closed to finish installing." & vbCrLf & vbCrLf & "Yes: close them and continue." & vbCrLf & "No: cancel the installation."
-    answer = Session.Message(&H03000024, rec)
-    If answer = 7 Then
-      ' User declined: fail this action so Windows Installer ends Setup with its own message. This runs before
-      ' InstallValidate, so no files have changed and the existing installation stays intact.
-      On Error Goto 0
-      Err.Raise 1602
-    End If
-  End If
-  For Each p In procs
-    If ShouldCloseProcess(p, targetDirLower) Then
-      p.Terminate
-    End If
-  Next
-End If
-
-Function ShouldCloseProcess(proc, installDirLower)
-  Dim exePath
-  ShouldCloseProcess = False
-  If Len(installDirLower) = 0 Then
-    ShouldCloseProcess = True
-    Exit Function
-  End If
-  exePath = ""
-  If Not IsNull(proc.ExecutablePath) Then exePath = LCase(CStr(proc.ExecutablePath))
-  If Len(exePath) > 0 Then
-    ShouldCloseProcess = (Left(exePath, Len(installDirLower)) = installDirLower)
-  End If
-End Function
-'@
-
-    $installer = New-Object -ComObject WindowsInstaller.Installer
-    $db = Open-MsiForUpdate $installer $MsiPath  # transact mode, retried (a just-built MSI is often briefly locked by AV)
-    try {
-        # Run on uninstall (REMOVE="ALL") and on upgrades that REMOVE an older product (the Upgrade table's
-        # ActionProperty). Skip "detect only" rows (msidbUpgradeAttributesOnlyDetect = 0x2, e.g. the
-        # newer-version guard) so a blocked downgrade does not needlessly close a running newer install. On a
-        # clean first install none are set, so the action is skipped and unrelated installs are left alone.
-        $conditions = @('REMOVE="ALL"')
-        try {
-            $view = $db.OpenView('SELECT `ActionProperty`, `Attributes` FROM `Upgrade`')
-            $view.Execute()
-            while ($null -ne ($rec = $view.Fetch())) {
-                $prop = $rec.StringData(1)
-                $attr = $rec.IntegerData(2)
-                if ($prop -and (($attr -band 0x2) -eq 0)) { $conditions += $prop }
-                # Release each record now; a leaked view/record RCW keeps the database (and the .msi file
-                # handle) open after this function returns, locking the built MSI until the host process GCs.
-                [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($rec)
-            }
-            $view.Close()
-            [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($view)
-        } catch { }
-        $condition = (($conditions | Select-Object -Unique) -join ' OR ')
-
-        $action = 'KeysharpCloseInstances'
-        # Type 38 = 0x26 inline VBScript (Target holds the script), immediate (no in-script bit). The
-        # continue-on-error bit is deliberately NOT set: a runtime error - which the script raises only when the
-        # user answers No - fails the action and ends Setup. Errors in the WMI/terminate code are swallowed by
-        # "On Error Resume Next", so the only thing that aborts is the explicit No.
-        $type = 38
-        # Sequence 1395: after CostFinalize (paths costed) and before InstallValidate (1400), so the running
-        # instances are gone before in-use detection and before RemoveFiles/InstallFiles touch the locked files.
-        $sequence = 1395
-
-        & $exec $db $installer 'DELETE FROM `CustomAction` WHERE `Action` = ?' @($action)
-        & $exec $db $installer 'DELETE FROM `InstallExecuteSequence` WHERE `Action` = ?' @($action)
-        & $exec $db $installer 'INSERT INTO `CustomAction` (`Action`, `Type`, `Target`) VALUES (?, ?, ?)' @($action, $type, $vbs)
-        & $exec $db $installer 'INSERT INTO `InstallExecuteSequence` (`Action`, `Condition`, `Sequence`) VALUES (?, ?, ?)' @($action, $condition, $sequence)
-
-        $db.Commit()
-        Write-Host "  injected '$action' (condition: $condition; sequence $sequence, before InstallValidate)."
-    }
-    finally {
-        [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($db) | Out-Null
-        [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) | Out-Null
-        [GC]::Collect()
-        [GC]::WaitForPendingFinalizers()
-    }
-}
-
-function Move-RemoveExistingProductsEarly {
-    # Visual Studio setup projects sequence RemoveExistingProducts AFTER InstallFiles (~6550). On a major upgrade
-    # that lets InstallFiles skip any file already present at an equal version, and then the old product's removal
-    # deletes those skipped files - corrupting the install (e.g. unchanged third-party DLLs such as Eto/Roslyn,
-    # whose versions don't move between Keysharp releases, simply vanish). Re-sequence it to just after
-    # InstallInitialize so the previous version is fully removed BEFORE InstallFiles reinstalls everything fresh.
-    param([string] $MsiPath)
-
-    if (-not (Test-Path $MsiPath)) {
-        throw "Built MSI not found for RemoveExistingProducts re-sequencing: $MsiPath"
-    }
-
-    Write-Host "Re-sequencing RemoveExistingProducts in $MsiPath..."
-    $installer = New-Object -ComObject WindowsInstaller.Installer
-    $db = Open-MsiForUpdate $installer $MsiPath  # transact mode, retried (a just-built MSI is often briefly locked by AV)
-    try {
-        # Sequence is not a primary key of InstallExecuteSequence (Action is), so a plain UPDATE is allowed.
-        $view = $db.OpenView('UPDATE `InstallExecuteSequence` SET `Sequence` = 1525 WHERE `Action` = ''RemoveExistingProducts''')
-        $view.Execute()
-        $view.Close()
-        [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($view)
-        $db.Commit()
-        Write-Host "  RemoveExistingProducts moved to 1525 (just after InstallInitialize)."
-    }
-    finally {
-        [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($db) | Out-Null
-        [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) | Out-Null
-        [GC]::Collect()
-        [GC]::WaitForPendingFinalizers()
-    }
-}
-
 Push-Location $root
 try {
     $Version = Resolve-KeysharpVersion $Version
-    Write-Host "Packaging Keysharp version $Version."
+    Assert-PackagableVersion $Version
+    Write-Host "Packaging Keysharp version $Version ($RuntimeIdentifier)."
 
     if (-not $SkipPublish) {
         Write-Host "Publishing $solution ($Configuration, $RuntimeIdentifier)..."
+        # Publish does not prune, so a stale tree would keep shipping files a newer build no longer emits.
         $publishProjectDirs = @(
-            (Join-Path $root "dist\publish\$RuntimeIdentifier\Keysharp"),
-            (Join-Path $root "dist\publish\$RuntimeIdentifier\Keyview")
+            (Join-Path $publishRoot "Keysharp"),
+            (Join-Path $publishRoot "Keyview")
         )
         Remove-Item -Path $publishProjectDirs -Recurse -Force -ErrorAction SilentlyContinue
 
@@ -568,37 +417,37 @@ try {
 
     Write-Host "Checking staged files for local absolute paths..."
     Assert-NoLocalPaths $appDir $localPathPatterns
+    Assert-PayloadIsShippable $appDir
 
-    if ($buildMsi) {
-        $devenv = Find-Devenv $DevenvPath
-        # Must name a solution configuration that actually exists in Keysharp.sln. Every project is AnyCPU,
-        # so the solution carries a single "Any CPU" platform; devenv fails outright on an unknown one.
-        $solutionConfig = "$Configuration|Any CPU"
-        $installerProjectOriginalContent = Get-Content -LiteralPath $installerProjectPath -Raw
-        Update-InstallerProjectVersion $installerProjectPath $Version
-
-        Write-Host "Building MSI with $devenv ($solutionConfig, project $installerProject)..."
-        & $devenv $solution /Build $solutionConfig /Project $installerProject
+    if (-not $SkipMsi) {
+        # WiX v5 is restored from NuGet by the .wixproj, so this needs nothing on the machine beyond the
+        # .NET SDK - no Visual Studio, no devenv.com, and no Visual Studio Installer Projects extension.
+        # The MSI is built from the staged tree above, which it harvests wholesale.
+        #
+        # -t:Rebuild is not optional. The harvested file set is captured at link time, and incremental build
+        # does not treat a file ADDED to or REMOVED from the payload directory as an input change: it skips
+        # the link in under a second and leaves the previous MSI in place, byte for byte. The zip is
+        # recompressed from the same tree unconditionally, so the two artefacts silently disagree - a newly
+        # added dependency ships in the zip and is missing from the installer.
+        Write-Host "Building MSI ($msiPlatform) from $appDir..."
+        dotnet build $installerProject -t:Rebuild -c $Configuration -p:Platform=$msiPlatform -p:PayloadDir=$appDir -p:KeysharpVersion=$Version --nologo
         if ($LASTEXITCODE -ne 0) {
             throw "Installer build failed with exit code $LASTEXITCODE."
         }
 
-        Add-CloseInstancesCustomAction $msiPath
-        Move-RemoveExistingProductsEarly $msiPath
+        Assert-MsiMatchesPayload $msiPath $appDir
+
+        Assert-MsiSequencing $msiPath
     }
 
     Write-Host "Creating zip package at $zipPath..."
     Compress-WindowsPackage $appDir $zipPath
 
-    if ($buildMsi) {
+    if (-not $SkipMsi) {
         Write-Host "Windows package ready at $msiPath"
     }
     Write-Host "Windows zip ready at $zipPath"
 }
 finally {
-    if ($installerProjectOriginalContent -ne $null) {
-        Set-Content -LiteralPath $installerProjectPath -Value $installerProjectOriginalContent -NoNewline
-    }
-
     Pop-Location
 }

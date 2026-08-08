@@ -79,6 +79,10 @@ jobs:
             platform: windows
             os: windows-latest
             rid: win-x64
+          - name: Windows arm64
+            platform: windows
+            os: windows-11-arm
+            rid: win-arm64
           - name: Linux x64
             platform: linux
             os: ubuntu-latest
@@ -111,6 +115,7 @@ jobs:
           cache: true
           cache-dependency-path: |
             **/*.csproj
+            **/*.wixproj
             **/packages.lock.json
 
       - name: Resolve latest Eto ref (non-Windows)
@@ -184,6 +189,23 @@ jobs:
 
           Write-Host "Verified release host macOS $actualVersion on $actualArch for ${{ matrix.rid }}."
 
+      # Windows packages are built on hardware matching the target, as every other platform here is.
+      # Cross-publishing succeeds but degrades the result silently - Scripts\WindowSpy.cks cannot be
+      # produced for an architecture the build machine cannot execute - so a mismatched runner has to fail
+      # the release rather than ship a lesser package.
+      - name: Verify Windows release runner
+        if: ${{ matrix.platform == 'windows' }}
+        shell: pwsh
+        run: |
+          $actualArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+          $expectedArch = if ('${{ matrix.rid }}' -eq 'win-arm64') { 'arm64' } else { 'x64' }
+
+          if ($actualArch -ne $expectedArch) {
+            throw "${{ matrix.rid }} must be built on a $expectedArch runner, but this one reports $actualArch. Cross-publishing would omit Scripts\WindowSpy.cks."
+          }
+
+          Write-Host "Verified release host $actualArch for ${{ matrix.rid }}."
+
       - name: Install Linux package dependencies
         if: ${{ matrix.platform == 'linux' }}
         run: |
@@ -218,34 +240,8 @@ jobs:
             pkg-config \
             rsync
 
-      - name: Install Visual Studio Installer Projects
-        if: ${{ matrix.platform == 'windows' }}
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path $vswhere)) {
-            throw "vswhere.exe was not found."
-          }
-
-          $vsInstall = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-          if (-not $vsInstall) {
-            throw "Visual Studio with MSBuild was not found."
-          }
-
-          $vsixInstaller = Join-Path $vsInstall "Common7\IDE\VSIXInstaller.exe"
-          if (-not (Test-Path $vsixInstaller)) {
-            throw "VSIXInstaller.exe was not found at $vsixInstaller."
-          }
-
-          $vsixPath = Join-Path $env:RUNNER_TEMP "InstallerProjects2022.vsix"
-          Invoke-WebRequest `
-            -Uri "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/VisualStudioClient/vsextensions/MicrosoftVisualStudio2022InstallerProjects/latest/vspackage" `
-            -OutFile $vsixPath
-
-          & $vsixInstaller /quiet /admin $vsixPath
-          if ($LASTEXITCODE -ne 0) {
-            throw "Visual Studio Installer Projects VSIX install failed with exit code $LASTEXITCODE."
-          }
+      # The installer is a WiX v5 SDK-style project whose toolset restores from NuGet, so the Windows
+      # release needs nothing on the runner beyond the .NET SDK. 
 
       - name: Publish Windows package
         if: ${{ matrix.platform == 'windows' }}
@@ -262,13 +258,13 @@ jobs:
             -RuntimeIdentifier $env:RID `
             -Version $env:KEYSHARP_VERSION
 
-          $msi = Join-Path $PWD "dist/Keysharp-win-x64.msi"
+          $msi = Join-Path $PWD "dist/Keysharp-$env:RID.msi"
           if (-not (Test-Path $msi)) {
             throw "Expected MSI was not produced: $msi"
           }
           Copy-Item -LiteralPath $msi -Destination (Join-Path $assetRoot "keysharp-$env:KEYSHARP_VERSION-$env:RID.msi") -Force
 
-          $zip = Join-Path $PWD "dist/Keysharp-win-x64.zip"
+          $zip = Join-Path $PWD "dist/Keysharp-$env:RID.zip"
           if (-not (Test-Path $zip)) {
             throw "Expected zip was not produced: $zip"
           }

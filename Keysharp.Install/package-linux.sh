@@ -927,6 +927,10 @@ mkdir -p "${APP_DIR}"
 
 rsync -a "${PUBLISH_DIR}/Keyview/" "${APP_DIR}/"
 rsync -a "${PUBLISH_DIR}/Keysharp/" "${APP_DIR}/"
+# Keysharp, Keysharp.Core and Keyview emit no PDBs in Release (see Directory.Build.props), but Eto is a
+# project reference on this platform and is not covered by that, so its symbols would still ship. macOS
+# strips PDBs the same way in clean_app_bundle; do it here too so all three platforms agree.
+find "${APP_DIR}" -name '*.pdb' -delete
 relocate_library_scripts
 build_native_helpers
 normalize_app_permissions

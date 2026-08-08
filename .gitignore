@@ -6,6 +6,7 @@
 /bin
 /obj
 /dist
+/.claude/worktrees
 /native/*/build
 /.vs/ProjectEvaluation
 /Keysharp.Install/Debug

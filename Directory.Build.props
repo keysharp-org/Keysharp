@@ -46,6 +46,30 @@
     <IsKeysharpShippingProject>true</IsKeysharpShippingProject>
   </PropertyGroup>
 
+  <!-- Projects whose build output lands in a release package. Deliberately a wider set than
+       IsKeysharpShippingProject (which marks the two RID-specific apphosts): Keysharp.Core is a library, so
+       it must not acquire RuntimeIdentifiers, but its binaries are packaged and so its payload matters. -->
+  <PropertyGroup Condition="'$(IsKeysharpShippingProject)' == 'true' OR '$(MSBuildProjectName)' == 'Keysharp.Core'">
+    <IsKeysharpPackagedProject>true</IsKeysharpPackagedProject>
+  </PropertyGroup>
+
+  <!-- Release packages ship no loose .pdb, saving ~0.7 MB of payload.
+
+       What this costs, stated accurately: script assemblies never carried debug info in the first place
+       (CompilerHelper.CompileFromTree calls Emit without a pdbStream), so nothing changes for script-level
+       diagnostics that a script sets itself. What DOES change is the fallback in Errors.cs, where
+       CaptureStackInfo/FormatStack use StackFrame.GetFileName/GetFileLineNumber: for an error raised inside
+       a Keysharp.Core built-in, Error.File and Error.Line become "" and 0 rather than a location in
+       Keysharp's own C# source, and Error.Stack loses its trailing " in <file>, line N" fragments. Method
+       names are unaffected. Showing script authors a path inside Keysharp's implementation was of little
+       use to them, so this is close to a wash - but it is a behaviour change, not a free saving.
+
+       Debug builds, and every test and benchmark project in any configuration, keep full symbols. -->
+  <PropertyGroup Condition="'$(IsKeysharpPackagedProject)' == 'true' AND '$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(IsKeysharpShippingProject)' == 'true' AND $([MSBuild]::IsOSPlatform('Windows'))">
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
   </PropertyGroup>
