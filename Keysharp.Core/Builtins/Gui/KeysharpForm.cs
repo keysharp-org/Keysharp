@@ -625,7 +625,11 @@ namespace Keysharp.Builtins
 			var i = obj2.Al(1);
 			e = e.ToLower();
 			var del = Functions.GetKeysharpFunc(h, eventObj, true);
-			if (!((KeysharpFunc)del).IsClosure)
+
+			// Only detach the receiver GetKeysharpFunc just attached by resolving a method NAME on the sink, since
+			// the Gui takes the receiver slot at dispatch. A function object the script supplied carries its own
+			// receiver, and is the script's own object, so clearing Inst on it would corrupt every other holder.
+			if (h is string && eventObj != null && ReferenceEquals(del?.Inst, eventObj))
 				del.Inst = null;
 
 			if (e == "close")

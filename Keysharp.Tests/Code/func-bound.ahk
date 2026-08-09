@@ -461,3 +461,57 @@ if (c(2) == -8)
 	FileAppend "pass", "*"
 else
 	FileAppend "fail", "*"
+; ObjBindMethod binds a NAME, resolved on the receiver at call time, so the function object carries no
+; signature - yet every signature question about it must still answer instead of raising.
+
+class BoundMethodHost {
+	static log := ""
+	Add(a := 0, b := 0) {
+		BoundMethodHost.log .= "|" Type(this) ":" a "," b
+		return a + b
+	}
+}
+
+host := BoundMethodHost()
+obm := ObjBindMethod(host, "Add")
+
+if (obm.MinParams == 0 && obm.MaxParams == 0 && obm.IsVariadic)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+if (obm.IsBuiltIn == false && obm.IsClosure == false && obm.IsByRef(1) == false && obm.IsOptional(1) == true)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+if (obm(2, 3) == 5)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; The receiver belongs to the function object, so the method runs on it whoever does the calling.
+BoundMethodHost.log := ""
+obm(1, 1)
+
+if (BoundMethodHost.log == "|BoundMethodHost:1,1")
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; Binding on top of one still fills holes left to right.
+if (obm.Bind(10)(5) == 15)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; ... and every registration site that takes a function takes this one.
+BoundMethodHost.log := ""
+cb := CallbackCreate(obm)
+DllCall(cb)
+CallbackFree(cb)
+
+if (BoundMethodHost.log == "|BoundMethodHost:0,0")
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"

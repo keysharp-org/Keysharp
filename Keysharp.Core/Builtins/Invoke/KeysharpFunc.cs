@@ -263,9 +263,9 @@ namespace Keysharp.Builtins
 			}
 		}
 		internal Type DeclaringType => mi?.DeclaringType;
-		public bool IsClosure => Inst != null && mi.DeclaringType?.DeclaringType == Inst.GetType();
+		public bool IsClosure => Inst != null && mi != null && mi.DeclaringType?.DeclaringType == Inst.GetType();
 		public bool IsMethod => (mi != null && !mi.IsStatic) || (mph != null && mph.parameters?.First().Name == "@this");
-		public virtual bool IsBuiltIn => mi?.DeclaringType.Namespace != TheScript.ProgramType.Namespace;
+		public virtual bool IsBuiltIn => mi != null && mi.DeclaringType.Namespace != TheScript.ProgramType.Namespace;
 		internal virtual bool IsValid => (mi != null && mph != null && mph.CallFunc != null) || (Inst is Any && mph.memberInfo == null);
 		public virtual string Name => mph.Name;
 		public bool IsVariadic => mph.variadicParamIndex != -1;
@@ -540,6 +540,10 @@ namespace Keysharp.Builtins
 
 		public virtual bool IsByRef(object paramIndex = null)
 		{
+			//No signature, so nothing is ByRef - as AutoHotkey's BoundFunc answers too.
+			if (mi == null)
+				return false;
+
 			var index = paramIndex.Ai();
 			var funcParams = mi.GetParameters();
 
@@ -562,6 +566,10 @@ namespace Keysharp.Builtins
 
 		public virtual bool IsOptional(object paramIndex = null)
 		{
+			//No signature, so every parameter is beyond MinParams (0) and therefore optional.
+			if (mi == null)
+				return true;
+
 			var index = paramIndex.Ai();
 			var funcParams = mi.GetParameters();
 

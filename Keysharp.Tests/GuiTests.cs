@@ -254,6 +254,33 @@ namespace Keysharp.Tests
 			}
 		}
 
+		/// <summary>
+		/// An <c>ObjBindMethod</c> handler carries no signature, which raised out of <c>IsClosure</c>, and its
+		/// receiver was then cleared off the script's own function object. Registration must leave it as it was.
+		/// </summary>
+		[Test, Category("Gui")]
+		[Apartment(ApartmentState.STA)]
+		public void OnEventAcceptsABoundMethodHandlerAndLeavesItsReceiverAlone()
+		{
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+			var target = new Keysharp.Builtins.Array();
+			var handler = (KeysharpFunc)Functions.ObjBindMethod(target, "Push");
+
+			try
+			{
+				_ = gui.OnEvent("Close", handler);
+				Assert.AreEqual(1, gui.form.closedHandlers.Count);
+				Assert.AreSame(target, handler.Inst, "registration must not detach the receiver");
+				_ = handler.Call("fired");
+				Assert.AreEqual(1, target.Count, "the handler must still reach its own receiver afterwards");
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
 		public void OnMessageRegistersOrdersAndRemovesHandlers()
