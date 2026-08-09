@@ -78,3 +78,33 @@ two members. Repeat at least 1,000 batches because this is a scheduling test.
 The source's two-second discovery delay prevents the virtual device's first event
 from racing inputd hotplug discovery. The tool always destroys its device on a
 normal exit; if it is killed, closing its file descriptor destroys it in-kernel.
+
+### Replay visibility (uaccess ACL / total-lockout regression)
+
+Regression check for the 0.0.0.15 lockout: with hooks engaged, replayed events
+were invisible to the display server on sessions whose user was not in the
+`input` group, so all non-hotkey input died while hotkeys still fired. Fixed in
+v0.0.0.16 by the `70-keysharp-inputd-uaccess.rules` uaccess rule written by
+`--install-input-access`. This test needs a real desktop session (X11 or
+Wayland) whose user is **not** in the `input` group — `id -nG | grep -w input`
+must print nothing — because membership masks the failure.
+
+Keep an SSH session from another machine open for recovery before starting.
+If input ever dies: Ctrl+Alt+Pause is the daemon's panic combo (releases all
+grabs), and the SSH session can `sudo systemctl stop keysharp-inputd`.
+
+1. Confirm the rule is installed:
+   `test -f /etc/udev/rules.d/70-keysharp-inputd-uaccess.rules && echo ok`
+2. Run a Keysharp script with one harmless hotkey (e.g. `F13::MsgBox`) so the
+   daemon grabs devices and creates its virtual devices.
+3. Find the `Keysharp Virtual Input` / `Keysharp Virtual Pointer` event nodes in
+   `/proc/bus/input/devices` and verify the ACL:
+   `getfacl /dev/input/eventN` must list `user:<session-user>:rw-`.
+4. Type ordinary text into an editor and move the mouse: everything must pass
+   through normally, and the hotkey must still fire.
+5. Negative control (optional — this deliberately reproduces the lockout; only
+   with the SSH recovery shell ready): exit the script, run
+   `sudo keysharp-inputd --remove-input-access`, start the script again so the
+   virtual devices are recreated without the ACL, and confirm input dies while
+   the hotkey still fires. Recover via Ctrl+Alt+Pause or SSH, then re-run
+   `sudo keysharp-inputd --install-input-access` and repeat steps 1–4.
