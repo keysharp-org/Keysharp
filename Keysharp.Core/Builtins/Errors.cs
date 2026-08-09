@@ -1353,8 +1353,9 @@ namespace Keysharp.Builtins
 		Warning,        // a #Warn load-time warning (always continuable): Help, Edit, Reload, ExitApp, Continue
 	}
 
-#if WINDOWS
-	internal class ErrorDialog : Form
+	// The widget itself is per-toolkit (WinForms below, Eto otherwise), but the entry points are not: both toolkits
+	// expose the same ctor, ShowDialog() and Result, so Show/ShowFatal live here once instead of once per backend.
+	internal partial class ErrorDialog
 	{
 		internal enum ErrorDialogResult
 		{
@@ -1366,6 +1367,58 @@ namespace Keysharp.Builtins
 
 		internal ErrorDialogResult Result { get; private set; } = ErrorDialogResult.Exit;
 
+		/// <summary>
+		/// Displays an error dialog for the given exception and returns whether execution should abort.
+		/// </summary>
+		/// <param name="ex">The exception to show.</param>
+		/// <param name="allowContinue">
+		/// If <c>true</c>, the dialog will offer a “Continue” button (only enabled for KeysharpException of type Return).
+		/// Otherwise, only Abort/Exit/Reload options are shown.
+		/// </param>
+		/// <returns>
+		/// The ErrorDialogResult value corresponding to the option the user chose.
+		/// </returns>
+		[StackTraceHidden]
+		internal static ErrorDialogResult Show(Exception ex, bool allowContinue = true)
+		{
+			KeysharpException kex = ex as KeysharpException;
+			// A plain .NET exception (never wrapped in a KeysharpException) still needs its internal frames
+			// stripped, and the "Stack:\n\t" framing so the dialog marks the causing frame with ▶ the same way
+			// it does for our own exceptions. kex.ToString() already emits a filtered trace in this format.
+			string msg = kex != null
+				? kex.ToString()
+				: $"Message: {ex.Message}{Environment.NewLine}Stack:{Environment.NewLine}\t{KeysharpException.FormatFilteredStack(ex)}";
+			using var dlg = new ErrorDialog(msg, ErrorDialogKind.RuntimeError, allowContinue && kex?.UserError != null ? kex.UserError.ExcType == Keyword_Return : false);
+			using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
+				dlg.ShowDialog();
+
+			switch (dlg.Result)
+			{
+				case ErrorDialogResult.Exit:
+					_ = Keysharp.Internals.Flow.ExitAppInternal(Flow.ExitReasons.Critical, 2L, false);
+					break;
+
+				case ErrorDialogResult.Reload:
+					_ = Flow.Reload();
+					break;
+			}
+
+			return dlg.Result;
+		}
+
+		[StackTraceHidden]
+		internal static ErrorDialogResult ShowFatal(string errorText, string fileToEdit = null)
+		{
+			using var dlg = new ErrorDialog(errorText, ErrorDialogKind.LoadError, false, "The program will exit.", fileToEdit);
+			using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
+				dlg.ShowDialog();
+
+			return dlg.Result;
+		}
+	}
+#if WINDOWS
+	internal partial class ErrorDialog : Form
+	{
 		internal ErrorDialog(string errorText, ErrorDialogKind kind = ErrorDialogKind.RuntimeError, bool allowContinue = false, string exitMessage = null, string fileToEdit = null)
 		{
 			if (!allowContinue)
@@ -1580,68 +1633,10 @@ namespace Keysharp.Builtins
 			box.Select(0, 0); // Reset selection
 		}
 
-		/// <summary>
-		/// Displays an error dialog for the given exception and returns whether execution should abort.
-		/// </summary>
-		/// <param name="ex">The exception to show.</param>
-		/// <param name="allowContinue">
-		/// If <c>true</c>, the dialog will offer a “Continue” button (only enabled for KeysharpException of type Return).
-		/// Otherwise, only Abort/Exit/Reload options are shown.
-		/// </param>
-		/// <returns>
-		/// The ErrorDialogResult value corresponding to the option the user chose.
-		/// </returns>
-		[StackTraceHidden]
-		internal static ErrorDialogResult Show(Exception ex, bool allowContinue = true)
-		{
-			KeysharpException kex = ex as KeysharpException;
-			// A plain .NET exception (never wrapped in a KeysharpException) still needs its internal frames
-			// stripped, and the "Stack:\n\t" framing so the dialog marks the causing frame with ▶ the same way
-			// it does for our own exceptions. kex.ToString() already emits a filtered trace in this format.
-			string msg = kex != null
-				? kex.ToString()
-				: $"Message: {ex.Message}{Environment.NewLine}Stack:{Environment.NewLine}\t{KeysharpException.FormatFilteredStack(ex)}";
-			using var dlg = new ErrorDialog(msg, ErrorDialogKind.RuntimeError, allowContinue && kex?.UserError != null ? kex.UserError.ExcType == Keyword_Return : false);
-			using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
-				dlg.ShowDialog();
-
-			switch (dlg.Result)
-			{
-				case ErrorDialogResult.Exit:
-					_ = Keysharp.Internals.Flow.ExitAppInternal(Flow.ExitReasons.Critical, 2L, false);
-					break;
-
-				case ErrorDialogResult.Reload:
-					_ = Flow.Reload();
-					break;
-			}
-
-			return dlg.Result;
-		}
-
-		[StackTraceHidden]
-		internal static ErrorDialogResult ShowFatal(string errorText, string fileToEdit = null)
-		{
-			using var dlg = new ErrorDialog(errorText, ErrorDialogKind.LoadError, false, "The program will exit.", fileToEdit);
-			using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
-				dlg.ShowDialog();
-
-			return dlg.Result;
-		}
 	}
 #else
-	internal class ErrorDialog : Eto.Forms.Dialog
+	internal partial class ErrorDialog : Eto.Forms.Dialog
 	{
-		internal enum ErrorDialogResult
-		{
-			Abort,
-			Continue,
-			Exit,
-			Reload,
-		}
-
-		internal ErrorDialogResult Result { get; private set; } = ErrorDialogResult.Exit;
-
 		internal ErrorDialog(string errorText, ErrorDialogKind kind = ErrorDialogKind.RuntimeError, bool allowContinue = false, string exitMessage = null, string fileToEdit = null)
 		{
 			if (!allowContinue)
@@ -1885,54 +1880,6 @@ namespace Keysharp.Builtins
 			return text;
 		}
 
-		/// <summary>
-		/// Displays an error dialog for the given exception and returns whether execution should abort.
-		/// </summary>
-		/// <param name="ex">The exception to show.</param>
-		/// <param name="allowContinue">
-		/// If <c>true</c>, the dialog will offer a “Continue” button (only enabled for KeysharpException of type Return).
-		/// Otherwise, only Abort/Exit/Reload options are shown.
-		/// </param>
-		/// <returns>
-		/// The ErrorDialogResult value corresponding to the option the user chose.
-		/// </returns>
-		[StackTraceHidden]
-		internal static ErrorDialogResult Show(Exception ex, bool allowContinue = true)
-		{
-			KeysharpException kex = ex as KeysharpException;
-			// A plain .NET exception (never wrapped in a KeysharpException) still needs its internal frames
-			// stripped, and the "Stack:\n\t" framing so the dialog marks the causing frame with ▶ the same way
-			// it does for our own exceptions. kex.ToString() already emits a filtered trace in this format.
-			string msg = kex != null
-				? kex.ToString()
-				: $"Message: {ex.Message}{Environment.NewLine}Stack:{Environment.NewLine}\t{KeysharpException.FormatFilteredStack(ex)}";
-			using var dlg = new ErrorDialog(msg, ErrorDialogKind.RuntimeError, allowContinue && kex?.UserError != null ? kex.UserError.ExcType == Keyword_Return : false);
-			using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
-				dlg.ShowDialog();
-
-			switch (dlg.Result)
-			{
-				case ErrorDialogResult.Exit:
-					_ = Keysharp.Internals.Flow.ExitAppInternal(Flow.ExitReasons.Critical, 2L, false);
-					break;
-
-				case ErrorDialogResult.Reload:
-					_ = Flow.Reload();
-					break;
-			}
-
-			return dlg.Result;
-		}
-
-		[StackTraceHidden]
-		internal static ErrorDialogResult ShowFatal(string errorText, string fileToEdit = null)
-		{
-			using var dlg = new ErrorDialog(errorText, ErrorDialogKind.LoadError, false, "The program will exit.", fileToEdit);
-			using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
-				dlg.ShowDialog();
-
-			return dlg.Result;
-		}
 	}
 #endif
 }

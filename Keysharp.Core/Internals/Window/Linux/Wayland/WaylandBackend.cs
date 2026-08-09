@@ -637,58 +637,6 @@ for (var __i = 0; __i < __order.length; ++__i) {
 
 				return false;
 			}
-
-			private static bool JsonBool(JsonElement element, string property)
-				=> element.TryGetProperty(property, out var value) && JsonBool(value);
-
-			private static bool JsonBool(JsonElement value)
-				=> value.ValueKind == JsonValueKind.True
-				   || (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var i) && i != 0)
-				   || (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var b) && b);
-
-			private static string JsonString(JsonElement element, string property)
-				=> JsonString(element, property, out var value) ? value : string.Empty;
-
-			private static bool JsonString(JsonElement element, string property, out string result)
-			{
-				result = string.Empty;
-
-				if (!element.TryGetProperty(property, out var value))
-					return false;
-
-				result = value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : value.ToString();
-				return true;
-			}
-
-			private static long JsonLong(JsonElement element, string property)
-			{
-				if (!element.TryGetProperty(property, out var value))
-					return 0L;
-
-				if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var l))
-					return l;
-
-				return value.ValueKind == JsonValueKind.String && long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out l) ? l : 0L;
-			}
-
-			private static Rectangle JsonRectangle(JsonElement element, string property)
-			{
-				if (!element.TryGetProperty(property, out var rect) || rect.ValueKind != JsonValueKind.Object)
-					return Rectangle.Empty;
-
-				return new Rectangle(JsonInt(rect, "x"), JsonInt(rect, "y"), JsonInt(rect, "width"), JsonInt(rect, "height"));
-			}
-
-			private static int JsonInt(JsonElement element, string property)
-			{
-				if (!element.TryGetProperty(property, out var value))
-					return 0;
-
-				if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var i))
-					return i;
-
-				return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out i) ? i : 0;
-			}
 		}
 
 		/// <summary>
@@ -1059,58 +1007,6 @@ for (var __i = 0; __i < __order.length; ++__i) {
 			/// <see cref="KWinBackend.TryGetWindowUuid"/>.
 			/// </summary>
 			internal bool TryGetWindowSeq(nint handle, out ulong seq) => TryHandleToSeq(handle, out seq);
-
-			private static bool JsonBool(JsonElement element, string property)
-				=> element.TryGetProperty(property, out var value) && JsonBoolValue(value);
-
-			private static bool JsonBoolValue(JsonElement value)
-				=> value.ValueKind == JsonValueKind.True
-				   || (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var i) && i != 0)
-				   || (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var b) && b);
-
-			private static string JsonString(JsonElement element, string property)
-				=> JsonString(element, property, out var value) ? value : string.Empty;
-
-			private static bool JsonString(JsonElement element, string property, out string result)
-			{
-				result = string.Empty;
-
-				if (!element.TryGetProperty(property, out var value))
-					return false;
-
-				result = value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : value.ToString();
-				return true;
-			}
-
-			private static long JsonLong(JsonElement element, string property)
-			{
-				if (!element.TryGetProperty(property, out var value))
-					return 0L;
-
-				if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var l))
-					return l;
-
-				return value.ValueKind == JsonValueKind.String && long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out l) ? l : 0L;
-			}
-
-			private static Rectangle JsonRectangle(JsonElement element, string property)
-			{
-				if (!element.TryGetProperty(property, out var rect) || rect.ValueKind != JsonValueKind.Object)
-					return Rectangle.Empty;
-
-				return new Rectangle(JsonInt(rect, "x"), JsonInt(rect, "y"), JsonInt(rect, "width"), JsonInt(rect, "height"));
-			}
-
-			private static int JsonInt(JsonElement element, string property)
-			{
-				if (!element.TryGetProperty(property, out var value))
-					return 0;
-
-				if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var i))
-					return i;
-
-				return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out i) ? i : 0;
-			}
 		}
 
 		internal sealed class SwayBackend : IWaylandBackend
@@ -1280,6 +1176,61 @@ for (var __i = 0; __i < __order.length; ++__i) {
 
 			public bool TrySendMouseScroll(int delta, bool vertical)
 				=> WaylandVirtualPointerClient.Current?.TryScroll(delta, vertical) == true;
+		}
+
+		// Shared by the nested backends: every compositor bridge returns JSON with the same shape, and these
+		// readers are deliberately lenient (a bool may arrive as true, 1, or "true") because the extensions and
+		// IPC sockets each pick their own encoding.
+		private static bool JsonBool(JsonElement element, string property)
+			=> element.TryGetProperty(property, out var value) && JsonBool(value);
+
+		private static bool JsonBool(JsonElement value)
+			=> value.ValueKind == JsonValueKind.True
+			   || (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var i) && i != 0)
+			   || (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var b) && b);
+
+		private static string JsonString(JsonElement element, string property)
+			=> JsonString(element, property, out var value) ? value : string.Empty;
+
+		private static bool JsonString(JsonElement element, string property, out string result)
+		{
+			result = string.Empty;
+
+			if (!element.TryGetProperty(property, out var value))
+				return false;
+
+			result = value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : value.ToString();
+			return true;
+		}
+
+		private static long JsonLong(JsonElement element, string property)
+		{
+			if (!element.TryGetProperty(property, out var value))
+				return 0L;
+
+			if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var l))
+				return l;
+
+			return value.ValueKind == JsonValueKind.String && long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out l) ? l : 0L;
+		}
+
+		private static Rectangle JsonRectangle(JsonElement element, string property)
+		{
+			if (!element.TryGetProperty(property, out var rect) || rect.ValueKind != JsonValueKind.Object)
+				return Rectangle.Empty;
+
+			return new Rectangle(JsonInt(rect, "x"), JsonInt(rect, "y"), JsonInt(rect, "width"), JsonInt(rect, "height"));
+		}
+
+		private static int JsonInt(JsonElement element, string property)
+		{
+			if (!element.TryGetProperty(property, out var value))
+				return 0;
+
+			if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var i))
+				return i;
+
+			return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out i) ? i : 0;
 		}
 	}
 }
