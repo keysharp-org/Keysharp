@@ -830,8 +830,44 @@ namespace Keysharp.Internals.Os.Unix
 			{
 				(uint)WindowsAPI.WM_VSCROLL => CreateTextAreaScrollAction(control, wparam),
 				(uint)WindowsAPI.EM_SCROLLCARET => CreateTextAreaScrollCaretAction(control),
+				(uint)WindowsAPI.EM_SETSEL => CreateTextAreaSetSelAction(control, wparam, lparam),
 				_ => null
 			};
+
+		//EM_SETSEL(start, end): select a character range, which also moves the caret to `end`. The two
+		//documented special cases are honoured because scripts rely on them: start == -1 deselects and
+		//parks the caret at the current end, and end == -1 selects to the end of the text.
+		//Eto's Range<int> is INCLUSIVE (see ScrollTextAreaToOffset), so an exclusive [start, end)
+		//becomes Range(start, end - 1), and an empty selection becomes Range(caret, caret - 1).
+		private static Action CreateTextAreaSetSelAction(Control control, nint wparam, nint lparam)
+		{
+			if (control is not TextArea area)
+				return null;
+
+			var start = (int)wparam.ToInt64();
+			var end = (int)lparam.ToInt64();
+
+			return () =>
+			{
+				var len = area.Text?.Length ?? 0;
+
+				if (start == -1)//Deselect; caret stays where the selection ended.
+				{
+					var caret = Math.Clamp(area.CaretIndex, 0, len);
+					area.Selection = new Range<int>(caret, caret - 1);
+					return;
+				}
+
+				var from = Math.Clamp(start, 0, len);
+				var to = end == -1 ? len : Math.Clamp(end, 0, len);
+
+				if (to < from)
+					(from, to) = (to, from);
+
+				area.Selection = new Range<int>(from, to - 1);
+				area.CaretIndex = to;
+			};
+		}
 
 		private static Action CreateTextAreaScrollAction(Control control, nint wparam)
 		{
