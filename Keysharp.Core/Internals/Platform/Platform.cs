@@ -34,20 +34,22 @@ namespace Keysharp.Internals
 				previous.Value.Dispose();
 		}
 
-		// Convenience accessors — a field read through Instance, then the service.
+		// Convenience accessors — a field read through Instance, then the service. Grouped and named to match
+		// PlatformHost; see the grouping note there.
 		internal static IWindow Window => Instance.Window;
-		internal static IMouse Mouse => Instance.Mouse;
+		internal static IWindowEvents WindowEvents => Instance.WindowEvents;
+		internal static ControlManagerBase Control => Instance.Control;
 		internal static IScreen Screen => Instance.Screen;
 		internal static IMonitorControl MonitorControl => Instance.MonitorControl;
-		internal static IOverlay Overlay => Instance.Overlay;
-		internal static IClipboard Clipboard => Instance.Clipboard;
-		internal static IWindowEvents Events => Instance.Events;
 		internal static IMonitorEvents MonitorEvents => Instance.MonitorEvents;
-		internal static ISession Session => Instance.Session;
-		internal static IHotkeys Hotkeys => Instance.Hotkeys;
-		internal static IInput Input => Instance.Input;
+		internal static IOverlay Overlay => Instance.Overlay;
+		internal static IMouse Mouse => Instance.Mouse;
 		internal static IKeyboard Keyboard => Instance.Keyboard;
+		internal static IInput Input => Instance.Input;
+		internal static IHotkeys Hotkeys => Instance.Hotkeys;
+		internal static ISession Session => Instance.Session;
 		internal static IPermissionManager Permissions => Instance.Permissions;
-		internal static ControlManagerBase Control => Instance.Control;
+		// The UI-thread-marshalling facade, not the raw backend (PlatformHost.ClipboardCore).
+		internal static IClipboard Clipboard => Instance.Clipboard;
 	}
 }

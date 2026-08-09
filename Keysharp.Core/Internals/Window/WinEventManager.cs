@@ -226,7 +226,7 @@ namespace Keysharp.Internals.Window
 
 			try
 			{
-				backend = Platform.Events.Backend;
+				backend = Platform.WindowEvents.Backend;
 
 				if (backend != null)
 					backend.Sink = OnNativeEvent;
