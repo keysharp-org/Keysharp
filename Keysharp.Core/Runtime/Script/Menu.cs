@@ -84,9 +84,23 @@ namespace Keysharp.Runtime
 				});
 			}
 
+		/// <summary>
+		/// Whether a tray mouse event came from the primary (left) button.
+		/// Only the left button activates the default menu item: the right button just displays the
+		/// tray menu (which the underlying icon does on its own) and the middle button does nothing.
+		/// This matters because the platform raises MouseClick/MouseDoubleClick for every button,
+		/// so without this test a right-click would pop the menu *and* run the default item.
+		/// </summary>
+		private static bool IsPrimaryClick(MouseEventArgs e) =>
+#if WINDOWS
+			e.Button == Forms.MouseButtons.Left;
+#else
+			(e.Buttons & Forms.MouseButtons.Primary) != 0;
+#endif
+
 		private static void TrayIcon_MouseClick(object sender, MouseEventArgs e)
 		{
-			if (sender is NotifyIcon ni && ni.Tag is Keysharp.Builtins.Menu mnu)
+			if (IsPrimaryClick(e) && sender is NotifyIcon ni && ni.Tag is Keysharp.Builtins.Menu mnu)
 				if (mnu.ClickCount == 1)
 					if (mnu.defaultItem is ToolStripItem tsi)
 						mnu.Tsmi_Click(tsi, new EventArgs());
@@ -94,7 +108,7 @@ namespace Keysharp.Runtime
 
 		private static void TrayIcon_MouseDoubleClick(object sender, MouseEventArgs e)
 		{
-			if (sender is NotifyIcon ni && ni.Tag is Keysharp.Builtins.Menu mnu)
+			if (IsPrimaryClick(e) && sender is NotifyIcon ni && ni.Tag is Keysharp.Builtins.Menu mnu)
 				if (mnu.ClickCount > 1)
 					if (mnu.defaultItem is ToolStripItem tsi)
 						mnu.Tsmi_Click(tsi, new EventArgs());
