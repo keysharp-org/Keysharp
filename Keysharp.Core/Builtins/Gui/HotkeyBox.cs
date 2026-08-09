@@ -115,8 +115,13 @@ namespace Keysharp.Builtins
 					str += Keyword_ModifierWin;
 #endif
 
+				//An empty control reads back as "", matching AHK: HKM_GETHOTKEY returns 0 and HotkeyToText()
+				//emits no modifier symbols and then resolves VK 0 to an empty name. The box still *displays*
+				//"None" (see UpdateDisplayText) because that is what the Win32 hotkey control shows; only the
+				//value the script sees is blank. Modifiers held without a key still read back as just their
+				//symbols, e.g. "^".
 				if (key == Keys.None)
-					return mod == Keys.None ? "None" : str;
+					return str;
 
 				return str + key.ToString();
 			}

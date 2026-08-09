@@ -752,6 +752,46 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
+		public void HotkeyControlReadsBackBlankWhenEmpty()
+		{
+			SkipIfUiInitializationBlocked("Reading a Hotkey control's value requires a constructed Gui.");
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+
+			try
+			{
+				var hk = (Gui.Control)gui.Add("Hotkey", "w160");
+
+				// AHK reads the control with HKM_GETHOTKEY, which yields 0 while nothing is set; HotkeyToText()
+				// then produces "" because VK 0 has no key name. The control displays "None", but that string
+				// must never reach the script - callers test the value against "" to detect "no hotkey".
+				Assert.AreEqual("", hk.Value, "an empty Hotkey control's value must be blank, not \"None\"");
+				Assert.AreEqual("", hk.Text, "an empty Hotkey control's text must be blank, not \"None\"");
+
+				hk.Value = "^!a";
+				Assert.AreEqual("^!A", hk.Value);
+
+				// Assigning "" clears the control, and it reads back blank again rather than round-tripping
+				// the "None" it now displays.
+				hk.Value = "";
+				Assert.AreEqual("", hk.Value);
+
+				// AHK's TextToHotkey() maps any unparseable key name - including the displayed "None" - to 0,
+				// so assigning "None" clears the control too.
+				hk.Value = "^!a";
+				hk.Value = "None";
+				Assert.AreEqual("", hk.Value);
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
+		[Test, Category("Gui")]
+#if WINDOWS
+		[Apartment(ApartmentState.STA)]
+#endif
 		public void FileSelect()
 		{
 			if (Script.IsHeadless)
