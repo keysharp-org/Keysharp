@@ -1982,9 +1982,10 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The primary screen's authored-size scale: 1.0 is 100%, 1.5 is 150%, and so on. It is not a
 		/// screen-coordinate conversion and must not be applied to absolute positions. Mixed-monitor code should use
-		/// <see cref="MonitorGetScale"/> for the target monitor. Keysharp-specific, so scripts reach it through KS.
+		/// <c>Monitor.Scale</c> for the target monitor. Keysharp-specific, so scripts reach it through KS.
 		/// </summary>
-		public static double A_ScreenScale => MonitorGetScale();
+		public static double A_ScreenScale
+			=> Keysharp.Internals.ScaleFactor.Normalize(Monitor.ResolveDisplay(null).Display.SizeScale);
 		/// <summary>
 		/// Whether timers are allowed to operate in the current thread. Default: true.
 		/// </summary>

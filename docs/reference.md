@@ -109,6 +109,7 @@ macOS support is in active development. The following table summarises what work
 | Cursor confinement | Partial | `ClipCursor` suppresses out-of-bounds movement; requires **Input Monitoring** and **Accessibility** permissions |
 | GUI windows | Working | Eto.Forms backend; some controls differ from Windows |
 | Screen capture / pixel functions | Working | Requires **Screen Recording** permission on first use |
+| Monitor brightness / DDC-CI | Partial | Built-in panel (and Apple's own displays) via DisplayServices; other external monitors over DDC/CI. No permission needed. Apple Silicon only — the Intel path is implemented but untested, and some USB-C hubs and docks do not carry the DDC channel. `Monitor.GetVCP()`/`SetVCP()` work on external monitors only, as a built-in panel has no DDC/CI connection |
 | Window management | Partial | Accessibility API; foreign-app control requires permission |
 | Registry APIs | Not supported | Windows-only |
 | COM APIs | Not supported | Windows-only |
@@ -931,9 +932,62 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 				+ Windows: Uses `SetWinEventHook()` and supports every event type.
 				+ Linux: The events come from a GDK/X11 event filter on the UI thread (covering X11 and XWayland windows); native Wayland sources (GNOME/KWin/wlroots) are not yet wired, and `Restore`/`Close`-on-hide are not yet emitted.
 				+ macOS: Only active-application changes are currently reported (window-granular events via the accessibility APIs are planned).
-				
+		+ `Monitor`: One display, carrying the metadata and device control the AHK-compatible `MonitorGet*` functions do not expose — model, manufacturer, serial, a stable id, refresh rate, physical size, orientation, connection kind, and brightness / raw DDC-CI control.
+			+ It is part of the `Ks` module; import it with `#import "Ks" { Monitor }`. It does not replace the AHK `MonitorGet*` functions, which are unchanged apart from now raising a `ValueError` on an out-of-range monitor index instead of silently substituting the primary (matching AutoHotkey v2). `Image.FromMonitor()` inherits that same validation.
+			+ A `Monitor` is a **snapshot** of the topology plus a **live** handle to the device: identity and geometry are read once when the object is created, so a loop over `Monitor.All` sees one consistent picture, while `Brightness` and the VCP methods always talk to the hardware at the moment they are called. `Refresh()` re-reads the snapshot in place and returns the same object, or `""` when that monitor is no longer attached.
+			+ Metadata beyond plain geometry costs a native query, so it is resolved on the first property that needs it and then cached on the object; constructing a `Monitor`, or reading only its geometry, never pays for it. Any field the display does not report is `""` rather than a fabricated value.
+			+ `Id` is derived from the panel's EDID identity and is the value to persist (for example, to restore a window layout per monitor set); pass it back to `Monitor.FromId()`. Panels that report no serial are disambiguated by connector on Windows and Linux, making the id stable per *port* rather than per panel; on macOS such a panel falls back to a per-*model* id that two identical displays would share.
+				```
+				class Monitor
+				{
+					static Call([n]) => Monitor    ; By 1-based index, matching MonitorGet's numbering; omitted = the primary monitor.
+					static Count => Integer        ; The number of monitors.
+					static Primary => Monitor
+					static All => Array            ; Every monitor, in index order, from ONE topology enumeration.
+					static FromPoint(x, y) => Monitor    ; The monitor containing a native screen point, or the nearest one when it falls in a gap.
+					static FromMouse() => Monitor
+					static FromWindow([winTitle, winText, excludeTitle, excludeText]) => Monitor  ; The monitor a window overlaps most.
+					static FromId(id) => Monitor   ; The monitor whose Id matches, or "" when it is not attached.
+					static OnChange(callback [, count := -1]) => MonitorHook  ; Display-configuration changes; see below.
+
+					; Identity
+					Index => Integer             ; 1-based, matching MonitorGet's numbering.
+					Name => String               ; The OS name: "\\.\DISPLAY1", "DP-1", or the localized name on macOS.
+					Model, Manufacturer, Serial  ; EDID panel identity, or "".
+					Id => String                 ; Stable across reboot and re-plug; the value to persist.
+					Adapter => String            ; The graphics adapter driving this monitor, or "".
+					Connection => String         ; "HDMI" | "DisplayPort" | "eDP" | "DVI" | "VGA" | "Internal" | "".
+					IsPrimary => Boolean
+					IsInternal => Boolean        ; A built-in laptop/all-in-one panel rather than an external monitor.
+
+					; Geometry, in the same native screen coordinates MonitorGet reports
+					X, Y, W, H => Integer
+					Bounds, WorkArea => Object   ; { x, y, w, h }
+					Scale => Float               ; Authored-size scale; 1.0 is 100%. Scales dimensions, never absolute positions.
+					Dpi                          ; Derived from the physical size, in the same units as W/H; "" if unknown.
+					PhysicalWidth, PhysicalHeight ; Millimetres, or "".
+					RefreshRate => Float         ; Hz — 59.94, not 59 — or "".
+					Orientation => Integer       ; Clockwise rotation of the desktop content: 0, 90, 180 or 270.
+					Refresh() => Monitor         ; Re-read in place; returns this object, or "" if the monitor is gone.
+
+					; Device control — each is a real hardware transaction, deliberately not cached
+					Brightness => Integer        ; Get/set, 0-100. OSError naming the reason where unsupported.
+					HasBrightness => Boolean     ; A real probe of the device, so it costs one brightness read.
+					GetVCP(code) => Object       ; Raw DDC/CI (MCCS) feature => { current, max }.
+					SetVCP(code, value)          ; Experimental; see the warning below.
+				}
+				```
+			+ `Monitor.OnChange(callback)` returns a hook carrying the same `Stop`/`Pause`/`Paused`/`IsActive`/`Count` surface as a `WinEvent` hook, so the two subscription APIs are managed identically. The callback receives `(hook, kind)`, where `kind` is `"topology"` when the set of attached monitors changed (plug/unplug, dock/undock) and `"settings"` when the same monitors are attached but their resolution, position, scale or primary assignment changed; `A_EventInfo` holds the monitor count after the change. The kind is derived by diffing topology snapshots rather than by decoding native change flags, so it is identical on every platform and the redundant notifications each platform emits are dropped. A handler holding a `Monitor` should call its `Refresh()` — which returns falsy if that is the display that was just unplugged — or simply re-read `Monitor.All`.
+			+ **`SetVCP()` is a foot-gun.** Writing an input-source or power code will switch the monitor away from this computer, and a few displays react badly to codes they document but mishandle; verify a code against the monitor's own MCCS documentation first. The feature is read back before it is written, so a code the monitor does not implement raises an `OSError` rather than reporting a success the display silently ignored.
+			+ Platform support for `Monitor`:
+				+ Windows: Metadata from the DisplayConfig API plus the EDID Windows caches under the monitor's registry key; brightness through WMI for the built-in panel and DDC/CI (dxva2) for external monitors.
+				+ Linux: EDID from `/sys/class/drm/*/edid`, identical under X11 and Wayland; refresh rate and rotation from XRandR or `wl_output`. Brightness uses the kernel backlight class for the built-in panel (a direct sysfs write where permitted, else logind's `SetBrightness`) and DDC/CI over `/dev/i2c-*` for external monitors, which needs `i2c-dev` loaded and access to the bus — the packaged udev rule grants it, and the error message names the fix when it is missing.
+				+ macOS: CoreGraphics answers identity, physical size, rotation and refresh rate directly, so no EDID parsing is involved; `Model` and `Adapter` are always `""` because CoreGraphics exposes no product-name or adapter API, and `Connection` only distinguishes the built-in panel. Brightness uses DisplayServices for the built-in panel and Apple's own displays, and DDC/CI for every other external monitor.
+				+ Display-change events come from `SystemEvents.DisplaySettingsChanged` on Windows, GDK's monitor signals on Linux (covering X11 and Wayland alike), and `CGDisplayRegisterReconfigurationCallback` on macOS.
+
 ### Removals
 * Removed/reduced functions:
+	+ `Ks.MonitorFromPoint()` and `Ks.MonitorGetScale()`: Both were Keysharp-only additions and both were folded into the new `Monitor` class — use `Monitor.FromPoint(x, y)` (which returns a `Monitor` rather than an index) and `Monitor.Scale`. The AHK-compatible `MonitorGet*` functions are unaffected.
 	+ `Download()`: Supports only the `*0` option, and not any other numerical values.
 	+ `ListLines()`: Non-functional because C# doesn't support it.
 	+ `FormatTime()`: The `R`, `Dn` or `Tn` parameters in  are not supported, except for 0x80000000 to disallow user overrides.

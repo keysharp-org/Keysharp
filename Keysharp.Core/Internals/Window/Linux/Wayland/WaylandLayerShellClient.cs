@@ -31,7 +31,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 				lock (sync)
 				{
-					if (current != null && !current.IsAvailable)
+					// IsConnected, not IsAvailable: a client with no layer-shell is still the correct thing to keep
+					// around for output topology. Only a genuinely dead connection should be retired and retried.
+					if (current != null && !current.IsConnected)
 					{
 						stale = current;
 						current = null;
@@ -105,8 +107,20 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		private WaylandLayerShellClient() => selfHandle = GCHandle.Alloc(this);
 
-		internal bool IsAvailable => !disposed && !connectionLost && Display != 0
-			&& LayerShell != 0 && Compositor != 0 && Shm != 0;
+		/// <summary>
+		/// True once the wl_display connection is up and the baseline globals (compositor, shm) are bound — enough
+		/// to read output topology (<see cref="GetDisplays"/>, <see cref="TryGetOutputMetrics"/>) regardless of
+		/// whether the compositor also advertises <c>zwlr_layer_shell_v1</c>. Kept separate from
+		/// <see cref="IsAvailable"/> so a compositor with no layer-shell (notably GNOME/Mutter) still gets a live
+		/// client instead of one that is created, found "unavailable" on the LayerShell check alone, and discarded
+		/// — which would throw away perfectly good wl_output data along with it.
+		/// </summary>
+		internal bool IsConnected => !disposed && !connectionLost && Display != 0 && Compositor != 0 && Shm != 0;
+
+		/// <summary>True when overlay surfaces can actually be created — additionally requires the compositor to
+		/// advertise <c>zwlr_layer_shell_v1</c>. Use this (not <see cref="IsConnected"/>) to gate any layer-shell
+		/// surface operation.</summary>
+		internal bool IsAvailable => IsConnected && LayerShell != 0;
 
 		internal bool Register(WaylandImageOverlay child)
 		{
@@ -136,6 +150,36 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						o.Bounds.X == 0 && o.Bounds.Y == 0, o.RegistryName))
 					.ToArray();
 			}
+		}
+
+		/// <summary>
+		/// The per-output metadata wl_output already delivered (physical size, make/model, current mode refresh and
+		/// transform), keyed by the registry name carried in <see cref="DisplayInfo.NativeId"/>. Nothing is queried
+		/// here — these values arrive with the geometry/mode events and were previously discarded.
+		/// </summary>
+		internal bool TryGetOutputMetrics(uint registryName, out double refreshRate, out int orientation,
+			out int physicalWidthMm, out int physicalHeightMm, out string make, out string model)
+		{
+			lock (sync)
+			{
+				if (outputs.TryGetValue(registryName, out var output) && output.Proxy != 0)
+				{
+					// wl_output reports refresh in mHz; 59940 mHz is the 59.94 Hz a script expects to see.
+					refreshRate = output.RefreshMilliHertz > 0 ? output.RefreshMilliHertz / 1000.0 : 0.0;
+					orientation = output.Orientation;
+					physicalWidthMm = output.PhysicalWidthMm;
+					physicalHeightMm = output.PhysicalHeightMm;
+					make = output.Make ?? "";
+					model = output.Model ?? "";
+					return true;
+				}
+			}
+
+			refreshRate = 0.0;
+			orientation = 0;
+			physicalWidthMm = physicalHeightMm = 0;
+			make = model = "";
+			return false;
 		}
 
 		internal bool TryResolveOutput(ScreenRect bounds, out OutputTarget target)
@@ -250,11 +294,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						GCHandle.ToIntPtr(client.selfHandle)) != 0)
 					throw new IOException("wl_registry listener setup failed.");
 
-				for (var i = 0; i < 8 && !client.IsAvailable; i++)
+				// Only the baseline globals (compositor, shm) gate success here. zwlr_layer_shell_v1 is not
+				// required: a compositor without it (notably GNOME/Mutter) still has a perfectly usable
+				// connection for output topology, just not for creating layer-shell overlay surfaces — callers
+				// that need those check IsAvailable, which additionally requires LayerShell.
+				for (var i = 0; i < 8 && !client.IsConnected; i++)
 					if (WaylandNative.DisplayRoundtrip(display) < 0)
 						throw new IOException("wl_display.roundtrip failed.");
 
-				if (!client.IsAvailable)
+				if (!client.IsConnected)
 				{
 					// A connected registry that does not advertise the required globals is a stable
 					// capability absence for this compositor generation, not a transport retry.

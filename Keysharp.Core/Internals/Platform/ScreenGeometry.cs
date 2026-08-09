@@ -105,6 +105,56 @@ namespace Keysharp.Internals
 	internal readonly record struct DisplayInfo(string Name, ScreenRect Bounds, ScreenRect WorkArea,
 		double SizeScale, bool IsPrimary, ulong NativeId = 0);
 
+	/// <summary>
+	/// The per-display facts that cost a native query BEYOND plain topology enumeration — EDID reads, DisplayConfig
+	/// round-trips, mode queries. Deliberately NOT part of <see cref="DisplayInfo"/>: <c>GetDisplays</c> is on the
+	/// path of every <c>MonitorGet</c>, <c>A_ScreenWidth</c>, overlay placement and screen capture, and must stay as
+	/// cheap as it is today. This record is produced only when a script actually asks for the metadata.
+	/// <para>Every field is "unknown"-tolerant: an empty string or 0 means the platform could not answer, and callers
+	/// surface that as an unset script value rather than inventing a plausible-looking one.</para>
+	/// </summary>
+	internal sealed record DisplayDetails
+	{
+		/// <summary>Marketing/model name from EDID or the OS ("U2720Q", "Built-in Retina Display").</summary>
+		internal string Model { get; init; } = "";
+
+		/// <summary>EDID PNP vendor id ("DEL") or the OS's vendor string.</summary>
+		internal string Manufacturer { get; init; } = "";
+
+		/// <summary>Display serial number, when the panel reports one.</summary>
+		internal string Serial { get; init; } = "";
+
+		/// <summary>Graphics adapter driving this display ("NVIDIA GeForce RTX 4080").</summary>
+		internal string Adapter { get; init; } = "";
+
+		/// <summary>Physical connection: "HDMI", "DisplayPort", "eDP", "DVI", "VGA", "Internal" or "".</summary>
+		internal string Connection { get; init; } = "";
+
+		/// <summary>
+		/// An identifier that survives reboots and re-plugging, derived from EDID (vendor + product + serial) where
+		/// available. Two identical panels reporting the same EDID serial are disambiguated by connector/device path,
+		/// which makes the id stable per PORT for that case — documented on the script-facing property.
+		/// </summary>
+		internal string StableId { get; init; } = "";
+
+		/// <summary>Vertical refresh in Hz (59.94, not 59); 0 when unknown.</summary>
+		internal double RefreshRate { get; init; }
+
+		/// <summary>Physical panel size in millimetres; 0 when unknown.</summary>
+		internal int PhysicalWidthMm { get; init; }
+
+		/// <summary>Physical panel size in millimetres; 0 when unknown.</summary>
+		internal int PhysicalHeightMm { get; init; }
+
+		/// <summary>Clockwise rotation in degrees: 0, 90, 180 or 270.</summary>
+		internal int Orientation { get; init; }
+
+		/// <summary>Whether this is a built-in panel (laptop/iMac) rather than an external display.</summary>
+		internal bool IsInternal { get; init; }
+
+		internal static readonly DisplayDetails Empty = new();
+	}
+
 	internal static class ScaleFactor
 	{
 		internal static double Normalize(double value, double fallback = 1.0)

@@ -978,7 +978,10 @@ internal bool HasBlockedQueuedWork
 		}
 
 		private void DisposeOwnedWinEventHandlers()
-			=> _ = script.WinEventManagerIfExists?.RemoveOwned(this);
+		{
+			_ = script.WinEventManagerIfExists?.RemoveOwned(this);
+			_ = script.MonitorEventManagerIfExists?.RemoveOwned(this);
+		}
 
 		private void DisposeOwnedClrSubscriptions()
 			=> _ = script.ClrEventManagerIfExists?.RemoveOwned(this);

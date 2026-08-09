@@ -6,6 +6,21 @@ namespace Keysharp.Builtins
 	public static class Objects
 	{
 		/// <summary>
+		/// Builds the <c>{ x, y, w, h }</c> rectangle object that is Keysharp's one shape for handing a rectangle
+		/// back to a script — <c>WinEvent</c>'s Move/CaretMove <c>A_EventInfo</c>, <c>Monitor.Bounds</c> and
+		/// <c>Monitor.WorkArea</c> all use it, so they stay literally the same shape rather than three lookalikes.
+		/// </summary>
+		internal static KeysharpObject RectObject(long x, long y, long w, long h)
+		{
+			var o = new KeysharpObject();
+			o.DefinePropInternal("x", new OwnPropsDesc(o, x));
+			o.DefinePropInternal("y", new OwnPropsDesc(o, y));
+			o.DefinePropInternal("w", new OwnPropsDesc(o, w));
+			o.DefinePropInternal("h", new OwnPropsDesc(o, h));
+			return o;
+		}
+
+		/// <summary>
 		/// Returns the current capacity of the object's internal dictionary of properties.
 		/// </summary>
 		/// <param name="obj">The object for which to query the capacity.</param>

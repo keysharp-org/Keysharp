@@ -25,6 +25,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal bool Done;
 		internal string Name = "";
 		internal string Description = "";
+		// wl_output already delivers these in the geometry/mode events; they are kept so the monitor-metadata API
+		// can answer without a second round trip to any other source.
+		internal int PhysicalWidthMm;
+		internal int PhysicalHeightMm;
+		internal string Make = "";
+		internal string Model = "";
+		/// <summary>Vertical refresh in mHz as wl_output reports it (60000 = 60 Hz); 0 when not yet received.</summary>
+		internal int RefreshMilliHertz;
 
 		internal ScreenRect Bounds
 		{
@@ -56,6 +64,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		internal string StableName => !string.IsNullOrWhiteSpace(Name) ? Name
 			: !string.IsNullOrWhiteSpace(Description) ? Description : $"wl-output-{RegistryName}";
+
+		/// <summary>Clockwise rotation in degrees derived from the wl_output transform (the flipped variants,
+		/// 4-7, carry the same rotation as their unflipped counterparts).</summary>
+		internal int Orientation => (Transform & 3) switch
+		{
+			1 => 90,
+			2 => 180,
+			3 => 270,
+			_ => 0,
+		};
 
 		private static int DivideRound(int value, int divisor)
 			=> value <= 0 ? 0 : Math.Max(1, (int)Math.Round((double)value / Math.Max(1, divisor)));
@@ -178,9 +196,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			state.GeometryX = x;
 			state.GeometryY = y;
 			state.Transform = transform;
+			state.PhysicalWidthMm = Math.Max(0, physicalWidth);
+			state.PhysicalHeightMm = Math.Max(0, physicalHeight);
+			state.Make = Utf8(make);
+			state.Model = Utf8(model);
 
 			if (string.IsNullOrWhiteSpace(state.Description))
-				state.Description = $"{Utf8(make)} {Utf8(model)}".Trim();
+				state.Description = $"{state.Make} {state.Model}".Trim();
 		}
 
 		private static void Mode(nint data, nint output, uint flags, int width, int height, int refresh)
@@ -191,6 +213,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			var state = Output(data);
 			state.ModeWidth = width;
 			state.ModeHeight = height;
+			state.RefreshMilliHertz = Math.Max(0, refresh);
 		}
 
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]

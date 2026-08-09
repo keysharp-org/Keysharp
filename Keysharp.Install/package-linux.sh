@@ -461,6 +461,26 @@ WARN
   fi
 fi
 
+# DDC/CI (Monitor.Brightness, Monitor.GetVCP/SetVCP on external monitors) needs
+# read/write on the connector's /dev/i2c-* node. The rule grants that to the
+# local-seat user via logind's uaccess ACL, scoped to display-controller buses
+# only -- see the rule file for why this is not the 'i2c' group. Installed into
+# /etc rather than shipped in /usr/lib/udev/rules.d so both install channels
+# (this package and the tarball's install.sh) own the exact same path: a
+# deb-over-tarball install then updates that file instead of leaving a stale
+# higher-precedence copy in /etc shadowing the packaged one.
+if [ -f /usr/lib/keysharp/udev/70-keysharp-i2c-uaccess.rules ]; then
+  install -Dm0644 /usr/lib/keysharp/udev/70-keysharp-i2c-uaccess.rules \
+    /etc/udev/rules.d/70-keysharp-i2c-uaccess.rules || true
+  # Reload, then re-run the rules against the buses that already exist, so DDC
+  # works in the current session without a replug or reboot. (uaccess ACLs are
+  # applied by udev at add/change time; trigger's default action is "change".)
+  if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules || true
+    udevadm trigger --subsystem-match=i2c-dev || true
+  fi
+fi
+
 # GNOME Shell extension: register in the desktop user's enabled-extensions. The
 # extension files land system-wide at /usr/share/gnome-shell/extensions/ via dpkg;
 # enabling is always per-user via gsettings, run as the desktop user resolved above.
@@ -716,6 +736,13 @@ if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
     rm -f /etc/udev/rules.d/99-keysharp-inputd.rules || true
     _ks_removed_udev_rule=true
   fi
+  # The DDC/CI i2c uaccess rule. postinst installs it into /etc, which dpkg does
+  # not own, so it has to be removed explicitly here (the payload copy under
+  # /usr/lib/keysharp is dpkg's and goes away on its own after prerm).
+  if [ -e /etc/udev/rules.d/70-keysharp-i2c-uaccess.rules ]; then
+    rm -f /etc/udev/rules.d/70-keysharp-i2c-uaccess.rules || true
+    _ks_removed_udev_rule=true
+  fi
   if [ "${_ks_removed_udev_rule}" = "true" ] && command -v udevadm >/dev/null 2>&1; then
     udevadm control --reload-rules || true
   fi
@@ -842,6 +869,11 @@ build_deb() {
   fi
   install -Dm644 "${ASSETS_DIR}/keysharp.xml" "${mime_dir}/keysharp.xml"
   install -Dm644 "${ROOT}/assets/Keysharp.png" "${icon_dir}/keysharp.png"
+  # Source copy of the DDC/CI uaccess rule; postinst installs it into
+  # /etc/udev/rules.d (see the comment there for why it is not shipped straight
+  # into /usr/lib/udev/rules.d).
+  install -Dm644 "${ASSETS_DIR}/70-keysharp-i2c-uaccess.rules" \
+    "${lib_dir}/udev/70-keysharp-i2c-uaccess.rules"
 
   if [[ -d "${GNOME_EXT_SOURCE}" ]]; then
     cp -r "${GNOME_EXT_SOURCE}/." "${gnome_ext_dir}/"
@@ -939,6 +971,7 @@ verify_no_local_paths "${APP_DIR}"
 # Copy installer assets
 cp "${ASSETS_DIR}/install.sh" "${ASSETS_DIR}/uninstall.sh" "${PKG_DIR}/"
 cp "${ASSETS_DIR}/keyview.desktop" "${ASSETS_DIR}/keysharp.desktop" "${ASSETS_DIR}/keysharp-helper.desktop" "${ASSETS_DIR}/keysharp.xml" "${PKG_DIR}/"
+cp "${ASSETS_DIR}/70-keysharp-i2c-uaccess.rules" "${PKG_DIR}/"
 cp "${ROOT}/assets/Keysharp.png" "${PKG_DIR}/"
 cp "${INPUTD_SERVICE_TEMPLATE}" "${PKG_DIR}/keysharp-inputd.service.in"
 cp "${INPUTD_SOCKET}" "${PKG_DIR}/keysharp-inputd.socket"
@@ -951,7 +984,8 @@ chmod 0644 "${PKG_DIR}/keyview.desktop" \
   "${PKG_DIR}/keysharp.xml" \
   "${PKG_DIR}/Keysharp.png" \
   "${PKG_DIR}/keysharp-inputd.service.in" \
-  "${PKG_DIR}/keysharp-inputd.socket"
+  "${PKG_DIR}/keysharp-inputd.socket" \
+  "${PKG_DIR}/70-keysharp-i2c-uaccess.rules"
 find "${PKG_DIR}/gnome-shell-extension" -type d -exec chmod 0755 {} +
 find "${PKG_DIR}/gnome-shell-extension" -type f -exec chmod 0644 {} +
 find "${PKG_DIR}/cinnamon-extension" -type d -exec chmod 0755 {} +

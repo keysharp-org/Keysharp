@@ -1,5 +1,5 @@
 #Requires AutoHotkey v2.0
-#import KS { Image, Overlay, WinFromPoint, MonitorFromPoint, MonitorGetScale }
+#import KS { Image, Overlay, WinFromPoint, Monitor }
                                            ; Import here so this shared layer is self-contained; duplicate imports from
                                            ; an including demo are harmless because KS imports are script-global.
 
@@ -210,8 +210,7 @@ class Shell {
         local useSaved := this.posX != "" && this.OnScreenRect(this.posX, this.posY, 1, 1)
         local targetX := useSaved ? this.posX : (l + r) // 2
         local targetY := useSaved ? this.posY : (t + b) // 2
-		local monitor := MonitorFromPoint(targetX, targetY)
-		local scale := MonitorGetScale(monitor)
+		local scale := Monitor.FromPoint(targetX, targetY).Scale
 
 		local img := Image.Create(w, h, , scale)
         img.FillRoundRect(0, 0, w, h, 12, "0xF01C1F28")

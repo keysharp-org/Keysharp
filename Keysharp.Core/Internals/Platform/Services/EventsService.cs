@@ -9,6 +9,11 @@ namespace Keysharp.Internals
 	{
 		public IWindowEventBackend Backend => new Keysharp.Internals.Window.Windows.WindowEventBackend();
 	}
+
+	internal sealed class WindowsMonitorEvents : IMonitorEvents
+	{
+		public IMonitorEventBackend Backend => new Keysharp.Internals.Window.Windows.MonitorEventBackend();
+	}
 #elif LINUX
 	/// <summary>
 	/// Linux window-event backend selection. On a Wayland session the compositor-native backend is preferred
@@ -32,10 +37,24 @@ namespace Keysharp.Internals
 			return new WindowEventBackend();
 		}
 	}
+
+	/// <summary>
+	/// Unlike window events, monitor events need no per-session selection: the backend reads GDK's monitor signals,
+	/// which GDK maintains under X11 and every Wayland compositor alike.
+	/// </summary>
+	internal sealed class LinuxMonitorEvents : IMonitorEvents
+	{
+		public IMonitorEventBackend Backend => new MonitorEventBackend();
+	}
 #elif OSX
 	internal sealed class MacEvents : IWindowEvents
 	{
 		public IWindowEventBackend Backend => new WindowEventBackend();
+	}
+
+	internal sealed class MacMonitorEvents : IMonitorEvents
+	{
+		public IMonitorEventBackend Backend => new MonitorEventBackend();
 	}
 #endif
 }

@@ -491,13 +491,14 @@ Installing with root privileges.
 Optional Linux helpers will be enabled when present:
   - keysharp-inputd: systemd socket service for input hooks, synthesis, BlockInput, and input permission management (keysharp-inputd trust list/reset).
   - keysharp-helper: Wayland screen capture helper (KWin ScreenShot2; trust gate for GNOME; screen-capture permission management).
+  - DDC/CI udev rule: lets the logged-in user drive external monitors (Monitor.Brightness, Monitor.GetVCP/SetVCP). Grants access to display-controller i2c buses only, not to the motherboard SMBus, and only for the local seat.
 
-This install may add systemd units, enable the keysharp-inputd service, load uinput, and mark the KDE helper root-owned setuid.
+This install may add systemd units, enable the keysharp-inputd service, load uinput, install a udev rule, and mark the KDE helper root-owned setuid.
 EOF
   else
     cat <<EOF
 Installing without root privileges.
-Keysharp will be installed under ${PREFIX}. Optional privileged Linux helpers will be skipped, so Linux input hooks/synthesis and Wayland screen capture may be unavailable until a root install is performed.
+Keysharp will be installed under ${PREFIX}. Optional privileged Linux helpers will be skipped, so Linux input hooks/synthesis, Wayland screen capture and DDC/CI monitor control may be unavailable until a root install is performed.
 EOF
   fi
 }
@@ -662,6 +663,22 @@ if [[ "${ROOT_INSTALL}" == "true" ]]; then
   if [[ -f "${APP_DIR_TARGET}/keysharp-helper" ]]; then
     chown root:root "${APP_DIR_TARGET}/keysharp-helper"
     chmod 4755 "${APP_DIR_TARGET}/keysharp-helper"
+  fi
+
+  # DDC/CI (Monitor.Brightness, Monitor.GetVCP/SetVCP on external monitors) needs
+  # read/write on the connector's /dev/i2c-* node. The rule grants that to the
+  # local-seat user via logind's uaccess ACL, scoped to display-controller buses
+  # only -- see the rule file for why this is not the 'i2c' group. Deliberately
+  # unconditional: it is independent of keysharp-helper (DDC does not go through
+  # it) and harmless alongside ddcutil's equivalent 60-ddcutil-i2c.rules.
+  if [[ -f "${SCRIPT_DIR}/70-keysharp-i2c-uaccess.rules" ]]; then
+    install -Dm0644 "${SCRIPT_DIR}/70-keysharp-i2c-uaccess.rules" \
+      /etc/udev/rules.d/70-keysharp-i2c-uaccess.rules
+    # Reload, then re-run the rules against the buses that already exist, so DDC
+    # works in the current session without a replug or reboot. (uaccess ACLs are
+    # applied by udev at add/change time; trigger's default action is "change".)
+    maybe_run udevadm control --reload-rules || true
+    maybe_run udevadm trigger --subsystem-match=i2c-dev || true
   fi
 else
   rm -f "${APP_DIR_TARGET}/keysharp-inputd" \

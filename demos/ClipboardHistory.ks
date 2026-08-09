@@ -178,8 +178,7 @@ class ClipboardHistory {
         local pad := 16, rowH := 30, titleH := 34, footH := 22, w := 640
         local h := pad + titleH + n * rowH + footH + pad
         MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
-		local monitor := MonitorGetPrimary()
-		local scale := MonitorGetScale(monitor)
+		local scale := Monitor.Primary.Scale
 
 		local img := Image.Create(w, h, , scale)
         img.FillRoundRect(0, 0, w, h, 12, "0xF01C1F28")

@@ -34,6 +34,81 @@ namespace Keysharp.Internals.Window.Linux.X11
 			internal nint Outputs;
 		}
 
+		// XRRScreenResources, XRROutputInfo and XRRCrtcInfo, declared only as far as the fields Keysharp reads.
+		// Nothing here follows a pointer out of these structs except the fixed-size mode array, so a layout
+		// mismatch on an unexpected server degrades to "unknown" instead of dereferencing garbage.
+		[StructLayout(LayoutKind.Sequential)]
+		private struct XRandRScreenResources
+		{
+			internal nuint Timestamp;
+			internal nuint ConfigTimestamp;
+			internal int CrtcCount;
+			internal nint Crtcs;
+			internal int OutputCount;
+			internal nint Outputs;
+			internal int ModeCount;
+			internal nint Modes;
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
+		private struct XRandRModeInfo
+		{
+			internal nuint Id;
+			internal uint Width;
+			internal uint Height;
+			internal nuint DotClock;
+			internal uint HSyncStart;
+			internal uint HSyncEnd;
+			internal uint HTotal;
+			internal uint HSkew;
+			internal uint VSyncStart;
+			internal uint VSyncEnd;
+			internal uint VTotal;
+			internal nint Name;
+			internal uint NameLength;
+			internal nuint ModeFlags;
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
+		private struct XRandROutputInfo
+		{
+			internal nuint Timestamp;
+			internal nuint Crtc;
+			internal nint Name;
+			internal int NameLength;
+			internal nuint PhysicalWidthMm;
+			internal nuint PhysicalHeightMm;
+			internal ushort Connection;
+			internal ushort SubpixelOrder;
+			internal int CrtcCount;
+			internal nint Crtcs;
+			internal int CloneCount;
+			internal nint Clones;
+			internal int ModeCount;
+			internal int PreferredCount;
+			internal nint Modes;
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
+		private struct XRandRCrtcInfo
+		{
+			internal nuint Timestamp;
+			internal int X;
+			internal int Y;
+			internal uint Width;
+			internal uint Height;
+			internal nuint Mode;
+			internal ushort Rotation;
+			internal ushort Rotations;
+			internal int OutputCount;
+			internal nint Outputs;
+			internal int PossibleCount;
+			internal nint Possible;
+		}
+
+		/// <summary>One RandR/Xinerama rectangle plus the output identity it came from.</summary>
+		private readonly record struct NativeMonitor(ScreenRect Bounds, string Name, nuint Output);
+
 		private readonly record struct Mapping(DisplayInfo Display, ScreenRect ToolkitBounds);
 
 		private sealed class Snapshot
@@ -61,6 +136,24 @@ namespace Keysharp.Internals.Window.Linux.X11
 
 		[DllImport("libXrandr.so.2", EntryPoint = "XRRFreeMonitors")]
 		private static extern void FreeMonitors(nint monitors);
+
+		[DllImport("libXrandr.so.2", EntryPoint = "XRRGetScreenResourcesCurrent")]
+		private static extern nint GetScreenResourcesCurrent(nint display, nint window);
+
+		[DllImport("libXrandr.so.2", EntryPoint = "XRRFreeScreenResources")]
+		private static extern void FreeScreenResources(nint resources);
+
+		[DllImport("libXrandr.so.2", EntryPoint = "XRRGetOutputInfo")]
+		private static extern nint GetOutputInfo(nint display, nint resources, nuint output);
+
+		[DllImport("libXrandr.so.2", EntryPoint = "XRRFreeOutputInfo")]
+		private static extern void FreeOutputInfo(nint outputInfo);
+
+		[DllImport("libXrandr.so.2", EntryPoint = "XRRGetCrtcInfo")]
+		private static extern nint GetCrtcInfo(nint display, nint resources, nuint crtc);
+
+		[DllImport("libXrandr.so.2", EntryPoint = "XRRFreeCrtcInfo")]
+		private static extern void FreeCrtcInfo(nint crtcInfo);
 
 		private static readonly object snapshotLock = new();
 		private static Snapshot cachedSnapshot;
@@ -112,7 +205,7 @@ namespace Keysharp.Internals.Window.Linux.X11
 			var mappings = new List<Mapping>();
 			var anyPrimary = toolkit.Any(s => s.IsPrimary);
 			var toolkitUnion = Union(toolkit.Select(s => ScreenRect.FromRectangle(s.Bounds)));
-			var nativeUnion = Union(native);
+			var nativeUnion = Union(native.Select(n => n.Bounds));
 
 			for (var i = 0; i < toolkit.Length; i++)
 			{
@@ -126,15 +219,21 @@ namespace Keysharp.Internals.Window.Linux.X11
 				try { toolkitWorkArea = ScreenRect.FromRectangle(screen.WorkingArea); }
 				catch { toolkitWorkArea = toolkitBounds; }
 
-				var nativeBounds = matchedNative[i] ?? (toolkitUnion.HasArea && nativeUnion.HasArea
+				var nativeBounds = matchedNative[i]?.Bounds ?? (toolkitUnion.HasArea && nativeUnion.HasArea
 					? MapRectangle(toolkitBounds, toolkitUnion, nativeUnion) : toolkitBounds);
 				// Content scale is a toolkit property, independent of the mapping between GTK coordinates and the
 				// X11 root. Geometry ratios are not a reliable scale source in mixed-monitor layouts.
 				var contentScale = ScaleFactor.Normalize(screen.LogicalPixelSize);
 				var workArea = MapRectangle(toolkitWorkArea, toolkitBounds, nativeBounds);
 				var primary = screen.IsPrimary || !anyPrimary && nativeBounds.X == 0 && nativeBounds.Y == 0;
-				var display = new DisplayInfo(screen.ID ?? $"display-{i + 1}", nativeBounds, workArea,
-					contentScale, primary, (ulong)i);
+				// Prefer the RandR output name ("DP-1", "eDP-1"): it is the name the OS and every Linux tool uses
+				// for this monitor, and it is what the DRM connector lookup keys off. Eto's Screen.ID is left as
+				// the fallback, but no GTK/Cocoa screen handler ever sets it, so in practice it is the synthetic
+				// display-N that reaches scripts only when RandR reports nothing.
+				var name = matchedNative[i]?.Name is { Length: > 0 } outputName ? outputName
+					: screen.ID is { Length: > 0 } id ? id : $"display-{i + 1}";
+				var display = new DisplayInfo(name, nativeBounds, workArea,
+					contentScale, primary, matchedNative[i]?.Output ?? 0);
 				mappings.Add(new Mapping(display, toolkitBounds));
 			}
 
@@ -142,9 +241,10 @@ namespace Keysharp.Internals.Window.Linux.X11
 			if (mappings.Count == 0)
 				for (var i = 0; i < native.Count; i++)
 				{
-					var bounds = native[i];
-					mappings.Add(new Mapping(new DisplayInfo($"Xinerama-{i}", bounds, bounds, 1,
-						i == 0 || bounds.X == 0 && bounds.Y == 0, (ulong)i), bounds));
+					var bounds = native[i].Bounds;
+					mappings.Add(new Mapping(new DisplayInfo(
+						native[i].Name is { Length: > 0 } n ? n : $"Xinerama-{i}", bounds, bounds, 1,
+						i == 0 || bounds.X == 0 && bounds.Y == 0, native[i].Output), bounds));
 				}
 
 			if (mappings.Count == 0)
@@ -154,9 +254,9 @@ namespace Keysharp.Internals.Window.Linux.X11
 			return new Snapshot(mappings.ToArray());
 		}
 
-		private static ScreenRect?[] MatchNativeScreens(Forms.Screen[] toolkit, List<ScreenRect> native)
+		private static NativeMonitor?[] MatchNativeScreens(Forms.Screen[] toolkit, List<NativeMonitor> native)
 		{
-			var result = new ScreenRect?[toolkit.Length];
+			var result = new NativeMonitor?[toolkit.Length];
 
 			// One Xinerama rectangle per GDK monitor is the only topology that can be associated losslessly. If a
 			// server exposes just the virtual root while GDK exposes several monitors, derive monitor-local raw bounds
@@ -166,7 +266,7 @@ namespace Keysharp.Internals.Window.Linux.X11
 
 			var available = new HashSet<int>(Enumerable.Range(0, native.Count));
 			var toolkitUnion = Union(toolkit.Select(screen => ScreenRect.FromRectangle(screen.Bounds)));
-			var nativeUnion = Union(native);
+			var nativeUnion = Union(native.Select(n => n.Bounds));
 
 			for (var i = 0; i < toolkit.Length; i++)
 			{
@@ -183,7 +283,7 @@ namespace Keysharp.Internals.Window.Linux.X11
 
 				foreach (var candidate in available)
 				{
-					var raw = native[candidate];
+					var raw = native[candidate].Bounds;
 					var sizeError = Math.Abs(raw.Width - expectedWidth) / (double)expectedWidth
 						+ Math.Abs(raw.Height - expectedHeight) / (double)expectedHeight;
 					var originError = Math.Abs((long)raw.X - expectedLayout.X) / (double)Math.Max(1, nativeUnion.Width)
@@ -207,9 +307,31 @@ namespace Keysharp.Internals.Window.Linux.X11
 			return result;
 		}
 
-		private static List<ScreenRect> QueryNativeScreens()
+		// Atom -> name, for the RandR monitor names read on every topology enumeration. GetDisplays() deliberately
+		// skips the conversion cache below, so without this every A_ScreenWidth, MonitorGet, overlay placement and
+		// capture would pay one synchronous XGetAtomName round trip PER MONITOR. An atom's name is immutable for
+		// the life of the server, so the only risk a cache carries is holding a handful of short strings.
+		private static readonly Dictionary<nint, string> atomNames = new();
+
+		private static string AtomName(nint display, nint atom)
 		{
-			var result = new List<ScreenRect>();
+			if (atom == 0)
+				return "";
+
+			lock (atomNames)
+			{
+				if (atomNames.TryGetValue(atom, out var cached))
+					return cached;
+
+				var name = Xlib.GetAtomName(display, atom) ?? "";
+				atomNames[atom] = name;
+				return name;
+			}
+		}
+
+		private static List<NativeMonitor> QueryNativeScreens()
+		{
+			var result = new List<NativeMonitor>();
 			var display = Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default;
 
 			if (display == null || display.Handle == 0)
@@ -225,8 +347,19 @@ namespace Keysharp.Internals.Window.Linux.X11
 				{
 					var info = Marshal.PtrToStructure<XRandRMonitorInfo>(monitors + i * stride);
 					var bounds = new ScreenRect(info.X, info.Y, info.Width, info.Height);
-					if (bounds.HasArea)
-						result.Add(bounds);
+
+					if (!bounds.HasArea)
+						continue;
+
+					// The monitor's name is an Atom ("DP-1", "eDP-1"), and its first output is the RandR object
+					// that owns the current mode and rotation.
+					var name = AtomName(display.Handle, info.Name);
+					nuint output = 0;
+
+					if (info.Outputs != 0 && info.OutputCount > 0)
+						output = (nuint)Marshal.ReadIntPtr(info.Outputs);
+
+					result.Add(new NativeMonitor(bounds, name, output));
 				}
 			}
 			catch (DllNotFoundException) { }
@@ -252,8 +385,10 @@ namespace Keysharp.Internals.Window.Linux.X11
 					{
 						var info = Marshal.PtrToStructure<XineramaScreenInfo>(screens + i * stride);
 						var bounds = new ScreenRect(info.X, info.Y, info.Width, info.Height);
+
+						// Xinerama has no per-monitor names or outputs; only the rectangle is knowable here.
 						if (bounds.HasArea)
-							result.Add(bounds);
+							result.Add(new NativeMonitor(bounds, "", 0));
 					}
 				}
 			}
@@ -270,13 +405,101 @@ namespace Keysharp.Internals.Window.Linux.X11
 				{
 					var attr = display.Root.Attributes;
 					var bounds = new ScreenRect(0, 0, attr.width, attr.height);
+
 					if (bounds.HasArea)
-						result.Add(bounds);
+						result.Add(new NativeMonitor(bounds, "", 0));
 				}
 				catch { }
 
 			return result;
 		}
+
+		/// <summary>
+		/// The current refresh rate (Hz) and clockwise rotation (degrees) of one RandR output, as captured in
+		/// <see cref="DisplayInfo.NativeId"/>. Returns zeroes when RandR is absent or the output is not driven by a
+		/// CRTC, which the caller reports as "unknown" rather than guessing.
+		/// </summary>
+		internal static (double RefreshRate, int Orientation) GetOutputMode(nuint output)
+		{
+			if (output == 0)
+				return (0.0, 0);
+
+			var display = Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default;
+
+			if (display == null || display.Handle == 0)
+				return (0.0, 0);
+
+			nint resources = 0, outputInfo = 0, crtcInfo = 0;
+
+			try
+			{
+				resources = GetScreenResourcesCurrent(display.Handle, (nint)display.Root.ID);
+
+				if (resources == 0)
+					return (0.0, 0);
+
+				outputInfo = GetOutputInfo(display.Handle, resources, output);
+
+				if (outputInfo == 0)
+					return (0.0, 0);
+
+				var info = Marshal.PtrToStructure<XRandROutputInfo>(outputInfo);
+
+				if (info.Crtc == 0)
+					return (0.0, 0);
+
+				crtcInfo = GetCrtcInfo(display.Handle, resources, info.Crtc);
+
+				if (crtcInfo == 0)
+					return (0.0, 0);
+
+				var crtc = Marshal.PtrToStructure<XRandRCrtcInfo>(crtcInfo);
+				var rotation = RotationDegrees(crtc.Rotation);
+
+				if (crtc.Mode == 0)
+					return (0.0, rotation);
+
+				var res = Marshal.PtrToStructure<XRandRScreenResources>(resources);
+
+				if (res.Modes == 0 || res.ModeCount <= 0)
+					return (0.0, rotation);
+
+				var stride = Marshal.SizeOf<XRandRModeInfo>();
+
+				for (var i = 0; i < res.ModeCount; i++)
+				{
+					var mode = Marshal.PtrToStructure<XRandRModeInfo>(res.Modes + i * stride);
+
+					if (mode.Id != crtc.Mode)
+						continue;
+
+					// Vertical refresh = pixel clock / (total pixels per line * total lines), the same arithmetic
+					// xrandr prints. A mode with a zero total is malformed and reads as unknown.
+					var total = (double)mode.HTotal * mode.VTotal;
+					return (total > 0 ? mode.DotClock / total : 0.0, rotation);
+				}
+
+				return (0.0, rotation);
+			}
+			catch (DllNotFoundException) { return (0.0, 0); }
+			catch (EntryPointNotFoundException) { return (0.0, 0); }
+			finally
+			{
+				if (crtcInfo != 0) FreeCrtcInfo(crtcInfo);
+				if (outputInfo != 0) FreeOutputInfo(outputInfo);
+				if (resources != 0) FreeScreenResources(resources);
+			}
+		}
+
+		// RandR rotation is a bitmask: 1 = 0deg, 2 = 90, 4 = 180, 8 = 270 (counter-clockwise in RandR terms,
+		// reported here as the clockwise angle the desktop content is turned by, matching Windows and macOS).
+		private static int RotationDegrees(ushort rotation) => (rotation & 0x0F) switch
+		{
+			2 => 90,
+			4 => 180,
+			8 => 270,
+			_ => 0,
+		};
 
 		private static ScreenRect Union(IEnumerable<ScreenRect> rectangles)
 		{

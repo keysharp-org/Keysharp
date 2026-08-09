@@ -439,8 +439,7 @@ class OCRSnip {
     }
 
     static RefreshDisplayMetrics(x, y) {
-		local monitor := MonitorFromPoint(x, y)
-		local scale := MonitorGetScale(monitor)
+		local scale := Monitor.FromPoint(x, y).Scale
 		if (Abs(scale - this.Scale) < 0.001)
 			return false
 		this.Scale := scale
