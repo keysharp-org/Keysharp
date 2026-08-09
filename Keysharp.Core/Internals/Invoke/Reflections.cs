@@ -486,7 +486,10 @@ namespace Keysharp.Internals.Invoke
 			return false;              // no Size property present (raw address/anything else)
 		}
 
-		internal static T SafeGetProperty<T>(object item, string name) => (T)item.GetType().GetProperty(name, typeof(T))?.GetValue(item);
+		//A missing property yields default(T) rather than throwing, which is what "safe" has to mean for a value
+		//type: unboxing the null that GetValue() never got to return would be a NullReferenceException.
+		internal static T SafeGetProperty<T>(object item, string name) =>
+		item.GetType().GetProperty(name, typeof(T))?.GetValue(item) is T value ? value : default;
 
 		internal static bool SafeHasProperty(object item, string name) =>
 			item.GetType().GetProperties().Any(prop => (Script.GetUserDeclaredName(prop) ?? prop.Name) == name);

@@ -659,6 +659,99 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
+		public void ControlOptionsHonorPlusAndMinusSigns()
+		{
+			SkipIfUiInitializationBlocked("Parsing control options requires a constructed Gui.");
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+
+			try
+			{
+				// "In the absence of a preceding sign, a plus sign is assumed; for example, Wrap is the same as
+				// +Wrap. By contrast, -Wrap would remove the word-wrapping property." An unrecognized token throws,
+				// so merely reaching the assertion proves the signed spellings are accepted.
+				Assert.AreEqual(Gui.GuiOptions.HorizontalAlignment.Center, gui.ParseOpt("text", "", "Center").halign);
+				Assert.AreEqual(Gui.GuiOptions.HorizontalAlignment.Center, gui.ParseOpt("text", "", "+Center").halign);
+				Assert.AreEqual(Gui.GuiOptions.HorizontalAlignment.Left, gui.ParseOpt("text", "", "-Center").halign);
+				Assert.AreEqual(Gui.GuiOptions.VerticalAlignment.Middle, gui.ParseOpt("text", "", "+Middle").valign);
+
+				Assert.AreEqual(true, gui.ParseOpt("edit", "", "Wrap").wordwrap);
+				Assert.AreEqual(true, gui.ParseOpt("edit", "", "+Wrap").wordwrap);
+				Assert.AreEqual(false, gui.ParseOpt("edit", "", "-Wrap").wordwrap);
+				Assert.AreEqual(false, gui.ParseOpt("edit", "", "-Tabstop").tabstop);
+				Assert.AreEqual(true, gui.ParseOpt("edit", "", "+ReadOnly").rdonly);
+				// AHK compares "Multi" exactly, so a signed spelling has to survive but "Multiline" is not an option.
+				Assert.AreEqual(true, gui.ParseOpt("edit", "", "xc+10 y+20 h400 w500 +Multi").multiline);
+
+				// Hidden/Disabled additionally accept a trailing 1/0, which inverts the sign.
+				Assert.AreEqual(false, gui.ParseOpt("edit", "", "Hidden").visible);
+				Assert.AreEqual(true, gui.ParseOpt("edit", "", "Hidden0").visible);
+				Assert.AreEqual(true, gui.ParseOpt("edit", "", "-Hidden").visible);
+				Assert.AreEqual(false, gui.ParseOpt("edit", "", "+Disabled").enabled);
+				Assert.AreEqual(true, gui.ParseOpt("edit", "", "Disabled0").enabled);
+
+				Assert.AreEqual(1, gui.ParseOpt("checkbox", "", "Checked").ischecked);
+				Assert.AreEqual(0, gui.ParseOpt("checkbox", "", "-Checked").ischecked);
+				Assert.AreEqual(-1, gui.ParseOpt("checkbox", "", "Checked-1").ischecked);
+				Assert.AreEqual(-1, gui.ParseOpt("checkbox", "", "CheckedGray").ischecked);
+
+				// A word option must not be swallowed by a single-letter option that shares its first letter.
+				var vscroll = gui.ParseOpt("listbox", "", "+VScroll");
+				Assert.AreEqual(true, vscroll.vscroll);
+				Assert.IsNull(vscroll.name, "VScroll must not be read as the name \"Scroll\"");
+				Assert.AreEqual("MyEdit", gui.ParseOpt("edit", "", "vMyEdit").name);
+				Assert.AreEqual(true, gui.ParseOpt("listview", "", "SortDesc").sortdesc);
+				Assert.IsNull(gui.ParseOpt("listview", "", "SortDesc").sort, "SortDesc must not be read as Sort");
+
+				// Icon selects the view for a ListView but the icon index for a Picture.
+				Assert.AreEqual(View.SmallIcon, gui.ParseOpt("listview", "", "IconSmall").lvview);
+				Assert.AreEqual(View.LargeIcon, gui.ParseOpt("listview", "", "Icon").lvview);
+				Assert.AreEqual(1L, gui.ParseOpt("picture", "", "Icon2").iconnumber, "the 1-based icon index is stored 0-based");
+
+				// The sign decides whether a raw style number is added or removed.
+				Assert.AreEqual(0x40000, gui.ParseOpt("edit", "", "0x40000").addstyle);
+				Assert.AreEqual(0x40000, gui.ParseOpt("edit", "", "+0x40000").addstyle);
+				Assert.AreEqual(0x40000, gui.ParseOpt("edit", "", "-0x40000").remstyle);
+				Assert.AreEqual(0x200, gui.ParseOpt("edit", "", "E0x200").addexstyle);
+				Assert.AreEqual(0x200, gui.ParseOpt("edit", "", "-E0x200").remexstyle);
+				// Styles accumulate rather than overwriting each other.
+				Assert.AreEqual(0x40000 | 0x100, gui.ParseOpt("edit", "", "0x40000 0x100").addstyle);
+
+				// Type-specific numeric options only apply to their own control type, and are matched by content
+				// rather than by span identity, so they still work in the middle of an option string.
+				Assert.IsTrue(gui.ParseOpt("datetime", "", "x0 1").dtopt1);
+				Assert.IsTrue(gui.ParseOpt("monthcal", "", "x0 4").opt4);
+				Assert.AreEqual(4, gui.ParseOpt("edit", "", "4").addstyle, "a bare number is a style for other types");
+				// GuiControl.Opt() passes the type name as the script spelled it.
+				Assert.IsTrue(gui.ParseOpt("DateTime", "", "2").dtopt2);
+
+				// Applying an alignment must cope with control types that have no TextAlign at all: a Slider reads
+				// halign as its tick placement instead, and a ProgressBar has no notion of alignment.
+				var slider = (Gui.Control)gui.Add("Slider", "w100 +Center Page20 Line10 NoTicks AltSubmit");
+				_ = gui.Add("Progress", "w100 +Center");
+#if WINDOWS
+				Assert.AreEqual(TickStyle.Both, ((TrackBar)slider.Ctrl).TickStyle, "+Center places a slider's ticks on both sides");
+				// Edit-like controls spell TextAlign with the horizontal-only enum.
+				Assert.AreEqual(System.Windows.Forms.HorizontalAlignment.Center, ((TextBox)((Gui.Control)gui.Add("Edit", "w100 +Center")).Ctrl).TextAlign);
+				Assert.AreEqual(ContentAlignment.MiddleCenter, ((Label)((Gui.Control)gui.Add("Text", "w100 Center Middle")).Ctrl).TextAlign);
+#endif
+
+				// The sign is stripped before the font tokens are handed to ParseFont().
+				var font = gui.ParseOpt("text", "", "+s12 +Bold").fontstyles;
+				Assert.IsTrue(font.Contains("s12"), $"expected s12 in \"{font}\"");
+				Assert.IsTrue(font.Contains("Bold"), $"expected Bold in \"{font}\"");
+				Assert.IsFalse(font.Contains('+'), "font tokens must reach ParseFont() without their sign");
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
+		[Test, Category("Gui")]
+#if WINDOWS
+		[Apartment(ApartmentState.STA)]
+#endif
 		public void FileSelect()
 		{
 			if (Script.IsHeadless)

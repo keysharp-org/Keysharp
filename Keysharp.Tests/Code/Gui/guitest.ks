@@ -1184,7 +1184,7 @@ Gui2FindCtrlsButton.OnEvent("Click", "EnumCtrls")
 Gui2CtrlIndexButton := Gui2.Add("Button", "xc+260 yp", "Find by _Item")
 Gui2CtrlIndexButton.OnEvent("Click", "FindByItem")
 
-Gui2Edit := Gui2.Add("Edit", "xc+10 y+20 h400 w500 +Multiline")
+Gui2Edit := Gui2.Add("Edit", "xc+10 y+20 h400 w500 +Multi")
 ;MsgBox(Gui2Edit.Hwnd, "Hwnd of Edit")
 
 SecondGUI(*) {

@@ -3372,11 +3372,44 @@ namespace Keysharp.Builtins
 
 		internal static bool IsGuiType(Type type) => GuiTypes.Any(t => t.IsAssignableFrom(type));
 
+		//AHK lets Checked/Hidden/Disabled be followed by an optional 1/0/-1 so a script can pass a stored flag
+		//straight through ("Hidden" VarContainingOne). A suffix which evaluates to zero flips the sign, so
+		//"Hidden0" means the same as "-Hidden". A non-numeric suffix reads as zero, like AHK's ATOI().
+		private static bool ApplySuffixFlag(ReadOnlySpan<char> suffix, bool adding) =>
+		suffix.Length > 0 && (!int.TryParse(suffix, out var n) || n == 0) ? !adding : adding;
+
+		//Maps the side letter of a slider's "ToolTip<side>" option onto the TBTS_* value it selects. AHK reads
+		//only the first letter, so "ToolTipL" and "ToolTipLeft" are the same option.
+		private static int TooltipSide(char side) => char.ToUpperInvariant(side) switch
+		{
+			'L' => 1,
+			'B' => 2,
+			'R' => 3,
+			_ => 0,//Top, which is also the default when no side is given.
+		};
+
 		internal GuiOptions ParseOpt(string type, string text, string optionsstr)
 		{
-			var options = new GuiOptions();
+			//Word() matches an option that is just a word, Val() one whose word is followed by a value, handing
+			//back the part after the word. Both are case-insensitive, and having them keeps that noise out of the
+			//ladder below. Options whose value is a number or a color go through Options.TryParse() instead,
+			//which already understands hex, an optional value and a default. (These take the option as a
+			//parameter rather than capturing it because a local function cannot close over a span.)
+			static bool Word(ReadOnlySpan<char> opt, string word) => opt.Equals(word, StringComparison.OrdinalIgnoreCase);
 
-			if (type == "monthcal" && !string.IsNullOrEmpty(text))
+			static bool Val(ReadOnlySpan<char> opt, string word, out ReadOnlySpan<char> value)
+			{
+				var matched = opt.StartsWith(word, StringComparison.OrdinalIgnoreCase);
+				value = matched ? opt[word.Length..] : default;
+				return matched;
+			}
+
+			var options = new GuiOptions();
+			//Add() lowercases the type, but GuiControl.Opt() passes the name the script used ("DateTime"),
+			//so normalize once here rather than making every type test below case-insensitive.
+			type = type?.ToLowerInvariant() ?? "";
+
+			if (type == Keyword_MonthCal && !string.IsNullOrEmpty(text))
 			{
 				Conversions.ParseRange(text, out options.dtselstart, out options.dtselend);
 
@@ -3393,56 +3426,88 @@ namespace Keysharp.Builtins
 
 			foreach (Range r in optionsstr.AsSpan().SplitAny(Spaces))
 			{
-				var tempbool = false;
+				var raw = optionsstr.AsSpan(r).Trim();
+
+				if (raw.Length == 0)
+					continue;
+
+				//AHK strips the sign once, up front: "-Word" removes the property, "+Word" adds it, and a bare
+				//"Word" is an implicit "+Word" ("In the absence of a preceding sign, a plus sign is assumed").
+				//Every test below therefore matches the bare option word and consults adding for the sign,
+				//instead of each one having to cope with a sign of its own.
+				var adding = raw[0] != '-';
+				var opt = raw[0] is '+' or '-' ? raw[1..] : raw;
+
+				if (opt.Length == 0)
+					continue;//A lone "+" or "-", which AHK ignores.
+
 				var temp = 0;
 				var tempcolor = Color.Empty;
-				var tempstr = "";
-				var opt = optionsstr.AsSpan(r).Trim();
 
-				if (opt.Length > 0)
+				if (type == Keyword_DateTime)
 				{
-					if (type == "datetime")
+					//ChooseNone has to be tested first because the date parser accepts any suffix.
+					if (Word(opt, "ChooseNone")) { options.choosenone = adding; continue; }
+					else if (Val(opt, "Choose", out _))
 					{
-						if (Options.TryParseDateTime(opt, "Choose", "yyyyMMdd", ref options.dtChoose)) { continue; }
-						else if (opt.Equals("ChooseNone", StringComparison.OrdinalIgnoreCase)) { options.choosenone = true; continue; }
-						else if (opt == "1") { options.dtopt1 = true; continue; }
-						else if (opt == "2") { options.dtopt2 = true; continue; }
-					}
-					else if (type == "monthcal")
-					{
-						if (Options.TryParse(opt, "Multi", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.datemultisel = true; continue; }
-					}
-					else
-					{
-						if (Options.TryParse(opt, "Multi", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.multiline = tempbool; continue; }
-					}
+						if (adding)//AHK does not implement removal of a chosen date.
+							_ = Options.TryParseDateTime(opt, "Choose", "yyyyMMdd", ref options.dtChoose);
 
-					if (Options.TryParse(opt, "r", ref options.rows)) { }
-					else if (Options.TryParse(opt, "w", ref options.width)) { }
-					else if (Options.TryParse(opt, "h", ref options.height)) { }
-					else if (Options.TryParse(opt, "x+", ref options.x)) { options.xpos = GuiOptions.Positioning.PreviousBottomRight; }
-					else if (Options.TryParse(opt, "y+", ref options.y)) { options.ypos = GuiOptions.Positioning.PreviousBottomRight; }
-					//else if (string.Compare(opt, "x+m", true) == 0) { options.xplusm = true; }
-					//else if (string.Compare(opt, "y+m", true) == 0) { options.yplusm = true; }
-					else if (Options.TryParse(opt, "x", ref options.x)) { options.xpos = GuiOptions.Positioning.Absolute; }
-					else if (Options.TryParse(opt, "y", ref options.y)) { options.ypos = GuiOptions.Positioning.Absolute; }
-					else if (Options.TryParse(opt, "t", ref options.t)) { options.tabstops.Add(options.t); }
-					else if (Options.TryParse(opt, "Redraw", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.redraw = tempbool; }
-					else if (Options.TryParse(opt, "DPIResize", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.dpiresize = tempbool; }
-					//Checkbox.
-					else if (opt.Equals("Check3", StringComparison.OrdinalIgnoreCase)) { options.check3 = true; }//Needs to come before any option starting with a 'c'.
-					else if (opt.Equals("CheckedGray ", StringComparison.OrdinalIgnoreCase)) { options.checkedgray = true; }
-					else if (Options.TryParse(opt, "Checked", ref temp, StringComparison.OrdinalIgnoreCase, true, 1)) { options.ischecked = temp; }
-					else if (Options.TryParseString(opt, "Range", ref options.nudrange))
+						continue;
+					}
+					else if (Word(opt, "1")) { options.dtopt1 = adding; continue; }//DTS_UPDOWN.
+					else if (Word(opt, "2")) { options.dtopt2 = adding; continue; }//DTS_SHOWNONE.
+				}
+				else if (type == Keyword_MonthCal)
+				{
+					//MCS_WEEKNUMBERS/MCS_NOTODAYCIRCLE/MCS_NOTODAY, which AHK spells as plain style numbers.
+					if (Word(opt, "4")) { options.opt4 = adding; continue; }
+					else if (Word(opt, "8")) { options.opt8 = adding; continue; }
+					else if (Word(opt, "16")) { options.opt16 = adding; continue; }
+				}
+
+				//"Multi" is multi-line for Edit and multi-select for ListBox/ListView/MonthCal.
+				if (Word(opt, "Multi"))
+				{
+					if (type == Keyword_MonthCal)
+						options.datemultisel = adding;
+					else
+						options.multiline = adding;
+
+					continue;
+				}
+
+				//Options carrying a number are matched first: each demands a numeric value, so none of them can
+				//swallow a word option that merely starts with the same letter ("Range", "Redraw", "Hidden"...).
+				if (Options.TryParse(opt, "r", ref options.rows)) { }
+				else if (Options.TryParse(opt, "w", ref options.width)) { }
+				else if (Options.TryParse(opt, "h", ref options.height)) { }
+				else if (Options.TryParse(opt, "x+", ref options.x)) { options.xpos = GuiOptions.Positioning.PreviousBottomRight; }
+				else if (Options.TryParse(opt, "y+", ref options.y)) { options.ypos = GuiOptions.Positioning.PreviousBottomRight; }
+				else if (Options.TryParse(opt, "x", ref options.x)) { options.xpos = GuiOptions.Positioning.Absolute; }
+				else if (Options.TryParse(opt, "y", ref options.y)) { options.ypos = GuiOptions.Positioning.Absolute; }
+				else if (Options.TryParse(opt, "t", ref options.t)) { options.tabstops.Add(options.t); }
+				else if (Word(opt, "Redraw")) { options.redraw = adding; }
+				else if (Word(opt, "DPIResize")) { options.dpiresize = adding; }
+				//Checkbox.
+				else if (Word(opt, "Check3")) { options.check3 = adding; }//Needs to come before any option starting with a 'c'.
+				else if (Word(opt, "CheckedGray")) { options.checkedgray = adding; options.ischecked = adding ? -1 : 0; }
+				//AHK allows an explicit 1/0/-1 after the word so a script can pass a stored flag straight through;
+				//without one the sign decides.
+				else if (Options.TryParse(opt, "Checked", ref temp, StringComparison.OrdinalIgnoreCase, true, adding ? 1 : 0)) { options.ischecked = temp; }
+				else if (Val(opt, "Range", out var range))
+				{
+					if (adding)//AHK does not implement range removal.
 					{
-						if (type == "datetime" || type == "monthcal")
+						options.nudrange = range.ToString();
+
+						if (type == Keyword_DateTime || type == Keyword_MonthCal)
 						{
 							Conversions.ParseRange(options.nudrange, out options.dtlow, out options.dthigh);
 						}
-						else if (type == "updown" || type == "slider" || type == "progress")
+						else if (type == Keyword_UpDown || type == Keyword_Slider || type == Keyword_Progress)
 						{
-							var splits = options.nudrange.Split('-', StringSplitOptions.None);
-							var vals = Conversions.ParseRange(splits);
+							var vals = Conversions.ParseRange(options.nudrange.Split('-', StringSplitOptions.None));
 
 							if (vals.Count > 0)
 								options.nudlow = vals[0];
@@ -3451,139 +3516,145 @@ namespace Keysharp.Builtins
 								options.nudhigh = vals[1];
 						}
 					}
-					else if (Options.TryParse(opt, "Choose", ref options.ddlchoose)) { options.ddlchoose--; options.choose.Add(options.ddlchoose); }
-					//
-					else if (Options.TryParse(opt, "Vertical", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.vertical = tempbool; }
-					else if (Options.TryParseString(opt, "v", ref options.name)) { }
-					else if (Options.TryParse(opt, "Disabled", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.enabled = !tempbool; }
-					else if (Options.TryParse(opt, "Hidden", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.visible = !tempbool; }
-					else if (Options.TryParse(opt, "Autosize", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.autosize = tempbool; }
-					else if (Options.TryParse(opt, "wp", ref options.wp, StringComparison.OrdinalIgnoreCase, true)) { }
-					else if (Options.TryParse(opt, "hp", ref options.hp, StringComparison.OrdinalIgnoreCase, true)) { }
+				}
+				else if (Options.TryParse(opt, "Choose", ref temp)) { if (adding) { options.ddlchoose = temp - 1; options.choose.Add(options.ddlchoose); } }
+				//
+				else if (Word(opt, "Vertical")) { options.vertical = adding; }
+				else if (Val(opt, "Disabled", out var disabled)) { options.enabled = !ApplySuffixFlag(disabled, adding); }
+				else if (Val(opt, "Hidden", out var hidden)) { options.visible = !ApplySuffixFlag(hidden, adding); }
+				else if (Word(opt, "Autosize")) { options.autosize = adding; }
+				else if (Options.TryParse(opt, "wp", ref options.wp, StringComparison.OrdinalIgnoreCase, true)) { }
+				else if (Options.TryParse(opt, "hp", ref options.hp, StringComparison.OrdinalIgnoreCase, true)) { }
 
 #if WINDOWS
-					else if (Options.TryParseString(opt, "Class", ref options.customclass, StringComparison.OrdinalIgnoreCase)) { }
+				else if (Options.TryParseString(opt, "Class", ref options.customclass, StringComparison.OrdinalIgnoreCase)) { }
 
 #endif
-					else if (Options.TryParse(opt, "xp", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.PreviousTopLeft; }
-					else if (Options.TryParse(opt, "yp", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.PreviousTopLeft; }
-					else if (Options.TryParse(opt, "xm", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Margin; }
-					else if (Options.TryParse(opt, "ym", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.Margin; }
-					else if (Options.TryParse(opt, "x+m", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.x = form.Margin.Left; options.xpos = GuiOptions.Positioning.PreviousBottomRight; }
-					else if (Options.TryParse(opt, "y+m", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.y = form.Margin.Bottom; options.ypos = GuiOptions.Positioning.PreviousBottomRight; }
-					else if (Options.TryParse(opt, "xs", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Section; }
-					else if (Options.TryParse(opt, "ys", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.Section; }
-					else if (Options.TryParse(opt, "xc", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Container; }
-					else if (Options.TryParse(opt, "yc", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.Container; }
-					else if (Options.TryParse(opt, "AltSubmit", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.altsubmit = tempbool; }
-					else if (opt.Equals("Section", StringComparison.OrdinalIgnoreCase)) { options.section = true; }
-					else if (Options.TryParse(opt, "Tabstop", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.tabstop = tempbool; }
-					else if (Options.TryParse(opt, "Wrap", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.wordwrap = tempbool; }
-					else if (Options.TryParse(opt, "VScroll", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.vscroll = tempbool; }
-					else if (opt.Equals("-HScroll", StringComparison.OrdinalIgnoreCase)) { options.hscroll = false; }
-					else if (Options.TryParse(opt, "HScroll", ref options.hscrollamt, StringComparison.OrdinalIgnoreCase, true)) { }
-					else if (Options.TryParse(opt, "Increment", ref temp)) { options.nudinc = temp; }
-					else if (Options.TryParse(opt, "Hex", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.hex = tempbool; }
-					else if (opt.Equals("BackgroundTrans", StringComparison.OrdinalIgnoreCase))
-					{
+				else if (Options.TryParse(opt, "xp", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.PreviousTopLeft; }
+				else if (Options.TryParse(opt, "yp", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.PreviousTopLeft; }
+				else if (Options.TryParse(opt, "xm", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Margin; }
+				else if (Options.TryParse(opt, "ym", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.Margin; }
+				else if (Options.TryParse(opt, "x+m", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.x = form.Margin.Left; options.xpos = GuiOptions.Positioning.PreviousBottomRight; }
+				else if (Options.TryParse(opt, "y+m", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.y = form.Margin.Bottom; options.ypos = GuiOptions.Positioning.PreviousBottomRight; }
+				else if (Options.TryParse(opt, "xs", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Section; }
+				else if (Options.TryParse(opt, "ys", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.Section; }
+				else if (Options.TryParse(opt, "xc", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Container; }
+				else if (Options.TryParse(opt, "yc", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.Container; }
+				else if (Word(opt, "AltSubmit")) { options.altsubmit = adding; }
+				else if (Word(opt, "Section")) { options.section = true; }//AHK treats adding and removing the same here.
+				else if (Word(opt, "Tabstop")) { options.tabstop = adding; }
+				else if (Word(opt, "Wrap")) { options.wordwrap = adding; }
+				else if (Word(opt, "VScroll")) { options.vscroll = adding; }
+				//The optional number after HScroll is the horizontal scrolling width (ListBox only).
+				else if (Options.TryParse(opt, "HScroll", ref temp, StringComparison.OrdinalIgnoreCase, true)) { options.hscroll = adding; if (adding) options.hscrollamt = temp; }
+				else if (Options.TryParse(opt, "Increment", ref temp)) { options.nudinc = temp; }
+				else if (Word(opt, "Hex")) { options.hex = adding; }
+				else if (Word(opt, "BackgroundTrans"))
+				{
+					options.bgtrans = adding;
+
+					//AHK's "-BackgroundTrans" resets the background the same way "+Background" does.
+					if (adding)
 						options.addexstyle |= 0x00000020;
-						options.bgtrans = true;
-					}
-					else if (opt.Equals("-Background", StringComparison.OrdinalIgnoreCase)) { options.bgcolor = Forms.Control.DefaultBackColor; }
-					else if (opt.Equals("Background", StringComparison.OrdinalIgnoreCase)) { options.bgcolor = Forms.Control.DefaultBackColor; }
-					else if (opt.Equals("BackgroundDefault", StringComparison.OrdinalIgnoreCase)) { options.bgcolor = Forms.Control.DefaultBackColor; }
-					else if (Options.TryParse(opt, "Background", ref tempcolor, StringComparison.OrdinalIgnoreCase, true)) { options.bgcolor = tempcolor; }
-					else if (Options.TryParse(opt, "Border", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.thinborder = tempbool; }
-
-					else if (opt.Equals("Left", StringComparison.OrdinalIgnoreCase)) { options.halign = GuiOptions.HorizontalAlignment.Left; }
-					else if (opt.Equals("Center", StringComparison.OrdinalIgnoreCase)) { options.halign = GuiOptions.HorizontalAlignment.Center; }
-					else if (opt.Equals("Right", StringComparison.OrdinalIgnoreCase)) { options.halign = GuiOptions.HorizontalAlignment.Right; }
-					else if (opt.Equals("Bottom", StringComparison.OrdinalIgnoreCase)) { options.valign = GuiOptions.VerticalAlignment.Bottom; }
-					else if (opt.Equals("Top", StringComparison.OrdinalIgnoreCase)) { options.valign = GuiOptions.VerticalAlignment.Top; }
-					else if (opt.Equals("Middle", StringComparison.OrdinalIgnoreCase)) { options.valign = GuiOptions.VerticalAlignment.Middle; }
-
-					//Control specific.
-					//Edit.
-					else if (Options.TryParse(opt, "limit", ref options.limit, StringComparison.OrdinalIgnoreCase, true)) { }
-					else if (Options.TryParse(opt, "Lowercase", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.lowercase = tempbool; }
-					else if (Options.TryParse(opt, "Uppercase", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.uppercase = tempbool; }
-					else if (Options.TryParse(opt, "Number", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.number = tempbool; }
-					else if (Options.TryParseString(opt, "Password", ref options.pwdch, StringComparison.OrdinalIgnoreCase)) { options.pwd = true; }
-					else if (Options.TryParse(opt, "ReadOnly", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.rdonly = tempbool; }
-					else if (Options.TryParse(opt, "WantCtrlA", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.wantctrla = tempbool; }
-					else if (Options.TryParse(opt, "WantReturn", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.wantreturn = tempbool; }
-					else if (Options.TryParse(opt, "WantTab", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.wanttab = tempbool; }
-					//GrouBox.
-					else if (opt.Equals("Group", StringComparison.OrdinalIgnoreCase)) { options.group = true; }
-					//UpDown.
-					else if (opt.Equals("Horz", StringComparison.OrdinalIgnoreCase)) { options.nudhorz = true; }
-					//16
-					//0x80
-					//None unit inc/dec
-					//Button.
-					else if (Options.TryParse(opt, "Default", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.btndef = tempbool; }
-					//DropDownList.
-					else if (Options.TryParse(opt, "Sort", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.sort = tempbool; }
-					//ComboBox.
-					else if (Options.TryParse(opt, "Simple", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.cmbsimple = tempbool; }
-					else if (Options.TryParse(opt, "Invert", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.invert = tempbool; }
-					else if (Options.TryParse(opt, "Line", ref options.line)) { }
-					else if (Options.TryParse(opt, "NoTicks", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.noticks = tempbool; }
-					else if (Options.TryParse(opt, "Page", ref options.page)) { }
-					else if (Options.TryParse(opt, "Thick", ref options.thick)) { }
-					else if (Options.TryParse(opt, "TickInterval", ref options.tickinterval)) { }
-					else if (opt.Equals("ToolTip", StringComparison.OrdinalIgnoreCase)) { options.tooltip = true; }
-					else if (opt.Equals("ToolTipTop", StringComparison.OrdinalIgnoreCase)) { options.tooltipside = 0; }
-					else if (opt.Equals("ToolTipLeft", StringComparison.OrdinalIgnoreCase)) { options.tooltipside = 1; }
-					else if (opt.Equals("ToolTipBottom", StringComparison.OrdinalIgnoreCase)) { options.tooltipside = 2; }
-					else if (opt.Equals("ToolTipRight", StringComparison.OrdinalIgnoreCase)) { options.tooltipside = 3; }
-					else if (Options.TryParse(opt, "Smooth", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.smooth = tempbool; }
-					else if (Options.TryParse(opt, "Buttons", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.buttons = tempbool; }
-					else if (Options.TryParse(opt, "ImageList", ref options.ilid)) { }
-					else if (Options.TryParse(opt, "Lines", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.lines = tempbool; }
-					else if (Options.TryParse(opt, "WantF2", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.wantf2 = tempbool; }
-					//ListView.
-					else if (Options.TryParse(opt, "SortDesc", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.sortdesc = tempbool; }
-					else if (Options.TryParse(opt, "Grid", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.grid = tempbool; }
-					else if (Options.TryParse(opt, "Hdr", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.header = tempbool; }
-					else if (Options.TryParse(opt, "NoSortHdr", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.clickheader = !tempbool; }
-					else if (Options.TryParse(opt, "NoSort", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { options.sortheader = !tempbool; }
-					else if (Options.TryParse(opt, "Icon", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { if (tempbool) options.lvview = View.LargeIcon; }
-					else if (Options.TryParse(opt, "Tile", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { if (tempbool) options.lvview = View.Tile; }
-					else if (Options.TryParse(opt, "IconSmall", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { if (tempbool) options.lvview = View.SmallIcon; }
-					else if (Options.TryParse(opt, "List", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { if (tempbool) options.lvview = View.List; }
-					else if (Options.TryParse(opt, "Report", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true)) { if (tempbool) options.lvview = View.Details; }
-					//PictureBox.
-					else if (Options.TryParseString(opt, "Icon", ref tempstr)) { options.iconnumber = ImageHelper.PrepareIconNumber(tempstr); }
-					//Other.
-					else if (Options.TryParse(opt, "c", ref tempcolor)) { options.c = tempcolor; }
-					//Font style options. These mirror the subset of Gui.SetFont() options that don't need a font
-					//family name (which can't be parsed unambiguously from a space-delimited option string, e.g.
-					//"MS Sans Serif"). The tokens are accumulated and applied to the control's font in Add() via
-					//Conversions.ParseFont(). "s" is only matched when followed by a number, so it doesn't clash
-					//with word options such as Section/Sort/Smooth.
-					else if (Options.TryParse(opt, "s", ref temp)) { options.fontstyles += " " + opt.ToString(); }
-					else if (opt.Equals(Keyword_Bold, StringComparison.OrdinalIgnoreCase)
-						  || opt.Equals(Keyword_Italic, StringComparison.OrdinalIgnoreCase)
-						  || opt.Equals(Keyword_Strike, StringComparison.OrdinalIgnoreCase)
-						  || opt.Equals(Keyword_Underline, StringComparison.OrdinalIgnoreCase)
-						  || opt.Equals(Keyword_Norm, StringComparison.OrdinalIgnoreCase)) { options.fontstyles += " " + opt.ToString(); }
-					else if (opt == "4") { options.opt4 = true; }
-					else if (opt == "8") { options.opt8 = true; }
-					else if (opt == "16") { options.opt16 = true; }
-					else if (Options.TryParse(opt, "+E", ref options.addexstyle)) { }
-					else if (Options.TryParse(opt, "E", ref options.addexstyle)) { }
-					else if (Options.TryParse(opt, "-E", ref options.remexstyle)) { }
-					else if (Options.TryParse(opt, "+LV", ref temp)) { options.addlvstyle |= temp; }
-					else if (Options.TryParse(opt, "LV", ref temp)) { options.addlvstyle |= temp; }
-					else if (Options.TryParse(opt, "-LV", ref temp)) { options.remlvstyle &= ~temp; }
-					else if (Options.TryParse(opt, "-", ref options.remstyle)) { }
-					else if (Options.TryParse(opt, "+", ref options.addstyle)) { }
-					else if (Options.TryParse(opt, "", ref options.addstyle)) { }
-					//Anything left is a raw token that isn't a recognized option and isn't a numeric style: reject
-					//it like Gui window options do, instead of silently ignoring it.
-					else { _ = Errors.ValueErrorOccurred("Invalid option.", opt.ToString()); }
+					else
+						options.bgcolor = Forms.Control.DefaultBackColor;
 				}
+				//"+Background" (no suffix), "-Background" and "BackgroundDefault" all revert to the default color,
+				//and so does any other negated spelling: only "+Background<color>" picks a color.
+				else if (Word(opt, "Background") || Word(opt, "BackgroundDefault")) { options.bgcolor = Forms.Control.DefaultBackColor; }
+				else if (Options.TryParse(opt, "Background", ref tempcolor, StringComparison.OrdinalIgnoreCase, true)) { options.bgcolor = adding ? tempcolor : Forms.Control.DefaultBackColor; }
+				else if (Word(opt, "Border")) { options.thinborder = adding; }
+
+				//Removing an alignment reverts to the default (left/top), since there is no way to know what the
+				//previous value was; this is what AHK does by clearing the corresponding style bits.
+				else if (Word(opt, "Left")) { if (adding) options.halign = GuiOptions.HorizontalAlignment.Left; }
+				else if (Word(opt, "Center")) { options.halign = adding ? GuiOptions.HorizontalAlignment.Center : GuiOptions.HorizontalAlignment.Left; }
+				else if (Word(opt, "Right")) { options.halign = adding ? GuiOptions.HorizontalAlignment.Right : GuiOptions.HorizontalAlignment.Left; }
+				else if (Word(opt, "Bottom")) { options.valign = adding ? GuiOptions.VerticalAlignment.Bottom : GuiOptions.VerticalAlignment.Top; }
+				else if (Word(opt, "Top")) { if (adding) options.valign = GuiOptions.VerticalAlignment.Top; }
+				else if (Word(opt, "Middle")) { options.valign = adding ? GuiOptions.VerticalAlignment.Middle : GuiOptions.VerticalAlignment.Top; }
+
+				//Control specific.
+				//Edit. "-Limit" removes the limit, which WinForms and Eto both spell as a maximum length of zero.
+				else if (Options.TryParse(opt, "Limit", ref temp, StringComparison.OrdinalIgnoreCase, true)) { options.limit = adding ? temp : 0; }
+				else if (Word(opt, "Lowercase")) { options.lowercase = adding; }
+				else if (Word(opt, "Uppercase")) { options.uppercase = adding; }
+				else if (Word(opt, "Number")) { options.number = adding; }
+				else if (Val(opt, "Password", out var pwdch)) { options.pwd = adding; options.pwdch = adding ? pwdch.ToString() : ""; }
+				else if (Word(opt, "ReadOnly")) { options.rdonly = adding; }
+				else if (Word(opt, "WantCtrlA")) { options.wantctrla = adding; }
+				else if (Word(opt, "WantReturn")) { options.wantreturn = adding; }
+				else if (Word(opt, "WantTab")) { options.wanttab = adding; }
+				//GrouBox.
+				else if (Word(opt, "Group")) { options.group = adding; }
+				//UpDown.
+				else if (Word(opt, "Horz")) { options.nudhorz = adding; }
+				//16
+				//0x80
+				//None unit inc/dec
+				//Button.
+				else if (Word(opt, "Default")) { options.btndef = adding; }
+				//DropDownList.
+				else if (Word(opt, "Sort")) { options.sort = adding; }
+				//ComboBox.
+				else if (Word(opt, "Simple")) { options.cmbsimple = adding; }
+				else if (Word(opt, "Invert")) { options.invert = adding; }
+				else if (Options.TryParse(opt, "Line", ref options.line)) { }
+				else if (Word(opt, "NoTicks")) { options.noticks = adding; }
+				else if (Options.TryParse(opt, "Page", ref options.page)) { }
+				else if (Options.TryParse(opt, "Thick", ref options.thick)) { }
+				else if (Options.TryParse(opt, "TickInterval", ref options.tickinterval)) { }
+				//AHK reads only the first letter of the side, so "ToolTipL" and "ToolTipLeft" are the same option.
+				else if (Val(opt, "ToolTip", out var side)) { options.tooltip = adding; if (adding) options.tooltipside = side.Length > 0 ? TooltipSide(side[0]) : 0; }
+				else if (Word(opt, "Smooth")) { options.smooth = adding; }
+				else if (Word(opt, "Buttons")) { options.buttons = adding; }
+				else if (Options.TryParse(opt, "ImageList", ref options.ilid)) { }
+				else if (Word(opt, "Lines")) { options.lines = adding; }
+				else if (Word(opt, "WantF2")) { options.wantf2 = adding; }
+				//ListView.
+				else if (Word(opt, "SortDesc")) { options.sortdesc = adding; }
+				else if (Word(opt, "Grid")) { options.grid = adding; }
+				else if (Word(opt, "Hdr")) { options.header = adding; }
+				else if (Word(opt, "NoSortHdr")) { options.clickheader = !adding; }
+				else if (Word(opt, "NoSort")) { options.sortheader = !adding; }
+				//"Icon" picks the view for a ListView ("Icon"/"IconSmall") but the icon index for a Picture.
+				else if (Val(opt, "Icon", out var icon))
+				{
+					//AHK does not implement removal here.
+					if (adding && type == Keyword_ListView)
+						options.lvview = icon.Equals("Small", StringComparison.OrdinalIgnoreCase) ? View.SmallIcon : View.LargeIcon;
+					else if (adding && icon.Length > 0)
+						options.iconnumber = ImageHelper.PrepareIconNumber(icon.ToString());
+				}
+				else if (Word(opt, "Tile")) { if (adding) options.lvview = View.Tile; }
+				else if (Word(opt, "List")) { if (adding) options.lvview = View.List; }
+				else if (Word(opt, "Report")) { if (adding) options.lvview = View.Details; }
+				//Other. "-c" reverts to the system text color, which is what Options.TryParse() hands back for
+				//"cDefault" as well.
+				else if (Options.TryParse(opt, "c", ref tempcolor, StringComparison.OrdinalIgnoreCase, !adding)) { options.c = tempcolor; }
+				//Font style options. These mirror the subset of Gui.SetFont() options that don't need a font
+				//family name (which can't be parsed unambiguously from a space-delimited option string, e.g.
+				//"MS Sans Serif"). The tokens are accumulated and applied to the control's font in Add() via
+				//Conversions.ParseFont(). "s" is only matched when followed by a number, so it doesn't clash
+				//with word options such as Section/Sort/Smooth. ParseFont() has no syntax for removing a single
+				//style (use "norm" to clear them all), so a negated token is accepted but has no effect.
+				else if (Options.TryParse(opt, "s", ref temp)
+						 || Word(opt, Keyword_Bold)
+						 || Word(opt, Keyword_Italic)
+						 || Word(opt, Keyword_Strike)
+						 || Word(opt, Keyword_Underline)
+						 || Word(opt, Keyword_Norm)) { if (adding) options.fontstyles += " " + opt.ToString(); }
+				//The name must be matched after every word option, otherwise it swallows them ("VScroll" would
+				//be read as the name "Scroll"), which is also why AHK checks its single-letter options last.
+				else if (Options.TryParseString(opt, "v", ref options.name)) { }
+				//Raw style numbers: a leading E is an extended style, LV a ListView extended style, and a bare
+				//number a window style. The sign decides whether each is added or removed.
+				else if (Options.TryParse(opt, "E", ref temp)) { if (adding) options.addexstyle |= temp; else options.remexstyle |= temp; }
+				else if (Options.TryParse(opt, "LV", ref temp)) { if (adding) options.addlvstyle |= temp; else options.remlvstyle |= temp; }
+				else if (Options.TryParse(opt, "", ref temp)) { if (adding) options.addstyle |= temp; else options.remstyle |= temp; }
+				//Anything left is a raw token that isn't a recognized option and isn't a numeric style: reject
+				//it like Gui window options do, instead of silently ignoring it.
+				else { _ = Errors.ValueErrorOccurred("Invalid option.", raw.ToString()); }
 			}
 
 			return options;
@@ -3608,18 +3679,22 @@ namespace Keysharp.Builtins
 			if (!opts.halign.HasValue && !opts.valign.HasValue)
 				return;
 
-			ContentAlignment current = Reflections.SafeGetProperty<ContentAlignment>(ctrl, "TextAlign");
+			//Alignment reaches the control through its TextAlign property, which text-bearing controls spell as a
+			//two-dimensional ContentAlignment (Label/Button/CheckBox/Radio) but Edit-like controls spell as a
+			//horizontal-only HorizontalAlignment. Control types that have neither must be left alone: a Slider
+			//takes Left/Center from opts.halign to place its tick marks instead (see Add()), and a ProgressBar has
+			//no notion of alignment at all, so reading a TextAlign they don't have would throw.
+			var ctrlType = ctrl.GetType();
 
-			var horizontal = GetHorizontalAlignment(current);
-			var vertical = GetVerticalAlignment(current);
-
-			if (opts.halign.HasValue)
-				horizontal = opts.halign.Value;
-
-			if (opts.valign.HasValue)
-				vertical = opts.valign.Value;
-
-			Reflections.SafeSetProperty(ctrl, "TextAlign", CombineAlignment(vertical, horizontal));
+			if (ctrlType.GetProperty("TextAlign", typeof(ContentAlignment)) is PropertyInfo content && content.CanRead && content.CanWrite)
+			{
+				var current = (ContentAlignment)content.GetValue(ctrl);
+				content.SetValue(ctrl, CombineAlignment(opts.valign ?? GetVerticalAlignment(current), opts.halign ?? GetHorizontalAlignment(current)));
+			}
+			else if (opts.halign.HasValue && ctrlType.GetProperty("TextAlign", typeof(Forms.HorizontalAlignment)) is PropertyInfo horizontal && horizontal.CanWrite)
+			{
+				horizontal.SetValue(ctrl, ToFormsAlignment(opts.halign.Value));
+			}
 #else
 			if (opts.halign.HasValue)
 			{
@@ -3649,6 +3724,14 @@ namespace Keysharp.Builtins
 			if (e.KeyData == (Keys.Control | Keys.A))
 				e.IsInputKey = true;
 		}
+
+		//Edit-like controls only have a horizontal TextAlign, which is a different enum than the Label/Button one.
+		private static Forms.HorizontalAlignment ToFormsAlignment(GuiOptions.HorizontalAlignment alignment) => alignment switch
+		{
+			GuiOptions.HorizontalAlignment.Center => Forms.HorizontalAlignment.Center,
+			GuiOptions.HorizontalAlignment.Right => Forms.HorizontalAlignment.Right,
+			_ => Forms.HorizontalAlignment.Left,
+		};
 
 		private static GuiOptions.VerticalAlignment GetVerticalAlignment(ContentAlignment alignment) => alignment switch
 		{
