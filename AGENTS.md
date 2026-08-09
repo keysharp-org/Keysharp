@@ -71,6 +71,13 @@ Build output lands in `bin/Debug/net10.0-windows/` (or the appropriate TFM subfo
 --compile dll <path> # emit the raw assembly to <path> (or * for stdout) and exit
 ```
 
+> **Important**: a script an agent runs must never be able to block on a dialog unless the user has explicitly opted in. A load-time warning or an uncaught runtime error opens a modal window on the user's desktop that nothing in this environment can dismiss, and it leaves an orphaned `Keysharp.exe` behind. Before running a script:
+>
+> - Put `#ErrorStdOut` at the top of it. The directive sends any syntax error that prevents the script from launching — and any uncaught runtime error — to the standard error stream (stderr) rather than displaying a dialog.
+> - The `--errorstdout` / `/ErrorStdOut` command-line switch does the same for load-time errors only; it does **not** suppress runtime error dialogs, so it is not a substitute for the directive.
+> - `#Warn` warnings show their own dialog, which `#ErrorStdOut` does not suppress, and `VarUnset`/`Unreachable` are on by default. Add `#Warn All, StdOut` to keep them visible without a dialog.
+> - The same applies to whatever the script itself blocks on: `MsgBox`, `InputBox`, `FileSelect`, a modal `Gui`. Use `--validate` when a compile check is all that is needed.
+
 ## Tests
 
 The test suite uses **NUnit 4** and is serialized (`LevelOfParallelism(1)`) because tests share `Script.TheScript` global state. Do not add `[Parallelizable]` attributes.
@@ -140,6 +147,8 @@ If KeysharpDocs is not present alongside this repo, still do steps 1–3 and not
 - The `Script.TheScript` singleton is the single source of truth for all runtime state. It is set once at startup (`Script.cs:369`) and is never null during execution.
 - Test scripts signal pass/fail by outputting a line containing `PASS` or `FAIL`.
 - Suppress warnings 1701, 1702, 8981, 0164, 8974 project-wide (already in `.csproj`). Do not add new `#pragma warning disable` without a comment explaining why.
+- Use comments sparingly, and keep the ones that earn their place as short as they can be. A comment should explain why the code is the way it is — including why an obvious alternative was rejected — not restate what it does.
+- Do not write comments about previous state ("this *used* to …", "now also handles …", "changed from …"). The reader only sees the current code and has no knowledge of what it replaced.
 
 ## Useful entry points for common tasks
 
