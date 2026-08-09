@@ -555,6 +555,9 @@ namespace Keysharp.Internals.Os.Windows
 		internal const int UNCHECKED_FOCUSED = 1048580; // if control is focused
 		internal const int CHECKED_FOCUSED = 1048596; // if control is focused
 
+		// GlobalAlloc flag SetClipboardData requires of the memory it takes ownership of.
+		internal const uint GMEM_MOVEABLE = 0x0002;
+
 		internal const int CF_TEXT = 1;
 		internal const int CF_BITMAP = 2;
 		internal const int CF_METAFILEPICT = 3;

@@ -104,23 +104,17 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static object A_Clipboard
 		{
-			get
-			{
-				// Even if we're on an STA thread, this can sometimes fail, so always make sure it runs on the main
-				// thread. The resolved clipboard backend (Windows raw-Win32, a Wayland shell extension, or Eto) was
-				// chosen once at startup — see Platform.Clipboard / LinuxClipboards.Resolve.
-				Func<object> act = () => Platform.Clipboard.GetText();
-				return Script.InvokeOnUIThread(act);
-			}
+			// Platform.Clipboard marshals to the UI thread itself (see PlatformHost.Clipboard), so this — like every
+			// other clipboard seam — is a plain call. The backend behind it (Windows raw-Win32, a Wayland shell
+			// extension, or Eto) was chosen once at startup; see LinuxClipboards.Resolve.
+			get => Platform.Clipboard.GetText();
+
 			set
 			{
-				Script.InvokeOnUIThread(() =>
-				{
-					if (value is ClipboardAll arr)
-						Platform.Clipboard.RestoreAll(arr);
-					else
-						Platform.Clipboard.SetText(value?.ToString() ?? "");
-				});
+				if (value is ClipboardAll arr)
+					Platform.Clipboard.RestoreAll(arr);
+				else
+					Platform.Clipboard.SetText(value?.ToString() ?? "");
 			}
 		}
 

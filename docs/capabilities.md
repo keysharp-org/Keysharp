@@ -27,6 +27,7 @@ Status legend:
 | #AssemblyTrademark | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly trademark metadata for compiled scripts. |
 | #AssemblyVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly version metadata for compiled scripts. |
 | #ClipboardTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets how long clipboard operations should wait before timing out. |
+| #CSharp | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Keysharp-only. Embeds C# compiled into the script's own assembly, for hot paths where AHK-level semantics cost too much. Top level of a script or module only. A public static method becomes a callable script function; C# accessibility is the only visibility rule, so non-public members stay invisible (there is no export attribute). Arguments are converted with AutoHotkey's rules at the boundary, so typed parameters take ordinary script values and a non-numeric value raises a catchable TypeError; ref/out/in and pointer parameters are rejected. A `using` at the top of a block is hoisted. Module globals are readable and writable as static fields, in lowercase. Errors and exceptions are reported against the script's own file and line. Unsafe/pointer code is allowed, gated only by C#'s own `unsafe` keyword as in any other C# project; the directive itself takes no options. Referencing the wider framework (Console, Regex, Tasks) is enabled only for scripts that use this directive, so others keep their compile speed. Platform-neutral implementation verified on Windows and compile-checked elsewhere; macOS untested. |
 | #Define | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Defines a conditional compilation symbol. |
 | #DllLoad | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #DllLoad directive loads a DLL or EXE file before the script starts executing. |
 | #ElIf | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Adds an alternate conditional compilation branch. |
@@ -374,6 +375,15 @@ Status legend:
 | Chr | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the string (usually a single character) corresponding to the character code indicated by the specified number. |
 | Click() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Clicks, holds, releases, wheels, or moves the mouse through the platform input backend. Wayland requires a supported compositor input backend or keysharp-inputd; macOS requires Accessibility permission. |
 | Clipboard | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Text, image, URI, custom MIME, wait, and change-notification operations use the native platform clipboard backends. See ClipboardAll() for the Wayland multi-format restore limitation. |
+| Clipboard.All | 🟢 Full | 🟢 Full | 🟡 Partial | ⚪ Unknown | The ClipboardAll() save/restore pair as one get/set property. Inherits ClipboardAll()'s Wayland single-representation limitation. |
+| Clipboard.Files | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | The copied files as an Array of paths, or "". Windows uses CF_HDROP, everything else text/uri-list. Copy semantics only; cut-vs-copy is desktop-specific and not implemented. |
+| Clipboard.Formats / Clipboard.Has() / Clipboard.GetData() | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | The platform-native escape hatch. Format names are NOT normalized ("HTML Format"/"FileDrop" on Windows, "text/html"/"text/uri-list" elsewhere), so a script using them is platform-specific by construction. Has() also accepts the portable kind names Text/Image/Files/Html/Rtf. |
+| Clipboard.Html / Clipboard.Rtf | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | HTML is exchanged as the fragment: the Windows CF_HTML header is built on write and stripped on read, so the raw envelope is only visible through GetData("HTML Format"). RTF is the format's source text. |
+| Clipboard.Image | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Gets an Image or ""; the setter takes an Image, file path, bitmap handle or "HBITMAP:n". Replaces CopyImageToClipboard(), which only accepted a filename. Linux is partial: writing works, but reading an image back through Eto/GTK produced no pixbuf under Xvfb and needs a real desktop session to confirm. |
+| Clipboard.OnChange() | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Returns a ClipboardHook with Stop/Pause/Paused/IsActive/Count, matching Ks.WinEvent. Registers into the same handler list as OnClipboardChange, so there is one native clipboard monitor either way. The callback is called as callback(hook, type). No callback has been observed firing from a real clipboard change on Linux or macOS. |
+| Clipboard.Set() | 🟢 Full | 🟢 Full | 🟡 Partial | ⚪ Unknown | Publishes several formats in one transaction. Windows uses a single raw Win32 transaction, so one change notification; the Eto backends accumulate formats into one offer but publish per entry, so each raises a notification (GTK debounces them into one on Wayland). The Wayland shell-extension fallback can advertise only one MIME type and degrades to the most useful single representation, exactly as ClipboardAll() does there. |
+| Clipboard.Text / Clipboard.IsEmpty / Clipboard.Clear() | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Text get/set (identical to A_Clipboard), emptiness and clearing. IsEmpty is derived from the platform format enumeration, so private and registered formats count. macOS is unverified: the Eto/Cocoa backend has never been compiled from the development host. |
+| Clipboard.Wait() | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | ClipWait with the kind vocabulary added: 0/1 behave exactly as before, and "Text", "Any", "Image", "Files", "Html", "Rtf" are also accepted (by ClipWait too). |
 | ClipboardAll() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | Captures and restores all advertised clipboard formats on Windows, X11, and macOS. The Wayland extension fallback can restore only one selected MIME representation at a time. |
 | ClipCursor() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Confines physical cursor movement to a screen-coordinate rectangle with exclusive right/bottom edges; call without arguments to release. Coordinates ignore CoordMode Mouse. Artificial cursor movement is allowed. Linux requires the keysharp-inputd mouse hook and uses suppress-and-warp-back enforcement, so the cursor may briefly cross the boundary. Wayland also requires a compositor backend that can query and move the global cursor. macOS suppresses out-of-bounds movement and requires Input Monitoring and Accessibility permissions. |
 | ClipWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits until the native platform clipboard contains data. |
@@ -441,7 +451,6 @@ Status legend:
 | ControlShowDropDown() | 🟢 Full | 🟡 Partial* | 🟡 Partial* | 🟡 Partial* | The ControlShowDropDown function shows the popup list of a combo box or drop-down list. |
 | CoordMode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The CoordMode function sets coordinate mode for various built-in functions to be relative to either the active window or the screen. |
 | Copilot declaration/remap alias | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Keysharp extension: in static hotkey and remap declarations only, `Copilot` lowers to the generic `<#<+F23` chord. When used as a remap source, the firmware-generated LWin and LShift modifiers are released but not restored. It is intentionally not a runtime key name for Hotkey(), Send, KeyWait, GetKeyState, InputHook or related APIs. There is no Office alias. |
-| CopyImageToClipboard() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies image data through the native platform clipboard backend. |
 | Cos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the cosine of a number. |
 | Cosh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic cosine of a number. |
 | CRC32() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes CRC32 checksum for input data. |
@@ -654,9 +663,9 @@ Status legend:
 | InputHook.Start() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Starts capturing input. |
 | InputHook.Stop() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Stops capturing input. |
 | InputHook.Timeout | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Maximum capture duration in seconds. |
+| InputHook.Wait() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Waits until capture ends or times out. |
 | InputHook.VisibleNonText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible non-text keys are collected. |
 | InputHook.VisibleText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible text characters are collected. |
-| InputHook.Wait() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Waits until capture ends or times out. |
 | InstallKeybdHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InstallKeybdHook function installs or uninstalls the keyboard hook. |
 | InstallMouseHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InstallMouseHook function installs or uninstalls the mouse hook. |
 | InStr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Searches for a string within another string, returning the 1-based index where it was found. Use negative numbers for searching in reverse order. |
@@ -670,7 +679,6 @@ Status legend:
 | is not | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Type check operator |
 | IsAlnum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a string is alphanumeric. |
 | IsAlpha() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a string contains only letters. |
-| IsClipboardEmpty() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks the native platform clipboard for advertised data. |
 | IsDigit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a string contains only digits. |
 | IsFloat() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a value is a floating-point number. |
 | IsInteger() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a value is an integer. |
@@ -944,6 +952,7 @@ Status legend:
 | Switch | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects one case branch based on a value/expression. |
 | SysGet() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Gets system information. Non-Windows builds implement monitor dimensions/count, mouse presence/buttons, network state and selected session metrics; Win32-only system metrics have no portable equivalent and are not implemented. |
 | SysGetIPAddresses() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SysGetIPAddresses function returns an array of the system's IPv4 addresses. |
+| ZeroDivisionError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | TabControl.SetTabIcon() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets icon for a tab page in tab controls. |
 | Tan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the tangent of a number. |
 | Tanh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic tangent of a number. |
@@ -1051,4 +1060,3 @@ Status legend:
 | WinWaitActive() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitActive and WinWaitNotActive functions wait until the specified window is active or not active. |
 | WinWaitClose() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitClose function waits until no matching windows can be found. |
 | WinWaitNotActive() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitActive and WinWaitNotActive functions wait until the specified window is active or not active. |
-| ZeroDivisionError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |

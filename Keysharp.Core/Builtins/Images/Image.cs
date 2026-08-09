@@ -304,17 +304,12 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Wraps the image currently on the clipboard (the round-trip counterpart of
-			/// <c>CopyImageToClipboard</c>). Returns "" when the clipboard holds no image.
+			/// Wraps the image currently on the clipboard, or "" when it holds none.
+			/// <para>An alias of <c>Clipboard.Image</c>, which is where clipboard I/O lives (write it with
+			/// <c>Clipboard.Image := img</c>). It is kept here because this factory family is a set a script scans as
+			/// a whole, and dropping one member to send the reader to another class costs more than the alias does.</para>
 			/// </summary>
-			[Static] public static object FromClipboard(object @this)
-			{
-				// The resolved clipboard backend returns a private image copy (or null when the clipboard holds no
-				// image); on Cinnamon/Muffin Wayland that reads the image through the shell extension, elsewhere via
-				// the native/Eto clipboard.
-				var bmp = Platform.Clipboard.GetImage();
-				return bmp == null ? "" : Wrap(bmp);
-			}
+			[Static] public static object FromClipboard(object @this) => KeysharpClipboard.staticget_Image(null);
 
 			/// <summary>
 			/// Creates a new ARGB canvas. Omit <paramref name="background"/> or pass "" for a fully
@@ -1443,8 +1438,17 @@ namespace Keysharp.Builtins
 			/// </list>
 			/// The returned Buffer owns its memory; keep a reference to it for as long as the native side
 			/// reads from <c>buf.Ptr</c>. The pixel dimensions are this image's <see cref="Width"/>/<see cref="Height"/>.
+			///
+			/// <para>Pass <paramref name="buffer"/> to write into storage you already own instead of allocating
+			/// a new Buffer, and that same object is returned. This is for the capture-in-a-loop case, where a
+			/// fresh multi-megabyte Buffer per frame is the dominant cost: allocate once and pass it back each
+			/// time (<c>data := img.GetPixelData(4, data)</c>). It may be a <see cref="Buffer"/> or any object
+			/// exposing script-visible <c>Ptr</c> and <c>Size</c> properties, the same duck typing
+			/// <see cref="SetPixelData"/> accepts. It must hold at LEAST <c>Width * Height * bytesPerPixel</c>
+			/// bytes (a ValueError otherwise); exactly that many are written, from the start, and anything
+			/// beyond is left alone — so one buffer sized for the largest capture can serve smaller ones too.</para>
 			/// </summary>
-			public object GetPixelData(object bytesPerPixel = null)
+			public object GetPixelData(object bytesPerPixel = null, object buffer = null)
 			{
 				ThrowIfDisposed();
 				var bpp = (int)(bytesPerPixel == null ? 1L : bytesPerPixel.Al());
@@ -1458,14 +1462,35 @@ namespace Keysharp.Builtins
 					return Errors.ValueErrorOccurred("There is no image to read.");
 
 				int w = bmp.Width, h = bmp.Height;
-				var buf = new Buffer((long)w * h * bpp);
+				long need = (long)w * h * bpp;
+
+				if (buffer == null)
+				{
+					var buf = new Buffer(need);
+
+					unsafe
+					{
+						WritePixelData(bmp, (byte*)buf.Ptr, bpp);
+					}
+
+					return buf;
+				}
+
+				if (!Reflections.TryGetPtrProperty(buffer, out long addr) || !Reflections.TryGetSizeProperty(buffer, out long have))
+					return Errors.ValueErrorOccurred("GetPixelData requires a Buffer or an object with Ptr and Size properties.");
+
+				// At least, not exactly: the caller supplies scratch space, not a description of the image
+				// (which is what makes SetPixelData's exact-size check the right one there). The valid extent
+				// is always Width * Height * bytesPerPixel, which the caller can compute from this image.
+				if (have < need)
+					return Errors.ValueErrorOccurred($"GetPixelData needs at least {need} bytes for the current {w}x{h} image at {bpp} bytes per pixel but the buffer holds {have}.");
 
 				unsafe
 				{
-					WritePixelData(bmp, (byte*)buf.Ptr, bpp);
+					WritePixelData(bmp, (byte*)new nint(addr), bpp);
 				}
 
-				return buf;
+				return buffer;
 			}
 
 			/// <summary>
@@ -1667,9 +1692,13 @@ namespace Keysharp.Builtins
 				return img;
 			}
 
+			/// <summary>Wraps a bitmap this class will own as an Image. Internal so the Clipboard class can build the
+			/// Image its getter returns without a second copy of the wrapping.</summary>
+			internal static object WrapBitmap(Bitmap bmp) => Wrap(bmp);
+
 			// Resolves an arbitrary script source to a freshly-owned bitmap plus its capture scale.
 			// Accepts another Image, a file path, or a native bitmap handle.
-			private static (Bitmap bmp, double sx, double sy) LoadFromSource(object source)
+			internal static (Bitmap bmp, double sx, double sy) LoadFromSource(object source)
 			{
 				if (source is KeysharpImage img)
 				{
@@ -1682,6 +1711,11 @@ namespace Keysharp.Builtins
 					try { return (ImageHelper.LoadImage(s, 0, 0, 0L, exactPixels: true).Item1, 1.0, 1.0); }
 					catch { return (null, 1.0, 1.0); }
 				}
+
+				// A backend bitmap, which is what Clr interop (and Keysharp's own internals) hand out. Without this
+				// it would fall through to the handle branch below and be read as a nonsense pointer.
+				if (source is Bitmap bitmap)
+					return (new Bitmap(bitmap), 1.0, 1.0);
 
 				// Treat anything else as a native bitmap handle.
 				var handle = (nint)source.Al();

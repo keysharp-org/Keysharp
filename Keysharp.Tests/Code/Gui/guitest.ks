@@ -693,7 +693,7 @@ MyGui.UseGroup()
 	CpText.SetFont("s8 cBlue")
 	MyRE := MyGui.Add("RichEdit", "xc+16 y+8 w310 h120")
 	MySecondPic := LoadPicture(A_WorkingDir . A_DirSeparator . "Robin.png")
-	CopyImageToClipboard("HBITMAP:" MySecondPic)
+	Clipboard.Image := "HBITMAP:" MySecondPic
 	ShowBtn := MyGui.Add("Button", "xc+16 y+8 w110", "Paste Pic")
 	ShowBtn.OnEvent("Click", "PastePic")
 	ShowBtn2 := MyGui.Add("Button", "x+10 yp w130", "Paste from file")
@@ -710,7 +710,7 @@ CopyPicFromFile(*) {
 
 	if (SelectedFile != "")
 	{
-		CopyImageToClipboard(SelectedFile)
+		Clipboard.Image := SelectedFile
 		Sleep(100)
 		ControlFocus(MyRE)
 		Send("^v")
@@ -4253,7 +4253,7 @@ RunClipboardImageCopy() {
 	}
 
 	try {
-		CopyImageToClipboard(gPixelAssetPath)
+		Clipboard.Image := gPixelAssetPath
 		ClipWait(2, true)
 		SetStatus("clipboard_main", "Clipboard status: PASS if you can now paste the image into another app")
 		AppendLog("Image copied to clipboard from " gPixelAssetPath ".")

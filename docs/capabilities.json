@@ -1,4 +1,4 @@
-﻿{
+{
     "legend":  {
                    "full":  "Implemented and generally usable",
                    "partial":  "Implemented with known limitations or gaps",
@@ -177,6 +177,17 @@
                      "macos":  "full",
                      "notes":  "Sets how long clipboard operations should wait before timing out.",
                      "tested-by":  "directive-misc.ahk"
+                 },
+                 {
+                     "category":  "Environment/System",
+                     "feature":  "#CSharp",
+                     "syntax":  "#CSharp ... #EndCSharp  |  #CSharp \"file.cs\"",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Keysharp-only. Embeds C# compiled into the script's own assembly, for hot paths where AHK-level semantics cost too much. Top level of a script or module only. A public static method becomes a callable script function; C# accessibility is the only visibility rule, so non-public members stay invisible (there is no export attribute). Arguments are converted with AutoHotkey's rules at the boundary, so typed parameters take ordinary script values and a non-numeric value raises a catchable TypeError; ref/out/in and pointer parameters are rejected. A `using` at the top of a block is hoisted. Module globals are readable and writable as static fields, in lowercase. Errors and exceptions are reported against the script's own file and line. Unsafe/pointer code is allowed, gated only by C#'s own `unsafe` keyword as in any other C# project; the directive itself takes no options. Referencing the wider framework (Console, Regex, Tasks) is enabled only for scripts that use this directive, so others keep their compile speed. Platform-neutral implementation verified on Windows and compile-checked elsewhere; macOS untested.",
+                     "tested-by":  "directive-csharp.ahk, directive-csharp-errors.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -3715,6 +3726,105 @@
                      "notes":  "Captures and restores all advertised clipboard formats on Windows, X11, and macOS. The Wayland extension fallback can restore only one selected MIME representation at a time."
                  },
                  {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Clipboard.Text / Clipboard.IsEmpty / Clipboard.Clear()",
+                     "syntax":  "Clipboard.Text := \"hi\"",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Text get/set (identical to A_Clipboard), emptiness and clearing. IsEmpty is derived from the platform format enumeration, so private and registered formats count. macOS is unverified: the Eto/Cocoa backend has never been compiled from the development host.",
+                     "tested-by":  "clipboard-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Clipboard.Image",
+                     "syntax":  "Clipboard.Image := Image.FromFile(\"logo.png\")",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "Gets an Image or \"\"; the setter takes an Image, file path, bitmap handle or \"HBITMAP:n\". Replaces CopyImageToClipboard(), which only accepted a filename. Linux is partial: writing works, but reading an image back through Eto/GTK produced no pixbuf under Xvfb and needs a real desktop session to confirm.",
+                     "tested-by":  "clipboard-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Clipboard.Files",
+                     "syntax":  "Clipboard.Files := [\"a.txt\", \"b.txt\"]",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "The copied files as an Array of paths, or \"\". Windows uses CF_HDROP, everything else text/uri-list. Copy semantics only; cut-vs-copy is desktop-specific and not implemented.",
+                     "tested-by":  "clipboard-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Clipboard.Html / Clipboard.Rtf",
+                     "syntax":  "Clipboard.Html := \"<b>hi</b>\"",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "HTML is exchanged as the fragment: the Windows CF_HTML header is built on write and stripped on read, so the raw envelope is only visible through GetData(\"HTML Format\"). RTF is the format's source text.",
+                     "tested-by":  "clipboard-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Clipboard.Formats / Clipboard.Has() / Clipboard.GetData()",
+                     "syntax":  "buf := Clipboard.GetData(\"HTML Format\")",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "The platform-native escape hatch. Format names are NOT normalized (\"HTML Format\"/\"FileDrop\" on Windows, \"text/html\"/\"text/uri-list\" elsewhere), so a script using them is platform-specific by construction. Has() also accepts the portable kind names Text/Image/Files/Html/Rtf.",
+                     "tested-by":  "clipboard-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Clipboard.Set()",
+                     "syntax":  "Clipboard.Set({ Text: \"Hello\", Html: \"<b>Hello</b>\" })",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "Publishes several formats in one transaction. Windows uses a single raw Win32 transaction, so one change notification; the Eto backends accumulate formats into one offer but publish per entry, so each raises a notification (GTK debounces them into one on Wayland). The Wayland shell-extension fallback can advertise only one MIME type and degrades to the most useful single representation, exactly as ClipboardAll() does there.",
+                     "tested-by":  "clipboard-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Clipboard.All",
+                     "syntax":  "saved := Clipboard.All",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "The ClipboardAll() save/restore pair as one get/set property. Inherits ClipboardAll()'s Wayland single-representation limitation.",
+                     "tested-by":  "clipboard-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Clipboard.Wait()",
+                     "syntax":  "Clipboard.Wait(2, \"Image\")",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "ClipWait with the kind vocabulary added: 0/1 behave exactly as before, and \"Text\", \"Any\", \"Image\", \"Files\", \"Html\", \"Rtf\" are also accepted (by ClipWait too).",
+                     "tested-by":  "clipboard-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Clipboard.OnChange()",
+                     "syntax":  "hook := Clipboard.OnChange(cb)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Returns a ClipboardHook with Stop/Pause/Paused/IsActive/Count, matching Ks.WinEvent. Registers into the same handler list as OnClipboardChange, so there is one native clipboard monitor either way. The callback is called as callback(hook, type). No callback has been observed firing from a real clipboard change on Linux or macOS.",
+                     "tested-by":  "clipboard-class.ahk"
+                 },
+                 {
                      "category":  "Clipboard",
                      "feature":  "ClipWait()",
                      "syntax":  "ClipWait(0.5)",
@@ -4401,17 +4511,6 @@
                      "macos":  "full",
                      "notes":  "The CoordMode function sets coordinate mode for various built-in functions to be relative to either the active window or the screen.",
                      "tested-by":  "ControlTests/control_set_exstyle.ahk"
-                 },
-                 {
-                     "category":  "Clipboard",
-                     "feature":  "CopyImageToClipboard()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Copies image data through the native platform clipboard backend.",
-                     "tested-by":  "ControlTests/copy_image_to_clipboard.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -6668,16 +6767,6 @@
                      "macos":  "full",
                      "notes":  "Returns true if a string contains only letters.",
                      "tested-by":  "misc-is.ahk"
-                 },
-                 {
-                     "category":  "Clipboard",
-                     "feature":  "IsClipboardEmpty()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Checks the native platform clipboard for advertised data."
                  },
                  {
                      "category":  "Core Language",

@@ -52,13 +52,15 @@ namespace Keysharp.Builtins
 		/// <param name="waitFor">If omitted, it defaults to 0 (wait only for text or files).<br/>
 		/// Otherwise, specify one of the following numbers to indicate what to wait for:<br/>
 		/// 0: The function is more selective, waiting specifically for text or files to appear("text" includes anything that would produce text when you paste into Notepad).<br/>
-		/// 1: The function waits for data of any kind to appear on the clipboard.
+		/// 1: The function waits for data of any kind to appear on the clipboard.<br/>
+		/// Keysharp additionally accepts a kind name — "Text", "Any", "Image", "Files", "Html" or "Rtf" — which is
+		/// what <c>Clipboard.Wait</c> exposes; the numeric forms are unchanged.
 		/// </param>
 		/// <returns>True if it did not time out, else false.</returns>
 		public static bool ClipWait(object timeout = null, object waitFor = null)
 		{
 			var to = timeout.Ad(double.MinValue);
-			var type = waitFor.Ab();
+			var condition = ParseWaitCondition(waitFor);
 			var checktime = to != double.MinValue;
 			long frequency = 100;
 			var timeoutMs = checktime ? (long)(Math.Abs(to) * 1000) : long.MaxValue;
@@ -66,7 +68,7 @@ namespace Keysharp.Builtins
 
 			while (true)
 			{
-				if (ClipboardMatchesWaitCondition(type))
+				if (condition())
 					return true;
 
 				if (checktime)
@@ -83,34 +85,28 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		private static bool ClipboardMatchesWaitCondition(bool waitForAny)
+		/// <summary>
+		/// Resolves <c>waitFor</c> ONCE, into the predicate the poll loop re-tests. The per-platform tests this
+		/// replaced disagreed with each other — the Windows one asked for text-or-files, the Eto one for
+		/// text-or-html-or-uris — where AHK's own rule is a single <c>CF_NATIVETEXT || CF_HDROP</c> check, which is
+		/// exactly what <c>ChangeType() == 1</c> now means on every backend.
+		/// </summary>
+		private static Func<bool> ParseWaitCondition(object waitFor)
 		{
-			var script = Script.TheScript;
+			var clip = Platform.Clipboard;
 
-			return Script.InvokeOnUIThread(() =>
+			if (waitFor is string s && s.Length != 0 && !double.TryParse(s, out _))
 			{
-#if WINDOWS
-				return !waitForAny
-					? Clipboard.ContainsText() || Clipboard.ContainsFileDropList()
-					: !Ks.IsClipboardEmpty();
-#else
-				var clip = Clipboard.Instance;
+				if (string.Equals(s, "Any", StringComparison.OrdinalIgnoreCase))
+					return () => !clip.IsEmpty;
 
-				if (clip == null)
-					return false;
+				if (Ks.KeysharpClipboard.TryParseKind(s, out var kind))
+					return () => clip.HasKind(kind);
 
-				if (!waitForAny)
-				{
-					// Match AHK's "text or files" behavior more closely on Eto/Gtk.
-					// HTML is text-convertible, and URIs are how file copies surface on non-Windows.
-					return clip.ContainsText
-						|| clip.ContainsHtml
-						|| clip.ContainsUris;
-				}
+				_ = Errors.ValueErrorOccurred($"Invalid clipboard wait kind: {s}");
+			}
 
-				return !Ks.IsClipboardEmpty();
-#endif
-			});
+			return waitFor.Ab() ? () => !clip.IsEmpty : () => clip.ChangeType() == 1;
 		}
 
 		/// <summary>

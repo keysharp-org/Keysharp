@@ -17,66 +17,6 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Copies an image to a clipboard.
-		/// </summary>
-		/// <param name="filename">The filename of the picture, which is usually assumed to be in <see cref="A_WorkingDir"/> if an absolute path isn't specified.<br/>
-		/// If the name of a DLL or EXE file is given without a path, it may be loaded from the directory of the current executable or a system directory.
-		/// </param>
-		/// <param name="options">If blank or omitted, it defaults to no options. Otherwise, specify a string of one or more of the following options,<br/>
-		/// each separated from the next with a space or tab:<br/>
-		/// Wn and Hn: The width and height to load the image at, where n is an integer. If one dimension is omitted or -1, it is calculated automatically based on the other dimension,<br/>
-		/// preserving aspect ratio. If both are omitted, the image's original size is used. If either dimension is 0, the original size is used for that dimension.<br/>
-		/// For example: "w80 h50", "w48 h-1" or "w48" (preserve aspect ratio), "h0 w100" (use original height but override width).<br/>
-		/// Iconn: Indicates which icon to load from a file with multiple icons (generally an EXE or DLL file). For example, "Icon2" loads the file's second icon.<br/>
-		/// Any supported image format can be converted to an icon by specifying "Icon1".
-		/// </param>
-		public static object CopyImageToClipboard(object filename, object options = null)
-		{
-			var file = filename.As();
-			var opts = options.As();
-			var width = int.MinValue;
-			var height = int.MinValue;
-			var icon = "";
-			object iconnumber = 0L;
-
-			foreach (Range r in opts.AsSpan().SplitAny(Spaces))
-			{
-				var opt = opts.AsSpan(r).Trim();
-
-				if (opt.Length > 0)
-				{
-					if (Options.TryParse(opt, "w", ref width)) { }
-					else if (Options.TryParse(opt, "h", ref height)) { }
-					else if (Options.TryParseString(opt, "icon", ref icon)) { iconnumber = ImageHelper.PrepareIconNumber(icon); }
-				}
-			}
-
-			var ext = Path.GetExtension(file).ToLower();
-
-			if (ext == ".cur")
-			{
-				using (var cur = new Cursor(file))
-				{
-					Platform.Clipboard.SetImage(ImageHelper.ConvertCursorToBitmap(cur));
-				}
-			}
-			else if (ImageHelper.LoadImage(file, width, height, iconnumber).Item1 is Bitmap bmp)
-			{
-				Platform.Clipboard.SetImage(new Bitmap(bmp));
-			}
-
-			return DefaultObject;
-		}
-
-		/// <summary>
-		/// The clipboard object doesn't provide a way to determine if it's truly empty or not.<br/>
-		/// Gotten from: https://www.codeproject.com/questions/1089557/check-with-csharp-if-the-clipboard-is-really-empty <br/>
-		/// attempts to provide such functionality.
-		/// </summary>
-		/// <returns>True if empty, else false.</returns>
-		public static bool IsClipboardEmpty() => Platform.Clipboard.IsEmpty;
-
-		/// <summary>
 		/// Shows the debug tab in the main window.
 		/// Using this anywhere in the script will also make it persistent.
 		/// </summary>

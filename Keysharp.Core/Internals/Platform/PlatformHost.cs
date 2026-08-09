@@ -10,7 +10,6 @@ namespace Keysharp.Internals
 		internal abstract IMouse Mouse { get; }
 		internal abstract IScreen Screen { get; }
 		internal abstract IOverlay Overlay { get; }
-		internal abstract IClipboard Clipboard { get; }
 		internal abstract IWindowEvents Events { get; }
 		internal abstract ISession Session { get; }
 		internal abstract IHotkeys Hotkeys { get; }
@@ -18,6 +17,35 @@ namespace Keysharp.Internals
 		internal abstract IKeyboard Keyboard { get; }
 		internal abstract IPermissionManager Permissions { get; }
 		internal abstract ControlManagerBase Control { get; }
+
+		/// <summary>The backend-specific clipboard. Reached only through <see cref="Clipboard"/>, never directly:
+		/// it assumes it is called on the UI thread.</summary>
+		internal abstract IClipboard ClipboardCore { get; }
+
+		private IClipboard clipboardFacade;
+
+		/// <summary>The process clipboard, with every operation marshalled to the UI thread. Wrapping the resolved
+		/// backend ONCE, here, is what makes that correct by construction — the WinForms clipboard requires an STA
+		/// thread and the GTK/Cocoa clipboards are UI-thread-only, so a call from a real thread (Ks.RealThread) is a
+		/// failure at any seam that forgot to marshal. Marshalling at the call sites instead is what let
+		/// ClipboardAll(), Image.FromClipboard and the old CopyImageToClipboard/IsClipboardEmpty each ship without
+		/// it. <see cref="Script.InvokeOnUIThread{T}"/> short-circuits on the main thread, so this costs nothing in
+		/// the common case.</summary>
+		internal IClipboard Clipboard
+		{
+			get
+			{
+				var facade = clipboardFacade;
+
+				if (facade == null)
+				{
+					facade = new UiThreadClipboard(ClipboardCore);
+					facade = Interlocked.CompareExchange(ref clipboardFacade, facade, null) ?? facade;
+				}
+
+				return facade;
+			}
+		}
 
 		public virtual void Dispose() { }
 
@@ -57,7 +85,7 @@ namespace Keysharp.Internals
 		internal override IKeyboard Keyboard => keyboard;
 		internal override IOverlay Overlay => overlay;
 		internal override IScreen Screen => screen;
-		internal override IClipboard Clipboard => clipboard;
+		internal override IClipboard ClipboardCore => clipboard;
 		internal override IWindowEvents Events => events;
 		internal override ISession Session => session;
 		internal override IHotkeys Hotkeys => hotkeys;
@@ -89,7 +117,7 @@ namespace Keysharp.Internals
 		internal override IKeyboard Keyboard => keyboard;
 		internal override IOverlay Overlay => overlay;
 		internal override IScreen Screen => screen.Value;
-		internal override IClipboard Clipboard => clipboard.Value;
+		internal override IClipboard ClipboardCore => clipboard.Value;
 		internal override IWindowEvents Events => events;
 		internal override ISession Session => session;
 		internal override IHotkeys Hotkeys => hotkeys;
@@ -126,7 +154,7 @@ namespace Keysharp.Internals
 		internal override IKeyboard Keyboard => keyboard;
 		internal override IOverlay Overlay => overlay;
 		internal override IScreen Screen => screen;
-		internal override IClipboard Clipboard => clipboard;
+		internal override IClipboard ClipboardCore => clipboard;
 		internal override IWindowEvents Events => events;
 		internal override ISession Session => session;
 		internal override IHotkeys Hotkeys => hotkeys;

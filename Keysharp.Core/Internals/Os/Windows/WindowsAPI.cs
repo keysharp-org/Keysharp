@@ -605,6 +605,44 @@ namespace Keysharp.Internals.Os.Windows
 		[LibraryImport(user32, EntryPoint = "SetClipboardData")]
 		internal static partial nint SetClipboardData(uint uFormat, nint hMem);
 
+		/// <summary>Walks the clipboard's advertised formats (0 starts the walk, 0 ends it). The clipboard must be
+		/// open. This is the exact answer to "what is on the clipboard", including registered/private formats — the
+		/// reason it replaced a probe over a fixed list of well-known format names.</summary>
+		[LibraryImport(user32, EntryPoint = "EnumClipboardFormats", SetLastError = true)]
+		internal static partial uint EnumClipboardFormats(uint format);
+
+		[LibraryImport(kernel32, EntryPoint = "GlobalAlloc")]
+		internal static partial nint GlobalAlloc(uint uFlags, nint dwBytes);
+
+		[LibraryImport(kernel32, EntryPoint = "GlobalFree")]
+		internal static partial nint GlobalFree(nint hMem);
+
+		/// <summary>A GMEM_MOVEABLE copy of <paramref name="bytes"/>, ready to hand to
+		/// <see cref="SetClipboardData"/> (which takes ownership on success). Returns 0 on failure.</summary>
+		internal static nint GlobalCopy(ReadOnlySpan<byte> bytes)
+		{
+			var handle = GlobalAlloc(GMEM_MOVEABLE, bytes.Length);
+
+			if (handle == 0)
+				return 0;
+
+			var ptr = GlobalLock(handle);
+
+			if (ptr == 0)
+			{
+				_ = GlobalFree(handle);
+				return 0;
+			}
+
+			unsafe
+			{
+				bytes.CopyTo(new Span<byte>((void*)ptr, bytes.Length));
+			}
+
+			_ = GlobalUnlock(handle);
+			return handle;
+		}
+
 		[LibraryImport(dwmapi, EntryPoint = "DwmGetWindowAttribute")]
 		internal static partial uint DwmGetWindowAttribute(nint hwnd, DWMWINDOWATTRIBUTE dwAttribute, ref int pvAttribute, int cbsize);
 

@@ -218,11 +218,57 @@ namespace Keysharp.Internals
 		nint GetImageOverlayHandle(uint id);
 	}
 
+	/// <summary>
+	/// The canonical, cross-platform clipboard content kinds. Each backend maps a kind to the format names its own
+	/// platform actually uses (<see cref="IClipboard.KindFormats"/>) — the names are never normalized, so
+	/// <c>Clipboard.Formats</c> keeps reporting what the platform calls things and the kinds carry the portability.
+	/// </summary>
+	internal enum ClipboardKind
+	{
+		Text,
+		Image,
+		Files,
+		Html,
+		Rtf
+	}
+
+	/// <summary>
+	/// One item of a multi-format clipboard write. Either a canonical <see cref="Kind"/> — which the backend encodes
+	/// into its own platform representation, because only the backend knows what that is — or a platform-native
+	/// <see cref="Format"/> name whose <see cref="Value"/> bytes are written verbatim.
+	/// </summary>
+	internal readonly struct ClipboardEntry
+	{
+		/// <summary>The canonical kind, or <c>null</c> when this entry names a native format.</summary>
+		internal ClipboardKind? Kind { get; }
+
+		/// <summary>The platform-native format name, or <c>null</c> when this entry is a canonical kind.</summary>
+		internal string Format { get; }
+
+		/// <summary>The payload: <c>string</c> (Text/Html/Rtf), <c>string[]</c> (Files), <see cref="Bitmap"/>
+		/// (Image), or <c>byte[]</c> (a native format).</summary>
+		internal object Value { get; }
+
+		private ClipboardEntry(ClipboardKind? kind, string format, object value)
+		{
+			Kind = kind;
+			Format = format;
+			Value = value;
+		}
+
+		internal static ClipboardEntry Of(ClipboardKind kind, object value) => new (kind, null, value);
+
+		internal static ClipboardEntry Raw(string format, byte[] bytes) => new (null, format, bytes);
+	}
+
 	/// <summary>The process clipboard, resolved once like <see cref="IScreen"/>/<see cref="IOverlay"/>. The backend
 	/// is chosen at host construction — Windows raw-Win32, a Wayland shell-extension backend (Cinnamon/Muffin, and
 	/// any future compositor whose <c>IWaylandBackend</c> exposes clipboard access), or the shared Eto path — so the
-	/// clipboard seams (A_Clipboard, ClipboardAll, image clipboard, OnClipboardChange, IsClipboardEmpty) are plain
-	/// calls with no per-call <c>is …Backend</c> / <c>if (Cinnamon)</c> test at the call site.</summary>
+	/// clipboard seams (A_Clipboard, ClipboardAll, the Clipboard class, OnClipboardChange) are plain calls with no
+	/// per-call <c>is …Backend</c> / <c>if (Cinnamon)</c> test at the call site.
+	/// <para>Every implementation reached through <see cref="Platform.Clipboard"/> is wrapped by
+	/// <c>UiThreadClipboard</c>, so implementations may assume they run on the UI thread and must never marshal
+	/// again themselves.</para></summary>
 	internal interface IClipboard
 	{
 		/// <summary>The clipboard's text (line endings normalized to <c>\n</c>), or "" when there is none.</summary>
@@ -234,7 +280,8 @@ namespace Keysharp.Internals
 		/// <summary>Whether the clipboard holds no data in any format.</summary>
 		bool IsEmpty { get; }
 
-		/// <summary>The OnClipboardChange event code for the current content: 0 = empty, 1 = text, 2 = other/binary.</summary>
+		/// <summary>The OnClipboardChange event code for the current content: 0 = empty, 1 = text, 2 = other/binary.
+		/// "Text" means text or files, matching AHK's <c>CF_NATIVETEXT || CF_HDROP</c> test.</summary>
 		int ChangeType();
 
 		/// <summary>A private copy of the clipboard's image (the caller owns and disposes it), or <c>null</c> when
@@ -243,6 +290,39 @@ namespace Keysharp.Internals
 
 		/// <summary>Put an image on the clipboard.</summary>
 		void SetImage(Bitmap image);
+
+		/// <summary>Every format the clipboard currently advertises, under the names the platform itself uses
+		/// ("HTML Format", "FileDrop" on Windows; "text/html", "text/uri-list" elsewhere). Empty when the clipboard
+		/// is empty — this is the authority <see cref="IsEmpty"/> and <see cref="ChangeType"/> are derived from.</summary>
+		string[] GetFormats();
+
+		/// <summary>Whether one platform-native format is present. Separate from <see cref="GetFormats"/> because
+		/// some backends can answer a single probe far more cheaply than a full enumeration.</summary>
+		bool Has(string format);
+
+		/// <summary>The platform-native format names this backend recognizes for a canonical kind, most preferred
+		/// first. Never empty; the names need not currently be present on the clipboard.</summary>
+		string[] KindFormats(ClipboardKind kind);
+
+		/// <summary>Whether the clipboard currently holds a canonical kind — one format enumeration, not one probe
+		/// per candidate name.</summary>
+		bool HasKind(ClipboardKind kind);
+
+		/// <summary>One format's raw bytes exactly as the platform stores them, or <c>null</c> when absent.</summary>
+		byte[] GetData(string format);
+
+		/// <summary>A text-ish kind (Text/Html/Rtf) decoded to script-level text, WITHOUT the platform's envelope —
+		/// Windows wraps HTML in a CF_HTML header, everyone else stores bare markup. "" when absent. The mirror of
+		/// the encoding <see cref="SetAll"/> does on the way in, so the envelope is a backend concern at both ends
+		/// rather than an <c>if (Windows)</c> at the call site.</summary>
+		string GetKindText(ClipboardKind kind);
+
+		/// <summary>The clipboard's file list as local paths, empty when it holds none.</summary>
+		string[] GetFiles();
+
+		/// <summary>Publish every entry in ONE clipboard transaction, so the formats coexist instead of overwriting
+		/// each other. A null/empty list clears the clipboard.</summary>
+		void SetAll(IReadOnlyList<ClipboardEntry> entries);
 
 		/// <summary>Serialize every clipboard format into an opaque blob (the <c>ClipboardAll()</c> save).</summary>
 		byte[] CaptureAll();

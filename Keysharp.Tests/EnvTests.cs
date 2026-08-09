@@ -121,7 +121,7 @@ namespace Keysharp.Tests
 			Assert.AreEqual(true, b);//Will have detected clipboard data, so ErrorLevel will be 0.
 			//Now test with file paths.
 			Clipboard.Clear();
-			AssertClipboardState(Ks.IsClipboardEmpty, "Clipboard should be empty before file-drop ClipWait test.");
+			AssertClipboardState(() => Keysharp.Internals.Platform.Clipboard.IsEmpty, "Clipboard should be empty before file-drop ClipWait test.");
 			tcs = new TaskCompletionSource<bool>();
 			thread = new Thread(() =>
 			{
@@ -147,7 +147,7 @@ namespace Keysharp.Tests
 			Assert.AreEqual(true, b);//Will have detected clipboard data, so ErrorLevel will be 0.
 			//Wait specifically for text/files, and copy an image. This should time out.
 			Clipboard.Clear();
-			AssertClipboardState(Ks.IsClipboardEmpty, "Clipboard should be empty before image ClipWait test.");
+			AssertClipboardState(() => Keysharp.Internals.Platform.Clipboard.IsEmpty, "Clipboard should be empty before image ClipWait test.");
 			tcs = new TaskCompletionSource<bool>();
 			thread = new Thread(() =>
 			{
@@ -231,7 +231,7 @@ namespace Keysharp.Tests
 #else
 				Clipboard.Instance.Clear();
 #endif
-				AssertClipboardState(Ks.IsClipboardEmpty, "Clipboard should be empty before ClipWait timeout test.");
+				AssertClipboardState(() => Keysharp.Internals.Platform.Clipboard.IsEmpty, "Clipboard should be empty before ClipWait timeout test.");
 				var dt = DateTime.UtcNow;
 				var b = Env.ClipWait(0.5);
 				var ms = (DateTime.UtcNow - dt).TotalMilliseconds;

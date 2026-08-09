@@ -110,6 +110,17 @@ namespace Keysharp.Tests
 			public int ChangeType() => IsEmpty ? 0 : 1;
 			public Bitmap GetImage() => null;
 			public void SetImage(Bitmap image) { }
+			// The format layer is not what these tests exercise (they cover the compositor/Eto routing and its
+			// recovery), so it is stubbed against the text this fake carries.
+			public string[] GetFormats() => IsEmpty ? [] : ["text/plain"];
+			public bool Has(string format) => !IsEmpty && format == "text/plain";
+			public string[] KindFormats(ClipboardKind kind) => kind == ClipboardKind.Text ? ["text/plain"] : [];
+			public bool HasKind(ClipboardKind kind) => kind == ClipboardKind.Text && !IsEmpty;
+			public byte[] GetData(string format) => Has(format) ? Encoding.UTF8.GetBytes(Text) : null;
+			public string GetKindText(ClipboardKind kind) => kind == ClipboardKind.Text ? Text : "";
+			public string[] GetFiles() => [];
+			public void SetAll(IReadOnlyList<ClipboardEntry> entries)
+				=> Text = entries?.FirstOrDefault(e => e.Kind == ClipboardKind.Text).Value as string ?? "";
 			public byte[] CaptureAll() => [];
 			public void RestoreAll(Keysharp.Builtins.ClipboardAll clip) { }
 			public IDisposable Subscribe(Action callback)
