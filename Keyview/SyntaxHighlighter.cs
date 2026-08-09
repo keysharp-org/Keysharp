@@ -1,8 +1,9 @@
-#if !WINDOWS
+// Platform-neutral: the SAME tokenizer drives the Eto RichTextArea (Linux/macOS) and Scintilla
+// (Windows) through ISyntaxSink, so both editors highlight identically and there is one set of rules.
 namespace Keyview
 {
 	/// <summary>
-	/// Minimal single-pass tokenizer that applies foreground colors to a <see cref="RichTextArea"/>.
+	/// Minimal single-pass tokenizer that classifies spans and reports them to an <see cref="ISyntaxSink"/>.
 	/// It recognizes comments, strings, numbers and two tiers of keywords. This is deliberately a
 	/// "good enough" highlighter for the Keyview input (Keysharp) and output (generated C#) boxes
 	/// rather than a full lexer, since the Eto text controls have no built-in lexing like ScintillaNET.
@@ -10,14 +11,14 @@ namespace Keyview
 	internal sealed class SyntaxHighlighter
 	{
 		// Colors mirror the light theme used by the Windows/Scintilla styler.
-		private static readonly Color CommentColor = Color.FromArgb(0, 128, 0);    // green
-		private static readonly Color StringColor = Color.FromArgb(163, 21, 21);   // dark red
-		private static readonly Color NumberColor = Color.FromArgb(85, 107, 47);   // dark olive green
-		private static readonly Color KeywordColor = Colors.Blue;
-		private static readonly Color BuiltinColor = Color.FromArgb(52, 146, 184); // turquoise
-		private static readonly Color MethodColor = Color.FromArgb(121, 94, 38);   // brown/gold - function & method calls
-		private static readonly Color PropertyColor = Color.FromArgb(99, 41, 141); // purple - member/property access
-		private static readonly Color KeyColor = Color.FromArgb(204, 102, 0);      // dark orange - hotkey/remap source & target keys ("::" stays default/black)
+		private const SyntaxColor CommentColor = SyntaxColor.Comment;
+		private const SyntaxColor StringColor = SyntaxColor.String;
+		private const SyntaxColor NumberColor = SyntaxColor.Number;
+		private const SyntaxColor KeywordColor = SyntaxColor.Keyword;
+		private const SyntaxColor BuiltinColor = SyntaxColor.Builtin;
+		private const SyntaxColor MethodColor = SyntaxColor.Method;
+		private const SyntaxColor PropertyColor = SyntaxColor.Property;
+		private const SyntaxColor KeyColor = SyntaxColor.Key;
 
 		// C# keyword list (kept in sync with CSharpStyler used on Windows). The huge "all exported
 		// type names" tier is intentionally omitted here to keep highlighting cheap and simple.
@@ -40,7 +41,7 @@ namespace Keyview
 		// if the buffer is edited while yielded (which would make the remaining offsets stale).
 		private const int PumpEvery = 512;
 		private Action pumpAction;
-		private RichTextArea pumpArea;
+		private Func<int> pumpLength;
 		private int pumpSnapshotLength;
 		private int applyCount;
 		private bool aborted;
@@ -93,30 +94,42 @@ namespace Keyview
 		private static HashSet<string> ToSet(string words, StringComparer comparer) =>
 			new (words.Split((char[])null, StringSplitOptions.RemoveEmptyEntries), comparer);
 
+		/// <summary>Whether <paramref name="length"/> is small enough to tokenize rather than only reset.</summary>
+		internal bool CanHighlight(int length) => length <= maxHighlightLength;
+
 		/// <summary>
-		/// Re-colors the entire contents of <paramref name="area"/>. Stale colors from a previous
-		/// pass are cleared by first resetting the whole buffer to the control's default text color.
+		/// Tokenizes <paramref name="text"/> and reports every colored span to <paramref name="sink"/>.
+		/// <para><paramref name="pump"/>, when supplied, is run periodically so a large buffer stays responsive;
+		/// <paramref name="currentLength"/> is then consulted after each pump, and the pass aborts if the text
+		/// changed underneath it (which would make every remaining offset stale). A back end with no event loop
+		/// to pump &mdash; Scintilla styles synchronously in small ranges &mdash; passes neither.</para>
 		/// </summary>
-		internal void Highlight(RichTextArea area, Action pump = null)
+		internal void Highlight(ISyntaxSink sink, string text, Action pump = null, Func<int> currentLength = null)
 		{
-			var text = area.Text ?? "";
-			var n = text.Length;
-			if (n == 0)
-				return;
+			var n = (text ?? "").Length;
 
-			var buffer = area.Buffer;
-			buffer.SetForeground(new Range<int>(0, n - 1), area.TextColor);
-
-			if (n > maxHighlightLength)
+			if (n == 0 || !CanHighlight(n))
 				return;
 
 			pumpAction = pump;
-			pumpArea = area;
+			pumpLength = currentLength;
 			pumpSnapshotLength = n;
 			applyCount = 0;
 			aborted = false;
+			HighlightSpan(sink, text, 0, n);
 
-			var i = 0;
+			pumpAction = null;
+			pumpLength = null;
+		}
+
+		/// <summary>
+		/// Tokenizes and colors [from, to). Split out so a region can be colored by a DIFFERENT highlighter than
+		/// the one owning the buffer, which is how a `#CSharp` block gets C# rules.
+		/// </summary>
+		private void HighlightSpan(ISyntaxSink sink, string text, int from, int to)
+		{
+			var n = to;
+			var i = from;
 			var atLineStart = true;
 			while (i < n)
 			{
@@ -138,10 +151,22 @@ namespace Keyview
 					continue;
 				}
 
+				// A `#CSharp` block body is C#: under AHK rules `//` is not a comment, a `;` in a for-loop is, and
+				// an apostrophe opens a string that swallows the rest of the block.
+				if (hotkeys && atLineStart && IsCSharpBlockStart(text, i, n, out var bodyStart, out var bodyEnd, out var blockEnd))
+				{
+					ApplyColor(sink, i, bodyStart, KeywordColor);            // the `#CSharp [unsafe]` line
+					CSharpRegion.HighlightSpanShared(this, sink, text, bodyStart, bodyEnd);
+					ApplyColor(sink, bodyEnd, blockEnd, KeywordColor);       // the `#EndCSharp` line
+					i = blockEnd;
+					atLineStart = true;
+					continue;
+				}
+
 				// Hotkey / hotstring / remap at the start of a line (e.g. "^!a::", "a::b", ":*:btw::").
 				if (hotkeys && atLineStart)
 				{
-					var next = HighlightHotkeyLine(text, i, n, buffer);
+					var next = HighlightHotkeyLine(text, i, n, sink);
 					if (next > i)
 					{
 						i = next;
@@ -157,7 +182,7 @@ namespace Keyview
 				{
 					var close = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
 					var end = close < 0 ? n : close + 2;
-					ApplyColor(buffer, i, end, CommentColor);
+					ApplyColor(sink, i, end, CommentColor);
 					i = end;
 					continue;
 				}
@@ -168,7 +193,7 @@ namespace Keyview
 					var end = text.IndexOf('\n', i);
 					if (end < 0)
 						end = n;
-					ApplyColor(buffer, i, end, CommentColor);
+					ApplyColor(sink, i, end, CommentColor);
 					i = end;
 					continue;
 				}
@@ -177,7 +202,7 @@ namespace Keyview
 				if (c == '"' || (singleQuoteStrings && c == '\''))
 				{
 					var end = ScanString(text, i, c);
-					ApplyColor(buffer, i, end, StringColor);
+					ApplyColor(sink, i, end, StringColor);
 					i = end;
 					continue;
 				}
@@ -186,7 +211,7 @@ namespace Keyview
 				if (char.IsDigit(c))
 				{
 					var end = ScanNumber(text, i);
-					ApplyColor(buffer, i, end, NumberColor);
+					ApplyColor(sink, i, end, NumberColor);
 					i = end;
 					continue;
 				}
@@ -200,21 +225,101 @@ namespace Keyview
 					var word = text.Substring(start, i - start);
 
 					if (keywords.Contains(word))
-						ApplyColor(buffer, start, i, KeywordColor);
+						ApplyColor(sink, start, i, KeywordColor);
 					else if (builtins.Contains(word))
-						ApplyColor(buffer, start, i, BuiltinColor);
+						ApplyColor(sink, start, i, BuiltinColor);
 					else if (IsFollowedByCall(text, i))
-						ApplyColor(buffer, start, i, MethodColor);   // foo(...) / obj.Method(...)
+						ApplyColor(sink, start, i, MethodColor);   // foo(...) / obj.Method(...)
 					else if (memberAccess && start > 0 && text[start - 1] == '.')
-						ApplyColor(buffer, start, i, PropertyColor); // obj.Property
+						ApplyColor(sink, start, i, PropertyColor); // obj.Property
 					continue;
 				}
 
 				i++;
 			}
+		}
 
-			pumpAction = null;
-			pumpArea = null;
+		/// <summary>
+		/// The C# highlighter for `#CSharp` regions. One shared instance (it holds only immutable keyword sets);
+		/// the pump/abort state is copied across so a long block still yields and still aborts on an edit.
+		/// </summary>
+		private static class CSharpRegion
+		{
+			private static readonly SyntaxHighlighter instance = ForCSharp();
+
+			internal static void HighlightSpanShared(SyntaxHighlighter owner, ISyntaxSink sink, string text, int from, int to)
+			{
+				instance.pumpAction = owner.pumpAction;
+				instance.pumpLength = owner.pumpLength;
+				instance.pumpSnapshotLength = owner.pumpSnapshotLength;
+				instance.applyCount = owner.applyCount;
+				instance.aborted = owner.aborted;
+
+				try
+				{
+					instance.HighlightSpan(sink, text, from, to);
+				}
+				finally
+				{
+					owner.applyCount = instance.applyCount;
+					owner.aborted = instance.aborted;   // an edit during the region must stop the outer pass too
+					instance.pumpAction = null;
+					instance.pumpLength = null;
+				}
+			}
+		}
+
+		/// <summary>
+		/// Recognizes a `#CSharp` block opening at <paramref name="i"/>, reporting its body and end. The one-line
+		/// `#CSharp "file.cs"` form has no body and is left to the AutoHotkey rules, as the lexer does.
+		/// </summary>
+		private static bool IsCSharpBlockStart(string text, int i, int n, out int bodyStart, out int bodyEnd, out int blockEnd)
+		{
+			bodyStart = bodyEnd = blockEnd = i;
+			const string directive = "#csharp";
+
+			if (i + directive.Length > n || string.Compare(text, i, directive, 0, directive.Length, StringComparison.OrdinalIgnoreCase) != 0)
+				return false;
+
+			// Must be the whole word: `#CSharpFoo` is not this directive.
+			var after = i + directive.Length;
+
+			if (after < n && (char.IsLetterOrDigit(text[after]) || text[after] == '_'))
+				return false;
+
+			var lineEnd = text.IndexOf('\n', i);
+			if (lineEnd < 0 || lineEnd >= n) lineEnd = n;
+			var firstLine = text.Substring(i, lineEnd - i);
+
+			if (firstLine.Contains('"') || firstLine.Contains('\''))
+				return false;   // the file form
+
+			bodyStart = System.Math.Min(lineEnd + 1, n);
+			var p = bodyStart;
+
+			while (p < n)
+			{
+				var eol = text.IndexOf('\n', p);
+				if (eol < 0 || eol > n) eol = n;
+				var q = p;
+
+				while (q < eol && (text[q] == ' ' || text[q] == '\t')) q++;
+
+				if (q < eol && string.Compare(text, q, "#endcsharp", 0, 10, StringComparison.OrdinalIgnoreCase) == 0)
+				{
+					bodyEnd = p;
+					blockEnd = System.Math.Min(eol + 1, n);
+					return true;
+				}
+
+				p = System.Math.Min(eol + 1, n);
+				if (eol >= n) break;
+			}
+
+			// Unterminated: color to the end rather than reverting the whole rest of the file to AHK rules, which
+			// is what the user is looking at while still typing the block.
+			bodyEnd = blockEnd = n;
+			return true;
 		}
 
 		private bool IsLineCommentAt(string text, int i)
@@ -304,12 +409,12 @@ namespace Keyview
 			return i;
 		}
 
-		private void ApplyColor(ITextBuffer buffer, int start, int endExclusive, Color color)
+		private void ApplyColor(ISyntaxSink sink, int start, int endExclusive, SyntaxColor color)
 		{
 			if (aborted || endExclusive <= start)
 				return;
 
-			buffer.SetForeground(new Range<int>(start, endExclusive - 1), color);
+			sink.Style(start, endExclusive, color);
 
 			if (pumpAction != null && ++applyCount >= PumpEvery)
 			{
@@ -317,7 +422,7 @@ namespace Keyview
 				pumpAction();
 
 				// An edit slipped in while we yielded, so the remaining token offsets are stale; stop.
-				if (pumpArea.TextLength != pumpSnapshotLength)
+				if (pumpLength != null && pumpLength() != pumpSnapshotLength)
 					aborted = true;
 			}
 		}
@@ -328,7 +433,7 @@ namespace Keyview
 		/// a definition. The source key (and a remap's target key) are colored red-ish while "::" is
 		/// left at the default color; a code action such as "^!a::Run("x")" is tokenized normally.
 		/// </summary>
-		private int HighlightHotkeyLine(string text, int start, int n, ITextBuffer buffer)
+		private int HighlightHotkeyLine(string text, int start, int n, ISyntaxSink sink)
 		{
 			var lineEnd = text.IndexOf('\n', start);
 			if (lineEnd < 0)
@@ -345,7 +450,7 @@ namespace Keyview
 				if (dbl < 0)
 					return start;
 
-				ApplyColor(buffer, optionsEnd + 1, dbl, KeyColor); // abbreviation; colons stay default
+				ApplyColor(sink, optionsEnd + 1, dbl, KeyColor); // abbreviation; colons stay default
 				return dbl + 2;                                    // replacement tokenizes normally
 			}
 
@@ -354,7 +459,7 @@ namespace Keyview
 			if (sep < 0)
 				return start;
 
-			ApplyColor(buffer, start, sep, KeyColor); // source key & modifiers; "::" stays default
+			ApplyColor(sink, start, sep, KeyColor); // source key & modifiers; "::" stays default
 
 			var afterSep = sep + 2;
 
@@ -365,7 +470,7 @@ namespace Keyview
 				var name = text.Substring(nameStart, keyEnd - nameStart);
 				if (nameStart > keyStart || (!keywords.Contains(name) && !builtins.Contains(name)))
 				{
-					ApplyColor(buffer, keyStart, keyEnd, KeyColor);
+					ApplyColor(sink, keyStart, keyEnd, KeyColor);
 					return keyEnd; // resume after the key (handles any trailing comment)
 				}
 			}
@@ -454,4 +559,4 @@ namespace Keyview
 		private static bool IsIdentChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 	}
 }
-#endif
+

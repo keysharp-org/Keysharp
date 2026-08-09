@@ -45,8 +45,6 @@ namespace Keyview
 		/// </summary>
 		private const int NUMBER_MARGIN = 1;
 
-		private static readonly string keywords1 = "true false this thishotkey super unset isset " + Keywords.GetKeywords();
-		private readonly string keywords2;
 		private readonly Button btnCopyFullCode = new ();
 		private readonly Button btnCompileScript = new ();
 		private readonly CheckBox chkFullCode = new ();
@@ -81,7 +79,6 @@ namespace Keyview
 		public Keyview(string initialFile = null)
 		{
 			InitializeComponent();
-			keywords2 = Script.TheScript.GetPublicStaticPropertyNames();
 			lastrun = $"{Accessors.A_AppData}/Keysharp/lastkeyviewrun.txt";
 			Icon = Script.TheScript.normalIcon;
 			btnCopyFullCode.Text = "Copy full code";
@@ -135,24 +132,13 @@ namespace Keyview
 
 		private static Color IntToColor(int rgb) => Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
 
-		//private void TxtIn_StyleNeeded(object sender, StyleNeededEventArgs e)
-		//{
-		//  var scintilla = sender as Scintilla;
-		//  var startPos = scintilla.GetEndStyled();
-		//  var endPos = e.Position;
-		//  // Start styling
-		//  //scintilla.StartStyling(startPos);
-		//  //while (startPos < endPos)
-		//  //{
-		//  //  var c = (char)scintilla.GetCharAt(startPos);
-		//  //  if (c == ';')
-		//  //  {
-		//  //      scintilla.SetStyling(endPos - startPos, Style.Cpp.CommentLine);
-		//  //      break;
-		//  //  }
-		//  //  startPos++;
-		//  //}
-		//}
+		// The Keysharp/AHK tokenizer for the input box, shared with the Eto editor on Linux/macOS. Built lazily
+		// because ForKeysharp() reads the built-in names off Script.TheScript, which is not up yet at field-init.
+		private SyntaxHighlighter inputHighlighter;
+
+		private void TxtIn_StyleNeeded(object sender, StyleNeededEventArgs e) =>
+			ScintillaSyntaxSink.Restyle((Scintilla)sender, inputHighlighter ??= SyntaxHighlighter.ForKeysharp());
+
 		private void BtnClearSearch_Click(object sender, EventArgs e) => CloseSearch();
 
 		private void BtnNextSearch_Click(object sender, EventArgs e) => SearchManager.Find(true, false);
@@ -331,61 +317,15 @@ namespace Keyview
 			txt.Margins[NUMBER_MARGIN].Width = px + 8;
 		}
 
-		private void InitSyntaxColoring(Scintilla txt)
+		// Base style only. The coloring is done by ScintillaSyntaxSink from the shared tokenizer, so no lexer
+		// styles or keyword lists are configured here.
+		private void InitInputStyle(Scintilla txt)
 		{
-			//Configure the default style.
 			txt.StyleResetDefault();
 			txt.Styles[Style.Default].Font = "Consolas";
 			txt.Styles[Style.Default].Size = 10;
-			//txt.Styles[Style.Default].BackColor = IntToColor(0xFFFCE1);
-			//txt.Styles[Style.Default].BackColor = IntToColor(0x212121);
-			//txt.Styles[Style.Default].ForeColor = IntToColor(0xFFFFFF);
 			txt.StyleClearAll();
-			var orig = false;
-
-			if (orig)
-			{
-				txt.Styles[Style.Cpp.Identifier].ForeColor = IntToColor(0xD0DAE2);
-				txt.Styles[Style.Cpp.Comment].ForeColor = IntToColor(0xBD758B);
-				txt.Styles[Style.Cpp.CommentLine].ForeColor = IntToColor(0x40BF57);
-				txt.Styles[Style.Cpp.CommentDoc].ForeColor = IntToColor(0x2FAE35);
-				txt.Styles[Style.Cpp.Number].ForeColor = IntToColor(0xFFFF00);
-				txt.Styles[Style.Cpp.String].ForeColor = IntToColor(0xFFFF00);
-				txt.Styles[Style.Cpp.Character].ForeColor = IntToColor(0xE95454);
-				txt.Styles[Style.Cpp.Preprocessor].ForeColor = IntToColor(0x8AAFEE);
-				txt.Styles[Style.Cpp.Operator].ForeColor = IntToColor(0xE0E0E0);
-				txt.Styles[Style.Cpp.CommentLineDoc].ForeColor = IntToColor(0x77A7DB);
-				txt.Styles[Style.Cpp.Word].ForeColor = IntToColor(0x48A8EE);
-				txt.Styles[Style.Cpp.Word2].ForeColor = IntToColor(0xF98906);
-				txt.SelectionBackColor = IntToColor(0x114D9C);
-			}
-			else
-			{
-				txt.Styles[Style.Cpp.Default].ForeColor = Color.Black;
-				txt.Styles[Style.Cpp.Comment].ForeColor = Color.FromArgb(0, 128, 0); // Green
-				txt.Styles[Style.Cpp.CommentLine].ForeColor = Color.FromArgb(0, 128, 0); // Green
-				txt.Styles[Style.Cpp.CommentLineDoc].ForeColor = Color.FromArgb(0, 128, 0); // Green
-				txt.Styles[Style.Cpp.Number].ForeColor = Color.DarkOliveGreen;
-				txt.Styles[Style.Cpp.String].ForeColor = Color.FromArgb(163, 21, 21); // Red
-				txt.Styles[Style.Cpp.Character].ForeColor = Color.FromArgb(163, 21, 21); // Red
-				txt.Styles[Style.Cpp.Preprocessor].ForeColor = Color.FromArgb(128, 128, 128); // Gray
-				txt.Styles[Style.Cpp.Operator].ForeColor = Color.FromArgb(0, 0, 120); // Dark Blue
-				txt.Styles[Style.Cpp.Regex].ForeColor = IntToColor(0xff00ff);
-				txt.Styles[Style.Cpp.Word].ForeColor = Color.Blue;
-				txt.Styles[Style.Cpp.Word2].ForeColor = Color.FromArgb(52, 146, 184); // Turqoise
-				txt.SelectionBackColor = Color.FromArgb(153, 201, 239);
-			}
-
-			//Extras.
-			txt.Styles[Style.Cpp.CommentDocKeyword].ForeColor = IntToColor(0xB3D991);
-			txt.Styles[Style.Cpp.CommentDocKeywordError].ForeColor = IntToColor(0xFF0000);
-			txt.Styles[Style.Cpp.GlobalClass].ForeColor = IntToColor(0x48A8EE);
-			txt.Styles[Style.Cpp.Verbatim].ForeColor = Color.FromArgb(163, 21, 21); // Red
-			txt.Styles[Style.Cpp.StringEol].BackColor = Color.Pink;
-			txt.LexerName = "cpp";
-			//txt.LexerName = "";
-			txt.SetKeywords(0, keywords1);
-			txt.SetKeywords(1, keywords2);
+			txt.SelectionBackColor = Color.FromArgb(153, 201, 239);
 		}
 
 		private void InitDragDropFile()
@@ -468,8 +408,11 @@ namespace Keyview
 		{
 			InitColors(txtIn);
 			InitColors(txtOut);
-			InitSyntaxColoring(txtIn);//Keysharp syntax for txtIn.
-			//InitSyntaxColoring(txtOut);
+			// The input box is container-styled from the SAME tokenizer the Eto editor uses: Scintilla has no
+			// AutoHotkey lexer, and the C++ one it used to borrow could not switch to C# inside a #CSharp block.
+			InitInputStyle(txtIn);
+			ScintillaSyntaxSink.Attach(txtIn);
+			txtIn.StyleNeeded += TxtIn_StyleNeeded;
 			txtOut.StyleResetDefault();
 			txtOut.Styles[Style.Default].Font = "Consolas";
 			txtOut.Styles[Style.Default].Size = 10;
@@ -486,7 +429,6 @@ namespace Keyview
 			InitCodeFolding(txtOut);
 			InitDragDropFile();
 			InitHotkeys();
-			//txtIn.StyleNeeded += TxtIn_StyleNeeded;
 
 			timer.Interval = 1000;
 			timer.Tick += Timer_Tick;
