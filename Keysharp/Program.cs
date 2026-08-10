@@ -175,16 +175,17 @@ namespace Keysharp.Main
 			// the compile; dispose it once the assembly bytes are produced.
 			byte[] arr;
 			string compileResult;
+			ScriptCompilationResult exeCompilation;
 
 			using (var script = new Script())
-				(arr, compileResult) = ch.CompileCodeToByteArray(r.ScriptName, namenoext, exeDir, r.MinimalExe, false, compileToFile: true, defines: r.Defines);
+				(arr, compileResult, exeCompilation) = ch.CompileCodeToByteArray(r.ScriptName, namenoext, exeDir, r.MinimalExe, false, compileToFile: true, defines: r.Defines);
 
 			if (arr == null)
 				return Runner.Message(compileResult, true);
 
 			// #Warning from the compiled script; on the failure path above it is already inside compileResult.
-			if (!string.IsNullOrEmpty(ch.CompileWarnings))
-				Console.Error.WriteLine(ch.CompileWarnings);
+			if (!string.IsNullOrEmpty(exeCompilation?.Warnings))
+				Console.Error.WriteLine(exeCompilation.Warnings);
 
 			var finalPath = "";
 
@@ -261,6 +262,12 @@ namespace Keysharp.Main
 						}
 					}
 				}
+
+				// Full artifacts deploy packages in a private package/version-scoped hierarchy. Minimal artifacts carry the
+				// same assets as resources and extract them at startup, so both forms remain portable without flattening
+				// package filenames into the host directory.
+				if (!r.MinimalExe && Runner.CopyPackageAssemblies(exeCompilation, scriptdir) is { } pkgErr)
+					return Runner.Message(pkgErr, true);
 			}
 			catch (Exception writeex)
 			{

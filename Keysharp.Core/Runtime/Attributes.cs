@@ -94,6 +94,8 @@ namespace Keysharp.Runtime
 	[AttributeUsage(AttributeTargets.Field | AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Class, Inherited = false)]
 	public sealed class Export : Attribute
 	{
+		public bool Default { get; set; }
+
 		public Export()
 		{ }
 	}
@@ -126,6 +128,10 @@ namespace Keysharp.Runtime
 	/// </summary>
 	[AttributeUsage(AttributeTargets.Method | AttributeTargets.Property, Inherited = false)]
 	public sealed class StaticAttribute : Attribute { }
+
+	/// <summary>Marks an inline-C# invocation boundary for CLR exception mapping.</summary>
+	[AttributeUsage(AttributeTargets.Method | AttributeTargets.Property, Inherited = false)]
+	public sealed class InlineCSharpAttribute : Attribute { }
 
 	/// <summary>
 	/// The name scripts know a class, member or parameter by, when it differs from the C# name (KeysharpObject is

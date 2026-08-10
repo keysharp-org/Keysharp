@@ -248,7 +248,7 @@ namespace Keysharp.Tests
 			// generated C# (emitCode: true) so nothing has to run.
 			static string Compile(string src, params string[] defines)
 			{
-				var (arr, code) = new CompilerHelper().CompileCodeToByteArray(src, "definetest", null, false, true, false, defines);
+				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(src, "definetest", null, false, true, false, defines);
 				Assert.IsNotNull(arr, code);
 				return code;
 			}
@@ -336,7 +336,7 @@ namespace Keysharp.Tests
 
 				string Compile(params string[] defines)
 				{
-					var (arr, code) = new CompilerHelper().CompileCodeToByteArray(main, "defmain", null, false, true, false, defines);
+					var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(main, "defmain", null, false, true, false, defines);
 					Assert.IsNotNull(arr, code);
 					return code;
 				}
@@ -362,7 +362,7 @@ namespace Keysharp.Tests
 			// generated C# (emitCode: true) so the check never contacts the permission daemon.
 			var ch = new CompilerHelper();
 
-			var (arr, code) = ch.CompileCodeToByteArray(
+			var (arr, code, _) = ch.CompileCodeToByteArray(
 				"#Requires AutoHotkey v2.0\n#Requires capability ScreenCapture, InputMonitoring\nx := 1\n",
 				"reqcap-emit", null, false, true);
 			Assert.IsNotNull(arr, code);
@@ -370,7 +370,7 @@ namespace Keysharp.Tests
 				"the capability directive should emit a RequireCapabilities call; generated:\n" + code);
 
 			// The plural alias also works.
-			var (arrPl, codePl) = ch.CompileCodeToByteArray(
+			var (arrPl, codePl, _) = ch.CompileCodeToByteArray(
 				"#Requires AutoHotkey v2.0\n#Requires capabilities InputMonitoring\nx := 1\n",
 				"reqcap-plural", null, false, true);
 			Assert.IsNotNull(arrPl, codePl);
@@ -378,7 +378,7 @@ namespace Keysharp.Tests
 				"the plural `#Requires capabilities` alias should emit a RequireCapabilities call");
 
 			// Control: a version-only #Requires must NOT emit a capability request.
-			var (arrNone, codeNone) = ch.CompileCodeToByteArray(
+			var (arrNone, codeNone, _) = ch.CompileCodeToByteArray(
 				"#Requires AutoHotkey v2.0\nx := 1\n", "reqcap-none", null, false, true);
 			Assert.IsNotNull(arrNone, codeNone);
 			Assert.IsFalse(codeNone.Contains("RequireCapabilities"),
@@ -404,7 +404,7 @@ namespace Keysharp.Tests
 				var mainPath = Path.Combine(dir, "warn-main.ks");
 				File.WriteAllText(mainPath, $"#Warn All, MsgBox\n#include \"{incPath}\"\nMainWarnHelper() {{\n\treturn zzUnsetInMain\n}}\n");
 
-				var (arr, code) = new CompilerHelper().CompileCodeToByteArray(mainPath, "warn-main", null, false, true);
+				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(mainPath, "warn-main", null, false, true);
 				Assert.IsNotNull(arr, code);
 
 				// The included file's warnings quote ITS text at ITS line numbers, and name it.
@@ -422,6 +422,595 @@ namespace Keysharp.Tests
 					"a main-script warning should still quote the main script; generated:\n" + code);
 				Assert.IsFalse(code.Contains("In warn-main.ks:"),
 					"a main-script warning should not be prefixed with a file name; generated:\n" + code);
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void CSharpBlock() => Assert.IsTrue(TestScript("directive-csharp", true));
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void CSharpPreprocessorSymbolsFollowSourceOrder() => Assert.IsTrue(TestScript("directive-csharp-symbols", false));
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void CSharpExceptions() => Assert.IsTrue(TestScript("directive-csharp-errors", true));
+
+		[Test, Category("Directives")]
+		public void CSharpClassScope() => Assert.IsTrue(TestScript("directive-csharp-class", false));
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void CSharpBlockHonorsPreprocessorSymbols()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_csif_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				string Inline(string body, string name, IEnumerable<string> defines = null)
+				{
+					var p = Path.Combine(dir, name + ".ks");
+					File.WriteAllText(p, "#NoTrayIcon\n#CSharp\n" + body + "\n#EndCSharp\nx := Pick()\n");
+					var ch = new CompilerHelper();
+					var (arr, code, compilation) = ch.CompileCodeToByteArray(p, name, defines: defines);
+					Assert.IsNotNull(arr, "compile failed:\n" + code);
+					return compilation.InlineCode;
+				}
+
+				var plat = Inline("#if WINDOWS\npublic static long Pick() => 1;\n#else\npublic static long Pick() => 2;\n#endif", "plat");
+#if WINDOWS
+				Assert.IsTrue(plat.Contains("=> 1"), plat);
+				Assert.IsFalse(plat.Contains("=> 2"), plat);
+#else
+				Assert.IsTrue(plat.Contains("=> 2"), plat);
+				Assert.IsFalse(plat.Contains("=> 1"), plat);
+#endif
+				const string branch = "public static long Pick() => 1;\n#else\npublic static long Pick() => 2;\n#endif";
+				var ks = Inline("#if KEYSHARP\n" + branch, "ks");
+				Assert.IsTrue(ks.Contains("=> 1"), ks);
+				var undef = Inline("#if NOT_DEFINED_ANYWHERE\n" + branch, "undef");
+				Assert.IsTrue(undef.Contains("=> 2"), undef);
+				var sup = Inline("#if MYSYM\n" + branch, "sup", ["MYSYM"]);
+				Assert.IsTrue(sup.Contains("=> 1"), sup);
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void CSharpConditionalAndGlobalUsings()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_csusing_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var script = Path.Combine(dir, "usings.ks");
+				File.WriteAllText(script, """
+					#NoTrayIcon
+					#CSharp
+					global using TextBuilder = System.Text.StringBuilder;
+					#if WINDOWS
+					using PlatformType = System.Windows.Forms.Form;
+					#else
+					using PlatformType = System.IO.FileInfo;
+					#endif
+					public static object PlatformName() => typeof(PlatformType).Name;
+					#EndCSharp
+					class C {
+					#CSharp
+					public object Build() => new TextBuilder().Append("ok").ToString();
+					#EndCSharp
+					}
+					x := PlatformName()
+					y := C().Build()
+					""");
+				var ch = new CompilerHelper();
+				var (arr, code, compilation) = ch.CompileCodeToByteArray(script, "usings");
+				Assert.IsNotNull(arr, "conditional and global using directives must compile:\n" + code);
+				Assert.IsTrue(compilation.InlineCode.Contains("global using TextBuilder"), compilation.InlineCode);
+#if WINDOWS
+				Assert.IsTrue(compilation.InlineCode.Contains("System.Windows.Forms.Form"), compilation.InlineCode);
+				Assert.IsFalse(compilation.InlineCode.Contains("System.IO.FileInfo"), compilation.InlineCode);
+#else
+				Assert.IsTrue(compilation.InlineCode.Contains("System.IO.FileInfo"), compilation.InlineCode);
+				Assert.IsFalse(compilation.InlineCode.Contains("System.Windows.Forms.Form"), compilation.InlineCode);
+#endif
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void CSharpBlockScopePlacement()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_csplace_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				(byte[] Arr, string Code, string Inline) Compile(string src, string name)
+				{
+					var p = Path.Combine(dir, name + ".ks");
+					File.WriteAllText(p, src);
+					var ch = new CompilerHelper();
+					var (arr, code, compilation) = ch.CompileCodeToByteArray(p, name);
+					return (arr, code, compilation.InlineCode);
+				}
+
+				// A block after an in-file `#Module` belongs to THAT module's class, not to __Main.
+				var mod = Compile("#NoTrayIcon\nx := 1\n#Module Helper\n#CSharp\npublic static long Only() => 7;\n#EndCSharp\n", "mod");
+				Assert.IsNotNull(mod.Arr, "a #CSharp block inside a #Module must compile:\n" + mod.Code);
+				var helperClass = mod.Inline.IndexOf("class Helper", StringComparison.Ordinal);
+				var onlyDecl = mod.Inline.IndexOf("Only()", StringComparison.Ordinal);
+				Assert.Greater(helperClass, -1, "the module's partial class must be emitted:\n" + mod.Inline);
+				Assert.Greater(onlyDecl, helperClass, "the member must land inside the module that declared it:\n" + mod.Inline);
+
+				// A block in an `export class` reaches that class rather than disappearing.
+				var exp = Compile("#NoTrayIcon\nexport class E {\n#CSharp\npublic static object Who(object @this) => \"e\";\n#EndCSharp\n}\n", "exp");
+				Assert.IsNotNull(exp.Arr, "a #CSharp block in an export class must compile:\n" + exp.Code);
+				Assert.IsTrue(exp.Inline.Contains("Who"), "its members must not silently vanish:\n" + exp.Inline);
+
+				// Below the top level of a script/module/class there is no type for members to belong to.
+				var fn = Compile("#NoTrayIcon\nf() {\n#CSharp\npublic static long N() => 1;\n#EndCSharp\n}\nf()\n", "fn");
+				Assert.IsNull(fn.Arr, "a #CSharp block inside a function must be rejected; generated:\n" + fn.Code);
+				Assert.IsTrue(fn.Code.Contains("must appear at the top level"), "the diagnostic should say where it may go; got:\n" + fn.Code);
+
+				// An unterminated block is reported, rather than swallowing the rest of the file.
+				var unterm = Compile("#NoTrayIcon\n#CSharp\npublic static long N() => 1;\nx := 1\n", "unterm");
+				Assert.IsNull(unterm.Arr, "a #CSharp block with no #EndCSharp must be rejected; generated:\n" + unterm.Code);
+				Assert.IsTrue(unterm.Code.Contains("EndCSharp"), "the diagnostic should name the missing terminator; got:\n" + unterm.Code);
+
+				// A hoisted `using` is anchored like a member, so a typo in one points at the author's own line (4).
+				var badUsing = Compile("#NoTrayIcon\n#CSharp\nusing Systm.Text;\npublic static long N() => 1;\n#EndCSharp\nx := N()\n", "badusing");
+				Assert.IsNull(badUsing.Arr, "an unresolvable using must fail the compile; generated:\n" + badUsing.Code);
+				Assert.IsTrue(badUsing.Code.Contains("badusing.ks"),
+							  "the error must point at the script the using was written in, not the generated file; got:\n" + badUsing.Code);
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void CSharpModuleDiagnostics()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_csdiag_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				string Compile(string src, string name)
+				{
+					var p = Path.Combine(dir, name + ".ks");
+					File.WriteAllText(p, src);
+					var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(p, name);
+					Assert.IsNull(arr, $"{name} must be rejected; it compiled");
+					return code;
+				}
+
+				void Rejects(string src, string name, string expect, int line = 0)
+				{
+					var code = Compile(src, name);
+					Assert.IsTrue(code.Contains(expect), $"{name}: expected '{expect}'; got:\n{code}");
+
+					if (line > 0)
+						Assert.IsTrue(code.Contains($"{name}.ks {line}:"),
+									  $"{name}: expected the diagnostic anchored at line {line}; got:\n{code}");
+				}
+
+				Rejects("#NoTrayIcon\nglobal Hits := 0\n#CSharp\npublic static long hits;\n#EndCSharp\nx := 1\n",
+						"globalcol", "collides with a variable or function the script declares", line: 4);
+				Rejects("#NoTrayIcon\n#CSharp\nstatic long AutoExecSection;\n#EndCSharp\nx := 1\n",
+						"reserved", "is a name Keysharp generates");
+				Rejects("#NoTrayIcon\nf() => 1\n#CSharp\npublic static long F() => 2;\n#EndCSharp\nx := 1\n",
+						"funccol", "declared both as a script function");
+				Rejects("#NoTrayIcon\n#CSharp\npublic static long R(ref long a) => a;\n#EndCSharp\nx := 1\n",
+						"refparam", "cannot be passed from a script", line: 3);
+				Rejects("#NoTrayIcon\n#CSharp\npublic static unsafe long* P() => null;\n#EndCSharp\nx := 1\n",
+						"ptrret", "return type that cannot be handed");
+				Rejects("#NoTrayIcon\n#CSharp\npublic static decimal D(decimal value) => value;\n#EndCSharp\nx := 1\n",
+						"decimalparam", "cannot be passed from a script");
+				Rejects("#NoTrayIcon\n#CSharp\npublic static char Ch() => 'x';\n#EndCSharp\nx := 1\n",
+						"charret", "return type that cannot be handed");
+				Rejects("#NoTrayIcon\n#CSharp\npublic static long Sum(params long[] values) => 0;\n#EndCSharp\nx := 1\n",
+						"typedparams", "params object[]");
+				Rejects("#NoTrayIcon\n#CSharp\nstatic long value;\npublic static ref long RefRet() => ref value;\n#EndCSharp\nx := 1\n",
+						"refreturn", "return type that cannot be handed", line: 4);
+				Rejects("#NoTrayIcon\n#CSharp\npublic static T Id<T>(T x) => x;\n#EndCSharp\nx := 1\n",
+						"generic", "is generic", line: 3);
+				Rejects("#NoTrayIcon\n#CSharp\npublic long M() => 1;\n#EndCSharp\nx := 1\n",
+						"nonstatic", "must be 'static' to be callable", line: 3);
+				Rejects("#NoTrayIcon\nx := 1\n#Module M\n#CSharp\npublic static long M() => 1;\n#EndCSharp\n",
+						"modname", "its module's exact name", line: 5);
+				Rejects("#NoTrayIcon\n#CSharp\npublic static long tally() => 1;\n#EndCSharp\nx := 1\n",
+						"lowerexport", "cannot be all-lowercase", line: 3);
+				Rejects("#NoTrayIcon\n#CSharp unsafe\npublic static long N() => 1;\n#EndCSharp\nx := 1\n",
+						"options", "takes no options");
+				Rejects("#NoTrayIcon\nclass C\n{\n#CSharp\n[Export]\npublic static long M() => 1;\n#EndCSharp\n}\n",
+						"classexport", "[Export] is valid only at module scope");
+				Rejects("#NoTrayIcon\n#CSharp \"a.cs\" \"b.cs\"\nx := 1\n",
+						"paths", "accepts exactly one quoted .cs file path");
+				Rejects("#NoTrayIcon\n#EndCSharp\nx := 1\n", "stray", "#EndCSharp without a matching #CSharp");
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void TranspileWritesTheInlineCSharpSeparately()
+		{
+			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+
+			if (!File.Exists(launcher))
+				Assert.Ignore($"launcher not built at {launcher}");
+
+			var dir = Path.Combine(Path.GetTempPath(), "ks_cstrans_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var script = Path.Combine(dir, "t.ks");
+				File.WriteAllText(script, "#NoTrayIcon\n#CSharp\nusing System.Text;\npublic static object Marker() => new StringBuilder(\"m\").ToString();\n#EndCSharp\nx := Marker()\n");
+				using var proc = Process.Start(new ProcessStartInfo(launcher, $"--errorstdout --transpile \"{script}\"")
+				{
+					RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true
+				});
+				proc.WaitForExit(120000);
+				Assert.AreEqual(0, proc.ExitCode, proc.StandardError.ReadToEnd());
+				Assert.IsTrue(File.Exists(Path.Combine(dir, "t.cs")), "the lowered tree's .cs must be written");
+				var inline = Path.Combine(dir, "t.inline.cs");
+				Assert.IsTrue(File.Exists(inline), "the inline C# must be written to its own .inline.cs");
+				var text = File.ReadAllText(inline);
+				Assert.IsTrue(text.Contains("Marker"), "the user's member must be in the inline file:\n" + text);
+				Assert.IsFalse(File.ReadAllText(Path.Combine(dir, "t.cs")).Contains("Marker()"),
+							   "the user's C# must not leak into the lowered tree's file");
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void CompiledCSharpArtifactRunsTheInlineCode()
+		{
+			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+
+			if (!File.Exists(launcher))
+				Assert.Ignore($"launcher not built at {launcher}");
+
+			var dir = Path.Combine(Path.GetTempPath(), "ks_csexe_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var script = Path.Combine(dir, "csart.ks");
+				File.WriteAllText(script,
+								  "#NoTrayIcon\n#ErrorStdOut\n"
+								  + "#CSharp\npublic static object Marker() => \"mod\";\n#EndCSharp\n"
+								  + "class C {\n#CSharp\n"
+								  + "[Keysharp.Runtime.Static] public static object Tag(object @this) => \"cls\";\n"
+								  + "[Keysharp.Runtime.Static] public static object Boom(object @this) { throw new System.IndexOutOfRangeException(\"x\"); }\n"
+								  + "#EndCSharp\n}\n"
+								  + "caught := \"\"\ntry\n\tC.Boom()\ncatch\n\tcaught := \"caught\"\n"
+								  + "FileAppend(Marker() \"-\" C.Tag() \"-\" caught, \"*\")\nExitApp()\n");
+				var (compileExit, _, compileErr) = Run(launcher, $"--errorstdout --compile exe \"{script}\"");
+				Assert.AreEqual(0, compileExit, "compile failed: " + compileErr);
+				var exe = Path.ChangeExtension(script, ".exe");
+				Assert.IsTrue(File.Exists(exe), $"compile produced no exe at {exe}");
+				var (runExit, stdout, stderr) = Run(exe, "");
+				Assert.AreEqual("mod-cls-caught", stdout.Trim(),
+								$"exit {runExit}, stderr: {stderr}");
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives")]
+		public void CSharpBlockInAnIncludedFile()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_csinc_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var inc = Path.Combine(dir, "inc.ahk");
+				var main = Path.Combine(dir, "main.ks");
+				File.WriteAllText(main, "#NoTrayIcon\n#Include \"inc.ahk\"\nx := IncFn()\n");
+
+				File.WriteAllText(inc, "#CSharp\npublic static object IncFn() => \"inc\";\n#EndCSharp\n");
+				var (arr, code, compilation) = new CompilerHelper().CompileCodeToByteArray(main, "incmain");
+				Assert.IsNotNull(arr, "a block in an included file must compile:\n" + code);
+				Assert.IsTrue(compilation.InlineCode.Contains("IncFn"), "the included block's member must be emitted:\n" + compilation.InlineCode);
+				Assert.IsTrue(compilation.InlineCode.Contains("inc.ahk"), "the member's #line must anchor to the INCLUDED file:\n" + compilation.InlineCode);
+
+				File.WriteAllText(inc, "#CSharp\nusing Systm.Text;\npublic static object IncFn() => \"inc\";\n#EndCSharp\n");
+				var (arr2, code2, _) = new CompilerHelper().CompileCodeToByteArray(main, "incmain");
+				Assert.IsNull(arr2, "a broken using in an included block must fail the compile; generated:\n" + code2);
+				Assert.IsTrue(code2.Contains("inc.ahk(2,"),
+							  "the diagnostic must point at line 2 of the included file; got:\n" + code2);
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void ValidateChecksInlineCSharp()
+		{
+			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+
+			if (!File.Exists(launcher))
+				Assert.Ignore($"launcher not built at {launcher}");
+
+			var dir = Path.Combine(Path.GetTempPath(), "ks_csval_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var bad = Path.Combine(dir, "bad.ks");
+				File.WriteAllText(bad, "#NoTrayIcon\n#CSharp\npublic static object F() => new NoSuchType();\n#EndCSharp\nF()\n");
+				var (badExit, badOut, badErr) = Run(launcher, $"--errorstdout --validate \"{bad}\"");
+				Assert.AreNotEqual(0, badExit, "an unknown type in a #CSharp block must fail --validate");
+				Assert.IsTrue((badOut + badErr).Contains("NoSuchType"),
+							  $"the failure should name the offending code; stdout:\n{badOut}\nstderr:\n{badErr}");
+
+				var good = Path.Combine(dir, "good.ks");
+				File.WriteAllText(good, "#NoTrayIcon\n#CSharp\npublic static object F() => 42L;\n#EndCSharp\nF()\n");
+				var (goodExit, goodOut, goodErr) = Run(launcher, $"--errorstdout --validate \"{good}\"");
+				Assert.AreEqual(0, goodExit, $"a valid script must pass --validate; stdout:\n{goodOut}\nstderr:\n{goodErr}");
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		/// <summary>Runs a process to completion with captured output, killing it rather than orphaning it on timeout.</summary>
+		private static (int ExitCode, string StdOut, string StdErr) Run(string exe, string args)
+		{
+			using var proc = Process.Start(new ProcessStartInfo(exe, args)
+			{
+				RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true
+			});
+			var so = proc.StandardOutput.ReadToEndAsync();
+			var se = proc.StandardError.ReadToEndAsync();
+
+			if (!proc.WaitForExit(240000))
+			{
+				try { proc.Kill(true); } catch { }
+
+				Assert.Fail($"'{exe} {args}' did not exit within 240s");
+			}
+
+			return (proc.ExitCode, so.Result, se.Result);
+		}
+
+		[Test, Category("Directives")]
+		public void CSharpSyntaxErrorIsReported()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_csharpsyn_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var script = Path.Combine(dir, "broken.ks");
+				File.WriteAllText(script,
+								  "#NoTrayIcon\n#CSharp\nusing System.Text\npublic static object Test() { return \"\"; }\n#EndCSharp\n\nTest()\n");
+				var ch = new CompilerHelper();
+				var (arr, code, _) = ch.CompileCodeToByteArray(script, "broken");
+				Assert.IsNull(arr, "a #CSharp block that does not parse must not produce an assembly; generated:\n" + code);
+				Assert.IsTrue(code.Contains("#CSharp:"), "the failure should be reported as a #CSharp diagnostic; got:\n" + code);
+				Assert.IsTrue(code.Contains("broken.ks 3:"),
+							  "the diagnostic should point at line 3, the `using` with no semicolon; got:\n" + code);
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives")]
+		public void CSharpClassMemberNeedsReceiver()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_csharprecv_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var ch = new CompilerHelper();
+
+				(byte[] Arr, string Code) Compile(string member, string name)
+				{
+					var script = Path.Combine(dir, name + ".ks");
+					File.WriteAllText(script, "#NoTrayIcon\nclass C {\n#CSharp\n" + member + "\n#EndCSharp\n}\n");
+					var (a, c, _) = ch.CompileCodeToByteArray(script, name);
+					return (a, c);
+				}
+
+				foreach (var (member, why) in new[]
+			{
+				("[Keysharp.Runtime.Static] public static long Solo(long a) => a;", "[Static], no receiver"),
+					("public static long staticSolo(long a) => a;", "static name prefix, no receiver"),
+					("public static long Inst(long a) => a;", "instance member, no receiver"),
+					("[Keysharp.Runtime.Static] public static long Var(params object[] args) => args.Length;", "variadic, receiver would be absorbed"),
+					("public static long Mistyped(long a, long b) => a;", "leading parameter cannot hold a receiver"),
+				})
+				{
+					var (arr, code) = Compile(member, "recv");
+					Assert.IsNull(arr, $"a class member that cannot receive its receiver must not compile ({why}); generated:\n{code}");
+					Assert.IsTrue(code.Contains("must take the receiver as its first parameter"),
+								  $"the diagnostic should name the fix ({why}); got:\n{code}");
+				}
+
+				// A property has no parameter list, so a static one can never receive the class.
+				var (parr, pcode) = Compile("[Keysharp.Runtime.Static] public static long Answer => 42;", "recvprop");
+				Assert.IsNull(parr, "a static property in a class block must not compile; generated:\n" + pcode);
+				Assert.IsTrue(pcode.Contains("cannot be static"), "the diagnostic should name the fix; got:\n" + pcode);
+
+				// Class members obey the SAME boundary-signature rule as module functions. The regression: these
+				// checks ran only at module scope, so every one of these compiled and then failed at the CALL — a
+				// raw CLR error from delegate compilation, outside the [InlineCSharp] boundary.
+				foreach (var (member, expect, why) in new[]
+			{
+				("public static long ByRef(object @this, ref long x) => x;", "cannot be passed from a script", "ref parameter"),
+					("public object SpanArg(System.Span<long> s) => s.Length;", "cannot be passed from a script", "Span parameter on an instance member"),
+					("public static unsafe long* Ptr(object @this) => null;", "return type", "pointer return"),
+					("public static T Gen<T>(object @this, T t) => t;", "is generic", "generic member"),
+					("public System.Span<byte> View => default;", "property", "Span-typed property"),
+				})
+				{
+					var (arr, code) = Compile(member, "clssig");
+					Assert.IsNull(arr, $"a class member the dispatcher cannot marshal must not compile ({why}); generated:\n{code}");
+					Assert.IsTrue(code.Contains(expect), $"the diagnostic should name the problem ({why}); got:\n{code}");
+				}
+
+				// The shapes that CAN receive one all compile: a declared receiver, a receiver typed more precisely
+				// than `object`, and a C# instance member -- which needs none, C# having bound it already.
+				foreach (var ok in new[]
+			{
+				"[Keysharp.Runtime.Static] public static long Fine(object @this, long a) => a;",
+					"public static long Named(object self, long a) => a;",
+					"public static object Typed(Keysharp.Builtins.KeysharpObject @this, long a) => a;",
+					"public object InstMethod(long a) => a;",
+					"public long InstProp => 42;",
+					"static long Hidden(long a) => a;",
+				})
+				{
+					var (arr, code) = Compile(ok, "recvok");
+					Assert.IsNotNull(arr, $"this member can receive its receiver and must compile: {ok}\n{code}");
+				}
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives")]
+		public void CSharpModuleExports() => Assert.IsTrue(TestScript("directive-csharp-modules", false));
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void CSharpFileFormInClassAndModuleFile()
+		{
+			var root = Path.Combine(Path.GetTempPath(), "ks_csfilescope_" + Guid.NewGuid().ToString("N"));
+			var mods = Path.Combine(root, "mods");
+			_ = Directory.CreateDirectory(mods);
+			var savedPath = Environment.GetEnvironmentVariable("AhkImportPath");
+
+			try
+			{
+				File.WriteAllText(Path.Combine(root, "vec.cs"),
+								  "[Keysharp.Runtime.Static] public static object Tag(object @this) => \"cls-file\";");
+				var s1 = Path.Combine(root, "s1.ks");
+				File.WriteAllText(s1, "#NoTrayIcon\nclass C {\n#CSharp \"vec.cs\"\n}\nx := C.Tag()\n");
+				var (arr1, code1, compilation1) = new CompilerHelper().CompileCodeToByteArray(s1, "s1");
+				Assert.IsNotNull(arr1, "a class-body file form must compile:\n" + code1);
+				Assert.IsTrue(compilation1.InlineCode.Contains("cls-file"), "the file's member must be emitted:\n" + compilation1.InlineCode);
+
+				File.WriteAllText(Path.Combine(mods, "Fast.ahk"),
+					"#define MODULE_CSHARP\n#CSharp\n#if MODULE_CSHARP\npublic static object BlockSymbol() => \"module-symbol\";\n#endif\n#EndCSharp\n#CSharp \"impl.cs\"\n");
+				File.WriteAllText(Path.Combine(mods, "impl.cs"), "public static object Crunch() => \"file-mod\";");
+				var main = Path.Combine(root, "main.ks");
+				File.WriteAllText(main, "#NoTrayIcon\n#import \"Fast\" { Crunch, BlockSymbol }\nx := Crunch()\ny := BlockSymbol()\n");
+				Environment.SetEnvironmentVariable("AhkImportPath", mods);
+				var (arr2, code2, compilation2) = new CompilerHelper().CompileCodeToByteArray(main, "main");
+				Assert.IsNotNull(arr2, "a module file's file form must resolve beside the module file:\n" + code2);
+				Assert.IsTrue(compilation2.InlineCode.Contains("file-mod"), "the module file's member must be emitted:\n" + compilation2.InlineCode);
+				Assert.IsTrue(compilation2.InlineCode.Contains("module-symbol"), "module-local symbols must reach inline C#:\n" + compilation2.InlineCode);
+			}
+			finally
+			{
+				Environment.SetEnvironmentVariable("AhkImportPath", savedPath);
+
+				try { Directory.Delete(root, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives"), NonParallelizable]
+		public void CSharpFileFormSearchOrder()
+		{
+			var root = Path.Combine(Path.GetTempPath(), "ks_csfile_" + Guid.NewGuid().ToString("N"));
+			var local = Path.Combine(root, "local");
+			var shared = Path.Combine(root, "shared");
+			_ = Directory.CreateDirectory(local);
+			_ = Directory.CreateDirectory(shared);
+			var savedPath = Environment.GetEnvironmentVariable("AhkImportPath");
+			var savedCwd = Directory.GetCurrentDirectory();
+
+			try
+			{
+				var script = Path.Combine(local, "s.ks");
+				File.WriteAllText(script, "#NoTrayIcon\n#CSharp \"helper.cs\"\nHelp()\n");
+				Environment.SetEnvironmentVariable("AhkImportPath", shared);
+
+				File.WriteAllText(Path.Combine(shared, "helper.cs"), "public static object Help() => \"shared\";");
+				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(script, "s");
+				Assert.IsNotNull(arr, "a file on the module search path must be found:\n" + code);
+
+				File.WriteAllText(Path.Combine(local, "helper.cs"), "public static object Help() => \"local\";");
+				var (arr2, code2, compilation2) = new CompilerHelper().CompileCodeToByteArray(script, "s");
+				Assert.IsNotNull(arr2, code2);
+				Assert.IsTrue(compilation2.InlineCode.Contains("\"local\""), "the directive's own directory must win; got:\n" + compilation2.InlineCode);
+
+				File.Delete(Path.Combine(local, "helper.cs"));
+				File.Delete(Path.Combine(shared, "helper.cs"));
+				var cwd = Path.Combine(root, "cwd");
+				_ = Directory.CreateDirectory(cwd);
+				File.WriteAllText(Path.Combine(cwd, "helper.cs"), "public static object Help() => \"cwd\";");
+				Directory.SetCurrentDirectory(cwd);
+				Environment.SetEnvironmentVariable("AhkImportPath", "");
+				var (arr3, code3, _) = new CompilerHelper().CompileCodeToByteArray(script, "s");
+				Assert.IsNull(arr3, "the working directory must not be searched; generated:\n" + code3);
+				Assert.IsTrue(code3.Contains("cannot find") && code3.Contains("Looked in:"),
+							  "a miss should say where it looked; got:\n" + code3);
+			}
+			finally
+			{
+				Directory.SetCurrentDirectory(savedCwd);
+				Environment.SetEnvironmentVariable("AhkImportPath", savedPath);
+
+				try { Directory.Delete(root, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives")]
+		public void ParseScriptChecksInlineCSharp()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_parsecs_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				string Parse(string body, string name)
+				{
+					var p = Path.Combine(dir, name + ".ks");
+					File.WriteAllText(p, body);
+					return Ks.ParseScript(p) as string ?? "";
+				}
+
+				var bad = Parse("#NoTrayIcon\n#CSharp\npublic static object F() => new NoSuchType();\n#EndCSharp\nF()\n", "bad");
+				Assert.IsNotEmpty(bad, "a #CSharp block naming an unknown type must not be reported as valid");
+				Assert.IsTrue(bad.Contains("NoSuchType"), "the error should name the offending code; got:\n" + bad);
+
+				var ambig = Parse("#NoTrayIcon\n#CSharp\nusing Keysharp.Builtins;\npublic static object F() => Array.Empty<long>().Length;\n#EndCSharp\nF()\n", "ambig");
+				Assert.IsNotEmpty(ambig, "an ambiguous reference in a #CSharp block must not be reported as valid");
+
+				Assert.IsEmpty(Parse("#NoTrayIcon\n#CSharp\npublic static long F() => 42;\n#EndCSharp\nF()\n", "good") ?? "");
+				Assert.IsEmpty(Parse("#NoTrayIcon\nx := 1\n", "plain") ?? "");
 			}
 			finally
 			{

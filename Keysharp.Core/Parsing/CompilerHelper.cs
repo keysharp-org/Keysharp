@@ -23,15 +23,8 @@ namespace Keysharp.Parsing
 		/// </summary>
 		public static Assembly compiledasm;
 
-		/// <summary>The script's `#AssemblyName`, captured while lowering; null when it does not set one.</summary>
-		private string declaredAssemblyName;
+		// Pipeline state belongs to ScriptCompilationResult; these statics describe the running script.
 
-		/// <summary>
-		/// Formatted `#Warning` text from the last <see cref="CompileCodeToByteArray"/> call, or null when it produced
-		/// none. Non-fatal, so it is published for the caller to route to wherever that caller shows output, rather
-		/// than printed here (see the assignment for why).
-		/// </summary>
-		public string CompileWarnings { get; private set; }
 		public static byte[] compiledBytes;
 
 		/// <summary>
@@ -61,6 +54,72 @@ namespace Keysharp.Parsing
 		// Cache of parsed deps.json results, keyed by the deps.json path. Instance-scoped (not static) so a
 		// long-lived compiler serving multiple scripts from different deps contexts can't return stale results.
 		private readonly Dictionary<string, HashSet<string>> _compiledScriptDependencies = new (StringComparer.OrdinalIgnoreCase);
+
+		// Framework metadata is immutable and expensive to remap on every compile.
+		private static PortableExecutableReference[] frameworkReferences;
+		private static readonly Lock frameworkReferencesLock = new();
+
+		// Keysharp dependency references are keyed by their selected directory.
+		private static MetadataReference[] curatedFrameworkRefs;
+		private sealed record CuratedDeps(string Dir, MetadataReference[] Refs);
+		private static CuratedDeps curatedKsDeps;
+
+		/// <summary>All managed shared-framework references, used only for inline C#.</summary>
+		private static PortableExecutableReference[] FrameworkReferences()
+		{
+			if (frameworkReferences != null)
+				return frameworkReferences;
+
+			lock (frameworkReferencesLock)
+			{
+				if (frameworkReferences != null)
+					return frameworkReferences;
+
+				var dirs = new List<string> { Path.GetDirectoryName(typeof(object).GetTypeInfo().Assembly.Location) };
+#if WINDOWS
+				dirs.Add(Path.GetDirectoryName(typeof(Form).GetTypeInfo().Assembly.Location));
+#endif
+				var frameworkDirs = new HashSet<string>(dirs.Where(d => !string.IsNullOrWhiteSpace(d)), StringComparer.OrdinalIgnoreCase);
+				var list = new List<PortableExecutableReference>();
+				var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+				// Exclude app-local TPA entries; the curated dependency set supplies them.
+				if (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") is string tpa && tpa.Length != 0)
+				{
+					foreach (var file in tpa.Split(Path.PathSeparator))
+						if (frameworkDirs.Contains(Path.GetDirectoryName(file) ?? "") && seen.Add(Path.GetFileName(file)))
+							try { list.Add(MetadataReference.CreateFromFile(file)); }
+							catch { }
+				}
+
+				if (list.Count == 0)
+				{
+					foreach (var dir in frameworkDirs.Where(Directory.Exists))
+					{
+						foreach (var file in Directory.EnumerateFiles(dir, "*.dll"))
+						{
+							if (!seen.Add(Path.GetFileName(file)))
+								continue;
+
+							try
+							{
+								using var fs = File.OpenRead(file);
+								using var pe = new System.Reflection.PortableExecutable.PEReader(fs);
+
+								if (!pe.HasMetadata)
+									continue;
+							}
+							catch { continue; }
+
+							try { list.Add(MetadataReference.CreateFromFile(file)); }
+							catch { }
+						}
+					}
+				}
+
+				return frameworkReferences = [.. list];
+			}
+		}
 
 		public static string GetRidNativeDependencyPath(string fileName) =>
 			Path.Combine("runtimes", RuntimeInformation.RuntimeIdentifier, "native", fileName);
@@ -235,6 +294,18 @@ namespace Keysharp.Parsing
 			return (sbe.ToString(), sbw.ToString());
 		}
 
+		/// <summary>Formats a diagnostic using any #line-mapped source location.</summary>
+		private static string FormatDiagnostic(Diagnostic diag, string fallbackFile)
+		{
+			var span = diag.Location.GetMappedLineSpan();
+			// Prefer the tree path even when no #line mapping is active.
+			var file = !string.IsNullOrEmpty(span.Path)
+					   ? Path.GetFileName(span.Path)
+					   : Path.GetFileName(fallbackFile);
+			var pos = span.StartLinePosition;
+			return $"{file}({pos.Line + 1},{pos.Character + 1}): {diag.GetMessage()}";
+		}
+
 		public static string HandleCompilerErrors(ImmutableArray<Diagnostic> diagnostics, string filename, string desc, string message = "")
 		{
 			var sbe = new StringBuilder();
@@ -242,7 +313,7 @@ namespace Keysharp.Parsing
 
 			foreach (var diag in diagnostics)
 			{
-				var str = $"{Path.GetFileName(filename)}{diag.Location.GetLineSpan()} - {diag.GetMessage()}";
+				var str = FormatDiagnostic(diag, filename);
 
 				if (diag.Severity == DiagnosticSeverity.Warning)
 					_ = sbw.AppendLine($"\t{str}");
@@ -271,24 +342,9 @@ namespace Keysharp.Parsing
 			return DefaultObject;
 		}
 
-        public (EmitResult, MemoryStream, Exception) Compile(string code, string outputname, string currentDir, bool minimalexeout = false)
-        {
-            try
-            {
-                var tree = SyntaxFactory.ParseSyntaxTree(code,
-                           new CSharpParseOptions(LanguageVersion.LatestMajor, DocumentationMode.None, SourceCodeKind.Regular));
-                return CompileFromTree(tree, outputname, currentDir, minimalexeout);
-            }
-            catch (Exception e)
-            {
-                return (null, null, e);
-            }
-        }
-
-		public (EmitResult, MemoryStream, Exception) Compile(CompilationUnitSyntax cu, string outputname, string currentDir, bool minimalexeout = false)
+		/// <summary>Emits one self-contained parsed script.</summary>
+		public (EmitResult, MemoryStream, Exception) Compile(ScriptCompilationResult compilation, string outputname, string currentDir, bool minimalexeout = false, List<Diagnostic> diagnoseSink = null)
 		{
-
-
 			try
 			{
 				var parseOptions = new CSharpParseOptions(
@@ -296,8 +352,8 @@ namespace Keysharp.Parsing
 					documentationMode: DocumentationMode.None,
 					kind: SourceCodeKind.Regular
 				);
-				var tree = SyntaxFactory.SyntaxTree(cu, parseOptions);
-				return CompileFromTree(tree, outputname, currentDir, minimalexeout);
+				var tree = SyntaxFactory.SyntaxTree(compilation.Unit, parseOptions);
+				return CompileFromTree(tree, outputname, currentDir, minimalexeout, BuildInlineTree(compilation, parseOptions), diagnoseSink, compilation.Packages);
 			}
 			catch (Exception e)
 			{
@@ -305,7 +361,92 @@ namespace Keysharp.Parsing
 			}
 		}
 
-        public (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false)
+		/// <summary>Resolves packages into a build-time manifest.</summary>
+		private static PackageManifest ResolvePackages(IReadOnlyList<Keysharp.Internals.Os.PackageResolver.PackageRef> packages,
+													   CompilerErrorCollection errors, string scriptPath, bool allowRestore)
+		{
+			if (packages == null || packages.Count == 0)
+				return null;
+
+			var set = packages.ToList();
+			// Even all-missing optional packages need an empty manifest because the script calls LoadPackages().
+			var manifest = new PackageManifest();
+
+			// Optional (`*i`) packages must not fail the build, and resolution is whole-graph, so one unavailable
+			// optional package would take the required ones down with it. Same two-attempt shape the loader uses.
+			if (!Keysharp.Internals.Os.PackageResolver.TryResolve(set, allowRestore, "#Package", out var resolved, out var failure))
+			{
+				var required = set.Where(p => !p.Optional).ToList();
+
+				if (required.Count == set.Count
+					|| (required.Count != 0 && !Keysharp.Internals.Os.PackageResolver.TryResolve(required, allowRestore, "#Package", out resolved, out _)))
+				{
+					_ = errors.Add(new CompilerError(scriptPath ?? "", 0, 0, "", failure));
+					return null;
+				}
+
+				// Optional absence is non-fatal, not silent.
+				_ = errors.Add(new CompilerError(scriptPath ?? "", 0, 0, "",
+												 "#Package: optional package(s) not available, continuing without: "
+												 + string.Join(", ", packages.Where(p => p.Optional).Select(p => p.Id))) { IsWarning = true });
+
+				if (required.Count == 0)
+					return manifest;   // every package was optional and none resolved: an empty manifest, and the script runs
+
+				set = required;
+			}
+
+			var byId = new Dictionary<string, Keysharp.Internals.Os.PackageResolver.ResolvedPackage>(StringComparer.OrdinalIgnoreCase);
+
+			foreach (var r in resolved)
+				byId[r.Id] = r;
+
+			try
+			{
+				foreach (var p in set)
+					if (byId.TryGetValue(p.Id, out var hit))
+						manifest.Add(hit, p.Version, p.Optional, true);
+
+				// The whole closure is deployed too, but only script-named packages are loaded eagerly.
+				var named = new HashSet<string>(manifest.Packages.Select(e => e.Id), StringComparer.OrdinalIgnoreCase);
+
+				foreach (var r in resolved)
+					if (named.Add(r.Id))
+						manifest.Add(r, r.Version, true, false);
+			}
+			catch (Exception e)
+			{
+				_ = errors.Add(new CompilerError(scriptPath ?? "", 0, 0, "", $"#Package: could not read a resolved asset: {e.Message}"));
+				return null;
+			}
+
+			// Report the build-time pins; runtime only reads the manifest.
+			Keysharp.Internals.Os.PackageResolver.ReportResolved(set, resolved, "#Package");
+			return manifest;
+		}
+
+		/// <summary>Builds the separate inline tree with its source path and symbols.</summary>
+		private static SyntaxTree BuildInlineTree(ScriptCompilationResult compilation, CSharpParseOptions parseOptions)
+		{
+			if (string.IsNullOrEmpty(compilation.InlineCode))
+				return null;
+
+			return SyntaxFactory.ParseSyntaxTree(
+					   compilation.InlineCode,
+					   parseOptions.WithPreprocessorSymbols(compilation.InlineDefines),
+					   path: (compilation.ScriptPath ?? "inline") + ".cs");
+		}
+
+		/// <summary>Binds with the production compilation configuration without emitting IL.</summary>
+		public (ImmutableArray<Diagnostic> Diagnostics, Exception Error) DiagnoseFromTree(ScriptCompilationResult compilation, string outputname, string currentDir)
+		{
+			var diags = new List<Diagnostic>();
+			var (_, ms, ex) = Compile(compilation, outputname, currentDir, diagnoseSink: diags);
+			ms?.Dispose();
+			return ([.. diags], ex);
+		}
+
+		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, SyntaxTree inlineTree = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null)
 		{
 			IEnumerable<ResourceDescription> resourceDescriptions = null;
 			HashSet<string> allDependencies = null;
@@ -387,11 +528,9 @@ namespace Keysharp.Parsing
 				}
 			}
 
-			// This curated list is intentional: as the note further below explains, we deliberately reference only
-			// the few assemblies a user script can actually touch rather than everything in deps.json, because
-			// pulling in large assemblies (e.g. Microsoft.CodeAnalysis) measurably slows script compilation.
-			var references = new List<MetadataReference>
-			{
+			// Keep the common path small; broad framework references are added only for inline C#.
+			var curated = curatedFrameworkRefs ??=
+			[
 				MetadataReference.CreateFromFile(Path.Combine(coreDir, "System.dll")),
 				MetadataReference.CreateFromFile(Path.Combine(coreDir, "System.Collections.dll")),
 				MetadataReference.CreateFromFile(Path.Combine(coreDir, "System.Data.dll")),
@@ -404,7 +543,8 @@ namespace Keysharp.Parsing
 				MetadataReference.CreateFromFile(Path.Combine(desktopDir, "System.Drawing.Common.dll")),
 				MetadataReference.CreateFromFile(Path.Combine(desktopDir, "System.Windows.Forms.dll")),
 #endif
-			};
+			];
+			var references = new List<MetadataReference>(curated);
 
 			// Do not load metadata from all dependencies, but just a select few. We need the metadata
 			// for only those dependencies which types an user script can have contact with. Loading
@@ -417,10 +557,19 @@ namespace Keysharp.Parsing
 			{
 				//This will be the build output folder when running from within the debugger, and the install folder when running from an installation.
 				//Note that Keysharp.Core.dll and System.CodeDom.dll *must* remain in that location for a compiled executable to work.
-				foreach (var dep in requiredManagedDependencies)
-					references.Add(MetadataReference.CreateFromFile(Path.Combine(ksCoreDir, dep)));
+				var deps = curatedKsDeps;
+
+				if (deps == null || !string.Equals(deps.Dir, ksCoreDir, StringComparison.OrdinalIgnoreCase))
+					curatedKsDeps = deps = new(ksCoreDir, [.. requiredManagedDependencies.Select(dep =>
+						(MetadataReference)MetadataReference.CreateFromFile(Path.Combine(ksCoreDir, dep)))]);
+
+				references.AddRange(deps.Refs);
 			}
-			else
+			// A stream-created reference has no FilePath, so the dedup set below cannot learn its name from the
+			// reference itself; the logical names are recorded here instead.
+			List<string> streamRefNames = null;
+
+			if (!hasManagedDepsInKsCoreDir)
 			{
 				var asm = Assembly.GetExecutingAssembly();
 
@@ -435,6 +584,58 @@ namespace Keysharp.Parsing
 					return MetadataReference.CreateFromStream(rs);
 				});
 				references.AddRange(refs);
+				streamRefNames = [.. requiredManagedDependencies];
+			}
+
+			// Lazily share one file-name dedup set across package and framework additions.
+			HashSet<string> have = null;
+			HashSet<string> ByFileName()
+			{
+				if (have == null)
+				{
+					have = new HashSet<string>(references.OfType<PortableExecutableReference>()
+											   .Select(r => Path.GetFileName(r.FilePath ?? "")), StringComparer.OrdinalIgnoreCase);
+
+					if (streamRefNames != null)
+						have.UnionWith(streamRefNames);
+				}
+
+				return have;
+			}
+
+			// Inline C# can name package types. Add pinned package assets before same-named framework assemblies.
+			if (packages != null && inlineTree != null)
+			{
+				foreach (var path in packages.Packages.SelectMany(p => p.Managed).Select(a => a.Source))
+					if (ByFileName().Add(Path.GetFileName(path)))
+						try { references.Add(MetadataReference.CreateFromFile(path)); }
+						catch { }   // an unreadable asset is the resolver's problem to report, not a reason to fail here
+			}
+
+			// Dynamic-only scripts retain the curated reference set and its compile time.
+			if (inlineTree != null)
+				foreach (var r in FrameworkReferences())
+					if (ByFileName().Add(Path.GetFileName(r.FilePath ?? "")))
+						references.Add(r);
+
+			// Carried inside the assembly so the runtime binds what was compiled against, not what it re-decides —
+			// for EVERY script with packages, inline C# or not: the runtime's only source of truth is this manifest.
+			if (packages != null)
+			{
+				var json = packages.Write();
+				resourceDescriptions = (resourceDescriptions ?? []).Append(
+										   new ResourceDescription(PackageManifest.ResourceName,
+																   () => new MemoryStream(Encoding.UTF8.GetBytes(json)), true));
+
+				if (minimalexeout)
+				{
+					var packageResources = packages.Assets.Select(asset =>
+					{
+						var source = asset.Source;
+						return new ResourceDescription(PackageManifest.AssetResourceName(asset), () => File.OpenRead(source), true);
+					});
+					resourceDescriptions = resourceDescriptions.Concat(packageResources);
+				}
 			}
 
 			var ms = new MemoryStream();
@@ -450,11 +651,21 @@ namespace Keysharp.Parsing
 									new CSharpCompilationOptions(OutputKind.WindowsApplication)
 									.WithOptimizationLevel(OptimizationLevel.Release)
 									.WithPlatform(compiledPlatform)
+									// C#'s unsafe keyword is the opt-in; scripts already expose equivalent pointer operations.
+									.WithAllowUnsafe(inlineTree != null)
 									.WithConcurrentBuild(true)
 								)
 								.AddReferences(references)
-								.AddSyntaxTrees(tree)
+								// Roslyn merges the inline tree's partial counterparts with the lowered tree.
+								.AddSyntaxTrees(inlineTree == null ? [tree] : [tree, inlineTree])
 								;
+			// Validation binds without paying for emit and resource generation.
+			if (diagnoseSink != null)
+			{
+				diagnoseSink.AddRange(compilation.GetDiagnostics());
+				return (null, ms, null);
+			}
+
 			EmitResult compilationResult = null;
 #if WINDOWS
 			// Apparently there isn't a good way to read app.manifest contents from the running process,
@@ -547,10 +758,10 @@ namespace Keysharp.Parsing
 			script.Threads.EnsureCurrentThreadVariables();
 		}
 
-		public (CompilationUnitSyntax, CompilerErrorCollection) CreateCompilationUnitFromFile(string fileName, string name = null, bool compileToFile = false, string includeDirOverride = null, IEnumerable<string> defines = null)
+		public ScriptCompilationResult CreateCompilationUnitFromFile(string fileName, string name = null, bool compileToFile = false, string includeDirOverride = null, IEnumerable<string> defines = null, bool allowPackageRestore = true)
 		{
-			CompilationUnitSyntax unit = null;
-			var errors = new CompilerErrorCollection();
+			var compilation = new ScriptCompilationResult();
+			var errors = compilation.Errors;
 			var enc = Encoding.Default;
 			var x = Env.FindCommandLineArg("cp");
 			var script = Script.TheScript;
@@ -562,9 +773,8 @@ namespace Keysharp.Parsing
 				scriptPath = Path.GetFullPath(fileName);
 				scriptName = Path.GetFileName(scriptPath);
 				startupName = null;
-				// Default the runtime script path to this file, so a compile-and-run in the same process (the test
-				// runner, or any launcher that doesn't set it explicitly) reports the real path via SetName. Cross-
-				// process runs (daemon client, or launching a built .cks/.exe) override runScriptPath themselves.
+				compilation.ScriptPath = scriptPath;
+				// In-process runners use this default; launchers override it with the runtime path.
 				runScriptPath = scriptPath;
 			}
 			else
@@ -587,10 +797,7 @@ namespace Keysharp.Parsing
 			try
 			{
 				var source = isFile ? File.ReadAllText(fileName, enc) : fileName;
-				// For a real file the include base is its own directory. For in-memory source (e.g. Keyview
-				// compiling live editor text), there is no script path, so a caller can supply the directory of
-				// the document being edited via includeDirOverride; without it, #include resolution stays
-				// disabled (null) as before.
+				// Editors can supply an include base for in-memory source.
 				var includeDir = isFile ? Path.GetDirectoryName(scriptPath) : includeDirOverride;
 				var buildName = name ?? (isFile ? Path.GetFileNameWithoutExtension(scriptName) : "*");
 
@@ -604,12 +811,18 @@ namespace Keysharp.Parsing
 				else
 				{
 					var lowerer = new Keysharp.Parsing.Syntax.Lowerer();
-					unit = lowerer.Build(prog, buildName, scriptPath, startupName, includeDir, source, compileToFile, defines);
-					declaredAssemblyName = lowerer.AssemblyName;   // #AssemblyName; overrides the script-derived name below
+					compilation.Unit = lowerer.Build(prog, buildName, scriptPath, startupName, includeDir, source, compileToFile, defines);
+					compilation.DeclaredAssemblyName = lowerer.AssemblyName;
+					compilation.InlineCode = lowerer.InlineSource;
+					compilation.InlineDefines = lowerer.InlineDefines;
 
-					if (unit == null || lowerer.Diagnostics.Count > 0)
+					if (compilation.Unit == null || lowerer.Diagnostics.Count > 0)
 						foreach (var d in lowerer.Diagnostics)
 							_ = errors.Add(ToCompilerError(d, scriptPath));
+
+					// Report syntax errors before a potentially slow package restore.
+					if (!errors.HasErrors)
+						compilation.Packages = ResolvePackages(lowerer.Packages, errors, scriptPath, allowPackageRestore);
 
 					// #Warning: same collection, flagged non-fatal so HasErrors stays false and the build proceeds.
 					foreach (var w in lowerer.CompileWarnings)
@@ -629,7 +842,7 @@ namespace Keysharp.Parsing
 				_ = errors.Add(new CompilerError { ErrorText = e.Message + "\n\nStack trace:\n" + e.StackTrace.ToString() });
 			}
 
-			return (unit, errors);
+			return compilation;
 		}
 
 		// New-pipeline diagnostics are "line:col: message" strings (lex + parse + lowering). Tokens that originate in a
@@ -718,20 +931,17 @@ namespace Keysharp.Parsing
 
 		// `defines` are the preprocessor symbols for THIS compilation — from `--define:NAME`, or from a caller such as
 		// Ks.RunScript. They are per-compilation rather than ambient so a nested compile can choose its own.
-		public (byte[], string) CompileCodeToByteArray(string fileName, string nameNoExt, string exeDir = null, bool minimalexeout = false, bool emitCode = false, bool compileToFile = false, IEnumerable<string> defines = null)
+		public (byte[] Bytes, string Text, ScriptCompilationResult Compilation) CompileCodeToByteArray(string fileName, string nameNoExt, string exeDir = null, bool minimalexeout = false, bool emitCode = false, bool compileToFile = false, IEnumerable<string> defines = null, bool allowPackageRestore = true)
 		{
 			var asm = Assembly.GetExecutingAssembly();
 			exeDir ??= Path.GetFullPath(Path.GetDirectoryName(asm.Location.IsNullOrEmpty() ? Environment.ProcessPath : asm.Location));
-			var (unit, errs) = CreateCompilationUnitFromFile(fileName, nameNoExt, compileToFile, null, defines);
-			// `#AssemblyName` wins over the name derived from the script file; it is only known once the script has
-			// been lowered, hence after the call above.
-			var assemblyName = declaredAssemblyName ?? nameNoExt ?? "*";
-			// #Warning text, published for the caller to route rather than written to a console here: this same method
-			// serves the compile daemon (whose stderr belongs to no one) and Keyview (which has no console at all), so
-			// printing in place would drop them for exactly the callers that have to forward them. Callers owning a
-			// console print this; the daemon ships it to its client. Assigned before the failure branch below so it can
-			// never be left stale from a previous compile.
-			CompileWarnings = errs.HasWarnings ? GetCompilerErrors(errs).Item2.Trim() : null;
+			var compilation = CreateCompilationUnitFromFile(fileName, nameNoExt, compileToFile, null, defines, allowPackageRestore);
+			var unit = compilation.Unit;
+			var errs = compilation.Errors;
+			var assemblyName = compilation.DeclaredAssemblyName ?? nameNoExt ?? "*";
+			// Let each host route warnings to its own output surface.
+			if (errs.HasWarnings)
+				compilation.AppendWarnings(GetCompilerErrors(errs).Item2);
 
 			if (errs.HasErrors || unit == null)
 			{
@@ -746,7 +956,7 @@ namespace Keysharp.Parsing
 				if (!string.IsNullOrEmpty(warnings))
 					_ = sb.Append(warnings);
 
-				return (null, sb.ToString());
+				return (null, sb.ToString(), compilation);
 			}
 
 			// PrettyPrinter.Print walks the whole syntax tree and is comparatively expensive, so only
@@ -766,23 +976,42 @@ namespace Keysharp.Parsing
 			if (emitCode)
 				_ = GetCode();
 
-			var (results, ms, compileexc) = Compile(unit, assemblyName, exeDir, minimalexeout);
+			var (results, ms, compileexc) = Compile(compilation, assemblyName, exeDir, minimalexeout);
 
 			try
 			{
 				if (results == null)
 				{
-					return (null, $"Error compiling C# code to executable: {(compileexc != null ? compileexc.Message : string.Empty)}\n\n{GetCode()}");
+					return (null, $"Error compiling C# code to executable: {(compileexc != null ? compileexc.Message : string.Empty)}\n\n{GetCode()}", compilation);
 				}
 				else if (results.Success)
 				{
-					_ = ms.Seek(0, SeekOrigin.Begin);
-					ms.Dispose();
-					return (ms.ToArray(), code);
+					if (compilation.InlineCode != null)
+					{
+						var inlinePath = (compilation.ScriptPath ?? "inline") + ".cs";
+						var userWarnings = results.Diagnostics.Where(d =>
+											   d.Severity == DiagnosticSeverity.Warning
+											   && string.Equals(d.Location.SourceTree?.FilePath, inlinePath, StringComparison.Ordinal))
+										   .ToImmutableArray();
+
+						if (userWarnings.Length != 0)
+						{
+							// HandleCompilerErrors intentionally returns no text for warning-only results.
+							var sbw = new StringBuilder();
+							_ = sbw.AppendLine("The following warnings occurred:");
+
+							foreach (var d in userWarnings)
+								_ = sbw.AppendLine($"\t{FormatDiagnostic(d, assemblyName)}");
+
+							compilation.AppendWarnings(sbw.ToString());
+						}
+					}
+
+					return (ms.ToArray(), code, compilation);
 				}
 				else
 				{
-					return (null, HandleCompilerErrors(results.Diagnostics, assemblyName, "Compiling C# code to executable", compileexc != null ? compileexc.Message : string.Empty) + "\n" + GetCode());
+					return (null, HandleCompilerErrors(results.Diagnostics, assemblyName, "Compiling C# code to executable", compileexc != null ? compileexc.Message : string.Empty) + "\n" + GetCode(), compilation);
 				}
 			}
 			finally

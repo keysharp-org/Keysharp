@@ -53,6 +53,7 @@ namespace Keysharp.Parsing.Syntax
 			// cannot stand in for it: X64 and ARM64 are both 8.
 			, Keysharp.Builtins.Ks.ArchName(RuntimeInformation.ProcessArchitecture)
 		};
+		private Queue<IReadOnlyCollection<string>> _csharpDefineSnapshots;
 		public readonly List<string> Diagnostics = new();
 
 		private readonly string _includeDir;   // directory used to resolve relative #include paths (null => disabled)
@@ -87,6 +88,8 @@ namespace Keysharp.Parsing.Syntax
 				if (lexer.Diagnostics.Count > 0) throw new Keysharp.Builtins.ParseException(lexer.Diagnostics[0]);
 				var parser = new Parser(tokens, includeDir, defines);
 				var prog = parser.ParseProgram();
+				// Publish the parser-owned final symbol set without another copy.
+				prog.Defines = parser._defines;
 				return (prog, parser.Diagnostics);
 			}
 			catch (Keysharp.Builtins.ParseException ex)
@@ -562,6 +565,18 @@ namespace Keysharp.Parsing.Syntax
 			var dirFile = Current.File;
 			Advance(); // #
 			var name = At(TokenKind.Identifier) ? Advance().Text : "";
+
+			// #CSharp carries either one verbatim block token or a quoted path.
+			if (name.Equals("csharp", System.StringComparison.OrdinalIgnoreCase))
+			{
+				var cs = ParseCSharpDirective();
+				cs.Line = dirLine;
+				cs.Column = dirCol;
+				cs.File = dirFile;
+				cs.Defines = _csharpDefineSnapshots?.Count > 0 ? _csharpDefineSnapshots.Dequeue() : [];
+				return cs;
+			}
+
 			var argToks = new List<Token>();
 			var sb = new System.Text.StringBuilder();
 			int brace = 0;   // a `{ … }` import list (e.g. #import "M" { a as b, … }) may span several lines
@@ -589,6 +604,43 @@ namespace Keysharp.Parsing.Syntax
 			dir.Column = dirCol;
 			dir.File = dirFile;
 			return dir;
+		}
+
+		// `#CSharp [options]` <block> | `#CSharp [options] "file.cs"`.
+		private CSharpDirective ParseCSharpDirective()
+		{
+			var opts = new System.Text.StringBuilder();
+			string path = null;
+
+			while (!At(TokenKind.Newline) && !At(TokenKind.EOF) && !At(TokenKind.CSharpBlock))
+			{
+				if (At(TokenKind.String))
+				{
+					var t = Advance();
+
+					if (path != null)
+						ErrorAt(t, "#CSharp accepts exactly one quoted .cs file path");
+					else
+						path = Unquote(t.Text);
+
+					continue;
+				}
+
+				if (opts.Length > 0) _ = opts.Append(' ');
+				_ = opts.Append(Advance().Text);
+			}
+
+			if (At(TokenKind.CSharpBlock))
+			{
+				var blk = Advance();
+				return new CSharpDirective(opts.ToString(), blk.Text, blk.Line);
+			}
+
+			if (path == null)
+				Error("#CSharp requires either a block terminated by #EndCSharp, or a quoted .cs file path");
+
+			// The lowerer owns file resolution.
+			return new CSharpDirective(opts.ToString(), null, 0) { FilePath = path };
 		}
 
 		// Each directive accepts a fixed number of comma-separated arguments (taken from the AHK v2 source's
@@ -866,7 +918,13 @@ namespace Keysharp.Parsing.Syntax
 					i = j;   // leave the trailing newline to be emitted normally, preserving line separation
 					continue;
 				}
-				if (Emit()) outp.Add(t);
+				if (Emit())
+				{
+					if (t.Kind == TokenKind.Hash && i + 1 < src.Count && src[i + 1].IsKeyword("csharp"))
+						(_csharpDefineSnapshots ??= new()).Enqueue([.. _defines]);
+
+					outp.Add(t);
+				}
 				i++;
 			}
 			if (stack.Count > 0)   // innermost unterminated block; without this its excluded region silently eats the rest of the file
@@ -1214,6 +1272,7 @@ namespace Keysharp.Parsing.Syntax
 			var instanceInits = new List<Stmt>();   // `x.y := z` member/index-target instance initializers
 			var classImports = new List<ImportDirective>();   // `#import` directives → class-scoped bindings (Lowerer)
 			string classRequires = null;
+			List<CSharpDirective> classCSharp = null;
 			long structPack = 0;   // #StructPack alignment in effect for subsequent typed fields (0 = default)
 			SkipNewlines();
 			while (!At(TokenKind.RBrace) && !At(TokenKind.EOF))
@@ -1230,6 +1289,8 @@ namespace Keysharp.Parsing.Syntax
 					// A class-body `#import` scopes its bindings to this class (retained for the Lowerer instead of
 					// being silently discarded).
 					else if (dir is ImportDirective imp) classImports.Add(imp);
+					// Keep class members with their declaring class.
+					else if (dir is CSharpDirective cs) (classCSharp ??= []).Add(cs);
 					else if (dir.Name.Equals("Module", System.StringComparison.OrdinalIgnoreCase))
 						Error("#Module is only allowed at the top level, not inside a class body");
 					// Everything else is hoisted to program scope rather than dropped, exactly as a directive found in
@@ -1328,7 +1389,7 @@ namespace Keysharp.Parsing.Syntax
 			}
 			Expect(TokenKind.RBrace, isStruct ? "struct body" : "class body");
 			return new ClassDecl(name, baseName, fields, methods, properties, nested, isStruct)
-			{ Requires = classRequires, Imports = classImports, StaticInit = staticInits, InstanceInit = instanceInits };
+			{ Requires = classRequires, Imports = classImports, StaticInit = staticInits, InstanceInit = instanceInits, CSharpBlocks = classCSharp };
 		}
 
 		// Property body: { get [=> expr | { ... }]  set [=> expr | { ... }] }

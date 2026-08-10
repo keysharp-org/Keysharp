@@ -99,5 +99,8 @@ namespace Keysharp.Parsing.Lexing
 		RemapTargetKey,         // `b` in a remap `a::b` — the target key (text after `::`)
 		HotstringTrigger,       // `:opts:trigger::` (text includes the trailing ::)
 		HotstringExpansion,     // raw replacement text following a HotstringTrigger (no quotes)
+
+		// Verbatim body of a `#CSharp` block; Line is its first content line.
+		CSharpBlock,
 	}
 }

@@ -3,6 +3,19 @@ namespace Keysharp.Runtime
 {
 	public partial class Script
 	{
+		/// <summary>Maps an inline-C# exception to a catchable Keysharp error.</summary>
+		[PublicHiddenFromUser]
+		[StackTraceHidden]
+		public static T MapInlineError<T>(Exception ex, string what)
+		{
+			// Preserve Exit/ExitApp through reflection and task wrappers.
+			if (Keysharp.Internals.Flow.TryGetException<Keysharp.Builtins.Flow.UserRequestedExitException>(ex, out var exit))
+				throw exit;
+
+			_ = Keysharp.Builtins.ManagedInvoke.ThrowMapped(ex, what);
+			return default;
+		}
+
 		[Flags] public enum OwnPropsMapType
 		{
 			None = 0,

@@ -12,7 +12,7 @@ public class ParserBench : BaseTest
 	{
 		var ch = new CompilerHelper();
 
-		var (unit, errs) = ch.CreateCompilationUnitFromFile("./Keysharp.ks");
+		_ = ch.CreateCompilationUnitFromFile("./Keysharp.ks");
 	}
 
 	[GlobalSetup]

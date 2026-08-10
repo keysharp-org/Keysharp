@@ -119,7 +119,7 @@ namespace Keysharp.Tests
 			ResetScriptState();
 			s.SetName(name);
 			var ch = new CompilerHelper();
-			var (arr, code) = ch.CompileCodeToByteArray(source, name);
+			var (arr, code, _) = ch.CompileCodeToByteArray(source, name);
 
 			if (arr == null)
 			{
@@ -245,9 +245,45 @@ namespace Keysharp.Tests
 			return b1 && b2;
 		}
 
+		// Keep module-member blocks outside the function wrapper.
+		private static (string Blocks, string Script) LiftCSharpBlocks(string source)
+		{
+			var blocks = new StringBuilder();
+			var rest = new StringBuilder();
+
+			using var sr = new StringReader(source);
+			string line;
+
+			while ((line = sr.ReadLine()) != null)
+			{
+				var trimmed = line.TrimStart(Keywords.Spaces);
+
+				// Reuse the lexer rule so file forms and comments classify identically.
+				if (!Keysharp.Parsing.Lexing.Lexer.IsCSharpBlockOpener(trimmed))
+				{
+					_ = rest.AppendLine(line);
+					continue;
+				}
+
+				_ = blocks.AppendLine(line);
+
+				while ((line = sr.ReadLine()) != null)
+				{
+					_ = blocks.AppendLine(line);
+
+					if (Keysharp.Parsing.Lexing.Lexer.IsCSharpBlockTerminator(line))
+						break;
+				}
+			}
+
+			return (blocks.ToString(), rest.ToString());
+		}
+
 		protected string WrapInFunc(string source)
 		{
 			var sb = new StringBuilder();
+			var (csharpBlocks, body) = LiftCSharpBlocks(source);
+			source = body;
 
 			using (var sr = new StringReader(source))
 			{
@@ -256,6 +292,7 @@ namespace Keysharp.Tests
 				while ((line = sr.ReadLine()) != null)
 				{
 					var trimmed = line.TrimStart(Keywords.Spaces);
+
 					if (trimmed.Length == 0
 						|| trimmed.StartsWith(';')
 						|| (trimmed.StartsWith('#') && !trimmed.StartsWith("#if ")))
@@ -266,6 +303,10 @@ namespace Keysharp.Tests
 					else
 						break;
 				}
+
+				// Inline members belong at module scope.
+				if (csharpBlocks.Length != 0)
+					_ = sb.Append(csharpBlocks);
 
 				_ = sb.AppendLine("TestFunc()");//This must be named TestFunc because it's referenced in some of the tests.
 				_ = sb.AppendLine("{");

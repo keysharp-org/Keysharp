@@ -2359,7 +2359,11 @@ namespace Keyview
 				setStart?.Invoke();
 				setStatus?.Invoke("Creating DOM from script...");
 				refreshStatus?.Invoke();
-				var (unit, domerrs) = await Task.Run(() => compiler.CreateCompilationUnitFromFile(inputText, includeDirOverride: includeDir)).ConfigureAwait(true);
+				// Live validation must not restore packages; an explicit run may.
+				var compilation = await Task.Run(() => compiler.CreateCompilationUnitFromFile(
+														   inputText, includeDirOverride: includeDir, allowPackageRestore: false)).ConfigureAwait(true);
+				var unit = compilation.Unit;
+				var domerrs = compilation.Errors;
 
 				if (domerrs.HasErrors)
 				{
@@ -2379,15 +2383,21 @@ namespace Keyview
 				var code = await Task.Run(() => PrettyPrinter.Print(unit)).ConfigureAwait(true);
 
 #if DEBUG
-				// NormalizeWhitespace + ToString on a large tree is expensive; keep it off the UI thread.
+				// Keep the expensive formatter comparison off the UI thread.
 				var normalized = await Task.Run(() => unit.NormalizeWhitespace("\t", Environment.NewLine).ToString()).ConfigureAwait(true);
 				if (code != normalized)
 					throw new Exception("Code formatting mismatch");
 #endif
 
+				// Show the separate inline tree without pretending the two sources form one valid C# unit.
+				if (compilation.InlineCode is { Length: > 0 } inlineCode)
+					code += Environment.NewLine + Environment.NewLine
+							+ "// ---- #CSharp (compiled as a separate file) ----" + Environment.NewLine + Environment.NewLine
+							+ inlineCode;
+
 				setStatus?.Invoke("Compiling C# code...");
 				refreshStatus?.Invoke();
-				var (results, ms, compileexc) = await Task.Run(() => compiler.Compile(unit, "Keyview", Path.GetFullPath(Path.GetDirectoryName(Environment.ProcessPath)))).ConfigureAwait(true);
+				var (results, ms, compileexc) = await Task.Run(() => compiler.Compile(compilation, "Keyview", Path.GetFullPath(Path.GetDirectoryName(Environment.ProcessPath)))).ConfigureAwait(true);
 
 				if (results == null)
 				{
@@ -2518,7 +2528,8 @@ namespace Keyview
 				script.SuppressErrorOccurredDialog = true;
 				var sourceDirectory = Path.GetDirectoryName(sourcePath);
 				var nameNoExt = Path.GetFileNameWithoutExtension(sourcePath);
-				var (bytes, result) = compiler.CompileCodeToByteArray(sourcePath, nameNoExt, sourceDirectory);
+				// Explicit builds may restore packages; live validation opts out above.
+				var (bytes, result, _) = compiler.CompileCodeToByteArray(sourcePath, nameNoExt, sourceDirectory);
 
 				if (bytes == null)
 				{

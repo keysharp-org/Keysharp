@@ -414,6 +414,18 @@ namespace Keysharp.Internals.Scripting
 
 		internal static int Run(string[] args) => Execute(Parse(args));
 
+		/// <summary>
+		/// Deploys a compiled script's packages into its private package/version/asset hierarchy. Returns an error
+		/// message, or null on success (including when the script declares no packages).
+		/// </summary>
+		internal static string CopyPackageAssemblies(ScriptCompilationResult compilation, string destDir)
+		{
+			if (compilation?.Packages == null || string.IsNullOrEmpty(destDir))
+				return null;
+
+			return compilation.Packages.CopyTo(destDir);
+		}
+
 		private static int CompileAndMaybeRun(CliCommand command)
 		{
 			// Tell the (about-to-run) compiled assembly where it is actually running from: the script file's full
@@ -424,12 +436,12 @@ namespace Keysharp.Internals.Scripting
 			script.ValidateThenExit = command.Validate;
 			script.ScriptArgs = command.ScriptArgs;
 			script.KeysharpArgs = command.KeysharpArgs;
-
-			var (arr, result) = ch.CompileCodeToByteArray(command.ScriptName, command.NameNoExt, command.ExeDir, false, command.Transpile, command.Kind == CliCommandKind.CompileAsm, command.Defines);
-			// #Warning goes to stderr, never a dialog: it must not block an otherwise-good script from starting. On a
-			// failed compile the text is already part of `result`, so only the success path needs to print it.
-			if (arr != null && !string.IsNullOrEmpty(ch.CompileWarnings))
-				Console.Error.WriteLine(ch.CompileWarnings);
+			// Validation reports unrestored packages; runs and builds may fetch them.
+			var (arr, result, compilation) = ch.CompileCodeToByteArray(command.ScriptName, command.NameNoExt, command.ExeDir, false, command.Transpile, command.Kind == CliCommandKind.CompileAsm, command.Defines,
+														  allowPackageRestore: !command.Validate);
+			// Failed-compilation text already includes its warnings.
+			if (arr != null && !string.IsNullOrEmpty(compilation?.Warnings))
+				Console.Error.WriteLine(compilation.Warnings);
 
 			if (command.Transpile)
 			{
@@ -443,6 +455,22 @@ namespace Keysharp.Internals.Scripting
 				catch (Exception writeex)
 				{
 					return Message($"Writing code to {codePath} failed: {writeex.Message}", true);
+				}
+
+				// Hoisted usings make the inline tree invalid if appended to the lowered source.
+				if (compilation?.InlineCode is { Length: > 0 } inline)
+				{
+					var inlinePath = $"{command.OutPath}.inline.cs";
+
+					try
+					{
+						using var inlineWriter = new StreamWriter(inlinePath);
+						inlineWriter.WriteLine(inline);
+					}
+					catch (Exception writeex)
+					{
+						return Message($"Writing inline C# to {inlinePath} failed: {writeex.Message}", true);
+					}
 				}
 			}
 
@@ -462,6 +490,9 @@ namespace Keysharp.Internals.Scripting
 				{
 					return Message($"Writing assembly to {compileAsmPath} failed: {writeex.Message}", true);
 				}
+
+				if (compileAsmPath != "*" && CopyPackageAssemblies(compilation, Path.GetDirectoryName(Path.GetFullPath(compileAsmPath))) is { } copyErr)
+					return Message(copyErr, true);
 
 				return 0;
 			}

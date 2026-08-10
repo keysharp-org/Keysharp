@@ -25,7 +25,8 @@ namespace Keysharp.Parsing.Lexing
 		/// <see cref="Line"/>/<see cref="Column"/> are relative to that file, so diagnostics can be reported per file.</summary>
 		public readonly string File;
 
-		public Token(TokenKind kind, string text, int line, int column, int offset, int length, bool leadingWhitespace, string file = null)
+		public Token(TokenKind kind, string text, int line, int column, int offset, int length, bool leadingWhitespace,
+			string file = null)
 		{
 			Kind = kind;
 			Text = text;

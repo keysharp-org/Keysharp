@@ -507,6 +507,25 @@ namespace Keysharp.Internals.Invoke
 									 : pi.SetValue;
 				}
 			}
+
+			// Module properties enter through the variable store rather than CompileCore.
+			if (pi.DeclaringType?.Namespace == Keywords.MainNamespaceName
+					&& pi.IsDefined(typeof(InlineCSharpAttribute), false))
+			{
+				var get = _callFunc;
+				_callFunc = (inst, args) =>
+				{
+					try { return get(inst, args); }
+					catch (Exception ex) { return Keysharp.Runtime.Script.MapInlineError<object>(ex, pi.Name); }
+				};
+
+				if (SetProp is { } set)
+					SetProp = (inst, obj) =>
+					{
+						try { set(inst, obj); }
+						catch (Exception ex) { _ = Keysharp.Runtime.Script.MapInlineError<object>(ex, pi.Name); }
+					};
+			}
 		}
 
 		public MethodPropertyHolder(FieldInfo f)
@@ -858,6 +877,24 @@ namespace Keysharp.Internals.Invoke
 				mi.ReturnType == typeof(void)
 					? Expression.Block(call, Expression.Constant(null, typeof(object)))
 					: ArgCoercer.NormalizeReturn(call, mi.ReturnType);
+
+			// Inline members and generated forwarders map CLR failures inside their compiled delegate.
+			// Properties are registered by accessor, so inspect the declaring property too.
+			var inlineMarked = mi.DeclaringType?.Namespace == Keywords.MainNamespaceName
+							   && (mi.IsDefined(typeof(InlineCSharpAttribute), false)
+								   || (mi.IsSpecialName && mi.Name.Length > 4 && (mi.Name.StartsWith("get_", StringComparison.Ordinal) || mi.Name.StartsWith("set_", StringComparison.Ordinal))
+									   && mi.DeclaringType.GetProperty(mi.Name[4..], BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+									   ?.IsDefined(typeof(InlineCSharpAttribute), false) == true));
+
+			if (inlineMarked)
+			{
+				var ex = Expression.Parameter(typeof(Exception), "__ksex");
+				body = Expression.TryCatch(
+						   Expression.Convert(body, typeof(object)),
+						   Expression.Catch(ex,
+											Expression.Call(typeof(Keysharp.Runtime.Script), nameof(Keysharp.Runtime.Script.MapInlineError),
+															[typeof(object)], ex, Expression.Constant(mi.Name))));
+			}
 
 			return Expression.Lambda<Func<object, object[], int, object>>(body, pTarget, pArgs, pStart)
 							 .Compile();

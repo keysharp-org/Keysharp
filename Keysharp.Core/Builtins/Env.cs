@@ -678,14 +678,14 @@ namespace Keysharp.Builtins
 			else
 			{
 				var ch = new CompilerHelper();
-				(compiledBytes, result) = ch.CompileCodeToByteArray(script, nameVal, defines: defineNames);
+				(compiledBytes, result, var compilation) = ch.CompileCodeToByteArray(script, nameVal, defines: defineNames);
 
 				if (compiledBytes == null)
 					return Errors.ErrorOccurred(result);
 
 				// Non-fatal #Warning text from the nested compile; the caller's console is the only place to show it.
-				if (!string.IsNullOrEmpty(ch.CompileWarnings))
-					Console.Error.WriteLine(ch.CompileWarnings);
+				if (!string.IsNullOrEmpty(compilation?.Warnings))
+					Console.Error.WriteLine(compilation.Warnings);
 			}
 
 			// Relaunch a Keysharp host that understands "--script --assembly *" (it reads the assembly
@@ -786,9 +786,11 @@ namespace Keysharp.Builtins
 		public static object ParseScript(object code)
 		{
 			var ch = new CompilerHelper();
-			var (unit, errs) = ch.CreateCompilationUnitFromFile(code.As());
+			// Validation reports unrestored packages instead of fetching them.
+			var compilation = ch.CreateCompilationUnitFromFile(code.As(), allowPackageRestore: false);
+			var errs = compilation.Errors;
 
-			if (errs.HasErrors || unit == null)
+			if (errs.HasErrors || compilation.Unit == null)
 			{
 				var (errors, warnings) = CompilerHelper.GetCompilerErrors(errs);
 
@@ -799,6 +801,20 @@ namespace Keysharp.Builtins
 
 				return sb.ToString();
 			}
+
+			// Inline C# still needs binding to catch unknown and ambiguous names.
+			if (compilation.InlineCode is { Length: > 0 })
+			{
+				var exeDir = Path.GetFullPath(Path.GetDirectoryName(Ks.A_KeysharpCorePath));
+				var (diags, compileexc) = ch.DiagnoseFromTree(compilation, "*", exeDir);
+
+				if (compileexc != null)
+					return $"Error compiling C# code: {compileexc.Message}";
+
+				if (diags.Any(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error))
+					return CompilerHelper.HandleCompilerErrors(diags, "*", "Compiling C# code");
+			}
+
 			return DefaultObject;
 		}
 	}

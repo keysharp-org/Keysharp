@@ -591,12 +591,13 @@ namespace Keysharp.Runtime
 		internal void RecordMessageCheck() => Threads.CurrentThread.lastPeekTick = Environment.TickCount;
 
 		/// <summary>
-		/// Backs the <c>#Package</c> directive: a generated call at the position of the script's first <c>#Package</c>
-		/// line, carrying the program's whole package set (see <see cref="Keysharp.Internals.Os.NuGetPackageLoader"/>
-		/// for why the set has to arrive in one call, and why the SDK — not Keysharp — does the resolving).
+		/// Backs the <c>#Package</c> directive: a generated, argument-less call at the position of the script's first
+		/// <c>#Package</c> line. The packages were resolved when the script was COMPILED and the exact resolution is
+		/// embedded in the script's own assembly, so this only has to find that manifest and load what it names —
+		/// hence <see cref="ProgramType"/>, which is the generated <c>Program</c> type and therefore identifies the
+		/// assembly the manifest lives in, whether the script was run from source or precompiled.
 		/// </summary>
-		/// <param name="spec">An <c>id|version|flags;…</c> list built by the lowerer; the only flag is <c>i</c> (optional).</param>
-		public void LoadPackages(params (string Id, string Version, bool Optional)[] packages) => NuGetPackageLoader.Load(packages);
+		public void LoadPackages() => NuGetPackageLoader.Load(ProgramType?.Assembly);
 
 		/// <summary>
 		/// Will be a generated call within Main which calls into this class to add DLLs.

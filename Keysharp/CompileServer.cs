@@ -590,8 +590,8 @@ namespace Keysharp.Main
 
 			try
 			{
-				(bytes, error) = ch.CompileCodeToByteArray(scriptPath, nameNoExt, exeDir);
-				warnings = ch.CompileWarnings;
+				(bytes, error, var compilation) = ch.CompileCodeToByteArray(scriptPath, nameNoExt, exeDir);
+				warnings = compilation?.Warnings;
 			}
 			catch (Exception ex)
 			{

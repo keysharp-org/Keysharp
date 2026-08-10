@@ -6,15 +6,14 @@ using System.Reflection.Metadata;
 namespace Keysharp.Internals.Os
 {
 	/// <summary>
-	/// Backs <c>#Package</c> and <c>Clr.LoadPackage</c>. Nothing here opens a socket, parses a .nuspec or extracts an
-	/// archive: the .NET SDK resolves the packages and this reads back the <c>project.assets.json</c> it writes.
+	/// The RUNTIME half of packages: for <c>#Package</c> it reads the manifest the compiler embedded and applies the
+	/// pinned closure (resolution and any restore happened at BUILD time, in <c>PackageResolver</c>); only
+	/// <c>Clr.LoadPackage</c> may still resolve — and restore — in this process, because an imperative call at run
+	/// time is the one place where fetching a missing package is what the user asked for.
 	/// See docs/design-nuget-packages.md for why.
 	/// </summary>
 	internal static class NuGetPackageLoader
 	{
-		/// <summary>Restore is a network operation; bound it so a hung feed fails loudly instead of wedging startup.</summary>
-		private const int RestoreTimeoutMs = 180_000;
-
 		private static readonly Lock sync = new();
 
 		// The two maps below are read by the AssemblyLoadContext hooks, which fire on any thread and at any time —
@@ -41,7 +40,7 @@ namespace Keysharp.Internals.Os
 		/// so two independent resolutions can pick different versions of a shared dependency and try to load both.
 		/// The directive avoids this by construction (one batched call); the runtime API cannot, so it accumulates.
 		/// </summary>
-		private static readonly List<PackageRef> requested = [];
+		private static readonly List<PackageResolver.PackageRef> requested = [];
 
 		/// <summary>Package id -> the managed assembly paths that package itself contributed, for LoadPackage's return.</summary>
 		private static readonly Dictionary<string, List<string>> assembliesByPackage = new(StringComparer.OrdinalIgnoreCase);
@@ -52,16 +51,6 @@ namespace Keysharp.Internals.Os
 		/// re-loading and re-reading metadata for work already done.
 		/// </summary>
 		private static readonly Dictionary<string, bool> applied = new(StringComparer.OrdinalIgnoreCase);
-
-		/// <summary>Restore subprocesses spawned. A warm set must spawn none, which is otherwise unobservable.</summary>
-		internal static int RestoreCount;
-
-		/// <summary>
-		/// Package-graph resolutions performed, cached or not. A batched request must resolve exactly once however
-		/// many packages it carries; unlike <see cref="RestoreCount"/> this holds whether the cache is warm or cold.
-		/// </summary>
-		internal static int ResolveCount;
-
 		/// <summary>
 		/// Resets bookkeeping so a test starts from a known state. Package content and already-loaded assemblies are
 		/// untouched — .NET cannot unload them.
@@ -73,42 +62,56 @@ namespace Keysharp.Internals.Os
 				requested.Clear();
 				applied.Clear();
 				assembliesByPackage.Clear();
-				RestoreCount = ResolveCount = 0;
+				PackageResolver.ResetCounters();
 			}
 		}
 
 		/// <summary>
-		/// Backs the <c>#Package</c> directive. An unavailable package not marked <c>*i</c> stops the script.
+		/// Backs the <c>#Package</c> directive, from the manifest the compiler embedded in the running assembly.
+		/// An unavailable package not marked <c>*i</c> stops the script.
+		/// <para>Nothing is resolved and nothing is restored here: the compiler already did that, and the manifest
+		/// records the EXACT versions it type-checked against. That is what makes a built script reproducible — a
+		/// floating <c>#Package Foo</c> resolved once, at build time, instead of resolving again on every machine
+		/// that runs it and drifting into a <c>MissingMethodException</c> at JIT time.</para>
 		/// </summary>
-		/// <param name="packages">Every <c>#Package</c> in the program, already validated by the lowerer.</param>
-		internal static void Load((string Id, string Version, bool Optional)[] packages)
+		/// <param name="scriptAssembly">The generated script's own assembly, which is where the manifest lives.</param>
+		internal static void Load(Assembly scriptAssembly)
 		{
 			lock (sync)
 			{
 				label = "#Package";
-				var refs = new List<PackageRef>(packages.Length);
+				// The SCRIPT's assembly, which is the one the manifest was embedded in, with the entry assembly as a
+				// fallback for a compiled script whose entry point IS the script.
+				//
+				// Deliberately NOT CompilerHelper.compiledasm, however tempting: touching any CompilerHelper member
+				// forces that type to load, which drags in Microsoft.CodeAnalysis — a compile-time dependency that is
+				// not shipped beside a compiled script. That made every compiled script declaring #Package die at
+				// startup with "Could not load file or assembly 'Microsoft.CodeAnalysis'", from the Program type
+				// initializer, before a line of script ran. The runtime must not reach into the compiler.
+				var manifest = PackageManifest.FromAssembly(scriptAssembly)
+							   ?? PackageManifest.FromAssembly(Assembly.GetEntryAssembly());
 
-				foreach (var (id, version, optional) in packages)
+				if (manifest == null)
 				{
-					// Re-checked because these are written verbatim into the generated csproj. The lowerer already
-					// rejected anything malformed, so a failure here means the two ends disagree.
-					if (!IsValidId(id) || !IsValidVersion(version))
-					{
-						_ = Errors.ErrorOccurred($"{label}: malformed package '{id} {version}' (this is a Keysharp bug, not a script error)",
-												 null, Keyword_ExitApp);
-						continue;
-					}
-
-					refs.Add(new PackageRef(id, version, optional));
+					_ = Errors.ErrorOccurred($"{label}: this script declares packages but carries no package manifest "
+											 + "(this is a Keysharp bug, not a script error)", null, Keyword_ExitApp);
+					return;
 				}
 
-				// ONE Add for the whole set, never one per package. Add resolves the union in a single restore, so
-				// the graph is unified once; feeding the packages in one at a time would load each one's closure
-				// before the next was resolved, and the later resolution could pick a different version of a shared
-				// dependency than the one already in the process — which .NET cannot unload. That diamond is the
-				// reason the directive batches, and the reason Clr.LoadPackage (which cannot) re-resolves the union.
-				if (!Add(refs, out var error))
-					_ = Errors.ErrorOccurred(error, null, Keyword_ExitApp);
+				if (!manifest.TryLocate(scriptAssembly, out var resolved, out var missing))
+				{
+					_ = Errors.ErrorOccurred($"{label}: {missing}", null, Keyword_ExitApp);
+					return;
+				}
+
+				// Only the packages the SCRIPT named. The transitive closure is deliberately excluded from both:
+				// from `requested`, because a dependency's exact resolved version is not a constraint the script
+				// wrote and would collide with a later Clr.LoadPackage asking for the same id; and from Apply's
+				// `wanted`, because that is what marks a package "direct" — marking the whole closure direct would
+				// load every dependency eagerly and turn a platform-irrelevant dependency into a fatal startup error.
+				var direct = manifest.Direct;
+				requested.AddRange(direct);
+				Apply(resolved, direct);
 			}
 		}
 
@@ -122,19 +125,19 @@ namespace Keysharp.Internals.Os
 			{
 				label = "Clr.LoadPackage";
 
-				if (!IsValidId(id))
+				if (!PackageResolver.IsValidId(id))
 				{
 					error = $"{label}: '{id}' is not a valid package name";
 					return null;
 				}
 
-				if (!TryTranslateVersion(version, out var range, out var verr))
+				if (!PackageResolver.TryTranslateVersion(version, out var range, out var verr))
 				{
 					error = $"{label}: {verr} for package '{id}'";
 					return null;
 				}
 
-				if (!Add([new PackageRef(id, range, optional)], out error))
+				if (!Add([new PackageResolver.PackageRef(id, range, optional)], out error))
 					return null;
 
 				// Absent, or present but empty (a package whose only asset for this framework is the `_._` placeholder):
@@ -166,14 +169,14 @@ namespace Keysharp.Internals.Os
 		/// reason when a required package could not be made available; the additions are rolled back in that case, so a
 		/// caught error does not poison every later call with a set that is known to fail. Caller holds <see cref="sync"/>.
 		/// </summary>
-		private static bool Add(List<PackageRef> incoming, out string error)
+		private static bool Add(List<PackageResolver.PackageRef> incoming, out string error)
 		{
 			error = null;
 
 			if (incoming.Count == 0)
 				return true;
 
-			var restore = new List<PackageRef>(requested);
+			var restore = new List<PackageResolver.PackageRef>(requested);
 
 			foreach (var p in incoming)
 			{
@@ -210,7 +213,7 @@ namespace Keysharp.Internals.Os
 
 			return Rollback(restore);
 
-			static bool Rollback(List<PackageRef> to)
+			static bool Rollback(List<PackageResolver.PackageRef> to)
 			{
 				requested.Clear();
 				requested.AddRange(to);
@@ -222,492 +225,20 @@ namespace Keysharp.Internals.Os
 		/// Resolves and loads exactly this package set, or reports why it could not. Never fatal — the caller decides,
 		/// because an unavailable <c>*i</c> package is recoverable and a required one is not.
 		/// </summary>
-		private static bool TryLoadSet(List<PackageRef> packages, out string failure)
+		private static bool TryLoadSet(List<PackageResolver.PackageRef> packages, out string failure)
 		{
-			failure = null;
-			ResolveCount++;
-			var dir = ProjectDir(packages);
-			var assetsPath = Path.Combine(dir, "obj", "project.assets.json");
-			// 1) Cache hit: no SDK, no network, no subprocess. This is the common case after first run. A restore that
-			// FAILED still writes a complete, well-formed assets file for whichever packages did resolve, so the
-			// assets file alone cannot be trusted — reading it would turn a hard error into a silently missing
-			// package on every later run. RestoreSucceeded consults NuGet's own verdict alongside it.
-			var resolved = RestoreSucceeded(dir) ? TryReadAssets(assetsPath) : null;
+			// Restore is allowed here: this is the running script's own process, which is the one place where
+			// fetching a missing package is what the user asked for. The compiler resolves offline (see
+			// PackageResolver.TryResolve) precisely because a syntax check is not.
+			if (!PackageResolver.TryResolve(packages, allowRestore: true, label, out var resolved, out failure))
+				return false;
 
-			if (resolved == null)
-			{
-				// 2) Miss: let the SDK do the actual work.
-				if (!TryRestore(dir, packages, out failure))
-					return false;
-
-				resolved = TryReadAssets(assetsPath);
-
-				if (resolved == null)
-				{
-					failure = $"{label}: restore succeeded but no usable package list was produced in \"{assetsPath}\".";
-					return false;
-				}
-			}
-
-			// Reported on both paths, so a script with a floating version can always read back what it actually got —
-			// on the restore that first resolved it and on every run that reuses the answer.
-			ReportResolved(packages, resolved);
+			// `#Package` itself reports at COMPILE time (CompilerHelper.ResolvePackages calls the same method), but
+			// its Direct refs do sit in `requested`, so a later Clr.LoadPackage re-resolves the union INCLUDING them,
+			// and a floating directive version can be reported here at whatever the union resolves to. Apply still
+			// skips reloading anything already applied.
+			PackageResolver.ReportResolved(packages, resolved, label);
 			Apply(resolved, packages);
-			return true;
-		}
-
-		// ---- directive spec ----
-
-		/// <summary>
-		/// A package id and an optional version. Both are validated by the lowerer (so a malformed one is a compile
-		/// error) and again here, which is also what makes writing them straight into the generated csproj safe.
-		/// </summary>
-		internal static bool IsValidId(string s) =>
-			s.Length > 0 && s.Length < 128 && s.All(c => char.IsAsciiLetterOrDigit(c) || c == '.' || c == '_' || c == '-');
-
-		internal static bool IsValidVersion(string s) =>
-			s.Length < 64 && s.All(c => char.IsAsciiLetterOrDigit(c) || c == '.' || c == '-' || c == '+' || c == '*'
-										|| c == '[' || c == ']' || c == '(' || c == ')' || c == ',');
-
-		/// <summary>A floating version: a plain version whose last component is the only <c>*</c> (<c>13.*</c>, <c>*</c>).</summary>
-		private static bool IsFloatingVersion(string s) =>
-			s == "*" || (s.EndsWith(".*", StringComparison.Ordinal) && IsPlainVersion(s[..^2]));
-
-		/// <summary>
-		/// A literal NuGet interval — a bracket, one or two comma-separated plain versions, a closing bracket. Either
-		/// bound may be empty (an open end), and the single-version form <c>[1.0]</c> means exactly that version.
-		/// </summary>
-		private static bool IsValidRange(string s)
-		{
-			if (!IsValidVersion(s) || s.Length < 3 || (s[0] != '[' && s[0] != '(') || (s[^1] != ']' && s[^1] != ')'))
-				return false;
-
-			var parts = s[1..^1].Split(',');
-
-			if (parts.Length > 2 || parts.All(p => p.Length == 0))
-				return false;   // "[]" / "[,]" bounds nothing
-
-			// A single version is only meaningful as the inclusive `[1.0]` form; `(1.0)` bounds nothing.
-			if (parts.Length == 1 && (s[0] != '[' || s[^1] != ']'))
-				return false;
-
-			return parts.All(p => p.Length == 0 || IsPlainVersion(p));
-		}
-
-		/// <summary>
-		/// Translates the version a script writes (omitted, partial, exact, comparison-bounded, or already a NuGet
-		/// range) into the range NuGet understands, mirroring what <c>#Requires</c> accepts. Two rules are not
-		/// self-evident from the code: a FULL version becomes exact (<c>13.0.3</c> → <c>[13.0.3]</c>, because NuGet
-		/// reads a bare <c>13.0.3</c> as "or newer" and a script naming a full version wants reproducibility), and
-		/// translation must happen at all because <c>&lt;</c>/<c>&gt;</c> are not legal in an XML attribute value and
-		/// so can never reach the generated project file as typed. Runs at compile time, so a bad version is a
-		/// compile error and the cache key is already canonical. VersionFormsTranslateToNuGetRanges pins every form.
-		/// </summary>
-		internal static bool TryTranslateVersion(string written, out string range, out string error)
-		{
-			range = Translate((written ?? "").Trim());
-			error = range == null ? $"'{written}' is not a valid version" : null;
-			return range != null;
-
-			// Returns null for anything malformed; the single caller above turns that into the one error message.
-			static string Translate(string s)
-			{
-				if (s.Length == 0)
-					return "*";   // newest stable
-
-				// A literal NuGet range or a floating version is already in the target language, but still has to be
-				// well-formed: it is written verbatim into the csproj, where a malformed one would surface as a NuGet
-				// error at run time instead of the compile error this method promises.
-				if (s[0] == '[' || s[0] == '(')
-					return IsValidRange(s) ? s : null;
-
-				if (s.Contains('*'))
-					return IsValidVersion(s) && IsFloatingVersion(s) ? s : null;
-
-				var tokens = s.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-
-				// A bare version is exactly one token with no comparison, so a stray trailing word (`13.0.3 extra`)
-				// is rejected rather than having only its first token honoured.
-				if (tokens.Length == 1 && Operator(tokens[0]).Length == 0)
-				{
-					var only = StripV(tokens[0]);
-					// A partial version floats within what was written; a full one is exact.
-					return !IsPlainVersion(only) ? null
-						 : only.Split('.').Length >= 3 ? $"[{only}]" : $"{only}.*";
-				}
-
-				string lo = null, hi = null, exact = null;
-				bool loInclusive = false, hiInclusive = false;
-
-				foreach (var raw in tokens)
-				{
-					var op = Operator(raw);
-					var tok = op.Length == 0 ? null : StripV(raw.Substring(op.Length));
-
-					if (tok == null || !IsPlainVersion(tok))
-						return null;
-
-					switch (op)
-					{
-						case ">=": lo = tok; loInclusive = true; break;
-						case ">": lo = tok; break;
-						case "<=": hi = tok; hiInclusive = true; break;
-						case "<": hi = tok; break;
-						default: exact = tok; break;   // "="
-					}
-				}
-
-				// `=` pins the version, so a bound alongside it is contradictory rather than merely redundant. This is
-				// checked after the loop, not on sight, so that the tokens following it are still validated.
-				if (exact != null)
-					return lo == null && hi == null ? $"[{exact}]" : null;
-
-				// An absent bound is open, and an open bound is always exclusive in NuGet's syntax: `(,14)`, never `[,14)`.
-				return $"{(loInclusive ? '[' : '(')}{lo},{hi}{(hiInclusive ? ']' : ')')}";
-			}
-
-			static string Operator(string t)
-			{
-				foreach (var c in new[] { ">=", "<=", ">", "<", "=" })
-					if (t.StartsWith(c, StringComparison.Ordinal))
-						return c;
-
-				return "";
-			}
-
-			// `#Requires` allows an optional leading "v"; accept it here so the two read the same.
-			static string StripV(string t) =>
-				t.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? t.Substring(1) : t;
-		}
-
-		/// <summary>A version with no operator, range syntax or wildcard — digits, dots and a pre-release/metadata tail.</summary>
-		private static bool IsPlainVersion(string s) =>
-			s.Length != 0 && char.IsAsciiDigit(s[0])
-			&& s.All(c => char.IsAsciiLetterOrDigit(c) || c == '.' || c == '-' || c == '+');
-
-		/// <summary>One `#Package` directive: its name, requested version (empty = newest stable) and `*i` flag.</summary>
-		internal readonly record struct PackageRef(string Id, string Version, bool Optional);
-
-		// ---- cache location ----
-
-		/// <summary>
-		/// One directory per (package set, framework, RID). The generated project and its assets file live here;
-		/// package <em>content</em> always lives in the standard global packages folder, written by the SDK —
-		/// Keysharp never writes there.
-		/// </summary>
-		private static string ProjectDir(List<PackageRef> packages) => Path.Combine(CacheRoot(), CacheKeyFor(packages));
-
-		/// <summary>
-		/// The cache key for a package set: order-independent (so writing the same directives in a different order is
-		/// still a cache hit) but sensitive to every id, version and to the framework/RID the assets were resolved for.
-		/// The `*i` flag is deliberately excluded — it changes what happens on failure, not what gets resolved.
-		/// </summary>
-		internal static string CacheKeyFor(List<PackageRef> packages)
-		{
-			var key = string.Join(";", packages.Select(p => $"{p.Id.ToLowerInvariant()}|{p.Version.ToLowerInvariant()}")
-											   .OrderBy(s => s, StringComparer.Ordinal));
-			return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{tfm}\n{rid}\n{key}")))[..16].ToLowerInvariant();
-		}
-
-		private static string CacheRoot()
-		{
-#if WINDOWS
-			var root = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-#else
-			var root = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
-
-			if (string.IsNullOrEmpty(root))
-				root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
-
-#endif
-			return Path.Combine(root, "Keysharp", "packages");
-		}
-
-		/// <summary>
-		/// The framework and RID a package must be compatible with, and that the assets file is read against — taken
-		/// from the running runtime rather than hard-coded, so they track the target Keysharp itself is built for.
-		/// </summary>
-		internal static string TargetFramework => tfm;
-
-		internal static string RuntimeId => rid;
-
-		private static readonly string tfm =
-#if WINDOWS
-			$"net{Environment.Version.Major}.{Environment.Version.Minor}-windows";
-#else
-			$"net{Environment.Version.Major}.{Environment.Version.Minor}";
-#endif
-
-		private static readonly string rid = RuntimeInformation.RuntimeIdentifier;
-
-		// ---- restore (step 2) ----
-
-		private static string BuildProject(List<PackageRef> packages)
-		{
-			var sb = new StringBuilder();
-			_ = sb.AppendLine("<!-- Generated by Keysharp for the #Package directive. Safe to delete; it will be recreated. -->");
-			_ = sb.AppendLine("<Project Sdk=\"Microsoft.NET.Sdk\">");
-			_ = sb.AppendLine("  <PropertyGroup>");
-			_ = sb.AppendLine($"    <TargetFramework>{tfm}</TargetFramework>");
-			_ = sb.AppendLine($"    <RuntimeIdentifier>{rid}</RuntimeIdentifier>");
-			_ = sb.AppendLine("    <SelfContained>false</SelfContained>");
-			_ = sb.AppendLine("    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>");
-			// Advisories are the one security control this design gets for free; make sure they are on.
-			_ = sb.AppendLine("    <NuGetAudit>true</NuGetAudit>");
-			_ = sb.AppendLine("    <NuGetAuditMode>all</NuGetAuditMode>");
-			_ = sb.AppendLine("  </PropertyGroup>");
-			_ = sb.AppendLine("  <ItemGroup>");
-
-			foreach (var (id, version, _) in packages)
-				// Already a NuGet range: the lowerer translated whatever the script wrote (see TryTranslateVersion),
-				// so nothing here can contain a character that is illegal in an XML attribute value. A floating range
-				// stays pinned by this cache entry — the assets file is written once and reused, so a script does not
-				// silently upgrade on later runs.
-				_ = sb.AppendLine($"    <PackageReference Include=\"{id}\" Version=\"{version}\" />");
-
-			_ = sb.AppendLine("  </ItemGroup>");
-			_ = sb.AppendLine("</Project>");
-			return sb.ToString();
-		}
-
-		private static bool TryRestore(string dir, List<PackageRef> packages, out string failure)
-		{
-			failure = null;
-			RestoreCount++;
-
-			try
-			{
-				_ = Directory.CreateDirectory(dir);
-				// MSBuild walks up from the project directory looking for these; an unrelated one above the cache
-				// root would silently change how the generated project restores. Terminate the walk here.
-				File.WriteAllText(Path.Combine(dir, "Directory.Build.props"), "<Project />");
-				File.WriteAllText(Path.Combine(dir, "Directory.Build.targets"), "<Project />");
-				File.WriteAllText(Path.Combine(dir, "Directory.Packages.props"), "<Project />");   // NuGet walks up for this one too
-				File.WriteAllText(Path.Combine(dir, "keysharp-packages.csproj"), BuildProject(packages));
-			}
-			catch (Exception e)
-			{
-				failure = $"{label}: could not write the package project to \"{dir}\": {e.Message}";
-				return false;
-			}
-
-			var psi = new ProcessStartInfo("dotnet", "restore --nologo")
-			{
-				WorkingDirectory = dir,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true,
-				UseShellExecute = false,
-				CreateNoWindow = true
-			};
-			string output;
-
-			try
-			{
-				using var proc = Process.Start(psi);
-
-				if (proc == null)
-					return Fail(dir, packages, "the 'dotnet' command could not be started", "", true, out failure);
-
-				// Read both pipes before waiting, or a chatty restore can fill a pipe buffer and deadlock.
-				var stdout = proc.StandardOutput.ReadToEndAsync();
-				var stderr = proc.StandardError.ReadToEndAsync();
-
-				if (!proc.WaitForExit(RestoreTimeoutMs))
-				{
-					try { proc.Kill(entireProcessTree: true); } catch { }
-
-					return Fail(dir, packages, $"'dotnet restore' did not finish within {RestoreTimeoutMs / 1000} seconds", "", false, out failure);
-				}
-
-				output = (stdout.GetAwaiter().GetResult() + stderr.GetAwaiter().GetResult()).Trim();
-
-				if (proc.ExitCode != 0)
-					return Fail(dir, packages, $"'dotnet restore' failed (exit code {proc.ExitCode})", output, false, out failure);
-			}
-			catch (System.ComponentModel.Win32Exception e)
-			{
-				// The process could not be started at all — "file not found" here means the .NET SDK is not installed
-				// or not on PATH, which is the one case the install-the-SDK advice fits.
-				return Fail(dir, packages, $"'dotnet restore' could not be run ({e.Message})", "", true, out failure);
-			}
-			catch (Exception e)
-			{
-				return Fail(dir, packages, $"'dotnet restore' failed ({e.Message})", "", false, out failure);
-			}
-
-			// NuGet audit findings (NU1901-NU1904) are advisory, not fatal: the user asked for these packages, and a
-			// vulnerable transitive dependency is information they need rather than a reason to refuse to start.
-			foreach (var line in output.Split('\n'))
-				if (line.Contains("NU190", StringComparison.Ordinal))
-					_ = KsDebug.OutputDebug($"{label}: {line.Trim()}");
-
-			return true;
-		}
-
-		/// <summary>
-		/// Builds the restore-failure message. The "install the SDK" paragraph appears only when the SDK is actually
-		/// the problem: printing it for a plain NU1101 (package not found, SDK working fine) buries the real error
-		/// under advice the user has already followed.
-		/// </summary>
-		private static bool Fail(string dir, List<PackageRef> packages, string reason, string output, bool sdkMissing, out string failure)
-		{
-			var advice = sdkMissing
-						 ? """
-						   Keysharp does not download packages itself — it asks the .NET SDK to resolve them, so the
-						   SDK must be installed and on PATH the first time a package set is used on this machine.
-						   Install it from https://dotnet.microsoft.com/download, or restore manually with:
-
-						   """
-						 : "Reproduce and investigate with:";
-			var log = output.Length == 0 ? "" : "\n\n" + (output.Length > 4000 ? output[..4000] + " …" : output);
-			failure = $"""
-					   {label}: {reason}.
-
-					   {advice}
-					       cd "{dir}"
-					       dotnet restore
-
-					   Requested: {string.Join(", ", packages.Select(p => $"{p.Id} {p.Version}"))}{log}
-					   """;
-			return false;
-		}
-
-		// ---- assets file (steps 1 and 3) ----
-
-		internal sealed class ResolvedPackage
-		{
-			internal string Id;
-			internal string Version;
-			internal readonly List<string> Managed = [];
-			internal readonly List<string> Native = [];
-		}
-
-		/// <summary>
-		/// Whether the restore that produced this directory's assets file succeeded, per the `success` flag NuGet
-		/// writes to project.nuget.cache beside it. Absent or unreadable counts as failure, so an interrupted restore
-		/// re-runs rather than being trusted.
-		/// </summary>
-		internal static bool RestoreSucceeded(string dir)
-		{
-			try
-			{
-				using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, "obj", "project.nuget.cache")));
-				return doc.RootElement.TryGetProperty("success", out var ok) && ok.ValueKind == JsonValueKind.True;
-			}
-			catch (Exception)
-			{
-				return false;
-			}
-		}
-
-		/// <summary>
-		/// Reads the SDK's resolved package graph. Returns null when the file is absent, unreadable, or names a file
-		/// that is missing — the last case matters because the global packages folder is shared and can be cleared
-		/// behind us, and a stale cache entry must fall through to a fresh restore rather than half-load. Whether the
-		/// restore that wrote it succeeded at all is a separate question, answered by RestoreSucceeded.
-		/// </summary>
-		internal static List<ResolvedPackage> TryReadAssets(string assetsPath)
-		{
-			if (!File.Exists(assetsPath))
-				return null;
-
-			try
-			{
-				using var doc = JsonDocument.Parse(File.ReadAllText(assetsPath));
-				var root = doc.RootElement;
-
-				if (!root.TryGetProperty("targets", out var targets) || !root.TryGetProperty("libraries", out var libraries))
-					return null;
-
-				var folders = root.TryGetProperty("packageFolders", out var pf)
-							  ? pf.EnumerateObject().Select(p => p.Name).ToList()
-							  : [];
-
-				if (folders.Count == 0 || !TrySelectTarget(targets, out var target))
-					return null;
-
-				var result = new List<ResolvedPackage>();
-
-				foreach (var entry in target.EnumerateObject())
-				{
-					// "Id/Version"; anything not of type "package" (i.e. a project reference) has no cached assets.
-					var slash = entry.Name.LastIndexOf('/');
-
-					if (slash <= 0
-						|| !libraries.TryGetProperty(entry.Name, out var lib)
-						|| !lib.TryGetProperty("type", out var type) || type.GetString() != "package"
-						|| !lib.TryGetProperty("path", out var relElem) || relElem.GetString() is not { } rel)
-						continue;
-
-					var baseDir = folders.Select(f => Path.Combine(f, rel.Replace('/', Path.DirectorySeparatorChar)))
-										 .FirstOrDefault(Directory.Exists);
-
-					if (baseDir == null)
-						return null;   // package content is gone — treat the whole cache entry as stale
-
-					var pkg = new ResolvedPackage { Id = entry.Name.Substring(0, slash), Version = entry.Name.Substring(slash + 1) };
-
-					if (!CollectAssets(entry.Value, "runtime", baseDir, pkg.Managed)
-						|| !CollectAssets(entry.Value, "native", baseDir, pkg.Native))
-						return null;
-
-					result.Add(pkg);
-				}
-
-				return result.Count == 0 ? null : result;
-			}
-			catch (Exception)
-			{
-				return null;   // unparseable/unreadable — fall through to a fresh restore
-			}
-		}
-
-		/// <summary>Prefers the RID-qualified target (which is what carries native and RID-specific managed assets).</summary>
-		private static bool TrySelectTarget(JsonElement targets, out JsonElement target)
-		{
-			target = default;
-			var found = false;
-
-			foreach (var t in targets.EnumerateObject())
-			{
-				if (!t.Name.StartsWith(tfm, StringComparison.OrdinalIgnoreCase))
-					continue;
-
-				if (t.Name.EndsWith("/" + rid, StringComparison.OrdinalIgnoreCase))
-				{
-					target = t.Value;
-					return true;
-				}
-
-				if (!found)
-				{
-					target = t.Value;
-					found = true;
-				}
-			}
-
-			return found;
-		}
-
-		private static bool CollectAssets(JsonElement package, string section, string baseDir, List<string> into)
-		{
-			if (!package.TryGetProperty(section, out var assets))
-				return true;
-
-			foreach (var asset in assets.EnumerateObject())
-			{
-				// "_._" is NuGet's explicit placeholder for "this package deliberately contributes nothing here".
-				if (asset.Name.EndsWith("_._", StringComparison.Ordinal))
-					continue;
-
-				var full = Path.Combine(baseDir, asset.Name.Replace('/', Path.DirectorySeparatorChar));
-
-				if (!File.Exists(full))
-					return false;
-
-				into.Add(full);
-			}
-
 			return true;
 		}
 
@@ -722,7 +253,7 @@ namespace Keysharp.Internals.Os
 		/// Re-resolving after a later <c>Clr.LoadPackage</c> replays the same closure, so packages already applied are
 		/// skipped: reloading is idempotent but re-reading every dependency's metadata is not free.
 		/// </summary>
-		private static void Apply(List<ResolvedPackage> resolved, List<PackageRef> wanted)
+		private static void Apply(List<PackageResolver.ResolvedPackage> resolved, List<PackageResolver.PackageRef> wanted)
 		{
 			InstallHooks();
 
@@ -883,15 +414,5 @@ namespace Keysharp.Internals.Os
 				: 0;
 		}
 
-		/// <summary>
-		/// Reports what a floating request actually resolved to, so `#Package Foo` has a discoverable answer the
-		/// user can paste back as an explicit version. Only floating ones: an exact request already knows.
-		/// </summary>
-		private static void ReportResolved(List<PackageRef> wanted, List<ResolvedPackage> resolved)
-		{
-			foreach (var w in wanted.Where(w => w.Version.Contains('*')))
-				if (resolved.FirstOrDefault(r => r.Id.Equals(w.Id, StringComparison.OrdinalIgnoreCase)) is { } hit)
-					_ = KsDebug.OutputDebug($"{label}: {hit.Id} {w.Version} resolved to {hit.Version}");
-		}
 	}
 }

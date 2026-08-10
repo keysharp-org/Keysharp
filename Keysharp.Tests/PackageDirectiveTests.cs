@@ -26,8 +26,20 @@ namespace Keysharp.Tests
 			Assert.IsEmpty(parseDiags, "unexpected parse diagnostics: " + string.Join("; ", parseDiags));
 			var lowerer = new KP.Lowerer();
 			var unit = lowerer.Build(prog, "nugettest");
+			lastPackages = lowerer.Packages;
 			return (unit?.ToFullString() ?? "", lowerer.Diagnostics);
 		}
+
+		/// <summary>
+		/// The package set the last <see cref="Lower"/> collected, rendered in the shape the lowerer USED to emit
+		/// into the script. `#Package` now carries its data in a build-time manifest rather than in the generated
+		/// call (see PackageManifest), so these assertions read it from here — what they pin is the version
+		/// translation, the batching and the order, none of which moved.
+		/// </summary>
+		private static IReadOnlyList<Keysharp.Internals.Os.PackageResolver.PackageRef> lastPackages;
+
+		private static string Packages() =>
+			"LoadPackages(" + string.Join(", ", lastPackages.Select(p => $"(\"{p.Id}\", \"{p.Version}\", {(p.Optional ? "true" : "false")})")) + ")";
 
 		/// <summary>
 		/// Asserts the lowered tree contains <paramref name="expected"/>. A synthesized syntax tree carries no
@@ -47,18 +59,18 @@ namespace Keysharp.Tests
 		public void SpecValidation()
 		{
 			foreach (var ok in new[] { "Newtonsoft.Json", "SQLitePCLRaw.bundle_e_sqlite3", "a", "A-B_c.1" })
-				Assert.IsTrue(Keysharp.Internals.Os.NuGetPackageLoader.IsValidId(ok), ok);
+				Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.IsValidId(ok), ok);
 
 			// Anything outside the allowlist would be written verbatim into the generated project file, so these
 			// have to be rejected rather than escaped.
 			foreach (var bad in new[] { "", "a/b", "a;b", "a b", "a\"b", "<a>", "a&b", "../x" })
-				Assert.IsFalse(Keysharp.Internals.Os.NuGetPackageLoader.IsValidId(bad), bad);
+				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.IsValidId(bad), bad);
 
 			foreach (var ok in new[] { "", "13.0.3", "2.1.10", "1.0.0-beta.1", "13.*", "1.2.3.4", "1.0.0+meta" })
-				Assert.IsTrue(Keysharp.Internals.Os.NuGetPackageLoader.IsValidVersion(ok), ok);
+				Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.IsValidVersion(ok), ok);
 
 			foreach (var bad in new[] { "1.0;x", "1.0 2.0", "<1.0>", "1.0\"" })
-				Assert.IsFalse(Keysharp.Internals.Os.NuGetPackageLoader.IsValidVersion(bad), bad);
+				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.IsValidVersion(bad), bad);
 		}
 
 		[Test, Category("Directives")]
@@ -87,7 +99,7 @@ namespace Keysharp.Tests
 		{
 			void Check(string written, string expected)
 			{
-				var ok = Keysharp.Internals.Os.NuGetPackageLoader.TryTranslateVersion(written, out var range, out var err);
+				var ok = Keysharp.Internals.Os.PackageResolver.TryTranslateVersion(written, out var range, out var err);
 				Assert.IsTrue(ok, $"'{written}' -> {err}");
 				Assert.AreEqual(expected, range, $"'{written}'");
 			}
@@ -111,7 +123,7 @@ namespace Keysharp.Tests
 			// Nothing may emit a character that is illegal inside Version="…".
 			foreach (var v in new[] { "", "13", "13.0.3", ">=13.0 <14", "<14", "v2" })
 			{
-				_ = Keysharp.Internals.Os.NuGetPackageLoader.TryTranslateVersion(v, out var r, out _);
+				_ = Keysharp.Internals.Os.PackageResolver.TryTranslateVersion(v, out var r, out _);
 				Assert.IsFalse(r.Contains('<') || r.Contains('>') || r.Contains('"') || r.Contains('&'), $"'{v}' -> '{r}'");
 			}
 
@@ -119,13 +131,14 @@ namespace Keysharp.Tests
 			Check("(13.0,)", "(13.0,)");          // literal open upper bound
 			Check("*", "*");
 
-			foreach (var bad in new[] { "abc", "1.0 2.0", ">=", "1.0 >=2.0", ">=x" })
-				Assert.IsFalse(Keysharp.Internals.Os.NuGetPackageLoader.TryTranslateVersion(bad, out _, out _), bad);
+			foreach (var bad in new[] { "abc", "1.0 2.0", ">=", "1.0 >=2.0", ">=x", "1..2", "1.",
+											 "1.2.3.4.5", "1.0-", "1.0+", "1.0-beta..1" })
+				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.TryTranslateVersion(bad, out _, out _), bad);
 
 			// A literal range is written verbatim into the csproj, so a malformed one has to be caught here rather
 			// than surfacing as a NuGet error at run time — this method's whole contract is compile-time rejection.
 			foreach (var bad in new[] { "[[[", "***", "[]", "[,]", "(1.0)", "[1.0,2.0,3.0]", "[abc,)", "1.*.3", "*.1" })
-				Assert.IsFalse(Keysharp.Internals.Os.NuGetPackageLoader.TryTranslateVersion(bad, out _, out _), bad);
+				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.TryTranslateVersion(bad, out _, out _), bad);
 		}
 
 		[Test, Category("Directives")]
@@ -133,7 +146,7 @@ namespace Keysharp.Tests
 		{
 			var (code, diags) = Lower("#Package Newtonsoft.Json >=13.0 <14\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
-			AssertEmits(code, "LoadPackages((\"Newtonsoft.Json\", \"[13.0,14)\", false))");
+			AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0,14)\", false))");
 		}
 
 		[Test, Category("Directives")]
@@ -157,7 +170,7 @@ namespace Keysharp.Tests
 		{
 			var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package Newtonsoft.Json 13.0.3\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
-			AssertEmits(code, "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false))");
+			AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false))");
 		}
 
 		/// <summary>
@@ -171,7 +184,11 @@ namespace Keysharp.Tests
 			var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package Serilog 4.0.0\nx := 1\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
 			Assert.AreEqual(1, CountCalls(code), "expected exactly one batched LoadPackages call");
-			AssertEmits(code, "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false), (\"Serilog\", \"[4.0.0]\", false))");
+			AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false), (\"Serilog\", \"[4.0.0]\", false))");
+			// What the lowerer actually emits is the argument-LESS call: the ids and versions above travel in the
+			// build-time manifest instead, so a script can never re-decide at run time what it was compiled against.
+			// Asserted on the generated code rather than on the package list, which the test itself formats.
+			AssertEmits(code, "MainScript.LoadPackages()");
 		}
 
 		[Test, Category("Directives")]
@@ -180,7 +197,7 @@ namespace Keysharp.Tests
 			var (code, diags) = Lower("#Package Newtonsoft.Json\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
 			// The empty version becomes Version="*" in the generated project: newest stable, then pinned by the cache.
-			AssertEmits(code, "LoadPackages((\"Newtonsoft.Json\", \"*\", false))");
+			AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"*\", false))");
 		}
 
 		/// <summary>
@@ -193,7 +210,7 @@ namespace Keysharp.Tests
 		{
 			var (code, diags) = Lower("#Package Keysharp.Extensions 1.2.3\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
-			AssertEmits(code, "LoadPackages((\"Keysharp.Extensions\", \"[1.2.3]\", false))");
+			AssertEmits(Packages(), "LoadPackages((\"Keysharp.Extensions\", \"[1.2.3]\", false))");
 
 			// The #Requires forms still lower to their own things, and never to a package load.
 			foreach (var other in new[] { "#Requires AutoHotkey v2.0\n", "#Requires Keysharp v2.1\n", "#Requires capability ScreenCapture\n" })
@@ -214,7 +231,7 @@ namespace Keysharp.Tests
 		{
 			var (code, diags) = Lower("#Package *i Serilog 4.0.0\n#Package Newtonsoft.Json 13.0.3\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
-			AssertEmits(code, "LoadPackages((\"Serilog\", \"[4.0.0]\", true), (\"Newtonsoft.Json\", \"[13.0.3]\", false))");
+			AssertEmits(Packages(), "LoadPackages((\"Serilog\", \"[4.0.0]\", true), (\"Newtonsoft.Json\", \"[13.0.3]\", false))");
 		}
 
 		[Test, Category("Directives")]
@@ -252,10 +269,12 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// Packages are program-wide, so they must load before ANY module's auto-exec runs — not at the position of
-		/// the directive that happened to declare them. Modules execute in dependency order, which need not match the
-		/// order they lower in, so emitting at the directive's position lets an imported module's top-level code run
-		/// against packages that are not loaded yet.
+		/// Packages are program-wide, so they load from ONE fixed position: generated Main, before RunMainWindow
+		/// starts the auto-exec — not at the position of the directive that happened to declare them (modules execute
+		/// in dependency order, so an imported module's top-level code could run against packages not loaded yet),
+		/// and not at the top of the outer auto-exec either: JITting that method resolves the module classes it calls
+		/// into, and a `static` field of a package STRUCT type in a `#CSharp` block forces the package assembly to
+		/// resolve before the method's own first statement has run.
 		/// </summary>
 		[Test, Category("Directives")]
 		public void PackagesLoadBeforeEveryModuleAutoExec()
@@ -264,6 +283,11 @@ namespace Keysharp.Tests
 			Assert.IsEmpty(diags, string.Join("; ", diags));
 			Assert.AreEqual(1, CountCalls(code));
 			var load = code.IndexOf("LoadPackages(", StringComparison.Ordinal);
+			// Before the call that starts (and therefore JITs) the auto-exec…
+			var runWindow = code.IndexOf("RunMainWindow", StringComparison.Ordinal);
+			Assert.IsTrue(runWindow >= 0, "expected Main to start the script via RunMainWindow; generated:\n" + code);
+			Assert.Less(load, runWindow, "packages must load before RunMainWindow JITs the auto-exec; generated:\n" + code);
+			// …and so before any module's own auto-exec statements.
 			var firstAutoExec = System.Text.RegularExpressions.Regex.Match(code, @"Program\.\w+\.AutoExecSection\(\)");
 			Assert.IsTrue(firstAutoExec.Success, "expected the outer auto-exec to drive each module; generated:\n" + code);
 			Assert.Less(load, firstAutoExec.Index,
@@ -285,17 +309,17 @@ namespace Keysharp.Tests
 			var cache = Path.Combine(obj, "project.nuget.cache");
 
 			// No project.nuget.cache at all: an interrupted restore, which must re-run rather than be trusted.
-			Assert.IsFalse(Keysharp.Internals.Os.NuGetPackageLoader.RestoreSucceeded(dir));
+			Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.RestoreSucceeded(dir));
 
 			File.WriteAllText(cache, "{\"version\":2,\"success\":false,\"expectedPackageFiles\":[],\"logs\":[]}");
-			Assert.IsFalse(Keysharp.Internals.Os.NuGetPackageLoader.RestoreSucceeded(dir),
+			Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.RestoreSucceeded(dir),
 						   "a restore NuGet itself recorded as failed must not count as a cache hit");
 
 			File.WriteAllText(cache, "{\"version\":2,\"success\":true,\"expectedPackageFiles\":[],\"logs\":[]}");
-			Assert.IsTrue(Keysharp.Internals.Os.NuGetPackageLoader.RestoreSucceeded(dir));
+			Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.RestoreSucceeded(dir));
 
 			File.WriteAllText(cache, "{ not json");
-			Assert.IsFalse(Keysharp.Internals.Os.NuGetPackageLoader.RestoreSucceeded(dir));
+			Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.RestoreSucceeded(dir));
 
 			try { Directory.Delete(dir, true); } catch { }
 		}
@@ -368,7 +392,7 @@ namespace Keysharp.Tests
 			var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package *i Serilog >=4.0 <5\n#Package A.B\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
 			Assert.AreEqual(1, CountCalls(code), "expected exactly one batched call");
-			AssertEmits(code, "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false), (\"Serilog\", \"[4.0,5)\", true), (\"A.B\", \"*\", false))");
+			AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false), (\"Serilog\", \"[4.0,5)\", true), (\"A.B\", \"*\", false))");
 		}
 
 		/// <summary>
@@ -386,8 +410,8 @@ namespace Keysharp.Tests
 			File.WriteAllText(Path.Combine(pkgDir, "lib", "net6.0", "Demo.dll"), "");
 			File.WriteAllText(Path.Combine(pkgDir, "lib", "net6.0", "_._"), "");
 			File.WriteAllText(Path.Combine(pkgDir, "runtimes", "win-x64", "native", "demo_native.dll"), "");
-			var tfm = Keysharp.Internals.Os.NuGetPackageLoader.TargetFramework;
-			var rid = Keysharp.Internals.Os.NuGetPackageLoader.RuntimeId;
+			var tfm = Keysharp.Internals.Os.PackageResolver.TargetFramework;
+			var rid = Keysharp.Internals.Os.PackageResolver.RuntimeId;
 			var assets = Path.Combine(root, "obj", "project.assets.json");
 			_ = Directory.CreateDirectory(Path.GetDirectoryName(assets));
 			File.WriteAllText(assets, $$"""
@@ -402,7 +426,7 @@ namespace Keysharp.Tests
 			  "packageFolders": { "{{Path.Combine(root, "packages").Replace("\\", "\\\\")}}": {} }
 			}
 			""");
-			var read = Keysharp.Internals.Os.NuGetPackageLoader.TryReadAssets(assets);
+			var read = Keysharp.Internals.Os.PackageResolver.TryReadAssets(assets);
 			Assert.IsNotNull(read, "fixture should parse");
 			Assert.AreEqual(1, read.Count);
 			// The RID-qualified target wins, `_._` is dropped, and native assets do not land among the managed ones.
@@ -410,11 +434,16 @@ namespace Keysharp.Tests
 			StringAssert.EndsWith("Demo.dll", read[0].Managed[0]);
 			Assert.AreEqual(1, read[0].Native.Count);
 			StringAssert.EndsWith("demo_native.dll", read[0].Native[0]);
+			var manifest = new Keysharp.Internals.Os.PackageManifest();
+			manifest.Add(read[0], "[1.0.0]", false, true);
+			StringAssert.EndsWith(Path.Combine("managed", "lib", "net6.0", "Demo.dll"), manifest.Packages[0].Managed[0].Deployed);
+			StringAssert.EndsWith(Path.Combine("native", "runtimes", "win-x64", "native", "demo_native.dll"),
+				manifest.Packages[0].Native[0].Deployed);
 
 			// A file the assets list names but which is gone means the shared package folder was cleared: the whole
 			// entry is stale and must force a fresh restore rather than half-load.
 			File.Delete(Path.Combine(pkgDir, "lib", "net6.0", "Demo.dll"));
-			Assert.IsNull(Keysharp.Internals.Os.NuGetPackageLoader.TryReadAssets(assets));
+			Assert.IsNull(Keysharp.Internals.Os.PackageResolver.TryReadAssets(assets));
 			try { Directory.Delete(root, true); } catch { }
 		}
 
@@ -434,13 +463,46 @@ namespace Keysharp.Tests
 			CollectionAssert.AreEquivalent(new[] { "libfoo.so.1", "libfoo.so", "libfoo", "foo" }, so);
 		}
 
+		[Test, Category("Directives")]
+		public void PackageDeploymentPreservesDuplicateBasenames()
+		{
+			var root = Path.Combine(Path.GetTempPath(), "ks-package-assets", Guid.NewGuid().ToString("N"));
+			var first = Path.Combine(root, "source-a", "Shared.dll");
+			var second = Path.Combine(root, "source-b", "Shared.dll");
+			var output = Path.Combine(root, "output");
+			_ = Directory.CreateDirectory(Path.GetDirectoryName(first));
+			_ = Directory.CreateDirectory(Path.GetDirectoryName(second));
+			File.WriteAllText(first, "first");
+			File.WriteAllText(second, "second");
+
+			try
+			{
+				var manifest = new Keysharp.Internals.Os.PackageManifest();
+				var a = new Keysharp.Internals.Os.PackageResolver.ResolvedPackage { Id = "Package.A", Version = "1.0.0" };
+				var b = new Keysharp.Internals.Os.PackageResolver.ResolvedPackage { Id = "Package.B", Version = "2.0.0" };
+				a.Managed.Add(first);
+				b.Managed.Add(second);
+				manifest.Add(a, "[1.0.0]", false, true);
+				manifest.Add(b, "[2.0.0]", false, true);
+
+				Assert.IsNull(manifest.CopyTo(output));
+				var deployed = Directory.GetFiles(output, "Shared.dll", SearchOption.AllDirectories);
+				Assert.AreEqual(2, deployed.Length, "same-named assets from different packages must not overwrite each other");
+				CollectionAssert.AreEquivalent(new[] { "first", "second" }, deployed.Select(File.ReadAllText).ToArray());
+			}
+			finally
+			{
+				try { Directory.Delete(root, true); } catch { }
+			}
+		}
+
 		/// <summary>The cache key must not depend on the order packages were written in, or every reorder re-restores.</summary>
 		[Test, Category("Directives")]
 		public void CacheKeyIsOrderIndependentButVersionSensitive()
 		{
 			static string Key(params (string, string)[] p) =>
-				Keysharp.Internals.Os.NuGetPackageLoader.CacheKeyFor(
-					p.Select(x => new Keysharp.Internals.Os.NuGetPackageLoader.PackageRef(x.Item1, x.Item2, false)).ToList());
+				Keysharp.Internals.Os.PackageResolver.CacheKeyFor(
+					p.Select(x => new Keysharp.Internals.Os.PackageResolver.PackageRef(x.Item1, x.Item2, false)).ToList());
 
 			Assert.AreEqual(Key(("A", "[1.0]"), ("B", "[2.0]")), Key(("B", "[2.0]"), ("A", "[1.0]")));
 			Assert.AreNotEqual(Key(("A", "[1.0]")), Key(("A", "[1.1]")));
@@ -511,25 +573,39 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// The directive's whole reason for batching, at the runtime end: however many packages one `#Package` set
-		/// carries, they must be resolved as ONE graph. Resolving them one at a time loads each package's closure
-		/// before the next is resolved, and the later resolution can then pick a version of a shared dependency that
-		/// differs from the one already in the process — which .NET cannot unload. Counting resolutions rather than
-		/// restores is deliberate: it holds whether the cache is warm or cold.
+		/// However many packages a script declares, the COMPILER resolves them as ONE graph, exactly once — the
+		/// batching now happens where the resolution moved. Resolving them one at a time would let a later resolution
+		/// pick a version of a shared dependency that differs from an earlier one's, which .NET cannot unload.
+		/// Counting resolutions rather than restores is deliberate: it holds whether the cache is warm or cold.
 		/// </summary>
-		[Test, Category("NuGet")]
+		[Test, Category("NuGet"), NonParallelizable]
 		public void ABatchedRequestResolvesTheGraphExactlyOnce()
 		{
-			Script.TheScript.LoadPackages(("Newtonsoft.Json", "[13.0.3]", false), ("Serilog", "[4.0.0]", false));
-			Assert.AreEqual(1, Keysharp.Internals.Os.NuGetPackageLoader.ResolveCount,
-							"two packages in one directive set must resolve as one graph, not once each");
+			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgbatch_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+			// Counters accumulate per process, so zero them here rather than trusting this test to run first.
+			Keysharp.Internals.Os.PackageResolver.ResetCounters();
 
-			// The contrast: the imperative form cannot batch, so each call resolves again — over the UNION, which is
-			// what keeps it correct despite not being able to.
+			try
+			{
+				var script = Path.Combine(dir, "batch.ks");
+				File.WriteAllText(script, "#NoTrayIcon\n#Package Newtonsoft.Json 13.0.3\n#Package Serilog 4.0.0\nx := 1\n");
+				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(script, "batch");
+				Assert.IsNotNull(arr, "compile failed:\n" + code);
+				Assert.AreEqual(1, Keysharp.Internals.Os.PackageResolver.ResolveCount,
+								"two directives in one script must resolve as one graph, not once each");
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+
+			// The contrast: the imperative runtime form cannot batch, so each call resolves again — over the UNION,
+			// which is what keeps it correct despite not being able to.
 			Keysharp.Internals.Os.NuGetPackageLoader.ResetForTests();
 			_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "13.0.3", false, out _);
 			_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Serilog", "4.0.0", false, out _);
-			Assert.AreEqual(2, Keysharp.Internals.Os.NuGetPackageLoader.ResolveCount);
+			Assert.AreEqual(2, Keysharp.Internals.Os.PackageResolver.ResolveCount);
 		}
 
 		/// <summary>
@@ -537,14 +613,17 @@ namespace Keysharp.Tests
 		/// used on a machine. Every later run reads the assets file the SDK already wrote, spawning no subprocess.
 		/// Nothing else observes that — a regression would just make startup quietly slow.
 		/// </summary>
-		[Test, Category("NuGet")]
+		[Test, Category("NuGet"), NonParallelizable]
 		public void AWarmPackageSetSpawnsNoRestore()
 		{
-			// Warm the set (this may or may not restore, depending on what earlier tests left in the cache).
-			Script.TheScript.LoadPackages(("Newtonsoft.Json", "[13.0.3]", false));
-			Keysharp.Internals.Os.NuGetPackageLoader.ResetForTests();   // zeroes the counter; the on-disk cache stays
-			Script.TheScript.LoadPackages(("Newtonsoft.Json", "[13.0.3]", false));
-			Assert.AreEqual(0, Keysharp.Internals.Os.NuGetPackageLoader.RestoreCount,
+			var pkgs = new List<Keysharp.Internals.Os.PackageResolver.PackageRef> { new("Newtonsoft.Json", "[13.0.3]", false) };
+			// Warm the set (this may or may not restore, depending on what earlier tests left in the on-disk cache).
+			Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.TryResolve(pkgs, true, "#Package", out _, out var err), err);
+			// Zeroes the counters AND the in-process memo, so the second call must go back to DISK — which is the
+			// cache this test exists to pin. Only the network/subprocess step may be skipped.
+			Keysharp.Internals.Os.PackageResolver.ResetCounters();
+			Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.TryResolve(pkgs, true, "#Package", out _, out err), err);
+			Assert.AreEqual(0, Keysharp.Internals.Os.PackageResolver.RestoreCount,
 							"a package set already resolved on this machine must not spawn 'dotnet restore' again");
 		}
 
@@ -568,7 +647,7 @@ namespace Keysharp.Tests
 			// The canonical spelling the lowerer emits. It matters that every test in this fixture agrees on it: the
 			// requested-package set is process-wide by design (loaded assemblies cannot be unloaded), so a different
 			// spelling here would be reported as a version conflict with whatever ran first.
-			Script.TheScript.LoadPackages(("Newtonsoft.Json", "[13.0.3]", false));
+			_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "[13.0.3]", false, out _);
 			var loaded = Loaded("Newtonsoft.Json");
 			Assert.IsNotNull(loaded, "Newtonsoft.Json was not loaded");
 			Assert.AreEqual(new Version(13, 0, 0, 0), loaded.GetName().Version);
@@ -577,13 +656,11 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// A compiled script has no Keysharp launcher around it, so the generated call has to reach the loader on its
-		/// own — and it resolves on the machine it runs on, not the one it was built on. Both `--compile exe` and
-		/// `exe-min` share this path; the difference between them is which dependencies are embedded, and
-		/// Keysharp.Core (which carries the loader) is excluded from embedding in both.
+		/// Both executable forms run from the graph pinned on the build machine. The full form deploys every package
+		/// asset under its package/version-scoped path; the minimal form embeds and extracts the same paths.
 		/// </summary>
 		[TestCase("exe"), TestCase("exe-min"), Category("NuGet")]
-		public void CompiledScriptResolvesPackagesAtRunTime(string mode)
+		public void CompiledScriptCarriesPinnedPackages(string mode)
 		{
 			// Driven through the real launcher rather than TestRunner's exeout: that path emits a bare assembly with
 			// no runtimeconfig.json (fine for the reflection AsmInfo does, not runnable), and running it is the whole
@@ -593,9 +670,7 @@ namespace Keysharp.Tests
 			if (!File.Exists(launcher))
 				Assert.Ignore($"launcher not built at {launcher}");
 
-			// Emptied first, and never the build output directory. If the dependencies happen to be lying next to the
-			// exe already, `exe-min` resolves them from disk and passes without its embedded copies ever being
-			// exercised — the two modes become indistinguishable and the test proves nothing.
+			// Emptied first and never the build output directory, so no stale deployment can satisfy the assertions.
 			var dir = Path.Combine(Path.GetTempPath(), "ks-package-compile", mode, Guid.NewGuid().ToString("N"));
 
 			if (Directory.Exists(dir))
@@ -609,22 +684,83 @@ namespace Keysharp.Tests
 			var exe = Path.ChangeExtension(script, ".exe");
 			Assert.IsTrue(File.Exists(exe), $"compile produced no exe at {exe}");
 
-			// Each mode must work for its own reason, or the pair of cases is really one case run twice. `exe-min`
-			// embeds the managed dependencies, so nothing but Keysharp.Core (deliberately excluded from embedding,
-			// since it is what loads the rest) may sit beside it; `exe` copies them instead.
+			// Each mode must work for its own reason: embedded resources versus private deployed assets.
 			var siblings = Directory.GetFiles(dir, "*.dll")
 									.Select(Path.GetFileName)
 									.Where(f => !f.Equals("Keysharp.Core.dll", StringComparison.OrdinalIgnoreCase)
 												&& !f.Equals(Path.GetFileName(Path.ChangeExtension(script, ".dll")), StringComparison.OrdinalIgnoreCase))
 									.ToArray();
 
+			var scriptAssembly = Assembly.Load(File.ReadAllBytes(Path.ChangeExtension(script, ".dll")));
+			var manifest = Keysharp.Internals.Os.PackageManifest.FromAssembly(scriptAssembly);
+			Assert.IsNotNull(manifest, "the generated assembly must carry its pinned package manifest");
+			var embeddedPackages = scriptAssembly.GetManifestResourceNames()
+										 .Where(n => n.StartsWith(Keysharp.Internals.Os.PackageManifest.AssetResourcePrefix, StringComparison.Ordinal))
+										 .ToArray();
+			var deployedRoot = Path.Combine(dir, ".keysharp", "packages");
+
 			if (mode == "exe-min")
+			{
 				Assert.IsEmpty(siblings, "exe-min should embed its dependencies, but these were copied alongside: " + string.Join(", ", siblings));
+				Assert.IsNotEmpty(embeddedPackages, "exe-min must embed its resolved package assets");
+				Assert.IsFalse(Directory.Exists(deployedRoot), "exe-min must not need a package sidecar directory");
+				Assert.IsTrue(manifest.TryLocate(scriptAssembly, out var located, out var missing), missing);
+				// The cache lives under the PER-USER profile, never the world-writable temp directory: TryExtract's
+				// pre-existing-file fast path trusts what it finds, which in a shared directory another local user
+				// could have planted.
+				var extractRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+											   "Keysharp", "embedded-packages");
+				Assert.IsTrue(located.SelectMany(p => p.Managed.Concat(p.Native)).All(path =>
+					path.StartsWith(extractRoot, StringComparison.OrdinalIgnoreCase)),
+					"exe-min must resolve every package asset from its per-user embedded cache");
+			}
 			else
+			{
 				Assert.IsNotEmpty(siblings, "exe should copy its dependencies alongside the executable");
+				Assert.IsEmpty(embeddedPackages, "the full executable should deploy package assets rather than duplicate them as resources");
+				Assert.IsTrue(Directory.Exists(deployedRoot)
+								&& Directory.GetFiles(deployedRoot, "*.dll", SearchOption.AllDirectories).Length != 0,
+							  "the full executable must carry package assets in its private hierarchy");
+				Assert.IsTrue(manifest.Assets.All(asset => File.Exists(Path.Combine(dir, asset.Deployed))),
+					"every manifest asset must be present at its collision-free deployed path");
+			}
 
 			_ = Run(exe, "", out var stdout, out var stderr);
 			Assert.AreEqual("[1,2,3]", stdout.Trim(), "stderr: " + stderr);
+			try { Directory.Delete(dir, true); } catch { }
+		}
+
+		/// <summary>
+		/// `--compile asm` (a `.cks` beside the script, run later by the installed launcher) deploys package assets
+		/// exactly as the full exe does: the launcher runs the `.cks` from the script's directory, so its packages
+		/// must sit in the private `.keysharp/packages` hierarchy beside it (Runner.CopyPackageAssemblies).
+		/// </summary>
+		[Test, Category("NuGet"), NonParallelizable]
+		public void CompiledCksCarriesItsPackageSidecar()
+		{
+			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+
+			if (!File.Exists(launcher))
+				Assert.Ignore($"launcher not built at {launcher}");
+
+			var dir = Path.Combine(Path.GetTempPath(), "ks-package-cks", Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var script = Path.Combine(dir, "sidecar.ks");
+				File.WriteAllText(script, "#NoTrayIcon\n#Package Newtonsoft.Json 13.0.3\nx := 1\nExitApp()\n");
+				Assert.AreEqual(0, Run(launcher, $"--errorstdout --compile asm \"{script}\"", out _, out var cerr), "compile failed: " + cerr);
+				Assert.IsTrue(File.Exists(Path.ChangeExtension(script, ".cks")), "no .cks was produced");
+				var deployed = Path.Combine(dir, ".keysharp", "packages");
+				Assert.IsTrue(Directory.Exists(deployed)
+							  && Directory.GetFiles(deployed, "*.dll", SearchOption.AllDirectories).Length != 0,
+							  "the .cks must carry its package assets in the private hierarchy beside it");
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
 		}
 
 		private static int Run(string exe, string args, out string stdout, out string stderr)
@@ -658,7 +794,7 @@ namespace Keysharp.Tests
 		public void DependencyIsResolvableButNotLoadedUntilUsed()
 		{
 			Assert.IsNull(Loaded("SQLitePCLRaw.core"), "test precondition: the dependency must not be loaded yet");
-			Script.TheScript.LoadPackages(("SQLitePCLRaw.bundle_e_sqlite3", "2.1.10", false));
+			_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("SQLitePCLRaw.bundle_e_sqlite3", "2.1.10", false, out _);
 
 			// The requested package is loaded; its dependency is only registered by name.
 			Assert.IsNotNull(Loaded("SQLitePCLRaw.batteries_v2"), "the requested package should be loaded");
@@ -668,6 +804,189 @@ namespace Keysharp.Tests
 			var t = Keysharp.Builtins.TypeResolver.Resolve("SQLitePCL.raw");
 			Assert.IsNotNull(t, "a dependency's type must still be resolvable by name");
 			Assert.IsNotNull(Loaded("SQLitePCLRaw.core"), "resolving the type should have loaded its assembly");
+		}
+
+		/// <summary>
+		/// The point of resolving at build time: inline C# can name a type from a package the script declared.
+		/// <para>It could not before, and the reason was structural rather than a missing lookup — `#Package` was
+		/// lowered into a RUNTIME call, so the assemblies did not exist until the script was already running and the
+		/// compiler was never told they would. `using Newtonsoft.Json;` was a CS0246 no matter what the script
+		/// declared.</para>
+		/// </summary>
+		[Test, Category("NuGet"), NonParallelizable]
+		public void InlineCSharpCanUseAPackageType()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgcs_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var script = Path.Combine(dir, "p.ks");
+				File.WriteAllText(script,
+								  "#NoTrayIcon\n#Package Newtonsoft.Json 13.0.3\n#CSharp\nusing Newtonsoft.Json;\n"
+								  + "public static object Ser(object o) => JsonConvert.SerializeObject(42);\n#EndCSharp\nx := Ser(1)\n");
+				var ch = new CompilerHelper();
+				var (arr, code, compilation) = ch.CompileCodeToByteArray(script, "p");
+				Assert.IsNotNull(arr, "inline C# must be able to bind a declared package's types:\n" + code);
+
+				// The manifest is the artifact that makes the build reproducible: it records what the constraint
+				// RESOLVED to, not what the script asked for.
+				Assert.IsNotNull(compilation.Packages, "a script with #Package must carry a resolved manifest");
+				var entry = compilation.Packages.Packages.FirstOrDefault(p => p.Id.Equals("Newtonsoft.Json", StringComparison.OrdinalIgnoreCase));
+				Assert.IsNotNull(entry, "the declared package must be in the manifest");
+				Assert.AreEqual("13.0.3", entry.Resolved, "the manifest records the resolved version");
+				Assert.IsNotEmpty(entry.Managed, "the manifest must record the assemblies the script was compiled against");
+				Assert.IsTrue(File.Exists(entry.Managed[0].Source), "recorded assembly paths must exist: " + entry.Managed[0].Source);
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		/// <summary>
+		/// The manifest is what a built script actually loads from, so it has to be exercised as a manifest — not via
+		/// the resolve-and-load helper the other runtime tests use.
+		/// <para>Every bug in the first version of this feature lived here and none was visible to a green suite: the
+		/// manifest could not be found in a precompiled script at all; an all-optional set produced no manifest and
+		/// the script refused to start; and the whole dependency closure was recorded as directly requested, which
+		/// both defeated lazy registration and made an unloadable transitive dependency fatal.</para>
+		/// </summary>
+		[Test, Category("NuGet"), NonParallelizable]
+		public void TheManifestPinsDirectPackagesAndTheClosureSeparately()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgman_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				// Serilog.Sinks.Console pulls Serilog in transitively, so the closure is strictly bigger than the ask.
+				var script = Path.Combine(dir, "m.ks");
+				File.WriteAllText(script, "#NoTrayIcon\n#Package Serilog.Sinks.Console 6.0.0\nx := 1\n");
+				var ch = new CompilerHelper();
+				var (arr, code, compilation) = ch.CompileCodeToByteArray(script, "m");
+				Assert.IsNotNull(arr, "compile failed:\n" + code);
+
+				var direct = compilation.Packages.Packages.Where(p => p.Direct).ToList();
+				var transitive = compilation.Packages.Packages.Where(p => !p.Direct).ToList();
+				Assert.AreEqual(1, direct.Count, "only the package the script named is direct");
+				Assert.AreEqual("Serilog.Sinks.Console", direct[0].Id);
+				Assert.IsNotEmpty(transitive, "the closure must be recorded too, so its types are still resolvable");
+				Assert.IsTrue(transitive.Any(p => p.Id.Equals("Serilog", StringComparison.OrdinalIgnoreCase)),
+							  "a transitive dependency belongs in the manifest, flagged not-direct");
+
+				// A round trip through the embedded form: this is exactly what the runtime reads back.
+				var round = Keysharp.Internals.Os.PackageManifest.Read(compilation.Packages.Write());
+				Assert.AreEqual(1, round.Direct.Count, "only direct packages are unioned into the loader's request list");
+				// The CONSTRAINT survives, in its translated form — a full version means exactly that version, so the
+				// lowerer turned `6.0.0` into the NuGet range `[6.0.0]`. What must NOT appear here is a raw resolved
+				// version, which is what a transitive entry carries and what used to collide with Clr.LoadPackage.
+				Assert.AreEqual("[6.0.0]", round.Direct[0].Version, "the constraint the script wrote survives the round trip");
+				Assert.IsTrue(round.TryLocate(null, out var located, out var missing), missing);
+				Assert.AreEqual(compilation.Packages.Packages.Count, located.Count, "every recorded package must be locatable");
+
+				// And it is embedded in the assembly the script will actually ask, rather than only living in memory.
+				Assert.IsNotNull(Keysharp.Internals.Os.PackageManifest.FromAssembly(Assembly.Load(arr)),
+								 "the manifest must be readable from the compiled assembly itself");
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		/// <summary>
+		/// `#Package *i` on a package that cannot be resolved must leave a script that still RUNS. It compiles either
+		/// way; the regression was that it then died at startup with "carries no package manifest", because the
+		/// compiler produced no manifest while the lowerer still emitted the call that looks for one.
+		/// </summary>
+		[Test, Category("NuGet"), NonParallelizable]
+		public void AnAllOptionalSetThatResolvesToNothingStillProducesAManifest()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgopt_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var script = Path.Combine(dir, "o.ks");
+				File.WriteAllText(script, "#NoTrayIcon\n#Package *i Keysharp.NoSuchPackage.ForTests 9.9.9\nx := 1\n");
+				var ch = new CompilerHelper();
+				var (arr, code, compilation) = ch.CompileCodeToByteArray(script, "o");
+				Assert.IsNotNull(arr, "an unavailable *i package must not fail the build:\n" + code);
+				Assert.IsNotNull(compilation.Packages, "a script that declares any package must carry a manifest, even an empty one");
+				Assert.IsEmpty(compilation.Packages.Packages, "nothing resolved, so the manifest is empty rather than absent");
+				Assert.IsNotNull(Keysharp.Internals.Os.PackageManifest.FromAssembly(Assembly.Load(arr)),
+								 "the empty manifest must still be embedded, or the script cannot start");
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		/// <summary>
+		/// The copy step that makes a compiled artifact portable: the manifest's assemblies land beside the output,
+		/// a stale copy from an earlier version IS overwritten (skipping it silently reintroduced the version drift
+		/// the manifest exists to prevent), and Keysharp's own files are never clobbered.
+		/// </summary>
+		[Test, Category("NuGet"), NonParallelizable]
+		public void CopyPackageAssembliesShipsAndRefreshesTheManifest()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgcopy_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var script = Path.Combine(dir, "c.ks");
+				File.WriteAllText(script, "#NoTrayIcon\n#Package Newtonsoft.Json 13.0.3\nx := 1\n");
+				var ch = new CompilerHelper();
+				var (arr, code, compilation) = ch.CompileCodeToByteArray(script, "c");
+				Assert.IsNotNull(arr, code);
+
+				var outDir = Path.Combine(dir, "out");
+				Assert.IsNull(Keysharp.Internals.Scripting.Runner.CopyPackageAssemblies(compilation, outDir));
+				// Assets deploy under .keysharp/packages/<id>/, so they can never collide with the host's own
+				// files beside the artifact — and repeating the copy after a version change overwrites in place.
+				var deployed = Directory.GetFiles(Path.Combine(outDir, ".keysharp", "packages"), "Newtonsoft.Json.dll", SearchOption.AllDirectories);
+				Assert.IsNotEmpty(deployed, "the package assembly must deploy under .keysharp/packages");
+				File.WriteAllText(deployed[0], "stale");
+				Assert.IsNull(Keysharp.Internals.Scripting.Runner.CopyPackageAssemblies(compilation, outDir));
+				Assert.Greater(new FileInfo(deployed[0]).Length, 100, "a re-copy must replace a stale file, not keep it");
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		/// <summary>
+		/// `--validate` and <c>Ks.ParseScript</c> are checks, not builds, so an unrestored package set must be
+		/// REPORTED rather than fetched. Without this a syntax check could block for up to three minutes on a
+		/// network restore the user never asked for — and Keyview runs one on a keystroke debounce.
+		/// </summary>
+		[Test, Category("NuGet"), NonParallelizable]
+		public void OfflineResolveReportsInsteadOfRestoring()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgoff_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var script = Path.Combine(dir, "off.ks");
+				// A package id that cannot be in any cache, so the set is guaranteed cold.
+				File.WriteAllText(script, "#NoTrayIcon\n#Package Keysharp.NoSuchPackage.ForTests 9.9.9\nx := 1\n");
+				Keysharp.Internals.Os.PackageResolver.ResetCounters();
+				// Passed per call: there is no mode to save, restore, or leak into a concurrent compile.
+				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(script, "off", allowPackageRestore: false);
+				Assert.IsNull(arr, "an unrestored package set must fail an offline compile rather than resolve");
+				Assert.AreEqual(0, Keysharp.Internals.Os.PackageResolver.RestoreCount,
+								"an offline compile must not spawn 'dotnet restore'");
+				Assert.IsTrue(code.Contains("not been restored"), "the report should name the actual situation; got:\n" + code);
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
 		}
 	}
 }

@@ -154,6 +154,8 @@ namespace Keysharp.Parsing.Lexing
 				if (tokens.Count == 0 || tokens[^1].Kind == TokenKind.Newline)
 				{
 					MaybeTrackHotstringDirective();   // `#Hotstring X` sets the default execute mode for later hotstrings
+					// Capture C# before other line-start scanners can interpret its body.
+					if (TryScanCSharpBlock(tokens, leadingWs)) { leadingWs = false; continue; }
 					if (TryScanRawDirective(tokens, leadingWs)) { leadingWs = false; continue; }
 					if (TryScanHot(tokens, leadingWs)) { leadingWs = false; continue; }
 				}
@@ -438,6 +440,106 @@ namespace Keysharp.Parsing.Lexing
 			// following line until the braces balance — for #Warning silently, since it does not fail the build.
 			"error", "warning"
 		};
+
+		// Capture block contents verbatim; quoted file forms remain ordinary directives.
+		private bool TryScanCSharpBlock(List<Token> tokens, bool leadingWs)
+		{
+			if (Cur != '#') return false;
+			int lineEnd = _pos;
+			while (lineEnd < _n && _s[lineEnd] != '\n' && _s[lineEnd] != '\r') lineEnd++;
+			if (!IsCSharpBlockOpener(_s.AsSpan(_pos, lineEnd - _pos))) return false;
+
+			int hl = _line, hc = _col;
+			tokens.Add(Tok(TokenKind.Hash, "#", hl, hc, _pos, 1, leadingWs));
+			Advance();                                   // '#'
+			while (Cur == ' ' || Cur == '\t') Advance();
+			int nl = _line, nc = _col, no = _pos;
+			while (_pos < _n && (char.IsLetterOrDigit(Cur) || Cur == '_')) Advance();
+			tokens.Add(Tok(TokenKind.Identifier, _s.Substring(no, _pos - no), nl, nc, no, _pos - no, true));
+
+			// Preserve unexpected options for a precise lowerer diagnostic.
+			while (Cur == ' ' || Cur == '\t') Advance();
+			int os = _pos, ol = _line, oc = _col;
+			while (_pos < _n && Cur != '\n' && Cur != '\r') Advance();
+			int oe = _pos;
+			var cmt = DirectiveCommentStart(_s.AsSpan(os, oe - os));
+			if (cmt >= 0) oe = os + cmt;
+			while (oe > os && (_s[oe - 1] == ' ' || _s[oe - 1] == '\t')) oe--;
+			if (oe > os) tokens.Add(Tok(TokenKind.Identifier, _s.Substring(os, oe - os), ol, oc, os, oe - os, true));
+
+			while (_pos < _n && Cur != '\n') Advance();
+			if (_pos < _n) Advance();                    // consume the newline that ends the `#CSharp` line
+
+			// Body: every line up to (not including) the one whose first token is `#EndCSharp`.
+			int bodyStart = _pos, bodyLine = _line, bodyCol = _col;
+			int bodyEnd = -1;
+			while (_pos < _n)
+			{
+				int lineStart = _pos;
+				while (_pos < _n && Cur != '\n') Advance();
+
+				if (IsCSharpBlockTerminator(_s.AsSpan(lineStart, _pos - lineStart)))
+				{
+					bodyEnd = lineStart;   // the #EndCSharp line is consumed, but not its newline
+					break;
+				}
+
+				if (_pos < _n) Advance();
+			}
+
+			if (bodyEnd < 0)
+			{
+				Diagnostics.Add($"{hl}:{hc}: #CSharp without a matching #EndCSharp");
+				bodyEnd = _n;
+			}
+
+			var body = _s.Substring(bodyStart, System.Math.Max(0, bodyEnd - bodyStart));
+			tokens.Add(Tok(TokenKind.CSharpBlock, body, bodyLine, bodyCol, bodyStart, body.Length, true));
+			// Leave the newline for Tokenize's line-start guard.
+			return true;
+		}
+
+		/// <summary>Recognizes a block opener after stripping its trailing AHK comment.</summary>
+		internal static bool IsCSharpBlockOpener(ReadOnlySpan<char> line)
+		{
+			if (line.IsEmpty || line[0] != '#') return false;
+			int p = 1;
+			while (p < line.Length && (line[p] == ' ' || line[p] == '\t')) p++;
+			int ns = p;
+			while (p < line.Length && (char.IsLetterOrDigit(line[p]) || line[p] == '_')) p++;
+			if (!line[ns..p].Equals("csharp", System.StringComparison.OrdinalIgnoreCase)) return false;
+
+			var opt = line[p..];
+			var cmt = DirectiveCommentStart(opt);
+
+			if (cmt >= 0)
+				opt = opt[..cmt];
+
+			return !opt.Contains('"') && !opt.Contains('\'');
+		}
+
+		/// <summary>Recognizes the exact EndCSharp directive name.</summary>
+		internal static bool IsCSharpBlockTerminator(ReadOnlySpan<char> line)
+		{
+			int p = 0;
+			while (p < line.Length && (line[p] == ' ' || line[p] == '\t')) p++;
+			if (p >= line.Length || line[p] != '#') return false;
+			p++;
+			while (p < line.Length && (line[p] == ' ' || line[p] == '\t')) p++;
+			int ns = p;
+			while (p < line.Length && (char.IsLetterOrDigit(line[p]) || line[p] == '_')) p++;
+			return line[ns..p].Equals("endcsharp", System.StringComparison.OrdinalIgnoreCase);
+		}
+
+		/// <summary>Finds a directive's whitespace-delimited trailing comment.</summary>
+		internal static int DirectiveCommentStart(ReadOnlySpan<char> text)
+		{
+			for (var i = 0; i < text.Length; i++)
+				if (text[i] == ';' && (i == 0 || text[i - 1] == ' ' || text[i - 1] == '\t'))
+					return i;
+
+			return -1;
+		}
 
 		// If the current line is a raw-argument directive (`#Hotstring …`), emits `#`, the name identifier, and the rest
 		// of the line as a single raw token (so quotes/semicolons in the argument do not start strings/comments).

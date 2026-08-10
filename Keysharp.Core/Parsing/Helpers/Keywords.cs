@@ -80,7 +80,33 @@ namespace Keysharp.Parsing
 		public const string MainModuleName = "__Main";
 		public const string UserDeclaredClassesContainerName = "UserDeclaredClasses";
 		public const string AutoExecSectionName = "AutoExecSection";
+
 		public const string MainScriptVariableName = "MainScript";
+
+		/// <summary>
+		/// Fixed names the lowerer generates into a MODULE class, which a module-scoped `#CSharp` block therefore
+		/// cannot reuse: the two partial declarations merge, so a clash is a duplicate-definition error naming a
+		/// generated type the script author never wrote. Reported against the block instead (see
+		/// Lowerer.CheckInlineNameCollision).
+		/// <para>Only the FIXED names. A generated member whose name derives from the script — an `FN_&lt;TitleCase&gt;`
+		/// function implementation, a lambda, a static-local backing field — cannot be listed here. Those are covered
+		/// separately: a collision with a script function is reported when the export is registered
+		/// (RegisterInlineExportsFor), and one with a module global by the `_moduleGlobals` test alongside this set.</para>
+		/// <para>Case-INSENSITIVE, matching the variable store these names ultimately land in. `Program`, `MainScript`
+		/// and `Main` are deliberately absent: they are members of the outer <c>Program</c> class, not of a module
+		/// class, so rejecting them here would be a false positive. The module's OWN class name is not listed either
+		/// — it varies per module (including `__Main`), so it is tested directly at the use site.</para>
+		/// </summary>
+		internal static readonly FrozenSet<string> InlineReservedModuleNames = FrozenSet.Create(StringComparer.OrdinalIgnoreCase,
+				AutoExecSectionName);
+
+		/// <summary>
+		/// The same idea for a CLASS-scoped block: names the lowerer generates into every user class. Kept apart from
+		/// the module set because the two do not overlap, and checking a class member against `MainScript` would
+		/// reject it with a message ("a name Keysharp generates into this class") that is simply untrue.
+		/// </summary>
+		internal static readonly FrozenSet<string> InlineReservedClassNames = FrozenSet.Create(StringComparer.OrdinalIgnoreCase,
+				"__Init", "__New", ClassStaticPrefix + "__Init");   // NameMangler.StaticInit() -- "static__Init", not "__StaticInit"
 
 		internal static FrozenSet<string> ClassReservedKeywords = FrozenSet.Create(StringComparer.OrdinalIgnoreCase,
 				"Call", "__New", "__Init", "__Get", "__Set", "__Item", "__Class", "__StaticInit");

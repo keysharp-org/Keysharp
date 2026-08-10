@@ -25,6 +25,9 @@ namespace Keysharp.Parsing.Syntax
 	internal sealed class ProgramNode : Node
 	{
 		public readonly List<Stmt> Body;
+
+		/// <summary>The final preprocessor symbol set.</summary>
+		public IReadOnlyCollection<string> Defines = [];
 		public ProgramNode(List<Stmt> body) => Body = body;
 	}
 
@@ -323,6 +326,19 @@ namespace Keysharp.Parsing.Syntax
 			: base("import", args) { Module = module; Alias = alias; Named = named; Quoted = quoted; }
 	}
 
+	internal sealed class CSharpDirective : DirectiveStmt
+	{
+		public string Code;
+		public int CodeLine;
+		public string CodeFile;
+		public IReadOnlyCollection<string> Defines = [];
+		public string FilePath;
+		public CSharpDirective(string options, string code, int codeLine)
+			: base("CSharp", options ?? "") { Code = code; CodeLine = codeLine; }
+
+		public bool IsFileForm => FilePath != null;
+	}
+
 	internal sealed class DeclStmt : Stmt
 	{
 		public readonly string Keyword;   // local / global / static
@@ -415,6 +431,7 @@ namespace Keysharp.Parsing.Syntax
 		public readonly bool IsStruct;   // `struct Name { … }` — base is Struct; instance fields are typed
 		public string Requires;          // a `#Requires` directive in the class body (its args) → per-class compat mode
 		public List<ImportDirective> Imports = new();   // `#import` directives in the class body → class-scoped bindings
+		public List<CSharpDirective> CSharpBlocks;
 		public List<Stmt> StaticInit = new();     // `static x.y := z` member/index-target static initializers (run in static __Init)
 		public List<Stmt> InstanceInit = new();   // `x.y := z` member/index-target instance initializers (run in __Init)
 		public ClassDecl(string name, string baseName, List<ClassField> fields, List<ClassMethod> methods, List<ClassProperty> properties, List<ClassDecl> nested = null, bool isStruct = false)
