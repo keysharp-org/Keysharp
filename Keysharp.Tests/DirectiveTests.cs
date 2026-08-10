@@ -632,6 +632,18 @@ namespace Keysharp.Tests
 						"modname", "its module's exact name", line: 5);
 				Rejects("#NoTrayIcon\n#CSharp\npublic static long tally() => 1;\n#EndCSharp\nx := 1\n",
 						"lowerexport", "cannot be all-lowercase", line: 3);
+				// The spelled-out forms get the keyword verdicts — the boundary check is by WRITTEN name, so
+				// `System.Char` must not slip past what `char` is rejected for.
+				Rejects("#NoTrayIcon\n#CSharp\npublic static System.Char Ch() => 'x';\n#EndCSharp\nx := 1\n",
+						"charspelled", "return type", line: 3);
+				Rejects("#NoTrayIcon\n#CSharp\npublic static long N(System.Nullable<long> v) => 0;\n#EndCSharp\nx := 1\n",
+						"nullspelled", "cannot be passed from a script", line: 3);
+				// [Export] misuse is diagnosed on EVERY lowering path: a library validated standalone
+				// (single-module, no importer in sight) must get the same verdict its importers will.
+				Rejects("#NoTrayIcon\n#CSharp\n[Export]\nprivate static long Hidden() => 1;\n#EndCSharp\nx := 1\n",
+						"exportprivate", "[Export] is supported only on public static module methods", line: 3);
+				Rejects("#NoTrayIcon\n#CSharp\n[Export]\npublic static long Slot = 3;\n#EndCSharp\nx := 1\n",
+						"exportfield", "[Export] is supported only on public static module methods", line: 3);
 				Rejects("#NoTrayIcon\n#CSharp unsafe\npublic static long N() => 1;\n#EndCSharp\nx := 1\n",
 						"options", "takes no options");
 				Rejects("#NoTrayIcon\nclass C\n{\n#CSharp\n[Export]\npublic static long M() => 1;\n#EndCSharp\n}\n",
@@ -672,6 +684,10 @@ namespace Keysharp.Tests
 				Assert.IsTrue(File.Exists(inline), "the inline C# must be written to its own .inline.cs");
 				var text = File.ReadAllText(inline);
 				Assert.IsTrue(text.Contains("Marker"), "the user's member must be in the inline file:\n" + text);
+				// Members are indented to their scope's depth (module members sit three levels deep), so the
+				// generated file reads like code rather than a paste at column zero.
+				Assert.IsTrue(text.Contains("\t\t\tpublic static object Marker"),
+							  "the member must be indented to its scope depth:\n" + text);
 				Assert.IsFalse(File.ReadAllText(Path.Combine(dir, "t.cs")).Contains("Marker()"),
 							   "the user's C# must not leak into the lowered tree's file");
 			}

@@ -966,7 +966,6 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 
 ### Removals
 * Removed/reduced functions:
-	+ `Ks.MonitorFromPoint()` and `Ks.MonitorGetScale()`: Both were Keysharp-only additions and both were folded into the new `Monitor` class — use `Monitor.FromPoint(x, y)` (which returns a `Monitor` rather than an index) and `Monitor.Scale`. The AHK-compatible `MonitorGet*` functions are unaffected.
 	+ `Download()`: Supports only the `*0` option, and not any other numerical values.
 	+ `ListLines()`: Non-functional because C# doesn't support it.
 	+ `FormatTime()`: The `R`, `Dn` or `Tn` parameters in  are not supported, except for 0x80000000 to disallow user overrides.

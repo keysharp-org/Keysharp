@@ -2120,16 +2120,11 @@ namespace Keysharp.Parsing.Syntax
 					if (classPath == null && isPublicStaticMethod)
 						(m.InlineMembers ??= new(System.StringComparer.OrdinalIgnoreCase)).Add(method.Identifier.Text);
 
-					if (InlineExportAttribute(mem) is { } attr)
-					{
-						if (!isPublicStaticMethod)
-						{
-							Diag($"{InlineMemberLocation(d, mem)}#CSharp: [Export] is supported only on public static module methods");
-							continue;
-						}
-
+					// Misuse (non-public, non-static, non-method) is diagnosed in BuildInlineSource, which every
+					// lowering path runs — this pass exists only on the multi-module one, and a library
+					// validated standalone must get the same verdict its importers will. Consume valid exports.
+					if (isPublicStaticMethod && InlineExportAttribute(mem) is { } attr)
 						(inlineExports ??= []).Add((d, method, attr));
-					}
 				}
 			}
 
@@ -2259,6 +2254,47 @@ namespace Keysharp.Parsing.Syntax
 		private MemberDeclarationSyntax FreezeConditionals(MemberDeclarationSyntax member) =>
 			(MemberDeclarationSyntax)inlineConditionalFreezer.Visit(member);
 
+		/// <summary>
+		/// Indents every line of a member to its scope's depth WITHOUT touching the interior of a multi-line
+		/// token: text-level indentation would rewrite the CONTENT of a verbatim (or interpolated-verbatim)
+		/// string spanning lines, so a line that starts inside such a token is left exactly where the author put
+		/// it. Line COUNT never changes, so the member's `#line` anchor still maps every line; only columns shift.
+		/// </summary>
+		private static string IndentMember(MemberDeclarationSyntax m, string indent)
+		{
+			var text = m.ToString();
+
+			if (!text.Contains('\n'))
+				return indent + text;
+
+			// Token spans that contain a newline, in the member's own coordinate space (text[i] sits at
+			// absolute position m.SpanStart + i — a rewritten node's spans are self-consistent, which is all
+			// this needs).
+			var protectedSpans = m.DescendantTokens()
+								 .Where(t => t.Text.Contains('\n'))
+								 .Select(t => t.Span).ToList();
+			var start = m.SpanStart;
+			var sb = new System.Text.StringBuilder(text.Length + 64);
+			_ = sb.Append(indent);
+
+			for (var i = 0; i < text.Length; i++)
+			{
+				var c = text[i];
+				_ = sb.Append(c);
+
+				// Indent the next line unless it is blank or starts inside a multi-line token.
+				if (c == '\n' && i + 1 < text.Length && text[i + 1] != '\n' && text[i + 1] != '\r')
+				{
+					var abs = start + i + 1;
+
+					if (!protectedSpans.Any(s => s.Start < abs && abs < s.End))
+						_ = sb.Append(indent);
+				}
+			}
+
+			return sb.ToString();
+		}
+
 		private IReadOnlyCollection<string> _inlineDefines = [];
 
 		// The final tree receives the script's platform symbols; block-local choices are already frozen.
@@ -2365,7 +2401,11 @@ namespace Keysharp.Parsing.Syntax
 				AliasQualifiedNameSyntax alias => alias.Name.Identifier.ValueText,
 				_ => null
 			};
-			return name is "Span" or "ReadOnlySpan" or "TypedReference" or "ArgIterator";
+			// Char/Decimal/Nullable: the spelled-out forms of the keyword rejections above, so `System.Char` gets
+			// the same verdict as `char`. This is a NAME check by design (no binding happens during lowering), so
+			// a `using` alias for one of these, or a user-defined ref struct, is not recognized here — those fail
+			// at the call instead, and the docs say so.
+			return name is "Span" or "ReadOnlySpan" or "TypedReference" or "ArgIterator" or "Char" or "Decimal" or "Nullable";
 		}
 
 		private static bool IsObjectParams(ParameterSyntax parameter) =>
@@ -2497,6 +2537,10 @@ namespace Keysharp.Parsing.Syntax
 				if (!ReportInlineSyntaxErrors(parsed.Probe, wrapperOffset, lineOffset, rawFile))
 					continue;
 
+				// Members sit one level below the innermost wrapper class (see the depth arithmetic in the
+				// assembly loop at the bottom of this method).
+				var indent = new string('\t', 3 + (classPath == null ? 0 : classPath.Split('.').Length));
+
 				foreach (var m in parsed.Members)
 				{
 					var isFunction = classPath == null && m is MethodDeclarationSyntax me && IsScriptVisible(me)
@@ -2513,6 +2557,12 @@ namespace Keysharp.Parsing.Syntax
 							Diag($"{at}#CSharp: public method '{im.Identifier.Text}' at module scope must be 'static' to be callable "
 								 + "from a script -- the module class is never instantiated, so an instance method can never run. "
 								 + "Add 'static', or make it non-public if no script was meant to call it.");
+
+						// Validated HERE, not in RegisterInlineModuleMembers: that pass runs only on the
+						// multi-module path, and a library validated standalone must get the same verdict its
+						// importers will.
+						if (!isFunction && InlineExportAttribute(m) != null)
+							Diag($"{at}#CSharp: [Export] is supported only on public static module methods");
 					}
 					else
 					{
@@ -2541,11 +2591,11 @@ namespace Keysharp.Parsing.Syntax
 					// Directly reflected members need an exception boundary before their #line mapping.
 					if ((classPath != null && m is MethodDeclarationSyntax or PropertyDeclarationSyntax
 							|| m is PropertyDeclarationSyntax) && IsScriptVisible(m))
-						_ = entry.Body.AppendLine("\t\t\t[Keysharp.Runtime.InlineCSharp]");
+						_ = entry.Body.AppendLine(indent + "[Keysharp.Runtime.InlineCSharp]");
 
-					_ = entry.Body.AppendLine($"#line {lineOffset + startLine + 1} \"{file}\"");
-					_ = entry.Body.AppendLine(FreezeConditionals(m).ToString());
-					_ = entry.Body.AppendLine("#line default");
+					_ = entry.Body.AppendLine($"{indent}#line {lineOffset + startLine + 1} \"{file}\"");
+					_ = entry.Body.AppendLine(IndentMember(FreezeConditionals(m), indent));
+					_ = entry.Body.AppendLine($"{indent}#line default");
 
 					// Supply the FN_ method expected by the generated function binding.
 					if (isFunction && m is MethodDeclarationSyntax em)
@@ -2559,10 +2609,10 @@ namespace Keysharp.Parsing.Syntax
 						var fwdBody = isVoid
 									  ? $"{call};"
 									  : $"return {call};";
-						_ = entry.Body.AppendLine("\t\t\t[Keysharp.Runtime.PublicHiddenFromUser]");
-						_ = entry.Body.AppendLine("\t\t\t[Keysharp.Runtime.InlineCSharp]");
+						_ = entry.Body.AppendLine(indent + "[Keysharp.Runtime.PublicHiddenFromUser]");
+						_ = entry.Body.AppendLine(indent + "[Keysharp.Runtime.InlineCSharp]");
 						_ = entry.Body.AppendLine(
-								$"\t\t\tpublic static {em.ReturnType} {NameMangler.FunctionMethod(em.Identifier.Text)}"
+								$"{indent}public static {em.ReturnType} {NameMangler.FunctionMethod(em.Identifier.Text)}"
 								+ $"{em.ParameterList} {{ {fwdBody} }}");
 					}
 				}
