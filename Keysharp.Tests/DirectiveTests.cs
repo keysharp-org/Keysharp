@@ -750,13 +750,14 @@ namespace Keysharp.Tests
 				var (arr, code, compilation) = new CompilerHelper().CompileCodeToByteArray(main, "incmain");
 				Assert.IsNotNull(arr, "a block in an included file must compile:\n" + code);
 				Assert.IsTrue(compilation.InlineCode.Contains("IncFn"), "the included block's member must be emitted:\n" + compilation.InlineCode);
-				Assert.IsTrue(compilation.InlineCode.Contains("inc.ahk"), "the member's #line must anchor to the INCLUDED file:\n" + compilation.InlineCode);
+				Assert.IsFalse(compilation.InlineCode.Contains("#line"),
+							   "the inline unit is pretty-printed with no source mapping:\n" + compilation.InlineCode);
 
 				File.WriteAllText(inc, "#CSharp\nusing Systm.Text;\npublic static object IncFn() => \"inc\";\n#EndCSharp\n");
 				var (arr2, code2, _) = new CompilerHelper().CompileCodeToByteArray(main, "incmain");
 				Assert.IsNull(arr2, "a broken using in an included block must fail the compile; generated:\n" + code2);
-				Assert.IsTrue(code2.Contains("inc.ahk(2,"),
-							  "the diagnostic must point at line 2 of the included file; got:\n" + code2);
+				Assert.IsTrue(code2.Contains("Systm"),
+							  "the diagnostic must name the unknown namespace; got:\n" + code2);
 			}
 			finally
 			{

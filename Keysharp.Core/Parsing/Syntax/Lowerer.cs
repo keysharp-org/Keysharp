@@ -2185,7 +2185,7 @@ namespace Keysharp.Parsing.Syntax
 			}
 		}
 
-		private sealed record InlineUsing(int Line, string Text, bool Global);
+		private sealed record InlineUsing(string Text, bool Global);
 		private sealed record ParsedBlock(List<InlineUsing> Usings, List<MemberDeclarationSyntax> Members, CompilationUnitSyntax Probe, int WrapperOffset);
 
 		private Dictionary<CSharpDirective, ParsedBlock> _parsedBlocks;
@@ -2210,7 +2210,6 @@ namespace Keysharp.Parsing.Syntax
 			var firstMember = unit.Members.FirstOrDefault()?.SpanStart ?? int.MaxValue;
 			var directives = unit.Usings.Where(u => u.SpanStart < firstMember && !u.SemicolonToken.IsMissing).ToList();
 			var usings = directives.Select(u => new InlineUsing(
-										 u.GetLocation().GetLineSpan().StartLinePosition.Line + 1,
 										 u.ToString().Trim(),
 										 u.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword))).ToList();
 			var body = normalized.ToCharArray();
@@ -2253,47 +2252,6 @@ namespace Keysharp.Parsing.Syntax
 		private readonly InlineConditionalFreezer inlineConditionalFreezer = new();
 		private MemberDeclarationSyntax FreezeConditionals(MemberDeclarationSyntax member) =>
 			(MemberDeclarationSyntax)inlineConditionalFreezer.Visit(member);
-
-		/// <summary>
-		/// Indents every line of a member to its scope's depth WITHOUT touching the interior of a multi-line
-		/// token: text-level indentation would rewrite the CONTENT of a verbatim (or interpolated-verbatim)
-		/// string spanning lines, so a line that starts inside such a token is left exactly where the author put
-		/// it. Line COUNT never changes, so the member's `#line` anchor still maps every line; only columns shift.
-		/// </summary>
-		private static string IndentMember(MemberDeclarationSyntax m, string indent)
-		{
-			var text = m.ToString();
-
-			if (!text.Contains('\n'))
-				return indent + text;
-
-			// Token spans that contain a newline, in the member's own coordinate space (text[i] sits at
-			// absolute position m.SpanStart + i — a rewritten node's spans are self-consistent, which is all
-			// this needs).
-			var protectedSpans = m.DescendantTokens()
-								 .Where(t => t.Text.Contains('\n'))
-								 .Select(t => t.Span).ToList();
-			var start = m.SpanStart;
-			var sb = new System.Text.StringBuilder(text.Length + 64);
-			_ = sb.Append(indent);
-
-			for (var i = 0; i < text.Length; i++)
-			{
-				var c = text[i];
-				_ = sb.Append(c);
-
-				// Indent the next line unless it is blank or starts inside a multi-line token.
-				if (c == '\n' && i + 1 < text.Length && text[i + 1] != '\n' && text[i + 1] != '\r')
-				{
-					var abs = start + i + 1;
-
-					if (!protectedSpans.Any(s => s.Start < abs && abs < s.End))
-						_ = sb.Append(indent);
-				}
-			}
-
-			return sb.ToString();
-		}
 
 		private IReadOnlyCollection<string> _inlineDefines = [];
 
@@ -2517,7 +2475,6 @@ namespace Keysharp.Parsing.Syntax
 				}
 
 				var rawFile = d.CodeFile ?? _scriptPath ?? "*";
-				var file = rawFile.Replace("\\", "\\\\").Replace("\"", "\\\"");   // escaped for use inside a `#line` string
 				var lineOffset = d.CodeLine - 1;   // the block's first content line, in the file it was written in
 				var wrapperOffset = parsed.WrapperOffset;
 
@@ -2527,19 +2484,11 @@ namespace Keysharp.Parsing.Syntax
 					var seen = directive.Global ? seenGlobalUsing : entry.SeenUsing;
 
 					if (seen.Add(directive.Text))
-					{
-						target.Add($"#line {lineOffset + directive.Line} \"{file}\"");
 						target.Add(directive.Text);
-						target.Add("#line default");
-					}
 				}
 
 				if (!ReportInlineSyntaxErrors(parsed.Probe, wrapperOffset, lineOffset, rawFile))
 					continue;
-
-				// Members sit one level below the innermost wrapper class (see the depth arithmetic in the
-				// assembly loop at the bottom of this method).
-				var indent = new string('\t', 3 + (classPath == null ? 0 : classPath.Split('.').Length));
 
 				foreach (var m in parsed.Members)
 				{
@@ -2588,14 +2537,12 @@ namespace Keysharp.Parsing.Syntax
 						Diag($"{at}#CSharp: public property '{pv.Identifier.Text}' has a type that cannot be handed to a script. "
 							 + "Use a supported scalar/reference type or make it non-public.");
 
-					// Directly reflected members need an exception boundary before their #line mapping.
+					// Directly reflected members need an exception boundary.
 					if ((classPath != null && m is MethodDeclarationSyntax or PropertyDeclarationSyntax
 							|| m is PropertyDeclarationSyntax) && IsScriptVisible(m))
-						_ = entry.Body.AppendLine(indent + "[Keysharp.Runtime.InlineCSharp]");
+						_ = entry.Body.AppendLine("[Keysharp.Runtime.InlineCSharp]");
 
-					_ = entry.Body.AppendLine($"{indent}#line {lineOffset + startLine + 1} \"{file}\"");
-					_ = entry.Body.AppendLine(IndentMember(FreezeConditionals(m), indent));
-					_ = entry.Body.AppendLine($"{indent}#line default");
+					_ = entry.Body.AppendLine(FreezeConditionals(m).ToString());
 
 					// Supply the FN_ method expected by the generated function binding.
 					if (isFunction && m is MethodDeclarationSyntax em)
@@ -2609,10 +2556,10 @@ namespace Keysharp.Parsing.Syntax
 						var fwdBody = isVoid
 									  ? $"{call};"
 									  : $"return {call};";
-						_ = entry.Body.AppendLine(indent + "[Keysharp.Runtime.PublicHiddenFromUser]");
-						_ = entry.Body.AppendLine(indent + "[Keysharp.Runtime.InlineCSharp]");
+						_ = entry.Body.AppendLine("[Keysharp.Runtime.PublicHiddenFromUser]");
+						_ = entry.Body.AppendLine("[Keysharp.Runtime.InlineCSharp]");
 						_ = entry.Body.AppendLine(
-								$"{indent}public static {em.ReturnType} {NameMangler.FunctionMethod(em.Identifier.Text)}"
+								$"public static {em.ReturnType} {NameMangler.FunctionMethod(em.Identifier.Text)}"
 								+ $"{em.ParameterList} {{ {fwdBody} }}");
 					}
 				}
@@ -2634,36 +2581,45 @@ namespace Keysharp.Parsing.Syntax
 				// Keysharp.Builtins is opt-in because Array, String and Buffer conflict with System.
 				foreach (var u in new[] { "System", "System.Collections.Generic", "System.Runtime.CompilerServices", "System.Runtime.InteropServices", "Keysharp.Runtime" })
 					if (!globalImports.Contains("using " + u + ";") && seenUsing.Add("using " + u + ";"))
-						_ = sb.AppendLine("\tusing " + u + ";");
+						_ = sb.AppendLine("using " + u + ";");
 
 				foreach (var u in scopeUsings)
-					_ = sb.AppendLine("\t" + u);
+					_ = sb.AppendLine(u);
 
-				_ = sb.AppendLine("\tpublic partial class Program");
-				_ = sb.AppendLine("\t{");
-				_ = sb.AppendLine($"\t\tpublic partial class {NameMangler.ModuleClass(module)}");
-				_ = sb.AppendLine("\t\t{");
-				var depth = 3;
+				_ = sb.AppendLine("public partial class Program");
+				_ = sb.AppendLine("{");
+				_ = sb.AppendLine($"public partial class {NameMangler.ModuleClass(module)}");
+				_ = sb.AppendLine("{");
 				var parts = classPath?.Split('.') ?? [];
 
 				foreach (var part in parts)
 				{
-					_ = sb.AppendLine(new string('\t', depth) + $"public partial class {part}");
-					_ = sb.AppendLine(new string('\t', depth) + "{");
-					depth++;
+					_ = sb.AppendLine($"public partial class {part}");
+					_ = sb.AppendLine("{");
 				}
 
 				_ = sb.Append(body);
 
 				for (var i = parts.Length - 1; i >= 0; i--)
-					_ = sb.AppendLine(new string('\t', --depth) + "}");
+					_ = sb.AppendLine("}");
 
-				_ = sb.AppendLine("\t\t}");
-				_ = sb.AppendLine("\t}");
+				_ = sb.AppendLine("}");
+				_ = sb.AppendLine("}");
 				_ = sb.AppendLine("}");
 			}
 
-			return sb.ToString();
+			// Layout comes from re-parsing the assembled unit and re-emitting it through the pipeline's
+			// printer (the lowered tree's path too; NormalizeWhitespace costs far more). The members no
+			// longer carry their authored line structure — nothing in this file maps back to the script.
+			var text = sb.ToString();
+			var unit = SyntaxFactory.ParseCompilationUnit(text, options: new CSharpParseOptions(
+						   LanguageVersion.LatestMajor, DocumentationMode.None, SourceCodeKind.Regular, _inlineDefines));
+
+			// The printer walks nodes, so token runs the parser had to skip would silently vanish from its
+			// output; a unit that does not parse must reach the compiler verbatim for honest errors.
+			return unit.GetDiagnostics().Any(x => x.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+				   ? text
+				   : PrettyPrinter.Print(unit);
 		}
 
 		// Gathers the program's `#Package [*i] <id> [version]` directives into one package set (see the _packages field

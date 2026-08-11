@@ -38,11 +38,33 @@ namespace Keysharp.Parsing
 			if (string.IsNullOrWhiteSpace(text))
 				return;
 
-			_sb.Append(text);
+			EmitToken(text);
 			// add a single space if the next token on same line is an identifier/literal
-			if (NeedsSpaceAfter(token) && !_sb.ToString().EndsWith(" "))
+			if (NeedsSpaceAfter(token) && _sb[^1] != ' ')
 				_sb.Append(' ');
 		}
+
+		/// <summary>
+		/// Appends text that begins a token. The printer also prints user-authored code (inline C#), not
+		/// just lowered shapes, so a fallback-printed token meeting the next emission (`throw new …`,
+		/// `is not null`, `await x`) or a doubled operator character (`- -x`, `x & &y`) must never fuse
+		/// into one token; the NeedsSpaceAfter allowlist only spaces what the lowerer is known to emit.
+		/// </summary>
+		void EmitToken(string text)
+		{
+			if (_sb.Length > 0 && text.Length > 0)
+			{
+				var prev = _sb[^1];
+
+				if ((IsIdentifierChar(prev) && IsIdentifierChar(text[0]))
+						|| (prev == text[0] && "+-*/<>&|=?:.".IndexOf(prev) >= 0))
+					_sb.Append(' ');
+			}
+
+			_sb.Append(text);
+		}
+
+		static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '@';
 
 		// decide when to force a space
 		bool NeedsSpaceAfter(SyntaxToken token)
@@ -300,7 +322,7 @@ namespace Keysharp.Parsing
 		public override void VisitSimpleLambdaExpression(SimpleLambdaExpressionSyntax node)
 		{
 			// 1) single identifier
-			_sb.Append(node.Parameter.Identifier.Text);
+			EmitToken(node.Parameter.Identifier.Text);
 			_sb.Append(" =>");
 
 			// 2a) block‐body
@@ -435,6 +457,12 @@ namespace Keysharp.Parsing
 		public override void VisitUsingDirective(UsingDirectiveSyntax node)
 		{
 			WriteIndent();
+			// `global using` reaches the whole compilation (the lowered tree included); dropping the
+			// keyword would silently demote it to file scope.
+			if (node.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword))
+			{
+				_sb.Append("global ");
+			}
 			_sb.Append("using ");
 			if (node.StaticKeyword.IsKind(SyntaxKind.StaticKeyword))
 			{
@@ -500,7 +528,7 @@ namespace Keysharp.Parsing
 
 		public override void VisitVarPattern(VarPatternSyntax node)
 		{
-			_sb.Append("var ");
+			EmitToken("var ");
 			AppendVariableDesignation(node.Designation);
 		}
 
@@ -556,7 +584,7 @@ namespace Keysharp.Parsing
 		public override void VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
 		{
 			// “new Type”
-			_sb.Append("new ");
+			EmitToken("new ");
 			Visit(node.Type);
 
 			// ( … arguments … )
@@ -572,7 +600,7 @@ namespace Keysharp.Parsing
 		public override void VisitArrayCreationExpression(ArrayCreationExpressionSyntax node)
 		{
 			// “new Type[...]”
-			_sb.Append("new ");
+			EmitToken("new ");
 			Visit(node.Type);
 
 			// optional { … } initializer
@@ -585,7 +613,7 @@ namespace Keysharp.Parsing
 		public override void VisitImplicitArrayCreationExpression(ImplicitArrayCreationExpressionSyntax node)
 		{
 			// “new[]”
-			_sb.Append("new[]");
+			EmitToken("new[]");
 
 			if (node.Initializer != null)
 			{
@@ -1075,18 +1103,18 @@ namespace Keysharp.Parsing
 
 		public override void VisitIdentifierName(IdentifierNameSyntax node)
 		{
-			_sb.Append(node.Identifier.Text);
+			EmitToken(node.Identifier.Text);
 		}
 
 		public override void VisitGenericName(GenericNameSyntax node)
 		{
-			_sb.Append(node.Identifier.Text);
+			EmitToken(node.Identifier.Text);
 			PrintTypeArgumentList(node.TypeArgumentList);
 		}
 
 		public override void VisitLiteralExpression(LiteralExpressionSyntax node)
 		{
-			_sb.Append(node.Token.Text);
+			EmitToken(node.Token.Text);
 		}
 
 		public override void VisitConstructorDeclaration(ConstructorDeclarationSyntax node)

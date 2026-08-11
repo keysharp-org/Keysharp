@@ -294,11 +294,10 @@ namespace Keysharp.Parsing
 			return (sbe.ToString(), sbw.ToString());
 		}
 
-		/// <summary>Formats a diagnostic using any #line-mapped source location.</summary>
+		/// <summary>Formats a diagnostic with its source file and position.</summary>
 		private static string FormatDiagnostic(Diagnostic diag, string fallbackFile)
 		{
 			var span = diag.Location.GetMappedLineSpan();
-			// Prefer the tree path even when no #line mapping is active.
 			var file = !string.IsNullOrEmpty(span.Path)
 					   ? Path.GetFileName(span.Path)
 					   : Path.GetFileName(fallbackFile);
