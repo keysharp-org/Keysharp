@@ -30,8 +30,10 @@ namespace Keysharp.Builtins
 			if (lvo.vis)
 				item.EnsureVisible();
 
-			if (lvo.icon >= 0 && lv.SmallImageList != null && lvo.icon < lv.SmallImageList.Images.Count)
-				item.ImageIndex = lvo.icon;
+			// AHK icon numbers are 1-based ("Icon1" is the first image; "Icon0" shows none), while
+			// WinForms ImageIndex is 0-based - same mapping TreeViewHelper already applies.
+			if (lvo.icon >= 1 && lv.SmallImageList != null && lvo.icon <= lv.SmallImageList.Images.Count)
+				item.ImageIndex = lvo.icon - 1;
 		}
 
 		internal static void ParseAndApplyListViewColumnOptions(ColumnHeader col, string options)
@@ -54,7 +56,7 @@ namespace Keysharp.Builtins
 				lv.SetListViewColumnSizes();
 
 			if (lvco.icon.HasValue)
-				col.ImageIndex = lvco.icon.Value == 0 ? -1 : lvco.icon.Value;
+				col.ImageIndex = lvco.icon.Value <= 0 ? -1 : lvco.icon.Value - 1;
 
 #if WINDOWS
 
