@@ -788,9 +788,10 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	* In addition to the `AHK` module, a `KS` module has been added which contains extra variabes and methods added to Keysharp. Accessing them requires using the `import` statement.
 		+ These include all new classes, functions and variables mentioned here (eg `HashMap`, `Sinh` etc).
 		+ Note: class method/property additions are always included and do not need to be imported (eg `String` or `Buffer` extra methods).
-	* **Boolean property naming.** On a class, an `Is` prefix marks a **read-only predicate** (`Thread.IsActive`, `Thread.IsInterruptible`, `Func.IsBuiltIn`, `Func.IsVariadic`); a **settable** boolean is named for the state itself (`Thread.Critical`, `Thread.Paused`, `WinEvent.Paused`), so it reads as `obj.Paused := true` rather than as a question.
+	* Boolean property naming:
+ 		+ On a class, an `Is` prefix marks a read-only predicate (`Thread.IsActive`, `Thread.IsInterruptible`, `Func.IsBuiltIn`, `Func.IsVariadic`). 		+ A settable boolean is named for the state itself (`Thread.Critical`, `Thread.Paused`, `WinEvent.Paused`), so it reads as `obj.Paused := true` rather than as a question.
 		+ This follows AutoHotkey, which never prefixes a settable boolean property — `InputHook.VisibleText`, `InputHook.CaseSensitive`, `GuiControl.Enabled`, `GuiControl.Visible` — while using `Is` on some read-only ones (`Func.IsBuiltIn`, `Func.IsVariadic`, alongside unprefixed `InputHook.InProgress`, `File.AtEOF`, `GuiControl.Focused`).
-		+ The `A_Is*` **variables** are a separate namespace and keep their AHK spelling: `A_IsCritical`, `A_IsPaused`, `A_IsSuspended`.
+		+ The `A_Is*` variables are a separate namespace and keep their AHK spelling: `A_IsCritical`, `A_IsPaused`, `A_IsSuspended`.
 	+ A compiled script can be reloaded.
 		+ AutoHotkey does not support reloading a compiled script.
 	+ When sending a string through `SendMessage()` using the `WM_COPYDATA` message type, the caller is no longer responsible for creating the special `COPYDATA` struct.
