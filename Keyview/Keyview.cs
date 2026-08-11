@@ -2421,7 +2421,7 @@ namespace Keyview
 
 					// Trimming the generated code is pure string work over the whole file; do it on a
 					// background thread so the UI thread is not blocked between compile and display.
-					var (displayCode, trimmedCode) = await Task.Run(() =>
+					var trimmedCode = await Task.Run(() =>
 					{
 						var token = "[System.STAThread]";
 						var start = code.IndexOf(token);
@@ -2431,12 +2431,12 @@ namespace Keyview
 						foreach (var line in display.SplitLines())
 							_ = sb.AppendLine(line.TrimNofAnyFromStart(trimstr, 2));
 
-						return (display, sb.ToString().TrimEnd(trimend));
+						return sb.ToString().TrimEnd(trimend);
 					}).ConfigureAwait(true);
 
 					setTrimmedCode(trimmedCode);
 					beforeOutput?.Invoke();
-					setOutput?.Invoke(useFullCode() ? displayCode : trimmedCode);
+					setOutput?.Invoke(useFullCode() ? code : trimmedCode);
 					afterOutput?.Invoke();
 					writeLastRun?.Invoke();
 				}
