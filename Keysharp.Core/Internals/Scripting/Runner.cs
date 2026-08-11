@@ -271,20 +271,25 @@ namespace Keysharp.Internals.Scripting
 
 			if (string.IsNullOrEmpty(scriptName) && !loadAsm)
 			{
-				var dirs = new string[]
-				{
-					$"{Environment.CurrentDirectory}{Path.DirectorySeparatorChar}{exeName}.ahk",
-					$"{Environment.CurrentDirectory}{Path.DirectorySeparatorChar}{exeName}.ks"
-				};
+				var candidates = new List<string>(6);
 
-				foreach (var dir in dirs)
+				foreach (var dir in new[] { Environment.CurrentDirectory, exeDir })
+					foreach (var ext in new[] { ".ahk", ".ks", ".cks" })
+						candidates.Add(Path.Combine(dir, exeName + ext));
+
+				foreach (var candidate in candidates)
 				{
-					if (File.Exists(dir))
+					if (File.Exists(candidate))
 					{
-						scriptName = dir;
+						scriptName = candidate;
 						break;
 					}
 				}
+
+				// A discovered .cks must take the assembly path; the explicit-argument equivalent was routed
+				// there at the IsCompiledScriptInput check above, which ran before discovery.
+				if (IsCompiledScriptInput(scriptName))
+					loadAsm = true;
 
 				// The script was discovered rather than named, so SetInput never ran and every argument was a switch —
 				// they are all Keysharp's. Without this they vanish from KeysharpArgs, and callers that gate on it read
@@ -323,7 +328,7 @@ namespace Keysharp.Internals.Scripting
 			}
 
 			if (string.IsNullOrEmpty(scriptName))
-				return CliCommand.Error("No script was specified, no text was read from stdin, and no script named keysharp.ahk was found in the current folder or your documents folder.");
+				return CliCommand.Error($"No script was specified, no text was read from stdin, and no default script named {exeName}.ahk, {exeName}.ks or {exeName}.cks was found in the current folder or next to the executable.");
 
 			if (!fromstdin && !File.Exists(scriptName))
 				return CliCommand.Error($"Could not find the script file {scriptName}.");
