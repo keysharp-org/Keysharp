@@ -397,7 +397,7 @@ namespace Keysharp.Parsing
 			i++;
 
 			if (i == code.Length)
-				throw new ParseException(ExUntermStr, codeLine);
+				throw new ParseException(ExUntermStr, codeLine.LineNumber, codeLine.Code, codeLine.FileName);
 
 			for (; i < code.Length; i++)
 			{
@@ -419,7 +419,7 @@ namespace Keysharp.Parsing
 					_ = str.Append(sym);
 
 					if ((!isbound || escape) && i == code.Length - 1)//If we've reached the end and it's not a quote. or it is a quote but we are in escape, then it's an unterminated string.
-						throw new ParseException(ExUntermStr, codeLine);
+						throw new ParseException(ExUntermStr, codeLine.LineNumber, codeLine.Code, codeLine.FileName);
 				}
 				else
 				{
@@ -430,7 +430,7 @@ namespace Keysharp.Parsing
 						break;
 
 					if ((!isbound || escape) && i == code.Length - 1)//If we've reached the end and it's not a quote. or it is a quote but we are in escape, then it's an unterminated string.
-						throw new ParseException(ExUntermStr, codeLine);
+						throw new ParseException(ExUntermStr, codeLine.LineNumber, codeLine.Code, codeLine.FileName);
 				}
 
 				escape = sym == Escape && !escape;

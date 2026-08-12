@@ -1,7 +1,7 @@
 using System.Globalization;
 using Microsoft.CodeAnalysis.CSharp;
 
-namespace Keysharp.Parsing.Syntax
+namespace Keysharp.Compilation.Syntax
 {
 	/// <summary>
 	/// Front-end-agnostic naming policy for the lowered C# identifiers, matching the conventions the

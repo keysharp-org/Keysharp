@@ -77,7 +77,6 @@ global using global::Keysharp.Internals.Input.Joystick;
 global using global::Keysharp.Internals.Input.Keyboard;
 global using global::Keysharp.Internals.Input.Mouse;
 global using global::Keysharp.Internals.Mapper;
-global using global::Keysharp.Internals.Patterns;
 global using global::Keysharp.Internals.Os;
 global using Platform = global::Keysharp.Internals.Platform;
 global using static global::Keysharp.Internals.Platform.Keys;
@@ -93,7 +92,7 @@ global using global::Keysharp.Internals.Strings;
 global using global::Keysharp.Internals.Threading;
 global using global::Keysharp.Internals.Window;
 global using global::Keysharp.Internals.Invoke;
-global using global::Keysharp.Parsing;
+global using global::Keysharp.Language;
 global using global::Keysharp.Runtime;
 global using global::Semver.Comparers;
 global using global::Semver.Utility;
@@ -145,7 +144,7 @@ global using global::BitFaster.Caching.Scheduler;
 
 //Static
 global using static global::Keysharp.Builtins.Accessors;
-global using static global::Keysharp.Parsing.Keywords;
+global using static global::Keysharp.Language.Keywords;
 global using static global::Keysharp.Runtime.Script;
 
 #if WINDOWS

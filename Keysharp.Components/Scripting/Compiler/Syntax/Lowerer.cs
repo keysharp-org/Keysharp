@@ -3,11 +3,13 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Keysharp.Components.Scripting;
+using Keysharp.Parsing.Syntax;
 using Keysharp.Runtime;
 using Keysharp.Internals.Input.Keyboard;
 using Keysharp.Internals.Input.Mouse;
 
-namespace Keysharp.Parsing.Syntax
+namespace Keysharp.Compilation.Syntax
 {
 	/// <summary>
 	/// Lowering pass: AST -> Roslyn CompilationUnit, built directly with SyntaxFactory (no text
@@ -92,7 +94,9 @@ namespace Keysharp.Parsing.Syntax
 		private readonly List<Keysharp.Internals.Os.PackageResolver.PackageRef> _packages = [];
 		private readonly HashSet<Stmt> _packagesSeen = new(ReferenceEqualityComparer.Instance);
 		private readonly HashSet<string> _requiredProviders = new(System.StringComparer.OrdinalIgnoreCase);
+		private readonly HashSet<string> _requiredComponents = new(System.StringComparer.OrdinalIgnoreCase);
 		public IReadOnlyCollection<string> RequiredProviders => _requiredProviders;
+		public IReadOnlyCollection<string> RequiredComponents => _requiredComponents;
 
 		// Inline C# is emitted as one additional tree per script module; identity tracking catches unsupported nesting.
 		private List<(string Module, string ClassPath, CSharpDirective Dir)> _inlineBlocks;
@@ -707,11 +711,14 @@ namespace Keysharp.Parsing.Syntax
 		// The inline expression a bare global name resolves to when it names a built-in function/property/AHK
 		// class (NOT a user declaration), else null. Factored out of EnsureGlobalField so a `#import AHK { X }`
 		// member — the AHK module being the catch-all over every global built-in — binds the same way.
-		private static ExpressionSyntax ResolveGlobalBuiltin(string lower)
+		private ExpressionSyntax ResolveGlobalBuiltin(string lower)
 		{
 			var rd = Script.TheScript.ReflectionsData;
 			if (rd.flatPublicStaticMethods.TryGetValue(lower, out var mi))
+			{
+				TrackRuntimeComponent(mi);
 				return FuncBind($"{mi.DeclaringType.FullName.Replace('+', '.')}.{mi.Name}");
+			}
 			if (rd.flatPublicStaticProperties.TryGetValue(lower, out var prop))
 				return Access(prop.DeclaringType.FullName.Replace('+', '.') + "." + prop.Name);
 			if (rd.stringToTypes.TryGetValue(lower, out var type) && IsGlobalAhkClass(type))
@@ -1545,7 +1552,11 @@ namespace Keysharp.Parsing.Syntax
 				(Script.GetUserDeclaredName(m) ?? m.Name).Equals(name, System.StringComparison.OrdinalIgnoreCase)
 				|| m.Name.Equals(name, System.StringComparison.OrdinalIgnoreCase);
 			var method = modType.GetMethods(flags).FirstOrDefault(mi => !mi.IsSpecialName && Matches(mi));
-			if (method != null) return FuncBind(method.DeclaringType.FullName.Replace('+', '.') + "." + method.Name);
+			if (method != null)
+			{
+				TrackRuntimeComponent(method);
+				return FuncBind(method.DeclaringType.FullName.Replace('+', '.') + "." + method.Name);
+			}
 			var nested = modType.GetNestedTypes(System.Reflection.BindingFlags.Public).FirstOrDefault(Matches);
 			if (nested != null) return TypeSingleton(nested.FullName.Replace('+', '.'));
 			var prop = modType.GetProperties(flags).FirstOrDefault(Matches);
@@ -1612,7 +1623,10 @@ namespace Keysharp.Parsing.Syntax
 			if (_userFuncByLower.TryGetValue(lower, out var orig))
 				init = FuncBind(NameMangler.FunctionMethod(orig));
 			else if (Script.TheScript.ReflectionsData.flatPublicStaticMethods.TryGetValue(lower, out var mi))
+			{
+				TrackRuntimeComponent(mi);
 				init = FuncBind($"{mi.DeclaringType.FullName.Replace('+', '.')}.{mi.Name}");
+			}
 			else if (Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(lower, out var type) && IsGlobalAhkClass(type))
 				init = TypeSingleton(type.FullName.Replace('+', '.'));
 			// (AHK class-name aliases Object/Func/File are resolved INLINE in NameRef, not as a cached field.)
@@ -1699,6 +1713,9 @@ namespace Keysharp.Parsing.Syntax
 			// A wildcard-imported PROPERTY reflects live runtime state (e.g. A_DefaultHotstring*), so read it through
 			// a direct member access each reference rather than caching it in a static field initialised once.
 			if (WildcardLiveProperty(lower) is { } liveProp) return liveProp;
+			if (!_userFuncByLower.ContainsKey(lower)
+					&& Script.TheScript.ReflectionsData.flatPublicStaticMethods.TryGetValue(lower, out var builtinMethod))
+				TrackRuntimeComponent(builtinMethod);
 			var gf = EnsureGlobalField(lower);
 			// Inside a (nested) class method the module's static field isn't in scope unqualified — qualify it as
 			// `Program.<Module>.<field>` (e.g. a class property `Prop => ModuleFunc()`).
@@ -2614,6 +2631,13 @@ namespace Keysharp.Parsing.Syntax
 			}
 
 			return sources;
+		}
+
+		private void TrackRuntimeComponent(System.Reflection.MethodInfo method)
+		{
+			if (method?.DeclaringType == typeof(Keysharp.Builtins.Ks)
+					&& method.Name is nameof(Keysharp.Builtins.Ks.RunScript) or nameof(Keysharp.Builtins.Ks.ParseScript))
+				_ = _requiredComponents.Add(ScriptingComponentIds.Compiler);
 		}
 
 		// Gathers the program's `#Package [*i] <id> [version]` directives into one package set (see the _packages field

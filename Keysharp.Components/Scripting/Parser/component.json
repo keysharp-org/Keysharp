@@ -1,0 +1,1 @@
+{"schemaVersion":1,"contractVersion":1,"id":"parser","version":"1.0.0","assembly":"Keysharp.Components.Scripting.Parser.dll","type":"Keysharp.Components.Scripting.Parser.ParserComponent","capabilities":["SyntaxValidation"],"files":["Keysharp.Components.Scripting.Parser.dll","Keysharp.Components.Scripting.Parser.deps.json"]}

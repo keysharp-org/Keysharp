@@ -25,6 +25,9 @@ global using global::NUnit.Framework;
 global using global::Keysharp.Builtins;
 global using global::Keysharp.Internals.ExtensionMethods;
 global using global::Keysharp.Internals.Input.Keyboard;
+global using global::Keysharp.Internals.Scripting;
+global using global::Keysharp.Compilation;
+global using global::Keysharp.Language;
 global using global::Keysharp.Parsing;
 global using global::Keysharp.Runtime;
 
@@ -44,4 +47,4 @@ global using global::Keysharp.Internals.Threading;
 //Static
 global using static global::Keysharp.Builtins.Accessors;
 global using static global::Keysharp.Builtins.Ks;
-global using static global::Keysharp.Parsing.Keywords;
+global using static global::Keysharp.Language.Keywords;

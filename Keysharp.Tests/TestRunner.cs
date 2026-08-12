@@ -135,7 +135,7 @@ namespace Keysharp.Tests
 				File.WriteAllText("./" + name + ".runtimeconfig.json", CompilerHelper.GenerateRuntimeConfig());//Probably not needed for test exe outputs.
 			}
 
-			CompilerHelper.compiledasm = Assembly.Load(arr);
+			ScriptExecutionState.Assembly = Assembly.Load(arr);
 			var buffer = new StringBuilder();
 			var output = string.Empty;
 
@@ -149,11 +149,11 @@ namespace Keysharp.Tests
 						GC.Collect(); //Necessary to prevent testhost.exe throwing an error on long runs
 						GC.WaitForPendingFinalizers();
 
-						if (CompilerHelper.compiledasm == null)
+						if (ScriptExecutionState.Assembly == null)
 							throw new Exception("Compilation failed.");
 
 						//Environment.SetEnvironmentVariable("SCRIPT", script);
-						var program = CompilerHelper.compiledasm.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
+						var program = ScriptExecutionState.Assembly.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
 						var main = program.GetMethod("Main");
 						var temp = new string[] { };
 						Environment.ExitCode = 0;

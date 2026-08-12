@@ -607,7 +607,7 @@ namespace Keysharp.Tests
 				""";
 			var (prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(script);
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
-			var generated = new Keysharp.Parsing.Syntax.Lowerer().Build(prog, "Test").ToFullString();
+			var generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
 			Assert.IsTrue(generated.Contains("\"<#<+F23\""), generated);
 			Assert.IsTrue(generated.Contains("\"<#<+F23 Up\""), generated);
 			Assert.IsTrue(generated.Contains("\"<#<+F23 & x\""), generated);
@@ -623,7 +623,7 @@ namespace Keysharp.Tests
 			// an identifier in the target position remains a one-line hotkey body rather than becoming a remap.
 			(prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("a::Office");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
-			generated = new Keysharp.Parsing.Syntax.Lowerer().Build(prog, "Test").ToFullString();
+			generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
 			Assert.IsFalse(generated.Contains("__Remap_"), generated);
 		}
 
@@ -632,7 +632,7 @@ namespace Keysharp.Tests
 		{
 			var (prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("Copilot::RCtrl");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
-			var generated = new Keysharp.Parsing.Syntax.Lowerer().Build(prog, "Test").ToFullString();
+			var generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
 			Assert.IsTrue(generated.Contains("\"*<#<+F23\""), generated);
 			Assert.IsTrue(generated.Contains(RemapDown("{Blind}{LShift up}{LWin up}{RCtrl DownR}")), generated);
 			Assert.IsTrue(generated.Contains("{Blind}{RCtrl Up}"), generated);
@@ -643,20 +643,20 @@ namespace Keysharp.Tests
 			// source modifiers after the remapped modifier is released.
 			(prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("<#<+F23::RCtrl");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
-			generated = new Keysharp.Parsing.Syntax.Lowerer().Build(prog, "Test").ToFullString();
+			generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
 			Assert.IsTrue(generated.Contains("GetKeyState(\"LShift\",\"P\")"), generated);
 			Assert.IsTrue(generated.Contains("GetKeyState(\"LWin\",\"P\")"), generated);
 
 			// Sided targets are translated into the explicit events Send requires, in both directions.
 			(prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("Copilot::>^a");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
-			generated = new Keysharp.Parsing.Syntax.Lowerer().Build(prog, "Test").ToFullString();
+			generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
 			Assert.IsTrue(generated.Contains(RemapDown("{Blind<+<#}{RCtrl down}{a DownR}")), generated);
 			Assert.IsTrue(generated.Contains("{Blind}{RCtrl up}"), generated);
 
 			(prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("a::Copilot");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
-			generated = new Keysharp.Parsing.Syntax.Lowerer().Build(prog, "Test").ToFullString();
+			generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
 			Assert.IsTrue(generated.Contains(RemapDown("{Blind}{LShift down}{LWin down}{F23 DownR}")), generated);
 			Assert.IsTrue(generated.Contains("{Blind}{LWin up}{LShift up}"), generated);
 			Assert.IsTrue(generated.Contains("{Blind}{F23 Up}"), generated);
@@ -668,7 +668,7 @@ namespace Keysharp.Tests
 			var (prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(">!.::RCtrl");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
 
-			var lowerer = new Keysharp.Parsing.Syntax.Lowerer();
+			var lowerer = new Keysharp.Compilation.Syntax.Lowerer();
 			var unit = lowerer.Build(prog, "Test");
 			var generated = unit.ToFullString();
 			Assert.IsTrue(generated.Contains(RemapDown("{Blind}{RAlt up}{RCtrl DownR}")), generated);
@@ -688,14 +688,14 @@ namespace Keysharp.Tests
 
 			(prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(">!.::b");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
-			generated = new Keysharp.Parsing.Syntax.Lowerer().Build(prog, "Test").ToFullString();
+			generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
 			Assert.IsTrue(generated.Contains(RemapDown("{Blind>!}{b DownR}")), generated);
 
 			// A wheel has no up event, so its up hotkey never fires; holding the destination with DownR would
 			// leave the modifier stuck down. Such a remap must keep the plain press-and-release form.
 			(prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("^WheelUp::LShift");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
-			generated = new Keysharp.Parsing.Syntax.Lowerer().Build(prog, "Test").ToFullString();
+			generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
 			Assert.IsTrue(generated.Contains("{Blind<^>^}{LShift}"), generated);
 			Assert.IsFalse(generated.Contains("{LShift DownR}"), generated);
 		}
@@ -709,7 +709,7 @@ namespace Keysharp.Tests
 			// that they are scoped to the one keystroke, exactly as Send scopes the neutral ^ ! + # prefixes.
 			var (prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("a::<#<+F23");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
-			var generated = new Keysharp.Parsing.Syntax.Lowerer().Build(prog, "Test").ToFullString();
+			var generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
 			Assert.IsTrue(generated.Contains(RemapDown("{Blind}{LShift down}{LWin down}{F23 DownR}")), generated);
 			Assert.IsTrue(generated.Contains("{Blind}{LWin up}{LShift up}"), generated);
 			Assert.IsTrue(generated.Contains("{Blind}{F23 Up}"), generated);
@@ -718,7 +718,7 @@ namespace Keysharp.Tests
 			// A neutral destination keeps the prefix form, which Send resolves to the left-hand key.
 			(prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("a::#+F23");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
-			generated = new Keysharp.Parsing.Syntax.Lowerer().Build(prog, "Test").ToFullString();
+			generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
 			Assert.IsTrue(generated.Contains(RemapDown("{Blind}#+{F23 DownR}")), generated);
 		}
 
@@ -831,7 +831,7 @@ namespace Keysharp.Tests
 			var (prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("a::b");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
 
-			var lowerer = new Keysharp.Parsing.Syntax.Lowerer();
+			var lowerer = new Keysharp.Compilation.Syntax.Lowerer();
 			var generated = lowerer.Build(prog, "Test").ToFullString();
 			Assert.IsTrue(generated.Contains("A_EventInfo"), generated);
 			Assert.IsTrue(generated.Contains("IsAutoRepeat"), generated);

@@ -1,0 +1,53 @@
+global using System;
+global using System.Buffers;
+global using System.CodeDom;
+global using System.CodeDom.Compiler;
+global using System.Collections;
+global using System.Collections.Concurrent;
+global using System.Collections.Frozen;
+global using System.Collections.Generic;
+global using System.Collections.Immutable;
+global using System.ComponentModel;
+global using System.Diagnostics;
+global using System.Globalization;
+global using System.IO;
+global using System.IO.Compression;
+global using System.Linq;
+global using System.Net;
+global using System.Reflection;
+global using System.Runtime.CompilerServices;
+global using System.Runtime.InteropServices;
+global using System.Security.Cryptography;
+global using System.Text;
+global using System.Text.Json;
+global using System.Text.RegularExpressions;
+global using System.Threading;
+global using System.Threading.Tasks;
+#if WINDOWS
+global using System.Drawing;
+global using System.Windows.Forms;
+#else
+global using Eto.Drawing;
+global using Eto.Forms;
+global using Keys = System.Windows.Forms.Keys;
+#endif
+
+global using String = System.String;
+global using Module = Keysharp.Runtime.Module;
+global using Keysharp.Internals.Containers;
+global using Keysharp.Internals.ExtensionMethods;
+global using Keysharp.Internals.Input.Hooks;
+global using Keysharp.Internals.Input.Keyboard;
+global using Keysharp.Internals.Input.Mouse;
+global using Keysharp.Internals.Invoke;
+global using Keysharp.Internals.Os;
+global using Keysharp.Internals.Scripting;
+global using Keysharp.Internals.Strings;
+global using Keysharp.Language;
+global using Keysharp.Runtime;
+global using PCRE;
+global using Semver.Comparers;
+global using Semver.Utility;
+global using static Keysharp.Builtins.Accessors;
+global using static Keysharp.Language.Keywords;
+global using static Keysharp.Runtime.Script;

@@ -83,11 +83,8 @@ namespace Keysharp.Internals.Os
 				// The SCRIPT's assembly, which is the one the manifest was embedded in, with the entry assembly as a
 				// fallback for a compiled script whose entry point IS the script.
 				//
-				// Deliberately NOT CompilerHelper.compiledasm, however tempting: touching any CompilerHelper member
-				// forces that type to load, which drags in Microsoft.CodeAnalysis — a compile-time dependency that is
-				// not shipped beside a compiled script. That made every compiled script declaring #Package die at
-				// startup with "Could not load file or assembly 'Microsoft.CodeAnalysis'", from the Program type
-				// initializer, before a line of script ran. The runtime must not reach into the compiler.
+				// The runtime must use the assembly it was handed rather than querying the optional compiler component:
+				// compiled scripts which only consume packages do not need the parser, compiler, or Roslyn installed.
 				var manifest = PackageManifest.FromAssembly(scriptAssembly)
 							   ?? PackageManifest.FromAssembly(Assembly.GetEntryAssembly());
 
@@ -269,7 +266,7 @@ namespace Keysharp.Internals.Os
 			if (!PackageResolver.TryResolve(packages, allowRestore: true, label, out var resolved, out failure))
 				return false;
 
-			// `#Package` itself reports at COMPILE time (CompilerHelper.ResolvePackages calls the same method), but
+			// `#Package` itself reports at compile time (the compiler component calls the same method), but
 			// its Direct refs do sit in `requested`, so a later Clr.LoadPackage re-resolves the union INCLUDING them,
 			// and a floating directive version can be reported here at whatever the union resolves to. Apply still
 			// skips reloading anything already applied.

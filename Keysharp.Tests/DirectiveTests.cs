@@ -128,7 +128,7 @@ namespace Keysharp.Tests
 			{
 				var (prog, parseDiags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(src);
 				Assert.IsEmpty(parseDiags, "unexpected parse diagnostics: " + string.Join("; ", parseDiags));
-				var lowerer = new Keysharp.Parsing.Syntax.Lowerer();
+				var lowerer = new Keysharp.Compilation.Syntax.Lowerer();
 				var unit = lowerer.Build(prog, "Test");
 				return (unit, lowerer.Diagnostics.ToArray(), lowerer.CompileWarnings.ToArray());
 			}

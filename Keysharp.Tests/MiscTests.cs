@@ -187,6 +187,13 @@ namespace Keysharp.Tests
 		public void MiscSyntax() => Assert.IsTrue(TestScript("misc-syntax", false));
 
 		[Test, Category("Misc"), NonParallelizable]
+		public void ComponentDiscovery()
+		{
+			var output = RunScript(Path.Combine(path, "component-available.ahk"), "component-available", true, false);
+			Assert.IsTrue(HasPassed(output), output);
+		}
+
+		[Test, Category("Misc"), NonParallelizable]
 		public void MiscReserved() => Assert.IsTrue(TestScript("misc-reserved", false));
 
 		[Test, Category("Misc"), NonParallelizable]

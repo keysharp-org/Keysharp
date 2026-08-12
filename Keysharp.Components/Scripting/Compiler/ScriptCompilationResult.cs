@@ -1,6 +1,6 @@
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace Keysharp.Parsing
+namespace Keysharp.Compilation
 {
 	internal sealed record InlineCSharpSource(string Module, string Code);
 
@@ -23,6 +23,8 @@ namespace Keysharp.Parsing
 		internal IReadOnlyCollection<string> InlineDefines { get; set; } = [];
 
 		internal IReadOnlyCollection<string> RequiredProviders { get; set; } = [];
+
+		internal IReadOnlyCollection<string> RequiredComponents { get; set; } = [];
 
 		internal PackageManifest Packages { get; set; }
 

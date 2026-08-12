@@ -33,7 +33,7 @@ namespace Keysharp.Tests
 			{
 				var (prog, parseDiags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(src);
 				Assert.IsEmpty(parseDiags, "unexpected parse diagnostics: " + string.Join("; ", parseDiags));
-				var lowerer = new Keysharp.Parsing.Syntax.Lowerer();
+				var lowerer = new Keysharp.Compilation.Syntax.Lowerer();
 				_ = lowerer.Build(prog, "Test");
 				return lowerer.Diagnostics.ToArray();
 			}
@@ -59,7 +59,7 @@ namespace Keysharp.Tests
 			{
 				var (prog, parseDiags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(src);
 				Assert.IsEmpty(parseDiags, "unexpected parse diagnostics: " + string.Join("; ", parseDiags));
-				var lowerer = new Keysharp.Parsing.Syntax.Lowerer();
+				var lowerer = new Keysharp.Compilation.Syntax.Lowerer();
 				_ = lowerer.Build(prog, "Test");
 				return lowerer.Diagnostics.ToArray();
 			}

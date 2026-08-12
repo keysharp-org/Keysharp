@@ -21,8 +21,8 @@ namespace Keysharp.Tests
 			try
 			{
 				Keysharp.Internals.Os.PackageProviderRegistry.AddSearchRoot(root);
-				var compilation = new ScriptCompilationResult { RequiredProviders = ["fake"] };
-				Assert.IsNull(Keysharp.Internals.Scripting.Runner.CopyRequiredProviders(compilation, destination));
+				Assert.IsTrue(Keysharp.Internals.Os.CompiledPackageProviderManifest.TryBuild(["fake"], out var manifest, out var buildError), buildError);
+				Assert.IsNull(manifest.CopyTo(destination));
 				var deployedRoot = Path.Combine(destination, "components", "packages", "fake");
 				Assert.AreEqual("provider-binary", File.ReadAllText(Path.Combine(deployedRoot, "fake.dll")));
 				Assert.AreEqual("nested-payload", File.ReadAllText(Path.Combine(deployedRoot, "data", "payload.bin")));
@@ -32,7 +32,6 @@ namespace Keysharp.Tests
 					"component deployment must not recreate the legacy providers subtree");
 
 				var declarativeOnly = Path.Combine(destination, "declarative-only");
-				Assert.IsNull(Keysharp.Internals.Scripting.Runner.CopyRequiredProviders(new ScriptCompilationResult(), declarativeOnly));
 				Assert.IsFalse(Directory.Exists(Path.Combine(declarativeOnly, "components", "packages")),
 					"a compilation without imperative provider metadata must not deploy a provider");
 				Assert.IsFalse(Directory.Exists(Path.Combine(declarativeOnly, "providers")),

@@ -2557,7 +2557,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Gets or sets the current thread\u0027s message-check interval in milliseconds.",
-                     "tested-by":  "ThreadSemanticsTests.PeekFrequency"
+                     "tested-by":  "ThreadTests.PeekFrequency"
                  },
                  {
                      "category":  "Environment/System",
@@ -3947,6 +3947,17 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Platform-independent managed type wrapper for reflection and invocation."
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "ComponentAvailable()",
+                     "syntax":  "ComponentAvailable(\"parser\")",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Reports whether the fixed first-party parser or compiler deployment unit is installed or embedded, compatible, and loadable. The check loads the requested unit; checking compiler can load Roslyn. Parsing/compilation are accepted aliases.",
+                     "tested-by":  "component-available.ahk; ScriptingComponentTests"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -8500,7 +8511,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Parser, preprocessing, and script execution runtime are implemented.",
+                     "notes":  "Script execution is provided by Keysharp.Core. Source parsing is an optional Roslyn-free component; lowering and C# compilation are supplied by the optional compiler component.",
                      "tested-by":  "misc-pass.ahk"
                  },
                  {
@@ -8511,7 +8522,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Parses script text and returns parse/compile result metadata."
+                     "notes":  "Parses, lowers, and compilation-validates script text with the optional compiler component. Returns an empty string on success or formatted errors on failure."
                  },
                  {
                      "category":  "Environment/System",
@@ -9184,7 +9195,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Executes script source text/file in a script engine context.",
+                     "notes":  "Executes script source text/file in a script engine context. Requires the optional compiler component at runtime; compiled artifacts detect this call and include the component unless it is explicitly excluded.",
                      "tested-by":  "external-com.ahk"
                  },
                  {

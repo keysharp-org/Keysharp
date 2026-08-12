@@ -45,7 +45,7 @@ Windows has the best feature implementation rate and very high AutoHotkey v2 com
 
 To build the release MSI installer and portable ZIP, run `Keysharp.Install\package-windows.ps1` from PowerShell. Packaging output is written to `dist\`.
 
-The MSI is built by `Keysharp.Install\windows\Keysharp.Installer.wixproj` ([WiX v5](https://wixtoolset.org/)), whose toolset restores from NuGet — the .NET SDK is the only prerequisite. The project is deliberately not a member of `Keysharp.sln`, because it packages a staged directory that does not exist until the script has published and staged; build it through the script, or by hand with `-p:PayloadDir=<staged app folder>`.
+The MSI is built by `Keysharp.Install\windows\wix\Keysharp.Installer.wixproj` ([WiX v5](https://wixtoolset.org/)), whose toolset restores from NuGet — the .NET SDK is the only prerequisite. The project is deliberately not a member of `Keysharp.sln`, because it packages a staged directory that does not exist until the script has published and staged; build it through the script, or by hand with `-p:PayloadDir=<staged app folder>`.
 
 | Switch | Effect |
 |---|---|
@@ -251,7 +251,7 @@ Status legend:
 
 | Capability | Windows | Linux (X11) | Linux (Wayland) | macOS | Notes |
 |---|---|---|---|---|---|
-| Parser and runtime execution | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Parser, preprocessing, and script execution runtime are implemented. |
+| Parser and runtime execution | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Script execution is provided by Keysharp.Core. Source parsing is an optional Roslyn-free component; lowering and C# compilation are supplied by the optional compiler component. |
 | Directives and preprocessing | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | OS-specific directives supported via compile constants. |
 | File and directory operations | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | macOS recycle/trash and privacy-scoped file access still evolving. |
 | Keyboard/Mouse send (synthetic input) | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Requires platform permissions on macOS. |
@@ -281,8 +281,9 @@ Some general notes about Keysharp's implementation of the [AutoHotkey v2 specifi
 * The operation of Keysharp is different than AutoHotkey. While AutoHotkey is an interpreted scripting language, Keysharp actually creates a compiled .NET executable and runs it.
 
 * The process for reading and running a script is:
-	+ Pass the script to Keysharp.exe which parses it and generates a Document Object Model (DOM) tree.
-	+ The DOM compiler generates C# code for a single program.
+	+ Keysharp.exe discovers the optional scripting components below `components/scripting`.
+	+ The Roslyn-free parser component parses the script and generates a Document Object Model (DOM) tree.
+	+ The compiler component lowers the DOM to C# and compiles it with Roslyn.
 	+ The C# program code is compiled into an in-memory executable.
 	+ The executable is ran in memory as a new process.
 	+ Optionally output the generated C# code to a .cs file for debugging purposes with the `--transpile` option, without running the script.
@@ -465,7 +466,9 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 			caps := RequestCapabilities()
 			```
 		+ Prefer `#Requires capability` for scripts that need permissions from startup. Use `RequestCapabilities` directly when you need to check or request permissions at a specific point in script execution, or when you want to inspect the current status.
-	+ `RunScript(code, callbackOrAsync?, name := "*", executable?)`: Dynamically parses, compiles, and runs the provided code. The default name `"*"` reflects that the script is fed to the target process via StdIn rather than loaded from disk. Optionally provide the script name; whether to run it asynchronously (non-unset non-zero `callbackOrAsync` causes async run without a callback); an executable path to run the compiled assembly (defaults to the current process).
+	+ `ComponentAvailable(capability)`: Returns true when the fixed first-party `"parser"` or `"compiler"` deployment unit is installed or embedded, compatible, and loadable. The aliases `"parsing"` and `"compilation"` are accepted. This check loads the requested unit, so checking `"compiler"` can load Roslyn. Unknown names raise a `ValueError`.
+	+ `ParseScript(code)`: Parses, lowers, and compilation-validates source text or a script file without running it. Returns an empty string on success or formatted errors on failure, and requires the compiler component. Use `--validate-syntax` when only Roslyn-free syntax validation is needed.
+	+ `RunScript(code, callbackOrAsync?, name := "*", executable?)`: Dynamically parses, compiles, and runs the provided code. It requires the compiler component in the calling process. The default name `"*"` reflects that the script is fed to the target process via StdIn rather than loaded from disk. Optionally provide the script name; whether to run it asynchronously (non-unset non-zero `callbackOrAsync` causes async run without a callback); an executable path to run the compiled assembly (defaults to the current process).
 		+ If `callbackOrAsync` is provided a function then it is called after the script has finished with the `ProcessInfo` as the only argument. Over multiple runs `RunScript` is faster than running the process manually and writing to StdIn because of assembly and compilation caching.
 		+ Returns a `ProcessInfo` object encapsulating info and I/O for the process. Available properties: `HasExited`, `ExitCode`, `ExitTime` (YYYYMMDDHH24MISS), `StdOut`, `StdErr`, `StdIn` (as `KeysharpFile`). Available methods: `Kill()`.
 * New `Clipboard` class (available from the `Ks` module) covering everything the clipboard holds, not just text. `A_Clipboard`, `ClipboardAll()`, `ClipWait()` and `OnClipboardChange()` are unchanged and remain the AutoHotkey-compatible surface.
@@ -835,6 +838,12 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 		  Like `--compile`, with explicit file, folder or `*` output. `dll` is an alias for `asm`. The script is not run.
 		- `--validate`, `/validate`
 		  Compiles but does not run the script. Can be used to check for load-time errors.
+		- `--validate-syntax`
+		  Parses without lowering, compiling, or loading Roslyn. `--syntax-only` and `--parse-only` are aliases.
+		- `--with-parser`, `--with-compiler`, `--with-component <parser|compiler>`
+		  Includes the selected optional first-party deployment unit in a `.cks` or executable. Compiler use by `Ks.RunScript` or `Ks.ParseScript` is detected and included automatically. The generic form accepts unit IDs, not capability aliases.
+		- `--without-parser`, `--without-compiler`, `--without-component <parser|compiler>`
+		  Excludes a selected deployment unit, including an automatically detected compiler. This supports capability-gated code which remains usable when the compiler is intentionally absent.
 		- `--asm`, `--assembly`
 		  Reads pre-compiled assembly code from the file or StdIn and runs it. If omitted, the default type `Keysharp.CompiledMain.Program` and method `Main` are used. A custom entry point can be specified with `--asm:Namespace.Type.Method`, splitting the type and method at the last dot. A `.cks` or `.dll` input is treated as an assembly even when `--asm` is omitted.
 		  Examples: `Keysharp.exe --asm Script.cks arg1 arg2`, `Keysharp.exe Script.cks arg1 arg2`, `Keysharp.exe --asm:My.Namespace.Type.Main Script.dll arg1 arg2`

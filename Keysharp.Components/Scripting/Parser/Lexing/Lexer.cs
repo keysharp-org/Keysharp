@@ -39,7 +39,7 @@ namespace Keysharp.Parsing.Lexing
 		// code (newlines suppressed), so e.g.  Var :=  ⏎ ( ⏎ obj ⏎ )  becomes  Var := obj.
 		private int _codeSectionDepth;
 
-		// Source file these tokens belong to (an #included file); null for the main script. Stamped onto every token so
+		// Source file these tokens belong to; null when the caller did not supply a path. Stamped onto every token so
 		// diagnostics can be reported per file without a post-pass.
 		private readonly string _file;
 

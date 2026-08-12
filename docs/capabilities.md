@@ -413,6 +413,7 @@ Status legend:
 | ComObjQuery() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjQuery function queries a COM object for an interface or service. |
 | ComObjType() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjType function retrieves type information from a COM object. |
 | ComObjValue() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjValue function retrieves the value or pointer stored in a COM wrapper object. |
+| ComponentAvailable() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reports whether the fixed first-party parser or compiler deployment unit is installed or embedded, compatible, and loadable. The check loads the requested unit; checking compiler can load Roslyn. Parsing/compilation are accepted aliases. |
 | ComValue() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComValue class wraps a value, SafeArray or COM object for use by the script or for passing to a COM method. |
 | ComValueRef | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Reference wrapper type for COM values. |
 | contains | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Substring containment operator. |
@@ -845,8 +846,8 @@ Status legend:
 | OutputDebug() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The OutputDebug function sends a string to the debugger (if any) for display. Ks.OutputDebugLine additionally takes a flag to clear the debug output. |
 | OutputDebugLine() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a debug line with newline terminator. |
 | Overlay | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Click-through, always-on-top screen overlay backed by a raster canvas and used by Highlight and ToolTip. Set ClickThrough := false for an interactive overlay and register mouse handlers with OnEvent("Click"/"DoubleClick"/"ContextMenu"/"MouseMove", cb) — the callback receives (overlay, x, y) in overlay-local units (verified on Windows; the Eto backing and native layer-shell surfaces (KWin/wlroots, via a client-side wl_pointer listener with synthesized DoubleClick) deliver events on Linux but are behavior-unverified; GNOME/Cinnamon compositor-drawn actors cannot receive input yet — see docs/design-wayland-overlay-input.md; macOS unverified). Update(source, x?, y?, w?, h?) atomically replaces the canvas image and geometry (SetImage was folded into it). Verified on Windows, Linux X11/Wayland and macOS. |
-| Parser and runtime execution | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Parser, preprocessing, and script execution runtime are implemented. |
-| ParseScript() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Parses script text and returns parse/compile result metadata. |
+| Parser and runtime execution | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Script execution is provided by Keysharp.Core. Source parsing is an optional Roslyn-free component; lowering and C# compilation are supplied by the optional compiler component. |
+| ParseScript() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Parses, lowers, and compilation-validates script text with the optional compiler component. Returns an empty string on success or formatted errors on failure. |
 | Pause() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Pause function pauses the script's current thread or sets the pause state of the underlying thread. |
 | Persistent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Persistent function prevents the script from exiting automatically when its last thread completes, allowing it to stay running in an idle state. |
 | PixelGetColor() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Returns the pixel value at the specified coordinate as a hexadecimal string like 0x010203. Differs because the mode parameter is not supported because it is not needed. |
@@ -896,7 +897,7 @@ Status legend:
 | RTrim() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Trims characters from the beginning of a string. |
 | Run() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Run and RunWait functions run an external program. RunWait will wait until the program finishes before continuing. |
 | RunAs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Specifies a set of user credentials to use for all subsequent uses of Run and RunWait. |
-| RunScript() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Executes script source text/file in a script engine context. |
+| RunScript() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Executes script source text/file in a script engine context. Requires the optional compiler component at runtime; compiled artifacts detect this call and include the component unless it is explicitly excluded. |
 | RunWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Run and RunWait functions run an external program. RunWait will wait until the program finishes before continuing. |
 | Screen capture and pixel/image functions | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Pixel/image search and screen capture depend on platform-specific backends. |
 | Script-owned window management | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Creating and driving the script's own GUI windows. Built on WinForms (Windows) and Eto (Linux/macOS); the object model, events, controls, menus, ListView and TreeView all behave the same. Remaining differences: the ActiveX and Custom control types are Win32-only, ListView supports only the Report view off Windows, raw Win32 style options are ignored, per-monitor DPI re-layout is Windows-only, and a client cannot position its own window on Wayland without a compositor backend. |

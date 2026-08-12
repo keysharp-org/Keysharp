@@ -36,8 +36,11 @@ namespace Keysharp.Internals.Scripting
 		internal string[] ScriptArgs = [];
 		internal string[] KeysharpArgs = [];
 		internal string[] Defines = [];   // --define:NAME symbols, handed to the compilation this command performs
+		internal string[] IncludeComponents = [];
+		internal string[] ExcludeComponents = [];
 		internal bool FromStdin;
 		internal bool Validate;
+		internal bool SyntaxOnly;
 		internal bool Transpile;
 		internal bool MinimalExe;
 
@@ -63,8 +66,6 @@ namespace Keysharp.Internals.Scripting
 	/// </summary>
 	internal class Runner
 	{
-		private static readonly CompilerHelper ch = new ();
-
 		internal static CliCommand Parse(string[] args)
 		{
 			var asm = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
@@ -86,9 +87,12 @@ namespace Keysharp.Internals.Scripting
 			var keysharpArgs = System.Array.Empty<string>();
 			var fromstdin = false;
 			var validate = false;
+			var syntaxOnly = false;
 			var compileAsm = false;
 			var compileDestPath = "";
 			var defines = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			var includeComponents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			var excludeComponents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
 			for (var i = 0; i < args.Length; i++)
 			{
@@ -153,6 +157,12 @@ namespace Keysharp.Internals.Scripting
 						validate = true;
 						break;
 
+					case "validate-syntax":
+					case "syntax-only":
+					case "parse-only":
+						syntaxOnly = true;
+						break;
+
 					case "about":
 						return CliCommand.Simple(CliCommandKind.About, asm, exeDir);
 
@@ -163,6 +173,40 @@ namespace Keysharp.Internals.Scripting
 
 					case "transpile":
 						transpile = true;
+						break;
+
+					case "with-parser":
+						_ = includeComponents.Add("parser");
+						break;
+
+					case "with-compiler":
+						_ = includeComponents.Add("compiler");
+						break;
+
+					case "with-component":
+						if (i + 1 >= args.Length || TryGetSwitch(args[i + 1], out _))
+							return CliCommand.Error("--with-component requires parser or compiler.");
+						var componentName = args[++i].ToLowerInvariant();
+						if (componentName is not ("parser" or "compiler"))
+							return CliCommand.Error("--with-component supports parser or compiler.");
+						_ = includeComponents.Add(componentName);
+						break;
+
+					case "without-parser":
+						_ = excludeComponents.Add("parser");
+						break;
+
+					case "without-compiler":
+						_ = excludeComponents.Add("compiler");
+						break;
+
+					case "without-component":
+						if (i + 1 >= args.Length || TryGetSwitch(args[i + 1], out _))
+							return CliCommand.Error("--without-component requires parser or compiler.");
+						var excludedComponentName = args[++i].ToLowerInvariant();
+						if (excludedComponentName is not ("parser" or "compiler"))
+							return CliCommand.Error("--without-component supports parser or compiler.");
+						_ = excludeComponents.Add(excludedComponentName);
 						break;
 
 					case "compile":
@@ -336,6 +380,12 @@ namespace Keysharp.Internals.Scripting
 			if (!compileAsm && !compileExe && compileDestPath.Length != 0)
 				return CliCommand.Error("--dest is only valid with --compile.");
 
+			if (syntaxOnly && (compileAsm || compileExe || transpile || validate))
+				return CliCommand.Error("--validate-syntax cannot be combined with --compile, --transpile, or --validate.");
+
+			if (includeComponents.Overlaps(excludeComponents))
+				return CliCommand.Error("A scripting component cannot be both included and excluded.");
+
 			var (nameNoExt, scriptDir, outPath) = GetScriptOutputPaths(scriptName, fromstdin);
 
 			// Only the kinds that COMPILE carry the symbols; RunAssembly above deliberately does not, since a
@@ -353,8 +403,11 @@ namespace Keysharp.Internals.Scripting
 				ScriptArgs = scriptArgs,
 				KeysharpArgs = keysharpArgs,
 				Defines = [.. defines],
+				IncludeComponents = [.. includeComponents],
+				ExcludeComponents = [.. excludeComponents],
 				FromStdin = fromstdin,
 				Validate = validate,
+				SyntaxOnly = syntaxOnly,
 				Transpile = transpile,
 				MinimalExe = compileMinimalExe,
 			};
@@ -384,7 +437,7 @@ namespace Keysharp.Internals.Scripting
 					case CliCommandKind.RunAssembly:
 						// A precompiled assembly run from a file (or "*" from stdin): its own path is the running script,
 						// so A_ScriptFullPath/A_ScriptDir reflect where the .cks/.dll actually is, not where it was built.
-						CompilerHelper.runScriptPath = command.ScriptName;
+						ScriptExecutionState.SourcePath = command.ScriptName;
 						runtimeEntryPoint = LoadAssemblyEntryPoint(command);
 						runtimeEntryArgs = [command.ScriptArgs];
 						goto InvokeRuntimeEntryPoint;
@@ -419,46 +472,43 @@ namespace Keysharp.Internals.Scripting
 
 		internal static int Run(string[] args) => Execute(Parse(args));
 
-		/// <summary>
-		/// Deploys a compiled script's packages into its private package/version/asset hierarchy. Returns an error
-		/// message, or null on success (including when the script declares no packages).
-		/// </summary>
-		internal static string CopyPackageAssemblies(ScriptCompilationResult compilation, string destDir)
-		{
-			if (compilation?.Packages == null || string.IsNullOrEmpty(destDir))
-				return null;
-
-			return compilation.Packages.CopyTo(destDir);
-		}
-
-		/// <summary>Deploys providers used by imperative package calls beside a full standalone executable.</summary>
-		internal static string CopyRequiredProviders(ScriptCompilationResult compilation, string destDir)
-		{
-			if (compilation?.RequiredProviders is not { Count: > 0 } || string.IsNullOrEmpty(destDir))
-				return null;
-
-			if (!CompiledPackageProviderManifest.TryBuild(compilation.RequiredProviders, out var manifest, out var failure))
-				return failure;
-
-			return manifest.CopyTo(destDir);
-		}
-
 		private static int CompileAndMaybeRun(CliCommand command)
 		{
+			if (command.SyntaxOnly)
+				return ValidateSyntax(command);
+
 			// Tell the (about-to-run) compiled assembly where it is actually running from: the script file's full
 			// path, or null for stdin so the compiled "*" marker stands. Drives A_ScriptFullPath/A_ScriptDir.
-			CompilerHelper.runScriptPath = command.FromStdin ? null : command.ScriptName;
+			ScriptExecutionState.SourcePath = command.FromStdin ? null : command.ScriptName;
 
 			using var script = new Script();
 			script.ValidateThenExit = command.Validate;
 			script.ScriptArgs = command.ScriptArgs;
 			script.KeysharpArgs = command.KeysharpArgs;
 			// Validation reports unrestored packages; runs and builds may fetch them.
-			var (arr, result, compilation) = ch.CompileCodeToByteArray(command.ScriptName, command.NameNoExt, command.ExeDir, false, command.Transpile, command.Kind == CliCommandKind.CompileAsm, command.Defines,
-														  allowPackageRestore: !command.Validate);
+			if (!ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var componentFailure))
+				return Message(componentFailure, true);
+
+			var compilation = compiler.Compile(new Keysharp.Components.Scripting.ScriptCompileRequest
+			{
+				SourceText = command.FromStdin ? command.ScriptName : null,
+				ScriptPath = command.FromStdin ? null : command.ScriptName,
+				CompilationName = command.NameNoExt,
+				RuntimeDirectory = command.ExeDir,
+				Defines = command.Defines,
+				AdditionalComponents = command.IncludeComponents,
+				ExcludedComponents = command.ExcludeComponents,
+				Output = command.Kind == CliCommandKind.CompileAsm
+					? Keysharp.Components.Scripting.ScriptCompilationOutput.Assembly
+					: Keysharp.Components.Scripting.ScriptCompilationOutput.InMemory,
+				EmitGeneratedCode = command.Transpile,
+				AllowPackageRestore = !command.Validate,
+			});
+			var arr = compilation.AssemblyBytes;
+			var result = compilation.Success ? compilation.GeneratedCode : compilation.ErrorText;
 			// Failed-compilation text already includes its warnings.
-			if (arr != null && !string.IsNullOrEmpty(compilation?.Warnings))
-				Console.Error.WriteLine(compilation.Warnings);
+			if (arr != null && !string.IsNullOrEmpty(compilation.WarningText))
+				Console.Error.WriteLine(compilation.WarningText);
 
 			if (command.Transpile)
 			{
@@ -475,7 +525,7 @@ namespace Keysharp.Internals.Scripting
 				}
 
 				// Hoisted usings make the inline tree invalid if appended to the lowered source.
-				if (compilation?.InlineCode is { Length: > 0 } inline)
+				if (compilation.InlineCode is { Length: > 0 } inline)
 				{
 					var inlinePath = $"{command.OutPath}.inline.cs";
 
@@ -497,6 +547,8 @@ namespace Keysharp.Internals.Scripting
 			if (command.Kind == CliCommandKind.CompileAsm)
 			{
 				var compileAsmPath = ResolveCompileAsmOutput(command.DestPath, command.ScriptDir, command.NameNoExt);
+				if (compileAsmPath == "*" && compilation.RequiredComponents.Count != 0)
+					return Message("--dest * cannot emit an assembly which requires sidecar scripting components. Write it to a file or exclude those components.", true);
 
 				try
 				{
@@ -508,7 +560,8 @@ namespace Keysharp.Internals.Scripting
 					return Message($"Writing assembly to {compileAsmPath} failed: {writeex.Message}", true);
 				}
 
-				if (compileAsmPath != "*" && CopyPackageAssemblies(compilation, Path.GetDirectoryName(Path.GetFullPath(compileAsmPath))) is { } copyErr)
+				if (compileAsmPath != "*" && compiler.DeploySupportFiles(compilation,
+						Path.GetDirectoryName(Path.GetFullPath(compileAsmPath))) is { } copyErr)
 					return Message(copyErr, true);
 
 				return 0;
@@ -517,21 +570,48 @@ namespace Keysharp.Internals.Scripting
 			if (command.Transpile)
 				return 0;
 
-			CompilerHelper.compiledasm = Assembly.Load(arr);
+			ScriptExecutionState.Assembly = Assembly.Load(arr);
 
 			if (command.Validate)
 				return 0;
 
-			if (CompilerHelper.compiledasm == null)
+			if (ScriptExecutionState.Assembly == null)
 				throw new Exception("Compilation failed.");
 
-			var program = CompilerHelper.compiledasm.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
+			var program = ScriptExecutionState.Assembly.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
 			var main = program.GetMethod("Main");
 			script.Dispose();
 #if DEBUG
 			Ks.OutputDebugLine("Running compiled code.");
 #endif
 			return main.Invoke(null, [command.ScriptArgs]).Ai();
+		}
+
+		private static int ValidateSyntax(CliCommand command)
+		{
+			if (!ScriptingComponentRegistry.TryGetSyntaxValidator(out var validator, out var componentFailure))
+				return Message(componentFailure, true);
+
+			var source = command.FromStdin ? command.ScriptName : File.ReadAllText(command.ScriptName);
+			var result = validator.ValidateSyntax(new Keysharp.Components.Scripting.ScriptSyntaxValidationRequest
+			{
+				SourceText = source,
+				ScriptPath = command.FromStdin ? null : command.ScriptName,
+				IncludeDirectory = command.ScriptDir,
+				Defines = command.Defines,
+			});
+
+			if (result.Success)
+				return 0;
+
+			var text = string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic =>
+			{
+				var location = diagnostic.FilePath;
+				if (diagnostic.Line > 0)
+					location += $"{(location.Length > 0 ? ":" : "")}{diagnostic.Line}:{diagnostic.Column}";
+				return location.Length > 0 ? $"{location}: {diagnostic.Message}" : diagnostic.Message;
+			}));
+			return Message(text, true);
 		}
 
 		private static MethodInfo LoadAssemblyEntryPoint(CliCommand command)
@@ -597,6 +677,12 @@ namespace Keysharp.Internals.Scripting
 			  --dest <path>           Output file or directory for --compile ("*" writes the asm to stdout).
 			  --transpile             Write the generated C# source next to the script (.cs).
 			  --validate              Parse and compile the script without running it.
+			  --validate-syntax       Parse only, without loading the compiler or Roslyn.
+			  --with-parser           Include the parser component in a compiled artifact.
+			  --with-compiler         Include the compiler component and Roslyn.
+			  --with-component <name> Include parser or compiler (generic form of the two options above).
+			  --without-compiler      Omit an automatically detected compiler for capability-gated code.
+			  --without-component <n> Omit parser or compiler (generic form; also --without-parser).
 
 			Compile daemon:
 			  --daemon                Start the background compile server (speeds up startup).
@@ -816,7 +902,7 @@ namespace Keysharp.Internals.Scripting
 			{
 				try
 				{
-					if (ch.ReportCompilerErrors(text))
+					if (ReportCompilerErrors(text))
 						return RestartCurrentProcess();
 				}
 				catch (Exception ex)
@@ -840,6 +926,39 @@ namespace Keysharp.Internals.Scripting
 			}
 
 			return error ? 1 : 0;
+		}
+
+		private static bool ReportCompilerErrors(string text)
+		{
+			if (Env.FindCommandLineArg("errorstdout") != null)
+			{
+				Console.Error.WriteLine(text);
+				return false;
+			}
+
+			var path = Script.TheScript?.scriptPath;
+			var fileToEdit = ScriptEditor.CanEditFile(path) ? path : null;
+#if WINDOWS
+			return ErrorDialog.ShowFatal(text, fileToEdit) == ErrorDialog.ErrorDialogResult.Reload;
+#else
+			if (Script.IsUiInitializationBlocked || Script.IsHeadless || Script.IsTestHost)
+			{
+				Console.Error.WriteLine(text);
+				return false;
+			}
+
+			try
+			{
+				if (Application.Instance == null)
+					_ = new Application();
+				return ErrorDialog.ShowFatal(text, fileToEdit) == ErrorDialog.ErrorDialogResult.Reload;
+			}
+			catch
+			{
+				Console.Error.WriteLine(text);
+				return false;
+			}
+#endif
 		}
 
 		// Relaunches this process with the same arguments. Used when the user clicks "Reload" on a

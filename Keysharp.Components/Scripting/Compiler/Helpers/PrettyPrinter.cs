@@ -3,7 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace Keysharp.Parsing
+namespace Keysharp.Compilation
 {
 	internal class PrettyPrinter : CSharpSyntaxWalker
 	{

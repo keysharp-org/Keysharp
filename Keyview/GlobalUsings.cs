@@ -1,5 +1,7 @@
 global using global::Keysharp.Builtins;
-global using global::Keysharp.Parsing;
+global using global::Keysharp.Components.Scripting;
+global using global::Keysharp.Internals.Scripting;
+global using global::Keysharp.Language;
 global using global::Keysharp.Runtime;
 global using global::System;
 global using global::System.Collections.Generic;

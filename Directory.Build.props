@@ -47,9 +47,14 @@
   </PropertyGroup>
 
   <!-- Projects whose build output lands in a release package. Deliberately a wider set than
-       IsKeysharpShippingProject (which marks the two RID-specific apphosts): Keysharp.Core is a library, so
-       it must not acquire RuntimeIdentifiers, but its binaries are packaged and so its payload matters. -->
-  <PropertyGroup Condition="'$(IsKeysharpShippingProject)' == 'true' OR '$(MSBuildProjectName)' == 'Keysharp.Core'">
+       IsKeysharpShippingProject (which marks the two RID-specific apphosts): the runtime and contract
+       libraries must not acquire RuntimeIdentifiers, but their packaged payload still needs release settings. -->
+  <PropertyGroup Condition="'$(IsKeysharpShippingProject)' == 'true'
+                            OR '$(MSBuildProjectName)' == 'Keysharp.Core'
+                            OR '$(MSBuildProjectName)' == 'Keysharp.Components.Packages'
+                            OR '$(MSBuildProjectName)' == 'Keysharp.Components.Scripting'
+                            OR '$(MSBuildProjectName)' == 'Keysharp.Components.Scripting.Parser'
+                            OR '$(MSBuildProjectName)' == 'Keysharp.Components.Scripting.Compiler'">
     <IsKeysharpPackagedProject>true</IsKeysharpPackagedProject>
   </PropertyGroup>
 

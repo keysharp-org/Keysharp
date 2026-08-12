@@ -52,5 +52,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
+	<ProjectReference Include="..\Keysharp.Components\Scripting\Compiler\Keysharp.Components.Scripting.Compiler.csproj" />
   </ItemGroup>
 </Project>

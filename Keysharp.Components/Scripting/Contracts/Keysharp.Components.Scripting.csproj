@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+		<TargetFramework>net10.0-windows</TargetFramework>
+	</PropertyGroup>
+	<PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+		<TargetFramework>net10.0</TargetFramework>
+	</PropertyGroup>
+	<PropertyGroup>
+		<AssemblyName>Keysharp.Components.Scripting</AssemblyName>
+		<RootNamespace>Keysharp.Components.Scripting</RootNamespace>
+		<IsPackable>false</IsPackable>
+		<IsPublishable>false</IsPublishable>
+	</PropertyGroup>
+</Project>

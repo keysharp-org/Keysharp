@@ -582,6 +582,23 @@ namespace Keysharp.Builtins
 
 	public partial class Ks
 	{
+		/// <summary>Returns whether an optional scripting capability is installed or embedded.</summary>
+		public static object ComponentAvailable(object capability)
+		{
+			var name = capability.As().Replace("-", "", StringComparison.Ordinal)
+				.Replace("_", "", StringComparison.Ordinal).ToUpperInvariant();
+			var parsed = name switch
+			{
+				"PARSER" or "PARSING" => Keysharp.Components.Scripting.ScriptingCapability.SyntaxValidation,
+				"COMPILER" or "COMPILATION" => Keysharp.Components.Scripting.ScriptingCapability.Compilation,
+				_ => Keysharp.Components.Scripting.ScriptingCapability.None,
+			};
+
+			return parsed == Keysharp.Components.Scripting.ScriptingCapability.None
+				? Errors.ValueErrorOccurred($"Unknown scripting component capability: {capability}")
+				: ScriptingComponentRegistry.IsAvailable(parsed);
+		}
+
 		/// <summary>
 		/// RunScript's Options as individual command-line arguments: an Array element by element, or a string split on
 		/// whitespace with double quotes grouping, so `--include "My include.ahk"` stays one argument. Written out
@@ -663,7 +680,8 @@ namespace Keysharp.Builtins
 				return Errors.ValueErrorOccurred(badDefine);
 
 			string result = null;
-			byte[] compiledBytes;
+			byte[] compiledBytes = null;
+			string compiledPath = null;
 			var ext = Path.GetExtension(script);
 
 			// A precompiled assembly file (.cks/.dll) is run as-is; only source needs compiling. This lets
@@ -673,23 +691,35 @@ namespace Keysharp.Builtins
 				if (defineNames is { Count: > 0 })
 					return Errors.ValueErrorOccurred("--define cannot be applied to an already-compiled .cks/.dll script; its conditionals were resolved when it was built.");
 
-				compiledBytes = File.ReadAllBytes(script);
+				compiledPath = Path.GetFullPath(script);
 			}
 			else
 			{
-				var ch = new CompilerHelper();
-				(compiledBytes, result, var compilation) = ch.CompileCodeToByteArray(script, nameVal, defines: defineNames);
+				if (!ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var componentFailure))
+					return Errors.ErrorOccurred(componentFailure);
 
-				if (compiledBytes == null)
+				var compilation = compiler.Compile(new Keysharp.Components.Scripting.ScriptCompileRequest
+				{
+					SourceText = File.Exists(script) ? null : script,
+					ScriptPath = File.Exists(script) ? script : null,
+					CompilationName = nameVal,
+					RuntimeDirectory = Path.GetDirectoryName(Ks.A_KeysharpCorePath),
+					Defines = defineNames ?? [],
+					Output = Keysharp.Components.Scripting.ScriptCompilationOutput.InMemory,
+				});
+				compiledBytes = compilation.AssemblyBytes;
+				result = compilation.ErrorText;
+
+				if (!compilation.Success)
 					return Errors.ErrorOccurred(result);
 
 				// Non-fatal #Warning text from the nested compile; the caller's console is the only place to show it.
-				if (!string.IsNullOrEmpty(compilation?.Warnings))
-					Console.Error.WriteLine(compilation.Warnings);
+				if (!string.IsNullOrEmpty(compilation.WarningText))
+					Console.Error.WriteLine(compilation.WarningText);
 			}
 
-			// Relaunch a Keysharp host that understands "--script --assembly *" (it reads the assembly
-			// bytes piped below). Environment.ProcessPath is only our app when published; under the dotnet
+			// Relaunch a Keysharp host that understands "--script --assembly" with either an assembly path
+			// or bytes piped as "*". Environment.ProcessPath is only our app when published; under the dotnet
 			// host (e.g. "dotnet Keysharp.dll" while debugging from an IDE) it is "dotnet", and handing
 			// Keysharp's args to dotnet makes it exit without reading stdin -- so the pipe write below
 			// would time out. Prefer the native apphost that sits beside the entry assembly; fall back to
@@ -706,7 +736,7 @@ namespace Keysharp.Builtins
 			if (forwardedArgs != null)
 				launcherArgs.AddRange(forwardedArgs);
 
-			launcherArgs.AddRange(["--script", "--assembly", "*"]);
+			launcherArgs.AddRange(["--script", "--assembly", compiledPath ?? "*"]);
 
 			if (string.IsNullOrEmpty(launcher))
 			{
@@ -737,7 +767,7 @@ namespace Keysharp.Builtins
 				StartInfo = new ProcessStartInfo
 				{
 					FileName = launcher,
-					RedirectStandardInput = true,
+					RedirectStandardInput = compiledPath == null,
 					RedirectStandardOutput = true,
 					UseShellExecute = false,
 					CreateNoWindow = true
@@ -752,12 +782,11 @@ namespace Keysharp.Builtins
 			scriptProcess.Exited += (object sender, EventArgs e) => cb?.Call(info);
 			_ = scriptProcess.Start();
 
-			// Write the raw assembly bytes and close stdin; the child ("--assembly *") reads to EOF.
-			// This must match the framing the launcher expects (Program.Main's "--assembly *" loader and
-			// Keyview): a length prefix here gets loaded as part of the assembly and fails with "Bad IL format",
-			// and leaving stdin open would hang the child's read-to-EOF.
-			using (var stdin = scriptProcess.StandardInput.BaseStream)
+			// Source compiled in this process is still transferred as raw assembly bytes. A precompiled file is
+			// passed by path so its script identity and adjacent optional-component search root survive the launch.
+			if (compiledPath == null)
 			{
+				using var stdin = scriptProcess.StandardInput.BaseStream;
 				stdin.Write(compiledBytes, 0, compiledBytes.Length);
 				stdin.Flush();
 			}
@@ -770,7 +799,7 @@ namespace Keysharp.Builtins
 
 		///
 		/// <summary>
-		/// Parses the provided script source or filename and validates it by invoking the parser.
+		/// Parses, lowers, and validates the provided script source or filename with the compiler component.
 		/// On success this method returns <c>""</c>. On failure it returns a string containing
 		/// the formatted compiler errors.
 		/// </summary>
@@ -781,41 +810,25 @@ namespace Keysharp.Builtins
 		/// (and warnings if present) is returned.
 		/// </returns>
 		/// <exception cref="Exception">
-		/// Any unexpected exception thrown by the underlying <see cref="CompilerHelper"/> APIs will propagate to the caller.
+		/// Any unexpected exception thrown by the installed compiler component will propagate to the caller.
 		/// </exception>
 		public static object ParseScript(object code)
 		{
-			var ch = new CompilerHelper();
-			// Validation reports unrestored packages instead of fetching them.
-			var compilation = ch.CreateCompilationUnitFromFile(code.As(), allowPackageRestore: false);
-			var errs = compilation.Errors;
+			if (!ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var failure))
+				return failure;
 
-			if (errs.HasErrors || compilation.Unit == null)
+			var source = code.As();
+			var isFile = File.Exists(source);
+			var result = compiler.Compile(new Keysharp.Components.Scripting.ScriptCompileRequest
 			{
-				var (errors, warnings) = CompilerHelper.GetCompilerErrors(errs);
-
-				var sb = new StringBuilder(1024);
-
-				if (!string.IsNullOrEmpty(errors))
-					_ = sb.Append(errors);
-
-				return sb.ToString();
-			}
-
-			// Inline C# still needs binding to catch unknown and ambiguous names.
-			if (compilation.InlineCode is { Length: > 0 })
-			{
-				var exeDir = Path.GetFullPath(Path.GetDirectoryName(Ks.A_KeysharpCorePath));
-				var (diags, compileexc) = ch.DiagnoseFromTree(compilation, "*", exeDir);
-
-				if (compileexc != null)
-					return $"Error compiling C# code: {compileexc.Message}";
-
-				if (diags.Any(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error))
-					return CompilerHelper.HandleCompilerErrors(diags, "*", "Compiling C# code");
-			}
-
-			return DefaultObject;
+				SourceText = isFile ? null : source,
+				ScriptPath = isFile ? source : null,
+				CompilationName = isFile ? Path.GetFileNameWithoutExtension(source) : "ParseScript",
+				RuntimeDirectory = Path.GetDirectoryName(Ks.A_KeysharpCorePath),
+				Output = Keysharp.Components.Scripting.ScriptCompilationOutput.InMemory,
+				AllowPackageRestore = false,
+			});
+			return result.Success ? "" : result.ErrorText;
 		}
 	}
 }

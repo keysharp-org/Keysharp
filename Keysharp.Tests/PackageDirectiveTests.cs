@@ -2,6 +2,7 @@ using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using StringAssert = NUnit.Framework.Legacy.StringAssert;
 using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
 using KP = Keysharp.Parsing.Syntax;
+using KC = Keysharp.Compilation.Syntax;
 
 namespace Keysharp.Tests
 {
@@ -25,7 +26,7 @@ namespace Keysharp.Tests
 		{
 			var (prog, parseDiags) = KP.Parser.ParseWithDiagnostics(src);
 			Assert.IsEmpty(parseDiags, "unexpected parse diagnostics: " + string.Join("; ", parseDiags));
-			var lowerer = new KP.Lowerer();
+			var lowerer = new KC.Lowerer();
 			var unit = lowerer.Build(prog, "nugettest");
 			lastPackages = lowerer.Packages;
 			return (unit?.ToFullString() ?? "", lowerer.Diagnostics);
@@ -63,7 +64,7 @@ namespace Keysharp.Tests
 			{
 				var (prog, parseDiags) = KP.Parser.ParseWithDiagnostics(source);
 				Assert.IsEmpty(parseDiags, "unexpected parse diagnostics: " + string.Join("; ", parseDiags));
-				var lowerer = new KP.Lowerer();
+				var lowerer = new KC.Lowerer();
 				_ = lowerer.Build(prog, "providertest");
 				return lowerer.RequiredProviders;
 			}
@@ -1145,13 +1146,13 @@ namespace Keysharp.Tests
 				Assert.IsNotNull(arr, code);
 
 				var outDir = Path.Combine(dir, "out");
-				Assert.IsNull(Keysharp.Internals.Scripting.Runner.CopyPackageAssemblies(compilation, outDir));
+				Assert.IsNull(compilation.Packages.CopyTo(outDir));
 				// Assets deploy under .keysharp/packages/<id>/, so they can never collide with the host's own
 				// files beside the artifact — and repeating the copy after a version change overwrites in place.
 				var deployed = Directory.GetFiles(Path.Combine(outDir, ".keysharp", "packages"), "Newtonsoft.Json.dll", SearchOption.AllDirectories);
 				Assert.IsNotEmpty(deployed, "the package assembly must deploy under .keysharp/packages");
 				File.WriteAllText(deployed[0], "stale");
-				Assert.IsNull(Keysharp.Internals.Scripting.Runner.CopyPackageAssemblies(compilation, outDir));
+				Assert.IsNull(compilation.Packages.CopyTo(outDir));
 				Assert.Greater(new FileInfo(deployed[0]).Length, 100, "a re-copy must replace a stale file, not keep it");
 			}
 			finally

@@ -29,6 +29,14 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Contracts", "Keysharp.Compo
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NuGet", "Keysharp.Components\Packages\NuGet\Keysharp.Components.Packages.NuGet.csproj", "{559D152E-12E8-4C38-8B9D-7F688A432038}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripting", "Scripting", "{A1111111-47A2-43AB-9C2B-10A8BFBED001}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Contracts", "Keysharp.Components\Scripting\Contracts\Keysharp.Components.Scripting.csproj", "{A2111111-47A2-43AB-9C2B-10A8BFBED002}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Keysharp.Components.Scripting.Parser", "Keysharp.Components\Scripting\Parser\Keysharp.Components.Scripting.Parser.csproj", "{A3111111-47A2-43AB-9C2B-10A8BFBED003}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Keysharp.Components.Scripting.Compiler", "Keysharp.Components\Scripting\Compiler\Keysharp.Components.Scripting.Compiler.csproj", "{A4111111-47A2-43AB-9C2B-10A8BFBED004}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -67,6 +75,18 @@ Global
 		{559D152E-12E8-4C38-8B9D-7F688A432038}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{559D152E-12E8-4C38-8B9D-7F688A432038}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{559D152E-12E8-4C38-8B9D-7F688A432038}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A2111111-47A2-43AB-9C2B-10A8BFBED002}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A2111111-47A2-43AB-9C2B-10A8BFBED002}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A2111111-47A2-43AB-9C2B-10A8BFBED002}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A2111111-47A2-43AB-9C2B-10A8BFBED002}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A3111111-47A2-43AB-9C2B-10A8BFBED003}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A3111111-47A2-43AB-9C2B-10A8BFBED003}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A3111111-47A2-43AB-9C2B-10A8BFBED003}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3111111-47A2-43AB-9C2B-10A8BFBED003}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A4111111-47A2-43AB-9C2B-10A8BFBED004}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A4111111-47A2-43AB-9C2B-10A8BFBED004}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A4111111-47A2-43AB-9C2B-10A8BFBED004}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A4111111-47A2-43AB-9C2B-10A8BFBED004}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -75,6 +95,10 @@ Global
 		{CD9F35BD-D8EA-44B8-95A2-1D85AAE31452} = {9D8222A2-3C4E-4F3B-9D11-6EFA7F8A24C1}
 		{3946B872-E9AC-4496-B323-ED1DFF10CE93} = {CD9F35BD-D8EA-44B8-95A2-1D85AAE31452}
 		{559D152E-12E8-4C38-8B9D-7F688A432038} = {CD9F35BD-D8EA-44B8-95A2-1D85AAE31452}
+		{A1111111-47A2-43AB-9C2B-10A8BFBED001} = {9D8222A2-3C4E-4F3B-9D11-6EFA7F8A24C1}
+		{A2111111-47A2-43AB-9C2B-10A8BFBED002} = {A1111111-47A2-43AB-9C2B-10A8BFBED001}
+		{A3111111-47A2-43AB-9C2B-10A8BFBED003} = {A1111111-47A2-43AB-9C2B-10A8BFBED001}
+		{A4111111-47A2-43AB-9C2B-10A8BFBED004} = {A1111111-47A2-43AB-9C2B-10A8BFBED001}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {6A61810C-1FD3-4A5F-934A-63BAED841D22}

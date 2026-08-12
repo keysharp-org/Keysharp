@@ -723,7 +723,9 @@ namespace Keysharp.Builtins
 #if !DEBUG
 
 				//Ignore most of our internal functions
-				if ((fullName.StartsWith("Keysharp.Internals") || fullName.StartsWith("Keysharp.Runtime") || fullName.StartsWith("Keysharp.Parsing")) && method is MethodInfo mi && mi != null && !builtins.ContainsValue(mi))
+				if ((fullName.StartsWith("Keysharp.Internals") || fullName.StartsWith("Keysharp.Runtime")
+						|| fullName.StartsWith("Keysharp.Parsing") || fullName.StartsWith("Keysharp.Compilation"))
+						&& method is MethodInfo mi && mi != null && !builtins.ContainsValue(mi))
 					continue;
 
 #endif
@@ -899,14 +901,6 @@ namespace Keysharp.Builtins
 		/// <param name="message">The message describing the error.</param>
 		public ParseException(string message)
 			: this(message, 0, "") { }
-
-		/// <summary>
-		/// Initializes a new instance of the <see cref="ParseException"/> class.
-		/// </summary>
-		/// <param name="message">The message describing the error.</param>
-		/// <param name="codeLine">The <see cref="CodeLine"/> object describing the line the error occurred on.</param>
-		public ParseException(string message, CodeLine codeLine)
-			: this(message, codeLine.LineNumber, codeLine.Code, codeLine.FileName) { }
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="ParseException"/> class.

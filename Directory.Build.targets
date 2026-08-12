@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Keysharp' OR '$(MSBuildProjectName)' == 'Keyview'">
     <ShipsPackageProviders>true</ShipsPackageProviders>
+    <ShipsScriptingComponents>true</ShipsScriptingComponents>
   </PropertyGroup>
 
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) AND ('$(MSBuildProjectName)' == 'Keysharp' OR '$(MSBuildProjectName)' == 'Keyview' OR '$(MSBuildProjectName)' == 'Keysharp.OutputTest')">
@@ -15,6 +16,44 @@
              RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed">
       <Output TaskParameter="TargetOutputs" ItemName="_BundledPackageProviderPayload" />
     </MSBuild>
+  </Target>
+
+  <Target Name="GetBundledScriptingComponentPayload"
+          Condition="'$(ShipsScriptingComponents)' == 'true'">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)Keysharp.Components\Scripting\Compiler\Keysharp.Components.Scripting.Compiler.csproj"
+             Targets="GetScriptingComponentPayload"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework)"
+             RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed">
+      <Output TaskParameter="TargetOutputs" ItemName="_BundledScriptingComponentPayload" />
+    </MSBuild>
+    <MSBuild Projects="$(MSBuildThisFileDirectory)Keysharp.Components\Scripting\Parser\Keysharp.Components.Scripting.Parser.csproj"
+             Targets="GetScriptingComponentPayload"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework)"
+             RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed">
+      <Output TaskParameter="TargetOutputs" ItemName="_BundledScriptingComponentPayload" />
+    </MSBuild>
+  </Target>
+
+  <Target Name="CopyBundledScriptingComponentsToRidOutput"
+          AfterTargets="Build"
+          DependsOnTargets="GetBundledScriptingComponentPayload"
+          Condition="'$(ShipsScriptingComponents)' == 'true' AND '$(RuntimeIdentifier)' != ''">
+    <Copy SourceFiles="@(_BundledScriptingComponentPayload)"
+          DestinationFiles="@(_BundledScriptingComponentPayload->'$(TargetDir)%(ComponentRelativePath)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="IncludeBundledScriptingComponentsInPublish"
+          AfterTargets="ComputeFilesToPublish"
+          DependsOnTargets="GetBundledScriptingComponentPayload"
+          Condition="'$(ShipsScriptingComponents)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(_BundledScriptingComponentPayload)">
+        <RelativePath>%(_BundledScriptingComponentPayload.ComponentRelativePath)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
   </Target>
 
   <Target Name="CopyBundledPackageProvidersToRidOutput"

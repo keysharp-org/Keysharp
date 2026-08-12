@@ -10,7 +10,7 @@ using Keysharp.Builtins;
 using Keysharp.Internals.ExtensionMethods;
 using Keysharp.Internals.Scripting;
 using Keysharp.Internals.Strings;
-using Keysharp.Parsing;
+using Keysharp.Language;
 using Keysharp.Runtime;
 using Microsoft.NET.HostModel.AppHost;
 #if WINDOWS
@@ -32,8 +32,6 @@ namespace Keysharp.Main
 	/// </summary>
 	public static class Program
 	{
-		private static readonly CompilerHelper ch = new ();
-
 		internal static Version Version => Assembly.GetExecutingAssembly().GetName().Version;
 
 		[STAThread]
@@ -96,7 +94,7 @@ namespace Keysharp.Main
 
 						// The daemon compiled the source but this process runs it: point A_ScriptFullPath/A_ScriptDir at
 						// the source the user launched, not at a path baked in by the daemon.
-						CompilerHelper.runScriptPath = command.ScriptName;
+						ScriptExecutionState.SourcePath = command.ScriptName;
 						return RunCompiledBytes(daemonBytes, command.ScriptArgs);
 
 					case CompileDaemonStatus.CompileFailed:
@@ -175,17 +173,37 @@ namespace Keysharp.Main
 			// the compile; dispose it once the assembly bytes are produced.
 			byte[] arr;
 			string compileResult;
-			ScriptCompilationResult exeCompilation;
+			Keysharp.Components.Scripting.IScriptCompiler compiler;
+			Keysharp.Components.Scripting.IScriptCompilationResult exeCompilation;
 
 			using (var script = new Script())
-				(arr, compileResult, exeCompilation) = ch.CompileCodeToByteArray(r.ScriptName, namenoext, exeDir, r.MinimalExe, false, compileToFile: true, defines: r.Defines);
+			{
+				if (!ScriptingComponentRegistry.TryGetCompiler(out compiler, out var componentFailure))
+					return Runner.Message(componentFailure, true);
+
+				exeCompilation = compiler.Compile(new Keysharp.Components.Scripting.ScriptCompileRequest
+				{
+					SourceText = r.FromStdin ? r.ScriptName : null,
+					ScriptPath = r.FromStdin ? null : r.ScriptName,
+					CompilationName = namenoext,
+					RuntimeDirectory = exeDir,
+					Defines = r.Defines,
+					AdditionalComponents = r.IncludeComponents,
+					ExcludedComponents = r.ExcludeComponents,
+					Output = r.MinimalExe
+						? Keysharp.Components.Scripting.ScriptCompilationOutput.MinimalExecutable
+						: Keysharp.Components.Scripting.ScriptCompilationOutput.Executable,
+				});
+				arr = exeCompilation.AssemblyBytes;
+				compileResult = exeCompilation.Success ? exeCompilation.GeneratedCode : exeCompilation.ErrorText;
+			}
 
 			if (arr == null)
 				return Runner.Message(compileResult, true);
 
 			// #Warning from the compiled script; on the failure path above it is already inside compileResult.
-			if (!string.IsNullOrEmpty(exeCompilation?.Warnings))
-				Console.Error.WriteLine(exeCompilation.Warnings);
+			if (!string.IsNullOrEmpty(exeCompilation?.WarningText))
+				Console.Error.WriteLine(exeCompilation.WarningText);
 
 			var finalPath = "";
 
@@ -233,47 +251,8 @@ namespace Keysharp.Main
 					assemblyToCopyResorcesFrom: outputDllPath);
 #endif
 
-				if (string.Compare(exeDir, scriptdir, true) != 0)
-				{
-					var deps = r.MinimalExe ? ["Keysharp.Core.dll"]
-							   : CompilerHelper.requiredManagedDependencies
-							   .Concat(CompilerHelper.requiredNativeDependencies.Select(CompilerHelper.GetRidNativeDependencyPath));
-
-					//For a minimal exe, every managed/native dependency except Keysharp.Core is embedded into the
-					//script assembly (see CompilerHelper.CompileFromTree), so only Keysharp.Core.dll must be copied
-					//alongside; it loads the embedded assemblies and native libs at runtime. For a full exe, copy
-					//Keysharp.Core and the other dependencies from the install path to the script's folder. Without
-					//them, the compiled exe cannot be run in a standalone manner.
-					foreach (var dep in deps)
-					{
-						var depPath = CompilerHelper.requiredNativeDependencies.Contains(Path.GetFileName(dep), StringComparer.OrdinalIgnoreCase)
-									  ? CompilerHelper.ResolveAppNativeDependencyPath(exeDir, Path.GetFileName(dep))
-									  : Path.Combine(exeDir, dep);
-
-						if (File.Exists(depPath))
-						{
-							var destPath = Path.Combine(scriptdir, dep);
-							var destDir = Path.GetDirectoryName(destPath);
-
-							if (!string.IsNullOrEmpty(destDir))
-								_ = Directory.CreateDirectory(destDir);
-
-							File.Copy(depPath, destPath, true);
-						}
-					}
-				}
-
-				// Full artifacts deploy packages in a private package/version-scoped hierarchy. Minimal artifacts carry the
-				// same assets as resources and extract them at startup, so both forms remain portable without flattening
-				// package filenames into the host directory.
-				if (!r.MinimalExe)
-				{
-					if (Runner.CopyPackageAssemblies(exeCompilation, scriptdir) is { } pkgErr)
-						return Runner.Message(pkgErr, true);
-
-					if (Runner.CopyRequiredProviders(exeCompilation, scriptdir) is { } providerErr)
-						return Runner.Message(providerErr, true);
-				}
+				if (compiler.DeploySupportFiles(exeCompilation, scriptdir) is { } deploymentError)
+					return Runner.Message(deploymentError, true);
 			}
 			catch (Exception writeex)
 			{
@@ -303,8 +282,8 @@ namespace Keysharp.Main
 		{
 			try
 			{
-				CompilerHelper.compiledasm = Assembly.Load(arr);
-				var program = CompilerHelper.compiledasm.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
+				ScriptExecutionState.Assembly = Assembly.Load(arr);
+				var program = ScriptExecutionState.Assembly.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
 				var main = program.GetMethod("Main");
 #if DEBUG
 				Ks.OutputDebugLine("Running compiled code (daemon).");

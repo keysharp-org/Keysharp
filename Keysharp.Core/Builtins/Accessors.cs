@@ -578,7 +578,7 @@ namespace Keysharp.Builtins
 					or "dotnet" or "dotnet.exe")
 					return false;
 
-				if (CompilerHelper.compiledasm != null && string.IsNullOrEmpty(CompilerHelper.compiledasm.Location))
+				if (ScriptExecutionState.Assembly != null && string.IsNullOrEmpty(ScriptExecutionState.Assembly.Location))
 					return false;
 
 				return true;
@@ -1650,7 +1650,8 @@ namespace Keysharp.Builtins
 		/// Internal helper to get the executing assembly.
 		/// </summary>
 		/// <returns>If compiled, the entry assembly, else the executing assembly.</returns>
-		internal static Assembly GetAssembly() => CompilerHelper.compiledasm ?? Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
+		internal static Assembly GetAssembly() => Script.TheScript?.ProgramType?.Assembly ?? ScriptExecutionState.Assembly
+			?? Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
 
 		/// <summary>
 		/// Wrapper to get a string representation of the <see cref="CordModeType"/> enum because using

@@ -1,5 +1,5 @@
 using Keysharp.Builtins;
-namespace Keysharp.Parsing
+namespace Keysharp.Language
 {
 	[PublicHiddenFromUser]
 	public static class Keywords

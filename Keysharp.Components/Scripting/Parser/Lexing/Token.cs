@@ -21,7 +21,7 @@ namespace Keysharp.Parsing.Lexing
 		/// </summary>
 		public readonly bool LeadingWhitespace;
 
-		/// <summary>Source file this token came from (an <c>#include</c>d file); null for the main script. The
+		/// <summary>Source file this token came from; null when the caller did not supply a path. The
 		/// <see cref="Line"/>/<see cref="Column"/> are relative to that file, so diagnostics can be reported per file.</summary>
 		public readonly string File;
 

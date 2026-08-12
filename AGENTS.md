@@ -2,25 +2,25 @@
 
 ## Project overview
 
-Keysharp is a cross-platform C# implementation of AutoHotkey v2. AHK scripts (`.ahk`/`.ks`) are parsed by a hand-written lexer + recursive-descent parser into an AST, lowered to C# (Roslyn `SyntaxNode`s), compiled in-memory with Roslyn, and executed as a .NET assembly. The goal is full AHK v2 compatibility on Windows, with partial Linux and eventual macOS support.
+Keysharp is a cross-platform C# implementation of AutoHotkey v2. AHK scripts (`.ahk`/`.ks`) are parsed by a hand-written lexer + recursive-descent parser into an AST, lowered to C# (Roslyn `SyntaxNode`s), compiled in-memory with Roslyn, and executed as a .NET assembly. The parser and compiler are optional first-party deployment units, so compiled scripts can run with the runtime alone. The goal is full AHK v2 compatibility on Windows, with partial Linux and eventual macOS support.
 
 ## Solution structure
 
 ```
 Keysharp.sln
 ├── Keysharp/               # Entry-point executable (thin launcher)
-├── Keysharp.Core/          # All runtime, parsing, and built-in logic
+├── Keysharp.Core/          # Runtime and built-in logic; no parser or Roslyn dependency
 │   ├── Builtins/           # AHK built-in functions (Keyboard, GUI, Files, COM, …)
 │   ├── Internals/          # Platform services: hooks, threading, window, input
 │   │   ├── Input/Hooks/    # HookThread (4 k lines) — OS keyboard/mouse callbacks
 │   │   ├── Input/Keyboard/ # HotkeyDefinition, KeyboardMouseSender
 │   │   └── Threading/      # Threads, ScriptTimerManager, SlimStack, ThreadVariables
-│   ├── Parsing/            # Hand-written lexer/parser/lowerer + Roslyn compile
-│   │   ├── Lexing/         # Lexer, Token, TokenKind
-│   │   ├── Syntax/         # Parser, Ast, Lowerer (AST → C#), NameMangler
-│   │   └── CompilerHelper.cs  # Wraps the lowered unit in a CSharpCompilation
 │   └── Runtime/Script/     # Script singleton, Call helpers, event scheduler
 ├── Keysharp.Components/    # Independently deployable first-party components
+│   ├── Scripting/
+│   │   ├── Contracts/      # Small Roslyn-free component contract
+│   │   ├── Parser/         # Lexer/parser and syntax validation; no Roslyn
+│   │   └── Compiler/       # Lowerer and Roslyn compiler
 │   └── Packages/
 │       ├── Contracts/      # Keysharp.Components.Packages provider contract
 │       └── NuGet/          # In-process NuGet package-provider implementation
@@ -89,7 +89,7 @@ The test suite uses **NUnit 4** and is serialized (`LevelOfParallelism(1)`) beca
 ```bash
 # Run the curated subset (safe, no user-input required — matches CI)
 dotnet test Keysharp.Tests/Keysharp.Tests.csproj -c Debug --nologo \
-  --filter "Category=Assign|Category=BuiltInVars|Category=Class|Category=Collections|Category=Directives|Category=Flow|Category=Function|Category=Hotstring|Category=Math|Category=Misc|Category=Module|Category=Operator|Category=String|Category=Types|Category=FileAndDir|Category=Network|FullyQualifiedName~SchedulerTests|FullyQualifiedName~MessageFilterTests"
+  --filter "(Category=Assign|Category=BuiltInVars|Category=Class|Category=Collections|Category=Curated|Category=Directives|Category=Flow|Category=Function|Category=Hotstring|Category=Math|Category=Misc|Category=Module|Category=Operator|Category=Parser|Category=String|Category=Types|Category=FileAndDir|Category=Network|FullyQualifiedName~ClipboardTests.CfHtml|FullyQualifiedName~ClipboardTests.UriListParsing|FullyQualifiedName~ClipboardTests.OnChangeHook) & Category!=RequiresHook"
 
 # Run a specific category
 dotnet test Keysharp.Tests/Keysharp.Tests.csproj --filter "Category=Math"
@@ -102,18 +102,18 @@ dotnet test Keysharp.Tests/Keysharp.Tests.csproj --filter "FullyQualifiedName~Ma
 
 > **Important**: Do not run commands to build parts of the project and run tests at the same time.
 
-Test `.ahk` scripts live in `Keysharp.Tests/Code/`. Each test typically:
-1. Calls a C# built-in directly and checks the return value.
-2. Calls `TestScript("script-name", true/false)` which compiles and runs the matching `.ahk` file and checks for `PASS` in output.
+Test `.ahk` scripts live in `Keysharp.Tests/Code/`. Script-visible behavior is tested through `TestScript("script-name", true/false)`, which compiles and runs the matching `.ahk` file and checks for `PASS` in output. Direct C# tests are reserved for deterministic internal contracts that cannot safely be reached through a script and are marked `Category("Internal")`.
+
+See `Keysharp.Tests/TESTING.md` for the test-boundary, naming, and category conventions.
 
 `TestRunner.SetupBeforeEachTest` resets global state before each test. `CleanupAfterEachTest` disposes the `Script` object.
 
 ## Architecture: how a script runs
 
-1. `CompilerHelper.CreateCompilationUnitFromFile()` (in `Keysharp.Core/Parsing/CompilerHelper.cs`) drives the front end.
-2. `Lexing.Lexer` tokenizes the `.ahk` source; `Syntax.Parser.ParseWithDiagnostics()` builds the strongly-typed AST (`ProgramNode`).
-3. `Syntax.Lowerer.Build()` walks the AST and emits a Roslyn `CompilationUnitSyntax` (the generated C#).
-4. `CompilerHelper.Compile()` wraps the syntax tree in a `CSharpCompilation` and emits a `MemoryStream`.
+1. Core discovers the fixed first-party `parser` or `compiler` unit below `components/scripting` when its capability is requested.
+2. `Lexing.Lexer` in `Keysharp.Components.Scripting.Parser` tokenizes the source; `Syntax.Parser.ParseWithDiagnostics()` builds the strongly-typed AST (`ProgramNode`).
+3. `Syntax.Lowerer.Build()` in `Keysharp.Components.Scripting.Compiler` walks the AST and emits a Roslyn `CompilationUnitSyntax` (the generated C#).
+4. `CompilerHelper.Compile()` in the compiler unit wraps the syntax tree in a `CSharpCompilation` and emits a `MemoryStream`.
 5. The compiled assembly is loaded and its entry point is invoked.
 6. At runtime, AHK built-ins dispatch to the static methods in `Keysharp.Core/Builtins/`.
 
@@ -159,8 +159,8 @@ If KeysharpDocs is not present alongside this repo, still do steps 1–3 and not
 | Task | Start here |
 |------|-----------|
 | Add/fix a built-in function | `Keysharp.Core/Builtins/<Category>.cs` |
-| Fix a parse/syntax error | `Keysharp.Core/Parsing/Lexing/Lexer.cs`, `Parsing/Syntax/Parser.cs` |
-| Fix code generation (lowering) | `Keysharp.Core/Parsing/Syntax/Lowerer.cs` |
+| Fix a parse/syntax error | `Keysharp.Components/Scripting/Parser/Lexing/Lexer.cs`, `Parser/Syntax/Parser.cs` |
+| Fix code generation (lowering) | `Keysharp.Components/Scripting/Compiler/Syntax/Lowerer.cs` |
 | Fix hotkey/hook behavior | `Internals/Input/Hooks/HookThread.cs`, `Internals/Input/Keyboard/HotkeyDefinition.cs` |
 | Fix timer behavior | `Internals/Threading/ScriptTimerManager.cs` |
 | Fix GUI | `Builtins/Gui/Gui.cs`, platform-specific `Windows/` or `Unix/` subfolder |

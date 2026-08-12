@@ -3,8 +3,9 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Keysharp.Parsing.Syntax;
 
-namespace Keysharp.Parsing
+namespace Keysharp.Compilation
 {
 	[PublicHiddenFromUser]
 	public class CompilerHelper
@@ -16,28 +17,10 @@ namespace Keysharp.Parsing
 		//CodeMemberMethod entryPoint;
 		//System.Web.Configuration.WebConfigurationManager cfg = new System.Web.Configuration.WebConfigurationManager();
 
-		/// <summary>
-		/// Needed as a static here so it can be accessed in other areas of Keysharp.Builtins, such as in Accessors,
-		/// to determine if the executing code is a standalone executable, or a script that was compiled and ran through
-		/// the main program.
-		/// </summary>
-		public static Assembly compiledasm;
-
-		// Pipeline state belongs to ScriptCompilationResult; these statics describe the running script.
-
-		public static byte[] compiledBytes;
-
-		/// <summary>
-		/// The full path of the script the launcher is actually running, set before a compiled assembly's Main
-		/// executes so A_ScriptFullPath/A_ScriptDir/A_ScriptName reflect the runtime location rather than a
-		/// baked-in compile-time path (consumed by <see cref="Keysharp.Runtime.Script.SetName"/>). Left null for
-		/// a standalone exe (falls back to A_AhkPath) and for stdin (the compiled "*" marker is used instead).
-		/// </summary>
-		public static string runScriptPath;
-
 		public static readonly string[] requiredManagedDependencies = new[]
 		{
 			"Keysharp.Core.dll",
+			"Keysharp.Components.Scripting.dll",
 			"Keysharp.Components.Packages.dll",
 			"PCRE.NET.dll",
 			"BitFaster.Caching.dll",
@@ -354,7 +337,7 @@ namespace Keysharp.Parsing
 				);
 				var tree = SyntaxFactory.SyntaxTree(compilation.Unit, parseOptions);
 				return CompileFromTree(tree, outputname, currentDir, minimalexeout, BuildInlineTrees(compilation, parseOptions),
-					diagnoseSink, compilation.Packages, compilation.RequiredProviders);
+					diagnoseSink, compilation.Packages, compilation.RequiredProviders, compilation.RequiredComponents);
 			}
 			catch (Exception e)
 			{
@@ -455,11 +438,12 @@ namespace Keysharp.Parsing
 			return ([.. diags], ex);
 		}
 
-		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null, IReadOnlyCollection<string> requiredProviders = null)
+		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null, IReadOnlyCollection<string> requiredProviders = null, IReadOnlyCollection<string> requiredComponents = null)
 		{
 			IEnumerable<ResourceDescription> resourceDescriptions = null;
 			HashSet<string> allDependencies = null;
 			CompiledPackageProviderManifest providerManifest = null;
+			CompiledScriptingComponentManifest componentManifest = null;
 			var hasInlineTrees = inlineTrees is { Count: > 0 };
 			var coreDir = Path.GetDirectoryName(typeof(object).GetTypeInfo().Assembly.Location);
 #if WINDOWS
@@ -494,6 +478,10 @@ namespace Keysharp.Parsing
 
 			if (minimalexeout)
 			{
+				if (requiredComponents is { Count: > 0 }
+						&& !CompiledScriptingComponentManifest.TryBuild(requiredComponents, out componentManifest, out var componentFailure))
+					throw new InvalidOperationException(componentFailure);
+
 				if (requiredProviders is { Count: > 0 }
 						&& !CompiledPackageProviderManifest.TryBuild(requiredProviders, out providerManifest, out var providerFailure))
 					throw new InvalidOperationException(providerFailure);
@@ -524,6 +512,8 @@ namespace Keysharp.Parsing
 							// is desired by the resulting executable.
 							case "MICROSOFT.CODEANALYSIS.DLL":
 							case "MICROSOFT.CODEANALYSIS.CSHARP.DLL":
+							case "KEYSHARP.COMPONENTS.SCRIPTING.COMPILER.DLL":
+							case "KEYSHARP.COMPONENTS.SCRIPTING.PARSER.DLL":
 							case "MICROSOFT.CODEDOM.PROVIDERS.DOTNETCOMPILERPLATFORM.DLL":
 							case "MICROSOFT.NET.HOSTMODEL.DLL":
 								return false;
@@ -666,6 +656,20 @@ namespace Keysharp.Parsing
 				}));
 			}
 
+			if (componentManifest != null)
+			{
+				var json = componentManifest.Write();
+				resourceDescriptions = (resourceDescriptions ?? []).Append(
+					new ResourceDescription(CompiledScriptingComponentManifest.ResourceName,
+						() => new MemoryStream(Encoding.UTF8.GetBytes(json)), true));
+				resourceDescriptions = resourceDescriptions.Concat(componentManifest.Assets.Select(asset =>
+				{
+					var source = asset.Source;
+					return new ResourceDescription(CompiledScriptingComponentManifest.AssetResourceName(asset),
+						() => File.OpenRead(source), true);
+				}));
+			}
+
 			var ms = new MemoryStream();
 			// AnyCpu, like the rest of Keysharp: the script assembly is loaded into this very process (or one
 			// built the same way), and the CLR rejects an assembly whose machine type doesn't match the
@@ -786,14 +790,14 @@ namespace Keysharp.Parsing
 			script.Threads.EnsureCurrentThreadVariables();
 		}
 
-		public ScriptCompilationResult CreateCompilationUnitFromFile(string fileName, string name = null, bool compileToFile = false, string includeDirOverride = null, IEnumerable<string> defines = null, bool allowPackageRestore = true)
+		public ScriptCompilationResult CreateCompilationUnitFromFile(string fileName, string name = null, bool compileToFile = false, string includeDirOverride = null, IEnumerable<string> defines = null, bool allowPackageRestore = true, bool? sourceIsFile = null)
 		{
 			var compilation = new ScriptCompilationResult();
 			var errors = compilation.Errors;
 			var enc = Encoding.Default;
 			var x = Env.FindCommandLineArg("cp");
 			var script = Script.TheScript;
-			var isFile = File.Exists(fileName);
+			var isFile = sourceIsFile ?? File.Exists(fileName);
 			string scriptPath, scriptName, startupName;
 
 			if (isFile)
@@ -803,7 +807,7 @@ namespace Keysharp.Parsing
 				startupName = null;
 				compilation.ScriptPath = scriptPath;
 				// In-process runners use this default; launchers override it with the runtime path.
-				runScriptPath = scriptPath;
+				ScriptExecutionState.SourcePath = scriptPath;
 			}
 			else
 			{
@@ -838,13 +842,14 @@ namespace Keysharp.Parsing
 				}
 				else
 				{
-					var lowerer = new Keysharp.Parsing.Syntax.Lowerer();
+					var lowerer = new Syntax.Lowerer();
 					compilation.Unit = lowerer.Build(prog, buildName, scriptPath, startupName, includeDir, source, compileToFile, defines);
 					compilation.DeclaredAssemblyName = lowerer.AssemblyName;
 					compilation.InlineCode = lowerer.InlineSource;
 					compilation.InlineSources = lowerer.InlineSources;
 					compilation.InlineDefines = lowerer.InlineDefines;
 					compilation.RequiredProviders = lowerer.RequiredProviders;
+					compilation.RequiredComponents = lowerer.RequiredComponents;
 
 					if (compilation.Unit == null || lowerer.Diagnostics.Count > 0)
 						foreach (var d in lowerer.Diagnostics)
@@ -876,19 +881,16 @@ namespace Keysharp.Parsing
 		}
 
 		// New-pipeline diagnostics are "line:col: message" strings (lex + parse + lowering). Tokens that originate in a
-		// specific file (an #included file, or the named main script) prefix it as "name:line:col: message". Either way,
-		// pull out line/col so the existing error-reporting path can surface them; when the embedded name differs from
-		// `file` (i.e. an #included file) keep it in the message so the user can tell which file the error is in.
+		// specific file (an #included file, or the named main script) prefix it as "path:line:col: message". Either way,
+		// pull out the source location so the existing error-reporting path can surface it. The path capture is greedy
+		// because an absolute Windows path contains a colon.
 		private static CompilerError ToCompilerError(string diagnostic, string file)
 		{
-			var m = System.Text.RegularExpressions.Regex.Match(diagnostic ?? "", @"^(?:([^:\r\n]+):)?(\d+):(\d+):\s*(.*)$");
+			var m = System.Text.RegularExpressions.Regex.Match(diagnostic ?? "", @"^(?:(.*):)?(\d+):(\d+):\s*(.*)$");
 			if (m.Success)
 			{
 				var srcFile = m.Groups[1].Success ? m.Groups[1].Value : null;
-				var text = m.Groups[4].Value;
-				if (srcFile != null && !string.Equals(srcFile, System.IO.Path.GetFileName(file), StringComparison.OrdinalIgnoreCase))
-					text = $"{srcFile}: {text}";
-				return new CompilerError(file, int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value), "0", text);
+				return new CompilerError(srcFile ?? file, int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value), "0", m.Groups[4].Value);
 			}
 			return new CompilerError { ErrorText = diagnostic ?? "", FileName = file };
 		}
@@ -961,11 +963,16 @@ namespace Keysharp.Parsing
 
 		// `defines` are the preprocessor symbols for THIS compilation — from `--define:NAME`, or from a caller such as
 		// Ks.RunScript. They are per-compilation rather than ambient so a nested compile can choose its own.
-		public (byte[] Bytes, string Text, ScriptCompilationResult Compilation) CompileCodeToByteArray(string fileName, string nameNoExt, string exeDir = null, bool minimalexeout = false, bool emitCode = false, bool compileToFile = false, IEnumerable<string> defines = null, bool allowPackageRestore = true)
+		public (byte[] Bytes, string Text, ScriptCompilationResult Compilation) CompileCodeToByteArray(string fileName, string nameNoExt, string exeDir = null, bool minimalexeout = false, bool emitCode = false, bool compileToFile = false, IEnumerable<string> defines = null, bool allowPackageRestore = true, IEnumerable<string> includeComponents = null, string includeDirOverride = null, IEnumerable<string> excludeComponents = null, bool? sourceIsFile = null)
 		{
 			var asm = Assembly.GetExecutingAssembly();
 			exeDir ??= Path.GetFullPath(Path.GetDirectoryName(asm.Location.IsNullOrEmpty() ? Environment.ProcessPath : asm.Location));
-			var compilation = CreateCompilationUnitFromFile(fileName, nameNoExt, compileToFile, null, defines, allowPackageRestore);
+			var compilation = CreateCompilationUnitFromFile(fileName, nameNoExt, compileToFile, includeDirOverride, defines, allowPackageRestore, sourceIsFile);
+			if (includeComponents != null)
+				compilation.RequiredComponents = compilation.RequiredComponents.Concat(includeComponents)
+					.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+			if (excludeComponents != null)
+				compilation.RequiredComponents = compilation.RequiredComponents.Except(excludeComponents, StringComparer.OrdinalIgnoreCase).ToArray();
 			var unit = compilation.Unit;
 			var errs = compilation.Errors;
 			var assemblyName = compilation.DeclaredAssemblyName ?? nameNoExt ?? "*";

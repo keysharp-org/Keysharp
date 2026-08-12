@@ -7,7 +7,8 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
-using Keysharp.Parsing;
+using Keysharp.Components.Scripting;
+using Keysharp.Internals.Scripting;
 using Keysharp.Runtime;
 
 namespace Keysharp.Main
@@ -279,12 +280,12 @@ namespace Keysharp.Main
 	}
 
 	/// <summary>
-	/// Compile daemon ("--daemon" mode). Holds one warm <see cref="CompilerHelper"/> and one reused
+	/// Compile daemon ("--daemon" mode). Holds one warm compiler component and one reused
 	/// parse-context <see cref="Script"/>, accepts script paths over a per-build/per-user named pipe, and
 	/// returns compiled assembly bytes so a thin launcher can run them in a lean process that never loads
 	/// the parser/Roslyn (see <see cref="CompileClient"/> and Program.RunCompiledBytes).
 	///
-	/// Correctness constraints (see CompilerHelper.ResetScriptForParse):
+	/// Correctness constraints:
 	///   - <see cref="Script.TheScript"/> is process-global, so compiles MUST be serialized. The accept
 	///     loop is single-threaded and runs on the (STA) thread that created the Script.
 	///   - Parsing only reads the built-in-only ReflectionsData and writes scriptPath/scriptName + thread
@@ -349,7 +350,11 @@ namespace Keysharp.Main
 			using var script = new Script();
 			script.SuppressErrorOccurredDialog = true;
 
-			var ch = new CompilerHelper();
+			if (!ScriptingComponentRegistry.TryGetCompiler(out var ch, out var componentError))
+			{
+				Log(componentError);
+				return 1;
+			}
 			var exeDir = Path.GetFullPath(Path.GetDirectoryName(Environment.ProcessPath));
 			SetDaemonWorkingDirectory(exeDir);
 #if WINDOWS
@@ -407,12 +412,18 @@ namespace Keysharp.Main
 
 		// Compile a trivial script once so the first real client request is already warm (parser + Roslyn
 		// JITted, reference metadata loaded). Failures here are non-fatal; the first request just pays cold.
-		private static void Warmup(CompilerHelper ch, string exeDir)
+		private static void Warmup(IScriptCompiler ch, string exeDir)
 		{
 			try
 			{
 				var sw = Stopwatch.StartNew();
-				_ = ch.CompileCodeToByteArray("x := 1", "warmup", exeDir);
+				_ = ch.Compile(new ScriptCompileRequest
+				{
+					SourceText = "x := 1",
+					CompilationName = "warmup",
+					RuntimeDirectory = exeDir,
+					Output = ScriptCompilationOutput.InMemory,
+				});
 				Log($"warmup compile took {sw.ElapsedMilliseconds} ms.");
 			}
 			catch (Exception ex)
@@ -565,7 +576,7 @@ namespace Keysharp.Main
 		//             else        -> string errorMessage
 		// `warnings` carries the script's #Warning text to the client: the daemon compiles in a detached process
 		// whose stderr goes nowhere, so a warning printed here would be lost on the path most runs take.
-		private static void HandleRequest(NamedPipeServerStream server, CompilerHelper ch, string exeDir)
+		private static void HandleRequest(NamedPipeServerStream server, IScriptCompiler ch, string exeDir)
 		{
 			using var reader = new BinaryReader(server, Encoding.UTF8, leaveOpen: true);
 			using var writer = new BinaryWriter(server, Encoding.UTF8, leaveOpen: true);
@@ -590,8 +601,17 @@ namespace Keysharp.Main
 
 			try
 			{
-				(bytes, error, var compilation) = ch.CompileCodeToByteArray(scriptPath, nameNoExt, exeDir);
-				warnings = compilation?.Warnings;
+				var compilation = ch.Compile(new ScriptCompileRequest
+				{
+					SourceText = scriptPath == "*" ? scriptPath : null,
+					ScriptPath = scriptPath == "*" ? null : scriptPath,
+					CompilationName = nameNoExt,
+					RuntimeDirectory = exeDir,
+					Output = ScriptCompilationOutput.InMemory,
+				});
+				bytes = compilation.AssemblyBytes;
+				error = compilation.ErrorText;
+				warnings = compilation.WarningText;
 			}
 			catch (Exception ex)
 			{

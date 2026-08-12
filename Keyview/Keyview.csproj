@@ -97,6 +97,7 @@
 	<ItemGroup>
 		<ProjectReference Include="..\Keysharp\Keysharp.csproj" ReferenceOutputAssembly="false" />
 		<ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
+		<ProjectReference Include="..\Keysharp.Components\Scripting\Contracts\Keysharp.Components.Scripting.csproj" />
 		<ProjectReference Include="..\Keysharp.Components\Packages\NuGet\Keysharp.Components.Packages.NuGet.csproj" ReferenceOutputAssembly="false" Private="false" />
 	</ItemGroup>
 
@@ -109,10 +110,7 @@
 	     requested RID (-r) is already a global property and still reaches the inner build on its own, so both
 	     builds land in the same place either way, exactly as on Windows and Linux. -->
 	<Target Name="BuildAndCopyKeysharpForMac" AfterTargets="Build" Condition="$([MSBuild]::IsOSPlatform('OSX')) AND '$(MacIsBuildingBundle)' != 'True'">
-		<MSBuild
-			Projects="..\Keysharp\Keysharp.csproj"
-			Targets="Build"
-			Properties="Configuration=$(Configuration);Platform=AnyCPU;Restore=false">
+		<MSBuild Projects="..\Keysharp\Keysharp.csproj" Targets="Build" Properties="Configuration=$(Configuration);Platform=AnyCPU;Restore=false">
 			<Output TaskParameter="TargetOutputs" ItemName="_KeysharpBuiltAssembly" />
 		</MSBuild>
 

@@ -51,7 +51,7 @@ namespace Keysharp.Parsing.Syntax
 			// runtime check rather than a C# #if because it must describe the process the script is being
 			// compiled for and run in, which is what decides DllCall/ComCall calling conventions. A_PtrSize
 			// cannot stand in for it: X64 and ARM64 are both 8.
-			, Keysharp.Builtins.Ks.ArchName(RuntimeInformation.ProcessArchitecture)
+			, ProcessArchitectureSymbol()
 		};
 		private Queue<IReadOnlyCollection<string>> _csharpDefineSnapshots;
 		public readonly List<string> Diagnostics = new();
@@ -60,6 +60,15 @@ namespace Keysharp.Parsing.Syntax
 		private readonly HashSet<string> _included = new(System.StringComparer.OrdinalIgnoreCase);   // #include dedup
 		private int _includeDepth;             // current #include nesting depth (guards against circular #includeagain)
 		private const int MaxIncludeDepth = 100;
+
+		private static string ProcessArchitectureSymbol() => RuntimeInformation.ProcessArchitecture switch
+		{
+			Architecture.X64 => "X64",
+			Architecture.Arm64 => "ARM64",
+			Architecture.X86 => "X86",
+			Architecture.Arm => "ARM",
+			var architecture => architecture.ToString().ToUpperInvariant(),
+		};
 
 		// `defines` are the caller's extra preprocessor symbols for this compilation (null when there are none).
 		public Parser(List<Token> tokens, string includeDir = null, IEnumerable<string> defines = null)
@@ -85,7 +94,8 @@ namespace Keysharp.Parsing.Syntax
 				var lexer = new Lexer(source, scriptFile);
 				var tokens = lexer.Tokenize();
 				// A lex error (e.g. an unterminated string) terminates immediately — before parsing — with the first one.
-				if (lexer.Diagnostics.Count > 0) throw new Keysharp.Builtins.ParseException(lexer.Diagnostics[0]);
+				if (lexer.Diagnostics.Count > 0)
+					throw new Keysharp.Builtins.ParseException(PrefixDiagnostic(scriptFile, lexer.Diagnostics[0]));
 				var parser = new Parser(tokens, includeDir, defines);
 				var prog = parser.ParseProgram();
 				// Publish the parser-owned final symbol set without another copy.
@@ -211,8 +221,14 @@ namespace Keysharp.Parsing.Syntax
 		// single diagnostic), so error-recovery can't silently produce a wrong AST or cascade bogus follow-on errors.
 		private void Error(string msg) => ErrorAt(Current, msg);
 		// Same, but pointing at a specific (already-consumed) token rather than the current one.
-		private static void ErrorAt(Token t, string msg) => throw new Keysharp.Builtins.ParseException(
-			$"{(t.File != null ? System.IO.Path.GetFileName(t.File) + ":" : "")}{t.Line}:{t.Column}: {msg}");
+		private static string Diagnostic(Token token, string message) =>
+			$"{(string.IsNullOrEmpty(token.File) ? "" : token.File + ":")}{token.Line}:{token.Column}: {message}";
+
+		private static string PrefixDiagnostic(string file, string diagnostic) =>
+			string.IsNullOrEmpty(file) ? diagnostic : $"{file}:{diagnostic}";
+
+		private static void ErrorAt(Token t, string msg) =>
+			throw new Keysharp.Builtins.ParseException(Diagnostic(t, msg));
 
 		// ---- program / statements ----
 
@@ -857,7 +873,8 @@ namespace Keysharp.Parsing.Syntax
 						// Depth-guard the recursion so a circular #includeagain (which, unlike #include, never dedups)
 						// fails with a clean error instead of overflowing the stack and crashing the process.
 						if (++_includeDepth > MaxIncludeDepth)
-							throw new Keysharp.Builtins.ParseException($"{t.Line}:{t.Column}: Too many nested #include directives (possible circular #includeagain)");
+							throw new Keysharp.Builtins.ParseException(Diagnostic(t,
+								"Too many nested #include directives (possible circular #includeagain)"));
 						outp.AddRange(Preprocess(included, includedDir));
 						_includeDepth--;
 					}
@@ -973,7 +990,7 @@ namespace Keysharp.Parsing.Syntax
 				if (path == null)
 				{
 					if (ignoreMissing) return null;
-					throw new Keysharp.Builtins.ParseException($"{directive.Line}:{directive.Column}: #Include library not found: {file}");
+					throw new Keysharp.Builtins.ParseException(Diagnostic(directive, $"#Include library not found: {file}"));
 				}
 			}
 			else
@@ -990,12 +1007,12 @@ namespace Keysharp.Parsing.Syntax
 			else if (again) _included.Add(path);
 			if (!System.IO.File.Exists(path)) { if (ignoreMissing) return null; throw IncludeNotFound(directive, path); }
 			includedDir = System.IO.Path.GetDirectoryName(path);   // nested includes in this file resolve against its dir
-			// The lexer stamps each token with this file's full path (per-file line numbers + diagnostics + A_LineFile),
-			// no post-pass needed. Diagnostics shorten it to the file name; A_LineFile needs the full path.
+			// The lexer stamps each token with this file's full path for diagnostics and A_LineFile.
 			var lexer = new Lexing.Lexer(System.IO.File.ReadAllText(path), path);
 			var toks = lexer.Tokenize();
 			// A lex error in the included file terminates immediately, reported against that file.
-			if (lexer.Diagnostics.Count > 0) throw new Keysharp.Builtins.ParseException($"{System.IO.Path.GetFileName(path)}:{lexer.Diagnostics[0]}");
+			if (lexer.Diagnostics.Count > 0)
+				throw new Keysharp.Builtins.ParseException(PrefixDiagnostic(path, lexer.Diagnostics[0]));
 			if (toks.Count > 0 && toks[^1].Kind == TokenKind.EOF) toks.RemoveAt(toks.Count - 1);   // drop the included EOF
 			toks.Insert(0, new Token(TokenKind.Newline, "\n", 0, 0, 0, 0, true, path));   // keep line separation from the host
 			return toks;
@@ -1004,7 +1021,7 @@ namespace Keysharp.Parsing.Syntax
 		// A "line:col: message" parse error for a #include whose target can't be found, attributed to the directive's
 		// position (ToCompilerError parses the line:col prefix so the user is pointed at the offending line).
 		private static Keysharp.Builtins.ParseException IncludeNotFound(Token directive, string target) =>
-			new($"{directive.Line}:{directive.Column}: #Include file not found: {target}");
+			new(Diagnostic(directive, $"#Include file not found: {target}"));
 
 		// File extensions tried for a library include, Keysharp-native first then AHK-compatible.
 		private static readonly string[] libExts = { ".ks", ".ahk" };
@@ -1025,8 +1042,8 @@ namespace Keysharp.Parsing.Syntax
 				libDirs.Add(System.IO.Path.Combine(_includeDir, "Lib"));
 
 			string docs = null, exeDir = null;
-			try { docs = Keysharp.Builtins.Accessors.A_MyDocuments; } catch { }
-			try { exeDir = System.IO.Path.GetDirectoryName(Keysharp.Builtins.Accessors.A_AhkPath); } catch { }
+			try { docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments); } catch { }
+			try { exeDir = System.IO.Path.GetDirectoryName(Environment.ProcessPath); } catch { }
 
 			if (!string.IsNullOrEmpty(docs))
 			{

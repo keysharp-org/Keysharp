@@ -1,5 +1,3 @@
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 #if WINDOWS
 using ScintillaNET;
 #endif
@@ -53,7 +51,8 @@ namespace Keyview
 		private readonly UITimer timer = new ();
 		private readonly char[] trimend = ['\n', '\r'];
 		private readonly double updateFreqSeconds = 1;
-		private readonly CompilerHelper ch = new ();
+		private readonly IScriptCompiler ch = KeyviewCompilerRunner.GetCompiler();
+		private byte[] compiledBytes;
 		private readonly CSharpStyler csStyler = new ();
 		private bool force = false;
 		private bool isCompiling = false;
@@ -714,6 +713,7 @@ namespace Keyview
 						txtIn.Text,
 						KeyviewCompilerRunner.IncludeDirFor(document),
 						ch,
+						bytes => compiledBytes = bytes,
 						code => fullCode = code,
 						code => trimmedCode = code,
 						trimend,
@@ -755,7 +755,7 @@ namespace Keyview
 			if (btnRunScript.Text == btnRunScriptText["Stop"])
 				return;
 
-			if (CompilerHelper.compiledasm == null)
+			if (compiledBytes == null)
 			{
 				_ = MessageBox.Show("Please wait, code is still compiling...", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
 				return;
@@ -787,7 +787,7 @@ namespace Keyview
 			// Write the raw assembly bytes and close stdin; the child ("--assembly *") reads to EOF.
 			using (var stdin = scriptProcess.StandardInput.BaseStream)
 			{
-				stdin.Write(CompilerHelper.compiledBytes, 0, CompilerHelper.compiledBytes.Length);
+				stdin.Write(compiledBytes, 0, compiledBytes.Length);
 				stdin.Flush();
 			}
 
@@ -985,7 +985,8 @@ namespace Keyview
 		private Splitter editorSplitter;
 		private StackLayout statusRightCluster;
 		private readonly UITimer timer = new ();
-		private readonly CompilerHelper ch = new ();
+		private readonly IScriptCompiler ch = KeyviewCompilerRunner.GetCompiler();
+		private byte[] compiledBytes;
 		private readonly char[] trimend = ['\n', '\r'];
 		private readonly string trimstr = "{}\t";
 		private readonly double updateFreqSeconds = 1;
@@ -2160,6 +2161,7 @@ namespace Keyview
 						inputArea.Text,
 						KeyviewCompilerRunner.IncludeDirFor(document),
 						ch,
+						bytes => compiledBytes = bytes,
 						code => fullCode = code,
 						code => trimmedCode = code,
 						trimend,
@@ -2199,7 +2201,7 @@ namespace Keyview
 			if (runScriptButton.Text == runScriptText["Stop"])
 				return;
 
-			if (CompilerHelper.compiledasm == null)
+			if (compiledBytes == null)
 			{
 				MessageBox.Show(this, "Please wait, code is still compiling...", "Error", MessageBoxButtons.OK, MessageBoxType.Error);
 				return;
@@ -2270,7 +2272,7 @@ namespace Keyview
 			try
 			{
 				using var stdin = scriptProcess.StandardInput.BaseStream;
-				stdin.Write(CompilerHelper.compiledBytes, 0, CompilerHelper.compiledBytes.Length);
+				stdin.Write(compiledBytes, 0, compiledBytes.Length);
 				stdin.Flush();
 			}
 			catch (IOException)
@@ -2320,6 +2322,14 @@ namespace Keyview
 
 	internal static class KeyviewCompilerRunner
 	{
+		internal static IScriptCompiler GetCompiler()
+		{
+			if (ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var error))
+				return compiler;
+
+			throw new InvalidOperationException(error);
+		}
+
 		// The base directory for resolving #include directives when compiling the live editor text (which has no
 		// script path of its own). Uses the open document's folder so relative, absolute and library (<Name>)
 		// includes all resolve as they would when the file is run directly; a never-saved scratch buffer falls
@@ -2330,7 +2340,8 @@ namespace Keyview
 		internal static async Task RunCompile(
 			string inputText,
 			string includeDir,
-			CompilerHelper compiler,
+			IScriptCompiler compiler,
+			Action<byte[]> setCompiledBytes,
 			Action<string> setFullCode,
 			Action<string> setTrimmedCode,
 			char[] trimend,
@@ -2348,63 +2359,34 @@ namespace Keyview
 			Action beforeOutput,
 			Action afterOutput)
 		{
-			Script script = null;
 			var startTime = DateTime.UtcNow;
 			try
 			{
-				script = new Script();
-				script.SuppressErrorOccurredDialog = true;
-				CompilerHelper.compiledasm = null;
+				setCompiledBytes(null);
 				disableRunButton?.Invoke();
 				setStart?.Invoke();
-				setStatus?.Invoke("Creating DOM from script...");
+				setStatus?.Invoke("Compiling script...");
 				refreshStatus?.Invoke();
 				// Live validation must not restore packages; an explicit run may.
-				var compilation = await Task.Run(() => compiler.CreateCompilationUnitFromFile(
-														   inputText, includeDirOverride: includeDir, allowPackageRestore: false)).ConfigureAwait(true);
-				var unit = compilation.Unit;
-				var domerrs = compilation.Errors;
-
-				if (domerrs.HasErrors)
+				var result = await Task.Run(() => compiler.Compile(new ScriptCompileRequest
 				{
-					var (errors, warnings) = CompilerHelper.GetCompilerErrors(domerrs);
-					setFailure?.Invoke();
-					var txt = "Error creating DOM from script.";
-					if (errors.Length > 0)
-						txt += $"\n\n{errors}";
-					if (warnings.Length > 0)
-						txt += $"\n\n{warnings}";
-					setOutput?.Invoke(txt);
-					return;
-				}
-
-				setStatus?.Invoke("Creating C# code from DOM...");
-				refreshStatus?.Invoke();
-				var code = await Task.Run(() => PrettyPrinter.Print(unit)).ConfigureAwait(true);
-
-#if DEBUG
-				// Keep the expensive formatter comparison off the UI thread.
-				var normalized = await Task.Run(() => unit.NormalizeWhitespace("\t", Environment.NewLine).ToString()).ConfigureAwait(true);
-				if (code != normalized)
-					throw new Exception("Code formatting mismatch");
-#endif
+					SourceText = inputText,
+					CompilationName = "Keyview",
+					RuntimeDirectory = Path.GetFullPath(Path.GetDirectoryName(Environment.ProcessPath)),
+					IncludeDirectory = includeDir,
+					Output = ScriptCompilationOutput.InMemory,
+					EmitGeneratedCode = true,
+					AllowPackageRestore = false,
+				})).ConfigureAwait(true);
+				var code = result.GeneratedCode ?? result.ErrorText ?? "Compilation failed.";
 
 				// Show the separate inline tree without pretending the two sources form one valid C# unit.
-				if (compilation.InlineCode is { Length: > 0 } inlineCode)
+				if (result.InlineCode is { Length: > 0 } inlineCode)
 					code += Environment.NewLine + Environment.NewLine
 							+ "// ---- #CSharp (compiled as a separate file) ----" + Environment.NewLine + Environment.NewLine
 							+ inlineCode;
 
-				setStatus?.Invoke("Compiling C# code...");
-				refreshStatus?.Invoke();
-				var (results, ms, compileexc) = await Task.Run(() => compiler.Compile(compilation, "Keyview", Path.GetFullPath(Path.GetDirectoryName(Environment.ProcessPath)))).ConfigureAwait(true);
-
-				if (results == null)
-				{
-					setFailure?.Invoke();
-					setOutput?.Invoke($"Error compiling C# code to executable: {(compileexc != null ? compileexc.Message : string.Empty)}\n\n{code}");
-				}
-				else if (results.Success)
+				if (result.Success)
 				{
 					setSuccess?.Invoke((DateTime.UtcNow - startTime).TotalSeconds);
 					setFullCode(code);
@@ -2413,10 +2395,8 @@ namespace Keyview
 					// actually runnable, before the (potentially slow) trimming and C# syntax highlighting
 					// below. Otherwise the button stays greyed out for a second or two after the compile
 					// has really finished, just while the generated code is being highlighted.
-					_ = ms.Seek(0, SeekOrigin.Begin);
-					var arr = ms.ToArray();
-					CompilerHelper.compiledBytes = arr;
-					CompilerHelper.compiledasm = Assembly.Load(arr);
+					_ = Assembly.Load(result.AssemblyBytes);
+					setCompiledBytes(result.AssemblyBytes);
 					enableRunButton?.Invoke();
 
 					// Trimming the generated code is pure string work over the whole file; do it on a
@@ -2443,10 +2423,8 @@ namespace Keyview
 				else
 				{
 					setFailure?.Invoke();
-					setOutput?.Invoke(CompilerHelper.HandleCompilerErrors(results.Diagnostics, "Keyview", "Compiling C# code to executable", compileexc != null ? compileexc.Message : string.Empty) + "\n" + code);
+					setOutput?.Invoke(code);
 				}
-
-				ms?.Dispose();
 			}
 			catch (Exception ex)
 			{
@@ -2455,7 +2433,6 @@ namespace Keyview
 			}
 			finally
 			{
-				script?.Dispose();
 				enableRunButton?.Invoke();
 			}
 		}
@@ -2512,42 +2489,43 @@ namespace Keyview
 
 	internal static class KeyviewDocumentCompiler
 	{
-		internal static bool TryCompile(string sourcePath, CompilerHelper compiler, out string outputPath, out string error)
+		internal static bool TryCompile(string sourcePath, IScriptCompiler compiler, out string outputPath, out string error)
 		{
 			outputPath = Path.ChangeExtension(sourcePath, ".cks");
 			error = null;
 
-			// Constructing a Script overwrites the global Script.TheScript singleton, so save and
-			// restore it around the temporary compile-only script to avoid clobbering whatever
-			// script Keyview itself may already be hosting (e.g. one started via "Run script").
-			var previousScript = Script.TheScript;
-
 			try
 			{
-				using var script = new Script();
-				script.SuppressErrorOccurredDialog = true;
 				var sourceDirectory = Path.GetDirectoryName(sourcePath);
 				var nameNoExt = Path.GetFileNameWithoutExtension(sourcePath);
 				// Explicit builds may restore packages; live validation opts out above.
-				var (bytes, result, _) = compiler.CompileCodeToByteArray(sourcePath, nameNoExt, sourceDirectory);
-
-				if (bytes == null)
+				var result = compiler.Compile(new ScriptCompileRequest
 				{
-					error = result;
+					ScriptPath = sourcePath,
+					CompilationName = nameNoExt,
+					RuntimeDirectory = Path.GetFullPath(Path.GetDirectoryName(Environment.ProcessPath)),
+					IncludeDirectory = sourceDirectory,
+					Output = ScriptCompilationOutput.Assembly,
+				});
+
+				if (!result.Success)
+				{
+					error = result.ErrorText;
 					return false;
 				}
 
-				File.WriteAllBytes(outputPath, bytes);
+				File.WriteAllBytes(outputPath, result.AssemblyBytes);
+				if (compiler.DeploySupportFiles(result, sourceDirectory) is { } deploymentError)
+				{
+					error = deploymentError;
+					return false;
+				}
 				return true;
 			}
 			catch (Exception ex)
 			{
 				error = ex.ToString();
 				return false;
-			}
-			finally
-			{
-				Script.TheScript = previousScript;
 			}
 		}
 	}

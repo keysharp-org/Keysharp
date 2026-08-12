@@ -27,19 +27,17 @@
 		<Company>Keysharp</Company>
 		<!-- Deliberately off. This would emit a refs/ folder of ~194 reference assemblies (10.5 MB, a third
 		     of the release download) plus a "compile" section in the deps.json, for consumers that build a
-		     Roslyn compilation from Microsoft.Extensions.DependencyModel. Keysharp is not one: script
-		     compilation resolves its metadata references from the shared framework directory
-		     (CompilerHelper.CreateCompilation), and GetCompiledScriptDependencies reads only the deps.json
-		     "targets" runtime/native groups. -->
+		     Roslyn compilation from Microsoft.Extensions.DependencyModel. The optional compiler component
+		     resolves framework metadata itself and reads only the deps.json "targets" runtime/native groups. -->
 		<PreserveCompilationContext>false</PreserveCompilationContext>
 		<SignAssembly>False</SignAssembly>
 		<DelaySign>False</DelaySign>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<WarningLevel>8</WarningLevel>
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-		<!-- Precompile IL to native code at publish time. This roughly halves cold startup (and therefore
-		     Reload) by eliminating first-call JIT of the large Roslyn and Keysharp.Core assemblies that are
-		     recompiled fresh on every launch. Only applies to `dotnet publish -r <rid>`; ignored by `build`.
+		<!-- Precompile host IL to native code at publish time. This roughly halves cold startup (and therefore
+		     Reload) by eliminating first-call JIT in the runtime. The optional compiler payload remains separate.
+		     Only applies to `dotnet publish -r <rid>`; ignored by `build`.
 		     Costs roughly 2x publish size. The JIT stays available, so runtime Roslyn compilation still works. -->
 		<PublishReadyToRun>true</PublishReadyToRun>
 		<PublishReadyToRunComposite>false</PublishReadyToRunComposite>
@@ -123,6 +121,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
+		<ProjectReference Include="..\Keysharp.Components\Scripting\Contracts\Keysharp.Components.Scripting.csproj" />
 		<ProjectReference Include="..\Keysharp.Components\Packages\NuGet\Keysharp.Components.Packages.NuGet.csproj" ReferenceOutputAssembly="false" Private="false" />
 	</ItemGroup>
 
@@ -160,10 +159,7 @@
 			<_BundledScript Include="$(PublishDir)Scripts\AtSpi.ks" Condition="Exists('$(PublishDir)Scripts\AtSpi.ks')" />
 			<_BundledScript Include="$(PublishDir)Scripts\Ax.ks" Condition="Exists('$(PublishDir)Scripts\Ax.ks')" />
 		</ItemGroup>
-		<Exec Condition="Exists('$(_KsHost)') And '@(_BundledScript)' != ''"
-			  Command="&quot;$(_KsHost)&quot; --compile asm &quot;%(_BundledScript.FullPath)&quot; --errorstdout"
-			  WorkingDirectory="$(PublishDir)"
-			  ContinueOnError="true" />
+		<Exec Condition="Exists('$(_KsHost)') And '@(_BundledScript)' != ''" Command="&quot;$(_KsHost)&quot; --compile asm &quot;%(_BundledScript.FullPath)&quot; --errorstdout" WorkingDirectory="$(PublishDir)" ContinueOnError="true" />
 		<Message Importance="high" Condition="'@(_BundledScript)' != ''" Text="Precompiled bundled scripts to .cks for faster startup: @(_BundledScript->'%(Filename).cks', ', ')" />
 	</Target>
 

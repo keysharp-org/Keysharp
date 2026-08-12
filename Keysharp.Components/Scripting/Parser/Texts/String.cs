@@ -412,7 +412,7 @@ namespace Keysharp.Parsing
 							if (check.Length != 1)
 								break;
 							else if (--level < 0)
-								throw new ParseException(ExUnbalancedParens, codeLine);
+								throw new ParseException(ExUnbalancedParens, codeLine.LineNumber, codeLine.Code, codeLine.FileName);
 
 							break;
 					}
