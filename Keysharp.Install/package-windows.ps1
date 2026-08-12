@@ -30,7 +30,7 @@ $packageDir = Join-Path $stagingDir $packageName
 $appDir = Join-Path $packageDir "app"
 $zipPath = Join-Path $distDir "$packageName.zip"
 $msiPath = Join-Path $distDir "$packageName.msi"
-$installerProject = Join-Path $root "Keysharp.Install\windows\Keysharp.Installer.wixproj"
+$installerProject = Join-Path $root "Keysharp.Install\windows\wix\Keysharp.Installer.wixproj"
 $etoDir = Join-Path (Split-Path -Parent $root) "Eto"
 $pathMap = "$root=/_/keysharp"
 if (Test-Path $etoDir) {

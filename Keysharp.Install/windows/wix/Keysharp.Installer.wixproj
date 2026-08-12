@@ -5,7 +5,7 @@
        `dotnet build Keysharp.sln` must not try to build it.
 
        Invoked as:
-         dotnet build Keysharp.Install/windows/Keysharp.Installer.wixproj -c Release -p:Platform=x64 \
+         dotnet build Keysharp.Install/windows/wix/Keysharp.Installer.wixproj -c Release -p:Platform=x64 \
            -p:PayloadDir=<abs path to ...\Keysharp-win-x64\app> -p:KeysharpVersion=0.0.0.16 -->
 
   <PropertyGroup>
@@ -20,8 +20,8 @@
     <KeysharpRid Condition="'$(KeysharpRid)' == ''">win-x64</KeysharpRid>
 
     <OutputName>Keysharp-$(KeysharpRid)</OutputName>
-    <OutputPath>$(MSBuildThisFileDirectory)..\..\dist\</OutputPath>
-    <IntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\obj\Keysharp.Installer\$(Platform)\</IntermediateOutputPath>
+    <OutputPath>$(MSBuildThisFileDirectory)..\..\..\dist\</OutputPath>
+    <IntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\..\obj\Keysharp.Installer\$(Platform)\</IntermediateOutputPath>
 
     <!-- Four-part product version, converted to the three-field MSI ProductVersion. Windows Installer only
          compares major.minor.build, so the historical mapping folds patch and revision together: assembly
@@ -75,7 +75,7 @@
 
   <PropertyGroup>
     <!-- ProjectDir is already declared by the WiX SDK and must not be redefined here. -->
-    <DefineConstants>PayloadDir=$(PayloadDir);RepoRoot=$(MSBuildThisFileDirectory)..\..\;KeysharpRid=$(KeysharpRid);KeysharpMsiVersion=$(KeysharpMsiVersion);NetRegArch=$(NetRegArch);WindowSpyScript=$(WindowSpyScript);UtilCaSuffix=$(UtilCaSuffix)</DefineConstants>
+    <DefineConstants>PayloadDir=$(PayloadDir);RepoRoot=$(MSBuildThisFileDirectory)..\..\..\;KeysharpRid=$(KeysharpRid);KeysharpMsiVersion=$(KeysharpMsiVersion);NetRegArch=$(NetRegArch);WindowSpyScript=$(WindowSpyScript);UtilCaSuffix=$(UtilCaSuffix)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
