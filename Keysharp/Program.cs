@@ -71,16 +71,16 @@ namespace Keysharp.Main
 			Eto.Mac.AppDelegate.FileOpened += SpawnScriptInNewProcess;
 #endif
 
-			// Daemon fast path: a plain source run can offload compilation to the shared daemon and run the
-			// returned bytes here, so this lean launcher never loads the parser/Roslyn. KEYSHARP_DAEMON forces it
-			// on/off; if unset, release builds use it and debug builds do not.
+			// Daemon fast path: a plain source run - or --validate, the same compile without the run - can offload
+			// compilation to the shared daemon, so this lean launcher never loads the parser/Roslyn.
+			// KEYSHARP_DAEMON forces it on/off; if unset, release builds use it and debug builds do not.
 			// --define is excluded explicitly, not merely via KeysharpArgs: the daemon is sent nothing but a script
 			// path, so it would compile with no symbols and silently resolve the #if branches the other way.
+			// Other compilation-altering switches go via the KeysharpArgs test (see ValidateWithDefaultCompilation).
 			if (command.Kind == CliCommandKind.RunSource
 					&& !command.FromStdin
-					&& !command.Validate
 					&& !command.Transpile
-					&& command.KeysharpArgs.Length == 0
+					&& (command.KeysharpArgs.Length == 0 || command.ValidateWithDefaultCompilation)
 					&& command.Defines.Length == 0
 					&& ShouldUseDaemon())
 			{
@@ -95,10 +95,19 @@ namespace Keysharp.Main
 						// The daemon compiled the source but this process runs it: point A_ScriptFullPath/A_ScriptDir at
 						// the source the user launched, not at a path baked in by the daemon.
 						ScriptExecutionState.SourcePath = command.ScriptName;
-						return RunCompiledBytes(daemonBytes, command.ScriptArgs);
+						return command.Validate
+							   ? LoadCompiledBytes(daemonBytes, command)
+							   : RunCompiledBytes(daemonBytes, command.ScriptArgs);
 
 					case CompileDaemonStatus.CompileFailed:
-						return ReportDaemonCompileFailure(daemonErr, command.ScriptName);
+
+						// --validate wanted exactly this answer, unrestored #Packages included.
+						if (command.Validate)
+							return ReportDaemonFailure(command, daemonErr);
+
+						// A run may fetch what the daemon won't, so recompile in-process - on the error path,
+						// where the second compile costs nothing anyone is waiting on.
+						break;
 
 						// Unreachable + unspawnable: fall through to the in-process runner below.
 				}
@@ -118,11 +127,16 @@ namespace Keysharp.Main
 		}
 
 		// Compile-server control, deferred to us by Runner because CompileServer lives in this launcher.
-		// daemonArgs[0] is the "--daemon" switch itself: "--daemon" starts it; "--daemon stop" stops the
+		// daemonArgs[0] is the "--daemon" switch itself: bare "--daemon" starts it; "--daemon stop" stops the
 		// running one; "--daemon ping <script>" compiles via a running daemon and reports only (no spawn/run).
+		// Only the bare form starts a server: a malformed subcommand is a usage error, not a daemon the user
+		// never asked for and now has for hours.
 		private static int HandleDaemon(string[] daemonArgs)
 		{
 			var sub = daemonArgs.Length > 1 ? (Runner.TryGetSwitch(daemonArgs[1], out var daemonSub) ? daemonSub : daemonArgs[1]) : null;
+
+			if (sub == null)
+				return CompileServer.Run();
 
 			if (string.Equals(sub, "stop", StringComparison.OrdinalIgnoreCase))
 			{
@@ -130,8 +144,11 @@ namespace Keysharp.Main
 				return 0;
 			}
 
-			if (string.Equals(sub, "ping", StringComparison.OrdinalIgnoreCase) && daemonArgs.Length > 2)
+			if (string.Equals(sub, "ping", StringComparison.OrdinalIgnoreCase))
 			{
+				if (daemonArgs.Length < 3 || string.IsNullOrWhiteSpace(daemonArgs[2]))
+					return DaemonUsageError("--daemon ping requires a script path.");
+
 				var st = CompileClient.TryCompile(daemonArgs[2], out var b, out var err, out var warn);
 				Console.WriteLine(st switch
 				{
@@ -143,7 +160,13 @@ namespace Keysharp.Main
 				return st == CompileDaemonStatus.Compiled ? 0 : 1;
 			}
 
-			return CompileServer.Run();
+			return DaemonUsageError($"Unknown --daemon subcommand \"{daemonArgs[1]}\".");
+		}
+
+		private static int DaemonUsageError(string problem)
+		{
+			Console.Error.WriteLine($"{problem} Valid forms: --daemon, --daemon stop, --daemon ping <script>.");
+			return 1;
 		}
 
 		// Builds an executable from a script. Deferred to us by Runner because HostWriter.CreateAppHost
@@ -306,11 +329,30 @@ namespace Keysharp.Main
 			return Environment.ExitCode;
 		}
 
-		private static int ReportDaemonCompileFailure(string error, string scriptPath)
+		// --validate stops here. The load stays part of the check - bytes the runtime refuses are still a failed
+		// compile - as it is in Runner.CompileAndMaybeRun.
+		private static int LoadCompiledBytes(byte[] arr, CliCommand command)
+		{
+			try
+			{
+				ScriptExecutionState.Assembly = Assembly.Load(arr);
+				return 0;
+			}
+			catch (Exception ex)
+			{
+				return ReportDaemonFailure(command, $"Loading the compiled script failed.\n\n{ex.GetType().Name}: {ex.Message}");
+			}
+		}
+
+		// Error reporting reads its switches off the Script, not the command line (see Env.FindCommandLineArg):
+		// without KeysharpArgs, --errorstdout goes unseen and a headless --validate stops at a modal dialog.
+		private static int ReportDaemonFailure(CliCommand command, string error)
 		{
 			using var script = new Script();
-			script.scriptPath = Path.GetFullPath(scriptPath);
+			script.scriptPath = Path.GetFullPath(command.ScriptName);
 			script.scriptName = Path.GetFileName(script.scriptPath);
+			script.KeysharpArgs = command.KeysharpArgs;
+			script.ScriptArgs = command.ScriptArgs;
 			return Runner.Message(error, true);
 		}
 

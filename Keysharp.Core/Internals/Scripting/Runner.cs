@@ -40,6 +40,10 @@ namespace Keysharp.Internals.Scripting
 		internal string[] ExcludeComponents = [];
 		internal bool FromStdin;
 		internal bool Validate;
+		// --validate (or --iLib) was given and no switch present changes what gets compiled, so the compile
+		// daemon - which is sent a script path and nothing else - can serve it. Allowlisted, so a switch added
+		// later stays in-process until someone decides otherwise.
+		internal bool ValidateWithDefaultCompilation;
 		internal bool SyntaxOnly;
 		internal bool Transpile;
 		internal bool MinimalExe;
@@ -87,6 +91,9 @@ namespace Keysharp.Internals.Scripting
 			var keysharpArgs = System.Array.Empty<string>();
 			var fromstdin = false;
 			var validate = false;
+			var switchCount = 0;
+			// Switches that say nothing about how the script compiles; everything else is assumed to matter.
+			var compilationNeutralSwitchCount = 0;
 			var syntaxOnly = false;
 			var compileAsm = false;
 			var compileDestPath = "";
@@ -103,6 +110,8 @@ namespace Keysharp.Internals.Scripting
 				}
 
 				var opt = option.ToLowerInvariant();
+				// Before the prefixed forms below continue, so every switch is counted.
+				switchCount++;
 
 				if (opt.StartsWith("asm:", StringComparison.OrdinalIgnoreCase)
 						|| opt.StartsWith("assembly:", StringComparison.OrdinalIgnoreCase))
@@ -127,8 +136,14 @@ namespace Keysharp.Internals.Scripting
 					continue;
 				}
 
-				if (opt.StartsWith("errorstdout=", StringComparison.OrdinalIgnoreCase)
-						|| IsCodePageSwitch(opt))
+				if (opt.StartsWith("errorstdout=", StringComparison.OrdinalIgnoreCase))
+				{
+					compilationNeutralSwitchCount++;
+					continue;
+				}
+
+				// A codepage is how the source is read, so it does change the compilation.
+				if (IsCodePageSwitch(opt))
 					continue;
 
 				switch (opt)
@@ -137,8 +152,11 @@ namespace Keysharp.Internals.Scripting
 					case "f":
 					case "restart":
 					case "r":
-					case "errorstdout":
 					case "debug":
+						break;
+
+					case "errorstdout":
+						compilationNeutralSwitchCount++;
 						break;
 
 					case "version":
@@ -155,6 +173,7 @@ namespace Keysharp.Internals.Scripting
 
 					case "validate":
 						validate = true;
+						compilationNeutralSwitchCount++;
 						break;
 
 					case "validate-syntax":
@@ -261,6 +280,7 @@ namespace Keysharp.Internals.Scripting
 							return CliCommand.Error("--iLib requires an output path.");
 
 						validate = true;
+						compilationNeutralSwitchCount++;//The path it takes is ignored, so this is exactly --validate.
 						i++;
 						break;
 
@@ -407,6 +427,7 @@ namespace Keysharp.Internals.Scripting
 				ExcludeComponents = [.. excludeComponents],
 				FromStdin = fromstdin,
 				Validate = validate,
+				ValidateWithDefaultCompilation = validate && switchCount == compilationNeutralSwitchCount,
 				SyntaxOnly = syntaxOnly,
 				Transpile = transpile,
 				MinimalExe = compileMinimalExe,

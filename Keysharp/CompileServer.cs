@@ -608,6 +608,9 @@ namespace Keysharp.Main
 					CompilationName = nameNoExt,
 					RuntimeDirectory = exeDir,
 					Output = ScriptCompilationOutput.InMemory,
+					// A shared background process does no network I/O for a caller it cannot see: an unrestored
+					// #Package fails here, and the client reports it (--validate) or recompiles in-process.
+					AllowPackageRestore = false,
 				});
 				bytes = compilation.AssemblyBytes;
 				error = compilation.ErrorText;
