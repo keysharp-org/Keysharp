@@ -2068,6 +2068,13 @@ namespace Keysharp.Internals.Input.Hooks
 		/// </summary>
 		internal nint LowLevelCommon(HookEventArgs e, uint vk, uint sc, uint rawSc, bool keyUp, ulong extraInfo, uint eventFlags, uint? deviceId = null)
 		{
+			var script = Script.TheScript;
+			// A hook can outlive the Script that installed it, and a replacement Script publishes
+			// Script.TheScript before it creates its HookThread. Everything below reaches the current Script,
+			// so an event arriving in either window would drive a torn-down or half-built one. Pass it through untouched instead.
+			if (script?.HookThread != this)
+				return CallNextHook(e);
+
 			var eventInfo = CreateEventInfo(e, extraInfo, eventFlags, MouseUtils.IsWheelVK(vk) ? (long)(short)sc : null, deviceId);
 			var isKeyboardEvent = e is KeyboardHookEventArgs;
 			var hotkeyIdToPost = HotkeyDefinition.HOTKEY_ID_INVALID; // Set default.
@@ -2091,7 +2098,6 @@ namespace Keysharp.Internals.Input.Hooks
 
 				RecordKeyDownState(key, down, kbdMsSender.modifiersLRPhysical);
 			}
-			var script = Script.TheScript;
 			var collectInputState = new CollectInputState()
 			{
 				earlyCollected = false
