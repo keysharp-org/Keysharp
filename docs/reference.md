@@ -804,6 +804,8 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 			+ In class blocks, public methods and property accessors are script-visible; non-public members remain C# helpers, `init` is read-only, and fields are not exposed. `[Static]` selects the class-static side.
 			+ Values use the same conversions as `Ks.Clr`. Unsupported public signatures are rejected, and CLR exceptions are mapped to catchable Keysharp errors where possible.
 			+ Usings are shared within a module but isolated between modules. Script preprocessor symbols and C# `unsafe` are supported. Calls use normal script dispatch, so group substantial work across the boundary.
+		+ `#Package [*i] id [version]` resolves a NuGet package for `Ks.Clr` and inline C# at compile time. It follows `NuGet.Config` and supports managed, resource and native assets, but not package build hooks. `*i` makes a missing package optional.
+		+ `Clr.LoadPackage(id, version?, optional?)` loads a NuGet package at runtime. Prefer `#Package` for known dependencies.
 		+ `#HookMutexName <name>` allows renaming the mutex objects created to detect keyboard and mouse hooks in other running scripts. The default name is "Keysharp".
 		+ Assembly description attributes may be changed with the following directives, with the desired value as the only argument of the directive:
 			+ `#AssemblyName`
@@ -824,13 +826,13 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 		- `--transpile`
 		  Outputs the generated .cs file shown in Keyview without running the script. A script using `#CSharp` also gets a `Scriptname.inline.cs` tooling view of its inline units.
 		- `--compile exe [--dest <path>] <script>`
-		  Outputs a .exe file which can be ran as standalone from Keysharp (but still requires .NET 10). If `--dest` is a folder, the executable is written there using the script's base name. If `--dest` is a file name, that name and folder are used for the output. A script using `#Package` stores its pinned package assets under `.keysharp/packages`; distribute that directory with the executable. The script is not run.
+		  Outputs a standalone .exe that still requires .NET 10. `--dest` accepts a file or folder. Package files are copied beside the output. The script is not run.
 		- `--compile exe-min [--dest <path>] <script>`
-		  Same as `--compile exe` but the number of file dependencies is reduced by embedding them in Scriptname.dll, including assets resolved by `#Package`. The resulting program will have five dependencies: Scriptname.exe, Scriptname.dll, Keysharp.Core.dll, Scriptname.deps.json, and Scriptname.runtime.config. To get a truly single-file executable the script must be compiled as a C# project, for example as Keysharp.OutputTest in the Keysharp solution. The script is not run.
+		  Like `exe`, but embeds package files in Scriptname.dll. The script is not run.
 		- `--compile <script>`
-		  Outputs the compiled raw assembly bytes to a `.cks` file with the same base name as the script. The script is not run.
+		  Outputs a `.cks` assembly and its package assets. The script is not run.
 		- `--compile asm [--dest <path|*>] <script>`
-		  Outputs the compiled raw assembly bytes to a `.cks` file. If `--dest` is a folder, the `.cks` file is written there using the script's base name. If `--dest` is a file name, that file is used. If `--dest` is `*`, output is written to StdOut. `dll` is also accepted as an alias for `asm`. The script is not run.
+		  Like `--compile`, with explicit file, folder or `*` output. `dll` is an alias for `asm`. The script is not run.
 		- `--validate`, `/validate`
 		  Compiles but does not run the script. Can be used to check for load-time errors.
 		- `--asm`, `--assembly`

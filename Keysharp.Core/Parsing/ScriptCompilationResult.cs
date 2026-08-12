@@ -22,6 +22,8 @@ namespace Keysharp.Parsing
 
 		internal IReadOnlyCollection<string> InlineDefines { get; set; } = [];
 
+		internal IReadOnlyCollection<string> RequiredProviders { get; set; } = [];
+
 		internal PackageManifest Packages { get; set; }
 
 		internal string DeclaredAssemblyName { get; set; }

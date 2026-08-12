@@ -52,7 +52,7 @@ Status legend:
 | #Module | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Module directive starts a new module or reopens an existing module. |
 | #NoTrayIcon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #NoTrayIcon directive disables the showing of a tray icon. |
 | #Nullable | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Accepted; nullable-context state is a no-op in Keysharp. |
-| #Package | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Keysharp-only. Makes a NuGet package's assemblies available to Clr and to inline C#. Packages are resolved when the script is COMPILED, not when it runs, and the exact resolved versions are pinned into the built assembly, so a floating version resolves once rather than differing on each machine; the runtime loads what was pinned and never restores. Full compiled artifacts deploy collision-free package assets under .keysharp/packages; exe-min embeds them. Resolution is delegated to the .NET SDK ('dotnet restore' on a generated project) and cached, so the SDK is needed only the first time a package set is resolved on a machine; --validate and Ks.ParseScript resolve offline and report an unrestored set instead of fetching it. Version may be omitted (newest stable), partial, exact, or a bounded range. Verified on Windows; the implementation is platform-neutral but has not been exercised on Linux or macOS. |
+| #Package | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Keysharp-only. Resolves NuGet packages at compile time for Clr and inline C#. Supports managed, resource and native assets, but not package build hooks. Windows verified. |
 | #Pragma | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Accepted; preprocessor pragma options are a no-op. |
 | #Region | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Accepted; a source-folding marker with no runtime semantics. |
 | #Requires | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Requires directive displays an error and quits if a version requirement is not met. |
@@ -391,7 +391,7 @@ Status legend:
 | Clr.GetNamespaceName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the namespace name for a managed wrapper or type; implemented by the shared managed runtime. |
 | Clr.GetTypeName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the type name for a managed wrapper or object; implemented by the shared managed runtime. |
 | Clr.Load() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Loads a managed assembly for CLR interop through the shared .NET runtime. |
-| Clr.LoadPackage() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Keysharp-only. Runtime form of the #Package directive, for a package chosen by a computed name or needed only on some code paths. Accumulates: each call re-resolves the union of everything requested so far, and a version conflict with an already-loaded package is reported. Prefer #Package where it fits. Verified on Windows; not exercised on Linux or macOS. |
+| Clr.LoadPackage() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Keysharp-only runtime NuGet package loading. Calls accumulate and report version conflicts. Prefer #Package when the dependency is known at compile time. Windows verified. |
 | Clr.ManagedAssembly | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent wrapper for a loaded managed assembly. |
 | Clr.ManagedInstance | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed object instance wrapper. |
 | Clr.ManagedInstance.__Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enumerates members exposed by the platform-independent managed instance wrapper. |

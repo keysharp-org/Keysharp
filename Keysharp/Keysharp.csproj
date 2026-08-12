@@ -123,6 +123,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
+		<ProjectReference Include="..\Keysharp.Components\Packages\NuGet\Keysharp.Components.Packages.NuGet.csproj" ReferenceOutputAssembly="false" Private="false" />
 	</ItemGroup>
 
 	<ItemGroup>

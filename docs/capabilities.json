@@ -451,12 +451,12 @@
                  {
                      "category":  "Environment/System",
                      "feature":  "#Package",
-                     "syntax":  "#Package [*i] <PackageName> [Version]",
+                     "syntax":  "#Package [*i] PackageId [Version]",
                      "windows":  "full",
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
-                     "notes":  "Keysharp-only. Makes a NuGet package's assemblies available to Clr and to inline C#. Packages are resolved when the script is COMPILED, not when it runs, and the exact resolved versions are pinned into the built assembly, so a floating version resolves once rather than differing on each machine; the runtime loads what was pinned and never restores. Full compiled artifacts deploy collision-free package assets under .keysharp/packages; exe-min embeds them. Resolution is delegated to the .NET SDK ('dotnet restore' on a generated project) and cached, so the SDK is needed only the first time a package set is resolved on a machine; --validate and Ks.ParseScript resolve offline and report an unrestored set instead of fetching it. Version may be omitted (newest stable), partial, exact, or a bounded range. Verified on Windows; the implementation is platform-neutral but has not been exercised on Linux or macOS.",
+                     "notes":  "Keysharp-only. Resolves NuGet packages at compile time for Clr and inline C#. Supports managed, resource and native assets, but not package build hooks. Windows verified.",
                      "tested-by":  "PackageDirectiveTests.cs"
                  },
                  {
@@ -3885,7 +3885,7 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
-                     "notes":  "Keysharp-only. Runtime form of the #Package directive, for a package chosen by a computed name or needed only on some code paths. Accumulates: each call re-resolves the union of everything requested so far, and a version conflict with an already-loaded package is reported. Prefer #Package where it fits. Verified on Windows; not exercised on Linux or macOS.",
+                     "notes":  "Keysharp-only runtime NuGet package loading. Calls accumulate and report version conflicts. Prefer #Package when the dependency is known at compile time. Windows verified.",
                      "tested-by":  "PackageDirectiveTests.cs"
                  },
                  {

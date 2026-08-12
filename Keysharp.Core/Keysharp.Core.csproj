@@ -89,6 +89,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\Keysharp.Components\Packages\Contracts\Keysharp.Components.Packages.csproj" />
 		<PackageReference Include="BitFaster.Caching" Version="2.5.4" />
 		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
 		<!-- 1.6.0-pre1 is the first release carrying a win-arm64 native, which Windows on ARM needs. -->

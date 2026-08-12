@@ -91,6 +91,8 @@ namespace Keysharp.Parsing.Syntax
 		// Package resolution is program-wide; identity tracking catches declarations below module scope.
 		private readonly List<Keysharp.Internals.Os.PackageResolver.PackageRef> _packages = [];
 		private readonly HashSet<Stmt> _packagesSeen = new(ReferenceEqualityComparer.Instance);
+		private readonly HashSet<string> _requiredProviders = new(System.StringComparer.OrdinalIgnoreCase);
+		public IReadOnlyCollection<string> RequiredProviders => _requiredProviders;
 
 		// Inline C# is emitted as one additional tree per script module; identity tracking catches unsupported nesting.
 		private List<(string Module, string ClassPath, CSharpDirective Dir)> _inlineBlocks;
@@ -2616,8 +2618,7 @@ namespace Keysharp.Parsing.Syntax
 
 		// Gathers the program's `#Package [*i] <id> [version]` directives into one package set (see the _packages field
 		// for why they cannot be resolved one at a time) and validates each. Validation belongs here rather than at
-		// runtime so a malformed id/version is a compile error — and, since these values are written verbatim into the
-		// generated project file the SDK restores, the character allowlist is also what makes that safe.
+		// runtime so a malformed provider/id/version is a compile error before provider resolution begins.
 		private void PrescanPackageDirectives(List<Stmt> body)
 		{
 			foreach (var s in body)
@@ -2643,20 +2644,50 @@ namespace Keysharp.Parsing.Syntax
 					continue;
 				}
 
-				var id = parts[0].Trim('"', '\'');
+				var qualifiedId = parts[0].Trim('"', '\'');
+				var provider = "nuget";
+				var colon = qualifiedId.IndexOf(':');
+
+				if (colon >= 0)
+				{
+					provider = qualifiedId[..colon];
+					qualifiedId = qualifiedId[(colon + 1)..];
+				}
+
+				if (!Keysharp.Internals.Os.PackageProviderRegistry.IsValidProviderName(provider))
+				{
+					Diag($"#Package: '{provider}' is not a valid package provider name");
+					continue;
+				}
+
+				var id = qualifiedId;
 				// Everything after the name is the version expression. It is joined rather than limited to one token
 				// because a bounded form takes two (`>=13.0 <14`), exactly as `#Requires` writes them.
 				var version = string.Join(" ", parts.Skip(1)).Trim('"', '\'');
 
-				if (!Keysharp.Internals.Os.PackageResolver.IsValidId(id))
+				string range;
+
+				if (!Keysharp.Internals.Os.PackageProviderRegistry.TryGet(provider, out var packageProvider, out var providerError))
 				{
-					Diag($"#Package: '{id}' is not a valid package name");
+					// An optional package may name an optional provider installation. Its grammar cannot be
+					// normalized while that provider is absent, but the compile-time resolver will drop the
+					// whole optional request and emit the ordinary optional-package warning.
+					if (optional)
+						range = version;
+					else
+					{
+						Diag($"#Package: {providerError}");
+						continue;
+					}
+				}
+				else if (!packageProvider.IsValidPackageId(id))
+				{
+					Diag($"#Package: '{id}' is not a valid package name for provider '{provider}'");
 					continue;
 				}
-
 				// Translated at compile time so a bad version is a compile error, and so the runtime cache key is
 				// canonical (two spellings of the same range share one resolved set).
-				if (!Keysharp.Internals.Os.PackageResolver.TryTranslateVersion(version, out var range, out var verr))
+				else if (!packageProvider.TryNormalizeVersion(version, out range, out var verr))
 				{
 					Diag($"#Package: {verr} for package '{id}'");
 					continue;
@@ -2666,7 +2697,8 @@ namespace Keysharp.Parsing.Syntax
 
 				// The same package twice is harmless if identical; conflicting versions are not, since the resolver
 				// would have to unify them and the script author almost certainly did not mean it.
-				var dup = _packages.FindIndex(p => p.Id.Equals(id, System.StringComparison.OrdinalIgnoreCase));
+				var dup = _packages.FindIndex(p => p.Provider.Equals(provider, System.StringComparison.OrdinalIgnoreCase)
+												  && p.Id.Equals(id, System.StringComparison.OrdinalIgnoreCase));
 
 				if (dup >= 0)
 				{
@@ -2678,7 +2710,7 @@ namespace Keysharp.Parsing.Syntax
 					continue;
 				}
 
-				_packages.Add(new Keysharp.Internals.Os.PackageResolver.PackageRef(id, version, optional));
+				_packages.Add(new Keysharp.Internals.Os.PackageResolver.PackageRef(id, version, optional, provider));
 			}
 		}
 
@@ -3242,6 +3274,7 @@ namespace Keysharp.Parsing.Syntax
 				// the *OrNull form so an unset-VALUED member yields null (which short-circuits the next `?.`) rather than
 				// raising (e.g. `optObj?.prop?.inner` when `prop` is unset).
 				case MemberExpr mem:
+					TrackLoadPackageMember(mem);
 					return mem.NullConditional || MayYieldUnset(mem.Target)
 						? NullCondWrap(mem.Target, tt => Op("GetPropertyValueOrNull", tt, Str(mem.Name)))
 						: Op("GetPropertyValue", LowerExpr(mem.Target), Str(mem.Name));
@@ -3724,6 +3757,12 @@ namespace Keysharp.Parsing.Syntax
 
 		private ExpressionSyntax LowerCall(CallExpr c, bool statement)
 		{
+			// Declarative #Package is resolved while compiling and needs no provider in the produced artifact.
+			// A statically visible imperative call does: a literal provider prefix is precise, while computed package
+			// names conservatively carry NuGet and let an unanticipated provider report its normal runtime error.
+			if (c.Callee is MemberExpr member && IsLoadPackageMember(member))
+				_ = _requiredProviders.Add(LoadPackageProvider(c));
+
 			if (c.Args.Count != 0) CheckNamedArgs(c);
 
 			// IsSet(member/index/call) must not throw on an unset target — rewrite the arg to its *OrNull form.
@@ -3751,6 +3790,46 @@ namespace Keysharp.Parsing.Syntax
 			else args = new() { LowerExpr(c.Callee), Str("Call") };
 			args.AddRange(CallArgs());
 			return Op(statement ? "InvokeOrNull" : "Invoke", args.ToArray());
+		}
+
+		private void TrackLoadPackageMember(MemberExpr member)
+		{
+			if (IsLoadPackageMember(member))
+				_ = _requiredProviders.Add("nuget");
+		}
+
+		private string LoadPackageProvider(CallExpr call)
+		{
+			if (call.Args.Count != 0 && call.Args[0].Value is LiteralExpr { Kind: LiteralKind.String } literal)
+			{
+				var id = DecodeString(literal.Raw);
+				var colon = id.IndexOf(':');
+
+				if (colon > 0)
+				{
+					var provider = id[..colon];
+
+					if (Keysharp.Internals.Os.PackageProviderRegistry.IsValidProviderName(provider))
+						return provider.ToLowerInvariant();
+				}
+			}
+
+			return "nuget";
+		}
+
+		private static bool IsLoadPackageMember(MemberExpr callee)
+		{
+			if (!callee.Name.Equals("LoadPackage", System.StringComparison.OrdinalIgnoreCase))
+				return false;
+
+			var target = callee.Target;
+
+			if (target is NameExpr direct)
+				return direct.Name.Equals("Clr", System.StringComparison.OrdinalIgnoreCase);
+
+			return target is MemberExpr { Name: var clr, Target: NameExpr root }
+				   && clr.Equals("Clr", System.StringComparison.OrdinalIgnoreCase)
+				   && root.Name.Equals("Ks", System.StringComparison.OrdinalIgnoreCase);
 		}
 
 		private ExpressionSyntax LowerObject(ObjectExpr o)

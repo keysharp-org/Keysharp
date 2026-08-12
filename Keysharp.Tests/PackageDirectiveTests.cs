@@ -7,8 +7,8 @@ namespace Keysharp.Tests
 {
 	/// <summary>
 	/// Covers the `#Package` directive. The compile-time half (validation and, crucially, batching) is tested here
-	/// against the lowerer directly; the resolve-and-load half needs the network and the .NET SDK, so it is kept in
-	/// its own category and out of the curated CI set.
+	/// against the lowerer directly; tests which may need a package-feed connection are kept in their own category
+	/// and out of the curated CI set.
 	/// </summary>
 	[Category("Internal")]
 	public class PackageDirectiveTests : TestRunner
@@ -57,6 +57,32 @@ namespace Keysharp.Tests
 			System.Text.RegularExpressions.Regex.Matches(code, @"LoadPackages\(").Count;
 
 		[Test, Category("Directives")]
+		public void RuntimeProviderMetadata()
+		{
+			static IReadOnlyCollection<string> Required(string source)
+			{
+				var (prog, parseDiags) = KP.Parser.ParseWithDiagnostics(source);
+				Assert.IsEmpty(parseDiags, "unexpected parse diagnostics: " + string.Join("; ", parseDiags));
+				var lowerer = new KP.Lowerer();
+				_ = lowerer.Build(prog, "providertest");
+				return lowerer.RequiredProviders;
+			}
+
+			Assert.IsEmpty(Required("#Package Newtonsoft.Json 13.0.3\n"),
+				"declarative packages are resolved at compile time and must not deploy the resolver");
+			CollectionAssert.Contains(Required("#import Ks { Clr }\nClr.LoadPackage(\"A\",, true)\n"), "nuget");
+			CollectionAssert.Contains(Required("Ks.Clr.LoadPackage(\"A\",, true)\n"), "nuget");
+			CollectionAssert.Contains(Required("loader := Clr.LoadPackage\nloader(\"A\")\n"), "nuget",
+				"a statically visible member reference must carry its provider even when invoked through an alias");
+			CollectionAssert.Contains(Required("Clr.LoadPackage(\"aris:dev/name\")\n"), "aris",
+				"a literal provider-qualified id makes the deployment metadata provider-specific");
+			Assert.IsFalse(Required("Clr.LoadPackage(\"aris:dev/name\")\n").Contains("nuget"),
+				"a known non-NuGet call should not carry an unrelated provider");
+			CollectionAssert.Contains(Required("id := \"aris:dev/name\"\nClr.LoadPackage(id)\n"), "nuget",
+				"computed package ids use the conservative default provider");
+		}
+
+		[Test, Category("Directives")]
 		public void MissingId()
 		{
 			var (_, diags) = Lower("#Package\n");
@@ -72,10 +98,42 @@ namespace Keysharp.Tests
 			StringAssert.Contains("is not a valid package name", diags[0]);
 		}
 
+		[Test, Category("Directives")]
+		public void ProviderQualification()
+		{
+			var (_, diags) = Lower("#Package nuget:Newtonsoft.Json v13.0\n");
+			Assert.IsEmpty(diags, string.Join("; ", diags));
+			Assert.AreEqual(1, lastPackages.Count);
+			Assert.AreEqual("nuget", lastPackages[0].Provider);
+			Assert.AreEqual("Newtonsoft.Json", lastPackages[0].Id);
+			Assert.AreEqual("13.0.*", lastPackages[0].Version);
+
+			(_, diags) = Lower("#Package 9aris:dev/name\n");
+			Assert.AreEqual(1, diags.Count);
+			StringAssert.Contains("not a valid package provider name", diags[0]);
+		}
+
+		[Test, Category("Directives")]
+		public void MissingOptionalProviderIsOptional()
+		{
+			var (_, diags) = Lower("#Package *i providernotinstalled:dev/name v1\n");
+			Assert.IsEmpty(diags, string.Join("; ", diags));
+			Assert.AreEqual(1, lastPackages.Count);
+			Assert.AreEqual("providernotinstalled", lastPackages[0].Provider);
+			Assert.AreEqual("dev/name", lastPackages[0].Id);
+			Assert.AreEqual("v1", lastPackages[0].Version,
+				"an absent provider owns the grammar, so its optional request must remain opaque until it is skipped");
+
+			var assemblies = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne(
+				"providernotinstalled:dev/name", "v1", true, out var error);
+			Assert.IsNull(assemblies);
+			Assert.IsNull(error, "Optional runtime packages include an optional provider installation.");
+		}
+
 		/// <summary>
 		/// Versions may be omitted, partial, exact, or bounded — the shapes `#Requires` accepts — and are translated
-		/// to NuGet ranges at compile time. The translation is not cosmetic: `&lt;` and `&gt;` are illegal in an XML
-		/// attribute value, so a comparison must never reach the generated project file as the script wrote it.
+		/// to NuGet ranges at compile time. The translation is provider input, not a formatting convenience: every
+		/// equivalent AHK spelling must describe the same dependency constraint to the in-process restore engine.
 		/// </summary>
 		[Test, Category("Directives")]
 		public void VersionRanges()
@@ -118,10 +176,161 @@ namespace Keysharp.Tests
 											 "1.2.3.4.5", "1.0-", "1.0+", "1.0-beta..1" })
 				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.TryTranslateVersion(bad, out _, out _), bad);
 
-			// A literal range is written verbatim into the csproj, so a malformed one has to be caught here rather
-			// than surfacing as a NuGet error at run time — this method's whole contract is compile-time rejection.
+			// A literal range is passed through to the provider, so a malformed one has to be caught here rather
+			// than surfacing during graph resolution — this method's whole contract is compile-time rejection.
 			foreach (var bad in new[] { "[[[", "***", "[]", "[,]", "(1.0)", "[1.0,2.0,3.0]", "[abc,)", "1.*.3", "*.1" })
 				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.TryTranslateVersion(bad, out _, out _), bad);
+		}
+
+		[Test, Category("Directives")]
+		public void ProviderVersionNormalization()
+		{
+			void Check(string written, string expected)
+			{
+				Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("NuGet", written,
+					out var normalized, out var error), error);
+				Assert.AreEqual(expected, normalized);
+			}
+
+			Check("v1", "1.*");
+			Check("v1.2", "1.2.*");
+			Check("v1.2.3", "[1.2.3]");
+			Check("v1.2.3-beta.1", "[1.2.3-beta.1]");
+			Check(">=v1.2 <v2", "[1.2,2)");
+		}
+
+		[Test, Category("Directives")]
+		public void ManifestPinsFloatingRequest()
+		{
+			var manifest = new Keysharp.Internals.Os.PackageManifest();
+			manifest.Add(new Keysharp.Internals.Os.PackageResolver.ResolvedPackage
+			{
+				Provider = "nuget",
+				Id = "Example.Package",
+				Version = "1.9.4",
+				PinnedVersion = "[1.9.4]"
+			}, "1.*", false, true);
+
+			var roundTrip = Keysharp.Internals.Os.PackageManifest.Read(manifest.Write());
+			Assert.AreEqual("1.*", roundTrip.Packages[0].Requested);
+			Assert.AreEqual("[1.9.4]", roundTrip.Direct[0].Version);
+			Assert.IsFalse(roundTrip.Write().Contains("\"compile\"", StringComparison.Ordinal),
+				"reference assets are build-only and must not be deployed in runtime manifests");
+		}
+
+		[Test, Category("Directives")]
+		public void ProviderSpecificIdsCannotCollideInDeploymentPaths()
+		{
+			string DeployedFor(string id)
+			{
+				var root = Path.Combine(Path.GetTempPath(), "keysharp-provider-path-test");
+				var source = Path.Combine(root, "lib", "Example.dll");
+				var package = new Keysharp.Internals.Os.PackageResolver.ResolvedPackage
+				{
+					Provider = "aris", Id = id, Version = "1.0.0", PinnedVersion = "1.0.0", Root = root
+				};
+				package.Managed.Add(source);
+				var manifest = new Keysharp.Internals.Os.PackageManifest();
+				manifest.Add(package, "1.0.0", false, true);
+				return manifest.Packages.Single().Managed.Single().Deployed;
+			}
+
+			Assert.AreNotEqual(DeployedFor("dev/name"), DeployedFor("dev_name"),
+				"opaque provider ids must not collide when mapped to filesystem-safe artifact paths");
+			Assert.AreNotEqual(DeployedFor("Dev/name"), DeployedFor("dev/name"),
+				"Core must not assume an external provider's identifier is case-insensitive");
+		}
+
+		[Test, Category("NuGet")]
+		public async Task ProviderAudit()
+		{
+			Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGet("NuGet", out var provider, out var failure), failure);
+			var cache = Path.Combine(Path.GetTempPath(), "keysharp-provider-audit-" + Guid.NewGuid().ToString("N"));
+
+			try
+			{
+				var context = new Keysharp.Components.Packages.PackageResolveContext(cache, Environment.CurrentDirectory,
+					Keysharp.Internals.Os.PackageResolver.TargetFramework, Keysharp.Internals.Os.PackageResolver.RuntimeId,
+					true, TimeSpan.FromMinutes(3), "audit test");
+				var result = await provider.ResolveAsync(context,
+					[new Keysharp.Components.Packages.PackageRequest("Newtonsoft.Json", "[12.0.1]")], CancellationToken.None);
+				Assert.IsTrue(result.Success, result.Failure);
+				Assert.IsTrue(result.Diagnostics.Any(message => message.Contains("NU190", StringComparison.Ordinal)),
+					"NuGetAudit was configured but emitted no NU190x advisory: " + string.Join("; ", result.Diagnostics));
+			}
+			finally
+			{
+				try { Directory.Delete(cache, true); } catch { }
+			}
+		}
+
+		[Test, Category("NuGet")]
+		public async Task ProviderWarmCacheValidation()
+		{
+			Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGet("nuget", out var provider, out var failure), failure);
+			var root = Path.Combine(Path.GetTempPath(), "keysharp-provider-cache-" + Guid.NewGuid().ToString("N"));
+			var cache = Path.Combine(root, "cache");
+			Directory.CreateDirectory(root);
+			var config = Path.Combine(root, "NuGet.Config");
+			File.WriteAllText(config, "<configuration><packageSources><add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" /></packageSources></configuration>");
+
+			try
+			{
+				var context = new Keysharp.Components.Packages.PackageResolveContext(cache, root,
+					Keysharp.Internals.Os.PackageResolver.TargetFramework, Keysharp.Internals.Os.PackageResolver.RuntimeId,
+					true, TimeSpan.FromMinutes(3), "cache test");
+				var request = new[] { new Keysharp.Components.Packages.PackageRequest("Newtonsoft.Json", "[13.0.3]") };
+				var cold = await provider.ResolveAsync(context, request, CancellationToken.None);
+				Assert.IsTrue(cold.Success, cold.Failure);
+				Assert.IsTrue(cold.RestoreAttempted);
+
+				var warm = await provider.ResolveAsync(context, request, CancellationToken.None);
+				Assert.IsTrue(warm.Success, warm.Failure);
+				Assert.IsFalse(warm.RestoreAttempted, "a complete, matching lock graph should be served before RestoreRunner");
+
+				var assetsPath = Directory.GetFiles(cache, "project.assets.json", SearchOption.AllDirectories).Single();
+				var assets = File.ReadAllText(assetsPath);
+				StringAssert.Contains("Newtonsoft.Json.dll", assets);
+				File.WriteAllText(assetsPath, assets.Replace("Newtonsoft.Json.dll", "Newtonsoft.Json.missing.dll", StringComparison.Ordinal));
+				var repaired = await provider.ResolveAsync(context, request, CancellationToken.None);
+				Assert.IsTrue(repaired.Success, repaired.Failure);
+				Assert.IsTrue(repaired.RestoreAttempted, "a lock graph selecting a missing asset must be restored, not accepted as warm");
+
+				File.AppendAllText(config, "<!-- fingerprint change -->");
+				var reconfigured = await provider.ResolveAsync(context, request, CancellationToken.None);
+				Assert.IsTrue(reconfigured.Success, reconfigured.Failure);
+				Assert.IsTrue(reconfigured.RestoreAttempted, "NuGet.Config content changes must invalidate the provider cache stamp");
+			}
+			finally
+			{
+				try { Directory.Delete(root, true); } catch { }
+			}
+		}
+
+		[Test, Category("NuGet")]
+		public void ProviderRestoreLockHonorsCancellation()
+		{
+			Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGet("nuget", out var provider, out var failure), failure);
+			var root = Path.Combine(Path.GetTempPath(), "keysharp-provider-lock-" + Guid.NewGuid().ToString("N"));
+			var cache = Path.Combine(root, "cache");
+			Directory.CreateDirectory(cache);
+
+			try
+			{
+				using var held = new FileStream(Path.Combine(cache, "restore.lock"), FileMode.OpenOrCreate,
+					FileAccess.ReadWrite, FileShare.None);
+				using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+				var context = new Keysharp.Components.Packages.PackageResolveContext(cache, root,
+					Keysharp.Internals.Os.PackageResolver.TargetFramework, Keysharp.Internals.Os.PackageResolver.RuntimeId,
+					true, TimeSpan.FromMinutes(3), "lock test");
+
+				Assert.CatchAsync<OperationCanceledException>(async () => await provider.ResolveAsync(context,
+					[new Keysharp.Components.Packages.PackageRequest("Newtonsoft.Json", "[13.0.3]")], timeout.Token));
+			}
+			finally
+			{
+				try { Directory.Delete(root, true); } catch { }
+			}
 		}
 
 		[Test, Category("Directives")]
@@ -143,8 +352,9 @@ namespace Keysharp.Tests
 		[Test, Category("Directives")]
 		public void DuplicatePackage()
 		{
-			var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package Newtonsoft.Json 13.0.3\n");
+			var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package nuget:Newtonsoft.Json 13.0.3\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
+			Assert.AreEqual(1, lastPackages.Count, "default and explicit NuGet spellings are one provider-qualified identity");
 			AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false))");
 		}
 
@@ -222,7 +432,7 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// A `dotnet restore` that FAILS still writes a complete, well-formed project.assets.json describing whichever
+		/// A NuGet restore that FAILS can still write a complete, well-formed project.assets.json describing whichever
 		/// packages did resolve. Trusting that file would turn a hard "package not found" error into a silently
 		/// missing package on every subsequent run — loud once, then never again. NuGet's own verdict lives in
 		/// project.nuget.cache beside it, and that is what gates the cache hit.
@@ -288,7 +498,7 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// Reading the SDK's assets file is the most assumption-laden code in the feature and the only part that a
+		/// Reading a NuGet assets file is retained for cache compatibility and package-manifest fixtures. A
 		/// live restore is otherwise the only way to exercise. A fixture pins the shapes that matter: RID-suffixed
 		/// target selection, the `_._` placeholder, and native assets landing separately from managed ones.
 		/// </summary>
@@ -442,9 +652,8 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// A REQUIRED package that does not exist must be reported, must name itself, and must not blame the SDK —
-		/// the install-the-SDK paragraph belongs only to a machine that actually lacks it, and printing it for a
-		/// plain "package not found" buries the real error under advice the user has already followed. The failed
+		/// A REQUIRED package that does not exist must be reported and must name itself. The provider is already
+		/// installed locally, so a plain "package not found" must not turn into advice about unrelated tools. The failed
 		/// request must also roll back, so a later good call is not poisoned by a set that is known to fail.
 		/// </summary>
 		[Test, Category("NuGet")]
@@ -501,8 +710,8 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// The feature's headline promise: the SDK and the network are needed only the FIRST time a package set is
-		/// used on a machine. Every later run reads the assets file the SDK already wrote, spawning no subprocess.
+		/// The feature's headline promise: a feed is needed only the FIRST time a package set is used on a machine.
+		/// Every later run reads the graph the in-process provider already wrote, spawning no subprocess.
 		/// Nothing else observes that — a regression would just make startup quietly slow.
 		/// </summary>
 		[Test, Category("NuGet"), NonParallelizable]
@@ -512,11 +721,11 @@ namespace Keysharp.Tests
 			// Warm the set (this may or may not restore, depending on what earlier tests left in the on-disk cache).
 			Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.TryResolve(pkgs, true, "#Package", out _, out var err), err);
 			// Zeroes the counters AND the in-process memo, so the second call must go back to DISK — which is the
-			// cache this test exists to pin. Only the network/subprocess step may be skipped.
+			// cache this test exists to pin. Only the network/restore step may be skipped.
 			Keysharp.Internals.Os.PackageResolver.ResetCounters();
 			Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.TryResolve(pkgs, true, "#Package", out _, out err), err);
 			Assert.AreEqual(0, Keysharp.Internals.Os.PackageResolver.RestoreCount,
-							"a package set already resolved on this machine must not spawn 'dotnet restore' again");
+							"a package set already resolved on this machine must not invoke the provider restore again");
 		}
 
 		[Test, Category("Directives")]
@@ -530,8 +739,8 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// End-to-end: actually resolves and loads a package. Needs the network and the .NET SDK on the first run for
-		/// a given package set, so it is deliberately outside the curated CI categories.
+		/// End-to-end: actually resolves and loads a package. It may need the network on the first run for a given
+		/// package set, so it is deliberately outside the curated CI categories.
 		/// </summary>
 		[Test, Category("NuGet")]
 		public void PackageRestore()
@@ -623,6 +832,66 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
+		/// Imperative package loading is the one compiled-script path which still needs a provider at runtime. A full
+		/// executable carries the provider as a loose subtree; exe-min authenticates an embedded copy and extracts it
+		/// lazily before the call. Neither form puts NuGet implementation assemblies in the application root.
+		/// </summary>
+		[TestCase("exe"), TestCase("exe-min"), Category("NuGet"), NonParallelizable]
+		public void CompiledLoadPackageCarriesProvider(string mode)
+		{
+			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+
+			if (!File.Exists(launcher))
+				Assert.Ignore($"launcher not built at {launcher}");
+
+			var dir = Path.Combine(Path.GetTempPath(), "ks-runtime-provider", mode, Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var script = Path.Combine(dir, "runtime-provider.ks");
+				File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Import Ks { Clr }\n"
+					+ "Clr.LoadPackage(\"Newtonsoft.Json\", \"v13.0.3\")\n"
+					+ "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([4, 5]), \"*\")\nExitApp()\n");
+				Assert.AreEqual(0, Run(launcher, $"--errorstdout --compile {mode} \"{script}\"", out _, out var compileError),
+					"compile failed: " + compileError);
+
+				var exe = Path.ChangeExtension(script, ".exe");
+				var assembly = Assembly.Load(File.ReadAllBytes(Path.ChangeExtension(script, ".dll")));
+				var resources = assembly.GetManifestResourceNames();
+				Assert.IsFalse(Directory.GetFiles(dir, "NuGet*.dll", SearchOption.TopDirectoryOnly).Any(),
+					"NuGet implementation assemblies belong under components/packages/nuget, never beside the application");
+
+				if (mode == "exe")
+				{
+					var providerRoot = Path.Combine(dir, "components", "packages", "nuget");
+					Assert.IsTrue(File.Exists(Path.Combine(providerRoot, "provider.json")));
+					Assert.IsTrue(File.Exists(Path.Combine(providerRoot, "NuGet.Commands.dll")));
+					Assert.IsFalse(resources.Contains(Keysharp.Internals.Os.CompiledPackageProviderManifest.ResourceName),
+						"the full form deploys its provider and must not duplicate it in the script assembly");
+				}
+				else
+				{
+					Assert.IsFalse(Directory.Exists(Path.Combine(dir, "components", "packages")),
+						"exe-min must not require a provider sidecar");
+					Assert.IsTrue(resources.Contains(Keysharp.Internals.Os.CompiledPackageProviderManifest.ResourceName));
+					Assert.IsTrue(resources.Any(name => name.StartsWith(
+						Keysharp.Internals.Os.CompiledPackageProviderManifest.AssetResourcePrefix, StringComparison.Ordinal)));
+				}
+
+				Assert.IsFalse(Directory.Exists(Path.Combine(dir, "providers")),
+					"compiled artifacts must not recreate the legacy providers subtree");
+
+				Assert.AreEqual(0, Run(exe, "", out var stdout, out var stderr), stderr);
+				Assert.AreEqual("[4,5]", stdout.Trim(), "stderr: " + stderr);
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		/// <summary>
 		/// `--compile asm` (a `.cks` beside the script, run later by the installed launcher) deploys package assets
 		/// exactly as the full exe does: the launcher runs the `.cks` from the script's directory, so its packages
 		/// must sit in the private `.keysharp/packages` hierarchy beside it (Runner.CopyPackageAssemblies).
@@ -648,6 +917,39 @@ namespace Keysharp.Tests
 				Assert.IsTrue(Directory.Exists(deployed)
 							  && Directory.GetFiles(deployed, "*.dll", SearchOption.AllDirectories).Length != 0,
 							  "the .cks must carry its package assets in the private hierarchy beside it");
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("NuGet"), NonParallelizable]
+		public void CompiledCksUsesLauncherProviderWithoutSidecarCopy()
+		{
+			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+
+			if (!File.Exists(launcher))
+				Assert.Ignore($"launcher not built at {launcher}");
+
+			var dir = Path.Combine(Path.GetTempPath(), "ks-provider-cks", Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var script = Path.Combine(dir, "provider-sidecar.ks");
+				File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Import Ks { Clr }\n"
+					+ "Clr.LoadPackage(\"nuget:Newtonsoft.Json\", \"v13.0.3\")\n"
+					+ "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([6, 7]), \"*\")\nExitApp()\n");
+				Assert.AreEqual(0, Run(launcher, $"--errorstdout --compile asm \"{script}\"", out _, out var error), error);
+				var compiled = Path.ChangeExtension(script, ".cks");
+				Assert.IsTrue(File.Exists(compiled));
+				Assert.IsFalse(Directory.Exists(Path.Combine(dir, "components", "packages")),
+					"a .cks already requires the Keysharp launcher and must not duplicate its provider payload");
+				Assert.IsFalse(Directory.Exists(Path.Combine(dir, "providers")),
+					"a .cks must not recreate the legacy providers subtree");
+				Assert.AreEqual(0, Run(launcher, $"--errorstdout \"{compiled}\"", out var stdout, out error), error);
+				Assert.AreEqual("[6,7]", stdout.Trim(), "stderr: " + error);
 			}
 			finally
 			{
@@ -696,6 +998,13 @@ namespace Keysharp.Tests
 			var t = Keysharp.Builtins.TypeResolver.Resolve("SQLitePCL.raw");
 			Assert.IsNotNull(t, "a dependency's type must still be resolvable by name");
 			Assert.IsNotNull(Loaded("SQLitePCLRaw.core"), "resolving the type should have loaded its assembly");
+
+			// The bundle's initialization reaches SQLitePCLRaw.provider.e_sqlite3 and then P/Invokes the selected
+			// RID-specific e_sqlite3 asset. This proves that preserving a runtimes/ folder is not enough: the provider
+			// selected the correct native file and the runtime loader registered its logical import name.
+			var batteries = Loaded("SQLitePCLRaw.batteries_v2")?.GetType("SQLitePCL.Batteries_V2");
+			Assert.IsNotNull(batteries);
+			Assert.DoesNotThrow(() => batteries.GetMethod("Init", BindingFlags.Public | BindingFlags.Static)?.Invoke(null, null));
 		}
 
 		/// <summary>
@@ -872,7 +1181,7 @@ namespace Keysharp.Tests
 				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(script, "off", allowPackageRestore: false);
 				Assert.IsNull(arr, "an unrestored package set must fail an offline compile rather than resolve");
 				Assert.AreEqual(0, Keysharp.Internals.Os.PackageResolver.RestoreCount,
-								"an offline compile must not spawn 'dotnet restore'");
+								"an offline compile must not invoke the provider restore");
 				Assert.IsTrue(code.Contains("not been restored"), "the report should name the actual situation; got:\n" + code);
 			}
 			finally

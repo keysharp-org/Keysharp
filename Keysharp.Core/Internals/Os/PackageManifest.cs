@@ -22,30 +22,40 @@ namespace Keysharp.Internals.Os
 
 		internal sealed class Entry
 		{
+			[JsonPropertyName("provider")] public string Provider { get; set; } = "nuget";
 			[JsonPropertyName("id")] public string Id { get; set; }
 			[JsonPropertyName("requested")] public string Requested { get; set; }
 			[JsonPropertyName("resolved")] public string Resolved { get; set; }
+			[JsonPropertyName("pinned")] public string Pinned { get; set; }
 			[JsonPropertyName("optional")] public bool Optional { get; set; }
 			[JsonPropertyName("direct")] public bool Direct { get; set; }
+			[JsonIgnore] public List<Asset> Compile { get; set; } = [];
 			[JsonPropertyName("managed")] public List<Asset> Managed { get; set; } = [];
+			[JsonPropertyName("resources")] public List<Asset> Resources { get; set; } = [];
 			[JsonPropertyName("native")] public List<Asset> Native { get; set; } = [];
 		}
 
-		internal IEnumerable<Asset> Assets => Packages.SelectMany(p => p.Managed.Concat(p.Native));
+		internal IEnumerable<Asset> Assets => Packages.SelectMany(p => p.Managed.Concat(p.Resources).Concat(p.Native)).DistinctBy(a => a.Deployed);
 
 		internal List<PackageResolver.PackageRef> Direct =>
-			[.. Packages.Where(p => p.Direct).Select(p => new PackageResolver.PackageRef(p.Id, p.Requested, p.Optional))];
+			[.. Packages.Where(p => p.Direct).Select(p => new PackageResolver.PackageRef(p.Id,
+				p.Pinned ?? (p.Provider.Equals("nuget", StringComparison.OrdinalIgnoreCase) ? $"[{p.Resolved}]" : p.Requested),
+				p.Optional, p.Provider))];
 
 		internal void Add(PackageResolver.ResolvedPackage package, string requested, bool optional, bool direct)
 		{
 			Packages.Add(new Entry
 			{
+				Provider = package.Provider,
 				Id = package.Id,
 				Requested = requested,
 				Resolved = package.Version,
+				Pinned = package.PinnedVersion,
 				Optional = optional,
 				Direct = direct,
+				Compile = MakeAssets(package, package.Compile, "compile"),
 				Managed = MakeAssets(package, package.Managed, "managed"),
+				Resources = MakeAssets(package, package.Resources, "resources"),
 				Native = MakeAssets(package, package.Native, "native")
 			});
 		}
@@ -60,8 +70,8 @@ namespace Keysharp.Internals.Os
 				result.Add(new Asset
 				{
 					Source = source,
-					Deployed = Path.Combine(".keysharp", "packages", SafeSegment(package.Id),
-											 SafeSegment(package.Version), kind, relative)
+					Deployed = Path.Combine(".keysharp", "packages", package.Provider.ToLowerInvariant(),
+						IdentitySegment(package.Id), IdentitySegment(package.Version), kind, relative)
 				});
 			}
 
@@ -85,8 +95,15 @@ namespace Keysharp.Internals.Os
 			return Path.Combine("_external", key, Path.GetFileName(source));
 		}
 
-		private static string SafeSegment(string value) =>
-			new(value.Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-' ? c : '_').ToArray());
+		private static string IdentitySegment(string value)
+		{
+			value ??= "";
+			var readable = new string(value.Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-' ? c : '_')
+				.Take(32).ToArray()).Trim('.', '_');
+			var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..32]
+				.ToLowerInvariant();
+			return $"{(readable.Length == 0 ? "package" : readable)}-{hash}";
+		}
 
 		internal static string AssetResourceName(Asset asset) =>
 			AssetResourcePrefix + asset.Deployed.Replace('\\', '/');
@@ -157,8 +174,9 @@ namespace Keysharp.Internals.Os
 
 			foreach (var entry in Packages)
 			{
-				var package = new PackageResolver.ResolvedPackage { Id = entry.Id, Version = entry.Resolved };
+				var package = new PackageResolver.ResolvedPackage { Provider = entry.Provider, Id = entry.Id, Version = entry.Resolved };
 				var ok = LocateAll(scriptAssembly, besides, entry.Managed, package.Managed)
+						 && LocateAll(scriptAssembly, besides, entry.Resources, package.Resources)
 						 && LocateAll(scriptAssembly, besides, entry.Native, package.Native);
 
 				if (ok)

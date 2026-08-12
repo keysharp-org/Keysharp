@@ -97,6 +97,7 @@
 	<ItemGroup>
 		<ProjectReference Include="..\Keysharp\Keysharp.csproj" ReferenceOutputAssembly="false" />
 		<ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
+		<ProjectReference Include="..\Keysharp.Components\Packages\NuGet\Keysharp.Components.Packages.NuGet.csproj" ReferenceOutputAssembly="false" Private="false" />
 	</ItemGroup>
 
 	<!-- Populates the Keyview.app in the *build* output with Keysharp's runtime files, purely so Keyview can be

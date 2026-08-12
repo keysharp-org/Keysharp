@@ -20,6 +20,10 @@ Keysharp.sln
 │   │   ├── Syntax/         # Parser, Ast, Lowerer (AST → C#), NameMangler
 │   │   └── CompilerHelper.cs  # Wraps the lowered unit in a CSharpCompilation
 │   └── Runtime/Script/     # Script singleton, Call helpers, event scheduler
+├── Keysharp.Components/    # Independently deployable first-party components
+│   └── Packages/
+│       ├── Contracts/      # Keysharp.Components.Packages provider contract
+│       └── NuGet/          # In-process NuGet package-provider implementation
 ├── Keysharp.Tests/         # NUnit test suite; test scripts in Code/
 ├── Keysharp.Benchmark/     # BenchmarkDotNet perf suite
 ├── Keysharp.OutputTest/    # Compiled-exe smoke tests (Program.cs is generated output)

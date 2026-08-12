@@ -1,7 +1,43 @@
 <Project>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Keysharp' OR '$(MSBuildProjectName)' == 'Keyview'">
+    <ShipsPackageProviders>true</ShipsPackageProviders>
+  </PropertyGroup>
+
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) AND ('$(MSBuildProjectName)' == 'Keysharp' OR '$(MSBuildProjectName)' == 'Keyview' OR '$(MSBuildProjectName)' == 'Keysharp.OutputTest')">
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>
   </PropertyGroup>
+
+  <Target Name="GetBundledPackageProviderPayload"
+          Condition="'$(ShipsPackageProviders)' == 'true'">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)Keysharp.Components\Packages\NuGet\Keysharp.Components.Packages.NuGet.csproj"
+             Targets="GetPackageProviderPayload"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework)"
+             RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed">
+      <Output TaskParameter="TargetOutputs" ItemName="_BundledPackageProviderPayload" />
+    </MSBuild>
+  </Target>
+
+  <Target Name="CopyBundledPackageProvidersToRidOutput"
+          AfterTargets="Build"
+          DependsOnTargets="GetBundledPackageProviderPayload"
+          Condition="'$(ShipsPackageProviders)' == 'true' AND '$(RuntimeIdentifier)' != ''">
+    <Copy SourceFiles="@(_BundledPackageProviderPayload)"
+          DestinationFiles="@(_BundledPackageProviderPayload->'$(TargetDir)%(ProviderRelativePath)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="IncludeBundledPackageProvidersInPublish"
+          AfterTargets="ComputeFilesToPublish"
+          DependsOnTargets="GetBundledPackageProviderPayload"
+          Condition="'$(ShipsPackageProviders)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(_BundledPackageProviderPayload)">
+        <RelativePath>%(_BundledPackageProviderPayload.ProviderRelativePath)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 
   <Import Project="../Eto/src/Eto.Mac/build/Mac.targets"
           Condition="$([MSBuild]::IsOSPlatform('OSX')) AND ('$(MSBuildProjectName)' == 'Keysharp' OR '$(MSBuildProjectName)' == 'Keyview' OR '$(MSBuildProjectName)' == 'Keysharp.OutputTest') AND Exists('../Eto/src/Eto.Mac/build/Mac.targets')" />

@@ -38,6 +38,7 @@ namespace Keysharp.Parsing
 		public static readonly string[] requiredManagedDependencies = new[]
 		{
 			"Keysharp.Core.dll",
+			"Keysharp.Components.Packages.dll",
 			"PCRE.NET.dll",
 			"BitFaster.Caching.dll",
 			"Semver.dll",
@@ -353,7 +354,7 @@ namespace Keysharp.Parsing
 				);
 				var tree = SyntaxFactory.SyntaxTree(compilation.Unit, parseOptions);
 				return CompileFromTree(tree, outputname, currentDir, minimalexeout, BuildInlineTrees(compilation, parseOptions),
-					diagnoseSink, compilation.Packages);
+					diagnoseSink, compilation.Packages, compilation.RequiredProviders);
 			}
 			catch (Exception e)
 			{
@@ -374,12 +375,14 @@ namespace Keysharp.Parsing
 
 			// Optional (`*i`) packages must not fail the build, and resolution is whole-graph, so one unavailable
 			// optional package would take the required ones down with it. Same two-attempt shape the loader uses.
-			if (!Keysharp.Internals.Os.PackageResolver.TryResolve(set, allowRestore, "#Package", out var resolved, out var failure))
+			var settingsDirectory = !string.IsNullOrWhiteSpace(scriptPath) ? Path.GetDirectoryName(Path.GetFullPath(scriptPath)) : Environment.CurrentDirectory;
+
+			if (!Keysharp.Internals.Os.PackageResolver.TryResolve(set, allowRestore, "#Package", out var resolved, out var failure, settingsDirectory))
 			{
 				var required = set.Where(p => !p.Optional).ToList();
 
 				if (required.Count == set.Count
-					|| (required.Count != 0 && !Keysharp.Internals.Os.PackageResolver.TryResolve(required, allowRestore, "#Package", out resolved, out _)))
+					|| (required.Count != 0 && !Keysharp.Internals.Os.PackageResolver.TryResolve(required, allowRestore, "#Package", out resolved, out _, settingsDirectory)))
 				{
 					_ = errors.Add(new CompilerError(scriptPath ?? "", 0, 0, "", failure));
 					return null;
@@ -396,22 +399,22 @@ namespace Keysharp.Parsing
 				set = required;
 			}
 
-			var byId = new Dictionary<string, Keysharp.Internals.Os.PackageResolver.ResolvedPackage>(StringComparer.OrdinalIgnoreCase);
+			var byId = new Dictionary<(string Provider, string Id), Keysharp.Internals.Os.PackageResolver.ResolvedPackage>();
 
 			foreach (var r in resolved)
-				byId[r.Id] = r;
+				byId[(r.Provider.ToLowerInvariant(), r.Id.ToLowerInvariant())] = r;
 
 			try
 			{
 				foreach (var p in set)
-					if (byId.TryGetValue(p.Id, out var hit))
+					if (byId.TryGetValue((p.Provider.ToLowerInvariant(), p.Id.ToLowerInvariant()), out var hit))
 						manifest.Add(hit, p.Version, p.Optional, true);
 
 				// The whole closure is deployed too, but only script-named packages are loaded eagerly.
-				var named = new HashSet<string>(manifest.Packages.Select(e => e.Id), StringComparer.OrdinalIgnoreCase);
+				var named = new HashSet<string>(manifest.Packages.Select(e => e.Provider + "\0" + e.Id), StringComparer.OrdinalIgnoreCase);
 
 				foreach (var r in resolved)
-					if (named.Add(r.Id))
+					if (named.Add(r.Provider + "\0" + r.Id))
 						manifest.Add(r, r.Version, true, false);
 			}
 			catch (Exception e)
@@ -452,10 +455,11 @@ namespace Keysharp.Parsing
 			return ([.. diags], ex);
 		}
 
-		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null)
+		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null, IReadOnlyCollection<string> requiredProviders = null)
 		{
 			IEnumerable<ResourceDescription> resourceDescriptions = null;
 			HashSet<string> allDependencies = null;
+			CompiledPackageProviderManifest providerManifest = null;
 			var hasInlineTrees = inlineTrees is { Count: > 0 };
 			var coreDir = Path.GetDirectoryName(typeof(object).GetTypeInfo().Assembly.Location);
 #if WINDOWS
@@ -490,6 +494,10 @@ namespace Keysharp.Parsing
 
 			if (minimalexeout)
 			{
+				if (requiredProviders is { Count: > 0 }
+						&& !CompiledPackageProviderManifest.TryBuild(requiredProviders, out providerManifest, out var providerFailure))
+					throw new InvalidOperationException(providerFailure);
+
 				var currentDepsConfigPath = Path.Combine(ksCoreDir ?? "", $"{Assembly.GetEntryAssembly().GetName().Name}.deps.json");
 
 				if (!File.Exists(currentDepsConfigPath))
@@ -613,7 +621,7 @@ namespace Keysharp.Parsing
 			// Inline C# can name package types. Add pinned package assets before same-named framework assemblies.
 			if (packages != null && hasInlineTrees)
 			{
-				foreach (var path in packages.Packages.SelectMany(p => p.Managed).Select(a => a.Source))
+				foreach (var path in packages.Packages.SelectMany(p => p.Compile.Count != 0 ? p.Compile : p.Managed).Select(a => a.Source))
 					if (ByFileName().Add(Path.GetFileName(path)))
 						try { references.Add(MetadataReference.CreateFromFile(path)); }
 						catch { }   // an unreadable asset is the resolver's problem to report, not a reason to fail here
@@ -643,6 +651,19 @@ namespace Keysharp.Parsing
 					});
 					resourceDescriptions = resourceDescriptions.Concat(packageResources);
 				}
+			}
+
+			if (providerManifest != null)
+			{
+				var json = providerManifest.Write();
+				resourceDescriptions = (resourceDescriptions ?? []).Append(
+					new ResourceDescription(CompiledPackageProviderManifest.ResourceName,
+						() => new MemoryStream(Encoding.UTF8.GetBytes(json)), true));
+				resourceDescriptions = resourceDescriptions.Concat(providerManifest.Assets.Select(asset =>
+				{
+					var source = asset.Source;
+					return new ResourceDescription(CompiledPackageProviderManifest.AssetResourceName(asset), () => File.OpenRead(source), true);
+				}));
 			}
 
 			var ms = new MemoryStream();
@@ -823,6 +844,7 @@ namespace Keysharp.Parsing
 					compilation.InlineCode = lowerer.InlineSource;
 					compilation.InlineSources = lowerer.InlineSources;
 					compilation.InlineDefines = lowerer.InlineDefines;
+					compilation.RequiredProviders = lowerer.RequiredProviders;
 
 					if (compilation.Unit == null || lowerer.Diagnostics.Count > 0)
 						foreach (var d in lowerer.Diagnostics)

@@ -20,7 +20,7 @@ namespace Keysharp.Internals.Os
 		// including while this class holds `sync` for the duration of a restore (up to RestoreTimeoutMs). They are
 		// therefore concurrent rather than guarded by `sync`, so a resolution on another thread is never blocked
 		// behind a network operation.
-		/// <summary>Assembly simple name -> path, for the whole resolved closure. Dependencies are resolvable, not surfaced.</summary>
+		/// <summary>Assembly name/culture -> path, for the whole resolved closure. Dependencies are resolvable, not surfaced.</summary>
 		private static readonly ConcurrentDictionary<string, string> managedByName = new(StringComparer.OrdinalIgnoreCase);
 
 		/// <summary>Native library name (several spellings per file — see <see cref="AddNativeAliases"/>) -> path.</summary>
@@ -124,25 +124,60 @@ namespace Keysharp.Internals.Os
 			lock (sync)
 			{
 				label = "Clr.LoadPackage";
+				var providerName = "nuget";
+				var colon = id?.IndexOf(':') ?? -1;
 
-				if (!PackageResolver.IsValidId(id))
+				if (colon > 0)
 				{
-					error = $"{label}: '{id}' is not a valid package name";
+					providerName = id[..colon];
+					id = id[(colon + 1)..];
+				}
+
+				if (!PackageProviderRegistry.IsValidProviderName(providerName))
+				{
+					error = $"{label}: '{providerName}' is not a valid package provider name";
 					return null;
 				}
 
-				if (!PackageResolver.TryTranslateVersion(version, out var range, out var verr))
+				var scriptAssembly = Script.TheScript?.ProgramType?.Assembly ?? Assembly.GetEntryAssembly();
+
+				if (!CompiledPackageProviderManifest.TryPrepare(scriptAssembly, providerName, out var prepareFailure))
+				{
+					error = $"{label}: {prepareFailure}";
+					return null;
+				}
+
+				if (!PackageProviderRegistry.TryGet(providerName, out var provider, out var providerFailure))
+				{
+					if (optional)
+					{
+						error = null;
+						_ = KsDebug.OutputDebug($"{label}: optional package provider '{providerName}' is not available, continuing without '{id}'");
+						return null;
+					}
+
+					error = $"{label}: {providerFailure}";
+					return null;
+				}
+
+				if (!provider.IsValidPackageId(id))
+				{
+					error = $"{label}: '{id}' is not a valid package name for provider '{providerName}'";
+					return null;
+				}
+
+				if (!provider.TryNormalizeVersion(version, out var range, out var verr))
 				{
 					error = $"{label}: {verr} for package '{id}'";
 					return null;
 				}
 
-				if (!Add([new PackageResolver.PackageRef(id, range, optional)], out error))
+				if (!Add([new PackageResolver.PackageRef(id, range, optional, providerName)], out error))
 					return null;
 
 				// Absent, or present but empty (a package whose only asset for this framework is the `_._` placeholder):
 				// either way there is nothing to hand back.
-				if (!assembliesByPackage.TryGetValue(id, out var paths) || paths.Count == 0)
+				if (!assembliesByPackage.TryGetValue(PackageKey(providerName, id), out var paths) || paths.Count == 0)
 				{
 					if (!optional)
 						error = $"{label}: '{id}' resolved but contributed no assemblies for this framework.";
@@ -180,7 +215,8 @@ namespace Keysharp.Internals.Os
 
 			foreach (var p in incoming)
 			{
-				var i = requested.FindIndex(r => r.Id.Equals(p.Id, StringComparison.OrdinalIgnoreCase));
+				var i = requested.FindIndex(r => r.Provider.Equals(p.Provider, StringComparison.OrdinalIgnoreCase)
+					&& r.Id.Equals(p.Id, StringComparison.OrdinalIgnoreCase));
 
 				if (i < 0)
 					requested.Add(p);
@@ -259,22 +295,24 @@ namespace Keysharp.Internals.Os
 
 			foreach (var pkg in resolved)
 			{
-				var direct = wanted.Any(r => r.Id.Equals(pkg.Id, StringComparison.OrdinalIgnoreCase));
+				var packageKey = PackageKey(pkg.Provider, pkg.Id);
+				var direct = wanted.Any(r => r.Provider.Equals(pkg.Provider, StringComparison.OrdinalIgnoreCase)
+					&& r.Id.Equals(pkg.Id, StringComparison.OrdinalIgnoreCase));
 
 				// Skip what is already done, but a package first seen as a dependency and later named directly still
 				// has to be loaded rather than left deferred, so only a same-or-weaker repeat is skipped.
-				if (applied.TryGetValue(pkg.Id, out var wasDirect) && (wasDirect || !direct))
+				if (applied.TryGetValue(packageKey, out var wasDirect) && (wasDirect || !direct))
 					continue;
 
-				foreach (var path in pkg.Managed)
-					managedByName[Path.GetFileNameWithoutExtension(path)] = path;
+				foreach (var path in pkg.Managed.Concat(pkg.Resources))
+					managedByName[ManagedKeyFor(path)] = path;
 
 				foreach (var path in pkg.Native)
 					AddNativeAliases(path);
 
 				// What this package itself contributed, so Clr.LoadPackage can hand back exactly those assemblies
 				// rather than the whole closure.
-				assembliesByPackage[pkg.Id] = pkg.Managed;
+				assembliesByPackage[packageKey] = pkg.Managed;
 
 				foreach (var path in pkg.Managed)
 				{
@@ -302,9 +340,11 @@ namespace Keysharp.Internals.Os
 				// Recorded only once the package's assemblies are in hand: an OnError handler can let the error above
 				// through, and marking it applied any earlier would let a later LoadPackage hand back the partial set
 				// as if it had succeeded.
-				applied[pkg.Id] = direct;
+				applied[packageKey] = direct;
 			}
 		}
+
+		private static string PackageKey(string provider, string id) => provider + "\0" + id;
 
 		/// <summary>
 		/// Registers an assembly's public top-level type names with the resolver without loading it. Reading the
@@ -396,6 +436,19 @@ namespace Keysharp.Internals.Os
 			return aliases.Distinct().ToList();
 		}
 
+		internal static string ManagedKeyFor(string path)
+		{
+			try { return ManagedKey(AssemblyName.GetAssemblyName(path)); }
+			catch
+			{
+				var culture = new DirectoryInfo(Path.GetDirectoryName(path) ?? "").Name;
+				return Path.GetFileNameWithoutExtension(path) + "\0" + culture;
+			}
+		}
+
+		private static string ManagedKey(AssemblyName name) =>
+			(name.Name ?? "") + "\0" + (name.CultureName ?? "");
+
 		private static void InstallHooks()
 		{
 			if (hooksInstalled)
@@ -404,7 +457,7 @@ namespace Keysharp.Internals.Os
 			hooksInstalled = true;
 
 			AssemblyLoadContext.Default.Resolving += (ctx, name) =>
-				managedByName.TryGetValue(name.Name ?? "", out var path) && File.Exists(path)
+				managedByName.TryGetValue(ManagedKey(name), out var path) && File.Exists(path)
 				? ctx.LoadFromAssemblyPath(path)
 				: null;
 			AssemblyLoadContext.Default.ResolvingUnmanagedDll += (_, name) =>

@@ -266,8 +266,14 @@ namespace Keysharp.Main
 				// Full artifacts deploy packages in a private package/version-scoped hierarchy. Minimal artifacts carry the
 				// same assets as resources and extract them at startup, so both forms remain portable without flattening
 				// package filenames into the host directory.
-				if (!r.MinimalExe && Runner.CopyPackageAssemblies(exeCompilation, scriptdir) is { } pkgErr)
-					return Runner.Message(pkgErr, true);
+				if (!r.MinimalExe)
+				{
+					if (Runner.CopyPackageAssemblies(exeCompilation, scriptdir) is { } pkgErr)
+						return Runner.Message(pkgErr, true);
+
+					if (Runner.CopyRequiredProviders(exeCompilation, scriptdir) is { } providerErr)
+						return Runner.Message(providerErr, true);
+				}
 			}
 			catch (Exception writeex)
 			{

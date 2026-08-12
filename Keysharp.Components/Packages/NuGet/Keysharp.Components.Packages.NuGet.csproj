@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+		<TargetFramework>net10.0-windows</TargetFramework>
+	</PropertyGroup>
+	<PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+		<TargetFramework>net10.0</TargetFramework>
+	</PropertyGroup>
+	<PropertyGroup>
+		<AssemblyName>Keysharp.Components.Packages.NuGet</AssemblyName>
+		<RootNamespace>Keysharp.Components.Packages.NuGet</RootNamespace>
+		<IsPackable>false</IsPackable>
+		<IsPublishable>false</IsPublishable>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<OutputPath>$(BaseOutputPath)$(Configuration)/$(TargetFramework)/components/packages/nuget/</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="../Contracts/Keysharp.Components.Packages.csproj" Private="false" />
+		<PackageReference Include="NuGet.Commands" Version="7.6.0" />
+		<PackageReference Include="NuGet.Credentials" Version="7.6.0" />
+		<None Update="provider.json" CopyToOutputDirectory="Always" />
+		<_ProviderPayloadName Include="Keysharp.Components.Packages.NuGet.dll;
+			Keysharp.Components.Packages.NuGet.deps.json;
+			Microsoft.Extensions.FileProviders.Abstractions.dll;
+			Microsoft.Extensions.FileSystemGlobbing.dll;
+			Microsoft.Extensions.Primitives.dll;
+			Newtonsoft.Json.dll;
+			NuGet.Commands.dll;
+			NuGet.Common.dll;
+			NuGet.Configuration.dll;
+			NuGet.Credentials.dll;
+			NuGet.DependencyResolver.Core.dll;
+			NuGet.Frameworks.dll;
+			NuGet.LibraryModel.dll;
+			NuGet.Packaging.dll;
+			NuGet.ProjectModel.dll;
+			NuGet.Protocol.dll;
+			NuGet.Versioning.dll;
+			provider.json" />
+	</ItemGroup>
+	<Target Name="ValidateProviderPayload" AfterTargets="Build">
+		<ItemGroup>
+			<_ProviderPayload Include="@(_ProviderPayloadName->'$(TargetDir)%(Identity)')" />
+			<_ProviderActual Include="$(TargetDir)**\*" />
+			<_ProviderUnexpected Include="@(_ProviderActual)" Exclude="@(_ProviderPayload)" />
+		</ItemGroup>
+		<Delete Files="@(_ProviderUnexpected)" />
+		<RemoveDir Directories="$(TargetDir)runtimes" Condition="Exists('$(TargetDir)runtimes')" />
+		<Error Condition="!Exists('%(_ProviderPayload.Identity)')" Text="NuGet provider payload is missing %(_ProviderPayload.Filename)%(_ProviderPayload.Extension)." />
+	</Target>
+
+	<Target Name="GetPackageProviderPayload" DependsOnTargets="Build" Returns="@(_PackageProviderPayload)">
+		<ItemGroup>
+			<_PackageProviderPayload Include="@(_ProviderPayloadName->'$(TargetDir)%(Identity)')">
+				<ProviderRelativePath>components\packages\nuget\%(Filename)%(Extension)</ProviderRelativePath>
+			</_PackageProviderPayload>
+		</ItemGroup>
+	</Target>
+</Project>

@@ -431,6 +431,18 @@ namespace Keysharp.Internals.Scripting
 			return compilation.Packages.CopyTo(destDir);
 		}
 
+		/// <summary>Deploys providers used by imperative package calls beside a full standalone executable.</summary>
+		internal static string CopyRequiredProviders(ScriptCompilationResult compilation, string destDir)
+		{
+			if (compilation?.RequiredProviders is not { Count: > 0 } || string.IsNullOrEmpty(destDir))
+				return null;
+
+			if (!CompiledPackageProviderManifest.TryBuild(compilation.RequiredProviders, out var manifest, out var failure))
+				return failure;
+
+			return manifest.CopyTo(destDir);
+		}
+
 		private static int CompileAndMaybeRun(CliCommand command)
 		{
 			// Tell the (about-to-run) compiled assembly where it is actually running from: the script file's full
