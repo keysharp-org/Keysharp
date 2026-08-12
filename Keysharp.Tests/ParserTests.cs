@@ -1,398 +1,160 @@
-using System.Collections.Generic;
-using KL = Keysharp.Parsing.Lexing;
-using KP = Keysharp.Parsing.Syntax;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
+using StringAssert = NUnit.Framework.Legacy.StringAssert;
 
 namespace Keysharp.Tests
 {
-	public class ParserTests
+	public class ParserTests : TestRunner
 	{
-		private static (string ast, List<string> diags) Parse(string s)
+		private static (byte[] Bytes, string Error) Compile(string source)
 		{
-			var p = new KP.Parser(KL.Lexer.Tokenize(s));
-			var prog = p.ParseProgram();
-			return (KP.AstPrinter.Print(prog), p.Diagnostics);
+			var name = "parser_" + Guid.NewGuid().ToString("N");
+			var (bytes, error, _) = new CompilerHelper().CompileCodeToByteArray("#ErrorStdOut\n" + source, name);
+			return (bytes, error);
 		}
 
-		private static string Ast(string s)
+		private static void AssertCompileError(string source, string expected)
 		{
-			var (ast, diags) = Parse(s);
-			Assert.IsTrue(diags.Count == 0, "unexpected diagnostics: " + string.Join("; ", diags));
-			return ast;
+			var (bytes, error) = Compile(source);
+			Assert.IsNull(bytes, "Expected compilation to fail.");
+			StringAssert.Contains(expected, error);
+		}
+
+		private static void AssertCompiles(params string[] sources)
+		{
+			foreach (var source in sources)
+			{
+				var (bytes, error) = Compile(source);
+				Assert.IsNotNull(bytes, error);
+			}
 		}
 
 		[Test, Category("Parser")]
-		public void ArithmeticPrecedence()
-		{
-			Assert.AreEqual("(+ 2 (* 3 4))", Ast("2 + 3 * 4"));
-			Assert.AreEqual("(- (+ 2 3) 4)", Ast("2 + 3 - 4"));   // additive is left-assoc
-		}
+		public void Parser() => Assert.IsTrue(TestScript("parser", false));
 
-		// #include is processed for in-memory source only when an include base directory is supplied. Keyview
-		// compiles the live editor text (no script path), so it now passes the open document's directory; without
-		// it (includeDir == null) include resolution is disabled and the included content is silently absent.
-		[Test, Category("Directives")]
-		public void IncludeProcessedForInMemorySourceWhenIncludeDirProvided()
+		[Test, Category("Parser"), Category("Internal")]
+		public void IncludeFromMemory()
 		{
-			var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ks_inc_test_" + System.Guid.NewGuid().ToString("N"));
-			_ = System.IO.Directory.CreateDirectory(dir);
+			var dir = Path.Combine(Path.GetTempPath(), "ks_include_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
 
 			try
 			{
-				var incPath = System.IO.Path.Combine(dir, "IncMe.ks");
-				System.IO.File.WriteAllText(incPath, "class IncMe {\n}\n");
-				var source = $"#include \"{incPath}\"\nx := 1\n";
+				var include = Path.Combine(dir, "Included.ks");
+				File.WriteAllText(include, "class Included {\n}\n");
+				var source = $"#include \"{include}\"\nx := Included()\n";
+				var helper = new CompilerHelper();
+				var withInclude = helper.CreateCompilationUnitFromFile(source, "include_memory", includeDirOverride: dir);
+				var (result, stream, exception) = helper.Compile(withInclude, "include_memory", dir);
 
-				var pWith = new KP.Parser(KL.Lexer.Tokenize(source), dir);
-				var astWith = KP.AstPrinter.Print(pWith.ParseProgram());
-				Assert.IsTrue(pWith.Diagnostics.Count == 0, "unexpected diagnostics: " + string.Join("; ", pWith.Diagnostics));
-				Assert.IsTrue(astWith.Contains("IncMe"), "included class should be present when includeDir is supplied");
+				using (stream)
+				{
+					Assert.IsNull(exception);
+					Assert.IsTrue(result?.Success == true, string.Join(Environment.NewLine, result?.Diagnostics ?? []));
+				}
 
-				var pNone = new KP.Parser(KL.Lexer.Tokenize(source), null);
-				var astNone = KP.AstPrinter.Print(pNone.ParseProgram());
-				Assert.IsFalse(astNone.Contains("IncMe"), "include should be skipped when includeDir is null");
+				var withoutInclude = helper.CreateCompilationUnitFromFile(source, "include_none");
+				Assert.IsFalse(withoutInclude.Unit?.ToFullString().Contains("class Included") == true);
 			}
 			finally
 			{
-				try { System.IO.Directory.Delete(dir, true); } catch { }
+				Directory.Delete(dir, true);
 			}
 		}
 
 		[Test, Category("Parser")]
-		public void PowerIsRightAssociativeAndBindsTighterThanUnaryMinus()
+		public void RemapsCompile() => AssertCompiles(
+			"a::b\n",
+			"^x::^c\n",
+			"Esc::CapsLock\n",
+			"'::;\n",
+			"\"::;\n",
+			"+'::;\n",
+			"*\"::a\n");
+
+		[Test, Category("Parser")]
+		public void DelimiterErrors()
 		{
-			Assert.AreEqual("(** 2 (** 3 2))", Ast("2 ** 3 ** 2"));
-			Assert.AreEqual("(- (** 2 2))", Ast("-2 ** 2"));      // -(2**2), not (-2)**2
+			AssertCompileError("x := \"hello\n", "unterminated string");
+			AssertCompileError("MsgBox(\"oops)\n", "unterminated string");
+			AssertCompileError("if (x) {\n\ty := 1\n", "expected '}'");
+			AssertCompileError("x := (1 + 2\n", "expected ')'");
+			AssertCompileError("x := [1, 2\n", "expected ']'");
 		}
 
 		[Test, Category("Parser")]
-		public void BitwiseBindsTighterThanComparison_AhkSemantics()
+		public void DiagnosticLocation()
 		{
-			// This is the case AHK2AST gets wrong; the AHK v2 source puts & above =.
-			Assert.AreEqual("(= (& a b) c)", Ast("a & b = c"));
-			Assert.AreEqual("(| (^ a b) c)", Ast("a ^ b | c"));  // & > ^ > |
+			var (_, error) = Compile("x := (1 + 2\n");
+			Assert.IsTrue(System.Text.RegularExpressions.Regex.IsMatch(error, @"\*:\s*Line\s+3\s+Col\s+1|3:1"), error);
 		}
 
 		[Test, Category("Parser")]
-		public void AssignmentIsRightAssociative()
+		public void ImportErrors()
 		{
-			Assert.AreEqual("(:= a (:= b c))", Ast("a := b := c"));
-			Assert.AreEqual("(+= x (* y 2))", Ast("x += y * 2"));
-		}
-
-		[Test, Category("Parser")]
-		public void VerbalOperators()
-		{
-			Assert.AreEqual("(and (not a) b)", Ast("not a and b"));   // 'not' is low-precedence
-			Assert.AreEqual("(or (and a b) c)", Ast("a and b or c")); // and > or
-		}
-
-		[Test, Category("Parser")]
-		public void TernaryAndMaybe()
-		{
-			Assert.AreEqual("(?: a b c)", Ast("a ? b : c"));
-			Assert.AreEqual("(?: a b (?: c d e))", Ast("a ? b : c ? d : e")); // right-assoc
-			Assert.AreEqual("(call foo (a?))", Ast("foo(a?)"));               // maybe-operator
-		}
-
-		[Test, Category("Parser")]
-		public void MemberCallIndexChains()
-		{
-			Assert.AreEqual("(call (. (. a b) c))", Ast("a.b.c()"));
-			Assert.AreEqual("(index a 1)", Ast("a[1]"));
-			Assert.AreEqual("(call (. obj method) x (y?))", Ast("obj.method(x, y?)"));
-			Assert.AreEqual("(call foo _ b)", Ast("foo(, b)"));   // omitted argument
-		}
-
-		[Test, Category("Parser")]
-		public void NoParenCommandSyntax()
-		{
-			Assert.AreEqual("(call FileAppend \"pass\" \"*\")", Ast("FileAppend \"pass\", \"*\""));
-			Assert.AreEqual("(call MsgBox x)", Ast("MsgBox x"));
-			Assert.AreEqual("(call Send _ a)", Ast("Send , a"));     // leading-comma omit
-			Assert.AreEqual("(:= x 5)", Ast("x := 5"));              // NOT a command
-			Assert.AreEqual("(call foo a b)", Ast("foo(a, b)"));     // paren call still works
-		}
-
-		[Test, Category("Parser")]
-		public void CommaSequences()
-		{
-			Assert.AreEqual("(seq (:= x 1) (:= y 2))", Ast("x := 1, y := 2"));
-			Assert.AreEqual("(:= r (seq 1 2))", Ast("r := (1, 2)"));
-		}
-
-		[Test, Category("Parser")]
-		public void Literals()
-		{
-			Assert.AreEqual("(:= x (object a:1 b:2))", Ast("x := {a: 1, b: 2}"));
-			Assert.AreEqual("(:= x (array 1 2 3))", Ast("x := [1, 2, 3]"));
-		}
-
-		[Test, Category("Parser")]
-		public void ControlFlow()
-		{
-			Assert.AreEqual("(loop 3 { (+= s \"x\") })", Ast("loop 3\n{\n\ts += \"x\"\n}"));
-			Assert.AreEqual("(for v in arr { (call use v) })", Ast("for v in arr\n{\n\tuse(v)\n}"));
-			Assert.AreEqual("(switch x (case 1 -> (:= r \"a\")) (default -> (:= r \"b\")))",
-				Ast("switch x {\ncase 1: r := \"a\"\ndefault: r := \"b\"\n}"));
-			Assert.AreEqual("(try { (throw \"x\") } catch e { (:= r \"c\") })",
-				Ast("try {\n\tthrow \"x\"\n} catch as e {\n\tr := \"c\"\n}"));
-		}
-
-		[Test, Category("Parser")]
-		public void ClassDeclaration()
-		{
-			Assert.AreEqual("(class Animal field name:=\"dog\" method Speak ())",
-				Ast("class Animal {\n\tname := \"dog\"\n\tSpeak() {\n\t\treturn this.name\n\t}\n}"));
-		}
-
-		[Test, Category("Parser")]
-		public void CommaSeparatedClassFields()
-		{
-			// Several field declarations may share a line (and its static/instance scope) via commas.
-			Assert.AreEqual("(class Test field a:=1 field b:=1 static-field x:=1 static-field y:=2)",
-				Ast("class Test {\n\ta := 1, b := 1\n\tstatic x := 1, y := 2\n}"));
-			// Typed struct fields comma-separate the same way.
-			Assert.AreEqual("(class POINT field x field y)",
-				Ast("struct POINT {\n\tx : Int32, y : Int32\n}"));
-			// A leading comma on the next line continues the declaration.
-			Assert.AreEqual("(class C field a:=1 field b:=2)",
-				Ast("class C {\n\ta := 1\n\t, b := 2\n}"));
-		}
-
-		[Test, Category("Parser")]
-		public void FatArrowLambdas()
-		{
-			Assert.AreEqual("(=> (x) (* x 2))", Ast("x => x * 2"));
-			Assert.AreEqual("(=> (a b) (+ a b))", Ast("(a, b) => a + b"));
-		}
-
-		[Test, Category("Parser")]
-		public void RemapSplitsSourceAndTargetInLexer()
-		{
-			// The lexer splits a remap `source::target` into a RemapSourceKey + RemapTargetKey pair.
-			Assert.AreEqual("(remap a::b)", Ast("a::b"));
-			Assert.AreEqual("(remap ^x::^c)", Ast("^x::^c"));
-			Assert.AreEqual("(remap Esc::CapsLock)", Ast("Esc::CapsLock"));
-		}
-
-		[Test, Category("Parser")]
-		public void QuoteKeyHotkeyIsNotAStringLiteral()
-		{
-			// A quote can itself be a (single-character) hotkey/remap source key. The trigger sits in key
-			// position (only modifier symbols precede it) and is immediately followed by `::`, so it must not
-			// be scanned as the start of a string literal. Mirrors AHK's hotkey-vs-statement disambiguation.
-			Assert.AreEqual("(remap '::;)", Ast("'::;"));            // the reported bug
-			Assert.AreEqual("(remap \"::;)", Ast("\"::;"));
-			Assert.AreEqual("(remap +'::;)", Ast("+'::;"));         // with a leading modifier symbol
-			Assert.AreEqual("(remap *\"::a)", Ast("*\"::a"));
-
-			// A genuine string opener (a quote not in key position, or not followed by `::`) stays a string,
-			// so `::` inside it is never mistaken for a hotkey separator.
-			Assert.AreEqual("(call testfunc \"::\")", Ast("testfunc \"::\""));
-			Assert.AreEqual("(== a \"::\")", Ast("a == \"::\""));
-		}
-
-		[Test, Category("Parser")]
-		public void Statements()
-		{
-			Assert.AreEqual("(if x (:= y 1) else (:= y 2))",
-				Ast("if x\n\ty := 1\nelse\n\ty := 2"));
-			Assert.AreEqual("(while (< i 10) (+= i 1))",
-				Ast("while i < 10\n\ti += 1"));
-			Assert.AreEqual("(func Add (a b) { (return (+ a b)) })",
-				Ast("Add(a, b) {\n\treturn a + b\n}"));
-			Assert.AreEqual("(func Sq (n) (* n n))", Ast("Sq(n) => n * n"));
-		}
-
-		[Test, Category("Parser")]
-		public void LineContinuationAfterOperator()
-		{
-			// a trailing binary operator continues onto the next line
-			Assert.AreEqual("(+ 1 2)", Ast("1 +\n2"));
-		}
-
-		// ---- error handling: malformed input must yield an understandable diagnostic (and never throw) ----
-
-		private static void AssertDiagnostic(string src, string expectedSubstring)
-		{
-			var (_, diags) = KP.Parser.ParseWithDiagnostics(src);
-			Assert.IsTrue(diags.Count > 0, $"expected a diagnostic for: {src}");
-			Assert.IsTrue(diags.Exists(d => d.Contains(expectedSubstring)),
-				$"expected a diagnostic containing '{expectedSubstring}' for: {src}\n got: {string.Join(" | ", diags)}");
-		}
-
-		[Test, Category("Parser")]
-		public void UnterminatedStringReported() =>
-			AssertDiagnostic("x := \"hello\n", "unterminated string");
-
-		[Test, Category("Parser")]
-		public void UnterminatedStringMidExpressionReported() =>
-			AssertDiagnostic("MsgBox(\"oops)\n", "unterminated string");
-
-		[Test, Category("Parser")]
-		public void MissingClosingBraceReported() =>
-			AssertDiagnostic("if (x) {\n\ty := 1\n", "expected '}'");
-
-		[Test, Category("Parser")]
-		public void MissingClosingParenReported() =>
-			AssertDiagnostic("x := (1 + 2\n", "expected ')'");
-
-		[Test, Category("Parser")]
-		public void MissingClosingBracketReported() =>
-			AssertDiagnostic("x := [1, 2\n", "expected ']'");
-
-		[Test, Category("Parser")]
-		public void DiagnosticsCarryLineAndColumn()
-		{
-			// Every diagnostic should start with a "line:col:" location so editors can point at it.
-			var (_, diags) = KP.Parser.ParseWithDiagnostics("x := (1 + 2\n");
-			Assert.IsTrue(diags.Count > 0);
-			Assert.IsTrue(System.Text.RegularExpressions.Regex.IsMatch(diags[0], @"^\d+:\d+: "), "diagnostic lacks line:col — " + diags[0]);
-		}
-
-		[Test, Category("Parser")]
-		public void ImportWithTrailingStatementsReported()
-		{
-			// A `#import <module> [as alias] [{ … }]` ends there. Tokens crammed onto the same line after it used to
-			// be silently swallowed into the directive (leaving the enclosing function empty / `return ""`).
-			AssertDiagnostic(
+			AssertCompileError(
 				"EncodeDecodeURI(str){\n#import Ks { Clr } static Web := Clr.Load(\"x\") return Web.Url(str)\n}\n",
 				"after #import");
-			AssertDiagnostic("#import Ks return 1\n", "after #import");        // trailing tokens, no braces
-			AssertDiagnostic("#import \"A\", \"B\"\n", "after #import");       // two modules in one directive
-			AssertDiagnostic("#import \"D\" { x } as Y\n", "after #import");   // `as` after the named list
+			AssertCompileError("#import Ks return 1\n", "after #import");
+			AssertCompileError("#import \"A\", \"B\"\n", "after #import");
+			AssertCompileError("#import \"D\" { x } as Y\n", "after #import");
 		}
 
 		[Test, Category("Parser")]
-		public void ImportValidFormsParseCleanly()
+		public void DirectiveArgs()
 		{
-			foreach (var ok in new[]
+			AssertCompileError("#HotIf 1, 2\n", "accepts a single argument");
+			AssertCompileError("#Warn VarUnset, Off, Extra\n", "accepts at most 2 arguments");
+			AssertCompileError("#MaxThreads 4, 8\n", "accepts a single argument");
+			AssertCompiles("#HotIf (1, 2)\nx::y\n#HotIf\n", "#Warn VarUnset, Off\n", "#Hotstring EndChars -,.?!\n");
+		}
+
+		[Test, Category("Parser")]
+		public void ReservedNames()
+		{
+			foreach (var source in new[]
 			{
-				"#import __Main\n", "#import Other as O\n", "#import \"Ks\" { * }\n",
-				"#import Lib/module_import_path_target\n", "#import Lib/module_import_path_target as M { * }\n",
-				"#import \"D\" { Named as DNamed }\n",
-				"#import \"Mixed\" {\n\ta as b,\n\tc\n}\n",   // multi-line named list
+				"Web := Clr.Load(\"x\") return Web.Url(str)\n",
+				"x := return\n",
+				"static y := 1 if z\n",
+				"case() {\n}\n",
+				"class while {\n}\n",
+				"f(return) {\n}\n",
+				"cb := loop => loop\n"
 			})
-				Assert.DoesNotThrow(() => { var (_, d) = KP.Parser.ParseWithDiagnostics(ok); Assert.IsEmpty(d, ok); });
+				AssertCompileError(source, "reserved word");
 		}
 
 		[Test, Category("Parser")]
-		public void DirectiveArgCountEnforced()
+		public void MalformedInput()
 		{
-			// #HotIf takes a single expression; a top-level comma is two arguments…
-			AssertDiagnostic("#HotIf 1, 2\n", "#HotIf accepts a single argument");
-			// …but a parenthesized comma expression is a single argument.
-			Assert.DoesNotThrow(() => { var (_, d) = KP.Parser.ParseWithDiagnostics("#HotIf (1, 2)\nx::y\n#HotIf\n"); Assert.IsEmpty(d); });
-			// #Warn takes up to two (Type, Mode); a third is rejected.
-			Assert.DoesNotThrow(() => { var (_, d) = KP.Parser.ParseWithDiagnostics("#Warn VarUnset, Off\n"); Assert.IsEmpty(d); });
-			AssertDiagnostic("#Warn VarUnset, Off, Extra\n", "#Warn accepts at most 2 arguments");
-			// A single-value directive rejects an extra comma-separated value.
-			AssertDiagnostic("#MaxThreads 4, 8\n", "#MaxThreads accepts a single argument");
-			// Literal-value directives keep commas as text (e.g. #Hotstring end chars).
-			Assert.DoesNotThrow(() => { var (_, d) = KP.Parser.ParseWithDiagnostics("#Hotstring EndChars -,.?!\n"); Assert.IsEmpty(d); });
+			foreach (var source in new[] { "\"", "(((('", "}}}", "class", "if (", "for x", "switch {", "x := [" })
+				Assert.DoesNotThrow(() => Compile(source), source);
 		}
 
 		[Test, Category("Parser")]
-		public void ReservedWordsRejectedAsNames()
+		public void NamedArgErrors()
 		{
-			// The reported case: two statements crammed on one line — `return` must not be swallowed as a variable
-			// by auto-concatenation, it's a reserved word.
-			AssertDiagnostic("Web := Clr.Load(\"x\") return Web.Url(str)\n", "reserved word");
-			AssertDiagnostic("x := return\n", "reserved word");
-			AssertDiagnostic("static y := 1 if z\n", "reserved word");
-			// Reserved words can't name functions, classes, or parameters either.
-			AssertDiagnostic("case() {\n}\n", "reserved word");
-			AssertDiagnostic("class while {\n}\n", "reserved word");
-			AssertDiagnostic("f(return) {\n}\n", "reserved word");
-			AssertDiagnostic("cb := loop => loop\n", "reserved word");          // single bare-name lambda param
-			// `throw` (usable as a function) and `class` (a legal variable name) are NOT rejected, nor are member names.
-			Assert.DoesNotThrow(() => { var (_, d) = KP.Parser.ParseWithDiagnostics("x := throw(err)\n"); Assert.IsEmpty(d); });
-			Assert.DoesNotThrow(() => { var (_, d) = KP.Parser.ParseWithDiagnostics("y := class\n"); Assert.IsEmpty(d); });
-			Assert.DoesNotThrow(() => { var (_, d) = KP.Parser.ParseWithDiagnostics("y := obj.return\n"); Assert.IsEmpty(d); });
-		}
-
-		[Test, Category("Parser")]
-		public void MalformedInputNeverThrows()
-		{
-			// A pile of broken constructs must still terminate with diagnostics rather than throwing.
-			foreach (var bad in new[] { "\"", "((((", "}}}", "class", "if (", "for x", "switch {", "x := [" })
-				Assert.DoesNotThrow(() => KP.Parser.ParseWithDiagnostics(bad), "threw on: " + bad);
-		}
-
-		[Test, Category("Parser")]
-		public void NamedArguments()
-		{
-			Assert.AreEqual("(call f 1 b:2)", Ast("f(1, b: 2)"));
-			Assert.AreEqual("(call f a:1 b:2)", Ast("f(a: 1, b: 2)"));
-			Assert.AreEqual("(call f 1 b:(?: c 2 3))", Ast("f(1, b: c ? 2 : 3)"));   // ternary inside a named argument
-			Assert.AreEqual("(call f b:\"x\")", Ast("f(b: \"x\")"));
-			// Whitespace around the colon is not significant, and a reserved word is a legal parameter NAME
-			// (it names a parameter, it is never resolved as a variable).
-			Assert.AreEqual("(call f a:1)", Ast("f(a : 1)"));
-			Assert.AreEqual("(call f loop:1)", Ast("f(loop: 1)"));
-			// Command syntax carries them too.
-			Assert.IsTrue(Ast("MsgBox \"t\", Options: \"OK\"").Contains("Options:"), "command syntax should accept named arguments");
-		}
-
-		[Test, Category("Parser")]
-		public void NamedArgumentsAcceptDynamicNames()
-		{
-			// `%x%: v` and the name-building `a%b%c: v` name a parameter at run time, exactly as the same text
-			// forms an object-literal key. Neither is a single Identifier, so they are recognised after the slot's
-			// expression has parsed -- by a ':' being left over.
-			Assert.AreEqual("(call f (deref x):1)", Ast("f(%x%: 1)"));
-			Assert.AreEqual("(call f 1 (deref y):2)", Ast("f(1, %y%: 2)"));
-			Assert.AreEqual("(call f a:1 (deref y):2)", Ast("f(a: 1, %y%: 2)"));      // mixed with a literal name
-			Assert.AreEqual("(call f (deref (concat (concat \"b\" x) \"a\")):1)", Ast("f(b%x%a: 1)"));   // name-building
-			// The value is still an ordinary expression, ternary included.
-			Assert.AreEqual("(call f (deref x):(?: c 2 3))", Ast("f(%x%: c ? 2 : 3)"));
-			// Command syntax too.
-			Assert.IsTrue(Ast("MsgBox \"t\", %o%: \"OK\"").Contains("(deref o):"), "command syntax should accept dynamic names");
-			// A deref that is NOT followed by ':' stays an ordinary argument, and a ternary over one is untouched.
-			Assert.AreEqual("(call f (deref x))", Ast("f(%x%)"));
-			Assert.AreEqual("(call f (?: (deref x) a b))", Ast("f(%x% ? a : b)"));
-		}
-
-		[Test, Category("Parser")]
-		public void NamedArgumentsRejectMalformedUses()
-		{
-			// Each of these is a parse error, and none may be silently accepted.
-			foreach (var bad in new[]
+			foreach (var source in new[]
 			{
-				"f(x: 1, 2)",        // positional after named
-				"f(x: 1, , y: 2)",   // omitted slot after named
-				"f(x: 1, x: 2)",     // duplicate name
-				"f(x: 1, a*)",       // spread after named
-				"f(x: a*)",          // a spread cannot be named
-				"a[x: 1]",           // '[]' is map-literal territory, not named arguments
-				// A quoted key is deliberately not a spelling of a named argument -- one bracket away the same
-				// text is a Map entry, and a parameter is named by an identifier.
+				"f(x: 1, 2)",
+				"f(x: 1, , y: 2)",
+				"f(x: 1, x: 2)",
+				"f(x: 1, a*)",
+				"f(x: a*)",
+				"a[x: 1]",
 				"f(\"x\": 1)",
-				"f(1: 2)",           // nor is a number
-				// The dynamic spellings obey every rule the literal one does.
-				"f(%x%: 1, 2)",      // positional after named
-				"f(%x%: 1, , y: 2)", // omitted slot after named
-				"f(%x%: 1, a*)",     // spread after named
-				"f(%x%: a*)",        // a spread cannot be named
-				"a[%x%: 1]",         // still map-literal territory
+				"f(1: 2)",
+				"f(%x%: 1, 2)",
+				"f(%x%: 1, , y: 2)",
+				"f(%x%: 1, a*)",
+				"f(%x%: a*)",
+				"a[%x%: 1]"
 			})
 			{
-				var (_, diags) = KP.Parser.ParseWithDiagnostics(bad + "\n");
-				Assert.IsTrue(diags.Count > 0, "expected a diagnostic for: " + bad);
+				var (bytes, error) = Compile(source + "\n");
+				Assert.IsNull(bytes, source + " should fail compilation.");
+				Assert.IsNotEmpty(error);
 			}
-		}
-
-		[Test, Category("Parser")]
-		public void NamedArgumentsDoNotDisturbExistingColonForms()
-		{
-			// The ternary's ':' is always preceded by a '?' the expression parse consumed, so a slot-initial
-			// `Identifier ':'` is unambiguous -- but the neighbouring forms must be verified not to shift.
-			Assert.AreEqual("(call f (?: a b c))", Ast("f(a ? b : c)"));
-			Assert.AreEqual("(call f (:= a 1))", Ast("f(a := 1)"));
-			Assert.AreEqual("(:= x (map a:1))", Ast("x := [a: 1]"));       // still a map-creation literal
-			Assert.AreEqual("(:= x (object a:1))", Ast("x := {a: 1}"));    // still an object literal
-			Assert.AreEqual("(index a (?: b c d))", Ast("a[b ? c : d]"));  // ternary inside '[]' is untouched
 		}
 	}
 }

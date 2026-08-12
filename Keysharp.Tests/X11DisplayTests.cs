@@ -4,11 +4,11 @@ using Keysharp.Internals.Window.Linux.X11;
 
 namespace Keysharp.Tests
 {
-	[TestFixture]
-	public class X11DisplayTopologyTests
+	[TestFixture, Category("Internal"), Category("Curated")]
+	public class X11DisplayTests
 	{
 		[Test]
-		public void SpanningRectangleMapsEachSideOfMixedScaleSeam()
+		public void MixedScaleSeam()
 		{
 			ScreenRect[] native =
 			[
@@ -30,7 +30,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void NegativeOriginRectangleUsesItsOwnDisplayMapping()
+		public void NegativeOrigin()
 		{
 			ScreenRect[] native =
 			[

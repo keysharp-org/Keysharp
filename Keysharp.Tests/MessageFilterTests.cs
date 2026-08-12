@@ -4,7 +4,7 @@ using Keysharp.Internals.Window;
 
 namespace Keysharp.Tests
 {
-	[TestFixture, NonParallelizable]
+	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class MessageFilterTests : TestRunner
 	{
 		private static MsgMonitor CreateMonitor(Func<object, object, object, object, object> callback, int maxInstances = 1)
@@ -64,7 +64,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void OnMessageEmergencyReserve()
+		public void EmergencyReserve()
 		{
 			s.MaxThreadsTotal = 1;
 			Assert.IsTrue(s.Threads.TryBeginThread(out var occupied));
@@ -98,7 +98,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void OnMessageEmergencyLimit()
+		public void EmergencyLimit()
 		{
 			s.MaxThreadsTotal = 1;
 			Assert.IsTrue(s.Threads.TryBeginThread(out var occupied));
@@ -139,7 +139,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void OnMessageBufferedLocalBlock()
+		public void OnMessageLocalBlock()
 		{
 			var context = UseQueuedMainContext();
 
@@ -178,7 +178,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void OnMessageEmergencyPerRegistrationLimit()
+		public void RegistrationLimit()
 		{
 			_ = UseQueuedMainContext();
 

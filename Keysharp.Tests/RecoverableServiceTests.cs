@@ -2,11 +2,11 @@ using Keysharp.Internals;
 
 namespace Keysharp.Tests
 {
-	[TestFixture, NonParallelizable, Category("Misc")]
+	[TestFixture, NonParallelizable, Category("Misc"), Category("Internal"), Category("Curated")]
 	public class RecoverableServiceTests
 	{
 		[Test]
-		public void RetiredServiceIsDisposedAfterLastLease()
+		public void LeaseDisposal()
 		{
 			var created = new TrackedService();
 			using var service = new RecoverableService<TrackedService>(() => created);
@@ -21,7 +21,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void StaleInvalidationDoesNotRetireReplacement()
+		public void StaleInvalidation()
 		{
 			var first = new TrackedService();
 			var second = new TrackedService();
@@ -39,7 +39,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void FailureBudgetRequiresAuthoritativeRearm()
+		public void FailureBudget()
 		{
 			var attempts = 0;
 			var clock = new ManualTimeProvider();
@@ -65,7 +65,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void RearmMakesOlderFactoryCompletionStale()
+		public void StaleFactory()
 		{
 			var entered = new ManualResetEventSlim();
 			var release = new ManualResetEventSlim();

@@ -32,7 +32,7 @@ namespace Keysharp.Tests
 		// The hotstring callback runs on a pseudo-thread, whose admission (IsInterruptible/AnyThreadsAvailable)
 		// can be momentarily blocked when the trigger key is pumped. When that happens the queued event is put
 		// back on the scheduler and must be pumped again once it becomes admissible. A real script keeps pumping
-		// via its message loop; this mirrors that (and the WaitWithUiPump pattern in RealThreadIntegrationTests)
+		// via its message loop; this mirrors that (and the WaitWithUiPump pattern in RealThreadTests)
 		// instead of blocking on the event, which would never reprocess a momentarily-blocked event.
 		private bool WaitForCallback(ManualResetEventSlim signal, int timeoutMs = 2000)
 		{
@@ -399,8 +399,8 @@ namespace Keysharp.Tests
 		}
 
 #if LINUX || OSX
-		[Test, Category("Hotstring")]
-		public void UnixNumpadNavigationNamesKeepTheirPhysicalScanCodes()
+		[Test, Category("Hotstring"), Category("Internal")]
+		public void UnixNumpadScanCodes()
 		{
 			var expected = new (string Name, long Vk, long Sc)[]
 			{
@@ -450,8 +450,8 @@ namespace Keysharp.Tests
 #endif
 
 #if LINUX
-		[Test, Category("Hotstring")]
-		public void LinuxEvdevMappingsCoverPortableAndAlternateKeyCodes()
+		[Test, Category("Hotstring"), Category("Internal")]
+		public void LinuxEvdevMappings()
 		{
 			static uint VkToEvdev(uint vk) => Keysharp.Internals.Input.Keyboard.KeyCodes.VkToEvdev(vk);
 			static uint EvdevToVk(uint evdev) => Keysharp.Internals.Input.Keyboard.KeyCodes.EvdevToVk(evdev);
@@ -483,8 +483,8 @@ namespace Keysharp.Tests
 				EvdevToVk(72), numLockOn: true, shiftDown: true));
 		}
 
-		[Test, Category("Hotstring")]
-		public void LinuxScanCodesForVkCoversEverySynonymousEvdevCode()
+		[Test, Category("Hotstring"), Category("Internal")]
+		public void LinuxScanCodes()
 		{
 			static uint[] CodesFor(uint vk) => Keysharp.Internals.Input.Keyboard.KeyCodes.ScanCodesForVk(vk).ToArray();
 			static uint TwinOf(uint vk, bool numLockOn, bool shiftDown)
@@ -512,8 +512,8 @@ namespace Keysharp.Tests
 #endif
 
 #if OSX
-		[Test, Category("Hotstring")]
-		public void MacKeyCodeMappingsCoverHelpContextMenuAndJisKeys()
+		[Test, Category("Hotstring"), Category("Internal")]
+		public void MacKeyCodeMappings()
 		{
 			Assert.AreEqual(0x2Fu, Keysharp.Internals.Input.Keyboard.KeyCodes.MapScToVk(0x72)); // kVK_Help
 			Assert.AreEqual(0x5Du, Keysharp.Internals.Input.Keyboard.KeyCodes.MapScToVk(0x6E)); // kVK_ContextualMenu
@@ -595,8 +595,8 @@ namespace Keysharp.Tests
 			downSend;
 #endif
 
-		[Test, Category("Hotstring")]
-		public void CopilotDeclarationAliasIsLoweredWithoutBecomingAKeyName()
+		[Test, Category("Hotstring"), Category("Internal")]
+		public void CopilotHotkeyAlias()
 		{
 			var script = """
 				Copilot::MsgBox "direct"
@@ -627,8 +627,8 @@ namespace Keysharp.Tests
 			Assert.IsFalse(generated.Contains("__Remap_"), generated);
 		}
 
-		[Test, Category("Hotstring")]
-		public void CopilotRemapAliasPreservesFirmwareSemantics()
+		[Test, Category("Hotstring"), Category("Internal")]
+		public void CopilotRemapAlias()
 		{
 			var (prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("Copilot::RCtrl");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
@@ -662,8 +662,8 @@ namespace Keysharp.Tests
 			Assert.IsTrue(generated.Contains("{Blind}{F23 Up}"), generated);
 		}
 
-		[Test, Category("Hotstring")]
-		public void ModifiedSourceToModifierRemapSpansBothHotkeyCallbacks()
+		[Test, Category("Hotstring"), Category("Internal")]
+		public void RemapCallbacks()
 		{
 			var (prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(">!.::RCtrl");
 			Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
@@ -700,8 +700,8 @@ namespace Keysharp.Tests
 			Assert.IsFalse(generated.Contains("{LShift DownR}"), generated);
 		}
 
-		[Test, Category("Hotstring")]
-		public void SidedModifiersOnRemapDestinationBecomeKeyEvents()
+		[Test, Category("Hotstring"), Category("Internal")]
+		public void SidedRemapDestination()
 		{
 			// A remap target is hotkey syntax and may use < and >, but Send has no such prefix and would type
 			// them as literal characters (which is how "a::<#<+F23" came to type ">>"). Such a destination is
@@ -722,8 +722,8 @@ namespace Keysharp.Tests
 			Assert.IsTrue(generated.Contains(RemapDown("{Blind}#+{F23 DownR}")), generated);
 		}
 
-		[Test, Category("Hotstring")]
-		public void CompositePrefixCanCarryModifiers()
+		[Test, Category("Hotstring"), Category("Internal")]
+		public void CompositeModifiers()
 		{
 			// The modifiers belong to the prefix, not the suffix: the prefix key is still just F23.
 			var combo = new HotkeyDefinition(1100, null, (uint)HotkeyTypeEnum.Normal, "<#<+F23 & x", 0);
@@ -780,8 +780,8 @@ namespace Keysharp.Tests
 			Assert.IsTrue(ModifiersSatisfied(0u, plain.prefixModifiers, plain.prefixModifiersLR));
 		}
 
-		[Test, Category("Hotstring")]
-		public void ModifiedCompositePrefixIsLatchedAtPrefixDown()
+		[Test, Category("Hotstring"), Category("Internal")]
+		public void CompositePrefixLatch()
 		{
 			var key = new Keysharp.Internals.Input.Keyboard.KeyType(Keysharp.Internals.Input.Keyboard.VirtualKeys.VK_F23);
 			var chord = MOD_LWIN | MOD_LSHIFT;
@@ -822,8 +822,8 @@ namespace Keysharp.Tests
 
 
 #if OSX
-		[Test, Category("Hotstring")]
-		public void MacRemapPropagatesNativeAutoRepeatMetadata()
+		[Test, Category("Hotstring"), Category("Internal")]
+		public void MacRemapRepeat()
 		{
 			var eventInfo = new Keysharp.Internals.Input.Hooks.HookEventInfo(1, false, true, 0, null, null).BuildEventInfo();
 			Assert.AreEqual(true, Script.GetPropertyValue(eventInfo, "IsAutoRepeat"));
@@ -968,8 +968,8 @@ namespace Keysharp.Tests
 			Assert.AreEqual(ih.EndCharMode, true);
 		}
 
-		[Test, Category("Hotstring"), NonParallelizable]
-		public void InputHookKeyOptEnterUsesPlatformScanCode()
+		[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
+		public void InputHookScanCode()
 		{
 			const uint VkReturn = 0x0D;
 			var ih = new InputHook("V");
@@ -1026,8 +1026,8 @@ namespace Keysharp.Tests
 			_ = Keyboard.Hotstring("MouseReset", true);
 		}
 
-		[Test, Category("Hotstring"), NonParallelizable]
-		public void MatchingRespectsImmediateAndEndCharTriggers()
+		[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
+		public void EndCharMatching()
 		{
 			ResetHotstringMatchState();
 			var immediate = AddHotstringForMatchTest("*:", "kssuite");
@@ -1040,8 +1040,8 @@ namespace Keysharp.Tests
 			Assert.AreEqual(endChar, MatchHotstring("ksend "));
 		}
 
-		[Test, Category("Hotstring"), NonParallelizable]
-		public void MatchingRecognizesDefaultEndingCharacters()
+		[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
+		public void EndingCharacters()
 		{
 			ResetHotstringMatchState();
 			var periodEndChar = AddHotstringForMatchTest("", "ksdot");
@@ -1052,8 +1052,8 @@ namespace Keysharp.Tests
 			Assert.AreEqual(tabEndChar, MatchHotstring("kstab\t"));
 		}
 
-		[Test, Category("Hotstring"), NonParallelizable]
-		public void MatchingRespectsInsideWordOption()
+		[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
+		public void InsideWordMatching()
 		{
 			ResetHotstringMatchState();
 			AddHotstringForMatchTest("", "ksword");
@@ -1064,8 +1064,8 @@ namespace Keysharp.Tests
 			Assert.AreEqual(insideWord, MatchHotstring("prefixksword "));
 		}
 
-		[Test, Category("Hotstring"), NonParallelizable]
-		public void MatchingRespectsCaseSensitiveOption()
+		[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
+		public void CaseSensitiveMatching()
 		{
 			ResetHotstringMatchState();
 			var caseSensitive = AddHotstringForMatchTest("C:", "AbC");

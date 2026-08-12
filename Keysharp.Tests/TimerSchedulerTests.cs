@@ -19,6 +19,6 @@ namespace Keysharp.Tests
 		public void LongTimerCoalescing() => Assert.IsTrue(TestScript("timer-long-callback-coalesces", false));
 
 		[Test, Category("Threading")]
-		public void TimerDuringCallbackSleep() => Assert.IsTrue(TestScript("timer-during-callback-sleep", false));
+		public void CallbackSleep() => Assert.IsTrue(TestScript("timer-during-callback-sleep", false));
 	}
 }

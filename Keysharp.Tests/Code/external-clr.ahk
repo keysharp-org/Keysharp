@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 
 #import "Ks" { Clr }
 ; ===== Setup =====
@@ -125,9 +127,13 @@ Check(Clr.GetTypeName(mathType) == "System.Math")
 ; 18) Clr.GetNamespaceName(...) on a namespace node
 Check(Clr.GetNamespaceName(System.Collections) == "System.Collections")
 
-; 19) Namespace node ToString() (implicit, via string concat)
-nsStr := "" System.Text
-Check(nsStr == "System.Text")
+; 19) A namespace node used as a value raises a catchable error
+namespaceValueFailed := false
+try
+    nsStr := "" System.Text
+catch Error
+    namespaceValueFailed := true
+Check(namespaceValueFailed)
 
 ; 20) Static const field
 Check(System.Int32.MaxValue == 2147483647)

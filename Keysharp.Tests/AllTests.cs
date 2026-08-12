@@ -1,7 +1,7 @@
 ﻿namespace Keysharp.Tests
 {
 	[SetUpFixture]
-	public class MySetUpClass
+	public class GlobalSetup
 	{
 		[OneTimeSetUp]
 		public void RunBeforeAnyTests()

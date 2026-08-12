@@ -12,7 +12,7 @@ namespace Keysharp.Tests
 	/// it), and skips itself when the environment has no working clipboard at all — the same headless-skip pattern
 	/// EnvTests uses.
 	/// </summary>
-	public class ClipboardTests : TestRunner
+	public partial class ClipboardTests : TestRunner
 	{
 		private static Ks.KeysharpClipboard Clip => null;   // the class is static-only; members take a null receiver
 
@@ -56,7 +56,7 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
-		public void ClearEmptiesEveryFormat()
+		public void Clear()
 		{
 			RequireClipboard();
 			_ = Ks.KeysharpClipboard.staticset_Text(Clip, "something");
@@ -71,7 +71,7 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
-		public void FormatsListsWhatIsThere()
+		public void Formats()
 		{
 			RequireClipboard();
 			_ = Ks.KeysharpClipboard.staticset_Text(Clip, "formats probe");
@@ -93,7 +93,7 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
-		public void NonTextOnlyClipboardIsNotEmpty()
+		public void NonTextClipboard()
 		{
 			RequireClipboard();
 			_ = Ks.KeysharpClipboard.Set(Clip, MakeMap("Html", "<b>rich</b>"));
@@ -161,7 +161,7 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
-		public void HtmlRoundTripsAsTheFragment()
+		public void HtmlFragment()
 		{
 			RequireClipboard();
 			const string fragment = "<b>Hello</b> <i>wörld</i>";
@@ -183,7 +183,7 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
-		public void SetPublishesSeveralFormatsAtOnce()
+		public void MultipleFormats()
 		{
 			RequireClipboard();
 			_ = Ks.KeysharpClipboard.Set(Clip, MakeMap("Text", "Hello", "Html", "<b>Hello</b>"));
@@ -266,7 +266,7 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
-		public void HasAcceptsKindsAndNativeNames()
+		public void HasKinds()
 		{
 			RequireClipboard();
 			_ = Ks.KeysharpClipboard.staticset_Text(Clip, "probe");
@@ -282,7 +282,7 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
-		public void AbsentContentIsEmptyString()
+		public void MissingContent()
 		{
 			RequireClipboard();
 			_ = Ks.KeysharpClipboard.staticset_Text(Clip, "text only");
@@ -295,8 +295,8 @@ namespace Keysharp.Tests
 
 		/// <summary>The CF_HTML codec, tested without a clipboard: the offsets are BYTE counts into the payload, so
 		/// non-ASCII markup is the case that catches an implementation that sliced characters.</summary>
-		[Test, Category("Clipboard")]
-		public void CfHtmlEnvelopeRoundTrips()
+		[Test, Category("Clipboard"), Category("Internal")]
+		public void CfHtmlEnvelope()
 		{
 			foreach (var fragment in new[] { "<b>plain</b>", "<p>Eesti — jäääär</p>", "", "<span>日本語</span>" })
 			{
@@ -312,8 +312,8 @@ namespace Keysharp.Tests
 
 		/// <summary>The declared byte offsets must actually point at the fragment, not merely round-trip through our
 		/// own parser — that is what other applications read.</summary>
-		[Test, Category("Clipboard")]
-		public void CfHtmlOffsetsAreCorrectByteCounts()
+		[Test, Category("Clipboard"), Category("Internal")]
+		public void CfHtmlOffsets()
 		{
 			const string fragment = "<p>ä-ö-ü</p>";
 			var bytes = Encoding.UTF8.GetBytes(ClipboardHtml.Wrap(fragment));
@@ -342,7 +342,7 @@ namespace Keysharp.Tests
 		/// the clipboard because on Windows the file list is DROPFILES, so this code path never runs there —
 		/// <see cref="FilesRoundTrip"/> covers the per-platform round trip.
 		/// </summary>
-		[Test, Category("Clipboard")]
+		[Test, Category("Clipboard"), Category("Internal")]
 		public void UriListParsing()
 		{
 			var parsed = ClipboardBase.ParseUriList(
@@ -377,7 +377,7 @@ namespace Keysharp.Tests
 
 		/// <summary>The hook's own bookkeeping — Pause, Count and Stop — without needing a real clipboard event,
 		/// which no headless environment can be relied on to deliver.</summary>
-		[Test, Category("Clipboard"), NonParallelizable]
+		[Test, Category("Clipboard"), Category("Internal"), NonParallelizable]
 		public void OnChangeHookSurface()
 		{
 			var calls = new List<object[]>();
@@ -412,7 +412,7 @@ namespace Keysharp.Tests
 
 		/// <summary>Count stops the hook by itself, and does so BEFORE the final call so a handler that writes the
 		/// clipboard cannot re-admit itself.</summary>
-		[Test, Category("Clipboard"), NonParallelizable]
+		[Test, Category("Clipboard"), Category("Internal"), NonParallelizable]
 		public void OnChangeHookCount()
 		{
 			var calls = 0;

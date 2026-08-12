@@ -3,7 +3,7 @@ using Keysharp.Internals.Invoke;
 
 namespace Keysharp.Tests
 {
-	[TestFixture, NonParallelizable]
+	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class InputSchedulerTests : TestRunner
 	{
 		private static HotkeyDefinition CreateHotkey(string name = "F1")

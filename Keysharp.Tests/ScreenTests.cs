@@ -6,7 +6,7 @@ using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests
 {
-	public partial class Screentests : TestRunner
+	public partial class ScreenTests : TestRunner
 	{
 		[Test, Category("Screen")]
 		public void ImageSearch()

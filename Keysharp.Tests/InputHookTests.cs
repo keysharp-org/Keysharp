@@ -7,7 +7,7 @@ using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests
 {
-	[TestFixture, NonParallelizable]
+	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class InputHookTests : TestRunner
 	{
 		// Joined with '|' so the exact phrase list (including order and embedded commas) is compared.
@@ -37,7 +37,7 @@ namespace Keysharp.Tests
 		// Bug fix: a trailing I/L/T option (the last char of the options string) must not throw;
 		// AHK reads the C-string null terminator safely and defaults the value.
 		[Test, Category("InputHook")]
-		public void OptionsTrailingNumericDoesNotThrow()
+		public void TrailingNumericOption()
 		{
 			Assert.DoesNotThrow(() => new InputHook("I"));
 			Assert.DoesNotThrow(() => new InputHook("L"));
@@ -55,7 +55,7 @@ namespace Keysharp.Tests
 		// carries Input key options (e.g. an end key). MouseIsNeeded is what makes Start() install
 		// the low-level mouse hook in addition to the keyboard hook.
 		[Test, Category("InputHook")]
-		public void MouseHookNeedDetection()
+		public void MouseHookNeed()
 		{
 			var io = (InputHook)new InputHook("");
 			Assert.AreEqual(true, io.VisibleMouseMove); // default: movement passes through
@@ -74,7 +74,7 @@ namespace Keysharp.Tests
 		// InputType.KeyboardIsNeeded gates installing the keyboard hook, mirroring MouseIsNeeded for the
 		// mouse hook. A default (text-suppressing) input needs it; a purely-mouse visible observer does not.
 		[Test, Category("InputHook")]
-		public void KeyboardHookNeedDetection()
+		public void KeyboardHookNeed()
 		{
 			var def = (InputHook)new InputHook("");  // default options suppress typed text
 			Assert.IsTrue(def.input.KeyboardIsNeeded);   // ...so the keyboard hook is required
@@ -92,7 +92,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("InputHook")]
-		public void MouseEventInfoCarriesScreenPositionOnlyForMouseEvents()
+		public void MouseEventPosition()
 		{
 			var mouse = new HookEventInfo(123, false, false, 0, null, 7, new POINT(321, 654));
 			s.Threads.CurrentThread.eventInfo = (Func<object>)mouse.BuildEventInfo;
@@ -110,7 +110,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("InputHook"), Category("Misc")]
-		public void MouseMoveReportsAreQueuedIndividually()
+		public void MouseMoveQueue()
 		{
 			var context = UseQueuedMainContext();
 			var calls = new List<(long dx, long dy, object info)>();

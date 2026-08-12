@@ -2,7 +2,7 @@
 
 namespace Keysharp.Tests
 {
-	public class DirectivesTests : TestRunner
+	public class DirectiveTests : TestRunner
 	{
 		[Test, Category("Directives")]
 		public void AsmInfo()
@@ -64,7 +64,7 @@ namespace Keysharp.Tests
 		public void Misc() => Assert.IsTrue(TestScript("directive-misc", false));
 
 		[Test, Category("Directives")]
-		public void ConditionalDirectiveErrors()
+		public void ConditionalErrors()
 		{
 			// Every case below used to be accepted silently, and each one silently changed which code compiled:
 			// a condition the grammar does not cover was dropped (taking the wrong branch), an unmatched #if
@@ -121,7 +121,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void WarningDirectiveIsNonFatal()
+		public void WarningNonFatal()
 		{
 			// #Warning is #Error's non-fatal sibling: reported at compile time, but the build still produces a unit.
 			static (object unit, string[] diags, string[] warns) Lower(string src)
@@ -241,7 +241,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void DefinesArePerCompilation()
+		public void CompilationDefines()
 		{
 			// Symbols are an argument to a compilation, not process state, so two compiles in the same process can
 			// disagree — which is what lets Ks.RunScript compile a nested script with its own set. Asserted on the
@@ -263,7 +263,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void RunScriptOptionsSplitCompileTimeFromRuntime()
+		public void RunScriptOptions()
 		{
 			// Ks.RunScript takes a command line, not a bespoke defines list. It compiles in-process and pipes only the
 			// resulting bytes to the launcher, so --define has to be applied HERE and everything else forwarded there.
@@ -319,7 +319,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void DefinesReachImportedModules()
+		public void ImportedDefines()
 		{
 			// A module file is parsed separately from the script that imports it, and is compiled once and shared by
 			// every importer — so an importer's own #define cannot reach it, and the supplied symbols must.
@@ -386,7 +386,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void WarnQuotesTheFileTheLineCameFrom()
+		public void WarnFile()
 		{
 			// A #Warn line number counts from the file the offending line is IN, but the dialog excerpt was always
 			// read from the MAIN script — so a warning raised in an #included file quoted whatever unrelated text the
@@ -433,7 +433,7 @@ namespace Keysharp.Tests
 		public void CSharpBlock() => Assert.IsTrue(TestScript("directive-csharp", true));
 
 		[Test, Category("Directives"), NonParallelizable]
-		public void CSharpPreprocessorSymbolsFollowSourceOrder() => Assert.IsTrue(TestScript("directive-csharp-symbols", false));
+		public void CSharpSymbolOrder() => Assert.IsTrue(TestScript("directive-csharp-symbols", false));
 
 		[Test, Category("Directives"), NonParallelizable]
 		public void CSharpExceptions() => Assert.IsTrue(TestScript("directive-csharp-errors", true));
@@ -441,8 +441,11 @@ namespace Keysharp.Tests
 		[Test, Category("Directives")]
 		public void CSharpClassScope() => Assert.IsTrue(TestScript("directive-csharp-class", false));
 
+		[Test, Category("Directives")]
+		public void CSharpClrBoundary() => Assert.IsTrue(TestScript("directive-csharp-clr", false));
+
 		[Test, Category("Directives"), NonParallelizable]
-		public void CSharpBlockHonorsPreprocessorSymbols()
+		public void CSharpPreprocessor()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_csif_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -482,7 +485,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives"), NonParallelizable]
-		public void CSharpConditionalAndGlobalUsings()
+		public void CSharpGlobalUsings()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_csusing_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -528,7 +531,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives"), NonParallelizable]
-		public void CSharpBlockScopePlacement()
+		public void CSharpScope()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_csplace_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -580,7 +583,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives"), NonParallelizable]
-		public void CSharpModuleDiagnostics()
+		public void CSharpModuleErrors()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_csdiag_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -659,7 +662,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives"), NonParallelizable]
-		public void TranspileWritesTheInlineCSharpSeparately()
+		public void TranspileInlineCSharp()
 		{
 			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
 
@@ -698,7 +701,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives"), NonParallelizable]
-		public void CompiledCSharpArtifactRunsTheInlineCode()
+		public void CompiledCSharp()
 		{
 			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
 
@@ -735,7 +738,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void CSharpBlockInAnIncludedFile()
+		public void IncludedCSharp()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_csinc_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -766,7 +769,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives"), NonParallelizable]
-		public void ValidateChecksInlineCSharp()
+		public void ValidateCSharp()
 		{
 			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
 
@@ -817,7 +820,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void CSharpSyntaxErrorIsReported()
+		public void CSharpErrors()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_csharpsyn_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -841,7 +844,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void CSharpClassMemberNeedsReceiver()
+		public void CSharpMemberReceiver()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_csharprecv_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -921,7 +924,7 @@ namespace Keysharp.Tests
 		public void CSharpModuleExports() => Assert.IsTrue(TestScript("directive-csharp-modules", false));
 
 		[Test, Category("Directives"), NonParallelizable]
-		public void CSharpFileFormInClassAndModuleFile()
+		public void CSharpFileScopes()
 		{
 			var root = Path.Combine(Path.GetTempPath(), "ks_csfilescope_" + Guid.NewGuid().ToString("N"));
 			var mods = Path.Combine(root, "mods");
@@ -958,7 +961,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives"), NonParallelizable]
-		public void CSharpFileFormSearchOrder()
+		public void CSharpSearchOrder()
 		{
 			var root = Path.Combine(Path.GetTempPath(), "ks_csfile_" + Guid.NewGuid().ToString("N"));
 			var local = Path.Combine(root, "local");
@@ -1005,7 +1008,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void ParseScriptChecksInlineCSharp()
+		public void ParseScriptCSharp()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_parsecs_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);

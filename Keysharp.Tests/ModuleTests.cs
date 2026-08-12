@@ -24,7 +24,7 @@ namespace Keysharp.Tests
 		public void CompatibilityMode() => Assert.IsTrue(TestScript("module-compatibility-mode", false));
 
 		[Test, Category("Module")]
-		public void ImportUnknownBuiltinMemberRejected()
+		public void ImportUnknownMember()
 		{
 			// Importing a name a built-in module does not expose (e.g. `#import "Ks" { OCR }` — there is no
 			// Ks.OCR) was silently dropped, so the directive compiled and the missing name surfaced only later.
@@ -53,7 +53,7 @@ namespace Keysharp.Tests
 		public void ScopedImport() => Assert.IsTrue(TestScript("module-scoped-import", false));
 
 		[Test, Category("Module")]
-		public void ScopedImportDiagnostics()
+		public void ImportDiagnostics()
 		{
 			static string[] Lower(string src)
 			{
@@ -90,7 +90,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Module")]
-		public void ModuleDirectiveInClassRejected()
+		public void ModuleInClass()
 		{
 			// `#Module` is only meaningful at the top level; inside a class body it is a parse error, not a silent drop.
 			var (_, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("class C {\n#Module Nope\n}\n");

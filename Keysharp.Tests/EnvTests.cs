@@ -269,7 +269,7 @@ namespace Keysharp.Tests
 
 #if !WINDOWS
 		[Test, Category("Env"), NonParallelizable]
-		public void EnvSetTracksChangesForEnvUpdate()
+		public void EnvSetTracking()
 		{
 			var key = $"KEYSHARP_ENVUPDATE_{Guid.NewGuid():N}";
 			var original = Environment.GetEnvironmentVariable(key);
@@ -298,8 +298,8 @@ namespace Keysharp.Tests
 			}
 		}
 
-		[Test, Category("Env"), NonParallelizable]
-		public void EnvUpdateBuildsSessionManagerCommands()
+		[Test, Category("Env"), Category("Internal"), Category("Curated"), NonParallelizable]
+		public void EnvUpdateCommands()
 		{
 			var changes = new Dictionary<string, string>
 			{
@@ -355,5 +355,3 @@ namespace Keysharp.Tests
 		}
 	}
 }
-
-

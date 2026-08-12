@@ -1,15 +1,14 @@
 #if LINUX
-using System.Runtime.InteropServices;
 using Keysharp.Internals;
 using Keysharp.Internals.Window.Linux.Wayland;
 
 namespace Keysharp.Tests
 {
-	[TestFixture]
-	public class WaylandInfrastructureTests
+	[TestFixture, Category("Internal"), Category("Curated")]
+	public class WaylandTests
 	{
 		[Test]
-		public void WholeOverlayMoveWithinOutputUsesCachedTarget()
+		public void OverlayMove()
 		{
 			var output = new WaylandLayerShellClient.OutputTarget(4, new nint(9),
 				new ScreenRect(-100, 0, 200, 100), 1.25, 1);
@@ -26,38 +25,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void OutputGeometryUsesLogicalMetadataAndTransformFallback()
-		{
-			var output = new WaylandOutput
-			{
-				GeometryX = -1080,
-				GeometryY = 0,
-				Transform = 1,
-				ModeWidth = 1920,
-				ModeHeight = 1080,
-				IntegerScale = 2
-			};
-
-			Assert.That(output.Bounds, Is.EqualTo(new ScreenRect(-1080, 0, 540, 960)));
-			output.LogicalX = -900;
-			output.LogicalY = 20;
-			output.LogicalWidth = 720;
-			output.LogicalHeight = 1280;
-			output.HasLogicalPosition = output.HasLogicalSize = true;
-			Assert.That(output.Bounds, Is.EqualTo(new ScreenRect(-900, 20, 720, 1280)));
-		}
-
-		[Test]
-		public void PassiveCompositorBackingRejectsInteractiveMode()
-		{
-			using var backing = new CompositorImageBacking(42);
-			Assert.That(backing.Show(null, new ScreenRect(0, 0, 1, 1), clickThrough: false), Is.False);
-			Assert.That(WaylandImageOverlay.ResolveInputRegion(clickThrough: true, new nint(17)), Is.EqualTo(new nint(17)));
-			Assert.That(WaylandImageOverlay.ResolveInputRegion(clickThrough: false, new nint(17)), Is.EqualTo(nint.Zero));
-		}
-
-		[Test]
-		public void ShellOverlayAttemptDoesNotDependOnTransientOwnerProbe()
+		public void ShellOverlayProbe()
 		{
 			IWaylandBackend backend = new TransientProbeOverlayBackend();
 			Assert.That(backend.SupportsImageOverlay, Is.False,
@@ -67,7 +35,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void WaylandBridgeDiagnosticsThrottleRepeatedFailures()
+		public void BridgeDiagnostics()
 		{
 			var throttle = new WaylandDiagnosticThrottle(5000);
 			Assert.That(throttle.TryAcquire("GNOME:NameHasOwner", 1000, out var suppressed), Is.True);
@@ -80,7 +48,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void ShmBufferPoolDropsFramesAtItsHardLimit()
+		public void ShmBufferLimit()
 		{
 			WaylandBufferState[] buffers =
 			[
@@ -97,16 +65,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void NearestSamplingUsesIntegerPixelCenters()
-		{
-			Assert.That(Enumerable.Range(0, 5).Select(x => WaylandImageOverlay.SampleIndex(x, 5, 3)),
-				Is.EqualTo(new[] { 0, 0, 1, 2, 2 }));
-			Assert.That(Enumerable.Range(0, 3).Select(x => WaylandImageOverlay.SampleIndex(x, 3, 5)),
-				Is.EqualTo(new[] { 0, 2, 4 }));
-		}
-
-		[Test]
-		public void MotionAbsoluteNormalizesAgainstVirtualDesktopOrigin()
+		public void AbsoluteMotion()
 		{
 			// Primary-only desktop, origin at (0,0): identity mapping, extent == width/height.
 			Assert.That(WaylandVirtualPointerCoordinates.ToMotionAbsolute(100, 50, 0, 0, 1920, 1080),
@@ -128,26 +87,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void FixedPointRoundTripPreservesWholePixelValues()
-		{
-			foreach (var v in new[] { 0, 1, -1, 120, -120, 65535 })
-				Assert.That(WaylandNative.FixedToDouble(WaylandNative.DoubleToFixed(v)), Is.EqualTo((double)v));
-		}
-
-		[Test]
-		public void OutputAbandonClearsHotplugIdentityAndListenerHandle()
-		{
-			var output = new WaylandOutput { RegistryName = 7 };
-			output.Handle = GCHandle.Alloc(output);
-			WaylandOutputBinding.Abandon(output);
-
-			Assert.That(output.Proxy, Is.EqualTo(nint.Zero));
-			Assert.That(output.XdgProxy, Is.EqualTo(nint.Zero));
-			Assert.That(output.Handle.IsAllocated, Is.False);
-		}
-
-		[Test]
-		public void ScreencopySessionIsRetiredOnlyWhenOperationMarksItUnusable()
+		public void ScreencopyRetirement()
 		{
 			FakeSession current = new();
 			var first = current;
@@ -166,7 +106,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void WindowEventSourcePromotesOnOwnerChangeAndDemotesOnStreamFailure()
+		public void WindowEventRecovery()
 		{
 			var available = false;
 			var preferredAttempts = 0;

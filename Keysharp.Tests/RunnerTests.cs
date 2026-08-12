@@ -6,7 +6,7 @@ namespace Keysharp.Tests
 	public class RunnerTests : TestRunner
 	{
 		[Test, Category("Misc")]
-		public void ParsesAhkCommandLineSwitchesBeforeScript()
+		public void CommandLineSwitches()
 		{
 			var scriptPath = Path.GetTempFileName();
 			var includePath = Path.GetTempFileName();
@@ -50,7 +50,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Misc")]
-		public void TreatsAbsolutePathAsScript()
+		public void AbsoluteScriptPath()
 		{
 			var scriptPath = Path.GetTempFileName();
 

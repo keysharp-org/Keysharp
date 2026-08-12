@@ -2,10 +2,11 @@ using Keysharp.Internals;
 
 namespace Keysharp.Tests
 {
+	[Category("Internal"), Category("Curated")]
 	public class RetryGateTests
 	{
 		[Test]
-		public void FailedBurstStopsUntilRearmed()
+		public void RetryLimit()
 		{
 			var time = new ManualTimeProvider();
 			var gate = new RetryGate(time, 3, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
@@ -24,7 +25,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void SuccessfulAttemptClearsFailureBurst()
+		public void SuccessResetsFailures()
 		{
 			var time = new ManualTimeProvider();
 			var gate = new RetryGate(time, 1, TimeSpan.Zero, TimeSpan.Zero);
@@ -41,7 +42,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void StaleCompletionCannotUndoAuthoritativeRearm()
+		public void StaleAttempt()
 		{
 			var gate = new RetryGate(maximumAttempts: 1, initialRetryDelay: TimeSpan.Zero,
 				maximumRetryDelay: TimeSpan.Zero);
@@ -53,7 +54,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void SuspensionRequiresAuthoritativeRearm()
+		public void Suspension()
 		{
 			var gate = new RetryGate();
 			gate.Suspend();

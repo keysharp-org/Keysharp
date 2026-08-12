@@ -8,11 +8,12 @@ using Keysharp.Internals.Input.Linux;
 
 namespace Keysharp.Tests
 {
+	[Category("Internal"), Category("Curated")]
 	public class LinuxInputdProtocolTests
 	{
 #if LINUX
 		[Test, Category("Misc")]
-		public void StableProtocolValuesDescribeModifyAndSynthesisFailures()
+		public void ProtocolValues()
 		{
 			Assert.AreEqual(2u, (uint)KeysharpInputdClient.HookDecision.Modify);
 			Assert.AreEqual(12u, (uint)KeysharpInputdClient.StatusDetail.ResourceExhausted);
@@ -27,7 +28,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Misc")]
-		public async Task IdleTimeQueryAcceptsPayloadAndRejectsStatus()
+		public async Task IdleTimeQuery()
 		{
 			var path = $"/tmp/keysharp-inputd-test-{Environment.ProcessId}-{Guid.NewGuid():N}.sock";
 			var previous = Environment.GetEnvironmentVariable(KeysharpInputdClient.SocketEnvironmentVariable);
@@ -74,7 +75,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Misc")]
-		public async Task PointerButtonQueryReturnsLogicalAndPhysicalXButtons()
+		public async Task PointerButtons()
 		{
 			var path = $"/tmp/keysharp-inputd-test-{Environment.ProcessId}-{Guid.NewGuid():N}.sock";
 			var previous = Environment.GetEnvironmentVariable(KeysharpInputdClient.SocketEnvironmentVariable);
@@ -116,7 +117,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Misc")]
-		public async Task HookStreamPumpsNestedEventsInStackOrder()
+		public async Task NestedHookEvents()
 		{
 			var path = $"/tmp/keysharp-inputd-test-{Environment.ProcessId}-{Guid.NewGuid():N}.sock";
 			var previous = Environment.GetEnvironmentVariable(KeysharpInputdClient.SocketEnvironmentVariable);
@@ -192,7 +193,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Misc")]
-		public async Task SubscribeHookSurvivesHookEventRacingItsAck()
+		public async Task SubscriptionRace()
 		{
 			var path = $"/tmp/keysharp-inputd-test-{Environment.ProcessId}-{Guid.NewGuid():N}.sock";
 			var previous = Environment.GetEnvironmentVariable(KeysharpInputdClient.SocketEnvironmentVariable);
@@ -252,7 +253,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Misc")]
-		public async Task HookPumpDiscardsResponsesNoRequestIsWaitingFor()
+		public async Task OrphanedResponses()
 		{
 			var path = $"/tmp/keysharp-inputd-test-{Environment.ProcessId}-{Guid.NewGuid():N}.sock";
 			var previous = Environment.GetEnvironmentVariable(KeysharpInputdClient.SocketEnvironmentVariable);

@@ -2,11 +2,11 @@
 
 namespace Keysharp.Tests
 {
-	[TestFixture, NonParallelizable]
+	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class SchedulerTests : TestRunner
 	{
 		[Test, Category("Threading")]
-		public void PostedPumpSuppressesExitSignal()
+		public void PostedExitSuppression()
 		{
 			var context = UseQueuedMainContext();
 			var scheduler = s.EventScheduler;
@@ -17,7 +17,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void PostedPumpPreservesThreadExitSignal()
+		public void PostedExitPropagation()
 		{
 			var context = UseQueuedMainContext();
 			var scheduler = s.EventScheduler;
@@ -34,7 +34,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void PseudoThreadSequenceWrapSkipsZero()
+		public void SequenceWrap()
 		{
 			s.pseudoThreadSequence = 0x0000FFFFFFFFFFFE;
 			long first = 0L;

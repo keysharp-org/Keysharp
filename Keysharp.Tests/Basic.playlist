@@ -93,36 +93,30 @@
                   </Rule>
                 </Rule>
                 <Rule Match="All">
-                  <Property Name="Class" Value="BuiltInVarTests" />
+                  <Property Name="Class" Value="BuiltInVarsTests" />
                   <Rule Match="Any">
                     <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.BuiltInVarTests.PropsDateTime" />
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.BuiltInVarsTests.PropsDateTime" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="PropsDateTime" />
                       </Rule>
                     </Rule>
                     <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.BuiltInVarTests.PropsScriptProperties" />
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.BuiltInVarsTests.PropsScriptProperties" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="PropsScriptProperties" />
                       </Rule>
                     </Rule>
                     <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.BuiltInVarTests.PropsScriptSettings" />
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.BuiltInVarsTests.PropsScriptSettings" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="PropsScriptSettings" />
                       </Rule>
                     </Rule>
                     <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.BuiltInVarTests.PropsSpecialChars" />
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.BuiltInVarsTests.PropsSpecialChars" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="PropsSpecialChars" />
-                      </Rule>
-                    </Rule>
-                    <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.BuiltInVarTests.ReflectionsInit" />
-                      <Rule Match="Any">
-                        <Property Name="DisplayName" Value="ReflectionsInit" />
                       </Rule>
                     </Rule>
                   </Rule>
@@ -197,12 +191,12 @@
                 <Property Name="Class" Value="ExternalTests" />
                 <Property Name="Class" Value="EnvTests" />
                 <Property Name="Class" Value="DriveTests" />
-                <Property Name="Class" Value="DirectivesTests" />
+                <Property Name="Class" Value="DirectiveTests" />
                 <Property Name="Class" Value="CollectionsTests" />
                 <Property Name="Class" Value="FlowTests" />
-                <Property Name="Class" Value="FunctionAndLabelTests" />
+                <Property Name="Class" Value="FunctionTests" />
                 <Property Name="Class" Value="MathTests" />
-                <Property Name="Class" Value="Misctests" />
+                <Property Name="Class" Value="MiscTests" />
                 <Property Name="Class" Value="MonitorTests" />
                 <Property Name="Class" Value="NetworkTests" />
                 <Property Name="Class" Value="OperatorTests" />

@@ -3,7 +3,7 @@
 ; build-time check is turned off here -- those cases assert the RUNTIME binder rejects them.
 #Warn NamedArg, Off
 ; The carrier type itself, needed only to build a named call dynamically or inspect a collected one.
-#Import "Ks" { NamedArgs }
+#Import "Ks" { NamedArgs, Clr }
 
 Check(cond) => FileAppend(cond ? "pass" : "fail", "*")
 
@@ -39,6 +39,11 @@ Check(SubStr("abcdef", startingPos: 2) == "bcdef")
 Check(SubStr("abcdef", startingPos: 2, length: 3) == "bcd")
 Check(InStr("hello world", "O", caseSense: true) == 0)         ; case-sensitive: no match
 Check(InStr("hello world", "O", caseSense: false) == 5)
+
+Clr.Load("System")
+Check(Clr.System.Convert.ToString(value: 255, toBase: 16) == "ff")
+Check(Clr.System.Convert.ToString(value: 255) == "255")
+Check(Clr.System.Math.Round(value: 2.567, digits: 2) == 2.57)
 
 ; StartsWith/EndsWith follow InStr's CaseSense convention: insensitive by default, and both On and Off
 ; are culture-invariant.

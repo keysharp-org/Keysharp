@@ -19,8 +19,8 @@ namespace Keysharp.Tests
 		// The synthesized tone is what makes SoundBeep honour Frequency/Duration on Linux and macOS, so the
 		// WAV it produces is verified here rather than trusted — this runs on every platform and needs no
 		// audio device. (Playback itself still needs a real desktop; see the manual-verification notes.)
-		[Test, Category("Misc")]
-		public void ToneWavIsWellFormedAndHonoursFrequencyAndDuration()
+		[Test, Category("Misc"), Category("Internal")]
+		public void ToneWav()
 		{
 			const int rate = 44100;
 			var wav = SoundPlayback.BuildToneWav(440, 250, rate);

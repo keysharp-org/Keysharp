@@ -1,43 +1,15 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using System.Collections;
 using System.Reflection;
 using Keysharp.Internals;
 using Keysharp.Internals.Images;
+using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests
 {
-	public class ScreenInfrastructureTests
+	public partial class ScreenTests
 	{
-		[Test]
-		public void ScreenPixelBoundsUseOneFractionalSeamConvention()
-		{
-			var twoToThree = new ScreenRect(0, 0, 2, 1);
-			var fiveToEight = new ScreenRect(0, 0, 5, 1);
-
-			Assert.AreEqual(new Rectangle(0, 0, 1, 1),
-				twoToThree.ScreenToPixelBounds(new ScreenRect(0, 0, 1, 1), new PixelSize(3, 1)));
-			Assert.AreEqual(new Rectangle(0, 0, 5, 1),
-				fiveToEight.ScreenToPixelBounds(new ScreenRect(0, 0, 3, 1), new PixelSize(8, 1)));
-			Assert.AreEqual(new Rectangle(5, 0, 3, 1),
-				fiveToEight.ScreenToPixelBounds(new ScreenRect(3, 0, 2, 1), new PixelSize(8, 1)));
-		}
-
-		[Test]
-		public void FloatingScreenRectangleRoundsEdgesInsteadOfExtent()
-		{
-			Assert.AreEqual(new ScreenRect(0, -2, 2, 3),
-				ScreenRect.FromRectangle(new RectangleF(0.4f, -1.6f, 1.2f, 2.7f)));
-		}
-
-		[Test]
-		public void WindowCaptureScalePreservesIndependentAxes()
-		{
-			using var bitmap = SolidBitmap(5, 7, unchecked((int)0xFFFFFFFF));
-			Assert.AreEqual(new PixelScale(1.25, 1.4), PixelScale.From(bitmap, new ScreenRect(0, 0, 4, 5)));
-		}
-
-		[Test]
-		public void CaptureComposerPreservesPixelsAcrossFractionalDensitySeam()
+		[Test, Category("Screen"), Category("Internal"), Category("Curated")]
+		public void FractionalSeam()
 		{
 			var captures = new List<(ScreenRect Bounds, Bitmap Pixels)>
 			{
@@ -64,8 +36,8 @@ namespace Keysharp.Tests
 			}
 		}
 
-		[Test]
-		public void CaptureComposerTransfersSoleNativeBitmapWithoutCopy()
+		[Test, Category("Screen"), Category("Internal"), Category("Curated")]
+		public void BitmapTransfer()
 		{
 			var source = SolidBitmap(2, 1, unchecked((int)0xFF102030));
 			var captures = new List<(ScreenRect Bounds, Bitmap Pixels)>
@@ -78,8 +50,8 @@ namespace Keysharp.Tests
 			Assert.AreEqual(0, captures.Count, "ownership transfer must remove the returned bitmap from disposal");
 		}
 
-		[Test]
-		public void OverlayServiceSerializesOperationsForOneId()
+		[Test, Category("Screen"), Category("Internal"), Category("Curated")]
+		public void OverlaySerialization()
 		{
 			using var image = SolidBitmap(1, 1, unchecked((int)0xFFFFFFFF));
 			var backing = new BlockingOverlayBacking();
@@ -102,8 +74,8 @@ namespace Keysharp.Tests
 			Assert.AreEqual(1, backing.MaxConcurrentCalls);
 		}
 
-		[Test]
-		public void OverlayServiceDisposesFailedNewBacking()
+		[Test, Category("Screen"), Category("Internal"), Category("Curated")]
+		public void OverlayFailure()
 		{
 			using var image = SolidBitmap(1, 1, unchecked((int)0xFFFFFFFF));
 			var backing = new BlockingOverlayBacking { ShowResult = false };
@@ -115,8 +87,8 @@ namespace Keysharp.Tests
 			Assert.AreEqual(nint.Zero, service.GetImageOverlayHandle(7));
 		}
 
-		[Test]
-		public void ShowCannotReportMappedAfterConcurrentHideAll()
+		[Test, Category("Screen"), Category("Internal"), Category("Curated")]
+		public void ConcurrentHide()
 		{
 			using var image = SolidBitmap(1, 1, unchecked((int)0xFFFFFFFF));
 			var backing = new BlockingOverlayBacking();

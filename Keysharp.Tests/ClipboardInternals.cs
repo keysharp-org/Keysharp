@@ -4,11 +4,10 @@ using Keysharp.Internals.ExtensionMethods;
 
 namespace Keysharp.Tests
 {
-	[TestFixture, NonParallelizable, Category("Misc")]
-	public class ClipboardRecoveryTests
+	public partial class ClipboardTests
 	{
-		[Test]
-		public void TaskWaitBeforeScriptInitializationDoesNotEnterMessagePump()
+		[Test, Category("Clipboard"), Category("Internal"), Category("Curated"), NonParallelizable]
+		public void UninitializedScript()
 		{
 			var previous = Script.TheScript;
 
@@ -23,8 +22,8 @@ namespace Keysharp.Tests
 			}
 		}
 
-		[Test]
-		public void ClipboardRouterPromotesAfterTransientNegative()
+		[Test, Category("Clipboard"), Category("Internal"), Category("Curated"), NonParallelizable]
+		public void RouterPromotion()
 		{
 			var fallback = new FakeClipboard("fallback");
 			var compositor = new FakeClipboard("compositor");
@@ -40,8 +39,8 @@ namespace Keysharp.Tests
 			Assert.That(fallback.Text, Is.EqualTo("fallback"));
 		}
 
-		[Test]
-		public void ClipboardMonitorRetriesAndReattachesAfterSignalFailure()
+		[Test, Category("Clipboard"), Category("Internal"), Category("Curated"), NonParallelizable]
+		public void MonitorRecovery()
 		{
 			var fallback = new FakeClipboard("fallback");
 			var compositor = new FakeClipboard("compositor");

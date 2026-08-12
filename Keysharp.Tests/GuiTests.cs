@@ -8,12 +8,13 @@ using AppKit = MonoMac.AppKit;
 
 namespace Keysharp.Tests
 {
+	[Category("Internal")]
 	public class GuiTests : TestRunner
 	{
 		private const string MsgBoxTitle = "this is a sample title";
 
 		[Test, Category("Gui")]
-		public void DisplayTopologySelectsLargestIntersectionThenNearestDisplay()
+		public void DisplaySelection()
 		{
 			DisplayInfo[] displays =
 			[
@@ -41,7 +42,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Gui")]
-		public void DisplayTopologyHandlesExtremeInputWithoutOverflow()
+		public void ExtremeDisplayInput()
 		{
 			DisplayInfo[] displays =
 			[
@@ -55,7 +56,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Gui")]
-		public void ScreenCaptureMapsWindowsMixedUiScalingOneToOne()
+		public void WindowsCaptureScale()
 		{
 			// PMv2 Windows exposes both monitors in physical desktop pixels. A 1920-wide 100% display followed
 			// by a 2560-wide 150% display is therefore one 4480-pixel-wide capture; UI scale is not applied here.
@@ -67,7 +68,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Gui")]
-		public void ScreenCaptureMapsDenseRasterPixelsToNativeScreenUnits()
+		public void DenseCaptureScale()
 		{
 			var twice = new ScreenRect(10, 20, 2, 1);
 			var fractional = new ScreenRect(10, 20, 2, 2);
@@ -93,7 +94,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Gui")]
-		public void OverlayUpdateStagesNativeScreenGeometryWhileHidden()
+		public void HiddenOverlayUpdate()
 		{
 			using var image = KeysharpImage.Create(null, 20, 12, "0xFF204060") as KeysharpImage;
 			var overlay = new Ks.KeysharpOverlay();
@@ -116,7 +117,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Gui")]
-		public void OverlayRedrawStagesTargetSizedCanvasAndGeometryTogether()
+		public void OverlayRedraw()
 		{
 			var overlay = new Ks.KeysharpOverlay();
 			_ = overlay.__New(1L, 2L, 10L, 10L);
@@ -143,7 +144,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Gui")]
-		public void OverlayDerivesUnspecifiedDisplaySizeFromImagePixels()
+		public void OverlayImageSize()
 		{
 			using var image = KeysharpImage.Create(null, 20, 12, "0xFF204060", 2.0) as KeysharpImage;
 			var overlay = new Ks.KeysharpOverlay();
@@ -164,7 +165,7 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
-		public void DpiResizeDefaultsPerControlAndIsIndependentOfDpiScale()
+		public void DpiResizeDefaults()
 		{
 			var gui = new Gui(System.Array.Empty<object>());
 			_ = gui.__New();
@@ -200,7 +201,7 @@ namespace Keysharp.Tests
 
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
-		public void RescaleForDpiSkipsControlsThatOptedOut()
+		public void DpiOptOut()
 		{
 			var gui = new Gui(System.Array.Empty<object>());
 			_ = gui.__New();
@@ -235,7 +236,7 @@ namespace Keysharp.Tests
 
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
-		public void DpiChangeEventRegistersAndDispatches()
+		public void DpiChangeEvent()
 		{
 			var gui = new Gui(System.Array.Empty<object>());
 			_ = gui.__New();
@@ -260,7 +261,7 @@ namespace Keysharp.Tests
 		/// </summary>
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
-		public void OnEventAcceptsABoundMethodHandlerAndLeavesItsReceiverAlone()
+		public void BoundEventHandler()
 		{
 			var gui = new Gui(System.Array.Empty<object>());
 			_ = gui.__New();
@@ -283,7 +284,7 @@ namespace Keysharp.Tests
 
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
-		public void OnMessageRegistersOrdersAndRemovesHandlers()
+		public void MessageHandlers()
 		{
 			const int msgId = 0x8123;
 			var gui = new Gui(System.Array.Empty<object>());
@@ -372,7 +373,7 @@ namespace Keysharp.Tests
 
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
-		public void ColumnedMenuKeepsItsSizeAcrossDisplays()
+		public void ColumnedMenuSize()
 		{
 			// Mirrors guitest.ks's Presentation menu: a MenuBar submenu with radio items, a separator and two
 			// column breaks. A columned menu is sized explicitly, so anything measured from the laid-out bounds
@@ -436,7 +437,7 @@ namespace Keysharp.Tests
 
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
-		public void MenuPresentationOptionsAndWaitDefault()
+		public void MenuOptions()
 		{
 			var callback = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => 0L));
 			var menu = new Keysharp.Builtins.Menu();
@@ -524,9 +525,9 @@ namespace Keysharp.Tests
 
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
-		public void WinSetStyleDoesNotAlterExStyle()
+		public void WinSetStyle()
 		{
-			using var form = new Form { Text = nameof(WinSetStyleDoesNotAlterExStyle) };
+			using var form = new Form { Text = nameof(WinSetStyle) };
 			var handle = form.Handle;
 			var oldDetectHiddenWindows = A_DetectHiddenWindows;
 			var originalStyle = WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64();
@@ -551,9 +552,9 @@ namespace Keysharp.Tests
 
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
-		public void WinSetExStyleDoesNotAlterStyle()
+		public void WinSetExStyle()
 		{
-			using var form = new Form { Text = nameof(WinSetExStyleDoesNotAlterStyle) };
+			using var form = new Form { Text = nameof(WinSetExStyle) };
 			var handle = form.Handle;
 			var oldDetectHiddenWindows = A_DetectHiddenWindows;
 			var originalStyle = WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64();
@@ -579,7 +580,7 @@ namespace Keysharp.Tests
 
 #if LINUX
 		[Test, Category("Gui")]
-		public void MenuPresentationOptionsUseGtkNativeFeatures()
+		public void GtkMenuOptions()
 		{
 			SkipIfUiInitializationBlocked("Test requires a live GTK application.");
 			var callback = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => 0L));
@@ -616,7 +617,7 @@ namespace Keysharp.Tests
 
 #if !WINDOWS
 		[Test, Category("Gui")]
-		public void MainWindowInitializesHidden()
+		public void MainWindowVisibility()
 		{
 			SkipIfUiInitializationBlocked("Test requires a live Eto Application (macOS testhost cannot drive AppKit).");
 			var shown = false;
@@ -631,7 +632,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Gui")]
-		public void EtoWindowStylesProjectToksWin32StyleBits()
+		public void EtoWindowStyles()
 		{
 			SkipIfUiInitializationBlocked("Test requires a live Eto Application (macOS testhost cannot drive AppKit).");
 
@@ -686,7 +687,7 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
-		public void ControlOptionsHonorPlusAndMinusSigns()
+		public void ControlOptionSigns()
 		{
 			SkipIfUiInitializationBlocked("Parsing control options requires a constructed Gui.");
 			var gui = new Gui(System.Array.Empty<object>());
@@ -779,7 +780,7 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
-		public void HotkeyControlReadsBackBlankWhenEmpty()
+		public void EmptyHotkeyControl()
 		{
 			SkipIfUiInitializationBlocked("Reading a Hotkey control's value requires a constructed Gui.");
 			var gui = new Gui(System.Array.Empty<object>());

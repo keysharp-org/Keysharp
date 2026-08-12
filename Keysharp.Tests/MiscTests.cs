@@ -190,7 +190,7 @@ namespace Keysharp.Tests
 		public void MiscReserved() => Assert.IsTrue(TestScript("misc-reserved", false));
 
 		[Test, Category("Misc"), NonParallelizable]
-		public void RequestCapabilitiesNoArgsQueriesStatus()
+		public void CapabilitiesStatus()
 		{
 			var caps = Keysharp.Builtins.Ks.RequestCapabilities();
 
@@ -212,7 +212,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Misc"), NonParallelizable]
-		public void KeysharpKeyboardLayoutInfo()
+		public void KeyboardLayout()
 		{
 			var layout = Keysharp.Builtins.Ks.GetKeyboardLayout();
 			Assert.IsFalse(string.IsNullOrWhiteSpace(layout));

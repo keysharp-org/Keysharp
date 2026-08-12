@@ -12,7 +12,7 @@ namespace Keysharp.Tests
 	/// input and are deliberately excluded from ordinary test runs. Select this
 	/// fixture explicitly to run it against the installed daemon.
 	/// </summary>
-	[Explicit("Injects real input through an installed keysharp-inputd instance.")]
+	[Explicit("Injects real input through an installed keysharp-inputd instance."), Category("Internal")]
 	public class LinuxInputdLiveTests
 	{
 #if LINUX
@@ -24,7 +24,7 @@ namespace Keysharp.Tests
 		private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(5);
 
 		[Test, Category("External")]
-		public void SendInsideHookIsRecursiveAndSynchronous()
+		public void RecursiveSend()
 		{
 			using var fixture = new LiveHookFixture();
 			var trace = new ConcurrentQueue<string>();
@@ -72,7 +72,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("External")]
-		public void WorkerThreadSendQueuesBehindActiveHookCallback()
+		public void QueuedWorkerSend()
 		{
 			using var fixture = new LiveHookFixture();
 			using var finished = new CountdownEvent(2);
@@ -125,7 +125,7 @@ namespace Keysharp.Tests
 		[TestCase(false, TestName = "RecursiveMaskOvertakesBystanderQueuedParent")]
 		[TestCase(true, TestName = "RecursiveMaskReentersBystanderAfterItsParentTurn")]
 		[Category("External")]
-		public void RecursiveMaskTraversesEveryHookWithoutParentDeadlock(bool bystanderNewest)
+		public void RecursiveMask(bool bystanderNewest)
 		{
 			// Connect in the requested order because inputd runs the newest hook first.
 			// F13 is the parent and F14 down/up model the separately-sent Ctrl mask
@@ -275,7 +275,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("External")]
-		public void RecursiveChildRoutesThroughActiveHookStream()
+		public void RecursiveChild()
 		{
 			// B is older. A receives F13 first and waits synchronously for its F14
 			// transaction. While B handles F14 on its hook stream, it sends F15.
@@ -410,7 +410,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("External")]
-		public void OrdinarySendReturnsAfterQueueAdmission()
+		public void SendAdmission()
 		{
 			using var fixture = new LiveHookFixture();
 			using var callbackEntered = new AutoResetEvent(false);
@@ -445,7 +445,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("External")]
-		public void BackToBackRecursiveSendsCannotOverlapNativePumpState()
+		public void RecursiveSends()
 		{
 			using var fixture = new LiveHookFixture();
 			using var nestedCallbacks = new CountdownEvent(256);
@@ -487,7 +487,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("External")]
-		public void TimedOutHookFailsOpenAndIsQuarantined()
+		public void HookTimeout()
 		{
 			using var fixture = new LiveHookFixture();
 			var quarantineSeen = new ManualResetEventSlim();
@@ -515,7 +515,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("External")]
-		public void QuarantinedHookCanBeRearmedAndReceivesLaterInput()
+		public void HookRearm()
 		{
 			using var fixture = new LiveHookFixture();
 			var quarantineSeen = new ManualResetEventSlim();
@@ -549,7 +549,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("External")]
-		public void NestedCrossLaneSynthesisCompletesBeforeParentCallback()
+		public void CrossLaneSynthesis()
 		{
 			using var fixture = new LiveHookFixture(subscribeMouse: true);
 			var trace = new ConcurrentQueue<string>();
@@ -593,7 +593,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("External")]
-		public void NewestSubscriberRunsFirstAndBlockStopsOlderSubscribers()
+		public void SubscriberOrder()
 		{
 			using var older = new LiveHookFixture();
 			using var newer = new LiveHookFixture();
@@ -620,7 +620,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("External")]
-		public void ModifyAcceptsReplacementAndStopsOlderSubscribers()
+		public void ModifyDecision()
 		{
 			using var older = new LiveHookFixture();
 			using var fixture = new LiveHookFixture();
@@ -653,7 +653,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("External")]
-		public void ConcurrentSendInputBatchesDoNotInterleaveHookCallbacks()
+		public void ConcurrentBatches()
 		{
 			using var fixture = new LiveHookFixture();
 			var trace = new ConcurrentQueue<uint>();

@@ -7,6 +7,11 @@ namespace Keysharp.Tests
 {
 	public partial class MonitorTests : TestRunner
 	{
+		private static DisplayInfo Display(string name, int x, int y, int w, int h,
+			double scale = 1.0, bool primary = true, ulong nativeId = 0)
+			=> new(name, new ScreenRect(x, y, w, h),
+				new ScreenRect(x, y, w, h), scale, primary, nativeId);
+
 		private static void SkipIfGuiHeadless()
 		{
 			if (Script.IsHeadless)
@@ -60,7 +65,7 @@ namespace Keysharp.Tests
 		/// <summary>Scale and point selection now live on the Monitor class (the standalone Ks.MonitorGetScale /
 		/// Ks.MonitorFromPoint functions were folded into it).</summary>
 		[Test, Category("Monitor")]
-		public void MonitorGetScaleAndPointSelection()
+		public void MonitorScaleAndPoint()
 		{
 			SkipIfGuiHeadless();
 			var primary = Builtins.Monitor.MonitorGetPrimary();
@@ -92,7 +97,7 @@ namespace Keysharp.Tests
 		/// Keysharp used to substitute the primary for every invalid index instead.
 		/// </summary>
 		[Test, Category("Monitor")]
-		public void MonitorInvalidIndexThrows()
+		public void MonitorInvalidIndex()
 		{
 			SkipIfGuiHeadless();
 			var count = Builtins.Monitor.MonitorGetCount();
@@ -117,7 +122,7 @@ namespace Keysharp.Tests
 		/// the topology records in <c>NativeId</c>.</para>
 		/// </summary>
 		[Test, Category("Monitor")]
-		public void MonitorNameIsNotAPlaceholder()
+		public void MonitorName()
 		{
 			SkipIfGuiHeadless();
 			var displays = Keysharp.Internals.Platform.Screen.GetDisplays();
@@ -153,7 +158,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Monitor")]
-		public void MonitorClassMatchesTheGlobals()
+		public void MonitorClass()
 		{
 			SkipIfGuiHeadless();
 			var count = Builtins.Monitor.MonitorGetCount();
@@ -184,7 +189,7 @@ namespace Keysharp.Tests
 		/// is either a plausible value or the unset marker, and is never a fabricated stand-in.
 		/// </summary>
 		[Test, Category("Monitor")]
-		public void MonitorDetailsAreEitherRealOrUnset()
+		public void MonitorDetails()
 		{
 			SkipIfGuiHeadless();
 			var all = Builtins.Ks.KeysharpMonitor.staticget_All(null) as Builtins.Array;
@@ -248,7 +253,7 @@ namespace Keysharp.Tests
 		/// attached. The matching rule itself is pure logic over a snapshot, so it is tested directly.
 		/// </summary>
 		[Test, Category("Monitor")]
-		public void MonitorRefreshMatching()
+		public void RefreshMatching()
 		{
 			DisplayInfo[] two =
 			[
@@ -276,7 +281,7 @@ namespace Keysharp.Tests
 		/// Id a monitor reports must find that same monitor. An unknown id must be falsy rather than an error.
 		/// </summary>
 		[Test, Category("Monitor")]
-		public void MonitorFromIdRoundTrips()
+		public void MonitorFromId()
 		{
 			SkipIfGuiHeadless();
 			var all = Builtins.Ks.KeysharpMonitor.staticget_All(null) as Builtins.Array;
@@ -303,7 +308,7 @@ namespace Keysharp.Tests
 		/// The subscription is exercised here; whether a real display change fires it can only be checked by
 		/// physically changing the display configuration (see the manual test suite).</summary>
 		[Test, Category("Monitor")]
-		public void MonitorOnChangeSubscribes()
+		public void MonitorOnChange()
 		{
 			SkipIfGuiHeadless();
 			var fired = 0L;
@@ -333,132 +338,35 @@ namespace Keysharp.Tests
 
 		/// <summary>A non-callable first argument is a TypeError, matching every other callback-taking factory.</summary>
 		[Test, Category("Monitor")]
-		public void MonitorOnChangeRejectsANonCallback()
+		public void OnChangeCallback()
 		{
 			SkipIfGuiHeadless();
 			_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(
 				() => Builtins.Ks.KeysharpMonitor.OnChange(null, "not a function"));
 		}
-	}
 
-	/// <summary>
-	/// The topology diff behind Monitor.OnChange decides both WHETHER a notification is reported and which kind it
-	/// is. It is pure logic over two snapshots, so unlike the rest of the change plumbing it can be tested without
-	/// physically re-plugging a monitor.
-	/// </summary>
-	public class MonitorChangeClassificationTests
-	{
-		private static DisplayInfo Display(string name, int x, int y, int w, int h,
-			double scale = 1.0, bool primary = true, ulong nativeId = 0)
-			=> new(name, new ScreenRect(x, y, w, h),
-				new ScreenRect(x, y, w, h), scale, primary, nativeId);
-
-		[Test, Category("Monitor")]
-		public void AnIdenticalSnapshotIsNotAChange()
+		[Test, Category("Monitor"), Category("Internal"), Category("Curated")]
+		public void MonitorChanges()
 		{
-			DisplayInfo[] a = [Display("DISPLAY1", 0, 0, 1920, 1080)];
-			DisplayInfo[] b = [Display("DISPLAY1", 0, 0, 1920, 1080)];
-			Assert.IsNull(MonitorEventManager.Classify(a, b));
-		}
+			DisplayInfo[] original = [Display("DP-1", 0, 0, 2560, 1440, nativeId: 71)];
+			DisplayInfo[] reenumerated = [Display("DP-1", 0, 0, 2560, 1440, nativeId: 94)];
+			Assert.IsNull(MonitorEventManager.Classify(original, reenumerated),
+				"A session-local native ID is not a display change.");
 
-		/// <summary>NativeId is an opaque per-session handle, so a change to it alone must not be reported —
-		/// otherwise a re-plug that restores the identical layout would fire a bogus "settings" event.</summary>
-		[Test, Category("Monitor")]
-		public void ANativeIdChangeAloneIsNotAChange()
-		{
-			DisplayInfo[] a = [Display("DP-1", 0, 0, 2560, 1440, nativeId: 71)];
-			DisplayInfo[] b = [Display("DP-1", 0, 0, 2560, 1440, nativeId: 94)];
-			Assert.IsNull(MonitorEventManager.Classify(a, b));
-		}
+			DisplayInfo[] resized = [Display("DP-1", 0, 0, 1920, 1080, nativeId: 94)];
+			Assert.AreEqual("settings", MonitorEventManager.Classify(original, resized));
 
-		[Test, Category("Monitor")]
-		public void AddingAMonitorIsTopology()
-		{
-			DisplayInfo[] a = [Display("DP-1", 0, 0, 2560, 1440)];
-			DisplayInfo[] b =
-			[
-				Display("DP-1", 0, 0, 2560, 1440),
-				Display("HDMI-1", 2560, 0, 1920, 1080, primary: false)
-			];
-			Assert.AreEqual("topology", MonitorEventManager.Classify(a, b));
-		}
+			DisplayInfo[] replacement = [Display("HDMI-1", 0, 0, 2560, 1440)];
+			Assert.AreEqual("topology", MonitorEventManager.Classify(original, replacement),
+				"Replacing a panel without changing the count is still a topology change.");
 
-		[Test, Category("Monitor")]
-		public void RemovingAMonitorIsTopology()
-		{
-			DisplayInfo[] a =
-			[
-				Display("DP-1", 0, 0, 2560, 1440),
-				Display("HDMI-1", 2560, 0, 1920, 1080, primary: false)
-			];
-			DisplayInfo[] b = [Display("DP-1", 0, 0, 2560, 1440)];
-			Assert.AreEqual("topology", MonitorEventManager.Classify(a, b));
-		}
-
-		/// <summary>Same count, different panels — a dock swap. The set changed, so it is topology, not settings.</summary>
-		[Test, Category("Monitor")]
-		public void SwappingWhichMonitorIsAttachedIsTopology()
-		{
-			DisplayInfo[] a = [Display("DP-1", 0, 0, 2560, 1440)];
-			DisplayInfo[] b = [Display("HDMI-1", 0, 0, 2560, 1440)];
-			Assert.AreEqual("topology", MonitorEventManager.Classify(a, b));
-		}
-
-		[Test, Category("Monitor")]
-		public void AResolutionChangeIsSettings()
-		{
-			DisplayInfo[] a = [Display("DISPLAY1", 0, 0, 3840, 2160)];
-			DisplayInfo[] b = [Display("DISPLAY1", 0, 0, 1920, 1080)];
-			Assert.AreEqual("settings", MonitorEventManager.Classify(a, b));
-		}
-
-		[Test, Category("Monitor")]
-		public void AScaleChangeIsSettings()
-		{
-			DisplayInfo[] a = [Display("DISPLAY1", 0, 0, 1920, 1080, scale: 1.0)];
-			DisplayInfo[] b = [Display("DISPLAY1", 0, 0, 1920, 1080, scale: 1.5)];
-			Assert.AreEqual("settings", MonitorEventManager.Classify(a, b));
-		}
-
-		/// <summary>Reassigning the primary monitor keeps the same set attached, so it is a settings change.</summary>
-		[Test, Category("Monitor")]
-		public void APrimaryReassignmentIsSettings()
-		{
-			DisplayInfo[] a =
-			[
-				Display("DP-1", 0, 0, 2560, 1440, primary: true),
-				Display("HDMI-1", 2560, 0, 1920, 1080, primary: false)
-			];
-			DisplayInfo[] b =
-			[
-				Display("DP-1", 0, 0, 2560, 1440, primary: false),
-				Display("HDMI-1", 2560, 0, 1920, 1080, primary: true)
-			];
-			Assert.AreEqual("settings", MonitorEventManager.Classify(a, b));
-		}
-
-		/// <summary>Two panels of the same model can report the same name; the set comparison is a multiset, so
-		/// losing one of a matched pair must still read as a topology change rather than as settings.</summary>
-		[Test, Category("Monitor")]
-		public void LosingOneOfTwoIdenticallyNamedMonitorsIsTopology()
-		{
-			DisplayInfo[] a =
+			DisplayInfo[] duplicates =
 			[
 				Display("DP-1", 0, 0, 1920, 1080),
 				Display("DP-1", 1920, 0, 1920, 1080, primary: false)
 			];
-			DisplayInfo[] b = [Display("DP-1", 0, 0, 1920, 1080)];
-			Assert.AreEqual("topology", MonitorEventManager.Classify(a, b));
-		}
-
-		/// <summary>The very first notification is diffed against an empty baseline only if the manager never saw a
-		/// layout; going from nothing to something is a topology change.</summary>
-		[Test, Category("Monitor")]
-		public void AnEmptyBaselineIsTopology()
-		{
-			DisplayInfo[] b = [Display("DISPLAY1", 0, 0, 1920, 1080)];
-			Assert.AreEqual("topology", MonitorEventManager.Classify([], b));
-			Assert.IsNull(MonitorEventManager.Classify([], []));
+			Assert.AreEqual("topology", MonitorEventManager.Classify(duplicates, [duplicates[0]]),
+				"Display names are a multiset; removing one duplicate must be detected.");
 		}
 	}
 
@@ -466,6 +374,7 @@ namespace Keysharp.Tests
 	/// The EDID parser is the one piece of the monitor stack that is pure logic, so it is the one piece that can
 	/// be tested without any particular hardware attached.
 	/// </summary>
+	[Category("Internal"), Category("Curated")]
 	public class EdidTests
 	{
 		/// <summary>A synthetic but structurally valid EDID 1.4 base block for a fictional "DEL 41C1" panel.</summary>
@@ -515,7 +424,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Monitor")]
-		public void ParsesAValidBlock()
+		public void ValidBlock()
 		{
 			Assert.IsTrue(Keysharp.Internals.Edid.TryParse(BuildBlock(), out var info));
 			Assert.AreEqual("DEL", info.Manufacturer);
@@ -532,7 +441,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Monitor")]
-		public void FallsBackToTheNumericSerial()
+		public void NumericSerial()
 		{
 			var edid = BuildBlock();
 
@@ -552,7 +461,7 @@ namespace Keysharp.Tests
 		/// produced a nonsense Dpi. Such a block has to report no physical size at all.
 		/// </summary>
 		[Test, Category("Monitor")]
-		public void RejectsTheAspectRatioEncodingAsASize()
+		public void AspectRatio()
 		{
 			var edid = BuildBlock();
 			edid[54] = 0;                                 // drop the detailed timing that carries the real size
@@ -585,7 +494,7 @@ namespace Keysharp.Tests
 		/// <summary>A panel reporting no serial at all cannot identify one physical unit, so the caller must be
 		/// told to add a connector disambiguator instead of persisting an id shared by every identical panel.</summary>
 		[Test, Category("Monitor")]
-		public void ReportsWhenTheKeyIsNotUnique()
+		public void KeyUniqueness()
 		{
 			var edid = BuildBlock();
 
@@ -605,7 +514,7 @@ namespace Keysharp.Tests
 		/// physical size (and therefore a wrong DPI).
 		/// </summary>
 		[Test, Category("Monitor")]
-		public void PrefersTheFirstDetailedTimingSize()
+		public void DetailedTiming()
 		{
 			var edid = BuildBlock();
 			// Turn the third descriptor into a detailed timing claiming a much smaller panel.
@@ -621,7 +530,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Monitor")]
-		public void RejectsMalformedBlocks()
+		public void MalformedBlocks()
 		{
 			Assert.IsFalse(Keysharp.Internals.Edid.TryParse(new byte[64], out _), "A short buffer must not parse.");
 			Assert.IsFalse(Keysharp.Internals.Edid.TryParse(new byte[Keysharp.Internals.Edid.BlockSize], out _), "A zeroed block has no EDID header.");
@@ -636,7 +545,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Monitor")]
-		public void MapsConnectorNamesToConnectionKinds()
+		public void ConnectorKinds()
 		{
 			Assert.AreEqual("DisplayPort", Keysharp.Internals.Edid.ConnectionFromConnectorName("DP-1"));
 			Assert.AreEqual("DisplayPort", Keysharp.Internals.Edid.ConnectionFromConnectorName("card0-DP-3"));

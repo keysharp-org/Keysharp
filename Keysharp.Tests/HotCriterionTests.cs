@@ -1,7 +1,7 @@
 namespace Keysharp.Tests
 {
-	[TestFixture, NonParallelizable]
-	public class HotCriterionExecutorTests : TestRunner
+	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
+	public class HotCriterionTests : TestRunner
 	{
 		// A callable that runs an arbitrary delegate. Derives from KeysharpFunc (rather than implementing an
 		// interface) and overrides every member the executor touches, so none of the base implementation's
@@ -19,7 +19,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void TimedOutWorkersGrowIncrementallyToTheConfiguredLimit()
+		public void WorkerGrowth()
 		{
 			using var executor = new HotCriterionExecutor(3);
 			using var release = new ManualResetEventSlim(false);
@@ -64,7 +64,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void OnlyHookOriginatedCriteriaUseTheExecutor()
+		public void HookCriteria()
 		{
 			var callerThread = Environment.CurrentManagedThreadId;
 			var evaluatedThread = 0;

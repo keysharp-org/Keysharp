@@ -13,11 +13,11 @@ using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 
 namespace Keysharp.Tests
 {
-	[TestFixture, NonParallelizable]
+	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class MacInputTests
 	{
 		[Test, Category("Input")]
-		public void InjectedMetadataRoundTripsSignedPayloadAndKind()
+		public void InjectedMetadata()
 		{
 			var kinds = new[]
 			{
@@ -49,7 +49,7 @@ namespace Keysharp.Tests
 		// modifiers, so without an explicit alias the neutral VK_SHIFT/VK_CONTROL/VK_MENU map to nothing and
 		// CreateKeyboardEvent drops the event — leaving ShiftAltTab to advance forward like AltTab.
 		[Test, Category("Input")]
-		public void NeutralModifierVksMapToLeftHandMacKeyCodes()
+		public void NeutralModifiers()
 		{
 			Assert.IsTrue(KeyCodes.TryMapVkToMacCode(VK_SHIFT, out var shift));
 			Assert.AreEqual(0x38u, shift);    // kVK_Shift (left)
@@ -66,7 +66,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void EventOriginUsesQuartzProvenanceAndKeysharpMetadataWins()
+		public void EventOrigin()
 		{
 			var ev = MacNativeInput.CGEventCreateKeyboardEvent(nint.Zero, 0, true);
 			try
@@ -90,14 +90,14 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void MouseOnlyTapIncludesModifierTransitions()
+		public void MouseTapModifiers()
 		{
 			var mask = MacNativeInput.EventMaskFor(keyboard: false, mouse: true);
 			Assert.AreNotEqual(0UL, mask & (1UL << (int)MacNativeInput.kCGEventFlagsChanged));
 		}
 
 		[Test, Category("Input")]
-		public void VirtualKeyUnicodeDoesNotIdentifyTextInjection()
+		public void UnicodeVirtualKey()
 		{
 			var down = MacNativeInput.CreateKeyboardEvent((uint)'A', true, KeyIgnore, 0);
 			var up = MacNativeInput.CreateKeyboardEvent((uint)'A', false, KeyIgnore, 0);
@@ -124,7 +124,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void ModifierStateKeepsLeftAndRightTransitionsIndependent()
+		public void SidedModifiers()
 		{
 			var state = new MacKeyboardState();
 			Assert.IsFalse(state.ApplyFlagsChanged(VK_LSHIFT, 0, MacKeyboardState.Origin.KeysharpSynthetic,
@@ -142,7 +142,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void ForeignModifierDirectionUsesItsOwnSourceState()
+		public void ForeignModifiers()
 		{
 			var state = new MacKeyboardState();
 			Assert.IsFalse(state.ApplyFlagsChanged(VK_LSHIFT, MacNativeInput.kCGEventFlagMaskShift,
@@ -156,7 +156,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void NativeObservationsCannotOverwriteAnActiveSendPrediction()
+		public void SendPrediction()
 		{
 			var state = new MacKeyboardState();
 			state.ApplyFlagsChanged(VK_LSHIFT, MacNativeInput.kCGEventFlagMaskShift,
@@ -177,7 +177,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void SenderChangesAfterNativeObservationWinPerStateComponent()
+		public void SenderVsNativeChanges()
 		{
 			var state = new MacKeyboardState();
 			state.BeginSend(MOD_LSHIFT, nativeCapsLock: false);
@@ -194,7 +194,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void FailedNativeModifierPostRollsBackOnlyItsOwnPrediction()
+		public void ModifierPostRollback()
 		{
 			var state = new MacKeyboardState();
 			state.BeginSend(MOD_LSHIFT, nativeCapsLock: false);
@@ -207,7 +207,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void EarlierModifierCallbackCannotOverwriteNewerSenderPrediction()
+		public void StaleModifierCallback()
 		{
 			var state = new MacKeyboardState();
 			state.BeginSend(MOD_LSHIFT, nativeCapsLock: false);
@@ -222,7 +222,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void CapsLockSendDoesNotBlockIndependentModifierObservation()
+		public void CapsLockObservation()
 		{
 			var state = new MacKeyboardState();
 			state.BeginSend(MOD_LSHIFT, nativeCapsLock: false);
@@ -237,7 +237,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void UnicodeEventsContainExactlyOneScalarAndExplicitMetadata()
+		public void UnicodeEvent()
 		{
 			Assert.AreEqual(1, MacNativeInput.NextUnicodeScalarLength("A"));
 			Assert.AreEqual(2, MacNativeInput.NextUnicodeScalarLength("\U0001F600"));
@@ -264,7 +264,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void MouseEventsCarryDragClickAndEventNumberMetadata()
+		public void MouseMetadata()
 		{
 			Assert.AreEqual(MacNativeInput.kCGEventMouseMoved, MacNativeInput.MouseMoveType(MouseButton.NoButton));
 			Assert.AreEqual(MacNativeInput.kCGEventLeftMouseDragged, MacNativeInput.MouseMoveType(MouseButton.Button1));
@@ -288,7 +288,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void RelativeMousePredictionAccumulatesWithoutWindowServerReads()
+		public void RelativeMouse()
 		{
 			var sink = new FakeMouseEventSink();
 			var stream = new MacMouseEventStream(sink);
@@ -300,7 +300,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void InvalidatedMousePredictionRebasesRelativeMovementOnWindowServerPosition()
+		public void MousePredictionRebase()
 		{
 			var sink = new FakeMouseEventSink { CursorX = 20, CursorY = 30 };
 			var stream = new MacMouseEventStream(sink: sink);
@@ -312,7 +312,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void NativeButtonsDriveDragTypeWithoutBeingClearedBySyntheticClicks()
+		public void NativeDragState()
 		{
 			var sink = new FakeMouseEventSink();
 			var stream = new MacMouseEventStream(sink);
@@ -331,7 +331,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void MouseButtonStateCanBeResynchronizedAfterMissedEvents()
+		public void MouseButtonResync()
 		{
 			var sink = new FakeMouseEventSink();
 			var stream = new MacMouseEventStream(sink);
@@ -345,7 +345,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void OlderNativeMoveCannotRewindANewerSenderPrediction()
+		public void StaleMouseMove()
 		{
 			var sink = new FakeMouseEventSink();
 			var stream = new MacMouseEventStream(sink);
@@ -357,7 +357,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void FixedSignatureHorizontalScrollEventUsesSecondAxis()
+		public void HorizontalScroll()
 		{
 			var ev = MacNativeInput.CreateScrollWheelEvent(240, MouseWheelScrollDirection.Horizontal, KeyIgnore);
 			try
@@ -379,7 +379,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void PartialWheelDeltaRoundTripsWithoutBecomingAFullNotch()
+		public void PartialWheelDelta()
 		{
 			var ev = MacNativeInput.CreateScrollWheelEvent(60, MouseWheelScrollDirection.Vertical, KeyIgnore);
 			try
@@ -402,7 +402,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void ClickSeriesContinuesAcrossSeparateClickCallsOnlyWithinSystemBounds()
+		public void ClickSeriesBounds()
 		{
 			long now = 100;
 			var sink = new FakeMouseEventSink();
@@ -427,7 +427,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void MouseStreamDoesNotTurnAnUnmatchedUpIntoAClickSeries()
+		public void UnmatchedMouseUp()
 		{
 			long now = 100;
 			var sink = new FakeMouseEventSink();
@@ -445,7 +445,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void FailedNativeMousePostsDoNotAdvancePredictedState()
+		public void MousePostRollback()
 		{
 			var sink = new FakeMouseEventSink { CursorX = 10, CursorY = 20, FailMoves = 1, FailButtons = 1 };
 			var stream = new MacMouseEventStream(sink);
@@ -461,7 +461,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void AcceptedPhysicalClickContinuesIntoSyntheticClickSeries()
+		public void SyntheticClickSeries()
 		{
 			long now = 100;
 			var sink = new FakeMouseEventSink();
@@ -473,7 +473,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void UnexpectedEventTapExitIsReportedAfterResourcesAreReleased()
+		public void EventTapExit()
 		{
 			var driver = new FakeEventTapDriver { RunResult = 1 };
 			using var terminated = new ManualResetEventSlim(false);
@@ -494,7 +494,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void EventTapRecoversItsOwnNativeResourcesBeforeReportingFailure()
+		public void EventTapRecovery()
 		{
 			var driver = new FakeEventTapDriver();
 			driver.RunResults.Enqueue(1);
@@ -512,7 +512,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void IntentionalEventTapStopDoesNotRequestRecovery()
+		public void EventTapStop()
 		{
 			var driver = new FakeEventTapDriver { RunResult = 2 };
 			var terminationCount = 0;
@@ -528,7 +528,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void StopCannotBeOverwrittenByStartupTransition()
+		public void StopDuringStartup()
 		{
 			var driver = new FakeEventTapDriver { BlockAddSource = true };
 			var tap = new MacNativeEventTap(1, (_, _) => false, () => { }, (_, _) => { }, driver);
@@ -545,7 +545,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void WatchdogReenableHappensEvenWhenStateResyncFails()
+		public void WatchdogReenable()
 		{
 			var driver = new FakeEventTapDriver { RunResult = 2 };
 			var tap = new MacNativeEventTap(1, (_, _) => false,
@@ -558,7 +558,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void WatchdogCallbackCannotReenableOrResyncAfterStop()
+		public void StoppedWatchdog()
 		{
 			var driver = new FakeEventTapDriver { RunResult = 2 };
 			var resyncCount = 0;

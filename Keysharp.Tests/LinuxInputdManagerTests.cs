@@ -6,11 +6,12 @@ using Keysharp.Internals.Input.Linux;
 
 namespace Keysharp.Tests
 {
+	[Category("Internal"), Category("Curated")]
 	public class LinuxInputdManagerTests
 	{
 #if LINUX
 		[Test, Category("Misc")]
-		public void HookCapabilityRequestIncludesSynthesis()
+		public void HookCapabilities()
 		{
 			var requested = KeysharpInputdClient.Capabilities.HookKeyboard;
 			var expanded = KeysharpInputdManager.ExpandInputPermissionRequest(requested);
@@ -22,7 +23,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Misc")]
-		public void SynthesisCapabilityRequestDoesNotIncludeHooks()
+		public void SynthesisCapabilities()
 		{
 			var requested = KeysharpInputdClient.Capabilities.SynthKeyboard;
 			var expanded = KeysharpInputdManager.ExpandInputPermissionRequest(requested);

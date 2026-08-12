@@ -9,7 +9,7 @@ using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 
 namespace Keysharp.Tests
 {
-	[TestFixture, NonParallelizable]
+	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class UnixInputArrayTests : TestRunner
 	{
 		private sealed class RecordingSender : UnixKeyboardMouseSender
@@ -29,7 +29,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void DispatchAndCleanupPopOnlyTheCurrentArrayFrame()
+		public void ArrayFrameCleanup()
 		{
 			var sender = new RecordingSender();
 			sender.SetMode(SendModes.Input);
@@ -58,7 +58,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
-		public void AbortAfterDispatchFailureRestoresOuterArrayFrame()
+		public void ArrayFrameFailure()
 		{
 			var sender = new RecordingSender();
 			sender.SetMode(SendModes.Input);

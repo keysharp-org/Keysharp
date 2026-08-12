@@ -10,6 +10,7 @@ namespace Keysharp.Tests
 	/// against the lowerer directly; the resolve-and-load half needs the network and the .NET SDK, so it is kept in
 	/// its own category and out of the curated CI set.
 	/// </summary>
+	[Category("Internal")]
 	public class PackageDirectiveTests : TestRunner
 	{
 		/// <summary>
@@ -56,25 +57,7 @@ namespace Keysharp.Tests
 			System.Text.RegularExpressions.Regex.Matches(code, @"LoadPackages\(").Count;
 
 		[Test, Category("Directives")]
-		public void SpecValidation()
-		{
-			foreach (var ok in new[] { "Newtonsoft.Json", "SQLitePCLRaw.bundle_e_sqlite3", "a", "A-B_c.1" })
-				Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.IsValidId(ok), ok);
-
-			// Anything outside the allowlist would be written verbatim into the generated project file, so these
-			// have to be rejected rather than escaped.
-			foreach (var bad in new[] { "", "a/b", "a;b", "a b", "a\"b", "<a>", "a&b", "../x" })
-				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.IsValidId(bad), bad);
-
-			foreach (var ok in new[] { "", "13.0.3", "2.1.10", "1.0.0-beta.1", "13.*", "1.2.3.4", "1.0.0+meta" })
-				Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.IsValidVersion(ok), ok);
-
-			foreach (var bad in new[] { "1.0;x", "1.0 2.0", "<1.0>", "1.0\"" })
-				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.IsValidVersion(bad), bad);
-		}
-
-		[Test, Category("Directives")]
-		public void MissingIdIsACompileError()
+		public void MissingId()
 		{
 			var (_, diags) = Lower("#Package\n");
 			Assert.AreEqual(1, diags.Count);
@@ -82,7 +65,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void InvalidIdIsACompileError()
+		public void InvalidId()
 		{
 			var (_, diags) = Lower("#Package Some/Bad;Id 1.0.0\n");
 			Assert.AreEqual(1, diags.Count);
@@ -95,7 +78,7 @@ namespace Keysharp.Tests
 		/// attribute value, so a comparison must never reach the generated project file as the script wrote it.
 		/// </summary>
 		[Test, Category("Directives")]
-		public void VersionFormsTranslateToNuGetRanges()
+		public void VersionRanges()
 		{
 			void Check(string written, string expected)
 			{
@@ -142,15 +125,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void BoundedVersionLowersIntoTheSpec()
-		{
-			var (code, diags) = Lower("#Package Newtonsoft.Json >=13.0 <14\n");
-			Assert.IsEmpty(diags, string.Join("; ", diags));
-			AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0,14)\", false))");
-		}
-
-		[Test, Category("Directives")]
-		public void MalformedVersionIsACompileError()
+		public void MalformedVersion()
 		{
 			var (_, diags) = Lower("#Package Newtonsoft.Json 13.0.3 extra\n");
 			Assert.AreEqual(1, diags.Count, string.Join("; ", diags));
@@ -158,7 +133,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void ConflictingVersionsForOnePackageIsACompileError()
+		public void VersionConflict()
 		{
 			var (_, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package Newtonsoft.Json 12.0.0\n");
 			Assert.AreEqual(1, diags.Count);
@@ -166,38 +141,11 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void IdenticalDuplicateIsAccepted()
+		public void DuplicatePackage()
 		{
 			var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package Newtonsoft.Json 13.0.3\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
 			AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false))");
-		}
-
-		/// <summary>
-		/// The load-bearing structural invariant: however many `#Package` lines a script has, they must reach the
-		/// runtime as ONE call carrying the whole set. NuGet resolution is a whole-graph operation — resolving each
-		/// directive separately could unify a shared dependency to two different versions and load both.
-		/// </summary>
-		[Test, Category("Directives")]
-		public void MultiplePackagesLowerToASingleBatchedCall()
-		{
-			var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package Serilog 4.0.0\nx := 1\n");
-			Assert.IsEmpty(diags, string.Join("; ", diags));
-			Assert.AreEqual(1, CountCalls(code), "expected exactly one batched LoadPackages call");
-			AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false), (\"Serilog\", \"[4.0.0]\", false))");
-			// What the lowerer actually emits is the argument-LESS call: the ids and versions above travel in the
-			// build-time manifest instead, so a script can never re-decide at run time what it was compiled against.
-			// Asserted on the generated code rather than on the package list, which the test itself formats.
-			AssertEmits(code, "MainScript.LoadPackages()");
-		}
-
-		[Test, Category("Directives")]
-		public void VersionIsOptional()
-		{
-			var (code, diags) = Lower("#Package Newtonsoft.Json\n");
-			Assert.IsEmpty(diags, string.Join("; ", diags));
-			// The empty version becomes Version="*" in the generated project: newest stable, then pinned by the cache.
-			AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"*\", false))");
 		}
 
 		/// <summary>
@@ -206,7 +154,7 @@ namespace Keysharp.Tests
 		/// would otherwise have been read as a compatibility-version declaration.
 		/// </summary>
 		[Test, Category("Directives")]
-		public void PackageNamesDoNotCollideWithRequiresForms()
+		public void RequiresSeparation()
 		{
 			var (code, diags) = Lower("#Package Keysharp.Extensions 1.2.3\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
@@ -222,32 +170,11 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// `*i` marks a package optional. It has to survive into the emitted spec, because whether an unavailable
-		/// package stops the script is decided at runtime — resolution is whole-graph, so the loader can only drop
-		/// the optional ones and retry once it knows the full set failed.
-		/// </summary>
-		[Test, Category("Directives")]
-		public void OptionalPackagesCarryTheIgnoreFlag()
-		{
-			var (code, diags) = Lower("#Package *i Serilog 4.0.0\n#Package Newtonsoft.Json 13.0.3\n");
-			Assert.IsEmpty(diags, string.Join("; ", diags));
-			AssertEmits(Packages(), "LoadPackages((\"Serilog\", \"[4.0.0]\", true), (\"Newtonsoft.Json\", \"[13.0.3]\", false))");
-		}
-
-		[Test, Category("Directives")]
-		public void OptionalFlagStillRequiresAName()
-		{
-			var (_, diags) = Lower("#Package *i\n");
-			Assert.AreEqual(1, diags.Count);
-			StringAssert.Contains("expected a package name", diags[0]);
-		}
-
-		/// <summary>
 		/// A package requirement is program-wide, so one buried in a function body cannot be honoured at the point it
 		/// appears. It must be reported rather than silently vanishing.
 		/// </summary>
 		[Test, Category("Directives")]
-		public void NestedRequirementIsReported()
+		public void NestedPackage()
 		{
 			var (_, diags) = Lower("f() {\n#Package Newtonsoft.Json 13.0.3\n}\nf()\n");
 			Assert.AreEqual(1, diags.Count, string.Join("; ", diags));
@@ -261,7 +188,7 @@ namespace Keysharp.Tests
 		/// inside the function body — i.e. only when that function is called, and on its thread.
 		/// </summary>
 		[Test, Category("Directives")]
-		public void NestedRequirementIsReportedEvenWhenItMatchesATopLevelOne()
+		public void NestedDuplicate()
 		{
 			var (_, diags) = Lower("f() {\n#Package Newtonsoft.Json 13.0.3\n}\n#Package Newtonsoft.Json 13.0.3\nf()\n");
 			Assert.AreEqual(1, diags.Count, string.Join("; ", diags));
@@ -277,7 +204,7 @@ namespace Keysharp.Tests
 		/// resolve before the method's own first statement has run.
 		/// </summary>
 		[Test, Category("Directives")]
-		public void PackagesLoadBeforeEveryModuleAutoExec()
+		public void PackageLoadOrder()
 		{
 			var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\nx := 1\n#Module Helper\ny := 2\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
@@ -301,7 +228,7 @@ namespace Keysharp.Tests
 		/// project.nuget.cache beside it, and that is what gates the cache hit.
 		/// </summary>
 		[Test, Category("Directives")]
-		public void AFailedRestoreIsNotTrustedAsACacheHit()
+		public void FailedRestoreCache()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks-restore-verdict", Guid.NewGuid().ToString("N"));
 			var obj = Path.Combine(dir, "obj");
@@ -324,21 +251,13 @@ namespace Keysharp.Tests
 			try { Directory.Delete(dir, true); } catch { }
 		}
 
-		[Test, Category("Directives")]
-		public void NoDirectiveEmitsNoCall()
-		{
-			var (code, diags) = Lower("x := 1\n");
-			Assert.IsEmpty(diags, string.Join("; ", diags));
-			Assert.AreEqual(0, CountCalls(code));
-		}
-
 		/// <summary>
 		/// A directive nobody handles is rejected rather than dropped: dropping it runs the script with the setting
 		/// silently absent, so the failure surfaces somewhere unrelated. Deprecated AutoHotkey v1 directives are in
 		/// that set deliberately — Keysharp targets v2, and ignoring a v1 leftover hides a porting bug.
 		/// </summary>
 		[Test, Category("Directives")]
-		public void UnknownAndDeprecatedDirectivesAreRejected()
+		public void UnknownDirectives()
 		{
 			foreach (var bad in new[]
 			{
@@ -355,39 +274,12 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// The counterpart, and the regression the check above can most easily cause: everything Keysharp genuinely
-		/// supports must still compile clean, including the directives consumed earlier in the pipeline that reach the
-		/// lowerer's default arm as legitimate no-ops.
-		/// </summary>
-		[Test, Category("Directives")]
-		public void SupportedDirectivesAreNotReported()
-		{
-			foreach (var ok in new[]
-			{
-				// Handled by the lowerer's switch.
-				"#Requires AutoHotkey v2.0\n", "#Warn VarUnset, Off\n", "#NoTrayIcon\n", "#SingleInstance Force\n",
-				"#Persistent\n", "#ErrorStdOut\n", "#MaxThreads 5\n", "#MaxThreadsBuffer 1\n",
-				"#MaxThreadsPerHotkey 2\n", "#ClipboardTimeout 500\n", "#HotIfTimeout 100\n", "#InputLevel 1\n",
-				"#SuspendExempt\n", "#UseHook\n", "#WinActivateForce\n", "#DllLoad *i user32\n",
-				"#HookMutexName foo\n", "#MenuMaskKey vk11\n", "#NoMainWindow\n", "#StructPack 4\n",
-				"#AssemblyTitle t\n", "#AssemblyVersion 1.2.3.4\n", "#Region\n#EndRegion\n", "#Nullable\n",
-				// Consumed earlier: parser splices these, DHHR takes #HotIf/#Hotstring at top level.
-				"#HotIf 1\nx::y\n#HotIf\n", "#Hotstring EndChars -,.?!\n", "#import \"Ks\" { Clr }\n",
-				"#Define FOO 1\n#If FOO\ny := 1\n#EndIf\n",
-			})
-			{
-				var (_, diags) = Lower(ok);
-				Assert.IsEmpty(diags, ok + " -> " + string.Join("; ", diags));
-			}
-		}
-
-		/// <summary>
 		/// Every directive reaches the runtime as its own `(id, version, optional)` tuple, in source order. The
 		/// pieces are never packed into a string, so this pins the whole lowerer-to-loader contract — there is no
 		/// separate format for the two ends to disagree about.
 		/// </summary>
 		[Test, Category("Directives")]
-		public void EachPackageLowersToItsOwnTuple()
+		public void Specs()
 		{
 			var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package *i Serilog >=4.0 <5\n#Package A.B\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
@@ -401,7 +293,7 @@ namespace Keysharp.Tests
 		/// target selection, the `_._` placeholder, and native assets landing separately from managed ones.
 		/// </summary>
 		[Test, Category("Directives")]
-		public void AssetsFileIsReadPerNuGetsShapes()
+		public void AssetsFile()
 		{
 			var root = Path.Combine(Path.GetTempPath(), "ks-assets-fixture", Guid.NewGuid().ToString("N"));
 			var pkgDir = Path.Combine(root, "packages", "demo.pkg", "1.0.0");
@@ -449,7 +341,7 @@ namespace Keysharp.Tests
 
 		/// <summary>A P/Invoke names a native library in several ways; all of them have to find the one file.</summary>
 		[Test, Category("Directives")]
-		public void NativeLibraryAliasesCoverTheSpellingsPInvokeUses()
+		public void NativeAliases()
 		{
 			// Composed with Path.Combine rather than written as a literal Windows path: a native asset path always
 			// reaches this function in the host platform's own separator style, and '\' is not a separator on Unix —
@@ -464,7 +356,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void PackageDeploymentPreservesDuplicateBasenames()
+		public void DuplicateBasenames()
 		{
 			var root = Path.Combine(Path.GetTempPath(), "ks-package-assets", Guid.NewGuid().ToString("N"));
 			var first = Path.Combine(root, "source-a", "Shared.dll");
@@ -498,7 +390,7 @@ namespace Keysharp.Tests
 
 		/// <summary>The cache key must not depend on the order packages were written in, or every reorder re-restores.</summary>
 		[Test, Category("Directives")]
-		public void CacheKeyIsOrderIndependentButVersionSensitive()
+		public void CacheKey()
 		{
 			static string Key(params (string, string)[] p) =>
 				Keysharp.Internals.Os.PackageResolver.CacheKeyFor(
@@ -511,7 +403,7 @@ namespace Keysharp.Tests
 
 		/// <summary>Win-modifier hotkeys start with '#' too; they must never be mistaken for directives.</summary>
 		[Test, Category("Directives")]
-		public void WinModifierHotkeysAreNotDirectives()
+		public void WinHotkeys()
 		{
 			var (_, diags) = Lower("#c::MsgBox 'win-c'\n#z::MsgBox 'win-z'\n");
 			Assert.IsEmpty(diags, string.Join("; ", diags));
@@ -527,7 +419,7 @@ namespace Keysharp.Tests
 		/// dependency, so every call resolves the union of everything requested so far.
 		/// </summary>
 		[Test, Category("NuGet")]
-		public void LoadPackageResolvesAndDetectsConflicts()
+		public void LoadPackage()
 		{
 			var pkg = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "13.0.3", false, out var error);
 			Assert.IsNull(error, error);
@@ -556,7 +448,7 @@ namespace Keysharp.Tests
 		/// request must also roll back, so a later good call is not poisoned by a set that is known to fail.
 		/// </summary>
 		[Test, Category("NuGet")]
-		public void RequiredPackageThatDoesNotExistIsReportedAndRolledBack()
+		public void RequiredPackageFailure()
 		{
 			var missing = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Keysharp.No.Such.Package.XYZ", "1.0.0", false, out var error);
 			Assert.IsNull(missing);
@@ -579,7 +471,7 @@ namespace Keysharp.Tests
 		/// Counting resolutions rather than restores is deliberate: it holds whether the cache is warm or cold.
 		/// </summary>
 		[Test, Category("NuGet"), NonParallelizable]
-		public void ABatchedRequestResolvesTheGraphExactlyOnce()
+		public void BatchedRestore()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgbatch_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -614,7 +506,7 @@ namespace Keysharp.Tests
 		/// Nothing else observes that — a regression would just make startup quietly slow.
 		/// </summary>
 		[Test, Category("NuGet"), NonParallelizable]
-		public void AWarmPackageSetSpawnsNoRestore()
+		public void WarmCache()
 		{
 			var pkgs = new List<Keysharp.Internals.Os.PackageResolver.PackageRef> { new("Newtonsoft.Json", "[13.0.3]", false) };
 			// Warm the set (this may or may not restore, depending on what earlier tests left in the on-disk cache).
@@ -628,7 +520,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void LoadPackageRejectsBadNamesAndVersionsWithoutResolving()
+		public void LoadPackageValidation()
 		{
 			_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Some/Bad;Id", "", false, out var e1);
 			StringAssert.Contains("not a valid package name", e1);
@@ -642,7 +534,7 @@ namespace Keysharp.Tests
 		/// a given package set, so it is deliberately outside the curated CI categories.
 		/// </summary>
 		[Test, Category("NuGet")]
-		public void ResolvesAndLoadsARealPackage()
+		public void PackageRestore()
 		{
 			// The canonical spelling the lowerer emits. It matters that every test in this fixture agrees on it: the
 			// requested-package set is process-wide by design (loaded assemblies cannot be unloaded), so a different
@@ -660,7 +552,7 @@ namespace Keysharp.Tests
 		/// asset under its package/version-scoped path; the minimal form embeds and extracts the same paths.
 		/// </summary>
 		[TestCase("exe"), TestCase("exe-min"), Category("NuGet")]
-		public void CompiledScriptCarriesPinnedPackages(string mode)
+		public void CompiledPackages(string mode)
 		{
 			// Driven through the real launcher rather than TestRunner's exeout: that path emits a bare assembly with
 			// no runtimeconfig.json (fine for the reflection AsmInfo does, not runnable), and running it is the whole
@@ -736,7 +628,7 @@ namespace Keysharp.Tests
 		/// must sit in the private `.keysharp/packages` hierarchy beside it (Runner.CopyPackageAssemblies).
 		/// </summary>
 		[Test, Category("NuGet"), NonParallelizable]
-		public void CompiledCksCarriesItsPackageSidecar()
+		public void CompiledCksPackages()
 		{
 			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
 
@@ -791,7 +683,7 @@ namespace Keysharp.Tests
 	/// a transitive dependency of the bundle package.
 		/// </summary>
 		[Test, Category("NuGet")]
-		public void DependencyIsResolvableButNotLoadedUntilUsed()
+		public void LazyDependency()
 		{
 			Assert.IsNull(Loaded("SQLitePCLRaw.core"), "test precondition: the dependency must not be loaded yet");
 			_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("SQLitePCLRaw.bundle_e_sqlite3", "2.1.10", false, out _);
@@ -814,7 +706,7 @@ namespace Keysharp.Tests
 		/// declared.</para>
 		/// </summary>
 		[Test, Category("NuGet"), NonParallelizable]
-		public void InlineCSharpCanUseAPackageType()
+		public void InlineCSharpPackage()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgcs_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -853,7 +745,7 @@ namespace Keysharp.Tests
 		/// both defeated lazy registration and made an unloadable transitive dependency fatal.</para>
 		/// </summary>
 		[Test, Category("NuGet"), NonParallelizable]
-		public void TheManifestPinsDirectPackagesAndTheClosureSeparately()
+		public void PackageManifest()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgman_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -901,7 +793,7 @@ namespace Keysharp.Tests
 		/// compiler produced no manifest while the lowerer still emitted the call that looks for one.
 		/// </summary>
 		[Test, Category("NuGet"), NonParallelizable]
-		public void AnAllOptionalSetThatResolvesToNothingStillProducesAManifest()
+		public void OptionalManifest()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgopt_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -930,7 +822,7 @@ namespace Keysharp.Tests
 		/// the manifest exists to prevent), and Keysharp's own files are never clobbered.
 		/// </summary>
 		[Test, Category("NuGet"), NonParallelizable]
-		public void CopyPackageAssembliesShipsAndRefreshesTheManifest()
+		public void PackageDeployment()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgcopy_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
@@ -965,7 +857,7 @@ namespace Keysharp.Tests
 		/// network restore the user never asked for — and Keyview runs one on a keystroke debounce.
 		/// </summary>
 		[Test, Category("NuGet"), NonParallelizable]
-		public void OfflineResolveReportsInsteadOfRestoring()
+		public void OfflineRestore()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgoff_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);

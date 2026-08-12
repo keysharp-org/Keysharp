@@ -3,11 +3,11 @@ using Keysharp.Internals.Threading;
 
 namespace Keysharp.Tests
 {
-	[TestFixture, NonParallelizable]
-	public class ThreadSemanticsTests : TestRunner
+	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
+	public class ThreadTests : TestRunner
 	{
 		[Test, Category("Threading")]
-		public void ThreadNoTimersLocal()
+		public void NoTimersLocal()
 		{
 			Assert.AreEqual(true, Ks.A_AllowTimers);
 			Assert.IsTrue(s.AccessorData.threadConfigDataPrototype.allowTimers);
@@ -19,7 +19,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void ThreadNoTimersPrototype()
+		public void NoTimersPrototype()
 		{
 			s.AccessorData.threadConfigDataPrototype.allowTimers = false;
 			Assert.IsTrue(s.Threads.TryBeginThread(out var btv));
@@ -35,7 +35,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void ThreadInterruptDuration()
+		public void InterruptDuration()
 		{
 			_ = Keysharp.Builtins.KeysharpThread.staticCall(null, "Interrupt", 42, 1);
 			Assert.AreEqual(42, s.uninterruptibleTime);
@@ -53,7 +53,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void CriticalPrototypeDefault()
+		public void CriticalDefault()
 		{
 			s.AccessorData.threadConfigDataPrototype.defaultIsCritical = true;
 			s.AccessorData.threadConfigDataPrototype.peekFrequency = ThreadVariables.DefaultUninterruptiblePeekFrequency;
@@ -90,7 +90,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void CriticalDialogInterruptibility()
+		public void CriticalDialog()
 		{
 			Assert.IsTrue(s.Threads.TryBeginThread(out var btv));
 
@@ -111,7 +111,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void DialogScopeInterruptionBlock()
+		public void DialogInterruption()
 		{
 			Assert.IsTrue(s.Threads.TryBeginThread(out var btv));
 

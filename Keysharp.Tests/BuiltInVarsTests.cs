@@ -2,7 +2,7 @@
 
 namespace Keysharp.Tests
 {
-	public class BuiltInVarTests : TestRunner
+	public class BuiltInVarsTests : TestRunner
 	{
 		[Test, Category("BuiltInVars")]
 		public void PropsDateTime()

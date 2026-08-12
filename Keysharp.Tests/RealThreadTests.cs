@@ -9,8 +9,8 @@ using Keysharp.Internals.Window;
 
 namespace Keysharp.Tests
 {
-	[TestFixture, NonParallelizable]
-	public class RealThreadIntegrationTests : TestRunner
+	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
+	public class RealThreadTests : TestRunner
 	{
 		private static int hookWinCriterionCalls;
 		private static bool hookWinCriterionResult;
@@ -180,7 +180,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading"), Category("UI")]
-		public void WorkerOwnedRegistrations()
+		public void WorkerOwnership()
 		{
 			EnsureUiScheduler();
 
@@ -307,7 +307,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading"), Category("UI")]
-		public void SendPumpsMainScheduler()
+		public void SchedulerSend()
 		{
 			_ = s.EventScheduler;
 
@@ -346,7 +346,7 @@ namespace Keysharp.Tests
 		// are per real thread and are mutated without locking. This is the same restriction targeted Exit() always
 		// had, now enforced by the object rather than by an error return.
 		[Test, Category("Threading"), Category("UI")]
-		public void ForeignPseudoThreadCannotBeExited()
+		public void ForeignThreadExit()
 		{
 			EnsureUiScheduler();
 			var ready = new ManualResetEventSlim(false);
@@ -379,7 +379,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading"), Category("UI")]
-		public void SendObservesExitRequestedWhileWaiting()
+		public void SendExitRequest()
 		{
 			EnsureUiScheduler();
 			var ready = new ManualResetEventSlim(false);
@@ -420,7 +420,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading"), Category("UI")]
-		public void ExactHotkeyVariantDispatchesAcrossSchedulers()
+		public void HotkeyDispatch()
 		{
 			var probe = new CallbackProbe();
 			var hk = new HotkeyDefinition((uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ => probe.Record("main"))), 0, "$a", 0);
@@ -441,7 +441,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading"), Category("Gui")]
-		public void HookHotkeyDispatchSkipsCriterionReevaluation()
+		public void HookCriterionDispatch()
 		{
 			var criterionCalls = 0;
 			var callbackRan = new ManualResetEventSlim(false);
@@ -484,7 +484,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading"), Category("UI")]
-		public void HookHotkeyWindowCriterionReevaluatesOnReceipt()
+		public void WindowDispatch()
 		{
 			var callbackRan = new ManualResetEventSlim(false);
 			var previousCriterion = s.Threads.CurrentThread.hotCriterion;
@@ -535,7 +535,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading"), Category("UI")]
-		public void HotIfHotkeyWithEnabledGlobalVariantCanStayRegistered()
+		public void HotIfRegistration()
 		{
 			var previousCriterion = s.Threads.CurrentThread.hotCriterion;
 
@@ -562,7 +562,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading"), Category("UI")]
-		public void WorkerHotkeyBindingRunsAfterMainThreadEnds()
+		public void WorkerHotkeyAfterExit()
 		{
 			var mainStarted = new ManualResetEventSlim(false);
 			var releaseMain = new ManualResetEventSlim(false);
@@ -598,7 +598,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading"), Category("Gui")]
-		public void WorkerHotkeyBindingProgressesWhileMainBindingBlocked()
+		public void BlockedMainBinding()
 		{
 			var mainStarted = new ManualResetEventSlim(false);
 			var releaseMain = new ManualResetEventSlim(false);
@@ -642,7 +642,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading"), Category("UI")]
-		public void PostSendAfterWorkerExit()
+		public void PostSendAfterExit()
 		{
 			_ = s.EventScheduler;
 			var worker = StartWorker(() => { });
@@ -657,7 +657,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading"), Category("UI")]
-		public void StopUnhooksKeyboardHotkeys()
+		public void StopUnhooksHotkeys()
 		{
 			var hk = new HotkeyDefinition((uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ => 0L)), 0, "$a", 0);
 			s.HotkeyData.shk = [..s.HotkeyData.shk, hk];

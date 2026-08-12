@@ -5,7 +5,7 @@ namespace Keysharp.Tests
 	/// <summary>
 	/// Function tests don't need to also be wrapped in a function, so pass false to all.
 	/// </summary>
-	public class FunctionAndLabelTests : TestRunner
+	public class FunctionTests : TestRunner
 	{
 		[Test, Category("Function"), NonParallelizable]
 		public void AllGlobalInFunc() => Assert.IsTrue(TestScript("func-all-global", false));
