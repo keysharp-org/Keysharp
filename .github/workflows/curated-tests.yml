@@ -29,6 +29,10 @@ concurrency:
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # Dispatch-only by choice: this is not a per-push gate. If a push/pull_request trigger is ever added, note
+  # that `inputs` is empty on those events - both this and the target_platform switch below fall back to
+  # nothing, so `dotnet test -c ""` fails immediately. Give each a default at that point (ci.yml shows the
+  # `github.event_name == 'workflow_dispatch' && inputs.x || '<default>'` form).
   BUILD_CONFIGURATION: ${{ inputs.configuration }}
   # Category=RequiresHook is excluded: those tests need the keysharp-inputd global hook and, on a desktop with
   # the daemon, prompt for input-access permission. The curated set must run without any user interaction, so

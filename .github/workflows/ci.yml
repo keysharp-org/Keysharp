@@ -22,20 +22,11 @@ on:
         description: "Build configuration"
         required: true
         type: choice
-        default: Debug
+        default: Release
         options:
-          - Debug
           - Release
-      project:
-        description: "Project scope"
-        required: true
-        type: choice
-        default: core
-        options:
-          - core
-          - all
-          - keysharp
-          - keyview
+          - Debug
+          - both
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -44,8 +35,7 @@ concurrency:
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-  BUILD_CONFIGURATION: ${{ github.event_name == 'workflow_dispatch' && inputs.configuration || 'Debug' }}
-  BUILD_PROJECT: ${{ github.event_name == 'workflow_dispatch' && inputs.project || 'core' }}
+  BUILD_CONFIGURATION: ${{ github.event_name == 'workflow_dispatch' && inputs.configuration || 'Release' }}
   ETO_REPOSITORY: https://github.com/keysharp-org/Eto.git
   ETO_BRANCH: Keysharp
 
@@ -60,7 +50,10 @@ jobs:
         id: set-matrix
         shell: pwsh
         run: |
-          $target = '${{ github.event_name == 'workflow_dispatch' && inputs.target_platform || 'all' }}'
+          # 'gate' is what push/pull_request runs: one leg per OS. The build is a compile check, and every
+          # project is AnyCPU (see Directory.Build.props), so the macOS version/architecture fan-out below
+          # would compile the same IL four times over. That fan-out stays available on workflow_dispatch.
+          $target = '${{ github.event_name == 'workflow_dispatch' && inputs.target_platform || 'gate' }}'
           switch ($target) {
             'windows' {
               $matrix = '{"include":[{"name":"Windows x64","os":"windows-latest","platform":"windows","rid":"win-x64"}]}'
@@ -70,6 +63,9 @@ jobs:
             }
             'macos' {
               $matrix = '{"include":[{"name":"macOS 15 arm64","os":"macos-15","platform":"macos","rid":"osx-arm64","macos_version":"15","arch":"arm64"},{"name":"macOS 26 arm64","os":"macos-26","platform":"macos","rid":"osx-arm64","macos_version":"26","arch":"arm64"},{"name":"macOS 15 Intel","os":"macos-15-intel","platform":"macos","rid":"osx-x64","macos_version":"15","arch":"x64"},{"name":"macOS 26 Intel","os":"macos-26-intel","platform":"macos","rid":"osx-x64","macos_version":"26","arch":"x64"}]}'
+            }
+            'gate' {
+              $matrix = '{"include":[{"name":"Windows x64","os":"windows-latest","platform":"windows","rid":"win-x64"},{"name":"Linux x64","os":"ubuntu-latest","platform":"linux","rid":"linux-x64"},{"name":"macOS 15 arm64","os":"macos-15","platform":"macos","rid":"osx-arm64","macos_version":"15","arch":"arm64"}]}'
             }
             default {
               $matrix = '{"include":[{"name":"Windows x64","os":"windows-latest","platform":"windows","rid":"win-x64"},{"name":"Linux x64","os":"ubuntu-latest","platform":"linux","rid":"linux-x64"},{"name":"macOS 15 arm64","os":"macos-15","platform":"macos","rid":"osx-arm64","macos_version":"15","arch":"arm64"},{"name":"macOS 26 arm64","os":"macos-26","platform":"macos","rid":"osx-arm64","macos_version":"26","arch":"arm64"},{"name":"macOS 15 Intel","os":"macos-15-intel","platform":"macos","rid":"osx-x64","macos_version":"15","arch":"x64"},{"name":"macOS 26 Intel","os":"macos-26-intel","platform":"macos","rid":"osx-x64","macos_version":"26","arch":"x64"}]}'
@@ -156,9 +152,8 @@ jobs:
         run: |
           Write-Host "Platform: ${{ matrix.platform }}"
           Write-Host "Runner: ${{ matrix.os }}"
-          Write-Host "RID: ${{ matrix.rid }}"
           Write-Host "Configuration: $env:BUILD_CONFIGURATION"
-          Write-Host "Project scope: $env:BUILD_PROJECT"
+          Write-Host "Scope: Keysharp.sln (every project)"
 
       - name: Verify macOS version and architecture
         if: ${{ matrix.platform == 'macos' }}
@@ -178,20 +173,28 @@ jobs:
 
           Write-Host "Verified macOS $actualVersion on $actualArch."
 
-      - name: Build Keysharp.Core
-        if: ${{ env.BUILD_PROJECT == 'core' || env.BUILD_PROJECT == 'all' }}
+      # The whole solution, never a list of projects. Naming projects individually is what let
+      # Keysharp.Components, Keysharp.Tests, Keyview and the rest go uncompiled here: a hand-maintained list
+      # silently stops covering whatever is added next. Keysharp.Components.Scripting.Parser/.Compiler are
+      # the ones this matters most for - nothing references them at compile time (they are loaded as
+      # components at runtime), so no dependency walk from an apphost reaches them either.
+      #
+      # No -r: every project is AnyCPU and the RID only picks an apphost and resolves native assets, neither
+      # of which a compile check looks at (again see Directory.Build.props). RID-specific restore is still
+      # exercised, because the shipping projects declare RuntimeIdentifiers and restore honors that list.
+      # `dotnet publish -r <rid>` in release.yml remains the place where RID-specific output is validated.
+      # Release, not Debug, is the default: it is what release.yml ships, and it is the stricter of the two
+      # (it drops DEBUG from DefineConstants in every project and flips DebugType to none for the packaged
+      # ones, so a `#if DEBUG` divergence breaks here and not in a Debug build). Debug and both remain
+      # selectable on workflow_dispatch.
+      - name: Build solution (Release)
+        if: ${{ env.BUILD_CONFIGURATION == 'both' || env.BUILD_CONFIGURATION == 'Release' }}
         shell: pwsh
         run: |
-          dotnet build Keysharp.Core/Keysharp.Core.csproj -c $env:BUILD_CONFIGURATION -r "${{ matrix.rid }}" --nologo
+          dotnet build Keysharp.sln -c Release --nologo
 
-      - name: Build Keysharp (secondary)
-        if: ${{ env.BUILD_PROJECT == 'all' || env.BUILD_PROJECT == 'keysharp' }}
+      - name: Build solution (Debug)
+        if: ${{ env.BUILD_CONFIGURATION == 'both' || env.BUILD_CONFIGURATION == 'Debug' }}
         shell: pwsh
         run: |
-          dotnet build Keysharp/Keysharp.csproj -c $env:BUILD_CONFIGURATION -r "${{ matrix.rid }}" --nologo
-
-      - name: Build Keyview (secondary)
-        if: ${{ env.BUILD_PROJECT == 'all' || env.BUILD_PROJECT == 'keyview' }}
-        shell: pwsh
-        run: |
-          dotnet build Keyview/Keyview.csproj -c $env:BUILD_CONFIGURATION -r "${{ matrix.rid }}" --nologo
+          dotnet build Keysharp.sln -c Debug --nologo
