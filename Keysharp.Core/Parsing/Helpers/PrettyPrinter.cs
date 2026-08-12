@@ -1193,9 +1193,13 @@ namespace Keysharp.Parsing
 					foreach (var acc in accessors)
 					{
 						_sb.Append(" ");
+						foreach (var mod in acc.Modifiers)
+							_sb.Append(mod.Text).Append(" ");
 						_sb.Append(acc.Keyword.Text).Append(";");
 					}
-					_sb.AppendLine(" }");
+					_sb.Append(" }");
+					PrintPropertyInitializer(node);
+					_sb.AppendLine();
 					return;
 				}
 
@@ -1206,19 +1210,30 @@ namespace Keysharp.Parsing
 					for (int i = 0; i < accessors.Count; i++)
 					{
 						var acc = accessors[i];
+						foreach (var mod in acc.Modifiers)
+							_sb.Append(mod.Text).Append(" ");
 						_sb.Append(acc.Keyword.Text);
 						Visit(acc.ExpressionBody);
 						_sb.Append(";");
 						if (i < accessors.Count - 1)
 							_sb.Append(" ");
 					}
-					_sb.AppendLine(" }");
+					_sb.Append(" }");
+					PrintPropertyInitializer(node);
+					_sb.AppendLine();
 					return;
 				}
 
 				// otherwise fall back to multi-line
 				_sb.AppendLine();
 				Visit(node.AccessorList);
+
+				if (node.Initializer != null)
+				{
+					TrimTrailingNewLine();
+					PrintPropertyInitializer(node);
+					_sb.AppendLine();
+				}
 			}
 			// 3b) expression‐body: “=> expr;”
 			else if (node.ExpressionBody != null)
@@ -1226,6 +1241,19 @@ namespace Keysharp.Parsing
 				Visit(node.ExpressionBody);
 				_sb.AppendLine(";");
 			}
+		}
+
+		// The `= <expr>;` an auto- or field-backed property may carry after its accessor list. Dropping it
+		// hands the runtime a default-initialized member (surfaced by an inline #CSharp `{ get; set; } = ...`
+		// whose value was null at run time).
+		void PrintPropertyInitializer(PropertyDeclarationSyntax node)
+		{
+			if (node.Initializer == null)
+				return;
+
+			_sb.Append(" = ");
+			Visit(node.Initializer.Value);
+			_sb.Append(";");
 		}
 
 		public override void VisitArrowExpressionClause(ArrowExpressionClauseSyntax node)

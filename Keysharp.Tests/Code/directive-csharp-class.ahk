@@ -76,7 +76,7 @@ class Uses
 class Sys
 {
     #CSharp
-    public static object Empty(object @this) => Array.Empty<long>().Length;
+    public static object Empty(object @this) => System.Array.Empty<long>().Length;
     #EndCSharp
 }
 

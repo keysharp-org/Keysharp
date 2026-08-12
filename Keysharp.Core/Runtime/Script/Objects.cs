@@ -184,12 +184,12 @@ namespace Keysharp.Runtime
 
 						propertyMap = staticInst.op != null && staticInst.op.TryGetValue(propertyName, out OwnPropsDesc staticPropDesc) ? staticPropDesc : new OwnPropsDesc();
 
-						if (prop.GetMethod != null)
+						if (MethodPropertyHolder.HasScriptGetter(prop))
 						{
 							propertyMap.Get = new KeysharpFunc(prop.GetMethod);
 						}
 
-						if (prop.SetMethod != null)
+						if (MethodPropertyHolder.HasScriptSetter(prop))
 						{
 							propertyMap.Set = new KeysharpFunc(prop.SetMethod);
 						}
@@ -205,12 +205,12 @@ namespace Keysharp.Runtime
 
 					propertyMap = proto.op.TryGetValue(propertyName, out OwnPropsDesc propDesc) ? propDesc : new OwnPropsDesc();
 
-					if (prop.GetMethod != null)
+					if (MethodPropertyHolder.HasScriptGetter(prop))
 					{
 						propertyMap.Get = new KeysharpFunc(prop.GetMethod);
 					}
 
-					if (prop.SetMethod != null)
+					if (MethodPropertyHolder.HasScriptSetter(prop))
 					{
 						propertyMap.Set = new KeysharpFunc(prop.SetMethod);
 					}

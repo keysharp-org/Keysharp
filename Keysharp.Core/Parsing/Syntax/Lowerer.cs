@@ -92,11 +92,12 @@ namespace Keysharp.Parsing.Syntax
 		private readonly List<Keysharp.Internals.Os.PackageResolver.PackageRef> _packages = [];
 		private readonly HashSet<Stmt> _packagesSeen = new(ReferenceEqualityComparer.Instance);
 
-		// Inline C# is emitted as a second tree; identity tracking catches unsupported nesting.
+		// Inline C# is emitted as one additional tree per script module; identity tracking catches unsupported nesting.
 		private List<(string Module, string ClassPath, CSharpDirective Dir)> _inlineBlocks;
 		private HashSet<Stmt> _csharpSeen;
-		/// <summary>The separate inline C# compilation unit, if any.</summary>
+		/// <summary>The combined tooling view of the module-scoped inline C# compilation units, if any.</summary>
 		public string InlineSource;
+		public IReadOnlyList<InlineCSharpSource> InlineSources = [];
 		private Dictionary<string, HashSet<string>> _moduleGlobals;
 		private HashSet<string> _inlineFuncNames;
 
@@ -2120,7 +2121,7 @@ namespace Keysharp.Parsing.Syntax
 					if (classPath == null && isPublicStaticMethod)
 						(m.InlineMembers ??= new(System.StringComparer.OrdinalIgnoreCase)).Add(method.Identifier.Text);
 
-					// Misuse (non-public, non-static, non-method) is diagnosed in BuildInlineSource, which every
+					// Misuse (non-public, non-static, non-method) is diagnosed in BuildInlineSources, which every
 					// lowering path runs — this pass exists only on the multi-module one, and a library
 					// validated standalone must get the same verdict its importers will. Consume valid exports.
 					if (isPublicStaticMethod && InlineExportAttribute(mem) is { } attr)
@@ -2209,8 +2210,11 @@ namespace Keysharp.Parsing.Syntax
 			var unit = SyntaxFactory.ParseCompilationUnit(normalized, options: options);
 			var firstMember = unit.Members.FirstOrDefault()?.SpanStart ?? int.MaxValue;
 			var directives = unit.Usings.Where(u => u.SpanStart < firstMember && !u.SemicolonToken.IsMissing).ToList();
+			// One C# tree is emitted per script module. Treat `global using` as module-global by placing the
+			// normalized directive inside that tree's namespace; a real C# global using would leak into every
+			// imported module because Roslyn applies it compilation-wide, across syntax trees.
 			var usings = directives.Select(u => new InlineUsing(
-										 u.ToString().Trim(),
+										 u.WithGlobalKeyword(default).ToString().Trim(),
 										 u.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword))).ToList();
 			var body = normalized.ToCharArray();
 
@@ -2452,174 +2456,162 @@ namespace Keysharp.Parsing.Syntax
 				PrescanClassCSharp(nested, moduleName, moduleDir, path);
 		}
 
-		private string BuildInlineSource()
+		private sealed record InlineEmission(string ClassPath, System.Text.StringBuilder Body);
+
+		private IReadOnlyList<InlineCSharpSource> BuildInlineSources()
 		{
 			if (_inlineBlocks == null)
-				return null;
+				return [];
 
-			// Pool usings within a scope; hoisting across scopes can introduce ambiguous type names.
-			var byScope = new List<(string Module, string ClassPath, System.Text.StringBuilder Body,
-									List<string> Usings, HashSet<string> SeenUsing)>();
-			var globalUsings = new List<string>();
-			var seenGlobalUsing = new HashSet<string>(System.StringComparer.Ordinal);
+			var sources = new List<InlineCSharpSource>();
 
-			foreach (var (module, classPath, d) in _inlineBlocks)
+			// Each script module gets one namespace declaration in one syntax tree. Its using directives apply to
+			// every module/class block in that tree, but not to another module's declaration of the same namespace.
+			foreach (var module in _inlineBlocks.Select(block => block.Module).Distinct(System.StringComparer.Ordinal))
 			{
-				var parsed = Parsed(d);
-				var entry = byScope.FirstOrDefault(e => e.Module == module && e.ClassPath == classPath);
+				var blocks = _inlineBlocks.Where(block => block.Module == module).ToList();
+				var usings = new List<string>();
+				var seenUsing = new HashSet<string>(System.StringComparer.Ordinal);
 
-				if (entry.Body == null)
+				// Keysharp.Builtins is opt-in because Array, String and Buffer conflict with System.
+				foreach (var name in new[] { "System", "System.Collections.Generic", "System.Runtime.CompilerServices", "System.Runtime.InteropServices", "Keysharp.Runtime" })
 				{
-					entry = (module, classPath, new System.Text.StringBuilder(), [], new HashSet<string>(System.StringComparer.Ordinal));
-					byScope.Add(entry);
+					var directive = "using " + name + ";";
+
+					if (seenUsing.Add(directive))
+						usings.Add(directive);
 				}
 
-				var rawFile = d.CodeFile ?? _scriptPath ?? "*";
-				var lineOffset = d.CodeLine - 1;   // the block's first content line, in the file it was written in
-				var wrapperOffset = parsed.WrapperOffset;
+				foreach (var (_, _, directive) in blocks)
+					foreach (var use in Parsed(directive).Usings)
+						if (seenUsing.Add(use.Text))
+							usings.Add(use.Text);
 
-				foreach (var directive in parsed.Usings)
+				var emissions = new List<InlineEmission>();
+
+				// Preserve block order so stateful C# directives such as #nullable and #pragma reach later
+				// blocks in this module and naturally stop at the module tree boundary.
+				foreach (var (_, classPath, d) in blocks)
 				{
-					var target = directive.Global ? globalUsings : entry.Usings;
-					var seen = directive.Global ? seenGlobalUsing : entry.SeenUsing;
+					var parsed = Parsed(d);
+					var body = new System.Text.StringBuilder();
+					var rawFile = d.CodeFile ?? _scriptPath ?? "*";
+					var lineOffset = d.CodeLine - 1;
+					var wrapperOffset = parsed.WrapperOffset;
 
-					if (seen.Add(directive.Text))
-						target.Add(directive.Text);
+					if (!ReportInlineSyntaxErrors(parsed.Probe, wrapperOffset, lineOffset, rawFile))
+						continue;
+
+					foreach (var m in parsed.Members)
+					{
+						var isFunction = classPath == null && m is MethodDeclarationSyntax me && IsScriptVisible(me)
+									   && me.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword));
+						var startLine = m.GetLocation().GetLineSpan().StartLinePosition.Line - wrapperOffset;
+						var at = $"{System.IO.Path.GetFileName(rawFile)}:{lineOffset + startLine + 1}:1: ";
+
+						if (classPath == null)
+						{
+							CheckInlineNameCollision(m, module, isFunction, at);
+
+							if (!isFunction && m is MethodDeclarationSyntax im && IsScriptVisible(im)
+									&& !im.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword)))
+								Diag($"{at}#CSharp: public method '{im.Identifier.Text}' at module scope must be 'static' to be callable "
+									 + "from a script -- the module class is never instantiated, so an instance method can never run. "
+									 + "Add 'static', or make it non-public if no script was meant to call it.");
+
+							if (!isFunction && InlineExportAttribute(m) != null)
+								Diag($"{at}#CSharp: [Export] is supported only on public static module methods");
+						}
+						else
+						{
+							if (InlineExportAttribute(m) != null)
+								Diag($"{at}#CSharp: [Export] is valid only at module scope");
+
+							CheckInlineClassMemberReceiver(m, at);
+
+							if (m is MethodDeclarationSyntax cm && IsScriptVisible(cm))
+								_ = CheckInlineBoundarySignature(cm, at);
+
+							foreach (var cn in DeclaredNames(m))
+								if (Keywords.InlineReservedClassNames.Contains(cn))
+									Diag($"{at}#CSharp: '{cn}' is a name Keysharp generates into this class; rename it");
+						}
+
+						if (m is PropertyDeclarationSyntax pv && IsScriptVisible(pv) && IsUnsupportedBoundaryType(pv.Type))
+							Diag($"{at}#CSharp: public property '{pv.Identifier.Text}' has a type that cannot be handed to a script. "
+								 + "Use a supported scalar/reference type or make it non-public.");
+
+						// Mark directly reflected boundaries for their conversion/error policy. Module fields are marked
+						// as well so they can be distinguished from the object fields generated for script globals.
+						if (IsScriptVisible(m) && (m is PropertyDeclarationSyntax
+								|| classPath != null && m is MethodDeclarationSyntax
+								|| classPath == null && m is FieldDeclarationSyntax))
+							_ = body.AppendLine("[Keysharp.Runtime.InlineCSharp]");
+
+						_ = body.AppendLine(FreezeConditionals(m).ToString());
+
+						// Supply the FN_ method expected by the generated function binding.
+						if (isFunction && m is MethodDeclarationSyntax em)
+						{
+							if (!CheckInlineBoundarySignature(em, at))
+								continue;
+
+							var argNames = string.Join(", ", em.ParameterList.Parameters.Select(p => p.Identifier.Text));
+							var isVoid = em.ReturnType is PredefinedTypeSyntax pts && pts.Keyword.IsKind(SyntaxKind.VoidKeyword);
+							var call = $"{em.Identifier.Text}({argNames})";
+							var fwdBody = isVoid ? $"{call};" : $"return {call};";
+							_ = body.AppendLine("[Keysharp.Runtime.PublicHiddenFromUser]");
+							_ = body.AppendLine("[Keysharp.Runtime.InlineCSharp]");
+							_ = body.AppendLine(
+									$"public static {em.ReturnType} {NameMangler.FunctionMethod(em.Identifier.Text)}"
+									+ $"{em.ParameterList} {{ {fwdBody} }}");
+						}
+					}
+
+					emissions.Add(new InlineEmission(classPath, body));
 				}
 
-				if (!ReportInlineSyntaxErrors(parsed.Probe, wrapperOffset, lineOffset, rawFile))
-					continue;
-
-				foreach (var m in parsed.Members)
-				{
-					var isFunction = classPath == null && m is MethodDeclarationSyntax me && IsScriptVisible(me)
-								   && me.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword));
-					var startLine = m.GetLocation().GetLineSpan().StartLinePosition.Line - wrapperOffset;
-					var at = $"{System.IO.Path.GetFileName(rawFile)}:{lineOffset + startLine + 1}:1: ";
-
-					if (classPath == null)
-					{
-						CheckInlineNameCollision(m, module, isFunction, at);
-
-						if (!isFunction && m is MethodDeclarationSyntax im && IsScriptVisible(im)
-								&& !im.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword)))
-							Diag($"{at}#CSharp: public method '{im.Identifier.Text}' at module scope must be 'static' to be callable "
-								 + "from a script -- the module class is never instantiated, so an instance method can never run. "
-								 + "Add 'static', or make it non-public if no script was meant to call it.");
-
-						// Validated HERE, not in RegisterInlineModuleMembers: that pass runs only on the
-						// multi-module path, and a library validated standalone must get the same verdict its
-						// importers will.
-						if (!isFunction && InlineExportAttribute(m) != null)
-							Diag($"{at}#CSharp: [Export] is supported only on public static module methods");
-					}
-					else
-					{
-						if (InlineExportAttribute(m) != null)
-							Diag($"{at}#CSharp: [Export] is valid only at module scope");
-
-						CheckInlineClassMemberReceiver(m, at);
-
-						// Class members are as script-reachable as module functions, so their signatures obey the
-						// same boundary rule (static AND instance — C# binds the instance receiver, but the
-						// arguments still cross the dispatcher).
-						if (m is MethodDeclarationSyntax cm && IsScriptVisible(cm))
-							_ = CheckInlineBoundarySignature(cm, at);
-
-						// Same-named script/C# class members may be valid overloads; only fixed generated names are checked.
-						foreach (var cn in DeclaredNames(m))
-							if (Keywords.InlineReservedClassNames.Contains(cn))
-								Diag($"{at}#CSharp: '{cn}' is a name Keysharp generates into this class; rename it");
-					}
-
-					// A property's TYPE crosses the same boundary its accessors dispatch through, at either scope.
-					if (m is PropertyDeclarationSyntax pv && IsScriptVisible(pv) && IsUnsupportedBoundaryType(pv.Type))
-						Diag($"{at}#CSharp: public property '{pv.Identifier.Text}' has a type that cannot be handed to a script. "
-							 + "Use a supported scalar/reference type or make it non-public.");
-
-					// Directly reflected members need an exception boundary.
-					if ((classPath != null && m is MethodDeclarationSyntax or PropertyDeclarationSyntax
-							|| m is PropertyDeclarationSyntax) && IsScriptVisible(m))
-						_ = entry.Body.AppendLine("[Keysharp.Runtime.InlineCSharp]");
-
-					_ = entry.Body.AppendLine(FreezeConditionals(m).ToString());
-
-					// Supply the FN_ method expected by the generated function binding.
-					if (isFunction && m is MethodDeclarationSyntax em)
-					{
-						if (!CheckInlineBoundarySignature(em, at))
-							continue;
-
-						var argNames = string.Join(", ", em.ParameterList.Parameters.Select(p => p.Identifier.Text));
-						var isVoid = em.ReturnType is PredefinedTypeSyntax pts && pts.Keyword.IsKind(SyntaxKind.VoidKeyword);
-						var call = $"{em.Identifier.Text}({argNames})";
-						var fwdBody = isVoid
-									  ? $"{call};"
-									  : $"return {call};";
-						_ = entry.Body.AppendLine("[Keysharp.Runtime.PublicHiddenFromUser]");
-						_ = entry.Body.AppendLine("[Keysharp.Runtime.InlineCSharp]");
-						_ = entry.Body.AppendLine(
-								$"public static {em.ReturnType} {NameMangler.FunctionMethod(em.Identifier.Text)}"
-								+ $"{em.ParameterList} {{ {fwdBody} }}");
-					}
-				}
-			}
-
-			var sb = new System.Text.StringBuilder();
-			var globalImports = new HashSet<string>(seenGlobalUsing.Select(u => u.StartsWith("global ", System.StringComparison.Ordinal)
-																				 ? u.Substring("global ".Length) : u), System.StringComparer.Ordinal);
-
-			foreach (var u in globalUsings)
-				_ = sb.AppendLine(u);
-
-			// One namespace block per scope keeps its usings local while partial types still merge.
-			foreach (var (module, classPath, body, scopeUsings, seenUsing) in byScope)
-			{
+				var sb = new System.Text.StringBuilder();
 				_ = sb.AppendLine("namespace Keysharp.CompiledMain");
 				_ = sb.AppendLine("{");
 
-				// Keysharp.Builtins is opt-in because Array, String and Buffer conflict with System.
-				foreach (var u in new[] { "System", "System.Collections.Generic", "System.Runtime.CompilerServices", "System.Runtime.InteropServices", "Keysharp.Runtime" })
-					if (!globalImports.Contains("using " + u + ";") && seenUsing.Add("using " + u + ";"))
-						_ = sb.AppendLine("using " + u + ";");
+				foreach (var directive in usings)
+					_ = sb.AppendLine(directive);
 
-				foreach (var u in scopeUsings)
-					_ = sb.AppendLine(u);
-
-				_ = sb.AppendLine("public partial class Program");
-				_ = sb.AppendLine("{");
-				_ = sb.AppendLine($"public partial class {NameMangler.ModuleClass(module)}");
-				_ = sb.AppendLine("{");
-				var parts = classPath?.Split('.') ?? [];
-
-				foreach (var part in parts)
+				foreach (var emission in emissions)
 				{
-					_ = sb.AppendLine($"public partial class {part}");
+					_ = sb.AppendLine("public partial class Program");
 					_ = sb.AppendLine("{");
+					_ = sb.AppendLine($"public partial class {NameMangler.ModuleClass(module)}");
+					_ = sb.AppendLine("{");
+					var parts = emission.ClassPath?.Split('.') ?? [];
+
+					foreach (var part in parts)
+					{
+						_ = sb.AppendLine($"public partial class {part}");
+						_ = sb.AppendLine("{");
+					}
+
+					_ = sb.Append(emission.Body);
+
+					for (var i = parts.Length - 1; i >= 0; i--)
+						_ = sb.AppendLine("}");
+
+					_ = sb.AppendLine("}");
+					_ = sb.AppendLine("}");
 				}
 
-				_ = sb.Append(body);
-
-				for (var i = parts.Length - 1; i >= 0; i--)
-					_ = sb.AppendLine("}");
-
 				_ = sb.AppendLine("}");
-				_ = sb.AppendLine("}");
-				_ = sb.AppendLine("}");
+				var text = sb.ToString();
+				var unit = SyntaxFactory.ParseCompilationUnit(text, options: new CSharpParseOptions(
+							   LanguageVersion.LatestMajor, DocumentationMode.None, SourceCodeKind.Regular, _inlineDefines));
+				var code = unit.GetDiagnostics().Any(x => x.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+						   ? text
+						   : PrettyPrinter.Print(unit);
+				sources.Add(new InlineCSharpSource(module, code));
 			}
 
-			// Layout comes from re-parsing the assembled unit and re-emitting it through the pipeline's
-			// printer (the lowered tree's path too; NormalizeWhitespace costs far more). The members no
-			// longer carry their authored line structure — nothing in this file maps back to the script.
-			var text = sb.ToString();
-			var unit = SyntaxFactory.ParseCompilationUnit(text, options: new CSharpParseOptions(
-						   LanguageVersion.LatestMajor, DocumentationMode.None, SourceCodeKind.Regular, _inlineDefines));
-
-			// The printer walks nodes, so token runs the parser had to skip would silently vanish from its
-			// output; a unit that does not parse must reach the compiler verbatim for honest errors.
-			return unit.GetDiagnostics().Any(x => x.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-				   ? text
-				   : PrettyPrinter.Print(unit);
+			return sources;
 		}
 
 		// Gathers the program's `#Package [*i] <id> [version]` directives into one package set (see the _packages field
@@ -5515,7 +5507,9 @@ namespace Keysharp.Parsing.Syntax
 			programMembers.AddRange(moduleClasses);
 			programMembers.Add(BuildOuterAuto(execOrder));
 
-			InlineSource = BuildInlineSource();
+			InlineSources = BuildInlineSources();
+			InlineSource = InlineSources.Count == 0 ? null
+				: string.Join(System.Environment.NewLine + System.Environment.NewLine, InlineSources.Select(source => source.Code));
 			var programClass = SyntaxFactory.ClassDeclaration("Program").AddModifiers(PublicTok).WithMembers(SyntaxFactory.List(programMembers));
 			if (_inlineBlocks != null) programClass = programClass.AddModifiers(PartialTok);
 			var ns = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.QualifiedName(Id("Keysharp"), Id("CompiledMain"))).AddMembers(programClass);

@@ -352,7 +352,8 @@ namespace Keysharp.Parsing
 					kind: SourceCodeKind.Regular
 				);
 				var tree = SyntaxFactory.SyntaxTree(compilation.Unit, parseOptions);
-				return CompileFromTree(tree, outputname, currentDir, minimalexeout, BuildInlineTree(compilation, parseOptions), diagnoseSink, compilation.Packages);
+				return CompileFromTree(tree, outputname, currentDir, minimalexeout, BuildInlineTrees(compilation, parseOptions),
+					diagnoseSink, compilation.Packages);
 			}
 			catch (Exception e)
 			{
@@ -424,16 +425,22 @@ namespace Keysharp.Parsing
 			return manifest;
 		}
 
-		/// <summary>Builds the separate inline tree with its source path and symbols.</summary>
-		private static SyntaxTree BuildInlineTree(ScriptCompilationResult compilation, CSharpParseOptions parseOptions)
+		private static string InlineTreePath(ScriptCompilationResult compilation, InlineCSharpSource source, int index)
 		{
-			if (string.IsNullOrEmpty(compilation.InlineCode))
-				return null;
+			var invalid = Path.GetInvalidFileNameChars();
+			var module = new string((source.Module ?? "module").Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+			return $"{compilation.ScriptPath ?? "inline"}.inline.{index}.{module}.cs";
+		}
 
-			return SyntaxFactory.ParseSyntaxTree(
-					   compilation.InlineCode,
-					   parseOptions.WithPreprocessorSymbols(compilation.InlineDefines),
-					   path: (compilation.ScriptPath ?? "inline") + ".cs");
+		/// <summary>Builds one inline tree per script module with distinct diagnostic paths.</summary>
+		private static IReadOnlyList<SyntaxTree> BuildInlineTrees(ScriptCompilationResult compilation, CSharpParseOptions parseOptions)
+		{
+			if (compilation.InlineSources.Count == 0)
+				return [];
+
+			var options = parseOptions.WithPreprocessorSymbols(compilation.InlineDefines);
+			return [.. compilation.InlineSources.Select((source, index) =>
+				SyntaxFactory.ParseSyntaxTree(source.Code, options, path: InlineTreePath(compilation, source, index)))];
 		}
 
 		/// <summary>Binds with the production compilation configuration without emitting IL.</summary>
@@ -445,10 +452,11 @@ namespace Keysharp.Parsing
 			return ([.. diags], ex);
 		}
 
-		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, SyntaxTree inlineTree = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null)
+		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null)
 		{
 			IEnumerable<ResourceDescription> resourceDescriptions = null;
 			HashSet<string> allDependencies = null;
+			var hasInlineTrees = inlineTrees is { Count: > 0 };
 			var coreDir = Path.GetDirectoryName(typeof(object).GetTypeInfo().Assembly.Location);
 #if WINDOWS
 			var desktopDir = Path.GetDirectoryName(typeof(Form).GetTypeInfo().Assembly.Location);
@@ -603,7 +611,7 @@ namespace Keysharp.Parsing
 			}
 
 			// Inline C# can name package types. Add pinned package assets before same-named framework assemblies.
-			if (packages != null && inlineTree != null)
+			if (packages != null && hasInlineTrees)
 			{
 				foreach (var path in packages.Packages.SelectMany(p => p.Managed).Select(a => a.Source))
 					if (ByFileName().Add(Path.GetFileName(path)))
@@ -612,7 +620,7 @@ namespace Keysharp.Parsing
 			}
 
 			// Dynamic-only scripts retain the curated reference set and its compile time.
-			if (inlineTree != null)
+			if (hasInlineTrees)
 				foreach (var r in FrameworkReferences())
 					if (ByFileName().Add(Path.GetFileName(r.FilePath ?? "")))
 						references.Add(r);
@@ -651,12 +659,12 @@ namespace Keysharp.Parsing
 									.WithOptimizationLevel(OptimizationLevel.Release)
 									.WithPlatform(compiledPlatform)
 									// C#'s unsafe keyword is the opt-in; scripts already expose equivalent pointer operations.
-									.WithAllowUnsafe(inlineTree != null)
+									.WithAllowUnsafe(hasInlineTrees)
 									.WithConcurrentBuild(true)
 								)
 								.AddReferences(references)
-								// Roslyn merges the inline tree's partial counterparts with the lowered tree.
-								.AddSyntaxTrees(inlineTree == null ? [tree] : [tree, inlineTree])
+								// Roslyn merges each module tree's partial counterparts with the lowered tree.
+								.AddSyntaxTrees(hasInlineTrees ? [tree, .. inlineTrees] : [tree])
 								;
 			// Validation binds without paying for emit and resource generation.
 			if (diagnoseSink != null)
@@ -813,6 +821,7 @@ namespace Keysharp.Parsing
 					compilation.Unit = lowerer.Build(prog, buildName, scriptPath, startupName, includeDir, source, compileToFile, defines);
 					compilation.DeclaredAssemblyName = lowerer.AssemblyName;
 					compilation.InlineCode = lowerer.InlineSource;
+					compilation.InlineSources = lowerer.InlineSources;
 					compilation.InlineDefines = lowerer.InlineDefines;
 
 					if (compilation.Unit == null || lowerer.Diagnostics.Count > 0)
@@ -987,10 +996,11 @@ namespace Keysharp.Parsing
 				{
 					if (compilation.InlineCode != null)
 					{
-						var inlinePath = (compilation.ScriptPath ?? "inline") + ".cs";
+						var inlinePaths = compilation.InlineSources.Select((source, index) => InlineTreePath(compilation, source, index))
+										 .ToHashSet(StringComparer.Ordinal);
 						var userWarnings = results.Diagnostics.Where(d =>
 											   d.Severity == DiagnosticSeverity.Warning
-											   && string.Equals(d.Location.SourceTree?.FilePath, inlinePath, StringComparison.Ordinal))
+											   && inlinePaths.Contains(d.Location.SourceTree?.FilePath ?? ""))
 										   .ToImmutableArray();
 
 						if (userWarnings.Length != 0)

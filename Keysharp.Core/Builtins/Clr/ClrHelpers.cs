@@ -1,4 +1,5 @@
 using Clr = Keysharp.Builtins.Ks.Clr;
+using System.Reflection.Metadata;
 
 namespace Keysharp.Builtins
 {
@@ -423,23 +424,66 @@ namespace Keysharp.Builtins
 
 		/// <summary>
 		/// True when any type in <paramref name="assemblies"/> lives in namespace <paramref name="ns"/> or below.
-		/// Only used where assembly precision matters (deciding what a bare <c>Clr.Load</c> name anchors to); the
-		/// global check gates it, so the type scan is reached only for a name that is a namespace *somewhere*.
+		/// Only used where assembly precision matters (deciding what a bare <c>Clr.Load</c> name anchors to).
 		/// </summary>
 		internal static bool IsKnownNamespaceIn(IEnumerable<Assembly> assemblies, string ns)
 		{
-			if (!IsKnownNamespace(ns))
+			if (string.IsNullOrEmpty(ns))
 				return false;
 
 			if (assemblies == null)
-				return true;
+				return IsKnownNamespace(ns);
 
 			var withDot = ns + ".";
 
 			foreach (var a in assemblies)
+			{
 				foreach (var t in SafeGetTypes(a))
 					if (t.Namespace is string n && (n.Equals(ns, StringComparison.Ordinal) || n.StartsWith(withDot, StringComparison.Ordinal)))
 						return true;
+
+				// Compatibility facades such as System.dll define no types themselves; they expose the real types through
+				// metadata forwarders. Assembly.GetForwardedTypes() resolves every target and can fail merely because an
+				// unrelated optional target is absent, so inspect the forwarder names without loading their assemblies.
+				if (ForwardsNamespace(a, ns, withDot))
+					return true;
+			}
+
+			return false;
+		}
+
+		private static bool ForwardsNamespace(Assembly assembly, string ns, string withDot)
+		{
+			try
+			{
+				if (assembly.IsDynamic || assembly.Location.IsNullOrEmpty())
+					return false;
+
+				using var fs = File.OpenRead(assembly.Location);
+				using var pe = new System.Reflection.PortableExecutable.PEReader(fs);
+
+				if (!pe.HasMetadata)
+					return false;
+
+				var metadata = pe.GetMetadataReader();
+
+				foreach (var handle in metadata.ExportedTypes)
+				{
+					var exported = metadata.GetExportedType(handle);
+
+					if (!exported.IsForwarder)
+						continue;
+
+					var candidate = metadata.GetString(exported.Namespace);
+
+					if (candidate.Equals(ns, StringComparison.Ordinal) || candidate.StartsWith(withDot, StringComparison.Ordinal))
+						return true;
+				}
+			}
+			catch
+			{
+				// A dynamic, bundled or unreadable assembly simply cannot contribute metadata evidence here.
+			}
 
 			return false;
 		}
@@ -1323,7 +1367,7 @@ namespace Keysharp.Builtins
 			if (value == null) return null;
 
 			// The types a script already has, first: between them they are the overwhelming majority of returns.
-			if (value is string or bool or long or double) return value;
+			if (value is string or bool or long or double or Any) return value;
 
 			if (value is Type t) return new Clr.ManagedType(t);
 

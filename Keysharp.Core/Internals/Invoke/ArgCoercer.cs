@@ -28,9 +28,9 @@ namespace Keysharp.Internals.Invoke
 	/// of an uncatchable <see cref="InvalidCastException"/>. Unset passes through as null.</item>
 	/// </list>
 	///
-	/// <para>Deliberately narrow: only the types <see cref="KindOf"/> claims are intercepted. Anything else
-	/// (enums, structs, <c>Nullable&lt;T&gt;</c>, pointers, <c>char</c>, <c>decimal</c>, …) keeps the previous
-	/// raw-unbox behavior, so this cannot change a member it does not explicitly claim.</para>
+	/// <para>Ordinary dispatch is deliberately narrow: only the types <see cref="KindOf"/> claims are intercepted.
+	/// Anything else keeps its previous raw-unbox behavior. An explicitly marked inline-C# boundary additionally
+	/// unwraps a managed proxy when its payload fits the declared target.</para>
 	/// </summary>
 #if !INTERNALDEBUG
 	[DebuggerStepThrough]
@@ -73,10 +73,10 @@ namespace Keysharp.Internals.Invoke
 
 					if (t == typeof(nuint)) return Kind.NUInt;
 
-					// `object` needs no conversion at all, and `object[]` is the packed variadic slot, which the
-					// caller has already built and must hand over untouched. Everything else that is a reference
-					// (Map, Array, Any-derived, …) gets the checked cast; null still passes through it, which
-					// optional parameters such as `Ks.Mail(…, Map options = null)` depend on.
+					// `object` needs no conversion at an ordinary script boundary, and `object[]` is the packed
+					// variadic slot which the caller has already built and must hand over untouched. Everything else
+					// that is a reference (Map, Array, Any-derived, …) gets the checked cast; null still passes through
+					// it, which optional parameters such as `Ks.Mail(…, Map options = null)` depend on.
 					return t == typeof(object) || t == typeof(object[]) || t.IsValueType ? Kind.None : Kind.Cast;
 
 				default: return Kind.None;//Char, Decimal, DateTime, ...
@@ -89,13 +89,7 @@ namespace Keysharp.Internals.Invoke
 		/// </summary>
 		internal static bool IsNarrow(Kind k) => k >= Kind.Int;
 
-		/// <summary>
-		/// The <see cref="Kind.Cast"/> conversion. Written as a call rather than inlined into the expression tree
-		/// because the reachable reference-typed surface is a handful of members (<c>Ks.Mail</c>'s
-		/// <c>Map options</c>, <c>OwnPropsDesc.Merge</c>, delegate <c>BeginInvoke</c>/<c>EndInvoke</c>), none of
-		/// them hot enough to pay for an inline isinst plus the temp it would need to avoid re-evaluating the
-		/// argument.
-		/// </summary>
+		/// <summary>The <see cref="Kind.Cast"/> conversion used by ordinary script calls.</summary>
 		internal static object CoerceCast(object value, Type target)
 		{
 			if (value == null || target.IsInstanceOfType(value))
@@ -108,6 +102,28 @@ namespace Keysharp.Internals.Invoke
 			return target.IsInstanceOfType(fallback) ? fallback : null;
 		}
 
+		/// <summary>Unwraps managed proxies at an explicit CLR boundary.</summary>
+		internal static object CoerceBoundaryCast(object value, Type target)
+		{
+			// ManagedInstance represents its payload even for an object slot. ManagedType remains a script object for
+			// object, matching Ks.Clr, and unwraps only for Type-compatible targets.
+			if (value is Ks.Clr.ManagedInstance mi && (target == typeof(object) || target.IsInstanceOfType(mi._instance)))
+				return mi._instance;
+
+			if (value == null || target.IsInstanceOfType(value))
+				return value;
+
+			if (value is Ks.Clr.ManagedType mt && target.IsInstanceOfType(mt._type))
+				return mt._type;
+
+			var fallback = Errors.TypeErrorOccurred(value, target);
+			return target.IsInstanceOfType(fallback)
+				? fallback
+				: target.IsValueType && Nullable.GetUnderlyingType(target) == null
+					? Activator.CreateInstance(target)
+					: null;
+		}
+
 		/// <summary>
 		/// Wraps <paramref name="value"/> (an <c>object</c> expression) so it yields <paramref name="target"/>.
 		/// </summary>
@@ -115,7 +131,7 @@ namespace Keysharp.Internals.Invoke
 		{
 			switch (KindOf(target))
 			{
-				case Kind.None: return Expression.Convert(value, target);//Unchanged from before this policy existed.
+				case Kind.None: return Expression.Convert(value, target);
 
 				case Kind.Long: return AsLong();
 
@@ -138,6 +154,17 @@ namespace Keysharp.Internals.Invoke
 
 			Expression AsLong() => Expression.Call(toLongMethod, value, allowFloat);
 			Expression AsDouble() => Expression.Call(toDoubleMethod, value);
+		}
+
+		/// <summary>Builds the input conversion for a member explicitly marked as a CLR boundary.</summary>
+		internal static Expression CoerceBoundary(Expression value, Type target)
+		{
+			var kind = KindOf(target);
+
+			if (NeedsBoundaryCast(target, kind))
+				return Expression.Convert(Expression.Call(coerceBoundaryCastMethod, value, Expression.Constant(target, typeof(Type))), target);
+
+			return Coerce(value, target);
 		}
 
 		/// <summary>
@@ -166,6 +193,32 @@ namespace Keysharp.Internals.Invoke
 				case Kind.Single: return (float)value.ToDouble();
 				default: return value;
 			}
+		}
+
+		/// <summary>Runtime counterpart of <see cref="CoerceBoundary"/>.</summary>
+		internal static object CoerceBoundaryValue(object value, Type target)
+		{
+			var kind = KindOf(target);
+
+			return NeedsBoundaryCast(target, kind)
+				? CoerceBoundaryCast(value, target)
+				: CoerceValue(value, target);
+		}
+
+		private static bool NeedsBoundaryCast(Type target, Kind kind) =>
+			kind == Kind.Cast
+			// object[] is Kind.None because a packed params slot must stay untouched. CompileCore skips that slot,
+			// leaving a non-variadic object[] free to use the normal CLR-boundary conversion here.
+			|| kind == Kind.None && (target == typeof(object) || target == typeof(object[]) || target.IsValueType);
+
+		/// <summary>Whether an ordinary property assignment needs script scalar conversion.</summary>
+		internal static bool NeedsCoercion(Type target) => KindOf(target) != Kind.None;
+
+		/// <summary>Whether a CLR-boundary property assignment needs scalar conversion or proxy unwrapping.</summary>
+		internal static bool NeedsBoundaryCoercion(Type target)
+		{
+			var kind = KindOf(target);
+			return kind != Kind.None || NeedsBoundaryCast(target, kind);
 		}
 
 		/// <summary>
@@ -213,6 +266,27 @@ namespace Keysharp.Internals.Invoke
 				_ => value,
 			};
 
+		/// <summary>
+		/// True when a member whose declared type is <paramref name="t"/> can hand a script a value no script
+		/// type covers — a raw CLR object (List&lt;T&gt;, DateTime, decimal, a boxed enum, …), or an
+		/// <c>object</c> holding one — so the inline-C# boundary must route the result through
+		/// <c>ManagedInvoke.ConvertOut</c> at run time. The script scalars and Any-derived types cannot leak,
+		/// and the narrow numerics are already widened by <see cref="NormalizeReturn"/>/<see cref="NormalizeScalar"/>,
+		/// so they all answer false and skip the conversion entirely when the delegate is built.
+		/// </summary>
+		internal static bool CanLeakClrValue(Type t) =>
+			t != typeof(void)
+			&& !typeof(Any).IsAssignableFrom(t)
+			&& KindOf(t) is Kind.None or Kind.Cast;
+
+		/// <summary>
+		/// Wraps <paramref name="value"/> in <c>ManagedInvoke.ConvertOut</c>, the same policy <c>Ks.Clr</c>
+		/// applies to a value leaving CLR code for a script: scalars pass, narrow numerics widen, a
+		/// <c>Type</c> becomes a <c>ManagedType</c>, and any other CLR object a <c>ManagedInstance</c>.
+		/// </summary>
+		internal static Expression ConvertOut(Expression value) =>
+			Expression.Call(convertOutMethod, Expression.Convert(value, typeof(object)));
+
 		private static readonly Expression allowFloat = Expression.Constant(true);
 		private static readonly Expression emptyString = Expression.Constant("", typeof(string));
 
@@ -229,5 +303,7 @@ namespace Keysharp.Internals.Invoke
 		// AutoHotkey does where a string is expected, and it is what the Clr boundary already used.
 		private static readonly MethodInfo asStringMethod = Bind(typeof(ObjectExtensions), nameof(ObjectExtensions.As), typeof(object), typeof(string));
 		private static readonly MethodInfo coerceCastMethod = Bind(typeof(ArgCoercer), nameof(CoerceCast), typeof(object), typeof(Type));
+		private static readonly MethodInfo coerceBoundaryCastMethod = Bind(typeof(ArgCoercer), nameof(CoerceBoundaryCast), typeof(object), typeof(Type));
+		private static readonly MethodInfo convertOutMethod = Bind(typeof(ManagedInvoke), nameof(ManagedInvoke.ConvertOut), typeof(object));
 	}
 }

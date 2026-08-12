@@ -79,6 +79,24 @@ namespace Keysharp.Internals.Invoke
 		internal int MinParams = 0;
 		internal int MaxParams = 0;
 
+		internal static bool HasScriptGetter(PropertyInfo property) => property.GetMethod?.IsPublic == true;
+
+		internal static bool HasScriptSetter(PropertyInfo property)
+		{
+			var setter = property.SetMethod;
+			// Reflection otherwise presents an init accessor as an ordinary public setter.
+			return setter?.IsPublic == true
+				&& !setter.ReturnParameter.GetRequiredCustomModifiers().Contains(typeof(IsExternalInit));
+		}
+
+		internal static bool IsInlineBoundary(MethodInfo method) =>
+			method.DeclaringType?.Namespace == Keywords.MainNamespaceName
+			&& (method.IsDefined(typeof(InlineCSharpAttribute), false)
+				|| method.IsSpecialName && method.Name.Length > 4
+				&& (method.Name.StartsWith("get_", StringComparison.Ordinal) || method.Name.StartsWith("set_", StringComparison.Ordinal))
+				&& method.DeclaringType.GetProperty(method.Name[4..], BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+					?.IsDefined(typeof(InlineCSharpAttribute), false) == true);
+
         internal const int DotNetMaxParams = 8192; // https://www.tabsoverspaces.com/233892-whats-the-maximum-number-of-arguments-for-method-in-csharp-and-in-net
 
 		/// <summary>
@@ -355,6 +373,7 @@ namespace Keysharp.Internals.Invoke
 
 			parameters = mi.GetParameters();
 			ParamLength = parameters.Length;
+			var inlineMarked = MethodPropertyHolder.IsInlineBoundary(mi);
 
 			// Determine if the method is a set_Item overload.
 			isSetter = mi.Name.StartsWith(setterPrefix) || mi.Name.StartsWith(classSetterPrefix);
@@ -365,7 +384,8 @@ namespace Keysharp.Internals.Invoke
 			{
 				var pmi = parameters[i];
 
-                if (pmi.IsVariadic() || ((pmi.ParameterType == typeof(object[])) && (i == (isItemSetter ? parameters.Length - 2 : parameters.Length - 1))))
+				if (pmi.IsVariadic() || (!inlineMarked && pmi.ParameterType == typeof(object[])
+						&& i == (isItemSetter ? parameters.Length - 2 : parameters.Length - 1)))
                     variadicParamIndex = i;
                 else
                 {
@@ -422,100 +442,156 @@ namespace Keysharp.Internals.Invoke
 			ParamLength = parameters.Length;
 			MinParams = MaxParams = ParamLength;
 
-			// Decided once here rather than per get/set: a property whose type is not one AutoHotkey has needs its
-			// value widened on the way out, and an `object`-typed one -- the overwhelming majority -- needs no
-			// conversion in either direction, so it keeps the bare reflection setter it had before this policy.
+			// Decide once rather than per access: ordinary properties retain scalar coercion, while an inline
+			// boundary additionally unwraps managed proxies for object and value-type targets.
 			var kind = ArgCoercer.KindOf(pi.PropertyType);
 			var normalize = ArgCoercer.IsNarrow(kind);
-			var coerce = kind != ArgCoercer.Kind.None;
+			var inlineMarked = pi.DeclaringType?.Namespace == Keywords.MainNamespaceName
+				&& pi.IsDefined(typeof(InlineCSharpAttribute), false);
+			var coerce = inlineMarked
+				? ArgCoercer.NeedsBoundaryCoercion(pi.PropertyType)
+				: ArgCoercer.NeedsCoercion(pi.PropertyType);
+			var canRead = HasScriptGetter(pi);
+			var canWrite = HasScriptSetter(pi);
 
-			if (pi.GetAccessors().Any(x => x.IsStatic))
+			if ((pi.GetMethod ?? pi.SetMethod)?.IsStatic == true)
 			{
 				IsStaticProp = true;
 
 				if (isGuiType)
 				{
-					_callFunc = (inst, obj) =>//Gui calls aren't worth optimizing further.
+					if (canRead)
 					{
-						object ret = null;
-						var ctrl = (inst ?? obj[0]).GetControl();//If it's a gui control, then invoke on the gui thread.
-						ctrl.CheckedInvoke(() =>
+						_callFunc = (inst, obj) =>//Gui calls aren't worth optimizing further.
 						{
-							ret = pi.GetValue(null);
-						}, true);//This can be null if called before a Gui object is fully initialized.
+							object ret = null;
+							var ctrl = (inst ?? obj[0]).GetControl();//If it's a gui control, then invoke on the gui thread.
+							ctrl.CheckedInvoke(() =>
+							{
+								ret = pi.GetValue(null);
+							}, true);//This can be null if called before a Gui object is fully initialized.
 
-						return normalize ? ArgCoercer.NormalizeScalar(ret) : ret;
-					};
+							return normalize ? ArgCoercer.NormalizeScalar(ret) : ret;
+						};
+					}
 					// Coerce on the calling thread, so a conversion TypeError is raised there rather than marshaled.
 					// This is what makes `gui.MarginX := 5.5` survivable: reflection's own binder is stricter than the
 					// script language and rejects a Float for the Int64 property with an ArgumentException, which is
 					// not a KeysharpException and so killed the process past any try/catch.
-					SetProp = (inst, arg) =>
+					if (canWrite)
 					{
-						arg = ArgCoercer.CoerceValue(arg, pi.PropertyType);
-						var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
-						ctrl.CheckedInvoke(() => pi.SetValue(null, arg), true);//This can be null if called before a Gui object is fully initialized.
-					};
+						if (inlineMarked)
+							SetProp = (inst, arg) =>
+							{
+								arg = ArgCoercer.CoerceBoundaryValue(arg, pi.PropertyType);
+								var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
+								ctrl.CheckedInvoke(() => pi.SetValue(null, arg), true);//This can be null if called before a Gui object is fully initialized.
+							};
+						else
+							SetProp = (inst, arg) =>
+							{
+								arg = ArgCoercer.CoerceValue(arg, pi.PropertyType);
+								var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
+								ctrl.CheckedInvoke(() => pi.SetValue(null, arg), true);//This can be null if called before a Gui object is fully initialized.
+							};
+					}
 				}
 				else
 				{
-					if (normalize)
-						_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValue(null));
-					else
-						_callFunc = (inst, obj) => pi.GetValue(null);
+					if (canRead)
+					{
+						if (normalize)
+							_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValue(null));
+						else
+							_callFunc = (inst, obj) => pi.GetValue(null);
+					}
 
-					SetProp = coerce ? (inst, obj) => pi.SetValue(null, ArgCoercer.CoerceValue(obj, pi.PropertyType))
-									 : (inst, obj) => pi.SetValue(null, obj);
+					if (canWrite)
+						SetProp = coerce
+							? inlineMarked
+								? (inst, obj) => pi.SetValue(null, ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType))
+								: (inst, obj) => pi.SetValue(null, ArgCoercer.CoerceValue(obj, pi.PropertyType))
+							: (inst, obj) => pi.SetValue(null, obj);
 				}
 			}
 			else
 			{
 				if (isGuiType)
 				{
-					_callFunc = (inst, args) =>
+					if (canRead)
 					{
-						object ret = null;
-						var ctrl = (inst ?? args[0]).GetControl();//If it's a gui control, then invoke on the gui thread.
-						ctrl.CheckedInvoke(() =>
+						_callFunc = (inst, args) =>
 						{
-							ret = pi.GetValue(inst ?? args[0]);
-						}, true);//This can be null if called before a Gui object is fully initialized.
+							object ret = null;
+							var ctrl = (inst ?? args[0]).GetControl();//If it's a gui control, then invoke on the gui thread.
+							ctrl.CheckedInvoke(() =>
+							{
+								ret = pi.GetValue(inst ?? args[0]);
+							}, true);//This can be null if called before a Gui object is fully initialized.
 
-						return normalize ? ArgCoercer.NormalizeScalar(ret) : ret;
-					};
+							return normalize ? ArgCoercer.NormalizeScalar(ret) : ret;
+						};
+					}
 					// See the static branch above for why the coercion happens here rather than inside CheckedInvoke.
-					SetProp = (inst, obj) =>
+					if (canWrite)
 					{
-						obj = ArgCoercer.CoerceValue(obj, pi.PropertyType);
-						var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
-						ctrl.CheckedInvoke(() => pi.SetValue(inst, obj), true);//This can be null if called before a Gui object is fully initialized.
-					};
+						if (inlineMarked)
+							SetProp = (inst, obj) =>
+							{
+								obj = ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType);
+								var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
+								ctrl.CheckedInvoke(() => pi.SetValue(inst, obj), true);//This can be null if called before a Gui object is fully initialized.
+							};
+						else
+							SetProp = (inst, obj) =>
+							{
+								obj = ArgCoercer.CoerceValue(obj, pi.PropertyType);
+								var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
+								ctrl.CheckedInvoke(() => pi.SetValue(inst, obj), true);//This can be null if called before a Gui object is fully initialized.
+							};
+					}
 				}
 				else
 				{
-					if (normalize)
-						_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValue(inst));
-					else
-						_callFunc = (inst, obj) => pi.GetValue(inst);
+					if (canRead)
+					{
+						if (normalize)
+							_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValue(inst));
+						else
+							_callFunc = (inst, obj) => pi.GetValue(inst);
+					}
 
 					// Deliberately still reflection, unlike the compiled setter the FieldInfo constructor builds:
 					// FindAndCacheProperty creates an MPH for EVERY property of a type the first time any one of
 					// them is named, so compiling here would pay an Expression.Compile per property of every type a
 					// script touches -- for a delegate that is usually never called, since an Any-derived builtin
 					// resolves an assignment through its prototype's set_X accessor and never reaches SetProp.
-					SetProp = coerce ? (inst, obj) => pi.SetValue(inst, ArgCoercer.CoerceValue(obj, pi.PropertyType))
-									 : pi.SetValue;
+					if (canWrite)
+						SetProp = coerce
+							? inlineMarked
+								? (inst, obj) => pi.SetValue(inst, ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType))
+								: (inst, obj) => pi.SetValue(inst, ArgCoercer.CoerceValue(obj, pi.PropertyType))
+							: pi.SetValue;
 				}
 			}
 
+			if (!canRead)
+				_callFunc = (inst, args) => Errors.PropertyErrorOccurred($"Property {pi.Name} is write-only.");
+
 			// Module properties enter through the variable store rather than CompileCore.
-			if (pi.DeclaringType?.Namespace == Keywords.MainNamespaceName
-					&& pi.IsDefined(typeof(InlineCSharpAttribute), false))
+			if (inlineMarked)
 			{
 				var get = _callFunc;
+				// Same out-conversion the compiled method path applies to an inline return: a property typed
+				// as a CLR class (or `object` holding one) reaches the script wrapped, never raw.
+				var convertOut = ArgCoercer.CanLeakClrValue(pi.PropertyType);
 				_callFunc = (inst, args) =>
 				{
-					try { return get(inst, args); }
+					try
+					{
+						var ret = get(inst, args);
+						return convertOut ? ManagedInvoke.ConvertOut(ret) : ret;
+					}
 					catch (Exception ex) { return Keysharp.Runtime.Script.MapInlineError<object>(ex, pi.Name); }
 				};
 
@@ -545,7 +621,9 @@ namespace Keysharp.Internals.Invoke
 				Expression assignExpr;
 				// Same conversion policy as parameters and properties: a script assigning to a typed field must
 				// not be able to raise an uncatchable InvalidCastException out of the compiled setter.
-				var coercedVal = ArgCoercer.Coerce(valParam, fi.FieldType);
+				var coercedVal = fi.IsDefined(typeof(InlineCSharpAttribute), false)
+					? ArgCoercer.CoerceBoundary(valParam, fi.FieldType)
+					: ArgCoercer.Coerce(valParam, fi.FieldType);
 				if (fi.IsStatic)
 					assignExpr = Expression.Assign(Expression.Field(null, fi), coercedVal);
 				else
@@ -818,6 +896,9 @@ namespace Keysharp.Internals.Invoke
 			var pArgs = Expression.Parameter(typeof(object[]), "args");
 			var pStart = Expression.Parameter(typeof(int), "start");
 			var argsLen = Expression.ArrayLength(pArgs);
+			// Resolve the boundary once while building the delegate. Ordinary script/built-in calls retain their
+			// original input expressions and therefore pay no wrapper check at invocation time.
+			var inlineMarked = MethodPropertyHolder.IsInlineBoundary(mi);
 
 			var a = new Expression[ps.Length];
 
@@ -854,11 +935,13 @@ namespace Keysharp.Internals.Invoke
 						valOrNull);
 				}
 
-				// The packed variadic slot is handed over as-is; everything else goes through the one conversion
-				// policy, which is an identity for `object` (the overwhelming majority of members).
+				// The packed variadic slot is handed over as-is. Boundary coercion is selected only for inline C#;
+				// ordinary object parameters remain a direct cast, as they were before CLR proxy round-tripping.
 				a[i] = i == variadicParamIndex
 					   ? Expression.Convert(chosen, ps[i].ParameterType)
-					   : ArgCoercer.Coerce(chosen, ps[i].ParameterType);
+					   : inlineMarked
+						   ? ArgCoercer.CoerceBoundary(chosen, ps[i].ParameterType)
+						   : ArgCoercer.Coerce(chosen, ps[i].ParameterType);
 			}
 
 			Expression call;
@@ -873,18 +956,16 @@ namespace Keysharp.Internals.Invoke
 				call = Expression.Call(inst, mi, a);
 			}
 
+			// An inline member's return crosses the CLR->script boundary, so a declared CLR type -- or an
+			// `object` return holding one -- takes the same out-conversion Ks.Clr applies (ManagedInstance/
+			// ManagedType wrapping, numeric widening) instead of leaking a raw CLR object into the script.
+			// A member whose declared type cannot leak keeps the compile-time-only NormalizeReturn path.
 			Expression body =
 				mi.ReturnType == typeof(void)
 					? Expression.Block(call, Expression.Constant(null, typeof(object)))
-					: ArgCoercer.NormalizeReturn(call, mi.ReturnType);
-
-			// Inline members and generated forwarders map CLR failures inside their compiled delegate.
-			// Properties are registered by accessor, so inspect the declaring property too.
-			var inlineMarked = mi.DeclaringType?.Namespace == Keywords.MainNamespaceName
-							   && (mi.IsDefined(typeof(InlineCSharpAttribute), false)
-								   || (mi.IsSpecialName && mi.Name.Length > 4 && (mi.Name.StartsWith("get_", StringComparison.Ordinal) || mi.Name.StartsWith("set_", StringComparison.Ordinal))
-									   && mi.DeclaringType.GetProperty(mi.Name[4..], BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
-									   ?.IsDefined(typeof(InlineCSharpAttribute), false) == true));
+					: inlineMarked && ArgCoercer.CanLeakClrValue(mi.ReturnType)
+						? ArgCoercer.ConvertOut(call)
+						: ArgCoercer.NormalizeReturn(call, mi.ReturnType);
 
 			if (inlineMarked)
 			{
@@ -912,7 +993,11 @@ namespace Keysharp.Internals.Invoke
 			else
 				fieldExpr = Expression.Field(Expression.Convert(instParam, fi.DeclaringType), fi);
 
-			var boxedField = ArgCoercer.NormalizeReturn(fieldExpr, fi.FieldType);
+			// Only fields originating in an inline block carry the marker, which distinguishes a public
+			// `object` field written by the user from the object fields generated for script globals.
+			var boxedField = fi.IsDefined(typeof(InlineCSharpAttribute), false) && ArgCoercer.CanLeakClrValue(fi.FieldType)
+							 ? ArgCoercer.ConvertOut(fieldExpr)
+							 : ArgCoercer.NormalizeReturn(fieldExpr, fi.FieldType);
 			var getter = Expression.Lambda<Func<object, object>>(boxedField, instParam).Compile();
 
 			return (inst, args) =>

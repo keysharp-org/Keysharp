@@ -129,8 +129,8 @@ namespace Keysharp.Runtime
 	[AttributeUsage(AttributeTargets.Method | AttributeTargets.Property, Inherited = false)]
 	public sealed class StaticAttribute : Attribute { }
 
-	/// <summary>Marks an inline-C# invocation boundary for CLR exception mapping.</summary>
-	[AttributeUsage(AttributeTargets.Method | AttributeTargets.Property, Inherited = false)]
+	/// <summary>Marks an inline-C# boundary for CLR conversion and exception mapping.</summary>
+	[AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field, Inherited = false)]
 	public sealed class InlineCSharpAttribute : Attribute { }
 
 	/// <summary>

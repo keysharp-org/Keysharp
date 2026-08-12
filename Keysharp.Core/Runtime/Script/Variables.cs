@@ -358,13 +358,13 @@ namespace Keysharp.Runtime
 
 			if (mph.pi != null)
 			{
-				mph.pi.SetValue(null, value);
+				_ = Errors.PropertyErrorOccurred($"Property {mph.pi.Name} is read-only.");
 				return;
 			}
 
 			if (mph.fi != null)
 			{
-				mph.fi.SetValue(null, value);
+				_ = Errors.PropertyErrorOccurred($"Field {mph.fi.Name} is read-only.");
 			}
 		}
 

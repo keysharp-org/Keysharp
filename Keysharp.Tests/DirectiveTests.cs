@@ -515,7 +515,7 @@ namespace Keysharp.Tests
 				var ch = new CompilerHelper();
 				var (arr, code, compilation) = ch.CompileCodeToByteArray(script, "usings");
 				Assert.IsNotNull(arr, "conditional and global using directives must compile:\n" + code);
-				Assert.IsTrue(compilation.InlineCode.Contains("global using TextBuilder"), compilation.InlineCode);
+				Assert.IsTrue(compilation.InlineCode.Contains("using TextBuilder"), compilation.InlineCode);
 #if WINDOWS
 				Assert.IsTrue(compilation.InlineCode.Contains("System.Windows.Forms.Form"), compilation.InlineCode);
 				Assert.IsFalse(compilation.InlineCode.Contains("System.IO.FileInfo"), compilation.InlineCode);
@@ -922,6 +922,9 @@ namespace Keysharp.Tests
 
 		[Test, Category("Directives")]
 		public void CSharpModuleExports() => Assert.IsTrue(TestScript("directive-csharp-modules", false));
+
+		[Test, Category("Directives")]
+		public void CSharpModuleUsingScopes() => Assert.IsTrue(TestScript("directive-csharp-module-scopes", false));
 
 		[Test, Category("Directives"), NonParallelizable]
 		public void CSharpFileScopes()

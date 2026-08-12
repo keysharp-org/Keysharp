@@ -2,6 +2,8 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Keysharp.Parsing
 {
+	internal sealed record InlineCSharpSource(string Module, string Code);
+
 	/// <summary>Outputs and diagnostics for one script compilation.</summary>
 	public sealed class ScriptCompilationResult
 	{
@@ -15,6 +17,8 @@ namespace Keysharp.Parsing
 
 		/// <summary>The generated inline C# tree source, if any.</summary>
 		public string InlineCode { get; internal set; }
+
+		internal IReadOnlyList<InlineCSharpSource> InlineSources { get; set; } = [];
 
 		internal IReadOnlyCollection<string> InlineDefines { get; set; } = [];
 

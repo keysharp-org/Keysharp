@@ -801,9 +801,9 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 		+ `#CSharp` embeds C# members in the script assembly for hot loops, buffer work and interop.
 			+ Use `#CSharp` … `#EndCSharp` for an inline block, or `#CSharp "helper.cs"` for a file. Blocks may appear at module scope or directly in a class. Relative files use the module search path.
 			+ At module scope, `public static` methods are callable locally and by an explicit `{ Name }` import. `[Export]` also exposes one to `{ * }`; `[Export(Default = true)]` makes it the bare-import default. These match `export` and `export default`.
-			+ In a class block, public methods and properties become script-visible class members; non-public members remain C# helpers, and fields are never script-visible (expose a value through a property). `[Static]` selects the class-static side. Module globals are available as lowercase static fields.
-			+ Arguments use Keysharp conversions, unsupported public signatures are rejected, source errors retain their original locations, and CLR exceptions are mapped to catchable Keysharp errors where possible.
-			+ Usings are scoped to the containing module or class; script preprocessor symbols apply inside the block. C# `unsafe` is supported — mind that an out-of-bounds pointer write raises `AccessViolationException`, which .NET does not deliver to a managed catch, so the process dies with no `OnError`, dialog or `OnExit` (the same exposure `DllCall` and `NumPut` already carry). Calls still pay normal script dispatch cost, so move substantial work across the boundary rather than tiny helpers.
+			+ In class blocks, public methods and property accessors are script-visible; non-public members remain C# helpers, `init` is read-only, and fields are not exposed. `[Static]` selects the class-static side.
+			+ Values use the same conversions as `Ks.Clr`. Unsupported public signatures are rejected, and CLR exceptions are mapped to catchable Keysharp errors where possible.
+			+ Usings are shared within a module but isolated between modules. Script preprocessor symbols and C# `unsafe` are supported. Calls use normal script dispatch, so group substantial work across the boundary.
 		+ `#HookMutexName <name>` allows renaming the mutex objects created to detect keyboard and mouse hooks in other running scripts. The default name is "Keysharp".
 		+ Assembly description attributes may be changed with the following directives, with the desired value as the only argument of the directive:
 			+ `#AssemblyName`
@@ -822,7 +822,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 		- `--version`, `-v`
 		  Displays Keysharp version.
 		- `--transpile`
-		  Outputs a .cs file with the same name as the script containing the code which was used to compile. This is the same code displayed in Keyview. The script is not run. A script using `#CSharp` also gets a `Scriptname.inline.cs` holding its inline C#; the two are separate files because they are separate compilation units, and concatenating them would not be valid C#.
+		  Outputs the generated .cs file shown in Keyview without running the script. A script using `#CSharp` also gets a `Scriptname.inline.cs` tooling view of its inline units.
 		- `--compile exe [--dest <path>] <script>`
 		  Outputs a .exe file which can be ran as standalone from Keysharp (but still requires .NET 10). If `--dest` is a folder, the executable is written there using the script's base name. If `--dest` is a file name, that name and folder are used for the output. A script using `#Package` stores its pinned package assets under `.keysharp/packages`; distribute that directory with the executable. The script is not run.
 		- `--compile exe-min [--dest <path>] <script>`
