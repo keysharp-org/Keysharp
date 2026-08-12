@@ -67,7 +67,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				}
 				catch (Exception ex)
 				{
-					Ks.OutputDebugLine($"WinEvent Wayland poll error ({backend?.Name}): {ex.Message}");
+					Diagnostics.Debug.WriteLine($"WinEvent Wayland poll error ({backend?.Name}): {ex.Message}");
 				}
 
 				// Sleep in small slices so Dispose() is responsive even with a long interval.

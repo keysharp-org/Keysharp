@@ -152,7 +152,7 @@ namespace Keysharp.Internals.Window
 			catch (Exception ex)
 			{
 				backendInitFailed = true;
-				Ks.OutputDebugLine($"Monitor event backend creation failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"Monitor event backend creation failed: {ex.Message}");
 			}
 
 			return backend;
@@ -265,7 +265,7 @@ namespace Keysharp.Internals.Window
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"Monitor topology enumeration failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"Monitor topology enumeration failed: {ex.Message}");
 				return null;
 			}
 		}
@@ -365,7 +365,7 @@ namespace Keysharp.Internals.Window
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"Monitor event backend disposal failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"Monitor event backend disposal failed: {ex.Message}");
 			}
 
 			backend = null;

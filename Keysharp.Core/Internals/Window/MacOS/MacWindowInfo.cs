@@ -196,7 +196,7 @@ namespace Keysharp.Internals.Window.MacOS
 		{
 			get
 			{
-				Ks.OutputDebugLine("Transparency key/color is not supported on macOS.");
+				Diagnostics.Debug.WriteLine("Transparency key/color is not supported on macOS.");
 				return 0L;
 			}
 		}

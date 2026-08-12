@@ -183,7 +183,7 @@ namespace Keysharp.Internals.Images
 			}
 			catch (Exception ex)
 			{
-				_ = Ks.OutputDebugLine(ex.Message);
+				_ = Diagnostics.Debug.WriteLine(ex.Message);
 				return null;
 			}
 			finally

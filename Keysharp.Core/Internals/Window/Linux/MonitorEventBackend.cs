@@ -143,7 +143,7 @@ namespace Keysharp.Internals.Window.Linux
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"GDK monitor signal connection failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"GDK monitor signal connection failed: {ex.Message}");
 			}
 		}
 
@@ -164,7 +164,7 @@ namespace Keysharp.Internals.Window.Linux
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"GDK monitor signal disconnection failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"GDK monitor signal disconnection failed: {ex.Message}");
 			}
 			finally
 			{

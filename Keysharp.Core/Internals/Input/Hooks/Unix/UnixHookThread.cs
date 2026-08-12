@@ -220,7 +220,7 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 				}
 
 				lastHookActivationFailure = PlatformHookDisabledMessage;
-				Ks.OutputDebugLine(lastHookActivationFailure);
+				Diagnostics.Debug.WriteLine(lastHookActivationFailure);
 				return;
 			}
 
@@ -258,7 +258,7 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 					lastHookActivationFailure = startFailure;
 
 					if (!string.IsNullOrEmpty(lastHookActivationFailure))
-						Ks.OutputDebugLine(lastHookActivationFailure);
+						Diagnostics.Debug.WriteLine(lastHookActivationFailure);
 
 					OnPlatformHookStartFailed(startFailure);
 					return;

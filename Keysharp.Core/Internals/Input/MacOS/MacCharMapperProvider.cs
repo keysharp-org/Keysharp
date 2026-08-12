@@ -320,7 +320,7 @@ namespace Keysharp.Internals.Input.Unix
 					return;
 				}
 				try { PublishCapturedLayout(CaptureCurrentLayout()); }
-				catch (Exception ex) { Ks.OutputDebugLine($"macOS keyboard-layout refresh failed: {ex.Message}"); }
+				catch (Exception ex) { Diagnostics.Debug.WriteLine($"macOS keyboard-layout refresh failed: {ex.Message}"); }
 				if (Interlocked.CompareExchange(ref reloadRequests, 0, requests) == requests)
 					return;
 			}
@@ -376,7 +376,7 @@ namespace Keysharp.Internals.Input.Unix
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"macOS keyboard-layout observer registration failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"macOS keyboard-layout observer registration failed: {ex.Message}");
 			}
 
 			lock (mapperLock)
@@ -407,7 +407,7 @@ namespace Keysharp.Internals.Input.Unix
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"macOS keyboard-layout refresh failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"macOS keyboard-layout refresh failed: {ex.Message}");
 			}
 		}
 

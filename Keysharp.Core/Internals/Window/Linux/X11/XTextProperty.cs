@@ -13,7 +13,7 @@ namespace Keysharp.Internals.Window.Linux.X11
 		internal unsafe string GetText() => Marshal.PtrToStringAuto(value);
 		//{
 		//  var strings = new byte[1024];
-		//  Ks.OutputDebugLine($"GetText() ptr: {value.ToInt64()}, format: {format}, nitems: {nitems.ToInt64()}.");
+		//  Diagnostics.Debug.WriteLine($"GetText() ptr: {value.ToInt64()}, format: {format}, nitems: {nitems.ToInt64()}.");
 
 		//  if (Xlib.XTextPropertyToStringList(value, ref strings, out int countReturn) != 0)
 		//  {
@@ -26,7 +26,7 @@ namespace Keysharp.Internals.Window.Linux.X11
 		//      }
 		//  }
 		//  else
-		//      Ks.OutputDebugLine($"XTextPropertyToStringList() failed.");
+		//      Diagnostics.Debug.WriteLine($"XTextPropertyToStringList() failed.");
 
 		//  return DefaultObject;
 		//}

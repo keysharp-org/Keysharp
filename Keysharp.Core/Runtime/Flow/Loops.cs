@@ -764,7 +764,7 @@ namespace Keysharp.Runtime
 					}
 					catch (Exception ex)
 					{
-						_ = Ks.OutputDebugLine(ex);
+						_ = Diagnostics.Debug.WriteLine(ex);
 					}
 
 					if (subdirs != null)
@@ -787,7 +787,7 @@ namespace Keysharp.Runtime
 					}
 					catch (Exception ex)
 					{
-						_ = Ks.OutputDebugLine(ex);
+						_ = Diagnostics.Debug.WriteLine(ex);
 					}
 
 					if (files != null)

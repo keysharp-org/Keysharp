@@ -63,11 +63,11 @@ namespace Keysharp.Internals.Window.Linux
 
 			if (errorEvent.error_code == 3)
 			{
-				Ks.OutputDebugLine($"Suppressed X11 BadWindow during test UI loop: request={errorEvent.request_code} resource=0x{errorEvent.resourceid.ToInt64():x}");
+				Diagnostics.Debug.WriteLine($"Suppressed X11 BadWindow during test UI loop: request={errorEvent.request_code} resource=0x{errorEvent.resourceid.ToInt64():x}");
 				return 0;
 			}
 
-			Ks.OutputDebugLine($"Suppressed X11 error during test UI loop: code={errorEvent.error_code} request={errorEvent.request_code} resource=0x{errorEvent.resourceid.ToInt64():x}");
+			Diagnostics.Debug.WriteLine($"Suppressed X11 error during test UI loop: code={errorEvent.error_code} request={errorEvent.request_code} resource=0x{errorEvent.resourceid.ToInt64():x}");
 			return 0;
 		}
 

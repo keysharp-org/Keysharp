@@ -118,7 +118,7 @@ namespace Keysharp.Builtins
 				if (name.Length == 0)
 					return false;
 
-				return TryParseKind(name, out var parsed) ? Platform.Clipboard.HasKind(parsed) : Platform.Clipboard.Has(name);
+				return Conversions.ConvertClipboardKind(name) is { } parsed ? Platform.Clipboard.HasKind(parsed) : Platform.Clipboard.Has(name);
 			}
 
 			/// <summary>Empties the clipboard.</summary>
@@ -255,24 +255,6 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
-			internal static bool TryParseKind(string name, out ClipboardKind kind)
-			{
-				switch (name.ToLowerInvariant())
-				{
-					case "text": kind = ClipboardKind.Text; return true;
-
-					case "image": kind = ClipboardKind.Image; return true;
-
-					case "files": kind = ClipboardKind.Files; return true;
-
-					case "html": kind = ClipboardKind.Html; return true;
-
-					case "rtf": kind = ClipboardKind.Rtf; return true;
-
-					default: kind = ClipboardKind.Text; return false;
-				}
-			}
-
 			/// <summary>An Array of paths, a single path, or "" (none) as a plain string array.</summary>
 			private static string[] ToPaths(object value)
 			{
@@ -295,7 +277,7 @@ namespace Keysharp.Builtins
 				if (string.IsNullOrEmpty(name))
 					return true;
 
-				if (TryParseKind(name, out var kind))
+				if (Conversions.ConvertClipboardKind(name) is { } kind)
 				{
 					object payload = kind switch
 					{

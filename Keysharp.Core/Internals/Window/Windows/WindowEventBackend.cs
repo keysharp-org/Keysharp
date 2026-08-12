@@ -126,7 +126,7 @@ namespace Keysharp.Internals.Window.Windows
 			var handle = WindowsAPI.SetWinEventHook(id, id, 0, proc, 0, 0, WINEVENT_OUTOFCONTEXT);
 
 			if (handle == 0)
-				Ks.OutputDebugLine($"SetWinEventHook failed for {bit} (event 0x{id:X}).");
+				Diagnostics.Debug.WriteLine($"SetWinEventHook failed for {bit} (event 0x{id:X}).");
 
 			hooks[id] = new HookEntry { handle = handle, refs = 1 };
 		}

@@ -174,7 +174,7 @@ namespace Keysharp.Builtins
 					else if (_control is KeysharpActiveX kax)
 						return kax.Iid;
 					else if (_control is Forms.Control ctrl)
-						return Ks.NormalizeEol(ctrl.Text);
+						return Conversions.NormalizeEol(ctrl.Text);
 					return DefaultObject;
 				}
 				set
@@ -296,7 +296,7 @@ namespace Keysharp.Builtins
 						}
 					}
 					else if (_control is Forms.Control ctrl)
-						ctrl.Text = Ks.NormalizeEol(val, Environment.NewLine);
+						ctrl.Text = Conversions.NormalizeEol(val, Environment.NewLine);
 
 					if (ParentForm.Visible == true)
 						_control.Refresh();
@@ -1683,7 +1683,7 @@ namespace Keysharp.Builtins
 					if (commandHandlers != null)
 					{
 						var val = (int)((m.WParam.ToInt64() >> 16) & 0xFFFF);
-						//Ks.OutputDebugLine($"Received WM_COMMAND {m.Msg}, with val: {val:X}, with lparam: {m.LParam.ToInt64():X}, wparam: {m.WParam.ToInt64():X}");
+						//Diagnostics.Debug.WriteLine($"Received WM_COMMAND {m.Msg}, with val: {val:X}, with lparam: {m.LParam.ToInt64():X}, wparam: {m.WParam.ToInt64():X}");
 
 						if (commandHandlers.TryGetValue(val, out var handler))
 						{

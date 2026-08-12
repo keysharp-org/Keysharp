@@ -156,7 +156,7 @@ namespace Keysharp.Internals.Window.Linux
 
 			if (gdkDisplay == 0 || gdkXDisplay == 0)
 			{
-				Ks.OutputDebugLine("WinEvent: GDK display unavailable for the X11 event filter.");
+				Diagnostics.Debug.WriteLine("WinEvent: GDK display unavailable for the X11 event filter.");
 				return;
 			}
 
@@ -199,7 +199,7 @@ namespace Keysharp.Internals.Window.Linux
 			catch (Exception ex)
 			{
 				filter = null;
-				Ks.OutputDebugLine($"WinEvent X11 filter attach failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"WinEvent X11 filter attach failed: {ex.Message}");
 			}
 		}
 
@@ -233,7 +233,7 @@ namespace Keysharp.Internals.Window.Linux
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"WinEvent X11 filter detach failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"WinEvent X11 filter detach failed: {ex.Message}");
 			}
 
 			knownClients.Clear();
@@ -258,7 +258,7 @@ namespace Keysharp.Internals.Window.Linux
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"WinEvent X11 filter error: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"WinEvent X11 filter error: {ex.Message}");
 			}
 
 			return 0;   // GDK_FILTER_CONTINUE — never consume; let GDK process the event normally.

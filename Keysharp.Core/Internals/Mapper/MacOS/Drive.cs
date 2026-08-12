@@ -41,7 +41,7 @@ namespace Keysharp.Internals.Mapper.MacOS
 		{
 			get
 			{
-				Ks.OutputDebugLine($"Obtaining the status of the CD/DVD drive is not supported on macOS.");
+				Diagnostics.Debug.WriteLine($"Obtaining the status of the CD/DVD drive is not supported on macOS.");
 				return DefaultObject;
 			}
 		}
@@ -52,18 +52,18 @@ namespace Keysharp.Internals.Mapper.MacOS
 		internal override void Eject()
 		{
 			if ($"diskutil eject \"{EscapeForBashDoubleQuotes(drive.Name)}\"".Bash() != 0)
-				Ks.OutputDebugLine($"Drive.Eject failed for {drive.Name}");
+				Diagnostics.Debug.WriteLine($"Drive.Eject failed for {drive.Name}");
 		}
 
 		internal override void Lock()
 		{
-			Ks.OutputDebugLine($"Locking the eject ability of a drive is not supported on macOS.");
+			Diagnostics.Debug.WriteLine($"Locking the eject ability of a drive is not supported on macOS.");
 		}
 
 		internal override void Retract()
 		{
 			if ("drutil tray close".Bash() != 0)
-				Ks.OutputDebugLine($"Drive.Retract failed for {drive.Name}");
+				Diagnostics.Debug.WriteLine($"Drive.Retract failed for {drive.Name}");
 		}
 
 		internal override void SetLabel(string label)
@@ -76,7 +76,7 @@ namespace Keysharp.Internals.Mapper.MacOS
 
 		internal override void UnLock()
 		{
-			Ks.OutputDebugLine($"Unlocking the eject ability of a drive is not supported on macOS.");
+			Diagnostics.Debug.WriteLine($"Unlocking the eject ability of a drive is not supported on macOS.");
 		}
 	}
 }

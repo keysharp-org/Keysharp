@@ -40,7 +40,7 @@ namespace Keysharp.Builtins.COM
 				if (methodMapper.Count > 0)
 					dispatcher.EventReceived += Dispatcher_EventReceivedGlobalFunc;
 				else
-					_ = Ks.OutputDebugLine($"No suitable global methods were found with the prefix {prefix} which could be used as COM event handlers. No COM event handlers will be triggered.");
+					_ = Diagnostics.Debug.WriteLine($"No suitable global methods were found with the prefix {prefix} which could be used as COM event handlers. No COM event handlers will be triggered.");
 			}
 			else if (sink is KeysharpObject ko)
 			{
@@ -113,7 +113,7 @@ namespace Keysharp.Builtins.COM
 		{
 			if (prefix is null) return;
 			if (logAll)
-				_ = Ks.OutputDebugLine($"Dispatch ID {e.DispId}: {e.Name} received to be dispatched to a global function with {e.Arguments.Length} + 1 args.");
+				_ = Diagnostics.Debug.WriteLine($"Dispatch ID {e.DispId}: {e.Name} received to be dispatched to a global function with {e.Arguments.Length} + 1 args.");
 
 			var thisObj = thisArg[0];
 
@@ -154,7 +154,7 @@ namespace Keysharp.Builtins.COM
 			e.IsHandled = false;
 			if (sinkObj is null) return;
 			if (logAll)
-				_ = Ks.OutputDebugLine($"Dispatch ID {e.DispId}: {e.Name} received to be dispatched to an object method with {e.Arguments.Length} + 1 args.");
+				_ = Diagnostics.Debug.WriteLine($"Dispatch ID {e.DispId}: {e.Name} received to be dispatched to an object method with {e.Arguments.Length} + 1 args.");
 
 			var (obj, target) = Script.GetMethodOrProperty(sinkObj, e.Name, -1, checkBase: true, throwIfMissing: false, invokeMeta: true);
 			if (target == null) return;

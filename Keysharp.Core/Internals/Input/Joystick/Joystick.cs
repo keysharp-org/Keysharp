@@ -280,7 +280,7 @@ namespace Keysharp.Internals.Input.Joystick
 		private static void LogUnsupportedOnce()
 		{
 			if (Interlocked.Exchange(ref loggedUnsupported, 1) == 0)
-				Ks.OutputDebugLine("Joystick support is not implemented on this platform; joystick controls report as unavailable.");
+				Diagnostics.Debug.WriteLine("Joystick support is not implemented on this platform; joystick controls report as unavailable.");
 		}
 #endif
 	}

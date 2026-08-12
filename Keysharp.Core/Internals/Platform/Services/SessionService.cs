@@ -34,32 +34,32 @@ namespace Keysharp.Internals
 				else if (IsLxqt)
 				{
 					if (force)
-						Ks.OutputDebugLine("LXQT doesn't support forced logouts.");
+						Diagnostics.Debug.WriteLine("LXQT doesn't support forced logouts.");
 
 					cmd = "lxqt-leave";
 				}
 				else if (IsLxde)
 				{
 					if (force)
-						Ks.OutputDebugLine("LXDE doesn't support forced logouts.");
+						Diagnostics.Debug.WriteLine("LXDE doesn't support forced logouts.");
 
 					cmd = "lxde-logout";
 				}
 
 				if (!string.IsNullOrWhiteSpace(cmd) && cmd.Bash() != 0)
-					Ks.OutputDebugLine($"ExitProgram logoff command failed: {cmd}");
+					Diagnostics.Debug.WriteLine($"ExitProgram logoff command failed: {cmd}");
 			}
 			else if ((flags & 1) == 1)   // Halt/shutdown
 			{
 				if ((flags & 8) == 8)   // Power down
 				{
 					if ("shutdown now".Bash() != 0)
-						Ks.OutputDebugLine("ExitProgram shutdown command failed: shutdown now");
+						Diagnostics.Debug.WriteLine("ExitProgram shutdown command failed: shutdown now");
 				}
 				else
 				{
 					if ("halt".Bash() != 0)
-						Ks.OutputDebugLine("ExitProgram halt command failed: halt");
+						Diagnostics.Debug.WriteLine("ExitProgram halt command failed: halt");
 				}
 			}
 			else if ((flags & 2) == 2)   // Reboot
@@ -67,18 +67,18 @@ namespace Keysharp.Internals
 				if (force)
 				{
 					if ("reboot -f".Bash() != 0)
-						Ks.OutputDebugLine("ExitProgram reboot command failed: reboot -f");
+						Diagnostics.Debug.WriteLine("ExitProgram reboot command failed: reboot -f");
 				}
 				else
 				{
 					if ("reboot".Bash() != 0)
-						Ks.OutputDebugLine("ExitProgram reboot command failed: reboot");
+						Diagnostics.Debug.WriteLine("ExitProgram reboot command failed: reboot");
 				}
 			}
 			else if ((flags & 8) == 8)   // Shutdown
 			{
 				if ("shutdown now".Bash() != 0)
-					Ks.OutputDebugLine("ExitProgram shutdown command failed: shutdown now");
+					Diagnostics.Debug.WriteLine("ExitProgram shutdown command failed: shutdown now");
 			}
 
 			return true;
@@ -98,7 +98,7 @@ namespace Keysharp.Internals
 			// System Events has no equivalent of ExitWindowsEx's force bit. Keep the
 			// operation safe and interactive instead of terminating applications.
 			if ((flags & 4) == 4)
-				Ks.OutputDebugLine("Shutdown force mode is not available on macOS; requesting a normal session action.");
+				Diagnostics.Debug.WriteLine("Shutdown force mode is not available on macOS; requesting a normal session action.");
 
 			return $"tell application \"System Events\" to {action}".AppleScript() == 0;
 		}

@@ -1488,7 +1488,7 @@ namespace Keysharp.Internals
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"XQueryTree() failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"XQueryTree() failed: {ex.Message}");
 			}
 			finally
 			{
@@ -1519,15 +1519,15 @@ namespace Keysharp.Internals
 
 			// A foreign X11 window: EWMH exposes no style word, and _MOTIF_WM_HINTS is both optional and
 			// only about decorations, so there is nothing honest to synthesize here.
-			Ks.OutputDebugLine($"Window with handle {h} is not owned by this process, so no window style is available. Returning 0.");
+			Diagnostics.Debug.WriteLine($"Window with handle {h} is not owned by this process, so no window style is available. Returning 0.");
 			return 0;
 		}
 
 		private static void X11SetStyle(nint h, long style)
-			=> Ks.OutputDebugLine($"Styles cannot be set on linux.");
+			=> Diagnostics.Debug.WriteLine($"Styles cannot be set on linux.");
 
 		private static void X11SetExStyle(nint h, long exStyle)
-			=> Ks.OutputDebugLine($"ExStyles cannot be set on linux.");
+			=> Diagnostics.Debug.WriteLine($"ExStyles cannot be set on linux.");
 
 		private static List<string> X11Text(nint h, bool detectHiddenText)
 		{
@@ -1591,7 +1591,7 @@ namespace Keysharp.Internals
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"XGetWMName() failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"XGetWMName() failed: {ex.Message}");
 			}
 
 			return DefaultObject;
@@ -1618,7 +1618,7 @@ namespace Keysharp.Internals
 				}
 				catch (Exception ex)
 				{
-					Ks.OutputDebugLine($"XSetTextProperty() failed: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"XSetTextProperty() failed: {ex.Message}");
 				}
 				finally
 				{
@@ -1672,12 +1672,12 @@ namespace Keysharp.Internals
 
 		private static object X11TransparentColor(nint h)
 		{
-			Ks.OutputDebugLine($"Transparency key/color not supported on linux, returning 0.");
+			Diagnostics.Debug.WriteLine($"Transparency key/color not supported on linux, returning 0.");
 			return 0L;
 		}
 
 		private static void X11SetTransparentColor(nint h, object color)
-			=> Ks.OutputDebugLine($"Transparency key/color not supported on linux.");
+			=> Diagnostics.Debug.WriteLine($"Transparency key/color not supported on linux.");
 
 		private static bool X11Visible(nint h)
 		{
@@ -1885,7 +1885,7 @@ namespace Keysharp.Internals
 				return true;
 			}
 
-			Ks.OutputDebugLine($"ReadStateProps() XGetWindowProperty failed.");
+			Diagnostics.Debug.WriteLine($"ReadStateProps() XGetWindowProperty failed.");
 			return false;
 		}
 

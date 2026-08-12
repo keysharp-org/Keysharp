@@ -111,13 +111,13 @@ namespace System
 				process.WaitForExit();
 
 				if (process.ExitCode != 0 && !err.IsNullOrEmpty())
-					Ks.OutputDebugLine($"Bash failed with exit code {process.ExitCode}: {err}");
+					Diagnostics.Debug.WriteLine($"Bash failed with exit code {process.ExitCode}: {err}");
 
 				return process.ExitCode;
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"Bash launch failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"Bash launch failed: {ex.Message}");
 				return -1;
 			}
 		}
@@ -171,13 +171,13 @@ namespace System
 				process.WaitForExit();
 
 				if (process.ExitCode != 0 && !err.IsNullOrEmpty())
-					Ks.OutputDebugLine($"AppleScript failed with exit code {process.ExitCode}: {err}");
+					Diagnostics.Debug.WriteLine($"AppleScript failed with exit code {process.ExitCode}: {err}");
 
 				return process.ExitCode;
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"AppleScript launch failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"AppleScript launch failed: {ex.Message}");
 				return -1;
 			}
 		}

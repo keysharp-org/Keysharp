@@ -150,7 +150,7 @@ namespace Keysharp.Builtins
 			var wasMs = s1.Contains('.');
 
 			if (s1.Length == 0)
-				s1 = Ks.A_NowMs;
+				s1 = Conversions.ToYYYYMMDDHH24MISSFFF(DateTime.Now);
 
 			var d1 = Conversions.ToDateTime(s1);
 
@@ -188,10 +188,10 @@ namespace Keysharp.Builtins
 			var units = timeUnits.As();
 
 			if (s1.Length == 0)
-				s1 = Ks.A_NowMs;
+				s1 = Conversions.ToYYYYMMDDHH24MISSFFF(DateTime.Now);
 
 			if (s2.Length == 0)
-				s2 = Ks.A_NowMs;
+				s2 = Conversions.ToYYYYMMDDHH24MISSFFF(DateTime.Now);
 
 			var d1 = Conversions.ToDateTime(s1);
 			var d2 = Conversions.ToDateTime(s2);

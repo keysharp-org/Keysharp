@@ -31,6 +31,6 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="text">The text to send to the debugger for display.</param>
 		/// <param name="clear">True to first clear the display, else false to append.</param>
-		public static object OutputDebugLine(object text, object clear = null) => Debug.OutputDebugCommon($"{text.As()}{Environment.NewLine}", clear.Ab());
+		public static object OutputDebugLine(object text, object clear = null) => Diagnostics.Debug.WriteLine(text, clear);
 	}
 }

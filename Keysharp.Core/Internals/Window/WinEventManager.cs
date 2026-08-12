@@ -236,7 +236,7 @@ namespace Keysharp.Internals.Window
 			catch (Exception ex)
 			{
 				backendInitFailed = true;
-				Ks.OutputDebugLine($"Window event backend creation failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"Window event backend creation failed: {ex.Message}");
 			}
 
 			return backend;
@@ -476,7 +476,7 @@ namespace Keysharp.Internals.Window
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"WinEvent match seed failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"WinEvent match seed failed: {ex.Message}");
 			}
 		}
 
@@ -621,7 +621,7 @@ namespace Keysharp.Internals.Window
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"Window event backend dispose failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"Window event backend dispose failed: {ex.Message}");
 			}
 		}
 	}

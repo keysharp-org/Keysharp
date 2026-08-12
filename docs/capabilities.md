@@ -264,7 +264,7 @@ Status legend:
 | A_OSVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_PeekFrequency | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the current thread's message-check interval in milliseconds. |
 | A_PriorHotkey | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
-| A_Priority | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the default priority copied into new script threads. |
+| A_Priority | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the running thread's priority; equivalent to `Thread "Priority", n`. Every thread starts at 0; there is no settable process-wide default. |
 | A_PriorKey | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_ProcessArch | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | CPU architecture of the running process: X64, ARM64, X86 or ARM, matching the preprocessor symbol of the same name. Branch on this rather than A_PtrSize for interop, since A_PtrSize is 8 for both X64 and ARM64. |
 | A_ProgramFiles | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |

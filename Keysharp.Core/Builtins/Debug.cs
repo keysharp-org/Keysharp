@@ -127,7 +127,7 @@ namespace Keysharp.Builtins
 						}
 						catch (Exception ex)
 						{
-							_ = Ks.OutputDebugLine($"GetVars(): exception thrown inside of nested loop inside of second internal loop: {ex.Message}");
+							_ = Diagnostics.Debug.WriteLine($"GetVars(): exception thrown inside of nested loop inside of second internal loop: {ex.Message}");
 						}
 					}
 
@@ -207,7 +207,7 @@ namespace Keysharp.Builtins
 		{
 			if (!_listLinesMessageEmitted)
 			{
-				_ = Ks.OutputDebugLine("ListLines() is not supported in Keysharp because it's a compiled program, not an interpreted one.");
+				_ = Diagnostics.Debug.WriteLine("ListLines() is not supported in Keysharp because it's a compiled program, not an interpreted one.");
 				_listLinesMessageEmitted = true;
 			}
 			return DefaultObject;
@@ -243,6 +243,6 @@ namespace Keysharp.Builtins
 		}
 
 		[Conditional("DEBUG")]
-		internal static void Log(string message) => _ = Ks.OutputDebugLine(message);
+		internal static void Log(string message) => _ = Diagnostics.Debug.WriteLine(message);
 	}
 }

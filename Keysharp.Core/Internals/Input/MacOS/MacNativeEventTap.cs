@@ -135,7 +135,7 @@ namespace Keysharp.Internals.Input.MacOS
 			var stopped = threadToJoin == null || !threadToJoin.IsAlive || threadToJoin.Join(StopTimeoutMs);
 			if (!stopped)
 			{
-				Ks.OutputDebugLine($"macOS event-tap thread did not exit within {StopTimeoutMs} ms; native resources remain owned by that thread.");
+				Diagnostics.Debug.WriteLine($"macOS event-tap thread did not exit within {StopTimeoutMs} ms; native resources remain owned by that thread.");
 				return false;
 			}
 
@@ -177,7 +177,7 @@ namespace Keysharp.Internals.Input.MacOS
 						break;
 					}
 
-					Ks.OutputDebugLine($"macOS event tap lost ({reason}); recreating it.");
+					Diagnostics.Debug.WriteLine($"macOS event tap lost ({reason}); recreating it.");
 					lock (lifecycleLock)
 					{
 						if (State == MacEventTapState.Stopping)
@@ -190,7 +190,7 @@ namespace Keysharp.Internals.Input.MacOS
 			{
 				terminalFailure = $"event-tap thread failed: {ex.Message}";
 				StartupFailure ??= terminalFailure;
-				Ks.OutputDebugLine($"macOS event-tap thread failed: {ex}");
+				Diagnostics.Debug.WriteLine($"macOS event-tap thread failed: {ex}");
 			}
 			finally
 			{
@@ -243,7 +243,7 @@ namespace Keysharp.Internals.Input.MacOS
 				if (recovering)
 				{
 					try { tapReenabled(); }
-					catch (Exception ex) { Ks.OutputDebugLine($"macOS event-tap state resync failed: {ex}"); }
+					catch (Exception ex) { Diagnostics.Debug.WriteLine($"macOS event-tap state resync failed: {ex}"); }
 				}
 				while (State == MacEventTapState.Running)
 				{
@@ -282,7 +282,7 @@ namespace Keysharp.Internals.Input.MacOS
 					if (type == MacNativeInput.kCGEventTapDisabledByTimeout)
 					{
 						var count = Interlocked.Increment(ref timeoutDisableCount);
-						Ks.OutputDebugLine($"macOS event tap was disabled by the watchdog (occurrence {count}); re-enabling it.");
+						Diagnostics.Debug.WriteLine($"macOS event tap was disabled by the watchdog (occurrence {count}); re-enabling it.");
 					}
 
 					var reenabled = false;
@@ -316,7 +316,7 @@ namespace Keysharp.Internals.Input.MacOS
 			{
 				// Exceptions must never cross the native callback boundary. Passing the event through
 				// is safer than leaving user input suppressed after a Keysharp failure.
-				Ks.OutputDebugLine($"macOS event-tap callback failed; passing the event through: {ex}");
+				Diagnostics.Debug.WriteLine($"macOS event-tap callback failed; passing the event through: {ex}");
 				return cgEvent;
 			}
 		}

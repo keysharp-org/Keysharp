@@ -61,7 +61,7 @@ namespace Keysharp.Internals.Window.MacOS
 				}
 				catch (Exception ex)
 				{
-					Ks.OutputDebugLine($"CGDisplayRegisterReconfigurationCallback failed: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"CGDisplayRegisterReconfigurationCallback failed: {ex.Message}");
 				}
 			}
 		}
@@ -79,7 +79,7 @@ namespace Keysharp.Internals.Window.MacOS
 				}
 				catch (Exception ex)
 				{
-					Ks.OutputDebugLine($"CGDisplayRemoveReconfigurationCallback failed: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"CGDisplayRemoveReconfigurationCallback failed: {ex.Message}");
 				}
 
 				registered = false;

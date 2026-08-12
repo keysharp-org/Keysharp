@@ -4308,7 +4308,7 @@ namespace Keysharp.Internals.Input.Hooks
 					{
 						// Named mutexes can be unavailable under some Unix configurations (e.g. an unwritable
 						// shared-memory dir). Degrade gracefully: SendInput etc. simply won't see other scripts.
-						_ = Ks.OutputDebugLine($"Hook mutex '{name}' could not be created: {ex.Message}");
+						_ = Diagnostics.Debug.WriteLine($"Hook mutex '{name}' could not be created: {ex.Message}");
 					}
 				}
 			}
@@ -4335,7 +4335,7 @@ namespace Keysharp.Internals.Input.Hooks
 			}
 			catch (Exception ex)
 			{
-				_ = Ks.OutputDebugLine($"Hook mutex '{name}' could not be opened: {ex.Message}");
+				_ = Diagnostics.Debug.WriteLine($"Hook mutex '{name}' could not be opened: {ex.Message}");
 				existingMutex = null; // Our previous handle is closed and we couldn't reopen it.
 				return false;
 			}

@@ -1486,7 +1486,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			var script = Script.TheScript;
 			var executor = script.HookThread.HotCriterionExecutor;
-			var deadline = GetHotCriterionDeadline(hookDeadline, Ks.A_HotIfTimeout.Ad());
+			var deadline = GetHotCriterionDeadline(hookDeadline, Script.TheScript.AccessorData.hotIfTimeout);
 			var status = executor.Execute(criterion, criterionType, hotkeyName, eventInfo,
 				deadline, out var value, out var error);
 
@@ -1496,7 +1496,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				// Log the first and exponentially-spaced subsequent rejections. This makes a stuck
 				// user criterion observable without flooding the debug UI from an input callback.
 				if (rejected != 0 && (rejected & (rejected - 1)) == 0)
-					_ = Ks.OutputDebugLine($"HotIf worker capacity is saturated; " +
+					_ = Diagnostics.Debug.WriteLine($"HotIf worker capacity is saturated; " +
 						$"failing input open (rejection {rejected}).");
 				return 0L;
 			}
@@ -2217,11 +2217,11 @@ namespace Keysharp.Internals.Input.Keyboard
 				// mNextVariant
 				// mExistingThreads
 				// mPriority (default priority is always 0)
-				maxThreads = Ks.A_MaxThreadsPerHotkey.Aui(),    // The values of these can vary during load-time.
-				maxThreadsBuffer = Ks.A_MaxThreadsBuffer.Ab(),
-				inputLevel = (long)Ks.A_InputLevel,
+				maxThreads = Script.TheScript.AccessorData.maxThreadsPerHotkey,    // The values of these can vary during load-time.
+				maxThreadsBuffer = Script.TheScript.AccessorData.maxThreadsBuffer,
+				inputLevel = Script.TheScript.AccessorData.inputLevel,
 				hotCriterion = Script.TheScript.Threads.CurrentThread.hotCriterion, // If this hotkey is an alt-tab one (mHookAction), this is stored but ignored until/unless the Hotkey command converts it into a non-alt-tab hotkey.
-				suspendExempt = Keysharp.Builtins.Ks.A_SuspendExempt.Ab(),
+				suspendExempt = Script.TheScript.HotstringManager.hsSuspendExempt,
 				noSuppress = _noSuppress,
 			};
 

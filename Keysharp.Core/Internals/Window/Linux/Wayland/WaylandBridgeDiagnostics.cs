@@ -51,7 +51,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (suppressed > 0)
 				message += $" ({suppressed} repeated failure{(suppressed == 1 ? "" : "s")} suppressed)";
 
-			try { Ks.OutputDebugLine(message); } catch { }
+			try { Diagnostics.Debug.WriteLine(message); } catch { }
 		}
 
 		internal static string Describe(Exception ex)

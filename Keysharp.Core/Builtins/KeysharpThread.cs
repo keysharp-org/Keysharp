@@ -58,7 +58,7 @@ namespace Keysharp.Builtins
 			var script = Script.TheScript;
 
 			if (string.Compare(sf, "notimers", true) == 0)
-				Ks.A_AllowTimers = !(Options.OnOff(value1.As()) ?? false);
+				script.Threads.AllowTimers = !(Options.OnOff(value1.As()) ?? false);
 			else if (string.Compare(sf, "priority", true) == 0)
 				script.Threads.CurrentThread.priority = value1.Al();
 			else if (string.Compare(sf, "interrupt", true) == 0)
@@ -103,8 +103,9 @@ namespace Keysharp.Builtins
 		public long Elapsed => Environment.TickCount64 - Live().threadStartTick;
 
 		/// <summary>
-		/// This thread's priority. Reads back what <c>Thread "Priority", n</c> set; new threads start at
-		/// <c>A_Priority</c>.
+		/// This thread's priority. Reads back what <c>Thread "Priority", n</c> or <c>A_Priority</c> set;
+		/// every thread starts at 0 unless its launcher (SetTimer, Hotkey, Menu.Add, a hotstring
+		/// definition) gave it one.
 		/// </summary>
 		public object Priority
 		{

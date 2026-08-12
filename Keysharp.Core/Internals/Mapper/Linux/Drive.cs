@@ -31,7 +31,7 @@ namespace Keysharp.Internals.Mapper.Linux
 		{
 			get
 			{
-				Ks.OutputDebugLine($"Obtaining the status of the CD/DVD drive is not supported on linux.");
+				Diagnostics.Debug.WriteLine($"Obtaining the status of the CD/DVD drive is not supported on linux.");
 				return DefaultObject;
 			}
 		}
@@ -42,19 +42,19 @@ namespace Keysharp.Internals.Mapper.Linux
 		internal override void Eject()
 		{
 			if ($"eject {drive.Name}".Bash() != 0)
-				Ks.OutputDebugLine($"Drive.Eject failed for {drive.Name}");
+				Diagnostics.Debug.WriteLine($"Drive.Eject failed for {drive.Name}");
 		}
 
 		internal override void Lock()
 		{
 			if ($"eject -i 1 {drive.Name}".Bash() != 0)
-				Ks.OutputDebugLine($"Drive.Lock failed for {drive.Name}");
+				Diagnostics.Debug.WriteLine($"Drive.Lock failed for {drive.Name}");
 		}
 
 		internal override void Retract()
 		{
 			if ($"eject -t {drive.Name}".Bash() != 0)
-				Ks.OutputDebugLine($"Drive.Retract failed for {drive.Name}");
+				Diagnostics.Debug.WriteLine($"Drive.Retract failed for {drive.Name}");
 		}
 
 		internal override void SetLabel(string label)
@@ -93,7 +93,7 @@ namespace Keysharp.Internals.Mapper.Linux
 		internal override void UnLock()
 		{
 			if ($"eject -i 0 {drive.Name}".Bash() != 0)
-				Ks.OutputDebugLine($"Drive.UnLock failed for {drive.Name}");
+				Diagnostics.Debug.WriteLine($"Drive.UnLock failed for {drive.Name}");
 		}
 	}
 }

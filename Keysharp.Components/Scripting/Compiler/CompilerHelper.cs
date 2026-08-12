@@ -938,7 +938,7 @@ namespace Keysharp.Compilation
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"Unable to show compiler error dialog: {ex.Message}");
+				Keysharp.Internals.Diagnostics.Debug.WriteLine($"Unable to show compiler error dialog: {ex.Message}");
 				return false;
 			}
 #endif

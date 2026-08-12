@@ -1027,7 +1027,7 @@ break_twice:;
 					if (result.Succeeded)
 						_ = script.KeyboardData.xinputBlockedDevices.Remove(id);
 					else
-						Ks.OutputDebugLine($"BlockInput: xinput command failed for device {id}: {result.ErrorMessage}");
+						Diagnostics.Debug.WriteLine($"BlockInput: xinput command failed for device {id}: {result.ErrorMessage}");
 				}
 			}
 			else
@@ -1049,7 +1049,7 @@ break_twice:;
 							_ = script.KeyboardData.xinputBlockedDevices.Remove(id);
 					}
 					else
-						Ks.OutputDebugLine($"BlockInput: xinput command failed for device {id}: {result.ErrorMessage}");
+						Diagnostics.Debug.WriteLine($"BlockInput: xinput command failed for device {id}: {result.ErrorMessage}");
 				}
 			}
 		#elif WINDOWS

@@ -54,7 +54,7 @@ namespace Keysharp.Internals.Threading
 			if (ctid != Script.TheScript.ManagedMainThreadID
 					|| threadVars.Index > 0)//Never pop the last object on the main thread.
 			{
-				//Ks.OutputDebugLine($"About to pop with {threadVars.Index} existing threads");
+				//Diagnostics.Debug.WriteLine($"About to pop with {threadVars.Index} existing threads");
 				if (threadVars.TryPop(out var tv))
 				{
 					if (!ReferenceEquals(tv, threadVarsToPop))
@@ -112,7 +112,7 @@ namespace Keysharp.Internals.Threading
 
 #if DEBUG
 			else
-				_ = Ks.OutputDebugLine($"Thread stack limit exceeded");
+				_ = Diagnostics.Debug.WriteLine($"Thread stack limit exceeded");
 
 #endif
 			return tv;

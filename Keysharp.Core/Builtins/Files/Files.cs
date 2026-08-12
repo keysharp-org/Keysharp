@@ -152,7 +152,7 @@ namespace Keysharp.Builtins
 #if DEBUG
 
 						if (s == "fail")
-							_ = Ks.OutputDebugLine(s);
+							_ = Diagnostics.Debug.WriteLine(s);
 
 #endif
 

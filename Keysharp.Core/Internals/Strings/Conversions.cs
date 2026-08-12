@@ -166,6 +166,32 @@ namespace Keysharp.Internals.Strings
 			return string.Compare(str, "Toggle", true) == 0 || str == "-1" ? ToggleValueType.Toggle : def;
 		}
 
+		/// <summary>
+		/// The canonical clipboard kind a script-facing name denotes ("text", "image", "files", "html", "rtf"),
+		/// or null when the name is not a kind at all — in which case callers treat it as a platform-native
+		/// format name instead. Shared by the Ks clipboard surface and base-AHK <c>ClipWait</c> so both resolve
+		/// names identically.
+		/// </summary>
+		internal static ClipboardKind? ConvertClipboardKind(string name) => name.ToLowerInvariant() switch
+		{
+			"text" => ClipboardKind.Text,
+			"image" => ClipboardKind.Image,
+			"files" => ClipboardKind.Files,
+			"html" => ClipboardKind.Html,
+			"rtf" => ClipboardKind.Rtf,
+			_ => null,
+		};
+
+		/// <summary>
+		/// Makes all line endings in a string match the value passed in, or the default newline. The runtime
+		/// needs this on its own account — GUI edit controls and the Windows clipboard backend both normalize
+		/// what they read and write — and <c>Ks.NormalizeEol</c> is a thin wrapper over it.
+		/// </summary>
+		/// <param name="str">The string whose line endings will be normalized.</param>
+		/// <param name="endOfLine">The line ending character to use. Default: DefaultNewLine.</param>
+		internal static string NormalizeEol(object str, object endOfLine = null) =>
+			str.As().ReplaceLineEndings(endOfLine.As(DefaultNewLine));
+
 		internal static string FromFileAttribs(FileAttributes attribs)
 		{
 			var str = new StringBuilder(9);

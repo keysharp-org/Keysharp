@@ -571,7 +571,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		private static void DebugLine(string message)
-			=> Keysharp.Builtins.Ks.OutputDebugLine(message);
+			=> Diagnostics.Debug.WriteLine(message);
 
 		// QImage format codes that KWin reports back in the KSSC1 header.
 		private const uint QImageFormatRgb32 = 4;                    // BGRX in memory (alpha unused)

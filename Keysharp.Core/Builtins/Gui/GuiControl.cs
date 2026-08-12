@@ -117,14 +117,14 @@ namespace Keysharp.Builtins
 				get
 				{
 					if (_control is KeysharpRichEdit rtf)
-						return Ks.NormalizeEol(rtf.Text);
+						return Conversions.NormalizeEol(rtf.Text);
 
 					return Errors.ErrorOccurred($"Can only get RichText on a RichEdit control. Attempted on a {_control?.GetType().Name ?? "null"} control.");
 				}
 				set
 				{
 					if (_control is KeysharpRichEdit rtf)
-						rtf.Rtf = Ks.NormalizeEol(value);
+						rtf.Rtf = Conversions.NormalizeEol(value);
 					else
 						_ = Errors.ErrorOccurred($"Can only set RichText on a RichEdit control. Attempted on a {_control?.GetType().Name ?? "null"} control.");
 				}

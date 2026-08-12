@@ -136,7 +136,7 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"macOS window-event observer start failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"macOS window-event observer start failed: {ex.Message}");
 			}
 		}
 
@@ -168,7 +168,7 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"macOS caret-event registration failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"macOS caret-event registration failed: {ex.Message}");
 			}
 		}
 
@@ -209,7 +209,7 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"macOS window-event observer stop failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"macOS window-event observer stop failed: {ex.Message}");
 			}
 		}
 
@@ -241,7 +241,7 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"macOS window-event launch handler failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"macOS window-event launch handler failed: {ex.Message}");
 			}
 
 			ReconcileApps();
@@ -274,7 +274,7 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"macOS window-event app reconcile failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"macOS window-event app reconcile failed: {ex.Message}");
 			}
 
 			foreach (var pid in appObservers.Keys.Where(p => !current.Contains(p)).ToArray())
@@ -596,7 +596,7 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"macOS window-event callback failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"macOS window-event callback failed: {ex.Message}");
 			}
 		}
 

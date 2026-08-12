@@ -159,6 +159,13 @@ namespace Keysharp.Internals
 	{
 		internal static double Normalize(double value, double fallback = 1.0)
 			=> double.IsFinite(value) && value > 0 ? value : fallback;
+
+		/// <summary>
+		/// The primary display's authored-size scale: 1.0 is 100%, 1.5 is 150%. Not a screen-coordinate
+		/// conversion. The script-facing <c>Ks.A_ScreenScale</c> wraps this.
+		/// </summary>
+		internal static double PrimaryScale
+			=> Normalize(Keysharp.Builtins.Monitor.ResolveDisplay(null).Display.SizeScale);
 	}
 
 	/// <summary>Shared display-selection rules.</summary>

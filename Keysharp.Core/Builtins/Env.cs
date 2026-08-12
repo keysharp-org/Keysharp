@@ -100,7 +100,7 @@ namespace Keysharp.Builtins
 				if (string.Equals(s, "Any", StringComparison.OrdinalIgnoreCase))
 					return () => !clip.IsEmpty;
 
-				if (Ks.KeysharpClipboard.TryParseKind(s, out var kind))
+				if (Conversions.ConvertClipboardKind(s) is { } kind)
 					return () => clip.HasKind(kind);
 
 				_ = Errors.ValueErrorOccurred($"Invalid clipboard wait kind: {s}");
@@ -169,7 +169,7 @@ namespace Keysharp.Builtins
 				// real failure and is raised.
 				if (!result.Started)
 				{
-					Ks.OutputDebugLine($"EnvUpdate: {command.FileName} is unavailable, so the environment changes " +
+					Diagnostics.Debug.WriteLine($"EnvUpdate: {command.FileName} is unavailable, so the environment changes " +
 									   $"were not published to the session manager. Details: {result.ErrorMessage}");
 					continue;
 				}

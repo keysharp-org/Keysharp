@@ -230,19 +230,19 @@ namespace Keysharp.Internals.Window.Linux.Proxies
 								var window = new XWindow(this, id);
 								windows.Add(window);
 								//var tempItem = new WindowInfo(window);
-								//Ks.OutputDebugLine($"Adding window from XQueryTree() with id: {id}, title: {tempItem.Title}");
+								//Diagnostics.Debug.WriteLine($"Adding window from XQueryTree() with id: {id}, title: {tempItem.Title}");
 							}
 						}
 						catch (Exception ex)
 						{
-							Ks.OutputDebugLine($"Error when applying XQueryTree() filter: {ex.Message}");
+							Diagnostics.Debug.WriteLine($"Error when applying XQueryTree() filter: {ex.Message}");
 						}
 					}
 				}
 			}
 			catch (Exception e)
 			{
-				Ks.OutputDebugLine(e.Message);
+				Diagnostics.Debug.WriteLine(e.Message);
 			}
 			finally
 			{
@@ -250,7 +250,7 @@ namespace Keysharp.Internals.Window.Linux.Proxies
 					_ = Xlib.XFree(childrenReturn);
 			}
 
-			//Ks.OutputDebugLine($"Exiting XQueryTree().");
+			//Diagnostics.Debug.WriteLine($"Exiting XQueryTree().");
 			return windows;
 		}
 
@@ -284,7 +284,7 @@ namespace Keysharp.Internals.Window.Linux.Proxies
 							var window = new XWindow(this, id);
 							windows.Add(window);
 							//var tempItem = new WindowInfo(window);
-							//Ks.OutputDebugLine($"Adding window from XQueryTree() with id: {id}, title: {tempItem.Title}");
+							//Diagnostics.Debug.WriteLine($"Adding window from XQueryTree() with id: {id}, title: {tempItem.Title}");
 							windows.AddRange(XQueryTreeRecursive(window, filter));
 						}
 					}
@@ -292,7 +292,7 @@ namespace Keysharp.Internals.Window.Linux.Proxies
 			}
 			catch (Exception e)
 			{
-				Ks.OutputDebugLine(e.Message);
+				Diagnostics.Debug.WriteLine(e.Message);
 			}
 			finally
 			{
@@ -300,7 +300,7 @@ namespace Keysharp.Internals.Window.Linux.Proxies
 					_ = Xlib.XFree(childrenReturn);
 			}
 
-			//Ks.OutputDebugLine($"Exiting XQueryTreeRecursive().");
+			//Diagnostics.Debug.WriteLine($"Exiting XQueryTreeRecursive().");
 			return windows;
 		}
 
@@ -456,7 +456,7 @@ namespace Keysharp.Internals.Window.Linux.Proxies
 			//DIB = (nint)Atom.XA_PIXMAP;
 			_NET_SYSTEM_TRAY_S = Xlib.XInternAtom(Handle, "_NET_SYSTEM_TRAY_S" + screenNumber.ToString(), false);
 			//for (var i = 0; i < atom_names.Length; i++)
-			//  Ks.OutputDebugLine($"Atom {atom_names[i]} = {atoms[i].ToInt64()}.");
+			//  Diagnostics.Debug.WriteLine($"Atom {atom_names[i]} = {atoms[i].ToInt64()}.");
 		}
 
 

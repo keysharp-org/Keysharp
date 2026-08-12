@@ -68,6 +68,7 @@ global using Module = Keysharp.Runtime.Module;
 //Our usings.
 global using global::Keysharp.Internals.Containers;
 global using global::Keysharp.Internals.Cryptography;
+global using Diagnostics = global::Keysharp.Internals.Diagnostics;
 global using global::Keysharp.Internals.ExtensionMethods;
 
 global using global::Keysharp.Internals.Input.Hooks;

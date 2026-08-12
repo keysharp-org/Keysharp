@@ -147,6 +147,7 @@ If KeysharpDocs is not present alongside this repo, still do steps 1–3 and not
 ## Conventions
 
 - Built-in AHK functions are `public static` methods in `Keysharp.Core/Builtins/` classes.
+- The `Ks` module is a one-way surface layer: **the runtime does not read Ks state and does not call Ks utilities.** A new setting a script changes through a `Ks.A_*` accessor is backed by `Script.AccessorData` (or the owning subsystem) with the accessor as a wrapper; internal diagnostics go to `Diagnostics.Debug.WriteLine`, not `Ks.OutputDebugLine`. The known exceptions are type identities (`Ks.NamedArgs`, `Ks.StringBuffer`, `Ks.RealThread`, `Ks.Clr`), `ToolTips.cs`, and `Menu.cs`; see `docs/design-ks-component.md`.
 - AHK `long`/`double`/`string` map to C# `object` at the scripting boundary; use the `.Al()`, `.Ad()`, `.As()` extension methods to convert.
 - The `Script.TheScript` singleton is the single source of truth for all runtime state. It is set once at startup (`Script.cs:369`) and is never null during execution.
 - Test scripts signal pass/fail by outputting a line containing `PASS` or `FAIL`.

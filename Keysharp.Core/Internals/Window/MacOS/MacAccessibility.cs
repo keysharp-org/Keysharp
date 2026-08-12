@@ -627,7 +627,7 @@ namespace Keysharp.Internals.Window.MacOS
 
 			if (Interlocked.Exchange(ref loggedTrustFailure, 1) == 0)
 			{
-				Ks.OutputDebugLine(
+				Diagnostics.Debug.WriteLine(
 					$"macOS Accessibility permission is required for '{operation}'. " +
 					"Grant access in System Settings -> Privacy & Security -> Accessibility, then restart the app.");
 			}
@@ -660,7 +660,7 @@ namespace Keysharp.Internals.Window.MacOS
 
 			if (Interlocked.Exchange(ref loggedListenFailure, 1) == 0)
 			{
-				Ks.OutputDebugLine(
+				Diagnostics.Debug.WriteLine(
 					$"macOS Input Monitoring permission is required for '{operation}'. " +
 					"Grant access in System Settings -> Privacy & Security -> Input Monitoring, then restart the app.");
 			}
@@ -694,7 +694,7 @@ namespace Keysharp.Internals.Window.MacOS
 
 			if (Interlocked.Exchange(ref loggedPostFailure, 1) == 0)
 			{
-				Ks.OutputDebugLine(
+				Diagnostics.Debug.WriteLine(
 					$"macOS synthetic input permission is required for '{operation}'. " +
 					"Grant access in System Settings -> Privacy & Security -> Accessibility, then restart the app.");
 			}
@@ -728,7 +728,7 @@ namespace Keysharp.Internals.Window.MacOS
 
 			if (Interlocked.Exchange(ref loggedScreenFailure, 1) == 0)
 			{
-				Ks.OutputDebugLine(
+				Diagnostics.Debug.WriteLine(
 					$"macOS Screen Recording permission is required for '{operation}'. " +
 					"Grant access in System Settings -> Privacy & Security -> Screen Recording, then restart the app.");
 			}
@@ -783,7 +783,7 @@ namespace Keysharp.Internals.Window.MacOS
 			{
 				if (loggedAutomationFailurePids.Add(pid))
 				{
-					Ks.OutputDebugLine(
+					Diagnostics.Debug.WriteLine(
 						$"macOS Automation permission is required for '{operation}'. " +
 						"Grant access in System Settings -> Privacy & Security -> Automation, then try again.");
 				}

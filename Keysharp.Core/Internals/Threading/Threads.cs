@@ -25,6 +25,20 @@ namespace Keysharp.Internals.Threading
 		internal ThreadVariables UnderlyingThread => ThreadVariableManagerForCurrentThread.threadVars.TryPeekSecond();
 		internal int ActivePseudoThreadCount => ThreadVariableManagerForCurrentThread.PseudoThreadCount;
 
+		/// <summary>
+		/// Whether timers may run in the current pseudo-thread. This is the runtime's own state, so the
+		/// scheduler and Flow read it here; the script-facing <c>Ks.A_AllowTimers</c> wraps this property.
+		/// </summary>
+		internal bool AllowTimers
+		{
+			get => CurrentThread?.configData.allowTimers ?? true;
+			set
+			{
+				if (CurrentThread is { } tv)
+					tv.configData.allowTimers = value;
+			}
+		}
+
 		public Threads()
 		{
 			var tvmSize = (int)Script.TheScript.MaxThreadsTotal + Script.maxEmergencyThreads + 1;

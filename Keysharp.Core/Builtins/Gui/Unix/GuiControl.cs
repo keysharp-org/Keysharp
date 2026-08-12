@@ -179,7 +179,7 @@ namespace Keysharp.Builtins
 					else if (_control is KeysharpPictureBox pic)
 						return pic.Filename;
 					else if (_control is TextControl ctrl)
-						return Ks.NormalizeEol(ctrl.Text);
+						return Conversions.NormalizeEol(ctrl.Text);
 
 					return DefaultObject;
 				}
@@ -312,7 +312,7 @@ namespace Keysharp.Builtins
 						}
 					}
 					else if (_control is TextControl ctrl)
-						ctrl.Text = Ks.NormalizeEol(val, Environment.NewLine);
+						ctrl.Text = Conversions.NormalizeEol(val, Environment.NewLine);
 					else if (_control != null)
 						_control.Text = val;
 

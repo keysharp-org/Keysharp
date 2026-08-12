@@ -472,7 +472,7 @@ namespace Keysharp.Internals.UI.Unix
 
 		private void windowSpyToolStripMenuItem_Click(object sender, EventArgs e)
 		{
-			var path = Path.GetDirectoryName(Ks.A_KeysharpPath);
+			var path = Path.GetDirectoryName(A_AhkPath);
 			var exe = path + "/Keysharp";
 			var spyCompiled = path + "/Scripts/WindowSpy.cks";
 			var opt = File.Exists(spyCompiled) ? spyCompiled : path + "/Scripts/WindowSpy.ks";//Prefer the precompiled .cks for faster startup.

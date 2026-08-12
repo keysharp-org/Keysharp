@@ -70,7 +70,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"WinEvent Wayland subscribe failed ({backend?.Name}): {ex.Message}");
+				Diagnostics.Debug.WriteLine($"WinEvent Wayland subscribe failed ({backend?.Name}): {ex.Message}");
 				StopWorker();
 				return;
 			}
@@ -196,7 +196,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					}
 					catch (Exception ex)
 					{
-						Ks.OutputDebugLine($"WinEvent Wayland dispatch error: {ex.Message}");
+						Diagnostics.Debug.WriteLine($"WinEvent Wayland dispatch error: {ex.Message}");
 					}
 				}
 			}

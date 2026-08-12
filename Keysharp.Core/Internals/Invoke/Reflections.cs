@@ -510,7 +510,7 @@ namespace Keysharp.Internals.Invoke
 				}
 				catch (Exception ex)
 				{
-					_ = Ks.OutputDebugLine(ex.Message);
+					_ = Diagnostics.Debug.WriteLine(ex.Message);
 				}
 			}
 

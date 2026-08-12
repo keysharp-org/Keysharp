@@ -258,7 +258,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 		private void HandleHookQuarantined(KeysharpInputdClient.HookQuarantine quarantine)
 		{
-			Ks.OutputDebugLine(
+			Diagnostics.Debug.WriteLine(
 				$"keysharp-inputd quarantined {quarantine.HookType} hook at event {quarantine.EventId}; " +
 				$"strike {quarantine.StrikeCount}; inputd will retry it after {quarantine.RetryAfterMs} ms.");
 		}
@@ -332,7 +332,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				{
 					if (!token.IsCancellationRequested)
 					{
-						Ks.OutputDebugLine($"keysharp-inputd hook reader stopped: {ex.Message}");
+						Diagnostics.Debug.WriteLine($"keysharp-inputd hook reader stopped: {ex.Message}");
 						HandleInputdHookReaderLoss(ex.Message);
 					}
 
@@ -349,13 +349,13 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				catch (KeysharpInputdClient.RequestFailedException ex)
 					when (KeysharpInputdClient.IsStaleHookDecisionFailure(ex))
 				{
-					Ks.OutputDebugLine($"keysharp-inputd hook decision for event {hookEvent.EventId} arrived after its deadline; continuing hooks.");
+					Diagnostics.Debug.WriteLine($"keysharp-inputd hook decision for event {hookEvent.EventId} arrived after its deadline; continuing hooks.");
 				}
 				catch (Exception ex)
 				{
 					if (!token.IsCancellationRequested)
 					{
-						Ks.OutputDebugLine($"keysharp-inputd hook decision failed: {ex.Message}");
+						Diagnostics.Debug.WriteLine($"keysharp-inputd hook decision failed: {ex.Message}");
 						HandleInputdHookReaderLoss(ex.Message);
 					}
 
@@ -375,7 +375,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			catch (KeysharpInputdClient.RequestFailedException ex)
 				when (KeysharpInputdClient.IsStaleHookDecisionFailure(ex))
 			{
-				Ks.OutputDebugLine($"keysharp-inputd nested hook decision for event {hookEvent.EventId} arrived after its deadline.");
+				Diagnostics.Debug.WriteLine($"keysharp-inputd nested hook decision for event {hookEvent.EventId} arrived after its deadline.");
 			}
 		}
 
@@ -404,7 +404,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				catch (Exception ex)
 				{
 					callbackError = ex;
-					Ks.OutputDebugLine($"keysharp-inputd hook event processing failed: {ex}");
+					Diagnostics.Debug.WriteLine($"keysharp-inputd hook event processing failed: {ex}");
 				}
 
 				SendInputdHookDecision(client, hookEvent, block);
@@ -464,7 +464,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				case VK_CANCEL:
 					if (down && inputdPanicCtrlDown && inputdPanicAltDown)
 					{
-						Ks.OutputDebugLine("keysharp-inputd: Ctrl+Alt+Pause emergency passthrough - releasing all grabs/block-input.");
+						Diagnostics.Debug.WriteLine("keysharp-inputd: Ctrl+Alt+Pause emergency passthrough - releasing all grabs/block-input.");
 						KeysharpInputdManager.EmergencyReleaseInput();
 					}
 					break;
@@ -484,7 +484,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				}
 				catch (Exception ex)
 				{
-					Ks.OutputDebugLine($"keysharp-inputd hook recovery failed: {ex}");
+					Diagnostics.Debug.WriteLine($"keysharp-inputd hook recovery failed: {ex}");
 				}
 				finally
 				{
@@ -544,7 +544,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 					}
 
 					SyncHookMutexes(changeIsTemporary: false);
-					Ks.OutputDebugLine(giveUpMessage);
+					Diagnostics.Debug.WriteLine(giveUpMessage);
 					return;
 				}
 			}
@@ -554,13 +554,13 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			}
 
 			lastInputdRecoveryTicks = now;
-			Ks.OutputDebugLine($"keysharp-inputd hook reader lost ({reason}); re-establishing hooks.");
+			Diagnostics.Debug.WriteLine($"keysharp-inputd hook reader lost ({reason}); re-establishing hooks.");
 			ChangePlatformHookState(want, changeIsTemporary: false, expectedGeneration: recoveryGeneration);
 
 			if (CursorClipActive && !usingInputdHooks)
 			{
 				ClearCursorClip();
-				Ks.OutputDebugLine("ClipCursor released because the keysharp-inputd mouse hook was lost.");
+				Diagnostics.Debug.WriteLine("ClipCursor released because the keysharp-inputd mouse hook was lost.");
 			}
 		}
 
@@ -617,7 +617,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"ClipCursor correction failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"ClipCursor correction failed: {ex.Message}");
 			}
 
 			Volatile.Write(ref clipCorrectionWorkerActive, 0);

@@ -120,7 +120,7 @@ namespace Keysharp.Internals.Input.Linux
 			}
 			catch (Exception ex)
 			{
-				Ks.OutputDebugLine($"keysharp-inputd: idle time query failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"keysharp-inputd: idle time query failed: {ex.Message}");
 				return false;
 			}
 
@@ -269,7 +269,7 @@ namespace Keysharp.Internals.Input.Linux
 			catch (Exception ex)
 			{
 				if (failureContext != null)
-					Ks.OutputDebugLine($"keysharp-inputd: {failureContext} failed: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"keysharp-inputd: {failureContext} failed: {ex.Message}");
 
 				return false;
 			}
@@ -339,7 +339,7 @@ namespace Keysharp.Internals.Input.Linux
 				}
 				catch (Exception ex) when (IsTransportException(ex))
 				{
-					Ks.OutputDebugLine($"keysharp-inputd hook channel lost: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"keysharp-inputd hook channel lost: {ex.Message}");
 					return false;
 				}
 			}
@@ -359,7 +359,7 @@ namespace Keysharp.Internals.Input.Linux
 				}
 				catch (Exception ex) when (IsTransportException(ex))
 				{
-					Ks.OutputDebugLine($"keysharp-inputd query channel lost: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"keysharp-inputd query channel lost: {ex.Message}");
 					try { queryClient?.Dispose(); } catch { }
 					queryClient = null;
 					queryRetries.Rearm();
@@ -430,7 +430,7 @@ namespace Keysharp.Internals.Input.Linux
 					var granted = client.SetBlockInput(mask);
 
 					if (granted != mask)
-						Ks.OutputDebugLine($"BlockInput: daemon granted {granted}, requested {mask}.");
+						Diagnostics.Debug.WriteLine($"BlockInput: daemon granted {granted}, requested {mask}.");
 
 					message = string.Empty;
 					return true;

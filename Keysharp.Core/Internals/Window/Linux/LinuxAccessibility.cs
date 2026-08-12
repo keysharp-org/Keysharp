@@ -209,7 +209,7 @@ namespace Keysharp.Internals.Window.Linux
 			}
 			catch (Exception ex)
 			{
-				Keysharp.Builtins.Ks.OutputDebugLine($"CaretGetPos: AT-SPI query failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"CaretGetPos: AT-SPI query failed: {ex.Message}");
 			}
 
 			return false;

@@ -109,7 +109,7 @@ namespace Keysharp.Internals.Window.Linux
 
 				if (!EnsureInitialized())
 				{
-					Ks.OutputDebugLine("WinEvent.CaretMove: AT-SPI is unavailable, so caret movement cannot be observed.");
+					Diagnostics.Debug.WriteLine("WinEvent.CaretMove: AT-SPI is unavailable, so caret movement cannot be observed.");
 					return;
 				}
 
@@ -122,7 +122,7 @@ namespace Keysharp.Internals.Window.Linux
 
 				if (created == 0)
 				{
-					Ks.OutputDebugLine("WinEvent.CaretMove: creating the AT-SPI event listener failed.");
+					Diagnostics.Debug.WriteLine("WinEvent.CaretMove: creating the AT-SPI event listener failed.");
 					return;
 				}
 
@@ -132,7 +132,7 @@ namespace Keysharp.Internals.Window.Linux
 				if (ConsumeError(ref error) || !registered)
 				{
 					Unref(created);
-					Ks.OutputDebugLine($"WinEvent.CaretMove: registering for {CaretMovedEvent} failed.");
+					Diagnostics.Debug.WriteLine($"WinEvent.CaretMove: registering for {CaretMovedEvent} failed.");
 					return;
 				}
 
@@ -173,7 +173,7 @@ namespace Keysharp.Internals.Window.Linux
 				}
 				catch (Exception ex)
 				{
-					Ks.OutputDebugLine($"WinEvent.CaretMove: releasing the AT-SPI event listener failed: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"WinEvent.CaretMove: releasing the AT-SPI event listener failed: {ex.Message}");
 				}
 
 				activeCachedAt = 0;
@@ -209,7 +209,7 @@ namespace Keysharp.Internals.Window.Linux
 				}
 				catch (Exception ex)
 				{
-					Ks.OutputDebugLine($"WinEvent.CaretMove: AT-SPI caret event failed: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"WinEvent.CaretMove: AT-SPI caret event failed: {ex.Message}");
 				}
 			}
 
@@ -254,7 +254,7 @@ namespace Keysharp.Internals.Window.Linux
 				}
 				catch (Exception ex)
 				{
-					Ks.OutputDebugLine($"WinEvent.CaretMove: resolving the active window failed: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"WinEvent.CaretMove: resolving the active window failed: {ex.Message}");
 				}
 
 				return activeCached;

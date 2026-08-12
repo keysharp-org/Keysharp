@@ -750,7 +750,7 @@ internal bool HasBlockedQueuedWork
 
 				// Timers are disabled (A_AllowTimers) but other, non-timer queued work may still run, so drop just this
 				// timer and let the pump continue. The timer thread reschedules it once timers are re-enabled.
-				if (!Keysharp.Builtins.Ks.A_AllowTimers.Ab() && script.totalExistingThreads > 0)
+				if (!threads.AllowTimers && script.totalExistingThreads > 0)
 				{
 					timers.ReleaseQueuedTimer(timer);
 					return ScriptEventExecutionResult.Dropped;

@@ -65,7 +65,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 				return true;
 			}
 
-			Ks.OutputDebugLine($"macOS cursor {(active ? "disassociation" : "reassociation")} failed with CGError {error}.");
+			Diagnostics.Debug.WriteLine($"macOS cursor {(active ? "disassociation" : "reassociation")} failed with CGError {error}.");
 			return false;
 		}
 
@@ -467,7 +467,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			SetMoveSuppression(false);
 			mouseStream.ResetObservedButtons();
 			SyncHookMutexes(changeIsTemporary: false);
-			Ks.OutputDebugLine(message);
+			Diagnostics.Debug.WriteLine(message);
 		}
 
 		protected override string PlatformHookDisabledMessage => "macOS hook disabled via KEYSHARP_DISABLE_HOOK=1.";

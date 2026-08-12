@@ -473,7 +473,7 @@ namespace Keysharp.Internals.Scripting
 
 			InvokeRuntimeEntryPoint:
 #if DEBUG
-				Ks.OutputDebugLine("Running compiled code.");
+				Diagnostics.Debug.WriteLine("Running compiled code.");
 #endif
 				return runtimeEntryPoint.Invoke(null, runtimeEntryArgs).Ai();
 			}
@@ -603,7 +603,7 @@ namespace Keysharp.Internals.Scripting
 			var main = program.GetMethod("Main");
 			script.Dispose();
 #if DEBUG
-			Ks.OutputDebugLine("Running compiled code.");
+			Diagnostics.Debug.WriteLine("Running compiled code.");
 #endif
 			return main.Invoke(null, [command.ScriptArgs]).Ai();
 		}
@@ -943,7 +943,7 @@ namespace Keysharp.Internals.Scripting
 				else
 					Console.WriteLine(text);
 
-				_ = Ks.OutputDebugLine(text);
+				_ = Diagnostics.Debug.WriteLine(text);
 			}
 
 			return error ? 1 : 0;
@@ -1038,7 +1038,7 @@ namespace Keysharp.Internals.Scripting
 			}
 			catch (Exception ex)
 			{
-				_ = Ks.OutputDebugLine($"Unable to initialize UI for message box: {ex.Message}");
+				_ = Diagnostics.Debug.WriteLine($"Unable to initialize UI for message box: {ex.Message}");
 				return false;
 			}
 #endif

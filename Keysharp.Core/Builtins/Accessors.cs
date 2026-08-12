@@ -12,6 +12,10 @@ namespace Keysharp.Builtins
 		internal bool iconHidden;
 		internal long inputLevel;
 		internal string menuMaskKey = "";
+		internal long clipboardTimeout = 1000L;
+		internal long hotIfTimeout = Accessors.DefaultHotIfTimeout;
+		internal bool maxThreadsBuffer;
+		internal uint maxThreadsPerHotkey = 1u;
 #if WINDOWS
 		internal Icon prevTrayIcon;
 #else
@@ -1807,12 +1811,20 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The time in milliseconds to wait when reading the clipboard before a timeout is triggered.
 		/// </summary>
-		public static object A_ClipboardTimeout { get; set; } = 1000L;
+		public static object A_ClipboardTimeout
+		{
+			get => Script.TheScript.AccessorData.clipboardTimeout;
+			set => Script.TheScript.AccessorData.clipboardTimeout = value.Al();
+		}
 
 		/// <summary>
 		/// The maximum time allowed for a #HotIf criterion evaluation.
 		/// </summary>
-		public static object A_HotIfTimeout { get; set; } = DefaultHotIfTimeout;
+		public static object A_HotIfTimeout
+		{
+			get => Script.TheScript.AccessorData.hotIfTimeout;
+			set => Script.TheScript.AccessorData.hotIfTimeout = value.Al();
+		}
 
 		/// <summary>
 		/// The default input level to use for subsequently created hotkeys and hotstrings.
@@ -1872,13 +1884,21 @@ namespace Keysharp.Builtins
 		/// The value specified by #MaxThreadsBuffer.
 		/// Causes some or all hotkeys to buffer rather than ignore keypresses when their #MaxThreadsPerHotkey limit has been reached.
 		/// </summary>
-		public static object A_MaxThreadsBuffer { get; set; } = 0L;
+		public static object A_MaxThreadsBuffer
+		{
+			get => Script.TheScript.AccessorData.maxThreadsBuffer;
+			set => Script.TheScript.AccessorData.maxThreadsBuffer = ForceBool(value);
+		}
 
 		/// <summary>
 		/// The value specified by #MaxThreadsPerHotkey.
 		/// The maximum number of simultaneous threads per hotkey or hotstring.
 		/// </summary>
-		public static object A_MaxThreadsPerHotkey { get; set; } = 1L;
+		public static object A_MaxThreadsPerHotkey
+		{
+			get => Script.TheScript.AccessorData.maxThreadsPerHotkey;
+			set => Script.TheScript.AccessorData.maxThreadsPerHotkey = value.Aui();
+		}
 
 		/// <summary>
 		/// The native newline string, i.e. "\n" on linux, "\r\n" on Windows.
@@ -1886,9 +1906,17 @@ namespace Keysharp.Builtins
 		public static string A_NewLine => Environment.NewLine;
 
 		/// <summary>
-		/// The default priority to use for each thread.
+		/// The running thread's priority; assigning to it is equivalent to <c>Thread "Priority", n</c>.
+		/// Every thread starts at 0. A thread is given a different priority only when it is launched
+		/// (SetTimer, Hotkey, a hotstring definition, Menu.Add) or by the thread itself through this, so
+		/// there is no process-wide default to change — writing this in the auto-execute section sets the
+		/// priority of that thread alone, exactly as AutoHotkey specifies.
 		/// </summary>
-		public static object A_Priority { get; set; } = 0L;
+		public static object A_Priority
+		{
+			get => ThreadAccessors.A_Priority;
+			set => ThreadAccessors.A_Priority = value.Al();
+		}
 
 		/// <summary>
 		/// The height of the working area of the primary screen.
@@ -1985,8 +2013,7 @@ namespace Keysharp.Builtins
 		/// screen-coordinate conversion and must not be applied to absolute positions. Mixed-monitor code should use
 		/// <c>Monitor.Scale</c> for the target monitor. Keysharp-specific, so scripts reach it through KS.
 		/// </summary>
-		public static double A_ScreenScale
-			=> Keysharp.Internals.ScaleFactor.Normalize(Monitor.ResolveDisplay(null).Display.SizeScale);
+		public static double A_ScreenScale => Keysharp.Internals.ScaleFactor.PrimaryScale;
 		/// <summary>
 		/// Whether timers are allowed to operate in the current thread. Default: true.
 		/// </summary>
@@ -1995,7 +2022,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var script = Script.TheScript;
-				return script?.Threads?.CurrentThread?.configData.allowTimers ?? true;
+				return script?.Threads?.AllowTimers ?? true;
 			}
 
 			set
@@ -2008,7 +2035,7 @@ namespace Keysharp.Builtins
 				var val = Options.OnOff(value);
 
 				if (val.HasValue)
-					script.Threads.CurrentThread.configData.allowTimers = val.Value;
+					script.Threads.AllowTimers = val.Value;
 			}
 		}
 

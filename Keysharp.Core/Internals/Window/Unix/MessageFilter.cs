@@ -46,7 +46,7 @@ namespace Keysharp.Internals.Window.Unix
 				}
 				catch
 				{
-					Ks.OutputDebugLine("Failed to attach GTK message filter");
+					Diagnostics.Debug.WriteLine("Failed to attach GTK message filter");
 				}
 			}
 #endif

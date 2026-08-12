@@ -677,19 +677,19 @@ namespace Keysharp.Runtime
 		/// <returns>An empty value once every capability is granted.</returns>
 		public static object RequireCapabilities(params object[] capabilities)
 		{
-			var requested = Builtins.Ks.ParseRequestedCapabilities(capabilities);
-			Builtins.Ks.RequestCapabilitiesBatched(requested);
+			var requested = CapabilityRequests.ParseRequested(capabilities);
+			CapabilityRequests.RequestBatched(requested);
 
 			var denied = new List<string>();
 
 			foreach (var cap in requested)
-				if (!Builtins.Ks.QueryCapabilityStatus(cap).IsGranted)
-					denied.Add(Builtins.Ks.CapabilityName(cap));
+				if (!CapabilityRequests.QueryStatus(cap).IsGranted)
+					denied.Add(CapabilityRequests.NameOf(cap));
 
 			if (denied.Count == 0)
 				return DefaultObject;
 
-			_ = Builtins.Ks.OutputDebugLine(
+			_ = Diagnostics.Debug.WriteLine(
 				$"Keysharp: required capability/capabilities not granted: {string.Join(", ", denied)}. Exiting. " +
 				"Re-run and choose Allow (or grant it persistently) to continue.");
 			return Builtins.Flow.ExitApp(1L);

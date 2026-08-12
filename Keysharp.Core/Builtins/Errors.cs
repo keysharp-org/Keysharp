@@ -1085,7 +1085,7 @@ namespace Keysharp.Builtins
 			}
 			catch (Exception ex)
 			{
-				_ = Ks.OutputDebugLine($"Unable to edit script file '{fileToEdit}': {ex.Message}");
+				_ = Diagnostics.Debug.WriteLine($"Unable to edit script file '{fileToEdit}': {ex.Message}");
 				return false;
 			}
 		}
@@ -1418,7 +1418,7 @@ namespace Keysharp.Builtins
 			if (!allowContinue)
 				errorText += $"{Environment.NewLine}{exitMessage ?? "The current thread will exit."}";
 
-			var scale = Ks.A_ScreenScale;
+			var scale = Keysharp.Internals.ScaleFactor.PrimaryScale;
 			this.AutoScaleMode = AutoScaleMode.Dpi;
 			this.AutoScaleDimensions = new SizeF(96F, 96F);
 			this.Text = A_ScriptName ?? "Keysharp";

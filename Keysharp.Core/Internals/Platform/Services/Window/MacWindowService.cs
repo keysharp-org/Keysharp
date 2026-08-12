@@ -160,12 +160,12 @@ namespace Keysharp.Internals
 			{
 				// macOS has no API to change another process's window level (raising via Accessibility would steal
 				// focus). Only our own windows support AlwaysOnTop.
-				Ks.OutputDebugLine("AlwaysOnTop is only supported for windows owned by this process on macOS.");
+				Diagnostics.Debug.WriteLine("AlwaysOnTop is only supported for windows owned by this process on macOS.");
 				return false;
 			}
 
 			if (!MacNativeWindows.TrySetOwnWindowAlwaysOnTop(native.WindowNumber, onTop))
-				Ks.OutputDebugLine("AlwaysOnTop failed for this macOS window.");
+				Diagnostics.Debug.WriteLine("AlwaysOnTop failed for this macOS window.");
 
 			return true;
 		}
@@ -199,7 +199,7 @@ namespace Keysharp.Internals
 				// is native full screen (what the green button does by default), so map WinMaximize onto it.
 				case FormWindowState.Maximized:
 					if (!MacAccessibility.TrySetFullScreen(native, true))
-						Ks.OutputDebugLine("Full screen (maximize) for macOS window failed.");
+						Diagnostics.Debug.WriteLine("Full screen (maximize) for macOS window failed.");
 
 					return true;
 
@@ -208,13 +208,13 @@ namespace Keysharp.Internals
 					_ = MacAccessibility.TrySetFullScreen(native, false);
 
 					if (!MacAccessibility.TrySetWindowState(native, state))
-						Ks.OutputDebugLine("WindowState for macOS window failed.");
+						Diagnostics.Debug.WriteLine("WindowState for macOS window failed.");
 
 					return true;
 
 				default: // Minimized
 					if (!MacAccessibility.TrySetWindowState(native, state))
-						Ks.OutputDebugLine("WindowState for macOS window failed.");
+						Diagnostics.Debug.WriteLine("WindowState for macOS window failed.");
 
 					return true;
 			}
@@ -227,7 +227,7 @@ namespace Keysharp.Internals
 
 			if (native.OwnerPid != Environment.ProcessId)
 			{
-				Ks.OutputDebugLine("Window styles are only supported for windows owned by this process on macOS.");
+				Diagnostics.Debug.WriteLine("Window styles are only supported for windows owned by this process on macOS.");
 				return false;
 			}
 
@@ -236,14 +236,14 @@ namespace Keysharp.Internals
 					(style & WS_SYSMENU) != 0,
 					(style & WS_THICKFRAME) != 0,
 					(style & WS_MINIMIZEBOX) != 0))
-				Ks.OutputDebugLine("Setting the window style failed for this macOS window.");
+				Diagnostics.Debug.WriteLine("Setting the window style failed for this macOS window.");
 
 			return true;
 		}
 
 		public override bool TrySetExStyle(nint h, long exStyle)
 		{
-			Ks.OutputDebugLine("ExStyles are not supported on macOS.");
+			Diagnostics.Debug.WriteLine("ExStyles are not supported on macOS.");
 			return false;
 		}
 
@@ -254,14 +254,14 @@ namespace Keysharp.Internals
 
 			if (native.OwnerPid != Environment.ProcessId)
 			{
-				Ks.OutputDebugLine("Opacity control is only supported for windows owned by this process on macOS.");
+				Diagnostics.Debug.WriteLine("Opacity control is only supported for windows owned by this process on macOS.");
 				return false;
 			}
 
 			var a = Math.Clamp(alpha.Al(), 0, 255) / 255.0;
 
 			if (!MacNativeWindows.TrySetOwnWindowAlpha(native.WindowNumber, a))
-				Ks.OutputDebugLine("Opacity control failed for this macOS window.");
+				Diagnostics.Debug.WriteLine("Opacity control failed for this macOS window.");
 
 			return true;
 		}
@@ -287,7 +287,7 @@ namespace Keysharp.Internals
 			if (z != ZOrder.Bottom)   // raise to top
 			{
 				if (!MacAccessibility.TryRaiseWindow(native))
-					Ks.OutputDebugLine("Raising macOS window to top failed.");
+					Diagnostics.Debug.WriteLine("Raising macOS window to top failed.");
 
 				return true;
 			}
@@ -295,7 +295,7 @@ namespace Keysharp.Internals
 			if (native.OwnerPid == Environment.ProcessId && MacNativeWindows.TrySendOwnWindowToBack(native.WindowNumber))
 				return true;
 
-			Ks.OutputDebugLine("Sending a window to the bottom of the Z order is only supported for windows owned by this process on macOS.");
+			Diagnostics.Debug.WriteLine("Sending a window to the bottom of the Z order is only supported for windows owned by this process on macOS.");
 			return false;
 		}
 
@@ -374,7 +374,7 @@ namespace Keysharp.Internals
 
 			for (var i = 0; i < count; i++)
 				if (!MacAccessibility.TryClickWindow(native, at, rightButton: button == 2))
-					Ks.OutputDebugLine("Native click failed on macOS window.");
+					Diagnostics.Debug.WriteLine("Native click failed on macOS window.");
 
 			return true;
 		}
@@ -389,7 +389,7 @@ namespace Keysharp.Internals
 				: MacAccessibility.TrySetWindowTitle(native, title);
 
 			if (!ok)
-				Ks.OutputDebugLine("Setting the window title failed on macOS.");
+				Diagnostics.Debug.WriteLine("Setting the window title failed on macOS.");
 
 			return true;
 		}
@@ -401,7 +401,7 @@ namespace Keysharp.Internals
 			if (base.TrySetEnabled(h, enabled))
 				return true;
 
-			Ks.OutputDebugLine("Enabled state is not implemented for macOS windows.");
+			Diagnostics.Debug.WriteLine("Enabled state is not implemented for macOS windows.");
 			return false;
 		}
 
@@ -410,7 +410,7 @@ namespace Keysharp.Internals
 			if (TryOwnControl(h, out _))
 				return base.TrySetTransparentColor(h, color);
 
-			Ks.OutputDebugLine("Transparency key/color is not supported on macOS.");
+			Diagnostics.Debug.WriteLine("Transparency key/color is not supported on macOS.");
 			return false;
 		}
 

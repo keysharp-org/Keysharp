@@ -11075,7 +11075,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets or sets the default priority copied into new script threads."
+                     "notes":  "Gets or sets the running thread's priority; equivalent to Thread \"Priority\", n. Every thread starts at 0; there is no settable process-wide default."
                  },
                  {
                      "category":  "Environment/System",
