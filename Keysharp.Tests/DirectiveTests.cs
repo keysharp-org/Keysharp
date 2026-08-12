@@ -154,9 +154,12 @@ namespace Keysharp.Tests
 			// A bare #Warning still says something rather than emitting an empty line.
 			Assert.AreEqual("1:1: #Warning directive", Lower("#Warning\n").warns[0]);
 
-			// Conditional compilation applies: a warning in a dead branch never fires.
-			Assert.IsEmpty(Lower("#if LINUX\n#Warning dead\n#endif\nx := 1\n").warns,
+			// Conditional compilation applies: a warning in a dead branch never fires. The symbol has to be one no
+			// host ever defines — a platform symbol is live when the suite runs on that platform, so the branch is
+			// only dead on the other ones. KEYSHARP is the control: always defined, so that branch must still warn.
+			Assert.IsEmpty(Lower("#if KEYSHARP_NO_SUCH_SYMBOL\n#Warning dead\n#endif\nx := 1\n").warns,
 				"a #Warning inside an excluded branch must not be reported");
+			Assert.AreEqual("2:1: live", Lower("#if KEYSHARP\n#Warning live\n#endif\nx := 1\n").warns[0]);
 
 			// Control: #Error remains fatal, and does not land in Warnings.
 			var e = Lower("#Error nope\nx := 1\n");

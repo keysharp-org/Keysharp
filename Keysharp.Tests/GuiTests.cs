@@ -632,7 +632,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Gui")]
-		public void EtoWindowStyles()
+		public void EtoWindowStyleBits()
 		{
 			SkipIfUiInitializationBlocked("Test requires a live Eto Application (macOS testhost cannot drive AppKit).");
 

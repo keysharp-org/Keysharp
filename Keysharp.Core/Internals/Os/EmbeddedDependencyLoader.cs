@@ -58,29 +58,48 @@ namespace Keysharp.Internals.Os
 			return NativeLibrary.Load(tmp);
 		}
 
+		// Keyed by simple name because Assembly.Load(byte[]) mints a new identity per call and does not satisfy
+		// later binding, so resolving one dependency twice yields two mutually uncastable copies of its types.
+		private static readonly Dictionary<string, Assembly> resolvedAssemblies = new(StringComparer.OrdinalIgnoreCase);
+
 		private static Assembly ResolveFromResources(object sender, ResolveEventArgs args)
 		{
-			var name = new AssemblyName(args.Name).Name + ".dll";
-			var resourceName = "Deps." + name; // match the <LogicalName> used in the manifest
+			var simpleName = new AssemblyName(args.Name).Name;
 
-			Stream stream = null;
-			Assembly asm;
-			if (assemblyResources.TryGetValue(name, out asm))
-				stream = asm.GetManifestResourceStream(name);
-			else if (assemblyResources.TryGetValue(resourceName, out asm))
-				stream = asm.GetManifestResourceStream(resourceName);
-			if (stream == null) return null;
+			// Re-entrant: loading an assembly can ask for its own dependencies on this thread.
+			lock (resolvedAssemblies)
+			{
+				if (resolvedAssemblies.TryGetValue(simpleName, out var cached))
+					return cached;
 
-			byte[] data = new byte[stream.Length];
-			_ = stream.Read(data, 0, data.Length);
-			stream.Close();
+				// An assembly the runtime already has wins over a second copy from the resources.
+				foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
+					if (string.Equals(loaded.GetName().Name, simpleName, StringComparison.OrdinalIgnoreCase))
+						return resolvedAssemblies[simpleName] = loaded;
 
-			asm = Assembly.Load(data);
+				var name = simpleName + ".dll";
+				var resourceName = "Deps." + name; // match the <LogicalName> used in the manifest
 
-			// Native P/Invoke resolver
-			NativeLibrary.SetDllImportResolver(asm, ResolveNativeFromResources);
+				Stream stream = null;
+				Assembly asm;
+				if (assemblyResources.TryGetValue(name, out asm))
+					stream = asm.GetManifestResourceStream(name);
+				else if (assemblyResources.TryGetValue(resourceName, out asm))
+					stream = asm.GetManifestResourceStream(resourceName);
+				if (stream == null) return null;
 
-			return asm;
+				byte[] data = new byte[stream.Length];
+				stream.ReadExactly(data);
+				stream.Close();
+
+				asm = Assembly.Load(data);
+				resolvedAssemblies[simpleName] = asm;
+
+				// Native P/Invoke resolver. Set exactly once per assembly — a second call throws.
+				NativeLibrary.SetDllImportResolver(asm, ResolveNativeFromResources);
+
+				return asm;
+			}
 		}
 	}
 }
