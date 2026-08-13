@@ -49,7 +49,7 @@ namespace Keysharp.Main
 			if (launchedFromFinder)
 				args = WaitForMacOsDocumentOpen();
 #endif
-
+			var start = DateTime.UtcNow;
 			var command = Runner.Parse(args);
 
 #if OSX
@@ -95,9 +95,14 @@ namespace Keysharp.Main
 						// The daemon compiled the source but this process runs it: point A_ScriptFullPath/A_ScriptDir at
 						// the source the user launched, not at a path baked in by the daemon.
 						ScriptExecutionState.SourcePath = command.ScriptName;
-						return command.Validate
-							   ? LoadCompiledBytes(daemonBytes, command)
-							   : RunCompiledBytes(daemonBytes, command.ScriptArgs);
+
+						if (command.Validate)
+						{
+							Console.WriteLine($"Compilation succeeded in {(DateTime.UtcNow - start).TotalSeconds:N3}s.");
+							return LoadCompiledBytes(daemonBytes, command);
+						}
+						else
+							return RunCompiledBytes(daemonBytes, command.ScriptArgs);
 
 					case CompileDaemonStatus.CompileFailed:
 

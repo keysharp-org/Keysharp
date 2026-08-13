@@ -501,6 +501,7 @@ namespace Keysharp.Internals.Scripting
 			// Tell the (about-to-run) compiled assembly where it is actually running from: the script file's full
 			// path, or null for stdin so the compiled "*" marker stands. Drives A_ScriptFullPath/A_ScriptDir.
 			ScriptExecutionState.SourcePath = command.FromStdin ? null : command.ScriptName;
+			var start = DateTime.UtcNow;
 
 			using var script = new Script();
 			script.ValidateThenExit = command.Validate;
@@ -527,6 +528,7 @@ namespace Keysharp.Internals.Scripting
 			});
 			var arr = compilation.AssemblyBytes;
 			var result = compilation.Success ? compilation.GeneratedCode : compilation.ErrorText;
+			var elapsed = DateTime.UtcNow - start;
 			// Failed-compilation text already includes its warnings.
 			if (arr != null && !string.IsNullOrEmpty(compilation.WarningText))
 				Console.Error.WriteLine(compilation.WarningText);
@@ -594,7 +596,11 @@ namespace Keysharp.Internals.Scripting
 			ScriptExecutionState.Assembly = Assembly.Load(arr);
 
 			if (command.Validate)
+			{
+				//Visible when not using the daemon, else see Main.Program() for the output when using the daemon.
+				Console.WriteLine($"Compilation succeeded in {elapsed.TotalSeconds:N3}s.");
 				return 0;
+			}
 
 			if (ScriptExecutionState.Assembly == null)
 				throw new Exception("Compilation failed.");
