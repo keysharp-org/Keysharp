@@ -14,6 +14,12 @@ namespace Keysharp.Parsing.Lexing
 		Unknown,
 		Newline,
 
+		// Trivia: emitted so every character is covered, and dropped by Parser.LexForParsing. Their Text is null —
+		// it is always source[Offset..Offset+Length], and materializing it taxes every parse for strings it discards.
+		Comment,                // `; …` or `/* … */`
+		Directive,              // the `#EndCSharp` line closing a `#CSharp` block
+		ContinuationDelimiter,  // the `(` (with its options) or `)` of a code continuation section — a splice, not a group
+
 		// Literals
 		Number,
 		String,
@@ -93,11 +99,12 @@ namespace Keysharp.Parsing.Lexing
 		MinusMinus,             // --
 		NullCoalesce,           // ??
 
-		// Hotkeys / hotstrings (detected at line start by the lexer; the trigger text is kept raw)
-		HotkeyTrigger,          // `^!a::`   (text includes the trailing ::)
-		RemapSourceKey,         // `a` in a remap `a::b` — the source key (text before `::`; emitted just before RemapTargetKey)
-		RemapTargetKey,         // `b` in a remap `a::b` — the target key (text after `::`)
-		HotstringTrigger,       // `:opts:trigger::` (text includes the trailing ::)
+		// Hotkeys / hotstrings (detected at line start by the lexer; the trigger text is kept raw).
+		// In every form the `::` separator is its own DoubleColon token and is NOT part of the trigger text.
+		HotkeyTrigger,          // `^!a` in `^!a::`
+		RemapSourceKey,         // `a` in a remap `a::b` — the source key (emitted before the `::` and the target)
+		RemapTargetKey,         // `b` in a remap `a::b` — the target key
+		HotstringTrigger,       // `:opts:trigger` in `:opts:trigger::`
 		HotstringExpansion,     // raw replacement text following a HotstringTrigger (no quotes)
 
 		// Verbatim body of a `#CSharp` block; Line is its first content line.

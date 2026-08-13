@@ -4634,11 +4634,11 @@ namespace Keysharp.Compilation.Syntax
 		private const string CopilotDeclarationChord = "<#<+F23";
 		private const uint CopilotFirmwareModifiersLR = KeyboardUtils.MOD_LWIN | KeyboardUtils.MOD_LSHIFT;
 
-		// Strips the trailing `::` from a raw trigger, restores a dangling backtick, and resolves AHK escapes
-		// (matches the canonical VisitHotkey/VisitHotstring trigger handling).
-		private static string ProcessTriggerText(string rawWithColons)
+		// Restores a dangling backtick and resolves AHK escapes in a trigger (matches the canonical
+		// VisitHotkey/VisitHotstring trigger handling). The `::` is its own token, so there is none to strip.
+		private static string ProcessTriggerText(string trigger)
 		{
-			var t = rawWithColons.Substring(0, rawWithColons.Length - 2);   // strip trailing `::`
+			var t = trigger;
 			if (t.Length > 0 && t[^1] == '`' && (t.Length < 2 || t[^2] != '`')) t += '`';
 			return Keysharp.Parsing.Parser.EscapedString(t, true);
 		}

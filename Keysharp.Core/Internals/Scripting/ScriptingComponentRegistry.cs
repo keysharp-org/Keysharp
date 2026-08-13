@@ -52,6 +52,20 @@ namespace Keysharp.Internals.Scripting
 			return false;
 		}
 
+		internal static bool TryGetTokenizer(out IScriptTokenizer tokenizer, out string failure)
+		{
+			tokenizer = null;
+			if (!TryGet(ScriptingCapability.Tokenization, out var component, out failure))
+				return false;
+
+			tokenizer = component as IScriptTokenizer;
+			if (tokenizer != null)
+				return true;
+
+			failure = $"Scripting component '{component.Id}' declares tokenization support but does not implement {nameof(IScriptTokenizer)}.";
+			return false;
+		}
+
 		internal static bool TryGetCompiler(out IScriptCompiler compiler, out string failure)
 		{
 			compiler = null;
@@ -276,8 +290,9 @@ namespace Keysharp.Internals.Scripting
 				throw new InvalidDataException($"'{path}' requires unsupported scripting-component contract version {descriptor.ContractVersion}.");
 
 			var capabilities = ParseCapabilities(descriptor.Capabilities);
+			// The exact set each component must declare.
 			var expectedCapabilities = descriptor.Id?.Equals(ScriptingComponentIds.Parser, StringComparison.OrdinalIgnoreCase) == true
-				? ScriptingCapability.SyntaxValidation
+				? ScriptingCapability.SyntaxValidation | ScriptingCapability.Tokenization
 				: ScriptingCapability.Compilation;
 
 			if (!IsKnownId(descriptor.Id) || !Version.TryParse(descriptor.Version, out _)

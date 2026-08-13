@@ -131,7 +131,9 @@ namespace Keysharp.Tests
 				Directory.Delete(malformed, true);
 				Directory.CreateDirectory(malformed);
 				File.WriteAllText(Path.Combine(malformed, "component.json"),
-					"{\"schemaVersion\":1,\"contractVersion\":1,\"id\":\"parser\",\"version\":\"1.0.0\",\"assembly\":\"missing.dll\",\"type\":\"Missing.Parser\",\"capabilities\":[\"SyntaxValidation\"],\"files\":[\"missing.dll\"]}");
+					// Declares the parser's full capability set on purpose: anything else is rejected as an
+					// incomplete descriptor, and this fixture is meant to fail on its missing assembly instead.
+					"{\"schemaVersion\":1,\"contractVersion\":1,\"id\":\"parser\",\"version\":\"1.0.0\",\"assembly\":\"missing.dll\",\"type\":\"Missing.Parser\",\"capabilities\":[\"SyntaxValidation\",\"Tokenization\"],\"files\":[\"missing.dll\"]}");
 				ScriptingComponentRegistry.SetSearchRootsForTests(root);
 				Assert.IsFalse(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation));
 				Assert.IsFalse(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out failure));
@@ -187,7 +189,9 @@ namespace Keysharp.Tests
 				var broken = ComponentDirectory(brokenRoot, "parser");
 				Directory.CreateDirectory(broken);
 				File.WriteAllText(Path.Combine(broken, "component.json"),
-					"{\"schemaVersion\":1,\"contractVersion\":1,\"id\":\"parser\",\"version\":\"1.0.0\",\"assembly\":\"missing.dll\",\"type\":\"Missing.Parser\",\"capabilities\":[\"SyntaxValidation\"],\"files\":[\"missing.dll\"]}");
+					// Declares the parser's full capability set on purpose: anything else is rejected as an
+					// incomplete descriptor, and this fixture is meant to fail on its missing assembly instead.
+					"{\"schemaVersion\":1,\"contractVersion\":1,\"id\":\"parser\",\"version\":\"1.0.0\",\"assembly\":\"missing.dll\",\"type\":\"Missing.Parser\",\"capabilities\":[\"SyntaxValidation\",\"Tokenization\"],\"files\":[\"missing.dll\"]}");
 				CopyComponentPayload(typeof(Keysharp.Components.Scripting.Parser.ParserComponent).Assembly, validRoot, "parser");
 				ScriptingComponentRegistry.SetSearchRootsForTests(brokenRoot, validRoot);
 

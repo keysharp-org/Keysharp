@@ -5,6 +5,12 @@ namespace Keysharp.Parsing.Lexing
 	/// <summary>
 	/// A hand-written single-pass scanner for AutoHotkey v2(.1) source.
 	///
+	/// LOSSLESS: every non-whitespace character falls inside exactly one token, and tokens never overlap — so a
+	/// consumer can classify a whole file from them (see IScriptTokenizer). When adding a scanner, keep it that way:
+	/// if a branch consumes characters it must emit a token covering them, using a trivia kind
+	/// (<see cref="TokenKind.Comment"/>/<see cref="TokenKind.Directive"/>/<see cref="TokenKind.ContinuationDelimiter"/>)
+	/// for anything the parser should not see. Parser.LexForParsing drops those.
+	///
 	/// Scope of this increment: the DEFAULT lexing mode — whitespace/newlines, line and block
 	/// comments, numbers (decimal/float/exponent, 0x/0o/0b, bigint <c>n</c> suffix), single- and
 	/// double-quoted strings with backtick escapes, identifiers, and the full operator set.
@@ -55,6 +61,20 @@ namespace Keysharp.Parsing.Lexing
 		/// <summary>Creates a token tagged with this lexer's source file.</summary>
 		private Token Tok(TokenKind kind, string text, int line, int col, int offset, int length, bool leadingWs) =>
 			new(kind, text, line, col, offset, length, leadingWs, _file);
+
+		/// <summary>Emits <c>[from, to)</c> as a comment token, for a comment a scanner consumed itself.</summary>
+		private void AddTrivia(List<Token> tokens, int from, int to, int line, int col)
+		{
+			// Callers pass everything up to the line break, which with no comment present is just a CRLF '\r'.
+			while (from < to && (_s[to - 1] == '\r' || _s[to - 1] == ' ' || _s[to - 1] == '\t')) to--;
+
+			while (from < to && (_s[from] == ' ' || _s[from] == '\t')) { from++; col++; }
+
+			if (to <= from)
+				return;
+
+			tokens.Add(Tok(TokenKind.Comment, null, line, col, from, to - from, true));
+		}
 
 		private char Cur => _pos < _n ? _s[_pos] : '\0';
 		private char At(int k) => _pos + k < _n ? _s[_pos + k] : '\0';
@@ -109,15 +129,16 @@ namespace Keysharp.Parsing.Lexing
 					// A section's first content token glues directly onto the preceding line (AHK joins with no
 					// separator and LTrims the line), so `obj` ⏎ (section) `.prop` becomes member access `obj.prop`,
 					// not concat. Inner line breaks keep leadingWs=true so `a` ⏎ `b` stays implicit concatenation.
-					if (TryEnterCodeSection()) { leadingWs = false; continue; }
+					if (TryEnterCodeSection(tokens)) { leadingWs = false; continue; }
 					tokens.Add(Tok(TokenKind.Newline, "\n", sl, sc, so, _pos - so, leadingWs));
 					leadingWs = true;
 					continue;
 				}
 
-				// Closing ')' of a code continuation section (its delimiting parens are not emitted).
+				// Closing ')' of a code continuation section. Trivia, not RParen: it ends a splice, not a group.
 				if (_codeSectionDepth > 0 && leadingWs && c == ')')
 				{
+					tokens.Add(Tok(TokenKind.ContinuationDelimiter, null, _line, _col, _pos, 1, leadingWs));
 					Advance();
 					_codeSectionDepth--;
 					leadingWs = false;
@@ -127,7 +148,9 @@ namespace Keysharp.Parsing.Lexing
 				// Line comment: ';' is a comment only at line start or when preceded by whitespace.
 				if (c == ';' && leadingWs)
 				{
+					int sl = _line, sc = _col, so = _pos;
 					while (_pos < _n && _s[_pos] != '\n') Advance();
+					tokens.Add(Tok(TokenKind.Comment, null, sl, sc, so, _pos - so, leadingWs));
 					leadingWs = true;
 					continue;
 				}
@@ -141,10 +164,10 @@ namespace Keysharp.Parsing.Lexing
 					Advance(2);
 					while (_pos < _n && !(_s[_pos] == '*' && At(1) == '/')) Advance();
 					if (_pos < _n) Advance(2);   // consume '*/'
-					if (_line > cl)              // spanned lines -> emit a single Newline token
-					{
-						tokens.Add(Tok(TokenKind.Newline, "\n", cl, cc, co, _pos - co, leadingWs));
-					}
+					tokens.Add(Tok(TokenKind.Comment, null, cl, cc, co, _pos - co, leadingWs));
+					// Spanned lines still act as a line break, but as an EMPTY token: the text is the comment's.
+					if (_line > cl)
+						tokens.Add(Tok(TokenKind.Newline, "\n", _line, _col, _pos, 0, true));
 					leadingWs = true;
 					continue;
 				}
@@ -358,26 +381,51 @@ namespace Keysharp.Parsing.Lexing
 		// From just past a collapsed newline run, skip blank/comment lines; if the next line opens a *code* continuation
 		// section (a '(' whose options contain no extra parens), consume the opener line and enter the section. Returns
 		// true on entry (caller suppresses the line break so the section's inner code splices onto the current line).
-		private bool TryEnterCodeSection()
+		private bool TryEnterCodeSection(List<Token> tokens)
 		{
 			int sp = _pos, sl = _line, sc = _col;
+			List<Token> pending = null;   // held back, not emitted: the scan rewinds if this is not a section
+
 			while (_pos < _n)
 			{
 				if (Cur == ' ' || Cur == '\t' || Cur == '\r' || Cur == '\n') { Advance(); continue; }
-				if (Cur == ';') { while (_pos < _n && Cur != '\n') Advance(); continue; }
+
+				if (Cur == ';')
+				{
+					int cs = _pos, cl = _line, cc = _col;
+					while (_pos < _n && Cur != '\n') Advance();
+					(pending ??= []).Add(Tok(TokenKind.Comment, null, cl, cc, cs, _pos - cs, true));
+					continue;
+				}
+
 				if (Cur == '/' && At(1) == '*')
 				{
+					int cs = _pos, cl = _line, cc = _col;
 					Advance(2);
 					while (_pos < _n && !(Cur == '*' && At(1) == '/')) Advance();
 					if (_pos < _n) Advance(2);
+					(pending ??= []).Add(Tok(TokenKind.Comment, null, cl, cc, cs, _pos - cs, true));
 					continue;
 				}
+
 				break;
 			}
 			if (Cur == '(' && IsCodeSectionOpener(_pos))
 			{
+				if (pending != null) tokens.AddRange(pending);
+				int po = _pos, pl = _line, pc = _col;
 				Advance();                                  // '('
-				while (_pos < _n && Cur != '\n') Advance(); // rest of the opener line (options/comment) is ignored
+				int os = _pos;
+				while (_pos < _n && Cur != '\n') Advance(); // rest of the opener line (options/comment)
+				int lineEnd = _pos;
+				// The '(' and its options (Join, LTrim, …) are one delimiter token; a trailing comment is separate.
+				var cmt = DirectiveCommentStart(_s.AsSpan(os, lineEnd - os));
+				int optEnd = cmt >= 0 ? os + cmt : lineEnd;
+
+				while (optEnd > po && (_s[optEnd - 1] == ' ' || _s[optEnd - 1] == '\t' || _s[optEnd - 1] == '\r')) optEnd--;
+
+				tokens.Add(Tok(TokenKind.ContinuationDelimiter, null, pl, pc, po, optEnd - po, true));
+				if (cmt >= 0) AddTrivia(tokens, os + cmt, lineEnd, pl, pc + 1 + cmt);
 				if (Cur == '\n') Advance();
 				while (Cur == ' ' || Cur == '\t' || Cur == '\r') Advance();   // LTrim the first content line
 				_codeSectionDepth++;
@@ -463,9 +511,11 @@ namespace Keysharp.Parsing.Lexing
 			while (_pos < _n && Cur != '\n' && Cur != '\r') Advance();
 			int oe = _pos;
 			var cmt = DirectiveCommentStart(_s.AsSpan(os, oe - os));
+			var optEnd = oe;
 			if (cmt >= 0) oe = os + cmt;
 			while (oe > os && (_s[oe - 1] == ' ' || _s[oe - 1] == '\t')) oe--;
 			if (oe > os) tokens.Add(Tok(TokenKind.Identifier, _s.Substring(os, oe - os), ol, oc, os, oe - os, true));
+			if (cmt >= 0) AddTrivia(tokens, os + cmt, optEnd, ol, oc + cmt);
 
 			while (_pos < _n && Cur != '\n') Advance();
 			if (_pos < _n) Advance();                    // consume the newline that ends the `#CSharp` line
@@ -495,6 +545,11 @@ namespace Keysharp.Parsing.Lexing
 
 			var body = _s.Substring(bodyStart, System.Math.Max(0, bodyEnd - bodyStart));
 			tokens.Add(Tok(TokenKind.CSharpBlock, body, bodyLine, bodyCol, bodyStart, body.Length, true));
+
+			// Consumed above but not part of the body, so it needs a token of its own.
+			if (_pos > bodyEnd)
+				tokens.Add(Tok(TokenKind.Directive, null, _line, 1, bodyEnd, _pos - bodyEnd, true));
+
 			// Leave the newline for Tokenize's line-start guard.
 			return true;
 		}
@@ -571,9 +626,11 @@ namespace Keysharp.Parsing.Lexing
 				Advance();
 			}
 			int re = _pos;
+			int cs = _pos, cl = _line, cc = _col;
 			while (_pos < _n && Cur != '\n') Advance();  // consume the trailing comment
 			while (re > rs && (_s[re - 1] == ' ' || _s[re - 1] == '\t')) re--;
 			if (re > rs) tokens.Add(Tok(TokenKind.Identifier, _s.Substring(rs, re - rs), rl, rc, rs, re - rs, true));
+			AddTrivia(tokens, cs, _pos, cl, cc);
 			return true;
 		}
 
@@ -661,14 +718,16 @@ namespace Keysharp.Parsing.Lexing
 				SplitRemap(remap, out var src, out var tgt);
 				int sepLocal = remap.Length - tgt.Length - 2;   // index of `::` within `remap`
 				tokens.Add(Tok(TokenKind.RemapSourceKey, src, sl, sc, start, sepLocal, leadingWs));
+				tokens.Add(Tok(TokenKind.DoubleColon, "::", sl, sc + sepLocal, start + sepLocal, 2, false));
 				tokens.Add(Tok(TokenKind.RemapTargetKey, tgt, sl, sc + sepLocal + 2, start + sepLocal + 2, tgt.Length, false));
 				return true;
 			}
 
-			// Plain hotkey: token text is `trigger::` (through the separator); the rest of the line lexes normally.
-			string trig = _s.Substring(start, afterSep - start);
+			// Plain hotkey: the rest of the line lexes normally.
+			string trig = _s.Substring(start, sep - start);
 			while (_pos < afterSep) Advance();
-			tokens.Add(Tok(TokenKind.HotkeyTrigger, trig, sl, sc, start, afterSep - start, leadingWs));
+			tokens.Add(Tok(TokenKind.HotkeyTrigger, trig, sl, sc, start, sep - start, leadingWs));
+			tokens.Add(Tok(TokenKind.DoubleColon, "::", sl, sc + (sep - start), sep, 2, false));
 			return true;
 		}
 
@@ -767,9 +826,10 @@ namespace Keysharp.Parsing.Lexing
 			int sep = FindSeparator(trigStart, escapeAware: true, allowEmpty: true);
 			if (sep < 0) return false;
 			int afterSep = sep + 2;
-			string trigTok = _s.Substring(start, afterSep - start);          // `:opts:trigger::`
+			string trigTok = _s.Substring(start, sep - start);                // `:opts:trigger` (separator excluded)
 			while (_pos < afterSep) Advance();
-			tokens.Add(Tok(TokenKind.HotstringTrigger, trigTok, sl, sc, start, afterSep - start, leadingWs));
+			tokens.Add(Tok(TokenKind.HotstringTrigger, trigTok, sl, sc, start, sep - start, leadingWs));
+			tokens.Add(Tok(TokenKind.DoubleColon, "::", sl, sc + (sep - start), sep, 2, false));
 
 			// Body: a block `{`, an inline expansion, a continuation-section expansion, or (EOL) a following statement.
 			int save = _pos, saveL = _line, saveC = _col;
@@ -802,11 +862,13 @@ namespace Keysharp.Parsing.Lexing
 				Advance();
 			}
 			int expEnd = _pos;
+			int cs = _pos, cl = _line, cc = _col;
 			while (_pos < _n && Cur != '\n') Advance();   // consume any trailing comment so it is not re-lexed
 			// Trim a trailing run of whitespace (a preceding-comment delimiter or line padding).
 			while (expEnd > expStart && (_s[expEnd - 1] == ' ' || _s[expEnd - 1] == '\t')) expEnd--;
 			string exp = _s.Substring(expStart, expEnd - expStart);
 			tokens.Add(Tok(TokenKind.HotstringExpansion, exp, el, ec, expStart, expEnd - expStart, false));
+			AddTrivia(tokens, cs, _pos, cl, cc);
 			return true;
 		}
 

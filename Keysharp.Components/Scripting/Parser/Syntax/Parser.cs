@@ -92,7 +92,7 @@ namespace Keysharp.Parsing.Syntax
 			try
 			{
 				var lexer = new Lexer(source, scriptFile);
-				var tokens = lexer.Tokenize();
+				var tokens = LexForParsing(lexer);
 				// A lex error (e.g. an unterminated string) terminates immediately — before parsing — with the first one.
 				if (lexer.Diagnostics.Count > 0)
 					throw new Keysharp.Builtins.ParseException(PrefixDiagnostic(scriptFile, lexer.Diagnostics[0]));
@@ -271,6 +271,7 @@ namespace Keysharp.Parsing.Syntax
 			if (At(TokenKind.RemapSourceKey))
 			{
 				var src = Advance().Text;
+				_ = Expect(TokenKind.DoubleColon, "'::' in a remap");
 				return new RemapDef(src, Expect(TokenKind.RemapTargetKey, "remap target").Text);
 			}
 			if (At(TokenKind.HotkeyTrigger)) return ParseHotkey();
@@ -775,6 +776,7 @@ namespace Keysharp.Parsing.Syntax
 			while (true)
 			{
 				triggers.Add(Advance().Text);          // HotkeyTrigger
+				_ = Expect(TokenKind.DoubleColon, "'::' after a hotkey trigger");
 				var save = _pos;
 				SkipNewlines();
 				if (At(TokenKind.HotkeyTrigger)) continue;
@@ -795,6 +797,7 @@ namespace Keysharp.Parsing.Syntax
 			while (true)
 			{
 				triggers.Add(Advance().Text);          // HotstringTrigger
+				_ = Expect(TokenKind.DoubleColon, "'::' after a hotstring trigger");
 				if (At(TokenKind.HotstringExpansion))  // inline / continuation-section expansion
 					return new HotstringDef(triggers, Advance().Text, null, null);
 				var save = _pos;
@@ -1009,13 +1012,27 @@ namespace Keysharp.Parsing.Syntax
 			includedDir = System.IO.Path.GetDirectoryName(path);   // nested includes in this file resolve against its dir
 			// The lexer stamps each token with this file's full path for diagnostics and A_LineFile.
 			var lexer = new Lexing.Lexer(System.IO.File.ReadAllText(path), path);
-			var toks = lexer.Tokenize();
+			var toks = LexForParsing(lexer);
 			// A lex error in the included file terminates immediately, reported against that file.
 			if (lexer.Diagnostics.Count > 0)
 				throw new Keysharp.Builtins.ParseException(PrefixDiagnostic(path, lexer.Diagnostics[0]));
 			if (toks.Count > 0 && toks[^1].Kind == TokenKind.EOF) toks.RemoveAt(toks.Count - 1);   // drop the included EOF
 			toks.Insert(0, new Token(TokenKind.Newline, "\n", 0, 0, 0, 0, true, path));   // keep line separation from the host
 			return toks;
+		}
+
+		/// <summary>
+		/// Lexes and drops the trivia the lossless lexer emits for other consumers. Every path into the parser — the
+		/// main file and each <c>#Include</c>d one — must come through here, or trivia reaches the parser.
+		/// RemoveAll compacts in place; a <c>Where(…).ToList()</c> copies the whole list and costs more than the
+		/// trivia it removes.
+		/// </summary>
+		private static List<Token> LexForParsing(Lexing.Lexer lexer)
+		{
+			var tokens = lexer.Tokenize();
+			_ = tokens.RemoveAll(token => token.Kind is TokenKind.Comment or TokenKind.Directive
+				or TokenKind.ContinuationDelimiter);
+			return tokens;
 		}
 
 		// A "line:col: message" parse error for a #include whose target can't be found, attributed to the directive's
