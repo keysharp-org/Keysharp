@@ -124,6 +124,17 @@ namespace Keysharp.Tests
 				AssertCompileError(source, "reserved word");
 		}
 
+		// A leading comma continues the previous line. parser.ahk covers what the joined line MEANS; these are the
+		// shapes that used to fail to parse at all, chiefly a command-style call whose arguments continue.
+		[Test, Category("Parser")]
+		public void LeadingCommaContinuation() => AssertCompiles(
+			"Loop 20\n\tMouseMove 10, 10, 20\n\t, Sleep 20\n",   // the reported case: braceless loop body
+			"MsgBox \"a\", \"b\"\n, \"c\"\n, \"d\"\n",           // several continuation lines in a row
+			"MsgBox \"a\"\n, , \"c\"\n",                         // an omitted argument across the continuation
+			"MsgBox \"a\"\n\n, \"b\"\n",                         // a blank line between the two
+			"f() {\n\tMsgBox \"a\"\n\t, \"b\"\n}\n",             // last statement of a block, `}` after
+			"ExitApp\n, 1\n");                                   // zero-arg call statement + continuation
+
 		[Test, Category("Parser")]
 		public void MalformedInput()
 		{

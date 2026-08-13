@@ -1454,7 +1454,15 @@ namespace Keysharp.Parsing.Syntax
 			// (`ExitApp`, `obj.Method`). An index-access end (`arr[i]`) is an expression statement, not a call (mirrors
 			// the canonical isFunctionCallStatement, which rejects a trailing CloseBracket).
 			if (i >= _t.Count || _t[i].Kind == TokenKind.Newline || _t[i].Kind == TokenKind.EOF || _t[i].Kind == TokenKind.RBrace)
+			{
+				// …unless a leading comma on a following line continues it. Joined, `Name` + `, x := 1` is
+				// `Name, x := 1`, and an ADJACENT comma makes that a comma-sequence expression statement (which
+				// evaluates `Name` without calling it), so hand it to ParseStatement rather than calling it here.
+				var j = i;
+				while (j < _t.Count && _t[j].Kind == TokenKind.Newline) j++;
+				if (j < _t.Count && _t[j].Kind == TokenKind.Comma) return false;
 				return _t[i - 1].Kind != TokenKind.RBracket && (sawDot || _t[i - 1].Kind == TokenKind.Identifier);
+			}
 			var next = _t[i];
 			if (next.Kind == TokenKind.LParen && !next.LeadingWhitespace) return false;   // Name(...) call expression
 			// A command-call statement (`MsgBox "x", "y"`) requires the name/chain to be followed by whitespace (then an
@@ -1502,7 +1510,14 @@ namespace Keysharp.Parsing.Syntax
 				var nameExpr = name == null ? TryTakeDynamicArgName(null, ref ex) : null;
 				var spread = Match(TokenKind.Star);
 				args.Add(NewArgSlot(ex, spread, name, nameExpr, args));
-				if (!Match(TokenKind.Comma)) break;
+				if (!Match(TokenKind.Comma))
+				{
+					// The comma may instead start the NEXT line — a leading comma is a line continuation, so look
+					// past newlines for it (as with comma statements).
+					var save = _pos;
+					SkipNewlines();
+					if (!Match(TokenKind.Comma)) { _pos = save; break; }
+				}
 			}
 			return args;
 		}

@@ -87,6 +87,27 @@ continued := 1 +
     2
 Check(continued == 3)
 
+; A leading comma continues the previous line, including a command-style call's argument list.
+leadLog := []
+LeadRec(log, p1 := "-", p2 := "-", p3 := "-", p4 := "-") => log.Push(p1 "|" p2 "|" p3 "|" p4)
+
+Loop 2   ; the continuation stays inside the braceless loop body
+    LeadRec leadLog, 1, 2, 3
+    , 4
+Check(leadLog.Length == 2 && leadLog[1] == "1|2|3|4" && leadLog[2] == "1|2|3|4")
+
+LeadRec leadLog, 1   ; several continuation lines, one carrying an omitted argument
+, 2
+, , 4
+Check(leadLog[3] == "1|2|-|4")
+
+; A zero-arg call statement plus a leading comma joins to `Name, expr`, where the adjacent comma makes it a
+; comma sequence that evaluates the name without calling it (so nothing is appended to leadLog).
+leadZero := 0
+LeadRec
+, leadZero := 5
+Check(leadZero == 5 && leadLog.Length == 3)
+
 escaped := "a`"b ; not comment"
 Check(escaped == 'a"b ; not comment')
 Check(0xFF == 255 && 0b1010 == 10 && 0o17 == 15 && 100_000 == 100000)
