@@ -288,12 +288,15 @@ namespace Keysharp.Builtins
 				{
 					Control best = null;
 
+					//GetScreenBounds rather than PointToScreen: it is the one that corrects the toolkit's
+					//surface-relative answer on Wayland, so this agrees with the hit test the window functions
+					//run (ControlInfo.TryFindPoint) instead of searching a different coordinate space.
 					foreach (var visualChild in ctrl.VisualControls.Reverse())
 					{
-						var origin = visualChild.PointToScreen(Point.Empty);
-						var size = visualChild.GetSize();
-							var rect = new Eto.Drawing.Rectangle(Convert.ToInt32(origin.X), Convert.ToInt32(origin.Y), size.Width, size.Height);
-						if (!rect.Contains(pos.X, pos.Y))
+						if (!visualChild.HitTestable)
+							continue;
+
+						if (!visualChild.GetScreenBounds().Contains(pos.X, pos.Y))
 							continue;
 
 						var deeper = FindDeepest(visualChild);
@@ -304,10 +307,7 @@ namespace Keysharp.Builtins
 					if (best != null)
 						return best;
 
-					var selfOrigin = ctrl.PointToScreen(Point.Empty);
-					var selfSize = ctrl.GetSize();
-						var selfRect = new Eto.Drawing.Rectangle(Convert.ToInt32(selfOrigin.X), Convert.ToInt32(selfOrigin.Y), selfSize.Width, selfSize.Height);
-					if (selfRect.Contains(pos.X, pos.Y))
+					if (ctrl.GetScreenBounds().Contains(pos.X, pos.Y))
 						return ctrl;
 
 					return null;

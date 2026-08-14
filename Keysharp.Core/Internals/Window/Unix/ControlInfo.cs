@@ -172,7 +172,7 @@ namespace Keysharp.Internals.Window.Unix
 					if (!seen.Add(child))
 						continue;
 
-					if (!child.Visible)
+					if (!child.HitTestable)
 						continue;
 
 					if (pah.ignoreDisabled && !child.Enabled)

@@ -520,6 +520,14 @@ namespace Eto.Forms
 			internal IAsyncResult BeginInvoke(Action act) => Eto.Forms.Application.Instance.InvokeAsync(act);
 			internal IEnumerable<Control> Controls => control is Container c ? c.Controls : control.VisualControls;
 
+			/// <summary>
+			/// Whether a point over this control should be answered with it. A TabControl lays every page out
+			/// and leaves them all reporting Visible == true, so a hit test that only asked about visibility
+			/// could return a control sitting on a page the user cannot see, let alone click.
+			/// </summary>
+			internal bool HitTestable => control.Visible
+				&& (control is not TabPage page || page.Parent is not TabControl tabs || ReferenceEquals(tabs.SelectedPage, page));
+
 
             // Mirror WinForms Control.ClientRectangle: the client area expressed in CLIENT coordinates, so its
             // origin is always (0,0) (NOT the control's position within its container, which is what Bounds
