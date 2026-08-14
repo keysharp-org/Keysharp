@@ -85,5 +85,31 @@ namespace Keysharp.Tests
 		{
 			Assert.IsTrue(TestScript("process-runscript", false));
 		}
+
+#if !WINDOWS
+		//Off Windows only: ShellExecute accepts a quoted file name, so exec is the only launcher a stray
+		//quote can break.
+		[Test, Category("Process")]
+		public void RunQuotedTarget()
+		{
+			//Quoting the program is how a path with spaces can still carry arguments.
+			var dir = Path.Combine(Path.GetTempPath(), $"keysharp run {Environment.ProcessId}");
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				//A link rather than a script, so the executable bit comes from the target and the test needs
+				//no platform-specific call to set it.
+				var exe = Path.Combine(dir, "spaced shell");
+				_ = File.CreateSymbolicLink(exe, "/bin/sh");
+				Assert.AreEqual(7L, RunWait($"\"{exe}\" -c \"exit 7\""));//Arguments parsed out of the target.
+				Assert.AreEqual(7L, RunWait($"\"{exe}\"", args: "-c \"exit 7\""));//Arguments passed separately.
+			}
+			finally
+			{
+				Directory.Delete(dir, true);
+			}
+		}
+#endif
 	}
 }

@@ -609,15 +609,18 @@ namespace Keysharp.Builtins
 				{
 					if (target.StartsWith('"'))
 					{
+						//Quoting the program is how a path with spaces can still carry arguments. The quotes
+						//delimit the name within the command line and are not part of it, so they come off
+						//here: FileName is a path. ShellExecute tolerates them, exec looks the name up verbatim.
 						var nextQuote = target.IndexOf('"', 1);
 
 						if (nextQuote > 0)
 						{
 							parsedArgs = target.Substring(nextQuote + 1).Trim();
-							target = target.Substring(0, nextQuote + 1).Trim();
+							target = target.Substring(1, nextQuote - 1).Trim();
 						}
 						else
-							target += '"';//Add the quote because it was missing, which is very unlikely.
+							target = target.Substring(1);//The closing quote was missing, which is very unlikely.
 					}
 					else
 					{
@@ -663,16 +666,17 @@ namespace Keysharp.Builtins
 					{
 						if (shellAction.StartsWith('"'))
 						{
+							//See the matching note above: the quotes delimit the name and are not part of it.
 							var nextQuote = shellAction.IndexOf('"', 1);
 
 							if (nextQuote > 0)
 							{
 								shellParams = shellAction.Substring(nextQuote + 1).Trim();
-								shellAction = shellAction.Substring(0, nextQuote + 1).Trim();
+								shellAction = shellAction.Substring(1, nextQuote - 1).Trim();
 								parsedArgs = shellParams;
 							}
 							else
-								shellAction += '"';//Add the quote because it was missing, which is very unlikely.
+								shellAction = shellAction.Substring(1);//The closing quote was missing, which is very unlikely.
 						}
 						else
 						{
