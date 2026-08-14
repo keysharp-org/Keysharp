@@ -246,8 +246,9 @@ namespace Keysharp.Internals.Window.Unix
 				}
 				else if (control is CheckBox checkBox)
 				{
+					//No NotifyGuiClick: toggling raises CheckedChanged, which the Click handlers are wired to,
+					//so reporting it here too would deliver one simulated click twice.
 					Toggle(checkBox);
-					NotifyGuiClick(location);
 					invoked = true;
 				}
 				else if (control is RadioButton radioButton)
@@ -276,16 +277,6 @@ namespace Keysharp.Internals.Window.Unix
 			}
 			else
 				checkBox.Checked = !(checkBox.Checked ?? false);
-
-			if (checkBox is KeysharpCheckBox keysharpCheckBox)
-			{
-				keysharpCheckBox.CheckState = checkBox.Checked switch
-				{
-					true => CheckState.Checked,
-					false => CheckState.Unchecked,
-					_ => CheckState.Indeterminate
-				};
-			}
 		}
 
 		private bool NotifyGuiClick(Point location)

@@ -312,7 +312,19 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		public CheckState CheckState { get; set; } = CheckState.Unchecked;
+		//Projected from Checked rather than stored alongside it: a stored copy cannot see the user ticking
+		//the box, so it only ever reports the last assignment.
+		public CheckState CheckState
+		{
+			get => Checked == null ? CheckState.Indeterminate : Checked.Value ? CheckState.Checked : CheckState.Unchecked;
+			set
+			{
+				if (value == CheckState.Indeterminate)
+					ThreeState = true;
+
+				Checked = value == CheckState.Indeterminate ? null : value == CheckState.Checked;
+			}
+		}
 		public ContentAlignment CheckAlign { get; set; } = ContentAlignment.MiddleLeft;
 
 		public KeysharpCheckBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)

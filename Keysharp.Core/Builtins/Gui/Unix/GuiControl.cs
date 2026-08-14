@@ -192,14 +192,19 @@ namespace Keysharp.Builtins
 						nud.Value = (double)value.ParseDouble().Value;
 					else if (_control is KeysharpCheckBox cb)
 					{
-						var cbstate = ival;
+						//Assigning Checked raises CheckedChanged, where the Click handlers hang. Only the user
+						//toggling the box is a Click, so hold them off for this assignment.
+						var wasActive = eventHandlerActive;
+						eventHandlerActive = false;
 
-						if (cbstate == -1)
-							cb.CheckState = CheckState.Indeterminate;
-						else
+						try
 						{
-							cb.Checked = Options.OnOff(value) ?? false;
-							cb.CheckState = cb.Checked == true ? CheckState.Checked : CheckState.Unchecked;
+							cb.CheckState = ival == -1 ? CheckState.Indeterminate
+											: (Options.OnOff(value) ?? false) ? CheckState.Checked : CheckState.Unchecked;
+						}
+						finally
+						{
+							eventHandlerActive = wasActive;
 						}
 					}
 					else if (_control is KeysharpRadioButton rb)
@@ -346,6 +351,11 @@ namespace Keysharp.Builtins
 					btn.Click += _control_Click;
 				else if (_control is KeysharpRadioButton rb)
 					rb.Click += _control_Click;
+				else if (_control is KeysharpCheckBox chk)
+					//NOT the MouseDown fallback below: that runs before the box has toggled, so a handler
+					//reading Value would see the state the click is about to replace, and a keyboard toggle
+					//would not report at all. Matches WinForms, whose Click fires after the state changes.
+					chk.CheckedChanged += _control_Click;
 				else if (_control is LinkButton link)
 					link.Click += _control_Click;
 				else if (_control is ICommandItem ti)
