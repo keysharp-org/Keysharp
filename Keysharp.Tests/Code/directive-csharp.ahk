@@ -18,6 +18,16 @@ public static long SumSquares(long n)
     return acc;
 }
 
+public static long Cells(long rows, long cols)
+{
+    long total = 0;
+    long c = 0;
+    for (long r = 0; r < rows; r++)
+        for (c = 0; c < cols; c++) // assigns an existing variable instead of declaring one
+            total++;
+    return total;
+}
+
 public static string Shout(string s) => new StringBuilder(s).Append("!").ToString();
 
 public static double Half(double d) => d / 2;
@@ -34,6 +44,7 @@ ok(SumSquares(4.0) == 30)
 ok(Shout("hi") == "hi!")
 ok(Half(5) == 2.5)
 ok(Doubled(21) == 42)
+ok(Cells(3, 4) == 12)
 ok(Hits == 3)
 
 caught := false

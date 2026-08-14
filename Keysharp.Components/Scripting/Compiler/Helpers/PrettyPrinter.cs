@@ -757,9 +757,21 @@ namespace Keysharp.Compilation
 		{
 			WriteIndent();
 			_sb.Append("for (");
-			// initializer
+			// initializer: a declaration (`for (int i = 0; …)`) or assignments to variables declared
+			// earlier (`for (i = 0, j = 0; …)`), never both. Omitting the latter still compiles, so it
+			// surfaces only as a loop left at its terminal value that never runs its body again.
 			if (node.Declaration != null)
 				Visit(node.Declaration);
+			else
+			{
+				bool firstInit = true;
+				foreach (var init in node.Initializers)
+				{
+					if (!firstInit) _sb.Append(", ");
+					firstInit = false;
+					Visit(init);
+				}
+			}
 			_sb.Append("; ");
 			// condition
 			if (node.Condition != null)
