@@ -266,6 +266,31 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("NuGet")]
+		public async Task ProviderNativeAssets()
+		{
+			Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGet("nuget", out var provider, out var failure), failure);
+			var cache = Path.Combine(Path.GetTempPath(), "keysharp-provider-native-" + Guid.NewGuid().ToString("N"));
+
+			try
+			{
+				//A package whose only assets are native and RID-specific, so it says nothing at all unless the
+				//RID the host reports resolves through the fallback chain to the portable one it publishes.
+				var context = new Keysharp.Components.Packages.PackageResolveContext(cache, Environment.CurrentDirectory,
+					Keysharp.Internals.Os.PackageResolver.TargetFramework, Keysharp.Internals.Os.PackageResolver.RuntimeId,
+					true, TimeSpan.FromMinutes(3), "native asset test");
+				var result = await provider.ResolveAsync(context,
+					[new Keysharp.Components.Packages.PackageRequest("SQLitePCLRaw.lib.e_sqlite3", "[2.1.10]")], CancellationToken.None);
+				Assert.IsTrue(result.Success, result.Failure);
+				var resolved = result.Packages.Single(package => package.Id.Equals("SQLitePCLRaw.lib.e_sqlite3", StringComparison.OrdinalIgnoreCase));
+				Assert.IsNotEmpty(resolved.Native, $"no native asset was selected for '{Keysharp.Internals.Os.PackageResolver.RuntimeId}'");
+			}
+			finally
+			{
+				try { Directory.Delete(cache, true); } catch { }
+			}
+		}
+
+		[Test, Category("NuGet")]
 		public async Task ProviderWarmCacheValidation()
 		{
 			Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGet("nuget", out var provider, out var failure), failure);

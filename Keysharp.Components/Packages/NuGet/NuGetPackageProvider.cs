@@ -133,11 +133,13 @@ public sealed class NuGetPackageProvider : IPackageProvider
 			IncludeType = LibraryIncludeFlags.All,
 			SuppressParent = LibraryIncludeFlags.None
 		}).ToImmutableArray();
+		var runtimeGraph = CreateRuntimeGraph(context.RuntimeIdentifier);
 		var target = new TargetFrameworkInformation
 		{
 			FrameworkName = framework,
 			TargetAlias = context.TargetFramework,
-			Dependencies = dependencies
+			Dependencies = dependencies,
+			RuntimeIdentifierGraphPath = WriteRuntimeGraph(context, runtimeGraph)
 		};
 		var projectPath = Path.Combine(context.CacheDirectory, "keysharp-packages.csproj");
 		var metadata = new ProjectRestoreMetadata
@@ -170,8 +172,29 @@ public sealed class NuGetPackageProvider : IPackageProvider
 			Name = "keysharp-packages",
 			FilePath = projectPath,
 			RestoreMetadata = metadata,
-			RuntimeGraph = CreateRuntimeGraph(context.RuntimeIdentifier)
+			RuntimeGraph = runtimeGraph
 		};
+	}
+
+	/// <summary>
+	/// Writes the RID fallback chain where restore looks for it, and answers with that path.
+	/// <para>RID-specific assets are selected from the graph named here, not from the spec's own RuntimeGraph,
+	/// which only decides which RIDs get a target. Hosts report a distro RID (ubuntu.24.04-x64) while packages
+	/// publish portable ones (runtimes/linux-x64/native/…), so without the chain a native asset is never
+	/// selected — restore still succeeds and only the first P/Invoke fails.</para>
+	/// <para>The SDK points this at its own PortableRuntimeIdentifierGraph.json, which a runtime-only host does
+	/// not have; the shared framework's chain for the running RID is the same data, narrowed to what can be
+	/// resolved here.</para>
+	/// </summary>
+	private static string WriteRuntimeGraph(PackageResolveContext context, global::NuGet.RuntimeModel.RuntimeGraph graph)
+	{
+		// No RID means no RID-specific target to select assets for, so there is nothing for a chain to say.
+		if (string.IsNullOrWhiteSpace(context.RuntimeIdentifier))
+			return null;
+
+		var path = Path.Combine(context.CacheDirectory, "runtime-graph.json");
+		global::NuGet.RuntimeModel.JsonRuntimeFormat.WriteRuntimeGraph(path, graph);
+		return path;
 	}
 
 	private static global::NuGet.RuntimeModel.RuntimeGraph CreateRuntimeGraph(string rid)
