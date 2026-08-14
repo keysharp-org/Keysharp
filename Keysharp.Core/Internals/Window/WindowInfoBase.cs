@@ -301,7 +301,8 @@ namespace Keysharp.Internals.Window
 			// Reject hidden top-levels (unless detecting hidden). Test !Visible BEFORE ParentWindow so a visible
 			// window — the common case, and all that enumeration even yields — short-circuits and never pays the
 			// ParentWindow (GetParent) round-trip; the parent check only runs for the rare not-visible candidate.
-			if (criteria.HasNonGroupCriteria && !GetDetectHiddenWindows(options) && !Visible && ParentWindow?.IsSpecified != true)
+			// A bare handle is exempt: it addresses the window directly rather than searching for it.
+			if (criteria.HasNonGroupCriteria && !criteria.IsPureID && !GetDetectHiddenWindows(options) && !Visible && ParentWindow?.IsSpecified != true)
 				return false;
 
 			if (criteria.ID != 0 && Handle != criteria.ID)

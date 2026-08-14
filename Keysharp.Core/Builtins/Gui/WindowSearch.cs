@@ -103,11 +103,10 @@ namespace Keysharp.Builtins
 				object excludeTitle,
 				object excludeText,
 				bool throwifnull,
-				bool last = false,
-				bool ignorePureID = false)
+				bool last = false)
 		{
 			var script = Script.TheScript;
-			var win = WindowQuery.FindWindow(winTitle, winText, excludeTitle, excludeText, last, ignorePureID);
+			var win = WindowQuery.FindWindow(winTitle, winText, excludeTitle, excludeText, last);
 
 			if (win == null && throwifnull && !script.IsMainWindowClosing)
 			{

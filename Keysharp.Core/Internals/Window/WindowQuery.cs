@@ -86,16 +86,17 @@ namespace Keysharp.Internals.Window
 
 			if (criteria.ID != 0)
 			{
-				//Naming a window by id skips the enumeration that applies DetectHiddenWindows, and Equals does
-				//not test visibility. A bare handle addresses the window directly and is exempt; "ahk_id <n>"
-				//is an ordinary criterion and honours the setting.
-				if (IsWindow(criteria.ID)
-						&& CreateWindow(criteria.ID) is WindowInfoBase temp
-						&& (criteria.IsPureID || detectHiddenWindows || temp.Visible)
-						&& temp.Equals(criteria, matchOptions))
-					return temp;
+				if (!IsWindow(criteria.ID))
+					return null;
 
-				return null;
+				var temp = CreateWindow(criteria.ID);
+
+				//Naming a window by id skips the enumeration that applies DetectHiddenWindows. Equals has a gate
+				//of its own, but it lets anything with a parent through, which our own GUI windows report.
+				if (!criteria.IsPureID && !detectHiddenWindows && !temp.Visible)
+					return null;
+
+				return temp.Equals(criteria, matchOptions) ? temp : null;
 			}
 
 			// Fast path: match by class (or exact title in mode 3) without scanning every window — ask the
@@ -146,40 +147,37 @@ namespace Keysharp.Internals.Window
 			return found;
 		}
 
-		public static WindowInfoBase FindWindow(object winTitle, object winText, object excludeTitle, object excludeText, bool last = false, bool ignorePureID = false)
+		public static WindowInfoBase FindWindow(object winTitle, object winText, object excludeTitle, object excludeText, bool last = false)
 		{
-			WindowInfoBase foundWindow = null;
-			var (parsed, ptr) = WindowHelper.CtrlTonint(winTitle);
-
-			if (parsed)
-			{
-				if (!ignorePureID && IsWindow(ptr))
-					return LastFound = CreateWindow(ptr);
-			}
-
-			var text = winText.As();
-			var exclTitle = excludeTitle.As();
-			var exclTxt = excludeText.As();
-
 			if (winTitle is Gui gui)
 				return LastFound = CreateWindow((nint)gui.Hwnd);
-			else if ((winTitle == null || winTitle is string s && string.IsNullOrEmpty(s)) &&
-					 string.IsNullOrEmpty(text) &&
-					 string.IsNullOrEmpty(exclTitle) &&
-					 string.IsNullOrEmpty(exclTxt))
-			{
-				foundWindow = LastFound;
-			}
-			else
-			{
-				var criteria = SearchCriteria.FromString(winTitle, text, excludeTitle, excludeText);
-				foundWindow = FindWindow(criteria, last);
-			}
+
+			var criteria = ToCriteria(winTitle, winText, excludeTitle, excludeText);
+			var foundWindow = criteria == null ? LastFound : FindWindow(criteria, last);
 
 			if (foundWindow != null && foundWindow.IsSpecified)
 				LastFound = foundWindow;
 
 			return foundWindow;
+		}
+
+		/// <summary>
+		/// The object form of a search resolved to criteria, or null when nothing was specified at all — which
+		/// means the last-found window rather than a search, as AHK's WinExist does.
+		/// </summary>
+		internal static SearchCriteria ToCriteria(object winTitle, object winText, object excludeTitle, object excludeText)
+		{
+			var text = winText.As();
+			var exclTitle = excludeTitle.As();
+			var exclText = excludeText.As();
+
+			if ((winTitle == null || winTitle is string s && string.IsNullOrEmpty(s))
+					&& string.IsNullOrEmpty(text)
+					&& string.IsNullOrEmpty(exclTitle)
+					&& string.IsNullOrEmpty(exclText))
+				return null;
+
+			return SearchCriteria.FromString(winTitle, text, excludeTitle, excludeText);
 		}
 
 		public static List<WindowInfoBase> FindWindowGroup(SearchCriteria criteria, bool forceAll = false)
@@ -240,23 +238,16 @@ namespace Keysharp.Internals.Window
 				object excludeText,
 				bool forceAll = false)
 		{
-			SearchCriteria criteria = null;
 			var foundWindows = new List<WindowInfoBase>();
-			var text = winText.As();
-			var exclTitle = excludeTitle.As();
-			var exclText = excludeText.As();
+			var criteria = ToCriteria(winTitle, winText, excludeTitle, excludeText);
 
-			if ((winTitle == null || winTitle is string s && string.IsNullOrEmpty(s)) &&
-					string.IsNullOrEmpty(text) &&
-					string.IsNullOrEmpty(exclTitle) &&
-					string.IsNullOrEmpty(exclText))
+			if (criteria == null)
 			{
 				if (LastFound != null)
 					foundWindows.Add(LastFound);
 			}
 			else
 			{
-				criteria = SearchCriteria.FromString(winTitle, text, exclTitle, exclText);
 				foundWindows = FindWindowGroup(criteria, forceAll);
 
 				if (foundWindows != null && foundWindows.Count > 0 && foundWindows[0].IsSpecified)

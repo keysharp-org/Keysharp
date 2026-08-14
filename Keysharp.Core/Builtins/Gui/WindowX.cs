@@ -1239,10 +1239,16 @@ namespace Keysharp.Builtins
 			var seconds = timeout.Ad();
 			WindowInfoBase win;
 			var start = DateTime.UtcNow;
+			var criteria = WindowQuery.ToCriteria(winTitle, winText, excludeTitle, excludeText);
+
+			//As in WinWaitClose: a handle is a search criterion here, not a direct address, so the wait
+			//respects DetectHiddenWindows and waits for a hidden window to become visible.
+			if (criteria != null)
+				criteria.IsPureID = false;
 
 			do
 			{
-				win = SearchWindow(winTitle, winText, excludeTitle, excludeText, false, false, true);
+				win = criteria == null ? WindowQuery.LastFound : WindowQuery.FindWindow(criteria, false);
 
 				if (win != null || (seconds != 0 && (DateTime.UtcNow - start).TotalSeconds >= seconds))
 					break;
