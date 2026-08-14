@@ -1312,10 +1312,13 @@ namespace Keysharp.Builtins
 			var start = DateTime.UtcNow;
 			var criteria = SearchCriteria.FromString(winTitle, winText, excludeTitle, excludeText);
 			long result = 0L;
+			//A handle is a search criterion here, not a direct address: AHK makes the wait family respect
+			//DetectHiddenWindows so a GUI that hides rather than destroys on close ends the wait.
+			criteria.IsPureID = false;
 
 			while (seconds == 0 || (DateTime.UtcNow - start).TotalSeconds < seconds)
 			{
-				var windows = WindowQuery.FindWindowGroup(criteria, false, true);
+				var windows = WindowQuery.FindWindowGroup(criteria, false);
 
 				if (windows.Count == 0)
 				{

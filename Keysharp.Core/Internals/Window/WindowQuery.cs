@@ -86,7 +86,13 @@ namespace Keysharp.Internals.Window
 
 			if (criteria.ID != 0)
 			{
-				if (IsWindow(criteria.ID) && CreateWindow(criteria.ID) is WindowInfoBase temp && temp.Equals(criteria, matchOptions))
+				//Naming a window by id skips the enumeration that applies DetectHiddenWindows, and Equals does
+				//not test visibility. A bare handle addresses the window directly and is exempt; "ahk_id <n>"
+				//is an ordinary criterion and honours the setting.
+				if (IsWindow(criteria.ID)
+						&& CreateWindow(criteria.ID) is WindowInfoBase temp
+						&& (criteria.IsPureID || detectHiddenWindows || temp.Visible)
+						&& temp.Equals(criteria, matchOptions))
 					return temp;
 
 				return null;
@@ -176,7 +182,7 @@ namespace Keysharp.Internals.Window
 			return foundWindow;
 		}
 
-		public static List<WindowInfoBase> FindWindowGroup(SearchCriteria criteria, bool forceAll = false, bool ignorePureID = false)
+		public static List<WindowInfoBase> FindWindowGroup(SearchCriteria criteria, bool forceAll = false)
 		{
 			var found = new List<WindowInfoBase>();
 			var matchOptions = WindowSearchOptions.Merge(criteria.Options);
@@ -197,13 +203,17 @@ namespace Keysharp.Internals.Window
 				return found;
 			}
 
-			if (!ignorePureID && criteria.IsPureID)
+			//HasID, matching FindWindow above: enumeration cannot answer for one of our own GUI windows off
+			//Windows, where it lists them under the compositor's id rather than the handle Gui.Hwnd returns.
+			if (criteria.HasID)
 			{
 				if (IsWindow(criteria.ID))
 				{
 					var window = CreateWindow(criteria.ID);
 
-					if (window.Equals(criteria, matchOptions)) // Other criteria may be present such as ExcludeTitle etc
+					//Visibility gate as in FindWindow above.
+					if ((criteria.IsPureID || detectHiddenWindows || window.Visible)
+							&& window.Equals(criteria, matchOptions)) // Other criteria may be present such as ExcludeTitle etc
 						found.Add(window);
 				}
 
@@ -228,8 +238,7 @@ namespace Keysharp.Internals.Window
 				object winText,
 				object excludeTitle,
 				object excludeText,
-				bool forceAll = false,
-				bool ignorePureID = false)
+				bool forceAll = false)
 		{
 			SearchCriteria criteria = null;
 			var foundWindows = new List<WindowInfoBase>();
@@ -248,7 +257,7 @@ namespace Keysharp.Internals.Window
 			else
 			{
 				criteria = SearchCriteria.FromString(winTitle, text, exclTitle, exclText);
-				foundWindows = FindWindowGroup(criteria, forceAll, ignorePureID);
+				foundWindows = FindWindowGroup(criteria, forceAll);
 
 				if (foundWindows != null && foundWindows.Count > 0 && foundWindows[0].IsSpecified)
 					LastFound = foundWindows[0];
