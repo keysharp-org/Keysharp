@@ -171,39 +171,44 @@ namespace Keysharp.Tests
 #else
 		public void ClipWait()
 		{
-			var clip = Clipboard.Instance;
+			// Drive the SAME clipboard ClipWait reads. Eto's clipboard is only the resolved backend on X11 (and on a
+			// Wayland session whose data-control handler works); under a shell-extension-driven Wayland session
+			// (Cinnamon/Muffin) a GTK write never reaches the compositor selection at all, so writing through
+			// Eto.Forms.Clipboard here would set up one clipboard and then assert on another.
+			var clip = Keysharp.Internals.Platform.Clipboard;
 
 			if (clip == null)
 				Assert.Ignore("Clipboard is unavailable in this headless Linux environment.");
 
 			//Verify the clipboard is actually functional in this session; otherwise treat as headless.
-			clip.Clear();
-			clip.Text = "probe";
+			clip.SetText("probe");
 
-			if (!clip.ContainsText)
+			if (clip.GetText() != "probe")
 				Assert.Ignore("Clipboard text is unavailable in this headless Linux environment.");
 
 			AssertClipWaitTimeoutAfterClear();
 
+			//Cleared before each stage: only the Wayland extension backend is limited to one representation at a
+			//time, so on every other backend a set would otherwise leave the previous kind advertised as well.
 			//Text satisfies both the "any" wait and the "text or files" wait.
-			clip.Clear();
-			clip.Text = "test text";
-			AssertClipboardState(() => clip.ContainsText, "Clipboard text did not appear.");
+			ClearClipboard();
+			clip.SetText("test text");
+			AssertClipboardState(() => clip.HasKind(Keysharp.Internals.ClipboardKind.Text), "Clipboard text did not appear.");
 			Assert.AreEqual(true, Env.ClipWait(null, true));//Wait indefinitely for any type.
 			Assert.AreEqual(true, Env.ClipWait(1));//Wait for text/files.
 
-			//File URIs satisfy the "text or files" wait (this is how file copies surface on Eto/Gtk).
-			clip.Clear();
-			clip.Uris = [new Uri(Path.GetFullPath("./testfile1.txt"))];
-			AssertClipboardState(() => clip.ContainsUris, "Clipboard URI data did not appear.");
+			//A file list satisfies the "text or files" wait (it is CF_HDROP on Windows, text/uri-list elsewhere).
+			ClearClipboard();
+			clip.SetAll([Keysharp.Internals.ClipboardEntry.Of(Keysharp.Internals.ClipboardKind.Files, new[] { Path.GetFullPath("./testfile1.txt") })]);
+			AssertClipboardState(() => clip.HasKind(Keysharp.Internals.ClipboardKind.Files), "Clipboard URI data did not appear.");
 			Assert.AreEqual(true, Env.ClipWait());//Wait indefinitely for text/files.
 
 			//An image alone must NOT satisfy the "text or files" wait (so it times out),
 			//but it does satisfy the "any" wait.
-			clip.Clear();
 			using var bitmap = new Bitmap(640, 480, PixelFormat.Format32bppRgba);
-			clip.Image = bitmap;
-			AssertClipboardState(() => clip.ContainsImage, "Clipboard image did not appear.");
+			ClearClipboard();
+			clip.SetImage(bitmap);
+			AssertClipboardState(() => clip.HasKind(Keysharp.Internals.ClipboardKind.Image), "Clipboard image did not appear.");
 			Assert.AreEqual(false, Env.ClipWait(1));//Times out: image is neither text nor files.
 			Assert.AreEqual(true, Env.ClipWait(1, true));//Any type: detects the image.
 
@@ -214,6 +219,15 @@ namespace Keysharp.Tests
 
 		private static void AssertClipboardState(Func<bool> predicate, string message, int timeoutMs = 3000)
 			=> Assert.IsTrue(SpinWait.SpinUntil(predicate, timeoutMs), message);
+
+		private static void ClearClipboard()
+		{
+#if WINDOWS
+			Clipboard.Clear();
+#else
+			Keysharp.Internals.Platform.Clipboard.SetAll(System.Array.Empty<Keysharp.Internals.ClipboardEntry>());
+#endif
+		}
 
 		private static void AssertClipWaitTimeoutAfterClear(int attempts = 3)
 		{
@@ -226,11 +240,7 @@ namespace Keysharp.Tests
 
 			for (var attempt = 0; attempt < attempts; attempt++)
 			{
-#if WINDOWS
-				Clipboard.Clear();
-#else
-				Clipboard.Instance.Clear();
-#endif
+				ClearClipboard();
 				AssertClipboardState(() => Keysharp.Internals.Platform.Clipboard.IsEmpty, "Clipboard should be empty before ClipWait timeout test.");
 				var dt = DateTime.UtcNow;
 				var b = Env.ClipWait(0.5);

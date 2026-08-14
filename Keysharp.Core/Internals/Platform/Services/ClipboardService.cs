@@ -891,6 +891,13 @@ namespace Keysharp.Internals
 			if (monitoring && !string.IsNullOrEmpty(cachedText) && !mimes.Any(IsTextMime))
 				return [.. mimes, TextMime];
 
+			// A MetaSelectionSourceMemory must advertise exactly one mimetype and there is no "own nothing" source,
+			// so clearing is expressed as taking ownership with an EMPTY text source — which still advertises
+			// text/plain. Report that as the empty clipboard it is, or IsEmpty, ChangeType and ClipWait would all
+			// read a just-cleared clipboard as "text is present" (ClipWait returning instantly is the visible bug).
+			if (mimes.Length != 0 && mimes.All(IsTextMime) && GetText().Length == 0)
+				return System.Array.Empty<string>();
+
 			return mimes;
 		}
 
@@ -907,7 +914,17 @@ namespace Keysharp.Internals
 			return false;
 		}
 
-		public override byte[] GetData(string format) => string.IsNullOrEmpty(format) ? null : GetContent(format);
+		public override byte[] GetData(string format)
+		{
+			if (string.IsNullOrEmpty(format))
+				return null;
+
+			var bytes = GetContent(format);
+			// A transfer the compositor cannot satisfy — an unavailable mimetype — comes back as an empty payload
+			// rather than an error, so "no bytes" only means "present but empty" when the type is actually
+			// advertised. Without this an absent format reads as a zero-length Buffer instead of "".
+			return bytes == null || (bytes.Length == 0 && !Has(format)) ? null : bytes;
+		}
 
 		/// <summary>
 		/// The one place the Wayland extension's single-representation limit shows: MetaSelectionSourceMemory can
