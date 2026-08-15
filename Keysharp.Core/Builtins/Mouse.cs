@@ -288,9 +288,8 @@ namespace Keysharp.Builtins
 				{
 					Control best = null;
 
-					//GetScreenBounds rather than PointToScreen: it is the one that corrects the toolkit's
-					//surface-relative answer on Wayland, so this agrees with the hit test the window functions
-					//run (ControlInfo.TryFindPoint) instead of searching a different coordinate space.
+					//GetScreenBounds rather than a rect built here, so this searches the same space as the hit
+					//test the window functions run (ControlInfo.TryFindPoint) rather than one of its own.
 					foreach (var visualChild in ctrl.VisualControls.Reverse())
 					{
 						if (!visualChild.HitTestable)

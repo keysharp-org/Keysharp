@@ -394,6 +394,18 @@ namespace System.Windows.Forms
 				{
 					var controlScreen = control.PointToScreen(Point.Empty);
 					var formScreen = form.PointToScreen(Point.Empty);
+
+					//Measured from the CONTENT, not the toplevel widget: the menu bar and toolbars pack above it
+					//and client-side decorations sit outside it, so measuring from the window reports every
+					//control short by that inset. Client coordinates exclude the menu, as Win32's do.
+					//Equal origins carry no correction to make: the toolkit answers with the toplevel's own for
+					//a control it has not placed yet, and a form without content has nothing to anchor on.
+					if (controlScreen != formScreen && form.Content is Control content)
+					{
+						var contentScreen = content.PointToScreen(Point.Empty);
+						return new Point(Convert.ToInt32(controlScreen.X - contentScreen.X), Convert.ToInt32(controlScreen.Y - contentScreen.Y));
+					}
+
 					return new Point(Convert.ToInt32(controlScreen.X - formScreen.X), Convert.ToInt32(controlScreen.Y - formScreen.Y));
 				}
 				catch
