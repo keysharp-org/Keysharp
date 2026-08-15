@@ -2431,8 +2431,8 @@ namespace Keysharp.Builtins
 #if LINUX
 			// Drop any cached Wayland self-position correlation so a recycled native handle can't
 			// inherit this window's compositor id. IsSupported first, to avoid form.Handle on X11.
-			if (form != null && Keysharp.Internals.Window.Linux.Wayland.WaylandSelfPositioner.IsSupported)
-				Keysharp.Internals.Window.Linux.Wayland.WaylandSelfPositioner.Forget(form.Handle);
+			if (form != null && Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
+				Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Forget(form.Handle);
 #endif
 			return form?.Destroy();
 		}
@@ -2489,11 +2489,11 @@ namespace Keysharp.Builtins
 		private void ReassertWindowStateOnWayland(FormWindowState state)
 		{
 #if LINUX
-			if (!Keysharp.Internals.Window.Linux.Wayland.WaylandSelfPositioner.IsSupported)
+			if (!Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
 				return;
 
 			var sz = form.Size;
-			Keysharp.Internals.Window.Linux.Wayland.WaylandSelfPositioner.SetWindowState(
+			Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.SetWindowState(
 				form, form.Title, sz.Width, sz.Height, state);
 #endif
 		}
@@ -2529,8 +2529,8 @@ namespace Keysharp.Builtins
 			// Wayland: SetLocation above can't move our own window, so drive the compositor backend.
 			// IsSupported is checked first to avoid evaluating form.Handle on X11.
 			if ((xVal != int.MinValue || yVal != int.MinValue)
-					&& Keysharp.Internals.Window.Linux.Wayland.WaylandSelfPositioner.IsSupported)
-				Keysharp.Internals.Window.Linux.Wayland.WaylandSelfPositioner.Position(form, form.Title, xVal, yVal, formSize.Width, formSize.Height);
+					&& Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
+				Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Position(form, form.Title, xVal, yVal, formSize.Width, formSize.Height);
 #endif
 			return DefaultObject;
 		}
@@ -3131,7 +3131,7 @@ namespace Keysharp.Builtins
 			// X11 and on compositors that can't move/decorate windows.
 			// IsSupported (a cheap Wayland-session check) is tested first so we don't evaluate form.Handle on
 			// X11 — there it triggers a native gdk_x11_window_get_xid call.
-			if (!hide && Keysharp.Internals.Window.Linux.Wayland.WaylandSelfPositioner.IsSupported)
+			if (!hide && Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
 			{
 				var hasPos = requestedLocation.X != int.MinValue || requestedLocation.Y != int.MinValue;
 				// A -Caption window normally loses its titlebar via GTK (the empty-titlebar CSD trick in Eto's
@@ -3145,7 +3145,7 @@ namespace Keysharp.Builtins
 				var skipTaskbar = !form.ShowInTaskbar;
 
 				if (hasPos || removeBorder || keepAbove || skipTaskbar)
-					Keysharp.Internals.Window.Linux.Wayland.WaylandSelfPositioner.Position(form, form.Title,
+					Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Position(form, form.Title,
 						hasPos ? location.X : int.MinValue, hasPos ? location.Y : int.MinValue,
 						size.Width, size.Height, removeBorder, keepAbove, skipTaskbar);
 			}

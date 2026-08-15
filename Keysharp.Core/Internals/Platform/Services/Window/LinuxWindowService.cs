@@ -71,7 +71,7 @@ namespace Keysharp.Internals
 				return false;
 
 			var size = form.GetSize();
-			return WaylandSelfPositioner.TryGetCompositorHandle(form, form.Title, size.Width, size.Height, out var compHandle)
+			return WaylandOwnToplevels.TryGetCompositorHandle(form, form.Title, size.Width, size.Height, out var compHandle)
 				   && wayland.TryGetWindow(compHandle, out info);
 		}
 
@@ -465,8 +465,8 @@ namespace Keysharp.Internals
 					return false;
 
 				if (setPos)
-					// If WaylandSelfPositioner is still placing one of our own windows, let it converge here.
-					WaylandSelfPositioner.NotifyExternalMove(h, bounds.X, bounds.Y);
+					// If WaylandOwnToplevels is still placing one of our own windows, let it converge here.
+					WaylandOwnToplevels.NotifyExternalMove(h, bounds.X, bounds.Y);
 
 				return true;
 			}
@@ -494,7 +494,7 @@ namespace Keysharp.Internals
 					if (!wayland.TryMoveResizeWindow(own.Handle, rect, true, false))
 						return false;
 
-					WaylandSelfPositioner.NotifyExternalMove(own.Handle, bounds.X, bounds.Y);
+					WaylandOwnToplevels.NotifyExternalMove(own.Handle, bounds.X, bounds.Y);
 				}
 
 				return true;

@@ -28,7 +28,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	/// where the compositor chooses, then we move it), and on compositors that cannot move windows
 	/// (foreign-toplevel-only: sway/Hyprland/COSMIC) it degrades to a no-op.</para>
 	/// </summary>
-	internal static class WaylandSelfPositioner
+	internal static class WaylandOwnToplevels
 	{
 		private const string NormalAppId = "keysharp";
 		private const string CorrelationAppIdPrefix = "keysharp.self.";

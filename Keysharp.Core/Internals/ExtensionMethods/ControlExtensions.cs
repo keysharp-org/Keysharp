@@ -854,7 +854,7 @@ namespace System.Windows.Forms
 			//on: GTK3 renders at an integer scale and the compositor downscales, so a fractional scale makes them
 			//diverge with distance from the window.
 			if (control.FindForm() is Forms.Form form
-					&& global::Keysharp.Internals.Window.Linux.Wayland.WaylandSelfPositioner.TryGetSurfaceOrigin(form, out var origin))
+					&& global::Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.TryGetSurfaceOrigin(form, out var origin))
 				point = new PointF(point.X + origin.X, point.Y + origin.Y);
 
 #endif

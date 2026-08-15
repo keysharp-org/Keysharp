@@ -20,7 +20,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private readonly object transparency;
 		private readonly bool active, visible, alwaysOnTop;
 
-		// --- Wayland-specific payload, read by LinuxWindow internals + WaylandSelfPositioner ---
+		// --- Wayland-specific payload, read by LinuxWindow internals + WaylandOwnToplevels ---
 		public string CompositorId { get; }
 		public string AppId { get; }
 		public Rectangle FrameGeometry { get; }

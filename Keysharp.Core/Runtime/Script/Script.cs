@@ -1107,7 +1107,7 @@ namespace Keysharp.Runtime
 			// retry state before auto-execute resolved process-global services such as the clipboard.
 			//
 			// It is still early enough to hide the cold-start cost: no native main window has been created yet.
-			Keysharp.Internals.Window.Linux.Wayland.WaylandSelfPositioner.Prewarm();
+			Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Prewarm();
 #endif
 
 #if WINDOWS
