@@ -139,6 +139,49 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		/// <summary>
+		/// The inverse of <see cref="TryGetCompositorHandle"/>: the handle one of OUR OWN windows is known by in
+		/// Eto/GTK, given the handle the compositor knows it by.
+		/// <para>
+		/// Every window of ours ends up with BOTH, because a client cannot place itself on Wayland and so has to
+		/// be correlated to its compositor window to be moved at all. Only the compositor's handle reaches the
+		/// window enumeration, though, and a script never sees that one - <c>Gui.Hwnd</c>, and therefore every
+		/// comparison a script makes against it, is the Eto handle. So the enumeration has to hand back the Eto
+		/// handle for a window of ours, which is what this resolves.
+		/// </para>
+		/// <para>
+		/// Reads only what correlation has already cached, so it costs no IPC and cannot itself correlate: a
+		/// window that has never been shown simply is not found, and the caller leaves the compositor's handle
+		/// alone - exactly what it did before this existed.
+		/// </para>
+		/// </summary>
+		internal static bool TryGetFormHandle(nint compositorHandle, out nint formHandle)
+		{
+			formHandle = 0;
+
+			if (compositorHandle == 0 || !IsSupported)
+				return false;
+
+			lock (sync)
+			{
+				foreach (var state in states.Values)
+				{
+					if (state.CompositorHandle != compositorHandle)
+						continue;
+
+					//A form whose window is gone (disposed, or never realized) would otherwise resolve to a
+					//handle that answers nothing, which is worse than reporting the compositor's own.
+					if (state.Form is not { IsDisposed: false } || state.FormHandle == 0)
+						return false;
+
+					formHandle = state.FormHandle;
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		/// <summary>
 		/// Resolve one of our OWN top-level windows to the active compositor's window handle, correlating once
 		/// and caching the result. Lets the synchronous
 		/// window verbs (WinMove / WinGetPos against a Gui object) take the same compositor path foreign windows
@@ -408,7 +451,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (!states.TryGetValue(formHandle, out var state))
 				states[formHandle] = state = new FormState { FormHandle = formHandle };
 
-			state.Form ??= form;
+			// Always adopt the caller's form, never just the first one seen: GTK can recycle a native handle, so a
+			// state that outlived its window (a teardown path that never reached Forget) would otherwise keep
+			// stamping the correlation app_id on the DEAD form and hand TryGetFormHandle a handle that answers
+			// nothing. The live form is the one this call is about.
+			if (form != null)
+				state.Form = form;
 
 			state.Title = title ?? "";
 			if (matchW > 0) state.MatchW = matchW;

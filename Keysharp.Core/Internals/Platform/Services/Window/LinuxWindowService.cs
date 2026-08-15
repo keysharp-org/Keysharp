@@ -610,9 +610,21 @@ namespace Keysharp.Internals
 			return new WindowInfo(id);
 		}
 
+		/// <summary>
+		/// The window as a script must see it. The compositor answers every query about one of OUR OWN windows
+		/// under its own handle, but a script only ever holds the Eto one (that is what <c>Gui.Hwnd</c> returns),
+		/// so anything a script can compare against <c>Gui.Hwnd</c> - or hand to <c>Control.FromHandle</c>, which
+		/// is how MouseGetPos finds the control under the cursor - has to be re-homed onto that handle first.
+		/// Leaves a foreign window, and one of ours that has not been correlated yet, exactly as it came.
+		/// </summary>
+		private static WindowInfoBase AsOwn(WindowInfoBase window)
+			=> window != null && WaylandOwnToplevels.TryGetFormHandle(window.Handle, out var own)
+			   ? new WindowInfo(own)
+			   : window;
+
 		public override WindowInfoBase ActiveWindow()
 		{
-			if (wayland?.TryGetActiveWindow(out var active) == true) return active;
+			if (wayland?.TryGetActiveWindow(out var active) == true) return AsOwn(active);
 			return WaylandForeignToplevels.Current?.Active is WaylandToplevel fa ? new WindowInfo(fa.Handle) : new WindowInfo(0);
 		}
 
@@ -623,7 +635,7 @@ namespace Keysharp.Internals
 			if (wayland?.TryListWindows(includeHidden, out var backendWindows) == true)
 			{
 				foreach (var w in backendWindows)
-					list.Add(w);
+					list.Add(AsOwn(w));
 			}
 
 			if (WaylandForeignToplevels.Current is { } tlm)
@@ -638,7 +650,7 @@ namespace Keysharp.Internals
 		{
 			if (wayland?.TryGetWindowAt(x, y, out var info) == true)
 			{
-				child = info.Handle;
+				child = AsOwn(info).Handle;
 				return true;
 			}
 
@@ -647,7 +659,7 @@ namespace Keysharp.Internals
 		}
 
 		public override WindowInfoBase WindowAt(int x, int y)
-			=> wayland?.TryGetWindowAt(x, y, out var info) == true ? info : null;
+			=> wayland?.TryGetWindowAt(x, y, out var info) == true ? AsOwn(info) : null;
 
 		public override uint GetFocusedControlThread(nint window = 0)
 		{
