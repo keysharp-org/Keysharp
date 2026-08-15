@@ -165,6 +165,22 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		bool TryActivateWindow(nint handle) => false;
 
+		/// <summary>Claim the next top-level this process creates under <paramref name="cookie"/>, so
+		/// <see cref="TryGetReservedWindow"/> can name it afterwards, and have the compositor place it at
+		/// (<paramref name="x"/>, <paramref name="y"/>) before it is first painted. Pass
+		/// <see cref="WindowInfoBase.Unchanged"/> for both to claim without placing. False = unsupported,
+		/// and the caller keeps the correlate-then-move path.</summary>
+		bool TryReserveWindow(ulong cookie, int x, int y, int ttlMs) => false;
+
+		/// <summary>The compositor window a reservation was applied to, which is an exact answer to "which
+		/// window is mine" and needs no matching. False = unsupported, or not consumed (yet).</summary>
+		bool TryGetReservedWindow(ulong cookie, out nint handle, out string compositorId)
+		{
+			handle = 0;
+			compositorId = "";
+			return false;
+		}
+
 		bool TryMoveResizeWindow(nint handle, Rectangle bounds, bool setPosition, bool setSize) => false;
 
 		/// <summary>Remove (true) / restore (false) the server-side window decoration (titlebar) for one of our

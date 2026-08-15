@@ -3101,6 +3101,24 @@ namespace Keysharp.Builtins
 				GuiHelper.EnsureSystemMenu(form);
 #endif
 
+#if LINUX
+
+			//Claim the window with the compositor BEFORE it exists, so the placement that follows can address it
+			//by name instead of searching for it. A window is unrecognisable at the moment it is created - no
+			//title, no app_id, no geometry - so this is the only point at which the claim can be made.
+			//Only when this Show will actually map a new toplevel: a Show of an already-visible window maps
+			//nothing, and its reservation would sit armed until some unrelated window of ours consumed it.
+			//Must stay immediately before form.Show() with no pump point between - FIFO pairing depends on
+			//it; see ReserveWindow.
+			if (!hide && !form.Visible)
+			{
+				var hasPlacement = requestedLocation.X != int.MinValue || requestedLocation.Y != int.MinValue;
+				_ = Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.ReserveWindow(form,
+					hasPlacement ? location.X : int.MinValue, hasPlacement ? location.Y : int.MinValue);
+			}
+
+#endif
+
 			if (hide)
 				form.Hide();
 #if WINDOWS

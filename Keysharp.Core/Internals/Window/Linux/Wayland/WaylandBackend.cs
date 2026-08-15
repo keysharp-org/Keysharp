@@ -294,6 +294,38 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return RunCommandOperation("activate", new { id });
 			}
 
+			public bool TryReserveWindow(ulong cookie, int x, int y, int ttlMs)
+				=> RunCommandOperation("reserveWindow",
+					new { pid = Environment.ProcessId, cookie = cookie.ToString(), x, y, ttlMs }, "reserve_window");
+
+			public bool TryGetReservedWindow(ulong cookie, out nint handle, out string compositorId)
+			{
+				handle = 0;
+				compositorId = "";
+				var json = RunJsonOperation("getReservedWindow",
+					new { pid = Environment.ProcessId, cookie = cookie.ToString() }, "get_reserved");
+
+				if (json.IsNullOrEmpty())
+					return false;
+
+				try
+				{
+					using var doc = JsonDocument.Parse(json);
+					var root = doc.RootElement;
+
+					if (!JsonBool(root, "ok") || !JsonString(root, "id", out var id) || id.IsNullOrEmpty())
+						return false;
+
+					compositorId = id;
+					handle = GetOrCreateHandle(id);
+					return true;
+				}
+				catch
+				{
+					return false;
+				}
+			}
+
 			public bool TryMoveResizeWindow(nint handle, Rectangle bounds, bool setPosition, bool setSize)
 			{
 				if (!TryGetCompositorId(handle, out var id))
@@ -819,6 +851,16 @@ for (var __i = 0; __i < __order.length; ++__i) {
 				   && (z == ZOrder.Top
 					   ? GnomeShellBridge.SendRaiseWindow(seq)
 					   : z == ZOrder.Bottom && GnomeShellBridge.SendLowerWindow(seq));
+
+			public bool TryReserveWindow(ulong cookie, int x, int y, int ttlMs)
+				=> GnomeShellBridge.SendReserveWindow(cookie, x, y, ttlMs);
+
+			public bool TryGetReservedWindow(ulong cookie, out nint handle, out string compositorId)
+			{
+				compositorId = GnomeShellBridge.SendGetReservedWindow(cookie);
+				handle = compositorId.Length > 0 && ulong.TryParse(compositorId, out var seq) ? SeqToHandle(seq) : 0;
+				return handle != 0;
+			}
 
 			public bool TrySetTransparency(nint handle, object alpha)
 				=> TryHandleToSeq(handle, out var seq) && GnomeShellBridge.SendSetOpacity(seq, alpha);

@@ -74,10 +74,21 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static readonly HashSet<string> claimedIds = new();
 		//The app_id a form is being correlated under, while that is in flight. See CurrentAppId.
 		private static readonly Dictionary<nint, string> correlationAppIds = new();
+		//Forms with a reservation the compositor accepted and Correlate has not yet resolved, with the tick it
+		//expires compositor-side. Correlation only pays the reservation polling (and its grace) for these -
+		//and only while the record can still answer; a plain Show whose form is never correlated must not tax
+		//a much later window op. Every other window keeps the plain search.
+		private static readonly Dictionary<nint, long> pendingReservations = new();
 
 		// A freshly-shown window may not be in the compositor's list instantly; poll briefly.
 		private const int CorrelateTimeoutMs = 1000;
 		private const int CorrelatePollMs = 20;
+		// How long a reservation is given to be consumed before the app_id/metadata search starts alongside it.
+		private const int ReservationGraceMs = 250;
+		private const int ReservedGeometryPollMs = 4;
+		//A reservation only has to outlive the Show that follows it; anything longer is a stale entry waiting
+		//to capture an unrelated window of ours.
+		private const int ReservationTtlMs = 2000;
 		// Allow the frame (which includes server-side decorations) to be larger than the requested
 		// client size when matching by size.
 		private const int SizeTolerance = 120;
@@ -105,6 +116,46 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			lock (sync)
 				return correlationAppIds.TryGetValue(formHandle, out var token) ? token : baseAppId;
+		}
+
+		/// <summary>
+		/// Claim the next window this process creates, so the compositor can name it for us afterwards instead of
+		/// our having to recognise it - and place it, if a position is given, before it is ever painted.
+		/// <para>
+		/// A client cannot tell which compositor window is its own: at creation the window has no title, no app_id
+		/// and no geometry, and stamping a temporary app_id to find it afterwards is both slow and defeated by
+		/// anything else writing that value. Reserving BEFORE the window is shown sidesteps all of it - the process
+		/// id is enough for the compositor to know the window is ours, and it hands back the cookie we chose.
+		/// </para>
+		/// <para>
+		/// Best-effort: false on a compositor with no such support, leaving <see cref="Correlate"/> on the search
+		/// path it has always had.
+		/// </para>
+		/// </summary>
+		internal static bool ReserveWindow(Eto.Forms.Form form, int x, int y)
+		{
+			//IsSupported before the handle: reading form.Handle on X11 forces a native window id.
+			if (!IsSupported)
+				return false;
+
+			//FIFO pairing gives the oldest reservation to the next window this process maps, which is only
+			//sound while three things hold: reservations are issued on the UI thread, immediately before the
+			//Show that maps the window with no pump point between, and the bridge call waits WITHOUT
+			//interruption (a hotkey pseudo-thread launched mid-wait could Show a window of its own between
+			//this call and ours). Off the UI thread the ordering guarantee is gone, so do not reserve at all.
+			if (Script.TheScript?.IsOnMainThread != true)
+				return false;
+
+			var formHandle = form?.Handle ?? 0;
+
+			if (formHandle == 0
+					|| WaylandBackend.Current?.TryReserveWindow((ulong)formHandle.ToInt64(), x, y, ReservationTtlMs) != true)
+				return false;
+
+			lock (sync)
+				pendingReservations[formHandle] = Environment.TickCount64 + ReservationTtlMs;
+
+			return true;
 		}
 
 		/// <summary>
@@ -413,6 +464,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				if (states.Remove(formHandle, out var state) && state.CompositorId.Length > 0)
 					_ = claimedIds.Remove(state.CompositorId);
+
+				_ = pendingReservations.Remove(formHandle);
 			}
 		}
 
@@ -602,7 +655,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				correlationAppIds[state.FormHandle] = token;
 			}
 
+			bool reserved;
+
+			lock (sync)
+			{
+				reserved = pendingReservations.TryGetValue(state.FormHandle, out var expires)
+						   && Environment.TickCount64 < expires;
+
+				if (!reserved)
+					_ = pendingReservations.Remove(state.FormHandle);
+			}
+
 			var deadline = Environment.TickCount64 + CorrelateTimeoutMs;
+			var graceUntil = reserved ? Environment.TickCount64 + ReservationGraceMs : 0;
 			var stamped = false;
 
 			try
@@ -617,6 +682,21 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 							return true;
 
 						existingId = state.CompositorId;
+					}
+
+					// Exact, and one cheap query, so it goes first. Retried every poll rather than once up front:
+					// the compositor only records the reservation when it CREATES the window, which is after the
+					// first polls have already gone out.
+					if (reserved && TryClaimReserved(backend, state, deadline))
+						return true;
+
+					// Give that a moment before falling back to stamping an app_id and matching metadata. Doing
+					// both from the start triples the traffic - and puts a UI-thread Wayland call in every poll -
+					// to race an answer that is about to arrive anyway.
+					if (Environment.TickCount64 < graceUntil)
+					{
+						PollWait();
+						continue;
 					}
 
 					// Retry the stamp only until it takes (the window must be realized for the app_id to stick);
@@ -647,28 +727,77 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						return false;
 					}
 
-					//On the UI thread this poll must PUMP rather than sleep: that thread IS the GTK main loop,
-					//and a freshly shown window only gets its compositor toplevel once the loop runs. Sleeping
-					//here keeps the very window being waited for from ever appearing, so a WinGetPos/WinMove
-					//issued right after Show correlates against a window that is not there yet and fails.
-					//Off the UI thread - the worker a request starts - a plain sleep is right.
-					if (Script.TheScript?.IsOnMainThread == true)
-					{
-						var resume = Environment.TickCount64 + CorrelatePollMs;
-						Keysharp.Internals.Flow.WaitWithMessagePump(() => Environment.TickCount64 < resume);
-					}
-					else
-						Thread.Sleep(CorrelatePollMs);
+					PollWait();
 				}
 			}
 			finally
 			{
 				lock (sync)
+				{
 					_ = correlationAppIds.Remove(state.FormHandle);
+
+					//Only when this correlate actually serviced it: one already in flight when Show armed the
+					//flag must leave it for the next correlate, which can still claim the record exactly.
+					if (reserved)
+						_ = pendingReservations.Remove(state.FormHandle);
+				}
 
 				if (stamped)
 					_ = TrySetAppIdOnUiThread(form, NormalAppId);
 			}
+		}
+
+		// A reservation the compositor has consumed names our window outright: exact, with no app_id stamp and
+		// no chance of matching another window of the same title and size.
+		private static bool TryClaimReserved(IWaylandBackend backend, FormState state, long deadline)
+		{
+			if (!backend.TryGetReservedWindow((ulong)state.FormHandle.ToInt64(), out var reserved, out var reservedId)
+					|| reserved == 0)
+				return false;
+
+			// The window is named as it is CREATED, which is before it has committed a buffer, so for a frame or
+			// two the compositor can report no geometry for it. Correlating that early hands the caller a window
+			// it cannot read - and the caller that asked for a position reads it straight after. Polled tighter
+			// than the correlation loop (one cheap query, only the first buffer is being waited for), but never
+			// past the caller's own deadline.
+			var readable = false;
+
+			while (!(readable = backend.TryGetWindow(reserved, out var info) && info != null
+					 && info.FrameGeometry.Width > 0 && info.FrameGeometry.Height > 0)
+					&& Environment.TickCount64 < deadline)
+				PollWait(ReservedGeometryPollMs);
+
+			//A window that never became readable is gone (destroyed before committing) or unreadable to this
+			//backend; claiming it would hand the caller a handle that answers nothing.
+			if (!readable)
+				return false;
+
+			lock (sync)
+			{
+				if (state.CompositorId.Length > 0 && state.CompositorId != reservedId)
+					_ = claimedIds.Remove(state.CompositorId);
+
+				state.CompositorHandle = reserved;
+				state.CompositorId = reservedId;
+				_ = claimedIds.Add(reservedId);
+			}
+
+			return true;
+		}
+
+		// One poll interval. On the UI thread this must PUMP rather than sleep: that thread IS the GTK main
+		// loop, and a freshly shown window only gets its compositor toplevel - and its first buffer - once the
+		// loop runs. Sleeping here keeps the very thing being waited for from ever happening. Off the UI
+		// thread a plain sleep is right.
+		private static void PollWait(int ms = CorrelatePollMs)
+		{
+			if (Script.TheScript?.IsOnMainThread == true)
+			{
+				var resume = Environment.TickCount64 + ms;
+				Keysharp.Internals.Flow.WaitWithMessagePump(() => Environment.TickCount64 < resume);
+			}
+			else
+				Thread.Sleep(ms);
 		}
 
 		private static void Claim(FormState state, WaylandWindowInfo pick)

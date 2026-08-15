@@ -43,6 +43,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		Task<bool> FocusWindowAsync(ulong handle);
 		Task<bool> RaiseWindowAsync(ulong handle);
 		Task<bool> LowerWindowAsync(ulong handle);
+		Task<bool> ReserveWindowAsync(int pid, ulong cookie, int x, int y, int ttlMs);
+		Task<string> GetReservedWindowAsync(int pid, ulong cookie);
 		Task<bool> MoveResizeWindowAsync(ulong handle, int x, int y, int width, int height);
 		Task<bool> MoveResizeWindowByXidAsync(ulong xid, int x, int y, int width, int height);
 		Task<bool> SetWindowStateAsync(ulong handle, int state);
@@ -251,6 +253,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal static bool SendLowerWindow(ulong seq)
 			=> RunExtensionBool(p => p.LowerWindowAsync(seq))
 			   || RunOk("(function(){try{" + JsHelpers + "const w=find(" + seq + ");let ok=false;if(w){try{if(typeof w.lower_with_transients==='function'){w.lower_with_transients();ok=true;}else if(typeof w.lower==='function'){w.lower();ok=true;}}catch(e){ok=false;}}return JSON.stringify({ok:ok});}catch(e){return JSON.stringify({ok:false});}})()");
+
+		// Ask the shell to place the NEXT window this process creates, before it is first painted. There is no
+		// Eval fallback: this needs a live window-created hook in the extension, which an Eval snippet cannot
+		// register safely. Fails closed against an extension that predates the method, leaving the caller on
+		// the normal correlate-then-move path.
+		internal static bool SendReserveWindow(ulong cookie, int x, int y, int ttlMs)
+			=> RunExtensionBool(p => p.ReserveWindowAsync(Environment.ProcessId, cookie, x, y, ttlMs));
+
+		// The compositor window a reservation landed on, or "" if it was never consumed.
+		internal static string SendGetReservedWindow(ulong cookie)
+			=> RunExtension(p => p.GetReservedWindowAsync(Environment.ProcessId, cookie)) ?? "";
 
 		internal static bool SendMoveResize(ulong seq, int x, int y, int width, int height)
 			=> RunExtensionBool(p => p.MoveResizeWindowAsync(seq, x, y, width, height))
@@ -826,6 +839,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		public bool TryActivateWindow(nint handle)
 			=> TryHandleToSeq(handle, out var seq) && CinnamonShellBridge.SendFocusWindow(seq);
+
+		public bool TryReserveWindow(ulong cookie, int x, int y, int ttlMs)
+			=> CinnamonShellBridge.SendReserveWindow(cookie, x, y, ttlMs);
+
+		public bool TryGetReservedWindow(ulong cookie, out nint handle, out string compositorId)
+		{
+			compositorId = CinnamonShellBridge.SendGetReservedWindow(cookie);
+			handle = compositorId.Length > 0 && ulong.TryParse(compositorId, out var seq) ? SeqToHandle(seq) : 0;
+			return handle != 0;
+		}
 
 		public bool TryMoveResizeWindow(nint handle, Rectangle bounds, bool setPosition, bool setSize)
 			=> TryHandleToSeq(handle, out var seq)

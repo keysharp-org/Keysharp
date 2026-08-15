@@ -19,6 +19,17 @@ const ByteArray = imports.byteArray;
 const Cairo = imports.cairo;
 
 const SERVICE_NAME = 'io.github.keysharp.CinnamonShell';
+
+// How many compositor frames to wait for a reserved window to become placeable.
+// Retries are timer-driven, so this is a real time budget: 40 x 16ms.
+const PLACEMENT_MAX_TRIES = 40;
+const PLACEMENT_RETRY_MS = 16;
+// How long the actor watchdog stays armed after placement; the observed yank fight lasts ~150ms.
+const PLACEMENT_WATCH_MS = 600;
+
+// How long a reservation stays live if the window it was meant for never arrives.
+const PLACEMENT_TTL_MS = 2000;
+
 const OBJECT_PATH = '/io/github/keysharp/CinnamonShell';
 
 const DBUS_IFACE_XML =
@@ -75,6 +86,21 @@ const DBUS_IFACE_XML =
     <method name="LowerWindow">
       <arg type="t" direction="in" name="handle"/>
       <arg type="b" direction="out" name="ok"/>
+    </method>
+
+    <method name="ReserveWindow">
+      <arg type="i" direction="in" name="pid"/>
+      <arg type="t" direction="in" name="cookie"/>
+      <arg type="i" direction="in" name="x"/>
+      <arg type="i" direction="in" name="y"/>
+      <arg type="i" direction="in" name="ttlMs"/>
+      <arg type="b" direction="out" name="ok"/>
+    </method>
+
+    <method name="GetReservedWindow">
+      <arg type="i" direction="in" name="pid"/>
+      <arg type="t" direction="in" name="cookie"/>
+      <arg type="s" direction="out" name="id"/>
     </method>
 
     <method name="MoveResizeWindow">
@@ -284,6 +310,10 @@ class KeysharpExtension {
         this._vPointer = null;
         this._focusId = null;
         this._winCreatedId = null;
+        this._mapId = 0;
+        this._placements = [];
+        this._placed = {};
+        this._placementSources = new Set();
         this._windowSignalIds = new Map();
         this._highlights = new Map();
         this._imageOverlays = new Map();
@@ -332,10 +362,24 @@ class KeysharpExtension {
                 this._emitWindowEvent('active', win);
         });
 
+        // The moment a reserved window can be placed WITHOUT a visible jump: 'map' fires as the actor is
+        // about to be presented, before its first frame reaches the screen, so a move here is never seen.
+        // The timer loop in _placeOnMap stays as the safety net for a map that slips past this.
+        this._mapId = global.window_manager.connect('map', (_wm, actor) => {
+            try {
+                const win = actor ? actor.get_meta_window() : null;
+
+                if (win && win.__ksPlaceNow)
+                    win.__ksPlaceNow();
+            } catch (_e) {
+            }
+        });
+
         this._winCreatedId = global.display.connect('window-created', (_display, win) => {
             if (!win || !this._isTrackedWindow(win))
                 return;
 
+            this._placeOnMap(win);
             this._hookWindow(win);
             this._emitWindowEvent('create', win);
         });
@@ -372,6 +416,17 @@ class KeysharpExtension {
             global.display.disconnect(this._winCreatedId);
             this._winCreatedId = null;
         }
+
+        if (this._mapId) {
+            global.window_manager.disconnect(this._mapId);
+            this._mapId = 0;
+        }
+
+        for (const id of this._placementSources) {
+            try { GLib.source_remove(id); } catch (_e) {}
+        }
+
+        this._placementSources.clear();
 
         if (this._focusId !== null) {
             global.display.disconnect(this._focusId);
@@ -797,6 +852,12 @@ class KeysharpExtension {
         if (!win)
             return false;
 
+        // Moving a window that has no monitor yet recurses to death inside
+        // move_resize_internal -> update_monitor -> wayland_update_main_monitor. Reachable here because a
+        // reserved window is correlated as soon as it has geometry, which can precede its monitor.
+        if (win.get_monitor() < 0)
+            return false;
+
         // A maximized (or tiled) window ignores move/resize until it is restored — mirror how dragging its
         // titlebar first unmaximizes it. Unmaximize BEFORE reading the frame rect so an unchanged-size move
         // keeps the restored size, not the maximized one.
@@ -820,6 +881,245 @@ class KeysharpExtension {
         } catch (_e) {
             return false;
         }
+    }
+
+    // Claim the NEXT window this pid creates under a caller-chosen cookie, so it can ask afterwards which
+    // compositor window its own toplevel became. Consumed in creation order: Show() is synchronous, so the
+    // oldest live reservation for a pid belongs to the next window it maps. The pid is the only identity
+    // available this early - title, app_id and geometry are all still empty when a window is created, which
+    // is exactly why a client cannot recognise its own window without this.
+    ReserveWindow(pid, cookie, x, y, ttlMs) {
+        if (pid <= 0)
+            return false;
+
+        try {
+            this._sweepPlacements();
+            this._placements.push({
+                pid: pid,
+                cookie: cookie,
+                x: x,
+                y: y,
+                expires: GLib.get_monotonic_time() / 1000 + (ttlMs > 0 ? ttlMs : PLACEMENT_TTL_MS)
+            });
+            return true;
+        } catch (_e) {
+            return false;
+        }
+    }
+
+    // The compositor window a reservation ended up on, or '' if it has not been consumed (or has expired).
+    // Keyed by pid too: the cookie is a per-process pointer, so two Keysharp processes can mint the same one.
+    GetReservedWindow(pid, cookie) {
+        try {
+            const now = GLib.get_monotonic_time() / 1000;
+            const hit = this._placed[pid + ':' + cookie];
+
+            if (!hit)
+                return '';
+
+            delete this._placed[pid + ':' + cookie];
+            return hit.expires > now ? hit.id : '';
+        } catch (_e) {
+            return '';
+        }
+    }
+
+    _sweepPlacements() {
+        const now = GLib.get_monotonic_time() / 1000;
+        this._placements = this._placements.filter(p => p.expires > now);
+
+        for (const key in this._placed) {
+            if (this._placed[key].expires <= now)
+                delete this._placed[key];
+        }
+    }
+
+    // Consume a reservation for a just-created window: record which compositor window it became, and place
+    // it if a position was reserved.
+    //
+    // The placement is what a client cannot do for itself. It has to wait for the window to exist, learn which
+    // one is its own, then move it - by which time the window has been painted where the compositor chose. Here
+    // the move happens before it is ever painted.
+    //
+    // Two hazards, both learned the hard way. A window has no monitor at creation, and moving it then recurses
+    // to death inside move_resize_internal -> update_monitor -> wayland_update_main_monitor, so wait for one.
+    // And Muffin emits the geometry signals from INSIDE move_resize_internal, so moving from a signal handler
+    // re-enters it: the move is posted to run before the next paint instead, outside that call stack.
+    _placeOnMap(win) {
+        let p = null;
+
+        try {
+            this._sweepPlacements();
+            // Muffin answers the client pid only via get_client_pid() (get_pid() is -1 for Wayland
+            // clients); modern Mutter removed get_client_pid() and made get_pid() answer it instead.
+            const pid = win.get_pid() > 0 ? win.get_pid() : (win.get_client_pid ? win.get_client_pid() : -1);
+
+            if (pid <= 0 || this._placements.length === 0)
+                return;
+
+            const i = this._placements.findIndex(q => q.pid === pid);
+
+            if (i < 0)
+                return;
+
+            p = this._placements.splice(i, 1)[0];
+
+            if (p.cookie)
+                this._placed[p.pid + ':' + p.cookie] = {id: String(win.get_stable_sequence()), expires: p.expires};
+        } catch (_e) {
+            return;
+        }
+
+        if (!p || (p.x === INT32_MIN && p.y === INT32_MIN))
+            return;
+
+        // Wait for the window to become placeable, then move it and hold it there. Never move before
+        // get_monitor() answers: a monitorless window recurses to death through
+        // move_resize_internal -> update_monitor -> wayland_update_main_monitor.
+        let left = PLACEMENT_MAX_TRIES;
+        let moved = 0;
+        let stable = 0;
+
+        // Every source is tracked so disable() can cancel it: a disabled extension must stop moving windows.
+        const defer = (ms, fn) => {
+            let id = 0;
+            id = GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
+                this._placementSources.delete(id);
+                fn();
+                return GLib.SOURCE_REMOVE;
+            });
+            this._placementSources.add(id);
+            return id;
+        };
+
+        const retry = () => defer(PLACEMENT_RETRY_MS, attempt);
+
+        // The compositor's lazy geometry sync can yank the painted actor to a stale position while the
+        // window's own buffer rect keeps saying where it belongs. Correcting from notify:: runs synchronously
+        // inside whatever moved the property - BEFORE the next paint - so a yank never reaches the screen,
+        // unlike a timer correction which can be a frame late. Snapping to the live buffer rect also cannot
+        // fight a legitimate move, which updates the buffer rect with it.
+        // The yank pathology was measured on Muffin; on a compositor that keeps the actor synced, the >1px
+        // gate leaves this inert. If windows ever stutter for ~600ms after Show (fractional scaling is the
+        // plausible trigger), suspect this block first.
+        let watchIds = [];
+        let fixing = false;
+        let fixes = 0;
+
+        const disarmWatch = (actor) => {
+            for (const id of watchIds) {
+                try { actor.disconnect(id); } catch (_e) {}
+            }
+
+            watchIds = [];
+        };
+
+        const armWatch = (actor) => {
+            if (watchIds.length)
+                return;
+
+            const fix = () => {
+                if (fixing || fixes > 60)
+                    return;
+
+                try {
+                    const br = win.get_buffer_rect();
+
+                    if (Math.abs(actor.x - br.x) > 1 || Math.abs(actor.y - br.y) > 1) {
+                        fixing = true;
+                        fixes++;
+                        actor.set_position(br.x, br.y);
+                        fixing = false;
+                    }
+                } catch (_e) {
+                }
+            };
+
+            try {
+                watchIds.push(actor.connect('notify::x', fix));
+                watchIds.push(actor.connect('notify::y', fix));
+
+                defer(PLACEMENT_WATCH_MS, () => disarmWatch(actor));
+            } catch (_e) {
+            }
+        };
+
+        const attempt = () => {
+            try {
+                if (--left <= 0) {
+                    delete win.__ksPlaceNow;
+                    return;
+                }
+
+                if (win.get_monitor() < 0) {
+                    retry();
+                    return;
+                }
+
+                const f = win.get_frame_rect();
+                const tx = p.x !== INT32_MIN ? p.x : f.x;
+                const ty = p.y !== INT32_MIN ? p.y : f.y;
+
+                if (moved > 0 && f.x === tx && f.y === ty) {
+                    // The rect being right is only half the job: the ACTOR - the thing actually painted - is
+                    // synced to it lazily and can still be yanked to a stale position tens of ms later. Only
+                    // finish once it exists and has sat at the window's buffer rect for two consecutive
+                    // ticks; a rect that converged before the actor existed would otherwise paint at its
+                    // spawn position unwatched.
+                    const held = win.get_compositor_private();
+
+                    if (!held) {
+                        retry();
+                        return;
+                    }
+
+                    armWatch(held);
+
+                    const br = win.get_buffer_rect();
+
+                    if (Math.abs(held.x - br.x) > 1 || Math.abs(held.y - br.y) > 1) {
+                        held.set_position(br.x, br.y);
+                        stable = 0;
+                        retry();
+                        return;
+                    }
+
+                    if (++stable < 2) {
+                        retry();
+                        return;
+                    }
+
+                    delete win.__ksPlaceNow;
+                    return;
+                }
+
+                // Position only, never a size. The size the client chose is already on its way, and a resize
+                // it never asked for is at best held until the client acks it - the position with it - and at
+                // worst is what crashes the compositor when issued this early.
+                win.move_frame(true, tx, ty);
+
+                // Carry the actor along: the buffer rect is where it belongs now that the rect has moved.
+                const a2 = win.get_compositor_private();
+
+                if (a2) {
+                    const nbr = win.get_buffer_rect();
+                    a2.set_position(nbr.x, nbr.y);
+                    armWatch(a2);
+                }
+
+                moved++;
+                stable = 0;
+                retry();
+            } catch (_e) {
+                delete win.__ksPlaceNow;
+            }
+        };
+
+        win.__ksPlaceNow = attempt;
+
+        // Deferred out of the window-created signal, but only just: an idle fires long before anything is
+        // presented, and pre-show moves both seed the rect and mean the map-time correction is tiny.
+        defer(0, attempt);
     }
 
     MoveResizeWindow(handle, x, y, width, height) {

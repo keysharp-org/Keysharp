@@ -43,6 +43,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// <summary>Lower the window to the bottom of the stack. False = no such window.</summary>
 		Task<bool> LowerWindowAsync(ulong handle);
 
+		/// <summary>Claim the next window this pid creates under <paramref name="cookie"/> and have the shell
+		/// place it before first paint; see <see cref="SendReserveWindow"/>.</summary>
+		Task<bool> ReserveWindowAsync(int pid, ulong cookie, int x, int y, int ttlMs);
+
+		/// <summary>The compositor window a reservation landed on, or "" if it was never consumed.</summary>
+		Task<string> GetReservedWindowAsync(int pid, ulong cookie);
+
 		/// <summary>
 		/// Pass x = int.MinValue to leave position unchanged;
 		/// width/height &lt;= 0 to leave size unchanged. False = no such window.
@@ -269,6 +276,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		internal static bool SendLowerWindow(ulong handle)
 			=> Run(p => p.LowerWindowAsync(handle));
+
+		// Ask the shell to place the NEXT window this process creates, before it is first painted. Fails closed
+		// against an extension that predates the method, leaving the caller on the correlate-then-move path.
+		internal static bool SendReserveWindow(ulong cookie, int x, int y, int ttlMs)
+			=> Run(p => p.ReserveWindowAsync(Environment.ProcessId, cookie, x, y, ttlMs));
+
+		internal static string SendGetReservedWindow(ulong cookie)
+			=> Run(p => p.GetReservedWindowAsync(Environment.ProcessId, cookie)) ?? "";
 
 		internal static bool SendMoveResize(ulong handle, int x, int y, int width, int height)
 			=> Run(p => p.MoveResizeWindowAsync(handle, x, y, width, height));

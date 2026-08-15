@@ -1007,7 +1007,105 @@ function windowAtPoint(px, py, ownPid) {
   } catch (e) {}
   return null;
 }
+// Windows this process asked to have claimed and placed before they exist. A client cannot recognise
+// its own window at creation nor place it before it has been painted at the compositor's chosen spot;
+// reserving ahead of Show() lets the script do both from windowAdded. FIFO per pid: Show() is synchronous
+// client-side, so the oldest live reservation belongs to the next window that pid maps.
+var reservations = [];
+var placedByCookie = {};
+var reservationHookInstalled = false;
+
+function sweepReservations() {
+  var now = Date.now();
+  var keep = [];
+  for (var i = 0; i < reservations.length; ++i)
+    if (reservations[i].expires > now) keep.push(reservations[i]);
+  reservations = keep;
+  for (var key in placedByCookie)
+    if (placedByCookie[key].expires <= now) delete placedByCookie[key];
+}
+
+function onReservedWindowAdded(w) {
+  try {
+    sweepReservations();
+    if (!reservations.length) return;
+    // Same window classes the shell extensions consume for: a reservation must not be stolen by this
+    // process's own overlays/OSD surfaces, which windowAdded also reports.
+    var tracked = safeBool(safeRead(w, "normalWindow", false))
+      || safeBool(safeRead(w, "dialog", false))
+      || safeBool(safeRead(w, "utility", false));
+    if (!tracked) return;
+    var pid = Math.round(safeRead(w, "pid", 0) || 0);
+    if (pid <= 0) return;
+    var idx = -1;
+    for (var i = 0; i < reservations.length; ++i)
+      if (reservations[i].pid === pid) { idx = i; break; }
+    if (idx < 0) return;
+    var r = reservations.splice(idx, 1)[0];
+    if (r.cookie) placedByCookie[r.pid + ":" + r.cookie] = { id: windowId(w), expires: r.expires };
+    if (r.x === -2147483648 && r.y === -2147483648) return;
+    var apply = function() {
+      try {
+        var g = safeRead(w, "frameGeometry", safeRead(w, "geometry", null));
+        if (!g || Math.round(g.width || 0) <= 0) return false;
+        // Position only, never a size: the size the client chose is already on its way, and forcing a
+        // different one stalls the move behind a resize the client never acks.
+        w.frameGeometry = {
+          x: Math.round(r.x !== -2147483648 ? r.x : g.x),
+          y: Math.round(r.y !== -2147483648 ? r.y : g.y),
+          width: Math.round(g.width),
+          height: Math.round(g.height)
+        };
+        return true;
+      } catch (e) { return false; }
+    };
+    if (!apply()) {
+      // A Wayland window can reach windowAdded before its first commit, with no geometry to move yet.
+      try {
+        var once = function() {
+          try { w.windowShown.disconnect(once); } catch (e) {}
+          apply();
+        };
+        w.windowShown.connect(once);
+      } catch (e) {}
+    }
+  } catch (e) {}
+}
+
+// Called by the RESIDENT script only. This file is also embedded into one-shot fallback scripts, and a
+// hook auto-connected there would live just long enough to steal a reservation from the resident copy.
+function installReservationHook() {
+  try { workspace.windowAdded.connect(onReservedWindowAdded); reservationHookInstalled = true; }
+  catch (e) { try { workspace.clientAdded.connect(onReservedWindowAdded); reservationHookInstalled = true; } catch (e2) {} }
+}
+
 var keysharpOps = {
+  reserveWindow: function(args) {
+    // In a one-shot fallback script the state below is discarded on unload and the hook is never
+    // installed, so accepting would silently lose the reservation; refusing keeps the client on its
+    // normal correlate-and-move path.
+    if (!reservationHookInstalled) return { ok: false };
+    var pid = Math.round(argNumber(args, "pid", 0));
+    if (pid <= 0) return { ok: false };
+    sweepReservations();
+    reservations.push({
+      pid: pid,
+      cookie: argString(args, "cookie"),
+      x: Math.round(argNumber(args, "x", -2147483648)),
+      y: Math.round(argNumber(args, "y", -2147483648)),
+      expires: Date.now() + Math.max(1, Math.round(argNumber(args, "ttlMs", 2000)))
+    });
+    return { ok: true };
+  },
+  getReservedWindow: function(args) {
+    sweepReservations();
+    // Keyed by pid too: the cookie is a per-process pointer, so two Keysharp processes can mint the same one.
+    var key = Math.round(argNumber(args, "pid", 0)) + ":" + argString(args, "cookie");
+    var hit = placedByCookie[key];
+    if (!hit) return { ok: true, id: "" };
+    delete placedByCookie[key];
+    return { ok: true, id: hit.id };
+  },
   ping: function(args) {
     return { ok: true };
   },
@@ -1217,6 +1315,7 @@ function executeOperation(op, args) {
 				"(function() {\n"
 				+ KWinOperationScript
 				+ "\n"
+				+ "  installReservationHook();\n"
 				+ "  function reportTo(id, json) {\n"
 				+ $"    try {{ {call}, \"ReportJson\", id, String(json)); }} catch (e) {{}}\n"
 				+ "  }\n"
