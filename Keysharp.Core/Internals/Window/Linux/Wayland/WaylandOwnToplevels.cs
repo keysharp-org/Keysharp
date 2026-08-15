@@ -619,7 +619,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						return false;
 					}
 
-					Thread.Sleep(CorrelatePollMs);
+					//On the UI thread this poll must PUMP rather than sleep: that thread IS the GTK main loop,
+					//and a freshly shown window only gets its compositor toplevel once the loop runs. Sleeping
+					//here keeps the very window being waited for from ever appearing, so a WinGetPos/WinMove
+					//issued right after Show correlates against a window that is not there yet and fails.
+					//Off the UI thread - the worker a request starts - a plain sleep is right.
+					if (Script.TheScript?.IsOnMainThread == true)
+					{
+						var resume = Environment.TickCount64 + CorrelatePollMs;
+						Keysharp.Internals.Flow.WaitWithMessagePump(() => Environment.TickCount64 < resume);
+					}
+					else
+						Thread.Sleep(CorrelatePollMs);
 				}
 			}
 			finally
