@@ -1760,6 +1760,17 @@ export default class KeysharpExtension {
     _windowInfo(win) {
         const frame = win.get_frame_rect();
 
+        // The surface as the client drew it, shadow included. That is precisely why it is wrong as a client
+        // origin (see below) and right as the surface origin: a Wayland client is never told where its surface
+        // sits, so this is the only thing its own coordinates can be resolved against. Absent on a compositor
+        // that cannot answer, which leaves the consumer uncorrected rather than wrong.
+        let buffer = null;
+        try {
+            const b = win.get_buffer_rect();
+            if (b) buffer = {x: b.x, y: b.y, width: b.width, height: b.height};
+        } catch (_e) {
+        }
+
         // get_maximized() was removed in Mutter 50; use the individual boolean
         // GObject properties instead, which are stable across all versions.
         const maximized = !!(win.maximized_horizontally && win.maximized_vertically);
@@ -1786,6 +1797,7 @@ export default class KeysharpExtension {
             pid:       win.get_pid(),
             frame:     {x: frame.x, y: frame.y, width: frame.width, height: frame.height},
             client:    {x: frame.x, y: frame.y, width: frame.width, height: frame.height},
+            buffer:    buffer,
             active:    !!win.appears_focused,
             minimized: !!win.minimized,
             maximized,

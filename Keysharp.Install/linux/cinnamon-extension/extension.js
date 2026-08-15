@@ -1535,6 +1535,8 @@ class KeysharpExtension {
 
     _windowInfo(win) {
         const frame = win.get_frame_rect();
+        let buffer = null;
+        try { const b = win.get_buffer_rect(); if (b) buffer = {x: b.x, y: b.y, width: b.width, height: b.height}; } catch (e) { }
         let workspace = -1;
         let monitor = -1;
         let opacity = 255;
@@ -1584,6 +1586,10 @@ class KeysharpExtension {
             onCurrentWorkspace: onCurrentWorkspace,
             frame: {x: frame.x, y: frame.y, width: frame.width, height: frame.height},
             client: {x: frame.x, y: frame.y, width: frame.width, height: frame.height},
+            // The surface as the client drew it, shadow included. A Wayland client is never told where its
+            // surface is, so this is the only origin its own coordinates can be resolved against. Omitted on a
+            // compositor that cannot answer, which leaves the consumer uncorrected rather than wrong.
+            buffer: buffer,
             active: !!win.appears_focused,
             minimized: !!win.minimized,
             maximized: !!(win.maximized_horizontally && win.maximized_vertically),

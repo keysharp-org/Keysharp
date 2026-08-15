@@ -154,7 +154,8 @@ namespace Keysharp.Internals.Window.Unix
 			if (control == null)
 				return new POINT();
 
-			var pt = control.PointToScreen(Point.Empty);
+			//ScreenOrigin, so this answers in the same space as Bounds and ClientBounds on this same object.
+			var pt = control.ScreenOrigin();
 			return new POINT(Convert.ToInt32(pt.X), Convert.ToInt32(pt.Y));
 		}
 

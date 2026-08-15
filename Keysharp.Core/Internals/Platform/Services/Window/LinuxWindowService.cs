@@ -248,15 +248,31 @@ namespace Keysharp.Internals
 			return true;
 		}
 
+		/// <summary>
+		/// Where our own window's client area sits, composed from the one thing each side knows: the compositor
+		/// says where the surface is, the toolkit says where the content sits inside it.
+		/// </summary>
 		private Rectangle OwnClientBounds(nint h, WaylandWindowInfo own)
 		{
 			var frame = own.FrameGeometry;
+
+			if (TryGetSurfaceOrigin(own, out var surface)
+					&& TryOwnControl(h, out var ctrl) && ctrl is Form form && form.Content is Control content)
+			{
+				var offset = content.PointToScreen(Point.Empty);   // surface-relative, which is what we correct
+				var size = form.ClientSize;
+
+				if (size.Width > 0 && size.Height > 0)
+					return new Rectangle(surface.X + (int)Math.Round(offset.X), surface.Y + (int)Math.Round(offset.Y),
+										 size.Width, size.Height);
+			}
+
 			var local = TryOwnControl(h, out _) ? base.GetClientBounds(h) : Rectangle.Empty;
 
 			if (local.Width > 0 && local.Height > 0 && frame.Width > 0 && frame.Height > 0)
 			{
-				// GTK/Eto knows the client size, but under Wayland its PointToScreen origin can be
-				// 0,0. Combine that client size with Muffin/KWin/GNOME's real frame position.
+				// Without a surface rect the decoration can only be guessed at: assume it is even down the sides
+				// and put the remainder on top, which is where a titlebar is.
 				var width = Math.Min(local.Width, frame.Width);
 				var height = Math.Min(local.Height, frame.Height);
 				var side = Math.Max(0, (int)Math.Round((frame.Width - width) / 2.0));
@@ -266,6 +282,15 @@ namespace Keysharp.Internals
 
 			return own.ClientGeometry.Width > 0 && own.ClientGeometry.Height > 0 ? own.ClientGeometry : frame;
 		}
+
+		/// <summary>The origin a Wayland client's own coordinates are relative to, when the compositor reports it.</summary>
+		private static bool TryGetSurfaceOrigin(WaylandWindowInfo own, out Point origin)
+		{
+			var surface = own.SurfaceGeometry;
+			origin = new Point(surface.X, surface.Y);
+			return surface.Width > 0 && surface.Height > 0;
+		}
+
 
 		public override bool TryGetParent(nint h, out nint parent)
 		{

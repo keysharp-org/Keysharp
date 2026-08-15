@@ -104,7 +104,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			// -1 = the compositor has no explicit opacity for this window (no actor / read failed); it is preserved as
 			// the cross-platform "no transparency set" sentinel (WinGetTransparent -> ""), NOT clamped to 0.
 			"function opacity(w){try{const a=w.get_compositor_private?w.get_compositor_private():null;return a?(a.get_opacity?a.get_opacity():a.opacity):-1;}catch(e){return -1;}}" +
-			"function info(w){const f=w.get_frame_rect();return{id:String(w.get_stable_sequence()),title:w.get_title()||'',appId:w.get_wm_class()||w.get_wm_class_instance()||'',pid:w.get_pid(),frame:{x:f.x,y:f.y,width:f.width,height:f.height},client:{x:f.x,y:f.y,width:f.width,height:f.height},active:!!w.appears_focused,minimized:!!w.minimized,maximized:!!(w.maximized_horizontally&&w.maximized_vertically),visible:!w.minimized,alwaysOnTop:(w.is_above?w.is_above():!!w.above),decorated:w.decorated!==false,transparency:(function(){const o=opacity(w);return o<0?-1:clamp255(o);})()};}" +
+			// buffer = the surface as the client drew it, shadow included. It is the only origin a GTK client
+			// can be located against: on Wayland it is never told where its surface is, so every coordinate it
+			// reports is relative to that rectangle. Absent on a compositor too old to answer, which leaves the
+			// consumer uncorrected rather than wrong.
+			"function buffer(w){try{const b=w.get_buffer_rect();return b?{x:b.x,y:b.y,width:b.width,height:b.height}:null;}catch(e){return null;}}" +
+			"function info(w){const f=w.get_frame_rect();return{id:String(w.get_stable_sequence()),buffer:buffer(w),title:w.get_title()||'',appId:w.get_wm_class()||w.get_wm_class_instance()||'',pid:w.get_pid(),frame:{x:f.x,y:f.y,width:f.width,height:f.height},client:{x:f.x,y:f.y,width:f.width,height:f.height},active:!!w.appears_focused,minimized:!!w.minimized,maximized:!!(w.maximized_horizontally&&w.maximized_vertically),visible:!w.minimized,alwaysOnTop:(w.is_above?w.is_above():!!w.above),decorated:w.decorated!==false,transparency:(function(){const o=opacity(w);return o<0?-1:clamp255(o);})()};}" +
 			"function find(s){const a=global.get_window_actors();for(let i=0;i<a.length;i++){const w=a[i].get_meta_window();if(w&&w.get_stable_sequence()===s)return w;}return null;}";
 
 		private static RecoverableService<DbusSession> sessions;
@@ -937,6 +942,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				pid: JsonLong(item, "pid"),
 				frameGeometry: JsonRectangle(item, "frame"),
 				clientGeometry: JsonRectangle(item, "client"),
+				surfaceGeometry: JsonRectangle(item, "buffer"),
 				active: JsonBool(item, "active"),
 				minimized: JsonBool(item, "minimized"),
 				maximized: JsonBool(item, "maximized"),

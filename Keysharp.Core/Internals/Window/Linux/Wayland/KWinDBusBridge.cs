@@ -893,8 +893,13 @@ function windowInfo(w, includeSpecial) {
       else
         client = frame;
     }
+    // The surface as the client drew it, shadow included: the origin a Wayland client's own coordinates are
+    // relative to. Not exposed on every KWin build, and absent leaves the consumer uncorrected rather than wrong.
+    var buffer = readRect(safeRead(w, "bufferGeometry", null));
+    if (buffer && buffer.width === 0) buffer = null;
     return {
       id: id,
+      buffer: buffer,
       title: safeString(safeRead(w, "caption", "")),
       appId: firstNonEmpty(safeRead(w, "resourceClass", ""), safeRead(w, "desktopFileName", ""), safeRead(w, "resourceName", "")),
       pid: Math.round(safeRead(w, "pid", 0) || 0),

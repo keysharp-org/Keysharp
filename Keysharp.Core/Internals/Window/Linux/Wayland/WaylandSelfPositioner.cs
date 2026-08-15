@@ -45,13 +45,20 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal int MatchW;
 			internal int MatchH;
 			internal bool Busy;                       // a worker is currently servicing this form
+			internal long Generation;                 // bumped by every request, so a worker can tell one arrived while it correlated
 			internal bool RemoveBorder;               // strip the server-side titlebar once correlated
 			internal bool BorderRemoved;              // ...and we have done so
 			internal bool KeepAbove;                  // assert keep-above (Eto +AlwaysOnTop is a no-op on Wayland)
 			internal bool KeptAbove;                  // ...and we have done so
 			internal bool SkipTaskbar;                // hide from taskbar/pager/switcher (GTK's hint is X11-only)
 			internal bool TaskbarSkipped;             // ...and we have done so
+			internal object Opacity;                  // requested whole-window alpha (null = never set)
+			internal bool OpacityApplied;             // ...and we have done so
+			internal bool PositionSettled;            // a placement has been verified (or given up on) once; see ApplyPosition
 			internal FormWindowState? PendingWindowState; // maximize/minimize/restore to reassert via the backend
+			internal Point SurfaceOrigin;             // where the compositor last said this form's surface starts
+			internal long SurfaceTick;                // ...and when, since the user can move the window at any time
+			internal bool SurfaceKnown;               // false = the compositor could not say
 		}
 
 		private static readonly object sync = new();
@@ -139,6 +146,72 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// without a capable backend, or when the window can't be correlated (e.g. foreign-toplevel-only
 		/// compositors).
 		/// </summary>
+		//The window can be dragged, tiled or maximized at any moment and a Wayland client is never told, so the
+		//origin is only ever a snapshot; one frame is as current as anything on screen can be. A form nothing can
+		//answer for is re-asked far less often, since that only changes when it is correlated.
+		private const long surfaceOriginValidMs = 16;
+		private const long surfaceOriginMissMs = 500;
+
+		/// <summary>
+		/// Where the form's surface starts, which is what its own toolkit coordinates are relative to: a Wayland
+		/// client is never told where it sits, so only the compositor can say.
+		/// <para>
+		/// Reads the correlation already cached and never starts one. Correlation pumps the message loop, and this
+		/// is reached from hit tests and from pointer motion, where dispatching an event mid-read would re-enter.
+		/// An uncorrelated form is simply not found, leaving the caller uncorrected.
+		/// </para>
+		/// </summary>
+		internal static bool TryGetSurfaceOrigin(Eto.Forms.Form form, out Point origin)
+		{
+			origin = default;
+			//Asking a disposed form for its handle throws rather than answering.
+			var formHandle = form is { IsDisposed: false } ? form.Handle : 0;
+
+			if (formHandle == 0 || !IsSupported)
+				return false;
+
+			nint compositorHandle;
+
+			lock (sync)
+			{
+				if (!states.TryGetValue(formHandle, out var cached))
+					return false;
+
+				if (Environment.TickCount64 - cached.SurfaceTick < (cached.SurfaceKnown ? surfaceOriginValidMs : surfaceOriginMissMs))
+				{
+					origin = cached.SurfaceOrigin;
+					return cached.SurfaceKnown;
+				}
+
+				compositorHandle = cached.CompositorHandle;
+			}
+
+			//Outside the lock: this is IPC, and every other holder of it is on the placement path.
+			var backend = WaylandBackend.Current;
+			var known = false;
+
+			if (compositorHandle != 0 && backend != null && backend.TryGetWindow(compositorHandle, out var info)
+					&& info.SurfaceGeometry.Width > 0 && info.SurfaceGeometry.Height > 0)
+			{
+				origin = new Point(info.SurfaceGeometry.X, info.SurfaceGeometry.Y);
+				known = true;
+			}
+
+			lock (sync)
+			{
+				if (states.TryGetValue(formHandle, out var state))
+				{
+					//Stamped after the round trip, not before: a slow answer would otherwise be born expired and
+					//every control of the same walk would repeat it. A failure is cached for the same reason.
+					state.SurfaceOrigin = origin;
+					state.SurfaceTick = Environment.TickCount64;
+					state.SurfaceKnown = known;
+				}
+			}
+
+			return known;
+		}
+
 		internal static bool TryGetCompositorHandle(Eto.Forms.Form form, string title, int matchW, int matchH, out nint compositorHandle)
 		{
 			compositorHandle = 0;

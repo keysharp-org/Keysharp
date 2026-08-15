@@ -25,6 +25,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		public string AppId { get; }
 		public Rectangle FrameGeometry { get; }
 		public Rectangle ClientGeometry { get; }
+		/// <summary>The surface as the client drew it, shadow included, or empty when the compositor cannot say.
+		/// Its origin is what a Wayland client's own coordinates are relative to, so it is the only thing a
+		/// toolkit position can be resolved against.</summary>
+		public Rectangle SurfaceGeometry { get; }
 		public bool Minimized { get; }
 		public bool Maximized { get; }
 		public bool Decorated { get; }
@@ -34,6 +38,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		internal WaylandWindowInfo(nint handle, string compositorId = "", string title = "", string appId = "",
 								   long pid = 0, Rectangle frameGeometry = default, Rectangle clientGeometry = default,
+								   Rectangle surfaceGeometry = default,
 								   bool active = false, bool minimized = false, bool maximized = false,
 								   bool visible = false, bool alwaysOnTop = false, bool decorated = true,
 								   object transparency = null, bool onCurrentWorkspace = true) : base(handle)
@@ -44,6 +49,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			this.pid = pid;
 			FrameGeometry = frameGeometry;
 			ClientGeometry = clientGeometry;
+			SurfaceGeometry = surfaceGeometry;
 			this.active = active;
 			Minimized = minimized;
 			Maximized = maximized;

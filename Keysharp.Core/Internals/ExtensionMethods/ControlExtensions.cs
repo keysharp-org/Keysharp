@@ -809,7 +809,10 @@ namespace System.Windows.Forms
 			// deliberately do not report, as the layout engine relies on those equalling the outer size.
 			// Non-container controls have no chrome, so their size is the client. PointToScreen returns
 			// floats here, so round to int.
-			var sp = control.PointToScreen(Point.Empty);
+			// A window's client origin is where its CONTENT starts, not where its surface does: the menu bar and
+			// toolbars pack above the content, and client-side decorations sit outside it again.
+			var anchor = control is Forms.Window w && w.Content is Control content ? content : control;
+			var sp = anchor.ScreenOrigin();
 			var cs = control is Container cont ? cont.ClientSize : control.GetSize();
 			return new Rectangle((int)Math.Round(sp.X), (int)Math.Round(sp.Y), cs.Width, cs.Height);
 #endif
@@ -831,9 +834,31 @@ namespace System.Windows.Forms
 			if (control is Forms.Window window)
 				return window.Bounds;
 
-			var sp = control.PointToScreen(Point.Empty);
+			var sp = control.ScreenOrigin();
 			var size = control.GetSize();
 			return new Rectangle((int)Math.Round(sp.X), (int)Math.Round(sp.Y), size.Width, size.Height);
+		}
+
+		/// <summary>
+		/// The control's top-left corner on screen. The toolkit answers this directly on X11; on Wayland it is
+		/// never told where its own surface sits, so it answers relative to that surface and only the compositor
+		/// can say where that is.
+		/// </summary>
+		/// <param name="control">The <see cref="Control"/> whose screen origin to return.</param>
+		internal static PointF ScreenOrigin(this Forms.Control control)
+		{
+			var point = control.PointToScreen(Point.Empty);
+#if LINUX
+
+			//Both terms are logical pixels at scale 1, the only scale GTK3 and the compositor are known to agree
+			//on: GTK3 renders at an integer scale and the compositor downscales, so a fractional scale makes them
+			//diverge with distance from the window.
+			if (control.FindForm() is Forms.Form form
+					&& global::Keysharp.Internals.Window.Linux.Wayland.WaylandSelfPositioner.TryGetSurfaceOrigin(form, out var origin))
+				point = new PointF(point.X + origin.X, point.Y + origin.Y);
+
+#endif
+			return point;
 		}
 #endif
 
