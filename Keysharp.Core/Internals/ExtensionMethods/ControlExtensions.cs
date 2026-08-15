@@ -51,7 +51,10 @@ namespace System.Windows.Forms
 #if WINDOWS
 			return control.Size;
 #else
-			if (control.Loaded && control.Size is Size size && size != new Size(1, 1))
+			// A dimension the caller left to the toolkit is stored as -1 until the backend allocates one, and a
+			// widget that is never shown is never allocated. Falling through to the measured size keeps a hidden
+			// control the size it would have had, so siblings positioned against it are not dragged to zero.
+			if (control.Loaded && control.Size is Size size && size != new Size(1, 1) && size.Width >= 0 && size.Height >= 0)
 				return control.Size;
 			var etoPrefSize = control.GetPreferredSize();
 			var prefSize = new Size(Convert.ToInt32(etoPrefSize.Width), Convert.ToInt32(etoPrefSize.Height));

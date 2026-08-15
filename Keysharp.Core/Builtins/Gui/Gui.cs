@@ -1662,9 +1662,6 @@ namespace Keysharp.Builtins
 
 			//ctrl.Padding = form.Padding;
 
-			if (opts.visible.HasValue)
-				ctrl.Visible = opts.visible.Value;
-
 			if (opts.enabled.HasValue)
 				ctrl.Enabled = opts.enabled.Value;
 
@@ -2326,6 +2323,11 @@ namespace Keysharp.Builtins
 				section.Height = Math.Max(section.Height, bounds.Bottom - section.Y);
 				Section = section;
 			}
+
+			//Applied only once the control has been measured and placed: a hidden widget measures as zero, so
+			//hiding it any earlier collapses it to 0x0 and takes every sibling positioned against it along too.
+			if (opts.visible.HasValue)
+				ctrl.Visible = opts.visible.Value;
 
 #if !WINDOWS
 			if (form.Visible)
