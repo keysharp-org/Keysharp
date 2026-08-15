@@ -72,6 +72,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static readonly object sync = new();
 		private static readonly Dictionary<nint, FormState> states = new();
 		private static readonly HashSet<string> claimedIds = new();
+		//The app_id a form is being correlated under, while that is in flight. See CurrentAppId.
+		private static readonly Dictionary<nint, string> correlationAppIds = new();
 
 		// A freshly-shown window may not be in the compositor's list instantly; poll briefly.
 		private const int CorrelateTimeoutMs = 1000;
@@ -81,6 +83,29 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private const int SizeTolerance = 120;
 
 		internal static bool IsSupported => Platform.Desktop.IsWaylandSession && WaylandBackend.Current != null;
+
+		/// <summary>
+		/// The app_id a form should be carrying right now: the caller's value, unless a correlation is matching
+		/// this window, in which case its unique token wins until it is done.
+		/// <para>
+		/// The Wayland app_id is single-valued and has two writers - the taskbar icon wants <c>keysharp</c> on
+		/// every window, correlation needs something unique on one - and the icon's write is deferred to an
+		/// AsyncInvoke whenever the window is still unmapped, which is the normal case at Shown. That deferred
+		/// write used to land in the middle of a correlation and erase the token, so the match could never
+		/// succeed and every first correlation paid the full poll timeout before falling back to guessing by
+		/// title and size. Routing both writers through here is what keeps a single owner of the value.
+		/// </para>
+		/// </summary>
+		internal static string CurrentAppId(Eto.Forms.Form form, string baseAppId)
+		{
+			var formHandle = form is { IsDisposed: false } ? form.Handle : 0;
+
+			if (formHandle == 0)
+				return baseAppId;
+
+			lock (sync)
+				return correlationAppIds.TryGetValue(formHandle, out var token) ? token : baseAppId;
+		}
 
 		/// <summary>
 		/// Establishes the compositor backend and its command channel on a background thread, so the first
@@ -572,6 +597,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				mh = state.MatchH;
 				form = state.Form;
 				token = $"{CorrelationAppIdPrefix}{pid}.{state.FormHandle.ToInt64():x}.{Guid.NewGuid():N}";
+				//Claim the app_id for the whole attempt, so the icon's deferred write re-applies the token
+				//rather than erasing it. See CurrentAppId.
+				correlationAppIds[state.FormHandle] = token;
 			}
 
 			var deadline = Environment.TickCount64 + CorrelateTimeoutMs;
@@ -635,6 +663,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 			finally
 			{
+				lock (sync)
+					_ = correlationAppIds.Remove(state.FormHandle);
+
 				if (stamped)
 					_ = TrySetAppIdOnUiThread(form, NormalAppId);
 			}
@@ -680,6 +711,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			lock (sync)
 				candidates = windows.Where(w => w != null
 					&& !string.IsNullOrEmpty(w.CompositorId)
+					//A window another process owns can never be one of ours. Only excluded when the compositor
+					//actually reports an owner: it answers -1 for a Wayland client on backends that have not
+					//been taught to fall back to the client pid.
+					&& (w.PID <= 0 || w.PID == pid)
 					&& (w.CompositorId == existingId || !claimedIds.Contains(w.CompositorId))).ToList();
 
 			if (candidates.Count == 0)

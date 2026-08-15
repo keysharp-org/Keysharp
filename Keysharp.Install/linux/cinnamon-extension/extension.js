@@ -1580,7 +1580,8 @@ class KeysharpExtension {
             id: String(win.get_stable_sequence()),
             title: win.get_title() || '',
             appId: win.get_wm_class() || win.get_wm_class_instance() || '',
-            pid: win.get_pid(),
+            // get_pid() is -1 for Wayland clients on Muffin; get_client_pid() is the real one there.
+            pid: win.get_pid() > 0 ? win.get_pid() : (win.get_client_pid ? win.get_client_pid() : -1),
             workspace: workspace,
             monitor: monitor,
             onCurrentWorkspace: onCurrentWorkspace,

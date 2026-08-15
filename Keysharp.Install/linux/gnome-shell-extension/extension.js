@@ -1794,7 +1794,8 @@ export default class KeysharpExtension {
             id:        String(win.get_stable_sequence()),
             title:     win.get_title()            ?? '',
             appId:     win.get_wm_class()         ?? win.get_wm_class_instance() ?? '',
-            pid:       win.get_pid(),
+            // get_pid() is -1 for Wayland clients on some Mutter builds; get_client_pid() is the real one.
+            pid:       win.get_pid() > 0 ? win.get_pid() : (win.get_client_pid ? win.get_client_pid() : -1),
             frame:     {x: frame.x, y: frame.y, width: frame.width, height: frame.height},
             client:    {x: frame.x, y: frame.y, width: frame.width, height: frame.height},
             buffer:    buffer,

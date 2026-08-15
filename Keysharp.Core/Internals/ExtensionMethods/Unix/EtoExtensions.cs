@@ -216,6 +216,10 @@ namespace Eto.Forms
         // Returns true if the app_id was applied; false if it couldn't be (not Wayland, or the GdkWindow
         // isn't realized yet — on Wayland that is common at Shown, so the caller should retry once the map
         // has settled, e.g. via AsyncInvoke).
+        // <paramref name="appId"/> is the value the CALLER wants; window correlation temporarily needs its own
+        // and wins for as long as it is matching, so the value actually written comes from there. Without that,
+        // this call - deferred to an AsyncInvoke whenever the window is still unmapped, which is the normal case
+        // at Shown - lands on top of a live correlation token and makes every first correlation time out.
         internal static bool SetWaylandAppId(Form form, string appId)
         {
             if (form == null || string.IsNullOrEmpty(appId) || !Keysharp.Internals.Platform.Desktop.IsWaylandSession)
@@ -224,6 +228,8 @@ namespace Eto.Forms
 #if LINUX
             try
             {
+                appId = Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.CurrentAppId(form, appId);
+
                 if (form.ToNative() is Gtk.Window gtkWin && gtkWin.Window is Gdk.Window gdkWin)
                 {
                     gdk_wayland_window_set_application_id(gdkWin.Handle, appId);
