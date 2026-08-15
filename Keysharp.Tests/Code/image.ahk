@@ -1,6 +1,6 @@
 #ErrorStdOut
 #Warn All, StdOut
-#Import "Ks" { Image }
+#Import "Ks" { Image, A_DirSeparator }
 
 Check(condition) {
     static number := 0
@@ -120,7 +120,7 @@ pixels.Flip()
 movedPixel := pixels.SearchPixel(0x112233, variation: 4)
 Check(movedPixel.x == 5 && movedPixel.y == 3)
 
-path := A_Temp "\keysharp-image-" A_TickCount ".png"
+path := A_Temp A_DirSeparator "keysharp-image-" A_TickCount ".png"
 try {
     Image.Create(20, 10, "0xFF102030").Save(path)
     Check(FileExist(path) != "")
