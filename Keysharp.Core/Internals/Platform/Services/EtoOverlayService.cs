@@ -111,6 +111,17 @@ namespace Keysharp.Internals
 						form.Show();
 
 					form.SetClickThrough(clickThrough);
+#if LINUX
+					// A Wayland client cannot place or stack its own toplevel, so the bounds set above and the
+					// taskbar/topmost/border options from EnsureForm are silent no-ops; drive the compositor
+					// instead, as Gui.Show does. An interactive overlay reaches this path on Mutter-family
+					// compositors, where the shell-actor backing refuses it: an actor cannot receive input.
+					if (Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
+						Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Position(form, form.Title,
+							windowBounds.X, windowBounds.Y,
+							Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height),
+							removeBorder: true, keepAbove: true, skipTaskbar: true);
+#endif
 				});
 
 				return true;   // borrow: `image` is neither retained nor disposed
@@ -146,6 +157,14 @@ namespace Keysharp.Internals
 						return;
 #endif
 					form.Location = new Point(windowBounds.X, windowBounds.Y);
+#if LINUX
+					// The setter above is a no-op on Wayland (see Show), so re-assert through the compositor. Moves
+					// coalesce per form, so a drag collapses to the latest position rather than one trip per frame.
+					if (Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
+						Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Position(form, form.Title,
+							windowBounds.X, windowBounds.Y,
+							Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height));
+#endif
 					moved = true;
 				}
 			});
@@ -330,6 +349,14 @@ namespace Keysharp.Internals
 			{
 				try
 				{
+#if LINUX
+					// Before the handle dies, since the correlation is keyed by it and holds a claimed compositor
+					// id: leaving it would keep that id claimed, so a later overlay - a reshown card gets a new
+					// form - could never claim its own window.
+					if (form != null && Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
+						Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Forget(form.Handle);
+
+#endif
 					form?.Close();
 					form?.Dispose();
 					form = null;   // only reached when Close/Dispose didn't throw
