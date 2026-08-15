@@ -513,7 +513,11 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		internal Forms.Control Section { get; set; }
+		//Where the section began, grown to the extents reached since - the four numbers AHK keeps as
+		//mSectionX/mSectionY and mMaxExtentRightSection/DownSection. Not the control that started it: a
+		//control only knows its position inside its own parent, which says nothing once the two sit in
+		//different containers.
+		internal Rectangle? Section { get; set; }
 
 		internal StatusStrip StatusStrip { get; set; }
 
@@ -1709,7 +1713,7 @@ namespace Keysharp.Builtins
 				(!ySpecified && (opts.xpos == GuiOptions.Positioning.Absolute || opts.xpos == GuiOptions.Positioning.Container || opts.xpos == GuiOptions.Positioning.Margin))
 				|| (!xSpecified && (opts.ypos == GuiOptions.Positioning.Absolute || opts.ypos == GuiOptions.Positioning.Container || opts.ypos == GuiOptions.Positioning.Margin));
 			bool needsSectionMostForPositioning =
-				Section?.Parent != null
+				Section != null
 				&& ((!ySpecified && opts.xpos == GuiOptions.Positioning.Section) || (!xSpecified && opts.ypos == GuiOptions.Positioning.Section));
 			bool needsLastParentMostForPositioning = lastControl != null
 				&& lastControl.Dock == DockStyle.None
@@ -1717,9 +1721,6 @@ namespace Keysharp.Builtins
 				&& ((!ySpecified && opts.xpos == GuiOptions.Positioning.Section) || (!xSpecified && opts.ypos == GuiOptions.Positioning.Section));
 			(Forms.Control right, Forms.Control bottom) rbContainerMost = needsContainerMostForPositioning && rbContainer != null
 				? rbContainer.RightBottomMost()
-				: (null, null);
-			(Forms.Control right, Forms.Control bottom) sectionMost = needsSectionMostForPositioning
-				? Section.Parent.RightBottomMostSince(Section)
 				: (null, null);
 			(Forms.Control right, Forms.Control bottom) lastControlParentMost = needsLastParentMostForPositioning && lastControl?.Parent != null
 				? lastControl.Parent.RightBottomMost()
@@ -2068,7 +2069,7 @@ namespace Keysharp.Builtins
 			else if (opts.xpos == GuiOptions.Positioning.Margin)
 				xoffset = form.Margin.Left + (opts.x * dpiscale) + pwx - xoffset;
 			else if (opts.xpos == GuiOptions.Positioning.Section)
-				xoffset = (Section?.GetLocation().X ?? 0) + (opts.x * dpiscale);
+				xoffset = (Section?.X ?? 0) + (opts.x * dpiscale);
 			else if (opts.xpos == GuiOptions.Positioning.Container)
 				xoffset = opts.x * dpiscale;
 			else
@@ -2083,7 +2084,7 @@ namespace Keysharp.Builtins
 			else if (opts.ypos == GuiOptions.Positioning.Margin)
 				yoffset = form.Margin.Top + (opts.y * dpiscale) + pwy - yoffset;
 			else if (opts.ypos == GuiOptions.Positioning.Section)
-				yoffset = (Section?.GetLocation().Y ?? 0) + (opts.y * dpiscale);
+				yoffset = (Section?.Y ?? 0) + (opts.y * dpiscale);
 			else if (opts.ypos == GuiOptions.Positioning.Container)
 				yoffset = opts.y * dpiscale;
 			else
@@ -2105,10 +2106,7 @@ namespace Keysharp.Builtins
 				}
 				else if (opts.xpos == GuiOptions.Positioning.Section && needsSectionMostForPositioning)//XS: Beneath all previous controls since the most recent use of the Section option.
 				{
-					var (right, bottom) = sectionMost;//Get the bottom-most control in the current section.
-					var bLoc = bottom?.GetLocation() ?? Point.Empty;
-					var bSize = bottom?.GetSize() ?? Size.Empty;
-					yoffset = bLoc.Y + bSize.Height + form.Margin.Top;
+					yoffset = Section.Value.Bottom + form.Margin.Top;
 				}
 			}
 			else if (xoffset == int.MinValue && yoffset != int.MinValue)//Y, but not X.
@@ -2126,10 +2124,7 @@ namespace Keysharp.Builtins
 				}
 				else if (opts.ypos == GuiOptions.Positioning.Section && needsSectionMostForPositioning)//YS: To the right of all previous controls since the most recent use of the Section option.
 				{
-					var (right, bottom) = sectionMost;//Get the right-most control in the current section.
-					var rLoc = right?.GetLocation() ?? Point.Empty;
-					var rSize = right?.GetSize() ?? Size.Empty;
-					xoffset = rLoc.X + rSize.Width + form.Margin.Left;
+					xoffset = Section.Value.Right + form.Margin.Left;
 				}
 			}
 			else if (xoffset == int.MinValue && yoffset == int.MinValue && ctrl is KeysharpNumericUpDown)
@@ -2318,10 +2313,19 @@ namespace Keysharp.Builtins
 					partc.AdjustSize(dpiscale, new Size(int.MinValue, int.MinValue));
 			}
 
-			if (opts.section)
-				Section = ctrl;
-			else if (Section == null)
-				Section = ctrl;
+			//The very first control starts a section implicitly, as AHK does; every later one only widens
+			//the extents xs/ys measure against, never moving where the section began.
+			var bounds = new Rectangle(ctrl.GetLocation(), ctrl.GetSize());
+
+			if (opts.section || Section == null)
+				Section = bounds;
+			else
+			{
+				var section = Section.Value;
+				section.Width = Math.Max(section.Width, bounds.Right - section.X);
+				section.Height = Math.Max(section.Height, bounds.Bottom - section.Y);
+				Section = section;
+			}
 
 #if !WINDOWS
 			if (form.Visible)
