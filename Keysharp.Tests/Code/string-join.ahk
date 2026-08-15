@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { Join }
+#import KS { Join }
 str := Join(",", "1", "2", "3")
 
 if (str == "1,2,3")

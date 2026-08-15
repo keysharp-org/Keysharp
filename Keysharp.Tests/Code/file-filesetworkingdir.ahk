@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { FileFullPath }
+#import KS { FileFullPath }
 ; #Include %A_ScriptDir%/header.ahk
 
 origdir := A_WorkingDir

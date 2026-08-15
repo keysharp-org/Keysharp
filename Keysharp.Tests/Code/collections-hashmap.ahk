@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { HashMap }
+#import KS { HashMap }
 a := HashMap() ; Map with a key and property each with the same name.
 a["test"] := 3
 a.test := 2

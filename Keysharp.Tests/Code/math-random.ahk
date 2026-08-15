@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { RandomSeed }
+#import KS { RandomSeed }
 if (Random() >= 0)
 	FileAppend "pass", "*"
 else

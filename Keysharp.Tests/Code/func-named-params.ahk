@@ -3,7 +3,7 @@
 ; build-time check is turned off here -- those cases assert the RUNTIME binder rejects them.
 #Warn NamedArg, Off
 ; The carrier type itself, needed only to build a named call dynamically or inspect a collected one.
-#Import "Ks" { NamedArgs, Clr }
+#import KS { NamedArgs, Clr }
 
 Check(cond) => FileAppend(cond ? "pass" : "fail", "*")
 

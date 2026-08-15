@@ -1,4 +1,4 @@
-#import "Ks" { * }
+#import KS { * }
 ; OCR library (cross-platform). Relative path from Code/Gui to Keysharp/Scripts.
 #include ../../../Keysharp/Scripts/OCR.ks
 If (FileExist(A_Desktop . "/MyScreenClip.png"))

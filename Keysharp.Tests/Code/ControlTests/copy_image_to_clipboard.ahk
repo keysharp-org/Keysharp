@@ -1,4 +1,4 @@
-#import "Ks" { Clipboard, Image }
+#import KS { Clipboard, Image }
 
 MyGui := Gui()
 MyRE := MyGui.Add("RichEdit", "w400 h400")

@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { Tanh }
+#import KS { Tanh }
 PI := 3.1415926535897931
 
 if (-0.99627207622075 == Tanh(-1 * PI))

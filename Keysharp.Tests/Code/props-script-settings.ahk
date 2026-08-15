@@ -2,7 +2,7 @@
 #NoTrayIcon
 #endif
 
-#import "Ks" { * }
+#import KS { * }
 ; #Include %A_ScriptDir%/header.ahk
 
 if (A_IsSuspended == 0) 

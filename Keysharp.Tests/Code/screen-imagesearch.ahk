@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { Image }
+#import KS { Image }
 x :=
 y := 0
 CoordMode("Pixel", "Screen")

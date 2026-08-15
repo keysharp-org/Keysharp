@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { * }
+#import KS { * }
 #Hotstring NoMouse
 
 if (A_DefaultHotstringNoMouse)

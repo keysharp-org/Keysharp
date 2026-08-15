@@ -1,7 +1,7 @@
 #NoTrayIcon
 
 #import __Main
-#import "KS" { Collect }
+#import KS { Collect }
 gval := 0
 
 class testclass

@@ -2,7 +2,7 @@
 #ErrorStdOut
 #Warn All, StdOut
 
-#import "Ks" { Clr }
+#import KS { Clr }
 ; ===== Setup =====
 System := Clr.Load("System")
 

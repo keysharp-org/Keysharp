@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { FileDirName, FileFullPath }
+#import KS { FileDirName, FileFullPath }
 ; #Include %A_ScriptDir%/header.ahk
 
 if (DirExist("./FileGetShortcut"))

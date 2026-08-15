@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { * }
+#import KS { * }
 #CLIPBOARDTIMEOUT 2000
 #ERRORSTDOUT
 #USEHOOK true

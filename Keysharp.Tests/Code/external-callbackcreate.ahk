@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { RealThread }
+#import KS { RealThread }
 val := ""
 #if WINDOWS
 callback := CallbackCreate("TheFunc", "&")

@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { RunScript }
+#import KS { RunScript }
 
 headlessDirectives := "#NoTrayIcon`n"
 #if WINDOWS

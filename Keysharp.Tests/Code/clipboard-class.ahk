@@ -1,5 +1,5 @@
 #NoTrayIcon
-#import "Ks" { Clipboard, Image }
+#import KS { Clipboard, Image }
 
 ; The Clipboard class through real dynamic dispatch — which the C# tests bypass, so this is what proves the
 ; members are actually reachable under the names a script types.

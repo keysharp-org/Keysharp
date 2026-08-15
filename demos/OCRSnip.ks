@@ -2,7 +2,7 @@
 #Requires capability ScreenCapture, InputMonitoring   ; prompts at startup (before any snip) so the screen-capture grant isn't sprung on you mid-drag
 #SingleInstance Force
 
-#import "Ks" { * }
+#import KS { * }
 #include ../Keysharp/Scripts/OCR.ks
 #include Shell.ks
 

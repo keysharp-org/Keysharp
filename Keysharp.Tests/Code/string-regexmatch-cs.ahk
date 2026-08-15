@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { * }
+#import KS { * }
 match := ""
 
 RegExMatchCs("abc123abc456", "abc\d+", &match, 1)

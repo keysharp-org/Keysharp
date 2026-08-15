@@ -1,4 +1,4 @@
-#import "Ks" { Clipboard, Image }
+#import KS { Clipboard, Image }
 
 MyGui := Gui(, "Copy Image to CB")
 MyRE2 := MyGui.Add("RichEdit", "w400 h400")

@@ -2,7 +2,7 @@
 #Warn All, StdOut
 #NoTrayIcon
 
-#Import "Ks" { ComponentAvailable }
+#import KS { ComponentAvailable }
 
 parser := ComponentAvailable("parser")
 compiler := ComponentAvailable("compiler")

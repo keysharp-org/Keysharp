@@ -34,7 +34,7 @@ else
 
 #Module ImportedNames
 
-#Import "Ks" { Clr, Highlight }
+#import KS { Clr, Highlight }
 
 if IsSet(Clr) && IsSet(Highlight) && Clr.ManagedType
 	FileAppend "pass", "*"

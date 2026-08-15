@@ -471,7 +471,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	+ `RunScript(code, callbackOrAsync?, name := "*", executable?)`: Dynamically parses, compiles, and runs the provided code. It requires the compiler component in the calling process. The default name `"*"` reflects that the script is fed to the target process via StdIn rather than loaded from disk. Optionally provide the script name; whether to run it asynchronously (non-unset non-zero `callbackOrAsync` causes async run without a callback); an executable path to run the compiled assembly (defaults to the current process).
 		+ If `callbackOrAsync` is provided a function then it is called after the script has finished with the `ProcessInfo` as the only argument. Over multiple runs `RunScript` is faster than running the process manually and writing to StdIn because of assembly and compilation caching.
 		+ Returns a `ProcessInfo` object encapsulating info and I/O for the process. Available properties: `HasExited`, `ExitCode`, `ExitTime` (YYYYMMDDHH24MISS), `StdOut`, `StdErr`, `StdIn` (as `KeysharpFile`). Available methods: `Kill()`.
-* New `Clipboard` class (available from the `Ks` module) covering everything the clipboard holds, not just text. `A_Clipboard`, `ClipboardAll()`, `ClipWait()` and `OnClipboardChange()` are unchanged and remain the AutoHotkey-compatible surface.
+* New `Clipboard` class (available from the `KS` module) covering everything the clipboard holds, not just text. `A_Clipboard`, `ClipboardAll()`, `ClipWait()` and `OnClipboardChange()` are unchanged and remain the AutoHotkey-compatible surface.
 	+ There is one clipboard per session, so the class has no instances — every member is used directly, and `Clipboard()` raises an error.
 	+ **Every getter returns `""` when the clipboard does not hold that content**, so `if (files := Clipboard.Files)` is the idiom.
 	+ Typed content — the portable surface:
@@ -587,6 +587,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	+ `A_EventInfo` is not limited to positive values when reporting the mouse wheel scroll amount.
 		+ When scrolling up, the value will be positive, and negative when scrolling down.
 * New accessors:
+	+ All of these live in the `KS` module, so a script must import the ones it uses: `#import KS { A_DirSeparator }`.
 	+ `A_AllowTimers` returns whether timers are allowed or not. It's also easier to set this value rather than call `Thread("NoTimers")`.
 	+ `A_AssemblyCompany` returns the value set by the `#AssemblyCompany` directive.
 	+ `A_AssemblyConfiguration` returns the value set by the `#AssemblyConfiguration` directive.
@@ -596,7 +597,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	+ `A_AssemblyProduct` returns the value set by the `#AssemblyProduct` directive.
 	+ `A_AssemblyTrademark` returns the value set by the `#AssemblyTrademark` directive.
 	+ `A_AssemblyVersion` returns the value set by the `#AssemblyVersion` directive.
-	+ `A_PeekFrequency` gets or sets the current thread's message-check interval in milliseconds. It is available from the `Ks` module.
+	+ `A_PeekFrequency` gets or sets the current thread's message-check interval in milliseconds.
 	+ `A_ClipboardTimeout` can be used at any point in the program to get or set the value normally specified by `#ClipboardTimeout`.
 	+ `A_CommandLine` returns the command line string. This is preferred over passing `GetCommandLine` to `DllCall()` as noted above.
 	+ `A_DefaultHotstringCaseSensitive` returns the default hotstring case sensitivity mode.
@@ -613,7 +614,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	+ `A_DefaultHotstringSendMode` returns the default hotstring sending mode.
 	+ `A_DefaultHotstringSendRaw` returns the default hotstring raw sending mode.
 	+ `A_DirSeparator` returns the directory separator character which is `\` on Windows and `/` elsewhere.
-	+ `A_GuiTheme` gets/sets the application-wide WinForms GUI theme. Accepted values: `Classic`, `System`, `Dark`. Windows only. Can be imported directly from the `Ks` module: `import { A_GuiTheme } from Ks`.
+	+ `A_GuiTheme` gets/sets the application-wide WinForms GUI theme. Accepted values: `Classic`, `System`, `Dark`. Windows only.
 	+ `A_HasExited` returns whether shutdown has been initiated.
 	+ `A_KeysharpCorePath` provides the full path to the Keysharp.Core.dll file.
 	+ `A_LoopRegValue` which makes it easy to get a registry value when using `Loop Reg`.
@@ -621,10 +622,10 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	+ `A_NoTrayIcon` returns whether the tray icon was hidden with #NoTrayIcon.
 	+ `A_NowMs`/`A_NowUTCMs` returns the current local/UTC time formatted to include milliseconds like so "YYYYMMDDHH24MISS.ff".
 		+ These can be used with `DateAdd()`/`DateDiff()` using `"L"` for the `TimeUnits` parameter.
-	+ `A_RealThread` is the real OS thread the current pseudo-thread runs on, as a `RealThread` object, and is available from the KS module: `#import KS { A_RealThread }`.
+	+ `A_RealThread` is the real OS thread the current pseudo-thread runs on, as a `RealThread` object.
 		+ On the main thread it is literally the same object as `RealThread.Main`, so `A_RealThread == RealThread.Main` is the test for "am I on the main thread". See the `RealThread` class under *New classes*.
 	+ `A_SuspendExempt` returns whether subsequent hotkeys and hotstrings will be exmpt from suspension because `#SuspendExempt true` was specified.
-	+ `A_Thread` is the current pseudo-thread as a `Thread` object, and is available from the KS module: `#import KS { A_Thread }`.
+	+ `A_Thread` is the current pseudo-thread as a `Thread` object.
 		+ Every per-pseudo-thread fact is a property on the object rather than its own importable global, so the surface extends without new names. See the `Thread` class under *New classes*.
 		+ There is exactly one object per pseudo-thread, so "is this the one I am in" is `thr == A_Thread`.
 	+ `A_TotalScreenHeight` returns the total height in pixels of the virtual screen.
@@ -788,7 +789,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 			#endif
 			```
 * Miscellaneous behavior:
-	* In addition to the `AHK` module, a `KS` module has been added which contains extra variabes and methods added to Keysharp. Accessing them requires using the `import` statement.
+	* In addition to the `AHK` module, a `KS` module has been added which contains extra variables and methods added to Keysharp. Accessing them requires using the `import` statement, eg `#import KS { HashMap, Sinh }`.
 		+ These include all new classes, functions and variables mentioned here (eg `HashMap`, `Sinh` etc).
 		+ Note: class method/property additions are always included and do not need to be imported (eg `String` or `Buffer` extra methods).
 	* Boolean property naming:
@@ -887,7 +888,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 			+ `GetNode(nodeIndex) => TreeNode`: Retrieves a raw Winforms `TreeNode` object based on the passed in ID.
 	+ New classes:
 		+ `WinEvent`: For subscribing to window events (active/foreground change, appearance, disappearance, move/resize, minimize, restore, title change, and caret movement) across platforms, modeled on the popular AutoHotkey `WinEvent` library.
-			+ It is part of the `Ks` module; import it with `#import "Ks" { WinEvent }`.
+			+ It is part of the `KS` module; import it with `#import KS { WinEvent }`.
 			+ Each subscription is created by calling a `WinEvent()` static method, which returns a subscription object whose callback fires until it is stopped. The argument order mirrors the reference library: `count` (default `-1` = unlimited) comes right after `winTitle`, with the rarely-used `winText`/`excludeTitle`/`excludeText` criteria last. The criteria use standard `WinTitle` matching, and `count` limits how many times the callback fires.
 			+ The callback receives `(hookObject, hwnd, dwmsEventTime)`. Event-specific extras arrive in `A_EventInfo` instead: `Move()` puts the window's new position and size there as an object with `x`, `y`, `w` and `h` (matching `WinGetPos()`), and `CaretMove()` the caret's rectangle in the same shape but in screen coordinates. Every other event type keeps the event time in `A_EventInfo`.
 			+ The registration-time values of `DetectHiddenWindows`, `DetectHiddenText`, and the title-match mode are captured and used for matching (as in the reference library); `Exist()` additionally forces hidden detection on. `Active()` also fires when the active window's title changes, and `NotExist()` fires when a window is destroyed or — for a `DetectHiddenWindows`-off subscription — hidden or cloaked. `Exist()`/`NotExist()` replace the reference library's `Create()`/`Close()` (those were just `Exist()`/`NotExist()` with `DetectHiddenWindows` on).
@@ -924,7 +925,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 				+ Linux: The events come from a GDK/X11 event filter on the UI thread (covering X11 and XWayland windows); native Wayland sources (GNOME/KWin/wlroots) are not yet wired, and `Restore`/`Close`-on-hide are not yet emitted.
 				+ macOS: Only active-application changes are currently reported (window-granular events via the accessibility APIs are planned).
 		+ `Monitor`: One display, carrying the metadata and device control the AHK-compatible `MonitorGet*` functions do not expose — model, manufacturer, serial, a stable id, refresh rate, physical size, orientation, connection kind, and brightness / raw DDC-CI control.
-			+ It is part of the `Ks` module; import it with `#import "Ks" { Monitor }`. It does not replace the AHK `MonitorGet*` functions, which are unchanged apart from now raising a `ValueError` on an out-of-range monitor index instead of silently substituting the primary (matching AutoHotkey v2). `Image.FromMonitor()` inherits that same validation.
+			+ It is part of the `KS` module; import it with `#import KS { Monitor }`. It does not replace the AHK `MonitorGet*` functions, which are unchanged apart from now raising a `ValueError` on an out-of-range monitor index instead of silently substituting the primary (matching AutoHotkey v2). `Image.FromMonitor()` inherits that same validation.
 			+ A `Monitor` is a **snapshot** of the topology plus a **live** handle to the device: identity and geometry are read once when the object is created, so a loop over `Monitor.All` sees one consistent picture, while `Brightness` and the VCP methods always talk to the hardware at the moment they are called. `Refresh()` re-reads the snapshot in place and returns the same object, or `""` when that monitor is no longer attached.
 			+ Metadata beyond plain geometry costs a native query, so it is resolved on the first property that needs it and then cached on the object; constructing a `Monitor`, or reading only its geometry, never pays for it. Any field the display does not report is `""` rather than a fabricated value.
 			+ `Id` is derived from the panel's EDID identity and is the value to persist (for example, to restore a window layout per monitor set); pass it back to `Monitor.FromId()`. Panels that report no serial are disambiguated by connector on Windows and Linux, making the id stable per *port* rather than per panel; on macOS such a panel falls back to a per-*model* id that two identical displays would share.

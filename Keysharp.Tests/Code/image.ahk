@@ -1,6 +1,6 @@
 #ErrorStdOut
 #Warn All, StdOut
-#Import "Ks" { Image, A_DirSeparator }
+#import KS { Image, A_DirSeparator }
 
 Check(condition) {
     static number := 0

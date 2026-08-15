@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { RealThread, LockRun, A_RealThread, A_Thread, Lock }
+#import KS { RealThread, LockRun, A_RealThread, A_Thread, Lock }
 #MaxThreads 256
 lockit := ""
 tharr := []

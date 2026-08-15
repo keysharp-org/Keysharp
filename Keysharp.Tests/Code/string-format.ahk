@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import "Ks" { FormatCs }
+#import KS { FormatCs }
 ; Test 1: Basic number formatting.
 s := Format("{1}", 123)
 if (s == "123")
