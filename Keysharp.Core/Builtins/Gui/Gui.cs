@@ -537,7 +537,7 @@ namespace Keysharp.Builtins
 				form.Content ??= new PixelLayout();
 #endif
 				LastContainer = form;
-				script.GuiData.allGuiHwnds[form.Handle.ToInt64()] = this;//Calling handle forces the creation of the window.
+				form.Register(this);//Calling handle forces the creation of the window.
 
 				if (lastfound)
 					script.HwndLastUsed = Hwnd;
@@ -599,7 +599,7 @@ namespace Keysharp.Builtins
 #endif
 					LastContainer = form;
 
-					script.GuiData.allGuiHwnds[form.Handle.ToInt64()] = this;//Calling handle forces the creation of the window.
+					form.Register(this);//Calling handle forces the creation of the window.
 
 					if (lastfound)
 						script.HwndLastUsed = Hwnd;

@@ -139,11 +139,33 @@ namespace Eto.Forms
                 var allGuis = TheScript.GuiData.allGuiHwnds;
                 if (allGuis.TryGetValue(key, out var gui))
                     return gui.form;
+                // A GUI that has not run its field initializers yet has no control map at all, and every
+                // registered GUI is walked here, built or not.
                 foreach (var g in allGuis)
                 {
-                    if (g.Value.controls.TryGetValue(key, out var ctrl))
+                    if (g.Value?.controls is { } controls && controls.TryGetValue(key, out var ctrl))
                         return ctrl.GetControl();
                 }
+
+                // A window is registered under the handle it had when it was created, and on X11 that changes
+                // the first time it is realized: the toolkit answers with a widget pointer until there is a
+                // native window id. So a lookup by the CURRENT handle can miss a GUI still registered under the
+                // earlier one; re-homing it here costs this scan once. A handle belonging to nothing of ours
+                // pays it on every call, which is what keeps this last, after both cheap lookups.
+                foreach (var g in allGuis)
+                {
+                    var form = g.Value?.form;
+
+                    // Asking a form for its handle only works once it has a handler behind it: a disposed or
+                    // not-yet-built window throws rather than answering, and neither can be the one being sought.
+                    if (form == null || form.IsDisposed || form.Handler == null || form.Handle.ToInt64() != key)
+                        continue;
+
+                    _ = allGuis.TryRemove(g.Key, out _);
+                    allGuis[key] = g.Value;
+                    return form;
+                }
+
                 return null;
             }
 		}

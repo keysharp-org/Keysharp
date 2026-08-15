@@ -455,6 +455,23 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		//The key this window is registered under, so a re-home drops the old one instead of searching for it:
+		//on X11 the handle changes the first time the window is realized.
+		private long registeredHwnd;
+
+		/// <summary>Points allGuiHwnds at this window's current handle, dropping the key it last used.</summary>
+		internal void Register(Gui gui)
+		{
+			var allGuiHwnds = Script.TheScript.GuiData.allGuiHwnds;
+			var handle = this.Handle.ToInt64();
+
+			if (registeredHwnd != 0 && registeredHwnd != handle)
+				_ = allGuiHwnds.TryRemove(registeredHwnd, out _);
+
+			allGuiHwnds[handle] = gui;
+			registeredHwnd = handle;
+		}
+
 		internal void ClearThis(bool isClosing = true)
 		{
 			//This will be called when a window is either hidden or destroyed. In both cases,
@@ -465,6 +482,7 @@ namespace Keysharp.Builtins
 			if (isClosing)
 			{
 				_ = script.GuiData.allGuiHwnds.TryRemove(handle, out _);
+				registeredHwnd = 0;
 				Script.PostToUIThread(GC.Collect);
 			}
 			script.ExitIfNotPersistent();//Also does BeginInvoke(), so it will come after the GC.Collect() above.
@@ -690,7 +708,9 @@ namespace Keysharp.Builtins
 			if (Visible)
 			{
 				if (Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
-					Script.TheScript.GuiData.allGuiHwnds[this.Handle.ToInt64()] = g;
+				{
+					Register(g);
+				}
 
 				UpdateStatusStripLayout();
 			}
