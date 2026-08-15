@@ -484,21 +484,28 @@ namespace Keysharp.Internals.Input.Linux
 			var targetY = y;
 			CoordToScreen(ref targetX, ref targetY, CoordMode.Mouse);
 
-			// Prefer compositor injection for absolute moves; uinput absolute mapping is fallback.
+			// Prefer compositor injection for absolute moves; uinput absolute mapping is the fallback. A backend
+			// exists whenever the compositor is one Keysharp can drive, but the interface behind it may still be
+			// missing (KWin dropped its FakeInput D-Bus object), so the fallback is chosen on the injection
+			// FAILING rather than on the backend's absence - otherwise the move is silently dropped.
 			{
-				var gnomeMouse = WaylandMouseInjection.Backend();
+				var compositorMouse = WaylandMouseInjection.Backend();
 
-				if (gnomeMouse != null)
+				if (compositorMouse != null)
 				{
 					if (speed < 0)
 						speed = 0;
 					else if (speed > MaxMouseSpeed)
 						speed = MaxMouseSpeed;
 
+					var injected = false;
+
 					if (speed == 0 || !GetCursorPos(out var current))
 					{
-						gnomeMouse.TrySendMouseMoveAbsolute(targetX, targetY);
-						DoMouseDelay();
+						injected = compositorMouse.TrySendMouseMoveAbsolute(targetX, targetY);
+
+						if (injected)
+							DoMouseDelay();
 					}
 					else
 					{
@@ -511,19 +518,33 @@ namespace Keysharp.Internals.Input.Linux
 							var nextX = current.X + ((targetX - current.X) * step / steps);
 							var nextY = current.Y + ((targetY - current.Y) * step / steps);
 
+							//A step that lands on the previous pixel is not injected, so it must not decide the
+							//outcome: only a step that was actually attempted can say whether injection works.
 							if (nextX != previousX || nextY != previousY)
-								gnomeMouse.TrySendMouseMoveAbsolute(nextX, nextY);
+							{
+								if (!compositorMouse.TrySendMouseMoveAbsolute(nextX, nextY))
+									break;
+
+								injected = true;
+							}
 
 							previousX = nextX;
 							previousY = nextY;
 							DoMouseDelay();
 						}
+
+						//Nothing moved because every step matched the cursor's current position: already there.
+						if (previousX == targetX && previousY == targetY)
+							injected = true;
 					}
 
-					eventFlags = (uint)MOUSEEVENTF.MOVE | (uint)MOUSEEVENTF.ABSOLUTE;
-					x = targetX;
-					y = targetY;
-					return;
+					if (injected)
+					{
+						eventFlags = (uint)MOUSEEVENTF.MOVE | (uint)MOUSEEVENTF.ABSOLUTE;
+						x = targetX;
+						y = targetY;
+						return;
+					}
 				}
 			}
 
