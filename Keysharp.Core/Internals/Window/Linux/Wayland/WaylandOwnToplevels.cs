@@ -92,6 +92,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// Allow the frame (which includes server-side decorations) to be larger than the requested
 		// client size when matching by size.
 		private const int SizeTolerance = 120;
+		// A just-mapped window is still subject to the compositor's OWN initial placement, which can land after
+		// our first move and silently overwrite it, so verify the move actually stuck and re-issue while it
+		// hasn't. Bounded: a compositor that genuinely can't move windows costs this fixed delay once, not a spin.
+		private const int PositionVerifyAttempts = 8;
+		private const int PositionVerifyDelayMs = 50;
+		private const int PositionTolerance = 2;
 
 		internal static bool IsSupported => Platform.Desktop.IsWaylandSession && WaylandBackend.Current != null;
 
@@ -516,6 +522,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 					state.CompositorHandle = 0;
 					state.CompositorId = "";
+					// The map-time placement race is back for the new window, so let its first move be verified again.
+					state.PositionSettled = false;
 				}
 			}
 
@@ -601,10 +609,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			if ((want.X != WindowInfoBase.Unchanged || want.Y != WindowInfoBase.Unchanged)
 					&& (want.X != have.X || want.Y != have.Y))
-			{
-				var rect = new Rectangle(want.X, want.Y, WindowInfoBase.Unchanged, WindowInfoBase.Unchanged);
-				_ = backend.TryMoveResizeWindow(handle, rect, true, false);
-			}
+				ApplyPosition(backend, state, want.X, want.Y);
 
 			// The traits GTK cannot express on Wayland go AFTER the move: a freshly mapped window may not be fully
 			// decorated at correlation time, so removing the border before it is drawn doesn't stick, while doing it
@@ -632,6 +637,78 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				state.AppliedTo = handle;
 				state.Applied = want;
 			}
+		}
+
+		// Move the window and make the move STICK. The compositor's initial placement for a freshly mapped
+		// window can be applied AFTER our move: the move round-trip reports success, yet the window ends up at
+		// the compositor's default spot (a Muffin/Mutter window asked for a corner appears at the top-left).
+		// Re-issue while the frame still disagrees with the target. Only the axes actually requested are
+		// checked, so a one-axis move isn't retried forever over the axis we never set.
+		private static void ApplyPosition(IWaylandBackend backend, FormState state, int tx, int ty)
+		{
+			bool settled;
+
+			lock (sync)
+				settled = state.PositionSettled;
+
+			// Already where it belongs - the compositor placed it from a reservation before it was ever painted -
+			// so there is nothing to move and nothing to verify. Costs one cheap query to save the move plus a
+			// verify delay on the path that is now the common one.
+			if (!settled && AtTarget(backend, state.CompositorHandle, tx, ty))
+			{
+				lock (sync)
+					state.PositionSettled = true;
+
+				return;
+			}
+
+			var rect = new Rectangle(tx, ty, WindowInfoBase.Unchanged, WindowInfoBase.Unchanged);
+			var moved = backend.TryMoveResizeWindow(state.CompositorHandle, rect, true, false);
+
+			// Verify at most ONCE per window, and only the first placement. The override this defends against is a
+			// map-time race (the compositor's initial placement landing after our move); once any placement has been
+			// resolved, later moves stick on their own, so a drag or a live reposition stays a single round-trip
+			// instead of paying the poll delay on every frame. A move the backend flatly refused (a compositor that
+			// cannot place windows at all) is not worth polling either -- and is left unsettled so a transient
+			// failure doesn't permanently skip verification.
+			if (settled || !moved)
+				return;
+
+			for (var attempt = 0; attempt < PositionVerifyAttempts; attempt++)
+			{
+				// A newer target (the next frame of a drag) supersedes this placement: leave it unsettled and let
+				// the worker loop re-read the target, so the move that actually matters is the one we verify.
+				lock (sync)
+				{
+					if (tx != state.TargetX || ty != state.TargetY)
+						return;
+				}
+
+				Thread.Sleep(PositionVerifyDelayMs);
+
+				if (AtTarget(backend, state.CompositorHandle, tx, ty))
+					break;
+
+				_ = backend.TryMoveResizeWindow(state.CompositorHandle, rect, true, false);
+			}
+
+			// Settled on success, on an unreadable frame, and on exhausting the attempts alike: the budget is spent
+			// once per window either way, so a compositor whose reported geometry never matches (a frame origin we
+			// measure differently) can't make every later move pay the full verify budget.
+			lock (sync)
+				state.PositionSettled = true;
+		}
+
+		// Whether the compositor reports the window on the requested axes. A frame it cannot read back at all
+		// (window gone, or a backend with no window query) counts as settled: verifying blind would only spin.
+		private static bool AtTarget(IWaylandBackend backend, nint handle, int tx, int ty)
+		{
+			if (!backend.TryGetWindow(handle, out var info) || info == null)
+				return true;
+
+			var frame = info.FrameGeometry;
+			return (tx == WindowInfoBase.Unchanged || Math.Abs(frame.X - tx) <= PositionTolerance)
+				   && (ty == WindowInfoBase.Unchanged || Math.Abs(frame.Y - ty) <= PositionTolerance);
 		}
 
 		// Locate our window in the compositor's list and claim it. Polls because a just-mapped
