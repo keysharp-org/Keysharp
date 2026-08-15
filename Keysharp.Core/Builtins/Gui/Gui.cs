@@ -3150,8 +3150,11 @@ namespace Keysharp.Builtins
 				// Likewise gtk_window_set_skip_taskbar_hint: X11-only, so +ToolWindow needs the compositor.
 				var skipTaskbar = !form.ShowInTaskbar;
 
-				if (hasPos || removeBorder || keepAbove || skipTaskbar)
-					Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Position(form, form.Title,
+				//Unconditional because a Show is also a RE-show: hiding the window unmapped it and the compositor
+				//dropped everything it had been told, including a transparency this Show doesn't ask for itself.
+				//The positioner reconciles the whole desired state, and returns straight away for a window that
+				//has none.
+				Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Position(form, form.Title,
 						hasPos ? location.X : int.MinValue, hasPos ? location.Y : int.MinValue,
 						size.Width, size.Height, removeBorder, keepAbove, skipTaskbar);
 			}

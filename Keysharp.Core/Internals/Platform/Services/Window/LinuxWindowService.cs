@@ -205,6 +205,7 @@ namespace Keysharp.Internals
 		public override object GetTransparency(nint h)
 		{
 			if (Backend(h, out var info)) return info.Transparency;
+			if (OwnBackend(h, out var own)) return own.Transparency;   // the compositor holds our own opacity too
 			if (TryOwnControl(h, out _)) return base.GetTransparency(h);
 			// -1L is the "no explicit transparency set" sentinel (WinGetTransparent -> ""), matching Windows/X11.
 			if (IsWayland(h)) return -1L;
@@ -546,8 +547,17 @@ namespace Keysharp.Internals
 			if (Foreign(h) != null)
 				return false;
 
-			if (TryOwnControl(h, out _))
-				return base.TrySetTransparency(h, alpha);
+			// A Wayland client cannot make its own surface translucent (GTK's window opacity is an X11-only path),
+			// so route our own windows through the compositor backend the way WinMove does. Via the positioner
+			// rather than OwnBackend directly, because it also holds the request for a window that has not been
+			// mapped yet and reasserts it after a Hide/Show, which unmaps the window and drops the compositor's
+			// opacity with it.
+			if (TryOwnControl(h, out var ctrl) && ctrl is Form ownForm)
+			{
+				var size = ownForm.GetSize();
+				return WaylandOwnToplevels.SetTransparency(ownForm, ownForm.Title, size.Width, size.Height, alpha);
+			}
+
 			return false;
 		}
 

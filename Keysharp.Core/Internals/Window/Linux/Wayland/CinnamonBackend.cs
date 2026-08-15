@@ -849,6 +849,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		public bool TrySetTransparency(nint handle, object alpha)
 			=> TryHandleToSeq(handle, out var seq) && CinnamonShellBridge.SendSetOpacity(seq, alpha);
 
+		public bool SupportsTransparency => true;
+
 		public bool TrySetZOrder(nint handle, ZOrder z)
 			=> TryHandleToSeq(handle, out var seq)
 			   && (z == ZOrder.Top

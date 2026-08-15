@@ -44,21 +44,29 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal int TargetY = WindowInfoBase.Unchanged;
 			internal int MatchW;
 			internal int MatchH;
-			internal bool Busy;                       // a worker is currently servicing this form
-			internal long Generation;                 // bumped by every request, so a worker can tell one arrived while it correlated
-			internal bool RemoveBorder;               // strip the server-side titlebar once correlated
-			internal bool BorderRemoved;              // ...and we have done so
+			internal bool Busy;                       // a reconcile pass is running for this form
+			internal bool Dirty;                      // ...and a request arrived after it read the desired state
+			internal bool RemoveBorder;               // strip the server-side titlebar
 			internal bool KeepAbove;                  // assert keep-above (Eto +AlwaysOnTop is a no-op on Wayland)
-			internal bool KeptAbove;                  // ...and we have done so
 			internal bool SkipTaskbar;                // hide from taskbar/pager/switcher (GTK's hint is X11-only)
-			internal bool TaskbarSkipped;             // ...and we have done so
-			internal object Opacity;                  // requested whole-window alpha (null = never set)
-			internal bool OpacityApplied;             // ...and we have done so
+			internal object Opacity;                  // whole-window alpha (null = never asked for)
+			internal nint AppliedTo;                  // the compositor window Applied was pushed to
+			internal Traits Applied = Traits.None;    // ...and what it was told, so a pass only issues what changed
 			internal bool PositionSettled;            // a placement has been verified (or given up on) once; see ApplyPosition
 			internal FormWindowState? PendingWindowState; // maximize/minimize/restore to reassert via the backend
 			internal Point SurfaceOrigin;             // where the compositor last said this form's surface starts
 			internal long SurfaceTick;                // ...and when, since the user can move the window at any time
 			internal bool SurfaceKnown;               // false = the compositor could not say
+		}
+
+		/// <summary>
+		/// What a compositor window has already been told. Compared against the desired state so a pass issues only
+		/// what differs, and paired with the handle it was told to: unmapping destroys the xdg-toplevel, so a window
+		/// shown again is a different one and everything is pushed afresh with nothing to invalidate by hand.
+		/// </summary>
+		private readonly record struct Traits(int X, int Y, bool Border, bool Above, bool Taskbar, object Opacity)
+		{
+			internal static readonly Traits None = new(WindowInfoBase.Unchanged, WindowInfoBase.Unchanged, false, false, false, null);
 		}
 
 		private static readonly object sync = new();
@@ -110,32 +118,24 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (formHandle == 0 || !IsSupported)
 				return;
 
-			// Nothing to do without a position to apply, a border to strip, a keep-above or a taskbar entry to hide.
-			if (x == WindowInfoBase.Unchanged && y == WindowInfoBase.Unchanged && !removeBorder && !keepAbove && !skipTaskbar)
-				return;
-
-			var startWorker = false;
-			FormState state;
-
 			lock (sync)
 			{
-				state = GetOrCreateState(formHandle, form);
+				// A window with nothing to assert has nothing to reconcile. One that already has desired state
+				// still does, even on a plain Show: unmapping dropped everything the compositor had been told.
+				if (!states.ContainsKey(formHandle) && x == WindowInfoBase.Unchanged && y == WindowInfoBase.Unchanged
+						&& !removeBorder && !keepAbove && !skipTaskbar)
+					return;
+
+				var state = Track(formHandle, form, title, matchW, matchH);
 
 				if (x != WindowInfoBase.Unchanged) state.TargetX = x;
 				if (y != WindowInfoBase.Unchanged) state.TargetY = y;
-				state.Title = title ?? "";
-				if (matchW > 0) state.MatchW = matchW;
-				if (matchH > 0) state.MatchH = matchH;
 				if (removeBorder) state.RemoveBorder = true;
 				if (keepAbove) state.KeepAbove = true;
 				if (skipTaskbar) state.SkipTaskbar = true;
 
-				if (!state.Busy)
-					startWorker = state.Busy = true;
+				Reconcile(state);
 			}
-
-			if (startWorker)
-				_ = Task.Run(() => Worker(state));
 		}
 
 		/// <summary>
@@ -226,41 +226,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return false;
 
 			FormState state;
-			nint cachedHandle;
 
 			lock (sync)
+				state = Track(formHandle, form, title, matchW, matchH);
+
+			if (StillLive(backend, state))
 			{
-				state = GetOrCreateState(formHandle, form);
-
-				cachedHandle = state.CompositorHandle;
-			}
-
-			if (cachedHandle != 0)
-			{
-				if (backend.TryGetWindow(cachedHandle, out _))
-				{
-					compositorHandle = cachedHandle;
-					return true;
-				}
-
 				lock (sync)
-				{
-					if (state.CompositorHandle == cachedHandle)
-					{
-						if (state.CompositorId.Length > 0)
-							_ = claimedIds.Remove(state.CompositorId);
+					compositorHandle = state.CompositorHandle;
 
-						state.CompositorHandle = 0;
-						state.CompositorId = "";
-					}
-				}
-			}
-
-			lock (sync)
-			{
-				state.Title = title ?? "";
-				if (matchW > 0) state.MatchW = matchW;
-				if (matchH > 0) state.MatchH = matchH;
+				return true;
 			}
 
 			if (!Correlate(backend, state))
@@ -287,24 +262,54 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (formHandle == 0 || !IsSupported)
 				return;
 
-			var startWorker = false;
+			lock (sync)
+			{
+				var state = Track(formHandle, form, title, matchW, matchH);
+				state.PendingWindowState = windowState;
+				Reconcile(state);
+			}
+		}
+
+		/// <summary>
+		/// Set whole-window opacity on one of OUR OWN windows (AHK alpha: 0 transparent, 255 opaque, "Off" opaque).
+		/// A Wayland client cannot make its own surface translucent, so the request goes through the compositor
+		/// backend. Returns false only when the compositor cannot do this at all, which is what makes
+		/// <c>WinSetTransparent</c> raise its OSError there.
+		/// </summary>
+		internal static bool SetTransparency(Eto.Forms.Form form, string title, int matchW, int matchH, object alpha)
+		{
+			var formHandle = form?.Handle ?? 0;
+			var backend = WaylandBackend.Current;
+
+			if (formHandle == 0 || !IsSupported || backend?.SupportsTransparency != true)
+				return false;
+
 			FormState state;
 
 			lock (sync)
 			{
-				state = GetOrCreateState(formHandle, form);
-
-				state.Title = title ?? "";
-				if (matchW > 0) state.MatchW = matchW;
-				if (matchH > 0) state.MatchH = matchH;
-				state.PendingWindowState = windowState;
-
-				if (!state.Busy)
-					startWorker = state.Busy = true;
+				state = Track(formHandle, form, title, matchW, matchH);
+				state.Opacity = alpha;
 			}
 
-			if (startWorker)
-				_ = Task.Run(() => Worker(state));
+			// Issue it here when the compositor already knows the window, so the caller gets the real result and a
+			// WinGetTransparent straight after reads back what was just set rather than racing a background pass.
+			if (StillLive(backend, state))
+			{
+				nint live;
+
+				lock (sync)
+					live = state.CompositorHandle;
+
+				return backend.TrySetTransparency(live, alpha);
+			}
+
+			// Not mapped yet, so there is nothing to correlate to: the desired state is recorded and the Show that
+			// maps the window reconciles it. Setting transparency before Show is ordinary usage.
+			lock (sync)
+				Reconcile(state);
+
+			return true;
 		}
 
 		/// <summary>
@@ -343,100 +348,94 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		/// <summary>Whether any requested compositor-side trait is still unapplied. Caller must hold <see cref="sync"/>.</summary>
-		private static bool PendingTraits(FormState state)
-			=> (state.RemoveBorder && !state.BorderRemoved)
-			   || (state.KeepAbove && !state.KeptAbove)
-			   || (state.SkipTaskbar && !state.TaskbarSkipped);
+		/// <summary>
+		/// Schedules a reconcile pass. Caller must hold <see cref="sync"/>.
+		/// <para>
+		/// Marking dirty before the check is what makes this lossless: a request landing while a pass is running
+		/// either sets the flag before that pass tests it (so the pass loops) or after it cleared <c>Busy</c> (so
+		/// this starts a new one). There is no window in which a request is seen by neither.
+		/// </para>
+		/// </summary>
+		private static void Reconcile(FormState state)
+		{
+			state.Dirty = true;
 
-		private static FormState GetOrCreateState(nint formHandle, Eto.Forms.Form form)
+			if (state.Busy)
+				return;
+
+			state.Busy = true;
+			_ = Task.Run(() => Worker(state));
+		}
+
+		/// <summary>
+		/// Whether the cached correlation still names a window the compositor knows, dropping it if it doesn't so the
+		/// caller re-correlates. Hiding a window unmaps it and destroys its xdg-toplevel, so the Show that follows
+		/// produces a NEW compositor window: without this, every trait reasserted after a re-Show would be applied to
+		/// a window that is gone.
+		/// </summary>
+		private static bool StillLive(IWaylandBackend backend, FormState state)
+		{
+			nint cached;
+
+			lock (sync)
+				cached = state.CompositorHandle;
+
+			if (cached == 0)
+				return false;
+
+			if (backend.TryGetWindow(cached, out _))
+				return true;
+
+			lock (sync)
+			{
+				if (state.CompositorHandle == cached)
+				{
+					if (state.CompositorId.Length > 0)
+						_ = claimedIds.Remove(state.CompositorId);
+
+					state.CompositorHandle = 0;
+					state.CompositorId = "";
+				}
+			}
+
+			return false;
+		}
+
+		/// <summary>The form's desired state, refreshed with the correlation metadata every request carries.
+		/// Caller must hold <see cref="sync"/>.</summary>
+		private static FormState Track(nint formHandle, Eto.Forms.Form form, string title, int matchW, int matchH)
 		{
 			if (!states.TryGetValue(formHandle, out var state))
 				states[formHandle] = state = new FormState { FormHandle = formHandle };
 
 			state.Form ??= form;
+
+			state.Title = title ?? "";
+			if (matchW > 0) state.MatchW = matchW;
+			if (matchH > 0) state.MatchH = matchH;
 			return state;
 		}
 
+		// Drive the form's desired state into the compositor until it is up to date and nothing new has arrived.
 		private static void Worker(FormState state)
 		{
 			try
 			{
-				var backend = WaylandBackend.Current;
-
-				if (backend == null || (state.CompositorHandle == 0 && !Correlate(backend, state)))
-				{
-					lock (sync) state.Busy = false;
-					return;
-				}
-
 				while (true)
 				{
-					int tx, ty;
-					FormWindowState? ws;
+					lock (sync)
+						state.Dirty = false;
+
+					var backend = WaylandBackend.Current;
+
+					// Failing to correlate normally just means the window is not mapped yet. The desired state stays
+					// recorded and the Show that maps it reconciles again - the only moment this can succeed.
+					if (backend != null && (StillLive(backend, state) || Correlate(backend, state)))
+						Push(backend, state);
 
 					lock (sync)
 					{
-						tx = state.TargetX;
-						ty = state.TargetY;
-						ws = state.PendingWindowState;
-						state.PendingWindowState = null;
-					}
-
-					// Reassert maximize/minimize/restore via the backend (Eto already issued the GTK request;
-					// this makes it stick on compositors that drop a client's xdg-toplevel state request).
-					if (ws.HasValue)
-						_ = backend.TrySetWindowState(state.CompositorHandle, ws.Value);
-
-					if (tx != WindowInfoBase.Unchanged || ty != WindowInfoBase.Unchanged)
-					{
-						var rect = new Rectangle(tx, ty, WindowInfoBase.Unchanged, WindowInfoBase.Unchanged);
-						_ = backend.TryMoveResizeWindow(state.CompositorHandle, rect, true, false);
-					}
-
-					// Assert the traits GTK cannot express on Wayland, AFTER the first move: a freshly mapped window
-					// may not be fully decorated by the compositor at correlation time, so removing the border
-					// before it is drawn doesn't stick, while doing it once the move round-trip has settled does.
-					// Each trait is guarded by its own "requested but not yet applied" pair rather than a
-					// once-per-worker flag: a worker started by an earlier flagless SetWindowState/Move would
-					// otherwise latch that flag and silently drop traits set by the Show that follows it.
-					bool removeBorder, keepAbove, skipTaskbar;
-					lock (sync)
-					{
-						removeBorder = state.RemoveBorder && !state.BorderRemoved;
-						keepAbove = state.KeepAbove && !state.KeptAbove;
-						skipTaskbar = state.SkipTaskbar && !state.TaskbarSkipped;
-					}
-
-					if (removeBorder)
-					{
-						_ = backend.TrySetNoBorder(state.CompositorHandle, true);
-						lock (sync) state.BorderRemoved = true;   // best-effort: applied once either way, so a
-					}                                             // failure can't spin this loop
-
-					// GTK's skip-taskbar hint only exists on X11, so a +ToolWindow overlay is listed in the
-					// taskbar/pager/switcher like a normal window here until the compositor is told otherwise.
-					if (skipTaskbar)
-					{
-						_ = backend.TrySetSkipTaskbar(state.CompositorHandle, true);
-						lock (sync) state.TaskbarSkipped = true;
-					}
-
-					// Eto's +AlwaysOnTop (gtk keep-above) is a no-op on Wayland — a client can't keep
-					// itself above — so assert it through the compositor.
-					if (keepAbove)
-					{
-						_ = backend.TrySetAlwaysOnTop(state.CompositorHandle, true);
-						lock (sync) state.KeptAbove = true;
-					}
-
-					lock (sync)
-					{
-						// Done only when no newer target, window-state request or trait arrived while we were
-						// working; otherwise the lock guarantees a fresh Position()/SetWindowState() either sees
-						// Busy and lets us loop, or (once we clear Busy here) starts its own worker. No update is lost.
-						if (tx == state.TargetX && ty == state.TargetY && !state.PendingWindowState.HasValue
-								&& !PendingTraits(state))
+						if (!state.Dirty)
 						{
 							state.Busy = false;
 							return;
@@ -447,6 +446,65 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			catch
 			{
 				lock (sync) state.Busy = false;
+			}
+		}
+
+		// Tell the compositor what it does not already know about this window. Skipping what matches Applied keeps a
+		// stream of Moves from re-issuing traits, while a window that was unmapped and shown again has a new handle,
+		// so it is told everything afresh - the flags cannot go stale against a live window.
+		private static void Push(IWaylandBackend backend, FormState state)
+		{
+			nint handle;
+			FormWindowState? ws;
+			Traits want, have;
+
+			lock (sync)
+			{
+				handle = state.CompositorHandle;
+				ws = state.PendingWindowState;
+				state.PendingWindowState = null;   // a one-shot reassert, not part of the desired state: re-applying
+				want = new Traits(state.TargetX, state.TargetY, state.RemoveBorder,   // it would undo a later user unmaximize
+								  state.KeepAbove, state.SkipTaskbar, state.Opacity);
+				have = state.AppliedTo == handle ? state.Applied : Traits.None;
+			}
+
+			// Reassert maximize/minimize/restore via the backend (Eto already issued the GTK request; this makes it
+			// stick on compositors that drop a client's xdg-toplevel state request).
+			if (ws.HasValue)
+				_ = backend.TrySetWindowState(handle, ws.Value);
+
+			if ((want.X != WindowInfoBase.Unchanged || want.Y != WindowInfoBase.Unchanged)
+					&& (want.X != have.X || want.Y != have.Y))
+			{
+				var rect = new Rectangle(want.X, want.Y, WindowInfoBase.Unchanged, WindowInfoBase.Unchanged);
+				_ = backend.TryMoveResizeWindow(handle, rect, true, false);
+			}
+
+			// The traits GTK cannot express on Wayland go AFTER the move: a freshly mapped window may not be fully
+			// decorated at correlation time, so removing the border before it is drawn doesn't stick, while doing it
+			// once the move round-trip has settled does.
+			if (want.Border && !have.Border)
+				_ = backend.TrySetNoBorder(handle, true);
+
+			// GTK's skip-taskbar hint only exists on X11, so a +ToolWindow overlay is listed in the
+			// taskbar/pager/switcher like a normal window here until the compositor is told otherwise.
+			if (want.Taskbar && !have.Taskbar)
+				_ = backend.TrySetSkipTaskbar(handle, true);
+
+			// Eto's +AlwaysOnTop (gtk keep-above) is a no-op on Wayland — a client can't keep itself above.
+			if (want.Above && !have.Above)
+				_ = backend.TrySetAlwaysOnTop(handle, true);
+
+			// Nor can a client make its own surface translucent.
+			if (want.Opacity != null && !Equals(want.Opacity, have.Opacity))
+				_ = backend.TrySetTransparency(handle, want.Opacity);
+
+			// Recorded even when a call failed: each is best-effort and applied at most once per compositor window,
+			// so a compositor that refuses one can't make every later pass retry it.
+			lock (sync)
+			{
+				state.AppliedTo = handle;
+				state.Applied = want;
 			}
 		}
 

@@ -372,6 +372,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return RunCommandOperation("setOpacity", new { id, opacity }, "opacity");
 			}
 
+			public bool SupportsTransparency => true;
+
 			public bool TryCloseWindow(nint handle)
 			{
 				if (!TryGetCompositorId(handle, out var id))
@@ -820,6 +822,8 @@ for (var __i = 0; __i < __order.length; ++__i) {
 
 			public bool TrySetTransparency(nint handle, object alpha)
 				=> TryHandleToSeq(handle, out var seq) && GnomeShellBridge.SendSetOpacity(seq, alpha);
+
+			public bool SupportsTransparency => true;
 
 				// The Keysharp extension owns the compositor-drawn overlay surface, so its D-Bus service ownership
 				// is the capability gate. A stale/broken extension that owns the name but errors on the actual

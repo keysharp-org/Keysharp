@@ -187,6 +187,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// <summary>Set whole-window opacity from AHK alpha semantics (0 transparent, 255 opaque, "Off" opaque). False = unsupported.</summary>
 		bool TrySetTransparency(nint handle, object alpha) => false;
 
+		/// <summary>True when <see cref="TrySetTransparency"/> is implemented at all. Lets a request against one of
+		/// OUR OWN windows be accepted before the window exists compositor-side (transparency set before Show) without
+		/// claiming success on a compositor that could never honour it.</summary>
+		bool SupportsTransparency => false;
+
 		bool TryCloseWindow(nint handle) => false;
 
 		bool TryKillWindow(nint handle) => TryCloseWindow(handle);
