@@ -94,8 +94,37 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Registers a function to be called when the control raises the named event. An event the
-			/// control does not support is accepted and simply never fires, as AHK does.
+			/// Whether this control type raises the named event, per the "Applies to" lists in the AHK OnEvent
+			/// documentation. AHK throws for an unsupported pair and scripts rely on that: FindText registers
+			/// "Click" in a Try and falls back to "Change" in the Catch, so accepting the pair silently left
+			/// Change-only controls (sliders, list boxes, drop-downs) with no handler at all. Tested against
+			/// the holder type because the widgets are not one-per-control-type (DDL and ComboBox share one).
+			/// </summary>
+			private bool SupportsEvent(string e) =>
+				//No AHK counterpart, so no documented event set to hold them to.
+				this is ActiveX or WebBrowser
+#if WINDOWS
+				|| this is Custom
+#endif
+				|| e switch
+			{
+				"change" => this is ComboBox or DDL or ListBox or Tab or Edit or RichEdit or DateTime or MonthCal or Hotkey or UpDown or Slider,
+				//Gui.Text spelled out: a bare "Text" binds to the Control.Text property instead.
+				"click" => this is Keysharp.Builtins.Gui.Text or Pic or Button or CheckBox or Radio or ListView or TreeView or Link or StatusBar,
+				"doubleclick" => this is Keysharp.Builtins.Gui.Text or Pic or Button or CheckBox or Radio or ComboBox or ListBox or ListView or TreeView or StatusBar,
+				"colclick" => this is ListView,
+				//"All controls except Edit and MonthCal, which have their own standard context menu."
+				"contextmenu" => this is not (Edit or RichEdit or MonthCal),
+				//Only the four the documentation rejects outright; the rest accept and may simply never fire.
+				"focus" or "losefocus" => this is not (Hotkey or Slider or Tab or Link),
+				"itemcheck" or "itemedit" or "itemselect" => this is ListView or TreeView,
+				"itemexpand" => this is TreeView,
+				"itemfocus" => this is ListView,
+				_ => false,//An event name that is not one of AHK's at all, rejected as AHK does.
+			};
+
+			/// <summary>
+			/// Registers a function to be called when the control raises the named event.
 			/// </summary>
 			public object OnEvent(object eventName, object callback, object addRemove = null)
 			{
@@ -112,6 +141,10 @@ namespace Keysharp.Builtins
 				//register nothing and still report success, exactly as HandleOnCommandNotify used to.
 				if (del == null)
 					return Errors.ValueErrorOccurred("The callback was not a valid function.");
+
+				//Checked once here rather than per branch, so the branches below can assume the pair is valid.
+				if (!SupportsEvent(e))
+					return Errors.ValueErrorOccurred($"A {Type} control does not support the {eventName.As()} event.");
 
 				if (e == "change")
 				{
@@ -164,73 +197,52 @@ namespace Keysharp.Builtins
 				}
 				else if (e == "colclick")
 				{
-					if (_control is KeysharpListView lv)
-					{
-						if (columnClickHandlers == null)
-							columnClickHandlers = new();
+					if (columnClickHandlers == null)
+						columnClickHandlers = new();
 
-						columnClickHandlers.ModifyEventHandlers(del, i);
-					}
+					columnClickHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemcheck")
 				{
-					if (_control is KeysharpTreeView || _control is KeysharpListView)
-					{
-						if (itemCheckHandlers == null)
-							itemCheckHandlers = new();
+					if (itemCheckHandlers == null)
+						itemCheckHandlers = new();
 
-						itemCheckHandlers.ModifyEventHandlers(del, i);
-					}
+					itemCheckHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemedit")
 				{
-					if (_control is KeysharpTreeView || _control is KeysharpListView)
-					{
-						if (itemEditHandlers == null)
-							itemEditHandlers = new();
+					if (itemEditHandlers == null)
+						itemEditHandlers = new();
 
-						itemEditHandlers.ModifyEventHandlers(del, i);
-					}
+					itemEditHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemexpand")
 				{
-					if (_control is KeysharpTreeView)
-					{
-						if (itemExpandHandlers == null)
-							itemExpandHandlers = new();
+					if (itemExpandHandlers == null)
+						itemExpandHandlers = new();
 
-						itemExpandHandlers.ModifyEventHandlers(del, i);
-					}
+					itemExpandHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemfocus")
 				{
-					if (_control is KeysharpListView)
-					{
-						if (focusedItemChangedHandlers == null)
-							focusedItemChangedHandlers = new();
+					if (focusedItemChangedHandlers == null)
+						focusedItemChangedHandlers = new();
 
-						focusedItemChangedHandlers.ModifyEventHandlers(del, i);
-					}
+					focusedItemChangedHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemselect")
 				{
-					if (_control is KeysharpTreeView || _control is KeysharpListView)
-					{
-						if (selectedItemChangedHandlers == null)
-							selectedItemChangedHandlers = new();
+					if (selectedItemChangedHandlers == null)
+						selectedItemChangedHandlers = new();
 
-						selectedItemChangedHandlers.ModifyEventHandlers(del, i);
-					}
+					selectedItemChangedHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "contextmenu")
 				{
 					if (contextMenuChangedHandlers == null)
 						contextMenuChangedHandlers = new();
 
-					//The password box derives from the text box on Windows but from PasswordBox off it, so it has
-					//to be named separately for the first test to cover it everywhere.
-					if (!(_control is KeysharpTextBox) && !(_control is KeysharpPasswordBox) && !(_control is KeysharpMonthCalendar))
-						contextMenuChangedHandlers.ModifyEventHandlers(del, i);
+					contextMenuChangedHandlers.ModifyEventHandlers(del, i);
 				}
 
 				return DefaultObject;
