@@ -337,6 +337,20 @@ namespace Keysharp.Builtins
 				DragDrop += Form_DragDrop;
 				KeyDown += Form_KeyDown;
 				MouseDown += Form_MouseDown;
+#if !WINDOWS
+
+				//On X11 the handle a window answers with changes the first time it is realized (widget pointer
+				//before, XID after), so the key it is registered under has to follow. Re-homed at realize
+				//rather than at Shown because the two are not adjacent: in between, a window query from another
+				//thread enumerates, gets the XID, and fails to recognise a window of ours still keyed by the
+				//pointer - and that lookup gates most of the Linux window service.
+				this.OnRealized(() =>
+				{
+					if (Tag is WeakReference<Gui> realizedGui && realizedGui.TryGetTarget(out var rg))
+						Register(rg);
+				});
+
+#endif
 			}
 
 			Shown += (o, e) =>
