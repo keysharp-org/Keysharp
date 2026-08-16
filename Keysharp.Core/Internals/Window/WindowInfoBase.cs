@@ -52,7 +52,11 @@ namespace Keysharp.Internals.Window
 
 				if (IsSpecified && Platform.Window.TryEnumerateChildren(Handle, out var kids))
 					foreach (var k in kids)
-						set.Add(new WindowInfo(k));
+						//Built through the factory rather than as a bare WindowInfo so a child that is one of our
+						//own toolkit controls comes back as the ControlInfo that can read it. A plain WindowInfo
+						//answers by handle, which off Windows reaches nothing for a widget - every control found
+						//by a search rather than by handle then reported no text and a zero rect.
+						set.Add(Platform.Window.CreateWindow(k));
 
 				return set;
 			}

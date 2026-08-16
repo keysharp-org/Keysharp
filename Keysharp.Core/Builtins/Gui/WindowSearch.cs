@@ -44,6 +44,23 @@ namespace Keysharp.Builtins
 
 			var childitem = parent.FirstChild(sc);
 
+			//AHK addresses a control by its ClassNN - the class name followed by its 1-based ordinal among the
+			//siblings sharing that class, which is exactly what WinGetControls reports - but criteria matching
+			//compares the bare class name, so "Edit1" never matches a control whose class is "Edit". Done here
+			//rather than in the criteria match because only a control is ever addressed this way: computing a
+			//ClassNN walks the candidate's siblings, which no top-level window search should have to pay.
+			if (childitem == null && !string.IsNullOrEmpty(sc.ClassName))
+			{
+				foreach (var child in parent.ChildWindows)
+				{
+					if (string.Equals(child.ClassNN, sc.ClassName, StringComparison.OrdinalIgnoreCase))
+					{
+						childitem = child;
+						break;
+					}
+				}
+			}
+
 			if (classortext != null && childitem == null)
 			{
 				if (string.IsNullOrEmpty(sc.Text))
