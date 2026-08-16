@@ -3197,6 +3197,13 @@ namespace Keysharp.Builtins
 #endif
 #if WINDOWS
 			form.Update();//Required for the very first state of the form to always be displayed.
+#elif LINUX
+
+			//Not for a window that was just iconified: an unmapped state is exactly what was asked for there,
+			//so waiting for it to become viewable would only ever burn the whole grace period.
+			if (!hide && !min && form.WindowState != FormWindowState.Minimized && !IsWaylandSession)
+				WaitForX11Map(form.Handle);
+
 #endif
 			// Now that the window has a real size, resolve any deferred "+MinSize"/"+MaxSize" (no dimensions).
 			if (!hide)
@@ -3205,6 +3212,33 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
+#if LINUX
+		/// <summary>
+		/// Blocks until the just-shown window is actually mapped on the X server, or a short grace period
+		/// elapses. GTK maps a toplevel from its main loop, so <c>Show()</c> returns while the window is still
+		/// unmapped - and an unmapped window is not viewable, so it is missing from the window enumeration the
+		/// window functions search. Every WinWaitClose/WinWait/WinMove issued right after Show would then act
+		/// on a window that appears not to exist (AHK's ShowWindow is synchronous, so scripts assume it does).
+		/// </summary>
+		/// <param name="handle">The form's X window id.</param>
+		private static void WaitForX11Map(nint handle)
+		{
+			if (handle == 0)
+				return;
+
+			var win = new Keysharp.Internals.Window.Linux.Proxies.XWindow(Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default, handle.ToInt64());
+			var deadline = Environment.TickCount64 + 2000;
+			//Stop on a failed read rather than treating it as "not mapped yet": the handle may be no X window
+			//at all (a Wayland backend hands out widget pointers, and the session guard reads the session type
+			//rather than the backend actually in use), or the window may already be gone. Attributes would
+			//report the zeroed struct's IsUnmapped for both and burn the whole grace period.
+			Keysharp.Internals.Flow.WaitWithMessagePump(() =>
+				Environment.TickCount64 < deadline
+				&& win.TryGetAttributes(out var attrs)
+				&& attrs.map_state != Keysharp.Internals.Window.Linux.X11.MapState.IsViewable);
+		}
+
+#endif
         public KeysharpObject Submit(object hide = null)
 		{
 			var hideVal = ForceBool(hide ?? true);
