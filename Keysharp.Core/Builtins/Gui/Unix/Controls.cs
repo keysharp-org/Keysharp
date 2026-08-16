@@ -1987,6 +1987,47 @@ namespace Keysharp.Builtins
 			BackgroundColor = Colors.LightGrey;
 		}
 
+		/// <summary>
+		/// The 1-based part under the pointer, or 0 for none. AHK reports the clicked part as the
+		/// Click/DoubleClick callback's Info, and each part is a child control here.
+		/// <para>
+		/// Read from the pointer rather than from the event's Location: the parts are the widgets the click is
+		/// actually delivered to, so the toolkit reports coordinates relative to the PART, which would place
+		/// every click inside whichever part sits at that offset from the strip's own left edge.
+		/// </para>
+		/// </summary>
+		internal long PartFromPoint()
+		{
+			if (!GetCursorPos(out POINT cursor))
+				return 0L;
+
+			var x = cursor.X - this.ScreenOrigin().X;
+
+			if (x < 0)
+				return 0L;
+
+			//Measured from the item widths that drive the layout, not from the part controls themselves: the
+			//trailing spring part is never assigned a width, so the toolkit reports the width of its text
+			//rather than the space it actually fills, which puts its left edge far to the right of where it
+			//is drawn.
+			float edge = 0;
+
+			for (var i = 0; i < Items.Count; i++)
+			{
+				var width = Items[i].Width;
+
+				if (width <= 0)//A spring part runs to the end of the bar.
+					return i + 1L;
+
+				edge += width;
+
+				if (x < edge)
+					return i + 1L;
+			}
+
+			return Items.Count;
+		}
+
 		internal void UpdateItems()
 		{
 			partControls.Clear();
@@ -2194,8 +2235,6 @@ namespace Keysharp.Builtins
 
 	public class KeysharpToolStripStatusLabel
 	{
-		internal readonly CallbackRegistry doubleClickHandlers = new();
-
 		public bool AutoSize { get; set; }
 		public bool Spring { get; set; }
 		public int Width { get; set; } = -1;

@@ -82,12 +82,6 @@ namespace Keysharp.Builtins
 							removedAny |= tssl.doubleClickHandlers.RemoveOwned(scheduler);
 					}
 				}
-#elif !WINDOWS
-				if (_control is KeysharpStatusStrip ss)
-				{
-					foreach (var item in ss.Items)
-						removedAny |= item?.doubleClickHandlers.RemoveOwned(scheduler) == true;
-				}
 #endif
 
 				return removedAny;
@@ -710,6 +704,14 @@ namespace Keysharp.Builtins
 					else
 						_ = doubleClickHandlers.InvokeEventHandlers(this, 0L);
 				}
+#if !WINDOWS
+				//Off Windows a StatusBar is one control whose parts are child controls, so the part has to be
+				//resolved from where the click landed. On Windows each part raises its own event instead - see
+				//the note below.
+				else if (_control is KeysharpStatusStrip sbar)
+					_ = doubleClickHandlers.InvokeEventHandlers(this, sbar.PartFromPoint());
+
+#endif
 				else
 					_ = doubleClickHandlers.InvokeEventHandlers(this, 0L);
 

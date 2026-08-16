@@ -1871,6 +1871,8 @@ namespace Keysharp.Builtins
 							_ = clickHandlers.InvokeEventHandlers(this, id != "" ? id : idx + 1L, url);
 					}
 				}
+				else if (_control is KeysharpStatusStrip sbar)
+					_ = clickHandlers.InvokeEventHandlers(this, sbar.PartFromPoint());
 				//else if (_control is KeysharpButton)
 				//{
 				//  //mousecount ^= 1;//Button click events get fired twice, because we have double click and standard click enabled, so filter the second click here.
