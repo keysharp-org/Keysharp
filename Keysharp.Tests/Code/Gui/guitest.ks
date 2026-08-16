@@ -3076,8 +3076,12 @@ MyGui.UseGroup(imgGroup)
 MyGui.AddText("xc+16 yc+24 w468 h44", "Display loads monkey/icon/svg Picture controls then destroys them; ImageSearch locates the colour swatch on screen and checks the coordinates against the swatch's own screen rect; ScreenClip captures a region and shows it. Pictures render on this tab.")
 imgDisplayBtn := MyGui.AddButton("xc+16 y+10 w150 h28", "Display Pictures")
 imgDisplayBtn.OnEvent("Click", "LoadPic")
+#if WINDOWS
+; DestroyPic destroys the picture controls with DllCall("DestroyWindow"), so it only exists on Windows
+; (see its own #if WINDOWS) - registering it elsewhere raises, since the callback name resolves to nothing.
 imgDestroyBtn := MyGui.AddButton("x+10 yp w150 h28", "Destroy Pictures")
 imgDestroyBtn.OnEvent("Click", "DestroyPic")
+#endif
 imgSearchBtn := MyGui.AddButton("xc+16 y+10 w180 h28", "Image Search (swatch)")
 imgSearchBtn.OnEvent("Click", "ImgSrch")
 imgScreenClipBtn := MyGui.AddButton("x+10 yp w120 h28", "Screen Clip")
