@@ -413,7 +413,7 @@ namespace Keysharp.Parsing.Syntax
 				while (!At(TokenKind.LBrace) && !At(TokenKind.Newline) && !At(TokenKind.EOF))
 				{
 					if (At(TokenKind.Comma)) { args.Add(null); Advance(); continue; }   // omitted arg
-					args.Add(ParseExpression(1));
+					args.Add(ParseCondExpr());   // header expr: a trailing `(…){` is the loop body, not an anon block fn
 					if (!Match(TokenKind.Comma)) break;
 				}
 				var sbody = ParseBodyStatement();
@@ -475,7 +475,7 @@ namespace Keysharp.Parsing.Syntax
 			if (!At(TokenKind.Newline) && !At(TokenKind.LBrace))
 			{
 				value = ParseCondExpr();
-				if (Match(TokenKind.Comma)) caseSense = ParseExpression(1);   // `switch v, caseSense`
+				if (Match(TokenKind.Comma)) caseSense = ParseCondExpr();   // `switch v, caseSense` (still a header: `(…){` is the body)
 			}
 			SkipNewlines();
 			Expect(TokenKind.LBrace, "switch body");
