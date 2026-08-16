@@ -134,6 +134,11 @@ namespace Keysharp.Builtins
 
 				var del = Functions.GetKeysharpFunc(callback, g.form.eventObj, true);
 
+				//ModifyEventHandlers ignores a null delegate, so a callback that did not resolve would
+				//otherwise register nothing and still report success. Gui.OnMessage() already rejects one.
+				if (del == null)
+					return Errors.ValueErrorOccurred("The callback was not a valid function.");
+
 				if (handlers == null)
 					handlers = new();
 
