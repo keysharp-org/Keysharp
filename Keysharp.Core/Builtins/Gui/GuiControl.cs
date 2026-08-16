@@ -37,10 +37,10 @@ namespace Keysharp.Builtins
 			private CallbackHub itemEditHandlers;
 			private CallbackHub itemExpandHandlers;
 			private CallbackHub lostFocusHandlers;
-#if WINDOWS
 			//Keyed by window message number, for OnMessage(). Separate from commandHandlers/notifyHandlers
 			//because those key on a WM_COMMAND notification code / WM_NOTIFY code, not on the message itself.
 			private ConcurrentDictionary<int, CallbackHub> messageHandlers;
+#if WINDOWS
 			private ConcurrentDictionary<int, CallbackHub> notifyHandlers;
 #endif
 			private long parenthandle;
@@ -67,8 +67,8 @@ namespace Keysharp.Builtins
 				removedAny |= itemEditHandlers?.RemoveOwned(scheduler) == true;
 				removedAny |= itemExpandHandlers?.RemoveOwned(scheduler) == true;
 				removedAny |= lostFocusHandlers?.RemoveOwned(scheduler) == true;
-#if WINDOWS
 				removedAny |= CallbackRegistry<CallbackRegistration>.RemoveOwned(messageHandlers, scheduler);
+#if WINDOWS
 				removedAny |= CallbackRegistry<CallbackRegistration>.RemoveOwned(notifyHandlers, scheduler);
 #endif
 				removedAny |= selectedItemChangedHandlers?.RemoveOwned(scheduler) == true;
@@ -91,6 +91,89 @@ namespace Keysharp.Builtins
 #endif
 
 				return removedAny;
+			}
+
+			/// <summary>
+			/// Registers a function to be called when the control receives the specified window message.
+			/// </summary>
+			/// <param name="msgNumber">The number of the message to monitor.</param>
+			/// <param name="callback">The function to call, as <c>Callback(GuiCtrlObj, wParam, lParam, Msg)</c>.
+			/// If it returns a non-empty value, that value becomes the message's result and no further
+			/// handlers (or default processing) run.</param>
+			/// <param name="addRemove">If omitted, defaults to 1. Otherwise 1 to call this callback after any
+			/// previously registered ones, -1 to call it before them, or 0 to unregister it.</param>
+			/// <remarks>
+			/// Off Windows there is no native message queue, so only the input messages EtoMessageSource
+			/// synthesizes are ever delivered here; see OnMessage() for that set.
+			/// </remarks>
+			public object OnMessage(object msgNumber, object callback, object addRemove = null)
+			{
+				var addremove = addRemove.Al(1L);
+
+				//AHK's GuiType::OnEvent rejects anything outside -1..1: a GUI event can only run one thread
+				//at a time, so the parameter is purely an ordering/removal switch, not a thread count.
+				if (addremove < -1 || addremove > 1)
+					return Errors.ValueErrorOccurred($"Invalid AddRemove value: {addremove}.");
+
+				var msg = msgNumber.Al();
+				var result = HandleOnCommandNotify(msg, callback, addremove, ref messageHandlers);
+#if !WINDOWS
+
+				//Pointer motion is only watched for while something is listening; see SyncMotionHooks().
+				if (msg == Keysharp.Internals.Os.Windows.WindowsAPI.WM_MOUSEMOVE)
+					Keysharp.Internals.Window.Unix.EtoMessageSource.SyncMotionHooks();
+
+#endif
+				return result;
+			}
+
+			internal object HandleOnCommandNotify(long code, object callback, long addremove, ref ConcurrentDictionary<int, CallbackHub> handlers)
+			{
+				if (gui == null || !gui.TryGetTarget(out var g))
+					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
+
+				var del = Functions.GetKeysharpFunc(callback, g.form.eventObj, true);
+
+				if (handlers == null)
+					handlers = new();
+
+				var h = handlers.GetOrAdd((int)code, static _ => new());
+				h.ModifyEventHandlers(del, addremove);
+				return DefaultObject;
+			}
+
+			/// <summary>
+			/// Whether this control has an OnMessage() handler for the given message. Lets the off-Windows
+			/// message source decide whether a toolkit event is worth subscribing to at all.
+			/// </summary>
+			internal bool HasWindowMessageHandler(int msg)
+				=> messageHandlers != null && messageHandlers.TryGetValue(msg, out var handler) && handler?.IsEmpty == false;
+
+			/// <summary>
+			/// Runs any OnMessage() handlers registered for this control.
+			/// </summary>
+			/// <returns>True if a handler claimed the message and supplied its result.</returns>
+			internal bool InvokeWindowMessageHandlers(ref Message m)
+			{
+				//OnMessage() monitors run before the WM_COMMAND/WM_NOTIFY reflection in the caller and before
+				//default processing, mirroring AHK's ControlWindowProc (which checks its message monitors ahead
+				//of DefSubclassProc). A non-empty return marks the message handled and supplies its result.
+				//"Claimed" must be the same test the chain broke on, so reuse that predicate rather than
+				//restating it: a NON-EMPTY return claims the message (an explicit 0 replies 0 and suppresses
+				//default processing), while "" or no return at all falls through to the next handler and then
+				//to the reflection/default handling in the caller.
+				if (messageHandlers != null && messageHandlers.TryGetValue(m.Msg, out var msgHandler))
+				{
+					var msgResult = msgHandler?.InvokeWindowMessageHandlers(this, m.WParam.ToInt64(), m.LParam.ToInt64(), (long)m.Msg);
+
+					if (CallbackStop.NonEmpty(msgResult))
+					{
+						m.Result = (nint)msgResult.Al();
+						return true;
+					}
+				}
+
+				return false;
 			}
 
 			public bool AltSubmit { get; internal set; } = false;

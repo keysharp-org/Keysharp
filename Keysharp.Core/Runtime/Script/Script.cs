@@ -512,11 +512,6 @@ namespace Keysharp.Runtime
 #if WINDOWS
 			Application.AddMessageFilter(msgFilter);
 			InitializeScreenSystemEventsOnNeutralContext();
-#else
-			if (!IsOnMainThread)
-				PostToUIThread(msgFilter.Attach);
-			else
-				msgFilter.Attach();
 #endif
 			//Must be set BEFORE the hook thread is constructed: HookThread.KeybdMutexName/MouseMutexName are
 			//instance field initializers derived from MutexName, so assigning it afterwards left them holding
@@ -1312,8 +1307,6 @@ namespace Keysharp.Runtime
 
 #if WINDOWS
 			Application.RemoveMessageFilter(msgFilter);
-#elif !WINDOWS
-			msgFilter?.Detach();
 #endif
 
 			if (Tray != null)

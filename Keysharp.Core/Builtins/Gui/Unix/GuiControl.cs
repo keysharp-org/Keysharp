@@ -1277,10 +1277,14 @@ namespace Keysharp.Builtins
 				return Errors.ValueErrorOccurred($"Only Edit controls implement this method.");
 			}
 
-			//WM_COMMAND, WM_NOTIFY and window messages in general are Win32 concepts with no Eto/GTK/Cocoa
-			//equivalent, so these are accepted (so a cross-platform script still loads) but never fire.
+			//WM_COMMAND and WM_NOTIFY are Win32 concepts with no Eto/GTK/Cocoa equivalent, so this is accepted
+			//(so a cross-platform script still loads) but never fires.
 			public object OnCommand(object notifyCode, object callback, object addRemove = null) => DefaultObject;
-			public object OnMessage(object msgNumber, object callback, object addRemove = null) => DefaultObject;
+
+			//Boxed, because the shared GuiHelper.CallMessageHandler consumes the Windows overload's object
+			//return, and that one carries the WM_COMMAND/WM_NOTIFY reflection this platform has no use for.
+			internal object InvokeMessageHandlers(ref Message m) => InvokeWindowMessageHandlers(ref m);
+
 			public object OnEvent(object eventName, object callback, object addRemove = null)
 			{
 				var e = eventName.As().ToLower();
@@ -1941,8 +1945,6 @@ namespace Keysharp.Builtins
 
 				container.Add(_control, _control.Location);
 			}
-
-			internal object InvokeMessageHandlers(ref Message m) => 0L;
 
 			private Point ConvertToClientPoint(int x, int y)
 			{

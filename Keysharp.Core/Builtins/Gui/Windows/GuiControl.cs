@@ -1012,27 +1012,6 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
-			/// <summary>
-			/// Registers a function to be called when the control receives the specified window message.
-			/// </summary>
-			/// <param name="msgNumber">The number of the message to monitor.</param>
-			/// <param name="callback">The function to call, as <c>Callback(GuiCtrlObj, wParam, lParam, Msg)</c>.
-			/// If it returns a non-empty value, that value becomes the message's result and no further
-			/// handlers (or default processing) run.</param>
-			/// <param name="addRemove">If omitted, defaults to 1. Otherwise 1 to call this callback after any
-			/// previously registered ones, -1 to call it before them, or 0 to unregister it.</param>
-			public object OnMessage(object msgNumber, object callback, object addRemove = null)
-			{
-				var addremove = addRemove.Al(1L);
-
-				//AHK's GuiType::OnEvent rejects anything outside -1..1: a GUI event can only run one thread
-				//at a time, so the parameter is purely an ordering/removal switch, not a thread count.
-				if (addremove < -1 || addremove > 1)
-					return Errors.ValueErrorOccurred($"Invalid AddRemove value: {addremove}.");
-
-				return HandleOnCommandNotify(msgNumber.Al(), callback, addremove, ref messageHandlers);
-			}
-
 			public object OnNotify(object notifyCode, object callback, object addRemove = null)
 			{
 				return HandleOnCommandNotify(notifyCode.Al(), callback, addRemove.Al(1L), ref notifyHandlers);
@@ -1627,42 +1606,12 @@ namespace Keysharp.Builtins
 					CallContextMenuChangeHandlers(false, e.X, e.Y);
 			}
 
-			internal object HandleOnCommandNotify(long code, object callback, long addremove, ref ConcurrentDictionary<int, CallbackHub> handlers)
-			{
-				if (gui == null || !gui.TryGetTarget(out var g))
-					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
-
-				var del = Functions.GetKeysharpFunc(callback, g.form.eventObj, true);
-
-				if (handlers == null)
-					handlers = new();
-
-				var h = handlers.GetOrAdd((int)code, static _ => new());
-				h.ModifyEventHandlers(del, addremove);
-				return DefaultObject;
-			}
-
 			internal unsafe object InvokeMessageHandlers(ref Message m)
 			{
 #if WINDOWS
 
-				//OnMessage() monitors run before the WM_COMMAND/WM_NOTIFY reflection below and before default
-				//processing, mirroring AHK's ControlWindowProc (which checks its message monitors ahead of
-				//DefSubclassProc). A non-empty return marks the message handled and supplies its result.
-				//"Claimed" must be the same test the chain broke on, so reuse that predicate rather than
-				//restating it: a NON-EMPTY return claims the message (an explicit 0 replies 0 and suppresses
-				//default processing), while "" or no return at all falls through to the next handler and then
-				//to the reflection/default handling below.
-				if (messageHandlers != null && messageHandlers.TryGetValue(m.Msg, out var msgHandler))
-				{
-					var msgResult = msgHandler?.InvokeWindowMessageHandlers(this, m.WParam.ToInt64(), m.LParam.ToInt64(), (long)m.Msg);
-
-					if (CallbackStop.NonEmpty(msgResult))
-					{
-						m.Result = (nint)msgResult.Al();
-						return true;
-					}
-				}
+				if (InvokeWindowMessageHandlers(ref m))
+					return true;
 
 				if (m.Msg == WindowsAPI.WM_NOTIFY || m.Msg == WindowsAPI.WM_REFLECT + WindowsAPI.WM_NOTIFY)
 				{

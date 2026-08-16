@@ -1023,6 +1023,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 			+ The help option `16384` is ignored.
 		+ `OnMessage()` doesn't observe any of the behavior mentioned in the documentation regarding the message check interval because it's implemented in a different way.
 			+ A GUI object is required for `OnMessage()` to be used.
+			+ Off Windows there is no native message queue to monitor, so the input messages are synthesized from the toolkit events the script's own GUI raises: `WM_MOUSEMOVE`, the left/right/middle button down, up and double-click messages, `WM_MOUSEWHEEL`, `WM_KEYDOWN`/`WM_KEYUP`, `WM_SYSKEYDOWN`/`WM_SYSKEYUP` and `WM_CHAR`. They carry the same payloads as on Windows — the control's handle, `MK_*` flags and packed coordinates in `wParam`/`lParam`, a virtual key code for the key messages — and the callback's last-found window is the GUI the control belongs to. Any other message number is never delivered, messages sent to windows the script does not own cannot be observed at all, and a click on a single-line `Edit` is missed because GTK's entry consumes the button press before the toolkit raises an event for it. `Gui.OnMessage()` and `GuiCtrl.OnMessage()` are fed from the same source after the global monitors, and are addressed the way Windows addresses them: a message that went to the GUI window reaches the former, one that went to a control reaches the latter. This is verified on X11 and Wayland; macOS runs the same code but is untested.
 		
 ## Code acknowledgements
 

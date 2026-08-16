@@ -1,8 +1,6 @@
 using Keysharp.Builtins;
 #if !WINDOWS
-#if LINUX
-using Gdk;
-#endif
+using Keysharp.Internals.Os.Windows;
 
 namespace Keysharp.Internals.Window.Unix
 {
@@ -15,54 +13,18 @@ namespace Keysharp.Internals.Window.Unix
 		public nint Result;
 	}
 
+	/// <summary>
+	/// The global OnMessage() monitors' sink. Off Windows the messages reaching it are synthesized by
+	/// <see cref="EtoMessageSource"/> rather than taken off a native queue.
+	/// </summary>
 	internal class MessageFilter
 	{
 		private readonly Script script;
 		internal Message handledMsg;
-#if LINUX
-		private FilterFunc gtkFilter;
-		private bool filterAttached;
-#endif
 
 		internal MessageFilter(Script associatedScript)
 		{
 			script = associatedScript;
-		}
-
-		internal void Attach()
-		{
-#if LINUX
-			if (filterAttached)
-				return;
-
-			gtkFilter = GtkFilter;
-			var root = Gdk.Screen.Default?.RootWindow;
-			if (root != null)
-			{
-				try
-				{
-					root?.AddFilter(gtkFilter);
-					filterAttached = true;
-				}
-				catch
-				{
-					Diagnostics.Debug.WriteLine("Failed to attach GTK message filter");
-				}
-			}
-#endif
-		}
-
-		internal void Detach()
-		{
-#if LINUX
-			if (!filterAttached || gtkFilter == null)
-				return;
-
-			var root = Gdk.Screen.Default?.RootWindow;
-			root?.RemoveFilter(gtkFilter);
-			gtkFilter = null;
-			filterAttached = false;
-#endif
 		}
 
 		internal bool CallEventHandlers(ref Message m, bool buffered = false)
@@ -70,7 +32,11 @@ namespace Keysharp.Internals.Window.Unix
 			if (script.GuiData.onMessageHandlers.TryGetValue(m.Msg, out var monitor))
 			{
 				object eventInfo = 0L;
-				long hwnd = m.HWnd;
+				//The monitor's thread takes this as its last-found window, and AHK makes that the top-level
+				//WINDOW even when the message went to a control (the control's own handle is still passed as the
+				//callback's fourth argument). Scripts compare it against a GUI's Hwnd to tell which of their
+				//windows a click landed in, which a control handle would never match.
+				long hwnd = TopLevelOf(m.HWnd);
 
 				if (MessagesEqual(handledMsg, m))
 				{
@@ -100,34 +66,28 @@ namespace Keysharp.Internals.Window.Unix
 			return false;
 		}
 
+		/// <summary>
+		/// The handle of the window a control belongs to, or the handle itself when it is already a window or
+		/// belongs to no GUI of ours. Stands in for Win32's GetNonChildParent.
+		/// </summary>
+		private static nint TopLevelOf(nint handle)
+		{
+			if (Forms.Control.FromHandle(handle) is not Forms.Control control)
+				return handle;
+
+			for (var parent = control; parent != null; parent = parent.Parent)
+				if (parent is KeysharpForm form)
+					return form.Handle;
+
+			return handle;
+		}
+
 		private static bool MessagesEqual(Message left, Message right)
 			=> left.HWnd == right.HWnd
 				&& left.Msg == right.Msg
 				&& left.WParam == right.WParam
 				&& left.LParam == right.LParam
 				&& left.Result == right.Result;
-
-#if LINUX
-		private FilterReturn GtkFilter(IntPtr xevent, Event evnt)
-		{
-			if (evnt?.Window == null)
-				return FilterReturn.Continue;
-
-			// No Win32 message on GTK; use the GDK event type as the message id.
-			var msg = new Message
-			{
-				HWnd = evnt.Window.Handle,
-				Msg = (int)evnt.Type,
-				WParam = 0,
-				LParam = 0,
-				Result = 0,
-			};
-
-			handledMsg = msg;
-			_ = CallEventHandlers(ref msg, true);
-			return FilterReturn.Continue;
-		}
-#endif
 	}
 }
 #endif

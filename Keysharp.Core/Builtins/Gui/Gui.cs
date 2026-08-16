@@ -603,6 +603,9 @@ namespace Keysharp.Builtins
 #endif
 					LastContainer = form;
 
+#if !WINDOWS
+					Keysharp.Internals.Window.Unix.EtoMessageSource.Attach(form);
+#endif
 					form.Register(this);//Calling handle forces the creation of the window.
 
 					if (lastfound)
@@ -2256,6 +2259,9 @@ namespace Keysharp.Builtins
 			ctrl.SetLocation(loc);
 			holder.dpiResize = opts.dpiresize ?? defaultDpiResize;
 			controls[ctrl.Handle.ToInt64()] = holder;
+#if !WINDOWS
+			Keysharp.Internals.Window.Unix.EtoMessageSource.Attach(ctrl);
+#endif
 
 #if WINDOWS
 			if (ctrl is KeysharpActiveX kax)
@@ -2553,8 +2559,8 @@ namespace Keysharp.Builtins
 		/// <param name="addRemove">If omitted, defaults to 1. Otherwise 1 to call this callback after any
 		/// previously registered ones, -1 to call it before them, or 0 to unregister it.</param>
 		/// <remarks>
-		/// Window messages exist only on Windows. On Linux and macOS the registration is accepted so that a
-		/// cross-platform script still loads, but no handler is ever invoked.
+		/// Off Windows there is no native message queue, so only the input messages EtoMessageSource
+		/// synthesizes from the toolkit's own events are ever delivered here; see OnMessage() for that set.
 		/// </remarks>
 		public object OnMessage(object msgNumber, object callback, object addRemove = null)
 		{
@@ -2565,21 +2571,34 @@ namespace Keysharp.Builtins
 			if (addremove < -1 || addremove > 1)
 				return Errors.ValueErrorOccurred($"Invalid AddRemove value: {addremove}.");
 
-#if WINDOWS
 			var del = Functions.GetKeysharpFunc(callback, form.eventObj, true);
 
 			if (del == null)
 				return Errors.ValueErrorOccurred("The callback was not a valid function.");
 
+			var msg = (int)msgNumber.Al();
 			messageHandlers ??= new();
-			_ = messageHandlers.GetOrAdd((int)msgNumber.Al(), static _ => new()).ModifyEventHandlers(del, addremove);
+			_ = messageHandlers.GetOrAdd(msg, static _ => new()).ModifyEventHandlers(del, addremove);
+#if !WINDOWS
+
+			//Pointer motion is only watched for while something is listening; see SyncMotionHooks().
+			if (msg == Keysharp.Internals.Os.Windows.WindowsAPI.WM_MOUSEMOVE)
+				Keysharp.Internals.Window.Unix.EtoMessageSource.SyncMotionHooks();
+
 #endif
 			return DefaultObject;
 		}
 
-#if WINDOWS
-		//Keyed by window message number, populated by OnMessage() and drained from KeysharpForm.WndProc.
+		//Keyed by window message number, populated by OnMessage() and drained from KeysharpForm.WndProc
+		//on Windows and from EtoMessageSource elsewhere.
 		private ConcurrentDictionary<int, CallbackHub> messageHandlers;
+
+		/// <summary>
+		/// Whether this GUI has an OnMessage() handler for the given message. Lets the off-Windows message
+		/// source decide whether a toolkit event is worth subscribing to at all.
+		/// </summary>
+		internal bool HasWindowMessageHandler(int msg)
+			=> messageHandlers != null && messageHandlers.TryGetValue(msg, out var handler) && handler?.IsEmpty == false;
 
 		/// <summary>
 		/// Runs any OnMessage() handlers registered for this message, ahead of the default window procedure
@@ -2602,7 +2621,6 @@ namespace Keysharp.Builtins
 			m.Result = (nint)result.Al();
 			return true;
 		}
-#endif
 
 		public object Opt(object options)
 		{

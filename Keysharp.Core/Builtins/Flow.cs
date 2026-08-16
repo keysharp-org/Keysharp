@@ -187,6 +187,14 @@ namespace Keysharp.Builtins
 			if (mt == 0 && monitor.IsEmpty)
 				_ = gd.onMessageHandlers.TryRemove(msg, out var _);
 
+#if !WINDOWS
+
+			//A GUI built before this call has no motion handlers yet, and they are only wired while something
+			//is listening for WM_MOUSEMOVE, so the ones already on screen have to be revisited here.
+			if (msg == Keysharp.Internals.Os.Windows.WindowsAPI.WM_MOUSEMOVE)
+				Keysharp.Internals.Window.Unix.EtoMessageSource.SyncMotionHooks();
+
+#endif
 			return DefaultObject;
 		}
 
