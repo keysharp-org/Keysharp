@@ -94,6 +94,149 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
+			/// Registers a function to be called when the control raises the named event. An event the
+			/// control does not support is accepted and simply never fires, as AHK does.
+			/// </summary>
+			public object OnEvent(object eventName, object callback, object addRemove = null)
+			{
+				var e = eventName.As().ToLower();
+				var h = callback;
+				var i = addRemove.Al(1);
+
+				if (gui == null || !gui.TryGetTarget(out var g))
+					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
+
+				var del = Functions.GetKeysharpFunc(h, g.form.eventObj, true);
+
+				//ModifyEventHandlers ignores a null delegate, so a callback that did not resolve would otherwise
+				//register nothing and still report success, exactly as HandleOnCommandNotify used to.
+				if (del == null)
+					return Errors.ValueErrorOccurred("The callback was not a valid function.");
+
+				if (e == "change")
+				{
+					if (changeHandlers == null)
+						changeHandlers = new();
+
+					changeHandlers.ModifyEventHandlers(del, i);
+				}
+				else if (e == "click")
+				{
+					if (_control is KeysharpLinkLabel ll && !ll.clickSet)
+					{
+						ll.clickSet = true;
+						clickHandlers.Clear();
+					}
+
+					clickHandlers.ModifyEventHandlers(del, i);
+				}
+				else if (e == "doubleclick")
+				{
+#if WINDOWS
+
+					//A StatusBar raises its double-click per part rather than on the strip itself.
+					if (_control is ToolStrip ts)
+					{
+						foreach (var item in ts.Items)
+							if (item is KeysharpToolStripStatusLabel tssl)
+								tssl.doubleClickHandlers.ModifyEventHandlers(del, i);
+					}
+					else
+						doubleClickHandlers.ModifyEventHandlers(del, i);
+
+#else
+					doubleClickHandlers.ModifyEventHandlers(del, i);
+#endif
+				}
+				else if (e == "focus")
+				{
+					if (focusHandlers == null)
+						focusHandlers = new();
+
+					focusHandlers.ModifyEventHandlers(del, i);
+				}
+				else if (e == "losefocus")
+				{
+					if (lostFocusHandlers == null)
+						lostFocusHandlers = new();
+
+					lostFocusHandlers.ModifyEventHandlers(del, i);
+				}
+				else if (e == "colclick")
+				{
+					if (_control is KeysharpListView lv)
+					{
+						if (columnClickHandlers == null)
+							columnClickHandlers = new();
+
+						columnClickHandlers.ModifyEventHandlers(del, i);
+					}
+				}
+				else if (e == "itemcheck")
+				{
+					if (_control is KeysharpTreeView || _control is KeysharpListView)
+					{
+						if (itemCheckHandlers == null)
+							itemCheckHandlers = new();
+
+						itemCheckHandlers.ModifyEventHandlers(del, i);
+					}
+				}
+				else if (e == "itemedit")
+				{
+					if (_control is KeysharpTreeView || _control is KeysharpListView)
+					{
+						if (itemEditHandlers == null)
+							itemEditHandlers = new();
+
+						itemEditHandlers.ModifyEventHandlers(del, i);
+					}
+				}
+				else if (e == "itemexpand")
+				{
+					if (_control is KeysharpTreeView)
+					{
+						if (itemExpandHandlers == null)
+							itemExpandHandlers = new();
+
+						itemExpandHandlers.ModifyEventHandlers(del, i);
+					}
+				}
+				else if (e == "itemfocus")
+				{
+					if (_control is KeysharpListView)
+					{
+						if (focusedItemChangedHandlers == null)
+							focusedItemChangedHandlers = new();
+
+						focusedItemChangedHandlers.ModifyEventHandlers(del, i);
+					}
+				}
+				else if (e == "itemselect")
+				{
+					if (_control is KeysharpTreeView || _control is KeysharpListView)
+					{
+						if (selectedItemChangedHandlers == null)
+							selectedItemChangedHandlers = new();
+
+						selectedItemChangedHandlers.ModifyEventHandlers(del, i);
+					}
+				}
+				else if (e == "contextmenu")
+				{
+					if (contextMenuChangedHandlers == null)
+						contextMenuChangedHandlers = new();
+
+					//The password box derives from the text box on Windows but from PasswordBox off it, so it has
+					//to be named separately for the first test to cover it everywhere.
+					if (!(_control is KeysharpTextBox) && !(_control is KeysharpPasswordBox) && !(_control is KeysharpMonthCalendar))
+						contextMenuChangedHandlers.ModifyEventHandlers(del, i);
+				}
+
+				return DefaultObject;
+			}
+
+			/// <summary>
 			/// Registers a function to be called when the control receives the specified window message.
 			/// </summary>
 			/// <param name="msgNumber">The number of the message to monitor.</param>

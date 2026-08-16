@@ -658,6 +658,11 @@ namespace Keysharp.Builtins
 			e = e.ToLower();
 			var del = Functions.GetKeysharpFunc(h, eventObj, true);
 
+			// ModifyEventHandlers ignores a null delegate, so a callback that did not resolve would otherwise
+			// register nothing and still report success.
+			if (del == null)
+				return Errors.ValueErrorOccurred("The callback was not a valid function.");
+
 			// Only detach the receiver GetKeysharpFunc just attached by resolving a method NAME on the sink, since
 			// the Gui takes the receiver slot at dispatch. A function object the script supplied carries its own
 			// receiver, and is the script's own object, so clearing Inst on it would corrupt every other holder.
