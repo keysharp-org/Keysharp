@@ -187,7 +187,7 @@
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
                      "notes":  "Keysharp-only. Embeds C# compiled into the script's own assembly for hot paths. A block sits at module scope or in a class body. Each script module has its own inline C# syntax tree and module-wide using pool, so aliases and directives do not leak between modules. Public module methods are locally visible and explicitly importable; [Export] enables wildcard import and Default = true sets the default export. Boundary values use AutoHotkey conversions, including wrapped CLR object/value round-tripping; only public property accessors are exposed and init accessors are read-only. Verified on Windows; Linux and macOS are unverified.",
-                     "tested-by":  "directive-csharp.ahk, directive-csharp-clr.ahk, directive-csharp-errors.ahk, directive-csharp-class.ahk, directive-csharp-modules.ahk, directive-csharp-module-scopes.ahk, directive-csharp-symbols.ahk"
+                     "tested-by":  "directive-csharp.ahk; directive-csharp-clr.ahk; directive-csharp-errors.ahk; directive-csharp-class.ahk; directive-csharp-modules.ahk; directive-csharp-module-scopes.ahk; directive-csharp-symbols.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -295,7 +295,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The #HotIf directive creates context-sensitive hotkeys and hotstrings. They perform a different action (or none at all) depending on any condition (an expression).",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Environment/System",
@@ -497,8 +497,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #SingleInstance directive determines whether a script is allowed to run again when it is already running.",
-                     "tested-by":  "directive-singleinstance.ahk"
+                     "notes":  "The #SingleInstance directive determines whether a script is allowed to run again when it is already running."
                  },
                  {
                      "category":  "Environment/System",
@@ -990,7 +989,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Send option which preserves modifier state while sending keys; parsed and applied by the shared cross-platform sender.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -1305,7 +1304,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Built-in variable.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Environment/System",
@@ -1651,7 +1650,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Built-in variable.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Environment/System",
@@ -1694,7 +1693,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Gets the current platform directory separator character.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Environment/System",
@@ -1819,7 +1818,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Gets whether the system tray icon is hidden. 1 for hidden, 0 for visible.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Environment/System",
@@ -2028,7 +2027,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The current pseudo-thread as a Thread object. Id keeps the former A_ThreadId layout: a 48-bit creation sequence and a 16-bit zero-based stack position.",
-                     "tested-by":  "FlowTests/FlowExit"
+                     "tested-by":  "FlowTests.FlowExit"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -2049,8 +2048,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Thread is a class rather than a function: calling it runs the AHK sub-functions (NoTimers/Priority/Interrupt) unchanged, and an instance describes one pseudo-thread: Id, Index (1-based), IsActive, Kind, Elapsed, Priority, Critical, Paused, IsInterruptible, Underlying and Exit. An Is prefix marks a read-only predicate; a settable mode is named for the mode. Obtained from A_Thread, Under or RealThread.Threads, never constructed. There is one object per pseudo-thread, so 	hr == A_Thread tests whether it is the running one. It revalidates its identity on every access, so one held past its pseudo-thread's life reports IsActive false rather than describing whichever pseudo-thread reused the pooled slot. Reads work from any real thread; setters and Exit require the owning one.",
-                     "tested-by":  "FlowTests/FlowExit"
+                     "notes":  "Thread is a class rather than a function: calling it runs the AHK sub-functions (NoTimers/Priority/Interrupt) unchanged, and an instance describes one pseudo-thread: Id, Index (1-based), IsActive, Kind, Elapsed, Priority, Critical, Paused, IsInterruptible, Underlying and Exit. An Is prefix marks a read-only predicate; a settable mode is named for the mode. Obtained from A_Thread, Under or RealThread.Threads, never constructed. There is one object per pseudo-thread, so `thr == A_Thread` tests whether it is the running one. It revalidates its identity on every access, so one held past its pseudo-thread's life reports IsActive false rather than describing whichever pseudo-thread reused the pooled slot. Reads work from any real thread; setters and Exit require the owning one.",
+                     "tested-by":  "FlowTests.FlowExit"
                  },
                  {
                      "category":  "Environment/System",
@@ -2081,7 +2080,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The full path and name of the file to which A_LineNumber belongs, which will be the same as A_ScriptFullPath unless the line belongs to one of a non-compiled script\u0027s #Include files.",
-                     "tested-by":  "line.ahk"
+                     "tested-by":  "props-linefile.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -2092,7 +2091,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The exact line number in the script, including comment lines.",
-                     "tested-by":  "line.ahk"
+                     "tested-by":  "props-script-properties.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -2503,7 +2502,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The current local time in YYYYMMDDHH24MISS format.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -2514,7 +2513,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Gets current local timestamp including milliseconds.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Environment/System",
@@ -2546,7 +2545,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Built-in variable.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -2650,7 +2649,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Built-in variable.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Environment/System",
@@ -2864,7 +2863,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The number of milliseconds since the system started. Note this is not limited to 49.7 days like AHK because it uses a long integer.",
-                     "tested-by":  "Benchmarks/increment.ahk"
+                     "tested-by":  "props-date-time.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -3138,7 +3137,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Computes the absolute value.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -3467,7 +3466,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Computes the arc sine. Throws an exception if the argument value is not between -1 and 1.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -3957,7 +3956,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Reports whether the fixed first-party parser or compiler deployment unit is installed or embedded, compatible, and loadable. The check loads the requested unit; checking compiler can load Roslyn. Parsing/compilation are accepted aliases.",
-                     "tested-by":  "component-available.ahk; ScriptingComponentTests"
+                     "tested-by":  "component-available.ahk; ScriptingComponentTests.cs"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -3989,7 +3988,7 @@
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
                      "notes":  "The ComCall function calls a native COM interface method by index. A return type of \u0027void\u0027 means the call returns no value.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "COM",
@@ -4022,7 +4021,7 @@
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
                      "notes":  "The ComObjConnect function connects a COM object\u0027s event source to the script, enabling events to be handled.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "COM",
@@ -4137,7 +4136,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Keysharp extension: both terms of a custom combination may carry modifiers (`\u003c^a \u0026 b::`, `a \u0026 \u003c^b::`). Those on the prefix are tested against the modifiers held when the prefix key went down and kept until it is released, so a key whose firmware asserts modifiers and drops them immediately still works as a prefix; those on the suffix are tested against the live state as the suffix is pressed. A combination asking for neither continues to ignore the modifier state. This covers keyboards whose Copilot key emits LWin+LShift+F23 and whose Office key emits LCtrl+LShift+LAlt+LWin.",
-                     "tested-by":  "HotstringTests.CompositePrefixCanCarryModifiers"
+                     "tested-by":  "HotstringTests.CompositeModifiers"
                  },
                  {
                      "category":  "Core Language",
@@ -4148,7 +4147,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Keysharp extension: in static hotkey and remap declarations only, `Copilot` lowers to the generic `\u003c#\u003c+F23` chord. When used as a remap source, the firmware-generated LWin and LShift modifiers are released but not restored. It is intentionally not a runtime key name for Hotkey(), Send, KeyWait, GetKeyState, InputHook or related APIs. There is no Office alias.",
-                     "tested-by":  "HotstringTests.CopilotDeclarationAliasIsLoweredWithoutBecomingAKeyName; HotstringTests.CopilotRemapAliasPreservesFirmwareSemantics"
+                     "tested-by":  "HotstringTests.CopilotHotkeyAlias; HotstringTests.CopilotRemapAlias"
                  },
                  {
                      "category":  "Core Language",
@@ -4246,7 +4245,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The ControlGetChecked function returns 1 if a check box or radio button is checked, or 0 if unchecked.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -4356,7 +4355,7 @@
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
                      "notes":  "The ControlGetStyle and ControlGetExStyle functions return an integer representing the style or extended style of a control. Eto controls have no Win32 style word, so the non-Windows backend returns the placeholder value 1 for every control rather than a real style. (Unlike WinGetStyle, no WS_* projection is done for controls.)",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -4597,7 +4596,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The DateDiff function compares two date-time values and returns the difference.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Flow/Expressions",
@@ -5025,7 +5024,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Exits the current pseudo-thread immediately. Terminating a different pseudo-thread is Thread.Exit(ExitCode?) on a Thread object, reached through KS.A_Thread.Underlying or KS.A_RealThread.Threads[i] (1-based, oldest first). An underlying target exits at its next cooperative event/message check; later requests overwrite its pending exit code.",
-                     "tested-by":  "ControlTests/control_send.ahk"
+                     "tested-by":  "FlowTests.FlowExit"
                  },
                  {
                      "category":  "Environment/System",
@@ -5036,7 +5035,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The ExitApp function terminates the script.",
-                     "tested-by":  "ControlTests/control_send.ahk"
+                     "tested-by":  "FlowTests.FlowExit"
                  },
                  {
                      "category":  "Core Language",
@@ -5386,7 +5385,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Computes a number rounded down to the nearest integer. Rounds toward zero for positive numbers and away from zero for negative numbers.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -5482,7 +5481,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Returns logical, physical, and toggle state. Linux queries keysharp-inputd first for keyboard keys and all five mouse buttons without installing a hook (input-monitoring permission is required), with X11 core queries as a basic fallback and no XInput2 path. macOS uses combined-session and HID-system state APIs.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Input/Automation",
@@ -5648,7 +5647,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Gets or sets the GUI background color.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -5809,7 +5808,7 @@
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
                      "notes":  "Registers Callback(GuiCtrlObj, wParam, lParam, Msg) to run when the control receives the given window message, ahead of the WM_COMMAND/WM_NOTIFY reflection and default processing. Matches AHK: a non-empty return claims the message (it becomes the reply, the remaining handlers are skipped and default processing is suppressed), while an empty string or no return at all lets the next handler and then default handling run. An explicit 0 therefore claims the message and replies 0. AddRemove is 1 (append, default), -1 (prepend) or 0 (unregister); any other value is a ValueError. Window messages are a Win32 concept, so on Linux and macOS the registration is accepted but no handler is ever invoked.",
-                     "tested-by":  "GuiTests.OnMessageRegistersOrdersAndRemovesHandlers"
+                     "tested-by":  "GuiTests.MessageHandlers"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -5970,7 +5969,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Native window handle of the GUI.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6034,7 +6033,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "full",
                      "notes":  "Moves and/or resizes the window. On Wayland a client cannot set its own position, so the move is routed through the compositor backend and needs KWin, GNOME or Cinnamon with the Keysharp extension; resizing works everywhere.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6055,18 +6054,18 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Registers a GUI event callback.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
                      "feature":  "Gui.OnMessage()",
                      "syntax":  "GuiObj.OnMessage(MsgNumber, Callback [, AddRemove])",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "Registers Callback(GuiObj, wParam, lParam, Msg) to run when the GUI window receives the given window message, ahead of the default window procedure. Matches AHK: a non-empty return claims the message (it becomes the reply, the remaining handlers are skipped and default processing is suppressed), while an empty string or no return at all lets the next handler and then the default window procedure run. An explicit 0 therefore claims the message and replies 0; a non-numeric value claims it and replies 0. AddRemove is 1 (append, default), -1 (prepend) or 0 (unregister); any other value is a ValueError. Window messages are a Win32 concept, so on Linux and macOS the registration is accepted (a cross-platform script still loads) but no handler is ever invoked.",
-                     "tested-by":  "GuiTests.OnMessageRegistersOrdersAndRemovesHandlers"
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "Registers Callback(GuiObj, wParam, lParam, Msg) to run when the GUI window receives the given window message, ahead of the default window procedure. Matches AHK: a non-empty return claims the message (it becomes the reply, the remaining handlers are skipped and default processing is suppressed), while an empty string or no return at all lets the next handler and then the default window procedure run. An explicit 0 therefore claims the message and replies 0; a non-numeric value claims it and replies 0. AddRemove is 1 (append, default), -1 (prepend) or 0 (unregister); any other value is a ValueError. Off Windows the same synthesized input messages OnMessage() receives are delivered here, after the global monitors have had their turn; see that entry for which messages exist and what is missing.",
+                     "tested-by":  "GuiTests.MessageHandlers"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6098,7 +6097,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Sets the default font for subsequent controls.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6162,7 +6161,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The GuiCtrlFromHwnd function retrieves the GuiControl object of a GUI control associated with the specified window handle.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6173,7 +6172,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The GuiFromHwnd function retrieves the Gui object of a GUI window associated with the specified window handle.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Collections",
@@ -6239,7 +6238,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The HotIf and HotIfWin functions specify the criteria for subsequently created or modified hotkey variants and hotstring variants.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Input/Automation",
@@ -6311,7 +6310,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The Hotstring function creates, modifies, enables, or disables a hotstring while the script is running.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Flow/Expressions",
@@ -6363,7 +6362,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Cross-platform image class for capturing, loading, or creating an image, then drawing, transforming, searching, and reading/writing its pixels before saving it or handing out a bitmap handle. Search/SearchAll/SearchPixel return match objects ({x, y[, color]}, \"\" or an empty array on a miss) with an optional flat (x, y, w, h) region; MeasureText returns {w, h}; fonts use Gui.SetFont-style (Options, FontName) arguments; the capture origin/density metadata is exposed as OriginX/OriginY/ScaleX/ScaleY (\"\" after Rotate/Flip until SetOrigin re-anchors); the per-pixel alpha transform is Alpha(0..1). Full on Windows, partial on Linux (X11); Wayland and macOS are unverified. Replaces the earlier ImageCapture() function.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -6374,7 +6373,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Searches a region of the screen for an image, with the AHK signature (writes the found position to the ByRef output variables and returns true/false). Does not support file types of .ani, .emf, .exif or .wmf. Only 32-bit color is supported. For searching a captured/loaded image instead of the live screen, see the Image class's Search/SearchAll/SearchPixel.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -6451,7 +6450,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The InputBox function displays an input box to ask the user to enter a string. On Linux and macOS the dialog is built with Eto and honours only the Password option; the W, H, X, Y and T (timeout) options are ignored, so Result never returns \"Timeout\".",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Input/Automation",
@@ -6853,7 +6852,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The IsObject function returns a non-zero number if the specified value is an object.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -6907,7 +6906,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Returns true if a string is uppercase.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -6971,7 +6970,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The KeyWait function waits for a key or mouse/controller button to be released or pressed down.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Input/Automation",
@@ -7539,7 +7538,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Adds an item to a menu. The Right and RTL item options are Win32 menu attributes with no Eto counterpart, so they are parsed and ignored on Linux and macOS; every other option, including the Break/BarBreak column controls, works on all platforms.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7681,7 +7680,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Sets icon for a menu item.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7692,7 +7691,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Shows the menu at a screen position.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7764,7 +7763,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The MenuSelect function invokes a menu item from the menu bar of the specified window. Like the Control functions, on Linux and macOS it can only reach menus of windows created by this script, not those of other applications.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Errors",
@@ -8114,7 +8113,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The MouseMove function moves the mouse cursor.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -8426,17 +8425,17 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The OnExit function registers a function to be called automatically whenever the script exits.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
                      "feature":  "OnMessage()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The OnMessage function registers a function to be called automatically whenever the script receives the specified message.",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "The OnMessage function registers a function to be called automatically whenever the script receives the specified message. Off Windows there is no native message queue, so the input messages are synthesized from the toolkit events raised by the script\u0027s own GUI: WM_MOUSEMOVE, the L/R/M button down, up and double-click messages, WM_MOUSEWHEEL, WM_KEYDOWN/UP, WM_SYSKEYDOWN/UP and WM_CHAR. As on Windows, the callback receives the CONTROL\u0027s handle and its thread\u0027s last-found window is the GUI the control belongs to. Anything outside that set is never delivered, and messages to windows the script does not own cannot be seen at all. Clicks on a single-line Edit are also missed, because GTK\u0027s entry consumes the button press before the toolkit raises its own event, and a press on a window\u0027s own background is delivered twice by the native event dispatch and de-duplicated here. Verified on X11 and Wayland; the macOS path shares the code but is untested.",
                      "tested-by":  "external-onmessage.ahk"
                  },
                  {
@@ -8481,7 +8480,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The OutputDebug function sends a string to the debugger (if any) for display. Ks.OutputDebugLine additionally takes a flag to clear the debug output.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -8533,7 +8532,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The Pause function pauses the script\u0027s current thread or sets the pause state of the underlying thread.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Environment/System",
@@ -8554,7 +8553,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Returns the pixel value at the specified coordinate as a hexadecimal string like 0x010203. Differs because the mode parameter is not supported because it is not needed.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -8817,7 +8816,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Keysharp-specific Ks class for cross-platform window-event subscriptions. Windows uses SetWinEventHook; Linux uses X11 or native compositor sources; macOS uses Accessibility AXObserver streams and requires Accessibility permission.",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8828,7 +8827,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Subscribes to active/foreground window changes; also fires when the active window\u0027s title changes (so late-matching criteria are caught). Callback receives (hook, hwnd, dwmsEventTime).",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8839,7 +8838,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Subscribes to a matching window appearing (created, shown, or its title changed so it now matches); fires once per matching window and respects DetectHiddenWindows. Subsumes the reference library\u0027s Create. macOS uses per-application AXObserver streams and requires Accessibility permission.",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8850,7 +8849,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Subscribes to a matching window disappearing (destroyed, hidden/cloaked, or its title changed so it no longer matches). Subsumes the reference library\u0027s Close. Tracks the set of matching top-level windows while they are alive (mirroring the reference library) so it fires reliably even though the window may be gone by the time the event arrives.",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8861,7 +8860,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Subscribes to window move/resize. Every event is delivered as-is (not coalesced).",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8872,7 +8871,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Subscribes to window minimize/iconify.",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8883,7 +8882,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Subscribes to restoration from a minimized state. X11 derives it from _NET_WM_STATE_HIDDEN transitions, Wayland maps compositor restore events, and macOS uses AXWindowDeminiaturized.",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8894,7 +8893,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Subscribes to window title changes.",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8905,7 +8904,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Subscribes to text caret (insertion point) movement. hwnd is the caret owner's top-level window and A_EventInfo holds the caret rectangle { x, y, w, h } in screen coordinates; unchanged positions are suppressed. Sourced from the same accessibility plumbing as CaretGetPos, so coverage matches it: Windows uses the MSAA caret (EVENT_OBJECT_LOCATIONCHANGE on OBJID_CARET), Linux the AT-SPI object:text-caret-moved signal, macOS the AXSelectedTextChanged notification. Applications that draw their own caret without exposing it to accessibility report nothing.",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8916,7 +8915,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Cancels the subscription. Also runs on __Delete, but GC timing is unpredictable so call it (or let the owning thread tear down) explicitly.",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8927,7 +8926,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Whether the subscription is still receiving events.",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8938,7 +8937,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The event kind this subscription listens for, e.g. \"Active\" or \"Move\".",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8949,7 +8948,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Remaining number of times the callback will fire (-1 = unlimited).",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8960,7 +8959,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Pauses (1), unpauses (0) or toggles (-1) a single hook (instance) or all hooks (static). A paused hook stays registered but does not fire. Returns the resulting paused state.",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -8971,7 +8970,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Gets or sets whether a single hook (instance) or all hooks (static) are paused.",
-                     "tested-by":  "guitest.ks"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
@@ -9131,7 +9130,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The Reload function replaces the currently running instance of the script with a new one.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -9153,7 +9152,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Computes a number rounded to either the nearest integer, a specified number of decimal places, or a specified number of digits.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -9175,7 +9174,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The Run and RunWait functions run an external program. RunWait will wait until the program finishes before continuing.",
-                     "tested-by":  "ControlTests/control_send.ahk"
+                     "tested-by":  "ProcessTests.ProcessRunWaitClose; process-run-wait-close.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -9207,7 +9206,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The Run and RunWait functions run an external program. RunWait will wait until the program finishes before continuing.",
-                     "tested-by":  "process-run-wait-close.ahk"
+                     "tested-by":  "ProcessTests.RunQuotedTarget; process-run-wait-close.ahk"
                  },
                  {
                      "category":  "Imaging",
@@ -9248,7 +9247,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Sends simulated keystrokes.",
-                     "tested-by":  "ControlTests/control_send.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Input/Automation",
@@ -9259,7 +9258,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Sends keystrokes via Event mode.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Input/Automation",
@@ -9270,7 +9269,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Sends keystrokes via Input mode.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Input/Automation",
@@ -9303,7 +9302,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Sets the default send mode. \"Play\" has no journal-playback equivalent on Linux or macOS and is downgraded to \"Event\" with a one-time warning to stderr; Input and Event behave as documented.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Input/Automation",
@@ -9314,7 +9313,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Sends keystrokes via Play mode. Play mode depends on the Win32 journal-playback hook, which has no equivalent elsewhere: Linux and macOS silently downgrade to Event mode and print a one-time warning to stderr.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Input/Automation",
@@ -9325,7 +9324,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Sends text without translating key names.",
-                     "tested-by":  "ControlTests/control_send.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -9368,7 +9367,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The SetKeyDelay function sets the delay that will occur after each keystroke sent by the Send or ControlSend functions.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Input/Automation",
@@ -9379,7 +9378,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The SetMouseDelay function sets the delay that will occur after each mouse movement or click.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -9421,7 +9420,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The SetStoreCapsLockMode function determines whether to restore the state of the CapsLock key after a Send function.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -9443,7 +9442,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The SetTitleMatchMode function sets the matching behavior of the WinTitle parameter in built-in functions such as WinWait.",
-                     "tested-by":  "ControlTests/control_send.ahk"
+                     "tested-by":  "props-script-settings.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -9516,7 +9515,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Shows or toggles debug UI/log output.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -9527,7 +9526,7 @@
                      "linux_wayland":  "full",
                      "macos":  "partial",
                      "notes":  "Shuts down, restarts, or logs off the system. macOS uses System Events; its normal actions are implemented, but AHK\u0027s force flag has no direct equivalent and is ignored with a diagnostic.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -9592,7 +9591,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Emits a tone at the requested frequency and duration on every platform. Windows uses the Win32 Beep API. Linux and macOS synthesize the sine wave to an in-memory WAV and play it through the same backend as SoundPlay, so Frequency and Duration are honoured there too; Linux needs one of the players listed under SoundPlay to be installed.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Sound",
@@ -9603,7 +9602,7 @@
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
                      "notes":  "Retrieves a native COM interface of a sound device or component and is Windows-specific.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Sound",
@@ -9614,7 +9613,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "full",
                      "notes":  "Retrieves a mute setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated \u0027Sound APIs\u0027; per-function validation pending.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Sound",
@@ -9625,7 +9624,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "full",
                      "notes":  "Retrieves the name of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated \u0027Sound APIs\u0027; per-function validation pending.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Sound",
@@ -9636,7 +9635,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "full",
                      "notes":  "Retrieves a mute setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated \u0027Sound APIs\u0027; per-function validation pending.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Sound",
@@ -9647,7 +9646,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Plays a sound file. The \"*n\" standard-sound syntax (*-1, *16, *32, *48, *64) works on every platform: Windows passes the number to MessageBeep, Linux uses the freedesktop sound theme and macOS /System/Library/Sounds, the latter two falling back to a synthesized beep when the desktop ships no such sound. Windows plays via MCI, so any format with an installed codec works (.wav, .mp3, .avi, ...); MCI limits paths to roughly 127 characters. macOS uses afplay (wav/aiff/caf/mp3/m4a). Linux picks the best installed player for the file type - paplay or aplay for uncompressed/libsndfile formats, otherwise ffplay, mpv, gst-play-1.0 or mpg123 - and raises an error naming them if none is present. On every platform, starting a new file stops the previous one, SoundPlay on a nonexistent file stops playback and raises, and playback stops when the script exits.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Sound",
@@ -9658,7 +9657,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "full",
                      "notes":  "Changes a mute setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated \u0027Sound APIs\u0027; per-function validation pending.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Sound",
@@ -9669,7 +9668,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "full",
                      "notes":  "Changes a volume setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated \u0027Sound APIs\u0027; per-function validation pending.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "FileSystem",
@@ -9810,7 +9809,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The StrPtr function returns the current memory address of a string.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Interop/Memory",
@@ -10049,7 +10048,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "full",
                      "notes":  "Creates an always-on-top window anywhere on the screen. On Linux and macOS it is drawn with the cross-platform Overlay primitive rather than a native tooltip, which on Wayland needs a compositor the Overlay supports (KWin, GNOME, or Cinnamon with the Keysharp extension).",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10070,7 +10069,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Changes the script\u0027s tray icon.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Core Language",
@@ -10377,7 +10376,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The WinActive function checks if the specified window is active and returns its unique ID (HWND).",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10388,7 +10387,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The WinClose function closes the specified window.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10521,7 +10520,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The WinGetList function returns an array of unique IDs (HWNDs) for all existing windows that match the specified criteria.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10552,7 +10551,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The WinGetPos function retrieves the position and size of the specified window.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10583,7 +10582,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Retrieves the style of the specified window. No non-Windows platform has a real Win32 style word, so for a script-owned window the toolkit state is projected onto the WS_* bits scripts actually test: WS_CAPTION/WS_POPUP from the border style, WS_SYSMENU, WS_THICKFRAME, WS_MINIMIZEBOX and WS_MAXIMIZEBOX from the frame buttons, plus WS_VISIBLE, WS_DISABLED, WS_MINIMIZE and WS_MAXIMIZE from the window state. Foreign windows expose no style word at all: X11 and macOS return 0, and Wayland reports only WS_CAPTION from the compositor decoration state.",
-                     "tested-by":  "GuiTests.EtoWindowStylesProjectToksWin32StyleBits"
+                     "tested-by":  "GuiTests.EtoWindowStyleBits"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10645,7 +10644,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The WinKill function forces the specified window to close. On Wayland a real force-kill is provided by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent), falling back to a graceful close request.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10656,7 +10655,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The WinMaximize function enlarges the specified window to its maximum size.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -10667,7 +10666,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Maximizes all top-level windows.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10678,7 +10677,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The WinMinimize function collapses the specified window into a button on the task bar.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10689,7 +10688,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The WinMinimizeAll and WinMinimizeAllUndo functions minimize or unminimize all windows.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10700,7 +10699,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The WinMinimizeAll and WinMinimizeAllUndo functions minimize or unminimize all windows.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10711,7 +10710,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The WinMove function changes the position and/or size of the specified window.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10802,7 +10801,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "unsupported",
                      "notes":  "Changes the style of the specified window. X11 has no way to write Win32 window styles: the call is accepted and does nothing on a script-owned window and raises an OSError on a foreign window. Wayland maps only WS_CAPTION, to the compositor decoration state, and only for compositor-backed windows. macOS has no equivalent.",
-                     "tested-by":  "Gui/guitest.ahk"
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11075,7 +11074,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets or sets the running thread's priority; equivalent to Thread \"Priority\", n. Every thread starts at 0; there is no settable process-wide default."
+                     "notes":  "Gets or sets the running thread's priority; equivalent to `Thread \"Priority\", n`. Every thread starts at 0; there is no settable process-wide default."
                  },
                  {
                      "category":  "Environment/System",
