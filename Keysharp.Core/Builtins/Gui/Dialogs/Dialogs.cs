@@ -52,8 +52,17 @@ namespace Keysharp.Builtins
 		private static T RunInterruptibleUIDialog<T>(Func<T> func) => RunInterruptibleDialog(() => Script.InvokeOnUIThread(func));
 
 #if WINDOWS
+		private static DialogResult ShowCommonDialog(CommonDialog dialog, Form owner)
+		{
+			return GetDialogOwnerHandle(owner) == 0 ? dialog.ShowDialog() : dialog.ShowDialog(owner);
+		}
+
+		private static nint GetDialogOwnerHandle(Form owner)
+			=> owner is { IsDisposed: false, IsHandleCreated: true } && WindowsAPI.IsWindow(owner.Handle) ? owner.Handle : 0;
+
 		private sealed class WindowsMsgBoxRequest
 		{
+			internal int CancelRequested;
 			internal string Caption;
 			internal nint DialogHwnd;
 			internal int DialogDepth;
@@ -63,7 +72,7 @@ namespace Keysharp.Builtins
 			internal uint TimeoutMs;
 		}
 
-		private static readonly System.Collections.Concurrent.ConcurrentDictionary<nuint, WindowsMsgBoxRequest> pendingWindowsMsgBoxes = new();
+		private static readonly System.Collections.Concurrent.ConcurrentDictionary<nuint, WindowsMsgBoxRequest> windowsMsgBoxRequests = new();
 		private static readonly System.Collections.Concurrent.ConcurrentDictionary<nint, WindowsMsgBoxRequest> activeWindowsMsgBoxes = new();
 		private static readonly WindowsAPI.TimerProc msgBoxTimeoutProc = MsgBoxTimeout;
 		private static int pendingWindowsMsgBoxShows;
@@ -77,7 +86,7 @@ namespace Keysharp.Builtins
 			if (dialogMessage != (uint)UserMessages.AHK_DIALOG)
 				return 0;
 
-			var request = requestToken != 0 && pendingWindowsMsgBoxes.TryRemove(unchecked((nuint)requestToken), out var pendingRequest)
+			var request = requestToken != 0 && windowsMsgBoxRequests.TryGetValue(unchecked((nuint)requestToken), out var pendingRequest)
 				? pendingRequest
 				: null;
 			var dialogHwnd = FindOurDialog(request);
@@ -91,10 +100,17 @@ namespace Keysharp.Builtins
 			if (request != null)
 			{
 				request.DialogHwnd = dialogHwnd;
+				activeWindowsMsgBoxes[dialogHwnd] = request;
+
+				if (Volatile.Read(ref request.CancelRequested) != 0)
+				{
+					_ = WindowsAPI.EndDialog(dialogHwnd, 0);
+					CompletePendingWindowsMsgBoxShow(request);
+					return dialogHwnd;
+				}
 
 				if (request.TimeoutMs != 0)
 				{
-					activeWindowsMsgBoxes[dialogHwnd] = request;
 					_ = WindowsAPI.SetTimer(dialogHwnd, unchecked((nuint)System.Threading.Interlocked.Increment(ref nextMsgBoxTimerId)), request.TimeoutMs, msgBoxTimeoutProc);
 				}
 			}
@@ -116,6 +132,7 @@ namespace Keysharp.Builtins
 					&& WindowsAPI.GetWindowThreadProcessId(hwnd, out var processId) != 0
 					&& processId == currentProcessId
 					&& WindowsAPI.GetClassName(hwnd) == "#32770"
+					&& !InputDialog.IsActive(hwnd)
 					&& Control.FromHandle(hwnd) is not KeysharpForm)
 					dialogs.Add(hwnd);
 
@@ -189,7 +206,7 @@ namespace Keysharp.Builtins
 
 			try
 			{
-				pendingWindowsMsgBoxes[request.RequestId] = request;
+				windowsMsgBoxRequests[request.RequestId] = request;
 				_ = Interlocked.Increment(ref pendingWindowsMsgBoxShows);
 
 				_ = WindowsAPI.PostMessage(Script.TheScript.MainWindowHandle, (uint)WindowsAPI.WM_COMMNOTIFY, (nint)(uint)UserMessages.AHK_DIALOG, (nint)request.RequestId);
@@ -200,7 +217,7 @@ namespace Keysharp.Builtins
 			finally
 			{
 				CompletePendingWindowsMsgBoxShow(request);
-				_ = pendingWindowsMsgBoxes.TryRemove(request.RequestId, out _);
+				_ = windowsMsgBoxRequests.TryRemove(request.RequestId, out _);
 
 				if (request.DialogHwnd != 0)
 					_ = activeWindowsMsgBoxes.TryRemove(request.DialogHwnd, out _);
@@ -268,6 +285,7 @@ namespace Keysharp.Builtins
 			var p = prompt.As();
 			var str = "";
 #if WINDOWS
+			var owner = GuiHelper.DialogOwner;
 			return RunInterruptibleUIDialog(() =>
 			{
 				var select = new FolderBrowserDialog
@@ -291,7 +309,7 @@ namespace Keysharp.Builtins
 				else if (folder.Length != 0)
 					select.SelectedPath = folder;
 
-				var selected = GuiHelper.DialogOwner == null ? select.ShowDialog() : select.ShowDialog(GuiHelper.DialogOwner);
+				var selected = ShowCommonDialog(select, owner);
 				return selected == DialogResult.OK ? select.SelectedPath : "";
 			});
 #else
@@ -388,9 +406,9 @@ namespace Keysharp.Builtins
 			var rootdir = rootDirFilename.As();
 			var t = title.As();
 			var f = FixFilters(filter.As());
-			var script = Script.TheScript;
 			bool save = false, multi = false, dir = false;
 #if WINDOWS
+			var owner = GuiHelper.DialogOwner;
 			bool check = false, create = false, overwite = false, shortcuts = false;
 #endif
 			opts = opts.ToUpperInvariant();
@@ -471,7 +489,7 @@ namespace Keysharp.Builtins
 						FileName = Path.GetFileName(rootdir),
 						RestoreDirectory = true,//Showing the dialog must not change the process working directory.
 					};
-					var selected = GuiHelper.DialogOwner == null ? saveas.ShowDialog() : saveas.ShowDialog(GuiHelper.DialogOwner);
+					var selected = ShowCommonDialog(saveas, owner);
 					return selected == DialogResult.OK ? saveas.FileName : "";
 				});
 #else
@@ -509,7 +527,7 @@ namespace Keysharp.Builtins
 							Description = t,
 							ShowNewFolderButton = true//Seems to be visible regardless of this property.
 						};
-						var selected = GuiHelper.DialogOwner == null ? select.ShowDialog() : select.ShowDialog(GuiHelper.DialogOwner);
+						var selected = ShowCommonDialog(select, owner);
 						return selected == DialogResult.OK ? select.SelectedPath : "";
 					});
 #else
@@ -546,7 +564,7 @@ namespace Keysharp.Builtins
 							FileName = Path.GetFileName(rootdir),
 							RestoreDirectory = true,//Showing the dialog must not change the process working directory.
 						};
-						var selected = GuiHelper.DialogOwner == null ? open.ShowDialog() : open.ShowDialog(GuiHelper.DialogOwner);
+						var selected = ShowCommonDialog(open, owner);
 						return selected == DialogResult.OK
 								? multi ? new Array(open.FileNames.Cast<object>()) : open.FileName
 								: multi ? new Array() : "";
@@ -641,7 +659,7 @@ namespace Keysharp.Builtins
 			var y = int.MinValue;
 			var pw = "";
 			var passwordSpecified = false;
-			var timeoutSeconds = 0;
+			var timeoutSeconds = 0.0;
 
 			foreach (Range r in opts.AsSpan().SplitAny(Spaces))
 			{
@@ -654,10 +672,12 @@ namespace Keysharp.Builtins
 					else if (Options.TryParse(opt, "h", ref temp)) { h = temp; }
 					else if (Options.TryParse(opt, "x", ref temp)) { x = temp; }
 					else if (Options.TryParse(opt, "y", ref temp)) { y = temp; }
-					else if (Options.TryParse(opt, "t", ref temp)) { timeoutSeconds = temp; }
+					else if (Options.TryParse(opt, "t", ref timeoutSeconds)) { }
 					else if (Options.TryParseString(opt, "Password", ref pw, StringComparison.OrdinalIgnoreCase, true)) { passwordSpecified = true; }
 				}
 			}
+
+			var owner = GuiHelper.DialogOwner;
 
 			return RunInterruptibleUIDialog(() =>
 			{
@@ -671,13 +691,7 @@ namespace Keysharp.Builtins
 				if (passwordSpecified)
 					input.PasswordChar = pw;
 				input.Timeout = timeoutSeconds;
-
-				input.PrepareForShow();
-
-				if (GuiHelper.DialogOwner != null)
-					_ = input.ShowDialog(GuiHelper.DialogOwner);
-				else
-					_ = input.ShowDialog();
+				_ = input.ShowDialog(GetDialogOwnerHandle(owner));
 
 				var obj = new KeysharpObject();
 				obj.DefinePropInternal("Value", new OwnPropsDesc(obj, input.Message));
@@ -1148,18 +1162,21 @@ namespace Keysharp.Builtins
 		internal static void CloseDialogs()
 		{
 #if WINDOWS
-			var tempn = Script.TheScript.nMessageBoxes;
-
-			while (tempn > 0)
+			foreach (var request in windowsMsgBoxRequests.Values)
 			{
-				nint wnd;
+				Volatile.Write(ref request.CancelRequested, 1);
 
-				if ((wnd = WindowsAPI.FindWindow("#32770", null)) != 0)
-				{
-					_ = WindowsAPI.SendMessage(wnd, WindowsAPI.WM_CLOSE, 0, 0);
-					tempn--;
-				}
+				if (request.DialogHwnd != 0 && WindowsAPI.IsWindow(request.DialogHwnd))
+					_ = WindowsAPI.EndDialog(request.DialogHwnd, 0);
 			}
+
+			foreach (var hwnd in activeWindowsMsgBoxes.Keys)
+			{
+				if (WindowsAPI.IsWindow(hwnd))
+					_ = WindowsAPI.EndDialog(hwnd, 0);
+			}
+
+			InputDialog.CloseAll();
 #else
 			foreach (var cts in activeEtoDialogs.Keys)
 			{

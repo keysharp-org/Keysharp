@@ -19,6 +19,7 @@ namespace Keysharp.Internals.Os.Windows
 		internal const int GWL_STYLE = -16;
 
 		internal const int GWL_WNDPROC = -4;
+		internal const int DWLP_MSGRESULT = 0;
 
 		internal const int HWND_BOTTOM = 1;
 
@@ -130,6 +131,13 @@ namespace Keysharp.Internals.Os.Windows
 		internal const int WM_SYSKEYUP = 0x0105;
 		internal const int WM_CLOSE = 0x0010;
 		internal const int WM_QUIT = 0x0012;
+		internal const int WM_GETMINMAXINFO = 0x0024;
+		internal const int WM_VKEYTOITEM = 0x002E;
+		internal const int WM_CHARTOITEM = 0x002F;
+		internal const int WM_QUERYDRAGICON = 0x0037;
+		internal const int WM_COMPAREITEM = 0x0039;
+		internal const int WM_SETICON = 0x0080;
+		internal const int WM_SIZE = 0x0005;
 		internal const int WM_COMMAND = 0x0111;
 		internal const int WM_SETREDRAW = 0x000B;
 		internal const int WM_SETTEXT = 0x000C;
@@ -176,14 +184,16 @@ namespace Keysharp.Internals.Os.Windows
 		internal const int WM_GETDLGCODE = 0x0087;
 		internal const int WM_ENDSESSION = 0x0016;
 		internal const int WM_ERASEBKGND = 0x0014;
+		internal const int WM_CTLCOLORMSGBOX = 0x0132;
 		internal const int WM_CTLCOLOREDIT = 0x0133;
 		internal const int WM_CTLCOLORLISTBOX = 0x0134;
 		internal const int WM_CTLCOLORBTN = 0x0135;
 		internal const int WM_CTLCOLORDLG = 0x0136;
+		internal const int WM_CTLCOLORSCROLLBAR = 0x0137;
 		internal const int WM_CTLCOLORSTATIC = 0x0138;
 		internal const uint WM_THEMECHANGED = 0x031A;
 		internal const int WM_COMMNOTIFY = 0x0044; // Used like AHK's WM_COMMNOTIFY to deliver pre-dialog notifications to OnMessage handlers.
-		internal const int WM_INITDIALOG = 0x0110; // Sent by DialogBoxParam after controls are created; we simulate it for #32770 windows created via CreateWindowEx.
+		internal const int WM_INITDIALOG = 0x0110;
 		internal const int WM_DESTROY = 0x0002;
 		internal const int WM_COPYDATA = 0x004A;
 		internal const int WM_PAINT = 0x000F;

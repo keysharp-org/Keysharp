@@ -576,6 +576,106 @@ namespace Keysharp.Tests
 				A_DetectHiddenWindows = oldDetectHiddenWindows;
 			}
 		}
+
+		[Test, Category("Gui")]
+		[Apartment(ApartmentState.STA)]
+		public void NativeInputBox()
+		{
+			if (Script.IsHeadless)
+				Assert.Ignore("InputBox requires an interactive desktop session.");
+
+			const int probeMessage = 0xB035;
+			var title = $"Keysharp InputBox probe {Guid.NewGuid():N}";
+			nint dialogHandle = 0;
+			string dialogClass = null;
+			var managedPeer = true;
+			Exception callbackFailure = null;
+			var initHandler = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, hwndArg) =>
+			{
+				var hwnd = unchecked((nint)hwndArg.Al());
+
+				try
+				{
+					if (dialogHandle == 0)
+					{
+						dialogHandle = hwnd;
+						dialogClass = WindowsAPI.GetClassName(hwnd);
+						managedPeer = Control.FromHandle(hwnd) != null;
+
+						//Posted so it arrives after InitializeDialog has populated the controls.
+						if (!WindowsAPI.PostMessage(hwnd, probeMessage, 0, 0))
+							throw new InvalidOperationException("Could not post the InputBox probe message.");
+					}
+				}
+				catch (Exception ex)
+				{
+					callbackFailure ??= ex;
+					_ = WindowsAPI.PostMessage(hwnd, WindowsAPI.WM_CLOSE, 0, 0);
+				}
+
+				return "";
+			}));
+			var probeHandler = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, hwndArg) =>
+			{
+				var hwnd = unchecked((nint)hwndArg.Al());
+
+				if (hwnd == dialogHandle)
+				{
+					try
+					{
+						var edit = WindowsAPI.GetDlgItem(hwnd, InputDialog.InputEditId);
+
+						if (edit == 0 || !WindowsAPI.SetWindowText(edit, "typed value"))
+							throw new InvalidOperationException("Could not update the native InputBox edit control.");
+					}
+					catch (Exception ex)
+					{
+						callbackFailure ??= ex;
+					}
+					finally
+					{
+						_ = WindowsAPI.PostMessage(hwnd, WindowsAPI.WM_COMMAND, (nint)InputDialog.OkId, 0);
+					}
+				}
+
+				return "";
+			}));
+
+			_ = Keysharp.Builtins.Flow.OnMessage(WindowsAPI.WM_INITDIALOG, initHandler);
+			_ = Keysharp.Builtins.Flow.OnMessage(probeMessage, probeHandler);
+
+			try
+			{
+				//Safety net so a regression cannot leave a modal dialog waiting for a human.
+				using var watchdog = new System.Threading.Timer(_ =>
+				{
+					var hwnd = WindowsAPI.FindWindow(null, title);
+
+					if (hwnd != 0)
+						_ = WindowsAPI.PostMessage(hwnd, WindowsAPI.WM_CLOSE, 0, 0);
+				}, null, 2000, 100);
+				var okResult = Dialogs.InputBox("Native InputBox probe", title, "", "initial value");
+				var timeoutResult = Dialogs.InputBox("Native InputBox probe", title, "t0.05", "kept value");
+
+				if (callbackFailure != null)
+					Assert.Fail(callbackFailure.ToString());
+
+				Assert.AreEqual("#32770", dialogClass, "the InputBox must be a native dialog whose messages reach OnMessage");
+				Assert.IsFalse(managedPeer, "the InputBox must not be a decorated WinForms window");
+				Assert.AreEqual("OK", InputBoxProperty(okResult, "Result"));
+				Assert.AreEqual("typed value", InputBoxProperty(okResult, "Value"));
+				Assert.AreEqual("Timeout", InputBoxProperty(timeoutResult, "Result"));
+				Assert.AreEqual("kept value", InputBoxProperty(timeoutResult, "Value"));
+			}
+			finally
+			{
+				_ = Keysharp.Builtins.Flow.OnMessage(WindowsAPI.WM_INITDIALOG, initHandler, 0L);
+				_ = Keysharp.Builtins.Flow.OnMessage(probeMessage, probeHandler, 0L);
+			}
+		}
+
+		private static string InputBoxProperty(KeysharpObject result, string property)
+			=> Script.GetPropertyValue(result, property).As();
 #endif
 
 #if LINUX

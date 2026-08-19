@@ -932,6 +932,9 @@ namespace Keysharp.Internals.Os.Windows
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool IsDialogMessage(nint hDlg, Msg lpMsg);
 
+		[LibraryImport(user32, EntryPoint = "DialogBoxIndirectParamW", SetLastError = true)]
+		internal static partial nint DialogBoxIndirectParam(nint hInstance, nint hDialogTemplate, nint hWndParent, DialogProc lpDialogFunc, nint dwInitParam);
+
 		[LibraryImport(user32, EntryPoint = "GetMessageW")]
 		internal static partial int GetMessage(out Msg lpMsg, nint hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
 
@@ -984,6 +987,9 @@ namespace Keysharp.Internals.Os.Windows
 		[LibraryImport(user32, EntryPoint = "GetDlgCtrlID")]
 		internal static partial int GetDlgCtrlID(nint hwndCtl);
 
+		[LibraryImport(user32, EntryPoint = "GetDlgItem")]
+		internal static partial nint GetDlgItem(nint hDlg, int nIDDlgItem);
+
 		[LibraryImport(user32, EntryPoint = "GetWindow")]
 		internal static partial nint GetWindow(nint hWnd, uint uCmd);
 
@@ -1007,6 +1013,10 @@ namespace Keysharp.Internals.Os.Windows
 		[LibraryImport(user32, EntryPoint = "GetClientRect")]
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool GetClientRect(nint hWnd, out RECT lpRect);
+
+		[LibraryImport(user32, EntryPoint = "AdjustWindowRect")]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		internal static partial bool AdjustWindowRect(ref RECT lpRect, uint dwStyle, [MarshalAs(UnmanagedType.Bool)] bool bMenu);
 
 		// PW_CLIENTONLY (0x1) renders only the client area (no title bar / borders); PW_RENDERFULLCONTENT
 		// (0x2) renders DirectComposition/hardware-accelerated content too, so the capture works for
@@ -1656,6 +1666,8 @@ namespace Keysharp.Internals.Os.Windows
 		internal static extern uint PrivateExtractIcons(string lpszFile, int nIconIndex, int cxIcon, int cyIcon, [Out] nint[] phicon, [Out] uint[] piconid, uint nIcons, uint flags);
 
 		internal delegate bool _EnumWindowsProc(nint hwnd, int lParam);//Add an underscore to this name because some sample programs use EnumWindowsProc as a function name.
+		[UnmanagedFunctionPointer(CallingConvention.Winapi)]
+		internal delegate nint DialogProc(nint hDlg, uint msg, nint wParam, nint lParam);
 		internal delegate void TimerProc(nint hWnd, uint uMsg, nuint idEvent, uint dwTime);
 
 		internal delegate nint LowLevelKeyboardProc(int nCode, nint wParam, ref KBDLLHOOKSTRUCT lParam);

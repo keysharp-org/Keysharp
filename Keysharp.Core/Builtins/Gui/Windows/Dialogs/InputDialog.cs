@@ -1,59 +1,66 @@
-using Timer = System.Windows.Forms.Timer;
-
 namespace Keysharp.Builtins
 {
-	internal class InputDialog : KeysharpForm
+	//WinForms derives a decorated window class and owner-draws buttons, so only a native dialog can
+	//provide AHK's #32770 class, control messages and theme behavior. The template (styles, DLU
+	//dimensions, control IDs) transcribes AHK's IDD_INPUTBOX resource verbatim, so keep its numbers
+	//in sync with that parity source rather than "improving" them.
+	internal sealed class InputDialog
 	{
+		internal const int OkId = 1;
+		internal const int CancelId = 2;
+		internal const int InputEditId = 201;
+		internal const int InputPromptId = 204;
+
 		private const int Unspecified = int.MinValue;
-		private readonly KeysharpButton btnCancel;
-		private readonly KeysharpButton btnOK;
-		private readonly FlowLayoutPanel buttonLayout;
-		private readonly TableLayoutPanel contentLayout;
-		private readonly KeysharpLabel prompt;
+		private const int SizeMinimized = 1;
+		private const int IconSmall = 0;
+		private const int IconBig = 1;
+		private const int TimeoutDialogResult = 3;
+		private const int CallbackFailureDialogResult = -2;
+		private const uint DsSetFont = 0x0040;
+		private const uint DsSetForeground = 0x0200;
+		private const uint DsFixedSys = 0x0008;
+		private const uint DsCenter = 0x0800;
+		private const uint WsPopup = 0x80000000;
+		private const uint WsCaption = 0x00C00000;
+		private const uint WsSysMenu = 0x00080000;
+		private const uint WsThickFrame = 0x00040000;
+		private const uint EditExtendedStyle = 0x00000200;
+		private const uint EditStyle = 0x50010080;
+		private const uint DefaultButtonStyle = 0x50010001;
+		private const uint ButtonStyle = 0x50010000;
+		private const uint StaticStyle = 0x50020000;
+		private const ushort ButtonClass = 0x0080;
+		private const ushort EditClass = 0x0081;
+		private const ushort StaticClass = 0x0082;
+		private static readonly ConcurrentDictionary<nint, InputDialog> activeDialogs = new();
+		private static readonly byte[] dialogTemplate = BuildDialogTemplate();
+		private static readonly WindowsAPI.DialogProc dialogProc = DialogProcedure;
+		private static readonly WindowsAPI.TimerProc timeoutProc = TimeoutProcedure;
+		private static int nextTimerId;
 		private readonly int requestedClientHeight;
 		private readonly int requestedClientWidth;
 		private readonly int requestedLeft;
 		private readonly int requestedTop;
-		private Timer timer;
-		private readonly TextBox txtMessage;
-		private bool layoutPrepared;
+		private ExceptionDispatchInfo callbackException;
+		private nint dialogHandle;
+		private nint ownerHandle;
+		private char passwordChar;
+		private int closing;
+		private int showing;
+		private nuint timerId;
 
-		private int ButtonGap => ScalePixels(8);
-		private int ButtonTopMargin => ScalePixels(8);
-		private int DialogPadding => ScalePixels(12);
-		private int DialogBottomPadding => ScalePixels(6);
-		private int WorkAreaMargin => ScalePixels(32);
-
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] public string Default { get; set; }
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] public string Message { get => txtMessage.Text; set => txtMessage.Text = value; }
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		public string Default { get; set; } = "";
+		public string Message { get; set; } = "";
 		public string PasswordChar
 		{
-			get => txtMessage.PasswordChar.ToString();
-			set
-			{
-				if (string.IsNullOrEmpty(value))
-					txtMessage.UseSystemPasswordChar = true;
-				else
-					txtMessage.PasswordChar = value[0];
-			}
+			get => passwordChar == '\0' ? "" : passwordChar.ToString();
+			set => passwordChar = string.IsNullOrEmpty(value) ? '\u25CF' : value[0];
 		}
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] public string Prompt { get => prompt.Text; set => prompt.Text = value; }
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] public string Result { get; private set; } = "";
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] public int Timeout { get; set; }
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] public string Title { get => Text; set => Text = value; }
-
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				// Use the Win32 dialog class so GetClassName() returns "#32770",
-				// matching AHK-style scripts that look for native dialog windows.
-				cp.ClassName = "#32770";
-				return cp;
-			}
-		}
+		public string Prompt { get; set; } = "";
+		public string Result { get; private set; } = "";
+		public double Timeout { get; set; }
+		public string Title { get; set; } = "";
 
 		public InputDialog(int clientWidth = Unspecified, int clientHeight = Unspecified, int left = Unspecified, int top = Unspecified)
 		{
@@ -61,216 +68,478 @@ namespace Keysharp.Builtins
 			requestedClientHeight = clientHeight;
 			requestedLeft = left;
 			requestedTop = top;
-			prompt = new KeysharpLabel { Name = "Prompt", AutoSize = true, BackColor = Color.Transparent, Dock = DockStyle.Top, Margin = Padding.Empty };
-			btnOK = new KeysharpButton { DialogResult = DialogResult.OK, Name = "OK", TabIndex = 1, Text = "OK", AutoSize = true, Margin = new Padding(0, 0, ButtonGap, 0) };
-			btnCancel = new KeysharpButton { DialogResult = DialogResult.Cancel, Name = "Cancel", TabIndex = 2, Text = "Cancel", AutoSize = true, Margin = Padding.Empty };
-			buttonLayout = new FlowLayoutPanel
+		}
+
+		internal nint ShowDialog(nint owner)
+		{
+			if (Interlocked.CompareExchange(ref showing, 1, 0) != 0)
+				throw new InvalidOperationException("This input dialog is already being shown.");
+
+			GCHandle instanceHandle = default;
+			GCHandle templateHandle = default;
+
+			try
 			{
-				Anchor = AnchorStyles.None,
-				AutoSize = true,
-				AutoSizeMode = AutoSizeMode.GrowAndShrink,
-				FlowDirection = FlowDirection.LeftToRight,
-				Margin = new Padding(0, ButtonTopMargin, 0, 0),
-				Padding = Padding.Empty,
-				WrapContents = false
-			};
-			contentLayout = new TableLayoutPanel
-			{
-				AutoSize = true,
-				AutoSizeMode = AutoSizeMode.GrowAndShrink,
-				ColumnCount = 1,
-				Dock = DockStyle.Top,
-				GrowStyle = TableLayoutPanelGrowStyle.FixedSize,
-				Margin = Padding.Empty,
-				Padding = new Padding(DialogPadding, DialogPadding, DialogPadding, DialogBottomPadding),
-				RowCount = 3
-			};
-			txtMessage = new TextBox { Name = "Message", TabIndex = 0, Dock = DockStyle.Top, Margin = new Padding(0, DialogPadding, 0, 0) };
-			FormClosing += (_, _) =>
-			{
+				ownerHandle = owner != 0 && WindowsAPI.IsWindow(owner) ? owner : 0;
+				dialogHandle = 0;
+				timerId = 0;
+				callbackException = null;
+				Message = Default ?? "";
+				Result = "";
+				Volatile.Write(ref closing, 0);
+				instanceHandle = GCHandle.Alloc(this);
+				templateHandle = GCHandle.Alloc(dialogTemplate, GCHandleType.Pinned);
+				var nativeResult = WindowsAPI.DialogBoxIndirectParam(
+					WindowsAPI.GetModuleHandle(null),
+					templateHandle.AddrOfPinnedObject(),
+					ownerHandle,
+					dialogProc,
+					GCHandle.ToIntPtr(instanceHandle));
+
+				callbackException?.Throw();
+
+				if (nativeResult == -1)
+					throw new Win32Exception(Marshal.GetLastPInvokeError());
+
 				if (Result.Length == 0)
 					Result = "Cancel";
-			};
-			btnOK.Click += (_, _) => CloseWith("OK");
-			btnCancel.Click += (_, _) => CloseWith("Cancel");
-			Load += InputDialog_Load;
-			Resize += (_, _) =>
+
+				return nativeResult;
+			}
+			finally
 			{
-				if (!layoutPrepared)
-					return;
+				StopTimer();
 
-				ApplyLayoutWidth(ClientSize.Width);
-				contentLayout.PerformLayout();
-				UpdateMinimumSize(GetTargetWorkingArea());
-			};
-			Shown += InputDialog_Shown;
-			txtMessage.KeyDown += TxtMessage_KeyDown;
+				if (dialogHandle != 0)
+					activeDialogs.TryRemove(dialogHandle, out _);
+
+				if (templateHandle.IsAllocated)
+					templateHandle.Free();
+
+				if (instanceHandle.IsAllocated)
+					instanceHandle.Free();
+
+				dialogHandle = 0;
+				ownerHandle = 0;
+				Volatile.Write(ref showing, 0);
+			}
 		}
 
-		private void CloseWith(string result)
+		internal static void CloseAll()
 		{
-			Result = result;
-			Hide();
+			foreach (var hwnd in activeDialogs.Keys)
+			{
+				if (WindowsAPI.IsWindow(hwnd))
+					_ = WindowsAPI.EndDialog(hwnd, CancelId);
+			}
 		}
 
-		private void InitializeComponent()
+		internal static bool IsActive(nint hwnd) => activeDialogs.ContainsKey(hwnd);
+
+		private static nint DialogProcedure(nint hwnd, uint message, nint wParam, nint lParam)
 		{
-			SuspendLayout();
-			contentLayout.RowStyles.Add(new RowStyle());
-			contentLayout.RowStyles.Add(new RowStyle());
-			contentLayout.RowStyles.Add(new RowStyle());
-			contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-			contentLayout.Controls.Add(prompt, 0, 0);
-			contentLayout.Controls.Add(txtMessage, 0, 1);
-			contentLayout.Controls.Add(buttonLayout, 0, 2);
-			buttonLayout.Controls.Add(btnOK);
-			buttonLayout.Controls.Add(btnCancel);
-			Controls.Add(contentLayout);
-			ShowIcon = true;
-			MaximizeBox = false;
-			MinimizeBox = false;
-			AutoScaleMode = AutoScaleMode.Dpi;
-			FormBorderStyle = FormBorderStyle.Sizable;
-			SizeGripStyle = SizeGripStyle.Show;
-			StartPosition = FormStartPosition.Manual;
-			AcceptButton = btnOK;
-			CancelButton = btnCancel;
-			ActiveControl = txtMessage;
-			Name = "KeysharpInputBox";
-			ResumeLayout(false);
-			PerformLayout();
+			InputDialog dialog = null;
+
+			try
+			{
+				if (message == WindowsAPI.WM_INITDIALOG && lParam != 0)
+				{
+					var handle = GCHandle.FromIntPtr(lParam);
+					dialog = handle.Target as InputDialog;
+
+					if (dialog != null)
+					{
+						dialog.dialogHandle = hwnd;
+						activeDialogs[hwnd] = dialog;
+					}
+				}
+				else
+					activeDialogs.TryGetValue(hwnd, out dialog);
+
+				if (dialog == null)
+					return 0;
+
+				if (TryCallMessageHandlers(hwnd, message, wParam, lParam, out var result))
+					return CompleteHandledMessage(hwnd, message, result);
+
+				if (message != WindowsAPI.WM_NCDESTROY && !WindowsAPI.IsWindow(hwnd))
+					return 1;
+
+				return dialog.HandleMessage(hwnd, message, wParam, lParam);
+			}
+			catch (Exception ex)
+			{
+				if (dialog == null)
+					return 0;
+
+				dialog.FailDialog(message == WindowsAPI.WM_NCDESTROY ? 0 : hwnd, ex);
+				return 1;
+			}
+			finally
+			{
+				if (message == WindowsAPI.WM_NCDESTROY)
+					activeDialogs.TryRemove(hwnd, out _);
+			}
 		}
 
-		internal void PrepareForShow()
+		private static nint CompleteHandledMessage(nint hwnd, uint message, nint result)
 		{
-			if (layoutPrepared)
+			//Dialog procedures answer most messages by storing the result in DWLP_MSGRESULT and returning
+			//TRUE; the messages below are the documented exceptions whose result is returned directly.
+			if (message is WindowsAPI.WM_INITDIALOG
+					or WindowsAPI.WM_VKEYTOITEM
+					or WindowsAPI.WM_CHARTOITEM
+					or WindowsAPI.WM_QUERYDRAGICON
+					or WindowsAPI.WM_COMPAREITEM
+					or >= WindowsAPI.WM_CTLCOLORMSGBOX and <= WindowsAPI.WM_CTLCOLORSTATIC)
+				return result;
+
+			_ = WindowsAPI.SetWindowLongPtr(hwnd, WindowsAPI.DWLP_MSGRESULT, result);
+			return 1;
+		}
+
+		private static bool TryCallMessageHandlers(nint hwnd, uint message, nint wParam, nint lParam, out nint result)
+		{
+			result = 0;
+			var filter = Script.TheScript?.msgFilter;
+
+			if (filter == null)
+				return false;
+
+			//No handledMsg double-dispatch dance is needed here (unlike KeysharpForm.WndProc): the native
+			//dialog pumps its own modal loop, so the WinForms message filter never sees, let alone
+			//pre-handles, a message that arrives at this dialog procedure.
+			var managedMessage = System.Windows.Forms.Message.Create(hwnd, unchecked((int)message), wParam, lParam);
+
+			if (!filter.CallEventHandlers(ref managedMessage))
+				return false;
+
+			result = managedMessage.Result;
+			return true;
+		}
+
+		private nint HandleMessage(nint hwnd, uint message, nint wParam, nint lParam)
+		{
+			switch (message)
+			{
+				case WindowsAPI.WM_INITDIALOG:
+					InitializeDialog(hwnd);
+					return 1;
+
+				case WindowsAPI.WM_SIZE:
+					if (wParam.ToInt64() != SizeMinimized)
+						LayoutControls(hwnd);
+
+					return 1;
+
+				case WindowsAPI.WM_GETMINMAXINFO:
+					SetMinimumWidth(hwnd, lParam);
+					break;
+
+				case WindowsAPI.WM_COMMAND:
+					var command = unchecked((ushort)wParam.ToInt64());
+
+					if (command == OkId)
+					{
+						Complete(hwnd, "OK", OkId);
+						return 1;
+					}
+
+					if (command == CancelId)
+					{
+						Complete(hwnd, "Cancel", CancelId);
+						return 1;
+					}
+
+					break;
+
+				case WindowsAPI.WM_CLOSE:
+					Complete(hwnd, "Cancel", CancelId);
+					return 1;
+
+				case WindowsAPI.WM_DESTROY:
+					StopTimer();
+
+					if (Result.Length == 0)
+					{
+						CaptureMessage(hwnd);
+						Result = "Cancel";
+					}
+
+					break;
+			}
+
+			return 0;
+		}
+
+		private void InitializeDialog(nint hwnd)
+		{
+			var edit = WindowsAPI.GetDlgItem(hwnd, InputEditId);
+			_ = WindowsAPI.SetWindowText(hwnd, Title ?? "");
+			_ = WindowsAPI.SetWindowText(WindowsAPI.GetDlgItem(hwnd, InputPromptId), Prompt ?? "");
+
+			if (passwordChar != '\0')
+				_ = WindowsAPI.SendMessage(edit, (uint)WindowsAPI.EM_SETPASSWORDCHAR, (nint)passwordChar, 0);
+
+			ResizeAndPosition(hwnd);
+			_ = WindowsAPI.SetWindowText(edit, Default ?? "");
+			_ = WindowsAPI.SendMessage(edit, (uint)WindowsAPI.EM_SETSEL, (nint)0, -1);
+			LayoutControls(hwnd);
+
+			var icon = Script.TheScript?.Tray?.Icon;
+
+			if (icon != null)
+			{
+				_ = WindowsAPI.SendMessage(hwnd, (uint)WindowsAPI.WM_SETICON, (nint)IconSmall, icon.Handle);
+				_ = WindowsAPI.SendMessage(hwnd, (uint)WindowsAPI.WM_SETICON, (nint)IconBig, icon.Handle);
+			}
+
+			var timeoutMilliseconds = GetTimeoutMilliseconds();
+
+			if (timeoutMilliseconds != 0)
+				timerId = WindowsAPI.SetTimer(hwnd, NextTimerId(), timeoutMilliseconds, timeoutProc);
+		}
+
+		private void ResizeAndPosition(nint hwnd)
+		{
+			if (!WindowsAPI.GetClientRect(hwnd, out var clientRect))
 				return;
 
-			layoutPrepared = true;
-			InitializeComponent();
-			txtMessage.Text = Default;
+			var clientWidth = requestedClientWidth == Unspecified ? clientRect.Right : ScaleForDpi(requestedClientWidth);
+			var clientHeight = requestedClientHeight == Unspecified ? clientRect.Bottom : ScaleForDpi(requestedClientHeight);
+			var windowRect = new RECT { Right = clientWidth, Bottom = clientHeight };
+			var style = unchecked((uint)WindowsAPI.GetWindowLongPtr(hwnd, WindowsAPI.GWL_STYLE).ToInt64());
+			_ = WindowsAPI.AdjustWindowRect(ref windowRect, style, false);
+			var width = windowRect.Right - windowRect.Left;
+			var height = windowRect.Bottom - windowRect.Top;
 			var workingArea = GetTargetWorkingArea();
-			var minimumWidth = GetMinimumClientWidth();
-			var width = requestedClientWidth != Unspecified
-				? requestedClientWidth
-				: GetDefaultClientWidth(minimumWidth, workingArea);
-			var preferredSize = GetPreferredClientSize(width, workingArea);
-			var height = requestedClientHeight != Unspecified ? requestedClientHeight : preferredSize.Height;
-			ClientSize = new Size(width, height);
-			UpdateMinimumSize(workingArea);
-
-			Left = requestedLeft != Unspecified ? requestedLeft : workingArea.Left + ((workingArea.Width - Width) / 2);
-			Top = requestedTop != Unspecified ? requestedTop : workingArea.Top + ((workingArea.Height - Height) / 2);
-		}
-
-		private Size GetPreferredClientSize(int clientWidth, Rectangle workingArea)
-		{
-			ApplyLayoutWidth(clientWidth);
-			contentLayout.PerformLayout();
-			var preferredSize = contentLayout.GetPreferredSize(new Size(clientWidth, 0));
-			var maxHeight = Math.Max(1, workingArea.Height - WorkAreaMargin);
-			return new Size(clientWidth, Math.Min(preferredSize.Height, maxHeight));
-		}
-
-		private void UpdateMinimumSize(Rectangle workingArea)
-		{
-			var minimumClientWidth = requestedClientWidth != Unspecified ? Math.Min(requestedClientWidth, GetMinimumClientWidth()) : GetMinimumClientWidth();
-			var minimumClientHeight = GetPreferredClientSize(ClientSize.Width, workingArea).Height;
-			if (requestedClientHeight != Unspecified)
-				minimumClientHeight = Math.Min(requestedClientHeight, minimumClientHeight);
-			MinimumSize = SizeFromClientSize(new Size(minimumClientWidth, minimumClientHeight));
-		}
-
-		private int GetDefaultClientWidth(int minimumWidth, Rectangle workingArea)
-		{
-			var noWrapPromptWidth = prompt.GetPreferredSize(Size.Empty).Width;
-			var naturalWidth = contentLayout.Padding.Horizontal + Math.Max(buttonLayout.GetPreferredSize(Size.Empty).Width, noWrapPromptWidth);
-			var maxWidth = Math.Max(minimumWidth, workingArea.Width - WorkAreaMargin);
-			return Math.Clamp(naturalWidth, minimumWidth, maxWidth);
-		}
-
-		private int GetMinimumClientWidth() => contentLayout.Padding.Horizontal + buttonLayout.GetPreferredSize(Size.Empty).Width;
-
-		private void ApplyLayoutWidth(int clientWidth)
-		{
-			var contentWidth = Math.Max(1, clientWidth - contentLayout.Padding.Horizontal);
-			contentLayout.MaximumSize = new Size(clientWidth, 0);
-			contentLayout.Width = clientWidth;
-			prompt.MaximumSize = new Size(contentWidth, 0);
-			txtMessage.Width = contentWidth;
+			var left = requestedLeft == Unspecified ? workingArea.Left + (workingArea.Width - width) / 2 : requestedLeft;
+			var top = requestedTop == Unspecified ? workingArea.Top + (workingArea.Height - height) / 2 : requestedTop;
+			_ = WindowsAPI.MoveWindow(hwnd, left, top, width, height, true);
 		}
 
 		private Rectangle GetTargetWorkingArea()
 		{
-			var primaryArea = System.Windows.Forms.Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, Width, Height);
-			var referencePoint = new Point(
-				requestedLeft != Unspecified ? requestedLeft : primaryArea.Left + (primaryArea.Width / 2),
-				requestedTop != Unspecified ? requestedTop : primaryArea.Top + (primaryArea.Height / 2));
-			return System.Windows.Forms.Screen.FromPoint(referencePoint).WorkingArea;
-		}
+			var primaryArea = System.Windows.Forms.Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 640, 480);
+			var referenceX = primaryArea.Left + primaryArea.Width / 2;
+			var referenceY = primaryArea.Top + primaryArea.Height / 2;
 
-		private int ScalePixels(int logicalPixels) => (int)Math.Round(logicalPixels * (DeviceDpi / 96.0));
-
-		private void InputDialog_Load(object sender, EventArgs e)
-		{
-			PrepareForShow();
-			EnsureHandlesCreated(this);
-			_ = WindowsAPI.SendMessage(Handle, (uint)WindowsAPI.WM_INITDIALOG, txtMessage.Handle, 0);
-			ApplyDialogCtlColorTheme();
-		}
-
-		private void ApplyDialogCtlColorTheme()
-		{
-			ApplyCtlColorTheme(this, (uint)WindowsAPI.WM_CTLCOLORDLG, false);
-			ApplyCtlColorTheme(prompt, (uint)WindowsAPI.WM_CTLCOLORSTATIC, false);
-			ApplyCtlColorTheme(txtMessage, (uint)WindowsAPI.WM_CTLCOLOREDIT, false);
-			ApplyCtlColorTheme(btnOK, (uint)WindowsAPI.WM_CTLCOLORBTN, false);
-			ApplyCtlColorTheme(btnCancel, (uint)WindowsAPI.WM_CTLCOLORBTN, false);
-			QueueCtlColorThemeRefresh();
-		}
-
-		private static void EnsureHandlesCreated(Control parent)
-		{
-			foreach (Control child in parent.Controls)
+			if (ownerHandle != 0 && WindowsAPI.GetWindowRect(ownerHandle, out var ownerRect))
 			{
-				_ = child.Handle;
-				if (child.Controls.Count > 0)
-					EnsureHandlesCreated(child);
+				referenceX = ownerRect.Left + (ownerRect.Right - ownerRect.Left) / 2;
+				referenceY = ownerRect.Top + (ownerRect.Bottom - ownerRect.Top) / 2;
+			}
+
+			if (requestedLeft != Unspecified)
+				referenceX = requestedLeft;
+
+			if (requestedTop != Unspecified)
+				referenceY = requestedTop;
+
+			return System.Windows.Forms.Screen.FromPoint(new Point(referenceX, referenceY)).WorkingArea;
+		}
+
+		private static int ScaleForDpi(int value)
+		{
+			var scaled = Math.Round(value * A_ScreenDPI / 96.0, MidpointRounding.AwayFromZero);
+			return (int)Math.Clamp(scaled, int.MinValue, int.MaxValue);
+		}
+
+		private static void LayoutControls(nint hwnd)
+		{
+			if (!WindowsAPI.GetClientRect(hwnd, out var clientRect))
+				return;
+
+			var ok = WindowsAPI.GetDlgItem(hwnd, OkId);
+			var cancel = WindowsAPI.GetDlgItem(hwnd, CancelId);
+			var edit = WindowsAPI.GetDlgItem(hwnd, InputEditId);
+			var prompt = WindowsAPI.GetDlgItem(hwnd, InputPromptId);
+
+			if (!TryGetSize(ok, out var okWidth, out var buttonHeight)
+					|| !TryGetSize(cancel, out var cancelWidth, out _)
+					|| !TryGetSize(edit, out _, out var editHeight))
+				return;
+
+			var clientWidth = clientRect.Right;
+			var clientHeight = clientRect.Bottom;
+			var buttonY = clientHeight - 5 - buttonHeight;
+			var okX = clientWidth / 4 + (5 - okWidth) / 2;
+			var cancelX = clientWidth * 3 / 4 - (5 + cancelWidth) / 2;
+			_ = WindowsAPI.MoveWindow(ok, okX, buttonY, okWidth, buttonHeight, true);
+			_ = WindowsAPI.MoveWindow(cancel, cancelX, buttonY, cancelWidth, buttonHeight, true);
+			var editY = buttonY - 5 - editHeight;
+			_ = WindowsAPI.MoveWindow(edit, 5, editY, clientWidth - 10, editHeight, true);
+			_ = WindowsAPI.MoveWindow(prompt, 5, 5, clientWidth - 10, editY - 10, true);
+			_ = WindowsAPI.InvalidateRect(hwnd, 0, true);
+		}
+
+		private static void SetMinimumWidth(nint hwnd, nint minMaxInfoPointer)
+		{
+			if (minMaxInfoPointer == 0
+					|| !TryGetSize(WindowsAPI.GetDlgItem(hwnd, OkId), out var okWidth, out _)
+					|| !TryGetSize(WindowsAPI.GetDlgItem(hwnd, CancelId), out var cancelWidth, out _))
+				return;
+
+			var minMaxInfo = Marshal.PtrToStructure<MINMAXINFO>(minMaxInfoPointer);
+			minMaxInfo.ptMinTrackSize.X = okWidth + cancelWidth + 30;
+			Marshal.StructureToPtr(minMaxInfo, minMaxInfoPointer, false);
+		}
+
+		private static bool TryGetSize(nint hwnd, out int width, out int height)
+		{
+			if (hwnd != 0 && WindowsAPI.GetWindowRect(hwnd, out var rect))
+			{
+				width = rect.Right - rect.Left;
+				height = rect.Bottom - rect.Top;
+				return true;
+			}
+
+			width = 0;
+			height = 0;
+			return false;
+		}
+
+		private void Complete(nint hwnd, string result, int nativeResult)
+		{
+			if (Interlocked.Exchange(ref closing, 1) != 0)
+				return;
+
+			CaptureMessage(hwnd);
+			Result = result;
+			StopTimer();
+			_ = WindowsAPI.EndDialog(hwnd, nativeResult);
+		}
+
+		private void CaptureMessage(nint hwnd)
+		{
+			var edit = WindowsAPI.GetDlgItem(hwnd, InputEditId);
+
+			if (edit != 0)
+				Message = WindowsAPI.GetWindowText(edit);
+		}
+
+		private uint GetTimeoutMilliseconds()
+		{
+			if (!(Timeout > 0))
+				return 0;
+
+			var milliseconds = Math.Min(Timeout, 2147483.0) * 1000.0;
+			return (uint)Math.Max(1.0, Math.Truncate(milliseconds));
+		}
+
+		private void StopTimer()
+		{
+			var currentTimerId = timerId;
+			timerId = 0;
+
+			if (currentTimerId != 0 && dialogHandle != 0 && WindowsAPI.IsWindow(dialogHandle))
+				_ = WindowsAPI.KillTimer(dialogHandle, currentTimerId);
+		}
+
+		private static void TimeoutProcedure(nint hwnd, uint message, nuint idEvent, uint time)
+		{
+			InputDialog dialog = null;
+
+			try
+			{
+				if (!activeDialogs.TryGetValue(hwnd, out dialog) || dialog.timerId != idEvent)
+					return;
+
+				dialog.Complete(hwnd, "Timeout", TimeoutDialogResult);
+			}
+			catch (Exception ex)
+			{
+				dialog?.FailDialog(hwnd, ex);
 			}
 		}
 
-		private void InputDialog_Shown(object sender, EventArgs e)
+		//Shared failure path for the native callbacks: capture the exception for ShowDialog to rethrow,
+		//cancel, and tear the dialog down. Pass 0 for hwnd when the window is already being destroyed.
+		private void FailDialog(nint hwnd, Exception ex)
 		{
-			var script = Script.TheScript;
-			if (script.Tray?.Icon != null)
-				Icon = script.Tray.Icon;
-			Activate();
-			BringToFront();
-			txtMessage.Focus();
-			txtMessage.SelectAll();
-			if (Timeout > 0)
-			{
-				timer = new Timer { Interval = Timeout * 1000 };
-				timer.Tick += (_, _) =>
-				{
-					timer.Enabled = false;
-					Result = "Timeout";
-					Hide();
-				};
-				timer.Enabled = true;
-			}
+			callbackException ??= ExceptionDispatchInfo.Capture(ex);
+			Result = "Cancel";
+			StopTimer();
+
+			if (hwnd != 0 && WindowsAPI.IsWindow(hwnd))
+				_ = WindowsAPI.EndDialog(hwnd, CallbackFailureDialogResult);
 		}
 
-		private void TxtMessage_KeyDown(object sender, KeyEventArgs e)
+		private static nuint NextTimerId()
 		{
-			if (e.KeyCode == Keys.Enter)
-			{
-				e.Handled = true;
-				e.SuppressKeyPress = true;
-				btnOK.PerformClick();
-			}
-			else if (e.KeyCode == Keys.Escape)
-				btnCancel.PerformClick();
+			nuint id;
+
+			do
+				id = unchecked((nuint)(uint)Interlocked.Increment(ref nextTimerId));
+			while (id == 0);
+
+			return id;
+		}
+
+		private static byte[] BuildDialogTemplate()
+		{
+			using var stream = new MemoryStream();
+			using var writer = new BinaryWriter(stream, Encoding.Unicode, true);
+			writer.Write((ushort)1);
+			writer.Write(ushort.MaxValue);
+			writer.Write(0u);
+			writer.Write(0u);
+			writer.Write(DsSetFont | DsSetForeground | DsFixedSys | DsCenter | WsPopup | WsCaption | WsSysMenu | WsThickFrame);
+			writer.Write((ushort)4);
+			writer.Write((short)0);
+			writer.Write((short)0);
+			writer.Write((short)210);
+			writer.Write((short)83);
+			writer.Write((ushort)0);
+			writer.Write((ushort)0);
+			WriteString(writer, "Dialog");
+			writer.Write((ushort)10);
+			writer.Write((ushort)400);
+			writer.Write((byte)0);
+			writer.Write((byte)0);
+			WriteString(writer, "Segoe UI");
+			WriteDialogItem(writer, EditExtendedStyle, EditStyle, 2, 51, 207, 12, InputEditId, EditClass, "");
+			WriteDialogItem(writer, 0, DefaultButtonStyle, 51, 67, 50, 12, OkId, ButtonClass, "OK");
+			WriteDialogItem(writer, 0, ButtonStyle, 129, 67, 50, 12, CancelId, ButtonClass, "Cancel");
+			WriteDialogItem(writer, 0, StaticStyle, 3, 2, 205, 48, InputPromptId, StaticClass, "Prompt");
+			return stream.ToArray();
+		}
+
+		private static void WriteDialogItem(BinaryWriter writer, uint extendedStyle, uint style, short x, short y, short width, short height, int id, ushort windowClass, string title)
+		{
+			while ((writer.BaseStream.Position & 3) != 0)
+				writer.Write((byte)0);
+
+			writer.Write(0u);
+			writer.Write(extendedStyle);
+			writer.Write(style);
+			writer.Write(x);
+			writer.Write(y);
+			writer.Write(width);
+			writer.Write(height);
+			writer.Write((uint)id);
+			writer.Write(ushort.MaxValue);
+			writer.Write(windowClass);
+			WriteString(writer, title);
+			writer.Write((ushort)0);
+		}
+
+		private static void WriteString(BinaryWriter writer, string value)
+		{
+			foreach (var character in value)
+				writer.Write((ushort)character);
+
+			writer.Write((ushort)0);
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
+		private struct MINMAXINFO
+		{
+			internal POINT ptReserved;
+			internal POINT ptMaxSize;
+			internal POINT ptMaxPosition;
+			internal POINT ptMinTrackSize;
+			internal POINT ptMaxTrackSize;
 		}
 	}
 }

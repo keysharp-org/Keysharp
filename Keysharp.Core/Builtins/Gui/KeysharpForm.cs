@@ -19,20 +19,13 @@ namespace Keysharp.Builtins
 		internal bool beenConstructed = false;
 		internal bool clickThrough;
 		private bool closingFromDestroy;
-#if WINDOWS
-		private nint originalWndProcPtr;
-#else
+#if !WINDOWS
 		private long lastDpi = 96;
 #endif
 #if OSX
 		private uint mouseTransparentWindow;
 #endif
 		internal bool BeenShown => beenShown;
-#if WINDOWS
-		internal bool HasExternalWndProcOverride => originalWndProcPtr != 0 && WindowsAPI.GetWindowLongPtr(Handle, WindowsAPI.GWL_WNDPROC) != originalWndProcPtr;
-#else
-		internal bool HasExternalWndProcOverride => false;
-#endif
 
 #if WINDOWS
 		protected override CreateParams CreateParams
@@ -53,16 +46,7 @@ namespace Keysharp.Builtins
 		{
 			if (IsDisposed || IsHandleCreated) return;
 			base.CreateHandle();
-			originalWndProcPtr = WindowsAPI.GetWindowLongPtr(Handle, WindowsAPI.GWL_WNDPROC);
 			beenConstructed = true;
-		}
-
-		protected override void OnPaintBackground(PaintEventArgs e)
-		{
-			if (TryPaintBackgroundFromCtlColor(e))
-				return;
-
-			base.OnPaintBackground(e);
 		}
 
 		protected override void WndProc(ref Message m)
@@ -89,20 +73,13 @@ namespace Keysharp.Builtins
 			if (m.Msg == WindowsAPI.WM_COMMNOTIFY)
 				_ = Dialogs.HandleDialogNotification((uint)m.WParam.ToInt64(), m.LParam);
 
-			var handledByMessageHook = false;
-
 			if (msgFilter != null)
 			{
 				if (msgFilter.handledMsg == m)
 					msgFilter.handledMsg = null;
 				else if (beenConstructed && msgFilter.CallEventHandlers(ref m))
-					handledByMessageHook = true;
+					return;
 			}
-
-			ApplyCtlColorThemeFromMessage(ref m);
-
-			if (handledByMessageHook)
-				return;
 
 			//GuiObj.OnMessage() monitors run ahead of default processing, the same way AHK's GuiWindowProc
 			//consults its message monitors before handing off to DefDlgProc.
@@ -112,170 +89,6 @@ namespace Keysharp.Builtins
 
 			base.WndProc(ref m);
 		}
-
-		internal void ApplyCtlColorTheme(Control control, uint msg, bool refresh = true)
-		{
-			if (IsDisposed || !IsHandleCreated || control == null || control.IsDisposed || !UsesCtlColorMessage(msg))
-				return;
-
-			if (!control.IsHandleCreated)
-				_ = control.Handle;
-
-			if (!control.IsHandleCreated)
-				return;
-
-			var hdc = WindowsAPI.GetDC(0);
-
-			if (hdc == 0)
-				return;
-
-			try
-			{
-				_ = WindowsAPI.SendMessage(Handle, msg, hdc, control.Handle);
-				ApplyCtlColorColors(control, hdc, msg);
-			}
-			finally
-			{
-				_ = WindowsAPI.ReleaseDC(0, hdc);
-			}
-
-			if (refresh)
-				QueueCtlColorThemeRefresh(ReferenceEquals(control, this) ? null : control);
-		}
-
-		internal void QueueCtlColorThemeRefresh(Control root = null)
-		{
-			if (IsDisposed || !IsHandleCreated)
-				return;
-
-			_ = BeginInvoke(new System.Windows.Forms.MethodInvoker(() =>
-			{
-				if (IsDisposed)
-					return;
-
-				var target = root ?? this;
-
-				if (target == null || target.IsDisposed)
-					return;
-
-				if (target.IsHandleCreated)
-				{
-					var flags = WindowsAPI.RDW_INVALIDATE | WindowsAPI.RDW_ERASE | WindowsAPI.RDW_UPDATENOW;
-
-					if (ReferenceEquals(target, this))
-						flags |= WindowsAPI.RDW_ALLCHILDREN;
-
-					_ = WindowsAPI.RedrawWindow(target.Handle, 0, 0, flags);
-				}
-				else
-					target.Refresh();
-			}));
-		}
-
-		private void ApplyCtlColorThemeFromMessage(ref Message m)
-		{
-			if (!IsCtlColorMessage((uint)m.Msg) || !UsesCtlColorMessage((uint)m.Msg) || m.WParam == 0)
-				return;
-
-			var target = m.Msg == WindowsAPI.WM_CTLCOLORDLG ? this : Control.FromHandle(m.LParam);
-
-			if (target != null)
-				ApplyCtlColorColors(target, m.WParam, (uint)m.Msg);
-		}
-
-		private void ApplyCtlColorColors(Control control, nint hdc, uint msg)
-		{
-			var textColorRef = WindowsAPI.GetTextColor(hdc);
-			var backColorRef = WindowsAPI.GetBkColor(hdc);
-
-			if (textColorRef != WindowsAPI.CLR_INVALID)
-				ApplyCtlColorForeColor(control, ColorFromColorRef(textColorRef));
-
-			if (backColorRef != WindowsAPI.CLR_INVALID)
-				ApplyCtlColorBackColor(control, ColorFromColorRef(backColorRef), msg);
-		}
-
-		private static void ApplyCtlColorForeColor(Control control, Color textColor)
-		{
-			if (control.ForeColor != textColor)
-				control.ForeColor = textColor;
-
-			if (control is LinkLabel linkLabel)
-			{
-				linkLabel.LinkColor = textColor;
-				linkLabel.ActiveLinkColor = textColor;
-				linkLabel.VisitedLinkColor = textColor;
-			}
-		}
-
-		private static void ApplyCtlColorBackColor(Control control, Color backColor, uint msg)
-		{
-			if (control is Form form)
-			{
-				if (form.BackColor != backColor)
-					form.BackColor = backColor;
-
-				return;
-			}
-
-			if (control.BackColor == Color.Transparent)
-				return;
-
-			if (control is ButtonBase buttonBase)
-			{
-				buttonBase.UseVisualStyleBackColor = false;
-
-				if (buttonBase.BackColor != backColor)
-					buttonBase.BackColor = backColor;
-
-				return;
-			}
-
-			if (control is TextBoxBase or ComboBox or ListBox
-				|| msg is (uint)WindowsAPI.WM_CTLCOLORBTN or (uint)WindowsAPI.WM_CTLCOLOREDIT or (uint)WindowsAPI.WM_CTLCOLORLISTBOX)
-			{
-				if (control.BackColor != backColor)
-					control.BackColor = backColor;
-			}
-		}
-
-		private bool TryPaintBackgroundFromCtlColor(PaintEventArgs e)
-		{
-			if (!UsesCtlColorMessage((uint)WindowsAPI.WM_CTLCOLORDLG))
-				return false;
-
-			var hdc = e.Graphics.GetHdc();
-
-			try
-			{
-				var hBrush = WindowsAPI.SendMessage(Handle, (uint)WindowsAPI.WM_CTLCOLORDLG, hdc, Handle);
-				ApplyCtlColorColors(this, hdc, (uint)WindowsAPI.WM_CTLCOLORDLG);
-
-				if (hBrush == 0)
-					return false;
-
-				WindowsAPI.GetClientRect(Handle, out var rc);
-				_ = WindowsAPI.FillRect(hdc, ref rc, hBrush);
-				return true;
-			}
-			finally
-			{
-				e.Graphics.ReleaseHdc(hdc);
-			}
-		}
-
-		private bool UsesCtlColorMessage(uint msg)
-			=> HasExternalWndProcOverride || Script.TheScript?.GuiData?.onMessageHandlers?.ContainsKey(msg) == true;
-
-		private static bool IsCtlColorMessage(uint msg)
-			=> msg is (uint)WindowsAPI.WM_CTLCOLOREDIT
-				or (uint)WindowsAPI.WM_CTLCOLORLISTBOX
-				or (uint)WindowsAPI.WM_CTLCOLORBTN
-				or (uint)WindowsAPI.WM_CTLCOLORDLG
-				or (uint)WindowsAPI.WM_CTLCOLORSTATIC;
-
-		private static Color ColorFromColorRef(uint colorRef)
-			=> Color.FromArgb((int)(colorRef & 0xFF), (int)((colorRef >> 8) & 0xFF), (int)((colorRef >> 16) & 0xFF));
 
 		[Browsable(false)]
 		protected override bool ShowWithoutActivation => showWithoutActivation;
