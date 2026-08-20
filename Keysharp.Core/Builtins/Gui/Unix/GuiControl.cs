@@ -328,8 +328,11 @@ namespace Keysharp.Builtins
 
 			public Control(params object[] args) : base(args)
 			{
-				if (args == null || args.Length == 0)
-					return;
+				//Refused rather than half-built, and checked by type rather than just by count: a Control with
+				//no toolkit control behind it has no working member at all, and reaching through the null raises
+				//a NullReferenceException that escapes the script's try/catch and kills the thread.
+				if (args == null || args.Length < 3 || args[0] is not Keysharp.Builtins.Gui || args[1] is not Forms.Control || args[2] == null)
+					throw new Error("Gui.Control cannot be constructed directly; add controls with Gui.Add().");
 
 				var g = args[0] as Gui;
 				var control = args[1] as Forms.Control;
