@@ -397,14 +397,7 @@ namespace Keysharp.Tests
 				File.WriteAllText(script,
 					"#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\nFileAppend('lean-pass', '*')\nExitApp(0)\n");
 
-				var compile = RunLauncher(["--errorstdout", "--compile", "exe-min", script]);
-				Assert.AreEqual(0, compile.ExitCode, "compile failed: " + compile.StdErr);
-#if WINDOWS
-				var executable = Path.ChangeExtension(script, ".exe");
-#else
-				var executable = Path.ChangeExtension(script, null);
-#endif
-				Assert.IsTrue(File.Exists(executable), $"compile produced no executable at {executable}");
+				var executable = BuildExecutable(script);
 				Assert.IsFalse(Directory.Exists(Path.Combine(root, "components", "scripting")));
 				Assert.IsFalse(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Any(file =>
 					Path.GetFileName(file).StartsWith("Keysharp.Components.Scripting.Parser", StringComparison.OrdinalIgnoreCase)
@@ -414,6 +407,44 @@ namespace Keysharp.Tests
 				var run = RunProcess(executable, []);
 				Assert.AreEqual(0, run.ExitCode, run.StdErr);
 				Assert.AreEqual("lean-pass", run.StdOut.Trim(), run.StdErr);
+			}
+			finally
+			{
+				try { Directory.Delete(root, true); } catch { }
+			}
+		}
+
+		/// <summary>
+		/// #ConsoleApp builds a console (CUI) executable instead of the default GUI one. On Windows that choice is
+		/// the PE subsystem field, which the shell reads before the process starts to decide whether to wait for it
+		/// and whether to hand it the terminal's stdio - so it can only be made at build time, and the produced file
+		/// is the only place it can be checked. Other platforms have no subsystem: there the directive is inert and
+		/// only its acceptance (a clean compile) is asserted.
+		/// </summary>
+		[Test, NonParallelizable]
+		public void ConsoleAppDirective()
+		{
+			var root = Path.Combine(Path.GetTempPath(), "ks-component-console-" + Guid.NewGuid().ToString("N"));
+			Directory.CreateDirectory(root);
+
+			try
+			{
+				// Same body twice, so the subsystem is the only difference between the two executables.
+				const string body = "#NoTrayIcon\n#ErrorStdOut\nFileAppend('console-pass', '*')\nExitApp(0)\n";
+				var consoleScript = Path.Combine(root, "console.ks");
+				var guiScript = Path.Combine(root, "gui.ks");
+				File.WriteAllText(consoleScript, "#ConsoleApp\n" + body);
+				File.WriteAllText(guiScript, body);
+				var consoleExe = BuildExecutable(consoleScript);
+				var guiExe = BuildExecutable(guiScript);
+#if WINDOWS
+				Assert.AreEqual(3, PeSubsystem(consoleExe), "#ConsoleApp must produce a console-subsystem executable");
+				Assert.AreEqual(2, PeSubsystem(guiExe), "without the directive the executable must stay a GUI one");
+#endif
+				// The stamped host still has to run: a subsystem edit that corrupted it would fail only here.
+				var run = RunProcess(consoleExe, []);
+				Assert.AreEqual(0, run.ExitCode, run.StdErr);
+				Assert.AreEqual("console-pass", run.StdOut.Trim(), run.StdErr);
 			}
 			finally
 			{
@@ -435,14 +466,7 @@ namespace Keysharp.Tests
 					+ "info := RunScript(\"#NoTrayIcon`n#ErrorStdOut`nFileAppend('nested-pass', '*')`nExitApp(0)\")\n"
 					+ "FileAppend(info.ExitCode ':' info.StdOut.Read(64), '*')\nExitApp()\n");
 
-				var compile = RunLauncher(["--errorstdout", "--compile", "exe-min", script]);
-				Assert.AreEqual(0, compile.ExitCode, "compile failed: " + compile.StdErr);
-#if WINDOWS
-				var executable = Path.ChangeExtension(script, ".exe");
-#else
-				var executable = Path.ChangeExtension(script, null);
-#endif
-				Assert.IsTrue(File.Exists(executable), $"compile produced no executable at {executable}");
+				var executable = BuildExecutable(script);
 				Assert.IsFalse(Directory.Exists(Path.Combine(root, "components", "scripting")),
 					"a minimal executable must carry components as integrity-checked embedded assets");
 
@@ -577,6 +601,34 @@ namespace Keysharp.Tests
 				CompilerHelper.requiredNativeDependencies.Single());
 			if (File.Exists(native))
 				File.Copy(native, Path.Combine(destination, Path.GetFileName(native)), true);
+		}
+
+		/// <summary>
+		/// Compiles a script to a standalone executable through the real launcher and returns its path. The name
+		/// differs per platform (only Windows appends .exe), which is why callers take it from here.
+		/// </summary>
+		private static string BuildExecutable(string script)
+		{
+			var compile = RunLauncher(["--errorstdout", "--compile", "exe-min", script]);
+			Assert.AreEqual(0, compile.ExitCode, "compile failed: " + compile.StdErr);
+#if WINDOWS
+			var executable = Path.ChangeExtension(script, ".exe");
+#else
+			var executable = Path.ChangeExtension(script, null);
+#endif
+			Assert.IsTrue(File.Exists(executable), $"compile produced no executable at {executable}");
+			return executable;
+		}
+
+		/// <summary>
+		/// Reads the PE subsystem field (2 = Windows GUI, 3 = console) straight out of the file, since nothing in
+		/// the .NET API surfaces it: the DOS header's e_lfanew at 0x3C locates the PE signature, and the field sits
+		/// 92 bytes past it (4 signature + 20 COFF header + 68 into the optional header).
+		/// </summary>
+		private static int PeSubsystem(string executable)
+		{
+			var image = File.ReadAllBytes(executable);
+			return BitConverter.ToUInt16(image, BitConverter.ToInt32(image, 0x3C) + 92);
 		}
 
 		private static (int ExitCode, string StdOut, string StdErr) RunLauncher(IReadOnlyList<string> arguments) =>

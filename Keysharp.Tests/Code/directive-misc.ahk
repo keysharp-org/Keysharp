@@ -11,6 +11,8 @@
 #SUSPENDEXEMPT 1
 #WINACTIVATEFORCE
 #DLLLOAD *i user32.dll
+; Compile-time only (it picks the PE subsystem of a --compile exe build), so here it just has to be accepted and do nothing.
+#CONSOLEAPP
 
 if (A_ClipboardTimeout == 2000)
 	FileAppend "pass", "*"

@@ -26,6 +26,9 @@ namespace Keysharp.Compilation
 
 		internal IReadOnlyCollection<string> RequiredComponents { get; set; } = [];
 
+		/// <summary>True when `#ConsoleApp` asked for a console (CUI) executable rather than a GUI one.</summary>
+		internal bool ConsoleApp { get; set; }
+
 		internal PackageManifest Packages { get; set; }
 
 		internal string DeclaredAssemblyName { get; set; }

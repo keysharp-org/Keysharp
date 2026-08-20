@@ -87,6 +87,7 @@ public sealed class CompilerComponent : IScriptCompiler
 		public string WarningText => compilation?.Warnings;
 		public string InlineCode => compilation?.InlineCode;
 		public IReadOnlyCollection<string> RequiredComponents => compilation?.RequiredComponents ?? [];
+		public bool ConsoleApp => compilation?.ConsoleApp ?? false;
 
 		internal string DeploySupportFiles(string destination)
 		{

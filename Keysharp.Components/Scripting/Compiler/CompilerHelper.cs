@@ -850,6 +850,7 @@ namespace Keysharp.Compilation
 					compilation.InlineDefines = lowerer.InlineDefines;
 					compilation.RequiredProviders = lowerer.RequiredProviders;
 					compilation.RequiredComponents = lowerer.RequiredComponents;
+					compilation.ConsoleApp = lowerer.ConsoleApp;
 
 					if (compilation.Unit == null || lowerer.Diagnostics.Count > 0)
 						foreach (var d in lowerer.Diagnostics)

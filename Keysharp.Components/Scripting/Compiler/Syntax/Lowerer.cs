@@ -98,6 +98,13 @@ namespace Keysharp.Compilation.Syntax
 		public IReadOnlyCollection<string> RequiredProviders => _requiredProviders;
 		public IReadOnlyCollection<string> RequiredComponents => _requiredComponents;
 
+		// #ConsoleApp: build the executable as a console (CUI) application rather than a GUI one. Compile-time
+		// only - it emits no code, and is surfaced to the host through the compilation result (see
+		// CompilerHelper.Build), which stamps the PE subsystem when it writes the apphost.
+		private bool _consoleApp;
+		/// <summary>True when the script asked to be built as a console application via `#ConsoleApp`.</summary>
+		public bool ConsoleApp => _consoleApp;
+
 		// Inline C# is emitted as one additional tree per script module; identity tracking catches unsupported nesting.
 		private List<(string Module, string ClassPath, CSharpDirective Dir)> _inlineBlocks;
 		private HashSet<Stmt> _csharpSeen;
@@ -1829,6 +1836,14 @@ namespace Keysharp.Compilation.Syntax
 				// tray icon would already have been created/shown by RunMainWindow, so the directive would be
 				// ignored (a brief tray flash on Linux).
 				case "NOTRAYICON": _noTrayIcon = true; return null;
+				// #ConsoleApp: build the compiled executable as a console (CUI) application, so a shell waits for it
+				// and its stdout/stdin are the terminal's. Windows decides both from the PE subsystem field, which is
+				// fixed before the process starts, so this cannot be a runtime setting - it is recorded here and
+				// applied when the host stamps the apphost (see Program.CompileToExe). It affects `--compile exe`
+				// only: running the script through the interpreter, or compiling it to a .cks, writes no apphost.
+				// Elsewhere it is simply inert - Linux and macOS have no subsystem concept, so a shell there always
+				// waits and stdio is always connected.
+				case "CONSOLEAPP": _consoleApp = true; return null;
 				case "NOMAINWINDOW": return Set("MainScript.NoMainWindow", True);
 				case "WINACTIVATEFORCE": return Set("MainScript.WinActivateForce", True);
 				// #MaxThreads N: global concurrent-thread cap (AHK clamps 1..255). MaxThreadsTotal is a uint field.

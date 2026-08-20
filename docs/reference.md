@@ -372,6 +372,11 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 * The `#ErrorStdOut` directive will not print to the console unless piping is used. For example:
 	+ `.\Keysharp.exe .\test.ahk | more`
 	+ `.\Keysharp.exe .\test.ahk | more > out.txt`
+* The `#ConsoleApp` directive is Keysharp-only, and is the equivalent of Ahk2Exe's `;@Ahk2Exe-ConsoleApp`. It makes `--compile exe` produce a console application rather than the default GUI one, which is what a command-line script needs:
+	+ A shell waits for the program to exit and reports its exit code, and its standard streams are the terminal's, so `FileAppend(text, "*")` prints and `FileOpen("*", "r")` reads typed input without any redirection.
+	+ On Windows this is the executable's PE subsystem field, which the shell reads before the process starts. Nothing done at runtime can substitute for it, which is why it is a build-time directive rather than a setting.
+	+ Without it the executable stays a GUI one, so a double-clicked script never flashes a console window. That is also the trade-off: a console-subsystem executable launched from Explorer gets a console window of its own.
+	+ It is ignored when the script is interpreted or compiled to a `.cks`, since neither writes an executable, and it is inert on Linux and macOS, where executables have no subsystem and a shell always waits.
 * If a script is compiled then none of Keysharp or AutoHotkey command parameters apply.
 
 ### Syntax

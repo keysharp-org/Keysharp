@@ -180,6 +180,17 @@
                  },
                  {
                      "category":  "Environment/System",
+                     "feature":  "#ConsoleApp",
+                     "syntax":  "#ConsoleApp",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp-only, and the AutoHotkey equivalent of Ahk2Exe's ;@Ahk2Exe-ConsoleApp. Builds a --compile exe executable as a console (CUI) application, so a shell waits for it and its stdin/stdout are the terminal's. Windows fixes this in the PE subsystem before the process starts, so it cannot be a runtime setting; GUI remains the default so a double-clicked script never flashes a console window. Ignored when the script is interpreted or compiled to a .cks, since neither writes an executable, and inert on Linux and macOS, where executables have no subsystem and a shell always waits.",
+                     "tested-by":  "directive-misc.ahk"
+                 },
+                 {
+                     "category":  "Environment/System",
                      "feature":  "#CSharp",
                      "syntax":  "#CSharp ... #EndCSharp  |  #CSharp \"file.cs\"",
                      "windows":  "full",

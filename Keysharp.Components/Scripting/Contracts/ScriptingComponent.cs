@@ -232,6 +232,13 @@ public interface IScriptCompilationResult
 	string WarningText { get; }
 	string InlineCode { get; }
 	IReadOnlyCollection<string> RequiredComponents { get; }
+
+	/// <summary>
+	/// True when the script carries `#ConsoleApp`, asking for a console (CUI) executable rather than a GUI one.
+	/// Only an executable can honour it: Windows fixes the choice in the PE subsystem field before the process
+	/// starts, so the host applies it when it stamps the apphost.
+	/// </summary>
+	bool ConsoleApp { get; }
 }
 
 public interface IScriptingComponent

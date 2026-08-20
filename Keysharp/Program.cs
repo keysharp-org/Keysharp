@@ -271,11 +271,15 @@ namespace Keysharp.Main
 					assemblyToCopyResorcesFrom: outputDllPath);
 #elif WINDOWS
 				finalPath = $"{path}.exe";
+				// #ConsoleApp inverts this: it is the PE subsystem field, and it is what makes a shell wait for the
+				// process and hand it the terminal's stdin/stdout. Windows reads it before the process starts, so it
+				// can only be chosen here, at build time - nothing the script does at runtime can change either
+				// behaviour. GUI stays the default so a double-clicked script never flashes a console window.
 				HostWriter.CreateAppHost(
 					appHostSourceFilePath: @$"{WindowsHostPackRoot}{ver}\runtimes\{WindowsHostRid}\native\apphost.exe",
 					appHostDestinationFilePath: finalPath,
 					appBinaryFilePath: $"{namenoext}.dll",
-					windowsGraphicalUserInterface: true,
+					windowsGraphicalUserInterface: !exeCompilation.ConsoleApp,
 					assemblyToCopyResorcesFrom: outputDllPath);
 #endif
 
