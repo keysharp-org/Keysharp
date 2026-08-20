@@ -629,6 +629,14 @@ namespace Keysharp.Builtins
 				if (enumerableMap != null)
 					enumerableMap = null;
 
+				if (value == null)
+				{
+					if (!map.Remove(key))
+						_ = Errors.UnsetItemErrorOccurred("Item has no value.");
+
+					return;
+				}
+
 				Insert(key, value);
 			}
 		}

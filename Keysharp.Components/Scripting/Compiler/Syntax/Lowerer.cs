@@ -3922,6 +3922,15 @@ namespace Keysharp.Compilation.Syntax
 			if (named != null)
 				list.Add(NamedArgsOf(named));
 
+			// A lone `unset` ARGUMENT lowers to a bare null literal, which C# binds to a `params object[]`
+			// parameter as a NULL ARRAY rather than a one-element one -- so `f(unset)` reached the callee as no
+			// arguments at all, where AutoHotkey passes one unset element (`f(a*)` sees Length 1, Has(1) false).
+			// The cast forces the packing. Matched on the SOURCE keyword, not the lowered literal: an OMITTED
+			// argument slot lowers to the same null and has to keep meaning omitted.
+			if (list.Count == 1 && named == null && positional.Count == 1
+					&& positional[0].Value is NameExpr un && un.Name.Equals("unset", System.StringComparison.OrdinalIgnoreCase))
+				list[0] = SyntaxFactory.CastExpression(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.ObjectKeyword)), list[0]);
+
 			return list;
 		}
 

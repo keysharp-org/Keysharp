@@ -742,3 +742,58 @@ m := Map("one", 1, "two", 2)
 m.MaxIndex()
 m.MinIndex()
 FileAppend "pass", "*"
+
+; Assigning unset to a map item REMOVES it, exactly as Delete does, so Has() and [] can never disagree.
+; Every expectation here was measured against AutoHotkey v2.1-alpha.30.
+
+; Existing key: removed.
+
+um := Map("b", 42)
+um["b"] := unset
+
+if (um.Count == 0 && !um.Has("b"))
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; A key that is not there raises UnsetItemError, and nothing else in the map is disturbed.
+
+um2 := Map("x", 1)
+threw := 0
+
+try
+	um2["y"] := unset
+catch UnsetItemError
+	threw := 1
+
+if (threw && um2.Count == 1 && um2["x"] == 1)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; A Default does not suppress that raise.
+
+um3 := Map("p", 1)
+um3.Default := "D"
+threw := 0
+
+try
+	um3["q"] := unset
+catch UnsetItemError
+	threw := 1
+
+if (threw)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; And a removed key can be set again.
+
+um4 := Map("k", 1)
+um4["k"] := unset
+um4["k"] := 2
+
+if (um4.Count == 1 && um4["k"] == 2)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"

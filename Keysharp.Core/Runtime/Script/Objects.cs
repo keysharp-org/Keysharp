@@ -439,8 +439,11 @@ namespace Keysharp.Runtime
 		}
 
 		// . strict base, strict result
+		// UnsetItemError, not the broader UnsetError: reading an element that has no value is what AutoHotkey
+		// raises this for (an array hole, a missing map key), and a script catching `UnsetItemError` has to
+		// see it. It derives from UnsetError, so anything catching the broader type still catches it.
 		public static object GetIndex(object item, params object[] index) =>
-			GetIndexOrNull(item, index) ?? Errors.UnsetErrorOccurred($"Index {(index.Length > 0 ? index[0] : "[]")} of {item}");
+			GetIndexOrNull(item, index) ?? Errors.UnsetItemErrorOccurred($"Index {(index.Length > 0 ? index[0] : "[]")} of {item} has no value.");
 		// . in ?? context: strict base, allow null result
 		public static object GetIndexOrNull(object item, params object[] index)
 		{

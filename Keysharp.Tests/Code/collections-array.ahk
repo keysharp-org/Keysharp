@@ -1114,3 +1114,111 @@ if (spreadIdxMap["a"] == 2)
 	FileAppend "pass", "*"
 else
 	FileAppend "fail", "*"
+
+; An array element can be value-less -- a "hole" -- which keeps the array's Length while Has() reports
+; the slot as empty. Every expectation here was measured against AutoHotkey v2.1-alpha.30.
+
+; Assigning unset makes a hole: Length is kept and Has is false.
+
+holeArr := [1, 2, 3]
+holeArr[2] := unset
+
+if (holeArr.Length == 3 && holeArr.Has(1) && !holeArr.Has(2) && holeArr.Has(3))
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; Reading a hole raises UnsetItemError, not the broader UnsetError.
+
+threw := 0
+
+try
+	v := holeArr[2]
+catch UnsetItemError
+	threw := 1
+
+if (threw)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; A hole can be refilled.
+
+holeArr[2] := 99
+
+if (holeArr.Has(2) && holeArr[2] == 99 && holeArr.Length == 3)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; Enumeration yields the hole as unset rather than raising.
+
+holeArr2 := [1, 2, 3]
+holeArr2[2] := unset
+s := ""
+
+for i, val in holeArr2
+	s .= i "=" (IsSet(val) ? val : "UNSET") ","
+
+if (s == "1=1,2=UNSET,3=3,")
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; A lone unset ARGUMENT reaches a variadic as ONE unset element, not as no arguments at all: a C#
+; `params` parameter would otherwise bind the single null as a null array, i.e. an empty argument list.
+
+CountArgs(args*) => args.Length
+
+if (CountArgs() == 0 &&
+	CountArgs(unset) == 1 &&
+	CountArgs(1, unset) == 2 &&
+	CountArgs(unset, 1) == 2 &&
+	CountArgs(unset, unset) == 2)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+ProbeArgs(args*) => args.Length "/" (args.Length >= 1 && args.Has(1) ? "set" : "hole")
+
+if (ProbeArgs(unset) == "1/hole")
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; Which is what makes Push(unset) append a hole rather than nothing.
+
+pushArr := [1]
+pushArr.Push(unset)
+
+if (pushArr.Length == 2 && !pushArr.Has(2))
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+pushArr2 := [1]
+pushArr2.Push(2, unset, 4)
+
+if (pushArr2.Length == 4 && pushArr2.Has(2) && !pushArr2.Has(3) && pushArr2[4] == 4)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; InsertAt places a hole too.
+
+insertArr := [1, 2]
+insertArr.InsertAt(2, unset)
+
+if (insertArr.Length == 3 && !insertArr.Has(2) && insertArr[3] == 2)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+; And an array literal of a lone unset is one hole, not an empty array.
+
+literalArr := [unset]
+
+if (literalArr.Length == 1 && !literalArr.Has(1))
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
