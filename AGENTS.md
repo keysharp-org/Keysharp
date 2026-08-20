@@ -102,6 +102,14 @@ dotnet test Keysharp.Tests/Keysharp.Tests.csproj --filter "FullyQualifiedName~Ma
 
 > **Important**: Do not run commands to build parts of the project and run tests at the same time.
 
+> **Run as few tests as possible, as rarely as possible.** The curated subset takes minutes; running it after every edit wastes far more time than it saves. Pick the narrowest thing that could actually catch a regression in what you changed, and run it **once, at the end** — not after each step of a multi-part change.
+> - **No test run at all** for changes that cannot alter behavior: comments, XML docs, whitespace, renaming a local, `.md` files. A build is enough to prove those still compile, and often even that is unnecessary.
+> - **One targeted test** (`--filter "FullyQualifiedName~SomeTests.Method"`) while iterating on a specific fix.
+> - **One category** (`--filter "Category=Misc"`) for a change confined to that area.
+> - **The full curated subset** only once the change is finished, or before handing work over — not as a progress check.
+>
+> The same applies to builds: prefer `-t:Compile` to check syntax without touching the output tree, and do not rebuild after an edit that only touched comments.
+
 Test `.ahk` scripts live in `Keysharp.Tests/Code/`. Script-visible behavior is tested through `TestScript("script-name", true/false)`, which compiles and runs the matching `.ahk` file and checks for `PASS` in output. Direct C# tests are reserved for deterministic internal contracts that cannot safely be reached through a script and are marked `Category("Internal")`.
 
 See `Keysharp.Tests/TESTING.md` for the test-boundary, naming, and category conventions.
@@ -154,6 +162,8 @@ If KeysharpDocs is not present alongside this repo, still do steps 1–3 and not
 - Suppress warnings 1701, 1702, 8981, 0164, 8974 project-wide (already in `.csproj`). Do not add new `#pragma warning disable` without a comment explaining why.
 - Use comments sparingly, and keep the ones that earn their place as short as they can be. A comment should explain why the code is the way it is — including why an obvious alternative was rejected — not restate what it does.
 - Do not write comments about previous state ("this *used* to …", "now also handles …", "changed from …"). The reader only sees the current code and has no knowledge of what it replaced.
+- Everything a script can see is **PascalCase and spelled out** — properties, method and constructor parameters, and the keys of any object handed back to a script (`Monitor.Width`, `Highlight(X, Y, Width, Height)`, `Monitor.Bounds` → `{X, Y, Width, Height}`, `Image.MeasureText` → `{Width, Height}`). No `W`/`H`/`w`/`h` abbreviations, and no lowercase keys: property lookup is case-insensitive, so `w` and `Width` are *different* names, not two spellings of one, and a script reading `.w` from a `Width` key fails. The exceptions are AutoHotkey's own option-string letters, which are compatibility surface and must not move — `InputBox(…, "W300 H200")`, `Gui.Add(…, "w200 h30")`.
+- Write comments in a plain, level voice. No shouting: do not capitalise whole words for emphasis (`NOT`, `ONLY`, `MUST`, `NOTE`), and do not lean on bold, italics or exclamation marks to make a point. If something is genuinely easy to get wrong, say so in an ordinary sentence — the reason carries the weight, not the typography. The same applies to XML doc comments and to comments in `.ks`/`.ahk` scripts.
 
 ## Useful entry points for common tasks
 
