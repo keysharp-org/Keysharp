@@ -13,64 +13,108 @@ namespace Keysharp.Builtins
 			}
 
 			string fileName = filename == null ? A_ScriptFullPath : filename.As();
-			string workingDir = filename == null ? A_ScriptDir : Path.GetDirectoryName(fileName);
-			var script = Script.TheScript;
-			var title = script.mainWindow != null ? script.mainWindow.Text : "";
-			var tv = script.Threads.CurrentThread.configData;
-			var mm = tv.titleMatchMode;
-			tv.titleMatchMode = 2L;//Match anywhere.
-			var hwnd = WindowX.WinExist(A_ScriptName, "", title, "");
-			tv.titleMatchMode = mm;
-			var wi = WindowQuery.CreateWindow((nint)hwnd);
-			var classname = wi.ClassName;//Logic taken from AHK.
 
-			if (classname == "#32770" || classname == "AutoHotkey" || classname == "Keysharp")//MessageBox(), InputBox(), FileSelect(), or GUI/script-owned window.
-				hwnd = 0;
-
-			if (hwnd == 0)
+			//Raise the window an editor already has it open in. Only searchable by A_ScriptName, so it can
+			//only answer for the script itself; any other file skips it and gets opened.
+			if (filename == null)
 			{
-#if LINUX
-				_ = $"$EDITOR {A_ScriptFullPath}".Bash(wait: false);
-#elif WINDOWS
-				var ed = "";
+				var script = Script.TheScript;
+				var title = script.mainWindow != null ? script.mainWindow.Text : "";
+				var tv = script.Threads.CurrentThread.configData;
+				var mm = tv.titleMatchMode;
+				tv.titleMatchMode = 2L;//Match anywhere.
+				var hwnd = WindowX.WinExist(A_ScriptName, "", title, "");
+				tv.titleMatchMode = mm;
+				var wi = WindowQuery.CreateWindow((nint)hwnd);
+				var classname = wi.ClassName;//Logic taken from AHK.
 
-				try
+				if (classname == "#32770" || classname == "AutoHotkey" || classname == "Keysharp")//MessageBox(), InputBox(), FileSelect(), or GUI/script-owned window.
+					hwnd = 0;
+
+				if (hwnd != 0)
 				{
-					using (new Errors.SuppressErrors()) //Suppress internal error processing
-						ed = Registrys.RegRead(@"HKCR\KeysharpScript\Shell\Edit\Command") as string;
+					Platform.Window.TryActivate(wi.Handle);
+					return DefaultObject;
 				}
-				catch
-				{
-				}
+			}
 
-				//try
-				//{
-				//  if (string.IsNullOrEmpty(ed))
-				//      ed = Registrys.RegRead(@"HKCR\AutoHotkeyScript\Shell\Edit\Command") as string;
-				//}
-				//catch
-				//{
-				//}
-				object pid = null;
-
-				if (!string.IsNullOrEmpty(ed))
-				{
-					var prcIndex = ed.IndexOf('%');
-					ed = prcIndex != -1 ? ed.Substring(0, prcIndex) : ed;
-					_ = Processes.Run(ed, workingDir, "", pid, fileName);
-				}
-				else
-					_ = Processes.Run($"Notepad.exe", workingDir, "", pid, fileName);
-
+#if !WINDOWS
+			//Deliberately not the handler registered for the file type: keysharp.desktop claims
+			//application/x-keysharp and Keysharp.app the same document types, so a plain xdg-open/open on a
+			//.ks would run the script instead of showing it.
+			//
+			//$VISUAL/$EDITOR are tried first, being the user's choice, but only tried: they are usually
+			//terminal editors and this process has no terminal, so one of them typically starts and dies at
+			//once. launch() therefore runs the candidate in the background and checks it is still alive a
+			//moment later, falling through to the desktop's own text editor when it is not. Nothing here may
+			//exec, or the first candidate would replace the shell and make every fallback unreachable.
+			var sh =
+				"f=" + BashQuote(fileName) + "\n" +
+				"launch() {\n" +
+				"  [ -n \"$1\" ] || return 1\n" +
+				"  command -v \"$1\" >/dev/null 2>&1 || return 1\n" +
+				"  \"$@\" >/dev/null 2>&1 &\n" +
+				"  p=$!\n" +
+				"  sleep 0.3\n" +
+				"  kill -0 \"$p\" 2>/dev/null\n" +
+				"}\n" +
+				//Unquoted on purpose, so VISUAL="code -w" splits into command plus arguments.
+				"if [ -n \"$VISUAL\" ]; then set -- $VISUAL \"$f\"; launch \"$@\" && exit 0; fi\n" +
+				"if [ -n \"$EDITOR\" ]; then set -- $EDITOR \"$f\"; launch \"$@\" && exit 0; fi\n" +
+#if OSX
+				//`open -t` reaches the default text editor rather than the extension's handler.
+				"exec open -t \"$f\"\n";
+#else
+				//No `open -t` here, so the text/plain handler is resolved by hand. xdg-open is the last
+				//resort, and the one call that can re-run a .ks.
+				"ed=$(xdg-mime query default text/plain 2>/dev/null)\n" +
+				"if [ -n \"$ed\" ] && command -v gtk-launch >/dev/null 2>&1; then exec gtk-launch \"${ed%.desktop}\" \"$f\"; fi\n" +
+				"exec xdg-open \"$f\"\n";
 #endif
+			_ = sh.Bash(wait: false);
+#else
+			string workingDir = filename == null ? A_ScriptDir : Path.GetDirectoryName(fileName);
+			var ed = "";
+
+			try
+			{
+				using (new Errors.SuppressErrors()) //Suppress internal error processing
+					ed = Registrys.RegRead(@"HKCR\KeysharpScript\Shell\Edit\Command") as string;
+			}
+			catch
+			{
+			}
+
+			//try
+			//{
+			//  if (string.IsNullOrEmpty(ed))
+			//      ed = Registrys.RegRead(@"HKCR\AutoHotkeyScript\Shell\Edit\Command") as string;
+			//}
+			//catch
+			//{
+			//}
+			object pid = null;
+
+			if (!string.IsNullOrEmpty(ed))
+			{
+				var prcIndex = ed.IndexOf('%');
+				ed = prcIndex != -1 ? ed.Substring(0, prcIndex) : ed;
+				_ = Processes.Run(ed, workingDir, "", pid, fileName);
 			}
 			else
-			{
-				Platform.Window.TryActivate(wi.Handle);
-			}
+				_ = Processes.Run($"Notepad.exe", workingDir, "", pid, fileName);
 
+#endif
 			return DefaultObject;
 		}
+
+#if !WINDOWS
+		/// <summary>
+		/// Quotes a path for /bin/bash: single quotes are literal, and an embedded one is closed,
+		/// escaped and reopened.
+		/// </summary>
+		private static string BashQuote(string s) => "'" + s.Replace("'", @"'\''") + "'";
+#endif
 
 		internal static string GetVars(object obj = null, List<KeyValuePair<string, object>> execLocals = null, string execName = null)
 		{
