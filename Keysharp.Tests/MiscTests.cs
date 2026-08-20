@@ -186,6 +186,17 @@ namespace Keysharp.Tests
 		[Test, Category("Misc"), NonParallelizable]
 		public void MiscSyntax() => Assert.IsTrue(TestScript("misc-syntax", false));
 
+		// Ks.Font: the option round-trip, the ""-means-unset contract, subclassing, and the Gui/Image
+		// integration. Creates Guis but shows none, so it needs no interactive desktop. Not run through
+		// the function-wrapped variant, since it declares a class to cover `extends Font`.
+		[Test, Category("Misc"), NonParallelizable]
+		public void KsFont()
+		{
+			//Output passed as the assertion message, so a failure names the checks that broke.
+			var output = RunScript(Path.Combine(path, "ks-font.ahk"), "ks-font", true, false);
+			Assert.IsTrue(HasPassed(output), output);
+		}
+
 #if WINDOWS
 		// A native IDispatch client reaching a Keysharp object through ObjPtr must be able to pass
 		// VT_BYREF|VT_VARIANT out-parameters -- that is how an enumerator hands back its key and value.

@@ -5025,7 +5025,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Opens text in the default editor.",
+                     "notes":  "Opens the script, or the file named by the optional argument, in a text editor rather than the extension's handler.",
                      "tested-by":  "ControlTests/control_get_focus.ahk"
                  },
                  {
@@ -5555,6 +5555,17 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
+                     "feature":  "Font",
+                     "syntax":  "#import KS { Font }",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "A font as a value object carrying what Gui.SetFont takes, each property optional, plus the platform's Ui/Emoji/GuiDefault/Monospace families.",
+                     "tested-by":  "ks-font.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
                      "feature":  "FormatCs()",
                      "syntax":  "",
                      "windows":  "full",
@@ -5865,6 +5876,17 @@
                  },
                  {
                      "category":  "Windowing/GUI",
+                     "feature":  "Gui.Control.Font",
+                     "syntax":  "f := MyCtrl.Font",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Gets or sets the control\u0027s font as a detached Ks.Font snapshot; colour round-trips through ForeColor.",
+                     "tested-by":  "ks-font.ahk"
+                 },
+                 {
+                     "category":  "Windowing/GUI",
                      "feature":  "Gui.Control.GetPos()",
                      "syntax":  "",
                      "windows":  "full",
@@ -6066,6 +6088,17 @@
                  },
                  {
                      "category":  "Windowing/GUI",
+                     "feature":  "Gui.Font",
+                     "syntax":  "MyGui.Font := Font.Ui",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Gets or sets the font later controls inherit, as a detached Ks.Font snapshot.",
+                     "tested-by":  "ks-font.ahk"
+                 },
+                 {
+                     "category":  "Windowing/GUI",
                      "feature":  "Gui.GetClientPos()",
                      "syntax":  "",
                      "windows":  "full",
@@ -6209,7 +6242,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Sets options for the window. Raw Win32 style and extended-style options (+0x..., +E0x...) have no portable equivalent and are ignored on Linux and macOS; the named options are honoured through the toolkit\u0027s own properties. The Theme option is unsupported on every platform.",
+                     "notes":  "Sets options for the window. Raw Win32 style and extended-style options (+0x..., +E0x...) have no portable equivalent and are ignored on Linux and macOS; the named options are honoured through the toolkit\u0027s own properties. The Theme option is unsupported on every platform. +Round rounds the window\u0027s outer corners, on Windows 11 only.",
                      "tested-by":  "ControlTests/picture_tests.ahk"
                  },
                  {
@@ -6495,7 +6528,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Cross-platform image class for capturing, loading, or creating an image, then drawing, transforming, searching, and reading/writing its pixels before saving it or handing out a bitmap handle. Search/SearchAll/SearchPixel return match objects ({x, y[, color]}, \"\" or an empty array on a miss) with an optional flat (x, y, w, h) region; MeasureText returns {w, h}; fonts use Gui.SetFont-style (Options, FontName) arguments; the capture origin/density metadata is exposed as OriginX/OriginY/ScaleX/ScaleY (\"\" after Rotate/Flip until SetOrigin re-anchors); the per-pixel alpha transform is Alpha(0..1). Full on Windows, partial on Linux (X11); Wayland and macOS are unverified. Replaces the earlier ImageCapture() function.",
+                     "notes":  "Cross-platform image class for capturing, loading, or creating an image, then drawing, transforming, searching, and reading/writing its pixels before saving it or handing out a bitmap handle. Search/SearchAll/SearchPixel return match objects ({X, Y[, Color]}, \"\" or an empty array on a miss) with an optional flat (x, y, width, height) region; MeasureText returns {Width, Height}; fonts use Gui.SetFont-style (Options, FontName) arguments; the capture origin/density metadata is exposed as OriginX/OriginY/ScaleX/ScaleY (\"\" after Rotate/Flip until SetOrigin re-anchors); the per-pixel alpha transform is Alpha(0..1). Full on Windows, partial on Linux (X11); Wayland and macOS are unverified. Replaces the earlier ImageCapture() function.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -8034,7 +8067,7 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "Monitor.X / .Y / .W / .H / .Bounds / .WorkArea",
+                     "feature":  "Monitor.X / .Y / .Width / .Height / .Bounds / .WorkArea",
                      "syntax":  "m.X, m.WorkArea.w",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -9027,7 +9060,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Subscribes to text caret (insertion point) movement. hwnd is the caret owner's top-level window and A_EventInfo holds the caret rectangle { x, y, w, h } in screen coordinates; unchanged positions are suppressed. Sourced from the same accessibility plumbing as CaretGetPos, so coverage matches it: Windows uses the MSAA caret (EVENT_OBJECT_LOCATIONCHANGE on OBJID_CARET), Linux the AT-SPI object:text-caret-moved signal, macOS the AXSelectedTextChanged notification. Applications that draw their own caret without exposing it to accessibility report nothing.",
+                     "notes":  "Subscribes to text caret (insertion point) movement. hwnd is the caret owner's top-level window and A_EventInfo holds the caret rectangle { X, Y, Width, Height } in screen coordinates; unchanged positions are suppressed. Sourced from the same accessibility plumbing as CaretGetPos, so coverage matches it: Windows uses the MSAA caret (EVENT_OBJECT_LOCATIONCHANGE on OBJID_CARET), Linux the AT-SPI object:text-caret-moved signal, macOS the AXSelectedTextChanged notification. Applications that draw their own caret without exposing it to accessibility report nothing.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11333,7 +11366,7 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Highlight",
-                     "syntax":  "Highlight(X, Y, W, H, Color?, Thickness?)",
+                     "syntax":  "Highlight(X, Y, Width, Height, Color?, Thickness?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",

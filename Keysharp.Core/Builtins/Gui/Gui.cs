@@ -461,8 +461,6 @@ namespace Keysharp.Builtins
 			set => form.Visible = value.Ab();
 		}
 
-		internal Font Font { get; set; }
-
 		internal Forms.Control LastContainer
 		{
 			get => lastContainer;
@@ -2876,6 +2874,25 @@ namespace Keysharp.Builtins
 			form.WindowState = FormWindowState.Normal;
 			ReassertWindowStateOnWayland(FormWindowState.Normal);
 			return DefaultObject;
+		}
+
+		/// <summary>
+		/// The font controls added from here on inherit, as a <see cref="Ks.Font"/>. Reading returns a
+		/// detached copy; assigning applies only the properties the font sets, so a font carrying nothing
+		/// but a family swaps the family and leaves the size alone. The Ui/Emoji/GuiDefault factories are
+		/// the other extreme - fully resolved, so assigning one of those replaces size and styles too.
+		/// </summary>
+		public object Font
+		{
+			get => Ks.Font.FromControl(form.Font, form.ForeColor);
+
+			set
+			{
+				if (value is Ks.Font f)
+					form.SetFont(f.Options, f.Name);
+				else
+					_ = Errors.TypeErrorOccurred(value, typeof(Ks.Font));
+			}
 		}
 
 		public object SetFont(object options = null, object fontName = null)

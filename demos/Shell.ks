@@ -1,5 +1,5 @@
 #Requires AutoHotkey v2.0
-#import KS { Image, Overlay, WinFromPoint, Monitor }
+#import KS { Font, Image, Overlay, WinFromPoint, Monitor }
                                            ; Import here so this shared layer is self-contained; duplicate imports from
                                            ; an including demo are harmless because KS imports are script-global.
 
@@ -60,7 +60,7 @@ class Shell {
         local img := ""
 
         try {
-            local fontName := this.EmojiFont()
+            local fontName := Font.Emoji.Name
             img := Image.Create(size, size)
             local sz := img.MeasureText(emoji, "s" fontSize, fontName)
             img.DrawText(emoji, Round((size - sz.Width) / 2), Round((size - sz.Height) / 2), "0xFFFFFFFF", "s" fontSize, fontName)
@@ -116,16 +116,6 @@ class Shell {
         parent.Add(it[1], it[2])                 ; [label, callback] (optionally checkable)
         if (it.Length >= 3 && it[3])
             parent.Check(it[1])
-    }
-
-    static EmojiFont() {
-#if OSX
-        return "Apple Color Emoji"
-#elif LINUX
-        return "Noto Color Emoji"
-#else
-        return "Segoe UI Emoji"
-#endif
     }
 
     ; --- the cheat-sheet card ----------------------------------------------

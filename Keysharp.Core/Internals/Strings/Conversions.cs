@@ -103,6 +103,28 @@ namespace Keysharp.Internals.Strings
 		}
 
 		/// <summary>
+		/// The inverse of <see cref="ScaleFontSize"/>: a native point size back to the Windows-convention
+		/// number a script would have written, so that reading a size and writing it back is a no-op on
+		/// macOS too. Not exactly lossless there, since ScaleFontSize rounds to whole points going in.
+		/// </summary>
+		/// <summary>Sets or clears one flag of an enum, since the toolkits model styles as flag sets.</summary>
+		private static T Flag<T>(T flags, T bit, bool on) where T : struct, Enum
+		{
+			var f = Convert.ToInt64(flags);
+			var b = Convert.ToInt64(bit);
+			return (T)Enum.ToObject(typeof(T), on ? f | b : f & ~b);
+		}
+
+		internal static float UnscaleFontSize(float size)
+		{
+#if OSX
+			return size * (72f / 96f);
+#else
+			return size;
+#endif
+		}
+
+		/// <summary>
 		/// Parses a string as a boolean flag: "1"/"true"/"on" => true, "0"/"false"/"off" => false (words
 		/// case-insensitive). Returns null for null/empty or any unrecognized value, so callers can supply
 		/// their own default. Does not trim - trim beforehand if leading/trailing whitespace should be ignored.
@@ -331,51 +353,15 @@ namespace Keysharp.Internals.Strings
 		internal static Font ParseFont(Font standard, string styles, string family = null)
 	{
 			family = string.IsNullOrEmpty(family) ? standard.FontFamily.Name : family;
-			var size = standard.Size;
+			//Tokenized by Ks.Font, which owns the whole option vocabulary; this only applies the result.
+			var spec = new Ks.Font(null);
+			spec.Parse(styles);
+			var size = spec.SizeOr(standard.Size);
 			var display = standard.Style;
-			var weight = 400;
-			var quality = 0;
-
-			foreach (Range r in styles.AsSpan().SplitAny(Spaces))
-			{
-				var opt = styles.AsSpan(r).Trim();
-
-				if (opt.Length > 0)
-				{
-					if (Options.TryParse(opt, "s", ref size)) { }
-					else if (Options.TryParse(opt, "q", ref quality)) { }
-					else if (Options.TryParse(opt, "w", ref weight))
-					{
-						if (weight <= 400)
-							display &= ~FontStyle.Bold;
-						else if (weight >= 700)
-							display |= FontStyle.Bold;
-					}
-
-					switch (opt)
-					{
-						case var b when opt.Equals(Keyword_Bold, StringComparison.OrdinalIgnoreCase):
-							display |= FontStyle.Bold;
-							break;
-
-						case var b when opt.Equals(Keyword_Italic, StringComparison.OrdinalIgnoreCase):
-							display |= FontStyle.Italic;
-							break;
-
-						case var b when opt.Equals(Keyword_Strike, StringComparison.OrdinalIgnoreCase):
-							display |= FontStyle.Strikeout;
-							break;
-
-						case var b when opt.Equals(Keyword_Underline, StringComparison.OrdinalIgnoreCase):
-							display |= FontStyle.Underline;
-							break;
-
-						case var b when opt.Equals(Keyword_Norm, StringComparison.OrdinalIgnoreCase):
-							display = FontStyle.Regular;
-							break;
-					}
-				}
-			}
+			display = Flag(display, FontStyle.Bold, spec.BoldOr(display.HasFlag(FontStyle.Bold)));
+			display = Flag(display, FontStyle.Italic, spec.ItalicOr(display.HasFlag(FontStyle.Italic)));
+			display = Flag(display, FontStyle.Underline, spec.UnderlineOr(display.HasFlag(FontStyle.Underline)));
+			display = Flag(display, FontStyle.Strikeout, spec.StrikeOr(display.HasFlag(FontStyle.Strikeout)));
 
 			FontFamily fam;
 			try
@@ -405,56 +391,17 @@ namespace Keysharp.Internals.Strings
 			{
 				return standard;
 			}
-			var size = standard.Size;
+			//Tokenized by Ks.Font, which owns the whole option vocabulary; this only applies the result.
+			var spec = new Ks.Font(null);
+			spec.Parse(styles);
+			//The script's size is in the Windows convention, so convert to this platform's points.
+			var size = spec.size.HasValue ? ScaleFontSize((float)spec.size.Value) : standard.Size;
 			var display = standard.FontStyle;
-			var weight = 400;
-			var quality = 0;
-			var decorations = FontDecoration.None;
-
-			foreach (Range r in styles.AsSpan().SplitAny(Spaces))
-			{
-				var opt = styles.AsSpan(r).Trim();
-
-				if (opt.Length > 0)
-				{
-					if (Options.TryParse(opt, "s", ref size))
-					{
-						// Convert the script's Windows-convention point size to this platform's equivalent.
-						size = ScaleFontSize(size);
-					}
-					else if (Options.TryParse(opt, "q", ref quality)) { }
-					else if (Options.TryParse(opt, "w", ref weight))
-					{
-						if (weight <= 400)
-							display &= ~FontStyle.Bold;
-						else if (weight >= 700)
-							display |= FontStyle.Bold;
-					}
-
-					switch (opt)
-					{
-						case var b when opt.Equals(Keyword_Bold, StringComparison.OrdinalIgnoreCase):
-							display |= FontStyle.Bold;
-							break;
-
-						case var b when opt.Equals(Keyword_Italic, StringComparison.OrdinalIgnoreCase):
-							display |= FontStyle.Italic;
-							break;
-
-						case var b when opt.Equals(Keyword_Strike, StringComparison.OrdinalIgnoreCase):
-							decorations |= FontDecoration.Strikethrough;
-							break;
-
-						case var b when opt.Equals(Keyword_Underline, StringComparison.OrdinalIgnoreCase):
-							decorations |= FontDecoration.Underline;
-							break;
-
-						case var b when opt.Equals(Keyword_Norm, StringComparison.OrdinalIgnoreCase):
-							decorations = FontDecoration.None;
-							break;
-					}
-				}
-			}
+			display = Flag(display, FontStyle.Bold, spec.BoldOr(display.HasFlag(FontStyle.Bold)));
+			display = Flag(display, FontStyle.Italic, spec.ItalicOr(display.HasFlag(FontStyle.Italic)));
+			var decorations = standard.FontDecoration;
+			decorations = Flag(decorations, FontDecoration.Underline, spec.UnderlineOr(decorations.HasFlag(FontDecoration.Underline)));
+			decorations = Flag(decorations, FontDecoration.Strikethrough, spec.StrikeOr(decorations.HasFlag(FontDecoration.Strikethrough)));
 
 			// When the requested family isn't installed on this system (e.g. "Comic Sans MS"
 			// on Linux), Eto's Font constructor throws ArgumentOutOfRangeException. Mirror

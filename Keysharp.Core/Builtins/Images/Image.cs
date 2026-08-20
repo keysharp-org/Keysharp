@@ -1,3 +1,11 @@
+// The nested Ks.Font class shadows the ambient toolkit Font type everywhere under Ks, and the text
+// rendering below wants the toolkit's.
+#if WINDOWS
+using NativeFont = System.Drawing.Font;
+#else
+using NativeFont = Eto.Drawing.Font;
+#endif
+
 namespace Keysharp.Builtins
 {
 	public partial class Ks
@@ -742,9 +750,13 @@ namespace Keysharp.Builtins
 
 				var px = x.Ad();
 				var py = y.Ad();
-				var argb = ParseColorArg(color, unchecked((int)0xFF000000u), allowTransparentEmpty: false);
-				var fontOptions = options.As();
-				var fontFamily = fontName.As();
+				//A Ks.Font in the options slot carries its own colour, which is the one thing the option string
+				//cannot express here, so it seeds the colour argument when that was left out.
+				var (fontOptions, fontFamily) = SplitFontArgs(options, fontName);
+				var defaultArgb = options is Font sf && sf.color.HasValue
+								  ? unchecked((int)(0xFF000000u | (uint)(sf.color.Value.ToArgb() & 0x00FFFFFF)))
+								  : unchecked((int)0xFF000000u);
+				var argb = ParseColorArg(color, defaultArgb, allowTransparentEmpty: false);
 
 				if (((uint)argb >> 24) == 0)
 					return this;
@@ -772,8 +784,24 @@ namespace Keysharp.Builtins
 			public object MeasureText(object text, object options = null, object fontName = null)
 			{
 				ThrowIfDisposed();
-				var (w, h) = MeasureTextCore(text.As(), options.As(), fontName.As());
+				var (o, n) = SplitFontArgs(options, fontName);
+				var (w, h) = MeasureTextCore(text.As(), o, n);
 				return MakeSize(w, h);
+			}
+
+			/// <summary>
+			/// Normalizes the <c>(options, fontName)</c> pair every text call takes, so either slot may also be
+			/// a <see cref="Ks.Font"/>: in the options slot it supplies both halves, and an explicit fontName
+			/// still wins; in the fontName slot only its family is used.
+			/// </summary>
+			internal static (string options, string name) SplitFontArgs(object options, object fontName)
+			{
+				var name = fontName is Font nf ? nf.name ?? "" : fontName.As();
+
+				if (options is not Font f)
+					return (options.As(), name);
+
+				return (f.OptionStringNoColor, name.Length > 0 ? name : f.name ?? "");
 			}
 
 			// Pixel size of text in the given font, measured on a throwaway 96-DPI surface so it matches
@@ -1936,12 +1964,12 @@ namespace Keysharp.Builtins
 			// did — left the next same-spec draw or measure pointing at a freed handle, throwing "Cannot access a
 			// disposed object: Font" after the first text was rendered. A script uses only a handful of distinct
 			// specs, so a permanent, reused cache is both cheap and the correct lifetime for a shared handle.
-			private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, string), Font> fontCache = new ();
+			private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, string), NativeFont> fontCache = new ();
 
-			private static Font CreateFont(string options, string name)
+			private static NativeFont CreateFont(string options, string name)
 				=> fontCache.GetOrAdd((options ?? "", name ?? ""), key => CreateFontUncached(key.Item1, key.Item2));
 
-			private static Font CreateFontUncached(string options, string name)
+			private static NativeFont CreateFontUncached(string options, string name)
 			{
 				var (size, bold, italic, underline, strike) = ParseFontOptions(options);
 				var family = string.IsNullOrWhiteSpace(name) ? "Sans" : name.Trim();
@@ -1953,7 +1981,7 @@ namespace Keysharp.Builtins
 				if (underline) style |= System.Drawing.FontStyle.Underline;
 				if (strike) style |= System.Drawing.FontStyle.Strikeout;
 
-				return new Font(family, size, style);
+				return new NativeFont(family, size, style);
 #else
 				var style = Eto.Drawing.FontStyle.None;
 
@@ -1965,7 +1993,7 @@ namespace Keysharp.Builtins
 				if (underline) deco |= Eto.Drawing.FontDecoration.Underline;
 				if (strike) deco |= Eto.Drawing.FontDecoration.Strikethrough;
 
-				try { return new Font(family, size, style, deco); }
+				try { return new NativeFont(family, size, style, deco); }
 				catch { return SystemFonts.Default(size); }
 #endif
 			}
@@ -1975,33 +2003,19 @@ namespace Keysharp.Builtins
 			// Windows uses) and "qN" (quality — accepted and ignored; it has no effect on an image canvas).
 			// A "cColor" token is rejected with guidance (the text color is DrawText's color argument), as is any
 			// other unrecognized token, so a typo'd option fails loudly instead of silently rendering wrong.
+			// Tokenized by Ks.Font so the option vocabulary has one definition; only the canvas-specific rules
+			// live here - a minimum size of 1pt, and rejecting a colour, which belongs in DrawText's own colour
+			// argument because a measured or cached font carries none.
 			private static (float size, bool bold, bool italic, bool underline, bool strike) ParseFontOptions(string options)
 			{
-				var size = 10f;
-				bool bold = false, italic = false, underline = false, strike = false;
+				var spec = new Font(null);
+				spec.Parse(options, tok => Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\"."));
 
-				if (string.IsNullOrWhiteSpace(options))
-					return (size, bold, italic, underline, strike);
+				if (spec.color.HasValue)
+					_ = Errors.ValueErrorOccurred("Font colour belongs in DrawText's color argument, not in the font options.");
 
-				foreach (var tok in options.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-				{
-					if (tok.Equals("bold", StringComparison.OrdinalIgnoreCase)) bold = true;
-					else if (tok.Equals("italic", StringComparison.OrdinalIgnoreCase)) italic = true;
-					else if (tok.Equals("underline", StringComparison.OrdinalIgnoreCase)) underline = true;
-					else if (tok.Equals("strike", StringComparison.OrdinalIgnoreCase) || tok.Equals("strikeout", StringComparison.OrdinalIgnoreCase)) strike = true;
-					else if (tok.Equals("norm", StringComparison.OrdinalIgnoreCase)) { bold = italic = underline = strike = false; }
-					else if ((tok[0] is 's' or 'S') && float.TryParse(tok.AsSpan(1), NumberStyles.Float, CultureInfo.InvariantCulture, out var s))
-						size = Math.Max(1f, s);
-					else if ((tok[0] is 'w' or 'W') && int.TryParse(tok.AsSpan(1), out var weight))
-						bold = weight >= 600;
-					else if ((tok[0] is 'q' or 'Q') && int.TryParse(tok.AsSpan(1), out _)) { }
-					else if (tok[0] is 'c' or 'C')
-						_ = Errors.ValueErrorOccurred($"Font option \"{tok}\": pass the text color as DrawText's color argument, not as a font option.");
-					else
-						_ = Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\".");
-				}
-
-				return (size, bold, italic, underline, strike);
+				return (Math.Max(1f, spec.SizeOr(10f)), spec.BoldOr(false), spec.ItalicOr(false),
+						spec.UnderlineOr(false), spec.StrikeOr(false));
 			}
 
 			// Formats the capture scale for the window title as a percentage: a single value when X and Y

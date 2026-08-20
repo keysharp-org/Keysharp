@@ -604,6 +604,23 @@ namespace Keysharp.Builtins
 
 				return DefaultErrorString;
 			}
+			/// <summary>
+			/// This control's font as a <see cref="Ks.Font"/>. Reading returns a detached copy; assigning
+			/// applies only the properties the font sets. See <see cref="Gui.Font"/>.
+			/// </summary>
+			public object Font
+			{
+				get => Ks.Font.FromControl(_control.Font, _control.ForeColor);
+
+				set
+				{
+					if (value is Ks.Font f)
+						_control.SetFont(f.Options, f.Name);
+					else
+						_ = Errors.TypeErrorOccurred(value, typeof(Ks.Font));
+				}
+			}
+
 			public object SetFont(object options = null, object fontName = null)
 			{
 				_control.SetFont(options, fontName);
