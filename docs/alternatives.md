@@ -5,10 +5,10 @@ As is shown here, there are many alternatives, hobby projects and even full fled
 It would serve no valuable purpose to create yet another experimental project. Instead, Keysharp aims to extend well known Windows-only functionality to linux.
 
 
-#Alternative/example projects examined#
+# Alternative/example projects examined
 
 
-##espanso##
+## espanso
 	+ Description: A cross platform text expander.
 	+ Platform(s): Windows, linux & Mac.
 	+ Language: Rust
@@ -21,7 +21,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 		Note they do Windows keyboard/mouse detection differently than AHK. They used raw WM_INPUT rather than installing a keyboard/mouse hook.
 	+ Site: https://github.com/espanso, https://espanso.org
 		
-##pkeymacs##
+## pkeymacs
 	+ Description: 
 	+ Platform(s): linux
 	+ Language: Python
@@ -32,7 +32,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes: xkeysnail copied the code for this library and extended it.
 	+ Site: https://github.com/zhanghai/pykeymacs
 	
-##xkeysnail##
+## xkeysnail
 	+ Description: Keyboard remapping and hotkey tool for linux/X11.
 	+ Platform(s): linux
 	+ Language: Python
@@ -43,7 +43,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://github.com/mooz/xkeysnail
 	
-##kinto##
+## kinto
 	+ Description: Wrapper around AutoHotkey and xkeysnail that provides Mac-style shortcut keys for linux and Windows.
 	+ Platform(s): Windows, linux & Mac.
 	+ Language: AHK script, Bash script, Python.
@@ -54,7 +54,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://github.com/rbreaves/kinto 
 	
-##evdev-sharp-unity##
+## evdev-sharp-unity
 	+ Description: A C# wrapper library around evdev supplied as a nuget package.
 	+ Platform(s): linux
 	+ Language: C#
@@ -65,7 +65,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes: This is a fork of https://github.com/afshin-parsa/evdev-sharp which was a fork of https://github.com/kekekeks/evdev-sharp
 	+ Site: https://github.com/Draass/evdev-sharp-unity/
 	
-##actiona##
+## actiona
 	+ Description: Cross platform keyboard/mouse manipulator that provides additional functionality similar to AHK. Also allows executing Javascript code.
 	+ Platform(s): Windows & linux.
 	+ Language: C++
@@ -76,7 +76,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://github.com/Jmgr/actiona
 	
-##Alfred##
+## Alfred
 	+ Description: Mac program that appears to do all thawt AHK does plus more.
 	+ Platform(s): Mac
 	+ Language: 
@@ -87,7 +87,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://www.alfredapp.com/
 	
-##Keyboard Maestro##
+## Keyboard Maestro
 	+ Description: Mac program that appears to do all thawt AHK does plus more.
 	+ Platform(s): Mac
 	+ Language: 
@@ -98,7 +98,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://www.keyboardmaestro.com/
 	
-##Simple Text Expander##
+## Simple Text Expander
 	+ Description: Simple text expander for Windows.
 	+ Platform(s): Windows
 	+ Language: C#
@@ -109,18 +109,18 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://github.com/natebean/SimpleTextExpander
 	
-##Beeftext##
+## Beeftext
 	+ Description: Simple text expander for Windows.
 	+ Platform(s): Windows
 	+ Language: C++
 	+ Implementation methodology: Uses the basic Windows keyboard hook with Qt. Details here: https://github.com/xmichelo/Beeftext/blob/master/Beeftext/InputManager.cpp
 	+ Dependencies: Qt
-	+ Pros: Provides a nice GUI for editing text explansions.
+	+ Pros: Provides a nice GUI for editing text expansions.
 	+ Cons:
 	+ Notes: Well written and documented code.
 	+ Site: https://beeftext.org/, https://github.com/xmichelo/Beeftext/tree/master
 	
-##Hypoinput##
+## Hypoinput
 	+ Description: Simple text expander for Windows.
 	+ Platform(s): Windows
 	+ Language: C++
@@ -131,7 +131,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://github.com/giosali/hypoinput
 		
-##node-ahk##
+## node-ahk
 	+ Description: An attempt to make a desktop automation tool using the original IronAHK and NodeJS.
 	+ Platform(s): Windows
 	+ Language: C# & NodeJS
@@ -142,7 +142,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes: Was ony worked on briefly and stopped being maintained many years ago.
 	+ Site: https://github.com/1j01/node-ahk
 		
-##robotjs##
+## robotjs
 	+ Description: An attempt to make a cross platform desktop automation tool using C and NodeJS.
 	+ Platform(s): Windows, linux & Mac.
 	+ Language: C & NodeJS
@@ -153,7 +153,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes: Was ony worked on briefly and stopped being maintained many years ago.
 	+ Site: https://github.com/octalmage/robotjs
 		
-##LibreAutomate##
+## LibreAutomate
 	+ Description: A Windows keyboard/mouse manipulator that provides functionality similar to AHK plus more. The scripting language itself is C#.
 	+ Platform(s): Windows
 	+ Language: C#
@@ -164,7 +164,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes: Well written and documented code. 
 	+ Site: https://www.libreautomate.com/, https://github.com/qgindi/LibreAutomate
 
-##Reginald##
+## Reginald
 	+ Description: A general productivity tool for Windows that resembles the official Microsoft PowerToys and was inspired by Alfred. It also has support for text expansion.
 	+ Platform(s): Windows
 	+ Language: C#
@@ -175,7 +175,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes: Well written code.
 	+ Site: https://github.com/giosali/reginald
 
-##map2##
+## map2
 	+ Description: A more advanced text expander and key remapper for linux.
 	+ Platform(s): linux
 	+ Language: Python and Rust.
@@ -186,7 +186,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes: Well written code. Users can create Python style functions, which can be used as key event handlers.
 	+ Site: https://github.com/shiro/map2
 
-##Hammerspoon##
+## Hammerspoon
 	+ Description: A desktop automation tool for Mac.
 	+ Platform(s): Mac
 	+ Language: Objective-C
@@ -197,7 +197,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://www.hammerspoon.org/, https://github.com/Hammerspoon/hammerspoon
 
-##AutoKey##
+## AutoKey
 	+ Description: A desktop automation tool for linux that supports hotkeys and text expansion. It also provides wrappers in Python for accessing system functionality.
 	+ Platform(s): linux
 	+ Language: Python
@@ -208,7 +208,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes: Supports global values that are saved to a JSON file which can be accessed by any script as well as local values that are saved to a script-specific JSON file. Uses either AtSpi or XRecord X11 extension for keyboard listening. Contains special processing for Mutter. Details here: https://github.com/autokey/autokey/blob/master/lib/autokey/interface.py and window manipulation details here: https://github.com/autokey/autokey/blob/master/lib/autokey/scripting/window.py
 	+ Site: https://github.com/autokey/autokey
 	
-##Phrase Express##
+## Phrase Express
 	+ Description: A commercial text expander and desktop automation tool for Windows and Mac.
 	+ Platform(s): Windows and Mac.
 	+ Language: Unknown
@@ -219,7 +219,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://www.hammerspoon.org/, https://github.com/Hammerspoon/hammerspoon
 
-##pywinauto##
+## pywinauto
 	+ Description: A desktop automation and text expander for Windows and linux.
 	+ Platform(s): Windows and linux.
 	+ Language: Python
@@ -230,7 +230,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://github.com/pywinauto/pywinauto
 
-##PyAutoGUI##
+## PyAutoGUI
 	+ Description: A desktop automation tool for Windows, linux and Mac.
 	+ Platform(s): Windows, linux and Mac.
 	+ Language: Python
@@ -241,7 +241,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://automatetheboringstuff.com/, https://github.com/asweigart/pyautogui, https://pyautogui.readthedocs.io/en/latest/
 
-##Desktop.Robot##
+## Desktop.Robot
 	+ Description: A mouse clicker/mover and key sender library for Windows, linux and Mac.
 	+ Platform(s): Windows, linux and Mac.
 	+ Language: Python
@@ -252,7 +252,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://github.com/lucassklp/Desktop.Robot
 	
-##AHK_X11##
+## AHK_X11
 	+ Description: A port of AHKv1 for linux.
 	+ Platform(s): linux
 	+ Language: Crystal
@@ -263,7 +263,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://github.com/phil294/AHK_X11
 	
-##rdev##
+## rdev
 	+ Description: An event listener library for Windows, linux and Mac.
 	+ Platform(s): Windows, linux and Mac.
 	+ Language: Rust
@@ -274,7 +274,7 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://github.com/Narsil/rdev
 	
-##Input Remapper##
+## Input Remapper
 	+ Description: An input remapper for linux
 	+ Platform(s): linux
 	+ Language: 
@@ -285,13 +285,10 @@ It would serve no valuable purpose to create yet another experimental project. I
 	+ Notes:
 	+ Site: https://github.com/sezanzeb/input-remapper
 	
-	
-	
-	https://sharphook.tolik.io/v5.3.6/ https://sharphook.tolik.io/articles/native.html
-		(06.07.2026: this was tries, but introduced native dependencies and was lacking certain features like propagating SendLevel)
-	
-	https://pythonawesome.com/hook-and-simulate-global-keyboard-events-on-windows-and-linux/
-	https://github.com/boppreh/keyboard
-	https://github.com/Skycoder42/QHotkey/tree/master/QHotkey
-	https://github.com/rvaiya/keyd
-	
+## Others
+	+ https://sharphook.tolik.io/v5.3.6/ https://sharphook.tolik.io/articles/native.html
+		+ (06.07.2026: this was tried, but introduced native dependencies and was lacking certain features like propagating SendLevel)
+	+ https://pythonawesome.com/hook-and-simulate-global-keyboard-events-on-windows-and-linux/
+	+ https://github.com/boppreh/keyboard
+	+ https://github.com/Skycoder42/QHotkey/tree/master/QHotkey
+	+ https://github.com/rvaiya/keyd
