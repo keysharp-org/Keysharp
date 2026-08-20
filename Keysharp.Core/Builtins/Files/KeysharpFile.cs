@@ -46,6 +46,12 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		/// <summary>
+		/// The stream the file reads and writes, so a hash can stream the content instead of loading all of
+		/// it into memory. Null until the file is opened.
+		/// </summary>
+		internal Stream BaseStream => fs;
+
 		public object Encoding
 		{
 			get => enc.BodyName;

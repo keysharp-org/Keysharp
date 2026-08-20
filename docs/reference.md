@@ -336,6 +336,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	+ Use `Ptr` and `StringBuffer` for double pointer parameters such as `LPTSTR*`. This is recommended over the use of `StrPtr()`.
 * `ObjPtr()` returns an IUnknown `ComValue` with the pointer wrapped in it, whereas `ObjPtrAddRef()` returns a raw pointer.
 * `SetTimer()` uses a in the range 0-4, not -2147483648 and 2147483647.
+* Encoding names — wherever one is accepted: `FileEncoding`, `A_FileEncoding`, `FileRead`, `FileOpen`, `File.Encoding`, `StrGet`, `StrPut`, `Base64Encode` and the `Crypt` class — take AutoHotkey's `UTF-8`, `UTF-8-RAW`, `UTF-16`, `UTF-16-RAW`, `CPnnn` and `nnn`, and additionally `ASCII` and any name .NET knows, such as `windows-1252`. A name which cannot be resolved raises a `ValueError`; it is never quietly substituted, since that would silently read or write the wrong bytes. An empty name means the native UTF-16 encoding, where AutoHotkey uses the active ANSI code page (CP0).
 * `Sleep()` works, but uses `Application.DoEvents()` internally which is not a good programming practice and can lead to hard to solve bugs.
 	+ For this reason, it's recommended that users use timers for repeated execution rather than a loop with calls to `Sleep()`.
 	+ It will not do any sleeping if shutdown has been initiated.
@@ -500,17 +501,22 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 * New debugging functions:
 	+ `ShowDebug()`: Shows the main window and focuses the debug output tab.
 	+ `OutputDebugLine()`: The same as `OutputDebug()` but appends a linebreak at the end of the string.
-* New encryption/decryption functions:
-	+ `AES(value, key, decrypt := false) => Buffer`: Encrypts or decrypts an object using the AES algorithm.
-	+ Generate hash values using various algorithms:
-		+ `MD5(value) => String`
-		+ `SHA1(value) => String`
-		+ `SHA256(value) => String`
-		+ `SHA384(value) => String`
-		+ `SHA512(value) => String`
-	+ `CRC32(value) => Integer`: Calculates the CRC32 polynomial of an object.
-	+ `SecureRandom(min, max) => Double`: Generates a secure cryptographic random number.
-		+ Returns an `Integer` if neither argument is a `Double`.
+* New `Crypt` class, holding hashing, key derivation, symmetric encryption and cryptographically secure random values (`#Import "Ks" { Crypt }`):
+	+ A String is taken as its **UTF-8** bytes, so a digest is the one any other tool prints for the same text. Pass an `encoding` — the names `A_FileEncoding` takes — to use a different one, and note that a name which cannot be resolved raises rather than falling back. A `Buffer` or an `Array` of bytes is used as it stands; an open `File` is accepted by anything that hashes, but not by `Crypt.Encrypt`.
+	+ A digest is returned as uppercase hexadecimal; compare digests case-insensitively, since the tool a checksum came from may print it in lowercase.
+	+ `Crypt.Hash(value, algorithm := "SHA256", encoding := "UTF-8") => String`: hashes with `MD5`, `SHA1`, `SHA256`, `SHA384`, `SHA512` or `CRC32`, spelled with or without the `-`. An open `File` is read as a stream and left at the position it was on.
+	+ `Crypt.HashFile(path, algorithm := "SHA256") => String`: the same over a file, read as a stream so that its size does not matter.
+	+ `Crypt.MD5(value, encoding := "UTF-8") => String`, and likewise `Crypt.SHA1`, `Crypt.SHA256`, `Crypt.SHA384` and `Crypt.SHA512`.
+	+ `Crypt.CRC32(value, encoding := "UTF-8") => Integer`: Calculates the CRC32 polynomial of an object. `Crypt.Hash(value, "CRC32")` returns the same checksum as hexadecimal.
+	+ `Crypt.Encrypt(value, key, algorithm := "AES", mode := "CBC", iv?, encoding := "UTF-8") => Buffer` and `Crypt.Decrypt(...)` with the same parameters: symmetric encryption. `AES` is the only cipher so far and `mode` is `CBC`, `ECB` or `CFB`; the cipher is a parameter rather than part of the method name so that another one is a value this accepts, not a new method.
+		+ With *iv* omitted, each call draws a random 16-byte initialization vector and writes it in front of the ciphertext, where `Crypt.Decrypt` reads it back. Encrypting the same text twice therefore gives different results, which is the point: a fixed vector lets anyone holding the output see which encrypted values are equal. Supply *iv* only to match a format defined elsewhere — it is then used as it stands and is **not** written to the result, so `Crypt.Decrypt` needs the same one back.
+		+ `mode := "GCM"` **authenticates** as well as encrypts: an altered message is detected on decryption and raises, where a chaining mode would decrypt it to rubbish without complaint. Its nonce is 12 bytes rather than 16, and its authentication tag is appended to the result. Prefer it unless a format defined elsewhere dictates otherwise.
+		+ `mode := "CFB"` is CFB8, the feedback size .NET and Windows CNG both default to — not the CFB128 that OpenSSL's plain `-aes-256-cfb` means.
+	+ `Crypt.RandomBytes(count) => Buffer` returns cryptographically secure bytes for a vector, a salt or a key.
+	+ `Crypt.PBKDF2(password, salt, iterations := 600000, length := 32, algorithm := "SHA256", encoding := "UTF-8") => Buffer` stretches a password into key material, which is what makes a passphrase usable as a key: `Crypt.Encrypt` otherwise takes the key exactly as it is given, zero-padded to the cipher's key size. *algorithm* is `SHA1`, `SHA256`, `SHA384` or `SHA512` — .NET rejects `MD5` for derivation on every platform, so it is not offered. The salt need not be secret but must differ per password, and must be stored alongside whatever the key protects.
+	+ `Crypt.SecureRandom(min, max) => Double`: Generates a secure cryptographic random number.
+		+ Returns an `Integer` if neither argument is a `Double`. The range includes *max*, as `Random`'s does.
+	+ Data encrypted by the earlier `AES()` function does **not** decrypt with `Crypt.Decrypt` as it stands. That function derived its vector from the key instead of storing one, which is what made it deterministic, and that derivation has been removed. The vector it used was the first 16 bytes of SHA-1 over the 32-byte zero-padded key — with the key taken as UTF-16, since that was the old default encoding — so old data can still be read by rebuilding that vector and passing it as *iv* along with `encoding := "UTF-16"`. The key padding, CBC mode and PKCS7 padding are otherwise unchanged.
 * New file functions:
 	+ `FileDirName(filename) => String`: Returns the full path to filename, without the actual filename or trailing directory separator character.
 	+ `FileFullPath(filename) => String`: Returns the full path to filename.
@@ -544,7 +550,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 			+ `\K` is not supported, instead, try using `(?<=abc)`.
 * New string functions:
 	+ `Base64Decode(str) => Array`: Converts a Base64 string to a Buffer containing the decoded bytes.
-	+ `Base64Encode(value) => String`: Converts a byte array to a Base64 string.
+	+ `Base64Encode(value, encoding := "UTF-8") => String`: Converts a byte array — or a string, taken as its **UTF-8** bytes unless another `encoding` is named — to a Base64 string.
 	+ `NormalizeEol(str, eol) => String`: Makes all line endings in a string match the value passed in, or the default for the current environment.
 	+ `Join(separator, params*) => String`: Joins each parameter together as a string, separated by `separator`.
 		+ Pass params as `params*` if it's a collection.

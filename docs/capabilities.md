@@ -324,7 +324,6 @@ Status legend:
 | A_YYYY | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The four digit year. Same as A_Year. |
 | Abs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the absolute value. |
 | Acos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc cosine. Throws an exception if the argument value is not between -1 and 1. |
-| AES() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Encrypts/decrypts data using AES. |
 | and | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical AND operator. |
 | Any | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Special type value that can match any type. |
 | Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ordered collection object. |
@@ -357,7 +356,7 @@ Status legend:
 | ATan2() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc tangent by using two numbers. |
 | Base | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the value's base object. |
 | Base64Decode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Decodes a Base64 string to binary data. |
-| Base64Encode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Encodes binary data to a Base64 string. |
+| Base64Encode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Encodes binary data to a Base64 string. A string Value is taken as its UTF-8 bytes unless another encoding is named. |
 | BlockInput() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Disables or enables physical keyboard and mouse input while allowing synthetic input. Linux suppresses movement-only mode through its existing keysharp-inputd mouse hook and uses the daemon block mask for all-input mode; the X11 xinput fallback is device-wide and cannot preserve buttons while blocking only movement. macOS uses event taps and requires Input Monitoring permission. |
 | Boolean | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The type of a truth value, extending Integer, so it reads as 1 or 0 everywhere except a type test. Boolean(Value) converts a value the way `if` decides it. |
 | Break | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Exits the current loop. |
@@ -455,8 +454,20 @@ Status legend:
 | Copilot declaration/remap alias | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Keysharp extension: in static hotkey and remap declarations only, `Copilot` lowers to the generic `<#<+F23` chord. When used as a remap source, the firmware-generated LWin and LShift modifiers are released but not restored. It is intentionally not a runtime key name for Hotkey(), Send, KeyWait, GetKeyState, InputHook or related APIs. There is no Office alias. |
 | Cos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the cosine of a number. |
 | Cosh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic cosine of a number. |
-| CRC32() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes CRC32 checksum for input data. |
 | Critical() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Critical statement prevents the current thread from being interrupted by other threads, or enables it to be interrupted. |
+| Crypt.CRC32() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the CRC32 checksum of the input as an integer. Crypt.Hash returns the same checksum as hexadecimal. |
+| Crypt.Decrypt() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Decrypts what Crypt.Encrypt produced, returning a Buffer. The key, algorithm, mode and encoding must match the ones it was encrypted under. The initialization vector is read from the front of the data unless IV supplies the one Encrypt was given. |
+| Crypt.Encrypt() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Encrypts data with a named symmetric cipher, returning a Buffer. Algorithm is AES (the only one so far, named as a parameter so another is a value rather than a new method) and Mode is CBC, ECB, CFB or GCM. GCM authenticates as well as encrypts, so an altered message is detected on decryption instead of decrypting to rubbish; its nonce is 12 bytes and its tag is appended to the result. The chaining modes and GCM are measured byte-identical on Windows and Linux; GCM is not yet run on macOS, where an unsupported platform reports a ValueError rather than failing obscurely. A string Value or Key is taken as its UTF-8 bytes unless another encoding is named. With IV omitted a random one is drawn per call and written in front of the ciphertext, where Crypt.Decrypt reads it back, so the same text does not encrypt alike twice; supply IV only to match a format defined elsewhere, in which case it is not written to the result. The key is used as it stands rather than stretched by a key-derivation function, so derive one with Crypt.PBKDF2 rather than passing a passphrase; under a chaining mode the result carries no authentication tag, where GCM does. |
+| Crypt.Hash() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Hashes a String, Buffer, Array of bytes or open File with MD5, SHA1, SHA256, SHA384, SHA512 or CRC32 (spelled with or without a hyphen), returning uppercase hexadecimal. A File is read as a stream and left at the position it was on. |
+| Crypt.HashFile() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Hashes a file, reading it as a stream so that its size does not matter. Takes the same algorithm names as Crypt.Hash. |
+| Crypt.MD5() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the MD5 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text. |
+| Crypt.PBKDF2() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Derives key material from a password with PBKDF2, returning a Buffer. This is what makes a passphrase usable as an encryption key, since Crypt.Encrypt otherwise takes the key exactly as given. Algorithm is SHA1, SHA256, SHA384 or SHA512; .NET rejects MD5 for derivation on every platform, so it is not offered. Verified against RFC 6070 on Windows and Linux; not yet run on macOS. |
+| Crypt.RandomBytes() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns cryptographically secure random bytes as a Buffer, for an initialization vector, a salt or a key. |
+| Crypt.SecureRandom() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Generates a cryptographically secure random number. Returns an integer unless either bound is a float. |
+| Crypt.SHA1() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the SHA-1 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text. |
+| Crypt.SHA256() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the SHA-256 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text. |
+| Crypt.SHA384() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the SHA-384 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text. |
+| Crypt.SHA512() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the SHA-512 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text. |
 | Date Time Built-in Variables | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Language/runtime capability. |
 | DateAdd() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DateAdd function adds or subtracts time from a date-time value. |
 | DateDiff() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DateDiff function compares two date-time values and returns the difference. |
@@ -515,7 +526,7 @@ Status legend:
 | FileCreateTemp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an empty temporary file and returns its full path. |
 | FileDelete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes one or more files. |
 | FileDirName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns directory portion of a file path. |
-| FileEncoding() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the default encoding for FileRead, Loop Read, FileAppend, and FileOpen. |
+| FileEncoding() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the default encoding for FileRead, Loop Read, FileAppend, and FileOpen. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
 | FileExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for the existence of a file or folder and returns its attributes. |
 | FileFullPath() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns absolute normalized full path. |
 | FileGetAttrib() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reports whether a file or folder is read-only, hidden, etc. |
@@ -525,8 +536,8 @@ Status legend:
 | FileGetVersion() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Retrieves the version of a file. Version metadata availability differs by platform file formats. |
 | FileInstall() | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | All scripts are converted into compiled executables, so this doesn't apply. |
 | FileMove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves or renames one or more files. |
-| FileOpen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform statuses inherited from curated 'File and directory operations'; per-function validation pending. |
-| FileRead() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the contents of a file. |
+| FileOpen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform statuses inherited from curated 'File and directory operations'; per-function validation pending. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
+| FileRead() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the contents of a file. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
 | FileRecycle() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Windows uses the recycle bin and Linux uses the freedesktop Trash through GIO. macOS currently moves only to the user ~/.Trash folder, without per-volume trash or Finder Put Back metadata. |
 | FileRecycleEmpty() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Windows empties the recycle bin and Linux empties the freedesktop Trash through GIO. macOS currently empties only the user ~/.Trash folder, not per-volume trash folders. |
 | FileSelect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Displays the native open/save file dialog, including cancellation and multiple selection, on every platform. |
@@ -727,7 +738,7 @@ Status legend:
 | Loop File | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Lists files and folders at a location, matching a specified pattern, optionally recursing. |
 | Loop Files | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enumerates files/folders matching a pattern. |
 | Loop Parse | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Parses the string either one character at a time, or broken into pieces based on the delimiter. Note this accepts strings as delimiters, unlike AHK which did not. |
-| Loop Read | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads though a file one line at a time. Optionally supports an output file, which can then be used with FileAppend with no filename argument. |
+| Loop Read | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads though a file one line at a time. Optionally supports an output file, which can then be used with FileAppend with no filename argument. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
 | Loop Reg | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Reads through registry keys and values, optionally recursive. Additionally supports HKEY_PERFORMANCE_DATA, and an accessor A_LoopRegValue to get the values. Supports data types except the following, which will return UNKNOWN: REG_LINK, REG_RESOURCE_LIST, REG_FULL_RESOURCE_DESCRIPTOR, REG_RESOURCE_REQUIREMENTS_LIST, REG_DWORD_BIG_ENDIAN. |
 | LTrim() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Trims characters from the end of a string. |
 | Mail() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sends email via configured SMTP settings. |
@@ -748,7 +759,6 @@ Status legend:
 | Map.MinIndex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the smallest integer key contained in the map. Returns empty string if no keys were integers. |
 | Map.Set() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets zero or more items. |
 | Max() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the larger of two numbers. If either is not numeric, the empty string is returned. The largest value of an array is computed if one is passed in. |
-| MD5() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes MD5 hash for input data. |
 | MemberError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | MemoryError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | Menu.Add() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Adds an item to a menu. The Right and RTL item options are Win32 menu attributes with no Eto counterpart, so they are parsed and ignored on Linux and macOS; every other option, including the Break/BarBreak column controls, works on all platforms. |
@@ -902,7 +912,6 @@ Status legend:
 | RunWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Run and RunWait functions run an external program. RunWait will wait until the program finishes before continuing. |
 | Screen capture and pixel/image functions | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Pixel/image search and screen capture depend on platform-specific backends. |
 | Script-owned window management | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Creating and driving the script's own GUI windows. Built on WinForms (Windows) and Eto (Linux/macOS); the object model, events, controls, menus, ListView and TreeView all behave the same. Remaining differences: the ActiveX and Custom control types are Win32-only, ListView supports only the Report view off Windows, raw Win32 style options are ignored, per-monitor DPI re-layout is Windows-only, and a client cannot position its own window on Wayland without a compositor backend. |
-| SecureRandom() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Generates cryptographically secure random numbers. |
 | Send() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends simulated keystrokes. |
 | SendEvent() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends keystrokes via Event mode. |
 | SendInput() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends keystrokes via Input mode. |
@@ -924,10 +933,6 @@ Status legend:
 | SetTitleMatchMode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SetTitleMatchMode function sets the matching behavior of the WinTitle parameter in built-in functions such as WinWait. |
 | SetWinDelay() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SetWinDelay function sets the delay that will occur after each windowing function, such as WinActivate. |
 | SetWorkingDir() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes the script's current working directory. |
-| SHA1() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes SHA-1 hash for input data. |
-| SHA256() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes SHA-256 hash for input data. |
-| SHA384() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes SHA-384 hash for input data. |
-| SHA512() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes SHA-512 hash for input data. |
 | ShowDebug() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Shows or toggles debug UI/log output. |
 | Shutdown() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Shuts down, restarts, or logs off the system. macOS uses System Events; its normal actions are implemented, but AHK's force flag has no direct equivalent and is ignored with a diagnostic. |
 | Sin() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic sine of a number. |
@@ -948,7 +953,7 @@ Status legend:
 | StatusBarGetText() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves text from a native Win32 status bar control. No non-Windows status-bar accessibility backend is implemented. |
 | StatusBarWait() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Waits for native Win32 status-bar text and depends on StatusBarGetText; no non-Windows status-bar accessibility backend is implemented. |
 | StrCompare() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compares two strings alphabetically. Note this supports local, human readable comparison as well. |
-| StrGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a string from a memory address or buffer, optionally converting it from a given code page. |
+| StrGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a string from a memory address or buffer, optionally converting it from a given code page. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
 | String.EndsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a string ends with the specified suffix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given. |
 | String.StartsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a string starts with the specified prefix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given. |
 | String() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a value to a string. For an object, the result is whatever its ToString() returned, so a ToString() which returns no value makes String() return no value too rather than raising. |
@@ -956,7 +961,7 @@ Status legend:
 | StrLen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the count of how many characters are in a string. |
 | StrLower() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a string to lowercase. |
 | StrPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The StrPtr function returns the current memory address of a string. |
-| StrPut() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes string data to a buffer/address using specified encoding. |
+| StrPut() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes string data to a buffer/address using specified encoding. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
 | StrReplace() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Replaces occurrences of a substring and returns the updated string. |
 | StrSplit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves one or more characters from the specified position in a string. |
 | StrTitle() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The StrLower, StrUpper and StrTitle functions convert a string to lowercase, uppercase or title case. |

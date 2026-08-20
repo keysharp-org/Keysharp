@@ -921,13 +921,13 @@ namespace Keysharp.Builtins
 		/// <param name="flags">Either a string of characters indicating the desired access mode followed by other options (with optional spaces or tabs in between);<br/>
 		/// or a combination (sum) of numeric flags.
 		/// </param>
-		/// <param name="encoding">If omitted, the default encoding (as set by FileEncoding or CP0 otherwise) will be used.<br/>
-		/// If blank, it defaults to CP0 (the system default ANSI code page).<br/>
+		/// <param name="encoding">If omitted or blank, the default encoding (as set by FileEncoding) will be used.<br/>
 		/// Otherwise, specify the encoding or code page to use for text I/O, e.g. "UTF-8", "UTF-16", "CP936" or 936.<br/>
 		/// If the file contains a UTF-8 or UTF-16 byte order mark(BOM), or if the h(handle) flag is used,<br/>
 		/// this parameter and the default encoding will be ignored, unless the file is being opened with write-only access (i.e.the previous contents of the file are being discarded).
 		/// </param>
 		/// <returns>A new KeysharpFile object encapsulating the open handle to the file.</returns>
+		/// <exception cref="ValueError">Thrown if the encoding cannot be resolved.</exception>
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static object FileOpen(object filename, object flags, object encoding = null)
 		{
@@ -935,13 +935,7 @@ namespace Keysharp.Builtins
 			var file = filename.As();
 			var f = flags.As();
 			var e = encoding.As();
-			var enc = ThreadAccessors.A_FileEncodingRaw;
-			var ienc = (int?)e.ParseLong();
-
-			if (ienc.HasValue)
-				enc = Encoding.GetEncoding(ienc.Value);
-			else if (e != "")
-				enc = GetEncoding(e);
+			var enc = e.Length != 0 ? GetEncoding(e) : ThreadAccessors.A_FileEncodingRaw;
 
 			var mode = FileMode.Open;
 			var access = FileAccess.ReadWrite;
@@ -1474,20 +1468,35 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Internal helper for retrieving an <see cref="Encoding"/> object from options specified as a string.
+		/// Resolves an encoding name, falling back to the caller's default when the script named none.
 		/// </summary>
-		/// <param name="s">The encoding options.</param>
-		/// <returns>A new <see cref="Encoding"/> object created based on the options specified in s.</returns>
+		/// <param name="s">An encoding name as <see cref="GetEncoding"/> takes, or empty.</param>
+		/// <param name="def">The encoding to use when no name was given.</param>
+		/// <returns>The corresponding <see cref="Encoding"/>.</returns>
+		/// <exception cref="ValueError">Thrown if a name was given and cannot be resolved.</exception>
+		internal static Encoding GetEncodingOrDefault(object s, Encoding def)
+		{
+			var name = s.As();
+			return name.Length == 0 ? def : GetEncoding(name);
+		}
+
+		/// <summary>
+		/// Resolves an encoding name to an <see cref="Encoding"/>.
+		/// </summary>
+		/// <param name="s">The encoding name: UTF-8, UTF-8-RAW, UTF-16, UTF-16-RAW, ASCII, a code page written
+		/// either as CPnnn or as the bare number, or any other name .NET knows such as windows-1252. Empty or
+		/// unset means the native UTF-16 encoding.</param>
+		/// <returns>The corresponding <see cref="Encoding"/>.</returns>
+		/// <exception cref="ValueError">Thrown if the name is not one of those, or names a code page this system
+		/// does not have.</exception>
+		/// <remarks>A name which cannot be resolved is never quietly substituted: the caller would then read or
+		/// write the wrong bytes and have no way to notice.</remarks>
 		internal static Encoding GetEncoding(object s)
 		{
-			var val = s.ToString().ToLowerInvariant();
-			Encoding tempenc;
+			var val = s.As().ToLowerInvariant();
 
-			if (val.StartsWith("cp"))
-				return Encoding.GetEncoding((int)val.Substring(2).ParseLong().Value);
-
-			if (int.TryParse(val, out var cp))
-				return Encoding.GetEncoding(cp);
+			if (val.Length == 0)
+				return Encoding.Unicode;
 
 			switch (val)
 			{
@@ -1509,16 +1518,30 @@ namespace Keysharp.Builtins
 					return new UnicodeEncoding(false, false);//Little endian, no byte order mark.
 			}
 
+			// Anything else which happens to start with "cp" falls through to the name lookup below.
+			var number = val.StartsWith("cp") ? val.AsSpan(2) : val.AsSpan();
+
+			if (int.TryParse(number, out var cp))
+			{
+				try
+				{
+					return Encoding.GetEncoding(cp);
+				}
+				catch
+				{
+					return (Encoding)Errors.ValueErrorOccurred($"Code page {cp} is not available on this system.", val, Encoding.Unicode);
+				}
+			}
+
 			try
 			{
-				tempenc = Encoding.GetEncoding(val);
-				return tempenc;
+				return Encoding.GetEncoding(val);
 			}
 			catch
 			{
 			}
 
-			return Encoding.Unicode;
+			return (Encoding)Errors.ValueErrorOccurred("Unknown encoding. Specify UTF-8, UTF-8-RAW, UTF-16, UTF-16-RAW, ASCII, a code page as CPnnn or nnn, or a name .NET recognizes.", val, Encoding.Unicode);
 		}
 
 		/// <summary>

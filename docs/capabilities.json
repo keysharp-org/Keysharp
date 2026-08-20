@@ -3151,16 +3151,6 @@
                      "tested-by":  "math-acos.ahk"
                  },
                  {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "AES()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Encrypts/decrypts data using AES."
-                 },
-                 {
                      "category":  "Core Language",
                      "feature":  "and",
                      "syntax":  "x := a and b",
@@ -3515,7 +3505,7 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Base64Encode()",
-                     "syntax":  "",
+                     "syntax":  "Text := Base64Encode(Value [, Encoding := \"UTF-8\"])",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -4546,13 +4536,146 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "CRC32()",
-                     "syntax":  "",
+                     "feature":  "Crypt.Decrypt()",
+                     "syntax":  "Data := Crypt.Decrypt(Value, Key [, Algorithm := \"AES\", Mode := \"CBC\", IV, Encoding := \"UTF-8\"])",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Computes CRC32 checksum for input data."
+                     "notes":  "Decrypts what Crypt.Encrypt produced, returning a Buffer. The key, algorithm, mode and encoding must match the ones it was encrypted under. The initialization vector is read from the front of the data unless IV supplies the one Encrypt was given.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.Encrypt()",
+                     "syntax":  "Data := Crypt.Encrypt(Value, Key [, Algorithm := \"AES\", Mode := \"CBC\", IV, Encoding := \"UTF-8\"])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Encrypts data with a named symmetric cipher, returning a Buffer. Algorithm is AES (the only one so far, named as a parameter so another is a value rather than a new method) and Mode is CBC, ECB, CFB or GCM. GCM authenticates as well as encrypts, so an altered message is detected on decryption instead of decrypting to rubbish; its nonce is 12 bytes and its tag is appended to the result. The chaining modes and GCM are measured byte-identical on Windows and Linux; GCM is not yet run on macOS, where an unsupported platform reports a ValueError rather than failing obscurely. A string Value or Key is taken as its UTF-8 bytes unless another encoding is named. With IV omitted a random one is drawn per call and written in front of the ciphertext, where Crypt.Decrypt reads it back, so the same text does not encrypt alike twice; supply IV only to match a format defined elsewhere, in which case it is not written to the result. The key is used as it stands rather than stretched by a key-derivation function, so derive one with Crypt.PBKDF2 rather than passing a passphrase; under a chaining mode the result carries no authentication tag, where GCM does.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.CRC32()",
+                     "syntax":  "Checksum := Crypt.CRC32(Value [, Encoding := \"UTF-8\"])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Computes the CRC32 checksum of the input as an integer. Crypt.Hash returns the same checksum as hexadecimal.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.Hash()",
+                     "syntax":  "Digest := Crypt.Hash(Value [, Algorithm := \"SHA256\", Encoding := \"UTF-8\"])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Hashes a String, Buffer, Array of bytes or open File with MD5, SHA1, SHA256, SHA384, SHA512 or CRC32 (spelled with or without a hyphen), returning uppercase hexadecimal. A File is read as a stream and left at the position it was on.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.HashFile()",
+                     "syntax":  "Digest := Crypt.HashFile(Path [, Algorithm := \"SHA256\"])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Hashes a file, reading it as a stream so that its size does not matter. Takes the same algorithm names as Crypt.Hash.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.MD5()",
+                     "syntax":  "Digest := Crypt.MD5(Value [, Encoding := \"UTF-8\"])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Computes the MD5 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.PBKDF2()",
+                     "syntax":  "Key := Crypt.PBKDF2(Password, Salt [, Iterations := 600000, Length := 32, Algorithm := \"SHA256\", Encoding := \"UTF-8\"])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Derives key material from a password with PBKDF2, returning a Buffer. This is what makes a passphrase usable as an encryption key, since Crypt.Encrypt otherwise takes the key exactly as given. Algorithm is SHA1, SHA256, SHA384 or SHA512; .NET rejects MD5 for derivation on every platform, so it is not offered. Verified against RFC 6070 on Windows and Linux; not yet run on macOS.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.RandomBytes()",
+                     "syntax":  "Data := Crypt.RandomBytes(Count)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Returns cryptographically secure random bytes as a Buffer, for an initialization vector, a salt or a key.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.SecureRandom()",
+                     "syntax":  "Value := Crypt.SecureRandom([Min, Max])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Generates a cryptographically secure random number. Returns an integer unless either bound is a float.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.SHA1()",
+                     "syntax":  "Digest := Crypt.SHA1(Value [, Encoding := \"UTF-8\"])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Computes the SHA-1 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.SHA256()",
+                     "syntax":  "Digest := Crypt.SHA256(Value [, Encoding := \"UTF-8\"])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Computes the SHA-256 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.SHA384()",
+                     "syntax":  "Digest := Crypt.SHA384(Value [, Encoding := \"UTF-8\"])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Computes the SHA-384 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text.",
+                     "tested-by":  "crypt-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Crypt.SHA512()",
+                     "syntax":  "Digest := Crypt.SHA512(Value [, Encoding := \"UTF-8\"])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Computes the SHA-512 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text.",
+                     "tested-by":  "crypt-class.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -5165,7 +5288,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Sets the default encoding for FileRead, Loop Read, FileAppend, and FileOpen.",
+                     "notes":  "Sets the default encoding for FileRead, Loop Read, FileAppend, and FileOpen. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
                      "tested-by":  "file-fileencoding.ahk"
                  },
                  {
@@ -5285,7 +5408,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Platform statuses inherited from curated \u0027File and directory operations\u0027; per-function validation pending.",
+                     "notes":  "Platform statuses inherited from curated \u0027File and directory operations\u0027; per-function validation pending. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
                      "tested-by":  "external-com.ahk"
                  },
                  {
@@ -5296,7 +5419,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Retrieves the contents of a file.",
+                     "notes":  "Retrieves the contents of a file. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
                      "tested-by":  "assign-multiline.ahk"
                  },
                  {
@@ -7264,7 +7387,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Reads though a file one line at a time. Optionally supports an output file, which can then be used with FileAppend with no filename argument.",
+                     "notes":  "Reads though a file one line at a time. Optionally supports an output file, which can then be used with FileAppend with no filename argument. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
                      "tested-by":  "flow-loop-read.ahk"
                  },
                  {
@@ -7485,16 +7608,6 @@
                      "macos":  "full",
                      "notes":  "Computes the larger of two numbers. If either is not numeric, the empty string is returned. The largest value of an array is computed if one is passed in.",
                      "tested-by":  "collections-array.ahk"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "MD5()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Computes MD5 hash for input data."
                  },
                  {
                      "category":  "Errors",
@@ -9229,16 +9342,6 @@
                      "notes":  "Creating and driving the script\u0027s own GUI windows. Built on WinForms (Windows) and Eto (Linux/macOS); the object model, events, controls, menus, ListView and TreeView all behave the same. Remaining differences: the ActiveX and Custom control types are Win32-only, ListView supports only the Report view off Windows, raw Win32 style options are ignored, per-monitor DPI re-layout is Windows-only, and a client cannot position its own window on Wayland without a compositor backend."
                  },
                  {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "SecureRandom()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Generates cryptographically secure random numbers."
-                 },
-                 {
                      "category":  "Input/Automation",
                      "feature":  "Send()",
                      "syntax":  "",
@@ -9468,46 +9571,6 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "SHA1()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Computes SHA-1 hash for input data."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "SHA256()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Computes SHA-256 hash for input data."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "SHA384()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Computes SHA-384 hash for input data."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "SHA512()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Computes SHA-512 hash for input data."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
                      "feature":  "ShowDebug()",
                      "syntax":  "",
                      "windows":  "full",
@@ -9731,7 +9794,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Copies a string from a memory address or buffer, optionally converting it from a given code page.",
+                     "notes":  "Copies a string from a memory address or buffer, optionally converting it from a given code page. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
                      "tested-by":  "external-dllcall.ahk"
                  },
                  {
@@ -9819,7 +9882,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Writes string data to a buffer/address using specified encoding.",
+                     "notes":  "Writes string data to a buffer/address using specified encoding. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
                      "tested-by":  "string-strputstrget.ahk"
                  },
                  {

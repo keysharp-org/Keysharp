@@ -233,9 +233,15 @@ if (A_FileEncoding == "us-ascii")
 else
 	FileAppend "fail", "*"
 
-FileEncoding "dummy"
+; A name which cannot be resolved raises, as it does in AutoHotkey, and leaves the setting alone.
+threw := 0
 
-if (A_FileEncoding == "utf-16") 
+try
+	FileEncoding "dummy"
+catch ValueError
+	threw := 1
+
+if (threw && A_FileEncoding == "us-ascii")
 	FileAppend "pass", "*"
 else
 	FileAppend "fail", "*"
@@ -637,4 +643,4 @@ CheckCoordModeMouse() {
 		FileAppend "pass", "*"
 	else
 		FileAppend "fail", "*"
-}
+}

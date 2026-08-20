@@ -572,6 +572,48 @@ namespace Keysharp.Internals.Strings
 			return bytes;
 		}
 
+		/// <summary>
+		/// Converts a script value to the bytes an API which works in bytes operates on.
+		/// </summary>
+		/// <param name="value">A String, <see cref="Keysharp.Builtins.Buffer"/>,
+		/// <see cref="Keysharp.Builtins.Array"/> or byte array. Unset is no bytes at all.</param>
+		/// <param name="enc">The encoding a string is taken in.</param>
+		/// <returns>The bytes, or null if value is none of those. Null rather than an empty array, so that a
+		/// caller which is not throwing reports nothing instead of operating on no bytes at all.</returns>
+		/// <exception cref="TypeError">Thrown if value is none of those.</exception>
+		internal static byte[] ToByteArray(object value, Encoding enc)
+		{
+			if (value is string s)
+				return enc.GetBytes(s);
+
+			if (value is byte[] b)
+				return b;
+
+			if (value is Keysharp.Builtins.Buffer buf)
+				return buf.ToByteArray();
+
+			if (value is Keysharp.Builtins.Array arr)
+			{
+				try
+				{
+					return arr.ToByteArray().ToArray();
+				}
+				catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+				{
+					// An Array holds anything, and the conversion coerces each element: a non-numeric one raises
+					// a .NET exception that no script can catch, so it is reported as the type error it is.
+					_ = Errors.TypeErrorOccurred(value, typeof(byte[]));
+					return null;
+				}
+			}
+
+			if (value == null)
+				return [];
+
+			_ = Errors.TypeErrorOccurred(value, typeof(byte[]));
+			return null;
+		}
+
 		internal static DateTime ToDateTime(string time, Calendar cal) => ToDateTime(time.AsSpan(), cal);
 
 		internal static DateTime ToDateTime(ReadOnlySpan<char> time, Calendar cal)

@@ -32,9 +32,18 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Encodes binary data to a Base64 character string.
 		/// </summary>
-		/// <param name="value">The data to encode.</param>
+		/// <param name="value">The data to encode: a String, <see cref="Buffer"/> or <see cref="Array"/> of bytes.</param>
+		/// <param name="encoding">The encoding a string <paramref name="value"/> is taken in, named as for
+		/// <see cref="A_FileEncoding"/>. Defaults to UTF-8, which is what any other tool means by the Base64 of
+		/// a text.</param>
 		/// <returns>A Base64 string representation of the given binary data.</returns>
-		public static string Base64Encode(object value) => Convert.ToBase64String(Crypt.ToByteArray(value));
+		/// <exception cref="ValueError">Thrown if the encoding cannot be resolved.</exception>
+		/// <exception cref="TypeError">Thrown if the value holds no bytes.</exception>
+		public static string Base64Encode(object value, object encoding = null)
+		{
+			var raw = Conversions.ToByteArray(value, Files.GetEncodingOrDefault(encoding, Encoding.UTF8));
+			return raw == null ? "" : Convert.ToBase64String(raw);
+		}
 
 		/// <summary>
 		/// Formats a string using the same syntax used by string.Format(), except it uses 1-based indexing.
@@ -965,7 +974,8 @@ namespace Keysharp.Builtins
 		/// <param name="encoding">If omitted, the string is simply copied without any conversion taking place.<br/>
 		/// Otherwise, specify the source encoding; for example, "UTF-8", "UTF-16" or "CP936".<br/>
 		/// For numeric identifiers, the prefix "CP" can be omitted only in 3-parameter mode.<br/>
-		/// Specify an empty string or "CP0" to use the system default ANSI code page.
+		/// Specify an empty string to use the native UTF-16 encoding, where AutoHotkey uses the system default<br/>
+		/// ANSI code page. A name which cannot be resolved raises a <see cref="ValueError"/>.
 		/// </param>
 		/// <returns>This function returns the copied or converted string. If the source encoding was specified correctly,<br/>
 		/// the return value always uses the native encoding.
@@ -1115,7 +1125,8 @@ namespace Keysharp.Builtins
 		/// <param name="encoding">If omitted, the string is simply copied or measured without any conversion taking place.<br/>
 		/// Otherwise, specify the target encoding; for example, "UTF-8", "UTF-16" or "CP936".<br/>
 		/// For numeric identifiers, the prefix "CP" can be omitted only in 4-parameter mode.<br/>
-		/// Specify an empty string or "CP0" to use the system default ANSI code page.
+		/// Specify an empty string to use the native UTF-16 encoding, where AutoHotkey uses the system default<br/>
+		/// ANSI code page. A name which cannot be resolved raises a <see cref="ValueError"/>.
 		/// </param>
 		/// <returns>In 4- or 3-parameter mode, this function returns the number of bytes written.<br/>
 		/// In 2-parameter mode, this function returns the required buffer size in bytes, including space for the null-terminator.
