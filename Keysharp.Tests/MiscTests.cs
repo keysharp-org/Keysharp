@@ -186,6 +186,13 @@ namespace Keysharp.Tests
 		[Test, Category("Misc"), NonParallelizable]
 		public void MiscSyntax() => Assert.IsTrue(TestScript("misc-syntax", false));
 
+#if WINDOWS
+		// A native IDispatch client reaching a Keysharp object through ObjPtr must be able to pass
+		// VT_BYREF|VT_VARIANT out-parameters -- that is how an enumerator hands back its key and value.
+		[Test, Category("Misc"), NonParallelizable]
+		public void MiscComByRefEnum() => Assert.IsTrue(TestScript("misc-com-byref-enum", false));
+#endif
+
 		[Test, Category("Misc"), NonParallelizable]
 		public void ComponentDiscovery()
 		{

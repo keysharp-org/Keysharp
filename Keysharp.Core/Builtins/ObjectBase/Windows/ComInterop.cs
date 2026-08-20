@@ -292,7 +292,7 @@ namespace Keysharp.Builtins
 			if ((invokeAttr & BindingFlags.InvokeMethod) != 0)
 			{
 				KeysharpFunc fo = null!;
-				ParameterInfo[] prms = null!;
+				object receiver = null!;   // the instance a by-name resolution bound the method to, if any
 				if (target is KeysharpFunc fo2 && name.Equals("Call", StringComparison.OrdinalIgnoreCase))
 				{
 					fo = fo2;
@@ -310,47 +310,85 @@ namespace Keysharp.Builtins
 					}
 					if (mitup.Item2 is KeysharpFunc fo3)
 						fo = fo3;
+
+					receiver = mitup.Item1;
 				}
-				if (fo != null)
+				// Which argument slots does the callee write back through? A COM caller's VT_BYREF flags never
+				// reach here -- the CLR hands IReflect a null `modifiers` -- so the callee's own [ByRef] marks are
+				// the only thing that can answer it. Allocated on the first mark, because almost no call has one.
+				// Write-back closes over the original `args`, which the CLR copies back into the caller's VARIANTs,
+				// so a variadic tail expansion (which renumbers the slots) opts out.
+				bool[] byRefSlots = null!;
+
+				// An ObjBindMethod reference does not resolve its target until it runs, so its placeholder MPH
+				// carries no signature to read marks off -- KeysharpFunc.IsByRef answers false for the same reason.
+				if (fo?.Mph?.mi != null && ReferenceEquals(usedArgs, args))
 				{
-					prms = [.. fo.Mph.mi.GetParameters()];
-					for (int i = 0; i < prms.Length; i++)
-					{
-						if (!prms[i].IsDefined(typeof(ByRefAttribute)))
-							prms[i] = null!;
-					}
+					var prms = fo.Mph.mi.GetParameters();
+					// A caller's argument slot is not a parameter index. Two things shift it: the receiver may be
+					// carried as parameters[0] (the explicit `object @this` a lowered class method declares), which
+					// is what ArgBase measures; and Bind may already have filled slots, which this call's arguments
+					// flow PAST rather than into, so the holes have to be walked exactly as BoundFunc.CreateArgs
+					// walks them when it merges the two. A method resolved by name carries no Inst of its own -- the
+					// receiver comes from the resolution, exactly as KeysharpFunc.CallInst takes `Inst ?? inst`.
+					var argBase = NamedArgBinder.ArgBase(fo.Mph, fo.Inst ?? receiver);
+					var boundargs = (fo as BoundFunc)?.boundargs;
 
-					if (fo is BoundFunc bo)
+					for (int i = 0, slot = 0; i < args.Length; i++, slot++)
 					{
-						for (int i = 0; i < bo.boundargs.Length; i++)
-							if (bo.boundargs[i] != null)
-								prms[i] = null!;
-					}
+						if (boundargs != null)
+							while (slot < boundargs.Length && boundargs[slot] != null)
+								slot++;
 
-					if (prms.Any(p => p != null))
-					{
-						if (usedArgs == args)
+						var p = slot - argBase;
+
+						if (p < 0)   // the caller prepended the receiver, which is never an out-parameter
+							continue;
+
+						if (p >= prms.Length)
+							break;
+
+						if (!prms[p].IsDefined(typeof(ByRefAttribute)))
+							continue;
+
+						byRefSlots ??= new bool[args.Length];
+
+						// A [ByRef] `params object[]` marks everything it absorbs, so the tail is all out-parameters
+						// from here on -- see Enumerator.Call, which stores each argument through __Value.
+						if (prms[p].IsDefined(typeof(ParamArrayAttribute), false))
 						{
-							usedArgs = new object[args.Length];
-							System.Array.Copy(args, usedArgs, args.Length);
+							for (int j = i; j < byRefSlots.Length; j++)
+								byRefSlots[j] = true;
+
+							break;
 						}
 
-						for (int i = 0; i < prms!.Length; i++)
-						{
-							if (prms != null)
-							{
-								var index = i;
-								usedArgs[i] = new VarRef(() => args[index], value => args[index] = value);
-							}
-						}
-						var result = Com.ConvertToCOMType(Script.Invoke(target, name, usedArgs));
-						for (int i = 0; i < prms.Length; i++)
-						{
-							if (prms[i] != null)
-								args[i] = Com.ConvertToCOMType(args[i]);
-						}
-						return result;
+						byRefSlots[i] = true;
 					}
+				}
+
+				if (byRefSlots != null)
+				{
+					usedArgs = (object[])args.Clone();
+
+					for (int i = 0; i < byRefSlots.Length; i++)
+					{
+						if (!byRefSlots[i])
+							continue;
+
+						var index = i;
+						usedArgs[i] = new VarRef(() => args[index], value => args[index] = value);
+					}
+
+					var result = Com.ConvertToCOMType(Script.Invoke(target, name, usedArgs));
+
+					for (int i = 0; i < byRefSlots.Length; i++)
+					{
+						if (byRefSlots[i])
+							args[i] = Com.ConvertToCOMType(args[i]);
+					}
+
+					return result;
 				}
 
 				return Com.ConvertToCOMType(Script.Invoke(target, name, usedArgs));

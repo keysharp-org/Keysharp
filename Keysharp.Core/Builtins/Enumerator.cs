@@ -87,7 +87,10 @@ namespace Keysharp.Builtins
 
 		void IDisposable.Dispose() => dispose?.Invoke();
 
-		public override object Call(params object[] args)
+		// Every argument is an out-parameter: each one is stored through __Value below, which is what an
+		// enumerator's `for k, v in obj` variables are. There is no per-element way to say that, so the
+		// marker sits on the variadic array and covers the whole tail.
+		public override object Call([ByRef] params object[] args)
 		{
 			try
 			{

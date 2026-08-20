@@ -552,16 +552,24 @@ namespace Keysharp.Builtins
 				index--;
 
 				if (index < funcParams.Length)
-					return funcParams[index].ParameterType.IsByRef || funcParams[index].GetCustomAttribute(typeof(ByRefAttribute)) != null;
+					return IsParamByRef(funcParams[index]);
+
+				// A [ByRef] `params object[]` marks every argument it absorbs, including those past the declared
+				// parameter count -- see Enumerator.Call.
+				var last = funcParams.Length - 1;
+				return last >= 0 && funcParams[last].IsDefined(typeof(ParamArrayAttribute), false) && IsParamByRef(funcParams[last]);
 			}
 			else
 			{
 				for (var i = 0; i < funcParams.Length; i++)
-					if (funcParams[i].ParameterType.IsByRef || funcParams[index].GetCustomAttribute(typeof(ByRefAttribute)) != null)
+					if (IsParamByRef(funcParams[i]))
 						return true;
 			}
 
 			return false;
+
+			static bool IsParamByRef(ParameterInfo p)
+			=> p.ParameterType.IsByRef || p.GetCustomAttribute(typeof(ByRefAttribute)) != null;
 		}
 
 		public virtual bool IsOptional(object paramIndex = null)
