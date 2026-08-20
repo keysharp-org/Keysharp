@@ -11280,12 +11280,13 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Json",
-                     "syntax":  "Json.Encode(Value) / Json.Decode(Text)",
+                     "syntax":  "Json.Encode(Value, Indent?, NullValue?) / Json.Decode(Text, CaseSense?, NullValue?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Encodes script values as JSON and decodes JSON into script values."
+                     "notes":  "Encodes script values as JSON and decodes JSON into script values. Indent pretty-prints, CaseSense sets the key comparison of every decoded Map, and a JSON null decodes to unset unless NullValue names a stand-in for it. A Boolean is written as true/false where the Integer 1 is written as 1.",
+                     "tested-by":  "json-class.ahk"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

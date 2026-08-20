@@ -41,7 +41,7 @@ env:
   # (the CF_HTML codec, the uri-list parser, the OnChange hook's bookkeeping), so they are deterministic on a
   # headless runner. The rest of Category=Clipboard shares one process-wide resource with whatever else is running
   # and stays out of CI, like the pre-existing Env clipboard tests.
-  CURATED_TEST_FILTER: (Category=Assign|Category=BuiltInVars|Category=Class|Category=Collections|Category=Curated|Category=Directives|Category=Flow|Category=Function|Category=Hotstring|Category=Math|Category=Misc|Category=Module|Category=Operator|Category=Parser|Category=String|Category=Types|Category=FileAndDir|Category=Network|FullyQualifiedName~ClipboardTests.CfHtml|FullyQualifiedName~ClipboardTests.UriListParsing|FullyQualifiedName~ClipboardTests.OnChangeHook) & Category!=RequiresHook
+  CURATED_TEST_FILTER: (Category=Assign|Category=BuiltInVars|Category=Class|Category=Collections|Category=Curated|Category=Directives|Category=Flow|Category=Function|Category=Hotstring|Category=Json|Category=Math|Category=Misc|Category=Module|Category=Operator|Category=Parser|Category=String|Category=Types|Category=FileAndDir|Category=Network|FullyQualifiedName~ClipboardTests.CfHtml|FullyQualifiedName~ClipboardTests.UriListParsing|FullyQualifiedName~ClipboardTests.OnChangeHook) & Category!=RequiresHook
   ETO_REPOSITORY: https://github.com/keysharp-org/Eto.git
   ETO_BRANCH: Keysharp
 

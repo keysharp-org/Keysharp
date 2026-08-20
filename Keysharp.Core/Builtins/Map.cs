@@ -19,14 +19,7 @@ namespace Keysharp.Builtins
 		/// <param name="caseSense">The case comparison mode to use.</param>
 		public CaseEqualityComp(eCaseSense caseSense)
 		{
-			//Choose an appropriate built-in StringComparer.
-
-			stringComparer = caseSense switch
-			{
-					eCaseSense.On => StringComparer.Ordinal,
-					eCaseSense.Off => StringComparer.OrdinalIgnoreCase,
-					_ => StringComparer.CurrentCultureIgnoreCase,
-			};
+			stringComparer = Conversions.ComparerFor(caseSense);
 		}
 
 		/// <summary>
@@ -130,13 +123,10 @@ namespace Keysharp.Builtins
 			set
 			{
 				var oldVal = caseSense;
-				var str = value.ToString().ToLower();
-				var val = Options.OnOff(str);
 
-				if (val != null)
-					caseSense = val.IsTrue() ? eCaseSense.On : eCaseSense.Off;
-				else if (str == "locale")
-					caseSense = eCaseSense.Locale;
+				//An unrecognized value leaves the mode alone, which is how this has always behaved.
+				if (Conversions.ParseCaseSense(value) is eCaseSense parsed)
+					caseSense = parsed;
 
 				if (map == null)
 					return;
@@ -213,6 +203,20 @@ namespace Keysharp.Builtins
 		/// See <see cref="__New(object[])"/>.
 		/// </summary>
 		public Map(params object[] args) : base(args) { }
+
+		/// <summary>
+		/// Initializes an empty <see cref="Map"/> whose string-key comparison is fixed at construction.
+		/// The public <see cref="CaseSense"/> setter refuses a map which already holds entries (the AHK v2
+		/// behavior), so a caller which populates as it builds -- JSON decoding -- has no other way to reach
+		/// a case-insensitive map. Passing null to the base constructor skips __Init/__New, which is what
+		/// lets the dictionary be created once, already carrying the right comparer.
+		/// </summary>
+		/// <param name="caseSense">The case comparison mode for string keys.</param>
+		internal Map(eCaseSense caseSense) : base(null)
+		{
+			this.caseSense = caseSense;
+			map = new Dictionary<object, object>(new CaseEqualityComp(caseSense));
+		}
 
 		/// <summary>
 		/// Gets the enumerator object which returns a key,value tuple for each element
@@ -659,12 +663,7 @@ namespace Keysharp.Builtins
 		{
 			CaseSense = caseSense;
 
-			stringComparer = caseSense switch
-			{
-				eCaseSense.On => StringComparer.Ordinal,
-				eCaseSense.Off => StringComparer.OrdinalIgnoreCase,
-				_ => StringComparer.CurrentCultureIgnoreCase,
-			};
+			stringComparer = Conversions.ComparerFor(caseSense);
 		}
 
 		/// <summary>

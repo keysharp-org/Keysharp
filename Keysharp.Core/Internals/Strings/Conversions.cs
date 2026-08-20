@@ -291,6 +291,35 @@ namespace Keysharp.Internals.Strings
 
 		internal static int MakeInt(int lowPart, int highPart) => (lowPart & 0x0000FFFF) | (highPart << 16);
 
+		/// <summary>
+		/// Parses a CaseSense option the way <c>Map.CaseSense</c> spells it, which is also the spelling
+		/// <c>Json.Decode</c> takes. Returns null for anything that is neither on/off nor "locale", leaving
+		/// the caller to choose between a default and an error -- Map keeps its previous mode, Json raises.
+		/// </summary>
+		/// <param name="option">The option as the script supplied it.</param>
+		/// <returns>The mode, or null if option named none.</returns>
+		internal static eCaseSense? ParseCaseSense(object option)
+		{
+			if (option == null)
+				return null;//Options.OnOff maps null to false, which would silently mean Off here.
+
+			if (Options.OnOff(option) is bool onOff)
+				return onOff ? eCaseSense.On : eCaseSense.Off;
+
+			return string.Equals(option.ToString().Trim(), Keyword_Locale, StringComparison.OrdinalIgnoreCase)
+				   ? eCaseSense.Locale : null;
+		}
+
+		/// <summary>The string comparer a <see cref="eCaseSense"/> mode selects.</summary>
+		/// <param name="caseSense">The mode.</param>
+		/// <returns>The comparer, culture-aware only for <see cref="eCaseSense.Locale"/>.</returns>
+		internal static StringComparer ComparerFor(eCaseSense caseSense) => caseSense switch
+		{
+			eCaseSense.On => StringComparer.Ordinal,
+			eCaseSense.Off => StringComparer.OrdinalIgnoreCase,
+			_ => StringComparer.CurrentCultureIgnoreCase,
+		};
+
 		internal static StringComparison ParseComparisonOption(object option) => option.ToString().Trim().ToLowerInvariant() switch
 	{
 			"1" or TrueTxt or Keyword_On => StringComparison.Ordinal,

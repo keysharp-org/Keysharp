@@ -695,7 +695,7 @@ Status legend:
 | IsUpper() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a string is uppercase. |
 | IsXDigit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a string contains only hexadecimal digits. |
 | Join() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Joins arguments into a string using a separator. |
-| Json | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Encodes script values as JSON and decodes JSON into script values. |
+| Json | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Encodes script values as JSON and decodes JSON into script values. Indent pretty-prints, CaseSense sets the key comparison of every decoded Map, and a JSON null decodes to unset unless NullValue names a stand-in for it. A Boolean is written as true/false where the Integer 1 is written as 1. |
 | Keyboard/Mouse send (synthetic input) | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Requires platform permissions on macOS. |
 | KeyError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class for missing keys/items. |
 | KeyHistory() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The KeyHistory function displays script info and a history of the most recent keystrokes and mouse clicks. |

@@ -659,7 +659,38 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 		+ `Clr.GetNamespaceName(ManagedNamespace)` returns the full intenal namespace name of the namespace wrapped by `ManagedNamespace`.
 		+ `Clr.GetTypeName(ManagedType)` returns the full internal type name of the type wrapped by `ManagedType`.
 	+ `HashMap`: Extends `Map` and does not perform sorting before enumeration.
-	+ `StringBuffer`: Can be used for passing string memory to `DllCall()` which will be written to inside of the call.
+	+ `Json`: Converts between JSON text and script values. Available from the `KS` module: `#Import "Ks" { Json }`, then `Json.Encode(value)` and `Json.Decode(text)`.
+		+ `Json.Encode(value [, indent, nullValue]) => String`: Returns the JSON text for a script value.
+			+ A `Map` becomes a JSON object, an `Array` becomes a JSON array, and any other object contributes its own value properties (a dynamic property is skipped rather than invoked, because encoding a value must not run script code). A `Map` enumerates in sorted key order, so encoding one sorts its keys and the same map always produces the same text regardless of insertion order.
+			+ `indent` follows the convention of JavaScript's `JSON.stringify` and Python's `json.dumps`: omitted, `""` or `0` writes the compact single-line form (the default); a number writes that many spaces per level; a string of spaces **or** of tabs is used as the indent unit itself, as in ``Json.Encode(value, "`t")``. The widest indent is 127; a mix of spaces and tabs, or any other string, raises a `ValueError`.
+			+ Indented output separates lines with a single line feed on every platform — deliberately not the platform line ending, so that the same value always produces the same bytes and a hash taken over encoded JSON (a lock file, a cache key) is not host-dependent.
+			+ Quotes are escaped but non-ASCII text is not, so `Json.Encode("äöü")` is `"äöü"` rather than a run of `\uXXXX` escapes.
+			+ A reference cycle, or nesting deeper than 128 levels, raises a `ValueError`. Two distinct but equal containers are not a cycle.
+		+ `Json.Decode(text [, caseSense := true, nullValue])`: Returns the script value for JSON text.
+			+ A JSON object becomes a `Map` and a JSON array becomes an `Array`. An integral number becomes an `Integer`, and anything else — including a value too large for a 64-bit integer — becomes a `Float`.
+			+ `caseSense` is the case sensitivity given to **every** `Map` in the result, spelled as for `Map.CaseSense`: `true` (the default, matching `Map()`), `false`, or `"Locale"`. It has to be chosen here because `Map.CaseSense` cannot be assigned once a map holds entries. With `false`, keys differing only in case collapse into a single entry, as they do in any case-insensitive `Map`.
+			+ Trailing commas and `//` and `/* */` comments are accepted, because hand-written configuration files commonly carry them. Everything else follows the JSON grammar; malformed text, or nesting deeper than the 128 levels `Encode` also allows, raises a `ValueError`.
+		+ A `Boolean` — the `true` and `false` keywords, or any comparison, negation or `Map.Has()` result — is written as JSON `true`/`false`, where the Integer 1 or 0 is written as a number. That is what makes booleans survive a round trip, and `x is Boolean` is what tells the two apart in a decoded document.
+		+ Nulls: JSON has a `null`; the language has no value a container can hold for it. With no marker a JSON `null` decodes to **unset**, which means what `unset` means everywhere else — a `Map` key is simply absent, and an `Array` element is a hole that keeps the array's `Length`.
+			+ So `Json.Decode('{"a":null,"b":""}')` gives a Map with only `b`, and `Json.Decode('[1,null,3]')` gives a 3-element Array whose element 2 is a hole. `Has()` is the test, and a `null` no longer collides with an empty string.
+			+ `nullValue` overrides that on `Decode` — it is what a JSON `null` becomes — and on `Encode` it is the value written back out as `null`. Supply the same marker to both to tell a `null` apart from an *absent* key, which is the one distinction unset cannot carry.
+			+ `Encode` has no default marker, because defaulting it to anything would silently turn every occurrence of that value into a null.
+			+ An object marker is matched by identity, so it cannot collide with data; any other value is matched by value, which is a caller deliberately nominating every occurrence of it.
+			```
+			#Import "Ks" { Json }
+			NULL := Object()
+
+			Json.Decode('{"a":null}').Has("a")            ; 0 — the key is simply not there
+			Json.Decode('[1,null,3]').Length              ; 3 — element 2 is a hole
+
+			cfg := Json.Decode(FileRead("config.json"), caseSense: false, nullValue: NULL)
+			if (cfg["Timeout"] == NULL)
+				cfg["timeout"] := 30       ; the key lookup is case-insensitive
+			FileOpen("config.json", "w").Write(Json.Encode(cfg, 2, NULL))
+
+			Json.Encode(Map("a", NULL))            ; {"a":{}} — no marker, so it is just an object
+			Json.Encode(Map("a", NULL), , NULL)    ; {"a":null}
+			```	+ `StringBuffer`: Can be used for passing string memory to `DllCall()` which will be written to inside of the call.
 		+ There are two methods for creating a `StringBuffer`:
 			+ `StringBuffer(str := "") => StringBuffer`: Creates a `StringBuffer` with a string of `str` and a capacity of 256.
 			+ `StringBuffer(str, capacity) => StringBuffer`: Creates a `StringBuffer` with a string of `str` and a capacity of `Max(16, capacity)`.
