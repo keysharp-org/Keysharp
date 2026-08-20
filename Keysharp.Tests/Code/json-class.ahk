@@ -6,67 +6,101 @@
 
 if (Json.Encode(Map("a", 1, "b", "two")) == '{"a":1,"b":"two"}')
     FileAppend "pass", "*"
+else
+	FileAppend "pass", "fail"
 
 if (Json.Encode([1, "x", Map("k", 2)]) == '[1,"x",{"k":2}]')
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 ; Indent: a width is that many spaces, a string of tabs is the unit itself, "" and 0 stay compact.
 if (Json.Encode(Map("a", 1), 2) == '{`n  "a": 1`n}')
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 if (Json.Encode(Map("a", 1), "`t") == '{`n`t"a": 1`n}')
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 if (Json.Encode(Map("a", 1), "") == '{"a":1}' && Json.Encode(Map("a", 1), 0) == '{"a":1}')
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 if (Json.Encode(Map("a", 1), indent: 2) == '{`n  "a": 1`n}')
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 ; Decoding builds Maps and Arrays.
 obj := Json.Decode('{"a":1,"b":[2,3]}')
 if (obj is Map && obj["a"] == 1 && obj["b"] is Array && obj["b"][2] == 3)
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 ; Keys are case-sensitive by default, and caseSense reaches every map in the document.
 sensitive := Json.Decode('{"Key":1,"key":2}')
 if (sensitive.Count == 2 && sensitive["Key"] == 1 && sensitive["key"] == 2)
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 insensitive := Json.Decode('{"Key":1,"Nested":{"Inner":2}}', false)
 if (insensitive["KEY"] == 1 && insensitive["nested"]["INNER"] == 2)
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 if (Json.Decode('{"Key":1}', caseSense: false)["kEy"] == 1)
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 ; true/false read as 1/0 like every other integer, but survive a round trip as true/false.
 flags := Json.Decode('{"t":true,"f":false}')
 if (flags["t"] == 1 && flags["f"] == 0 && Type(flags["t"]) == "Integer" && !flags["f"])
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 if (Json.Encode(flags) == '{"f":false,"t":true}')
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 if (Json.Encode(Map("t", true, "f", false)) == '{"f":false,"t":true}')
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 ; A boolean and the Integer 1 read the same everywhere, so the Boolean type is what names the difference.
 mixed := Json.Decode('{"t":true,"one":1}')
 if (mixed["t"] == mixed["one"] && Type(mixed["t"]) == Type(mixed["one"]) && mixed["t"] is Boolean && !(mixed["one"] is Boolean))
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 ; The language produces booleans on its own, so a comparison encodes as a JSON boolean where 1 does not.
 if (Json.Encode(Map("ok", 1 > 0)) == '{"ok":true}' && Json.Encode(Map("ok", 1)) == '{"ok":1}')
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 ; With no marker a JSON null is unset: the key is simply absent, and an array element is a hole.
 if (!Json.Decode('{"a":null}').Has("a") && Json.Decode('{"a":null,"b":1}').Count == 1)
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 holes := Json.Decode('[1,null,3]')
 if (holes.Length == 3 && !holes.Has(2) && holes[1] == 1 && holes[3] == 3)
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 ; There is no built-in null sentinel: a script that needs one supplies its own marker and hands the
 ; same one back to Encode. An object marker cannot collide with data.
@@ -74,20 +108,30 @@ NULL := Object()
 kept := Json.Decode('{"a":null,"b":1}', nullValue: NULL)
 if (kept["a"] == NULL && kept["b"] != NULL && kept["a"] != "")
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 if (Json.Encode(Map("a", NULL), nullValue: NULL) == '{"a":null}')
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 ; Without the marker the same object is just an object, so nothing becomes null by accident.
 if (Json.Encode(Map("a", NULL)) == '{"a":{}}')
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 if (Json.Encode(Json.Decode('{"a":null,"b":true}', nullValue: NULL), nullValue: NULL) == '{"a":null,"b":true}')
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 ; Hand-written JSON with comments and a trailing comma is accepted.
 if (Json.Decode('{`n// leading`n"a": 1, /* trailing */`n}')["a"] == 1)
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
 
 ; Malformed text and an unrecognised option both raise.
 threw := 0
@@ -103,5 +147,8 @@ try
     Json.Encode(Map(), " `t")
 catch ValueError
     threw++
+
 if (threw == 3)
     FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
