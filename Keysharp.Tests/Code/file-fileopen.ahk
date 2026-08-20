@@ -391,3 +391,77 @@ if (b == true)
 	FileAppend "pass", "*"
 else
 	FileAppend "fail", "*"
+
+if (FileExist(path) != "")
+	FileDelete(path)
+
+f := FileOpen(path, "rw", "UTF-8-RAW") ; The character count of Read() is optional.
+f.Write("hello wörld")
+f.Seek(0)
+r := f.Read(5)
+
+if (r == "hello")
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+r := f.Read(0) ; An explicit zero reads nothing; only an omitted count means "the rest".
+
+if (r == "")
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+r := f.Read() ; Omitted: everything left from the current position, multi-byte characters included.
+
+if (r == " wörld")
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+if (f.AtEOF == 1)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+b := false
+
+try
+	f.Read(-1)
+catch
+	b := true
+
+if (b == true)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+f.Close()
+
+if (FileExist(path) != "")
+	FileDelete(path)
+
+big := "" ; Longer than one decode chunk, so a multi-byte character straddles a chunk boundary.
+
+Loop 2500
+	big .= "aö"
+
+f := FileOpen(path, "w", "UTF-8-RAW")
+f.Write(big)
+f.Close()
+f := FileOpen(path, "r", "UTF-8-RAW")
+r := f.Read()
+f.Close()
+
+if (StrLen(r) == 5000)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+if (r == big)
+	FileAppend "pass", "*"
+else
+	FileAppend "fail", "*"
+
+if (FileExist(path) != "")
+	FileDelete(path)

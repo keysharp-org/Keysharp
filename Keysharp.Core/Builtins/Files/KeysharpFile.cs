@@ -383,10 +383,20 @@ namespace Keysharp.Builtins
 			return len;
 		}
 
-		public string Read(object characters)
+		/// <summary>
+		/// Reads characters and advances the file pointer.
+		/// </summary>
+		/// <param name="characters">How many characters to read; omit to read to the end of the stream.</param>
+		/// <returns>The characters read, or an empty string once the end has been reached.</returns>
+		public string Read(object characters = null)
 		{
 			var s = "";
+			var readAll = characters is null;
 			var count = characters.Al();
+
+			if (count < 0)
+				return (string)Errors.ValueErrorOccurred("Invalid character count", count, DefaultObject);
+
 			char[] buf = null;
 			var read = 0;
 
@@ -395,17 +405,29 @@ namespace Keysharp.Builtins
 
 			if (br != null)
 			{
-				if (count > 0)
+				if (readAll)
+				{
+					// Deliberately not BinaryReader.ReadString(): that expects the 7-bit-encoded length prefix
+					// BinaryWriter emits, which an ordinary file does not carry. Decoding through the reader's
+					// own encoding also keeps a multi-byte character split across two chunks intact.
+					var sb = new StringBuilder();
+					var chunk = new char[4096];
+					int n;
+
+					while ((n = br.Read(chunk, 0, chunk.Length)) > 0)
+						_ = sb.Append(chunk, 0, n);
+
+					s = sb.ToString();
+				}
+				else if (count > 0)
 					read = br.Read(buf, 0, (int)count);
-				else
-					s = br.ReadString();
 			}
 			else if (tr != null)
 			{
-				if (count > 0)
-					read = tr.Read(buf, 0, (int)count);
-				else
+				if (readAll)
 					s = tr.ReadToEnd();
+				else if (count > 0)
+					read = tr.Read(buf, 0, (int)count);
 			}
 
 			if (read > 0)
