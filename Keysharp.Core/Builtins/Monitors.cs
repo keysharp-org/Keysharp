@@ -28,7 +28,7 @@ namespace Keysharp.Builtins
 		/// as <c>Monitor</c>.</para>
 		/// </summary>
 		[UserDeclaredName("Monitor")]
-		public sealed class KeysharpMonitor : KeysharpObject
+		public class KeysharpMonitor : KeysharpObject
 		{
 			private DisplayInfo display;
 			private long index;

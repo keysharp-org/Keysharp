@@ -24,13 +24,13 @@ namespace Keysharp.Builtins
 		/// <c>Critical</c>.</para>
 		/// </summary>
 		[UserDeclaredName("Lock")]
-		public sealed class KeysharpLock : KeysharpObject
+		public class KeysharpLock : KeysharpObject
 		{
 			// Monitor is used directly on this object so that LockRun(lockObj, …), which locks whatever object it is
 			// given, and Acquire/Release refer to the same monitor. There is deliberately no IsHeld: its answer is
 			// stale the instant it is produced, so nothing can act on it — Acquire(0) is the usable form.
 
-			public static object staticCall(object @this) => new KeysharpLock();
+			public KeysharpLock(params object[] args) : base(args) { }
 
 			/// <summary>
 			/// Acquires the lock, blocking until it is free or <paramref name="timeout"/> milliseconds elapse.
