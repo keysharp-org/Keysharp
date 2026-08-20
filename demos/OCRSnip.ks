@@ -144,13 +144,13 @@ class OCRSnip {
                 return
             }
 
-            if (rect.w < this.MinSize || rect.h < this.MinSize) {
+            if (rect.Width < this.MinSize || rect.Height < this.MinSize) {
                 this.StatusTip("OCR snip ignored: selection was too small.", 1600)
                 return
             }
 
             this.StatusTip("OCR running...", 0)
-            result := OCR.FromRect(rect.x, rect.y, rect.w, rect.h, {scale: this.OcrScale})
+            result := OCR.FromRect(rect.X, rect.Y, rect.Width, rect.Height, {scale: this.OcrScale})
             if (Trim(result.Text) = "") {                ; nothing recognized — leave the user's clipboard intact
                 this.StatusTip("No text found in the selection — clipboard left unchanged.", 2000)
                 return
@@ -264,9 +264,9 @@ class OCRSnip {
         if this.RefreshDisplayMetrics(this.curX, this.curY) {
 			local d := this.Desktop, thin := Max(1, Round(this.Scale))
             if IsObject(this.GuideV)
-                this.GuideV.Move(this.curX, d.y, thin, d.h)
+                this.GuideV.Move(this.curX, d.Y, thin, d.Height)
             if IsObject(this.GuideH)
-                this.GuideH.Move(d.x, this.curY, d.w, thin)
+                this.GuideH.Move(d.X, this.curY, d.Width, thin)
             this.RebuildReticle(this.curX, this.curY)
         }
         if IsObject(this.GuideV)
@@ -285,19 +285,19 @@ class OCRSnip {
     static UpdateSelection(mx, my) {
         local r := this.NormalizeRect(this.AnchorX, this.AnchorY, mx, my)
 
-        if (r.w < 1 || r.h < 1) {
+        if (r.Width < 1 || r.Height < 1) {
             this.HideSelection()
             return
         }
 
 		local th := Max(1, Round(2 * this.Scale))
-        local rw := r.w, rh := r.h
+        local rw := r.Width, rh := r.Height
         local pieces := [
-            [this.SelFill,    r.x,             r.y,             rw, rh],   ; fill
-            [this.SelBars[1], r.x,             r.y,             rw, th],   ; top
-            [this.SelBars[2], r.x,             r.y + r.h - th,  rw, th],   ; bottom
-            [this.SelBars[3], r.x,             r.y,             th, rh],   ; left
-            [this.SelBars[4], r.x + r.w - th,  r.y,             th, rh]]   ; right
+            [this.SelFill,    r.X,             r.Y,             rw, rh],   ; fill
+            [this.SelBars[1], r.X,             r.Y,             rw, th],   ; top
+            [this.SelBars[2], r.X,             r.Y + r.Height - th,  rw, th],   ; bottom
+            [this.SelBars[3], r.X,             r.Y,             th, rh],   ; left
+            [this.SelBars[4], r.X + r.Width - th,  r.Y,             th, rh]]   ; right
         for p in pieces {
             if this.selShown
                 p[1].Move(p[2], p[3], p[4], p[5])
@@ -343,16 +343,16 @@ class OCRSnip {
         ; paint, one upload, regardless of word count.
         local rects := [], minX := 0x7FFFFFFF, minY := 0x7FFFFFFF, maxX := -0x7FFFFFFF, maxY := -0x7FFFFFFF
         for word in words {
-            if (Trim(word.Text) = "" || word.w < 1 || word.h < 1)
+            if (Trim(word.Text) = "" || word.Width < 1 || word.Height < 1)
                 continue
 
-            x := Round(word.x) - pad
-            y := Round(word.y) - pad
-            w := Round(word.w) + pad * 2
-            h := Round(word.h) + pad * 2
+            x := Round(word.X) - pad
+            y := Round(word.Y) - pad
+            w := Round(word.Width) + pad * 2
+            h := Round(word.Height) + pad * 2
 
-            rects.Push({x: x, y: y, w: w, h: h})
-            this.Words.Push({x: x, y: y, w: w, h: h, text: word.Text})
+            rects.Push({X: x, Y: y, Width: w, Height: h})
+            this.Words.Push({X: x, Y: y, Width: w, Height: h, text: word.Text})
             minX := Min(minX, x), minY := Min(minY, y)
             maxX := Max(maxX, x + w), maxY := Max(maxY, y + h)
         }
@@ -365,8 +365,8 @@ class OCRSnip {
         local bw := maxX - minX, bh := maxY - minY
 		local ov := Overlay(minX, minY, bw, bh)
         for r in rects {
-            local rx := r.x - minX, ry := r.y - minY
-            local rw := r.w, rh := r.h
+            local rx := r.X - minX, ry := r.Y - minY
+            local rw := r.Width, rh := r.Height
             ov.FillRoundRect(rx, ry, rw, rh, radius, "0x2200A1FF")
             ov.DrawRoundRect(rx + 1, ry + 1, Max(1, rw - 2), Max(1, rh - 2), radius, "0xB000A1FF", 2)
         }
@@ -406,11 +406,11 @@ class OCRSnip {
 
         ; Faint full-screen guide lines for precise alignment (one authored UI unit thick).
 		local thin := Max(1, Round(this.Scale))
-		this.GuideV := Overlay(mx, d.y, thin, d.h)
+		this.GuideV := Overlay(mx, d.Y, thin, d.Height)
         this.GuideV.Clear("0x661A73E8")
         this.GuideV.Show()
 
-		this.GuideH := Overlay(d.x, my, d.w, thin)
+		this.GuideH := Overlay(d.X, my, d.Width, thin)
         this.GuideH.Clear("0x661A73E8")
         this.GuideH.Show()
 
@@ -504,12 +504,12 @@ class OCRSnip {
             }
         }
 
-        return {x: left, y: top, w: Max(1, right - left), h: Max(1, bottom - top)}
+        return {X: left, Y: top, Width: Max(1, right - left), Height: Max(1, bottom - top)}
     }
 
     static NormalizeRect(x1, y1, x2, y2) {
         local x := Min(x1, x2), y := Min(y1, y2)
-        return {x: x, y: y, w: Abs(x2 - x1), h: Abs(y2 - y1)}
+        return {X: x, Y: y, Width: Abs(x2 - x1), Height: Abs(y2 - y1)}
     }
 
     static StatusTip(message, ms := 2000) {
@@ -543,7 +543,7 @@ class OCRSnip {
         MouseGetPos(&mx, &my)
 
         for word in this.Words {
-            if (mx >= word.x && mx < word.x + word.w && my >= word.y && my < word.y + word.h) {
+            if (mx >= word.X && mx < word.X + word.Width && my >= word.Y && my < word.Y + word.Height) {
                 if (word.text != lastText) {
                     ToolTip(word.text, mx + 14, my + 20, 2)
                     lastText := word.text

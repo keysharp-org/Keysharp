@@ -119,7 +119,7 @@ class InputHUD {
     static Setup() {
         ; Layout is authored in conventional UI units. Each HUD independently tracks native-units-per-UI-unit
         ; (`ui`) and backing-pixels-per-native-unit (`raster`) for the display containing its centre.
-		this.ms := {ov: Overlay(), cx: 0, cy: 0, x: 0, y: 0, w: 118, h: 188, pw: 118, ph: 188,
+		this.ms := {ov: Overlay(), cx: 0, cy: 0, X: 0, Y: 0, Width: 118, Height: 188, pw: 118, ph: 188,
 					scale: 1, zoom: 1, zoomImg: ""}
         this.BuildKeyboard()
         this.RefreshToggles()            ; seed the lock LEDs so the first paint already shows the real state
@@ -230,7 +230,7 @@ class InputHUD {
             this.dispVk[k.vk] := true
         }
         local lw := Round(maxR + this.Pad), lh := Round(maxB + this.Pad)
-		this.kb := {ov: Overlay(), cx: 0, cy: 0, x: 0, y: 0, w: lw, h: lh, pw: lw, ph: lh,
+		this.kb := {ov: Overlay(), cx: 0, cy: 0, X: 0, Y: 0, Width: lw, Height: lh, pw: lw, ph: lh,
 					scale: 1, keys: keys, zoom: 1, zoomImg: ""}
         this.BuildLeds(lw, navX)         ; status-light strip in the empty top-right corner, above the nav cluster
     }
@@ -248,8 +248,8 @@ class InputHUD {
         for i, lk in this.Locks {
             local cx := left + (i - 0.5) * band      ; centre of this LED's slot (i is 1-based)
             local sz := tmp.MeasureText(lk[3], this.LedFont, this.FontName)
-            this.leds.Push({name: lk[1], label: lk[3], x: cx - d / 2, y: this.Pad + 1, d: d,
-                            lx: cx - sz.w / 2, ly: this.Pad + 1 + d + 2})
+            this.leds.Push({name: lk[1], label: lk[3], X: cx - d / 2, Y: this.Pad + 1, d: d,
+                            lx: cx - sz.Width / 2, ly: this.Pad + 1 + d + 2})
         }
         tmp.Dispose()
     }
@@ -274,7 +274,7 @@ class InputHUD {
         if (label != "") {
             local tmp := Image.Create(1, 1)
             local sz := tmp.MeasureText(label, this.Font, this.FontName)
-            tw := sz.w, th := sz.h
+            tw := sz.Width, th := sz.Height
             tmp.Dispose()
         }
         ; A lock key on the board (only Caps, here) carries a toggle name so it gets an on-key toggle pip.
@@ -288,7 +288,7 @@ class InputHUD {
     static RenderKeyboard() {
         local kb := this.kb
         local z := this.Geometry(kb)     ; snapshot the zoom ONCE; the bitmap, on-screen size and position all use z
-		local img := Image.Create(kb.w, kb.h, , kb.scale * z)
+		local img := Image.Create(kb.Width, kb.Height, , kb.scale * z)
         this.DrawKeyboard(img)
 		this.UpdateOverlay(kb, img)    ; image + final geometry reach the platform in one transaction
         img.Dispose()
@@ -303,7 +303,7 @@ class InputHUD {
     static RenderKbPreview() {
         local kb := this.kb
         if (kb.zoomImg = "") {
-			kb.zoomImg := Image.Create(kb.w, kb.h, , kb.scale)
+			kb.zoomImg := Image.Create(kb.Width, kb.Height, , kb.scale)
             this.DrawKeyboard(kb.zoomImg)
         }
         local z := this.Geometry(kb)
@@ -313,8 +313,8 @@ class InputHUD {
     ; Paints the whole keyboard into `img` in LOGICAL coordinates (so it works at any bitmap scale). No geometry/upload.
     static DrawKeyboard(img) {
         local kb := this.kb
-        img.FillRoundRect(0, 0, kb.w, kb.h, 14, this.Bg)
-        img.DrawRoundRect(1, 1, kb.w - 2, kb.h - 2, 14, this.Border, 2)
+        img.FillRoundRect(0, 0, kb.Width, kb.Height, 14, this.Bg)
+        img.DrawRoundRect(1, 1, kb.Width - 2, kb.Height - 2, 14, this.Border, 2)
         for k in kb.keys {
             local src := this.down.Has(k.vk) ? this.down[k.vk] : ""
             img.FillRoundRect(k.px, k.py, k.pw, this.U, 6, src = "synth" ? this.SynFill : src = "phys" ? this.LitFill : this.KeyFill)
@@ -329,7 +329,7 @@ class InputHUD {
         ; including the two locks that have no key on this layout.
         for led in this.leds {
             local on := this.IsLockOn(led.name)
-            this.DrawLed(img, led.x, led.y, led.d, on)
+            this.DrawLed(img, led.X, led.Y, led.d, on)
             img.DrawText(led.label, led.lx, led.ly, on ? this.LedLabOn : this.LedLab, this.LedFont, this.FontName)
         }
     }
@@ -377,7 +377,7 @@ class InputHUD {
     static RenderMouse() {
         local ms := this.ms
         local z := this.Geometry(ms)
-		local img := Image.Create(ms.w, ms.h, , ms.scale * z)
+		local img := Image.Create(ms.Width, ms.Height, , ms.scale * z)
         this.DrawMouse(img)
 		this.UpdateOverlay(ms, img)
         img.Dispose()
@@ -388,7 +388,7 @@ class InputHUD {
     static RenderMsPreview() {
         local ms := this.ms
         if (ms.zoomImg = "") {
-			ms.zoomImg := Image.Create(ms.w, ms.h, , ms.scale)
+			ms.zoomImg := Image.Create(ms.Width, ms.Height, , ms.scale)
             this.DrawMouse(ms.zoomImg)
         }
         local z := this.Geometry(ms)
@@ -398,9 +398,9 @@ class InputHUD {
     ; Paints the whole mouse HUD into `img` in LOGICAL coordinates. No geometry/upload.
     static DrawMouse(img) {
         local ms := this.ms
-        img.FillRoundRect(0, 0, ms.w, ms.h, 12, this.Bg)
+        img.FillRoundRect(0, 0, ms.Width, ms.Height, 12, this.Bg)
 
-        local bx := 20, by := 14, bw := ms.w - 40, bh := ms.h - 34
+        local bx := 20, by := 14, bw := ms.Width - 40, bh := ms.Height - 34
         img.FillRoundRect(bx, by, bw, bh, bw / 2, this.KeyFill)          ; mouse body (rounded top & bottom)
 
         local half := bw / 2, btnH := bh * 0.42, gap := 4
@@ -423,7 +423,7 @@ class InputHUD {
         img.FillRoundRect(bx - 3, by + btnH + 10, 6, 16, 3, this.BtnFill("x2"))
         img.FillRoundRect(bx - 3, by + btnH + 30, 6, 16, 3, this.BtnFill("x1"))
 
-        img.DrawText("Mouse", bx, ms.h - 16, this.KeyText, "s9", this.FontName)
+        img.DrawText("Mouse", bx, ms.Height - 16, this.KeyText, "s9", this.FontName)
     }
 
     ; Fill colour for a mouse-button rectangle by pressed origin: physical = blue, injected = amber, idle = grey.
@@ -555,7 +555,7 @@ class InputHUD {
         return ""
     }
 
-    static InRect(x, y, o) => IsObject(o) && x >= o.x && x < o.x + o.pw && y >= o.y && y < o.y + o.ph
+    static InRect(x, y, o) => IsObject(o) && x >= o.X && x < o.X + o.pw && y >= o.Y && y < o.Y + o.ph
 
     static DragHud() {
         local which := this.OverHud()
@@ -579,7 +579,7 @@ class InputHUD {
                         this.msDirty := true
                 } else
                     this.Geometry(o)
-                o.ov.Move(o.x, o.y, o.pw, o.ph)
+                o.ov.Move(o.X, o.Y, o.pw, o.ph)
                 Sleep 8
             }
             this.SaveHud(which, o)                       ; remember where the user parked this HUD for next run
@@ -646,10 +646,10 @@ class InputHUD {
     static Geometry(o) {
         local z := o.zoom
         ; Zoom is encoded in the authored W/H, then monitor scale converts that size to native screen units.
-		o.pw := Round(Round(o.w * z) * o.scale)
-		o.ph := Round(Round(o.h * z) * o.scale)
-        o.x := Round(o.cx - o.pw / 2)
-        o.y := Round(o.cy - o.ph / 2)
+		o.pw := Round(Round(o.Width * z) * o.scale)
+		o.ph := Round(Round(o.Height * z) * o.scale)
+        o.X := Round(o.cx - o.pw / 2)
+        o.Y := Round(o.cy - o.ph / 2)
         return z
     }
 
@@ -657,7 +657,7 @@ class InputHUD {
     ; The old frame stays visible until this succeeds, so no transparent Scale frame or separately moved frame can
 	; reach the compositor. Zoom lives entirely in W/H; the renderer selects backing density automatically.
 	static UpdateOverlay(o, img) {
-		o.ov.Update(img, o.x, o.y, o.pw, o.ph)
+		o.ov.Update(img, o.X, o.Y, o.pw, o.ph)
 	}
 
 	; Refresh one HUD's monitor scale. Backing density is renderer-owned and never enters the script's geometry.
@@ -800,8 +800,8 @@ class InputHUD {
         this.ms.cx := msX + this.ms.pw / 2, this.ms.cy := msY + this.ms.ph / 2
         this.Geometry(this.kb)
         this.Geometry(this.ms)
-        this.kb.ov.Move(this.kb.x, this.kb.y)
-        this.ms.ov.Move(this.ms.x, this.ms.y)
+        this.kb.ov.Move(this.kb.X, this.kb.Y)
+        this.ms.ov.Move(this.ms.X, this.ms.Y)
     }
 }
 

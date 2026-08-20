@@ -63,7 +63,7 @@
         result.ImageWidth/Height
         result.FindString(Needle, Options?) / FindStrings / Filter(cb) / Crop(x1,y1,x2,y2)
 
-    OCR.Line / OCR.Word:  .Text, .x, .y, .w, .h, .BoundingRect (Word also has .Conf 0-100; Line also has .Words)
+    OCR.Line / OCR.Word:  .Text, .X, .Y, .Width, .Height, .BoundingRect (Word also has .Conf 0-100; Line also has .Words)
     Common methods (Result/Line/Word): .Highlight(showTime?, color:="Red", d:=2), .ClearHighlight(),
         .Click(WhichButton?, ClickCount?, DownOrUp?)
 
@@ -278,8 +278,8 @@ class OCR {
             throw ValueError("This function requires at least one argument", -1)
         local x1 := 100000000, y1 := 100000000, x2 := -100000000, y2 := -100000000, word
         for word in words
-            x1 := Min(word.x, x1), y1 := Min(word.y, y1), x2 := Max(word.x + word.w, x2), y2 := Max(word.y + word.h, y2)
-        return {x: x1, y: y1, w: x2 - x1, h: y2 - y1, x2: x2, y2: y2}
+            x1 := Min(word.X, x1), y1 := Min(word.Y, y1), x2 := Max(word.X + word.Width, x2), y2 := Max(word.Y + word.Height, y2)
+        return {X: x1, Y: y1, Width: x2 - x1, Height: y2 - y1, x2: x2, y2: y2}
     }
 
     /**
@@ -313,16 +313,16 @@ class OCR {
 
     class Common {
         x {
-            get => this.BoundingRect.x
+            get => this.BoundingRect.X
         }
         y {
-            get => this.BoundingRect.y
+            get => this.BoundingRect.Y
         }
         w {
-            get => this.BoundingRect.w
+            get => this.BoundingRect.Width
         }
         h {
-            get => this.BoundingRect.h
+            get => this.BoundingRect.Height
         }
 
         /**
@@ -363,10 +363,10 @@ class OCR {
                 showTime := 2000
             }
 
-            x := this.x, y := this.y, w := this.w, h := this.h
+            x := this.X, y := this.Y, w := this.Width, h := this.Height
             if this.HasProp("Relative") {
-                x += this.Relative.HasProp("x") ? this.Relative.x : 0
-                y += this.Relative.HasProp("y") ? this.Relative.y : 0
+                x += this.Relative.HasProp("x") ? this.Relative.X : 0
+                y += this.Relative.HasProp("y") ? this.Relative.Y : 0
             }
             if (w < 1 || h < 1)
                 return this
@@ -393,10 +393,10 @@ class OCR {
          * with x/y, those are added as an offset.
          */
         Click(WhichButton := "left", ClickCount := 1, DownOrUp := "") {
-            local x := this.x, y := this.y, w := this.w, h := this.h, cx, cy, saveCoordMode
+            local x := this.X, y := this.Y, w := this.Width, h := this.Height, cx, cy, saveCoordMode
             if this.HasProp("Relative") {
-                x += this.Relative.HasProp("x") ? this.Relative.x : 0
-                y += this.Relative.HasProp("y") ? this.Relative.y : 0
+                x += this.Relative.HasProp("x") ? this.Relative.X : 0
+                y += this.Relative.HasProp("y") ? this.Relative.Y : 0
             }
             cx := x + w // 2, cy := y + h // 2
             saveCoordMode := A_CoordModeMouse
@@ -416,7 +416,7 @@ class OCR {
                 return this
             if this.HasProp("Words")
                 for word in this.Words
-                    OCR.__SetRect(word, word.x + offsetX, word.y + offsetY, word.w, word.h)
+                    OCR.__SetRect(word, word.X + offsetX, word.Y + offsetY, word.Width, word.Height)
             return this
         }
     }
@@ -454,13 +454,13 @@ class OCR {
             if OCR.__HasOpt(Options, "SearchFunc")
                 SearchFunc := Options.SearchFunc
             if OCR.__HasOpt(Options, "x")
-                x := Options.x
+                x := Options.X
             if OCR.__HasOpt(Options, "y")
-                y := Options.y
+                y := Options.Y
             if OCR.__HasOpt(Options, "w")
-                w := Options.w
+                w := Options.Width
             if OCR.__HasOpt(Options, "h")
-                h := Options.h
+                h := Options.Height
 
             if !IsSet(SearchFunc)
                 SearchFunc := (haystack, needle, &foundstr) => (pos := InStr(haystack, needle, CaseSense), foundstr := SubStr(haystack, pos, StrLen(needle)), pos)
@@ -526,7 +526,7 @@ class OCR {
                     }
                     if !IsObject(word)
                         continue
-                    if (IsSet(x1) && (word.x < x1 || word.y < y1 || word.x + word.w > x2 || word.y + word.h > y2)) {
+                    if (IsSet(x1) && (word.X < x1 || word.Y < y1 || word.X + word.Width > x2 || word.Y + word.Height > y2)) {
                         counter--
                         continue 2
                     }
@@ -549,7 +549,7 @@ class OCR {
                 if foundWords.Length
                     OCR.__SetRect(result, OCR.WordsBoundingRect(foundWords*))
                 else
-                    OCR.__SetRect(result, {x: 0, y: 0, w: 0, h: 0})
+                    OCR.__SetRect(result, {X: 0, Y: 0, Width: 0, Height: 0})
 
                 if All
                     results.Push(result)
@@ -592,7 +592,7 @@ class OCR {
             if allWords.Length
                 OCR.__SetRect(result, OCR.WordsBoundingRect(allWords*))
             else
-                OCR.__SetRect(result, {x: 0, y: 0, w: 0, h: 0})
+                OCR.__SetRect(result, {X: 0, Y: 0, Width: 0, Height: 0})
             return result
         }
 
@@ -601,7 +601,7 @@ class OCR {
          * Coordinates are relative to the result object (same space as the words).
          */
         Crop(x1 := -100000, y1 := -100000, x2 := 100000, y2 := 100000)
-            => this.Filter((word) => word.x >= x1 && word.y >= y1 && (word.x + word.w) <= x2 && (word.y + word.h) <= y2)
+            => this.Filter((word) => word.X >= x1 && word.Y >= y1 && (word.X + word.Width) <= x2 && (word.Y + word.Height) <= y2)
 
         __CollectWords(lines) {
             local words := [], line, word
@@ -640,10 +640,10 @@ class OCR {
         if !IsSet(compareFunc) {
             if (eps_y < 0) {
                 for point in objs
-                    sum += point.h
+                    sum += point.Height
                 eps_y := (sum // objs.Length) // 2
             }
-            compareFunc := (p1, p2) => Abs(p1.y + p1.h // 2 - p2.y - p2.h // 2) < eps_y && (eps_x < 0 || (Abs(p1.x + p1.w - p2.x) < eps_x || Abs(p1.x - p2.x - p2.w) < eps_x))
+            compareFunc := (p1, p2) => Abs(p1.Y + p1.Height // 2 - p2.Y - p2.Height // 2) < eps_y && (eps_x < 0 || (Abs(p1.X + p1.Width - p2.X) < eps_x || Abs(p1.X - p2.X - p2.Width) < eps_x))
         }
 
         for point in objs {
@@ -793,7 +793,7 @@ class OCR {
             for rw in rawWords {
                 word := OCR.Word()
                 word.Text := rw.Text
-                OCR.__SetRect(word, rw.x, rw.y, rw.w, rw.h)
+                OCR.__SetRect(word, rw.X, rw.Y, rw.Width, rw.Height)
                 ; Conf is 0-100 recognition confidence (Tesseract); "" for engines that don't report it.
                 word.Conf := rw.HasProp("Conf") ? rw.Conf : ""
                 words.Push(word), allWords.Push(word)
@@ -824,10 +824,10 @@ class OCR {
         local word, line
         if (sx != 1 || sy != 1 || ox != 0 || oy != 0)
             for word in result.Words
-                OCR.__SetRect(word, Integer(word.x / sx) + ox, Integer(word.y / sy) + oy, Integer(word.w / sx), Integer(word.h / sy))
+                OCR.__SetRect(word, Integer(word.X / sx) + ox, Integer(word.Y / sy) + oy, Integer(word.Width / sx), Integer(word.Height / sy))
         for line in result.Lines
-            OCR.__SetRect(line, line.Words.Length ? OCR.WordsBoundingRect(line.Words*) : {x: 0, y: 0, w: 0, h: 0})
-        OCR.__SetRect(result, result.Words.Length ? OCR.WordsBoundingRect(result.Words*) : {x: 0, y: 0, w: 0, h: 0})
+            OCR.__SetRect(line, line.Words.Length ? OCR.WordsBoundingRect(line.Words*) : {X: 0, Y: 0, Width: 0, Height: 0})
+        OCR.__SetRect(result, result.Words.Length ? OCR.WordsBoundingRect(result.Words*) : {X: 0, Y: 0, Width: 0, Height: 0})
         return result
     }
 
@@ -836,11 +836,11 @@ class OCR {
         local rect
         if !IsSet(y) {
             rect := x
-            x := rect.x, y := rect.y, w := rect.w, h := rect.h
+            x := rect.X, y := rect.Y, w := rect.Width, h := rect.Height
         }
         ; Store the geometry as a single BoundingRect value property: OCR.Common's x/y/w/h getters read straight
         ; from it, so there is no need to (redundantly) define x/y/w/h as their own per-object value properties.
-        obj.BoundingRect := {x: x, y: y, w: w, h: h}
+        obj.BoundingRect := {X: x, Y: y, Width: w, Height: h}
         return obj
     }
 
@@ -1012,7 +1012,7 @@ class OCR {
                         l := 0, t := 0, r := 0, b := 0
                         if DllCall(this.__Sym("TessPageIteratorBoundingBox"), "Ptr", pageIt, "Int", 3, "Int*", &l, "Int*", &t, "Int*", &r, "Int*", &b, "Cdecl Int") {
                             conf := DllCall(this.__Sym("TessResultIteratorConfidence"), "Ptr", it, "Int", 3, "Cdecl Float")
-                            curWords.Push({Text: wordText, x: l, y: t, w: r - l, h: b - t, Conf: Round(conf, 2)})
+                            curWords.Push({Text: wordText, X: l, Y: t, Width: r - l, Height: b - t, Conf: Round(conf, 2)})
                         }
                     }
                     if !DllCall(this.__Sym("TessResultIteratorNext"), "Ptr", it, "Int", 3, "Cdecl Int")

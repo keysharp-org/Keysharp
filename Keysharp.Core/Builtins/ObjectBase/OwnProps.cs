@@ -274,16 +274,16 @@ namespace Keysharp.Builtins
 			map.EnsureOwnProps();
 
 			if (Value != null)
-				map.DefinePropInternal("value", new OwnPropsDesc(map, Value));
+				map.DefinePropInternal("Value", new OwnPropsDesc(map, Value));
 
 			if (Get != null)
-				map.DefinePropInternal("get", new OwnPropsDesc(map, Get));
+				map.DefinePropInternal("Get", new OwnPropsDesc(map, Get));
 
 			if (Set != null)
-				map.DefinePropInternal("set", new OwnPropsDesc(map, Set));
+				map.DefinePropInternal("Set", new OwnPropsDesc(map, Set));
 
 			if (Call != null)
-				map.DefinePropInternal("call", new OwnPropsDesc(map, Call));
+				map.DefinePropInternal("Call", new OwnPropsDesc(map, Call));
 
 			if (StructField != null)
 			{
@@ -291,11 +291,11 @@ namespace Keysharp.Builtins
 					? classObj
 					: Script.GetUserDeclaredName(StructField.FieldType) ?? StructField.FieldType.Name;
 
-				map.DefinePropInternal("type", new OwnPropsDesc(map, typeValue));
-				map.DefinePropInternal("offset", new OwnPropsDesc(map, StructField.Offset));
+				map.DefinePropInternal("Type", new OwnPropsDesc(map, typeValue));
+				map.DefinePropInternal("Offset", new OwnPropsDesc(map, StructField.Offset));
 
 				if (StructField.Pack > 0)
-					map.DefinePropInternal("pack", new OwnPropsDesc(map, StructField.Pack));
+					map.DefinePropInternal("Pack", new OwnPropsDesc(map, StructField.Pack));
 			}
 
 			return map;

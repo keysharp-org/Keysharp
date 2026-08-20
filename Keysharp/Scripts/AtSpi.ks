@@ -64,7 +64,7 @@ class AtSpi {
      */
     static MaxRecurseDepth := 0xFFFFFFFF
 
-    ; --- enums from atspi-constants.h ---
+    ; --- enums from atspi-constants.Height ---
     static LocaleType := {
         Messages:0,
         Collate:1,
@@ -672,9 +672,9 @@ class AtSpi {
             inPt := false
             try {
                 loc := el.Location
-                if loc.w > 0 && loc.h > 0 && x >= loc.x && y >= loc.y && x <= loc.x + loc.w && y <= loc.y + loc.h {
+                if loc.Width > 0 && loc.Height > 0 && x >= loc.X && y >= loc.Y && x <= loc.X + loc.Width && y <= loc.Y + loc.Height {
                     inPt := true
-                    area := loc.w * loc.h
+                    area := loc.Width * loc.Height
                     if area < bestArea || (area = bestArea && depth > bestDepth) {
                         best := el
                         bestArea := area
@@ -719,12 +719,12 @@ class AtSpi {
 
         tol := 8
 
-        if Abs(raw.x - wx) <= tol && Abs(raw.y - wy) <= tol
+        if Abs(raw.X - wx) <= tol && Abs(raw.Y - wy) <= tol
             return ctx
-        if !(Abs(raw.x) <= tol && Abs(raw.y) <= tol)
+        if !(Abs(raw.X) <= tol && Abs(raw.Y) <= tol)
             return ctx
 
-        if Abs(raw.w - ww) <= tol * 2 && Abs(raw.h - wh) <= tol * 2 {
+        if Abs(raw.Width - ww) <= tol * 2 && Abs(raw.Height - wh) <= tol * 2 {
             ctx.dx := wx, ctx.dy := wy
             return ctx
         }
@@ -734,7 +734,7 @@ class AtSpi {
         }
         try {
             WinGetClientPos(&cx, &cy, &cw, &ch, hWnd)
-            if cw > 0 && ch > 0 && Abs(raw.w - cw) <= tol * 2 && Abs(raw.h - ch) <= tol * 2 {
+            if cw > 0 && ch > 0 && Abs(raw.Width - cw) <= tol * 2 && Abs(raw.Height - ch) <= tol * 2 {
                 ctx.dx := cx, ctx.dy := cy
                 return ctx
             }
@@ -758,9 +758,9 @@ class AtSpi {
                 continue
 
             if this.__HasValidExtents(cr)
-                && cr.x >= 0 && cr.y >= 0 && cr.x <= 128 && cr.y <= 128
-                && Abs(cr.w - ww) <= tol * 2 && Abs(cr.h - wh) <= tol * 2 {
-                x := cr.x, y := cr.y
+                && cr.X >= 0 && cr.Y >= 0 && cr.X <= 128 && cr.Y <= 128
+                && Abs(cr.Width - ww) <= tol * 2 && Abs(cr.Height - wh) <= tol * 2 {
+                x := cr.X, y := cr.Y
                 return true
             }
         }
@@ -768,7 +768,7 @@ class AtSpi {
         return false
     }
 
-    static __HasValidExtents(r) => IsObject(r) && r.w > 0 && r.h > 0 && Abs(r.x) < 100000 && Abs(r.y) < 100000
+    static __HasValidExtents(r) => IsObject(r) && r.Width > 0 && r.Height > 0 && Abs(r.X) < 100000 && Abs(r.Y) < 100000
 
     /**
      * Finds an accessible matching a window handle by PID/title/geometry heuristics.
@@ -882,7 +882,7 @@ class AtSpi {
             score += 30
 
         ; Geometry closeness
-        dx := Abs(r.x - wx), dy := Abs(r.y - wy), dw := Abs(r.w - ww), dh := Abs(r.h - wh)
+        dx := Abs(r.X - wx), dy := Abs(r.Y - wy), dw := Abs(r.Width - ww), dh := Abs(r.Height - wh)
 
         tol := 8
         if (dx <= tol && dy <= tol && dw <= tol*2 && dh <= tol*2)
@@ -892,7 +892,7 @@ class AtSpi {
         score += Max(0, 200 - (dw + dh))
 
         cx1 := wx + (ww // 2), cy1 := wy + (wh // 2)
-        cx2 := r.x + (r.w // 2), cy2 := r.y + (r.h // 2)
+        cx2 := r.X + (r.Width // 2), cy2 := r.Y + (r.Height // 2)
         cdist := Abs(cx1 - cx2) + Abs(cy1 - cy2)
         score += Max(0, 300 - cdist)
 
@@ -1583,7 +1583,7 @@ class AtSpi {
         ; --- Component interface ---
         /**
          * Raw AT-SPI extents without Keysharp coordinate normalization.
-         * @returns {{x:Integer,y:Integer,w:Integer,h:Integer}}
+         * @returns {{X:Integer,Y:Integer,Width:Integer,Height:Integer}}
          */
         RawLocation {
             get {
@@ -1618,7 +1618,7 @@ class AtSpi {
                 rh := NumGet(pRect, 12, "Int")
                 DllCall(AtSpi.__Sym(AtSpi.LibGlib, "g_free"), "Ptr", pRect)
 
-                return { x: rx, y: ry, w: rw, h: rh }
+                return { X: rx, Y: ry, Width: rw, Height: rh }
             }
         }
 
@@ -1626,17 +1626,17 @@ class AtSpi {
          * Screen coordinates of the element. On Wayland, AT-SPI sometimes returns
          * coordinates relative to the owning window; those are normalized here via
          * the CoordContext delta.
-         * @returns {{x:Integer,y:Integer,w:Integer,h:Integer}}
+         * @returns {{X:Integer,Y:Integer,Width:Integer,Height:Integer}}
          */
         Location {
             get {
                 ctx := this.__ccx
                 if ctx.rootPtr && this.Ptr == ctx.rootPtr
-                    return { x: ctx.rx, y: ctx.ry, w: ctx.rw, h: ctx.rh }
+                    return { X: ctx.rx, Y: ctx.ry, Width: ctx.rw, Height: ctx.rh }
                 raw := this.RawLocation
                 if !AtSpi.__HasValidExtents(raw)
                     return raw
-                return { x: raw.x + ctx.dx, y: raw.y + ctx.dy, w: raw.w, h: raw.h }
+                return { X: raw.X + ctx.dx, Y: raw.Y + ctx.dy, Width: raw.Width, Height: raw.Height }
             }
             set {
                 if !IsObject(value)
@@ -1650,10 +1650,10 @@ class AtSpi {
                 err := 0
                 ok := DllCall(AtSpi.__Sym(AtSpi.LibAtSpi, "atspi_component_set_extents")
                             , "Ptr", pComp
-                            , "Int", value.x - ctx.dx
-                            , "Int", value.y - ctx.dy
-                            , "Int", value.w
-                            , "Int", value.h
+                            , "Int", value.X - ctx.dx
+                            , "Int", value.Y - ctx.dy
+                            , "Int", value.Width
+                            , "Int", value.Height
                             , "Int", AtSpi.CoordType.Screen
                             , "Ptr*", &err
                             , "Int")
@@ -2351,7 +2351,7 @@ class AtSpi {
          * Gets character extents for an offset.
          * @param offset 0-based character offset.
          * @param coordType AtSpi.CoordType value or name.
-         * @returns {{x:Integer,y:Integer,w:Integer,h:Integer}}
+         * @returns {{X:Integer,Y:Integer,Width:Integer,Height:Integer}}
          */
         GetCharacterExtents(offset, coordType := "Screen") {
             pText := DllCall(AtSpi.__Sym(AtSpi.LibAtSpi, "atspi_accessible_get_text_iface")
@@ -2382,10 +2382,10 @@ class AtSpi {
             rw := NumGet(pRect,  8, "Int")
             rh := NumGet(pRect, 12, "Int")
             DllCall(AtSpi.__Sym(AtSpi.LibGlib, "g_free"), "Ptr", pRect)
-            rect := {x: rx, y: ry, w: rw, h: rh}
+            rect := {X: rx, Y: ry, Width: rw, Height: rh}
             if coordType = AtSpi.CoordType.Screen && AtSpi.__HasValidExtents(rect) {
                 ctx := this.__ccx
-                rect.x += ctx.dx, rect.y += ctx.dy
+                rect.X += ctx.dx, rect.Y += ctx.dy
             }
             return rect
         }
@@ -2395,7 +2395,7 @@ class AtSpi {
          * @param startOffset 0-based start offset.
          * @param endOffset 0-based end offset.
          * @param coordType AtSpi.CoordType value or name.
-         * @returns {{x:Integer,y:Integer,w:Integer,h:Integer}}
+         * @returns {{X:Integer,Y:Integer,Width:Integer,Height:Integer}}
          */
         GetRangeExtents(startOffset, endOffset, coordType := "Screen") {
             pText := DllCall(AtSpi.__Sym(AtSpi.LibAtSpi, "atspi_accessible_get_text_iface")
@@ -2427,10 +2427,10 @@ class AtSpi {
             rw := NumGet(pRect,  8, "Int")
             rh := NumGet(pRect, 12, "Int")
             DllCall(AtSpi.__Sym(AtSpi.LibGlib, "g_free"), "Ptr", pRect)
-            rect := {x: rx, y: ry, w: rw, h: rh}
+            rect := {X: rx, Y: ry, Width: rw, Height: rh}
             if coordType = AtSpi.CoordType.Screen && AtSpi.__HasValidExtents(rect) {
                 ctx := this.__ccx
-                rect.x += ctx.dx, rect.y += ctx.dy
+                rect.X += ctx.dx, rect.Y += ctx.dy
             }
             return rect
         }
@@ -2907,7 +2907,7 @@ class AtSpi {
             out := "", scope := IsInteger(scope) ? scope : AtSpi.TreeScope.%scope%
             if scope&1 {
                 RoleName := "N/A", RoleId := "N/A", Name := "N/A", Description := "N/A"
-                States := "", Interfaces := "", Location := {x:"N/A",y:"N/A",w:"N/A",h:"N/A"}, AccessibleId := ""
+                States := "", Interfaces := "", Location := {X:"N/A",Y:"N/A",Width:"N/A",Height:"N/A"}, AccessibleId := ""
                 try RoleName := this.RoleName
                 try RoleId := this.RoleId
                 try Name := this.Name
@@ -2924,7 +2924,7 @@ class AtSpi {
                     if ifaceArr.Length
                         Interfaces := JoinArray(ifaceArr, ",")
                 }
-                out := "Role: " RoleName delimiter "RoleId: " RoleId delimiter "[Location: {x:" Location.x ",y:" Location.y ",w:" Location.w ",h:" Location.h "}]" delimiter "[Name: " Name "]"
+                out := "Role: " RoleName delimiter "RoleId: " RoleId delimiter "[Location: {X:" Location.X ",Y:" Location.Y ",Width:" Location.Width ",Height:" Location.Height "}]" delimiter "[Name: " Name "]"
                     . (Description ? delimiter "[Description: " Description "]" : "")
                     . (States ? delimiter "[States: " States "]" : "")
                     . (Interfaces ? delimiter "[Interfaces: " Interfaces "]" : "")
@@ -2991,7 +2991,7 @@ class AtSpi {
             } else if !IsSet(showTime)
                 showTime := 2000
             try loc := this.Location
-            if !IsSet(loc) || !IsObject(loc) || loc.w < 1 || loc.h < 1 || loc.x == -2147483648 || loc.y == -2147483648
+            if !IsSet(loc) || !IsObject(loc) || loc.Width < 1 || loc.Height < 1 || loc.X == -2147483648 || loc.Y == -2147483648
                 return this
             ; Draw the border as four separate thin edge windows (top/bottom/left/right) and leave the element's
             ; CENTRE clear. A single window spanning the whole rect (even one with a transparent middle) gets picked
@@ -3004,10 +3004,10 @@ class AtSpi {
                 AtSpi.__HighlightGuis[this].Push(Gui("+AlwaysOnTop +ClickThrough -Caption +ToolWindow -DPIScale +E0x08000000"))
             Loop 4 {
                 i := A_Index
-                x1 := (i=2 ? loc.x+loc.w : loc.x-d)
-                y1 := (i=3 ? loc.y+loc.h : loc.y-d)
-                w1 := (i=1 or i=3 ? loc.w+2*d : d)
-                h1 := (i=2 or i=4 ? loc.h+2*d : d)
+                x1 := (i=2 ? loc.X+loc.Width : loc.X-d)
+                y1 := (i=3 ? loc.Y+loc.Height : loc.Y-d)
+                w1 := (i=1 or i=3 ? loc.Width+2*d : d)
+                h1 := (i=2 or i=4 ? loc.Height+2*d : d)
                 AtSpi.__HighlightGuis[this][i].BackColor := color
                 AtSpi.__HighlightGuis[this][i].Show("NA x" . x1 . " y" . y1 . " w" . w1 . " h" . h1)
             }
@@ -3047,7 +3047,7 @@ class AtSpi {
                 SleepTime := cCount, cCount := 1
             }
             CoordMode("Mouse", "Screen")
-            Click(pos.x+pos.w//2+rel[1] " " pos.y+pos.h//2+rel[2] " " WhichButton (ClickCount ? " " ClickCount : "") (DownOrUp ? " " DownOrUp : "") (Relative ? " " Relative : ""))
+            Click(pos.X+pos.Width//2+rel[1] " " pos.Y+pos.Height//2+rel[2] " " WhichButton (ClickCount ? " " ClickCount : "") (DownOrUp ? " " DownOrUp : "") (Relative ? " " Relative : ""))
             CoordMode("Mouse", saveCoordMode)
             Sleep(SleepTime)
             return this
@@ -3228,7 +3228,7 @@ class AtSpi {
             AtSpi.ClearAllHighlights()
             oContext.Highlight(0)
             this.LVProps.Delete()
-            Location := {x:"N/A",y:"N/A",w:"N/A",h:"N/A"}, RawLocation := {x:"N/A",y:"N/A",w:"N/A",h:"N/A"}, RoleName := "N/A", RoleId := "N/A", Name := "N/A", Description := "N/A", States := "N/A", Interfaces := "N/A", AccessibleId := "N/A", ProcessId := "N/A", Id := "N/A"
+            Location := {X:"N/A",Y:"N/A",Width:"N/A",Height:"N/A"}, RawLocation := {X:"N/A",Y:"N/A",Width:"N/A",Height:"N/A"}, RoleName := "N/A", RoleId := "N/A", Name := "N/A", Description := "N/A", States := "N/A", Interfaces := "N/A", AccessibleId := "N/A", ProcessId := "N/A", Id := "N/A"
             for _, v in this.DefaultLVPropsItems {
                 try {
                     if v = "Location"
@@ -3248,7 +3248,7 @@ class AtSpi {
             }
         }
 
-        FormatLocation(loc) => "x: " loc.x " y: " loc.y " w: " loc.w " h: " loc.h
+        FormatLocation(loc) => "x: " loc.X " y: " loc.Y " w: " loc.Width " h: " loc.Height
 
         TVContext_Click(GuiCtrlObj, Info) {
             if this.Capturing

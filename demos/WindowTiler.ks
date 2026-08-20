@@ -126,7 +126,7 @@ class WindowTiler {
         try {
             local r := this.FracRect(frac, info)
             WinRestore(info.id)                          ; un-maximize so the resize takes effect
-            WinMove(r.x, r.y, r.w, r.h, info.id)
+            WinMove(r.X, r.Y, r.Width, r.Height, info.id)
             this.Flash(r)
             this.Tip(this.PosLabel(frac), 800, info)
         } catch as e
@@ -140,11 +140,11 @@ class WindowTiler {
         try {
             if (WinGetMinMax(info.id) = 1) {
                 WinRestore(info.id)
-                this.Flash({x: info.l, y: info.t, w: 1, h: 1})   ; nothing to outline; just clear
+                this.Flash({X: info.l, Y: info.t, Width: 1, Height: 1})   ; nothing to outline; just clear
                 this.Tip("Restore", 800, info)
             } else {
                 WinMaximize(info.id)
-                this.Flash({x: info.l, y: info.t, w: info.w, h: info.h})
+                this.Flash({X: info.l, Y: info.t, Width: info.Width, Height: info.Height})
                 this.Tip("Maximize", 800, info)
             }
         } catch as e
@@ -172,7 +172,7 @@ class WindowTiler {
             WinGetPos(&wx, &wy, &ww, &wh, id)
             local mon := this.MonitorAt(wx + ww // 2, wy + wh // 2)
             MonitorGetWorkArea(mon, &l, &t, &r, &b)
-            return {id: id, l: l, t: t, r: r, b: b, w: r - l, h: b - t}
+            return {id: id, l: l, t: t, r: r, b: b, Width: r - l, Height: b - t}
         }
         return 0
     }
@@ -190,11 +190,11 @@ class WindowTiler {
     ; computed by rounding (fx+fw)/(fy+fh), so cells sharing a boundary fraction land on the same pixel
     ; (no gaps or overlaps from rounding) and full-span cells reach the work-area edge exactly.
     static FracRect(frac, info) {
-        local x0 := info.l + Round(frac[1] * info.w)
-        local y0 := info.t + Round(frac[2] * info.h)
-        local x1 := info.l + Round((frac[1] + frac[3]) * info.w)
-        local y1 := info.t + Round((frac[2] + frac[4]) * info.h)
-        return {x: x0, y: y0, w: x1 - x0, h: y1 - y0}
+        local x0 := info.l + Round(frac[1] * info.Width)
+        local y0 := info.t + Round(frac[2] * info.Height)
+        local x1 := info.l + Round((frac[1] + frac[3]) * info.Width)
+        local y1 := info.t + Round((frac[2] + frac[4]) * info.Height)
+        return {X: x0, Y: y0, Width: x1 - x0, Height: y1 - y0}
     }
 
     ; A short directional label derived from a rect's centre — works for every mode without a per-mode table.
@@ -225,15 +225,15 @@ class WindowTiler {
 
     ; Briefly outline the snap target so the action is visible.
     static Flash(r) {
-        if (r.w < 2 || r.h < 2) {
+        if (r.Width < 2 || r.Height < 2) {
             if IsObject(this.hl)
                 this.hl.Hide()
             return
         }
         if !IsObject(this.hl)
-            this.hl := Highlight(r.x, r.y, r.w, r.h, "0x2196F3", 3)
+            this.hl := Highlight(r.X, r.Y, r.Width, r.Height, "0x2196F3", 3)
         else
-            this.hl.Show(r.x, r.y, r.w, r.h)
+            this.hl.Show(r.X, r.Y, r.Width, r.Height)
         SetTimer(this.hideFlash, -380)
     }
 

@@ -13,10 +13,10 @@ namespace Keysharp.Builtins
 		internal static KeysharpObject RectObject(long x, long y, long w, long h)
 		{
 			var o = new KeysharpObject();
-			o.DefinePropInternal("x", new OwnPropsDesc(o, x));
-			o.DefinePropInternal("y", new OwnPropsDesc(o, y));
-			o.DefinePropInternal("w", new OwnPropsDesc(o, w));
-			o.DefinePropInternal("h", new OwnPropsDesc(o, h));
+			o.DefinePropInternal("X", new OwnPropsDesc(o, x));
+			o.DefinePropInternal("Y", new OwnPropsDesc(o, y));
+			o.DefinePropInternal("Width", new OwnPropsDesc(o, w));
+			o.DefinePropInternal("Height", new OwnPropsDesc(o, h));
 			return o;
 		}
 

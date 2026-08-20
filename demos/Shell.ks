@@ -33,7 +33,7 @@ class Shell {
     static ReopenHotkey := "^!+s"        ; Ctrl+Alt+Shift+S — reopens the card after it's dismissed (all demos)
     static MainWindowHotkey := "^!+m"    ; Ctrl+Alt+Shift+M — opens Keysharp's main window (internal)
     static ov := ""
-    static rect := {x: 0, y: 0, w: 0, h: 0}
+    static rect := {X: 0, Y: 0, Width: 0, Height: 0}
     static checkRect := ""               ; overlay-local rect of the "Don't show on startup" checkbox (hit-tested on click)
     static closeRect := ""               ; overlay-local rect of the ✕ close button (top-right) — the ONLY way to dismiss
     static shown := false
@@ -63,7 +63,7 @@ class Shell {
             local fontName := this.EmojiFont()
             img := Image.Create(size, size)
             local sz := img.MeasureText(emoji, "s" fontSize, fontName)
-            img.DrawText(emoji, Round((size - sz.w) / 2), Round((size - sz.h) / 2), "0xFFFFFFFF", "s" fontSize, fontName)
+            img.DrawText(emoji, Round((size - sz.Width) / 2), Round((size - sz.Height) / 2), "0xFFFFFFFF", "s" fontSize, fontName)
 
             local hbm := img.ToBitmap()
             if hbm
@@ -182,14 +182,14 @@ class Shell {
 
         ; Measure so the card fits its content exactly (MeasureText returns a {w, h} object).
         local m := Image.Create(1, 1)
-        local titleW := m.MeasureText(title, titleFont, fontName).w
+        local titleW := m.MeasureText(title, titleFont, fontName).Width
         local keyWs := [], descW := 0
         for ln in lines {
-            keyWs.Push(m.MeasureText(ln[1], keyFont, fontName).w)
-            descW := Max(descW, m.MeasureText(ln[2], descFont, fontName).w)
+            keyWs.Push(m.MeasureText(ln[1], keyFont, fontName).Width)
+            descW := Max(descW, m.MeasureText(ln[2], descFont, fontName).Width)
         }
-        local footerW := m.MeasureText(footer, hintFont, fontName).w
-        local closeW := m.MeasureText(closeHint, hintFont, fontName).w
+        local footerW := m.MeasureText(footer, hintFont, fontName).Width
+        local closeW := m.MeasureText(closeHint, hintFont, fontName).Width
         m.Dispose()
 
         local pillCol := 0
@@ -247,20 +247,20 @@ class Shell {
         ; honour it; otherwise fall back to the default corner (handles a changed monitor layout, like the HUDs).
 		if (useSaved && this.OnScreenRect(this.posX, this.posY, pw, ph))
 			rx := this.posX, ry := this.posY
-		this.rect := {x: rx, y: ry, w: pw, h: ph}
-		this.ov.Update(img, this.rect.x, this.rect.y, this.rect.w, this.rect.h)
+		this.rect := {X: rx, Y: ry, Width: pw, Height: ph}
+		this.ov.Update(img, this.rect.X, this.rect.Y, this.rect.Width, this.rect.Height)
 		img.Dispose()
         ; OVERLAY-LOCAL rects of the two clickable regions — OnEvent's (x, y) is already overlay-local, in
         ; the same native units as the card's on-screen size, so no screen-offset bookkeeping is needed.
         ; Ctrl+drag anywhere ELSE on the card moves it (see OnClick/DragCard).
-		this.closeRect := {x: Round((w - pad - closeW) * scale),
-		                   y: Round((pad - 2) * scale),
-		                   w: Round((closeW + pad) * scale),
-		                   h: Round(22 * scale)}
-		this.checkRect := {x: Round(pad * scale),
-		                   y: Round((cbY - 3) * scale),
-		                   w: Round((cbSize + 8 + footerW) * scale),
-		                   h: Round((cbSize + 6) * scale)}
+		this.closeRect := {X: Round((w - pad - closeW) * scale),
+		                   Y: Round((pad - 2) * scale),
+		                   Width: Round((closeW + pad) * scale),
+		                   Height: Round(22 * scale)}
+		this.checkRect := {X: Round(pad * scale),
+		                   Y: Round((cbY - 3) * scale),
+		                   Width: Round((cbSize + 8 + footerW) * scale),
+		                   Height: Round((cbSize + 6) * scale)}
     }
 
     ; Overlay Click handler; x/y arrive overlay-local from OnEvent. The ✕ closes the card, the checkbox
@@ -283,23 +283,23 @@ class Shell {
         if this.dragging
             return
         this.dragging := true
-        local startX := this.rect.x, startY := this.rect.y
+        local startX := this.rect.X, startY := this.rect.Y
         try {
             CoordMode("Mouse", "Screen")
             MouseGetPos(&gx, &gy)
-            local offX := gx - this.rect.x, offY := gy - this.rect.y   ; grab offset from the card's top-left
+            local offX := gx - this.rect.X, offY := gy - this.rect.Y   ; grab offset from the card's top-left
             while GetKeyState("LButton", "P") {
                 MouseGetPos(&mx, &my)
-                this.rect.x := mx - offX, this.rect.y := my - offY
-                this.ov.Move(this.rect.x, this.rect.y)
+                this.rect.X := mx - offX, this.rect.Y := my - offY
+                this.ov.Move(this.rect.X, this.rect.Y)
                 Sleep 8
             }
         } finally {
             this.dragging := false
         }
-        if (this.rect.x = startX && this.rect.y = startY)
+        if (this.rect.X = startX && this.rect.Y = startY)
             return                               ; a plain click that didn't move the card — do nothing
-        this.posX := this.rect.x, this.posY := this.rect.y
+        this.posX := this.rect.X, this.posY := this.rect.Y
         this.SaveCardPos()
         this.Render()                            ; recompute closeRect/checkRect for the new position
         this.ov.Show()
@@ -324,7 +324,7 @@ class Shell {
         return this.InRectAt(rc, mx, my)
     }
 
-    static InRectAt(rc, x, y) => IsObject(rc) && x >= rc.x && x < rc.x + rc.w && y >= rc.y && y < rc.y + rc.h
+    static InRectAt(rc, x, y) => IsObject(rc) && x >= rc.X && x < rc.X + rc.Width && y >= rc.Y && y < rc.Y + rc.Height
 
     ; A mouse HotIf/callback should hit-test the event which triggered it, not issue a second cursor query after
     ; the pointer may already have moved. Where the platform carries a click's screen coordinates on the event

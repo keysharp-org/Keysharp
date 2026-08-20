@@ -791,12 +791,12 @@ namespace Keysharp.Builtins
 				return (sz.Width, sz.Height);
 			}
 
-			// A v2 {w, h} size object (read as sz.w / sz.h in scripts) — MeasureText's return shape.
+			// MeasureText's return shape: {Width, Height}.
 			internal static KeysharpObject MakeSize(double w, double h)
 			{
 				var o = new KeysharpObject();
-				o.DefinePropInternal("w", new OwnPropsDesc(o, w));
-				o.DefinePropInternal("h", new OwnPropsDesc(o, h));
+				o.DefinePropInternal("Width", new OwnPropsDesc(o, w));
+				o.DefinePropInternal("Height", new OwnPropsDesc(o, h));
 				return o;
 			}
 
@@ -1405,22 +1405,22 @@ namespace Keysharp.Builtins
 				return (ImageHelper.CropBitmap(haystack, rx, ry, rw, rh), rx, ry, true);
 			}
 
-			// A v2 {x, y} match object with own properties (accessed m.x / m.y in scripts).
+			// A {X, Y} match object with own properties.
 			private static KeysharpObject MakePoint(long x, long y)
 			{
 				var o = new KeysharpObject();
-				o.DefinePropInternal("x", new OwnPropsDesc(o, x));
-				o.DefinePropInternal("y", new OwnPropsDesc(o, y));
+				o.DefinePropInternal("X", new OwnPropsDesc(o, x));
+				o.DefinePropInternal("Y", new OwnPropsDesc(o, y));
 				return o;
 			}
 
-			// A v2 {x, y, color} pixel-match object; color is the pixel's full 0xAARRGGBB.
+			// A {X, Y, Color} pixel-match object; Color is the pixel's full 0xAARRGGBB.
 			private static KeysharpObject MakePixel(long x, long y, long color)
 			{
 				var o = new KeysharpObject();
-				o.DefinePropInternal("x", new OwnPropsDesc(o, x));
-				o.DefinePropInternal("y", new OwnPropsDesc(o, y));
-				o.DefinePropInternal("color", new OwnPropsDesc(o, color));
+				o.DefinePropInternal("X", new OwnPropsDesc(o, x));
+				o.DefinePropInternal("Y", new OwnPropsDesc(o, y));
+				o.DefinePropInternal("Color", new OwnPropsDesc(o, color));
 				return o;
 			}
 

@@ -800,15 +800,15 @@ class Ax {
             case this.kAXValueCGPointType:
                 buf := Buffer(16, 0)
                 DllCall(this.__Sym(this.LibAX, "AXValueGetValue"), "Ptr", pVal, "Int", vtype, "Ptr", buf.Ptr, "Int")
-                out := {x:NumGet(buf, 0, "Double"), y:NumGet(buf, 8, "Double")}
+                out := {X:NumGet(buf, 0, "Double"), Y:NumGet(buf, 8, "Double")}
             case this.kAXValueCGSizeType:
                 buf := Buffer(16, 0)
                 DllCall(this.__Sym(this.LibAX, "AXValueGetValue"), "Ptr", pVal, "Int", vtype, "Ptr", buf.Ptr, "Int")
-                out := {w:NumGet(buf, 0, "Double"), h:NumGet(buf, 8, "Double")}
+                out := {Width:NumGet(buf, 0, "Double"), Height:NumGet(buf, 8, "Double")}
             case this.kAXValueCGRectType:
                 buf := Buffer(32, 0)
                 DllCall(this.__Sym(this.LibAX, "AXValueGetValue"), "Ptr", pVal, "Int", vtype, "Ptr", buf.Ptr, "Int")
-                out := {x:NumGet(buf, 0, "Double"), y:NumGet(buf, 8, "Double"), w:NumGet(buf, 16, "Double"), h:NumGet(buf, 24, "Double")}
+                out := {X:NumGet(buf, 0, "Double"), Y:NumGet(buf, 8, "Double"), Width:NumGet(buf, 16, "Double"), Height:NumGet(buf, 24, "Double")}
             case this.kAXValueCFRangeType:
                 buf := Buffer(A_PtrSize * 2, 0)
                 DllCall(this.__Sym(this.LibAX, "AXValueGetValue"), "Ptr", pVal, "Int", vtype, "Ptr", buf.Ptr, "Int")
@@ -830,18 +830,18 @@ class Ax {
         switch valueType {
             case this.kAXValueCGPointType:
                 buf := Buffer(16, 0)
-                NumPut("Double", value.x, buf, 0)
-                NumPut("Double", value.y, buf, 8)
+                NumPut("Double", value.X, buf, 0)
+                NumPut("Double", value.Y, buf, 8)
             case this.kAXValueCGSizeType:
                 buf := Buffer(16, 0)
-                NumPut("Double", value.HasOwnProp("w") ? value.w : value.width, buf, 0)
-                NumPut("Double", value.HasOwnProp("h") ? value.h : value.height, buf, 8)
+                NumPut("Double", value.HasOwnProp("w") ? value.Width : value.width, buf, 0)
+                NumPut("Double", value.HasOwnProp("h") ? value.Height : value.height, buf, 8)
             case this.kAXValueCGRectType:
                 buf := Buffer(32, 0)
-                NumPut("Double", value.x, buf, 0)
-                NumPut("Double", value.y, buf, 8)
-                NumPut("Double", value.HasOwnProp("w") ? value.w : value.width, buf, 16)
-                NumPut("Double", value.HasOwnProp("h") ? value.h : value.height, buf, 24)
+                NumPut("Double", value.X, buf, 0)
+                NumPut("Double", value.Y, buf, 8)
+                NumPut("Double", value.HasOwnProp("w") ? value.Width : value.width, buf, 16)
+                NumPut("Double", value.HasOwnProp("h") ? value.Height : value.height, buf, 24)
             case this.kAXValueCFRangeType:
                 buf := Buffer(A_PtrSize * 2, 0)
                 loc := value.HasOwnProp("location") ? value.location : value.start
@@ -1101,7 +1101,7 @@ class Ax {
                 if (wTitle = "")
                     wTitle := info.Name
                 if !ww || !wh
-                    wx := info.Bounds.x, wy := info.Bounds.y, ww := info.Bounds.w, wh := info.Bounds.h
+                    wx := info.Bounds.X, wy := info.Bounds.Y, ww := info.Bounds.Width, wh := info.Bounds.Height
             }
         }
 
@@ -1221,14 +1221,14 @@ class Ax {
             catch
                 r := 0
             if IsObject(r) {
-                dx := Abs(r.x - wx), dy := Abs(r.y - wy), dw := Abs(r.w - ww), dh := Abs(r.h - wh)
+                dx := Abs(r.X - wx), dy := Abs(r.Y - wy), dw := Abs(r.Width - ww), dh := Abs(r.Height - wh)
                 tol := 8
                 if (dx <= tol && dy <= tol && dw <= tol * 2 && dh <= tol * 2)
                     score += 500
                 score += Max(0, 300 - (dx + dy))
                 score += Max(0, 200 - (dw + dh))
                 cx1 := wx + (ww // 2), cy1 := wy + (wh // 2)
-                cx2 := r.x + (r.w // 2), cy2 := r.y + (r.h // 2)
+                cx2 := r.X + (r.Width // 2), cy2 := r.Y + (r.Height // 2)
                 score += Max(0, 300 - (Abs(cx1 - cx2) + Abs(cy1 - cy2)))
             }
         }
@@ -1270,12 +1270,12 @@ class Ax {
             if !includeNonLayer0 && layer != 0
                 continue
             pBounds := this.__CFDictionaryGetRaw(pDict, "kCGWindowBounds")
-            bounds := {x:0, y:0, w:0, h:0}
+            bounds := {X:0, Y:0, Width:0, Height:0}
             if pBounds
-                bounds := { x:this.__CFDictionaryGet(pBounds, "X", 0)
-                          , y:this.__CFDictionaryGet(pBounds, "Y", 0)
-                          , w:this.__CFDictionaryGet(pBounds, "Width", 0)
-                          , h:this.__CFDictionaryGet(pBounds, "Height", 0) }
+                bounds := { X:this.__CFDictionaryGet(pBounds, "X", 0)
+                          , Y:this.__CFDictionaryGet(pBounds, "Y", 0)
+                          , Width:this.__CFDictionaryGet(pBounds, "Width", 0)
+                          , Height:this.__CFDictionaryGet(pBounds, "Height", 0) }
             out.Push({ Number:this.__CFDictionaryGet(pDict, "kCGWindowNumber", 0)
                      , OwnerPID:this.__CFDictionaryGet(pDict, "kCGWindowOwnerPID", 0)
                      , OwnerName:this.__CFDictionaryGet(pDict, "kCGWindowOwnerName", "")
@@ -1596,7 +1596,7 @@ class Ax {
             get {
                 try {
                     loc := this.Location
-                    return !this.Hidden && loc.w > 0 && loc.h > 0
+                    return !this.Hidden && loc.Width > 0 && loc.Height > 0
                 } catch
                     return !this.Hidden
             }
@@ -1746,7 +1746,7 @@ class Ax {
                 try return this.Attribute("AXFrame")
                 catch {
                     pos := this.Position, sz := this.Size
-                    return {x:pos.x, y:pos.y, w:sz.w, h:sz.h}
+                    return {X:pos.X, Y:pos.Y, Width:sz.Width, Height:sz.Height}
                 }
             }
             set => this.SetAttribute("AXFrame", value)
@@ -1756,7 +1756,7 @@ class Ax {
             get {
                 try {
                     pos := this.Position, sz := this.Size
-                    return {x:Round(pos.x), y:Round(pos.y), w:Round(sz.w), h:Round(sz.h)}
+                    return {X:Round(pos.X), Y:Round(pos.Y), Width:Round(sz.Width), Height:Round(sz.Height)}
                 } catch {
                     try return this.Attribute("AXFrame")
                     catch
@@ -1764,14 +1764,14 @@ class Ax {
                 }
             }
             set {
-                this.SetLocation(value.x, value.y, value.HasOwnProp("w") ? value.w : value.width, value.HasOwnProp("h") ? value.h : value.height)
+                this.SetLocation(value.X, value.Y, value.HasOwnProp("w") ? value.Width : value.width, value.HasOwnProp("h") ? value.Height : value.height)
             }
         }
 
         SetLocation(x, y, w := unset, h := unset) {
-            this.SetAttribute("AXPosition", {x:x, y:y})
+            this.SetAttribute("AXPosition", {X:x, Y:y})
             if IsSet(w) && IsSet(h)
-                this.SetAttribute("AXSize", {w:w, h:h})
+                this.SetAttribute("AXSize", {Width:w, Height:h})
             return this
         }
 
@@ -2041,17 +2041,17 @@ class Ax {
         GetStringForRange(start, length) => this.ParameterizedAttribute("AXStringForRange", {location:start, length:length}, "")
         GetRTFForRange(start, length) => this.ParameterizedAttribute("AXRTFForRange", {location:start, length:length}, "")
         GetBoundsForRange(start, length) => this.ParameterizedAttribute("AXBoundsForRange", {location:start, length:length})
-        GetRangeForPosition(x, y) => this.ParameterizedAttribute("AXRangeForPosition", {x:x, y:y})
+        GetRangeForPosition(x, y) => this.ParameterizedAttribute("AXRangeForPosition", {X:x, Y:y})
         GetRangeForLine(line) => this.ParameterizedAttribute("AXRangeForLine", line)
         GetLineForIndex(index) => this.ParameterizedAttribute("AXLineForIndex", index)
         GetStyleRangeForIndex(index) => this.ParameterizedAttribute("AXStyleRangeForIndex", index)
         GetAttributedStringForRange(start, length) => this.ParameterizedAttribute("AXAttributedStringForRange", {location:start, length:length}, "")
         GetRangeForIndex(index) => this.ParameterizedAttribute("AXRangeForIndex", index)
         GetCellForColumnAndRow(column, row) => this.ParameterizedAttribute("AXCellForColumnAndRow", [column, row], 0)
-        GetLayoutPointForScreenPoint(x, y) => this.ParameterizedAttribute("AXLayoutPointForScreenPoint", {x:x, y:y})
-        GetLayoutSizeForScreenSize(w, h) => this.ParameterizedAttribute("AXLayoutSizeForScreenSize", {w:w, h:h})
-        GetScreenPointForLayoutPoint(x, y) => this.ParameterizedAttribute("AXScreenPointForLayoutPoint", {x:x, y:y})
-        GetScreenSizeForLayoutSize(w, h) => this.ParameterizedAttribute("AXScreenSizeForLayoutSize", {w:w, h:h})
+        GetLayoutPointForScreenPoint(x, y) => this.ParameterizedAttribute("AXLayoutPointForScreenPoint", {X:x, Y:y})
+        GetLayoutSizeForScreenSize(w, h) => this.ParameterizedAttribute("AXLayoutSizeForScreenSize", {Width:w, Height:h})
+        GetScreenPointForLayoutPoint(x, y) => this.ParameterizedAttribute("AXScreenPointForLayoutPoint", {X:x, Y:y})
+        GetScreenSizeForLayoutSize(w, h) => this.ParameterizedAttribute("AXScreenSizeForLayoutSize", {Width:w, Height:h})
 
         SelectText(start, length := unset) {
             if !IsSet(length)
@@ -2347,7 +2347,7 @@ class Ax {
         Dump(scope := 1, delimiter := " ", depth := -1) {
             out := "", scope := IsInteger(scope) ? scope : Ax.TreeScope.%scope%
             if scope&1 {
-                RoleName := "N/A", Subrole := "", Name := "N/A", Value := "", Location := {x:"N/A",y:"N/A",w:"N/A",h:"N/A"}, Pid := "N/A"
+                RoleName := "N/A", Subrole := "", Name := "N/A", Value := "", Location := {X:"N/A",Y:"N/A",Width:"N/A",Height:"N/A"}, Pid := "N/A"
                 Actions := "", Attrs := ""
                 try RoleName := this.RoleName
                 try Subrole := this.Subrole
@@ -2357,7 +2357,7 @@ class Ax {
                 try Pid := this.Pid
                 try Actions := JoinArray(this.Actions, ",")
                 try Attrs := JoinArray(this.Attributes, ",")
-                out := "Role: " RoleName (Subrole ? "/" Subrole : "") delimiter "Pid: " Pid delimiter "[Location: {x:" Location.x ",y:" Location.y ",w:" Location.w ",h:" Location.h "}]" delimiter "[Name: " Name "]"
+                out := "Role: " RoleName (Subrole ? "/" Subrole : "") delimiter "Pid: " Pid delimiter "[Location: {X:" Location.X ",Y:" Location.Y ",Width:" Location.Width ",Height:" Location.Height "}]" delimiter "[Name: " Name "]"
                     . (Value != "" && !IsObject(Value) ? delimiter "[Value: " Value "]" : "")
                     . (Actions ? delimiter "[Actions: " Actions "]" : "")
                     . (Attrs ? delimiter "[Attrs: " Attrs "]" : "") "`n"
@@ -2406,14 +2406,14 @@ class Ax {
             } else if !IsSet(showTime)
                 showTime := 2000
             try loc := this.Location
-            if !IsSet(loc) || !IsObject(loc) || loc.w < 1 || loc.h < 1
+            if !IsSet(loc) || !IsObject(loc) || loc.Width < 1 || loc.Height < 1
                 return this
             ; One reusable KS.Highlight overlay per element (single click-through border window), keyed by
             ; `this`. Replaces the previous four-window-per-highlight approach, which on Wayland/KWin spawned a
             ; burst of windows that could destabilize the compositor.
             hl := Ax.__Highlights.Has(this) ? Ax.__Highlights[this] : (Ax.__Highlights[this] := Highlight())
             hl.Color := color, hl.Thickness := d
-            hl.Show(loc.x, loc.y, loc.w, loc.h)
+            hl.Show(loc.X, loc.Y, loc.Width, loc.Height)
             if showTime > 0 {
                 Sleep(showTime)
                 this.Highlight()
@@ -2440,7 +2440,7 @@ class Ax {
                 SleepTime := ClickCount, cCount := 1, ClickCount := 1
             }
             CoordMode("Mouse", "Screen")
-            Click(pos.x + pos.w//2 + rel[1] " " pos.y + pos.h//2 + rel[2] " " WhichButton (cCount ? " " cCount : "") (DownOrUp ? " " DownOrUp : "") (Relative ? " " Relative : ""))
+            Click(pos.X + pos.Width//2 + rel[1] " " pos.Y + pos.Height//2 + rel[2] " " WhichButton (cCount ? " " cCount : "") (DownOrUp ? " " DownOrUp : "") (Relative ? " " Relative : ""))
             CoordMode("Mouse", saveCoordMode)
             Sleep(SleepTime)
             return this
@@ -2638,7 +2638,7 @@ class Ax {
             }
         }
 
-        FormatLocation(loc) => IsObject(loc) ? "x: " loc.x " y: " loc.y " w: " loc.w " h: " loc.h : loc
+        FormatLocation(loc) => IsObject(loc) ? "x: " loc.X " y: " loc.Y " w: " loc.Width " h: " loc.Height : loc
 
         ValueToString(value) {
             if value is Buffer

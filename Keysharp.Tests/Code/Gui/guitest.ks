@@ -3509,7 +3509,7 @@ OnWinEvent(hook, hwnd, dwmsEventTime) {
 		gWinEventCaretCount++
 		caret := A_EventInfo
 		SetStatus("window_winevent", "WinEvent: " gWinEventCount " events, " gWinEventCaretCount " caret moves (last at "
-			caret.x "," caret.y " " caret.w "x" caret.h " in hwnd " Format("0x{:X}", hwnd) ")")
+			caret.X "," caret.Y " " caret.Width "x" caret.Height " in hwnd " Format("0x{:X}", hwnd) ")")
 		return
 	}
 
@@ -3657,8 +3657,8 @@ ShowSelectedMonitor() {
 	text .= "Adapter:          " MonitorField(m.Adapter) "`r`n"
 	text .= "Connection:       " MonitorField(m.Connection) (m.IsInternal ? "  (internal panel)" : "") "`r`n"
 	text .= "`r`n"
-	text .= "Bounds:           " b.x ", " b.y "  " b.w "x" b.h "`r`n"
-	text .= "Work area:        " w.x ", " w.y "  " w.w "x" w.h "`r`n"
+	text .= "Bounds:           " b.X ", " b.Y "  " b.Width "x" b.Height "`r`n"
+	text .= "Work area:        " w.X ", " w.Y "  " w.Width "x" w.Height "`r`n"
 	text .= "Scale:            " m.Scale " (" Round(m.Scale * 100) "%)`r`n"
 	text .= "DPI:              " MonitorField(m.Dpi) "`r`n"
 	text .= "Physical size:    " MonitorField(m.PhysicalWidth, " mm") " x " MonitorField(m.PhysicalHeight, " mm") "`r`n"
@@ -3809,9 +3809,9 @@ GetSelectedVcp() {
 
 	try {
 		feature := m.GetVCP(code)
-		gVcpValueEdit.Value := feature.current
-		SetStatus("monitor_vcp", "VCP: 0x" Format("{:02X}", code) " = " feature.current " (max " feature.max ")")
-		AppendLog("Monitor " m.Index " GetVCP(0x" Format("{:02X}", code) ") -> current=" feature.current ", max=" feature.max ".")
+		gVcpValueEdit.Value := feature.Current
+		SetStatus("monitor_vcp", "VCP: 0x" Format("{:02X}", code) " = " feature.Current " (max " feature.Max ")")
+		AppendLog("Monitor " m.Index " GetVCP(0x" Format("{:02X}", code) ") -> current=" feature.Current ", max=" feature.Max ".")
 	} catch as err {
 		SetStatus("monitor_vcp", "VCP: read UNSUPPORTED/ERROR (see log)")
 		AppendLog("GetVCP(0x" Format("{:02X}", code) ") on monitor " m.Index " failed: " err.Message)
@@ -3891,7 +3891,7 @@ OnMonitorChange(hook, kind) {
 	names := ""
 
 	for m in Monitor.All
-		names .= (names = "" ? "" : ", ") m.Name " " m.W "x" m.H (m.IsPrimary ? " (primary)" : "")
+		names .= (names = "" ? "" : ", ") m.Name " " m.Width "x" m.Height (m.IsPrimary ? " (primary)" : "")
 
 	SetStatus("monitor_change", "Monitor.OnChange: " gMonitorChangeCount " event(s), last=" kind)
 	AppendLog("Monitor.OnChange #" gMonitorChangeCount ": kind=" kind ", count=" A_EventInfo " [" names "]")
@@ -3941,7 +3941,7 @@ RunOverlayTest() {
 	tr.DrawRect(0, 0, bwP - 1, bhP - 1, "0xFF3030", Round(4 * ui))
 	tr.FillEllipse(bwP // 2 - 30 * ui, bhP // 2 - 30 * ui, 60 * ui, 60 * ui, "0xFFCC00")
 	trSize := tr.MeasureText("TR", font16, "Sans")
-	tr.DrawText("TR", (bwP - trSize.w) / 2, (bhP - trSize.h) / 2, "0x000000", font16, "Sans")
+	tr.DrawText("TR", (bwP - trSize.Width) / 2, (bhP - trSize.Height) / 2, "0x000000", font16, "Sans")
 	tr.Show()
 
 	bl := Overlay(mrgP, sh - mrgP - bhP, bwP, bhP)
@@ -3953,7 +3953,7 @@ RunOverlayTest() {
 	br := Overlay(sw - mrgP - bwP, sh - mrgP - bhP, bwP, bhP)
 	br.FillEllipse(0, 0, bwP, bhP, "0xC030C0")
 	brSize := br.MeasureText("BR", font26, "Sans")
-	br.DrawText("BR", (bwP - brSize.w) / 2, (bhP - brSize.h) / 2, "0xFFFFFF", font26, "Sans")
+	br.DrawText("BR", (bwP - brSize.Width) / 2, (bhP - brSize.Height) / 2, "0xFFFFFF", font26, "Sans")
 	br.Show()
 
 	bannerW := 260
@@ -4040,16 +4040,16 @@ RunOcrTest() {
 	report.Push(res.Text)
 	report.Push("Lines: " res.Lines.Length "   Words: " res.Words.Length)
 	report.Push("")
-	report.Push("=== Words (text @ x,y wxh  conf | BoundingRect.x) ===")
+	report.Push("=== Words (text @ x,y wxh  conf | BoundingRect.X) ===")
 	for w in res.Words
-		report.Push(Format("  '{1}' @ {2},{3} {4}x{5}  conf={6}  br.x={7}", w.Text, w.x, w.y, w.w, w.h, w.Conf, w.BoundingRect.x))
+		report.Push(Format("  '{1}' @ {2},{3} {4}x{5}  conf={6}  br.X={7}", w.Text, w.X, w.Y, w.Width, w.Height, w.Conf, w.BoundingRect.X))
 
 	report.Push("")
 	report.Push("=== FindString('Open') ===")
 	openMatch := ""
 	try {
 		openMatch := res.FindString("Open")
-		report.Push(Format("  found '{1}' at {2},{3} ({4}x{5})", openMatch.Text, openMatch.x, openMatch.y, openMatch.w, openMatch.h))
+		report.Push(Format("  found '{1}' at {2},{3} ({4}x{5})", openMatch.Text, openMatch.X, openMatch.Y, openMatch.Width, openMatch.Height))
 	} catch as err
 		report.Push("  FindString('Open') threw: " err.Message "  (likely an OCR misread, not a code bug)")
 
@@ -4058,7 +4058,7 @@ RunOcrTest() {
 		saves := res.FindStrings("Save")
 		report.Push("  occurrences: " saves.Length)
 		for i, s in saves
-			report.Push(Format("    #{1}: '{2}' at {3},{4}", i, s.Text, s.x, s.y))
+			report.Push(Format("    #{1}: '{2}' at {3},{4}", i, s.Text, s.X, s.Y))
 	} catch as err
 		report.Push("  FindStrings('Save') threw: " err.Message)
 
@@ -4083,7 +4083,7 @@ RunOcrTest() {
 		br := OCR.WordsBoundingRect(res.Words*)
 		report.Push("")
 		report.Push("=== WordsBoundingRect (all words) ===")
-		report.Push(Format("  x={1} y={2} w={3} h={4} x2={5} y2={6}", br.x, br.y, br.w, br.h, br.x2, br.y2))
+		report.Push(Format("  x={1} y={2} w={3} h={4} x2={5} y2={6}", br.X, br.Y, br.Width, br.Height, br.x2, br.y2))
 		try {
 			clusters := OCR.Cluster(res.Words)
 			report.Push("=== Cluster -> " clusters.Length " cluster(s) ===")
