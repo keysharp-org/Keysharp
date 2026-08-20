@@ -1000,7 +1000,7 @@ namespace Keysharp.Parsing.Syntax
 			{
 				// Built-in variables enclosed in percent signs are expanded (e.g. "%A_ScriptDir%\Lib"); a "%name%" that
 				// is not a recognized built-in is interpreted literally, matching AutoHotkey.
-				file = ExpandIncludeVars(file, directive);
+				file = NormalizeDirectiveSeparators(ExpandIncludeVars(file, directive));   // '\' separates on every platform
 				try { path = System.IO.Path.GetFullPath(System.IO.Path.IsPathRooted(file) ? file : System.IO.Path.Combine(baseDir, file)); }
 				catch { if (ignoreMissing) return null; throw IncludeNotFound(directive, file); }
 				// Directory form: change the base dir used by the rest of this file's relative includes (no content spliced).
@@ -1052,6 +1052,9 @@ namespace Keysharp.Parsing.Syntax
 		{
 			if (string.IsNullOrEmpty(name))
 				return null;
+
+			// A library name may carry a subdirectory (`<Aris/Author/Lib>`, `<Lib\UIA>`); both separators work anywhere.
+			name = NormalizeDirectiveSeparators(name);
 
 			var libDirs = new List<string>();
 
@@ -1127,6 +1130,24 @@ namespace Keysharp.Parsing.Syntax
 				}
 				catch { return m.Value; }
 			});
+		}
+
+		/// <summary>
+		/// Maps the path separators of a compile-time directive path (<c>#Include</c>, <c>#Import</c>, <c>#CSharp</c>)
+		/// onto the host's. Such a path is a literal written by the script author and never carries user data, so the
+		/// separator set is fixed by the LANGUAGE — '\' and '/' both separate components on every platform — rather
+		/// than by the host filesystem. Without this, an AHK-ecosystem `#Include Lib\Thing.ahk` resolves on Unix to a
+		/// single file whose NAME contains a backslash and fails. Windows needs no mapping: Path.GetFullPath already
+		/// folds '/' to '\'. The cost is that a Unix file with a literal '\' in its name cannot be named by a
+		/// directive (rename it, or read it at run time), which is the better trade — a botched unzip of a
+		/// Windows-authored archive is the one realistic way such a file appears, and resolving to it is never meant.
+		/// <paramref name="sep"/> defaults to the host separator and exists so the Unix mapping stays testable from a
+		/// Windows host.
+		/// </summary>
+		internal static string NormalizeDirectiveSeparators(string path, char sep = '\0')
+		{
+			if (sep == '\0') sep = System.IO.Path.DirectorySeparatorChar;
+			return sep == '\\' || string.IsNullOrEmpty(path) || path.IndexOf('\\') < 0 ? path : path.Replace('\\', sep);
 		}
 
 		private static bool IsCondDirective(string name) =>

@@ -434,7 +434,9 @@ namespace Keysharp.Compilation.Syntax
 			var baseDir = string.IsNullOrEmpty(_includeDir) ? System.IO.Directory.GetCurrentDirectory() : _includeDir;
 			foreach (var raw in spec.Split(';'))
 			{
-				var item = Parser.ExpandPathVars(raw.Trim(), _includeDir, _scriptPath).Trim();
+				// The default spec is written with '\' (AHK's own), so without this the user-Documents and exe-adjacent
+				// tiers expand to non-existent directories on Unix and are silently dropped from the search path.
+				var item = Parser.NormalizeDirectiveSeparators(Parser.ExpandPathVars(raw.Trim(), _includeDir, _scriptPath).Trim());
 				if (item.Length == 0) continue;
 				string full;
 				try { full = System.IO.Path.GetFullPath(System.IO.Path.IsPathRooted(item) ? item : System.IO.Path.Combine(baseDir, item)); }
@@ -452,6 +454,9 @@ namespace Keysharp.Compilation.Syntax
 		private string ResolveModuleFile(string modName, string localDir)
 		{
 			if (string.IsNullOrEmpty(modName)) return null;
+
+			// A module name may carry a subdirectory (`#import "Sub\Mod"`); both separators work on every platform.
+			modName = Parser.NormalizeDirectiveSeparators(modName);
 
 			// The directory walk itself lives in SearchModulePath, shared with the `#CSharp "file.cs"` form; only
 			// these candidates are specific to a module NAME.
@@ -2061,7 +2066,8 @@ namespace Keysharp.Compilation.Syntax
 
 		private string ResolveInlineFile(CSharpDirective d, string baseDir)
 		{
-			var raw = Parser.ExpandPathVars((d.FilePath ?? "").Trim(), _includeDir, d.File ?? _scriptPath ?? _includeDir);
+			var raw = Parser.NormalizeDirectiveSeparators(
+						  Parser.ExpandPathVars((d.FilePath ?? "").Trim(), _includeDir, d.File ?? _scriptPath ?? _includeDir));
 
 			if (raw.Length == 0)
 			{

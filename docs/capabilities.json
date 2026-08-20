@@ -348,7 +348,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #Include and #IncludeAgain directives cause the script to behave as though the specified file\u0027s contents are present at this exact position.",
+                     "notes":  "The #Include and #IncludeAgain directives cause the script to behave as though the specified file\u0027s contents are present at this exact position. Path separators are platform-independent: a backslash in an #Include, #Import or #CSharp path separates directories on Linux and macOS too, so `#Include Lib\\Thing.ahk` resolves everywhere.",
                      "tested-by":  "directive-include.ahk"
                  },
                  {
@@ -359,7 +359,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #Include and #IncludeAgain directives cause the script to behave as though the specified file\u0027s contents are present at this exact position.",
+                     "notes":  "The #Include and #IncludeAgain directives cause the script to behave as though the specified file\u0027s contents are present at this exact position. Path separators are platform-independent: a backslash in an #Include, #Import or #CSharp path separates directories on Linux and macOS too, so `#Include Lib\\Thing.ahk` resolves everywhere.",
                      "tested-by":  "directive-include.ahk"
                  },
                  {
