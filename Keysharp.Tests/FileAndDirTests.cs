@@ -72,6 +72,84 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("FileAndDir")]
+		public void DirCopyArchive()
+		{
+			var src = string.Concat(path, "DirCopy");
+			var work = Path.Combine(Path.GetTempPath(), string.Concat("KeysharpDirCopyArchive-", Guid.NewGuid().ToString("N")));
+			_ = Directory.CreateDirectory(work);
+
+			try
+			{
+				//Build the tar/gzip fixtures from the checked in DirCopy folder so no binaries need to be committed.
+				var tar = Path.Combine(work, "DirCopy.tar");
+				System.Formats.Tar.TarFile.CreateFromDirectory(src, tar, false);
+				var targz = Path.Combine(work, "DirCopy.tar.gz");
+				GzipFile(tar, targz);
+				var tgz = Path.Combine(work, "DirCopy.tgz");
+				GzipFile(tar, tgz);
+				var zip = Path.Combine(src, "DirCopy.zip");
+
+				//Archives extract their entries into dest, which must work on a fresh destination and again with overwrite.
+				foreach (var archive in new[] { zip, tar, targz, tgz })
+				{
+					var dest = Path.Combine(work, string.Concat("out-", Path.GetFileName(archive)));
+					_ = Dir.DirCopy(archive, dest);
+					AssertExtracted(dest);
+					_ = Dir.DirCopy(archive, dest, true);
+					AssertExtracted(dest);
+					Assert.IsTrue(Throws(() => Dir.DirCopy(archive, dest, false)), $"{Path.GetFileName(archive)} did not fail on an existing destination with overwrite off.");
+				}
+
+				//A plain .gz holds one compressed file, so dest names the decompressed FILE and must not be created as a directory.
+				var file1 = Path.Combine(src, "file1.txt");
+				var gz = Path.Combine(work, "file1.txt.gz");
+				GzipFile(file1, gz);
+				var gzdest = Path.Combine(work, "gz-fresh", "file1.txt");//Nonexistent parent: the .gz path must create it.
+				_ = Dir.DirCopy(gz, gzdest);
+				Assert.IsTrue(File.Exists(gzdest));
+				Assert.IsFalse(Directory.Exists(gzdest));
+				Assert.AreEqual(File.ReadAllBytes(file1), File.ReadAllBytes(gzdest));
+				_ = Dir.DirCopy(gz, gzdest, true);
+				Assert.AreEqual(File.ReadAllBytes(file1), File.ReadAllBytes(gzdest));
+				Assert.IsTrue(Throws(() => Dir.DirCopy(gz, gzdest, false)), "A plain .gz did not fail on an existing destination file with overwrite off.");
+			}
+			finally
+			{
+				if (Directory.Exists(work))
+					Directory.Delete(work, true);
+			}
+
+			static void GzipFile(string source, string dest)
+			{
+				using FileStream input = File.OpenRead(source);
+				using FileStream output = File.Create(dest);
+				using var compressor = new System.IO.Compression.GZipStream(output, System.IO.Compression.CompressionMode.Compress);
+				input.CopyTo(compressor);
+			}
+
+			static void AssertExtracted(string dest)
+			{
+				Assert.IsTrue(Directory.Exists(dest));
+				Assert.IsTrue(File.Exists(Path.Combine(dest, "file1.txt")));
+				Assert.IsTrue(File.Exists(Path.Combine(dest, "file2.txt")));
+				Assert.IsTrue(File.Exists(Path.Combine(dest, "file3txt")));
+			}
+
+			static bool Throws(Action action)
+			{
+				try
+				{
+					action();
+					return false;
+				}
+				catch
+				{
+					return true;
+				}
+			}
+		}
+
+		[Test, Category("FileAndDir")]
 		public void DirCreate()
 		{
 			if (Directory.Exists("./DirCreate"))

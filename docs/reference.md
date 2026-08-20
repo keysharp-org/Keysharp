@@ -332,6 +332,8 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	+ Passing string pointers to `DllCall()` when passing a created callback is recommended against. See explanation above under `StrPtr()`.
 	+ Usage of the created callback will be inefficient, so usage of `CallbackCreate()` is discouraged.
 * `ControlMove()` and `ControlSetPos()` operate relative to their immediate parent, which may not be the main window if they are contained in a nested control.
+* `DirCopy()` extracts archives with .NET rather than the OS shell, so the supported formats are the same on every platform: `.zip`, `.tar`, `.tar.gz` and `.tgz` are extracted into *Dest* as a folder. AutoHotkey's format list instead depends on the Windows version (and RAR/7z are not supported at all here).
+	+ A plain `.gz` holds a single compressed file rather than an archive of entries, so *Dest* names the decompressed **file** and its parent folder is created if needed. This is the one case where *Dest* is not a directory.
 * `DllCall()` has the following caveats:
 	+ Use `Ptr` and `StringBuffer` for double pointer parameters such as `LPTSTR*`. This is recommended over the use of `StrPtr()`.
 * `ObjPtr()` returns an IUnknown `ComValue` with the pointer wrapped in it, whereas `ObjPtrAddRef()` returns a raw pointer.

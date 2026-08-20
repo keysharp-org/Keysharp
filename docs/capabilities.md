@@ -476,7 +476,7 @@ Status legend:
 | DelegateHolder | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Callback object type returned by CallbackCreate; exposes the native address through Ptr. |
 | DetectHiddenText() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DetectHiddenText function determines whether invisible text in a window is "seen" for the purpose of finding the window. |
 | DetectHiddenWindows() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DetectHiddenWindows function determines whether invisible windows are "seen" by the script. |
-| DirCopy() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a folder along with all its sub-folders and files (similar to xcopy). |
+| DirCopy() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a folder along with all its sub-folders and files (similar to xcopy). A .zip, .tar, .tar.gz or .tgz source is extracted into the destination folder; a plain .gz is decompressed to the destination as a single file. |
 | DirCreate() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a folder, and all of its parent folders if needed. |
 | DirDelete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes a folder, optionally recursive. |
 | Directives and preprocessing | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | OS-specific directives supported via compile constants. |

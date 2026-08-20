@@ -337,14 +337,46 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Private helper for copying a folder from source to dest.
+		/// Private helper for copying a folder from source to dest.<br/>
+		/// If source is an archive file (.zip, .tar, .tar.gz/.tgz) its contents are extracted into dest.<br/>
+		/// A plain .gz holds a single compressed file rather than an archive of entries, so in that case
+		/// dest names the decompressed file itself instead of a folder.
 		/// </summary>
-		/// <param name="source">The folder to copy from.</param>
-		/// <param name="dest">The folder to copy to.</param>
+		/// <param name="source">The folder or archive file to copy from.</param>
+		/// <param name="dest">The folder to copy to, or the file to decompress to when source is a plain .gz.</param>
 		/// <param name="overwrite">Whether to overwrite the contents of dest.</param>
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if any failure happens while attempting to perform the operation.</exception>
 		private static void CopyDirectory(string source, string dest, bool overwrite)
 		{
+			var isFile = File.Exists(source);
+			//Check the compressed tar suffixes before the plain .gz one, else foo.tar.gz would match .gz and the inner tar would never be extracted.
+			var isCompressedTar = isFile && (source.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || source.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase));
+			var isSingleGz = isFile && !isCompressedTar && source.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
+
+			//A plain .gz decompresses to a single file, so dest must not be created as a directory.
+			if (isSingleGz)
+			{
+				try
+				{
+					if (!overwrite && File.Exists(dest))
+						throw new IOException($"File already exists and overwrite is false.");
+
+					if (Path.GetDirectoryName(dest) is string parent && parent.Length > 0)
+						_ = Directory.CreateDirectory(parent);
+
+					using FileStream compressedFileStream = File.OpenRead(source);
+					using FileStream outputFileStream = File.Create(dest);
+					using var decompressor = new GZipStream(compressedFileStream, CompressionMode.Decompress);
+					decompressor.CopyTo(outputFileStream);
+				}
+				catch (Exception ex)
+				{
+					_ = Errors.OSErrorOccurred(ex, $"Failed to copy file {source} to {dest}: {ex.Message}");
+				}
+
+				return;
+			}
+
 			try
 			{
 				if (!overwrite && Directory.Exists(dest))
@@ -364,20 +396,31 @@ namespace Keysharp.Builtins
 			try
 			{
 				//Special check for archive files.
-				var exists = File.Exists(source);
-
-				if (exists && source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+				if (isFile && source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
 				{
 					ZipFile.ExtractToDirectory(source, dest, overwrite);
 				}
-				else if (exists && source.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
+				else if (isCompressedTar)
 				{
-					using FileStream compressedFileStream = File.Open(source, FileMode.Open);
-					using FileStream outputFileStream = File.Create(dest);
-					using var decompressor = new GZipStream(compressedFileStream, CompressionMode.Decompress);
-					decompressor.CopyTo(outputFileStream);
+					//Decompress to a temporary tar first, then let TarFile extract it so its entry path validation still applies.
+					var tempTar = Path.Combine(Path.GetTempPath(), Path.ChangeExtension(Path.GetRandomFileName(), ".tar"));
+
+					try
+					{
+						using (FileStream compressedFileStream = File.OpenRead(source))
+						using (FileStream tarFileStream = File.Create(tempTar))
+						using (var decompressor = new GZipStream(compressedFileStream, CompressionMode.Decompress))
+							decompressor.CopyTo(tarFileStream);
+
+						System.Formats.Tar.TarFile.ExtractToDirectory(tempTar, dest, overwrite);
+					}
+					finally
+					{
+						if (File.Exists(tempTar))
+							File.Delete(tempTar);
+					}
 				}
-				else if (exists && source.EndsWith(".tar", StringComparison.OrdinalIgnoreCase))
+				else if (isFile && source.EndsWith(".tar", StringComparison.OrdinalIgnoreCase))
 				{
 					System.Formats.Tar.TarFile.ExtractToDirectory(source, dest, overwrite);
 				}

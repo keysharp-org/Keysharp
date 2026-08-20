@@ -4762,7 +4762,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Copies a folder along with all its sub-folders and files (similar to xcopy).",
+                     "notes":  "Copies a folder along with all its sub-folders and files (similar to xcopy). A .zip, .tar, .tar.gz or .tgz source is extracted into the destination folder; a plain .gz is decompressed to the destination as a single file.",
                      "tested-by":  "file-dircopy.ahk"
                  },
                  {
