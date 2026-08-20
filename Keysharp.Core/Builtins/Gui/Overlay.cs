@@ -84,7 +84,7 @@ namespace Keysharp.Builtins
 			/// not a bitmap rebuild), so a solid-fill or tile overlay can grow every frame cheaply without discarding
 			/// its content. Draw ops keep targeting the canvas at its authored resolution — to draw crisply at a larger
 			/// size, redraw the content or recreate the overlay.</summary>
-			public object W
+			public object Width
 			{
 				get
 				{
@@ -98,8 +98,8 @@ namespace Keysharp.Builtins
 
 			/// <summary>Overlay height in native screen/draw units. Changing
 			/// it stretches the live
-			/// surface to the new size (the canvas is kept, not rebuilt) — see <see cref="W"/>.</summary>
-			public object H
+			/// surface to the new size (the canvas is kept, not rebuilt) — see <see cref="Width"/>.</summary>
+			public object Height
 			{
 				get
 				{
@@ -190,7 +190,7 @@ namespace Keysharp.Builtins
 			/// <paramref name="callback"/>, then commits its pixels and optional geometry in one platform update.
 			/// Drawing uses local native screen units while backing-pixel density is selected automatically for the target.
 			/// A drawing exception or failed upload preserves the previous frame and overlay state.</summary>
-			public object Redraw(object callback, object newX = null, object newY = null, object newW = null, object newH = null)
+			public object Redraw(object callback, object newX = null, object newY = null, object newWidth = null, object newHeight = null)
 			{
 				if (RejectRedrawMutation()) return this;
 				if (callback is not KeysharpFunc f)
@@ -198,8 +198,8 @@ namespace Keysharp.Builtins
 
 				var nextX = newX != null ? newX.Ai() : x;
 				var nextY = newY != null ? newY.Ai() : y;
-				var nextW = newW != null ? newW.Ai() : w;
-				var nextH = newH != null ? newH.Ai() : h;
+				var nextW = newWidth != null ? newWidth.Ai() : w;
+				var nextH = newHeight != null ? newHeight.Ai() : h;
 				var oldGeometry = CurrentGeometry;
 				var screenW = nextW > 0 ? nextW : oldGeometry.ScreenW;
 				var screenH = nextH > 0 ? nextH : oldGeometry.ScreenH;
@@ -322,14 +322,14 @@ namespace Keysharp.Builtins
 			/// state. The source (an Image, a file path, or a bitmap handle) is copied and remains owned by the
 			/// caller. The image dimensions are its backing pixels; W/H are its native on-screen size. Update does
 			/// not change visibility: call <see cref="Show"/> when staging into a hidden overlay.</summary>
-			public object Update(object source, object newX = null, object newY = null, object newW = null,
-						 object newH = null)
+			public object Update(object source, object newX = null, object newY = null, object newWidth = null,
+						 object newHeight = null)
 			{
 				if (RejectRedrawMutation()) return this;
 				var nextX = newX != null ? newX.Ai() : x;
 				var nextY = newY != null ? newY.Ai() : y;
-				var nextW = newW != null ? newW.Ai() : w;
-				var nextH = newH != null ? newH.Ai() : h;
+				var nextW = newWidth != null ? newWidth.Ai() : w;
+				var nextH = newHeight != null ? newHeight.Ai() : h;
 				// Do every fallible image operation before touching the live model. The old canvas remains owned by
 				// this overlay and displayed by the backing until the final upload succeeds.
 				if (!TryCopyImage(source, nameof(Update), out var replacement))
@@ -563,13 +563,13 @@ namespace Keysharp.Builtins
 
 			#region Show / Move / Hide / Destroy
 
-			public object Show(object newX = null, object newY = null, object newW = null, object newH = null)
+			public object Show(object newX = null, object newY = null, object newWidth = null, object newHeight = null)
 			{
 				if (RejectRedrawMutation()) return this;
 				if (newX != null) x = newX.Ai();
 				if (newY != null) y = newY.Ai();
-				if (newW != null) w = newW.Ai();
-				if (newH != null) h = newH.Ai();
+				if (newWidth != null) w = newWidth.Ai();
+				if (newHeight != null) h = newHeight.Ai();
 
 				if (!EnsureCanvas())
 					return this;   // sizeless overlay: EnsureCanvas raised the error (throws in throw-mode); keep chaining otherwise
@@ -581,13 +581,13 @@ namespace Keysharp.Builtins
 				return this;
 			}
 
-			public object Move(object newX = null, object newY = null, object newW = null, object newH = null)
+			public object Move(object newX = null, object newY = null, object newWidth = null, object newHeight = null)
 			{
 				if (RejectRedrawMutation()) return this;
 				if (newX != null) x = newX.Ai();
 				if (newY != null) y = newY.Ai();
-				if (newW != null) w = newW.Ai();
-				if (newH != null) h = newH.Ai();
+				if (newWidth != null) w = newWidth.Ai();
+				if (newHeight != null) h = newHeight.Ai();
 
 				// The backing STRETCHES the existing canvas to the new W/H (see the W property) — a resize is a display
 				// scale, not a bitmap rebuild — so a tile/fill overlay resized every frame keeps its content.

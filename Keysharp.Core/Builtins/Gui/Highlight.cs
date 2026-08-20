@@ -51,18 +51,18 @@ namespace Keysharp.Builtins
 
 			public KeysharpHighlight(params object[] args) : base(args) { }
 
-			/// <summary>Highlight(x?, y?, w?, h?, color := "Red", thickness := 2) — stores the rectangle/style; no
+			/// <summary>Highlight(X?, Y?, Width?, Height?, Color := "Red", Thickness := 2) — stores the rectangle/style; no
 			/// overlay is created until the first Show.</summary>
 			// `new`, not `override`: construction dispatches by name, so the real signature is declared here and
 			// arity/defaults/named binding follow from it (see Buffer.__New and Any's constructor). The parameters
 			// are PascalCase on purpose: these names ARE script-facing API (`Highlight(Color: "Blue")`).
-			public object __New(object X = null, object Y = null, object W = null, object H = null,
+			public object __New(object X = null, object Y = null, object Width = null, object Height = null,
 									object Color = null, object Thickness = null)
 			{
 				if (X != null) rx = X.Ai();
 				if (Y != null) ry = Y.Ai();
-				if (W != null) rw = W.Ai();
-				if (H != null) rh = H.Ai();
+				if (Width != null) rw = Width.Ai();
+				if (Height != null) rh = Height.Ai();
 				if (Color != null) color = NormalizeColor(Color);
 				if (Thickness != null) thickness = Math.Max(0, Thickness.Ai());
 
@@ -78,10 +78,10 @@ namespace Keysharp.Builtins
 			public object Y { get => (long)ry; set { ry = value.Ai(); Refresh(); } }
 
 			/// <summary>Width of the outlined rectangle, in pixels. Updates live while shown.</summary>
-			public object W { get => (long)rw; set { rw = value.Ai(); Refresh(); } }
+			public object Width { get => (long)rw; set { rw = value.Ai(); Refresh(); } }
 
 			/// <summary>Height of the outlined rectangle, in pixels. Updates live while shown.</summary>
-			public object H { get => (long)rh; set { rh = value.Ai(); Refresh(); } }
+			public object Height { get => (long)rh; set { rh = value.Ai(); Refresh(); } }
 
 			/// <summary>Border color: set with a color name ("Red"), a 0xRRGGBB integer, or a hex string; it is
 			/// normalized to and read back as a 6-hex-digit string (e.g. "FF0000"). Updates live while shown.</summary>
@@ -101,14 +101,14 @@ namespace Keysharp.Builtins
 
 			#region Methods
 
-			/// <summary>Shows the overlay (creating it on first use), returning immediately. Optional x/y/w/h set the
+			/// <summary>Shows the overlay (creating it on first use), returning immediately. Optional X/Y/Width/Height set the
 			/// rectangle first, so Show doubles as move/resize.</summary>
-			public object Show(object x = null, object y = null, object w = null, object h = null)
+			public object Show(object x = null, object y = null, object width = null, object height = null)
 			{
 				if (x != null) rx = x.Ai();
 				if (y != null) ry = y.Ai();
-				if (w != null) rw = w.Ai();
-				if (h != null) rh = h.Ai();
+				if (width != null) rw = width.Ai();
+				if (height != null) rh = height.Ai();
 				visible = true;
 				Refresh();
 				return this;
@@ -116,13 +116,13 @@ namespace Keysharp.Builtins
 
 			/// <summary>Repositions/resizes the overlay in place — and only that. Unlike <c>Show</c>, <c>Move</c>
 			/// never shows or hides it and never changes visibility: on a hidden overlay it just records the new
-			/// geometry for the next <c>Show</c>. All args optional, so <c>Move(, , w, h)</c> resizes only.</summary>
-			public object Move(object x = null, object y = null, object w = null, object h = null)
+			/// geometry for the next <c>Show</c>. All args optional, so <c>Move(, , Width, Height)</c> resizes only.</summary>
+			public object Move(object x = null, object y = null, object width = null, object height = null)
 			{
 				if (x != null) rx = x.Ai();
 				if (y != null) ry = y.Ai();
-				if (w != null) rw = w.Ai();
-				if (h != null) rh = h.Ai();
+				if (width != null) rw = width.Ai();
+				if (height != null) rh = height.Ai();
 
 				if (shown)
 					Refresh();

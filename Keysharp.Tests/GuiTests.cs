@@ -106,8 +106,8 @@ namespace Keysharp.Tests
 
 				Assert.AreEqual(31L, overlay.X);
 				Assert.AreEqual(42L, overlay.Y);
-				Assert.AreEqual(30L, overlay.W);
-				Assert.AreEqual(18L, overlay.H);
+				Assert.AreEqual(30L, overlay.Width);
+				Assert.AreEqual(18L, overlay.Height);
 				Assert.AreEqual(false, overlay.Visible);
 			}
 			finally
@@ -133,8 +133,8 @@ namespace Keysharp.Tests
 
 				Assert.AreEqual(31L, overlay.X);
 				Assert.AreEqual(42L, overlay.Y);
-				Assert.AreEqual(30L, overlay.W);
-				Assert.AreEqual(18L, overlay.H);
+				Assert.AreEqual(30L, overlay.Width);
+				Assert.AreEqual(18L, overlay.Height);
 				Assert.AreEqual(false, overlay.Visible);
 			}
 			finally
@@ -153,8 +153,8 @@ namespace Keysharp.Tests
 			try
 			{
 				_ = overlay.Update(image);
-				Assert.AreEqual(40L, overlay.W);
-				Assert.AreEqual(24L, overlay.H);
+				Assert.AreEqual(40L, overlay.Width);
+				Assert.AreEqual(24L, overlay.Height);
 			}
 			finally
 			{

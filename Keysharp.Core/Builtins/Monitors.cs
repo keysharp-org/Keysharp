@@ -220,10 +220,10 @@ namespace Keysharp.Builtins
 			public long Y => display.Bounds.Y;
 
 			/// <summary>Width in native screen units.</summary>
-			public long W => display.Bounds.Width;
+			public long Width => display.Bounds.Width;
 
 			/// <summary>Height in native screen units.</summary>
-			public long H => display.Bounds.Height;
+			public long Height => display.Bounds.Height;
 
 			/// <summary>The full monitor rectangle as <c>{x, y, w, h}</c>.</summary>
 			public object Bounds => Rect(display.Bounds);

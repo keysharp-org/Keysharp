@@ -179,8 +179,8 @@ namespace Keysharp.Tests
 				_ = Builtins.Monitor.MonitorGet(i, l, t, r, b);
 				Assert.AreEqual(l.__Value.Al(), m.X);
 				Assert.AreEqual(t.__Value.Al(), m.Y);
-				Assert.AreEqual(r.__Value.Al() - l.__Value.Al(), m.W);
-				Assert.AreEqual(b.__Value.Al() - t.__Value.Al(), m.H);
+				Assert.AreEqual(r.__Value.Al() - l.__Value.Al(), m.Width);
+				Assert.AreEqual(b.__Value.Al() - t.__Value.Al(), m.Height);
 			}
 		}
 
@@ -236,7 +236,7 @@ namespace Keysharp.Tests
 			Assert.AreEqual(primary, p.Index);
 			Assert.IsTrue(p.IsPrimary);
 
-			var fromPoint = Builtins.Ks.KeysharpMonitor.FromPoint(null, p.X + p.W / 2, p.Y + p.H / 2)
+			var fromPoint = Builtins.Ks.KeysharpMonitor.FromPoint(null, p.X + p.Width / 2, p.Y + p.Height / 2)
 				as Builtins.Ks.KeysharpMonitor;
 			Assert.AreEqual(primary, fromPoint.Index);
 
