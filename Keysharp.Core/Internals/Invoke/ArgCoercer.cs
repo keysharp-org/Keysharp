@@ -24,6 +24,8 @@ namespace Keysharp.Internals.Invoke
 	/// string is <c>true</c>, so this never raises for a value; only an unset one does.</item>
 	/// <item><c>string</c> — <see cref="ObjectExtensions.As"/>: total, and honors a script class's own
 	/// <c>ToString</c> override. Unset becomes <c>""</c>.</item>
+	/// <item>enum targets — <see cref="Enum.ToObject(Type, long)"/> over the same numeric conversion, since a
+	/// script has only the Integer to name a member (or a flag combination) with.</item>
 	/// <item>reference targets — a checked cast that raises a <see cref="TypeError"/> naming both types instead
 	/// of an uncatchable <see cref="InvalidCastException"/>. Unset passes through as null.</item>
 	/// </list>
@@ -42,15 +44,21 @@ namespace Keysharp.Internals.Invoke
 		/// no equivalent for and must be widened on the way back out — see <see cref="IsNarrow"/>, which depends on
 		/// that ordering.
 		/// </summary>
-		internal enum Kind { None, Long, Double, Bool, Str, Cast, Int, UInt, Short, UShort, Byte, SByte, ULong, NInt, NUInt, Single }
+		internal enum Kind { None, Long, Double, Bool, Str, Cast, Enum, Int, UInt, Short, UShort, Byte, SByte, ULong, NInt, NUInt, Single }
 
 		/// <summary>The conversion rule for <paramref name="t"/>, or <see cref="Kind.None"/> to leave it alone.</summary>
 		internal static Kind KindOf(Type t)
 		{
-			// An enum reports its underlying integral type, and byref/pointer types report as non-value types, so
-			// all of them have to be rejected up front or the switch below would claim them for a kind that cannot
+			// An enum reports its underlying integral type, so it has to be claimed before the switch below picks
+			// the kind for that type and unboxes an Int32 straight into an Int32-BACKED target, which is not the
+			// same thing. It is not narrow: an enum leaves for a script as a wrapped value, never widened to
+			// Integer, so it sorts before Kind.Int (see IsNarrow) and CanLeakClrValue keeps claiming it.
+			if (t.IsEnum)
+				return Kind.Enum;
+
+			// Byref/pointer types report as non-value types, so they too would be claimed for a kind that cannot
 			// represent them.
-			if (t.IsEnum || t.IsByRef || t.IsPointer || t.IsFunctionPointer)
+			if (t.IsByRef || t.IsPointer || t.IsFunctionPointer)
 				return Kind.None;
 
 			switch (Type.GetTypeCode(t))
@@ -102,6 +110,39 @@ namespace Keysharp.Internals.Invoke
 			return target.IsInstanceOfType(fallback) ? fallback : null;
 		}
 
+		/// <summary>
+		/// The <see cref="Kind.Enum"/> conversion. AutoHotkey has no enum type, so a script names a member of one
+		/// in exactly two ways, and both arrive here: as an Integer — including one built by flag arithmetic, which
+		/// need not be a declared member — or as the member itself fetched through <c>Ks.Clr</c>, which arrives as
+		/// a proxy or a boxed enum. <see cref="Enum.ToObject(Type, long)"/> takes all of them; it converts by value
+		/// and does not require the result to be named, which is what a flag combination depends on.
+		/// <para>Reflection would accept a bare integral only when it can widen it to the underlying type, and
+		/// script Integers are Int64 while nearly every .NET enum is Int32-backed — so without this the common case
+		/// is the one that fails.</para>
+		/// </summary>
+		internal static object CoerceEnum(object value, Type target)
+		{
+			// A proxy can only have been meant as its payload here. This is not the boundary-only unwrapping
+			// CoerceBoundaryCast does: an enum parameter, unlike an `object` or reference one, has no reading in
+			// which a ManagedInstance is itself the argument.
+			if (value is Ks.Clr.ManagedInstance mi)
+				value = mi._instance;
+
+			if (target.IsInstanceOfType(value))
+				return value;
+
+			// A boxed enum of some other type converts by value, like the Integer it stands for. Its own underlying
+			// type is the only lossless stop on the way there: `.ToLong()` would fall through to ToString(), which
+			// yields the member NAME for a named value and the number only for an unnamed one.
+			if (value is Enum e)
+				return Enum.ToObject(target, Convert.ChangeType(e, Enum.GetUnderlyingType(e.GetType()), CultureInfo.InvariantCulture));
+
+			// Everything else takes the numeric policy the integral kinds take: a numeric string converts, a Float
+			// truncates, and anything else raises the TypeError `Integer("abc")` raises. Out-of-range bits are
+			// dropped rather than throwing, matching the unchecked casts those kinds use.
+			return Enum.ToObject(target, value.ToLong());
+		}
+
 		/// <summary>Unwraps managed proxies at an explicit CLR boundary.</summary>
 		internal static object CoerceBoundaryCast(object value, Type target)
 		{
@@ -144,6 +185,9 @@ namespace Keysharp.Internals.Invoke
 				case Kind.Cast:
 					return Expression.Convert(Expression.Call(coerceCastMethod, value, Expression.Constant(target, typeof(Type))), target);
 
+				case Kind.Enum:
+					return Expression.Convert(Expression.Call(coerceEnumMethod, value, Expression.Constant(target, typeof(Type))), target);
+
 				case Kind.Single: return Expression.Convert(AsDouble(), target);
 
 				// There is no Int64 -> UIntPtr coercion operator, so nuint alone needs the ulong stepping stone.
@@ -181,6 +225,7 @@ namespace Keysharp.Internals.Invoke
 				case Kind.Bool: return ForceBool(value);
 				case Kind.Str: return value.As();
 				case Kind.Cast: return CoerceCast(value, target);
+				case Kind.Enum: return CoerceEnum(value, target);
 				case Kind.Int: return unchecked((int)value.ToLong());
 				case Kind.UInt: return unchecked((uint)value.ToLong());
 				case Kind.Short: return unchecked((short)value.ToLong());
@@ -277,7 +322,7 @@ namespace Keysharp.Internals.Invoke
 		internal static bool CanLeakClrValue(Type t) =>
 			t != typeof(void)
 			&& !typeof(Any).IsAssignableFrom(t)
-			&& KindOf(t) is Kind.None or Kind.Cast;
+			&& KindOf(t) is Kind.None or Kind.Cast or Kind.Enum;
 
 		/// <summary>
 		/// Wraps <paramref name="value"/> in <c>ManagedInvoke.ConvertOut</c>, the same policy <c>Ks.Clr</c>
@@ -303,6 +348,7 @@ namespace Keysharp.Internals.Invoke
 		// AutoHotkey does where a string is expected, and it is what the Clr boundary already used.
 		private static readonly MethodInfo asStringMethod = Bind(typeof(ObjectExtensions), nameof(ObjectExtensions.As), typeof(object), typeof(string));
 		private static readonly MethodInfo coerceCastMethod = Bind(typeof(ArgCoercer), nameof(CoerceCast), typeof(object), typeof(Type));
+		private static readonly MethodInfo coerceEnumMethod = Bind(typeof(ArgCoercer), nameof(CoerceEnum), typeof(object), typeof(Type));
 		private static readonly MethodInfo coerceBoundaryCastMethod = Bind(typeof(ArgCoercer), nameof(CoerceBoundaryCast), typeof(object), typeof(Type));
 		private static readonly MethodInfo convertOutMethod = Bind(typeof(ManagedInvoke), nameof(ManagedInvoke.ConvertOut), typeof(object));
 	}

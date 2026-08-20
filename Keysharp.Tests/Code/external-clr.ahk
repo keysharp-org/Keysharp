@@ -262,3 +262,24 @@ for v in intList
     if (Type(v) != "Integer")
         allInts := false
 Check(allInts)
+
+; 50) A script Integer names an enum member (StringComparison.OrdinalIgnoreCase == 5).
+Check(System.StringComparer.FromComparison(5).Compare("a", "A") == 0)
+
+; 51) ...and it is the value that arrives, not a default: Ordinal (4) still distinguishes case.
+Check(System.StringComparer.FromComparison(4).Compare("a", "A") != 0)
+
+; 52) The same member fetched through Clr still round-trips into that parameter.
+cmp := System.StringComparison.OrdinalIgnoreCase
+Check(System.StringComparer.FromComparison(cmp).Compare("a", "A") == 0)
+
+; 53) An enum-typed return stays a wrapped enum rather than widening to the Integer backing it.
+Check(System.DateTime(2026, 8, 19).DayOfWeek.ToString() == "Wednesday")
+
+; 54) A value with no numeric reading is the same TypeError any other integral parameter gives.
+caught := false
+try
+    System.StringComparer.FromComparison("nope")
+catch TypeError
+    caught := true
+Check(caught)

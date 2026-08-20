@@ -33,6 +33,10 @@ public static System.DayOfWeek Day() => System.DayOfWeek.Friday;
 
 public static bool TakeDay(System.DayOfWeek value) => value == System.DayOfWeek.Friday;
 
+public static long DayValue(System.DayOfWeek value) => (long)value;
+
+public static System.DayOfWeek StoredDay { get; set; } = System.DayOfWeek.Monday;
+
 public static object BoxedChar() => 'K';                                // char returns are rejected by the boundary rule, but one can hide in an object
 
 public static object[] Objects() => new object[] { "one", 2L };
@@ -108,6 +112,20 @@ ok(TakeWhen(When()) == 2020)
 ok(Day().ToString() == "Friday")
 ok(TakeDay(Day()))
 ok(BoxedChar().ToString() == "K")
+
+; A script has only the Integer to name an enum member with, so one reaches an enum parameter directly
+; (DayOfWeek.Friday == 5)...
+ok(TakeDay(5))
+ok(DayValue(5) == 5)
+; ...and is not required to be a declared member, which is what flag arithmetic done in script depends on.
+ok(DayValue(99) == 99)
+; An enum-typed property takes the same Integer, and still reads back as the wrapped member.
+storedDayName := "StoredDay"
+ok(%storedDayName%.ToString() == "Monday")
+%storedDayName% := 5
+ok(%storedDayName%.ToString() == "Friday")
+%storedDayName% := Day()
+ok(DayValue(%storedDayName%) == 5)
 
 ; A non-variadic object[] is wrapped on return and unwrapped when its declared parameter receives it.
 ok(TakeObjects(Objects()) == 2)

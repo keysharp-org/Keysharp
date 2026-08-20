@@ -656,6 +656,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 			+ `ManagedType` may be accessed for static methods/properties, or called to create a new `ManagedInstance`.
 			+ `ManagedInstance` may be accessed with normal AutoHotkey syntax for properties, methods, and indexer access. Example: `linq.Where(nums, isOdd)`
 			+ Basic type marshalling between AutoHotkey and CLR is supported (including function objects), more complicated types may not currently work.
+			+ An enum-typed parameter or property takes a plain Integer, since a script has no enum type: `File.SetUnixFileMode(path, 0x180)`. The value does not have to be a declared member, so a flag combination can be built in script with `|`. The member itself works equally well when fetched through `Clr` (`System.StringComparison.OrdinalIgnoreCase`), and an enum coming back from CLR stays a wrapped member rather than widening to an Integer — take its name with `.ToString()`. A value with no numeric reading raises a `TypeError`, as it does for any other integral parameter.
 		+ `Clr.GetNamespaceName(ManagedNamespace)` returns the full intenal namespace name of the namespace wrapped by `ManagedNamespace`.
 		+ `Clr.GetTypeName(ManagedType)` returns the full internal type name of the type wrapped by `ManagedType`.
 	+ `HashMap`: Extends `Map` and does not perform sorting before enumeration.
