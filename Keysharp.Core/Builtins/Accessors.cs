@@ -315,12 +315,14 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The full path and name of the folder containing the current user's desktop files.
 		/// </summary>
-		public static string A_Desktop => Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+		// DoNotVerify for the same reason as A_MyDocuments: "" on a box with no ~/Desktop.
+		public static string A_Desktop =>
+			Environment.GetFolderPath(Environment.SpecialFolder.Desktop, Environment.SpecialFolderOption.DoNotVerify);
 
 		/// <summary>
 		/// The full path and name of the folder containing the all-users desktop files.
 		/// </summary>
-		public static string A_DesktopCommon => Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+		public static string A_DesktopCommon => Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
 
 		/// <summary>
 		/// Determines whether invisible text in a window is "seen" for the purpose of finding the window. This affects commands such as <see cref="WinExist"/> and <see cref="WinActivate"/>.
@@ -1128,7 +1130,10 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The full path and name of the current user's "My Documents" folder.
 		/// </summary>
-		public static string A_MyDocuments => Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+		// DoNotVerify because the default returns "" for a folder that does not exist yet (a box with no
+		// ~/Documents), which silently drops the user tier from the library and #import searches.
+		public static string A_MyDocuments =>
+			Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments, Environment.SpecialFolderOption.DoNotVerify);
 
 
 		/// <summary>
@@ -1184,7 +1189,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The full path and name of the Programs folder in the all-users Start Menu.
 		/// </summary>
-		public static string A_ProgramsCommon => Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+		public static string A_ProgramsCommon => Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms);
 
 		/// <summary>
 		/// The size in bytes of a pointer, always 8.
@@ -1353,7 +1358,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The full path and name of the all-users Start Menu folder.
 		/// </summary>
-		public static string A_StartMenuCommon => Environment.GetFolderPath(Environment.SpecialFolder.StartMenu);
+		public static string A_StartMenuCommon => Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu);
 
 		/// <summary>
 		/// The full path and name of the Startup folder in the current user's Start Menu.
@@ -1363,7 +1368,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The full path and name of the Startup folder in the all-users Start Menu.
 		/// </summary>
-		public static string A_StartupCommon => Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+		public static string A_StartupCommon => Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup);
 
 		/// <summary>
 		/// Whether to restore the state of CapsLock after a <see cref="Send"/>.

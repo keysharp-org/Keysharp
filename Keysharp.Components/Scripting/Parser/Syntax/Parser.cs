@@ -1062,7 +1062,8 @@ namespace Keysharp.Parsing.Syntax
 				libDirs.Add(System.IO.Path.Combine(_includeDir, "Lib"));
 
 			string docs = null, exeDir = null;
-			try { docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments); } catch { }
+			// The accessor, not GetFolderPath: an unverified Documents path still counts (see A_MyDocuments).
+			try { docs = Keysharp.Builtins.Accessors.A_MyDocuments; } catch { }
 			try { exeDir = System.IO.Path.GetDirectoryName(Environment.ProcessPath); } catch { }
 
 			if (!string.IsNullOrEmpty(docs))
