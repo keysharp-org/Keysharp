@@ -1033,13 +1033,11 @@ ThirdGuiButton.OnEvent("Click", "ThirdGUI")
 MouseMoveButton := MyGui.Add("Button", "xc+10 y+5 w160 h26", "Mouse-moving tests")
 MouseMoveButton.OnEvent("Click", "MoveTheMouse")
 
-#if WINDOWS
 AddMsgMonitorButton := MyGui.Add("Button", "xc+10 y+5 w160 h26", "Add msg mon (edit clicks)")
 AddMsgMonitorButton.OnEvent("Click", "AddMsgMonitor")
 
 RemoveMsgMonitorButton := MyGui.Add("Button", "xc+10 y+5 w160 h26", "Remove msg mon")
 RemoveMsgMonitorButton.OnEvent("Click", "RemoveMsgMonitor")
-#endif
 
 ; Second column (starts level with "Control Tests Redux")
 MinimizeAllButton := MyGui.Add("Button", "xs+170 ys w160 h26", "Minimize all")
@@ -1336,7 +1334,7 @@ MoveTheMouse(*) {
 	ToolTip()
 }
 
-#if WINDOWS
+; Not Windows-only: EtoMessageSource synthesizes WM_LBUTTONDOWN into the same global monitors.
 AddMsgMonitor(*)
 {
 	OnMessage 0x0201, "WM_LBUTTONDOWN"
@@ -1346,7 +1344,6 @@ RemoveMsgMonitor(*)
 {
 	OnMessage 0x0201, "WM_LBUTTONDOWN", 0
 }
-#endif
 
 WM_LBUTTONDOWN(wParam, lParam, msg, hwnd)
 {
@@ -4200,6 +4197,9 @@ RunSendScenario(mode, expected, label := "") {
 				Send("{Text}" expected)
 			case "SendText":
 #if LINUX
+				; keysharp-inputd types Unicode as Ctrl+Shift+U + hex codepoint, and the input bus handling
+				; that is async and slow, so Input mode outruns it and drops characters. Leaks SendMode and
+				; SetKeyDelay for the rest of the run, which is fine in a one-shot test.
 				SendMode "Event"
 				SetKeyDelay 30, -1
 #endif
