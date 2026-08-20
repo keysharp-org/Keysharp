@@ -636,6 +636,20 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	+ `A_WorkAreaWidth` returns the width of the working area of the primary screen.
 	+ `A_Timers` returns a `Map` of (`Func`, `Boolean`) pairs where the key is the function object of the timer and the value is the enabled state of the associated timer.
 * New classes:
+	+ `Boolean`: The type of a truth value, extending `Integer`. Available from the `KS` module.
+		+ Every operator that yields a truth value yields a `Boolean`: a comparison (`a > b`, `a = b`, `a != b`), a negation (`!a`), and `Map.Has()`. The `true` and `false` keywords are `Boolean` values too.
+		+ It behaves as the Integer 1 or 0 everywhere: `Type()` reports `"Integer"`, `x is Integer` is true, it compares equal to 1 and 0, it does arithmetic as one, and it converts to `"1"` and `"0"`. AutoHotkey v2 has no boolean type and the global namespace is AutoHotkey's, which is why the name is in `KS` rather than global — but only the *name* needs the import, never the values.
+		+ `x is Boolean` is the only thing that distinguishes one from an ordinary Integer, and `Ks.Json.Encode` is the one place the distinction is visible in output: a `Boolean` is written as JSON `true`/`false` where the Integer 1 is written as `1`.
+			```
+			#Import "Ks" { Boolean, Json }
+			Type(1 > 0)              ; "Integer"
+			(1 > 0) is Boolean       ; 1
+			(1 > 0) is Integer       ; 1
+			1 is Boolean             ; 0
+			Json.Encode(Map("ok", 1 > 0))   ; {"ok":true}
+			Json.Encode(Map("ok", 1))       ; {"ok":1}
+			```
+		+ `Boolean(value) => Boolean`: converts a value, deciding it exactly as `if` would — `Boolean("")` and `Boolean("0")` are false, `Boolean("x")` and `Boolean([])` are true. An unset value raises, as `if` on an unset variable does.
 	+ `Clr`: Experimental CLR interop with regular AutoHotkey syntax, meaning easy access to CLR libraries.
 		+ `Clr.Load(asmOrPath)` loads a CLR assembly from a dll file or assembly name, and returns a `ManagedAssembly` or `ManagedNamespace` object. Example: `System := Clr.Load("System")`
 			+ `ManagedNamespace` can be accessed with property access syntax to get namespaces and types (`ManagedType`). Example: `linq := System.Linq.Enumerable`

@@ -3237,11 +3237,14 @@ namespace Keysharp.Compilation.Syntax
 			{
 				case LiteralExpr l: return l.Kind == LiteralKind.Number ? Num(l.Raw) : Str(DecodeString(l.Raw));
 				case NameExpr n:
-					// AHK reserves true/false/unset as value keywords (booleans 1/0, and the no-value sentinel null).
+					// AHK reserves true/false/unset as value keywords (booleans, and the no-value sentinel null).
+					// The booleans lower to real C# booleans rather than 1/0: everything downstream reads one as the
+					// Integer 1 or 0 anyway (MatchTypes folds it, Type() names it "Integer"), so nothing changes for
+					// the script, but the value keeps the type Ks.Boolean names and Json.Encode can write true/false.
 					switch (n.Name.ToLowerInvariant())
 					{
-						case "true": return Num("1");
-						case "false": return Num("0");
+						case "true": return BoolLit(true);
+						case "false": return BoolLit(false);
 						case "unset": return Null;
 						case "super": return SuperTuple();
 						// A_LineNumber folds to a compile-time literal (the source line). A_LineFile inside an #included
@@ -5942,6 +5945,7 @@ namespace Keysharp.Compilation.Syntax
 		private static ExpressionSyntax IntLit(int n) => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(n));
 		private static ExpressionSyntax Str(string value) => SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(value));
 
+		private static ExpressionSyntax BoolLit(bool v) => SyntaxFactory.LiteralExpression(v ? SyntaxKind.TrueLiteralExpression : SyntaxKind.FalseLiteralExpression);
 		private static ExpressionSyntax NumLit(long v) => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(v));
 		private static ExpressionSyntax NumLit(double v) => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(v));
 

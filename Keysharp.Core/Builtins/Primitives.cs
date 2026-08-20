@@ -2,11 +2,13 @@ namespace Keysharp.Builtins
 {
 	public class Primitive : Any
 	{
-		internal static bool IsNative(object item) => item is string || item is long || item is double;
+		internal static bool IsNative(object item) => item is string || item is long || item is double || item is bool;
 		internal static Type MapPrimitiveToNativeType(object item)
 		{
 			if (item is string)
 				return typeof(Keysharp.Builtins.@String);
+			else if (item is bool)
+				return typeof(Keysharp.Builtins.Ks.Boolean);
 			else if (item is long)
 				return typeof(Keysharp.Builtins.Integer);
 			else
@@ -113,5 +115,32 @@ namespace Keysharp.Builtins
 		/// <returns>The converted value as a double.</returns>
 		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if the conversion failed.</exception>
 		public new static object staticCall(object @this, object value) => value.ToDouble();
+	}
+
+	public partial class Ks
+	{
+		/// <summary>
+		/// The type of a boolean value. It extends <see cref="Integer"/> because that is what a boolean is
+		/// everywhere else in the language: <c>Type()</c> names it "Integer", it compares equal to 1 or 0 and
+		/// does arithmetic as one, so <c>x is Integer</c> has to stay true for it.
+		/// <para>The distinction is worth modelling because the language produces booleans on its own -- a
+		/// comparison, a negation and <c>Map.Has()</c> all yield one -- and something has to be able to name
+		/// that. <see cref="Json.Encode"/> is the visible consequence: a boolean is written as JSON true or
+		/// false where the Integer 1 is written as 1.</para>
+		/// <para>It lives in the Ks module rather than the global namespace because the global namespace
+		/// belongs to AutoHotkey, which has no boolean type, and every Keysharp addition is reached through
+		/// Ks. Only the NAME needs the import; the values themselves need nothing.</para>
+		/// </summary>
+		public class Boolean : Integer
+		{
+			/// <summary>
+			/// Converts a value to a boolean, deciding it exactly as <c>if</c> would.
+			/// </summary>
+			/// <param name="this">The class object, supplied by the script-static call.</param>
+			/// <param name="value">The value to convert.</param>
+			/// <returns>True if value is truthy, else false.</returns>
+			/// <exception cref="UnsetError">Thrown if value is unset, as <c>if</c> throws.</exception>
+			public new static object staticCall(object @this, object value) => Script.ForceBool(value);
+		}
 	}
 }

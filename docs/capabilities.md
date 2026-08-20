@@ -359,6 +359,7 @@ Status legend:
 | Base64Decode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Decodes a Base64 string to binary data. |
 | Base64Encode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Encodes binary data to a Base64 string. |
 | BlockInput() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Disables or enables physical keyboard and mouse input while allowing synthetic input. Linux suppresses movement-only mode through its existing keysharp-inputd mouse hook and uses the daemon block mask for all-input mode; the X11 xinput fallback is device-wide and cannot preserve buttons while blocking only movement. macOS uses event taps and requires Input Monitoring permission. |
+| Boolean | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The type of a truth value, extending Integer, so it reads as 1 or 0 everywhere except a type test. Boolean(Value) converts a value the way `if` decides it. |
 | Break | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Exits the current loop. |
 | Buffer.__Item[] | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer for reading/writing bytes in Buffer by offset. |
 | Buffer.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Constructs a new Buffer object. |

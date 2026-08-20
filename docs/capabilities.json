@@ -11268,6 +11268,17 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
+                     "feature":  "Boolean",
+                     "syntax":  "x is Boolean / Boolean(Value)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The type of a truth value, extending Integer, so it reads as 1 or 0 everywhere except a type test. Boolean(Value) converts a value the way `if` decides it.",
+                     "tested-by":  "types-boolean.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
                      "feature":  "Json",
                      "syntax":  "Json.Encode(Value) / Json.Decode(Text)",
                      "windows":  "full",
