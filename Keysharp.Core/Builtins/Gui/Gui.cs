@@ -256,6 +256,11 @@ namespace Keysharp.Builtins
 				}
 			},
 			{
+				// Rounds the window's outer corners, for a borderless window drawing its own chrome. Windows
+				// 11 only; an accepted no-op elsewhere, see KeysharpForm.SetRoundedCorners.
+				"Round", (f, o) => { if (o is bool b) f.form.SetRoundedCorners(b); }
+			},
+			{
 				"SysMenu", (f, o) => { if (o is bool b) f.form.ControlBox = b; }
 			},
 			{

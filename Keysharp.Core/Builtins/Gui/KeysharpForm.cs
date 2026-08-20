@@ -18,6 +18,7 @@ namespace Keysharp.Builtins
 		internal bool beenShown = false;
 		internal bool beenConstructed = false;
 		internal bool clickThrough;
+		internal bool roundedCorners;
 		private bool closingFromDestroy;
 #if !WINDOWS
 		private long lastDpi = 96;
@@ -169,7 +170,8 @@ namespace Keysharp.Builtins
 			Shown += (o, e) =>
 			{
 				beenShown = true;
-#if !WINDOWS
+#if WINDOWS
+#else
 				lastDpi = CurrentDpi;
 				_ = this.Handle;
 				// On Wayland the titlebar/taskbar icon is resolved from the window's app_id (matched to an
@@ -240,6 +242,48 @@ namespace Keysharp.Builtins
 			ApplyClickThrough(enable);
 #endif
 		}
+
+		// Rounds the window's outer corners, for a borderless window drawing its own chrome. Exposed to
+		// scripts as the Gui "+Round" / "-Round" option.
+		//
+		// Windows 11 only: corner shape is a compositor decision and neither of the other two platforms
+		// exposes one to ask. GTK rounds a client-side-decorated window from the theme and leaves a
+		// borderless one square unless the GdkWindow is shaped (which gives aliased corners); Cocoa rounds a
+		// titled NSWindow and leaves a borderless one square unless the content view is layer-masked. So off
+		// Windows this is an accepted no-op rather than an error, and the script still runs unchanged.
+		internal void SetRoundedCorners(bool enable)
+		{
+			roundedCorners = enable;
+#if WINDOWS
+			ApplyRoundedCorners(enable);
+#endif
+		}
+
+#if WINDOWS
+		// The corner preference lives on the HWND, so every recreation drops it - and WinForms recreates the
+		// handle whenever a style-bearing property changes, which "-Caption" does. Riding HandleCreated
+		// catches all of them, including the ones after the window is already up.
+		protected override void OnHandleCreated(EventArgs e)
+		{
+			base.OnHandleCreated(e);
+
+			if (roundedCorners)
+				ApplyRoundedCorners(true);
+		}
+
+		private void ApplyRoundedCorners(bool enable)
+		{
+			if (!IsHandleCreated)
+				_ = Handle;
+
+			// DWMWCP_DEFAULT rather than DWMWCP_DONOTROUND for "-Round": stop overriding, do not force square
+			// corners on a window the system would have rounded anyway.
+			var pref = (int)(enable ? DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND
+						   : DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_DEFAULT);
+			// Fails with E_INVALIDARG on Windows 10; a square window there is the correct outcome.
+			_ = WindowsAPI.DwmSetWindowAttribute(Handle, DWMWINDOWATTRIBUTE.DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int));
+		}
+#endif
 
 #if !WINDOWS
 		private void ApplyClickThrough(bool enable)

@@ -156,7 +156,17 @@ namespace Keysharp.Internals.Os.Windows
 		DWMWA_CLOAK,
 		DWMWA_CLOAKED,
 		DWMWA_FREEZE_REPRESENTATION,
-		DWMWA_LAST
+		DWMWA_LAST,
+		//Windows 11 only, and numbered explicitly because the SDK adds it well past DWMWA_LAST.
+		DWMWA_WINDOW_CORNER_PREFERENCE = 33
+	};
+
+	internal enum DWM_WINDOW_CORNER_PREFERENCE
+	{
+		DWMWCP_DEFAULT = 0,//Let the system decide.
+		DWMWCP_DONOTROUND = 1,
+		DWMWCP_ROUND = 2,
+		DWMWCP_ROUNDSMALL = 3
 	};
 
 	internal enum AccessProtectionFlags
@@ -645,6 +655,9 @@ namespace Keysharp.Internals.Os.Windows
 
 		[LibraryImport(dwmapi, EntryPoint = "DwmGetWindowAttribute")]
 		internal static partial uint DwmGetWindowAttribute(nint hwnd, DWMWINDOWATTRIBUTE dwAttribute, ref int pvAttribute, int cbsize);
+
+		[LibraryImport(dwmapi, EntryPoint = "DwmSetWindowAttribute")]
+		internal static partial uint DwmSetWindowAttribute(nint hwnd, DWMWINDOWATTRIBUTE dwAttribute, ref int pvAttribute, int cbsize);
 
 		internal static bool IsWindowCloaked(nint hwnd)
 		{
