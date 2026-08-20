@@ -135,6 +135,39 @@ namespace Keysharp.Tests
 			"f() {\n\tMsgBox \"a\"\n\t, \"b\"\n}\n",             // last statement of a block, `}` after
 			"ExitApp\n, 1\n");                                   // zero-arg call statement + continuation
 
+		// A header expression that ends in `(…)` right before the body's `{` is the header, not an anonymous
+		// block-bodied function `(params) { … }`. `if`/`while`/`for` already parsed their header that way; the
+		// specialized-loop arguments and `switch`'s case-sense argument did not.
+		[Test, Category("Parser")]
+		public void FlowHeaderEndingInParens() => AssertCompiles(
+			"Loop Files \"*.txt\", \"DF\" (InStr(\"a\", \"b\") ? \"R\" : \"\") {\n\tbreak\n}\n",   // the reported case
+			"Loop Parse \"a,b\", (\"\" \",\") {\n\tbreak\n}\n",                                   // trailing paren is the whole arg
+			"Loop Read \"f.txt\", (\"o.txt\") {\n\tbreak\n}\n",
+			"Loop Files \"*.txt\", (\"D\")\n\tbreak\n",                                           // braceless body still fine
+			"switch 1, (0) {\n\tcase 1:\n\t\tbreak\n}\n",                                         // switch case-sense arg
+			"Loop Files \"*.txt\", \"D\" {\n\tbreak\n}\n");                                       // unchanged plain form
+
+		// A continuation section outside a quoted string is merged as TEXT before it is parsed, so its content lines
+		// become one logical line: a string can open on one and close on a later one, the Join text between them is
+		// real syntax, and a name or operator can be split across them. See Code/string-continuation.ahk for what
+		// each of these produces.
+		[Test, Category("Parser")]
+		public void ContinuationSections() => AssertCompiles(
+			"Var :=\n(\n\"Quote marks are not escaped here.\nSpecify variables as follows: \" Var \"\nA line of text.\"\n)\n",  // docs example #2
+			"a := Array(\n(Join,\n1\n2\n3\n)\n)\n",                    // the Join builds the argument list
+			"MyVar := 1\nn :=\n(Join\nMyV\nar\n)\n",                   // one name split across the content lines
+			"MyVar := 1\nt :=\n(Join\nMy\n)Var\n",                     // …and across the ')', whose trailing text joins on
+			"n :=\n(JoinrL\nSt\nen(\"abcde\")\n)\n",                   // …with the Join string itself part of the name
+			"(Joinpp\nFileA\nend \"x\", \"*\"\n)\n",                   // a section opening the file merges onto nothing above it
+			"v := Array(\n(Join,\na\nb\n)\n(Join,\nc\nd\n)\n)\n",      // a second section re-applies the name-character space
+			"op :\n(Join\n= 5\n)\n",                                   // an operator split at the opening line
+			"c :=\n(Join\n1 >\n= 1\n)\n",                              // …and between two content lines
+			"v := 12\nr := v\n(\n34\n)\n",                             // a name character above the section gets a space after it
+			"o := {p: 1}\nq := o\n(\n.p\n)\n",                         // …but an operator does not, so this stays member access
+			"x :=\n(RTrim0 LTrim\n    \"abc\n    def\"\n)\n",          // trimming options apply inside the string too
+			"y :=\n(Comments\n\"abc   ; stripped\ndef\"\n)\n",         // as does comment stripping
+			"z := 1\n(\n  + 2\n)\n");                                  // the plain form is unchanged
+
 		[Test, Category("Parser")]
 		public void MalformedInput()
 		{

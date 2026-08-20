@@ -57,21 +57,107 @@ namespace Keysharp.Parsing
 			return sb.ToString();
 		}
 
-		internal static string ParseContinuationSection(string code, int lineNumber, string name)
-			=> ParseContinuationSectionCore(code, lineNumber, name, escapeForMultilineString: false, lexerNormalize: true);
+		/// <summary>
+		/// The options written to the right of a continuation section's opening <c>(</c>. Shared by the two places
+		/// that honour them: the lexer, which merges a *code* section's lines inline, and <see cref="MultilineString"/>,
+		/// which joins a section that opened inside a quoted string.
+		/// </summary>
+		internal sealed class ContinuationOptions
+		{
+			/// <summary>Text placed between content lines — a linefeed unless a <c>Join</c> option said otherwise.</summary>
+			internal string Join = DefaultNewLine;
+			/// <summary>null means AHK's "smart" trim: strip the first content line's indentation from every line.</summary>
+			internal bool? LTrim;
+			internal bool RTrim = true;
+			internal bool Comments;
+			internal bool LiteralEscape;
+			/// <summary>Legacy <c>%</c> option: keep percent signs literal instead of resolving them.</summary>
+			internal bool PercentLiteral;
+		}
+
+		// AHK stores the Join string in a TCHAR[16], so anything past 15 characters is dropped.
+		private const int MaxJoinLength = 15;
+
+		/// <summary>
+		/// Parses the option text to the right of a continuation section's <c>(</c> (the <c>(</c> itself excluded).
+		/// </summary>
+		internal static ContinuationOptions ParseContinuationOptions(string optionText, int lineNumber, string code, string name)
+		{
+			var opts = new ContinuationOptions();
+
+			if (string.IsNullOrEmpty(optionText))
+				return opts;
+
+			if (optionText.Contains('%'))
+			{
+				opts.PercentLiteral = true;
+				optionText = optionText.Replace("%", string.Empty);
+			}
+
+			var span = optionText.AsSpan().Trim();
+
+			foreach (Range r in span.SplitAny(SpacesSv))
+			{
+				var option = span[r];
+
+				if (option.IsEmpty)
+					continue;
+
+				if (option.StartsWith(Keyword_Join, StringComparison.OrdinalIgnoreCase))
+				{
+					// `Join` on its own joins the lines with nothing at all. Not routed through EscapedString: that
+					// answers an empty span with the script's default value, which is null under v2.1 compatibility.
+					var rest = option.Slice(Keyword_Join.Length);
+					var join = rest.IsEmpty ? "" : EscapedString(rest, false);
+					opts.Join = join.Length > MaxJoinLength ? join.Substring(0, MaxJoinLength) : join;
+					continue;
+				}
+
+				switch (option)
+				{
+					case var _ when option.Equals("ltrim", StringComparison.OrdinalIgnoreCase):
+						opts.LTrim = true;
+						break;
+
+					case var _ when option.Equals("ltrim0", StringComparison.OrdinalIgnoreCase):
+						opts.LTrim = false;
+						break;
+
+					case var _ when option.Equals("rtrim", StringComparison.OrdinalIgnoreCase):
+						opts.RTrim = true;
+						break;
+
+					case var _ when option.Equals("rtrim0", StringComparison.OrdinalIgnoreCase):
+						opts.RTrim = false;
+						break;
+
+					// Any prefix of "Comments" is accepted, as in AHK; the documented spellings are C, Com, Comment, Comments.
+					case var _ when option.Length <= 8 && "comments".AsSpan(0, option.Length).Equals(option, StringComparison.OrdinalIgnoreCase):
+						opts.Comments = true;
+						break;
+
+					case var _ when option.Length == 1 && option[0] == Escape:
+						opts.LiteralEscape = true;
+						break;
+
+					case var _ when option[0] == ';':
+						return opts;   // a trailing comment ends the option list
+
+					default:
+						throw new ParseException(ExMultiStr, lineNumber, code, name);
+				}
+			}
+
+			return opts;
+		}
 
 		internal static string MultilineString(string code, int lineNumber, string name)
-			=> ParseContinuationSectionCore(code, lineNumber, name, escapeForMultilineString: true, lexerNormalize: false);
-
-		private static string ParseContinuationSectionCore(string code, int lineNumber, string name, bool escapeForMultilineString, bool lexerNormalize)
 		{
 			var reader = new StringReader(code);
 			string line = null;
-			var originalLineBreakCount = 0;
 
 			while ((line = reader.ReadLine()) != null)
 			{
-				originalLineBreakCount++;
 				var trimmed = line.AsSpan().Trim();
 
 				if (trimmed.IsEmpty)
@@ -84,85 +170,10 @@ namespace Keysharp.Parsing
 			if (line == null || line.Length < 1 || line[0] != ParenOpen)
 				throw new ParseException("Multiline string must start with '(' after optional leading blank lines.", lineNumber, code, name);
 
-			var join = lexerNormalize ? " " : DefaultNewLine;
-			var hasExplicitJoin = false;
-			bool? ltrim = null;
-			bool rtrim = true, stripComments = false, percentResolve = true, literalEscape = false;
-
-			if (line.Length > 2)
-			{
-				if (line.Contains('%'))
-				{
-					percentResolve = false;
-					line = line.Replace("%", string.Empty);
-				}
-
-				var span = line.AsSpan(1).Trim();
-
-				foreach (Range r in span.SplitAny(SpacesSv))
-				{
-					var option = span[r];
-
-					if (option.IsEmpty)
-						continue;
-
-					if (option.StartsWith(Keyword_Join, StringComparison.OrdinalIgnoreCase))
-					{
-						hasExplicitJoin = true;
-						join = EscapedString(option.Slice(4), false);
-					}
-					else
-					{
-						switch (option)
-						{
-							case var b when option.Equals("ltrim", StringComparison.OrdinalIgnoreCase):
-								ltrim = true;
-								break;
-
-							case var b when option.Equals("ltrim0", StringComparison.OrdinalIgnoreCase):
-								ltrim = false;
-								break;
-
-							case var b when option.Equals("rtrim", StringComparison.OrdinalIgnoreCase):
-								rtrim = true;
-								break;
-
-							case var b when option.Equals("rtrim0", StringComparison.OrdinalIgnoreCase):
-								rtrim = false;
-								break;
-
-							case var b when option.Equals("comments", StringComparison.OrdinalIgnoreCase):
-							case var b2 when option.Equals("comment", StringComparison.OrdinalIgnoreCase):
-							case var b3 when option.Equals("com", StringComparison.OrdinalIgnoreCase):
-							case var b4 when option.Equals("c", StringComparison.OrdinalIgnoreCase):
-								stripComments = true;
-								break;
-
-							case var b4 when option.Equals("`", StringComparison.OrdinalIgnoreCase):
-								literalEscape = true;
-								break;
-
-							case var b5 when option.StartsWith(";"):
-								goto ParsedOptions;
-
-							default:
-								const string joinOpt = "join";
-
-								if (option.Length > joinOpt.Length && option.Slice(0, joinOpt.Length).Equals(joinOpt, StringComparison.OrdinalIgnoreCase))
-								{
-									hasExplicitJoin = true;
-									join = option.Slice(joinOpt.Length).ToString().Replace("`s", " ");
-								}
-								else
-									throw new ParseException(ExMultiStr, lineNumber, code, name);
-
-								break;
-						}
-					}
-				}
-			}
-		ParsedOptions:
-
+			var opts = ParseContinuationOptions(line.Substring(1), lineNumber, code, name);
+			var join = opts.Join;
+			var ltrim = opts.LTrim;
+			bool rtrim = opts.RTrim, stripComments = opts.Comments, percentResolve = !opts.PercentLiteral, literalEscape = opts.LiteralEscape;
 			var sb = new StringBuilder(code.Length);
 			var resolve = Resolve.ToString();
 			var escape = Escape.ToString();
@@ -176,11 +187,23 @@ namespace Keysharp.Parsing
 
 			while ((line = reader.ReadLine()) != null)
 			{
-				originalLineBreakCount++;
 				var check = line.Trim();
 
 				if (check.Length > 0 && check[0] == ParenClose)
 					break;
+
+				// A comment is removed before any trimming, and takes ALL the whitespace to its left with it — that much
+				// happens whether or not RTrim is on, so it cannot be left to the trimming below.
+				if (stripComments)
+				{
+					if (check.Length > 0 && check[0] == ';')
+						continue;   // a comment on a line of its own contributes nothing at all, not even a blank line
+
+					line = StripCommentSingle(line, out var stripped);
+
+					if (stripped)
+						line = line.TrimEnd(Spaces);
+				}
 
 				// On first content line, capture indent sample if trimming
 				if (firstLine)
@@ -218,25 +241,14 @@ namespace Keysharp.Parsing
 				else if (rtrim)
 					line = line.TrimEnd(Spaces);
 
-				if (stripComments)
-				{
-					line = StripComment(line, out bool strippedAny);
-
-					if (strippedAny && line == "")
-						continue;
-				}
-
 				if (!percentResolve)
 					line = line.Replace(resolve, resolveEscaped);
 
 				if (literalEscape)
 					line = line.Replace(escape, escapeEscaped);
 
-				if (escapeForMultilineString)
-				{
-					line = line.Replace("\"", Escape + "\"");//Can't use interpolated string here because the AStyle formatter misinterprets it.
-					line = line.Replace(cast, castEscaped);
-				}
+				line = line.Replace("\"", Escape + "\"");//Can't use interpolated string here because the AStyle formatter misinterprets it.
+				line = line.Replace(cast, castEscaped);
 				_ = sb.Append(line);
 				_ = sb.Append(join);
 			}
@@ -245,97 +257,7 @@ namespace Keysharp.Parsing
 				return DefaultObject;
 
 			_ = sb.Remove(sb.Length - join.Length, join.Length);
-
-			if (lexerNormalize)
-			{
-				// ContinuationSection tokens always include a leading line break before '('.
-				// originalLineBreakCount tracks ReadLine calls (+1 baseline), so convert it to
-				// the actual line-break count to preserve downstream diagnostics.
-				sb = NormalizeContinuationForLexer(sb, collapseOutsideQuotes: !hasExplicitJoin, Math.Max(0, originalLineBreakCount - 1));
-			}
-
 			return sb.ToString();
-		}
-
-		private static StringBuilder NormalizeContinuationForLexer(StringBuilder text, bool collapseOutsideQuotes, int minimumLineBreakCount)
-		{
-			text ??= new StringBuilder();
-			var sb = new StringBuilder(text.Length + 16);
-			bool inSingle = false;
-			bool inDouble = false;
-			bool escaped = false;
-			int lineBreakCount = 0;
-
-			for (int i = 0; i < text.Length; i++)
-			{
-				var ch = text[i];
-
-				if (ch == '`')
-				{
-					sb.Append(ch);
-					escaped = !escaped;
-					continue;
-				}
-
-				if ((ch == '"' && !inSingle) || (ch == '\'' && !inDouble))
-				{
-					if (!escaped)
-					{
-						if (ch == '"')
-							inDouble = !inDouble;
-						else
-							inSingle = !inSingle;
-					}
-
-					sb.Append(ch);
-					escaped = false;
-					continue;
-				}
-
-				if (ch == '\r' || ch == '\n' || ch == '\u2028' || ch == '\u2029')
-				{
-					var isCrLf = ch == '\r' && i + 1 < text.Length && text[i + 1] == '\n';
-
-					if (inSingle || inDouble)
-					{
-						sb.Append("`n");
-					}
-					else if (collapseOutsideQuotes)
-					{
-						if (sb.Length == 0 || sb[sb.Length - 1] != ' ')
-							sb.Append(' ');
-					}
-					else
-					{
-						if (isCrLf)
-						{
-							sb.Append('\r');
-							sb.Append('\n');
-							i++;
-						}
-						else
-						{
-							sb.Append(ch);
-						}
-
-						lineBreakCount++;
-					}
-
-					if (isCrLf && (inSingle || inDouble || collapseOutsideQuotes))
-						i++;
-
-					escaped = false;
-					continue;
-				}
-
-				sb.Append(ch);
-				escaped = false;
-			}
-
-			if (minimumLineBreakCount > lineBreakCount)
-				sb.Append('\n', minimumLineBreakCount - lineBreakCount);
-
-			return sb;
 		}
 
 		private int FindNextBalanced(string s, char ch1, char ch2)

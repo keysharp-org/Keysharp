@@ -1845,7 +1845,12 @@ namespace Keysharp.Parsing.Syntax
 					_pos = save;
 					break;
 				}
-				if (t.Kind == TokenKind.Dot && !t.LeadingWhitespace)
+				// Concatenation wants whitespace on BOTH sides of the dot, so a dot with a space on only one side is
+				// member access: `a .b` reads as `a.b`, the same as `a. b` does, while `a . b` concatenates. The
+				// member-name check keeps a trailing `.` continuation (`"a" .` ⏎ `"b"`) a concat.
+				if (t.Kind == TokenKind.Dot
+						&& (!t.LeadingWhitespace || (!Peek(1).LeadingWhitespace
+								&& Peek(1).Kind is TokenKind.Identifier or TokenKind.Number or TokenKind.Percent)))
 				{ Advance(); e = MakeMember(e, false); continue; }
 				if (t.Kind == TokenKind.QuestionDot)
 				{
