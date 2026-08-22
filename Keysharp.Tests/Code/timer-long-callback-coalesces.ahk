@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 ticks := []
 fn := (*) => (ticks.Push(A_TickCount), Sleep(140))
@@ -26,7 +27,6 @@ if (ok && ticks.Length > 1)
     }
 }
 
-if (ok)
-    FileAppend("pass", "*")
-else
-    FileAppend("fail", "*")
+Assert(ok, A_LineNumber)
+
+FileAppend "pass", "*"

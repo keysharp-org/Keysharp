@@ -1,6 +1,7 @@
 #NoTrayIcon
 
 #Requires AutoHotkey v2.1
+#Include <assert>
 
 struct X {
     y : Int32[10]
@@ -12,51 +13,40 @@ struct XX {
 
 ; A struct field of array type contributes its full array size, and exposes Length/element access.
 z := X()
-if z.Size != 40 || z.y.Size != 40 || z.y.Length != 10
-    FileAppend "fail field array", "*"
+Assert(!(z.Size != 40 || z.y.Size != 40 || z.y.Length != 10), A_LineNumber)
 
 z.y[1] := 11
 z.y[10] := 99
-if z.y[1] != 11 || z.y[10] != 99
-    FileAppend "fail field elem", "*"
+Assert(!(z.y[1] != 11 || z.y[10] != 99), A_LineNumber)
 
-if !(z.y is Int32[10]) || (z.y is Int32[100])
-    FileAppend "fail field is", "*"
+Assert(!(!(z.y is Int32[10]) || (z.y is Int32[100])), A_LineNumber)
 
 ; Nested array of structs: XX has 2 X's, each 40 bytes => 80.
 zz := XX()
-if zz.Size != 80
-    FileAppend "fail nested array size", "*"
+Assert(!(zz.Size != 80), A_LineNumber)
 
 ; Class-level indexing of a struct class yields a fixed-size structured-array class.
 arrCls := Int32[10]
 inst := arrCls()
 
-if inst.Size != 40
-    FileAppend "fail size", "*"
+Assert(!(inst.Size != 40), A_LineNumber)
 
-if inst.Length != 10
-    FileAppend "fail length", "*"
+Assert(!(inst.Length != 10), A_LineNumber)
 
 inst[1] := 100
 inst[10] := 200
 inst[-1] := 250   ; negative index counts from the end, so -1 is element 10
 
-if inst[1] != 100
-    FileAppend "fail elem1", "*"
+Assert(!(inst[1] != 100), A_LineNumber)
 
-if inst[10] != 250 || inst[-1] != 250
-    FileAppend "fail neg", "*"
+Assert(!(inst[10] != 250 || inst[-1] != 250), A_LineNumber)
 
 ; The array class has stable identity (cached), and differs by element type and length.
-if !(inst is Int32[10])
-    FileAppend "fail is", "*"
+Assert(!(!(inst is Int32[10])), A_LineNumber)
 
-if (inst is Int32[5])
-    FileAppend "fail is-len", "*"
+Assert(!(inst is Int32[5]), A_LineNumber)
 
-if (inst is Float32[10])
-    FileAppend "fail is-type", "*"
+Assert(!(inst is Float32[10]), A_LineNumber)
 
 ; Out-of-bounds indices throw IndexError.
 threw := false
@@ -64,15 +54,13 @@ try
     _ := inst[11]
 catch IndexError
     threw := true
-if !threw
-    FileAppend "fail oob", "*"
+Assert(!(!threw), A_LineNumber)
 
 threw := false
 try
     _ := inst[0]
 catch IndexError
     threw := true
-if !threw
-    FileAppend "fail zero", "*"
+Assert(!(!threw), A_LineNumber)
 
 FileAppend "pass", "*"

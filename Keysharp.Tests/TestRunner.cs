@@ -42,6 +42,7 @@ namespace Keysharp.Tests
 		protected string path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Keysharp.Tests", "Code")) + Path.DirectorySeparatorChar;
 		private const string ext = ".ahk";
 		protected Script s;
+		private int wrapOffset;
 		internal HotstringManager hsm;
 
 		[SetUp]
@@ -99,18 +100,10 @@ namespace Keysharp.Tests
 			return context;
 		}
 
-		protected bool HasPassed(string output)
-		{
-			if (string.IsNullOrEmpty(output))
-				return false;
-
-			const string pass = "pass";
-
-			foreach (var remove in new[] { pass, " ", "\n" })
-					output = output.Replace(remove, string.Empty);
-
-			return output.Length == 0;
-		}
+		// A script is silent while it succeeds and writes a single "pass" once it reaches its end, so anything else
+		// in the output — a "fail <tag>" from Assert, an error trace, or nothing at all because the run died
+		// partway — is a failure. Matching only "pass"es would score a script that stopped halfway as passing.
+		protected static bool HasPassed(string output) => output?.Trim() == "pass";
 
 		protected string RunScript(string source, string name, bool execute, bool wrapinfunction, bool exeout, int? exitCode = null) => RunScript(WrapInFunc(File.ReadAllText(source)), name, execute, exeout, exitCode);
 
@@ -119,7 +112,9 @@ namespace Keysharp.Tests
 			ResetScriptState();
 			s.SetName(name);
 			var ch = new CompilerHelper();
-			var (arr, code, _) = ch.CompileCodeToByteArray(source, name);
+			//Source handed over as text has no directory of its own, so `#Include <assert>` and friends resolve
+			//against Code/ the same way they do when the file itself is compiled.
+			var (arr, code, _) = ch.CompileCodeToByteArray(source, name, includeDirOverride: path);
 
 			if (arr == null)
 			{
@@ -170,15 +165,14 @@ namespace Keysharp.Tests
 						}
 #endif
 
+						//Silent on success, like the script's own assertions: the run's only "pass" is the one the script writes.
 						if (exitCode.HasValue)
 						{
-							if (result is int i && i == exitCode.Value)
-								Console.Write("pass");
-							else
-								Console.Write("fail");
+							if (!(result is int i && i == exitCode.Value))
+								Console.Write($"fail exit {result} (expected {exitCode.Value})");
 						}
-						else if (result is int i && i != 0)//This is for when an exception is thrown in the compiled program, the catch blocks make it return 1.
-							Console.Write("fail");
+						else if (result is int i2 && i2 != 0)//This is for when an exception is thrown in the compiled program, the catch blocks make it return 1.
+							Console.Write($"fail exit {i2}");
 					}
 					catch (Exception ex)
 					{
@@ -193,7 +187,7 @@ namespace Keysharp.Tests
 						var msg = error.ToString();
 						_ = Ks.OutputDebugLine(msg);
 						Console.Write("fail");
-						Assert.IsTrue(false);
+						Assert.Fail(msg);
 					}
 					finally
 					{
@@ -236,13 +230,23 @@ namespace Keysharp.Tests
 		protected bool TestScript(string source, bool testfunc, bool exeout = false)
 		{
 			var scriptPath = string.Concat(path, source, ext);
-			var b2 = true;
-			var b1 = HasPassed(RunScript(scriptPath, source, true, exeout));
+			Verify(scriptPath, RunScript(scriptPath, source, true, exeout), 0);
 
-			if (testfunc && b1)
-				b2 = HasPassed(RunScript(scriptPath, source + "_func", true, true, exeout));
+			if (testfunc)
+				Verify(scriptPath, RunScript(scriptPath, source + "_func", true, true, exeout), wrapOffset);
 
-			return b1 && b2;
+			return true;
+		}
+
+		// Fails with what the script actually wrote, so the tag Assert emitted names the line instead of the test
+		// reporting "expected True". The wrapped run compiles two extra lines ahead of the body, shifting its tags.
+		private static void Verify(string scriptPath, string output, int lineOffset)
+		{
+			if (HasPassed(output))
+				return;
+
+			var shift = lineOffset != 0 ? $" (wrapped in TestFunc: subtract {lineOffset} from each line)" : "";
+			Assert.Fail($"{scriptPath}{shift}\n{(string.IsNullOrWhiteSpace(output) ? "<no output: the run ended before the final pass>" : output.Trim())}");
 		}
 
 		// Keep module-member blocks outside the function wrapper.
@@ -304,7 +308,10 @@ namespace Keysharp.Tests
 						break;
 				}
 
-				// Inline members belong at module scope.
+				// Inline members belong at module scope. Lifting them out of the body moves the lines around it, so
+				// the body's A_LineNumber shift is only knowable when there are none.
+				wrapOffset = csharpBlocks.Length == 0 ? 2 : 0;
+
 				if (csharpBlocks.Length != 0)
 					_ = sb.Append(csharpBlocks);
 

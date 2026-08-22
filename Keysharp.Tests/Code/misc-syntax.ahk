@@ -1,50 +1,36 @@
 #NoTrayIcon
+#Include <assert>
 
 ;Simple assign.
 
 x := 123
 
-if (x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 123, A_LineNumber)
 
 ;String concat.
 
 x := "this is a string"
 . " and another string"
 
-if (x == "this is a string and another string")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, "this is a string and another string", A_LineNumber)
 
 ;Comment at end.
 
 x := 456 ; This is a comment.
 
-if (x == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 456, A_LineNumber)
 
 ;Multiline comment at end.
 
 x := 100/*This is an multiline comment at the end.*/
 
-if (x == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 100, A_LineNumber)
 
 ;Multiline comment in between.
 
 x := /*This is a multiline comment inline.*/200
 
-if (x == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 200, A_LineNumber)
 
 ;Multiline comment in between multiline expression.
 
@@ -55,19 +41,13 @@ a multiline comment
 in a multiline expression.
 */+ 2
 
-if (x == 57)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 57, A_LineNumber)
 
 ;Multiline multi assignment.
 x :=
 y := 200
 
-if (x == 200 && y == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x == 200 && y == 200, A_LineNumber)
 
 ;Hotkey.
 #if WINDOWS
@@ -88,10 +68,7 @@ funcincrement1()
 
 funcincrement1()
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 x := 0
 
@@ -102,10 +79,7 @@ funcincrement2()
 
 funcincrement2()
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 x := 0
 
@@ -116,10 +90,7 @@ funcdecrement1()
 
 funcdecrement1()
 
-if (x == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, -1, A_LineNumber)
 
 x := 0
 
@@ -130,10 +101,7 @@ funcdecrement2()
 
 funcdecrement2()
 
-if (x == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, -1, A_LineNumber)
 
 x := 0
 
@@ -146,10 +114,7 @@ funcincrementdecrement()
 	--x
 }
 
-if (x == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 0, A_LineNumber)
 
 ;Construct a map multiline with a comment inline.
 
@@ -157,10 +122,7 @@ m := { ;This is a comment.
 one : 1
 }
 
-if (m.one == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m.one, 1, A_LineNumber)
 
 ;Construct a map multiline with each part on a different line.
 
@@ -171,10 +133,7 @@ a
 b
 }
 
-if (m.a == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m.a, 100, A_LineNumber)
 
 ;Construct a map multiline with each part on a different line, including the first brace.
 
@@ -186,10 +145,7 @@ a
 b
 }
 
-if (m.a == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m.a, 200, A_LineNumber)
 
 ;Construct a multiline array with each part on a different line.
 
@@ -199,10 +155,7 @@ m := [
 , 3
 ]
 
-if (m[1] == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m[1], 1, A_LineNumber)
 	
 ;Construct an array with each part on a different line, including the first bracket.
 
@@ -213,37 +166,25 @@ m :=
 , 6
 ]
 
-if (m[2] == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m[2], 5, A_LineNumber)
 
 ;Construct an array on one line with operators inline.
 
 m := [ 1 * 2, 2 * 2, 3 * 2 ]
 
-if (m[1] == 2 && m[2] == 4 && m[3] == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(m[1] == 2 && m[2] == 4 && m[3] == 6, A_LineNumber)
 
 ;Construct an array on one line with lambdas with operators inline.
 
 m := [ (a) => a * 1, (a) => a * 2, (a) => a * 3 ]
 
-if (m[1](0) == 0 && m[2](2) == 4 && m[3](3) == 9)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(m[1](0) == 0 && m[2](2) == 4 && m[3](3) == 9, A_LineNumber)
 
 ;Construct an empty map on the fly inside of a conditional.
 
 x := 0
 
-if (x == {}.OwnPropCount())
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, {}.OwnPropCount(), A_LineNumber)
 
 ;Function that takes a parameter and returns it.
 
@@ -252,10 +193,7 @@ func1(p1)
 	return p1
 }
 
-if (func1(123) == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(func1(123), 123, A_LineNumber)
 
 ;Function call on multiple lines with operators inline on the beginning and end of each line.
 
@@ -265,10 +203,7 @@ x := func1(1
 4)
 ; MsgBox(x)
 
-if (x == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 10, A_LineNumber)
 
 ;Construct a map on the fly, and pass as a function argument with a comment inline.
 
@@ -276,10 +211,7 @@ m := func1({ ;This is a comment.
 one : 1 /*This is a multiline comment.*/
 })
 
-if (m.one == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m.one, 1, A_LineNumber)
 
 ;Construct an array on the fly, and pass as a function argument with a comment inline.
 
@@ -289,21 +221,14 @@ m := func1([ ;This is a comment.
 , 3
 ])
 
-if (m[3] == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m[3], 3, A_LineNumber)
 
 ;Construct a map on the fly with a comment inline and pass as a function argument to a function passed to a conditional.
 
-if (func1({ ; continuation
+Assert(func1({ ; continuation
 	a
 	: "two"
-}).OwnPropCount() == 1) {
-	FileAppend "pass", "*"
-}
-else
-	FileAppend "fail", "*"
+}).OwnPropCount() == 1, A_LineNumber)
 
 ;Combine multiline assignment with operators with .
 
@@ -314,10 +239,7 @@ x := 1
 + 2
 + 3 + 4)
 
-if (x == 33)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 33, A_LineNumber)
 
 ;Function that takes a 3 parameters and returns their sum.
 
@@ -333,22 +255,15 @@ x := func2(1
 , 3
 )
 
-if (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 ;Function call with map defined inline on separate lines passed directly to a conditional with OTB.
 
-if (func2(
+Assert(func2(
 1,
 2,
 3
-) == 6) {
-	FileAppend "pass", "*"
-}
-else
-	FileAppend "fail", "*"
+) == 6, A_LineNumber)
 
 ;OTB function definition.
 
@@ -363,17 +278,11 @@ func3(p1) {
 
 x := func3(0)
 
-if (x == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 0, A_LineNumber)
 
 x := func3(2)
 
-if (x == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 4, A_LineNumber)
 
 ; Function with loop whose variables get passed to another function.
 ; Ensure they are not defined as function variables outside of the loop scope.
@@ -443,48 +352,32 @@ class Fn__ {
 
 a := _()
 
-if (a = 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a = 1, A_LineNumber)
 
 a := __()
 
-if (a = 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a = 1, A_LineNumber)
 
 for _, __ in [6,7] {
     if (A_Index == 1) {
-        if (_ = 1 && __ = 6) 
-            FileAppend "pass", "*"
-        else
-            FileAppend "fail", "*"
+        Assert(_ = 1 && __ = 6, A_LineNumber) 
     }
     if (A_Index == 2) {
-        if (_ = 2 && __ = 7) 
-            FileAppend "pass", "*"
-        else
-            FileAppend "fail", "*"
+        Assert(_ = 2 && __ = 7, A_LineNumber) 
     }
 }
 
 a := _()
 
-if (a = 2)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a = 2, A_LineNumber)
 
 a := __()
 
-if (a = 2)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a = 2, A_LineNumber)
 
 ;Test ending a file with a multiline comment.
+FileAppend "pass", "*"
+
 ExitApp()/*
 asdf
 asdf

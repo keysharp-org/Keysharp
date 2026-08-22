@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 #if WINDOWS
 	val := DriveGetFileSystem("C:\")
@@ -6,13 +7,12 @@
 	val := DriveGetFileSystem("/")
 #endif
 
-if (
+Assert(
 #if WINDOWS
 	val == "NTFS" || val == "FAT32" || val == "FAT" || val == "CDFS" || val == "UDF"
 #else
 	val != ""
 #endif
-)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+, A_LineNumber)
+
+FileAppend "pass", "*"

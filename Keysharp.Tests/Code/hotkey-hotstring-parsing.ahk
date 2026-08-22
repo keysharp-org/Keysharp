@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 ; This just tests parsing.
 
@@ -127,10 +128,7 @@ testfunc(p1)
 
 testfunc "::"
 
-if (a == "::")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, "::", A_LineNumber)
 
 FileAppend "pass", "*"
 

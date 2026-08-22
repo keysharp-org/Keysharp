@@ -1,3 +1,4 @@
+#Include <assert>
 include_again_counter := 0
 
 #include directive-include-target.ahk
@@ -17,29 +18,16 @@ obj := {
 
 inst := IncludedClass()
 
-if (include_value == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(include_value, 123, A_LineNumber)
 
-if (include_again_counter == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(include_again_counter, 2, A_LineNumber)
 
-if (inst.IncludedMethod() == 42)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(inst.IncludedMethod(), 42, A_LineNumber)
 
-if (obj.Alpha == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(obj.Alpha, 10, A_LineNumber)
 
-if (obj.Beta == 20)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(obj.Beta, 20, A_LineNumber)
+
+FileAppend "pass", "*"
 
 ExitApp()

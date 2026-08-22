@@ -1,9 +1,9 @@
 #NoTrayIcon
+#Include <assert>
 
 dir := "../../../Keysharp.Tests/Code/DirCopy/file1.txt"
 time := FileGetTime(dir)
 
-if (StrLen(time) == 14)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(StrLen(time), 14, A_LineNumber)
+
+FileAppend "pass", "*"

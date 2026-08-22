@@ -6,7 +6,7 @@
 
 parser := ComponentAvailable("parser")
 compiler := ComponentAvailable("compiler")
-if parser && compiler
-	FileAppend "pass", "*"
-else
-	FileAppend "FAIL parser=" parser " compiler=" compiler, "*"
+if !(parser && compiler)
+	FileAppend "fail parser=" parser " compiler=" compiler, "*"
+
+FileAppend "pass", "*"

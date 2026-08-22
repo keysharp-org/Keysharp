@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := 0
@@ -17,67 +18,30 @@ k := -0.9
 l := -0.5
 m := -0.8
 
-If not (x > y and x < z)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not (x > y and x < z)), A_LineNumber)
 
-If not (x > z and x < y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x > z and x < y), A_LineNumber)
 	
-If not (x > a and x < b)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x > a and x < b), A_LineNumber)
 
-If not (x > c and x < d)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not (x > c and x < d)), A_LineNumber)
 
-If not (x > d and x < c)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x > d and x < c), A_LineNumber)
 	
-If not (x > e and x < f)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x > e and x < f), A_LineNumber)
 
-If not (x > g and x < h)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not (x > g and x < h)), A_LineNumber)
 
-If not (x > h and x < g)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x > h and x < g), A_LineNumber)
 
-If not (x > i and x < j)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x > i and x < j), A_LineNumber)
 	
-If not (x > j and x < i)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x > j and x < i), A_LineNumber)
 	
-If not (x > k and x < d)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not (x > k and x < d)), A_LineNumber)
 
-If not (x > d and x < k)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x > d and x < k), A_LineNumber)
 
-If not (x > l and x < m)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x > l and x < m), A_LineNumber)
+
+FileAppend "pass", "*"

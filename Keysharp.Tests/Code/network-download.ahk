@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 filename := "./asciiart.txt"
 
@@ -10,19 +11,15 @@ if (attr == "N" || attr == "A")
 Download("http://textfiles.com/art/asciiart.txt", filename)
 attr := FileExist(filename)
 
-if ("A" == attr || "N" == attr)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert("A" == attr || "N" == attr, A_LineNumber)
 	
 size := FileGetSize(filename)
 
-if (16048 == size)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(16048, size, A_LineNumber)
 
 attr := FileExist(filename)
 
 if ("A" == attr || "N" == attr)
 	FileDelete(filename)
+
+FileAppend "pass", "*"

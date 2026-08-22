@@ -1,8 +1,8 @@
 #NoTrayIcon
+#Include <assert>
 
 val := DriveGetStatusCD("C:\\")
 			
-if (val == "error")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(val, "error", A_LineNumber)
+
+FileAppend "pass", "*"

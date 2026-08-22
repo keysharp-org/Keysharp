@@ -1,6 +1,7 @@
 #NoTrayIcon
 
 #import KS { Sinh }
+#Include <assert>
 ; s := Format("{1:G}", Sinh(1 * PI))
 ; MsgBox("Sinh(1 * PI) == ". s)
 
@@ -12,44 +13,25 @@ Eq(a, b)
 PI := 3.1415926535897931
 
 #if WINDOWS
-	if (Eq(-11.548739357257746, Sinh(-1 * PI)))
+	Assert(Eq(-11.548739357257746, Sinh(-1 * PI)), A_LineNumber)
 #else
-	if (Eq(-11.548739357257748, Sinh(-1 * PI)))
+	Assert(Eq(-11.548739357257748, Sinh(-1 * PI)), A_LineNumber)
 #endif
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
 
-if (Eq(-2.3012989023072947, Sinh(-0.5 * PI)))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Eq(-2.3012989023072947, Sinh(-0.5 * PI)), A_LineNumber)
 
-if (Eq(0, Sinh(0)))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Eq(0, Sinh(0)), A_LineNumber)
 
-if (Eq(0, Sinh(-0)))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Eq(0, Sinh(-0)), A_LineNumber)
 
-if (Eq(2.3012989023072947, Sinh(0.5 * PI)))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Eq(2.3012989023072947, Sinh(0.5 * PI)), A_LineNumber)
 
 #if WINDOWS
-	if (Eq(11.548739357257746, Sinh(1 * PI)))
+	Assert(Eq(11.548739357257746, Sinh(1 * PI)), A_LineNumber)
 #else
-	if (Eq(11.548739357257748, Sinh(1 * PI)))
+	Assert(Eq(11.548739357257748, Sinh(1 * PI)), A_LineNumber)
 #endif
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
 
-if (Eq(4.107983493619838, Sinh(0.675 * PI)))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Eq(4.107983493619838, Sinh(0.675 * PI)), A_LineNumber)
+
+FileAppend "pass", "*"

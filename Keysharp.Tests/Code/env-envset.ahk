@@ -1,19 +1,16 @@
 #NoTrayIcon
+#Include <assert>
 
 key := "dummynothing123"
 s := "a test value"
 EnvSet(key, s)
 val := EnvGet(key)
 
-if (val == s) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, s, A_LineNumber)
 	
 EnvSet(key, unset)
 val := EnvGet(key)
 
-if (val == "") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, "", A_LineNumber)
+
+FileAppend "pass", "*"

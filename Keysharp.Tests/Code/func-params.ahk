@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := 2
@@ -18,37 +19,19 @@ func(a, b, c)
 
 func(11, 22, 33)
 
-If (x == 11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 11, A_LineNumber)
 
-If (y == 22)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 22, A_LineNumber)
 
-If (z == 33)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 33, A_LineNumber)
 
 func(initfunc(1, 2), initfunc(3, 4) * 2, initfunc(5, 6) * 3)
 
-If (x == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 3, A_LineNumber)
 
-If (y == 14)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 14, A_LineNumber)
 
-If (z == 33)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 33, A_LineNumber)
 
 myfunc(a, b, c)
 {
@@ -57,64 +40,31 @@ myfunc(a, b, c)
 
 myfunc(xx := 1, yy := 2, zz := 3)
 
-if (xx == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, 1, A_LineNumber)
 
-if (yy == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(yy, 2, A_LineNumber)
 
-if (zz == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(zz, 3, A_LineNumber)
 
 val := myfunc(xxx := 1, yyy := 2, zzz := 3)
 
-if (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
-if (xxx == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xxx, 1, A_LineNumber)
 
-if (yyy == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(yyy, 2, A_LineNumber)
 
-if (zzz == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(zzz, 3, A_LineNumber)
 
 val := myfunc((x4 := 3) / 2, (y4 := 2) + 2, (z4 := 1) * 2) ; The parsing is a little trickier in nested expressions as arguments.
 
-if (x4 == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x4, 3, A_LineNumber)
 
-if (y4 == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y4, 2, A_LineNumber)
 
-if (z4 == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z4, 1, A_LineNumber)
 
-if (val == 7.5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 7.5, A_LineNumber)
 
 ; Try nested arguments referring the global, local and static vars.
 
@@ -130,41 +80,25 @@ TestParamFunc() {
 	static yy := 123
 	local ll := 8
 	
-	if (x == 9)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 9, A_LineNumber)
 
 	val := myfunc2((x := 10) / 5)
 	
-	if (val == 2 && x == 10)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(val == 2 && x == 10, A_LineNumber)
 		
-	if (yy == 123)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(yy, 123, A_LineNumber)
 
 	val := myfunc2((yy := 9) / 3)
 	
-	if (val == 3 && yy == 9)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(val == 3 && yy == 9, A_LineNumber)
 	
-	if (ll == 8)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(ll, 8, A_LineNumber)
 
 	val := myfunc2((ll := 20) * 5)
 	
-	if (val == 100 && ll == 20)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(val == 100 && ll == 20, A_LineNumber)
 }
 
 TestParamFunc()
+
+FileAppend "pass", "*"

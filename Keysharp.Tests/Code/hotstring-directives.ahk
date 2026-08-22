@@ -2,11 +2,9 @@
 
 #import KS { * }
 #Hotstring NoMouse
+#Include <assert>
 
-if (A_DefaultHotstringNoMouse)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_DefaultHotstringNoMouse, A_LineNumber)
 
 
 ; Reset to what it was for the sake of other tests in this class.
@@ -14,34 +12,22 @@ Hotstring("MouseReset", true)
 
 #Hotstring EndChars -()[]{}':;"/\,.?!`n`s`t
 
-if (A_DefaultHotstringEndChars == "-()[]{}':;`"/\,.?!`n`s`t")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_DefaultHotstringEndChars, "-()[]{}':;`"/\,.?!`n`s`t", A_LineNumber)
 	
 
 ; End char required.
 newVal := false
 origVal := A_DefaultHotstringEndCharRequired
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 	
 		
 #hotstring * ; Comes after the test above, but actually gets executed before
 Hotstring("*0")
 
-if (origVal != A_DefaultHotstringEndCharRequired)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(origVal != A_DefaultHotstringEndCharRequired, A_LineNumber)
 
-if (A_DefaultHotstringEndCharRequired)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_DefaultHotstringEndCharRequired, A_LineNumber)
 	
 
 ; Case sensitivity. Will be false by default even though the directive sets it to true,
@@ -49,22 +35,13 @@ else
 newVal := false
 origVal := A_DefaultHotstringCaseSensitive
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 
 #Hotstring C ; Runs before test above.
 
-if (origVal == A_DefaultHotstringCaseSensitive)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_DefaultHotstringCaseSensitive, A_LineNumber)
 
-if (newVal == A_DefaultHotstringCaseSensitive)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_DefaultHotstringCaseSensitive, A_LineNumber)
 
 ; Case sensitivity restore to default.
 Hotstring("C0")
@@ -72,63 +49,36 @@ Hotstring("C0")
 newVal := false
 origVal := A_DefaultHotstringCaseSensitive
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 
-if (origVal == A_DefaultHotstringCaseSensitive)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_DefaultHotstringCaseSensitive, A_LineNumber)
 
-if (newVal == A_DefaultHotstringCaseSensitive)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_DefaultHotstringCaseSensitive, A_LineNumber)
 
 
 ; Inside word.
 newVal := true
 origVal := A_DefaultHotstringDetectWhenInsideWord
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 
 #Hotstring ?
 
-if (origVal == A_DefaultHotstringDetectWhenInsideWord)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_DefaultHotstringDetectWhenInsideWord, A_LineNumber)
 
-if (newVal == A_DefaultHotstringDetectWhenInsideWord)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_DefaultHotstringDetectWhenInsideWord, A_LineNumber)
 	
 ; Automatic backspacing off.
 newVal := false
 origVal := A_DefaultHotstringDoBackspace
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 
 #Hotstring B0
 
-if (origVal == A_DefaultHotstringDoBackspace)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_DefaultHotstringDoBackspace, A_LineNumber)
 
-if (newVal == A_DefaultHotstringDoBackspace)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_DefaultHotstringDoBackspace, A_LineNumber)
 
 
 ; Automatic backspacing back on.
@@ -137,20 +87,11 @@ Hotstring("B")
 newVal := true
 origVal := A_DefaultHotstringDoBackspace
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 
-if (origVal == A_DefaultHotstringDoBackspace)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_DefaultHotstringDoBackspace, A_LineNumber)
 
-if (newVal == A_DefaultHotstringDoBackspace)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_DefaultHotstringDoBackspace, A_LineNumber)
 
 ; Do not conform to typed case.
 ; Even though directive set to C1, the actual value at this point is C0 because it was
@@ -158,44 +99,26 @@ else
 newVal := true
 origVal := A_DefaultHotstringConformToCase
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 
 #hotstring C1
 	
 
-if (origVal == A_DefaultHotstringConformToCase)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_DefaultHotstringConformToCase, A_LineNumber)
 
-if (newVal == A_DefaultHotstringConformToCase)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_DefaultHotstringConformToCase, A_LineNumber)
 
 ; Omit ending character.
 newVal := true
 origVal := A_DefaultHotstringOmitEndChar
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 	
 #Hotstring O
 
-if (origVal == A_DefaultHotstringOmitEndChar)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_DefaultHotstringOmitEndChar, A_LineNumber)
 
-if (newVal == A_DefaultHotstringOmitEndChar)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_DefaultHotstringOmitEndChar, A_LineNumber)
 
 ; Restore ending character.
 Hotstring("O0")
@@ -203,41 +126,23 @@ Hotstring("O0")
 newVal := false
 origVal := A_DefaultHotstringOmitEndChar
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 
-if (origVal == A_DefaultHotstringOmitEndChar)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_DefaultHotstringOmitEndChar, A_LineNumber)
 
-if (newVal == A_DefaultHotstringOmitEndChar)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_DefaultHotstringOmitEndChar, A_LineNumber)
 
 ; Exempt from suspend.
 newVal := true
 origVal := A_SuspendExempt
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 
 #Hotstring S
 
-if (origVal == A_SuspendExempt)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_SuspendExempt, A_LineNumber)
 
-if (newVal == A_SuspendExempt)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_SuspendExempt, A_LineNumber)
 
 
 ; Remove suspend exempt.
@@ -245,83 +150,47 @@ Hotstring("S0")
 newVal := false
 origVal := A_SuspendExempt
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 
-if (origVal == A_SuspendExempt)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_SuspendExempt, A_LineNumber)
 
-if (newVal == A_SuspendExempt)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_SuspendExempt, A_LineNumber)
 
 ; Reset on trigger.
 newVal := true
 origVal := A_DefaultHotstringDoReset
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 
 #Hotstring Z
 
-if (origVal == A_DefaultHotstringDoReset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_DefaultHotstringDoReset, A_LineNumber)
 
-if (newVal == A_DefaultHotstringDoReset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_DefaultHotstringDoReset, A_LineNumber)
 
 ; Restore reset on trigger.
 Hotstring("Z0")
 newVal := false
 origVal := A_DefaultHotstringDoReset
 
-if (origVal == newVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, newVal, A_LineNumber)
 
-if (origVal == A_DefaultHotstringDoReset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origVal, A_DefaultHotstringDoReset, A_LineNumber)
 
-if (newVal == A_DefaultHotstringDoReset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newVal, A_DefaultHotstringDoReset, A_LineNumber)
 		
 
 ; Send replacement text raw.
 newMode := "Raw"
 origMode := A_DefaultHotstringSendRaw
 
-if (origMode == "Raw")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origMode, "Raw", A_LineNumber)
 
 #Hotstring R
 
-if (origMode == A_DefaultHotstringSendRaw)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origMode, A_DefaultHotstringSendRaw, A_LineNumber)
 
-if (newMode == A_DefaultHotstringSendRaw)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newMode, A_DefaultHotstringSendRaw, A_LineNumber)
 
 
 ; Restore replacement text mode.
@@ -329,163 +198,93 @@ Hotstring("R0")
 newMode := "NotRaw"
 origMode := A_DefaultHotstringSendRaw
 
-if (origMode == "NotRaw")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origMode, "NotRaw", A_LineNumber)
 
-if (origMode == A_DefaultHotstringSendRaw)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origMode, A_DefaultHotstringSendRaw, A_LineNumber)
 
-if (newMode == A_DefaultHotstringSendRaw)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newMode, A_DefaultHotstringSendRaw, A_LineNumber)
 
 ; Send replacement text mode.
 Hotstring("T")
 newMode := "RawText"
 origMode := A_DefaultHotstringSendRaw
 
-if (origMode == "RawText")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origMode, "RawText", A_LineNumber)
 
-if (origMode == A_DefaultHotstringSendRaw)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origMode, A_DefaultHotstringSendRaw, A_LineNumber)
 
-if (newMode == A_DefaultHotstringSendRaw)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newMode, A_DefaultHotstringSendRaw, A_LineNumber)
 
 ; Restore replacement text mode.
 Hotstring("T0")
 newMode := "NotRaw"
 origMode := A_DefaultHotstringSendRaw
 
-if (origMode == "NotRaw")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origMode, "NotRaw", A_LineNumber)
 
-if (origMode == A_DefaultHotstringSendRaw)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origMode, A_DefaultHotstringSendRaw, A_LineNumber)
 
-if (newMode == A_DefaultHotstringSendRaw)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newMode, A_DefaultHotstringSendRaw, A_LineNumber)
 
 ; Key delay.
 newInt := 42
 origInt := A_DefaultHotstringKeyDelay
 
-if (origInt == 42)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origInt, 42, A_LineNumber)
 
 #Hotstring K42
 
-if (origInt == A_DefaultHotstringKeyDelay)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origInt, A_DefaultHotstringKeyDelay, A_LineNumber)
 
-if (newInt == A_DefaultHotstringKeyDelay)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newInt, A_DefaultHotstringKeyDelay, A_LineNumber)
 
 
 ; Priority.
 newInt := 42
 origInt := A_DefaultHotstringPriority
 
-if (origInt == 42)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origInt, 42, A_LineNumber)
 
 #Hotstring P42
 
-if (origInt == A_DefaultHotstringPriority)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origInt, A_DefaultHotstringPriority, A_LineNumber)
 
-if (newInt == A_DefaultHotstringPriority)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newInt, A_DefaultHotstringPriority, A_LineNumber)
 	
 			
 ; Send mode Event.
 newSendMode := "Event"
 origSendMode := A_DefaultHotstringSendMode
 
-if (origSendMode == "Event")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origSendMode, "Event", A_LineNumber)
 	
 #Hotstring SE
 
-if (origSendMode == A_DefaultHotstringSendMode)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origSendMode, A_DefaultHotstringSendMode, A_LineNumber)
 
-if (newSendMode == A_DefaultHotstringSendMode)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newSendMode, A_DefaultHotstringSendMode, A_LineNumber)
 
 ; Send mode Play.
 Hotstring("SP")
 newSendMode := "Play"
 origSendMode := A_DefaultHotstringSendMode
 
-if (origSendMode == "Play")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origSendMode, "Play", A_LineNumber)
 
-if (origSendMode == A_DefaultHotstringSendMode)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origSendMode, A_DefaultHotstringSendMode, A_LineNumber)
 
-if (newSendMode == A_DefaultHotstringSendMode)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(newSendMode, A_DefaultHotstringSendMode, A_LineNumber)
 ; Send mode Input.
 Hotstring("SI")
 newSendMode := "Input"
 origSendMode := A_DefaultHotstringSendMode
 
-if (origSendMode == "InputThenPlay")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origSendMode, "InputThenPlay", A_LineNumber)
 
-if (origSendMode == A_DefaultHotstringSendMode)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(origSendMode, A_DefaultHotstringSendMode, A_LineNumber)
 
-if ("InputThenPlay" == A_DefaultHotstringSendMode)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("InputThenPlay", A_DefaultHotstringSendMode, A_LineNumber)
+
+FileAppend "pass", "*"
 
 ExitApp()

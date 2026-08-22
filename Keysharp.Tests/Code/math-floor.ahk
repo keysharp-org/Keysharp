@@ -1,41 +1,20 @@
 #NoTrayIcon
+#Include <assert>
 
-if (-2 == Floor(-1.5))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(-2, Floor(-1.5), A_LineNumber)
 	
-if (-1 == Floor(-1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(-1, Floor(-1), A_LineNumber)
 
-if (-1 == Floor(-0.5))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(-1, Floor(-0.5), A_LineNumber)
 
-if (0 == Floor(0))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(0, Floor(0), A_LineNumber)
 
-if (0 == Floor(-0))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(0, Floor(-0), A_LineNumber)
 
-if (0 == Floor(0.5))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(0, Floor(0.5), A_LineNumber)
 	
-if (1 == Floor(1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(1, Floor(1), A_LineNumber)
 
-if (1 == Floor(1.675))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(1, Floor(1.675), A_LineNumber)
+
+FileAppend "pass", "*"

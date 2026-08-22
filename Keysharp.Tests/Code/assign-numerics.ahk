@@ -1,25 +1,16 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (x != 1)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != 1), A_LineNumber)
 	
 xneg := -1
 
-If (xneg == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xneg, -1, A_LineNumber)
 
-If (xneg != -1)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(xneg != -1), A_LineNumber)
+
+FileAppend "pass", "*"

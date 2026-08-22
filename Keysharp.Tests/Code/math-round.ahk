@@ -1,43 +1,22 @@
 #NoTrayIcon
+#Include <assert>
 
 val := Round(3.14)
 
-if (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 	
-if (Type(val) == "Integer")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Type(val), "Integer", A_LineNumber)
 		
-if (Round(3.14, 1) == 3.1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Round(3.14, 1), 3.1, A_LineNumber)
 		
-if (Round(345, -1) == 350)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Round(345, -1), 350, A_LineNumber)
 		
-if (Round(345, -2) == 300)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Round(345, -2), 300, A_LineNumber)
 
-if (Round(-345, -1) == -350)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Round(-345, -1), -350, A_LineNumber)
 		
-if (Round(-345, -2) == -300)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Round(-345, -2), -300, A_LineNumber)
 
-if (Round(-0, -2) == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Round(-0, -2), 0, A_LineNumber)
+
+FileAppend "pass", "*"

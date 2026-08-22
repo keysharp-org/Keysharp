@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 path := "./testfileobject1.txt"
 
@@ -11,15 +12,9 @@ count := f.WriteLine(w)
 f.Seek(0) ; Test seeking from beginning.
 r := f.ReadLine()
 
-if (r == "testing")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(r, "testing", A_LineNumber)
 
-if (count == 8) ; Add one for the newline.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(count, 8, A_LineNumber)  ; Add one for the newline.
 
 f.Close()
 
@@ -32,30 +27,18 @@ count := f.WriteUInt(val)
 f.Seek(0)
 r := f.ReadUInt()
 
-if (val == r)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, r, A_LineNumber)
 
-if (count == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(count, 4, A_LineNumber)
 
 val2 := -12345678
 count := f.WriteInt(val2)
 f.Seek(-4, 1) ; Test seeking from current.
 r2 := f.ReadInt()
 
-if (val2 == r2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val2, r2, A_LineNumber)
 
-if (count == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(count, 4, A_LineNumber)
 
 f.Close()
 
@@ -74,10 +57,7 @@ Loop (buf.Size)
 	p1 := buf[A_Index]
 	p2 := buf2[A_Index]
 
-	if (p1 == p2)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(p1, p2, A_LineNumber)
 }
 
 f.Seek(0)
@@ -95,10 +75,7 @@ Loop (buf.Size)
 	p1 := arr[A_Index]
 	p2 := buf2[A_Index]
 
-	if (p1 == p2)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(p1, p2, A_LineNumber)
 }
 
 f.Close()
@@ -112,20 +89,11 @@ count := f.Write(w)
 f.Seek(2) ; A unicode file will have a 2 byte long byte order mark.
 r := f.ReadLine()
 
-if (r == "testing")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(r, "testing", A_LineNumber)
 
-if (count == 14) ; Unicode is two bytes per char.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(count, 14, A_LineNumber)  ; Unicode is two bytes per char.
 
-if (f.Length == 16) ; BOM plus 2 bytes per char.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(f.Length, 16, A_LineNumber)  ; BOM plus 2 bytes per char.
 
 f.Close()
 
@@ -133,15 +101,9 @@ f := FileOpen(path, "rw", "Unicode") ; Ensure reading an existing file with a BO
 w := "testing"
 r := f.ReadLine()
 
-if (r == "testing")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(r, "testing", A_LineNumber)
 
-if (w.Length == r.Length)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(w.Length, r.Length, A_LineNumber)
 
 f.Close()
 
@@ -155,31 +117,19 @@ count := f.Write(w)
 pos := f.Pos
 len := StrLen(w)
 
-if (len == pos)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(len, pos, A_LineNumber)
 
 eof := f.AtEOF
 
-if (eof == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(eof, 1, A_LineNumber)
 
 len := f.Length
 
-if (len == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(len, 7, A_LineNumber)
 
 enc := f.Encoding
 
-if (enc == "utf-8")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(enc, "utf-8", A_LineNumber)
 
 f.Close()
 
@@ -190,22 +140,13 @@ count := f.Write(w)
 pos := f.Pos
 eof := f.AtEOF
 
-if (eof == 0) ; With append mode, you're never really at the "end" of the file.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(eof, 0, A_LineNumber)  ; With append mode, you're never really at the "end" of the file.
 
 len := f.Length
 
-if (pos == 14)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(pos, 14, A_LineNumber)
 
-if (len == 14)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(len, 14, A_LineNumber)
 
 f.Close()
 
@@ -222,20 +163,11 @@ pos := f.Pos
 eof := f.AtEOF
 len := f.Length
 
-if (eof == 1) ; Overwrite should cause it to be an empty file.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(eof, 1, A_LineNumber)  ; Overwrite should cause it to be an empty file.
 
-if (pos == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(pos, 0, A_LineNumber)
 
-if (len == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(len, 0, A_LineNumber)
 
 f.Close()
 
@@ -252,20 +184,11 @@ pos := f.Pos
 eof := f.AtEOF
 len := f.Length
 
-if (eof == 0) ; At position zero, so not at EOF.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(eof, 0, A_LineNumber)  ; At position zero, so not at EOF.
 
-if (pos == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(pos, 0, A_LineNumber)
 
-if (len == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(len, 7, A_LineNumber)
 
 f.Close()
 
@@ -289,10 +212,7 @@ catch
 {
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 fShareWrite := ""
@@ -314,10 +234,7 @@ catch
 {
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 fNumLock1 := ""
@@ -347,10 +264,7 @@ catch
 {
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 #endif
 
 b := false
@@ -368,10 +282,7 @@ catch
 	b := true
 }
 
-if (b == true)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(b == true), A_LineNumber)
 
 if (FileExist(path) != "")
 	FileDelete(path)
@@ -387,10 +298,7 @@ catch
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 if (FileExist(path) != "")
 	FileDelete(path)
@@ -400,29 +308,17 @@ f.Write("hello wörld")
 f.Seek(0)
 r := f.Read(5)
 
-if (r == "hello")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(r, "hello", A_LineNumber)
 
 r := f.Read(0) ; An explicit zero reads nothing; only an omitted count means "the rest".
 
-if (r == "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(r, "", A_LineNumber)
 
 r := f.Read() ; Omitted: everything left from the current position, multi-byte characters included.
 
-if (r == " wörld")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(r, " wörld", A_LineNumber)
 
-if (f.AtEOF == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(f.AtEOF, 1, A_LineNumber)
 
 b := false
 
@@ -431,10 +327,7 @@ try
 catch
 	b := true
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 f.Close()
 
@@ -453,15 +346,11 @@ f := FileOpen(path, "r", "UTF-8-RAW")
 r := f.Read()
 f.Close()
 
-if (StrLen(r) == 5000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(StrLen(r), 5000, A_LineNumber)
 
-if (r == big)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(r, big, A_LineNumber)
 
 if (FileExist(path) != "")
 	FileDelete(path)
+
+FileAppend "pass", "*"

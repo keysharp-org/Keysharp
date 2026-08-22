@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 	
 if (DirExist("./FileDelete"))
 	DirDelete("./FileDelete", true)
@@ -8,32 +9,19 @@ dir := "../../../Keysharp.Tests/Code/DirCopy"
 DirCopy(dir, "./FileDelete")
 FileDelete("./FileDelete/*.txt")
 
-if (DirExist("./FileDelete/"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(DirExist("./FileDelete/"), A_LineNumber)
 	
-if (!FileExist("./FileDelete/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileDelete/file1.txt"), A_LineNumber)
 
-if (!FileExist("./FileDelete/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileDelete/file2.txt"), A_LineNumber)
 
-if (FileExist("./FileDelete/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileDelete/file3txt"), A_LineNumber)
 
 FileDelete("./FileDelete/*")
 
-if (!FileExist("./FileDelete/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileDelete/file3txt"), A_LineNumber)
 	
 if (DirExist("./FileDelete"))
 	DirDelete("./FileDelete", true)
+
+FileAppend "pass", "*"

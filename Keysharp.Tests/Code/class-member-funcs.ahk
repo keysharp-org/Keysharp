@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 a := ""
 
@@ -149,214 +150,127 @@ class myclass
 classobj := myclass()
 val := classobj.classfunc()
 
-If (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 val := myclass.classfuncstatic()
 
-If (val == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 10, A_LineNumber)
 
 ; Test directly referring to static class methods
 val := 0
 fo := myclass.classfuncstatic
 val := fo(myclass)
 
-If (val == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 10, A_LineNumber)
 
 fo := true ? myclass.classfuncstatic : myclass.classfuncstatic2
 val := fo(myclass)
 
-If (val == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 10, A_LineNumber)
 
 val := classobj.classfuncusesstatic()
 
-If (val == 1230)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1230, A_LineNumber)
 
 myclass.s1 := 1
 
 val := classobj.classfuncusesstatic()
 
-If (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 val := classobj.classfuncwithlocalvars()
 
-If (val == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 100, A_LineNumber)
 
 val := classobj.classfuncwithreadmembervars()
 
-If (val == 15129)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 15129, A_LineNumber)
 
 classobj.classfuncwithwritelocalmembervars()
 
-if (classobj.x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.x, 123, A_LineNumber)
 
-if (classobj.y == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.y, 123, A_LineNumber)
 
 classobj.classfuncwithwritemembervars()
 
-if (classobj.x == 88)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.x, 88, A_LineNumber)
 
-if (classobj.y == 99)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.y, 99, A_LineNumber)
 
 val := classobj.classfuncwithlocalstaticvars()
 
-if (val == 1000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1000, A_LineNumber)
 
 classobj.classfuncwriteglobalvars()
 
-if (classobj.a == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.a, 0, A_LineNumber)
 
-if (a == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 val := myclass.classfuncstaticwithparams(150, 2)
 
-if (val == 300)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 300, A_LineNumber)
 
 val := classobj.classfuncwithparams(500, 2)
 
-if (val == 1000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1000, A_LineNumber)
 
 val := myclass.classvarfuncstatic(1, 2, 3)
 
-If (val == 12)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 12, A_LineNumber)
 	
 val := classobj.classvarfunc(1, 2, 3)
 
-If (val == 12)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 12, A_LineNumber)
 
 val := classobj.classfuncwiththis()
 
-If (val == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 999, A_LineNumber)
 
 classobj.ClassFuncCaseSensitive()
 
-if (classobj.a == 1000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.a, 1000, A_LineNumber)
 
-if (classobj.b == 2000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.b, 2000, A_LineNumber)
 
 classobj.a := ""
 classobj.b := ""
 
 classobj.classfunccasesensitive()
 
-if (classobj.a == 1000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.a, 1000, A_LineNumber)
 
-if (classobj.b == 2000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.b, 2000, A_LineNumber)
 
 myclass.s1 := ""
 myclass.ClassFuncCaseSensitiveStatic()
 
-if (myclass.s1 == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myclass.s1, 999, A_LineNumber)
 
 funcadd := classobj.classfuncwithparams.Bind(classobj)
 
 val := funcadd(10, 20)
 
-if (val == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 200, A_LineNumber)
 
 funcadd := myclass.classfuncstaticwithparams.Bind(myclass)
 
 val := funcadd(10, 10)
 
-if (val == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 100, A_LineNumber)
 
 funcadd := classobj.classvarfunc.Bind(classobj)
 
 val := funcadd(1, 2, 3)
 
-if (val == 12)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 12, A_LineNumber)
 
 funcadd := myclass.classvarfuncstatic.Bind(myclass)
 
 val := funcadd(1, 2, 3)
 
-if (val == 12)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 12, A_LineNumber)
 
 ; Test command style when using methods.
 
@@ -421,155 +335,98 @@ arr := [1, 2, 3]
 class2obj := myclass2()
 class2obj.classfunc0
 
-if (a == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 0, A_LineNumber)
 
 a := ""
 val := class2obj.classfunc0()
 
-if (val == 0 && a == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 0 && a == 0, A_LineNumber)
 
 a := ""
 class2obj.classfunc1 1
 
-if (a == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 a := ""
 class2obj.classfunc2 1, 2
 
-if (a == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 3, A_LineNumber)
 
 a := ""
 class2obj.classfunc3 1
 
-if (a == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 6, A_LineNumber)
 
 a := ""
 class2obj.classfunc3 1, 2, 4, 5, 6
 
-if (a == 18)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 18, A_LineNumber)
 	
 a := ""
 class2obj.classfunc3(1, 2, arr*) ; variadic spread operator can't be used with command style because it's mistaken for a multiplication with the next line.
 
-if (a == 9)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 9, A_LineNumber)
 
 val := class2obj.classfunc4(1)
 
-if (val == 16)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 16, A_LineNumber)
 	
 val := class2obj.classfunc4(1,,)
 
-if (val == 16)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 16, A_LineNumber)
 	
 val := class2obj.classfunc4(1, 10, &a := 15)
 
-if (val == 26 && a == 26)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 26 && a == 26, A_LineNumber)
 
 val := class2obj.classfuncimplicit()
 
-if (val == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 0, A_LineNumber)
 
 fo := class2obj.classfunc0.Bind(class2obj)
 a := ""
 val := fo()
 
-if (val == 0 && a == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 0 && a == 0, A_LineNumber)
 
 fo := class2obj.GetMethod("classfunc1")
 a := ""
 val := fo(class2obj, 123)
 
-if (val == 123 && a == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 123 && a == 123, A_LineNumber)
 
 fo := class2obj.classfunc2.Bind(class2obj)
 a := ""
 val := fo(123)
 
-if (val == 128 && a == 128)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 128 && a == 128, A_LineNumber)
 
 fo := class2obj.classfunc3
 a := ""
 val := fo(class2obj, 1)
 
-if (val == 6 && a == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 6 && a == 6, A_LineNumber)
 
 a := ""
 val := fo(class2obj, 1, 2, 4, 5, 6)
 
-if (val == 18 && a == 18)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 18 && a == 18, A_LineNumber)
 
 fo := class2obj.classfuncimplicit.Bind(class2obj)
 a := ""
 val := fo()
 
-if (val == 0 && a == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 0 && a == 0, A_LineNumber)
 
 a := ""
 val := fo(1, 2, 4, 5, 6)
 
-if (val == 18 && a == 18)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 18 && a == 18, A_LineNumber)
 
 a := ""
 val := fo(arr*)
 
-if (val == 6 && a == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 6 && a == 6, A_LineNumber)
 
 ; Accessing class members dynamically:
 temp := 0
@@ -592,7 +449,6 @@ class mydynclass
 dc := mydynclass()
 dc.callmydynclassreffunc()
 
-if (temp == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(temp, 123, A_LineNumber)
+
+FileAppend "pass", "*"

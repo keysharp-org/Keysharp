@@ -2,6 +2,7 @@
 
 #import KS { RealThread, LockRun, A_RealThread, A_Thread, Lock }
 #MaxThreads 256
+#Include <assert>
 lockit := ""
 tharr := []
 tharr.Length := 100
@@ -32,10 +33,7 @@ Loop 100
 
 tharr.Length := 0
 
-If tot == 5150
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(tot, 5150, A_LineNumber)
 
 tharr := []
 tharr.Length := 100
@@ -68,49 +66,33 @@ Loop 100
 Loop 100
 {
 	; Wait reports completion; the body's value is read from Result.
-	if !tharr[A_Index].Wait()
-		FileAppend "fail", "*"
+	Assert(!(!tharr[A_Index].Wait()), A_LineNumber)
 
 	tot += tharr[A_Index].Result
 }
 
 tharr.Length := 0
 
-If tot == 10000
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(tot, 10000, A_LineNumber)
 
 ; Wait must honour its timeout instead of blocking until the body finishes.
 slowWorker := RealThread(() => Sleep(2000))
 
-if !slowWorker.Wait(50) && slowWorker.Status == "Running"
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!slowWorker.Wait(50) && slowWorker.Status == "Running", A_LineNumber)
 
 slowWorker.Wait()
 
-if slowWorker.Status == "Done"
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(slowWorker.Status, "Done", A_LineNumber)
 
 ; Starting arguments, Send, and self-identification from inside the worker.
 argWorker := RealThread(RealThreadArgEntry, 21)
 
-if argWorker.Send(() => A_RealThread.Id) == argWorker.Id
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(argWorker.Send(() => A_RealThread.Id), argWorker.Id, A_LineNumber)
 
 argWorker.Post(() => argWorker.Exit())
 argWorker.Wait()
 
-if argWorker.Result == 42
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(argWorker.Result, 42, A_LineNumber)
 
 RealThreadArgEntry(n) {
 	; Keeps the worker's event loop alive until Exit() is requested, so Post/Send have somewhere to land.
@@ -122,10 +104,7 @@ RealThreadArgEntry(n) {
 kindWorker := RealThread(() => A_Thread.Kind)
 kindWorker.Wait()
 
-if kindWorker.Result == "RealThread" && A_Thread.Kind == "Auto"
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(kindWorker.Result == "RealThread" && A_Thread.Kind == "Auto", A_LineNumber)
 
 global kindFromTimer := ""
 SetTimer(CaptureTimerKind, -1)
@@ -133,10 +112,7 @@ SetTimer(CaptureTimerKind, -1)
 while kindFromTimer == ""
 	Sleep 10
 
-if kindFromTimer == "Timer over Auto"
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(kindFromTimer, "Timer over Auto", A_LineNumber)
 
 CaptureTimerKind() {
 	global kindFromTimer := A_Thread.Kind " over " A_Thread.Underlying.Kind
@@ -146,50 +122,32 @@ CaptureTimerKind() {
 ; InvalidCastException here that no try/catch could intercept.
 A_Thread.Critical := true
 
-if A_Thread.Critical && !A_Thread.IsInterruptible
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Thread.Critical && !A_Thread.IsInterruptible, A_LineNumber)
 
 A_Thread.Critical := false
 
-if !A_Thread.Critical && A_Thread.IsInterruptible && !A_Thread.Paused
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!A_Thread.Critical && A_Thread.IsInterruptible && !A_Thread.Paused, A_LineNumber)
 
 ; Lock: a contended timed acquire fails while a worker holds it, and succeeds once released.
 global sharedLock := Lock()
 
-if sharedLock.Acquire()
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(sharedLock.Acquire(), A_LineNumber)
 
 sharedLock.Release()
 
 ; A released lock is immediately re-acquirable, including with a zero timeout.
-if sharedLock.Acquire(0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(sharedLock.Acquire(0), A_LineNumber)
 
 sharedLock.Release()
 
 holder := RealThread(HoldSharedLock)
 Sleep 300
 
-if !sharedLock.Acquire(50)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!sharedLock.Acquire(50), A_LineNumber)
 
 holder.Wait()
 
-if sharedLock.Acquire(1000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(sharedLock.Acquire(1000), A_LineNumber)
 
 sharedLock.Release()
 
@@ -210,10 +168,7 @@ Loop 10000 {
 
 coordWorker.Wait()
 
-if A_CoordModeMouse = "Screen"
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_CoordModeMouse = "Screen", A_LineNumber)
 
 workerReady := false
 workerStop := false
@@ -229,10 +184,7 @@ ret2 := DllCall(workerCallback)
 workerStop := true
 workerThread.Wait()
 
-if ret1 = 101 && ret2 = 202 && A_CoordModeMouse = "Client"
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(ret1 = 101 && ret2 = 202 && A_CoordModeMouse = "Client", A_LineNumber)
 
 RealThreadEntry() {
 	CoordMode "Mouse", "Screen"
@@ -247,7 +199,7 @@ RealThreadEntry() {
 
 SetCoordModeMouseWindow() {
 	if A_CoordModeMouse = "Client" {
-		FileAppend "fail", "*"
+		Assert(false, A_LineNumber)
 		ExitApp()
 	}
 
@@ -256,7 +208,7 @@ SetCoordModeMouseWindow() {
 
 SetCoordModeMouseClient() {
 	if A_CoordModeMouse = "Window" {
-		FileAppend "fail", "*"
+		Assert(false, A_LineNumber)
 		ExitApp()
 	}
 
@@ -296,3 +248,5 @@ CheckWorkerCoordModeAffinity() {
 
 	return -3
 }
+
+FileAppend "pass", "*"

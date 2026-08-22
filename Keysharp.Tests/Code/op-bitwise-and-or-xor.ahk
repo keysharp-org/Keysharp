@@ -1,50 +1,33 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := 2
 z := x & y
 
-if (z = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0, A_LineNumber)
 
 z := x | y
 
-if (z = 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 3, A_LineNumber)
 
 z := x ^ y
 
-if (z = 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 3, A_LineNumber)
 
 x := "0x1"
 y := "2"
 z := x & y
 
-if (z = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0, A_LineNumber)
 
 z := x | y
 
-if (z = 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 3, A_LineNumber)
 
 z := x ^ y
 
-if (z = 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 3, A_LineNumber)
 
 b := false
 
@@ -59,10 +42,7 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -75,10 +55,7 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -91,10 +68,7 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -109,10 +83,7 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -125,10 +96,7 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -141,145 +109,90 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 x := -1
 y := -2
 z := x & y
 
-if (z = -2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = -2, A_LineNumber)
 
 z := x | y
 
-if (z = -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = -1, A_LineNumber)
 
 z := x ^ y
 
-if (z = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 1, A_LineNumber)
 
 x := "-1"
 y := "-0x2"
 z := x & y
 
-if (z = -2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = -2, A_LineNumber)
 
 z := x | y
 
-if (z = -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = -1, A_LineNumber)
 
 z := x ^ y
 
-if (z = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 1, A_LineNumber)
 
 x := 1
 y := 0
 z := x & y
 
-if (z = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0, A_LineNumber)
 
 z := x | y
 
-if (z = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 1, A_LineNumber)
 
 z := x ^ y
 
-if (z = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 1, A_LineNumber)
 
 x := "0x1"
 y := "0"
 z := x & y
 
-if (z = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0, A_LineNumber)
 
 z := x | y
 
-if (z = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 1, A_LineNumber)
 
 z := x ^ y
 
-if (z = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 1, A_LineNumber)
 
 x := 0
 y := 0
 z := x & y
 
-if (z = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0, A_LineNumber)
 
 z := x | y
 
-if (z = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0, A_LineNumber)
 
 z := x ^ y
 
-if (z = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0, A_LineNumber)
 
 x := "0"
 y := "0x0"
 z := x & y
 
-if (z = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0, A_LineNumber)
 
 z := x | y
 
-if (z = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0, A_LineNumber)
 
 z := x ^ y
 
-if (z = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0, A_LineNumber)
+
+FileAppend "pass", "*"

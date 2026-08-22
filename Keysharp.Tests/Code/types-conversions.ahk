@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 ; Throwing numeric conversions (AHK v2 TypeError parity).
 
@@ -8,10 +9,7 @@ try
 catch TypeError
 	caught := true
 
-if (caught)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(caught, A_LineNumber)
 
 caught := false
 try
@@ -19,10 +17,7 @@ try
 catch TypeError
 	caught := true
 
-if (caught)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(caught, A_LineNumber)
 
 caught := false
 try
@@ -30,10 +25,7 @@ try
 catch TypeError
 	caught := true
 
-if (caught)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(caught, A_LineNumber)
 
 caught := false
 try
@@ -41,10 +33,7 @@ try
 catch TypeError
 	caught := true
 
-if (caught)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(caught, A_LineNumber)
 
 caught := false
 try
@@ -52,10 +41,7 @@ try
 catch TypeError
 	caught := true
 
-if (caught)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(caught, A_LineNumber)
 
 ; A hex string without the 0x prefix is not a number.
 caught := false
@@ -64,88 +50,43 @@ try
 catch TypeError
 	caught := true
 
-if (caught)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(caught, A_LineNumber)
 
 ; Floats coerce (truncate toward zero) where AHK allows them.
 
-if (Integer("3.9") = 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Integer("3.9") = 3, A_LineNumber)
 
-if (Integer(3.5) = 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Integer(3.5) = 3, A_LineNumber)
 
-if (Integer(-3.5) = -3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Integer(-3.5) = -3, A_LineNumber)
 
-if (Number("1e5") = 100000.0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Number("1e5") = 100000.0, A_LineNumber)
 
-if (Number("0x10") = 16)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Number("0x10") = 16, A_LineNumber)
 
-if (Mod(7.5, 2) = 1.5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Mod(7.5, 2) = 1.5, A_LineNumber)
 
-if (Floor(7 / 2) = 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Floor(7 / 2) = 3, A_LineNumber)
 
-if (SubStr("ABCDEFGH", 6 / 2) = "CDEFGH")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(SubStr("ABCDEFGH", 6 / 2) = "CDEFGH", A_LineNumber)
 
-if (Round(3.567, 1) = 3.6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Round(3.567, 1) = 3.6, A_LineNumber)
 
 ; Float-to-string formatting: whole-valued Floats keep a trailing .0, Integers do not.
 
-if (String(760 / 2) == "380.0")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(String(760 / 2), "380.0", A_LineNumber)
 
-if (String(0.0) == "0.0")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(String(0.0), "0.0", A_LineNumber)
 
-if (String(0 * 5) == "0")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(String(0 * 5), "0", A_LineNumber)
 
-if ("" (1280 / 3) == "426.6666666666667")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("" (1280 / 3), "426.6666666666667", A_LineNumber)
 
 ; Fractional Floats stay truthy.
 
 x := 0.5
 
-if (x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x, A_LineNumber)
 
 ; Numeric property setters validate their input and truncate Floats.
 
@@ -155,16 +96,12 @@ try
 catch TypeError
 	caught := true
 
-if (caught)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(caught, A_LineNumber)
 
 A_SendLevel := 5.0
 
-if (A_SendLevel = 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_SendLevel = 5, A_LineNumber)
 
 A_SendLevel := 0
+
+FileAppend "pass", "*"

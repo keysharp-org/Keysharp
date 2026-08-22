@@ -1,61 +1,31 @@
 #NoTrayIcon
+#Include <assert>
 
 x := ""
 
-If (x != "")
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != ""), A_LineNumber)
 	
-If (x = "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = "", A_LineNumber)
 
 x := 123
 x := unset
 
-if (x is unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is unset, A_LineNumber)
 
-if (x = unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = unset, A_LineNumber)
 
-if (x == unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = unset, A_LineNumber)
 
-if (unset = x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(unset = x, A_LineNumber)
 	
-if (unset == x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(unset = x, A_LineNumber)
 
-if (x != unset)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != unset), A_LineNumber)
 
-if (x !== unset)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x !== unset), A_LineNumber)
 
-if (unset != x)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(unset != x), A_LineNumber)
 	
-if (unset !== x)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(unset !== x), A_LineNumber)
+
+FileAppend "pass", "*"

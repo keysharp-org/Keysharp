@@ -1,24 +1,18 @@
 #NoTrayIcon
 
 #import KS { Join }
+#Include <assert>
 str := Join(",", "1", "2", "3")
 
-if (str == "1,2,3")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(str, "1,2,3", A_LineNumber)
 
 str := Join(",", 1, 2, 3)
 
-if (str == "1,2,3")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(str, "1,2,3", A_LineNumber)
 
 arr := [10, 20, "hello"]
 str := Join(",", arr*)
 
-if (str == "10,20,hello")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(str, "10,20,hello", A_LineNumber)
+
+FileAppend "pass", "*"

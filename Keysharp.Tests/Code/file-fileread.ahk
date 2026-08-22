@@ -1,32 +1,23 @@
 #NoTrayIcon
+#Include <assert>
 
 path := "../../../Keysharp.Tests/Code/"
 dir := path . "DirCopy/file1.txt"
 text := FileRead(dir)
 
-if (text == "this is file 1")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(text, "this is file 1", A_LineNumber)
 
 text := FileRead(dir, "m4")
 
-if (text == "this")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(text, "this", A_LineNumber)
 
 text := FileRead(dir, "m4 utf-8")
 
-if (text == "this")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(text, "this", A_LineNumber)
 
 buf := FileRead(dir, "m4 raw")
 buf2 := Buffer([ 116, 104, 105, 115 ])
 
-if (buf = buf2)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(buf = buf2, A_LineNumber)
+
+FileAppend "pass", "*"

@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := 25
@@ -6,176 +7,101 @@ y--
 z := y--
 x++
 
-If (x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 2, A_LineNumber)
 
-If (y == 23)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 23, A_LineNumber)
 
 y := 1
 ++y
 
-If (y = 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 2, A_LineNumber)
 
 y := "1"
 ++y
 
-If (y = 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 2, A_LineNumber)
 
 y := "1"
 y++
 
-If (y = 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 2, A_LineNumber)
 
 x--
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 	
 x := "2"
 x--
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 --y
 
-If (y = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 1, A_LineNumber)
 
 y := "2"
 --y
 
-If (y = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 1, A_LineNumber)
 
 z := y++
 
-If (z = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 1, A_LineNumber)
 
-If (y == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 2, A_LineNumber)
 
 y := "0"
 z := y++
 
-If (z = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0, A_LineNumber)
 
-If (y == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 1, A_LineNumber)
 
 y := 2
 z := --y
 
-If (z = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 1, A_LineNumber)
 
-If (y == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 1, A_LineNumber)
 	
 y := "2"
 z := --y
 
-If (z = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 1, A_LineNumber)
 
-If (y == "1")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, "1", A_LineNumber)
 
 x := 11
 y11 := 123
 z := y%x%++
 
-if (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 
-if (y%x% == 124)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 124, A_LineNumber)
 	
 x := 11
 y11 := 123
 z := ++y%x%
 
-if (z == 124)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 124, A_LineNumber)
 
-if (y%x% == 124)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 124, A_LineNumber)
 	
 x := 11
 y11 := 123
 z := y%x%--
 
-if (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 
-if (y%x% == 122)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 122, A_LineNumber)
 	
 x := 11
 y11 := 123
 z := --y%x%
 
-if (z == 122)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 122, A_LineNumber)
 
-if (y%x% == 122)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 122, A_LineNumber)
 	
 myfunc(xx)
 {
@@ -186,57 +112,33 @@ x := 11
 y11 := 123
 z := myfunc(y%x%++)
 
-if (y%x% == 124)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 124, A_LineNumber)
 
-if (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 
 x := 11
 y11 := 123
 z := myfunc(++y%x%)
 
-if (y%x% == 124)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 124, A_LineNumber)
 
-if (z == 124)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 124, A_LineNumber)
 
 x := 11
 y11 := 123
 z := myfunc(y%x%--)
 
-if (y%x% == 122)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 122, A_LineNumber)
 
-if (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 
 x := 11
 y11 := 123
 z := myfunc(--y%x%)
 
-if (y%x% == 122)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 122, A_LineNumber)
 
-if (z == 122)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 122, A_LineNumber)
 
 class aclass
 {
@@ -271,126 +173,66 @@ class cclass
 a := aclass()
 a.b.c.d++
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 2, A_LineNumber)
 
 a := aclass()
 ++a.b.c.d
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 2, A_LineNumber)
 	
 a := aclass()
 a.b.c.d--
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 0, A_LineNumber)
 		
 a := aclass()
 --a.b.c.d
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 0, A_LineNumber)
 	
 a := aclass()
 x := a.b.c.d++
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 2, A_LineNumber)
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 a := aclass()
 x := ++a.b.c.d
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 2, A_LineNumber)
 
-if (x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 2, A_LineNumber)
 
 a := aclass()
 x := a.b.c.d--
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 0, A_LineNumber)
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 a := aclass()
 x := --a.b.c.d
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 0, A_LineNumber)
 
-if (x == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 0, A_LineNumber)
 	
 ; Compound operator with prefix or postfix increment/decrement.
 
@@ -398,198 +240,116 @@ a := aclass()
 x := 2
 x *= a.b.c.d++
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 2, A_LineNumber)
 
-if (x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 2, A_LineNumber)
 	
 a := aclass()
 x := 2
 x *= ++a.b.c.d
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 2, A_LineNumber)
 
-if (x == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 4, A_LineNumber)
 
 a := aclass()
 x := 2
 x *= a.b.c.d--
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 0, A_LineNumber)
 
-if (x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 2, A_LineNumber)
 	
 a := aclass()
 x := 2
 x *= --a.b.c.d
 
-if (a.b.ct == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.ct, 1, A_LineNumber)
 
-if (a.b.c.d == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.b.c.d, 0, A_LineNumber)
 
-if (x == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 0, A_LineNumber)
 
 x := 11
 y11 := 123
 z := 2
 z *= y%x%++
 
-if (z == 246)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 246, A_LineNumber)
 
-if (y%x% == 124)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 124, A_LineNumber)
 
 x := 11
 y11 := 123
 z := 2
 z *= ++y%x%
 
-if (z == 248)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 248, A_LineNumber)
 
-if (y%x% == 124)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 124, A_LineNumber)
 	
 x := 11
 y11 := 123
 z := 2
 z *= y%x%--
 
-if (z == 246)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 246, A_LineNumber)
 
-if (y%x% == 122)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 122, A_LineNumber)
 
 x := 11
 y11 := 123
 z := 2
 z *= --y%x%
 
-if (z == 244)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 244, A_LineNumber)
 
-if (y%x% == 122)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y%x%, 122, A_LineNumber)
 	
 arr := [1, 2, 3]
 prev := arr[2]++
 
-if (prev == 2 && arr[2] == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(prev == 2 && arr[2] == 3, A_LineNumber)
 
 arr := [1, 2, 3]
 prev := arr[2]--
 
-if (prev == 2 && arr[2] == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(prev == 2 && arr[2] == 1, A_LineNumber)
 
 arr := [1, 2, 3]
 newval := ++arr[2]
 
-if (newval == 3 && arr[2] == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(newval == 3 && arr[2] == 3, A_LineNumber)
 
 arr := [1, 2, 3]
 newval := --arr[2]
 
-if (newval == 1 && arr[2] == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(newval == 1 && arr[2] == 1, A_LineNumber)
 
 m := Map(x, 1)
 prev := m[x]++
 
-if (prev == 1 && m[x] == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(prev == 1 && m[x] == 2, A_LineNumber)
 
 m := Map(x, 1)
 prev := m[x]--
 
-if (prev == 1 && m[x] == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(prev == 1 && m[x] == 0, A_LineNumber)
 
 m := Map(x, 1)
 prev := ++m[x]
 
-if (prev == 2 && m[x] == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(prev == 2 && m[x] == 2, A_LineNumber)
 
 m := Map(x, 1)
 prev := --m[x]
 
-if (prev == 0 && m[x] == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(prev == 0 && m[x] == 0, A_LineNumber)
+
+FileAppend "pass", "*"

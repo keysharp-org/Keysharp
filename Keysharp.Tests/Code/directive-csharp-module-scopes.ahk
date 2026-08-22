@@ -4,12 +4,13 @@
 
 #import "Alpha" { AlphaName, AlphaClassName }
 #import "Beta" { BetaName }
+#Include <assert>
 
-ok(cond) => FileAppend(cond ? "pass" : "fail", "*")
+AssertEq(AlphaName(), "StringBuilder", A_LineNumber)
+AssertEq(AlphaClassName(), "StringBuilder", A_LineNumber)
+AssertEq(BetaName(), "FileInfo", A_LineNumber)
 
-ok(AlphaName() == "StringBuilder")
-ok(AlphaClassName() == "StringBuilder")
-ok(BetaName() == "FileInfo")
+FileAppend "pass", "*"
 
 #Module Alpha
 

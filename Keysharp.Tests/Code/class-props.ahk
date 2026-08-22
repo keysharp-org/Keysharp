@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 class testclass
 {
@@ -43,48 +44,30 @@ class testclass
 
 testclassobj := testclass()
 
-if (HasProp(testclassobj, "__Item") && testclassobj.HasProp("__Item"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(HasProp(testclassobj, "__Item") && testclassobj.HasProp("__Item"), A_LineNumber)
 	
 val := testclassobj.a
 
-If (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 testclassobj.a := 999
 
 val := testclassobj.a
 
-If (val == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 999, A_LineNumber)
 
 val := testclass.b
 
-If (val == 555)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 555, A_LineNumber)
 
 val := testclassobj[3]
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 
 testclassobj[3] := 100
 val := testclassobj[3]
 
-If (val == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 100, A_LineNumber)
 
 class PropTestOTB
 {
@@ -103,18 +86,12 @@ class PropTestOTB
 
 otb := PropTestOTB()
 
-if (HasProp(otb, "__Item") && otb.HasProp("__Item"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(HasProp(otb, "__Item") && otb.HasProp("__Item"), A_LineNumber)
 	
 otb[999] := 123
 val := otb[777]
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 	
 class PropTestThis
 {
@@ -132,18 +109,12 @@ class PropTestThis
 
 ptt := PropTestThis()
 
-if (!HasProp(ptt, "__Item") && !ptt.HasProp("__Item"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!HasProp(ptt, "__Item") && !ptt.HasProp("__Item"), A_LineNumber)
 	
 ptt.xprop := 123
 val := ptt.xprop
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 ; Ensure the special super property is properly implemented.
 x := 0
@@ -175,20 +146,11 @@ class Test3 {
 t1 := test1()
 y := t1.Meth1()
 
-if (y == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 2, A_LineNumber)
 
-if (x == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 3, A_LineNumber)
 	
-if (!HasProp(t1, "__Item") && !t1.HasProp("__Item"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!HasProp(t1, "__Item") && !t1.HasProp("__Item"), A_LineNumber)
 
 
 class Test {
@@ -214,35 +176,22 @@ T := Test()
 
 x := 0
 T.Len      ; .call without param
-if (x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 2, A_LineNumber)
 
 x := 0
 _ := T.Len ; .get without param
-if (x == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 4, A_LineNumber)
 
 x := 0
 _ := T.Len[1]   ; .get with param
-if (x == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 3, A_LineNumber)
 
 x := 0
 T.Len()    ; .call without param
-if (x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 2, A_LineNumber)
 
 x := 0
 T.Len(1)   ; .call with param
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
+
+FileAppend "pass", "*"

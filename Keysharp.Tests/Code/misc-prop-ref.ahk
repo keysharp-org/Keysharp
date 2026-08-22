@@ -1,47 +1,44 @@
 #NoTrayIcon
+#Include <assert>
 
 ; Tests for AHK v2.1 PropRef / __Ref.
-
-check(cond) {
-    FileAppend cond ? "pass" : "fail", "*"
-}
 
 ; --- 1. Basic PropRef via &obj.prop --------------------------------
 m := { a: 1, b: "x" }
 r := &m.a
-check(r is PropRef)
-check(r is VarRef)                 ; PropRef is a VarRef-compatible virtual reference.
-check(r.__Value == 1)
+Assert(r is PropRef, A_LineNumber)
+Assert(r is VarRef, A_LineNumber)                 ; PropRef is a VarRef-compatible virtual reference.
+AssertEq(r.__Value, 1, A_LineNumber)
 r.__Value := 42
-check(m.a == 42)
+AssertEq(m.a, 42, A_LineNumber)
 
 ; --- 2. PropRef directly ------------------------------------------
 r2 := PropRef(m, "b")
-check(r2.__Value == "x")
+AssertEq(r2.__Value, "x", A_LineNumber)
 r2.__Value := "y"
-check(m.b == "y")
+AssertEq(m.b, "y", A_LineNumber)
 
 ; --- 3. &arr[i] lowers to arr.__Ref("__Item", i) ------------------
 arr := [10, 20, 30]
 rix := &arr[2]
-check(rix is PropRef)
-check(rix.__Value == 20)
+Assert(rix is PropRef, A_LineNumber)
+AssertEq(rix.__Value, 20, A_LineNumber)
 rix.__Value := 200
-check(arr[2] == 200)
+AssertEq(arr[2], 200, A_LineNumber)
 
 ; --- 4. &map["key"] ------------------------------------------------
 mp := Map("one", 1, "two", 2)
 rk := &mp["one"]
-check(rk.__Value == 1)
+AssertEq(rk.__Value, 1, A_LineNumber)
 rk.__Value := 99
-check(mp["one"] == 99)
+AssertEq(mp["one"], 99, A_LineNumber)
 
 ; --- 5. &obj.prop[i] stays bound to the named property slot -----------
 nested := { g: [100, 200, 300] }
 rn := &nested.g[2]
-check(rn.__Value == 200)
+AssertEq(rn.__Value, 200, A_LineNumber)
 rn.__Value := 222
-check(nested.g[2] == 222)
+AssertEq(nested.g[2], 222, A_LineNumber)
 
 ; For a property without property parameters, the ref still stays attached
 ; to the property slot rather than the property's current __Item target.
@@ -50,8 +47,8 @@ rOrig := &holder.g[1]
 origArr := holder.g
 holder.g := [9, 9, 9]              ; swap in a fresh array
 rOrig.__Value := 500               ; writes through the current property slot
-check(origArr[1] == 1)             ; original array unchanged
-check(holder.g[1] == 500)
+AssertEq(origArr[1], 1, A_LineNumber)  ; original array unchanged
+AssertEq(holder.g[1], 500, A_LineNumber)
 
 ; If the property itself accepts parameters, the ref binds to the property.
 class ParamProp {
@@ -65,30 +62,30 @@ class ParamProp {
 }
 p := ParamProp([4, 5, 6])
 rParam := &p.data[2]
-check(rParam.__Value == 5)
+AssertEq(rParam.__Value, 5, A_LineNumber)
 p.store := [7, 8, 9]
-check(rParam.__Value == 8)
+AssertEq(rParam.__Value, 8, A_LineNumber)
 rParam.__Value := 88
-check(p.store[2] == 88)
+AssertEq(p.store[2], 88, A_LineNumber)
 
 ; Direct PropRef construction follows the same slot-binding rules.
 holder2 := { g: [4, 5, 6] }
 rDirect := PropRef(holder2, "g", 2)
 origArr2 := holder2.g
 holder2.g := [7, 8, 9]
-check(rDirect.__Value == 8)
+AssertEq(rDirect.__Value, 8, A_LineNumber)
 rDirect.__Value := 88
-check(origArr2[2] == 5)
-check(holder2.g[2] == 88)
+AssertEq(origArr2[2], 5, A_LineNumber)
+AssertEq(holder2.g[2], 88, A_LineNumber)
 
 ; --- 6. ByRef parameter receives PropRef ---------------------------
 bump(&p) => p += 1
 o := { n: 10 }
 bump(&o.n)
-check(o.n == 11)
+AssertEq(o.n, 11, A_LineNumber)
 a := [5, 6, 7]
 bump(&a[3])
-check(a[3] == 8)
+AssertEq(a[3], 8, A_LineNumber)
 
 ; --- 7. User override of __Ref -------------------------------------
 class CustomRef {
@@ -100,18 +97,18 @@ class CustomRef {
 }
 c := CustomRef()
 _ := &c.foo                         ; triggers __Ref("foo")
-check(c.store["foo"].Length == 0)
+AssertEq(c.store["foo"].Length, 0, A_LineNumber)
 
 _ := &c.bar[1, 2]                   ; -> c.__Ref("bar", 1, 2)
-check(c.store["bar"].Length == 2)
-check(c.store["bar"][1] == 1 && c.store["bar"][2] == 2)
+AssertEq(c.store["bar"].Length, 2, A_LineNumber)
+Assert(c.store["bar"][1] == 1 && c.store["bar"][2] == 2, A_LineNumber)
 
 ; --- 8. Normal __Value property is not mistaken for a ByRef ref ----
 boxed := { __Value: 7 }
 rBoxed := &boxed.__Value
-check(rBoxed.__Value == 7)
+AssertEq(rBoxed.__Value, 7, A_LineNumber)
 rBoxed.__Value := 70
-check(boxed.__Value == 70)
+AssertEq(boxed.__Value, 70, A_LineNumber)
 
 ; --- 9. A subclassed VarRef with a REDEFINED __Value is honored everywhere a plain one is fast-pathed ----
 ; The plain built-in VarRef takes a direct-write shortcut in property access, the for-loop's per-element
@@ -126,10 +123,12 @@ class DoubleRef extends VarRef {
 }
 dr := DoubleRef()
 dr.__Value := 5
-check(dr.__Value == 10)             ; property get/set dispatch to the redefined accessors
+AssertEq(dr.__Value, 10, A_LineNumber)  ; property get/set dispatch to the redefined accessors
 drEnum := [7].__Enum(1)
 drEnum(dr)
-check(DoubleRef.box.v == 14)        ; the enumerator's output write dispatches too
+AssertEq(DoubleRef.box.v, 14, A_LineNumber)  ; the enumerator's output write dispatches too
 %dr% := 3
-check(DoubleRef.box.v == 6)         ; ... and so does deref assignment
-check(%dr% == 6)
+AssertEq(DoubleRef.box.v, 6, A_LineNumber)  ; ... and so does deref assignment
+AssertEq(%dr%, 6, A_LineNumber)
+
+FileAppend "pass", "*"

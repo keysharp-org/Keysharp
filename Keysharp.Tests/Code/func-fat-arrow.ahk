@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 class myclass
 {
@@ -35,177 +36,111 @@ class myclass
 myclassobj := myclass()
 x := myclassobj.myprop
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 			
 myclassobj.myprop := 10
 
-If (myclassobj.x == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myclassobj.x, 100, A_LineNumber)
 
 myclassobj.x := 10
 x := myclassobj.myclassfunc(10, 20)
 
-If (x == 20000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 20000, A_LineNumber)
 
 x := myclassobj.callmember1(4, 5)
 
-If (x == 40)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 40, A_LineNumber)
 	
 x := myclassobj.member2.Call(1, 2)
 
-If (x == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 4, A_LineNumber)
 	
 x := myclassobj.member3.Call(3)
 
-If (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 x := myclassobj.member4.Call(3, 4)
 
-If (x == 14)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 14, A_LineNumber)
 
 x := myclassobj.member5.Call()
 
-If (x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 123, A_LineNumber)
 
 x := myclassobj.member6.Call(3, 4)
 
-If (x == 14)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 14, A_LineNumber)
 	
 myclassobj.x := 123
 x := myclassobj.member7.Call(2)
 
-If (x == 246)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 246, A_LineNumber)
 
 myclassobj.x := 123
 x := myclassobj.member8.Call(2)
 
-If (x == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 200, A_LineNumber)
 	
 myfunc() => 123
 x := myfunc()
 
-If (x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 123, A_LineNumber)
 
 Sum(a, b) => a + b
 
 x := Sum(1, 2)
 
-If (x == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 3, A_LineNumber)
 
 Sum2(a, b, c*) => a + b + c[1] + c[2]
 
 x := Sum2(1, 2, 3, 4)
 
-If (x == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 10, A_LineNumber)
 
 double1 := doublefunc(a, b) => a * b * 2
 
 x := double1(1, 2)
 
-If (x == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 4, A_LineNumber)
 
 double2 := doublefunc2(a, b, c*) => a * b * c[1] * 2
 
 x := double2(1, 2, 3)
 
-If (x == 12)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 12, A_LineNumber)
 	
 myfunc2 := () => 123
 x := myfunc2()
 
-If (x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 123, A_LineNumber)
 	
 myfunc3 := (a*) => a[1] * a[2] * 2
 x := myfunc3(1, 2)
 
-If (x == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 4, A_LineNumber)
 
 myfunc4 := (a*) => a[1] * a[2] * 2
 
 x := myfunc4(3, 4)
 
-If (x == 24)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 24, A_LineNumber)
 
 myfunc5 := (a) => a * 2
 x := myfunc5(3)
 
-If (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 myfunc6 := a => a * 2
 
 x := myfunc6(4)
 
-If (x == 8)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 8, A_LineNumber)
 
 myfunc7 := (args*) => args[1] * args[2] * 2
 x := myfunc7(1, 2)
 
-If (x == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 4, A_LineNumber)
 
 x := 0
 myfunc8 := () {
@@ -214,39 +149,24 @@ myfunc8 := () {
 }
 y := myfunc8()
 
-If (x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 123, A_LineNumber)
 
-If (y == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 123, A_LineNumber)
 
 myfunc9 := () => (a := 123, b := 456, c := 789)
 x := myfunc9()
 
-If (x == 789)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 789, A_LineNumber)
 
 m := { two : (this) => 2 }
 x := m.two()
 
-If (x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 2, A_LineNumber)
 
 m := { two : (this, a) => a * 2 }
 x := m.two(5)
 
-If (x == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 10, A_LineNumber)
 
 MultFunc(a, b)
 {
@@ -256,27 +176,18 @@ MultFunc(a, b)
 m := { two : (this) => MultFunc(3, 4) }
 x := m.two()
 
-If (x == 12)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 12, A_LineNumber)
 
 m := { two : (this, a) => a * MultFunc(3, 4) }
 x := m.two(2)
 
-If (x == 24)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 24, A_LineNumber)
 
 x :=
 m := { one : 1, two : (this, a) => a * MultFunc(3, 4) }
 x := m.two(2)
 
-If (x == 24)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 24, A_LineNumber)
 		
 m := {
 one : 1,
@@ -286,10 +197,7 @@ three : (this, a) => a * 2
 
 x := m.two(2) * m.three(3)
 
-If (x == 144)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 144, A_LineNumber)
 	
 arr := [
 () => 1
@@ -299,10 +207,7 @@ arr := [
 
 x := arr[1]() * arr[2]() * arr[3]()
 
-If (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 	
 b := ""
 
@@ -314,54 +219,33 @@ AssignFunc(xx)
 AssignFunc(() => 1)
 x := b()
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 m := { one : { oneone : 11, onef : (this, a) => a * 2 }, two : { twotwo : 22 }, three : { threethree : 33, threethreearr : [10, 20, 30 ] } }
 
 x := m.one.onef(5)
 
-If (x == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 10, A_LineNumber)
 
 x := m.one.onef(5) * m.two.twotwo
 
-If (x == 220)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 220, A_LineNumber)
 
 x := m.one.onef(5) * m.two.twotwo * m.three.threethree
 
-If (x == 7260)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 7260, A_LineNumber)
 
 x := m.one.onef(5) * m.two.twotwo * m.three.threethree * m.three.threethreearr[3]
 
-If (x == 217800)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 217800, A_LineNumber)
 
 val := 5
 m := { one : (this, &a) => a := a * 2 }
 x := m.one(&val)
 
-If (x == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 10, A_LineNumber)
 	
-If (val == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 10, A_LineNumber)
 	
 gval := 0
 lam := () {
@@ -370,15 +254,9 @@ lam := () {
 }
 x := lam()
 
-If (x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 123, A_LineNumber)
 
-If (gval == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gval, 123, A_LineNumber)
 
 tot := 0
 
@@ -401,10 +279,7 @@ testfunc(a, b, c)
 testfunc((o) => o * 1, (o) => o * 2, (o) => o * 3)
 ; MsgBox(tot)
 
-If (tot == 24)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(tot, 24, A_LineNumber)
 
 class myclass2
 {
@@ -422,36 +297,24 @@ tot := 0
 class2obj := myclass2()
 class2obj.testfunc((o) => o * 1, (o) => o * 2, (o) => o * 3)
 
-If (tot == 34)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(tot, 34, A_LineNumber)
 
 y := false
 
 y := true ? (a) => 1 : (b) => 2
 z := y(3)
 
-If (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 lamanondef := (a := 123) => a * 2
 val := lamanondef()
 
-If (val == 246)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 246, A_LineNumber)
 
 lamnameddef := (a := 3) => a * 2
 val := lamnameddef()
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 myfunc10(a, b, c)
 {
@@ -460,10 +323,7 @@ myfunc10(a, b, c)
 
 val := myfunc10((x := 1) => x, (y := 2) => y, (z := 3) => z)
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 class myclass3
 {
@@ -478,87 +338,51 @@ class myclass3
 myclassobj := myclass3()
 val := myclassobj.member1.Call(5)
 
-If (val == 20)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 20, A_LineNumber)
 	
 val := myclassobj.member2.Call(5)
 
-If (val == 30)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 30, A_LineNumber)
 
 val := myclassobj.member2.Call()
 
-If (val == 12)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 12, A_LineNumber)
 
 val := myclassobj.member3.Call()
 
-If (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 val := myclassobj.member3.Call(55)
 
-If (val == 55)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 55, A_LineNumber)
 
 val := myclassobj.member4.Call(1, &b := 2, 3, 4)
 
-If (val == 24 && b == 24)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 24 && b == 24, A_LineNumber)
 
 val := myclassobj.member5.Call(1, &b := 2, 3, 4)
 
-If (val == 24 && b == 24)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 24 && b == 24, A_LineNumber)
 
 val := myclassobj.member5.Call(1, &b := 2, , 4)
 
-If (val == 40 && b == 40)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 40 && b == 40, A_LineNumber)
 
 x := myclassobj.member6.Call(20)
 
-If (x == 35)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 35, A_LineNumber)
 	
 x := myclassobj.member6.Call(20, 25)
 
-If (x == 55)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 55, A_LineNumber)
 	
 x := myclassobj.member6.Call(20, ,) ; left off here, not working. probably need work with invoking a null in place of a ref.
 
-If (x == 35)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 35, A_LineNumber)
 
 x := myclassobj.member6.Call(1, ,&z := 11)
 
-If (x == 17 && z == 17)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x == 17 && z == 17, A_LineNumber)
 
 ; Test fat arrow properties with parens in them.
 class propclass
@@ -589,21 +413,14 @@ class propclass
 pc := propclass()
 x := pc.a
 
-If (x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 123, A_LineNumber)
 
 x := pc.b
 
-If (x == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 456, A_LineNumber)
 
 x := pc.c
 
-If (x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 2, A_LineNumber)
+
+FileAppend "pass", "*"

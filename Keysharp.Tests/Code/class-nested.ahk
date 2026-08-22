@@ -1,4 +1,5 @@
-﻿#NoTrayIcon
+#NoTrayIcon
+#Include <assert>
 
 class c1 {
     class c2 {
@@ -32,48 +33,26 @@ class c1 {
 a := 0, b := 0, c := 0, d := 0
 
 c1().test()
-if (a == 1 && b == 0 && c == 0 && d == 0)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a == 1 && b == 0 && c == 0 && d == 0, A_LineNumber)
 
 c1.test()
-if (a == 1 && b == 2 && c == 0 && d == 0)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a == 1 && b == 2 && c == 0 && d == 0, A_LineNumber)
 c1().statictest()
-if (a == 1 && b == 2 && c == 3 && d == 0)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a == 1 && b == 2 && c == 3 && d == 0, A_LineNumber)
 c1.statictest()
-if (a == 1 && b == 2 && c == 3 && d == 4)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a == 1 && b == 2 && c == 3 && d == 4, A_LineNumber)
 
 a := 0, b := 0, c := 0, d := 0
 
 c1.c2().test()
-if (a == 5 && b == 0 && c == 0 && d == 0)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a == 5 && b == 0 && c == 0 && d == 0, A_LineNumber)
 c1.c2.test()
-if (a == 5 && b == 6 && c == 0 && d == 0)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a == 5 && b == 6 && c == 0 && d == 0, A_LineNumber)
 
 c1.c2().statictest()
-if (a == 5 && b == 6 && c == 7 && d == 0)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a == 5 && b == 6 && c == 7 && d == 0, A_LineNumber)
 
 c1.c2.statictest()
-if (a == 5 && b == 6 && c == 7 && d == 8)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(a == 5 && b == 6 && c == 7 && d == 8, A_LineNumber)
+
+FileAppend "pass", "*"

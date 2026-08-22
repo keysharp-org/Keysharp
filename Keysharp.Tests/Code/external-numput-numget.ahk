@@ -1,213 +1,118 @@
 #NoTrayIcon
+#Include <assert>
 
 buf := Buffer(100, 0)
 ret := NumPut("int", 1, buf)
 b1 := NumGet(buf, 0, "int")
 
-if (b1 == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 1, A_LineNumber)
 
-if (buf.Ptr + 4 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 4, ret, A_LineNumber)
 
 ret := NumPut("int", -1, buf)
 b1 := NumGet(buf, 0, "int")
 
-if (b1 == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, -1, A_LineNumber)
 	
-if (buf.Ptr + 4 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 4, ret, A_LineNumber)
 
 ret := NumPut("uint", 0xFFFFFFFF, buf)
 b1 := NumGet(buf, 0, "uint")
 
-if (b1 == 0xFFFFFFFF)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 0xFFFFFFFF, A_LineNumber)
 	
-if (buf.Ptr + 4 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 4, ret, A_LineNumber)
 
 ret := NumPut("char", 123, buf)
 b1 := NumGet(buf, 0, "char")
 
-if (b1 == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 123, A_LineNumber)
 
-if (buf.Ptr + 1 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 1, ret, A_LineNumber)
 
 ret := NumPut("char", -123, buf)
 b1 := NumGet(buf, 0, "char")
 
-if (b1 == -123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, -123, A_LineNumber)
 
-if (buf.Ptr + 1 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 1, ret, A_LineNumber)
 
 ret := NumPut("uchar", 255, buf)
 b1 := NumGet(buf, 0, "uchar")
 
-if (b1 == 255)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 255, A_LineNumber)
 	
-if (buf.Ptr + 1 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 1, ret, A_LineNumber)
 
 ret := NumPut("uchar", 256, buf)
 b1 := NumGet(buf, 0, "uchar")
 
-if (b1 == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 0, A_LineNumber)
 
-if (buf.Ptr + 1 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 1, ret, A_LineNumber)
 
 ret := NumPut("short", 10000, buf)
 b1 := NumGet(buf, 0, "short")
 
-if (b1 == 10000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 10000, A_LineNumber)
 	
-if (buf.Ptr + 2 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 2, ret, A_LineNumber)
 
 ret := NumPut("short", -10000, buf)
 b1 := NumGet(buf, 0, "short")
 
-if (b1 == -10000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, -10000, A_LineNumber)
 	
-if (buf.Ptr + 2 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 2, ret, A_LineNumber)
 
 ret := NumPut("ushort", 50000, buf)
 b1 := NumGet(buf, 0, "ushort")
 
-if (b1 == 50000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 50000, A_LineNumber)
 	
-if (buf.Ptr + 2 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 2, ret, A_LineNumber)
 
 ret := NumPut("ushort", 65536, buf)
 b1 := NumGet(buf, 0, "ushort")
 
-if (b1 == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 0, A_LineNumber)
 	
-if (buf.Ptr + 2 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 2, ret, A_LineNumber)
 
 ret := NumPut("int64", 0xFFFFFFFFFFFFFFFF, buf)
 b1 := NumGet(buf, 0, "int64")
 
-if (b1 == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, -1, A_LineNumber)
 	
-if (buf.Ptr + 8 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 8, ret, A_LineNumber)
 
 ret := NumPut("double", 1.2345, buf)
 b1 := NumGet(buf, 0, "double")
 
-if (b1 == 1.2345)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 1.2345, A_LineNumber)
 	
-if (buf.Ptr + 8 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 8, ret, A_LineNumber)
 
 ret := NumPut("double", -1.2345, buf)
 b1 := NumGet(buf, 0, "double")
 
-if (b1 == -1.2345)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, -1.2345, A_LineNumber)
 	
-if (buf.Ptr + 8 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 8, ret, A_LineNumber)
 
 ret := NumPut("float", 1.2345, buf)
 b1 := NumGet(buf, 0, "float")
 
-if (b1 == 1.2345)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 1.2345, A_LineNumber)
 	
-if (buf.Ptr + 4 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 4, ret, A_LineNumber)
 
 ret :=NumPut("float", -1.2345, buf)
 b1 := NumGet(buf, 0, "float")
 
-if (b1 == -1.2345)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, -1.2345, A_LineNumber)
 	
-if (buf.Ptr + 4 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 4, ret, A_LineNumber)
 
 NumPut("char", 1, buf)
 NumPut("char", 2, buf, 1)
@@ -216,71 +121,41 @@ NumPut("char", 4, buf, 3)
 
 b1 := NumGet(buf, 0, "uint")
 
-if (b1 == 0x04030201)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 0x04030201, A_LineNumber)
 	
-if (buf.Ptr + 4 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 4, ret, A_LineNumber)
 
 ret := NumPut("int", 1234, "short", 10000, "double", 1.2345, buf)
 b1 := NumGet(buf, 0, "int")
 
-if (b1 == 1234)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 1234, A_LineNumber)
 	
-if (buf.Ptr + 14 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 14, ret, A_LineNumber)
 
 b1 := NumGet(buf, 4, "short")
 
-if (b1 == 10000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 10000, A_LineNumber)
 
 b1 := NumGet(buf, 6, "double")
 
-if (b1 == 1.2345)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 1.2345, A_LineNumber)
 
 ret := NumPut("int", 0, buf)
 
-if (buf.Ptr + 4 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 4, ret, A_LineNumber)
 
 ret := NumPut("int", 0x01020304, buf, 2)
 b1 := NumGet(buf, 0, "int")
 
-if (b1 == 0x03040000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, 0x03040000, A_LineNumber)
 	
-if (buf.Ptr + 6 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 6, ret, A_LineNumber)
 
 buf := Buffer(4, 0)
 ret := NumPut("int", 123, buf)
 val := false
 
-if (buf.Ptr + 4 == ret)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Ptr + 4, ret, A_LineNumber)
 
 try
 {
@@ -291,39 +166,26 @@ catch
 	val := true
 }
 
-if (val == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, true, A_LineNumber)
 
 buf := Buffer(100, 0)
 ret := NumPut("ptr", buf.Ptr, buf)
 
 b1 := NumGet(buf, 0, "ptr")
 
-if (b1 == buf.Ptr)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, buf.Ptr, A_LineNumber)
 
 b1 := NumGet(buf, 0, "uptr")
 
-if (b1 == buf.Ptr)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, buf.Ptr, A_LineNumber)
 
 b1 := NumGet(buf, 0, "int64")
 
-if (b1 == buf.Ptr)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b1, buf.Ptr, A_LineNumber)
 
 NumPut("uint", 5000000000, buf)
 ret := NumGet(buf, "uint")
 
-if (ret == 705032704)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(ret, 705032704, A_LineNumber)
+
+FileAppend "pass", "*"

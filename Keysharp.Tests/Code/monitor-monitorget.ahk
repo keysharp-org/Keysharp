@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 l :=
 t :=
@@ -6,7 +7,6 @@ r :=
 b :=
 monget := MonitorGet(, &l, &t, &r, &b)
 
-if (l >= 0 && r >= 0 && t >= 0 && b >= 0 && monget > 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(l >= 0 && r >= 0 && t >= 0 && b >= 0 && monget > 0, A_LineNumber)
+
+FileAppend "pass", "*"

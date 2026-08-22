@@ -1,6 +1,7 @@
 #NoTrayIcon
 
 #import KS { Image }
+#Include <assert>
 x :=
 y := 0
 CoordMode("Pixel", "Screen")
@@ -13,7 +14,6 @@ b := 0
 monget := MonitorGetWorkArea(, &l, &t, &r, &b)
 ImageSearch(&x, &y, 0, 0, r, b, "HBITMAP:" hbitmap)
 
-if (x == 100 && y == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x == 100 && y == 100, A_LineNumber)
+
+FileAppend "pass", "*"

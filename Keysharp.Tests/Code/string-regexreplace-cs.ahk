@@ -1,36 +1,24 @@
 #NoTrayIcon
 
 #import KS { * }
+#Include <assert>
 outputVarCount :=
 match := RegExReplaceCs("abc123123", "123$", "xyz")
 
-if (match == "abc123xyz")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(match, "abc123xyz", A_LineNumber)
 
 match := RegExReplaceCs("abc123", "i)^ABC")
 
-if (match == "123")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(match, "123", A_LineNumber)
 
 match := RegExReplaceCs("abcXYZ123", "abc(.*)123", "aaa$1zzz")
 
-if (match == "aaaXYZzzz")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(match, "aaaXYZzzz", A_LineNumber)
 
 match := RegExReplaceCs("abc123abc456", "abc\d+", "", &outputVarCount)
 
-if (match == "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(match, "", A_LineNumber)
 	
-if (outputVarCount == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(outputVarCount, 2, A_LineNumber)
+
+FileAppend "pass", "*"

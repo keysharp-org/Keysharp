@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := 20
@@ -6,10 +7,7 @@ Loop
 	x *= 2
 Until x > y
 
-if (x == 32)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 32, A_LineNumber)
 
 x := 1
 y := 20
@@ -17,10 +15,7 @@ Loop
 	x *= 2
 Until (x > y)
 
-if (x == 32)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 32, A_LineNumber)
 
 x := 1
 y := 20
@@ -33,10 +28,7 @@ Loop
 }
 Until (x > y)
 
-if (x == 32)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 32, A_LineNumber)
 
 x := 1
 Loop
@@ -45,10 +37,7 @@ Loop
 }
 Until (A_Index == 5)
 
-if (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 x := 1
 
@@ -58,10 +47,7 @@ while true
 }
 Until (A_Index == 5)
 
-if (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 x := 1
 y := 5
@@ -76,10 +62,7 @@ Loop %z%
 }
 Until (A_Index == 5)
 
-if (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 x := 1
 y := 5
@@ -94,10 +77,7 @@ Loop %z%
 }
 Until (A_Index == 10)
 
-if (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 x := 1
 y := 5
@@ -112,10 +92,7 @@ Loop y
 }
 Until (str != "")
 
-if (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 x := 1
 y := 20
@@ -131,15 +108,9 @@ Loop ; this is a comment
 } ; more comments
 Until x > y ; last comment
 
-if (x == 32)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 32, A_LineNumber)
 
-if (z == 33)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 33, A_LineNumber)
 
 arr := [10, 20, 30]
 x := 0
@@ -150,7 +121,6 @@ for , in arr
 }
 until x > 1
 
-if (x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 2, A_LineNumber)
+
+FileAppend "pass", "*"

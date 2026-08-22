@@ -1,39 +1,19 @@
 #NoTrayIcon
+#Include <assert>
 
-if (Max(-6, -6) == -6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Max(-6, -6), -6, A_LineNumber)
 	
-if (Max(-6, "-5") == -5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Max(-6, "-5"), -5, A_LineNumber)
 
-if (Max(-4.2, -5.0) == -4.2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Max(-4.2, -5.0), -4.2, A_LineNumber)
 
-if (Max(0, 0) == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Max(0, 0), 0, A_LineNumber)
 
-if (Max("0", 1) == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Max("0", 1), 1, A_LineNumber)
 
-if (Max(1, 1) == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Max(1, 1), 1, A_LineNumber)
 
-if (Max(1.5, 2.3) == 2.3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Max(1.5, 2.3), 2.3, A_LineNumber)
 
 caught := false
 
@@ -47,41 +27,22 @@ catch
 }
 
 
-if (caught)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(caught, A_LineNumber)
 
 x := [ -1.0, -0.5, 0, 0.5, 1, 0.675 ]
 
-if (Max(x) == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Max(x), 1, A_LineNumber)
 
 x := [ -1.0, -0.5, 0, 0.5, 1, "0.675", "2.0" ]
 
-if (Max(x) == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Max(x), 2, A_LineNumber)
 
-if (Max(-1.0, -0.5, 0, "0.5", 1, 0.675) == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Max(-1.0, -0.5, 0, "0.5", 1, 0.675), 1, A_LineNumber)
 
-if (Max(-1.0, -0.5, 0, 0.5, 1, 0.675, "2.0") == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Max(-1.0, -0.5, 0, 0.5, 1, 0.675, "2.0"), 2, A_LineNumber)
 
-if (Type(Max(-1.0, 1)) == "Integer")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Type(Max(-1.0, 1)), "Integer", A_LineNumber)
 	
-if (Type(Max(1.0, -1)) == "Float")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Type(Max(1.0, -1)), "Float", A_LineNumber)
+
+FileAppend "pass", "*"

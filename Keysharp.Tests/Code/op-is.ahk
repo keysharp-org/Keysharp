@@ -1,322 +1,145 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 0
 
-if (x is integer)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is integer, A_LineNumber)
 
-if (not x is Integer)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is Integer), A_LineNumber)
 
-if (x is float)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is float), A_LineNumber)
 	
-if (not x is float)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is float, A_LineNumber)
 
-if (x is number)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is number, A_LineNumber)
 
-if (not x is number)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is number), A_LineNumber)
 
-if (x is string)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is string), A_LineNumber)
 	
-if (not x is string)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is string, A_LineNumber)
 
-if (not x is object)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is object, A_LineNumber)
 
 x := 123
 
-if (x is integer)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is integer, A_LineNumber)
 
-if (not x is Integer)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is Integer), A_LineNumber)
 
-if (x is float)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is float), A_LineNumber)
 	
-if (not x is float)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is float, A_LineNumber)
 
-if (x is number)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is number, A_LineNumber)
 
-if (not x is number)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is number), A_LineNumber)
 
-if (x is string)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is string), A_LineNumber)
 	
-if (not x is string)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is string, A_LineNumber)
 
-if (not x is object)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is object, A_LineNumber)
 
 x := -123
 
-if (x is integer)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is integer, A_LineNumber)
 
-if (not x is Integer)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is Integer), A_LineNumber)
 
-if (x is float)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is float), A_LineNumber)
 	
-if (not x is float)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is float, A_LineNumber)
 
-if (x is number)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is number, A_LineNumber)
 
-if (not x is number)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is number), A_LineNumber)
 
-if (x is string)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is string), A_LineNumber)
 	
-if (not x is string)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is string, A_LineNumber)
 
-if (not x is object)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is object, A_LineNumber)
 
 x := 0.0
 
-if (x is float)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is float, A_LineNumber)
 
-if (not x is float)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is float), A_LineNumber)
 
-if (x is integer)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is integer), A_LineNumber)
 
-if (not x is Integer)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is Integer, A_LineNumber)
 
-if (x is number)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is number, A_LineNumber)
 
-if (not x is number)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is number), A_LineNumber)
 
-if (x is string)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is string), A_LineNumber)
 	
-if (not x is string)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is string, A_LineNumber)
 
-if (not x is object)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is object, A_LineNumber)
 
 x := 123.0
 
-if (x is float)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is float, A_LineNumber)
 
-if (not x is float)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is float), A_LineNumber)
 
-if (x is integer)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is integer), A_LineNumber)
 
-if (not x is Integer)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is Integer, A_LineNumber)
 
-if (x is number)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is number, A_LineNumber)
 
-if (not x is number)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is number), A_LineNumber)
 
-if (x is string)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is string), A_LineNumber)
 	
-if (not x is string)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is string, A_LineNumber)
 
-if (not x is object)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is object, A_LineNumber)
 
 x := -123.0
 
-if (x is float)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is float, A_LineNumber)
 
-if (not x is float)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is float), A_LineNumber)
 
-if (x is integer)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is integer), A_LineNumber)
 
-if (not x is Integer)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is Integer, A_LineNumber)
 
-if (x is number)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is number, A_LineNumber)
 
-if (not x is number)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not x is number), A_LineNumber)
 
-if (x is string)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x is string), A_LineNumber)
 	
-if (not x is string)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is string, A_LineNumber)
 
 x := {}
 
-if (x is object)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is object, A_LineNumber)
 
 x := []
 
-if (x is array)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is array, A_LineNumber)
 
-if (x is object)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is object, A_LineNumber)
 
 x := (*) => 1
 
-if (not x is Closure)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not x is Closure, A_LineNumber)
 
-if (x is Func)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is Func, A_LineNumber)
 
 f() => (x := 1, (*) => x)
 x := f()
 
-if (x is Closure)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is Closure, A_LineNumber)
 
-if (x is Func)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is Func, A_LineNumber)
+
+FileAppend "pass", "*"

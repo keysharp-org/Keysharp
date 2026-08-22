@@ -1,33 +1,24 @@
 #NoTrayIcon
+#Include <assert>
 
 x := " test`t"
 y := RTrim(x)
 
-if (y = " test")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = " test", A_LineNumber)
 	
 x := "test"
 y := RTrim(x)
 
-if (y = "test")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "test", A_LineNumber)
 	
 x := "`ttest "
 y := RTrim(x)
 
-if (y = "`ttest")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "`ttest", A_LineNumber)
 	
 x := "`ttest`t "
 y := RTrim(x)
 
-if (y = "`ttest")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "`ttest", A_LineNumber)
+
+FileAppend "pass", "*"

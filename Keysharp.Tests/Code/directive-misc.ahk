@@ -13,47 +13,26 @@
 #DLLLOAD *i user32.dll
 ; Compile-time only (it picks the PE subsystem of a --compile exe build), so here it just has to be accepted and do nothing.
 #CONSOLEAPP
+#Include <assert>
 
-if (A_ClipboardTimeout == 2000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_ClipboardTimeout, 2000, A_LineNumber)
 
-if (A_UseHook)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_UseHook, A_LineNumber)
 	
-if (A_MaxThreadsBuffer)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_MaxThreadsBuffer, A_LineNumber)
 
-if (A_MaxThreadsPerHotkey == 150)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_MaxThreadsPerHotkey, 150, A_LineNumber)
 
-if (A_NoTrayIcon)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_NoTrayIcon, A_LineNumber)
 	
-if (A_SuspendExempt)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_SuspendExempt, A_LineNumber)
 
-if (A_WinActivateForce)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_WinActivateForce, A_LineNumber)
 
 #INPUTLEVEL 50
 
-if (A_InputLevel == 50)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_InputLevel, 50, A_LineNumber)
+
+FileAppend "pass", "*"
 
 ExitApp()

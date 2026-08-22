@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 ; Regression tests for typed CLR parameters and properties reached through the dynamic-invoke path.
 ;
@@ -12,28 +13,26 @@
 ; Float converts and only a genuinely non-numeric value raises, as a catchable TypeError; bool and
 ; string use AutoHotkey's total conversions and never raise.
 
-ok(cond) => FileAppend(cond ? "pass" : "fail", "*")
-
 ; -- bool parameter (HasProp's `checkBase`) --------------------------------------------
 ; AHK has no Boolean type, so a script writing `false` passes Integer 0. This used to be fatal.
 obj := {a: 1}
 
 try
-	ok(HasProp(obj, "a", , false) == 1)
+	AssertEq(HasProp(obj, "a", , false), 1, A_LineNumber)
 catch
-	ok(false)
+	Assert(false, A_LineNumber)
 
 try
-	ok(HasProp(obj, "a", , true) == 1)
+	AssertEq(HasProp(obj, "a", , true), 1, A_LineNumber)
 catch
-	ok(false)
+	Assert(false, A_LineNumber)
 
 ; A bool target is AutoHotkey truthiness, which is total: a non-empty non-numeric string is true
 ; rather than the TypeError the same value would raise against a numeric target below.
 try
-	ok(HasProp(obj, "a", , "abc") == 1)
+	AssertEq(HasProp(obj, "a", , "abc"), 1, A_LineNumber)
 catch
-	ok(false)
+	Assert(false, A_LineNumber)
 
 ; -- long property, reflection-set (Map.Capacity) --------------------------------------
 ; Capacity reads back rounded up to the underlying Dictionary's bucket count, so these assert a
@@ -43,18 +42,18 @@ m := Map()
 try
 {
 	m.Capacity := 10.5          ; Float truncates toward zero in an integer context
-	ok(m.Capacity >= 10)
+	Assert(m.Capacity >= 10, A_LineNumber)
 }
 catch
-	ok(false)
+	Assert(false, A_LineNumber)
 
 try
 {
 	m.Capacity := "20"          ; numeric string converts, exactly as "20" == 20 does
-	ok(m.Capacity >= 20)
+	Assert(m.Capacity >= 20, A_LineNumber)
 }
 catch
-	ok(false)
+	Assert(false, A_LineNumber)
 
 ; a genuinely non-numeric value is a catchable TypeError, not a process kill
 caught := false
@@ -62,7 +61,7 @@ try
 	m.Capacity := "abc"
 catch TypeError
 	caught := true
-ok(caught)
+Assert(caught, A_LineNumber)
 
 ; -- string property (Error.What) ------------------------------------------------------
 err := Error("msg")
@@ -70,10 +69,10 @@ err := Error("msg")
 try
 {
 	err.What := 5
-	ok(err.What == "5")
+	AssertEq(err.What, "5", A_LineNumber)
 }
 catch
-	ok(false)
+	Assert(false, A_LineNumber)
 
 ; A CLR Boolean landing in a string context renders as an Integer ("1"/"0"), not .NET's
 ; "True"/"False". A_IsSuspended is one of the few `bool`-typed members a script can read, so it is
@@ -82,10 +81,10 @@ catch
 try
 {
 	err.What := A_IsSuspended
-	ok(err.What == "0")
+	AssertEq(err.What, "0", A_LineNumber)
 }
 catch
-	ok(false)
+	Assert(false, A_LineNumber)
 
 ; -- long property (OSError.Number) ----------------------------------------------------
 oserr := OSError(5)
@@ -93,28 +92,28 @@ oserr := OSError(5)
 try
 {
 	oserr.Number := "7"
-	ok(oserr.Number == 7)
+	AssertEq(oserr.Number, 7, A_LineNumber)
 }
 catch
-	ok(false)
+	Assert(false, A_LineNumber)
 
 ; truncation is toward zero, not toward negative infinity, in both directions
 try
 {
 	oserr.Number := 7.9
-	ok(oserr.Number == 7)
+	AssertEq(oserr.Number, 7, A_LineNumber)
 	oserr.Number := -7.9
-	ok(oserr.Number == -7)
+	AssertEq(oserr.Number, -7, A_LineNumber)
 }
 catch
-	ok(false)
+	Assert(false, A_LineNumber)
 
 caught := false
 try
 	oserr.Number := "nope"
 catch TypeError
 	caught := true
-ok(caught)
+Assert(caught, A_LineNumber)
 
 ; -- the packed variadic slot must NOT be coerced --------------------------------------
 ; `params object[]` members are filled by the caller before the compiled core runs; coercing
@@ -123,10 +122,10 @@ try
 {
 	arr := [1, 2, 3]
 	arr.Push(4, 5)
-	ok(arr.Length == 5 && Max(1, 2, 3) == 3 && Format("{1}-{2}", "a", "b") == "a-b")
+	Assert(arr.Length == 5 && Max(1, 2, 3) == 3 && Format("{1}-{2}", "a", "b") == "a-b", A_LineNumber)
 }
 catch
-	ok(false)
+	Assert(false, A_LineNumber)
 
 ; NOTE: two branches of the coercer have no case here because nothing a script can name reaches
 ; them, not because they are untested by design.
@@ -143,3 +142,5 @@ catch
 ;   but its Int32 reads (StringBuilder.Length, DateTime.Year, Dictionary.Count) all compare with ==,
 ;   which passes on a boxed Int32 too; only its case 49 asserts Type(v) == "Integer", and that file
 ;   is currently failing and is not in the curated CI filter.
+
+FileAppend "pass", "*"

@@ -1,6 +1,7 @@
 #NoTrayIcon
 
 #import KS { RealThread }
+#Include <assert>
 val := ""
 #if WINDOWS
 callback := CallbackCreate("TheFunc", "&")
@@ -21,13 +22,10 @@ TheFunc(args)
 }
 
 #if WINDOWS
-if (val == 52.5)
+AssertEq(val, 52.5, A_LineNumber)
 #elif LINUX || OSX
-if (val == 52)
+AssertEq(val, 52, A_LineNumber)
 #endif
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
 
 val := ""
 CallbackFree(callback)
@@ -40,10 +38,7 @@ FuncNoParams()
 	val := 123
 }
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 CallbackFree(callback)
 
@@ -54,10 +49,7 @@ DllCall(callback)
 CallbackFree(callback)
 Critical false
 
-if (criticalCallbackRan == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(criticalCallbackRan, 1, A_LineNumber)
 
 CriticalCallback()
 {
@@ -84,10 +76,7 @@ EnumWindowsProc(hwnd, lParam, *)
 		return false
 }
 
-if (ct == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(ct, 5, A_LineNumber)
 
 CallbackFree(EnumAddress)
 #elif LINUX || OSX
@@ -107,10 +96,7 @@ ret2 := DllCall(workerCallback)
 workerStop := true
 worker.Wait()
 
-if (ret1 = 101 && ret2 = 202 && A_CoordModeMouse = "Client")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(ret1 = 101 && ret2 = 202 && A_CoordModeMouse = "Client", A_LineNumber)
 #endif
 
 args := []
@@ -121,10 +107,7 @@ Loop 32 {
 	}
 	cb := CallbackCreate(Variadic,, i)
 	ret := DllCall(cb, args*)
-	if (ret == i)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(ret, i, A_LineNumber)
 	CallbackFree(cb)
 }
 
@@ -141,26 +124,17 @@ AddTyped(a, b) => a + b
 SumPair(pair) => pair.a + pair.b
 
 typedCb := CallbackCreate(AddTyped, "Fast", [Float32, Float32, Float32])
-if (DllCall(typedCb, "float", 1.5, "float", 2.25, "float") == 3.75)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail typed float", "*"
+AssertEq(DllCall(typedCb, "float", 1.5, "float", 2.25, "float"), 3.75, A_LineNumber)
 CallbackFree(typedCb)
 
 ; An integer parameter type must arrive as an Integer, not a Float.
 intCb := CallbackCreate(v => Type(v) = "Integer" ? v : -1, "Fast", [Int32, Int32])
-if (DllCall(intCb, Int32, 30, Int32) == 30)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail typed int", "*"
+AssertEq(DllCall(intCb, Int32, 30, Int32), 30, A_LineNumber)
 CallbackFree(intCb)
 
 ; A narrow signed type round-trips with its sign intact.
 negCb := CallbackCreate(v => v - 1, "Fast", [Int16, Int16])
-if (DllCall(negCb, Int16, -5, Int16) == -6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail typed int16", "*"
+AssertEq(DllCall(negCb, Int16, -5, Int16), -6, A_LineNumber)
 CallbackFree(negCb)
 
 ; Shapes whose passing convention is not the same on every ABI are refused rather than silently
@@ -200,10 +174,7 @@ for badShape in [[CB_FLOAT_PAIR, Int32], [CB_BIG, Int32], [Int32, CB_BIG], [CB_F
 	catch ValueError
 		threw := true
 
-	if threw
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail unsupported shape accepted", "*"
+	Assert(threw, A_LineNumber)
 }
 
 ; A mix of integer and floating-point fields is an integer slot everywhere, so it stays supported.
@@ -214,12 +185,10 @@ struct CB_MIXED {
 
 mixedCb := CallbackCreate(v => 1, "Fast", [CB_MIXED, Int32])
 CallbackFree(mixedCb)
-FileAppend "pass", "*"
 
 ; Likewise for a float field added to an inherited integer one.
 mixedCb := CallbackCreate(v => 1, "Fast", [CB_MIXED_DERIVED, Int32])
 CallbackFree(mixedCb)
-FileAppend "pass", "*"
 
 ; A parameter list which is not an array is a type error, not a confusing type-resolution failure.
 threw := false
@@ -228,20 +197,14 @@ try
 catch TypeError
 	threw := true
 
-if threw
-	FileAppend "pass", "*"
-else
-	FileAppend "fail non-array ParamCount", "*"
+Assert(threw, A_LineNumber)
 
 ; A struct passed and returned by value.
 pair := CB_PAIR()
 pair.a := 20
 pair.b := 22
 pairCb := CallbackCreate(SumPair, "Fast", [CB_PAIR, Int32])
-if (DllCall(pairCb, CB_PAIR, pair, Int32) == 42)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail typed struct", "*"
+AssertEq(DllCall(pairCb, CB_PAIR, pair, Int32), 42, A_LineNumber)
 CallbackFree(pairCb)
 
 ; A "void" return type yields no value, for CallbackCreate and DllCall alike. [v2.1-alpha.30]
@@ -253,10 +216,7 @@ VoidCallback(value) {
 voidCb := CallbackCreate(VoidCallback, "Fast", [Int32, "void"])
 ; In v2.0 mode "no value" is blank; in v2.1 mode it is unset (checked below).
 voidResult := DllCall(voidCb, "int", 30, "void")
-if (voidSideEffect == 30 && voidResult == "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail void callback", "*"
+Assert(voidSideEffect == 30 && voidResult == "", A_LineNumber)
 CallbackFree(voidCb)
 
 ; In v2.1 mode the same call yields unset rather than blank.
@@ -268,10 +228,7 @@ VoidReturns21(callback) {
 
 voidSideEffect := 0
 voidCb := CallbackCreate(VoidCallback, "Fast", [Int32, "void"])
-if (VoidReturns21(voidCb) == "unset" && voidSideEffect == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail void callback unset", "*"
+Assert(VoidReturns21(voidCb) == "unset" && voidSideEffect == 7, A_LineNumber)
 CallbackFree(voidCb)
 
 WorkerCallbackOwner() {
@@ -311,3 +268,5 @@ CheckWorkerCoordModeAffinity() {
 
 	return -3
 }
+
+FileAppend "pass", "*"

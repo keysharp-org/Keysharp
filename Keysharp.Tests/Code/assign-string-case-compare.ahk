@@ -1,44 +1,23 @@
 #NoTrayIcon
+#Include <assert>
 
 x := "HeLlO WoRlD"
 
-If (x == "HeLlO WoRlD")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, "HeLlO WoRlD", A_LineNumber)
 
-If (x == "hello world")
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x == "hello world"), A_LineNumber)
 
-If (x = "HeLlO WoRlD")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = "HeLlO WoRlD", A_LineNumber)
 	
-If (x = "hello world")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = "hello world", A_LineNumber)
 
 
-If (!(x == "HeLlO WoRlD"))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x == "HeLlO WoRlD")), A_LineNumber)
 
-If (!(x == "hello world"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x == "hello world"), A_LineNumber)
 
-If (!(x = "HeLlO WoRlD"))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x = "HeLlO WoRlD")), A_LineNumber)
 	
-If (!(x = "hello world"))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x = "hello world")), A_LineNumber)
+
+FileAppend "pass", "*"

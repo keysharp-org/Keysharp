@@ -1,22 +1,17 @@
-﻿#NoTrayIcon
+#NoTrayIcon
+#Include <assert>
 
 a := 1
 globalFatArrow := (*) => a := 2
 globalFatArrow()
 
-if (a == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 a := 1
 globalFatArrowWithArg := (a) => a := 2
 globalFatArrowWithArg(1)
 
-if (a == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 a := 1
 globalAnonFunc := (*) {
@@ -24,10 +19,7 @@ globalAnonFunc := (*) {
 }
 globalAnonFunc()
 
-if (a == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 g()
 
@@ -38,18 +30,12 @@ g() {
 
     b := 1
     localClosure()
-    if (b == 2)
-        FileAppend "pass", "*"
-    else
-        FileAppend "fail", "*"
+    AssertEq(b, 2, A_LineNumber)
 
     b := 1
     localAnonClosure := (*) => b := 2
     localAnonClosure()
-    if (b == 2)
-        FileAppend "pass", "*"
-    else
-        FileAppend "fail", "*"
+    AssertEq(b, 2, A_LineNumber)
 
     static localStaticClosure() {
         b := 2
@@ -57,10 +43,7 @@ g() {
 
     b := 1
     localStaticClosure()
-    if (b == 1)
-        FileAppend "pass", "*"
-    else
-        FileAppend "fail", "*"
+    AssertEq(b, 1, A_LineNumber)
 
     closureLocalVar() {
         local b := 2
@@ -68,10 +51,7 @@ g() {
 
     b := 1
     closureLocalVar()
-    if (b == 1)
-        FileAppend "pass", "*"
-    else
-        FileAppend "fail", "*"
+    AssertEq(b, 1, A_LineNumber)
 
     closureStaticVar() {
         static c := 2
@@ -79,10 +59,7 @@ g() {
 
     static c := 1
     closureStaticVar()
-    if (c == 1)
-        FileAppend "pass", "*"
-    else
-        FileAppend "fail", "*"
+    AssertEq(c, 1, A_LineNumber)
 }
 
 StaticLocalFuncs() {
@@ -94,10 +71,7 @@ StaticLocalFuncs() {
 a := 0
 a := StaticLocalFuncs()
 
-if (a == 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 StaticDynClosure() {
     static name := "a"
@@ -107,20 +81,16 @@ StaticDynClosure() {
     closureWrite()
 
     closureRead() {
-        if (%name% == 1)
-            FileAppend "pass", "*"
-        else
-            FileAppend "fail", "*"
+        AssertEq(%name%, 1, A_LineNumber)
     }
 
     closureWrite() {
         %name% := 5
     }
 
-    if (a == 5)
-        FileAppend "pass", "*"
-    else
-        FileAppend "fail", "*"
+    AssertEq(a, 5, A_LineNumber)
 }
 
 StaticDynClosure()
+
+FileAppend "pass", "*"

@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 0
 y := 0
@@ -13,32 +14,17 @@ func_bound(a, b, c)
 
 fo := func_bound
 
-If (fo.Name = "func_bound")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(fo.Name = "func_bound", A_LineNumber)
 	
-If (fo.IsBuiltIn == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(fo.IsBuiltIn, false, A_LineNumber)
 
 fo.Call(1, 2, 3)
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (y == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 2, A_LineNumber)
 
-If (z == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 3, A_LineNumber)
 
 x := 0
 y := 0
@@ -46,20 +32,11 @@ z := 0
 
 fo(1, 2, 3)
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (y == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 2, A_LineNumber)
 
-If (z == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 3, A_LineNumber)
 
 x := 0
 
@@ -71,10 +48,7 @@ class test1 {
 
 test1()
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 
 x := 0
@@ -88,10 +62,7 @@ class test2 {
 t := test2()
 t()
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 
 call_callback(callback) {
@@ -106,17 +77,12 @@ modify_x() {
 	global x := 1
 }
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 x := 0
 
 call_callback((*) => modify_x())
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
+FileAppend "pass", "*"

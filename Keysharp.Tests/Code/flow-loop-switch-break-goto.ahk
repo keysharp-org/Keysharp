@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 0
 
@@ -11,15 +12,9 @@ Loop 10
 
 l1:
 
-if (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
 
 x := 0
 
@@ -30,15 +25,9 @@ Loop 10
 		break 1
 }
 
-if (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
 
 x := 0
 
@@ -50,15 +39,9 @@ Loop 10
 		break looplabel1
 }
 
-if (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
 
 x := 0
 
@@ -70,15 +53,9 @@ Loop 10
 		break outerlooplabel1
 }
 
-if (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
 
 x := 0
 
@@ -96,15 +73,9 @@ Loop 10
 	x := 999
 }
 
-if (x == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 999, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
 
 x := 0
 
@@ -122,15 +93,9 @@ Loop 10
 	x := 999
 }
 
-if (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
 
 x := 0
 
@@ -146,15 +111,9 @@ Loop 10
 	x := 999
 }
 
-if (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
 
 x := 0
 
@@ -171,15 +130,9 @@ Loop 10
 }
 l4:
 
-if (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
 
 x := 0
 
@@ -195,15 +148,9 @@ l5:
 	x := 999
 }
 
-if (x == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 999, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
 
 x := 0
 y := 123
@@ -222,15 +169,9 @@ Loop 10
 	}
 }
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
 
 x := 0
 y := 123
@@ -252,15 +193,9 @@ Loop 10
 	}
 }
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
 
 x := 0
 y := 123
@@ -286,12 +221,8 @@ Loop 10
 	x := 999
 }
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-if (A_Index == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_Index, 0, A_LineNumber)
+
+FileAppend "pass", "*"

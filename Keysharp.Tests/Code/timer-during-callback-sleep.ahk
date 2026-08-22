@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 fired := false
 firedDuringSleep := false
@@ -6,10 +7,9 @@ firedDuringSleep := false
 SetTimer(Outer, -1)
 Sleep(250)
 
-if (firedDuringSleep)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(firedDuringSleep, A_LineNumber)
+
+FileAppend "pass", "*"
 
 ExitApp
 

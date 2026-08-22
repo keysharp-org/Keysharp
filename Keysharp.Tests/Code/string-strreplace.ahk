@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := "a,b,c,d,e,f"
 varct := ""
@@ -6,113 +7,64 @@ z := "abcdef"
 y := StrReplace(x, ",")
 
 
-if (y = z)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = z, A_LineNumber)
 
 y := StrReplace(x, ",", "")
 
-if (y = "abcdef")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "abcdef", A_LineNumber)
 
 y := StrReplace(x, ",", ".")
 
-if (y = "a.b.c.d.e.f")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "a.b.c.d.e.f", A_LineNumber)
 
 y := StrReplace(x, ",", ".", "On")
 
-if (y = "a.b.c.d.e.f")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "a.b.c.d.e.f", A_LineNumber)
 
 y := StrReplace(x, ",", ".", unset, &varct)
 
-if (y = "a.b.c.d.e.f")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "a.b.c.d.e.f", A_LineNumber)
 
-if (varct = 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(varct = 5, A_LineNumber)
 	
 y := StrReplace(x, ",", ".", , &varct, 3)
 
-if (y = "a.b.c.d,e,f")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "a.b.c.d,e,f", A_LineNumber)
 
-if (varct = 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(varct = 3, A_LineNumber)
 	
 y := StrReplace(x, "")
 
-if (y = x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = x, A_LineNumber)
 
 y := StrReplace(x, "a", "A", 1)
 
-if (y = "A,b,c,d,e,f")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "A,b,c,d,e,f", A_LineNumber)
 
 y := StrReplace(x, "a", "A", "On")
 
-if (y = "A,b,c,d,e,f")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "A,b,c,d,e,f", A_LineNumber)
 
 y := StrReplace(x, "a", "A", true)
 
-if (y = "A,b,c,d,e,f")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "A,b,c,d,e,f", A_LineNumber)
 
 y := StrReplace(x, "A", "1", 0)
 
-if (y = "1,b,c,d,e,f")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "1,b,c,d,e,f", A_LineNumber)
 
 y := StrReplace(x, "A", "1", "Off")
 
-if (y = "1,b,c,d,e,f")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "1,b,c,d,e,f", A_LineNumber)
 
 y := StrReplace(x, "A", "1", false)
 
-if (y = "1,b,c,d,e,f")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "1,b,c,d,e,f", A_LineNumber)
 
 y := StrReplace(x, "a", "A", "On", &varct, 9)
 		
-if (y = "A,b,c,d,e,f")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "A,b,c,d,e,f", A_LineNumber)
 	
-if (varct = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(varct = 1, A_LineNumber)
+
+FileAppend "pass", "*"

@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 val := DriveGetStatus("C:\")
 
@@ -6,15 +7,11 @@ origlabel := DriveGetLabel("C:\")
 DriveSetLabel("C:\", "a test label")
 newlabel := DriveGetLabel("C:\")
 			
-if (newlabel == "a test label")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(newlabel, "a test label", A_LineNumber)
 
 DriveSetLabel("C:\", origlabel)
 newlabel := DriveGetLabel("C:\")
 
-if (origlabel = newlabel)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(origlabel = newlabel, A_LineNumber)
+
+FileAppend "pass", "*"

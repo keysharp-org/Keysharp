@@ -1,12 +1,12 @@
 #NoTrayIcon
+#Include <assert>
 
 val := DriveGetList()
 			
 #if WINDOWS
-	if (SubStr(val, 1, 1) == "C")
+	AssertEq(SubStr(val, 1, 1), "C", A_LineNumber)
 #else
-	if (SubStr(val, 1, 1) == "/")
+	AssertEq(SubStr(val, 1, 1), "/", A_LineNumber)
 #endif
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+
+FileAppend "pass", "*"

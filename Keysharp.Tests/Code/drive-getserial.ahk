@@ -1,18 +1,18 @@
 #NoTrayIcon
+#Include <assert>
 
 #if WINDOWS
 	val := DriveGetSerial("C:\")
 
-	if (val > 1)
+	Assert(val > 1, A_LineNumber)
 #elif OSX
 	val := DriveGetSerial("/")
 
-	if (val >= 0)
+	Assert(val >= 0, A_LineNumber)
 #else
 	val := DriveGetSerial("/dev/sda")
 
-	if (val >= 0)
+	Assert(val >= 0, A_LineNumber)
 #endif
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+
+FileAppend "pass", "*"

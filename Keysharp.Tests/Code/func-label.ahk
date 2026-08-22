@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 goto labelz
@@ -7,17 +8,10 @@ y := 2
 labelz:
 z := 3
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (y == unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, unset, A_LineNumber)
 
-If (z == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 3, A_LineNumber)
+
+FileAppend "pass", "*"

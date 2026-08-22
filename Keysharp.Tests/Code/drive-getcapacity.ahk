@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 #if WINDOWS
 	val := DriveGetCapacity("C:\")
@@ -8,7 +9,6 @@
 	val := DriveGetCapacity("/dev/sda")
 #endif
 			
-if (val > 1000)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(val > 1000, A_LineNumber)
+
+FileAppend "pass", "*"

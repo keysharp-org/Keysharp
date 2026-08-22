@@ -1,138 +1,81 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 a := [10, 20, 30]
 
-if (HasMethod(a, "Contains"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"	
+Assert(HasMethod(a, "Contains"), A_LineNumber)
 
-if (HasMethod(a, "CoNtAiNs")) ; test case insensitive once.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(HasMethod(a, "CoNtAiNs"), A_LineNumber) ; test case insensitive once.
 	
-if (HasMethod(a, "RemoveAt"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(HasMethod(a, "RemoveAt"), A_LineNumber)
 	
-if (HasMethod(a, "Push"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(HasMethod(a, "Push"), A_LineNumber)
 	
-if (HasMethod(a, "Pop"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(HasMethod(a, "Pop"), A_LineNumber)
 
-if (a.HasMethod("Contains"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"	
+Assert(a.HasMethod("Contains"), A_LineNumber)
 	
-if (a.HasMethod("CoNtAiNs")) ; test case insensitive once.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"	
+Assert(a.HasMethod("CoNtAiNs"), A_LineNumber) ; test case insensitive once.
 	
-if (a.HasMethod("RemoveAt"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(a.HasMethod("RemoveAt"), A_LineNumber)
 	
-if (a.HasMethod("Push"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(a.HasMethod("Push"), A_LineNumber)
 	
-if (a.HasMethod("Pop"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(a.HasMethod("Pop"), A_LineNumber)
 
 fo := a.GetMethod("Push")
 fo(a, 40)
 
-if (a.Length == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.Length, 4, A_LineNumber)
 
 a := [10, 20, 30]
 fo := GetMethod(a, "Push")
 fo(a, 40)
 
-if (a.Length == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.Length, 4, A_LineNumber)
 
 a := [10, 20, 30]
 fo := GetMethod(a, "RemoveAt")
 fo(a, 1)
 
-if (a.Length == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a.Length, 2, A_LineNumber)
 
-if (a = [20, 30])
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(a = [20, 30], A_LineNumber)
 
 #if WINDOWS
 obj := Map(1, "a", "b", 2)
 punk := ObjPtr(obj)
 ObjAddRef(punk), count := ObjRelease(punk)
 
-if (count == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(count, 1, A_LineNumber)
 
 got := ObjFromPtr(punk)
 
-if (got is Map)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(got is Map, A_LineNumber)
 
 ObjAddRef(punk), count := ObjRelease(punk)
 
-if (count == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(count, 1, A_LineNumber)
 
 obj2 := Map(1, "a", "b", 2)
 punk := ObjPtrAddRef(obj2) ; returns a raw pointer with the ref count being 1 initially
 ObjAddRef(punk), count := ObjRelease(punk)
 
-if (count == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(count, 1, A_LineNumber)
 
 punk2 := ObjPtrAddRef(obj2)
 ObjAddRef(punk2), count := ObjRelease(punk2)
 
-if (count == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(count, 2, A_LineNumber)
 
 obj3 := Map(1, "a", "b", 2)
 punk3 := ObjPtrAddRef(obj3)
 got2 := ObjFromPtrAddRef(punk3)
 
-if (got2 is Map)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(got2 is Map, A_LineNumber)
 
 ObjRelease(punk3)
 #endif
+
+FileAppend "pass", "*"

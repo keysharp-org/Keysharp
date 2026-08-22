@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 0
 y := 0
@@ -31,7 +32,6 @@ Loop 100
 	x++
 }
 
-if (found == true)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(found, true, A_LineNumber)
+
+FileAppend "pass", "*"

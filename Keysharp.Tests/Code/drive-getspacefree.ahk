@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 #if WINDOWS
 	val := DriveGetSpaceFree("C:\")
@@ -8,7 +9,6 @@
 	val := DriveGetSpaceFree("/dev/sda")
 #endif
 			
-if (val > 10)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(val > 10, A_LineNumber)
+
+FileAppend "pass", "*"

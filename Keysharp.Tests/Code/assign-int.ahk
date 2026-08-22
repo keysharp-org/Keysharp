@@ -1,79 +1,40 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y:=2
 z := x + y
 
-If x != 1
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != 1), A_LineNumber)
 
-If y!=2
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(y!=2), A_LineNumber)
 	
-if z!=	3
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(z!=	3), A_LineNumber)
 	
-If x = 1
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 1, A_LineNumber)
 
-If y = 2
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 2, A_LineNumber)
 
-If z = 3
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 3, A_LineNumber)
 
-If (x != 1)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != 1), A_LineNumber)
 	
-If (y!=2)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(y!=2), A_LineNumber)
 	
-if (z!=	3)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(z!=	3), A_LineNumber)
 	
-If (x = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 1, A_LineNumber)
 
-If (y = 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 2, A_LineNumber)
 
-If (z = 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 3, A_LineNumber)
 
 x := 1 + 2
 
-If (x != 3)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != 3), A_LineNumber)
 
 x := -1 + -2
 
-If (x != -3)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != -3), A_LineNumber)
+
+FileAppend "pass", "*"

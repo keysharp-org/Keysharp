@@ -1,6 +1,7 @@
 #NoTrayIcon
 
 #import KS { RunScript }
+#Include <assert>
 
 headlessDirectives := "#NoTrayIcon`n"
 #if WINDOWS
@@ -29,17 +30,11 @@ WaitForRunScriptExit(info, timeoutMs := 10000) {
 }
 
 info := RunScript(headlessDirectives . "ExitApp(0)",,, hostBinary)
-if (info.ExitCode == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(info.ExitCode, 0, A_LineNumber)
 
 info := ""
 info := RunScript(headlessDirectives . "ExitApp(1)",,, hostBinary)
-if (info.ExitCode == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(info.ExitCode, 1, A_LineNumber)
 
 AsyncCallback(callbackinfo) {
 	global result := callbackinfo.ExitCode
@@ -49,14 +44,11 @@ info := RunScript(headlessDirectives . "ExitApp(3)", AsyncCallback,, hostBinary)
 
 if (!WaitForRunScriptExit(info))
 {
-	FileAppend "fail", "*"
+	Assert(false, A_LineNumber)
 	ExitApp(1)
 }
 
-if (info.ExitCode == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(info.ExitCode, 3, A_LineNumber)
 
 loops := 0
 while (result == "" && loops < 200)
@@ -65,10 +57,7 @@ while (result == "" && loops < 200)
 	loops++
 }
 
-if (result == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(result, 3, A_LineNumber)
 
 info := ""
 script := headlessDirectives . "
@@ -80,11 +69,10 @@ info := RunScript(script, 1,, hostBinary)
 
 if (!WaitForRunScriptExit(info))
 {
-	FileAppend "fail", "*"
+	Assert(false, A_LineNumber)
 	ExitApp(1)
 }
 
-if (info.StdOut.Read(2) == "aa")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(info.StdOut.Read(2), "aa", A_LineNumber)
+
+FileAppend "pass", "*"

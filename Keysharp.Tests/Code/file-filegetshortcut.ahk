@@ -1,6 +1,7 @@
 #NoTrayIcon
 
 #import KS { FileDirName, FileFullPath }
+#Include <assert>
 ; #Include %A_ScriptDir%/header.ahk
 
 if (DirExist("./FileGetShortcut"))
@@ -25,25 +26,16 @@ fullpath := FileDirName("./FileGetShortcut/file1.txt")
 												&outIconNum,
 												&outRunState)
 
-if (StrLower(FileFullPath("./FileGetShortcut/file1.txt")) == StrLower(outTarget))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(StrLower(FileFullPath("./FileGetShortcut/file1.txt")), StrLower(outTarget), A_LineNumber)
 
-if (fullpath == outDir)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(fullpath, outDir, A_LineNumber)
 
-if (outDescription == "" &&
+Assert(outDescription == "" &&
 	outArgs == "" &&
 	outIcon == "" &&
 	outIconNum == "" &&
 	outRunState == ""
-)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+, A_LineNumber)
 
 if (FileExist("./testshortcut.lnk"))
 	FileDelete("./testshortcut.lnk")
@@ -56,10 +48,7 @@ if (FileExist("./testshortcut.lnk"))
 	FileCreateShortcut("./FileGetShortcut/file1.txt", "./testshortcut.lnk", fullpath, "", "TestDescription", "../../../assets/Keysharp.ico", 2)
 #endif
 
-if (FileExist("./testshortcut.lnk"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(FileExist("./testshortcut.lnk"), A_LineNumber)
 
 outTarget :=
 outDir :=
@@ -77,56 +66,29 @@ FileGetShortcut("./testshortcut.lnk",
 	&outIconNum,
 	&outRunState)
 
-if (StrLower(FileFullPath("./FileGetShortcut/file1.txt")) == StrLower(outTarget))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(StrLower(FileFullPath("./FileGetShortcut/file1.txt")), StrLower(outTarget), A_LineNumber)
 
-if (fullpath == outDir)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(fullpath, outDir, A_LineNumber)
 
-if ("TestDescription" == outDescription)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("TestDescription", outDescription, A_LineNumber)
 
-if ("" == outArgs)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", outArgs, A_LineNumber)
 
 expectedIcon := "../../../assets/Keysharp.ico"
 #if LINUX || OSX
 expectedIcon := FileFullPath(expectedIcon)
 #endif
 
-if (expectedIcon == outIcon)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(expectedIcon, outIcon, A_LineNumber)
 
 #if WINDOWS
-	if ("1" == outIconNum)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq("1", outIconNum, A_LineNumber)
 
-	if ("1" == outRunState)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq("1", outRunState, A_LineNumber)
 #else
-	if ("Link" == outIconNum)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq("Link", outIconNum, A_LineNumber)
 
-	if ("" == outRunState)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq("", outRunState, A_LineNumber)
 #endif
 
 if (DirExist("./FileGetShortcut"))
@@ -134,3 +96,5 @@ if (DirExist("./FileGetShortcut"))
 
 if (FileExist("./testshortcut.lnk"))
 	FileDelete("./testshortcut.lnk")
+
+FileAppend "pass", "*"

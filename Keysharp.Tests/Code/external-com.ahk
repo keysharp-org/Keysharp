@@ -1,6 +1,7 @@
 #NoTrayIcon
 
 #import KS { RunScript }
+#Include <assert>
 shell := ComObject("WScript.Shell")
 exec := shell.Exec("Notepad.exe")
 exec := shell.Run("Notepad.exe")
@@ -11,44 +12,23 @@ dict.Add("Name", "Alice")
 dict.Add("Age", 30)
 dict.Add("Country", "USA")
 
-if (dict.Item("Name") == "Alice")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(dict.Item("Name"), "Alice", A_LineNumber)
 
-if dict.Exists("Age")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(dict.Exists("Age"), A_LineNumber)
 
-if (dict.Item("Age") == 30)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(dict.Item("Age"), 30, A_LineNumber)
 	
-if (dict.Item("Country") == "USA")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(dict.Item("Country"), "USA", A_LineNumber)
 
-if (dict["Name"] == "Alice" && dict["Age"] == 30 && dict["Country"] == "USA")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(dict["Name"] == "Alice" && dict["Age"] == 30 && dict["Country"] == "USA", A_LineNumber)
 
 dict["Age"] := 50
 
-if (dict.Item("Age") == 50 && dict["Age"] == 50)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(dict.Item("Age") == 50 && dict["Age"] == 50, A_LineNumber)
 
 dict["newval"] := 75
 
-if (dict.Item("newval") == 75 && dict["newval"] == 75)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(dict.Item("newval") == 75 && dict["newval"] == 75, A_LineNumber)
 
 totalKeys := ""
 totalVals := ""
@@ -59,22 +39,13 @@ for key in dict.Keys
 	totalVals .= dict.Item(key)
 }
 
-if totalKeys == "NameAgeCountrynewval"
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(totalKeys, "NameAgeCountrynewval", A_LineNumber)
 
-if totalVals == "Alice50USA75"
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(totalVals, "Alice50USA75", A_LineNumber)
 
 dict.Remove("Country")
 
-if (dict.Count == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(dict.Count, 3, A_LineNumber)
 
 SIZEOF_VARIANT := 8 + (2 * A_PtrSize)
 var := Buffer(SIZEOF_VARIANT, 0)
@@ -82,41 +53,23 @@ var := Buffer(SIZEOF_VARIANT, 0)
 cv := ComValue(0x4000 | 0x3, var.Ptr)
 cv[] := 5
 
-if (cv[] == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(cv[], 5, A_LineNumber)
 
-if (NumGet(var, 0, "int") == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(NumGet(var, 0, "int"), 5, A_LineNumber)
 
 cv := ComValue(0x4000 | 0xB, var.Ptr)
 cv[] := true
 
-if (cv[] == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(cv[], true, A_LineNumber)
 
-if (NumGet(var, 0, "int") == 65535)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(NumGet(var, 0, "int"), 65535, A_LineNumber)
 
 cv := ComValue(0x4000 | 0xC, var.Ptr) ; VT_VARIANT
 cv[] := 5
 
-if (cv[] == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(cv[], 5, A_LineNumber)
 
-if (NumGet(var, 0, "int") == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(NumGet(var, 0, "int"), 3, A_LineNumber)
 
 arr := ComObjArray(VT_VARIANT:=12, 3)
 arr[0] := "Auto"
@@ -126,30 +79,18 @@ t := ""
 Loop arr.MaxIndex() + 1
 	t .= arr[A_Index-1]
 
-if (t == "AutoHotkey")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(t, "AutoHotkey", A_LineNumber)
 
 arr := ComObjArray(VT_VARIANT:=12, 3, 4)
 
 ; Get the number of dimensions:
 dim := DllCall("oleaut32\SafeArrayGetDim", "ptr", ComObjValue(arr))
 
-if (dim == arr.Dimensions)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(dim, arr.Dimensions, A_LineNumber)
 
-if (arr.MinIndex(1) == 0 && arr.MaxIndex(1) == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(arr.MinIndex(1) == 0 && arr.MaxIndex(1) == 2, A_LineNumber)
 
-if (arr.MinIndex(2) == 0 && arr.MaxIndex(2) == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(arr.MinIndex(2) == 0 && arr.MaxIndex(2) == 3, A_LineNumber)
 
 Loop 3 {
 	x := A_Index-1
@@ -159,10 +100,7 @@ Loop 3 {
 	}
 }
 
-if (arr[2, 3] == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr[2, 3], 6, A_LineNumber)
 
 arr := ComObjArray(VT_I4:=3, 3, 4)
 
@@ -174,10 +112,7 @@ Loop 3 {
 	}
 }
 
-if (arr[2, 3] == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr[2, 3], 6, A_LineNumber)
 
 IID_IUnknown := "{00000000-0000-0000-C000-000000000046}"
 CLSID_FileOpenDialog := "{DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7}"
@@ -188,10 +123,7 @@ arr[0] := p
 ObjAddRef(p.Ptr), after := ObjRelease(p.Ptr)
 
 ; Ref count should increase after adding it to the safe-array
-if (after == (before + 1))
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(after, (before + 1), A_LineNumber)
 
 script := "
 (
@@ -206,15 +138,9 @@ m.1 := 0
 ObjRegisterActive(m, "{6B39CAA1-A320-4CB0-8DB4-352AA81E460E}")
 pi := RunScript(script,,, "Keysharp.exe")
 
-if m.1
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(m.1, A_LineNumber)
 
-if !m.Has(3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!m.Has(3), A_LineNumber)
 
 ObjRegisterActive(obj, CLSID, Flags:=0) {
 	static cookieJar := Map()
@@ -233,3 +159,5 @@ ObjRegisterActive(obj, CLSID, Flags:=0) {
 		throw Error(format("Error 0x{:x}", hr), -1)
 	cookieJar[obj] := cookie
 }
+
+FileAppend "pass", "*"

@@ -1,4 +1,5 @@
-﻿#NoTrayIcon
+#NoTrayIcon
+#Include <assert>
 
 a := 0
 Object.Prototype.DefineProp("protoCall", {call:(*) {
@@ -7,28 +8,19 @@ Object.Prototype.DefineProp("protoCall", {call:(*) {
 })
 ({}.protoCall())
 
-if (a == 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 b := 0
 Object.Prototype.DefineProp("protoGet", {get:(*) => 1})
 b := {}.protoGet
 
-if (b == 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(b, 1, A_LineNumber)
 
 b := 0
 Object.Prototype.DefineProp("protoValue", {value:1})
 b := {}.protoValue
 
-if (b == 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(b, 1, A_LineNumber)
 
 class Test {
     HasOwnProp(*) => 1 
@@ -45,83 +37,44 @@ o := TestExtend()
 
 b := 0
 b := o.HasOwnProp("test")
-if (b == 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(b, 1, A_LineNumber)
 
 o.base := Object.Prototype
 b := o.HasOwnProp("test")
-if (b == 0)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(b, 0, A_LineNumber)
 
-if (Type(o) = "Object")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(Type(o) = "Object", A_LineNumber)
 
 a := 0
 o.protoCall()
-if (a == 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 b := 0
 b := o.protoGet
-if (b == 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(b, 1, A_LineNumber)
 
 b := 0
 b := o.protoValue
-if (b == 2)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(b, 2, A_LineNumber)
 
 c := Class()
 
-if (c.Base == Class.Prototype)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(c.Base, Class.Prototype, A_LineNumber)
 
-if (c.Base.Base == Object.Prototype)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(c.Base.Base, Object.Prototype, A_LineNumber)
 
-if (c.Base.Base.Base == Any.Prototype)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(c.Base.Base.Base, Any.Prototype, A_LineNumber)
 
 t := Test()
 
-if (t.Base.__Class == "Test")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(t.Base.__Class, "Test", A_LineNumber)
 
 
-if Object.Base == Any
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(Object.Base, Any, A_LineNumber)
 
-if Any.Base == Class.Prototype
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(Any.Base, Class.Prototype, A_LineNumber)
 
-if Class.Base == Object
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(Class.Base, Object, A_LineNumber)
 
 ; A Class object accepts Base assignment. [v2.1-alpha.30]
 class BaseAssignA {
@@ -133,14 +86,10 @@ class BaseAssignB {
 oldBase := BaseAssignB.Base
 BaseAssignB.Base := BaseAssignA
 
-if BaseAssignB.Base == BaseAssignA
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(BaseAssignB.Base, BaseAssignA, A_LineNumber)
 
 BaseAssignB.Base := oldBase
 
-if BaseAssignB.Base == oldBase
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(BaseAssignB.Base, oldBase, A_LineNumber)
+
+FileAppend "pass", "*"

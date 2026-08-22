@@ -1,100 +1,80 @@
 #NoTrayIcon
 #import KS { Clipboard, Image }
+#Include <assert>
 
 ; The Clipboard class through real dynamic dispatch — which the C# tests bypass, so this is what proves the
 ; members are actually reachable under the names a script types.
 
 Clipboard.Text := "script text"
-if (Clipboard.Text == "script text")
-    FileAppend "pass", "*"
+AssertEq(Clipboard.Text, "script text", A_LineNumber)
 
 ; A_Clipboard and Clipboard.Text are the same clipboard.
-if (A_Clipboard == "script text")
-    FileAppend "pass", "*"
+AssertEq(A_Clipboard, "script text", A_LineNumber)
 
-if (Clipboard.Has("Text") && !Clipboard.Has("Image") && !Clipboard.IsEmpty)
-    FileAppend "pass", "*"
+Assert(Clipboard.Has("Text") && !Clipboard.Has("Image") && !Clipboard.IsEmpty, A_LineNumber)
 
 ; Formats is an Array of native names, non-empty while something is on the clipboard.
 formats := Clipboard.Formats
-if (formats is Array && formats.Length > 0)
-    FileAppend "pass", "*"
+Assert(formats is Array && formats.Length > 0, A_LineNumber)
 
 ; Absent content reads as "" (falsy), which is the documented idiom.
-if (Clipboard.Image == "" && Clipboard.Files == "" && Clipboard.Rtf == "")
-    FileAppend "pass", "*"
+Assert(Clipboard.Image == "" && Clipboard.Files == "" && Clipboard.Rtf == "", A_LineNumber)
 
 ; Save, overwrite, restore.
 saved := Clipboard.All
 Clipboard.Text := "overwritten"
 Clipboard.All := saved
-if (Clipboard.Text == "script text")
-    FileAppend "pass", "*"
+AssertEq(Clipboard.Text, "script text", A_LineNumber)
 
 ; Clear empties every format.
 Clipboard.Clear()
-if (Clipboard.IsEmpty && Clipboard.Text == "" && Clipboard.Formats.Length == 0)
-    FileAppend "pass", "*"
+Assert(Clipboard.IsEmpty && Clipboard.Text == "" && Clipboard.Formats.Length == 0, A_LineNumber)
 
 ; One transaction, several formats.
 Clipboard.Set({ Text: "fallback", Html: "<b>rich</b>" })
-if (Clipboard.Text == "fallback")
-    FileAppend "pass", "*"
+AssertEq(Clipboard.Text, "fallback", A_LineNumber)
 
 ; Html round-trips as the fragment (the CF_HTML envelope is added and stripped for us on Windows). A backend that
 ; can only advertise one representation keeps the text, which the previous check already covered.
-if (Clipboard.Html == "<b>rich</b>" || !Clipboard.Has("Html"))
-    FileAppend "pass", "*"
+Assert(Clipboard.Html == "<b>rich</b>" || !Clipboard.Has("Html"), A_LineNumber)
 
 ; A Map key can name a format an object literal cannot spell.
 Clipboard.Set(Map("KeysharpScriptFormat", "raw bytes"))
-if (Clipboard.Has("KeysharpScriptFormat"))
-    FileAppend "pass", "*"
+Assert(Clipboard.Has("KeysharpScriptFormat"), A_LineNumber)
 
 buf := Clipboard.GetData("KeysharpScriptFormat")
-if (buf is Buffer && StrGet(buf.Ptr, 9, "UTF-8") == "raw bytes")
-    FileAppend "pass", "*"
+Assert(buf is Buffer && StrGet(buf.Ptr, 9, "UTF-8") == "raw bytes", A_LineNumber)
 
 ; Wait's kind names, on content that is already present.
 Clipboard.Text := "waiting"
-if (Clipboard.Wait(1, "Text") && !Clipboard.Wait(0.3, "Image"))
-    FileAppend "pass", "*"
+Assert(Clipboard.Wait(1, "Text") && !Clipboard.Wait(0.3, "Image"), A_LineNumber)
 
 ; An image set from an Image object and read back as one — the round trip CopyImageToClipboard could not do.
 img := Image.Create(20, 10, "Red")
 Clipboard.Image := img
 back := Clipboard.Image
-if (!Clipboard.Has("Image") || (back is Image && back.Width == 20 && back.Height == 10))
-    FileAppend "pass", "*"
+Assert(!Clipboard.Has("Image") || (back is Image && back.Width == 20 && back.Height == 10), A_LineNumber)
 
 ; Image.FromClipboard is an alias of the same getter.
 alias := Image.FromClipboard()
-if (!Clipboard.Has("Image") || (alias is Image && alias.Width == 20))
-    FileAppend "pass", "*"
+Assert(!Clipboard.Has("Image") || (alias is Image && alias.Width == 20), A_LineNumber)
 
 ; The hook surface: OnChange returns an object that can stop itself without the callback being kept around.
 hook := Clipboard.OnChange((h, type) => 0)
-if (hook.IsActive && hook.Count == -1 && !hook.Paused)
-    FileAppend "pass", "*"
+Assert(hook.IsActive && hook.Count == -1 && !hook.Paused, A_LineNumber)
 
 hook.Pause()
-if (hook.Paused) {
-    hook.Pause(0)
-    FileAppend "pass", "*"
-}
+Assert(hook.Paused, A_LineNumber)
+hook.Pause(0)
 
 hook.Stop()
-if (!hook.IsActive)
-    FileAppend "pass", "*"
+Assert(!hook.IsActive, A_LineNumber)
 
-if (Type(hook) == "ClipboardHook")
-    FileAppend "pass", "*"
+AssertEq(Type(hook), "ClipboardHook", A_LineNumber)
 
 ; Constructing one must fail: there is exactly one clipboard, so the class has no instances.
-try {
-    c := Clipboard()
-} catch Any {
-    FileAppend "pass", "*"
-}
+Throws(() => Clipboard(), A_LineNumber)
 
 Clipboard.Clear()
+
+FileAppend "pass", "*"

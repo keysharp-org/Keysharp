@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 0
 y := 0
@@ -39,10 +40,9 @@ if (found == true)
 	outy := 0
 	PixelSearch(&outx, &outy, x, y, x + 1, y + 1, pix)
 	
-	if (outx == x && outy == y)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(outx == x && outy == y, A_LineNumber)
 }
 else
-  	FileAppend "fail", "*"
+  	Assert(false, A_LineNumber)
+
+FileAppend "pass", "*"

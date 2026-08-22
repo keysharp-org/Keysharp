@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 class myclass
 {
@@ -13,80 +14,41 @@ class myclass
 
 classobj := myclass.Call()
 
-If (!IsSet(myclass.a))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(myclass.a), A_LineNumber)
 
-If (myclass.b == "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myclass.b, "", A_LineNumber)
 
-If (myclass.c == "asdf")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myclass.c, "asdf", A_LineNumber)
 
-If (myclass.x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myclass.x, 123, A_LineNumber)
 
-If (myclass.y == myclass.x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myclass.y, myclass.x, A_LineNumber)
 	
 myclass.x := 456
 
-If (myclass.x == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myclass.x, 456, A_LineNumber)
 
-If (myclass.y == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myclass.y, 123, A_LineNumber)
 	
 classobj2 := myclass.Call()
 
-If (myclass.x == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myclass.x, 456, A_LineNumber)
 	
 classobj3 := myclass()
 
-If (!classobj3.HasProp("x"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!classobj3.HasProp("x"), A_LineNumber)
 
 a := 1
 
-If (!IsSet(myclass.a))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(myclass.a), A_LineNumber)
 
 myclass.a := 123
 
-If (a == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 	
-if (myclass.arr is Array && myclass.arr.Length == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(myclass.arr is Array && myclass.arr.Length == 3, A_LineNumber)
 	
-if (myclass.m is Object && myclass.m.one == 1 && myclass.m.two == 2 && myclass.m.three == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(myclass.m is Object && myclass.m.one == 1 && myclass.m.two == 2 && myclass.m.three == 3, A_LineNumber)
 
 ; test static member initialized in a complex way.
 class TypeSizeMapper {
@@ -118,24 +80,15 @@ class TypeSizeMapper {
 
 val := TypeSizeMapper.NumTypeSize["char"]
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 val := TypeSizeMapper.NumTypeSize["int64"]
 
-If (val == 8)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 8, A_LineNumber)
 
 val := TypeSizeMapper.NumTypeSize["ptr"]
 
-If (val == A_PtrSize)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, A_PtrSize, A_LineNumber)
 
 ; do the same, but using static __Init()
 class TypeSizeMapper2 {
@@ -166,24 +119,15 @@ global
 
 val := TypeSizeMapper2.NumTypeSize["char"]
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 val := TypeSizeMapper2.NumTypeSize["int64"]
 
-If (val == 8)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 8, A_LineNumber)
 
 val := TypeSizeMapper2.NumTypeSize["ptr"]
 
-If (val == A_PtrSize)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, A_PtrSize, A_LineNumber)
 
 class sclass1
 {
@@ -197,12 +141,8 @@ class sclass2
 
 sc1 := sclass1()
 
-If (!sc1.HasProp("c2"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!sc1.HasProp("c2"), A_LineNumber)
 
-If (sclass1.c2.x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(sclass1.c2.x, 1, A_LineNumber)
+
+FileAppend "pass", "*"

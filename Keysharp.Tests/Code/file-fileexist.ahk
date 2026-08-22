@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 path := "../../../Keysharp.Tests/Code/"
 dir := path . "DirCopy/*.txt"
@@ -6,17 +7,13 @@ dir := path . "DirCopy/*.txt"
 val := FileExist(dir)
 
 #if WINDOWS
-	if ("A" == val)
+	AssertEq("A", val, A_LineNumber)
 #else
-	if ("N" == val)
+	AssertEq("N", val, A_LineNumber)
 #endif
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
 
 #if	WINDOWS
-if (FileExist(A_MyDocuments) == "RD") ; Unsure what it is in linux.//TODO
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(FileExist(A_MyDocuments), "RD", A_LineNumber)  ; Unsure what it is in linux.//TODO
 #endif
+
+FileAppend "pass", "*"

@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 0
 y := 0
@@ -13,32 +14,17 @@ func_bound(a, b, c)
 
 fo := func_bound
 
-If (fo.Name = "func_bound")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(fo.Name = "func_bound", A_LineNumber)
 	
-If (fo.IsBuiltIn == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(fo.IsBuiltIn, false, A_LineNumber)
 
 fo.Call(1, 2, 3)
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (y == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 2, A_LineNumber)
 
-If (z == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 3, A_LineNumber)
 
 x := 0
 y := 0
@@ -46,20 +32,11 @@ z := 0
 
 fo(1, 0, 3)
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (y == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 0, A_LineNumber)
 
-If (z == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 3, A_LineNumber)
 
 x := 0
 y := 0
@@ -69,20 +46,11 @@ bf := fo.Bind(5, 6, 7)
 
 bf()
 
-If (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
-If (y == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 6, A_LineNumber)
 
-If (z == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 7, A_LineNumber)
 
 x := 0
 y := 0
@@ -92,20 +60,11 @@ bf := fo.Bind(5)
 
 bf(0, 1)
 
-If (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
-If (y == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 0, A_LineNumber)
 
-If (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 x := 0
 y := 0
@@ -115,20 +74,11 @@ bf := fo.Bind(5, 0, 7)
 
 bf.Call()
 
-If (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
-If (y == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 0, A_LineNumber)
 
-If (z == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 7, A_LineNumber)
 
 x := 0
 y := 0
@@ -138,20 +88,11 @@ bf := fo.Bind(,123)
 
 bf(1, 0)
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (y == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 123, A_LineNumber)
 
-If (z == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 0, A_LineNumber)
 
 x := 0
 y := 0
@@ -161,58 +102,37 @@ bf := fo.Bind(,,123)
 
 bf(1,2)
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (y == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 2, A_LineNumber)
 
-If (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 
 fo := boundvarfunc0 ; Try without quotes.
 bf := fo.Bind(10)
 val := bf(20)
 
-If (val == 30)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 30, A_LineNumber)
 
 arr := [1, 2, 3]
 bf := fo.Bind(arr*)
 
 val := bf()
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 fo := BoundVarFunc0 ; Try referring to an improperly cased local function by name, without using Func().
 bf := fo.Bind(10)
 val := bf(20)
 
-If (val == 30)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 30, A_LineNumber)
 
 arr := [1, 2, 3]
 bf := fo.Bind(arr*)
 
 val := bf()
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 	
 boundvarfunc0(theparams*) ; Purposely define this *after* it's used above.
 {
@@ -229,10 +149,7 @@ boundvarfunc0(theparams*) ; Purposely define this *after* it's used above.
 fo := String ; Try referring to a built-in function by name, without using Func().
 val := Fo(123)
 
-If (val == "123")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, "123", A_LineNumber)
 
 boundvarfunc1(p1, theparams*)
 {
@@ -251,17 +168,11 @@ bf := fo.Bind(10, 20)
 
 val := bf(20)
 
-If (val == 50)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 50, A_LineNumber)
 
 val := funcretcall(Func123)
 
-If (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 funcretcall(xx)
 {
@@ -276,18 +187,12 @@ func123()
 newfunc := true ? func123 : func456
 val := NEWFUNC()
 
-If (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 newfunc := false ? func123 : Func456
 val := newfunc()
 
-If (val == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 456, A_LineNumber)
 
 func456()
 {
@@ -302,20 +207,14 @@ funcadd(10)
 funcadd(20)
 funcadd(30)
 
-if (arr1 == arr2)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(arr1 == arr2), A_LineNumber)
 
 arr1 := Array()
 funcadd := arr1.Push.Bind(arr1)
 
 funcadd(10, 20, 30)
 
-if (arr1 == arr2)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(arr1 == arr2), A_LineNumber)
 
 o := 1
 pcount := ""
@@ -330,43 +229,28 @@ boundfunc5 := func5.Bind(, 1)
 pcount := 123
 boundfunc5(0)
 
-if (pcount == 0)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(pcount == 0), A_LineNumber)
 
 pcount := 0
 boundfunc5(1)
 
-if (pcount == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(pcount, 1, A_LineNumber)
 
 pcount := 0
 boundfunc5(1, 2)
 
-if (pcount == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(pcount, 2, A_LineNumber)
 
 pcount := 0
 Boundfunc5(1, 2, 3)
 
-if (pcount == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(pcount, 3, A_LineNumber)
 
 pcount := 0
 arr := [1, 2, 3]
 boundfunc5(arr*)
 
-if (pcount == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "pass", "*"
+AssertEq(pcount, 3, A_LineNumber)
 
 ; Ensure functions which are passed as arguments to member methods are properly converted using Func().
 
@@ -376,40 +260,22 @@ class Test {
 }
 val := Test().Meth(f)
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 TwoParams(a, b) => a - b
 
 a := TwoParams
-if (a.MinParams == 2 && a.MaxParams == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(a.MinParams == 2 && a.MaxParams == 2, A_LineNumber)
 
 b := TwoParams.Bind(, 2)
-if (b.MinParams == 1 && b.MaxParams == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(b.MinParams == 1 && b.MaxParams == 1, A_LineNumber)
 
 c := b.Bind(1)
-if (c.MinParams == 0 && c.MaxParams == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(c.MinParams == 0 && c.MaxParams == 0, A_LineNumber)
 
-if (c() == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c(), -1, A_LineNumber)
 
-if (b.MinParams == 1 && b.MaxParams == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(b.MinParams == 1 && b.MaxParams == 1, A_LineNumber)
 
 overflow := false
 try {
@@ -418,10 +284,7 @@ try {
 	overflow := true
 }
 
-if (overflow)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(overflow, A_LineNumber)
 
 overflow := false
 try {
@@ -430,37 +293,22 @@ try {
 	overflow := true
 }
 
-if (overflow)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(overflow, A_LineNumber)
 
 c := TwoParams.Bind(,2,,,) ; should not throw
 
 FourParams(a, b, c?, d?) => a - b - (c ?? 0) - (d ?? 0)
 
 a := FourParams
-if (a.MinParams == 2 && a.MaxParams == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(a.MinParams == 2 && a.MaxParams == 4, A_LineNumber)
 
 b := FourParams.Bind(,, 3)
-if (b.MinParams == 2 && b.MaxParams == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(b.MinParams == 2 && b.MaxParams == 3, A_LineNumber)
 
 c := b.Bind(1,, 4)
-if (c.MinParams == 1 && c.MaxParams == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(c.MinParams == 1 && c.MaxParams == 1, A_LineNumber)
 
-if (c(2) == -8)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c(2), -8, A_LineNumber)
 ; ObjBindMethod binds a NAME, resolved on the receiver at call time, so the function object carries no
 ; signature - yet every signature question about it must still answer instead of raising.
 
@@ -475,35 +323,20 @@ class BoundMethodHost {
 host := BoundMethodHost()
 obm := ObjBindMethod(host, "Add")
 
-if (obm.MinParams == 0 && obm.MaxParams == 0 && obm.IsVariadic)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(obm.MinParams == 0 && obm.MaxParams == 0 && obm.IsVariadic, A_LineNumber)
 
-if (obm.IsBuiltIn == false && obm.IsClosure == false && obm.IsByRef(1) == false && obm.IsOptional(1) == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(obm.IsBuiltIn == false && obm.IsClosure == false && obm.IsByRef(1) == false && obm.IsOptional(1) == true, A_LineNumber)
 
-if (obm(2, 3) == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(obm(2, 3), 5, A_LineNumber)
 
 ; The receiver belongs to the function object, so the method runs on it whoever does the calling.
 BoundMethodHost.log := ""
 obm(1, 1)
 
-if (BoundMethodHost.log == "|BoundMethodHost:1,1")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(BoundMethodHost.log, "|BoundMethodHost:1,1", A_LineNumber)
 
 ; Binding on top of one still fills holes left to right.
-if (obm.Bind(10)(5) == 15)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(obm.Bind(10)(5), 15, A_LineNumber)
 
 ; ... and every registration site that takes a function takes this one.
 BoundMethodHost.log := ""
@@ -511,7 +344,6 @@ cb := CallbackCreate(obm)
 DllCall(cb)
 CallbackFree(cb)
 
-if (BoundMethodHost.log == "|BoundMethodHost:0,0")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(BoundMethodHost.log, "|BoundMethodHost:0,0", A_LineNumber)
+
+FileAppend "pass", "*"

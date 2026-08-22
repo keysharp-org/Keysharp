@@ -1,11 +1,11 @@
 #NoTrayIcon
+#Include <assert>
 
 dir := "./Keysharp.Core.dll"
 ver := FileGetVersion(dir)
 split := StrSplit(ver, ".")
 len := split.Length
 
-if (len == 4)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(len, 4, A_LineNumber)
+
+FileAppend "pass", "*"

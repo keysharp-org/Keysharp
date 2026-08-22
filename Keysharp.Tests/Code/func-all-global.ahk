@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := 2
@@ -13,55 +14,28 @@ func()
 {
 	global x := 11, y := 22, z := 33
 
-	If (x == 11)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 11, A_LineNumber)
 
-	If (y == 22)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(y, 22, A_LineNumber)
 
-	If (z == 33)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 33, A_LineNumber)
 
 	x := 101, y := 202, z := 303
 
-	If (x == 101)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 101, A_LineNumber)
 
-	If (y == 202)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(y, 202, A_LineNumber)
 
-	If (z == 303)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 303, A_LineNumber)
 }
 
 func()
 
-If (x == 101)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 101, A_LineNumber)
 
-If (y == 202)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 202, A_LineNumber)
 
-If (z == 303)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 303, A_LineNumber)
 
 a := 100
 b := 200
@@ -74,72 +48,38 @@ func2()
 	b := 222
 	c := 333
 
-	If (a == 111)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(a, 111, A_LineNumber)
 
-	If (b == 222)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(b, 222, A_LineNumber)
 
-	If (c == 333)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(c, 333, A_LineNumber)
 }
 
 func2()
 
-If (a == 111)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 111, A_LineNumber)
 
-If (b == 222)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, 222, A_LineNumber)
 
-If (c == 333)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c, 333, A_LineNumber)
 
 func3()
 {
 	global x := initfunc(1, 2), y := initfunc(3, 4) * 2, z := initfunc(5, 6) * 3
 
-	If (x == 3)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 3, A_LineNumber)
 
-	If (y == 14)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(y, 14, A_LineNumber)
 
-	If (z == 33)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 33, A_LineNumber)
 }
 
 func3()
 
-If (x == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 3, A_LineNumber)
 
-If (y == 14)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 14, A_LineNumber)
 
-If (z == 33)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 33, A_LineNumber)
+
+FileAppend "pass", "*"

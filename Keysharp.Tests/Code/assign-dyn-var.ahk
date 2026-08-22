@@ -1,200 +1,108 @@
 #import KS { A_ClipboardTimeout }
 #NoTrayIcon
+#Include <assert>
 
 x := 11
 y11 := 123
 z := y%x%
 
-If (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 
-If (y11 == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y11, 123, A_LineNumber)
 
-If (z == y11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, y11, A_LineNumber)
 
-If (x == 11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 11, A_LineNumber)
 
-If (x != y11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x != y11, A_LineNumber)
 
-If (x != y%x%)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x != y%x%, A_LineNumber)
 
-If (z != x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z != x, A_LineNumber)
 
-If (z == y%x%)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, y%x%, A_LineNumber)
 	
-If (123 == y%x%)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(123, y%x%, A_LineNumber)
 
 target := 42
 second := "target"
 val := %second%
 
-if (second == "target")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(second, "target", A_LineNumber)
 
-if (val == 42)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 42, A_LineNumber)
 
-if (%second% == 42)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(%second%, 42, A_LineNumber)
 
 x := "y"
 y11 := 123
 z := %x%11
 
-If (z == %x%11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, %x%11, A_LineNumber)
 	
-If (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 	
-If (y11 == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y11, 123, A_LineNumber)
 
-If (z == y11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, y11, A_LineNumber)
 
-If (x == "y")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, "y", A_LineNumber)
 
-If (x != y11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x != y11, A_LineNumber)
 
-If (z != x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z != x, A_LineNumber)
 	
-If (123 == %x%11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(123, %x%11, A_LineNumber)
 
 arr := [10, 20, 30]
 suffix := "gth"
 val := arr.Len%suffix%
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 	
 suffix := "Length"
 val := arr.%suffix%
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 
 suffix := "gth"
 val := arr.len%suffix%
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 	
 suffix := "length"
 val := arr.%suffix%
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 
 prefix := "Len"
 val := arr.%prefix%gth
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 
 prefix := "len"
 val := arr.%prefix%Gth
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 	
 suffix := "gth"
 val := arr.%prefix%%suffix%
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 
 suffix := "city"
 arr.Capa%suffix% := 1000
 
-If (arr.Capacity == 1000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr.Capacity, 1000, A_LineNumber)
 
-If (arr.Capa%suffix% == 1000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr.Capa%suffix%, 1000, A_LineNumber)
 
 prefix := "capa"
 arr.%prefix%city := 2000
 
-If (arr.Capacity == 2000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr.Capacity, 2000, A_LineNumber)
 
-If (arr.%prefix%City == 2000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr.%prefix%City, 2000, A_LineNumber)
 
 MyArray1 := 10
 MyArray2 := 20
@@ -204,26 +112,17 @@ x := 0
 Loop 3
 	x += MyArray%A_Index%
 
-If (x == 60)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 60, A_LineNumber)
 	
 a_clipboardTimeout := 1000
 to := "Timeout"
 val := a_clipboard%to%
 
-If (val == 1000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1000, A_LineNumber)
 
 a_clipboard%to% := 2000
 
-If (a_clipboardTimeout == 2000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a_clipboardTimeout, 2000, A_LineNumber)
 
 a := 1
 b := 2
@@ -242,18 +141,12 @@ while (!hasa || !hasb)
 		hasb := true
 }
 
-If (hasa && hasb)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(hasa && hasb, A_LineNumber)
 
 threeparts := 123
 a := "reepa"
 
-if (th%a%rts == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(th%a%rts, 123, A_LineNumber)
 
 l := "length"
 d := "default"
@@ -262,31 +155,19 @@ arr.Default := 456
 a := true
 b := arr.%a ? l : d%
 
-if (b == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, 3, A_LineNumber)
 
 a := false
 b := arr.%a ? l : d%
 
-if (b == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, 456, A_LineNumber)
 
 ; A %…% dynamic member name whose inner expression itself contains a member access (obj.%a.b%),
 ; including the call form obj.%a.b%(args). Regression: the inner '.' parse used to mistake the
 ; closing '%' for the start of a new deref and fail with "expected '%' in dynamic member name".
-if (DynMem.%DynMem.key% == 42)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(DynMem.%DynMem.key%, 42, A_LineNumber)
 
-if (DynMem.%DynMem.fnName%(21) == 42)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(DynMem.%DynMem.fnName%(21), 42, A_LineNumber)
 
 class DynMem {
 	static key := "Val"
@@ -294,3 +175,5 @@ class DynMem {
 	static fnName := "Twice"
 	static Twice(t) => t * 2
 }
+
+FileAppend "pass", "*"

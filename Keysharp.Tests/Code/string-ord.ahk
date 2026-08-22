@@ -1,15 +1,12 @@
 #NoTrayIcon
+#Include <assert>
 
 x := Ord("t")
 
-if (x = 116)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 116, A_LineNumber)
 
 x := Ord("et")
 			
-if (x = 101)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 101, A_LineNumber)
+
+FileAppend "pass", "*"

@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 0
 
@@ -10,10 +11,7 @@ while true
 		break
 }
 
-If x = 5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 5, A_LineNumber)
 
 
 x := 0
@@ -25,10 +23,7 @@ while true {
 		break
 }
 
-If x = 5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 5, A_LineNumber)
 
 x := 0
 
@@ -40,10 +35,7 @@ while (true)
 		break
 }
 
-If x = 5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 5, A_LineNumber)
 
 x := 0
 
@@ -54,10 +46,7 @@ while (true) {
 		break
 }
 
-If x = 5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 5, A_LineNumber)
 
 x := 0
 
@@ -69,10 +58,7 @@ while 1
 		break
 }
 
-If x = 5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 5, A_LineNumber)
 
 x := 0
 
@@ -83,10 +69,7 @@ while 1 {
 		break
 }
 
-If x = 5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 5, A_LineNumber)
 
 x := 0
 str := ""
@@ -98,10 +81,7 @@ while (str = "") {
 		break
 }
 
-If x = 5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 5, A_LineNumber)
 	
 x := 0
 
@@ -110,10 +90,7 @@ while (x < 5)
 	x++
 }
 
-If x = 5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 5, A_LineNumber)
 
 x := 0
 
@@ -121,10 +98,7 @@ while (x < 5) {
 	x++
 }
 
-If x = 5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 5, A_LineNumber)
 
 x := 0
 
@@ -133,10 +107,7 @@ while x < 5
 	x++
 }
 
-If x = 5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 5, A_LineNumber)
 
 x := 0
 
@@ -144,10 +115,7 @@ while x < 5 {
 	x++
 }
 
-If x = 5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 5, A_LineNumber)
 
 x := 0
 y := 5
@@ -161,15 +129,9 @@ while z%y% ; this is a comment
 	x++
 }
 
-If x = 25
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 25, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 
 x := 0
 y := 5
@@ -182,15 +144,9 @@ while z%y% { ; another comment
 	x++
 }
 
-If x = 25
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 25, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 
 x := 0
 y := 5
@@ -203,15 +159,9 @@ while (z%y%) {
 	x++
 }
 
-If x = 25
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 25, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 	
 x := 1
 b := false
@@ -224,10 +174,7 @@ else
 	b := true
 }
 
-If (b == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, false, A_LineNumber)
 	
 x := 1
 b := false
@@ -239,8 +186,6 @@ else
 	b := true
 }
 
-If (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
-	
+AssertEq(b, true, A_LineNumber)
+
+FileAppend "pass", "*"

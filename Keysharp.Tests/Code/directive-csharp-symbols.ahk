@@ -2,6 +2,7 @@
 #Warn All, StdOut
 #NoTrayIcon
 #define EARLY_SYMBOL
+#Include <assert>
 
 #CSharp
 public static string SymbolAtBlock()
@@ -27,4 +28,6 @@ public static string SymbolAtLateBlock()
 }
 #EndCSharp
 
-FileAppend(SymbolAtBlock() == "early" && SymbolAtLateBlock() == "late" ? "pass" : "fail", "*")
+Assert(SymbolAtBlock() == "early" && SymbolAtLateBlock() == "late", A_LineNumber)
+
+FileAppend "pass", "*"

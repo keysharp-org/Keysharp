@@ -1,36 +1,27 @@
 #NoTrayIcon
+#Include <assert>
 
 buf := Buffer(5, 10)
 
-If (buf.Size == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Size, 5, A_LineNumber)
 	
 Loop (buf.Size)
 {
 	p := buf[A_Index]
 	
-	If (p == 10)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(p, 10, A_LineNumber)
 }
 
 buf.Size := 10
 
-If (buf.Size == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(buf.Size, 10, A_LineNumber)
 	
 ; Ensure original values were copied. Subsequent values are undefined.
 Loop (5)
 {
 	p := buf[A_Index]
 	
-	If (p == 10)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(p, 10, A_LineNumber)
 }
+
+FileAppend "pass", "*"

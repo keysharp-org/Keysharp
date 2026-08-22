@@ -1,26 +1,14 @@
 #NoTrayIcon
+#Include <assert>
 
-if (-1 == Ceil(-1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(-1, Ceil(-1), A_LineNumber)
 
-if (-2 == Ceil(-2.1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(-2, Ceil(-2.1), A_LineNumber)
 
-if (0 == Ceil(0))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(0, Ceil(0), A_LineNumber)
 
-if (0 == Ceil(-0))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(0, Ceil(-0), A_LineNumber)
 	
-if (2 == Ceil(1.000001))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(2, Ceil(1.000001), A_LineNumber)
+
+FileAppend "pass", "*"

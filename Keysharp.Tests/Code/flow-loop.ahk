@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 y := 5
 x := 0
@@ -12,15 +13,9 @@ Loop y
 		Break
 }
 
-If x =8
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 8, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 	
 x := 0
 
@@ -32,15 +27,9 @@ Loop %"y"% {
 		Break
 }
 
-If x =8
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 8, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 	
 x := 0
 
@@ -53,15 +42,9 @@ Loop y
 		Break
 }
 
-If x =8
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 8, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 		
 x := 0
 
@@ -73,30 +56,18 @@ Loop y {
 		Break
 }
 
-If x =8
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 8, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 
 x := 0
 
 Loop y
 	x++
 
-If x =5
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 	
 x := 0
 
@@ -106,15 +77,9 @@ Loop y
 	else
 		x += 2
 
-If x =9
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 9, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 
 x := 0
 y := ""
@@ -124,15 +89,9 @@ Loop %"y"%
 	x++
 }
 
-If x = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 0, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 	
 x := 0
 y := 0
@@ -142,15 +101,9 @@ Loop %"y"%
 	x++
 }
 
-If x = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 0, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 	
 x := 0
 
@@ -162,15 +115,9 @@ Loop
 	x++
 }
 
-If x = 25
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 25, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 
 x := 0
 
@@ -181,15 +128,9 @@ Loop {
 	x++
 }
 
-If x = 25
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 25, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 	
 x := 0
 
@@ -201,15 +142,9 @@ Loop 100
 	x++
 }
 
-If x = 25
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 25, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 
 x := 0
 
@@ -221,15 +156,9 @@ Loop (100)
 	x++
 }
 
-If x = 25
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 25, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 
 x := 0
 
@@ -241,15 +170,9 @@ Loop(100)
 	x++
 }
 
-If x = 25
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 25, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 	
 x := 0
 
@@ -260,15 +183,9 @@ Loop 100 {
 	x++
 }
 
-If x = 25
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 25, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 
 x := 0
 global y := 5
@@ -282,15 +199,9 @@ Loop z%y% ; this is a comment
 	x++
 }
 
-If x = 25
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 25, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 
 x := 0
 y := 5
@@ -303,15 +214,9 @@ Loop z%y% { ; another comment
 	x++
 }
 
-If x = 25
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 25, A_LineNumber)
 
-If A_Index = 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_Index = 0, A_LineNumber)
 
 x := 1
 b := false
@@ -325,10 +230,7 @@ else
 	b := true
 }
 
-If (b == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, false, A_LineNumber)
 	
 x := 1
 b := false
@@ -340,10 +242,7 @@ else
 	b := true
 }
 
-If (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 		
 x := 0
@@ -353,10 +252,7 @@ Loop y + 1 {
 	x++
 }
 
-If (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 	
 x := 0
 
@@ -364,37 +260,27 @@ Loop (y + 1) {
 	x++
 }
 
-If (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 x := 0
 
 Loop (y + 1)
 	x++
 
-If (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 x := 0
 
 Loop y + 1
 	x++
 
-If (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 x := 0
 
 Loop 1 * 2 * 3
 	x++
 
-If (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
+
+FileAppend "pass", "*"

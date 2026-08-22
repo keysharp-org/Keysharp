@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 	
 if (DirExist("./FileCopy"))
 	DirDelete("./FileCopy", true)
@@ -8,17 +9,11 @@ DirCreate("./FileCopy")
 dir := path . "DirCopy"
 FileCopy(dir . "/file1.txt", "./FileCopy/file1.txt")
 
-if (FileExist("./FileCopy/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file1.txt"), A_LineNumber)
 	
 FileDelete("./FileCopy/file1.txt")
 
-if (!FileExist("./FileCopy/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/file1.txt"), A_LineNumber)
 
 if (DirExist("./FileCopy"))
 	DirDelete("./FileCopy", true)
@@ -26,20 +21,11 @@ if (DirExist("./FileCopy"))
 DirCreate("./FileCopy")
 FileCopy(dir . "/*.txt", "./FileCopy")
 
-if (FileExist("./FileCopy/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file1.txt"), A_LineNumber)
 
-if (FileExist("./FileCopy/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file2.txt"), A_LineNumber)
 
-if (!FileExist("./FileCopy/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/file3txt"), A_LineNumber)
 
 if (DirExist("./FileCopy"))
 	DirDelete("./FileCopy", true)
@@ -47,20 +33,11 @@ if (DirExist("./FileCopy"))
 DirCreate("./FileCopy")
 FileCopy(dir . "/*.txt", "./FileCopy/*.*")
 
-if (FileExist("./FileCopy/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file1.txt"), A_LineNumber)
 
-if (FileExist("./FileCopy/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file2.txt"), A_LineNumber)
 
-if (!FileExist("./FileCopy/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/file3txt"), A_LineNumber)
 
 if (DirExist("./FileCopy"))
 	DirDelete("./FileCopy", true)
@@ -68,20 +45,11 @@ if (DirExist("./FileCopy"))
 DirCreate("./FileCopy")
 FileCopy(dir . "/*.txt", "./FileCopy/*.bak")
 
-if (FileExist("./FileCopy/file1.bak"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file1.bak"), A_LineNumber)
 
-if (FileExist("./FileCopy/file2.bak"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file2.bak"), A_LineNumber)
 
-if (!FileExist("./FileCopy/file3.bak"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/file3.bak"), A_LineNumber)
 
 if (DirExist("./FileCopy"))
 	DirDelete("./FileCopy", true)
@@ -89,26 +57,14 @@ if (DirExist("./FileCopy"))
 DirCreate("./FileCopy")
 FileCopy(dir . "/*.txt", "./FileCopy/*")
 
-if (FileExist("./FileCopy/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file1.txt"), A_LineNumber)
 
-if (FileExist("./FileCopy/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file2.txt"), A_LineNumber)
 
-if (!FileExist("./FileCopy/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/file3txt"), A_LineNumber)
 
 
-if (!FileExist("./FileCopy/file3.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/file3.txt"), A_LineNumber)
 
 if (DirExist("./FileCopy"))
 	DirDelete("./FileCopy", true)
@@ -116,25 +72,13 @@ if (DirExist("./FileCopy"))
 DirCreate("./FileCopy")
 FileCopy(dir . "/*.txt", "./FileCopy/*.")
 
-if (FileExist("./FileCopy/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file1.txt"), A_LineNumber)
 
-if (FileExist("./FileCopy/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file2.txt"), A_LineNumber)
 
-if (!FileExist("./FileCopy/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/file3txt"), A_LineNumber)
 
-if (!FileExist("./FileCopy/file3.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/file3.txt"), A_LineNumber)
 
 if (DirExist("./FileCopy"))
 	DirDelete("./FileCopy", true)
@@ -149,25 +93,13 @@ catch
 {
 }
 
-if (!FileExist("./FileCopy/NonExistentDir/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/NonExistentDir/file1.txt"), A_LineNumber)
 
-if (!FileExist("./FileCopy/NonExistentDir/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/NonExistentDir/file2.txt"), A_LineNumber)
 
-if (!FileExist("./FileCopy/NonExistentDir/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/NonExistentDir/file3txt"), A_LineNumber)
 
-if (!FileExist("./FileCopy/NonExistentDir/file3.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileCopy/NonExistentDir/file3.txt"), A_LineNumber)
 
 if (DirExist("./FileCopy"))
 	DirDelete("./FileCopy", true)
@@ -175,20 +107,13 @@ if (DirExist("./FileCopy"))
 DirCreate("./FileCopy")
 FileCopy(dir . "/*", "./FileCopy/*")
 
-if (FileExist("./FileCopy/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file1.txt"), A_LineNumber)
 
-if (FileExist("./FileCopy/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file2.txt"), A_LineNumber)
 
-if (FileExist("./FileCopy/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileCopy/file3txt"), A_LineNumber)
 
 if (DirExist("./FileCopy"))
 	DirDelete("./FileCopy", true)
+
+FileAppend "pass", "*"

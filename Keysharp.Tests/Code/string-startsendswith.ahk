@@ -1,34 +1,18 @@
-﻿#NoTrayIcon
+#NoTrayIcon
+#Include <assert>
 
 s := "This is a test STRING"
 
-if (s.EndsWith(" STRING", true))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(s.EndsWith(" STRING", true), A_LineNumber)
 	
-if (!s.EndsWith(" string", true))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!s.EndsWith(" string", true), A_LineNumber)
 	
-if (s.EndsWith(" string", false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(s.EndsWith(" string", false), A_LineNumber)
 	
-if (s.StartsWith("This ", true))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(s.StartsWith("This ", true), A_LineNumber)
 	
-if (!s.StartsWith("this ", true))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!s.StartsWith("this ", true), A_LineNumber)
 	
-if (s.StartsWith("tHiS ", false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
-	
+Assert(s.StartsWith("tHiS ", false), A_LineNumber)
+
+FileAppend "pass", "*"

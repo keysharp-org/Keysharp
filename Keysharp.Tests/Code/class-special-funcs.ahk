@@ -2,6 +2,7 @@
 
 #import __Main
 #import KS { Collect }
+#Include <assert>
 gval := 0
 
 class testclass
@@ -28,10 +29,7 @@ while (gval != 999 && A_TickCount < timeout)
 	Collect()
 }
 
-If (gval == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gval, 999, A_LineNumber)
 
 class enumclass
 {
@@ -51,10 +49,7 @@ for i,v in testclassobj
 	gval += v
 }
 
-If (gval == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gval, 6, A_LineNumber)
 
 class subenumclass extends enumclass
 {
@@ -74,10 +69,7 @@ for i,v in testclassobj
 	gval += v
 }
 
-If (gval == 15)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gval, 15, A_LineNumber)
 
 class testclass2
 {
@@ -89,20 +81,11 @@ class testclass2
 testclassobj := testclass2()
 cloneobj := testclassobj.Clone()
 
-If (cloneobj.a == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(cloneobj.a, 1, A_LineNumber)
 
-If (cloneobj.b == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(cloneobj.b, 2, A_LineNumber)
 
-If (cloneobj.c == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(cloneobj.c, 3, A_LineNumber)
 
 class testclass3 {
 	static Call(a) {
@@ -112,25 +95,16 @@ class testclass3 {
 
 val := testclass3(10)
 
-If (val == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 100, A_LineNumber)
 
 
 val := TestWithCustomStaticCall() ; internally calls the custom Call() to return 123 instead of a new object
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 val := TestWithCustomStaticCall.Call() ; also returns 123
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 ; class with one custom static Call() method which replaces the default one.
 ; this prevents an instance of this class from every being created.
@@ -152,17 +126,11 @@ class TestWithCustomInstanceCall
 
 obj := TestWithCustomInstanceCall() ; creates an instance of the class.
 
-if (obj is TestWithCustomInstanceCall)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(obj is TestWithCustomInstanceCall, A_LineNumber)
 
 val := obj.Call() ; intelligent enough to resolve to the instance Call() to return 123, instead of the default static one.
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 Gfunc123(*)
 {
@@ -192,25 +160,16 @@ class foclass
 
 		val := lg123()
 		
-		if (val == 123)
-			FileAppend "pass", "*"
-		else
-			FileAppend "fail", "*"
+		AssertEq(val, 123, A_LineNumber)
 
 		val := lg456()
 		
-		if (val == 456)
-			FileAppend "pass", "*"
-		else
-			FileAppend "fail", "*"
+		AssertEq(val, 456, A_LineNumber)
 
 		testfunc := this.classfunc123
 		val := testfunc(this)
 		
-		if (val == 123)
-			FileAppend "pass", "*"
-		else
-			FileAppend "fail", "*"
+		AssertEq(val, 123, A_LineNumber)
 	}
 
 	ClassFunc123()
@@ -229,42 +188,26 @@ fc.classfunc()
 
 val := fc.ig123()
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 val := fc.ig456()
 
-if (val == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 456, A_LineNumber)
 	
 val := fc.iginit123()
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 val := foclass.sg123.Call()
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 val := foclass.sg456.Call()
 
-if (val == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 456, A_LineNumber)
 
 val := foclass.stestmemberfunc.Call(foclass)
 
-if (val == 789)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 789, A_LineNumber)
+
+FileAppend "pass", "*"

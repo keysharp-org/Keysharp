@@ -1,17 +1,14 @@
 #NoTrayIcon
+#Include <assert>
 
 x := "test"
 y := StrLen(x)
 
-if (y = 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 4, A_LineNumber)
 	
 x := ""
 y := StrLen(x)
 
-if (y = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 0, A_LineNumber)
+
+FileAppend "pass", "*"

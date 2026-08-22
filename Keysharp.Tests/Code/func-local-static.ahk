@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 initfunc(a, b)
 {
@@ -11,20 +12,11 @@ func()
 	y := 2
 	static Z := 3
 
-	If (x == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 1, A_LineNumber)
 
-	If (y == 2)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(y, 2, A_LineNumber)
 	
-	If (z == 3)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 3, A_LineNumber)
 }
 
 func()
@@ -38,33 +30,18 @@ func2()
 	static
 	local x := 22, y := initfunc(10, 20)
 
-	if (x == 22)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 22, A_LineNumber)
 	
-	if (y == 30)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(y, 30, A_LineNumber)
 }
 
 func2()
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (y == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 2, A_LineNumber)
 
-If (z == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 3, A_LineNumber)
 
 x := 1
 y := 2
@@ -76,43 +53,22 @@ func3()
 	y := 22
 	static z := 333, ZZ := initfunc(1, 2)
 
-	if (x == 111)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 111, A_LineNumber)
 
-	if (y == 22)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(y, 22, A_LineNumber)
 
-	if (z == 333)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 333, A_LineNumber)
 	
-	if (zz == 3)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(zz, 3, A_LineNumber)
 }
 
 func3()
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (y == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 2, A_LineNumber)
 
-If (z == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 3, A_LineNumber)
 
 x := 1
 y := 2
@@ -123,65 +79,32 @@ func4()
 	static
 	local x := 11, y := 22, z := 33, zz := initfunc(5, 6)
 
-	if (x == 11)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 11, A_LineNumber)
 
-	if (y == 22)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(y, 22, A_LineNumber)
 
-	if (z == 33)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 33, A_LineNumber)
 	
-	if (zz == 11)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(zz, 11, A_LineNumber)
 
 	x := 111, y := 222, z := 333, zz := initfunc(7, 8)
 
-	if (x == 111)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 111, A_LineNumber)
 
-	if (y == 222)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(y, 222, A_LineNumber)
 
-	if (z == 333)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 333, A_LineNumber)
 	
-	if (zz == 15)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(zz, 15, A_LineNumber)
 }
 
 func4()
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (y == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 2, A_LineNumber)
 
-If (z == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 3, A_LineNumber)
 
 reffunc1(&a)
 {
@@ -193,10 +116,7 @@ func5()
 	static x := 111
 	reffunc1(&x := 0)
 	
-	if (x == 100)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 100, A_LineNumber)
 }
 
 func5()
@@ -215,36 +135,23 @@ func6() {
 
 t1 := class1()
 x := t1.func6()
-if (x == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 3, A_LineNumber)
 
 x := unset
 x := t1.func6()
-if (x == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 4, A_LineNumber)
 
 t2 := class1()
 x := unset
 x := t2.func6()
-if (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
 x := unset
 x := t2.func6()
-if (x == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 6, A_LineNumber)
 
 x := unset
 x := func6()
-if (x == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 3, A_LineNumber)
+
+FileAppend "pass", "*"

@@ -1,208 +1,107 @@
 #NoTrayIcon
+#Include <assert>
 
 x := "`""
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(34))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(34), A_LineNumber)
 
 x := '"'
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(34))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(34), A_LineNumber)
 
 x := "``"
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(0x60))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(0x60), A_LineNumber)
 
 x := '""'
 
-if (x.Length == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 2, A_LineNumber)
 
-if (x[1] == Chr(34) && x[2] == Chr(34))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x[1] == Chr(34) && x[2] == Chr(34), A_LineNumber)
 
 x := '`''
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(0x27))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(0x27), A_LineNumber)
 
 x := "`n"
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(10))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(10), A_LineNumber)
 
 x := "`r"
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(13))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(13), A_LineNumber)
 
 x := '`n'
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(10))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(10), A_LineNumber)
 
 x := '`r'
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(13))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(13), A_LineNumber)
 
 x := "`s"
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == " ")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], " ", A_LineNumber)
 
 x := "`b"
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(8))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(8), A_LineNumber)
 
 x := '`s'
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == " ")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], " ", A_LineNumber)
 
 x := '`b'
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(8))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(8), A_LineNumber)
 
 x := "`v"
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(11))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(11), A_LineNumber)
 
 x := "`f"
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(12))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(12), A_LineNumber)
 
 x := '`v'
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(11))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(11), A_LineNumber)
 
 x := '`f'
 
-if (x.Length == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.Length, 1, A_LineNumber)
 
-if (x[1] == Chr(12))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x[1], Chr(12), A_LineNumber)
 
 ; There was once a bug where certain verbatim strings being passed as function arguments wasn't parsing.
 strargfunc(x)
@@ -218,15 +117,11 @@ strargfunc2(x, y)
 value := 123
 xx := strargfunc('"' value "'")
 
-if (xx == "`"123'" )
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, "`"123'", A_LineNumber)
 
 xx := ""
 xx := strargfunc2('"' value "'", -1)
 
-if (xx == "`"123'" )
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, "`"123'", A_LineNumber)
+
+FileAppend "pass", "*"

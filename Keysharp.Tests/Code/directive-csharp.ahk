@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 global Hits := 0
 
@@ -36,20 +37,20 @@ public static long Doubled(long n) => Helper(n);
 
 #EndCSharp
 
-ok(cond) => FileAppend(cond ? "pass" : "fail", "*")
-
-ok(SumSquares(4) == 30)
-ok(SumSquares("4") == 30)
-ok(SumSquares(4.0) == 30)
-ok(Shout("hi") == "hi!")
-ok(Half(5) == 2.5)
-ok(Doubled(21) == 42)
-ok(Cells(3, 4) == 12)
-ok(Hits == 3)
+AssertEq(SumSquares(4), 30, A_LineNumber)
+AssertEq(SumSquares("4"), 30, A_LineNumber)
+AssertEq(SumSquares(4.0), 30, A_LineNumber)
+AssertEq(Shout("hi"), "hi!", A_LineNumber)
+AssertEq(Half(5), 2.5, A_LineNumber)
+AssertEq(Doubled(21), 42, A_LineNumber)
+AssertEq(Cells(3, 4), 12, A_LineNumber)
+AssertEq(Hits, 3, A_LineNumber)
 
 caught := false
 try
 	SumSquares("abc")
 catch TypeError
 	caught := true
-ok(caught)
+Assert(caught, A_LineNumber)
+
+FileAppend "pass", "*"

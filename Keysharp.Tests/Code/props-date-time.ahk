@@ -1,138 +1,81 @@
 #NoTrayIcon
+#Include <assert>
 
 x := A_YYYY
 y := A_Year
 
-if (x > 2000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x > 2000, A_LineNumber)
 
-if (y = x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = x, A_LineNumber)
 
 x := A_MM
 y := A_Mon
 
-if (x >= 1 && x <= 12)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x >= 1 && x <= 12, A_LineNumber)
 
-if (y = x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = x, A_LineNumber)
 
 x := A_DD
 y := A_MDay
 
-if (x >= 1 && x <= 31)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x >= 1 && x <= 31, A_LineNumber)
 
-if (y = x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = x, A_LineNumber)
 
 x := A_MMMM
 
-if (x = "January" || x = "February" || x = "March" || x = "April" || x = "May" || x = "June" || x = "July" || x = "August" || x = "September" || x = "October" || x = "November" || x = "December")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = "January" || x = "February" || x = "March" || x = "April" || x = "May" || x = "June" || x = "July" || x = "August" || x = "September" || x = "October" || x = "November" || x = "December", A_LineNumber)
 
 x := A_MMM
 
-if (x = "Jan" || x = "Feb" || x = "Mar" || x = "Apr" || x = "May" || x = "Jun" || x = "Jul" || x = "Aug" || x = "Sep" || x = "Oct" || x = "Nov" || x = "Dec")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = "Jan" || x = "Feb" || x = "Mar" || x = "Apr" || x = "May" || x = "Jun" || x = "Jul" || x = "Aug" || x = "Sep" || x = "Oct" || x = "Nov" || x = "Dec", A_LineNumber)
 
 x := A_DDDD
 
-if (x = "Sunday" || x = "Monday" || x = "Tuesday" || x = "Wednesday" || x = "Thursday" || x = "Friday" || x = "Sunday" || x = "Saturday")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = "Sunday" || x = "Monday" || x = "Tuesday" || x = "Wednesday" || x = "Thursday" || x = "Friday" || x = "Sunday" || x = "Saturday", A_LineNumber)
 
 x := A_DDD
 
-if (x = "Sun" || x = "Mon" || x = "Tue" || x = "Wed" || x = "Thu" || x = "Fri" || x = "Sun" || x = "Sat")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = "Sun" || x = "Mon" || x = "Tue" || x = "Wed" || x = "Thu" || x = "Fri" || x = "Sun" || x = "Sat", A_LineNumber)
 
 x := A_WDay
 
-if (x >= 1 && x <= 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x >= 1 && x <= 7, A_LineNumber)
 
 x := A_YDay
 
-if (x >= 1 && x <= 366)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x >= 1 && x <= 366, A_LineNumber)
 
 x := A_YWeek
 
-if (x != "") ; Not really a full test, but the code is clear enough to know it works.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x != "", A_LineNumber) ; Not really a full test, but the code is clear enough to know it works.
 
 x := A_Hour
 
-if (x >= 0 && x <= 23)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x >= 0 && x <= 23, A_LineNumber)
 
 x := A_Min
 
-if (x >= 0 && x <= 59)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x >= 0 && x <= 59, A_LineNumber)
 
 x := A_Sec
 
-if (x >= 0 && x <= 59)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x >= 0 && x <= 59, A_LineNumber)
 
 x := A_MSec
 
-if (x >= 0 && x <= 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x >= 0 && x <= 999, A_LineNumber)
 
 x := A_Now
 
-if (x != "") ; Not really a full test, but the code is clear enough to know it works.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x != "", A_LineNumber) ; Not really a full test, but the code is clear enough to know it works.
 
 x := A_NowUTC
 
-if (x != "") ; Not really a full test, but the code is clear enough to know it works.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x != "", A_LineNumber) ; Not really a full test, but the code is clear enough to know it works.
 
 x := A_TickCount
 
-if (x > 0) ; Not really a full test, but the code is clear enough to know it works.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x > 0, A_LineNumber) ; Not really a full test, but the code is clear enough to know it works.
+
+FileAppend "pass", "*"

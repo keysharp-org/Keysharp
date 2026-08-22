@@ -1,105 +1,149 @@
 #NoTrayIcon
+#Include <assert>
+
+; The odd spacing and brace styles below are the point of this file: each block records which branch ran
+; so the assertion afterwards proves where the parser attached it.
 
 x := 1
+r := ""
 
 If x = 2
-	FileAppend "fail", "*"
+	r := "if"
 
-	
+
 ELSE if x    =1
-	FileAppend "pass", "*"
-else 
-	FileAppend "fail", "*"
+	r := "elseif"
+else
+	r := "else"
+
+AssertEq(r, "elseif", A_LineNumber)
+
+r := ""
 
 if x = 0
 {
-	FileAppend "fail", "*"
+	r := "if"
 }
 else
 {
-	FileAppend "pass", "*"
+	r := "else"
 }
+
+AssertEq(r, "else", A_LineNumber)
+
+r := "", nested := ""
 
 if x = 1 {
-	FileAppend "pass", "*"
+	r := "if"
 	if x = 2
 		{
-			FileAppend "fail", "*"
+			nested := "taken"
 }
 } else if x = 2
-{	FileAppend "fail", "*"
-} else { FileAppend "pass", "*"
+{	r := "elseif"
+} else { r := "else"
 }
+
+Assert(r == "if" && nested == "", A_LineNumber)
 
 x := 123
+r := ""
 
 if (!x) {
-} else if (x == 123) { 
-	FileAppend "pass", "*"
+} else if (x == 123) {
+	r := "elseif"
 }
+
+AssertEq(r, "elseif", A_LineNumber)
 
 x := 1
+r := ""
 
 if (x == 1) {
-	FileAppend "pass", "*"
+	r := "if"
 } else {
-	FileAppend "fail", "*"
+	r := "else"
 }
 
+AssertEq(r, "if", A_LineNumber)
+
+r := ""
+
 if (x == 1) {
-	FileAppend "pass", "*"
+	r := "if"
 } else
-	FileAppend "fail", "*"
+	r := "else"
+
+AssertEq(r, "if", A_LineNumber)
 
 ; Ensure else blocks are attached to the proper parent if block.
 x := 1
+inner := "", outer := ""
 
 if x = 1
 {
 	if (x = 2)
 	{
-		FileAppend "fail", "*"
+		inner := "if"
 	}
 	else
 	{
-		FileAppend "pass", "*"
+		inner := "else"
 	}
 }
 else
 {
-	FileAppend "fail", "*"
+	outer := "else"
 }
+
+Assert(inner == "else" && outer == "", A_LineNumber)
+
+inner := "", outer := ""
 
 if x = 1
 {
 	if (x = 2)
 	{
-		FileAppend "fail", "*"
+		inner := "if"
 	}
 	else if (x = 1)
 	{
-		FileAppend "pass", "*"
+		inner := "elseif"
 	}
 }
 else
 {
-	FileAppend "fail", "*"
+	outer := "else"
 }
 
+Assert(inner == "elseif" && outer == "", A_LineNumber)
+
+r := ""
+
 if x = unset
-	FileAppend "fail", "*"
+	r := "if"
 else if x != unset
-	FileAppend "pass", "*"
-	
+	r := "elseif"
+
+AssertEq(r, "elseif", A_LineNumber)
+
+r := ""
+
 if x is unset
-	FileAppend "fail", "*"
+	r := "if"
 else if x != unset
-	FileAppend "pass", "*"
+	r := "elseif"
+
+AssertEq(r, "elseif", A_LineNumber)
+
+r := ""
 
 if (x is unset)
-	FileAppend "fail", "*"
+	r := "if"
 else if (x != unset)
-	FileAppend "pass", "*"
+	r := "elseif"
+
+AssertEq(r, "elseif", A_LineNumber)
 
 x := ""
 b := true
@@ -112,20 +156,13 @@ if (c)
 	b := 123
 else
 	b := 456
-	
-if (x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
 
-if (b == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 123, A_LineNumber)
+
+AssertEq(b, 456, A_LineNumber)
 
 arr := [123, 456, 789]
 
-if (arr) ; Objects are always considered true.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(arr, A_LineNumber) ; Objects are always considered true.
+
+FileAppend "pass", "*"

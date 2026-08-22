@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 class testclass
 {
@@ -80,145 +81,85 @@ class testsubclass extends testclass
 testclassobj := testclass()
 testsubclassobj := testsubclass()
 
-If (testclassobj is testclass)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(testclassobj is testclass, A_LineNumber)
 
-If (testsubclassobj is testclass)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(testsubclassobj is testclass, A_LineNumber)
 
-If (testsubclassobj is testsubclass)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(testsubclassobj is testsubclass, A_LineNumber)
 
 val := testclassobj.a
 
-If (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 val := testsubclassobj.a
 
-If (val == 321)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 321, A_LineNumber)
 
 val := testclassobj.b
 
-If (val == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 456, A_LineNumber)
 
 val := testsubclass.b
 
-If (val == 654)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 654, A_LineNumber)
 
 val := testclass.c
 
-If (val == 888)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 888, A_LineNumber)
 
 val := testsubclassobj.c
 
-If (val == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 999, A_LineNumber)
 
 val := testclass.d
 
-If (val == 1000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1000, A_LineNumber)
 
 val := testsubclass.d
 
-If (val == 2000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2000, A_LineNumber)
 	
 testsubclassobj.setbasea()
 
 val := testsubclassobj.getbasea()
 
-If (val == 500)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 500, A_LineNumber)
 
 val := testsubclassobj.a
 
-If (val == 321)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 321, A_LineNumber)
 	
 testsubclassobj.base.a := 777
 
 val := testsubclassobj.getbasea()
 
-If (val == 777)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 777, A_LineNumber)
 
 val := testsubclassobj.a
 
-If (val == 321)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 321, A_LineNumber)
 
 classname := testclassobj.__Class
 
-If (classname == "testclass")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classname, "testclass", A_LineNumber)
 
 classname := testsubclassobj.__Class
 
-If (classname == "testsubclass")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classname, "testsubclass", A_LineNumber)
 
 testsubclassobj.a := ""
 testsubclassobj.base.a := ""
 
 testsubclassobj.subcasesensitivefunc()
 
-if (testsubclass.a == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(testsubclass.a, 999, A_LineNumber)
 	
-if (testsubclassobj.a == 1212)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(testsubclassobj.a, 1212, A_LineNumber)
 
 testclass.c := ""
 testsubclass.subcasesensitivefuncstatic()
 
-if (testclass.c == 3131)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(testclass.c, 3131, A_LineNumber)
 
 class MyArray extends Array
 {
@@ -233,22 +174,13 @@ class MyArray extends Array
 
 classname := MyArray()
 
-If (classname is Array)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(classname is Array, A_LineNumber)
 
-If (classname is MyArray)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(classname is MyArray, A_LineNumber)
 
 val := classname[100]
 
-If (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 class MyMap extends Map
 {
@@ -263,22 +195,13 @@ class MyMap extends Map
 
 classname := MyMap()
 
-If (classname is Map)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(classname is Map, A_LineNumber)
 
-If (classname is MyMap)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(classname is MyMap, A_LineNumber)
 
 val := classname[100]
 
-If (val == 321)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 321, A_LineNumber)
 
 class base1
 {
@@ -320,24 +243,15 @@ class subarr2 extends subarr1
 obj := sub1()
 val := obj[999]
 
-If (val == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2, A_LineNumber)
 
 obj := subarr2()
 
-If (obj is subarr2 && obj is subarr1 && obj is Array)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(obj is subarr2 && obj is subarr1 && obj is Array, A_LineNumber)
 
 val := obj[999]
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 
 class submap1 extends Map
 {
@@ -356,55 +270,37 @@ class submap2 extends submap1
 
 obj := submap2()
 
-If (obj is submap2 && obj is submap1 && obj is Map)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(obj is submap2 && obj is submap1 && obj is Map, A_LineNumber)
 
 val := obj[999]
 
-If (val == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 4, A_LineNumber)
 
 testclass.c := 101
 myfunc := testsubclass.basecasesensitivefuncstatic
 
 myfunc(testsubclass)
 
-if (testclass.c == 3131)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(testclass.c, 3131, A_LineNumber)
 
 testclass.c := 101
 myfunc := testsubclass.subcasesensitivefuncstatic
 
 myfunc(testsubclass)
 
-if (testclass.c == 3131)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(testclass.c, 3131, A_LineNumber)
 
 testsubclassobj.a := 0
 myfunc := testsubclassobj.basecasesensitivefunc
 myfunc(testsubclassobj)
 
-if (testsubclassobj.a == 1212)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(testsubclassobj.a, 1212, A_LineNumber)
 	
 testsubclassobj.a := 0
 myfunc := testsubclassobj.SubCaseSensitiveFunc
 myfunc(testsubclassobj)
 
-if (testsubclassobj.a == 1212)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(testsubclassobj.a, 1212, A_LineNumber)
 
 class myarrayclass1 extends Array
 {
@@ -422,18 +318,12 @@ mac := myarrayclass1()
 mac.Push(123)
 val := mac[1]
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 mac[1] := 999
 val := mac[1]
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 class myarrayclass2 extends Array
 {
@@ -450,18 +340,12 @@ mac := myarrayclass2()
 mac.Push(123)
 val := mac[1]
 
-If (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 mac[1] := 999
 val := mac[1]
 
-If (val == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 999, A_LineNumber)
 
 class mymapclass1 extends map
 {
@@ -496,26 +380,17 @@ mmp := mymapclass1()
 mmp["asdf"] := 123
 val := mmp["asdf"]
 
-If (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 mmp[1, 2] := 123
 val := mmp[1, 2]
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 
 mmp[1, 2, 3] := 123
 val := mmp[1, 2, 3]
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 	
 class myarrayclass3 extends Array
 {
@@ -540,10 +415,7 @@ mac.Push(1)
 mac[1, 2, 3, 4] := 100
 val := mac[1]
 
-if (val == 110)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 110, A_LineNumber)
 
 class myarrayclass4 extends Array
 {
@@ -566,10 +438,7 @@ class myarrayclass4 extends Array
 mac := myarrayclass4()
 val := mac[1, 2, 3, 4]
 
-if (val == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 10, A_LineNumber)
 
 class myarrayclass5 extends Array
 {
@@ -592,10 +461,7 @@ class myarrayclass5 extends Array
 mac := myarrayclass5()
 val := mac[1, 2, 3, 4]
 
-if (val == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 10, A_LineNumber)
 
 	
 class myarrayclass6 extends Array
@@ -614,10 +480,7 @@ class myarrayclass6 extends Array
 mac := myarrayclass6(1, 2, 3, 4)
 val := mac.doublecount
 
-if (val == 8)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 8, A_LineNumber)
 
 class myinitclass
 {
@@ -627,10 +490,7 @@ class myinitclass
 mic := myinitclass()
 val := mic.p1
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 	
 return123func()
 {
@@ -645,10 +505,7 @@ class myfuncinitclass
 mic := myfuncinitclass()
 val := mic.p1
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 class mybaseclass
 {
@@ -674,15 +531,9 @@ class mysubclass extends mybaseclass
 		temp := this.x
 		val := this.retfunc((this.x := 99) / 3) ; Nested assignment within an expression referencing already declared global property.
 		
-		if (this.x == 99)
-			FileAppend "pass", "*"
-		else
-			FileAppend "fail", "*"
+		AssertEq(this.x, 99, A_LineNumber)
 
-		if (val == 33)
-			FileAppend "pass", "*"
-		else
-			FileAppend "fail", "*"
+		AssertEq(val, 33, A_LineNumber)
 
 		this.x := temp
 	}
@@ -692,19 +543,13 @@ msc := mysubclass()
 msc.basefunc()
 val := msc.x
 
-if (val == 124)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 124, A_LineNumber)
 
 msc := mysubclass()
 msc.base.base.basefunc()
 val := msc.base.x
 
-if (val == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 123, A_LineNumber)
 
 ; Test subclasses that derive from built in types and access the base properties before either class is fully initialized.
 ; This ensures the initialization chain of __Init() and __New() work properly.
@@ -716,25 +561,13 @@ class bigarr extends Array
 
 mybigarr := bigarr(1, 2, 3)
 
-If (mybigarr is Array)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(mybigarr is Array, A_LineNumber)
 
-If (mybigarr is bigarr)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(mybigarr is bigarr, A_LineNumber)
 
-if (mybigarr.Capacity == 10000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(mybigarr.Capacity, 10000, A_LineNumber)
 	
-if (mybigarr[1] == 1 && mybigarr[2] == 2 && mybigarr[3] == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(mybigarr[1] == 1 && mybigarr[2] == 2 && mybigarr[3] == 3, A_LineNumber)
 	
 class Mapi extends Map {
 	CaseSense := false
@@ -749,20 +582,11 @@ class Mapi extends Map {
 
 cim := Mapi("a", 1, "B", 2)
 
-if (cim is Map)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(cim is Map, A_LineNumber)
 
-If (cim is Mapi)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(cim is Mapi, A_LineNumber)
 
-if (cim["A"] == 1 && cim["b"] == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(cim["A"] == 1 && cim["b"] == 2, A_LineNumber)
 	
 class dupepropsbase
 {
@@ -800,30 +624,15 @@ class dupepropssub extends dupepropsbase
 
 classobj := dupepropssub()
 
-if (classobj.a == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.a, 999, A_LineNumber)
 
-if (classobj.base.base.a == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.base.base.a, 123, A_LineNumber)
 
-if (classobj.getlocala() == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.getlocala(), 1, A_LineNumber)
 
-if (classobj.getthisa() == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.getthisa(), 999, A_LineNumber)
 
-if (classobj.getsupera() == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.getsupera(), 123, A_LineNumber)
 
 ; A member declared on a script class SHADOWS the one it inherits from a built-in base. Most already did,
 ; through the prototype chain; __Enum did not, because enumeration reached the built-in through its C#
@@ -845,18 +654,11 @@ seen := ""
 for k, v in om
 	seen .= k "=" v ";"
 
-if (seen == "overridden=1;" && om.hits == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(seen == "overridden=1;" && om.hits == 1, A_LineNumber)
 
-if (om.Has("real") == "shadowed")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(om.Has("real"), "shadowed", A_LineNumber)
 
 ; ... and a built-in NOT overridden still resolves to the built-in.
-if (om.Count == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(om.Count, 1, A_LineNumber)
+
+FileAppend "pass", "*"

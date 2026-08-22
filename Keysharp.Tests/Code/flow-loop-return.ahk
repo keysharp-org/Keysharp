@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 i := 0
 
@@ -6,10 +7,7 @@ Loop 5 {
 	i++
 	f1()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 f1() {
@@ -24,10 +22,7 @@ Loop 5 {
 	i++
 	f2()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 f2() {
@@ -44,10 +39,7 @@ Loop 5 {
 	i++
 	f3()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 f3()
@@ -64,10 +56,7 @@ Loop 5 {
 	i++
 	f4()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 f4()
@@ -89,10 +78,7 @@ while i < 5
 	f3()
 	f4()
 	
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 i := 0
@@ -101,10 +87,7 @@ Loop 5 {
 	i++
 	w1()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 w1() {
@@ -119,10 +102,7 @@ Loop 5 {
 	i++
 	w2()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 w2() {
@@ -139,10 +119,7 @@ Loop 5 {
 	i++
 	flu1()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 flu1() {
@@ -158,10 +135,7 @@ Loop 5 {
 	i++
 	fwu1()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 fwu1() {
@@ -177,10 +151,7 @@ Loop 5 {
 	i++
 	ffu3()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 ffu3()
@@ -200,10 +171,7 @@ for (loopvar in arr)
 {
 }
 
-if (loopvar == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(loopvar, 0, A_LineNumber)
 
 aglobalvar := 0
 
@@ -215,10 +183,9 @@ testglobalvarfunc()
 	{
 	}
 
-	if (aglobalvar == 0)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(aglobalvar, 0, A_LineNumber)
 }
 
 testglobalvarfunc()
+
+FileAppend "pass", "*"

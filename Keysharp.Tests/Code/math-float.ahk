@@ -1,39 +1,19 @@
 #NoTrayIcon
+#Include <assert>
 
-if (-1 == Float(-1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(-1, Float(-1), A_LineNumber)
 
-if (1 == Float(1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(1, Float(1), A_LineNumber)
 
-if (-2.1 == Float(-2.1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(-2.1, Float(-2.1), A_LineNumber)
 
-if (0 == Float(0))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(0, Float(0), A_LineNumber)
 
-if (0 == Float(-0))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(0, Float(-0), A_LineNumber)
 
-if (0.5 == Float(0.5))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(0.5, Float(0.5), A_LineNumber)
 	
-if (1.000001 == Float(1.000001))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(1.000001, Float(1.000001), A_LineNumber)
 
 b := false
 
@@ -46,7 +26,6 @@ catch
 	b := true
 }
 	
-if (b)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(b, A_LineNumber)
+
+FileAppend "pass", "*"

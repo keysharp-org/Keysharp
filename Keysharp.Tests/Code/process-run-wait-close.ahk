@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 #if WINDOWS
 	pid := 0
@@ -16,19 +17,13 @@
 	Sleep(1000)
 	exists := ProcessExist("cmd.exe")
 
-	if (exists == 0)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(exists, 0, A_LineNumber)
 
 	pid := RunWait("cmd.exe", "", "max")
 	Sleep(1000)
 	exists := ProcessExist("cmd.exe")
 
-	if (exists == 0)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(exists, 0, A_LineNumber)
 #else
 	pid := 0
 	Run("/usr/bin/sleep", "", "max", &pid, "60")
@@ -43,14 +38,10 @@
 
 	exists := ProcessExist(pid)
 
-	if (exists == 0)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(exists, 0, A_LineNumber)
 
 	pid := RunWait("/usr/bin/true", "", "max")
-	if (pid == 0)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(pid, 0, A_LineNumber)
 #endif
+
+FileAppend "pass", "*"

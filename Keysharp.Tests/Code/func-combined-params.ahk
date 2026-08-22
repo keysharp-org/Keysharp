@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 optreffunc(a?, &b?)
 {
@@ -9,56 +10,38 @@ val1 := ""
 val2 := ""
 optreffunc(,&val2)
 
-if (val2 is unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val2 is unset, A_LineNumber)
 
 val1 := ""
 val2 := ""
 fo := optreffunc
 fo(,&val2)
 
-if (val2 is unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val2 is unset, A_LineNumber)
 
 val1 := 123
 val2 := ""
 optreffunc(val1,&val2)
 
-if (val2 == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val2, 123, A_LineNumber)
 	
 val1 := 123
 val2 := ""
 fo(val1,&val2)
 
-if (val2 == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val2, 123, A_LineNumber)
 
 val1 := ""
 val2 := ""
 optreffunc(,)
 
-if (val2 == "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val2, "", A_LineNumber)
 
 val1 := ""
 val2 := ""
 fo(,)
 
-if (val2 == "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val2, "", A_LineNumber)
 
 x := 1
 y := 2
@@ -83,15 +66,9 @@ optrefvarfunc(a?, &b, c*)
 arr := [1, 2, 3]
 val := optrefvarfunc(x, &y, z, z, z)
 
-If (y == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 10, A_LineNumber)
 
-If (val == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 10, A_LineNumber)
 
 x := 1
 y := 2
@@ -99,15 +76,9 @@ z := 3
 
 val := optrefvarfunc(x, &y, arr*)
 
-If (y == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 7, A_LineNumber)
 
-If (val == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 7, A_LineNumber)
 
 x := 1
 y := 2
@@ -116,15 +87,9 @@ z := 3
 fo := optrefvarfunc
 val := fo(x, &y, z, z, z)
 
-If (y == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 10, A_LineNumber)
 
-If (val == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 10, A_LineNumber)
 
 x := 1
 y := 2
@@ -132,15 +97,9 @@ z := 3
 
 val := optrefvarfunc(x, &y,)
 
-If (y == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 1, A_LineNumber)
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 x := 1
 y := 2
@@ -148,15 +107,9 @@ z := 3
 
 val := fo(x, &y,)
 
-If (y == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 1, A_LineNumber)
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 x := 1
 y := 2
@@ -164,15 +117,9 @@ z := 3
 
 val := optrefvarfunc(x, &y)
 
-If (y == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 1, A_LineNumber)
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 x := 1
 y := 2
@@ -180,12 +127,8 @@ z := 3
 
 val := fo(x, &y)
 
-If (y == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 1, A_LineNumber)
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
+
+FileAppend "pass", "*"

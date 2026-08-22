@@ -1,42 +1,33 @@
 #NoTrayIcon
+#Include <assert>
 
 path := "../../../Keysharp.Tests/Code/DirCopy"
 val := FileGetAttrib(path)
 
-if (val == "D")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(val, "D", A_LineNumber)
 
 val := FileGetAttrib(path . "/file1.txt")
 
 #if WINDOWS
-	if ("A" == val)
+	AssertEq("A", val, A_LineNumber)
 #else
-	if ("N" == val)
+	AssertEq("N", val, A_LineNumber)
 #endif
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
 
 val := FileGetAttrib(path . "/file2.txt")
 
 #if WINDOWS
-	if ("A" == val)
+	AssertEq("A", val, A_LineNumber)
 #else
-	if ("N" == val)
+	AssertEq("N", val, A_LineNumber)
 #endif
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
 
 val := FileGetAttrib(path . "/file3txt")
 
 #if WINDOWS
-	if ("A" == val)
+	AssertEq("A", val, A_LineNumber)
 #else
-	if ("N" == val)
+	AssertEq("N", val, A_LineNumber)
 #endif
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+
+FileAppend "pass", "*"

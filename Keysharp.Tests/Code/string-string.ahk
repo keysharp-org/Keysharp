@@ -1,28 +1,20 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 123
 y := String(x)
 
-if (y = "123")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "123", A_LineNumber)
 
 x := "123"
 y := String(x)
 
-if (y = "123")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "123", A_LineNumber)
 
 x := 1.234
 y := String(x)
 
-if (y = "1.234")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "1.234", A_LineNumber)
 
 ; String(x) returns whatever x.ToString() returned, so a ToString() with no return value makes
 ; String() return no value too, rather than raising. [v2.1-alpha.30]
@@ -37,16 +29,12 @@ noStringResult := {}
 noStringResult.DefineProp("ToString", {call: ToStringNoValue})
 y := String(noStringResult)
 
-if (y = "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "", A_LineNumber)
 
 stringResult := {}
 stringResult.DefineProp("ToString", {call: ToStringValue})
 y := String(stringResult)
 
-if (y = "stringified")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "stringified", A_LineNumber)
+
+FileAppend "pass", "*"

@@ -1,6 +1,7 @@
 #NoTrayIcon
 
 #import KS { StringBuffer }
+#Include <assert>
 desktop := DllCall("GetDesktopWindow", "ptr")
 buf := Buffer(16, 0)
 DllCall("user32.dll\GetWindowRect", "ptr", desktop, "ptr", buf)
@@ -9,20 +10,14 @@ t := NumGet(buf, 4, "UInt")
 r := NumGet(buf, 8, "UInt")
 b := NumGet(buf, 12, "UInt")
 	
-if (r > 0 && b > 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(r > 0 && b > 0, A_LineNumber)
 
 str := "lower"
 len := StrLen(str)
 strbuf := StringBuffer(str)
 DllCall("user32.dll\CharUpperBuff", "ptr", strbuf, "UInt", len)
 
-if (strbuf == StrUpper(str))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(strbuf, StrUpper(str), A_LineNumber)
 
 
 DetectHiddenWindows True
@@ -32,43 +27,34 @@ ProcessWait(pid)
 ProcessSetPriority("H", pid)
 Sleep(2000)
 
-if DllCall("IsWindowVisible", "Ptr", WinExist("Untitled - Notepad"))
+visible := DllCall("IsWindowVisible", "Ptr", WinExist("Untitled - Notepad"))
+Assert(visible, A_LineNumber)
+
+if visible
 {
 	ProcessClose(pid)
 	ProcessWaitClose(pid)
-	FileAppend "pass", "*"
 }
-else
-	FileAppend "fail", "*"
 
 ZeroPaddedNumber := Buffer(20)
 DllCall("wsprintf", "Ptr", ZeroPaddedNumber, "Str", "%010d", "Int", 432, "Cdecl")
 str := StrGet(ZeroPaddedNumber)
 fmtstr := Format(str, "0:D10")
 
-if (str == "0000000432" && str == fmtstr)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(str == "0000000432" && str == fmtstr, A_LineNumber)
 
 str := StringBuffer()
 DllCall("wsprintf", "Ptr", str, "Str", "%010d", "Int", 432, "Cdecl")
 fmtstr := Format(str, "0:D10")
 
-if (str == "0000000432" && str == fmtstr)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(str == "0000000432" && str == fmtstr, A_LineNumber)
 
 MAX_DIR_PATH := 260 - 12 + 1
 folder := A_MyDocuments
 longPath := StringBuffer()
 DllCall("GetLongPathNameW", "Str", folder, "Ptr", longPath, "UInt", MAX_DIR_PATH, "UInt")
 
-if (folder == longPath && longPath == A_MyDocuments)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(folder == longPath && longPath == A_MyDocuments, A_LineNumber)
 
 freq := 0
 CounterBefore := 0
@@ -80,10 +66,7 @@ Sleep(1000)
 DllCall("QueryPerformanceCounter", "Int64*", &CounterAfter)
 elapsed := (CounterAfter - CounterBefore) / freq * 1000
 
-if (elapsed > 900 && elapsed < 1200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(elapsed > 900 && elapsed < 1200, A_LineNumber)
 
 freq := 0
 CounterBefore := 0
@@ -98,35 +81,23 @@ Sleep(1000)
 DllCall(qpc, "Int64*", &counterafter)
 elapsed := (CounterAfter - CounterBefore) / freq * 1000
 
-if (elapsed > 900 && elapsed < 1200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(elapsed > 900 && elapsed < 1200, A_LineNumber)
 
 mh := DllCall("GetModuleHandle", "Str", "kernel32", "Ptr")
 MulDivProc := DllCall("GetProcAddress", "Ptr", mh, "AStr", "MulDiv", "Ptr")
 result := DllCall(MulDivProc, "Int", 3, "Int", 4, "Int", 3)
 
-if (result == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(result, 4, A_LineNumber)
 	
 str := "hello"
 DllCall("msvcrt.dll\_wcsrev", "Str", str)
 
-if (str == "olleh")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(str, "olleh", A_LineNumber)
 	
 str2 := "world"
 DllCall("msvcrt.dll\_wcsrev", "Str", &str2)
 
-if (str2 == "dlrow")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(str2, "dlrow", A_LineNumber)
 
 code := Buffer(64)
 NumPut(
@@ -142,10 +113,7 @@ if (!DllCall("VirtualProtect", "Ptr", code, "Ptr", code.Size, "UInt", 0x40, "UIn
 
 val := DllCall(code, "Str", "Hello", "Cdecl Int")
 
-if (val == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 5, A_LineNumber)
 	
 ; Ensure int* gets properly written to with a negative number.
 
@@ -154,10 +122,7 @@ NumPut("int", -1, src)
 dest := 0
 DllCall("Kernel32\RtlMoveMemory", "int*", &dest, "Ptr", src, "Int", 4)
 
-if (dest == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(dest, -1, A_LineNumber)
 
 ; Ensure int* gets properly written to and initial bits are cleared.
 
@@ -166,10 +131,7 @@ NumPut("int", 1, src)
 dest := 0xFFFFFFFF+1
 DllCall("Kernel32\RtlMoveMemory", "int*", &dest, "Ptr", src, "Int", 4)
 
-if (dest == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(dest, 1, A_LineNumber)
 
 ; Ensure float* gets properly written to and can be read back as a double.
 
@@ -177,10 +139,7 @@ src := Buffer(4)
 NumPut("float", 1.0, src)
 dest := 1.1
 DllCall("Kernel32\RtlMoveMemory", "float*", &dest, "Ptr", src, "Int", 4)
-if (dest == 1.0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(dest, 1.0, A_LineNumber)
 
 ; This tests the regular DllCall() and the CallDel() path using ComArgumentHelper.
 ; I don't know what it's supposed to be doing or how it works, but it appears to be
@@ -198,18 +157,12 @@ ptr := MCode('2,x64:gwEBww==')
 i := -2
 DllCall(ptr, "int*", &i)
 
-if (i == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(i, -1, A_LineNumber)
 
 i := -1
 DllCall(ptr, "int*", &i)
 
-if (i == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(i, 0, A_LineNumber)
 
 MCode(mcode) {
 	static e := Map('1', 4, '2', 1), c := (A_PtrSize=8) ? "x64" : "x86"
@@ -246,10 +199,7 @@ ptr := MCode('2,x64:SP/h')
 result := 0
 result := DllCall(ptr, "ptr", CallbackCreate(CallbackZeroArgs))
 
-if (result == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(result, 3, A_LineNumber)
 
 /*
 int CallCallbackTwoArgs(void* ptr, int arg1, int arg2)
@@ -263,10 +213,7 @@ ptr := MCode('2,x64:SInIidFEicJI/+A=')
 result := 0
 result := DllCall(ptr, "ptr", CallbackCreate(CallbackTwoArgs), "int", -1, "int", 4)
 
-if (result == 3) ; This is testing the conversion of long back to int.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(result, 3, A_LineNumber)  ; This is testing the conversion of long back to int.
 
 Base64ToString(Base64)
 {
@@ -283,7 +230,6 @@ Base64ToString(Base64)
 }
 
 str := Base64ToString("VGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZw==")
-if (str == "The quick brown fox jumps over the lazy dog")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(str, "The quick brown fox jumps over the lazy dog", A_LineNumber)
+
+FileAppend "pass", "*"

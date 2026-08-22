@@ -1,14 +1,12 @@
 #NoTrayIcon
+#Include <assert>
 
 func0() {
 }
 
 x := func0()
 
-If (x == "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, "", A_LineNumber)
 
 func1(a)
 {
@@ -17,10 +15,7 @@ func1(a)
 
 x := func1(123)
 
-If (x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 123, A_LineNumber)
 	
 func2(a) {
 	return a * 2
@@ -28,10 +23,7 @@ func2(a) {
 
 x := func2(4)
 
-If (x == 8)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 8, A_LineNumber)
 	
 func3()
 {
@@ -40,10 +32,7 @@ func3()
 
 x := func3()
 
-If (x = [10, 20, 30])
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = [10, 20, 30], A_LineNumber)
 	
 func4()
 {
@@ -52,10 +41,7 @@ func4()
 
 x := func4()
 
-If (x.one == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.one, 1, A_LineNumber)
 	
 func5()
 {
@@ -66,7 +52,6 @@ func5()
 
 x := func5()
 
-If (x.two == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x.two, 2, A_LineNumber)
+
+FileAppend "pass", "*"

@@ -1,4 +1,5 @@
-﻿#NoTrayIcon
+#NoTrayIcon
+#Include <assert>
 
 ; Return true to continue enumerating, false to stop
 EnumFunc(&x) {
@@ -12,10 +13,7 @@ EnumFunc(&x) {
 a := 0
 ; An enumerator is a function which can just be called
 EnumFunc(&a)
-if (a == 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 ; Reset the internal counter to 0
 EnumFunc(&a)
@@ -30,10 +28,7 @@ e := arr.__Enum(2)
 while (e(&i, &j))
     a += j
 
-if (a == 9)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 9, A_LineNumber)
 
 ; A for loop checks whether the passed object has __Enum, and calls it with the number of requested arguments.
 ; For example `for i, j, k in e` calls `e.__Enum(3)` to get the enumerator function (if __Enum is defined) 
@@ -43,19 +38,13 @@ for i in EnumFunc {
     a += i
 }
 
-if (a == 6)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 6, A_LineNumber)
 
 a := 0
 ; Using the spread operator calls either the enumerator function, or __Enum(1)
 a := [EnumFunc*].Length
 
-if (a == 3)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 3, A_LineNumber)
 
 Enum1(&x) {
     static i := 0
@@ -77,10 +66,7 @@ for i in o {
     a += i
 }
 
-if (a == 12)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 12, A_LineNumber)
 
 a := 0, b := 0
 ; And this one is equivalent to `for i in o.__Enum(2)`
@@ -89,49 +75,35 @@ for i, j in o {
     b += j
 }
 
-if (a == 6)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 6, A_LineNumber)
 
-if (b == 12)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(b, 12, A_LineNumber)
 
 a := 0
 ; Here `o.__Enum(1)` is called
 a := [o*]
 
-if (a[3] == 6)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a[3], 6, A_LineNumber)
 
 a := 0
 ; Using Bind we can ignore certain arguments, here the second argument is ignored
 a := [o.__Enum(2).Bind(, &_)*] ; This is also testing a difficult to parse statement that ends in the * spread operator inside of an array literal.
 
-if (a[3] == 3)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a[3], 3, A_LineNumber)
 
 a := 0
 ; And now the first argument is ignored.
 a := [o.__Enum(2).Bind(&_)*]
 
-if (a[3] == 6)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a[3], 6, A_LineNumber)
     
 try {
     ; Incorrect number of parameters should throw.
     for i, j in EnumFunc {
         a += i
     }
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 } catch {
-    FileAppend "pass", "*"
 }
+
+FileAppend "pass", "*"

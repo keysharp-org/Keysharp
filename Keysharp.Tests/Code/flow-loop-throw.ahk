@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 i := 0
 
@@ -9,10 +10,7 @@ try
 	f1()
 }
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 f1() {
@@ -31,10 +29,7 @@ try
 	f2()
 }
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 f2() {
@@ -55,10 +50,7 @@ try
 	f3()
 }
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 f3()
@@ -81,10 +73,7 @@ try
 	f4()
 }
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 f4()
@@ -124,10 +113,7 @@ try
 	f4()
 }
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 i := 0
@@ -139,10 +125,7 @@ try
 	tw1()
 }
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 tw1() {
@@ -161,10 +144,7 @@ try
 	tw2()
 }
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 tw2() {
@@ -182,10 +162,7 @@ Loop 5 {
 	i++
 	ftc1()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 ftc1() {
@@ -205,10 +182,7 @@ Loop 5 {
 	i++
 	ftc2()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 ftc2() {
@@ -230,10 +204,7 @@ Loop 5 {
 	i++
 	ftc3()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 ftc3()
@@ -256,10 +227,7 @@ Loop 5 {
 	i++
 	ftc4()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 ftc4()
@@ -283,10 +251,7 @@ Loop 5 {
 	i++
 	wtc1()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 wtc1() {
@@ -306,10 +271,7 @@ Loop 5 {
 	i++
 	wtc2()
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 wtc2() {
@@ -335,10 +297,7 @@ try
 	flut1()
 }
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 flut1() {
@@ -358,10 +317,7 @@ try
 	fwut1()
 }
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 fwut1() {
@@ -381,10 +337,7 @@ try
 	ffu1()
 }
 
-	if (i == A_Index)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(i, A_Index, A_LineNumber)
 }
 
 ffu1()
@@ -398,3 +351,5 @@ ffu1()
 	}
 	until false
 }
+
+FileAppend "pass", "*"

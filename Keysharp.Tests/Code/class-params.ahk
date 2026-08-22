@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 class testclass
 {
@@ -38,73 +39,43 @@ testsubclassobj := testsubclass(1, 2, 3, 4)
 
 val := testclassobj.a
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 val := testclassobj.b
 
-If (val == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2, A_LineNumber)
 	
 val := testclassobj.c
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 	
 val := testsubclassobj.a
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 val := testsubclassobj.b
 
-If (val == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2, A_LineNumber)
 	
 val := testsubclassobj.c
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 	
 val := testsubclassobj.x
 
-If (val == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 10, A_LineNumber)
 
 val := testsubclassobj.y
 
-If (val == 20)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 20, A_LineNumber)
 	
 val := testsubclassobj.z
 
-If (val == 30)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 30, A_LineNumber)
 
 val := testsubclassobj.zz
 
-If (val == 40)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 40, A_LineNumber)
 
 class testclassnoargs
 {
@@ -140,38 +111,23 @@ testsubclassobj := testsubclassfourargs(1, 2)
 
 val := testclassobj.a
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 val := testclassobj.b
 
-If (val == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2, A_LineNumber)
 	
 val := testclassobj.c
 
-If (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 
 val := testsubclassobj.x
 
-If (val == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 10, A_LineNumber)
 
 val := testsubclassobj.y
 
-If (val == 20)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 20, A_LineNumber)
 
 class testclassthreeargs
 {
@@ -207,82 +163,49 @@ testsubclassobj := testsubclassnoargs(1, 2, 3)
 
 val := testclassobj.a
 
-If (val == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 4, A_LineNumber)
 
 val := testclassobj.b
 
-If (val == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 5, A_LineNumber)
 	
 val := testclassobj.c
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 val := testsubclassobj.x
 
-If (val == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 100, A_LineNumber)
 
 val := testsubclassobj.y
 
-If (val == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 200, A_LineNumber)
 
 val := testsubclassobj.a
 
-If (IsSet(val))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(IsSet(val), A_LineNumber)
 
 val := testsubclassobj.b
 
-If (IsSet(val))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(IsSet(val), A_LineNumber)
 
 val := testsubclassobj.c
 
-If (IsSet(val))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(IsSet(val), A_LineNumber)
 
 testsubclassobj := testsubclassnoargs(7, 8, 9) ; No constructor parameters defined in the subclass, so just forward them to the base.
 
 val := testsubclassobj.a
 
-If (val == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 7, A_LineNumber)
 
 val := testsubclassobj.b
 
-If (val == 8)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 8, A_LineNumber)
 
 val := testsubclassobj.c
 
-If (val == 9)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 9, A_LineNumber)
 
 class class1
 {
@@ -305,31 +228,19 @@ class class1
 arr := [1, 2, 3]
 c1 := class1()
 
-if (c1.sum == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c1.sum, 0, A_LineNumber)
 	
 c1 := class1(arr*)
 
-if (c1.sum == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c1.sum, 6, A_LineNumber)
 
 c1 := class1(1, arr*)
 		
-if (c1.sum == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c1.sum, 7, A_LineNumber)
 	
 c1 := class1(1, 2, arr*)
 
-if (c1.sum == 9)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c1.sum, 9, A_LineNumber)
 
 c1 := ""
 
@@ -353,31 +264,19 @@ class class2
 
 c2 := class2()
 
-if (c2.sum == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c2.sum, 0, A_LineNumber)
 
 c2 := class2(1, 2, 3)
 
-if (c2.sum == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c2.sum, 6, A_LineNumber)
 	
 c2 := class2(arr*)
 
-if (c2.sum == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c2.sum, 6, A_LineNumber)
 	
 c2 := class2(1, 2, arr*)
 
-if (c2.sum == 9)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c2.sum, 9, A_LineNumber)
 
 c2 := ""
 
@@ -401,24 +300,15 @@ class class3
 
 c3 := class3(1, 2, 3)
 
-if (c3.sum == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c3.sum, 6, A_LineNumber)
 
 c3 := class3(arr*)
 
-if (c3.sum == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c3.sum, 6, A_LineNumber)
 
 c3 := class3(1, 2, arr*)
 
-if (c3.sum == 9)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c3.sum, 9, A_LineNumber)
 
 c3 := ""
 
@@ -445,17 +335,11 @@ class class4
 
 c4 := class4(1, 2)
 
-if (c4.sum == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c4.sum, 3, A_LineNumber)
 
 c4 := class4(1, 2, arr*)
 
-if (c4.sum == 9)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(c4.sum, 9, A_LineNumber)
 
 class class5
 {
@@ -468,7 +352,6 @@ class class5
 c5 := class5()
 val := c5.func()
 
-if (val == "`r`n`t")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, "`r`n`t", A_LineNumber)
+
+FileAppend "pass", "*"

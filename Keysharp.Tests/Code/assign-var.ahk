@@ -1,46 +1,25 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := x
 
-If (x = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 1, A_LineNumber)
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 1, A_LineNumber)
 	
-If (x != 1)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != 1), A_LineNumber)
 
-If (y = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 1, A_LineNumber)
 	
-If (y != 1)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(y != 1), A_LineNumber)
 
-If (x != y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != y), A_LineNumber)
 
 a := b := 123
 
-If (a == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 123, A_LineNumber)
 
-If (b == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, 123, A_LineNumber)
+
+FileAppend "pass", "*"

@@ -1,155 +1,92 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 2
 y := 2
 z := x**y
 
-If (z = 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 4, A_LineNumber)
 
-If (z != 4)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(z != 4), A_LineNumber)
 
 z := 2**2
 
-If (z = 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 4, A_LineNumber)
 
 z := "2"**2
 
-If (z = 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 4, A_LineNumber)
 
 z := "0x2"**"0x2"
 
-If (z = 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 4, A_LineNumber)
 
 z := -x**y
 
-If (z = -4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = -4, A_LineNumber)
 
-If (z != -4)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(z != -4), A_LineNumber)
 	
 ; Should give the same result as - with no parens.
 z := -(x)**y
 
-If (z = -4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = -4, A_LineNumber)
 
-If (z != -4)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(z != -4), A_LineNumber)
 
 z := (-x)**y
 
-If (z = 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 4, A_LineNumber)
 
-If (z != 4)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(z != 4), A_LineNumber)
 	
 ; To apply the - to the result, parens are needed.
 z := -(x**y)
 
-If (z = -4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = -4, A_LineNumber)
 
-If (z != -4)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(z != -4), A_LineNumber)
 
 ; Now do float with int
 x := 0.5
 y := 2
 z := x**y
 
-If (z = 0.25)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0.25, A_LineNumber)
 
-If (z != 0.25)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(z != 0.25), A_LineNumber)
 
 z := 0.5**2
 
-If (z = 0.25)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 0.25, A_LineNumber)
 
 x := 2
 y := 0.5
 z := x**y
 
-If (z = "1.4142135623730951")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = "1.4142135623730951", A_LineNumber)
 
-If (z != "1.4142135623730951")
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(z != "1.4142135623730951"), A_LineNumber)
 
 x := 2
 y := 0.5
 z := 2**0.5
 
-If (z = "1.4142135623730951")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = "1.4142135623730951", A_LineNumber)
 
 ; Now do float with float
 x := 0.5
 y := 0.5
 z := x**y
 
-If (z = "0.70710678118654757")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = "0.70710678118654757", A_LineNumber)
 
-If (z != "0.70710678118654757")
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(z != "0.70710678118654757"), A_LineNumber)
 
 x := 0.5
 y := 0.5
 z := 0.5**0.5
 
-If (z = "0.70710678118654757")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = "0.70710678118654757", A_LineNumber)
+
+FileAppend "pass", "*"

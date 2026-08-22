@@ -1,16 +1,10 @@
 #NoTrayIcon
+#Include <assert>
 
-if (-0.6931471805599453 == Ln(0.5))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(-0.6931471805599453, Ln(0.5), A_LineNumber)
 	
-if (0 == Ln(1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(0, Ln(1), A_LineNumber)
 
-if (-0.3930425881096072 == Ln(0.675))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(-0.3930425881096072, Ln(0.675), A_LineNumber)
+
+FileAppend "pass", "*"

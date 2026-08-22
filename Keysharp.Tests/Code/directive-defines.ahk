@@ -2,6 +2,7 @@
 
 #define SOMETHING
 #define SOMETHING_UNDERSCORE
+#Include <assert>
 
 x := 10
 
@@ -10,13 +11,10 @@ x := 10
 #endif
 
 #if WINDOWS
-	if (x == 20)
+	AssertEq(x, 20, A_LineNumber)
 #elif LINUX || OSX
-	if (x == 10)
+	AssertEq(x, 10, A_LineNumber)
 #endif
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
 
 x := 10
 
@@ -25,13 +23,10 @@ x := 10
 #endif
 
 #if WINDOWS
-	if (x == 10)
+	AssertEq(x, 10, A_LineNumber)
 #elif LINUX || OSX
-	if (x == 20)
+	AssertEq(x, 20, A_LineNumber)
 #endif
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
 
 x := 10
 
@@ -41,10 +36,7 @@ x := 10
 	x := 200
 #endif
 
-if (x == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 100, A_LineNumber)
 
 x := 10
 
@@ -54,10 +46,7 @@ x := 10
 	x := 200
 #endif
 
-if (x == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 200, A_LineNumber)
 
 x := 10
 
@@ -65,10 +54,7 @@ x := 10
 	x *= 2
 #endif
 
-if (x == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 10, A_LineNumber)
 
 x := 10
 
@@ -76,10 +62,7 @@ x := 10
 	x *= 2
 #endif
 
-if (x == 20)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 20, A_LineNumber)
 
 ; False outer with true inner.
 x := 10
@@ -93,15 +76,12 @@ x := 10
 #endif
 
 #if WINDOWS
-	if (x == 10)
+	AssertEq(x, 10, A_LineNumber)
 #elif LINUX
-	if (x == 20)
+	AssertEq(x, 20, A_LineNumber)
 #elif OSX
-	if (x == 10)
+	AssertEq(x, 10, A_LineNumber)
 #endif
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
 
 ; True outer with false inner.
 x := 10
@@ -115,15 +95,12 @@ x := 10
 #endif
 
 #if WINDOWS
-	if (x == 1)
+	AssertEq(x, 1, A_LineNumber)
 #elif LINUX
-	if (x == 10)
+	AssertEq(x, 10, A_LineNumber)
 #elif OSX
-	if (x == 10)
+	AssertEq(x, 10, A_LineNumber)
 #endif
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
 
 str := ""
 
@@ -146,15 +123,12 @@ str := ""
 #endif
 
 #if WINDOWS
-	if (str == "windows")
+	AssertEq(str, "windows", A_LineNumber)
 #elif LINUX
-	if (str == "linux")
+	AssertEq(str, "linux", A_LineNumber)
 #elif OSX
-	if (str == "osx")
+	AssertEq(str, "osx", A_LineNumber)
 #endif
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
 
 str := ""
 
@@ -167,13 +141,10 @@ str := ""
 #endif
 
 #if WINDOWS
-	if (str == "not linux")
+	AssertEq(str, "not linux", A_LineNumber)
 #else
-	if (str == "not windows")
+	AssertEq(str, "not windows", A_LineNumber)
 #endif
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
 
 x := 10
 
@@ -181,10 +152,7 @@ x := 10
 	x *= 2
 #endif
 
-if (x == 20)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 20, A_LineNumber)
 
 x := 10
 
@@ -192,10 +160,7 @@ x := 10
 	x *= 2
 #endif
 
-if (x == 10)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 10, A_LineNumber)
 	
 x := 10
 
@@ -203,10 +168,7 @@ x := 10
 	x *= 2
 #endif
 
-if (x == 20)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 20, A_LineNumber)
 
 ; Test undefining something that has been predefined.
 x := false
@@ -217,10 +179,7 @@ x := false
 	x := true
 #endif
 
-if (!x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!x, A_LineNumber)
 
 x := false
 
@@ -230,10 +189,7 @@ x := false
 	x := true
 #endif
 
-if (x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x, A_LineNumber)
 
 ; true and false are value keywords inside a condition too, not merely undefined symbols: #if true must
 ; keep its block, and #if false must drop it (the usual way to comment out a whole region).
@@ -243,10 +199,7 @@ x := false
 	x := true
 #endif
 
-if (x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x, A_LineNumber)
 
 x := true
 
@@ -254,10 +207,7 @@ x := true
 	x := false
 #endif
 
-if (x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x, A_LineNumber)
 
 ; A defined symbol still wins over the literal. Symbol names are case-insensitive, so #define FALSE names the same
 ; thing as the literal false; if the literal won, this branch would silently stop being taken.
@@ -269,10 +219,7 @@ x := false
 	x := true
 #endif
 
-if (x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x, A_LineNumber)
 
 #undef FALSE
 
@@ -291,10 +238,7 @@ x := true
 	x := false
 #endif
 
-if (x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x, A_LineNumber)
 
 ; ...and a nonzero hex literal is still true.
 x := false
@@ -303,7 +247,6 @@ x := false
 	x := true
 #endif
 
-if (x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x, A_LineNumber)
+
+FileAppend "pass", "*"

@@ -1,72 +1,52 @@
-﻿#NoTrayIcon
+#NoTrayIcon
+#Include <assert>
 
 ZeroParams() => 0
 
 try {
     ZeroParams()
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
 
-try {
-    ZeroParams(0)
-    FileAppend "fail", "*"
-} catch {
-    FileAppend "pass", "*"
-}
+Throws(() => ZeroParams(0), A_LineNumber)
 
 OneParam(a) => 0
 
-try {
-    OneParam()
-    FileAppend "fail", "*"
-} catch {
-    FileAppend "pass", "*"
-}
+Throws(() => OneParam(), A_LineNumber)
 
 try {
     OneParam(0)
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
 
-try {
-    OneParam(0, 0)
-    FileAppend "fail", "*"
-} catch {
-    FileAppend "pass", "*"
-}
+Throws(() => OneParam(0, 0), A_LineNumber)
 
 try {
     OneParam(0, unset)
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
 
 VariadicOneParam(a*) => 0
 
 try {
     VariadicOneParam()
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
 
 try {
     VariadicOneParam(0)
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
 
 try {
     VariadicOneParam(0, 0)
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
 
 class TestClass1 {
@@ -78,26 +58,15 @@ class TestClass1 {
 
 t1 := TestClass1()
 
-try {
-    a := t1[]
-    FileAppend "fail", "*"
-} catch {
-    FileAppend "pass", "*"
-}
+Throws(() => (a := t1[]), A_LineNumber)
 
 try {
     a := t1[1]
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
 
-try {
-    a := t1[1, 2]
-    FileAppend "fail", "*"
-} catch {
-    FileAppend "pass", "*"
-}
+Throws(() => (a := t1[1, 2]), A_LineNumber)
 
 class TestClass2 {
     __Item[a*] {
@@ -110,23 +79,20 @@ t2 := TestClass2()
 
 try {
     a := t2[]
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
 
 try {
     a := t2[1]
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
 
 try {
     a := t2[1, 2]
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
 
 class TestClass3 {
@@ -138,23 +104,18 @@ class TestClass3 {
 
 t3 := TestClass3()
 
-try {
-    a := t3[]
-    FileAppend "fail", "*"
-} catch {
-    FileAppend "pass", "*"
-}
+Throws(() => (a := t3[]), A_LineNumber)
 
 try {
     a := t3[1]
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
 
 try {
     a := t3[1, 2]
-    FileAppend "pass", "*"
 } catch {
-    FileAppend "fail", "*"
+    Assert(false, A_LineNumber)
 }
+
+FileAppend "pass", "*"

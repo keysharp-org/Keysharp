@@ -15,7 +15,7 @@ Check(label, actual, expected)
 	}
 }
 
-Throws(label, fn)
+Rejects(label, fn)
 {
 	global failed
 	try
@@ -93,10 +93,10 @@ Check("bool 'on'", sp.Bold, true)
 ; ---- invalid values raise rather than coercing to zero -------------------------------------------
 bad := Font()
 bad.Size := 12
-Throws("bad size", () => bad.Size := "abc")
+Rejects("bad size", () => bad.Size := "abc")
 Check("bad size left alone", bad.Size, 12)
-Throws("bad weight", () => bad.Weight := "abc")
-Throws("bad color", () => bad.Color := "NotAColour")
+Rejects("bad weight", () => bad.Weight := "abc")
+Rejects("bad color", () => bad.Color := "NotAColour")
 
 ; A numeric colour is masked to 24 bits rather than letting a high byte reach the alpha.
 num := Font()
@@ -190,8 +190,8 @@ Check("ctl italic", cf.Italic, true)
 Check("ctl color", cf.Color, "0000FF")
 
 ; Assigning something that is not a Font must raise.
-Throws("gui bad assign", () => g.Font := "s12")
-Throws("ctl bad assign", () => ctl.Font := 5)
+Rejects("gui bad assign", () => g.Font := "s12")
+Rejects("ctl bad assign", () => ctl.Font := 5)
 
 ; ---- Image text calls accept a Font in either slot -----------------------------------------------
 img := Image.Create(40, 20)
@@ -209,10 +209,11 @@ Check("font as name only", byName.Width, viaString.Width)
 
 ; A Font carrying a colour must not raise the way a "cRRGGBB" option string does.
 img.DrawText("hi", 0, 0, , Font("s10 cFF0000", "Arial"))
-Throws("colour option still rejected", () => img.MeasureText("Wg", "s10 cFF0000", "Arial"))
+Rejects("colour option still rejected", () => img.MeasureText("Wg", "s10 cFF0000", "Arial"))
 img.Dispose()
 
-if (failed = 0)
-	FileAppend("pass", "*")
-else
+; This file reports value diffs rather than line numbers, so it writes its own accumulated failure text.
+if (failed != 0)
 	FileAppend("fail: " failed " check(s):" report, "*")
+
+FileAppend "pass", "*"

@@ -1,46 +1,22 @@
-﻿#NoTrayIcon
+#NoTrayIcon
+#Include <assert>
 
-if 1 == 1.0
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(1, 1.0, A_LineNumber)
 
-if 1 = "1"
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(1 = "1", A_LineNumber)
 
-if 1 == "1"
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(1, "1", A_LineNumber)
 
-if 1 != 2.0
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(1 != 2.0, A_LineNumber)
 
-if "0.10" = 0.1
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert("0.10" = 0.1, A_LineNumber)
 
-if 513 = "0x201"
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(513 = "0x201", A_LineNumber)
 
-if 513.0 == "0x201"
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(513.0, "0x201", A_LineNumber)
 
-if "a" = "A"
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert("a" = "A", A_LineNumber)
 
-if "a" == "A"
-    FileAppend "fail", "*"
-else
-    FileAppend "pass", "*"
+Assert(!("a" == "A"), A_LineNumber)
+
+FileAppend "pass", "*"

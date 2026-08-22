@@ -1,16 +1,13 @@
 #NoTrayIcon
+#Include <assert>
 
 x := EnvGet("PATH")
 
-if (x != "") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x != "", A_LineNumber) 
 
 dummy := "dummynothing123"
 x := EnvGet(dummy)
 
-if (x == "") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, "", A_LineNumber)
+
+FileAppend "pass", "*"

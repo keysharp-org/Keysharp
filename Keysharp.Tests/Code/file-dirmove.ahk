@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 if (DirExist("./DirMove"))
 	DirDelete("./DirMove", true)
@@ -14,52 +15,25 @@ dir := path . "DirCopy"
 
 DirCopy(dir, "./DirMove")
 	
-if (DirExist("./DirMove"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(DirExist("./DirMove"), A_LineNumber)
 
-if (FileExist("./DirMove/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./DirMove/file1.txt"), A_LineNumber)
 
-if (FileExist("./DirMove/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./DirMove/file2.txt"), A_LineNumber)
 
-if (FileExist("./DirMove/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./DirMove/file3txt"), A_LineNumber)
 
 DirMove("./DirMove", "./DirCopy3")
 
-if (!DirExist("./DirMove"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!DirExist("./DirMove"), A_LineNumber)
 	
-if (DirExist("./DirCopy3"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(DirExist("./DirCopy3"), A_LineNumber)
 
-if (FileExist("./DirCopy3/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./DirCopy3/file1.txt"), A_LineNumber)
 
-if (FileExist("./DirCopy3/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./DirCopy3/file2.txt"), A_LineNumber)
 
-if (FileExist("./DirCopy3/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./DirCopy3/file3txt"), A_LineNumber)
 
 threw := false
 
@@ -72,10 +46,7 @@ catch
 	threw := true
 }
 
-if (threw)
-	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(threw, A_LineNumber)
 
 threw := false
 try
@@ -87,34 +58,19 @@ catch
 	threw := true
 }
 
-if (threw)
-	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(threw, A_LineNumber)
 
 DirCopy(dir, "./DirMove")
 DirMove("./DirMove", "./DirCopy3", 1) ;Will copy into because ./DirCopy3 already exists.
 
-if (DirExist("./DirCopy3/DirMove"))
-	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(DirExist("./DirCopy3/DirMove"), A_LineNumber)
 
-if (FileExist("./DirCopy3/DirMove/file1.txt"))
-	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./DirCopy3/DirMove/file1.txt"), A_LineNumber)
 
 
-if (FileExist("./DirCopy3/DirMove/file2.txt"))
-	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./DirCopy3/DirMove/file2.txt"), A_LineNumber)
 
-if (FileExist("./DirCopy3/DirMove/file3txt"))
-	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./DirCopy3/DirMove/file3txt"), A_LineNumber)
 	
 DirMove("./DirCopy3", "./DirCopy3-rename", "R")
 
@@ -126,3 +82,5 @@ if (DirExist("./DirCopy3"))
 	
 if (DirExist("./DirCopy3-rename"))
 	DirDelete("./DirCopy3-rename", true)
+
+FileAppend "pass", "*"

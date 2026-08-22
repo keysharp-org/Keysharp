@@ -1,60 +1,36 @@
 #NoTrayIcon
+#Include <assert>
 
 x := "hello"
 y := x " world"
 y := x . " world"
 
-If x != "hello"
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != "hello"), A_LineNumber)
 	
-If y != "hello world"
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(y != "hello world"), A_LineNumber)
 	
-If y = "hello world"
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "hello world", A_LineNumber)
 	
 y := x " world"
 
-If y != "hello world"
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(y != "hello world"), A_LineNumber)
 	
-If y = "hello world"
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "hello world", A_LineNumber)
 
 y := x . " world " x
 	
-If (y == "hello world hello")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, "hello world hello", A_LineNumber)
 
 y := x " world " . x
 	
-If (y == "hello world hello")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, "hello world hello", A_LineNumber)
 
 y := x . " world " . x
 	
-If (y == "hello world hello")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, "hello world hello", A_LineNumber)
 
 y := x " world " x
 	
-If (y == "hello world hello")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, "hello world hello", A_LineNumber)
+
+FileAppend "pass", "*"

@@ -3,18 +3,17 @@
 ; =========================
 ; module-scoped-import.ahk
 ; #import scoped to a function body / class body (Keysharp extension), plus laziness and write-through.
-; Each check prints "pass" on success; anything else fails HasPassed.
+; Each check is silent on success; the script's only output is the single "pass" at the end.
 ; =========================
-
-Ok(cond) => FileAppend(cond ? "pass" : "fail", "*")
 
 ; A bare module-scope import binds the module NAME to a Module object, so a method call dispatches via IMetaObject.
 #import KS
-Ok(Ks.Cosh(0) == 1)
+#Include <assert>
+AssertEq(Ks.Cosh(0), 1, A_LineNumber)
 
 ; KS-only functions remain available through the module object.
 tempFile := Ks.FileCreateTemp()
-Ok(FileExist(tempFile) != "")
+Assert(FileExist(tempFile) != "", A_LineNumber)
 FileDelete(tempFile)
 
 FnKsUtilities() {
@@ -27,42 +26,42 @@ FnKsUtilities() {
     FileDelete(tempName)
     return result
 }
-Ok(FnKsUtilities())
+Assert(FnKsUtilities(), A_LineNumber)
 
 ; ---- 1. Function-scoped built-in import: Cosh visible inside, resolves correctly
 FnBuiltin() {
     #import KS { Cosh }
     return Cosh(0)   ; cosh(0) = 1
 }
-Ok(FnBuiltin() == 1)
+AssertEq(FnBuiltin(), 1, A_LineNumber)
 
 ; ---- 1b. Function-scoped bare import: the module object dispatches a method call
 FnModuleObject() {
     #import KS
     return Ks.Cosh(0)
 }
-Ok(FnModuleObject() == 1)
+AssertEq(FnModuleObject(), 1, A_LineNumber)
 
 ; ---- 2. Function-scoped file import: a separate module's export, bound only inside the function
 FnFile() {
     #import "module_scoped_import_helper" { HelperFn }
     return HelperFn()
 }
-Ok(FnFile() == 42)
+AssertEq(FnFile(), 42, A_LineNumber)
 
 ; ---- 3. Function-scoped wildcard import, only referenced names materialize
 FnWild() {
     #import KS { * }
     return Cosh(0)
 }
-Ok(FnWild() == 1)
+AssertEq(FnWild(), 1, A_LineNumber)
 
 ; ---- 4. Aliased import inside a function
 FnAlias() {
     #import KS { Cosh as C }
     return C(0)
 }
-Ok(FnAlias() == 1)
+AssertEq(FnAlias(), 1, A_LineNumber)
 
 ; ---- 5. Closure sees the enclosing function's import
 FnClosure() {
@@ -70,7 +69,7 @@ FnClosure() {
     f := () => Cosh(0)
     return f()
 }
-Ok(FnClosure() == 1)
+AssertEq(FnClosure(), 1, A_LineNumber)
 
 ; ---- 6. Write-through: assigning an imported script VARIABLE propagates to the source module
 FnWrite() {
@@ -78,7 +77,7 @@ FnWrite() {
     helperVar := 7
     return GetHelperVar()   ; reads the module's own helperVar
 }
-Ok(FnWrite() == 7)
+AssertEq(FnWrite(), 7, A_LineNumber)
 
 ; ---- 8. %name% dynamic deref of a scoped import resolves in-scope
 FnDeref() {
@@ -86,14 +85,14 @@ FnDeref() {
     n := "Cosh"
     return %n%(0)
 }
-Ok(FnDeref() == 1)
+AssertEq(FnDeref(), 1, A_LineNumber)
 
 ; ---- 9. Class-body import visible in a method
 class WithImport {
     #import KS { Cosh }
     Compute() => Cosh(0)
 }
-Ok(WithImport().Compute() == 1)
+AssertEq(WithImport().Compute(), 1, A_LineNumber)
 
 ; ---- 10. Class-body import visible in a nested class's method
 class Outer {
@@ -102,7 +101,7 @@ class Outer {
         Compute() => Cosh(0)
     }
 }
-Ok(Outer.Inner().Compute() == 1)
+AssertEq(Outer.Inner().Compute(), 1, A_LineNumber)
 
 ; ---- 11. A local declared in the function shadows an import of the same name
 FnShadow() {
@@ -110,7 +109,7 @@ FnShadow() {
     local Cosh := 5
     return Cosh
 }
-Ok(FnShadow() == 5)
+AssertEq(FnShadow(), 5, A_LineNumber)
 
 ; ---- 12. An import in one function does not leak into another: the SAME alias bound to DIFFERENT
 ;          functions in each frame must resolve independently (Cosh(0)=1, Sinh(0)=0).
@@ -122,4 +121,6 @@ FnB() {
     #import KS { Sinh as Shared }
     return Shared(0)
 }
-Ok(FnA() == 1 && FnB() == 0)
+Assert(FnA() == 1 && FnB() == 0, A_LineNumber)
+
+FileAppend "pass", "*"

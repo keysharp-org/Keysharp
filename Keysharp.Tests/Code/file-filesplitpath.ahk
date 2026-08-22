@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 path := A_ScriptDir . "/DirCopy/file1.txt"
 filename :=
@@ -23,53 +24,26 @@ Clear()
 
 SplitPath(path, &filename, &dir, &ext, &namenoext, &drive)
 
-if (filename == "file1.txt")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(filename, "file1.txt", A_LineNumber)
 
-if (ext == "txt")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(ext, "txt", A_LineNumber)
 
-if (namenoext == "file1")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(namenoext, "file1", A_LineNumber)
 
 #if WINDOWS
-	if ("Keysharp.Tests\Code\DirCopy" == SubStr(dir, -StrLen("Keysharp.Tests\Code\DirCopy")))
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq("Keysharp.Tests\Code\DirCopy", SubStr(dir, -StrLen("Keysharp.Tests\Code\DirCopy")), A_LineNumber)
 
-	if (StrLower("C:") == StrLower(drive) || StrLower("D:") == StrLower(drive))
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(StrLower("C:") == StrLower(drive) || StrLower("D:") == StrLower(drive), A_LineNumber)
 
 	SplitPath("C:\Windows", &filename, &dir, &ext, &namenoext, &drive)
 
-	if (StrLower("c:") == StrLower(drive))
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(StrLower("c:"), StrLower(drive), A_LineNumber)
 
-	if (StrLower("c:") == StrLower(dir))
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(StrLower("c:"), StrLower(dir), A_LineNumber)
 #else
-	if (StrLower(A_ScriptDir . "/DirCopy") == StrLower(StrReplace(dir, "\", "/")))
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(StrLower(A_ScriptDir . "/DirCopy"), StrLower(StrReplace(dir, "\", "/")), A_LineNumber)
 
-	if ("/" == StrLower(drive))
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq("/", StrLower(drive), A_LineNumber)
 
 #endif
 
@@ -77,172 +51,84 @@ Clear()
 url := "https://domain.com"
 SplitPath(url, &filename, &dir, &ext, &namenoext, &drive)
 
-if ("" == filename)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", filename, A_LineNumber)
 
-if ("https://domain.com" == dir)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("https://domain.com", dir, A_LineNumber)
 
-if ("" == ext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", ext, A_LineNumber)
 
-if ("" == namenoext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", namenoext, A_LineNumber)
 
-if ("https://domain.com" == drive)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("https://domain.com", drive, A_LineNumber)
 
 Clear()
 url := "https://domain.com/images"
 SplitPath(url, &filename, &dir, &ext, &namenoext, &drive)
 
-if ("" == filename)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", filename, A_LineNumber)
 
-if ("https://domain.com/images" == dir)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("https://domain.com/images", dir, A_LineNumber)
 
-if ("" == ext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", ext, A_LineNumber)
 
-if ("" == namenoext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", namenoext, A_LineNumber)
 
-if ("https://domain.com" == drive)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("https://domain.com", drive, A_LineNumber)
 
 Clear()
 url := "https://domain.com/images/afile.jpg"
 SplitPath(url, &filename, &dir, &ext, &namenoext, &drive)
 
-if ("afile.jpg" == filename)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("afile.jpg", filename, A_LineNumber)
 
-if ("https://domain.com/images" == dir)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("https://domain.com/images", dir, A_LineNumber)
 
-if ("jpg" == ext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("jpg", ext, A_LineNumber)
 
-if ("afile" == namenoext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("afile", namenoext, A_LineNumber)
 
-if ("https://domain.com" == drive)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("https://domain.com", drive, A_LineNumber)
 
 Clear()
 path := "\\machinename"
 SplitPath(path, &filename, &dir, &ext, &namenoext, &drive)
 
-if ("" == filename)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", filename, A_LineNumber)
 
-if ("\\machinename" == dir)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("\\machinename", dir, A_LineNumber)
 
-if ("" == ext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", ext, A_LineNumber)
 
-if ("" == namenoext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", namenoext, A_LineNumber)
 
-if ("\\machinename" == drive)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("\\machinename", drive, A_LineNumber)
 
 Clear()
 path := "\\machinename\dir"
 SplitPath(path, &filename, &dir, &ext, &namenoext, &drive)
 
-if ("" == filename)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", filename, A_LineNumber)
 
-if ("\\machinename\dir" == dir)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("\\machinename\dir", dir, A_LineNumber)
 
-if ("" == ext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", ext, A_LineNumber)
 
-if ("" == namenoext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("", namenoext, A_LineNumber)
 
-if ("\\machinename" == drive)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("\\machinename", drive, A_LineNumber)
 
 Clear()
 path := "\\machinename\dir\filename.txt"
 SplitPath(path, &filename, &dir, &ext, &namenoext, &drive)
 
-if ("filename.txt" == filename)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("filename.txt", filename, A_LineNumber)
 
-if ("\\machinename\dir" == dir)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("\\machinename\dir", dir, A_LineNumber)
 
-if ("txt" == ext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("txt", ext, A_LineNumber)
 
-if ("filename" == namenoext)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("filename", namenoext, A_LineNumber)
 
-if ("\\machinename" == drive)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq("\\machinename", drive, A_LineNumber)
+
+FileAppend "pass", "*"

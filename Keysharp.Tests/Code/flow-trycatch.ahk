@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 b := false
 
@@ -9,10 +10,7 @@ try
 catch
 	b := true
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -23,10 +21,7 @@ try
 catch
 	b := true
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -39,10 +34,7 @@ catch
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -52,10 +44,7 @@ try
 } catch
 	b := true
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 	
 b := false
 
@@ -68,10 +57,7 @@ catch Error
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -83,10 +69,7 @@ try
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -96,10 +79,7 @@ try
 } catch Error
 	b := true
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 str := ""
@@ -114,15 +94,9 @@ catch Error as errex
 	str := errex.Message
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
-if (str == "tester")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(str, "tester", A_LineNumber)
 
 b := false
 
@@ -138,10 +112,7 @@ finally
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 str := ""
@@ -158,15 +129,9 @@ else
 	b := true
 }
 
-if (b == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, false, A_LineNumber)
 
-if (str == "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(str, "", A_LineNumber)
 
 b := false
 
@@ -179,10 +144,7 @@ catch IndexError as errex
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -195,10 +157,7 @@ catch IndexError as errex
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -211,10 +170,7 @@ catch KeyError as errex
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -227,10 +183,7 @@ catch MemberError as errex
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -243,10 +196,7 @@ catch MemoryError as errex
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -259,10 +209,7 @@ catch MethodError as errex
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -275,10 +222,7 @@ catch
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -291,10 +235,7 @@ catch OSError as errex
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -307,10 +248,7 @@ catch PropertyError As errex
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -323,10 +261,7 @@ catch TargetError aS errex
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -339,10 +274,7 @@ catch TimeoutError AS errex
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -354,10 +286,7 @@ catch TypeError errex ; Test named exception without "as".
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -368,10 +297,7 @@ catch ValueError errex {
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -409,26 +335,17 @@ catch(targeterror)
 	b := false
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
 try b := true
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 try bb := true
 
-if (bb == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(bb, true, A_LineNumber)
 
 b := false
 try throw Error("test")
@@ -437,10 +354,7 @@ catch
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := true
 xx := 0
@@ -460,10 +374,7 @@ if b
 else
 	xx := 0
 	
-if (xx == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, 5, A_LineNumber)
 
 b := false
 xx := 0
@@ -483,10 +394,7 @@ if b
 else
 	xx := 123
 	
-if (xx == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, 123, A_LineNumber)
 
 xx := 0
 
@@ -498,36 +406,24 @@ try loop
 
 }
 
-if (xx == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, 5, A_LineNumber)
 
 xx := 0
 
 try while (xx < 5)
 	xx++
 
-if (xx == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, 5, A_LineNumber)
 
 xx := 0
 
 try xx++
 
-if (xx == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, 1, A_LineNumber)
 
 try xx := StrLen("hello")
 
-if (xx == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, 5, A_LineNumber)
 
 xx := 0
 
@@ -538,10 +434,7 @@ loop
 		x := 0
 until xx > 2
 
-if (xx == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, 3, A_LineNumber)
 
 ; Just test parsing but not functionality since we're not implementing this for now.
 try
@@ -574,10 +467,7 @@ catch {
 	b := true
 }
 
-if (b)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(b, A_LineNumber)
 
 StackTraceDispatchTarget() {
 	throw Error("stack dispatch")
@@ -588,12 +478,8 @@ try {
 	f()
 }
 catch Error as err {
-	if InStr(err.Stack, "KeysharpFunc.Call()")
-		FileAppend "fail", "*"
-	else if InStr(err.Stack, "StackTraceDispatchTarget()")
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	; The dispatch frame the script can name, not the internal one it calls through.
+	Assert(!InStr(err.Stack, "KeysharpFunc.Call()") && InStr(err.Stack, "StackTraceDispatchTarget()"), A_LineNumber)
 }
 
 class myclass
@@ -613,7 +499,6 @@ catch {
 	b := true
 }
 
-if (b)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(b, A_LineNumber)
+
+FileAppend "pass", "*"

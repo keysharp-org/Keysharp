@@ -1,39 +1,21 @@
 #NoTrayIcon
 
 #import KS { Cosh }
+#Include <assert>
 PI := 3.1415926535897931
 
-if (11.591953275521519 == Cosh(-1 * PI))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(11.591953275521519, Cosh(-1 * PI), A_LineNumber)
 
-if (2.5091784786580567 == Cosh(-0.5 * PI))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(2.5091784786580567, Cosh(-0.5 * PI), A_LineNumber)
 
-if (1 == Cosh(0))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(1, Cosh(0), A_LineNumber)
 
-if (1 == Cosh(-0))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(1, Cosh(-0), A_LineNumber)
 
-if (2.5091784786580567 == Cosh(0.5 * PI))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(2.5091784786580567, Cosh(0.5 * PI), A_LineNumber)
 	
-if (11.591953275521519 == Cosh(1 * PI))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(11.591953275521519, Cosh(1 * PI), A_LineNumber)
 
-if (4.227946118844592 == Cosh(0.675 * PI))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(4.227946118844592, Cosh(0.675 * PI), A_LineNumber)
+
+FileAppend "pass", "*"

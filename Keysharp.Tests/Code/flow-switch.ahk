@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 z := ""
@@ -13,10 +14,7 @@ switch x
 		z := 1
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 z := ""
 
@@ -29,10 +27,7 @@ switch x {
 		z := 1
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 z := ""
 
@@ -44,10 +39,7 @@ switch x
 		z := 1
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 	
 z := ""
 
@@ -56,10 +48,7 @@ switch x	{
 		z := 1
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 z := ""
 
@@ -69,10 +58,7 @@ switch x
 		z := 1
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 x := "Tester"
 z := ""
@@ -87,10 +73,7 @@ switch x, 0
 		z := 1
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 x := "Tester"
 z := ""
@@ -106,10 +89,7 @@ switch x, 1 {
 		z := 1
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 x := "Tester"
 z := ""
@@ -122,10 +102,7 @@ switch x, 1
 		z := 1
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 x := 1
 z := ""
@@ -140,10 +117,7 @@ switch
 		z := 1
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 x := 1
 z := ""
@@ -158,10 +132,7 @@ switch
 		z := 2
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 x := 1
 z := ""
@@ -176,10 +147,7 @@ switch {
 		z := 1
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 x := 123
 z := ""
@@ -197,10 +165,7 @@ switch x, 1 ; this is a comment
 		z := 1
 }
 
-if (z == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 3, A_LineNumber)
 
 x := 0
 z := 0
@@ -215,10 +180,7 @@ switch z
 		x += 100
 }
 
-if (x == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 0, A_LineNumber)
 	
 x := 3
 y := 4
@@ -237,10 +199,7 @@ switch func(x, y)
 	default: z := 4
 }
 
-if (z == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 3, A_LineNumber)
 
 x := 3
 y := 4
@@ -251,10 +210,7 @@ switch func(x, y) {
 	default: z := 2
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 class myclass
 {
@@ -275,10 +231,7 @@ switch myclassobj.func(x, y) {
 	default: z := 2
 }
 
-if (z == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 1, A_LineNumber)
 
 MyFunc()
 
@@ -296,10 +249,7 @@ myfunc() {
 			z := 1
 	}
 
-	if (z == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 1, A_LineNumber)
 
 	z := ""
 
@@ -312,10 +262,7 @@ myfunc() {
 			z := 1
 	}
 
-	if (z == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 1, A_LineNumber)
 
 	z := ""
 
@@ -327,10 +274,7 @@ myfunc() {
 			z := 1
 	}
 
-	if (z == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 1, A_LineNumber)
 	
 	z := ""
 
@@ -339,10 +283,7 @@ myfunc() {
 			z := 1
 	}
 
-	if (z == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 1, A_LineNumber)
 
 	z := ""
 
@@ -352,10 +293,7 @@ myfunc() {
 			z := 1
 	}
 
-	if (z == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 1, A_LineNumber)
 
 	x := "Tester"
 	z := ""
@@ -370,10 +308,7 @@ myfunc() {
 			z := 1
 	}
 
-	if (z == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 1, A_LineNumber)
 
 	x := "Tester"
 	z := ""
@@ -389,10 +324,7 @@ myfunc() {
 			z := 1
 	}
 
-	if (z == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 1, A_LineNumber)
 
 	x := "Tester"
 	z := ""
@@ -405,10 +337,7 @@ myfunc() {
 			z := 1
 	}
 
-	if (z == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 1, A_LineNumber)
 
 	x := 1
 	z := ""
@@ -423,10 +352,7 @@ myfunc() {
 			z := 1
 	}
 
-	if (z == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 1, A_LineNumber)
 
 	x := 1
 	z := ""
@@ -441,10 +367,7 @@ myfunc() {
 			z := 2
 	}
 
-	if (z == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 1, A_LineNumber)
 
 	x := 1
 	z := ""
@@ -459,10 +382,7 @@ myfunc() {
 			z := 1
 	}
 
-	if (z == 1)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 1, A_LineNumber)
 
 	x := 123
 	z := ""
@@ -480,10 +400,7 @@ myfunc() {
 			z := 1
 	}
 
-	if (z == 3)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(z, 3, A_LineNumber)
 
 	x := 0
 	z := 0
@@ -498,8 +415,7 @@ myfunc() {
 			x += 100
 	}
 
-	if (x == 0)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 0, A_LineNumber)
 }
+
+FileAppend "pass", "*"

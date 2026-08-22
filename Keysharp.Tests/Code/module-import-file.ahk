@@ -4,25 +4,19 @@
 #import Lib/module_import_path_target
 #import Lib/implicit_default_import_target
 #import Lib/implicit_default_import_target as implicit_default_alias
-Success()
-module_import_path_target.PathSuccess()
+#Include <assert>
+AssertEq(Success(), "imported", A_LineNumber)
+AssertEq(module_import_path_target.PathSuccess(), "imported by path", A_LineNumber)
 
-if (ImportedClass.Value == 42)
-	FileAppend("pass", "*")
-else
-	FileAppend("fail", "*")
+AssertEq(ImportedClass.Value, 42, A_LineNumber)
 
-if (implicit_default_import_target.Value == 43 && implicit_default_alias.Value == 43)
-	FileAppend("pass", "*")
-else
-	FileAppend("fail", "*")
+Assert(implicit_default_import_target.Value == 43 && implicit_default_alias.Value == 43, A_LineNumber)
 
 ScopedImplicitDefault() {
 	#import Lib/implicit_default_import_target
 	return implicit_default_import_target.Value
 }
 
-if (ScopedImplicitDefault() == 43)
-	FileAppend("pass", "*")
-else
-	FileAppend("fail", "*")
+AssertEq(ScopedImplicitDefault(), 43, A_LineNumber)
+
+FileAppend "pass", "*"

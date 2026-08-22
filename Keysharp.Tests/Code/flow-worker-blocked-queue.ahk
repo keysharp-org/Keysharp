@@ -2,6 +2,7 @@
 #Warn All, StdOut
 #NoTrayIcon
 #import KS { RealThread }
+#Include <assert>
 
 ; A RealThread worker which leaves a permanently unrunnable entry on its own queue must still finish.
 ;
@@ -21,10 +22,7 @@
 
 worker := RealThread(WorkerBody)
 
-if worker.Wait(15000) && worker.Result == 42
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(worker.Wait(15000) && worker.Result == 42, A_LineNumber)
 
 WorkerBody()
 {
@@ -40,3 +38,5 @@ WorkerBody()
 WorkerTick()
 {
 }
+
+FileAppend "pass", "*"

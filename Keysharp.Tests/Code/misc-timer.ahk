@@ -1,6 +1,7 @@
 #NoTrayIcon
 
 #MaxThreads 2
+#Include <assert>
 
 x := 0
 
@@ -20,10 +21,7 @@ global
 
 Sleep(1000)
 
-if (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 
 x := 0
 fo1 := Func("TimerHandler2")
@@ -39,12 +37,7 @@ global x
 
 Sleep(100)
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
-
-ExitApp()
+AssertEq(x, 1, A_LineNumber)
 
 x := 0
 
@@ -59,22 +52,16 @@ TimerHandler3()
 
 Sleep(50)
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 x := 0
 SetTimer(TimerHandler3, -1) ; Ensure the timer is called immediately if the period is 1
 Sleep(-1)
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 x := 0, doDelayEnd := 0
-; Fill max threads with TimerHandler4, and ensure TimerHandler3 was queued
+; Fill max threads with TimerHandler4, and ensure TimerHandler3 is queued behind it.
 SetTimer(TimerHandler3, -100)
 SetTimer(TimerHandler4, -1)
 Sleep(-1)
@@ -85,12 +72,14 @@ TimerHandler4() {
 	doDelayEnd := A_TickCount
 }
 
-if (A_TickCount == doDelayEnd)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+; Sleep(-1) returns only once TimerHandler4 has finished, so no time has passed since it stamped the tick.
+AssertEq(A_TickCount, doDelayEnd, A_LineNumber)
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+; TimerHandler3 came due while TimerHandler4 held the thread, so it must be queued rather than dropped, and
+; must still run exactly once. WHEN it runs is deliberately not asserted: Keysharp drains it before Sleep(-1)
+; returns, while AutoHotkey v2.0.26 leaves it queued until the script sleeps again.
+Sleep(300)
+
+AssertEq(x, 1, A_LineNumber)
+
+FileAppend "pass", "*"

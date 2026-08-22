@@ -1,285 +1,133 @@
 #NoTrayIcon
+#Include <assert>
 
 x := true
 y := false
 
-If (x or y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x or y, A_LineNumber)
 
-If ((x or y) = true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert((x or y) = true, A_LineNumber)
 
-If (!(x or y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x or y)), A_LineNumber)
 
-If (not (x or y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not (x or y)), A_LineNumber)
 
-If ((x or y) = false)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!((x or y) = false), A_LineNumber)
 
-If (true or false = true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(true or false = true, A_LineNumber)
 
-If (!(("true" or false) = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(("true" or false) = false), A_LineNumber)
 	
-If (not (("true" or "false") = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (("true" or "false") = false), A_LineNumber)
 
 x := 1
 y := 0
 
-If (x or y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x or y, A_LineNumber)
 
-If ((x or y) = true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert((x or y) = true, A_LineNumber)
 
-If (!(x or y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x or y)), A_LineNumber)
 
-If (not (x or y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not (x or y)), A_LineNumber)
 
-If ((x or y) = false)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!((x or y) = false), A_LineNumber)
 	
-If ((1 or 0) = true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert((1 or 0) = true, A_LineNumber)
 
-If (!(("1" or 0) = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(("1" or 0) = false), A_LineNumber)
 	
-If (not (("1" or "0x0") = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (("1" or "0x0") = false), A_LineNumber)
 
 x := 1.234
 y := 5.678
 
-If (x or y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x or y, A_LineNumber)
 
-If ((x or y) = x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert((x or y) = x, A_LineNumber)
 
-If (!(x or y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x or y)), A_LineNumber)
 
-If (not (x or y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not (x or y)), A_LineNumber)
 
-If ((x or y) = false)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!((x or y) = false), A_LineNumber)
 
-If ((1.234 or 5.678) = 1.234)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert((1.234 or 5.678) = 1.234, A_LineNumber)
 
-If (!(("1.234" or 5.678) = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(("1.234" or 5.678) = false), A_LineNumber)
 	
-If (not (("1.234" or "5.678") = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (("1.234" or "5.678") = false), A_LineNumber)
 
 ; Now do again with ||
 
 x := true
 y := false
 
-If (x || y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x || y, A_LineNumber)
 
-If ((x || y) = true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert((x || y) = true, A_LineNumber)
 
-If (!(x || y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x || y)), A_LineNumber)
 
-If (not (x || y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not (x || y)), A_LineNumber)
 
-If ((x || y) = false)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!((x || y) = false), A_LineNumber)
 
-If (true || false = true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(true || false = true, A_LineNumber)
 
-If (!(("true" || false) = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(("true" || false) = false), A_LineNumber)
 	
-If (not (("true" || "false") = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (("true" || "false") = false), A_LineNumber)
 
 x := 1
 y := 0
 
-If (x || y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x || y, A_LineNumber)
 
-If ((x || y) = true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert((x || y) = true, A_LineNumber)
 
-If (!(x || y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x || y)), A_LineNumber)
 
-If (not (x || y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not (x || y)), A_LineNumber)
 
-If ((x || y) = false)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!((x || y) = false), A_LineNumber)
 
-If ((1 || 0) = true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert((1 || 0) = true, A_LineNumber)
 
-If (!(("1" || 0) = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(("1" || 0) = false), A_LineNumber)
 	
-If (not (("1" || "0x0") = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (("1" || "0x0") = false), A_LineNumber)
 
 x := 1.234
 y := 5.678
 
-If (x || y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x || y, A_LineNumber)
 
-If ((x || y) = x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert((x || y) = x, A_LineNumber)
 
-If (!(x || y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x || y)), A_LineNumber)
 
-If (not (x || y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(not (x || y)), A_LineNumber)
 
-If ((x || y) = false)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!((x || y) = false), A_LineNumber)
 
-If ((1.234 || 5.678) = 1.234)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert((1.234 || 5.678) = 1.234, A_LineNumber)
 
-If (!(("1.234" || 5.678) = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(("1.234" || 5.678) = false), A_LineNumber)
 	
-If (not (("1.234" || "5.678") = false))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (("1.234" || "5.678") = false), A_LineNumber)
 
 A := "", B := False, C := 0, D := "String", E := 20 ; At least one operand is truthy. All operands up until D (including) will be evaluated
 x := A || B || C || D || ++E ; The first truthy operand is returned ("String"). E is not evaluated and is never incremented
 
-if (x == "String")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, "String", A_LineNumber)
 
-if (E == 20)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(E, 20, A_LineNumber)
 
 A := "", B := False, C := 0 ; All operands are falsey and will be evaluated
 x := A || B || C ; The last falsey operand is returned (0)
 
-if (x == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 0, A_LineNumber)
 
 evalfunc(p1)
 {
@@ -288,94 +136,48 @@ evalfunc(p1)
 
 val := evalfunc(0 || 2)
 
-if (val == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2, A_LineNumber)
 
 val := evalfunc("0" || 2)
 
-if (val == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2, A_LineNumber)
 
 val := evalfunc("0" || "0x2")
 
-if (val == "0x2")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, "0x2", A_LineNumber)
 
 val := evalfunc(x := 0 || 2)
 
-if (val == 2 && x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 2 && x == 2, A_LineNumber)
 
 val := evalfunc(x := "0" || 2)
 
-if (val == 2 && x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 2 && x == 2, A_LineNumber)
 
 val := evalfunc(x := "0" || "0x2")
 
-if (val == "0x2" && x == "0x2")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == "0x2" && x == "0x2", A_LineNumber)
 
-if ((0 || 2) == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq((0 || 2), 2, A_LineNumber)
 
-if (("0" || 2) == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(("0" || 2), 2, A_LineNumber)
 	
-if (("0x0" || 2) == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(("0x0" || 2), 2, A_LineNumber)
 
-if (("0x0" || "0x2") == "0x2")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(("0x0" || "0x2"), "0x2", A_LineNumber)
 
-if ((x := 0 || 2) == 2 && x == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert((x := 0 || 2) == 2 && x == 2, A_LineNumber)
 
 val := evalfunc(x := "" || false || 0 || 123)
 
-if (val == 123 && x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(val == 123 && x == 123, A_LineNumber)
 	
-if (("" || "false" || 0 || 123) == "false")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(("" || "false" || 0 || 123), "false", A_LineNumber)
 
-if (("" || "false" || 0 || 123) == false)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(("" || "false" || 0 || 123) == false), A_LineNumber)
 
+; Negating an unset variable raises rather than treating it as false.
 a := unset
-try {
-  if (!a)
-    FileAppend "fail", "*"
-  else
-    FileAppend "fail", "*"
-} catch {
-  FileAppend "pass", "*"
-}
+Throws(() => !a, A_LineNumber)
+
+FileAppend "pass", "*"

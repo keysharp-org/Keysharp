@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 testnot(true, unset)
 testnot(1, 0)
@@ -8,110 +9,49 @@ testnot("1", "0")
 
 testnot(x, y := false)
 {
-	If (!x = false)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(!x = false, A_LineNumber)
 
-	If (x != true)
-		FileAppend "fail", "*"
-	else
-		FileAppend "pass", "*"
+	Assert(!(x != true), A_LineNumber)
 
-	If (!(x) = false)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(!(x) = false, A_LineNumber)
 
-	If ((x) != true)
-		FileAppend "fail", "*"
-	else
-		FileAppend "pass", "*"
+	Assert(!((x) != true), A_LineNumber)
 
-	If ((!x) = false)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert((!x) = false, A_LineNumber)
 
-	If (!(x = false))
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(!(x = false), A_LineNumber)
 
-	If ((x != true))
-		FileAppend "fail", "*"
-	else
-		FileAppend "pass", "*"
+	Assert(!((x != true)), A_LineNumber)
 
-	If (!y = true)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(!y = true, A_LineNumber)
 
-	If (y != true)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(y != true, A_LineNumber)
 
-	If (not x = false)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(not x = false, A_LineNumber)
 
-	If (not x = true)
-		FileAppend "fail", "*"
-	else
-		FileAppend "pass", "*"
+	Assert(!(not x = true), A_LineNumber)
 
-	If (not (x) = false)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(not (x) = false, A_LineNumber)
 
-	If (not (x) = true)
-		FileAppend "fail", "*"
-	else
-		FileAppend "pass", "*"
+	Assert(!(not (x) = true), A_LineNumber)
 
-	If ((not x) = false)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert((not x) = false, A_LineNumber)
 
-	If (not (x = false))
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(not (x = false), A_LineNumber)
 
-	If (not (x = true))
-		FileAppend "fail", "*"
-	else
-		FileAppend "pass", "*"
+	Assert(!(not (x = true)), A_LineNumber)
 
-	If (not y = true)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(not y = true, A_LineNumber)
 
-	If (not (y) = true)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(not (y) = true, A_LineNumber)
 }
 
 x := 123
 
-if (not (x is unset))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x is unset), A_LineNumber)
 
-if (not (x = unset))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x = unset), A_LineNumber)
 
-if (not (x == unset))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(not (x == unset), A_LineNumber)
+
+FileAppend "pass", "*"

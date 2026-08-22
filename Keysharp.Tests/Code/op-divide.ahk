@@ -1,59 +1,36 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 10
 y := x / 10
 
-if (y = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 1, A_LineNumber)
 	
-if (Type(y) = "Float")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Type(y) = "Float", A_LineNumber)
 
 x := 10
 y := x / 2.5
 
-if (y = 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 4, A_LineNumber)
 	
-if (Type(y) = "Float")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Type(y) = "Float", A_LineNumber)
 
 x := 3
 y := x / 2
 
-if (y = 1.5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 1.5, A_LineNumber)
 	
-if (Type(y) = "Float")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(Type(y) = "Float", A_LineNumber)
 
 x := 5
 y := x // 3
 
-if (y = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 1, A_LineNumber)
 
 x := 5
 y := x // -3
 
-if (y = -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = -1, A_LineNumber)
 
 x := 5
 y := 0
@@ -68,10 +45,7 @@ catch (ZeroDivisionError as exc)
 	res := true
 }
 
-if (res == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(res, true, A_LineNumber)
 
 x := 5
 y := 0
@@ -86,10 +60,7 @@ catch (ZeroDivisionError as exc)
 	res := true
 }
 
-if (res == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(res, true, A_LineNumber)
 
 x := 5
 y := 1.234
@@ -104,10 +75,7 @@ catch (TypeError as exc)
 	res := true
 }
 
-if (res == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(res, true, A_LineNumber)
 
 x := 5.123
 y := 2
@@ -122,10 +90,7 @@ catch (TypeError as exc)
 	res := true
 }
 
-if (res == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(res, true, A_LineNumber)
 
 x := 5.123
 y := 2.456
@@ -140,7 +105,6 @@ catch (TypeError as exc)
 	res := true
 }
 
-if (res == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(res, true, A_LineNumber)
+
+FileAppend "pass", "*"

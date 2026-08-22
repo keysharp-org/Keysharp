@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 if (DirExist("./FileRecycleEmpty"))
 	DirDelete("./FileRecycleEmpty", true)
@@ -7,37 +8,19 @@ dir := "../../../Keysharp.Tests/Code/DirCopy"
 DirCreate("./FileRecycleEmpty")
 FileCopy(dir . "/*", "./FileRecycleEmpty/")
 
-if (FileExist("./FileRecycleEmpty/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileRecycleEmpty/file1.txt"), A_LineNumber)
 
-if (FileExist("./FileRecycleEmpty/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileRecycleEmpty/file2.txt"), A_LineNumber)
 
-if (FileExist("./FileRecycleEmpty/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileRecycleEmpty/file3txt"), A_LineNumber)
 
 FileRecycle("./FileRecycleEmpty/*")
 
-if (!FileExist("./FileRecycleEmpty/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileRecycleEmpty/file1.txt"), A_LineNumber)
 
-if (!FileExist("./FileRecycleEmpty/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileRecycleEmpty/file2.txt"), A_LineNumber)
 
-if (!FileExist("./FileRecycleEmpty/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileRecycleEmpty/file3txt"), A_LineNumber)
 
 FileRecycleEmpty()
 
@@ -47,39 +30,23 @@ if (DirExist("./FileRecycleEmpty"))
 DirCreate("./FileRecycleEmpty")
 FileCopy(dir . "/*", "./FileRecycleEmpty/")
 
-if (FileExist("./FileRecycleEmpty/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileRecycleEmpty/file1.txt"), A_LineNumber)
 
-if (FileExist("./FileRecycleEmpty/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileRecycleEmpty/file2.txt"), A_LineNumber)
 
-if (FileExist("./FileRecycleEmpty/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileRecycleEmpty/file3txt"), A_LineNumber)
 
 FileRecycle("./FileRecycleEmpty/*")
 
-if (!FileExist("./FileRecycleEmpty/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileRecycleEmpty/file1.txt"), A_LineNumber)
 
-if (!FileExist("./FileRecycleEmpty/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileRecycleEmpty/file2.txt"), A_LineNumber)
 
-if (!FileExist("./FileRecycleEmpty/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(!FileExist("./FileRecycleEmpty/file3txt"), A_LineNumber)
 
 FileRecycleEmpty("C:\")
 
 if (DirExist("./FileRecycleEmpty"))
 	DirDelete("./FileRecycleEmpty", true)
+
+FileAppend "pass", "*"

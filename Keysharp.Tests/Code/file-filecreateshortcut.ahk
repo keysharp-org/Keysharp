@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 if (DirExist("./FileCreateShortcut"))
 	DirDelete("./FileCreateShortcut", true)
@@ -15,13 +16,12 @@ if (FileExist("./fileappend.txt"))
 	
 FileCreateShortcut("./FileCreateShortcut/file1.txt", "./testshortcut.lnk", "", "", "TestDescription", "../../../assets/Keysharp.ico", "")
 
-if (FileExist("./testshortcut.lnk"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./testshortcut.lnk"), A_LineNumber)
 
 if (DirExist("./FileCreateShortcut"))
 	DirDelete("./FileCreateShortcut", true)
 
 if (FileExist("./testshortcut.lnk"))
 	FileDelete("./testshortcut.lnk")
+
+FileAppend "pass", "*"

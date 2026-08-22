@@ -1,423 +1,198 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := 1
 
-If (x < y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 	
-If (1 < 1)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(1 < 1), A_LineNumber)
 
-If (1 > 1)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(1 > 1), A_LineNumber)
 
-If (!("1" < 1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!("1" < 1), A_LineNumber)
 
-If (!("0x1" > "1"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!("0x1" > "1"), A_LineNumber)
 
 x := 1
 y := 2
 
-If (x < y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x < y, A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x < y)), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 
 x := -1
 y := -1
 
-If (x < y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (-1 < -1)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(-1 < -1), A_LineNumber)
 
-If (-1 > -1)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(-1 > -1), A_LineNumber)
 
-If (!("-1" < -1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!("-1" < -1), A_LineNumber)
 
-If (!("-0x1" > "-1"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!("-0x1" > "-1"), A_LineNumber)
 
 x := -1
 y := 2
 
-If (x < y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x < y, A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x < y)), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 	
 x := -2
 y := -1
 
-If (x < y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x < y, A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x < y)), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 
 x := 1.234
 y := 1.234
 
-If (x < y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (1.234 < 1.234)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(1.234 < 1.234), A_LineNumber)
 
-If (1.234 > 1.234)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(1.234 > 1.234), A_LineNumber)
 
-If (!("1.234" < 1.234))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!("1.234" < 1.234), A_LineNumber)
 
-If (!("1.234" > "1.234"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!("1.234" > "1.234"), A_LineNumber)
 
 x := 1.234
 y := 2.456
 
-If (x < y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x < y, A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x < y)), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 
 x := -1.234
 y := -1.234
 
-If (x < y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (-1.234 < -1.234)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(-1.234 < -1.234), A_LineNumber)
 
-If (-1.234 > -1.234)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(-1.234 > -1.234), A_LineNumber)
 
-If (!("-1.234" < -1.234))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!("-1.234" < -1.234), A_LineNumber)
 
-If (!("-1.234" > "-1.234"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!("-1.234" > "-1.234"), A_LineNumber)
 
 x := -1.234
 y := 2.456
 
-If (x < y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x < y, A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x < y)), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 
 x := -2.234
 y := -1.456
 
-If (x < y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x < y, A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x < y)), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 
 x := 0
 y := 0
 
-If (x < y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (0 < 0)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(0 < 0), A_LineNumber)
 
-If (0 > 0)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(0 > 0), A_LineNumber)
 
-If (!("0" < 0))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!("0" < 0), A_LineNumber)
 
-If (!("0" > "0"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!("0" > "0"), A_LineNumber)
 	
 x := 0
 y := 1
 
-If (x < y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x < y, A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x < y)), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 	
 x := "a"
 y := "a"
 
-If (x < y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x < y), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
 	
 x := "a"
 y := "b"
 
-If (x < y)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x < y, A_LineNumber)
 
-If (x > y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x > y), A_LineNumber)
 
-If (!(x < y))
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(!(x < y)), A_LineNumber)
 
-If (!(x > y))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!(x > y), A_LineNumber)
+
+FileAppend "pass", "*"

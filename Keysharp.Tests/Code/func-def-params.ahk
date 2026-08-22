@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := 2
@@ -16,160 +17,88 @@ y := 2
 z := 3
 func2(11, 22)
 
-If (x == 11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 11, A_LineNumber)
 
-If (y == 22)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 22, A_LineNumber)
 
-If (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 	
 x := 1
 y := 2
 z := 3
 func2(,)
 
-If (x == unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, unset, A_LineNumber)
 
-If (y == unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, unset, A_LineNumber)
 
-If (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 
 x := 1
 y := 2
 z := 3
 func2(, 22, 33)
 
-If (x == unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, unset, A_LineNumber)
 
-If (y == 22)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 22, A_LineNumber)
 
-If (z == 33)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 33, A_LineNumber)
 	
 x := 1
 y := 2
 z := 3
 func2(11,,33)
 
-If (x == 11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 11, A_LineNumber)
 
-If (y == unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, unset, A_LineNumber)
 
-If (z == 33)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 33, A_LineNumber)
 
 x := 1
 y := 2
 z := 3
 func2(11,)
 
-If (x == 11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 11, A_LineNumber)
 
-If (y == unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, unset, A_LineNumber)
 
-If (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 
 x := 1
 y := 2
 z := 3
 func2(11,,)
 
-If (x == 11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 11, A_LineNumber)
 
-If (y == unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, unset, A_LineNumber)
 
-If (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 	
 x := 1
 y := 2
 z := 3
 func2(,22,)
 
-If (x == unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, unset, A_LineNumber)
 
-If (y == 22)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 22, A_LineNumber)
 
-If (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 		
 x := 1
 y := 2
 z := 3
 func2(,,)
 
-If (x == unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, unset, A_LineNumber)
 
-If (y == unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, unset, A_LineNumber)
 
-If (z == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 123, A_LineNumber)
 	
 x := false
 
@@ -183,82 +112,55 @@ func3(a?, b?, c := unset)
 
 func3(,)
 
-If (x == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, false, A_LineNumber)
 
 x := false
 
 func3(1,)
 
-If (x == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, false, A_LineNumber)
 
 x := false
 
 func3(1, 2)
 
-If (x == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, false, A_LineNumber)
 	
 x := false
 
 func3(1, 2, 3)
 
-If (x == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, true, A_LineNumber)
 
 x := false
 
 func3(,)
 
-If (x == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, false, A_LineNumber)
 
 x := false
 
 func3(,,)
 
-If (x == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, false, A_LineNumber)
 	
 funcdef1(p := '')
 {
-	if (p == "")
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(p, "", A_LineNumber)
 }
 
 funcdef1()
 
 funcdef2(p := '"')
 {
-	if (p == "`"")
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(p, "`"", A_LineNumber)
 }
 
 funcdef2()
 
 funcdef3(p := 'asdf')
 {
-	if (p == "asdf")
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(p, "asdf", A_LineNumber)
 }
 
 funcdef3()
@@ -269,7 +171,6 @@ Test(lineBreak := "`r`n`t") {
 
 x := Test()
 
-If (x == "`r`n`t")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, "`r`n`t", A_LineNumber)
+
+FileAppend "pass", "*"

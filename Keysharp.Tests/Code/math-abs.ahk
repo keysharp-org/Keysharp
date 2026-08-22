@@ -1,26 +1,14 @@
 #NoTrayIcon
+#Include <assert>
 
-if (1 == Abs(1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(1, Abs(1), A_LineNumber)
 
-if (1 == Abs(-1))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(1, Abs(-1), A_LineNumber)
 
-if (9.81 == Abs(-9.81))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(9.81, Abs(-9.81), A_LineNumber)
 
-if (0 == Abs(0))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(0, Abs(0), A_LineNumber)
 
-if (0 == Abs(-0))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(0, Abs(-0), A_LineNumber)
+
+FileAppend "pass", "*"

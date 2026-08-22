@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-export Success() => FileAppend("pass", "*")
+export Success() => "imported"
 
 export class ImportedClass {
 	static Value => 42

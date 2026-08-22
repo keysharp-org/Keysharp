@@ -1,37 +1,22 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1.123
 
-If (x = 1.123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 1.123, A_LineNumber)
 
-If (x != 1.123)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != 1.123), A_LineNumber)
 	
-If x == 1.123
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 1.123, A_LineNumber)
 
-If x != 1.123
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != 1.123), A_LineNumber)
 	
 x := 1.123 + 1
 
-If x != 2.123
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != 2.123), A_LineNumber)
 
 x := 1.123 * 2
 
-If x != 2.246
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != 2.246), A_LineNumber)
+
+FileAppend "pass", "*"

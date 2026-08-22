@@ -1,14 +1,11 @@
 #NoTrayIcon
+#Include <assert>
 
 x := A_Space
 y := A_Tab
 
-if (x = " ")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = " ", A_LineNumber)
 
-if (y = "`t")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "`t", A_LineNumber)
+
+FileAppend "pass", "*"

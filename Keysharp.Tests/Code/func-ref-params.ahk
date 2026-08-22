@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := 2
@@ -11,24 +12,15 @@ reffunc1(&a)
 
 reffunc1(&x)
 
-If (x == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 100, A_LineNumber)
 
 reffunc1(&xxx) ; Declare inline.
 
-If (xxx == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xxx, 100, A_LineNumber)
 
 reffunc1(&xx := 0) ; Declare and initialize inline.
 
-If (xx == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, 100, A_LineNumber)
 
 callreffunc(&p1)
 {
@@ -38,26 +30,17 @@ callreffunc(&p1)
 xx := ""
 callreffunc(&xx := 0)
 
-If (xx == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, 100, A_LineNumber)
 	
 callreffunc2()
 {
 	reffunc1(&pp)
 	
-	If (pp == 100)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(pp, 100, A_LineNumber)
 
 	reffunc1(&ppp := 123)
 	
-	If (ppp == 100)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(ppp, 100, A_LineNumber)
 }
 callreffunc2()
 
@@ -66,10 +49,7 @@ y11 := 123
 
 reffunc1(&y%x%)
 
-If (y11 == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y11, 100, A_LineNumber)
 
 x := 1
 y := 2
@@ -82,48 +62,30 @@ reffunc2(a, &b)
 
 reffunc2(x, &y)
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
-If (y == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 200, A_LineNumber)
 
 x := 11
 y11 := 123
 
 reffunc2(x, &y%x%)
 
-If (x == 11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 11, A_LineNumber)
 
-If (y11 == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y11, 200, A_LineNumber)
 	
 arr := [1, 2, 3]
 
 reffunc1(&arr[2])
 
-If (arr[2] == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr[2], 100, A_LineNumber)
 
 m := { one : 1, two : 2, three : 3 }
 
 reffunc1(&m.one)
 
-If (m.one == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m.one, 100, A_LineNumber)
 
 class myrefclass
 {
@@ -150,86 +112,56 @@ myclassobj := myrefclass()
 
 reffunc1(&myclassobj.x)
 
-If (myclassobj.x == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myclassobj.x, 100, A_LineNumber)
 
 myclassobj.myclassreffunc()
 
-If (myclassobj.classarr[3] == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myclassobj.classarr[3], 100, A_LineNumber)
 
 x := 0
 myclassobj.x := 999
 myclassobj.myclassreffunc2(&x)
 
-If (x == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 999, A_LineNumber)
 
 arr[1] := 1
 myclassobj.myclassreffunc2(&arr[1])
 
-If (arr[1] == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr[1], 999, A_LineNumber)
 
 m := Map("one", 1, "two", 2, "three", 3)
 
 m["one"] := 1
 myclassobj.myclassreffunc2(&m["one"])
 
-If (m["one"] == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m["one"], 999, A_LineNumber)
 
 x := 11
 y11 := 123
 myclassobj.myclassreffunc2(&y%x%)
 
-If (y11 == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y11, 999, A_LineNumber)
 
 x := 0
 myclassobj.myclassreffunc3(&x)
 
-If (x == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 999, A_LineNumber)
 
 arr[1] := 1
 myclassobj.myclassreffunc3(&arr[1])
 
-If (arr[1] == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr[1], 999, A_LineNumber)
 
 m["one"] := 1
 myclassobj.myclassreffunc3(&m["one"])
 
-If (m["one"] == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m["one"], 999, A_LineNumber)
 
 x := 11
 y11 := 123
 myclassobj.myclassreffunc3(&y%x%)
 
-If (y11 == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y11, 999, A_LineNumber)
 
 reffunc3(a, &b, &c, theparams*)
 {
@@ -237,87 +169,48 @@ reffunc3(a, &b, &c, theparams*)
 
 reffuncobj := Func("reffunc3")
 
-If (reffuncobj.IsByRef(1) == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(reffuncobj.IsByRef(1), false, A_LineNumber)
 	
-If (reffuncobj.IsByRef(2) == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(reffuncobj.IsByRef(2), true, A_LineNumber)
 	
-If (reffuncobj.IsByRef(3) == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(reffuncobj.IsByRef(3), true, A_LineNumber)
 
-If (reffuncobj.IsByRef(4) == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(reffuncobj.IsByRef(4), false, A_LineNumber)
 
 myreffunc := (a, &b, &c) => (b := 1111, c := 888)
 	
-If (myreffunc.IsByRef(1) == false)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myreffunc.IsByRef(1), false, A_LineNumber)
 
-If (myreffunc.IsByRef(2) == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myreffunc.IsByRef(2), true, A_LineNumber)
 
-If (myreffunc.IsByRef(3) == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(myreffunc.IsByRef(3), true, A_LineNumber)
 			
 x :=
 y :=
 z := ""
 val := myreffunc(x, &y, &z)
 
-If (val == 888)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 888, A_LineNumber)
 	
-If (y == 1111)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 1111, A_LineNumber)
 	
-If (z == 888)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 888, A_LineNumber)
 	
 arr := [1, 2, 3]
 val := myreffunc(x, &y, &arr[2])
 
-If (arr[2] == 888)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr[2], 888, A_LineNumber)
 	
 m["one"] := 1
 myreffunc(x, &y, &m["one"])
 
-If (m["one"] == 888)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m["one"], 888, A_LineNumber)
 
 x := 11
 y11 := 123
 myreffunc(x, &y, &y%x%)
 
-If (y11 == 888)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y11, 888, A_LineNumber)
 
 class myrefclass2
 {
@@ -331,202 +224,106 @@ y := 200
 myclassobj := myrefclass2()
 val := myclassobj.member1.Call(x, &y)
 
-If (val == 40000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 40000, A_LineNumber)
 
-If (x == 100)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 100, A_LineNumber)
 
-If (y == 40000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 40000, A_LineNumber)
 
 arr := [1, 2, 3]
 val := myclassobj.member1.Call(arr[1], &arr[2])
 
-If (val == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 4, A_LineNumber)
 	
-If (arr[1] == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr[1], 1, A_LineNumber)
 
-If (arr[2] == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr[2], 4, A_LineNumber)
 
 m := { one : 1, two : 2, three : 3 }
 val := myclassobj.member1.Call(m.one, &m.two)
 
-If (val == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 4, A_LineNumber)
 	
-If (m.one == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m.one, 1, A_LineNumber)
 
-If (m.two == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m.two, 4, A_LineNumber)
 
 x := 11
 y11 := 123
 val := myclassobj.member1.Call(x, &y%x%)
 
-If (val == 2706)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2706, A_LineNumber)
 
-If (x == 11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 11, A_LineNumber)
 
-If (y11 == 2706)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y11, 2706, A_LineNumber)
 
 x := 100
 y := 200
 val := myclassobj.member2.Call(&x, y)
 
-If (val == 40000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 40000, A_LineNumber)
 
-If (x == 40000)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 40000, A_LineNumber)
 
-If (y == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 200, A_LineNumber)
 
 arr := [1, 2, 3]
 val := myclassobj.member2.Call(&arr[1], arr[2])
 
-If (val == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 4, A_LineNumber)
 	
-If (arr[1] == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr[1], 4, A_LineNumber)
 
-If (arr[2] == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr[2], 2, A_LineNumber)
 
 m := { one : 1, two : 2, three : 3 }
 val := myclassobj.member2.Call(&m.one, m.two)
 
-If (val == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 4, A_LineNumber)
 
-If (m.one == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m.one, 4, A_LineNumber)
 	
-If (m.two == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m.two, 2, A_LineNumber)
 
 x := 11
 y11 := 123
 val := myclassobj.member2.Call(&x, y%x%)
 
-If (val == 2706)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2706, A_LineNumber)
 
-If (x == 2706)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 2706, A_LineNumber)
 
-If (y11 == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y11, 123, A_LineNumber)
 
 x := 100
 val := myclassobj.member3.Call(&x)
 
-If (val == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 200, A_LineNumber)
 
-If (x == 200)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 200, A_LineNumber)
 
 arr := [1, 2, 3]
 val := myclassobj.member3.Call(&arr[1])
 
-If (val == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2, A_LineNumber)
 	
-If (arr[1] == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(arr[1], 2, A_LineNumber)
 	
 m := { one : 1, two : 2, three : 3 }
 val := myclassobj.member3.Call(&m.one)
 
-If (val == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2, A_LineNumber)
 
-If (m.one == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(m.one, 2, A_LineNumber)
 
 x := 11
 y11 := 123
 val := myclassobj.member3.Call(&y%x%)
 
-If (val == 246)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 246, A_LineNumber)
 
-If (y11 == 246)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y11, 246, A_LineNumber)
 
 x := 0
 y := 0
@@ -543,20 +340,11 @@ fo := Func("func_bound")
 bf := fo.Bind(5, ,7)
 bf(&y)
 
-If (x == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 5, A_LineNumber)
 	
-If (y == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 123, A_LineNumber)
 	
-If (z == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 7, A_LineNumber)
 
 a := 0
 
@@ -573,10 +361,7 @@ func_static2(&p2)
 
 func_static()
 
-If (a == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 123, A_LineNumber)
 
 a := 0
 
@@ -597,10 +382,7 @@ class myclass
 
 func_static3()
 
-If (a == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 456, A_LineNumber)
 
 funcoptref(a, b := 5, &c := 10)
 {
@@ -609,31 +391,19 @@ funcoptref(a, b := 5, &c := 10)
 
 x := funcoptref(20)
 
-If (x == 35)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 35, A_LineNumber)
 
 x := funcoptref(20, 25)
 
-If (x == 55)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 55, A_LineNumber)
 
 x := funcoptref(20, ,)
 
-If (x == 35)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 35, A_LineNumber)
 
 x := funcoptref(1, ,&z := 11)
 
-If (x == 17 && z == 17)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x == 17 && z == 17, A_LineNumber)
 
 Myfunc(&x, &y) {
   x := 1, y := 2
@@ -643,71 +413,41 @@ w := 0, z := 0
 bound := Myfunc.Bind(,)
 Bound(&w, &z) ; nothing was bound, so both get assigned.
 
-if (w == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(w, 1, A_LineNumber)
 
-if (z == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 2, A_LineNumber)
 
 w := 0, z := 0
 bound := Myfunc.Bind(&w)
 Bound(&z)
 
-if (w == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(w, 1, A_LineNumber)
 
-if (z == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 2, A_LineNumber)
 
 w := 0, z := 0
 bound := Myfunc.Bind(&w,)
 Bound(&z)
 
-if (w == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(w, 1, A_LineNumber)
 
-if (z == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 2, A_LineNumber)
 
 w := 0, z := 0
 bound := Myfunc.Bind(, &z)
 Bound(&w)
 
-if (w == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(w, 1, A_LineNumber)
 
-if (z == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 2, A_LineNumber)
 
 w := 0, z := 0
 bound := Myfunc.Bind(&w, &z)
 Bound()
 
-if (w == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(w, 1, A_LineNumber)
 
-if (z == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 2, A_LineNumber)
 
 ; Forwarding a by-ref param whose target is still UNSET must not raise.
 fill_inner(&fi_a, &fi_b)
@@ -726,8 +466,6 @@ forward_unset_test()
 	return (uo == 7 && ut == 8)
 }
 
-if (forward_unset_test())
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
-	
+Assert(forward_unset_test(), A_LineNumber)
+
+FileAppend "pass", "*"

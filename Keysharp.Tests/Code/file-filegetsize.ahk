@@ -1,37 +1,25 @@
 #NoTrayIcon
+#Include <assert>
 
 dir := "../../../Keysharp.Tests/Code/DirCopy/file1.txt"
 size := FileGetSize(dir)
 
-if (size == 14)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(size, 14, A_LineNumber)
 
 size := FileGetSize(dir, "k")
 
-if (size == 0)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(size, 0, A_LineNumber)
 	
 size := FileGetSize(dir, "m")
 
-if (size == 0)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(size, 0, A_LineNumber)
 	
 size := FileGetSize(dir, "g")
 
-if (size == 0)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(size, 0, A_LineNumber)
 	
 size := FileGetSize(dir, "t")
 
-if (size == 0)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(size, 0, A_LineNumber)
+
+FileAppend "pass", "*"

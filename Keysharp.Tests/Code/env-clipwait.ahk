@@ -4,7 +4,6 @@
 
 ClipWait , true
 ; Waited for any type indefinitely and successfully detected clipboard data because a bitmap was placed on the clipboard before this script was run.
-FileAppend "pass", "*"
 
 ClipWait 0.5
 

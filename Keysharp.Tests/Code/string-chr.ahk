@@ -1,8 +1,8 @@
 #NoTrayIcon
+#Include <assert>
 
 x := Chr(116)
 
-if (x = "t")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = "t", A_LineNumber)
+
+FileAppend "pass", "*"

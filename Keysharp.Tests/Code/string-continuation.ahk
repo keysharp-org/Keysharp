@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 str := "
 (
@@ -11,17 +12,11 @@ if (FileExist("./continuation.txt"))
 
 FileAppend(str, "./continuation.txt")
 
-if (FileExist("./continuation.txt"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(FileExist("./continuation.txt"), A_LineNumber)
 
 text := FileRead("./continuation.txt")
 
-if (text == "A line of text.`nBy default, the hard carriage return (Enter) between the previous line and this one will be stored.")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(text, "A line of text.`nBy default, the hard carriage return (Enter) between the previous line and this one will be stored.", A_LineNumber)
 
 if (FileExist("./continuation.txt"))
 	FileDelete("./continuation.txt")
@@ -39,17 +34,11 @@ if (FileExist("./continuation.txt"))
 
 FileAppend(str, "./continuation.txt")
 
-if (FileExist("./continuation.txt"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(FileExist("./continuation.txt"), A_LineNumber)
 
 text := FileRead("./continuation.txt")
 
-if (text == "A line of text.`nBy default, the hard carriage return (Enter) between the previous line and this one will be stored.`n`tThis line is indented with a tab; by default, that tab will also be stored.`nAdditionally, `"quote marks`" are automatically escaped when appropriate.")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(text, "A line of text.`nBy default, the hard carriage return (Enter) between the previous line and this one will be stored.`n`tThis line is indented with a tab; by default, that tab will also be stored.`nAdditionally, `"quote marks`" are automatically escaped when appropriate.", A_LineNumber)
 
 if (FileExist("./continuation.txt"))
 	FileDelete("./continuation.txt")
@@ -63,10 +52,7 @@ Specify variables as follows: " str "
 A line of text."
 )
 
-if (str2 == "Same as above, except that quote marks are not automatically escaped.`nSpecify variables as follows: " str "`nA line of text.")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(str2, "Same as above, except that quote marks are not automatically escaped.`nSpecify variables as follows: " str "`nA line of text.", A_LineNumber)
 
 ; ---- The section's Join text is real syntax in a code section, not merely a separator.
 arr := Array(
@@ -77,10 +63,7 @@ arr := Array(
 )
 )
 
-if (arr.Length = 3 && arr[1] = 1 && arr[3] = 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(arr.Length = 3 && arr[1] = 1 && arr[3] = 3, A_LineNumber)
 
 ; ---- A single space is inserted when the line above the section ends with a name character (so this concatenates)…
 v := 12
@@ -89,10 +72,7 @@ r := v
 34
 )
 
-if (r == "1234")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(r, "1234", A_LineNumber)
 
 ; ---- …but not when it does not, so a leading-dot section is still member access.
 obj := {p: 9}
@@ -101,10 +81,7 @@ q := obj
 .p
 )
 
-if (q = 9)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(q = 9, A_LineNumber)
 
 ; ---- Trimming inside a section-spanning string follows the section's options: smart LTrim by default, and a line
 ; ---- indented differently from the first keeps its whitespace.
@@ -115,10 +92,7 @@ smart :=
   ghi"
 )
 
-if (smart == "abc`ndef`n  ghi")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(smart, "abc`ndef`n  ghi", A_LineNumber)
 
 ; ---- "C" is a valid spelling of the Comments option, and a stripped comment takes the whitespace to its left.
 cmt := "
@@ -128,10 +102,7 @@ one   ; trailing comment
 two
 )"
 
-if (cmt == "one`ntwo")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(cmt, "one`ntwo", A_LineNumber)
 
 ; ---- The accent option makes backticks literal, so no escape sequence in the section is translated.
 acc := "
@@ -139,10 +110,7 @@ acc := "
 esc`ttab
 )"
 
-if (acc == "esc``ttab")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(acc, "esc``ttab", A_LineNumber)
 
 ; ---- A Join string is capped at 15 characters.
 cap := "
@@ -151,10 +119,7 @@ one
 two
 )"
 
-if (cap == "one0123456789abcdetwo")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(cap, "one0123456789abcdetwo", A_LineNumber)
 
 ; ---- Blank lines and comment lines are permitted between the opening line and the section's '('.
 gap := "   ; Comment.
@@ -164,10 +129,7 @@ gap := "   ; Comment.
 	 ; This is not a comment; it is literal.
 )"   ; Comment.
 
-if (gap == "; This is not a comment; it is literal.")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gap, "; This is not a comment; it is literal.", A_LineNumber)
 
 ; ---- The merge is textual, so a section can split a NAME across its content lines…
 MyVar := 42
@@ -177,10 +139,7 @@ MyV
 ar
 )
 
-if (split = 42)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(split = 42, A_LineNumber)
 
 ; ---- …and across the closing parenthesis, whose trailing text is joined on with no delimiter.
 tail :=
@@ -188,10 +147,7 @@ tail :=
 My
 )Var
 
-if (tail = 42)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(tail = 42, A_LineNumber)
 
 ; ---- An operator can be split the same way, both at the section's opening line…
 op :
@@ -199,10 +155,7 @@ op :
 = 5
 )
 
-if (op = 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(op = 5, A_LineNumber)
 
 ; ---- …and between two content lines.
 cmp :=
@@ -211,10 +164,7 @@ cmp :=
 = 1
 )
 
-if (cmp = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(cmp = 1, A_LineNumber)
 
 ; ---- The Join string is merged in as text like everything else, so it can itself be part of a name:
 ; ---- `St` + `rL` + `en(…)` is a call to StrLen.
@@ -224,10 +174,7 @@ St
 en("abcde")
 )
 
-if (name = 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(name = 5, A_LineNumber)
 
 ; ---- A comment ending the line above is stripped before the merge, so the section still joins onto it.
 opc :  ; a comment here does not break the join
@@ -235,10 +182,7 @@ opc :  ; a comment here does not break the join
 = 7
 )
 
-if (opc = 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(opc = 7, A_LineNumber)
 
 ; ---- The name-character space belongs to a section's first CONTENT line, so a section with none never gets one.
 MyVar := 42
@@ -246,10 +190,7 @@ none := My
 (Join
 )Var
 
-if (none = 42)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(none = 42, A_LineNumber)
 
 ; ---- A second section on the same logical line re-applies the space rule, so `b` and `c` stay separate.
 va := "A", vb := "B", vc := "C", vd := "D"
@@ -264,10 +205,7 @@ vd
 )
 )
 
-if (arr2.Length = 3 && arr2[1] == "A" && arr2[2] == "BC" && arr2[3] == "D")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(arr2.Length = 3 && arr2[1] == "A" && arr2[2] == "BC" && arr2[3] == "D", A_LineNumber)
 
 ; ---- A stripped comment takes all the whitespace to its left even when RTrim is off.
 rt := "
@@ -276,7 +214,6 @@ one   ; cmt
 two   
 )"
 
-if (rt == "one`ntwo   ")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(rt, "one`ntwo   ", A_LineNumber)
+
+FileAppend "pass", "*"

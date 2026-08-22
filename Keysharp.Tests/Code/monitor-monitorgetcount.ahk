@@ -1,8 +1,8 @@
 #NoTrayIcon
+#Include <assert>
 
 monget := MonitorGetCount()
 
-if (monget >= 0)
-	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(monget >= 0, A_LineNumber)
+
+FileAppend "pass", "*"

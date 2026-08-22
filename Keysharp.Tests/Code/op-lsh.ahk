@@ -1,46 +1,32 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := x << 1
 
-if (y = 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 2, A_LineNumber)
 
 x := 1
 y := x << "1"
 
-if (y = 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 2, A_LineNumber)
 
 x := 1
 y := x << "0x1"
 
-if (y = 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 2, A_LineNumber)
 
 x := 1
 y := 1
 z := x << y
 
-if (z == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 2, A_LineNumber)
 
 x := "1"
 y := "0x1"
 z := x << y
 
-if (z == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(z, 2, A_LineNumber)
 
 b := false
 
@@ -54,10 +40,7 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -71,10 +54,7 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -88,10 +68,7 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -105,10 +82,7 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -123,10 +97,7 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -141,10 +112,7 @@ catch (TypeError as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -159,10 +127,7 @@ catch (Error as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -177,10 +142,7 @@ catch (Error as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -195,10 +157,7 @@ catch (Error as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -213,10 +172,7 @@ catch (Error as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -231,10 +187,7 @@ catch (Error as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
 b := false
 
@@ -249,7 +202,6 @@ catch (Error as exc)
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
+
+FileAppend "pass", "*"

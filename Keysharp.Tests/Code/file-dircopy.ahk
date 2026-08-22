@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 if (DirExist("./DirCopy2"))
 	DirDelete("./DirCopy2", true)
@@ -20,43 +21,27 @@ catch
     b := true
 }
 
-if (b)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(b, A_LineNumber)
 
 VerifyAndDelete(true)
 
 VerifyAndDelete(del)
 {
-    if (DirExist("./DirCopy2"))
- 	    FileAppend "pass", "*"
-    else
-  	    FileAppend "fail", "*"
+    Assert(DirExist("./DirCopy2"), A_LineNumber)
 
-    if (FileExist("./DirCopy2/file1.txt"))
- 	    FileAppend "pass", "*"
-    else
-  	    FileAppend "fail", "*"
+    Assert(FileExist("./DirCopy2/file1.txt"), A_LineNumber)
 
-    if (FileExist("./DirCopy2/file2.txt"))
- 	    FileAppend "pass", "*"
-    else
-  	    FileAppend "fail", "*"
+    Assert(FileExist("./DirCopy2/file2.txt"), A_LineNumber)
 
-    if (FileExist("./DirCopy2/file3txt"))
- 	    FileAppend "pass", "*"
-    else
-  	    FileAppend "fail", "*"
+    Assert(FileExist("./DirCopy2/file3txt"), A_LineNumber)
 
     if (del)
     {
         if (DirExist("./DirCopy2"))
 	        DirDelete("./DirCopy2", true)
 
-        if (DirExist("./DirCopy2"))
- 	        FileAppend "fail", "*"
-        else
-  	        FileAppend "pass", "*"
+        Assert(!(DirExist("./DirCopy2")), A_LineNumber)
     }
 }
+
+FileAppend "pass", "*"

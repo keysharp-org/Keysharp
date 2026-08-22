@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 if (DirExist("./FileSetAttrib"))
 	DirDelete("./FileSetAttrib", true)
@@ -7,77 +8,49 @@ dir := "../../../Keysharp.Tests/Code/DirCopy"
 DirCreate("./FileSetAttrib")
 DirCopy(dir, "./FileSetAttrib", true)
 
-if (DirExist("./FileSetAttrib"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(DirExist("./FileSetAttrib"), A_LineNumber)
 
-if (FileExist("./FileSetAttrib/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileSetAttrib/file1.txt"), A_LineNumber)
 
-if (FileExist("./FileSetAttrib/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileSetAttrib/file2.txt"), A_LineNumber)
 
-if (FileExist("./FileSetAttrib/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileSetAttrib/file3txt"), A_LineNumber)
 
 dir := "./FileSetAttrib"
 attr := FileGetAttrib(dir)
 
-if (attr == "D")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(attr, "D", A_LineNumber)
 
 dir := "./FileSetAttrib/file1.txt"
 attr := FileGetAttrib(dir)
 
 #if WINDOWS
-	if (attr == "A")
+	AssertEq(attr, "A", A_LineNumber)
 #else
-	if (attr == "N")
+	AssertEq(attr, "N", A_LineNumber)
 #endif
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
 
 FileSetAttrib("r", dir)
 attr := FileGetAttrib(dir)
 
-if (attr == "R")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(attr, "R", A_LineNumber)
 
 FileSetAttrib("-r", dir)
 attr := FileGetAttrib(dir)
 
-if (attr == "N")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(attr, "N", A_LineNumber)
 
 FileSetAttrib("^r", dir)
 attr := FileGetAttrib(dir)
 
-if (attr == "R")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(attr, "R", A_LineNumber)
 
 FileSetAttrib("^r", dir)
 attr := FileGetAttrib(dir)
 
-if (attr == "N")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(attr, "N", A_LineNumber)
 
 if (DirExist("./FileSetAttrib"))
 	DirDelete("./FileSetAttrib", true)
+
+FileAppend "pass", "*"

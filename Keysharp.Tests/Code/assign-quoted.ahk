@@ -1,13 +1,10 @@
 #NoTrayIcon
+#Include <assert>
 
 x := "hello"
 
-If (x != "hello")
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x != "hello"), A_LineNumber)
 	
-if (x = "hello")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = "hello", A_LineNumber)
+
+FileAppend "pass", "*"

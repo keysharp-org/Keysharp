@@ -1,6 +1,7 @@
 #ErrorStdOut
 #Warn All, StdOut
 #NoTrayIcon
+#Include <assert>
 
 #CSharp
 using System.Collections.Generic;
@@ -77,98 +78,96 @@ class Meas
     #EndCSharp
 }
 
-ok(cond) => FileAppend(cond ? "pass" : "fail", "*")
-
 ; A declared CLR return type reaches the script wrapped, with Ks.Clr's member-access semantics.
 l := MakeList()
-ok(IsManagedInstance(l))
-ok(l.Count == 2)
-ok(l[1] == "b")
+Assert(IsManagedInstance(l), A_LineNumber)
+AssertEq(l.Count, 2, A_LineNumber)
+AssertEq(l[1], "b", A_LineNumber)
 
 ; ...and unwraps back to its real type when handed to a member that declares it.
-ok(TakeList(l) == 2)
-ok(TakeList(MakeList()) == 2)
-ok(IsListObject(l))
+AssertEq(TakeList(l), 2, A_LineNumber)
+AssertEq(TakeList(MakeList()), 2, A_LineNumber)
+Assert(IsListObject(l), A_LineNumber)
 
 ; Ordinary AHK calls and generated globals preserve the wrapper; only marked CLR boundaries unwrap it.
 Identity(value) => value
-ok(IsManagedInstance(Identity(l)))
+Assert(IsManagedInstance(Identity(l)), A_LineNumber)
 global PlainHolder := ""
 plainHolderName := "PlainHolder"
 %plainHolderName% := l
-ok(IsManagedInstance(%plainHolderName%))
+Assert(IsManagedInstance(%plainHolderName%), A_LineNumber)
 
 ; An `object` return holding a narrow numeric widens to a script Integer instead of leaking a boxed Int32.
-ok(Type(BoxedInt()) == "Integer")
-ok(BoxedInt() == 7)
+AssertEq(Type(BoxedInt()), "Integer", A_LineNumber)
+AssertEq(BoxedInt(), 7, A_LineNumber)
 
 ; An `object` return holding a CLR object gets wrapped too.
-ok(BoxedClr().ToString() == "sb")
+AssertEq(BoxedClr().ToString(), "sb", A_LineNumber)
 
 ; Value types a script has no equivalent for: DateTime, enum, char.
-ok(When().Year == 2020)
-ok(When().AddDays(1).Day == 16)
-ok(TakeWhen(When()) == 2020)
-ok(Day().ToString() == "Friday")
-ok(TakeDay(Day()))
-ok(BoxedChar().ToString() == "K")
+AssertEq(When().Year, 2020, A_LineNumber)
+AssertEq(When().AddDays(1).Day, 16, A_LineNumber)
+AssertEq(TakeWhen(When()), 2020, A_LineNumber)
+AssertEq(Day().ToString(), "Friday", A_LineNumber)
+Assert(TakeDay(Day()), A_LineNumber)
+AssertEq(BoxedChar().ToString(), "K", A_LineNumber)
 
 ; A script has only the Integer to name an enum member with, so one reaches an enum parameter directly
 ; (DayOfWeek.Friday == 5)...
-ok(TakeDay(5))
-ok(DayValue(5) == 5)
+Assert(TakeDay(5), A_LineNumber)
+AssertEq(DayValue(5), 5, A_LineNumber)
 ; ...and is not required to be a declared member, which is what flag arithmetic done in script depends on.
-ok(DayValue(99) == 99)
+AssertEq(DayValue(99), 99, A_LineNumber)
 ; An enum-typed property takes the same Integer, and still reads back as the wrapped member.
 storedDayName := "StoredDay"
-ok(%storedDayName%.ToString() == "Monday")
+AssertEq(%storedDayName%.ToString(), "Monday", A_LineNumber)
 %storedDayName% := 5
-ok(%storedDayName%.ToString() == "Friday")
+AssertEq(%storedDayName%.ToString(), "Friday", A_LineNumber)
 %storedDayName% := Day()
-ok(DayValue(%storedDayName%) == 5)
+AssertEq(DayValue(%storedDayName%), 5, A_LineNumber)
 
 ; A non-variadic object[] is wrapped on return and unwrapped when its declared parameter receives it.
-ok(TakeObjects(Objects()) == 2)
+AssertEq(TakeObjects(Objects()), 2, A_LineNumber)
 
 ; A Type becomes a constructible ManagedType, exactly as Ks.Clr hands one out.
 sb := SbType()("hello")
 sb.Append("!")
-ok(sb.ToString() == "hello!")
+AssertEq(sb.ToString(), "hello!", A_LineNumber)
 
 ; Script-native objects cross unwrapped, whether declared as object or as their real type.
 arr := NativeArr()
-ok(Type(arr) == "Array")
-ok(arr.Length == 3)
+AssertEq(Type(arr), "Array", A_LineNumber)
+AssertEq(arr.Length, 3, A_LineNumber)
 tarr := TypedArr()
-ok(Type(tarr) == "Array")
-ok(tarr[2] == 5)
+AssertEq(Type(tarr), "Array", A_LineNumber)
+AssertEq(tarr[2], 5, A_LineNumber)
 
 ; Module properties and fields with declared CLR types wrap on read. Naming an inline member
 ; statically would declare a colliding script global, so access goes through the variable store.
 wname := "Words"
 sname := "Stash"
-ok(%wname%.Count == 3)
-ok(%wname%[0] == "x")
-ok(%sname%.Count == 1)
+AssertEq(%wname%.Count, 3, A_LineNumber)
+AssertEq(%wname%[0], "x", A_LineNumber)
+AssertEq(%sname%.Count, 1, A_LineNumber)
 
 ; An object-typed inline field is distinct from generated object fields and follows the CLR boundary.
 objectSlotName := "ObjectSlot"
-ok(IsManagedInstance(%objectSlotName%))
-ok(%objectSlotName%.ToString() == "field")
+Assert(IsManagedInstance(%objectSlotName%), A_LineNumber)
+AssertEq(%objectSlotName%.ToString(), "field", A_LineNumber)
 
 ; ...and a wrapped value written back through the store unwraps into them.
 %wname% := MakeList()
-ok(%wname%.Count == 2)
+AssertEq(%wname%.Count, 2, A_LineNumber)
 %sname% := MakeList()
-ok(TakeList(%sname%) == 2)
+AssertEq(TakeList(%sname%), 2, A_LineNumber)
 
 ; Wrapped value types also round-trip through module property and field setters.
 storedWhenName := "StoredWhen"
 storedWhenFieldName := "StoredWhenField"
 %storedWhenName% := When()
 %storedWhenFieldName% := When()
-ok(%storedWhenName%.Year == 2020)
-ok(%storedWhenFieldName%.Year == 2020)
+AssertEq(%storedWhenName%.Year, 2020, A_LineNumber)
+AssertEq(%storedWhenFieldName%.Year, 2020, A_LineNumber)
 
 ; Only public accessors are visible, and an init accessor is not a mutable script setter.
 lockedModuleName := "LockedModule"
@@ -177,8 +176,8 @@ try
     %lockedModuleName% := 99
 catch PropertyError
     moduleSetFailed := true
-ok(moduleSetFailed)
-ok(%lockedModuleName% == 11)
+Assert(moduleSetFailed, A_LineNumber)
+AssertEq(%lockedModuleName%, 11, A_LineNumber)
 
 writeOnlyModuleName := "WriteOnlyModule"
 %writeOnlyModuleName% := 24
@@ -187,21 +186,21 @@ try
     moduleWriteOnlyValue := %writeOnlyModuleName%
 catch PropertyError
     moduleGetFailed := true
-ok(moduleGetFailed)
+Assert(moduleGetFailed, A_LineNumber)
 
 ; Class-body members cross the same boundary: an instance property and a [receiver] method.
 m := Meas()
-ok(m.Taken.Year == 2021)
-ok(m.Tags().Count == 2)
-ok(m.Tags()[0] == "t1")
-ok(m.Locked == 21)
+AssertEq(m.Taken.Year, 2021, A_LineNumber)
+AssertEq(m.Tags().Count, 2, A_LineNumber)
+AssertEq(m.Tags()[0], "t1", A_LineNumber)
+AssertEq(m.Locked, 21, A_LineNumber)
 
 classSetFailed := false
 try
     m.Locked := 99
 catch PropertyError
     classSetFailed := true
-ok(classSetFailed)
+Assert(classSetFailed, A_LineNumber)
 
 m.WriteOnly := 25
 classGetFailed := false
@@ -209,12 +208,14 @@ try
     classWriteOnlyValue := m.WriteOnly
 catch Error
     classGetFailed := true
-ok(classGetFailed)
+Assert(classGetFailed, A_LineNumber)
 
-ok(m.InitOnly == 23)
+AssertEq(m.InitOnly, 23, A_LineNumber)
 initSetFailed := false
 try
     m.InitOnly := 99
 catch PropertyError
     initSetFailed := true
-ok(initSetFailed)
+Assert(initSetFailed, A_LineNumber)
+
+FileAppend "pass", "*"

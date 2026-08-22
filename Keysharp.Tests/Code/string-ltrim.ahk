@@ -1,33 +1,24 @@
 #NoTrayIcon
+#Include <assert>
 
 x := " test`t"
 y := LTrim(x)
 
-if (y = "test`t")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "test`t", A_LineNumber)
 	
 x := "test"
 y := LTrim(x)
 
-if (y = "test")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "test", A_LineNumber)
 	
 x := "`ttest "
 y := LTrim(x)
 
-if (y = "test ")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "test ", A_LineNumber)
 	
 x := "`ttest`t "
 y := LTrim(x)
 
-if (y = "test`t ")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "test`t ", A_LineNumber)
+
+FileAppend "pass", "*"

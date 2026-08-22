@@ -1,36 +1,24 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 0xAA
 
-if (x = 170)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(x = 170, A_LineNumber)
 
 x := 0xBB
 
-if (x = 187)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(x = 187, A_LineNumber)
 
 x := 0xCC
 
-if (x = 204)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(x = 204, A_LineNumber)
 
 x := 0xDD
 
-if (x = 221)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(x = 221, A_LineNumber)
 
 x := 0xDd
 
-if (x = 221)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(x = 221, A_LineNumber)
+
+FileAppend "pass", "*"

@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 fires := 0
 fn := () {
@@ -28,7 +29,6 @@ while (fires = 0 && A_TickCount < deadline)
 SetTimer(fn, 0)
 Sleep(160)
 
-if (fires = 1)
-    FileAppend("pass", "*")
-else
-    FileAppend("fail", "*")
+Assert(fires = 1, A_LineNumber)
+
+FileAppend "pass", "*"

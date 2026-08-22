@@ -1,19 +1,14 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 123
 y := x ?? ""
 
-if (y = 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 123, A_LineNumber)
 
 nafunc(p?)
 {
-	if ((p ?? 456) == 456)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq((p ?? 456), 456, A_LineNumber)
 }
 
 nafunc(unset)
@@ -21,10 +16,7 @@ nafunc(unset)
 z :=
 y := z ?? 456
 
-if (y = 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 456, A_LineNumber)
 
 tot := 0
 
@@ -38,76 +30,46 @@ nafunc2(a, b, c)
 
 nafunc2((o) => o ?? 11, (o?) => o ?? 22, (o?) => o ?? 33)
 
-If (tot == 26)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(tot, 26, A_LineNumber)
 
 x := 123
 yy := unset
 m := { one : x ?? 456,  two : yy ?? 789}
 
-if (m.one = 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(m.one = 123, A_LineNumber)
 
-if (m.two = 789)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(m.two = 789, A_LineNumber)
 
 x := 123
 
-if ((x ?? 456) == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq((x ?? 456), 123, A_LineNumber)
 
 x := unset
 x ??= Array()
 
-if (x is Array)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x is Array, A_LineNumber)
 
 ; Optional chaining tests
 optObj := unset
 optVal := optObj?.prop
-if !IsSet(optVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(optVal), A_LineNumber)
 
 optObj := { prop: { inner: 7 } }
 optVal := optObj?.prop.inner
-if (optVal = 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(optVal = 7, A_LineNumber)
 
 optObj := { prop: unset }
 optVal := optObj?.prop?.inner
-if !IsSet(optVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(optVal), A_LineNumber)
 
 ; v2.1-alpha.30 removed `a?.[i]` and `a?.()` in favour of `(a?)[i]` and `(a?)()`.
 optArr := [10, 20]
 optVal := (optArr?)[2]
-if (optVal = 20)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(optVal = 20, A_LineNumber)
 
 optArr := unset
 optVal := (optArr?)[1]
-if !IsSet(optVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(optVal), A_LineNumber)
 
 optCount := 0
 Bump()
@@ -127,39 +89,24 @@ class OptClass
 
 optObj := unset
 optVal := optObj?.M(Bump())
-if (optCount = 0 && !IsSet(optVal))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(optCount = 0 && !IsSet(optVal), A_LineNumber)
 
 optObj := OptClass()
 optVal := optObj?.M(Bump())
-if (optCount = 1 && optVal = 43)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(optCount = 1 && optVal = 43, A_LineNumber)
 
 optObj := unset
 optVal := optObj?.prop ?? 55
-if (optVal = 55)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(optVal = 55, A_LineNumber)
 
 ; Optional chaining with ternary + coalesce (both branches)
 optObj := unset
 dummyObj := { prop: 1 }
 optVal := (true ? optObj?.prop : dummyObj?.prop) ?? 66
-if (optVal = 66)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(optVal = 66, A_LineNumber)
 
 optVal := (false ? dummyObj?.prop : optObj?.prop) ?? 77
-if (optVal = 77)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(optVal = 77, A_LineNumber)
 
 ; v2.1-alpha.29: the maybe operator short-circuits most operators, so an unset operand
 ; propagates out of the whole expression without evaluating the rest of it.
@@ -174,56 +121,34 @@ Bump2()
 missing := unset
 
 optVal := missing?.value + Bump2()
-if (!IsSet(optVal) && sideEffects = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(optVal) && sideEffects = 0, A_LineNumber)
 
 optVal := -(missing?) + Bump2()
-if (!IsSet(optVal) && sideEffects = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(optVal) && sideEffects = 0, A_LineNumber)
 
 optVal := (missing?) ? Bump2() : Bump2()
-if (!IsSet(optVal) && sideEffects = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(optVal) && sideEffects = 0, A_LineNumber)
 
 optCallable := unset
 optVal := (optCallable?)(Bump2())
-if (!IsSet(optVal) && sideEffects = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(optVal) && sideEffects = 0, A_LineNumber)
 
 optIndexable := unset
 optVal := (optIndexable?)[Bump2()]
-if (!IsSet(optVal) && sideEffects = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(optVal) && sideEffects = 0, A_LineNumber)
 
 ; An assignment through an unset target is skipped entirely, value expression included.
 missing?.value := Bump2()
-if (sideEffects = 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(sideEffects = 0, A_LineNumber)
 
 ; v2.1-alpha.30: `x?.%y%` is valid syntax, not a load-time error.
 memberName := "value"
 optVal := missing?.%memberName%
-if !IsSet(optVal)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(optVal), A_LineNumber)
 
 ; Short-circuiting must not swallow a set operand: the same forms still compute normally.
 present := { value: 5 }
 optVal := present?.value + Bump2()
-if (optVal = 6 && sideEffects = 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(optVal = 6 && sideEffects = 1, A_LineNumber)
+
+FileAppend "pass", "*"

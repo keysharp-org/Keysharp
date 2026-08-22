@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 class myclass
 {
@@ -12,65 +13,35 @@ class myclass
 
 classobj := myclass.Call()
 
-If (classobj.a == "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.a, "", A_LineNumber)
 
-If (classobj.b == "asdf")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.b, "asdf", A_LineNumber)
 	
-If (classobj.d == "asdf")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.d, "asdf", A_LineNumber)
 	
-If (classobj.x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.x, 123, A_LineNumber)
 
-If (classobj.y == classobj.x)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.y, classobj.x, A_LineNumber)
 
 classobj.x := 456
 
-If (classobj.x == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.x, 456, A_LineNumber)
 
 classobj2 := myclass.Call()
 
-If (classobj2.x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj2.x, 123, A_LineNumber)
 
 classobj3 := myclass()
 
-If (classobj3.x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj3.x, 123, A_LineNumber)
 	
 a := 1
 
-If (classobj.a == "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.a, "", A_LineNumber)
 
 classobj.a := 123
 
-If (a == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 ; Test class members that are initialized using the value of other members.
 ; Purposely declare them in reverse alphabetical order to make sure they are
@@ -83,15 +54,9 @@ class membersrefeachother
 
 classobj := membersrefeachother()
 
-if (classobj.zz == 8080)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.zz, 8080, A_LineNumber)
 
-if (classobj.ii == 16160)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(classobj.ii, 16160, A_LineNumber)
 
 ; Comma-separated field declarations that share a line (and its instance/static scope).
 class commafields
@@ -102,10 +67,7 @@ class commafields
 
 cf := commafields()
 
-if (cf.a == 1 && cf.b == 2 && commafields.x == 10 && commafields.y == 20)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(cf.a == 1 && cf.b == 2 && commafields.x == 10 && commafields.y == 20, A_LineNumber)
 
 ; Just parsing tests:
 ; 1. In C# a method can't be the same name as the enclosing type
@@ -120,3 +82,5 @@ class Test {
 		static a := 2
 	}
 }
+
+FileAppend "pass", "*"

@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 if (DirExist("./FileSetTime"))
 	DirDelete("./FileSetTime", true)
@@ -6,49 +7,30 @@ if (DirExist("./FileSetTime"))
 dir := "../../../Keysharp.Tests/Code/DirCopy"
 DirCopy(dir, "./FileSetTime")
 
-if (DirExist("./FileSetTime"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(DirExist("./FileSetTime"), A_LineNumber)
 
-if (FileExist("./FileSetTime/file1.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileSetTime/file1.txt"), A_LineNumber)
 
-if (FileExist("./FileSetTime/file2.txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileSetTime/file2.txt"), A_LineNumber)
 
-if (FileExist("./FileSetTime/file3txt"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./FileSetTime/file3txt"), A_LineNumber)
 
 FileSetTime("20200101131415", "./FileSetTime/file1.txt", "m")
 filetime := FileGetTime("./FileSetTime/file1.txt", "m")
 
-if ("20200101131415" == filetime)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq("20200101131415", filetime, A_LineNumber)
 
 FileSetTime("20200101131416", "./FileSetTime/file1.txt", "c")
 filetime := FileGetTime("./FileSetTime/file1.txt", "c")
 
-if ("20200101131416" == filetime)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq("20200101131416", filetime, A_LineNumber)
 
 FileSetTime("20200101131417", "./FileSetTime/file1.txt", "a")
 filetime := FileGetTime("./FileSetTime/file1.txt", "a")
 
-if ("20200101131417" == filetime)
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq("20200101131417", filetime, A_LineNumber)
 
 if (DirExist("./FileSetTime"))
 	DirDelete("./FileSetTime", true)
+
+FileAppend "pass", "*"

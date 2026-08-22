@@ -10,71 +10,45 @@
 #import "A" { * }
 #import "B" { * }
 #import "A" { Foo as FooFromA }
+#Include <assert>
 ; ---- Local Calculate must take precedence over wildcard imports regardless of order
 Calculate() => 1
 
 a := Calculate()
-if (a == 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 a := CalculateX()
-if (a == 2)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 2, A_LineNumber)
 
 a := Check(3)
-if (a == true)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, true, A_LineNumber)
 
 ; ---- "from X" should NOT add X to namespace unless alias is specified
 a := IsSet(X)
-if (a == false)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, false, A_LineNumber)
 
 ; ---- wildcard import conflict: last import wins (B after A)
 a := Bar()
-if (a == "B")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, "B", A_LineNumber)
 
 ; ---- explicit import alias remains available and unaffected
 a := FooFromA()
-if (a == "A")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, "A", A_LineNumber)
 
 ; ---- local declaration overrides wildcard import even if declared after imports
 Foo() => "local"
 a := Foo()
-if (a == "local")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, "local", A_LineNumber)
 
 ; ---- explicit imports with alternative syntax (as opposed to "import { a } from Test")
 #import "Test" { Hello as ReturnHello }
 #import "Test" { Hello }
 
 v := ReturnHello()
-if (v == "Hello")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(v, "Hello", A_LineNumber)
 
 v := Hello()
-if (v == "Hello")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(v, "Hello", A_LineNumber)
 
 if true
 {
@@ -82,20 +56,14 @@ if true
 }
 
 v := BlockHello()
-if (v == "Hello")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(v, "Hello", A_LineNumber)
 
 obj := {
     #import "Test" { Hello as ObjectHello }
 }
 
 v := ObjectHello()
-if (v == "Hello")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(v, "Hello", A_LineNumber)
 
 ; ---- non-exported members should still be importable, but must be explicitly imported (not via wildcard)
 
@@ -105,42 +73,26 @@ else
 }
 #import "Mixed" { hiddenFn as h2, hiddenVar as hv2 }
 
-if (h1() == "hidden" && h2() == "hidden")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(h1() == "hidden" && h2() == "hidden", A_LineNumber)
 
-if (hv1 == 42 && hv2 == 42)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(hv1 == 42 && hv2 == 42, A_LineNumber)
 
 #import "NoExports" { noExportFn as n1, noExportVar as nv1 }
 #import "NoExports" { * }
-if (n1() == "noexp" && noExportFn() == "noexp")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(n1() == "noexp" && noExportFn() == "noexp", A_LineNumber)
 
-if (nv1 == 7 && noExportVar == 7)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(nv1 == 7 && noExportVar == 7, A_LineNumber)
 
 ; ---- a module global assigned only inside top-level control flow (if/else, loop) is still importable by name
 #import "NestedGlobals" { nestedIfVar as niv, nestedLoopVar as nlv }
-if (niv == 99 && nlv == 55)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(niv == 99 && nlv == 55, A_LineNumber)
 
 ; ---- module globals materialized via an assignment chain and via a function-scope `global` decl are importable
 #import "ChainGlobals" { chainB as cb }
 #import "FuncGlobals" { fgTheme as fgt }
-if (cb == 7 && fgt == "dark")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+Assert(cb == 7 && fgt == "dark", A_LineNumber)
+
+FileAppend "pass", "*"
 
 #Module X
 export Calculate() => 2

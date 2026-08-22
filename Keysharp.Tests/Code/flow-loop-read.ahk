@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := ""
 
@@ -9,10 +10,7 @@ Loop Read "../../../Keysharp.Tests/Code/test-text-file.txt"
 	x .= A_LoopReadLine
 }
 
-If (x == "this is line 1another lineline 3")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, "this is line 1another lineline 3", A_LineNumber)
 
 x := ""
 FileDelete "../../../Keysharp.Tests/Code/test-text-file-out.txt"
@@ -34,7 +32,6 @@ Loop Read  "../../../Keysharp.Tests/Code/test-text-file-out.txt" ; another comme
 	z.= A_LoopReadLine
 }
 
-If (x == z)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, z, A_LineNumber)
+
+FileAppend "pass", "*"

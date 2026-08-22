@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 if (FileExist("./testini2.ini"))
 	FileDelete("./testini2.ini")
@@ -6,56 +7,35 @@ if (FileExist("./testini2.ini"))
 dir := "../../../Keysharp.Tests/Code/testini.ini"
 FileCopy(dir, "./testini2.ini", true)
 
-if (FileExist("./testini2.ini"))
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(FileExist("./testini2.ini"), A_LineNumber)
 
 val := IniRead("./testini2.ini", "sectionone", "keyval")
 
-if ("theval" == val)
-  	FileAppend "pass", "*"
-else
-   	FileAppend "fail", "*"
+AssertEq("theval", val, A_LineNumber)
 
 val := IniRead("./testini2.ini", "sectiontwo")
 
-if ("groupkey1=groupval1`ngroupkey2=groupval2`ngroupkey3=groupval3" == val)
-  	FileAppend "pass", "*"
-else
-   	FileAppend "fail", "*"
+AssertEq("groupkey1=groupval1`ngroupkey2=groupval2`ngroupkey3=groupval3", val, A_LineNumber)
 
 val := IniRead("./testini2.ini")
 
-if ("sectionone`nsectiontwo`nsectionthree" == val)
-  	FileAppend "pass", "*"
-else
-   	FileAppend "fail", "*"
+AssertEq("sectionone`nsectiontwo`nsectionthree", val, A_LineNumber)
 
 IniWrite("thevalnew", "./testini2.ini", "sectionone", "keyval")
 val := IniRead("./testini2.ini", "sectionone", "keyval")
 
-if ("thevalnew" == val)
-  	FileAppend "pass", "*"
-else
-   	FileAppend "fail", "*"
+AssertEq("thevalnew", val, A_LineNumber)
 
 str := "groupkey11=groupval11`ngroupkey12=groupval12`ngroupkey13=groupval13"
 IniWrite(str, "./testini2.ini", "sectiontwo")
 val := IniRead("./testini2.ini", "sectiontwo")
 
-if ("groupkey11=groupval11`ngroupkey12=groupval12`ngroupkey13=groupval13" == val)
-  	FileAppend "pass", "*"
-else
-   	FileAppend "fail", "*"
+AssertEq("groupkey11=groupval11`ngroupkey12=groupval12`ngroupkey13=groupval13", val, A_LineNumber)
 
 IniDelete("./testini2.ini", "sectiontwo", "groupkey11")
 val := IniRead("./testini2.ini", "sectiontwo")
 
-if ("groupkey12=groupval12`ngroupkey13=groupval13" == val)
-  	FileAppend "pass", "*"
-else
-   	FileAppend "fail", "*"
+AssertEq("groupkey12=groupval12`ngroupkey13=groupval13", val, A_LineNumber)
 
 b := false
 
@@ -68,10 +48,7 @@ catch
     b := true
 }
 
-if (b)
-  	FileAppend "pass", "*"
-else
-   	FileAppend "fail", "*"
+Assert(b, A_LineNumber)
     
 b := false
 
@@ -84,18 +61,14 @@ catch
     b := true
 }
 
-if (!b && val == 123)
-  	FileAppend "pass", "*"
-else
-   	FileAppend "fail", "*"
+Assert(!b && val == 123, A_LineNumber)
 
 IniDelete("./testini2.ini", "sectiontwo")
 val := IniRead("./testini2.ini", "sectiontwo",, "")
 
-if ("" == val)
-  	FileAppend "pass", "*"
-else
-   	FileAppend "fail", "*"
+AssertEq("", val, A_LineNumber)
 	
 if (FileExist("./testini2.ini"))
 	FileDelete("./testini2.ini")
+
+FileAppend "pass", "*"

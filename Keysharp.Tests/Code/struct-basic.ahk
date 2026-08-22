@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 struct POINT {
     x : Int32
@@ -132,31 +133,26 @@ dp(PTR_HOLDER.Prototype, "pt", {type:POINT.Ptr})
 
 pt := POINT()
 
-if pt.Size != 8
-    FileAppend "fail size", "*"
+Assert(!(pt.Size != 8), A_LineNumber)
 
-if !HasProp(pt, "x") || !HasProp(pt, "y")
-    FileAppend "fail hasprop", "*"
+Assert(!(!HasProp(pt, "x") || !HasProp(pt, "y")), A_LineNumber)
 
 pt.x := 10
 pt.y := 20
 
-if pt.x != 10 || pt.y != 20
-    FileAppend "fail fields", "*"
+Assert(!(pt.x != 10 || pt.y != 20), A_LineNumber)
 
 cpt := COMMA_POINT()
 cpt.x := 7
 cpt.y := 9
 
-if cpt.Size != 8 || cpt.x != 7 || cpt.y != 9
-    FileAppend "fail comma struct", "*"
+Assert(!(cpt.Size != 8 || cpt.x != 7 || cpt.y != 9), A_LineNumber)
 
 holder := BOX()
 holder.pt.x := 10
 holder.pt.y := 20
 
-if holder.pt.x != 10 || holder.pt.y != 20
-    FileAppend "fail nested", "*"
+Assert(!(holder.pt.x != 10 || holder.pt.y != 20), A_LineNumber)
 
 threw := false
 try
@@ -164,47 +160,38 @@ try
 catch as e
     threw := e is Error && e.Message == "Assignment to struct is not supported."
 
-if !threw
-    FileAppend "fail nested assignment", "*"
+Assert(!(!threw), A_LineNumber)
 
 pt2 := POINT.At(pt.Ptr)
 
-if pt2.x != 10 || pt2.y != 20
-    FileAppend "fail at", "*"
+Assert(!(pt2.x != 10 || pt2.y != 20), A_LineNumber)
 
 num := Int32()
 num.__Value := 42
 
-if num.Size != 4 || num.__Value != 42
-    FileAppend "fail primitive", "*"
+Assert(!(num.Size != 4 || num.__Value != 42), A_LineNumber)
 
-if !HasProp(num, "__Value")
-    FileAppend "fail primitive hasprop", "*"
+Assert(!(!HasProp(num, "__Value")), A_LineNumber)
 
 pointPtrClass := POINT.Ptr
 
-if !(pointPtrClass is Class)
-    FileAppend "fail ptrclass", "*"
+Assert(!(!(pointPtrClass is Class)), A_LineNumber)
 
-if ObjHasOwnProp(POINT, "Ptr")
-    FileAppend "fail ptr ownprop", "*"
+Assert(!(ObjHasOwnProp(POINT, "Ptr")), A_LineNumber)
 
-if !HasBase(CHILD_POINT.Ptr, BASE_POINT.Ptr) || !HasBase(CHILD_POINT.Ptr.Prototype, BASE_POINT.Ptr.Prototype)
-    FileAppend "fail ptr relation", "*"
+Assert(!(!HasBase(CHILD_POINT.Ptr, BASE_POINT.Ptr) || !HasBase(CHILD_POINT.Ptr.Prototype, BASE_POINT.Ptr.Prototype)), A_LineNumber)
 
 ptrnum := Int32.Ptr()
 ptrtarget := Int32()
 ptrtarget.__Value := 123
 ptrnum.__Value := ptrtarget
 
-if ptrnum.Size != A_PtrSize || ptrnum.__Value.__Value != 123
-    FileAppend "fail intptr", "*"
+Assert(!(ptrnum.Size != A_PtrSize || ptrnum.__Value.__Value != 123), A_LineNumber)
 
 iptr := IntPtr()
 iptr.__Value := 456
 
-if iptr.Size != A_PtrSize || iptr.__Value != 456
-    FileAppend "fail IntPtr", "*"
+Assert(!(iptr.Size != A_PtrSize || iptr.__Value != 456), A_LineNumber)
 
 unusedPtrClass := EARLY_POINT.Ptr
 
@@ -213,8 +200,7 @@ early.x := 1
 early.y := 2
 early.z := 3
 
-if early.Size != 12 || early.z != 3
-    FileAppend "fail early", "*"
+Assert(!(early.Size != 12 || early.z != 3), A_LineNumber)
 
 late := LATE_POINT()
 
@@ -224,36 +210,30 @@ try
 catch
     threw := true
 
-if !threw
-    FileAppend "fail lock", "*"
+Assert(!(!threw), A_LineNumber)
 
 packedInst := PACKED()
 packedInst.b := 0x11223344
 
-if packedInst.Size != 5 || packedInst.b != 0x11223344
-    FileAppend "fail pack", "*"
+Assert(!(packedInst.Size != 5 || packedInst.b != 0x11223344), A_LineNumber)
 
 unionInst := UNION()
 unionInst.a := 1
 unionInst.b := 2
 
-if unionInst.Size != 4 || unionInst.a != 2
-    FileAppend "fail offset", "*"
+Assert(!(unionInst.Size != 4 || unionInst.a != 2), A_LineNumber)
 
 ptrHolder := PTR_HOLDER()
 
-if PropIsSet(ptrHolder, "pt")
-    FileAppend "fail null pointer field", "*"
+Assert(!(PropIsSet(ptrHolder, "pt")), A_LineNumber)
 
 ptrHolder.pt := pt
 
-if !(ptrHolder.pt is POINT) || ptrHolder.pt.Ptr != pt.Ptr
-    FileAppend "fail pointer field", "*"
+Assert(!(!(ptrHolder.pt is POINT) || ptrHolder.pt.Ptr != pt.Ptr), A_LineNumber)
 
 ptrHolder.pt := unset
 
-if PropIsSet(ptrHolder, "pt")
-    FileAppend "fail pointer unset", "*"
+Assert(!(PropIsSet(ptrHolder, "pt")), A_LineNumber)
 
 DynPoint := Class("DynPoint", DYN_BASE)
 dp(DynPoint.Prototype, "x", {type:Int32})
@@ -271,14 +251,13 @@ dynChild.x := 1
 dynChild.y := 2
 dynChild.z := 3
 
-if dynPoint.Size != 8
+Assert(!(dynPoint.Size != 8
     || dynPoint.x != 10
     || dynPoint.y != 20
     || dynChild.Size != 12
     || dynChild.x != 1
     || dynChild.y != 2
-    || dynChild.z != 3
-    FileAppend "fail dynamic", "*"
+    || dynChild.z != 3), A_LineNumber)
 
 buf := Buffer(4)
 atLock := POINT.At(buf.Ptr)
@@ -289,8 +268,7 @@ try
 catch
     threw := true
 
-if atLock.Size != 8 || !threw
-    FileAppend "fail at lock", "*"
+Assert(!(atLock.Size != 8 || !threw), A_LineNumber)
 
 threw := false
 try
@@ -302,35 +280,30 @@ packChild := PACK_CHILD()
 packChild.x := 1
 packChild.y := 3
 
-if packChild.Size != 8 || packChild.x != 1 || packChild.y != 3 || !threw
-    FileAppend "fail base extend", "*"
+Assert(!(packChild.Size != 8 || packChild.x != 1 || packChild.y != 3 || !threw), A_LineNumber)
 
 fwdBox := FWD_BOX()
 fwdPoint := FWD_POINT()
 fwdBox.pt.x := 10
 fwdBox.pt.y := 20
 
-if fwdBox.Size != 8 || fwdBox.pt.x != 10 || fwdBox.pt.y != 20
-    FileAppend "fail forward", "*"
+Assert(!(fwdBox.Size != 8 || fwdBox.pt.x != 10 || fwdBox.pt.y != 20), A_LineNumber)
 
 initChild := INIT_CHILD()
 
-if initChild.Ptr == 0 || initChild.Size != 4 || initChild.x != 42
-    FileAppend "fail inherited init", "*"
+Assert(!(initChild.Ptr == 0 || initChild.Size != 4 || initChild.x != 42), A_LineNumber)
 
 myInt := MY_INT()
 myInt.__Value := 123
 
-if myInt.Ptr == 0 || myInt.Size != 4 || myInt.__Value != 123
-    FileAppend "fail primitive extend", "*"
+Assert(!(myInt.Ptr == 0 || myInt.Size != 4 || myInt.__Value != 123), A_LineNumber)
 
 threw := false
 try CLASS_FIELD_ASSIGN()
 catch
     threw := true
 
-if !threw
-    FileAppend "fail field assignment", "*"
+Assert(!(!threw), A_LineNumber)
 
 ; Type specifiers as expressions: (Int32), this.PickType() and an array type. [v2.1-alpha.30]
 dynamic := DYNAMIC_TYPES()
@@ -340,14 +313,12 @@ dynamic.c[1] := 7
 dynamic.c[2] := 8
 dynamic.c[3] := 9
 
-if dynamic.a != 0x12345678 || dynamic.b != 0x1234
-    || dynamic.c[1] != 7 || dynamic.c[2] != 8 || dynamic.c[3] != 9
-    FileAppend "fail dynamic type specifiers", "*"
+Assert(!(dynamic.a != 0x12345678 || dynamic.b != 0x1234
+    || dynamic.c[1] != 7 || dynamic.c[2] != 8 || dynamic.c[3] != 9), A_LineNumber)
 
 ; A prototype reports the struct size of the class it belongs to, matching its instances. [v2.1-alpha.23]
-if POINT.Prototype.Size != 8 || POINT.Prototype.Size != POINT().Size
-    || DYNAMIC_TYPES.Prototype.Size != dynamic.Size
-    FileAppend "fail prototype size", "*"
+Assert(!(POINT.Prototype.Size != 8 || POINT.Prototype.Size != POINT().Size
+    || DYNAMIC_TYPES.Prototype.Size != dynamic.Size), A_LineNumber)
 
 ; Base is read-only on both a prototype and an instance carrying typed properties. [v2.1-alpha.27]
 threw := false
@@ -356,8 +327,7 @@ try
 catch ValueError
     threw := true
 
-if !threw
-    FileAppend "fail typed prototype base", "*"
+Assert(!(!threw), A_LineNumber)
 
 threw := false
 try
@@ -365,14 +335,13 @@ try
 catch ValueError
     threw := true
 
-if !threw
-    FileAppend "fail typed instance base", "*"
+Assert(!(!threw), A_LineNumber)
 
 ; A prototype with no typed properties still accepts Base assignment. [v2.1-alpha.29]
 try
     CLASS_FIELD_ASSIGN.Prototype.Base := CLASS_GET_BASE.Prototype
 catch
-    FileAppend "fail untyped prototype base", "*"
+    Assert(false, A_LineNumber)
 
 ; Property type strings and typeless (byte-count) types were both removed. [v2.1-alpha.30]
 for badType in ["i32", 4] {
@@ -382,36 +351,29 @@ for badType in ["i32", 4] {
     catch ValueError
         threw := true
 
-    if !threw
-        FileAppend "fail removed type form", "*"
+    Assert(!(!threw), A_LineNumber)
 }
 
 #if WINDOWS
 {
     pt3 := POINT()
-    if !DllCall("GetCursorPos", POINT.Ptr, pt3)
-        FileAppend "fail getcursor", "*"
+    Assert(!(!DllCall("GetCursorPos", POINT.Ptr, pt3)), A_LineNumber)
 
-    if !IsNumber(pt3.x) || !IsNumber(pt3.y)
-        FileAppend "fail point", "*"
+    Assert(!(!IsNumber(pt3.x) || !IsNumber(pt3.y)), A_LineNumber)
 
     hwnd := DllCall("WindowFromPoint", POINT, pt3, "ptr")
 
     pt4 := unset
-    if !DllCall("GetCursorPos", POINT.Ptr, &pt4)
-        FileAppend "fail getcursor varref", "*"
+    Assert(!(!DllCall("GetCursorPos", POINT.Ptr, &pt4)), A_LineNumber)
 
-    if !(pt4 is POINT)
-        FileAppend "fail varref", "*"
+    Assert(!(!(pt4 is POINT)), A_LineNumber)
 
-    if DllCall("IsWindow", POINT.Ptr, unset) != 0
-        FileAppend "fail unset pointer", "*"
+    Assert(!(DllCall("IsWindow", POINT.Ptr, unset) != 0), A_LineNumber)
 
     pp := POINT.Ptr()
     pp.__Value := pt3
 
-    if !DllCall("GetCursorPos", POINT.Ptr, pp)
-        FileAppend "fail pointer instance", "*"
+    Assert(!(!DllCall("GetCursorPos", POINT.Ptr, pp)), A_LineNumber)
 
     threw := false
     try
@@ -419,15 +381,13 @@ for badType in ["i32", 4] {
     catch as e
         threw := e is TypeError
 
-    if !threw
-        FileAppend "fail missing value typeerror", "*"
+    Assert(!(!threw), A_LineNumber)
 
     hwnd := DllCall("GetDesktopWindow", "ptr")
     pid := unset
     tid := DllCall("GetWindowThreadProcessId", "ptr", hwnd, DWORD.Ptr, &pid, "uint")
 
-    if !IsNumber(pid) || pid == 0
-        FileAppend "fail custom value output", "*"
+    Assert(!(!IsNumber(pid) || pid == 0), A_LineNumber)
 
     threw := false
     try
@@ -435,13 +395,11 @@ for badType in ["i32", 4] {
     catch as e
         threw := e is UnsetError
 
-    if !threw
-        FileAppend "fail null pointer return", "*"
+    Assert(!(!threw), A_LineNumber)
 
     kernel32 := DllCall("GetModuleHandle", "str", "kernel32", Int32.Ptr)
 
-    if !IsNumber(kernel32) || kernel32 == 0
-        FileAppend "fail numeric pointer return", "*"
+    Assert(!(!IsNumber(kernel32) || kernel32 == 0), A_LineNumber)
 }
 #endif
 

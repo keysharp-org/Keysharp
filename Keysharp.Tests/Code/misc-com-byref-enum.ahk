@@ -1,12 +1,11 @@
 #NoTrayIcon
+#Include <assert>
 
 ; A native IDispatch client (cJson.ahk is the real-world one) enumerates a Keysharp object by calling
 ; __Enum(2) and then invoking the returned enumerator with two VT_BYREF|VT_VARIANT out-parameters.
 ; The CLR hands IReflect.InvokeMember a null `modifiers`, so nothing about the call itself says those
 ; slots are byref -- Enumerator.Call's contract is what does. This drives the whole path through the
 ; CCW so a regression shows up as an enumeration that yields nothing.
-
-Ok(cond) => FileAppend(cond ? "pass" : "fail", "*")
 
 IID_IDispatch := Buffer(16), IID_NULL := Buffer(16, 0)
 DllCall("ole32\CLSIDFromString", "Str", "{00020400-0000-0000-C000-000000000046}", "Ptr", IID_IDispatch)
@@ -32,14 +31,14 @@ DispIdOf(pd, name) {
 ComEnumerate(obj) {
     pd := GetDisp(obj)
     id := DispIdOf(pd, "__Enum")
-    Ok(id != -1 && id != 0)
+    Assert(id != -1 && id != 0, A_LineNumber)
 
     two := Buffer(24, 0), dp := Buffer(24, 0), res := Buffer(24, 0)
     NumPut("UShort", 3, two, 0), NumPut("Int", 2, two, 8)                     ; VT_I4 2
     NumPut("Ptr", two.Ptr, dp, 0), NumPut("UInt", 1, dp, 16)
     DllCall(Vt(pd, 6), "Ptr", pd, "Int", id, "Ptr", IID_NULL, "UInt", 0
         , "UShort", 3, "Ptr", dp, "Ptr", res, "Ptr", 0, "Ptr", 0, "Int")      ; METHOD|PROPERTYGET
-    Ok(NumGet(res, 0, "UShort") = 9)                                          ; VT_DISPATCH
+    Assert(NumGet(res, 0, "UShort") = 9, A_LineNumber)  ; VT_DISPATCH
     pEnum := NumGet(res, 8, "Ptr")
 
     out := ""
@@ -67,21 +66,21 @@ VariantText(var) {
     return "<vt" vt ">"
 }
 
-Ok(ComEnumerate(Map("a", 1, "b", 2)) = "a=1|b=2|")
-Ok(ComEnumerate([10, 20, 30]) = "1=10|2=20|3=30|")
+Assert(ComEnumerate(Map("a", 1, "b", 2)) = "a=1|b=2|", A_LineNumber)
+Assert(ComEnumerate([10, 20, 30]) = "1=10|2=20|3=30|", A_LineNumber)
 
 ; The [ByRef] marker sits on Enumerator.Call's `params object[]`, so it covers the whole tail: every
 ; slot reports ByRef, including ones past the single declared parameter.
 en := Map("a", 1).__Enum(2)
-Ok(en.IsByRef(1))
-Ok(en.IsByRef(2))
-Ok(en.IsByRef())
-Ok(en.Params[1].ByRef = 1 && en.Params[1].Variadic = 1)
+Assert(en.IsByRef(1), A_LineNumber)
+Assert(en.IsByRef(2), A_LineNumber)
+Assert(en.IsByRef(), A_LineNumber)
+Assert(en.Params[1].ByRef = 1 && en.Params[1].Variadic = 1, A_LineNumber)
 
 ; A function with no ByRef parameters must still report none.
 Plain(a, b) => a + b
-Ok(!Plain.IsByRef(1))
-Ok(!Plain.IsByRef())
+Assert(!Plain.IsByRef(1), A_LineNumber)
+Assert(!Plain.IsByRef(), A_LineNumber)
 
 ; A Keysharp object must also still be constructible through the same path -- cJson's loads.c builds its
 ; result by invoking ObjPtr(Map) as DISPATCH_METHOD.
@@ -89,7 +88,7 @@ pdMapClass := GetDisp(Map)
 dp0 := Buffer(24, 0), res3 := Buffer(24, 0)
 DllCall(Vt(pdMapClass, 6), "Ptr", pdMapClass, "Int", 0, "Ptr", IID_NULL, "UInt", 0
     , "UShort", 1, "Ptr", dp0, "Ptr", res3, "Ptr", 0, "Ptr", 0, "Int")
-Ok(NumGet(res3, 0, "UShort") = 9)
+Assert(NumGet(res3, 0, "UShort") = 9, A_LineNumber)
 
 ; Invokes dispid on pd with two VT_BYREF|VT_VARIANT slots holding 11 and 22, and reports what came back.
 SwapThrough(pd, dispid) {
@@ -110,7 +109,7 @@ Swapper(&a, &b) {
     t := a, a := b, b := t
     return 1
 }
-Ok(SwapThrough(GetDisp(Swapper), 0) = "22,11")
+Assert(SwapThrough(GetDisp(Swapper), 0) = "22,11", A_LineNumber)
 
 ; And so must a class method's. A lowered method carries its receiver as the FIRST parameter, so the
 ; caller's argument slots sit one place away from the parameter list the marks have to be read off.
@@ -122,5 +121,7 @@ class Holder {
 }
 pdHolder := GetDisp(Holder())
 idSwap := DispIdOf(pdHolder, "Swap")
-Ok(idSwap != -1 && idSwap != 0)
-Ok(SwapThrough(pdHolder, idSwap) = "22,11")
+Assert(idSwap != -1 && idSwap != 0, A_LineNumber)
+Assert(SwapThrough(pdHolder, idSwap) = "22,11", A_LineNumber)
+
+FileAppend "pass", "*"

@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 optfunc1(a?)
 {
@@ -7,19 +8,13 @@ optfunc1(a?)
 
 val := optfunc1() ?? 1
 
-if (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 val := ""
 fo := Func("optfunc1")
 val := fo() ?? 2
 
-if (val == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2, A_LineNumber)
 
 optfunc2(a, b?)
 {
@@ -28,19 +23,13 @@ optfunc2(a, b?)
 
 val := optfunc2(123) ?? 3
 
-if (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 
 val := ""
 fo := Func("optfunc2")
 val := fo(123) ?? 4
 
-if (val == 4)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 4, A_LineNumber)
 
 ga :=
 gb :=
@@ -57,25 +46,13 @@ optfunc3(a, b, c?)
 
 val := optfunc3(123, 456) ?? 5
 
-if (ga == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(ga, 123, A_LineNumber)
 
-if (gb == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gb, 456, A_LineNumber)
 	
-if (gc is unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(gc is unset, A_LineNumber)
 
-if (val == 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 5, A_LineNumber)
 
 ga :=
 gb :=
@@ -84,25 +61,13 @@ val := ""
 fo := Func("optfunc3")
 val := fo(123, 456) ?? 6
 
-if (ga == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(ga, 123, A_LineNumber)
 
-if (gb == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gb, 456, A_LineNumber)
 	
-if (gc is unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(gc is unset, A_LineNumber)
 
-if (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 ga :=
 gb :=
@@ -110,25 +75,13 @@ gc :=
 val := ""
 val := optfunc3(123, 456, 789) ?? 7
 
-if (ga == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(ga, 123, A_LineNumber)
 
-if (gb == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gb, 456, A_LineNumber)
 	
-if (gc == 789)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gc, 789, A_LineNumber)
 
-if (val == 789)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 789, A_LineNumber)
 
 ga :=
 gb :=
@@ -137,25 +90,13 @@ val := ""
 fo := Func("optfunc3")
 val := fo(123, 456, 789)
 
-if (ga == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(ga, 123, A_LineNumber)
 
-if (gb == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gb, 456, A_LineNumber)
 	
-if (gc == 789)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gc, 789, A_LineNumber)
 
-if (val == 789)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 789, A_LineNumber)
 
 class optfuncclass
 {
@@ -183,17 +124,11 @@ classobj := optfuncclass()
 
 val := classobj.f1() ?? 1
 
-if (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
 
 val := classobj.f2(123) ?? 2
 
-if (val == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 2, A_LineNumber)
 
 ga :=
 gb :=
@@ -201,25 +136,13 @@ gc := ""
 val := ""
 val := classobj.f3(123, 456) ?? 3
 
-if (ga == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(ga, 123, A_LineNumber)
 
-if (gb == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gb, 456, A_LineNumber)
 	
-if (gc is unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(gc is unset, A_LineNumber)
 
-if (val == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 3, A_LineNumber)
 
 ga :=
 gb :=
@@ -227,25 +150,13 @@ gc :=
 val := ""
 val := classobj.f3(123, 456, 789) ?? 4
 
-if (ga == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(ga, 123, A_LineNumber)
 
-if (gb == 456)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gb, 456, A_LineNumber)
 	
-if (gc == 789)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(gc, 789, A_LineNumber)
 
-if (val == 789)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 789, A_LineNumber)
 	
 optreffunc(a?, &b)
 {
@@ -257,7 +168,6 @@ val2 := ""
 b := unset
 optreffunc(,&val2)
 
-if (b is unset)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(b is unset, A_LineNumber)
+
+FileAppend "pass", "*"

@@ -4,26 +4,27 @@
 #import "Fast" { Crunch as Aliased }
 #import "Fast" { Own as ExplicitOwn }
 #import Fast
-
-ok(cond) => FileAppend(cond ? "pass" : "fail", "*")
+#Include <assert>
 
 nestedOwn() {
     #import "Fast" { Own as NestedOwn }
     return NestedOwn()
 }
 
-ok(Crunch() == "fast")
-ok(Aliased() == "fast")
-ok(ExplicitOwn() == "fast-local")
-ok(nestedOwn() == "fast-local")
-ok(Fast() == "leaf-default")
-ok(Own() == "main")
-ok(!IsSet(Hidden))
-ok(!IsSet(ForeignMarked))
+AssertEq(Crunch(), "fast", A_LineNumber)
+AssertEq(Aliased(), "fast", A_LineNumber)
+AssertEq(ExplicitOwn(), "fast-local", A_LineNumber)
+AssertEq(nestedOwn(), "fast-local", A_LineNumber)
+AssertEq(Fast(), "leaf-default", A_LineNumber)
+AssertEq(Own(), "main", A_LineNumber)
+Assert(!IsSet(Hidden), A_LineNumber)
+Assert(!IsSet(ForeignMarked), A_LineNumber)
 
 #CSharp
 public static object Own() => "main";
 #EndCSharp
+
+FileAppend "pass", "*"
 
 #Module Fast
 

@@ -1,57 +1,39 @@
 #NoTrayIcon
+#Include <assert>
 
 x := "ALL CAPS"
 y := StrLower(x)
 
-if (y = "all caps")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "all caps", A_LineNumber)
 	
 x := "AlL CaPs"
 y := StrLower(x)
 
-if (y = "all caps")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "all caps", A_LineNumber)
 	
 x := "all caps"
 y := StrLower(x)
 
-if (y = "all caps")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "all caps", A_LineNumber)
 	
 x := ""
 y := StrLower(x)
 
-if (y = "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "", A_LineNumber)
 	
 x := "ALL CAPS"
 y := StrTitle(x)
 
-if (y = "ALL CAPS")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "ALL CAPS", A_LineNumber)
 	
 x := "all caps"
 y := StrTitle(x)
 
-if (y = "All Caps")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "All Caps", A_LineNumber)
 	
 x := "All Caps"
 y := StrTitle(x)
 
-if (y = "All Caps")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = "All Caps", A_LineNumber)
+
+FileAppend "pass", "*"

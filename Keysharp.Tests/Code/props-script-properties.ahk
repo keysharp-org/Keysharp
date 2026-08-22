@@ -1,5 +1,6 @@
 #import KS { A_KeysharpPath, A_NewLine, A_ProcessArch, A_OSArch }
 #NoTrayIcon
+#Include <assert>
 
 ; Can't really test if some of these properties have "valid" values. So at least just test if they can be compiled properly in a script.
 
@@ -11,10 +12,7 @@ expectedOsType := "OSX"
 expectedOsType := "LINUX"
 #endif
 
-if (A_OSType = expectedOsType)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_OSType = expectedOsType, A_LineNumber)
 
 ; Exactly one architecture symbol is predefined, and it names A_ProcessArch.
 #if X64
@@ -29,107 +27,64 @@ expectedArch := "ARM"
 expectedArch := "<none defined>"
 #endif
 
-if (A_ProcessArch = expectedArch)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_ProcessArch = expectedArch, A_LineNumber)
 
 ; A_OSArch uses the same names. It only differs from A_ProcessArch under emulation, so just check it
 ; is one of the known values rather than tying the test to the host.
-if (A_OSArch ~= "^(X64|ARM64|X86|ARM)$")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_OSArch ~= "^(X64|ARM64|X86|ARM)$", A_LineNumber)
 
 x := A_WorkingDir
 
-if (x != "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x != "", A_LineNumber)
 
 x := A_ScriptName
 
-if (x == "props-script-properties.ahk")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, "props-script-properties.ahk", A_LineNumber)
 
 x := A_ScriptFullPath
 
-if (x != "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x != "", A_LineNumber)
 		
 x := A_ScriptDir
 
-if (x != "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x != "", A_LineNumber)
 
 #if !OSX
 x := A_ScriptHwnd
 
-if (x > 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x > 0, A_LineNumber)
 #endif
 
 x := A_LineNumber ; This is not a reliable indicator of the line because the preprocessor condenses everything.
 
-if (x > 0) ; 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x > 0, A_LineNumber) ; 
 
 oldx := x
 x := A_LineNumber
 
-if (x > oldx)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x > oldx, A_LineNumber)
 
 x := A_LineFile
 
-if (x = A_ScriptFullPath) ; These two are always the same except for when the latter is in an include file.
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = A_ScriptFullPath, A_LineNumber)  ; These two are always the same except for when the latter is in an include file.
 
 myfunc()
 {
 	y := A_ThisFunc
 
-	if (y = "myfunc")
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(y = "myfunc", A_LineNumber)
 }
 
 myfunc()
 
-if (A_IsUnicode == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_IsUnicode, true, A_LineNumber)
 
-if (A_KeysharpPath = A_AhkPath && (A_NewLine = "`n" || A_NewLine = "`r`n"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_KeysharpPath = A_AhkPath && (A_NewLine = "`n" || A_NewLine = "`r`n"), A_LineNumber)
 
 ; The AutoHotkey version Keysharp implements.
-if (A_AhkVersion = "2.1-alpha.30")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_AhkVersion = "2.1-alpha.30", A_LineNumber)
 
-if (!IsSet(A_E) && !IsSet(A_IPAddress) && !IsSet(A_PeekFrequency) && !IsSet(A_PI) && !IsSet(A_TempFile)
-	&& !IsSet(A_ThisMenu) && !IsSet(A_ThisMenuItem) && !IsSet(A_ThisMenuItemPos))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!IsSet(A_E) && !IsSet(A_IPAddress) && !IsSet(A_PeekFrequency) && !IsSet(A_PI) && !IsSet(A_TempFile)
+	&& !IsSet(A_ThisMenu) && !IsSet(A_ThisMenuItem) && !IsSet(A_ThisMenuItemPos), A_LineNumber)
+
+FileAppend "pass", "*"

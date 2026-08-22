@@ -1,39 +1,19 @@
 #NoTrayIcon
+#Include <assert>
 
-if (Min(-6, -6) == -6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Min(-6, -6), -6, A_LineNumber)
 	
-if (Min(-6, "-5") == -6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Min(-6, "-5"), -6, A_LineNumber)
 
-if (Min(-4.2, -5.0) == -5.0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Min(-4.2, -5.0), -5.0, A_LineNumber)
 
-if (Min(0, 0) == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Min(0, 0), 0, A_LineNumber)
 
-if (Min("0", 1) == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Min("0", 1), 0, A_LineNumber)
 
-if (Min(1, 1) == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Min(1, 1), 1, A_LineNumber)
 
-if (Min(1.5, 2.3) == 1.5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Min(1.5, 2.3), 1.5, A_LineNumber)
 	
 caught := false
 
@@ -47,41 +27,22 @@ catch
 }
 
 
-if (caught)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(caught, A_LineNumber)
 
 x := [ -1.0, -0.5, 0, 0.5, 1, 0.675 ]
 
-if (Min(x) == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Min(x), -1, A_LineNumber)
 
 x := [ -1.0, -0.5, 0, 0.5, 1, "0.675", 2.0 ]
 
-if (Min(x) == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Min(x), -1, A_LineNumber)
 
-if (Min(-1.0, -0.5, 0, 0.5, 1, 0.675) == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Min(-1.0, -0.5, 0, 0.5, 1, 0.675), -1, A_LineNumber)
 
-if (Min(-1.0, -0.5, 0, 0.5, 1, 0.675, "2.0") == -1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Min(-1.0, -0.5, 0, 0.5, 1, 0.675, "2.0"), -1, A_LineNumber)
 	
-if (Type(Min(-1.0, 1)) == "Float")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Type(Min(-1.0, 1)), "Float", A_LineNumber)
 	
-if (Type(Min(1.0, -1)) == "Integer")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(Type(Min(1.0, -1)), "Integer", A_LineNumber)
+
+FileAppend "pass", "*"

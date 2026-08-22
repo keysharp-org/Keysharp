@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := 2
@@ -12,68 +13,44 @@ varfunc1(*)
 x := false
 varfunc1()
 
-If (x == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, true, A_LineNumber)
 
 x := false
 varfunc1("firstparam")
 
-If (x == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, true, A_LineNumber)
 
 x := false
 varfunc1("firstparam", "secondparam")
 
-If (x == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, true, A_LineNumber)
 
 x := false
 varfunc1("firstparam", ,"thirdparam")
 
-If (x == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, true, A_LineNumber)
 
 varfo1 := Func("varfunc1")
 
 x := false
 varfo1()
 
-If (x == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, true, A_LineNumber)
 
 x := false
 varfo1("firstparam")
 
-If (x == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, true, A_LineNumber)
 
 x := false
 varfo1("firstparam", "secondparam")
 
-If (x == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, true, A_LineNumber)
 
 x := false
 varfo1("firstparam", ,"thirdparam")
 
-If (x == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, true, A_LineNumber)
 
 varfuncimplicit(*)
 {
@@ -90,33 +67,21 @@ varfuncimplicit(*)
 arr := [1, 2, 3]
 val := varfuncimplicit(arr*)
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 val := varfuncimplicit()
 
-If (val == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 0, A_LineNumber)
 
 fo := Func("varfuncimplicit")
 val := fo(arr*)
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 fo := Func("varfuncimplicit")
 val := fo()
 
-If (val == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 0, A_LineNumber)
 
 varfunc2(p1, theparams*)
 {
@@ -132,10 +97,7 @@ varfunc2(p1, theparams*)
 
 val := varfunc2(1, 2, 3)
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 varfunc3(p1, theparams*)
 {
@@ -151,10 +113,7 @@ varfunc3(p1, theparams*)
 
 val := varfunc3(1, 2, 3)
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 varfunc4(*)
 {
@@ -163,25 +122,16 @@ varfunc4(*)
 
 val := varfunc3(1, 2, 3)
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 arr := [1, 2, 3]
 val := varfunc3(1, arr*)
 
-If (val == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 7, A_LineNumber)
 
 val := varfunc4(arr*)
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 varfunc5(p1, p2, theparams*)
 {
@@ -197,34 +147,22 @@ varfunc5(p1, p2, theparams*)
 
 val := varfunc5(1, 2, arr*)
 
-If (val == 9)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 9, A_LineNumber)
 
 fo := Func("varfunc3")
 val := fo(1, arr*)
 
-If (val == 7)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 7, A_LineNumber)
 
 fo := Func("varfunc4")
 val := fo(arr*)
 
-If (val == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 6, A_LineNumber)
 
 fo := Func("varfunc5")
 val := fo(1, 2, arr*)
 
-If (val == 9)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 9, A_LineNumber)
 
 varfunc6(args*)
 {
@@ -242,10 +180,7 @@ arr := [1, 2, 3]
 ; Test dynamic call passing two non variadic args plus a variadic arg passed to a func that takes one variadic param.
 val := Func("varfunc6").Call(1, 2, arr*)
 
-If (val == 9)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 9, A_LineNumber)
 
 ; This tests the proper casting of a variadic argument to object, so that it can be properly passed to a non variadic function.
 first(args*)
@@ -256,10 +191,7 @@ first(args*)
 
 second(args)
 {
-	If (args[1] == "hello")
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(args[1], "hello", A_LineNumber)
 }
 
 first("hello")
@@ -268,12 +200,9 @@ first("hello")
 arr := ["one", 1, "two", 2]
 m := Map("three", 3, arr*)
 
-if (m["one"] == 1 &&
+Assert(m["one"] == 1 &&
 	m["two"] == 2 &&
-	m["three"] == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+	m["three"] == 3, A_LineNumber)
 
 funca(a:=1)
 {
@@ -283,7 +212,6 @@ funca(a:=1)
 ; Dynamically invoking a function with unset is a special case because it won't work unless unset is cast to object in the generated code.
 val := Func("funca").Call(unset)
 
-If (val == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(val, 1, A_LineNumber)
+
+FileAppend "pass", "*"

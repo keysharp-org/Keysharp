@@ -1,9 +1,9 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := &x
 
-if (x = y)
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(x = y), A_LineNumber)
+
+FileAppend "pass", "*"

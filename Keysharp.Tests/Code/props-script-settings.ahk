@@ -1,3 +1,4 @@
+#Include <assert>
 #if OSX
 #NoTrayIcon
 #endif
@@ -5,233 +6,134 @@
 #import KS { * }
 ; #Include %A_ScriptDir%/header.ahk
 
-if (A_IsSuspended == 0) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_IsSuspended, 0, A_LineNumber)
 
 Suspend 1
 
-if (A_IsSuspended == 1) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_IsSuspended, 1, A_LineNumber)
 		
 Suspend false
 
-if (A_IsCritical == 0) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_IsCritical, 0, A_LineNumber)
 		
 Critical true
 x := A_IsCritical
 
-if (x > 0) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x > 0, A_LineNumber) 
 	
 Critical 0
 x := A_IsCritical
 
-if (x == 0) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 0, A_LineNumber)
 
-if (A_TitleMatchMode == 2) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_TitleMatchMode, 2, A_LineNumber)
 
 SetTitleMatchMode 1
 
-if (A_TitleMatchMode == 1) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_TitleMatchMode, 1, A_LineNumber)
 
 SetTitleMatchMode 2
 
-if (A_TitleMatchMode == 2) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_TitleMatchMode, 2, A_LineNumber)
 	
 SetTitleMatchMode 3
 
-if (A_TitleMatchMode == 3) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_TitleMatchMode, 3, A_LineNumber)
 	
 SetTitleMatchMode "RegEx"
 
-if (A_TitleMatchMode == "regex") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_TitleMatchMode, "regex", A_LineNumber)
 
 SetTitleMatchMode "dummy"
 
-if (A_TitleMatchMode == 2) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_TitleMatchMode, 2, A_LineNumber)
 
-if (A_TitleMatchModeSpeed == "fast") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_TitleMatchModeSpeed, "fast", A_LineNumber)
 
 SetTitleMatchMode "fast"
 
-if (A_TitleMatchModeSpeed == "fast") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_TitleMatchModeSpeed, "fast", A_LineNumber)
 
 SetTitleMatchMode "slow"
 
-if (A_TitleMatchModeSpeed == "slow") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_TitleMatchModeSpeed, "slow", A_LineNumber)
 
 SetTitleMatchMode "dummy"
 
-if (A_TitleMatchModeSpeed == "slow") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_TitleMatchModeSpeed, "slow", A_LineNumber)
 
-if (A_TitleMatchMode == 2) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_TitleMatchMode, 2, A_LineNumber)
 
 SetTitleMatchMode 2 ; Reset it back for the function version of this test.
 SetTitleMatchMode "fast"
 	
-if (!A_DetectHiddenWindows) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!A_DetectHiddenWindows, A_LineNumber) 
 
 DetectHiddenWindows 0
 
-if (!A_DetectHiddenWindows)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!A_DetectHiddenWindows, A_LineNumber)
 	
 DetectHiddenWindows 1
 
-if (A_DetectHiddenWindows) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_DetectHiddenWindows, A_LineNumber) 
 
 DetectHiddenWindows "Off"
 
-if (!A_DetectHiddenWindows)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!A_DetectHiddenWindows, A_LineNumber)
 
 DetectHiddenWindows 1
 
-if (A_DetectHiddenWindows) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_DetectHiddenWindows, A_LineNumber) 
 				
 DetectHiddenWindows "dummy"
 
-if (A_DetectHiddenWindows) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_DetectHiddenWindows, A_LineNumber) 
 
 DetectHiddenWindows 0 ; Reset it back for the function version of this test.
 
-if (!A_DetectHiddenWindows) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!A_DetectHiddenWindows, A_LineNumber) 
 
 DetectHiddenText 0
 
-if (!A_DetectHiddenText) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!A_DetectHiddenText, A_LineNumber) 
 	
 DetectHiddenText 1
 
-if (A_DetectHiddenText) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_DetectHiddenText, A_LineNumber) 
 
 DetectHiddenText false
 
-if (!A_DetectHiddenText) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(!A_DetectHiddenText, A_LineNumber) 
 
 DetectHiddenText true
 
-if (A_DetectHiddenText) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_DetectHiddenText, A_LineNumber) 
 
 DetectHiddenText 0 ; Reset it back for the function version of this test.
 
 FileEncoding "utf-8"
 
-if (A_FileEncoding == "utf-8") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_FileEncoding, "utf-8", A_LineNumber)
 	
 FileEncoding "utf-8-raw"
 
-if (A_FileEncoding == "utf-8-raw") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_FileEncoding, "utf-8-raw", A_LineNumber)
 
 FileEncoding "unicode"
 
-if (A_FileEncoding == "utf-16") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_FileEncoding, "utf-16", A_LineNumber)
 
 FileEncoding "utf-16"
 
-if (A_FileEncoding == "utf-16") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_FileEncoding, "utf-16", A_LineNumber)
 
 FileEncoding "utf-16-raw"
 
-if (A_FileEncoding == "utf-16-raw") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_FileEncoding, "utf-16-raw", A_LineNumber)
 
 FileEncoding "ascii"
 
-if (A_FileEncoding == "us-ascii") 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_FileEncoding, "us-ascii", A_LineNumber)
 
 ; A name which cannot be resolved raises, as it does in AutoHotkey, and leaves the setting alone.
 threw := 0
@@ -241,274 +143,151 @@ try
 catch ValueError
 	threw := 1
 
-if (threw && A_FileEncoding == "us-ascii")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(threw && A_FileEncoding == "us-ascii", A_LineNumber)
 
-if (A_SendLevel == 0) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_SendLevel, 0, A_LineNumber)
 
 SendLevel 0
 
-if (A_SendLevel == 0) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_SendLevel, 0, A_LineNumber)
 
 SendLevel -1
 
-if (A_SendLevel == 0) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_SendLevel, 0, A_LineNumber)
 	
 SendLevel 1
 
-if (A_SendLevel == 1) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_SendLevel, 1, A_LineNumber)
 
 SendLevel 100
 
-if (A_SendLevel == 100) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_SendLevel, 100, A_LineNumber)
 
 SendLevel 101
 
-if (A_SendLevel == 100) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_SendLevel, 100, A_LineNumber)
 
 SendLevel 0 ; Reset it back for the function version of this test.
 
-if (A_StoreCapsLockMode == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_StoreCapsLockMode, 1, A_LineNumber)
 
 SetStoreCapsLockMode 0
 
-if (A_StoreCapsLockMode == 0) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_StoreCapsLockMode, 0, A_LineNumber)
 
 SetStoreCapsLockMode 1
 
-if (A_StoreCapsLockMode == 1) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_StoreCapsLockMode, 1, A_LineNumber)
 
 SetStoreCapsLockMode false
 
-if (A_StoreCapsLockMode == 0) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_StoreCapsLockMode, 0, A_LineNumber)
 
 SetStoreCapsLockMode 1
 
-if (A_StoreCapsLockMode == 1) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_StoreCapsLockMode, 1, A_LineNumber)
 
 SetStoreCapsLockMode "dummy"
 
-if (A_StoreCapsLockMode == 1) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_StoreCapsLockMode, 1, A_LineNumber)
 
 SetStoreCapsLockMode 1 ; Reset it back for the function version of this test.
 
-if (A_KeyDelay == 10) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_KeyDelay, 10, A_LineNumber)
 
-if (A_KeyDelayPlay == -1) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_KeyDelayPlay, -1, A_LineNumber)
 
 SetKeyDelay 10
 
-if (A_KeyDelay == 10) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_KeyDelay, 10, A_LineNumber)
 
 SetKeyDelay 20, 30
 
-if (A_KeyDelay == 20) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_KeyDelay, 20, A_LineNumber)
 
 SetKeyDelay , 40
 
-if (A_KeyDelay == 20) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_KeyDelay, 20, A_LineNumber)
 
 SetKeyDelay 50, 60, "Play"
 
-if (A_KeyDelay == 20) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_KeyDelay, 20, A_LineNumber)
 
-if (A_KeyDelayPlay == 50) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_KeyDelayPlay, 50, A_LineNumber)
 
 SetKeyDelay 10, -1 ; Reset it back for the function version of this test.
 SetKeyDelay -1, -1, "Play"
 
-if (A_WinDelay == 100) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_WinDelay, 100, A_LineNumber)
 
 SetWinDelay 200
 	
-if (A_WinDelay == 200) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_WinDelay, 200, A_LineNumber)
 
 SetWinDelay 100 ; Reset it back for the function version of this test.
 
-if (A_ControlDelay == 20) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_ControlDelay, 20, A_LineNumber)
 
 SetControlDelay 200
 
-if (A_ControlDelay == 200) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_ControlDelay, 200, A_LineNumber)
 
 SetControlDelay 20 ; Reset it back for the function version of this test.
 
-if (A_MouseDelay == 10) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_MouseDelay, 10, A_LineNumber)
 
 SetMouseDelay 200
 
-if (A_MouseDelay == 200) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_MouseDelay, 200, A_LineNumber)
 
-if (A_MouseDelayPlay == -1) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_MouseDelayPlay, -1, A_LineNumber)
 								
 SetMouseDelay 300, "Play"
 
-if (A_MouseDelay == 200) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_MouseDelay, 200, A_LineNumber)
 
-if (A_MouseDelayPlay == 300) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_MouseDelayPlay, 300, A_LineNumber)
 		
 SetMouseDelay 10 ; Reset it back for the function version of this test.
 SetMouseDelay -1, "Play"
 
-if (A_DefaultMouseSpeed == 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_DefaultMouseSpeed, 2, A_LineNumber)
 
 SetDefaultMouseSpeed 500
 
-if (A_DefaultMouseSpeed == 500)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_DefaultMouseSpeed, 500, A_LineNumber)
 		
 SetDefaultMouseSpeed 2 ; Reset it back for the function version of this test.
 
-if (A_CoordModeToolTip == "Client")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_CoordModeToolTip, "Client", A_LineNumber)
 
-if (A_CoordModePixel == "Client")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_CoordModePixel, "Client", A_LineNumber)
 	
-if (A_CoordModeMouse == "Client")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_CoordModeMouse, "Client", A_LineNumber)
 	
-if (A_CoordModeCaret == "Client")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_CoordModeCaret, "Client", A_LineNumber)
 	
-if (A_CoordModeMenu == "Client")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_CoordModeMenu, "Client", A_LineNumber)
 
 CoordMode "ToolTip", "Screen"
 
-if (A_CoordModeToolTip == "Screen")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_CoordModeToolTip, "Screen", A_LineNumber)
 
 CoordMode "Pixel", "Client"
 
-if (A_CoordModePixel == "Client")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_CoordModePixel, "Client", A_LineNumber)
 
 CoordMode "Mouse", "Window"
 
-if (A_CoordModeMouse == "Window")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_CoordModeMouse = "Window", A_LineNumber)
 
 CoordMode "Caret", "Screen"
 
-if (A_CoordModeCaret == "Screen")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_CoordModeCaret, "Screen", A_LineNumber)
 
 CoordMode "Menu", "Screen"
 
-if (A_CoordModeMenu == "Screen")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_CoordModeMenu, "Screen", A_LineNumber)
 
 b := false
 
@@ -521,22 +300,13 @@ catch
 	b := true
 }
 
-if (b == true)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(b, true, A_LineNumber)
 
-if (A_CoordModeMenu == "Screen")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_CoordModeMenu, "Screen", A_LineNumber)
 
 CoordMode "Menu", "Window"
 
-if (A_CoordModeMenu == "Window")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_CoordModeMenu, "Window", A_LineNumber)
 
 CoordMode "ToolTip", "Client" ; Reset it back for the function version of this test.
 CoordMode "Pixel", "Client"
@@ -545,102 +315,59 @@ CoordMode "Caret", "Client"
 CoordMode "Menu", "Client"
 
 #if WINDOWS
-if (A_RegView == 64)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_RegView, 64, A_LineNumber)
 	
 SetRegView 32
 
-if (A_RegView == 32)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_RegView, 32, A_LineNumber)
 
 A_RegView := "default"
 
-if (A_RegView == 64)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_RegView, 64, A_LineNumber)
 
 SetRegView 64
 
-if (A_RegView == 64)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_RegView, 64, A_LineNumber)
 
 SetRegView 100
 
-if (A_RegView == 64)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_RegView, 64, A_LineNumber)
 #endif
 
 #if !OSX
-if (A_TrayMenu.Handle > 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_TrayMenu.Handle > 0, A_LineNumber)
 
-if (A_IconHidden == 0)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_IconHidden, 0, A_LineNumber)
 
-if (A_IconTip.EndsWith("props-script-settings.ahk"))
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_IconTip.EndsWith("props-script-settings.ahk"), A_LineNumber)
 
-if (A_IconFile == "")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_IconFile, "", A_LineNumber)
 
-if (A_IconNumber == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_IconNumber, 1, A_LineNumber)
 #endif
 
 Suspend true
 
-if (A_IsSuspended == true) 
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(A_IsSuspended, true, A_LineNumber)
 
 CoordMode "Mouse", "Screen"
 
 DllCall(CallbackCreate(SetCoordModeMouse)) ; Execute in new pseudo-thread
 
-if (A_CoordModeMouse = "Screen")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(A_CoordModeMouse = "Screen", A_LineNumber)
 
 DllCall(CallbackCreate(CheckCoordModeMouse))
 
 SetCoordModeMouse() {
-	if (A_CoordModeMouse = "Screen")
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(A_CoordModeMouse = "Screen", A_LineNumber)
 
 	CoordMode("Mouse", "Window")
 
-	if (A_CoordModeMouse = "Window")
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	Assert(A_CoordModeMouse = "Window", A_LineNumber)
 }
 
 CheckCoordModeMouse() {
-	if (A_CoordModeMouse = "Screen")
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
-}
+	Assert(A_CoordModeMouse = "Screen", A_LineNumber)
+}
+
+FileAppend "pass", "*"

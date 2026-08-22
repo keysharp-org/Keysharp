@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 OnError("LogError1")
 OnError("LogError2")
@@ -20,10 +21,7 @@ LogError3(exception, mode) {
 x := 0
 WinActivate("C3D38B48-B165-4A69-9D8F-020DCD360712")
 
-if (x == 3)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 3, A_LineNumber)
 
 OnError("LogError1", 0)
 OnError("LogError2", 0)
@@ -31,10 +29,7 @@ OnError("LogError2", 0)
 x := 0
 WinActivate("C3D38B48-B165-4A69-9D8F-020DCD360712")
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 x := 0
 
@@ -57,10 +52,9 @@ global
 
 Sleep(1000)
 
-if (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 OnError("LogError3", 0)
+FileAppend "pass", "*"
+
 ExitApp()

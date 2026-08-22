@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 #if WINDOWS
 	val := DriveGetStatus("C:\")
@@ -8,7 +9,6 @@
 	val := DriveGetStatus("/dev") ; /dev seems to work better than /dev/sda on VMs.
 #endif
 			
-if (val == "Ready")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+AssertEq(val, "Ready", A_LineNumber)
+
+FileAppend "pass", "*"

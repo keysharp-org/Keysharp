@@ -1,3 +1,3 @@
 #NoTrayIcon
 
-export PathSuccess() => FileAppend("pass", "*")
+export PathSuccess() => "imported by path"

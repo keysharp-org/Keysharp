@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 #if WINDOWS
 	val := DriveGetType("C:\")
@@ -8,7 +9,6 @@
 	val := DriveGetType("/dev/sda")
 #endif
 
-if (val == "Fixed" || val == "RAMDisk")
- 	FileAppend "pass", "*"
-else
-  	FileAppend "fail", "*"
+Assert(val == "Fixed" || val == "RAMDisk", A_LineNumber)
+
+FileAppend "pass", "*"

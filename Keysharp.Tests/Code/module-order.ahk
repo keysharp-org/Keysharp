@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 ; =========================
 ; module-order.ahk
@@ -13,28 +14,21 @@ export MainReady := 1
 
 ; ---- Dependency execution: Z imports W and captures WState
 a := Z.ObservedW()
-if (a == "W executed")
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, "W executed", A_LineNumber)
 
 ; ---- Late imports __Main, so __Main executes before Late.
 ; Late exports functions that should be callable even before Late body has run.
 
 ; LateBodyRan is set in Late's module body, which should not have executed yet.
 a := LateMod.GetLateBodyRan()
-if (a == "")   ; expecting unset/blank before Late executes
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, "", A_LineNumber)  ; expecting unset/blank before Late executes
 
 ; Exported function should be callable pre-exec and can see __Main export.
 a := LateMod.GetMainReady()
-if (a == 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
+
+FileAppend "pass", "*"
 
 #Module W
 WState := "W executed"

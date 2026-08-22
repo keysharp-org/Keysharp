@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 buf := Buffer(32)
 s := "tester"
@@ -7,46 +8,30 @@ s := "tester"
 testlen := StrPut(s)
 lenwritten := StrPut(s, buf)
 
-if (testlen == lenwritten)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(testlen, lenwritten, A_LineNumber)
 
 gotten := StrGet(buf, -StrLen(s))
 
-if (s == gotten)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(s, gotten, A_LineNumber)
 	
 ; ASCII test.
 testlen := StrPut(s, "ASCII")
 lenwritten := StrPut(s, buf, "ASCII")
 
-if (testlen == lenwritten)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(testlen, lenwritten, A_LineNumber)
 	
 gotten := StrGet(buf, StrLen(s), "ASCII")
 
-if (s == gotten)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(s, gotten, A_LineNumber)
 
 ; Substring test.
 gotten := StrGet(buf, StrLen(s) - 2, "ASCII")
 
-if (SubStr(s, 1, StrLen(s) - 2) == gotten)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(SubStr(s, 1, StrLen(s) - 2), gotten, A_LineNumber)
 
 ; A length of 0 yields an empty string, not a number. [v2.1-alpha.30]
 gotten := StrGet(buf, 0, "UTF-8")
 
-if (gotten == "" && gotten is String)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(gotten == "" && gotten is String, A_LineNumber)
+
+FileAppend "pass", "*"

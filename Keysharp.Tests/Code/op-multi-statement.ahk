@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 10
 y := 20
@@ -6,20 +7,11 @@ z := 30
 
 x++, y++, z++
 
-if (x = 11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(x = 11, A_LineNumber)
 
-if (y = 21)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(y = 21, A_LineNumber)
 
-if (z = 31)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(z = 31, A_LineNumber)
 
 ; Only the last item is the sequence's value; the others are evaluated for their side effects, so a
 ; call which returns no value is simply discarded rather than raising.
@@ -34,24 +26,15 @@ Side() {
 
 v := (NoValue(), 5)
 
-if (v = 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(v = 5, A_LineNumber)
 
 Side(), NoValue(), Side()
 
-if (sideCount = 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(sideCount = 2, A_LineNumber)
 
 a := 1, NoValue(), b := 2
 
-if (a = 1 && b = 2)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(a = 1 && b = 2, A_LineNumber)
 
 ; The distinction only becomes observable in v2.1 mode, where a call with no return value yields
 ; unset rather than blank: a discarded one is still fine, but the consumed final item raises.
@@ -63,10 +46,7 @@ DiscardedUnset21() {
 	return (NoValue21(), 5)
 }
 
-if (DiscardedUnset21() = 5)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(DiscardedUnset21() = 5, A_LineNumber)
 
 ConsumedUnset21() {
 	#Requires AutoHotkey v2.1-alpha
@@ -82,7 +62,6 @@ try
 catch UnsetError
 	threw := true
 
-if threw
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(threw, A_LineNumber)
+
+FileAppend "pass", "*"

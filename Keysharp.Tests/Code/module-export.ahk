@@ -12,56 +12,38 @@
 
 ; quoted module import should not add module name unless alias is given
 #import "Q"
+#Include <assert>
 
 ; ---- default export callable via alias
 a := DDefault()
-if (a == 123)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 123, A_LineNumber)
 
 ; ---- named export callable via explicit import
 a := DNamed()
-if (a == 5)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 5, A_LineNumber)
 
 ; ---- a bare import binds an explicit default under the module name
 a := E()
-if (a == 321)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 321, A_LineNumber)
 
 ; ---- importing via "from D" should NOT add D unless aliased
 a := IsSet(D)
-if (a == false)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, false, A_LineNumber)
 
 ; ---- quoted import "Q" should NOT add Q to namespace
 a := IsSet(Q)
-if (a == false)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, false, A_LineNumber)
 
 ; ---- exported variables can be assigned by other modules
 a := ModV.Var
-if (a == 1)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 1, A_LineNumber)
 
 ModV.Var := 7
 a := ModV.Var
-if (a == 7)
-    FileAppend "pass", "*"
-else
-    FileAppend "fail", "*"
+AssertEq(a, 7, A_LineNumber)
 
+
+FileAppend "pass", "*"
 
 #Module D
 export default DefaultFunc() => 123

@@ -1,11 +1,9 @@
 #NoTrayIcon
+#Include <assert>
 
 char := 123
 
-if (char == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(char, 123, A_LineNumber)
 
 resfunc(short, float, double)
 {
@@ -14,10 +12,7 @@ resfunc(short, float, double)
 
 int := resfunc(1, 2, 3)
 
-if (int == 6)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(int, 6, A_LineNumber)
 
 class myclass
 {
@@ -43,10 +38,7 @@ class myclass
 mc := myclass(4, 5, 6)
 sbyte := mc.GetSum()
 
-if (sbyte == 15)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(sbyte, 15, A_LineNumber)
 
 resfunc2()
 {
@@ -56,7 +48,6 @@ resfunc2()
 
 xx := resfunc2()
 
-if (xx == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(xx, 123, A_LineNumber)
+
+FileAppend "pass", "*"

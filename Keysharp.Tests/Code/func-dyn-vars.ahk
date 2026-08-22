@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 x := 1
 y := "x"
@@ -11,15 +12,9 @@ func()
 
 func()
 
-If (x == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 123, A_LineNumber)
 
-If (y == "x")
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, "x", A_LineNumber)
 
 x := 11
 y11 := 123
@@ -32,15 +27,9 @@ func2()
 
 func2()
 
-If (x == 11)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 11, A_LineNumber)
 
-If (y11 == 222)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y11, 222, A_LineNumber)
 	
 x := "unc"
 y := 0
@@ -52,10 +41,7 @@ myfunc()
 
 myf%x%()
 
-If (y == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 999, A_LineNumber)
 
 x := "unc2"
 y := 0
@@ -67,30 +53,21 @@ myfunc2(funcparam)
 
 myf%x%(123)
 
-If (y == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 123, A_LineNumber)
 
 x := "myfunc"
 y := 0
 
 %x%()
 
-If (y == 999)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 999, A_LineNumber)
 
 x := "myfunc2"
 y := 0
 
 %x%(123)
 
-If (y == 123)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(y, 123, A_LineNumber)
 
 x := 1
 y := "x"
@@ -99,18 +76,12 @@ localfunc()
 {
 	x := 2
 	%y% := 123
-	If (x == 123)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 123, A_LineNumber)
 }
 
 localfunc()
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 x := 1
 y := "x"
@@ -119,18 +90,12 @@ staticfunc()
 {
 	static x := 2
 	%y% := 123
-	If (x == 123)
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 123, A_LineNumber)
 }
 
 staticfunc()
 
-If (x == 1)
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)
 
 x := 1
 y := "x"
@@ -150,15 +115,11 @@ loopelsederef()
 	{
 		%y% := 123   ; deref-write appearing only inside the else
 	}
-	If (x == 123)   ; the write landed in the function's local x
-		FileAppend "pass", "*"
-	else
-		FileAppend "fail", "*"
+	AssertEq(x, 123, A_LineNumber)  ; the write landed in the function's local x
 }
 
 loopelsederef()
 
-If (x == 1)         ; ...and did not leak to the global x
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+AssertEq(x, 1, A_LineNumber)  ; ...and did not leak to the global x
+
+FileAppend "pass", "*"

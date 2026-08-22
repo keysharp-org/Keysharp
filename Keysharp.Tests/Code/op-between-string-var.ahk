@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Include <assert>
 
 b := "blue"
 o := "ooo"
@@ -6,22 +7,12 @@ r := "red"
 x := "xxx"
 z := "zzz"
 
-If StrCompare(o, b) > 0 and StrCompare(o, r) < 0
-	FileAppend "pass", "*"
-else
-	FileAppend "fail", "*"
+Assert(StrCompare(o, b) > 0 and StrCompare(o, r) < 0, A_LineNumber)
 	
-If StrCompare(o, r) > 0 and StrCompare(o, b) < 0
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(StrCompare(o, r) > 0 and StrCompare(o, b) < 0), A_LineNumber)
 
-If StrCompare(o, x) > 0 and StrCompare(o, z) < 0
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"
+Assert(!(StrCompare(o, x) > 0 and StrCompare(o, z) < 0), A_LineNumber)
 	
-If StrCompare(o, z) > 0 and StrCompare(o, x) < 0
-	FileAppend "fail", "*"
-else
-	FileAppend "pass", "*"	
+Assert(!(StrCompare(o, z) > 0 and StrCompare(o, x) < 0), A_LineNumber)
+
+FileAppend "pass", "*"
