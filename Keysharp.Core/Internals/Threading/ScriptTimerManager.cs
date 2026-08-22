@@ -114,7 +114,10 @@ namespace Keysharp.Internals.Threading
 					timers.Add(key, timer);
 				}
 
-				timer.PeriodMs = Math.Max(1, periodMs);
+				//AHK stores a period of 1 as 0 so the timer may run within the same tick instead of waiting for the next
+				//one (script.cpp SetTimer), which is what makes SetTimer(fn, -1) followed by Sleep(-1) fire. SetTimer
+				//has already turned a period of 0 into "disable", so 1 is the only value needing this.
+				timer.PeriodMs = periodMs == 1 ? 0 : periodMs;
 				timer.NextDueTick = Environment.TickCount64 + timer.PeriodMs;
 				timer.Priority = priority;
 				timer.RunOnce = runOnce;
@@ -138,7 +141,7 @@ namespace Keysharp.Internals.Threading
 				if (disposed)
 					return;
 
-				timer.NextDueTick = Environment.TickCount64 + Math.Max(1, timer.PeriodMs);
+				timer.NextDueTick = Environment.TickCount64 + timer.PeriodMs;
 				timer.Enabled = true;
 				timer.DeletePending = false;
 				timer.SetActive(true);
@@ -207,7 +210,7 @@ namespace Keysharp.Internals.Threading
 				}
 				else
 				{
-					timer.NextDueTick = Environment.TickCount64 + Math.Max(1, timer.PeriodMs);
+					timer.NextDueTick = Environment.TickCount64 + timer.PeriodMs;
 				}
 
 				timer.RunningCount++;
@@ -230,7 +233,7 @@ namespace Keysharp.Internals.Threading
 					return;
 
 				timer.Queued = false;
-				timer.NextDueTick = Environment.TickCount64 + (timer.RunOnce ? PriorityBlockedRetryMs : Math.Max(1, timer.PeriodMs));
+				timer.NextDueTick = Environment.TickCount64 + (timer.RunOnce ? PriorityBlockedRetryMs : timer.PeriodMs);
 			}
 
 			Wake();
