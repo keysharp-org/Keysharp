@@ -28,6 +28,9 @@ namespace Keysharp.Internals.Scripting
 		internal string ExeDir;
 		internal Assembly EntryAssembly;
 
+		// Every script file named, in order; empty for stdin. Only --compile takes more than one, so the
+		// fields below describe Scripts[0].
+		internal string[] Scripts = [];
 		internal string ScriptName = "";
 		internal string NameNoExt = "";
 		internal string ScriptDir = "";
@@ -406,6 +409,15 @@ namespace Keysharp.Internals.Scripting
 			if (includeComponents.Overlaps(excludeComponents))
 				return CliCommand.Error("A scripting component cannot be both included and excluded.");
 
+			// A compile runs nothing, so its trailing arguments were inert; read them as further scripts to
+			// share one warm compiler. Stopping at the first switch keeps a trailing one inert as before.
+			// Validation waits for CompileToAssemblies: a parse-time error has no Script, so it cannot see
+			// --errorstdout and becomes a modal dialog.
+			var scripts = fromstdin ? [] : new[] { scriptName };
+
+			if (compileAsm && !fromstdin)
+				scripts = [.. scripts, .. scriptArgs.TakeWhile(a => !TryGetSwitch(a, out _) && !TryGetAhkSlashSwitch(a, out _))];
+
 			var (nameNoExt, scriptDir, outPath) = GetScriptOutputPaths(scriptName, fromstdin);
 
 			// Only the kinds that COMPILE carry the symbols; RunAssembly above deliberately does not, since a
@@ -415,6 +427,7 @@ namespace Keysharp.Internals.Scripting
 				Kind = compileExe ? CliCommandKind.CompileExe : compileAsm ? CliCommandKind.CompileAsm : CliCommandKind.RunSource,
 				EntryAssembly = asm,
 				ExeDir = exeDir,
+				Scripts = scripts,
 				ScriptName = scriptName,
 				NameNoExt = nameNoExt,
 				ScriptDir = scriptDir,
@@ -493,10 +506,142 @@ namespace Keysharp.Internals.Scripting
 
 		internal static int Run(string[] args) => Execute(Parse(args));
 
+		/// <summary>
+		/// Writes a transpiled script's generated C# beside its output path, returning an error message or null.
+		/// </summary>
+		private static string WriteTranspiledCode(Keysharp.Components.Scripting.IScriptCompilationResult compilation, string code, string outPath)
+		{
+			var codePath = $"{outPath}.cs";
+
+			try
+			{
+				using var sourceWriter = new StreamWriter(codePath);
+				sourceWriter.WriteLine(code);
+			}
+			catch (Exception writeex)
+			{
+				return $"Writing code to {codePath} failed: {writeex.Message}";
+			}
+
+			// Hoisted usings make the inline tree invalid if appended to the lowered source.
+			if (compilation.InlineCode is { Length: > 0 } inline)
+			{
+				var inlinePath = $"{outPath}.inline.cs";
+
+				try
+				{
+					using var inlineWriter = new StreamWriter(inlinePath);
+					inlineWriter.WriteLine(inline);
+				}
+				catch (Exception writeex)
+				{
+					return $"Writing inline C# to {inlinePath} failed: {writeex.Message}";
+				}
+			}
+
+			return null;
+		}
+
+		/// <summary>
+		/// Compiles every script the command names to a <c>.cks</c>, sharing one warm compiler and one parse
+		/// <see cref="Script"/>. Serialized on this thread: <see cref="Script.TheScript"/> is process-global.
+		/// </summary>
+		private static int CompileToAssemblies(CliCommand command)
+		{
+			using var script = new Script();
+			script.ValidateThenExit = command.Validate;
+			script.ScriptArgs = [];   // NOT command.ScriptArgs: in a batch those are the sibling script paths.
+			script.KeysharpArgs = command.KeysharpArgs;
+
+			if (!ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var componentFailure))
+				return Message(componentFailure, true);
+
+			if (command.FromStdin)
+				return EmitAssembly(compiler, command, null);
+
+			// Each names a single output, so neither can describe a set.
+			if (command.Scripts.Length > 1)
+			{
+				if (command.DestPath.Length != 0)
+					return Message("--dest names a single output file, so it cannot be given with several scripts.", true);
+
+				if (command.Transpile)
+					return Message("--transpile writes one script's generated code, so it cannot be given with several scripts.", true);
+			}
+
+			// Keep going after a failure: stopping would leave scripts uncompiled that separate invocations
+			// would have produced.
+			var failed = 0;
+
+			foreach (var scriptPath in command.Scripts)
+				if (EmitAssembly(compiler, command, scriptPath) != 0)
+					failed++;
+
+			return failed == 0 ? 0 : 1;
+		}
+
+		/// <summary>
+		/// Compiles one script and writes its assembly beside it, or where --dest says.
+		/// <paramref name="scriptPath"/> is null for stdin.
+		/// </summary>
+		private static int EmitAssembly(Keysharp.Components.Scripting.IScriptCompiler compiler, CliCommand command, string scriptPath)
+		{
+			if (scriptPath != null && !File.Exists(scriptPath))
+				return Message($"Could not find the script file {scriptPath}.", true);
+
+			var (nameNoExt, scriptDir, outPath) = GetScriptOutputPaths(scriptPath ?? command.ScriptName, scriptPath == null);
+			var compilation = compiler.Compile(new Keysharp.Components.Scripting.ScriptCompileRequest
+			{
+				SourceText = scriptPath == null ? command.ScriptName : null,
+				ScriptPath = scriptPath,
+				CompilationName = nameNoExt,
+				RuntimeDirectory = command.ExeDir,
+				Defines = command.Defines,
+				AdditionalComponents = command.IncludeComponents,
+				ExcludedComponents = command.ExcludeComponents,
+				Output = Keysharp.Components.Scripting.ScriptCompilationOutput.Assembly,
+				EmitGeneratedCode = command.Transpile,
+				AllowPackageRestore = !command.Validate,
+			});
+
+			if (compilation.AssemblyBytes is not { } arr)
+				return Message(compilation.ErrorText, true);
+
+			// Failed-compilation text already includes its warnings.
+			if (!string.IsNullOrEmpty(compilation.WarningText))
+				Console.Error.WriteLine(compilation.WarningText);
+
+			if (command.Transpile && WriteTranspiledCode(compilation, compilation.GeneratedCode, outPath) is { } transpileErr)
+				return Message(transpileErr, true);
+
+			var asmPath = ResolveCompileAsmOutput(command.DestPath, scriptDir, nameNoExt);
+
+			if (asmPath == "*" && compilation.RequiredComponents.Count != 0)
+				return Message("--dest * cannot emit an assembly which requires sidecar scripting components. Write it to a file or exclude those components.", true);
+
+			try
+			{
+				using var outStream = asmPath == "*" ? Console.OpenStandardOutput() : File.Create(asmPath);
+				outStream.Write(arr, 0, arr.Length);
+			}
+			catch (Exception writeex)
+			{
+				return Message($"Writing assembly to {asmPath} failed: {writeex.Message}", true);
+			}
+
+			return asmPath != "*" && compiler.DeploySupportFiles(compilation, Path.GetDirectoryName(Path.GetFullPath(asmPath))) is { } copyErr
+				   ? Message(copyErr, true)
+				   : 0;
+		}
+
 		private static int CompileAndMaybeRun(CliCommand command)
 		{
 			if (command.SyntaxOnly)
 				return ValidateSyntax(command);
+
+			// Emitting assemblies shares only the compile call with running one, and needs it in a loop.
+			if (command.Kind == CliCommandKind.CompileAsm)
+				return CompileToAssemblies(command);
 
 			// Tell the (about-to-run) compiled assembly where it is actually running from: the script file's full
 			// path, or null for stdin so the compiled "*" marker stands. Drives A_ScriptFullPath/A_ScriptDir.
@@ -520,9 +665,7 @@ namespace Keysharp.Internals.Scripting
 				Defines = command.Defines,
 				AdditionalComponents = command.IncludeComponents,
 				ExcludedComponents = command.ExcludeComponents,
-				Output = command.Kind == CliCommandKind.CompileAsm
-					? Keysharp.Components.Scripting.ScriptCompilationOutput.Assembly
-					: Keysharp.Components.Scripting.ScriptCompilationOutput.InMemory,
+				Output = Keysharp.Components.Scripting.ScriptCompilationOutput.InMemory,
 				EmitGeneratedCode = command.Transpile,
 				AllowPackageRestore = !command.Validate,
 			});
@@ -533,62 +676,11 @@ namespace Keysharp.Internals.Scripting
 			if (arr != null && !string.IsNullOrEmpty(compilation.WarningText))
 				Console.Error.WriteLine(compilation.WarningText);
 
-			if (command.Transpile)
-			{
-				var codePath = $"{command.OutPath}.cs";
-
-				try
-				{
-					using var sourceWriter = new StreamWriter(codePath);
-					sourceWriter.WriteLine(result);
-				}
-				catch (Exception writeex)
-				{
-					return Message($"Writing code to {codePath} failed: {writeex.Message}", true);
-				}
-
-				// Hoisted usings make the inline tree invalid if appended to the lowered source.
-				if (compilation.InlineCode is { Length: > 0 } inline)
-				{
-					var inlinePath = $"{command.OutPath}.inline.cs";
-
-					try
-					{
-						using var inlineWriter = new StreamWriter(inlinePath);
-						inlineWriter.WriteLine(inline);
-					}
-					catch (Exception writeex)
-					{
-						return Message($"Writing inline C# to {inlinePath} failed: {writeex.Message}", true);
-					}
-				}
-			}
+			if (command.Transpile && WriteTranspiledCode(compilation, result, command.OutPath) is { } transpileErr)
+				return Message(transpileErr, true);
 
 			if (arr == null)
 				return Message(result, true);
-
-			if (command.Kind == CliCommandKind.CompileAsm)
-			{
-				var compileAsmPath = ResolveCompileAsmOutput(command.DestPath, command.ScriptDir, command.NameNoExt);
-				if (compileAsmPath == "*" && compilation.RequiredComponents.Count != 0)
-					return Message("--dest * cannot emit an assembly which requires sidecar scripting components. Write it to a file or exclude those components.", true);
-
-				try
-				{
-					using var outStream = compileAsmPath == "*" ? Console.OpenStandardOutput() : File.Create(compileAsmPath);
-					outStream.Write(arr, 0, arr.Length);
-				}
-				catch (Exception writeex)
-				{
-					return Message($"Writing assembly to {compileAsmPath} failed: {writeex.Message}", true);
-				}
-
-				if (compileAsmPath != "*" && compiler.DeploySupportFiles(compilation,
-						Path.GetDirectoryName(Path.GetFullPath(compileAsmPath))) is { } copyErr)
-					return Message(copyErr, true);
-
-				return 0;
-			}
 
 			if (command.Transpile)
 				return 0;
@@ -683,6 +775,7 @@ namespace Keysharp.Internals.Scripting
 			Usage:
 			  keysharp [options] <script> [script-args...]   Run a .ahk/.ks script.
 			  keysharp <script.cks> [script-args...]         Run a precompiled script.
+			  keysharp --compile asm <script>...             Compile one or more scripts.
 
 			Run:
 			  <script>                Run a .ahk/.ks source file, or a .cks/.dll compiled assembly.
@@ -698,10 +791,13 @@ namespace Keysharp.Internals.Scripting
 			  --iLib <ignored>        Deprecated alias for --validate.
 
 			Compile:
-			  --compile [asm|dll]     Compile the script to a .cks assembly (the default).
+			  --compile [asm|dll]     Compile the script to a .cks assembly (the default). Several scripts may
+			                          follow, each compiled to a .cks beside its own source; they share one
+			                          warm compiler, which is far faster than one run per script.
 			  --compile exe           Compile the script to a standalone executable.
 			  --compile exe-min       Compile to a minimal executable (dependencies embedded).
 			  --dest <path>           Output file or directory for --compile ("*" writes the asm to stdout).
+			                          Names a single output, so it takes a single script.
 			  --transpile             Write the generated C# source next to the script (.cs).
 			  --validate              Parse and compile the script without running it.
 			  --validate-syntax       Parse only, without loading the compiler or Roslyn.

@@ -44,6 +44,10 @@
           <RegistryValue Key="DefaultIcon" Value="&quot;[INSTALLFOLDER]Keysharp.exe&quot;,0" Type="string" />
           <RegistryValue Key="shell\open\command" Value="&quot;[INSTALLFOLDER]Keysharp.exe&quot; &quot;%1&quot;" Type="string" />
         </RegistryKey>
+        <!-- Explorer's New > Keysharp script entry, seeded from the same file the Dash's "New script"
+             writes and the MSIX manifest names as ShellNewFileName. Lives under .ks, which this
+             component owns and tree-deletes. -->
+        <RegistryValue Root="HKMU" Key="Software\Classes\.ks\ShellNew" Name="FileName" Value="[INSTALLFOLDER]Scripts\Template.ks" Type="string" />
         <!-- Older builds registered an iconless "compile" verb under this ProgId, and RegisterShellIntegration
              deleted it on every run. A machine that used the portable zip's install switch before upgrading to
              the MSI still has it, pointing at whatever directory that copy was extracted to, which shows up as

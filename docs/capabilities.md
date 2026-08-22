@@ -130,8 +130,8 @@ Status legend:
 | A_AhkVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The version of the program used to compile the script. |
 | A_AllowMainWindow | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_AllowTimers | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets whether timers are allowed to run. |
-| A_AppData | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
-| A_AppDataCommon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
+| A_AppData | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %APPDATA% on Windows; $XDG_CONFIG_HOME else ~/.config on Linux; ~/Library/Application Support on macOS. |
+| A_AppDataCommon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %ProgramData% on Windows; the first entry of $XDG_CONFIG_DIRS else /etc/xdg on Linux; /Library/Application Support on macOS. Writable only by an administrator, like %ProgramData%. |
 | A_Args | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable containing command-line arguments passed to the script. |
 | A_AssemblyCompany | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly company metadata set by #AssemblyCompany. |
 | A_AssemblyConfiguration | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly configuration metadata set by #AssemblyConfiguration. |

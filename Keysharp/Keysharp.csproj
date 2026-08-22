@@ -25,20 +25,16 @@
 		<Authors>Matt Feemster, Descolada + legacy IronAHK developers</Authors>
 		<Description>A cross-platform C# port and enhancement of the AutoHotkey program</Description>
 		<Company>Keysharp</Company>
-		<!-- Deliberately off. This would emit a refs/ folder of ~194 reference assemblies (10.5 MB, a third
-		     of the release download) plus a "compile" section in the deps.json, for consumers that build a
-		     Roslyn compilation from Microsoft.Extensions.DependencyModel. The optional compiler component
-		     resolves framework metadata itself and reads only the deps.json "targets" runtime/native groups. -->
+		<!-- Off: would ship a refs/ folder of ~194 reference assemblies (10.5 MB) for consumers that build a
+		     Roslyn compilation from DependencyModel. Our compiler resolves framework metadata itself. -->
 		<PreserveCompilationContext>false</PreserveCompilationContext>
 		<SignAssembly>False</SignAssembly>
 		<DelaySign>False</DelaySign>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<WarningLevel>8</WarningLevel>
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-		<!-- Precompile host IL to native code at publish time. This roughly halves cold startup (and therefore
-		     Reload) by eliminating first-call JIT in the runtime. The optional compiler payload remains separate.
-		     Only applies to `dotnet publish -r <rid>`; ignored by `build`.
-		     Costs roughly 2x publish size. The JIT stays available, so runtime Roslyn compilation still works. -->
+		<!-- Roughly halves cold startup (and Reload) by removing first-call JIT, at roughly 2x publish size.
+		     Publish-only; the JIT stays available, so runtime Roslyn compilation still works. -->
 		<PublishReadyToRun>true</PublishReadyToRun>
 		<PublishReadyToRunComposite>false</PublishReadyToRunComposite>
 		<!-- <PublishSingleFile>true</PublishSingleFile>
@@ -76,8 +72,7 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
 		</Content>
-		<!-- The .app bundle icon named by Info.plist's CFBundleIconFile. Content items publish on every
-		     platform by default, which put 400 KB of Mach-O icon data in the Windows and Linux packages. -->
+		<!-- The .app bundle icon named by Info.plist. OSX-only, or 400 KB of Mach-O ships in every package. -->
 		<Content Include="..\Keyview\Icon.icns" Link="Icon.icns" Condition="$([MSBuild]::IsOSPlatform('OSX')) And Exists('..\Keyview\Icon.icns')">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
@@ -89,10 +84,11 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
 		</Content>
-		<Content Include="Scripts\OCR.ks">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-		</Content>
+		<!-- Only the scripts Keysharp itself reaches for are here: the tray menu and main window resolve
+		     Scripts\<name>.cks for WindowSpy above and AtSpi/Ax below, so without them the host loses
+		     functionality. Dash.ks, Template.ks, OCR.ks and the demos are not needed for that, so they belong
+		     to a Keysharp install and Keysharp.Install\payload adds them. Nothing here is precompiled either -
+		     the .cks form is install payload for the same reason. -->
 		<Content Include="Scripts\AtSpi.ks" Condition="$([MSBuild]::IsOSPlatform('Linux'))">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
@@ -139,28 +135,5 @@
 			<LastGenOutput>Resources.Designer.cs</LastGenOutput>
 		</EmbeddedResource>
 	</ItemGroup>
-
-	<!-- At publish time, precompile the bundled scripts (WindowSpy, plus AtSpi on Linux) to a .cks sitting
-	     next to the .ks, so the tray/main-window launchers run them without an on-the-fly compile (the
-	     launchers prefer the .cks when present, else fall back to the .ks). The just-published host is used
-	     so the .cks matches this exact build. Compiler errors go to stderr (never a modal dialog) so a
-	     headless/CI publish can't hang, and the step is non-fatal so a failure (e.g. a cross-RID publish
-	     whose host can't run here) simply leaves the .ks to be compiled on demand. -->
-	<Target Name="PrecompileBundledScripts" AfterTargets="Publish">
-		<PropertyGroup>
-			<_KsHost Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(PublishDir)Keysharp.exe</_KsHost>
-			<_KsHost Condition="!$([MSBuild]::IsOSPlatform('Windows'))">$(PublishDir)Keysharp</_KsHost>
-		</PropertyGroup>
-		<ItemGroup>
-			<!-- Only launchable inspector scripts are precompiled. OCR.ks is deliberately NOT here: it is a
-			     pure #include <OCR> library (no entry point), so it has no .cks and the packagers relocate it
-			     into the Lib folder rather than leaving it in Scripts. -->
-			<_BundledScript Include="$(PublishDir)Scripts\WindowSpy.ks" Condition="Exists('$(PublishDir)Scripts\WindowSpy.ks')" />
-			<_BundledScript Include="$(PublishDir)Scripts\AtSpi.ks" Condition="Exists('$(PublishDir)Scripts\AtSpi.ks')" />
-			<_BundledScript Include="$(PublishDir)Scripts\Ax.ks" Condition="Exists('$(PublishDir)Scripts\Ax.ks')" />
-		</ItemGroup>
-		<Exec Condition="Exists('$(_KsHost)') And '@(_BundledScript)' != ''" Command="&quot;$(_KsHost)&quot; --compile asm &quot;%(_BundledScript.FullPath)&quot; --errorstdout" WorkingDirectory="$(PublishDir)" ContinueOnError="true" />
-		<Message Importance="high" Condition="'@(_BundledScript)' != ''" Text="Precompiled bundled scripts to .cks for faster startup: @(_BundledScript->'%(Filename).cks', ', ')" />
-	</Target>
 
 </Project>

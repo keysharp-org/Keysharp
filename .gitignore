@@ -12,6 +12,13 @@
 /Keysharp.Install/Debug
 /Keysharp.Install/Release
 /privatenotes.txt
+# Code-signing material. Matched by name anywhere in the tree, not by full path: the bundled test
+# certificate lives in Keysharp.Install/windows/msix/assets/, but a path-anchored rule stops
+# protecting it the moment that folder is renamed or the pair is copied somewhere to try a build.
+*.pfx
+*.p12
+SignCert*
+
 *.dll
 *.exe
 *.msi

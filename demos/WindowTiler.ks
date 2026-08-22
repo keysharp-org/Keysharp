@@ -91,7 +91,7 @@ class WindowTiler {
         this.ShowTrayMenu()                                          ; tray: a "Region mode" switcher
     }
 
-    ; The region mode persists across runs in demos/Settings.ini. Clamp defensively in case Modes changed or the
+    ; The region mode persists across runs in demos.ini. Clamp defensively in case Modes changed or the
     ; file was hand-edited, so a bad value can never crash startup or index outside Modes.
     static SavedMode() {
         try {

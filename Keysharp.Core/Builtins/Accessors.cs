@@ -74,21 +74,55 @@ namespace Keysharp.Builtins
 
 		/// <summary>
 		/// The full path and name of the folder containing the current user's application-specific data.<br/>
-		/// For example on Windows: C:\Documents and Settings\Username\Application Data<br/>
-		/// Linux: ~/
+		/// Windows: %APPDATA% (for example C:\Users\Username\AppData\Roaming)<br/>
+		/// Linux: $XDG_CONFIG_HOME, else ~/.config<br/>
+		/// macOS: ~/Library/Application Support
 		/// </summary>
+		// DoNotVerify for the same reason as A_MyDocuments: the default option returns "" for a folder that
+		// does not exist yet, so on a fresh account paths built from this would resolve against the
+		// filesystem root. It also keeps this a pure read - Create would mkdir on mere evaluation.
 		public static string A_AppData =>
-#if WINDOWS
-		Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-
-#else//On linux, ApplicationData maps to home/.config which is a file, not a folder. So just map it to home instead.
-		Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+#if OSX
+		Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support");
+#else
+		Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData, Environment.SpecialFolderOption.DoNotVerify);
 #endif
 
 		/// <summary>
-		/// The full path and name of the folder containing the all-users application-specific data.
+		/// The full path and name of the folder containing the all-users application-specific data.<br/>
+		/// Windows: %ProgramData%<br/>
+		/// Linux: the first entry of $XDG_CONFIG_DIRS, else /etc/xdg<br/>
+		/// macOS: /Library/Application Support
 		/// </summary>
-		public static string A_AppDataCommon => Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+		// Config-shaped and admin-writable, the permission shape %ProgramData% has. Not .NET's
+		// CommonApplicationData, which maps to /usr/share on both Unixes: package-manager territory.
+		public static string A_AppDataCommon =>
+#if WINDOWS
+		Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData, Environment.SpecialFolderOption.DoNotVerify);
+#elif OSX
+		"/Library/Application Support";
+#else
+		UnixCommonConfigDir();
+#endif
+#if !WINDOWS && !OSX
+
+		/// <summary>
+		/// The machine-wide configuration root for <see cref="A_AppDataCommon"/>. $XDG_CONFIG_DIRS is a
+		/// colon-separated search path in precedence order, so the first usable entry is the one an admin
+		/// means; the spec's default is /etc/xdg, and a relative entry is invalid and skipped.
+		/// </summary>
+		private static string UnixCommonConfigDir()
+		{
+			var dirs = Environment.GetEnvironmentVariable("XDG_CONFIG_DIRS");
+
+			if (!dirs.IsNullOrEmpty())
+				foreach (var dir in dirs.Split(':', StringSplitOptions.RemoveEmptyEntries))
+					if (Path.IsPathRooted(dir))
+						return dir;
+
+			return "/etc/xdg";
+		}
+#endif
 
 		/// <summary>
 		/// An <see cref="Array"/> containing the command line arguments used to run the script.

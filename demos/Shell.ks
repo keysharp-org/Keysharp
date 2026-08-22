@@ -6,13 +6,13 @@
 /*
     Shell — the shared support layer the demos in this folder build on. It provides three things each demo
     plugs into: a persistent "cheat sheet" overlay, a customized tray icon/menu, and per-demo settings
-    persistence (demos/Settings.ini). The cheat-sheet card is the main visual piece:
+    persistence (A_AppData "/Keysharp/demos.ini"). The cheat-sheet card is the main visual piece:
 
     It shows a title and a list of shortcuts as keycap-style pills in the bottom-right corner and stays put
     (the shortcuts are easy to forget, so it does NOT auto-close). Close it with the ✕ button in its top-right
     corner; Ctrl+drag anywhere else on the card to reposition it (the spot is remembered per-demo). Once closed,
     Ctrl+Alt+Shift+S — or the tray icon's "Show shortcuts" item — brings it back. A "Don't show this card on
-    startup" checkbox on the card persists that choice per-demo to demos/Settings.ini, so a demo you already
+    startup" checkbox on the card persists that choice per-demo to demos.ini, so a demo you already
     know stops greeting you, while the reopen chord / tray item still summon it on demand.
 
     Each demo #includes this file and calls:
@@ -41,10 +41,10 @@ class Shell {
     static registered := false
     static pending := ""
     static pendingMenu := ""             ; demo-specific tray items awaiting BuildMenu on the UI thread
-    static title := ""                   ; current card title — doubles as the Settings.ini section name
+    static title := ""                   ; current card title — doubles as the demos.ini section name
     static posX := ""                    ; custom top-left (screen px) after the user drags the card; "" = default corner
     static posY := ""
-    static posLoaded := false            ; whether the saved position has been read from Settings.ini yet this run
+    static posLoaded := false            ; whether the saved position has been read from demos.ini yet this run
     static dragging := false             ; a card-move loop is running (re-entry guard)
     static ourPid := 0                   ; this process's PID (cached; see Blocked)
 
@@ -363,7 +363,7 @@ class Shell {
         }
     }
 
-    ; --- settings (shared demos/Settings.ini; one [section] per demo) -------
+    ; --- settings (shared demos.ini; one [section] per demo) ----------------
     ; Generic helpers so each demo can persist its own state (window-tiler mode, HUD placement, …) in the shared
     ; file alongside the card's own "don't show on startup" flag. Section is conventionally the demo title.
     ;
@@ -372,7 +372,13 @@ class Shell {
     ; cycling WindowTiler modes or dragging a HUD around never hammers the disk. GetSetting reads THROUGH the same
     ; cache, so within a run reads see pending writes. (A hard kill loses unflushed changes — fine for these
     ; convenience settings.)
-    static SettingsPath() => A_ScriptDir "/Settings.ini"
+    ;
+    ; NOT A_ScriptDir: every packaged edition installs the demos somewhere the user cannot write (Program Files,
+    ; /usr/local/lib, inside the signed .app), so a write there fails — and this one runs from OnExit, where an
+    ; uncaught error is a dialog on the way out, every time. A_AppData "/Keysharp" is the one place Keysharp
+    ; keeps user data on every platform; Keyview's scratchpad autosave sits in the same folder.
+    static SettingsDir() => A_AppData "/Keysharp"
+    static SettingsPath() => this.SettingsDir() "/demos.ini"
     static settingsCache := Map()        ; "section`nkey" -> value (read-through cache)
     static settingsPending := Map()      ; keys written this run, awaiting the on-exit flush
     static exitHooked := false
@@ -395,10 +401,15 @@ class Shell {
     }
 
     ; Write every setting changed this run to disk (runs from OnExit). Returns nothing, so it never vetoes the exit.
+    ; Wrapped because it runs on the way out: a read-only or full disk would otherwise turn "quit the demo" into an
+    ; error dialog, and losing a window position is not worth interrupting an exit for.
     static Flush(*) {
-        for ck, value in this.settingsPending {
-            local nl := InStr(ck, "`n")
-            IniWrite(value, this.SettingsPath(), SubStr(ck, 1, nl - 1), SubStr(ck, nl + 1))
+        try {
+            DirCreate(this.SettingsDir())
+            for ck, value in this.settingsPending {
+                local nl := InStr(ck, "`n")
+                IniWrite(value, this.SettingsPath(), SubStr(ck, 1, nl - 1), SubStr(ck, nl + 1))
+            }
         }
         this.settingsPending.Clear()
     }

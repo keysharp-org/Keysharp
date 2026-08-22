@@ -706,4 +706,7 @@ maybe_run gtk-update-icon-cache -f "${ICON_ROOT}" || true
 install_gnome_extension
 install_cinnamon_extension
 
-echo "Install complete."
+# Every edition ends with one obvious way in. The MSI offers to open it from its last page; dpkg and
+# this script run as root with no desktop session, so they say it rather than doing it.
+echo "Install complete. Run 'keysharp' with no arguments, or pick Keysharp from the applications menu,"
+echo "to open the Dash - new script, run a script, tools and demos."

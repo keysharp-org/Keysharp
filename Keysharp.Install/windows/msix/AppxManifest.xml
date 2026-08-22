@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    MSIX manifest TEMPLATE for the Keysharp Store package. package-windows.ps1 -Msix replaces
+    the double-underscore placeholders and writes the result into the staged package root; this
+    file is never consumed directly by makeappx. (No literal placeholder-shaped text may
+    appear outside the real placeholders - the packager fails on any leftover match.)
+
+    Identity notes (mirroring the AutoHotkey v2 Store Edition packaging):
+      * For local/sideload testing, __PUBLISHER__ must equal the SUBJECT of the certificate the
+        .msix is signed with, or Windows refuses to install it. The packager reads that subject
+        from the certificate itself, so no publisher identity is stored in this repository.
+      * For a Store submission, __IDENTITY_NAME__ and __PUBLISHER__ must be the exact values
+        Partner Center shows under Product identity (the publisher is a CN=<GUID> form); the
+        Store re-signs the package itself.
+
+    Layout notes: unlike the AutoHotkey Store package there is NO VFS\ tree here. That package
+    was produced by capturing an install of a program with hard-coded Program Files paths; this
+    one is built natively and Keysharp resolves everything relative to its executable, so all
+    files sit at the package root. Write virtualization (registry + AppData) is left at its
+    default (ON) - same as the AutoHotkey Store Edition. The installedLocationVirtualization
+    extension makes the read-only install directory writable-per-user; on updates, files the
+    package replaced reset to the new copy and files the user added are kept. Nothing Keysharp
+    ships DEPENDS on that (settings go to %AppData%\Keysharp, which every edition can write) -
+    it is here so a user who drops a script into Demos\ keeps it across updates.
+-->
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:uap2="http://schemas.microsoft.com/appx/manifest/uap/windows10/2"
+         xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+         xmlns:uap4="http://schemas.microsoft.com/appx/manifest/uap/windows10/4"
+         xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+         xmlns:uap8="http://schemas.microsoft.com/appx/manifest/uap/windows10/8"
+         xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap uap2 uap3 uap4 uap5 uap8 uap10 rescap">
+
+  <Identity Name="__IDENTITY_NAME__"
+            Publisher="__PUBLISHER__"
+            Version="__VERSION__"
+            ProcessorArchitecture="__ARCH__" />
+
+  <Properties>
+    <DisplayName>Keysharp</DisplayName>
+    <PublisherDisplayName>__PUBLISHER_DISPLAY__</PublisherDisplayName>
+    <Description>Keysharp - AutoHotkey v2-compatible automation and scripting for .NET</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <uap10:PackageIntegrity>
+      <uap10:Content Enforcement="on" />
+    </uap10:PackageIntegrity>
+  </Properties>
+
+  <Resources>
+    <Resource Language="en-US" />
+    <Resource uap:Scale="100" />
+    <Resource uap:Scale="125" />
+    <Resource uap:Scale="150" />
+    <Resource uap:Scale="200" />
+    <Resource uap:Scale="400" />
+  </Resources>
+
+  <Dependencies>
+    <!-- 19041 (Windows 10 2004) is the floor for the uap10 features used here:
+         installedLocationVirtualization, SupportsMultipleInstances and the alias Subsystem. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Extensions>
+    <uap10:Extension Category="windows.installedLocationVirtualization">
+      <uap10:InstalledLocationVirtualization>
+        <uap10:UpdateActions ModifiedItems="reset" DeletedItems="reset" AddedItems="keep" />
+      </uap10:InstalledLocationVirtualization>
+    </uap10:Extension>
+  </Extensions>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+  <Applications>
+
+    <!-- Keysharp itself. Launched with no arguments it looks for a script named after the
+         executable and then falls back to the bundled Dash, Scripts\Dash.cks - so the Start-menu
+         tile needs no uap10:Parameters and no hard-coded paths. SupportsMultipleInstances is
+         essential for a script host: every launched script is another Keysharp.exe. -->
+    <Application Id="Keysharp"
+                 Executable="Keysharp.exe"
+                 EntryPoint="Windows.FullTrustApplication"
+                 uap10:SupportsMultipleInstances="true">
+      <uap:VisualElements DisplayName="Keysharp"
+                          Description="Keysharp Dash - create and run scripts, launch demos and tools"
+                          BackgroundColor="transparent"
+                          Square150x150Logo="Assets\Square150x150Logo.png"
+                          Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- `keysharp` on any command line. The alias name must match the executable name or
+             Run/RunWait through the alias fails (lesson learned in the AutoHotkey Store Edition).
+             Declared console so a shell that invokes it waits and receives the exit code, which
+             is what callers of the errorstdout/validate/compile switches expect. -->
+        <uap5:Extension Category="windows.appExecutionAlias" EntryPoint="Windows.FullTrustApplication" Executable="Keysharp.exe">
+          <uap5:AppExecutionAlias uap10:Subsystem="console">
+            <uap8:ExecutionAlias Alias="Keysharp.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
+
+        <!-- .ks / .ahk: double-click runs the script; the context menu adds Compile. ShellNew
+             gives Explorer's New > Keysharp script entry, seeded from the same Scripts\Template.ks
+             the Dash's "New script" writes and the MSI registers under .ks\ShellNew. -->
+        <uap3:Extension Category="windows.fileTypeAssociation" EntryPoint="Windows.FullTrustApplication" Executable="Keysharp.exe">
+          <uap3:FileTypeAssociation Name="keysharpscript" Parameters="&quot;%1&quot; %*">
+            <uap:DisplayName>Keysharp script</uap:DisplayName>
+            <uap:Logo>Assets\FileLogo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType uap4:ShellNewFileName="Scripts\Template.ks">.ks</uap:FileType>
+              <uap:FileType>.ahk</uap:FileType>
+            </uap:SupportedFileTypes>
+            <uap2:SupportedVerbs>
+              <uap3:Verb Id="open" Parameters="&quot;%1&quot; %*">Run script</uap3:Verb>
+              <uap3:Verb Id="compile" Parameters="--compile &quot;%1&quot;">Compile script</uap3:Verb>
+            </uap2:SupportedVerbs>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+
+        <!-- .cks: a compiled script assembly; run only, nothing to compile or edit. -->
+        <uap3:Extension Category="windows.fileTypeAssociation" EntryPoint="Windows.FullTrustApplication" Executable="Keysharp.exe">
+          <uap3:FileTypeAssociation Name="keysharpcompiled" Parameters="&quot;%1&quot; %*">
+            <uap:DisplayName>Compiled Keysharp script</uap:DisplayName>
+            <uap:Logo>Assets\FileLogo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.cks</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+
+    <!-- Keyview, the script editor: a tile and a `keyview` alias, but deliberately NO file-type
+         association. MSIX allows each file type to be declared only ONCE per package (makeappx
+         hard-fails on a duplicate), and .ks/.ahk belong to the run-on-double-click association
+         above. The MSI's "Open with > Keyview" registration is therefore not expressible here;
+         the route back is an "edit" verb on the Keysharp association relaying to Keyview via a
+         future Keysharp.exe edit switch. -->
+    <Application Id="Keyview"
+                 Executable="Keyview.exe"
+                 EntryPoint="Windows.FullTrustApplication"
+                 uap10:SupportsMultipleInstances="true">
+      <uap:VisualElements DisplayName="Keyview"
+                          Description="Keyview - the Keysharp script editor"
+                          BackgroundColor="transparent"
+                          Square150x150Logo="Assets\Square150x150Logo.png"
+                          Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <uap5:Extension Category="windows.appExecutionAlias" EntryPoint="Windows.FullTrustApplication" Executable="Keyview.exe">
+          <uap5:AppExecutionAlias>
+            <uap8:ExecutionAlias Alias="Keyview.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
+      </Extensions>
+    </Application>
+
+  </Applications>
+</Package>

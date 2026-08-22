@@ -902,7 +902,8 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 			+ `#AssemblyCopyright`
 			+ `#AssemblyTrademark`
 			+ `#AssemblyVersion`
-	+ Command line switches may start with `/`, `-` or `--`, and must appear before the script or assembly input. After the input is found, all remaining arguments are passed to the script or assembly entry point.
+	+ Command line switches may start with `/`, `-` or `--`, and must appear before the script or assembly input. After the input is found, all remaining arguments are passed to the script or assembly entry point. The exception is `--compile asm`, which runs nothing: further script paths there are read as additional scripts to compile.
+	+ Started with no input at all, Keysharp looks for a script named after its own executable — `Keysharp.ahk`, `Keysharp.ks`, then `Keysharp.cks` — first in the working directory and then beside the executable. Every package ships the Dash as `Keysharp.cks` at the install root, so that probe is what opens it on a bare launch; a script of your own placed alongside takes precedence.
 	+ Command line switches
 		- `--script`
 		  Causes a compiled script to ignore its main code and instead executes the provided script. For this to apply, `--script` must be the first command line argument.
@@ -919,6 +920,8 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 		  Outputs a `.cks` assembly and its package assets. The script is not run.
 		- `--compile asm [--dest <path|*>] <script>`
 		  Like `--compile`, with explicit file, folder or `*` output. `dll` is an alias for `asm`. The script is not run.
+		- `--compile asm <script> <script>...`
+		  Compiles several scripts in one run, each to a `.cks` beside its own source. They share one warm parser and compiler, so this is much faster than one invocation per script. `--dest` and `--transpile` each name a single output and so take a single script.
 		- `--validate`, `/validate`
 		  Compiles but does not run the script. Can be used to check for load-time errors.
 		- `--validate-syntax`

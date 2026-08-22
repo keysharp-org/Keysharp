@@ -158,6 +158,13 @@ publish_projects() {
       -p:ContinuousIntegrationBuild=true \
       -p:PathMap="${PATH_MAP}"
   done
+
+  # The Dash, its template, the demos and every .cks: install payload, so Keysharp.csproj does not carry
+  # it. Runs against the just-published host, which is what makes each .cks match this build. Inside the
+  # .app because that is where macOS publishes; the other two packagers publish a plain tree.
+  log "Staging install payload..."
+  dotnet msbuild "${ROOT}/Keysharp.Install/payload/Keysharp.Payload.proj" \
+    -p:PayloadDir="$(resolve_app_source Keysharp)/Contents/MacOS" --nologo -v:minimal
 }
 
 resolve_app_source() {
@@ -454,13 +461,22 @@ relocate_library_scripts() {
       mkdir -p "${dir}/Lib"
       mv "${dir}/Scripts/Ax.ks" "${dir}/Lib/Ax.ks"
     fi
-    # OCR.ks is a pure library (no inspector/entry point and no .cks), so it moves
-    # to Lib/ entirely so #include <OCR> resolves it; nothing stays in Scripts.
-    if [[ -f "${dir}/Scripts/OCR.ks" ]]; then
-      mkdir -p "${dir}/Lib"
-      mv "${dir}/Scripts/OCR.ks" "${dir}/Lib/OCR.ks"
-    fi
   done
+}
+
+verify_dash_present() {
+  local macos_dir="$1/Contents/MacOS"
+
+  # Opened with no document, Keysharp.app runs Keysharp.cks - the Dash - through the ordinary
+  # <exe-name> probe. Neither it nor the Keysharp.ks fallback present means the icon opens an error.
+  if [[ ! -f "${macos_dir}/Keysharp.cks" && ! -f "${macos_dir}/Keysharp.ks" ]]; then
+    echo "Keysharp.app has neither Keysharp.cks nor Keysharp.ks. Opening it with no document would error instead of showing the Dash." >&2
+    exit 1
+  fi
+
+  if [[ ! -f "${macos_dir}/Keysharp.cks" ]]; then
+    echo "Warning: Keysharp.cks was not produced, so the Dash ships as source and is compiled in memory on every launch. Expected on a cross-RID publish; otherwise check the publish output for 'Could not precompile'." >&2
+  fi
 }
 
 stage_payload() {
@@ -479,6 +495,7 @@ stage_payload() {
 
   relocate_library_scripts "${PKG_ROOT}/Applications/Keysharp.app"
   relocate_library_scripts "${PKG_ROOT}/Applications/Keyview.app"
+  verify_dash_present "${PKG_ROOT}/Applications/Keysharp.app"
 
   set_bundle_metadata "${PKG_ROOT}/Applications/Keysharp.app"
   set_bundle_metadata "${PKG_ROOT}/Applications/Keyview.app"

@@ -760,6 +760,14 @@ namespace Keysharp.Main
 			using (var ext = root.CreateSubKey(@"Software\Classes\.ks"))
 				ext.SetValue("", "Keysharp");
 
+			// Explorer's New > Keysharp script entry, seeded from the same template the Dash writes and the
+			// MSI/MSIX register. Skipped rather than dangling if the file is missing from this layout.
+			var templatePath = Path.Combine(path, "Scripts", "Template.ks");
+
+			if (File.Exists(templatePath))
+				using (var shellNew = root.CreateSubKey(@"Software\Classes\.ks\ShellNew"))
+					shellNew.SetValue("FileName", templatePath);
+
 			using (var type = root.CreateSubKey(@"Software\Classes\Keysharp"))
 				type.SetValue("", "Keysharp script");
 

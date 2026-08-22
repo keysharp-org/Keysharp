@@ -730,7 +730,7 @@ class InputHUD {
         this.SavePlacement()             ; persist the reset layout so next run starts clean too
     }
 
-    ; --- placement persistence (demos/Settings.ini, section "Input HUD") ----
+    ; --- placement persistence (Keysharp's data folder, demos.ini, section "Input HUD") ----
     static SavePlacement() {
         this.SaveHud("kb", this.kb)
         this.SaveHud("ms", this.ms)

@@ -19,11 +19,12 @@ script's header comment says so.
 
 [Shell.ks](Shell.ks) is the small **shared support layer** the demos build on (not a standalone demo):
 each demo `#include`s it for a persistent, click-to-dismiss cheat-sheet overlay of its shortcuts, a
-customized tray icon/menu, and per-demo settings persistence (`demos/Settings.ini`).
+customized tray icon/menu, and per-demo settings persistence (`demos.ini` in Keysharp's data folder).
 
 Hotkeys are defined near the top of each script and are easy to rebind if they clash with your
 desktop's shortcuts. Each demo prompts on first launch for the OS permissions listed in its header,
 quits with Ctrl+Alt+Shift+Q, and shows a bottom-right cheat-sheet you can reopen with Ctrl+Alt+Shift+S
 or from the tray icon's menu (which also carries demo-specific actions). Preferences — a card's
 "Don't show on startup" tick, WindowTiler's region mode, InputHUD's HUD positions and zoom — persist to
-`demos/Settings.ini`, so each demo comes back the way you left it.
+`%AppData%\Keysharp\demos.ini` — `~/.config/Keysharp/demos.ini` on Linux and
+`~/Library/Application Support/Keysharp/demos.ini` on macOS — so each demo comes back the way you left it.

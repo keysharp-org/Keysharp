@@ -1,0 +1,82 @@
+<Project DefaultTargets="StagePayload">
+
+	<!-- What a Keysharp INSTALL carries beyond Keysharp itself: the Dash, its new-script template, the demos,
+	     and the .cks form of every bundled script. None of it belongs to Keysharp.csproj - `dotnet publish` of
+	     that project builds the host and its helper scripts, nothing else.
+
+	     Run once per published tree, by each packager:
+	         dotnet msbuild Keysharp.Install/payload/Keysharp.Payload.proj -p:PayloadDir=<published app dir>
+
+	     The compile has to happen here rather than in a packager script because it needs a project system,
+	     and it has to happen after the publish because the .cks must come from the host being shipped. -->
+
+	<PropertyGroup>
+		<_Repo>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..'))</_Repo>
+		<_Out>$([MSBuild]::EnsureTrailingSlash('$(PayloadDir)'))</_Out>
+		<_KsHost Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(_Out)Keysharp.exe</_KsHost>
+		<_KsHost Condition="!$([MSBuild]::IsOSPlatform('Windows'))">$(_Out)Keysharp</_KsHost>
+		<_DashSource>$(_Out)Scripts/Dash.ks</_DashSource>
+		<_DashInPlace>$(_Out)Scripts/Dash.cks</_DashInPlace>
+		<_DashAsm>$(_Out)Keysharp.cks</_DashAsm>
+		<_DashFallback>$(_Out)Keysharp.ks</_DashFallback>
+	</PropertyGroup>
+
+	<Target Name="StagePayload" DependsOnTargets="CopyPayload;PrecompileScripts" />
+
+	<Target Name="CopyPayload">
+		<Error Condition="'$(PayloadDir)' == ''" Text="PayloadDir is required: the published app directory to add the install payload to." />
+		<Error Condition="!Exists('$(_KsHost)')" Text="No Keysharp host at $(_KsHost). Publish before staging the payload." />
+		<ItemGroup>
+			<!-- Shell.ks is the demos' shared #include, so it ships as source with no entry point of its own.
+			     OCRSnip is absent: it #includes OCR.ks by repo-relative path and needs an engine no package has. -->
+			<_Demo Include="$(_Repo)demos/Shell.ks;$(_Repo)demos/ClipboardHistory.ks;$(_Repo)demos/InputHUD.ks;$(_Repo)demos/WindowGrab.ks;$(_Repo)demos/WindowTiler.ks" />
+			<!-- The Dash, and the one new-script seed shared by its "New script" button and the ShellNew
+			     registrations in the MSI, the MSIX manifest and the CLI install switch. Both live here rather
+			     than in Keysharp\Scripts because neither is part of Keysharp. -->
+			<_InstallScript Include="$(MSBuildThisFileDirectory)Dash.ks;$(MSBuildThisFileDirectory)Template.ks" />
+			<!-- Straight to Lib: OCR.ks is a pure "#include <OCR>" library with no entry point, and Lib is
+			     where the include resolver looks. Capital L - it matters on a case-sensitive filesystem. -->
+			<_InstallLibrary Include="$(_Repo)Keysharp/Scripts/OCR.ks" />
+		</ItemGroup>
+		<Copy SourceFiles="@(_InstallScript)" DestinationFolder="$(_Out)Scripts" SkipUnchangedFiles="true" />
+		<Copy SourceFiles="@(_InstallLibrary)" DestinationFolder="$(_Out)Lib" SkipUnchangedFiles="true" />
+		<Copy SourceFiles="@(_Demo)" DestinationFolder="$(_Out)Demos" SkipUnchangedFiles="true" />
+	</Target>
+
+	<Target Name="PrecompileScripts">
+		<ItemGroup>
+			<!-- OCR.ks and Demos/Shell.ks are absent: pure #include libraries, no entry point. -->
+			<_InPlaceScript Include="$(_Out)Scripts/WindowSpy.ks" Condition="Exists('$(_Out)Scripts/WindowSpy.ks')" />
+			<_InPlaceScript Include="$(_Out)Scripts/AtSpi.ks" Condition="Exists('$(_Out)Scripts/AtSpi.ks')" />
+			<_InPlaceScript Include="$(_Out)Scripts/Ax.ks" Condition="Exists('$(_Out)Scripts/Ax.ks')" />
+			<_InPlaceScript Include="$(_Out)Demos/*.ks" Exclude="$(_Out)Demos/Shell.ks" />
+			<_BundledScript Include="@(_InPlaceScript)" />
+			<_BundledScript Include="$(_DashSource)" Condition="Exists('$(_DashSource)')" />
+			<!-- Listed rather than derived-then-excluded: an Exclude spec does not match a rooted transform,
+			     so the Dash silently stayed in the list whenever the path was relative. -->
+			<_ExpectedCks Include="@(_InPlaceScript->'%(RootDir)%(Directory)%(Filename).cks')" />
+			<_ExpectedCks Include="$(_DashAsm)" Condition="Exists('$(_DashSource)')" />
+		</ItemGroup>
+		<!-- Publish does not prune, so a .cks from an earlier build would pass for one this run produced. -->
+		<Delete Files="@(_ExpectedCks);$(_DashInPlace);$(_DashFallback)" />
+		<!-- One process for the whole batch: separate hosts cost ~5s each, this costs 13s for all of them. -->
+		<Exec Condition="'@(_BundledScript)' != ''" Command="&quot;$(_KsHost)&quot; --errorstdout --compile asm @(_BundledScript->'&quot;%(FullPath)&quot;', ' ')" WorkingDirectory="$(_Out)" ContinueOnError="true" />
+		<!-- The Dash is the one script whose assembly is not named after its source: a bare launch finds it
+		     through the ordinary <exe-name>.cks probe, so it has to sit at the app root. Moving it keeps it in
+		     the batch. Safe while the Dash needs no sidecar files - DeploySupportFiles writes those beside the
+		     assembly, i.e. into Scripts, and only the .cks moves. Add a #Package or Ks.RunScript to Dash.ks
+		     and it must be compiled with its own dest instead. -->
+		<Move Condition="Exists('$(_DashInPlace)')" SourceFiles="$(_DashInPlace)" DestinationFiles="$(_DashAsm)" />
+		<!-- Cross-architecture publish: the host could not run here, so ship the Dash source under the probed
+		     name instead. Never both - the probe prefers .ks, which would cost a compile on every start. -->
+		<Copy Condition="Exists('$(_DashSource)') And !Exists('$(_DashAsm)')" SourceFiles="$(_DashSource)" DestinationFiles="$(_DashFallback)" />
+		<!-- Report what landed on disk: the step is non-fatal, so a failed Exec is otherwise
+		     indistinguishable from success until a packager notices. Each script ships its .ks either way. -->
+		<ItemGroup>
+			<_MissingCks Include="@(_ExpectedCks)" Condition="!Exists('%(Identity)')" />
+		</ItemGroup>
+		<Message Importance="high" Condition="'@(_ExpectedCks)' != '' And '@(_MissingCks)' == ''" Text="Precompiled bundled scripts for faster startup: @(_ExpectedCks->'%(Filename)%(Extension)', ', ')" />
+		<Warning Condition="'@(_MissingCks)' != ''" Text="Could not precompile @(_MissingCks->'%(Filename)%(Extension)', ', '); the launchers will compile the .ks on every start. Any host output above says why." />
+	</Target>
+
+</Project>

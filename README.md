@@ -99,7 +99,7 @@ Keysharp targets .NET 10. Linux and macOS builds also need the sibling [Keysharp
 
 | Platform | Command |
 |---|---|
-| Windows | Open `Keysharp.sln` in Visual Studio 2022 (with the .NET 10 SDK) and build. `Keysharp.Install\package-windows.ps1` produces the MSI and portable ZIP in `dist\`. |
+| Windows | Open `Keysharp.sln` in Visual Studio 2022 (with the .NET 10 SDK) and build. `Keysharp.Install\package-windows.ps1` produces the MSI and portable ZIP in `dist\`; add `-Msix` for the Microsoft Store package. |
 | Linux | `bash ./Keysharp.Install/package-linux.sh` → output in `dist/` |
 | macOS | `bash ./Keysharp.Install/package-macos.sh` → output in `dist/` |
 

@@ -124,12 +124,18 @@ relocate_library_scripts() {
     mkdir -p "${APP_DIR}/Lib"
     mv "${APP_DIR}/Scripts/AtSpi.ks" "${APP_DIR}/Lib/AtSpi.ks"
   fi
+}
 
-  # OCR.ks is a pure library (no inspector/entry point and no .cks), so it moves
-  # to Lib/ entirely so #include <OCR> resolves it; nothing stays in Scripts.
-  if [[ -f "${APP_DIR}/Scripts/OCR.ks" ]]; then
-    mkdir -p "${APP_DIR}/Lib"
-    mv "${APP_DIR}/Scripts/OCR.ks" "${APP_DIR}/Lib/OCR.ks"
+verify_dash_present() {
+  # A bare launch runs Keysharp.cks - the Dash - through the ordinary <exe-name> probe. Neither it nor
+  # the Keysharp.ks fallback present means `keysharp` with no script errors instead of opening it.
+  if [[ ! -f "${APP_DIR}/Keysharp.cks" && ! -f "${APP_DIR}/Keysharp.ks" ]]; then
+    echo "Package payload has neither Keysharp.cks nor Keysharp.ks. Running keysharp with no script would error instead of opening the Dash." >&2
+    exit 1
+  fi
+
+  if [[ ! -f "${APP_DIR}/Keysharp.cks" ]]; then
+    echo "Warning: Keysharp.cks was not produced, so the Dash ships as source and is compiled in memory on every launch. Expected on a cross-RID publish; otherwise check the publish output for 'Could not precompile'." >&2
   fi
 }
 
@@ -953,6 +959,12 @@ for proj in Keysharp Keyview; do
     -p:PathMap="${PATH_MAP}"
 done
 
+# The Dash, its template, the demos and every .cks: install payload, so Keysharp.csproj does not carry
+# it. Runs against the just-published host, which is what makes each .cks match this build.
+echo "Staging install payload..."
+dotnet msbuild "${ROOT}/Keysharp.Install/payload/Keysharp.Payload.proj" \
+  -p:PayloadDir="${PUBLISH_DIR}/Keysharp" --nologo -v:minimal
+
 echo "Staging package at ${PKG_DIR}..."
 rm -rf "${PKG_DIR}"
 mkdir -p "${APP_DIR}"
@@ -964,6 +976,7 @@ rsync -a "${PUBLISH_DIR}/Keysharp/" "${APP_DIR}/"
 # strips PDBs the same way in clean_app_bundle; do it here too so all three platforms agree.
 find "${APP_DIR}" -name '*.pdb' -delete
 relocate_library_scripts
+verify_dash_present
 build_native_helpers
 normalize_app_permissions
 verify_no_local_paths "${APP_DIR}"

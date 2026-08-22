@@ -23,9 +23,11 @@
     <OutputPath>$(MSBuildThisFileDirectory)..\..\..\dist\</OutputPath>
     <IntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\..\obj\Keysharp.Installer\$(Platform)\</IntermediateOutputPath>
 
-    <!-- Four-part product version, converted to the three-field MSI ProductVersion. Windows Installer only
-         compares major.minor.build, so the historical mapping folds patch and revision together: assembly
-         0.0.0.16 becomes MSI 0.0.16, matching every release the vdproj produced. -->
+    <!-- Product version converted to the three-field MSI ProductVersion, which is all Windows Installer
+         compares. A three-part version - the scheme from 0.0.1 on - already IS that shape and passes
+         through. A legacy four-part 0.0.0.N folds patch and revision together, so assembly 0.0.0.16 becomes
+         MSI 0.0.16, matching every release the vdproj produced. Both mappings are mirrored in
+         package-windows.ps1 (Assert-PackagableVersion, Convert-ToMsixVersion); change them together. -->
     <!-- No default for KeysharpVersion here on purpose: Directory.Build.props already sets it, and a second
          copy of the literal would only rot.
 
@@ -34,13 +36,16 @@
          already have failed evaluation with "Index was outside the bounds of the array", naming neither the
          property nor the offending value. Guarding the assignments keeps the diagnosis in ValidateVersion
          below, where it can say something useful. -->
+    <_VerIsThreePart>$([System.Text.RegularExpressions.Regex]::IsMatch($(KeysharpVersion), '^\d+\.\d+\.\d+$'))</_VerIsThreePart>
     <_VerIsFourPart>$([System.Text.RegularExpressions.Regex]::IsMatch($(KeysharpVersion), '^\d+\.\d+\.\d+\.\d+$'))</_VerIsFourPart>
-    <_VerMajor Condition="'$(_VerIsFourPart)' == 'true'">$(KeysharpVersion.Split('.')[0])</_VerMajor>
-    <_VerMinor Condition="'$(_VerIsFourPart)' == 'true'">$(KeysharpVersion.Split('.')[1])</_VerMinor>
-    <_VerPatch Condition="'$(_VerIsFourPart)' == 'true'">$(KeysharpVersion.Split('.')[2])</_VerPatch>
+    <_VerIsMappable Condition="'$(_VerIsThreePart)' == 'true' or '$(_VerIsFourPart)' == 'true'">true</_VerIsMappable>
+    <_VerMajor Condition="'$(_VerIsMappable)' == 'true'">$(KeysharpVersion.Split('.')[0])</_VerMajor>
+    <_VerMinor Condition="'$(_VerIsMappable)' == 'true'">$(KeysharpVersion.Split('.')[1])</_VerMinor>
+    <_VerPatch Condition="'$(_VerIsMappable)' == 'true'">$(KeysharpVersion.Split('.')[2])</_VerPatch>
     <_VerRevision Condition="'$(_VerIsFourPart)' == 'true'">$(KeysharpVersion.Split('.')[3])</_VerRevision>
+    <_VerBuildField Condition="'$(_VerIsThreePart)' == 'true'">$(_VerPatch)</_VerBuildField>
     <_VerBuildField Condition="'$(_VerIsFourPart)' == 'true'">$([MSBuild]::Add($([MSBuild]::Multiply($(_VerPatch), 1000)), $(_VerRevision)))</_VerBuildField>
-    <KeysharpMsiVersion Condition="'$(_VerIsFourPart)' == 'true'">$(_VerMajor).$(_VerMinor).$(_VerBuildField)</KeysharpMsiVersion>
+    <KeysharpMsiVersion Condition="'$(_VerIsMappable)' == 'true'">$(_VerMajor).$(_VerMinor).$(_VerBuildField)</KeysharpMsiVersion>
 
     <!-- The architecture name .NET uses under HKLM\SOFTWARE\dotnet\Setup\InstalledVersions. -->
     <NetRegArch Condition="'$(Platform)' == 'arm64'">arm64</NetRegArch>
@@ -51,12 +56,6 @@
          suffix is resolved here rather than guessed per-platform in the authoring. -->
     <UtilCaSuffix Condition="'$(Platform)' == 'arm64'">A64</UtilCaSuffix>
     <UtilCaSuffix Condition="'$(UtilCaSuffix)' == ''">X64</UtilCaSuffix>
-
-    <!-- Which Window Spy file the Start Menu shortcut runs. The precompiled .cks is preferred, but it only
-         exists when the publish could run its own host: a cross-architecture publish (arm64 staged on an
-         x64 build machine) leaves only the .ks. Resolved here so the shortcut can never dangle. -->
-    <WindowSpyScript Condition="Exists('$(PayloadDir)\Scripts\WindowSpy.cks')">WindowSpy.cks</WindowSpyScript>
-    <WindowSpyScript Condition="'$(WindowSpyScript)' == ''">WindowSpy.ks</WindowSpyScript>
 
     <!-- ICE validation is on by default and is wanted here; it is what catches the component/keypath
          mistakes that a hand-authored installer makes. Only these two are suppressed, each deliberately:
@@ -75,7 +74,7 @@
 
   <PropertyGroup>
     <!-- ProjectDir is already declared by the WiX SDK and must not be redefined here. -->
-    <DefineConstants>PayloadDir=$(PayloadDir);RepoRoot=$(MSBuildThisFileDirectory)..\..\..\;KeysharpRid=$(KeysharpRid);KeysharpMsiVersion=$(KeysharpMsiVersion);NetRegArch=$(NetRegArch);WindowSpyScript=$(WindowSpyScript);UtilCaSuffix=$(UtilCaSuffix)</DefineConstants>
+    <DefineConstants>PayloadDir=$(PayloadDir);RepoRoot=$(MSBuildThisFileDirectory)..\..\..\;KeysharpRid=$(KeysharpRid);KeysharpMsiVersion=$(KeysharpMsiVersion);NetRegArch=$(NetRegArch);UtilCaSuffix=$(UtilCaSuffix)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

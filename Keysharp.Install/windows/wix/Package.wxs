@@ -243,6 +243,28 @@
          with a Typical/Custom/Complete page whose Typical and Complete are indistinguishable here - every
          feature is Level=1, so both install everything. -->
     <ui:WixUI Id="WixUI_FeatureTree" />
+
+    <!-- Offer to open the Dash from the last page, ticked by default. WixShellExec runs in the installer's
+         UI process, which is the user's ordinary unelevated token - a deferred action would launch the
+         launcher as SYSTEM. Return="ignore" because a failure to start it is not a failed install.
+         The shared WixUI ExitDialog hides its checkbox unless the text property is set and this is a fresh
+         install, so repair, modify and uninstall never offer it; a silent install has no ExitDialog at all. -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Open Keysharp" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <CustomAction Id="LaunchKeysharp" BinaryRef="Wix4UtilCA_$(UtilCaSuffix)" DllEntry="WixShellExec"
+                  Impersonate="yes" Return="ignore" />
+    <UI>
+      <!-- The target is set from the button rather than as a <Property>, for two reasons: a Property value
+           is authored, not formatted, so [INSTALLFOLDER] would be passed literally (WIX1077); and setting
+           it here reads INSTALLFOLDER after the user has picked a folder in CustomizeDlg, which a
+           SetProperty scheduled after CostFinalize would miss. -->
+      <Publish Dialog="ExitDialog" Control="Finish" Order="1"
+               Property="WixShellExecTarget" Value="[INSTALLFOLDER]Keysharp.exe"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+      <Publish Dialog="ExitDialog" Control="Finish" Order="2" Event="DoAction" Value="LaunchKeysharp"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+    </UI>
+
     <WixVariable Id="WixUILicenseRtf" Value="$(ProjectDir)assets\license.rtf" />
     <WixVariable Id="WixUIBannerBmp" Value="$(ProjectDir)assets\banner.bmp" />
     <WixVariable Id="WixUIDialogBmp" Value="$(ProjectDir)assets\dialog.bmp" />
@@ -270,28 +292,27 @@
     <!-- Non-advertised shortcuts, targeted by path rather than by file key, so the payload can stay a
          wholesale harvest with no hand-maintained file IDs. The vdproj's shortcuts were advertised, which
          made Windows run a repair check on every click; these behave like ordinary shortcuts.
-         Window Spy points at the precompiled WindowSpy.cks (the vdproj pointed at WindowSpy.ks, so the
-         .cks that ships alongside it was never the thing the shortcut ran). -->
+
+         Exactly the two entries every other edition offers - the MSIX tiles, the Linux .desktop files,
+         the two macOS .app bundles. Window Spy had a third shortcut here and nowhere else; it is reached
+         from the Dash, like the demos and the documentation. -->
     <ComponentGroup Id="ShortcutComponents" Directory="ShortcutFolder">
       <Component>
+        <!-- Plain "Keysharp", the same entry every other edition offers (the MSIX tile, the Linux
+             .desktop, Keysharp.app on macOS) - not a second "Dash" entry beside it. No arguments on
+             purpose: started with no script, Keysharp falls back to the bundled Dash,
+             Scripts\Dash.cks, produced by the PrecompileBundledScripts target. So the launcher needs
+             no path baked into any package. -->
+        <Shortcut Id="KeysharpShortcut"
+                  Name="Keysharp"
+                  Description="Keysharp: new script, run a script, tools and demos"
+                  Target="[INSTALLFOLDER]Keysharp.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="Keysharp.ico" />
         <Shortcut Id="KeyviewShortcut"
                   Name="Keyview"
                   Description="The Keysharp script editor"
                   Target="[INSTALLFOLDER]Keyview.exe"
-                  WorkingDirectory="INSTALLFOLDER"
-                  Icon="Keysharp.ico" />
-        <!-- Prefer the precompiled .cks, which starts without an on-the-fly compile. It is produced by the
-             PrecompileBundledScripts target in Keysharp.csproj, which runs the just-published host - so it
-             is absent whenever the publish was cross-architecture (an arm64 Keysharp.exe cannot execute on
-             an x64 build machine; the target is ContinueOnError and simply leaves the .ks behind). Falling
-             back keeps the shortcut working instead of pointing at a file that was never built.
-             WindowSpy.ks ships either way, for source inspection.
-             WindowSpyScript is resolved from the staged tree by the .wixproj. -->
-        <Shortcut Id="WindowSpyShortcut"
-                  Name="Window Spy"
-                  Description="Inspect windows, controls and the mouse position"
-                  Target="[INSTALLFOLDER]Keysharp.exe"
-                  Arguments="&quot;[INSTALLFOLDER]Scripts\$(WindowSpyScript)&quot;"
                   WorkingDirectory="INSTALLFOLDER"
                   Icon="Keysharp.ico" />
         <RemoveFolder Id="RemoveShortcutFolder" On="uninstall" />

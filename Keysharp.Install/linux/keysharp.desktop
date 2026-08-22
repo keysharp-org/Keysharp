@@ -1,9 +1,15 @@
+# Shown in application menus (this entry used to be NoDisplay=true, i.e. a MIME handler only).
+# It stays plain "Keysharp" rather than gaining a second "Dash" entry beside it: activating it with
+# no file runs keysharp with no arguments, and that opens the Dash - the launcher every package now
+# ships as Keysharp.cks beside the host. Same shape as Keysharp.app on macOS and the MSIX tile.
 [Desktop Entry]
 Type=Application
 Name=Keysharp
+Comment=Create and run automation scripts, and launch the bundled tools and demos
 Exec=/usr/local/bin/keysharp %f
 Icon=keysharp
 Terminal=false
+Categories=Utility;Development;
+Keywords=script;automation;hotkey;autohotkey;macro;
 MimeType=application/x-keysharp;application/x-keysharp-compiled;application/x-autohotkey;
 InitialPreference=100
-NoDisplay=true

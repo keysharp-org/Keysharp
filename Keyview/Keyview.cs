@@ -78,7 +78,7 @@ namespace Keyview
 		public Keyview(string initialFile = null)
 		{
 			InitializeComponent();
-			lastrun = $"{Accessors.A_AppData}/Keysharp/lastkeyviewrun.txt";
+			lastrun = KeyviewPaths.ScratchDocument;
 			Icon = Script.TheScript.normalIcon;
 			btnCopyFullCode.Text = "Copy full code";
 			btnCopyFullCode.Click += CopyFullCode_Click;
@@ -1028,7 +1028,7 @@ namespace Keyview
 
 		public Keyview(string initialFile = null)
 		{
-			lastrun = $"{Accessors.A_AppData}/Keysharp/lastkeyviewrun.txt";
+			lastrun = KeyviewPaths.ScratchDocument;
 			Title = $"Keyview {Assembly.GetExecutingAssembly().GetName().Version}";
 			baseTitle = Title;
 			InitializeWindowIcon();
@@ -2319,6 +2319,19 @@ namespace Keyview
 		}
 	}
 #endif
+
+	/// <summary>
+	/// Where Keysharp keeps per-user data, and the files Keyview puts there. One definition for both the
+	/// WinForms and Eto windows, and the same folder the bundled demos write demos.ini to - Keysharp has a
+	/// single data folder rather than one per component.
+	/// </summary>
+	internal static class KeyviewPaths
+	{
+		internal static string DataDir => Path.Combine(Accessors.A_AppData, "Keysharp");
+
+		/// <summary>The scratch buffer autosave: the never-saved document Keyview reopens on next launch.</summary>
+		internal static string ScratchDocument => Path.Combine(DataDir, "lastkeyviewrun.txt");
+	}
 
 	internal static class KeyviewCompilerRunner
 	{

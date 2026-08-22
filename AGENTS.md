@@ -72,7 +72,9 @@ Build output lands in `bin/Debug/net10.0-windows/` (or the appropriate TFM subfo
 --validate           # compile-check only, do not run
 --compile exe        # emit a standalone .exe and exit
 --compile exe-min    # like exe, with dependencies embedded
---compile dll <path> # emit the raw assembly to <path> (or * for stdout) and exit
+--compile asm        # emit a .cks assembly beside the script and exit; several scripts may follow,
+                     #   each compiled beside its own source, sharing one warm compiler
+--dest <path>        # send --compile's output to <path> (or * for stdout); one output, so one script
 ```
 
 > **Important**: a script an agent runs must never be able to block on a dialog unless the user has explicitly opted in. A load-time warning or an uncaught runtime error opens a modal window on the user's desktop that nothing in this environment can dismiss, and it leaves an orphaned `Keysharp.exe` behind. Before running a script:
