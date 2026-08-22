@@ -451,6 +451,27 @@ internal bool HasBlockedQueuedWork
 					// Blocked work can become runnable either when another scheduler finishes a pseudo-thread
 					// or when interruptibility naturally times out, so wait briefly rather than spinning.
 					_ = WaitForWorkerPumpSignal((int)ThreadVariables.DefaultUninterruptiblePeekFrequency);
+
+					// RequestWorkerExit signals this same wait, and a shutting-down worker abandons queued work
+					// rather than serving one more entry on the way out.
+					if (script.hasExited || IsDisposed || IsWorkerExitRequested)
+						continue;
+
+					// Then retry. TryBeginPump/EndPump are the only writers of the blocked flag, so a pump is the
+					// only thing that can clear it -- going back to the top without one leaves this loop waiting
+					// for a condition only it can produce. That outlives whatever caused the block: an entry
+					// whose registration is later removed (SetTimer(fn, 0) while it sits parked) can never become
+					// runnable again, and only a pump discovers that and drops it. The worker then spins forever
+					// after its body has returned, so its completion -- published past this loop -- never lands.
+					// The main thread is not exposed: its pump is driven from outside by PostToUIThread, which
+					// does not consult this gate.
+					PumpThreadQueuedEventsCore();
+
+					// Same hand-off the normal path makes below: a pseudo-thread left running on this thread
+					// owns the loop from here.
+					if (script.Threads.ActivePseudoThreadCount > 0)
+						return;
+
 					continue;
 				}
 

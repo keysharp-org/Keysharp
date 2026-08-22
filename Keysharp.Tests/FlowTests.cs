@@ -334,6 +334,9 @@ namespace Keysharp.Tests
         [Test, Category("Flow"), NonParallelizable]
         public void FlowRealThreads() => Assert.IsTrue(TestScript("flow-realthreads", false));
 
+        [Test, Category("Flow"), NonParallelizable]
+        public void FlowWorkerBlockedQueue() => Assert.IsTrue(TestScript("flow-worker-blocked-queue", false));
+
         [Test, Category("Flow")]
         public void FlowSwitch() => Assert.IsTrue(TestScript("flow-switch", false));
 
