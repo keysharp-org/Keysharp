@@ -244,6 +244,40 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
+		public void HotIfCriterionIsAnExpression()
+		{
+			// A `#HotIf` criterion is an expression. At statement level a trailing primary chain is a zero-arg
+			// call, which would invoke `Probe.Running` and `MyFlag` instead of reading them, while a criterion
+			// that really is a call must still be called. Asserted on the generated C# (emitCode: true) because
+			// firing a hotkey needs the hook and focus.
+			static string Compile(string src)
+			{
+				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(src, "hotiftest", null, false, true, false);
+				Assert.IsNotNull(arr, code);
+				return code;
+			}
+
+			var code = Compile("class Probe {\n\tstatic Running := false\n}\n"
+							   + "global MyFlag := false\n"
+							   + "#HotIf Probe.Running\n*F13::return\n#HotIf\n"
+							   + "#HotIf MyFlag\n*F14::return\n#HotIf\n"
+							   + "#HotIf IsOn()\n*F15::return\n#HotIf\n"
+							   + "IsOn() => 1\n");
+
+			// A class static is read, not invoked.
+			Assert.IsTrue(code.Contains("GetPropertyValue(probe, \"Running\")"),
+						  "a `Class.Prop` criterion must read the property; generated:\n" + code);
+			Assert.IsFalse(code.Contains("Invoke(probe, \"Running\")"),
+						   "a `Class.Prop` criterion must not be invoked as a method; generated:\n" + code);
+			// A plain variable is its own value, not something to call.
+			Assert.IsFalse(code.Contains("Invoke(myflag, \"Call\")"),
+						   "a bare-variable criterion must not be called; generated:\n" + code);
+			// A criterion that really is a call still is one.
+			Assert.IsTrue(code.Contains("Invoke(ison, \"Call\")"),
+						  "a `Func()` criterion must still be called; generated:\n" + code);
+		}
+
+		[Test, Category("Directives")]
 		public void CompilationDefines()
 		{
 			// Symbols are an argument to a compilation, not process state, so two compiles in the same process can

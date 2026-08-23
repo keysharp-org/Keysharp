@@ -4991,19 +4991,23 @@ namespace Keysharp.Compilation.Syntax
 				_dhhr.Add(ExprStmt(Inv(Access("Keysharp.Builtins.Keyboard.HotIf"), Str(""))));
 				return;
 			}
-			var cond = ParseExprFragment(args);
-			if (cond == null) { Diag($"#HotIf condition is not a valid expression: '{args}'"); return; }
+			var cond = ParseExprFragment(args, out var err);
+			if (cond == null) { Diag($"#HotIf condition is not a valid expression: '{args}'{(err == null ? "" : $" ({err})")}"); return; }
 			var fnName = EmitHotCallback(new Block(new List<Stmt> { new ReturnStmt(cond) }), "__HotIf_" + (++_hotCount));
 			_dhhr.Add(ExprStmt(Inv(Access("Keysharp.Builtins.Keyboard.HotIf"), FuncBind("__Main." + fnName))));
 		}
 
-		// Re-parses a directive's reconstructed expression argument (e.g. a `#HotIf` condition) back into an Expr.
-		// Returns null if it doesn't parse cleanly to a single expression.
-		private static Expr ParseExprFragment(string text)
+		// Re-parses a directive's reconstructed expression argument (e.g. a `#HotIf` condition) back into an Expr,
+		// or null if it is not exactly one expression. `error` is positioned within the fragment rather than the
+		// script, so the caller folds it into its own message instead of reporting it as a diagnostic.
+		private static Expr ParseExprFragment(string text, out string error)
 		{
+			error = null;
 			if (string.IsNullOrWhiteSpace(text)) return null;
-			var (prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(text);
-			return diags.Count == 0 && prog.Body.Count > 0 && prog.Body[0] is ExpressionStmt es ? es.Expr : null;
+			var (expr, diags) = Keysharp.Parsing.Syntax.Parser.ParseExpressionWithDiagnostics(text);
+			if (diags.Count == 0) return expr;
+			error = diags[0];
+			return null;
 		}
 
 		private MemberDeclarationSyntax LowerFunction(FunctionDecl f)

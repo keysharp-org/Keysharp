@@ -109,6 +109,39 @@ namespace Keysharp.Parsing.Syntax
 			}
 		}
 
+		// Parses one expression, for a directive argument such as a `#HotIf` criterion. ParseProgram is the wrong
+		// entry point: at statement level a trailing primary chain such as `obj.Member` is a zero-arg call
+		// statement, so a criterion would be invoked rather than read. Returns null, with diagnostics, unless the
+		// text is exactly one expression. It takes no preprocessor symbols because a directive argument is rebuilt
+		// from already-preprocessed tokens.
+		internal static (Expr expr, List<string> diagnostics) ParseExpressionWithDiagnostics(string source)
+		{
+			var diags = new List<string>();
+
+			try
+			{
+				var lexer = new Lexer(source, null);
+				var tokens = LexForParsing(lexer);
+
+				if (lexer.Diagnostics.Count > 0)
+					throw new Keysharp.Builtins.ParseException(lexer.Diagnostics[0]);
+
+				var parser = new Parser(tokens, null);
+				var expr = parser.ParseExpression(0);
+				parser.SkipNewlines();
+
+				if (!parser.At(TokenKind.EOF))
+					parser.Error($"unexpected {parser.Got()} after the expression");
+
+				return (parser.Diagnostics.Count == 0 ? expr : null, parser.Diagnostics);
+			}
+			catch (Keysharp.Builtins.ParseException ex)
+			{
+				diags.Add(ex.Message);
+				return (null, diags);
+			}
+		}
+
 		// ---- token helpers ----
 		private Token Current => _pos < _t.Count ? _t[_pos] : _t[^1];
 		private Token Peek(int k) => _pos + k < _t.Count ? _t[_pos + k] : _t[^1];
