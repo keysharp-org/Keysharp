@@ -501,7 +501,9 @@ namespace Keysharp.Builtins
 			var places = n is null ? 0L : n.ToLong();
 
 			if (places == 0L)
-				return Convert.ToInt64(num);
+				//Convert.ToInt64 rounds a midpoint to even; AutoHotkey rounds it away from zero, the same
+				//rule the fractional-digits path below already uses.
+				return Convert.ToInt64(num >= 0.0 ? Math.Floor(num + 0.5) : Math.Ceiling(num - 0.5));
 
 			var mult = Math.Pow(10, places);//Code taken from AHK.
 			return (num >= 0.0 ? Math.Floor(num * mult + 0.5) : Math.Ceiling((num * mult) - 0.5)) / mult;
