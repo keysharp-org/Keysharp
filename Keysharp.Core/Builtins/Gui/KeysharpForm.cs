@@ -19,6 +19,7 @@ namespace Keysharp.Builtins
 		internal bool beenConstructed = false;
 		internal bool clickThrough;
 		internal bool roundedCorners;
+		private bool toolWindow;
 		private bool closingFromDestroy;
 #if !WINDOWS
 		private long lastDpi = 96;
@@ -38,6 +39,10 @@ namespace Keysharp.Builtins
 				cp.Style |= addStyle;
 				cp.ExStyle |= addExStyle;
 				cp.Style &= ~removeStyle;
+
+				if (toolWindow)
+					cp.ExStyle |= WindowsAPI.WS_EX_TOOLWINDOW;
+
 				cp.ExStyle &= ~removeExStyle;
 				return cp;
 			}
@@ -256,6 +261,18 @@ namespace Keysharp.Builtins
 			roundedCorners = enable;
 #if WINDOWS
 			ApplyRoundedCorners(enable);
+#endif
+		}
+
+		internal void SetToolWindow(bool enable)
+		{
+			if (toolWindow == enable)
+				return;
+
+			toolWindow = enable;
+#if WINDOWS
+			if (IsHandleCreated)
+				UpdateStyles();
 #endif
 		}
 

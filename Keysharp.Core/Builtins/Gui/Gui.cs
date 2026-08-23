@@ -270,6 +270,8 @@ namespace Keysharp.Builtins
 				"ToolWindow", (f, o) => {
 					if (o is bool b && b)
 					{
+						f.form.SetToolWindow(true);
+
 						if (f.caption)//Only change border if they haven't requested that there be no caption/border.
 							f.form.FormBorderStyle = f.resizable ? FormBorderStyle.SizableToolWindow : FormBorderStyle.FixedToolWindow;
 
@@ -277,6 +279,8 @@ namespace Keysharp.Builtins
 					}
 					else
 					{
+						f.form.SetToolWindow(false);
+
 						if (f.caption)
 							f.form.FormBorderStyle = f.resizable ? FormBorderStyle.Sizable : FormBorderStyle.FixedDialog;
 
