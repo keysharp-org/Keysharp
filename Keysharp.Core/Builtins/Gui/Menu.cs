@@ -549,7 +549,7 @@ namespace Keysharp.Builtins
 		/// <param name="menuItemName">If omitted, all menu items are deleted from the menu,<br/>
 		/// leaving the menu empty. Otherwise, specify the name or position of a menu item.
 		/// </param>
-		public object Delete(object menuItemName)
+		public object Delete(object menuItemName = null)
 		{
 			var s = menuItemName.As();
 
