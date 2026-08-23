@@ -154,6 +154,13 @@ namespace Keysharp.Internals.Invoke
 			if (value == null || target.IsInstanceOfType(value))
 				return value;
 
+			// Ks.Task is the script's face on a CLR Task, so an inline member declaring a Task parameter must
+			// receive the task itself. `object` deliberately keeps the wrapper -- the same call ManagedInstance
+			// makes above is reversed here, because a Ks.Task is itself a script object while a ManagedInstance is only
+			// a view of one.
+			if (value is Ks.KeysharpTask kt && target.IsInstanceOfType(kt.Underlying))
+				return kt.Underlying;
+
 			if (value is Ks.Clr.ManagedType mt && target.IsInstanceOfType(mt._type))
 				return mt._type;
 

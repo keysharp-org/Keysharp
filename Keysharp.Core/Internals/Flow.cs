@@ -434,6 +434,81 @@ namespace Keysharp.Internals
 				System.Threading.Thread.Sleep(1);
 		}
 
+		/// <summary>
+		/// Waits for <paramref name="task"/>, pumping events so timers, hotkeys and the GUI stay alive. This is
+		/// what backs the script-facing waits -- <c>Await()</c>, <c>Task.Wait()</c> and <c>RealThread.Wait()</c>
+		/// -- as distinct from <c>TaskExtensions</c>, which serves internal cold-start and compositor probes and
+		/// deliberately refuses to pump anywhere but the main thread.
+		/// <para>
+		/// It blocks on <c>Task.Wait</c> and pumps on each tick, rather than spinning. Pumping is what makes the
+		/// task progress when its continuation was posted to this thread's scheduler, which is why a wait that
+		/// cannot pump -- the raw <c>Task.Clr</c> surface, a tight loop -- can leave such a task unfinished.</para>
+		/// <para>
+		/// Interruptible, like <c>Sleep</c>: new pseudo-threads may launch while it waits.</para>
+		/// </summary>
+		/// <param name="task">The task to wait for.</param>
+		/// <param name="timeoutMs">Milliseconds to wait, or negative to wait indefinitely.</param>
+		/// <returns>True if the task finished, false if the timeout elapsed first.</returns>
+		internal static bool WaitForTask(Task task, int timeoutMs)
+		{
+			if (task == null)
+				return true;
+
+			if (task.IsCompleted)
+				return true;
+
+			// Pump the scheduler this thread owns, not whatever Script.EventScheduler resolves to: on a thread
+			// with no ambient SynchronizationContext those differ, and PumpThreadQueuedEventsCore returns
+			// immediately for a scheduler it does not own, turning the wait into a silent spin.
+			var scheduler = Script.TheScript?.CurrentSchedulerIfCreated;
+
+			// Nothing here would be pumped anyway (static init, a pool thread), so an ordinary blocking wait is
+			// both correct and all that is available. Wait rethrows a faulted task, which a wait must not do --
+			// the caller decides what a failure means -- so the throw is turned back into "it finished".
+			if (scheduler == null)
+				return WaitQuietly(task, timeoutMs < 0 ? Timeout.Infinite : timeoutMs);
+
+			var deadline = timeoutMs < 0 ? long.MaxValue : Environment.TickCount64 + timeoutMs;
+
+			while (true)
+			{
+				var remaining = timeoutMs < 0 ? PumpTickMs : (int)Math.Min(PumpTickMs, Math.Max(0, deadline - Environment.TickCount64));
+
+				// Pump first, so a zero or very short timeout still services the queue once rather than only
+				// sleeping, and so the caller stays responsive from the outset rather than a tick late.
+				TryDoEvents(scheduler, propagateExit: true, yieldTick: false);
+
+				if (WaitQuietly(task, remaining))
+					return true;
+
+				if (Environment.TickCount64 >= deadline)
+					return task.IsCompleted;
+			}
+		}
+
+		// How long a task wait blocks before pumping again. Short enough that a script stays responsive, long
+		// enough that a multi-second wait is not thousands of DoEvents rounds.
+		private const int PumpTickMs = 5;
+
+		/// <summary>
+		/// Waits for <paramref name="task"/> without rethrowing its failure. <see cref="Task.Wait(int)"/> only
+		/// throws once the task has actually settled, so a throw here is the "it finished" answer. Used instead
+		/// of <c>AsyncWaitHandle</c>, which lazily allocates an OS event on the task that nothing ever disposes.
+		/// </summary>
+		private static bool WaitQuietly(Task task, int timeoutMs)
+		{
+			try
+			{
+				return task.Wait(timeoutMs);
+			}
+			catch (Exception)
+			{
+				// Wait rethrows a faulted or cancelled task, which a wait must not do -- the caller decides what a
+				// failure means. Anything else (a disposed handle, an interrupt) is not completion, so ask the task.
+				return task.IsCompleted;
+			}
+		}
+
 		internal static void WaitWithMessagePump(Func<bool> keepWaiting, bool propagateExit = true)
 		{
 			while (keepWaiting())

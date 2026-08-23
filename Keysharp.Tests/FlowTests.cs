@@ -358,6 +358,24 @@ namespace Keysharp.Tests
             }
         }
 
+        // Forces the headless branch, where there is no UI framework to marshal through. Without it a display
+        // is present and RunMainWindow takes the GUI path, so this scenario never reaches the code it covers.
+        [Test, Category("Flow"), NonParallelizable]
+        public void FlowRealThreadHeadlessMarshal()
+        {
+            var previous = Environment.GetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS");
+            Environment.SetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS", "1");
+
+            try
+            {
+                Assert.IsTrue(TestScript("flow-realthread-headless-marshal", false));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS", previous);
+            }
+        }
+
         [Test, Category("Flow")]
         public void FlowSwitch() => Assert.IsTrue(TestScript("flow-switch", false));
 

@@ -1157,6 +1157,15 @@ namespace Keysharp.Builtins
 				{
 					if (pt == typeof(Type) || pt.IsAssignableFrom(typeof(Type))) { score += 0; continue; }
 				}
+				// Overload selection happens before ConvertScalarToCLR unwraps, so without this a Ks.Task scores
+				// as an unrelated object and ties with every candidate -- Task.WhenAny(t) would pick the
+				// IEnumerable<Task> overload and fail at Invoke.
+				if (arg is Ks.KeysharpTask kt && kt.Underlying is { } ktask)
+				{
+					var taskType = ktask.GetType();
+					if (pt == taskType) { score += 0; continue; }
+					if (pt.IsAssignableFrom(taskType)) { score += 1; continue; }
+				}
 
 				// numeric-ish
 				if (IsNumericType(pt) && IsNumericLike(arg)) { score += 1; continue; }
@@ -1216,23 +1225,20 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Maps a CLR exception onto the matching Keysharp error so a script `try/catch` can see it.
-		/// Without this, anything thrown out of a member reached through <see cref="Ks.Clr"/> escapes as a raw CLR
-		/// exception and terminates the pseudo-thread, which makes the escape hatch unusable defensively -- a script
-		/// cannot probe for an optional assembly or member without risking the whole run.
+		/// Turns a CLR exception into the Keysharp <see cref="Error"/> representing it, without raising it, so a
+		/// failure a script inspects rather than catches -- <c>Task.Error</c> above all -- describes itself with
+		/// the same object and wording as one it catches.
 		/// Reflection wraps everything in <see cref="TargetInvocationException"/>, so that is peeled off first;
 		/// otherwise every message would read "Exception has been thrown by the target of an invocation."
-		/// A <see cref="KeysharpException"/> passes through untouched: it is already a script error (typically thrown
-		/// by a script callback the CLR called back into), and re-wrapping would hide its type from `catch`.
 		/// </summary>
-		[StackTraceHidden]
-		internal static object ThrowMapped(Exception ex, string what)
+		internal static Error MapException(Exception ex, string what)
 		{
-			while (ex is TargetInvocationException tie && tie.InnerException != null)
-				ex = tie.InnerException;
+			ex = Unwind(ex);
 
-			if (ex is KeysharpException)
-				throw ex;
+			// Already a script error, typically thrown by a script callback the CLR called back into. Re-wrapping
+			// would hide its type from `catch`.
+			if (ex is KeysharpException kse)
+				return kse.UserError ?? new Error(kse.Message);
 
 			var msg = $"{what} threw {ex.GetType().Name}: {ex.Message}";
 			// Order matters: ArgumentOutOfRangeException derives from ArgumentException, so it has to be tested first.
@@ -1240,7 +1246,7 @@ namespace Keysharp.Builtins
 			// Exception to read one from), and it derives Message itself -- passing a string there would leave the
 			// caller reading "The operation completed successfully." So it gets the exception, and the context goes
 			// into What, where the other error types put it via the message.
-			Error err = ex switch
+			return ex switch
 			{
 				ArgumentOutOfRangeException or IndexOutOfRangeException => new IndexError(msg),
 				KeyNotFoundException => new KeyError(msg),
@@ -1253,7 +1259,33 @@ namespace Keysharp.Builtins
 					or IOException or UnauthorizedAccessException => new OSError(ex, what),
 				_ => new Error(msg),
 			};
+		}
+
+		/// <summary>
+		/// Raises the Keysharp error matching <paramref name="ex"/> so a script `try/catch` can see it. Without
+		/// this, anything thrown out of a member reached through <see cref="Ks.Clr"/> escapes as a raw CLR
+		/// exception and terminates the pseudo-thread, which makes the escape hatch unusable defensively -- a
+		/// script could not probe for an optional assembly or member without risking the whole run.
+		/// </summary>
+		[StackTraceHidden]
+		internal static object ThrowMapped(Exception ex, string what)
+		{
+			ex = Unwind(ex);
+
+			if (ex is KeysharpException)
+				throw ex;
+
+			var err = MapException(ex, what);
 			return Errors.ErrorOccurred(err) ? throw err : DefaultObject;
+		}
+
+		/// <summary>Peels the <see cref="TargetInvocationException"/> layers reflection adds.</summary>
+		private static Exception Unwind(Exception ex)
+		{
+			while (ex is TargetInvocationException { InnerException: { } inner })
+				ex = inner;
+
+			return ex;
 		}
 
 		// -------- Conversions (Keysharp <-> CLR) --------
@@ -1306,6 +1338,16 @@ namespace Keysharp.Builtins
 				if (target == null) return mi._instance;
 				if (target.IsByRef) return ConvertScalarToCLR(mi._instance, target.GetElementType());
 				return ConvertScalarToCLR(mi._instance, target);
+			}
+			// A Ks.Task hands its underlying task to a Task-shaped parameter, so a script task can go back into
+			// Task.WhenAll and friends. Unlike ManagedInstance it stays wrapped for an untyped slot: a Ks.Task
+			// is a script object in its own right, and an `object` parameter should receive it as one.
+			if (value is Ks.KeysharpTask kst && target != null)
+			{
+				var want = target.IsByRef ? target.GetElementType() : target;
+
+				if (want != typeof(object) && want.IsInstanceOfType(kst.Underlying))
+					return kst.Underlying;
 			}
 #if WINDOWS
 			if (value is ComValue cv) // allow COM pointer to be passed on
@@ -1362,6 +1404,13 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		/// <summary>
+		/// Wraps a CLR object as a <c>Ks.Clr</c> instance without the Task interception <see cref="ConvertOut"/>
+		/// applies. This is what <c>Task.Clr</c> hands back, so the raw task surface stays reachable.
+		/// </summary>
+		internal static object WrapManaged(object value) =>
+			value == null ? null : new Clr.ManagedInstance(value.GetType(), value);
+
 		internal static object ConvertOut(object value)
 		{
 			if (value == null) return null;
@@ -1370,6 +1419,12 @@ namespace Keysharp.Builtins
 			if (value is string or bool or long or double or Any) return value;
 
 			if (value is Type t) return new Clr.ManagedType(t);
+
+			// A task becomes Ks.Task so Ks.Clr and #CSharp agree on what work-in-flight looks like, and so
+			// `.Result` is a snapshot rather than a hard block that would freeze the message loop. One isinst,
+			// on a path that was already allocating a ManagedInstance. ValueTask is a struct and is deliberately
+			// left alone here; Await() and the Task() constructor accept it.
+			if (value is Task task) return Ks.KeysharpTask.Wrap(task);
 
 			// Every other numeric gets the same widening ArgCoercer applies to a typed return on the script side, so
 			// the two directions of this boundary cannot disagree about what an Int32 or a Single looks like.

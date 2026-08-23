@@ -382,7 +382,9 @@ internal bool HasBlockedQueuedWork
 			if (OwnsCurrentThread)
 				return func();
 
-			if (isUiScheduler)
+			// Hand off to the UI framework only when there is one. Without it the queue below is the marshal --
+			// it targets this same thread, and whoever is pumping serves it.
+			if (isUiScheduler && script.UIThreadContext != null)
 				return Script.InvokeOnUIThread(func);
 
 			using var completed = new ManualResetEventSlim(false);

@@ -669,6 +669,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 			+ `ManagedType` may be accessed for static methods/properties, or called to create a new `ManagedInstance`.
 			+ `ManagedInstance` may be accessed with normal AutoHotkey syntax for properties, methods, and indexer access. Example: `linq.Where(nums, isOdd)`
 			+ Basic type marshalling between AutoHotkey and CLR is supported (including function objects), more complicated types may not currently work.
+			+ A script function handed to a CLR API runs on the script thread that created it, in its own pseudo-thread, so `A_*` values, `Critical` and GUI access all behave normally and an error in it is reported rather than killing the process. One the CLR invokes on its own thread — `Parallel.ForEach`, PLINQ, `Task.Run` — is therefore queued rather than run in place, and the CLR caller receives the return type's default value instead of the script's answer. A comparer or predicate passed into a synchronous call still runs inline and still returns normally.
 			+ An enum-typed parameter or property takes a plain Integer, since a script has no enum type: `File.SetUnixFileMode(path, 0x180)`. The value does not have to be a declared member, so a flag combination can be built in script with `|`. The member itself works equally well when fetched through `Clr` (`System.StringComparison.OrdinalIgnoreCase`), and an enum coming back from CLR stays a wrapped member rather than widening to an Integer — take its name with `.ToString()`. A value with no numeric reading raises a `TypeError`, as it does for any other integral parameter.
 		+ `Clr.GetNamespaceName(ManagedNamespace)` returns the full intenal namespace name of the namespace wrapped by `ManagedNamespace`.
 		+ `Clr.GetTypeName(ManagedType)` returns the full internal type name of the type wrapped by `ManagedType`.
@@ -811,6 +812,53 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 		+ `Wait` reports *completion*, not the body's value — that is `Result` — so a timeout is distinguishable from a body that returned nothing.
 		+ An uncaught error in a body is reported on the thread where it happened, exactly like one in a timer or hotkey body, and sets `Status` to `"Error"`. It is never smuggled to a later `Wait`.
 		+ A worker that registered a timer, hotkey or callback keeps serving them after its body returns; `Exit` is how it is shut down. `Wait`, `ContinueWith` and `Exit` throw `TargetError` on `RealThread.Main` and on adopted threads, which have no body of their own.
+	+ `Task`: Work that finishes later. Every CLR call returning a .NET `Task` hands one of these back, so `Ks.Clr` and `#CSharp` agree on what work-in-flight looks like.
+		```
+		class Task
+		{
+			static Call(clrTask) => Task        ; wrap a Task or ValueTask reached some other way
+			Result => Any                       ; the value if it has finished, "" otherwise. Never waits.
+			Status => String                    ; "Running", then "Done", "Error" or "Canceled"
+			Error => Any                        ; the failure as a catchable error object, "" otherwise
+			Clr => Any                          ; the underlying CLR task, for IsCompleted/ContinueWith/…
+			Wait([Timeout := -1]) => Boolean     ; true if it finished, false if the timeout elapsed first
+			Then(funcobj) => Task               ; run funcobj(task) afterwards, on this script thread
+			                                    ; funcobj may declare no parameter if it does not want the task
+			static WhenAll(tasks*) => Task      ; finishes when all do; Result is an Array of their results
+			static WhenAny(tasks*) => Task      ; finishes when the first does; Result is that one's result
+			static Source() => TaskSource       ; a task the script settles itself
+		}
+
+		class TaskSource
+		{
+			Task => Task                        ; the task to hand to Await/Then/WhenAll/WhenAny
+			Resolve([Value]) => Boolean         ; finish it successfully; true if this call settled it
+			Reject([Reason]) => Boolean         ; finish it as failed; Reason may be an Error or a string
+		}
+		```
+		+ `Result` is a snapshot and never blocks, exactly like `RealThread.Result`. `Await(task)` and `Wait` are the waiting forms, and both pump, so timers, hotkeys and the GUI stay alive while a script waits.
+		+ `Then` is the only non-blocking way to react. Its callback receives the task and may declare no parameter if it does not want it; it runs on the script thread that owns the task, in its own pseudo-thread, so `A_*` variables, `Critical` and GUI access all behave normally. It returns a new `Task` carrying the callback's own outcome — its return value, or its failure — so `Await` on a chain reports what went wrong instead of resolving to nothing. `Then` does not flatten: a callback returning a `Task` yields a `Task` whose `Result` is that inner task.
+		+ `Task.Source()` makes a task the script settles itself, which is how a callback-shaped source of events — a hotkey, a GUI control, a device notification — takes part in `WhenAny` or is handed to `Await`. Settling is one-shot and idempotent: the first `Resolve` or `Reject` decides the outcome and returns true, later calls return false without raising, so several handlers may safely race.
+			```
+			gate := Task.Source()
+			OnKey() => gate.Resolve("user")               ; from a hotkey, a GUI event, anywhere
+			winner := Await(Task.WhenAny(gate.Task, Download()))
+			```
+		+ There is deliberately no `Cancel()`: .NET cannot cancel a task it did not create. Pass a token instead — `cts := Clr.System.Threading.CancellationTokenSource()`, `t := api.FooAsync(url, cts.Token)`, `cts.Cancel()` — and `Status` then reports `"Canceled"`. Likewise no `Delay`/`Completed`/`Run`: `Clr.System.Threading.Tasks.Task.Delay(ms)` and `.FromResult(v)` both come back as a `Task` through the ordinary boundary, and `RealThread(fn)` runs script code on another thread.
+		+ A failure nobody ever looks at is reported as an ordinary script error when the task is collected — the same terms .NET reports one on, so a task you are about to `Await` is never reported out from under you.
+		+ `Await`, `WhenAll` and `WhenAny` also accept a `RealThread`. A `RealThread` reports a failing body on its own thread (like a timer or hotkey body), so awaiting one yields its `Result` — empty if it failed — and never rethrows; check its `Status` instead. `RealThread.Main` and adopted threads have no body to wait for and raise a `TargetError`.
+
+	+ `Await(value [, timeout := -1])`: Waits for work that finishes later — a `Task`, a `RealThread`, or a CLR task reached through `Ks.Clr` — and returns what it produced. This is Keysharp's `await`.
+		+ It does not suspend the way C#'s `await` suspends a method: a Keysharp pseudo-thread runs to completion on its own frame. Instead it blocks the calling thread and pumps everything else, exactly as `Sleep`, `WinWait` and `RealThread.Wait` do, so timers, hotkeys and the GUI stay alive throughout.
+		+ Because it pumps, it is an interruption point: another pseudo-thread can start while it waits, just as inside `Sleep`. That matters most around `Lock`, whose ownership is per real thread and reentrant — a timer that acquires and releases the same lock during an `Await` releases the waiting thread's acquisition. Use `Critical` to hold a section closed across a wait.
+		+ A failure is rethrown as a catchable Keysharp error; a timeout raises `TimeoutError`. `task.Wait(timeout)` is the non-throwing form. Passing something that does not finish later raises a `TypeError` rather than silently handing the value back.
+		```
+		#import KS { Task, Await }
+		docx := Await(MakeDocx(html))                 ; block here, stay responsive
+		d := MakeDocx(html), p := MakePdf(html)       ; or run both, then join
+		results := Await(Task.WhenAll(d, p))
+		MakePdf(html).Then(t => FileAppend(t.Result, out))   ; or never block at all
+		```
 	+ `Lock`: Guards code shared between real threads where `LockRun` cannot — a timed acquire, or a lock held across several statements. `LockRun` remains the one-call form and is not duplicated on the class.
 		```
 		class Lock

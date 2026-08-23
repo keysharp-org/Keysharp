@@ -2387,6 +2387,49 @@ namespace Keysharp.Compilation.Syntax
 				_ => true
 			};
 
+		// A returned Task<T> reaches the script as a Ks.Task whose Result is T, so T crosses the boundary too and
+		// has to answer the same question -- otherwise every rejected return type is reachable again just by
+		// wrapping it. A Task<T> parameter crosses nothing: CoerceBoundaryCast hands over the task itself, so T
+		// is never converted and the rule does not apply there.
+		private static bool IsUnsupportedBoundaryReturn(TypeSyntax type)
+		{
+			// Only Task is intercepted on the way out, so a ValueTask would reach the script as an opaque Clr
+			// object with no Status, Wait or Then -- which reads as the feature silently not working.
+			if (TypeNameOf(type) is "ValueTask")
+				return true;
+
+			if (AwaitedTypeArgument(type) is { } awaited)
+				return IsUnsupportedBoundaryReturn(awaited);
+
+			return IsUnsupportedBoundaryType(type);
+		}
+
+		/// <summary>The T of a <c>Task&lt;T&gt;</c> in any spelling, else null.</summary>
+		private static TypeSyntax AwaitedTypeArgument(TypeSyntax type)
+		{
+			var generic = type switch
+			{
+				GenericNameSyntax g => g,
+				QualifiedNameSyntax { Right: GenericNameSyntax qg } => qg,
+				AliasQualifiedNameSyntax { Name: GenericNameSyntax ag } => ag,
+				_ => null
+			};
+			return generic is { TypeArgumentList.Arguments.Count: 1 }
+				   && generic.Identifier.ValueText is "Task"
+				   ? generic.TypeArgumentList.Arguments[0]
+				   : null;
+		}
+
+		/// <summary>The rightmost identifier of a named type in any spelling, else null.</summary>
+		private static string TypeNameOf(TypeSyntax type) => type switch
+		{
+			IdentifierNameSyntax id => id.Identifier.ValueText,
+			GenericNameSyntax generic => generic.Identifier.ValueText,
+			QualifiedNameSyntax qualified => qualified.Right.Identifier.ValueText,
+			AliasQualifiedNameSyntax alias => alias.Name.Identifier.ValueText,
+			_ => null
+		};
+
 		private static bool IsUnsupportedBoundaryType(TypeSyntax type)
 		{
 			if (type is PointerTypeSyntax or FunctionPointerTypeSyntax or RefTypeSyntax or NullableTypeSyntax or TupleTypeSyntax)
@@ -2395,18 +2438,11 @@ namespace Keysharp.Compilation.Syntax
 			if (type is PredefinedTypeSyntax predefined)
 				return predefined.Keyword.IsKind(SyntaxKind.CharKeyword) || predefined.Keyword.IsKind(SyntaxKind.DecimalKeyword);
 
-			var name = type switch
-			{
-				IdentifierNameSyntax id => id.Identifier.ValueText,
-				GenericNameSyntax generic => generic.Identifier.ValueText,
-				QualifiedNameSyntax qualified => qualified.Right.Identifier.ValueText,
-				AliasQualifiedNameSyntax alias => alias.Name.Identifier.ValueText,
-				_ => null
-			};
+			var name = TypeNameOf(type);
 			// Char/Decimal/Nullable: the spelled-out forms of the keyword rejections above, so `System.Char` gets
-			// the same verdict as `char`. This is a NAME check by design (no binding happens during lowering), so
-			// a `using` alias for one of these, or a user-defined ref struct, is not recognized here — those fail
-			// at the call instead, and the docs say so.
+			// the same verdict as `char`. This matches on the name by design, since no binding happens during
+			// lowering, so a `using` alias for one of these, or a user-defined ref struct, is not recognized here
+			// — those fail at the call instead, and the docs say so.
 			return name is "Span" or "ReadOnlySpan" or "TypedReference" or "ArgIterator" or "Char" or "Decimal" or "Nullable";
 		}
 
@@ -2438,7 +2474,17 @@ namespace Keysharp.Compilation.Syntax
 				return false;
 			}
 
-			if (IsUnsupportedBoundaryType(meth.ReturnType))
+			// Only Task crosses as a script Task; a ValueTask would arrive as an opaque Clr object with no
+			// Status, Wait or Then, which reads as the feature silently not working. Ahead of the general
+			// return-type check so the message names the actual problem.
+			if (TypeNameOf(meth.ReturnType) is "ValueTask")
+			{
+				Diag($"{at}#CSharp: public method '{meth.Identifier.Text}' returns ValueTask, which a script cannot wait "
+					 + "for. Return 'Task' or 'Task<T>', or make the method non-public.");
+				return false;
+			}
+
+			if (IsUnsupportedBoundaryReturn(meth.ReturnType))
 			{
 				Diag($"{at}#CSharp: public method '{meth.Identifier.Text}' has a return type that cannot be handed to a script. "
 					 + "Use a supported scalar/reference type or make the method non-public.");
@@ -2449,6 +2495,18 @@ namespace Keysharp.Compilation.Syntax
 			{
 				Diag($"{at}#CSharp: public method '{meth.Identifier.Text}' is generic, and a script cannot supply a type argument. "
 					 + "Make it non-generic, or non-public if no script was meant to call it.");
+				return false;
+			}
+
+			// `async void` has nowhere to put a failure: the exception is raised on whatever context the method
+			// captured rather than travelling back with a task, so the script can neither await it nor catch it,
+			// and on the scheduler path it is swallowed outright. `async Task` carries both the completion and
+			// the failure, which is what Await() and Task.Error read.
+			if (meth.Modifiers.Any(t => t.IsKind(SyntaxKind.AsyncKeyword))
+					&& meth.ReturnType is PredefinedTypeSyntax { Keyword: var kw } && kw.IsKind(SyntaxKind.VoidKeyword))
+			{
+				Diag($"{at}#CSharp: public method '{meth.Identifier.Text}' is 'async void', so a script cannot wait for it "
+					 + "or see it fail. Return 'async Task' or 'async Task<T>', or make the method non-public.");
 				return false;
 			}
 
@@ -2577,7 +2635,7 @@ namespace Keysharp.Compilation.Syntax
 									Diag($"{at}#CSharp: '{cn}' is a name Keysharp generates into this class; rename it");
 						}
 
-						if (m is PropertyDeclarationSyntax pv && IsScriptVisible(pv) && IsUnsupportedBoundaryType(pv.Type))
+						if (m is PropertyDeclarationSyntax pv && IsScriptVisible(pv) && IsUnsupportedBoundaryReturn(pv.Type))
 							Diag($"{at}#CSharp: public property '{pv.Identifier.Text}' has a type that cannot be handed to a script. "
 								 + "Use a supported scalar/reference type or make it non-public.");
 

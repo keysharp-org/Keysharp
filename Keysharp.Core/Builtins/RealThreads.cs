@@ -78,7 +78,13 @@ namespace Keysharp.Builtins
 				_ = schedulerSource.TrySetResult(scheduler);
 			}
 
-			private Task<object> Task => completion?.Task;
+			/// <summary>
+			/// This worker's completion, or null for the main and adopted threads, which never finish. Internal
+			/// rather than public on purpose: <c>Await</c> and <c>Task.WhenAll</c>/<c>WhenAny</c> take a
+			/// RealThread through this, but a script-visible <c>Task</c> property would be a second view of the
+			/// same body which answers differently from <see cref="Result"/> about whether it failed.
+			/// </summary>
+			internal Task<object> Task => completion?.Task;
 
 			private bool IsWorker => completion != null;
 
@@ -267,14 +273,7 @@ namespace Keysharp.Builtins
 				if (OwnsCurrentThread())
 					return Errors.TargetErrorOccurred("A real thread cannot wait on itself.", false);
 
-				var timeoutVal = timeout.Ai(-1);
-				var start = Environment.TickCount64;
-				var task = Task;
-
-				while (!task.IsCompleted && (timeoutVal < 0 || Environment.TickCount64 - start < timeoutVal))
-					Keysharp.Internals.Flow.TryDoEvents();
-
-				return task.IsCompleted;
+				return Keysharp.Internals.Flow.WaitForTask(Task, timeout.Ai(-1));
 			}
 
 			/// <summary>

@@ -49,6 +49,12 @@ namespace Keysharp.Runtime
 		/// control creation) onto the thread the UI framework demands. Backed by
 		/// <see cref="WindowsFormsSynchronizationContext"/>/<see cref="EtoSynchronizationContext"/>, set up by
 		/// <see cref="InitializeUIThreadContext"/>.
+		/// <para>
+		/// Null when there is no UI framework (headless), which is what <c>Gui</c> already tests for. It must
+		/// never be set to a scheduler's own DispatchContext: this field means "somewhere else to marshal
+		/// to", so pointing it at our own scheduler makes a cross-thread call arrive back where it started --
+		/// <see cref="ScriptEventScheduler.InvokeSynchronous"/> would delegate here and be delegated straight
+		/// back, recursing until the stack is gone.</para>
 		/// </summary>
 		public SynchronizationContext UIThreadContext;
 
@@ -868,11 +874,25 @@ namespace Keysharp.Runtime
 			}
 
 			if (script.UIThreadContext != null)
+			{
 				script.UIThreadContext.Send(_ => action(), null);
+				return;
+			}
 #if !WINDOWS
-			else if (Application.Instance != null)
+
+			if (Application.Instance != null)
+			{
 				Application.Instance.Invoke(action);
+				return;
+			}
+
 #endif
+
+			// No UI framework to marshal through. Queue onto the main thread rather than running here: this is
+			// main-thread work, and executing it on the caller is the silent-wrong-thread bug, not a fallback.
+			// Terminating, because InvokeSynchronous only delegates back here when UIThreadContext is non-null.
+			if (script.uiEventScheduler is { IsDisposed: false } ui)
+				_ = ui.InvokeSynchronous(() => { action(); return true; });
 			else
 				action();
 		}
@@ -884,22 +904,27 @@ namespace Keysharp.Runtime
 
 			var script = TheScript;
 
-			if (script == null || script.IsOnMainThread || script.UIThreadContext == null)
-			{
-#if !WINDOWS
-				if (script != null && !script.IsOnMainThread && Application.Instance != null)
-				{
-					T appResult = default;
-					Application.Instance.Invoke(() => appResult = action());
-					return appResult;
-				}
-#endif
+			if (script == null || script.IsOnMainThread)
 				return action();
+
+			if (script.UIThreadContext != null)
+			{
+				T uiResult = default;
+				script.UIThreadContext.Send(_ => uiResult = action(), null);
+				return uiResult;
+			}
+#if !WINDOWS
+
+			if (Application.Instance != null)
+			{
+				T appResult = default;
+				Application.Instance.Invoke(() => appResult = action());
+				return appResult;
 			}
 
-			T uiResult = default;
-			script.UIThreadContext.Send(_ => uiResult = action(), null);
-			return uiResult;
+#endif
+
+			return script.uiEventScheduler is { IsDisposed: false } ui ? ui.InvokeSynchronous(action) : action();
 		}
 
 		internal static void PostToUIThread(Action action)

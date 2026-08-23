@@ -482,6 +482,9 @@ namespace Keysharp.Tests
 		public void CSharpClrBoundary() => Assert.IsTrue(TestScript("directive-csharp-clr", false));
 
 		[Test, Category("Directives"), NonParallelizable]
+		public void CSharpAsyncBoundary() => Assert.IsTrue(TestScript("directive-csharp-async", false));
+
+		[Test, Category("Directives"), NonParallelizable]
 		public void CSharpPreprocessor()
 		{
 			var dir = Path.Combine(Path.GetTempPath(), "ks_csif_" + Guid.NewGuid().ToString("N"));
@@ -928,6 +931,14 @@ namespace Keysharp.Tests
 					("public static unsafe long* Ptr(object @this) => null;", "return type", "pointer return"),
 					("public static T Gen<T>(object @this, T t) => t;", "is generic", "generic member"),
 					("public System.Span<byte> View => default;", "property", "Span-typed property"),
+					// A Task<T> is unwrapped to a Ks.Task whose Result is T, so T faces the same rule -- otherwise
+					// every rejection above is reachable again just by wrapping it in Task<>.
+					("public static System.Threading.Tasks.Task<char> Ch(object @this) => null;", "return type", "Task of a rejected type"),
+					// Only Task is intercepted on the way out, so a ValueTask would reach the script as an opaque
+					// Clr object. Both the method and the property path have to say so.
+					("public static async System.Threading.Tasks.ValueTask Vt(object @this) { await System.Threading.Tasks.Task.Delay(1); }", "ValueTask", "async ValueTask member"),
+					("public System.Threading.Tasks.ValueTask<long> Pending => default;", "property", "ValueTask-typed property"),
+					("public static async void OnFire(object @this) { await System.Threading.Tasks.Task.Delay(1); }", "async void", "async void member"),
 				})
 				{
 					var (arr, code) = Compile(member, "clssig");

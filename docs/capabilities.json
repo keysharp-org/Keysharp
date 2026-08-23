@@ -7317,6 +7317,39 @@
                  },
                  {
                      "category":  "Automation",
+                     "feature":  "Task",
+                     "syntax":  "#import KS { Task }",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Work that finishes later; every CLR call returning a .NET Task hands one back. Result is a snapshot that never waits, Await(task) and Wait([Timeout]) are the waiting forms, and Then(fn) reacts without blocking.",
+                     "tested-by":  "directive-csharp-async.ahk"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "TaskSource",
+                     "syntax":  "Task.Source()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The settling half of a Task the script owns: hand .Task to whoever waits, then Resolve([Value]) or Reject([Reason]) when the answer arrives. This is how a hotkey or GUI event takes part in Task.WhenAny.",
+                     "tested-by":  "directive-csharp-async.ahk"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "Await()",
+                     "syntax":  "#import KS { Await } / Await(Value [, Timeout := -1])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Waits for a Task, a RealThread, or a CLR task and returns its value. Blocks the calling pseudo-thread while pumping everything else, like Sleep, so it is an interruption point rather than a suspension.",
+                     "tested-by":  "directive-csharp-async.ahk"
+                 },
+                 {
+                     "category":  "Automation",
                      "feature":  "Lock",
                      "syntax":  "#import KS { Lock }",
                      "windows":  "full",

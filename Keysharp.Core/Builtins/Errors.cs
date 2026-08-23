@@ -302,6 +302,16 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
+		/// Internal helper to handle timeouts. Throws a <see cref="TimeoutError"/> or returns <see cref="DefaultObject"/>.
+		/// </summary>
+		[StackTraceHidden]
+		internal static object TimeoutErrorOccurred(string text, object ret = null)
+		{
+			Error err;
+			return ErrorOccurred(err = new TimeoutError(text)) ? throw err : ret ?? DefaultObject;
+		}
+
+		/// <summary>
 		/// Internal helper to handle type errors. Throws a <see cref="TypeError"/> or returns <see cref="DefaultObject"/>.
 		/// </summary>
 		[StackTraceHidden]

@@ -21,7 +21,42 @@ namespace Keysharp.Builtins
 		private static readonly ConcurrentDictionary<Type, Func<object, Delegate>> _cache = new();
 
 		public static Delegate FromKeysharpFunc(Type delegateType, object callable)
-			=> _cache.GetOrAdd(delegateType, BuildFactoryFor)(callable);
+		{
+			// Neither is script code, so neither needs a script thread to run on or an error boundary around it,
+			// and wrapping one would only cost it its return value. A ClrCallbackShim in particular already owns
+			// the marshalling decision -- ClrEvents wraps its dispatcher in one precisely so it can make that
+			// choice per event, including the inline path on which a handler can cancel an event.
+			if (callable is ClrCallbackShim or Delegate)
+				return _cache.GetOrAdd(delegateType, BuildFactoryFor)(callable);
+
+			return _cache.GetOrAdd(delegateType, BuildFactoryFor)(
+					   new OwnedCallable(callable, Script.TheScript?.EventScheduler, DefaultReturnFor(delegateType)));
+		}
+
+		/// <summary>
+		/// A script callable plus the scheduler that owned the thread which handed it to the CLR, and the value
+		/// an off-thread call hands back. All resolved once here rather than per invocation: this shim is the
+		/// body of every marshalled delegate call, so it runs once per element for <c>list.ForEach</c> and once
+		/// per element per stage for LINQ.
+		/// </summary>
+		private sealed class OwnedCallable(object callable, ScriptEventScheduler owner, object defaultReturn)
+		{
+			internal readonly object Callable = callable;
+			internal readonly ScriptEventScheduler Owner = owner;
+			// An off-thread call cannot produce the script's answer in time, so it hands over a value the
+			// delegate's return type already accepts. A script value would go through the shim's coercion and
+			// raise a TypeError on the CLR's own thread for anything numeric, which is the
+			// unhandled-foreign-thread failure this marshalling exists to remove.
+			internal readonly object DefaultReturn = defaultReturn;
+		}
+
+		private static object DefaultReturnFor(Type delegateType)
+		{
+			var returnType = delegateType.GetMethod("Invoke")?.ReturnType;
+			return returnType == null || returnType == typeof(void) || !returnType.IsValueType
+				   ? null
+				   : Activator.CreateInstance(returnType);
+		}
 
 		private static Func<object, Delegate> BuildFactoryFor(Type delType)
 		{
@@ -303,7 +338,62 @@ namespace Keysharp.Builtins
 		}
 
 
+		/// <summary>
+		/// Runs a script callable the CLR is invoking through a marshalled delegate.
+		/// <para>
+		/// Same rule as a CLR event handler (<c>ClrEventRegistration.Dispatch</c>): inline when we are already on
+		/// the owning script thread, otherwise queued as a pseudo-thread on its owner. Inline is not merely an
+		/// optimisation -- a comparer or predicate the script passed into a synchronous call arrives on the
+		/// script thread, and it is the only path on which the CLR caller can observe a return value.</para>
+		/// <para>
+		/// Off-thread delivery is deliberately fire-and-forget rather than a synchronous hop. Blocking a foreign
+		/// thread on the script thread deadlocks the moment that script thread is itself inside the CLR call
+		/// which invoked the callback -- <c>Parallel.ForEach</c>, PLINQ and <c>Task.Run</c> are exactly that
+		/// case. The cost is that such a callback cannot return a value to the CLR caller, which is documented.</para>
+		/// <para>
+		/// What the queued path buys is a real pseudo-thread: correct <c>A_*</c>, <c>Critical</c> and
+		/// <c>CoordMode</c> state, synchronised GUI access, and an error reported through the script's own error
+		/// path rather than escaping as an unhandled CLR exception on a foreign thread.</para>
+		/// </summary>
 		private static object InvokeKeysharpFunc(object func, object[] args)
+		{
+			if (func is not OwnedCallable owned)
+				return CallDirect(func, args);
+
+			var scheduler = owned.Owner ?? Script.TheScript?.EventScheduler;
+
+			// OwnsCurrentThread first: it is the branch the inline path needs, and this runs once per element
+			// for list.ForEach and once per element per stage for LINQ.
+			if (scheduler == null || scheduler.OwnsCurrentThread || scheduler.IsDisposed
+					|| Script.TheScript is not { hasExited: false })
+				return CallDirect(owned.Callable, args);
+
+			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
+			{
+				using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, ThreadKind.Clr);
+
+				if (!thread.Started)
+					return thread.Result;
+
+				try
+				{
+					_ = CallDirect(owned.Callable, args);
+				}
+				catch (Exception ex)
+				{
+					_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
+				}
+				finally
+				{
+					Script.TheScript.ExitIfNotPersistent();
+				}
+
+				return ScriptEventExecutionResult.Executed;
+			});
+			return owned.DefaultReturn;
+		}
+
+		private static object CallDirect(object func, object[] args)
 		{
 			if (func is KeysharpFunc fo) return fo.Call(args);
 			if (func is ClrCallbackShim shim) return shim.Invoke(args);
