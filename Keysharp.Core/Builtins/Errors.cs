@@ -453,7 +453,8 @@ namespace Keysharp.Builtins
 			get
 			{
 				EnsureStackInfo();
-				return _file;
+				// Always a string, like AHK: no PDB is emitted for script code, so a frame often has no file.
+				return _file ?? "";
 			}
 
 			internal set => _file = value;
@@ -474,7 +475,8 @@ namespace Keysharp.Builtins
 			get
 			{
 				EnsureStackInfo();
-				return _line;
+				// The unset sentinel never reaches a script: a frame with no line reads as 0, as it does in AHK.
+				return _line == long.MinValue ? 0 : _line;
 			}
 
 			internal set => _line = value;
@@ -507,7 +509,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				EnsureStackInfo();
-				return _stack;
+				return _stack ?? "";
 			}
 
 			internal set => _stack = value;
