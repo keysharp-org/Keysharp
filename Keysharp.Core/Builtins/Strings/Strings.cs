@@ -1832,6 +1832,24 @@ namespace Keysharp.Builtins
 		internal static int StrCmp(string left, string right, bool caseSensitive) => string.Compare(left, right, caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
 
 		/// <summary>
+		/// The bit pattern of a Format() argument read as unsigned, for the conversions that have no sign:
+		/// u, o, x, X and p. A negative value is its two's complement, the way AutoHotkey formats one, so
+		/// <c>Format("{:X}", -1)</c> is FFFFFFFFFFFFFFFF and a handle whose high bit is set keeps all 64 bits.
+		/// </summary>
+		private static ulong ToUnsignedBits(object arg) => unchecked((ulong)arg.Al());
+
+		/// <summary>
+		/// Whether a conversion takes a number, which is every one of them except s.
+		/// </summary>
+		private static bool IsNumericSpec(char type) =>
+		type is 'd' or 'i' or 'u' or 'o' or 'x' or 'X' or 'e' or 'E' or 'f' or 'F' or 'g' or 'G' or 'a' or 'A' or 'c' or 'C' or 'p' or 'P';
+
+		/// <summary>
+		/// Whether a conversion takes a floating-point number rather than an integer.
+		/// </summary>
+		private static bool IsFloatSpec(char type) => type is 'e' or 'E' or 'f' or 'F' or 'g' or 'G' or 'a' or 'A';
+
+		/// <summary>
 		/// Converts an unsigned integer to its octal (base‑8) representation.
 		/// </summary>
 		private static string ConvertToOctal(ulong num)
@@ -1857,6 +1875,19 @@ namespace Keysharp.Builtins
 		/// </summary>
 		private static string FormatArgument(object arg, SpecInfo spec)
 		{
+			// A numeric conversion requires a number, which AutoHotkey rejects rather than substituting a value
+			// the script did not supply. Coercing it here also spares each case below a second parse.
+			if (IsNumericSpec(spec.Type))
+			{
+				if (IsFloatSpec(spec.Type))
+				{
+					if (arg is not double)
+						arg = arg.ToDouble();
+				}
+				else if (arg is not long)
+					arg = arg.ToLong();
+			}
+
 			switch (spec.Type)
 			{
 				// Integer formats – d or i.
@@ -1914,16 +1945,7 @@ namespace Keysharp.Builtins
 				// Unsigned integer.
 				case 'u':
 				{
-					ulong unum;
-
-					try
-					{
-						unum = Convert.ToUInt64(arg, CultureInfo.InvariantCulture);
-					}
-					catch
-					{
-						unum = 0;
-					}
+					var unum = ToUnsignedBits(arg);
 
 					string unumStr = spec.Precision.HasValue
 									 ? unum.ToString("D" + spec.Precision.Value, CultureInfo.InvariantCulture)
@@ -1948,16 +1970,7 @@ namespace Keysharp.Builtins
 				case 'x':
 				case 'X':
 				{
-					ulong hexnum;
-
-					try
-					{
-						hexnum = Convert.ToUInt64(arg, CultureInfo.InvariantCulture);
-					}
-					catch
-					{
-						hexnum = 0;
-					}
+					var hexnum = ToUnsignedBits(arg);
 
 					string hexStr = hexnum.ToString(spec.Type == 'x' ? "x" : "X", CultureInfo.InvariantCulture);
 
@@ -1986,16 +1999,7 @@ namespace Keysharp.Builtins
 				// Octal – not built in, so we convert manually.
 				case 'o':
 				{
-					ulong onum;
-
-					try
-					{
-						onum = Convert.ToUInt64(arg, CultureInfo.InvariantCulture);
-					}
-					catch
-					{
-						onum = 0;
-					}
+					var onum = ToUnsignedBits(arg);
 
 					string octStr = ConvertToOctal(onum);
 
@@ -2120,16 +2124,7 @@ namespace Keysharp.Builtins
 				case 'p':
 				case 'P':
 				{
-					ulong ptrVal;
-
-					try
-					{
-						ptrVal = Convert.ToUInt64(arg, CultureInfo.InvariantCulture);
-					}
-					catch
-					{
-						ptrVal = 0;
-					}
+					var ptrVal = ToUnsignedBits(arg);
 
 					// For example, output as 0x followed by 16 hexadecimal digits.
 					string ptrStr = ptrVal.ToString("x16", CultureInfo.InvariantCulture).ToUpperInvariant();
