@@ -478,7 +478,7 @@ namespace Keysharp.Internals.Invoke
 		/// </summary>
 		internal static bool TryGetSizeProperty(object item, out long size)
 		{
-			if (item is Keysharp.Builtins.Buffer buf) { size = buf.Size.Al(); return true; }//Buffer exposes Size directly; fast and the common case.
+			if (item is Keysharp.Builtins.Buffer buf) { size = buf.size; return true; }//Buffer exposes Size directly; fast and the common case.
 
 			if (item is Any kso && Script.GetPropertyValueOrNull(kso, "size") is object p) { size = p.Al(); return true; }
 

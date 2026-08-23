@@ -13,9 +13,10 @@ namespace Keysharp.Builtins
 		private bool disposed = false;
 
 		/// <summary>
-		/// The size of the buffer in bytes.
+		/// The size of the buffer in bytes. Internal, so the paths that read it once per call are spared the
+		/// boxing that the script-facing, object-typed <see cref="Size"/> costs.
 		/// </summary>
-		private long size;
+		internal long size;
 
 		/// <summary>
 		/// SafeHandle wrapper for the native memory pointer.
@@ -182,7 +183,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Returns a mutable Span wrapper for the raw buffer.
 		/// </summary>
-		internal unsafe Span<byte> AsSpan() => new Span<byte>((byte*)_ptr.DangerousGetHandle(), (int)(long)Size);
+		internal unsafe Span<byte> AsSpan() => new Span<byte>((byte*)_ptr.DangerousGetHandle(), (int)size);
 
 		/// <summary>
 		/// Indexer which retrieves or sets the value of an array element.
