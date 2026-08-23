@@ -99,8 +99,14 @@ namespace Keysharp.Runtime
 
 		public override void Post(SendOrPostCallback d, object state)
 		{
-			if (d != null)
-				scheduler.EnqueueCallback(() => d(state));
+			if (d == null)
+				return;
+
+			// Once the owning thread is gone the queue is cleared and nothing will ever drain it, so dropping the
+			// callback would leave whatever awaits it unfinished for good. There is no script thread left to
+			// marshal to, which makes the pool the honest destination rather than a fallback.
+			if (!scheduler.EnqueueCallback(() => d(state)))
+				_ = ThreadPool.QueueUserWorkItem(_ => d(state));
 		}
 
 		public override void Send(SendOrPostCallback d, object state)
@@ -119,10 +125,23 @@ namespace Keysharp.Runtime
 		}
 	}
 
-	internal readonly struct ScriptQueueEntry(long priority, Func<ScriptEventExecutionResult> execute)
+	internal readonly struct ScriptQueueEntry(long priority, Func<ScriptEventExecutionResult> execute, bool launchesThread)
 	{
 		internal readonly long Priority = priority;
 		internal readonly Func<ScriptEventExecutionResult> Execute = execute;
+
+		/// <summary>
+		/// Whether this entry reports launch admission (#MaxThreads, interruptibility, a visible menu) to the pump,
+		/// i.e. whether <see cref="Execute"/> can return <see cref="ScriptEventExecutionResult.GlobalBlocked"/>.
+		/// Those conditions gate thread launches, not message dispatch — as in AutoHotkey, where a Critical thread
+		/// still processes sent messages — so the pump keeps serving entries labelled false while launches are
+		/// refused.
+		/// <para>
+		/// This describes what the pump sees, not what the body does: a dispatch body may still start a
+		/// pseudo-thread internally (<see cref="ScriptEventScheduler.InvokeSynchronous"/> bodies do), in which case
+		/// it handles its own refusal rather than deferring to the pump.</para>
+		/// </summary>
+		internal readonly bool LaunchesThread = launchesThread;
 	}
 
 	internal ref struct ScriptPseudoThreadScope
@@ -173,6 +192,16 @@ namespace Keysharp.Runtime
 		private readonly int ownerManagedThreadId;
 		private readonly Script script;
 		private readonly Action postedPump;
+		private SynchronizationContext dispatchContext;
+
+		/// <summary>
+		/// This scheduler's dispatch transport: the <see cref="SynchronizationContext"/> which marshals a callback
+		/// onto the thread it serves. Every scheduler has one of the same kind, so a worker and the main thread
+		/// behave identically. Marshalling is all it does -- timers, hotkeys and the other thread launches are
+		/// scheduled, never posted, and do not travel through it.
+		/// </summary>
+		internal SynchronizationContext DispatchContext
+			=> dispatchContext ??= new ScriptEventSynchronizationContext(this);
 
 		internal ScriptEventScheduler(Script owner, int ownerManagedThreadId, bool isUiScheduler)
 		{
@@ -244,7 +273,9 @@ internal bool HasBlockedQueuedWork
 				return ownedDelegates.Count != 0 ? [.. ownedDelegates] : [];
 		}
 
-		internal bool Enqueue(ScriptEventQueue queueType, long priority, Func<ScriptEventExecutionResult> tryExecute)
+		/// <param name="launchesThread">See <see cref="ScriptQueueEntry.LaunchesThread"/>. Defaults to true because
+		/// every producer outside this class launches; non-launching work goes through EnqueueCallback.</param>
+		internal bool Enqueue(ScriptEventQueue queueType, long priority, Func<ScriptEventExecutionResult> tryExecute, bool launchesThread = true)
 		{
 			if (tryExecute == null)
 				return false;
@@ -254,10 +285,12 @@ internal bool HasBlockedQueuedWork
 				if (IsDisposed)
 					return false;
 
-				var entry = new ScriptQueueEntry(priority, tryExecute);
+				var entry = new ScriptQueueEntry(priority, tryExecute, launchesThread);
 				var queue = GetQueue(queueType);
 
-				// Interactive queue is always FIFO (used by InvokeSynchronous — ordering must be strict).
+				// Interactive queue is inserted FIFO (used by InvokeSynchronous — ordering must be strict). Service
+				// order can still differ: a pass which has been refused a thread launch serves dispatch entries past
+				// the parked launches ahead of them.
 				// Normal queue uses priority-sorted insertion: higher priority events go before lower ones,
 				// and same-priority events maintain FIFO order (new event goes after existing same-priority events).
 				if (queueType == ScriptEventQueue.Interactive || queue.Count == 0 || priority <= queue.Last.Value.Priority)
@@ -323,7 +356,7 @@ internal bool HasBlockedQueuedWork
 
 				action();
 				return ScriptEventExecutionResult.Executed;
-			});
+			}, launchesThread: false);
 
 		internal bool EnqueueCallback(Action action, ScriptEventQueue queueType, bool useTryCatch, long priority = 0)
 			=> useTryCatch
@@ -335,7 +368,7 @@ internal bool HasBlockedQueuedWork
 
 						_ = Keysharp.Internals.Flow.TryCatch(action);
 						return ScriptEventExecutionResult.Executed;
-					})
+					}, launchesThread: false)
 				: EnqueueCallback(action, queueType, priority);
 
 		internal T InvokeSynchronous<T>(Func<T> func)
@@ -401,13 +434,17 @@ internal bool HasBlockedQueuedWork
 
 				while (true)
 				{
-					switch (TryProcessNextQueuedEvent(ref consecutiveInteractiveLocalBlocks, ref consecutiveNormalLocalBlocks, ref preferNormalOnce))
+					switch (TryProcessNextQueuedEvent(blocked, ref consecutiveInteractiveLocalBlocks, ref consecutiveNormalLocalBlocks, ref preferNormalOnce))
 					{
 						case ScriptEventExecutionResult.Executed:
 							continue;
 						case ScriptEventExecutionResult.GlobalBlocked:
+							// The entry is parked at the front of its queue. Latch so the rest of this pass skips
+							// launches, keeping that class in order, and keep draining dispatch. A parked launch is
+							// retried by the next pass, not this one, which is the back-pressure that stops the
+							// timer thread refilling into the livelock described at TimerQueuedEvent.Execute.
 							blocked = true;
-							return;
+							continue;
 						case ScriptEventExecutionResult.LocalBlocked:
 							stalledOnLocalBlock = true;
 							return;
@@ -586,9 +623,9 @@ internal bool HasBlockedQueuedWork
 				SchedulePump();
 		}
 
-		private ScriptEventExecutionResult TryProcessNextQueuedEvent(ref int consecutiveInteractiveLocalBlocks, ref int consecutiveNormalLocalBlocks, ref bool preferNormalOnce)
+		private ScriptEventExecutionResult TryProcessNextQueuedEvent(bool skipLaunches, ref int consecutiveInteractiveLocalBlocks, ref int consecutiveNormalLocalBlocks, ref bool preferNormalOnce)
 		{
-			if (!TryGetNextQueuedEvent(preferNormalOnce, out var queueType, out var entry))
+			if (!TryGetNextQueuedEvent(preferNormalOnce, skipLaunches, out var queueType, out var entry))
 				return ScriptEventExecutionResult.Dropped;
 
 			preferNormalOnce = false;
@@ -612,31 +649,24 @@ internal bool HasBlockedQueuedWork
 				: result;
 		}
 
-		private bool TryGetNextQueuedEvent(bool preferNormal, out ScriptEventQueue queueType, out ScriptQueueEntry entry)
+		private bool TryGetNextQueuedEvent(bool preferNormal, bool skipLaunches, out ScriptEventQueue queueType, out ScriptQueueEntry entry)
 		{
 			lock (gate)
 			{
-				if (preferNormal && normalQueue.Count != 0)
+				// Interactive first, unless a run of locally blocked interactive events has asked to let normal work
+				// past. Each queue is examined once either way.
+				var firstType = preferNormal ? ScriptEventQueue.Normal : ScriptEventQueue.Interactive;
+				var secondType = preferNormal ? ScriptEventQueue.Interactive : ScriptEventQueue.Normal;
+
+				if (TryTakeNextServable(GetQueue(firstType), skipLaunches, out entry))
 				{
-					queueType = ScriptEventQueue.Normal;
-					entry = normalQueue.First.Value;
-					normalQueue.RemoveFirst();
+					queueType = firstType;
 					return true;
 				}
 
-				if (interactiveQueue.Count != 0)
+				if (TryTakeNextServable(GetQueue(secondType), skipLaunches, out entry))
 				{
-					queueType = ScriptEventQueue.Interactive;
-					entry = interactiveQueue.First.Value;
-					interactiveQueue.RemoveFirst();
-					return true;
-				}
-
-				if (normalQueue.Count != 0)
-				{
-					queueType = ScriptEventQueue.Normal;
-					entry = normalQueue.First.Value;
-					normalQueue.RemoveFirst();
+					queueType = secondType;
 					return true;
 				}
 
@@ -646,10 +676,32 @@ internal bool HasBlockedQueuedWork
 			}
 		}
 
+		// Takes the queue head, or -- once launch admission has failed this pass -- the first entry which does not
+		// need it, walking past the parked launches. Only walks while blocked, but the parked prefix has no bound
+		// (an event source can keep enqueuing through a long Critical section) and the walk holds the gate, which
+		// producers such as the input hook thread also take. Caller holds the gate.
+		private static bool TryTakeNextServable(LinkedList<ScriptQueueEntry> queue, bool skipLaunches, out ScriptQueueEntry entry)
+		{
+			for (var node = queue.First; node != null; node = node.Next)
+			{
+				if (skipLaunches && node.Value.LaunchesThread)
+					continue;
+
+				entry = node.Value;
+				queue.Remove(node);
+				return true;
+			}
+
+			entry = default;
+			return false;
+		}
+
 		private void RestoreBlockedWork(ScriptEventQueue queueType, ScriptQueueEntry entry)
 		{
+			// Re-labelling is a no-op copy for a correct producer; it exists so a mislabelled one cannot be refetched
+			// by the skip-walk and re-run for the rest of the pass.
 			lock (gate)
-				GetQueue(queueType).AddFirst(entry);
+				GetQueue(queueType).AddFirst(new ScriptQueueEntry(entry.Priority, entry.Execute, true));
 		}
 
 		private bool HandleLocalBlock(ScriptEventQueue queueType, ScriptQueueEntry entry, ref int consecutiveInteractiveLocalBlocks, ref int consecutiveNormalLocalBlocks, ref bool preferNormalOnce)
@@ -760,9 +812,11 @@ internal bool HasBlockedQueuedWork
 
 				var threads = script.Threads;
 
-				// The thread pool is exhausted, the current thread is uninterruptible, or a menu is displayed: a GLOBAL
-				// condition that blocks every queued event equally (the thread-launch path reports the same via
-				// TryStartPseudoThread). YIELD the pump rather than dropping-and-continuing. Returning Dropped here made
+				// The thread pool is exhausted, the current thread is uninterruptible, or a menu is displayed: a global
+				// condition that blocks every queued THREAD LAUNCH (the thread-launch path reports the same via
+				// TryStartPseudoThread). It does not block dispatch work, which the pump keeps serving -- matching AHK,
+				// where a Critical thread still processes sent messages and only refuses interrupting threads.
+				// PARK this entry rather than dropping-and-continuing. Returning Dropped here made
 				// TryProcessNextQueuedEvent report Executed, so the pump kept looping while the timer thread refilled the
 				// queue — a livelock that pinned normalQueue, pegged the CPU, and starved the running pseudo-threads so
 				// their slots never freed. Holding timers while a menu is open matches AutoHotkey's g_MenuIsVisible check.

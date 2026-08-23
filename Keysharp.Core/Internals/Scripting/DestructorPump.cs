@@ -34,7 +34,7 @@ namespace Keysharp.Internals.Scripting
 
 			try
 			{
-				script.ScriptMainThreadContext.Post(_ => RunPendingDestructors(), null);
+				script.MainEventScheduler.DispatchContext.Post(_ => RunPendingDestructors(), null);
 			}
 			catch
 			{
@@ -43,7 +43,7 @@ namespace Keysharp.Internals.Scripting
 			}
 		}
 
-		// Called on the script's logical main thread, serialized via ScriptMainThreadContext -- but also directly
+		// Called on the script's logical main thread, serialized via its dispatch context -- but also directly
 		// from ExitAppInternal, so the batch is a local rather than a shared static: two overlapping calls would
 		// otherwise interleave into the same list and double-invoke (or lose) __Delete.
 		public static void RunPendingDestructors()

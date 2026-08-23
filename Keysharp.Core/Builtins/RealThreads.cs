@@ -341,7 +341,7 @@ namespace Keysharp.Builtins
 					scheduler = script.ThreadScheduler;
 					scheduler.realThread = this;
 					_ = schedulerSource.TrySetResult(scheduler);
-					SynchronizationContext.SetSynchronizationContext(new ScriptEventSynchronizationContext(scheduler));
+					SynchronizationContext.SetSynchronizationContext(scheduler.DispatchContext);
 					var launchResult = RunOnSchedulerThread(scheduler, body, true, out var bodyResult);
 
 					if (launchResult == ScriptEventExecutionResult.Executed)

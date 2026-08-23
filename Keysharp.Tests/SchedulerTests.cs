@@ -97,14 +97,70 @@ namespace Keysharp.Tests
 
 			context.DrainAll();
 
-			Assert.IsEmpty(order);
+			// A refused launch parks and holds its own class, but dispatch work behind it still runs: the
+			// conditions which refuse a launch do not gate message dispatch.
+			Assert.That(order, Is.EqualTo(new[] { "N1" }));
 			Assert.AreEqual(0, context.PendingCount);
 
 			interactiveBlocked = false;
 			scheduler.SchedulePump();
 			context.DrainAll();
 
-			Assert.That(order, Is.EqualTo(new[] { "H1", "N1" }));
+			Assert.That(order, Is.EqualTo(new[] { "N1", "H1" }));
+		}
+
+		[Test, Category("Threading")]
+		public void BlockedLaunchDoesNotStarveDispatch()
+		{
+			var context = UseQueuedMainContext();
+			var scheduler = s.EventScheduler;
+			var order = new List<string>();
+			var launchBlocked = true;
+
+			scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
+			{
+				if (launchBlocked)
+					return ScriptEventExecutionResult.GlobalBlocked;
+
+				order.Add("launch");
+				return ScriptEventExecutionResult.Executed;
+			});
+			scheduler.EnqueueCallback(() => order.Add("dispatch"), ScriptEventQueue.Normal, false);
+
+			context.DrainAll();
+
+			Assert.That(order, Is.EqualTo(new[] { "dispatch" }));
+			Assert.IsTrue(scheduler.HasBlockedQueuedWork);
+
+			launchBlocked = false;
+			scheduler.SchedulePump();
+			context.DrainAll();
+
+			Assert.That(order, Is.EqualTo(new[] { "dispatch", "launch" }));
+		}
+
+		[Test, Category("Threading")]
+		public void MislabeledDispatchBlockIsParked()
+		{
+			var context = UseQueuedMainContext();
+			var scheduler = s.EventScheduler;
+			var order = new List<string>();
+			var attempts = 0;
+
+			// A producer bug: work labelled dispatch which reports a launch block. Parking it re-labelled is what
+			// stops the skip-walk from refetching and re-running it for the rest of the pass.
+			scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
+			{
+				attempts++;
+				return ScriptEventExecutionResult.GlobalBlocked;
+			}, launchesThread: false);
+			scheduler.EnqueueCallback(() => order.Add("N1"), ScriptEventQueue.Normal, false);
+
+			context.DrainAll();
+
+			Assert.AreEqual(1, attempts);
+			Assert.That(order, Is.EqualTo(new[] { "N1" }));
+			Assert.IsTrue(scheduler.HasBlockedQueuedWork);
 		}
 
 		[Test, Category("Threading")]

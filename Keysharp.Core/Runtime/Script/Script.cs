@@ -39,13 +39,10 @@ namespace Keysharp.Runtime
 #endif
 
 		/// <summary>
-		/// SynchronizationContext for dispatching script-logic work (timers, OnMessage, hotkeys) onto the
-		/// script's logical main thread, serialized through <see cref="mainEventScheduler"/>. This is distinct
-		/// from <see cref="UIThreadContext"/>, which targets whatever thread the UI framework actually requires
-		/// (these can differ once window construction is lazy/headless).
+		/// The scheduler serving the script's logical main thread. Its
+		/// <see cref="ScriptEventScheduler.DispatchContext"/> is what marshals a callback onto that thread.
 		/// </summary>
-		internal SynchronizationContext ScriptMainThreadContext
-			=> scriptMainThreadContext ??= new ScriptEventSynchronizationContext(mainEventScheduler);
+		internal ScriptEventScheduler MainEventScheduler => mainEventScheduler;
 
 		/// <summary>
 		/// SynchronizationContext for dispatching genuine UI-framework operations (Show/Hide, native dialogs,
@@ -55,7 +52,6 @@ namespace Keysharp.Runtime
 		/// </summary>
 		public SynchronizationContext UIThreadContext;
 
-		private SynchronizationContext scriptMainThreadContext;
 		private ScriptEventScheduler mainEventScheduler;
 
 		internal readonly uint NativeMainThreadID;
@@ -919,6 +915,11 @@ namespace Keysharp.Runtime
 			else if (Application.Instance != null)
 				Application.Instance.AsyncInvoke(action);
 #endif
+			// No UI framework to post through, so queue onto the main thread instead. Running inline would
+			// execute main-thread work on whichever thread posted -- a worker, or the finalizer thread, where
+			// ExitIfNotPersistent's teardown deadlocks on WaitForPendingFinalizers.
+			else if (script?.uiEventScheduler is { IsDisposed: false } ui)
+				_ = ui.EnqueueCallback(action);
 			else
 				action();
 		}
@@ -1087,8 +1088,29 @@ namespace Keysharp.Runtime
 				// Note: #NoTrayIcon only suppresses tray chrome, not the loop — those scripts still
 				// need Application.Run for event handling.
 				SuppressErrorOccurredDialog = true;
-				UIThreadContext ??= SynchronizationContext.Current ?? ScriptMainThreadContext;
-				RunAutoExecSection(userInit);
+				// Give the main thread the same ambient context a RealThread worker gets, so main-thread CLR code
+				// which captures one (a Progress<T>, a TaskScheduler.FromCurrentSynchronizationContext) resumes on
+				// the scheduler at a pump point rather than on the thread pool, where it would touch script state
+				// from the wrong thread. Only fill an empty slot: a UI framework which already owns it -- Eto does,
+				// even here, since it initializes before this branch -- keeps it. Restore on the way out, because
+				// the Linux and macOS test hosts run scripts inline on one reused thread.
+				// UIThreadContext stays null: there is no separate thread to marshal to.
+				var previousContext = SynchronizationContext.Current;
+				var installedContext = previousContext == null || previousContext.GetType() == typeof(SynchronizationContext);
+
+				if (installedContext)
+					SynchronizationContext.SetSynchronizationContext(mainEventScheduler.DispatchContext);
+
+				try
+				{
+					RunAutoExecSection(userInit);
+				}
+				finally
+				{
+					if (installedContext)
+						SynchronizationContext.SetSynchronizationContext(previousContext);
+				}
+
 				return;
 			}
 

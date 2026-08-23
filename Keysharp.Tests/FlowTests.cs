@@ -337,6 +337,27 @@ namespace Keysharp.Tests
         [Test, Category("Flow"), NonParallelizable]
         public void FlowWorkerBlockedQueue() => Assert.IsTrue(TestScript("flow-worker-blocked-queue", false));
 
+        [Test, Category("Flow"), NonParallelizable]
+        public void FlowWorkerCriticalDispatch() => Assert.IsTrue(TestScript("flow-worker-critical-dispatch", false));
+
+        // Forces the headless branch: with a display present RunMainWindow takes the GUI path, where the ambient
+        // context comes from the UI framework instead of the scheduler.
+        [Test, Category("Flow"), NonParallelizable]
+        public void FlowHeadlessAmbientContext()
+        {
+            var previous = Environment.GetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS");
+            Environment.SetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS", "1");
+
+            try
+            {
+                Assert.IsTrue(TestScript("flow-headless-ambient-context", false));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS", previous);
+            }
+        }
+
         [Test, Category("Flow")]
         public void FlowSwitch() => Assert.IsTrue(TestScript("flow-switch", false));
 
