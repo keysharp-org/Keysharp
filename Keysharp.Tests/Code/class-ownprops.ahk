@@ -336,4 +336,55 @@ testfunc(testclassobj)
 	AssertEq(testclassobj.a, 3, A_LineNumber)
 }
 
+; --- The two-variable form omits what it cannot value, rather than calling a getter that must fail.
+; Every expectation below was read off AutoHotkey v2.0.26 and v2.1-alpha.30, which agree exactly.
+OwnPropKeys(subject, twoVar)
+{
+	joined := ""
+
+	if (twoVar)
+	{
+		for propName, propValue in subject.OwnProps()
+			joined .= propName "|"
+	}
+	else
+	{
+		for propName in subject.OwnProps()
+			joined .= propName "|"
+	}
+
+	return joined
+}
+
+; A prototype is not an instance of its class, so none of its getters has a receiver they would accept.
+AssertEq(OwnPropKeys(Array.Prototype, true), "__Class|", A_LineNumber)
+Assert(InStr(OwnPropKeys(Array.Prototype, false), "Push|") > 0, A_LineNumber)   ; the one-variable form still names them
+
+opIndexed := {Keep: 1}
+opIndexed.DefineProp("Idx", {get: (this, i) => i})
+AssertEq(OwnPropKeys(opIndexed, true), "Keep|", A_LineNumber)                   ; an indexed getter has no index to be given
+Assert(InStr(OwnPropKeys(opIndexed, false), "Idx|") > 0, A_LineNumber)
+
+opBoth := {Keep: 1}
+opBoth.DefineProp("Idx", {get: (this, i) => i, call: (this) => 7})
+AssertEq(OwnPropKeys(opBoth, true), "Keep|", A_LineNumber)                      ; a Call must not approve an indexed Get
+
+opVariadic := {}
+opVariadic.DefineProp("V", {get: (this, req, rest*) => req})
+AssertEq(OwnPropKeys(opVariadic, true), "", A_LineNumber)                       ; variadic does not make a required param optional
+
+opSetOnly := {}
+opSetOnly.DefineProp("S", {set: (this, v) => v})
+AssertEq(OwnPropKeys(opSetOnly, true), "", A_LineNumber)
+Assert(InStr(OwnPropKeys(opSetOnly, false), "S|") > 0, A_LineNumber)
+
+opCallOnly := {}
+opCallOnly.DefineProp("C", {call: (this) => 7})
+AssertEq(OwnPropKeys(opCallOnly, true), "", A_LineNumber)
+Assert(InStr(OwnPropKeys(opCallOnly, false), "C|") > 0, A_LineNumber)
+
+opGettable := {}
+opGettable.DefineProp("G", {get: (this) => 11, call: (this) => 7})
+AssertEq(OwnPropKeys(opGettable, true), "G|", A_LineNumber)
+
 FileAppend "pass", "*"

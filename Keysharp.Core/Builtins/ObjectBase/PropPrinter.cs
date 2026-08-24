@@ -196,7 +196,7 @@ namespace Keysharp.Builtins
 
 			while (true)
 			{
-				try { if (!opi.Advance()) break; }
+				try { if (!opi.Advance(2)) break; }
 				catch { break; }//If advancing the enumerator itself fails there's nothing left to do.
 
 				// Enumerator.Current (the single-value form) yields only the key, so the

@@ -149,9 +149,10 @@ namespace Keysharp.Builtins
 		/// Enumerates this object's own properties, matching AutoHotkey's OwnProps().
 		/// <para>
 		/// Takes no arguments: how many values an iteration yields is decided by the for-loop's variable count,
-		/// which <see cref="Enumerator.Call"/> reads from the number of VarRefs it is handed, so a one-variable
-		/// loop never evaluates a property getter. Nothing on the iteration path consults
-		/// <see cref="Enumerator.Count"/>, so there is no setting for a caller to make here.
+		/// which <see cref="Enumerator.Call"/> reads from the number of VarRefs it is handed and passes to
+		/// <c>Advance</c>, so a one-variable loop never evaluates a property getter and never skips a property.
+		/// A C# <c>foreach</c> has no such count and falls back to <see cref="Enumerator.Count"/>, which is why
+		/// this builds a two-value enumerator; there is no setting for a caller to make here.
 		/// </para>
 		/// </summary>
 		public static object OwnProps(object @this)

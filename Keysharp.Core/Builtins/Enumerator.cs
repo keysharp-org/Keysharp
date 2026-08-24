@@ -9,6 +9,7 @@ namespace Keysharp.Builtins
 		private readonly Func<(object, object)> currentPair;
 		private readonly Action reset;
 		private readonly Action dispose;
+		private readonly Func<bool> hasValue;
 		private readonly KeysharpFunc callback;
 
 		/// <summary>
@@ -57,7 +58,8 @@ namespace Keysharp.Builtins
 			Func<object> currentValue,
 			Func<(object, object)> currentPair,
 			Action reset,
-			Action dispose = null)
+			Action dispose = null,
+			Func<bool> hasValue = null)
 			: this(source, count)
 		{
 			this.moveNext = moveNext;
@@ -65,6 +67,7 @@ namespace Keysharp.Builtins
 			this.currentPair = currentPair;
 			this.reset = reset;
 			this.dispose = dispose;
+			this.hasValue = hasValue;
 		}
 
 		internal Enumerator(object source, int count, KeysharpFunc callback)
@@ -76,10 +79,24 @@ namespace Keysharp.Builtins
 		private static MethodPropertyHolder CallMethod() => callMethod ??= Reflections.FindAndCacheMethod(typeof(Enumerator), nameof(Call), 1);
 
 		// Call below advances the enumerator too, so the step lives here rather than inside the explicit
-		// interface implementation, which could not be called without a cast.
-		internal bool Advance() => moveNext != null && moveNext();
+		// interface implementation, which could not be called without a cast. A source that cannot produce a value
+		// for every item -- OwnProps, whose indexed getters need an argument no loop supplies -- says so through
+		// hasValue, and those items are stepped over once a value is actually being asked for. `requested` is the
+		// caller's variable count, which Count cannot stand in for: an enumerator built to supply a value is still
+		// driven one-variable by `for k in obj`.
+		internal bool Advance(long requested)
+		{
+			if (moveNext == null)
+				return false;
 
-		bool IEnumerator.MoveNext() => Advance();
+			while (moveNext())
+				if (requested < 2 || hasValue == null || hasValue())
+					return true;
+
+			return false;
+		}
+
+		bool IEnumerator.MoveNext() => Advance(Count);
 
 		protected virtual (object, object) GetCurrentPair() => currentPair != null ? currentPair() : currentValue != null ? (currentValue(), null) : (null, null);
 
@@ -97,7 +114,7 @@ namespace Keysharp.Builtins
 				if (callback != null)
 					return callback.Call(args);
 
-				if (!Advance())
+				if (!Advance(args?.Length ?? 0))
 				{
 					((IDisposable)this).Dispose();
 					return false;

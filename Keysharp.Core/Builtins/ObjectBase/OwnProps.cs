@@ -14,14 +14,54 @@ namespace Keysharp.Builtins
 		internal static Enumerator CreateEnumerator(object obj, Dictionary<object, object> map, bool getVal)
 		{
 			var iter = map.GetEnumerator();
+			(object, object)? evaluated = null;
+
+			// Asked for a value, a property must be able to produce one: the descriptor has to allow it at all, and
+			// the getter has to actually yield something -- an Array's Default holds nothing until it is assigned,
+			// and AutoHotkey omits such a property rather than pairing its name with nothing. The result is kept so
+			// the getter runs exactly once per item, and never at all when only names were asked for.
+			bool HasValue()
+			{
+				evaluated = null;
+
+				if (!CanYieldValue(obj, iter.Current.Value))
+					return false;
+
+				var pair = GetCurrent(obj, iter.Current);
+				evaluated = pair;
+				return pair.Item2 != null;
+			}
 
 			return new Enumerator(
 					   obj,
 					   getVal ? 2 : 1,
 					   () => iter.MoveNext(),
 					   () => iter.Current.Key,
-					   () => GetCurrent(obj, iter.Current),
-					   () => iter = map.GetEnumerator());
+					   () => evaluated ?? GetCurrent(obj, iter.Current),
+					   () => { evaluated = null; iter = map.GetEnumerator(); },
+					   hasValue: HasValue);
+		}
+
+		/// <summary>
+		/// Whether an entry can produce a value for the two-variable form: it holds one outright, or it has a getter
+		/// the receiver alone satisfies. AutoHotkey omits the rest rather than calling them (Object::GetEnumProp):
+		/// an indexed getter has no index to be given, a Call-only property has no getter at all, and a prototype is
+		/// not an instance of its own class, so none of its getters has a receiver they could accept.
+		/// </summary>
+		private static bool CanYieldValue(object obj, object entry)
+		{
+			if (obj is Any { isPrototype: true })
+				return entry is not (OwnPropsDesc or MethodPropertyHolder or KeysharpFunc)
+					   || entry is OwnPropsDesc { Value: not null };
+
+			return entry switch
+			{
+				//NoEnumGet already means "this getter needs more than the receiver", set where the descriptor is built.
+				OwnPropsDesc op => op.Value != null || (op.Get != null && !op.NoEnumGet),
+				MethodPropertyHolder mph => mph.MinParams + mph.ReceiverCorrection(obj) <= 0,
+				KeysharpFunc fo => fo.MinParams <= 1,
+				_ => true
+			};
 		}
 
 		private static (object, object) GetCurrent(object obj, KeyValuePair<object, object> kv)
