@@ -398,7 +398,9 @@ namespace Keysharp.Internals.Invoke
 		{
 			var props = new List<MethodPropertyHolder>();
 
-			while (t != typeof(KeysharpObject))
+			// KeysharpObject is not the root -- it derives from Any -- so a walk that starts at or above it runs off
+			// the top of the hierarchy. Only the userOnly break stopped that, and Props() does not take it.
+			while (t != null && t != typeof(KeysharpObject))
 			{
 				if (userOnly && t.Assembly == typeof(Any).Assembly)
 					break;
@@ -425,7 +427,7 @@ namespace Keysharp.Internals.Invoke
 		{
 			var ct = 0L;
 
-			while (t != typeof(KeysharpObject))
+			while (t != null && t != typeof(KeysharpObject))   //Same walk, same reason, as GetOwnProps above
 			{
 				if (userOnly && t.Assembly == typeof(Any).Assembly)
 					break;

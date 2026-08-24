@@ -155,11 +155,6 @@ namespace Keysharp.Builtins
 		int ICollection.Count => (int)Count;
 
 		/// <summary>
-		/// Gets or sets the default value to use when retrieving a value for a key that doesn't exist.
-		/// </summary>
-		public object Default { get; set; }
-
-		/// <summary>
 		/// Gets a value indicating whether synchronized.
 		/// </summary>
 		bool ICollection.IsSynchronized => ((ICollection)map).IsSynchronized;
@@ -329,7 +324,7 @@ namespace Keysharp.Builtins
 		/// Returns the value associated with a key in the following manner:
 		///     Return the value associated with key, if found.
 		///     Return the value of the default parameter, if specified.
-		///     Return the value of this.Default, if defined.
+		///     Return the value of a script-defined Default property, if there is one.
 		///     Throw an <see cref="UnsetItemError"/>.
 		/// </summary>
 		/// <param name="key">They key whose value will be returned.</param>
@@ -347,8 +342,11 @@ namespace Keysharp.Builtins
 			if (def != null)
 				return def;
 
-			if (Default != null)
-				return Default;
+			// AutoHotkey declares no Default: it looks for one the script may have defined, by assignment,
+			// DefineProp or a meta-function, so an ordinary lookup is the whole mechanism and a map given
+			// none simply has no such property.
+			if (Script.GetPropertyValueOrNull(this, "Default") is { } fallback)
+				return fallback;
 
 			return Script.CompatReturnsUnsetForMissing ? null
 				: Errors.UnsetItemErrorOccurred($"Key {k} was not present in the map.");
@@ -612,8 +610,8 @@ namespace Keysharp.Builtins
 		/// Indexer which retrieves or sets the value of an key.
 		/// </summary>
 		/// <param name="key">They key to search for.</param>
-		/// <returns>The value if found, else <see cref="Default"/> if specified.</returns>
-		/// <exception cref="UnsetItemError">An <see cref="UnsetItemError"/> exception is thrown if key is not found and <see cref="Default"/> is not specified.</exception>
+		/// <returns>The value if found, else a script-defined <c>Default</c> property if there is one.</returns>
+		/// <exception cref="UnsetItemError">Thrown if the key is not found and no <c>Default</c> property is defined.</exception>
 		public object this[object key]
 		{
 			get
@@ -621,7 +619,7 @@ namespace Keysharp.Builtins
 				if (TryGetValue(key, out var val))
 					return val;
 
-				return Default ?? (Script.CompatReturnsUnsetForMissing ? null
+				return Script.GetPropertyValueOrNull(this, "Default") ?? (Script.CompatReturnsUnsetForMissing ? null
 					: Errors.UnsetItemErrorOccurred($"Key {key} was not present in the map."));
 			}
 			set

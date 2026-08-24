@@ -108,9 +108,16 @@ val := m[str1]
 
 Assert(val = 1, A_LineNumber)
 
+; As for Array, Default is not a declared property -- it exists only once a script defines one.
+Assert(!Map.Prototype.HasOwnProp("Default"), A_LineNumber)
+Assert(!Map().HasProp("Default"), A_LineNumber)
+
 m := Map()
 m.CaseSense := "Off"
 m.Default := 999
+
+Assert(m.HasOwnProp("Default"), A_LineNumber)
+AssertEq(m["absent"], 999, A_LineNumber)
 m.Capacity := 100
 m["one"] := 1
 m["two"] := 2

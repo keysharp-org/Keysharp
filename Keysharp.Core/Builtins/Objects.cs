@@ -99,11 +99,12 @@ namespace Keysharp.Builtins
 			var props = new Dictionary<object, object>();
 			var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 			var anyPrototype = script.Vars.Prototypes[typeof(Any)];
-			var skipDynamicProps = current.isPrototype;
 
 			for (var cursor = current; cursor != null; cursor = cursor._base)
 			{
-				if (!skipDynamicProps && cursor.op != null)
+				// Dynamic properties stay in the map even for a Prototype: naming them is harmless and useful, and it
+				// is only asking for their VALUE that has no valid receiver, which the enumerator decides per call.
+				if (cursor.op != null)
 				{
 					foreach (var (name, desc) in cursor.op)
 					{

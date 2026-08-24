@@ -336,10 +336,38 @@ sorted := [-5, -5, 0, 3, 99, 100]
 
 Assert(arr = sorted, A_LineNumber)
 
+; Default is not a declared property: it exists only once a script defines one, by assignment or DefineProp,
+; and from then on it is an ordinary own property. Verified against AutoHotkey v2.1-alpha.30.
+Assert(!Array.Prototype.HasOwnProp("Default"), A_LineNumber)
+Assert(![].HasProp("Default"), A_LineNumber)
+
 arr := [10, 20, 30]
 arr.Default := 456
 
 Assert(arr.Default = 456, A_LineNumber)
+Assert(arr.HasOwnProp("Default"), A_LineNumber)
+
+; It stands in for an element with no value through __Item exactly as through Get, but never rescues an
+; out-of-range index, and a dynamic Default works because the lookup is an ordinary one.
+sparse := [1,,3]
+sparse.Default := 5
+
+AssertEq(sparse[2], 5, A_LineNumber)
+AssertEq(sparse.Get(2), 5, A_LineNumber)
+
+dyn := [1,,3]
+dyn.DefineProp("Default", {get: (this) => 777})
+
+AssertEq(dyn[2], 777, A_LineNumber)
+
+oor := false
+
+try
+	val := sparse[9]
+catch IndexError
+	oor := true
+
+Assert(oor, A_LineNumber)
 
 val := arr.Get(3)
  

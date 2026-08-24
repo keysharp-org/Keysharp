@@ -77,11 +77,6 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	public int Count => array != null ? array.Count : 0;
 
 	/// <summary>
-	/// Gets or sets the default value returned when an element with no value is requested.
-	/// </summary>
-	public object Default { get; set; }
-
-	/// <summary>
 	/// Get or sets the length of an array.<br/>
 	/// The length includes elements which have no value.<br/>
 	/// Increasing the length changes which indices are considered valid,
@@ -428,7 +423,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	///     Throw an IndexError if index is zero or out of range.<br/>
 	///     Return the value at index, if there is one (see <see cref="Has"/>).<br/>
 	///     Return the value of the default parameter, if specified.<br/>
-	///     Return the value of this.Default, if defined.
+	///     Return the value of a script-defined Default property, if there is one.
 	/// </summary>
 	/// <param name="index">The array index to retrieve the value from.</param>
 	/// <param name="default">The default value to return if a non empty value is contained at the given index.</param>
@@ -449,11 +444,14 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 			return val;
 		else if (@default != null)
 			return @default;
-		else if (Default != null)
-			return Default;
+		// AutoHotkey declares no Default: it looks for one the script may have defined, by assignment, DefineProp
+		// or a meta-function, so an ordinary lookup is the whole mechanism and an array given none simply has no
+		// such property.
+		else if (Script.GetPropertyValueOrNull(this, "Default") is { } fallback)
+			return fallback;
 		else
 			return Script.CompatReturnsUnsetForMissing ? null
-				: Errors.UnsetItemErrorOccurred($"array[{i}], default and Array.Default were all unset/null.");
+				: Errors.UnsetItemErrorOccurred($"array[{i}], default and Default were all unset/null.");
 	}
 
 	/// <summary>
@@ -810,7 +808,9 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 			var i = index.Ai();
 
 			if ((i = TranslateIndex(i)) != -1)
-				return array[i];
+				// A Default the script defined stands in for an element that has no value, for __Item exactly as
+				// for Get. It cannot rescue an out-of-range index below: that still throws, as AutoHotkey documents.
+				return array[i] ?? Script.GetPropertyValueOrNull(this, "Default");
 			else
 				// An out-of-range index always throws IndexError, in both v2.0 and v2.1 mode (AHK alpha.30 Array::Invoke);
 				// only an in-range-but-unset *element* yields unset in v2.1 — see Array.Get.
