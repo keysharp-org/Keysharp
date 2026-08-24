@@ -901,7 +901,7 @@ namespace Keysharp.Parsing.Lexing
 
 		// Resolves whether a hotstring with the given option text runs in execute mode (replacement is code): an explicit
 		// `X` (or `X0` to turn it off) overrides the `#Hotstring`-set default.
-		private bool HotstringExecutes(string opts)
+		private bool HotstringExecutes(ReadOnlySpan<char> opts)
 		{
 			bool exec = _hsExecuteDefault;
 			for (int k = 0; k < opts.Length; k++)
@@ -921,6 +921,8 @@ namespace Keysharp.Parsing.Lexing
 			// following line until the braces balance — for #Warning silently, since it does not fail the build.
 			"error", "warning"
 		};
+
+		private static readonly HashSet<string>.AlternateLookup<ReadOnlySpan<char>> RawArgDirectivesLookup = RawArgDirectives.GetAlternateLookup<ReadOnlySpan<char>>();
 
 		// Capture block contents verbatim; quoted file forms remain ordinary directives.
 		private bool TryScanCSharpBlock(List<Token> tokens, bool leadingWs)
@@ -1038,8 +1040,8 @@ namespace Keysharp.Parsing.Lexing
 			while (p < _n && (_s[p] == ' ' || _s[p] == '\t')) p++;
 			int ns = p;
 			while (p < _n && (char.IsLetterOrDigit(_s[p]) || _s[p] == '_')) p++;
-			var name = _s.Substring(ns, p - ns);
-			if (!RawArgDirectives.Contains(name)) return false;
+			var name = _s.AsSpan(ns, p - ns);
+			if (!RawArgDirectivesLookup.Contains(name)) return false;
 
 			int hl = _line, hc = _col, ho = _pos;
 			tokens.Add(Tok(TokenKind.Hash, "#", hl, hc, ho, 1, leadingWs));
@@ -1080,7 +1082,7 @@ namespace Keysharp.Parsing.Lexing
 			i += kw.Length;
 			int s = i;
 			while (i < _n && _s[i] != '\n' && _s[i] != '\r') i++;
-			var opts = _s.Substring(s, i - s).Trim();
+			var opts = _s.AsSpan(s, i - s).Trim();
 			for (int k = 0; k < opts.Length; k++)
 				if (opts[k] is 'x' or 'X') _hsExecuteDefault = !(k + 1 < opts.Length && opts[k + 1] == '0');
 		}
@@ -1254,7 +1256,7 @@ namespace Keysharp.Parsing.Lexing
 			int i = _pos + 1;
 			while (i < _n && _s[i] != ':' && _s[i] != '\n' && _s[i] != '\r') i++;
 			if (i >= _n || _s[i] != ':') return false;
-			var opts = _s.Substring(_pos + 1, i - (_pos + 1));              // option chars between the two colons
+			var opts = _s.AsSpan(_pos + 1, i - (_pos + 1));              // option chars between the two colons
 			int trigStart = i + 1;                                          // after the second ':'
 			int sep = FindSeparator(trigStart, escapeAware: true, allowEmpty: true);
 			if (sep < 0) return false;

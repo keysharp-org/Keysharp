@@ -15,7 +15,7 @@ namespace Keysharp.Parsing.Syntax
 	/// (%...%), object/map literals, classes, switch/try/loop variants, hotkeys/directives,
 	/// and no-parentheses command-style calls.
 	/// </summary>
-	internal sealed class Parser
+	internal sealed partial class Parser
 	{
 		private readonly List<Token> _t;
 		private int _pos;
@@ -1117,7 +1117,7 @@ namespace Keysharp.Parsing.Syntax
 		internal static string ExpandPathVars(string s, string scriptDir, string lineFile)
 		{
 			if (string.IsNullOrEmpty(s) || s.IndexOf('%') < 0) return s;
-			return System.Text.RegularExpressions.Regex.Replace(s, "%([A-Za-z_][A-Za-z0-9_]*)%", m =>
+			return ExpandPathRegEx().Replace(s, m =>
 			{
 				var name = m.Groups[1].Value;
 				if (!includePathVars.Contains(name)) return m.Value;
@@ -2210,5 +2210,8 @@ namespace Keysharp.Parsing.Syntax
 			Expect(TokenKind.FatArrow, "fat-arrow function");
 			return new FatArrowExpr(ps, ParseExpression(1)) { Name = faName };
 		}
+
+		[GeneratedRegex("%([A-Za-z_][A-Za-z0-9_]*)%")]
+		private static partial Regex ExpandPathRegEx();
 	}
 }
