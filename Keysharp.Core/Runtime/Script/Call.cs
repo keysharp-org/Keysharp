@@ -126,7 +126,7 @@ namespace Keysharp.Runtime
 					if (TryGetOwnPropsMap(kso, key, out var opm, searchBase: checkBase))
 					{
 						if (opm.Call != null) return (item, opm.Call); // (this, …)
-						if (opm.Get != null) return (item, Invoke(opm.Get, "Call", item)); // getter call, no params
+						if (opm.Get != null) return (item, Invoke(opm.Get, null, item)); // getter call, no params
 						if (opm.Value != null) return (item, opm.Value);
 						if (opm.Set != null) return (item, opm.Set);
 
@@ -257,7 +257,7 @@ namespace Keysharp.Runtime
 							if (opm.Get is KeysharpFunc ifo)
 								return args.Length > 0 && opm.NoParamGet ? GetIndexOrNull(ifo.Call(item), args) : ifo.CallInst(item, args);
 							else
-								return Invoke(opm.Get, "Call", item, args);
+								return Invoke(opm.Get, null, item, args);
 						}
 
 						if (opm.Call != null)
@@ -271,7 +271,7 @@ namespace Keysharp.Runtime
 					// __Get meta (function or callable object), only queried for Call and Value (but not Get)
 					if (TryGetOwnPropsMap(kso, "__Get", out var protoGet) && (protoGet.Call ?? protoGet.Value) is object metaGet)
 					{
-						return InvokeOrNull(metaGet, "Call", item, namestr, new Keysharp.Builtins.Array(args));
+						return InvokeOrNull(metaGet, null, item, namestr, new Keysharp.Builtins.Array(args));
 					}
 
 					if (kso is IMetaObject mo)
@@ -347,7 +347,7 @@ namespace Keysharp.Runtime
 					else if (target != null)
 					{
 						// Callable object (has its own Call). Explicitly call "Call" (still NOT meta).
-						return Invoke(target, "Call", parameters.Prepend(actualThis));
+						return Invoke(target, null, parameters.Prepend(actualThis));
 					}
 
 					// Found a member but it's not callable.
@@ -364,14 +364,28 @@ namespace Keysharp.Runtime
 
 		// . strict base, strict result
 		public static object Invoke(object obj, object meth, params object[] parameters) =>
-			InvokeOrNull(obj, meth, parameters) ?? Errors.UnsetErrorOccurred($"Invoke result of method {meth} on function {obj}");
+			InvokeOrNull(obj, meth, parameters) ?? Errors.UnsetErrorOccurred(meth == null
+					? $"Call result of function {obj}"
+					: $"Invoke result of method {meth} on function {obj}");
 		// . in ?? context: strict base, allow null result
 		public static object InvokeOrNull(object obj, object meth, params object[] parameters)
 		{
-			if (obj == null) return Errors.UnsetErrorOccurred($"The base object of method {meth}");
+			if (obj == null) return Errors.UnsetErrorOccurred(meth == null ? "The function being called" : $"The base object of method {meth}");
 
 			try
 			{
+				// A null name is the call form `f(args)`, as opposed to the member form `f.Call(args)`. AutoHotkey
+				// calls a function directly only while it has no own properties. Once it has any, even an unrelated
+				// one, Call resolves through the ordinary prototype path below. Other callable objects and COM objects
+				// always take that path too.
+				if (meth == null)
+				{
+					if (obj is KeysharpFunc fnObj && (fnObj.op == null || fnObj.op.Count == 0))
+						return fnObj.Call(parameters);
+
+					meth = "Call";
+				}
+
 				var methName = (string)meth;
 
 				if (obj is Module module && module is IMetaObject imo)
@@ -392,17 +406,6 @@ namespace Keysharp.Runtime
 							// __Call handler that forwards them relays them intact.
 							return fn.Call(actualThis, methName, new Keysharp.Builtins.Array(parameters));
 
-						// Fast path: if it's an unmodified Call method then call the actual function directly. The
-						// shared registration-time test (Any.IsBuiltinMember) is what keeps a receiver whose own
-						// Call SHADOWS the built-in one on the by-name path, so its override is reached -- a
-						// script override's function declares on the lowered assembly, never on a built-in type.
-						if (methName.Equals("Call", StringComparison.OrdinalIgnoreCase)
-							&& obj is KeysharpFunc direct
-							&& direct.IsValid
-							&& fn is KeysharpFunc fo
-							&& (fo == KeysharpFunc.PrototypeCall || Any.IsBuiltinMember(fo, obj.GetType())))
-							return direct.Call(parameters);
-
 						// Regular callable
 						if (parameters == null)
 							return fn.Call(mitup.Item1);
@@ -412,11 +415,11 @@ namespace Keysharp.Runtime
 						// Callable object meta: Call(receiver, name, ParamsArray). Named arguments ride into the
 						// Params Array as an ordinary trailing element.
 						if (mitup.Item1 == null)
-							return InvokeOrNull(callable, "Call", actualThis, methName, new Keysharp.Builtins.Array(parameters));
+							return InvokeOrNull(callable, null, actualThis, methName, new Keysharp.Builtins.Array(parameters));
 
 						// Normal callable object: Call(receiver, ...args). Prepending keeps any named arguments
 						// trailing, so they bind against the object's own Call method further down.
-						return InvokeOrNull(callable, "Call", parameters.Prepend(actualThis));
+						return InvokeOrNull(callable, null, parameters.Prepend(actualThis));
 
 					case IMetaObject mo:
 						// Every IMetaObject resolves named arguments itself (COM via DISPIDs, Clr via reflection,
@@ -621,7 +624,7 @@ namespace Keysharp.Runtime
 							else
 							{
 								// callable setter
-								_ = Invoke(own.Set, "Call", args.Prepend(item));
+								_ = Invoke(own.Set, null, args.Prepend(item));
 							}
 							return value;
 						}
@@ -664,7 +667,7 @@ namespace Keysharp.Runtime
 						}
 						else
 						{
-							_ = Invoke(opm.Set, "Call", item, args);
+							_ = Invoke(opm.Set, null, item, args);
 						}
 						return value;
 					}
@@ -676,7 +679,7 @@ namespace Keysharp.Runtime
 						{
 							object val = null;
 							if (opm2.Get != null)
-								val = Invoke(opm2.Get, "Call", item);
+								val = Invoke(opm2.Get, null, item);
 							else
 								val = opm2.Value;
 							_ = SetPropertyValue(val, "__Item", args);
@@ -697,7 +700,7 @@ namespace Keysharp.Runtime
 						if (metaSet is KeysharpFunc f)
 							_ = f.Call(item, namestr, new Keysharp.Builtins.Array(GetIndexArgs(args)), value);
 						else
-							_ = Invoke(metaSet, "Call", item, namestr, new Keysharp.Builtins.Array(GetIndexArgs(args)), value);
+							_ = Invoke(metaSet, null, item, namestr, new Keysharp.Builtins.Array(GetIndexArgs(args)), value);
 						return value;
 					}
 

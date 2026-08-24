@@ -305,7 +305,7 @@ namespace Keysharp.Builtins
 		// Calls the target, resolving its result to null when it returned no value so that both the untyped and
 		// the typed caller can apply their own conversion.
 		private object CallTarget(object[] args) =>
-			_fn != null ? _fn.Call(args) : Script.InvokeOrNull(funcObj, "Call", args);
+			_fn != null ? _fn.Call(args) : Script.InvokeOrNull(funcObj, null, args);
 
 		private object InvokeCallback(object[] args, long[] rawArgs)
 		{

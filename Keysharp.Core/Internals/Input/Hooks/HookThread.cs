@@ -4088,7 +4088,7 @@ namespace Keysharp.Internals.Input.Hooks
 							var endCallback = so.GetCallbackSlot(UserMessages.AHK_INPUT_END)?.Callback;
 
 							if (endCallback != null)
-								_ = Script.Invoke(endCallback, "Call", [so]);
+								_ = Script.Invoke(endCallback, null, [so]);
 
 							so.DeactivateCallbackPersistence();
 						}
@@ -4136,7 +4136,7 @@ namespace Keysharp.Internals.Input.Hooks
 						var args = message == (uint)UserMessages.AHK_INPUT_CHAR
 							? new object[] { inputHook.scriptObject, new string(wParamVal == 0 ? [(char)lParamVal] : [(char)lParamVal, (char)wParamVal]) }
 							: [inputHook.scriptObject, lParamVal, wParamVal];
-						_ = Script.Invoke(callback, "Call", args);
+						_ = Script.Invoke(callback, null, args);
 					}), ThreadKind.Input);
 				}
 
@@ -4182,7 +4182,7 @@ namespace Keysharp.Internals.Input.Hooks
 						var args = message == (uint)UserMessages.AHK_INPUT_MOUSEMOVE
 							? new object[] { inputHook.scriptObject, mx, my }
 							: [inputHook.scriptObject, VKtoKeyName(vkVal, true), mx, my];
-						_ = Script.Invoke(callback, "Call", args);
+						_ = Script.Invoke(callback, null, args);
 					}), ThreadKind.Input);
 				}
 

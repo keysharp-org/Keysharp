@@ -208,7 +208,7 @@ namespace Keysharp.Builtins
 					 || name.Equals($"[DISPID={DISPID_VALUE}]", StringComparison.OrdinalIgnoreCase))
 			{
 				if ((invokeAttr & BindingFlags.InvokeMethod) != 0 && (target is not KeysharpFunc))
-					return Com.ConvertToCOMType(Script.Invoke(target ?? this, "Call", usedArgs));
+					return Com.ConvertToCOMType(Script.Invoke(target ?? this, null, usedArgs));
 
 				if (this is Array)
 				{

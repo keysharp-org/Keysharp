@@ -105,7 +105,7 @@ namespace Keysharp.Builtins
 		public static object staticget_Ptr(object @this) => GetPointerClass(@this);
 
 		public static object staticPtr(object @this, params object[] args) =>
-			Script.Invoke(GetPointerClass(@this), "Call", args);
+			Script.Invoke(GetPointerClass(@this), null, args);
 
 		public static object staticAt(object @this, object address)
 		{

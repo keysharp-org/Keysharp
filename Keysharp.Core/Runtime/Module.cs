@@ -41,7 +41,7 @@ namespace Keysharp.Runtime
 			if (target is KeysharpFunc fn)
 				return fn.Call(args);
 
-			return Keysharp.Runtime.Script.Invoke(target, "Call", args);
+			return Keysharp.Runtime.Script.Invoke(target, null, args);
 		}
 
 		object IMetaObject.get_Item(object[] indexArgs)
@@ -159,7 +159,7 @@ namespace Keysharp.Runtime
 				var target = prop.GetValue(null);
 				if (target is KeysharpFunc fn)
 					return fn.Call(args);
-				return Keysharp.Runtime.Script.Invoke(target, "Call", args);
+				return Keysharp.Runtime.Script.Invoke(target, null, args);
 			}
 
 			if (rd.stringToTypes.TryGetValue(name, out var type))
@@ -169,7 +169,7 @@ namespace Keysharp.Runtime
 				object target = Script.TheScript.Vars.Statics[type];
 				if (target is KeysharpFunc fn)
 					return fn.Call(args);
-				return Keysharp.Runtime.Script.Invoke(target, "Call", args);
+				return Keysharp.Runtime.Script.Invoke(target, null, args);
 			}
 
 			return Errors.ErrorOccurred($"Unknown built-in function '{name}'.");

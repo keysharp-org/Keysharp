@@ -255,7 +255,7 @@ namespace Keysharp.Runtime
 						new OwnPropsDesc(staticInst, null,
 							new KeysharpFunc((params object[] args) => script.Vars.Statics[nestedType]),
 							null,
-							new KeysharpFunc((object @this, params object[] args) => Script.Invoke(script.Vars.Statics[nestedType], "Call", args))
+							new KeysharpFunc((object @this, params object[] args) => Script.Invoke(script.Vars.Statics[nestedType], null, args))
 						)
 					);
 				}
@@ -381,7 +381,7 @@ namespace Keysharp.Runtime
 							else
 							{
 								// Callable object setter
-								_ = Invoke(opm.Set, "Call", kso, args);
+								_ = Invoke(opm.Set, null, kso, args);
 							}
 							return value;
 						}
@@ -390,7 +390,7 @@ namespace Keysharp.Runtime
 							if (opm.Call is KeysharpFunc fcall)
 								_ = fcall.CallInst(kso, args);
 							else
-								_ = Invoke(opm.Call, "Call", kso, args);
+								_ = Invoke(opm.Call, null, kso, args);
 							return value;
 						}
 						if (opm.Value != null)
@@ -495,7 +495,7 @@ namespace Keysharp.Runtime
 								return fget.CallInst(item, index);
 							} else
 								// Callable object getter
-								return InvokeOrNull(opm.Get, "Call", item, index);
+								return InvokeOrNull(opm.Get, null, item, index);
 						}
 						if (opm.Value != null)
 						{

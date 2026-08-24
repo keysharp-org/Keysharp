@@ -24,7 +24,7 @@ internal class KeysharpFuncComparer : IComparer<object>
 	/// <param name="left">The left object to compare.</param>
 	/// <param name="right">The right object to compare.</param>
 	/// <returns>An <see cref="int"/>-1 if left is less than right, 0 if left equals right, otherwise 1.</returns>
-	public int Compare(object left, object right) => Script.Invoke(ifo, "Call", left, right).Ai();
+	public int Compare(object left, object right) => Script.Invoke(ifo, null, left, right).Ai();
 }
 
 /// <summary>
@@ -317,7 +317,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 				var args = argCount == 0 ? System.Array.Empty<object>()
 						 : argCount == 1 ? [value]
 						 : new[] { value, index };
-				var result = direct != null ? direct.Call(args) : Script.InvokeOrNull(callback, "Call", args);
+				var result = direct != null ? direct.Call(args) : Script.InvokeOrNull(callback, null, args);
 
 				return result ?? (requireResult
 								  ? Errors.UnsetErrorOccurred($"Invoke result of method Call on function {(callback as KeysharpFunc)?.Name ?? callback}")

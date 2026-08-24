@@ -3888,12 +3888,12 @@ namespace Keysharp.Compilation.Syntax
 			if (c.Callee is DynMemberExpr dmc && (dmc.NullConditional || MayYieldUnset(dmc.Target)))
 				return NullCondWrap(dmc.Target, tt => Op("Invoke", Cons2(tt, LowerExpr(dmc.NameExpr), CallArgs())));
 			if (c.NullConditional || MayYieldUnset(c.Callee))
-				return NullCondWrap(c.Callee, tt => Op("Invoke", Cons2(tt, Str("Call"), CallArgs())));
+				return NullCondWrap(c.Callee, tt => Op("Invoke", Cons2(tt, Null, CallArgs())));
 
 			List<ExpressionSyntax> args;
 			if (c.Callee is MemberExpr m) args = new() { LowerExpr(m.Target), Str(m.Name) };
 			else if (c.Callee is DynMemberExpr dm) args = new() { LowerExpr(dm.Target), LowerExpr(dm.NameExpr) };
-			else args = new() { LowerExpr(c.Callee), Str("Call") };
+			else args = new() { LowerExpr(c.Callee), Null };
 			args.AddRange(CallArgs());
 			return Op(statement ? "InvokeOrNull" : "Invoke", args.ToArray());
 		}
@@ -3931,6 +3931,8 @@ namespace Keysharp.Compilation.Syntax
 			var target = callee.Target;
 
 			if (target is NameExpr direct)
+			// A member callee names the member to resolve; a bare callee is the call form `f(args)`, which the
+			// runtime distinguishes by a null name (see Script.InvokeOrNull).
 				return direct.Name.Equals("Clr", System.StringComparison.OrdinalIgnoreCase);
 
 			return target is MemberExpr { Name: var clr, Target: NameExpr root }

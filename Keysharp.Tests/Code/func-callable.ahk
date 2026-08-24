@@ -85,4 +85,23 @@ call_callback((*) => modify_x())
 
 AssertEq(x, 1, A_LineNumber)
 
+; AutoHotkey's bare-function shortcut applies only while the Func has no own properties. Once it has
+; any own property, even an unrelated one, bare invocation resolves Call through Func.Prototype.
+prototypeCallDesc := Func.Prototype.GetOwnPropDesc("Call")
+prototype_call_probe(*) => "function body"
+
+try
+{
+	Func.Prototype.DefineProp("Call", {Call: (this, *) => "prototype call"})
+	AssertEq(prototype_call_probe(), "function body", A_LineNumber)
+
+	prototype_call_probe.Marker := true
+	AssertEq(prototype_call_probe(), "prototype call", A_LineNumber)
+	AssertEq(prototype_call_probe.Call(), "prototype call", A_LineNumber)
+}
+finally
+	Func.Prototype.DefineProp("Call", prototypeCallDesc)
+
+AssertEq(prototype_call_probe(), "function body", A_LineNumber)
+
 FileAppend "pass", "*"

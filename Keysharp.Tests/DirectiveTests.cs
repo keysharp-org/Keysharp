@@ -269,11 +269,12 @@ namespace Keysharp.Tests
 						  "a `Class.Prop` criterion must read the property; generated:\n" + code);
 			Assert.IsFalse(code.Contains("Invoke(probe, \"Running\")"),
 						   "a `Class.Prop` criterion must not be invoked as a method; generated:\n" + code);
-			// A plain variable is its own value, not something to call.
-			Assert.IsFalse(code.Contains("Invoke(myflag, \"Call\")"),
+			// A plain variable is its own value, not something to call. A call lowers to the call form, which
+			// names no member (see Script.InvokeOrNull).
+			Assert.IsFalse(code.Contains("Invoke(myflag, null)"),
 						   "a bare-variable criterion must not be called; generated:\n" + code);
 			// A criterion that really is a call still is one.
-			Assert.IsTrue(code.Contains("Invoke(ison, \"Call\")"),
+			Assert.IsTrue(code.Contains("Invoke(ison, null)"),
 						  "a `Func()` criterion must still be called; generated:\n" + code);
 		}
 

@@ -5595,7 +5595,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Function object type.",
-                     "tested-by":  "assign-multiline.ahk"
+                     "tested-by":  "assign-multiline.ahk; func-callable.ahk"
                  },
                  {
                      "category":  "Input/Automation",
