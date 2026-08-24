@@ -2,83 +2,14 @@ using StringBuffer = Keysharp.Builtins.Ks.StringBuffer;
 
 namespace Keysharp.Builtins
 {
-	internal class DllData
-	{
-		// These dictionaries are theoretically unbounded in size, but in practice should not blow up in size.
-		// delegateCache is keyed by a combination of the number of arguments and whether the argument
-		// is a floating-type, so the max size should be about 1000.
-		// procAddressCache is keyed by DllCall target functions, which in practice should not get
-		// into too large numbers.
-		internal readonly ConcurrentDictionary<ulong, Delegate> delegateCache = new ();
-		internal readonly ConcurrentDictionary<string, nint> procAddressCache = new (StringComparer.OrdinalIgnoreCase);
-	}
-
 	/// <summary>
-	/// Public interface for DLL-related functions.
+	/// Public interface for DLL-related functions. This is the script-facing half only: resolving a function
+	/// specification to an address lives in <see cref="Keysharp.Internals.Interop.NativeLibraryResolver"/>,
+	/// marshalling the arguments in <see cref="ArgumentHelper"/>, and performing the call itself in
+	/// <see cref="Keysharp.Internals.Interop.NativeInvoker"/>.
 	/// </summary>
 	public static class Dll
 	{
-		/// <summary>
-		/// Calling <see cref="DllCall"/> requires creating a dynamic assembly, module, type, and method.<br/>
-		/// Then an instance the type is finally created.<br/>
-		/// Doing all of these take significant time.<br/>
-		/// Sadly, an existing assembly/module/type cannot have new methods created on it once the initial creation is done.<br/>
-		/// An optimization is to keep a cache of these objects, keyed by the exact function name and argument types.<br/>
-		/// Doing this saves significant time when doing repeated calls to the same DLL function with the same argument types.
-		/// </summary>
-		internal static readonly Dictionary<string, nint> loadedDlls = BuildSystemLibraries();
-
-		/// <summary>
-		/// The standard set of system libraries scanned when <see cref="DllCall"/> is given a bare function name
-		/// (no library/path component), mirroring how Windows resolves bare names against user32/kernel32/comctl32/
-		/// gdi32. This is what lets <c>DllCall("getpid")</c> resolve a C-library symbol without naming a library.
-		/// On macOS every libc/libm/pthread symbol is vended by the <c>libSystem</c> umbrella; on Linux they live in
-		/// libc/libm. Built defensively (each library loaded via <see cref="NativeLibrary.TryLoad(string, out nint)"/>
-		/// inside a try) so a single missing library can never throw out of the static initializer and break every
-		/// subsequent <see cref="DllCall"/>.
-		/// </summary>
-		private static Dictionary<string, nint> BuildSystemLibraries()
-		{
-			var dlls = new Dictionary<string, nint>(StringComparer.OrdinalIgnoreCase);
-
-			void Add(string key, params string[] candidates)
-			{
-				foreach (var candidate in candidates)
-				{
-					try
-					{
-						if (NativeLibrary.TryLoad(candidate, out var handle) && handle != 0)
-						{
-							dlls[key] = handle;
-							return;
-						}
-					}
-					catch
-					{
-					}
-				}
-			}
-
-#if WINDOWS
-			Add("user32", "user32");
-			Add("kernel32", "kernel32");
-			Add("comctl32", "comctl32");
-			Add("gdi32", "gdi32");
-#elif OSX
-			// libSystem re-exports libc/libm/libpthread/dyld, so loading it alone resolves the entire standard C
-			// library. Expose it under both "libSystem" and "libc" so an explicit "libc\func" path resolves too.
-			Add("libSystem", "libSystem.dylib", "/usr/lib/libSystem.B.dylib", "libSystem.B.dylib");
-
-			if (dlls.TryGetValue("libSystem", out var libSystem))
-				dlls["libc"] = libSystem;
-#else
-			Add("libc", "libc.so.6", "libc.so", "libc");
-			Add("libm", "libm.so.6", "libm.so", "libm");
-#endif
-
-			return dlls;
-		}
-
 		/// <summary>
 		/// Calls a function inside a DLL, such as a standard Windows API function.
 		/// </summary>
@@ -101,7 +32,7 @@ namespace Keysharp.Builtins
 		/// <see cref="StrGet"/> must be called to retrieve any memory allocated and returned inside of function.
 		/// </param>
 		/// <param name="parameters">Type1, Arg1<br/>
-		/// Each of these pairs represents a single parameter to be passed to the function. The number of pairs is unlimited for normal DLL calls and is limited to 16 for COM calls.<br/>
+		/// Each of these pairs represents a single parameter to be passed to the function. At most <see cref="NativeInvoker.MaxArguments"/> pairs may be given (one fewer for ComCall, whose object pointer takes a slot).<br/>
 		/// The argument types can be: Str, WStr, AStr, Int64, Int, Short, Char, Float, Double, Ptr or HRESULT (a 32-bit integer).<br/>
 		/// Append an asterisk (with optional preceding space) to any of the above types to cause the address of the argument to be passed rather than the value itself.<br/>
 		/// Prepend the letter U to any of the integer types above to interpret it as an unsigned integer (UInt64, UInt, UShort, and UChar).<br/>
@@ -118,130 +49,60 @@ namespace Keysharp.Builtins
 			// assembly and reflects over its namespaces/types/instances (incl. generics, indexers, enumerators and
 			// delegates) far more dynamically than DllCall could, so DllCall stays focused on native (C ABI) calls.
 			// See Keysharp.Tests/Code/external-clr.ahk for usage.
-			nint handle = 0;
-			nint address = 0;
+			nint address;
+			//A library this call has to load is unloaded again once it returns, matching AutoHotkey: a script
+			//which wants one to stay loaded says so with #DllLoad, or loads it itself with LoadLibrary.
+			nint moduleToFree = 0;
 
 			if (function is string path)
 			{
-				string name;
-				var z = path.LastIndexOfAny(['\\', '/']);
-				var procAddressCache = TheScript.DllData.procAddressCache;
 #if WINDOWS
+
 				// A LoadLibrary-family Win32 function takes a DLL path as its first argument, bound straight for
 				// the OS module loader, which only accepts '\' separators (see NormalizeLoaderPath). Keysharp
-				// encourages '/' as a cross-platform separator, so normalize that argument just-in-time. The
-				// function name is whatever follows the last separator (or the whole string for a bare name).
-				{
-					var fnSpan = z == -1 ? path.AsSpan() : path.AsSpan(z + 1);
+				// encourages '/' as a cross-platform separator, so normalize that argument just-in-time.
+				if (parameters.Length >= 2 && parameters[1] is string libArg
+						&& path.AsSpan(path.AsSpan().LastIndexOfAny('\\', '/') + 1).StartsWith("LoadLibrary", StringComparison.OrdinalIgnoreCase))
+					parameters[1] = NativeLibraryResolver.NormalizeLoaderPath(libArg);
 
-					if (parameters.Length >= 2 && parameters[1] is string libArg
-							&& fnSpan.StartsWith("LoadLibrary", StringComparison.OrdinalIgnoreCase))
-						parameters[1] = NormalizeLoaderPath(libArg);
-				}
 #endif
+				var procAddressCache = TheScript.DllData.procAddressCache;
 
-				if (z == -1)
+				// Keyed by the exact string the script wrote, so a repeated call is one lookup and no parsing.
+				// Only addresses the resolver vouches for are kept: one inside a library this call loaded, and
+				// will unload again below, would dangle the moment it did.
+				if (!procAddressCache.TryGetValue(path, out address))
 				{
-					name = path;
+					if (!NativeLibraryResolver.TryResolveProcAddress(path, out address, out moduleToFree, out var cacheable, out var error))
+						return Errors.ErrorOccurred(error);
 
-					if (procAddressCache.TryGetValue(name, out address))
-						goto AddressFound;
-
-
-					foreach (var dll in loadedDlls)
-					{
-						if (NativeLibrary.TryGetExport(dll.Value, name, out address))
-						{
-							procAddressCache[name] = address;
-							procAddressCache[dll.Key + Path.DirectorySeparatorChar + name] = address;
-							goto AddressFound;
-						}
-					}
-
-#if WINDOWS
-					var nameW = name + "W";
-
-					foreach (var dll in loadedDlls)
-					{
-						if (NativeLibrary.TryGetExport(dll.Value, nameW, out address))
-						{
-							procAddressCache[name] = address;
-							procAddressCache[dll.Key + Path.DirectorySeparatorChar + name] = address;
-							goto AddressFound;
-						}
-					}
-#endif
-
-					return Errors.ErrorOccurred($"Unable to find function \"{name}\" in any of the standard system libraries; specify the library explicitly (e.g. \"mylib\\{name}\").");
-				}
-				else if (loadedDlls.Keys.FirstOrDefault(n => path.StartsWith(n, StringComparison.OrdinalIgnoreCase)) is string moduleName && moduleName != null)
-				{
-					name = path.Substring(z + 1);
-					var key = moduleName + Path.DirectorySeparatorChar + name;
-
-					if (procAddressCache.TryGetValue(key, out address))
-						goto AddressFound;
-
-
-					if (!NativeLibrary.TryGetExport(loadedDlls[moduleName], name, out address))
-					{
-						NativeLibrary.TryGetExport(loadedDlls[moduleName], name + "W", out address);
-					}
-
-					if (address == 0)
-						return Errors.ErrorOccurred($"Unable to locate {LibraryExtension} with path {path}.");
-					else
-					{
-						procAddressCache[name] = address;
-						procAddressCache[key] = address;
-					}
-				}
-				else
-				{
-					z++;
-
-					if (z >= path.Length)
-						return Errors.ErrorOccurred($"Improperly formatted path of {path}.");
-
-					name = path.Substring(z);
-					path = path.Substring(0, z - 1);
-
-					if (path.Length != 0 && !Path.HasExtension(path)
-#if !WINDOWS
-						&& !File.Exists(path)
-#endif
-					)
-						path += LibraryExtension;
-
-					path = NormalizeLoaderPath(path);
-					NativeLibrary.TryLoad(path, out handle);
-#if WINDOWS
-					if (handle != 0 && !NativeLibrary.TryGetExport(handle, name, out address))
-						NativeLibrary.TryGetExport(handle, name + "W", out address);
-#else
-					if (handle == 0 && path.EndsWith(LibraryExtension, StringComparison.OrdinalIgnoreCase))
-						NativeLibrary.TryLoad(path + ".0", out handle);
-
-					if (handle != 0)
-						_ = NativeLibrary.TryGetExport(handle, name, out address);
-#endif
+					if (cacheable)
+						procAddressCache[path] = address;
 				}
 			}
-			else if (Reflections.TryGetPtrProperty(function, out var faddr))//A false/0 result leaves address at 0, caught by the shared guard below.
+			else if (Reflections.TryGetPtrProperty(function, out var faddr))//A false/0 result means no usable address.
 				address = new nint(faddr);
-
-			AddressFound:
-
-			if (address == 0)
+			else
 				return Errors.TypeErrorOccurred(function, typeof(nint), DefaultObject);
+
+			var argCount = parameters.Length / 2;
+
+			if (argCount > NativeInvoker.MaxArguments)//Also what keeps the stack allocation below bounded.
+				return Errors.ValueErrorOccurred($"A DllCall cannot take more than {NativeInvoker.MaxArguments} arguments.");
+
+			Span<long> args = stackalloc long[argCount];
+			Span<ArgumentSlot> slots = stackalloc ArgumentSlot[argCount];
 
 			try
 			{
-				using var helper = new ArgumentHelper(parameters);
-				var value = NativeInvoke(address, helper.args, helper.floatingTypeMask);
-				FixParamTypesAndCopyBack(parameters, helper);
-				var result = helper.ConvertReturnValue(value);
-				return result;
+				using var helper = new ArgumentHelper(parameters, args, slots);
+
+				if (helper.Failed)//The error was reported and suppressed; the argument list is incomplete.
+					return DefaultObject;
+
+				var value = NativeInvoker.NativeInvoke(address, args, helper.floatingTypeMask);
+				helper.CopyBack(parameters);
+				return helper.ConvertReturnValue(value);
 			}
 			catch (KeysharpException)
 			{
@@ -253,109 +114,9 @@ namespace Keysharp.Builtins
 			}
 			finally
 			{
-				if (handle != 0)
-					NativeLibrary.Free(handle);
+				if (moduleToFree != 0)
+					NativeLibrary.Free(moduleToFree);
 			}
-		}
-
-		/// <summary>
-		/// Normalizes a path that is about to be handed to the native module loader. On Windows the loader
-		/// (LoadLibrary/LoadLibraryEx, and its LOAD_WITH_ALTERED_SEARCH_PATH search for a DLL's sibling
-		/// dependencies) only accepts '\' separators — a '/' yields ERROR_MOD_NOT_FOUND — so any '/' is
-		/// converted to '\'. A new string is allocated only when a '/' is actually present; otherwise the
-		/// original instance is returned unchanged. A no-op on non-Windows platforms, where '/' is correct.
-		/// </summary>
-		internal static string NormalizeLoaderPath(string path)
-		{
-#if WINDOWS
-			return path != null && path.IndexOf('/') >= 0 ? path.Replace('/', '\\') : path;
-#else
-			return path;
-#endif
-		}
-
-		/// <summary>
-		/// A private helper to compile and cache a delegate with the appropriate number of<br/>
-		/// parameters and then invoke it. All arguments are considered <see cref="long"/> internally.
-		/// </summary>
-		/// <param name="fnPtr">The pointer to the native function to be called.</param>
-		/// <param name="args">The argument list.</param>
-		/// <param name="mask">64-bit mask containing information about floating point arguments and return value</param>
-		/// <returns>An <see cref="nint"/> which contains the return value of the function call.</returns>
-		internal static object NativeInvoke(nint fnPtr, long[] args, ulong mask)
-		{
-			nint shim = 0;
-			int n = args.Length;
-			var script = TheScript;
-			var delegateCache = script.DllData.delegateCache;
-			// pack n (≤ 58) into bits 58–63, mask occupies bits 0–57
-			// this means the maximum argument count is 63 for integer return values, 57 for floating point ones
-			// (this limitation can be eliminated in the future if needed)
-			ulong key = ((ulong)n << 58) | (mask & ((1UL << 58) - 1));
-			var del = delegateCache.GetOrAdd(key, _ => CreateInvoker(n, mask));
-#if WINDOWS
-
-			// Under Windows x64 AutoHotkey passes the first four arguments in both
-			// general purpose registers as well as floating point registers to support
-			// variadic function calls. Here we create a small shim which copies floating points
-			// to GPRs, but only if any of the first four args is floating point.
-			//
-			// There is deliberately no ARM64 equivalent. AAPCS64 counts general and floating point argument
-			// registers separately, so a value cannot occupy x_n and v_n at once the way it can occupy a GPR
-			// and an XMM on x64 - duplicating it would consume an integer slot the next argument needs. A
-			// non-variadic callee reads a double from v_n (which CreateInvoker's `double` parameter already
-			// satisfies), while a Windows ARM64 variadic callee reads it from x_n, and DllCall has no way to
-			// know which it is calling. Non-variadic calls are therefore correct and variadic calls with
-			// floating point arguments are not; distinguishing them needs an explicit caller-supplied flag.
-			if (((mask & 0xFUL) != 0) && RuntimeInformation.ProcessArchitecture == Architecture.X64)
-			{
-				shim = script.ExecutableMemoryPoolManager.Rent();
-				unsafe
-				{
-					byte* ptr = (byte*)shim;
-
-					// Emit MOVQ rcx←xmm0, rdx←xmm1, r8←xmm2, r9←xmm3 as needed. MOVQ from an XMM register to a
-					// 64-bit GPR is `66 REX.W 0F 7E /r`: the 0x66 prefix and REX.W are both required, since
-					// without REX.W the same opcode is MOVD and copies only the low 32 bits, and without the
-					// 0x66 prefix it is the MMX MOVQ instead. ModRM is mod=11, reg=the XMM, rm=the GPR, with
-					// REX.B extending rm to reach r8/r9.
-					for (int i = 0; i < 4; i++)
-					{
-						if ((mask & (1UL << i)) == 0 || i == n) continue;
-
-						// rcx, rdx, r8, r9 as the low 3 bits of rm, the last two needing REX.B.
-						const string rm = "\x01\x02\x00\x01";
-						*ptr++ = 0x66;
-						*ptr++ = (byte)(i < 2 ? 0x48 : 0x49);
-						*ptr++ = 0x0F;
-						*ptr++ = 0x7E;
-						*ptr++ = (byte)(0xC0 | (i << 3) | rm[i]);
-					}
-
-					// Emit: JMP [RIP + 0]  => FF 25 00 00 00 00
-					*ptr++ = 0xFF;* ptr++ = 0x25;* ptr++ = 0x00;* ptr++ = 0x00;* ptr++ = 0x00;* ptr++ = 0x00;
-
-					// Followed immediately by the 64-bit absolute address
-					*((long*)ptr) = fnPtr;
-					fnPtr = shim;
-				}
-			}
-
-#endif
-			object result = 0L;
-
-			// invoke with the correct delegate type
-			if (((mask >> n) & 1) != 0)
-				result = ((Func<nint, long[], double>)del)(fnPtr, args);
-			else
-				result = ((Func<nint, long[], long>)del)(fnPtr, args);
-
-			ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-
-			if (shim != 0)
-				script.ExecutableMemoryPoolManager.Return(shim);
-
-			return result;
 		}
 
 		/// <summary>
@@ -458,185 +219,17 @@ namespace Keysharp.Builtins
 		public static object CallbackFree(object address)
 		{
 			if (address is DelegateHolder dh)
+			{
+#if WINDOWS
+				//Before the thunk's address goes away. A shim keyed on it would otherwise sit in the cache for
+				//the life of the script, and a script that creates and frees callbacks in a loop would keep one
+				//executable chunk per callback it has ever made.
+				NativeInvoker.ReleaseShims((nint)dh.Ptr);
+#endif
 				((IDisposable)dh).Dispose();
+			}
 
 			return DefaultObject;
-		}
-
-		/// <summary>
-		/// Generates (and returns) a delegate of type Func<nint, long[], long> or Func<nint, long[], double>
-		/// for a function pointer that accepts exactly n long arguments.
-		/// It reads n arguments from the provided array, loads as either long or double,
-		/// then loads the function pointer and calls it.
-		/// </summary>
-		/// <param name="n">The number of long arguments expected.</param>
-		/// <param name="mask">Bitmask containing info about possible floating point number argument positions</param>
-		private static Delegate CreateInvoker(int n, ulong mask)
-		{
-			Type returnType = (((mask >> n) & 1) != 0) ? typeof(double) : typeof(long);
-			// method name only depends on n and floatingTypeMask
-			string name = $"NativeCall_{n}_{mask}";
-			var dm = new DynamicMethod(
-				name,
-				returnType,
-				[typeof(nint), typeof(long[])],
-				typeof(Dll).Module,
-				skipVisibility: true);
-			var il = dm.GetILGenerator();
-
-			// 1) load each argument slot
-			for (int i = 0; i < n; i++)
-			{
-				il.Emit(OpCodes.Ldarg_1);           // args[]
-				il.Emit(OpCodes.Ldc_I4, i);         // index
-
-				if (((mask >> i) & 1) != 0)
-					il.Emit(OpCodes.Ldelem_R8);     // double
-				else
-					il.Emit(OpCodes.Ldelem_I8);     // long
-			}
-
-			// 2) load fn pointer
-			il.Emit(OpCodes.Ldarg_0);
-			// 3) build the param-type list for calli
-			var paramTypes = Enumerable.Range(0, n)
-							 .Select(i => (((mask >> i) & 1) != 0)
-									 ? typeof(double)
-									 : typeof(long))
-							 .ToArray();
-			// 4) emit the unmanaged cdecl calli
-			il.EmitCalli(
-				OpCodes.Calli,
-				CallingConvention.Cdecl,
-				returnType,
-				paramTypes);
-			il.Emit(OpCodes.Ret);
-			// pick the right Func<…> delegate
-			Type delegateType = (returnType == typeof(double))
-								? typeof(Func<nint, long[], double>)
-								: typeof(Func<nint, long[], long>);
-			return dm.CreateDelegate(delegateType);
-		}
-
-		internal static unsafe void FixParamTypeAndCopyBack(ref object p, Type t, nint aip)
-		{
-			if (t == typeof(uint))
-			{
-				var tempui = *(uint*)aip;
-				var templ = (long)tempui;
-				p = templ;
-			}
-			else if (t == typeof(int))
-			{
-				var tempi = *(int*)aip;
-				var templ = (long)tempi;
-				p = templ;
-			}
-			else if (t == typeof(long))
-			{
-				var templ = *(long*)aip;
-				p = templ;
-			}
-			else if (t == typeof(double))
-			{
-				var tempd = *(double*)aip;
-				p = tempd;
-			}
-			else if (t == typeof(float))
-			{
-				var tempf = *(float*)aip;
-				var tempd = (double)tempf;
-				p = tempd;
-			}
-			else if (t == typeof(ushort))
-			{
-				var tempus = *(ushort*)aip;
-				var templ = (long)tempus;
-				p = templ;
-			}
-			else if (t == typeof(short))
-			{
-				var temps = *(short*)aip;
-				var templ = (long)temps;
-				p = templ;
-			}
-			else if (t == typeof(byte))
-			{
-				var tempub = *(byte*)aip;
-				var templ = (long)tempub;
-				p = templ;
-			}
-			else if (t == typeof(sbyte))
-			{
-				var tempb = *(sbyte*)aip;
-				var templ = (long)tempb;
-				p = templ;
-			}
-			else if (t == typeof(string))
-			{
-				var s = (long*)aip;
-				p = Strings.StrGet((long)new nint(*s));
-			}
-			else
-			{
-				var pp = (long*)aip;
-				p = *pp;
-			}
-		}
-
-		internal static unsafe void FixParamTypesAndCopyBack(object[] parameters, ArgumentHelper helper)
-		{
-			//Ensure arguments passed in are in the proper format when writing back.
-			foreach (var pair in helper.OutputVars)
-			{
-				var pi = pair.Key;
-				var n = pi / 2;
-				var arg = helper.args[n];
-				var outputType = pair.Value.Item1;
-
-				if (outputType == typeof(Struct))
-				{
-					if (parameters[pi] is Any kso && Script.GetPropertyValueOrNull(kso, "__Value") is Struct structValue)
-						_ = Script.SetPropertyValue(kso, "__Value", Struct.GetOutputValue(structValue));
-
-					continue;
-				}
-
-				if (parameters[pi] is StringBuffer sb)
-				{
-					sb.UpdateEntangledStringFromBuffer();
-					parameters[pi] = sb.EntangledString;
-				}
-				else if (parameters[pi] is Any kso)
-				{
-					object temp = arg;
-					FixParamTypeAndCopyBack(ref temp, pair.Value.Item1, (nint)arg);
-					if (pair.Value.Item2)
-						_ = Script.SetPropertyValue(kso, "ptr", temp);
-					else
-						_ = Script.SetPropertyValue(kso, "__Value", temp);
-				}
-				else
-				{
-					FixParamTypeAndCopyBack(ref parameters[pi], pair.Value.Item1, (nint)arg);
-				}
-
-				/*
-				    else
-				    {
-				    if (parameters[pi + 1] is string s)
-				    {
-				        if (arg is not string)
-				        {
-				            //var s = (long*)aip.ToPointer();
-				            //p = Strings.StrGet((long)new nint(s));
-				            if (arg is long l)
-				                parameters[pi + 1] = Strings.StrGet(l);
-				        }
-				    }
-				    }
-				*/
-			}
 		}
 	}
 }

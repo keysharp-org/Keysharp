@@ -549,30 +549,30 @@ namespace Keysharp.Builtins
 
 		internal static bool IsPrimitive(Type structType) => GetLayoutInfo(structType, true).IsPrimitive;
 
-		// The built-in DllCall type name a numeric type class is equivalent to, or null if structType is not one.
+		// The built-in DllCall type a numeric type class is equivalent to, or Invalid if structType is not one.
 		// Used as a DllCall type, such a class "is not instantiated" and converts directly, so it can simply be
 		// handled as the built-in type it mirrors. Pointer classes are primitive too, but must keep their own
 		// dereferencing behaviour, so they are excluded. [v2.1-alpha.23+]
-		internal static string GetPrimitiveTypeTag(Type structType)
+		internal static NativeTypeCode GetPrimitiveTypeCode(Type structType)
 		{
 			var info = GetLayoutInfo(structType, true);
 
 			if (!info.IsPrimitive || pointerTargets.ContainsKey(structType))
-				return null;
+				return NativeTypeCode.Invalid;
 
 			return info.PrimitiveKind switch
 			{
-				StructPrimitiveKind.Int8 => "char",
-				StructPrimitiveKind.UInt8 => "uchar",
-				StructPrimitiveKind.Int16 => "short",
-				StructPrimitiveKind.UInt16 => "ushort",
-				StructPrimitiveKind.Int32 => "int",
-				StructPrimitiveKind.UInt32 => "uint",
-				StructPrimitiveKind.Int64 => "int64",
-				StructPrimitiveKind.Ptr => "ptr",
-				StructPrimitiveKind.Float32 => "float",
-				StructPrimitiveKind.Float64 => "double",
-				_ => null
+				StructPrimitiveKind.Int8 => NativeTypeCode.Char,
+				StructPrimitiveKind.UInt8 => NativeTypeCode.UChar,
+				StructPrimitiveKind.Int16 => NativeTypeCode.Short,
+				StructPrimitiveKind.UInt16 => NativeTypeCode.UShort,
+				StructPrimitiveKind.Int32 => NativeTypeCode.Int,
+				StructPrimitiveKind.UInt32 => NativeTypeCode.UInt,
+				StructPrimitiveKind.Int64 => NativeTypeCode.Int64,
+				StructPrimitiveKind.Ptr => NativeTypeCode.Ptr,
+				StructPrimitiveKind.Float32 => NativeTypeCode.Float,
+				StructPrimitiveKind.Float64 => NativeTypeCode.Double,
+				_ => NativeTypeCode.Invalid
 			};
 		}
 

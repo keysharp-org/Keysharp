@@ -269,4 +269,43 @@ CheckWorkerCoordModeAffinity() {
 	return -3
 }
 
+; A by-value Double travels in a floating-point register just as a Float does, but through a different
+; path in the generated call, and neither was covered.
+AddTwo(a, b) => a + b
+doubleCb := CallbackCreate(AddTwo, "Fast", [Float64, Float64, Float64])
+AssertEq(DllCall(doubleCb, "double", 1.5, "double", 2.25, "double"), 3.75, A_LineNumber)
+CallbackFree(doubleCb)
+
+; More than four floating-point arguments: the first four are duplicated into general purpose registers
+; for a variadic callee, the rest travel on the stack, and the two groups are handled separately.
+SumSix(a, b, c, d, e, f) => a + b + c + d + e + f
+sixCb := CallbackCreate(SumSix, "Fast", [Float64, Float64, Float64, Float64, Float64, Float64, Float64])
+AssertEq(DllCall(sixCb, "double", 1.0, "double", 2.0, "double", 3.0, "double", 4.0, "double", 5.0
+	, "double", 6.0, "double"), 21.0, A_LineNumber)
+CallbackFree(sixCb)
+
+; A return type may carry the same '*' an argument does, meaning the function returns the address of the
+; value rather than the value.
+retBuf := Buffer(8, 0)
+NumPut("int", 12345, retBuf)
+NumPut("int64", 9876543210, retBuf, 0)
+ptrCb := CallbackCreate((*) => retBuf.Ptr, "Fast")
+AssertEq(DllCall(ptrCb, "int64*"), 9876543210, A_LineNumber)
+NumPut("int", 12345, retBuf)
+AssertEq(DllCall(ptrCb, "int*"), 12345, A_LineNumber)
+CallbackFree(ptrCb)
+
+; A 'str*' output receives the string the callee pointed at, not the raw address.
+outText := Buffer(64, 0)
+StrPut("hello from native", outText, "UTF-16")
+WriteStrPtr(slot) {
+	NumPut("ptr", outText.Ptr, slot)
+	return 0
+}
+strCb := CallbackCreate(WriteStrPtr, "Fast")
+got := ""
+DllCall(strCb, "str*", &got)
+AssertEq(got, "hello from native", A_LineNumber)
+CallbackFree(strCb)
+
 FileAppend "pass", "*"

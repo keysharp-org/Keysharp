@@ -649,7 +649,7 @@ namespace Keysharp.Runtime
 					// resolves a proc address in a dll loaded by this directive.
 					_ = WindowsAPI.GetModuleHandleEx(WindowsAPI.GET_MODULE_HANDLE_EX_FLAG_PIN, libraryName, out hmodule);  // MSDN regarding hmodule: "If the function fails, this parameter is NULL."
 #else
-					Dll.loadedDlls[library] = hmodule;
+					NativeLibraryResolver.loadedDlls[library] = hmodule;
 #endif
 				}
 				else if (throwOnFailure)

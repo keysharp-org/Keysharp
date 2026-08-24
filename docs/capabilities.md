@@ -485,7 +485,7 @@ Status legend:
 | DirExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for the existence of a folder and returns its attributes. |
 | DirMove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves a folder along with all its sub-folders and files. It can also rename a folder. |
 | DirSelect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Displays the native folder-selection dialog on every platform. Some legacy Windows folder-dialog option flags have no portable equivalent. |
-| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls a native shared-library function on every platform. Numeric type classes can replace built-in type names, and a return type of 'void' returns no value. |
+| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls a native shared-library function on every platform. Numeric type classes can replace built-in type names, and a 'void' return type yields no value. |
 | Download() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Download function downloads a file from the Internet. |
 | DriveEject() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Ejects or retracts the tray of the specified CD/DVD drive. |
 | DriveGetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the total capacity of the drive which contains the specified path, in megabytes. |
@@ -828,8 +828,8 @@ Status legend:
 | NormalizeEol() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Normalizes all line endings to a requested or platform-default sequence. |
 | not | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical NOT operator. |
 | Number() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Number function converts a numeric string to a pure integer or floating-point number. |
-| NumGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The NumGet function returns the binary number stored at the specified address+offset. |
-| NumPut() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The NumPut function stores one or more numbers in binary format at the specified address+offset. |
+| NumGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The NumGet function returns the binary number stored at the specified address+offset. A type which does not name a number raises a ValueError, and the name is matched in full where AutoHotkey reads only its first character. |
+| NumPut() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The NumPut function stores one or more numbers in binary format at the specified address+offset. A type or value which does not name a number raises a ValueError. |
 | ObjAddRef() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ObjAddRef and ObjRelease functions increment or decrement an object's reference count. |
 | ObjBindMethod() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ObjBindMethod function creates a BoundFunc object which calls a method of a given object. |
 | Object() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new Object; optional key/value arguments initialize own properties. |

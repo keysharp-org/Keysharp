@@ -3,8 +3,13 @@ namespace Keysharp.Builtins
 	/// <summary>
 	/// Manages executable memory in pages, providing fixed 64-byte chunks to DllCall, which writes a small
 	/// machine-code shim into one when it has to copy floating-point arguments into general purpose registers
-	/// (see Dll.NativeInvoke). Automatically allocates new pages when needed and reuses freed chunks.
+	/// (see NativeInvoker). Automatically allocates new pages when needed and reuses freed chunks.
 	/// This is needed because VirtualAlloc is quite a heavy function, best called as few times as possible.
+	///
+	/// A rented chunk is normally kept for as long as the function it shims can be called, rather than returned
+	/// per call: writing into a chunk that was just executed trips the processor's self-modifying-code detection
+	/// and costs a pipeline flush. Return is for a chunk whose function is going away, which is what
+	/// CallbackFree does.
 	///
 	/// Renting and returning are serialised, because a lock-free free list would need tagged pointers to be
 	/// safe here: chunks hold executable code, so handing the same chunk to two callers would let one overwrite
@@ -21,7 +26,8 @@ namespace Keysharp.Builtins
 		// A whole page is mapped at once regardless, so carve the full page rather than reserving a granule to
 		// hand out only a few chunks.
 		private const int PageSize = 4096;
-		private const int ChunkSize = 64;
+		//Internal so the shim emitter can prove at compile time that what it writes fits (see NativeInvoker.ShimFitsChunk).
+		internal const int ChunkSize = 64;
 		private readonly Lock _lock = new();
 
 		// Head of the free-chunk list, each chunk holding the address of the next (0 == empty).

@@ -92,6 +92,7 @@ global using global::Keysharp.Internals.Scripting;
 global using global::Keysharp.Internals.Strings;
 global using global::Keysharp.Internals.Threading;
 global using global::Keysharp.Internals.Window;
+global using global::Keysharp.Internals.Interop;
 global using global::Keysharp.Internals.Invoke;
 global using global::Keysharp.Language;
 global using global::Keysharp.Runtime;

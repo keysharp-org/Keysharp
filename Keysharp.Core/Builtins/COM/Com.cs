@@ -358,23 +358,35 @@ namespace Keysharp.Builtins.COM
 			else
 				return Errors.ValueErrorOccurred($"The passed in object was not a ComObject or a raw COM interface.");
 
-			var pVtbl = Marshal.ReadIntPtr(pUnk);
-			using var helper = new ComArgumentHelper(parameters);
-			var value = NativeInvoke(pUnk.ToInt64(), Marshal.ReadIntPtr(nint.Add(pVtbl, idx * sizeof(nint))), helper.args, helper.floatingTypeMask);
-			Dll.FixParamTypesAndCopyBack(parameters, helper);
-			var result = helper.ConvertReturnValue(value);
-			return result;
-		}
+			var argCount = parameters.Length / 2;
 
-		internal static object NativeInvoke(long objPtr, nint vtbl, long[] args, ulong mask)
-		{
-			if (objPtr == 0L || vtbl == 0)
+			if (argCount >= NativeInvoker.MaxArguments)//The object pointer takes a slot of its own ahead of them.
+				return Errors.ValueErrorOccurred($"A ComCall cannot take more than {NativeInvoker.MaxArguments - 1} arguments.");
+
+			//Checked before the dereference below rather than after it, which is where the equivalent guard
+			//used to sit -- reading the vtable out of a null pointer faults before any check can report it.
+			if (pUnk == 0)
 				throw new Error("Invalid object pointer or vtable number");
 
-			object ret = 0L;
-			//First attempt to call the normal way. This will succeed with any normal COM call.
-			//However, it will throw an exception if we've passed a fake COM function using DelegateHolder.
-			//This can be reproduced with the following Script.TheScript.
+			var vtbl = Marshal.ReadIntPtr(nint.Add(Marshal.ReadIntPtr(pUnk), idx * sizeof(nint)));
+
+			if (vtbl == 0)
+				throw new Error("Invalid object pointer or vtable number");
+
+			//A COM method takes the object pointer as its first argument, so the list is one longer than the
+			//script's arguments and is built with that slot already in front: the helper fills the tail in
+			//place, which is why nothing here has to be copied into or out of a second buffer.
+			Span<long> args = stackalloc long[argCount + 1];
+			Span<ArgumentSlot> slots = stackalloc ArgumentSlot[argCount];
+			using var helper = new ArgumentHelper(parameters, args[1..], slots, isCom: true);
+
+			if (helper.Failed)//The error was reported and suppressed; the argument list is incomplete.
+				return DefaultObject;
+
+			args[0] = pUnk;
+			//Called through the same generated invoker DllCall uses rather than anything COM-aware, because the
+			//vtable entry need not belong to a real COM object at all: a script can build one out of Buffers and
+			//a CallbackCreate thunk, with no AddRef or Release behind it, and ComCall must still work.
 			/*
 			    ReturnInt() => 123
 
@@ -387,16 +399,12 @@ namespace Keysharp.Builtins.COM
 
 			    MsgBox ComCall(3, dummyCOM.Ptr, "int")
 			*/
-			// This could potentially be optimized by compiling a specific delegate
-			// for the ComCall scenario with the signature Func<nint, long, long[], long>
-			long[] newArgs = new long[args.Length + 1];
-			newArgs[0] = objPtr;
-			System.Array.Copy(args, 0, newArgs, 1, args.Length);
-			mask = mask << 1; // since we inserted an extra argument at the beginning
-			ret = Dll.NativeInvoke(vtbl, newArgs, mask);
-			// Copy back.
-			System.Array.Copy(newArgs, 1, args, 0, args.Length);
-			return ret;
+			//Every argument sits one slot further along than the helper numbered it, and so does the return
+			//value, so the whole mask shifts with them.
+			var value = NativeInvoker.NativeInvoke(vtbl, args, helper.floatingTypeMask << 1);
+			helper.CopyBack(parameters);
+			var result = helper.ConvertReturnValue(value);
+			return result;
 		}
 
 		[LibraryImport(WindowsAPI.ole32, EntryPoint = "CLSIDFromProgIDEx", StringMarshalling = StringMarshalling.Utf16)]

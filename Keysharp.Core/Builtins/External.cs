@@ -6,20 +6,33 @@ namespace Keysharp.Builtins
 	public static class External
 	{
 		/// <summary>
+		/// The lowest address NumGet/NumPut will touch, matching AutoHotkey. It is a sanity check, not a promise
+		/// about the address space: its job is to catch a zero or blank address that reached here by mistake and
+		/// report it, rather than fault inside the read.
+		/// <para>The value suits every platform, for different reasons. Windows guarantees the first 64KB is
+		/// never mapped, which is where the number comes from; 64KB is also the usual Linux
+		/// <c>vm.mmap_min_addr</c> default, and macOS reserves far more than this below the executable. Only a
+		/// Linux system with that sysctl deliberately lowered could map memory beneath the floor, and a script
+		/// reading it would get an IndexError here.</para>
+		/// </summary>
+		private const long MinValidAddress = 65536;
+
+		/// <summary>
 		/// Returns the binary number stored at the specified address+offset.
 		/// </summary>
 		/// <param name="source">A <see cref="Buffer"/>-like object or memory address.</param>
 		/// <param name="offset">If blank or omitted (or when using 2-parameter mode), it defaults to 0.<br/>
 		/// Otherwise, specify an offset in bytes which is added to source to determine the source address.
 		/// </param>
-		/// <param name="type">One of the following strings: UInt, Int, Int64, Short, UShort, Char, UChar, Double, Float, Ptr or UPtr</param>
+		/// <param name="type">One of the following strings: UInt, Int, Int64, UInt64, Short, UShort, Char, UChar, Double, Float, Ptr or UPtr</param>
 		/// <returns>The binary number at the specified address+offset.</returns>
 		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown the address could not be determined.</exception>
+		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if type does not name a number.</exception>
+		/// <exception cref="IndexError">An <see cref="IndexError"/> exception is thrown if the offset exceeds the bounds of the memory.</exception>
 		public unsafe static object NumGet(object source, object offset, object type = null)
 		{
-			int off;
+			long off;
 			string t;
-			var address = source;
 
 			if (type == null)
 			{
@@ -28,115 +41,29 @@ namespace Keysharp.Builtins
 			}
 			else
 			{
-				off = offset.Ai();
+				//Read as a long, not an int: a truncated offset can come back negative, which would slip past
+				//the bounds check below and read far outside the buffer.
+				off = offset.Al();
 				t = type.As("UInt");
 			}
 
-			nint addr;
-			var size = 0L;
-			t = t.ToLower();
+			var code = NativeType.Parse(t);
 
-			if (address is Buffer abuf)//Put Buffer check first because it's faster and more likely.
-			{
-				address = abuf.Ptr;
-				size = abuf.Size.Al();
-			}
-			else if (address is KeysharpObject kso && Script.GetPropertyValueOrNull(kso, "ptr") is object p
-					 && Script.GetPropertyValueOrNull(kso, "size") is object s)
-			{
-				address = p;
-				size = s.Al();
-			}
+			if (!NativeType.IsNumeric(code))
+				return Errors.ValueErrorOccurred($"Type of {t} is not a number that can be read from memory.", t, DefaultObject);
 
-			if (address is object[] objarr && objarr.Length > 0)//Assume the first element was a long which was an address.
-				addr = new nint(objarr[0].Al());
-			else if (address is long l)
-				addr = new nint(l);
+			if (!TryResolveTarget(source, out var addr, out var size) && !TryResolveReadOnlyTarget(source, code, out addr))
+				return Errors.TypeErrorOccurred(source, typeof(nint), DefaultObject);
 
-			//else if (address is int i)
-			//  addr = new nint(i);
-#if WINDOWS
-			else if (t == "ptr" && Marshal.IsComObject(address))
-			{
-				var pUnk = Marshal.GetIUnknownForObject(address);
-				addr = pUnk;//Ditto.
-				_ = Marshal.Release(pUnk);
-			}
-#endif
-			else
-				return Errors.TypeErrorOccurred(address, typeof(nint), DefaultObject);
+			if (addr < MinValidAddress)
+				return Errors.IndexErrorOccurred($"Could not parse target {source} as a Buffer or memory address.", DefaultObject);
 
-			switch (t)
-			{
-				case "uint":
-					if (size > 0 && (off + 4 > size))
-						return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off} + length 4 > buffer size {size}.");
+			var width = NativeType.SizeOf(code);
 
-					return (long)(uint)Marshal.ReadInt32(addr, off);
+			if (size > 0 && off + width > size)
+				return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off} + length {width} > buffer size {size}.", DefaultObject);
 
-				case "int":
-					if (size > 0 && (off + 4 > size))
-						return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off} + length 4 > buffer size {size}.");
-
-					return (long)Marshal.ReadInt32(addr, off);
-
-				case "short":
-					if (size > 0 && (off + 2 > size))
-						return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off} + length 2 > buffer size {size}.");
-
-					return (long)Marshal.ReadInt16(addr, off);
-
-				case "ushort":
-					if (size > 0 && (off + 2 > size))
-						return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off} + length 2 > buffer size {size}.");
-
-					return (long)(ushort)Marshal.ReadInt16(addr, off);
-
-				case "char":
-					if (size > 0 && (off + 1 > size))
-						return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off} + length 1 > buffer size {size}.");
-
-					return (long)(sbyte)Marshal.ReadByte(addr, off);
-
-				case "uchar":
-					if (size > 0 && (off + 1 > size))
-						return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off} + length 1 > buffer size {size}.");
-
-					return (long)Marshal.ReadByte(addr, off);
-
-				case "double":
-					if (size > 0 && (off + 8 > size))
-						return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off} + length 8 > buffer size {size}.");
-
-					unsafe
-					{
-						var ptr = (double*)(addr + off).ToPointer();
-						var val = *ptr;
-						return val;
-					}
-
-				case "float":
-					if (size > 0 && (off + 4 > size))
-						return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off} + length 4 > buffer size {size}.");
-
-					unsafe
-					{
-						var ptr = (float*)(addr + off).ToPointer();
-						return double.Parse((*ptr).ToString());//Need to convert to string to make it exact, else there can be lots of rounding/trailing digits.
-					}
-
-				case "int64":
-				case "ptr":
-				case "uptr":
-				default:
-					if (size > 0 && (off + 8 > size))
-						return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off} + length 8 > buffer size {size}.");
-
-					var ipoff = nint.Add(addr, off);
-					//var pp = (long*)ipoff.ToPointer();
-					//return *pp;
-					return Marshal.ReadIntPtr(ipoff).ToInt64();//Dereference here.
-			}
+			return NativeType.ReadMemory(code, addr + (nint)off);
 		}
 
 		/// <summary>
@@ -147,20 +74,20 @@ namespace Keysharp.Builtins
 		/// <param name="target">A <see cref="Buffer"/>-like object or memory address.</param>
 		/// <param name="offset">If omitted, it defaults to 0. Otherwise, specify an offset in bytes which is added to Target to determine the target address.</param>
 		/// <returns>The address to the right of the last item written.</returns>
-		/// <exception cref="IndexError">An <see cref="IndexError"/> exception is thrown if the offset exceeds the bounds of the memory or if it couldn't be determined.</exception>
+		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if the address could not be determined.</exception>
+		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if a type does not name a number.</exception>
+		/// <exception cref="IndexError">An <see cref="IndexError"/> exception is thrown if the offset exceeds the bounds of the memory.</exception>
 		public static long NumPut(params object[] obj)
 		{
-			nint addr = 0;
-			var offset = 0;
-			var size = 0L;
+			long offset = 0;
 			int lastPairIndex;
-			var offsetSpecified = !((obj.Length & 1) == 1);
 			object target;
 
-			if (offsetSpecified)
+			if ((obj.Length & 1) == 0)//An even count means a trailing offset follows the target.
 			{
 				lastPairIndex = obj.Length - 4;
-				offset = obj.Ai(obj.Length - 1);
+				//A long, not an int: a truncated offset can come back negative and slip past the bounds check.
+				offset = obj.Al(obj.Length - 1);
 				target = obj[obj.Length - 2];
 			}
 			else
@@ -169,118 +96,96 @@ namespace Keysharp.Builtins
 				target = obj[obj.Length - 1];
 			}
 
-			if (target is Buffer buf)//Put Buffer check first because it's faster and more likely.
-			{
-				size = buf.Size.Al();
-				target = buf.Ptr;
-			}
-			else if (target is Any kso && Script.GetPropertyValueOrNull(kso, "ptr") is object p && p != null
-					 && Script.GetPropertyValueOrNull(kso, "size") is object s && s != null)
-			{
-				size = s.Al();
-				target = p;
-			}
-
-			if (target is long l)
-				addr = new nint(l);
-			else
+			if (!TryResolveTarget(target, out var addr, out var size))
 				return (long)Errors.TypeErrorOccurred(target, typeof(nint), DefaultErrorLong);
+
+			if (addr < MinValidAddress)
+				return (long)Errors.IndexErrorOccurred($"Could not parse target {target} as a Buffer or memory address.", DefaultErrorLong);
 
 			for (var i = 0; i <= lastPairIndex; i += 2)
 			{
-				var inc = 0;
-				var type = obj[i] as string;
-				var number = obj[i + 1];
-				byte[] bytes;
+				var t = obj[i] as string;
+				var code = NativeType.Parse(t);
 
-				switch (type.ToLower())
-				{
-					case "int":
-						bytes = BitConverter.GetBytes(number.Ai());
-						inc = 4;
-						break;
+				if (!NativeType.IsNumeric(code))
+					return (long)Errors.ValueErrorOccurred($"Type of {t ?? obj[i]} is not a number that can be written to memory.", obj[i], DefaultErrorLong);
 
-					case "uint":
-						bytes = BitConverter.GetBytes(number.Aui());
-						inc = 4;
-						break;
+				var width = NativeType.SizeOf(code);
 
-					case "float":
-						bytes = BitConverter.GetBytes(number.Af());
-						inc = 4;
-						break;
+				if (size > 0 && offset + width > size)
+					return (long)Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {offset} + length {width} > buffer size {size}.", DefaultErrorLong);
 
-					case "short":
-						bytes = BitConverter.GetBytes((short)number.Ai());
-						inc = 2;
-						break;
+				if (!NativeType.WriteMemory(addr + (nint)offset, code, obj[i + 1]))
+					return (long)Errors.ValueErrorOccurred($"Value {obj[i + 1]} is not a number that can be written to memory.", obj[i + 1], DefaultErrorLong);
 
-					case "ushort":
-						bytes = BitConverter.GetBytes((ushort)number.Aui());
-						inc = 2;
-						break;
-
-					case "char":
-						bytes = [(byte)number.Ai()];
-						inc = 1;
-						break;
-
-					case "uchar":
-						bytes = [(byte)number.Ai()];
-						inc = 1;
-						break;
-
-					case "double":
-						bytes = BitConverter.GetBytes(number.Ad());
-						inc = 8;
-						break;
-
-					case "int64":
-						bytes = BitConverter.GetBytes(number.Al());
-						inc = 8;
-						break;
-
-					case "uint64":
-					case "ptr":
-					case "uptr":
-						if (number is Any kso)
-						{
-							Reflections.TryGetPtrProperty(kso, out var ksoAddr);
-							number = ksoAddr;
-						}
-
-						bytes = BitConverter.GetBytes(number.Al());
-						inc = 8;
-						break;
-
-					default:
-						bytes = [];
-						inc = 0;
-						break;
-				}
-
-				var finalAddr = nint.Add(addr, offset);
-
-				if (size > 0)
-				{
-					if ((offset + bytes.Length) <= size)
-					{
-						Marshal.Copy(bytes, 0, finalAddr, bytes.Length);
-						offset += inc;
-					}
-					else
-						return (long)Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {offset} + length {bytes.Length} > buffer size {size}.", DefaultErrorLong);
-				}
-				else if (addr != 0)
-				{
-					Marshal.Copy(bytes, 0, finalAddr, bytes.Length);
-					offset += inc;
-				}
-				else
-					return (long)Errors.IndexErrorOccurred($"Could not parse target {target} as a Buffer or memory address.", DefaultErrorLong);
+				offset += width;
 			}
 
-			return nint.Add(addr, offset).ToInt64();
+			return addr + offset;
+		}
+
+		/// <summary>
+		/// Resolves a NumGet/NumPut target to the address it names, plus the size which bounds access through it.
+		/// A bare address has no size, so nothing bounds it and <paramref name="size"/> stays 0.
+		/// </summary>
+		private static bool TryResolveTarget(object target, out nint addr, out long size)
+		{
+			size = 0;
+
+			if (target is Buffer buf)//Put Buffer first because it's faster and more likely.
+			{
+				addr = (nint)buf.Ptr;
+				size = buf.size;
+				return true;
+			}
+
+			if (target is long l)
+			{
+				addr = (nint)l;
+				return true;
+			}
+
+			//Anything else has to carry both a Ptr and a Size: without a size there is nothing to bound the
+			//access against, which is why AutoHotkey's GetObjectPtrProperty requires both too. Going through
+			//the shared helpers picks up IPointable (a StringBuffer, say) off the interface rather than paying
+			//for a script-visible property lookup.
+			if (target is Any && Reflections.TryGetPtrProperty(target, out var p) && Reflections.TryGetSizeProperty(target, out size))
+			{
+				addr = (nint)p;
+				return true;
+			}
+
+			size = 0;
+			addr = 0;
+			return false;
+		}
+
+		/// <summary>
+		/// The two sources only NumGet accepts: an argument list whose first element is the address, and a COM
+		/// object read as its IUnknown. Neither carries a size, so neither is bounds-checked.
+		/// </summary>
+		private static bool TryResolveReadOnlyTarget(object source, NativeTypeCode code, out nint addr)
+		{
+			if (source is object[] objarr && objarr.Length > 0)
+			{
+				addr = (nint)objarr[0].Al();
+				return true;
+			}
+
+#if WINDOWS
+
+			//Marshal.IsComObject throws on null rather than returning false, and an unset source reaches here.
+			if (code == NativeTypeCode.Ptr && source != null && Marshal.IsComObject(source))
+			{
+				var pUnk = Marshal.GetIUnknownForObject(source);
+				addr = pUnk;
+				_ = Marshal.Release(pUnk);//The object is kept alive by the caller, so the reference this took is not needed.
+				return true;
+			}
+
+#endif
+			addr = 0;
+			return false;
 		}
 	}
 }

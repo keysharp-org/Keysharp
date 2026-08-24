@@ -460,7 +460,7 @@ namespace Keysharp.Internals.Os
 			AssemblyLoadContext.Default.ResolvingUnmanagedDll += (_, name) =>
 				// The Windows module loader rejects '/' separators; route through the same chokepoint DllCall uses.
 				nativeByName.TryGetValue(name ?? "", out var path) && File.Exists(path)
-				? NativeLibrary.Load(Dll.NormalizeLoaderPath(path))
+				? NativeLibrary.Load(NativeLibraryResolver.NormalizeLoaderPath(path))
 				: 0;
 		}
 

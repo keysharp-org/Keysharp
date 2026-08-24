@@ -4850,7 +4850,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Calls a native shared-library function on every platform. Numeric type classes can replace built-in type names, and a return type of \u0027void\u0027 returns no value.",
+                     "notes":  "Calls a native shared-library function on every platform. Numeric type classes can replace built-in type names, and a \u0027void\u0027 return type yields no value.",
                      "tested-by":  "external-callbackcreate.ahk"
                  },
                  {
@@ -8346,7 +8346,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The NumGet function returns the binary number stored at the specified address+offset.",
+                     "notes":  "The NumGet function returns the binary number stored at the specified address+offset. A type which does not name a number raises a ValueError, and the name is matched in full where AutoHotkey reads only its first character.",
                      "tested-by":  "external-callbackcreate.ahk"
                  },
                  {
@@ -8357,7 +8357,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The NumPut function stores one or more numbers in binary format at the specified address+offset.",
+                     "notes":  "The NumPut function stores one or more numbers in binary format at the specified address+offset. A type or value which does not name a number raises a ValueError.",
                      "tested-by":  "external-dllcall.ahk"
                  },
                  {

@@ -188,4 +188,38 @@ ret := NumGet(buf, "uint")
 
 AssertEq(ret, 705032704, A_LineNumber)
 
+; A type which does not name a number is rejected rather than silently reading or writing the wrong bytes.
+Throws(() => NumGet(buf, 0, "bogus"), A_LineNumber, ValueError)
+Throws(() => NumGet(buf, 0, ""), A_LineNumber, ValueError)
+Throws(() => NumGet(buf, 0, "str"), A_LineNumber, ValueError)
+Throws(() => NumPut("bogus", 1, buf), A_LineNumber, ValueError)
+Throws(() => NumPut("str", 1, buf), A_LineNumber, ValueError)
+
+; Pairs are written as they are read, so the ones before a rejected type have already landed.
+NumPut("int64", 0, buf)
+try NumPut("int", 1, "bogus", 2, buf)
+AssertEq(NumGet(buf, 0, "int64"), 1, A_LineNumber)
+
+; A value which does not name a number is rejected rather than written as a zero.
+Throws(() => NumPut("int", "abc", buf), A_LineNumber, ValueError)
+Throws(() => NumPut("int", {}, buf), A_LineNumber, ValueError)
+Throws(() => NumPut("double", "abc", buf), A_LineNumber, ValueError)
+; ...but a numeric string still is one, and a pointer type still takes an object carrying an address.
+NumPut("int64", 0, buf)
+NumPut("int", "42", buf)
+AssertEq(NumGet(buf, 0, "int"), 42, A_LineNumber)
+NumPut("ptr", buf, buf)
+AssertEq(NumGet(buf, 0, "ptr"), buf.Ptr, A_LineNumber)
+
+; An offset far past the buffer is caught. It used to be truncated to 32 bits, which came back negative
+; and slipped through the bounds check into memory 2 GB away.
+Throws(() => NumPut("int", 1, buf, 0x80000000), A_LineNumber, IndexError)
+Throws(() => NumGet(buf, 0x80000000, "int"), A_LineNumber, IndexError)
+Throws(() => NumPut("int", 1, buf, 0x7FFFFFFFFFFF), A_LineNumber, IndexError)
+
+; The first 64KB of the address space is never mapped, so an address in it is a mistake rather than
+; something to dereference.
+Throws(() => NumGet(4, "int"), A_LineNumber, IndexError)
+Throws(() => NumPut("int", 1, 4), A_LineNumber, IndexError)
+
 FileAppend "pass", "*"

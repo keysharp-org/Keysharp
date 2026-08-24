@@ -336,7 +336,13 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	+ A plain `.gz` holds a single compressed file rather than an archive of entries, so *Dest* names the decompressed **file** and its parent folder is created if needed. This is the one case where *Dest* is not a directory.
 * `DllCall()` has the following caveats:
 	+ Use `Ptr` and `StringBuffer` for double pointer parameters such as `LPTSTR*`. This is recommended over the use of `StrPtr()`.
+	+ A call may pass at most 63 arguments.
+	+ A `Float` value read back out of a call — a `Float` return value or a `Float*` output variable — widens to the shortest Float that round-trips, so `1.2345` stays `1.2345`. `NumGet` widens the same way, where AutoHotkey carries the binary error of the narrower type into the decimal digits (`1.2344999313354492`).
 * Encoding names — wherever one is accepted: `FileEncoding`, `A_FileEncoding`, `FileRead`, `FileOpen`, `File.Encoding`, `StrGet`, `StrPut`, `Base64Encode` and the `Crypt` class — take AutoHotkey's `UTF-8`, `UTF-8-RAW`, `UTF-16`, `UTF-16-RAW`, `CPnnn` and `nnn`, and additionally `ASCII` and any name .NET knows, such as `windows-1252`. A name which cannot be resolved raises a `ValueError`; it is never quietly substituted, since that would silently read or write the wrong bytes. An empty name means the native UTF-16 encoding, where AutoHotkey uses the active ANSI code page (CP0).
+* `NumGet()` and `NumPut()` match a type name in full, where AutoHotkey looks only at its first character (after an optional leading `U`).
+	+ AutoHotkey therefore reads `"Str"` as a 2-byte short, `"Int16"` as **eight** bytes (it searches the whole name for a `6`), and accepts abbreviations such as `"i"`, `"D"` and `"Integer"`. Keysharp raises a `ValueError` for all of these, so a type that does not name a number cannot silently read or write the wrong bytes.
+	+ The accepted names are `Int`, `UInt`, `Int64`, `UInt64`, `Short`, `UShort`, `Char`, `UChar`, `Float`, `Double`, `Ptr` and `UPtr`.
+	+ A value that does not read as a number raises a `ValueError` rather than being written as a zero. The pointer-width types additionally accept an object carrying a `Ptr`.
 * `ObjPtr()` returns an IUnknown `ComValue` with the pointer wrapped in it, whereas `ObjPtrAddRef()` returns a raw pointer.
 * `SetTimer()` uses a in the range 0-4, not -2147483648 and 2147483647.
 * `Sleep()` works, but uses `Application.DoEvents()` internally which is not a good programming practice and can lead to hard to solve bugs.
