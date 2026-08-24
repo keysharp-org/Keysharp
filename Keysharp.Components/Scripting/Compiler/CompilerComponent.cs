@@ -107,7 +107,11 @@ public sealed class CompilerComponent : IScriptCompiler
 			if (request.Output == ScriptCompilationOutput.MinimalExecutable)
 				return null;
 
-			if (compilation.RequiredProviders is { Count: > 0 })
+			// Only a standalone executable carries the package provider beside it: a minimal executable embeds it,
+			// and a .cks runs under the Keysharp launcher, which already ships one -- copying it there would
+			// duplicate megabytes next to every compiled script. Scripting components below are NOT the same case:
+			// a .cks does need those deployed, since the launcher resolves them from beside the script.
+			if (request.Output == ScriptCompilationOutput.Executable && compilation.RequiredProviders is { Count: > 0 })
 			{
 				if (!CompiledPackageProviderManifest.TryBuild(compilation.RequiredProviders, out var providers, out var providerFailure))
 					return providerFailure;

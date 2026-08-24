@@ -925,20 +925,24 @@ namespace Keysharp.Tests
 		[Test, Category("NuGet"), NonParallelizable]
 		public void CompiledCksPackages()
 		{
-			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
-
-			if (!File.Exists(launcher))
-				Assert.Ignore($"launcher not built at {launcher}");
-
 			var dir = Path.Combine(Path.GetTempPath(), "ks-package-cks", Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
 
 			try
 			{
-				var script = Path.Combine(dir, "sidecar.ks");
-				File.WriteAllText(script, "#NoTrayIcon\n#Package Newtonsoft.Json 13.0.3\nx := 1\nExitApp()\n");
-				Assert.AreEqual(0, Run(launcher, $"--errorstdout --compile asm \"{script}\"", out _, out var cerr), "compile failed: " + cerr);
-				Assert.IsTrue(File.Exists(Path.ChangeExtension(script, ".cks")), "no .cks was produced");
+				// Compiled in-process: this asserts only WHERE the assets land, and spawning the launcher for that
+				// costs seconds without covering anything the component API does not. That the CLI writes the .cks
+				// itself is covered by CompiledCksUsesLauncherProviderWithoutSidecarCopy, which also runs one.
+				var compiler = new Keysharp.Components.Scripting.Compiler.CompilerComponent();
+				var result = compiler.Compile(new Keysharp.Components.Scripting.ScriptCompileRequest
+				{
+					SourceText = "#NoTrayIcon\n#Package Newtonsoft.Json 13.0.3\nx := 1\nExitApp()\n",
+					CompilationName = "sidecar",
+					RuntimeDirectory = AppContext.BaseDirectory,
+					Output = Keysharp.Components.Scripting.ScriptCompilationOutput.Assembly,
+				});
+				Assert.IsTrue(result.Success, result.ErrorText);
+				Assert.IsNull(compiler.DeploySupportFiles(result, dir));
 				var deployed = Path.Combine(dir, ".keysharp", "packages");
 				Assert.IsTrue(Directory.Exists(deployed)
 							  && Directory.GetFiles(deployed, "*.dll", SearchOption.AllDirectories).Length != 0,
