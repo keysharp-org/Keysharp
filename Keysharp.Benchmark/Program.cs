@@ -33,6 +33,7 @@ public sealed class Program
 #else
 		var config = new ManualConfig();
 #endif
+		_ = config.AddLogger(logger);   // ManualConfig has none, so without this a run prints nothing until it ends
 		_ = config.AddColumnProvider([.. DefaultConfig.Instance.GetColumnProviders()]);
 		_ = config.AddExporter([.. DefaultConfig.Instance.GetExporters()]);
 		_ = config.AddDiagnoser([.. DefaultConfig.Instance.GetDiagnosers()]);

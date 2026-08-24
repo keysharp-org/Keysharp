@@ -4097,8 +4097,10 @@ namespace Keysharp.Compilation.Syntax
 
 		// ---- control flow ----
 
-		// while cond { body } -> Push; try { while(IfTest(cond)) { Inc(); body [; if(until) break] } } finally { Pop }
+		// while cond { body } -> Push; try { while(IsTrueAndRunning(cond)) { Inc(); body [; if(until) break] } } finally { Pop }
 		// (Push/Inc/Pop give the loop a working A_Index, matching AHK.)
+		// IsTrueAndRunning rather than a bare IfTest, as every other loop form uses: it carries the per-iteration
+		// message check, and without it a `while` whose body calls nothing never polls and never sees the exit.
 		private StatementSyntax LowerWhile(WhileStmt w)
 		{
 			var id = ++_flowCounter;
@@ -4107,7 +4109,8 @@ namespace Keysharp.Compilation.Syntax
 			body = body.WithStatements(body.Statements.Insert(0, CallStmt("Keysharp.Runtime.Loops.Inc")));
 			body = WrapLoopBody(body, w.Until, frame);
 			PopLoop();
-			var loop = SyntaxFactory.WhileStatement(IfTest(LowerExpr(w.Cond)), body);
+			var loop = SyntaxFactory.WhileStatement(
+						   Inv(Access("Keysharp.Runtime.Flow.IsTrueAndRunning"), LowerExpr(w.Cond)), body);
 			var block = new List<StatementSyntax> {
 				CallStmt("Keysharp.Runtime.Loops.Push", Access("Keysharp.Runtime.LoopType.Normal")),
 				TryFinally(loop, LoopFinally(w.Else)) };

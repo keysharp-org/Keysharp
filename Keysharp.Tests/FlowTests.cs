@@ -321,6 +321,9 @@ namespace Keysharp.Tests
         [Test, Category("Flow")]
         public void FlowLoopThrow() => Assert.IsTrue(TestScript("flow-loop-throw", false));
 
+        [Test, Category("Flow"), Category("Curated"), NonParallelizable]
+        public void FlowLoopInterrupt() => Assert.IsTrue(TestScript("flow-loop-interrupt", false));
+
         [Test, Category("Flow"), NonParallelizable]
         public void FlowMultiStatement() => Assert.IsTrue(TestScript("flow-multi-statement", false));
 
