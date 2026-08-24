@@ -635,9 +635,44 @@ namespace Keysharp.Builtins
 			marginsInit = true;
 		}
 
+		//Adding a control lays the form out again, and so does each geometry write that follows it, so a script
+		//building a dialog pays for a layout pass per control over an ever-growing child list. Suspended on the
+		//first Add and resumed by Show(), which is where a laid-out form is first actually wanted. Measured at
+		//roughly a third of the time Gui.Add spends on a 300-control form.
+		private bool layoutSuspended;
+
+		/// <summary>
+		/// Lays the form out once, if a run of <see cref="Add"/> calls has been deferring it.
+		/// </summary>
+		internal void ResumeAddLayout()
+		{
+			if (!layoutSuspended)
+				return;
+
+			layoutSuspended = false;
+#if WINDOWS
+			form.ResumeLayout(true);
+#else
+			//Eto's ResumeLayout takes no "perform a layout now" flag; it always does.
+			form.ResumeLayout();
+#endif
+		}
+
 		public object Add(object controlType, object options = null, object text = null)
 		{
 			EnsureDefaultMargins();
+
+			//Only a window nobody is looking at yet may defer its layout. Adding to a window already on screen
+			//lays out at once, because AutoHotkey shows such a control immediately and a script may go on to
+			//read its position.
+			if (form.Visible)
+				ResumeAddLayout();
+			else if (!layoutSuspended)
+			{
+				layoutSuspended = true;
+				form.SuspendLayout();
+			}
+
 			var typeo = controlType.As();
 			var optionsStr = options.As();
 			var o = text;//The third argument needs to account for being an array in the case of combo/list boxes.
@@ -2873,6 +2908,8 @@ namespace Keysharp.Builtins
 
 		public object Restore()
 		{
+			ResumeAddLayout();//This can put a hidden window back on screen without going through Show().
+
 			if (!form.Visible)
 				form.Show();
 			form.WindowState = FormWindowState.Normal;
@@ -2907,6 +2944,7 @@ namespace Keysharp.Builtins
 
 		public object Show(object options = null)
 		{
+			ResumeAddLayout();
 			EnsureDefaultMargins();
 			var s = options.As();
 			bool /*center = false, cX = false, cY = false,*/ auto = false, min = false, max = false, restore = true, hide = false, cX = false, cY = false;
