@@ -28,9 +28,9 @@ namespace Keysharp.Runtime
 		/// </summary>
 		public delegate object Writer(object name, object value);
 
-		/// <summary>The function's user-declared name, for the ListVars header (empty for an anonymous lambda). The
-		/// Lowerer passes it as a literal to <see cref="Script.EnterScope"/> — it knows the name at the emission site,
-		/// and this is the scope's only consumer of it, so there is no need to carry the live KeysharpFunc.</summary>
+		/// <summary>The function's exact AHK-visible name, for A_ThisFunc and the ListVars header (empty for an
+		/// anonymous function). The Lowerer passes it as a literal to <see cref="Script.EnterScope"/>, so there is no
+		/// need to carry the live KeysharpFunc.</summary>
 		public readonly string Name;
 
 		private readonly Reader reader;

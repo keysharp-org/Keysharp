@@ -398,7 +398,7 @@ namespace Keysharp.Builtins
 			if (func is KeysharpFunc fo) return fo.Call(args);
 			if (func is ClrCallbackShim shim) return shim.Invoke(args);
 			if (func is Delegate dnet) return dnet.DynamicInvoke(args);
-			return Script.Invoke(func, "Call", args);
+			return Script.Invoke(func, null, args);
 		}
 	}
 

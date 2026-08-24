@@ -527,7 +527,7 @@ namespace Keysharp.Runtime
 			if (f?.Mph?.parameters == null)
 			{
 				var recv = f != null ? f.Inst : callback;
-				var name = f != null ? f.Name : "Call";
+				var name = f != null ? f.Mph.Name : "Call";
 
 				try
 				{

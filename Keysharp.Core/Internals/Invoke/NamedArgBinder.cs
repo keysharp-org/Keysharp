@@ -392,19 +392,10 @@ namespace Keysharp.Internals.Invoke
 			return result;
 		}
 
-		// A bare method name is ambiguous when several types declare one by that name, so a member of a
-		// script-visible type is qualified with it. A holder class (Strings, Objects) is not a type scripts have
-		// ever heard of, so its members are reported bare, the same way the compile-time warning reports them.
-		// Always mph.Name for the member -- never mi.Name, which is the C# spelling (`staticCall`, `get_Foo`, and
-		// the `<Outer>g__…|n_m` Roslyn gives a lowered lambda).
+		// MethodPropertyHolder owns the script-visible name, including class/prototype/accessor qualification.
 		private static string Describe(MethodPropertyHolder mph)
 		{
-			var declaring = mph.mi?.DeclaringType;
-			var name = declaring == null
-					   || declaring.Namespace == Script.TheScript.ProgramType.Namespace
-					   || (declaring.IsSealed && declaring.IsAbstract)   // static holder: its members are global functions
-					   ? mph.Name
-					   : $"{Script.GetUserDeclaredName(declaring) ?? declaring.Name}.{mph.Name}";
+			var name = mph.QualifiedName;
 			// An anonymous lambda has no name to print; naming it "" would read as `is not a parameter of .`
 			return name.Length != 0 ? name : "this function";
 		}

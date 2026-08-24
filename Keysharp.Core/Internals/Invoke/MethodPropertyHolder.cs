@@ -109,98 +109,155 @@ namespace Keysharp.Internals.Invoke
 		private static bool IsExplicitThis(ParameterInfo p) =>
 			p.Name?.TrimStart('@').Equals("this", StringComparison.OrdinalIgnoreCase) ?? false;
 
+		// Our own accessor convention for a hand-written Core member, which has no property to pair with:
+		// `Clipboard.staticget_Text`, `Structs.get_Size`. NameMangler.StaticGetter emits the same shape.
+		private const string getterPrefix = "get_";
 		private const string setterPrefix = "set_";
         private const string classSetterPrefix = Keywords.ClassStaticPrefix + setterPrefix;
 
-		private static readonly string[] namePrefixes = ["static", "get_", "set_"];
+		private string _name, _qualifiedName;
+		/// <summary>The bare member name used for dispatch: never qualified, never accessor-suffixed.</summary>
+		internal string Name => _name ??= BuildName();
+		/// <summary>The fully qualified AHK-visible name — <c>Class.Prototype.Method</c>, <c>Class.Property.Get</c> —
+		/// which is what <c>Func.Name</c> and <c>A_ThisFunc</c> report. Empty for a callable a script cannot name.</summary>
+		internal string QualifiedName => _qualifiedName ??= BuildQualifiedName();
 
 		/// <summary>
-		/// Recovers the name a script wrote from the emitted C# one. Closures, nested functions and lambdas are
-		/// lowered to LOCAL functions, and Roslyn renames those to <c>&lt;Outer&gt;g__Name|n_m</c> -- which is what
-		/// <c>Func.Name</c> and every error message naming a function would otherwise print. An anonymous lambda has
-		/// no name a script could write, so it reports as empty, matching AutoHotkey.
-		/// <para>
-		/// The trailing <c>_&lt;n&gt;</c> is the lowerer's uniquing counter (see Lowerer.LowerFatArrow), stripped
-		/// with it. A nested function genuinely named <c>foo_2</c> therefore reports as <c>foo</c> -- cosmetic, and
-		/// only in a diagnostic.
-		/// </para>
+		/// The property an accessor belongs to. Metadata already pairs the two, so the <c>get_</c>/<c>set_</c> the C#
+		/// compiler puts in front of an accessor's name is never parsed back off it.
 		/// </summary>
-		private static string Unmangle(string emitted)
+		private PropertyInfo AccessorProperty()
 		{
-			// `<Outer>g__Inner|n_m` -- take what is between "g__" and the '|'.
-			if (emitted.Length == 0 || emitted[0] != '<')
-				return emitted;
-
-			var open = emitted.IndexOf("g__", StringComparison.Ordinal);
-			var bar = emitted.LastIndexOf('|');
-
-			if (open < 0 || bar < open)
-				return emitted;
-
-			var inner = emitted.Substring(open + 3, bar - open - 3);
-
-			if (inner.StartsWith(Keywords.TopLevelFunctionPrefix, StringComparison.Ordinal))
-				inner = inner.Substring(Keywords.TopLevelFunctionPrefix.Length);
-
-			if (inner.StartsWith(Keywords.AnonymousLambdaPrefix, StringComparison.Ordinal)
-					|| inner.StartsWith(Keywords.AnonymousFatArrowLambdaPrefix, StringComparison.Ordinal))
-				return "";
-
-			var lastUnderscore = inner.LastIndexOf('_');
-			return lastUnderscore > 0 && inner.AsSpan(lastUnderscore + 1).Length != 0
-				   && ulong.TryParse(inner.AsSpan(lastUnderscore + 1), out _)
-				? inner.Substring(0, lastUnderscore)
-				: inner;
+			const BindingFlags flags = BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+			return mi.IsSpecialName
+				   ? mi.DeclaringType?.GetProperties(flags).FirstOrDefault(p => p.GetMethod == mi || p.SetMethod == mi)
+				   : null;
 		}
 
-		string _name = null;
-		internal string Name
+		/// <summary>The bare script name of a property: our own static prefix off, C#'s indexer name mapped to AHK's.</summary>
+		private static string PropertyScriptName(PropertyInfo property)
 		{
-			get
+			if (GetUserDeclaredName(property) is { } declared)
+				return declared;
+
+			var name = property.Name;
+			_ = StripPrefix(ref name, Keywords.ClassStaticPrefix);
+			return name == "Item" ? "__Item" : name;
+		}
+
+		private string BuildName()
+		{
+			if (mi == null)
+				return pi?.Name ?? fi?.Name ?? "";
+
+			if (GetUserDeclaredName(mi) is { } declaredName)
+				return declaredName;
+
+			// Every local function the Lowerer emits carries the attribute above, so a name the C# compiler chose
+			// for one names nothing a script could write.
+			if (mi.Name.StartsWith("<", StringComparison.Ordinal))
+				return "";
+
+			if (AccessorProperty() is { } property)
+				return PropertyScriptName(property);
+
+			var name = mi.Name;
+			_ = StripPrefix(ref name, Keywords.ClassStaticPrefix);
+			if (!StripPrefix(ref name, getterPrefix))
+				_ = StripPrefix(ref name, setterPrefix);
+			if (name == "Item")
+				name = "__Item";
+			return name.Length == 0 ? nameof(KeysharpFunc.Call) : name;
+		}
+
+		private string BuildQualifiedName()
+		{
+			if (mi == null)
+				return pi?.Name ?? fi?.Name ?? "";
+
+			// The exact source spelling of the member itself, which the mangler TitleCases away (`mixedCase` is
+			// emitted as `get_MixedCase`), so the qualified name is built from this rather than from the identifier.
+			var declaredName = GetUserDeclaredName(mi);
+
+			// A local function belongs to its lexical scope, not to the display class the C# compiler invented for
+			// it. Every one the Lowerer emits carries the attribute, so that invented name is never read back.
+			if (mi.Name.StartsWith("<", StringComparison.Ordinal))
+				return declaredName ?? "";
+
+			var emittedName = mi.Name;
+			var declaringType = mi.DeclaringType;
+			var isCompiledProgramContainer = declaringType != null && (declaringType == moduleType
+				|| declaringType.Name == Keywords.MainClassName && declaringType.Namespace == Keywords.MainNamespaceName);
+			if (isCompiledProgramContainer && declaredName == null
+					&& !mi.Name.StartsWith(Keywords.TopLevelFunctionPrefix, StringComparison.Ordinal)
+					&& !mi.IsDefined(typeof(InlineCSharpAttribute), false))
+				return "";
+
+			var isStaticMember = StripPrefix(ref emittedName, Keywords.ClassStaticPrefix)
+				|| mi.GetCustomAttribute<StaticAttribute>() != null;
+			// A real property pairs with its accessor in metadata, so which accessor this is never comes from the
+			// method's spelling. A hand-written Core accessor has no property, and there our own get_/set_
+			// convention names it. Always capitalised: AutoHotkey reports the case of the `get`/`set` keyword as
+			// written, which C# erases, and Keysharp deliberately does not carry it -- only the member's own case,
+			// which it does preserve, is worth the machinery.
+			var property = AccessorProperty();
+			string propertyName = null;
+			string accessor;
+
+			if (property != null)
 			{
-				if (_name != null)
-					return _name;
-
-				if (mi == null)
-				{
-					if (pi != null)
-						return _name = pi.Name;
-					if (fi != null)
-						return _name = fi.Name;
-					return _name = "";
-				}
-
-				var name = GetUserDeclaredName(mi);
-				if (name != null)
-				{
-					return _name = name;
-				}
-
-				string funcName = Unmangle(mi.Name);
-
-				foreach (var p in namePrefixes)
-				{
-					if (funcName.StartsWith(p, StringComparison.Ordinal))
-						funcName = funcName.Substring(p.Length);
-				}
-
-				if (mi.DeclaringType.Namespace != TheScript.ProgramType.Namespace || mi.DeclaringType.Name == Keywords.MainClassName)
-					return _name = funcName;
-
-				var parts = new Stack<string>();
-				var script = TheScript;
-				for (var cur = mi.DeclaringType; cur != null && cur != script.ProgramType; cur = cur.DeclaringType)
-				{
-					if (IsModuleContainer(cur, script))
-						continue;
-					parts.Push(cur.Name);
-				}
-
-				if (parts.Count == 0)
-					return _name = funcName;
-
-				return _name = $"{string.Join(".", parts)}.{funcName}";
+				accessor = property.GetMethod == mi ? ".Get" : ".Set";
+				isStaticMember = isStaticMember
+					|| property.GetCustomAttribute<StaticAttribute>() != null
+					|| property.Name.StartsWith(Keywords.ClassStaticPrefix, StringComparison.Ordinal);
+				propertyName = PropertyScriptName(property);
 			}
+			else
+			{
+				accessor = StripPrefix(ref emittedName, getterPrefix) ? ".Get"
+					: StripPrefix(ref emittedName, setterPrefix) ? ".Set"
+					: "";
+			}
+
+			var topLevel = declaringType == null || isCompiledProgramContainer
+				|| declaringType.IsAbstract && declaringType.IsSealed;
+			if (topLevel)
+				_ = StripPrefix(ref emittedName, Keywords.TopLevelFunctionPrefix);
+
+			var funcName = propertyName ?? declaredName
+				?? (accessor.Length != 0 && emittedName == "Item" ? "__Item" : emittedName);
+			if (topLevel)
+				return funcName + accessor;
+
+			var className = ScriptVisibleClassName(declaringType, moduleType);
+			return className.Length == 0
+				? funcName + accessor
+				: $"{className}.{(isStaticMember ? "" : "Prototype.")}{funcName}{accessor}";
+		}
+
+		private static bool StripPrefix(ref string name, string prefix)
+		{
+			if (!name.StartsWith(prefix, StringComparison.Ordinal))
+				return false;
+
+			name = name.Substring(prefix.Length);
+			return true;
+		}
+
+		private static string ScriptVisibleClassName(Type declaringType, Type moduleType)
+		{
+			var parts = new Stack<string>();
+
+			for (var cur = declaringType; cur != null && cur != moduleType; cur = cur.DeclaringType)
+			{
+				if (cur.Name == Keywords.MainClassName && cur.Namespace == Keywords.MainNamespaceName
+						|| cur.IsDefined(typeof(CompilerGeneratedAttribute), false))
+					continue;
+
+				parts.Push(GetUserDeclaredName(cur) ?? cur.Name);
+			}
+
+			return string.Join(".", parts);
 		}
 
 		private Dictionary<string, int> _paramIndexByName;
@@ -632,10 +689,11 @@ namespace Keysharp.Internals.Invoke
 			}
 		}
 
-		// Allow creating a "fake" MPH for ObjBindMethod
+		// Allow creating a "fake" MPH for ObjBindMethod: it names a member to resolve on the receiver at call time,
+		// so both names are the caller's literal and neither can be recovered from metadata there is none of.
 		public MethodPropertyHolder(string name)
 		{
-			_name = name;
+			_name = _qualifiedName = name;
 			variadicParamIndex = 1;
 		}
 
@@ -758,10 +816,10 @@ namespace Keysharp.Internals.Invoke
 				}
 
 				if (provided < mph.MinParams)
-					throw new ValueError($"Too few arguments provided for function {mph.Name}");
+					throw new ValueError($"Too few arguments provided for function {mph.QualifiedName}");
 
 				if (!isVariadic && provided > mph.MaxParams)
-					throw new ValueError($"Too many arguments provided for function {mph.Name}");
+					throw new ValueError($"Too many arguments provided for function {mph.QualifiedName}");
 
 				// ---- instance splicing ----
 				object target;
@@ -777,7 +835,7 @@ namespace Keysharp.Internals.Invoke
 					else
 					{
 						if (working.Length == 0)
-							throw new ValueError($"Too few arguments provided for function {mph.Name}");
+							throw new ValueError($"Too few arguments provided for function {mph.QualifiedName}");
 
 						target = working[0];
 						start = 1;

@@ -462,14 +462,12 @@ AssertEq([].Get.Params[1].Name, "index", A_LineNumber)  ; the receiver is not re
 
 ; ---------------------------------------------------------------- Func.Name
 ; A nested function or closure is lowered to a local function, which Roslyn renames to `<Outer>g__Name|n_m`.
-; Func.Name reports the name the script wrote, which is also what a binder error naming it prints. Compared
-; case-insensitively, like every other name in the language: a nested function is lowered under a lower-cased
-; identifier, so only a top-level one round-trips its exact casing.
+; Func.Name reports the exact name the script wrote, which is also what a binder error naming it prints.
 outerFn() {
 	nestedFn(a) => a
 	return nestedFn
 }
-Assert(outerFn().Name = "nestedFn", A_LineNumber)
+AssertEq(outerFn().Name, "nestedFn", A_LineNumber)
 AssertEq(((x) => x).Name, "", A_LineNumber)  ; an anonymous lambda has no name a script could write
 
 FileAppend "pass", "*"

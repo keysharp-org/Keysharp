@@ -2696,12 +2696,15 @@ namespace Keysharp.Internals.Input.Keyboard
 								goto keeptrying;
 
 							for (var i = 0; i < bf1.boundargs.Length; i++)
-								if (!bf1.boundargs[i].Equals(bf2.boundargs[i]))
+								if (!Equals(bf1.boundargs[i], bf2.boundargs[i]))
 									goto keeptrying;
 						}
 					}
 
-					if (cp.Name == fo.Name && ReferenceEquals(cp.Inst, fo.Inst))
+					var sameTarget = ReferenceEquals(cp.Mph, fo.Mph)
+						|| cp.Mph.mi == null && fo.Mph.mi == null
+							&& cp.Mph.Name.Equals(fo.Mph.Name, StringComparison.OrdinalIgnoreCase);
+					if (sameTarget && ReferenceEquals(cp.Inst, fo.Inst))
 						return cp;
 				}
 

@@ -82,6 +82,8 @@ namespace Keysharp.Builtins
 
 		}
 
+		public override string Name => "";
+
 		/// <summary>
 		/// Merges the arguments bound by name into the positional array at the slots their names denote, and reports
 		/// a bad or already-taken name while a Bind-time error is still possible. A name the target's variadic tail
@@ -149,10 +151,10 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Calls the target function along with any bound arguments.
 		/// <returns>The return value of the bound function.</returns>
-		public override object Call(params object[] args) => mi == null ? Script.Invoke(Inst, Name, CreateArgs(args)) : base.Call(CreateArgs(args));
+		public override object Call(params object[] args) => mi == null ? Script.Invoke(Inst, mph.Name, CreateArgs(args)) : base.Call(CreateArgs(args));
 
 		[PublicHiddenFromUser]
-		public override object CallInst(object inst, params object[] args) => mi == null ? Script.Invoke(Inst, Name, CreateArgs(args, inst, true)) : base.Call(CreateArgs(args, inst, true));
+		public override object CallInst(object inst, params object[] args) => mi == null ? Script.Invoke(Inst, mph.Name, CreateArgs(args, inst, true)) : base.Call(CreateArgs(args, inst, true));
 
 		private object[] CreateArgs(object[] args, object firstArg = null, bool hasFirstArg = false)
 		{
@@ -267,7 +269,7 @@ namespace Keysharp.Builtins
 		public bool IsMethod => (mi != null && !mi.IsStatic) || (mph != null && mph.parameters?.First().Name == "@this");
 		public virtual bool IsBuiltIn => mi != null && mi.DeclaringType.Namespace != TheScript.ProgramType.Namespace;
 		internal virtual bool IsValid => (mi != null && mph != null && mph.CallFunc != null) || (Inst is Any && mph.memberInfo == null);
-		public virtual string Name => mph.Name;
+		public virtual string Name => mph.QualifiedName;
 		public bool IsVariadic => mph.variadicParamIndex != -1;
 
 		/// <summary>
@@ -605,5 +607,3 @@ namespace Keysharp.Builtins
 
 	public delegate object VariadicFunction(params object[] args);
 }
-
-

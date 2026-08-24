@@ -244,7 +244,7 @@ namespace Keysharp.Builtins
 				if (fo != null && !fo.CanAcceptArgCount(1))
 					return Errors.ValueErrorOccurred(
 						$"Hotkey callback requires at least {fo.MinParams} parameter(s), but hotkey callbacks are called with one (the hotkey name).",
-						fo.Name);
+						fo.Mph.QualifiedName);   //Not fo.Name: a bound function's Name is empty, so it would name nothing
 
 				if (fo == null && !string.IsNullOrEmpty(label) && ((hook_action = HotkeyDefinition.ConvertAltTab(label, true)) == 0))
 				{

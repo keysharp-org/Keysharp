@@ -298,7 +298,9 @@ namespace Keysharp.Builtins
 				if (!func.CanAcceptArgCount(0))
 					return (long)Errors.ValueErrorOccurred(
 						$"SetTimer callback requires at least {func.MinParams} parameter(s), but timer callbacks are called with none.",
-						func.Name, DefaultErrorLong);
+						//Mph.QualifiedName, not Name: a bound function's script-visible Name is empty, and an error that
+						//names nothing is worse than one naming the target it was bound to.
+						func.Mph.QualifiedName, DefaultErrorLong);
 
 				timer = script.FlowData.timers.Find(func, ownerScheduler);
 			}

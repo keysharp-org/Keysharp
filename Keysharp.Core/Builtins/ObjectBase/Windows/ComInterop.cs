@@ -46,16 +46,17 @@ namespace Keysharp.Builtins
 			if (kso is KeysharpFunc sfo && sfo != null)
 			{
 				var mi = sfo.Mph.mi;
+				var name = sfo.Mph.Name;
 				if (mi.GetParameters()
 					.Any(p => p.IsDefined(typeof(ByRefAttribute), inherit: false)))
 				{
 					mi = ByRefWrapper.Create(mi);
 				}
 
-				if (sfo.Mph.mi.Name.Equals(sfo.Name, StringComparison.OrdinalIgnoreCase))
-					meths.Add(sfo.Mph.mi);
+				if (mi.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+					meths.Add(mi);
 				else
-					meths.Add(new RenamedMethodInfo(sfo.Mph.mi, sfo.Name));
+					meths.Add(new RenamedMethodInfo(mi, name));
 			}
 
 			if (Script.TryGetProps(this, out var props, true, OwnPropsMapType.Call))
@@ -72,10 +73,10 @@ namespace Keysharp.Builtins
 							mi = ByRefWrapper.Create(mi);
 						}
 
-						if (fo.Mph.mi.Name.Equals(prop.Key, StringComparison.OrdinalIgnoreCase))
-							meths.Add(fo.Mph.mi);
+						if (mi.Name.Equals(prop.Key, StringComparison.OrdinalIgnoreCase))
+							meths.Add(mi);
 						else
-							meths.Add(new RenamedMethodInfo(fo.Mph.mi, prop.Key));
+							meths.Add(new RenamedMethodInfo(mi, prop.Key));
 					}
 				}
 			}

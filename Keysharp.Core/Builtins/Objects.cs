@@ -124,6 +124,8 @@ namespace Keysharp.Builtins
 
 				foreach (var mph in Reflections.GetOwnProps(cursor.type, false))
 				{
+					//Bare because GetOwnProps yields property-backed holders only, whose Name is unqualified;
+					//a method-backed one would arrive here already carrying its Class.Prototype. prefix.
 					var name = mph.Name;
 
 					if (name.Equals("__Class", StringComparison.OrdinalIgnoreCase) ||

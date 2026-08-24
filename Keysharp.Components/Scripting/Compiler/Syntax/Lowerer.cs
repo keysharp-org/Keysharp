@@ -56,8 +56,11 @@ namespace Keysharp.Compilation.Syntax
 		// a class method's static-local one-time-init guard key unique per declaring type (the C# field can repeat across
 		// classes now that it lives in its own class), so two same-named methods' statics don't share an init guard.
 		private string _currentClassPath;
+		private string _currentClassUserPath;
 		private string _structTypeName;     // C# type name of the struct being lowered (for typed-field DefineProp)
 		private bool _currentMethodStatic;   // the method being lowered is static (super -> Statics vs Prototypes)
+		private string _currentThisFuncName;
+		private bool _loweringParamDefault;
 		private int _flowCounter;
 
 		// Enclosing-loop stack for break/continue with a level/label. Each loop gets an id (its KS_e<id> base); the
@@ -2355,6 +2358,10 @@ namespace Keysharp.Compilation.Syntax
 		private static bool IsScriptVisible(MemberDeclarationSyntax m) =>
 			m.Modifiers.Any(t => t.IsKind(SyntaxKind.PublicKeyword));
 
+		private static bool ReferencesThisFunc(MemberDeclarationSyntax m) =>
+			m.DescendantNodes().OfType<IdentifierNameSyntax>()
+			 .Any(n => n.Identifier.ValueText.Equals("A_ThisFunc", System.StringComparison.OrdinalIgnoreCase));
+
 		private static AttributeSyntax InlineExportAttribute(MemberDeclarationSyntax member) =>
 			member.AttributeLists.SelectMany(list => list.Attributes).FirstOrDefault(attr =>
 				attr.Name.ToString() is "Export" or "Keysharp.Runtime.Export" or "global::Keysharp.Runtime.Export");
@@ -2633,6 +2640,10 @@ namespace Keysharp.Compilation.Syntax
 					{
 						var isFunction = classPath == null && m is MethodDeclarationSyntax me && IsScriptVisible(me)
 									   && me.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword));
+						// A_ThisFunc has no emission site to fold in inline C#, so it falls back to a stack walk --
+						// which finds nothing if the JIT inlined the very member it is meant to name. Methods only:
+						// MethodImpl is legal on nothing else, and a property or class would fail to compile.
+						var needsThisFuncFrame = m is MethodDeclarationSyntax && ReferencesThisFunc(m);
 						var startLine = m.GetLocation().GetLineSpan().StartLinePosition.Line - wrapperOffset;
 						var at = $"{System.IO.Path.GetFileName(rawFile)}:{lineOffset + startLine + 1}:1: ";
 
@@ -2668,12 +2679,17 @@ namespace Keysharp.Compilation.Syntax
 							Diag($"{at}#CSharp: public property '{pv.Identifier.Text}' has a type that cannot be handed to a script. "
 								 + "Use a supported scalar/reference type or make it non-public.");
 
-						// Mark directly reflected boundaries for their conversion/error policy. Module fields are marked
-						// as well so they can be distinguished from the object fields generated for script globals.
+						// Mark script-visible inline members for boundary policy and function-name recovery. A module-scope
+						// method is marked too, where only a class-scope one used to be: it now takes the same boundary
+						// policy as its FN_ forwarder (conversion, error mapping, and whether a trailing object[] reads
+						// as variadic), so which of the two a lookup resolves no longer changes behaviour. Module fields
+						// are marked as well so they can be distinguished from generated script globals.
 						if (IsScriptVisible(m) && (m is PropertyDeclarationSyntax
-								|| classPath != null && m is MethodDeclarationSyntax
+								|| m is MethodDeclarationSyntax
 								|| classPath == null && m is FieldDeclarationSyntax))
 							_ = body.AppendLine("[Keysharp.Runtime.InlineCSharp]");
+						if (needsThisFuncFrame)
+							_ = body.AppendLine("[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]");
 
 						_ = body.AppendLine(FreezeConditionals(m).ToString());
 
@@ -2689,6 +2705,9 @@ namespace Keysharp.Compilation.Syntax
 							var fwdBody = isVoid ? $"{call};" : $"return {call};";
 							_ = body.AppendLine("[Keysharp.Runtime.PublicHiddenFromUser]");
 							_ = body.AppendLine("[Keysharp.Runtime.InlineCSharp]");
+							_ = body.AppendLine($"[Keysharp.Runtime.UserDeclaredName(\"{em.Identifier.ValueText}\")]");
+							if (needsThisFuncFrame)
+								_ = body.AppendLine("[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]");
 							_ = body.AppendLine(
 									$"public static {em.ReturnType} {NameMangler.FunctionMethod(em.Identifier.Text)}"
 									+ $"{em.ParameterList} {{ {fwdBody} }}");
@@ -3368,6 +3387,12 @@ namespace Keysharp.Compilation.Syntax
 							return string.IsNullOrEmpty(n.File) || string.Equals(n.File, _scriptPath, StringComparison.OrdinalIgnoreCase)
 								   ? Access("Keysharp.Builtins.Accessors.A_ScriptFullPath")
 								   : Str(IncludeLineFile(n.File));
+						// AutoHotkey evaluates a parameter default in the CALLER's frame, so A_ThisFunc there names
+						// the caller -- a name this lowering cannot know, since the default runs in the callee's
+						// prologue. Fold it to "", AutoHotkey's own answer for a top-level call, rather than leave
+						// it to a stack walk that reports whichever ancestor the JIT happened to leave standing.
+						case "a_thisfunc" when !IsDeclaredLocal("a_thisfunc"):
+							return Str(_loweringParamDefault ? "" : _currentThisFuncName ?? "");
 					}
 					return NameRef(n.Name);
 				case GroupExpr g: return SyntaxFactory.ParenthesizedExpression(LowerExpr(g.Inner));
@@ -3919,6 +3944,8 @@ namespace Keysharp.Compilation.Syntax
 			if (c.NullConditional || MayYieldUnset(c.Callee))
 				return NullCondWrap(c.Callee, tt => Op("Invoke", Cons2(tt, Null, CallArgs())));
 
+			// A member callee names the member to resolve; a bare callee is the call form `f(args)`, which the
+			// runtime distinguishes by a null name (see Script.InvokeOrNull).
 			List<ExpressionSyntax> args;
 			if (c.Callee is MemberExpr m) args = new() { LowerExpr(m.Target), Str(m.Name) };
 			else if (c.Callee is DynMemberExpr dm) args = new() { LowerExpr(dm.Target), LowerExpr(dm.NameExpr) };
@@ -3960,8 +3987,6 @@ namespace Keysharp.Compilation.Syntax
 			var target = callee.Target;
 
 			if (target is NameExpr direct)
-			// A member callee names the member to resolve; a bare callee is the call form `f(args)`, which the
-			// runtime distinguishes by a null name (see Script.InvokeOrNull).
 				return direct.Name.Equals("Clr", System.StringComparison.OrdinalIgnoreCase);
 
 			return target is MemberExpr { Name: var clr, Target: NameExpr root }
@@ -4507,7 +4532,9 @@ namespace Keysharp.Compilation.Syntax
 			var classStaticFields = new List<MemberDeclarationSyntax>();
 			_staticFieldSink = classStaticFields;
 			var savedPath = _currentClassPath;
+			var savedUserPath = _currentClassUserPath;
 			_currentClassPath = _currentClassPath == null ? typeName : _currentClassPath + "." + typeName;
+			_currentClassUserPath = _currentClassUserPath == null ? c.Name : _currentClassUserPath + "." + c.Name;
 			// Class-body `#import` frame: visible to every member lowered below — methods, property accessors, field and
 			// static initializers, and (via the still-pushed stack) lexically nested classes. Pushed AFTER the `extends`
 			// clause is resolved above, so a base-class name is never shadowed by a class import.
@@ -4529,11 +4556,14 @@ namespace Keysharp.Compilation.Syntax
 			_structTypeName = typeName;
 			var savedInMethod = _inMethod;
 			var savedMethodStatic = _currentMethodStatic;
+			var savedThisFuncName = _currentThisFuncName;
 			_inMethod = true;
 			_currentMethodStatic = true;
+			_currentThisFuncName = ClassMemberFuncName("__Init", true);
 			var staticPre = typedFields.Select(StructFieldDefineProp).Where(s => s != null).ToList();
 			_inMethod = savedInMethod;
 			_currentMethodStatic = savedMethodStatic;
+			_currentThisFuncName = savedThisFuncName;
 			if (statFields.Count > 0 || staticPre.Count > 0 || c.StaticInit.Count > 0)
 				members.Add(InitMethod(NameMangler.StaticInit(), null, statFields, staticPre, c.StaticInit, staticCtx: true));
 
@@ -4541,6 +4571,7 @@ namespace Keysharp.Compilation.Syntax
 			members.AddRange(classStaticFields);
 			_staticFieldSink = savedSink;
 			_currentClassPath = savedPath;
+			_currentClassUserPath = savedUserPath;
 			if (classFrame != null) _importScopes.RemoveAt(_importScopes.Count - 1);
 
 			var decl = SyntaxFactory.ClassDeclaration(typeName)
@@ -4580,6 +4611,8 @@ namespace Keysharp.Compilation.Syntax
 		private MemberDeclarationSyntax InitMethod(string name, string baseProtoType, List<ClassField> fields,
 			List<StatementSyntax> prologue = null, List<Stmt> extra = null, bool staticCtx = false)
 		{
+			var savedThisFuncName = _currentThisFuncName;
+			_currentThisFuncName = ClassMemberFuncName("__Init", staticCtx);
 			var savedScopeFuncs = _pendingScopeFuncs; _pendingScopeFuncs = new();   // field-init fat-arrow local funcs
 			var stmts = new List<StatementSyntax>();
 			if (prologue != null) stmts.AddRange(prologue);
@@ -4603,6 +4636,7 @@ namespace Keysharp.Compilation.Syntax
 			stmts.AddRange(_pendingScopeFuncs);   // fat-arrow field values become local funcs that capture @this
 			stmts.Add(SyntaxFactory.ReturnStatement(Str("")));
 			_pendingScopeFuncs = savedScopeFuncs;
+			_currentThisFuncName = savedThisFuncName;
 			return ObjMethod(name, ParamThis(), SyntaxFactory.Block(stmts));
 		}
 
@@ -4630,6 +4664,7 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var paramLowers = m.Params.Select(p => p.Name.ToLowerInvariant()).ToHashSet();
 			var implName = m.Static ? NameMangler.StaticMethod(m.Name) : NameMangler.Method(m.Name);
+			var thisFuncName = ClassMemberFuncName(m.Name, m.Static);
 			// A method whose impl name collides with the enclosing type (or its constructor) must be renamed;
 			// the runtime still resolves it via the UserDeclaredName attribute.
 			bool renamed = !m.Static && implName == classType;
@@ -4638,14 +4673,14 @@ namespace Keysharp.Compilation.Syntax
 			var savedStatic = _currentMethodStatic; _currentMethodStatic = m.Static;
 			var savedCompat = _currentCompat;
 			_currentCompat = ScanRequires(m.Body?.Body) ?? _currentCompat;   // a `#Requires` in the method body sets its mode
-			var body = LowerCallableBody(paramLowers, m.Body, m.ArrowBody, implName, m.Name, ByRefSet(m.Params), m.Params);
+			var body = LowerCallableBody(paramLowers, m.Body, m.ArrowBody, implName,
+				thisFuncName, ByRefSet(m.Params), m.Params);
 			_inMethod = saved; _currentMethodStatic = savedStatic;
 			var attrs = new List<AttributeListSyntax>();
-			// Preserve the exact source-case name whenever the emitted C# identifier differs from it (the mangler
-			// TitleCases, prefixes statics, suffixes renamed collisions). OwnProps() enumeration and case-sensitive
-			// (`==`/`!==`) user comparisons need the original casing; the runtime resolves via this attribute.
-			if (!string.Equals(implName, m.Name, StringComparison.Ordinal))
-				attrs.Add(Attr("Keysharp.Runtime.UserDeclaredName", Str(m.Name)));
+			// Always stamped, not only when the mangler changed the spelling: the exact source case is what
+			// OwnProps() enumeration, case-sensitive (`==`/`!==`) comparisons and Func.Name all report, and a name
+			// carried in metadata is one the runtime never has to recover from the emitted identifier.
+			attrs.Add(Attr("Keysharp.Runtime.UserDeclaredName", Str(m.Name)));
 			attrs.AddRange(CompatAttr());
 			_currentCompat = savedCompat;
 			return ObjMethod(implName, ParamDecls(m.Params, includeThis: true, wrapVariadics: true), body, attrs.ToArray());
@@ -4665,17 +4700,21 @@ namespace Keysharp.Compilation.Syntax
 
 			if (pr.HasGet)
 			{
+				var thisFuncName = ClassMemberFuncName(pr.Name, pr.Static) + ".Get";
 				var savedM = _inMethod; var savedS = _currentMethodStatic; _inMethod = true; _currentMethodStatic = pr.Static;
-				var body = LowerCallableBody(new HashSet<string>(idxLowers), pr.GetBody, pr.GetArrow, getterName, pr.Name, ByRefSet(pr.Params), pr.Params);
+				var body = LowerCallableBody(new HashSet<string>(idxLowers), pr.GetBody, pr.GetArrow, getterName,
+					thisFuncName, ByRefSet(pr.Params), pr.Params);
 				_inMethod = savedM; _currentMethodStatic = savedS;
 				var ps = SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(Prepend(ThisParam(), IdxParams().ToArray())));
 				result.Add(ObjMethod(getterName, ps, body, Attr("Keysharp.Runtime.UserDeclaredName", Str(pr.Name))));
 			}
 			if (pr.HasSet)
 			{
+				var thisFuncName = ClassMemberFuncName(pr.Name, pr.Static) + ".Set";
 				var setParams = new HashSet<string>(idxLowers) { "value" };
 				var savedM = _inMethod; var savedS = _currentMethodStatic; _inMethod = true; _currentMethodStatic = pr.Static;
-				var body = LowerCallableBody(setParams, pr.SetBody, pr.SetArrow, setterName, pr.Name, ByRefSet(pr.Params), pr.Params);
+				var body = LowerCallableBody(setParams, pr.SetBody, pr.SetArrow, setterName,
+					thisFuncName, ByRefSet(pr.Params), pr.Params);
 				_inMethod = savedM; _currentMethodStatic = savedS;
 				var idx = IdxParams();
 				// `value` is always the LAST setter param, so a trailing `params object[]` index param drops `params`
@@ -4702,6 +4741,7 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var n = ++_lambdaCounter;
 			var implName = "FN_KS_AnonLambda_" + n;
+			var thisFuncName = fa.Name ?? "";
 			var paramLowers = fa.Params.Select(p => p.Name.ToLowerInvariant()).ToHashSet();
 			var savedCaptured = _capturedInScope; _capturedInScope = false;
 			// A named fn-expression `name(params) => …` can call itself: resolve `name` inside the body to a Func over
@@ -4713,12 +4753,17 @@ namespace Keysharp.Compilation.Syntax
 			System.Func<ExpressionSyntax> savedAlias = null;
 			bool hadAlias = aliasInBody && _inlineAliases.TryGetValue(selfName, out savedAlias);
 			if (aliasInBody) _inlineAliases[selfName] = () => FuncBind(implName);
-			var body = LowerCallableBody(paramLowers, fa.BlockBody, fa.BlockBody == null ? fa.Body : null, implName, fa.Name ?? "", ByRefSet(fa.Params), fa.Params, capturing: true);
+			var body = LowerCallableBody(paramLowers, fa.BlockBody, fa.BlockBody == null ? fa.Body : null, implName,
+				thisFuncName, ByRefSet(fa.Params), fa.Params, capturing: true);
 			if (aliasInBody) { if (hadAlias) _inlineAliases[selfName] = savedAlias; else _inlineAliases.Remove(selfName); }
 			bool captured = _capturedInScope; _capturedInScope = savedCaptured;
-			_pendingScopeFuncs.Add(SyntaxFactory.LocalFunctionStatement(ObjType, SyntaxFactory.Identifier(implName))
+			var localFunction = SyntaxFactory.LocalFunctionStatement(ObjType, SyntaxFactory.Identifier(implName))
 				.WithParameterList(ParamDecls(fa.Params, includeThis: false, wrapVariadics: true))
-				.WithBody(body));
+				.WithBody(body);
+			// Always stamped, "" for an anonymous lambda: Roslyn renames a local function to `<Outer>g__name|n_m`,
+			// and the attribute is what spares the runtime having to read that scheme back.
+			localFunction = localFunction.AddAttributeLists(Attr("Keysharp.Runtime.UserDeclaredName", Str(fa.Name ?? "")));
+			_pendingScopeFuncs.Add(localFunction);
 			// A closure that captured `this`/an enclosing local binds as a Closure (so `x is Closure`); otherwise a Func.
 			return captured ? ClosureBind(implName) : FuncBind(implName);
 		}
@@ -4735,12 +4780,14 @@ namespace Keysharp.Compilation.Syntax
 			var savedCaptured = _capturedInScope; _capturedInScope = false;
 			var savedCompat = _currentCompat;
 			_currentCompat = ScanRequires(fd.Body?.Body) ?? _currentCompat;   // nested-function `#Requires` (restored after)
-			var body = LowerCallableBody(paramLowers, fd.Body, fd.ArrowBody, implName, fd.Name, ByRefSet(fd.Params), fd.Params, capturing: true, staticNested: fd.Static);
+			var body = LowerCallableBody(paramLowers, fd.Body, fd.ArrowBody, implName, fd.Name,
+				ByRefSet(fd.Params), fd.Params, capturing: true, staticNested: fd.Static);
 			_currentCompat = savedCompat;
 			bool captured = _capturedInScope; _capturedInScope = savedCaptured;
 			_pendingScopeFuncs.Add(SyntaxFactory.LocalFunctionStatement(ObjType, SyntaxFactory.Identifier(implName))
 				.WithParameterList(ParamDecls(fd.Params, includeThis: false, wrapVariadics: true))
-				.WithBody(body));
+				.WithBody(body)
+				.AddAttributeLists(Attr("Keysharp.Runtime.UserDeclaredName", Str(fd.Name))));
 			// Assign (not declare — the var is hoisted) at the scope TOP so forward-referenced calls work and a
 			// self-recursive binding doesn't trip definite assignment; the delegate's captures read lazily.
 			_pendingScopeClosureInits.Add(ExprStmt(Assign(Id(NameMangler.Escape(nameLower)), captured ? ClosureBind(implName) : FuncBind(implName))));
@@ -4801,7 +4848,9 @@ namespace Keysharp.Compilation.Syntax
 		private string EmitHotCallback(Block body, string name)
 		{
 			var ps = new List<Param> { new Param("thishotkey", null, false, false, false) };
-			var lowered = LowerCallableBody(new HashSet<string> { "thishotkey" }, body, null, name, name);
+			// AutoHotkey builds every hotkey, hotstring and #HotIf body from one `<Hotkey>(ThisHotkey)` template
+			// (Script::CreateHotFunc), so that is the name A_ThisFunc reports inside all three.
+			var lowered = LowerCallableBody(new HashSet<string> { "thishotkey" }, body, null, name, "<Hotkey>");
 			_hotMembers.Add(ObjMethod(name, ParamDecls(ps, includeThis: false), lowered));
 			return name;
 		}
@@ -5151,7 +5200,7 @@ namespace Keysharp.Compilation.Syntax
 					// as required and rejects calls that omit them).
 					if (p.Default != null)
 					{
-						var d = LowerExpr(p.Default);
+						var d = LowerParamDefault(p.Default);
 						// A constant default goes straight into the attribute; a non-constant one defaults to null and gets a
 						// `param ??= <expr>` prologue. A by-ref default is ALWAYS declared null so an omitted `&p` arrives null
 						// (its default is substituted into the VarRef in LowerCallableBody, never via the attribute).
@@ -5165,14 +5214,29 @@ namespace Keysharp.Compilation.Syntax
 			return SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(list));
 		}
 
-		// funcName is the mangled C# method name (used for static-local field mangling); userName is the user-declared
-		// name passed to Script.EnterScope for the ListVars header (empty for an anonymous lambda).
-		private BlockSyntax LowerCallableBody(HashSet<string> paramLowers, Block bodyBlock, Expr arrowBody, string funcName, string userName, HashSet<string> byRefParams = null, List<Param> paramDefaults = null, bool capturing = false, bool staticNested = false)
+		private ExpressionSyntax LowerParamDefault(Expr expr)
+		{
+			var saved = _loweringParamDefault;
+			_loweringParamDefault = true;
+			var result = LowerExpr(expr);
+			_loweringParamDefault = saved;
+			return result;
+		}
+
+		// funcName is the mangled C# method name used for static-local field mangling. thisFuncName is the exact
+		// AHK-visible name used by A_ThisFunc and by an externally visible function scope.
+		private BlockSyntax LowerCallableBody(HashSet<string> paramLowers, Block bodyBlock, Expr arrowBody, string funcName,
+			string thisFuncName, HashSet<string> byRefParams = null, List<Param> paramDefaults = null,
+			bool capturing = false, bool staticNested = false)
 		{
 			// A `static` nested function resolves sibling nested-function names (so `static f2() => f1()` works) and can
 			// still access the enclosing function's STATIC variables (shared across calls), but does NOT capture the
 			// enclosing function's non-static LOCALS (AHK semantics) — varCapture covers only the local capture.
 			bool varCapture = capturing && !staticNested;
+			var savedThisFuncName = _currentThisFuncName;
+			var savedLoweringParamDefault = _loweringParamDefault;
+			_currentThisFuncName = thisFuncName;
+			_loweringParamDefault = false;
 			var savedByRef = _byRefParams;
 			_byRefParams = byRefParams;
 			var savedTemps = _scopeTemps; _scopeTemps = new();
@@ -5306,7 +5370,7 @@ namespace Keysharp.Compilation.Syntax
 				// clears/restores executingUserFunc around the call, so no matching teardown is emitted here.
 				body.Add(LocalDecl(Ty("Keysharp.Runtime.FuncScope.Reader"), "KS_readVar", BuildReaderLambda()));
 				if (needsWriter) body.Add(LocalDecl(Ty("Keysharp.Runtime.FuncScope.Writer"), "KS_writeVar", BuildWriterLambda()));
-				body.Add(ExprStmt(Inv(Access("Keysharp.Runtime.Script.EnterScope"), Id("KS_readVar"), ScopeNamesLambda(), Str(userName ?? ""))));
+				body.Add(ExprStmt(Inv(Access("Keysharp.Runtime.Script.EnterScope"), Id("KS_readVar"), ScopeNamesLambda(), Str(thisFuncName ?? ""))));
 			}
 
 			// A by-ref param is read/written through its VarRef's __Value. Only when the caller OMITS an optional `&p`
@@ -5319,7 +5383,7 @@ namespace Keysharp.Compilation.Syntax
 					if (p.ByRef && !p.Variadic)
 					{
 						var rid = Id(NameMangler.Escape(p.Name.ToLowerInvariant()));
-						var deflt = p.Default != null ? LowerExpr(p.Default) : Str("");
+						var deflt = p.Default != null ? LowerParamDefault(p.Default) : Str("");
 						body.Add(ExprStmt(SyntaxFactory.AssignmentExpression(SyntaxKind.CoalesceAssignmentExpression, rid,
 							SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Builtins.VarRef"))
 								.WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(deflt)))))));
@@ -5329,9 +5393,13 @@ namespace Keysharp.Compilation.Syntax
 			// so assign the real default when the caller omitted it (`param ??= <expr>`).
 			if (paramDefaults != null)
 				foreach (var p in paramDefaults)
-					if (!p.ByRef && !p.Variadic && p.Default != null && LowerExpr(p.Default) is not LiteralExpressionSyntax)
-						body.Add(ExprStmt(SyntaxFactory.AssignmentExpression(SyntaxKind.CoalesceAssignmentExpression,
-							Id(NameMangler.Escape(p.Name.ToLowerInvariant())), LowerExpr(p.Default))));
+					if (!p.ByRef && !p.Variadic && p.Default != null)
+					{
+						var defaultExpr = LowerParamDefault(p.Default);
+						if (defaultExpr is not LiteralExpressionSyntax)
+							body.Add(ExprStmt(SyntaxFactory.AssignmentExpression(SyntaxKind.CoalesceAssignmentExpression,
+								Id(NameMangler.Escape(p.Name.ToLowerInvariant())), defaultExpr)));
+					}
 
 			// A fat-arrow `=> expr` propagates an unset result rather than raising (unlike an explicit `return f()`),
 			// so its outermost call/member/index uses the non-raising *OrNull form.
@@ -5360,9 +5428,14 @@ namespace Keysharp.Compilation.Syntax
 			_scopeTemps = savedTemps; _pendingScopeFuncs = savedScopeFuncs; _enclosingLocals = savedEnclosing;
 			_pendingScopeClosureInits = savedClosureInits; _enclosingStatics = savedEnclosingStatics;
 			_inStaticNested = savedInStaticNested;
+			_currentThisFuncName = savedThisFuncName;
+			_loweringParamDefault = savedLoweringParamDefault;
 			if (importFrame != null) _importScopes.RemoveAt(_importScopes.Count - 1);
 			return SyntaxFactory.Block(body);
 		}
+
+		private string ClassMemberFuncName(string memberName, bool isStatic) =>
+			$"{_currentClassUserPath}.{(isStatic ? "" : "Prototype.")}{memberName}";
 
 		// AHK keeps locals alive to scope exit; the JIT may otherwise collect a Buffer after its last managed
 		// read while native code still uses its Ptr. KeepAlive restores that lifetime on every exit path.

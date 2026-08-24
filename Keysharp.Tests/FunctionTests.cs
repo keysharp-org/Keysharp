@@ -20,6 +20,26 @@ namespace Keysharp.Tests
 		public void NamedArgs() => Assert.IsTrue(TestScript("func-named-params", false));
 
 		[Test, Category("Function"), NonParallelizable]
+		public void FuncNames() => Assert.IsTrue(TestScript("func-names", false));
+
+		[Test, Category("Function"), Category("Internal")]
+		public void ThisFuncUsesLiteralFastPath()
+		{
+			const string source = "Probe() => A_ThisFunc\nclass C { static M() => A_ThisFunc\nP { get => A_ThisFunc }\nS => A_ThisFunc }\n"
+								  + "F13::MsgBox A_ThisFunc\n";
+			var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source);
+			Assert.IsEmpty(diagnostics, string.Join("; ", diagnostics));
+			var generated = new Keysharp.Compilation.Syntax.Lowerer().Build(program, "Test").ToFullString();
+			Assert.IsFalse(generated.Contains("Keysharp.Builtins.Accessors.A_ThisFunc", StringComparison.Ordinal), generated);
+			Assert.IsTrue(generated.Contains("\"Probe\"", StringComparison.Ordinal), generated);
+			Assert.IsTrue(generated.Contains("\"C.M\"", StringComparison.Ordinal), generated);
+			Assert.IsTrue(generated.Contains("\"C.Prototype.P.Get\"", StringComparison.Ordinal), generated);
+			// A shorthand getter capitalises, and every hot callback is AutoHotkey's one `<Hotkey>` function.
+			Assert.IsTrue(generated.Contains("\"C.Prototype.S.Get\"", StringComparison.Ordinal), generated);
+			Assert.IsTrue(generated.Contains("\"<Hotkey>\"", StringComparison.Ordinal), generated);
+		}
+
+		[Test, Category("Function"), NonParallelizable]
 		public void CombinedParamsInFunc() => Assert.IsTrue(TestScript("func-combined-params", false));
 
 		[Test, Category("Function"), NonParallelizable]

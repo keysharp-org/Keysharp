@@ -867,7 +867,7 @@ namespace Keysharp.Runtime
 
 		// Installs the executing-function scope for the current thread. Emitted into the prologue of any scope-publishing
 		// function so external code can resolve its locals/closures by name (and ListVars can show them). The Lowerer
-		// passes the function's user-declared name (the scope's only identity detail — used for the ListVars header),
+		// passes the function's exact AHK-visible name (used by A_ThisFunc and the ListVars header),
 		// so EnterScope reads nothing from thread state. KeysharpFunc.Call clears the scope on entry to and restores it on
 		// return from every user function, so no matching "leave" call is needed here.
 		public static void EnterScope(FuncScope.Reader reader, Func<string[]> namesFactory, string name) =>
