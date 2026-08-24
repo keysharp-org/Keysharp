@@ -2227,7 +2227,8 @@ namespace Keysharp.Compilation.Syntax
 		}
 
 		private sealed record InlineUsing(string Text, bool Global);
-		private sealed record ParsedBlock(List<InlineUsing> Usings, List<MemberDeclarationSyntax> Members, CompilationUnitSyntax Probe, int WrapperOffset);
+		private sealed record ParsedBlock(List<InlineUsing> Usings, List<MemberDeclarationSyntax> Members,
+										  CompilationUnitSyntax Probe, int WrapperOffset, string Body, CSharpParseOptions Options);
 
 		private Dictionary<CSharpDirective, ParsedBlock> _parsedBlocks;
 
@@ -2240,7 +2241,7 @@ namespace Keysharp.Compilation.Syntax
 										  SourceCodeKind.Regular, d.Defines ?? _inlineDefines);
 			var (usings, body) = SplitUsings(d.Code ?? "", options);
 			var members = ParseInlineMembers(body, options, out var wrapperOffset, out var probe);
-			return (_parsedBlocks ??= [])[d] = new ParsedBlock(usings, [.. members], probe, wrapperOffset);
+			return (_parsedBlocks ??= [])[d] = new ParsedBlock(usings, [.. members], probe, wrapperOffset, body, options);
 		}
 
 		// Extract leading usings without changing member line positions.
@@ -2302,9 +2303,9 @@ namespace Keysharp.Compilation.Syntax
 		// The final tree receives the script's platform symbols; block-local choices are already frozen.
 		public IReadOnlyCollection<string> InlineDefines => _inlineDefines;
 
-		private bool ReportInlineSyntaxErrors(CompilationUnitSyntax probe, int wrapperOffset, int lineOffset, string file)
+		private bool ReportInlineSyntaxErrors(ParsedBlock parsed, int lineOffset, string file)
 		{
-			var errors = probe.GetDiagnostics()
+			var errors = parsed.Probe.GetDiagnostics()
 						 .Where(x => x.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
 						 .ToList();
 
@@ -2312,15 +2313,43 @@ namespace Keysharp.Compilation.Syntax
 				return true;
 
 			var shortFile = string.IsNullOrEmpty(file) ? "" : System.IO.Path.GetFileName(file);
+			// Lines are the block's own, so a position from the member parse first sheds the probe's wrapper --
+			// clamped, since a diagnostic anchored on the wrapper itself would otherwise point above the block.
+			string At(Microsoft.CodeAnalysis.Text.LinePosition pos, int wrapperLines = 0) =>
+				$"{(shortFile.Length != 0 ? shortFile + ":" : "")}{lineOffset + System.Math.Max(pos.Line - wrapperLines, 0) + 1}:{pos.Character + 1}: #CSharp: ";
 
-			foreach (var e in errors.Take(5))
+			// A member parse can only report a bare statement as cascading token errors that never name it, so
+			// ask the script-kind parse, which classifies statements and declarations exactly.
+			if (FirstInlineStatement(parsed) is { } stmt)
 			{
-				var pos = e.Location.GetLineSpan().StartLinePosition;
-				var line = lineOffset + pos.Line - wrapperOffset + 1;
-				Diag($"{(shortFile.Length != 0 ? shortFile + ":" : "")}{line}:{pos.Character + 1}: #CSharp: {e.GetMessage()}");
+				Diag(At(stmt.GetLocation().GetLineSpan().StartLinePosition)
+					 + $"`{InlineSnippet(stmt)}` is a statement, but a #CSharp block holds declarations only. "
+					 + "Move it into a method the script can call, or give it a type if you meant to declare a field.");
+				return false;
 			}
 
+			foreach (var e in errors.Take(5))
+				Diag(At(e.Location.GetLineSpan().StartLinePosition, parsed.WrapperOffset) + e.GetMessage());
+
 			return false;
+		}
+
+		// Only a clean script-kind parse is trustworthy: if it errors too, the block has a genuine syntax
+		// problem and the compiler's own messages are the better report.
+		private static GlobalStatementSyntax FirstInlineStatement(ParsedBlock parsed)
+		{
+			var script = SyntaxFactory.ParseCompilationUnit(parsed.Body, options: parsed.Options.WithKind(SourceCodeKind.Script));
+			return script.GetDiagnostics().Any(x => x.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+				   ? null
+				   : script.Members.OfType<GlobalStatementSyntax>().FirstOrDefault();
+		}
+
+		// Collapsed to one capped line: the message already carries the statement's position, and a wrapped
+		// statement cut at its first newline would quote a fragment too short to recognise.
+		private static string InlineSnippet(SyntaxNode node)
+		{
+			var text = string.Join(" ", node.ToString().Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+			return text.Length > 40 ? text[..40] + "..." : text;
 		}
 
 		private static bool IsScriptVisible(MemberDeclarationSyntax m) =>
@@ -2597,7 +2626,7 @@ namespace Keysharp.Compilation.Syntax
 					var lineOffset = d.CodeLine - 1;
 					var wrapperOffset = parsed.WrapperOffset;
 
-					if (!ReportInlineSyntaxErrors(parsed.Probe, wrapperOffset, lineOffset, rawFile))
+					if (!ReportInlineSyntaxErrors(parsed, lineOffset, rawFile))
 						continue;
 
 					foreach (var m in parsed.Members)

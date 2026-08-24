@@ -877,6 +877,48 @@ namespace Keysharp.Tests
 				Assert.IsTrue(code.Contains("#CSharp:"), "the failure should be reported as a #CSharp diagnostic; got:\n" + code);
 				Assert.IsTrue(code.Contains("broken.ks 3:"),
 							  "the diagnostic should point at line 3, the `using` with no semicolon; got:\n" + code);
+				Assert.IsFalse(code.Contains("is a statement"),
+							   "a block that does not parse must report its syntax error, not be blamed on a statement; got:\n" + code);
+			}
+			finally
+			{
+				try { Directory.Delete(dir, true); } catch { }
+			}
+		}
+
+		[Test, Category("Directives")]
+		public void CSharpStatementError()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_csharpstmt_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var ch = new CompilerHelper();
+
+				string Compile(string block, string name)
+				{
+					var script = Path.Combine(dir, name + ".ks");
+					File.WriteAllText(script, "#NoTrayIcon\n#CSharp\n" + block + "#EndCSharp\n\nTest()\n");
+					var (arr, code, _) = ch.CompileCodeToByteArray(script, name);
+					Assert.IsNull(arr, $"a statement in a #CSharp block must not produce an assembly; generated:\n{code}");
+					Assert.IsTrue(code.Contains("is a statement, but a #CSharp block holds declarations only"),
+								  $"the statement should be named as such; got:\n{code}");
+					return code;
+				}
+
+				var one = Compile("public static object Test() { return \"\"; }\nSystem.Console.WriteLine(1);\n", "stmt");
+				Assert.IsTrue(one.Contains("stmt.ks 4:"),
+							  "the diagnostic should point at line 4, the statement; got:\n" + one);
+				Assert.IsTrue(one.Contains("`System.Console.WriteLine(1);` is a statement"),
+							  "the message should quote the offending statement; got:\n" + one);
+				Assert.IsFalse(one.Contains("in a member declaration"),
+							   "the cascading parser errors should be replaced by it, not joined by it; got:\n" + one);
+				// A modifier-less field is a declaration to the script parser too, so the statement below it is
+				// what gets named -- the assumption the whole detection rests on.
+				var two = Compile("long n = 5;\npublic static object Test() { return \"\"; }\nn = 6;\n", "field");
+				Assert.IsTrue(two.Contains("field.ks 5:") && two.Contains("`n = 6;` is a statement"),
+							  "the field must not be mistaken for the statement three lines below it; got:\n" + two);
 			}
 			finally
 			{

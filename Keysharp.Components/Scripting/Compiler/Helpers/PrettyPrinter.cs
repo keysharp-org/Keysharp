@@ -217,13 +217,26 @@ namespace Keysharp.Compilation
 			}
 			_sb.Append("class ").Append(node.Identifier.Text);
 
+			if (node.TypeParameterList != null)
+				_sb.Append(node.TypeParameterList.ToString());
+
+			// A base list runs on into the constraints; without one they get their own indented line.
 			if (node.BaseList != null)
 			{
 				_sb.Append(" : ")
 					.Append(string.Join(", ", node.BaseList.Types.Select(t => t.ToString())));
+
+				foreach (var c in node.ConstraintClauses)
+					_sb.Append(" ").Append(c.ToString());
+
+				_sb.AppendLine();
+			}
+			else
+			{
+				_sb.AppendLine();
+				PrintConstraintClauses(node.ConstraintClauses);
 			}
 
-			_sb.AppendLine();
 			WriteIndent();
 			_sb.AppendLine("{");
 			_indent++;
@@ -244,9 +257,15 @@ namespace Keysharp.Compilation
 			_sb.AppendLine("}");
 		}
 
-		static bool NeedsMemberSpacer(MemberDeclarationSyntax m) =>
-			   m is not FieldDeclarationSyntax
-			&& m is not PropertyDeclarationSyntax;
+		// Roslyn blank-lines only a member that ends in `}`; a body-less one runs on to the next.
+		static bool NeedsMemberSpacer(MemberDeclarationSyntax m) => m switch
+		{
+			FieldDeclarationSyntax or PropertyDeclarationSyntax => false,
+			MethodDeclarationSyntax me => me.Body != null,
+			ConstructorDeclarationSyntax c => c.Body != null,
+			DestructorDeclarationSyntax d => d.Body != null,
+			_ => true
+		};
 
 		static bool NeedsPropertyFieldSpacer(MemberDeclarationSyntax current, MemberDeclarationSyntax next) =>
 			current is PropertyDeclarationSyntax && next is not PropertyDeclarationSyntax;
@@ -261,20 +280,12 @@ namespace Keysharp.Compilation
 				node.TypeParameterList,
 				node.Modifiers,
 				node.AttributeLists,
-				node.ParameterList
+				node.ParameterList,
+				node.ExplicitInterfaceSpecifier,
+				node.ConstraintClauses
 			);
 
-			// Body (block or expression‐bodied)
-			if (node.Body != null)
-				Visit(node.Body);
-			else if (node.ExpressionBody != null)
-			{
-				// e.g. “=> expr;”
-				WriteIndent();
-				_sb.Append("=> ");
-				Visit(node.ExpressionBody.Expression);
-				_sb.AppendLine(";");
-			}
+			PrintFunctionBody(node.Body, node.ExpressionBody);
 		}
 
 		public override void VisitLocalFunctionStatement(LocalFunctionStatementSyntax node)
@@ -285,19 +296,12 @@ namespace Keysharp.Compilation
 				node.TypeParameterList,
 				node.Modifiers,
 				node.AttributeLists,
-				node.ParameterList
+				node.ParameterList,
+				null,                       // a local function cannot implement an interface member
+				node.ConstraintClauses
 			);
 
-			if (node.Body != null)
-				Visit(node.Body);
-			else if (node.ExpressionBody != null)
-			{
-				// `<header> => expr;` — the header line added a trailing newline; continue it for the arrow body.
-				TrimTrailingNewLine();
-				_sb.Append(" => ");
-				Visit(node.ExpressionBody.Expression);
-				_sb.AppendLine(";");
-			}
+			PrintFunctionBody(node.Body, node.ExpressionBody);
 		}
 
 
@@ -1156,9 +1160,9 @@ namespace Keysharp.Compilation
 				PrintArgumentList(node.Initializer.ArgumentList);
 			}
 
-			// 5) body on next line
+			// 5) body
 			_sb.AppendLine();
-			Visit(node.Body);
+			PrintFunctionBody(node.Body, node.ExpressionBody);
 		}
 
 		public override void VisitDestructorDeclaration(DestructorDeclarationSyntax node)
@@ -1176,7 +1180,7 @@ namespace Keysharp.Compilation
 			_sb.AppendLine();
 
 			// 3) body
-			Visit(node.Body);
+			PrintFunctionBody(node.Body, node.ExpressionBody);
 		}
 
 		public override void VisitPropertyDeclaration(PropertyDeclarationSyntax node)
@@ -1192,7 +1196,9 @@ namespace Keysharp.Compilation
 			foreach (var mod in node.Modifiers)
 				_sb.Append(mod.Text).Append(" ");
 			Visit(node.Type);
-			_sb.Append(" ").Append(node.Identifier.Text);
+			_sb.Append(" ");
+			PrintExplicitInterface(node.ExplicitInterfaceSpecifier);
+			_sb.Append(node.Identifier.Text);
 
 			// 3a) normal get/set block
 			if (node.AccessorList != null)
@@ -1292,7 +1298,9 @@ namespace Keysharp.Compilation
 			TypeParameterListSyntax typeParams,
 			SyntaxTokenList modifiers,
 			SyntaxList<AttributeListSyntax> attributes,
-			ParameterListSyntax parameters)
+			ParameterListSyntax parameters,
+			ExplicitInterfaceSpecifierSyntax explicitInterface,
+			SyntaxList<TypeParameterConstraintClauseSyntax> constraints)
 		{
 			// attributes
 			foreach (var al in attributes)
@@ -1305,12 +1313,57 @@ namespace Keysharp.Compilation
 			foreach (var mod in modifiers)
 				_sb.Append(mod.Text).Append(" ");
 			Visit(returnType);
-			_sb.Append(" ").Append(identifier);
+			_sb.Append(" ");
+			PrintExplicitInterface(explicitInterface);
+			_sb.Append(identifier);
 			if (typeParams != null)
 				_sb.Append(typeParams.ToString());
 
 			PrintParameterList(parameters);
 			_sb.AppendLine();
+			PrintConstraintClauses(constraints);
+		}
+
+		// Dropping the specifier re-parses cleanly and silently stops the type implementing the interface.
+		void PrintExplicitInterface(ExplicitInterfaceSpecifierSyntax explicitInterface)
+		{
+			if (explicitInterface != null)
+				_sb.Append(explicitInterface.ToString());
+		}
+
+		// Dropping the clauses likewise re-parses, silently unbounding the type parameters. Roslyn keeps the whole
+		// list on one indented line and lets what follows continue from it, so this leaves the line terminated
+		// exactly the way the header would have -- bar a `new()` clause, after which it breaks (whitespace only).
+		void PrintConstraintClauses(SyntaxList<TypeParameterConstraintClauseSyntax> constraints)
+		{
+			if (constraints.Count == 0)
+				return;
+
+			_indent++;
+			WriteIndent();
+			_sb.AppendLine(string.Join(" ", constraints.Select(c => c.ToString())));
+			_indent--;
+		}
+
+		// A declaration with no block body has none of its own lines: Roslyn's normalizer keeps both `=> expr;`
+		// and the bare `;` of a body-less member (extern/abstract/partial/interface) on the header line.
+		void PrintFunctionBody(BlockSyntax body, ArrowExpressionClauseSyntax arrow)
+		{
+			if (body != null)
+			{
+				Visit(body);
+				return;
+			}
+
+			TrimTrailingNewLine();
+
+			if (arrow != null)
+			{
+				_sb.Append(" => ");
+				Visit(arrow.Expression);
+			}
+
+			_sb.AppendLine(";");
 		}
 
 		private void PrintParameterList(ParameterListSyntax parameters)
