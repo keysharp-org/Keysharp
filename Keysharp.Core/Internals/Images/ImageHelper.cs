@@ -918,10 +918,95 @@ namespace Keysharp.Internals.Images
 			var ids = new uint[1];
 			var count = WindowsAPI.PrivateExtractIcons(path, index, w, h, hicons, ids, 1, 0);
 
-			return (count > 0 && hicons[0] != 0) ? Icon.FromHandle(hicons[0]) : null;
+			if (count == 0 || hicons[0] == 0)
+				return null;
+
+			//Clone into an icon which owns its handle, and release the extracted one here. Icon.FromHandle does NOT
+			//take ownership, so returning that directly leaks the HICON however carefully the caller disposes.
+			//Clone copies through CopyIcon on .NET Core; on .NET Framework it shared the handle, which would make
+			//the DestroyIcon below a use-after-free rather than a release.
+			try
+			{
+				using var borrowed = Icon.FromHandle(hicons[0]);
+				return (Icon)borrowed.Clone();
+			}
+			finally
+			{
+				_ = DestroyIcon(hicons[0]);
+			}
 		}
 
 #endif
+
+		/// <summary>
+		/// Loads an icon for a window or the tray. <see cref="LoadImage"/> answers with one bitmap, which is the
+		/// wrong shape here twice over: a window wants an Icon, and LoadImage splits a multi-size .ico down to a
+		/// single frame, where a window wants every size the file carries so the toolkit can pick one per slot --
+		/// a small frame for the title bar, a larger one for alt-tab. Every other source is LoadImage's job.
+		/// </summary>
+		/// <param name="filename">What <see cref="LoadImage"/> accepts: a file, an "HICON:"/"HBITMAP:" handle, or
+		/// a module holding icon resources.</param>
+		/// <param name="iconNumber">The icon within a module, already through <see cref="PrepareIconNumber"/>.</param>
+		/// <param name="size">The size the icon reports as its own, which is what a large-icon consumer such as the
+		/// alt-tab switcher receives. Non-positive keeps the source's own size. Window icons are square.</param>
+		/// <returns>The icon, or null when the source holds none or cannot be read. Nothing is thrown: a caller
+		/// reports a bad source as a ValueError naming it, which is more use to a script than a decoder's message
+		/// about a stream.</returns>
+		internal static Icon LoadIconSet(string filename, object iconNumber, int size = 0)
+		{
+			try
+			{
+				//Invariant, not the current culture: in tr-TR the dotless i makes ".ICO".ToLower() ".ıco".
+				if (Path.GetExtension(filename).ToLowerInvariant() == ".ico" && File.Exists(filename))
+#if WINDOWS
+					return size > 0 ? new Icon(filename, size, size) : new Icon(filename);
+
+#else
+					//Eto keeps every frame either way and has no preferred size to set.
+					return new Icon(filename);
+
+#endif
+				//A module hands back the icon itself at the size asked for, and an image format carries one size,
+				//so LoadImage already resolves both -- it just also produces a bitmap this caller has no use for.
+				var (bmp, icon) = LoadImage(filename, size, size, iconNumber);
+
+				using (bmp)
+					return icon as Icon ?? IconFromBitmap(bmp);
+			}
+			catch (Exception)
+			{
+				return null;
+			}
+		}
+
+		/// <summary>
+		/// Turns one bitmap into an icon. The bitmap is only read; the icon owns its own handle.
+		/// </summary>
+		internal static Icon IconFromBitmap(Bitmap bmp)
+		{
+			if (bmp == null)
+				return null;
+
+#if WINDOWS
+
+			//GetHicon's handle belongs to the caller and Icon.FromHandle does not adopt it, so it is cloned into
+			//an icon which owns its handle and the original is released here.
+			var handle = bmp.GetHicon();
+
+			try
+			{
+				using var borrowed = Icon.FromHandle(handle);
+				return (Icon)borrowed.Clone();
+			}
+			finally
+			{
+				_ = DestroyIcon(handle);
+			}
+
+#else
+			return new Icon(1f, new Bitmap(bmp));
+#endif
+		}
 
 		internal static object PrepareIconNumber(object iconnumber)
 		{

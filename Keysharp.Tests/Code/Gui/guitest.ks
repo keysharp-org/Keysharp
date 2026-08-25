@@ -61,6 +61,12 @@ global gMouseUpCount := 0
 global gMouseMoveCount := 0
 global gPixelAssetPath := A_ScriptDir "/killbill.png"
 global pixelSwatch := ""
+global gIconAssetPath := A_ScriptDir "/monkey.ico"
+global gTaskbarTargetDDL := ""
+global gTaskbarStateDDL := ""
+global gTaskbarProbeGui := ""
+global gTraySetIconGui := ""
+global gTaskbarProgressValue := 0
 
 winposx := ""
 winposy := ""
@@ -3238,6 +3244,291 @@ PostBtn1.OnEvent("Click", "AboutNotepad")
 MyGui.UseGroup()
 Tab.UseTab()
 
+; ── Windows tab: the window's own icon, and the badge / progress a shell draws on its taskbar button ──
+; Nothing here can check itself: a shell draws the result, so each button says what to look for and the
+; status line reports "PASS if ...", which leaves the pass/fail bar alone.
+Tab.UseTab("Windows")
+; "y+10" after re-selecting the tab references the last group added to it, which is guiSelfGroup above.
+iconTaskbarGroup := MyGui.AddGroupBox("xc+16 y+10 w1114", "Window Icon && Taskbar Button (Gui.Icon / Gui.SetIcon / Ks.Taskbar)")
+MyGui.UseGroup(iconTaskbarGroup)
+
+MyGui.AddText("xc+16 yc+22 w348 h44", "Gui.SetIcon gives one window its own icon; TraySetIcon changes the script's, which every window opened after it wears. Watch the title bar, the taskbar button and alt-tab.")
+btnIconFile := MyGui.AddButton("xc+16 y+6 w170 h26", "Icon: monkey.ico")
+btnIconFile.OnEvent("Click", (*) => SetWindowIconFromFile())
+btnIconLarge := MyGui.AddButton("x+8 yp w170 h26", "Icon: monkey.ico w256")
+btnIconLarge.OnEvent("Click", (*) => SetWindowIconLarge())
+btnIconModule := MyGui.AddButton("xc+16 y+6 w170 h26", "Icon: Keysharp_s.ico")
+btnIconModule.OnEvent("Click", (*) => SetWindowIconFromModule())
+btnIconCopy := MyGui.AddButton("x+8 yp w170 h26", "Copy Icon to Probe")
+btnIconCopy.OnEvent("Click", (*) => CopyWindowIconToProbe())
+btnIconTray := MyGui.AddButton("xc+16 y+6 w170 h26", "TraySetIcon + New Window")
+btnIconTray.OnEvent("Click", (*) => TraySetIconThenNewWindow())
+btnIconReset := MyGui.AddButton("x+8 yp w170 h26", "Back to Default (*)")
+btnIconReset.OnEvent("Click", (*) => ResetWindowIcon())
+
+MyGui.AddText("xc+382 yc+22 w348 h44", "The badge is drawn over the button. 'Application' is the class form, which decorates every window the script has open and every one it opens later; a single window is a Windows distinction.")
+MyGui.AddText("xc+382 y+6 w52 h22", "Target:")
+gTaskbarTargetDDL := MyGui.Add("DropDownList", "x+4 yp-4 w292 Choose1", ["This window", "Probe window", "Application (all windows)"])
+btnProbeOpen := MyGui.AddButton("xc+382 y+8 w170 h26", "Open Probe Window")
+btnProbeOpen.OnEvent("Click", (*) => ShowTaskbarProbe())
+btnProbeClose := MyGui.AddButton("x+8 yp w170 h26", "Close Probe Window")
+btnProbeClose.OnEvent("Click", (*) => HideTaskbarProbe())
+btnBadgeIco := MyGui.AddButton("xc+382 y+6 w170 h26", "Badge: monkey.ico")
+btnBadgeIco.OnEvent("Click", (*) => SetTaskbarBadgeFromFile())
+btnBadgeRes := MyGui.AddButton("x+8 yp w170 h26", "Badge: Keysharp_s.ico")
+btnBadgeRes.OnEvent("Click", (*) => SetTaskbarBadgeFromModule())
+btnBadgeClear := MyGui.AddButton("xc+382 y+6 w170 h26", "Clear Badge")
+btnBadgeClear.OnEvent("Click", (*) => ClearTaskbarBadge())
+btnBadgeBoth := MyGui.AddButton("x+8 yp w170 h26", "Two-Window Badge Check")
+btnBadgeBoth.OnEvent("Click", (*) => TwoWindowBadgeCheck())
+
+MyGui.AddText("xc+748 yc+22 w348 h44", "The progress bar fills the button, out of 100 unless a maximum is given. A blank value removes it, and the state is what makes it a marquee, amber or red.")
+btnProgValue := MyGui.AddButton("xc+748 y+6 w170 h26", "Progress 40%")
+btnProgValue.OnEvent("Click", (*) => SetTaskbarProgressValue())
+btnProgAnimate := MyGui.AddButton("x+8 yp w170 h26", "Animate 0 to 100")
+btnProgAnimate.OnEvent("Click", (*) => AnimateTaskbarProgress())
+MyGui.AddText("xc+748 y+6 w44 h22", "State:")
+gTaskbarStateDDL := MyGui.Add("DropDownList", "x+4 yp-4 w158 Choose1", ["Normal", "Indeterminate", "Paused", "Error", "None"])
+btnProgState := MyGui.AddButton("x+8 yp-1 w134 h26", "Apply State")
+btnProgState.OnEvent("Click", (*) => ApplyTaskbarProgressState())
+btnProgClear := MyGui.AddButton("xc+748 y+8 w170 h26", "Clear Progress")
+btnProgClear.OnEvent("Click", (*) => ClearTaskbarProgress())
+
+; Read from the class rather than restated here, so this line is the running platform's own answer.
+MyGui.AddText("xc+16 yc+222 w1082 h20 cBlue", "Taskbar.HasBadgeIcon: " (Taskbar.HasBadgeIcon ? "yes" : "no, the badge shows its Text instead") "      Taskbar.IsPerWindow: " (Taskbar.IsPerWindow ? "yes" : "no, every target decorates the whole application"))
+iconTaskbarStatus := MyGui.AddText("xc+16 y+6 w1082 h34", "Window icon / Taskbar: not run")
+gStatus["window_taskbar"] := iconTaskbarStatus
+MyGui.UseGroup()
+Tab.UseTab()
+
+; ┌────────────────────────────────┐
+; │  Window icon / taskbar probes  │
+; └────────────────────────────────┘
+
+; A second top-level window, so a per-window badge or progress bar has a taskbar button of its own to appear
+; on beside this one's. Closing a Gui hides it rather than destroying it, so the same window is reshown.
+TaskbarProbeWindow() {
+	global gTaskbarProbeGui
+
+	if !IsObject(gTaskbarProbeGui) {
+		gTaskbarProbeGui := Gui(, "Keysharp Taskbar Probe")
+		gTaskbarProbeGui.AddText("xm ym w330", "A window of its own, with a taskbar button of its own. Aim the Target list at it to watch a badge or a progress bar land here and not on the main window.")
+	}
+
+	if !gTaskbarProbeGui.Visible
+		gTaskbarProbeGui.Show("w360 h110")
+
+	return gTaskbarProbeGui
+}
+
+ShowTaskbarProbe(*) {
+	TaskbarProbeWindow()
+	SetStatus("window_taskbar", "Taskbar: probe window open - aim the Target list at it, or leave it for the two-window badge check")
+}
+
+HideTaskbarProbe(*) {
+	global gTaskbarProbeGui
+
+	if (IsObject(gTaskbarProbeGui) && gTaskbarProbeGui.Visible)
+		gTaskbarProbeGui.Hide()
+
+	SetStatus("window_taskbar", "Taskbar: probe window closed - its button goes with it, and anything drawn on that button")
+}
+
+; 0 selects the application form (the Taskbar class's own methods); anything else is the handle of the one
+; window to decorate. Both forms take the same arguments, so only the call target differs below.
+TaskbarTargetHwnd() {
+	global gTaskbarTargetDDL, MyGui
+
+	choice := gTaskbarTargetDDL.Text
+
+	if InStr(choice, "Application")
+		return 0
+
+	if InStr(choice, "Probe")
+		return TaskbarProbeWindow().Hwnd
+
+	return MyGui.Hwnd
+}
+
+TaskbarApplyBadge(source, iconNumber, text) {
+	hwnd := TaskbarTargetHwnd()
+
+	if (hwnd = 0)
+		Taskbar.SetBadge(source, iconNumber, text)
+	else
+		Taskbar(hwnd).SetBadge(source, iconNumber, text)
+}
+
+TaskbarApplyProgress(value) {
+	hwnd := TaskbarTargetHwnd()
+
+	if (hwnd = 0)
+		Taskbar.SetProgress(value)
+	else
+		Taskbar(hwnd).SetProgress(value)
+}
+
+TaskbarApplyProgressState(state) {
+	hwnd := TaskbarTargetHwnd()
+
+	if (hwnd = 0)
+		Taskbar.SetProgressState(state)
+	else
+		Taskbar(hwnd).SetProgressState(state)
+}
+
+TaskbarTargetName() {
+	global gTaskbarTargetDDL
+
+	return gTaskbarTargetDDL.Text
+}
+
+SetWindowIconFromFile(*) {
+	global MyGui, gIconAssetPath
+
+	MyGui.SetIcon(gIconAssetPath)
+	SetStatus("window_taskbar", "Window icon: monkey.ico - PASS if this window's title bar and taskbar button both show the monkey, and no other window changed")
+}
+
+SetWindowIconLarge(*) {
+	global MyGui, gIconAssetPath
+
+	; The size the large icon reports, which is what alt-tab and the taskbar button take. The title bar asks
+	; for the small size regardless, so it should not change with it.
+	MyGui.SetIcon(gIconAssetPath, , "w256")
+	SetStatus("window_taskbar", "Window icon: monkey.ico at w256 - PASS if alt-tab and the taskbar show a large crisp monkey while the title bar keeps the small one")
+}
+
+SetWindowIconFromModule(*) {
+	global MyGui
+
+	; A named resource inside a .NET assembly, which is the one module form that works off Windows too.
+	MyGui.SetIcon(A_KeysharpCorePath, "Keysharp_s.ico")
+	SetStatus("window_taskbar", "Window icon: the suspend icon out of Keysharp.Core - PASS if the title bar shows the Keysharp 'S' icon")
+}
+
+CopyWindowIconToProbe(*) {
+	global MyGui
+
+	; Gui.Icon reads as an Image and assigns as one, which is what lets an icon be copied between windows
+	; without a handle ever reaching the script.
+	probe := TaskbarProbeWindow()
+	probe.Icon := MyGui.Icon
+	SetStatus("window_taskbar", "Window icon: copied to the probe window through Gui.Icon - PASS if both title bars now show the same icon")
+}
+
+TraySetIconThenNewWindow(*) {
+	global gTraySetIconGui
+
+	TraySetIcon(A_KeysharpCorePath, "Keysharp_p.ico")
+
+	; Destroyed and rebuilt rather than reshown, because the point is what a window picks up when it is
+	; created: one already open keeps the icon it was made with.
+	if IsObject(gTraySetIconGui)
+		gTraySetIconGui.Destroy()
+
+	gTraySetIconGui := Gui(, "Opened After TraySetIcon")
+	gTraySetIconGui.AddText("xm ym w330", "Created after TraySetIcon, so this window wears the pause icon the script now has. Windows already open keep whatever they were last given, and the tray shows the pause icon too.")
+	gTraySetIconGui.Show("w360 h110")
+	SetStatus("window_taskbar", "Script icon: TraySetIcon(pause) - PASS if the new window and the tray both show the pause icon, and the windows already open did not change")
+}
+
+ResetWindowIcon(*) {
+	global MyGui, gTraySetIconGui
+
+	TraySetIcon("*")     ; the script back to its own default icon
+	MyGui.SetIcon("*")   ; and this window back to the script's
+
+	if IsObject(gTraySetIconGui) {
+		gTraySetIconGui.Destroy()
+		gTraySetIconGui := ""
+	}
+
+	SetStatus("window_taskbar", "Window icon: back to the default Keysharp icon for both the script and this window")
+}
+
+SetTaskbarBadgeFromFile(*) {
+	global gIconAssetPath
+
+	TaskbarApplyBadge(gIconAssetPath, 1, "7 monkeys")
+	SetStatus("window_taskbar", "Badge: monkey.ico on " TaskbarTargetName() " - PASS if a small monkey sits in the corner of that taskbar button, or the count 7 where the badge cannot be an icon")
+}
+
+SetTaskbarBadgeFromModule(*) {
+	TaskbarApplyBadge(A_KeysharpCorePath, "Keysharp_s.ico", "12 waiting")
+	SetStatus("window_taskbar", "Badge: the suspend icon on " TaskbarTargetName() " - PASS if the badge changed from the monkey to the Keysharp 'S'")
+}
+
+ClearTaskbarBadge(*) {
+	TaskbarApplyBadge("", 1, "")
+	SetStatus("window_taskbar", "Badge: cleared on " TaskbarTargetName() " - PASS if that button is back to a plain icon")
+}
+
+; The reason the application form exists: two windows each given their own badge, then one call on the class,
+; which has to replace both rather than leave the first still showing the badge it was given.
+TwoWindowBadgeCheck(*) {
+	global MyGui, gIconAssetPath
+
+	probe := TaskbarProbeWindow()
+	Taskbar(MyGui.Hwnd).SetBadge(gIconAssetPath, 1, "1")
+	Taskbar(probe.Hwnd).SetBadge(A_KeysharpCorePath, "Keysharp_s.ico", "2")
+	SetStatus("window_taskbar", "Badge check: both buttons badged separately, monkey here and Keysharp 'S' on the probe - look now, the application badge follows in 3 seconds")
+	Sleep(3000)
+	Taskbar.SetBadge(A_KeysharpCorePath, "Keysharp_p.ico", "3")
+	SetStatus("window_taskbar", "Badge check: PASS if BOTH buttons now show the pause icon - a window still showing its earlier badge is the stale state the application form is there to clear")
+}
+
+SetTaskbarProgressValue(*) {
+	TaskbarApplyProgress(40)
+	SetStatus("window_taskbar", "Progress: 40% on " TaskbarTargetName() " - PASS if that taskbar button is about two fifths full")
+}
+
+AnimateTaskbarProgress(*) {
+	global gTaskbarProgressValue
+
+	gTaskbarProgressValue := 0
+	SetTimer(TaskbarProgressStep, 100)
+	SetStatus("window_taskbar", "Progress: filling " TaskbarTargetName() " - PASS if the bar climbs smoothly and is gone at the end")
+}
+
+TaskbarProgressStep() {
+	global gTaskbarProgressValue
+
+	gTaskbarProgressValue += 4
+
+	if (gTaskbarProgressValue > 100) {
+		SetTimer(TaskbarProgressStep, 0)
+		TaskbarApplyProgress("")   ; a blank value removes the bar, and the state with it
+		SetStatus("window_taskbar", "Progress: finished and cleared - PASS if the bar is gone rather than sitting full")
+		return
+	}
+
+	TaskbarApplyProgress(gTaskbarProgressValue)
+}
+
+ApplyTaskbarProgressState(*) {
+	global gTaskbarStateDDL
+
+	state := gTaskbarStateDDL.Text
+
+	; A state on its own has nothing to colour, so give the bar a value first unless the state removes it.
+	if (state != "None")
+		TaskbarApplyProgress(60)
+
+	TaskbarApplyProgressState(state)
+	SetStatus("window_taskbar", "Progress state: " state " on " TaskbarTargetName() " - PASS if the bar matches: Normal green, Paused amber, Error red, Indeterminate sweeping, None gone")
+}
+
+ClearTaskbarProgress(*) {
+	global gTaskbarProgressValue
+
+	SetTimer(TaskbarProgressStep, 0)   ; in case the animation is still running
+	gTaskbarProgressValue := 0
+	TaskbarApplyProgress("")
+	SetStatus("window_taskbar", "Progress: cleared on " TaskbarTargetName() " - PASS if the bar is gone, colour and all, after an Error or Paused state")
+}
+
 ChangeMoveBtnColor(*) {
 	MoveButton.SetFont("cRed")
 	MoveButtonBack.SetFont("cBlack")
@@ -3482,6 +3773,7 @@ ResetStatuses() {
 	SetStatus("sound_main", "Sound status: Not run")
 	SetStatus("sound_control", "Sound control status: waiting")
 	SetStatus("window_winevent", "WinEvent: not started")
+	SetStatus("window_taskbar", "Window icon / Taskbar: not run")
 	AppendLog("Status text reset.")
 }
 

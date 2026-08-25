@@ -250,12 +250,18 @@ namespace Keysharp.Runtime
 			get
 			{
 #if WINDOWS
+
 				if (_normalIcon == null)
 					_normalIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+
 #endif
 				return _normalIcon ??= ImageHelper.IconFromByteArray(Keysharp.Internals.Properties.Resources.Keysharp_ico);
 			}
 		}
+		//The icon loaded by TraySetIcon, null while the script still uses its default icon. As in AHK, it is also worn
+		//by the main window and by every Gui created after it was set; already open Guis keep the icon they were made with.
+		internal Icon customIcon;
+		internal Icon scriptIcon => customIcon ?? normalIcon;
 		private Icon _pausedIcon;
 		internal Icon pausedIcon => _pausedIcon ??= ImageHelper.IconFromByteArray(Keysharp.Internals.Properties.Resources.Keysharp_p_ico);
 		private Icon _suspendedIcon;
@@ -1092,8 +1098,8 @@ namespace Keysharp.Runtime
 			if (!string.IsNullOrEmpty(title))
 				mainWindow.Text = title;
 
-			if (initializeUiChrome && normalIcon != null)
-				mainWindow.Icon = normalIcon;
+			if (initializeUiChrome && scriptIcon != null)
+				mainWindow.Icon = scriptIcon;
 
 			if (initializeUiChrome && Tray == null)
 				CreateTrayMenu();

@@ -105,8 +105,10 @@ namespace Keysharp.Builtins
 		private void InputDialog_Shown(object sender, System.EventArgs e)
 		{
 			var script = Script.TheScript;
-			if (script.Tray?.Icon != null)
-				Icon = script.Tray.Icon as Icon;
+			var icon = script.scriptIcon;//Not the tray's: that is null under #NoTrayIcon or A_IconHidden, and shows the suspended icon while suspended.
+
+			if (icon != null)
+				Icon = icon;
 
 			txtMessage.Text = Default;
 			txtMessage.Focus();

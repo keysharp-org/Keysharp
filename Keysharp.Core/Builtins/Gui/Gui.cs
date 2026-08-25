@@ -472,6 +472,10 @@ namespace Keysharp.Builtins
 		}
 
 		private Forms.Control lastContainer;
+		private Icon ownedIcon;//The icon SetIcon loaded for this window alone, freed when replaced or the window goes.
+#if WINDOWS
+		private bool taskbarDecorated;//Whether this window's button has already been given the application's decoration.
+#endif
 
 		private static Forms.Control NormalizeContainer(Forms.Control container)
 		{
@@ -592,7 +596,7 @@ namespace Keysharp.Builtins
 					{
 						eventObj = eventObj,
 						FormBorderStyle = FormBorderStyle.FixedSingle,//Default to a non-resizeable window, with the maximize box disabled.
-						Icon = TheScript.normalIcon,
+						Icon = script.scriptIcon,//TraySetIcon's icon when the script set one, else the default.
 						Name = $"Keysharp window {newCount}",
 						MaximizeBox = false,
 						SizeGripStyle = SizeGripStyle.Hide,
@@ -2496,7 +2500,17 @@ namespace Keysharp.Builtins
 			if (form != null && Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
 				Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Forget(form.Handle);
 #endif
-			return form?.Destroy();
+			//Owned by this window: the icon would otherwise be freed only whenever GC got round to it. The window
+			//is let go of it first, so a later read of Icon finds nothing rather than a disposed something.
+			var icon = ownedIcon;
+			ownedIcon = null;
+
+			if (form != null && ReferenceEquals(form.Icon, icon))
+				form.Icon = null;
+
+			var result = form?.Destroy();
+			icon?.Dispose();
+			return result;
 		}
 
 		public object Flash(object blink)
@@ -2942,6 +2956,108 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
+		/// <summary>
+		/// The window's icon as an <see cref="Ks.KeysharpImage"/>, or "" when it has none. Assigning takes whatever
+		/// <see cref="ToolTips.TraySetIcon"/> takes: a file, an "HICON:"/"HBITMAP:" handle, an Image, or "*" for the
+		/// script's own icon. Use <see cref="SetIcon"/> to name an icon within a file, or the size the large icon
+		/// should be.
+		/// </summary>
+		public object Icon
+		{
+			get
+			{
+				//A snapshot of the frame the window shows at its preferred size, not the icon itself: an Image holds
+				//one bitmap, and handing out the live icon's handle would let a script destroy what the window wears.
+				if (form?.Icon is not Icon ico)
+					return "";
+
+#if WINDOWS
+				//ToBitmap already hands back a fresh bitmap the caller owns, so it goes straight to the Image.
+				return Ks.KeysharpImage.WrapBitmap(ico.ToBitmap());
+#else
+
+				//An Eto icon's frame bitmap belongs to the icon, so the Image gets a copy of it.
+				if (ico.GetFrame(1f)?.Bitmap is not Bitmap frame)
+					return "";
+
+				return Ks.KeysharpImage.WrapBitmap(new Bitmap(frame));
+#endif
+			}
+
+			set => SetIcon(value);
+		}
+
+		/// <summary>
+		/// Gives the window its own icon, in place of the script icon it was created with. Unlike
+		/// <see cref="ToolTips.TraySetIcon"/> this affects only this window, and it applies to a window which is
+		/// already open.
+		/// </summary>
+		/// <param name="fileName">The path to an icon or image file, a module holding icon resources such as
+		/// "shell32.dll", a bitmap or icon handle such as "HICON:" followed by the handle, an
+		/// <see cref="Ks.KeysharpImage"/>, or an asterisk (*) to go back to the script's icon.</param>
+		/// <param name="iconNumber">If omitted, it defaults to 1 (the first icon group in the file).<br/>
+		/// Otherwise, specify the number of the icon group to use. If negative, the absolute value is assumed to be
+		/// the resource ID of an icon within an executable file.</param>
+		/// <param name="options">If blank or omitted, the source's own sizes are kept. Otherwise "Wn" gives the size
+		/// of the large icon, which is the one the alt-tab switcher and the taskbar button show; the title bar keeps
+		/// using the small size regardless. On Linux the window manager picks the size it wants, and macOS windows
+		/// have no icon at all, so this is a Windows-only refinement.</param>
+		/// <returns>Ignored.</returns>
+		public object SetIcon(object fileName, object iconNumber = null, object options = null)
+		{
+			var opts = options.As();
+			var width = 0;
+
+			foreach (Range r in opts.AsSpan().SplitAny(Spaces))
+			{
+				var opt = opts.AsSpan(r).Trim();
+
+				if (opt.Length > 0)
+					_ = Options.TryParse(opt, "w", ref width);
+			}
+
+			Icon icon;
+			var owned = true;
+
+			if (fileName is Ks.KeysharpImage image)
+			{
+				//Borrowed: the image keeps its bitmap, so a size is applied to a copy rather than to it.
+				var pixels = image.PeekBitmap();
+				using var sized = width > 0 && pixels != null ? pixels.Resize(width, width) : null;
+				icon = ImageHelper.IconFromBitmap(sized ?? pixels);
+			}
+			else
+			{
+				var file = fileName.As();
+
+				if (file is "*" or "")
+				{
+					//The script icon is shared with the tray and every other window, so this one does not own it.
+					icon = Script.TheScript.scriptIcon;
+					owned = false;
+				}
+				else
+					icon = ImageHelper.LoadIconSet(file, ImageHelper.PrepareIconNumber(iconNumber), width);
+			}
+
+			if (icon == null)
+				return Errors.ValueErrorOccurred($"Could not load an icon from {fileName}.", fileName);
+
+			Script.InvokeOnUIThread(() =>
+			{
+				if (form == null)
+					return;
+
+				var previous = ownedIcon;
+				ownedIcon = owned ? icon : null;
+				form.Icon = icon;
+				//Only an icon this window loaded for itself is freed, and only once the window has stopped using
+				//it: SetIcon builds a fresh one per call, so nothing outside this window can be holding that one.
+				previous?.Dispose();
+			});
+			return DefaultObject;
+		}
+
 		public object Show(object options = null)
 		{
 			ResumeAddLayout();
@@ -3281,6 +3397,19 @@ namespace Keysharp.Builtins
 			if (!hide)
 				ApplyDeferredSizeLimits();
 
+#if WINDOWS
+
+			//Whatever Taskbar decorates the application with belongs on this window's button too, since Windows
+			//decorates a button rather than an application. Only on the FIRST show: a re-show must not undo a
+			//per-window Taskbar call made while the window was up. Windows-only, both because the other platforms
+			//decorate the application anyway and because form.Handle would force an X11 round trip here.
+			if (!hide && !taskbarDecorated && form.ShowInTaskbar)
+			{
+				taskbarDecorated = true;
+				Keysharp.Internals.TaskbarService.ApplyAppDecoration(form.Handle);
+			}
+
+#endif
 			return DefaultObject;
 		}
 

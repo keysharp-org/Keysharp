@@ -335,64 +335,56 @@ namespace Keysharp.Builtins
 			var iconnumber = ImageHelper.PrepareIconNumber(iconNumber);
 			var script = Script.TheScript;
 
-			if (script.NoTrayIcon)
-				return DefaultObject;
-
 			if (freeze != null)
 				A_IconFrozen = freeze.Ab();
 
 			if (filename != "*")
 			{
-				var (bmp, temp) = ImageHelper.LoadImage(filename, 0, 0, iconnumber);
+				//LoadIconSet, not LoadImage: the icon must keep every size it carries so a window can wear a 16px
+				//frame in its title bar and a large one in the alt-tab switcher and taskbar.
+				var icon = ImageHelper.LoadIconSet(filename, iconnumber);
 
+				//Deliberately not guarded by NoTrayIcon: as in AHK the directive suppresses only the tray icon, and
+				//the loaded icon still becomes the script's icon. CreateTrayMenu() no-ops under it, leaving Tray null.
 				if (script.Tray == null)
 					script.CreateTrayMenu();
 
-				if (bmp != null)
+				if (icon != null)
 				{
-#if WINDOWS
-					var ptr = bmp.GetHicon();
-
-					try
-					{
-						var icon = temp as Icon;
-
-						if (icon == null)
-						{
-							using var handleIcon = Icon.FromHandle(ptr);
-							icon = (Icon)handleIcon.Clone();
-						}
-
-						if (icon != null)
-						{
-							A_IconFile = filename;
-							A_IconNumber = iconNumber;
-							Script.PostToUIThread(() => script.Tray.Icon = script.mainWindow.Icon = icon);
-						}
-					}
-					finally
-					{
-						_ =  DestroyIcon(ptr);
-					}
-#else
-					var icon = temp as Icon ?? new Icon(1f, bmp);
-					if (icon != null)
-					{
-						A_IconFile = filename;
-						A_IconNumber = iconNumber;
-						Script.PostToUIThread(() => script.Tray.Icon = script.mainWindow.Icon = icon);
-					}
-#endif
+					A_IconFile = filename;
+					A_IconNumber = iconNumber == null ? 1L : iconNumber.Al();
+					//The icon this replaces is deliberately NOT freed here. Everything still showing it holds a
+					//managed reference -- Form.Icon on a Gui built while it was current, NotifyIcon.Icon, and
+					//InputDialog's own field -- so it stays alive exactly as long as something is drawing it, and
+					//destroying the handle here would take it out from under them. AHK reaches the same end by
+					//refcounting (GuiType::DestroyIconsIfUnused); this relies on the collector instead, which costs
+					//a delayed free per TraySetIcon call rather than a dangling handle.
+					script.customIcon = icon;
+					Script.PostToUIThread(() => ApplyScriptIcon(script, icon));
 				}
 			}
 			else
 			{
 				A_IconFile = "";
-				A_IconNumber = 1;
-				Script.PostToUIThread(() => script.Tray.Icon = script.mainWindow.Icon = script.normalIcon);
+				A_IconNumber = 1L;
+				script.customIcon = null;
+				Script.PostToUIThread(() => ApplyScriptIcon(script, script.normalIcon));
 			}
 
 			return DefaultObject;
+		}
+
+		/// <summary>
+		/// Puts the script's icon on the chrome that follows it: the tray icon and the main window. Guis pick it up
+		/// when they are created, so only windows that already exist are touched here.
+		/// </summary>
+		private static void ApplyScriptIcon(Script script, Icon icon)
+		{
+			if (script.Tray != null)
+				script.Tray.Icon = icon;
+
+			if (script.mainWindow != null)
+				script.mainWindow.Icon = icon;
 		}
 
 		/// <summary>

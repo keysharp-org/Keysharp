@@ -366,7 +366,7 @@ namespace Keysharp.Builtins
 			fd.suspended = state == ToggleValueType.Toggle ? !fd.suspended : (state == ToggleValueType.On);
 
 			if (!(bool)A_IconFrozen && !script.NoTrayIcon && script.EnsureTrayMenu())
-				script.Tray.Icon = fd.suspended ? script.suspendedIcon : script.normalIcon;
+				script.Tray.Icon = fd.suspended ? script.suspendedIcon : script.scriptIcon;
 
 			return DefaultObject;
 		}

@@ -46,6 +46,7 @@ namespace Keysharp.Builtins
 		private nint dialogHandle;
 		private nint ownerHandle;
 		private char passwordChar;
+		private Icon shownIcon;//Roots the icon whose raw handle WM_SETICON was given; see InitializeDialog.
 		private int closing;
 		private int showing;
 		private nuint timerId;
@@ -286,12 +287,16 @@ namespace Keysharp.Builtins
 			_ = WindowsAPI.SendMessage(edit, (uint)WindowsAPI.EM_SETSEL, (nint)0, -1);
 			LayoutControls(hwnd);
 
-			var icon = Script.TheScript?.Tray?.Icon;
+			//Not the tray's: that is null under #NoTrayIcon or A_IconHidden, and shows the suspended icon while
+			//suspended. Held in a field for the dialog's lifetime, because WM_SETICON takes the raw handle and
+			//keeps no managed reference: if this were the only thing holding the script icon and TraySetIcon then
+			//replaced it, the finalizer would DestroyIcon the handle this dialog is still drawing from.
+			shownIcon = Script.TheScript?.scriptIcon;
 
-			if (icon != null)
+			if (shownIcon != null)
 			{
-				_ = WindowsAPI.SendMessage(hwnd, (uint)WindowsAPI.WM_SETICON, (nint)IconSmall, icon.Handle);
-				_ = WindowsAPI.SendMessage(hwnd, (uint)WindowsAPI.WM_SETICON, (nint)IconBig, icon.Handle);
+				_ = WindowsAPI.SendMessage(hwnd, (uint)WindowsAPI.WM_SETICON, (nint)IconSmall, shownIcon.Handle);
+				_ = WindowsAPI.SendMessage(hwnd, (uint)WindowsAPI.WM_SETICON, (nint)IconBig, shownIcon.Handle);
 			}
 
 			var timeoutMilliseconds = GetTimeoutMilliseconds();
