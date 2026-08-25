@@ -29,7 +29,7 @@ namespace Keysharp.Internals.Window
 
 		internal bool ApplyToken(string token)
 		{
-			switch (token.ToLowerInvariant())
+			switch (token)
 			{
 				case "1":
 					TitleMatchMode = 1L;
@@ -43,33 +43,33 @@ namespace Keysharp.Internals.Window
 					TitleMatchMode = 3L;
 					return true;
 
-				case Keyword_RegEx:
+				case var x when x.Equals(Keyword_RegEx, StringComparison.OrdinalIgnoreCase):
 					TitleMatchMode = 4L;
 					return true;
 
-				case Keyword_Fast:
+				case var x when x.Equals(Keyword_Fast, StringComparison.OrdinalIgnoreCase):
 					TitleMatchModeSpeed = true;
 					return true;
 
-				case Keyword_Slow:
+				case var x when x.Equals(Keyword_Slow, StringComparison.OrdinalIgnoreCase):
 					TitleMatchModeSpeed = false;
 					return true;
 
-				case Keyword_Hidden:
-				case "hidden1":
+				case var x when x.Equals(Keyword_Hidden, StringComparison.OrdinalIgnoreCase) ||
+					x.Equals("hidden1", StringComparison.OrdinalIgnoreCase):
 					DetectHiddenWindows = true;
 					return true;
 
-				case "hidden0":
+				case var x when x.Equals("hidden0", StringComparison.OrdinalIgnoreCase):
 					DetectHiddenWindows = false;
 					return true;
 
-				case "hiddentext":
-				case "hiddentext1":
+				case var x when x.Equals("hiddentext", StringComparison.OrdinalIgnoreCase) ||
+					x.Equals("hiddentext1", StringComparison.OrdinalIgnoreCase):
 					DetectHiddenText = true;
 					return true;
 
-				case "hiddentext0":
+				case var x when x.Equals("hiddentext0", StringComparison.OrdinalIgnoreCase):
 					DetectHiddenText = false;
 					return true;
 			}

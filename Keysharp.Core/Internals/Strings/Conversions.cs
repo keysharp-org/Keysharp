@@ -194,13 +194,13 @@ namespace Keysharp.Internals.Strings
 		/// format name instead. Shared by the Ks clipboard surface and base-AHK <c>ClipWait</c> so both resolve
 		/// names identically.
 		/// </summary>
-		internal static ClipboardKind? ConvertClipboardKind(string name) => name.ToLowerInvariant() switch
+		internal static ClipboardKind? ConvertClipboardKind(string name) => name switch
 		{
-			"text" => ClipboardKind.Text,
-			"image" => ClipboardKind.Image,
-			"files" => ClipboardKind.Files,
-			"html" => ClipboardKind.Html,
-			"rtf" => ClipboardKind.Rtf,
+			var x when x.Equals("text", StringComparison.OrdinalIgnoreCase) => ClipboardKind.Text,
+			var x when x.Equals("image", StringComparison.OrdinalIgnoreCase) => ClipboardKind.Image,
+			var x when x.Equals("files", StringComparison.OrdinalIgnoreCase) => ClipboardKind.Files,
+			var x when x.Equals("html", StringComparison.OrdinalIgnoreCase) => ClipboardKind.Html,
+			var x when x.Equals("rtf", StringComparison.OrdinalIgnoreCase) => ClipboardKind.Rtf,
 			_ => null,
 		};
 

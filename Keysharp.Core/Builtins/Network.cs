@@ -68,36 +68,36 @@ namespace Keysharp.Builtins
 				else
 					continue;
 
-				switch (item.ToLowerInvariant())
+				switch (item)
 				{
-					case Keyword_Attachments:
+					case var x when x.Equals(Keyword_Attachments, StringComparison.OrdinalIgnoreCase):
 						foreach (var entry in value)
 							if (File.Exists(entry))
 								msg.Attachments.Add(new Attachment(entry));
 
 						break;
 
-					case Keyword_Bcc:
+					case var x when x.Equals(Keyword_Bcc, StringComparison.OrdinalIgnoreCase):
 						foreach (var entry in value)
 							msg.Bcc.Add(entry);
 
 						break;
 
-					case Keyword_CC:
+					case var x when x.Equals(Keyword_CC, StringComparison.OrdinalIgnoreCase):
 						foreach (var entry in value)
 							msg.CC.Add(entry);
 
 						break;
 
-					case Keyword_From:
+					case var x when x.Equals(Keyword_From, StringComparison.OrdinalIgnoreCase):
 						msg.From = new MailAddress(value[0]);
 						break;
 
-					case Keyword_ReplyTo:
+					case var x when x.Equals(Keyword_ReplyTo, StringComparison.OrdinalIgnoreCase):
 						msg.ReplyToList.Add(new MailAddress(value[0]));
 						break;
 
-					case Keyword_Host:
+					case var x when x.Equals(Keyword_Host, StringComparison.OrdinalIgnoreCase):
 					{
 						smtpHost = value[0];
 						var z = smtpHost.LastIndexOf(Keyword_Port);

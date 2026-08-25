@@ -103,29 +103,29 @@ namespace Keysharp.Builtins
 
 			object prev;
 
-			switch (target.ToLowerInvariant())
+			switch (target)
 			{
-				case Keyword_ToolTip:
+				case var x when x.Equals(Keyword_ToolTip, StringComparison.OrdinalIgnoreCase):
 					prev = A_CoordModeToolTip;
 					A_CoordModeToolTip = rel;
 					break;
 
-				case Keyword_Pixel:
+				case var x when x.Equals(Keyword_Pixel, StringComparison.OrdinalIgnoreCase):
 					prev = A_CoordModePixel;
 					A_CoordModePixel = rel;
 					break;
 
-				case Keyword_Mouse:
+				case var x when x.Equals(Keyword_Mouse, StringComparison.OrdinalIgnoreCase):
 					prev = A_CoordModeMouse;
 					A_CoordModeMouse = rel;
 					break;
 
-				case Keyword_Caret:
+				case var x when x.Equals(Keyword_Caret, StringComparison.OrdinalIgnoreCase):
 					prev = A_CoordModeCaret;
 					A_CoordModeCaret = rel;
 					break;
 
-				case Keyword_Menu:
+				case var x when x.Equals(Keyword_Menu, StringComparison.OrdinalIgnoreCase):
 					prev = A_CoordModeMenu;
 					A_CoordModeMenu = rel;
 					break;
@@ -383,8 +383,7 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object SetMouseDelay(object delay, object play = null)
 		{
-			var p = play.As().ToLowerInvariant();
-			var isplay = p == "play";
+			var isplay = play.As().Equals("play", StringComparison.OrdinalIgnoreCase);
 			var del = isplay ? A_MouseDelayPlay : A_MouseDelay;
 
 			if (delay != null)

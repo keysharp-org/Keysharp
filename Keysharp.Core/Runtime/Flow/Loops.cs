@@ -174,7 +174,7 @@ namespace Keysharp.Runtime
 			var info = Peek(LoopType.Parse);//The calling code must have called Push() with this type.
 			var script = Script.TheScript;
 
-			if (delimiters.ToLowerInvariant() == Keyword_CSV)
+			if (delimiters.Equals(Keyword_CSV, StringComparison.OrdinalIgnoreCase))
 			{
 				var reader = new StringReader(i);
 				var part = new StringBuilder();

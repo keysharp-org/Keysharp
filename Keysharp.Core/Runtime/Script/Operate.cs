@@ -113,29 +113,27 @@ namespace Keysharp.Runtime
 					if (test == null)
 						return subject == null;
 
-					test = test.ToLowerInvariant();
-
 					//Put common cases first.
 					switch (test)
 					{
-						case Keyword_Integer:
+						case var x when x.Equals(Keyword_Integer, StringComparison.OrdinalIgnoreCase):
 							ret = IsInteger(subject);
 							goto done;
 
-						case Keyword_Float:
+						case var x when x.Equals(Keyword_Float, StringComparison.OrdinalIgnoreCase):
 							ret = IsFloat(subject);
 							goto done;
 
-						case Keyword_Number:
+						case var x when x.Equals(Keyword_Number, StringComparison.OrdinalIgnoreCase):
 							ret = IsInteger(subject) || IsFloat(subject);
 							goto done;
 
-						case "string":
+						case var x when x.Equals("string", StringComparison.OrdinalIgnoreCase):
 							ret = subject is string;
 							goto done;
 
-						case "unset":
-						case "null":
+						case var x when x.Equals("unset", StringComparison.OrdinalIgnoreCase) ||
+							x.Equals("null", StringComparison.OrdinalIgnoreCase):
 							ret = subject == null;
 							goto done;
 					}

@@ -1499,12 +1499,11 @@ namespace Keysharp.Builtins
 			{
 				var val = false;
 				var script = Script.TheScript;
-
-				switch (value.ToString().ToLowerInvariant())
+				var str = value.ToString();
+				switch (str)
 				{
-					case Keyword_Fast: val = true; break;
-
-					case Keyword_Slow: val = false; break;
+					case var x when x.Equals(Keyword_Fast, StringComparison.OrdinalIgnoreCase): val = true; break;
+					case var x when x.Equals(Keyword_Slow, StringComparison.OrdinalIgnoreCase): val = false; break;
 				}
 
 				ThreadAccessors.A_TitleMatchModeSpeed = val;

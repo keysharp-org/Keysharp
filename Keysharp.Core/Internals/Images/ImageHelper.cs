@@ -877,17 +877,17 @@ namespace Keysharp.Internals.Images
 
 		private static ImageFormat ImageFormatFromExtension(string path)
 		{
-			switch (Path.GetExtension(path).ToLowerInvariant())
+			switch (Path.GetExtension(path))
 			{
-				case ".jpg":
-				case ".jpeg": return ImageFormat.Jpeg;
-				case ".gif": return ImageFormat.Gif;
-				case ".tif":
-				case ".tiff": return ImageFormat.Tiff;
+				case var x when x.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+				x.Equals(".jpeg", StringComparison.OrdinalIgnoreCase): return ImageFormat.Jpeg;
+				case var x when x.Equals(".gif", StringComparison.OrdinalIgnoreCase): return ImageFormat.Gif;
+				case var x when x.Equals(".tif", StringComparison.OrdinalIgnoreCase) ||
+				x.Equals(".tiff", StringComparison.OrdinalIgnoreCase): return ImageFormat.Tiff;
 #if WINDOWS
-				case ".bmp": return ImageFormat.Bmp;
+				case var x when x.Equals(".bmp", StringComparison.OrdinalIgnoreCase): return ImageFormat.Bmp;
 #else
-				case ".bmp": return ImageFormat.Bitmap;
+				case var x when x.Equals(".bmp", StringComparison.OrdinalIgnoreCase): return ImageFormat.Bitmap;
 #endif
 				default: return ImageFormat.Png;
 			}

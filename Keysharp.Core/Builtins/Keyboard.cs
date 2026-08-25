@@ -794,8 +794,7 @@ break_twice:;
 		/// </param>
 		public static object SetKeyDelay(object delay = null, object pressDuration = null, object play = null)
 		{
-			var p = play.As().ToLowerInvariant();
-			var isPlay = p == "play";
+			var isPlay = play.As().Equals("play", StringComparison.OrdinalIgnoreCase);
 			var del = isPlay ? A_KeyDelayPlay : A_KeyDelay;
 			var dur = isPlay ? A_KeyDurationPlay : A_KeyDuration;
 

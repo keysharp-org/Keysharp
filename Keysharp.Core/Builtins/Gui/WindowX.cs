@@ -137,16 +137,16 @@ namespace Keysharp.Builtins
 				var stack = group.lastWasDeactivate ? group.deactivated : group.activated;
 				var windows = SearchWindows($"ahk_group {name}");
 
-				switch (m.ToLowerInvariant())
+				switch (m)
 				{
-					case Keyword_A:
+					case var x when x.Equals(Keyword_A, StringComparison.OrdinalIgnoreCase):
 						while (stack.Count != 0)
 							_ = Platform.Window.TryClose(new nint(stack.Pop()));
 
 						_ = windowGroups.Remove(name);
 						break;
 
-					case Keyword_R:
+					case var x when x.Equals(Keyword_R, StringComparison.OrdinalIgnoreCase):
 						if (stack.Count > 0)
 							_ = Platform.Window.TryClose(new nint(stack.Pop()));
 

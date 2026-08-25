@@ -727,13 +727,13 @@ namespace Keysharp.Builtins
 
 				if (!string.IsNullOrEmpty(showMode))
 				{
-					switch (showMode.ToLowerInvariant())
+					switch (showMode)
 					{
-						case Keyword_Max: prc.StartInfo.WindowStyle = ProcessWindowStyle.Maximized; break;
+						case var x when x.Equals(Keyword_Max, StringComparison.OrdinalIgnoreCase): prc.StartInfo.WindowStyle = ProcessWindowStyle.Maximized; break;
 
-						case Keyword_Min: prc.StartInfo.WindowStyle = ProcessWindowStyle.Minimized; break;
+						case var x when x.Equals(Keyword_Min, StringComparison.OrdinalIgnoreCase): prc.StartInfo.WindowStyle = ProcessWindowStyle.Minimized; break;
 
-						case Keyword_Hide: prc.StartInfo.WindowStyle = ProcessWindowStyle.Hidden; break;
+						case var x when x.Equals(Keyword_Hide, StringComparison.OrdinalIgnoreCase): prc.StartInfo.WindowStyle = ProcessWindowStyle.Hidden; break;
 					}
 				}
 
