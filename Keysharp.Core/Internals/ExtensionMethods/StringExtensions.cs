@@ -91,7 +91,7 @@ namespace System
 				{
 					StartInfo = new ProcessStartInfo
 					{
-						FileName = "/bin/bash",
+						FileName = "bash",
 						RedirectStandardOutput = true,
 						RedirectStandardError = true,
 						UseShellExecute = false,
