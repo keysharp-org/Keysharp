@@ -1,4 +1,6 @@
 ; Ks.Font: the value object behind Gui.Font / Gui.Control.Font.
+#ErrorStdOut
+#Warn All, StdOut
 #import KS { Font, Image }
 
 failed := 0

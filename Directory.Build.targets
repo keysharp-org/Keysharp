@@ -78,6 +78,24 @@
     </ItemGroup>
   </Target>
 
+  <!-- Eto assembles the macOS .app bundle from the files MSBuild recorded while building, which happens before
+       the two targets above drop their payload into $(TargetDir), so the bundle would ship without a compiler and
+       every script it runs would fail to load. Mirror both payloads into the bundle; the publish path needs no
+       equivalent because it copies the publish directory wholesale. -->
+  <Target Name="CopyBundledComponentsToAppBundle"
+          AfterTargets="Build"
+          DependsOnTargets="GetBundledScriptingComponentPayload;GetBundledPackageProviderPayload"
+          Condition="'$(LauncherPath)' != ''">
+    <Copy SourceFiles="@(_BundledScriptingComponentPayload)"
+          DestinationFiles="@(_BundledScriptingComponentPayload->'$(LauncherPath)%(ComponentRelativePath)')"
+          SkipUnchangedFiles="true"
+          Condition="'$(ShipsScriptingComponents)' == 'true'" />
+    <Copy SourceFiles="@(_BundledPackageProviderPayload)"
+          DestinationFiles="@(_BundledPackageProviderPayload->'$(LauncherPath)%(ProviderRelativePath)')"
+          SkipUnchangedFiles="true"
+          Condition="'$(ShipsPackageProviders)' == 'true'" />
+  </Target>
+
   <Import Project="../Eto/src/Eto.Mac/build/Mac.targets"
           Condition="$([MSBuild]::IsOSPlatform('OSX')) AND ('$(MSBuildProjectName)' == 'Keysharp' OR '$(MSBuildProjectName)' == 'Keyview' OR '$(MSBuildProjectName)' == 'Keysharp.OutputTest') AND Exists('../Eto/src/Eto.Mac/build/Mac.targets')" />
 </Project>

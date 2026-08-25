@@ -1135,6 +1135,9 @@ namespace Keysharp.Runtime
 				try
 				{
 					RunAutoExecSection(userInit);
+					// There is no native event loop to perform the first scheduler turn. One turn lets immediate
+					// one-shot timers and deferred non-persistent teardown run without keeping headless hosts alive.
+					Keysharp.Internals.Flow.TryDoEvents();
 				}
 				finally
 				{

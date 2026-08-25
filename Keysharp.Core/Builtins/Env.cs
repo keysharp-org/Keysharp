@@ -736,7 +736,9 @@ namespace Keysharp.Builtins
 			if (forwardedArgs != null)
 				launcherArgs.AddRange(forwardedArgs);
 
-			launcherArgs.AddRange(["--script", "--assembly", compiledPath ?? "*"]);
+			// A host failure can happen before the child assembly runs its own #ErrorStdOut directive. RunScript
+			// captures stderr, so keep those failures on that channel instead of opening a modal error window.
+			launcherArgs.AddRange(["--script", "--errorstdout", "--assembly", compiledPath ?? "*"]);
 
 			if (string.IsNullOrEmpty(launcher))
 			{

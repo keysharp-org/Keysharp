@@ -16,6 +16,9 @@ namespace Keysharp.Tests
 				Environment.SetEnvironmentVariable("GDK_BACKEND", "wayland");
 			else if (!isWayland && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")))
 				Environment.SetEnvironmentVariable("GDK_BACKEND", "x11");
+#elif OSX
+			// AppKit's event loop cannot run inside testhost, but Eto's drawing handlers still work without one.
+			_ = Eto.Platform.Detect;
 #endif
 		}
 

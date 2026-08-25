@@ -192,6 +192,7 @@ namespace Keysharp.Tests
 		[Test, Category("Misc"), NonParallelizable]
 		public void KsFont()
 		{
+			SkipIfUiInitializationBlocked("Creating an AppKit window requires OS thread 1.");
 			//Output passed as the assertion message, so a failure names the checks that broke.
 			var output = RunScript(Path.Combine(path, "ks-font.ahk"), "ks-font", true, false);
 			Assert.IsTrue(HasPassed(output), output);

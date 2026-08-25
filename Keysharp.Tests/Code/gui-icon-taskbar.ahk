@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Import "Ks" { Taskbar }
 #Include <assert>
 

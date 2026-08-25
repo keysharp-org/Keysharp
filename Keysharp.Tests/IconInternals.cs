@@ -163,7 +163,11 @@ namespace Keysharp.Tests
 		/// member, so that dispatch is worth exercising for real rather than reasoning about.
 		/// </summary>
 		[Test, Category("Gui"), Category("Curated"), NonParallelizable]
-		public void ScriptSurfaceBinds() => Assert.IsTrue(TestScript("gui-icon-taskbar", false));
+		public void ScriptSurfaceBinds()
+		{
+			SkipIfUiInitializationBlocked("Creating an AppKit window requires OS thread 1.");
+			Assert.IsTrue(TestScript("gui-icon-taskbar", false));
+		}
 
 		/// <summary>
 		/// #NoTrayIcon suppresses the tray icon, not the icon: as in AutoHotkey the file is still loaded and still

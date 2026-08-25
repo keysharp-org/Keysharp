@@ -294,9 +294,11 @@ namespace Keysharp.Internals.Images
 								frame = iconint >= 0 && iconint < frames.Count ? frames[iconint] : frames[0];
 							}
 
-							temp = ico;
+							temp = new Icon(frame);
 							bmp = frame.Bitmap;
 						}
+
+						ico.Dispose();
 
 						if (bmp != null && (w > 0 || h > 0))
 							bmp = ResizeBitmap(bmp, w, h, exactPixels);
@@ -1048,8 +1050,26 @@ namespace Keysharp.Internals.Images
 					return size > 0 ? new Icon(filename, size, size) : new Icon(filename);
 
 #else
-					//Eto keeps every frame either way and has no preferred size to set.
-					return new Icon(filename);
+				{
+					var iconSet = new Icon(filename);
+
+					if (size <= 0)
+						return iconSet;
+
+					var frames = iconSet.Frames.ToArray();
+
+					if (frames.Length == 0)
+					{
+						iconSet.Dispose();
+						return null;
+					}
+
+					var preferred = frames.MinBy(frame => Math.Abs(frame.PixelSize.Width - size)
+						+ Math.Abs(frame.PixelSize.Height - size));
+					var sized = new Icon([preferred, .. frames.Where(frame => !ReferenceEquals(frame, preferred))]);
+					iconSet.Dispose();
+					return sized;
+				}
 
 #endif
 				//A module hands back the icon itself at the size asked for, and an image format carries one size,
