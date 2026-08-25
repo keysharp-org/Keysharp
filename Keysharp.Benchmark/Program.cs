@@ -59,6 +59,8 @@ public sealed class Program
 		//MarkdownExporter.Console.ExportToLog(summary, logger);
 		//summary = BenchmarkRunner.Run<FuncBench>(config);
 		//MarkdownExporter.Console.ExportToLog(summary, logger);
+		//summary = BenchmarkRunner.Run<OverlayBench>(config);
+		//MarkdownExporter.Console.ExportToLog(summary, logger);
 		//summary = BenchmarkRunner.Run<DllBench>();
 		//MarkdownExporter.Console.ExportToLog(summary, logger);
 		summary = BenchmarkRunner.Run<FuncBench>(config);

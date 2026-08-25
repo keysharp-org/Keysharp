@@ -433,7 +433,7 @@ namespace Keysharp.Internals.Images
 
 		/// <summary>
 		/// Multiplies every pixel's alpha of <paramref name="bmp"/> by <paramref name="alpha"/>/255 (whole-image
-		/// opacity for overlay fades), IN PLACE, and returns the same bitmap. The caller decides whether the
+		/// opacity for overlay fades), in place, and returns the same bitmap. The caller decides whether the
 		/// original must be preserved: if so, clone it and pass the clone (so, e.g., an overlay can fade its live
 		/// canvas by fading a throwaway copy). Both platforms mutate in place — Windows via LockBits, others via
 		/// the backend's pixel lock — so there is no hidden allocation. A no-op (returns <paramref name="bmp"/>
@@ -682,6 +682,86 @@ namespace Keysharp.Internals.Images
 		}
 
 		/// <summary>
+		/// Overwrites every pixel of <paramref name="bmp"/> with <paramref name="argb"/> without replacing the
+		/// bitmap. A live Overlay canvas is presented from these exact pixels, so a clear must not hand back a
+		/// different surface. Fully transparent — the common case, once a frame — takes a straight memory wipe
+		/// rather than a GDI+/Cairo fill.
+		/// </summary>
+		internal static void ClearInPlace(Bitmap bmp, int argb)
+		{
+			if (bmp == null)
+				return;
+
+#if WINDOWS
+			if (((uint)argb >> 24) == 0)
+			{
+				var data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.WriteOnly, bmp.PixelFormat);
+
+				try
+				{
+					unsafe
+					{
+						// Stride can exceed the row's pixels and may be negative for a bottom-up bitmap; Scan0
+						// then points at the last row, so walk from the lowest address either way.
+						var stride = Math.Abs(data.Stride);
+						var start = data.Stride < 0 ? (byte*)data.Scan0 - (long)stride * (data.Height - 1) : (byte*)data.Scan0;
+						NativeMemory.Clear(start, (nuint)((long)stride * data.Height));
+					}
+				}
+				finally
+				{
+					bmp.UnlockBits(data);
+				}
+
+				return;
+			}
+
+#endif
+			using var g = MakeGraphics(bmp, highQuality: false);
+			g.Clear(ArgbToColor(argb));
+		}
+
+		/// <summary>
+		/// Starts one draw op's transform on a Graphics that may be reused, so a per-op ScaleTransform cannot
+		/// accumulate across ops. The two backends spell this differently and neither has the other's call:
+		/// System.Drawing resets to identity outright, while Eto only has a transform stack, so there it is a
+		/// push that <see cref="PopDrawTransform"/> unwinds. Always pair the two.
+		/// </summary>
+		internal static void PushDrawTransform(Graphics g)
+		{
+#if WINDOWS
+			g.ResetTransform();
+#else
+			g.SaveTransform();
+#endif
+		}
+
+		/// <summary>Ends what <see cref="PushDrawTransform"/> began. A no-op on System.Drawing, where the next
+		/// op resets rather than pops.</summary>
+		internal static void PopDrawTransform(Graphics g)
+		{
+#if !WINDOWS
+			g.RestoreTransform();
+#endif
+		}
+
+		/// <summary>
+		/// Applies the quality settings <see cref="MakeGraphics"/> would have set, to a Graphics that already
+		/// exists. Lets a live drawing surface keep one Graphics across ops — worth about 2 us per draw
+		/// — while still letting each op choose its own filtering.
+		/// </summary>
+		internal static void ConfigureGraphics(Graphics g, bool highQuality)
+		{
+#if WINDOWS
+			g.InterpolationMode = highQuality ? InterpolationMode.HighQualityBicubic : InterpolationMode.NearestNeighbor;
+			g.SmoothingMode = highQuality ? SmoothingMode.AntiAlias : SmoothingMode.None;
+#else
+			g.ImageInterpolation = highQuality ? ImageInterpolation.High : ImageInterpolation.None;
+			g.AntiAlias = highQuality;
+#endif
+		}
+
+		/// <summary>
 		/// Returns a <see cref="Graphics"/> targeting <paramref name="bmp"/>. The only backend
 		/// divergence is how a Graphics is obtained (Graphics.FromImage vs the Eto constructor) and
 		/// the interpolation/anti-alias property names; the transform and DrawImage calls used by
@@ -696,6 +776,12 @@ namespace Keysharp.Internals.Images
 			g.InterpolationMode = highQuality ? InterpolationMode.HighQualityBicubic : InterpolationMode.NearestNeighbor;
 			g.SmoothingMode = highQuality ? SmoothingMode.AntiAlias : SmoothingMode.None;
 			g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+			// Grayscale AA, not the SystemDefault the machine's font smoothing picks. That default is normally
+			// ClearType, whose subpixel coverage is three separate per-channel masks; on an opaque window GDI
+			// resolves them against the pixels behind, but on a transparent canvas there is nothing behind, so
+			// the glyph edges come out colour-fringed with alpha that belongs to no single channel. Every canvas
+			// here is alpha-capable, and this is also what keeps DrawText and MeasureText measuring the same way.
+			g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
 			return g;
 #else
 			var g = new Graphics(bmp);

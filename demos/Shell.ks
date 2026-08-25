@@ -238,11 +238,10 @@ class Shell {
 		if (useSaved && this.OnScreenRect(this.posX, this.posY, pw, ph))
 			rx := this.posX, ry := this.posY
 		this.rect := {X: rx, Y: ry, Width: pw, Height: ph}
-		this.ov.Update(img, this.rect.X, this.rect.Y, this.rect.Width, this.rect.Height)
+		this.ov.SetImage(img, this.rect.X, this.rect.Y, this.rect.Width, this.rect.Height)
 		img.Dispose()
-        ; OVERLAY-LOCAL rects of the two clickable regions — OnEvent's (x, y) is already overlay-local, in
-        ; the same native units as the card's on-screen size, so no screen-offset bookkeeping is needed.
-        ; Ctrl+drag anywhere ELSE on the card moves it (see OnClick/DragCard).
+        ; The clickable rectangles are overlay-local; OnEvent's (x, y) uses the same native units.
+        ; Ctrl+drag elsewhere on the card moves it (see OnClick/DragCard).
 		this.closeRect := {X: Round((w - pad - closeW) * scale),
 		                   Y: Round((pad - 2) * scale),
 		                   Width: Round((closeW + pad) * scale),

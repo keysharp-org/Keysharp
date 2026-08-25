@@ -337,6 +337,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				SurfaceDamage(surface, x, y, width, height);
 		}
 
+		/// <summary>
+		/// Whether this surface takes damage rectangles in buffer pixels (wl_surface v4+). Below that only
+		/// <c>wl_surface.damage</c> exists, whose rectangle is in surface-local logical coordinates — so on a
+		/// scaled output a buffer-pixel rectangle would repaint the wrong region. Callers that want to damage
+		/// part of a surface must check this and fall back to damaging all of it.
+		/// </summary>
+		internal static bool SupportsBufferDamage(nint surface) => surface != 0 && ProxyGetVersion(surface) >= 4;
+
 		internal static void SurfaceSetBufferScale(nint surface, int scale)
 		{
 			if (ProxyGetVersion(surface) >= 3)

@@ -11,7 +11,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	///   4. Dispose() destroys both proxies, unmaps, and closes the fd after compositor release.
 	///
 	/// Buffers must not be disposed while the compositor still owns them. Callers should keep the
-	/// buffer alive until either (a) a newer buffer has been attached AND the compositor has
+	/// buffer alive until either (a) a newer buffer has been attached and the compositor has
 	/// released this one (via the wl_buffer.release event). Destroying a surface does not make it safe to unmap an
 	/// in-flight buffer immediately; Dispose therefore retires it and lets the release callback finish cleanup.
 	/// </summary>
@@ -31,6 +31,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private bool disposePending;
 		private bool disposed;
 		internal bool Released => released;
+
+		/// <summary>
+		/// The frame number this buffer last carried to the compositor, or -1 if it never has. A pool buffer
+		/// still holds the pixels from that frame, so reusing it for a partial update means first replaying
+		/// everything that changed since — its "age". Without this, a partial update into a recycled buffer
+		/// would show whatever that older frame had outside the damaged region.
+		/// </summary>
+		internal long LastPresentedFrame { get; set; } = -1;
 
 		private WaylandShmBuffer(int fd, nint mapping, nuint mapLength, nint pool, nint buffer,
 			int width, int height, int stride)
@@ -167,7 +175,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (disposed)
 				return;
 
-			disposed = true;
 			disposePending = false;
 
 			if (Buffer != 0 && destroyProxies)
@@ -196,6 +203,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			if (listenerHandle.IsAllocated)
 				listenerHandle.Free();
+
+			disposed = true;
 		}
 
 		private static class ReleaseListener

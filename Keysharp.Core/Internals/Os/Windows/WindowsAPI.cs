@@ -420,6 +420,43 @@ namespace Keysharp.Internals.Os.Windows
 		internal byte AlphaFormat;
 	}
 
+	/// <summary>The header of a BITMAPINFO with no colour table — all that a 32bpp DIB needs. A negative
+	/// <see cref="biHeight"/> asks for a top-down bitmap, which is what GDI+ expects, so no row flipping is
+	/// needed between the two APIs sharing the pixels.</summary>
+	[StructLayout(LayoutKind.Sequential)]
+	internal struct BITMAPINFOHEADER
+	{
+		internal int biSize;
+		internal int biWidth;
+		internal int biHeight;
+		internal short biPlanes;
+		internal short biBitCount;
+		internal int biCompression;
+		internal int biSizeImage;
+		internal int biXPelsPerMeter;
+		internal int biYPelsPerMeter;
+		internal int biClrUsed;
+		internal int biClrImportant;
+	}
+
+	/// <summary>Arguments for <c>UpdateLayeredWindowIndirect</c>. Every pointer field is optional: leaving
+	/// pptDst/psize null updates the pixels without moving or resizing, and prcDirty limits the transfer to one
+	/// rectangle of the source.</summary>
+	[StructLayout(LayoutKind.Sequential)]
+	internal unsafe struct UPDATELAYEREDWINDOWINFO
+	{
+		internal uint cbSize;
+		internal nint hdcDst;
+		internal POINT* pptDst;
+		internal SIZE* psize;
+		internal nint hdcSrc;
+		internal POINT* pptSrc;
+		internal uint crKey;
+		internal BLENDFUNCTION* pblend;
+		internal uint dwFlags;
+		internal RECT* prcDirty;
+	}
+
 	[StructLayout(LayoutKind.Sequential)]
 	internal struct LASTINPUTINFO
 	{
@@ -1058,6 +1095,11 @@ namespace Keysharp.Internals.Os.Windows
 		[LibraryImport(gdi32, EntryPoint = "GetBkColor")]
 		internal static partial uint GetBkColor(nint hdc);
 
+		/// <summary>Reads one pixel through a DC, as a COLORREF (0x00BBGGRR). Used to prove that GDI sees what
+		/// GDI+ wrote into the same DIB section, which is the assumption the zero-copy overlay present rests on.</summary>
+		[LibraryImport(gdi32, EntryPoint = "GetPixel")]
+		internal static partial uint GetPixel(nint hdc, int x, int y);
+
 
 		[LibraryImport(user32, EntryPoint = "RedrawWindow")]
 		[return: MarshalAs(UnmanagedType.Bool)]
@@ -1375,6 +1417,13 @@ namespace Keysharp.Internals.Os.Windows
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static extern bool UpdateLayeredWindow(nint hwnd, nint hdcDst, ref POINT pptDst, ref SIZE psize, nint hdcSrc, ref POINT pptSrc, uint crKey, ref BLENDFUNCTION pblend, uint dwFlags);
 
+		/// <summary>The pointer-taking form of UpdateLayeredWindow. Two things the other one cannot express:
+		/// omitting position/size (repaint only) and <c>prcDirty</c>, which transfers just one changed rectangle
+		/// instead of the whole surface.</summary>
+		[DllImport(user32, SetLastError = true)]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		internal static extern unsafe bool UpdateLayeredWindowIndirect(nint hwnd, UPDATELAYEREDWINDOWINFO* pULWInfo);
+
 		//[DllImport(user32, CharSet = CharSet.Unicode)]
 		//internal static extern int SetWindowLong(nint hWnd, int nIndex, int dwNewLong);
 		[LibraryImport(user32, EntryPoint = "GetWindowLongPtrW")]
@@ -1648,6 +1697,13 @@ namespace Keysharp.Internals.Os.Windows
 
 		[DllImport(gdi32, SetLastError = true)]
 		internal static extern nint CreateCompatibleDC(nint hdc);
+
+		/// <summary>Allocates a bitmap whose pixel memory the caller can address directly (<paramref name="ppvBits"/>),
+		/// while GDI can still select it into a DC. That double identity is what lets one buffer be both a GDI+
+		/// draw target and the source of a layered-window update, with no copy between them.</summary>
+		[DllImport(gdi32, SetLastError = true)]
+		internal static extern nint CreateDIBSection(nint hdc, ref BITMAPINFOHEADER pbmi, uint usage,
+													out nint ppvBits, nint hSection, uint offset);
 
 		[DllImport(gdi32, SetLastError = true)]
 		internal static extern nint SelectObject(nint hdc, nint h);

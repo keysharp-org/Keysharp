@@ -5,17 +5,12 @@ namespace Keysharp.Builtins
 	public partial class Ks
 	{
 		/// <summary>
-		/// A screen overlay backed by a raster canvas — click-through and always-on-top by default. Draw onto it with
-		/// the same shape/text primitives as <see cref="KeysharpImage"/> (<c>DrawRect</c>, <c>FillRect</c>, <c>DrawLine</c>,
-		/// <c>DrawEllipse</c>, <c>FillEllipse</c>, <c>DrawText</c>, <c>Clear</c>) or stamp an existing image with
-		/// <see cref="DrawImage"/> / <see cref="Update"/>, then <see cref="Show"/> it on screen. Use <see cref="Update"/>
-		/// to replace a live overlay's image, position, and native screen-space size in one backing operation. Drawing
-		/// while the overlay is visible updates it live. The canvas is owned by the overlay; <see cref="Destroy"/> (or dropping
-		/// all references) frees it. This is the single cross-platform overlay primitive that <c>Highlight</c> and,
-		/// on Linux/macOS, <c>ToolTip</c> build on.
-		/// <para>By default each draw op auto-repaints (one upload per op). Wrap a burst of primitives in
-		/// <see cref="BeginDraw"/>/<see cref="EndDraw"/> — or <see cref="Redraw"/> — to composite a whole HUD frame and
-		/// upload it exactly once. Set <see cref="ClickThrough"/> to <c>false</c> to make the overlay receive mouse
+		/// A click-through, always-on-top screen overlay. The overlay owns window state; its pixels are the
+		/// borrowed <see cref="KeysharpImage"/> exposed by <see cref="Canvas"/>. Drawing changes only that canvas;
+		/// <see cref="Present"/> publishes a completed frame. <see cref="SetImage"/> copies a source into the canvas,
+		/// and <see cref="Redraw"/> builds and commits a replacement canvas off-screen.
+		/// <para><c>Highlight</c> and, on Linux/macOS, <c>ToolTip</c> use this platform primitive.</para>
+		/// <para>Set <see cref="ClickThrough"/> to <c>false</c> to make the overlay receive mouse
 		/// input (an interactive HUD) instead of passing clicks through to the windows beneath it, and register
 		/// mouse handlers with <see cref="OnEvent"/> (Click/DoubleClick/ContextMenu/MouseMove).</para>
 		/// </summary>
@@ -26,18 +21,27 @@ namespace Keysharp.Builtins
 			private const uint IdMask = 0x0FFF_FFFFu;
 			private static int nextOverlayId;
 
-			// The drawable canvas (reuses Image's shape/text primitives so no drawing logic is duplicated here).
-			private KeysharpImage canvas;
+			// The surface owns the platform pixels, their Image view and accumulated damage as one lifetime.
+			private OverlaySurface surface;
+
+			// The drawing view of `surface`. Not a field: two names for one thing is how they drift apart.
+			private KeysharpImage canvas => surface?.Image;
+
+			// For tests that need to prove which surface an operation left in place (SetImage reuse, Redraw
+			// replacement) and whether a present is still owed. Internal, so neither is part of the script surface.
+			internal OverlaySurface SurfaceForTests => surface;
+			internal bool HasUnpresentedDamageForTests => surface?.Damage.Kind != DamageKind.None;
 			private uint overlayId;
 			private int x;
 			private int y;
-			private int w;   // explicit native width/height; 0 means "use the image pixel size"
+			private int w;   // authored native width/height; 0 keeps that dimension automatic
 			private int h;
+			private int autoW;   // resolved automatic geometry can differ from the backing-pixel size
+			private int autoH;
 			private long opacity = 255;   // whole-overlay alpha multiplier applied at upload time
 			private bool requestedVisible;
 			private bool isMapped;
 			private bool clickThrough = true;   // default: transparent to mouse input (Highlight/ToolTip depend on this)
-			private int suspendCount;           // > 0 while a BeginDraw/EndDraw (or Redraw) batch is deferring uploads
 			private bool redrawing;
 
 			private uint OverlayId => overlayId != 0
@@ -45,9 +49,11 @@ namespace Keysharp.Builtins
 				: overlayId = OverlayIdPrefix | ((uint)Interlocked.Increment(ref nextOverlayId) & IdMask);
 
 			private (int ScreenW, int ScreenH) CurrentGeometry
-				=> ResolveGeometry(w, h, (int)(canvas?.Width ?? 0), (int)(canvas?.Height ?? 0));
+				=> ResolveGeometry(w, h,
+					autoW > 0 ? autoW : (int)(canvas?.Width ?? 0),
+					autoH > 0 ? autoH : (int)(canvas?.Height ?? 0));
 
-			// W/H are always native screen units. A raster image with no explicit W/H uses one native unit per pixel;
+			// Width and height are native screen units. An image without either uses one unit per pixel;
 			// generated canvases ask the platform renderer for their actual pixel dimensions.
 			private static (int ScreenW, int ScreenH) ResolveGeometry(
 				int authoredW, int authoredH, int imageW, int imageH)
@@ -56,34 +62,53 @@ namespace Keysharp.Builtins
 
 			public KeysharpOverlay(params object[] args) : base(args) { }
 
-			/// <summary>Overlay(x?, y?, w?, h?) stores the geometry; the canvas is created on the first
-			/// draw (or Update), and nothing is shown until Show. X/Y/W/H are native screen coordinates: PMv2/X11
-			/// desktop pixels, Cocoa points, or Wayland logical units. The renderer chooses the pixel size of generated
-			/// canvases; supplied images already carry their raster dimensions.</summary>
-			// `new`, not `override`: construction dispatches by name, so the real signature is declared here and
-			// arity/defaults/named binding follow from it (see Buffer.__New and Any's constructor). A fifth
-			// argument is now simply "Too many arguments" from the arity check, replacing the hand-written guard.
+			/// <summary>
+			/// <c>Overlay()</c> creates an unconfigured overlay. <c>Overlay(X, Y, Width, Height)</c> stores a native
+			/// screen rectangle and creates its canvas on first access. Use <see cref="FromImage"/> when an image
+			/// supplies the initial pixels.
+			/// </summary>
+			// `new`, not `override`: lifecycle dispatch resolves the most-derived declaration by name.
 			public object __New(object X = null, object Y = null, object Width = null, object Height = null)
 			{
-				if (X != null) x = X.Ai();
-				if (Y != null) y = Y.Ai();
-				if (Width != null) w = Width.Ai();
-				if (Height != null) h = Height.Ai();
+				if (X == null && Y == null && Width == null && Height == null)
+					return DefaultObject;
+
+				if (X == null || Y == null || Width == null || Height == null)
+					return Errors.ValueErrorOccurred("Overlay requires either no arguments or X, Y, Width and Height.");
+
+				var nextX = X.Ai();
+				var nextY = Y.Ai();
+				var nextW = Width.Ai();
+				var nextH = Height.Ai();
+
+				if (nextW <= 0 || nextH <= 0)
+					return Errors.ValueErrorOccurred("Overlay Width and Height must be positive.");
+
+				x = nextX;
+				y = nextY;
+				w = nextW;
+				h = nextH;
 
 				return DefaultObject;
 			}
 
+			/// <summary>Creates a hidden overlay whose canvas is copied from <paramref name="Source"/>.</summary>
+			[Static]
+			public static object FromImage(object @this, object Source, object X = null, object Y = null,
+				object Width = null, object Height = null)
+			{
+				var overlay = new KeysharpOverlay();
+				_ = overlay.SetImage(Source, X, Y, Width, Height);
+				return overlay.surface != null ? overlay : DefaultObject;
+			}
+
 			#region Properties
 
-			public object X { get => (long)x; set { if (RejectRedrawMutation()) return; x = value.Ai(); MoveLive(); } }
-			public object Y { get => (long)y; set { if (RejectRedrawMutation()) return; y = value.Ai(); MoveLive(); } }
+			public object X { get => (long)x; set { if (RejectRedrawMutation()) return; x = value.Ai(); MoveLive(false); } }
+			public object Y { get => (long)y; set { if (RejectRedrawMutation()) return; y = value.Ai(); MoveLive(false); } }
 
-			/// <summary>Overlay width in native screen/draw units. Changing
-			/// it resizes the live
-			/// surface; the existing canvas is KEPT and the backing STRETCHES it to the new size (a display-time scale,
-			/// not a bitmap rebuild), so a solid-fill or tile overlay can grow every frame cheaply without discarding
-			/// its content. Draw ops keep targeting the canvas at its authored resolution — to draw crisply at a larger
-			/// size, redraw the content or recreate the overlay.</summary>
+			/// <summary>Width in native screen units. Resizing keeps and scales the canvas; use
+			/// <see cref="Redraw"/> when its raster size should change.</summary>
 			public object Width
 			{
 				get
@@ -93,12 +118,28 @@ namespace Keysharp.Builtins
 
 					return canvas != null ? (long)CurrentGeometry.ScreenW : 0L;
 				}
-				set { if (RejectRedrawMutation()) return; w = value.Ai(); MoveLive(); }
+				set
+				{
+					if (RejectRedrawMutation()) return;
+					var next = value.Ai();
+
+					if (next < 0)
+					{
+						_ = Errors.ValueErrorOccurred("Overlay Width cannot be negative.");
+						return;
+					}
+
+					var previous = CurrentGeometry.ScreenW;
+					w = next;
+
+					if (next == 0)
+						autoW = (int)(canvas?.Width ?? 0);
+
+					MoveLive(CurrentGeometry.ScreenW != previous);
+				}
 			}
 
-			/// <summary>Overlay height in native screen/draw units. Changing
-			/// it stretches the live
-			/// surface to the new size (the canvas is kept, not rebuilt) — see <see cref="Width"/>.</summary>
+			/// <summary>Height in native screen units. See <see cref="Width"/>.</summary>
 			public object Height
 			{
 				get
@@ -108,12 +149,28 @@ namespace Keysharp.Builtins
 
 					return canvas != null ? (long)CurrentGeometry.ScreenH : 0L;
 				}
-				set { if (RejectRedrawMutation()) return; h = value.Ai(); MoveLive(); }
+				set
+				{
+					if (RejectRedrawMutation()) return;
+					var next = value.Ai();
+
+					if (next < 0)
+					{
+						_ = Errors.ValueErrorOccurred("Overlay Height cannot be negative.");
+						return;
+					}
+
+					var previous = CurrentGeometry.ScreenH;
+					h = next;
+
+					if (next == 0)
+						autoH = (int)(canvas?.Height ?? 0);
+
+					MoveLive(CurrentGeometry.ScreenH != previous);
+				}
 			}
 
-			/// <summary>Whole-overlay opacity, 0 (invisible) to 255 (opaque, default). Multiplies the
-			/// per-pixel alpha at upload time; setting it on a visible overlay re-uploads with the new
-			/// alpha, so an OSD can be faded in/out without redrawing its content.</summary>
+			/// <summary>Whole-overlay opacity from 0 to 255. Changing it republishes a visible overlay.</summary>
 			public object Opacity
 			{
 				get => opacity;
@@ -131,7 +188,7 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>Whether the overlay is transparent to mouse input (default true). Leave it true for a passive
-			/// HUD/highlight so clicks reach the windows beneath; set it false to make the overlay RECEIVE mouse input
+			/// HUD/highlight so clicks reach the windows beneath; set it false to make the overlay receive mouse input
 			/// (an interactive HUD). Changing it on a visible overlay re-applies the input mode immediately.</summary>
 			public object ClickThrough
 			{
@@ -158,108 +215,86 @@ namespace Keysharp.Builtins
 
 			#endregion
 
-			#region Draw batching
+			#region Frame building
 
-			/// <summary>Begins a draw batch: subsequent draw ops and property changes update the canvas but DEFER the
-			/// on-screen upload until the matching <see cref="EndDraw"/> (or the end of a <see cref="Redraw"/>). The
-			/// default is auto-repaint-per-op (one upload per primitive); batching composites a whole HUD frame and
-			/// uploads it exactly once. Calls nest — each BeginDraw needs an EndDraw, and the upload happens when the
-			/// outermost EndDraw runs. Returns this for chaining.</summary>
-			public object BeginDraw()
-			{
-				if (RejectRedrawMutation()) return this;
-				suspendCount++;
-				return this;
-			}
-
-			/// <summary>Ends a draw batch started with <see cref="BeginDraw"/>. When the outermost batch closes, the
-			/// accumulated frame is uploaded once (if the overlay is visible). Returns this for chaining.</summary>
-			public object EndDraw()
-			{
-				if (RejectRedrawMutation()) return this;
-				if (suspendCount > 0)
-					suspendCount--;
-
-				if (suspendCount == 0 && requestedVisible)
-					Refresh();
-
-				return this;
-			}
-
-			/// <summary>Builds a complete replacement canvas off-screen, passing this overlay to
-			/// <paramref name="callback"/>, then commits its pixels and optional geometry in one platform update.
+			/// <summary>Builds a complete replacement canvas off-screen, passing it to
+			/// <paramref name="Callback"/>, then presents its pixels and optional geometry as a completed frame.
 			/// Drawing uses local native screen units while backing-pixel density is selected automatically for the target.
-			/// A drawing exception or failed upload preserves the previous frame and overlay state.</summary>
-			public object Redraw(object callback, object newX = null, object newY = null, object newWidth = null, object newHeight = null)
+			/// A drawing exception leaves the current frame unchanged. A failed presentation does not commit the
+			/// replacement canvas or geometry.</summary>
+			public object Redraw(object Callback, object X = null, object Y = null, object Width = null, object Height = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				if (callback is not KeysharpFunc f)
+				if (Callback is not KeysharpFunc f)
 					return Errors.ValueErrorOccurred("Overlay.Redraw requires a callable object.");
 
-				var nextX = newX != null ? newX.Ai() : x;
-				var nextY = newY != null ? newY.Ai() : y;
-				var nextW = newWidth != null ? newWidth.Ai() : w;
-				var nextH = newHeight != null ? newHeight.Ai() : h;
+				var nextX = X != null ? X.Ai() : x;
+				var nextY = Y != null ? Y.Ai() : y;
+				var nextW = Width != null ? Width.Ai() : w;
+				var nextH = Height != null ? Height.Ai() : h;
 				var oldGeometry = CurrentGeometry;
+
+				if (nextW < 0 || nextH < 0)
+					return Errors.ValueErrorOccurred("Overlay Redraw Width and Height cannot be negative.");
+
 				var screenW = nextW > 0 ? nextW : oldGeometry.ScreenW;
 				var screenH = nextH > 0 ? nextH : oldGeometry.ScreenH;
 
-				if (!TryCreateCanvas(new ScreenRect(nextX, nextY, screenW, screenH), out var replacement))
+				if (!TryCreateSurface(new ScreenRect(nextX, nextY, screenW, screenH), out var replacement))
 					return Errors.ValueErrorOccurred("Overlay.Redraw requires a positive final width and height.");
 
-				var previousCanvas = canvas;
+				var previousSurface = surface;
 				var previousX = x;
 				var previousY = y;
 				var previousW = w;
 				var previousH = h;
-				var previousOpacity = opacity;
-				var previousClickThrough = clickThrough;
-				var previousSuspend = suspendCount;
+				var previousAutoW = autoW;
+				var previousAutoH = autoH;
 				var committed = false;
 
 				// Draw into a private target-sized canvas. The live backing and previous model are untouched until the
 				// final upload succeeds, so a resize never publishes an empty/intermediate surface.
-				canvas = replacement;
+				surface = replacement;
 				x = nextX;
 				y = nextY;
-				w = screenW;
-				h = screenH;
-				suspendCount = previousSuspend + 1;
+				w = nextW;
+				h = nextH;
+
+				if (nextW == 0)
+					autoW = screenW;
+
+				if (nextH == 0)
+					autoH = screenH;
+
 				redrawing = true;
 
 				try
 				{
-					_ = f.Call(this);
-					replacement.Bake();
-
-					if (x != nextX || y != nextY || w != screenW || h != screenH)
-						return Errors.ValueErrorOccurred("Overlay.Redraw geometry must be supplied as arguments, not changed inside the callback.");
-
+					_ = f.Call(canvas);
 					var finalBounds = new ScreenRect(x, y, screenW, screenH);
 
-					if (requestedVisible && previousSuspend == 0 && !TryUpload(replacement, finalBounds))
+					if (requestedVisible && !TryPresent(replacement, finalBounds))
 						return this;
 
 					committed = true;
-					previousCanvas?.Dispose();
+					previousSurface?.Dispose();
 
-					if (requestedVisible && previousSuspend == 0)
+					if (requestedVisible)
 						isMapped = true;
 				}
 				finally
 				{
 					redrawing = false;
-					suspendCount = previousSuspend;
 
 					if (!committed)
 					{
-						canvas = previousCanvas;
+						surface = previousSurface;
 						x = previousX;
 						y = previousY;
 						w = previousW;
 						h = previousH;
-						opacity = previousOpacity;
-						clickThrough = previousClickThrough;
+						autoW = previousAutoW;
+						autoH = previousAutoH;
 						replacement.Dispose();
 					}
 				}
@@ -269,97 +304,120 @@ namespace Keysharp.Builtins
 
 			#endregion
 
-			#region Drawing (delegates to the Image canvas, then repaints if shown)
+			#region Drawing
 
-			/// <summary>Fills the whole canvas. Omit <paramref name="color"/> or pass "" for transparent.</summary>
-			public object Clear(object color = null) => Draw(() => canvas.Clear(color));
+			/// <summary>
+			/// The overlay's borrowed drawing surface. Drawing and read operations are available, but ownership and
+			/// whole-image replacement operations are not. Call <see cref="Present"/> when a frame is complete.
+			/// <para>The overlay owns this image and it cannot be disposed, re-initialised, scaled, rotated,
+			/// cropped, filtered, or have its pixel data replaced, because its pixels are the platform's own
+			/// presentable buffer. <c>Canvas.Copy()</c> gives an independent image
+			/// you can transform freely.</para>
+			/// <para>The reference is not stable for the overlay's whole life: <see cref="Destroy"/> frees it,
+			/// and a resizing <see cref="SetImage"/> or any <see cref="Redraw"/> builds a new canvas, so a
+			/// reference held across either is dead. Read it again rather than caching it, unless the overlay is
+			/// known never to resize.</para>
+			/// <para>Reading this creates the canvas, so the overlay needs a size first — from the constructor,
+			/// or from <see cref="SetImage"/>.</para>
+			/// </summary>
+			public KeysharpImage Canvas => EnsureCanvas() ? canvas : null;
 
-			public object DrawLine(object x1, object y1, object x2, object y2, object color = null, object thickness = null)
-				=> Draw(() => canvas.DrawLine(x1, y1, x2, y2, color, thickness));
-
-			public object DrawRect(object rx, object ry, object rw, object rh, object color = null, object thickness = null)
-				=> Draw(() => canvas.DrawRect(rx, ry, rw, rh, color, thickness));
-
-			public object FillRect(object rx, object ry, object rw, object rh, object color = null)
-				=> Draw(() => canvas.FillRect(rx, ry, rw, rh, color));
-
-			public object DrawEllipse(object rx, object ry, object rw, object rh, object color = null, object thickness = null)
-				=> Draw(() => canvas.DrawEllipse(rx, ry, rw, rh, color, thickness));
-
-			public object FillEllipse(object rx, object ry, object rw, object rh, object color = null)
-				=> Draw(() => canvas.FillEllipse(rx, ry, rw, rh, color));
-
-			public object DrawRoundRect(object rx, object ry, object rw, object rh, object radius, object color = null, object thickness = null)
-				=> Draw(() => canvas.DrawRoundRect(rx, ry, rw, rh, radius, color, thickness));
-
-			public object FillRoundRect(object rx, object ry, object rw, object rh, object radius, object color = null)
-				=> Draw(() => canvas.FillRoundRect(rx, ry, rw, rh, radius, color));
-
-			/// <summary>Queues text rendering; the font is given as Gui.SetFont-style
-			/// <paramref name="options"/> ("s16 bold italic underline strike") plus a <paramref name="fontName"/>,
-			/// exactly as in <see cref="KeysharpImage.DrawText"/>.</summary>
-			public object DrawText(object text, object tx, object ty, object color = null, object options = null, object fontName = null)
-				=> Draw(() => canvas.DrawText(text, tx, ty, color, options, fontName));
-
-			/// <summary>Measures the size <paramref name="text"/> would occupy in the given font (same
-			/// <paramref name="options"/>/<paramref name="fontName"/> convention as <see cref="DrawText"/>) and
-			/// returns it as a <c>{w, h}</c> object, in the overlay's local draw units (so it composes with the
-			/// coordinates passed to DrawText/DrawRect). Use it to centre or align text.</summary>
-			public object MeasureText(object text, object options = null, object fontName = null)
-			{
-				var (mw, mh) = KeysharpImage.MeasureTextCore(text.As(), options.As(), fontName.As());
-				return KeysharpImage.MakeSize(mw, mh);
-			}
-
-			/// <summary>Stamps another image (an Image, a file path, or a bitmap handle) onto the canvas.</summary>
-			public object DrawImage(object image, object ix = null, object iy = null, object iw = null, object ih = null)
-				=> Draw(() => canvas.DrawImage(image, ix, iy, iw, ih));
-
-			/// <summary>Atomically replaces the canvas image and any supplied geometry (omit the geometry to just
-			/// swap the image in place). The complete replacement is prepared off-screen and, when visible, handed
-			/// to the platform in one upload; no blank canvas, intermediate move, or intermediate resize is
-			/// published. A failed upload preserves both the previous on-screen frame and this overlay's previous
-			/// state. The source (an Image, a file path, or a bitmap handle) is copied and remains owned by the
-			/// caller. The image dimensions are its backing pixels; W/H are its native on-screen size. Update does
-			/// not change visibility: call <see cref="Show"/> when staging into a hidden overlay.</summary>
-			public object Update(object source, object newX = null, object newY = null, object newWidth = null,
-						 object newHeight = null)
+			/// <summary>Publishes the current canvas without changing visibility.</summary>
+			public object Present()
 			{
 				if (RejectRedrawMutation()) return this;
-				var nextX = newX != null ? newX.Ai() : x;
-				var nextY = newY != null ? newY.Ai() : y;
-				var nextW = newWidth != null ? newWidth.Ai() : w;
-				var nextH = newHeight != null ? newHeight.Ai() : h;
-				// Do every fallible image operation before touching the live model. The old canvas remains owned by
-				// this overlay and displayed by the backing until the final upload succeeds.
-				if (!TryCopyImage(source, nameof(Update), out var replacement))
+				if (EnsureCanvas()) Refresh();
+				return this;
+			}
+
+			/// <summary>Copies <paramref name="Source"/> into the canvas and optionally changes geometry. A failed
+			/// presentation does not commit requested geometry or a replacement canvas; a reused same-sized canvas
+			/// retains the copied pixels for the next presentation. This operation does not change visibility.</summary>
+			public object SetImage(object Source, object X = null, object Y = null, object Width = null,
+				object Height = null)
+			{
+				if (RejectRedrawMutation()) return this;
+				var nextX = X != null ? X.Ai() : x;
+				var nextY = Y != null ? Y.Ai() : y;
+				var nextW = Width != null ? Width.Ai() : w;
+				var nextH = Height != null ? Height.Ai() : h;
+
+				if (nextW < 0 || nextH < 0)
+					return Errors.ValueErrorOccurred("Overlay SetImage Width and Height cannot be negative.");
+
+				if (!TryResolveSource(Source, nameof(SetImage), out var loaded, out var ownsLoaded))
 					return this;
 
-				var nextGeometry = ResolveGeometry(nextW, nextH, (int)replacement.Width, (int)replacement.Height);
-				SetDrawScale(replacement, (int)replacement.Width, (int)replacement.Height,
-					nextGeometry.ScreenW, nextGeometry.ScreenH);
+				OverlaySurface replacement = null;
 
-				var uploadNow = requestedVisible && suspendCount == 0;
-
-				if (uploadNow && !TryUpload(
-						replacement, new ScreenRect(nextX, nextY, nextGeometry.ScreenW, nextGeometry.ScreenH)))
+				try
 				{
-					replacement.Dispose();
+					if (ReferenceEquals(loaded, canvas))
+					{
+						_ = Errors.ValueErrorOccurred("Overlay.SetImage cannot use its own Canvas; call Present instead.");
+						return this;
+					}
+
+					var srcBitmap = loaded.PrepareForRead();
+
+					if (srcBitmap == null)
+					{
+						_ = Errors.ValueErrorOccurred($"Overlay.{nameof(SetImage)} requires a valid Image.");
+						return this;
+					}
+
+					var srcSize = new PixelSize(srcBitmap.Width, srcBitmap.Height);
+					var reuse = surface != null && surface.Size == srcSize;
+					var target = reuse ? surface : (replacement = CreateSurface(srcSize));
+
+					if (target == null)
+					{
+						_ = Errors.ValueErrorOccurred($"Overlay.{nameof(SetImage)} requires a valid Image.");
+						return this;
+					}
+
+					target.Image.BlitFrom(srcBitmap);
+					var nextGeometry = ResolveGeometry(nextW, nextH, target.Size.Width, target.Size.Height);
+					var uploadNow = requestedVisible && !redrawing;
+
+					if (uploadNow && !TryPresent(target,
+							new ScreenRect(nextX, nextY, nextGeometry.ScreenW, nextGeometry.ScreenH)))
+						return this;
+
+					if (!reuse)
+					{
+						var previous = surface;
+						surface = target;
+						replacement = null;
+						previous?.Dispose();
+					}
+
+					x = nextX;
+					y = nextY;
+					w = nextW;
+					h = nextH;
+
+					if (nextW == 0)
+						autoW = target.Size.Width;
+
+					if (nextH == 0)
+						autoH = target.Size.Height;
+
+					SetDrawScale(target.Image, target.Size.Width, target.Size.Height,
+						nextGeometry.ScreenW, nextGeometry.ScreenH);
+
+					if (uploadNow)
+						isMapped = true;
+
 					return this;
 				}
+				finally
+				{
+					replacement?.Dispose();
 
-				var previous = canvas;
-				canvas = replacement;
-				x = nextX;
-				y = nextY;
-				w = nextW;
-				h = nextH;
-				previous?.Dispose();
-
-				if (uploadNow)
-					isMapped = true;
-
-				return this;
+					if (ownsLoaded)
+						_ = loaded.Dispose();
+				}
 			}
 
 			#endregion
@@ -367,7 +425,7 @@ namespace Keysharp.Builtins
 			#region Events
 
 			// Registered pointer handlers by canonical event name ("click", "doubleclick", "contextmenu",
-			// "mousemove"). Each entry keeps the ORIGINAL script callback object for OnEvent(.., .., 0) removal
+			// "mousemove"). Each entry keeps the original script callback object for OnEvent(.., .., 0) removal
 			// (converting again yields a different wrapper, so identity must be tested against what was passed)
 			// and a CallbackRegistration whose active state holds script persistence, like other event hooks.
 			// handlerGate guards the map: OnEvent mutates on a script thread while HandlePointerEvent snapshots
@@ -378,35 +436,35 @@ namespace Keysharp.Builtins
 
 			private static readonly string[] supportedEvents = ["click", "doubleclick", "contextmenu", "mousemove"];
 
-			/// <summary>Registers <paramref name="callback"/> for a mouse event on this overlay, in the style of
+			/// <summary>Registers <paramref name="Callback"/> for a mouse event on this overlay, in the style of
 			/// <c>Gui.OnEvent</c>. Events: <c>Click</c> (left button), <c>DoubleClick</c>, <c>ContextMenu</c>
 			/// (right button) and <c>MouseMove</c>. The callback receives <c>(overlay, x, y)</c> with x/y in the
 			/// overlay's local native units — the same units the draw ops use, so a hit-test against drawn
-			/// shapes needs no conversion. <paramref name="addRemove"/>: 1 (default) = call after previously
+			/// shapes needs no conversion. <paramref name="AddRemove"/>: 1 (default) = call after previously
 			/// registered handlers, -1 = call before them, 0 = unregister the callback.
 			/// <para>The overlay must not be click-through to receive mouse input: set
 			/// <see cref="ClickThrough"/> := false, or the events never fire (input passes through to the
 			/// windows beneath). Events require a backing with a client-side window (<see cref="Hwnd"/> != 0);
 			/// a compositor-drawn overlay cannot receive input. Registered handlers keep the script persistent;
 			/// <see cref="Destroy"/> removes them all.</para></summary>
-			public object OnEvent(object eventName, object callback, object addRemove = null)
+			public object OnEvent(object EventName, object Callback, object AddRemove = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				var rawName = eventName.As();
+				var rawName = EventName.As();
 				var name = rawName.ToLowerInvariant();
 
 				if (System.Array.IndexOf(supportedEvents, name) < 0)
 					return Errors.ValueErrorOccurred($"Overlay.OnEvent: unknown event \"{rawName}\". Supported: Click, DoubleClick, ContextMenu, MouseMove.");
 
-				var mode = addRemove == null ? 1L : addRemove.Al();
+				var mode = AddRemove == null ? 1L : AddRemove.Al();
 
 				if (mode is not (1L or -1L or 0L))
 					return Errors.ValueErrorOccurred("Overlay.OnEvent: AddRemove must be 1, -1 or 0.");
 
-				var fo = Functions.GetKeysharpFunc(callback, null, null, true);
+				var fo = Functions.GetKeysharpFunc(Callback, null, null, true);
 
 				if (fo == null)
-					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));
+					return Errors.TypeErrorOccurred(Callback, typeof(KeysharpFunc));
 
 				var anyLeft = true;
 
@@ -421,7 +479,7 @@ namespace Keysharp.Builtins
 					{
 						for (var i = list.Count - 1; i >= 0; i--)
 						{
-							if (ReferenceEquals(list[i].original, callback) || Equals(list[i].original, callback))
+							if (ReferenceEquals(list[i].original, Callback) || Equals(list[i].original, Callback))
 							{
 								list[i].reg.Clear();   // releases the persistence hold
 								list.RemoveAt(i);
@@ -430,7 +488,7 @@ namespace Keysharp.Builtins
 					}
 					else
 					{
-						var entry = (callback, new CallbackRegistration(fo, Script.TheScript?.EventScheduler, true));
+						var entry = (Callback, new CallbackRegistration(fo, Script.TheScript?.EventScheduler, true));
 
 						if (mode == -1L)
 							list.Insert(0, entry);
@@ -457,7 +515,7 @@ namespace Keysharp.Builtins
 					return;
 
 				// The service's id-keyed sink map (and the live backing) hold this delegate for as long as the
-				// registration stands. Capture only a WEAK reference to the overlay: a strong capture would pin a
+				// registration stands. Capture only a weak reference to the overlay: a strong capture would pin a
 				// dropped overlay forever — __Delete could then never run, so an event-overlay abandoned without
 				// Destroy would leak its canvas and keep holding script persistence, and a shown one would never
 				// auto-hide on collection. With the weak target the normal drop-all-references lifecycle keeps
@@ -529,7 +587,7 @@ namespace Keysharp.Builtins
 						continue;
 
 					var r = reg;
-					// One args array PER handler: a callback declaring a ByRef parameter writes into its argument
+					// One args array per handler: a callback declaring a ByRef parameter writes into its argument
 					// slots, which must not leak into the next handler's arguments.
 					object[] args = [this, (long)ev.X, (long)ev.Y];
 					_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunPointerHandler(scheduler, r, args));
@@ -563,35 +621,61 @@ namespace Keysharp.Builtins
 
 			#region Show / Move / Hide / Destroy
 
-			public object Show(object newX = null, object newY = null, object newWidth = null, object newHeight = null)
+			public object Show(object X = null, object Y = null, object Width = null, object Height = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				if (newX != null) x = newX.Ai();
-				if (newY != null) y = newY.Ai();
-				if (newWidth != null) w = newWidth.Ai();
-				if (newHeight != null) h = newHeight.Ai();
+				var nextX = X != null ? X.Ai() : x;
+				var nextY = Y != null ? Y.Ai() : y;
+				var nextW = Width != null ? Width.Ai() : w;
+				var nextH = Height != null ? Height.Ai() : h;
+
+				if (nextW < 0 || nextH < 0)
+					return Errors.ValueErrorOccurred("Overlay Show Width and Height cannot be negative.");
+
+				x = nextX;
+				y = nextY;
+				w = nextW;
+				h = nextH;
+
+				if (Width != null && nextW == 0)
+					autoW = (int)(canvas?.Width ?? 0);
+
+				if (Height != null && nextH == 0)
+					autoH = (int)(canvas?.Height ?? 0);
 
 				if (!EnsureCanvas())
 					return this;   // sizeless overlay: EnsureCanvas raised the error (throws in throw-mode); keep chaining otherwise
 
-				// A resize just changes the displayed size; the backing STRETCHES the existing canvas to the new W/H
-				// (see the W property), so growing a tile/fill overlay keeps its content instead of blanking it.
 				requestedVisible = true;
 				MaybeRefresh();
 				return this;
 			}
 
-			public object Move(object newX = null, object newY = null, object newWidth = null, object newHeight = null)
+			public object Move(object X = null, object Y = null, object Width = null, object Height = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				if (newX != null) x = newX.Ai();
-				if (newY != null) y = newY.Ai();
-				if (newWidth != null) w = newWidth.Ai();
-				if (newHeight != null) h = newHeight.Ai();
+				var nextX = X != null ? X.Ai() : x;
+				var nextY = Y != null ? Y.Ai() : y;
+				var nextW = Width != null ? Width.Ai() : w;
+				var nextH = Height != null ? Height.Ai() : h;
 
-				// The backing STRETCHES the existing canvas to the new W/H (see the W property) — a resize is a display
-				// scale, not a bitmap rebuild — so a tile/fill overlay resized every frame keeps its content.
-				MoveLive();
+				if (nextW < 0 || nextH < 0)
+					return Errors.ValueErrorOccurred("Overlay Move Width and Height cannot be negative.");
+
+				var previous = CurrentGeometry;
+				x = nextX;
+				y = nextY;
+				w = nextW;
+				h = nextH;
+
+				if (Width != null && nextW == 0)
+					autoW = (int)(canvas?.Width ?? 0);
+
+				if (Height != null && nextH == 0)
+					autoH = (int)(canvas?.Height ?? 0);
+
+				var current = CurrentGeometry;
+				MoveLive(current.ScreenW != previous.ScreenW || current.ScreenH != previous.ScreenH);
 				return this;
 			}
 
@@ -608,9 +692,7 @@ namespace Keysharp.Builtins
 					return this;
 				}
 
-				// Only mark ourselves hidden once the platform CONFIRMS the surface is gone. If the withdraw
-				// couldn't be confirmed (e.g. a dropped compositor hide), keep isMapped true so Visible stays
-				// truthful and a later Hide re-attempts, instead of leaving a painted-but-"hidden" orphan.
+				// Keep the mapped state when withdrawal is not confirmed so a later Hide can retry.
 				if (Platform.Overlay.TryHideImageOverlay(overlayId))
 					isMapped = false;
 
@@ -624,11 +706,8 @@ namespace Keysharp.Builtins
 
 				if (overlayId != 0)
 				{
-					// Try a graceful, confirm-gated withdraw first...
 					_ = Hide();
-					// ...then FORCE-reap the backing unconditionally. If Hide couldn't confirm the withdraw (a dropped
-					// Wayland hide), the backing would otherwise stay mapped in OverlayService with no owner left to
-					// retry — this disposes and removes it for good, distinct from the retryable Hide.
+					// Destroy cannot leave an unconfirmed backing without an owner to retry it.
 					Platform.Overlay.DisposeImageOverlay(overlayId);
 				}
 
@@ -636,29 +715,18 @@ namespace Keysharp.Builtins
 				// Visible must read false.
 				requestedVisible = false;
 				isMapped = false;
-				canvas?.Dispose();
-				canvas = null;
+				// One Dispose: the surface frees the image view, the bitmap and the platform memory beneath it,
+				// in the one order in which the GDI object and its DIB both survive to be freed.
+				surface?.Dispose();
+				surface = null;
+				autoW = 0;
+				autoH = 0;
 				return DefaultObject;
 			}
 
 			public override object __Delete() => Destroy();
 
 			#endregion
-
-			// Runs one canvas draw op, bakes it in (so the op chain never grows across repaints), repaints if visible
-			// and not mid-batch, and returns this overlay for chaining. On a real failure the canvas op raises the
-			// error (throws in the normal throwing mode); we return this either way so a fluent chain never receives
-			// an error object to dereference.
-			private object Draw(Func<object> op)
-			{
-				if (!EnsureCanvas())
-					return this;
-
-				_ = op();
-				canvas.Bake();
-				MaybeRefresh();
-				return this;
-			}
 
 			private bool EnsureCanvas()
 			{
@@ -667,13 +735,13 @@ namespace Keysharp.Builtins
 
 				if (w <= 0 || h <= 0)
 				{
-					_ = Errors.ValueErrorOccurred("Overlay has no size: construct it as Overlay(x, y, w, h) or call Update/DrawImage first.");
+					_ = Errors.ValueErrorOccurred("Overlay has no size: use Overlay(X, Y, Width, Height) or Overlay.FromImage(Source).");
 					return false;
 				}
 
-				if (TryCreateCanvas(new ScreenRect(x, y, w, h), out var created))
+				if (TryCreateSurface(new ScreenRect(x, y, w, h), out var created))
 				{
-					canvas = created;
+					surface = created;
 					return true;
 				}
 
@@ -681,59 +749,53 @@ namespace Keysharp.Builtins
 				return false;
 			}
 
-			private static bool TryCreateCanvas(ScreenRect bounds, out KeysharpImage created)
+			// Asks the renderer for the pixel surface it prefers for these bounds. Drawing coordinates stay native
+			// local units; drawScale bridges the two.
+			private bool TryCreateSurface(ScreenRect bounds, out OverlaySurface created)
 			{
-				created = null;
+				created = bounds.HasArea ? CreateSurface(Platform.Overlay.GetCanvasSize(bounds)) : null;
 
-				if (!bounds.HasArea)
+				if (created == null)
 					return false;
 
-				// Ask the renderer for the target's actual pixel canvas. Drawing coordinates remain native local units.
-				var pixels = Platform.Overlay.GetCanvasSize(bounds);
-
-				if (!pixels.HasArea || KeysharpImage.Create(null,
-						(long)pixels.Width, (long)pixels.Height) is not KeysharpImage image)
-					return false;
-
-				SetDrawScale(image, pixels.Width, pixels.Height, bounds.Width, bounds.Height);
-				image.mutable = true;
-				created = image;
+				SetDrawScale(created.Image, created.Size.Width, created.Size.Height, bounds.Width, bounds.Height);
 				return true;
 			}
 
-			// Loads (where needed) and copies a caller-owned image without changing live overlay state.
-			private bool TryCopyImage(object source, string operation, out KeysharpImage copy)
+			// The surface comes from the platform, not from KeysharpImage.Create: its pixels may be memory the
+			// compositor reads directly, which is what lets a present skip copying them.
+			private OverlaySurface CreateSurface(PixelSize pixels)
 			{
-				copy = null;
-				var loaded = source as KeysharpImage;
-				var ownsLoaded = false;
+				if (!pixels.HasArea)
+					return null;
 
-				if (loaded == null)
+				var created = Platform.Overlay.CreateOverlaySurface(pixels);
+
+				if (created?.Bitmap != null && created.Image != null)
+					return created;
+
+				created?.Dispose();
+				return null;
+			}
+
+			// Resolves a SetImage source to a KeysharpImage without copying it. A path or bitmap handle
+			// has to be loaded (and is then ours to free); a script-supplied Image is borrowed.
+			private bool TryResolveSource(object source, string operation, out KeysharpImage loaded, out bool ownsLoaded)
+			{
+				loaded = source as KeysharpImage;
+				ownsLoaded = false;
+
+				if (loaded != null)
+					return true;
+
+				if (KeysharpImage.FromBitmap(null, source) is not KeysharpImage li)
 				{
-					var result = KeysharpImage.FromBitmap(null, source);
-
-					if (result is not KeysharpImage li)
-					{
-						_ = Errors.ValueErrorOccurred($"Overlay.{operation} could not load the source image.");
-						return false;
-					}
-
-					loaded = li;
-					ownsLoaded = true;
-				}
-
-				copy = loaded.Copy() as KeysharpImage;
-
-				if (ownsLoaded)
-					_ = loaded.Dispose();
-
-				if (copy == null)
-				{
-					_ = Errors.ValueErrorOccurred($"Overlay.{operation} requires a valid Image.");
+					_ = Errors.ValueErrorOccurred($"Overlay.{operation} could not load the source image.");
 					return false;
 				}
 
-				copy.mutable = true;
+				loaded = li;
+				ownsLoaded = true;
 				return true;
 			}
 
@@ -752,18 +814,23 @@ namespace Keysharp.Builtins
 				return true;
 			}
 
-			// Repaints the live surface after a mutation, but ONLY when actually visible and not inside a
-			// BeginDraw/EndDraw batch — the batch coalesces many mutations into the single upload EndDraw performs.
+			// Repaints after a visible state mutation. Redraw publishes its completed replacement itself.
 			private void MaybeRefresh()
 			{
-				if (requestedVisible && suspendCount == 0)
+				if (requestedVisible && !redrawing)
 					Refresh();
 			}
 
-			private void MoveLive()
+			private void MoveLive(bool resized)
 			{
-				if (!isMapped || suspendCount > 0)
+				if (!isMapped || redrawing)
 					return;
+
+				if (resized)
+				{
+					Refresh();
+					return;
+				}
 
 				var geometry = CurrentGeometry;
 				var bounds = new ScreenRect(x, y, geometry.ScreenW, geometry.ScreenH);
@@ -774,41 +841,27 @@ namespace Keysharp.Builtins
 
 			private void Refresh()
 			{
-				if (!requestedVisible || canvas == null)
+				if (!requestedVisible || surface == null)
 					return;
 
 				var geometry = CurrentGeometry;
 
-				if (TryUpload(canvas, new ScreenRect(x, y, geometry.ScreenW, geometry.ScreenH)))
+				if (TryPresent(surface, new ScreenRect(x, y, geometry.ScreenW, geometry.ScreenH)))
 					isMapped = true;
 			}
 
-			// Uploads one already-prepared canvas at one final geometry. This is the only platform call made by
-			// Update; the backing copies synchronously and never retains or disposes the canvas bitmap.
-			private bool TryUpload(KeysharpImage source, ScreenRect bounds)
+			// SetImage and Redraw can present a candidate before it becomes the live surface.
+			private bool TryPresent(OverlaySurface target, ScreenRect bounds)
 			{
-				// Hand the canvas's own bitmap to the backing WITHOUT copying it — the backing borrows it and
-				// performs its platform-specific display conversion synchronously (it never keeps or disposes what it is
-				// handed). Some backings require more than one native transfer. Only an
-				// opacity pass needs a temporary, which we own and dispose here.
-				var bmp = source.PeekBitmap();
-
-				if (bmp == null)
+				if (target?.Bitmap == null)
 					return false;
 
-				// ApplyOpacity mutates in place, so to preserve the live canvas we fade a throwaway clone; at full
-				// opacity we borrow the canvas bitmap directly (zero-copy). toShow is disposed below iff it's the clone.
-				var toShow = opacity != 255 ? ImageHelper.ApplyOpacity(new Bitmap(bmp), (byte)opacity) : bmp;
+				if (!Platform.Overlay.TryPresentImageOverlay(OverlayId, target, bounds, (byte)opacity, clickThrough))
+					return false;
 
-				try
-				{
-					return Platform.Overlay.TryShowImageOverlay(OverlayId, bounds, toShow, clickThrough);
-				}
-				finally
-				{
-					if (!ReferenceEquals(toShow, bmp))
-						toShow.Dispose();   // dispose only the opacity temp, never the canvas's own bitmap
-				}
+				// Failed presents retain damage for the next attempt.
+				target.Damage.Reset();
+				return true;
 			}
 		}
 	}

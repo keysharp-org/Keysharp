@@ -190,7 +190,7 @@ namespace Keysharp.Builtins
 					if (frame == null)
 						return;
 
-					_ = overlay.Update(frame, bx, by, bw, bh);
+					_ = overlay.SetImage(frame, bx, by, bw, bh);
 
 					builtW = bw;
 					builtH = bh;

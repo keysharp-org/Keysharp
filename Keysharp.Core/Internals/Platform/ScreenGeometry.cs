@@ -82,6 +82,56 @@ namespace Keysharp.Internals
 		internal bool HasArea => Width > 0 && Height > 0;
 	}
 
+	/// <summary>
+	/// A rectangle in raster pixels, distinct from <see cref="ScreenRect"/>'s native screen units.
+	/// </summary>
+	internal readonly record struct PixelRect(int X, int Y, int Width, int Height)
+	{
+		internal int Right => X + Width;
+		internal int Bottom => Y + Height;
+		internal bool IsEmpty => Width <= 0 || Height <= 0;
+
+		internal static PixelRect FromEdges(int left, int top, int right, int bottom)
+			=> right > left && bottom > top ? new PixelRect(left, top, right - left, bottom - top) : default;
+
+		/// <summary>
+		/// Expands by <paramref name="pad"/>, rounds outward and clips to the buffer so antialiasing and pen
+		/// overhang remain inside the reported damage.
+		/// </summary>
+		internal static PixelRect FromBounds(double left, double top, double right, double bottom, double pad, PixelSize clamp)
+		{
+			var l = Math.Max(0, Floor(left - pad));
+			var t = Math.Max(0, Floor(top - pad));
+			var r = Math.Min(clamp.Width, Ceiling(right + pad));
+			var b = Math.Min(clamp.Height, Ceiling(bottom + pad));
+			return FromEdges(l, t, r, b);
+		}
+
+		internal PixelRect Union(PixelRect other)
+		{
+			if (other.IsEmpty)
+				return this;
+
+			if (IsEmpty)
+				return other;
+
+			return FromEdges(Math.Min(X, other.X), Math.Min(Y, other.Y),
+							 Math.Max(Right, other.Right), Math.Max(Bottom, other.Bottom));
+		}
+
+		internal PixelRect Intersect(PixelRect other)
+			=> FromEdges(Math.Max(X, other.X), Math.Max(Y, other.Y),
+						 Math.Min(Right, other.Right), Math.Min(Bottom, other.Bottom));
+
+		internal PixelRect Offset(int dx, int dy) => IsEmpty ? default : new PixelRect(X + dx, Y + dy, Width, Height);
+
+		// A coordinate can arrive as anything a script computed, NaN and 1e300 included; an unchecked
+		// double->int conversion of those is an unspecified value, so saturate before converting.
+		private static int Floor(double v) => double.IsNaN(v) ? 0 : (int)Math.Clamp(Math.Floor(v), int.MinValue, int.MaxValue);
+
+		private static int Ceiling(double v) => double.IsNaN(v) ? 0 : (int)Math.Clamp(Math.Ceiling(v), int.MinValue, int.MaxValue);
+	}
+
 	/// <summary>Raster pixels per native screen unit on each axis.</summary>
 	internal readonly record struct PixelScale(double X, double Y)
 	{

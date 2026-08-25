@@ -149,7 +149,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		internal bool AttachBuffer(WaylandShmBuffer buffer)
+		internal bool AttachBuffer(WaylandShmBuffer buffer, WaylandFrameDamage damage)
 		{
 			if (buffer == null)
 				return false;
@@ -160,7 +160,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					return false;
 
 				WaylandNative.SurfaceAttach(surface, buffer.Buffer, 0, 0);
-				WaylandNative.SurfaceDamageBuffer(surface, 0, 0, buffer.Width, buffer.Height);
+
+				if (damage.Kind == DamageKind.All
+						|| damage.Kind == DamageKind.Region && !WaylandNative.SupportsBufferDamage(surface))
+					WaylandNative.SurfaceDamageBuffer(surface, 0, 0, buffer.Width, buffer.Height);
+				else if (damage.Kind == DamageKind.Region)
+					WaylandNative.SurfaceDamageBuffer(surface, damage.Bounds.X, damage.Bounds.Y,
+						damage.Bounds.Width, damage.Bounds.Height);
+
 				buffer.MarkInFlight();
 				return true;
 			}
@@ -173,9 +180,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (surface == 0 || !client.IsAvailable)
 					return false;
 
-				// ack_configure MUST come before the wl_surface.commit that attaches a buffer
-				// in response to it — the layer-shell spec is explicit that committing without
-				// the ack causes the buffer to be ignored silently.
+				// The protocol requires ack_configure before the commit that attaches its buffer.
 				if (ackPending && layerSurface != 0)
 				{
 					WaylandNative.LayerSurfaceAckConfigure(layerSurface, pendingSerial);
@@ -225,7 +230,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (disposed)
 				return;
 
-			disposed = true;
 			configuredEvent.Set();
 
 			lock (WaylandLayerShellClient.Sync)
@@ -256,6 +260,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				selfHandle.Free();
 
 			configuredEvent.Dispose();
+			disposed = true;
 		}
 
 		/// <summary>Drops managed ownership without issuing requests through a failed connection. The owning
@@ -265,7 +270,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (disposed)
 				return;
 
-			disposed = true;
 			configuredEvent.Set();
 			viewport = layerSurface = surface = 0;
 
@@ -273,6 +277,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				selfHandle.Free();
 
 			configuredEvent.Dispose();
+			disposed = true;
 		}
 
 		private static WaylandLayerSurface Self(nint data) => (WaylandLayerSurface)GCHandle.FromIntPtr(data).Target;

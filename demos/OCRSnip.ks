@@ -280,7 +280,7 @@ class OCRSnip {
     }
 
     ; Positions the translucent fill and the four border edges to the current drag rectangle. Every piece is a
-    ; tiny tile the overlay STRETCHES to size, so after the first Show this is pure window moves/resizes
+    ; tiny tile the overlay stretches to size, so after the first Show this is pure window moves/resizes
     ; (Move = byte-free reposition) — no bitmap is built or uploaded per frame.
     static UpdateSelection(mx, my) {
         local r := this.NormalizeRect(this.AnchorX, this.AnchorY, mx, my)
@@ -336,11 +336,7 @@ class OCRSnip {
 
         this.ClearWordOverlays(false)
 
-        ; Collect the padded word rectangles and their overall bounding box, so EVERY box can be painted onto
-        ; a single click-through overlay. The previous version created one Overlay per word, and each Overlay
-        ; is a top-level layered window — creating hundreds of windows (a handle + UpdateLayeredWindow + a
-        ; UI-thread hop each) is what made highlighting a big area take seconds. One overlay = one window, one
-        ; paint, one upload, regardless of word count.
+        ; Collect the padded rectangles so every box is painted in one window, one draw and one upload.
         local rects := [], minX := 0x7FFFFFFF, minY := 0x7FFFFFFF, maxX := -0x7FFFFFFF, maxY := -0x7FFFFFFF
         for word in words {
             if (Trim(word.Text) = "" || word.Width < 1 || word.Height < 1)
@@ -367,8 +363,8 @@ class OCRSnip {
         for r in rects {
             local rx := r.X - minX, ry := r.Y - minY
             local rw := r.Width, rh := r.Height
-            ov.FillRoundRect(rx, ry, rw, rh, radius, "0x2200A1FF")
-            ov.DrawRoundRect(rx + 1, ry + 1, Max(1, rw - 2), Max(1, rh - 2), radius, "0xB000A1FF", 2)
+            ov.Canvas.FillRoundRect(rx, ry, rw, rh, radius, "0x2200A1FF")
+            ov.Canvas.DrawRoundRect(rx + 1, ry + 1, Max(1, rw - 2), Max(1, rh - 2), radius, "0xB000A1FF", 2)
         }
         ov.Show()
         this.WordOverlays.Push(ov)
@@ -393,8 +389,7 @@ class OCRSnip {
     }
 
     ; Builds the click-through tracking overlays and starts event-driven cursor tracking. Each piece is its
-    ; own overlay so following the pointer is a window move, not a full-screen repaint — which is what made
-    ; the old single desktop-sized overlay lag.
+    ; own overlay so following the pointer is a window move, not a full-screen repaint.
     static SetupTracking() {
         local d := this.Desktop
         MouseGetPos(&mx, &my)
@@ -407,32 +402,31 @@ class OCRSnip {
         ; Faint full-screen guide lines for precise alignment (one authored UI unit thick).
 		local thin := Max(1, Round(this.Scale))
 		this.GuideV := Overlay(mx, d.Y, thin, d.Height)
-        this.GuideV.Clear("0x661A73E8")
+        this.GuideV.Canvas.Clear("0x661A73E8")
         this.GuideV.Show()
 
 		this.GuideH := Overlay(d.X, my, d.Width, thin)
-        this.GuideH.Clear("0x661A73E8")
+        this.GuideH.Canvas.Clear("0x661A73E8")
         this.GuideH.Show()
 
         ; ...a bold crosshair reticle at the pointer (rebuilt only when it crosses to a differently-scaled display).
         this.RebuildReticle(mx, my)
 
         ; ...and the selection box: a translucent fill plus four thin border edges. Each is a tiny solid tile the
-        ; overlay STRETCHES to size, so growing the box while dragging is a window resize + one display copy —
+        ; overlay stretches to size, so growing the box while dragging is a window resize and one display copy,
         ; never a per-frame bitmap rebuilt through the image pipeline.
 		local tile := Max(1, Round(4 * this.Scale))
 		this.SelFill := Overlay(0, 0, tile, tile)
-        this.SelFill.Clear("0x331A73E8")
+        this.SelFill.Canvas.Clear("0x331A73E8")
         this.SelBars := []
         loop 4 {
 			local bar := Overlay(0, 0, tile, tile)
-            bar.Clear("0xD81A73E8")
+            bar.Canvas.Clear("0xD81A73E8")
             this.SelBars.Push(bar)
         }
 
-        ; Event-driven tracking: OnMouseMove flags a pending update the instant the pointer moves, so the
-        ; crosshair keeps up with no Sleep/SetTimer polling (the previous poll is what made it lag). The move's
-        ; dx/dy are ignored (it reports movement, not a position — see OnMove); SyncTracking reads the position.
+        ; OnMouseMove flags a pending update without polling. Its deltas report movement, not a position;
+        ; SyncTracking reads the coordinates.
         this.ih := InputHook("V")
         this.ih.OnMouseMove := (*) => this.OnMove()
         this.ih.Start()
@@ -452,7 +446,7 @@ class OCRSnip {
 		this.retHalfPx := Max(1, Round(this.RetHalf * this.Scale))
         local s := this.retHalfPx * 2
 		this.Reticle := Overlay(mx - this.retHalfPx, my - this.retHalfPx, s, s)
-        this.DrawCrosshair(this.Reticle, this.retHalfPx, this.retHalfPx)
+        this.DrawCrosshair(this.Reticle.Canvas, this.retHalfPx, this.retHalfPx)
         this.Reticle.Show()
     }
 

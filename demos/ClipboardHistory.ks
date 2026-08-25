@@ -201,7 +201,7 @@ class ClipboardHistory {
 		if !IsObject(this.picker)
 			this.picker := Overlay()
 		local pw := Round(w * scale), ph := Round(h * scale)
-		this.picker.Update(img, (l + r) // 2 - pw // 2, (t + b) // 2 - ph // 2, pw, ph)
+		this.picker.SetImage(img, (l + r) // 2 - pw // 2, (t + b) // 2 - ph // 2, pw, ph)
 		img.Dispose()
 
 		if !this.picker.Visible

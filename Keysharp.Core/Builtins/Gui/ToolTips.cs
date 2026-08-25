@@ -239,7 +239,7 @@ namespace Keysharp.Builtins
 				return 0L;
 
 			var overlay = overlays[id] ??= new Ks.KeysharpOverlay();
-			_ = overlay.Update(img, sx, sy, geometry.ScreenW, geometry.ScreenH);
+			_ = overlay.SetImage(img, sx, sy, geometry.ScreenW, geometry.ScreenH);
 
 			if (overlay.Visible is not true)
 				_ = overlay.Show();

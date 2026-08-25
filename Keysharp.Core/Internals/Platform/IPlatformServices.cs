@@ -222,14 +222,22 @@ namespace Keysharp.Internals
 		/// Wayland may return a denser backing size.</summary>
 		PixelSize GetCanvasSize(ScreenRect bounds);
 
+		/// <summary>Allocates a drawing surface of the kind this platform presents most cheaply — on Windows one
+		/// whose pixels the compositor can read directly, so a frame never has to be copied to be shown. The
+		/// caller owns the returned surface and disposes it; it is not tied to an overlay id and outlives any one
+		/// backing instance. Null if <paramref name="pixels"/> is empty or the allocation failed.</summary>
+		OverlaySurface CreateOverlaySurface(PixelSize pixels);
+
 		/// <summary>
-		/// Create or update a click-through image overlay. The service borrows <paramref name="image"/> for this
-		/// synchronous call and copies the pixels it needs; it neither retains nor disposes the bitmap. Non-positive
-		/// bounds use the image's native raster size as native screen units.
+		/// Create or update a click-through image overlay from <paramref name="surface"/>. Synchronous; the
+		/// surface remains the caller's live drawing surface and is neither retained nor disposed here.
+		/// Non-positive bounds use its raster size as native screen units. The surface carries its own damage —
+		/// the region changed since it was last presented — which is a hint; presenting more is always correct.
 		/// <paramref name="clickThrough"/> true (the usual) makes the surface transparent to mouse input; false makes
-		/// it RECEIVE mouse input so an interactive overlay can be built (where the backing supports it).
+		/// it receive mouse input so an interactive overlay can be built (where the backing supports it).
 		/// </summary>
-		bool TryShowImageOverlay(uint id, ScreenRect bounds, Bitmap image, bool clickThrough);
+		bool TryPresentImageOverlay(uint id, OverlaySurface surface, ScreenRect bounds, byte opacity,
+									bool clickThrough);
 
 		/// <summary>Registers (or, with null, removes) the receiver for pointer events on one overlay's surface.
 		/// The sink is stored by id — it survives backing recreation across Hide/Show — and is raised on the UI

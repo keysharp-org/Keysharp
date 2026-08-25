@@ -15,28 +15,49 @@ namespace Keysharp.Internals
 	internal readonly record struct OverlayPointerEvent(OverlayPointerKind Kind, int X, int Y);
 
 	/// <summary>
-	/// One click-through image overlay's platform backing. Ownership rule: <see cref="Show"/> BORROWS the bitmap
-	/// it is handed -- it copies only what it needs to display (and to satisfy same-size moves), synchronously,
-	/// and must NOT store, retain a reference to, or dispose the passed bitmap; the caller keeps ownership.
-	/// <see cref="Move"/> repositions the last shown content as cheaply as the backing can; if it cannot satisfy
-	/// the request without new pixels (e.g. a resize), it returns false and the caller re-renders via <see cref="Show"/>.
+	/// One click-through image overlay's platform backing.
+	///
+	/// The platform supplies the pixels through <see cref="OverlayBase.CreateOverlaySurface"/>; the Overlay owns
+	/// that surface, draws into it, and asks <see cref="Present"/> to put the changed part on screen. A canvas
+	/// handed to Present stays valid and
+	/// mutable afterwards — it is the live surface, not a snapshot — so a backing that cannot present from it
+	/// directly copies what it needs synchronously and never retains or disposes it.
+	///
+	/// <see cref="Move"/> repositions the last presented content as cheaply as the backing can; if it cannot
+	/// satisfy the request without new pixels (a resize), it returns false and the caller re-presents.
 	/// </summary>
 	internal interface IImageOverlayBacking : IDisposable
 	{
-		/// <summary><paramref name="clickThrough"/> true (the default for a passive HUD/highlight) makes the surface
-		/// transparent to mouse input; false makes it RECEIVE mouse input, where the backing supports an interactive
-		/// mode (Windows layered form, Eto window, or a layer surface with its default input region). A backing which
-		/// cannot be interactive must return false so selection can fall back to one which can.</summary>
-		bool Show(Bitmap image, ScreenRect bounds, bool clickThrough);
+		/// <summary>
+		/// Puts <paramref name="surface"/> on screen at <paramref name="bounds"/>. Synchronous.
+		///
+		/// The backing reconciles size itself: when the surface's pixel size is what this platform would choose
+		/// for these bounds it can present it as-is, otherwise it scales — always from the surface, never from a
+		/// previous scaled result, so repeated resizes cannot compound resampling error.
+		///
+		/// <paramref name="damage"/> is the region that changed since the last successful present, in surface
+		/// pixels. It is a hint a backing may ignore (presenting everything is always correct);
+		/// <see cref="DamageKind.None"/> means no pixels changed, but the present must still carry any change of
+		/// geometry, opacity or input mode. It is passed separately rather than read from
+		/// <c>surface.Damage</c> because the service substitutes a whole-surface value when this backing has not
+		/// presented the surface before.
+		/// </summary>
+		/// <param name="clickThrough">True (the default for a passive HUD/highlight) makes the surface
+		/// transparent to mouse input; false makes it receive mouse input, where the backing supports an
+		/// interactive mode (Windows layered form, Eto window, or a layer surface with its default input
+		/// region). A backing which cannot be interactive must return false so selection can fall back to one
+		/// which can.</param>
+		bool Present(OverlaySurface surface, ScreenRect bounds, byte opacity, bool clickThrough, DamageList damage);
+
 		bool Move(ScreenRect bounds);
 
 		/// <summary>Receiver for pointer events on an interactive (non-click-through) surface, or null when the
 		/// overlay has no registered handlers. Raised on the UI thread. Backings without a client-side input
-		/// window (compositor/layer surfaces) simply store the value and never raise it.</summary>
+		/// window (a compositor-owned actor) stores the value but does not raise it.</summary>
 		Action<OverlayPointerEvent> PointerSink { get; set; }
 
 		/// <summary>
-		/// Withdraw the on-screen surface. Returns true iff it is CONFIRMED gone (so the caller may forget the id);
+		/// Withdraw the on-screen surface. Returns true iff it is confirmed gone (so the caller may forget the id);
 		/// false means the withdraw could not be confirmed -- e.g. a dropped / timed-out compositor call -- and the
 		/// caller must keep the backing mapped so a later Hide can re-attempt rather than orphaning the surface.
 		/// Must be idempotent: a call after a successful withdraw returns true without doing more work.
@@ -61,6 +82,12 @@ namespace Keysharp.Internals
 			internal readonly IImageOverlayBacking Backing;
 			internal bool Retired;
 
+			// The surface this slot last presented, to catch a present from a different one (see
+			// TryPresentImageOverlay). Compared by reference and never dereferenced. It is a strong reference,
+			// which is what makes the comparison sound: a disposed surface cannot be collected and have a new
+			// one land on its address, so identity here always means identity.
+			internal OverlaySurface LastPresented;
+
 			internal OverlaySlot(IImageOverlayBacking backing) => Backing = backing;
 		}
 
@@ -75,6 +102,15 @@ namespace Keysharp.Internals
 
 		/// <summary>Create the backing for a new overlay id (called under the map lock; must not do UI/IO work).</summary>
 		protected abstract IImageOverlayBacking CreateBacking(uint id);
+
+		/// <summary>
+		/// Allocates a drawing surface of the kind this platform can present most cheaply. Deliberately not tied
+		/// to an overlay id or a live backing: a canvas is created before the first present (there is no window
+		/// yet) and survives the Hide that disposes the backing instance, so it belongs to the platform, not to
+		/// either of those. The default is a plain bitmap, which every backing can present by copying.
+		/// </summary>
+		public virtual OverlaySurface CreateOverlaySurface(PixelSize pixels)
+			=> pixels.HasArea ? OverlaySurface.Plain(pixels) : null;
 
 		public void SetImageOverlayPointerSink(uint id, Action<OverlayPointerEvent> sink)
 		{
@@ -103,16 +139,17 @@ namespace Keysharp.Internals
 			}
 		}
 
-		public bool TryShowImageOverlay(uint id, ScreenRect bounds, Bitmap image, bool clickThrough)
+		public bool TryPresentImageOverlay(uint id, OverlaySurface surface, ScreenRect bounds, byte opacity,
+										   bool clickThrough)
 		{
-			if (id == 0 || image == null)
+			if (id == 0 || surface?.Bitmap == null)
 				return false;
 
-			if (bounds.Width <= 0) bounds = bounds with { Width = image.Width };
-			if (bounds.Height <= 0) bounds = bounds with { Height = image.Height };
+			if (bounds.Width <= 0) bounds = bounds with { Width = surface.Size.Width };
+			if (bounds.Height <= 0) bounds = bounds with { Height = surface.Size.Height };
 
 			if (!bounds.HasArea)
-				return TryHideImageOverlay(id);   // nothing to show; the caller still owns `image`
+				return TryHideImageOverlay(id);   // nothing to show; the caller still owns `surface`
 
 			OverlaySlot slot;
 			var created = false;
@@ -130,16 +167,27 @@ namespace Keysharp.Internals
 				}
 			}
 
-			// Outside the lock (may hit the UI thread / D-Bus). The backing BORROWS `image` -- it copies what it
-			// needs, synchronously, and never stores or disposes it. The caller (the Overlay) keeps ownership of
-			// its canvas bitmap, so there is nothing to clean up here on either path.
+			// Outside the lock (may hit the UI thread / D-Bus). The surface stays the caller's: a backing either
+			// presents from it in place or copies what it needs synchronously, and never retains or disposes it.
 			lock (slot.Gate)
 			{
 				if (!IsCurrent(id, slot))
 					return false;
 
-				if (slot.Backing.Show(image, bounds, clickThrough))
+				// A backing's dirty-rect path is only sound while it keeps receiving the same surface: its
+				// window still holds what the last present put there, and a partial transfer only tops that up.
+				// Presenting a different surface breaks that assumption — Overlay.Redraw builds a whole new one,
+				// draws part of it and presents, so an unguarded partial transfer would leave the rest of the
+				// window showing the previous surface's pixels. The surface itself starts out fully damaged, so
+				// this is belt-and-braces; it lives here because "every caller remembers to damage-all a new
+				// surface" is a convention, and this is a check.
+				var damage = ReferenceEquals(slot.LastPresented, surface) ? surface.Damage : AllDamage;
+
+				if (slot.Backing.Present(surface, bounds, opacity, clickThrough, damage))
+				{
+					slot.LastPresented = surface;
 					return IsCurrent(id, slot);
+				}
 
 				if (created)
 				{
@@ -149,6 +197,16 @@ namespace Keysharp.Internals
 
 				return false;
 			}
+		}
+
+		// Shared immutable damage for a surface this backing has not presented before.
+		private static readonly DamageList AllDamage = CreateAllDamage();
+
+		private static DamageList CreateAllDamage()
+		{
+			var d = new DamageList();
+			d.AddAll();
+			return d;
 		}
 
 		public bool TryMoveImageOverlay(uint id, ScreenRect bounds)

@@ -14,7 +14,7 @@
           each lit green while that lock is on. Toggle is drawn independently of the press colour, so a key
           reports BOTH whether it is held down (blue/amber) and whether its lock is on (green) at the same time.
         - The layout adapts to the OS: Win/Super/Alt/Menu on Windows & Linux, Command/Option/Control on macOS.
-        - Both HUDs are separately draggable AND zoomable: Ctrl+drag either one to reposition it, or
+        - Both HUDs are separately draggable and zoomable: Ctrl+drag either one to reposition it, or
           Ctrl+right-drag it to scale it — drag right to enlarge, left to shrink. Only clicks that land ON a
           HUD are captured; clicks anywhere else pass straight through the click-through overlays.
         - Non-intrusive: it never swallows your input — everything you press still reaches your apps.
@@ -30,8 +30,8 @@
     option also surfaces input a hotkey/remap suppresses, so a remap's physical source and the LButton used
     to drag a HUD still register), telling physical from injected input via A_EventInfo.IsInjected, lock-key
     toggle state polled with GetKeyState(key, "T") and surfaced as green LEDs, Overlay canvases drawn with
-    Image primitives (FillRoundRect/FillEllipse/DrawText) and updated live via Update, live repositioning
-    through atomic Overlay.Update calls — re-rendered at the current display's backing density times zoom to stay
+    Image primitives (FillRoundRect/FillEllipse/DrawText) and updated live through Overlay.SetImage
+    calls — re-rendered at the current display's backing density times zoom to stay
     crisp and centre-anchored — and HotIf-scoped hotkeys so the drag/zoom
     only capture the click while the cursor is over a HUD (so normal clicks pass straight through).
 
@@ -653,11 +653,10 @@ class InputHUD {
         return z
     }
 
-    ; Commits the prepared image, centre-derived position and matching native display size as ONE backing update.
-    ; The old frame stays visible until this succeeds, so no transparent Scale frame or separately moved frame can
-	; reach the compositor. Zoom lives entirely in W/H; the renderer selects backing density automatically.
+    ; The image is prepared off-screen, so no transparent or separately moved intermediate frame is requested.
+	; Zoom lives entirely in Width/Height; the renderer selects backing density automatically.
 	static UpdateOverlay(o, img) {
-		o.ov.Update(img, o.X, o.Y, o.pw, o.ph)
+		o.ov.SetImage(img, o.X, o.Y, o.pw, o.ph)
 	}
 
 	; Refresh one HUD's monitor scale. Backing density is renderer-owned and never enters the script's geometry.
@@ -716,7 +715,7 @@ class InputHUD {
     }
 
     ; Ctrl+Alt+Shift+0 — restore the default layout after a stray drag/zoom. Reset each HUD's zoom to 1 and refresh
-    ; its pw/ph at 1x FIRST (Place lays the pair out from pw/ph), then re-place and atomically repaint both overlays.
+    ; Set its pw/ph at 1x first (Place lays the pair out from pw/ph), then re-place and repaint both overlays.
     static Reset(*) {
         this.kb.zoom := 1
         this.ms.zoom := 1

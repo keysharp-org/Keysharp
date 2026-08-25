@@ -39,23 +39,16 @@ namespace Keysharp.Internals
 	{
 		private Keysharp.Builtins.KeysharpForm form;
 #if LINUX
-		// Linux draws the bitmap through a Drawable that blits it 1:1 (natural size, top-left aligned), NOT Eto's
-		// ImageView. ImageView's GTK DrawingArea rescales its image to the widget's CURRENT allocation on every paint
-		// (Math.Min(scaleW, scaleH), centred), and a top-level GTK window only adopts a new allocation after the WM's
-		// asynchronous ConfigureNotify round-trip. So while an overlay resizes live (a zoom drag, a shrinking tooltip
-		// or highlight) a paint lands at a STALE allocation and the new bitmap is scaled up (huge/blurry), down
-		// (flicker), to zero (vanishes) or off-aspect (shifted). A 1:1 blit removes the scaling: a lagging allocation
-		// can at most clip or leave a transparent margin on the far edge for the single frame before it catches up.
-		// PaintOwned already sizes the bitmap to the exact window size, so the blit is pixel-exact in steady state.
+		// ImageView scales against GTK's asynchronously updated allocation. A 1:1 Drawable instead limits resize
+		// lag to brief clipping or a transparent far edge.
 		private Eto.Forms.Drawable imageSurface;
-		// The window manager applies GTK allocations asynchronously. Keep the requested paint extent separately so
-		// an intermediate paint clips/leaves a transparent edge instead of stretching the new frame to an old size.
 		private int paintW, paintH;
 #else
 		private ImageView imageView;
 #endif
 		private Bitmap displayed;
 		private int shownW, shownH;
+		private byte shownOpacity;
 #if OSX
 		private double shownBackingScale = 1;
 #endif
@@ -64,11 +57,7 @@ namespace Keysharp.Internals
 		// exists (or across TryHide's teardown/recreation) needs no rewiring.
 		public Action<OverlayPointerEvent> PointerSink { get; set; }
 
-		// Toolkit-window units -> overlay native units, per axis. Mouse event locations arrive in the
-		// window's TOOLKIT coordinate space, which on a GDK-scaled X11 desktop differs from the overlay's
-		// native root-pixel space (ToToolkitBounds maps between them, so bounds/windowBounds carry the
-		// ratio). Identity on Wayland and macOS, where ToToolkitBounds is a pass-through. Written on the
-		// UI thread in Show, read on the UI thread by the mouse handlers.
+		// Mouse events use toolkit units; X11 overlays expose root pixels.
 		private double pointerScaleX = 1.0, pointerScaleY = 1.0;
 
 		private OverlayPointerEvent MakePointerEvent(OverlayPointerKind kind, PointF location)
@@ -76,16 +65,47 @@ namespace Keysharp.Internals
 
 		public nint Handle => form?.Handle ?? 0;
 
-		public bool Show(Bitmap image, ScreenRect bounds, bool clickThrough)
+		public bool Present(OverlaySurface canvas, ScreenRect bounds, byte opacity, bool clickThrough, DamageList damage)
+		{
+#if LINUX
+			var reusePixels = displayed != null && shownOpacity == opacity && damage?.Kind == DamageKind.None;
+#else
+			const bool reusePixels = false;
+#endif
+			return Show(reusePixels ? null : canvas.PrepareForPresent(), bounds, clickThrough, opacity);
+		}
+
+		internal static Bitmap Snapshot(Bitmap image)
+		{
+			if (image == null)
+				return null;
+
+#if LINUX
+			if (image.Handler is not Eto.GtkSharp.Drawing.BitmapHandler { Surface: not null })
+				return new Bitmap(image);
+
+			var snapshot = new Bitmap(image.Width, image.Height, PixelFormat.Format32bppRgba);
+			using var graphics = new Graphics(snapshot);
+			graphics.DrawImage(image, 0, 0);
+			return snapshot;
+#else
+			return new Bitmap(image);
+#endif
+		}
+
+		private bool Show(Bitmap image, ScreenRect bounds, bool clickThrough, byte opacity)
 		{
 			Bitmap snapshot = null;
 			var adopted = false;
 
 			try
 			{
-				// Copy `image` on THIS (calling) thread -- the borrowed canvas may be redrawn on this thread, so
-				// snapshotting here (not inside the UI-thread callback) isolates the pixels the UI will show.
-				snapshot = new Bitmap(image);
+				if (image != null)
+				{
+					snapshot = Snapshot(image);
+					ImageHelper.ApplyOpacity(snapshot, opacity);
+				}
+
 				var snap = snapshot;
 
 				Script.InvokeOnUIThread(() =>
@@ -96,14 +116,10 @@ namespace Keysharp.Internals
 					// Keep the pointer-coordinate mapping in step with this show's geometry (see the fields).
 					pointerScaleX = windowBounds.Width > 0 ? (double)bounds.Width / windowBounds.Width : 1.0;
 					pointerScaleY = windowBounds.Height > 0 ? (double)bounds.Height / windowBounds.Height : 1.0;
-					// From here PaintOwned owns `snap` (it keeps it as `displayed`, or disposes it after resizing), so
-					// mark ownership transferred BEFORE the call: a throw past this point must not ALSO dispose it on
-					// the catch path (that would double-free the bitmap the form now holds).
-					adopted = true;
+					// PaintOwned adopts the snapshot before any operation that can throw.
+					adopted = snap != null;
 					PaintOwned(snap, bounds, windowBounds);
-					// One atomic geometry set: Eto's Window.Bounds resolves to a single gdk_window_move_resize on
-					// GTK (and setFrame on macOS), so a live resize+move (an InputHUD zoom frame) is one request and
-					// never flashes an intermediate new-size/old-position frame the way separate Size+Location did.
+					// Bounds maps to one native move-resize request.
 					form.Bounds = new Rectangle(windowBounds.X, windowBounds.Y,
 						Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height));
 
@@ -122,6 +138,7 @@ namespace Keysharp.Internals
 							Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height),
 							removeBorder: true, keepAbove: true, skipTaskbar: true);
 #endif
+					shownOpacity = opacity;
 				});
 
 				return true;   // borrow: `image` is neither retained nor disposed
@@ -180,61 +197,69 @@ namespace Keysharp.Internals
 		{
 			var size = new Size(Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height));
 			var old = displayed;
+			var next = snapshot;
 
-#if OSX
-			// Cocoa sizes windows in LOGICAL points but renders into a HiDPI backing store, so the visible surface
-			// is `size * backingScale` device pixels. Match the bitmap to that device resolution: a hi-res card
-			// bitmap (already at device size) is kept as-is for a crisp 1:1 result, while a small "stretch tile"
-			// (SelFill / guide / border bars) is scaled up to fill the view exactly. Leaving a bitmap whose aspect
-			// differs from the view would let NSImageView's ProportionallyUpOrDown scaling shrink-to-fit and CENTRE
-			// it -- which is what made a drag selection look smaller than the real area with its corner offset.
-			// macOS-unverified: use the scale of the screen the overlay is actually PLACED on (derived from x/y) rather
-			// than always the primary -- a secondary monitor with a different backingScaleFactor would otherwise render
-			// at the wrong resolution. Screen.FromRectangle is the Eto API for this; fall back to the primary screen.
-			var screen = Forms.Screen.FromRectangle(new RectangleF(bounds.X, bounds.Y, size.Width, size.Height)) ?? Forms.Screen.PrimaryScreen;
-			var backing = ScaleFactor.Normalize(screen?.LogicalPixelSize ?? 1f);
-			shownBackingScale = backing;
-			var devW = Math.Max(1, (int)Math.Round(size.Width * backing));
-			var devH = Math.Max(1, (int)Math.Round(size.Height * backing));
-
-			// Take ownership of the snapshot BEFORE the throwable resize: if ResizeBitmap fails (OOM/GDI), `displayed`
-			// still owns a live bitmap that TryHide frees, rather than the snapshot leaking (the caller already set
-			// adopted=true, so Show's catch will NOT dispose it).
-			displayed = snapshot;
-
-			if (snapshot.Width != devW || snapshot.Height != devH)
+			try
 			{
-				var resized = ImageHelper.ResizeBitmap(snapshot, devW, devH, exactPixels: true);
-				displayed = resized;
-				snapshot.Dispose();
-			}
+#if OSX
+				// Match Cocoa's point-sized window to the selected screen's device-pixel backing store.
+				var screen = Forms.Screen.FromRectangle(new RectangleF(bounds.X, bounds.Y, size.Width, size.Height)) ?? Forms.Screen.PrimaryScreen;
+				var backing = ScaleFactor.Normalize(screen?.LogicalPixelSize ?? 1f);
+				shownBackingScale = backing;
+				var devW = Math.Max(1, (int)Math.Round(size.Width * backing));
+				var devH = Math.Max(1, (int)Math.Round(size.Height * backing));
+
+				if (next.Width != devW || next.Height != devH)
+				{
+					var resized = ImageHelper.ResizeBitmap(next, devW, devH, exactPixels: true);
+
+					if (!ReferenceEquals(resized, next))
+					{
+						var unscaled = next;
+						next = resized;
+						try { unscaled.Dispose(); } catch { }
+					}
+				}
+
+				displayed = next;
 #else
-			// GTK/Cairo owns the mapping from widget units to its backing surface. Keep the renderer-selected raster
-			// intact and draw it into the widget's native rectangle in the Paint handler; resizing it here would throw
-			// away HiDPI pixels on Wayland and would incorrectly apply GTK's scale to X11 root-pixel coordinates.
-			displayed = snapshot;
+				// GTK/Cairo owns the mapping from widget units to its backing surface. Keep the renderer-selected raster
+				// intact and draw it into the widget's native rectangle in the Paint handler; resizing it here would throw
+				// away HiDPI pixels on Wayland and would incorrectly apply GTK's scale to X11 root-pixel coordinates.
+				if (next != null)
+					displayed = next;
 #endif
 
 #if LINUX
-			// The outer window's geometry (position AND size) is applied atomically by the caller via form.Bounds so
-			// a live resize does not jitter; here we size only the inner Drawable. The Drawable holds no image of its
-			// own -- it reads `displayed` in its Paint handler. Resize it to the window, then Invalidate. This
-			// immediate Invalidate is also what repaints a SAME-SIZE content change (a Highlight recolour, an opacity
-			// re-push, a same-size tooltip text swap) -- cases where SizeChanged in EnsureForm never fires -- so it is
-			// NOT redundant with that handler; the two cover different cases.
-			paintW = size.Width;
-			paintH = size.Height;
-			imageSurface.Size = size;
-			imageSurface.Invalidate();
+				// Invalidate explicitly because same-size content changes do not raise SizeChanged.
+				paintW = size.Width;
+				paintH = size.Height;
+				imageSurface.Size = size;
+				imageSurface.Invalidate();
 #else
-			imageView.Image = displayed;
-			imageView.Size = size;
+				imageView.Image = next;
+				imageView.Size = size;
 #endif
-			// Free the previous frame only now that the view/Drawable references the NEW bitmap: on macOS imageView
-			// still points at `old` until the assignment above, so disposing earlier briefly freed the live image.
-			old?.Dispose();
-			shownW = bounds.Width;
-			shownH = bounds.Height;
+				// The view must stop referencing the replaced frame before it is disposed.
+				if (next != null)
+					try { old?.Dispose(); } catch { }
+
+				shownW = bounds.Width;
+				shownH = bounds.Height;
+			}
+			catch
+			{
+				if (next != null)
+				{
+					displayed = old;
+#if OSX
+					try { imageView.Image = old; } catch { }
+#endif
+					try { next.Dispose(); } catch { }
+				}
+
+				throw;
+			}
 		}
 
 		private static ScreenRect ToToolkitBounds(ScreenRect bounds)
@@ -258,12 +283,7 @@ namespace Keysharp.Internals
 				ShowActivated = false,
 				CanFocus = false,
 				TopMost = true,
-				// Must be resizable so PaintOwned can SHRINK the window, not just grow it: GTK3 forces AutoSize when
-				// !Resizable and ignores gtk_window_resize() on a non-resizable window, so a smaller PaintOwned size
-				// was a no-op and the previous (larger) window stretched the new smaller bitmap -- an overlay that
-				// shrank in place (zoom-out, a shorter tooltip after a longer one, a shrinking highlight) blurred at
-				// its old size. The overlay is click-through + borderless + non-taskbar, so this never lets the user
-				// resize it; it only lets us set the exact size both ways. PaintOwned always sets form.Size explicitly.
+				// GTK ignores shrinking a non-resizable window; the borderless overlay still has no user resize affordance.
 				Resizable = true,
 				BackgroundColor = Colors.Transparent
 			};
@@ -321,7 +341,7 @@ namespace Keysharp.Internals
 				PointerSink?.Invoke(MakePointerEvent(OverlayPointerKind.MouseMove, e.Location));
 #if OSX
 			// MouseMove on a never-key window (ShowActivated=false) needs acceptsMouseMovedEvents on the
-			// NSWindow — Cocoa otherwise routes motion only to the key window. First-CLICK delivery is a
+			// NSWindow — Cocoa otherwise routes motion only to the key window. First-click delivery is a
 			// view-level acceptsFirstMouse question that cannot be set from here; it is flagged in
 			// docs/design-wayland-overlay-input.md as the one remaining macOS unknown for OnEvent.
 			try
@@ -332,9 +352,7 @@ namespace Keysharp.Internals
 			catch { }
 #endif
 			form.SetClickThrough(true);
-			// Take the overlay out of WM control (override-redirect): it is placed at exact pixels (no reposition
-			// when a live HUD resizes every frame) AND kept in the topmost layer, above even +AlwaysOnTop windows,
-			// so a highlight over an always-on-top window is visible. Set before the form is mapped.
+			// Override-redirect preserves exact placement and stacking for X11 overlays.
 #if LINUX
 			Eto.Forms.EtoExtensions.SetFormOverlayTopmost(form);
 #endif
@@ -368,6 +386,7 @@ namespace Keysharp.Internals
 #endif
 					displayed?.Dispose();
 					displayed = null;
+					shownOpacity = 0;
 				}
 				catch { closed = false; }   // leave `form` set so a later retry can re-close it
 			});

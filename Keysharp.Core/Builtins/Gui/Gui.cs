@@ -3022,7 +3022,7 @@ namespace Keysharp.Builtins
 			if (fileName is Ks.KeysharpImage image)
 			{
 				//Borrowed: the image keeps its bitmap, so a size is applied to a copy rather than to it.
-				var pixels = image.PeekBitmap();
+				var pixels = image.PrepareForRead();
 				using var sized = width > 0 && pixels != null ? pixels.Resize(width, width) : null;
 				icon = ImageHelper.IconFromBitmap(sized ?? pixels);
 			}

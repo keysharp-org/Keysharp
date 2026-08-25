@@ -3,6 +3,67 @@ using System.Buffers;
 
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
+	internal readonly record struct WaylandFrameDamage(DamageKind Kind, PixelRect Bounds)
+	{
+		internal static WaylandFrameDamage None => new(DamageKind.None, default);
+		internal static WaylandFrameDamage All => new(DamageKind.All, default);
+
+		internal static WaylandFrameDamage Region(PixelRect bounds)
+			=> bounds.IsEmpty ? None : new(DamageKind.Region, bounds);
+
+		internal WaylandFrameDamage Merge(WaylandFrameDamage other)
+		{
+			if (Kind == DamageKind.All || other.Kind == DamageKind.All)
+				return All;
+
+			if (Kind == DamageKind.None)
+				return other;
+
+			if (other.Kind == DamageKind.None)
+				return this;
+
+			return Region(Bounds.Union(other.Bounds));
+		}
+	}
+
+	internal readonly record struct WaylandBufferInterpretation(int Width, int Height, Rectangle Source, byte Opacity);
+
+	internal sealed class WaylandDamageHistory
+	{
+		private readonly WaylandFrameDamage[] frames;
+		private long nextFrame;
+
+		internal WaylandDamageHistory(int capacity) => frames = new WaylandFrameDamage[capacity];
+
+		internal WaylandFrameDamage Resolve(long lastPresentedFrame, WaylandFrameDamage current)
+		{
+			var age = nextFrame - lastPresentedFrame;
+
+			if (lastPresentedFrame < 0 || age < 1 || age > frames.Length)
+				return WaylandFrameDamage.All;
+
+			var result = current;
+
+			for (var frame = lastPresentedFrame + 1; frame < nextFrame; frame++)
+				result = result.Merge(frames[(int)(frame % frames.Length)]);
+
+			return result;
+		}
+
+		internal long Commit(WaylandFrameDamage damage)
+		{
+			var frame = nextFrame++;
+			frames[(int)(frame % frames.Length)] = damage;
+			return frame;
+		}
+
+		internal void Reset()
+		{
+			Array.Clear(frames);
+			nextFrame = 0;
+		}
+	}
+
 	/// <summary>
 	/// Generic click-through image overlay backed by zwlr_layer_shell + wl_shm.
 	/// Pixels are copied into a premultiplied ARGB8888 SHM buffer and displayed on the overlay layer.
@@ -28,6 +89,30 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private int marginTop;
 		private WaylandShmBuffer preparedBuffer;
 		private int preparedMarginLeft, preparedMarginTop;
+
+		#region Partial updates
+
+		private readonly WaylandDamageHistory damageHistory = new(WaylandBufferPoolPolicy.Capacity + 1);
+		private WaylandBufferInterpretation? historyInterpretation;
+		private WaylandFrameDamage preparedSemanticDamage;
+		private WaylandFrameDamage preparedWriteDamage;
+
+		private void ResetDamageHistory(int bufferWidth, int bufferHeight, Rectangle source, byte opacity)
+		{
+			var interpretation = new WaylandBufferInterpretation(bufferWidth, bufferHeight, source, opacity);
+
+			if (historyInterpretation == interpretation)
+				return;
+
+			damageHistory.Reset();
+			historyInterpretation = interpretation;
+
+			// Every pooled buffer's recorded age describes a geometry that no longer exists.
+			foreach (var b in bufferPool)
+				b.LastPresentedFrame = -1;
+		}
+
+		#endregion
 		private uint outputName;
 		private bool disposed;
 		private bool connectionInvalidated;
@@ -35,8 +120,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal nint Handle => surface?.Surface ?? 0;
 		internal bool IsAvailable => !disposed && !connectionInvalidated && client.IsAvailable;
 
-		// Pointer sink for an INTERACTIVE overlay, set by LayerImageBacking with the fragment's segment offset
-		// baked in. Invoked by the client's wl_pointer listener on its dispatcher thread with SURFACE-LOCAL
+		// Pointer sink for an interactive overlay, set by LayerImageBacking with the fragment's segment offset
+		// baked in. Invoked by the client's wl_pointer listener on its dispatcher thread with surface-local
 		// logical coordinates; a plain delegate field read/written from different threads is a benign race
 		// (either the old or new sink sees the event).
 		internal Action<OverlayPointerKind, double, double> PointerSink;
@@ -56,17 +141,22 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// created, or never configured within the timeout) so the caller can fall back to a visible Eto window
 		// instead of recording a phantom "shown" overlay with nothing on screen.
 		internal bool Show(Bitmap image, Rectangle sourcePixels, ScreenRect bounds,
-			WaylandLayerShellClient.OutputTarget output, bool clickThrough)
+			WaylandLayerShellClient.OutputTarget output, bool clickThrough,
+			byte opacity = 255, DamageKind sourceDamageKind = DamageKind.All, PixelRect sourceDamage = default)
 		{
 			lock (stateSync)
-				return PrepareCore(image, sourcePixels, bounds, output, clickThrough) && CommitPreparedCore();
+				return PrepareCore(image, sourcePixels, bounds, output, clickThrough, opacity,
+						sourceDamageKind, sourceDamage)
+					   && CommitPreparedCore();
 		}
 
 		internal bool Prepare(Bitmap image, Rectangle sourcePixels, ScreenRect bounds,
-			WaylandLayerShellClient.OutputTarget output, bool clickThrough)
+			WaylandLayerShellClient.OutputTarget output, bool clickThrough,
+			byte opacity = 255, DamageKind sourceDamageKind = DamageKind.All, PixelRect sourceDamage = default)
 		{
 			lock (stateSync)
-				return PrepareCore(image, sourcePixels, bounds, output, clickThrough);
+				return PrepareCore(image, sourcePixels, bounds, output, clickThrough, opacity,
+					sourceDamageKind, sourceDamage);
 		}
 
 		internal bool CommitPrepared()
@@ -76,7 +166,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		private bool PrepareCore(Bitmap image, Rectangle sourcePixels, ScreenRect bounds,
-			WaylandLayerShellClient.OutputTarget output, bool clickThrough)
+			WaylandLayerShellClient.OutputTarget output, bool clickThrough, byte opacity,
+			DamageKind sourceDamageKind, PixelRect sourceDamage)
 		{
 			if (disposed || connectionInvalidated || !client.IsAvailable)
 				return false;
@@ -99,9 +190,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return false;
 			}
 
-			// A layer surface is permanently assigned to the wl_output passed at construction. Crossing a monitor
-			// therefore requires a fresh surface; keeping global margins on the old output is what previously made an
-			// overlay disappear or jump on mixed monitor layouts.
+			// A layer surface is permanently assigned to one wl_output, so crossing a monitor needs a fresh one.
 			if (surface != null && output.RegistryName != outputName)
 				TeardownSurface();
 
@@ -123,12 +212,30 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				|| !TryResolvePixelLength(h, useViewport ? output.BufferScale : bufferScale, out var pixelHeight))
 				return false;
 
+			var source = Rectangle.Intersect(sourcePixels, new Rectangle(0, 0, image.Width, image.Height));
+
+			if (source.Width <= 0 || source.Height <= 0)
+				return false;
+
+			ResetDamageHistory(pixelWidth, pixelHeight, source, opacity);
 			var target = AcquireBuffer(pixelWidth, pixelHeight);
 
 			if (target == null)
 				return false;
 
-			CopyImageToBuffer(image, sourcePixels, target, pixelWidth, pixelHeight);
+			var oneToOne = pixelWidth == source.Width && pixelHeight == source.Height;
+			var semanticDamage = oneToOne
+				? ToBufferDamage(sourceDamageKind, sourceDamage, source, pixelWidth, pixelHeight)
+				: sourceDamageKind == DamageKind.None ? WaylandFrameDamage.None : WaylandFrameDamage.All;
+			var writeDamage = damageHistory.Resolve(target.LastPresentedFrame, semanticDamage);
+
+			if (writeDamage.Kind == DamageKind.All)
+				CopyImageToBuffer(image, source, target, pixelWidth, pixelHeight, opacity);
+			else if (writeDamage.Kind == DamageKind.Region)
+				CopyImageRegionToBuffer(image, source, target, writeDamage.Bounds, opacity);
+
+			preparedSemanticDamage = semanticDamage;
+			preparedWriteDamage = writeDamage;
 			var initiallyConfigured = surface.IsConfigured;
 			surface.SetSize((uint)w, (uint)h);
 			surface.SetMargin(localY, 0, 0, localX);
@@ -169,12 +276,37 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return false;
 
 			preparedBuffer = null;
-			if (!surface.AttachBuffer(target) || !surface.Commit())
+			var semanticDamage = preparedSemanticDamage;
+			var writeDamage = preparedWriteDamage;
+			preparedSemanticDamage = default;
+			preparedWriteDamage = default;
+
+			if (!surface.AttachBuffer(target, writeDamage) || !surface.Commit())
 				return false;
 
+			target.LastPresentedFrame = damageHistory.Commit(semanticDamage);
 			marginLeft = preparedMarginLeft;
 			marginTop = preparedMarginTop;
 			return true;
+		}
+
+		/// <summary>
+		/// Maps damage from the canvas's pixels into this fragment's buffer. Only meaningful when the buffer is
+		/// 1:1 with <paramref name="source"/>; the caller checks that.
+		/// </summary>
+		private static WaylandFrameDamage ToBufferDamage(DamageKind kind, PixelRect canvasDamage,
+			Rectangle source, int bufferWidth, int bufferHeight)
+		{
+			if (kind == DamageKind.All)
+				return WaylandFrameDamage.All;
+
+			if (kind == DamageKind.None)
+				return WaylandFrameDamage.None;
+
+			var clipped = canvasDamage.Intersect(new PixelRect(source.X, source.Y, source.Width, source.Height));
+			var bounds = clipped.Offset(-source.X, -source.Y)
+				.Intersect(new PixelRect(0, 0, bufferWidth, bufferHeight));
+			return WaylandFrameDamage.Region(bounds);
 		}
 
 		private static bool TryResolvePixelLength(int logicalLength, double scale, out int pixels)
@@ -304,8 +436,64 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
+		/// <summary>
+		/// Writes only <paramref name="region"/> of <paramref name="target"/>, reading the matching pixels of
+		/// <paramref name="source"/> 1:1. Falls back to a whole-buffer copy when the bitmap has no Cairo
+		/// surface to read (nothing drawn yet, or a non-GTK backend).
+		/// </summary>
+		private static unsafe void CopyImageRegionToBuffer(Bitmap image, Rectangle source,
+			WaylandShmBuffer target, PixelRect region, byte opacity)
+		{
+			if (image == null || target == null || target.Data == 0 || region.IsEmpty)
+				return;
+
+			if (image.Handler is not Eto.GtkSharp.Drawing.BitmapHandler handler
+					|| handler.Surface is not { } surface || surface.Format != Cairo.Format.Argb32
+					|| surface.DataPtr == 0)
+			{
+				CopyImageToBuffer(image, source, target, target.Width, target.Height, opacity);
+				return;
+			}
+
+			surface.Flush();
+			var srcBase = (byte*)surface.DataPtr;
+			var srcStride = surface.Stride;
+			var dstBase = (uint*)target.Data;
+			var dstStride = target.Stride / 4;
+
+			for (var y = region.Y; y < region.Bottom; y++)
+			{
+				var srcRow = (uint*)(srcBase + (long)(source.Y + y) * srcStride) + source.X + region.X;
+				var dstRow = dstBase + (long)y * dstStride + region.X;
+
+				if (opacity == 255)
+					Buffer.MemoryCopy(srcRow, dstRow, (long)region.Width * 4, (long)region.Width * 4);
+				else
+					for (var x = 0; x < region.Width; x++)
+						dstRow[x] = ScalePremultiplied(srcRow[x], opacity);
+			}
+		}
+
+		// Both the source and the shm buffer are premultiplied, so a constant alpha scales all four channels
+		// alike — including alpha itself, which is what keeps the result premultiplied.
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static uint ScalePremultiplied(uint argb, byte opacity)
+		{
+			if (opacity == 255)
+				return argb;
+
+			if (opacity == 0)
+				return 0;
+
+			var a = ((argb >> 24) & 0xFF) * opacity / 255;
+			var r = ((argb >> 16) & 0xFF) * opacity / 255;
+			var g = ((argb >> 8) & 0xFF) * opacity / 255;
+			var b = (argb & 0xFF) * opacity / 255;
+			return (a << 24) | (r << 16) | (g << 8) | b;
+		}
+
 		private static unsafe void CopyImageToBuffer(Bitmap image, Rectangle sourcePixels,
-			WaylandShmBuffer target, int width, int height)
+			WaylandShmBuffer target, int width, int height, byte opacity = 255)
 		{
 			if (image == null || target == null || target.Data == 0)
 				return;
@@ -313,6 +501,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			var source = Rectangle.Intersect(sourcePixels, new Rectangle(0, 0, image.Width, image.Height));
 
 			if (source.Width <= 0 || source.Height <= 0)
+				return;
+
+			// Cairo's ARGB32 surface is current, premultiplied, and matches the SHM byte layout. Reading it directly
+			// avoids the lossy surface-to-pixbuf conversion performed by Lock().
+			if (CopyFromCairoSurface(image, source, target, width, height, opacity))
 				return;
 
 			var src32 = ImageHelper.EnsureOpaque32Bpp(image);
@@ -356,7 +549,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						else
 							argb = (uint)data.TranslateDataToArgb((int)raw);
 
-						dstRow[x] = Premultiply(argb);
+						dstRow[x] = ScalePremultiplied(Premultiply(argb), opacity);
 					}
 				}
 			}
@@ -368,6 +561,56 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (!ReferenceEquals(src32, image))
 					src32.Dispose();
 			}
+		}
+
+		/// <summary>
+		/// Copies straight out of the bitmap's Cairo surface when it has one, leaving that surface intact.
+		/// False when there is none (nothing has been drawn yet, or this is not the GTK backend), and the
+		/// caller falls back to the pixbuf path.
+		/// </summary>
+		private static unsafe bool CopyFromCairoSurface(Bitmap image, Rectangle source,
+			WaylandShmBuffer target, int width, int height, byte opacity)
+		{
+			if (image.Handler is not Eto.GtkSharp.Drawing.BitmapHandler handler)
+				return false;
+
+			var surface = handler.Surface;
+
+			// Argb32 only: a bitmap created without alpha gets an Rgb24 surface, whose 32-bit words carry no
+			// usable alpha for a per-pixel-alpha overlay.
+			if (surface == null || surface.Format != Cairo.Format.Argb32)
+				return false;
+
+			surface.Flush();
+			var srcBase = (byte*)surface.DataPtr;
+
+			if (srcBase == null)
+				return false;
+
+			var srcStride = surface.Stride;
+			var dstBase = (uint*)target.Data;
+			var dstStride = target.Stride / 4;
+			var oneToOne = width == source.Width && height == source.Height;
+
+			for (var y = 0; y < height; y++)
+			{
+				var sourceY = source.Y + (oneToOne ? y : SampleIndex(y, height, source.Height));
+				var srcRow = (uint*)(srcBase + (long)sourceY * srcStride);
+				var dstRow = dstBase + (long)y * dstStride;
+
+				if (oneToOne && opacity == 255)
+				{
+					// Identical layout and identical alpha convention: whole rows move as memory.
+					Buffer.MemoryCopy(srcRow + source.X, dstRow, (long)width * 4, (long)width * 4);
+					continue;
+				}
+
+				for (var x = 0; x < width; x++)
+					dstRow[x] = ScalePremultiplied(
+						srcRow[source.X + (oneToOne ? x : SampleIndex(x, width, source.Width))], opacity);
+			}
+
+			return true;
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -399,6 +642,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private void TeardownSurface(bool abandon = false, bool forceLocal = false)
 		{
 			preparedBuffer = null;
+			preparedSemanticDamage = default;
+			preparedWriteDamage = default;
+			historyInterpretation = null;
+			damageHistory.Reset();
 			if (abandon)
 				surface?.Abandon();
 			else
@@ -442,8 +689,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (disposed)
 					return;
 
-				disposed = true;
 				TeardownSurface(connectionInvalidated || !client.IsAvailable);
+				disposed = true;
 			}
 
 			client.Unregister(this);

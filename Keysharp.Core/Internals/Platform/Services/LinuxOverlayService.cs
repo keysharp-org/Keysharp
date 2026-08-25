@@ -38,8 +38,8 @@ namespace Keysharp.Internals
 
 		internal LinuxImageOverlayBacking(uint id) => this.id = id;
 
-		// Forwarded to whichever concrete backing selection picked (only the Eto fallback ever raises it;
-		// layer/compositor surfaces have no client-side input window).
+		// Forwarded to whichever concrete backing selection picked. Eto and layer-shell surfaces can raise it;
+		// compositor actors cannot receive client input.
 		public Action<OverlayPointerEvent> PointerSink
 		{
 			get => pointerSink;
@@ -54,38 +54,36 @@ namespace Keysharp.Internals
 
 		public nint Handle => inner?.Handle ?? 0;
 
-		public bool Show(Bitmap image, ScreenRect bounds, bool clickThrough)
+		// Each concrete Linux backing implements opacity, so lazy selection cannot invalidate this answer.
+		public bool Present(OverlaySurface canvas, ScreenRect bounds, byte opacity, bool clickThrough, DamageList damage)
 		{
+			if (inner is CompositorImageBacking && !clickThrough && !RetireActor())
+				return false;
+
 			if (inner != null)
 			{
-				if (inner.Show(image, bounds, clickThrough))
+				if (inner.Present(canvas, bounds, opacity, clickThrough, damage))
 					return true;
 
-				// A layer-shell connection can disappear on compositor restart. Its children are invalidated before
-				// wl_display_disconnect; retire that terminal backing and run normal selection again on the new client.
+				// A compositor restart invalidates the layer-shell backing; its replacement needs a complete frame.
 				if (inner is LayerImageBacking layer && !layer.IsAvailable)
 				{
 					inner.Dispose();
 					inner = null;
-					return Show(image, bounds, clickThrough);
+					return Present(canvas, bounds, opacity, clickThrough, AllDamage());
 				}
+
+				if (inner is CompositorImageBacking && RetireActor())
+					return Present(canvas, bounds, opacity, clickThrough, AllDamage());
 
 				return false;
 			}
 
-			var preferred = CreatePreferred();
+			var preferred = CreatePreferred(clickThrough);
 			preferred.PointerSink = pointerSink;
 
-			// Every backing borrows `image` (copies what it needs, never disposes it), so we can hand the same
-			// bitmap to the preferred backing and, if it genuinely can't render it, straight to the Eto fallback
-			// -- no clone needed. Crucially, the compositor backing does NOT report a transient D-Bus TIMEOUT as a
-			// failure: the shell almost certainly still received the (cold, large) upload and created the actor,
-			// so it commits and returns true, and the next Show/Move updates that same shell-owned actor in place.
-			// Only a DEFINITIVE failure (the extension rejected the call / is absent) returns false here. That is
-			// what prevents the duplicated-overlay bug -- a naive fallback on timeout would leave the shell's actor
-			// (correctly positioned) PLUS a second Eto window that native-Wayland GDK cannot position, so it piles
-			// up in the screen centre and, being `inner`, steals every live update. See CompositorImageBacking.Show.
-			if (preferred.Show(image, bounds, clickThrough))
+			// The compositor backing treats an ambiguous timeout as success, preventing a duplicate Eto window.
+			if (preferred.Present(canvas, bounds, opacity, clickThrough, AllDamage()))
 			{
 				inner = preferred;
 				return true;
@@ -98,7 +96,7 @@ namespace Keysharp.Internals
 
 			var fallback = new EtoImageOverlay { PointerSink = pointerSink };
 
-			if (fallback.Show(image, bounds, clickThrough))
+			if (fallback.Present(canvas, bounds, opacity, clickThrough, AllDamage()))
 			{
 				inner = fallback;
 				return true;
@@ -106,6 +104,23 @@ namespace Keysharp.Internals
 
 			fallback.Dispose();
 			return false;
+		}
+
+		private static DamageList AllDamage()
+		{
+			var damage = new DamageList();
+			damage.AddAll();
+			return damage;
+		}
+
+		private bool RetireActor()
+		{
+			if (inner is not CompositorImageBacking actor || !actor.TryHide())
+				return false;
+
+			actor.Dispose();
+			inner = null;
+			return true;
 		}
 
 		public bool Move(ScreenRect bounds) => inner?.Move(bounds) ?? false;
@@ -131,14 +146,14 @@ namespace Keysharp.Internals
 			inner = null;
 		}
 
-		private IImageOverlayBacking CreatePreferred()
+		private IImageOverlayBacking CreatePreferred(bool clickThrough)
 		{
 			var client = Wl.WaylandLayerShellClient.Current;
 
 			if (client != null && client.IsAvailable)
 				return new LayerImageBacking();
 
-			if (IsWaylandSession && ShouldAttemptCompositor(Wl.WaylandBackend.Current))
+			if (clickThrough && IsWaylandSession && ShouldAttemptCompositor(Wl.WaylandBackend.Current))
 				return new CompositorImageBacking(id);
 
 			return new EtoImageOverlay();
@@ -169,11 +184,11 @@ namespace Keysharp.Internals
 
 		private readonly Dictionary<uint, Fragment> fragments = [];
 		private int shownW, shownH;
+		private byte shownOpacity;
+		private bool shownClickThrough;
 		private Action<OverlayPointerEvent> pointerSink;
 
-		// Raised via the layer-shell client's wl_pointer listener: an interactive surface already has a full
-		// input region, and each fragment forwards its surface-local events here with its segment offset added
-		// (surface-local logical units ARE the overlay's native units on Wayland).
+		// Each fragment adds its segment offset to the layer surface's local pointer coordinates.
 		public Action<OverlayPointerEvent> PointerSink
 		{
 			get => pointerSink;
@@ -204,6 +219,19 @@ namespace Keysharp.Internals
 			}
 		}
 
+		private bool Matches(IReadOnlyList<Wl.WaylandLayerShellClient.OutputSegment> segments)
+		{
+			if (segments.Count != fragments.Count)
+				return false;
+
+			foreach (var segment in segments)
+				if (!fragments.TryGetValue(segment.Output.RegistryName, out var fragment)
+						|| fragment.Segment != segment)
+					return false;
+
+			return true;
+		}
+
 		public nint Handle
 		{
 			get
@@ -230,7 +258,14 @@ namespace Keysharp.Internals
 			}
 		}
 
-		public bool Show(Bitmap image, ScreenRect bounds, bool clickThrough)
+		// A constant alpha is folded into the pixel copy that has to happen anyway, so fading costs nothing
+		// beyond the multiply — no cloning the canvas.
+		public bool Present(OverlaySurface canvas, ScreenRect bounds, byte opacity, bool clickThrough, DamageList damage)
+			=> Show(canvas, bounds, clickThrough, opacity,
+				damage?.Kind ?? DamageKind.All, damage?.Union() ?? default);
+
+		private bool Show(OverlaySurface canvas, ScreenRect bounds, bool clickThrough,
+			byte opacity, DamageKind canvasDamageKind, PixelRect canvasDamage)
 		{
 			var client = Wl.WaylandLayerShellClient.Current;
 
@@ -244,6 +279,12 @@ namespace Keysharp.Internals
 				if (segments.Count == 0)
 					return false;
 
+				if (canvasDamageKind == DamageKind.None && shownOpacity == opacity
+						&& shownClickThrough == clickThrough && Matches(segments))
+					return true;
+
+				var image = canvas.PrepareForPresent();
+
 				// The steady-state animation path has one unchanged surface: update only its next buffer. Geometry and
 				// multi-output changes are staged below because mutating several live fragments sequentially would expose
 				// a half-old/half-new frame if a later output failed.
@@ -253,12 +294,14 @@ namespace Keysharp.Internals
 					var segment = segments[0];
 
 					if (!existing.Overlay.Show(image, SourcePixels(image, bounds, segment), segment.Bounds,
-							segment.Output, clickThrough))
+							segment.Output, clickThrough, opacity, canvasDamageKind, canvasDamage))
 						return false;
 
 					existing.Segment = segment;
 					shownW = bounds.Width;
 					shownH = bounds.Height;
+					shownOpacity = opacity;
+					shownClickThrough = clickThrough;
 					ApplyPointerSinks();   // the segment offset may have changed with the geometry
 					return true;
 				}
@@ -272,8 +315,10 @@ namespace Keysharp.Internals
 					{
 						var overlay = new Wl.WaylandImageOverlay(client);
 
+						// A brand-new fragment surface has no previous content, so it must be written whole
+						// regardless of what changed on the canvas.
 						if (!overlay.Prepare(image, SourcePixels(image, bounds, segment), segment.Bounds,
-								segment.Output, clickThrough))
+								segment.Output, clickThrough, opacity))
 						{
 							overlay.Dispose();
 							return false;
@@ -306,6 +351,8 @@ namespace Keysharp.Internals
 
 				shownW = bounds.Width;
 				shownH = bounds.Height;
+				shownOpacity = opacity;
+				shownClickThrough = clickThrough;
 				ApplyPointerSinks();   // fresh fragments need the sink with their segment offsets
 
 				// Replacements are already configured and mapped, so retiring old surfaces cannot flash a blank frame.
@@ -371,15 +418,27 @@ namespace Keysharp.Internals
 
 		public bool TryHide()
 		{
-			// Tearing down our own Wayland SHM surface is local and synchronous, so it either succeeds or throws.
+			if (!TryRetire(fragments, fragment => fragment.Overlay.Dispose()))
+				return false;
+
+			shownW = shownH = 0;
+			shownOpacity = 0;
+			shownClickThrough = false;
+			return true;
+		}
+
+		internal static bool TryRetire<T>(Dictionary<uint, T> owned, Action<T> retire)
+		{
 			var success = true;
 
-			foreach (var fragment in fragments.Values)
-				try { fragment.Overlay.Dispose(); }
+			foreach (var pair in owned.ToArray())
+				try
+				{
+					retire(pair.Value);
+					owned.Remove(pair.Key);
+				}
 				catch { success = false; }
 
-			fragments.Clear();
-			shownW = shownH = 0;
 			return success;
 		}
 
@@ -410,6 +469,8 @@ namespace Keysharp.Internals
 		private readonly uint id;
 		private bool shown;
 		private bool hidden;
+		private ScreenRect shownBounds;
+		private byte shownOpacity;
 
 		internal CompositorImageBacking(uint id) => this.id = id;
 
@@ -418,19 +479,33 @@ namespace Keysharp.Internals
 
 		public nint Handle => 0;
 
-		public bool Show(Bitmap image, ScreenRect bounds, bool clickThrough)
+		// Actor opacity is folded into the encoded snapshot.
+		public bool Present(OverlaySurface canvas, ScreenRect bounds, byte opacity, bool clickThrough, DamageList damage)
 		{
 			// Compositor-extension actors are passive. Returning false selects the interactive Eto backing instead of
 			// falsely claiming that this surface can receive input.
 			if (!clickThrough)
 				return false;
 
+			if (shown && damage?.Kind == DamageKind.None && opacity == shownOpacity)
+			{
+				if (bounds == shownBounds)
+					return true;
+
+				if (CanMoveWithoutUpload(shownBounds, bounds)
+						&& Wl.WaylandBackend.Current?.TryMoveImageOverlay(id, bounds.X, bounds.Y,
+						bounds.Width, bounds.Height) == true)
+				{
+					shownBounds = bounds;
+					return true;
+				}
+			}
+
 			try
 			{
-				// ToPngBytes reads `image` into a PNG (Eto ToByteArray / GDI Save) which is what gets uploaded;
-				// `image` itself is never retained or disposed (borrow contract). ToPngBytes / the D-Bus call
-				// can throw -- return false without touching `image` on every path.
-				var bytes = ImageHelper.ToPngBytes(image);
+				using var snapshot = EtoImageOverlay.Snapshot(canvas.PrepareForPresent());
+				ImageHelper.ApplyOpacity(snapshot, opacity);
+				var bytes = ImageHelper.ToPngBytes(snapshot);
 
 				if (bytes.Length == 0)
 					return false;
@@ -438,16 +513,14 @@ namespace Keysharp.Internals
 				var result = Wl.WaylandBackend.Current?.TryShowImageOverlay(id, bounds.X, bounds.Y, bounds.Width, bounds.Height, bytes)
 							 ?? Wl.OverlayShowResult.Failed;
 
-				// A DEFINITIVE Failed means the extension is absent or rejected the call -- report failure so the
-				// LinuxImageOverlayBacking wrapper falls back to a (visible) Eto window. A TIMEOUT is NOT a failure:
-				// the shell almost certainly still received this (cold, large) upload and created the actor, so we
-				// commit to the compositor -- mark it shown (the actor exists, or will momentarily, and the next
-				// Show/Move updates it in place) rather than spawning a duplicate Eto window for the same overlay.
+				// A timeout is ambiguous and may mean the actor was created; only a definitive rejection falls back.
 				if (result == Wl.OverlayShowResult.Failed)
 					return false;
 
 				shown = true;
 				hidden = false;
+				shownBounds = bounds;
+				shownOpacity = opacity;
 				return true;
 			}
 			catch
@@ -458,10 +531,22 @@ namespace Keysharp.Internals
 
 		public bool Move(ScreenRect bounds)
 		{
-			// Byte-free reposition: the compositor keeps the pixels we already uploaded and just moves the actor.
-			// If that fast path is unavailable, return false so the overlay re-renders via Show.
-			return shown && Wl.WaylandBackend.Current?.TryMoveImageOverlay(id, bounds.X, bounds.Y, bounds.Width, bounds.Height) == true;
+			if (!shown || !CanMoveWithoutUpload(shownBounds, bounds))
+				return false;
+
+			if (bounds == shownBounds)
+				return true;
+
+			if (Wl.WaylandBackend.Current?.TryMoveImageOverlay(id, bounds.X, bounds.Y,
+					bounds.Width, bounds.Height) != true)
+				return false;
+
+			shownBounds = bounds;
+			return true;
 		}
+
+		internal static bool CanMoveWithoutUpload(ScreenRect current, ScreenRect next)
+			=> current.Width == next.Width && current.Height == next.Height;
 
 		public bool TryHide()
 		{
@@ -475,13 +560,11 @@ namespace Keysharp.Internals
 			{
 				var backend = Wl.WaylandBackend.Current;
 
-				// No backend, or the extension is gone (disabled/uninstalled mid-session): the shell has already
-				// reaped its actors on disable, so there is nothing left to withdraw. Treat that as a CONFIRMED hide
-				// and reclaim the backing -- otherwise SendHideImageOverlay returns false (no owner to ack) and the
-				// id is kept mapped and retried forever, leaking backings for the rest of the process lifetime.
+				// Disabling the extension reaps its actors, so owner absence confirms the hide.
 				if (backend == null || !backend.SupportsImageOverlay)
 				{
 					hidden = true;
+					shown = false;
 					return true;
 				}
 
@@ -491,6 +574,7 @@ namespace Keysharp.Internals
 				if (backend.TryHideImageOverlay(id))
 				{
 					hidden = true;
+					shown = false;
 					return true;
 				}
 

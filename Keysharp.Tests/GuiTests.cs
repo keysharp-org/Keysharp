@@ -94,7 +94,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Gui")]
-		public void HiddenOverlayUpdate()
+		public void HiddenOverlaySetImage()
 		{
 			using var image = KeysharpImage.Create(null, 20, 12, "0xFF204060") as KeysharpImage;
 			var overlay = new Ks.KeysharpOverlay();
@@ -102,7 +102,7 @@ namespace Keysharp.Tests
 
 			try
 			{
-				_ = overlay.Update(image, 31L, 42L, 30L, 18L);
+				_ = overlay.SetImage(image, 31L, 42L, 30L, 18L);
 
 				Assert.AreEqual(31L, overlay.X);
 				Assert.AreEqual(42L, overlay.Y);
@@ -126,7 +126,7 @@ namespace Keysharp.Tests
 			{
 				var callback = new KeysharpFunc((Func<object, object>)(target =>
 				{
-					_ = ((Ks.KeysharpOverlay)target).Clear("0xFF204060");
+					_ = ((Ks.KeysharpImage)target).Clear("0xFF204060");
 					return 0L;
 				}));
 				_ = overlay.Redraw(callback, 31L, 42L, 30L, 18L);
@@ -144,15 +144,51 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Gui")]
+		public void OverlayRedrawPreservesAutoSize()
+		{
+			using var small = KeysharpImage.Create(null, 10L, 6L, "0xFF204060") as KeysharpImage;
+			using var large = KeysharpImage.Create(null, 20L, 12L, "0xFF406080") as KeysharpImage;
+			var overlay = Ks.KeysharpOverlay.FromImage(null, small) as Ks.KeysharpOverlay;
+			Assert.IsNotNull(overlay);
+			var callback = new KeysharpFunc((Func<object, object>)(target =>
+			{
+				_ = ((Ks.KeysharpImage)target).Clear("0xFF204060");
+				return 0L;
+			}));
+
+			try
+			{
+				_ = overlay.Redraw(callback);
+				Assert.AreEqual(10L, overlay.Width);
+				Assert.AreEqual(6L, overlay.Height);
+
+				_ = overlay.SetImage(large);
+				Assert.AreEqual(20L, overlay.Width, "an auto width must follow the next source image");
+				Assert.AreEqual(12L, overlay.Height, "an auto height must follow the next source image");
+
+				var surface = overlay.SurfaceForTests;
+				var error = Assert.Throws<KeysharpException>(() => overlay.Redraw(callback, null, null, -1L));
+				Assert.IsInstanceOf<ValueError>(error.UserError);
+				Assert.AreSame(surface, overlay.SurfaceForTests, "invalid geometry must not replace the canvas");
+				Assert.AreEqual(20L, overlay.Width);
+				Assert.AreEqual(12L, overlay.Height);
+			}
+			finally
+			{
+				_ = overlay.Destroy();
+			}
+		}
+
+		[Test, Category("Gui")]
 		public void OverlayImageSize()
 		{
 			using var image = KeysharpImage.Create(null, 20, 12, "0xFF204060", 2.0) as KeysharpImage;
 			var overlay = new Ks.KeysharpOverlay();
-			_ = overlay.__New(1L, 2L);
+			_ = overlay.__New();
 
 			try
 			{
-				_ = overlay.Update(image);
+				_ = overlay.SetImage(image, 1L, 2L);
 				Assert.AreEqual(40L, overlay.Width);
 				Assert.AreEqual(24L, overlay.Height);
 			}
@@ -162,7 +198,259 @@ namespace Keysharp.Tests
 			}
 		}
 
+		// Script-visible canvas behaviour: what Canvas is, what it refuses, and that Copy escapes the refusals.
+		[Test, Category("Gui"), Category("Curated")]
+		public void OverlayCanvas()
+		{
+			if (Script.IsHeadless)
+				Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
+
+			Assert.IsTrue(TestScript("overlay-canvas", false));
+		}
+
+		// The canvas is the backing's presentable memory (on Windows the DIB the compositor reads), so no
+		// operation may swap or free that bitmap out from under it.
+		[Test, Category("Gui"), Category("Curated")]
+		public void SurfaceCanvasOwnership()
+		{
+			using var surface = OverlaySurface.Plain(new PixelSize(8, 4));
+			var canvas = surface.Image;
+			var bitmap = surface.Bitmap;
+
+			var before = canvas.PeekBitmap();
+			_ = canvas.Clear();
+			Assert.AreSame(before, canvas.PeekBitmap(), "Clear must overwrite the surface, not replace it");
+			_ = canvas.Clear("0xFF204060");
+			Assert.AreSame(before, canvas.PeekBitmap(), "clearing to a colour must not replace it either");
+
+			canvas.Bake();
+			Assert.AreSame(bitmap, canvas.PeekBitmap(), "Bake must not dispose or replace a borrowed base");
+
+			// Disposing through the interface is the surface's own teardown path and does release the view; the
+			// borrowed pixels must survive it, since the surface frees those separately and in order.
+			((IDisposable)canvas).Dispose();
+			Assert.AreEqual(8, bitmap.Width, "the borrowed bitmap must outlive the image that drew into it");
+			Assert.AreEqual(4, bitmap.Height);
+		}
+
+		// Damage decides how much of a frame is transferred, so under-reporting is a stale pixel on screen.
+		[Test, Category("Gui"), Category("Curated")]
+		public void SurfaceDamage()
+		{
+			using var surface = OverlaySurface.Plain(new PixelSize(200, 100));
+			var canvas = surface.Image;
+
+			// A never-presented surface is entirely unpresented; starting at None is what let Redraw's
+			// replacement transfer only the drawn part and leave the previous surface's pixels showing.
+			Assert.AreEqual(DamageKind.All, surface.Damage.Kind, "a never-presented surface is fully damaged");
+			surface.Damage.Reset();   // stand in for a successful present
+
+			_ = canvas.FillRect(10L, 10L, 20L, 20L, "0xFF0000");
+			Assert.AreEqual(DamageKind.Region, surface.Damage.Kind);
+			var one = surface.Damage.Union();
+			Assert.IsTrue(one.X <= 10 && one.Y <= 10 && one.Right >= 30 && one.Bottom >= 30,
+						  $"rounded outward: damage {one.X},{one.Y} {one.Width}x{one.Height} must cover the fill");
+
+			_ = canvas.FillRect(100L, 50L, 20L, 20L, "0x00FF00");
+			var both = surface.Damage.Union();
+			Assert.IsTrue(both.X <= 10 && both.Y <= 10 && both.Right >= 120 && both.Bottom >= 70,
+						  $"a disjoint draw widens the region: got {both.X},{both.Y} {both.Width}x{both.Height}");
+
+			for (var i = 0; i < 64; i++)
+				_ = canvas.FillRect((long)i, (long)i, 4L, 4L, "0x0000FF");
+
+			Assert.AreEqual(DamageKind.Region, surface.Damage.Kind, "many draws stay one region");
+
+			_ = canvas.Clear();
+			Assert.AreEqual(DamageKind.All, surface.Damage.Kind, "a clear changes every pixel");
+			surface.Damage.Reset();
+			Assert.AreEqual(DamageKind.None, surface.Damage.Kind);
+		}
+
+		// Redraw builds a replacement surface and draws only part of it. If that surface were handed to a
+		// backing carrying only the damage the callback produced, a dirty-rect present would top up the old
+		// frame instead of replacing it, and everything the callback did not draw would keep showing the
+		// previous content — a moving shape would leave a trail. The replacement must be fully damaged.
+		[Test, Category("Gui"), Category("Curated")]
+		public void RedrawFullDamage()
+		{
+			if (Script.IsHeadless)
+				Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
+
+			var overlay = new Ks.KeysharpOverlay();
+			_ = overlay.__New(0L, 0L, 64L, 32L);
+
+			try
+			{
+				var callback = new KeysharpFunc((Func<object, object>)(target =>
+				{
+					_ = ((Ks.KeysharpImage)target).FillRect(2L, 2L, 4L, 4L, "0xFF0000");
+					return 0L;
+				}));
+				_ = overlay.Redraw(callback);
+				var surface = overlay.SurfaceForTests;
+				Assert.IsNotNull(surface);
+				Assert.AreEqual(DamageKind.All, surface.Damage.Kind,
+								"a Redraw replacement must repaint the whole surface, not just what was drawn");
+			}
+			finally
+			{
+				_ = overlay.Destroy();
+			}
+		}
+
+		// Drawing stages; Present publishes. Nothing may reach the screen behind the script's back, and the
+		// operations that are complete in themselves must still publish without a second call.
+		[Test, Category("Gui"), Category("Curated")]
+		public void ExplicitPresent()
+		{
+			if (Script.IsHeadless)
+				Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
+
+			var context = UseQueuedMainContext();
+			var overlay = new Ks.KeysharpOverlay();
+			_ = overlay.__New(0L, 0L, 64L, 32L);
+
+			try
+			{
+				_ = overlay.Show();
+				context.DrainAll();
+				Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "Show uploads, so nothing is left over");
+
+				for (var i = 0; i < 50; i++)
+					_ = overlay.Canvas.FillRect((long)i, 0L, 4L, 4L, "0xFF0000");
+
+				Assert.IsTrue(overlay.HasUnpresentedDamageForTests, "50 primitives, deliberately unshown");
+				Assert.AreEqual(0, context.PendingCount, "drawing must not schedule anything either");
+				context.DrainAll();
+				Assert.IsTrue(overlay.HasUnpresentedDamageForTests, "yielding must not upload");
+
+				_ = overlay.Present();
+				Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "Present uploads the frame");
+
+				// Show and a resize are complete operations, so each publishes on its own. A pure move does not
+				// (the window keeps its content across SWP_NOSIZE), which is why this uses Width.
+				_ = overlay.Canvas.FillRect(0L, 0L, 4L, 4L, "0x00FF00");
+				_ = overlay.Show();
+				Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "Show publishes the current canvas");
+
+				_ = overlay.Canvas.FillRect(0L, 0L, 2L, 2L, "0x0000FF");
+				overlay.Width = 40L;
+				Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "a resize republishes the surface");
+			}
+			finally
+			{
+				_ = overlay.Destroy();
+			}
+		}
+		// Drawing interleaved with reads must fold into the same bitmap without replaying earlier operations.
+		[Test, Category("Gui"), Category("Curated")]
+		public void LazyDrawFold()
+		{
+			var image = KeysharpImage.Create(null, 40L, 20L, "0xFF000000") as KeysharpImage;
+
+			try
+			{
+				_ = image.FillRect(0L, 0L, 10L, 10L, "0xFF0000");
+				var first = image.PeekBitmap();
+				Assert.AreEqual(0xFFFF0000, (uint)(long)image.GetPixel(2L, 2L));
+
+				_ = image.FillRect(20L, 0L, 10L, 10L, "0x00FF00");
+				Assert.AreEqual(0xFF00FF00, (uint)(long)image.GetPixel(22L, 2L));
+				Assert.AreEqual(0xFFFF0000, (uint)(long)image.GetPixel(2L, 2L), "the earlier draw must survive");
+				Assert.AreSame(first, image.PeekBitmap(), "reads must not rebuild the surface");
+			}
+			finally
+			{
+				_ = image.Dispose();
+			}
+		}
+
 #if WINDOWS
+		// The whole zero-copy design rests on one property: GDI+ drawing through the Bitmap and GDI reading
+		// through the DC address the same memory. If that ever stopped holding, presents would silently show
+		// stale frames rather than fail, so assert it directly.
+		[Test, Category("Gui"), Category("Curated")]
+		public void DibSurfacePixelSharing()
+		{
+			using var canvas = DibOverlaySurface.TryCreate(new PixelSize(8, 4));
+			Assert.IsNotNull(canvas, "a 32bpp DIB section should always be creatable");
+			Assert.IsTrue(canvas.Premultiplied, "UpdateLayeredWindow consumes premultiplied alpha");
+			Assert.AreNotEqual(0, canvas.SourceDC, "the DIB must be selected into a DC to be presentable");
+			Assert.AreEqual(System.Drawing.Imaging.PixelFormat.Format32bppPArgb, canvas.Bitmap.PixelFormat);
+
+			_ = canvas.Image.FillRect(0L, 0L, 8L, 4L, "0xFF0000FF");
+			Assert.AreSame(canvas.Bitmap, canvas.PrepareForPresent());
+
+			Assert.IsTrue(canvas.TryAcquireSourceDC(out var dc));
+
+			try
+			{
+				Assert.AreEqual(0x00FF0000u, WindowsAPI.GetPixel(dc, 1, 1) & 0x00FFFFFFu,
+								"GDI must see canvas drawing after the production present boundary (COLORREF is BGR)");
+			}
+			finally
+			{
+				canvas.ReleaseSourceDC();
+			}
+
+			_ = canvas.Image.FillRect(0L, 0L, 8L, 4L, "0xFF00FF00");
+			_ = canvas.PrepareForPresent();
+			Assert.IsTrue(canvas.TryAcquireSourceDC(out dc));
+
+			try
+			{
+				Assert.AreEqual(0x0000FF00u, WindowsAPI.GetPixel(dc, 1, 1) & 0x00FFFFFFu,
+								"a later draw through the retained Graphics must also be visible through the DC");
+			}
+			finally
+			{
+				canvas.ReleaseSourceDC();
+			}
+		}
+
+		// SetImage with same-sized content must keep the surface it already has. Allocating a new DIB and DC per
+		// frame is what made a sequence-of-frames overlay (video, sprite animation) churn a screen-sized
+		// platform buffer every frame.
+		[Test, Category("Gui"), Category("Curated")]
+		public void SetImageSurfaceReuse()
+		{
+			if (Script.IsHeadless)
+				Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
+
+			var overlay = new Ks.KeysharpOverlay();
+			_ = overlay.__New(0L, 0L, 32L, 16L);
+			var frameA = KeysharpImage.Create(null, 32L, 16L, "0xFF0000") as KeysharpImage;
+			// Transparent on purpose: reusing the surface must clear it before blitting. An opaque frame would
+			// pass under plain source-over too, so it would not pin the behaviour that matters on the Eto
+			// backends, where the previous frame would otherwise show through forever.
+			var frameB = KeysharpImage.Create(null, 32L, 16L) as KeysharpImage;
+			var frameC = KeysharpImage.Create(null, 40L, 20L, "0x0000FF") as KeysharpImage;
+
+			try
+			{
+				_ = overlay.SetImage(frameA);
+				var first = overlay.SurfaceForTests;
+				Assert.IsNotNull(first, "SetImage must create a surface");
+
+				_ = overlay.SetImage(frameB);
+				Assert.AreSame(first, overlay.SurfaceForTests, "a same-sized SetImage must reuse the surface");
+				Assert.AreEqual(0u, (uint)(long)first.Image.GetPixel(4L, 4L),
+								"the reused surface must be wiped, not composited onto — red must not survive");
+
+				// A different size has no choice but to build a new one.
+				_ = overlay.SetImage(frameC);
+				Assert.AreNotSame(first, overlay.SurfaceForTests, "a resize must build a new surface");
+			}
+			finally
+			{
+				_ = overlay.Destroy();
+				_ = frameA.Dispose();
+				_ = frameB.Dispose();
+				_ = frameC.Dispose();
+			}
+		}
+
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
 		public void CaptionlessToolWindow()
