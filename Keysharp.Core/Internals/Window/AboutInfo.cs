@@ -15,6 +15,7 @@ namespace Keysharp.Internals.Window
 
 Authors:
 	Matt Feemster 2020 - present
+	Descolada 2024 - present
 	IronAHK developers 2010 - 2015
 
 Testers:
