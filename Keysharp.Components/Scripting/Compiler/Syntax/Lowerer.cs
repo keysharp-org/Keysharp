@@ -1800,6 +1800,14 @@ namespace Keysharp.Compilation.Syntax
 					if (_emittedFuncImpls.Add(NameMangler.FunctionMethod(fd.Name))) _pendingLambdas.Add(LowerFunction(fd));
 					return null;
 				case DirectiveStmt dir: return LowerDirective(dir);   // value-setting directives; rest are no-ops here
+				// A hotkey/hotstring/remap inside a plain block — the `{ … }` commonly used to group a `#HotIf`
+				// section — still registers globally at load; only a function or class body forbids one.
+				case HotkeyDef or HotstringDef or RemapDef when _locals != null:
+					Diag("Hotkeys/hotstrings are not allowed inside functions or classes.");
+					return null;
+				case HotkeyDef nhk: LowerHotkey(nhk); return null;
+				case HotstringDef nhs: LowerHotstring(nhs); return null;
+				case RemapDef nrm: LowerRemap(nrm); return null;
 				default: Diag($"statement not yet lowerable: {s.GetType().Name}"); return null;
 			}
 		}

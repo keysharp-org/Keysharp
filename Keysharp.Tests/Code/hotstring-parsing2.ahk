@@ -10,6 +10,26 @@
 ; 7: -> :8
 ::7`::::8
 
+; Quotes are ordinary characters in a hotstring's trigger and replacement.
+::arn't::aren't
+::i"m::I'm
+::charge d'affaires::charge d'affaires
+::let's it::lets it
+:*:i"q::I "quote"
+
+; A ';' starts a comment only when whitespace precedes it.
+:?:; btu::; but
+::bt;w::by the; way
+::btw::by the way ; basic hotstring
+
+; '{' opens a block body only when it is the last thing on the line.
+::sig::{Enter}Regards
+
+; A hotstring inside a plain block — the grouping commonly wrapped around a #HotIf section.
+{
+::inblock::in a block
+}
+
 ::text1::
 (
 Any text between the top and bottom parentheses is treated literally.
@@ -46,6 +66,10 @@ myfunc()
 ::mf6::myfunc
 :X:mf7::myfunc
 ::mf8::myfunc
+
+; Raw/text mode rules out a block body, so even a lone '{' is replacement text.
+#Hotstring X0
+:T:brace::{
 
 FileAppend "pass", "*"
 

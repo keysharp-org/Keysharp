@@ -80,6 +80,21 @@ GroupAdd("AltTabWindow", "ahk_class MultitaskingViewFrame")  ; Windows 10
 ~*Esc::Send("{Alt up}")  ; When the menu is cancelled, release the Alt key automatically.
 #HotIf
 
+; A #HotIf section whose hotkeys and hotstrings are grouped in a block.
+#HotIf WinActive("ahk_class KeysharpNoSuchWindow")
+{
+$Home::
+{
+	ToolTip("home")
+}
+	NumpadSub::
+	{
+		ToolTip("minus")
+	}
+::hotifblock::in a hotif block
+}
+#HotIf
+
 ; This used to fail parsing.
 #h::
 {

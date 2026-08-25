@@ -35,6 +35,10 @@ namespace Keysharp.Parsing.Lexing
 		// replacement is treated as code (a function body) rather than literal text.
 		private bool _hsExecuteDefault;
 
+		// Default hotstring raw/text mode, toggled by `#Hotstring T`/`R` (and their `0` forms). It rules out an
+		// OTB block body, so a lone `{` after the separator is replacement text.
+		private bool _hsRawDefault;
+
 		// When a string token is a continuation section, ScanString stores the equivalent escaped double-quoted
 		// literal here (so the existing DecodeString reproduces the joined text); the Tokenize loop uses it as the
 		// token text instead of the raw source span.
@@ -909,6 +913,23 @@ namespace Keysharp.Parsing.Lexing
 			return exec;
 		}
 
+		// Resolves whether a hotstring sends its replacement literally (`T`/`R`, or the `#Hotstring`-set default).
+		private bool HotstringSendsRaw(ReadOnlySpan<char> opts)
+		{
+			bool raw = _hsRawDefault;
+			for (int k = 0; k < opts.Length; k++)
+				if (opts[k] is 't' or 'T' or 'r' or 'R') raw = !(k + 1 < opts.Length && opts[k + 1] == '0');
+			return raw;
+		}
+
+		// Whether only whitespace — optionally then a whitespace-preceded comment — remains on the line from `i`.
+		private bool IsLastOnLine(int i)
+		{
+			bool ws = false;
+			while (i < _n && (_s[i] == ' ' || _s[i] == '\t')) { ws = true; i++; }
+			return i >= _n || _s[i] == '\n' || _s[i] == '\r' || (ws && _s[i] == ';');
+		}
+
 		// Directives whose argument is free-form raw text (may contain quotes, `;`, brackets) — captured verbatim so it
 		// is not lexed as code. Token-needing directives (#if/#include/#import/#HotIf) are deliberately excluded.
 		// Internal so the parser can tell which directives arrive as a single verbatim token (commas inside its text)
@@ -1069,8 +1090,8 @@ namespace Keysharp.Parsing.Lexing
 			return true;
 		}
 
-		// At a line start, if the line is a `#Hotstring X`/`#Hotstring X0` directive, update the default execute mode.
-		// Does not consume input — the directive is still lexed normally and emitted to the DHHR.
+		// At a line start, if the line is a `#Hotstring <options>` directive, update the defaults it sets for later
+		// hotstrings. Does not consume input — the directive is still lexed normally and emitted to the DHHR.
 		private void MaybeTrackHotstringDirective()
 		{
 			if (Cur != '#') return;
@@ -1083,8 +1104,14 @@ namespace Keysharp.Parsing.Lexing
 			int s = i;
 			while (i < _n && _s[i] != '\n' && _s[i] != '\r') i++;
 			var opts = _s.AsSpan(s, i - s).Trim();
+			// The word forms set end chars / mouse reset; only the other form is a list of option letters.
+			if (opts.Contains("EndChars", System.StringComparison.OrdinalIgnoreCase)) return;
+			if (opts.StartsWith("NoMouse", System.StringComparison.OrdinalIgnoreCase)) return;
 			for (int k = 0; k < opts.Length; k++)
+			{
 				if (opts[k] is 'x' or 'X') _hsExecuteDefault = !(k + 1 < opts.Length && opts[k + 1] == '0');
+				else if (opts[k] is 't' or 'T' or 'r' or 'R') _hsRawDefault = !(k + 1 < opts.Length && opts[k + 1] == '0');
+			}
 		}
 
 		// At a logical line start, try to recognise a hotkey (`^!a::…`), remap (`a::b`), or hotstring
@@ -1105,16 +1132,18 @@ namespace Keysharp.Parsing.Lexing
 
 		// Finds the offset of the hotkey/hotstring `::` separator on the current line, starting at `from`.
 		// Honors backtick escapes (`` `: `` is a literal colon, not part of a separator) when escapeAware.
-		// Stops (returns -1) at end of line, a whitespace-preceded comment, or a string-opening quote
-		// (a quote in key position immediately followed by `::` is a single-char trigger, not a string).
-		private int FindSeparator(int from, bool escapeAware, bool allowEmpty)
+		// Stops (returns -1) at end of line, a whitespace-preceded comment, or — when quotesEndScan — a
+		// string-opening quote (a quote in key position immediately followed by `::` is a single-char
+		// trigger, not a string). A hotstring's trigger is raw text where a quote is just another
+		// character (`::arn't::aren't`), so that scan passes quotesEndScan: false.
+		private int FindSeparator(int from, bool escapeAware, bool allowEmpty, bool quotesEndScan)
 		{
 			bool escaped = false;
 			for (int i = from; i < _n; i++)
 			{
 				char c = _s[i];
 				if (c == '\n' || c == '\r') return -1;
-				if (c == '"' || c == '\'')
+				if (quotesEndScan && (c == '"' || c == '\''))
 				{
 					// A quote almost always means the line is an expression and any following `::` is string
 					// content, not a hotkey separator (e.g. `MsgBox("a::b")`, `x := "::"`). The exception is a
@@ -1137,8 +1166,8 @@ namespace Keysharp.Parsing.Lexing
 		private bool TryScanHotkey(List<Token> tokens, bool leadingWs)
 		{
 			int start = _pos, sl = _line, sc = _col;
-			int sep = FindSeparator(_pos, escapeAware: true, allowEmpty: false);
-			if (sep < 0) sep = FindSeparator(_pos, escapeAware: false, allowEmpty: false);
+			int sep = FindSeparator(_pos, escapeAware: true, allowEmpty: false, quotesEndScan: true);
+			if (sep < 0) sep = FindSeparator(_pos, escapeAware: false, allowEmpty: false, quotesEndScan: true);
 			if (sep < 0) return false;
 
 			// `sep` indexes the first ':' of the '::' separator. Decide remap (target is a single key) vs hotkey.
@@ -1258,7 +1287,7 @@ namespace Keysharp.Parsing.Lexing
 			if (i >= _n || _s[i] != ':') return false;
 			var opts = _s.AsSpan(_pos + 1, i - (_pos + 1));              // option chars between the two colons
 			int trigStart = i + 1;                                          // after the second ':'
-			int sep = FindSeparator(trigStart, escapeAware: true, allowEmpty: true);
+			int sep = FindSeparator(trigStart, escapeAware: true, allowEmpty: true, quotesEndScan: false);
 			if (sep < 0) return false;
 			int afterSep = sep + 2;
 			string trigTok = _s.Substring(start, sep - start);                // `:opts:trigger` (separator excluded)
@@ -1268,9 +1297,13 @@ namespace Keysharp.Parsing.Lexing
 
 			// Body: a block `{`, an inline expansion, a continuation-section expansion, or (EOL) a following statement.
 			int save = _pos, saveL = _line, saveC = _col;
-			while (Cur == ' ' || Cur == '\t') Advance();
-			if (Cur == '{') return true;                                     // OTB block body — lexes normally
-			if (Cur == ';') { while (_pos < _n && Cur != '\n') Advance(); }  // trailing comment then EOL
+			bool sawWs = false;
+			while (Cur == ' ' || Cur == '\t') { sawWs = true; Advance(); }
+			// OTB block body, but only when the `{` is the last thing on the line — otherwise a replacement such as
+			// `::sig::{Enter}Regards` would be swallowed as code. Raw/text mode makes even a lone `{` literal text.
+			if (Cur == '{' && IsLastOnLine(_pos + 1) && !HotstringSendsRaw(opts)) return true;
+			// A `;` only starts a comment when whitespace precedes it, so `::btu::; but` replaces with "; but".
+			if (sawWs && Cur == ';') { while (_pos < _n && Cur != '\n') Advance(); }
 			if (Cur == '\n' || Cur == '\r' || _pos >= _n)
 			{
 				// No inline expansion. A continuation section on the next non-blank line is the expansion.
@@ -1289,7 +1322,7 @@ namespace Keysharp.Parsing.Lexing
 			// Inline expansion: the rest of the line (stop at a whitespace-preceded comment).
 			_pos = save; _line = saveL; _col = saveC;
 			int expStart = _pos, el = _line, ec = _col;
-			bool prevWs = true;
+			bool prevWs = false;                          // the char before the expansion is the separator's ':'
 			while (_pos < _n && Cur != '\n' && Cur != '\r')
 			{
 				if (Cur == ';' && prevWs) break;

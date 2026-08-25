@@ -935,7 +935,32 @@ namespace Keysharp.Tests
 			Assert.AreEqual(hs.Name, "::mf8");
 			Assert.AreEqual(hs.Replacement, null);
 			//
+			// An abbreviation and its replacement are raw text, so a quote is an ordinary character rather than a
+			// string opener, and a ';' is a comment only when whitespace precedes it.
+			AssertHotstring("arn't ", "::arn't", "aren't");
+			AssertHotstring("i\"m ", "::i\"m", "I'm");
+			AssertHotstring("charge d'affaires ", "::charge d'affaires", "charge d'affaires");
+			AssertHotstring("let's it ", "::let's it", "lets it");
+			AssertHotstring("i\"q", ":*:i\"q", "I \"quote\"");
+			AssertHotstring("; btu ", ":?:; btu", "; but");
+			AssertHotstring("bt;w ", "::bt;w", "by the; way");
+			AssertHotstring("btw ", "::btw", "by the way");
+			// A '{' is a block body only when it ends the line, and never in raw/text mode.
+			AssertHotstring("sig ", "::sig", "{Enter}Regards");
+			AssertHotstring("brace ", ":T:brace", "{");
+			// A hotstring inside a plain block (how a #HotIf section is usually grouped) still registers globally.
+			AssertHotstring("inblock ", "::inblock", "in a block");
 			hsm.ClearHotstrings();
+
+			void AssertHotstring(string typed, string name, string replacement)
+			{
+				_ = Keyboard.Hotstring("Reset");
+				hsm.AddChars(typed);
+				var hs = hsm.MatchHotstring();
+				Assert.IsNotNull(hs, $"nothing matched after typing \"{typed}\"");
+				Assert.AreEqual(name, hs.Name);
+				Assert.AreEqual(replacement, hs.Replacement);
+			}
 		}
 
 		[Test, Category("Hotstring"), NonParallelizable]
