@@ -74,7 +74,7 @@
 <!--
 		<PackageReference Include="Eto.Forms" Version="2.10.2" />
 -->
-		<ProjectReference Include="..\..\Eto\src\Eto\Eto.csproj" />
+		<ProjectReference Include="$(EtoRoot)/src/Eto/Eto.csproj" />
 
 		<Compile Remove="Keyview.Designer.cs" />
 		<Compile Remove="HotKeyManager.cs" />
@@ -86,12 +86,12 @@
 <!--
 		<PackageReference Include="Eto.Platform.Gtk" Version="2.10.2" />
 -->
-		<ProjectReference Include="..\..\Eto\src\Eto.Gtk\Eto.Gtk.csproj" />
+		<ProjectReference Include="$(EtoRoot)/src/Eto.Gtk/Eto.Gtk.csproj" />
 	</ItemGroup>
 
 	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
-		<ProjectReference Include="..\..\Eto\src\Eto.Mac\Eto.Mac64.csproj" />
-		<ProjectReference Include="..\..\Eto\lib\monomac\src\MonoMac.csproj" />
+		<ProjectReference Include="$(EtoRoot)/src/Eto.Mac/Eto.Mac64.csproj" />
+		<ProjectReference Include="$(EtoRoot)/lib/monomac/src/MonoMac.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
