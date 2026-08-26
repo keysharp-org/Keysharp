@@ -154,10 +154,12 @@ mf.Italic := true
 Check("subclass inherits setters", mf.Options, "s14 italic")
 
 ; ---- Gui.Font / Gui.Control.Font round-trip ------------------------------------------------------
+guiFamily := Font.Ui.Name
+controlFamily := Font.Monospace.Name
 g := Gui()
-g.SetFont("s14 bold", "Verdana")
+g.SetFont("s14 bold", guiFamily)
 gf := g.Font
-Check("gui name", gf.Name, "Verdana")
+Check("gui name", gf.Name, guiFamily)
 Check("gui size", gf.Size, 14)
 Check("gui bold", gf.Bold, true)
 
@@ -172,21 +174,21 @@ gf2.Bold := false
 g.Font := gf2
 Check("assigned size", g.Font.Size, 18)
 Check("assigned bold", g.Font.Bold, false)
-Check("assigned name kept", g.Font.Name, "Verdana")
+Check("assigned name kept", g.Font.Name, guiFamily)
 
 ; A font carrying nothing but a family changes the family and leaves the rest alone.
-g.SetFont("s20 bold italic", "Arial")
-g.Font := Font(, "Verdana")
-Check("family-only name", g.Font.Name, "Verdana")
+g.SetFont("s20 bold italic", controlFamily)
+g.Font := Font(, guiFamily)
+Check("family-only name", g.Font.Name, guiFamily)
 Check("family-only size kept", g.Font.Size, 20)
 Check("family-only bold kept", g.Font.Bold, true)
 Check("family-only italic kept", g.Font.Italic, true)
 
 ; Control-level, including the colour that rides on ForeColor.
 ctl := g.Add("Text", "w120", "probe")
-ctl.Font := Font("s16 italic cBlue", "Georgia")
+ctl.Font := Font("s16 italic cBlue", controlFamily)
 cf := ctl.Font
-Check("ctl name", cf.Name, "Georgia")
+Check("ctl name", cf.Name, controlFamily)
 Check("ctl size", cf.Size, 16)
 Check("ctl italic", cf.Italic, true)
 Check("ctl color", cf.Color, "0000FF")

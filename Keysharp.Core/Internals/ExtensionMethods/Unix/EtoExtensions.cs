@@ -1,6 +1,5 @@
 using Keysharp.Builtins;
 #if !WINDOWS
-using System.Reflection;
 using System.Xml.Linq;
 
 namespace Eto.Forms
@@ -631,18 +630,9 @@ namespace Eto.Forms
             internal static Color Transparent => Colors.Transparent;
 			internal static Color FromName(string name)
 			{
-				var color = Colors.Transparent;
-				if (string.IsNullOrWhiteSpace(name))
-					return color;
-
-				var prop = typeof(Colors).GetProperty(
-					name,
-					BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);
-
-				if (prop == null || prop.PropertyType != typeof(Color))
-					return color;
-
-				return (Color)prop.GetValue(null);
+				return !string.IsNullOrWhiteSpace(name) && Color.TryParse(name, out var color)
+					? color
+					: Colors.Transparent;
 			}
 		}
 
@@ -787,25 +777,6 @@ namespace Eto.Forms
                 textArea.Text = (textArea.Text ?? "") + text;
             }
         }
-
-		extension(Eto.Drawing.Color color)
-		{
-			internal bool IsKnownColor
-			{
-				get
-				{
-					var props = typeof(Colors).GetProperties(BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);
-					foreach (var prop in props)
-					{
-						if (prop.PropertyType != typeof(Color))
-							continue;
-						if (prop.GetValue(null) is Color c && c == color)
-							return true;
-					}
-					return false;
-				}
-			}
-		}
 
         extension (Eto.Drawing.Graphics)
         {

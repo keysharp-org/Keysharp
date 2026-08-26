@@ -941,8 +941,16 @@ namespace Keysharp.Internals.Strings
 				return true;
 			}
 
+#if WINDOWS
 			c = Color.FromName(name);
 			return c.IsKnownColor;
+#else
+			if (name.Length > 0 && Color.TryParse(name, out c))
+				return true;
+
+			c = default;
+			return false;
+#endif
 		}
 
 		internal struct FileSetAttribData
