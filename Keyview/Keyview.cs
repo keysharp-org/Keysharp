@@ -1255,7 +1255,7 @@ namespace Keyview
 		{
 			var background = SyntaxPalette.ToColor(SyntaxPalette.EditorBackground);
 			var foreground = SyntaxPalette.ToColor(SyntaxPalette.EditorForeground);
-			BackgroundColor = SystemColors.WindowBackground;
+			// Leave the form background theme-owned because GTK draws its client-side shadow on that surface.
 			inputArea.BackgroundColor = background;
 			inputArea.TextColor = foreground;
 			outputArea.BackgroundColor = background;
