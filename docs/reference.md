@@ -15,7 +15,7 @@ Jump directly to:
 - [Code acknowledgements](#code-acknowledgements)
 
 ## Prerequisites
-* If .NET 10 is not installed on your machine, download it from the [.NET 10 download page](https://dotnet.microsoft.com/en-us/download/dotnet/10.0).
+* If the .NET 10 runtime is not installed on your machine, download it from the [.NET 10 download page](https://dotnet.microsoft.com/en-us/download/dotnet/10.0).
 
 ## Windows Platform Support
 
@@ -36,7 +36,7 @@ Windows has the best feature implementation rate and very high AutoHotkey v2 com
 	+ Run `.\Keysharp.exe yourfilename.ahk`
 
 ### Building from source on Windows
-* Download the latest version of [Visual Studio 2022](https://visualstudio.microsoft.com/vs/community/).
+* Download the latest version of [Visual Studio 2026](https://visualstudio.microsoft.com/vs/community/) or VS Code.
 	+ This should install .NET 10. If it doesn't, you need to install it manually from the link above.
 * Open Keysharp.sln
 * Build all (building the installer is not necessary).
