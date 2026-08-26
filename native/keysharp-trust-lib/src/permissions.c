@@ -1936,8 +1936,18 @@ ksi_permission_decision ksi_permissions_prompt(
         capability_text[0] != '\0' ? capability_text : "- No capabilities requested\n");
 
     {
-        static const char *zenity_paths[] = { "/usr/bin/zenity", "/bin/zenity", NULL };
-        static const char *kdialog_paths[] = { "/usr/bin/kdialog", "/bin/kdialog", NULL };
+        static const char *zenity_paths[] = {
+            "/usr/bin/zenity",
+            "/bin/zenity",
+            "/run/current-system/sw/bin/zenity",
+            NULL
+        };
+        static const char *kdialog_paths[] = {
+            "/usr/bin/kdialog",
+            "/bin/kdialog",
+            "/run/current-system/sw/bin/kdialog",
+            NULL
+        };
 
         /* Simple two-button prompt: [Allow] / [Deny]. Allow grants access to this
          * EXECUTABLE persistently ("always allow this program" — the wildcard
