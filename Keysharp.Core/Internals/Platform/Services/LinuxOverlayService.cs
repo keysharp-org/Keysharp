@@ -221,7 +221,7 @@ namespace Keysharp.Internals
 
 		private bool Matches(IReadOnlyList<Wl.WaylandLayerShellClient.OutputSegment> segments)
 		{
-			if (segments.Count != fragments.Count)
+			if (!CanReuseFragmentCount(segments.Count, fragments.Count))
 				return false;
 
 			foreach (var segment in segments)
@@ -231,6 +231,9 @@ namespace Keysharp.Internals
 
 			return true;
 		}
+
+		internal static bool CanReuseFragmentCount(int segmentCount, int fragmentCount)
+			=> segmentCount > 0 && segmentCount == fragmentCount;
 
 		public nint Handle
 		{
@@ -285,24 +288,32 @@ namespace Keysharp.Internals
 
 				var image = canvas.PrepareForPresent();
 
-				// The steady-state animation path has one unchanged surface: update only its next buffer. Geometry and
-				// multi-output changes are staged below because mutating several live fragments sequentially would expose
-				// a half-old/half-new frame if a later output failed.
-				if (segments.Count == 1 && fragments.Count == 1
-						&& fragments.TryGetValue(segments[0].Output.RegistryName, out var existing))
+				// Prepare every existing fragment before committing any of them. A virtual-desktop animation therefore
+				// reuses its layer surfaces and bounded buffer pools just like a single-output animation; only an actual
+				// topology or segment-geometry change needs the replacement path below.
+				if (Matches(segments))
 				{
-					var segment = segments[0];
+					foreach (var segment in segments)
+					{
+						var fragment = fragments[segment.Output.RegistryName];
 
-					if (!existing.Overlay.Show(image, SourcePixels(image, bounds, segment), segment.Bounds,
-							segment.Output, clickThrough, opacity, canvasDamageKind, canvasDamage))
-						return false;
+						if (!fragment.Overlay.Prepare(image, SourcePixels(image, bounds, segment), segment.Bounds,
+								segment.Output, clickThrough, opacity, canvasDamageKind, canvasDamage))
+							return false;
+					}
 
-					existing.Segment = segment;
+					foreach (var segment in segments)
+						if (!fragments[segment.Output.RegistryName].Overlay.CommitPrepared())
+							return false;
+
+					foreach (var segment in segments)
+						fragments[segment.Output.RegistryName].Segment = segment;
+
 					shownW = bounds.Width;
 					shownH = bounds.Height;
 					shownOpacity = opacity;
 					shownClickThrough = clickThrough;
-					ApplyPointerSinks();   // the segment offset may have changed with the geometry
+					ApplyPointerSinks();
 					return true;
 				}
 

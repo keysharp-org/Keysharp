@@ -61,6 +61,14 @@ namespace Keysharp.Tests
 				new ScreenRect(30, 40, 101, 50)), Is.False);
 		}
 
+		[TestCase(1, 1, true)]
+		[TestCase(2, 2, true)]
+		[TestCase(3, 3, true)]
+		[TestCase(0, 0, false)]
+		[TestCase(2, 1, false)]
+		public void StableOutputCountCanReuseEveryFragment(int segmentCount, int fragmentCount, bool expected)
+			=> Assert.That(LayerImageBacking.CanReuseFragmentCount(segmentCount, fragmentCount), Is.EqualTo(expected));
+
 		[Test]
 		public void LayerTeardownRetriesOnlyFailedFragments()
 		{

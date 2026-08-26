@@ -14,6 +14,7 @@ const GdkPixbuf = imports.gi.GdkPixbuf;
 const GLib = imports.gi.GLib;
 const Meta = imports.gi.Meta;
 const St = imports.gi.St;
+const CairoGI = imports.gi.cairo;
 const Main = imports.ui.main;
 const ByteArray = imports.byteArray;
 const Cairo = imports.cairo;
@@ -1674,7 +1675,7 @@ class KeysharpExtension {
         return false;
     }
 
-    _createImageContent(pngData) {
+    _decodeImageFrame(pngData) {
         const loader = GdkPixbuf.PixbufLoader.new();
         loader.write(pngData);
         loader.close();
@@ -1683,15 +1684,47 @@ class KeysharpExtension {
         if (!pixbuf)
             throw new Error('Could not decode PNG overlay image.');
 
-        const content = new Clutter.Image();
-        const pixels = pixbuf.get_pixels();
-        const format = pixbuf.get_has_alpha() ? Cogl.PixelFormat.RGBA_8888 : Cogl.PixelFormat.RGB_888;
-        content.set_data(pixels, format, pixbuf.get_width(), pixbuf.get_height(), pixbuf.get_rowstride());
-        return content;
+        return {
+            pixbuf, // keeps the borrowed pixel array alive until the texture copy completes
+            pixels: pixbuf.get_pixels(),
+            format: pixbuf.get_has_alpha() ? Cogl.PixelFormat.RGBA_8888 : Cogl.PixelFormat.RGB_888,
+            width: pixbuf.get_width(),
+            height: pixbuf.get_height(),
+            rowStride: pixbuf.get_rowstride(),
+        };
     }
 
     _updateImageActor(actor, pngData, x, y, width, height) {
-        actor.set_content(this._createImageContent(pngData));
+        const frame = this._decodeImageFrame(pngData);
+        let content = actor.get_content();
+
+        // set_data replaces the Cogl texture; set_area keeps the compositor's existing texture allocation.
+        if (content && actor._keysharpImageWidth === frame.width &&
+            actor._keysharpImageHeight === frame.height && typeof content.set_area === 'function') {
+            try {
+                const area = new CairoGI.RectangleInt();
+                area.x = 0;
+                area.y = 0;
+                area.width = frame.width;
+                area.height = frame.height;
+
+                if (!content.set_area(frame.pixels, frame.format, area, frame.rowStride))
+                    content = null;
+            } catch (_e) {
+                content = null;
+            }
+        } else {
+            content = null;
+        }
+
+        if (!content) {
+            content = new Clutter.Image();
+            content.set_data(frame.pixels, frame.format, frame.width, frame.height, frame.rowStride);
+            actor.set_content(content);
+            actor._keysharpImageWidth = frame.width;
+            actor._keysharpImageHeight = frame.height;
+        }
+
         actor.set_position(x, y);
         actor.set_size(width, height);
     }

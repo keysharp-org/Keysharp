@@ -17,6 +17,7 @@ import Cogl from 'gi://Cogl';
 import GdkPixbuf from 'gi://GdkPixbuf';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
+import CairoGI from 'gi://cairo';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 
@@ -1916,7 +1917,7 @@ export default class KeysharpExtension {
             this._stopOverlayCleanupTimer();
     }
 
-    _createImageContent(pngData) {
+    _decodeImageFrame(pngData) {
         const loader = GdkPixbuf.PixbufLoader.new();
         loader.write(pngData);
         loader.close();
@@ -1925,9 +1926,17 @@ export default class KeysharpExtension {
         if (!pixbuf)
             throw new Error('Could not decode PNG overlay image.');
 
-        const width = pixbuf.get_width();
-        const height = pixbuf.get_height();
-        const format = pixbuf.get_has_alpha() ? Cogl.PixelFormat.RGBA_8888 : Cogl.PixelFormat.RGB_888;
+        return {
+            pixbuf, // keeps the borrowed pixel array alive until the texture copy completes
+            pixels: pixbuf.get_pixels(),
+            format: pixbuf.get_has_alpha() ? Cogl.PixelFormat.RGBA_8888 : Cogl.PixelFormat.RGB_888,
+            width: pixbuf.get_width(),
+            height: pixbuf.get_height(),
+            rowStride: pixbuf.get_rowstride(),
+        };
+    }
+
+    _createImageContent(frame) {
         // Shell 48 removed Clutter.Image; St.ImageContent replaces it, with set_bytes()
         // taking a leading Cogl.Context parameter. Give St.ImageContent a real preferred size (its default
         // -1x-1 produces one shell warning per HUD frame on GNOME 50) and retain the pixels as GLib.Bytes so
@@ -1935,21 +1944,66 @@ export default class KeysharpExtension {
         let content;
         if (SHELL_MAJOR >= 48) {
             content = new St.ImageContent({
-                preferredWidth: width,
-                preferredHeight: height,
+                preferredWidth: frame.width,
+                preferredHeight: frame.height,
             });
             const coglContext = global.stage.context.get_backend().get_cogl_context();
-            content.set_bytes(coglContext, pixbuf.read_pixel_bytes(), format, width, height, pixbuf.get_rowstride());
+            content.set_bytes(coglContext, frame.pixbuf.read_pixel_bytes(), frame.format,
+                frame.width, frame.height, frame.rowStride);
         } else {
             content = new Clutter.Image();
-            content.set_data(pixbuf.get_pixels(), format, width, height, pixbuf.get_rowstride());
+            content.set_data(frame.pixels, frame.format, frame.width, frame.height, frame.rowStride);
         }
 
         return content;
     }
 
     _updateImageActor(actor, pngData, x, y, width, height) {
-        actor.set_content(this._createImageContent(pngData));
+        const frame = this._decodeImageFrame(pngData);
+        let content = actor.get_content();
+
+        // Both content setters replace the Cogl texture; update that texture in place while the size is stable.
+        if (content && actor._keysharpImageWidth === frame.width &&
+            actor._keysharpImageHeight === frame.height) {
+            try {
+                let updated = false;
+
+                if (SHELL_MAJOR >= 48 && typeof content.get_texture === 'function') {
+                    const texture = content.get_texture();
+
+                    if (texture && typeof texture.set_region === 'function') {
+                        updated = texture.set_region(0, 0, 0, 0,
+                            frame.width, frame.height, frame.width, frame.height,
+                            frame.format, frame.rowStride, frame.pixels);
+
+                        if (updated)
+                            content.invalidate();
+                    }
+                } else if (typeof content.set_area === 'function') {
+                    const area = new CairoGI.RectangleInt();
+                    area.x = 0;
+                    area.y = 0;
+                    area.width = frame.width;
+                    area.height = frame.height;
+                    updated = content.set_area(frame.pixels, frame.format, area, frame.rowStride);
+                }
+
+                if (!updated)
+                    content = null;
+            } catch (_e) {
+                content = null;
+            }
+        } else {
+            content = null;
+        }
+
+        if (!content) {
+            content = this._createImageContent(frame);
+            actor.set_content(content);
+            actor._keysharpImageWidth = frame.width;
+            actor._keysharpImageHeight = frame.height;
+        }
+
         actor.set_position(x, y);
         actor.set_size(width, height);
     }
