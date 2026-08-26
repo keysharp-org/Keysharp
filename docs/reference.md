@@ -633,7 +633,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	+ `A_DefaultHotstringSendMode` returns the default hotstring sending mode.
 	+ `A_DefaultHotstringSendRaw` returns the default hotstring raw sending mode.
 	+ `A_DirSeparator` returns the directory separator character which is `\` on Windows and `/` elsewhere.
-	+ `A_GuiTheme` gets/sets the application-wide WinForms GUI theme. Accepted values: `Classic`, `System`, `Dark`. Windows only.
+	+ `A_GuiTheme` gets/sets the application-wide GUI theme. Accepted values are `Classic`, `System`, and `Dark`. `System` selects the operating-system theme; Eto follows later system-theme changes, while WinForms resolves the setting when it is applied. On Linux and macOS, `Classic` selects Eto's light theme.
 	+ `A_HasExited` returns whether shutdown has been initiated.
 	+ `A_KeysharpCorePath` provides the full path to the Keysharp.Core.dll file.
 	+ `A_LoopRegValue` which makes it easy to get a registry value when using `Loop Reg`.

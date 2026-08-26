@@ -10,11 +10,9 @@ namespace Keyview
 #if WINDOWS
 	internal partial class Keyview : Form
 	{
-		/// <summary>
-		/// the background color of the text area
-		/// </summary>
-		//private const int BACK_COLOR = 0x2A211C;
-		private const int BACK_COLOR = 0xEEEEEE;
+		[System.Runtime.InteropServices.LibraryImport("uxtheme.dll", EntryPoint = "SetWindowTheme",
+			StringMarshalling = System.Runtime.InteropServices.StringMarshalling.Utf16)]
+		private static partial int SetWindowTheme(nint window, string subAppName, string subIdList);
 
 		/// <summary>
 		/// change this to whatever margin you want the bookmarks/breakpoints to show in
@@ -32,11 +30,6 @@ namespace Keyview
 		/// change this to whatever margin you want the code folding tree (+/-) to show in
 		/// </summary>
 		private const int FOLDING_MARGIN = 3;
-
-		/// <summary>
-		/// default text color of the text area
-		/// </summary>
-		private const int FORE_COLOR = 0x858585;
 
 		/// <summary>
 		/// change this to whatever margin you want the line numbers to show in
@@ -78,6 +71,8 @@ namespace Keyview
 		public Keyview(string initialFile = null)
 		{
 			InitializeComponent();
+			InitializeScintillaTheme(txtIn);
+			InitializeScintillaTheme(txtOut);
 			lastrun = KeyviewPaths.ScratchDocument;
 			Icon = Script.TheScript.normalIcon;
 			btnCopyFullCode.Text = "Copy full code";
@@ -129,7 +124,17 @@ namespace Keyview
 				UpdateDocumentUi();
 		}
 
-		private static Color IntToColor(int rgb) => Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
+		private static void ApplyScintillaTheme(Scintilla scintilla) =>
+			_ = SetWindowTheme(scintilla.Handle, Application.IsDarkModeEnabled ? "DarkMode_Explorer" : null, null);
+
+		private static void InitializeScintillaTheme(Scintilla scintilla)
+		{
+			// Scintilla owns its native scrollbars, so WinForms cannot theme them with the rest of the control tree.
+			scintilla.HandleCreated += (_, _) => ApplyScintillaTheme(scintilla);
+
+			if (scintilla.IsHandleCreated)
+				ApplyScintillaTheme(scintilla);
+		}
 
 		// The Keysharp/AHK tokenizer for the input box, shared with the Eto editor on Linux/macOS. Built lazily
 		// because ForKeysharp() reads the built-in names off Script.TheScript, which is not up yet at field-init.
@@ -255,8 +260,10 @@ namespace Keyview
 		//}
 		private void InitCodeFolding(Scintilla txt)
 		{
-			txt.SetFoldMarginColor(true, IntToColor(BACK_COLOR));
-			txt.SetFoldMarginHighlightColor(true, IntToColor(BACK_COLOR));
+			var marginBackground = SyntaxPalette.ToColor(SyntaxPalette.MarginBackground);
+			var marginForeground = SyntaxPalette.ToColor(SyntaxPalette.MarginForeground);
+			txt.SetFoldMarginColor(true, marginBackground);
+			txt.SetFoldMarginHighlightColor(true, marginBackground);
 			//Enable code folding.
 			txt.SetProperty("fold", "1");
 			txt.SetProperty("fold.compact", "1");
@@ -269,8 +276,8 @@ namespace Keyview
 			//Set colors for all folding markers.
 			for (int i = 25; i <= 31; i++)
 			{
-				txt.Markers[i].SetForeColor(IntToColor(BACK_COLOR)); // styles for [+] and [-]
-				txt.Markers[i].SetBackColor(IntToColor(FORE_COLOR)); // styles for [+] and [-]
+				txt.Markers[i].SetForeColor(marginBackground);
+				txt.Markers[i].SetBackColor(marginForeground);
 			}
 
 			//Configure folding markers with respective symbols.
@@ -285,14 +292,24 @@ namespace Keyview
 			txt.AutomaticFold = AutomaticFold.Show | AutomaticFold.Click | AutomaticFold.Change;
 		}
 
-		private void InitColors(Scintilla txt) => txt.CaretForeColor = Color.Black;
+		private void InitColors(Scintilla txt)
+		{
+			txt.CaretForeColor = SyntaxPalette.ToColor(SyntaxPalette.Caret);
+			txt.CaretLineBackColor = SyntaxPalette.ToColor(SyntaxPalette.CaretLine);
+			txt.SelectionBackColor = SyntaxPalette.ToColor(SyntaxPalette.SelectionBackground);
+			txt.SelectionTextColor = SyntaxPalette.ToColor(SyntaxPalette.SelectionForeground);
+			txt.AutocompleteListBackColor = SyntaxPalette.ToColor(SyntaxPalette.EditorBackground);
+			txt.AutocompleteListTextColor = SyntaxPalette.ToColor(SyntaxPalette.EditorForeground);
+			txt.AutocompleteListSelectedBackColor = SyntaxPalette.ToColor(SyntaxPalette.SelectionBackground);
+			txt.AutocompleteListSelectedTextColor = SyntaxPalette.ToColor(SyntaxPalette.SelectionForeground);
+		}
 
 		private void InitNumberMargin(Scintilla txt)
 		{
-			txt.Styles[Style.LineNumber].BackColor = IntToColor(BACK_COLOR);
-			txt.Styles[Style.LineNumber].ForeColor = IntToColor(FORE_COLOR);
-			txt.Styles[Style.IndentGuide].ForeColor = IntToColor(FORE_COLOR);
-			txt.Styles[Style.IndentGuide].BackColor = IntToColor(BACK_COLOR);
+			txt.Styles[Style.LineNumber].BackColor = SyntaxPalette.ToColor(SyntaxPalette.MarginBackground);
+			txt.Styles[Style.LineNumber].ForeColor = SyntaxPalette.ToColor(SyntaxPalette.MarginForeground);
+			txt.Styles[Style.IndentGuide].ForeColor = SyntaxPalette.ToColor(SyntaxPalette.MarginForeground);
+			txt.Styles[Style.IndentGuide].BackColor = SyntaxPalette.ToColor(SyntaxPalette.MarginBackground);
 			var nums = txt.Margins[NUMBER_MARGIN];
 			nums.Width = 30;
 			nums.Type = MarginType.Number;
@@ -323,8 +340,9 @@ namespace Keyview
 			txt.StyleResetDefault();
 			txt.Styles[Style.Default].Font = "Consolas";
 			txt.Styles[Style.Default].Size = 10;
+			txt.Styles[Style.Default].BackColor = SyntaxPalette.ToColor(SyntaxPalette.EditorBackground);
+			txt.Styles[Style.Default].ForeColor = SyntaxPalette.ToColor(SyntaxPalette.EditorForeground);
 			txt.StyleClearAll();
-			txt.SelectionBackColor = Color.FromArgb(153, 201, 239);
 		}
 
 		private void InitDragDropFile()
@@ -405,8 +423,6 @@ namespace Keyview
 
 		private void Keyview_Load(object sender, EventArgs e)
 		{
-			InitColors(txtIn);
-			InitColors(txtOut);
 			// The input box is container-styled from the SAME tokenizer the Eto editor uses: Scintilla has no
 			// AutoHotkey lexer, and the C++ one it used to borrow could not switch to C# inside a #CSharp block.
 			InitInputStyle(txtIn);
@@ -415,12 +431,13 @@ namespace Keyview
 			txtOut.StyleResetDefault();
 			txtOut.Styles[Style.Default].Font = "Consolas";
 			txtOut.Styles[Style.Default].Size = 10;
-			//txt.Styles[Style.Default].BackColor = IntToColor(0xFFFCE1);
-			//txt.Styles[Style.Default].BackColor = IntToColor(0x212121);
-			//txt.Styles[Style.Default].ForeColor = IntToColor(0xFFFFFF);
+			txtOut.Styles[Style.Default].BackColor = SyntaxPalette.ToColor(SyntaxPalette.EditorBackground);
+			txtOut.Styles[Style.Default].ForeColor = SyntaxPalette.ToColor(SyntaxPalette.EditorForeground);
 			txtOut.StyleClearAll();
 			csStyler.ApplyStyle(txtOut);//C# syntax for txtOut.
 			csStyler.SetKeywords(txtOut);
+			InitColors(txtIn);
+			InitColors(txtOut);
 			InitNumberMargin(txtIn);
 			InitNumberMargin(txtOut);
 			//InitBookmarkMargin();
@@ -576,17 +593,18 @@ namespace Keyview
 				return;
 
 			btnCompileScript.Enabled = false;
+			tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.EditorForeground);
 			tslCodeStatus.Text = "Writing .cks...";
 			Refresh();
 
 			if (KeyviewDocumentCompiler.TryCompile(document.CurrentFilePath, ch, out var outputPath, out var error))
 			{
-				tslCodeStatus.ForeColor = Color.Green;
+				tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusSuccess);
 				tslCodeStatus.Text = $"Wrote {outputPath}";
 			}
 			else
 			{
-				tslCodeStatus.ForeColor = Color.Red;
+				tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusError);
 				tslCodeStatus.Text = "Compile failed";
 				SetTxtOut(error);
 			}
@@ -637,7 +655,7 @@ namespace Keyview
 
 		private void SetFailure()
 		{
-			tslCodeStatus.ForeColor = Color.Red;
+			tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusError);
 			tslCodeStatus.Text = "Error";
 			SetTxtOut("");
 			Refresh();
@@ -646,7 +664,7 @@ namespace Keyview
 		private void SetStart()
 		{
 			fullCode = trimmedCode = "";
-			tslCodeStatus.ForeColor = Color.Black;
+			tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.EditorForeground);
 			tslCodeStatus.Text = "";
 			//Don't clear txtOut, it causes flicker.
 			Refresh();
@@ -654,7 +672,7 @@ namespace Keyview
 
 		private void SetSuccess(double seconds)
 		{
-			tslCodeStatus.ForeColor = Color.Green;
+			tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusSuccess);
 			tslCodeStatus.Text = $"Ok ({seconds:F1}s)";
 			Refresh();
 		}
@@ -942,6 +960,13 @@ namespace Keyview
 #if !WINDOWS
 	internal sealed class Keyview : Eto.Forms.Form
 	{
+		private enum StatusTone
+		{
+			Default,
+			Success,
+			Error
+		}
+
 		private readonly struct TextSnapshot
 		{
 			public TextSnapshot(string text, int selectionStart, int selectionLength)
@@ -1019,6 +1044,8 @@ namespace Keyview
 		private bool suppressDocumentChange;
 		private bool highlighting;
 		private bool outputHighlighting;
+		private bool themeRefreshPending;
+		private StatusTone codeStatusTone;
 		// True while the output box is displaying a running script's output rather than generated C#.
 		// Cleared whenever the compiler writes C# back into the box, so a still-running (now stale)
 		// script can't clobber the freshly displayed code with its continued output.
@@ -1044,6 +1071,7 @@ namespace Keyview
 			InitializeSearchPanel();
 			InitializeStatusBar();
 			InitializeLayout();
+			Application.Instance.ThemeChanged += Application_ThemeChanged;
 
 			timer.Interval = updateFreqSeconds;
 			timer.Elapsed += Timer_Elapsed;
@@ -1076,6 +1104,7 @@ namespace Keyview
 			};
 			Closed += (_, _) =>
 			{
+				Application.Instance.ThemeChanged -= Application_ThemeChanged;
 				timer.Stop();
 				highlightTimer.Stop();
 				try
@@ -1192,6 +1221,7 @@ namespace Keyview
 			outputArea.ReadOnly = true;
 			inputArea.Wrap = true;
 			outputArea.Wrap = true;
+			ApplyEditorTheme(false);
 			inputArea.TextChanged += InputArea_TextChanged;
 			// Debounce input highlighting so a full re-color runs once typing pauses rather than
 			// on every keystroke (important for large scripts).
@@ -1204,6 +1234,67 @@ namespace Keyview
 			outputArea.KeyDown += InputArea_KeyDown;
 #endif
 			inputArea.MouseUp += (_, _) => UpdateSelectionSnapshot();
+		}
+
+		private void Application_ThemeChanged(object sender, EventArgs e)
+		{
+			themeRefreshPending = true;
+			Application.Instance.AsyncInvoke(ApplyPendingThemeRefresh);
+		}
+
+		private void ApplyPendingThemeRefresh()
+		{
+			if (!themeRefreshPending || highlighting || outputHighlighting || closing)
+				return;
+
+			themeRefreshPending = false;
+			ApplyEditorTheme(true);
+		}
+
+		private void ApplyEditorTheme(bool recolor)
+		{
+			var background = SyntaxPalette.ToColor(SyntaxPalette.EditorBackground);
+			var foreground = SyntaxPalette.ToColor(SyntaxPalette.EditorForeground);
+			BackgroundColor = SystemColors.WindowBackground;
+			inputArea.BackgroundColor = background;
+			inputArea.TextColor = foreground;
+			outputArea.BackgroundColor = background;
+			outputArea.TextColor = foreground;
+
+			ApplyCodeStatusColor();
+
+			if (recolor)
+			{
+				HighlightInput();
+				RecolorOutputForTheme();
+			}
+		}
+
+		private void ApplyCodeStatusColor() => codeStatusLabel.TextColor = SyntaxPalette.ToColor(codeStatusTone switch
+		{
+			StatusTone.Success => SyntaxPalette.StatusSuccess,
+			StatusTone.Error => SyntaxPalette.StatusError,
+			_ => SyntaxPalette.EditorForeground
+		});
+
+		private void SetCodeStatusTone(StatusTone tone)
+		{
+			codeStatusTone = tone;
+			ApplyCodeStatusColor();
+		}
+
+		private void RecolorOutputForTheme()
+		{
+			if (!scriptOwnsOutput)
+			{
+				HighlightOutput();
+				return;
+			}
+
+			var length = outputArea.TextLength;
+
+			if (length > 0)
+				outputArea.Buffer.SetForeground(new Range<int>(0, length - 1), outputArea.TextColor);
 		}
 
 		private static Font TryMonospaceFont(float size)
@@ -1544,6 +1635,7 @@ namespace Keyview
 			finally
 			{
 				highlighting = false;
+				ApplyPendingThemeRefresh();
 			}
 		}
 
@@ -2060,16 +2152,17 @@ namespace Keyview
 				return;
 
 			compileScriptButton.Enabled = false;
+			SetCodeStatusTone(StatusTone.Default);
 			codeStatusLabel.Text = "Writing .cks...";
 
 			if (KeyviewDocumentCompiler.TryCompile(document.CurrentFilePath, ch, out var outputPath, out var error))
 			{
-				codeStatusLabel.TextColor = Colors.Green;
+				SetCodeStatusTone(StatusTone.Success);
 				codeStatusLabel.Text = $"Wrote {outputPath}";
 			}
 			else
 			{
-				codeStatusLabel.TextColor = Colors.Red;
+				SetCodeStatusTone(StatusTone.Error);
 				codeStatusLabel.Text = "Compile failed";
 				SetOutputText(error);
 			}
@@ -2103,19 +2196,19 @@ namespace Keyview
 		private void SetStart()
 		{
 			fullCode = trimmedCode = "";
-			codeStatusLabel.TextColor = Colors.Black;
+			SetCodeStatusTone(StatusTone.Default);
 			codeStatusLabel.Text = "";
 		}
 
 		private void SetSuccess(double seconds)
 		{
-			codeStatusLabel.TextColor = Colors.Green;
+			SetCodeStatusTone(StatusTone.Success);
 			codeStatusLabel.Text = $"Ok ({seconds:F1}s)";
 		}
 
 		private void SetFailure()
 		{
-			codeStatusLabel.TextColor = Colors.Red;
+			SetCodeStatusTone(StatusTone.Error);
 			codeStatusLabel.Text = "Error";
 			SetOutputText("");
 		}
@@ -2127,6 +2220,14 @@ namespace Keyview
 
 			scriptOwnsOutput = false; // the compiler is reclaiming the output box from any running script
 			outputArea.Text = text;
+			HighlightOutput();
+		}
+
+		private void HighlightOutput()
+		{
+			if (outputHighlighting)
+				return;
+
 			outputHighlighting = true;
 			try
 			{
@@ -2136,6 +2237,7 @@ namespace Keyview
 			finally
 			{
 				outputHighlighting = false;
+				ApplyPendingThemeRefresh();
 			}
 		}
 

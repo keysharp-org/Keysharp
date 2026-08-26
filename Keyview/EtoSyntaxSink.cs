@@ -8,11 +8,16 @@ namespace Keyview
 	internal sealed class EtoSyntaxSink : ISyntaxSink
 	{
 		private readonly ITextBuffer buffer;
+		private readonly bool isDark;
 
-		internal EtoSyntaxSink(ITextBuffer buffer) => this.buffer = buffer;
+		internal EtoSyntaxSink(ITextBuffer buffer, bool isDark)
+		{
+			this.buffer = buffer;
+			this.isDark = isDark;
+		}
 
 		public void Style(int start, int endExclusive, SyntaxColor color) =>
-			buffer.SetForeground(new Range<int>(start, endExclusive - 1), SyntaxPalette.ToEto(color));
+			buffer.SetForeground(new Range<int>(start, endExclusive - 1), SyntaxPalette.ToColor(color, isDark));
 	}
 
 	internal static class EtoHighlightExtensions
@@ -35,7 +40,7 @@ namespace Keyview
 			if (!highlighter.CanHighlight(n))
 				return;
 
-			highlighter.Highlight(new EtoSyntaxSink(buffer), text, pump, () => area.TextLength);
+			highlighter.Highlight(new EtoSyntaxSink(buffer, SyntaxPalette.IsDark), text, pump, () => area.TextLength);
 		}
 	}
 }

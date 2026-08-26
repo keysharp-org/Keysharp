@@ -100,7 +100,6 @@
 			//
 			// menuStrip1
 			//
-			menuStrip1.BackColor = Color.FromArgb(224, 224, 224);
 			menuStrip1.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, 0);
 			menuStrip1.Items.AddRange(new ToolStripItem[] { fileToolStripMenuItem, editToolStripMenuItem, searchToolStripMenuItem, viewToolStripMenuItem });
 			menuStrip1.Location = new Point(0, 0);
@@ -343,7 +342,6 @@
 			//
 			// PanelSearch
 			//
-			PanelSearch.BackColor = Color.White;
 			PanelSearch.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
 			PanelSearch.Controls.Add(BtnNextSearch);
 			PanelSearch.Controls.Add(BtnPrevSearch);
@@ -447,10 +445,6 @@
 			//
 			// txtIn
 			//
-#if WINDOWS
-			txtIn.AutocompleteListSelectedBackColor = Color.FromArgb(0, 120, 215);
-			txtIn.CaretLineBackColor = Color.AliceBlue;
-#endif
 			txtIn.Dock = DockStyle.Fill;
 			txtIn.Font = new Font("Consolas", 10F);
 #if !WINDOWS
@@ -471,10 +465,6 @@
 			//
 			// txtOut
 			//
-#if WINDOWS
-			txtOut.AutocompleteListSelectedBackColor = Color.FromArgb(0, 120, 215);
-			txtOut.CaretLineBackColor = Color.AliceBlue;
-#endif
 			txtOut.Dock = DockStyle.Fill;
 			txtOut.Font = new Font("Consolas", 10F);
 #if !WINDOWS
@@ -530,7 +520,6 @@
 			//
 			AutoScaleDimensions = new SizeF(7F, 15F);
 			AutoScaleMode = AutoScaleMode.Font;
-			BackColor = Color.White;
 			ClientSize = new Size(1680, 482);
 			Controls.Add(splitContainer);
 			Controls.Add(PanelSearch);

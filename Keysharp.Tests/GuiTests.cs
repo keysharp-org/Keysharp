@@ -1325,16 +1325,30 @@ namespace Keysharp.Tests
 				Ks.A_GuiTheme = originalTheme;
 			}
 #else
+			SkipIfUiInitializationBlocked("A_GuiTheme requires an Eto application.");
 			var originalTheme = Ks.A_GuiTheme.ToString();
+			var app = Application.Instance;
+			Assert.IsNotNull(app);
+			var originalEtoTheme = app.Theme;
 
 			try
 			{
 				Ks.A_GuiTheme = "Dark";
 				Assert.AreEqual("Dark", Ks.A_GuiTheme);
+				Assert.AreEqual(Themes.Dark, app.Theme);
+
+				Ks.A_GuiTheme = "System";
+				Assert.AreEqual("System", Ks.A_GuiTheme);
+				Assert.AreEqual(Themes.System, app.Theme);
+
+				Ks.A_GuiTheme = "Classic";
+				Assert.AreEqual("Classic", Ks.A_GuiTheme);
+				Assert.AreEqual(Themes.Light, app.Theme);
 			}
 			finally
 			{
 				Ks.A_GuiTheme = originalTheme;
+				Script.InvokeOnUIThread(() => app.Theme = originalEtoTheme);
 			}
 #endif
 		}

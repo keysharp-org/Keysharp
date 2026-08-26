@@ -180,7 +180,7 @@ Status legend:
 | A_EventInfo | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_ExitReason | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Always null until the main form is closing, in which case the value will be "OnExit()". |
 | A_FileEncoding | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the encoding used for reading and writing files. This differs from AHK in that it only supports ASCII (ascii), UTF-8 (utf-8/utf8-raw) or Unicode (utf-16/utf16-raw or unicode). ASCII will always return us-ascii because that is the name of the encoding in C#. |
-| A_GuiTheme | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Gets/sets the application-wide WinForms GUI theme. Accepted values: Classic, System, Dark. Windows only; no-op on other platforms. |
+| A_GuiTheme | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets the application-wide GUI theme. Accepted values: Classic, System, Dark. System selects the operating-system theme; Eto follows later system-theme changes, while WinForms resolves the setting when it is applied. Classic selects the Eto light theme on Linux and macOS. |
 | A_HasExited | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether script termination has been requested/completed. |
 | A_HotIf | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_HotIfTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the timeout for evaluating #HotIf criteria. |

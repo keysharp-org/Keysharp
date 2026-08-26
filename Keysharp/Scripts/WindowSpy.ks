@@ -4,6 +4,7 @@
 
 #Requires AutoHotkey v2.0
 #Requires capability ScreenCapture, InputMonitoring
+#Import Ks { A_GuiTheme }
 
 #NoTrayIcon
 #SingleInstance Ignore
@@ -11,6 +12,8 @@ SetWorkingDir A_ScriptDir
 CoordMode "Pixel", "Screen"
 
 Global oGui
+
+A_GuiTheme := "System"
 
 WinSpyGui()
 

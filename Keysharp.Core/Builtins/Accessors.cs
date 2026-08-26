@@ -7,7 +7,11 @@ namespace Keysharp.Builtins
 		internal long maxHotkeysPerInterval = 2000L;
 		internal readonly string initialWorkingDir = Environment.CurrentDirectory;
 		internal bool allowMainWindow = true;
+#if WINDOWS
 		internal string guiTheme = "Classic";
+#else
+		internal string guiTheme = "System";
+#endif
 		internal bool? iconFrozen;
 		internal bool iconHidden;
 		internal long inputLevel;
@@ -2097,7 +2101,7 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// The application-wide WinForms GUI theme.
+		/// The application-wide GUI theme.
 		/// Possible values are Classic, System, and Dark.
 		/// </summary>
 		public static object A_GuiTheme
@@ -2107,7 +2111,26 @@ namespace Keysharp.Builtins
 #if WINDOWS
 				return Script.InvokeOnUIThread(() => Application.ColorMode.ToString());
 #else
-				return Script.TheScript.AccessorData.guiTheme;
+				var app = Application.Instance;
+
+				if (app == null || Script.IsUiInitializationBlocked)
+					return Script.TheScript.AccessorData.guiTheme;
+
+				return Script.InvokeOnUIThread(() =>
+				{
+					var theme = app.Theme;
+
+					if (theme == Themes.System)
+						return "System";
+
+					if (theme == Themes.Dark)
+						return "Dark";
+
+					if (theme == Themes.Light)
+						return "Classic";
+
+					return Script.TheScript.AccessorData.guiTheme;
+				});
 #endif
 			}
 			set
@@ -2125,6 +2148,9 @@ namespace Keysharp.Builtins
 				Script.TheScript.AccessorData.guiTheme = normalizedTheme;
 #if WINDOWS
 				Script.InvokeOnUIThread(() => Application.SetColorMode(colorMode));
+#else
+				if (!Script.IsUiInitializationBlocked && Application.Instance is { } app)
+					Script.InvokeOnUIThread(() => Script.ApplyEtoGuiTheme(app, normalizedTheme));
 #endif
 			}
 		}

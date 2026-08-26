@@ -956,6 +956,16 @@ namespace Keysharp.Runtime
 		}
 
 #if !WINDOWS
+		internal static void ApplyEtoGuiTheme(Application app, string theme)
+		{
+			app.Theme = theme switch
+			{
+				"Dark" => Themes.Dark,
+				"Classic" => Themes.Light,
+				_ => Themes.System
+			};
+		}
+
 		internal static Application EnsureEtoApplication()
 		{
 			var app = Application.Instance ?? new Application();
@@ -965,6 +975,8 @@ namespace Keysharp.Runtime
 
 			if (etoAppConfigured)
 				return app;
+
+			ApplyEtoGuiTheme(app, TheScript?.AccessorData.guiTheme ?? "System");
 
 			app.UnhandledException += (s, e) =>
 			{

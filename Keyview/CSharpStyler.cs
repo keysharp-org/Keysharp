@@ -10,27 +10,27 @@ namespace Keyview
 
 		public override void ApplyStyle(ScintillaNET.Scintilla scintilla)
 		{
-			// Configure the CPP (C#) lexer styles
-			scintilla.Styles[Style.Cpp.Default].ForeColor = Color.Silver;
-			scintilla.Styles[Style.Cpp.Comment].ForeColor = Color.FromArgb(0, 128, 0); // Green
-			scintilla.Styles[Style.Cpp.CommentLine].ForeColor = Color.FromArgb(0, 128, 0); // Green
-			scintilla.Styles[Style.Cpp.CommentLineDoc].ForeColor = Color.FromArgb(0, 128, 0); // Green
-			scintilla.Styles[Style.Cpp.Number].ForeColor = Color.DarkOliveGreen;
-			scintilla.Styles[Style.Cpp.Word].ForeColor = Color.Blue;
-			scintilla.Styles[Style.Cpp.Word2].ForeColor = Color.FromArgb(52, 146, 184); // Turqoise
-			scintilla.Styles[Style.Cpp.String].ForeColor = Color.FromArgb(163, 21, 21); // Red
-			scintilla.Styles[Style.Cpp.Character].ForeColor = Color.FromArgb(163, 21, 21); // Red
-			scintilla.Styles[Style.Cpp.Verbatim].ForeColor = Color.FromArgb(163, 21, 21); // Red
-			scintilla.Styles[Style.Cpp.StringEol].BackColor = Color.Pink;
-			scintilla.Styles[Style.Cpp.Operator].ForeColor = Color.FromArgb(0, 0, 120); // Dark Blue
-			scintilla.Styles[Style.Cpp.Preprocessor].ForeColor = Color.FromArgb(128, 128, 128); // Gray
-			scintilla.SelectionBackColor = Color.FromArgb(153, 201, 239);
+			var isDark = SyntaxPalette.IsDark;
+			scintilla.Styles[Style.Cpp.Default].ForeColor = SyntaxPalette.ToColor(SyntaxColor.Default, isDark);
+			scintilla.Styles[Style.Cpp.Comment].ForeColor = SyntaxPalette.ToColor(SyntaxColor.Comment, isDark);
+			scintilla.Styles[Style.Cpp.CommentLine].ForeColor = SyntaxPalette.ToColor(SyntaxColor.Comment, isDark);
+			scintilla.Styles[Style.Cpp.CommentLineDoc].ForeColor = SyntaxPalette.ToColor(SyntaxColor.Comment, isDark);
+			scintilla.Styles[Style.Cpp.Number].ForeColor = SyntaxPalette.ToColor(SyntaxColor.Number, isDark);
+			scintilla.Styles[Style.Cpp.Word].ForeColor = SyntaxPalette.ToColor(SyntaxColor.Keyword, isDark);
+			scintilla.Styles[Style.Cpp.Word2].ForeColor = SyntaxPalette.ToColor(SyntaxColor.Builtin, isDark);
+			scintilla.Styles[Style.Cpp.String].ForeColor = SyntaxPalette.ToColor(SyntaxColor.String, isDark);
+			scintilla.Styles[Style.Cpp.Character].ForeColor = SyntaxPalette.ToColor(SyntaxColor.String, isDark);
+			scintilla.Styles[Style.Cpp.Verbatim].ForeColor = SyntaxPalette.ToColor(SyntaxColor.String, isDark);
+			scintilla.Styles[Style.Cpp.StringEol].BackColor = SyntaxPalette.ToColor(SyntaxPalette.StringEolBackground);
+			scintilla.Styles[Style.Cpp.Operator].ForeColor = SyntaxPalette.ToColor(SyntaxColor.Default, isDark);
+			scintilla.Styles[Style.Cpp.Preprocessor].ForeColor = SyntaxPalette.ToColor(SyntaxPalette.Preprocessor);
+			scintilla.SelectionBackColor = SyntaxPalette.ToColor(SyntaxPalette.SelectionBackground);
 			scintilla.LexerName = "cpp";
 		}
 
 		public override void RemoveStyle(ScintillaNET.Scintilla scintilla)
 		{
-			scintilla.SelectionBackColor = Color.Silver;
+			scintilla.SelectionBackColor = SyntaxPalette.ToColor(SyntaxPalette.SelectionBackground);
 		}
 
 		public override void SetKeywords(ScintillaNET.Scintilla scintilla)

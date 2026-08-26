@@ -14,10 +14,12 @@ namespace Keyview
 			_ = Application.SetHighDpiMode(HighDpiMode.SystemAware);
 			Application.EnableVisualStyles();
 			Application.SetCompatibleTextRenderingDefault(false);
+			Application.SetColorMode(SystemColorMode.System);
 			Application.Run(new Keyview(initialFile));
 #else
 			if (Application.Instance == null)
 				new Eto.Forms.Application();
+			Application.Instance.Theme = Themes.System;
 #if OSX
 			if (Application.Instance.Handler is Eto.Mac.Forms.ApplicationHandler macHandler)
 				macHandler.AllowClosingMainForm = true;

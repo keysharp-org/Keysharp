@@ -1753,10 +1753,11 @@
                      "feature":  "A_GuiTheme",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "Gets/sets the application-wide WinForms GUI theme. Accepted values: Classic, System, Dark. Windows only; no-op on other platforms."
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Gets/sets the application-wide GUI theme. Accepted values: Classic, System, Dark. System selects the operating-system theme; Eto follows later system-theme changes, while WinForms resolves the setting when it is applied. Classic selects the Eto light theme on Linux and macOS.",
+                     "tested-by":  "GuiTests.Theme"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

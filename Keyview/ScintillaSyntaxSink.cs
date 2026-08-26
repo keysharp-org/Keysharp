@@ -52,14 +52,14 @@ namespace Keyview
 		{
 			// Our style indices overlap the built-in lexers', so clear whatever a previous one left behind.
 			scintilla.StyleClearAll();
+			var isDark = SyntaxPalette.IsDark;
 
 			foreach (SyntaxColor color in Enum.GetValues<SyntaxColor>())
 			{
 				if (color == SyntaxColor.Default)
 					continue;
 
-				var rgb = SyntaxPalette.ToRgb(color);
-				scintilla.Styles[StyleOf(color)].ForeColor = Color.FromArgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
+				scintilla.Styles[StyleOf(color)].ForeColor = SyntaxPalette.ToColor(color, isDark);
 			}
 
 			// No lexer name = the container styles the document, so Scintilla raises StyleNeeded instead.
