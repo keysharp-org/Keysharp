@@ -431,6 +431,7 @@ static bool test_vk_evdev_mapping_covers_portable_and_alternate_codes(void)
     CHECK(ksi_vk_to_evdev(0x15u) == KEY_KATAKANAHIRAGANA);
     CHECK(ksi_vk_to_evdev(0x19u) == KEY_HANJA);
     CHECK(ksi_vk_to_evdev(0xB4u) == KEY_MAIL);
+    CHECK(ksi_vk_to_evdev(0xABu) == KEY_BOOKMARKS);
     CHECK(ksi_vk_to_evdev(0xE2u) == KEY_102ND);
     CHECK(ksi_evdev_to_vk(KEY_KATAKANA) == 0x15u);
     CHECK(ksi_evdev_to_vk(KEY_HANGEUL) == 0x15u);
@@ -439,8 +440,24 @@ static bool test_vk_evdev_mapping_covers_portable_and_alternate_codes(void)
     CHECK(ksi_evdev_to_vk(KEY_YEN) == 0xDCu);
     CHECK(ksi_evdev_to_vk(KEY_MENU) == 0x5Du);
     CHECK(ksi_evdev_to_vk(KEY_WWW) == 0xACu);
+    CHECK(ksi_evdev_to_vk(KEY_BOOKMARKS) == 0xABu);
+    CHECK(ksi_evdev_to_vk(KEY_FAVORITES) == 0xABu);
     CHECK(ksi_evdev_to_vk(KEY_EMAIL) == 0xB4u);
     CHECK(ksi_evdev_to_vk(KEY_RO) == 0xE2u);
+    return true;
+}
+
+static bool test_panic_chord_requires_all_physical_keys(void)
+{
+    uint8_t keys[KSI_KEY_STATE_BITMAP_BYTES] = { 0 };
+
+    keys[KEY_BACKSPACE >> 3u] |= (uint8_t)(1u << (KEY_BACKSPACE & 7u));
+    keys[KEY_ESC >> 3u] |= (uint8_t)(1u << (KEY_ESC & 7u));
+    CHECK(!panic_chord_is_down(keys));
+    keys[KEY_ENTER >> 3u] |= (uint8_t)(1u << (KEY_ENTER & 7u));
+    CHECK(panic_chord_is_down(keys));
+    keys[KEY_ESC >> 3u] &= (uint8_t)~(1u << (KEY_ESC & 7u));
+    CHECK(!panic_chord_is_down(keys));
     return true;
 }
 
@@ -483,6 +500,7 @@ int main(void)
         bool (*run)(void);
     } tests[] = {
         { "VK/evdev mapping covers portable and alternate codes", test_vk_evdev_mapping_covers_portable_and_alternate_codes },
+        { "panic chord requires all physical keys", test_panic_chord_requires_all_physical_keys },
         { "stale nested transaction preserves its whole batch", test_nested_parent_mismatch_fails_open_as_one_batch },
         { "hook snapshot follows install order", test_subscriber_snapshot_uses_hook_install_order },
         { "only active seat user receives callbacks", test_only_active_seat_user_enters_hook_snapshot },

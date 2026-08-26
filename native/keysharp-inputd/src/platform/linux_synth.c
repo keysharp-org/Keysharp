@@ -2,6 +2,7 @@
 
 #include "keysharp_inputd/globals.h"
 #include "keysharp_inputd/linux_devices.h"
+#include "linux_device_filter.h"
 #include "vk_evdev.h"
 
 #include <errno.h>
@@ -660,8 +661,15 @@ static int scan_to_evdev_key(uint16_t scan, bool extended)
 
 static int enable_keyboard_keys(void)
 {
-    for (size_t i = 0; i < ksi_vk_evdev_key_count(); i++) {
-        if (enable_key((int)ksi_vk_evdev_key_at(i)) != 0) {
+    /* A grabbed keyboard is replayed through this device. Enable the complete
+     * Linux keyboard-key ranges so keys without a Windows VK counterpart
+     * (brightness, privacy, macro and similar hardware controls) pass through
+     * instead of disappearing while a Keysharp hook is installed. Keep BTN_*
+     * ranges off the keyboard device so libinput does not classify it as a
+     * mouse, tablet, joystick or gamepad. */
+    for (int key = KEY_RESERVED + 1; key <= KEY_MAX; key++) {
+        if (ksi_linux_key_code_is_keyboard((unsigned int)key)
+            && enable_key(key) != 0) {
             return -1;
         }
     }

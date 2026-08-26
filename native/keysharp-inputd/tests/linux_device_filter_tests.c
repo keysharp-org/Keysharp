@@ -19,6 +19,39 @@ static bool expect_seat(const char *id_seat, bool expected, const char *descript
     return true;
 }
 
+static bool expect_keyboard_key(unsigned int code, bool expected, const char *description)
+{
+    bool actual = ksi_linux_key_code_is_keyboard(code);
+
+    if (actual != expected) {
+        fprintf(stderr,
+            "FAIL: %s: code=%u was %s\n",
+            description,
+            code,
+            actual ? "accepted" : "rejected");
+        return false;
+    }
+
+    return true;
+}
+
+static bool expect_pointer_button(unsigned int code, uint32_t expected, const char *description)
+{
+    uint32_t actual = ksi_linux_pointer_button_mask(code);
+
+    if (actual != expected) {
+        fprintf(stderr,
+            "FAIL: %s: code=%u mask=0x%x expected=0x%x\n",
+            description,
+            code,
+            actual,
+            expected);
+        return false;
+    }
+
+    return true;
+}
+
 static bool expect_admission(
     bool metadata_initialized,
     const char *id_seat,
@@ -71,6 +104,18 @@ static bool expect_nearest_seat(
 int main(void)
 {
     bool passed = true;
+
+    passed = expect_keyboard_key(KEY_A, true, "ordinary keys are accepted") && passed;
+    passed = expect_keyboard_key(BTN_LEFT, false, "mouse buttons are rejected") && passed;
+    passed = expect_keyboard_key(KEY_OK, true, "remote-control keys are accepted") && passed;
+    passed = expect_keyboard_key(BTN_DPAD_UP, false, "controller D-pad buttons are rejected") && passed;
+    passed = expect_keyboard_key(KEY_ALS_TOGGLE, true, "late hardware keys are accepted") && passed;
+    passed = expect_keyboard_key(BTN_TRIGGER_HAPPY1, false, "controller trigger buttons are rejected") && passed;
+    passed = expect_pointer_button(BTN_SIDE, 1u << 3, "side maps to X1") && passed;
+    passed = expect_pointer_button(BTN_BACK, 1u << 3, "back aliases X1") && passed;
+    passed = expect_pointer_button(BTN_EXTRA, 1u << 4, "extra maps to X2") && passed;
+    passed = expect_pointer_button(BTN_FORWARD, 1u << 4, "forward aliases X2") && passed;
+    passed = expect_pointer_button(BTN_TASK, 0u, "unrepresented buttons are rejected") && passed;
 
     passed = expect_seat(NULL, true, "an absent ID_SEAT defaults to seat0") && passed;
     passed = expect_seat("seat0", true, "seat0 is admitted") && passed;

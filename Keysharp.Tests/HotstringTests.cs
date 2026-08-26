@@ -469,6 +469,8 @@ namespace Keysharp.Tests
 			Assert.AreEqual(0xBBu, EvdevToVk(117)); // KEY_KPEQUAL -> VK_OEM_PLUS
 			Assert.AreEqual(0xDCu, EvdevToVk(124)); // KEY_YEN -> VK_OEM_5
 			Assert.AreEqual(0xACu, EvdevToVk(150)); // KEY_WWW -> VK_BROWSER_HOME
+			Assert.AreEqual(156u, VkToEvdev(0xAB)); // VK_BROWSER_FAVORITES -> KEY_BOOKMARKS
+			Assert.AreEqual(0xABu, EvdevToVk(364)); // KEY_FAVORITES
 			Assert.AreEqual(155u, VkToEvdev(0xB4)); // VK_LAUNCH_MAIL -> KEY_MAIL
 			Assert.AreEqual(0xB4u, EvdevToVk(215)); // KEY_EMAIL
 			Assert.AreEqual(0xB3u, EvdevToVk(207)); // KEY_PLAY -> VK_MEDIA_PLAY_PAUSE
@@ -494,6 +496,7 @@ namespace Keysharp.Tests
 			// not just the one MapVkToSc names.
 			CollectionAssert.AreEqual(new uint[] { 127, 139 }, CodesFor(0x5D)); // VK_APPS: KEY_COMPOSE, KEY_MENU
 			CollectionAssert.AreEqual(new uint[] { 155, 215 }, CodesFor(0xB4)); // VK_LAUNCH_MAIL: KEY_MAIL, KEY_EMAIL
+			CollectionAssert.AreEqual(new uint[] { 156, 364 }, CodesFor(0xAB)); // VK_BROWSER_FAVORITES
 			CollectionAssert.AreEqual(new uint[] { 164, 200, 201, 207 }, CodesFor(0xB3)); // VK_MEDIA_PLAY_PAUSE
 			CollectionAssert.AreEqual(new uint[] { 28, 96 }, CodesFor(0x0D)); // VK_RETURN: KEY_ENTER, KEY_KPENTER
 			CollectionAssert.AreEqual(new uint[] { 103 }, CodesFor(0x26)); // VK_UP

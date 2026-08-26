@@ -43,6 +43,7 @@ typedef struct ksi_linux_device_info {
     bool has_keyboard_keys;
     bool has_mouse_buttons;
     bool has_pointer_axes;
+    bool requires_compositor_processing;
     uint16_t bustype;
     uint16_t vendor;
     uint16_t product;
@@ -59,6 +60,8 @@ typedef struct ksi_linux_tracked_device {
     bool grabbed;
     bool keyboard_candidate;
     bool mouse_candidate;
+    bool mouse_hook_candidate;
+    bool mouse_block_candidate;
     bool injected_source;
     bool event_clock_monotonic;
     bool grab_deferred;
@@ -95,6 +98,8 @@ static struct udev_monitor *udev_monitor;
 static uint32_t next_device_id = 1;
 static ksi_hook_event_callback hook_event_callback;
 static void *hook_event_context;
+static ksi_physical_key_event_callback physical_key_event_callback;
+static void *physical_key_event_context;
 static uint32_t grab_hook_mask;
 static uint32_t block_input_mask;
 /* Set when the most recent set_grab_masks() could not apply the requested grab
@@ -166,25 +171,25 @@ static bool any_bit_set(const unsigned long *bits, size_t length)
     return false;
 }
 
-static bool has_any_key_range(const unsigned long *key_bits, int first, int last)
+static bool is_keyboard_key_code(unsigned int code)
 {
-    for (int key = first; key <= last; key++) {
-        if (test_bit(key_bits, key)) {
+    return ksi_linux_key_code_is_keyboard(code);
+}
+
+static bool is_mouse_button_code(unsigned int code)
+{
+    return ksi_linux_pointer_button_mask(code) != 0u;
+}
+
+static bool looks_like_keyboard(const unsigned long *key_bits)
+{
+    for (unsigned int code = KEY_RESERVED + 1u; code <= KEY_MAX; code++) {
+        if (is_keyboard_key_code(code) && test_bit(key_bits, (int)code)) {
             return true;
         }
     }
 
     return false;
-}
-
-static bool looks_like_keyboard(const unsigned long *key_bits)
-{
-    return has_any_key_range(key_bits, KEY_A, KEY_Z)
-        || has_any_key_range(key_bits, KEY_1, KEY_0)
-        || test_bit(key_bits, KEY_ENTER)
-        || test_bit(key_bits, KEY_SPACE)
-        || test_bit(key_bits, KEY_LEFTCTRL)
-        || test_bit(key_bits, KEY_RIGHTCTRL);
 }
 
 static bool looks_like_mouse_buttons(const unsigned long *key_bits)
@@ -193,7 +198,16 @@ static bool looks_like_mouse_buttons(const unsigned long *key_bits)
         || test_bit(key_bits, BTN_RIGHT)
         || test_bit(key_bits, BTN_MIDDLE)
         || test_bit(key_bits, BTN_SIDE)
-        || test_bit(key_bits, BTN_EXTRA);
+        || test_bit(key_bits, BTN_EXTRA)
+        || test_bit(key_bits, BTN_FORWARD)
+        || test_bit(key_bits, BTN_BACK);
+}
+
+static bool looks_like_compositor_processed_pointer(const unsigned long *key_bits)
+{
+    return test_bit(key_bits, BTN_TOOL_FINGER)
+        || test_bit(key_bits, BTN_TOOL_PEN)
+        || test_bit(key_bits, BTN_TOOL_RUBBER);
 }
 
 static bool looks_like_pointer_axes(const unsigned long *rel_bits, const unsigned long *abs_bits)
@@ -307,6 +321,8 @@ static int read_device_info(const char *path, ksi_linux_device_info *info)
     info->has_keyboard_keys = info->has_keys && looks_like_keyboard(key_bits);
     info->has_mouse_buttons = info->has_keys && looks_like_mouse_buttons(key_bits);
     info->has_pointer_axes = looks_like_pointer_axes(rel_bits, abs_bits);
+    info->requires_compositor_processing = info->has_absolute
+        && looks_like_compositor_processed_pointer(key_bits);
     info->is_synth_device = is_keysharp_synth_device_identity(
         info->name,
         info->bustype,
@@ -404,6 +420,39 @@ static bool admit_udev_event_device(struct udev_device *device, const char *path
     return false;
 }
 
+static bool udev_property_is_true(const char *value)
+{
+    return value != NULL && strcmp(value, "1") == 0;
+}
+
+static bool udev_hierarchy_requires_compositor_processing(struct udev_device *device)
+{
+    for (struct udev_device *current = device;
+         current != NULL;
+         current = udev_device_get_parent(current)) {
+        if (udev_property_is_true(udev_device_get_property_value(current, "ID_INPUT_TOUCHPAD"))
+            || udev_property_is_true(udev_device_get_property_value(current, "ID_INPUT_TOUCHSCREEN"))
+            || udev_property_is_true(udev_device_get_property_value(current, "ID_INPUT_TABLET"))
+            || udev_property_is_true(udev_device_get_property_value(current, "ID_INPUT_TABLET_PAD"))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void apply_udev_device_metadata(
+    ksi_linux_device_info *info,
+    struct udev_device *device)
+{
+    if (info == NULL || device == NULL) {
+        return;
+    }
+
+    info->requires_compositor_processing = info->requires_compositor_processing
+        || udev_hierarchy_requires_compositor_processing(device);
+}
+
 static bool is_candidate(const ksi_linux_device_info *info)
 {
     return info->has_keyboard_keys || (info->has_mouse_buttons && info->has_pointer_axes);
@@ -429,9 +478,20 @@ static bool is_mouse_candidate(const ksi_linux_device_info *info)
     return info->has_mouse_buttons && info->has_pointer_axes;
 }
 
+static bool is_mouse_hook_candidate(const ksi_linux_device_info *info)
+{
+    return is_mouse_candidate(info) && !info->requires_compositor_processing;
+}
+
+static bool is_mouse_block_candidate(const ksi_linux_device_info *info)
+{
+    return (info->has_mouse_buttons || info->requires_compositor_processing)
+        && info->has_pointer_axes;
+}
+
 static void log_device(const ksi_linux_device_info *info, const char *prefix)
 {
-    fprintf(stderr, "inputd: %s %s: \"%s\" candidate=%s%s%s%s%s%s\n",
+    fprintf(stderr, "inputd: %s %s: \"%s\" candidate=%s%s%s%s%s%s%s\n",
         prefix,
         info->path,
         info->name,
@@ -440,6 +500,7 @@ static void log_device(const ksi_linux_device_info *info, const char *prefix)
         is_mouse_candidate(info) ? "mouse" : "",
         info->has_relative ? " rel" : "",
         info->has_absolute ? " abs" : "",
+        info->requires_compositor_processing ? " compositor-processed" : "",
         info->is_synth_device ? " injected" : "");
 }
 
@@ -676,7 +737,7 @@ static bool process_deferred_grab_key_event(ksi_linux_tracked_device *device, co
         || !device->grab_deferred
         || event->type != EV_KEY
         || event->code > KEY_MAX
-        || event->code >= BTN_MOUSE) {
+        || !is_keyboard_key_code(event->code)) {
         return false;
     }
 
@@ -700,7 +761,7 @@ static void update_physical_key_state(ksi_linux_tracked_device *device, const st
         || event == NULL
         || event->type != EV_KEY
         || event->code > KEY_MAX
-        || event->code >= BTN_MOUSE) {
+        || !is_keyboard_key_code(event->code)) {
         return;
     }
 
@@ -723,9 +784,10 @@ static bool should_grab_device_for_masks(
     return (((hook_mask & KSI_CAP_HOOK_KEYBOARD) != 0
              || (block_mask & KSI_BLOCK_INPUT_KEYBOARD) != 0)
             && device->keyboard_candidate)
-        || (((hook_mask & KSI_CAP_HOOK_MOUSE) != 0
-             || (block_mask & KSI_BLOCK_INPUT_MOUSE) != 0)
-            && device->mouse_candidate);
+        || ((hook_mask & KSI_CAP_HOOK_MOUSE) != 0
+            && device->mouse_hook_candidate)
+        || ((block_mask & KSI_BLOCK_INPUT_MOUSE) != 0
+            && device->mouse_block_candidate);
 }
 
 /* Best-effort, kernel-truth check: is any of our OWN re-emission device (the
@@ -801,6 +863,8 @@ static void track_device(const ksi_linux_device_info *info, const char *reason)
     (void)snprintf(target->name, sizeof(target->name), "%s", info->name);
     target->keyboard_candidate = is_keyboard_candidate(info);
     target->mouse_candidate = is_mouse_candidate(info);
+    target->mouse_hook_candidate = is_mouse_hook_candidate(info);
+    target->mouse_block_candidate = is_mouse_block_candidate(info);
     target->injected_source = info->is_synth_device;
 
     if (is_new || target->fd < 0) {
@@ -923,11 +987,13 @@ static void scan_existing_devices(void)
             continue;
         }
 
-        udev_device_unref(udev_device);
-
         if (read_device_info(path, &info) != 0) {
+            udev_device_unref(udev_device);
             continue;
         }
+
+        apply_udev_device_metadata(&info, udev_device);
+        udev_device_unref(udev_device);
 
         idle_candidate = is_idle_candidate(&info);
 
@@ -1016,6 +1082,8 @@ static void handle_device_add_or_change(
     if (read_device_info(path, &info) != 0) {
         return;
     }
+
+    apply_udev_device_metadata(&info, udev_device);
 
     if (!is_idle_candidate(&info)) {
         fprintf(stderr, "inputd: %s %s ignored: not a user-input candidate\n", action, path);
@@ -1120,7 +1188,9 @@ bool ksi_linux_devices_has_candidates(void)
 {
     for (size_t i = 0; i < tracked_device_count; i++) {
         if (!tracked_devices[i].injected_source
-            && (tracked_devices[i].keyboard_candidate || tracked_devices[i].mouse_candidate)) {
+            && (tracked_devices[i].keyboard_candidate
+                || tracked_devices[i].mouse_candidate
+                || tracked_devices[i].mouse_block_candidate)) {
             return true;
         }
     }
@@ -1336,7 +1406,9 @@ static bool evdev_button_to_mouse_message(unsigned int code, int value, uint32_t
             *message = value != 0 ? KSI_WM_MBUTTONDOWN : KSI_WM_MBUTTONUP;
             return true;
         case BTN_SIDE:
+        case BTN_BACK:
         case BTN_EXTRA:
+        case BTN_FORWARD:
             *message = value != 0 ? KSI_WM_XBUTTONDOWN : KSI_WM_XBUTTONUP;
             return true;
         default:
@@ -1346,11 +1418,11 @@ static bool evdev_button_to_mouse_message(unsigned int code, int value, uint32_t
 
 static uint32_t evdev_button_mouse_data(unsigned int code)
 {
-    if (code == BTN_SIDE) {
+    if (code == BTN_SIDE || code == BTN_BACK) {
         return KSI_XBUTTON1 << 16;
     }
 
-    if (code == BTN_EXTRA) {
+    if (code == BTN_EXTRA || code == BTN_FORWARD) {
         return KSI_XBUTTON2 << 16;
     }
 
@@ -1699,18 +1771,24 @@ static void handle_input_event(
         dispatch_pending_mouse_move(device);
         update_physical_key_state(device, event);
 
+        if (device->keyboard_candidate && !device->injected_source
+            && is_keyboard_key_code(event->code)
+            && physical_key_event_callback != NULL) {
+            physical_key_event_callback(physical_key_event_context, event->code);
+        }
+
         if (process_deferred_grab_key_event(device, event)) {
             return;
         }
 
-        if (event->code >= BTN_MOUSE) {
+        if (device->mouse_hook_candidate && is_mouse_button_code(event->code)) {
             dispatch_mouse_button_event(device, event, extra_info, is_injected);
-        } else {
+        } else if (device->keyboard_candidate && is_keyboard_key_code(event->code)) {
             dispatch_keyboard_event(device, event, extra_info, is_injected);
         }
-    } else if (event->type == EV_REL) {
+    } else if (event->type == EV_REL && device->mouse_hook_candidate) {
         dispatch_relative_event(device, event, extra_info, is_injected);
-    } else if (event->type == EV_ABS) {
+    } else if (event->type == EV_ABS && device->mouse_hook_candidate) {
         dispatch_absolute_event(device, event, extra_info, is_injected);
     } else if (event->type == EV_LED) {
         /* Track indicator LED state so we can include it in keyboard hook events. */
@@ -1795,11 +1873,11 @@ bool ksi_linux_devices_get_pointer_buttons(ksi_pointer_buttons_payload *result)
 
         any = true;
 
-        if (test_bit(key_bits, BTN_LEFT))   physical_buttons |= (1u << 0);
-        if (test_bit(key_bits, BTN_RIGHT))  physical_buttons |= (1u << 1);
-        if (test_bit(key_bits, BTN_MIDDLE)) physical_buttons |= (1u << 2);
-        if (test_bit(key_bits, BTN_SIDE))   physical_buttons |= (1u << 3);
-        if (test_bit(key_bits, BTN_EXTRA))  physical_buttons |= (1u << 4);
+        for (unsigned int code = BTN_LEFT; code <= BTN_BACK; code++) {
+            if (test_bit(key_bits, (int)code)) {
+                physical_buttons |= ksi_linux_pointer_button_mask(code);
+            }
+        }
     }
 
     logical_buttons = physical_buttons;
@@ -1840,32 +1918,6 @@ void ksi_linux_devices_refresh_indicator_state(void)
     }
 }
 
-/* Aggregate physical_down_keys across all grabbed keyboard devices and return
- * the result as the modifiers_lr bitmask used by Keysharp's internal state.
- * Bit assignments (matches KeyboardUtils.cs MOD_* constants):
- *   0=LCONTROL  1=RCONTROL  2=LALT  3=RALT  4=LSHIFT  5=RSHIFT  6=LWIN  7=RWIN */
-uint32_t ksi_linux_devices_get_modifier_state(void)
-{
-    uint32_t mods = 0;
-
-    for (size_t i = 0; i < tracked_device_count; i++) {
-        const ksi_linux_tracked_device *dev = &tracked_devices[i];
-
-        if (!dev->grabbed || !dev->keyboard_candidate)
-            continue;
-
-        if (test_bit(dev->physical_down_keys, KEY_LEFTCTRL))   mods |= 0x01u; /* MOD_LCONTROL */
-        if (test_bit(dev->physical_down_keys, KEY_RIGHTCTRL))  mods |= 0x02u; /* MOD_RCONTROL */
-        if (test_bit(dev->physical_down_keys, KEY_LEFTALT))    mods |= 0x04u; /* MOD_LALT     */
-        if (test_bit(dev->physical_down_keys, KEY_RIGHTALT))   mods |= 0x08u; /* MOD_RALT     */
-        if (test_bit(dev->physical_down_keys, KEY_LEFTSHIFT))  mods |= 0x10u; /* MOD_LSHIFT   */
-        if (test_bit(dev->physical_down_keys, KEY_RIGHTSHIFT)) mods |= 0x20u; /* MOD_RSHIFT   */
-        if (test_bit(dev->physical_down_keys, KEY_LEFTMETA))   mods |= 0x40u; /* MOD_LWIN     */
-        if (test_bit(dev->physical_down_keys, KEY_RIGHTMETA))  mods |= 0x80u; /* MOD_RWIN     */
-    }
-
-    return mods;
-}
 
 static uint32_t modifiers_from_logical_key_bitmap(const uint8_t *keys)
 {
@@ -1939,6 +1991,14 @@ void ksi_linux_devices_set_hook_event_callback(ksi_hook_event_callback callback,
 {
     hook_event_callback = callback;
     hook_event_context = context;
+}
+
+void ksi_linux_devices_set_physical_key_event_callback(
+    ksi_physical_key_event_callback callback,
+    void *context)
+{
+    physical_key_event_callback = callback;
+    physical_key_event_context = context;
 }
 
 static void process_device_events(ksi_linux_tracked_device *device)

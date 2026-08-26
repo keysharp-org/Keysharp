@@ -123,8 +123,9 @@ daemon is running as root) can target another user's records.
 
 ## Hook model
 
-The daemon implements hook transport only; Keysharp owns all policy. Root keyboard
-and mouse events use independent lane threads. Each script has one `HOOK_STREAM`
+The daemon owns hook transport and native fail-open safety; Keysharp owns script
+hook policy. Root keyboard and mouse events use independent lane threads. Each
+script has one `HOOK_STREAM`
 call stack shared by both hook types, so its own keyboard/mouse callbacks serialize;
 different scripts can execute in parallel. All uinput-bound writes use one output
 sequencer thread.
@@ -183,11 +184,10 @@ Keysharp renews active leases every five seconds using one-way heartbeats.
 Expiry clears the client's input state, releases grabs, and disconnects the
 client so managed recovery can reconnect or fall back.
 
-Physically pressing `Ctrl+Alt+Backspace` asks the daemon's main event loop to
-perform the same fail-open action and enqueue a complete press/release chord for
-the display server. It does not depend on a responsive Keysharp client, and it
-also clears all `BlockInput` masks. It is not a substitute for killing a daemon
-whose main event loop or output path is itself stalled.
+Physically holding `Backspace+Escape+Enter`, in any press order, performs the same
+fail-open action directly in the daemon. It clears hook subscriptions and
+`BlockInput` masks and releases grabs without involving managed hook logic. The
+final chord event is consumed while a keyboard grab is active.
 
 `SET_BLOCK_INPUT` requires `KSI_CAP_BLOCK_INPUT` and sets the calling client's
 physical input block mask: keyboard, mouse, both, or neither. The daemon drops

@@ -251,7 +251,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				159u => VK_BROWSER_FORWARD,
 				173u => VK_BROWSER_REFRESH,
 				217u => VK_BROWSER_SEARCH,
-				156u => VK_BROWSER_FAVORITES,
+				156u or 364u => VK_BROWSER_FAVORITES,
 				150u or 172u => VK_BROWSER_HOME,
 				155u or 215u => VK_LAUNCH_MAIL,
 				226u => VK_LAUNCH_MEDIA_SELECT,

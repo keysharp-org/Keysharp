@@ -340,7 +340,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				}
 
 				liveness.MarkProgress();
-				CheckInputdPanicCombo(hookEvent);
 
 				try
 				{
@@ -425,9 +424,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				throw new InvalidOperationException("hook event processing failed", callbackError);
 		}
 
-		private bool inputdPanicCtrlDown;
-		private bool inputdPanicAltDown;
-
 		// A hook decision is pure suppress-or-pass. Direct sends on this owner have
 		// already unwound recursively; worker-thread sends are independently queued.
 		private static void SendInputdHookDecision(
@@ -438,37 +434,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			client.SendHookDecision(
 				hookEvent.EventId,
 				block ? KeysharpInputdClient.HookDecision.Block : KeysharpInputdClient.HookDecision.Pass);
-		}
-
-		private void CheckInputdPanicCombo(in KeysharpInputdClient.HookEvent hookEvent)
-		{
-			if (hookEvent.HookType != KeysharpInputdClient.HookType.KeyboardLowLevel)
-				return;
-
-			var ev = hookEvent.Keyboard;
-			var down = (ev.Flags & 0x80u) == 0 && ev.Message != 0x0101u && ev.Message != 0x0105u;
-
-			switch (ev.VkCode)
-			{
-				case VK_CONTROL:
-				case VK_LCONTROL:
-				case VK_RCONTROL:
-					inputdPanicCtrlDown = down;
-					break;
-				case VK_MENU:
-				case VK_LMENU:
-				case VK_RMENU:
-					inputdPanicAltDown = down;
-					break;
-				case VK_PAUSE:
-				case VK_CANCEL:
-					if (down && inputdPanicCtrlDown && inputdPanicAltDown)
-					{
-						Diagnostics.Debug.WriteLine("keysharp-inputd: Ctrl+Alt+Pause emergency passthrough - releasing all grabs/block-input.");
-						KeysharpInputdManager.EmergencyReleaseInput();
-					}
-					break;
-			}
 		}
 
 		private void HandleInputdHookReaderLoss(string reason)

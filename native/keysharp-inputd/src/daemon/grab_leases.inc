@@ -642,6 +642,8 @@ static int update_grab_state(ksi_daemon_state *state)
         return result;
     }
 
+    state->interception_active = interception_active;
+
     /* When the keyboard grab is released, any key the daemon replayed "down" on the
      * uinput virtual device would be stranded there: the user's physical key-up lands
      * on the now-ungrabbed real device and does not cancel the uinput key, so the

@@ -19,6 +19,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/input-event-codes.h>
 #include <poll.h>
 #include <pthread.h>
 #include <signal.h>
@@ -80,15 +81,7 @@ _Static_assert(KSI_CAP_BLOCK_INPUT == KST_CAP_INPUT_BLOCK, "trust/input capabili
 #define KSI_FORCED_PROMPT_COOLDOWN_MS 3000u
 /* Reserve a few client slots for other users/root helpers on shared systems. */
 #define KSI_MAX_CLIENTS_PER_UID (KSI_MAX_CLIENTS - 8u)
-#define KSI_VK_BACK 0x08u
 #define KSI_VK_LCONTROL 0xA2u
-#define KSI_VK_RCONTROL 0xA3u
-#define KSI_VK_LALT 0xA4u
-#define KSI_VK_RALT 0xA5u
-#define KSI_MOD_LCONTROL 0x01u
-#define KSI_MOD_RCONTROL 0x02u
-#define KSI_MOD_LALT 0x04u
-#define KSI_MOD_RALT 0x08u
 
 static volatile sig_atomic_t keep_running = 1;
 
@@ -474,6 +467,7 @@ typedef struct ksi_daemon_state {
     ksi_hook_lane mouse_lane;
     /* Used to enqueue RELEASE_ALL on keyboard grab held->released. */
     bool keyboard_grab_active;
+    bool interception_active;
     /* The main evdev reader needs real-time priority only while it owns an
      * interception grab. Idle observation remains ordinary SCHED_OTHER work. */
     bool reader_realtime;
@@ -944,6 +938,9 @@ int ksi_daemon_run(const ksi_daemon_options *options)
         backend->set_hook_event_callback(daemon_handle_hook_event, daemon_state);
     }
 
+    ksi_linux_devices_set_physical_key_event_callback(
+        daemon_handle_physical_key_event, daemon_state);
+
     if (ksi_worker_pool_init(&g_worker_pool) != 0
         || ksi_worker_pool_init(&g_identify_worker_pool) != 0) {
         fprintf(stderr, "inputd: failed to start worker pool\n");
@@ -953,6 +950,8 @@ int ksi_daemon_run(const ksi_daemon_options *options)
         if (backend->set_hook_event_callback != NULL) {
             backend->set_hook_event_callback(NULL, NULL);
         }
+
+        ksi_linux_devices_set_physical_key_event_callback(NULL, NULL);
 
         (void)lane_shutdown(&daemon_state->keyboard_lane, 0u);
         (void)lane_shutdown(&daemon_state->mouse_lane, 0u);
@@ -1105,6 +1104,8 @@ int ksi_daemon_run(const ksi_daemon_options *options)
     if (backend->set_hook_event_callback != NULL) {
         backend->set_hook_event_callback(NULL, NULL);
     }
+
+    ksi_linux_devices_set_physical_key_event_callback(NULL, NULL);
 
     /* Release grabs before any shutdown step that may block. */
     clear_hook_state(daemon_state);

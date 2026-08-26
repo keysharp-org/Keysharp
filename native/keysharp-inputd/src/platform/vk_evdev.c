@@ -182,6 +182,7 @@ static const ksi_vk_evdev_entry ksi_vk_evdev_table[] = {
     { 0xA8u, KEY_REFRESH },
     { 0xA9u, KEY_STOP },
     { 0xAAu, KEY_SEARCH },
+    { 0xABu, KEY_BOOKMARKS },
     { 0xABu, KEY_FAVORITES },
     { 0xACu, KEY_HOMEPAGE },
     { 0xACu, KEY_WWW },

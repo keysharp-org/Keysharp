@@ -90,8 +90,13 @@ Wayland) whose user is **not** in the `input` group — `id -nG | grep -w input`
 must print nothing — because membership masks the failure.
 
 Keep an SSH session from another machine open for recovery before starting.
-If input ever dies: Ctrl+Alt+Pause is the daemon's panic combo (releases all
-grabs), and the SSH session can `sudo systemctl stop keysharp-inputd`.
+If input ever dies: hold Backspace+Escape+Enter in any order to activate the
+daemon's panic combo (releases all grabs), or use the SSH session to run
+`sudo systemctl stop keysharp-inputd`.
+
+The daemon consumes the final chord key while the keyboard is grabbed and clears
+all hooks and `BlockInput` requests. Restart affected Keysharp processes if the
+hooks are needed again.
 
 1. Confirm the rule is installed:
    `test -f /etc/udev/rules.d/70-keysharp-inputd-uaccess.rules && echo ok`
@@ -106,5 +111,5 @@ grabs), and the SSH session can `sudo systemctl stop keysharp-inputd`.
    with the SSH recovery shell ready): exit the script, run
    `sudo keysharp-inputd --remove-input-access`, start the script again so the
    virtual devices are recreated without the ACL, and confirm input dies while
-   the hotkey still fires. Recover via Ctrl+Alt+Pause or SSH, then re-run
+   the hotkey still fires. Recover via Backspace+Escape+Enter or SSH, then re-run
    `sudo keysharp-inputd --install-input-access` and repeat steps 1–4.

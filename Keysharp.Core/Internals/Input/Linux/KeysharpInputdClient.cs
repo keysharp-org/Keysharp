@@ -377,11 +377,6 @@ namespace Keysharp.Internals.Input.Linux
 			SendStatusRequest(MessageType.Heartbeat);
 		}
 
-		internal void EmergencyPassthrough()
-		{
-			SendStatusRequest(MessageType.EmergencyPassthrough);
-		}
-
 		internal BlockInputMask SetBlockInput(BlockInputMask mask)
 		{
 			Span<byte> payload = stackalloc byte[8];

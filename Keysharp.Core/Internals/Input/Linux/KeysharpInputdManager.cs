@@ -64,22 +64,6 @@ namespace Keysharp.Internals.Input.Linux
 				throw new InvalidOperationException("keysharp-inputd query channel is unavailable for synthesis.");
 		}
 
-		/// <summary>Best-effort panic release; never throws.</summary>
-		internal static void EmergencyReleaseInput()
-		{
-			try
-			{
-				_ = TryUseQueryClient(qc =>
-				{
-					qc.EmergencyPassthrough();
-					return true;
-				});
-			}
-			catch
-			{
-			}
-		}
-
 		internal static bool TryGetIndicatorState(out bool capsLock, out bool numLock, out bool scrollLock)
 		{
 			capsLock = false;
