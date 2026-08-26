@@ -192,13 +192,13 @@
                  {
                      "category":  "Environment/System",
                      "feature":  "#CSharp",
-                     "syntax":  "#CSharp ... #EndCSharp  |  #CSharp \"file.cs\"",
+                     "syntax":  "#CSharp ... #EndCSharp  |  #CSharp \"file.cs\"  |  #CSharp <Library>",
                      "windows":  "full",
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
-                     "notes":  "Keysharp-only. Embeds C# compiled into the script's own assembly for hot paths. A block sits at module scope or in a class body. Each script module has its own inline C# syntax tree and module-wide using pool, so aliases and directives do not leak between modules. Public module methods are locally visible and explicitly importable; [Export] enables wildcard import and Default = true sets the default export. Boundary values use AutoHotkey conversions, including wrapped CLR object/value round-tripping; only public property accessors are exposed and init accessors are read-only. Verified on Windows; Linux and macOS are unverified.",
-                     "tested-by":  "directive-csharp.ahk; directive-csharp-clr.ahk; directive-csharp-errors.ahk; directive-csharp-class.ahk; directive-csharp-modules.ahk; directive-csharp-module-scopes.ahk; directive-csharp-symbols.ahk"
+                     "notes":  "Keysharp-only. Embeds C# members into the script assembly at module or class scope; `#CSharp <Library>` uses #Include's Lib-folder search order, `.cs` extension and underscore fallback.",
+                     "tested-by":  "directive-csharp.ahk; directive-csharp-clr.ahk; directive-csharp-errors.ahk; directive-csharp-class.ahk; directive-csharp-modules.ahk; directive-csharp-module-scopes.ahk; directive-csharp-symbols.ahk; DirectiveTests.CSharpLibraryFile"
                  },
                  {
                      "category":  "Environment/System",

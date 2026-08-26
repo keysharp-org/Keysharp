@@ -333,6 +333,7 @@ namespace Keysharp.Parsing.Syntax
 		public string CodeFile;
 		public IReadOnlyCollection<string> Defines = [];
 		public string FilePath;
+		public bool LibraryForm;
 		public CSharpDirective(string options, string code, int codeLine)
 			: base("CSharp", options ?? "") { Code = code; CodeLine = codeLine; }
 

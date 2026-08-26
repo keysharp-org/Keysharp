@@ -2092,6 +2092,18 @@ namespace Keysharp.Compilation.Syntax
 
 		private string ResolveInlineFile(CSharpDirective d, string baseDir)
 		{
+			if (d.LibraryForm)
+			{
+				var name = Parser.NormalizeDirectiveSeparators((d.FilePath ?? "").Trim());
+				var library = Parser.FindLibraryFile(name, baseDir, [".cs"]);
+
+				if (library != null)
+					return library;
+
+				Diag($"{DirectiveAnchor(d)}#CSharp: library not found: <{name}>");
+				return null;
+			}
+
 			var raw = Parser.NormalizeDirectiveSeparators(
 						  Parser.ExpandPathVars((d.FilePath ?? "").Trim(), _includeDir, d.File ?? _scriptPath ?? _includeDir));
 

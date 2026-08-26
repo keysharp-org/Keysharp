@@ -1054,6 +1054,39 @@ namespace Keysharp.Tests
 			}
 		}
 
+		[Test, Category("Directives")]
+		public void CSharpLibraryFile()
+		{
+			var root = Path.Combine(Path.GetTempPath(), "ks_cslib_" + Guid.NewGuid().ToString("N"));
+			var lib = Path.Combine(root, "Lib");
+			_ = Directory.CreateDirectory(lib);
+
+			try
+			{
+				File.WriteAllText(Path.Combine(lib, "Fast.cs"), "public static object FastValue() => \"fast\";");
+				File.WriteAllText(Path.Combine(lib, "Math.cs"), "public static long Add(long a, long b) => a + b;");
+				File.WriteAllText(Path.Combine(lib, "My Lib.cs"), "public static object SpacedValue() => \"space\";");
+				var script = Path.Combine(root, "main.ks");
+				File.WriteAllText(script,
+					"#NoTrayIcon\n#CSharp <Fast>\n#CSharp <Math_Add>\n#CSharp <My Lib>\nx := FastValue()\ny := Add(2, 3)\nz := SpacedValue()\n");
+
+				var (arr, code, compilation) = new CompilerHelper().CompileCodeToByteArray(script, "cslib");
+				Assert.IsNotNull(arr, "library and underscore-fallback C# files must compile:\n" + code);
+				Assert.IsTrue(compilation.InlineCode.Contains("FastValue") && compilation.InlineCode.Contains("Add")
+					&& compilation.InlineCode.Contains("SpacedValue"), "all library members must be emitted:\n" + compilation.InlineCode);
+
+				File.WriteAllText(script, "#NoTrayIcon\n#CSharp <MissingLibrary>\n");
+				var (missing, missingCode, _) = new CompilerHelper().CompileCodeToByteArray(script, "missingcslib");
+				Assert.IsNull(missing, "a missing C# library must stop compilation:\n" + missingCode);
+				Assert.IsTrue(missingCode.Contains("library not found") && missingCode.Contains("MissingLibrary"),
+					"the diagnostic must name the missing library:\n" + missingCode);
+			}
+			finally
+			{
+				try { Directory.Delete(root, true); } catch { }
+			}
+		}
+
 		[Test, Category("Directives"), NonParallelizable]
 		public void CSharpSearchOrder()
 		{

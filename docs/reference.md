@@ -940,7 +940,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 		+ Note, this will send the string as UTF-16 Unicode. If you need to send to a program which expects ASCII, then you'll need to manually create the `COPYDATA` struct.
 	+ New preprocessor directives:
 		+ `#CSharp` embeds C# members in the script assembly for hot loops, buffer work and interop.
-			+ Use `#CSharp` … `#EndCSharp` for an inline block, or `#CSharp "helper.cs"` for a file. Blocks may appear at module scope or directly in a class. Relative files use the module search path.
+			+ Use `#CSharp` … `#EndCSharp` for an inline block, `#CSharp "helper.cs"` for a file on the module search path, or `#CSharp <Helper>` for `Helper.cs` in the same Lib folders searched by `#Include <Helper>`. The library form also uses #Include's underscore fallback. Blocks may appear at module scope or directly in a class.
 			+ At module scope, `public static` methods are callable locally and by an explicit `{ Name }` import. `[Export]` also exposes one to `{ * }`; `[Export(Default = true)]` makes it the bare-import default. These match `export` and `export default`.
 			+ In class blocks, public methods and property accessors are script-visible; non-public members remain C# helpers, `init` is read-only, and fields are not exposed. `[Static]` selects the class-static side.
 			+ Values use the same conversions as `Ks.Clr`. Unsupported public signatures are rejected, and CLR exceptions are mapped to catchable Keysharp errors where possible.

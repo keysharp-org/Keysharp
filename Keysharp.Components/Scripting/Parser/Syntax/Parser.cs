@@ -656,11 +656,12 @@ namespace Keysharp.Parsing.Syntax
 			return dir;
 		}
 
-		// `#CSharp [options]` <block> | `#CSharp [options] "file.cs"`.
+		// `#CSharp [options]` <block> | `#CSharp "file.cs"` | `#CSharp <Library>`.
 		private CSharpDirective ParseCSharpDirective()
 		{
 			var opts = new System.Text.StringBuilder();
 			string path = null;
+			var library = false;
 
 			while (!At(TokenKind.Newline) && !At(TokenKind.EOF) && !At(TokenKind.CSharpBlock))
 			{
@@ -675,6 +676,29 @@ namespace Keysharp.Parsing.Syntax
 
 					continue;
 				}
+				else if (At(TokenKind.Less))
+				{
+					var t = Advance();
+
+					if (path != null)
+						ErrorAt(t, "#CSharp accepts exactly one file path");
+
+					var name = new System.Text.StringBuilder();
+
+					while (!At(TokenKind.Greater) && !At(TokenKind.Newline) && !At(TokenKind.EOF))
+					{
+						var part = Advance();
+						if (name.Length > 0 && part.LeadingWhitespace) _ = name.Append(' ');
+						_ = name.Append(part.Text);
+					}
+
+					if (!Match(TokenKind.Greater) || name.Length == 0)
+						ErrorAt(t, "#CSharp library form requires a name enclosed in < and >");
+
+					path = name.ToString();
+					library = true;
+					continue;
+				}
 
 				if (opts.Length > 0) _ = opts.Append(' ');
 				_ = opts.Append(Advance().Text);
@@ -687,10 +711,10 @@ namespace Keysharp.Parsing.Syntax
 			}
 
 			if (path == null)
-				Error("#CSharp requires either a block terminated by #EndCSharp, or a quoted .cs file path");
+				Error("#CSharp requires a block terminated by #EndCSharp, a quoted .cs path, or a <Library> name");
 
 			// The lowerer owns file resolution.
-			return new CSharpDirective(opts.ToString(), null, 0) { FilePath = path };
+			return new CSharpDirective(opts.ToString(), null, 0) { FilePath = path, LibraryForm = library };
 		}
 
 		// Each directive accepts a fixed number of comma-separated arguments (taken from the AHK v2 source's
@@ -1081,7 +1105,10 @@ namespace Keysharp.Parsing.Syntax
 		// executable (<exe>\Lib). Each directory is tried for Name.ks/.ahk; if nothing matches and Name contains an
 		// underscore, the part before the FIRST underscore is tried too (so <lib_func> resolves to lib). Returns the
 		// full path of the first existing candidate, or null.
-		private string FindLibraryFile(string name)
+		private string FindLibraryFile(string name) => FindLibraryFile(name, _includeDir, libExts);
+
+		// Shared with #CSharp <Name>, whose library files use the same directories and fallback rule but a .cs extension.
+		internal static string FindLibraryFile(string name, string scriptDir, IReadOnlyList<string> extensions)
 		{
 			if (string.IsNullOrEmpty(name))
 				return null;
@@ -1091,8 +1118,8 @@ namespace Keysharp.Parsing.Syntax
 
 			var libDirs = new List<string>();
 
-			if (!string.IsNullOrEmpty(_includeDir))
-				libDirs.Add(System.IO.Path.Combine(_includeDir, "Lib"));
+			if (!string.IsNullOrEmpty(scriptDir))
+				libDirs.Add(System.IO.Path.Combine(scriptDir, "Lib"));
 
 			string docs = null, exeDir = null;
 			// The accessor, not GetFolderPath: an unverified Documents path still counts (see A_MyDocuments).
@@ -1117,7 +1144,7 @@ namespace Keysharp.Parsing.Syntax
 
 			foreach (var candidate in candidates)
 				foreach (var dir in libDirs)
-					foreach (var ext in libExts)
+					foreach (var ext in extensions)
 					{
 						string p;
 						try { p = System.IO.Path.GetFullPath(System.IO.Path.Combine(dir, candidate + ext)); }

@@ -945,7 +945,7 @@ namespace Keysharp.Parsing.Lexing
 
 		private static readonly HashSet<string>.AlternateLookup<ReadOnlySpan<char>> RawArgDirectivesLookup = RawArgDirectives.GetAlternateLookup<ReadOnlySpan<char>>();
 
-		// Capture block contents verbatim; quoted file forms remain ordinary directives.
+		// Capture block contents verbatim; quoted and library file forms remain ordinary directives.
 		private bool TryScanCSharpBlock(List<Token> tokens, bool leadingWs)
 		{
 			if (Cur != '#') return false;
@@ -1026,7 +1026,7 @@ namespace Keysharp.Parsing.Lexing
 			if (cmt >= 0)
 				opt = opt[..cmt];
 
-			return !opt.Contains('"') && !opt.Contains('\'');
+			return !opt.Contains('"') && !opt.Contains('\'') && !opt.TrimStart().StartsWith("<");
 		}
 
 		/// <summary>Recognizes the exact EndCSharp directive name.</summary>
