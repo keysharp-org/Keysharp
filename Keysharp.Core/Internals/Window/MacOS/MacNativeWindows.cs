@@ -66,6 +66,7 @@ namespace Keysharp.Internals.Window.MacOS
 		private const int kCFNumberDoubleType = 13;
 		private const uint kCGWindowListOptionAll = 0u;
 		private const uint kCGWindowListOptionOnScreenOnly = 1u;
+		private const uint kCGWindowListOptionOnScreenAboveWindow = 2u;
 		private const uint kCGWindowListOptionIncludingWindow = 8u;
 		private const uint kCGWindowListExcludeDesktopElements = 16u;
 
@@ -183,11 +184,15 @@ namespace Keysharp.Internals.Window.MacOS
 			var id = unchecked((uint)handle.ToInt64());
 			var snapshot = SnapshotCore(onScreenOnly: false, includeTextMetadata, includeSingleWindow: true, relativeToWindow: id);
 
-			if (snapshot.Count > 0)
-			{
-				info = snapshot[0];
+			if (TryFindWindowInfo(snapshot, id, out info))
 				return true;
-			}
+
+			// A minimized window is off-screen. If the relative lookup omits it, the all-window list is
+			// the documented way to include off-screen windows; keep the common on-screen path cheap.
+			snapshot = SnapshotCore(onScreenOnly: false, includeTextMetadata);
+
+			if (TryFindWindowInfo(snapshot, id, out info))
+				return true;
 
 			// A window we ordered out via TryHideOwnWindow() drops out of the window server's
 			// list entirely (its NSWindow.WindowNumber even becomes -1), so it can no longer be
@@ -198,6 +203,21 @@ namespace Keysharp.Internals.Window.MacOS
 				if (hiddenOwnWindowInfo.TryGetValue(id, out var hiddenInfo))
 				{
 					info = hiddenInfo;
+					return true;
+				}
+			}
+
+			info = default;
+			return false;
+		}
+
+		internal static bool TryFindWindowInfo(IReadOnlyList<MacNativeWindow> windows, uint id, out MacNativeWindow info)
+		{
+			foreach (var candidate in windows)
+			{
+				if (candidate.WindowNumber == id)
+				{
+					info = candidate;
 					return true;
 				}
 			}
@@ -841,7 +861,7 @@ namespace Keysharp.Internals.Window.MacOS
 		private static List<MacNativeWindow> SnapshotCore(bool onScreenOnly, bool includeTextMetadata, bool includeSingleWindow = false, uint relativeToWindow = 0, bool includeOwnerName = false)
 		{
 			var options = includeSingleWindow
-				? kCGWindowListOptionIncludingWindow | kCGWindowListExcludeDesktopElements
+				? kCGWindowListOptionOnScreenAboveWindow | kCGWindowListOptionIncludingWindow | kCGWindowListExcludeDesktopElements
 				: (onScreenOnly ? kCGWindowListOptionOnScreenOnly : kCGWindowListOptionAll) | kCGWindowListExcludeDesktopElements;
 			var arrayRef = CGWindowListCopyWindowInfo(options, relativeToWindow);
 			if (arrayRef == 0)
