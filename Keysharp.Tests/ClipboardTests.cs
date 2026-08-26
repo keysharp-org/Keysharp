@@ -56,6 +56,28 @@ namespace Keysharp.Tests
 #if WINDOWS
 		[Apartment(ApartmentState.STA)]
 #endif
+		public void TextSetterReplacesExistingFormatsAndEmptyTextClears()
+		{
+			RequireClipboard();
+			_ = Ks.KeysharpClipboard.Set(Clip, MakeMap("Text", "old text", "Html", "<b>old html</b>"));
+			var hadHtml = (bool)Ks.KeysharpClipboard.Has(Clip, "Html");
+
+			_ = Ks.KeysharpClipboard.staticset_Text(Clip, "replacement");
+			Assert.AreEqual("replacement", Ks.KeysharpClipboard.staticget_Text(Clip));
+
+			if (hadHtml)
+				Assert.IsFalse((bool)Ks.KeysharpClipboard.Has(Clip, "Html"));
+
+			_ = Ks.KeysharpClipboard.staticset_Text(Clip, "");
+			var formats = (Array)Ks.KeysharpClipboard.staticget_Formats(Clip);
+			Assert.IsTrue((bool)Ks.KeysharpClipboard.staticget_IsEmpty(Clip),
+				$"Empty text left formats [{string.Join(", ", formats.Cast<object>())}] and text '{Ks.KeysharpClipboard.staticget_Text(Clip)}'.");
+		}
+
+		[Test, Category("Clipboard"), NonParallelizable]
+#if WINDOWS
+		[Apartment(ApartmentState.STA)]
+#endif
 		public void Clear()
 		{
 			RequireClipboard();
@@ -207,6 +229,7 @@ namespace Keysharp.Tests
 		public void ImageRoundTrip()
 		{
 			RequireClipboard();
+			_ = Ks.KeysharpClipboard.staticset_Text(Clip, "old text");
 #if WINDOWS
 			using var bitmap = new Bitmap(32, 24);
 #else
@@ -217,6 +240,7 @@ namespace Keysharp.Tests
 			if (!(bool)Ks.KeysharpClipboard.Has(Clip, "Image"))
 				Assert.Ignore("This environment's clipboard does not carry images.");
 
+			Assert.IsFalse((bool)Ks.KeysharpClipboard.Has(Clip, "Text"));
 			var read = Ks.KeysharpClipboard.staticget_Image(Clip);
 
 			// Under Xvfb, Eto's GTK handler advertises the image targets but its retrieval callback fails

@@ -15,7 +15,8 @@ namespace Keysharp.Internals.Images
 			using (var ms = new MemoryStream(bytes))
 				return new Icon(ms);
 #else
-			return new Icon(1.0f, new Bitmap(bytes));
+			using (var ms = new MemoryStream(bytes, writable: false))
+				return new Icon(ms);
 #endif
 		}
 
@@ -104,7 +105,7 @@ namespace Keysharp.Internals.Images
 						using (var ms = new MemoryStream(bytes))
 							icon = new Icon(ms);
 #else
-						icon = new Icon(1.0f, new Bitmap(bytes));
+						icon = IconFromByteArray(bytes);
 #endif
 					}
 					if (icon != null)
@@ -277,28 +278,28 @@ namespace Keysharp.Internals.Images
 						else if (bmp.Size != SystemInformation.IconSize)
 							bmp = bmp.Resize(SystemInformation.IconSize.Width, SystemInformation.IconSize.Height);
 #else
-						var ico = new Icon(filename);
-						var frames = ico.Frames.ToList();
-
-						if (frames.Count > 0)
+						using (var ico = new Icon(filename))
 						{
-							IconFrame frame;
-							if (w > 0 || h > 0)
-							{
-								var targetSize = new Size(w > 0 ? w : h, h > 0 ? h : w);
-								frame = frames.FirstOrDefault(tempFrame => tempFrame.PixelSize == targetSize) ?? frames[0];
-							}
-							else
-							{
-								var iconint = iconindex.Ai(int.MaxValue);
-								frame = iconint >= 0 && iconint < frames.Count ? frames[iconint] : frames[0];
-							}
+							var frames = ico.Frames.ToList();
 
-							temp = new Icon(frame);
-							bmp = frame.Bitmap;
+							if (frames.Count > 0)
+							{
+								IconFrame frame;
+								if (w > 0 || h > 0)
+								{
+									var targetSize = new Size(w > 0 ? w : h, h > 0 ? h : w);
+									frame = frames.FirstOrDefault(tempFrame => tempFrame.PixelSize == targetSize) ?? frames[0];
+								}
+								else
+								{
+									var iconint = iconindex.Ai(int.MaxValue);
+									frame = iconint >= 0 && iconint < frames.Count ? frames[iconint] : frames[0];
+								}
+
+								bmp = new Bitmap(frame.Bitmap);
+								temp = new Icon(1f, new Bitmap(frame.Bitmap));
+							}
 						}
-
-						ico.Dispose();
 
 						if (bmp != null && (w > 0 || h > 0))
 							bmp = ResizeBitmap(bmp, w, h, exactPixels);
@@ -1056,19 +1057,18 @@ namespace Keysharp.Internals.Images
 					if (size <= 0)
 						return iconSet;
 
-					var frames = iconSet.Frames.ToArray();
-
-					if (frames.Length == 0)
+					using (iconSet)
 					{
-						iconSet.Dispose();
-						return null;
-					}
+						var frames = iconSet.Frames.ToArray();
 
-					var preferred = frames.MinBy(frame => Math.Abs(frame.PixelSize.Width - size)
-						+ Math.Abs(frame.PixelSize.Height - size));
-					var sized = new Icon([preferred, .. frames.Where(frame => !ReferenceEquals(frame, preferred))]);
-					iconSet.Dispose();
-					return sized;
+						if (frames.Length == 0)
+							return null;
+
+						var preferred = frames.MinBy(frame => Math.Abs(frame.PixelSize.Width - size)
+							+ Math.Abs(frame.PixelSize.Height - size));
+						var ordered = new[] { preferred }.Concat(frames.Where(frame => !ReferenceEquals(frame, preferred)));
+						return new Icon(ordered.Select(frame => new IconFrame(frame.Scale, new Bitmap(frame.Bitmap))));
+					}
 				}
 
 #endif

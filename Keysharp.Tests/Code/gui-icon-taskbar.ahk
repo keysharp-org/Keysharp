@@ -9,7 +9,7 @@
 ; and an instance member, and Gui.Icon is a property whose getter and setter take different types.
 
 ; Code/ -> Keysharp.Tests/ -> the repository root, which is where assets/ lives.
-assets := A_ScriptDir . "\..\..\assets\"
+assets := A_ScriptDir . "/../../assets/"
 icon := assets . "Keysharp_s.ico"
 
 ; Checked rather than assumed: an unreadable path would otherwise surface as an uncaught error, and an
@@ -29,7 +29,6 @@ AssertEq(Type(g.Icon), "Image", A_LineNumber)
 other := Gui()
 other.Icon := g.Icon                                  ; the flagship example on the Gui.Icon page
 AssertEq(Type(other.Icon), "Image", A_LineNumber)
-other.Destroy()
 
 g.SetIcon("*")                                        ; back to the script icon
 AssertEq(Type(g.Icon), "Image", A_LineNumber)
@@ -65,7 +64,5 @@ Throws(() => Taskbar(0), A_LineNumber)                ; a handle naming no windo
 Taskbar.SetProgress(Value: 25, Maximum: 50)
 bar.SetProgress(Value: 25, Maximum: 50)
 Taskbar.SetProgress("")
-
-g.Destroy()
 
 FileAppend("pass`n", "*")

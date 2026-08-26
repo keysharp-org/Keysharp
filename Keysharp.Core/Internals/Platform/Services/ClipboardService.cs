@@ -269,13 +269,13 @@ namespace Keysharp.Internals
 		// No DataFormats entry: Eto's DataFormats has Text/Html/Color and nothing for RTF.
 		internal static readonly string[] RtfMimes = ["text/rtf", "application/rtf", "public.rtf"];
 
-		private static readonly string[] TextTypes =
-		[
-			DataFormats.Text, "TEXT", "STRING", "text/plain", "text/plain;charset=utf-8", "COMPOUND_TEXT"
-		];
+		private static readonly string[] ClipboardProtocolTypes = ["TIMESTAMP", "TARGETS", "MULTIPLE", "SAVE_TARGETS"];
 
 		private static bool IsTextType(string type) =>
-			!string.IsNullOrEmpty(type) && TextTypes.Contains(type, StringComparer.OrdinalIgnoreCase);
+			!string.IsNullOrEmpty(type) && TextMimes.Contains(type, StringComparer.OrdinalIgnoreCase);
+
+		private static bool IsClipboardProtocolType(string type) =>
+			!string.IsNullOrEmpty(type) && ClipboardProtocolTypes.Contains(type, StringComparer.OrdinalIgnoreCase);
 
 		public override string[] KindFormats(ClipboardKind kind) => kind switch
 		{
@@ -298,7 +298,14 @@ namespace Keysharp.Internals
 			if (clip == null)
 				return System.Array.Empty<string>();
 
-			var formats = new List<string>(clip.Types ?? System.Array.Empty<string>());
+			var formats = new List<string>((clip.Types ?? System.Array.Empty<string>()).Where(type => !IsClipboardProtocolType(type)));
+			var text = clip.ContainsText ? clip.Text : null;
+
+			// GTK must keep ownership with an empty text offer after a clear; otherwise an X11 clipboard manager can
+			// restore the previous content. Hide that implementation detail so scripts still see a genuinely empty
+			// clipboard, and do not count GTK's TARGETS/TIMESTAMP protocol machinery as user data.
+			if (string.IsNullOrEmpty(text))
+				formats.RemoveAll(IsTextType);
 
 			void AddIfMissing(bool present, string canonical, string[] equivalents)
 			{
@@ -308,7 +315,7 @@ namespace Keysharp.Internals
 				formats.Add(canonical);
 			}
 
-			AddIfMissing(clip.ContainsText, "text/plain", TextMimes);
+			AddIfMissing(!string.IsNullOrEmpty(text), "text/plain", TextMimes);
 			AddIfMissing(clip.ContainsHtml, "text/html", HtmlMimes);
 			AddIfMissing(clip.ContainsImage, "image/png", ImageMimes);
 			AddIfMissing(clip.ContainsUris, "text/uri-list", FileMimes);
@@ -316,8 +323,15 @@ namespace Keysharp.Internals
 		}
 
 		public override bool Has(string format)
-			=> !string.IsNullOrEmpty(format) && Clipboard.Instance is Eto.Forms.Clipboard clip
-			   && (clip.Contains(format) || base.Has(format));
+		{
+			if (string.IsNullOrEmpty(format) || IsClipboardProtocolType(format))
+				return false;
+
+			if (IsTextType(format) && string.IsNullOrEmpty(GetText()))
+				return false;
+
+			return Clipboard.Instance is Eto.Forms.Clipboard clip && (clip.Contains(format) || base.Has(format));
+		}
 
 		public override byte[] GetData(string format)
 		{
@@ -362,8 +376,11 @@ namespace Keysharp.Internals
 
 			clip.Clear();
 
-			if (entries == null)
+			if (entries == null || entries.Count == 0)
+			{
+				clip.Text = "";
 				return;
+			}
 
 			foreach (var entry in entries)
 			{
@@ -407,13 +424,8 @@ namespace Keysharp.Internals
 			if (clip == null)
 				return;
 
-			if (string.IsNullOrEmpty(text))
-			{
-				clip.Clear();
-				clip.Text = "";
-			}
-			else
-				clip.Text = text;
+			clip.Clear();
+			clip.Text = text ?? "";
 		}
 
 		// IsEmpty and ChangeType are derived from GetFormats in ClipboardBase — the same derivation every backend
@@ -435,18 +447,26 @@ namespace Keysharp.Internals
 		{
 			var clip = Clipboard.Instance;
 
-			if (clip == null || !clip.ContainsImage || clip.Image is not Bitmap bmp)
+			if (clip == null || !clip.ContainsImage)
 				return null;
 
-			return new Bitmap(bmp);   // detach a private copy from the clipboard object
+			using var image = clip.Image;
+			return image is Bitmap bmp ? new Bitmap(bmp) : null;   // detach a private copy from the clipboard object
 		}
 
 		public override void SetImage(Bitmap image)
 		{
 			var clip = Clipboard.Instance;
 
-			if (clip != null)
+			if (clip == null)
+				return;
+
+			clip.Clear();
+
+			if (image != null)
 				clip.Image = image;
+			else
+				clip.Text = "";
 		}
 
 		public override byte[] CaptureAll()
@@ -463,7 +483,7 @@ namespace Keysharp.Internals
 
 			foreach (var type in clip.Types ?? System.Array.Empty<string>())
 			{
-				if (string.IsNullOrEmpty(type) || IsTextType(type))
+				if (string.IsNullOrEmpty(type) || IsTextType(type) || IsClipboardProtocolType(type))
 					continue;
 
 				var payload = clip.GetData(type);
@@ -493,12 +513,17 @@ namespace Keysharp.Internals
 			if (!string.IsNullOrEmpty(html) && !seen.Contains(DataFormats.Html))
 				WriteEntry(bw, DataFormats.Html, Encoding.UTF8.GetBytes(html));
 
-			if (clip.ContainsImage && clip.Image is Bitmap bmp)
+			if (clip.ContainsImage)
 			{
-				var imageBytes = bmp.ToByteArray(ImageFormat.Png);
+				using var image = clip.Image;
 
-				if (imageBytes != null && imageBytes.Length > 0)
-					WriteEntry(bw, ImagePngKey, imageBytes);
+				if (image is Bitmap bmp)
+				{
+					var imageBytes = bmp.ToByteArray(ImageFormat.Png);
+
+					if (imageBytes != null && imageBytes.Length > 0)
+						WriteEntry(bw, ImagePngKey, imageBytes);
+				}
 			}
 
 			if (clip.ContainsUris && clip.Uris is Uri[] uris && uris.Length > 0)
@@ -519,6 +544,7 @@ namespace Keysharp.Internals
 			if (sourceBytes.Length == 0)
 			{
 				clipboard.Clear();
+				clipboard.Text = "";
 				return;
 			}
 
@@ -555,7 +581,8 @@ namespace Keysharp.Internals
 				else if (type == ImagePngKey)
 				{
 					using var imgStream = new MemoryStream(payload, writable: false);
-					clipboard.Image = new Bitmap(imgStream);
+					using var image = new Bitmap(imgStream);
+					clipboard.Image = image;
 				}
 				else if (type == UrisKey)
 				{
