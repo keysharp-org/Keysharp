@@ -37,7 +37,7 @@ Windows has the best feature implementation rate and very high AutoHotkey v2 com
 
 ### Building from source on Windows
 * Download the latest version of [Visual Studio 2026](https://visualstudio.microsoft.com/vs/community/) or VS Code.
-	+ This should install .NET 10. If it doesn't, you need to install it manually from the link above.
+	+ This should install the .NET 10 SDK. If it doesn't, you need to install it manually from the link above.
 * Open Keysharp.sln
 * Build all (building the installer is not necessary).
 * CD to bin\release\net10.0-windows (or \debug\, depending whether using Debug or Release mode)
