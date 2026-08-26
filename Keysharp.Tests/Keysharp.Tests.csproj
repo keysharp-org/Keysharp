@@ -66,6 +66,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\Keysharp\Keysharp.csproj" ReferenceOutputAssembly="false" Private="false" />
 		<ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
 		<ProjectReference Include="..\Keysharp.Components\Scripting\Parser\Keysharp.Components.Scripting.Parser.csproj" />
 		<ProjectReference Include="..\Keysharp.Components\Scripting\Compiler\Keysharp.Components.Scripting.Compiler.csproj" />

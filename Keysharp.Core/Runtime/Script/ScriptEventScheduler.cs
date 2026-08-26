@@ -215,9 +215,10 @@ namespace Keysharp.Runtime
 			}
 		}
 
+		internal Script Owner => script;
 		internal bool OwnsCurrentThread => Thread.CurrentThread.ManagedThreadId == ownerManagedThreadId;
 		internal int OwnerManagedThreadId => ownerManagedThreadId;
-		internal bool IsDisposed => Volatile.Read(ref workerDisposed) != 0;
+		internal bool IsDisposed => script.IsDisposed || Volatile.Read(ref workerDisposed) != 0;
 		// True for schedulers that are guaranteed to be pumped: the UI scheduler (driven by the
 		// message loop) and RealThread schedulers (marked intentional before body runs, then
 		// driven by RunWorkerEventLoop). False for ephemeral ad-hoc C# thread schedulers that
@@ -582,7 +583,7 @@ internal bool HasBlockedQueuedWork
 			if (isUiScheduler)
 				// This delegate can run from an idle native UI loop with no script exception boundary.
 				// Keep exit requests pending for the next genuine script safe point instead of throwing here.
-				Script.PostToUIThread(postedPump);
+				Script.PostToUIThread(script, postedPump);
 			else
 				SignalWorkerPump();
 		}

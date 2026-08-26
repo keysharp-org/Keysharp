@@ -256,14 +256,14 @@ namespace Keysharp.Builtins
 				if (Interlocked.Exchange(ref unobservedHooked, 1) != 0)
 					return;
 
-				TaskScheduler.UnobservedTaskException += (_, e) =>
+				TaskScheduler.UnobservedTaskException += (sender, e) =>
 				{
-					var script = Script.TheScript;
+					var scheduler = GetUnobservedScheduler(sender);
 
 					// This handler is process-wide, so it sees tasks belonging to a host as well. Marking one
 					// observed is a claim that it has been reported; leave the ones this script will not report
 					// to whoever else is listening.
-					if (script is not { hasExited: false } || script.EventScheduler is not { IsDisposed: false } scheduler)
+					if (scheduler == null)
 						return;
 
 					e.SetObserved();
@@ -279,6 +279,17 @@ namespace Keysharp.Builtins
 						return ScriptEventExecutionResult.Executed;
 					});
 				};
+			}
+
+			internal static ScriptEventScheduler GetUnobservedScheduler(object sender)
+			{
+				if (sender is not Task task
+						|| !wrappers.TryGetValue(task, out var wrapper)
+						|| wrapper.ownerScheduler is not { IsDisposed: false } scheduler
+						|| scheduler.Owner is not { hasExited: false, IsDisposed: false })
+					return null;
+
+				return scheduler;
 			}
 
 			/// <summary>

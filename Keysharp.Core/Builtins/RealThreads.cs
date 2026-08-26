@@ -377,10 +377,17 @@ namespace Keysharp.Builtins
 					// GetAliveScheduler report not-alive, whereas faulting this source would create a second task
 					// nobody observes.
 					_ = schedulerSource.TrySetResult(scheduler);
-					_ = completion.TrySetResult(result);
-					scheduler?.DisposeWorker();
-					script.ExitIfNotPersistent();
-					SynchronizationContext.SetSynchronizationContext(previousContext);
+
+					try
+					{
+						scheduler?.DisposeWorker();
+						script.ExitIfNotPersistent();
+					}
+					finally
+					{
+						SynchronizationContext.SetSynchronizationContext(previousContext);
+						_ = completion.TrySetResult(result);
+					}
 				}
 			}
 

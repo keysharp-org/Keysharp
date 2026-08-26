@@ -43,6 +43,7 @@ namespace Keysharp.Runtime
 		/// <see cref="ScriptEventScheduler.DispatchContext"/> is what marshals a callback onto that thread.
 		/// </summary>
 		internal ScriptEventScheduler MainEventScheduler => mainEventScheduler;
+		internal bool IsDisposed => Volatile.Read(ref disposeStarted) != 0;
 
 		/// <summary>
 		/// SynchronizationContext for dispatching genuine UI-framework operations (Show/Hide, native dialogs,
@@ -933,12 +934,12 @@ namespace Keysharp.Runtime
 			return script.uiEventScheduler is { IsDisposed: false } ui ? ui.InvokeSynchronous(action) : action();
 		}
 
-		internal static void PostToUIThread(Action action)
+		internal static void PostToUIThread(Action action) => PostToUIThread(TheScript, action);
+
+		internal static void PostToUIThread(Script script, Action action)
 		{
 			if (action == null)
 				return;
-
-			var script = TheScript;
 
 			if (script?.UIThreadContext != null)
 				script.UIThreadContext.Post(_ => action(), null);

@@ -6,6 +6,69 @@ namespace Keysharp.Tests
 	public class SchedulerTests : TestRunner
 	{
 		[Test, Category("Threading")]
+		public void UnobservedFaultLookupUsesWrappedTaskOwner()
+		{
+			var ownedTask = Task.FromResult(Guid.NewGuid());
+			var hostTask = Task.FromResult(Guid.NewGuid());
+			var wrapper = Ks.KeysharpTask.Wrap(ownedTask);
+			var scheduler = s.EventScheduler;
+			var incomplete = (Script)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Script));
+			Script.TheScript = incomplete;
+
+			try
+			{
+				Assert.AreSame(scheduler, Ks.KeysharpTask.GetUnobservedScheduler(ownedTask));
+				Assert.IsNull(Ks.KeysharpTask.GetUnobservedScheduler(hostTask));
+			}
+			finally
+			{
+				Script.TheScript = s;
+				GC.SuppressFinalize(incomplete);
+				GC.KeepAlive(wrapper);
+			}
+		}
+
+		[Test, Category("Threading")]
+		public void ExplicitAndPostedPumpsUseSchedulerOwner()
+		{
+			var context = UseQueuedMainContext();
+			var scheduler = s.EventScheduler;
+			var incomplete = (Script)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Script));
+			var ran = false;
+			Script.TheScript = incomplete;
+
+			try
+			{
+				Assert.DoesNotThrow(() => Keysharp.Internals.Flow.TryDoEvents(scheduler, false, false, false));
+				Assert.IsTrue(scheduler.EnqueueCallback(() => ran = true));
+				Assert.IsFalse(ran);
+				Assert.AreEqual(1, context.PendingCount);
+				Assert.DoesNotThrow(context.DrainAll);
+				Assert.IsTrue(ran);
+			}
+			finally
+			{
+				Script.TheScript = s;
+				GC.SuppressFinalize(incomplete);
+			}
+		}
+
+		[Test, Category("Threading")]
+		public void DisposedOwnerDoesNotDrainPostedPump()
+		{
+			var context = UseQueuedMainContext();
+			var scheduler = s.EventScheduler;
+			var ran = false;
+
+			Assert.IsTrue(scheduler.EnqueueCallback(() => ran = true));
+			Assert.AreEqual(1, context.PendingCount);
+
+			s.Dispose();
+			Assert.DoesNotThrow(context.DrainAll);
+			Assert.IsFalse(ran);
+		}
+
+		[Test, Category("Threading")]
 		public void PostedExitSuppression()
 		{
 			var context = UseQueuedMainContext();

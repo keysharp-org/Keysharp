@@ -391,12 +391,14 @@ namespace Keysharp.Internals
 		internal static void TryDoEvents(bool propagateExit = true, bool yieldTick = true)
 			=> TryDoEvents(null, propagateExit, yieldTick);
 
-		// A null scheduler resolves through Script.EventScheduler. Callers which are already executing inside
-		// a UI dispatch can suppress the nested native UI pump while retaining scheduler and exit handling.
+		// A null scheduler resolves through Script.EventScheduler. An explicit scheduler retains its owning Script,
+		// including when a posted pump from an older Script runs after the process-wide current Script has changed.
+		// Callers already inside a UI dispatch can suppress the nested native UI pump while retaining scheduler and
+		// exit handling.
 		internal static void TryDoEvents(ScriptEventScheduler scheduler, bool propagateExit = true, bool yieldTick = true, bool pumpUi = true)
 		{
 			var start = yieldTick ? Environment.TickCount : default;
-			var script = Script.TheScript;
+			var script = scheduler?.Owner ?? Script.TheScript;
 			ThreadVariables currentThread = null;
 			scheduler ??= script.EventScheduler;
 
