@@ -49,7 +49,7 @@ Prebuilt packages are on the [Releases](https://github.com/keysharp-org/Keysharp
 
 ### Linux
 
-- **Install:** extract the tarball, then `sudo bash ./install.sh` — the root install adds privileged helpers for reliable input hooks, input synthesis, and Wayland screen capture. Run without `sudo` for a user-local install under `~/.local` that skips those helpers.
+- **Install:** extract the tarball, then `sudo bash ./install.sh` — the root install adds privileged helpers for reliable input hooks, input synthesis, and direct or compositor-specific capture paths. Run without `sudo` for a user-local install under `~/.local` that skips those helpers.
 - **Run:** `keysharp hello.ks`.
 - **Uninstall:** `sudo bash ./uninstall.sh` (use the same privilege level you installed with).
 - **VS Code:** the extension needs an `.exe` name, so create a shim:

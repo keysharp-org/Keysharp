@@ -106,6 +106,93 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
+		public void CosmicGeometryAndProtocolHelpers()
+		{
+			Assert.That(WaylandForeignToplevels.TryResolveGeometry(new Rectangle(120, 40, 800, 600),
+				new ScreenRect(-1920, 0, 1920, 1080), out var resolved), Is.True);
+			Assert.That(resolved, Is.EqualTo(new Rectangle(-1800, 40, 800, 600)));
+			Assert.That(WaylandForeignToplevels.TryResolveGeometry(new Rectangle(0, 0, 20, 20),
+				new ScreenRect(int.MaxValue - 10, 0, 10, 10), out _), Is.False);
+			Assert.That(WaylandForeignToplevels.TryResolveGeometry(new Rectangle(0, 0, 20, 20),
+				new ScreenRect(0, int.MaxValue - 10, 10, 10), out _), Is.False);
+			var first = WaylandForeignToplevels.NewHandle();
+			var second = WaylandForeignToplevels.NewHandle();
+			Assert.That(first.ToInt64(), Is.LessThan(0L));
+			Assert.That(second.ToInt64(), Is.LessThan(first.ToInt64()));
+			Assert.That(WaylandForeignToplevels.FoldBitSet([0u, 2u, 2u, 31u, 32u, uint.MaxValue], 32),
+				Is.EqualTo((1UL << 0) | (1UL << 2) | (1UL << 31)));
+			Assert.That(WaylandForeignToplevels.FoldBitSet([1u, 5u, 63u, 64u], 64),
+				Is.EqualTo((1UL << 1) | (1UL << 5) | (1UL << 63)));
+		}
+
+		[Test]
+		public void CosmicStateCommitsAtomically()
+		{
+			var output = new nint(7);
+			var state = new WaylandToplevel { State = 1, PendingState = 4 };
+			state.GeometryByOutput[output] = new Rectangle(1, 2, 3, 4);
+			state.PendingGeometryByOutput = new() { [output] = new Rectangle(10, 20, 30, 40) };
+			Assert.That(state.State, Is.EqualTo(1));
+			Assert.That(state.GeometryByOutput[output], Is.EqualTo(new Rectangle(1, 2, 3, 4)));
+			WaylandForeignToplevels.CommitCosmicUpdate(state);
+			Assert.That(state.State, Is.EqualTo(4));
+			Assert.That(state.GeometryByOutput[output], Is.EqualTo(new Rectangle(10, 20, 30, 40)));
+			Assert.That(state.CosmicReady, Is.True);
+			Assert.That(state.PendingState, Is.Null);
+			Assert.That(state.PendingGeometryByOutput, Is.Null);
+		}
+
+		[Test]
+		public void WaylandOutputChangesCommitAtomically()
+		{
+			var output = new WaylandOutput { Version = 4 };
+			output.OutputPending.GeometryX = -1920;
+			output.OutputPending.ModeWidth = 1920;
+			output.OutputPending.ModeHeight = 1080;
+			output.OutputPending.Name = "wl-output";
+			output.XdgPending.LogicalX = 40;
+			output.XdgPending.HasLogicalPosition = true;
+			output.XdgPending.Name = "stale-xdg-name";
+			output.CommitOutput(false);
+			Assert.That(output.Bounds, Is.EqualTo(new ScreenRect(-1920, 0, 1920, 1080)));
+			Assert.That(output.LogicalX, Is.Zero);
+			output.CommitXdg();
+			Assert.That(output.Bounds.X, Is.EqualTo(40));
+			Assert.That(output.Name, Is.EqualTo("wl-output"));
+			output.OutputPending.GeometryX = 0;
+			Assert.That(output.GeometryX, Is.EqualTo(-1920));
+			output.CommitOutput(false);
+			Assert.That(output.GeometryX, Is.Zero);
+			Assert.That(output.Bounds.X, Is.EqualTo(40));
+
+			var legacy = new WaylandOutput { Version = 1 };
+			legacy.OutputPending.ModeWidth = 640;
+			legacy.OutputPending.ModeHeight = 480;
+			legacy.CommitLegacyOutput();
+			Assert.That(legacy.Bounds, Is.EqualTo(new ScreenRect(0, 0, 640, 480)));
+		}
+
+		[Test]
+		public void DisplayPumpHonorsItsDeadline()
+		{
+			long tick = 100;
+			var dispatches = 0;
+			var completed = WaylandDisplayPump.WaitUntil(() => false, 25,
+				remaining => { dispatches++; tick += remaining; return true; }, () => tick);
+			Assert.That(completed, Is.False);
+			Assert.That(dispatches, Is.EqualTo(1));
+		}
+
+		[Test]
+		public void PollingDerivesActivationFromTheListSnapshot() =>
+			Assert.That(WaylandPollingEventSource.ActiveHandle(
+			[
+				new(new nint(10), active: false),
+				new(new nint(20), active: true),
+				new(new nint(30), active: false)
+			]), Is.EqualTo(new nint(20)));
+
+		[Test]
 		public void WindowEventRecovery()
 		{
 			var available = false;

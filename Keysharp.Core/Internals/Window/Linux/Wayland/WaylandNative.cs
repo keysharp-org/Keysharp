@@ -29,6 +29,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		[LibraryImport(ClientLibrary, EntryPoint = "wl_display_get_fd")]
 		internal static partial int DisplayGetFd(nint display);
 
+		[LibraryImport(ClientLibrary, EntryPoint = "wl_display_get_error")]
+		internal static partial int DisplayGetError(nint display);
+
 		[LibraryImport(ClientLibrary, EntryPoint = "wl_display_prepare_read")]
 		internal static partial int DisplayPrepareRead(nint display);
 
@@ -162,6 +165,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal static extern int Close(int fd);
 
 		internal const short POLLIN = 0x0001;
+		internal const short POLLOUT = 0x0004;
+		internal const short POLLERR = 0x0008;
+		internal const short POLLHUP = 0x0010;
+		internal const short POLLNVAL = 0x0020;
+		internal const int EINTR = 4;
+		internal const int EAGAIN = 11;
 
 		[StructLayout(LayoutKind.Sequential)]
 		internal struct PollFd
@@ -173,9 +182,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		[DllImport("libc", EntryPoint = "poll", SetLastError = true)]
 		internal static extern int Poll([In, Out] PollFd[] fds, nuint count, int timeoutMs);
+		[DllImport("libc", EntryPoint = "poll", SetLastError = true)]
+		internal static extern int Poll(ref PollFd fd, nuint count, int timeoutMs);
 
 		// Stable wl_display and wl_registry opcodes (Wayland core protocol).
-		private const uint WlDisplayGetRegistryOpcode = 1; // sync=0, get_registry=1
+		private const uint WlDisplaySyncOpcode = 0;
+		private const uint WlDisplayGetRegistryOpcode = 1;
 		private const uint WlRegistryBindOpcode = 0;
 
 		// wl_compositor opcodes
@@ -292,6 +304,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		internal static nint DisplayGetRegistry(nint display)
 			=> MarshalConstructor(display, WlDisplayGetRegistryOpcode, RegistryInterface, ProxyGetVersion(display), 0, 0);
+
+		internal static nint DisplaySync(nint display)
+			=> MarshalConstructor(display, WlDisplaySyncOpcode, CallbackInterface, ProxyGetVersion(display), 0, 0);
 
 		internal static nint RegistryBind(nint registry, uint name, ProtocolInterface protocolInterface, uint version)
 			=> MarshalRegistryBind(registry, WlRegistryBindOpcode, protocolInterface.Pointer, version, 0, name, protocolInterface.NamePointer, version, 0);

@@ -85,6 +85,7 @@ namespace Keysharp.Internals
 				Wl.WaylandBackend.KWinBackend kwin => new KWinScreen(kwin),
 				Wl.WaylandBackend.GnomeBackend gnome => new GnomeScreen(gnome),
 				Wl.CinnamonBackend cinnamon => new CinnamonScreen(cinnamon),
+				Wl.WaylandBackend.CosmicBackend cosmic => new CosmicScreen(cosmic),
 				// Wayland without a recognized compositor helper: no compositor-specific capture/overlay, but
 				// wl_output/xdg-output (core protocols every compositor advertises) still give real monitor
 				// topology and metadata through WaylandLayerShellClient, so this is not plain EtoScreen.
@@ -462,11 +463,47 @@ namespace Keysharp.Internals
 			=> prompt ? Wl.HelperClient.AuthorizeCapture(true) : Wl.HelperClient.PeekCaptureConsent();
 	}
 
-	/// <summary>Wayland session whose compositor matched none of the known helpers (KWin/GNOME/Cinnamon/wlroots
-	/// signatures). No compositor-specific capture, work area or overlay support — those inherit EtoScreen's
-	/// GDK-based defaults, exactly as plain <c>EtoScreen</c> behaved before — but <see cref="WaylandScreen"/>'s
-	/// wl_output/xdg-output topology still applies, because every Wayland compositor advertises those core
-	/// protocols regardless of which (if any) compositor-specific extension it also speaks.</summary>
+	/// <summary>COSMIC capture through staging image-copy, with the desktop Screenshot portal as a bounded fallback.</summary>
+	internal sealed class CosmicScreen : WaylandScreen
+	{
+		internal CosmicScreen(Wl.WaylandBackend.CosmicBackend backend) : base(backend) { }
+
+		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
+		{
+			var direct = Wl.CosmicImageCapture.Capture(bounds, Wl.HelperClient.EnsureCaptureConsent, out bmp);
+
+			if (direct == Wl.CosmicCaptureStatus.Captured)
+				return true;
+
+			// A stopped session can represent an explicit user stop, so it is as authoritative as helper denial.
+			if (!ShouldTryPortal(direct))
+				return false;
+
+			var status = Wl.PortalScreenCapture.Capture(bounds, GetDisplays(), out bmp);
+			return status == Wl.PortalCaptureStatus.Captured;
+		}
+
+		internal static bool ShouldTryPortal(Wl.CosmicCaptureStatus status)
+			=> status is Wl.CosmicCaptureStatus.Unavailable or Wl.CosmicCaptureStatus.Failed;
+
+		public override bool RequiresAuthorization => true;
+
+		public override Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt)
+		{
+			if (prompt)
+				return Wl.CosmicImageCapture.IsAvailable()
+					? Wl.HelperClient.AuthorizeCapture(true)
+					: new Os.PermissionResult(Os.PermissionStatus.NotApplicable);
+
+			// A status check must not make a Wayland round trip or cause a prompt. Before native capture has
+			// actually been found, the portal-only path has no Keysharp-helper authorization to report.
+			return Wl.CosmicImageCapture.WasAvailable
+				? Wl.HelperClient.PeekCaptureConsent()
+				: new Os.PermissionResult(Os.PermissionStatus.NotApplicable);
+		}
+	}
+
+	/// <summary>Unrecognized Wayland compositor: standard output topology with the existing toolkit capture fallback.</summary>
 	internal sealed class GenericWaylandScreen : WaylandScreen
 	{
 		internal GenericWaylandScreen() : base(null) { }

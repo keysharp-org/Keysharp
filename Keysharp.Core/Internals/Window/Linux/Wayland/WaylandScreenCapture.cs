@@ -419,66 +419,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				WaylandOutputBinding.Release(output);
 			}
 
-			/// <summary>Dispatches this private display connection with a real deadline. wl_display_dispatch can block
-			/// forever when a compositor stops responding; prepare_read + poll keeps capture failure bounded.</summary>
 			private bool DispatchUntil(Func<bool> completed, int timeoutMs)
 			{
-				var deadline = Environment.TickCount64 + Math.Max(1, timeoutMs);
-				var poll = new WaylandNative.PollFd[1];
+				var result = WaylandDisplayPump.DispatchUntil(display, completed, timeoutMs);
 
-				while (!completed())
-				{
-					if (WaylandNative.DisplayDispatchPending(display) < 0)
-					{
-						connectionLost = true;
-						return false;
-					}
+				if (!result && WaylandNative.DisplayGetError(display) != 0)
+					connectionLost = true;
 
-					if (completed())
-						return true;
-
-					while (WaylandNative.DisplayPrepareRead(display) != 0)
-					{
-						if (WaylandNative.DisplayDispatchPending(display) < 0)
-						{
-							connectionLost = true;
-							return false;
-						}
-
-						if (completed())
-							return true;
-					}
-
-					_ = WaylandNative.DisplayFlush(display);
-					var remaining = deadline - Environment.TickCount64;
-
-					if (remaining <= 0)
-					{
-						WaylandNative.DisplayCancelRead(display);
-						return false;
-					}
-
-					poll[0] = new WaylandNative.PollFd
-					{
-						FileDescriptor = WaylandNative.DisplayGetFd(display),
-						Events = WaylandNative.POLLIN
-					};
-					var ready = WaylandNative.Poll(poll, 1, (int)Math.Min(int.MaxValue, remaining));
-
-					if (ready <= 0 || (poll[0].ReturnedEvents & WaylandNative.POLLIN) == 0)
-					{
-						WaylandNative.DisplayCancelRead(display);
-						return false;
-					}
-
-					if (WaylandNative.DisplayReadEvents(display) < 0)
-					{
-						connectionLost = true;
-						return false;
-					}
-				}
-
-				return true;
+				return result;
 			}
 
 			private void BindXdgOutputManager(uint name, uint version)

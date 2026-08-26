@@ -3,10 +3,50 @@ using System.Runtime.InteropServices;
 
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
-	/// <summary>Connection-local wl_output/xdg-output state shared by overlay and capture clients.</summary>
+	/// <summary>Connection-local wl_output/xdg-output state shared by Wayland clients.</summary>
 	internal sealed class WaylandOutput
 	{
+		internal sealed class Snapshot
+		{
+			internal int GeometryX, GeometryY, Transform, ModeWidth, ModeHeight, IntegerScale = 1;
+			internal int LogicalX, LogicalY, LogicalWidth, LogicalHeight;
+			internal int PhysicalWidthMm, PhysicalHeightMm, RefreshMilliHertz;
+			internal bool HasLogicalPosition, HasLogicalSize;
+			internal string Name = "", Description = "", Make = "", Model = "";
+
+			internal Snapshot(WaylandOutput value)
+			{
+				GeometryX = value.GeometryX; GeometryY = value.GeometryY; Transform = value.Transform;
+				ModeWidth = value.ModeWidth; ModeHeight = value.ModeHeight; IntegerScale = value.IntegerScale;
+				LogicalX = value.LogicalX; LogicalY = value.LogicalY;
+				LogicalWidth = value.LogicalWidth; LogicalHeight = value.LogicalHeight;
+				PhysicalWidthMm = value.PhysicalWidthMm; PhysicalHeightMm = value.PhysicalHeightMm;
+				RefreshMilliHertz = value.RefreshMilliHertz; Make = value.Make; Model = value.Model;
+				HasLogicalPosition = value.HasLogicalPosition; HasLogicalSize = value.HasLogicalSize;
+				Name = value.Name; Description = value.Description;
+			}
+
+			internal void ApplyOutput(WaylandOutput target, bool includeIdentity)
+			{
+				target.GeometryX = GeometryX; target.GeometryY = GeometryY; target.Transform = Transform;
+				target.ModeWidth = ModeWidth; target.ModeHeight = ModeHeight; target.IntegerScale = IntegerScale;
+				target.PhysicalWidthMm = PhysicalWidthMm; target.PhysicalHeightMm = PhysicalHeightMm;
+				target.RefreshMilliHertz = RefreshMilliHertz; target.Make = Make; target.Model = Model;
+				if (includeIdentity) { target.Name = Name; target.Description = Description; }
+				else if (string.IsNullOrWhiteSpace(target.Description)) target.Description = $"{target.Make} {target.Model}".Trim();
+			}
+
+			internal void ApplyXdg(WaylandOutput target, bool includeIdentity)
+			{
+				target.LogicalX = LogicalX; target.LogicalY = LogicalY;
+				target.LogicalWidth = LogicalWidth; target.LogicalHeight = LogicalHeight;
+				target.HasLogicalPosition = HasLogicalPosition; target.HasLogicalSize = HasLogicalSize;
+				if (includeIdentity) { target.Name = Name; target.Description = Description; }
+			}
+		}
+
 		internal uint RegistryName;
+		internal uint Version;
 		internal nint Proxy;
 		internal nint XdgProxy;
 		internal GCHandle Handle;
@@ -33,6 +73,34 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal string Model = "";
 		/// <summary>Vertical refresh in mHz as wl_output reports it (60000 = 60 Hz); 0 when not yet received.</summary>
 		internal int RefreshMilliHertz;
+		private Snapshot outputPending;
+		private Snapshot xdgPending;
+		internal Snapshot OutputPending => outputPending ??= new(this);
+		internal Snapshot XdgPending => xdgPending ??= new(this);
+
+		internal void CommitOutput(bool includesXdg)
+		{
+			if (outputPending != null)
+			{
+				outputPending.ApplyOutput(this, Version >= 4);
+				outputPending = null;
+			}
+			if (includesXdg) CommitXdg();
+			Done = true;
+		}
+
+		internal void CommitXdg()
+		{
+			if (Version < 2) Done = true;
+			if (xdgPending == null) return;
+			xdgPending.ApplyXdg(this, Version < 4);
+			xdgPending = null;
+		}
+
+		internal void CommitLegacyOutput()
+		{
+			if (Version < 2) CommitOutput(false);
+		}
 
 		internal ScreenRect Bounds
 		{
@@ -84,13 +152,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	{
 		internal static WaylandOutput Bind(nint registry, uint registryName, uint version, nint xdgOutputManager)
 		{
+			var boundVersion = Math.Min(version, 4u);
 			var proxy = WaylandNative.RegistryBind(registry, registryName, WaylandNative.OutputInterface,
-				"wl_output", Math.Min(version, 4u));
+				"wl_output", boundVersion);
 
 			if (proxy == 0)
 				return null;
 
-			var output = new WaylandOutput { RegistryName = registryName, Proxy = proxy };
+			var output = new WaylandOutput { RegistryName = registryName, Version = boundVersion, Proxy = proxy };
 			output.Handle = GCHandle.Alloc(output);
 
 			if (WaylandNative.ProxyAddListener(proxy, WaylandOutputListeners.OutputPointer,
@@ -158,28 +227,35 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	{
 		private static readonly GeometryHandler onGeometry = Geometry;
 		private static readonly ModeHandler onMode = Mode;
-		private static readonly VoidHandler onOutputDone = (data, _) => Output(data).Done = true;
-		private static readonly ScaleHandler onScale = (data, _, factor) => Output(data).IntegerScale = Math.Max(1, factor);
-		private static readonly StringHandler onOutputName = (data, _, value) => Output(data).Name = Utf8(value);
-		private static readonly StringHandler onOutputDescription = (data, _, value) => Output(data).Description = Utf8(value);
+		private static readonly VoidHandler onOutputDone = (data, _) =>
+		{
+			var output = Output(data);
+			output.CommitOutput(output.XdgProxy != 0 && WaylandNative.ProxyGetVersion(output.XdgProxy) >= 3);
+		};
+		private static readonly ScaleHandler onScale = (data, _, factor) => Output(data).OutputPending.IntegerScale = Math.Max(1, factor);
+		private static readonly StringHandler onOutputName = (data, _, value) => Output(data).OutputPending.Name = Utf8(value);
+		private static readonly StringHandler onOutputDescription = (data, _, value) => Output(data).OutputPending.Description = Utf8(value);
 
 		private static readonly PositionHandler onPosition = (data, _, x, y) =>
 		{
 			var output = Output(data);
-			output.LogicalX = x;
-			output.LogicalY = y;
-			output.HasLogicalPosition = true;
+			output.XdgPending.LogicalX = x;
+			output.XdgPending.LogicalY = y;
+			output.XdgPending.HasLogicalPosition = true;
 		};
 		private static readonly SizeHandler onSize = (data, _, width, height) =>
 		{
 			var output = Output(data);
-			output.LogicalWidth = width;
-			output.LogicalHeight = height;
-			output.HasLogicalSize = width > 0 && height > 0;
+			output.XdgPending.LogicalWidth = width;
+			output.XdgPending.LogicalHeight = height;
+			output.XdgPending.HasLogicalSize = width > 0 && height > 0;
 		};
-		private static readonly VoidHandler onXdgDone = (data, _) => Output(data).Done = true;
-		private static readonly StringHandler onXdgName = (data, _, value) => Output(data).Name = Utf8(value);
-		private static readonly StringHandler onXdgDescription = (data, _, value) => Output(data).Description = Utf8(value);
+		private static readonly VoidHandler onXdgDone = (data, proxy) =>
+		{
+			if (WaylandNative.ProxyGetVersion(proxy) < 3) Output(data).CommitXdg();
+		};
+		private static readonly StringHandler onXdgName = (data, _, value) => Output(data).XdgPending.Name = Utf8(value);
+		private static readonly StringHandler onXdgDescription = (data, _, value) => Output(data).XdgPending.Description = Utf8(value);
 
 		internal static readonly nint OutputPointer = WaylandListenerTable.Allocate(onGeometry, onMode, onOutputDone,
 			onScale, onOutputName, onOutputDescription);
@@ -192,7 +268,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static void Geometry(nint data, nint output, int x, int y, int physicalWidth, int physicalHeight,
 			int subpixel, nint make, nint model, int transform)
 		{
-			var state = Output(data);
+			var target = Output(data);
+			var state = target.OutputPending;
 			state.GeometryX = x;
 			state.GeometryY = y;
 			state.Transform = transform;
@@ -203,6 +280,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			if (string.IsNullOrWhiteSpace(state.Description))
 				state.Description = $"{state.Make} {state.Model}".Trim();
+			target.CommitLegacyOutput();
 		}
 
 		private static void Mode(nint data, nint output, uint flags, int width, int height, int refresh)
@@ -210,10 +288,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if ((flags & 1u) == 0 || width <= 0 || height <= 0)
 				return;
 
-			var state = Output(data);
+			var target = Output(data);
+			var state = target.OutputPending;
 			state.ModeWidth = width;
 			state.ModeHeight = height;
 			state.RefreshMilliHertz = Math.Max(0, refresh);
+			target.CommitLegacyOutput();
 		}
 
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]

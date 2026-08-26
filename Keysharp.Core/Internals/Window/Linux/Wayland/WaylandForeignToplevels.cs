@@ -1,12 +1,11 @@
+using Keysharp.Builtins;
 using System.Runtime.InteropServices;
 
 #if LINUX
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
-	// Not thread-safe: all public calls (Enumerate, Active, Get, Activate, etc.) must come from
-	// the same thread. Native callbacks run synchronously within DisplayRoundtrip, so the
-	// toplevel dictionaries are only mutated and read on the one calling thread.
-	internal sealed class WaylandForeignToplevels : IDisposable
+	/// <summary>One serialized Wayland connection for standard and compositor-extended foreign toplevels.</summary>
+	internal sealed partial class WaylandForeignToplevels : IDisposable
 	{
 		private const string ExtListName = "ext_foreign_toplevel_list_v1";
 		private const string SeatName = "wl_seat";
@@ -16,19 +15,23 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static readonly RetryGate probes = new(maximumAttempts: 3,
 			initialRetryDelay: TimeSpan.FromMilliseconds(200), maximumRetryDelay: TimeSpan.FromSeconds(2));
 		private static WaylandForeignToplevels current;
+		private static long nextHandle;
 
+		private readonly object displaySync = new();
 		private readonly Dictionary<nint, WaylandToplevel> toplevelsByHandle = [];
 		private readonly Dictionary<nint, WaylandToplevel> toplevelsByProxy = [];
-		private readonly List<GCHandle> listenerData = [];
 		private readonly GCHandle selfHandle;
 		private readonly nint display;
 		private nint extList;
 		private nint registry;
 		private nint seat;
 		private nint wlrManager;
-		private long nextHandle = -1;
+		private uint extListName;
+		private uint seatName;
+		private uint wlrManagerName;
 		private volatile bool connectionLost;
-		private bool disposed;
+		private volatile bool disposed;
+		private bool extListFinished;
 
 		private WaylandForeignToplevels(nint display)
 		{
@@ -79,152 +82,146 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		private bool IsAvailable => !disposed && !connectionLost && display != 0;
-		internal bool CanList => IsAvailable && (wlrManager != 0 || extList != 0);
+		private bool IsAvailable => !disposed && !connectionLost && display != 0
+			&& (wlrManager != 0 || (extList != 0 && !extListFinished));
+		internal bool CanList => IsAvailable;
 		internal bool CanManage => IsAvailable && wlrManager != 0;
 
 		internal WaylandToplevel Active
 		{
 			get
 			{
-				Refresh();
-				if (!IsAvailable)
-					return null;
-
-				return toplevelsByHandle.Values.FirstOrDefault(toplevel => !toplevel.Closed && toplevel.Activated);
+				lock (displaySync)
+				{
+					RefreshCore();
+					return IsAvailable
+						? toplevelsByHandle.Values.FirstOrDefault(t => !t.Closed && t.Activated)
+						: null;
+				}
 			}
 		}
 
 		internal IReadOnlyList<WaylandToplevel> Enumerate()
 		{
-			Refresh();
-			if (!IsAvailable)
-				return [];
+			lock (displaySync)
+			{
+				RefreshCore();
+				if (!IsAvailable)
+					return [];
 
-			var protocol = CanManage ? WaylandForeignToplevelProtocol.Wlr : WaylandForeignToplevelProtocol.Ext;
-			return toplevelsByHandle.Values
-				.Where(toplevel => !toplevel.Closed && toplevel.Protocol == protocol)
-				.ToList();
+				var protocol = CanManage ? WaylandForeignToplevelProtocol.Wlr : WaylandForeignToplevelProtocol.Ext;
+				return toplevelsByHandle.Values.Where(t => !t.Closed && t.Protocol == protocol).ToArray();
+			}
 		}
 
 		internal bool IsWindow(nint handle)
 		{
-			Refresh();
-			if (!IsAvailable)
-				return false;
-
-			return toplevelsByHandle.TryGetValue(handle, out var toplevel) && !toplevel.Closed;
+			lock (displaySync)
+			{
+				RefreshCore();
+				return IsAvailable && toplevelsByHandle.TryGetValue(handle, out var state) && !state.Closed;
+			}
 		}
 
 		internal WaylandToplevel Get(nint handle)
 		{
-			Refresh();
-			if (!IsAvailable)
-				return null;
-
-			return toplevelsByHandle.TryGetValue(handle, out var toplevel) && !toplevel.Closed ? toplevel : null;
+			lock (displaySync)
+			{
+				RefreshCore();
+				return IsAvailable && toplevelsByHandle.TryGetValue(handle, out var state) && !state.Closed
+					? state : null;
+			}
 		}
 
 		internal bool Activate(WaylandToplevel toplevel)
 		{
-			if (!CanRequest(toplevel) || seat == 0)
-				return false;
+			lock (displaySync)
+			{
+				if (!CanRequest(toplevel) || seat == 0)
+					return false;
 
-			WaylandNative.MarshalObjectRequest(toplevel.Proxy, 4, 0, WaylandNative.ProxyGetVersion(toplevel.Proxy), 0, seat);
-			return RoundtripAfterRequest();
+				WaylandNative.MarshalObjectRequest(toplevel.Proxy, 4, 0, WaylandNative.ProxyGetVersion(toplevel.Proxy), 0, seat);
+				return SynchronizeCore(500);
+			}
 		}
 
 		internal bool Close(WaylandToplevel toplevel)
 		{
-			if (!CanRequest(toplevel))
-				return false;
+			lock (displaySync)
+			{
+				if (!CanRequest(toplevel))
+					return false;
 
-			WaylandNative.MarshalRequest(toplevel.Proxy, 5, 0, WaylandNative.ProxyGetVersion(toplevel.Proxy), 0);
-			return RoundtripAfterRequest();
+				WaylandNative.MarshalRequest(toplevel.Proxy, 5, 0, WaylandNative.ProxyGetVersion(toplevel.Proxy), 0);
+				return SynchronizeCore(500);
+			}
 		}
 
 		internal bool SetState(WaylandToplevel toplevel, FormWindowState state)
 		{
-			if (!CanRequest(toplevel))
-				return false;
-
-			var opcode = state switch
+			lock (displaySync)
 			{
-				FormWindowState.Maximized => 0u,
-				FormWindowState.Minimized => 2u,
-				_ when toplevel.Minimized => 3u,
-				_ when toplevel.Maximized => 1u,
-				_ => uint.MaxValue
-			};
+				if (!CanRequest(toplevel))
+					return false;
 
-			if (opcode == uint.MaxValue)
-				return true;
+				var opcode = state switch
+				{
+					FormWindowState.Maximized => 0u,
+					FormWindowState.Minimized => 2u,
+					_ when toplevel.Minimized => 3u,
+					_ when toplevel.Maximized => 1u,
+					_ => uint.MaxValue
+				};
 
-			WaylandNative.MarshalRequest(toplevel.Proxy, opcode, 0, WaylandNative.ProxyGetVersion(toplevel.Proxy), 0);
-			return RoundtripAfterRequest();
-		}
+				if (opcode == uint.MaxValue)
+					return true;
 
-		public void Dispose()
-		{
-			lock (sync)
-			{
-				if (disposed)
-					return;
-
-				disposed = true;
-				if (ReferenceEquals(current, this))
-					current = null;
+				WaylandNative.MarshalRequest(toplevel.Proxy, opcode, 0, WaylandNative.ProxyGetVersion(toplevel.Proxy), 0);
+				return SynchronizeCore(500);
 			}
-
-			foreach (var handle in listenerData)
-				if (handle.IsAllocated)
-					handle.Free();
-
-			if (selfHandle.IsAllocated)
-				selfHandle.Free();
-
-			foreach (var toplevel in toplevelsByProxy.Values)
-				if (toplevel.Proxy != 0)
-					WaylandNative.ProxyDestroy(toplevel.Proxy);
-
-			if (wlrManager != 0)
-				WaylandNative.ProxyDestroy(wlrManager);
-
-			if (extList != 0)
-				WaylandNative.ProxyDestroy(extList);
-
-			if (seat != 0)
-				WaylandNative.ProxyDestroy(seat);
-
-			if (registry != 0)
-				WaylandNative.ProxyDestroy(registry);
-
-			if (display != 0)
-				WaylandNative.DisplayDisconnect(display);
 		}
 
 		private bool CanRequest(WaylandToplevel toplevel)
 			=> toplevel is { Closed: false, Protocol: WaylandForeignToplevelProtocol.Wlr } && toplevel.Proxy != 0 && CanManage;
 
-		private bool RoundtripAfterRequest()
+		private bool RefreshCore()
 		{
-			Refresh();
-			return true;
+			if (disposed || connectionLost || display == 0)
+				return false;
+
+			return CompleteDispatch(WaylandDisplayPump.DispatchPending(display));
 		}
 
-		private void Refresh()
+		private bool SynchronizeCore(int timeoutMs)
 		{
-			if (!disposed && !connectionLost && display != 0 && WaylandNative.DisplayRoundtrip(display) < 0)
+			if (disposed || connectionLost || display == 0)
+				return false;
+
+			return CompleteDispatch(WaylandDisplayPump.Roundtrip(display, timeoutMs));
+		}
+
+		private bool CompleteDispatch(bool succeeded)
+		{
+			if (!succeeded)
 			{
 				connectionLost = true;
 				probes.Rearm();
+				return false;
 			}
+
+			PruneClosed();
+			if (extListFinished && extList != 0)
+			{
+				WaylandNative.MarshalRequest(extList, 1, 0, WaylandNative.ProxyGetVersion(extList),
+					WaylandNative.DestroyFlag);
+				extList = 0;
+			}
+			return true;
 		}
 
 		private static WaylandForeignToplevels TryCreate(out bool unavailable)
 		{
 			unavailable = false;
-
 			if (!Platform.Desktop.IsWaylandSession)
 			{
 				unavailable = true;
@@ -237,15 +234,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			var client = new WaylandForeignToplevels(display);
 			client.registry = WaylandNative.DisplayGetRegistry(display);
-
-			if (client.registry == 0 || WaylandNative.ProxyAddListener(client.registry, RegistryListener.Pointer, GCHandle.ToIntPtr(client.selfHandle)) != 0)
+			if (client.registry == 0 || WaylandNative.ProxyAddListener(client.registry, RegistryListener.Pointer,
+					GCHandle.ToIntPtr(client.selfHandle)) != 0)
 			{
 				client.Dispose();
 				return null;
 			}
 
-			client.Refresh();
-			client.Refresh();
+			client.SynchronizeCore(300);
+			client.SynchronizeCore(300);
+			client.SynchronizeCore(300);
 
 			if (client.connectionLost)
 			{
@@ -266,14 +264,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal static void Reset()
 		{
 			WaylandForeignToplevels retired;
-
 			lock (sync)
 			{
 				retired = current;
 				current = null;
 				probes.Rearm();
 			}
-
 			retired?.Dispose();
 		}
 
@@ -284,17 +280,47 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			var toplevel = new WaylandToplevel
 			{
-				Handle = new nint(nextHandle--),
+				Handle = NewHandle(),
 				Protocol = protocol,
 				Proxy = proxy
 			};
+			toplevel.ListenerHandle = GCHandle.Alloc(toplevel);
 			toplevelsByHandle[toplevel.Handle] = toplevel;
 			toplevelsByProxy[proxy] = toplevel;
 
-			var data = GCHandle.Alloc(toplevel);
-			listenerData.Add(data);
-			var listener = protocol == WaylandForeignToplevelProtocol.Wlr ? WlrHandleListener.Pointer : ExtHandleListener.Pointer;
-			_ = WaylandNative.ProxyAddListener(proxy, listener, GCHandle.ToIntPtr(data));
+			var listener = protocol == WaylandForeignToplevelProtocol.Wlr
+				? WlrHandleListener.Pointer : ExtHandleListener.Pointer;
+			if (WaylandNative.ProxyAddListener(proxy, listener, GCHandle.ToIntPtr(toplevel.ListenerHandle)) != 0)
+				CloseToplevel(toplevel);
+			else if (protocol == WaylandForeignToplevelProtocol.Ext)
+				AttachCosmic(toplevel);
+		}
+
+		internal static nint NewHandle()
+		{
+			var sequence = Interlocked.Decrement(ref nextHandle);
+			if (sequence >= 0 || (IntPtr.Size == 4 && sequence < int.MinValue))
+				throw new InvalidOperationException("Wayland window handle space exhausted.");
+			return new nint(sequence);
+		}
+
+		private void PruneClosed()
+		{
+			foreach (var pair in toplevelsByProxy.Where(pair => pair.Value.Closed).ToArray())
+			{
+				var state = pair.Value;
+				toplevelsByProxy.Remove(pair.Key);
+				toplevelsByHandle.Remove(state.Handle);
+				DestroyCosmic(state);
+				if (state.Proxy != 0)
+				{
+					var opcode = state.Protocol == WaylandForeignToplevelProtocol.Ext ? 0u : 7u;
+					WaylandNative.MarshalRequest(state.Proxy, opcode, 0,
+						WaylandNative.ProxyGetVersion(state.Proxy), WaylandNative.DestroyFlag);
+					state.Proxy = 0;
+				}
+				ReleaseListener(state);
+			}
 		}
 
 		private void BindExt(uint name, uint version)
@@ -303,22 +329,127 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return;
 
 			extList = WaylandNative.RegistryBind(registry, name, Interfaces.ExtList, Math.Min(version, 1u));
-			_ = WaylandNative.ProxyAddListener(extList, ExtListListener.Pointer, GCHandle.ToIntPtr(selfHandle));
+			if (!Listen(extList, ExtListListener.Pointer))
+			{
+				Destroy(ref extList);
+				return;
+			}
+			extListFinished = false;
+			extListName = name;
 		}
 
 		private void BindSeat(uint name, uint version)
 		{
 			if (seat == 0)
 				seat = WaylandNative.RegistryBind(registry, name, WaylandNative.SeatInterface, SeatName, Math.Min(version, 8u));
+			if (seat != 0 && seatName == 0) seatName = name;
 		}
 
 		private void BindWlr(uint name, uint version)
 		{
 			if (wlrManager != 0)
 				return;
-
 			wlrManager = WaylandNative.RegistryBind(registry, name, Interfaces.WlrManager, Math.Min(version, 3u));
-			_ = WaylandNative.ProxyAddListener(wlrManager, WlrManagerListener.Pointer, GCHandle.ToIntPtr(selfHandle));
+			if (!Listen(wlrManager, WlrManagerListener.Pointer))
+			{
+				Destroy(ref wlrManager);
+				return;
+			}
+			wlrManagerName = name;
+		}
+
+		private void RemoveGlobal(uint name)
+		{
+			if (name == extListName)
+			{
+				extListName = 0;
+				FinishExtList(extList);
+			}
+			else if (name == wlrManagerName)
+			{
+				wlrManagerName = 0;
+				Destroy(ref wlrManager);
+				foreach (var state in toplevelsByProxy.Values.Where(t => t.Protocol == WaylandForeignToplevelProtocol.Wlr))
+					CloseToplevel(state);
+			}
+			else if (name == seatName)
+			{
+				seatName = 0;
+				Destroy(ref seat);
+			}
+			else
+				RemoveCosmicGlobal(name);
+		}
+
+		private void FinishExtList(nint proxy)
+		{
+			if (proxy == 0 || proxy != extList)
+				return;
+			foreach (var state in toplevelsByProxy.Values.Where(t => t.Protocol == WaylandForeignToplevelProtocol.Ext))
+				CloseToplevel(state);
+			extListFinished = true;
+		}
+
+		private bool Listen(nint proxy, nint listener)
+			=> proxy != 0 && WaylandNative.ProxyAddListener(proxy, listener, GCHandle.ToIntPtr(selfHandle)) == 0;
+
+		private static void Destroy(ref nint proxy)
+		{
+			if (proxy == 0) return;
+			WaylandNative.ProxyDestroy(proxy);
+			proxy = 0;
+		}
+
+		private void ReleaseListener(WaylandToplevel state)
+		{
+			if (!state.ListenerHandle.IsAllocated) return;
+			state.ListenerHandle.Free();
+			state.ListenerHandle = default;
+		}
+
+		private static void CloseToplevel(WaylandToplevel state) => state.Closed = true;
+
+		private static void CommitExtUpdate(WaylandToplevel state)
+		{
+			if (state.PendingTitle != null) state.Title = state.PendingTitle;
+			if (state.PendingAppId != null) state.AppId = state.PendingAppId;
+			if (state.PendingIdentifier != null) state.Identifier = state.PendingIdentifier;
+			state.PendingTitle = state.PendingAppId = state.PendingIdentifier = null;
+		}
+
+		public void Dispose()
+		{
+			lock (sync)
+				if (ReferenceEquals(current, this)) current = null;
+
+			lock (displaySync)
+			{
+				if (disposed) return;
+				disposed = true;
+				var abandon = connectionLost;
+
+				foreach (var state in toplevelsByProxy.Values)
+				{
+					if (abandon)
+					{
+						state.CosmicProxy = 0;
+						state.Proxy = 0;
+					}
+					else
+					{
+						DestroyCosmic(state);
+						if (state.Proxy != 0) WaylandNative.ProxyDestroy(state.Proxy);
+					}
+					ReleaseListener(state);
+				}
+				DisposeCosmic(abandon);
+				Destroy(ref wlrManager);
+				Destroy(ref extList);
+				Destroy(ref seat);
+				Destroy(ref registry);
+				if (selfHandle.IsAllocated) selfHandle.Free();
+				if (display != 0) WaylandNative.DisplayDisconnect(display);
+			}
 		}
 
 		private static WaylandForeignToplevels Self(nint data) => (WaylandForeignToplevels)GCHandle.FromIntPtr(data).Target;
@@ -335,7 +466,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				var client = Self(data);
 				var interfaceName = Utf8(protocolInterface);
-
 				switch (interfaceName)
 				{
 					case WlrManagerName:
@@ -347,10 +477,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					case SeatName:
 						client.BindSeat(name, version);
 						break;
+					default:
+						client.BindCosmicGlobal(interfaceName, name, version);
+						break;
 				}
 			}
 
-			private static void GlobalRemove(nint data, nint registry, uint name) { }
+			private static void GlobalRemove(nint data, nint registry, uint name) => Self(data).RemoveGlobal(name);
 
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 			private delegate void GlobalHandler(nint data, nint registry, uint name, nint protocolInterface, uint version);
@@ -375,7 +508,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			private static readonly FinishedHandler onFinished = Finished;
 			internal static readonly nint Pointer = ListenerBlock.Create(onCreated, onFinished);
 			private static void Created(nint data, nint list, nint handle) => Self(data).AddToplevel(handle, WaylandForeignToplevelProtocol.Ext);
-			private static void Finished(nint data, nint list) { }
+			private static void Finished(nint data, nint list) => Self(data).FinishExtList(list);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void CreatedHandler(nint data, nint list, nint handle);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void FinishedHandler(nint data, nint list);
 		}
@@ -388,25 +521,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			private static readonly ObjectHandler onOutputLeave = IgnoreObject;
 			private static readonly StateHandler onState = State;
 			private static readonly VoidHandler onDone = Ignore;
-			private static readonly VoidHandler onClosed = (data, _) => Toplevel(data).Closed = true;
+			private static readonly VoidHandler onClosed = (data, _) => CloseToplevel(Toplevel(data));
 			private static readonly ObjectHandler onParent = IgnoreObject;
 			internal static readonly nint Pointer = ListenerBlock.Create(onTitle, onAppId, onOutputEnter, onOutputLeave, onState, onDone, onClosed, onParent);
 
-			private static void State(nint data, nint handle, nint array)
-			{
-				var stateArray = Marshal.PtrToStructure<WaylandNative.WlArray>(array);
-				var state = 0u;
-
-				for (nuint offset = 0; stateArray.Data != 0 && offset + sizeof(uint) <= stateArray.Size; offset += sizeof(uint))
-				{
-					var entry = (uint)Marshal.ReadInt32(stateArray.Data, (int)offset);
-					if (entry < 32)
-						state |= 1u << (int)entry;
-				}
-
-				Toplevel(data).State = state;
-			}
-
+			private static void State(nint data, nint handle, nint array) => Toplevel(data).State = (uint)ReadBitSet(array, 32);
 			private static void Ignore(nint data, nint handle) { }
 			private static void IgnoreObject(nint data, nint handle, nint value) { }
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void StringHandler(nint data, nint handle, nint value);
@@ -417,15 +536,31 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		private static class ExtHandleListener
 		{
-			private static readonly VoidHandler onClosed = (data, _) => Toplevel(data).Closed = true;
-			private static readonly VoidHandler onDone = Ignore;
-			private static readonly StringHandler onTitle = (data, _, value) => Toplevel(data).Title = Utf8(value);
-			private static readonly StringHandler onAppId = (data, _, value) => Toplevel(data).AppId = Utf8(value);
-			private static readonly StringHandler onIdentifier = (data, _, value) => Toplevel(data).Identifier = Utf8(value);
+			private static readonly VoidHandler onClosed = (data, _) => CloseToplevel(Toplevel(data));
+			private static readonly VoidHandler onDone = (data, _) => CommitExtUpdate(Toplevel(data));
+			private static readonly StringHandler onTitle = (data, _, value) => Toplevel(data).PendingTitle = Utf8(value);
+			private static readonly StringHandler onAppId = (data, _, value) => Toplevel(data).PendingAppId = Utf8(value);
+			private static readonly StringHandler onIdentifier = (data, _, value) => Toplevel(data).PendingIdentifier = Utf8(value);
 			internal static readonly nint Pointer = ListenerBlock.Create(onClosed, onDone, onTitle, onAppId, onIdentifier);
-			private static void Ignore(nint data, nint handle) { }
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void VoidHandler(nint data, nint handle);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void StringHandler(nint data, nint handle, nint value);
+		}
+
+		private static unsafe ulong ReadBitSet(nint array, int bitCount)
+		{
+			if (array == 0) return 0;
+			var native = Marshal.PtrToStructure<WaylandNative.WlArray>(array);
+			if (native.Data == 0 || native.Size / sizeof(uint) > int.MaxValue) return 0;
+			return FoldBitSet(new ReadOnlySpan<uint>((void*)native.Data, (int)(native.Size / sizeof(uint))), bitCount);
+		}
+
+		internal static ulong FoldBitSet(ReadOnlySpan<uint> values, int bitCount)
+		{
+			var bits = 0UL;
+			var limit = Math.Clamp(bitCount, 0, 64);
+			foreach (var value in values)
+				if (value < limit) bits |= 1UL << (int)value;
+			return bits;
 		}
 
 		private static class ListenerBlock

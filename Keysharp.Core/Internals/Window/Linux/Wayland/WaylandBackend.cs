@@ -42,6 +42,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			(previous as IDisposable)?.Dispose();
 			WaylandLayerShellClient.Reset();
+			CosmicImageCapture.Reset();
 			WaylandForeignToplevels.Reset();
 			WaylandScreenCapture.Reset();
 			WaylandVirtualPointerClient.Reset();
@@ -1192,16 +1193,66 @@ for (var __i = 0; __i < __order.length; ++__i) {
 		{
 			public string Name => "COSMIC";
 
-			internal static bool IsAvailable() => DesktopMatches("COSMIC");
+			internal static bool IsAvailable()
+				=> DesktopMatches("COSMIC")
+					|| EnvironmentContains("DESKTOP_SESSION", "cosmic")
+					|| EnvironmentContains("XDG_SESSION_DESKTOP", "cosmic");
+
+			public bool SupportsWindowEvents => WaylandForeignToplevels.Current?.CanListCosmic == true;
+
+			public IDisposable SubscribeWindowEvents(Action<WaylandWindowEvent> sink)
+				=> sink != null && WaylandForeignToplevels.Current?.CanListCosmic == true
+					? new WaylandPollingEventSource(this, sink)
+					: null;
+
+			public bool IsKnown(nint handle) => WaylandForeignToplevels.KnowsCosmicCurrent(handle);
+
+			public bool TryListWindows(bool includeHidden, out IReadOnlyList<WaylandWindowInfo> windows)
+			{
+				var client = WaylandForeignToplevels.Current;
+				windows = client?.EnumerateCosmic(includeHidden) ?? [];
+				return client?.CanListCosmic == true;
+			}
+
+			public bool TryGetActiveWindow(out WaylandWindowInfo window)
+			{
+				var client = WaylandForeignToplevels.Current;
+
+				if (client != null)
+					return client.TryGetCosmicActive(out window);
+
+				window = null;
+				return false;
+			}
+
+			public bool TryGetWindow(nint handle, out WaylandWindowInfo window)
+			{
+				var client = WaylandForeignToplevels.Current;
+
+				if (client != null)
+					return client.TryGetCosmic(handle, out window);
+
+				window = null;
+				return false;
+			}
+
+			public bool TryGetWindowAt(int x, int y, out WaylandWindowInfo window)
+			{
+				var client = WaylandForeignToplevels.Current;
+
+				if (client != null)
+					return client.TryGetCosmicAt(x, y, out window);
+
+				window = null;
+				return false;
+			}
 
 			public bool TryGetCursorPos(out int x, out int y)
 			{
 				x = 0;
 				y = 0;
-				// TODO: bind zcosmic_toplevel_info_v1 (which already includes geometry) and
-				// — separately — find or push for a cursor-position Wayland extension on
-				// COSMIC. As of writing there isn't a standard cursor-pos protocol there
-				// either; the toplevel-info extension exists but doesn't carry the cursor.
+				// COSMIC toplevel-info supplies window geometry, but neither it nor a standard Wayland protocol
+				// exposes the global cursor position.
 				return false;
 			}
 

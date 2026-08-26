@@ -20,6 +20,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal int Width { get; }
 		internal int Height { get; }
 		internal int Stride { get; }
+		internal uint Format { get; }
 		internal nint Buffer { get; private set; }
 		internal nint Data { get; private set; }
 		private nuint MapLength { get; }
@@ -41,7 +42,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal long LastPresentedFrame { get; set; } = -1;
 
 		private WaylandShmBuffer(int fd, nint mapping, nuint mapLength, nint pool, nint buffer,
-			int width, int height, int stride)
+			int width, int height, int stride, uint format)
 		{
 			this.fd = fd;
 			Data = mapping;
@@ -51,11 +52,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			Width = width;
 			Height = height;
 			Stride = stride;
+			Format = format;
 			listenerHandle = GCHandle.Alloc(this);
 			if (WaylandNative.ProxyAddListener(buffer, ReleaseListener.Pointer, GCHandle.ToIntPtr(listenerHandle)) != 0)
 			{
 				listenerHandle.Free();
-				WaylandNative.BufferDestroy(buffer);
 				Buffer = 0;
 				throw new IOException("wl_buffer listener setup failed.");
 			}
@@ -85,6 +86,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				throw new ArgumentOutOfRangeException(nameof(height), "The SHM buffer exceeds the Wayland protocol limit.");
 
 			var fd = WaylandNative.MemfdCreate("keysharp-wl-shm", WaylandNative.MFD_CLOEXEC);
+			nint mapping = 0;
+			nint pool = 0;
+			nint buffer = 0;
 
 			if (fd < 0)
 				throw new IOException($"memfd_create failed: errno={Marshal.GetLastPInvokeError()}");
@@ -94,44 +98,39 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (WaylandNative.Ftruncate(fd, size) != 0)
 					throw new IOException($"ftruncate({size}) failed: errno={Marshal.GetLastPInvokeError()}");
 
-				var mapping = WaylandNative.Mmap(0, (nuint)size, WaylandNative.PROT_READ | WaylandNative.PROT_WRITE,
+				mapping = WaylandNative.Mmap(0, (nuint)size, WaylandNative.PROT_READ | WaylandNative.PROT_WRITE,
 					WaylandNative.MAP_SHARED, fd, 0);
 
 				if (mapping == WaylandNative.MAP_FAILED)
 					throw new IOException($"mmap failed: errno={Marshal.GetLastPInvokeError()}");
 
-				try
-				{
-					var pool = WaylandNative.ShmCreatePool(shm, fd, (int)size);
+				pool = WaylandNative.ShmCreatePool(shm, fd, (int)size);
 
-					if (pool == 0)
-						throw new IOException("wl_shm.create_pool returned null.");
+				if (pool == 0)
+					throw new IOException("wl_shm.create_pool returned null.");
 
-					try
-					{
-						var buffer = WaylandNative.ShmPoolCreateBuffer(pool, 0, width, height, stride, format);
+				buffer = WaylandNative.ShmPoolCreateBuffer(pool, 0, width, height, stride, format);
 
-						if (buffer == 0)
-							throw new IOException("wl_shm_pool.create_buffer returned null.");
+				if (buffer == 0)
+					throw new IOException("wl_shm_pool.create_buffer returned null.");
 
-						return new WaylandShmBuffer(fd, mapping, (nuint)size, pool, buffer, width, height, stride);
-					}
-					catch
-					{
-						WaylandNative.ShmPoolDestroy(pool);
-						throw;
-					}
-				}
-				catch
-				{
-					_ = WaylandNative.Munmap(mapping, (nuint)size);
-					throw;
-				}
-			}
-			catch
-			{
+				// The wl_buffer and mmap outlive their creation pool; neither the pool proxy nor the local fd
+				// needs to remain open for a cached buffer.
+				WaylandNative.ShmPoolDestroy(pool);
+				pool = 0;
 				_ = WaylandNative.Close(fd);
-				throw;
+				fd = -1;
+				var result = new WaylandShmBuffer(fd, mapping, (nuint)size, pool, buffer, width, height, stride,
+					format);
+				mapping = buffer = 0;
+				return result;
+			}
+			finally
+			{
+				if (buffer != 0) WaylandNative.BufferDestroy(buffer);
+				if (pool != 0) WaylandNative.ShmPoolDestroy(pool);
+				if (mapping != 0 && mapping != WaylandNative.MAP_FAILED) _ = WaylandNative.Munmap(mapping, (nuint)size);
+				if (fd >= 0) _ = WaylandNative.Close(fd);
 			}
 		}
 
@@ -206,6 +205,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			disposed = true;
 		}
+
+		internal bool Matches(int width, int height, uint format)
+			=> Buffer != 0 && Width == width && Height == height && Format == format;
 
 		private static class ReleaseListener
 		{

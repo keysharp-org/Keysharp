@@ -321,7 +321,7 @@ namespace Keysharp.Internals
 		public override nint GetForegroundHandle()
 		{
 			if (wayland?.TryGetActiveWindow(out var active) == true)
-				return active.Handle;
+				return AsOwn(active).Handle;
 
 			return WaylandForeignToplevels.Current?.Active is WaylandToplevel fa ? fa.Handle : 0;
 		}
@@ -631,14 +631,19 @@ namespace Keysharp.Internals
 		public override IReadOnlyList<WindowInfoBase> Enumerate(bool includeHidden)
 		{
 			var list = new List<WindowInfoBase>();
+			var backendListed = false;
 
 			if (wayland?.TryListWindows(includeHidden, out var backendWindows) == true)
 			{
+				backendListed = true;
 				foreach (var w in backendWindows)
 					list.Add(AsOwn(w));
 			}
 
-			if (WaylandForeignToplevels.Current is { } tlm)
+			// COSMIC augments the generic ext-foreign-toplevel objects, so adding both views would duplicate them.
+			// Other backends retain the merge because their compositor IPC may expose a different window set.
+			if ((!backendListed || wayland is not WaylandBackend.CosmicBackend)
+					&& WaylandForeignToplevels.Current is { } tlm)
 				foreach (var tl in tlm.Enumerate())
 					list.Add(new WindowInfo(tl.Handle));
 

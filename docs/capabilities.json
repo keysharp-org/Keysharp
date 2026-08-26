@@ -5541,7 +5541,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process window/control interaction. macOS currently relies on Accessibility APIs with permission requirements."
+                     "notes":  "On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process window/control interaction. COSMIC supplies native listing, active state, geometry, and window events. Coordinate hit-testing is limited to the active window because the protocol exposes neither workspace membership nor stacking order; window actions and general move/resize are not supported. macOS currently relies on Accessibility APIs with permission requirements.",
+                     "tested-by":  "WaylandTests.cs"
                  },
                  {
                      "category":  "Core Language",
@@ -8085,7 +8086,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "The monitor a window overlaps most. Inherits the platform's foreign-window geometry support, so on Wayland it needs a compositor backend (KWin/GNOME/Cinnamon) to locate the window at all.",
+                     "notes":  "The monitor a window overlaps most. Inherits the platform's foreign-window geometry support, so on Wayland it needs a compositor backend (KWin/GNOME/Cinnamon/COSMIC) to locate the window at all.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {

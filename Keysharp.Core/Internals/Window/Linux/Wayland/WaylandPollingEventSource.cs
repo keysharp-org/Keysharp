@@ -4,8 +4,8 @@ using Keysharp.Builtins;
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	/// <summary>
-	/// Generic, compositor-agnostic window-event source built on top of <see cref="IWaylandBackend.TryListWindows"/>
-	/// and <see cref="IWaylandBackend.TryGetActiveWindow"/>. It polls the backend on a background thread and diffs
+	/// Generic, compositor-agnostic window-event source built on top of <see cref="IWaylandBackend.TryListWindows"/>.
+	/// It polls one complete backend snapshot on a background thread and diffs
 	/// successive snapshots to synthesize create/close/title/minimize/restore/move/active events.
 	/// <para>
 	/// This is the fallback for compositors that can enumerate windows but offer no push channel (e.g. Cinnamon), and
@@ -82,6 +82,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return;
 
 			var current = new Dictionary<nint, Snapshot>(windows.Count);
+			var activeHandle = ActiveHandle(windows);
 
 			foreach (var w in windows)
 			{
@@ -98,8 +99,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					previous[kvp.Key] = kvp.Value;
 
 				seeded = true;
-				_ = backend.TryGetActiveWindow(out var first) ;
-				previousActive = first?.Handle ?? 0;
+				previousActive = activeHandle;
 				return;
 			}
 
@@ -132,20 +132,27 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			foreach (var kvp in current)
 				previous[kvp.Key] = kvp.Value;
 
-			// Activation.
-			if (backend.TryGetActiveWindow(out var active))
-			{
-				var activeHandle = active?.Handle ?? 0;
+			if (activeHandle != 0 && activeHandle != previousActive)
+				Emit(WaylandWindowEventKind.Activated, activeHandle);
 
-				if (activeHandle != 0 && activeHandle != previousActive)
-					Emit(WaylandWindowEventKind.Activated, activeHandle);
+			previousActive = activeHandle;
+		}
 
-				previousActive = activeHandle;
-			}
+		internal static nint ActiveHandle(IReadOnlyList<WaylandWindowInfo> windows)
+		{
+			if (windows != null)
+				foreach (var window in windows)
+					if (window is { Active: true } && window.Handle != 0)
+						return window.Handle;
+
+			return 0;
 		}
 
 		private void Emit(WaylandWindowEventKind kind, nint handle, Rectangle? bounds = null)
 		{
+			if (stopped)
+				return;
+
 			try { sink(new WaylandWindowEvent(kind, handle) { Bounds = bounds }); }
 			catch { }
 		}
