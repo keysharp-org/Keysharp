@@ -12,12 +12,45 @@ Status legend:
 
 | Capability | Windows | Linux (X11) | Linux (Wayland) | macOS | Notes |
 |---|---|---|---|---|---|
+| __Call | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when calling a missing method or property. |
+| __Delete | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when an object is being deleted. |
+| __Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns an enumerator for the object. |
+| __Get | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when getting a missing property. |
+| __Init() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Class initialization method executed once before first use. |
+| __Item | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer meta-property for bracket access. |
+| __New | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when constructing a new object. |
+| __Set | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when setting a missing property. |
 | - | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Subtraction / unary minus operator |
 | -- | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Decrement operator |
+| -= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| , | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comma/sequence operator |
+| := | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assignment operator |
 | ! | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical NOT operator |
-| !~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regular-expression not-match operator. |
 | != | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inequality operator |
 | !== | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Strict inequality operator. |
+| !~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regular-expression not-match operator. |
+| ?: | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ternary operator |
+| ?? | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Null coalescing operator |
+| ??= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Null-coalescing assignment operator |
+| . | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Concatenation operator |
+| .= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| [ ... ] / Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Array literal. |
+| [ ... ] / Map | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Map literal. |
+| { ... } (Block) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a block scope for one or more statements. |
+| { ... } / Object | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Object literal. |
+| {Blind} | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Send option which preserves modifier state while sending keys; parsed and applied by the shared cross-platform sender. |
+| * | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Multiplication operator |
+| ** | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Power operator |
+| **= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| *= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| / | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Division operator |
+| // | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Integer division operator |
+| //= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| /= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| & | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise AND operator |
+| & (VarRef) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | VarRef/address-of operator |
+| && | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical AND operator |
+| &= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
 | #AssemblyCompany | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly company metadata for compiled scripts. |
 | #AssemblyConfiguration | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly configuration metadata for compiled scripts. |
 | #AssemblyCopyright | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly copyright metadata for compiled scripts. |
@@ -67,45 +100,8 @@ Status legend:
 | #Warning | 🟠 Planned | 🟠 Planned | 🟠 Planned | 🟠 Planned | Intended to emit a compile-time warning message. No handler exists, so using it is a load-time error. Distinct from #Warn, which is implemented. |
 | #WinActivateForce | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #WinActivateForce directive skips the gentle method of activating a window and goes straight to the forceful method. |
 | %...% / Dereference | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Performs dynamic dereferencing (double-deref) to resolve a variable name stored in another variable. |
-| & | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise AND operator |
-| & (VarRef) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | VarRef/address-of operator |
-| && | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical AND operator |
-| &= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| * | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Multiplication operator |
-| ** | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Power operator |
-| **= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| *= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| , | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comma/sequence operator |
-| . | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Concatenation operator |
-| .= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| / | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Division operator |
-| // | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Integer division operator |
-| //= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| /= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| := | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assignment operator |
-| ?: | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ternary operator |
-| ?? | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Null coalescing operator |
-| ??= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Null-coalescing assignment operator |
-| [ ... ] / Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Array literal. |
-| [ ... ] / Map | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Map literal. |
 | ^ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise XOR operator |
 | ^= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| __Call | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when calling a missing method or property. |
-| __Delete | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when an object is being deleted. |
-| __Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns an enumerator for the object. |
-| __Get | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when getting a missing property. |
-| __Init() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Class initialization method executed once before first use. |
-| __Item | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer meta-property for bracket access. |
-| __New | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when constructing a new object. |
-| __Set | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when setting a missing property. |
-| { ... } (Block) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a block scope for one or more statements. |
-| { ... } / Object | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Object literal. |
-| {Blind} | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Send option which preserves modifier state while sending keys; parsed and applied by the shared cross-platform sender. |
-| \\| | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise OR operator |
-| \\|\\| | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical OR operator |
-| \\|= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| ~ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise NOT operator |
-| ~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regex match operator |
 | + | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Addition / unary plus operator |
 | ++ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Increment operator |
 | += | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
@@ -115,7 +111,6 @@ Status legend:
 | <= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comparison operator |
 | <> | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inequality alias operator |
 | = | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Case-insensitive equality operator |
-| -= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
 | == | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Case-sensitive equality operator |
 | => | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fat-arrow function operator. |
 | > | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comparison operator |
@@ -124,6 +119,11 @@ Status legend:
 | >>= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
 | >>> | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical right shift operator |
 | >>>= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| \\| | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise OR operator |
+| \\|= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| \\|\\| | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical OR operator |
+| ~ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise NOT operator |
+| ~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regex match operator |
 | 1, 2, 3 | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comma operator evaluates expressions left-to-right and returns the last value. |
 | A_AhkBuildVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Build version stamped onto the running script assembly. |
 | A_AhkPath | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The full path to the executable compiling the script. For compiled scripts, it's the path to the compiled executable. |
@@ -362,12 +362,12 @@ Status legend:
 | BlockInput() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Disables or enables physical keyboard and mouse input while allowing synthetic input. Linux suppresses movement-only mode through its existing keysharp-inputd mouse hook and uses the daemon block mask for all-input mode; the X11 xinput fallback is device-wide and cannot preserve buttons while blocking only movement. macOS uses event taps and requires Input Monitoring permission. |
 | Boolean | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The type of a truth value, extending Integer, so it reads as 1 or 0 everywhere except a type test. Boolean(Value) converts a value the way `if` decides it. |
 | Break | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Exits the current loop. |
-| Buffer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Buffer object encapsulates a block of memory for use with advanced techniques such as DllCall, structures, StrPut and raw file I/O. |
 | Buffer.__Item[] | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer for reading/writing bytes in Buffer by offset. |
 | Buffer.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Constructs a new Buffer object. |
 | Buffer.ToBase64() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns Buffer contents as a Base64 string. |
 | Buffer.ToByteArray() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns Buffer contents as a byte array. |
 | Buffer.ToHex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns Buffer contents as a hexadecimal string. |
+| Buffer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Buffer object encapsulates a block of memory for use with advanced techniques such as DllCall, structures, StrPut and raw file I/O. |
 | CallbackCreate() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. |
 | CallbackFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases a callback created by CallbackCreate on every platform. |
 | CaretGetPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the caret position. Linux uses native GTK geometry for script-owned controls and AT-SPI for foreign applications, normalizing Wayland-local coordinates through compositor window geometry when needed. macOS uses the Accessibility API and requires Accessibility permission. |
@@ -389,7 +389,6 @@ Status legend:
 | ClipboardAll() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | Captures and restores all advertised clipboard formats on Windows, X11, and macOS. The Wayland extension fallback can restore only one selected MIME representation at a time. |
 | ClipCursor() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Confines physical cursor movement to a screen-coordinate rectangle with exclusive right/bottom edges; call without arguments to release. Coordinates ignore CoordMode Mouse. Artificial cursor movement is allowed. Linux requires the keysharp-inputd mouse hook and uses suppress-and-warp-back enforcement, so the cursor may briefly cross the boundary. Wayland also requires a compositor backend that can query and move the global cursor. macOS suppresses out-of-bounds movement and requires Input Monitoring and Accessibility permissions. |
 | ClipWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits until the native platform clipboard contains data. |
-| Clr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates the platform-independent CLR interop facade for loading and invoking .NET types. |
 | Clr.GetNamespaceName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the namespace name for a managed wrapper or type; implemented by the shared managed runtime. |
 | Clr.GetTypeName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the type name for a managed wrapper or object; implemented by the shared managed runtime. |
 | Clr.Load() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Loads a managed assembly for CLR interop through the shared .NET runtime. |
@@ -400,13 +399,14 @@ Status legend:
 | Clr.ManagedNamespace | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed namespace wrapper used for type resolution. |
 | Clr.ManagedType | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed type wrapper for reflection and invocation. |
 | Clr.Type() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Resolves managed types through the platform-independent CLR interop surface. |
+| Clr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates the platform-independent CLR interop facade for loading and invoking .NET types. |
 | Collect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Forces garbage collection and finalizer processing. |
 | COM APIs | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | COM is available on Windows only. |
 | ComCall() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComCall function calls a native COM interface method by index. A return type of 'void' means the call returns no value. |
 | ComObjActive() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjActive function retrieves a registered COM object. |
-| ComObjArray() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjArray function creates a SafeArray for use with COM. |
 | ComObjArray.__Enum() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Enumerates a COM SAFEARRAY. COM is available only on Windows. |
 | ComObjArray.__Item | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Gets or sets a COM SAFEARRAY element. COM is available only on Windows. |
+| ComObjArray() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjArray function creates a SafeArray for use with COM. |
 | ComObjConnect() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjConnect function connects a COM object's event source to the script, enabling events to be handled. |
 | ComObject() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObject function creates a COM object. |
 | ComObjFlags() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjFlags function retrieves or changes flags which control a COM wrapper object's behaviour. |
@@ -574,7 +574,6 @@ Status legend:
 | GroupClose() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The GroupClose function closes the active window if it was just activated by the GroupActivate or GroupDeactivate function. |
 | GroupDeactivate() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The GroupDeactivate function is similar to the GroupActivate function but activates the next window not in the group. |
 | Gui control types | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | GUI control types are elements of interaction which can be added to a GUI window using the Gui object's Add method. ActiveX and Custom are Win32-only and raise a ValueError on Linux and macOS; every other type is available on all platforms. ListView additionally supports only the Report view there (see Gui.Add). |
-| Gui() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Gui object provides an interface to create a window, add controls, modify the window, and retrieve information about the window. Such windows can be used as data entry forms or custom user interfaces. |
 | Gui.__Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns an enumerator for GUI controls. |
 | Gui.__Item | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer property for retrieving controls by name or key. |
 | Gui.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Constructs a new GUI window object. |
@@ -633,6 +632,7 @@ Status legend:
 | Gui.Tab.UseTab() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects the active tab page for subsequent control additions. |
 | Gui.Title | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the GUI window title. |
 | Gui.Visible | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets GUI visibility state. |
+| Gui() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Gui object provides an interface to create a window, add controls, modify the window, and retrieve information about the window. Such windows can be used as data entry forms or custom user interfaces. |
 | GuiCtrlFromHwnd() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The GuiCtrlFromHwnd function retrieves the GuiControl object of a GUI control associated with the specified window handle. |
 | GuiFromHwnd() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The GuiFromHwnd function retrieves the Gui object of a GUI window associated with the specified window handle. |
 | HasBase() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The HasBase function returns a non-zero number if the specified value is derived from the specified base object. |
@@ -662,7 +662,6 @@ Status legend:
 | IniRead() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads a value, section or list of section names from a standard format.ini file. |
 | IniWrite() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a value or section to a standard format.ini file. |
 | InputBox() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InputBox function displays an input box to ask the user to enter a string. On Linux and macOS the dialog is built with Eto and honours only the Password option; the W, H, X, Y and T (timeout) options are ignored, so Result never returns "Timeout". |
-| InputHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InputHook function creates an object which can be used to collect or intercept keyboard input. |
 | InputHook.BackspaceIsUndo | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Treats Backspace as undo for collected input. |
 | InputHook.CaseSensitive | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether match checks are case-sensitive. |
 | InputHook.EndKey | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Key that ended the input hook. |
@@ -683,9 +682,10 @@ Status legend:
 | InputHook.Start() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Starts capturing input. |
 | InputHook.Stop() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Stops capturing input. |
 | InputHook.Timeout | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Maximum capture duration in seconds. |
-| InputHook.Wait() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Waits until capture ends or times out. |
 | InputHook.VisibleNonText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible non-text keys are collected. |
 | InputHook.VisibleText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible text characters are collected. |
+| InputHook.Wait() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Waits until capture ends or times out. |
+| InputHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InputHook function creates an object which can be used to collect or intercept keyboard input. |
 | InstallKeybdHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InstallKeybdHook function installs or uninstalls the keyboard hook. |
 | InstallMouseHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InstallMouseHook function installs or uninstalls the mouse hook. |
 | InStr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Searches for a string within another string, returning the 1-based index where it was found. Use negative numbers for searching in reverse order. |
@@ -768,7 +768,6 @@ Status legend:
 | Max() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the larger of two numbers. If either is not numeric, the empty string is returned. The largest value of an array is computed if one is passed in. |
 | MemberError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | MemoryError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
-| Menu() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Menu/MenuBar object provides an interface to create and modify a menu or menu bar, add and modify menu items, and retrieve information about the menu or menu bar. |
 | Menu.Add() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Adds an item to a menu. The Right and RTL item options are Win32 menu attributes with no Eto counterpart, so they are parsed and ignored on Linux and macOS; every other option, including the Break/BarBreak column controls, works on all platforms. |
 | Menu.AddStandard() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Adds standard tray menu items. |
 | Menu.Check() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks a menu item. |
@@ -789,6 +788,7 @@ Status legend:
 | Menu.ToggleEnable() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles enabled state of a menu item. |
 | Menu.ToggleItemVis() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles visibility of a menu item. |
 | Menu.Uncheck() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Unchecks a menu item. |
+| Menu() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Menu/MenuBar object provides an interface to create and modify a menu or menu bar, add and modify menu items, and retrieve information about the menu or menu bar. |
 | MenuBar() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Menu/MenuBar object provides an interface to create and modify a menu or menu bar, add and modify menu items, and retrieve information about the menu or menu bar. |
 | MenuFromHandle() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The MenuFromHandle function retrieves the Menu or MenuBar object corresponding to a Win32 menu handle. |
 | MenuSelect() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The MenuSelect function invokes a menu item from the menu bar of the specified window. Like the Control functions, on Linux and macOS it can only reach menus of windows created by this script, not those of other applications. |
@@ -834,9 +834,9 @@ Status legend:
 | NumPut() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The NumPut function stores one or more numbers in binary format at the specified address+offset. A type or value which does not name a number raises a ValueError. |
 | ObjAddRef() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ObjAddRef and ObjRelease functions increment or decrement an object's reference count. |
 | ObjBindMethod() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ObjBindMethod function creates a BoundFunc object which calls a method of a given object. |
-| Object() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new Object; optional key/value arguments initialize own properties. |
 | Object.__Ref() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a property-reference (PropRef) object. |
 | Object.OwnPropCount() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns number of own properties defined directly on the object. |
+| Object() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new Object; optional key/value arguments initialize own properties. |
 | ObjFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases object references associated with a pointer/COM wrapper context. |
 | ObjFromPtr() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Creates or retrieves an object wrapper from a raw pointer. |
 | ObjFromPtrAddRef() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Creates/retrieves an object wrapper from a pointer and increments its reference count. |
@@ -863,7 +863,7 @@ Status legend:
 | OSError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | OutputDebug() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The OutputDebug function sends a string to the debugger (if any) for display. Ks.OutputDebugLine additionally takes a flag to clear the debug output. |
 | OutputDebugLine() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a debug line with newline terminator. |
-| Overlay | 🟢 Full | 🟢 Full | 🟡 Partial | ⚪ Unknown | Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. Pointer events require ClickThrough := false; GNOME/Cinnamon switch from a passive compositor actor to a positioned client window for interactive mode. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS. |
+| Overlay | 🟢 Full | 🟢 Full | 🟡 Partial | ⚪ Unknown | Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. Pointer events require ClickThrough := false; GNOME/Cinnamon use compositor-positioned client surfaces so animated frames stay on Wayland's native buffer path. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS. |
 | Parser and runtime execution | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Script execution is provided by Keysharp.Core. Source parsing is an optional Roslyn-free component; lowering and C# compilation are supplied by the optional compiler component. |
 | ParseScript() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Parses, lowers, and compilation-validates script text with the optional compiler component. Returns an empty string on success or formatted errors on failure. |
 | Pause() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Pause function pauses the script's current thread or sets the pause state of the underlying thread. |
@@ -961,9 +961,9 @@ Status legend:
 | StatusBarWait() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Waits for native Win32 status-bar text and depends on StatusBarGetText; no non-Windows status-bar accessibility backend is implemented. |
 | StrCompare() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compares two strings alphabetically. Note this supports local, human readable comparison as well. |
 | StrGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a string from a memory address or buffer, optionally converting it from a given code page. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
-| String() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a value to a string. For an object, the result is whatever its ToString() returned, so a ToString() which returns no value makes String() return no value too rather than raising. |
 | String.EndsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a string ends with the specified suffix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given. |
 | String.StartsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a string starts with the specified prefix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given. |
+| String() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a value to a string. For an object, the result is whatever its ToString() returned, so a ToString() which returns no value makes String() return no value too rather than raising. |
 | StringBuffer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a mutable string buffer object. |
 | StrLen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the count of how many characters are in a string. |
 | StrLower() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a string to lowercase. |
@@ -984,7 +984,6 @@ Status legend:
 | Switch | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects one case branch based on a value/expression. |
 | SysGet() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Gets system information. Non-Windows builds implement monitor dimensions/count, mouse presence/buttons, network state and selected session metrics; Win32-only system metrics have no portable equivalent and are not implemented. |
 | SysGetIPAddresses() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SysGetIPAddresses function returns an array of the system's IPv4 addresses. |
-| ZeroDivisionError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | TabControl.SetTabIcon() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets icon for a tab page in tab controls. |
 | Tan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the tangent of a number. |
 | Tanh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic tangent of a number. |
@@ -1095,3 +1094,4 @@ Status legend:
 | WinWaitActive() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitActive and WinWaitNotActive functions wait until the specified window is active or not active. |
 | WinWaitClose() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitClose function waits until no matching windows can be found. |
 | WinWaitNotActive() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitActive and WinWaitNotActive functions wait until the specified window is active or not active. |
+| ZeroDivisionError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |

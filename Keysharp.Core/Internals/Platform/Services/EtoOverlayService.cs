@@ -32,9 +32,10 @@ namespace Keysharp.Internals
 #endif
 
 #if LINUX || OSX
-	// Shared Eto (GTK/Cocoa) click-through overlay window -- the toolkit fallback on Linux and the only backing on
-	// macOS. It borrows `image`: Show snapshots it on the calling thread for isolation and
-	// keeps only that private `displayed` bitmap, which a same-size move just repositions.
+	// Shared Eto (GTK/Cocoa) overlay window -- the compositor-positioned client surface on GNOME/Cinnamon,
+	// the toolkit fallback elsewhere on Linux, and the only backing on macOS. It borrows `image`: Show snapshots
+	// it on the calling thread for isolation and keeps only that private `displayed` bitmap, which a same-size move
+	// just repositions.
 	internal sealed class EtoImageOverlay : IImageOverlayBacking
 	{
 		private Keysharp.Builtins.KeysharpForm form;
@@ -49,6 +50,9 @@ namespace Keysharp.Internals
 		private Bitmap displayed;
 		private int shownW, shownH;
 		private byte shownOpacity;
+		private ScreenRect shownBounds;
+		private bool shownClickThrough;
+		private bool presented;
 #if OSX
 		private double shownBackingScale = 1;
 #endif
@@ -81,10 +85,15 @@ namespace Keysharp.Internals
 				return null;
 
 #if LINUX
-			if (image.Handler is not Eto.GtkSharp.Drawing.BitmapHandler { Surface: not null })
+			if (image.Handler is not Eto.GtkSharp.Drawing.BitmapHandler { Surface: not null } sourceHandler)
 				return new Bitmap(image);
 
 			var snapshot = new Bitmap(image.Width, image.Height, PixelFormat.Format32bppRgba);
+
+			if (snapshot.Handler is Eto.GtkSharp.Drawing.BitmapHandler { Surface: not null } targetHandler
+					&& CopySurface(sourceHandler.Surface, targetHandler.Surface, image.Width, image.Height))
+				return snapshot;
+
 			using var graphics = new Graphics(snapshot);
 			graphics.DrawImage(image, 0, 0);
 			return snapshot;
@@ -92,6 +101,27 @@ namespace Keysharp.Internals
 			return new Bitmap(image);
 #endif
 		}
+
+#if LINUX
+		private static unsafe bool CopySurface(Cairo.ImageSurface source, Cairo.ImageSurface target,
+			int width, int height)
+		{
+			if (source.Format != Cairo.Format.Argb32 || target.Format != Cairo.Format.Argb32
+					|| source.DataPtr == 0 || target.DataPtr == 0 || width <= 0 || height <= 0)
+				return false;
+
+			source.Flush();
+			target.Flush();
+			var rowBytes = (long)width * 4;
+
+			for (var y = 0; y < height; y++)
+				Buffer.MemoryCopy((byte*)source.DataPtr + (long)y * source.Stride,
+					(byte*)target.DataPtr + (long)y * target.Stride, rowBytes, rowBytes);
+
+			target.MarkDirty();
+			return true;
+		}
+#endif
 
 		private bool Show(Bitmap image, ScreenRect bounds, bool clickThrough, byte opacity)
 		{
@@ -111,7 +141,12 @@ namespace Keysharp.Internals
 				Script.InvokeOnUIThread(() =>
 				{
 					EnsureForm();
-					form.CanFocus = !clickThrough;
+					var geometryChanged = !presented || bounds != shownBounds;
+					var inputChanged = !presented || clickThrough != shownClickThrough;
+
+					if (inputChanged)
+						form.CanFocus = !clickThrough;
+
 					var windowBounds = ToToolkitBounds(bounds);
 					// Keep the pointer-coordinate mapping in step with this show's geometry (see the fields).
 					pointerScaleX = windowBounds.Width > 0 ? (double)bounds.Width / windowBounds.Width : 1.0;
@@ -119,26 +154,38 @@ namespace Keysharp.Internals
 					// PaintOwned adopts the snapshot before any operation that can throw.
 					adopted = snap != null;
 					PaintOwned(snap, bounds, windowBounds);
-					// Bounds maps to one native move-resize request.
-					form.Bounds = new Rectangle(windowBounds.X, windowBounds.Y,
-						Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height));
+					if (geometryChanged)
+						form.Bounds = new Rectangle(windowBounds.X, windowBounds.Y,
+							Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height));
 
+					var wasVisible = form.Visible;
 					if (!form.Visible)
+					{
+#if LINUX
+						_ = Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.ReserveWindow(form,
+							windowBounds.X, windowBounds.Y);
+#endif
 						form.Show();
+					}
 
-					form.SetClickThrough(clickThrough);
+					if (inputChanged)
+						form.SetClickThrough(clickThrough);
 #if LINUX
 					// A Wayland client cannot place or stack its own toplevel, so the bounds set above and the
 					// taskbar/topmost/border options from EnsureForm are silent no-ops; drive the compositor
-					// instead, as Gui.Show does. An interactive overlay reaches this path on Mutter-family
-					// compositors, where the shell-actor backing refuses it: an actor cannot receive input.
-					if (Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
+					// instead, as Gui.Show does. Mutter-family compositors use this client surface for every
+					// overlay so animated frames stay on Wayland's native buffer path.
+					if ((!wasVisible || geometryChanged)
+							&& Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
 						Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Position(form, form.Title,
 							windowBounds.X, windowBounds.Y,
 							Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height),
 							removeBorder: true, keepAbove: true, skipTaskbar: true);
 #endif
 					shownOpacity = opacity;
+					shownBounds = bounds;
+					shownClickThrough = clickThrough;
+					presented = true;
 				});
 
 				return true;   // borrow: `image` is neither retained nor disposed
@@ -182,6 +229,7 @@ namespace Keysharp.Internals
 							windowBounds.X, windowBounds.Y,
 							Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height));
 #endif
+					shownBounds = bounds;
 					moved = true;
 				}
 			});
@@ -387,6 +435,9 @@ namespace Keysharp.Internals
 					displayed?.Dispose();
 					displayed = null;
 					shownOpacity = 0;
+					shownBounds = default;
+					shownClickThrough = false;
+					presented = false;
 				}
 				catch { closed = false; }   // leave `form` set so a later retry can re-close it
 			});

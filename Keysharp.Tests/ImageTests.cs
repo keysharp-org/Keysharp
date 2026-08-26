@@ -56,5 +56,23 @@ namespace Keysharp.Tests
 			using var snapshot = new Bitmap(surface.PrepareForRead());
 			Assert.AreEqual(expected, (uint)snapshot.GetPixel(1, 1).ToArgb());
 		}
+
+#if LINUX
+		[Test, Category("Image"), Category("Internal")]
+		public void GtkOverlaySnapshotPreservesArgbPixels()
+		{
+			using var source = new Bitmap(4, 3, PixelFormat.Format32bppRgba);
+			using (var graphics = new Graphics(source))
+			{
+				graphics.Clear(Colors.Transparent);
+				graphics.FillRectangle(Colors.Red, 0, 0, 2, 3);
+				graphics.FillRectangle(Colors.Blue, 2, 0, 2, 3);
+			}
+
+			using var snapshot = EtoImageOverlay.Snapshot(source);
+			Assert.AreEqual(0xFFFF0000u, (uint)snapshot.GetPixel(0, 1).ToArgb());
+			Assert.AreEqual(0xFF0000FFu, (uint)snapshot.GetPixel(3, 1).ToArgb());
+		}
+#endif
 	}
 }

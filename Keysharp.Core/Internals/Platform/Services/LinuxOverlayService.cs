@@ -3,8 +3,8 @@ using Wl = Keysharp.Internals.Window.Linux.Wayland;
 
 namespace Keysharp.Internals
 {
-	/// <summary>Linux overlay backing. Image overlays prefer wlr-layer-shell, then a compositor extension
-	/// (GNOME/Cinnamon), then the Eto click-through fallback -- chosen per overlay on its first Show.</summary>
+	/// <summary>Linux overlay backing. Image overlays prefer wlr-layer-shell, then a compositor-positioned
+	/// client surface (GNOME/Cinnamon), then the Eto fallback -- chosen per overlay on its first Show.</summary>
 	internal sealed class LinuxOverlay : OverlayBase
 	{
 		public override PixelSize GetCanvasSize(ScreenRect bounds)
@@ -28,8 +28,8 @@ namespace Keysharp.Internals
 		protected override IImageOverlayBacking CreateBacking(uint id) => new LinuxImageOverlayBacking(id);
 	}
 
-	// Picks wlr-layer-shell / compositor-extension / Eto on the first Show (falling back to Eto if the preferred
-	// backing fails), then reuses that concrete backing for every later Show/Move.
+	// Picks wlr-layer-shell / compositor-positioned client / Eto on the first Show (falling back to Eto if the
+	// preferred backing fails), then reuses that concrete backing for every later Show/Move.
 	internal sealed class LinuxImageOverlayBacking : IImageOverlayBacking
 	{
 		private readonly uint id;
@@ -152,6 +152,9 @@ namespace Keysharp.Internals
 
 			if (client != null && client.IsAvailable)
 				return new LayerImageBacking();
+
+			if (IsWaylandSession && Wl.WaylandOwnToplevels.IsSupported)
+				return new EtoImageOverlay();
 
 			if (clickThrough && IsWaylandSession && ShouldAttemptCompositor(Wl.WaylandBackend.Current))
 				return new CompositorImageBacking(id);
