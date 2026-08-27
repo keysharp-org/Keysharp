@@ -661,11 +661,38 @@ namespace Keysharp.Tests
 
 			// A crashed child can leave a grandchild (its dump writer, an orphaned spawn) holding the redirected
 			// pipes open; an unbounded read here then hangs the whole test host until the blame collector aborts
-			// the run. Fail just this test instead.
+			// the run. Fail just this test instead, naming the survivors so the holder is identifiable from CI logs.
 			if (!Task.WaitAll([output, error], 60000))
-				Assert.Fail($"'{executable}' exited (code {process.ExitCode}) but its output pipes stayed open; a child process is still attached to them.");
+				Assert.Fail($"'{executable}' exited (code {process.ExitCode}) but its output pipes stayed open; a child process is still attached to them."
+					+ $"\nstdout so far: [{PipeContent(output)}]\nstderr so far: [{PipeContent(error)}]\nsurviving processes:\n{SurvivingProcesses()}");
 
 			return (process.ExitCode, output.Result, error.Result);
+		}
+
+		private static string PipeContent(Task<string> pipe) => pipe.IsCompletedSuccessfully ? pipe.Result.Trim() : "<still open>";
+
+		private static string SurvivingProcesses()
+		{
+#if WINDOWS
+			return "<not captured on Windows>";
+#else
+			try
+			{
+				using var ps = Process.Start(new ProcessStartInfo("ps", "-axo pid,ppid,etime,args")
+				{
+					RedirectStandardOutput = true,
+					UseShellExecute = false,
+				});
+				var listing = ps.StandardOutput.ReadToEnd();
+				_ = ps.WaitForExit(5000);
+				return string.Join('\n', listing.Split('\n').Where(line =>
+					line.Contains("dotnet") || line.Contains("Keysharp") || line.Contains("createdump")));
+			}
+			catch (Exception ex)
+			{
+				return $"<ps failed: {ex.Message}>";
+			}
+#endif
 		}
 
 		private static string NewComponentRoot() => Path.Combine(Path.GetTempPath(), "ks-components-" + Guid.NewGuid().ToString("N"));

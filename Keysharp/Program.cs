@@ -74,6 +74,13 @@ namespace Keysharp.Main
 				if (!string.IsNullOrEmpty(command.ScriptName))
 					macOsLaunchDocs.Add(CanonicalPath(command.ScriptName));
 
+				// The re-delivery is not limited to the script: any argv entry naming an existing file can come
+				// back as a "document" — for a "dotnet Keysharp.dll <script>" launch that includes Keysharp.dll
+				// itself, and re-spawning THAT is a scriptless launcher stuck on its error dialog forever.
+				foreach (var arg in Environment.GetCommandLineArgs())
+					if (!string.IsNullOrEmpty(arg) && File.Exists(arg))
+						macOsLaunchDocs.Add(CanonicalPath(arg));
+
 				Eto.Mac.AppDelegate.FileOpened += SpawnScriptInNewProcess;
 			}
 #endif
@@ -534,15 +541,39 @@ namespace Keysharp.Main
 				if (macOsLaunchDocs.Contains(CanonicalPath(path)))
 					return;
 
+				// Any existing file is a runnable document (the CLI takes scripts of any extension, and a
+				// precompiled .dll runs like a .cks) — except files directly inside Keysharp's own install
+				// directory, which are runtime components: only AppKit's argv re-delivery produces those (the
+				// entry dll of a "dotnet Keysharp.dll …" launch), and respawning one starts a scriptless
+				// launcher that parks on its error dialog holding the caller's pipes.
+				if (!File.Exists(path))
+					return;
+
+				if (string.Equals(
+						Path.GetDirectoryName(CanonicalPath(path)),
+						CanonicalPath(AppContext.BaseDirectory).TrimEnd(Path.DirectorySeparatorChar),
+						StringComparison.OrdinalIgnoreCase))
+					return;
+
 				var exe = Environment.ProcessPath; // the Keysharp apphost inside this .app bundle
 
 				if (!string.IsNullOrEmpty(exe))
-					_ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+				{
+					var start = new System.Diagnostics.ProcessStartInfo
 					{
 						FileName = exe,
 						UseShellExecute = false,
-						ArgumentList = { path },
-					});
+					};
+
+					// Under the muxer ("dotnet Keysharp.dll …") the entry dll must be re-inserted; handing dotnet
+					// just the script path would try to run the script itself as a managed app.
+					if (Path.GetFileNameWithoutExtension(exe).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
+							&& Assembly.GetEntryAssembly()?.Location is { Length: > 0 } entryAsm)
+						start.ArgumentList.Add(entryAsm);
+
+					start.ArgumentList.Add(path);
+					_ = System.Diagnostics.Process.Start(start);
+				}
 			}
 			catch
 			{
