@@ -22,6 +22,17 @@ reffunc1(&xx := 0) ; Declare and initialize inline.
 
 AssertEq(xx, 100, A_LineNumber)
 
+incrementref(&param)
+{
+	previous := pArAm++
+	AssertEq(previous, 10, A_LineNumber)
+	return ++PARAM
+}
+
+incremented := 10
+AssertEq(incrementref(&incremented), 12, A_LineNumber)
+AssertEq(incremented, 12, A_LineNumber)
+
 callreffunc(&p1)
 {
 	reffunc1(&p1 := 123)

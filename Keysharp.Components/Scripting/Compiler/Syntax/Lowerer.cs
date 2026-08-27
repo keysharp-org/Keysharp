@@ -864,12 +864,13 @@ namespace Keysharp.Compilation.Syntax
 			{
 				var lower = alias.ToLowerInvariant();
 				if (_fields.ContainsKey(lower)) return;
-				_fields[lower] = NameMangler.Escape(lower);
+				var id = NameMangler.Escape(lower);
+				_fields[lower] = id;
 				var src = ModuleMemberField(modName, name);
 				if (kind == ExportK.Type)
-					props.Add(ObjArrowProp(NameMangler.Escape(lower), src));
+					props.Add(ObjArrowProp(id, src));
 				else
-					props.Add(SyntaxFactory.PropertyDeclaration(ObjType, NameMangler.Escape(lower))
+					props.Add(SyntaxFactory.PropertyDeclaration(ObjType, id)
 						.AddModifiers(PublicTok, StaticTok)
 						.AddAccessorListAccessors(
 							SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithExpressionBody(SyntaxFactory.ArrowExpressionClause(src)).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken)),
@@ -881,8 +882,9 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var lower = name.ToLowerInvariant();
 			if (_fields.ContainsKey(lower)) return;
-			_fields[lower] = NameMangler.Escape(lower);
-			_fieldDecls.Add(ObjField(NameMangler.Escape(lower), value));
+			var id = NameMangler.Escape(lower);
+			_fields[lower] = id;
+			_fieldDecls.Add(ObjField(id, value));
 		}
 
 		// A built-in METHOD or nested TYPE is an immutable reference and binds as a cached field. A built-in PROPERTY
@@ -902,17 +904,17 @@ namespace Keysharp.Compilation.Syntax
 
 			var lower = alias.ToLowerInvariant();
 			if (_fields.ContainsKey(lower)) return;
-			_fields[lower] = NameMangler.Escape(lower);
-			var name = NameMangler.Escape(lower);
+			var id = NameMangler.Escape(lower);
+			_fields[lower] = id;
 			var access = Access(prop.DeclaringType.FullName.Replace('+', '.') + "." + prop.Name);
 
 			if (prop.SetMethod?.IsPublic != true || prop.PropertyType != typeof(object))
 			{
-				props.Add(ObjArrowProp(name, access));
+				props.Add(ObjArrowProp(id, access));
 				return;
 			}
 
-			props.Add(SyntaxFactory.PropertyDeclaration(ObjType, name)
+			props.Add(SyntaxFactory.PropertyDeclaration(ObjType, id)
 				.AddModifiers(PublicTok, StaticTok)
 				.AddAccessorListAccessors(
 					SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithExpressionBody(SyntaxFactory.ArrowExpressionClause(access)).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken)),
@@ -980,7 +982,8 @@ namespace Keysharp.Compilation.Syntax
 					if (_inlineFuncNames?.Contains(fd.Name) == true)
 						Diag($"'{fd.Name}' is declared both as a script function and as a public method in a #CSharp block; rename one of them");
 
-					_userFuncByLower[fd.Name.ToLowerInvariant()] = fd.Name; _userFuncDeclByLower[fd.Name.ToLowerInvariant()] = fd;
+					var lower = fd.Name.ToLowerInvariant();
+					_userFuncByLower[lower] = fd.Name; _userFuncDeclByLower[lower] = fd;
 				}
 				else if (s is HotkeyDef { Func: { } hkf }) { _userFuncByLower[hkf.Name.ToLowerInvariant()] = hkf.Name; }
 				else if (s is HotstringDef { Func: { } hsf }) { _userFuncByLower[hsf.Name.ToLowerInvariant()] = hsf.Name; }
@@ -1535,7 +1538,7 @@ namespace Keysharp.Compilation.Syntax
 			return TryScopedWildcard(lower, out binding);
 		}
 
-		// True when `name` is provided by ANY enclosing `#import` frame currently on the stack — this callable's own
+		// True when canonical `lower` is provided by ANY enclosing `#import` frame currently on the stack — this callable's own
 		// frame, an enclosing class frame, or an enclosing function's frame — as an explicit named binding or a wildcard
 		// export. Consulted during local classification (LowerCallableBody) so such a name is NOT turned into a fresh
 		// local by an assignment to it (`counter := 5` / `counter++`): that would shadow the import and lose the
@@ -1544,10 +1547,9 @@ namespace Keysharp.Compilation.Syntax
 		// ResolvesToScopedImport this does NOT consult _locals (which is being built at the call site) — it answers
 		// purely from the import stack, mirroring that method's explicit-then-wildcard ordering (a built-in variable
 		// still beats a wildcard).
-		private bool BoundByEnclosingImport(string name)
+		private bool BoundByEnclosingImport(string lower)
 		{
 			if (_importScopes.Count == 0) return false;
-			var lower = name.ToLowerInvariant();
 			if (TryScopedExplicit(lower, out _)) return true;
 			if (Script.TheScript.ReflectionsData.flatPublicStaticProperties.ContainsKey(lower)) return false;   // built-in var beats a wildcard
 			return TryScopedWildcard(lower, out _);
@@ -1688,9 +1690,10 @@ namespace Keysharp.Compilation.Syntax
 			return System.IO.Path.GetFileName(includeFull);
 		}
 
-		private ExpressionSyntax NameRef(string name)
+		private ExpressionSyntax NameRef(string name) => NameRefLower(name.ToLowerInvariant());
+
+		private ExpressionSyntax NameRefLower(string lower)
 		{
-			var lower = name.ToLowerInvariant();
 			if (_inMethod && lower == "this") { _capturedInScope = true; return Id("@this"); }
 			if (_byRefParams != null && _byRefParams.Contains(lower))   // &param read: through the VarRef
 				return Op("GetPropertyValue", Id(NameMangler.Escape(lower)), Str("__Value"));
@@ -3043,7 +3046,21 @@ namespace Keysharp.Compilation.Syntax
 				case FunctionDecl fd: provided.Add(fd.Name.ToLowerInvariant()); break;
 				case ClassDecl cd: provided.Add(cd.Name.ToLowerInvariant()); break;
 				case DeclStmt d:
-					foreach (var item in d.Items) { var nm = DeclItemName(item); if (nm != null) { provided.Add(nm.ToLowerInvariant()); if (d.Keyword == "global") declaredGlobal.Add(nm.ToLowerInvariant()); } CollectProvidedExpr(item, provided, declaredGlobal); }
+					foreach (var item in d.Items)
+					{
+						var name = DeclItemName(item);
+
+						if (name != null)
+						{
+							var lower = name.ToLowerInvariant();
+							provided.Add(lower);
+
+							if (d.Keyword == "global")
+								declaredGlobal.Add(lower);
+						}
+
+						CollectProvidedExpr(item, provided, declaredGlobal);
+					}
 					break;
 				case ExpressionStmt es: CollectProvidedExpr(es.Expr, provided, declaredGlobal); break;
 				case ReturnStmt r: if (r.Value != null) CollectProvidedExpr(r.Value, provided, declaredGlobal); break;
@@ -3378,43 +3395,48 @@ namespace Keysharp.Compilation.Syntax
 
 		// ---- expressions ----
 
+		private ExpressionSyntax LowerName(NameExpr n, string lower)
+		{
+			// AHK reserves true/false/unset as value keywords (booleans, and the no-value sentinel null).
+			// The booleans lower to real C# booleans rather than 1/0: everything downstream reads one as the
+			// Integer 1 or 0 anyway (MatchTypes folds it, Type() names it "Integer"), so nothing changes for
+			// the script, but the value keeps the type Ks.Boolean names and Json.Encode can write true/false.
+			switch (lower)
+			{
+				case "true": return BoolLit(true);
+				case "false": return BoolLit(false);
+				case "unset": return Null;
+				case "super": return SuperTuple();
+				// A_LineNumber folds to a compile-time literal (the source line). A_LineFile inside an #included
+				// file is that file's path (a literal stamped on the node); for a main-script line it equals
+				// A_ScriptFullPath and is emitted as the runtime accessor, so it reflects where the script actually
+				// runs and never bakes the compile-time path into the assembly.
+				case "a_linenumber" when !IsDeclaredLocal("a_linenumber"): return Num(n.Line.ToString());
+				case "a_linefile" when !IsDeclaredLocal("a_linefile"):
+					// A main-script line's file IS the running script, so fold to the A_ScriptFullPath accessor
+					// (n.File unset, or stamped with the main path _scriptPath). This keeps A_LineFile ==
+					// A_ScriptFullPath true whether the main script runs as source (.ks) or compiled (.cks/.exe,
+					// whose runtime path differs from the baked source name). Only #included files bake a path.
+					return string.IsNullOrEmpty(n.File) || string.Equals(n.File, _scriptPath, StringComparison.OrdinalIgnoreCase)
+						   ? Access("Keysharp.Builtins.Accessors.A_ScriptFullPath")
+						   : Str(IncludeLineFile(n.File));
+				// AutoHotkey evaluates a parameter default in the CALLER's frame, so A_ThisFunc there names
+				// the caller -- a name this lowering cannot know, since the default runs in the callee's
+				// prologue. Fold it to "", AutoHotkey's own answer for a top-level call, rather than leave
+				// it to a stack walk that reports whichever ancestor the JIT happened to leave standing.
+				case "a_thisfunc" when !IsDeclaredLocal("a_thisfunc"):
+					return Str(_loweringParamDefault ? "" : _currentThisFuncName ?? "");
+			}
+
+			return NameRefLower(lower);
+		}
+
 		private ExpressionSyntax LowerExpr(Expr e)
 		{
 			switch (e)
 			{
 				case LiteralExpr l: return l.Kind == LiteralKind.Number ? Num(l.Raw) : Str(DecodeString(l.Raw));
-				case NameExpr n:
-					// AHK reserves true/false/unset as value keywords (booleans, and the no-value sentinel null).
-					// The booleans lower to real C# booleans rather than 1/0: everything downstream reads one as the
-					// Integer 1 or 0 anyway (MatchTypes folds it, Type() names it "Integer"), so nothing changes for
-					// the script, but the value keeps the type Ks.Boolean names and Json.Encode can write true/false.
-					switch (n.Name.ToLowerInvariant())
-					{
-						case "true": return BoolLit(true);
-						case "false": return BoolLit(false);
-						case "unset": return Null;
-						case "super": return SuperTuple();
-						// A_LineNumber folds to a compile-time literal (the source line). A_LineFile inside an #included
-						// file is that file's path (a literal stamped on the node); for a main-script line it equals
-						// A_ScriptFullPath and is emitted as the runtime accessor, so it reflects where the script actually
-						// runs and never bakes the compile-time path into the assembly.
-						case "a_linenumber" when !IsDeclaredLocal("a_linenumber"): return Num(n.Line.ToString());
-						case "a_linefile" when !IsDeclaredLocal("a_linefile"):
-							// A main-script line's file IS the running script, so fold to the A_ScriptFullPath accessor
-							// (n.File unset, or stamped with the main path _scriptPath). This keeps A_LineFile ==
-							// A_ScriptFullPath true whether the main script runs as source (.ks) or compiled (.cks/.exe,
-							// whose runtime path differs from the baked source name). Only #included files bake a path.
-							return string.IsNullOrEmpty(n.File) || string.Equals(n.File, _scriptPath, StringComparison.OrdinalIgnoreCase)
-								   ? Access("Keysharp.Builtins.Accessors.A_ScriptFullPath")
-								   : Str(IncludeLineFile(n.File));
-						// AutoHotkey evaluates a parameter default in the CALLER's frame, so A_ThisFunc there names
-						// the caller -- a name this lowering cannot know, since the default runs in the callee's
-						// prologue. Fold it to "", AutoHotkey's own answer for a top-level call, rather than leave
-						// it to a stack walk that reports whichever ancestor the JIT happened to leave standing.
-						case "a_thisfunc" when !IsDeclaredLocal("a_thisfunc"):
-							return Str(_loweringParamDefault ? "" : _currentThisFuncName ?? "");
-					}
-					return NameRef(n.Name);
+				case NameExpr n: return LowerName(n, n.Name.ToLowerInvariant());
 				case GroupExpr g: return SyntaxFactory.ParenthesizedExpression(LowerExpr(g.Inner));
 				// Only the last item is the sequence's value; the rest are evaluated for their side effects alone,
 				// so they are lowered as statements — a discarded unset return must not raise.
@@ -3621,10 +3643,11 @@ namespace Keysharp.Compilation.Syntax
 				Diag($"unsupported assignment target at {a.Line}:{a.Column}: {a.Target.GetType().Name}" + (a.Target is BinaryExpr be ? $" op={be.Op}" : a.Target is UnaryExpr ue ? $" op={ue.Op}" : ""));
 				return Str("");
 			}
+			var lower = tn.Name.ToLowerInvariant();
 			// &param write: through the VarRef's __Value (rather than reassigning the local VarRef).
-			if (_byRefParams != null && _byRefParams.Contains(tn.Name.ToLowerInvariant()))
+			if (_byRefParams != null && _byRefParams.Contains(lower))
 			{
-				var refId = Id(NameMangler.Escape(tn.Name.ToLowerInvariant()));
+				var refId = Id(NameMangler.Escape(lower));
 				var rv = a.Op == ":=" ? LowerExpr(a.Value)
 					: CompoundValue(a.Op[..^1], Op("GetPropertyValue", refId, Str("__Value")), LowerExpr(a.Value));
 				if (rv == null) { Diag($"compound assignment '{a.Op}' not yet lowerable"); return Str(""); }
@@ -3634,7 +3657,7 @@ namespace Keysharp.Compilation.Syntax
 			// (the write goes through to the source module's field). Assigning to an imported function/type/module
 			// object/built-in member is a load-time error — otherwise it would silently reassign the importer's own
 			// binding (or emit uncompilable C#). Locals/params/statics of the same name shadow the import (handled above).
-			if (ResolvesToScopedImport(tn.Name.ToLowerInvariant(), out var impBind))
+			if (ResolvesToScopedImport(lower, out var impBind))
 			{
 				if (impBind.Write == null)
 				{
@@ -3645,7 +3668,7 @@ namespace Keysharp.Compilation.Syntax
 				if (wval == null) { Diag($"compound assignment '{a.Op}' not yet lowerable"); return Str(""); }
 				return Assign(impBind.Write(), wval);
 			}
-			var target = NameRef(tn.Name);
+			var target = NameRefLower(lower);
 
 			ExpressionSyntax value;
 			if (a.Op == ":=") value = LowerExpr(a.Value);
@@ -3758,14 +3781,21 @@ namespace Keysharp.Compilation.Syntax
 			{
 				// A by-ref param's value lives in its VarRef's __Value, so the write must go through SetPropertyValue
 				// (the same as a compound assignment) — `GetPropertyValue(p,"__Value") = …` is not a C# lvalue.
-				case NameExpr bn when _byRefParams != null && _byRefParams.Contains(bn.Name.ToLowerInvariant()):
-					var brefId = Id(NameMangler.Escape(bn.Name.ToLowerInvariant()));
-					read = Op("GetPropertyValue", brefId, Str("__Value"));
-					write = Op("SetPropertyValue", brefId, Str("__Value"), Op(op, Op("GetPropertyValue", brefId, Str("__Value")), Num("1")));
-					break;
-				case NameExpr:
-					read = LowerExpr(u.Operand);
-					write = SyntaxFactory.ParenthesizedExpression(Assign(LowerExpr(u.Operand), Op(op, LowerExpr(u.Operand), Num("1"))));
+				case NameExpr name:
+					var lower = name.Name.ToLowerInvariant();
+
+					if (_byRefParams != null && _byRefParams.Contains(lower))
+					{
+						var brefId = Id(NameMangler.Escape(lower));
+						read = Op("GetPropertyValue", brefId, Str("__Value"));
+						write = Op("SetPropertyValue", brefId, Str("__Value"), Op(op, Op("GetPropertyValue", brefId, Str("__Value")), Num("1")));
+					}
+					else
+					{
+						read = LowerName(name, lower);
+						write = SyntaxFactory.ParenthesizedExpression(Assign(LowerName(name, lower), Op(op, LowerName(name, lower), Num("1"))));
+					}
+
 					break;
 				case MemberExpr me:
 					var mt = NewTemp();
@@ -4685,7 +4715,7 @@ namespace Keysharp.Compilation.Syntax
 
 		private MemberDeclarationSyntax LowerMethod(ClassMethod m, string classType)
 		{
-			var paramLowers = m.Params.Select(p => p.Name.ToLowerInvariant()).ToHashSet();
+			var (paramLowers, byRefParams) = ParamSets(m.Params);
 			var implName = m.Static ? NameMangler.StaticMethod(m.Name) : NameMangler.Method(m.Name);
 			var thisFuncName = ClassMemberFuncName(m.Name, m.Static);
 			// A method whose impl name collides with the enclosing type (or its constructor) must be renamed;
@@ -4697,7 +4727,7 @@ namespace Keysharp.Compilation.Syntax
 			var savedCompat = _currentCompat;
 			_currentCompat = ScanRequires(m.Body?.Body) ?? _currentCompat;   // a `#Requires` in the method body sets its mode
 			var body = LowerCallableBody(paramLowers, m.Body, m.ArrowBody, implName,
-				thisFuncName, ByRefSet(m.Params), m.Params);
+				thisFuncName, byRefParams, m.Params);
 			_inMethod = saved; _currentMethodStatic = savedStatic;
 			var attrs = new List<AttributeListSyntax>();
 			// Always stamped, not only when the mangler changed the spelling: the exact source case is what
@@ -4712,7 +4742,7 @@ namespace Keysharp.Compilation.Syntax
 		private List<MemberDeclarationSyntax> LowerProperty(ClassProperty pr)
 		{
 			var result = new List<MemberDeclarationSyntax>();
-			var idxLowers = pr.Params.Select(p => p.Name.ToLowerInvariant()).ToList();
+			var (idxLowers, byRefParams) = ParamSets(pr.Params);
 			// Index params with full variadic (`a*` -> params object[]) / optional handling, like a normal param list.
 			// wrapVariadics so the body sees an Array (`__Item[a*]` uses `a.Length`); LowerCallableBody adds the wrap.
 			List<ParameterSyntax> IdxParams() => ParamDecls(pr.Params, includeThis: false, wrapVariadics: true).Parameters.ToList();
@@ -4726,7 +4756,7 @@ namespace Keysharp.Compilation.Syntax
 				var thisFuncName = ClassMemberFuncName(pr.Name, pr.Static) + ".Get";
 				var savedM = _inMethod; var savedS = _currentMethodStatic; _inMethod = true; _currentMethodStatic = pr.Static;
 				var body = LowerCallableBody(new HashSet<string>(idxLowers), pr.GetBody, pr.GetArrow, getterName,
-					thisFuncName, ByRefSet(pr.Params), pr.Params);
+					thisFuncName, byRefParams, pr.Params);
 				_inMethod = savedM; _currentMethodStatic = savedS;
 				var ps = SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(Prepend(ThisParam(), IdxParams().ToArray())));
 				result.Add(ObjMethod(getterName, ps, body, Attr("Keysharp.Runtime.UserDeclaredName", Str(pr.Name))));
@@ -4737,7 +4767,7 @@ namespace Keysharp.Compilation.Syntax
 				var setParams = new HashSet<string>(idxLowers) { "value" };
 				var savedM = _inMethod; var savedS = _currentMethodStatic; _inMethod = true; _currentMethodStatic = pr.Static;
 				var body = LowerCallableBody(setParams, pr.SetBody, pr.SetArrow, setterName,
-					thisFuncName, ByRefSet(pr.Params), pr.Params);
+					thisFuncName, byRefParams, pr.Params);
 				_inMethod = savedM; _currentMethodStatic = savedS;
 				var idx = IdxParams();
 				// `value` is always the LAST setter param, so a trailing `params object[]` index param drops `params`
@@ -4765,7 +4795,7 @@ namespace Keysharp.Compilation.Syntax
 			var n = ++_lambdaCounter;
 			var implName = "FN_KS_AnonLambda_" + n;
 			var thisFuncName = fa.Name ?? "";
-			var paramLowers = fa.Params.Select(p => p.Name.ToLowerInvariant()).ToHashSet();
+			var (paramLowers, byRefParams) = ParamSets(fa.Params);
 			var savedCaptured = _capturedInScope; _capturedInScope = false;
 			// A named fn-expression `name(params) => …` can call itself: resolve `name` inside the body to a Func over
 			// this lambda's impl (the local function is hoisted, so a forward self-reference is fine). Save/restore any
@@ -4777,7 +4807,7 @@ namespace Keysharp.Compilation.Syntax
 			bool hadAlias = aliasInBody && _inlineAliases.TryGetValue(selfName, out savedAlias);
 			if (aliasInBody) _inlineAliases[selfName] = () => FuncBind(implName);
 			var body = LowerCallableBody(paramLowers, fa.BlockBody, fa.BlockBody == null ? fa.Body : null, implName,
-				thisFuncName, ByRefSet(fa.Params), fa.Params, capturing: true);
+				thisFuncName, byRefParams, fa.Params, capturing: true);
 			if (aliasInBody) { if (hadAlias) _inlineAliases[selfName] = savedAlias; else _inlineAliases.Remove(selfName); }
 			bool captured = _capturedInScope; _capturedInScope = savedCaptured;
 			var localFunction = SyntaxFactory.LocalFunctionStatement(ObjType, SyntaxFactory.Identifier(implName))
@@ -4797,14 +4827,14 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var nameLower = fd.Name.ToLowerInvariant();
 			var implName = "FN_" + NameMangler.Escape(nameLower) + "_" + (++_lambdaCounter);
-			var paramLowers = fd.Params.Select(p => p.Name.ToLowerInvariant()).ToHashSet();
+			var (paramLowers, byRefParams) = ParamSets(fd.Params);
 			// The name is already in _scopeClosureNames (pre-collected by the enclosing scope), so a recursive reference
 			// in the body resolves to this local closure var rather than a module field.
 			var savedCaptured = _capturedInScope; _capturedInScope = false;
 			var savedCompat = _currentCompat;
 			_currentCompat = ScanRequires(fd.Body?.Body) ?? _currentCompat;   // nested-function `#Requires` (restored after)
 			var body = LowerCallableBody(paramLowers, fd.Body, fd.ArrowBody, implName, fd.Name,
-				ByRefSet(fd.Params), fd.Params, capturing: true, staticNested: fd.Static);
+				byRefParams, fd.Params, capturing: true, staticNested: fd.Static);
 			_currentCompat = savedCompat;
 			bool captured = _capturedInScope; _capturedInScope = savedCaptured;
 			_pendingScopeFuncs.Add(SyntaxFactory.LocalFunctionStatement(ObjType, SyntaxFactory.Identifier(implName))
@@ -5176,9 +5206,9 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var savedCompat = _currentCompat;
 			_currentCompat = ScanRequires(f.Body?.Body) ?? _currentCompat;   // a `#Requires` in the body sets this function's mode
-			var paramLowers = f.Params.Select(p => p.Name.ToLowerInvariant()).ToHashSet();
+			var (paramLowers, byRefParams) = ParamSets(f.Params);
 			var implName = NameMangler.FunctionMethod(f.Name);
-			var body = LowerCallableBody(paramLowers, f.Body, f.ArrowBody, implName, f.Name, ByRefSet(f.Params), f.Params);
+			var body = LowerCallableBody(paramLowers, f.Body, f.ArrowBody, implName, f.Name, byRefParams, f.Params);
 			var attrs = new List<AttributeListSyntax> { Attr("Keysharp.Runtime.UserDeclaredName", Str(f.Name)) };
 			attrs.AddRange(CompatAttr());
 			var method = ObjMethod(implName, ParamDecls(f.Params, includeThis: false, wrapVariadics: true), body, attrs.ToArray());
@@ -5192,8 +5222,6 @@ namespace Keysharp.Compilation.Syntax
 		// signature param, and LowerCallableBody prepends `<name> = new Array(KS_<name>)` (see VariadicWrap).
 		// The `KS_` prefix already guarantees a non-keyword identifier, so do NOT @-escape (a variadic param named
 		// `params` must become `KS_params`, never the invalid `KS_@params`).
-		private static string VariadicRawName(string name) => "KS_" + name.ToLowerInvariant();
-
 		private ParameterListSyntax ParamDecls(List<Param> ps, bool includeThis, bool wrapVariadics = false)
 		{
 			var list = new List<ParameterSyntax>();
@@ -5204,7 +5232,7 @@ namespace Keysharp.Compilation.Syntax
 				var ident = SyntaxFactory.Identifier(NameMangler.Escape(lowered));
 				ParameterSyntax param;
 				if (p.Variadic)
-					param = SyntaxFactory.Parameter(wrapVariadics ? SyntaxFactory.Identifier(VariadicRawName(p.Name)) : ident)
+					param = SyntaxFactory.Parameter(wrapVariadics ? SyntaxFactory.Identifier("KS_" + lowered) : ident)
 						.WithType(ObjArrayType).AddModifiers(SyntaxFactory.Token(SyntaxKind.ParamsKeyword));
 				else
 				{
@@ -5361,9 +5389,12 @@ namespace Keysharp.Compilation.Syntax
 			if (paramDefaults != null)
 				foreach (var p in paramDefaults)
 					if (p.Variadic)
-						body.Add(LocalDecl(ObjType, NameMangler.Escape(p.Name.ToLowerInvariant()),
+					{
+						var lower = p.Name.ToLowerInvariant();
+						body.Add(LocalDecl(ObjType, NameMangler.Escape(lower),
 							SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Builtins.Array"))
-								.WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(Id(VariadicRawName(p.Name))))))));
+								.WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(Id("KS_" + lower)))))));
+					}
 
 			// If the body dereferences (%name%), route those reads/writes through this scope's reader/writer delegates
 			// (KS_readVar/KS_writeVar, declared in the prologue below); a name that isn't a local/static/closure falls
@@ -5746,8 +5777,13 @@ namespace Keysharp.Compilation.Syntax
 				case AssignExpr a:
 					// A builtin var (A_Clipboard, A_SendLevel, …) is never a local even when assigned inside a function —
 					// it resolves to its accessor (whose setter validates/throws), so don't shadow it with a local slot.
-					if (a.Target is NameExpr n && !Script.TheScript.ReflectionsData.flatPublicStaticProperties.ContainsKey(n.Name.ToLowerInvariant()))
-					{ var lo = n.Name.ToLowerInvariant(); if (seen.Add(lo)) acc.Add(lo); }
+					if (a.Target is NameExpr n)
+					{
+						var lower = n.Name.ToLowerInvariant();
+
+						if (!Script.TheScript.ReflectionsData.flatPublicStaticProperties.ContainsKey(lower) && seen.Add(lower))
+							acc.Add(lower);
+					}
 					CollectAssignedExpr(a.Target, acc, seen);   // a nested `x:=` inside a member/index target (e.g. obj[x:=v]:=w)
 					CollectAssignedExpr(a.Value, acc, seen);
 					break;
@@ -5755,8 +5791,13 @@ namespace Keysharp.Compilation.Syntax
 				case UnaryExpr u:
 					// `&var` (a reference, typically an output param like `SplitPath(p,,,, &name)`) makes that variable a
 					// local — it may be written through the ref. (`&obj.prop` is a PropRef, not a local; handled by recursion.)
-					if (u.Op == "&" && u.Operand is NameExpr rn && !Script.TheScript.ReflectionsData.flatPublicStaticProperties.ContainsKey(rn.Name.ToLowerInvariant()))
-					{ var lo = rn.Name.ToLowerInvariant(); if (seen.Add(lo)) acc.Add(lo); }
+					if (u.Op == "&" && u.Operand is NameExpr rn)
+					{
+						var lower = rn.Name.ToLowerInvariant();
+
+						if (!Script.TheScript.ReflectionsData.flatPublicStaticProperties.ContainsKey(lower) && seen.Add(lower))
+							acc.Add(lower);
+					}
 					CollectAssignedExpr(u.Operand, acc, seen);
 					break;
 				case TernaryExpr t: CollectAssignedExpr(t.Cond, acc, seen); CollectAssignedExpr(t.Then, acc, seen); CollectAssignedExpr(t.Else, acc, seen); break;
@@ -6072,7 +6113,7 @@ namespace Keysharp.Compilation.Syntax
 						}
 						return MakeVarRefGS(impRef.Read(), Assign(impRef.Write(), Id("KS_value")));
 					}
-					var nr = NameRef(n.Name);
+					var nr = NameRefLower(lown);
 					return MakeVarRefGS(nr, Assign(nr, Id("KS_value")));
 				// `&obj.prop` / `&obj[i]` produce a v2.1 PropRef bound to the property slot, via obj.__Ref(name[, args]).
 				case MemberExpr me:
@@ -6293,11 +6334,21 @@ namespace Keysharp.Compilation.Syntax
 			return arr;
 		}
 
-		private static HashSet<string> ByRefSet(List<Param> ps)
+		private static (HashSet<string> All, HashSet<string> ByRef) ParamSets(List<Param> ps)
 		{
-			HashSet<string> set = null;
-			foreach (var p in ps) if (p.ByRef) (set ??= new()).Add(p.Name.ToLowerInvariant());
-			return set;
+			var all = new HashSet<string>();
+			HashSet<string> byRef = null;
+
+			foreach (var p in ps)
+			{
+				var lower = p.Name.ToLowerInvariant();
+				all.Add(lower);
+
+				if (p.ByRef)
+					(byRef ??= new()).Add(lower);
+			}
+
+			return (all, byRef);
 		}
 
 		private void Diag(string msg) => Diagnostics.Add(msg);
