@@ -401,20 +401,26 @@ namespace Keysharp.Internals
 			var start = yieldTick ? Environment.TickCount : default;
 			var script = scheduler?.Owner ?? Script.TheScript;
 			ThreadVariables currentThread = null;
-			scheduler ??= script.EventScheduler;
 
 			try
 			{
-				if (pumpUi && script.IsOnMainThread)
+				// A disposed script (ExitApp disposes before the unwind reaches this pump) has no schedulers left;
+				// resolving one would throw and mask the exit propagation below.
+				if (!script.IsDisposed)
 				{
-#if WINDOWS
-					Application.DoEvents();
-#else
-					Application.Instance?.RunIteration();
-#endif
-				}
+					scheduler ??= script.EventScheduler;
 
-				scheduler.PumpThreadQueuedEventsCore();
+					if (pumpUi && script.IsOnMainThread)
+					{
+#if WINDOWS
+						Application.DoEvents();
+#else
+						Application.Instance?.RunIteration();
+#endif
+					}
+
+					scheduler.PumpThreadQueuedEventsCore();
+				}
 			}
 			catch (Exception ex) when (!propagateExit || !TryGetException<Keysharp.Builtins.Flow.UserRequestedExitException>(ex, out _))
 			{

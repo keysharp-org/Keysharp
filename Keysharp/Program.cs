@@ -66,9 +66,16 @@ namespace Keysharp.Main
 			// the canonicalized script(s) this instance was launched with and ignore open-document events for them;
 			// any OTHER path is a genuine request to open a new document and gets its own process. Populated before
 			// subscribing so the launch document is known.
-			if (!string.IsNullOrEmpty(command.ScriptName))
-				macOsLaunchDocs.Add(CanonicalPath(command.ScriptName));
-			Eto.Mac.AppDelegate.FileOpened += SpawnScriptInNewProcess;
+			// Only script-running commands can ever receive these events (delivery needs the AppKit run loop,
+			// which utility commands like --compile/--validate never start), so keep those children away from
+			// Eto.Mac/AppKit entirely.
+			if (command.Kind is CliCommandKind.RunSource or CliCommandKind.RunAssembly)
+			{
+				if (!string.IsNullOrEmpty(command.ScriptName))
+					macOsLaunchDocs.Add(CanonicalPath(command.ScriptName));
+
+				Eto.Mac.AppDelegate.FileOpened += SpawnScriptInNewProcess;
+			}
 #endif
 
 			// Daemon fast path: a plain source run - or --validate, the same compile without the run - can offload
@@ -206,6 +213,11 @@ namespace Keysharp.Main
 
 			using (var script = new Script())
 			{
+				// Error reporting reads --errorstdout off the Script (Env.FindCommandLineArg); without these a
+				// compile failure on a headless CI runner opens a modal dialog and the process hangs forever.
+				script.KeysharpArgs = r.KeysharpArgs;
+				script.ScriptArgs = r.ScriptArgs;
+
 				if (!ScriptingComponentRegistry.TryGetCompiler(out compiler, out var componentFailure))
 					return Runner.Message(componentFailure, true);
 
@@ -237,7 +249,6 @@ namespace Keysharp.Main
 
 			try
 			{
-				var ver = GetLatestDotNetVersion();
 				var outputRuntimeConfigPath = Path.ChangeExtension(path, "runtimeconfig.json");
 				var currentRuntimeConfigPath = Path.ChangeExtension(exePath, "runtimeconfig.json");
 				var outputDllPath = path + ".dll";
@@ -246,23 +257,13 @@ namespace Keysharp.Main
 				var outputDepsConfigPath = Path.ChangeExtension(path, "deps.json");
 				var currentDepsConfigPath = Path.ChangeExtension(exePath, "deps.json");
 				File.Copy(currentDepsConfigPath, outputDepsConfigPath, true);
-#if LINUX
+#if LINUX || OSX
 				finalPath = path;
-				HostWriter.CreateAppHost(
-					appHostSourceFilePath: @$"/lib/dotnet/sdk/{ver}/AppHostTemplate/apphost",
-					appHostDestinationFilePath: finalPath,
-					appBinaryFilePath: $"{namenoext}.dll",
-					windowsGraphicalUserInterface: false,
-					assemblyToCopyResorcesFrom: outputDllPath);
-#elif OSX
-				finalPath = path;
-				var rid = RuntimeInformation.RuntimeIdentifier.Contains("osx-arm64", StringComparison.OrdinalIgnoreCase) ? "osx-arm64" : "osx-x64";
-				var appHostCandidates = new[]
-				{
-					$"/usr/local/share/dotnet/packs/Microsoft.NETCore.App.Host.{rid}/{ver}/runtimes/{rid}/native/apphost",
-					$"/usr/share/dotnet/packs/Microsoft.NETCore.App.Host.{rid}/{ver}/runtimes/{rid}/native/apphost"
-				};
-				var appHostPath = appHostCandidates.FirstOrDefault(File.Exists) ?? appHostCandidates[0];
+				var appHostPath = FindAppHostTemplate();
+
+				if (appHostPath == null)
+					return Runner.Message($"Could not find a .NET {Script.dotNetMajorVersion} apphost template under any dotnet install root, so no executable can be produced. Installing the .NET SDK provides one.", true);
+
 				HostWriter.CreateAppHost(
 					appHostSourceFilePath: appHostPath,
 					appHostDestinationFilePath: finalPath,
@@ -270,6 +271,7 @@ namespace Keysharp.Main
 					windowsGraphicalUserInterface: false,
 					assemblyToCopyResorcesFrom: outputDllPath);
 #elif WINDOWS
+				var ver = GetLatestDotNetVersion();
 				finalPath = $"{path}.exe";
 				// #ConsoleApp inverts this: it is the PE subsystem field, and it is what makes a shell wait for the
 				// process and hand it the terminal's stdin/stdout. Windows reads it before the process starts, so it
@@ -373,28 +375,79 @@ namespace Keysharp.Main
 		internal static string WindowsHostPackRoot => @$"C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Host.{WindowsHostRid}\";
 #endif
 
+#if WINDOWS
 		internal static string GetLatestDotNetVersion()
-		{
-#if OSX
-			var rid = RuntimeInformation.RuntimeIdentifier.Contains("osx-arm64", StringComparison.OrdinalIgnoreCase) ? "osx-arm64" : "osx-x64";
-			var hostRoots = new[]
-			{
-				$"/usr/local/share/dotnet/packs/Microsoft.NETCore.App.Host.{rid}/",
-				$"/usr/share/dotnet/packs/Microsoft.NETCore.App.Host.{rid}/"
-			};
-			var hostRoot = hostRoots.FirstOrDefault(Directory.Exists);
-			var dir = hostRoot != null
-				? Directory.GetDirectories(hostRoot).Select(Path.GetFileName).Where(x => x.StartsWith(Script.dotNetMajorVersion)).OrderByDescending(x => new Version(x.Contains("-rc", StringComparison.OrdinalIgnoreCase) ? x.Substring(0, x.IndexOf("-rc", StringComparison.OrdinalIgnoreCase)) : x)).FirstOrDefault()
-				: "";
-#elif LINUX
-			var dir = Directory.GetDirectories(@"/lib/dotnet/sdk/").Select(System.IO.Path.GetFileName).Where(x => x.StartsWith(Script.dotNetMajorVersion)).OrderByDescending(x => new Version(x)).FirstOrDefault();
-#elif WINDOWS
-			var dir = Directory.GetDirectories(WindowsHostPackRoot).Select(Path.GetFileName).Where(x => x.StartsWith(Script.dotNetMajorVersion)).OrderByDescending(x => new Version(x.Contains("-rc", StringComparison.OrdinalIgnoreCase) ? x.Substring(0, x.IndexOf("-rc", StringComparison.OrdinalIgnoreCase)) : x)).FirstOrDefault();
+			=> Directory.GetDirectories(WindowsHostPackRoot).Select(Path.GetFileName).Where(x => x.StartsWith(Script.dotNetMajorVersion)).OrderByDescending(x => new Version(x.Contains("-rc", StringComparison.OrdinalIgnoreCase) ? x.Substring(0, x.IndexOf("-rc", StringComparison.OrdinalIgnoreCase)) : x)).FirstOrDefault();
 #else
-			var dir = "";
+		// Locates the newest matching-major apphost template, trying every plausible dotnet install root:
+		// the running runtime's own root covers however this process was launched, DOTNET_ROOT covers CI
+		// (GitHub runners use /usr/share/dotnet on Linux and ~/.dotnet on macOS), and the rest are the
+		// distro/pkg defaults (apt's /usr/lib/dotnet is also visible as /lib/dotnet).
+		private static string FindAppHostTemplate()
+		{
+			var roots = new List<string>();
+
+			void AddRoot(string root)
+			{
+				if (!root.IsNullOrEmpty() && Directory.Exists(root) && !roots.Contains(root))
+					roots.Add(Path.GetFullPath(root));
+			}
+
+			try
+			{
+				// shared/Microsoft.NETCore.App/<ver>/ -> three levels up is the root.
+				AddRoot(Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "..", "..", ".."));
+			}
+			catch { }
+
+			AddRoot(Environment.GetEnvironmentVariable("DOTNET_ROOT"));
+#if LINUX
+			AddRoot("/usr/share/dotnet");
+			AddRoot("/usr/lib/dotnet");
+			AddRoot("/lib/dotnet");
+#else
+			AddRoot("/usr/local/share/dotnet");
+			AddRoot("/usr/share/dotnet");
+			AddRoot(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dotnet"));
 #endif
-			return dir;
+			var arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "arm64" : "x64";
+			var rid = $"{(OperatingSystem.IsMacOS() ? "osx" : "linux")}-{arch}";
+
+			foreach (var root in roots)
+			{
+				// A full SDK carries the template directly; a runtime with the host pack still has one under packs.
+				if (NewestHost(Path.Combine(root, "sdk"), Path.Combine("AppHostTemplate", "apphost")) is { } sdkHost)
+					return sdkHost;
+
+				if (NewestHost(Path.Combine(root, "packs", $"Microsoft.NETCore.App.Host.{rid}"), Path.Combine("runtimes", rid, "native", "apphost")) is { } packHost)
+					return packHost;
+			}
+
+			return null;
+
+			static string NewestHost(string versionsDir, string hostRelativePath)
+			{
+				if (!Directory.Exists(versionsDir))
+					return null;
+
+				return Directory.GetDirectories(versionsDir)
+					.Where(dir => Path.GetFileName(dir).StartsWith(Script.dotNetMajorVersion))
+					.OrderByDescending(dir => ParseVersion(Path.GetFileName(dir)))
+					.Select(dir => Path.Combine(dir, hostRelativePath))
+					.FirstOrDefault(File.Exists);
+			}
+
+			static Version ParseVersion(string name)
+			{
+				var dash = name.IndexOf('-');   // 10.0.100-rc.1.25451.107 -> 10.0.100
+
+				if (dash > 0)
+					name = name.Substring(0, dash);
+
+				return Version.TryParse(name, out var version) ? version : new Version(0, 0);
+			}
 		}
+#endif
 
 		private static (string PathNoExtension, string OutputDir, string NameNoExt) ResolveCompileExeOutput(string outputPath, string scriptDir, string scriptNameNoExt)
 		{

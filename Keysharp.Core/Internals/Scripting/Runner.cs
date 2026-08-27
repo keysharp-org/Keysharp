@@ -1056,6 +1056,10 @@ namespace Keysharp.Internals.Scripting
 			//FindCommandLineArg reads TheScript.KeysharpArgs, which does not exist yet for a failure this early.
 			//Fall back to the raw process arguments then: an --errorstdout launch must never block on a modal
 			//dialog (headless CI showed such a dialog invisibly and turned an instant failure into a hang).
+			//The fallback stays gated on no-Script-yet: once a Script exists its PARSED switches are the only
+			//authority, since a raw scan cannot tell a launcher switch from a script argument (everything after
+			//the script path belongs to the script) — so every compile path must thread command.KeysharpArgs
+			//onto its parse Script.
 			if (Env.FindCommandLineArg("errorstdout") != null
 					|| (Script.TheScript == null && Environment.GetCommandLineArgs().Any(
 						a => a.TrimStart('-', '/').Equals("errorstdout", StringComparison.OrdinalIgnoreCase))))

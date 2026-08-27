@@ -103,6 +103,11 @@ namespace Keysharp.Internals.Threading
 			PopThreadVariables(tv, checkThread);
 			_ = Interlocked.Decrement(ref script.totalExistingThreads);
 
+			// An ExitApp inside the pseudo-thread disposes the script before this unwind runs; resolving a
+			// scheduler then would throw and replace the in-flight UserRequestedExitException.
+			if (script.IsDisposed)
+				return;
+
 			script.EventScheduler.SchedulePump();
 			script.ScheduleBlockedEventSchedulers();
 		}

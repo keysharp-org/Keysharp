@@ -659,7 +659,13 @@ namespace Keysharp.Tests
 				Assert.Fail($"'{executable}' did not exit within 240 seconds.");
 			}
 
-			return (process.ExitCode, output.GetAwaiter().GetResult(), error.GetAwaiter().GetResult());
+			// A crashed child can leave a grandchild (its dump writer, an orphaned spawn) holding the redirected
+			// pipes open; an unbounded read here then hangs the whole test host until the blame collector aborts
+			// the run. Fail just this test instead.
+			if (!Task.WaitAll([output, error], 60000))
+				Assert.Fail($"'{executable}' exited (code {process.ExitCode}) but its output pipes stayed open; a child process is still attached to them.");
+
+			return (process.ExitCode, output.Result, error.Result);
 		}
 
 		private static string NewComponentRoot() => Path.Combine(Path.GetTempPath(), "ks-components-" + Guid.NewGuid().ToString("N"));
