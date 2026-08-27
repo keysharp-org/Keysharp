@@ -182,6 +182,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						 ImageOverlayTimeoutMs)
 			   : OverlayShowResult.Failed;
 
+		internal static OverlayShowResult SendShowImageOverlayShm(uint id, int x, int y, int width, int height,
+			string shmPath, int pixelWidth, int pixelHeight, int stride)
+			=> !shmPath.IsNullOrEmpty()
+			   ? RunShow(p => p.ShowImageOverlayShmAsync(id, HighlightOwnerKey, connectionLocalName, x, y, width, height,
+														 shmPath, pixelWidth, pixelHeight, stride),
+						 ImageOverlayTimeoutMs)
+			   : OverlayShowResult.Failed;
+
 		internal static bool SendMoveImageOverlay(uint id, int x, int y, int width, int height)
 			=> Run(p => p.MoveImageOverlayAsync(id, HighlightOwnerKey, connectionLocalName, x, y, width, height));
 

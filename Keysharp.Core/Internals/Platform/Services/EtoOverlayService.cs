@@ -32,10 +32,10 @@ namespace Keysharp.Internals
 #endif
 
 #if LINUX || OSX
-	// Shared Eto (GTK/Cocoa) overlay window -- the compositor-positioned client surface on GNOME/Cinnamon,
-	// the toolkit fallback elsewhere on Linux, and the only backing on macOS. It borrows `image`: Show snapshots
-	// it on the calling thread for isolation and keeps only that private `displayed` bitmap, which a same-size move
-	// just repositions.
+	// Shared Eto (GTK/Cocoa) overlay window -- the backing for an INTERACTIVE overlay on GNOME/Cinnamon (a shell
+	// actor cannot receive input), the toolkit fallback elsewhere on Linux, and the only backing on macOS. It
+	// borrows `image`: Show snapshots it on the calling thread for isolation and keeps only that private
+	// `displayed` bitmap, which a same-size move just repositions.
 	internal sealed class EtoImageOverlay : IImageOverlayBacking
 	{
 		private readonly Script owner;
@@ -176,8 +176,10 @@ namespace Keysharp.Internals
 #if LINUX
 					// A Wayland client cannot place or stack its own toplevel, so the bounds set above and the
 					// taskbar/topmost/border options from EnsureForm are silent no-ops; drive the compositor
-					// instead, as Gui.Show does. Mutter-family compositors use this client surface for every
-					// overlay so animated frames stay on Wayland's native buffer path.
+					// instead, as Gui.Show does. An interactive overlay reaches this path on Mutter-family
+					// compositors, where the shell-actor backing refuses it: an actor cannot receive input.
+					// skipTaskbar is asked for regardless, but Muffin cannot honour it -- skip-taskbar is
+					// read-only there -- so such an overlay does show up in Cinnamon's window list.
 					if ((!wasVisible || geometryChanged)
 							&& Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
 						Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Position(form, form.Title,

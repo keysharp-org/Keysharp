@@ -165,6 +165,20 @@
       <arg direction="in" type="ay" name="pngBytes"/>
       <arg direction="out" type="b" name="value"/>
     </method>
+    <method name="ShowImageOverlayShm">
+      <arg direction="in" type="u" name="id"/>
+      <arg direction="in" type="s" name="ownerKey"/>
+      <arg direction="in" type="s" name="busName"/>
+      <arg direction="in" type="i" name="x"/>
+      <arg direction="in" type="i" name="y"/>
+      <arg direction="in" type="i" name="width"/>
+      <arg direction="in" type="i" name="height"/>
+      <arg direction="in" type="s" name="shmPath"/>
+      <arg direction="in" type="i" name="pixelWidth"/>
+      <arg direction="in" type="i" name="pixelHeight"/>
+      <arg direction="in" type="i" name="stride"/>
+      <arg direction="out" type="b" name="value"/>
+    </method>
     <signal name="ClipboardChanged">
       <arg type="s" name="item1"/>
       <arg type="as" name="item2"/>

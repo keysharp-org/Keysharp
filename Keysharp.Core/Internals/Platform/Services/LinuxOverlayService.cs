@@ -1,4 +1,5 @@
 #if LINUX
+using System.IO.MemoryMappedFiles;
 using Wl = Keysharp.Internals.Window.Linux.Wayland;
 
 namespace Keysharp.Internals
@@ -158,12 +159,15 @@ namespace Keysharp.Internals
 			if (client != null && client.IsAvailable)
 				return new LayerImageBacking();
 
-			if (IsWaylandSession && Wl.WaylandOwnToplevels.IsSupported)
-				return new EtoImageOverlay(owner);
-
+			// A click-through overlay is drawn by the shell itself, so it is not a window: no taskbar entry, no
+			// window-list row, no place in the alt-tab order. A Wayland client toplevel on Mutter/Muffin cannot
+			// have any of that -- skip-taskbar is read-only there and every GTK type hint still maps to NORMAL --
+			// so the actor is the only backing that keeps an overlay out of the user's window list. Frames reach it
+			// through shared memory (see CompositorImageBacking), which is why this no longer costs frame rate.
 			if (clickThrough && IsWaylandSession && ShouldAttemptCompositor(Wl.WaylandBackend.Current))
 				return new CompositorImageBacking(id);
 
+			// An interactive overlay has to be a real surface: a shell actor cannot receive input.
 			return new EtoImageOverlay(owner);
 		}
 
@@ -490,6 +494,13 @@ namespace Keysharp.Internals
 		private bool hidden;
 		private ScreenRect shownBounds;
 		private byte shownOpacity;
+		private OverlayShmBuffer shm;
+
+		// Whether the installed shell extension is too old to take frames as shared memory. One answer for the
+		// whole process, because it is a property of the extension rather than of any one overlay, and sticky:
+		// re-probing would cost a failed round-trip on every frame. Only a definitive rejection sets it -- an
+		// ambiguous timeout means the shell may well have drawn the frame.
+		private static bool sharedFramesRejected;
 
 		internal CompositorImageBacking(uint id) => this.id = id;
 
@@ -522,15 +533,7 @@ namespace Keysharp.Internals
 
 			try
 			{
-				using var snapshot = EtoImageOverlay.Snapshot(canvas.PrepareForPresent());
-				ImageHelper.ApplyOpacity(snapshot, opacity);
-				var bytes = ImageHelper.ToPngBytes(snapshot);
-
-				if (bytes.Length == 0)
-					return false;
-
-				var result = Wl.WaylandBackend.Current?.TryShowImageOverlay(id, bounds.X, bounds.Y, bounds.Width, bounds.Height, bytes)
-							 ?? Wl.OverlayShowResult.Failed;
+				var result = PresentShared(canvas, bounds, opacity) ?? PresentEncoded(canvas, bounds, opacity);
 
 				// A timeout is ambiguous and may mean the actor was created; only a definitive rejection falls back.
 				if (result == Wl.OverlayShowResult.Failed)
@@ -546,6 +549,115 @@ namespace Keysharp.Internals
 			{
 				return false;
 			}
+		}
+
+		/// <summary>
+		/// Hands the frame over as shared memory: the pixels go into a file the shell maps, so the call itself
+		/// carries nothing but the geometry. That turns a frame into one texture upload, where the encoded path
+		/// below costs a PNG encode, a multi-megabyte D-Bus payload and a PNG decode -- the difference between an
+		/// animated overlay running and crawling. Returns null when this path is not on the table (an extension
+		/// without the method, or a canvas whose pixels cannot be read directly), leaving the caller on PNG.
+		/// </summary>
+		private Wl.OverlayShowResult? PresentShared(OverlaySurface canvas, ScreenRect bounds, byte opacity)
+		{
+			if (sharedFramesRejected)
+				return null;
+
+			var bitmap = canvas.PrepareForPresent();
+
+			if (!TryGetCanvasPixels(bitmap, out var source, out var sourceStride))
+				return null;
+
+			var buffer = EnsureBuffer(bitmap.Width, bitmap.Height);
+
+			if (buffer == null)
+				return null;
+
+			CopyPixels(source, sourceStride, buffer, opacity);
+			var result = Wl.WaylandBackend.Current?.TryShowImageOverlayShm(id, bounds.X, bounds.Y,
+							 bounds.Width, bounds.Height, buffer.Path, buffer.Width, buffer.Height, buffer.Stride)
+						 ?? Wl.OverlayShowResult.Failed;
+
+			if (result != Wl.OverlayShowResult.Failed)
+				return result;
+
+			sharedFramesRejected = true;
+			ReleaseBuffer();
+			return null;
+		}
+
+		/// <summary>The original path: a PNG the shell decodes. Still the one that runs against an extension
+		/// predating the shared-memory frame, and against any canvas this process cannot read pixels out of.</summary>
+		private Wl.OverlayShowResult PresentEncoded(OverlaySurface canvas, ScreenRect bounds, byte opacity)
+		{
+			using var snapshot = EtoImageOverlay.Snapshot(canvas.PrepareForPresent());
+			ImageHelper.ApplyOpacity(snapshot, opacity);
+			var bytes = ImageHelper.ToPngBytes(snapshot);
+
+			return bytes.Length == 0
+				   ? Wl.OverlayShowResult.Failed
+				   : Wl.WaylandBackend.Current?.TryShowImageOverlay(id, bounds.X, bounds.Y, bounds.Width, bounds.Height, bytes)
+					 ?? Wl.OverlayShowResult.Failed;
+		}
+
+		// Cairo's ARGB32 is premultiplied BGRA on little-endian, which is exactly what the shell uploads, so the
+		// canvas can be read where it lies. Anything else (nothing drawn yet, a non-GTK backend) has no such
+		// guarantee and takes the encoded path, which converts as it goes.
+		private static bool TryGetCanvasPixels(Bitmap bitmap, out nint data, out int stride)
+		{
+			data = 0;
+			stride = 0;
+
+			if (bitmap?.Handler is not Eto.GtkSharp.Drawing.BitmapHandler { Surface: { } surface }
+					|| surface.Format != Cairo.Format.Argb32 || surface.DataPtr == 0)
+				return false;
+
+			surface.Flush();
+			data = surface.DataPtr;
+			stride = surface.Stride;
+			return true;
+		}
+
+		// Both sides are premultiplied, so a constant alpha scales all four channels alike and a fully opaque
+		// frame is just rows of memory.
+		private static unsafe void CopyPixels(nint source, int sourceStride, OverlayShmBuffer target, byte opacity)
+		{
+			var src = (byte*)source;
+			var dst = (byte*)target.Data;
+			var rowBytes = (long)target.Width * 4;
+
+			for (var y = 0; y < target.Height; y++)
+			{
+				var srcRow = src + (long)y * sourceStride;
+				var dstRow = dst + (long)y * target.Stride;
+
+				if (opacity == 255)
+				{
+					Buffer.MemoryCopy(srcRow, dstRow, rowBytes, rowBytes);
+					continue;
+				}
+
+				for (var x = 0; x < target.Width; x++)
+					((uint*)dstRow)[x] = Wl.WaylandImageOverlay.ScalePremultiplied(((uint*)srcRow)[x], opacity);
+			}
+		}
+
+		// The shell keys its mapping on the file name, so a resized overlay has to name a new file for it to
+		// notice; a same-size frame keeps writing into the buffer both processes already have mapped.
+		private OverlayShmBuffer EnsureBuffer(int width, int height)
+		{
+			if (shm != null && shm.Width == width && shm.Height == height)
+				return shm;
+
+			ReleaseBuffer();
+			shm = OverlayShmBuffer.Create(id, width, height);
+			return shm;
+		}
+
+		private void ReleaseBuffer()
+		{
+			shm?.Dispose();
+			shm = null;
 		}
 
 		public bool Move(ScreenRect bounds)
@@ -584,6 +696,7 @@ namespace Keysharp.Internals
 				{
 					hidden = true;
 					shown = false;
+					ReleaseBuffer();
 					return true;
 				}
 
@@ -594,6 +707,7 @@ namespace Keysharp.Internals
 				{
 					hidden = true;
 					shown = false;
+					ReleaseBuffer();
 					return true;
 				}
 
@@ -602,7 +716,159 @@ namespace Keysharp.Internals
 			catch { return false; }
 		}
 
-		public void Dispose() => _ = TryHide();
+		public void Dispose()
+		{
+			_ = TryHide();
+			ReleaseBuffer();
+		}
+	}
+
+	/// <summary>
+	/// One overlay's frame buffer, shared with the shell as a file both processes map: pixels the client draws
+	/// are already in the compositor's address space, so a frame costs a texture upload and nothing else. Sized to
+	/// the canvas in premultiplied BGRA -- Cairo's ARGB32 on little-endian, which is what the overlay surface
+	/// already holds, so an opaque frame is a row-by-row memcpy.
+	///
+	/// <para>Every allocation gets its own name, because the shell keys its mapping on the path: reusing a name
+	/// for a differently sized buffer would leave it reading the old mapping.</para>
+	/// </summary>
+	internal sealed class OverlayShmBuffer : IDisposable
+	{
+		// Also the shell's filter on what it will map: it only ever opens a file named like one of ours.
+		private const string Prefix = "keysharp-overlay-";
+
+		internal string Path { get; }
+		internal int Width { get; }
+		internal int Height { get; }
+		internal int Stride { get; }
+		internal nint Data { get; private set; }
+
+		private MemoryMappedFile file;
+		private MemoryMappedViewAccessor view;
+		private static long sequence;
+		private static bool swept;
+
+		private OverlayShmBuffer(string path, MemoryMappedFile file, MemoryMappedViewAccessor view,
+			nint data, int width, int height, int stride)
+		{
+			Path = path;
+			this.file = file;
+			this.view = view;
+			Data = data;
+			Width = width;
+			Height = height;
+			Stride = stride;
+		}
+
+		/// <summary>Allocates a buffer for one overlay, or null if the backing store cannot be created -- in which
+		/// case the caller falls back to sending encoded frames.</summary>
+		internal static OverlayShmBuffer Create(uint id, int width, int height)
+		{
+			if (width <= 0 || height <= 0)
+				return null;
+
+			var stride = (long)width * 4;
+			var size = stride * height;
+
+			if (stride > int.MaxValue || size > int.MaxValue)
+				return null;
+
+			var path = System.IO.Path.Combine(Directory(),
+				$"{Prefix}{Environment.ProcessId}-{id}-{Interlocked.Increment(ref sequence)}");
+			MemoryMappedFile mapped = null;
+			MemoryMappedViewAccessor accessor = null;
+
+			try
+			{
+				SweepAbandoned();
+
+				using (var stream = new FileStream(path, FileMode.Create, FileAccess.ReadWrite, FileShare.ReadWrite))
+					stream.SetLength(size);
+
+				// The shell runs as the same user; nothing else has any business reading a frame buffer. The
+				// redundant-looking guard is for the platform analyzer -- this file only compiles on Linux.
+				if (OperatingSystem.IsLinux())
+					File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+				mapped = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, size, MemoryMappedFileAccess.ReadWrite);
+				accessor = mapped.CreateViewAccessor(0, size, MemoryMappedFileAccess.ReadWrite);
+				var data = accessor.SafeMemoryMappedViewHandle.DangerousGetHandle();
+
+				if (data == 0)
+					throw new IOException("The overlay frame buffer could not be mapped.");
+
+				return new OverlayShmBuffer(path, mapped, accessor, data, width, height, (int)stride);
+			}
+			catch
+			{
+				accessor?.Dispose();
+				mapped?.Dispose();
+				Delete(path);
+				return null;
+			}
+		}
+
+		public void Dispose()
+		{
+			Data = 0;
+
+			try { view?.Dispose(); } catch { }
+
+			try { file?.Dispose(); } catch { }
+
+			view = null;
+			file = null;
+			Delete(Path);
+		}
+
+		// XDG_RUNTIME_DIR is a per-user tmpfs the session cleans up on logout, which is exactly what a frame
+		// buffer wants; /dev/shm is the fallback for a session that does not set it.
+		private static string Directory()
+		{
+			var runtime = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR");
+			return !string.IsNullOrEmpty(runtime) && System.IO.Directory.Exists(runtime) ? runtime : "/dev/shm";
+		}
+
+		private static void Delete(string path)
+		{
+			try { File.Delete(path); } catch { }
+		}
+
+		// A process killed mid-frame leaves its buffer behind, and a frame buffer is RAM. Reap the ones whose
+		// owner is gone, once, when this process first needs a buffer of its own.
+		private static void SweepAbandoned()
+		{
+			if (swept)
+				return;
+
+			swept = true;
+
+			try
+			{
+				foreach (var path in System.IO.Directory.EnumerateFiles(Directory(), Prefix + "*"))
+				{
+					var parts = System.IO.Path.GetFileName(path)[Prefix.Length..].Split('-');
+
+					if (parts.Length == 3 && int.TryParse(parts[0], out var pid) && pid != Environment.ProcessId
+							&& !ProcessExists(pid))
+						Delete(path);
+				}
+			}
+			catch
+			{
+			}
+		}
+
+		private static bool ProcessExists(int pid)
+		{
+			try
+			{
+				return System.IO.Directory.Exists($"/proc/{pid}");
+			}
+			catch
+			{
+				return true;   // unknown: leave the file alone
+			}
+		}
 	}
 }
 #endif

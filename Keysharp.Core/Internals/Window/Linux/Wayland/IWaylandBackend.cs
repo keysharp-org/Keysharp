@@ -234,6 +234,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		OverlayShowResult TryShowImageOverlay(uint id, int x, int y, int width, int height, byte[] pngBytes)
 			=> OverlayShowResult.Failed;
 
+		/// <summary>The same overlay, taking the frame as shared memory instead of encoded PNG: the client writes
+		/// premultiplied BGRA into <paramref name="shmPath"/> and the shell maps the same file, so an animated
+		/// overlay costs one texture upload per frame rather than a PNG encode, a multi-megabyte D-Bus payload and
+		/// a PNG decode. <paramref name="pixelWidth"/>/<paramref name="pixelHeight"/>/<paramref name="stride"/>
+		/// describe the buffer; width/height stay the on-screen size. A resized overlay must name a NEW path -- that
+		/// is how the shell knows to re-map. Returns <see cref="OverlayShowResult.Failed"/> where unsupported (which
+		/// includes an installed extension too old to have the method), so the caller can drop back to PNG.</summary>
+		OverlayShowResult TryShowImageOverlayShm(uint id, int x, int y, int width, int height,
+			string shmPath, int pixelWidth, int pixelHeight, int stride)
+			=> OverlayShowResult.Failed;
+
 		/// <summary>Reposition/resize an existing image overlay by id, reusing the pixels already uploaded to the
 		/// compositor (no re-encode). False = unsupported or no such overlay; the caller should re-Show instead.</summary>
 		bool TryMoveImageOverlay(uint id, int x, int y, int width, int height) => false;

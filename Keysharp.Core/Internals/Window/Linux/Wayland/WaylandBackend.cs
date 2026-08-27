@@ -881,6 +881,10 @@ for (var __i = 0; __i < __order.length; ++__i) {
 				public OverlayShowResult TryShowImageOverlay(uint id, int x, int y, int width, int height, byte[] pngBytes)
 					=> GnomeShellBridge.SendShowImageOverlay(id, x, y, width, height, pngBytes);
 
+				public OverlayShowResult TryShowImageOverlayShm(uint id, int x, int y, int width, int height,
+					string shmPath, int pixelWidth, int pixelHeight, int stride)
+					=> GnomeShellBridge.SendShowImageOverlayShm(id, x, y, width, height, shmPath, pixelWidth, pixelHeight, stride);
+
 				public bool TryMoveImageOverlay(uint id, int x, int y, int width, int height)
 					=> GnomeShellBridge.SendMoveImageOverlay(id, x, y, width, height);
 

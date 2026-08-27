@@ -41,13 +41,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			// -1 = the compositor has no explicit opacity for this window (no actor / read failed); it is preserved as
 			// the cross-platform "no transparency set" sentinel (WinGetTransparent -> ""), NOT clamped to 0.
 			"function opacity(w){try{const a=w.get_compositor_private?w.get_compositor_private():null;return a?(a.get_opacity?a.get_opacity():a.opacity):-1;}catch(e){return -1;}}" +
+			// An unmanaged window stays in global.get_window_actors() for the length of the shell's close
+			// animation, and Muffin's meta_window_wayland_get_client_pid() dereferences the already-freed
+			// wl_resource without a NULL check: asking a dying window for its pid segfaults the whole shell.
+			// Nothing about such a window is worth reporting either, so every walk below skips it.
+			"function live(w){try{const a=w?w.get_compositor_private():null;if(!a)return false;return typeof a.is_destroyed!=='function'||!a.is_destroyed();}catch(e){return false;}}" +
+			"function pid(w){try{return live(w)?(w.get_pid()>0?w.get_pid():(w.get_client_pid?w.get_client_pid():-1)):-1;}catch(e){return -1;}}" +
 			// buffer = the surface as the client drew it, shadow included. It is the only origin a GTK client
 			// can be located against: on Wayland it is never told where its surface is, so every coordinate it
 			// reports is relative to that rectangle. Absent on a compositor too old to answer, which leaves the
 			// consumer uncorrected rather than wrong.
 			"function buffer(w){try{const b=w.get_buffer_rect();return b?{x:b.x,y:b.y,width:b.width,height:b.height}:null;}catch(e){return null;}}" +
-			"function info(w){const f=w.get_frame_rect();return{id:String(w.get_stable_sequence()),buffer:buffer(w),title:w.get_title()||'',appId:w.get_wm_class()||w.get_wm_class_instance()||'',pid:(w.get_pid()>0?w.get_pid():(w.get_client_pid?w.get_client_pid():-1)),frame:{x:f.x,y:f.y,width:f.width,height:f.height},client:{x:f.x,y:f.y,width:f.width,height:f.height},active:!!w.appears_focused,minimized:!!w.minimized,maximized:!!(w.maximized_horizontally&&w.maximized_vertically),visible:!w.minimized,alwaysOnTop:(w.is_above?w.is_above():!!w.above),decorated:w.decorated!==false,transparency:(function(){const o=opacity(w);return o<0?-1:clamp255(o);})()};}" +
-			"function find(s){const a=global.get_window_actors();for(let i=0;i<a.length;i++){const w=a[i].get_meta_window();if(w&&w.get_stable_sequence()===s)return w;}return null;}";
+			"function info(w){const f=w.get_frame_rect();return{id:String(w.get_stable_sequence()),buffer:buffer(w),title:w.get_title()||'',appId:w.get_wm_class()||w.get_wm_class_instance()||'',pid:pid(w),frame:{x:f.x,y:f.y,width:f.width,height:f.height},client:{x:f.x,y:f.y,width:f.width,height:f.height},active:!!w.appears_focused,minimized:!!w.minimized,maximized:!!(w.maximized_horizontally&&w.maximized_vertically),visible:!w.minimized,alwaysOnTop:(w.is_above?w.is_above():!!w.above),decorated:w.decorated!==false,transparency:(function(){const o=opacity(w);return o<0?-1:clamp255(o);})()};}" +
+			"function find(s){const a=global.get_window_actors();for(let i=0;i<a.length;i++){const w=a[i].get_meta_window();if(w&&live(w)&&w.get_stable_sequence()===s)return w;}return null;}";
 
 		private static RecoverableService<DbusSession> sessions;
 		private static WatchedDbusService<Cin.Cinnamon> cinnamonService;
@@ -86,7 +92,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			var json = RunExtension(p => p.GetActiveWindowAsync());
 			return JsonOk(json)
 				? json
-				: EvalJson("(function(){try{" + JsHelpers + "const w=global.display.get_focus_window();return JSON.stringify({ok:true,window:(w&&tracked(w))?info(w):null});}catch(e){return JSON.stringify({ok:false});}})()");
+				: EvalJson("(function(){try{" + JsHelpers + "const w=global.display.get_focus_window();return JSON.stringify({ok:true,window:(w&&live(w)&&tracked(w))?info(w):null});}catch(e){return JSON.stringify({ok:false});}})()");
 		}
 
 		internal static bool QueryIdleTime(out long milliseconds)
@@ -130,7 +136,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			var json = RunExtension(p => p.GetWindowListAsync(includeHidden));
 			return JsonOk(json)
 				? json
-				: EvalJson("(function(){try{" + JsHelpers + "const a=global.get_window_actors();const out=[];for(let i=0;i<a.length;i++){const w=a[i].get_meta_window();if(!w||!tracked(w))continue;if(!" + (includeHidden ? "true" : "false") + "&&w.minimized)continue;out.push(info(w));}return JSON.stringify({ok:true,windows:out});}catch(e){return JSON.stringify({ok:false,windows:[]});}})()");
+				: EvalJson("(function(){try{" + JsHelpers + "const a=global.get_window_actors();const out=[];for(let i=0;i<a.length;i++){const w=a[i].get_meta_window();if(!w||!live(w)||!tracked(w))continue;if(!" + (includeHidden ? "true" : "false") + "&&w.minimized)continue;out.push(info(w));}return JSON.stringify({ok:true,windows:out});}catch(e){return JSON.stringify({ok:false,windows:[]});}})()");
 		}
 
 		internal static bool QueryCursorPosition(out int x, out int y)
@@ -211,7 +217,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// extension comment). Position sentinel int.MinValue = unchanged; size <= 0 = unchanged.
 		internal static bool SendMoveResizeByXid(ulong xid, int x, int y, int width, int height)
 			=> RunExtensionBool(p => p.MoveResizeWindowByXidAsync(xid, x, y, width, height))
-			   || RunOk("(function(){try{" + JsHelpers + "let w=null;for(const a of global.get_window_actors()){const m=a.get_meta_window();if(m&&typeof m.get_xwindow==='function'&&Number(m.get_xwindow())===" + xid + "){w=m;break;}}if(w){if(w.maximized_horizontally||w.maximized_vertically)w.unmaximize(3);const f=w.get_frame_rect();w.move_resize_frame(true," + x + "===-2147483648?f.x:" + x + "," + y + "===-2147483648?f.y:" + y + "," + width + ">0?" + width + ":f.width," + height + ">0?" + height + ":f.height);}return JSON.stringify({ok:!!w});}catch(e){return JSON.stringify({ok:false});}})()");
+			   || RunOk("(function(){try{" + JsHelpers + "let w=null;for(const a of global.get_window_actors()){const m=a.get_meta_window();if(m&&live(m)&&typeof m.get_xwindow==='function'&&Number(m.get_xwindow())===" + xid + "){w=m;break;}}if(w){if(w.maximized_horizontally||w.maximized_vertically)w.unmaximize(3);const f=w.get_frame_rect();w.move_resize_frame(true," + x + "===-2147483648?f.x:" + x + "," + y + "===-2147483648?f.y:" + y + "," + width + ">0?" + width + ":f.width," + height + ">0?" + height + ":f.height);}return JSON.stringify({ok:!!w});}catch(e){return JSON.stringify({ok:false});}})()");
 
 		internal static bool SendSetWindowState(ulong seq, int state)
 			=> RunExtensionBool(p => p.SetWindowStateAsync(seq, state))
@@ -277,6 +283,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal static OverlayShowResult SendShowImageOverlay(uint id, int x, int y, int width, int height, byte[] pngBytes)
 				=> pngBytes is { Length: > 0 }
 				   ? RunShow(p => p.ShowImageOverlayAsync(id, HighlightOwnerKey, connectionLocalName, x, y, width, height, pngBytes),
+							 ImageOverlayTimeoutMs)
+				   : OverlayShowResult.Failed;
+
+			internal static OverlayShowResult SendShowImageOverlayShm(uint id, int x, int y, int width, int height,
+				string shmPath, int pixelWidth, int pixelHeight, int stride)
+				=> !shmPath.IsNullOrEmpty()
+				   ? RunShow(p => p.ShowImageOverlayShmAsync(id, HighlightOwnerKey, connectionLocalName, x, y, width, height,
+															 shmPath, pixelWidth, pixelHeight, stride),
 							 ImageOverlayTimeoutMs)
 				   : OverlayShowResult.Failed;
 
@@ -812,6 +826,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			public OverlayShowResult TryShowImageOverlay(uint id, int x, int y, int width, int height, byte[] pngBytes)
 				=> CinnamonShellBridge.SendShowImageOverlay(id, x, y, width, height, pngBytes);
+
+			public OverlayShowResult TryShowImageOverlayShm(uint id, int x, int y, int width, int height,
+				string shmPath, int pixelWidth, int pixelHeight, int stride)
+				=> CinnamonShellBridge.SendShowImageOverlayShm(id, x, y, width, height, shmPath, pixelWidth, pixelHeight, stride);
 
 			public bool TryMoveImageOverlay(uint id, int x, int y, int width, int height)
 				=> CinnamonShellBridge.SendMoveImageOverlay(id, x, y, width, height);

@@ -218,6 +218,25 @@ const DBUS_IFACE_XML =
       <arg type="b" direction="out" name="ok"/>
     </method>
 
+    <!-- The same frame, handed over as shared memory rather than an encoded PNG. The client writes
+         premultiplied BGRA into a file both processes map, so an animated overlay costs one texture
+         upload per frame instead of a PNG encode, a multi-megabyte D-Bus payload and a PNG decode.
+         pixelWidth/pixelHeight/stride describe the buffer; width/height stay the on-screen size. -->
+    <method name="ShowImageOverlayShm">
+      <arg type="u" direction="in" name="id"/>
+      <arg type="s" direction="in" name="ownerKey"/>
+      <arg type="s" direction="in" name="busName"/>
+      <arg type="i" direction="in" name="x"/>
+      <arg type="i" direction="in" name="y"/>
+      <arg type="i" direction="in" name="width"/>
+      <arg type="i" direction="in" name="height"/>
+      <arg type="s" direction="in" name="shmPath"/>
+      <arg type="i" direction="in" name="pixelWidth"/>
+      <arg type="i" direction="in" name="pixelHeight"/>
+      <arg type="i" direction="in" name="stride"/>
+      <arg type="b" direction="out" name="ok"/>
+    </method>
+
     <method name="MoveImageOverlay">
       <arg type="u" direction="in" name="id"/>
       <arg type="s" direction="in" name="ownerKey"/>
@@ -386,7 +405,7 @@ class KeysharpExtension {
         });
 
         for (const actor of global.get_window_actors()) {
-            const win = actor.get_meta_window();
+            const win = this._liveMetaWindow(actor);
             if (win && this._isTrackedWindow(win))
                 this._hookWindow(win);
         }
@@ -472,7 +491,7 @@ class KeysharpExtension {
             const windows = [];
 
             for (const actor of global.get_window_actors()) {
-                const win = actor.get_meta_window();
+                const win = this._liveMetaWindow(actor);
                 if (!win || !this._isTrackedWindow(win))
                     continue;
                 if (!includeHidden && win.minimized)
@@ -492,7 +511,9 @@ class KeysharpExtension {
             const win = global.display.get_focus_window();
             return JSON.stringify({
                 ok: true,
-                window: (win && this._isTrackedWindow(win)) ? this._windowInfo(win) : null
+                window: (win && this._isLiveWindow(win) && this._isTrackedWindow(win))
+                    ? this._windowInfo(win)
+                    : null
             });
         } catch (e) {
             return JSON.stringify({ok: false, window: null});
@@ -951,9 +972,7 @@ class KeysharpExtension {
 
         try {
             this._sweepPlacements();
-            // Muffin answers the client pid only via get_client_pid() (get_pid() is -1 for Wayland
-            // clients); modern Mutter removed get_client_pid() and made get_pid() answer it instead.
-            const pid = win.get_pid() > 0 ? win.get_pid() : (win.get_client_pid ? win.get_client_pid() : -1);
+            const pid = this._clientPid(win, true);
 
             if (pid <= 0 || this._placements.length === 0)
                 return;
@@ -1411,54 +1430,91 @@ class KeysharpExtension {
         try {
             const owner = this._parseOverlayOwner(ownerKey);
             const key = this._overlayKey(id, owner.key);
-            const bus = String(busName || '');
 
             this._cancelOverlayReconnectTimer(owner.key);
 
-            if (!pngData || pngData.length === 0 || width < 1 || height < 1) {
-                this._removeImageOverlayByKey(key);
+            if (!pngData || pngData.length === 0 || width < 1 || height < 1)
+                return this._clearImageOverlay(key);
 
-                if (!this._hasAnyOverlays())
-                    this._stopOverlayCleanupTimer();
-
-                return true;
-            }
-
-            const entry = this._imageOverlays.get(key);
-
-            if (entry && entry.actor) {
-                try {
-                    this._updateImageActor(entry.actor, pngData, x, y, width, height);
-                    entry.ownerPid = owner.pid;
-                    entry.ownerStartTime = owner.startTime;
-                    entry.busName = bus;
-                    this._ensureOverlayCleanupTimer();
-                    return true;
-                } catch (_e) {
-                    this._removeImageOverlayByKey(key);
-                }
-            }
-
-            const actor = this._createImageActor(pngData, x, y, width, height);
-            Main.layoutManager.addChrome(actor, {
-                visibleInFullscreen: true,
-                affectsStruts: false,
-                affectsInputRegion: false
-            });
-
-            this._imageOverlays.set(key, {
-                actor: actor,
-                ownerKey: owner.key,
-                ownerPid: owner.pid,
-                ownerStartTime: owner.startTime,
-                busName: bus
-            });
-            this._ensureOverlayCleanupTimer();
-            return true;
+            return this._presentImageOverlay(key, owner, busName, x, y, width, height,
+                () => this._decodeImageFrame(pngData));
         } catch (e) {
             global.logError(e, 'Keysharp: ShowImageOverlay failed');
             return false;
         }
+    }
+
+    // The same overlay, with the frame handed over as shared memory instead of an encoded PNG. Only the
+    // pixels arrive differently; everything downstream is the ShowImageOverlay path.
+    ShowImageOverlayShm(id, ownerKey, busName, x, y, width, height, shmPath, pixelWidth, pixelHeight, stride) {
+        try {
+            const owner = this._parseOverlayOwner(ownerKey);
+            const key = this._overlayKey(id, owner.key);
+
+            this._cancelOverlayReconnectTimer(owner.key);
+
+            if (!shmPath || pixelWidth < 1 || pixelHeight < 1 || width < 1 || height < 1)
+                return this._clearImageOverlay(key);
+
+            return this._presentImageOverlay(key, owner, busName, x, y, width, height,
+                entry => this._mapImageFrame(entry, shmPath, pixelWidth, pixelHeight, stride));
+        } catch (e) {
+            global.logError(e, 'Keysharp: ShowImageOverlayShm failed');
+            return false;
+        }
+    }
+
+    // An empty frame is how a client asks for the overlay to go away.
+    _clearImageOverlay(key) {
+        this._removeImageOverlayByKey(key);
+
+        if (!this._hasAnyOverlays())
+            this._stopOverlayCleanupTimer();
+
+        return true;
+    }
+
+    // The shared tail of both Show paths: makeFrame() produces the pixels -- decoded, or mapped out of the
+    // client's shared buffer -- and everything from there on is one actor, created once and updated after.
+    _presentImageOverlay(key, owner, busName, x, y, width, height, makeFrame) {
+        const bus = String(busName || '');
+        const existing = this._imageOverlays.get(key);
+        const frame = makeFrame(existing);
+
+        if (!frame)
+            return false;
+
+        if (existing && existing.actor) {
+            try {
+                this._updateImageActor(existing.actor, frame, x, y, width, height);
+                existing.ownerPid = owner.pid;
+                existing.ownerStartTime = owner.startTime;
+                existing.busName = bus;
+                this._ensureOverlayCleanupTimer();
+                return true;
+            } catch (_e) {
+                this._removeImageOverlayByKey(key);
+            }
+        }
+
+        const actor = new Clutter.Actor({ reactive: false });
+        this._updateImageActor(actor, frame, x, y, width, height);
+        Main.layoutManager.addChrome(actor, {
+            visibleInFullscreen: true,
+            affectsStruts: false,
+            affectsInputRegion: false
+        });
+
+        this._imageOverlays.set(key, {
+            actor: actor,
+            ownerKey: owner.key,
+            ownerPid: owner.pid,
+            ownerStartTime: owner.startTime,
+            busName: bus,
+            shm: frame.shm || null
+        });
+        this._ensureOverlayCleanupTimer();
+        return true;
     }
 
     MoveImageOverlay(id, ownerKey, _busName, x, y, width, height) {
@@ -1694,8 +1750,51 @@ class KeysharpExtension {
         };
     }
 
-    _updateImageActor(actor, pngData, x, y, width, height) {
-        const frame = this._decodeImageFrame(pngData);
+    // Maps the client's frame buffer. Both processes map the same file, so the pixels the client wrote are
+    // already here and the only per-frame cost is the texture upload in _updateImageActor. The mapping is
+    // kept on the overlay entry and redone only when the client names a different file, which is how it
+    // reports a size change -- a resized overlay always gets a fresh path.
+    _mapImageFrame(entry, shmPath, width, height, stride) {
+        const path = String(shmPath);
+
+        // Only ever map a buffer one of our own clients wrote.
+        if (!GLib.path_get_basename(path).startsWith('keysharp-overlay-'))
+            return null;
+
+        let shm = entry ? entry.shm : null;
+
+        if (!shm || shm.path !== path || shm.width !== width || shm.height !== height || shm.stride !== stride) {
+            let mapped = null;
+
+            try {
+                mapped = GLib.MappedFile.new(path, false);
+            } catch (_e) {
+                return null;
+            }
+
+            // A short file would have the texture upload read past the mapping.
+            if (mapped.get_length() < stride * height)
+                return null;
+
+            shm = {path: path, mapped: mapped, width: width, height: height, stride: stride};
+
+            if (entry)
+                entry.shm = shm;
+        }
+
+        return {
+            // Shares the mapping rather than copying it, so this stays cheap at video rates.
+            pixels: shm.mapped.get_bytes().toArray(),
+            // Cairo's ARGB32, which is what the client draws into: premultiplied BGRA on little-endian.
+            format: Cogl.PixelFormat.BGRA_8888_PRE,
+            width: width,
+            height: height,
+            rowStride: stride,
+            shm: shm,
+        };
+    }
+
+    _updateImageActor(actor, frame, x, y, width, height) {
         let content = actor.get_content();
 
         // set_data replaces the Cogl texture; set_area keeps the compositor's existing texture allocation.
@@ -1727,12 +1826,6 @@ class KeysharpExtension {
 
         actor.set_position(x, y);
         actor.set_size(width, height);
-    }
-
-    _createImageActor(pngData, x, y, width, height) {
-        const actor = new Clutter.Actor({ reactive: false });
-        this._updateImageActor(actor, pngData, x, y, width, height);
-        return actor;
     }
 
     _cancelOverlayReconnectTimer(ownerKey) {
@@ -1825,6 +1918,9 @@ class KeysharpExtension {
         if (this._windowSignalIds.has(seq))
             return;
 
+        // Read the pid now, while the window is certainly alive; see _clientPid.
+        this._clientPid(win, true);
+
         const ids = [];
         ids.push(win.connect('notify::title', () => this._emitWindowEvent('title', win)));
         ids.push(win.connect('notify::minimized', () => this._emitWindowEvent(win.minimized ? 'minimize' : 'restore', win)));
@@ -1852,6 +1948,59 @@ class KeysharpExtension {
         }
 
         this._windowSignalIds.delete(seq);
+    }
+
+    // An unmanaged window lingers in global.get_window_actors() for as long as the shell's close animation
+    // runs. It is not a window any more -- reporting it as one is wrong, and asking it about its Wayland
+    // client is fatal: Muffin's meta_window_wayland_get_client_pid() hands the already-freed wl_resource
+    // straight to wl_resource_get_client(), which dereferences it without a NULL check and takes the whole
+    // shell down with it. Everything that walks the actor list therefore goes through here first.
+    _isLiveWindow(win) {
+        try {
+            const actor = win ? win.get_compositor_private() : null;
+
+            if (!actor)
+                return false;
+
+            return typeof actor.is_destroyed !== 'function' || !actor.is_destroyed();
+        } catch (_e) {
+            return false;
+        }
+    }
+
+    _liveMetaWindow(actor) {
+        const win = actor ? actor.get_meta_window() : null;
+        return (win && this._isLiveWindow(win)) ? win : null;
+    }
+
+    // The window's client pid, read once while the window is unquestionably alive and cached on it after
+    // that, so a later query -- which may well arrive mid-teardown -- never has to ask the compositor again.
+    // A window that is already gone has no pid to give: -1, the same answer as the platforms that cannot say.
+    //
+    // `alive` is for the callers that hold that guarantee themselves -- window-created, where the window has
+    // no compositor actor yet and _isLiveWindow cannot tell "not composited" from "destroyed" -- and it is
+    // exactly those callers that seed the cache for everyone else.
+    _clientPid(win, alive) {
+        if (typeof win.__ksClientPid === 'number')
+            return win.__ksClientPid;
+
+        if (!alive && !this._isLiveWindow(win))
+            return -1;
+
+        let pid = -1;
+
+        try {
+            // Muffin answers the client pid only via get_client_pid() (get_pid() is -1 for Wayland
+            // clients); modern Mutter removed get_client_pid() and made get_pid() answer it instead.
+            pid = win.get_pid() > 0 ? win.get_pid() : (win.get_client_pid ? win.get_client_pid() : -1);
+        } catch (_e) {
+            pid = -1;
+        }
+
+        if (pid > 0)
+            win.__ksClientPid = pid;
+
+        return pid;
     }
 
     _isTrackedWindow(win) {
@@ -1913,8 +2062,7 @@ class KeysharpExtension {
             id: String(win.get_stable_sequence()),
             title: win.get_title() || '',
             appId: win.get_wm_class() || win.get_wm_class_instance() || '',
-            // get_pid() is -1 for Wayland clients on Muffin; get_client_pid() is the real one there.
-            pid: win.get_pid() > 0 ? win.get_pid() : (win.get_client_pid ? win.get_client_pid() : -1),
+            pid: this._clientPid(win),
             workspace: workspace,
             monitor: monitor,
             onCurrentWorkspace: onCurrentWorkspace,
@@ -1938,7 +2086,7 @@ class KeysharpExtension {
         const seq = Number(handle);
 
         for (const actor of global.get_window_actors()) {
-            const win = actor.get_meta_window();
+            const win = this._liveMetaWindow(actor);
             if (win && win.get_stable_sequence() === seq)
                 return win;
         }
@@ -1950,7 +2098,7 @@ class KeysharpExtension {
         const target = Number(xid);
 
         for (const actor of global.get_window_actors()) {
-            const win = actor.get_meta_window();
+            const win = this._liveMetaWindow(actor);
             if (win && typeof win.get_xwindow === 'function' && Number(win.get_xwindow()) === target)
                 return win;
         }

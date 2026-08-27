@@ -61,6 +61,57 @@ namespace Keysharp.Tests
 				new ScreenRect(30, 40, 101, 50)), Is.False);
 		}
 
+		[Test]
+		public void SharedFrameBufferIsWritableAndPrivateAndCleansUp()
+		{
+			var buffer = OverlayShmBuffer.Create(id: 7, width: 4, height: 3);
+
+			Assert.That(buffer, Is.Not.Null);
+
+			try
+			{
+				Assert.That(buffer.Stride, Is.EqualTo(16));
+				Assert.That(new FileInfo(buffer.Path).Length, Is.EqualTo(48));
+				if (OperatingSystem.IsLinux())   // the guard is the platform analyzer's, not ours
+					Assert.That(File.GetUnixFileMode(buffer.Path),
+						Is.EqualTo(UnixFileMode.UserRead | UnixFileMode.UserWrite));
+				// The shell recognises its own clients' buffers by this name, and maps nothing else.
+				Assert.That(Path.GetFileName(buffer.Path), Does.StartWith("keysharp-overlay-"));
+
+				// What the client writes through the mapping is what a reader of the file sees: that is the
+				// whole point of the path.
+				unsafe { ((uint*)buffer.Data)[0] = 0xDEADBEEF; }
+
+				var bytes = File.ReadAllBytes(buffer.Path);
+				Assert.That(BitConverter.ToUInt32(bytes, 0), Is.EqualTo(0xDEADBEEFu));
+			}
+			finally
+			{
+				buffer.Dispose();
+			}
+
+			Assert.That(File.Exists(buffer.Path), Is.False);
+		}
+
+		[Test]
+		public void SharedFrameBuffersNeverReuseAName()
+		{
+			var first = OverlayShmBuffer.Create(id: 8, width: 2, height: 2);
+			var second = OverlayShmBuffer.Create(id: 8, width: 4, height: 4);
+
+			try
+			{
+				// The shell keys its mapping on the path, so a resized overlay that reused the name would
+				// leave it uploading from the old, shorter mapping.
+				Assert.That(second.Path, Is.Not.EqualTo(first.Path));
+			}
+			finally
+			{
+				first?.Dispose();
+				second?.Dispose();
+			}
+		}
+
 		[TestCase(1, 1, true)]
 		[TestCase(2, 2, true)]
 		[TestCase(3, 3, true)]

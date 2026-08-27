@@ -477,7 +477,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// Both the source and the shm buffer are premultiplied, so a constant alpha scales all four channels
 		// alike — including alpha itself, which is what keeps the result premultiplied.
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		private static uint ScalePremultiplied(uint argb, byte opacity)
+		internal static uint ScalePremultiplied(uint argb, byte opacity)
 		{
 			if (opacity == 255)
 				return argb;

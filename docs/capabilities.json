@@ -8714,7 +8714,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. Pointer events require ClickThrough := false; GNOME/Cinnamon use compositor-positioned client surfaces so animated frames stay on Wayland's native buffer path. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS.",
+                     "notes":  "Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. Pointer events require ClickThrough := false; On GNOME/Cinnamon a click-through overlay is drawn inside the shell, so it is not a window and takes no taskbar entry; frames reach it as shared memory. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS.",
                      "tested-by":  "overlay-canvas.ahk; GuiTests.ExplicitPresent; OverlayLinuxTests.cs"
                  },
                  {
