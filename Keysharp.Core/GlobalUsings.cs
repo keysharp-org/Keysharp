@@ -88,6 +88,7 @@ global using static global::Keysharp.Internals.Platform.Pointer;
 global using static global::Keysharp.Internals.Platform.Messages;
 global using static global::Keysharp.Internals.Platform.Time;
 global using static global::Keysharp.Internals.Window.WindowCoords;
+global using global::Keysharp.Builtins.COM;
 global using global::Keysharp.Internals.Scripting;
 global using global::Keysharp.Internals.Strings;
 global using global::Keysharp.Internals.Threading;
@@ -103,7 +104,6 @@ global using global::BitFaster.Caching.Lfu;
 global using global::BitFaster.Caching.Scheduler;
 
 #if WINDOWS
-	global using global::Keysharp.Builtins.COM;
 	global using global::Accessibility;
 	global using global::Microsoft.Win32;
 	global using global::Microsoft.Win32.SafeHandles;

@@ -4,7 +4,7 @@ using Tmds.DBus.Protocol;
 using Gnome = Keysharp.Internals.DBus.Generated.Gnome;
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
-	// The GnomeShell1 and IdleMonitor proxies are generated from Internals/DBus/Interfaces/GnomeShell.xml.
+	// The GnomeShell1 and IdleMonitor proxies are generated from Internals/Linux/DBus/Interfaces/GnomeShell.xml.
 
 	/// <summary>
 	/// Static bridge to the Keysharp GNOME Shell extension D-Bus service.

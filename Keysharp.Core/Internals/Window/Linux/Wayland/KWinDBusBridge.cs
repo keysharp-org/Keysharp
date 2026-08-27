@@ -12,7 +12,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	// separate dynamic assembly (Tmds.DBus.Emit) and that assembly cannot implement
 	// internal interfaces.
 	// Proxies (Scripting/Script/FakeInput) and served-object handler interfaces (KWinBridge/KWinQueryBridge)
-	// are generated from Internals/DBus/Interfaces/KWin.xml and KWinBridge.xml.
+	// are generated from Internals/Linux/DBus/Interfaces/KWin.xml and KWinBridge.xml.
 
 
 	/// <summary>

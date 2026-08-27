@@ -257,7 +257,7 @@ namespace Keysharp.Internals
 	// logind's Session.SetBrightness is the supported unprivileged way to change a backlight: logind performs the
 	// write as root on behalf of the session owner, so no udev rule or group membership is needed. There is no
 	// matching getter — the current value is read straight from sysfs, which is world-readable. The Session and
-	// Manager proxies are generated from Internals/DBus/Interfaces/Logind.xml.
+	// Manager proxies are generated from Internals/Linux/DBus/Interfaces/Logind.xml.
 
 	/// <summary>
 	/// Linux brightness and VCP control. The built-in panel goes through the kernel backlight class (a direct

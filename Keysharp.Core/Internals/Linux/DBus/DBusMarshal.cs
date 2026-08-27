@@ -31,7 +31,7 @@ namespace Keysharp.Internals.DBus
 		{
 			// A ComValue carries an explicit wire type; honour it wherever the target is a variant, and otherwise
 			// just unwrap it (the declared type still has to match the signature the peer published).
-			if (value is Keysharp.Builtins.COM.ComValue cv && node.Code != DBusTypeCode.Variant)
+			if (value is ComValue cv && node.Code != DBusTypeCode.Variant)
 				value = cv.Value;
 
 			switch (node.Code)
@@ -120,7 +120,7 @@ namespace Keysharp.Internals.DBus
 		{
 			string sigText;
 
-			if (value is Keysharp.Builtins.COM.ComValue cv)
+			if (value is ComValue cv)
 			{
 				sigText = cv.DBusSignature;
 				value = cv.Value;

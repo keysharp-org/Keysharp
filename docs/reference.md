@@ -113,7 +113,7 @@ macOS support is in active development. The following table summarises what work
 | Monitor brightness / DDC-CI | Partial | Built-in panel (and Apple's own displays) via DisplayServices; other external monitors over DDC/CI. No permission needed. Apple Silicon only — the Intel path is implemented but untested, and some USB-C hubs and docks do not carry the DDC channel. `Monitor.GetVCP()`/`SetVCP()` work on external monitors only, as a built-in panel has no DDC/CI connection |
 | Window management | Partial | Accessibility API; foreign-app control requires permission |
 | Registry APIs | Not supported | Windows-only |
-| COM APIs | Not supported | Windows-only |
+| COM APIs | Unverified | `ComObject` and friends are backed by Apple Events, not COM. Implemented but not yet exercised on macOS hardware. Requires **Automation** permission per controlled application. See [ComObject off Windows](#comobject-off-windows) |
 
 Permissions are requested automatically when first needed, or up front with `#Requires capability` (see [Additions and Improvements](#additions-and-improvements) below). Grant them in **System Settings → Privacy & Security**.
 
@@ -266,7 +266,7 @@ Status legend:
 | Clipboard | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Text, image, URI, custom MIME, wait, and change-notification operations use the native platform clipboard backends. See ClipboardAll() for the Wayland multi-format restore limitation. |
 | Sound APIs | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Audio device/endpoint support differs by platform. |
 | Registry APIs | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Windows Registry APIs are Windows-only. |
-| COM APIs | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | COM is available on Windows only. |
+| COM APIs | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Real COM on Windows; the same late-bound surface is backed by D-Bus on Linux and by Apple Events on macOS, so target strings and member names differ per platform. The macOS backend is implemented but not yet verified on hardware. Functions that need vtables, reference counts or raw pointers throw off Windows. |
 <!-- CAPABILITIES_OVERVIEW:END -->
 
 ## Overview
@@ -299,6 +299,61 @@ Some general notes about Keysharp's implementation of the [AutoHotkey v2 specifi
 
 Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there are differences. Some of these differences are a reduction in functionality, and others are an increase. There are also slight syntax changes.
 
+## ComObject off Windows
+
+`ComObject` keeps its name on every platform, the way `DllCall` does, because the late-bound automation model carries over even though the machinery underneath does not. On Linux it drives **D-Bus**; on macOS it drives **Apple Events**. The concepts line up closely enough to share one surface:
+
+| COM (Windows) | D-Bus (Linux) | Apple Events (macOS) |
+|---|---|---|
+| type library | introspection XML | sdef scripting dictionary |
+| object | service plus object path | application plus object specifier |
+| method call | method call | command event |
+| property get/put | `Properties.Get`/`Set` | get/set events |
+| collections | child object nodes | elements (`every`, by index, name or id) |
+| running object table | bus name ownership | running application |
+| `CoCreateInstance` | service activation | launching the application |
+| connection point events | signals | distributed notifications |
+| `VARIANT` | signature strings | four-character descriptor types |
+
+The syntax is the same on every platform; the targets are not. The target string and every member name differ per platform and per application, so a script that runs on more than one branches.
+
+```ahk
+; Linux — a D-Bus service; "system:" selects the system bus
+nm := ComObject("system:org.freedesktop.NetworkManager")
+
+; macOS — an application, by bundle id, name, path, or "pid:1234"
+finder := ComObject("com.apple.Finder")
+MsgBox finder.Windows[1].Name
+```
+
+Common to both backends:
+
+* `ComObject()` starts the service or application if it is not running; `ComObjActive()` and `ComObjGet()` attach only, and throw otherwise. Neither platform has monikers, so `ComObjGet` is an alias of `ComObjActive`.
+* `ComObjQuery()` narrows which face of the object is used: a D-Bus interface on Linux, a scripting suite on macOS. Passing it up front as `ComObject`'s second argument does the same thing.
+* `ComValue()` takes a wire type instead of a `VT_` constant — a D-Bus signature (`ComValue("u", 5)`) or a four-character descriptor type (`ComValue("enum", "ask")`). The unambiguous `VT_` constants are still accepted.
+* `ComCall()`, `ObjAddRef()`, `ObjRelease()`, `ComObjValue()`, `ComObjFlags()`, `ComObjFromPtr()` and `ComObjArray()` throw an error stating the reason. They depend on vtables, reference counts or raw interface pointers, none of which exist on either backend.
+
+### macOS specifics
+
+An Apple Events object is a **query, not a handle**: `window 1 of application "Finder"` is resolved by the target application each time it is used, so a stale object fails when it is used rather than when it is created. Narrowing a collection therefore costs nothing until the value is read.
+
+Parameters follow the Apple Events model, which is the reverse of the D-Bus one: the first unnamed argument is the *direct parameter*, and every other value must be **named**.
+
+```ahk
+finder := ComObject("com.apple.Finder")
+finder.Windows[1].Close(Saving: "no")        ; the receiver is the direct parameter
+doc := finder.Make(New: "document")           ; named parameters carry the rest
+for w in finder.Windows                       ; one round trip, then iterate
+    MsgBox w.Name
+MsgBox finder.Windows.Count
+```
+
+Member names come from the application's scripting dictionary, whose terms contain spaces. Keysharp folds spaces and underscores away and ignores case, so a term such as `file name` is reachable as `FileName`, `filename` or `file_name`. When a name is defined by two suites with different events, the error lists them and `ComObjQuery()` picks one.
+
+Controlling another application needs **Automation** permission, granted per target application in **System Settings → Privacy & Security → Automation**. Keysharp asks the system for it before the first event so the prompt is attributed properly; a refusal reports what to grant. This is separate from the Accessibility permission the window functions use.
+
+`ComObjConnect()` maps to distributed notifications. These carry less than D-Bus signals or COM connection points do: no scripting definition describes them, they are not scoped to a particular object, and many applications publish none. A notification whose name begins with the target's bundle id calls the matching handler, so `com.example.App.stateChanged` calls `Prefix_stateChanged(name, payload, comObj)`. The naming convention is not a rule — Music still posts under `com.apple.iTunes` — so an application that changed its bundle id publishes names this does not match.
+
 ## Differences
 
 ### Behaviors and Functionality
@@ -306,7 +361,7 @@ Despite our best efforts to remain compatible with the AutoHotkey v2 spec, there
 	+ Control commands only work on windows created by the running Keysharp process. This is because "controls" don't exist in Linux the same way they do in Windows.
 		+ As an alternative it's recommended to use [AtSpi.ks](https://github.com/keysharp-org/Keysharp/blob/master/Keysharp/Scripts/AtSpi.ks): running it directly displays AtSpiViewer which can be used to inspect windows, and it also contains methods to manipulate windows and controls similarly to Acc/UIA in Windows.
 	+ GUI support is mostly implemented, but some controls are missing or incomplete.
-	+ Registry and COM functions are not supported.
+	+ Registry functions are not supported. The COM functions are, but they address D-Bus rather than COM — see [ComObject off Windows](#comobject-off-windows).
 * Keysharp follows the .NET memory model.
 	+ There is no variable caching with strings vs numbers. All variables are C# objects.
 	+ Values not stored in variables are like regular variables, only eligible to be freed once they go out of scope.

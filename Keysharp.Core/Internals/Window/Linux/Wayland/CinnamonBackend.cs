@@ -7,7 +7,7 @@ using Cin = Keysharp.Internals.DBus.Generated.Cinnamon;
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	// The Cinnamon, CinnamonShell1, IdleMonitor and DBus proxies are generated from
-	// Internals/DBus/Interfaces/Cinnamon.xml and FreedesktopDBus.xml.
+	// Internals/Linux/DBus/Interfaces/Cinnamon.xml and FreedesktopDBus.xml.
 
 	/// <summary>
 	/// Static bridge to Cinnamon's org.Cinnamon.Eval D-Bus method. Mirrors

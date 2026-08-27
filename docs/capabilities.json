@@ -3976,10 +3976,10 @@
                      "feature":  "COM APIs",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "COM is available on Windows only."
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "Real COM on Windows; the same late-bound surface is backed by D-Bus on Linux and by Apple Events on macOS, so target strings and member names differ per platform. The macOS backend is implemented but not yet verified on hardware. Functions that need vtables, reference counts or raw pointers throw off Windows."
                  },
                  {
                      "category":  "Core Language",
@@ -3997,10 +3997,10 @@
                      "feature":  "ComObjActive()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "The ComObjActive function retrieves a registered COM object.",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "The ComObjActive function retrieves a registered COM object. Attaches to a running D-Bus service on Linux and to a running application on macOS, never starting one; the macOS backend is not yet verified on hardware.",
                      "tested-by":  "external-com.ahk"
                  },
                  {
@@ -4019,9 +4019,9 @@
                      "feature":  "ComObjConnect()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
                      "notes":  "The ComObjConnect function connects a COM object\u0027s event source to the script, enabling events to be handled.",
                      "tested-by":  "Gui/guitest.ks"
                  },
@@ -4030,10 +4030,10 @@
                      "feature":  "ComObject()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "The ComObject function creates a COM object.",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "The ComObject function creates a COM object. On Linux the target is a D-Bus service name; on macOS it is an application (bundle id, name, path or a pid), and the second parameter selects an interface or a suite. The macOS backend is not yet verified on hardware.",
                      "tested-by":  "external-com.ahk"
                  },
                  {
@@ -4061,30 +4061,30 @@
                      "feature":  "ComObjGet()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "The ComObjGet function returns a reference to an object provided by a COM component."
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "The ComObjGet function returns a reference to an object provided by a COM component. Neither D-Bus nor Apple Events has monikers, so off Windows this behaves as ComObjActive."
                  },
                  {
                      "category":  "COM",
                      "feature":  "ComObjQuery()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "The ComObjQuery function queries a COM object for an interface or service."
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "The ComObjQuery function queries a COM object for an interface or service. Selects a D-Bus interface on Linux and a scripting suite on macOS, both of which play the part an IID plays on Windows."
                  },
                  {
                      "category":  "COM",
                      "feature":  "ComObjType()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "The ComObjType function retrieves type information from a COM object."
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "The ComObjType function retrieves type information from a COM object. Off Windows the requests differ: Linux answers Name, IID and Path, and macOS answers the class name, Name, CLSID or IID, and Path."
                  },
                  {
                      "category":  "COM",
@@ -4102,10 +4102,10 @@
                      "feature":  "ComValue()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "The ComValue class wraps a value, SafeArray or COM object for use by the script or for passing to a COM method.",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "The ComValue class wraps a value, SafeArray or COM object for use by the script or for passing to a COM method. Off Windows the first argument is a wire type rather than a VT_ constant: a D-Bus signature on Linux, a four-character descriptor type on macOS. The clean VT_ constants are still accepted.",
                      "tested-by":  "external-com.ahk"
                  },
                  {

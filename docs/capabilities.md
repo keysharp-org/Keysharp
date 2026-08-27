@@ -401,22 +401,22 @@ Status legend:
 | Clr.ManagedType | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed type wrapper for reflection and invocation. |
 | Clr.Type() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Resolves managed types through the platform-independent CLR interop surface. |
 | Collect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Forces garbage collection and finalizer processing. |
-| COM APIs | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | COM is available on Windows only. |
+| COM APIs | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Real COM on Windows; the same late-bound surface is backed by D-Bus on Linux and by Apple Events on macOS, so target strings and member names differ per platform. The macOS backend is implemented but not yet verified on hardware. Functions that need vtables, reference counts or raw pointers throw off Windows. |
 | ComCall() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComCall function calls a native COM interface method by index. A return type of 'void' means the call returns no value. |
-| ComObjActive() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjActive function retrieves a registered COM object. |
+| ComObjActive() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObjActive function retrieves a registered COM object. Attaches to a running D-Bus service on Linux and to a running application on macOS, never starting one; the macOS backend is not yet verified on hardware. |
 | ComObjArray() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjArray function creates a SafeArray for use with COM. |
 | ComObjArray.__Enum() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Enumerates a COM SAFEARRAY. COM is available only on Windows. |
 | ComObjArray.__Item | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Gets or sets a COM SAFEARRAY element. COM is available only on Windows. |
-| ComObjConnect() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjConnect function connects a COM object's event source to the script, enabling events to be handled. |
-| ComObject() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObject function creates a COM object. |
+| ComObjConnect() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObjConnect function connects a COM object's event source to the script, enabling events to be handled. Subscribes D-Bus signals on Linux; on macOS it subscribes the application's distributed notifications, which no terminology describes and which many applications never publish. |
+| ComObject() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObject function creates a COM object. On Linux the target is a D-Bus service name; on macOS it is an application (bundle id, name, path or a pid), and the second parameter selects an interface or a suite. The macOS backend is not yet verified on hardware. |
 | ComObjFlags() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjFlags function retrieves or changes flags which control a COM wrapper object's behaviour. |
 | ComObjFromPtr() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjFromPtr function wraps a raw IDispatch pointer (COM object) for use by the script. |
-| ComObjGet() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjGet function returns a reference to an object provided by a COM component. |
-| ComObjQuery() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjQuery function queries a COM object for an interface or service. |
-| ComObjType() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjType function retrieves type information from a COM object. |
+| ComObjGet() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObjGet function returns a reference to an object provided by a COM component. Neither D-Bus nor Apple Events has monikers, so off Windows this behaves as ComObjActive. |
+| ComObjQuery() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObjQuery function queries a COM object for an interface or service. Selects a D-Bus interface on Linux and a scripting suite on macOS, both of which play the part an IID plays on Windows. |
+| ComObjType() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObjType function retrieves type information from a COM object. Off Windows the requests differ: Linux answers Name, IID and Path, and macOS answers the class name, Name, CLSID or IID, and Path. |
 | ComObjValue() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjValue function retrieves the value or pointer stored in a COM wrapper object. |
 | ComponentAvailable() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reports whether the fixed first-party parser or compiler deployment unit is installed or embedded, compatible, and loadable. The check loads the requested unit; checking compiler can load Roslyn. Parsing/compilation are accepted aliases. |
-| ComValue() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComValue class wraps a value, SafeArray or COM object for use by the script or for passing to a COM method. |
+| ComValue() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComValue class wraps a value, SafeArray or COM object for use by the script or for passing to a COM method. Off Windows the first argument is a wire type rather than a VT_ constant: a D-Bus signature on Linux, a four-character descriptor type on macOS. The clean VT_ constants are still accepted. |
 | ComValueRef | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Reference wrapper type for COM values. |
 | contains | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Substring containment operator. |
 | Continue | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Skips to the next loop iteration. |

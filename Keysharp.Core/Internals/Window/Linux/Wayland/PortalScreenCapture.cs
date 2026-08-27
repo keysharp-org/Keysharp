@@ -13,7 +13,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		Captured
 	}
 
-	// The Screenshot and Request proxies are generated from Internals/DBus/Interfaces/Portal.xml.
+	// The Screenshot and Request proxies are generated from Internals/Linux/DBus/Interfaces/Portal.xml.
 
 	/// <summary>
 	/// One-shot capture through the freedesktop Screenshot portal. This is the portable fallback for

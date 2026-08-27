@@ -19,7 +19,7 @@ namespace Keysharp.Builtins.COM
 
 		public ComValue(params object[] args) : base(args) => Init(args);
 
-		public new static object staticCall(object @this, object varType, object value = null, object flags = null)
+		public static object staticCall(object @this, object varType, object value = null, object flags = null)
 			=> new ComValue(varType, value);
 
 		public override string ToString() => Value?.ToString() ?? "";
