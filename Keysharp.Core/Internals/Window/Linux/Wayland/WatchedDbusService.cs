@@ -1,36 +1,91 @@
 #if LINUX
-using Tmds.DBus;
+using Keysharp.Internals.DBus;
+using Tmds.DBus.Protocol;
 
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
-	internal sealed class DbusSession(Connection connection, string localName) : IDisposable
+	internal sealed class DbusSession(DBusConnection connection, string localName) : IDisposable
 	{
-		internal Connection Connection { get; } = connection;
+		internal DBusConnection Connection { get; } = connection;
 		internal string LocalName { get; } = localName ?? string.Empty;
 		public void Dispose() => Connection.Dispose();
+
+		/// <summary>
+		/// Opens a private connection for one backend and arranges for a drop to invalidate it. Each backend keeps
+		/// its own connection because a failure has to retire only that backend's proxies and watches.
+		/// </summary>
+		internal static DbusSession Connect(DBusBus bus, int timeoutMs, string diagnosticName,
+											Action<DbusSession, Exception> onDisconnected)
+		{
+			var address = DBusAddresses.For(bus);
+
+			if (string.IsNullOrEmpty(address))
+			{
+				WaylandBridgeDiagnostics.Failure(diagnosticName, "connect bus", "D-Bus address is empty");
+				return null;
+			}
+
+			DBusConnection connection = null;
+
+			try
+			{
+				connection = new DBusConnection(address);
+				var task = connection.ConnectAsync().AsTask();
+
+				if (!task.WaitWithoutInterruption(timeoutMs))
+				{
+					WaylandBridgeDiagnostics.Failure(diagnosticName, "connect bus", $"timed out after {timeoutMs} ms");
+					connection.Dispose();
+					return null;
+				}
+
+				task.GetAwaiter().GetResult();
+				var session = new DbusSession(connection, connection.UniqueName);
+				_ = connection.DisconnectedAsync().ContinueWith(
+						t => onDisconnected?.Invoke(session, DBusConnections.DisconnectReason(t)),
+						TaskScheduler.Default);
+				return session;
+			}
+			catch (Exception ex)
+			{
+				WaylandBridgeDiagnostics.Failure(diagnosticName, "connect bus", ex.Message);
+
+				try { connection?.Dispose(); } catch { }
+
+				return null;
+			}
+		}
 	}
 
-	/// <summary>Tracks a well-known name independently from the shared bus connection and binds calls to its owner.</summary>
-	internal sealed class WatchedDbusService<TProxy> : IDisposable where TProxy : class, IDBusObject
+	/// <summary>
+	/// Tracks a well-known name independently from the shared bus connection and binds calls to its owner, so a
+	/// service that restarts cannot be addressed through a stale proxy. NameOwnerWatcher keeps the current owner
+	/// up to date internally, which is why reading it here needs no round trip.
+	/// </summary>
+	internal sealed class WatchedDbusService<TProxy> : IDisposable where TProxy : DBusObject
 	{
 		private readonly object sync = new();
 		private readonly RecoverableService<DbusSession> sessions;
 		private readonly string name;
 		private readonly ObjectPath path;
 		private readonly int timeoutMs;
+		private readonly Func<DBusConnection, string, ObjectPath, TProxy> factory;
 		private DbusSession session;
-		private IDisposable watch;
+		private NameOwnerWatcher watcher;
 		private string owner;
 		private TProxy proxy;
-		private long changes, generation;
+		private long generation;
 		private bool watching, disposed;
 
-		internal WatchedDbusService(RecoverableService<DbusSession> sessions, string name, ObjectPath path, int timeoutMs)
+		/// <param name="factory">Builds the generated proxy; passed in so no reflection is needed to construct one.</param>
+		internal WatchedDbusService(RecoverableService<DbusSession> sessions, string name, ObjectPath path, int timeoutMs,
+									Func<DBusConnection, string, ObjectPath, TProxy> factory)
 		{
 			this.sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
 			this.name = name ?? throw new ArgumentNullException(nameof(name));
 			this.path = path;
 			this.timeoutMs = Math.Max(1, timeoutMs);
+			this.factory = factory ?? throw new ArgumentNullException(nameof(factory));
 		}
 
 		internal event Action AvailabilityChanged;
@@ -41,8 +96,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			get
 			{
 				using var lease = sessions.TryAcquire();
-				if (lease == null || !EnsureWatch(lease.Value)) return false;
-				lock (sync) return ReferenceEquals(session, lease.Value) && !string.IsNullOrEmpty(owner);
+
+				if (lease == null || !EnsureWatch(lease.Value))
+					return false;
+
+				return RefreshOwner(lease.Value) is { Length: > 0 };
 			}
 		}
 
@@ -52,112 +110,216 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal bool TryUse<TResult>(Func<TProxy, DbusSession, TResult> action, out TResult result)
 		{
 			result = default;
-			if (action == null) return false;
+
+			if (action == null)
+				return false;
+
 			using var lease = sessions.TryAcquire();
-			if (lease == null || !EnsureWatch(lease.Value)) return false;
+
+			if (lease == null || !EnsureWatch(lease.Value))
+				return false;
+
+			var current = RefreshOwner(lease.Value);
+
+			if (string.IsNullOrEmpty(current))
+				return false;
 
 			TProxy target;
+
 			lock (sync)
 			{
-				if (disposed || !ReferenceEquals(session, lease.Value) || string.IsNullOrEmpty(owner)) return false;
-				target = proxy ??= lease.Value.Connection.CreateProxy<TProxy>(owner, path);
+				if (disposed || !ReferenceEquals(session, lease.Value) || !string.Equals(owner, current, StringComparison.Ordinal))
+					return false;
+
+				target = proxy ??= factory(lease.Value.Connection, current, path);
 			}
+
 			result = action(target, lease.Value);
 			return true;
 		}
 
 		internal void Invalidate(DbusSession failed, Exception error = null)
 		{
-			if (failed == null) return;
+			if (failed == null)
+				return;
+
 			lock (sync)
-				if (ReferenceEquals(session, failed)) { owner = null; proxy = null; generation++; }
+			{
+				if (ReferenceEquals(session, failed))
+				{
+					owner = null;
+					proxy = null;
+					generation++;
+				}
+			}
+
 			sessions.Invalidate(failed, error);
+		}
+
+		/// <summary>Re-reads the watcher's owner, retiring the cached proxy and notifying when it changed.</summary>
+		private string RefreshOwner(DbusSession candidate)
+		{
+			string current;
+
+			try
+			{
+				NameOwnerWatcher active;
+
+				lock (sync)
+				{
+					if (disposed || !ReferenceEquals(session, candidate))
+						return null;
+
+					active = watcher;
+				}
+
+				current = active?.GetCurrentOwner();
+			}
+			catch (Exception ex)
+			{
+				Invalidate(candidate, ex);
+				Notify();
+				return null;
+			}
+
+			RecordOwner(candidate, current);
+			return current;
+		}
+
+		/// <summary>
+		/// Adopts an observed owner, retiring the cached proxy and raising AvailabilityChanged when it moved.
+		/// Reached both from the background tracker (so subscribers hear about a service appearing or dying
+		/// without anyone polling, as they did before) and from the synchronous read path.
+		/// </summary>
+		private void RecordOwner(DbusSession candidate, string current)
+		{
+			var changed = false;
+
+			lock (sync)
+			{
+				if (disposed || !ReferenceEquals(session, candidate))
+					return;
+
+				if (!string.Equals(owner, current, StringComparison.Ordinal))
+				{
+					owner = current;
+					proxy = null;
+					generation++;
+					changed = true;
+				}
+			}
+
+			if (changed)
+				Notify();
 		}
 
 		private bool EnsureWatch(DbusSession candidate)
 		{
-			IDisposable old;
+			NameOwnerWatcher old;
+
 			lock (sync)
 			{
-				if (disposed) return false;
-				if (ReferenceEquals(session, candidate) && watch != null) return true;
-				if (watching) return false;
-				watching = true;
-				old = watch; watch = null; session = candidate; owner = null; proxy = null; changes = 0; generation++;
-			}
-			SafeDispose(old);
+				if (disposed)
+					return false;
 
-			IDisposable installed = null;
+				if (ReferenceEquals(session, candidate) && watcher != null)
+					return true;
+
+				if (watching)
+					return false;
+
+				watching = true;
+				old = watcher;
+				watcher = null;
+				session = candidate;
+				owner = null;
+				proxy = null;
+				generation++;
+			}
+
+			SafeDispose(old);
+			NameOwnerWatcher installed = null;
 			Exception failure = null;
+
 			try
 			{
-				var watchTask = candidate.Connection.ResolveServiceOwnerAsync(name,
-					change => OwnerChanged(candidate, change.NewOwner), error => WatchFailed(candidate, error));
-				if (!watchTask.WaitWithoutInterruption(timeoutMs)) throw Timeout("watching");
-				installed = watchTask.GetAwaiter().GetResult();
+				var task = candidate.Connection.WatchNameOwnerAsync(name);
 
-				long before;
-				lock (sync) before = changes;
-				var query = candidate.Connection.ResolveServiceOwnerAsync(name);
-				if (!query.WaitWithoutInterruption(timeoutMs)) throw Timeout("resolving");
-				var queried = query.GetAwaiter().GetResult();
-				bool notify = false;
+				if (!task.WaitWithoutInterruption(timeoutMs))
+					throw new TimeoutException($"watching D-Bus service '{name}' timed out after {timeoutMs} ms.");
+
+				installed = task.GetAwaiter().GetResult();
+
+				NameOwnerWatcher active;
+
 				lock (sync)
 				{
-					if (disposed || !ReferenceEquals(session, candidate)) return false;
-					watch = installed; installed = null;
-					if (changes == before && owner != queried)
-					{
-						owner = queried; proxy = null; generation++; notify = true;
-					}
+					if (disposed || !ReferenceEquals(session, candidate))
+						return false;
+
+					watcher = active = installed;
+					installed = null;
 				}
-				if (notify) Notify();
+
+				// Report the owner now and on every later change, so a service appearing or dying reaches
+				// subscribers without waiting for the next call through this service.
+				DBusNameOwner.Track(active, o => RecordOwner(candidate, o), () => IsCurrent(candidate));
 				return true;
 			}
-			catch (Exception ex) { failure = ex; return false; }
+			catch (Exception ex)
+			{
+				failure = ex;
+				return false;
+			}
 			finally
 			{
 				SafeDispose(installed);
-				lock (sync) watching = false;
-				if (failure != null) sessions.Invalidate(candidate, failure);
+
+				lock (sync)
+					watching = false;
+
+				if (failure != null)
+					sessions.Invalidate(candidate, failure);
 			}
 		}
 
-		private TimeoutException Timeout(string operation)
-			=> new($"{operation} D-Bus service '{name}' timed out after {timeoutMs} ms.");
-
-		private void OwnerChanged(DbusSession source, string newOwner)
+		private bool IsCurrent(DbusSession candidate)
 		{
 			lock (sync)
-			{
-				if (disposed || !ReferenceEquals(session, source)) return;
-				changes++; owner = newOwner; proxy = null; generation++;
-			}
-			Notify();
-		}
-
-		private void WatchFailed(DbusSession source, Exception error)
-		{
-			Invalidate(source, error);
-			Notify();
+				return !disposed && ReferenceEquals(session, candidate);
 		}
 
 		private void Notify()
 		{
 			foreach (Action handler in AvailabilityChanged?.GetInvocationList() ?? [])
+			{
 				try { handler(); } catch { }
+			}
 		}
 
-		private static void SafeDispose(IDisposable value) { try { value?.Dispose(); } catch { } }
+		private static void SafeDispose(IDisposable value)
+		{
+			try { value?.Dispose(); } catch { }
+		}
 
 		public void Dispose()
 		{
-			IDisposable retired;
+			NameOwnerWatcher retired;
+
 			lock (sync)
 			{
-				if (disposed) return;
-				disposed = true; retired = watch; watch = null; session = null; owner = null; proxy = null; generation++;
+				if (disposed)
+					return;
+
+				disposed = true;
+				retired = watcher;
+				watcher = null;
+				session = null;
+				owner = null;
+				proxy = null;
+				generation++;
 			}
+
 			SafeDispose(retired);
 		}
 	}

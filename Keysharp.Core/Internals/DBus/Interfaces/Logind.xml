@@ -1,0 +1,15 @@
+<!-- Generated from the [DBusInterface] declarations; see dbus-comobject-plan.md -->
+<node>
+  <interface name="org.freedesktop.login1.Manager">
+    <method name="ListSessions">
+      <arg direction="out" type="a(susso)" name="value"/>
+    </method>
+  </interface>
+  <interface name="org.freedesktop.login1.Session">
+    <method name="SetBrightness">
+      <arg direction="in" type="s" name="subsystem"/>
+      <arg direction="in" type="s" name="name"/>
+      <arg direction="in" type="u" name="brightness"/>
+    </method>
+  </interface>
+</node>

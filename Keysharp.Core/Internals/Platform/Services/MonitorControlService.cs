@@ -1,5 +1,7 @@
 #if LINUX
-using Tmds.DBus;
+using Keysharp.Internals.DBus;
+using Tmds.DBus.Protocol;
+using Logind = Keysharp.Internals.DBus.Generated.Logind;
 #endif
 
 namespace Keysharp.Internals
@@ -252,26 +254,10 @@ namespace Keysharp.Internals
 		}
 	}
 #elif LINUX
-#pragma warning disable IDE1006 // D-Bus member names are case-sensitive.
-	/// <summary>
-	/// logind's session interface. <c>SetBrightness</c> is the supported unprivileged way to change a backlight:
-	/// logind performs the write as root on behalf of the session owner, so no udev rule or group membership is
-	/// needed. There is no matching getter — the current value is read straight from sysfs, which is world-readable.
-	/// </summary>
-	[DBusInterface("org.freedesktop.login1.Session")]
-	public interface ILogindSession : IDBusObject
-	{
-		Task SetBrightnessAsync(string subsystem, string name, uint brightness);
-	}
-
-	/// <summary>logind's manager interface, used only to find the caller's own session by enumeration — see
-	/// <see cref="LinuxMonitorControl.ResolveOwnSessionPath"/> for why <c>session/self</c> alone is not enough.</summary>
-	[DBusInterface("org.freedesktop.login1.Manager")]
-	public interface ILogindManager : IDBusObject
-	{
-		Task<(string Id, uint Uid, string UserName, string Seat, ObjectPath Path)[]> ListSessionsAsync();
-	}
-#pragma warning restore IDE1006
+	// logind's Session.SetBrightness is the supported unprivileged way to change a backlight: logind performs the
+	// write as root on behalf of the session owner, so no udev rule or group membership is needed. There is no
+	// matching getter — the current value is read straight from sysfs, which is world-readable. The Session and
+	// Manager proxies are generated from Internals/DBus/Interfaces/Logind.xml.
 
 	/// <summary>
 	/// Linux brightness and VCP control. The built-in panel goes through the kernel backlight class (a direct
@@ -415,15 +401,15 @@ namespace Keysharp.Internals
 
 		private static bool TrySetBrightnessViaLogind(string subsystem, string device, int raw)
 		{
-			Connection connection = null;
+			DBusConnection connection = null;
 
 			try
 			{
 				// logind lives on the SYSTEM bus (the rest of Keysharp's D-Bus use is session-bus).
-				connection = new Connection(Tmds.DBus.Address.System);
+				connection = new DBusConnection(DBusAddresses.System);
 				connection.ConnectAsync().GetAwaiter().GetResult();
 				var path = ResolveOwnSessionPath(connection) ?? new ObjectPath("/org/freedesktop/login1/session/self");
-				var session = connection.CreateProxy<ILogindSession>("org.freedesktop.login1", path);
+				var session = new Logind.Session(connection, "org.freedesktop.login1", path);
 				session.SetBrightnessAsync(subsystem, device, (uint)Math.Max(0, raw)).GetAwaiter().GetResult();
 				return true;
 			}
@@ -449,25 +435,26 @@ namespace Keysharp.Internals
 		/// login) is preferred over a seat-less manager/lingering session; failing that, any session for this user
 		/// beats none.
 		/// </summary>
-		private static ObjectPath? ResolveOwnSessionPath(Connection connection)
+		private static ObjectPath? ResolveOwnSessionPath(DBusConnection connection)
 		{
 			try
 			{
-				var manager = connection.CreateProxy<ILogindManager>("org.freedesktop.login1",
-					new ObjectPath("/org/freedesktop/login1"));
+				var manager = new Logind.Manager(connection, "org.freedesktop.login1",
+												 new ObjectPath("/org/freedesktop/login1"));
 				var sessions = manager.ListSessionsAsync().GetAwaiter().GetResult();
 				var user = Environment.UserName;
 				ObjectPath? anyForUser = null;
 
-				foreach (var s in sessions)
+				// ListSessions returns a(susso): id, uid, user name, seat, object path.
+				foreach (var (_, _, userName, seat, sessionPath) in sessions)
 				{
-					if (!string.Equals(s.UserName, user, StringComparison.Ordinal))
+					if (!string.Equals(userName, user, StringComparison.Ordinal))
 						continue;
 
-					if (s.Seat.Length > 0)
-						return s.Path;
+					if (seat.Length > 0)
+						return sessionPath;
 
-					anyForUser ??= s.Path;
+					anyForUser ??= sessionPath;
 				}
 
 				return anyForUser;

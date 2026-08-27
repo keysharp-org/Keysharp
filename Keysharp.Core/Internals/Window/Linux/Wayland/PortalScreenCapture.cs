@@ -1,5 +1,7 @@
 #if LINUX
-using Tmds.DBus;
+using Keysharp.Internals.DBus;
+using Tmds.DBus.Protocol;
+using Portal = Keysharp.Internals.DBus.Generated.Portal;
 
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
@@ -11,25 +13,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		Captured
 	}
 
-#pragma warning disable IDE1006 // D-Bus member names are case-sensitive.
-
-	[DBusInterface("org.freedesktop.portal.Screenshot")]
-	public interface IDesktopPortalScreenshot : IDBusObject
-	{
-		Task<ObjectPath> ScreenshotAsync(string parentWindow, IDictionary<string, object> options);
-		Task<T> GetAsync<T>(string property);
-	}
-
-	[DBusInterface("org.freedesktop.portal.Request")]
-	public interface IDesktopPortalRequest : IDBusObject
-	{
-		Task CloseAsync();
-		Task<IDisposable> WatchResponseAsync(
-			Action<(uint response, IDictionary<string, object> results)> handler,
-			Action<Exception> onError = null);
-	}
-
-#pragma warning restore IDE1006
+	// The Screenshot and Request proxies are generated from Internals/DBus/Interfaces/Portal.xml.
 
 	/// <summary>
 	/// One-shot capture through the freedesktop Screenshot portal. This is the portable fallback for
@@ -127,28 +111,29 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static PortalCaptureStatus CaptureDesktop(out Bitmap bitmap)
 		{
 			bitmap = null;
-			Connection connection = null;
+			DBusConnection connection = null;
 			IDisposable predictedWatch = null;
 			IDisposable returnedWatch = null;
-			IDesktopPortalRequest predictedRequest = null;
-			IDesktopPortalRequest returnedRequest = null;
+			Portal.Request predictedRequest = null;
+			Portal.Request returnedRequest = null;
 			var requestStarted = false;
 			var responseReceived = false;
 
 			try
 			{
-				var address = Tmds.DBus.Address.Session;
+				var address = DBusAddresses.Session;
 
 				if (string.IsNullOrEmpty(address))
 					return PortalCaptureStatus.Unavailable;
 
-				connection = new Connection(address);
-				var connect = connection.ConnectAsync();
+				connection = new DBusConnection(address);
+				var connect = connection.ConnectAsync().AsTask();
 
 				if (!connect.WaitWithoutInterruption(ConnectTimeoutMs))
 					return PortalCaptureStatus.Unavailable;
 
-				var localName = connect.GetAwaiter().GetResult()?.LocalName;
+				connect.GetAwaiter().GetResult();
+				var localName = connection.UniqueName;
 
 				if (string.IsNullOrEmpty(localName))
 					return PortalCaptureStatus.Unavailable;
@@ -156,11 +141,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				var token = $"keysharp_{Environment.ProcessId}_{Guid.NewGuid():N}";
 				var sender = localName.TrimStart(':').Replace('.', '_');
 				var predictedPath = new ObjectPath($"/org/freedesktop/portal/desktop/request/{sender}/{token}");
-				var response = new TaskCompletionSource<(uint Code, IDictionary<string, object> Results)>(
+				var response = new TaskCompletionSource<(uint Code, Dictionary<string, VariantValue> Results)>(
 					TaskCreationOptions.RunContinuationsAsynchronously);
 
-				void Complete((uint response, IDictionary<string, object> results) value)
-					=> response.TrySetResult((value.response, value.results));
+				void Complete((uint Response, Dictionary<string, VariantValue> Results) value)
+					=> response.TrySetResult((value.Response, value.Results));
 
 				void Fail(Exception error)
 				{
@@ -168,18 +153,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						response.TrySetException(error);
 				}
 
-				predictedRequest = connection.CreateProxy<IDesktopPortalRequest>(ServiceName, predictedPath);
-				var watch = predictedRequest.WatchResponseAsync(Complete, Fail);
+				predictedRequest = new Portal.Request(connection, ServiceName, predictedPath);
+				var watch = predictedRequest.WatchResponseAsync(DBusSignals.Adapt<(uint, Dictionary<string, VariantValue>)>(Complete, Fail),
+															 DBusSignals.FlagsFor(Fail), emitOnCapturedContext: false).AsTask();
 
 				if (!watch.WaitWithoutInterruption(ConnectTimeoutMs))
 					return PortalCaptureStatus.Unavailable;
 
 				predictedWatch = watch.GetAwaiter().GetResult();
-				var portal = connection.CreateProxy<IDesktopPortalScreenshot>(ServiceName, DesktopPath);
-				var options = new Dictionary<string, object>
+				var portal = new Portal.Screenshot(connection, ServiceName, DesktopPath);
+				var options = new Dictionary<string, VariantValue>
 				{
-					["handle_token"] = token,
-					["interactive"] = false
+					["handle_token"] = VariantValue.String(token),
+					["interactive"] = VariantValue.Bool(false)
 				};
 				var targetMode = GetTargetMode(portal);
 
@@ -187,7 +173,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					return PortalCaptureStatus.Unavailable;
 
 				if (targetMode == TargetMode.Screen)
-					options["target"] = ScreenTarget;
+					options["target"] = VariantValue.UInt32(ScreenTarget);
 
 				var start = portal.ScreenshotAsync(string.Empty, options);
 				requestStarted = true;
@@ -201,8 +187,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				// well for older implementations; the first matching response wins.
 				if (returnedPath != predictedPath)
 				{
-					returnedRequest = connection.CreateProxy<IDesktopPortalRequest>(ServiceName, returnedPath);
-					watch = returnedRequest.WatchResponseAsync(Complete, Fail);
+					returnedRequest = new Portal.Request(connection, ServiceName, returnedPath);
+					watch = returnedRequest.WatchResponseAsync(DBusSignals.Adapt<(uint, Dictionary<string, VariantValue>)>(Complete, Fail),
+														  DBusSignals.FlagsFor(Fail), emitOnCapturedContext: false).AsTask();
 
 					if (!watch.WaitWithoutInterruption(ConnectTimeoutMs))
 						return PortalCaptureStatus.NotCaptured;
@@ -222,7 +209,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					return PortalCaptureStatus.NotCaptured;
 
 				if (result.Results == null || !result.Results.TryGetValue("uri", out var uriValue)
-						|| uriValue is not string uri || !Uri.TryCreate(uri, UriKind.Absolute, out var parsed)
+						|| uriValue.Type != VariantValueType.String
+						|| !Uri.TryCreate(uriValue.GetString(), UriKind.Absolute, out var parsed)
 					|| !parsed.IsFile)
 					return PortalCaptureStatus.Failed;
 
@@ -269,18 +257,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		private static TargetMode GetTargetMode(IDesktopPortalScreenshot portal)
+		private static TargetMode GetTargetMode(Portal.Screenshot portal)
 		{
 			uint version;
 
 			try
 			{
-				var versionTask = portal.GetAsync<uint>("version");
-
-				if (!versionTask.WaitWithoutInterruption(ConnectTimeoutMs))
-					return TargetMode.Legacy;
-
-				version = versionTask.GetAwaiter().GetResult();
+				version = ReadUInt32Property(portal, "version");
 			}
 			catch
 			{
@@ -292,11 +275,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			try
 			{
-				var targetsTask = portal.GetAsync<uint>("AvailableTargets");
-
-				return targetsTask.WaitWithoutInterruption(ConnectTimeoutMs)
-					? ChooseTargetMode(version, targetsTask.GetAwaiter().GetResult())
-					: TargetMode.Unsupported;
+				return ChooseTargetMode(version, ReadUInt32Property(portal, "AvailableTargets"));
 			}
 			catch
 			{
@@ -304,11 +283,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
+		/// <summary>Reads a portal property through org.freedesktop.DBus.Properties on the portal's own connection.</summary>
+		private static uint ReadUInt32Property(Portal.Screenshot portal, string name)
+		{
+			var value = DBusCalls.GetPropertyOn(portal.Connection, portal.Destination, portal.Path.ToString(),
+												Portal.Screenshot.DBusInterfaceName, name, ConnectTimeoutMs);
+			return value is long l ? unchecked((uint)l) : Convert.ToUInt32(value);
+		}
+
 		internal static TargetMode ChooseTargetMode(uint version, uint availableTargets)
 			=> version < 3 ? TargetMode.Legacy
 				: (availableTargets & ScreenTarget) != 0 ? TargetMode.Screen : TargetMode.Unsupported;
 
-		private static void TryClose(IDesktopPortalRequest request)
+		private static void TryClose(Portal.Request request)
 		{
 			try
 			{

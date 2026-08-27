@@ -1,70 +1,18 @@
 #if LINUX
 using System.Threading.Channels;
 
-using Tmds.DBus;
+using Keysharp.Internals.DBus;
+using Tmds.DBus.Protocol;
+using KWin = Keysharp.Internals.DBus.Generated.KWin;
+using KWinSrv = Keysharp.Internals.DBus.Generated.KWinServer;
 
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	// These interfaces must be public because Tmds.DBus generates proxy classes in a
 	// separate dynamic assembly (Tmds.DBus.Emit) and that assembly cannot implement
 	// internal interfaces.
-#pragma warning disable IDE1006 // D-Bus member names are case-sensitive.
-	[DBusInterface("org.kde.kwin.Scripting")]
-	public interface IKWinScripting : IDBusObject
-	{
-		Task<int> loadScriptAsync(string filePath, string pluginName);
-		Task<bool> unloadScriptAsync(string pluginName);
-	}
-
-	[DBusInterface("org.kde.kwin.Script")]
-	public interface IKWinScript : IDBusObject
-	{
-		Task runAsync();
-	}
-
-	[DBusInterface("org.keysharp.KWinBridge")]
-	public interface IKWinBridge : IDBusObject
-	{
-		Task ReportJsonAsync(string requestId, string json);
-
-		/// <summary>Called repeatedly by a persistent event script: <paramref name="token"/> identifies the
-		/// subscription, <paramref name="eventType"/> is "create"/"close"/"active"/"title"/"minimize"/"restore"/
-		/// "move", and <paramref name="json"/> is the affected window's info (at least an "id").</summary>
-		Task ReportEventAsync(string token, string eventType, string json);
-	}
-
-	/// <summary>
-	/// Operation channel served to the persistent KWin script. The script keeps one GetQueries call
-	/// outstanding (a long poll); Keysharp completes it with queued {id, op, args} envelopes the moment work
-	/// arrives, or with an empty batch before the D-Bus call timeout so the script's poll loop never dies.
-	/// Results come back through ReportJson keyed by the envelope id.
-	/// </summary>
-	[DBusInterface("org.keysharp.KWinQueryBridge")]
-	public interface IKWinQueryBridge : IDBusObject
-	{
-		Task<string[]> GetQueriesAsync();
-		Task ReportJsonAsync(string requestId, string json);
-	}
-
-	/// <summary>
-	/// KWin's compositor-native input injection interface. Requires a one-time
-	/// authentication call that KWin grants silently for local D-Bus clients.
-	/// Object path: /org/kde/KWin/FakeInput
-	/// </summary>
-	[DBusInterface("org.kde.kwin.FakeInput")]
-	public interface IKWinFakeInput : IDBusObject
-	{
-		/// <summary>Returns true if KWin grants the input-injection permission.</summary>
-		Task<bool> authenticateAsync(string applicationName, string reason);
-		Task pointerMotionAsync(double dx, double dy);
-		Task pointerMotionAbsoluteAsync(double x, double y);
-		/// <summary>button is a Linux evdev BTN_* code; state 0 = released, 1 = pressed.</summary>
-		Task pointerButtonAsync(uint button, uint state);
-		/// <summary>axis 0 = vertical, 1 = horizontal; delta positive = scroll down/right.</summary>
-		Task pointerAxisAsync(uint axis, double delta);
-	}
-
-#pragma warning restore IDE1006
+	// Proxies (Scripting/Script/FakeInput) and served-object handler interfaces (KWinBridge/KWinQueryBridge)
+	// are generated from Internals/DBus/Interfaces/KWin.xml and KWinBridge.xml.
 
 
 	/// <summary>
@@ -84,9 +32,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static readonly string bridgeServiceName = $"org.keysharp.KWinBridge_{Environment.ProcessId}";
 		internal static readonly ObjectPath BridgeObjectPath = new("/keysharp/kwin");
 
-		private static Connection connection;
+		private static DBusConnection connection;
 		private static KWinBridgeService bridgeService;
-		private static IKWinScripting scriptingProxy;
+		private static KWin.Scripting scriptingProxy;
 		private static IDisposable kwinOwnerWatch;
 		private static event Action availabilityChanged;
 
@@ -100,14 +48,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static readonly TimeSpan persistentRetryBackoff = TimeSpan.FromSeconds(5);
 		private const int MaxPersistentFailures = 3;   // consecutive failed (re)loads latch the channel off
 		private static readonly SemaphoreSlim persistentLock = new(1, 1);
-		private static Connection queryConnection;
+		private static DBusConnection queryConnection;
 		private static KWinQueryService queryService;
 		private static volatile bool persistentReady;
 		private static volatile int persistentFailures;
 		private static DateTime lastPersistentAttempt = DateTime.MinValue;
 		private static bool persistentCleanupRegistered;
 		private static string kwinOwner;
-		private static long kwinOwnerChanges;
 		private static long requestCounter;
 
 		// KWin 6 uses "/Scripting/Script{id}" as the per-script object path; KWin 5
@@ -251,14 +198,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 				if (queryConnection == null)
 				{
-					var localConn = new Connection(Tmds.DBus.Address.Session);
+					var localConn = new DBusConnection(DBusAddresses.Session);
 
 					try
 					{
 						await localConn.ConnectAsync().ConfigureAwait(false);
-						var localService = new KWinQueryService();
-						await localConn.RegisterObjectAsync(localService).ConfigureAwait(false);
-						await localConn.RegisterServiceAsync(queryServiceName).ConfigureAwait(false);
+						var localService = new KWinQueryService(localConn);
+						localConn.AddMethodHandler(localService);
+						await localConn.RequestNameAsync(queryServiceName, RequestNameOptions.Default).ConfigureAwait(false);
 						queryConnection = localConn;
 						queryService = localService;
 					}
@@ -450,7 +397,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			try
 			{
-				var scriptId = await scriptingProxy.loadScriptAsync(scriptPath, pluginName).ConfigureAwait(false);
+				var scriptId = await scriptingProxy.LoadScriptAsync(scriptPath, pluginName).ConfigureAwait(false);
 				return await TryRunScriptAsync(scriptId).ConfigureAwait(false);
 			}
 			catch
@@ -485,8 +432,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			try
 			{
 				var path = string.Format(CultureInfo.InvariantCulture, format, scriptId);
-				var proxy = connection.CreateProxy<IKWinScript>("org.kde.KWin", new ObjectPath(path));
-				await proxy.runAsync().ConfigureAwait(false);
+				var proxy = new KWin.Script(connection, "org.kde.KWin", new ObjectPath(path));
+				await proxy.RunAsync().ConfigureAwait(false);
 				return true;
 			}
 			catch
@@ -499,7 +446,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			try
 			{
-				_ = await scriptingProxy.unloadScriptAsync(pluginName).ConfigureAwait(false);
+				_ = await scriptingProxy.UnloadScriptAsync(pluginName).ConfigureAwait(false);
 			}
 			catch
 			{
@@ -513,7 +460,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (connection != null)
 					return scriptingProxy != null;
 
-			Connection localConnection = null;
+			DBusConnection localConnection = null;
 			KWinBridgeService localBridge = null;
 			IDisposable localOwnerWatch = null;
 
@@ -532,11 +479,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (attempt == null)
 					return false;
 
-				localConnection = new Connection(Tmds.DBus.Address.Session);
-				_ = await localConnection.ConnectAsync().ConfigureAwait(false);
-				localBridge = new KWinBridgeService();
-				await localConnection.RegisterObjectAsync(localBridge).ConfigureAwait(false);
-				await localConnection.RegisterServiceAsync(bridgeServiceName).ConfigureAwait(false);
+				localConnection = new DBusConnection(DBusAddresses.Session);
+				await localConnection.ConnectAsync().ConfigureAwait(false);
+				localBridge = new KWinBridgeService(localConnection);
+				localConnection.AddMethodHandler(localBridge);
+				await localConnection.RequestNameAsync(bridgeServiceName, RequestNameOptions.Default).ConfigureAwait(false);
 
 				lock (initLock)
 				{
@@ -551,15 +498,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				}
 
 				var connected = localConnection;
-				connected.StateChanged += (_, e) =>
-				{
-					if (e.State == Tmds.DBus.ConnectionState.Disconnected)
-						InvalidateConnection(connected, e.DisconnectReason);
-				};
-
-				localOwnerWatch = await connected.ResolveServiceOwnerAsync("org.kde.KWin",
-					change => KWinOwnerChanged(connected, change.NewOwner),
-					error => InvalidateConnection(connected, error)).ConfigureAwait(false);
+				_ = connected.DisconnectedAsync().ContinueWith(
+						t => InvalidateConnection(connected, DBusConnections.DisconnectReason(t)),
+						TaskScheduler.Default);
+				// NameOwnerWatcher tracks the owner itself, so the separate resolve-then-watch race is gone.
+				var ownerWatcher = await connected.WatchNameOwnerAsync("org.kde.KWin").ConfigureAwait(false);
+				localOwnerWatch = ownerWatcher;
 
 				lock (initLock)
 				{
@@ -570,14 +514,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					localOwnerWatch = null;
 				}
 
-				long changesBeforeQuery;
-				lock (initLock)
-					changesBeforeQuery = kwinOwnerChanges;
-
-				var owner = await connected.ResolveServiceOwnerAsync("org.kde.KWin").ConfigureAwait(false);
-				lock (initLock)
-					if (kwinOwnerChanges == changesBeforeQuery)
-						KWinOwnerChanged(connected, owner, false);
+				// Reports the current owner immediately, then again on every change.
+				DBusNameOwner.Track(ownerWatcher, owner => KWinOwnerChanged(connected, owner),
+									() => ReferenceEquals(Volatile.Read(ref connection), connected));
 				attempt.Succeed();
 				localConnection = null;
 
@@ -597,7 +536,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		private static void KWinOwnerChanged(Connection source, string newOwner, bool fromWatch = true)
+		private static void KWinOwnerChanged(DBusConnection source, string newOwner)
 		{
 			Action handlers = null;
 			bool changed;
@@ -607,13 +546,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (!ReferenceEquals(connection, source))
 					return;
 
-				if (fromWatch)
-					kwinOwnerChanges++;
-
 				changed = !string.Equals(kwinOwner, newOwner, StringComparison.Ordinal);
 				kwinOwner = newOwner;
 				scriptingProxy = string.IsNullOrEmpty(newOwner) ? null
-					: source.CreateProxy<IKWinScripting>(newOwner, new ObjectPath("/Scripting"));
+					: new KWin.Scripting(source, newOwner, new ObjectPath("/Scripting"));
 
 				if (changed)
 				{
@@ -632,10 +568,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		private static void InvalidateConnection(Connection failed, Exception error, bool rearm = true)
+		private static void InvalidateConnection(DBusConnection failed, Exception error, bool rearm = true)
 		{
 			IDisposable watch = null;
-			Connection retired = null;
+			DBusConnection retired = null;
 			Action handlers = null;
 
 			lock (initLock)
@@ -694,8 +630,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		internal static void Reset()
 		{
-			Connection main;
-			Connection queries;
+			DBusConnection main;
+			DBusConnection queries;
 			IDisposable watch;
 
 			lock (initLock)
@@ -710,7 +646,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				scriptingProxy = null;
 				kwinOwnerWatch = null;
 				kwinOwner = null;
-				kwinOwnerChanges++;
 				scriptPathFormat = null;
 				persistentReady = false;
 				persistentFailures = 0;
@@ -1501,20 +1436,20 @@ function executeOperation(op, args) {
 			}
 		}
 
-		private sealed class KWinBridgeService : IKWinBridge
+		private sealed class KWinBridgeService(DBusConnection connection)
+			: DBusHandler(connection, BridgeObjectPath.ToString(), handlesChildPaths: false, handleOnCapturedContext: false),
+			  KWinSrv.IKWinBridgeHandler
 		{
 			private readonly PendingJsonTable pending = new();
 			private readonly ConcurrentDictionary<string, Action<string, string>> eventHandlers = new();
 
-			public ObjectPath ObjectPath => BridgeObjectPath;
-
-			public Task ReportJsonAsync(string requestId, string json)
+			public ValueTask ReportJsonAsync(string requestId, string json)
 			{
 				pending.Complete(requestId, json);
-				return Task.CompletedTask;
+				return default;
 			}
 
-			public Task ReportEventAsync(string token, string eventType, string json)
+			public ValueTask ReportEventAsync(string token, string eventType, string json)
 			{
 				if (eventHandlers.TryGetValue(token, out var handler))
 				{
@@ -1522,7 +1457,7 @@ function executeOperation(op, args) {
 					catch { }   // never let a consumer fault break the D-Bus dispatch loop
 				}
 
-				return Task.CompletedTask;
+				return default;
 			}
 
 			internal void RegisterEventHandler(string token, Action<string, string> handler) => eventHandlers[token] = handler;
@@ -1539,7 +1474,9 @@ function executeOperation(op, args) {
 		/// re-polls), then returns the queued batch. ReportJson completes the matching waiter. Lives on its
 		/// own connection so a parked poll can't interact with the event/one-shot service.
 		/// </summary>
-		private sealed class KWinQueryService : IKWinQueryBridge
+		private sealed class KWinQueryService(DBusConnection connection)
+			: DBusHandler(connection, QueryObjectPath.ToString(), handlesChildPaths: false, handleOnCapturedContext: false),
+			  KWinSrv.IKWinQueryBridgeHandler
 		{
 			private const int IdleReplyMs = 15000;   // safely under the ~25s default D-Bus method-call timeout
 			private const int MaxBatch = 16;
@@ -1556,9 +1493,7 @@ function executeOperation(op, args) {
 			private int activePollers;
 			private long lastPollTicks;
 
-			public ObjectPath ObjectPath => QueryObjectPath;
-
-			public async Task<string[]> GetQueriesAsync()
+			public async ValueTask<string[]> GetQueriesAsync()
 			{
 				_ = Interlocked.Increment(ref activePollers);
 				var q = queue;   // pin this poll to the current channel generation
@@ -1604,13 +1539,13 @@ function executeOperation(op, args) {
 				}
 			}
 
-			public Task ReportJsonAsync(string requestId, string json)
+			public ValueTask ReportJsonAsync(string requestId, string json)
 			{
 				lock (stateGate)
 					_ = delivered.Remove(requestId);
 
 				pending.Complete(requestId, json);
-				return Task.CompletedTask;
+				return default;
 			}
 
 			/// <summary>Whether the resident script is still polling: either a GetQueries is parked right now,
@@ -1676,30 +1611,30 @@ function executeOperation(op, args) {
 
 		private static readonly object authLock = new();
 		private static RecoverableService<DbusSession> sessions;
-		private static WatchedDbusService<IKWinFakeInput> service;
+		private static WatchedDbusService<KWin.FakeInput> service;
 		private static RetryGate authentication;
 		private static long authenticatedGeneration = -1;
 
 		static KWinFakeInputBridge() => Initialize();
 
 		internal static bool TryMoveAbsolute(double x, double y)
-			=> Run(p => p.pointerMotionAbsoluteAsync(x, y));
+			=> Run(p => p.PointerMotionAbsoluteAsync(x, y));
 
 		internal static bool TryMoveRelative(double dx, double dy)
-			=> Run(p => p.pointerMotionAsync(dx, dy));
+			=> Run(p => p.PointerMotionAsync(dx, dy));
 
 		/// <param name="evdevButton">Linux BTN_* code (e.g. 0x110 = left).</param>
 		internal static bool TryButton(uint evdevButton, bool pressed)
-			=> Run(p => p.pointerButtonAsync(evdevButton, pressed ? 1u : 0u));
+			=> Run(p => p.PointerButtonAsync(evdevButton, pressed ? 1u : 0u));
 
 		/// <param name="axis">0 = vertical, 1 = horizontal.</param>
 		/// <param name="delta">Scroll amount in notch units (positive = down/right).</param>
 		internal static bool TryAxis(uint axis, double delta)
-			=> Run(p => p.pointerAxisAsync(axis, delta));
+			=> Run(p => p.PointerAxisAsync(axis, delta));
 
-		private static bool Run(Func<IKWinFakeInput, Task> call)
+		private static bool Run(Func<KWin.FakeInput, Task> call)
 		{
-			(IKWinFakeInput Proxy, long Generation) target;
+			(KWin.FakeInput Proxy, long Generation) target;
 
 			if (!service.TryUse(proxy => (proxy, service.Generation), out target)
 				|| !EnsureAuthenticated(target.Proxy, target.Generation))
@@ -1718,7 +1653,7 @@ function executeOperation(op, args) {
 			}
 		}
 
-		private static bool EnsureAuthenticated(IKWinFakeInput proxy, long generation)
+		private static bool EnsureAuthenticated(KWin.FakeInput proxy, long generation)
 		{
 			lock (authLock)
 			{
@@ -1732,7 +1667,7 @@ function executeOperation(op, args) {
 
 				try
 				{
-					var granted = proxy.authenticateAsync("Keysharp", "Keysharp mouse automation")
+					var granted = proxy.AuthenticateAsync("Keysharp", "Keysharp mouse automation")
 						.WaitAsync(TimeSpan.FromMilliseconds(2000))
 						.GetAwaiter()
 						.GetResult();
@@ -1758,8 +1693,8 @@ function executeOperation(op, args) {
 		private static void Initialize()
 		{
 			sessions = new RecoverableService<DbusSession>(ConnectSessionBus);
-			service = new WatchedDbusService<IKWinFakeInput>(sessions, ServiceName,
-				new ObjectPath(FakeInputPath), TimeoutMs);
+			service = new WatchedDbusService<KWin.FakeInput>(sessions, ServiceName,
+				new ObjectPath(FakeInputPath), TimeoutMs, (c, d, p) => new KWin.FakeInput(c, d, p));
 			authentication = new RetryGate(maximumAttempts: 3, initialRetryDelay: TimeSpan.FromMilliseconds(250),
 				maximumRetryDelay: TimeSpan.FromSeconds(2));
 			service.AvailabilityChanged += () =>
@@ -1772,32 +1707,9 @@ function executeOperation(op, args) {
 		}
 
 		private static DbusSession ConnectSessionBus()
-		{
-			Connection connection = null;
-
-			try
-			{
-				connection = new Connection(Tmds.DBus.Address.Session);
-				var task = connection.ConnectAsync();
-
-				if (!task.WaitWithoutInterruption(TimeoutMs))
-					throw new TimeoutException($"Connecting to the D-Bus session bus timed out after {TimeoutMs} ms.");
-
-				var info = task.GetAwaiter().GetResult();
-				var session = new DbusSession(connection, info?.LocalName);
-				connection.StateChanged += (_, e) =>
-				{
-					if (e.State == Tmds.DBus.ConnectionState.Disconnected)
-						sessions.Invalidate(session, e.DisconnectReason);
-				};
-				return session;
-			}
-			catch
-			{
-				try { connection?.Dispose(); } catch { }
-				throw;
-			}
-		}
+			=> DbusSession.Connect(DBusBus.Session, TimeoutMs, "KWin FakeInput",
+								   (session, reason) => sessions.Invalidate(session, reason))
+			   ?? throw new TimeoutException($"Connecting to the D-Bus session bus timed out after {TimeoutMs} ms.");
 
 		internal static void Reset()
 		{

@@ -1,78 +1,13 @@
 #if LINUX
 using Keysharp.Builtins;
 using System.Globalization;
-using Tmds.DBus;
+using Keysharp.Internals.DBus;
+using Tmds.DBus.Protocol;
+using Cin = Keysharp.Internals.DBus.Generated.Cinnamon;
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
-	// D-Bus member names are case-sensitive; suppress the IDE naming rule.
-#pragma warning disable IDE1006
-
-	/// <summary>
-	/// Tmds.DBus proxy for Cinnamon's privileged JavaScript evaluation endpoint.
-	/// Cinnamon's window manager (Muffin) is Mutter-based, so the same Meta/global
-	/// JS API used by the GNOME Shell extension works here, but Cinnamon still exposes
-	/// org.Cinnamon.Eval directly (unlike GNOME, which locked Eval down in 41+), so no
-	/// bundled extension is required. The interface must be public for Tmds.DBus.
-	/// </summary>
-	[DBusInterface("org.Cinnamon")]
-	public interface ICinnamon : IDBusObject
-	{
-		Task<(bool success, string result)> EvalAsync(string script);
-	}
-
-	[DBusInterface("org.freedesktop.DBus")]
-	public interface IFreedesktopDBus : IDBusObject
-	{
-		Task<bool> NameHasOwnerAsync(string name);
-	}
-
-	/// <summary>Muffin's compositor-owned idle monitor, independent of the Keysharp Shell extension.</summary>
-	[DBusInterface("org.cinnamon.Muffin.IdleMonitor")]
-	public interface IMuffinIdleMonitor : IDBusObject
-	{
-		Task<ulong> GetIdletimeAsync();
-	}
-
-	[DBusInterface("io.github.keysharp.CinnamonShell1")]
-	public interface IKeysharpCinnamonShell : IDBusObject
-	{
-		Task<string> GetWindowListAsync(bool includeHidden);
-		Task<string> GetActiveWindowAsync();
-		Task<(int X, int Y)> GetCursorPositionAsync();
-		Task<(int X, int Y, int Width, int Height)> GetWorkAreaAsync();
-		Task<bool> FocusWindowAsync(ulong handle);
-		Task<bool> RaiseWindowAsync(ulong handle);
-		Task<bool> LowerWindowAsync(ulong handle);
-		Task<bool> ReserveWindowAsync(int pid, ulong cookie, int x, int y, int ttlMs);
-		Task<string> GetReservedWindowAsync(int pid, ulong cookie);
-		Task<bool> MoveResizeWindowAsync(ulong handle, int x, int y, int width, int height);
-		Task<bool> MoveResizeWindowByXidAsync(ulong xid, int x, int y, int width, int height);
-		Task<bool> SetWindowStateAsync(ulong handle, int state);
-		Task<bool> SetWindowAboveAsync(ulong handle, bool above);
-		Task<bool> SetWindowDecoratedAsync(ulong handle, bool decorated);
-		Task<bool> SetWindowOpacityAsync(ulong handle, int opacity);
-		Task<bool> CloseWindowAsync(ulong handle);
-		Task<bool> KillWindowAsync(ulong handle);
-		Task<bool> SendMouseMoveAbsoluteAsync(int x, int y);
-		Task<bool> SendMouseMoveRelativeAsync(int dx, int dy);
-		Task<bool> SendMouseButtonAsync(uint button, bool pressed);
-		Task<bool> SendMouseScrollAsync(int delta, bool vertical);
-		Task<bool> RegisterHighlightOwnerAsync(string ownerKey, string busName);
-		// Cinnamon highlights (like GNOME's) render through the generic image-overlay primitive below; the
-		// extension's ShowHighlight/HideHighlight D-Bus methods are no longer called from C#.
-		Task<bool> ShowImageOverlayAsync(uint id, string ownerKey, string busName, int x, int y, int width, int height, byte[] pngBytes);
-		Task<bool> MoveImageOverlayAsync(uint id, string ownerKey, string busName, int x, int y, int width, int height);
-		Task<bool> HideImageOverlayAsync(uint id, string ownerKey, string busName);
-		Task<IDisposable> WatchWindowEventAsync(Action<(string type, string json)> handler, Action<Exception> onError = null);
-		Task<string[]> GetClipboardMimetypesAsync();
-		Task<byte[]> GetClipboardContentAsync(string mimetype);
-		Task<bool> SetClipboardContentAsync(string mimetype, byte[] bytes);
-		Task<string> GetClipboardTextAsync();
-		Task<bool> SetClipboardTextAsync(string text);
-		Task<IDisposable> WatchClipboardChangedAsync(Action<(string text, string[] mimetypes)> handler, Action<Exception> onError = null);
-	}
-
-#pragma warning restore IDE1006
+	// The Cinnamon, CinnamonShell1, IdleMonitor and DBus proxies are generated from
+	// Internals/DBus/Interfaces/Cinnamon.xml and FreedesktopDBus.xml.
 
 	/// <summary>
 	/// Static bridge to Cinnamon's org.Cinnamon.Eval D-Bus method. Mirrors
@@ -115,10 +50,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			"function find(s){const a=global.get_window_actors();for(let i=0;i<a.length;i++){const w=a[i].get_meta_window();if(w&&w.get_stable_sequence()===s)return w;}return null;}";
 
 		private static RecoverableService<DbusSession> sessions;
-		private static WatchedDbusService<ICinnamon> cinnamonService;
-		private static WatchedDbusService<IKeysharpCinnamonShell> extension;
+		private static WatchedDbusService<Cin.Cinnamon> cinnamonService;
+		private static WatchedDbusService<Cin.CinnamonShell1> extension;
 		private static RetryGate highlightOwnerRegistration;
-		private static IMuffinIdleMonitor idleMonitorProxy;
+		private static Cin.IdleMonitor idleMonitorProxy;
 		private static DbusSession idleMonitorSession;
 		private static long clipboardSupportCacheUntil;
 		private static bool clipboardSupportCached;
@@ -135,9 +70,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			sessions = new RecoverableService<DbusSession>(ConnectSessionBus,
 				initialRetryDelay: TimeSpan.FromMilliseconds(500),
 				maximumRetryDelay: TimeSpan.FromSeconds(5));
-			cinnamonService = new WatchedDbusService<ICinnamon>(sessions, ServiceName, new ObjectPath(ObjectPath), TimeoutMs);
-			extension = new WatchedDbusService<IKeysharpCinnamonShell>(sessions, ExtensionServiceName,
-				new ObjectPath(ExtensionObjectPath), TimeoutMs);
+			cinnamonService = new WatchedDbusService<Cin.Cinnamon>(sessions, ServiceName, new ObjectPath(ObjectPath), TimeoutMs,
+				(c, d, p) => new Cin.Cinnamon(c, d, p));
+			extension = new WatchedDbusService<Cin.CinnamonShell1>(sessions, ExtensionServiceName,
+				new ObjectPath(ExtensionObjectPath), TimeoutMs, (c, d, p) => new Cin.CinnamonShell1(c, d, p));
 			highlightOwnerRegistration = new RetryGate(maximumAttempts: 3,
 				initialRetryDelay: TimeSpan.FromMilliseconds(500), maximumRetryDelay: TimeSpan.FromSeconds(5));
 			clipboardProbes = new RetryGate(maximumAttempts: 3,
@@ -166,7 +102,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (!ReferenceEquals(idleMonitorSession, lease.Value))
 				{
 					idleMonitorSession = lease.Value;
-					idleMonitorProxy = lease.Value.Connection.CreateProxy<IMuffinIdleMonitor>(
+					idleMonitorProxy = new Cin.IdleMonitor(lease.Value.Connection,
 						IdleMonitorServiceName, new ObjectPath(IdleMonitorObjectPath));
 				}
 
@@ -371,7 +307,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			internal static IDisposable WatchClipboardChanged(Action<string, string[]> handler, Action<Exception> onError = null)
 				=> TryRunExtension(p => p.WatchClipboardChangedAsync(
-					e => handler(e.text, e.mimetypes), onError), out IDisposable subscription)
+						DBusSignals.Adapt<(string, string[])>(e => handler(e.Item1, e.Item2), onError),
+						DBusSignals.FlagsFor(onError), emitOnCapturedContext: false).AsTask(), out IDisposable subscription)
 					? subscription : null;
 
 		// Lazily creates a Clutter virtual pointer (Muffin is Clutter-based, same API as the
@@ -402,7 +339,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		internal static IDisposable WatchWindowEvent(Action<string, string> handler, Action<Exception> onError = null)
-			=> TryRunExtension(p => p.WatchWindowEventAsync(e => handler(e.type, e.json), onError),
+			=> TryRunExtension(p => p.WatchWindowEventAsync(
+					DBusSignals.Adapt<(string, string)>(e => handler(e.Item1, e.Item2), onError),
+					DBusSignals.FlagsFor(onError), emitOnCapturedContext: false).AsTask(),
 				out IDisposable subscription) ? subscription : null;
 
 		private static bool RunOk(string js)
@@ -448,7 +387,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			try
 			{
-				if (!cinnamonService.TryUse(p => p.EvalAsync(js), out Task<(bool success, string result)> task))
+				if (!cinnamonService.TryUse(p => p.EvalAsync(js), out Task<(bool Item1, string Item2)> task))
 					return null;
 
 				if (!task.WaitWithoutInterruption(TimeoutMs))
@@ -476,11 +415,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return true;
 		}
 
-		private static T RunExtension<T>(Func<IKeysharpCinnamonShell, Task<T>> call,
+		private static T RunExtension<T>(Func<Cin.CinnamonShell1, Task<T>> call,
 			[System.Runtime.CompilerServices.CallerMemberName] string operation = null)
 			=> TryRunExtension(call, out T result, TimeoutMs, operation) ? result : default;
 
-		private static bool TryRunExtension<T>(Func<IKeysharpCinnamonShell, Task<T>> call, out T result,
+		private static bool TryRunExtension<T>(Func<Cin.CinnamonShell1, Task<T>> call, out T result,
 			int timeoutMs = TimeoutMs,
 			[System.Runtime.CompilerServices.CallerMemberName] string operation = null)
 		{
@@ -518,7 +457,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		private static bool RunExtensionBool(Func<IKeysharpCinnamonShell, Task<bool>> call,
+		private static bool RunExtensionBool(Func<Cin.CinnamonShell1, Task<bool>> call,
 			[System.Runtime.CompilerServices.CallerMemberName] string operation = null)
 			=> TryRunExtension(call, out bool result, TimeoutMs, operation) && result;
 
@@ -526,7 +465,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// ambiguous timeout — the shell most likely still created the actor, so commit to the compositor — from a
 		// definitive failure that may safely fall back to Eto. A plain RunExtensionBool collapses both to false,
 		// which is what let a slow first upload spawn a duplicate Eto overlay.
-		private static OverlayShowResult RunShow(Func<IKeysharpCinnamonShell, Task<bool>> call, int timeoutMs)
+		private static OverlayShowResult RunShow(Func<Cin.CinnamonShell1, Task<bool>> call, int timeoutMs)
 		{
 			try
 			{
@@ -578,7 +517,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		private static void RegisterHighlightOwner(IKeysharpCinnamonShell p)
+		private static void RegisterHighlightOwner(Cin.CinnamonShell1 p)
 		{
 			if (p == null || connectionLocalName.IsNullOrEmpty() || registeredHighlightOwnerBusName == connectionLocalName)
 				return;
@@ -629,45 +568,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		private static DbusSession ConnectSessionBus()
-		{
-			var address = Tmds.DBus.Address.Session;
-
-			if (string.IsNullOrEmpty(address))
-			{
-				WaylandBridgeDiagnostics.Failure("Cinnamon Shell", "connect session bus", "D-Bus session address is empty");
-				return null;
-			}
-
-			Connection connection = null;
-
-			try
-			{
-				connection = new Connection(address);
-				var task = connection.ConnectAsync();
-
-				if (!task.WaitWithoutInterruption(TimeoutMs))
-				{
-					WaylandBridgeDiagnostics.Failure("Cinnamon Shell", "connect session bus", $"timed out after {TimeoutMs} ms");
-					connection.Dispose();
-					return null;
-				}
-
-				var info = task.GetAwaiter().GetResult();
-				var session = new DbusSession(connection, info?.LocalName);
-				connection.StateChanged += (_, e) =>
-				{
-					if (e.State == Tmds.DBus.ConnectionState.Disconnected)
-						sessions.Invalidate(session, e.DisconnectReason);
-				};
-				return session;
-			}
-			catch (Exception ex)
-			{
-				WaylandBridgeDiagnostics.Failure("Cinnamon Shell", "connect session bus", WaylandBridgeDiagnostics.Describe(ex));
-				try { connection?.Dispose(); } catch { }
-				return null;
-			}
-		}
+			=> DbusSession.Connect(DBusBus.Session, TimeoutMs, "Cinnamon Shell",
+								   (session, reason) => sessions.Invalidate(session, reason));
 
 		private static void ExtensionAvailabilityChanged()
 		{

@@ -55,7 +55,21 @@
 
 	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
 		<ProjectReference Include="$(EtoRoot)/src/Eto.Gtk/Eto.Gtk.csproj" />
-		<PackageReference Include="Tmds.DBus" Version="0.93.0" />
+		<!-- Pinned exactly: floating resolves 0.90.0, which carries advisory GHSA-xrw6-gwf8-vvr9.
+		     The Generator is build-time only (PrivateAssets), so it adds no runtime dependency. -->
+		<PackageReference Include="Tmds.DBus.Protocol" Version="0.95.0" />
+		<PackageReference Include="Tmds.DBus.Generator" Version="0.95.0" PrivateAssets="all" />
+		<!-- Typed proxies/handlers generated from introspection XML; the XML itself was derived from the
+		     former [DBusInterface] declarations rather than retyped. See Internals/DBus/Interfaces. -->
+		<AdditionalFiles Include="Internals\DBus\Interfaces\Logind.xml"          Namespace="Keysharp.Internals.DBus.Generated.Logind"    DBusGeneratorMode="Proxy" />
+		<AdditionalFiles Include="Internals\DBus\Interfaces\Cinnamon.xml"        Namespace="Keysharp.Internals.DBus.Generated.Cinnamon"  DBusGeneratorMode="Proxy" />
+		<AdditionalFiles Include="Internals\DBus\Interfaces\GnomeShell.xml"      Namespace="Keysharp.Internals.DBus.Generated.Gnome"     DBusGeneratorMode="Proxy" />
+		<AdditionalFiles Include="Internals\DBus\Interfaces\Portal.xml"          Namespace="Keysharp.Internals.DBus.Generated.Portal"    DBusGeneratorMode="Proxy" />
+		<AdditionalFiles Include="Internals\DBus\Interfaces\KWin.xml"            Namespace="Keysharp.Internals.DBus.Generated.KWin"      DBusGeneratorMode="Proxy" />
+		<!-- KWinBridge/KWinQueryBridge and LauncherEntry are objects Keysharp itself serves. One XML cannot carry
+		     two modes: a second AdditionalFiles entry for the same path merges metadata rather than adding an item. -->
+		<AdditionalFiles Include="Internals\DBus\Interfaces\KWinBridge.xml"      Namespace="Keysharp.Internals.DBus.Generated.KWinServer" DBusGeneratorMode="Handler" />
+		<AdditionalFiles Include="Internals\DBus\Interfaces\LauncherEntry.xml"   Namespace="Keysharp.Internals.DBus.Generated.Launcher"  DBusGeneratorMode="Handler" />
 		<Compile Remove="Internals\Input\MacOS\**\*.cs" />
 		<Compile Remove="Internals\Input\Hooks\MacOS\**\*.cs" />
 		<Compile Remove="Internals\Window\MacOS\**\*.cs" />

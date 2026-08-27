@@ -1,154 +1,10 @@
 #if LINUX
-using Tmds.DBus;
+using Keysharp.Internals.DBus;
+using Tmds.DBus.Protocol;
+using Gnome = Keysharp.Internals.DBus.Generated.Gnome;
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
-	// D-Bus member names are case-sensitive; suppress the IDE naming rule.
-#pragma warning disable IDE1006
-
-	/// <summary>
-	/// Tmds.DBus proxy interface for the Keysharp GNOME Shell extension.
-	/// The interface must be public because Tmds.DBus generates the proxy
-	/// in a separate dynamic assembly that cannot implement internal interfaces.
-	/// </summary>
-	[DBusInterface("io.github.keysharp.GnomeShell1")]
-	public interface IGnomeShell : IDBusObject
-	{
-		/// <summary>
-		/// Returns JSON: { ok, windows: [ { id, title, appId, pid,
-		/// frame:{x,y,width,height}, client:{x,y,width,height},
-		/// active, minimized, maximized, visible, transparency } ... ] }
-		/// Windows are ordered bottom-to-top (index 0 = lowest z-order).
-		/// </summary>
-		Task<string> GetWindowListAsync(bool includeHidden);
-
-		/// <summary>Returns JSON: { ok, window: { ... } | null }</summary>
-		Task<string> GetActiveWindowAsync();
-
-		/// <summary>Global pointer position in compositor coordinates.</summary>
-		Task<(int X, int Y)> GetCursorPositionAsync();
-
-		/// <summary>Work area (monitor minus panels/struts) of the primary monitor, in screen coordinates.</summary>
-		Task<(int X, int Y, int Width, int Height)> GetWorkAreaAsync();
-
-		/// <summary>Attach this process as an overlay owner so the shell can reap our overlays when we die.
-		/// ownerKey = "pid:starttime"; busName = our unique D-Bus connection name.</summary>
-		Task<bool> RegisterHighlightOwnerAsync(string ownerKey, string busName);
-
-		/// <summary>Window handle is the stable_sequence uint32 of Meta.Window. False = no such window.</summary>
-		Task<bool> FocusWindowAsync(ulong handle);
-
-		/// <summary>Raise the window to the top of the stack. False = no such window.</summary>
-		Task<bool> RaiseWindowAsync(ulong handle);
-
-		/// <summary>Lower the window to the bottom of the stack. False = no such window.</summary>
-		Task<bool> LowerWindowAsync(ulong handle);
-
-		/// <summary>Claim the next window this pid creates under <paramref name="cookie"/> and have the shell
-		/// place it before first paint; see <see cref="SendReserveWindow"/>.</summary>
-		Task<bool> ReserveWindowAsync(int pid, ulong cookie, int x, int y, int ttlMs);
-
-		/// <summary>The compositor window a reservation landed on, or "" if it was never consumed.</summary>
-		Task<string> GetReservedWindowAsync(int pid, ulong cookie);
-
-		/// <summary>
-		/// Pass x = int.MinValue to leave position unchanged;
-		/// width/height &lt;= 0 to leave size unchanged. False = no such window.
-		/// </summary>
-		Task<bool> MoveResizeWindowAsync(ulong handle, int x, int y, int width, int height);
-
-		/// <summary>As MoveResizeWindow but the window is identified by its X11 window id (get_xwindow),
-		/// for X11 sessions where the caller has an XID rather than a stable_sequence. False = no such window.</summary>
-		Task<bool> MoveResizeWindowByXidAsync(ulong xid, int x, int y, int width, int height);
-
-		/// <summary>state: 0 = normal, 1 = minimized, 2 = maximized. False = no such window.</summary>
-		Task<bool> SetWindowStateAsync(ulong handle, int state);
-
-		/// <summary>Keep the window above all others (true) or clear keep-above (false). False = no such window.</summary>
-		Task<bool> SetWindowAboveAsync(ulong handle, bool above);
-
-		/// <summary>Show (true) or hide (false) the window's titlebar/decorations. False = no such window.</summary>
-		Task<bool> SetWindowDecoratedAsync(ulong handle, bool decorated);
-
-		/// <summary>Set the window's opacity, 0 (transparent) to 255 (opaque). False = no such window.</summary>
-		Task<bool> SetWindowOpacityAsync(ulong handle, int opacity);
-
-		/// <summary>Request the window to close. False = no such window.</summary>
-		Task<bool> CloseWindowAsync(ulong handle);
-
-		/// <summary>Force-kill the window's client (SIGKILL-equivalent), falling back to close. False = no such window.</summary>
-		Task<bool> KillWindowAsync(ulong handle);
-
-		/// <summary>Create or update a generic PNG-backed click-through overlay. False = the shell rejected it.</summary>
-		Task<bool> ShowImageOverlayAsync(uint id, string ownerKey, string busName, int x, int y, int width, int height, byte[] pngBytes);
-
-		/// <summary>Reposition/resize an existing overlay by id, reusing its already-uploaded pixels (no re-encode).
-		/// False = no such overlay; the caller should re-Show instead.</summary>
-		Task<bool> MoveImageOverlayAsync(uint id, string ownerKey, string busName, int x, int y, int width, int height);
-
-		/// <summary>Remove a generic PNG-backed overlay.</summary>
-		Task<bool> HideImageOverlayAsync(uint id, string ownerKey, string busName);
-
-		Task<bool> SendMouseMoveAbsoluteAsync(int x, int y);
-		Task<bool> SendMouseMoveRelativeAsync(int dx, int dy);
-
-		/// <summary>button: 1 = left, 2 = middle, 3 = right (X11 convention).</summary>
-		Task<bool> SendMouseButtonAsync(uint button, bool pressed);
-
-		/// <summary>
-		/// delta in 120-unit wheel increments (positive = up/right).
-		/// vertical: true = vertical scroll, false = horizontal.
-		/// </summary>
-		Task<bool> SendMouseScrollAsync(int delta, bool vertical);
-
-		/// <summary>
-		/// Capture a screen region entirely inside the compositor process.
-		/// No polkit check, no flash, no disk I/O. Returns raw PNG bytes,
-		/// or an empty array on failure.
-		/// </summary>
-		Task<byte[]> CaptureAreaAsync(int x, int y, int width, int height);
-
-		Task<IDisposable> WatchActiveWindowChangedAsync(
-			Action<string> handler, Action<Exception> onError = null);
-
-		/// <summary>
-		/// Generic window-event stream. The handler receives (type, json) where type is one of
-		/// create/close/active/title/minimize/restore/move and json is the affected window's info.
-		/// </summary>
-		Task<IDisposable> WatchWindowEventAsync(
-			Action<(string type, string json)> handler, Action<Exception> onError = null);
-
-		// ---- Clipboard (compositor-mediated, all MIME types) ------------
-		// Mutter exposes no data-control protocol, so a background app can't read/write/monitor the clipboard
-		// directly; the shell extension does it via MetaSelection. Raw MIME <-> bytes so every format
-		// (text, image, html, uri-list, ...) round-trips.
-
-		/// <summary>MIME types currently on the clipboard.</summary>
-		Task<string[]> GetClipboardMimetypesAsync();
-
-		/// <summary>Bytes of one clipboard MIME type. Empty array = absent/empty.</summary>
-		Task<byte[]> GetClipboardContentAsync(string mimetype);
-
-		/// <summary>Replace the whole clipboard with one MIME type's bytes.</summary>
-		Task<bool> SetClipboardContentAsync(string mimetype, byte[] bytes);
-
-		/// <summary>Current clipboard UTF-8 text (fast path).</summary>
-		Task<string> GetClipboardTextAsync();
-
-		/// <summary>Replace the clipboard with UTF-8 text.</summary>
-		Task<bool> SetClipboardTextAsync(string text);
-
-		Task<IDisposable> WatchClipboardChangedAsync(
-			Action<(string text, string[] mimetypes)> handler, Action<Exception> onError = null);
-	}
-
-	/// <summary>Mutter's compositor-owned idle monitor, independent of the Keysharp Shell extension.</summary>
-	[DBusInterface("org.gnome.Mutter.IdleMonitor")]
-	public interface IMutterIdleMonitor : IDBusObject
-	{
-		Task<ulong> GetIdletimeAsync();
-	}
-
-#pragma warning restore IDE1006
+	// The GnomeShell1 and IdleMonitor proxies are generated from Internals/DBus/Interfaces/GnomeShell.xml.
 
 	/// <summary>
 	/// Static bridge to the Keysharp GNOME Shell extension D-Bus service.
@@ -167,9 +23,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private const int    ExtensionPresentCacheMs = 1000;
 
 		private static RecoverableService<DbusSession> sessions;
-		private static WatchedDbusService<IGnomeShell> extension;
+		private static WatchedDbusService<Gnome.GnomeShell1> extension;
 		private static RetryGate highlightOwnerRegistration;
-		private static IMutterIdleMonitor idleMonitorProxy;
+		private static Gnome.IdleMonitor idleMonitorProxy;
 		private static DbusSession idleMonitorSession;
 		private static long clipboardSupportCacheUntil;
 		private static bool clipboardSupportCached;
@@ -189,7 +45,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			sessions = new RecoverableService<DbusSession>(ConnectSessionBus,
 				initialRetryDelay: TimeSpan.FromMilliseconds(500),
 				maximumRetryDelay: TimeSpan.FromSeconds(5));
-			extension = new WatchedDbusService<IGnomeShell>(sessions, ServiceName, new ObjectPath(ObjectPath), TimeoutMs);
+			extension = new WatchedDbusService<Gnome.GnomeShell1>(sessions, ServiceName, new ObjectPath(ObjectPath), TimeoutMs,
+				(c, d, p) => new Gnome.GnomeShell1(c, d, p));
 			highlightOwnerRegistration = new RetryGate(maximumAttempts: 3,
 				initialRetryDelay: TimeSpan.FromMilliseconds(500), maximumRetryDelay: TimeSpan.FromSeconds(5));
 			clipboardProbes = new RetryGate(maximumAttempts: 3,
@@ -225,7 +82,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (!ReferenceEquals(idleMonitorSession, lease.Value))
 				{
 					idleMonitorSession = lease.Value;
-					idleMonitorProxy = lease.Value.Connection.CreateProxy<IMutterIdleMonitor>(
+					idleMonitorProxy = new Gnome.IdleMonitor(lease.Value.Connection,
 						IdleMonitorServiceName, new ObjectPath(IdleMonitorObjectPath));
 				}
 
@@ -355,13 +212,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		internal static IDisposable WatchActiveWindowChanged(Action<string> handler)
 		{
-			return TryRun(p => p.WatchActiveWindowChangedAsync(handler), out IDisposable subscription)
+			return TryRun(p => p.WatchActiveWindowChangedAsync(handler, emitOnCapturedContext: false).AsTask(), out IDisposable subscription)
 				? subscription : null;
 		}
 
 		internal static IDisposable WatchWindowEvent(Action<string, string> handler, Action<Exception> onError = null)
 		{
-			return TryRun(p => p.WatchWindowEventAsync(e => handler(e.type, e.json), onError), out IDisposable subscription)
+			return TryRun(p => p.WatchWindowEventAsync(DBusSignals.Adapt<(string, string)>(e => handler(e.Item1, e.Item2), onError),
+												   DBusSignals.FlagsFor(onError), emitOnCapturedContext: false).AsTask(), out IDisposable subscription)
 				? subscription : null;
 		}
 
@@ -417,18 +275,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		internal static IDisposable WatchClipboardChanged(Action<string, string[]> handler, Action<Exception> onError = null)
 		{
-			return TryRun(p => p.WatchClipboardChangedAsync(
-				e => handler(e.text, e.mimetypes), onError), out IDisposable subscription)
+			return TryRun(p => p.WatchClipboardChangedAsync(DBusSignals.Adapt<(string, string[])>(e => handler(e.Item1, e.Item2), onError),
+													   DBusSignals.FlagsFor(onError), emitOnCapturedContext: false).AsTask(), out IDisposable subscription)
 				? subscription : null;
 		}
 
 		// ---- connection management ---------------------------------------
 
-		private static T Run<T>(Func<IGnomeShell, Task<T>> call, int timeoutMs = TimeoutMs,
+		private static T Run<T>(Func<Gnome.GnomeShell1, Task<T>> call, int timeoutMs = TimeoutMs,
 			[System.Runtime.CompilerServices.CallerMemberName] string operation = null)
 			=> TryRun(call, out T result, timeoutMs, operation) ? result : default;
 
-		private static bool TryRun<T>(Func<IGnomeShell, Task<T>> call, out T result, int timeoutMs = TimeoutMs,
+		private static bool TryRun<T>(Func<Gnome.GnomeShell1, Task<T>> call, out T result, int timeoutMs = TimeoutMs,
 			[System.Runtime.CompilerServices.CallerMemberName] string operation = null)
 		{
 			result = default;
@@ -466,7 +324,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// the compositor) from a definitive failure (fall back to Eto). A plain Run collapses both to `false`,
 		// which is exactly what caused the duplicated-overlay bug: a slow first upload timed out client-side yet
 		// still created the shell actor, and the false return triggered a second, Eto, surface.
-		private static OverlayShowResult RunShow(Func<IGnomeShell, Task<bool>> call, int timeoutMs)
+		private static OverlayShowResult RunShow(Func<Gnome.GnomeShell1, Task<bool>> call, int timeoutMs)
 		{
 			try
 			{
@@ -502,51 +360,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		private static DbusSession ConnectSessionBus()
-		{
-			var address = Tmds.DBus.Address.Session;
-
-			if (string.IsNullOrEmpty(address))
+			=> DbusSession.Connect(DBusBus.Session, TimeoutMs, "GNOME Shell", (session, reason) =>
 			{
-				WaylandBridgeDiagnostics.Failure("GNOME Shell", "connect session bus", "D-Bus session address is empty");
-				return null;
-			}
+				if (reason != null)
+					WaylandBridgeDiagnostics.Failure("GNOME Shell", "session bus disconnected",
+												   WaylandBridgeDiagnostics.Describe(reason));
 
-			Connection connection = null;
-
-			try
-			{
-				connection = new Connection(address);
-				var task = connection.ConnectAsync();
-
-				if (!task.WaitWithoutInterruption(TimeoutMs))
-				{
-					WaylandBridgeDiagnostics.Failure("GNOME Shell", "connect session bus", $"timed out after {TimeoutMs} ms");
-					connection.Dispose();
-					return null;
-				}
-
-				var info = task.GetAwaiter().GetResult();
-				var session = new DbusSession(connection, info?.LocalName);
-				connection.StateChanged += (_, e) =>
-				{
-					if (e.State != Tmds.DBus.ConnectionState.Disconnected)
-						return;
-
-					if (e.DisconnectReason != null)
-						WaylandBridgeDiagnostics.Failure("GNOME Shell", "session bus disconnected",
-							WaylandBridgeDiagnostics.Describe(e.DisconnectReason));
-
-					sessions.Invalidate(session, e.DisconnectReason);
-				};
-				return session;
-			}
-			catch (Exception ex)
-			{
-				WaylandBridgeDiagnostics.Failure("GNOME Shell", "connect session bus", WaylandBridgeDiagnostics.Describe(ex));
-				try { connection?.Dispose(); } catch { }
-				return null;
-			}
-		}
+				sessions.Invalidate(session, reason);
+			});
 
 		private static void ExtensionAvailabilityChanged()
 		{
@@ -581,7 +402,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// Announce this process to the shell extension as an overlay owner so it can attribute our overlays
 		// and reap them when we die. Guarded so the real D-Bus call fires at most once per connection name,
 		// with a short backoff on miss (extension still loading / absent). Mirrors CinnamonBackend.
-		private static void RegisterHighlightOwner(IGnomeShell p)
+		private static void RegisterHighlightOwner(Gnome.GnomeShell1 p)
 		{
 			if (p == null || string.IsNullOrEmpty(connectionLocalName) || registeredHighlightOwnerBusName == connectionLocalName)
 				return;

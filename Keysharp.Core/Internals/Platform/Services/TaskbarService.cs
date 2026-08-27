@@ -1,6 +1,8 @@
 using Keysharp.Builtins;
 #if LINUX
-using Tmds.DBus;
+using Keysharp.Internals.DBus;
+using Keysharp.Internals.DBus.Generated.Launcher;
+using Tmds.DBus.Protocol;
 #endif
 
 namespace Keysharp.Internals
@@ -449,9 +451,10 @@ namespace Keysharp.Internals
 	{
 		private static readonly object stateLock = new();
 		private static readonly object initLock = new();
-		//Held only to root the bus connection for the process lifetime; the signal goes out through `entry`.
-		private static Connection connection;
-		private static LauncherEntryObject entry;
+		//The connection IS the emitter: LauncherEntry publishes a broadcast signal and serves no methods, so
+		//nothing needs registering on the bus -- the connection is only held open for the process lifetime.
+		private static DBusConnection connection;
+		private static readonly ObjectPath EntryPath = new ($"/com/canonical/unity/launcherentry/{Environment.ProcessId}");
 		private static bool unavailable;
 
 		//The protocol carries no notion of a partial update -- each signal replaces the whole state -- so the
@@ -506,13 +509,13 @@ namespace Keysharp.Internals
 
 				try
 				{
-					target.Emit($"application://{AppId}", new Dictionary<string, object>
+					target.EmitUpdate(EntryPath, $"application://{AppId}", new Dictionary<string, VariantValue>
 					{
-						{ "count", LauncherEntry.count },
-						{ "count-visible", LauncherEntry.countVisible },
-						{ "progress", LauncherEntry.progress },
-						{ "progress-visible", LauncherEntry.progressVisible },
-						{ "urgent", LauncherEntry.urgent },
+						{ "count", VariantValue.Int64(LauncherEntry.count) },
+						{ "count-visible", VariantValue.Bool(LauncherEntry.countVisible) },
+						{ "progress", VariantValue.Double(LauncherEntry.progress) },
+						{ "progress-visible", VariantValue.Bool(LauncherEntry.progressVisible) },
+						{ "urgent", VariantValue.Bool(LauncherEntry.urgent) },
 					});
 				}
 				catch
@@ -523,89 +526,49 @@ namespace Keysharp.Internals
 			}
 		}
 
-		private static LauncherEntryObject Target
+		private static DBusConnection Target
 		{
 			get
 			{
-				if (entry != null || unavailable)
-					return entry;
+				if (connection != null || unavailable)
+					return connection;
 
 				//Double-checked, as WindowsTaskbar.Instance is: two threads racing here would otherwise each build
 				//a connection, and whichever lost would emit into a socket nothing is holding open.
 				lock (initLock)
 				{
-					if (entry != null || unavailable)
-						return entry;
+					if (connection != null || unavailable)
+						return connection;
 
 					return Connect();
 				}
 			}
 		}
 
-		/// <summary>
-		/// Opens the session bus and registers the object the signal is emitted from. Called once, under
-		/// <c>initLock</c>.
-		/// </summary>
-		private static LauncherEntryObject Connect()
+		/// <summary>Opens the session bus the signal is emitted on. Called once, under <c>initLock</c>.</summary>
+		private static DBusConnection Connect()
 		{
 			try
 			{
 				//The handshake blocks, and it is started from the script thread, which carries a UI
 				//synchronization context: awaiting it there is the classic sync-over-async deadlock. Running it
 				//on the pool captures no context, so the continuations cannot be queued behind this wait.
-				var obj = new LauncherEntryObject();
 				connection = Task.Run(async () =>
 				{
-					var conn = new Connection(Tmds.DBus.Address.Session);
-					_ = await conn.ConnectAsync().ConfigureAwait(false);
-					await conn.RegisterObjectAsync(obj).ConfigureAwait(false);
+					var conn = new DBusConnection(DBusAddresses.Session);
+					await conn.ConnectAsync().ConfigureAwait(false);
 					return conn;
 				}).GetAwaiter().GetResult();
-				entry = obj;
 			}
 			catch
 			{
-				//No session bus, or it refused the registration. Nothing here is retried: a desktop which has no
-				//bus now will not grow one.
+				//No session bus. Nothing here is retried: a desktop which has no bus now will not grow one.
 				unavailable = true;
 			}
 
-			return entry;
+			return connection;
 		}
 
-		/// <summary>
-		/// Tmds.DBus wires a registered object's signal by handing it a sink through the Watch method, so
-		/// emitting the signal means invoking whatever that handed us.
-		/// </summary>
-		private sealed class LauncherEntryObject : ILauncherEntry
-		{
-			private Action<(string, IDictionary<string, object>)> sink;
-
-			//The path is arbitrary as far as the protocol goes, but it is per-process by convention so two
-			//running scripts do not collide on the bus.
-			public ObjectPath ObjectPath { get; } = new ObjectPath($"/com/canonical/unity/launcherentry/{Environment.ProcessId}");
-
-			public Task<IDisposable> WatchUpdateAsync(Action<(string appUri, IDictionary<string, object> properties)> handler,
-					Action<Exception> onError = null)
-			{
-				sink = handler;
-				return Task.FromResult<IDisposable>(new Unsubscriber(this));
-			}
-
-			internal void Emit(string appUri, IDictionary<string, object> properties) => sink?.Invoke((appUri, properties));
-
-			private sealed class Unsubscriber(LauncherEntryObject owner) : IDisposable
-			{
-				public void Dispose() => owner.sink = null;
-			}
-		}
-	}
-
-	[DBusInterface("com.canonical.Unity.LauncherEntry")]
-	internal interface ILauncherEntry : IDBusObject
-	{
-		Task<IDisposable> WatchUpdateAsync(Action<(string appUri, IDictionary<string, object> properties)> handler,
-										   Action<Exception> onError = null);
 	}
 
 #elif OSX

@@ -1,0 +1,23 @@
+<!-- Objects Keysharp itself serves; generated in Handler mode. -->
+<node>
+  <interface name="org.keysharp.KWinBridge">
+    <method name="ReportEvent">
+      <arg direction="in" type="s" name="token"/>
+      <arg direction="in" type="s" name="eventType"/>
+      <arg direction="in" type="s" name="json"/>
+    </method>
+    <method name="ReportJson">
+      <arg direction="in" type="s" name="requestId"/>
+      <arg direction="in" type="s" name="json"/>
+    </method>
+  </interface>
+  <interface name="org.keysharp.KWinQueryBridge">
+    <method name="GetQueries">
+      <arg direction="out" type="as" name="value"/>
+    </method>
+    <method name="ReportJson">
+      <arg direction="in" type="s" name="requestId"/>
+      <arg direction="in" type="s" name="json"/>
+    </method>
+  </interface>
+</node>

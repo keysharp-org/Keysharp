@@ -1,0 +1,9 @@
+<!-- Generated from the [DBusInterface] declarations; see dbus-comobject-plan.md -->
+<node>
+  <interface name="com.canonical.Unity.LauncherEntry">
+    <signal name="Update">
+      <arg type="s" name="item1"/>
+      <arg type="a{sv}" name="item2"/>
+    </signal>
+  </interface>
+</node>
