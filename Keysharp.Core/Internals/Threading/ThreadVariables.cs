@@ -59,9 +59,9 @@ namespace Keysharp.Internals.Threading
 
 		public ThreadConfigData Clone() => (ThreadConfigData)MemberwiseClone();
 
-		internal void CopyFromPrototypeConfigData()
+		internal void CopyFromPrototypeConfigData(Script script)
 		{
-			var protoConfigData = Script.TheScript.AccessorData.threadConfigDataPrototype;
+			var protoConfigData = script.AccessorData.threadConfigDataPrototype;
 			controlDelay = protoConfigData.controlDelay;
 			coordModeCaret = protoConfigData.coordModeCaret;
 			coordModeMenu = protoConfigData.coordModeMenu;
@@ -153,10 +153,8 @@ namespace Keysharp.Internals.Threading
 		// Every newly launched thread is uninterruptible for a startup window (the "Thread Interrupt" time) unless
 		// that time is 0; a Critical thread stays uninterruptible indefinitely (-1). The becoming-interruptible moment
 		// is locked in at launch so a later Thread('Interrupt', n) only affects FUTURE threads. See IsInterruptible().
-		internal void ApplyUninterruptibleStartupWindow()
+		internal void ApplyUninterruptibleStartupWindow(Script script)
 		{
-			var script = Script.TheScript;
-
 			if (script.uninterruptibleTime != 0 || isCritical)
 			{
 				allowThreadToBeInterrupted = false;
@@ -200,13 +198,13 @@ namespace Keysharp.Internals.Threading
 			threadObject = null;
 		}
 
-		public void Init()
+		internal void Init(Script script)
 		{
 			task = false;// null;
 			isCritical = false;
 			isPaused = false;
 			allowThreadToBeInterrupted = true;
-			UninterruptibleDuration = Script.TheScript.uninterruptibleTime;
+			UninterruptibleDuration = script.uninterruptibleTime;
 			// Stamped unconditionally (not just when the uninterruptible window applies) so KeysharpThread.Elapsed
 			// always has a launch instant to measure from. One shared-page read per pseudo-thread launch, and
 			// ApplyUninterruptibleStartupWindow no longer reads it a second time.
@@ -231,7 +229,7 @@ namespace Keysharp.Internals.Threading
 			threadObject = null;
 			// Instead of cloning the instance, copy the data because
 			// allocating the memory for new instances is expensive
-			configData.CopyFromPrototypeConfigData();
+			configData.CopyFromPrototypeConfigData(script);
 			isCritical = configData.defaultIsCritical;
 		}
 

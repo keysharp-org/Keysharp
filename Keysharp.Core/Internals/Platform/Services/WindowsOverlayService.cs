@@ -5,7 +5,7 @@ namespace Keysharp.Internals
 	{
 		public override PixelSize GetCanvasSize(ScreenRect bounds)
 			=> new(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height));
-		protected override IImageOverlayBacking CreateBacking(uint id) => new WindowsImageOverlay();
+		protected override IImageOverlayBacking CreateBacking(uint id, Script owner) => new WindowsImageOverlay(owner);
 
 		public override OverlaySurface CreateOverlaySurface(PixelSize pixels)
 			=> pixels.HasArea ? DibOverlaySurface.TryCreate(pixels) : null;
@@ -179,6 +179,7 @@ namespace Keysharp.Internals
 	// A per-pixel-alpha layered top-level window (UpdateLayeredWindow) that is click-through and never activates.
 	internal sealed class WindowsImageOverlay : IImageOverlayBacking
 	{
+		private readonly Script owner;
 		private LayeredOverlayForm form;
 		private int shownW, shownH, shownX, shownY;
 		private byte shownOpacity = 255;
@@ -191,6 +192,8 @@ namespace Keysharp.Internals
 		// The form reads this through the GetPointerSink provider delegate wired at creation, so setting it
 		// before or after the form exists (and across TryHide's form teardown/recreation) needs no rewiring.
 		private Action<OverlayPointerEvent> pointerSink;
+
+		internal WindowsImageOverlay(Script owner) => this.owner = owner;
 
 		public Action<OverlayPointerEvent> PointerSink { get => pointerSink; set => pointerSink = value; }
 
@@ -239,7 +242,7 @@ namespace Keysharp.Internals
 
 				try
 				{
-					Script.InvokeOnUIThread(() =>
+					owner.InvokeOnUIThread(() =>
 					{
 						EnsureForm();
 						// Apply the input mode before showing so the exstyle is right from the first CreateParams
@@ -341,7 +344,7 @@ namespace Keysharp.Internals
 			if (bounds.Width == shownW && bounds.Height == shownH)
 			{
 				var moved = false;
-				Script.InvokeOnUIThread(() =>
+				owner.InvokeOnUIThread(() =>
 					moved = WindowsAPI.SetWindowPos(form.Handle, new nint(WindowsAPI.HWND_TOPMOST), bounds.X, bounds.Y, 0, 0,
 											WindowsAPI.SWP_NOACTIVATE | WindowsAPI.SWP_NOSIZE));
 
@@ -368,7 +371,7 @@ namespace Keysharp.Internals
 			var closed = true;
 
 			// InvokeOnUIThread is synchronous, so `closed`/`form` reflect the outcome once it returns.
-			Script.InvokeOnUIThread(() =>
+			owner.InvokeOnUIThread(() =>
 			{
 				try
 				{

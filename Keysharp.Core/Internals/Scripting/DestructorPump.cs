@@ -4,37 +4,55 @@ using Keysharp.Builtins.COM;
 #endif
 namespace Keysharp.Internals.Scripting
 {
-	internal static class DestructorPump
+	internal sealed class DestructorPump
 	{
-		private static readonly Lock _lock = new();
-		private static readonly Queue<Any> _q = new();       // enqueued by finalizers (strong refs -> resurrection)
-		private static bool _pending = false;
+		private readonly Script owner;
+		private readonly Lock runGate = new();
+		private readonly Lock _lock = new();
+		private readonly Queue<Any> _q = new();       // enqueued by finalizers (strong refs -> resurrection)
+		private bool _pending = false;
+		private bool stopped;
 
-		public static void Enqueue(Any obj)
+		internal DestructorPump(Script owner) => this.owner = owner;
+
+		public void Enqueue(Any obj)
 		{
-			var script = TheScript;
-			if (script == null) return;
-
 			bool post;
+			bool disposeOnly;
 
 			lock (_lock)
 			{
-				_q.Enqueue(obj);     // keep strong ref: prevents collection until processed
-				// Claim the right to post from INSIDE the lock. Enqueue runs on the GC finalizer thread, so the
-				// old unsynchronized check-then-set let two threads both observe false and post twice. Worse, a
-				// _pending stuck at true -- because its post targeted a scheduler that died with the previous
-				// script -- permanently silenced every later Enqueue, so __Delete simply stopped running.
-				post = !_pending;
+				disposeOnly = stopped || owner.IsDisposed;
 
-				if (post)
-					_pending = true;
+				if (disposeOnly)
+				{
+					post = false;
+				}
+				else
+				{
+					_q.Enqueue(obj);     // keep strong ref: prevents collection until processed
+					// Claim the right to post from inside the lock. Enqueue runs on the GC finalizer thread, so the
+					// old unsynchronized check-then-set let two threads both observe false and post twice. Worse, a
+					// _pending stuck at true -- because its post targeted a scheduler that died with the previous
+					// script -- permanently silenced every later Enqueue, so __Delete simply stopped running.
+					post = !_pending;
+
+					if (post)
+						_pending = true;
+				}
+			}
+
+			if (disposeOnly)
+			{
+				DisposeNative(obj);
+				return;
 			}
 
 			if (!post) return;
 
 			try
 			{
-				script.MainEventScheduler.DispatchContext.Post(_ => RunPendingDestructors(), null);
+				owner.MainEventScheduler.DispatchContext.Post(_ => RunPendingDestructors(), null);
 			}
 			catch
 			{
@@ -43,43 +61,90 @@ namespace Keysharp.Internals.Scripting
 			}
 		}
 
-		// Called on the script's logical main thread, serialized via its dispatch context -- but also directly
-		// from ExitAppInternal, so the batch is a local rather than a shared static: two overlapping calls would
-		// otherwise interleave into the same list and double-invoke (or lose) __Delete.
-		public static void RunPendingDestructors()
+		// Called on the script's logical main thread via its dispatch context, but also directly from
+		// ExitAppInternal, so runGate serializes the two: overlapping drains would otherwise split one batch
+		// between them and double-invoke (or lose) __Delete.
+		public void RunPendingDestructors()
 		{
-			var batch = new List<Any>();
-
-			// Drain to a batch
-			lock (_lock)
+			lock (runGate)
 			{
-				while (_q.Count > 0) batch.Add(_q.Dequeue());
+				var batch = Drain();
 
-				_pending = false;
-			}
+				if (batch.Count == 0) return;
 
-			if (batch.Count == 0) return;
-
-			// Sort for outside-in (parents before children)
-			var ordered = OrderOutsideIn(batch);
-
-			// Now call __Delete in that order
-			foreach (var any in ordered)
-			{
-				try
+				if (stopped || owner.IsDisposed)
 				{
-					// Important: call script hook first, then native frees if you have any.
-#if WINDOWS
-					if (any is not ComValue)
-#endif
-						InvokeMeta(any, "__Delete");
-					if (any is IDisposable idisp) idisp.Dispose();
-				}
-				catch { /* swallow per destructor semantics */ }
-			}
+					foreach (var any in batch)
+						DisposeNative(any);
 
-			// Drop strong refs so GC can actually collect
-			batch.Clear();
+					return;
+				}
+
+				// Sort for outside-in (parents before children)
+				var ordered = OrderOutsideIn(batch);
+
+				// Now call __Delete in that order
+				foreach (var any in ordered)
+				{
+					try
+					{
+						// Important: call script hook first, then native frees if you have any.
+#if WINDOWS
+						if (any is not ComValue)
+#endif
+							InvokeMeta(any, "__Delete");
+						if (any is IDisposable idisp) idisp.Dispose();
+					}
+					catch { /* swallow per destructor semantics */ }
+				}
+
+				// Drop strong refs so GC can actually collect
+				batch.Clear();
+			}
+		}
+
+		internal void Stop()
+		{
+			lock (runGate)
+			{
+				List<Any> batch;
+
+				lock (_lock)
+				{
+					stopped = true;
+					batch = DrainUnsafe();
+				}
+
+				foreach (var any in batch)
+					DisposeNative(any);
+			}
+		}
+
+		private List<Any> Drain()
+		{
+			lock (_lock)
+				return DrainUnsafe();
+		}
+
+		private List<Any> DrainUnsafe()
+		{
+			var batch = new List<Any>(_q.Count);
+
+			while (_q.Count > 0)
+				batch.Add(_q.Dequeue());
+
+			_pending = false;
+			return batch;
+		}
+
+		private static void DisposeNative(Any obj)
+		{
+			try
+			{
+				if (obj is IDisposable disposable)
+					disposable.Dispose();
+			}
+			catch { }
 		}
 
 		private static List<Any> OrderOutsideIn(List<Any> batch)

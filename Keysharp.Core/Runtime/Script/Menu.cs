@@ -16,7 +16,7 @@ namespace Keysharp.Runtime
 			if (NoTrayIcon || IsUiInitializationBlocked || IsHeadless)
 				return false;
 
-			Script.InvokeOnUIThread(() =>
+			InvokeOnUIThread(() =>
 			{
 				if (Tray == null || trayMenu == null)
 					CreateTrayMenu();
@@ -71,12 +71,12 @@ namespace Keysharp.Runtime
 
 			internal static void SuspendHotkeys()
 			{
-				Script.InvokeOnUIThread(() =>
+				var script = Script.TheScript;
+				script.InvokeOnUIThread(() =>
 				{
-					var script = Script.TheScript;
 					var suspended = script.flowData.suspended = !script.flowData.suspended;
 					script.HotstringManager.SuspendAll(suspended);//Must do this prior to ManifestAllHotkeysHotstringsHooks() to avoid incorrect removal of hook.
-					_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(); //Update the state of all hotkeys based on the complex interdependencies hotkeys have with each another.
+					_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(script); //Update the state of all hotkeys based on the complex interdependencies hotkeys have with each another.
 
 					script.suspendMenuItem?.Checked = suspended;
 					script.mainWindow?.SuspendHotkeysToolStripMenuItem.Checked = suspended;

@@ -69,7 +69,7 @@ namespace Keysharp.Builtins
 			}
 
 			if (err.ExcType == Keyword_ExitApp)
-				_ = Keysharp.Internals.Flow.ExitAppInternal(Flow.ExitReasons.Critical, 2L, true);
+				_ = Keysharp.Internals.Flow.ExitAppInternal(script, Flow.ExitReasons.Critical, 2L, true);
 
 			return exitThread;
 		}
@@ -100,7 +100,7 @@ namespace Keysharp.Builtins
 			switch (dlg.Result)
 			{
 				case ErrorDialog.ErrorDialogResult.Exit:
-					_ = Keysharp.Internals.Flow.ExitAppInternal(Flow.ExitReasons.Critical, 2L, false);
+					_ = Keysharp.Internals.Flow.ExitAppInternal(script, Flow.ExitReasons.Critical, 2L, false);
 					break;
 
 				case ErrorDialog.ErrorDialogResult.Reload:
@@ -1401,7 +1401,7 @@ namespace Keysharp.Builtins
 			switch (dlg.Result)
 			{
 				case ErrorDialogResult.Exit:
-					_ = Keysharp.Internals.Flow.ExitAppInternal(Flow.ExitReasons.Critical, 2L, false);
+					_ = Keysharp.Internals.Flow.ExitAppInternal(Script.TheScript, Flow.ExitReasons.Critical, 2L, false);
 					break;
 
 				case ErrorDialogResult.Reload:

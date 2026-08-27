@@ -3,6 +3,8 @@ namespace Keysharp.Internals.Threading
 {
 	internal class ThreadVariableManager
 	{
+		private readonly Script script;
+
 		/// <summary>
 		/// Since AHK doesn't actually use threads, and instead behaves more as a stack-based system, using the built-in [ThreadStatic] attribute for members
 		/// will not work.
@@ -11,10 +13,12 @@ namespace Keysharp.Internals.Threading
 		/// So we create a SlimStack to be used as an object pool which we push and pop each time a thread starts and finishes.
 		/// </summary>
 		internal SlimStack<ThreadVariables> threadVars;
+		internal Script Owner => script;
 		internal int PseudoThreadCount => Math.Max(0, threadVars.Index - 1);
 
-		internal ThreadVariableManager(int size)
+		internal ThreadVariableManager(Script script, int size)
 		{
+			this.script = script ?? throw new ArgumentNullException(nameof(script));
 			threadVars = new (size, () => new ThreadVariables());
 		}
 
@@ -51,7 +55,7 @@ namespace Keysharp.Internals.Threading
 			var ctid = Thread.CurrentThread.ManagedThreadId;
 
 			//Do not check threadVars for null, because it should have always been created with a call to PushThreadVariables() before this.
-			if (ctid != Script.TheScript.ManagedMainThreadID
+			if (ctid != script.ManagedMainThreadID
 					|| threadVars.Index > 0)//Never pop the last object on the main thread.
 			{
 				//Diagnostics.Debug.WriteLine($"About to pop with {threadVars.Index} existing threads");
@@ -75,12 +79,11 @@ namespace Keysharp.Internals.Threading
 		internal ThreadVariables PushThreadVariables(long priority, bool skipUninterruptible,
 				bool isCritical = false, ThreadKind kind = ThreadKind.None)
 		{
-			var script = Script.TheScript;
 			var pushed = threadVars.TryPush(out var tv);
 
 			if (pushed)
 			{
-				tv.Init();
+				tv.Init(script);
 				tv.threadId = Thread.CurrentThread.ManagedThreadId;
 				tv.kind = kind;
 
@@ -106,7 +109,7 @@ namespace Keysharp.Internals.Threading
 					if (!tv.isCritical)
 						tv.isCritical = isCritical;
 
-					tv.ApplyUninterruptibleStartupWindow();
+					tv.ApplyUninterruptibleStartupWindow(script);
 				}
 			}
 

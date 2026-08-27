@@ -18,6 +18,8 @@ namespace Keysharp.Internals.Input.Linux
 	/// </summary>
 	internal sealed class InputdKeyboardMouseSender : KeyboardMouseSender
 	{
+		internal InputdKeyboardMouseSender(Script script) : base(script) { }
+
 		// KEYEVENTF_* constants equal KSI_KEYEVENTF_* by design.
 		private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
 		private const uint KEYEVENTF_KEYUP = 0x0002;
@@ -181,9 +183,9 @@ namespace Keysharp.Internals.Input.Linux
 		}
 
 		/// <summary>Reconciles logical modifiers after bypass-hook SendInput.</summary>
-		private static void ReconcileLogicalModifiersFromOs()
+		private void ReconcileLogicalModifiersFromOs()
 		{
-			var ht = Script.TheScript.HookThread;
+			var ht = script.HookThread;
 			var sender = ht.kbdMsSender;
 
 			if (sender == null)
@@ -204,8 +206,6 @@ namespace Keysharp.Internals.Input.Linux
 		/// <summary>Uses the inputd-backed live toggle state after sending a lock key.</summary>
 		internal override ToggleValueType ToggleKeyState(uint vk, ToggleValueType toggleValue)
 		{
-			var script = Script.TheScript;
-
 			var startingState = script.HookThread.IsKeyToggledOn(vk) ? ToggleValueType.On : ToggleValueType.Off;
 
 			if (toggleValue != ToggleValueType.On && toggleValue != ToggleValueType.Off)

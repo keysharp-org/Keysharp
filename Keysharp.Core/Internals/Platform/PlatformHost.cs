@@ -29,34 +29,18 @@ namespace Keysharp.Internals
 		internal abstract ISession Session { get; }
 		internal abstract IPermissionManager Permissions { get; }
 
-		/// <summary>The backend-specific clipboard. Reached only through <see cref="Clipboard"/>, never directly:
+		/// <summary>The backend-specific clipboard. Reached only through <see cref="CreateClipboard"/>, never directly:
 		/// it assumes it is called on the UI thread.</summary>
-		internal abstract IClipboard ClipboardCore { get; }
+		internal abstract IClipboard GetClipboardCore(Script owner);
 
-		private IClipboard clipboardFacade;
-
-		/// <summary>The process clipboard, with every operation marshalled to the UI thread. Wrapping the resolved
-		/// backend ONCE, here, is what makes that correct by construction — the WinForms clipboard requires an STA
+		/// <summary>Creates a Script-owned view of the process clipboard, with every operation marshalled through
+		/// that Script's UI context. The WinForms clipboard requires an STA
 		/// thread and the GTK/Cocoa clipboards are UI-thread-only, so a call from a real thread (Ks.RealThread) is a
 		/// failure at any seam that forgot to marshal. Marshalling at the call sites instead is what let
 		/// ClipboardAll(), Image.FromClipboard and the old CopyImageToClipboard/IsClipboardEmpty each ship without
 		/// it. <see cref="Script.InvokeOnUIThread{T}"/> short-circuits on the main thread, so this costs nothing in
 		/// the common case.</summary>
-		internal IClipboard Clipboard
-		{
-			get
-			{
-				var facade = clipboardFacade;
-
-				if (facade == null)
-				{
-					facade = new UiThreadClipboard(ClipboardCore);
-					facade = Interlocked.CompareExchange(ref clipboardFacade, facade, null) ?? facade;
-				}
-
-				return facade;
-			}
-		}
+		internal IClipboard CreateClipboard(Script owner) => new UiThreadClipboard(owner, GetClipboardCore(owner));
 
 		public virtual void Dispose() { }
 
@@ -92,7 +76,6 @@ namespace Keysharp.Internals
 		private readonly IHotkeys hotkeys = new WindowsHotkeys();
 		private readonly ISession session = new WindowsSession();
 		private readonly IPermissionManager permissions = new DefaultPermissionManager();
-		private readonly IClipboard clipboard = new WindowsClipboard();
 
 		internal override IWindow Window => window;
 		internal override IWindowEvents WindowEvents => windowEvents;
@@ -107,7 +90,7 @@ namespace Keysharp.Internals
 		internal override IHotkeys Hotkeys => hotkeys;
 		internal override ISession Session => session;
 		internal override IPermissionManager Permissions => permissions;
-		internal override IClipboard ClipboardCore => clipboard;
+		internal override IClipboard GetClipboardCore(Script owner) => new WindowsClipboard(owner);
 	}
 #elif LINUX
 	internal sealed class LinuxPlatformHost : PlatformHost
@@ -146,7 +129,7 @@ namespace Keysharp.Internals
 		internal override IHotkeys Hotkeys => hotkeys;
 		internal override ISession Session => session;
 		internal override IPermissionManager Permissions => permissions;
-		internal override IClipboard ClipboardCore => clipboard.Value;
+		internal override IClipboard GetClipboardCore(Script owner) => clipboard.Value;
 
 		public override void Dispose()
 		{
@@ -188,7 +171,7 @@ namespace Keysharp.Internals
 		internal override IHotkeys Hotkeys => hotkeys;
 		internal override ISession Session => session;
 		internal override IPermissionManager Permissions => permissions;
-		internal override IClipboard ClipboardCore => clipboard;
+		internal override IClipboard GetClipboardCore(Script owner) => clipboard;
 	}
 #endif
 }

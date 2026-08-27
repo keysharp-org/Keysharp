@@ -146,7 +146,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static object A_Clipboard
 		{
-			// Platform.Clipboard marshals to the UI thread itself (see PlatformHost.Clipboard), so this — like every
+			// Platform.Clipboard marshals to the UI thread itself (see PlatformHost.CreateClipboard), so this — like every
 			// other clipboard seam — is a plain call. The backend behind it (Windows raw-Win32, a Wayland shell
 			// extension, or Eto) was chosen once at startup; see LinuxClipboards.Resolve.
 			get => Platform.Clipboard.GetText();
@@ -2109,14 +2109,14 @@ namespace Keysharp.Builtins
 			get
 			{
 #if WINDOWS
-				return Script.InvokeOnUIThread(() => Application.ColorMode.ToString());
+				return Script.TheScript.InvokeOnUIThread(() => Application.ColorMode.ToString());
 #else
 				var app = Application.Instance;
 
 				if (app == null || Script.IsUiInitializationBlocked)
 					return Script.TheScript.AccessorData.guiTheme;
 
-				return Script.InvokeOnUIThread(() =>
+				return Script.TheScript.InvokeOnUIThread(() =>
 				{
 					var theme = app.Theme;
 
@@ -2147,10 +2147,10 @@ namespace Keysharp.Builtins
 
 				Script.TheScript.AccessorData.guiTheme = normalizedTheme;
 #if WINDOWS
-				Script.InvokeOnUIThread(() => Application.SetColorMode(colorMode));
+				Script.TheScript.InvokeOnUIThread(() => Application.SetColorMode(colorMode));
 #else
 				if (!Script.IsUiInitializationBlocked && Application.Instance is { } app)
-					Script.InvokeOnUIThread(() => Script.ApplyEtoGuiTheme(app, normalizedTheme));
+					Script.TheScript.InvokeOnUIThread(() => Script.ApplyEtoGuiTheme(app, normalizedTheme));
 #endif
 			}
 		}

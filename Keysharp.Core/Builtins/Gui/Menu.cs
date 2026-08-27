@@ -407,7 +407,7 @@ namespace Keysharp.Builtins
 
 				if (mainWindow != null && A_AllowMainWindow.Ab())
 				{
-					Script.PostToUIThread(() =>
+					script.PostToUIThread(() =>
 					{
 						mainWindow.AllowShowDisplay = true;
 						mainWindow.WindowState = mainWindow.lastWindowState == FormWindowState.Minimized
@@ -437,7 +437,7 @@ namespace Keysharp.Builtins
 			};
 			var exitfunc = (params object[] args) =>
 			{
-				_ = Keysharp.Internals.Flow.ExitAppInternal(Flow.ExitReasons.Menu, null, true);
+				_ = Keysharp.Internals.Flow.ExitAppInternal(script, Flow.ExitReasons.Menu, null, true);
 				return DefaultObject;
 			};
 			//Won't be a gui target, so won't be marked as IsGui internally, but it's ok because it's only ever called on the gui thread in response to gui events.
@@ -724,7 +724,7 @@ namespace Keysharp.Builtins
 			// default of true (AHK's aWait.value_or(temp_modeless)). Passing false retains the non-blocking form.
 			var shouldWait = wait.Ab(true);
 
-			Script.InvokeOnUIThread(() =>
+			Script.TheScript.InvokeOnUIThread(() =>
 			{
 				_ = GetCursorPos(out POINT def);
 				var _x = x.Ai();
@@ -951,7 +951,7 @@ namespace Keysharp.Builtins
 				{
 					// Create the registration explicitly (not ModifyEventHandlers) so the "Pn" option parsed below can
 					// set its Priority — the priority then travels with the registration to the launch.
-					clickReg = new Keysharp.Internals.Scripting.CallbackRegistration(Functions.GetKeysharpFunc(funcorsub, null, true), Script.TheScript?.EventScheduler, true);
+					clickReg = new Keysharp.Internals.Scripting.CallbackRegistration(Functions.GetKeysharpFunc(funcorsub, null, true), Script.TheScript.EventScheduler, true);
 					clickHandlers.GetOrAdd(item, static _ => new()).Add(clickReg);
 				}
 

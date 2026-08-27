@@ -44,6 +44,8 @@ namespace Keysharp.Internals.Window.Linux
 		/// </summary>
 		internal sealed class CaretEventSource : IDisposable
 		{
+			private readonly Script owner;
+
 			/// <summary>How long a resolved active window is reused for. Resolving it is a cheap property read on X11
 			/// but a synchronous D-Bus round trip on Wayland, and caret events arrive per keystroke — while the caret
 			/// itself follows focus, so a briefly stale answer can only affect the first event after an app switch.</summary>
@@ -57,6 +59,9 @@ namespace Keysharp.Internals.Window.Linux
 			private bool wanted;                     // a CaretMove subscription exists
 			private bool attached;
 			private bool disposed;
+
+			internal CaretEventSource(Script owner)
+				=> this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
 
 			// UI-thread-only (the AT-SPI callback and attach/detach all run on the GDK main loop).
 			private ActiveWindowSnapshot activeCached;
@@ -76,7 +81,7 @@ namespace Keysharp.Internals.Window.Linux
 						return;
 				}
 
-				Script.PostToUIThread(AttachOnUI);
+				owner.PostToUIThread(AttachOnUI);
 			}
 
 			internal void Stop()
@@ -84,7 +89,7 @@ namespace Keysharp.Internals.Window.Linux
 				lock (gate)
 					wanted = false;
 
-				Script.PostToUIThread(DetachOnUI);
+				owner.PostToUIThread(DetachOnUI);
 			}
 
 			public void Dispose()
@@ -95,7 +100,7 @@ namespace Keysharp.Internals.Window.Linux
 					wanted = false;
 				}
 
-				Script.PostToUIThread(DetachOnUI);
+				owner.PostToUIThread(DetachOnUI);
 			}
 
 			// ---- UI-thread attach/detach --------------------------------------------------------

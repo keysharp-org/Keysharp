@@ -360,7 +360,7 @@ namespace Keysharp.Builtins
 					//refcounting (GuiType::DestroyIconsIfUnused); this relies on the collector instead, which costs
 					//a delayed free per TraySetIcon call rather than a dangling handle.
 					script.customIcon = icon;
-					Script.PostToUIThread(() => ApplyScriptIcon(script, icon));
+					script.PostToUIThread(() => ApplyScriptIcon(script, icon));
 				}
 			}
 			else
@@ -368,7 +368,7 @@ namespace Keysharp.Builtins
 				A_IconFile = "";
 				A_IconNumber = 1L;
 				script.customIcon = null;
-				Script.PostToUIThread(() => ApplyScriptIcon(script, script.normalIcon));
+				script.PostToUIThread(() => ApplyScriptIcon(script, script.normalIcon));
 			}
 
 			return DefaultObject;

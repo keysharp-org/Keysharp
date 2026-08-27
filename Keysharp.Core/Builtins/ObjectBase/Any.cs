@@ -116,7 +116,7 @@ namespace Keysharp.Builtins
 		~Any()
 		{
 			HasFinalizer = false;
-			DestructorPump.Enqueue(this);
+			TheScript?.DestructorPump.Enqueue(this);
 		}
 
 		// These must be visible such that user classes can call base.__Init() without errors, and AHK also exposes them

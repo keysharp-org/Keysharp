@@ -80,6 +80,7 @@ namespace Keysharp.Internals
 		{
 			internal readonly object Gate = new();
 			internal readonly IImageOverlayBacking Backing;
+			internal readonly Script Owner;
 			internal bool Retired;
 
 			// The surface this slot last presented, to catch a present from a different one (see
@@ -88,20 +89,26 @@ namespace Keysharp.Internals
 			// one land on its address, so identity here always means identity.
 			internal OverlaySurface LastPresented;
 
-			internal OverlaySlot(IImageOverlayBacking backing) => Backing = backing;
+			internal OverlaySlot(Script owner, IImageOverlayBacking backing)
+			{
+				Owner = owner;
+				Backing = backing;
+			}
 		}
+
+		private readonly record struct PointerSinkRegistration(Script Owner, Action<OverlayPointerEvent> Sink);
 
 		private readonly object sync = new ();
 		private readonly Dictionary<uint, OverlaySlot> overlays = new ();
 
 		// Pointer sinks by overlay id, kept OUTSIDE the slot so a sink registered before the first Show — or
 		// after a Hide disposed the backing — is (re)applied to whatever backing the id gets next.
-		private readonly Dictionary<uint, Action<OverlayPointerEvent>> pointerSinks = new ();
+		private readonly Dictionary<uint, PointerSinkRegistration> pointerSinks = new ();
 
 		public abstract PixelSize GetCanvasSize(ScreenRect bounds);
 
 		/// <summary>Create the backing for a new overlay id (called under the map lock; must not do UI/IO work).</summary>
-		protected abstract IImageOverlayBacking CreateBacking(uint id);
+		protected abstract IImageOverlayBacking CreateBacking(uint id, Script owner);
 
 		/// <summary>
 		/// Allocates a drawing surface of the kind this platform can present most cheaply. Deliberately not tied
@@ -124,7 +131,7 @@ namespace Keysharp.Internals
 				if (sink == null)
 					_ = pointerSinks.Remove(id);
 				else
-					pointerSinks[id] = sink;
+					pointerSinks[id] = new(Script.TheScript, sink);
 
 				_ = overlays.TryGetValue(id, out slot);
 			}
@@ -158,12 +165,13 @@ namespace Keysharp.Internals
 			{
 				if (!overlays.TryGetValue(id, out slot))
 				{
-					overlays[id] = slot = new OverlaySlot(CreateBacking(id));
+					var owner = Script.TheScript;
+					overlays[id] = slot = new OverlaySlot(owner, CreateBacking(id, owner));
 					created = true;
 
 					// A fresh backing must inherit the id's registered sink (a plain property store; no UI work).
 					if (pointerSinks.TryGetValue(id, out var sink))
-						slot.Backing.PointerSink = sink;
+						slot.Backing.PointerSink = sink.Sink;
 				}
 			}
 
@@ -277,26 +285,33 @@ namespace Keysharp.Internals
 			}
 		}
 
-		public bool TryHideAllImageOverlays()
+		public bool TryHideAllImageOverlays(Script owner = null)
 		{
-			OverlaySlot[] all;
+			KeyValuePair<uint, OverlaySlot>[] all;
+			uint[] sinks;
 
-			// Clearing the map is HideAll's linearization point. Show and Move recheck membership after their native
-			// call, so an operation already holding a slot gate cannot report success after this point.
+			// Removing the matching slots is HideAll's linearization point. Show and Move recheck membership after
+			// their native call, so an operation already holding a slot gate cannot report success after this point.
 			lock (sync)
 			{
-				if (overlays.Count == 0)
+				all = overlays.Where(kv => owner == null || ReferenceEquals(kv.Value.Owner, owner)).ToArray();
+				sinks = pointerSinks.Where(kv => owner == null || ReferenceEquals(kv.Value.Owner, owner))
+					.Select(kv => kv.Key).ToArray();
+
+				if (all.Length == 0 && sinks.Length == 0)
 					return false;
 
-				all = overlays.Values.ToArray();
-
-				foreach (var slot in all)
+				foreach (var (id, slot) in all)
+				{
 					slot.Retired = true;
+					_ = overlays.Remove(id);
+				}
 
-				overlays.Clear();
+				foreach (var id in sinks)
+					_ = pointerSinks.Remove(id);
 			}
 
-			foreach (var slot in all)
+			foreach (var (_, slot) in all)
 			{
 				lock (slot.Gate)
 					try { slot.Backing.Dispose(); } catch { }

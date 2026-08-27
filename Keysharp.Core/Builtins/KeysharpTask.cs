@@ -69,11 +69,12 @@ namespace Keysharp.Builtins
 					return existing;
 
 				EnsureUnobservedHook();
+				var owner = Script.TheScript?.EventScheduler;
 				// The owner is resolved inside the factory so it belongs to the wrapper which actually wins:
 				// ConditionalWeakTable runs the factory outside its lock, so several threads can each build one
 				// and all but one are discarded. Nothing may happen in the constructor for the same reason -- a
 				// side effect there would be performed once per loser and never undone.
-				return wrappers.GetValue(t, key => new KeysharpTask(key, Script.TheScript?.EventScheduler));
+				return wrappers.GetValue(t, key => new KeysharpTask(key, owner));
 			}
 
 			/// <summary>The underlying <see cref="Task"/>, for runtime code that needs it rather than the wrapper.</summary>
@@ -300,9 +301,10 @@ namespace Keysharp.Builtins
 			/// </summary>
 			private void Dispatch(KeysharpFunc fo, TaskCompletionSource<object> completion)
 			{
-				var scheduler = ownerScheduler ?? Script.TheScript?.EventScheduler;
+				var scheduler = ownerScheduler;
+				var script = scheduler?.Owner;
 
-				if (scheduler == null || scheduler.IsDisposed || Script.TheScript is not { hasExited: false })
+				if (scheduler == null || scheduler.IsDisposed || script is not { hasExited: false, IsDisposed: false })
 				{
 					_ = completion.TrySetResult(DefaultObject);
 					return;
@@ -331,7 +333,7 @@ namespace Keysharp.Builtins
 					}
 
 					RunCallback(fo, completion);
-					Script.TheScript.ExitIfNotPersistent();
+					script.ExitIfNotPersistent();
 					return ScriptEventExecutionResult.Executed;
 				}))
 					_ = completion.TrySetResult(DefaultObject);

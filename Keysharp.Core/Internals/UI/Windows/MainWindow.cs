@@ -20,7 +20,7 @@ namespace Keysharp.Internals.UI.Windows
 
 		internal ToolStripMenuItem SuspendHotkeysToolStripMenuItem => suspendHotkeysToolStripMenuItem;
 
-		public MainWindow()
+		internal MainWindow(Script owner) : base(owner)
 		{
 			InitializeComponent();
 			//FormBorderStyle = FormBorderStyle.SizableToolWindow;
@@ -74,7 +74,7 @@ namespace Keysharp.Internals.UI.Windows
 			_ = this.BeginInvoke(() =>
 			{
 				ShowIfNeeded();
-				SetTextInternal(HotkeyDefinition.GetHotkeyDescriptions(), MainFocusedTab.Hotkeys, txtHotkeys, true);
+				SetTextInternal(HotkeyDefinition.GetHotkeyDescriptions(OwnerScript), MainFocusedTab.Hotkeys, txtHotkeys, true);
 			});
 			return DefaultObject;
 		}
@@ -185,14 +185,14 @@ namespace Keysharp.Internals.UI.Windows
 					break;
 
 				case WindowsAPI.WM_ENDSESSION:
-					_ = Keysharp.Internals.Flow.ExitAppInternal((m.Msg & WindowsAPI.ENDSESSION_LOGOFF) != 0 ? Keysharp.Builtins.Flow.ExitReasons.LogOff : Keysharp.Builtins.Flow.ExitReasons.Shutdown, null, false);
+					_ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, (m.Msg & WindowsAPI.ENDSESSION_LOGOFF) != 0 ? Keysharp.Builtins.Flow.ExitReasons.LogOff : Keysharp.Builtins.Flow.ExitReasons.Shutdown, null, false);
 					break;
 
 				// WM_HOTKEY is delivery for OS-registered (RegisterHotKey) hotkeys, which is Windows-only. On Linux/macOS
 				// there is no equivalent OS facility; hotkeys are instead delivered through the keyboard hook (HookThread),
 				// so no cross-platform mechanism is needed here.
 				case WindowsAPI.WM_HOTKEY:
-					_ = Script.TheScript.HookThread.PostMessage(new KeysharpMsg()
+					_ = OwnerScript.HookThread.PostMessage(new KeysharpMsg()
 					{
 						hwnd = m.HWnd,//Unused, but probably still good to assign.
 						message = WindowsAPI.WM_HOTKEY,
@@ -224,7 +224,7 @@ namespace Keysharp.Internals.UI.Windows
 
 		private void editScriptToolStripMenuItem_Click(object sender, EventArgs e) => Builtins.Debug.Edit();
 
-		private void exitToolStripMenuItem_Click(object sender, EventArgs e) => _ = Keysharp.Internals.Flow.ExitAppInternal(Keysharp.Builtins.Flow.ExitReasons.Menu, null, false);
+		private void exitToolStripMenuItem_Click(object sender, EventArgs e) => _ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, Keysharp.Builtins.Flow.ExitReasons.Menu, null, false);
 
 		private MainFocusedTab GetFocusedTab(TabPage page)
 		{
@@ -282,7 +282,7 @@ namespace Keysharp.Internals.UI.Windows
 
 			IsClosing = true;
 
-			if (Keysharp.Internals.Flow.ExitAppInternal(Keysharp.Builtins.Flow.ExitReasons.Close, null, false))
+			if (Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, Keysharp.Builtins.Flow.ExitReasons.Close, null, false))
 			{
 				IsClosing = false;
 				e.Cancel = true;

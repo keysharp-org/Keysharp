@@ -62,7 +62,13 @@ namespace Keysharp.Builtins
 			_reference = reference;
 			_arity = arity;
 			_ownerState = new(Script.TheScript?.EventScheduler, true);
-			_ownerState.OwnerScheduler?.RegisterOwnedDelegate(this);
+
+			if (_ownerState.OwnerScheduler is { } owner && !owner.RegisterOwnedDelegate(this))
+			{
+				_ownerState.Clear();
+				throw new ObjectDisposedException(nameof(Script));
+			}
+
 			_slotId = Publish(id => CallbackPointerCache.GetOrCreateForArity(arity, id));
 		}
 
@@ -112,7 +118,13 @@ namespace Keysharp.Builtins
 			_typedParameters = conversions[.._arity];
 			_typedReturn = conversions[_arity];
 			_ownerState = new(Script.TheScript?.EventScheduler, true);
-			_ownerState.OwnerScheduler?.RegisterOwnedDelegate(this);
+
+			if (_ownerState.OwnerScheduler is { } owner && !owner.RegisterOwnedDelegate(this))
+			{
+				_ownerState.Clear();
+				throw new ObjectDisposedException(nameof(Script));
+			}
+
 			_slotId = Publish(id => TypedCallbackSignature.IsAllInteger(conversions)
 								? CallbackPointerCache.GetOrCreateForArity(_arity, id)
 								: TypedCallbackSignature.GetOrCreate(conversions, cdecl, id));
@@ -309,18 +321,21 @@ namespace Keysharp.Builtins
 
 		private object InvokeCallback(object[] args, long[] rawArgs)
 		{
-			var script = Script.TheScript;
-			var targetScheduler = OwnerScheduler ?? script.EventScheduler;
+			var targetScheduler = OwnerScheduler;
+			var script = targetScheduler?.Owner;
 			(object value, bool completed) execution;
+
+			if (targetScheduler == null || targetScheduler.IsDisposed
+					|| script is not { hasExited: false, IsDisposed: false })
+				return null;
 
 			if (_fast)
 			{
 				// On the scheduler's own thread InvokeSynchronous would just call the delegate inline, so run the
 				// body directly there: capturing it would otherwise allocate a closure and a delegate on every
 				// single invocation, which is the case Fast mode exists to keep cheap. This also skips the
-				// disposed check InvokeSynchronous opens with, deliberately: a callback arriving on the owning
-				// thread after disposal queues nothing and is harmless, whereas throwing would cross the native
-				// caller's frames.
+				// disposed check in InvokeSynchronous; owner retirement was checked above so a late callback can
+				// never run script code or cross the native caller's frames with ObjectDisposedException.
 				execution = targetScheduler.OwnsCurrentThread
 							? ExecuteTarget(args, rawArgs)
 							: targetScheduler.InvokeSynchronous(() => ExecuteTarget(args, rawArgs));
@@ -330,9 +345,6 @@ namespace Keysharp.Builtins
 				// Match AutoHotkey's callback behavior: incoming native callbacks are treated like
 				// emergency interruptions, so they must not be blocked by the current thread's
 				// critical/uninterruptible state or a higher current priority.
-				if (targetScheduler.IsDisposed)
-					return null;
-
 				var launchPriority = script.Threads.CurrentThread.priority;
 				var launched = targetScheduler.OwnsCurrentThread
 							   ? RunInPseudoThread(targetScheduler, launchPriority, args, rawArgs)

@@ -3,6 +3,8 @@ namespace Keysharp.Internals.Threading
 {
 	public class Threads
 	{
+		private readonly Script script;
+
 		/// <summary>
 		/// Each thread has its own TVM. This means the main UI thread gets one, and worker threads get their own.
 		/// This allows the hook thread to run #HotIf evaluations separately without interfering with the main thread.
@@ -39,10 +41,13 @@ namespace Keysharp.Internals.Threading
 			}
 		}
 
-		public Threads()
+		internal Threads(Script script)
 		{
-			var tvmSize = (int)Script.TheScript.MaxThreadsTotal + Script.maxEmergencyThreads + 1;
-			tvm = new ThreadLocal<ThreadVariableManager>(() => new ThreadVariableManager(tvmSize), true);
+			this.script = script ?? throw new ArgumentNullException(nameof(script));
+			var tvmSize = (int)script.MaxThreadsTotal + Script.maxEmergencyThreads + 1;
+			//No trackAllValues: nothing enumerates them, and tracking would pin every thread's manager for as long
+			//as this Script lives -- one per thread per create-dispose cycle in a host that makes many.
+			tvm = new ThreadLocal<ThreadVariableManager>(() => new ThreadVariableManager(script, tvmSize));
 			_ = EnsureCurrentThreadVariables();
 		}
 
@@ -58,20 +63,18 @@ namespace Keysharp.Internals.Threading
 
 		public bool TryBeginThread(out ThreadVariables tv)
 		{
-			var skip = Script.TheScript.FlowData.allowInterruption == false;
+			var skip = script.FlowData.allowInterruption == false;
 			return TryPushThreadVariables(0, skip, false, true, false, out tv);
 		}
 
 		public bool TryBeginEmergencyThread(out ThreadVariables tv)
 		{
-			var skip = Script.TheScript.FlowData.allowInterruption == false;
+			var skip = script.FlowData.allowInterruption == false;
 			return TryPushThreadVariables(0, skip, false, true, true, out tv);
 		}
 
 		internal bool TryReserveThreadCount(bool allowEmergencyOverflow = false)
 		{
-			var script = Script.TheScript;
-
 			while (true)
 			{
 				var existingCount = Volatile.Read(ref script.totalExistingThreads);
@@ -95,8 +98,6 @@ namespace Keysharp.Internals.Threading
 			if (tv == null)
 				return;
 
-			var script = Script.TheScript;
-
 			tv.task = false;
 
 			PopThreadVariables(tv, checkThread);
@@ -109,7 +110,6 @@ namespace Keysharp.Internals.Threading
 		internal bool TryPushThreadVariables(long priority, bool skipUninterruptible,
 				bool isCritical, bool inc, bool allowEmergencyOverflow, out ThreadVariables tv, ThreadKind kind = ThreadKind.None)
 		{
-			var script = Script.TheScript;
 			tv = null;
 
 			if (inc)
@@ -142,7 +142,6 @@ namespace Keysharp.Internals.Threading
 
 		internal bool AnyThreadsAvailable()
 		{
-			var script = Script.TheScript;
 			return Volatile.Read(ref script.totalExistingThreads) < script.MaxThreadsTotal;
 		}
 
@@ -191,8 +190,6 @@ namespace Keysharp.Internals.Threading
 
 		internal bool IsInterruptible()
 		{
-			var script = Script.TheScript;
-
 			if (!script.FlowData.allowInterruption)
 				return false;
 
@@ -225,7 +222,7 @@ namespace Keysharp.Internals.Threading
 		{
 			try
 			{
-				Script.TheScript.UIEventScheduler.EnqueueThreadLaunch(priority, skipUninterruptible, isCritical, act, kind);
+				script.UIEventScheduler.EnqueueThreadLaunch(priority, skipUninterruptible, isCritical, act, kind);
 			}
 			catch (Exception ex) when (ex.InnerException is not null)
 			{

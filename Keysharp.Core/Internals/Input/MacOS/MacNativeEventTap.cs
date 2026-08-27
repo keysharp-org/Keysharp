@@ -44,6 +44,7 @@ namespace Keysharp.Internals.Input.MacOS
 		private const double RunLoopPollSeconds = 0.5;
 		private const int RunLoopFinished = 1;
 		private const int RunLoopStopped = 2;
+		private readonly Script owner;
 		private readonly Func<uint, nint, bool> processEvent;
 		private readonly Action tapReenabled;
 		private readonly Action<MacNativeEventTap, string> tapTerminated;
@@ -61,16 +62,17 @@ namespace Keysharp.Internals.Input.MacOS
 		private int timeoutDisableCount;
 
 		internal MacNativeEventTap(MacHookThread owner, ulong eventMask)
-			: this(eventMask,
+			: this(owner.script, eventMask,
 				(type, cgEvent) => owner.ProcessNativeKeyboardEvent(type, cgEvent)
 					|| owner.ProcessNativeMouseEvent(type, cgEvent),
 				owner.OnNativeTapReenabled, owner.OnNativeTapTerminated, MacEventTapDriver.Native)
 		{
 		}
 
-		internal MacNativeEventTap(ulong eventMask, Func<uint, nint, bool> processEvent,
+		internal MacNativeEventTap(Script owner, ulong eventMask, Func<uint, nint, bool> processEvent,
 			Action tapReenabled, Action<MacNativeEventTap, string> tapTerminated, MacEventTapDriver driver)
 		{
+			this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
 			this.eventMask = eventMask;
 			this.processEvent = processEvent ?? throw new ArgumentNullException(nameof(processEvent));
 			this.tapReenabled = tapReenabled ?? throw new ArgumentNullException(nameof(tapReenabled));
@@ -202,7 +204,7 @@ namespace Keysharp.Internals.Input.MacOS
 					failed = State != MacEventTapState.Stopping && terminalFailure != null;
 					SetState(failed ? MacEventTapState.Faulted : MacEventTapState.Stopped);
 				}
-				if (failed && everStarted)
+				if (failed && everStarted && !owner.IsDisposed)
 					tapTerminated(this, terminalFailure);
 			}
 		}
@@ -275,6 +277,9 @@ namespace Keysharp.Internals.Input.MacOS
 
 		private nint OnEvent(nint proxy, uint type, nint cgEvent, nint userInfo)
 		{
+			if (owner.IsDisposed)
+				return cgEvent;
+
 			try
 			{
 				if (type == MacNativeInput.kCGEventTapDisabledByTimeout || type == MacNativeInput.kCGEventTapDisabledByUserInput)

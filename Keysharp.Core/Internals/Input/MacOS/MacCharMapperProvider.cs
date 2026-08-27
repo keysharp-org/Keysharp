@@ -76,6 +76,7 @@ namespace Keysharp.Internals.Input.Unix
 
 		private static readonly nint observerToken = 1;
 		private static WeakReference<MacCharMapperProvider> layoutObserver;
+		private WeakReference<Script> uiOwner;
 		private bool monitoringStarted;
 		private bool layoutPrepared;
 		private volatile bool disposed;
@@ -306,7 +307,17 @@ namespace Keysharp.Internals.Input.Unix
 			if (disposed)
 				return;
 			if (Interlocked.Increment(ref reloadRequests) == 1)
-				_ = ThreadPool.QueueUserWorkItem(_ => Script.PostToUIThread(ProcessQueuedLayoutReload));
+			{
+				var ownerRef = Volatile.Read(ref uiOwner);
+
+				if (ownerRef == null || !ownerRef.TryGetTarget(out var owner) || owner.IsDisposed)
+				{
+					_ = Interlocked.Exchange(ref reloadRequests, 0);
+					return;
+				}
+
+				_ = ThreadPool.QueueUserWorkItem(_ => owner.PostToUIThread(ProcessQueuedLayoutReload));
+			}
 		}
 
 		private void ProcessQueuedLayoutReload()
@@ -326,15 +337,18 @@ namespace Keysharp.Internals.Input.Unix
 			}
 		}
 
-		public void PrepareForInputHook()
+		public void PrepareForInputHook(Script owner)
 		{
+			ArgumentNullException.ThrowIfNull(owner);
+			Volatile.Write(ref uiOwner, new WeakReference<Script>(owner));
+
 			lock (mapperLock)
 			{
 				if (disposed || (layoutPrepared && monitoringStarted))
 					return;
 			}
 
-			Script.InvokeOnUIThread(() =>
+			owner.InvokeOnUIThread(() =>
 			{
 				bool needsLayout;
 				lock (mapperLock)
@@ -432,6 +446,7 @@ namespace Keysharp.Internals.Input.Unix
 
 		public void Dispose()
 		{
+			Volatile.Write(ref uiOwner, null);
 			nint dataRef;
 			lock (mapperLock)
 			{

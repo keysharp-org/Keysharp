@@ -9,6 +9,7 @@ namespace Keysharp.Internals.Input.Linux
 	{
 		private static readonly Lock gate = new();
 		private static readonly Lock queryGate = new();
+		private static readonly HashSet<Script> owners = new();
 		private static readonly RetryGate connectionRetries = new(maximumAttempts: 3,
 			initialRetryDelay: TimeSpan.FromMilliseconds(250), maximumRetryDelay: TimeSpan.FromSeconds(2));
 		private static readonly RetryGate queryRetries = new(maximumAttempts: 3,
@@ -658,10 +659,25 @@ namespace Keysharp.Internals.Input.Linux
 			queryRetries.Rearm();
 		}
 
-		internal static void DisconnectClients()
+		internal static void RegisterOwner(Script owner)
 		{
+			ArgumentNullException.ThrowIfNull(owner);
+
+			lock (gate)
+				_ = owners.Add(owner);
+		}
+
+		internal static void DisconnectClients(Script owner)
+		{
+			ArgumentNullException.ThrowIfNull(owner);
+
 			lock (gate)
 			{
+				_ = owners.Remove(owner);
+
+				if (owners.Count != 0)
+					return;
+
 				DisposeClient();
 				connectionRetries.Rearm();
 				queryRetries.Rearm();

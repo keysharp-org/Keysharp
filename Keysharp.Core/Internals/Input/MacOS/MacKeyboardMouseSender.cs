@@ -14,7 +14,8 @@ namespace Keysharp.Internals.Input.MacOS
 		private readonly MacKeyboardState keyboardState;
 		private readonly MacMouseEventStream mouseStream;
 
-		internal MacKeyboardMouseSender(MacKeyboardState keyboardState, MacMouseEventStream mouseStream)
+		internal MacKeyboardMouseSender(Script script, MacKeyboardState keyboardState, MacMouseEventStream mouseStream)
+			: base(script)
 		{
 			this.keyboardState = keyboardState;
 			this.mouseStream = mouseStream;
@@ -23,7 +24,7 @@ namespace Keysharp.Internals.Input.MacOS
 		private uint CurrentPostedModifiers() => keyboardState.GetModifiers(() => GetModifierLRState(true));
 		private void RefreshButtonsWithoutHook()
 		{
-			if (!Script.TheScript.HookThread.HasMouseHook())
+			if (!script.HookThread.HasMouseHook())
 				mouseStream.ResyncButtons();
 		}
 
@@ -138,7 +139,7 @@ namespace Keysharp.Internals.Input.MacOS
 				return false;
 
 			var remaining = text[keyIndex..].ToString();
-			var lht = Script.TheScript.HookThread as Keysharp.Internals.Input.Hooks.Unix.UnixHookThread;
+			var lht = script.HookThread as Keysharp.Internals.Input.Hooks.Unix.UnixHookThread;
 			if (lht == null)
 				return false;
 
@@ -280,7 +281,7 @@ namespace Keysharp.Internals.Input.MacOS
 				return;
 			}
 
-			var lht = Script.TheScript.HookThread as Keysharp.Internals.Input.Hooks.Unix.UnixHookThread;
+			var lht = script.HookThread as Keysharp.Internals.Input.Hooks.Unix.UnixHookThread;
 			if (lht == null)
 				return;
 

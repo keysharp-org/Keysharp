@@ -13,6 +13,9 @@ namespace Keysharp.Internals.Window.Windows
 
 		internal bool CallEventHandlers(ref Message m, bool buffered = false)
 		{
+			if (script.IsDisposed)
+				return false;
+
 			if (script.GuiData.onMessageHandlers.TryGetValue(m.Msg, out var monitor))
 			{
 				buffered = buffered && m.Msg > 0x0311;
@@ -31,7 +34,7 @@ namespace Keysharp.Internals.Window.Windows
 				{
 					foreach (var registration in monitor.GetRegistrationsSnapshot())
 					{
-						var targetScheduler = registration.OwnerScheduler ?? script.EventScheduler;
+						var targetScheduler = registration.OwnerScheduler;
 						var queuedEvent = new MsgMonitorExtensions.BufferedMessageQueuedEvent(registration, script, args, eventInfo, hwnd);
 						targetScheduler.Enqueue(ScriptEventQueue.Normal, 0, queuedEvent.Execute);
 					}

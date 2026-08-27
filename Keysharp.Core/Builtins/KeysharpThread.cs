@@ -143,7 +143,7 @@ namespace Keysharp.Builtins
 				if (on)
 					target.UninterruptibleDuration = -1;
 
-				Script.TheScript.RecordMessageCheck();
+				manager.Owner.RecordMessageCheck();
 			}
 		}
 
@@ -169,7 +169,7 @@ namespace Keysharp.Builtins
 				// The full interruptibility rule (which also consults the script-wide flow state and can flip the
 				// thread's own flag as the startup window expires) only applies to the running thread.
 				return IsCurrentThread()
-					   ? Script.TheScript.Threads.IsInterruptible()
+					   ? manager.Owner.Threads.IsInterruptible()
 					   : target.allowThreadToBeInterrupted && !target.isCritical;
 			}
 		}
@@ -200,7 +200,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="exitCode">The process exit code to apply when the thread exits. Default: 0.</param>
 		/// <returns>This thread's ID.</returns>
-		public object Exit(object exitCode = null) => Script.TheScript.Threads.RequestExit(Mutable(), exitCode.Ai());
+		public object Exit(object exitCode = null) => manager.Owner.Threads.RequestExit(Mutable(), exitCode.Ai());
 
 		public override string ToString() => $"Thread {id}";
 
@@ -215,7 +215,7 @@ namespace Keysharp.Builtins
 		private bool IsCurrentThread()
 			=> IsActive
 			   && System.Threading.Thread.CurrentThread.ManagedThreadId == tv.threadId
-			   && ReferenceEquals(Script.TheScript.Threads.CurrentThread, tv);
+			   && ReferenceEquals(manager.Owner.Threads.CurrentThread, tv);
 
 		/// <summary>
 		/// The live thread state, or a <c>TargetError</c> if this wrapper outlived its thread.

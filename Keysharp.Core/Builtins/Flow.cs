@@ -126,9 +126,9 @@ namespace Keysharp.Builtins
 				try
 				{
 					if (script.mainWindow != null)
-						Script.InvokeOnUIThread(() => _ = Keysharp.Internals.Flow.ExitAppInternal(ExitReasons.Exit, exitCode, true));
+						script.InvokeOnUIThread(() => _ = Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Exit, exitCode, true));
 					else
-						_ = Keysharp.Internals.Flow.ExitAppInternal(ExitReasons.Exit, exitCode, true);
+						_ = Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Exit, exitCode, true);
 				}
 				catch (Exception ex) when (Keysharp.Internals.Flow.TryGetException(ex, out UserRequestedExitException userExit))
 				{
@@ -180,9 +180,10 @@ namespace Keysharp.Builtins
 		{
 			var msg = msgNumber.Al();
 			var mt = maxThreads.Al(1);
-			var gd = Script.TheScript.GuiData;
+			var script = Script.TheScript;
+			var gd = script.GuiData;
 			var monitor = gd.onMessageHandlers.GetOrAdd(msg);
-			monitor.ModifyRegistration(Functions.GetKeysharpFunc(callback, null, true), mt);
+			monitor.ModifyRegistration(Functions.GetKeysharpFunc(callback, null, true), mt, script.EventScheduler);
 
 			if (mt == 0 && monitor.IsEmpty)
 				_ = gd.onMessageHandlers.TryRemove(msg, out var _);
@@ -192,7 +193,7 @@ namespace Keysharp.Builtins
 			//A GUI built before this call has no motion handlers yet, and they are only wired while something
 			//is listening for WM_MOUSEMOVE, so the ones already on screen have to be revisited here.
 			if (msg == Keysharp.Internals.Os.Windows.WindowsAPI.WM_MOUSEMOVE)
-				Keysharp.Internals.Window.Unix.EtoMessageSource.SyncMotionHooks();
+				Keysharp.Internals.Window.Unix.EtoMessageSource.SyncMotionHooks(script);
 
 #endif
 			return DefaultObject;
@@ -229,7 +230,7 @@ namespace Keysharp.Builtins
 			if (script.scriptPath == "*")
 				return DefaultObject;
 			//Just calling Application.Restart will not always trigger ExitAppInternal().
-			Script.PostToUIThread(() =>
+			script.PostToUIThread(() =>
 			{
 				A_ExitReason = ExitReasons.Reload;
 #if WINDOWS
@@ -237,7 +238,7 @@ namespace Keysharp.Builtins
 #else
 				Application.Instance.Restart();
 #endif
-				Keysharp.Internals.Flow.ExitAppInternal(ExitReasons.Reload);
+				Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Reload);
 			});
 			var start = DateTime.UtcNow;
 

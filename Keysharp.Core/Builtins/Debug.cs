@@ -281,7 +281,14 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			System.Diagnostics.Debug.Write(text);//Will print only in debug mode to the debugger so we can see it in Visual Studio.
 
-			Script.PostToUIThread(() => MainWindow.AppendDebugOutput(text, clear));
+			//Null before any Script exists (launcher/compiler diagnostics): append into the window's static
+			//buffer inline, exactly as the old static PostToUIThread fell back to doing.
+			var script = Script.TheScript;
+
+			if (script != null)
+				script.PostToUIThread(() => MainWindow.AppendDebugOutput(text, clear));
+			else
+				MainWindow.AppendDebugOutput(text, clear);
 
 			return DefaultObject;
 		}

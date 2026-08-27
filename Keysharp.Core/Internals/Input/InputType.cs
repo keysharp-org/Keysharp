@@ -12,13 +12,22 @@ namespace Keysharp.Internals.Input
 		internal nint keyboardLayout;
 	};
 
-	internal class InputData
+	internal class InputData : IDisposable
 	{
 		internal UITimer inputTimer;
+
+		public void Dispose()
+		{
+			var timer = inputTimer;
+			inputTimer = null;
+			timer?.Stop();
+			timer?.Dispose();
+		}
 	}
 
 	internal class InputType//This is also Windows specific, and needs to eventually be made into a common base with derived OS specific classes.//TODO
 	{
+		private readonly Script owner;
 		internal bool backspaceIsUndo = true;
 		internal bool beforeHotkeys;
 		internal string buffer = "";
@@ -108,6 +117,7 @@ namespace Keysharp.Internals.Input
 
 		internal InputType(InputHook io, string options, string endKeys, string matchList)
 		{
+			owner = Script.TheScript;
 			scriptObject = io;
 			ParseOptions(options);
 			SetKeyFlags(endKeys);
@@ -267,7 +277,7 @@ namespace Keysharp.Internals.Input
 
 		internal string GetEndReason(ref string keyBuf)
 		{
-			var script = Script.TheScript;
+			var script = owner;
 
 			if (script.HookThread is HookThread hook && hook.kbdMsSender != null)
 			{
@@ -342,7 +352,7 @@ namespace Keysharp.Internals.Input
 
 		internal InputType InputFindLink(InputType input)
 		{
-			var script = Script.TheScript;
+			var script = owner;
 
 			if (script.input == input)
 				return script.input;
@@ -356,7 +366,7 @@ namespace Keysharp.Internals.Input
 
 		internal InputType InputRelease()
 		{
-			var script = Script.TheScript;
+			var script = owner;
 			var ht = script.HookThread;
 
 			// Input should already have ended prior to this function being called.
@@ -387,7 +397,7 @@ namespace Keysharp.Internals.Input
 
 			if (scriptObject != null)
 			{
-				HotkeyDefinition.MaybeUninstallHook();
+				HotkeyDefinition.MaybeUninstallHook(script);
 
 				if (scriptObject.OnEnd != null)
 					return this; // Return for caller to call OnEnd and Release.
@@ -407,7 +417,7 @@ namespace Keysharp.Internals.Input
 
 		internal void InputStart()
 		{
-			var script = Script.TheScript;
+			var script = owner;
 
 			// Set or update the timeout timer if needed.  The timer proc takes care to end
 			// only those inputs which are due, and will reset or kill the timer as needed.
@@ -427,10 +437,10 @@ namespace Keysharp.Internals.Input
 				++script.inputBeforeHotkeysCount;
 
 			if (KeyboardIsNeeded)
-				HotkeyDefinition.InstallKeybdHook(); // Keyboard hook only when collecting/suppressing keyboard.
+				HotkeyDefinition.InstallKeybdHook(script); // Keyboard hook only when collecting/suppressing keyboard.
 
 			if (MouseIsNeeded)
-				HotkeyDefinition.InstallMouseHook(); // Also install the mouse hook when collecting mouse events.
+				HotkeyDefinition.InstallMouseHook(script); // Also install the mouse hook when collecting mouse events.
 
 			script.HookThread.RefreshPlatformKeyGrabs();
 		}
@@ -438,7 +448,7 @@ namespace Keysharp.Internals.Input
 		internal InputType InputUnlinkIfStopped(InputType input)
 		{
 			InputType temp = null;
-			var script = Script.TheScript;
+			var script = owner;
 
 			if (input == null)
 				return null;
@@ -555,7 +565,7 @@ namespace Keysharp.Internals.Input
 			var sc = 0u;
 			var vkByNumber = false;
 			bool? scByNumber = false;
-			var script = Script.TheScript;
+			var script = owner;
 			var ht = script.HookThread;
 			var kbdMouseSender = ht.kbdMsSender;//This should always be non-null if any hotkeys/strings are present.
 			var keybdLayout = new KeybdLayoutRef(); // Resolved lazily (once, foreground focused-control layout) only if an end key needs char mapping.
@@ -735,7 +745,7 @@ namespace Keysharp.Internals.Input
 
 		internal void SetTimeoutTimer()
 		{
-			var script = Script.TheScript;
+			var script = owner;
 			var now = DateTime.UtcNow;
 			timeoutAt = now.AddMilliseconds(timeout);
 
@@ -767,7 +777,7 @@ namespace Keysharp.Internals.Input
 
 		private void EndByReason(InputStatusType aReason)
 		{
-			var script = Script.TheScript;
+			var script = owner;
 
 			if (script.HookThread is HookThread hook && hook.kbdMsSender != null)
 			{
@@ -794,8 +804,14 @@ namespace Keysharp.Internals.Input
 
 		private void InputTimer_Tick(object sender, EventArgs e)
 		{
-			var script = Script.TheScript;
+			var script = owner;
 			var inputTimer = script.InputData.inputTimer;
+
+			//Null once InputData is disposed. Dispose and this tick both run on the UI thread, but a tick already
+			//queued when the script tore down still arrives after it.
+			if (inputTimer == null)
+				return;
+
 			inputTimer.Stop();
 			var newTimerPeriod = 0;
 

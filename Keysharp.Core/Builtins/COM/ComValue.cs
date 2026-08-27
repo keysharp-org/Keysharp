@@ -191,7 +191,7 @@ namespace Keysharp.Builtins.COM
 				{
 					WindowsAPI.SysFreeString(ip);
 				}
-				TheScript.ComMethodData.comMethodCache.TryRemove(NintPtr);
+				Script.TheScript.ComMethodData.ForgetMethods(NintPtr);
 			}
 
 			Ptr = null;
@@ -1102,7 +1102,7 @@ namespace Keysharp.Builtins.COM
 		{
 			// Try to get cached type info
 			nint ptr = Ptr is nint ip ? ip : new nint((long)Ptr);
-			if (Script.TheScript.ComMethodData.comMethodCache.TryGet(ptr, out var objDict))
+			if (Script.TheScript.ComMethodData.MethodCache.TryGet(ptr, out var objDict))
 			{
 				if (objDict.TryGetValue($"{methodName}_{preferredKinds}", out var cmi))
 				{
@@ -1195,7 +1195,7 @@ namespace Keysharp.Builtins.COM
 				// Cache type info if we got it
 				if (expectedTypes != null || modifiers != null)
 				{
-					_ = Script.TheScript.ComMethodData.comMethodCache
+					_ = Script.TheScript.ComMethodData.MethodCache
 						.GetOrAdd(ptr, key => new Dictionary<string, ComMethodInfo>(StringComparer.OrdinalIgnoreCase))
 						.GetOrAdd($"{methodName}_{preferredKinds}", new ComMethodInfo
 						{

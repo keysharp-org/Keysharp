@@ -104,7 +104,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			EnsureProvider();
 #if OSX
 			// Explicit layout queries may prepare the UI-owned snapshot; tap callbacks never call this path.
-			provider?.PrepareForInputHook();
+			provider?.PrepareForInputHook(Script.TheScript);
 #endif
 			return provider;
 		}
@@ -142,10 +142,10 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// snapshot-only and will use the fixed fallback map if preparation did not produce a layout.
 		/// This method may synchronously enter the UI thread and therefore must not be called by a tap callback.
 		/// </summary>
-		internal static void PrepareForInputHook()
+		internal static void PrepareForInputHook(Script owner)
 		{
 			EnsureProvider();
-			provider?.PrepareForInputHook();
+			provider?.PrepareForInputHook(owner);
 		}
 
 		internal static bool TryMapMacCodeToVk(uint keycode, out uint vk)
@@ -262,7 +262,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// mapping methods. Implementations must keep ordinary mapping calls non-blocking with
 		/// respect to the UI thread after this returns.
 		/// </summary>
-		void PrepareForInputHook() => StartLayoutChangeMonitoring();
+		void PrepareForInputHook(Script owner) => StartLayoutChangeMonitoring();
 	}
 
 	internal sealed class NullKeyCodeMapperProvider : IKeyCodeMapperProvider

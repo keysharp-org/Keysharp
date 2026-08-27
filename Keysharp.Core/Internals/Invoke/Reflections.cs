@@ -27,9 +27,9 @@ namespace Keysharp.Internals.Invoke
 
 	internal class Reflections
 	{
-		public Reflections()
+		internal Reflections(Script script)
 		{
-			Initialize();
+			Initialize(script);
 		}
 
 		/// <summary>
@@ -40,9 +40,8 @@ namespace Keysharp.Internals.Invoke
 		/// Also note that when running a script from Keysharp.exe, this will get called once when the parser starts in Keysharp, then again
 		/// when the script actually runs. On the second time, there will be an extra assembly loaded, which is the compiled script itself. More system assemblies will also be loaded.
 		/// </summary>
-		public static void Initialize(bool ignoreMainAssembly = false)
+		internal static void Initialize(Script script, bool ignoreMainAssembly = false)
 		{
-			var script = Script.TheScript;
 			var rd = script.ReflectionsData;
 			rd.loadedAssemblies = GetLoadedAssemblies();
 

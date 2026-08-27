@@ -25,7 +25,7 @@ namespace Keysharp.Internals
 			return OverlayCanvasSizing.FromEtoScreen(bounds);
 		}
 
-		protected override IImageOverlayBacking CreateBacking(uint id) => new LinuxImageOverlayBacking(id);
+		protected override IImageOverlayBacking CreateBacking(uint id, Script owner) => new LinuxImageOverlayBacking(id, owner);
 	}
 
 	// Picks wlr-layer-shell / compositor-positioned client / Eto on the first Show (falling back to Eto if the
@@ -33,10 +33,15 @@ namespace Keysharp.Internals
 	internal sealed class LinuxImageOverlayBacking : IImageOverlayBacking
 	{
 		private readonly uint id;
+		private readonly Script owner;
 		private IImageOverlayBacking inner;
 		private Action<OverlayPointerEvent> pointerSink;
 
-		internal LinuxImageOverlayBacking(uint id) => this.id = id;
+		internal LinuxImageOverlayBacking(uint id, Script owner)
+		{
+			this.id = id;
+			this.owner = owner;
+		}
 
 		// Forwarded to whichever concrete backing selection picked. Eto and layer-shell surfaces can raise it;
 		// compositor actors cannot receive client input.
@@ -94,7 +99,7 @@ namespace Keysharp.Internals
 			if (preferred is EtoImageOverlay)
 				return false;
 
-			var fallback = new EtoImageOverlay { PointerSink = pointerSink };
+			var fallback = new EtoImageOverlay(owner) { PointerSink = pointerSink };
 
 			if (fallback.Present(canvas, bounds, opacity, clickThrough, AllDamage()))
 			{
@@ -154,12 +159,12 @@ namespace Keysharp.Internals
 				return new LayerImageBacking();
 
 			if (IsWaylandSession && Wl.WaylandOwnToplevels.IsSupported)
-				return new EtoImageOverlay();
+				return new EtoImageOverlay(owner);
 
 			if (clickThrough && IsWaylandSession && ShouldAttemptCompositor(Wl.WaylandBackend.Current))
 				return new CompositorImageBacking(id);
 
-			return new EtoImageOverlay();
+			return new EtoImageOverlay(owner);
 		}
 
 		// A shell service's real Show response is authoritative. Its separate NameHasOwner probe is only a cached

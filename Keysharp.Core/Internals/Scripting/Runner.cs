@@ -1053,7 +1053,12 @@ namespace Keysharp.Internals.Scripting
 
 		private static bool ReportCompilerErrors(string text)
 		{
-			if (Env.FindCommandLineArg("errorstdout") != null)
+			//FindCommandLineArg reads TheScript.KeysharpArgs, which does not exist yet for a failure this early.
+			//Fall back to the raw process arguments then: an --errorstdout launch must never block on a modal
+			//dialog (headless CI showed such a dialog invisibly and turned an instant failure into a hang).
+			if (Env.FindCommandLineArg("errorstdout") != null
+					|| (Script.TheScript == null && Environment.GetCommandLineArgs().Any(
+						a => a.TrimStart('-', '/').Equals("errorstdout", StringComparison.OrdinalIgnoreCase))))
 			{
 				Console.Error.WriteLine(text);
 				return false;

@@ -9,6 +9,8 @@ namespace Keysharp.Runtime
 {
 	public class Variables
 	{
+		private readonly Script script;
+
         public LazyDictionary<Type, Prototype> Prototypes = new();
 		public LazyDictionary<Type, Class> Statics = new();
 		// Internal rather than private: Lowerer.CheckNamedArgs resolves a bare built-in class name to its type so
@@ -23,15 +25,16 @@ namespace Keysharp.Runtime
 		// The variable store for the module currently executing on this thread (the main module when none is active,
 		// e.g. on the UI thread). Replaces the former standalone globalVars field, which was only ever an alias of
 		// the main module's store.
-		internal Dictionary<string, MethodPropertyHolder> GlobalVars => GetModuleVars(TheScript.CurrentModuleType);
+		internal Dictionary<string, MethodPropertyHolder> GlobalVars => GetModuleVars(script.CurrentModuleType);
 		// All modules and their global-variable stores, in declaration order, for ListVars.
 		internal IEnumerable<KeyValuePair<Type, Dictionary<string, MethodPropertyHolder>>> AllModuleVars => moduleVars;
 		private readonly Type defaultModuleType;
 		internal Type DefaultModuleType => defaultModuleType;
 
-		public Variables()
+		internal Variables(Script script)
 		{
-			moduleVars = GatherModuleVariables(TheScript.ProgramType);
+			this.script = script ?? throw new ArgumentNullException(nameof(script));
+			moduleVars = GatherModuleVariables(script.ProgramType);
 			if (moduleVars.Count == 0)
 				return;
 			defaultModuleType = moduleVars.Keys.FirstOrDefault(t => t.Name.Equals(Keywords.MainModuleName, StringComparison.OrdinalIgnoreCase)) ?? moduleVars.First().Key;
@@ -130,7 +133,7 @@ namespace Keysharp.Runtime
 			// modules at all (never in practice) has nothing to resolve to; gather from the program type then.
 			moduleType ??= defaultModuleType;
 			if (moduleType == null)
-				return programVars ??= GatherTypeVariables(TheScript.ProgramType);
+				return programVars ??= GatherTypeVariables(script.ProgramType);
 
 			if (moduleVars.TryGetValue(moduleType, out var vars))
 				return vars;
@@ -183,7 +186,6 @@ namespace Keysharp.Runtime
 		public void InitClasses()
 		{
 			var anyType = typeof(Any);
-			var script = Script.TheScript;
 			var types = script.ReflectionsData.stringToTypes.Values
 				.Where(type => type.IsClass && !type.IsAbstract && anyType.IsAssignableFrom(type));
 			types = types.Concat(
@@ -307,17 +309,17 @@ namespace Keysharp.Runtime
 			return false;
 		}
 
-		public bool HasVariable(string key) => HasVariable(TheScript.CurrentModuleType, key);
+		public bool HasVariable(string key) => HasVariable(script.CurrentModuleType, key);
 
 		public bool HasVariable(Type moduleType, string key)
 		{
 			var vars = GetModuleVars(moduleType);
 			return vars.ContainsKey(key)
-				|| Script.TheScript.ReflectionsData.flatPublicStaticProperties.ContainsKey(key)
-				|| Script.TheScript.ReflectionsData.flatPublicStaticMethods.ContainsKey(key);
+				|| script.ReflectionsData.flatPublicStaticProperties.ContainsKey(key)
+				|| script.ReflectionsData.flatPublicStaticMethods.ContainsKey(key);
 		}
 
-		public object GetVariable(string key) => GetVariable(TheScript.CurrentModuleType, key);
+		public object GetVariable(string key) => GetVariable(script.CurrentModuleType, key);
 
 		public object GetVariable(Type moduleType, string key, bool exportsOnly = false)
 		{
@@ -335,7 +337,7 @@ namespace Keysharp.Runtime
 			return Functions.Func(key, moduleType);
 		}
 
-		public object SetVariable(string key, object value) => SetVariable(TheScript.CurrentModuleType, key, value);
+		public object SetVariable(string key, object value) => SetVariable(script.CurrentModuleType, key, value);
 
 		public object SetVariable(Type moduleType, string key, object value)
 		{
@@ -370,7 +372,7 @@ namespace Keysharp.Runtime
 
 		private PropertyInfo FindReservedVariable(string name)
 		{
-			_ = Script.TheScript.ReflectionsData.flatPublicStaticProperties.TryGetValue(name, out var prop);
+			_ = script.ReflectionsData.flatPublicStaticProperties.TryGetValue(name, out var prop);
 			return prop;
 		}
 

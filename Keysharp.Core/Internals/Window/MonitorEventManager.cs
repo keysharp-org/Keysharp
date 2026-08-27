@@ -9,8 +9,12 @@ namespace Keysharp.Internals.Window
 	/// script-facing <c>Ks.MonitorHook</c> object wraps one of these, mirroring how <c>Ks.WinEvent</c> wraps
 	/// <see cref="WinEventRegistration"/>.
 	/// </summary>
-	internal sealed class MonitorEventRegistration(KeysharpFunc callback, long count, ScriptEventScheduler ownerScheduler)
-		: EventSubscriptionBase(callback, count, ownerScheduler);
+	internal sealed class MonitorEventRegistration(KeysharpFunc callback, long count, ScriptEventScheduler ownerScheduler,
+		MonitorEventManager manager)
+		: EventSubscriptionBase(callback, count, ownerScheduler)
+	{
+		internal readonly MonitorEventManager manager = manager;
+	}
 
 	/// <summary>
 	/// The per-<see cref="Script"/> engine behind <c>Ks.Monitor.OnChange</c>. It owns the platform
@@ -142,7 +146,7 @@ namespace Keysharp.Internals.Window
 
 			try
 			{
-				backend = Platform.MonitorEvents.Backend;
+				backend = Platform.MonitorEvents.CreateBackend(script);
 
 				if (backend != null)
 					backend.Sink = OnNativeChange;
@@ -208,7 +212,7 @@ namespace Keysharp.Internals.Window
 			if (!reg.TryConsumeFire())
 				return;
 
-			var scheduler = reg.ownerScheduler ?? script.EventScheduler;
+			var scheduler = reg.ownerScheduler;
 
 			if (scheduler == null || scheduler.IsDisposed)
 				return;

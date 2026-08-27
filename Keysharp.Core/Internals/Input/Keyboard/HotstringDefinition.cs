@@ -84,25 +84,24 @@ namespace Keysharp.Internals.Input.Keyboard
 			callbackRegistration.SetActive(isEnabled && funcObj != null);
 		}
 
-		public HotstringDefinition(string sequence, string _replacement)
+		internal HotstringDefinition(Script script, string sequence, string _replacement)
 		{
 			Sequence = sequence;
 			replacement = _replacement;
-			ownerScheduler = Script.TheScript?.EventScheduler;
+			ownerScheduler = script.EventScheduler;
 			//EndChars = defEndChars;
 		}
 
-		internal HotstringDefinition(string _name, KeysharpFunc _funcObj, ReadOnlySpan<char> _options, string _hotstring, string _replacement
+		internal HotstringDefinition(Script script, string _name, KeysharpFunc _funcObj, ReadOnlySpan<char> _options, string _hotstring, string _replacement
 									 , bool _hasContinuationSection, int _suspend)
 
 		{
-			var script = Script.TheScript;
 			var hm = script.HotstringManager;
 			funcObj = _funcObj;
 			hotCriterion = script.Threads.CurrentThread.hotCriterion;
 			suspended = _suspend;
 			ownerScheduler = script.EventScheduler;
-			maxThreads = Script.TheScript.AccessorData.maxThreadsPerHotkey;  // The value of g_MaxThreadsPerHotkey can vary during load-time.
+			maxThreads = script.AccessorData.maxThreadsPerHotkey;  // The value of g_MaxThreadsPerHotkey can vary during load-time.
 			priority = hm.hsPriority;
 			keyDelay = hm.hsKeyDelay;
 			sendMode = hm.hsSendMode;  // And all these can vary too.
@@ -376,12 +375,11 @@ namespace Keysharp.Internals.Input.Keyboard
 			return skipChars;
 		}
 
-		internal void DoReplace(CaseConformModes caseMode, char endChar, uint triggerVk = 0, int skipChars = 0)
+		internal void DoReplace(Script script, CaseConformModes caseMode, char endChar, uint triggerVk = 0, int skipChars = 0)
 		{
 			var sb = new StringBuilder();//This might be able to be done more efficiently, but use sb unless performance issues show up.
 			var startOfReplacement = 0;
 			string sendBuf;
-			var script = Script.TheScript;
 			var ht = script.HookThread;
 			var kbdMouseSender = ht.kbdMsSender;
 			var triggerLength = str?.Length ?? 0;
@@ -526,8 +524,9 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		internal ResultType PerformInNewThreadMadeByCaller(long criterionFoundHwnd, CaseConformModes caseMode, char endChar, uint triggerVk, bool recheckCriterionOnReceipt, int skipChars = 0)
 		{
-			var script = Script.TheScript;
-			var targetScheduler = ownerScheduler ?? script.UIEventScheduler;
+			if (ownerScheduler is not { IsDisposed: false } targetScheduler)
+				return ResultType.Fail;
+
 			var queuedEvent = new HotstringQueuedEvent(this, targetScheduler, criterionFoundHwnd, recheckCriterionOnReceipt, caseMode, endChar, triggerVk, skipChars);
 			_ = targetScheduler.Enqueue(ScriptEventQueue.Interactive, priority, queuedEvent.Execute);
 			return ResultType.Ok;
@@ -544,7 +543,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				if (!thread.Started)
 					return thread.Result;
 
-				var script = Script.TheScript;
+				var script = scheduler.Owner;
 				var callbackExecuted = false;
 
 				try
@@ -553,7 +552,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 					if (recheckCriterionOnReceipt && definition.hotCriterion != null)
 					{
-						hwndCritFound = HotkeyDefinition.HotCriterionAllowsFiring(definition.hotCriterion, definition.Name);
+						hwndCritFound = HotkeyDefinition.HotCriterionAllowsFiring(script, definition.hotCriterion, definition.Name);
 
 						if (hwndCritFound == 0)
 							return ScriptEventExecutionResult.Dropped;
@@ -581,7 +580,7 @@ namespace Keysharp.Internals.Input.Keyboard
 							// the actual hotstring action.
 							try
 							{
-								definition.DoReplace(caseMode, endChar, triggerVk, skipChars);
+								definition.DoReplace(script, caseMode, endChar, triggerVk, skipChars);
 							}
 							catch (Exception ex)
 							{
@@ -594,7 +593,7 @@ namespace Keysharp.Internals.Input.Keyboard
 						{
 							// Auto-replace hotstring: the send IS the action, so let failures propagate to the
 							// outer handler.
-							definition.DoReplace(caseMode, endChar, triggerVk, skipChars);
+							definition.DoReplace(script, caseMode, endChar, triggerVk, skipChars);
 						}
 
 						callbackExecuted = true;

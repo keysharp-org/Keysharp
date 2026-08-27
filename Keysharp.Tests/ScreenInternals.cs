@@ -88,6 +88,49 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Screen"), Category("Internal"), Category("Curated")]
+		public void OverlayOwnerTeardownIsIsolated()
+		{
+			using var firstCanvas = TestSurface(1, 1);
+			using var secondCanvas = TestSurface(1, 1);
+			var firstBacking = new RecordingOverlayBacking();
+			var secondBacking = new RecordingOverlayBacking();
+			var thirdBacking = new RecordingOverlayBacking();
+			var backings = new Queue<IImageOverlayBacking>([firstBacking, secondBacking, thirdBacking]);
+			var service = new TestOverlayService(backings.Dequeue);
+			var other = (Script)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Script));
+
+			try
+			{
+				//Overlay slots are stamped with the current script; publish `other` while creating the ones that
+				//must survive this script's HideAll (the way a leftover overlay from a previous script would).
+				Assert.IsTrue(service.TryPresentImageOverlay(1, firstCanvas, new ScreenRect(0, 0, 1, 1), 255, true));
+
+				Script.TheScript = other;
+				Assert.IsTrue(service.TryPresentImageOverlay(2, secondCanvas, new ScreenRect(0, 0, 1, 1), 255, true));
+				Script.TheScript = s;
+
+				service.SetImageOverlayPointerSink(3, _ => { });
+
+				Assert.IsTrue(service.TryHideAllImageOverlays(s));
+				Assert.IsTrue(firstBacking.Disposed);
+				Assert.IsFalse(secondBacking.Disposed);
+				Assert.AreEqual(nint.Zero, service.GetImageOverlayHandle(1));
+				Assert.AreNotEqual(nint.Zero, service.GetImageOverlayHandle(2));
+
+				Script.TheScript = other;
+				Assert.IsTrue(service.TryPresentImageOverlay(3, secondCanvas, new ScreenRect(0, 0, 1, 1), 255, true));
+
+				Assert.IsNull(thirdBacking.PointerSink);
+			}
+			finally
+			{
+				Script.TheScript = s;
+				_ = service.TryHideAllImageOverlays();
+				GC.SuppressFinalize(other);
+			}
+		}
+
+		[Test, Category("Screen"), Category("Internal"), Category("Curated")]
 		public void ConcurrentHide()
 		{
 			using var canvas = TestSurface(1, 1);
@@ -191,6 +234,7 @@ namespace Keysharp.Tests
 
 		private sealed class RecordingOverlayBacking : IImageOverlayBacking
 		{
+			internal bool Disposed;
 			internal bool Result = true;
 			internal DamageList LastDamage;
 			internal OverlaySurface LastSurface;
@@ -206,7 +250,7 @@ namespace Keysharp.Tests
 
 			public bool Move(ScreenRect bounds) => true;
 			public bool TryHide() => true;
-			public void Dispose() { }
+			public void Dispose() => Disposed = true;
 		}
 
 		private sealed class TestOverlayService : OverlayBase
@@ -215,7 +259,7 @@ namespace Keysharp.Tests
 
 			internal TestOverlayService(Func<IImageOverlayBacking> create) => this.create = create;
 			public override PixelSize GetCanvasSize(ScreenRect bounds) => new(bounds.Width, bounds.Height);
-			protected override IImageOverlayBacking CreateBacking(uint id) => create();
+			protected override IImageOverlayBacking CreateBacking(uint id, Script owner) => create();
 		}
 
 		private sealed class BlockingOverlayBacking : IImageOverlayBacking

@@ -6,6 +6,7 @@ namespace Keysharp.Internals.Input.Keyboard
 	[PublicHiddenFromUser]
 	internal class HotstringManager
 	{
+		private readonly Script script;
 		internal string defEndChars = "-()[]{}:;'\"/\\,.?!\r\n \t";
 		internal uint enabledCount;      // Keep in sync with the above.
 		internal List<char> hsBuf = new (256);
@@ -29,6 +30,11 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		public string CurrentInputBuffer => new (hsBuf.ToArray());
 
+		internal HotstringManager(Script script)
+		{
+			this.script = script ?? throw new ArgumentNullException(nameof(script));
+		}
+
 		/// <summary>
 		/// Returns OK or FAIL.
 		/// Caller has ensured that aHotstringOptions is blank if there are no options.  Otherwise, aHotstringOptions
@@ -37,21 +43,19 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// any options (e.g. ::ahk:: has a different aName than :c:ahk::).
 		/// Caller has also ensured that aHotstring is not blank.
 		/// </summary>
-		public static object AddHotstring(string _name, KeysharpFunc _funcObj, ReadOnlySpan<char> _options, string _hotstring
-										  , string _replacement, bool _hasContinuationSection, int _suspend = 0)
+		public object AddHotstring(string _name, KeysharpFunc _funcObj, ReadOnlySpan<char> _options, string _hotstring
+								   , string _replacement, bool _hasContinuationSection, int _suspend = 0)
 		{
-			var script = Script.TheScript;
-			var hs = new HotstringDefinition(_name, _funcObj, _options, _hotstring, _replacement, _hasContinuationSection, _suspend);
+			var hs = new HotstringDefinition(script, _name, _funcObj, _options, _hotstring, _replacement, _hasContinuationSection, _suspend);
 
 			if (!hs.constructedOK)
 				return Errors.ValueErrorOccurred($"Invalid hotstring: {_name}.");
 
-			var hm = script.HotstringManager;
-			hm.shs.Add(hs);
-			hm.shsDkt.GetOrAdd(_hotstring[0]).Add(hs);
+			shs.Add(hs);
+			shsDkt.GetOrAdd(_hotstring[0]).Add(hs);
 
 			if (!script.IsReadyToExecute) // Caller is LoadIncludedFile(); allow BIF_Hotstring to manage this at runtime.
-				++hm.enabledCount; // This works because the script can't be suspended during startup (aSuspend is always FALSE).
+				++enabledCount; // This works because the script can't be suspended during startup (aSuspend is always FALSE).
 
 			return hs;
 		}
@@ -82,7 +86,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				var hsBufCountm1 = hsLength - 1;
 				var hsBufCountm2 = hsLength - 2;
 				var hasEndChar = defEndChars.Contains(hsBufSpan[hsBufCountm1]);
-				var ht = Script.TheScript.HookThread;
+				var ht = script.HookThread;
 
 				for (var i = 0; !found && i < hsBuf.Count; i++)//Must loop forward to catch hotstrings in order.
 				{
@@ -151,7 +155,7 @@ namespace Keysharp.Internals.Input.Keyboard
 									// ... v1.0.41: Or it's a perfect match but the right window isn't active or doesn't exist.
 									// In that case, continue searching for other matches in case the script contains
 									// hotstrings that would trigger simultaneously were it not for the "only one" rule.
-									|| (HotkeyDefinition.HotCriterionAllowsFiring(hs.hotCriterion, hs.Name) == 0L)
+									|| (HotkeyDefinition.HotCriterionAllowsFiring(script, hs.hotCriterion, hs.Name) == 0L)
 							   )
 								continue; // No match or not eligible to fire.
 

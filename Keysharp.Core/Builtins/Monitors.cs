@@ -156,10 +156,12 @@ namespace Keysharp.Builtins
 				if (fo == null)
 					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));
 
-				var reg = new MonitorEventRegistration(fo, count.Al(-1L), Script.TheScript.EventScheduler);
+				var script = Script.TheScript;
+				var manager = script.MonitorEventManager;
+				var reg = new MonitorEventRegistration(fo, count.Al(-1L), script.EventScheduler, manager);
 				var hook = new MonitorHook { reg = reg };
 				reg.scriptObject = hook;
-				Script.TheScript.MonitorEventManager.Register(reg);
+				manager.Register(reg);
 				return hook;
 			}
 
@@ -450,7 +452,7 @@ namespace Keysharp.Builtins
 				var r = reg;
 
 				if (r != null && r.active)
-					Script.TheScript.MonitorEventManager.Unregister(r);
+					r.manager.Unregister(r);
 
 				return DefaultObject;
 			}

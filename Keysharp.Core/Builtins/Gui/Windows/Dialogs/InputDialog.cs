@@ -38,6 +38,7 @@ namespace Keysharp.Builtins
 		private static readonly WindowsAPI.DialogProc dialogProc = DialogProcedure;
 		private static readonly WindowsAPI.TimerProc timeoutProc = TimeoutProcedure;
 		private static int nextTimerId;
+		private readonly Script owner;
 		private readonly int requestedClientHeight;
 		private readonly int requestedClientWidth;
 		private readonly int requestedLeft;
@@ -65,6 +66,7 @@ namespace Keysharp.Builtins
 
 		public InputDialog(int clientWidth = Unspecified, int clientHeight = Unspecified, int left = Unspecified, int top = Unspecified)
 		{
+			owner = Script.TheScript;
 			requestedClientWidth = clientWidth;
 			requestedClientHeight = clientHeight;
 			requestedLeft = left;
@@ -126,11 +128,11 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		internal static void CloseAll()
+		internal static void CloseAll(Script owner)
 		{
-			foreach (var hwnd in activeDialogs.Keys)
+			foreach (var (hwnd, dialog) in activeDialogs)
 			{
-				if (WindowsAPI.IsWindow(hwnd))
+				if (ReferenceEquals(dialog.owner, owner) && WindowsAPI.IsWindow(hwnd))
 					_ = WindowsAPI.EndDialog(hwnd, CancelId);
 			}
 		}
@@ -160,7 +162,7 @@ namespace Keysharp.Builtins
 				if (dialog == null)
 					return 0;
 
-				if (TryCallMessageHandlers(hwnd, message, wParam, lParam, out var result))
+				if (dialog.TryCallMessageHandlers(hwnd, message, wParam, lParam, out var result))
 					return CompleteHandledMessage(hwnd, message, result);
 
 				if (message != WindowsAPI.WM_NCDESTROY && !WindowsAPI.IsWindow(hwnd))
@@ -199,10 +201,10 @@ namespace Keysharp.Builtins
 			return 1;
 		}
 
-		private static bool TryCallMessageHandlers(nint hwnd, uint message, nint wParam, nint lParam, out nint result)
+		private bool TryCallMessageHandlers(nint hwnd, uint message, nint wParam, nint lParam, out nint result)
 		{
 			result = 0;
-			var filter = Script.TheScript?.msgFilter;
+			var filter = owner?.msgFilter;
 
 			if (filter == null)
 				return false;
@@ -291,7 +293,7 @@ namespace Keysharp.Builtins
 			//suspended. Held in a field for the dialog's lifetime, because WM_SETICON takes the raw handle and
 			//keeps no managed reference: if this were the only thing holding the script icon and TraySetIcon then
 			//replaced it, the finalizer would DestroyIcon the handle this dialog is still drawing from.
-			shownIcon = Script.TheScript?.scriptIcon;
+			shownIcon = owner?.scriptIcon;
 
 			if (shownIcon != null)
 			{

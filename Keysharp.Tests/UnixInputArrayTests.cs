@@ -12,7 +12,7 @@ namespace Keysharp.Tests
 	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class UnixInputArrayTests : TestRunner
 	{
-		private sealed class RecordingSender : UnixKeyboardMouseSender
+		private sealed class RecordingSender(Script owner) : UnixKeyboardMouseSender(owner)
 		{
 			internal bool ThrowDuringDispatch { get; set; }
 			internal int DispatchCount { get; private set; }
@@ -31,7 +31,7 @@ namespace Keysharp.Tests
 		[Test, Category("Input")]
 		public void ArrayFrameCleanup()
 		{
-			var sender = new RecordingSender();
+			var sender = new RecordingSender(s);
 			sender.SetMode(SendModes.Input);
 			sender.InitEventArray(4, MOD_LSHIFT);
 			sender.PutKeybdEventIntoArray(0, 0x41, 0, 0, 0);
@@ -60,7 +60,7 @@ namespace Keysharp.Tests
 		[Test, Category("Input")]
 		public void ArrayFrameFailure()
 		{
-			var sender = new RecordingSender();
+			var sender = new RecordingSender(s);
 			sender.SetMode(SendModes.Input);
 			sender.InitEventArray(4, MOD_LALT);
 			sender.PutKeybdEventIntoArray(0, 0x41, 0, 0, 0);

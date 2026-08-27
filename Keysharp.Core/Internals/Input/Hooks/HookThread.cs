@@ -88,6 +88,8 @@ namespace Keysharp.Internals.Input.Hooks
 
 	internal abstract class HookThread//Fill in base stuff here later, but this serves as the thread which attaches/detaches the keyboard hooks.
 	{
+		protected internal readonly Script script;
+
 		private const int MaxHotCriterionWorkers = 2;
 		internal const uint END_KEY_ENABLED = END_KEY_WITH_SHIFT | END_KEY_WITHOUT_SHIFT;
 		internal const uint END_KEY_WITH_SHIFT = 0x01;
@@ -122,21 +124,21 @@ namespace Keysharp.Internals.Input.Hooks
 		[ThreadStatic]
 		private static long hotIfCallbackDeadline;
 
-		internal static string MutexName = "Keysharp";
 		internal Mutex keybdMutex = null, mouseMutex = null;
-		internal string KeybdMutexName = $"{MutexName} Keybd";
+		/// <summary>Per-Script, so #HookMutexName cannot rebind a later Script in this process.</summary>
+		internal readonly string KeybdMutexName;
 		internal Dictionary<string, uint> keyToSc = null;
 		internal Dictionary<string, uint>.AlternateLookup<ReadOnlySpan<char>> keyToScAlt;
 		internal Dictionary<string, uint> keyToVk = null;
 		internal Dictionary<string, uint>.AlternateLookup<ReadOnlySpan<char>> keyToVkAlt;
-		internal string MouseMutexName = $"{MutexName} Mouse";
+		internal readonly string MouseMutexName;
 		internal Dictionary<uint, string> vkToKey = [];
 		internal bool blockWinKeys = false;
 		internal nint hsHwnd = 0;
 		// Read directly (not via the kbdMsSender getter) when you must inspect the
 		// current sender WITHOUT forcing lazy creation. null until first use.
 		protected KeyboardMouseSender _kbdMsSender;
-		private readonly HotCriterionExecutor hotCriterionExecutor = new(MaxHotCriterionWorkers);
+		private readonly HotCriterionExecutor hotCriterionExecutor;
 		internal KeyboardMouseSender kbdMsSender
 		{
 			get => _kbdMsSender ??= CreateKbdMsSender();
@@ -227,8 +229,13 @@ namespace Keysharp.Internals.Input.Hooks
 			public void Dispose() => hotIfCallbackDeadline = previousDeadline;
 		}
 
-		internal HookThread()
+		internal HookThread(Script script, string mutexName)
 		{
+			this.script = script ?? throw new ArgumentNullException(nameof(script));
+			mutexName = string.IsNullOrEmpty(mutexName) ? "Keysharp" : mutexName;
+			KeybdMutexName = $"{mutexName} Keybd";
+			MouseMutexName = $"{mutexName} Mouse";
+			hotCriterionExecutor = new(script, MaxHotCriterionWorkers);
 			EnsureKeyLookups();
 		}
 
@@ -410,8 +417,6 @@ namespace Keysharp.Internals.Input.Hooks
 		{
 			// Determine the set of hooks that should be activated or deactivated.
 			var hooksToBeActive = whichHook | whichHookAlways; // Bitwise union.
-			var script = Script.TheScript;
-
 			if (hooksToBeActive == 0) // No need to check any further in this case.  Just remove all hooks.
 			{
 				AddRemoveHooks(0); // Remove all hooks.
@@ -976,7 +981,7 @@ namespace Keysharp.Internals.Input.Hooks
 											  KeyHistoryItem keyHistoryCurr, ref HotstringDefinition hsOut, ref CaseConformModes caseConformMode, ref char endChar, ref int skipChars)
 		{
 			var suppressHotstringFinalChar = false; // Set default.
-			var hm = Script.TheScript.HotstringManager;
+			var hm = script.HotstringManager;
 
 			if (activeWindow != hsHwnd)
 			{
@@ -1192,7 +1197,7 @@ namespace Keysharp.Internals.Input.Hooks
 		// might have adjusted vk, namely to make it a left/right specific modifier key rather than a
 		// neutral one.
 		{
-			for (var input = Script.TheScript.input; input != null; input = input.prev)
+			for (var input = script.input; input != null; input = input.prev)
 			{
 				if (input.BeforeHotkeys == early && input.IsInteresting(extraInfo) && input.InProgress())
 				{
@@ -1229,7 +1234,7 @@ namespace Keysharp.Internals.Input.Hooks
 
 		internal bool CollectInputHook(ulong extraInfo, uint vk, uint sc, char[] ch, int charCount, bool early, object eventInfo)
 		{
-			var input = Script.TheScript.input;
+			var input = script.input;
 
 			for (; input != null; input = input.prev)
 			{
@@ -1371,7 +1376,7 @@ namespace Keysharp.Internals.Input.Hooks
 		// Returns true if the caller should treat the event as visible (non-suppressed).
 		internal bool CollectMouseInput(ulong extraInfo, uint vk, bool keyUp, int x, int y, object eventInfo, bool early)
 		{
-			var input = Script.TheScript.input;
+			var input = script.input;
 
 			for (; input != null; input = input.prev)
 			{
@@ -1448,7 +1453,7 @@ namespace Keysharp.Internals.Input.Hooks
 			var allow = true;
 			Func<object> eventInfo = null;
 
-			for (var input = Script.TheScript.input; input != null; input = input.prev)
+			for (var input = script.input; input != null; input = input.prev)
 			{
 				if (!(input.IsInteresting(extraInfo) && input.InProgress()))
 					continue;
@@ -1499,7 +1504,7 @@ namespace Keysharp.Internals.Input.Hooks
 			var activeWindowKeybdLayout = state.keyboardLayout;
 			var ch = state.ch;
 			var sb = new StringBuilder(8);
-			var hm = Script.TheScript.HotstringManager;
+			var hm = script.HotstringManager;
 			var hsBuf = hm.hsBuf;
 
 			if (!CollectInputHook(extraInfo, vk, sc, ch, charCount, false, eventInfo))
@@ -1674,7 +1679,7 @@ namespace Keysharp.Internals.Input.Hooks
 			// Linux needs this to verify that the active hook backend is inputd, rather than the
 			// non-suppressing native fallback. The hook is left installed after ClearCursorClip
 			// (mirrors BlockInput's "MouseMoveOff").
-			HotkeyDefinition.InstallMouseHook();
+			HotkeyDefinition.InstallMouseHook(script);
 
 			if (!CanClipCursor(out var reason))
 			{
@@ -1728,7 +1733,7 @@ namespace Keysharp.Internals.Input.Hooks
 
 		/// <summary>Requests permissions needed to monitor and enforce cursor clipping.</summary>
 		protected virtual void EnsureCursorClipPermissions()
-			=> _ = Script.TheScript.Permissions.EnsureInputMonitoring(operation: "ClipCursor");
+			=> _ = script.Permissions.EnsureInputMonitoring(operation: "ClipCursor");
 
 		/// <summary>Whether ClipCursor can work in the current platform/environment.</summary>
 		protected virtual bool CanClipCursor(out string reason) { reason = ""; return true; }
@@ -1773,7 +1778,7 @@ namespace Keysharp.Internals.Input.Hooks
 			if (!byVk && !bySc)
 				return 0u;
 
-			var shk = Script.TheScript.HotkeyData.shk;
+			var shk = script.HotkeyData.shk;
 			var required = 0u;
 
 			for (var i = 0; i < shk.Length; i++)
@@ -1854,7 +1859,6 @@ namespace Keysharp.Internals.Input.Hooks
 					return false;
 			}
 
-			var script = Script.TheScript;
 			// Otherwise, it's physical.
 			// v1.0.42.04:
 			// The time member of the incoming event struct has been observed to be wrongly zero sometimes, perhaps only
@@ -1954,8 +1958,8 @@ namespace Keysharp.Internals.Input.Hooks
 				return;
 
 			// Append the neutral key's list to the lists of the left and right keys.
-			HotkeyDefinition.CustomComboLast(ref kvk[left].firstHotkey) = first_neutral;
-			HotkeyDefinition.CustomComboLast(ref kvk[right].firstHotkey) = first_neutral;
+			HotkeyDefinition.CustomComboLast(script, ref kvk[left].firstHotkey) = first_neutral;
+			HotkeyDefinition.CustomComboLast(script, ref kvk[right].firstHotkey) = first_neutral;
 		}
 
 		internal virtual void RefreshPlatformKeyGrabs() { }
@@ -2068,11 +2072,9 @@ namespace Keysharp.Internals.Input.Hooks
 		/// </summary>
 		internal nint LowLevelCommon(HookEventArgs e, uint vk, uint sc, uint rawSc, bool keyUp, ulong extraInfo, uint eventFlags, uint? deviceId = null)
 		{
-			var script = Script.TheScript;
-			// A hook can outlive the Script that installed it, and a replacement Script publishes
-			// Script.TheScript before it creates its HookThread. Everything below reaches the current Script,
-			// so an event arriving in either window would drive a torn-down or half-built one. Pass it through untouched instead.
-			if (script?.HookThread != this)
+			// A native callback can arrive after its owner starts teardown. It must never be redirected into a
+			// replacement script, and the retired owner is no longer allowed to launch script work.
+			if (script.IsDisposed || script.hasExited)
 				return CallNextHook(e);
 
 			var eventInfo = CreateEventInfo(e, extraInfo, eventFlags, MouseUtils.IsWheelVK(vk) ? (long)(short)sc : null, deviceId);
@@ -2437,7 +2439,7 @@ namespace Keysharp.Internals.Input.Hooks
 				// for neutral modifiers so that e.g. Alt & Esc:: won't affect how LAlt:: behaves (suffixes don't
 				// need to be checked for Alt because Alt:: always fires on release).
 				bool hasEnabledSuffixes = (thisKey.usedAsPrefix & KeyType.PREFIX_ACTUAL) != 0
-					&& HotkeyDefinition.PrefixHasEnabledSuffixes(scTakesPrecedence ? sc : vk, scTakesPrecedence, ref suppressThisPrefix);
+					&& HotkeyDefinition.PrefixHasEnabledSuffixes(script, scTakesPrecedence ? sc : vk, scTakesPrecedence, ref suppressThisPrefix);
 
 				if (hasEnabledSuffixes || (thisKey.usedAsPrefix & KeyType.PREFIX_FORCED) != 0)
 				{
@@ -3046,7 +3048,7 @@ namespace Keysharp.Internals.Input.Hooks
 						// to fire when RCtrl+A is pressed.  To support them both firing on LCtrl+A, this looks
 						// for any key-down hotkey which might be elegible to fire.  It's okay if this hotkey
 						// has no eligible variants, because Hotkey::CriterionFiringIsCertain will handle that.
-						hotkeyIdWithFlags = HotkeyDefinition.FindPairedHotkey(thisKey.firstHotkey, kbdMsSender.modifiersLRLogicalNonIgnored, false);
+						hotkeyIdWithFlags = HotkeyDefinition.FindPairedHotkey(script, thisKey.firstHotkey, kbdMsSender.modifiersLRLogicalNonIgnored, false);
 					}
 
 					//else hotkey_id_with_flags contains the up-hotkey that is now eligible for firing.
@@ -3224,7 +3226,7 @@ namespace Keysharp.Internals.Input.Hooks
 				// When the user finally releases the WIN key, that release will be disguised if called
 				// for by the logic below and in AllowIt().
 				if ((kbdMsSender.modifiersLRLogical & (MOD_LWIN | MOD_RWIN)) != 0 // One or both are down and may require disguising.
-						&& HotkeyDefinition.HotkeyRequiresModLR(hotkeyIdToFire, MOD_LWIN | MOD_RWIN) != 0) // Avoid masking hotkeys which could be intended to send {LWin up}, such as for AppsKey::RWin.
+						&& HotkeyDefinition.HotkeyRequiresModLR(script, hotkeyIdToFire, MOD_LWIN | MOD_RWIN) != 0) // Avoid masking hotkeys which could be intended to send {LWin up}, such as for AppsKey::RWin.
 				{
 					disguiseNextMenu = true;
 					// An earlier stage has ensured that the keyboard hook is installed for suppression of LWin/RWin if
@@ -3247,7 +3249,7 @@ namespace Keysharp.Internals.Input.Hooks
 				if (!disguiseNextMenu // It's not already going to be disguised due to the section above or a previous hotkey.
 						&& (kbdMsSender.modifiersLRLogical & (MOD_LALT | MOD_RALT)) != 0// If RAlt==AltGr, it should never need disguising, but in that case LCtrl is also down, so ActiveWindowLayoutHasAltGr() isn't checked.
 						&& (kbdMsSender.modifiersLRLogical & (MOD_LCONTROL | MOD_RCONTROL)) == 0 // No need to mask if Ctrl is down (the key-repeat issue that affects the WIN key does not affect ALT).
-						&& HotkeyDefinition.HotkeyRequiresModLR(hotkeyIdToFire, MOD_LALT | MOD_RALT) != 0) // Avoid masking hotkeys which could be intended to send {Alt up}, such as for AppsKey::Alt.
+						&& HotkeyDefinition.HotkeyRequiresModLR(script, hotkeyIdToFire, MOD_LALT | MOD_RALT) != 0) // Avoid masking hotkeys which could be intended to send {Alt up}, such as for AppsKey::Alt.
 				{
 					if (HasKbdHook())
 						disguiseNextMenu = true;
@@ -3645,7 +3647,6 @@ namespace Keysharp.Internals.Input.Hooks
 			var caseConformMode = CaseConformModes.None;
 			var endChar = (char)0;
 			var skipChars = 0;
-			var script = Script.TheScript;
 			var hm = script.HotstringManager;
 
 			// Prevent toggleable keys from being toggled (if the user wanted that) by suppressing it.
@@ -3903,7 +3904,6 @@ namespace Keysharp.Internals.Input.Hooks
 		protected bool TryBuildHookHotkeyMessage(uint hotkeyIDToPost, ulong extraInfo, HotkeyVariant initialVariant, object eventInfo, out HookHotkeyMsg hotkeyMsg)
 		{
 			hotkeyMsg = null;
-			var script = Script.TheScript;
 			var hkId = hotkeyIDToPost & HotkeyDefinition.HOTKEY_ID_MASK;
 			var shk = script.HotkeyData.shk; // volatile read; safe on hook thread
 
@@ -4014,8 +4014,6 @@ namespace Keysharp.Internals.Input.Hooks
 		{
 			if (msg == null)
 				return false;
-
-			var script = Script.TheScript;
 
 			switch (msg.message)
 			{
@@ -4684,7 +4682,7 @@ namespace Keysharp.Internals.Input.Hooks
 				altTabMenuIsVisible = GetAltTabMenuHandle() != 0;
 				pendingDeadKeys.Clear();
 				pendingDeadKeyInvisible = false;
-				Script.TheScript.HotstringManager.ClearBuf();
+				script.HotstringManager.ClearBuf();
 				hsHwnd = 0; // It isn't necessary to determine the actual window/control at this point since the buffer is already empty.
 
 				if (resetKVKandKSC)
@@ -4914,8 +4912,6 @@ namespace Keysharp.Internals.Input.Hooks
 		// Wait until the hook has reached a known idle state (i.e. finished any processing
 		// that it was in the middle of, though it could start something new immediately after).
 		{
-			var script = Script.TheScript;
-
 			if (!IsHookThreadRunning())
 				return;
 
@@ -4926,7 +4922,7 @@ namespace Keysharp.Internals.Input.Hooks
 			}
 
 			using var synced = new ManualResetEventSlim(false);
-			Script.PostToUIThread(synced.Set);
+			script.PostToUIThread(synced.Set);
 
 			while (!synced.Wait(10))
 				Keysharp.Internals.Flow.SleepWithoutInterruption();

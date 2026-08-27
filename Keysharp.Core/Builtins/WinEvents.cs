@@ -140,7 +140,7 @@ namespace Keysharp.Builtins
 				var r = reg;
 
 				if (r != null && r.active)
-					Script.TheScript.WinEventManager.Unregister(r);
+					r.manager.Unregister(r);
 
 				return DefaultObject;
 			}
@@ -162,11 +162,13 @@ namespace Keysharp.Builtins
 
 				var criteria = BuildCriteria(winTitle, winText, excludeTitle, excludeText);
 				var remaining = count.Al(-1L);
-				var scheduler = Script.TheScript.EventScheduler;
-				var reg = new WinEventRegistration(type, criteria, fo, remaining, scheduler);
+				var script = Script.TheScript;
+				var manager = script.WinEventManager;
+				var scheduler = script.EventScheduler;
+				var reg = new WinEventRegistration(type, criteria, fo, remaining, scheduler, manager);
 				var we = new WinEvent { reg = reg };
 				reg.scriptObject = we;
-				Script.TheScript.WinEventManager.Register(reg);
+				manager.Register(reg);
 				return we;
 			}
 

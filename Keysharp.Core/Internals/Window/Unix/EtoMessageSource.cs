@@ -55,13 +55,12 @@ namespace Keysharp.Internals.Window.Unix
 		/// actually presses something, whereas pointer motion is a continuous stream worth not starting.
 		/// </para>
 		/// </summary>
-		internal static void SyncMotionHooks() => Script.InvokeOnUIThread(SyncMotionHooksCore);
+		internal static void SyncMotionHooks(Script script)
+			=> script.InvokeOnUIThread(() => SyncMotionHooksCore(script));
 
-		private static void SyncMotionHooksCore()
+		private static void SyncMotionHooksCore(Script script)
 		{
-			var script = Script.TheScript;
-
-			if (script == null)
+			if (script == null || script.IsDisposed)
 				return;
 
 			foreach (var kv in script.GuiData.allGuiHwnds)
@@ -97,7 +96,7 @@ namespace Keysharp.Internals.Window.Unix
 		/// </para>
 		/// </summary>
 		private static bool MotionWanted(Forms.Control control)
-			=> Script.TheScript?.GuiData.onMessageHandlers.ContainsKey(WindowsAPI.WM_MOUSEMOVE) == true
+			=> OwningScript(control)?.GuiData.onMessageHandlers.ContainsKey(WindowsAPI.WM_MOUSEMOVE) == true
 			   || OwningGui(control)?.HasWindowMessageHandler(WindowsAPI.WM_MOUSEMOVE) == true
 			   || control.GetGuiControl()?.HasWindowMessageHandler(WindowsAPI.WM_MOUSEMOVE) == true;
 
@@ -292,7 +291,12 @@ namespace Keysharp.Internals.Window.Unix
 		/// <returns>True when a monitor claimed the message, meaning default processing must be suppressed.</returns>
 		private static bool Dispatch(Forms.Control control, int msg, nint wparam, nint lparam)
 		{
-			var filter = Script.TheScript?.msgFilter;
+			var script = OwningScript(control);
+
+			if (script == null || script.IsDisposed)
+				return false;
+
+			var filter = script.msgFilter;
 
 			if (filter == null)
 				return false;
@@ -332,6 +336,15 @@ namespace Keysharp.Internals.Window.Unix
 			for (var parent = control; parent != null; parent = parent.Parent)
 				if (parent is KeysharpForm form && form.Tag is WeakReference<Builtins.Gui> weak && weak.TryGetTarget(out var gui))
 					return gui;
+
+			return null;
+		}
+
+		private static Script OwningScript(Forms.Control control)
+		{
+			for (var parent = control; parent != null; parent = parent.Parent)
+				if (parent is KeysharpForm form)
+					return form.OwnerScript;
 
 			return null;
 		}

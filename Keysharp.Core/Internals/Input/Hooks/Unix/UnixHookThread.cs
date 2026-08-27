@@ -101,13 +101,13 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 					owner.SyncModifiersAfterSend();
 			}
 		}
-		internal UnixHookThread() : base()
+		internal UnixHookThread(Script script, string mutexName) : base(script, mutexName)
 		{
 			ConfigureScanCodeNames();
 		}
 
 		protected override KeyboardMouseSender CreateKbdMsSender()
-			=> new UnixKeyboardMouseSender();
+			=> new UnixKeyboardMouseSender(script);
 
 		internal SendScope EnterSendScope() => new(this);
 
@@ -631,7 +631,6 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 		// might have adjusted aVK, such as to make it a left/right specific modifier key rather than a
 		// neutral one. On the other hand, event.scanCode is the one we need for ToUnicodeEx() calls.
 		{
-			var script = Script.TheScript;
 			state.earlyCollected = true;
 			state.used_dead_key_non_destructively = false;
 			state.charCount = 0;

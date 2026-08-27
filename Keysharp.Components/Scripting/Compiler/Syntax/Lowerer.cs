@@ -4959,7 +4959,8 @@ namespace Keysharp.Compilation.Syntax
 
 			uint remapDestVk = 0u, remapDestSc = 0u; uint? modLR = null, modifiersLR = null;
 			var remapName = targetKey; var hotName = sourceKey;
-			var ht = Script.TheScript.HookThread;
+			var script = Script.TheScript;
+			var ht = script.HookThread;
 			var kbLayout = new KeybdLayoutRef(); // Lazy: resolved only if a single-char remap key actually needs the layout.
 
 			remapName = HotkeyDefinition.TextToModifiers(remapName, null);
@@ -5026,7 +5027,7 @@ namespace Keysharp.Compilation.Syntax
 			}
 
 			var blindMods = "";
-			var temphk = new HotkeyDefinition(999, null, (uint)HotkeyTypeEnum.Normal, hotName, 0);
+			var temphk = new HotkeyDefinition(script, 999, null, (uint)HotkeyTypeEnum.Normal, hotName, 0);
 			var remapSourceModifiersLR = temphk.modifiersConsolidatedLR;
 			bool? remapDestIsNeutral = null;
 			var remapDestModifierLR = ht.KeyToModifiersLR(remapDestVk, remapDestSc, ref remapDestIsNeutral);

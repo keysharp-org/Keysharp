@@ -37,7 +37,8 @@ namespace Keysharp.Internals.UI.Unix
 
 		internal FormWindowState lastWindowState = FormWindowState.Normal;
 		private AboutBox about;
-		private bool clipboardMonitoringEnabled;
+		private int clipboardMonitoringEnabled;
+		private long clipboardMonitoringGeneration;
 		private bool selectingTab;
 
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -45,7 +46,7 @@ namespace Keysharp.Internals.UI.Unix
 
 		internal ToolStripMenuItem SuspendHotkeysToolStripMenuItem => suspendHotkeysToolStripMenuItem;
 
-		public MainWindow()
+		internal MainWindow(Script owner) : base(owner)
 		{
 			Title = "Keysharp";
 			ShowInTaskbar = true;
@@ -204,7 +205,7 @@ namespace Keysharp.Internals.UI.Unix
 			_ = QueueUiUpdate(() =>
 			{
 				ShowIfNeeded();
-				SetTextInternal(HotkeyDefinition.GetHotkeyDescriptions(), MainFocusedTab.Hotkeys, true);
+				SetTextInternal(HotkeyDefinition.GetHotkeyDescriptions(OwnerScript), MainFocusedTab.Hotkeys, true);
 			});
 			return DefaultObject;
 		}
@@ -302,7 +303,7 @@ namespace Keysharp.Internals.UI.Unix
 
 		private void editScriptToolStripMenuItem_Click(object sender, EventArgs e) => Builtins.Debug.Edit();
 
-		private void exitToolStripMenuItem_Click(object sender, EventArgs e) => _ = Keysharp.Internals.Flow.ExitAppInternal(Keysharp.Builtins.Flow.ExitReasons.Menu, null, false);
+		private void exitToolStripMenuItem_Click(object sender, EventArgs e) => _ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, Keysharp.Builtins.Flow.ExitReasons.Menu, null, false);
 
 		private MainFocusedTab GetFocusedTab(TabPage page)
 		{
@@ -389,8 +390,8 @@ namespace Keysharp.Internals.UI.Unix
 				lastWindowState = WindowState;
 		}
 
-			private void MainWindow_Closing(object sender, CancelEventArgs e)
-			{
+		private void MainWindow_Closing(object sender, CancelEventArgs e)
+		{
 			if (string.IsNullOrEmpty(A_ExitReason as string))
 			{
 				e.Cancel = true;
@@ -398,10 +399,10 @@ namespace Keysharp.Internals.UI.Unix
 				return;
 			}
 
-				IsClosing = true;
-				SetClipboardMonitoringEnabled(false);
+			IsClosing = true;
+			SetClipboardMonitoringEnabled(false);
 
-				if (Keysharp.Internals.Flow.ExitAppInternal(Keysharp.Builtins.Flow.ExitReasons.Close, null, false))
+			if (Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, Keysharp.Builtins.Flow.ExitReasons.Close, null, false))
 			{
 				IsClosing = false;
 				e.Cancel = true;
@@ -453,7 +454,7 @@ namespace Keysharp.Internals.UI.Unix
 			return true;
 		}
 
-		private bool ShouldSkipUiUpdate() => IsClosing || IsDisposed || Script.TheScript?.hasExited == true;
+		private bool ShouldSkipUiUpdate() => IsClosing || IsDisposed || OwnerScript.hasExited;
 
 		private void SetTextInternal(string s, MainFocusedTab tab, bool focus)
 		{
@@ -489,28 +490,46 @@ namespace Keysharp.Internals.UI.Unix
 			History
 		}
 
-			public event VariadicAction ClipboardUpdate;
+		public event VariadicAction ClipboardUpdate;
 
-			private IDisposable clipboardSub;   // clipboard-change subscription from the resolved backend
+		private IDisposable clipboardSub;   // clipboard-change subscription from the resolved backend
 
-			internal void SetClipboardMonitoringEnabled(bool enabled)
-			{
-				if (clipboardMonitoringEnabled == enabled)
-					return;
+		internal void SetClipboardMonitoringEnabled(bool enabled)
+		{
+			if ((Volatile.Read(ref clipboardMonitoringEnabled) != 0) == enabled)
+				return;
 
-				if (enabled)
-					// The resolved backend owns how changes are detected (Eto's Clipboard.Changed, or the Wayland
-					// shell extension's signal). Its callback may arrive off the UI thread, so marshal onto it.
-					clipboardSub = Keysharp.Internals.Platform.Clipboard.Subscribe(
-						() => Eto.Forms.Application.Instance?.AsyncInvoke(() => Clipboard_Changed(null, EventArgs.Empty)));
-				else
+			var generation = Interlocked.Increment(ref clipboardMonitoringGeneration);
+			Volatile.Write(ref clipboardMonitoringEnabled, enabled ? 1 : 0);
+
+			if (enabled)
+				// The resolved backend owns how changes are detected (Eto's Clipboard.Changed, or the Wayland
+				// shell extension's signal). Its callback may arrive off the UI thread, so marshal onto it.
+				clipboardSub = OwnerScript.Clipboard.Subscribe(() =>
 				{
-					clipboardSub?.Dispose();
-					clipboardSub = null;
-				}
+					if (!IsClipboardNotificationCurrent(generation))
+						return;
 
-				clipboardMonitoringEnabled = enabled;
+					Eto.Forms.Application.Instance?.AsyncInvoke(() =>
+					{
+						if (!IsClipboardNotificationCurrent(generation))
+							return;
+
+						Clipboard_Changed(null, EventArgs.Empty);
+					});
+				});
+			else
+			{
+				var sub = clipboardSub;
+				clipboardSub = null;
+				sub?.Dispose();
 			}
+		}
+
+		private bool IsClipboardNotificationCurrent(long generation)
+			=> Volatile.Read(ref clipboardMonitoringEnabled) != 0
+			   && Volatile.Read(ref clipboardMonitoringGeneration) == generation
+			   && !ShouldSkipUiUpdate();
 	}
 
 	/// <summary>

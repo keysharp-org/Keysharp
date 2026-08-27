@@ -47,6 +47,8 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public sealed class RealThread : KeysharpObject
 		{
+			private readonly Script owner;
+
 			// Completed by the worker loop when the body has finished. Null for the main and adopted threads,
 			// which never complete, and is what distinguishes them throughout this class.
 			private readonly TaskCompletionSource<object> completion;
@@ -64,8 +66,9 @@ namespace Keysharp.Builtins
 			private const int StatusError = 2;
 
 			/// <summary>Creates a worker object. Its thread is started separately by <see cref="Start"/>.</summary>
-			private RealThread()
+			private RealThread(Script owner)
 			{
+				this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
 				completion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 				schedulerSource = new TaskCompletionSource<ScriptEventScheduler>(TaskCreationOptions.RunContinuationsAsynchronously);
 			}
@@ -73,6 +76,7 @@ namespace Keysharp.Builtins
 			/// <summary>Creates the object for an already-running thread this class did not start.</summary>
 			private RealThread(ScriptEventScheduler scheduler)
 			{
+				owner = scheduler?.Owner ?? throw new ArgumentNullException(nameof(scheduler));
 				started = true;
 				schedulerSource = new TaskCompletionSource<ScriptEventScheduler>(TaskCreationOptions.RunContinuationsAsynchronously);
 				_ = schedulerSource.TrySetResult(scheduler);
@@ -99,7 +103,7 @@ namespace Keysharp.Builtins
 			public static object staticCall(object @this, object callback, params object[] args)
 			{
 				var funcObj = Functions.GetKeysharpFunc(callback, null, true);
-				var rt = new RealThread();
+				var rt = new RealThread(Script.TheScript);
 				rt.Start(() => funcObj.Call(args));
 				return rt;
 			}
@@ -114,12 +118,13 @@ namespace Keysharp.Builtins
 			internal static RealThread ForCurrentThread()
 			{
 				var script = Script.TheScript;
-				return script.IsOnMainThread ? MainInstance() : Bind(script.ThreadScheduler);
+				return script.IsOnMainThread ? MainInstance(script) : Bind(script.ThreadScheduler);
 			}
 
-			private static RealThread MainInstance()
+			private static RealThread MainInstance(Script script = null)
 			{
-				var scheduler = Script.TheScript.uiEventScheduler;
+				script ??= Script.TheScript;
+				var scheduler = script.uiEventScheduler;
 				return scheduler == null ? null : Bind(scheduler);
 			}
 
@@ -206,7 +211,7 @@ namespace Keysharp.Builtins
 					return ReportNotAWorker();
 
 				var fo = Functions.GetKeysharpFunc(callback, null, true);
-				var rt = new RealThread();
+				var rt = new RealThread(owner);
 				_ = Task.ContinueWith(_ => rt.Start(() => fo.Call(args)), TaskScheduler.Default);
 				return rt;
 			}
@@ -313,7 +318,7 @@ namespace Keysharp.Builtins
 				}
 
 				if (scheduler.OwnsCurrentThread)
-					Script.TheScript.Threads.ThrowIfExitRequested(Script.TheScript.Threads.CurrentThread);
+					owner.Threads.ThrowIfExitRequested(owner.Threads.CurrentThread);
 
 				return DefaultObject;
 			}
@@ -331,7 +336,7 @@ namespace Keysharp.Builtins
 
 			private object RunWorkerLoop(Func<object> body)
 			{
-				var script = Script.TheScript;
+				var script = owner;
 				ScriptEventScheduler scheduler = null;
 				var previousContext = SynchronizationContext.Current;
 
@@ -460,7 +465,7 @@ namespace Keysharp.Builtins
 				{
 					var scheduler = schedulerSource.Task;
 					return scheduler.Status == TaskStatus.RanToCompletion
-						   && ReferenceEquals(scheduler.Result, Script.TheScript.uiEventScheduler);
+						   && ReferenceEquals(scheduler.Result, owner.uiEventScheduler);
 				}
 			}
 

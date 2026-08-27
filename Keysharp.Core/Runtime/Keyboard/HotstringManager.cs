@@ -13,7 +13,7 @@ namespace Keysharp.Runtime.Keyboard
 			string replacement,
 			bool hasContinuationSection,
 			int suspend = 0)
-			=> Keysharp.Internals.Input.Keyboard.HotstringManager.AddHotstring(
+			=> Script.TheScript.HotstringManager.AddHotstring(
 				name,
 				funcObj,
 				options,

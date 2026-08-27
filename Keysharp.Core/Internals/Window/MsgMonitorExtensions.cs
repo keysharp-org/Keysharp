@@ -14,7 +14,7 @@ namespace Keysharp.Internals.Window
 		private static ScriptEventExecutionResult ExecuteRegistration(this MsgMonitorRegistration registration, Script script, object[] args, object eventInfo, long hwnd, bool skipUninterruptible, bool allowEmergencyOverflow, out long result)
 		{
 			result = 0L;
-			var targetScheduler = registration.OwnerScheduler ?? script.EventScheduler;
+			var targetScheduler = registration.OwnerScheduler;
 			registration.InstanceCount++;
 
 			try

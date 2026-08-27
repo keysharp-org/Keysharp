@@ -7,6 +7,7 @@ namespace Keysharp.Builtins
 {
 	internal class InputDialog : Dialog
 	{
+		private readonly Script owner;
 		private readonly Button btnCancel;
 		private readonly Button btnOK;
 		private readonly Forms.Label prompt;
@@ -58,6 +59,7 @@ namespace Keysharp.Builtins
 
 		public InputDialog()
 		{
+			owner = Script.TheScript;
 			prompt = new Forms.Label();
 			txtMessage = new ();
 			btnOK = new Button { Text = "OK" };
@@ -104,8 +106,7 @@ namespace Keysharp.Builtins
 
 		private void InputDialog_Shown(object sender, System.EventArgs e)
 		{
-			var script = Script.TheScript;
-			var icon = script.scriptIcon;//Not the tray's: that is null under #NoTrayIcon or A_IconHidden, and shows the suspended icon while suspended.
+			var icon = owner.scriptIcon;//Not the tray's: that is null under #NoTrayIcon or A_IconHidden, and shows the suspended icon while suspended.
 
 			if (icon != null)
 				Icon = icon;

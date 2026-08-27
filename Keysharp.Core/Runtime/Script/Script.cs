@@ -15,17 +15,16 @@ using Keysharp.Builtins.COM;
 namespace Keysharp.Runtime
 {
 	/// <summary>
-	/// This is the main script object which contains all instance data needed for a script to run.
-	/// A Script object is created twice: once for parsing, and another for running.
-	/// The design is unusual because all instance data is contained here, then the object itself
-	/// is assigned to a global static member of itself, script.
-	/// The reason for this is that most of the user facing functions in Keysharp are static.
-	/// However, just having them access static data presents a major problem:
-	///     Static data is left around after multiple instances are created during parsing, running
-	///     and between unit tests. As long as they all exist in the same process, each instance does
-	///     not start clean and instead starts with unpredictable remnants of the previous instance.
-	/// To remedy this problem, all data is instance data, and there is only one static member that all
-	/// instance data is accessed through. This ensures a clean start every time we create a Script object.
+	/// Owns all runtime state and services for one running script. One engine per process: the script-facing
+	/// static entry points reach their state through <see cref="TheScript"/>, and a replacement engine simply
+	/// publishes itself over the retired one. Anything that receives a callback from OUTSIDE script execution
+	/// (a window proc, an input hook, a COM sink, a native tap, a deferred registration) stores its owner
+	/// instead, because there is nothing ambient to consult on those threads; everything else reads TheScript.
+	/// <para>
+	/// Naming for a stored reference: <c>script</c> when the type is a COMPONENT of the Script (HookThread,
+	/// Threads, Variables, HotstringManager, KeyboardMouseSender…), <c>owner</c> when it is a callback boundary
+	/// or platform service owned BY one (event backends, overlays, dialogs, taps, clipboards, the destructor
+	/// pump). The distinction is which direction the "belongs to" points.</para>
 	/// </summary>
 	public partial class Script : IDisposable
 	{
@@ -243,6 +242,11 @@ namespace Keysharp.Runtime
 		}
 
 		internal int nMessageBoxes;
+#if WINDOWS
+		/// <summary>MessageBox.Show calls of this script's that have not yet reported their dialog window.
+		/// Read by every scheduler pump, so it is a counter rather than a scan of the pending-request map.</summary>
+		internal int pendingMsgBoxShows;
+#endif
 		internal CallbackRegistry<CallbackRegistration> onErrorHandlers = new();
 		internal CallbackRegistry<CallbackRegistration> onExitHandlers = new();
 		private Icon _normalIcon = null;
@@ -284,8 +288,8 @@ namespace Keysharp.Runtime
 		internal int uninterruptibleTime = 17;
 		private static int instanceCount;
 		private AccessorData accessorData;
+		private Keysharp.Internals.IClipboard clipboard;
 #if WINDOWS
-		private ComMethodData comMethodData;
 #endif
 		private DllData dllData;
 		private DriveTypeMapper driveTypeMapper;
@@ -311,22 +315,42 @@ namespace Keysharp.Runtime
 		private StringsData stringsData;
 		private ToolTipData toolTipData;
 		private Dictionary<string, WindowGroup> windowGroups;
-		private WinEventManager winEventManager;
-		private MonitorEventManager monitorEventManager;
-		private ClrEventManager clrEventManager;
 		private int disposeStarted;
 
+		/// <summary>
+		/// The one Script this process is currently running (one engine per process; a replacement overwrites
+		/// it on construction, and dispose deliberately leaves it pointing at the retired script so late
+		/// callers resolve something whose hasExited/IsDisposed guards answer honestly).
+		/// </summary>
 		public static Keysharp.Runtime.Script TheScript { get; internal set; }
+
 		public Type ProgramType;
 		public string ProgramNamespace = Keywords.MainNamespaceName;
-		internal HotstringManager HotstringManager => hotstringManager ?? (hotstringManager = new ());
+		internal HotstringManager HotstringManager => hotstringManager ?? (hotstringManager = new (this));
 		public Threads Threads => threads.Value;
 		public Variables Vars { get; private set; }
 		internal AccessorData AccessorData => accessorData ?? (accessorData = new ());
+		internal Keysharp.Internals.IClipboard Clipboard
+		{
+			get
+			{
+				var current = clipboard;
+
+				if (current == null)
+				{
+					current = Platform.Instance.CreateClipboard(this);
+					current = Interlocked.CompareExchange(ref clipboard, current, null) ?? current;
+				}
+
+				return current;
+			}
+		}
 #if WINDOWS
-		internal ComMethodData ComMethodData => comMethodData ?? (comMethodData = new ());
+		/// <summary>COM event sinks and member type-info for this Script. Its cache is what costs; see MethodCache.</summary>
+		internal ComMethodData ComMethodData { get; }
 #endif
 		internal DllData DllData => dllData ?? (dllData = new ());
+		internal DestructorPump DestructorPump { get; }
 		internal DriveTypeMapper DriveTypeMapper => driveTypeMapper ?? (driveTypeMapper = new ());
 #if !WINDOWS
 		internal EnvData EnvData => envData ?? (envData = new ());
@@ -389,24 +413,17 @@ namespace Keysharp.Runtime
 		/// (was <c>WindowManagerBase.Groups</c>, reached through the deleted WindowProvider).</summary>
 		internal Dictionary<string, WindowGroup> WindowGroups => windowGroups ??= new (StringComparer.OrdinalIgnoreCase);
 
-		/// <summary>Lazily-created per-script engine for <c>Ks.WinEvent</c> subscriptions; owns the platform window-event backend.</summary>
-		internal WinEventManager WinEventManager => winEventManager ?? (winEventManager = new (this));
+		/// <summary>Per-script engine for <c>Ks.WinEvent</c> subscriptions; owns the platform window-event backend,
+		/// which stays uninstalled until the first subscription. Built with the Script -- the manager itself is one
+		/// field, so deferring it bought only a null to guard on every cleanup path.</summary>
+		internal WinEventManager WinEventManager { get; }
 
-		/// <summary>The WinEvent manager if one has been created, else null (used by cleanup paths that must not create it).</summary>
-		internal WinEventManager WinEventManagerIfExists => winEventManager;
+		/// <summary>Per-script engine for <c>Ks.Monitor.OnChange</c> subscriptions; its backend is likewise deferred
+		/// until the first subscription.</summary>
+		internal MonitorEventManager MonitorEventManager { get; }
 
-		/// <summary>Lazily-created per-script engine for <c>Ks.Monitor.OnChange</c> subscriptions; owns the platform
-		/// monitor-event backend, which stays uninstalled until the first subscription.</summary>
-		internal MonitorEventManager MonitorEventManager => monitorEventManager ?? (monitorEventManager = new (this));
-
-		/// <summary>The monitor-event manager if one has been created, else null (used by cleanup paths that must not create it).</summary>
-		internal MonitorEventManager MonitorEventManagerIfExists => monitorEventManager;
-
-		/// <summary>Lazily-created registry of live CLR event subscriptions made through <c>Clr</c>'s <c>OnEvent</c>.</summary>
-		internal ClrEventManager ClrEventManager => clrEventManager ?? (clrEventManager = new ());
-
-		/// <summary>The CLR event manager if one has been created, else null (used by cleanup paths that must not create it).</summary>
-		internal ClrEventManager ClrEventManagerIfExists => clrEventManager;
+		/// <summary>Registry of live CLR event subscriptions made through <c>Clr</c>.s <c>OnEvent</c>.</summary>
+		internal ClrEventManager ClrEventManager { get; }
 
 #if OSX
 		internal string ldLibraryPath = Environment.GetEnvironmentVariable("DYLD_LIBRARY_PATH") ?? "";
@@ -490,13 +507,18 @@ namespace Keysharp.Runtime
 
 		public Script(Type program = null, string hookMutexName = null)
 		{
+			DestructorPump = new(this);
+			WinEventManager = new(this);
+			MonitorEventManager = new(this);
+			ClrEventManager = new();
+#if WINDOWS
+			ComMethodData = new(this);
+#endif
 			//Create the message filter before publishing TheScript. Windows belonging to a previous script (or forms
 			//owned by another pumping thread) can dispatch a message the instant TheScript points at this instance,
-			//and KeysharpForm.WndProc reads TheScript.msgFilter, so it must never observe a half-constructed script.
+			//and KeysharpForm.WndProc reads the filter, so it must never observe a half-constructed script.
 			msgFilter = new MessageFilter(this);
-			Script.TheScript = this;//Everywhere in the script will reference this.
-			MainWindow.ResetDebugOutputBuffer();
-
+			Script.TheScript = this;//Everything resolving the current script from here on sees this instance.
 			NativeMainThreadID = CurrentThreadId();
 			ManagedMainThreadID = Environment.CurrentManagedThreadId;
 
@@ -508,27 +530,29 @@ namespace Keysharp.Runtime
 			timeLastInputMouse = timeLastInputPhysical;
 
 			//Init the API classes, passing in this which will be used to access their respective data objects.
-			Reflections = new Reflections();
-			Vars = new Variables();
+			Reflections = new Reflections(this);
+			Vars = new Variables(this);
+			//Immediately after Vars: TheScript is already published above, and Any.InitializeBase SILENTLY leaves a
+			//null base when Prototypes is still empty, so any object built on another thread before this runs is
+			//quietly malformed rather than failing.
 			Vars.InitClasses();
-
-			threads = new(() => new());
-
-			Script.TheScript.Threads.EnsureCurrentThreadVariables();
-
+			threads = new(() => new Threads(this));
+			Threads.EnsureCurrentThreadVariables();
 			mainEventScheduler = ThreadScheduler;
+			HookThread = CreateHookThread(hookMutexName);
+			SetInitialFloatFormat();
+
+#if WINDOWS
+			InitializeScreenSystemEventsOnNeutralContext();
+#endif
+
+			MainWindow.ResetDebugOutputBuffer();
 
 #if WINDOWS
 			Application.AddMessageFilter(msgFilter);
-			InitializeScreenSystemEventsOnNeutralContext();
+#elif LINUX
+			Keysharp.Internals.Input.Linux.KeysharpInputdManager.RegisterOwner(this);
 #endif
-			//Must be set BEFORE the hook thread is constructed: HookThread.KeybdMutexName/MouseMutexName are
-			//instance field initializers derived from MutexName, so assigning it afterwards left them holding
-			//the previous value and made #HookMutexName a no-op.
-			if (hookMutexName != null && hookMutexName != "") Keysharp.Internals.Input.Hooks.HookThread.MutexName = hookMutexName;
-			HookThread = CreateHookThread();
-			//Init the data objects that the API classes will use.
-			SetInitialFloatFormat();//This must be done intially and not just when A_FormatFloat is referenced for the first time.
 		}
 
 #if WINDOWS
@@ -774,7 +798,7 @@ namespace Keysharp.Runtime
 				PostToUIThread(() =>
 				{
 					if (!IsMainWindowClosing && !AnyPersistent())
-						_ = Keysharp.Internals.Flow.ExitAppInternal(exitReason, Environment.ExitCode, false);
+						_ = Keysharp.Internals.Flow.ExitAppInternal(this, exitReason, Environment.ExitCode, false);
 				});
 			}
 		}
@@ -867,22 +891,20 @@ namespace Keysharp.Runtime
 #endif
 		}
 
-		internal static void InvokeOnUIThread(Action action)
+		internal void InvokeOnUIThread(Action action)
 		{
 			if (action == null)
 				return;
 
-			var script = TheScript;
-
-			if (script == null || script.IsOnMainThread)
+			if (IsOnMainThread)
 			{
 				action();
 				return;
 			}
 
-			if (script.UIThreadContext != null)
+			if (UIThreadContext != null)
 			{
-				script.UIThreadContext.Send(_ => action(), null);
+				UIThreadContext.Send(_ => action(), null);
 				return;
 			}
 #if !WINDOWS
@@ -898,26 +920,24 @@ namespace Keysharp.Runtime
 			// No UI framework to marshal through. Queue onto the main thread rather than running here: this is
 			// main-thread work, and executing it on the caller is the silent-wrong-thread bug, not a fallback.
 			// Terminating, because InvokeSynchronous only delegates back here when UIThreadContext is non-null.
-			if (script.uiEventScheduler is { IsDisposed: false } ui)
+			if (uiEventScheduler is { IsDisposed: false } ui)
 				_ = ui.InvokeSynchronous(() => { action(); return true; });
 			else
 				action();
 		}
 
-		internal static T InvokeOnUIThread<T>(Func<T> action)
+		internal T InvokeOnUIThread<T>(Func<T> action)
 		{
 			if (action == null)
 				return default;
 
-			var script = TheScript;
-
-			if (script == null || script.IsOnMainThread)
+			if (IsOnMainThread)
 				return action();
 
-			if (script.UIThreadContext != null)
+			if (UIThreadContext != null)
 			{
 				T uiResult = default;
-				script.UIThreadContext.Send(_ => uiResult = action(), null);
+				UIThreadContext.Send(_ => uiResult = action(), null);
 				return uiResult;
 			}
 #if !WINDOWS
@@ -931,29 +951,32 @@ namespace Keysharp.Runtime
 
 #endif
 
-			return script.uiEventScheduler is { IsDisposed: false } ui ? ui.InvokeSynchronous(action) : action();
+			return uiEventScheduler is { IsDisposed: false } ui ? ui.InvokeSynchronous(action) : action();
 		}
 
-		internal static void PostToUIThread(Action action) => PostToUIThread(TheScript, action);
-
-		internal static void PostToUIThread(Script script, Action action)
+		internal void PostToUIThread(Action action)
 		{
-			if (action == null)
+			if (action == null || IsDisposed)
 				return;
 
-			if (script?.UIThreadContext != null)
-				script.UIThreadContext.Post(_ => action(), null);
+			void RunIfAlive()
+			{
+				if (!IsDisposed)
+					action();
+			}
+
+			if (UIThreadContext != null)
+				UIThreadContext.Post(_ => RunIfAlive(), null);
 #if !WINDOWS
 			else if (Application.Instance != null)
-				Application.Instance.AsyncInvoke(action);
+				Application.Instance.AsyncInvoke(RunIfAlive);
 #endif
 			// No UI framework to post through, so queue onto the main thread instead. Running inline would
 			// execute main-thread work on whichever thread posted -- a worker, or the finalizer thread, where
-			// ExitIfNotPersistent's teardown deadlocks on WaitForPendingFinalizers.
-			else if (script?.uiEventScheduler is { IsDisposed: false } ui)
-				_ = ui.EnqueueCallback(action);
-			else
-				action();
+			// ExitIfNotPersistent's teardown deadlocks on WaitForPendingFinalizers. With no scheduler either
+			// the script is past teardown, so the work is dropped rather than run on the wrong thread.
+			else if (uiEventScheduler is { IsDisposed: false } ui)
+				_ = ui.EnqueueCallback(RunIfAlive);
 		}
 
 #if !WINDOWS
@@ -1093,9 +1116,9 @@ namespace Keysharp.Runtime
 			if (mainWindow != null)
 				return;
 
-			mainWindow = new MainWindow();
+			mainWindow = new MainWindow(this);
 			MainWindow.ResetDebugOutputFlush();
-			mainWindowGui = new Gui(null, null, null, mainWindow);
+			mainWindowGui = new Gui(this, null, null, null, mainWindow);
 			mainWindow.AllowShowDisplay = false;
 		}
 
@@ -1332,8 +1355,14 @@ namespace Keysharp.Runtime
 
 		public void Dispose()
 		{
-			Dispose(true);
-			GC.SuppressFinalize(this);
+			try
+			{
+				Dispose(true);
+			}
+			finally
+			{
+				GC.SuppressFinalize(this);
+			}
 		}
 
 		protected virtual void Dispose(bool disposing)
@@ -1342,7 +1371,7 @@ namespace Keysharp.Runtime
 				return;
 
 			//Everything below is managed teardown that can block on, or marshal to, another thread:
-			//HookThread.Stop() joins the hook's STA thread, and winEventManager/flowData post to the UI
+			//HookThread.Stop() joins the hook's STA thread, and WinEventManager/flowData post to the UI
 			//thread. None of it may run on the GC finalizer thread -- joining there stalls the whole
 			//finalizer queue, which is precisely what ExitAppInternal's GC.WaitForPendingFinalizers()
 			//then waits on. A Script that reaches its finalizer was never disposed (i.e. it leaked); its
@@ -1351,48 +1380,89 @@ namespace Keysharp.Runtime
 			if (!disposing)
 				return;
 
-			HookThread?.Stop();
-			winEventManager?.Dispose();
-			// Same reasoning as clrEventManager below on Windows: the monitor backend hangs off the *static*
+			// Every step runs even if an earlier one throws, and none of them propagates: callers unwind through
+			// Dispose on the exit path (ExitAppInternal quits the Eto loop AFTER this returns), so throwing here
+			// would strand the app loop and swallow the UserRequestedExitException the caller is filtering for.
+			static void Teardown(Action action)
+			{
+				try
+				{
+					action();
+				}
+				catch (Exception ex)
+				{
+					//Trace, not Diagnostics.Debug: the latter is [Conditional("DEBUG")] on one half and posts to a
+					//UI thread this script no longer has on the other, so a Release failure would vanish entirely.
+					System.Diagnostics.Trace.WriteLine($"Script teardown step failed: {ex}");
+				}
+			}
+
+			// The publication is deliberately left pointing at this script for everything below. Static built-ins
+			// resolve through it and plenty of them run after teardown (an ExitApp unwind, a __Delete, a late UI
+			// callback); handing those null makes every one a NullReferenceException. They already guard on
+			// hasExited/IsDisposed, so a retired script is the right answer, and a replacement overwrites it anyway.
+
+			// Also done by ExitAppInternal, but a Script can be disposed directly (tests, embedding) and the
+			// dialog registries are process-static -- an abandoned entry there would outlive this engine.
+			Teardown(() => Dialogs.CloseDialogs(this));
+			Teardown(() => Dialogs.CloseToolTips(this));
+			Teardown(DestructorPump.Stop);
+			Teardown(ShutdownEventSchedulers);
+			Teardown(() => HookThread?.Stop());
+			Teardown(() => InvokeOnUIThread(() => inputData?.Dispose()));
+			inputTimerExists = false;
+			Teardown(WinEventManager.Dispose);
+			// Same reasoning as ClrEventManager below: the monitor backend hangs off the *static*
 			// SystemEvents.DisplaySettingsChanged, so it has to be detached explicitly or it roots this Script.
-			monitorEventManager?.Dispose();
+			Teardown(MonitorEventManager.Dispose);
 			// Before anything else managed goes away: a subscription to a *static* CLR event is a root the runtime
 			// holds indefinitely, so leaving one attached keeps the callback -- and the engine behind it -- alive past
 			// dispose. This is the orphaned-callback case teardown has to cover.
-			clrEventManager?.Dispose();
-#if LINUX
-			Keysharp.Internals.Input.Linux.KeysharpInputdManager.DisconnectClients();
+			Teardown(ClrEventManager.Dispose);
+#if WINDOWS
+			Teardown(ComMethodData.Dispose);
 #endif
-			stringsData?.Free();
-			flowData?.Dispose();
+#if LINUX
+			Teardown(() => Keysharp.Internals.Input.Linux.KeysharpInputdManager.DisconnectClients(this));
+#endif
+			Teardown(() => stringsData?.Free());
+			Teardown(() => flowData?.Dispose());
 
-			// Frees every overlay this process still owns (Highlight/ToolTip/Overlay builtins all register as
-			// image overlays), so a script that exits without disposing them doesn't leak on-screen surfaces.
-			try { _ = Platform.Overlay.TryHideAllImageOverlays(); } catch { }
+			// Frees every overlay this script still owns (Highlight/ToolTip/Overlay builtins all register as
+			// image overlays) without disturbing surfaces belonging to another script in the same process.
+			Teardown(() => _ = Platform.Overlay.TryHideAllImageOverlays(this));
 
 			// Stops anything SoundPlay left playing. On Windows an MCI item left open can hang the process on
 			// exit (AHK closes it from its destructor for the same reason); elsewhere this reaps the player.
-			try { Keysharp.Internals.Os.SoundPlayback.StopCurrent(); } catch { }
+			Teardown(() => Keysharp.Internals.Os.SoundPlayback.StopCurrent(this));
 
 #if WINDOWS
-			Application.RemoveMessageFilter(msgFilter);
+			Teardown(() => Application.RemoveMessageFilter(msgFilter));
 #endif
 
 			if (Tray != null)
-			{
-				InvokeOnUIThread(DisposeTrayIcon);
-			}
+				Teardown(() => InvokeOnUIThread(DisposeTrayIcon));
 
-			if (!IsMainWindowClosing)
+			Teardown(() =>
 			{
 				var window = mainWindow;
-				window?.CheckedInvoke(() =>
-				{
-					window.Close();
-					mainWindow = null;
-				}, false);
-			}
 
+				if (window == null || window.IsClosing)
+					return;
+
+				window.CheckedInvoke(() =>
+				{
+					try
+					{
+						window.Close();
+					}
+					finally
+					{
+						if (ReferenceEquals(mainWindow, window))
+							mainWindow = null;
+					}
+				}, false);
+			});
 		}
 
 		private void DisposeTrayIcon()
@@ -1485,7 +1555,7 @@ namespace Keysharp.Runtime
 			if (totalExistingThreads > 0)
 				return true;
 
-			if (Gui.AnyExistingVisibleWindows())
+			if (Gui.AnyExistingVisibleWindows(this))
 				return true;
 
 			if (HotkeyData.shk.Length > 0)
@@ -1555,14 +1625,14 @@ namespace Keysharp.Runtime
 			thisHotkeyStartTime = DateTime.UtcNow; // Fixed for v1.0.35.10 to not happen for GUI
 		}
 
-		private static HookThread CreateHookThread()
+		private HookThread CreateHookThread(string mutexName)
 		{
 #if WINDOWS
-			return new WindowsHookThread();
+			return new WindowsHookThread(this, mutexName);
 #elif LINUX
-			return new LinuxHookThread();
+			return new LinuxHookThread(this, mutexName);
 #elif OSX
-			return new MacHookThread();
+			return new MacHookThread(this, mutexName);
 #else
 #error Unsupported platform. Only WINDOWS, LINUX, and OSX are supported.
 #endif
@@ -1575,7 +1645,7 @@ namespace Keysharp.Runtime
 			// re-entrant A_Clipboard:= from a hotkey thread) or returns nothing, and ForceBool(null) throws
 			// "input was unset". The other InvokeEventHandlers call sites already just discard the result.
 			// The resolved clipboard backend reports the event type (0 = empty, 1 = text, 2 = other).
-			_ = ClipFunctions.InvokeEventHandlers(Platform.Clipboard.ChangeType());
+			_ = ClipFunctions.InvokeEventHandlers(Clipboard.ChangeType());
 		}
 
 		internal Type GetNativeType(Any obj)

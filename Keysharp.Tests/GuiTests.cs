@@ -1045,7 +1045,7 @@ namespace Keysharp.Tests
 		{
 			SkipIfUiInitializationBlocked("Test requires a live Eto Application (macOS testhost cannot drive AppKit).");
 			var shown = false;
-			using var mainWindow = new Keysharp.Internals.UI.Unix.MainWindow();
+			using var mainWindow = new Keysharp.Internals.UI.Unix.MainWindow(s);
 			mainWindow.Shown += (_, _) => shown = true;
 
 			mainWindow.InitializeHidden();
@@ -1348,7 +1348,7 @@ namespace Keysharp.Tests
 			finally
 			{
 				Ks.A_GuiTheme = originalTheme;
-				Script.InvokeOnUIThread(() => app.Theme = originalEtoTheme);
+				s.InvokeOnUIThread(() => app.Theme = originalEtoTheme);
 			}
 #endif
 		}

@@ -5,6 +5,7 @@ namespace Keysharp.Builtins.COM
 {
 	internal class ComEvent
 	{
+		private readonly Script owner;
 		internal Dispatcher dispatcher;
 		internal KeysharpObject sinkObj;
 		internal object[] thisArg;
@@ -12,9 +13,9 @@ namespace Keysharp.Builtins.COM
 		private readonly Dictionary<string, MethodPropertyHolder> methodMapper = new (10, StringComparer.OrdinalIgnoreCase);
 		private readonly string prefix;
 
-		internal ComEvent(Dispatcher disp, object sink, bool log)
+		internal ComEvent(Script owner, Dispatcher disp, object sink, bool log)
 		{
-			var script = Script.TheScript;
+			this.owner = owner;
 			dispatcher = disp;
 			thisArg = [disp.Co!];
 			logAll = log;
@@ -23,10 +24,10 @@ namespace Keysharp.Builtins.COM
 			{
 				prefix = s;
 
-				if (!script.ReflectionsData.typeToStringStaticMethods.ContainsKey(script.CurrentModuleType))
-					Reflections.FindAndCacheMethod(script.CurrentModuleType, "", -1);
+				if (!owner.ReflectionsData.typeToStringStaticMethods.ContainsKey(owner.CurrentModuleType))
+					Reflections.FindAndCacheMethod(owner.CurrentModuleType, "", -1);
 
-				foreach (var kv in script.ReflectionsData.typeToStringStaticMethods[script.CurrentModuleType])
+				foreach (var kv in owner.ReflectionsData.typeToStringStaticMethods[owner.CurrentModuleType])
 				{
 					if (string.Equals(kv.Key, AutoExecSectionName, StringComparison.OrdinalIgnoreCase))
 						continue;
@@ -111,6 +112,9 @@ namespace Keysharp.Builtins.COM
 
 		private void Dispatcher_EventReceivedGlobalFunc(object sender, DispatcherEventArgs e)
 		{
+			if (owner.IsDisposed || owner.hasExited)
+				return;
+
 			if (prefix is null) return;
 			if (logAll)
 				_ = Diagnostics.Debug.WriteLine($"Dispatch ID {e.DispId}: {e.Name} received to be dispatched to a global function with {e.Arguments.Length} + 1 args.");
@@ -121,23 +125,22 @@ namespace Keysharp.Builtins.COM
 			{
 				var args = e.Arguments.Concat(thisArg);
 				var moduleType = ResolveModuleType(mph.mi?.DeclaringType);
-				TheScript.Threads.LaunchThreadInMain(() =>
+				owner.Threads.LaunchThreadInMain(() =>
 				{
 					_ = Keysharp.Internals.Flow.TryCatch(() =>
 					{
 						e.IsHandled = true;
 						if (moduleType != null)
 						{
-							var script = Script.TheScript;
-							var prev = script.CurrentModuleType;
-							script.CurrentModuleType = moduleType;
+							var prev = owner.CurrentModuleType;
+							owner.CurrentModuleType = moduleType;
 							try
 							{
 								e.Result = mph.CallFunc(null, args);
 							}
 							finally
 							{
-								script.CurrentModuleType = prev;
+								owner.CurrentModuleType = prev;
 							}
 						}
 						else
@@ -151,6 +154,9 @@ namespace Keysharp.Builtins.COM
 
 		private void Dispatcher_EventReceivedObjectMethod(object sender, DispatcherEventArgs e)
 		{
+			if (owner.IsDisposed || owner.hasExited)
+				return;
+
 			e.IsHandled = false;
 			if (sinkObj is null) return;
 			if (logAll)
@@ -163,7 +169,7 @@ namespace Keysharp.Builtins.COM
 			System.Array.Copy(e.Arguments, allArgs, e.Arguments.Length);
 			allArgs[^1] = thisArg[0];
 
-			TheScript.Threads.LaunchThreadInMain(() =>
+			owner.Threads.LaunchThreadInMain(() =>
 			{
 				_ = Keysharp.Internals.Flow.TryCatch(() =>
 				{
@@ -187,4 +193,3 @@ namespace Keysharp.Builtins.COM
 }
 
 #endif
-

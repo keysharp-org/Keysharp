@@ -9,14 +9,17 @@ namespace Keysharp.Internals.Input.Keyboard
 	/// </summary>
 	internal sealed class HotCriterionExecutor : IDisposable
 	{
+		private readonly Script owner;
 		private readonly object growthGate = new();
 		private readonly Worker[] workers;
 		private int disposed;
 		private int rejectionCount;
 		private int workerCount;
 
-		internal HotCriterionExecutor(int maxWorkers)
+		internal HotCriterionExecutor(Script owner, int maxWorkers)
 		{
+			this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
+
 			if (maxWorkers <= 0)
 				throw new ArgumentOutOfRangeException(nameof(maxWorkers));
 
@@ -61,7 +64,7 @@ namespace Keysharp.Internals.Input.Keyboard
 						if (count >= workers.Length)
 							return CriterionExecutionStatus.Rejected;
 
-						worker = new Worker(count + 1);
+						worker = new Worker(owner, count + 1);
 						_ = worker.TryBegin(criterion, criterionType, hotkeyName, eventInfo);
 
 						try
@@ -114,6 +117,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		private sealed class Worker
 		{
+			private readonly Script owner;
 			private readonly object gate = new();
 			private readonly Thread thread;
 			private Exception completedError;
@@ -125,8 +129,9 @@ namespace Keysharp.Internals.Input.Keyboard
 			private WorkerState state;
 			private bool stopRequested;
 
-			internal Worker(int index)
+			internal Worker(Script owner, int index)
 			{
+				this.owner = owner;
 				thread = new Thread(Run)
 				{
 					IsBackground = true,
@@ -248,8 +253,11 @@ namespace Keysharp.Internals.Input.Keyboard
 
 					try
 					{
-						result = HotkeyDefinition.EvaluateCriterion(
-							currentCriterion, currentCriterionType, currentHotkeyName, currentEventInfo);
+						if (!owner.IsDisposed && !owner.hasExited)
+						{
+							result = HotkeyDefinition.EvaluateCriterion(
+								owner, currentCriterion, currentCriterionType, currentHotkeyName, currentEventInfo);
+						}
 					}
 					catch (Exception ex)
 					{

@@ -13,6 +13,8 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 	// higher-level hotkey, hotstring and InputHook decision pipeline.
 	internal sealed class MacHookThread : Keysharp.Internals.Input.Hooks.Unix.UnixHookThread
 	{
+		internal MacHookThread(Script script, string mutexName) : base(script, mutexName) { }
+
 		private const int HookStartTimeoutMs = 3000;
 		private MacNativeEventTap nativeEventTap;
 		private readonly MacKeyboardState keyboardState = new();
@@ -25,7 +27,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 		protected override void EnsureCursorClipPermissions()
 		{
 			base.EnsureCursorClipPermissions();
-			_ = Script.TheScript.Permissions.EnsureInputInjection(operation: "ClipCursor");
+			_ = script.Permissions.EnsureInputInjection(operation: "ClipCursor");
 		}
 
 		protected override bool CanClipCursor(out string reason)
@@ -77,7 +79,6 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 				return;
 			}
 
-			var script = Script.TheScript;
 			var suppress = script.KeyboardData.blockMouseMove || script.KeyboardData.blockInput;
 
 			for (var input = script.input; !suppress && input != null; input = input.prev)
@@ -87,7 +88,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 		}
 
 		protected override KeyboardMouseSender CreateKbdMsSender()
-			=> new MacKeyboardMouseSender(keyboardState, mouseStream);
+			=> new MacKeyboardMouseSender(script, keyboardState, mouseStream);
 
 		// macOS App Switcher uses Cmd+Tab, not Alt+Tab.
 		protected override uint AltTabModifierVk => VK_LWIN;
@@ -120,8 +121,8 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 
 		// macOS has no process-local BlockInput equivalent, so the native tap suppresses
 		// physical events directly while allowing Keysharp's own injected events through.
-		private static bool ShouldSuppressForBlockInput(bool isInjected) =>
-			!isInjected && Script.TheScript.KeyboardData.blockInput;
+		private bool ShouldSuppressForBlockInput(bool isInjected) =>
+			!isInjected && script.KeyboardData.blockInput;
 
 		internal bool ProcessNativeKeyboardEvent(uint type, nint cgEvent)
 		{
@@ -257,7 +258,6 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			if (!mouseEnabled)
 				return false;
 
-			var script = Script.TheScript;
 			var streamRevision = mouseStream.SenderRevision;
 
 			var flags = MacNativeInput.CGEventGetFlags(cgEvent);
@@ -494,10 +494,10 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 				return false;
 			}
 
-			_ = Script.TheScript.Permissions.EnsureInputMonitoring(operation: "install keyboard/mouse hooks");
+			_ = script.Permissions.EnsureInputMonitoring(operation: "install keyboard/mouse hooks");
 			// This is the only synchronous UI/layout preparation point. Once the native tap starts,
 			// key mapping is snapshot-only and can never wait on the UI thread.
-			KeyCodes.PrepareForInputHook();
+			KeyCodes.PrepareForInputHook(script);
 			keyboardState.Resync();
 			mouseStream.ResyncButtons();
 			nativeEventTap = new MacNativeEventTap(this, requestedMask);

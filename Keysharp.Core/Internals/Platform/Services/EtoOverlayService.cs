@@ -4,7 +4,7 @@ namespace Keysharp.Internals
 	internal sealed class MacOverlay : OverlayBase
 	{
 		public override PixelSize GetCanvasSize(ScreenRect bounds) => OverlayCanvasSizing.FromEtoScreen(bounds);
-		protected override IImageOverlayBacking CreateBacking(uint id) => new EtoImageOverlay();
+		protected override IImageOverlayBacking CreateBacking(uint id, Script owner) => new EtoImageOverlay(owner);
 	}
 #endif
 
@@ -38,6 +38,7 @@ namespace Keysharp.Internals
 	// just repositions.
 	internal sealed class EtoImageOverlay : IImageOverlayBacking
 	{
+		private readonly Script owner;
 		private Keysharp.Builtins.KeysharpForm form;
 #if LINUX
 		// ImageView scales against GTK's asynchronously updated allocation. A 1:1 Drawable instead limits resize
@@ -63,6 +64,8 @@ namespace Keysharp.Internals
 
 		// Mouse events use toolkit units; X11 overlays expose root pixels.
 		private double pointerScaleX = 1.0, pointerScaleY = 1.0;
+
+		internal EtoImageOverlay(Script owner) => this.owner = owner;
 
 		private OverlayPointerEvent MakePointerEvent(OverlayPointerKind kind, PointF location)
 			=> new(kind, (int)Math.Round(location.X * pointerScaleX), (int)Math.Round(location.Y * pointerScaleY));
@@ -138,7 +141,7 @@ namespace Keysharp.Internals
 
 				var snap = snapshot;
 
-				Script.InvokeOnUIThread(() =>
+				owner.InvokeOnUIThread(() =>
 				{
 					EnsureForm();
 					var geometryChanged = !presented || bounds != shownBounds;
@@ -208,7 +211,7 @@ namespace Keysharp.Internals
 				return false;
 
 			var moved = false;
-			Script.InvokeOnUIThread(() =>
+			owner.InvokeOnUIThread(() =>
 			{
 				if (form != null)
 				{
@@ -324,7 +327,7 @@ namespace Keysharp.Internals
 			if (form != null)
 				return;
 
-			form = new Keysharp.Builtins.KeysharpForm
+			form = new Keysharp.Builtins.KeysharpForm(owner)
 			{
 				FormBorderStyle = Keysharp.Builtins.FormBorderStyle.None,
 				ShowInTaskbar = false,
@@ -411,7 +414,7 @@ namespace Keysharp.Internals
 			var closed = true;
 
 			// InvokeOnUIThread is synchronous, so `closed`/`form` reflect the outcome once it returns.
-			Script.InvokeOnUIThread(() =>
+			owner.InvokeOnUIThread(() =>
 			{
 				try
 				{

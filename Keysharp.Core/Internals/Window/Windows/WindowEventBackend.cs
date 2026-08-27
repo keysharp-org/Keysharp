@@ -14,6 +14,8 @@ namespace Keysharp.Internals.Window.Windows
 	/// </summary>
 	internal sealed class WindowEventBackend : IWindowEventBackend
 	{
+		private readonly Script owner;
+
 		// WINEVENTPROC dwFlags.
 		private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
 		// Object identifiers: apart from the text caret (CaretMove), we only care about whole top-level windows,
@@ -61,13 +63,17 @@ namespace Keysharp.Internals.Window.Windows
 		private readonly WindowsAPI.WinEventProc proc;
 		private bool disposed;
 
-		internal WindowEventBackend() => proc = OnWinEvent;
+		internal WindowEventBackend(Script owner)
+		{
+			this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
+			proc = OnWinEvent;
+		}
 
 		public Action<WindowEventRaw> Sink { get; set; }
 
-		public void Start(WindowEventMask mask) => PostToUIThread(() => InstallOnUI(mask));
+		public void Start(WindowEventMask mask) => owner.PostToUIThread(() => InstallOnUI(mask));
 
-		public void Stop(WindowEventMask mask) => PostToUIThread(() => UninstallOnUI(mask));
+		public void Stop(WindowEventMask mask) => owner.PostToUIThread(() => UninstallOnUI(mask));
 
 		public void Dispose()
 		{
@@ -77,7 +83,7 @@ namespace Keysharp.Internals.Window.Windows
 			//leaving every SetWinEventHook handle installed and the pinned proc alive for the rest of the
 			//process -- and a subsequent Script would install a second set and double-dispatch every event.
 			//InvokeOnUIThread also keeps UnhookWinEvent on the thread that installed the hook, as required.
-			InvokeOnUIThread(() => UninstallOnUI((WindowEventMask)~0));
+			owner.InvokeOnUIThread(() => UninstallOnUI((WindowEventMask)~0));
 		}
 
 		// ---- UI-thread hook management ------------------------------------------------------

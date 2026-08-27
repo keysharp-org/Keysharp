@@ -207,8 +207,7 @@ namespace Keysharp.Tests
 				}
 			}
 
-			//Make the Script object from within the script available to the calling code.
-			//This is uesd in the HotstringParsing2() test.
+			//The compiled program builds its own Script; take it over so the test can read back what the run registered.
 			s = Script.TheScript;
 			hsm = s.HotstringManager;
 			return output;

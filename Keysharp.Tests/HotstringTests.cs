@@ -376,7 +376,7 @@ namespace Keysharp.Tests
 			hsm.RestoreDefaults(true);
 			_ = Keyboard.Hotstring("Reset");
 			_ = Keysharp.Runtime.Keyboard.HotstringManager.AddHotstring("::btw", Functions.Func(Label_9F201721, null), ":btw", "btw", "", false);
-			_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks();
+			_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(Script.TheScript);
 			Assert.IsTrue(A_KeybdHookInstalled == 1L);//Will fail if system has another hook, so exit your scripts before running this.
 			Assert.IsTrue(A_MouseHookInstalled == 1L);//Because there is a hotstring and mouse reset is true by default, the mouse hook gets installed.
 			SimulateKeyPress((uint)Keysharp.Builtins.Keyboard.GetKeyVK("b"));
@@ -729,7 +729,7 @@ namespace Keysharp.Tests
 		public void CompositeModifiers()
 		{
 			// The modifiers belong to the prefix, not the suffix: the prefix key is still just F23.
-			var combo = new HotkeyDefinition(1100, null, (uint)HotkeyTypeEnum.Normal, "<#<+F23 & x", 0);
+			var combo = new HotkeyDefinition(Script.TheScript, 1100, null, (uint)HotkeyTypeEnum.Normal, "<#<+F23 & x", 0);
 			Assert.IsTrue(combo.constructedOK);
 			Assert.AreEqual(Keysharp.Internals.Input.Keyboard.VirtualKeys.VK_F23, combo.modifierVK);
 			Assert.AreEqual(
@@ -737,14 +737,14 @@ namespace Keysharp.Tests
 				combo.prefixModifiersLR);
 
 			// A plain combo on the same prefix key is unconstrained, and is a different hotkey.
-			var plain = new HotkeyDefinition(1101, null, (uint)HotkeyTypeEnum.Normal, "F23 & x", 0);
+			var plain = new HotkeyDefinition(Script.TheScript, 1101, null, (uint)HotkeyTypeEnum.Normal, "F23 & x", 0);
 			Assert.IsTrue(plain.constructedOK);
 			Assert.AreEqual(combo.modifierVK, plain.modifierVK);
 			Assert.AreEqual(0u, plain.prefixModifiersLR);
 
 			// The suffix of a composite may carry modifiers too. AutoHotkey rejects these outright, so a
 			// combination which used to be spelled with a chord key name has an equivalent again.
-			var suffix = new HotkeyDefinition(1103, null, (uint)HotkeyTypeEnum.Normal, "a & <#<+F23", 0);
+			var suffix = new HotkeyDefinition(Script.TheScript, 1103, null, (uint)HotkeyTypeEnum.Normal, "a & <#<+F23", 0);
 			Assert.IsTrue(suffix.constructedOK);
 			Assert.AreEqual(Keysharp.Internals.Input.Keyboard.VirtualKeys.VK_F23, suffix.vk);
 			Assert.AreEqual(
@@ -753,7 +753,7 @@ namespace Keysharp.Tests
 			Assert.AreEqual(0u, suffix.prefixModifiersLR); // The modifiers belong to the suffix, not the prefix.
 
 			// A composite with no modifiers on either side keeps ignoring the modifier state.
-			var bare = new HotkeyDefinition(1104, null, (uint)HotkeyTypeEnum.Normal, "a & F23", 0);
+			var bare = new HotkeyDefinition(Script.TheScript, 1104, null, (uint)HotkeyTypeEnum.Normal, "a & F23", 0);
 			Assert.IsTrue(bare.constructedOK);
 			Assert.AreEqual(0u, bare.suffixModifiersLR);
 			Assert.IsTrue(ModifiersSatisfied(0u, bare.suffixModifiers, bare.suffixModifiersLR));
@@ -773,7 +773,7 @@ namespace Keysharp.Tests
 			Assert.AreEqual(0, bare.CompositeSpecificity());
 
 			// A neutral modifier means either side satisfies it; a sided one means that side only.
-			var neutral = new HotkeyDefinition(1102, null, (uint)HotkeyTypeEnum.Normal, "^F23 & x", 0);
+			var neutral = new HotkeyDefinition(Script.TheScript, 1102, null, (uint)HotkeyTypeEnum.Normal, "^F23 & x", 0);
 			Assert.IsTrue(neutral.constructedOK);
 			Assert.IsTrue(ModifiersSatisfied(MOD_LCONTROL, neutral.prefixModifiers, neutral.prefixModifiersLR));
 			Assert.IsTrue(ModifiersSatisfied(MOD_RCONTROL, neutral.prefixModifiers, neutral.prefixModifiersLR));
@@ -848,8 +848,12 @@ namespace Keysharp.Tests
 		{
 			var filename = "hotstring-parsing2";
 			_ = TestScript(filename, false);
-			//After the script exits, the hotstrings are still kept in memory in the global list.
-			//So query them below to ensure they were properly parsed.
+			//The definitions survive the script that parsed them, but its exit turns them off (they belonged to
+			//that Script's scheduler) and MatchHotstring skips a suspended one. Re-enable before querying: this
+			//test is about how each line parsed, not about the hotstrings still being live after exit.
+			foreach (var hotstring in hsm.shs)
+				hotstring.suspended = 0;
+
 			_ = Keyboard.Hotstring("Reset");
 			hsm.AddChars("bitw ");
 			var hs = hsm.MatchHotstring();

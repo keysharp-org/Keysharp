@@ -96,11 +96,21 @@ namespace Keysharp.Internals.Window.MacOS
 		private static nint lastActiveHwnd;                                     // de-dupes overlapping Active signals
 		private static bool windowEventsRunning;
 		private static bool caretEventsEnabled;                                 // AXSelectedTextChanged registered too?
+		private static Script eventOwner;
 
 		/// <summary>Installs the AX-observer window-event stream (idempotent). Requires Accessibility permission;
 		/// returns having logged guidance if it is not granted. Must be called on the main thread.</summary>
-		internal static void StartWindowEvents(Action<WindowEventRaw> sink)
+		internal static void StartWindowEvents(Script owner, Action<WindowEventRaw> sink)
 		{
+			if (owner == null || owner.IsDisposed)
+				return;
+
+			var previousOwner = Volatile.Read(ref eventOwner);
+
+			if (windowEventsRunning && !ReferenceEquals(previousOwner, owner))
+				StopWindowEvents(previousOwner);
+
+			Volatile.Write(ref eventOwner, owner);
 			eventSink = sink;
 
 			if (windowEventsRunning)
@@ -146,8 +156,11 @@ namespace Keysharp.Internals.Window.MacOS
 		/// one whose traffic is per-keystroke, and no script should pay for it without a CaretMove subscription. Any
 		/// observer created later picks the current setting up in <see cref="AddAppObserver"/>. Must be called on the
 		/// main thread; safe to call before the stream is running (the flag alone then decides).</summary>
-		internal static void SetCaretEvents(bool enabled)
+		internal static void SetCaretEvents(Script owner, bool enabled)
 		{
+			if (owner == null || owner.IsDisposed || !ReferenceEquals(Volatile.Read(ref eventOwner), owner))
+				return;
+
 			if (caretEventsEnabled == enabled)
 				return;
 
@@ -173,10 +186,15 @@ namespace Keysharp.Internals.Window.MacOS
 		}
 
 		/// <summary>Tears the whole stream down (idempotent). Must be called on the main thread.</summary>
-		internal static void StopWindowEvents()
+		internal static void StopWindowEvents(Script owner)
 		{
+			if (!ReferenceEquals(Volatile.Read(ref eventOwner), owner))
+				return;
+
 			windowEventsRunning = false;
+			caretEventsEnabled = false;
 			eventSink = null;
+			Volatile.Write(ref eventOwner, null);
 
 			try
 			{
@@ -465,7 +483,9 @@ namespace Keysharp.Internals.Window.MacOS
 		/// move/close/etc. — for its whole life.</summary>
 		private static void ScheduleTrackRetry(AppObserverState state, nint windowElement, int remaining)
 		{
-			if (remaining <= 0 || windowElement == 0 || !windowEventsRunning)
+			var owner = Volatile.Read(ref eventOwner);
+
+			if (owner == null || remaining <= 0 || windowElement == 0 || !windowEventsRunning)
 				return;
 
 			// Keep the element alive across the delay (the AX framework owns it only for the callback's duration).
@@ -481,13 +501,14 @@ namespace Keysharp.Internals.Window.MacOS
 				timer.Dispose();   // one-shot
 
 				// The timer callback is on a thread-pool thread; all AX/observer state is main-thread-only, so hop back.
-				Script.PostToUIThread(() =>
+				owner.PostToUIThread(() =>
 				{
 					try
 					{
 						// Only retry while this exact observer is still live — the app may have terminated meanwhile,
 						// which removes/replaces its state and releases its element registrations.
 						if (windowEventsRunning
+							&& ReferenceEquals(eventOwner, owner)
 							&& appObservers.TryGetValue(state.pid, out var live)
 							&& ReferenceEquals(live, state)
 							&& TrackWindow(live, retained, emitCreateShow: true) == 0)
@@ -507,7 +528,9 @@ namespace Keysharp.Internals.Window.MacOS
 		{
 			try
 			{
-				if (eventSink == null)
+				var owner = Volatile.Read(ref eventOwner);
+
+				if (owner == null || owner.IsDisposed || eventSink == null)
 					return;
 
 				// The per-window notifications carry the CGWindowID in refcon (set at registration); the app-element
@@ -654,8 +677,9 @@ namespace Keysharp.Internals.Window.MacOS
 		private static void Emit(WindowEventType type, nint hwnd, Rectangle? bounds = null, bool destroyConfirmed = false)
 		{
 			var sink = eventSink;
+			var owner = Volatile.Read(ref eventOwner);
 
-			if (sink == null || hwnd == 0)
+			if (sink == null || owner == null || owner.IsDisposed || hwnd == 0)
 				return;
 
 			// Active is sourced from two overlapping signals (app activation + focused-window change); collapsing
@@ -673,7 +697,10 @@ namespace Keysharp.Internals.Window.MacOS
 			// timestamp (Environment.TickCount64), stamped at delivery — the same clock the Linux backend uses and what
 			// the Windows backend reconstructs from its native 32-bit event time. AX notifications carry no usable event
 			// time, so delivery time is the closest we can capture.
-			sink(new WindowEventRaw(type, hwnd, Environment.TickCount64) { Bounds = bounds, DestroyConfirmed = destroyConfirmed });
+			var raw = new WindowEventRaw(type, hwnd, Environment.TickCount64) { Bounds = bounds, DestroyConfirmed = destroyConfirmed };
+
+			if (ReferenceEquals(Volatile.Read(ref eventOwner), owner) && !owner.IsDisposed)
+				sink(raw);
 		}
 
 		private static nint ResolveCoreFoundationConstant(string symbolName)

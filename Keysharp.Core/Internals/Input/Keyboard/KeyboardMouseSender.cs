@@ -34,6 +34,8 @@ namespace Keysharp.Internals.Input.Keyboard
 	/// </summary>
 	internal abstract class KeyboardMouseSender
 	{
+		protected readonly Script script;
+
 		// Signed int sentinels, matching AHK's COORD_UNSPECIFIED (INT_MIN) and COORD_CENTERED (INT_MIN + 1).
 		// These are only ever used in equality checks (== / != / ^), never in ordering or arithmetic
 		// comparisons, so there is no signed/unsigned wraparound hazard.
@@ -148,8 +150,9 @@ namespace Keysharp.Internals.Input.Keyboard
 			internal nint hkl = 0;
 		};
 
-		public KeyboardMouseSender()
+		protected KeyboardMouseSender(Script script)
 		{
+			this.script = script ?? throw new ArgumentNullException(nameof(script));
 			hotkeys = [];
 			hotstrings = [];
 			pressed = [];
@@ -441,7 +444,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// <returns></returns>
 		internal virtual uint GetModifierLRState(bool explicitlyGet = false)
 		{
-			var ht = Script.TheScript.HookThread;
+			var ht = script.HookThread;
 
 			// If the hook is active, rely only on its tracked value rather than calling Get():
 			if (ht.HasKbdHook() && !explicitlyGet)
@@ -1023,7 +1026,6 @@ namespace Keysharp.Internals.Input.Keyboard
 			// Drag consists of at most:
 			// 1) Move; 2) Delay; 3) Down; 4) Delay; 5) Move; 6) Delay; 7) Delay (dupe); 8) Up; 9) Delay.
 			const int MAX_PERFORM_MOUSE_EVENTS = 10;
-			var script = Script.TheScript;
 			var ht = script.HookThread;
 			sendMode = ThreadAccessors.A_SendMode;
 
@@ -1110,7 +1112,6 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal void ProcessHotkey(int wParamVal, int lParamVal, HotkeyVariant variant, uint msg, ulong? hookExtraInfo = null, object eventInfo = null)
 		{
 			var hkId = wParamVal & HotkeyDefinition.HOTKEY_ID_MASK;
-			var script = Script.TheScript;
 			var shk = script.HotkeyData.shk;
 
 			if (hkId < shk.Length)//Ensure hotkey ID is valid.
@@ -1228,7 +1229,6 @@ namespace Keysharp.Internals.Input.Keyboard
 			// for this particular vk keystroke, but modifiersLRPersistent are the ones that will stay
 			// in pressed down even after it's sent.
 			var modifiersLRSpecified = (modifiersLR | modifiersLRPersistent);
-			var script = Script.TheScript;
 			var vkIsMouse = MouseUtils.IsMouseVK(vk); // Caller has ensured that VK is non-zero when it wants a mouse click.
 			var tv = script.Threads.CurrentThread.configData;
 			var sendLevel = tv.sendLevel;
@@ -1395,7 +1395,6 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (keys?.Length == 0)
 				return;
 
-			var script = Script.TheScript;
 			script.Permissions.EnsureInputInjection(operation: "SendKeys");
 			var ht = script.HookThread;
 
@@ -1427,7 +1426,6 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		private void SendKeysCore(string keys, SendRawModes sendRaw, SendModes sendModeOrig, nint targetWindow)
 		{
-			var script = Script.TheScript;
 			var ht = script.HookThread;
 
 			var modsExcludedFromBlind = 0u;// For performance and also to reserve future flexibility, recognize {Blind} only when it's the first item in the string.
@@ -2567,7 +2565,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			// Since calls from the hook thread could come in even while the SendInput array is being constructed,
 			// don't let those events get interspersed with the script's explicit use of SendInput.
-			var ht = Script.TheScript.HookThread;
+			var ht = script.HookThread;
 			//Note that the threading model in Keysharp is different than AHK, so this doesn't apply.
 			//In AHK, the low level keyboard proc runs in its own thread, however in Keysharp it turns on the main window thread.
 			//Further, after hours of extreme scrutiny in AHK, there seems to be no code in HookThreadProc() where a keyboard event could be sent here.
@@ -3048,7 +3046,6 @@ namespace Keysharp.Internals.Input.Keyboard
 			// Set up some conditions so that the keystrokes that disguise the release of Win or Alt
 			// are only sent when necessary (which helps avoid complications caused by keystroke interaction,
 			// while improving performance):
-			var script = Script.TheScript;
 			var modifiersLRunion = modifiersLRnow | modifiersLRnew; // The set of keys that were or will be down.
 			var ctrlNotDown = (modifiersLRnow & (MOD_LCONTROL | MOD_RCONTROL)) == 0; // Neither CTRL key is down now.
 			var ctrlWillNotBeDown = (modifiersLRnew & (MOD_LCONTROL | MOD_RCONTROL)) == 0 // Nor will it be.

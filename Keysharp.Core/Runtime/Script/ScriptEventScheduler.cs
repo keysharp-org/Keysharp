@@ -9,6 +9,7 @@ namespace Keysharp.Runtime
 {
 	public partial class Script
 	{
+		private readonly Lock eventSchedulerGate = new();
 		private ThreadLocal<ScriptEventScheduler> eventSchedulers;
 		internal ScriptEventScheduler uiEventScheduler;
 
@@ -18,10 +19,34 @@ namespace Keysharp.Runtime
 		/// such as in RealThread setup. All other callers should use <see cref="EventScheduler"/>.
 		/// </summary>
 		internal ScriptEventScheduler ThreadScheduler
-			=> (eventSchedulers ??= new(CreateSchedulerForCurrentThread, true)).Value;
+		{
+			get
+			{
+				// No factory on the ThreadLocal, so this is a single slot read that cannot construct anything --
+				// it is on the path of every thread launch and callback registration. Creation happens under the
+				// gate instead, which is what keeps it from racing ShutdownEventSchedulers.
+				var existing = Volatile.Read(ref eventSchedulers)?.Value;
 
-		// The factory runs on the thread the scheduler will belong to, which is the only place its pseudo-thread
-		// stack can be captured correctly (both are thread-local and 1:1 with the real thread). Binding them here is
+				if (existing != null)
+					return existing;
+
+				lock (eventSchedulerGate)
+				{
+					var schedulers = eventSchedulers ??= new(true);
+
+					if (schedulers.Value is { } created)
+						return created;
+
+					if (IsDisposed)
+						throw new ObjectDisposedException(nameof(Script));
+
+					return schedulers.Value = CreateSchedulerForCurrentThread();
+				}
+			}
+		}
+
+		// Runs on the thread the scheduler will belong to, which is the only place its pseudo-thread stack can be
+		// captured correctly (both are thread-local and 1:1 with the real thread). Binding them here is
 		// what lets RealThread.Threads and RealThread.Main reach another thread's stack without a second registry.
 		private ScriptEventScheduler CreateSchedulerForCurrentThread()
 		{
@@ -34,7 +59,7 @@ namespace Keysharp.Runtime
 			=> uiEventScheduler ?? throw new InvalidOperationException("UI event scheduler has not been bound yet.");
 
 		internal ScriptEventScheduler CurrentSchedulerIfCreated
-			=> eventSchedulers != null && eventSchedulers.IsValueCreated ? eventSchedulers.Value : null;
+			=> Volatile.Read(ref eventSchedulers)?.Value;
 
 		/// <summary>Whether a synchronous task wait may safely pump Keysharp/UI events on this thread. Static
 		/// initialization and ThreadPool workers must use an ordinary wait: pumping there would either touch a
@@ -65,14 +90,50 @@ namespace Keysharp.Runtime
 
 		private void ScheduleEventSchedulers(Predicate<ScriptEventScheduler> shouldSchedule)
 		{
-			if (eventSchedulers == null)
+			var schedulers = Volatile.Read(ref eventSchedulers);
+
+			if (schedulers == null)
 				return;
 
-			foreach (var scheduler in eventSchedulers.Values)
+			foreach (var scheduler in schedulers.Values)
 			{
 				if (scheduler != null && (shouldSchedule == null || shouldSchedule(scheduler)))
 					scheduler.SchedulePump();
 			}
+		}
+
+		internal void ShutdownEventSchedulers()
+		{
+			ScriptEventScheduler[] shutdown;
+			// Detached, not disposed: trackAllValues pins every thread's value for as long as the ThreadLocal is
+			// reachable, so nulling the field is what releases them. Disposing would additionally make Value throw
+			// for readers still holding the old reference. Readers tolerate null; ThreadScheduler rebuilds only
+			// while the script is alive.
+			ThreadLocal<ScriptEventScheduler> stale;
+
+			lock (eventSchedulerGate)
+			{
+				var schedulers = new HashSet<ScriptEventScheduler>();
+				stale = eventSchedulers;
+				eventSchedulers = null;
+
+				if (uiEventScheduler != null)
+					_ = schedulers.Add(uiEventScheduler);
+
+				if (stale != null)
+				{
+					foreach (var scheduler in stale.Values)
+					{
+						if (scheduler != null)
+							_ = schedulers.Add(scheduler);
+					}
+				}
+
+				shutdown = [.. schedulers];
+			}
+
+			foreach (var scheduler in shutdown)
+				scheduler.ShutdownForScriptDispose();
 		}
 	}
 
@@ -102,11 +163,24 @@ namespace Keysharp.Runtime
 			if (d == null)
 				return;
 
+			var owner = scheduler.Owner;
+
+			if (owner.IsDisposed)
+				return;
+
 			// Once the owning thread is gone the queue is cleared and nothing will ever drain it, so dropping the
 			// callback would leave whatever awaits it unfinished for good. There is no script thread left to
 			// marshal to, which makes the pool the honest destination rather than a fallback.
-			if (!scheduler.EnqueueCallback(() => d(state)))
-				_ = ThreadPool.QueueUserWorkItem(_ => d(state));
+			if (!scheduler.EnqueueCallback(() =>
+				{
+					if (!owner.IsDisposed)
+						d(state);
+				}))
+				_ = ThreadPool.QueueUserWorkItem(_ =>
+				{
+					if (!owner.IsDisposed)
+						d(state);
+				});
 		}
 
 		public override void Send(SendOrPostCallback d, object state)
@@ -114,14 +188,26 @@ namespace Keysharp.Runtime
 			if (d == null)
 				return;
 
+			var owner = scheduler.Owner;
+
+			if (owner.IsDisposed)
+				throw new ObjectDisposedException(nameof(Script));
+
+			// Nothing can retire the owner between the check above and the call: only this thread could, and it is here.
 			if (scheduler.OwnsCurrentThread)
+			{
 				d(state);
-			else
-				_ = scheduler.InvokeSynchronous(() =>
-				{
-					d(state);
-					return true;
-				});
+				return;
+			}
+
+			_ = scheduler.InvokeSynchronous(() =>
+			{
+				if (owner.IsDisposed)
+					throw new ObjectDisposedException(nameof(Script));
+
+				d(state);
+				return true;
+			});
 		}
 	}
 
@@ -169,14 +255,16 @@ namespace Keysharp.Runtime
 	internal sealed class ScriptEventScheduler
 	{
 		private readonly object gate = new();
+		private readonly Lock ownedResourceCleanupGate = new();
 		private readonly Lock ownedDelegateGate = new();
 		private readonly HashSet<DelegateHolder> ownedDelegates = [];
 		private readonly LinkedList<ScriptQueueEntry> interactiveQueue = new();
 		private readonly LinkedList<ScriptQueueEntry> normalQueue = new();
 		// Reused by EnqueueDueTimers (only the owning thread calls it), so the per-pump due-check doesn't allocate.
 		private readonly List<Keysharp.Internals.Threading.ScriptTimerState> dueTimerBuffer = new();
-		private AutoResetEvent workerPumpSignal = new(false);
+		private AutoResetEvent workerPumpSignal;
 		private int workerDisposed;
+		private bool ownedResourcesDisposed;
 		private int workerExitRequested;
 		// The script-visible RealThread bound to this scheduler's thread (A_RealThread). Set by the RealThread
 		// worker before its body runs, or created on demand for the main/adopted threads.
@@ -213,6 +301,8 @@ namespace Keysharp.Runtime
 				postedPump = PumpPosted;
 				owner.uiEventScheduler = this;
 			}
+			else
+				workerPumpSignal = new(false);
 		}
 
 		internal Script Owner => script;
@@ -250,13 +340,30 @@ internal bool HasBlockedQueuedWork
 			SignalWorkerPump();
 		}
 
-		internal void RegisterOwnedDelegate(DelegateHolder holder)
+		internal bool RegisterOwnedDelegate(DelegateHolder holder)
 		{
 			if (holder == null)
-				return;
+				return false;
 
-			lock (ownedDelegateGate)
-				_ = ownedDelegates.Add(holder);
+			return TryRegisterOwnedResource(() =>
+			{
+				lock (ownedDelegateGate)
+					return ownedDelegates.Add(holder);
+			});
+		}
+
+		internal bool TryRegisterOwnedResource(Func<bool> register)
+		{
+			if (register == null)
+				return false;
+
+			lock (ownedResourceCleanupGate)
+			{
+				if (ownedResourcesDisposed || IsDisposed)
+					return false;
+
+				return register();
+			}
 		}
 
 		internal void UnregisterOwnedDelegate(DelegateHolder holder)
@@ -386,7 +493,7 @@ internal bool HasBlockedQueuedWork
 			// Hand off to the UI framework only when there is one. Without it the queue below is the marshal --
 			// it targets this same thread, and whoever is pumping serves it.
 			if (isUiScheduler && script.UIThreadContext != null)
-				return Script.InvokeOnUIThread(func);
+				return script.InvokeOnUIThread(func);
 
 			using var completed = new ManualResetEventSlim(false);
 			ExceptionDispatchInfo captured = null;
@@ -540,26 +647,22 @@ internal bool HasBlockedQueuedWork
 			if (isUiScheduler || Interlocked.Exchange(ref workerDisposed, 1) != 0)
 				return;
 
-			ClearQueues();
-			DisposeOwnedTimers();
-			DisposeOwnedClipboardHandlers();
-			var hotkeysChanged = Keysharp.Internals.Input.Keyboard.HotkeyDefinition.DisableOwnedVariants(this);
-			var hotstringsChanged = script.HotstringManager.DisableOwnedHotstrings(this);
-			DisposeOwnedMessageHandlers();
-			DisposeOwnedGuiHandlers();
-			DisposeOwnedMenuHandlers();
-			DisposeOwnedWinEventHandlers();
-			DisposeOwnedClrSubscriptions();
-			DelegateHolder.DisposeOwnedByScheduler(this);
-			_ = Interlocked.Exchange(ref persistentRegistrationCount, 0);
-
-			if (hotkeysChanged || hotstringsChanged)
-				_ = Keysharp.Internals.Input.Keyboard.HotkeyDefinition.ManifestAllHotkeysHotstringsHooks();
+			DisposeOwnedResources();
 
 			SignalWorkerPump();
 
+			// Only the worker's finally path closes its wait handle. Script shutdown can run concurrently on
+			// another thread, so it limits itself to requesting exit and waking this handle.
 			var signal = Interlocked.Exchange(ref workerPumpSignal, null);
 			signal?.Dispose();
+		}
+
+		internal void ShutdownForScriptDispose()
+		{
+			DisposeOwnedResources();
+
+			if (!isUiScheduler)
+				RequestWorkerExit();
 		}
 
 		internal void SchedulePump() => SchedulePump(requireQueued: true);
@@ -583,7 +686,7 @@ internal bool HasBlockedQueuedWork
 			if (isUiScheduler)
 				// This delegate can run from an idle native UI loop with no script exception boundary.
 				// Keep exit requests pending for the next genuine script safe point instead of throwing here.
-				Script.PostToUIThread(script, postedPump);
+				script.PostToUIThread(postedPump);
 			else
 				SignalWorkerPump();
 		}
@@ -809,7 +912,7 @@ internal bool HasBlockedQueuedWork
 				}
 
 #if WINDOWS
-				if (Dialogs.HasPendingWindowsMsgBoxShow())
+				if (Dialogs.HasPendingWindowsMsgBoxShow(script))
 					return ScriptEventExecutionResult.LocalBlocked;
 #endif
 
@@ -855,7 +958,7 @@ internal bool HasBlockedQueuedWork
 						// Timers honour the Thread-Interrupt uninterruptible startup window like any new thread. The launch
 						// passed skipUninterruptible=true (the pump vetted admission above), which also skips the window setup,
 						// so apply it here.
-						thread.ThreadVariables.ApplyUninterruptibleStartupWindow();
+						thread.ThreadVariables.ApplyUninterruptibleStartupWindow(script);
 
 						executed = true;
 
@@ -1031,9 +1134,41 @@ internal bool HasBlockedQueuedWork
 			}
 		}
 
+		private void DisposeOwnedResources()
+		{
+			// Cleanup may be initiated by Script.Dispose while a worker is entering its finally block. Keep the
+			// operation idempotent and make the losing caller wait until the winning cleanup has actually finished,
+			// since Script.Dispose can tear down the managers these removals use as soon as this method returns.
+			// The gate is held across ManifestAllHotkeysHotstringsHooks, which blocks on the hook thread via
+			// ht.Invoke. That cannot deadlock: the hook thread never registers an owned resource on a scheduler,
+			// so it never takes this gate and can always finish the work it is handed.
+			lock (ownedResourceCleanupGate)
+			{
+				if (ownedResourcesDisposed)
+					return;
+
+				ownedResourcesDisposed = true;
+				ClearQueues();
+				DisposeOwnedTimers();
+				DisposeOwnedClipboardHandlers();
+				var hotkeysChanged = Keysharp.Internals.Input.Keyboard.HotkeyDefinition.DisableOwnedVariants(this);
+				var hotstringsChanged = script.HotstringManager.DisableOwnedHotstrings(this);
+				DisposeOwnedMessageHandlers();
+				DisposeOwnedGuiHandlers();
+				DisposeOwnedMenuHandlers();
+				DisposeOwnedWinEventHandlers();
+				DisposeOwnedClrSubscriptions();
+				DelegateHolder.DisposeOwnedByScheduler(this);
+				_ = Interlocked.Exchange(ref persistentRegistrationCount, 0);
+
+				if (hotkeysChanged || hotstringsChanged)
+					_ = Keysharp.Internals.Input.Keyboard.HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(script);
+			}
+		}
+
 		private void DisposeOwnedTimers()
 		{
-			if (script.FlowData.timers.RemoveOwned(this))
+			if (script.FlowData.timers.RemoveOwned(this) && !script.IsDisposed)
 				script.ExitIfNotPersistent();
 		}
 
@@ -1057,12 +1192,12 @@ internal bool HasBlockedQueuedWork
 
 		private void DisposeOwnedWinEventHandlers()
 		{
-			_ = script.WinEventManagerIfExists?.RemoveOwned(this);
-			_ = script.MonitorEventManagerIfExists?.RemoveOwned(this);
+			_ = script.WinEventManager.RemoveOwned(this);
+			_ = script.MonitorEventManager.RemoveOwned(this);
 		}
 
 		private void DisposeOwnedClrSubscriptions()
-			=> _ = script.ClrEventManagerIfExists?.RemoveOwned(this);
+			=> _ = script.ClrEventManager.RemoveOwned(this);
 
 		private void DisposeOwnedGuiHandlers()
 		{

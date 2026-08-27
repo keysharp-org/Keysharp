@@ -37,6 +37,7 @@ namespace Keysharp.Internals.Scripting
 		private readonly List<TRegistration> ordered = [];
 		private readonly Dictionary<CallbackRegistrationKey, List<TRegistration>> byCallbackAndScheduler = [];
 		private readonly Dictionary<ScriptEventScheduler, List<TRegistration>> byScheduler = new(ReferenceEqualityComparer<ScriptEventScheduler>.Instance);
+		private Script script;
 		private TRegistration[] snapshot = [];
 		private bool snapshotDirty = true;
 
@@ -58,13 +59,32 @@ namespace Keysharp.Internals.Scripting
 			}
 		}
 
-		internal void Add(TRegistration registration, bool addFirst = false)
+		internal bool Add(TRegistration registration, bool addFirst = false)
 		{
 			if (registration == null)
-				return;
+				return false;
 
+			var scheduler = registration.OwnerScheduler;
+
+			if (scheduler == null)
+				return AddCore(registration, addFirst);
+
+			// Adding under the scheduler's cleanup gate is what makes "registered" and "will be cleaned up" one
+			// step: a scheduler that has already torn down refuses, leaving the registration inactive rather than
+			// stranded in a registry nothing will ever sweep.
+			if (scheduler.TryRegisterOwnedResource(() => AddCore(registration, addFirst)))
+				return true;
+
+			registration.SetActive(false);
+			return false;
+		}
+
+		private bool AddCore(TRegistration registration, bool addFirst)
+		{
 			lock (gate)
 			{
+				script ??= registration.OwnerScheduler?.Owner ?? Script.TheScript;
+
 				if (addFirst)
 					ordered.Insert(0, registration);
 				else
@@ -72,6 +92,7 @@ namespace Keysharp.Internals.Scripting
 
 				IndexAdd(registration);
 				snapshotDirty = true;
+				return true;
 			}
 		}
 
@@ -173,27 +194,29 @@ namespace Keysharp.Internals.Scripting
 			if (callback == null)
 				return false;
 
+			Script currentOwner;
+
+			lock (gate)
+				currentOwner = script;
+
+			var currentScheduler = (currentOwner ?? Script.TheScript)?.EventScheduler;
+
 			if (createRegistration == null)
 			{
 				if (typeof(TRegistration) != typeof(CallbackRegistration))
 					throw new InvalidOperationException($"A registration factory is required for {typeof(TRegistration).Name}.");
 
-				createRegistration = (Func<KeysharpFunc, long, TRegistration>)(object)CallbackRegistration.CreateCurrent;
+				createRegistration = (Func<KeysharpFunc, long, TRegistration>)(object)new Func<KeysharpFunc, long, CallbackRegistration>(
+					(cb, _) => new CallbackRegistration(cb, currentScheduler, true));
 			}
 
 			if (addRemove > 0)
-			{
-				Add(createRegistration(callback, addRemove));
-				return true;
-			}
+				return Add(createRegistration(callback, addRemove));
 
 			if (addRemove < 0)
-			{
-				Add(createRegistration(callback, addRemove), true);
-				return true;
-			}
+				return Add(createRegistration(callback, addRemove), true);
 
-			return Remove(callback, matchCurrentSchedulerOnRemove ? Script.TheScript?.EventScheduler : null, matchCurrentSchedulerOnRemove);
+			return Remove(callback, matchCurrentSchedulerOnRemove ? currentScheduler : null, matchCurrentSchedulerOnRemove);
 		}
 
 		internal bool ModifyGlobalEventHandlers(KeysharpFunc callback, long addRemove)
@@ -245,11 +268,13 @@ namespace Keysharp.Internals.Scripting
 				return result;
 
 			var inst = args.Length > 0 ? args[0].GetControl() : null;
-			var script = Script.TheScript;
-			var oldEventInfo = A_EventInfo;
+			Script registryOwner;
+
+			lock (gate)
+				registryOwner = script;
 
 			// Run one handler in a fresh pseudo-thread on the given scheduler's own thread. Kept as a LOCAL function
-			// so it captures the admission flags/args/script/inst/result rather than threading them through a separate
+			// so it captures the admission flags/args/inst/result rather than threading them through a separate
 			// static method and its two call sites. For the OnExit sequence both admission flags are set (see
 			// InvokeExitHandlers): skipUninterruptible starts the thread even though the exit sequence has disabled
 			// interruption, and allowEmergencyOverflow bypasses #MaxThreads. That thread still runs UNINTERRUPTIBLE for
@@ -257,8 +282,9 @@ namespace Keysharp.Internals.Scripting
 			// tries to launch while it runs is refused at that same gate. Do NOT also pass isCritical: on a veto the
 			// exit is cancelled and the script keeps running, and a leftover Critical scope then wedges later thread
 			// launches (subsequent timers/hotkeys stop firing).
-			ScriptEventExecutionResult RunHandler(ScriptEventScheduler scheduler, KeysharpFunc handler, long priority)
+			ScriptEventExecutionResult RunHandler(ScriptEventScheduler scheduler, Script script, KeysharpFunc handler, long priority)
 			{
+				var oldEventInfo = A_EventInfo;
 				using var thread = scheduler.StartPseudoThreadScope(priority, skipUninterruptible, false, allowEmergencyOverflow, ThreadKind.Event);
 
 				if (!thread.Started)
@@ -294,7 +320,12 @@ namespace Keysharp.Internals.Scripting
 					continue;
 
 				var priority = entry.Priority;   // per-registration thread priority (0 except for menu items' "Pn")
-				var targetScheduler = entry.OwnerScheduler ?? script.EventScheduler;
+				var targetScheduler = entry.OwnerScheduler ?? registryOwner?.EventScheduler;
+
+				if (targetScheduler == null)
+					continue;
+
+				var script = targetScheduler.Owner;
 				ScriptEventExecutionResult executionResult;
 
 				if (targetScheduler.IsDisposed)
@@ -304,11 +335,11 @@ namespace Keysharp.Internals.Scripting
 				}
 				else if (targetScheduler.OwnsCurrentThread)
 				{
-					executionResult = RunHandler(targetScheduler, handler, priority);
+					executionResult = RunHandler(targetScheduler, script, handler, priority);
 				}
 				else
 				{
-					executionResult = targetScheduler.InvokeSynchronous(() => RunHandler(targetScheduler, handler, priority));
+					executionResult = targetScheduler.InvokeSynchronous(() => RunHandler(targetScheduler, script, handler, priority));
 				}
 
 				if (executionResult != ScriptEventExecutionResult.Executed)
@@ -319,7 +350,7 @@ namespace Keysharp.Internals.Scripting
 			}
 
 			if (checkPersistence)
-				script.ExitIfNotPersistent();
+				registryOwner?.ExitIfNotPersistent();
 
 			return result;
 		}

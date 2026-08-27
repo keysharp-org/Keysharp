@@ -14,8 +14,13 @@ namespace Keysharp.Internals.Window.MacOS
 	/// </summary>
 	internal sealed class WindowEventBackend : IWindowEventBackend
 	{
+		private readonly Script owner;
+		private readonly Lock gate = new();
 		private WindowEventMask installed = WindowEventMask.None;
 		private bool disposed;
+
+		internal WindowEventBackend(Script owner)
+			=> this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
 
 		public Action<WindowEventRaw> Sink { get; set; }
 
@@ -24,42 +29,65 @@ namespace Keysharp.Internals.Window.MacOS
 		// lock could deadlock against the main-thread callback, which re-enters the manager).
 		public void Start(WindowEventMask mask)
 		{
-			if (disposed || mask == WindowEventMask.None)
+			if (mask == WindowEventMask.None)
 				return;
 
-			var wasEmpty = installed == WindowEventMask.None;
-			installed |= mask;
-
-			if (wasEmpty && installed != WindowEventMask.None)
+			lock (gate)
 			{
-				var sink = Sink;
-				Script.PostToUIThread(() => MacAccessibility.StartWindowEvents(sink));
+				if (disposed)
+					return;
+
+				installed |= mask;
 			}
 
-			// CaretMove is the one category that isn't all-or-nothing: AXSelectedTextChanged fires per keystroke, so
-			// it is registered on (and removed from) the observers separately rather than always being part of the
-			// stream. Posted after any start above, so the observers exist by the time it runs.
-			if ((mask & WindowEventMask.CaretMove) != 0)
-				Script.PostToUIThread(() => MacAccessibility.SetCaretEvents(true));
+			owner.PostToUIThread(ReconcileOnUIThread);
 		}
 
 		public void Stop(WindowEventMask mask)
 		{
-			installed &= ~mask;
+			lock (gate)
+				installed &= ~mask;
 
-			if ((mask & WindowEventMask.CaretMove) != 0)
-				Script.PostToUIThread(() => MacAccessibility.SetCaretEvents(false));
-
-			if (installed == WindowEventMask.None)
-				Script.PostToUIThread(MacAccessibility.StopWindowEvents);
+			owner.PostToUIThread(ReconcileOnUIThread);
 		}
 
 		public void Dispose()
 		{
-			disposed = true;
-			installed = WindowEventMask.None;
-			Script.PostToUIThread(() => MacAccessibility.SetCaretEvents(false));
-			Script.PostToUIThread(MacAccessibility.StopWindowEvents);
+			lock (gate)
+			{
+				if (disposed)
+					return;
+
+				disposed = true;
+				installed = WindowEventMask.None;
+			}
+
+			owner.InvokeOnUIThread(ReconcileOnUIThread);
+			Sink = null;
+		}
+
+		private void ReconcileOnUIThread()
+		{
+			WindowEventMask wanted;
+			Action<WindowEventRaw> sink;
+			bool isDisposed;
+
+			lock (gate)
+			{
+				wanted = installed;
+				sink = Sink;
+				isDisposed = disposed;
+			}
+
+			if (isDisposed || wanted == WindowEventMask.None)
+			{
+				MacAccessibility.SetCaretEvents(owner, false);
+				MacAccessibility.StopWindowEvents(owner);
+				return;
+			}
+
+			MacAccessibility.StartWindowEvents(owner, sink);
+			MacAccessibility.SetCaretEvents(owner, (wanted & WindowEventMask.CaretMove) != 0);
 		}
 	}
 }

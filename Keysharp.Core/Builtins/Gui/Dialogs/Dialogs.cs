@@ -17,6 +17,7 @@ namespace Keysharp.Builtins
 
 		private static T RunInterruptibleDialog<T>(Func<T> func)
 		{
+			var script = Script.TheScript;
 			using var scope = Keysharp.Internals.Flow.BeginDialogInterruptibilityScope();
 #if OSX
 			// MsgBox, InputBox, FileSelect, DirSelect, etc. all funnel through here. Several of them
@@ -29,8 +30,6 @@ namespace Keysharp.Builtins
 			{
 #endif
 				var result = func();
-
-				var script = Script.TheScript;
 
 				if (script?.hasExited == true)
 					throw new Flow.UserRequestedExitException();
@@ -49,7 +48,11 @@ namespace Keysharp.Builtins
 #endif
 		}
 
-		private static T RunInterruptibleUIDialog<T>(Func<T> func) => RunInterruptibleDialog(() => Script.InvokeOnUIThread(func));
+		private static T RunInterruptibleUIDialog<T>(Func<T> func)
+		{
+			var script = Script.TheScript;
+			return RunInterruptibleDialog(() => script.InvokeOnUIThread(func));
+		}
 
 #if WINDOWS
 		private static DialogResult ShowCommonDialog(CommonDialog dialog, Form owner)
@@ -62,6 +65,7 @@ namespace Keysharp.Builtins
 
 		private sealed class WindowsMsgBoxRequest
 		{
+			internal Script Owner;
 			internal int CancelRequested;
 			internal string Caption;
 			internal nint DialogHwnd;
@@ -75,11 +79,10 @@ namespace Keysharp.Builtins
 		private static readonly System.Collections.Concurrent.ConcurrentDictionary<nuint, WindowsMsgBoxRequest> windowsMsgBoxRequests = new();
 		private static readonly System.Collections.Concurrent.ConcurrentDictionary<nint, WindowsMsgBoxRequest> activeWindowsMsgBoxes = new();
 		private static readonly WindowsAPI.TimerProc msgBoxTimeoutProc = MsgBoxTimeout;
-		private static int pendingWindowsMsgBoxShows;
 		private static int nextMsgBoxRequestId;
 		private static int nextMsgBoxTimerId;
 
-		internal static bool HasPendingWindowsMsgBoxShow() => Volatile.Read(ref pendingWindowsMsgBoxShows) > 0;
+		internal static bool HasPendingWindowsMsgBoxShow(Script owner) => Volatile.Read(ref owner.pendingMsgBoxShows) > 0;
 
 		internal static nint HandleDialogNotification(uint dialogMessage, nint requestToken)
 		{
@@ -187,18 +190,24 @@ namespace Keysharp.Builtins
 			if (request == null || Interlocked.Exchange(ref request.PendingShowState, 0) == 0)
 				return;
 
-			if (Interlocked.Decrement(ref pendingWindowsMsgBoxShows) < 0)
-				_ = Interlocked.Exchange(ref pendingWindowsMsgBoxShows, 0);
+			var owner = request.Owner;
 
-			Script.TheScript?.ScheduleBlockedEventSchedulers();
+			if (owner == null)
+				return;
+
+			if (Interlocked.Decrement(ref owner.pendingMsgBoxShows) < 0)
+				_ = Interlocked.Exchange(ref owner.pendingMsgBoxShows, 0);
+
+			owner.ScheduleBlockedEventSchedulers();
 		}
 
-		private static string ShowWindowsMsgBox(IWin32Window ownerWindow, string txt, string caption, MessageBoxButtons buttons, MessageBoxIcon icon, MessageBoxDefaultButton defaultbutton, MessageBoxOptions mbopts, uint timeoutMs)
+		private static string ShowWindowsMsgBox(Script script, IWin32Window ownerWindow, string txt, string caption, MessageBoxButtons buttons, MessageBoxIcon icon, MessageBoxDefaultButton defaultbutton, MessageBoxOptions mbopts, uint timeoutMs)
 		{
 			var request = new WindowsMsgBoxRequest()
 			{
+				Owner = script,
 				Caption = caption,
-				DialogDepth = Script.TheScript.nMessageBoxes,
+				DialogDepth = script.nMessageBoxes,
 				PendingShowState = 1,
 				RequestId = unchecked((nuint)System.Threading.Interlocked.Increment(ref nextMsgBoxRequestId)),
 				TimeoutMs = timeoutMs
@@ -207,9 +216,9 @@ namespace Keysharp.Builtins
 			try
 			{
 				windowsMsgBoxRequests[request.RequestId] = request;
-				_ = Interlocked.Increment(ref pendingWindowsMsgBoxShows);
+				_ = Interlocked.Increment(ref script.pendingMsgBoxShows);
 
-				_ = WindowsAPI.PostMessage(Script.TheScript.MainWindowHandle, (uint)WindowsAPI.WM_COMMNOTIFY, (nint)(uint)UserMessages.AHK_DIALOG, (nint)request.RequestId);
+				_ = WindowsAPI.PostMessage(script.MainWindowHandle, (uint)WindowsAPI.WM_COMMNOTIFY, (nint)(uint)UserMessages.AHK_DIALOG, (nint)request.RequestId);
 
 				var ret = MessageBox.Show(ownerWindow, txt, caption, buttons, icon, defaultbutton, mbopts);
 				return request.TimedOut || (timeoutMs != 0 && ret == DialogResult.None) ? "Timeout" : ret.ToString();
@@ -224,19 +233,20 @@ namespace Keysharp.Builtins
 			}
 		}
 #else
-		private static readonly System.Collections.Concurrent.ConcurrentDictionary<CancellationTokenSource, byte> activeEtoDialogs = new();
+		private static readonly System.Collections.Concurrent.ConcurrentDictionary<CancellationTokenSource, Script> activeEtoDialogs = new();
 
 		private static T ShowEtoDialog<T>(Func<CancellationToken, Task<T>> show, double timeout = 0, T cancellationResult = default)
 		{
+			var script = Script.TheScript;
 			using var showCts = new CancellationTokenSource();
-			_ = activeEtoDialogs.TryAdd(showCts, 0);
+			_ = activeEtoDialogs.TryAdd(showCts, script);
 
 			try
 			{
 				if (timeout != 0)
 					showCts.CancelAfter(TimeSpan.FromSeconds(timeout));
 
-				var showTask = Script.InvokeOnUIThread(() => show(showCts.Token));
+				var showTask = script.InvokeOnUIThread(() => show(showCts.Token));
 
 				while (!showTask.IsCompleted)
 					Keysharp.Internals.Flow.TryDoEvents();
@@ -1054,7 +1064,7 @@ namespace Keysharp.Builtins
 				{
 					var ownerWindow = (IWin32Window)(owner?.FindForm() ?? owner);
 					var timeoutMs = timeout != 0 ? (uint)Math.Clamp((long)Math.Round(timeout * 1000.0), 1L, int.MaxValue) : 0;
-					return ShowWindowsMsgBox(ownerWindow, txt, caption, buttons, icon, defaultbutton, mbopts, timeoutMs);
+					return ShowWindowsMsgBox(script, ownerWindow, txt, caption, buttons, icon, defaultbutton, mbopts, timeoutMs);
 				}
 				finally
 				{
@@ -1159,27 +1169,33 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Cancels active dialogs during script exit.
 		/// </summary>
-		internal static void CloseDialogs()
+		internal static void CloseDialogs(Script script)
 		{
 #if WINDOWS
 			foreach (var request in windowsMsgBoxRequests.Values)
 			{
+				if (!ReferenceEquals(request.Owner, script))
+					continue;
+
 				Volatile.Write(ref request.CancelRequested, 1);
 
 				if (request.DialogHwnd != 0 && WindowsAPI.IsWindow(request.DialogHwnd))
 					_ = WindowsAPI.EndDialog(request.DialogHwnd, 0);
 			}
 
-			foreach (var hwnd in activeWindowsMsgBoxes.Keys)
+			foreach (var (hwnd, request) in activeWindowsMsgBoxes)
 			{
-				if (WindowsAPI.IsWindow(hwnd))
+				if (ReferenceEquals(request.Owner, script) && WindowsAPI.IsWindow(hwnd))
 					_ = WindowsAPI.EndDialog(hwnd, 0);
 			}
 
-			InputDialog.CloseAll();
+			InputDialog.CloseAll(script);
 #else
-			foreach (var cts in activeEtoDialogs.Keys)
+			foreach (var (cts, owner) in activeEtoDialogs)
 			{
+				if (!ReferenceEquals(owner, script))
+					continue;
+
 				try
 				{
 					cts.Cancel();
@@ -1191,16 +1207,16 @@ namespace Keysharp.Builtins
 #endif
 		}
 
-		internal static void CloseToolTips()
+		internal static void CloseToolTips(Script script)
 		{
 #if WINDOWS
-			foreach (var tt in TheScript.ToolTipData.persistentTooltips)
+			foreach (var tt in script.ToolTipData.persistentTooltips)
 			{
 				if (tt != null)
 					tt.Dispose();
 			}
 #else
-			foreach (var overlay in TheScript.ToolTipData.overlayTooltips)
+			foreach (var overlay in script.ToolTipData.overlayTooltips)
 				overlay?.Destroy();
 #endif
 		}

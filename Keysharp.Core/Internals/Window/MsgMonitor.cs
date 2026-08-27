@@ -31,13 +31,13 @@ namespace Keysharp.Internals.Window
 				return registrations.GetSnapshot();
 		}
 
-		internal void ModifyRegistration(KeysharpFunc funcObj, long addRemove)
+		internal void ModifyRegistration(KeysharpFunc funcObj, long addRemove, ScriptEventScheduler ownerScheduler)
 		{
 			lock (gate)
-				registrations.ModifyEventHandlers(funcObj, addRemove, static (callback, value) => new MsgMonitorRegistration(
+				registrations.ModifyEventHandlers(funcObj, addRemove, (callback, value) => new MsgMonitorRegistration(
 					callback,
 					Math.Clamp((int)Math.Abs(value), 1, Script.maxThreadsLimit),
-					Script.TheScript.EventScheduler));
+					ownerScheduler));
 		}
 
 		internal bool RemoveOwned(ScriptEventScheduler scheduler)

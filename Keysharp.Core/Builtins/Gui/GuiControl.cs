@@ -270,7 +270,7 @@ namespace Keysharp.Builtins
 
 				//Pointer motion is only watched for while something is listening; see SyncMotionHooks().
 				if (msg == Keysharp.Internals.Os.Windows.WindowsAPI.WM_MOUSEMOVE)
-					Keysharp.Internals.Window.Unix.EtoMessageSource.SyncMotionHooks();
+					Keysharp.Internals.Window.Unix.EtoMessageSource.SyncMotionHooks(Script.TheScript);
 
 #endif
 				return result;

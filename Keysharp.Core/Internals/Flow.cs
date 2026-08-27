@@ -81,16 +81,18 @@ namespace Keysharp.Internals
 			return scope;
 		}
 
-		internal static bool ExitAppInternal(Keysharp.Builtins.Flow.ExitReasons exitReason, object exitCode = null, bool useThrow = true)
+		internal static bool ExitAppInternal(Script script, Keysharp.Builtins.Flow.ExitReasons exitReason, object exitCode = null, bool useThrow = true)
 		{
-			var script = Script.TheScript;
+			if (script == null || script.IsDisposed)
+				return false;
+
 			var fd = script.FlowData;
 
 			if (script.hasExited)
 				return false;
 
-			Dialogs.CloseDialogs();
-			Dialogs.CloseToolTips();
+			Dialogs.CloseDialogs(script);
+			Dialogs.CloseToolTips(script);
 			var ec = exitCode.Ai();
 			Accessors.A_ExitReason = exitReason.ToString();
 			var allowInterruptionPrev = fd.allowInterruption;
@@ -140,7 +142,7 @@ namespace Keysharp.Internals
 
 			GC.Collect();
 			GC.WaitForPendingFinalizers();
-			DestructorPump.RunPendingDestructors();
+			script.DestructorPump.RunPendingDestructors();
 
 			foreach (var t in Reflections.GetNestedTypes([script.ProgramType]).OrderBy(Reflections.GetInheritanceDepth))
 			{
@@ -164,8 +166,8 @@ namespace Keysharp.Internals
 			script.hasExited = true;
 			script.ScheduleAllEventSchedulers();
 			fd.allowInterruption = allowInterruptionPrev;
-			HotkeyDefinition.AllDestruct();
-			StopMainTimer();
+			HotkeyDefinition.AllDestruct(script);
+			StopMainTimer(script);
 
 			if (script.KeyboardData.blockInput)
 				_ = Keysharp.Builtins.Keyboard.ScriptBlockInput(ToggleValueType.Off);
@@ -175,12 +177,12 @@ namespace Keysharp.Internals
 
 			script.FlowData.timers.Clear();
 
-			Gui.DestroyAll();
+			Gui.DestroyAll(script);
 			Environment.ExitCode = ec;
 			script.Dispose();
 
 #if !WINDOWS
-			Script.InvokeOnUIThread(() => Eto.Forms.Application.Instance?.Quit());
+			script.InvokeOnUIThread(() => Eto.Forms.Application.Instance?.Quit());
 #endif
 
 			if (useThrow)
@@ -304,9 +306,8 @@ namespace Keysharp.Internals
 			}
 		}
 
-		internal static void StopMainTimer()
+		internal static void StopMainTimer(Script script)
 		{
-			var script = Script.TheScript;
 			var mainTimer = script.FlowData.mainTimer;
 
 			if (mainTimer != null)

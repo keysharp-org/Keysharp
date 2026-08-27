@@ -87,6 +87,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal HotkeyTypeEnum type = HotkeyTypeEnum.Normal;
 		internal uint vk;
 		internal bool vkWasSpecifiedByNumber;
+		private readonly Script owner;
 
 		internal bool Enabled { get; set; }
 		internal Options EnabledOptions { get; }
@@ -99,6 +100,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		internal HotkeyDefinition(Keys keys, Keys extra, Options options, KeysharpFunc proc)
 		{
+			owner = Script.TheScript;
 			Keys = keys;
 			Extra = extra;
 			EnabledOptions = options;
@@ -106,10 +108,11 @@ namespace Keysharp.Internals.Input.Keyboard
 			Enabled = true;
 		}
 
-		internal HotkeyDefinition(uint _id, KeysharpFunc callback, uint _hookAction, string _name, uint _noSuppress)
+		internal HotkeyDefinition(Script owner, uint _id, KeysharpFunc callback, uint _hookAction, string _name, uint _noSuppress)
 		{
+			this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
 			hookAction = _hookAction;
-			var script = Script.TheScript;
+			var script = owner;
 			var ht = script.HookThread;
 			var kbdMouseSender = ht.kbdMsSender;//This should always be non-null if any hotkeys/strings are present.
 
@@ -327,10 +330,10 @@ namespace Keysharp.Internals.Input.Keyboard
 			_ = Unregister();
 		}
 
-		public static HotkeyDefinition AddHotkey(KeysharpFunc _callback, uint _hookAction, string _name)
+		internal static HotkeyDefinition AddHotkey(Script script, KeysharpFunc _callback, uint _hookAction, string _name)
 		{
 			var b = 0u;
-			return AddHotkey(_callback, _hookAction, _name, ref b);
+			return AddHotkey(script, _callback, _hookAction, _name, ref b);
 		}
 
 		/// <summary>
@@ -344,7 +347,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// - Based on the above, decide whether the keyboard and/or mouse hooks need to be (de)activated.
 		/// Needs to be public so tests can use it.
 		/// </summary>
-		public static object ManifestAllHotkeysHotstringsHooks()
+		internal static object ManifestAllHotkeysHotstringsHooks(Script script)
 		{
 			// v1.0.37.05: A prefix key such as "a" in "a & b" should cause any use of "a" as a suffix
 			// (such as ^!a) also to be a hook hotkey.  Otherwise, the ^!a hotkey won't fire because the
@@ -365,7 +368,6 @@ namespace Keysharp.Internals.Input.Keyboard
 			// be to set mKeybdHookMandatory = true, but that would prevent the hotkey from reverting to
 			// HK_NORMAL when it no longer needs the hook.  Instead, there are now three passes.
 			var vkIsPrefix = new bool[HookThread.VK_ARRAY_COUNT];
-			var script = Script.TheScript;
 			var hkd = script.HotkeyData;
 			var kbd = script.KeyboardData;
 			var shk = hkd.shk;
@@ -768,15 +770,14 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// Returns the address of the new hotkey on success, or NULL otherwise.
 		/// The caller is responsible for calling ManifestAllHotkeysHotstringsHooks(), if appropriate.
 		/// </summary>
-		internal static HotkeyDefinition AddHotkey(KeysharpFunc _callback, uint _hookAction, string _name, ref uint _noSuppress)
+		internal static HotkeyDefinition AddHotkey(Script script, KeysharpFunc _callback, uint _hookAction, string _name, ref uint _noSuppress)
 		{
 			HotkeyDefinition hk;
 			var hookIsMandatory = false;
-			var script = Script.TheScript;
 
 			//We must first check if the hotkey exists before creating a new one because this might just be a variant.
 			//The code to check for a variant was in the parsing section of AHK, but we move it here because Keysharp adds them at runtime.
-			if ((hk = FindHotkeyByTrueNature(_name, ref _noSuppress, ref hookIsMandatory)) != null) // Parent hotkey found.  Add a child/variant hotkey for it.
+			if ((hk = FindHotkeyByTrueNature(script, _name, ref _noSuppress, ref hookIsMandatory)) != null) // Parent hotkey found.  Add a child/variant hotkey for it.
 			{
 				if (_hookAction != 0) // suffix_has_tilde has always been ignored for these types (alt-tab hotkeys).
 				{
@@ -817,7 +818,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			else
 			{
 				var hkd = script.HotkeyData;
-				hk = new HotkeyDefinition((uint)hkd.shk.Length, _callback, _hookAction, _name, _noSuppress);
+				hk = new HotkeyDefinition(script, (uint)hkd.shk.Length, _callback, _hookAction, _name, _noSuppress);
 
 				if (hk.constructedOK)
 				{
@@ -844,13 +845,8 @@ namespace Keysharp.Internals.Input.Keyboard
 			return null;
 		}
 
-		internal static void AddHotkeyCriterion(KeysharpFunc fo) => Script.TheScript.hotCriterions.Add(fo);
-
-		internal static void AddHotkeyIfExpr(KeysharpFunc fo) => Script.TheScript.hotExprs.Add(fo);
-
-		internal static void AllDestruct()
+		internal static void AllDestruct(Script script)
 		{
-			var script = Script.TheScript;
 			script.HookThread.Unhook();
 			foreach (var hk in script.HotkeyData.shk)
 				_ = hk.Unregister(); //Hotkeys will unregister as they go out of scope, but force them to do it now.
@@ -1029,9 +1025,9 @@ namespace Keysharp.Internals.Input.Keyboard
 			return null;
 		}
 
-		internal static ref uint CustomComboLast(ref uint first)
+		internal static ref uint CustomComboLast(Script script, ref uint first)
 		{
-			var shk = Script.TheScript.HotkeyData.shk; // capture once; main-thread-only call site
+			var shk = script.HotkeyData.shk; // capture once; main-thread-only call site
 
 			for (; first != HOTKEY_ID_INVALID; first = ref shk[(int)first].nextHotkey)
 			{
@@ -1049,7 +1045,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// <param name="hookAction"></param>
 		/// <returns></returns>
 		/// <exception cref="ValueError"></exception>
-		internal static ResultType Dynamic(string hotkeyName, string options, KeysharpFunc callback, uint hookAction)
+		internal static ResultType Dynamic(Script script, string hotkeyName, string options, KeysharpFunc callback, uint hookAction)
 		{
 			// Caller has ensured that aCallback and _hookAction can't both be non-zero. Furthermore,
 			// both can be zero/NULL only when the caller is updating an existing hotkey to have new options
@@ -1062,8 +1058,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			uint noSuppress = 0;
 			bool hook_is_mandatory = false;
-			var script = Script.TheScript;
-			var hk = FindHotkeyByTrueNature(hotkeyName, ref noSuppress, ref hook_is_mandatory); // NULL if not found.
+			var hk = FindHotkeyByTrueNature(script, hotkeyName, ref noSuppress, ref hook_is_mandatory); // NULL if not found.
 			var variant = hk?.FindVariant();
 			var binding = variant?.FindBinding(script.EventScheduler);
 			var updateAllHotkeys = false;  // This method avoids multiple calls to ManifestAllHotkeysHotstringsHooks() (which is high-overhead).
@@ -1102,13 +1097,13 @@ namespace Keysharp.Internals.Input.Keyboard
 					if (hk == null) // No existing hotkey of this name, so create a new hotkey.
 					{
 						if (hookAction != 0) // Create hotkey: Hotkey Name, AltTabAction
-							hk = AddHotkey(null, hookAction, hotkeyName, ref noSuppress);
+							hk = AddHotkey(script, null, hookAction, hotkeyName, ref noSuppress);
 						else // Create hotkey: Hotkey Name, Callback [, Options]
 						{
 							if (callback == null) // Caller is trying to set new aOptions for a nonexistent hotkey.
 								return (ResultType)Errors.ValueErrorOccurred("Nonexistent hotkey.", hotkeyName, ResultType.Fail);
 
-							hk = AddHotkey(callback, 0, hotkeyName, ref noSuppress);
+							hk = AddHotkey(script, callback, 0, hotkeyName, ref noSuppress);
 						}
 
 						if (hk == null)
@@ -1322,7 +1317,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			}
 
 			if (updateAllHotkeys)
-				_ = ManifestAllHotkeysHotstringsHooks(); // See its comments for why it's done in so many of the above situations.
+				_ = ManifestAllHotkeysHotstringsHooks(script); // See its comments for why it's done in so many of the above situations.
 
 			return ResultType.Ok;
 		}
@@ -1339,9 +1334,9 @@ namespace Keysharp.Internals.Input.Keyboard
 		///    one of them would never fire because the hook isn't capable or storing two hotkey IDs for the same combination of
 		///    modifiers+VK/SC.
 		/// </summary>
-		internal static HotkeyDefinition FindHotkeyByTrueNature(string _name, ref uint _noSuppress, ref bool _hookIsMandatory)
+		internal static HotkeyDefinition FindHotkeyByTrueNature(Script script, string _name, ref uint _noSuppress, ref bool _hookIsMandatory)
 		{
-			var shk = Script.TheScript.HotkeyData.shk;
+			var shk = script.HotkeyData.shk;
 			HotkeyProperties propCandidate = new (), propExisting = new ();
 			_ = TextToModifiers(_name, null, propCandidate);
 			_noSuppress = (propCandidate.prefixHasTilde ? NO_SUPPRESS_PREFIX : 0)//Set for caller.
@@ -1406,14 +1401,10 @@ namespace Keysharp.Internals.Input.Keyboard
 			return null;  // No match found.
 		}
 
-		internal static KeysharpFunc FindHotkeyCriterion(KeysharpFunc fo) => FindHotkeyIf(fo, Script.TheScript.hotCriterions);
-
-		internal static KeysharpFunc FindHotkeyIfExpr(KeysharpFunc fo) => FindHotkeyIf(fo, Script.TheScript.hotExprs);
-
-		internal static uint FindPairedHotkey(uint firstID, uint modsLR, bool keyUp)
+		internal static uint FindPairedHotkey(Script script, uint firstID, uint modsLR, bool keyUp)
 		{
 			var modifiers = ConvertModifiersLR(modsLR); // Neutral modifiers.
-			var shk = Script.TheScript.HotkeyData.shk; // one volatile read; safe on hook thread
+			var shk = script.HotkeyData.shk; // one volatile read; safe on hook thread
 
 			for (var candidateId = firstID; candidateId != HOTKEY_ID_INVALID;)
 			{
@@ -1438,9 +1429,9 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// <summary>
 		/// Get the text description of all hotkeys in this Script.TheScript.
 		/// </summary>
-		internal static string GetHotkeyDescriptions()
+		internal static string GetHotkeyDescriptions(Script script)
 		{
-			var shk = Script.TheScript.HotkeyData.shk;
+			var shk = script.HotkeyData.shk;
 			var sb = new StringBuilder(4096);
 			_ = sb.Append("Type\tOff?\tLevel\tRunning\tName\r\n-------------------------------------------------------------------\r\n");
 
@@ -1465,7 +1456,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// <param name="criterion"></param>
 		/// <param name="hotkeyName"></param>
 		/// <returns></returns>
-		internal static long HotCriterionAllowsFiring(KeysharpFunc criterion, string hotkeyName, object eventInfo = null)
+		internal static long HotCriterionAllowsFiring(Script script, KeysharpFunc criterion, string hotkeyName, object eventInfo = null)
 		{
 			if (criterion == null)
 				return 1L;
@@ -1475,18 +1466,17 @@ namespace Keysharp.Internals.Input.Keyboard
 			{
 				try
 				{
-					return EvaluateCriterion(criterion, criterionType, hotkeyName, eventInfo);
+					return EvaluateCriterion(script, criterion, criterionType, hotkeyName, eventInfo);
 				}
 				catch (Exception ex)
 				{
-					ReportCriterionError(ex);
+					ReportCriterionError(script, ex);
 					return 0L;
 				}
 			}
 
-			var script = Script.TheScript;
 			var executor = script.HookThread.HotCriterionExecutor;
-			var deadline = GetHotCriterionDeadline(hookDeadline, Script.TheScript.AccessorData.hotIfTimeout);
+			var deadline = GetHotCriterionDeadline(hookDeadline, script.AccessorData.hotIfTimeout);
 			var status = executor.Execute(criterion, criterionType, hotkeyName, eventInfo,
 				deadline, out var value, out var error);
 
@@ -1506,7 +1496,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			if (status == CriterionExecutionStatus.Failed)
 			{
-				ReportCriterionError(error);
+				ReportCriterionError(script, error);
 				return 0L;
 			}
 
@@ -1529,7 +1519,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			return now + (long)(timeoutMilliseconds * Stopwatch.Frequency / 1000.0);
 		}
 
-		internal static long EvaluateCriterion(KeysharpFunc criterion, HotCriterionEnum criterionType,
+		internal static long EvaluateCriterion(Script script, KeysharpFunc criterion, HotCriterionEnum criterionType,
 			string hotkeyName, object eventInfo)
 		{
 			var previousEvaluation = evaluatingCriterion;
@@ -1539,7 +1529,6 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			try
 			{
-				var script = Script.TheScript;
 				script.Threads.EnsureCurrentThreadVariables();
 				var tv = script.Threads.CurrentThread;
 				var oldEventInfo = tv.eventInfo;
@@ -1574,8 +1563,8 @@ namespace Keysharp.Internals.Input.Keyboard
 			}
 		}
 
-		private static void ReportCriterionError(Exception error)
-			=> _ = Script.TheScript.UIEventScheduler.EnqueueThreadLaunch(0, false, false, () =>
+		private static void ReportCriterionError(Script script, Exception error)
+			=> _ = script.UIEventScheduler.EnqueueThreadLaunch(0, false, false, () =>
 				_ = Keysharp.Internals.Flow.TryCatch(() => ExceptionDispatchInfo.Throw(error)));
 
 		internal static HotCriterionEnum GetHotCriterionType(KeysharpFunc criterion)
@@ -1595,15 +1584,14 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal static long NormalizeCriterionFoundHwnd(KeysharpFunc criterion, long foundHwnd)
 			=> GetHotCriterionType(criterion) is HotCriterionEnum.NoCriterion or HotCriterionEnum.IfNotActive or HotCriterionEnum.IfNotExist ? 0L : foundHwnd;
 
-		internal static uint HotkeyRequiresModLR(uint hotkeyID, uint modLR)
+		internal static uint HotkeyRequiresModLR(Script script, uint hotkeyID, uint modLR)
 		{
-			var shk = Script.TheScript.HotkeyData.shk; // one volatile read; safe on hook thread
+			var shk = script.HotkeyData.shk; // one volatile read; safe on hook thread
 			return hotkeyID < shk.Length ? shk[(int)hotkeyID].modifiersConsolidatedLR & modLR : 0u;
 		}
 
-		internal static void InstallKeybdHook()
+		internal static void InstallKeybdHook(Script script)
 		{
-			var script = Script.TheScript;
 			script.HotkeyData.whichHookNeeded |= HookType.Keyboard;
 			var ht = script.HookThread;
 
@@ -1611,9 +1599,8 @@ namespace Keysharp.Internals.Input.Keyboard
 				ht.ChangeHookState(script.HotkeyData.shk, script.HotkeyData.whichHookNeeded, script.HotkeyData.whichHookAlways);
 		}
 
-		internal static void InstallMouseHook()
+		internal static void InstallMouseHook(Script script)
 		{
-			var script = Script.TheScript;
 			script.HotkeyData.whichHookNeeded |= HookType.Mouse;
 			var ht = script.HookThread;
 
@@ -1627,16 +1614,14 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// Caller knows that one of the users of the keyboard hook no longer requires it,
 		/// and wants it uninstalled if it is no longer needed by anything else.
 		/// </summary>
-		internal static void MaybeUninstallHook()
+		internal static void MaybeUninstallHook(Script script)
 		{
-			var script = Script.TheScript;
-
 			// Do some quick checks to avoid scanning all hotkeys unnecessarily:
 			if (script.input != null || script.HotstringManager.enabledCount != 0 || ((int)script.HotkeyData.whichHookAlways & KeyboardMouseSender.HookKeyboard) != 0)
 				return;
 
 			// Do more thorough checking to determine whether the hook is still needed:
-			_ = ManifestAllHotkeysHotstringsHooks();
+			_ = ManifestAllHotkeysHotstringsHooks(script);
 		}
 
 		/// <summary>
@@ -1650,9 +1635,8 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// <param name="isSC"></param>
 		/// <param name="suppress">Caller is expected to set to a default value of false.</param>
 		/// <returns></returns>
-		internal static bool PrefixHasEnabledSuffixes(uint VKorSC, bool isSC, ref bool suppress)
+		internal static bool PrefixHasEnabledSuffixes(Script script, uint VKorSC, bool isSC, ref bool suppress)
 		{
-			var script = Script.TheScript;
 			var ht = script.HookThread;
 			var shk = script.HotkeyData.shk;
 			// v1.0.44: Added aAsModifier so that a pair of hotkeys such as:
@@ -1709,7 +1693,7 @@ namespace Keysharp.Internals.Input.Keyboard
 					// whether the hotkey was enabled (above), which isn't enough):
 					if (vp.HasEnabledBindings() // This particular variant within its parent hotkey is enabled.
 							&& (!A_IsSuspended || vp.suspendExempt) // This variant isn't suspended...
-							&& (vp.hotCriterion == null || (HotCriterionAllowsFiring(vp.hotCriterion, hk.Name) != 0L))) // ... and its criteria allow it to fire.
+						&& (vp.hotCriterion == null || (HotCriterionAllowsFiring(script, vp.hotCriterion, hk.Name) != 0L))) // ... and its criteria allow it to fire.
 					{
 						if ((vp.noSuppress & NO_SUPPRESS_PREFIX) != 0 || suppress)
 							return true; // At least one of this prefix's suffixes is eligible for firing.
@@ -2217,15 +2201,15 @@ namespace Keysharp.Internals.Input.Keyboard
 				// mNextVariant
 				// mExistingThreads
 				// mPriority (default priority is always 0)
-				maxThreads = Script.TheScript.AccessorData.maxThreadsPerHotkey,    // The values of these can vary during load-time.
-				maxThreadsBuffer = Script.TheScript.AccessorData.maxThreadsBuffer,
-				inputLevel = Script.TheScript.AccessorData.inputLevel,
-				hotCriterion = Script.TheScript.Threads.CurrentThread.hotCriterion, // If this hotkey is an alt-tab one (mHookAction), this is stored but ignored until/unless the Hotkey command converts it into a non-alt-tab hotkey.
-				suspendExempt = Script.TheScript.HotstringManager.hsSuspendExempt,
+				maxThreads = owner.AccessorData.maxThreadsPerHotkey,    // The values of these can vary during load-time.
+				maxThreadsBuffer = owner.AccessorData.maxThreadsBuffer,
+				inputLevel = owner.AccessorData.inputLevel,
+				hotCriterion = owner.Threads.CurrentThread.hotCriterion, // If this hotkey is an alt-tab one (mHookAction), this is stored but ignored until/unless the Hotkey command converts it into a non-alt-tab hotkey.
+				suspendExempt = owner.HotstringManager.hsSuspendExempt,
 				noSuppress = _noSuppress,
 			};
 
-			vp.SetBinding(Script.TheScript.EventScheduler, _callback, Proc);
+			vp.SetBinding(owner.EventScheduler, _callback, Proc);
 
 			if (vp.inputLevel > 0)
 			{
@@ -2303,7 +2287,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				if (vp.HasEnabledBindings() // This particular variant within its parent hotkey is enabled.
 						&& (!A_IsSuspended || vp.suspendExempt) // This variant isn't suspended...
 						&& KeyboardMouseSender.HotInputLevelAllowsFiring(vp.inputLevel, extraInfo, ref singleChar) // ... its #InputLevel allows it to fire...
-						&& (vp.hotCriterion == null || ((foundHwnd = HotCriterionAllowsFiring(vp.hotCriterion, Name, eventInfo)) != 0L))) // ... and its criteria allow it to fire.
+						&& (vp.hotCriterion == null || ((foundHwnd = HotCriterionAllowsFiring(owner, vp.hotCriterion, Name, eventInfo)) != 0L))) // ... and its criteria allow it to fire.
 				{
 					if (vp.hotCriterion != null) // Since this is the first criteria hotkey, it takes precedence.
 						return vp;
@@ -2325,7 +2309,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// <returns></returns>
 		internal HotkeyVariant FindVariant()
 		{
-			var tv = Script.TheScript.Threads.CurrentThread;
+			var tv = owner.Threads.CurrentThread;
 
 			for (var vp = firstVariant; vp != null; vp = vp.nextVariant)
 				if (vp.hotCriterion == tv.hotCriterion)
@@ -2388,7 +2372,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		{
 			internal ScriptEventExecutionResult Execute()
 			{
-				var script = Script.TheScript;
+				var script = scheduler.Owner;
 
 				if (ShouldDropForThrottle(script))
 					return Complete(ScriptEventExecutionResult.Dropped);
@@ -2464,7 +2448,7 @@ namespace Keysharp.Internals.Input.Keyboard
 					if (critFoundHwnd != 0 || variant.hotCriterion == null)
 						return true;
 
-					finalCritFoundHwnd = HotCriterionAllowsFiring(variant.hotCriterion, definition.Name, eventInfo);
+					finalCritFoundHwnd = HotCriterionAllowsFiring(scheduler.Owner, variant.hotCriterion, definition.Name, eventInfo);
 
 					if (finalCritFoundHwnd == 0L)
 						return false;
@@ -2510,7 +2494,7 @@ namespace Keysharp.Internals.Input.Keyboard
 					script.FlowData.allowInterruption = false;
 
 					if (Dialogs.MsgBox(errorText, null, "YesNo") == DialogResult.No.ToString())
-						_ = Keysharp.Internals.Flow.ExitAppInternal(Keysharp.Builtins.Flow.ExitReasons.Close, null, false);
+						_ = Keysharp.Internals.Flow.ExitAppInternal(script, Keysharp.Builtins.Flow.ExitReasons.Close, null, false);
 
 					script.FlowData.allowInterruption = true;
 					hkd.dialogIsDisplayed = false;
@@ -2530,7 +2514,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			// user from having to specify +SHIFT in the script:
 			var key = (Keys)vk;
 			var modifiersToRegister = modifiers;
-			var script = Script.TheScript;
+			var script = owner;
 
 			switch (key)
 			{
@@ -2639,7 +2623,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (!isRegistered)
 				return ResultType.Ok;
 
-			var script = Script.TheScript;
+			var script = owner;
 			var mw = script.mainWindow;
 
 			// Don't report any errors in here, at least not when we were called in conjunction
@@ -2667,7 +2651,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			return unregistered ? ResultType.Ok : ResultType.Fail;//I've see it fail in one rare case.
 		}
 
-		private static KeysharpFunc FindHotkeyIf(KeysharpFunc fo, List<KeysharpFunc> list)
+		internal static KeysharpFunc FindHotkeyIf(KeysharpFunc fo, List<KeysharpFunc> list)
 		{
 			if (fo == null)
 				return null;
@@ -2737,8 +2721,8 @@ namespace Keysharp.Internals.Input.Keyboard
 				var fo = new KeysharpFunc(mi);
 				var bf = fo.Bind(obj0 ?? "", obj1 ?? "");//Must not pass null so that the logic in BoundFunc.Call() works.
 
-				if (FindHotkeyCriterion(bf) == null)
-					AddHotkeyCriterion(bf);
+				if (FindHotkeyIf(bf, script.hotCriterions) == null)
+					script.hotCriterions.Add(bf);
 
 				script.Threads.CurrentThread.hotCriterion = bf;
 			}
@@ -2790,7 +2774,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				return false;
 
 			var changed = false;
-			var script = Script.TheScript;
+			var script = scheduler.Owner;
 
 			foreach (var hotkey in script.HotkeyData.shk)
 			{

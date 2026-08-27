@@ -49,7 +49,7 @@ namespace Keysharp.Internals
 		internal static IHotkeys Hotkeys => Instance.Hotkeys;
 		internal static ISession Session => Instance.Session;
 		internal static IPermissionManager Permissions => Instance.Permissions;
-		// The UI-thread-marshalling facade, not the raw backend (PlatformHost.ClipboardCore).
-		internal static IClipboard Clipboard => Instance.Clipboard;
+		// The current Script's UI-thread-marshalling facade, not the raw backend (PlatformHost.GetClipboardCore).
+		internal static IClipboard Clipboard => Script.TheScript.Clipboard;
 	}
 }

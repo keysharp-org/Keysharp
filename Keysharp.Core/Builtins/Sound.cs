@@ -45,7 +45,7 @@ namespace Keysharp.Builtins
 			// Linux and macOS have no tone generator, so synthesize the sine and play it. This is what makes
 			// Frequency and Duration mean something on macOS (which used to emit a fixed system alert) and
 			// removes the Linux dependency on alsa-utils' speaker-test.
-			if (!SoundPlayback.TryPlayTone(freq, time, out var error))
+			if (!SoundPlayback.TryPlayTone(Script.TheScript, freq, time, out var error))
 				return Errors.ErrorOccurred($"SoundBeep failed: {error}");
 
 #endif
@@ -125,6 +125,7 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown on failure.</exception>
 		public static object SoundPlay(object filename, object wait = null)
 		{
+			var script = Script.TheScript;
 			var file = filename.As();
 			var w = wait.As();
 
@@ -134,14 +135,14 @@ namespace Keysharp.Builtins
 				if (!int.TryParse(file.AsSpan(1), out var n))
 					return Errors.ValueErrorOccurred($"Invalid SoundPlay system sound: {file}.");
 
-				return PlaySystemSound(n);
+				return PlaySystemSound(script, n);
 			}
 
 			try
 			{
 				var doWait = w == "1" || string.Compare(w, "WAIT", true) == 0;
 
-				if (!SoundPlayback.TryPlay(file, doWait, out var error))
+				if (!SoundPlayback.TryPlay(script, file, doWait, out var error))
 					return Errors.ErrorOccurred(error);
 
 				return DefaultObject;
@@ -156,7 +157,7 @@ namespace Keysharp.Builtins
 		/// Plays one of SoundPlay's "*n" standard system sounds.
 		/// </summary>
 		/// <param name="which">-1 for a simple beep, or 16/32/48/64 for hand/question/exclamation/asterisk.</param>
-		private static object PlaySystemSound(int which)
+		private static object PlaySystemSound(Script script, int which)
 		{
 #if WINDOWS
 			_ = SoundPlayback.TryPlaySystemSound(which);
@@ -164,10 +165,10 @@ namespace Keysharp.Builtins
 
 			// Prefer the desktop's own alert sound so "*n" matches what the rest of the system does; fall back
 			// to a synthesized beep so the call is never silently inaudible where no sound theme is installed.
-			if (SoundPlayback.SystemSoundFile(which) is string path && SoundPlayback.TryPlay(path, wait: false, out _))
+			if (SoundPlayback.SystemSoundFile(which) is string path && SoundPlayback.TryPlay(script, path, wait: false, out _))
 				return DefaultObject;
 
-			_ = SoundPlayback.TryPlayTone(523, 150, out _);
+			_ = SoundPlayback.TryPlayTone(script, 523, 150, out _);
 #endif
 			return DefaultObject;
 		}

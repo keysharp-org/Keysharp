@@ -21,7 +21,7 @@ namespace Keysharp.Tests
 		[Test, Category("Input")]
 		public void WorkerGrowth()
 		{
-			using var executor = new HotCriterionExecutor(3);
+			using var executor = new HotCriterionExecutor(s, 3);
 			using var release = new ManualResetEventSlim(false);
 			using var entered = new CountdownEvent(3);
 			var blocked = new TestCriterion(() =>
@@ -76,13 +76,13 @@ namespace Keysharp.Tests
 			var executor = Script.TheScript.HookThread.HotCriterionExecutor;
 
 			Assert.That(executor.WorkerCount, Is.Zero);
-			Assert.That(HotkeyDefinition.HotCriterionAllowsFiring(criterion, "test"), Is.EqualTo(1L));
+			Assert.That(HotkeyDefinition.HotCriterionAllowsFiring(Script.TheScript, criterion, "test"), Is.EqualTo(1L));
 			Assert.That(evaluatedThread, Is.EqualTo(callerThread));
 			Assert.That(executor.WorkerCount, Is.Zero);
 
 			evaluatedThread = 0;
 			using (HookThread.BeginHotIfCallback(HookThread.HotIfCallbackBudgetMilliseconds))
-				Assert.That(HotkeyDefinition.HotCriterionAllowsFiring(criterion, "test"), Is.EqualTo(1L));
+				Assert.That(HotkeyDefinition.HotCriterionAllowsFiring(Script.TheScript, criterion, "test"), Is.EqualTo(1L));
 
 			Assert.That(evaluatedThread, Is.Not.EqualTo(callerThread));
 			Assert.That(executor.WorkerCount, Is.EqualTo(1));

@@ -13,6 +13,7 @@ namespace Keysharp.Internals.Window
 		internal readonly WindowEventType type;
 		internal readonly SearchCriteria criteria;            // null => match any window
 		internal readonly WindowSearchOptions inheritedOptions;
+		internal readonly WinEventManager manager;
 		internal readonly bool detectHidden;                  // effective DetectHiddenWindows for this subscription
 		internal nint activeReported;                         // Active subs: hwnd last reported active, so a
 		                                                      // title-change re-fire of the same window doesn't duplicate
@@ -34,11 +35,13 @@ namespace Keysharp.Internals.Window
 		/// <summary>True for any subscription that maintains a matching-window set (Exist/NotExist).</summary>
 		internal bool TracksMembership => matchingWindows != null;
 
-		internal WinEventRegistration(WindowEventType type, SearchCriteria criteria, KeysharpFunc callback, long count, ScriptEventScheduler ownerScheduler)
+		internal WinEventRegistration(WindowEventType type, SearchCriteria criteria, KeysharpFunc callback, long count,
+			ScriptEventScheduler ownerScheduler, WinEventManager manager)
 			: base(callback, count, ownerScheduler)
 		{
 			this.type = type;
 			this.criteria = criteria;
+			this.manager = manager;
 
 			if (type is WindowEventType.Exist or WindowEventType.NotExist)
 			{
@@ -51,13 +54,14 @@ namespace Keysharp.Internals.Window
 			// hidden detection on, because a freshly shown window is often still hidden for a short time. All other
 			// event types respect the thread's DetectHiddenWindows setting.
 			var forceHidden = type is WindowEventType.Show;
-			detectHidden = forceHidden || ThreadAccessors.A_DetectHiddenWindows;
+			var config = ownerScheduler.Owner.Threads.CurrentThread.configData;
+			detectHidden = forceHidden || config.detectHiddenWindows;
 			inheritedOptions = new WindowSearchOptions
 			{
 				DetectHiddenWindows = detectHidden,
-				DetectHiddenText = forceHidden || ThreadAccessors.A_DetectHiddenText,
-				TitleMatchMode = ThreadAccessors.A_TitleMatchMode,
-				TitleMatchModeSpeed = ThreadAccessors.A_TitleMatchModeSpeed
+				DetectHiddenText = forceHidden || config.detectHiddenText,
+				TitleMatchMode = config.titleMatchMode,
+				TitleMatchModeSpeed = config.titleMatchModeSpeed
 			};
 		}
 
@@ -226,7 +230,7 @@ namespace Keysharp.Internals.Window
 
 			try
 			{
-				backend = Platform.WindowEvents.Backend;
+				backend = Platform.WindowEvents.CreateBackend(script);
 
 				if (backend != null)
 					backend.Sink = OnNativeEvent;
@@ -500,7 +504,7 @@ namespace Keysharp.Internals.Window
 			if (!reg.TryConsumeFire())
 				return;
 
-			var scheduler = reg.ownerScheduler ?? script.EventScheduler;
+			var scheduler = reg.ownerScheduler;
 
 			if (scheduler == null || scheduler.IsDisposed)
 				return;

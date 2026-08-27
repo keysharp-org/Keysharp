@@ -212,12 +212,12 @@ namespace Keysharp.Tests
 						registrations.TimerScheduler = s.EventScheduler;
 						registrations.Timer = s.FlowData.timers.Find(registrations.TimerFunc, registrations.TimerScheduler);
 
-						registrations.Hotkey = new HotkeyDefinition(1, new KeysharpFunc((Func<object, object>)(_ => probe.Record("hotkey"))), 0, "F24", 0);
+						registrations.Hotkey = new HotkeyDefinition(s, 1, new KeysharpFunc((Func<object, object>)(_ => probe.Record("hotkey"))), 0, "F24", 0);
 						s.HotkeyData.shk = [..s.HotkeyData.shk, registrations.Hotkey];
 						registrations.HotkeyVariant = registrations.Hotkey.firstVariant;
 						registrations.HotkeyBinding = registrations.HotkeyVariant.FindBinding(s.EventScheduler);
 
-						registrations.Hotstring = new HotstringDefinition("::abc", "")
+						registrations.Hotstring = new HotstringDefinition(s, "::abc", "")
 						{
 							Name = "abc",
 							funcObj = new KeysharpFunc((Func<object, object>)(_ => probe.Record("hotstring"))),
@@ -423,7 +423,7 @@ namespace Keysharp.Tests
 		public void HotkeyDispatch()
 		{
 			var probe = new CallbackProbe();
-			var hk = new HotkeyDefinition((uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ => probe.Record("main"))), 0, "$a", 0);
+			var hk = new HotkeyDefinition(s, (uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ => probe.Record("main"))), 0, "$a", 0);
 			s.HotkeyData.shk = [..s.HotkeyData.shk, hk];
 
 			WithMatchingWorkerHotkey(hk, new KeysharpFunc((Func<object, object>)(_ => probe.Record("worker"))), worker =>
@@ -455,7 +455,7 @@ namespace Keysharp.Tests
 					return 1L;
 				}));
 
-				var hk = new HotkeyDefinition((uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ =>
+				var hk = new HotkeyDefinition(s, (uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ =>
 				{
 					callbackRan.Set();
 					return 0L;
@@ -499,7 +499,7 @@ namespace Keysharp.Tests
 					return hookWinCriterionResult;
 				});
 
-				var hk = new HotkeyDefinition((uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ =>
+				var hk = new HotkeyDefinition(s, (uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ =>
 				{
 					callbackRan.Set();
 					return 0L;
@@ -541,13 +541,13 @@ namespace Keysharp.Tests
 
 			try
 			{
-				var hk = new HotkeyDefinition((uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ => 0L)), 0, "b", 0);
+				var hk = new HotkeyDefinition(s, (uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ => 0L)), 0, "b", 0);
 				s.HotkeyData.shk = [..s.HotkeyData.shk, hk];
 				s.Threads.CurrentThread.hotCriterion = new KeysharpFunc((Func<object, object>)(_ => 1L));
 				_ = hk.AddVariant(new KeysharpFunc((Func<object, object>)(_ => 0L)), 0);
 				s.Threads.CurrentThread.hotCriterion = previousCriterion;
 
-				_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks();
+				_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(s);
 
 #if WINDOWS
 				Assert.AreEqual(HotkeyTypeEnum.Normal, hk.type, "A hotkey with an enabled global variant should be allowed to stay on the non-hook WM_HOTKEY path.");
@@ -567,7 +567,7 @@ namespace Keysharp.Tests
 			var mainStarted = new ManualResetEventSlim(false);
 			var releaseMain = new ManualResetEventSlim(false);
 			var workerRan = new ManualResetEventSlim(false);
-			var hk = new HotkeyDefinition((uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ =>
+			var hk = new HotkeyDefinition(s, (uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ =>
 			{
 				mainStarted.Set();
 				_ = releaseMain.Wait(2000);
@@ -604,7 +604,7 @@ namespace Keysharp.Tests
 			var releaseMain = new ManualResetEventSlim(false);
 			var workerProgressed = new ManualResetEventSlim(false);
 			var workerCalls = 0;
-			var hk = new HotkeyDefinition((uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ =>
+			var hk = new HotkeyDefinition(s, (uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ =>
 			{
 				mainStarted.Set();
 				_ = releaseMain.Wait(2000);
@@ -659,9 +659,9 @@ namespace Keysharp.Tests
 		[Test, Category("Threading"), Category("UI")]
 		public void StopUnhooksHotkeys()
 		{
-			var hk = new HotkeyDefinition((uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ => 0L)), 0, "$a", 0);
+			var hk = new HotkeyDefinition(s, (uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ => 0L)), 0, "$a", 0);
 			s.HotkeyData.shk = [..s.HotkeyData.shk, hk];
-			_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks();
+			_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(s);
 
 			// Installing a real global hook needs devices to grab: a headless container (WSL/CI has no /dev/input
 			// and no keysharp-inputd) cannot, so there is nothing to assert about unhooking there.

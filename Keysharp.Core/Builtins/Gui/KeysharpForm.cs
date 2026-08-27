@@ -5,6 +5,8 @@ namespace Keysharp.Builtins
 {
 	public class KeysharpForm : Form
 	{
+		internal Script OwnerScript { get; }
+
 		public bool AllowShowDisplay = true;
 		internal CallbackHub closedHandlers;
 		internal CallbackHub contextMenuChangedHandlers;
@@ -71,10 +73,7 @@ namespace Keysharp.Builtins
 			// WM_KEYDOWN will get translated to WM_CHAR and the user may want to capture that as well.
 			// Additionally if any messages get lost for some reason or another message arrives here
 			// before the MessageFilter processed message has had time to arrive then we'd confuse the two.
-			// A form can outlive the script that created it (the close is posted to the owning thread and only
-			// runs at the next pump, by which time the script may be disposed and another one constructed),
-			// so the filter can legitimately be absent here. Fall through to default processing when it is.
-			var msgFilter = TheScript?.msgFilter;
+			var msgFilter = OwnerScript.msgFilter;
 
 			if (m.Msg == WindowsAPI.WM_COMMNOTIFY)
 				_ = Dialogs.HandleDialogNotification((uint)m.WParam.ToInt64(), m.LParam);
@@ -119,7 +118,11 @@ namespace Keysharp.Builtins
 #endif
 
 		public KeysharpForm(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
+			: this(Script.TheScript, _addStyle, _addExStyle, _removeStyle, _removeExStyle) { }
+
+		internal KeysharpForm(Script owner, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
+			OwnerScript = owner ?? throw new ArgumentNullException(nameof(owner));
 			addStyle = _addStyle;
 			addExStyle = _addExStyle;
 			removeStyle = _removeStyle;
@@ -350,7 +353,7 @@ namespace Keysharp.Builtins
 		/// <summary>Points allGuiHwnds at this window's current handle, dropping the key it last used.</summary>
 		internal void Register(Gui gui)
 		{
-			var allGuiHwnds = Script.TheScript.GuiData.allGuiHwnds;
+			var allGuiHwnds = OwnerScript.GuiData.allGuiHwnds;
 			var handle = this.Handle.ToInt64();
 
 			if (registeredHwnd != 0 && registeredHwnd != handle)
@@ -366,12 +369,12 @@ namespace Keysharp.Builtins
 			//we must check if there are any remaining visible windows. If not, and the script
 			//has not been explicitly marked persistent, then exit the program.
 			var handle = this.Handle.ToInt64();
-			var script = Script.TheScript;
+			var script = OwnerScript;
 			if (isClosing)
 			{
 				_ = script.GuiData.allGuiHwnds.TryRemove(handle, out _);
 				registeredHwnd = 0;
-				Script.PostToUIThread(GC.Collect);
+				script.PostToUIThread(GC.Collect);
 			}
 			script.ExitIfNotPersistent();//Also does BeginInvoke(), so it will come after the GC.Collect() above.
 		}
@@ -383,7 +386,7 @@ namespace Keysharp.Builtins
 			//Do not close the window if the program is already exiting because it will throw
 			//an enumeration modified exception because Winforms is internally already iterating over
 			//all open windows to close them.
-			if (!Script.TheScript.IsMainWindowClosing)
+			if (!OwnerScript.IsMainWindowClosing)
 				this.CheckedInvoke(Close, false);
 
 			return DefaultObject;

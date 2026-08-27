@@ -94,7 +94,7 @@ namespace Keysharp.Builtins
 			var caret = (Found: LinuxAccessibility.TryGetCaretScreenPosition(out var x, out var y), X: x, Y: y);
 
 			if (!caret.Found)
-				caret = Script.InvokeOnUIThread(static () =>
+				caret = Script.TheScript.InvokeOnUIThread(static () =>
 					(Found: LinuxAccessibility.TryGetOwnedCaretScreenPosition(out var ownedX, out var ownedY),
 					 X: ownedX, Y: ownedY));
 
@@ -225,6 +225,7 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">Throws an <see cref="Error"/> exception if an invalid function object or name is specified.</exception>
 		public static object Hotkey(object keyName, object action = null, object options = null)
 		{
+			var script = Script.TheScript;
 			var keyname = keyName.As();
 			var label = action.As();
 			var opt = options.As();
@@ -234,7 +235,6 @@ namespace Keysharp.Builtins
 			if (action != null)
 			{
 				fo = Functions.GetKeysharpFunc(action, null);//Don't throw on failure because returning null is a valid action.
-				var script = Script.TheScript;
 				var tv = script.Threads.CurrentThread;
 
 				//Hotkey callbacks are invoked with one argument (the hotkey name). A function requiring more can
@@ -275,7 +275,7 @@ break_twice:;
 					hook_action = HotkeyDefinition.ConvertAltTab(label, true);
 			}
 
-			_ = HotkeyDefinition.Dynamic(keyname, opt, fo, hook_action);
+			_ = HotkeyDefinition.Dynamic(script, keyname, opt, fo, hook_action);
 			return DefaultObject;
 		}
 
@@ -334,7 +334,7 @@ break_twice:;
 						hm.hsResetUponMouseClick = val.Value;
 
 						if (hm.hsResetUponMouseClick != previousValue && hm.enabledCount != 0) // No need if there aren't any hotstrings.
-							_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(); // Install the hook if needed, or uninstall if no longer needed.
+							_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(script); // Install the hook if needed, or uninstall if no longer needed.
 					}
 				}
 
@@ -473,7 +473,7 @@ break_twice:;
 				if (A_IsSuspended)
 					initialSuspendState |= HotstringDefinition.HS_SUSPENDED;
 
-				var addResult = HotstringManager.AddHotstring(name, ifunc, hotstringOptions, hotstringStart, action, false, initialSuspendState);
+				var addResult = hm.AddHotstring(name, ifunc, hotstringOptions, hotstringStart, action, false, initialSuspendState);
 				if (addResult is not HotstringDefinition)
 					return addResult;
 
@@ -501,7 +501,7 @@ break_twice:;
 						hm.ClearBuf();
 
 					if (!isenabled || ht.kbdHook == 0) // Hook may not be needed anymore || hook is needed but not present.
-						_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks();
+						_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(script);
 				}
 			}
 
@@ -540,7 +540,7 @@ break_twice:;
 			}
 			else if (script.mainWindow != null)
 			{
-				Script.PostToUIThread(() => Script.TheScript.mainWindow.ShowHistory());
+				script.PostToUIThread(() => script.mainWindow.ShowHistory());
 			}
 
 			return DefaultObject;
@@ -860,10 +860,10 @@ break_twice:;
 			if (callback != null)
 			{
 				var funcobj = Functions.GetKeysharpFunc(callback, null, true);
-				var cp = HotkeyDefinition.FindHotkeyIfExpr(funcobj);
+				var cp = HotkeyDefinition.FindHotkeyIf(funcobj, script.hotExprs);
 
 				if (cp == null && funcobj != null)
-					HotkeyDefinition.AddHotkeyIfExpr(cp = funcobj);
+					script.hotExprs.Add(cp = funcobj);
 
 				script.Threads.CurrentThread.hotCriterion = cp;
 			}
@@ -1003,7 +1003,7 @@ break_twice:;
 			// Movement-only blocking is a mouse-hook concern. LinuxHookThread already
 			// suppresses physical move events while passing buttons, wheels and injected moves.
 			if (script.KeyboardData.blockMouseMove)
-				HotkeyDefinition.InstallMouseHook();
+				HotkeyDefinition.InstallMouseHook(script);
 
 			var inputdMask = Keysharp.Internals.Input.Linux.KeysharpInputdClient.BlockInputMask.None;
 
@@ -1072,7 +1072,7 @@ break_twice:;
 
 				case ToggleValueType.MouseMove:
 					script.KeyboardData.blockMouseMove = true;
-					HotkeyDefinition.InstallMouseHook();
+					HotkeyDefinition.InstallMouseHook(script);
 					break;
 
 				case ToggleValueType.MouseMoveOff:
@@ -1093,8 +1093,8 @@ break_twice:;
 					// Make sure that hook is actually installed and running.
 					if (toggle == ToggleValueType.On)
 					{
-						HotkeyDefinition.InstallKeybdHook();
-						HotkeyDefinition.InstallMouseHook();
+						HotkeyDefinition.InstallKeybdHook(script);
+						HotkeyDefinition.InstallMouseHook(script);
 					}
 
 					break;
@@ -1108,7 +1108,7 @@ break_twice:;
 
 				case ToggleValueType.MouseMove:
 					script.KeyboardData.blockMouseMove = true;
-					HotkeyDefinition.InstallMouseHook();
+					HotkeyDefinition.InstallMouseHook(script);
 					break;
 
 				case ToggleValueType.MouseMoveOff:
@@ -1253,12 +1253,13 @@ break_twice:;
 		{
 			var i = install.Ab(true);
 			var f = force.Ab();
-			var ht = Script.TheScript.HookThread;
+			var script = Script.TheScript;
+			var ht = script.HookThread;
 
 			if (i)
 			{
 				var op = whichHook == HookType.Keyboard ? "InstallKeybdHook" : "InstallMouseHook";
-				_ = Script.TheScript.Permissions.EnsureInputMonitoring(operation: op);
+				_ = script.Permissions.EnsureInputMonitoring(operation: op);
 			}
 
 			//When the second parameter is true, unconditionally remove the hook. If the first parameter is
@@ -1267,17 +1268,17 @@ break_twice:;
 			if (f)
 				ht.AddRemoveHooks(ht.GetActiveHooks() & ~whichHook);
 
-			RequireHook(whichHook, i);
+			RequireHook(script, whichHook, i);
 
 			if (!f || i)
-				_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks();
+				_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(script);
 
 			return DefaultObject;
 		}
 
-		private static void RequireHook(HookType whichHook, bool require = true)
+		private static void RequireHook(Script script, HookType whichHook, bool require = true)
 		{
-			var hkd = Script.TheScript.HotkeyData;
+			var hkd = script.HotkeyData;
 			_ = require ? hkd.whichHookAlways |= whichHook : hkd.whichHookAlways &= ~whichHook;
 		}
 
@@ -1290,7 +1291,8 @@ break_twice:;
 		private static void SetToggleState(uint vk, ref ToggleValueType forceLock, string toggleText)
 		{
 			var toggle = Conversions.ConvertOnOffAlways(toggleText, ToggleValueType.Neutral);
-			var ht = Script.TheScript.HookThread;
+			var script = Script.TheScript;
+			var ht = script.HookThread;
 			var kbdMouseSender = ht.kbdMsSender;
 
 			switch (toggle)
@@ -1313,7 +1315,7 @@ break_twice:;
 					// The hook is currently needed to support keeping these keys AlwaysOn or AlwaysOff, though
 					// there may be better ways to do it (such as registering them as a hotkey, but
 					// that may introduce quite a bit of complexity):
-					HotkeyDefinition.InstallKeybdHook();
+					HotkeyDefinition.InstallKeybdHook(script);
 					break;
 
 				case ToggleValueType.Neutral:
@@ -1368,9 +1370,10 @@ break_twice:;
 		/// <returns>An object with VK, SC, Name, Modifiers and Prefix, or 0 if unresolved.</returns>
 		public static object GetKeyInfo(object keyName, object layout = null)
 		{
+			var script = Script.TheScript;
 			var keyname = keyName.As();
 			var keybdLayout = layout.IsNullOrEmpty() ? 0 : Platform.Keys.ResolveKeyboardLayout(layout.As());
-			var ht = Script.TheScript.HookThread;
+			var ht = script.HookThread;
 			var vk = 0u;
 			var sc = 0u;
 			var source = KeySource.None;

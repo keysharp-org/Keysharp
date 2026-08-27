@@ -200,7 +200,7 @@ namespace Keysharp.Builtins
 				if (input.InProgress())
 				{
 					if (input.MouseIsNeeded)
-						HotkeyDefinition.InstallMouseHook();
+						HotkeyDefinition.InstallMouseHook(Script.TheScript);
 
 					Script.TheScript.HookThread.RefreshPlatformKeyGrabs();
 				}
@@ -218,7 +218,7 @@ namespace Keysharp.Builtins
 				{
 					// Turning suppression on requires the keyboard hook if it wasn't already installed.
 					if (input.KeyboardIsNeeded)
-						HotkeyDefinition.InstallKeybdHook();
+						HotkeyDefinition.InstallKeybdHook(Script.TheScript);
 
 					Script.TheScript.HookThread.RefreshPlatformKeyGrabs();
 				}
@@ -235,7 +235,7 @@ namespace Keysharp.Builtins
 				if (input.InProgress())
 				{
 					if (input.KeyboardIsNeeded)
-						HotkeyDefinition.InstallKeybdHook();
+						HotkeyDefinition.InstallKeybdHook(Script.TheScript);
 
 					Script.TheScript.HookThread.RefreshPlatformKeyGrabs();
 				}
@@ -360,10 +360,10 @@ namespace Keysharp.Builtins
 				// Flagging a key after Start() may newly require a hook: a keyboard key/end key needs the
 				// keyboard hook, a mouse/wheel button (end key or +S) needs the mouse hook.
 				if (input.KeyboardIsNeeded)
-					HotkeyDefinition.InstallKeybdHook();
+					HotkeyDefinition.InstallKeybdHook(Script.TheScript);
 
 				if (input.MouseIsNeeded)
-					HotkeyDefinition.InstallMouseHook();
+					HotkeyDefinition.InstallMouseHook(Script.TheScript);
 			}
 
 			return DefaultObject;
@@ -441,7 +441,7 @@ namespace Keysharp.Builtins
 			SetCallback(index, value);
 
 			if (input.InProgress() && input.MouseIsNeeded)
-				HotkeyDefinition.InstallMouseHook();
+				HotkeyDefinition.InstallMouseHook(Script.TheScript);
 		}
 
 		// As SetCallback, but ensures the keyboard hook is running if an OnChar/OnKeyDown/OnKeyUp callback
@@ -451,7 +451,7 @@ namespace Keysharp.Builtins
 			SetCallback(index, value);
 
 			if (input.InProgress() && input.KeyboardIsNeeded)
-				HotkeyDefinition.InstallKeybdHook();
+				HotkeyDefinition.InstallKeybdHook(Script.TheScript);
 		}
 
 		private void SetCallbackPersistenceActive(bool active)

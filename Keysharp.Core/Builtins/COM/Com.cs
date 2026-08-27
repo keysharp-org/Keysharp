@@ -1,9 +1,117 @@
 #if WINDOWS
 namespace Keysharp.Builtins.COM
 {
-	internal class ComMethodData
+	internal class ComMethodData(Script script) : IDisposable
 	{
-		internal ConcurrentLfu<nint, Dictionary<string, ComMethodInfo>> comMethodCache = new(Caching.DefaultCacheCapacity);
+		private readonly Lock comEventGate = new();
+		private readonly HashSet<ComEvent> comEvents = [];
+		private bool disposed;
+		private ConcurrentLfu<nint, Dictionary<string, ComMethodInfo>> methodCache;
+
+		/// <summary>
+		/// Type info for COM members, keyed by interface pointer. Built on the first COM member call rather than
+		/// with the Script: it measures ~32KB, and most scripts never touch COM.
+		/// </summary>
+		internal ConcurrentLfu<nint, Dictionary<string, ComMethodInfo>> MethodCache
+		{
+			get
+			{
+				var current = methodCache;
+
+				if (current == null)
+				{
+					current = new(Caching.DefaultCacheCapacity);
+					current = Interlocked.CompareExchange(ref methodCache, current, null) ?? current;
+				}
+
+				return current;
+			}
+		}
+
+		/// <summary>Drops a released interface pointer's entry. Used from ComValue's dispose path, so it must not
+		/// build the cache just to find it empty.</summary>
+		internal void ForgetMethods(nint ptr) => methodCache?.TryRemove(ptr);
+
+		internal void Connect(ComObject comObject, object sink, bool log)
+		{
+			ComEvent replacement = null;
+
+			if (sink != null)
+			{
+				var dispatcher = new Dispatcher(comObject);
+
+				try
+				{
+					replacement = new ComEvent(script, dispatcher, sink, log);
+				}
+				catch
+				{
+					dispatcher.Dispose();
+					throw;
+				}
+			}
+
+			ComEvent existing;
+			var rejected = false;
+
+			lock (comEventGate)
+			{
+				if (disposed || script.IsDisposed)
+				{
+					existing = null;
+					rejected = true;
+				}
+				else
+				{
+					existing = comEvents.FirstOrDefault(ce => ReferenceEquals(ce.dispatcher.Co, comObject));
+
+					if (existing != null)
+						_ = comEvents.Remove(existing);
+
+					if (replacement != null)
+						_ = comEvents.Add(replacement);
+				}
+			}
+
+			if (existing != null)
+			{
+				existing.Unwire();
+				existing.dispatcher.Dispose();
+			}
+
+			if (rejected)
+			{
+				if (replacement != null)
+				{
+					replacement.Unwire();
+					replacement.dispatcher.Dispose();
+				}
+
+				throw new ObjectDisposedException(nameof(Script));
+			}
+		}
+
+		public void Dispose()
+		{
+			ComEvent[] all;
+
+			lock (comEventGate)
+			{
+				if (disposed)
+					return;
+
+				disposed = true;
+				all = [.. comEvents];
+				comEvents.Clear();
+			}
+
+			// Unadvise can enter arbitrary COM code, so it must not run while the registry gate is held.
+			foreach (var comEvent in all)
+			{
+				comEvent.Unwire();
+				comEvent.dispatcher.Dispose();
+			}
+		}
 	}
 
 	internal class ComMethodInfo
@@ -26,8 +134,6 @@ namespace Keysharp.Builtins.COM
 		internal const int CLSCTX_SERVER = CLSCTX_INPROC_SERVER | CLSCTX_LOCAL_SERVER | CLSCTX_REMOTE_SERVER; //16;
 		internal const int LOCALE_SYSTEM_DEFAULT = 0x800;
 		internal const int LOCALE_USER_DEFAULT = 0x400;
-		internal static HashSet<ComEvent> comEvents = [];
-
 		internal const int DISPID_PROPERTYPUT = -3;
 
 		[DllImport(WindowsAPI.ole32, CharSet = CharSet.Unicode)]
@@ -51,21 +157,14 @@ namespace Keysharp.Builtins.COM
 
 		public static object ComObjConnect(object comObj, object prefixOrSink = null, object debug = null)
 		{
+			var script = Script.TheScript;
+
 			if (comObj is ComObject co)
 			{
 				if (co.vt != VarEnum.VT_DISPATCH && co.vt != VarEnum.VT_UNKNOWN)// || Marshal.GetIUnknownForObject(co.Ptr) == 0)
 					return Errors.ValueErrorOccurred($"COM object type of {co.vt} was not VT_DISPATCH or VT_UNKNOWN, and was not IUnknown.");
 
-				//If it existed, whether obj1 was null or not, remove it.
-				if (comEvents.FirstOrDefault(ce => ReferenceEquals(ce.dispatcher.Co, co)) is ComEvent ev)
-				{
-					_ = comEvents.Remove(ev);
-					ev.Unwire();
-					ev.dispatcher.Dispose();
-				}
-
-				if (prefixOrSink != null)//obj1 not being null means add it.
-					_ = comEvents.Add(new ComEvent(new Dispatcher(co), prefixOrSink, debug != null ? debug.Ab() : false));
+				script.ComMethodData.Connect(co, prefixOrSink, debug != null ? debug.Ab() : false);
 
 				return DefaultObject;
 			}

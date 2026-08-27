@@ -78,7 +78,10 @@ namespace Keysharp.Internals.Os
 		private const string MciAlias = "KeysharpPlayMe";
 		// MCI paths are limited to ~127 chars, so AHK's buffer is MAX_PATH*2; keep the same room.
 		private const int MciBuffer = 520;
+		private static readonly Lock gate = new();
 		private static bool soundWasPlayed;
+		private static Script currentOwner;//The Script whose SoundPlay opened the current MCI item; matches the non-Windows branch below.
+		private static long playbackSequence;
 
 		/// <summary>"playing"/"stopped"/... for the open item, or "" when nothing is open.</summary>
 		private static string MciMode()
@@ -94,23 +97,34 @@ namespace Keysharp.Internals.Os
 		/// Closes any open MCI item. Called when a new file starts, and at script exit — an item left open can
 		/// hang the process on exit on some systems, which is why AHK's destructor does the same.
 		/// </summary>
-		internal static void StopCurrent()
+		internal static void StopCurrent() => StopCurrent(null);
+
+		internal static void StopCurrent(Script owner)
 		{
-			if (!soundWasPlayed)
+			lock (gate)
+				StopCurrentLocked(owner);
+		}
+
+		private static void StopCurrentLocked(Script owner)
+		{
+			if (!soundWasPlayed || (owner != null && !ReferenceEquals(currentOwner, owner)))
 				return;
 
 			if (MciMode().Length > 0)
 				MciClose();
 
 			soundWasPlayed = false;
+			currentOwner = null;
+			playbackSequence++;
 		}
 
 		/// <summary>
 		/// Plays an audio file through MCI, so anything with an installed codec works (.wav, .mp3, .avi, ...).
 		/// </summary>
-		internal static bool TryPlay(string path, bool wait, out string error)
+		internal static bool TryPlay(Script owner, string path, bool wait, out string error)
 		{
 			error = null;
+			long sequence;
 			// Close first: that is what stops the previous file, and it is why SoundPlay on a nonexistent file
 			// is the documented way to stop playback — the stop happens before the open can fail.
 			StopCurrent();
@@ -122,18 +136,27 @@ namespace Keysharp.Internals.Os
 				return false;
 			}
 
-			if (WindowsAPI.mciSendString($"open \"{path}\" alias {MciAlias}", null, 0, 0) != 0)
+			lock (gate)
 			{
-				error = $"Failed to open sound file {path}.";
-				return false;
-			}
+				// Another script can start playback between the documented early stop above and this open.
+				StopCurrentLocked(null);
 
-			soundWasPlayed = true;
+				if (WindowsAPI.mciSendString($"open \"{path}\" alias {MciAlias}", null, 0, 0) != 0)
+				{
+					error = $"Failed to open sound file {path}.";
+					return false;
+				}
 
-			if (WindowsAPI.mciSendString($"play {MciAlias}", null, 0, 0) != 0)
-			{
-				error = $"Failed to play sound file {path}.";
-				return false;
+				if (WindowsAPI.mciSendString($"play {MciAlias}", null, 0, 0) != 0)
+				{
+					MciClose();
+					error = $"Failed to play sound file {path}.";
+					return false;
+				}
+
+				soundWasPlayed = true;
+				currentOwner = owner;
+				sequence = ++playbackSequence;
 			}
 
 			if (!wait)
@@ -143,16 +166,29 @@ namespace Keysharp.Internals.Os
 			// that timers/hotkeys still run while SoundPlay waits. Flow.Sleep pumps, so they do.
 			for (;;)
 			{
-				var mode = MciMode();
-
-				if (mode.Length == 0)   // item vanished; nothing left to wait for
-					break;
-
-				if (mode == "stopped")
+				lock (gate)
 				{
-					MciClose();
-					soundWasPlayed = false;
-					break;
+					if (sequence != playbackSequence)
+						break;
+
+					var mode = MciMode();
+
+					if (mode.Length == 0)   // item vanished; nothing left to wait for
+					{
+						soundWasPlayed = false;
+						currentOwner = null;
+						playbackSequence++;
+						break;
+					}
+
+					if (mode == "stopped")
+					{
+						MciClose();
+						soundWasPlayed = false;
+						currentOwner = null;
+						playbackSequence++;
+						break;
+					}
 				}
 
 				Keysharp.Internals.Flow.Sleep(20);
@@ -172,6 +208,7 @@ namespace Keysharp.Internals.Os
 		private static readonly Lock gate = new();
 		private static readonly ConcurrentDictionary<string, string> resolvedPlayers = new();
 		private static Process current;
+		private static Script currentOwner;
 
 		// Formats libsndfile (and therefore paplay) decodes without a full media framework.
 		private static readonly string[] sndFileExtensions =
@@ -207,14 +244,20 @@ namespace Keysharp.Internals.Os
 		/// Stops whatever this script is currently playing. AHK stops the previous file when a new one starts,
 		/// when SoundPlay is given a nonexistent file, and when the script exits.
 		/// </summary>
-		internal static void StopCurrent()
+		internal static void StopCurrent() => StopCurrent(null);
+
+		internal static void StopCurrent(Script owner)
 		{
 			Process previous;
 
 			lock (gate)
 			{
+				if (owner != null && !ReferenceEquals(currentOwner, owner))
+					return;
+
 				previous = current;
 				current = null;
+				currentOwner = null;
 			}
 
 			if (previous == null)
@@ -241,7 +284,7 @@ namespace Keysharp.Internals.Os
 		/// <summary>
 		/// Synthesizes a tone and plays it, blocking until it finishes (SoundBeep is synchronous in AHK).
 		/// </summary>
-		internal static bool TryPlayTone(int frequency, int durationMs, out string error)
+		internal static bool TryPlayTone(Script owner, int frequency, int durationMs, out string error)
 		{
 			// A tone is always a WAV, so the temp file keeps the single "play a file" primitive rather than
 			// adding a second, player-specific raw-PCM-over-stdin path.
@@ -251,7 +294,7 @@ namespace Keysharp.Internals.Os
 			{
 				temp = Path.Combine(Path.GetTempPath(), $"keysharp-tone-{Environment.ProcessId}-{Guid.NewGuid():N}.wav");
 				File.WriteAllBytes(temp, BuildToneWav(frequency, durationMs));
-				return TryPlay(temp, wait: true, out error);
+				return TryPlay(owner, temp, wait: true, out error);
 			}
 			catch (Exception ex)
 			{
@@ -280,7 +323,7 @@ namespace Keysharp.Internals.Os
 		/// <param name="path">Path to the file; relative paths resolve against A_WorkingDir.</param>
 		/// <param name="wait">Whether to block until playback finishes.</param>
 		/// <param name="error">Failure description when this returns false.</param>
-		internal static bool TryPlay(string path, bool wait, out string error)
+		internal static bool TryPlay(Script owner, string path, bool wait, out string error)
 		{
 			error = null;
 			string full;
@@ -340,7 +383,10 @@ namespace Keysharp.Internals.Os
 				if (!wait)
 				{
 					lock (gate)
+					{
 						current = process;
+						currentOwner = owner;
+					}
 
 					return true;
 				}

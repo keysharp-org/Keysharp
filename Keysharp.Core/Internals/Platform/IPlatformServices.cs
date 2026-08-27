@@ -258,8 +258,9 @@ namespace Keysharp.Internals
 		/// confirmed, so it is never left mapped with no owner left to retry. Idempotent; a no-op for an unknown id.</summary>
 		void DisposeImageOverlay(uint id);
 
-		/// <summary>Hide and free every image overlay owned by this process.</summary>
-		bool TryHideAllImageOverlays();
+		/// <summary>Hide and free every image overlay owned by <paramref name="owner"/>, or every process overlay
+		/// when no owner is supplied.</summary>
+		bool TryHideAllImageOverlays(Script owner = null);
 
 		/// <summary>Native handle for a toolkit-backed overlay where one exists (Eto/WinForms window or wlr layer
 		/// surface), otherwise zero (a compositor-drawn overlay has no client-side window).</summary>
@@ -388,7 +389,7 @@ namespace Keysharp.Internals
 	/// exposes the chosen one.</summary>
 	internal interface IWindowEvents
 	{
-		Keysharp.Internals.Window.IWindowEventBackend Backend { get; }
+		Keysharp.Internals.Window.IWindowEventBackend CreateBackend(Script owner);
 	}
 
 	/// <summary>Display-configuration change notifications, behind <c>Ks.Monitor.OnChange</c>. Its own service
@@ -397,7 +398,7 @@ namespace Keysharp.Internals
 	/// one needs no per-compositor selection at all.</summary>
 	internal interface IMonitorEvents
 	{
-		Keysharp.Internals.Window.IMonitorEventBackend Backend { get; }
+		Keysharp.Internals.Window.IMonitorEventBackend CreateBackend(Script owner);
 	}
 
 	/// <summary>Session control (logout/shutdown/reboot), DE-keyed on Linux. <paramref name="flags"/> follows

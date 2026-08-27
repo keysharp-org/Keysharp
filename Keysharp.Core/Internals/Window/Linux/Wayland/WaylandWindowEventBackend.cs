@@ -29,7 +29,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// No compositor exposes caret movement — the caret is an accessibility concept — so CaretMove is served by
 		// the same display-server-agnostic AT-SPI source the X11 backend uses, and a caret-only subscription never
 		// touches the compositor channel at all.
-		private readonly LinuxAccessibility.CaretEventSource caretSource = new();
+		private readonly LinuxAccessibility.CaretEventSource caretSource;
 		private readonly Lock gate = new();
 		private WindowEventMask enabledMask = WindowEventMask.None;
 		private IDisposable subscription;
@@ -37,7 +37,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private Thread worker;
 		private bool disposed;
 
-		internal WaylandWindowEventBackend(IWaylandBackend backend) => this.backend = backend;
+		internal WaylandWindowEventBackend(Script owner, IWaylandBackend backend)
+		{
+			this.backend = backend;
+			caretSource = new LinuxAccessibility.CaretEventSource(owner);
+		}
 
 		public Action<WindowEventRaw> Sink { get; set; }
 

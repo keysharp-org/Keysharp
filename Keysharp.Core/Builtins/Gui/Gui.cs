@@ -534,11 +534,11 @@ namespace Keysharp.Builtins
 
 		public Gui(params object[] args) : base(args) { }
 
-		internal Gui(object obj0 = null, object obj1 = null, object obj2 = null, object obj3 = null) : base(null)//The last parameter is hidden and is only for internal use for when we wrap the main window in a Gui object.
+		internal Gui(Script owner, object obj0 = null, object obj1 = null, object obj2 = null, object obj3 = null) : base(null)//The last parameter is hidden and is only for internal use for when we wrap the main window in a Gui object.
 		{
-			Script.InvokeOnUIThread(() =>
+			owner.InvokeOnUIThread(() =>
 			{
-				var script = Script.TheScript;
+				var script = owner;
 
 				if (obj3 is KeysharpForm kf)
 				{
@@ -566,8 +566,7 @@ namespace Keysharp.Builtins
 			//ExitIfNotPersistent posts to the UI thread, but PostToUIThread falls back to running the action
 			//inline when no UI context is bound, which would drive ExitAppInternal -- and its
 			//GC.WaitForPendingFinalizers() -- from the finalizer thread and deadlock. Skip once the script has
-			//exited too: TheScript is still set after teardown, so a late collection would otherwise run exit
-			//logic against a dead script (or, after a restart, against a different one).
+			//exited too, because a late collection must not run exit logic against a retired owner.
 			var script = Script.TheScript;
 
 			if (script == null || script.hasExited || script.UIThreadContext == null)
@@ -582,7 +581,7 @@ namespace Keysharp.Builtins
 		{
 			if (form == null)//Don't allow derived classes to init twice.
 			{
-				Script.InvokeOnUIThread(() =>
+				Script.TheScript.InvokeOnUIThread(() =>
 				{
 					var options = Options != null ? Options.As() : null;
 					var caption = Title != null ? Title.As() : null;
@@ -592,7 +591,7 @@ namespace Keysharp.Builtins
 					//Get numeric creation params first.
 					int addStyle = 0, addExStyle = 0, removeStyle = 0, removeExStyle = 0;
 					Opt(options, ref addStyle, ref addExStyle, ref removeStyle, ref removeExStyle);
-					form = new KeysharpForm(addStyle, addExStyle, removeStyle, removeExStyle)
+					form = new KeysharpForm(Script.TheScript, addStyle, addExStyle, removeStyle, removeExStyle)
 					{
 						eventObj = eventObj,
 						FormBorderStyle = FormBorderStyle.FixedSingle,//Default to a non-resizeable window, with the maximize box disabled.
@@ -2647,7 +2646,7 @@ namespace Keysharp.Builtins
 
 			//Pointer motion is only watched for while something is listening; see SyncMotionHooks().
 			if (msg == Keysharp.Internals.Os.Windows.WindowsAPI.WM_MOUSEMOVE)
-				Keysharp.Internals.Window.Unix.EtoMessageSource.SyncMotionHooks();
+				Keysharp.Internals.Window.Unix.EtoMessageSource.SyncMotionHooks(Script.TheScript);
 
 #endif
 			return DefaultObject;
@@ -3043,7 +3042,7 @@ namespace Keysharp.Builtins
 			if (icon == null)
 				return Errors.ValueErrorOccurred($"Could not load an icon from {fileName}.", fileName);
 
-			Script.InvokeOnUIThread(() =>
+			Script.TheScript.InvokeOnUIThread(() =>
 			{
 				if (form == null)
 					return;
@@ -3627,12 +3626,10 @@ namespace Keysharp.Builtins
 					   () => iter = controls.GetEnumerator());
 		}
 
-		internal static bool AnyExistingVisibleWindows() => Script.TheScript.GuiData.allGuiHwnds.Values.Any(g => g.form != null && g.form.Visible);
+		internal static bool AnyExistingVisibleWindows(Script script) => script.GuiData.allGuiHwnds.Values.Any(g => g.form != null && g.form.Visible);
 
-		internal static void DestroyAll()
+		internal static void DestroyAll(Script script)
 		{
-			var script = Script.TheScript;
-
 			//Destroy everything but the main window, which will destroy itself.
 			foreach (var gui in script.GuiData.allGuiHwnds.Values.Where(g => g.form != script.mainWindow).ToArray())
 			{

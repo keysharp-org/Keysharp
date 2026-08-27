@@ -61,7 +61,7 @@ namespace Keysharp.Internals.Input.Windows
 
 		private DateTime thisEventTime;
 
-		internal WindowsKeyboardMouseSender()
+		internal WindowsKeyboardMouseSender(Script script) : base(script)
 		{
 		}
 
@@ -270,7 +270,7 @@ namespace Keysharp.Internals.Input.Windows
 
 				if ((childUnderCursor = WindowsAPI.WindowFromPoint(point)) != 0
 						&& (parentUnderCursor = WindowsAPI.GetNonChildParent(childUnderCursor)) != 0 // WM_NCHITTEST below probably requires parent vs. child.
-						&& GetWindowThreadProcessId(parentUnderCursor, out _) == Script.TheScript.NativeMainThreadID) // It's one of our thread's windows.
+						&& GetWindowThreadProcessId(parentUnderCursor, out _) == script.NativeMainThreadID) // It's one of our thread's windows.
 				{
 					var hitTest = SendMessage(parentUnderCursor, WM_NCHITTEST, 0, MakeLong((short)point.X, (short)point.Y));
 
@@ -328,7 +328,6 @@ namespace Keysharp.Internals.Input.Windows
 		internal nint PlaybackHandler(int code, nint wParam, ref EventMsg lParam)
 		// Journal playback hook.
 		{
-			var script = Script.TheScript;
 			var ht = script.HookThread;
 			//var lParam = (EventMsg)Marshal.PtrToStructure(lp, typeof(EventMsg));
 
@@ -737,7 +736,6 @@ namespace Keysharp.Internals.Input.Windows
 		/// <param name="modsDuringSend"></param>
 		internal override void SendEventArray(ref long finalKeyDelay, uint modsDuringSend)
 		{
-			var script = Script.TheScript;
 			var ht = script.HookThread;
 
 			if (sendMode == SendModes.Input)
@@ -831,11 +829,11 @@ namespace Keysharp.Internals.Input.Windows
 			            // - Study contents of the sEventPB array, which contains the keystrokes just recorded.
 			            eventCount = 0; // Used by RecordProc().
 
-			            if ((script.TheScript.playbackHook = SetWindowsHookEx(WH_JOURNALRECORD, RecordProc, WindowsAPI.GetModuleHandle(Process.GetCurrentProcess().MainModule.ModuleName), 0)) == 0)
+			            if ((script.playbackHook = SetWindowsHookEx(WH_JOURNALRECORD, RecordProc, WindowsAPI.GetModuleHandle(Process.GetCurrentProcess().MainModule.ModuleName), 0)) == 0)
 			                return;
 
 			*/
-			_ = ht.Invoke(() => Script.TheScript.playbackHook = SetWindowsHookEx(WH_JOURNALPLAYBACK, PlaybackHandler, Marshal.GetHINSTANCE(typeof(Script).Module), 0));
+			_ = ht.Invoke(() => script.playbackHook = SetWindowsHookEx(WH_JOURNALPLAYBACK, PlaybackHandler, Marshal.GetHINSTANCE(typeof(Script).Module), 0));
 
 			if (script.playbackHook == 0)
 				return;
@@ -892,7 +890,7 @@ namespace Keysharp.Internals.Input.Windows
 
 		internal override void AttachTargetWindowThread(ref bool threadsAreAttached, ref uint keybdLayoutThread, ref WindowInfoBase tempitem, nint targetWindow)
 		{
-			var tid = TheScript.NativeMainThreadId;
+			var tid = script.NativeMainThreadId;
 			tempitem = WindowQuery.CreateWindow(targetWindow);
 			uint targetThread;
 
@@ -968,7 +966,6 @@ namespace Keysharp.Internals.Input.Windows
 		/// <returns></returns>
 		internal override ToggleValueType ToggleKeyState(uint vk, ToggleValueType toggleValue)
 		{
-			var script = Script.TheScript;
 			// Can't use the down-state query because it doesn't have toggle-state info:
 			var startingState = script.HookThread.IsKeyToggledOn(vk) ? ToggleValueType.On : ToggleValueType.Off;
 
@@ -1027,8 +1024,6 @@ namespace Keysharp.Internals.Input.Windows
 		protected internal override void LongOperationUpdate()
 		{
 			var msg = new Msg();
-			var script = Script.TheScript;
-
 			if (script.IsCurrentThreadPreemptiveCheckDue())
 			{
 				if (PeekMessage(out msg, 0, 0, 0, PM_NOREMOVE))
@@ -1044,8 +1039,6 @@ namespace Keysharp.Internals.Input.Windows
 		protected internal override void LongOperationUpdateForSendKeys()
 		{
 			var msg = new Msg();
-			var script = Script.TheScript;
-
 			if (script.IsCurrentThreadPreemptiveCheckDue())
 			{
 				if (PeekMessage(out msg, 0, 0, 0, PM_NOREMOVE))
@@ -1126,7 +1119,7 @@ namespace Keysharp.Internals.Input.Windows
 
 		internal override void SendKeyEventToTargetWindow(KeyEventTypes eventType, uint vk, uint sc = 0u, nint targetWindow = default, bool doKeyDelay = false, long extraInfo = KeyIgnoreAllExceptModifier)
 		{
-			var ht = Script.TheScript.HookThread;
+			var ht = script.HookThread;
 			bool? b = null;
 
 			if (ht.KeyToModifiersLR(vk, sc, ref b) != 0)

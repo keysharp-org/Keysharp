@@ -360,12 +360,18 @@ namespace Keysharp.Builtins
 			if (func is not OwnedCallable owned)
 				return CallDirect(func, args);
 
-			var scheduler = owned.Owner ?? Script.TheScript?.EventScheduler;
+			var scheduler = owned.Owner;
+			var script = scheduler?.Owner;
 
 			// OwnsCurrentThread first: it is the branch the inline path needs, and this runs once per element
 			// for list.ForEach and once per element per stage for LINQ.
-			if (scheduler == null || scheduler.OwnsCurrentThread || scheduler.IsDisposed
-					|| Script.TheScript is not { hasExited: false })
+			if (scheduler == null)
+				return CallDirect(owned.Callable, args);
+
+			if (scheduler.IsDisposed || script is not { hasExited: false, IsDisposed: false })
+				return owned.DefaultReturn;
+
+			if (scheduler.OwnsCurrentThread)
 				return CallDirect(owned.Callable, args);
 
 			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
@@ -385,7 +391,7 @@ namespace Keysharp.Builtins
 				}
 				finally
 				{
-					Script.TheScript.ExitIfNotPersistent();
+					script.ExitIfNotPersistent();
 				}
 
 				return ScriptEventExecutionResult.Executed;

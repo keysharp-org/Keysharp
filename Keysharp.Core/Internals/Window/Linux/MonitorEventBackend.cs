@@ -22,6 +22,8 @@ namespace Keysharp.Internals.Window.Linux
 	/// </summary>
 	internal sealed class MonitorEventBackend : IMonitorEventBackend
 	{
+		private readonly Script owner;
+
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 		private delegate void GSignalHandler(nint instance, nint userData);
 
@@ -56,8 +58,9 @@ namespace Keysharp.Internals.Window.Linux
 		private bool wanted;
 		private bool disposed;
 
-		internal MonitorEventBackend()
+		internal MonitorEventBackend(Script owner)
 		{
+			this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
 			screenHandler = OnScreenChanged;
 			displayHandler = OnDisplayMonitorChanged;
 			screenHandlerPtr = Marshal.GetFunctionPointerForDelegate(screenHandler);
@@ -76,7 +79,7 @@ namespace Keysharp.Internals.Window.Linux
 				wanted = true;
 			}
 
-			Script.PostToUIThread(ConnectOnUI);
+			owner.PostToUIThread(ConnectOnUI);
 		}
 
 		public void Stop()
@@ -89,7 +92,7 @@ namespace Keysharp.Internals.Window.Linux
 				wanted = false;
 			}
 
-			Script.PostToUIThread(DisconnectOnUI);
+			owner.PostToUIThread(DisconnectOnUI);
 		}
 
 		public void Dispose()
@@ -105,7 +108,7 @@ namespace Keysharp.Internals.Window.Linux
 
 			// Synchronous, unlike Stop: Script.Dispose() tears the UI thread down right after this, so a posted
 			// disconnect would never run and GObject would keep calling a collected delegate.
-			Script.InvokeOnUIThread(DisconnectOnUI);
+			owner.InvokeOnUIThread(DisconnectOnUI);
 			Sink = null;
 		}
 

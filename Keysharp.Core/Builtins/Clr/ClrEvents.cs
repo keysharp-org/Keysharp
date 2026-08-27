@@ -35,10 +35,8 @@ namespace Keysharp.Builtins
 				{
 					var r = reg;
 
-					// IfExists, not the creating property: __Delete runs this from the finalizer path, where creating a
-					// manager just to find nothing in it would be pure waste.
 					if (r != null && r.active)
-						Script.TheScript.ClrEventManagerIfExists?.Unregister(r);
+						r.manager.Unregister(r);
 
 					return DefaultObject;
 				}
@@ -125,7 +123,7 @@ namespace Keysharp.Builtins
 				// delegate's invocation list is append-only from outside, and reordering it would mean detaching and
 				// reattaching handlers this script may not own. Ordering across *separate* subscriptions is the CLR's
 				// to decide, so -1 is accepted and behaves as 1 rather than failing.
-				var reg = new ClrEventRegistration(script, instance, type, ev, fo, scriptTarget, script.EventScheduler);
+				var reg = new ClrEventRegistration(script, instance, type, ev, fo, scriptTarget, script.EventScheduler, manager);
 				return manager.Register(reg) ? new EventSubscription { reg = reg } : DefaultObject;
 			}
 		}
@@ -138,9 +136,12 @@ namespace Keysharp.Builtins
 	/// would allocate a display class per subscription to reach the same state.
 	/// </summary>
 	internal sealed class ClrEventRegistration(Script script, object instance, Type type, EventInfo eventInfo,
-			KeysharpFunc callback, object scriptTarget, ScriptEventScheduler ownerScheduler)
+			KeysharpFunc callback, object scriptTarget, ScriptEventScheduler ownerScheduler, ClrEventManager manager)
 	{
 		private readonly Script script = script;
+		// Held directly, like WinEventRegistration/MonitorEventRegistration: __Delete unregisters from the
+		// finalizer path, where reaching the manager through the Script could otherwise create one to find it empty.
+		internal readonly ClrEventManager manager = manager;
 		internal readonly object instance = instance;               // null for a static event
 		internal readonly Type type = type;
 		internal readonly EventInfo eventInfo = eventInfo;
@@ -171,7 +172,7 @@ namespace Keysharp.Builtins
 			if (!active)
 				return DefaultObject;
 
-			var scheduler = ownerScheduler ?? script.EventScheduler;
+			var scheduler = ownerScheduler;
 
 			if (scheduler == null || scheduler.IsDisposed || script.hasExited)
 				return DefaultObject;

@@ -204,7 +204,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 		private StaThreadWithMessageQueue thread;
 		private bool uwpAppFocused;
 		private nint uwpHwndChecked = 0;
-		internal WindowsHookThread()
+		internal WindowsHookThread(Script script, string mutexName) : base(script, mutexName)
 		{
 			AddScKeyName("NumpadEnter", NumpadEnter);
 			AddScKeyName("Delete", Delete);
@@ -221,7 +221,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			AddScKeyName("PageUp", PgUp);
 			AddScKeyName("PgDn", PgDn);
 			AddScKeyName("PageDown", PgDn);
-			kbdMsSender = new WindowsKeyboardMouseSender();
+			kbdMsSender = new WindowsKeyboardMouseSender(script);
 			kbdHandlerDel = new LowLevelKeyboardProc(LowLevelKeybdHandler);
 			mouseHandlerDel = new LowLevelMouseProc(LowLevelMouseHandler);
 		}
@@ -420,7 +420,6 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			// For maintainability, it seems best to display the MsgBox only at the very end.
 			if (problemActivatingHooks)
 			{
-				var script = Script.TheScript;
 				// Prevent hotkeys and other subroutines from running (which could happen via MsgBox's message pump)
 				// to avoid the possibility that the script will continue to call this function recursively, resulting
 				// in an infinite stack of MsgBoxes. This approach is similar to that used in Hotkey::Perform()
@@ -513,7 +512,6 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 		// might have adjusted aVK, such as to make it a left/right specific modifier key rather than a
 		// neutral one. On the other hand, event.scanCode is the one we need for ToUnicodeEx() calls.
 		{
-			var script = Script.TheScript;
 			state.earlyCollected = true;
 			state.used_dead_key_non_destructively = false;
 			state.charCount = 0;
@@ -791,8 +789,6 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 
 		protected internal override bool IsMouseMenuVisible()
 		{
-			var script = Script.TheScript;
-
 			if (script.menuIsVisible != MenuType.None)
 				return true;
 
@@ -808,7 +804,6 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			{
 				if (hwnd != history.HistoryHwndPrev)
 				{
-					var script = Script.TheScript;
 					var wnd = Control.FromHandle(hwnd) is Control ctrl ? ctrl : script.mainWindow;
 
 					if (wnd != null)
@@ -943,8 +938,6 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 
 		internal unsafe nint LowLevelMouseHandler(int code, nint param, ref MSDLLHOOKSTRUCT lParam)
 		{
-			var script = Script.TheScript;
-
 			// code != HC_ACTION should be evaluated PRIOR to considering the values
 			// of wParam and lParam, because those values may be invalid or untrustworthy
 			// whenever code < 0.
@@ -1099,7 +1092,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			//Original did these, but HookThread.Stop() will take care of it before this is called.
 			//WindowsAPI.PostQuitMessage(exitCode);
 			AddRemoveHooks(HookType.None); // Remove all hooks. By contrast, registered hotkeys are unregistered below.
-			Unhook(Script.TheScript.playbackHook); // Would be unusual for this to be installed during exit, but should be checked for completeness.
+			Unhook(script.playbackHook); // Would be unusual for this to be installed during exit, but should be checked for completeness.
 			thread?.Dispose();
 		}
 

@@ -7,10 +7,10 @@ namespace Keysharp.Tests
 	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class MessageFilterTests : TestRunner
 	{
-		private static MsgMonitor CreateMonitor(Func<object, object, object, object, object> callback, int maxInstances = 1)
+		private MsgMonitor CreateMonitor(Func<object, object, object, object, object> callback, int maxInstances = 1)
 		{
 			var monitor = new MsgMonitor();
-			monitor.ModifyRegistration(new KeysharpFunc(callback), maxInstances);
+			monitor.ModifyRegistration(new KeysharpFunc(callback), maxInstances, s.EventScheduler);
 			return monitor;
 		}
 
@@ -150,12 +150,12 @@ namespace Keysharp.Tests
 			{
 				order.Add("A");
 				return 0L;
-			})), 1);
+			})), 1, s.EventScheduler);
 			monitor.ModifyRegistration(new KeysharpFunc((Func<object, object, object, object, object>)((wParam, lParam, msg, hwnd) =>
 			{
 				order.Add("B");
 				return 0L;
-			})), 1);
+			})), 1, s.EventScheduler);
 			s.GuiData.onMessageHandlers[msgId] = monitor;
 
 			var registrations = monitor.GetRegistrationsSnapshot();
@@ -189,12 +189,12 @@ namespace Keysharp.Tests
 			{
 				order.Add("A");
 				return 0L;
-			})), 1);
+			})), 1, s.EventScheduler);
 			monitor.ModifyRegistration(new KeysharpFunc((Func<object, object, object, object, object>)((wParam, lParam, msg, hwnd) =>
 			{
 				order.Add("B");
 				return 7L;
-			})), 2);
+			})), 2, s.EventScheduler);
 			s.GuiData.onMessageHandlers[msgId] = monitor;
 
 			var registrations = monitor.GetRegistrationsSnapshot();

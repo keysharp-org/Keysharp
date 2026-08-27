@@ -18,49 +18,49 @@ namespace Keysharp.Internals
 	}
 
 	/// <summary>
-	/// The one place clipboard access is marshalled to the UI thread. <see cref="PlatformHost.Clipboard"/> wraps the
-	/// resolved backend in this, so every present and future call site is correct by construction rather than by
+	/// The one place clipboard access is marshalled to the UI thread. <see cref="PlatformHost.CreateClipboard"/> wraps
+	/// the resolved backend for one Script, so every present and future call site is correct by construction rather than by
 	/// remembering — see the rationale there. Backends may therefore assume the UI thread and must not marshal again.
 	/// <para>The <see cref="Subscribe"/> attach is marshalled too, but the returned unsubscribe token is handed back
 	/// as-is: each backend that needs one already marshals its own detach (<see cref="EtoClipboard.Subscribe"/>), and
 	/// wrapping it here would double-post a teardown that can legitimately run during shutdown.</para>
 	/// </summary>
-	internal sealed class UiThreadClipboard(IClipboard inner) : IClipboard
+	internal sealed class UiThreadClipboard(Script owner, IClipboard inner) : IClipboard
 	{
-		public string GetText() => Script.InvokeOnUIThread(inner.GetText);
+		public string GetText() => owner.InvokeOnUIThread(inner.GetText);
 
-		public void SetText(string text) => Script.InvokeOnUIThread(() => inner.SetText(text));
+		public void SetText(string text) => owner.InvokeOnUIThread(() => inner.SetText(text));
 
-		public bool IsEmpty => Script.InvokeOnUIThread(() => inner.IsEmpty);
+		public bool IsEmpty => owner.InvokeOnUIThread(() => inner.IsEmpty);
 
-		public int ChangeType() => Script.InvokeOnUIThread(inner.ChangeType);
+		public int ChangeType() => owner.InvokeOnUIThread(inner.ChangeType);
 
-		public Bitmap GetImage() => Script.InvokeOnUIThread(inner.GetImage);
+		public Bitmap GetImage() => owner.InvokeOnUIThread(inner.GetImage);
 
-		public void SetImage(Bitmap image) => Script.InvokeOnUIThread(() => inner.SetImage(image));
+		public void SetImage(Bitmap image) => owner.InvokeOnUIThread(() => inner.SetImage(image));
 
-		public string[] GetFormats() => Script.InvokeOnUIThread(inner.GetFormats);
+		public string[] GetFormats() => owner.InvokeOnUIThread(inner.GetFormats);
 
-		public bool Has(string format) => Script.InvokeOnUIThread(() => inner.Has(format));
+		public bool Has(string format) => owner.InvokeOnUIThread(() => inner.Has(format));
 
 		// Pure per-backend metadata — no clipboard access, so no marshalling.
 		public string[] KindFormats(ClipboardKind kind) => inner.KindFormats(kind);
 
-		public bool HasKind(ClipboardKind kind) => Script.InvokeOnUIThread(() => inner.HasKind(kind));
+		public bool HasKind(ClipboardKind kind) => owner.InvokeOnUIThread(() => inner.HasKind(kind));
 
-		public byte[] GetData(string format) => Script.InvokeOnUIThread(() => inner.GetData(format));
+		public byte[] GetData(string format) => owner.InvokeOnUIThread(() => inner.GetData(format));
 
-		public string GetKindText(ClipboardKind kind) => Script.InvokeOnUIThread(() => inner.GetKindText(kind));
+		public string GetKindText(ClipboardKind kind) => owner.InvokeOnUIThread(() => inner.GetKindText(kind));
 
-		public string[] GetFiles() => Script.InvokeOnUIThread(inner.GetFiles);
+		public string[] GetFiles() => owner.InvokeOnUIThread(inner.GetFiles);
 
-		public void SetAll(IReadOnlyList<ClipboardEntry> entries) => Script.InvokeOnUIThread(() => inner.SetAll(entries));
+		public void SetAll(IReadOnlyList<ClipboardEntry> entries) => owner.InvokeOnUIThread(() => inner.SetAll(entries));
 
-		public byte[] CaptureAll() => Script.InvokeOnUIThread(inner.CaptureAll);
+		public byte[] CaptureAll() => owner.InvokeOnUIThread(inner.CaptureAll);
 
-		public void RestoreAll(Keysharp.Builtins.ClipboardAll clip) => Script.InvokeOnUIThread(() => inner.RestoreAll(clip));
+		public void RestoreAll(Keysharp.Builtins.ClipboardAll clip) => owner.InvokeOnUIThread(() => inner.RestoreAll(clip));
 
-		public IDisposable Subscribe(Action onChanged) => Script.InvokeOnUIThread(() => inner.Subscribe(onChanged));
+		public IDisposable Subscribe(Action onChanged) => owner.InvokeOnUIThread(() => inner.Subscribe(onChanged));
 	}
 
 	/// <summary>
@@ -613,10 +613,17 @@ namespace Keysharp.Internals
 			if (clip == null)
 				return null;
 
-			EventHandler<EventArgs> handler = (_, _) => onChanged();
+			var enabled = 1;
+			EventHandler<EventArgs> handler = (_, _) =>
+			{
+				if (Volatile.Read(ref enabled) != 0)
+					onChanged();
+			};
 			clip.Changed += handler;
 			return new CallbackDisposable(() =>
 			{
+				Volatile.Write(ref enabled, 0);
+
 				void Unsubscribe()
 				{
 					var c = Clipboard.Instance;
@@ -1229,6 +1236,11 @@ namespace Keysharp.Internals
 	/// </summary>
 	internal sealed class WindowsClipboard : ClipboardBase
 	{
+		private readonly Script owner;
+
+		internal WindowsClipboard(Script owner)
+			=> this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
+
 		// Windows format names for each canonical kind, most preferred first. These are the names
 		// DataFormats/GetClipboardFormatName report, NOT the CF_* constant spellings.
 		private static readonly string[] textFormats = [DataFormats.UnicodeText, DataFormats.Text, DataFormats.OemText];
@@ -1240,7 +1252,7 @@ namespace Keysharp.Internals
 		public override string GetText()
 		{
 			// OpenClipboard/CloseClipboard honors A_ClipboardTimeout under the Win32 single-owner lock.
-			if (WindowsAPI.OpenClipboard(Script.TheScript.AccessorData.clipboardTimeout))
+			if (WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))
 			{
 				// Whether plain text is present, captured while we still hold the clipboard open (stable — no other
 				// process can be mid-update). Scopes the retry below so empty/non-text clipboards are never delayed.
@@ -1292,7 +1304,7 @@ namespace Keysharp.Internals
 
 		public override void SetText(string text)
 		{
-			if (WindowsAPI.OpenClipboard(Script.TheScript.AccessorData.clipboardTimeout))
+			if (WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))
 			{
 				// A single raw Win32 transaction (EmptyClipboard + SetClipboardData) fires WM_CLIPBOARDUPDATE exactly
 				// once, matching AutoHotkey. Clipboard.SetDataObject(copy:true) would instead do OleSetClipboard then
@@ -1324,7 +1336,7 @@ namespace Keysharp.Internals
 		/// </summary>
 		public override string[] GetFormats()
 		{
-			if (!WindowsAPI.OpenClipboard(Script.TheScript.AccessorData.clipboardTimeout))
+			if (!WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))
 				return System.Array.Empty<string>();
 
 			try
@@ -1395,7 +1407,7 @@ namespace Keysharp.Internals
 		/// </summary>
 		public override void SetAll(IReadOnlyList<ClipboardEntry> entries)
 		{
-			if (!WindowsAPI.OpenClipboard(Script.TheScript.AccessorData.clipboardTimeout))
+			if (!WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))
 				return;
 
 			try
@@ -1626,7 +1638,7 @@ namespace Keysharp.Internals
 
 			try
 			{
-				if (WindowsAPI.OpenClipboard(Script.TheScript.AccessorData.clipboardTimeout))//Need to leave it open for it to work when using the Windows API.
+				if (WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))//Need to leave it open for it to work when using the Windows API.
 				{
 					wasOpened = true;
 					_ = WindowsAPI.EmptyClipboard();
@@ -1680,11 +1692,11 @@ namespace Keysharp.Internals
 
 		// Get the clipboard data in the given integer format. Gotten from:
 		// http://pinvoke.net/default.aspx/user32/GetClipboardData.html
-		private static byte[] GetClipboardData(int format, ref bool nullData)
+		private byte[] GetClipboardData(int format, ref bool nullData)
 		{
 			if (format != 0)
 			{
-				if (WindowsAPI.OpenClipboard(Script.TheScript.AccessorData.clipboardTimeout))
+				if (WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))
 				{
 					byte[] buf;
 					nint gLock = 0;

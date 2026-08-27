@@ -17,6 +17,7 @@ namespace Keysharp.Internals.Window.MacOS
 	/// </summary>
 	internal sealed class MonitorEventBackend : IMonitorEventBackend
 	{
+		private readonly Script owner;
 		private const string CoreGraphics = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics";
 
 		/// <summary>The display configuration is about to change; nothing has moved yet.</summary>
@@ -38,8 +39,9 @@ namespace Keysharp.Internals.Window.MacOS
 		private bool registered;
 		private bool disposed;
 
-		internal MonitorEventBackend()
+		internal MonitorEventBackend(Script owner)
 		{
+			this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
 			callback = OnReconfigured;
 			callbackPtr = Marshal.GetFunctionPointerForDelegate(callback);
 		}
@@ -97,7 +99,7 @@ namespace Keysharp.Internals.Window.MacOS
 
 		private void OnReconfigured(uint display, uint flags, nint userInfo)
 		{
-			if ((flags & KCGDisplayBeginConfigurationFlag) != 0)
+			if ((flags & KCGDisplayBeginConfigurationFlag) != 0 || owner.IsDisposed)
 				return;
 
 			Sink?.Invoke();

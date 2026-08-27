@@ -478,7 +478,7 @@ namespace Keysharp.Tests
 			var driver = new FakeEventTapDriver { RunResult = 1 };
 			using var terminated = new ManualResetEventSlim(false);
 			MacEventTapState stateAtNotification = MacEventTapState.Created;
-			var tap = new MacNativeEventTap(1, (_, _) => false, () => { }, (failed, _) =>
+			var tap = new MacNativeEventTap(Script.TheScript, 1, (_, _) => false, () => { }, (failed, _) =>
 			{
 				stateAtNotification = failed.State;
 				terminated.Set();
@@ -500,7 +500,7 @@ namespace Keysharp.Tests
 			driver.RunResults.Enqueue(1);
 			var resyncCount = 0;
 			var terminationCount = 0;
-			var tap = new MacNativeEventTap(1, (_, _) => false,
+			var tap = new MacNativeEventTap(Script.TheScript, 1, (_, _) => false,
 				() => Interlocked.Increment(ref resyncCount), (_, _) => Interlocked.Increment(ref terminationCount), driver);
 
 			Assert.IsTrue(tap.Start(1000));
@@ -516,7 +516,7 @@ namespace Keysharp.Tests
 		{
 			var driver = new FakeEventTapDriver { RunResult = 2 };
 			var terminationCount = 0;
-			var tap = new MacNativeEventTap(1, (_, _) => false, () => { }, (_, _) =>
+			var tap = new MacNativeEventTap(Script.TheScript, 1, (_, _) => false, () => { }, (_, _) =>
 				Interlocked.Increment(ref terminationCount), driver);
 
 			Assert.IsTrue(tap.Start(1000));
@@ -531,7 +531,7 @@ namespace Keysharp.Tests
 		public void StopDuringStartup()
 		{
 			var driver = new FakeEventTapDriver { BlockAddSource = true };
-			var tap = new MacNativeEventTap(1, (_, _) => false, () => { }, (_, _) => { }, driver);
+			var tap = new MacNativeEventTap(Script.TheScript, 1, (_, _) => false, () => { }, (_, _) => { }, driver);
 			var starting = Task.Run(() => tap.Start(1000));
 			Assert.IsTrue(driver.AddSourceEntered.Wait(1000));
 			var stopping = Task.Run(tap.Stop);
@@ -548,7 +548,7 @@ namespace Keysharp.Tests
 		public void WatchdogReenable()
 		{
 			var driver = new FakeEventTapDriver { RunResult = 2 };
-			var tap = new MacNativeEventTap(1, (_, _) => false,
+			var tap = new MacNativeEventTap(Script.TheScript, 1, (_, _) => false,
 				() => throw new InvalidOperationException("resync failure"), (_, _) => { }, driver);
 			Assert.IsTrue(tap.Start(1000));
 			Assert.AreNotEqual(nint.Zero, driver.Callback(nint.Zero,
@@ -562,7 +562,7 @@ namespace Keysharp.Tests
 		{
 			var driver = new FakeEventTapDriver { RunResult = 2 };
 			var resyncCount = 0;
-			var tap = new MacNativeEventTap(1, (_, _) => false,
+			var tap = new MacNativeEventTap(Script.TheScript, 1, (_, _) => false,
 				() => Interlocked.Increment(ref resyncCount), (_, _) => { }, driver);
 			Assert.IsTrue(tap.Start(1000));
 			Assert.IsTrue(tap.Stop());

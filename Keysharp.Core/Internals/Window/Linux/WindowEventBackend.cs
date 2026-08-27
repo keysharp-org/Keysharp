@@ -31,6 +31,8 @@ namespace Keysharp.Internals.Window.Linux
 	/// </summary>
 	internal sealed class WindowEventBackend : IWindowEventBackend
 	{
+		private readonly Script owner;
+
 		// GdkFilterReturn (*GdkFilterFunc)(GdkXEvent *xevent, GdkEvent *event, gpointer data); return 0 = CONTINUE.
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 		private delegate int GdkFilterFuncNative(nint xevent, nint gdkEvent, nint data);
@@ -56,7 +58,7 @@ namespace Keysharp.Internals.Window.Linux
 		// CaretMove doesn't come from X11 at all — the caret is an accessibility concept, so it is served by the
 		// display-server-agnostic AT-SPI source (which the Wayland backend owns one of too). Every other category is
 		// X11's, and the GDK filter is only attached when at least one of those is wanted.
-		private readonly LinuxAccessibility.CaretEventSource caretSource = new();
+		private readonly LinuxAccessibility.CaretEventSource caretSource;
 
 		private readonly Lock gate = new();
 		private WindowEventMask enabledMask = WindowEventMask.None;
@@ -86,6 +88,12 @@ namespace Keysharp.Internals.Window.Linux
 
 		public Action<WindowEventRaw> Sink { get; set; }
 
+		internal WindowEventBackend(Script owner)
+		{
+			this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
+			caretSource = new LinuxAccessibility.CaretEventSource(owner);
+		}
+
 		public void Start(WindowEventMask mask)
 		{
 			if ((mask & WindowEventMask.CaretMove) != 0)
@@ -102,7 +110,7 @@ namespace Keysharp.Internals.Window.Linux
 					return;
 			}
 
-			Script.PostToUIThread(AttachOnUI);
+			owner.PostToUIThread(AttachOnUI);
 		}
 
 		public void Stop(WindowEventMask mask)
@@ -119,7 +127,7 @@ namespace Keysharp.Internals.Window.Linux
 			}
 
 			if (detach)
-				Script.PostToUIThread(DetachOnUI);
+				owner.PostToUIThread(DetachOnUI);
 		}
 
 		public void Dispose()
@@ -130,7 +138,7 @@ namespace Keysharp.Internals.Window.Linux
 				enabledMask = WindowEventMask.None;
 
 			caretSource.Dispose();
-			Script.PostToUIThread(DetachOnUI);
+			owner.PostToUIThread(DetachOnUI);
 		}
 
 		/// <summary>Whether any category the X11 filter actually serves is enabled — i.e. anything but CaretMove,

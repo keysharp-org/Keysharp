@@ -22,7 +22,7 @@ namespace Keysharp.Internals.Input.Unix
 	{
 		internal PlatformEventSimulator sim => backend.sim;
 		protected PlatformEventSimulator Sim => backend.sim;
-		protected readonly PlatformKeySimulationBackend backend = new();
+		protected readonly PlatformKeySimulationBackend backend;
 
 		// Prefer Right-Alt as AltGr on Linux (prevents menu activation better than neutral Alt).
 		private const uint VK_ALTGR = VK_RMENU;
@@ -54,12 +54,13 @@ namespace Keysharp.Internals.Input.Unix
 		// scalar (e.g. emoji) while sending in Event mode; see SendUnicodeChar.
 		private char pendingHighSurrogate;
 
-		internal UnixKeyboardMouseSender()
+		internal UnixKeyboardMouseSender(Script script) : base(script)
 		{
+			backend = new PlatformKeySimulationBackend(script);
 		}
 
-		protected static void EnsureInputSendPermission(string operation)
-			=> _ = Script.TheScript.Permissions.EnsureInputInjection(operation: operation);
+		protected void EnsureInputSendPermission(string operation)
+			=> _ = script.Permissions.EnsureInputInjection(operation: operation);
 
 		internal override bool MouseButtonsSwapped
 		{
@@ -358,7 +359,7 @@ namespace Keysharp.Internals.Input.Unix
 			if (st.Events.Count == 0)
 				return;
 
-			var lht = Script.TheScript.HookThread as UnixHookThread;
+			var lht = script.HookThread as UnixHookThread;
 			if (lht == null)
 				return;
 
@@ -603,7 +604,7 @@ namespace Keysharp.Internals.Input.Unix
 				return;
 			}
 
-			var lht = Script.TheScript.HookThread as UnixHookThread;
+			var lht = script.HookThread as UnixHookThread;
 
 			if (lht != null)
 			{
@@ -843,7 +844,7 @@ namespace Keysharp.Internals.Input.Unix
 		internal override void SendKeybdEvent(KeyEventTypes eventType, uint vk, uint sc, uint eventFlags, long extraInfo, bool autoRepeat = false)
 		{
 			EnsureInputSendPermission("send keyboard input");
-			var lht = Script.TheScript.HookThread as UnixHookThread;
+			var lht = script.HookThread as UnixHookThread;
 			if (lht == null)
 				return;
 
@@ -900,7 +901,7 @@ namespace Keysharp.Internals.Input.Unix
 				return;
 
 			var extraInfo = KeyIgnoreLevel(ThreadAccessors.A_SendLevel);
-			var lht = Script.TheScript.HookThread as UnixHookThread;
+			var lht = script.HookThread as UnixHookThread;
 
 			if (lht == null)
 				return;
@@ -944,7 +945,7 @@ namespace Keysharp.Internals.Input.Unix
 				return;
 			}
 
-			var lht = Script.TheScript.HookThread as UnixHookThread;
+			var lht = script.HookThread as UnixHookThread;
 			if (lht == null)
 				return;
 
@@ -1041,7 +1042,6 @@ namespace Keysharp.Internals.Input.Unix
 
 		internal override ToggleValueType ToggleKeyState(uint vk, ToggleValueType toggleValue)
 		{
-			var script = Script.TheScript;
 			// Can't use the down-state query because it doesn't have toggle-state info:
 			var startingState = script.HookThread.IsKeyToggledOn(vk) ? ToggleValueType.On : ToggleValueType.Off;
 
@@ -1177,14 +1177,18 @@ namespace Keysharp.Internals.Input.Unix
 
 		internal sealed class PlatformKeySimulationBackend
 		{
+			private readonly Script owner;
 			internal readonly PlatformEventSimulator sim;
 
-			public PlatformKeySimulationBackend(PlatformEventSimulator sim = null)
-				=> this.sim = sim ?? new PlatformEventSimulator();
+			public PlatformKeySimulationBackend(Script owner, PlatformEventSimulator sim = null)
+			{
+				this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
+				this.sim = sim ?? new PlatformEventSimulator();
+			}
 
 			public void KeyDown(uint vk, DateTime ms, long extraInfo)
 			{
-				EnsureInputSendPermission("send keyboard input");
+				_ = owner.Permissions.EnsureInputInjection(operation: "send keyboard input");
 #if OSX
 				if (vk == VK_CAPITAL && Keysharp.Internals.Input.MacOS.MacCapsLockState.TryToggle())
 					return;
@@ -1194,7 +1198,7 @@ namespace Keysharp.Internals.Input.Unix
 
 			public void KeyUp(uint vk, DateTime ms, long extraInfo)
 			{
-				EnsureInputSendPermission("send keyboard input");
+				_ = owner.Permissions.EnsureInputInjection(operation: "send keyboard input");
 #if OSX
 				// The toggle was already applied by the paired KeyDown; a CapsLock
 				// key-up has no effect on the lock state, so don't post anything.

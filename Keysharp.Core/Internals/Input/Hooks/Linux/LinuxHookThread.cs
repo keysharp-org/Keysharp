@@ -10,6 +10,8 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 	// Linux hook extension points backed by keysharp-inputd.
 	internal sealed class LinuxHookThread : UnixHookThread
 	{
+		internal LinuxHookThread(Script script, string mutexName) : base(script, mutexName) { }
+
 		private sealed record CallbackContext(
 			KeysharpInputdClient Client,
 			ulong EventId);
@@ -49,7 +51,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 		private int clipCorrectionWorkerActive;
 
 		protected override KeyboardMouseSender CreateKbdMsSender()
-			=> new InputdKeyboardMouseSender();
+			=> new InputdKeyboardMouseSender(script);
 
 		// Fast path for the 8 modifier VKs while the inputd hook is active: every
 		// key event, physical (evdev) and synthetic (uinput, re-injected through
@@ -149,7 +151,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			lastKeyboardEventVk = vk;
 
 			if (!isInjected)
-				Script.TheScript.timeLastInputPhysical = DateTime.UtcNow;
+				script.timeLastInputPhysical = DateTime.UtcNow;
 
 			var args = new KeyboardHookEventArgs(
 				keyUp ? EventType.KeyReleased : EventType.KeyPressed,
@@ -603,7 +605,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 			if (!isInjected)
 			{
-				var script = Script.TheScript;
 				script.timeLastInputPhysical = script.timeLastInputMouse = DateTime.UtcNow;
 			}
 
@@ -612,9 +613,9 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				case 0x0200u:
 				{
 					var isAbsolute = (ev.MouseData & (uint)MOUSEEVENTF.ABSOLUTE) != 0;
-					var moveBlocked = !isInjected && Script.TheScript.KeyboardData.blockMouseMove;
+					var moveBlocked = !isInjected && script.KeyboardData.blockMouseMove;
 
-					if (Script.TheScript.input != null
+					if (script.input != null
 						&& !CollectMouseMove(ev.DeltaX, ev.DeltaY, ev.ExtraInfo, isInjected,
 							ev.TimeMs is > 0 and <= long.MaxValue ? (long)ev.TimeMs : Environment.TickCount64,
 							deviceId: ev.DeviceId, isAbsolute: isAbsolute))

@@ -5,6 +5,177 @@ namespace Keysharp.Tests
 	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class SchedulerTests : TestRunner
 	{
+		private sealed class DestructorProbe : Any, IDisposable
+		{
+			internal int Deletes;
+			internal int Disposes;
+
+			internal DestructorProbe() : base(null) { }
+
+			public override object __Delete()
+			{
+				Deletes++;
+				return 0L;
+			}
+
+			void IDisposable.Dispose() => Disposes++;
+		}
+
+		/// <summary>
+		/// The one-engine-per-process contract, from the RETIRED script's side: what it registered must be
+		/// revoked by its own Dispose, so nothing of it can still fire once a replacement is running. Asserting
+		/// the replacement's own fields are empty would prove nothing — they are instance state on a new object.
+		/// </summary>
+		[Test, Category("Threading")]
+		public void DisposedScriptRevokesItsOwnRegistrations()
+		{
+			var clipReg = new Keysharp.Internals.Scripting.CallbackRegistration(
+				new KeysharpFunc((Func<object>)(() => 0L)), s.EventScheduler, true);
+			Assert.IsTrue(s.ClipFunctions.Add(clipReg));
+			Assert.IsTrue(clipReg.IsActive);
+
+			var hs = (HotstringDefinition)s.HotstringManager.AddHotstring("::d1test", null, "", "d1test", "leak", false);
+			Assert.AreEqual(0, hs.suspended);
+
+			_ = s.FlowData.timers.Upsert(new KeysharpFunc((Func<object>)(() => 0L)), s.EventScheduler, 1000L, false, 0L);
+			Assert.IsFalse(s.FlowData.timers.IsEmpty);
+
+			s.Dispose();
+
+			//Every kind of registration the retired script owned is now inert, and it stayed published so late
+			//callers resolve a script whose guards answer honestly rather than a null.
+			Assert.IsFalse(clipReg.IsActive, "a clipboard registration must not survive its script");
+			Assert.AreNotEqual(0, hs.suspended & HotstringDefinition.HS_TURNED_OFF, "hotstrings must be disabled on exit");
+			Assert.IsTrue(s.FlowData.timers.IsEmpty, "timers must be removed on exit");
+			Assert.IsTrue(s.IsDisposed);
+			Assert.AreSame(s, Script.TheScript);
+
+			var replacement = new Script();
+			s = replacement;//Hand ownership to TearDown.
+			hsm = replacement.HotstringManager;
+			Assert.AreSame(replacement, Script.TheScript);
+		}
+
+		/// <summary>
+		/// #HookMutexName is per-Script. It used to be a static whose value the hook thread's name fields were
+		/// initialized from, so one script naming its mutex silently rebound every later script in the process.
+		/// </summary>
+		[Test, Category("Threading")]
+		public void HookMutexNameDoesNotLeakIntoReplacement()
+		{
+			s.Dispose();//Otherwise it stays in KeysharpInputdManager.owners and blocks every later DisconnectClients.
+
+			using (var named = new Script(typeof(SchedulerTests), "CustomHookMutex"))
+			{
+				Assert.AreEqual("CustomHookMutex Keybd", named.HookThread.KeybdMutexName);
+				Assert.AreEqual("CustomHookMutex Mouse", named.HookThread.MouseMutexName);
+			}
+
+			var replacement = new Script();
+			s = replacement;//Hand ownership to TearDown.
+			hsm = replacement.HotstringManager;
+			Assert.AreEqual("Keysharp Keybd", replacement.HookThread.KeybdMutexName);
+			Assert.AreEqual("Keysharp Mouse", replacement.HookThread.MouseMutexName);
+		}
+
+		/// <summary>
+		/// Playback is one process-global resource (a single MCI alias / one child player), so it is owner-keyed
+		/// rather than per-Script: a script's teardown must stop only what that script started. Driven through the
+		/// private state because starting real playback in a test would need an audio device.
+		/// </summary>
+		[Test, Category("Threading")]
+		public void SoundPlaybackStopsOnlyItsOwnOwner()
+		{
+			var type = typeof(Keysharp.Internals.Os.SoundPlayback);
+			const BindingFlags Flags = BindingFlags.NonPublic | BindingFlags.Static;
+			var ownerField = type.GetField("currentOwner", Flags);
+#if WINDOWS
+			//Windows keys off a separate "something is open" flag, which StopCurrent checks before the owner.
+			var activeField = type.GetField("soundWasPlayed", Flags);
+			activeField.SetValue(null, true);
+#endif
+			var other = (Script)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Script));
+
+			try
+			{
+				ownerField.SetValue(null, s);
+
+				Keysharp.Internals.Os.SoundPlayback.StopCurrent(other);
+				Assert.AreSame(s, ownerField.GetValue(null), "another script's teardown must not stop this one's playback");
+
+				Keysharp.Internals.Os.SoundPlayback.StopCurrent(s);
+				Assert.IsNull(ownerField.GetValue(null), "the owning script's teardown must stop its own playback");
+			}
+			finally
+			{
+				ownerField.SetValue(null, null);
+#if WINDOWS
+				activeField.SetValue(null, false);
+#endif
+				GC.SuppressFinalize(other);
+			}
+		}
+
+		[Test, Category("Threading")]
+		public void DisposingOlderScriptDoesNotClearNewPublication()
+		{
+			using var replacement = new Script();
+			Assert.AreSame(replacement, Script.TheScript);
+
+			s.Dispose();
+
+			Assert.AreSame(replacement, Script.TheScript);
+		}
+
+		[Test, Category("Threading")]
+		public void UiSchedulerRegistrationsAreRemovedOnDispose()
+		{
+			var callback = new KeysharpFunc((Func<object>)(() => 0L));
+			Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(callback, 1L));
+			Assert.AreEqual(1, s.ClipFunctions.Count);
+
+			s.Dispose();
+
+			Assert.AreEqual(0, s.ClipFunctions.Count);
+		}
+
+		[Test, Category("Threading")]
+		public void SchedulerCleanupRejectsLateCallbackRegistration()
+		{
+			var callback = new KeysharpFunc((Func<object>)(() => 0L));
+			s.EventScheduler.ShutdownForScriptDispose();
+
+			Assert.IsFalse(s.ClipFunctions.ModifyEventHandlers(callback, 1L));
+			Assert.AreEqual(0, s.ClipFunctions.Count);
+		}
+
+		[Test, Category("Threading")]
+		public void DisposedSynchronizationContextRejectsCallbacks()
+		{
+			var context = s.EventScheduler.DispatchContext;
+			var called = false;
+			s.Dispose();
+
+			context.Post(_ => called = true, null);
+			Assert.Throws<ObjectDisposedException>(() => context.Send(_ => called = true, null));
+			Assert.IsFalse(called);
+		}
+
+		[Test, Category("Threading")]
+		public void QueuedDestructorDoesNotRunScriptCodeAfterDispose()
+		{
+			var context = UseQueuedMainContext();
+			var probe = new DestructorProbe();
+			s.DestructorPump.Enqueue(probe);
+			Assert.AreEqual(1, context.PendingCount);
+
+			s.Dispose();
+			context.DrainAll();
+
+			Assert.AreEqual(0, probe.Deletes);
+			Assert.AreEqual(1, probe.Disposes);
+		}
+
 		[Test, Category("Threading")]
 		public void UnobservedFaultLookupUsesWrappedTaskOwner()
 		{

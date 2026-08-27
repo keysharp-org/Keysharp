@@ -581,7 +581,7 @@ namespace Keysharp.Builtins
 
 				foreach (var (_, reg) in snapshot)
 				{
-					var scheduler = reg.OwnerScheduler ?? Script.TheScript?.EventScheduler;
+					var scheduler = reg.OwnerScheduler;
 
 					if (scheduler == null || scheduler.IsDisposed)
 						continue;
@@ -611,7 +611,7 @@ namespace Keysharp.Builtins
 				}
 				finally
 				{
-					Script.TheScript?.ExitIfNotPersistent();
+					scheduler.Owner.ExitIfNotPersistent();
 				}
 
 				return ScriptEventExecutionResult.Executed;
