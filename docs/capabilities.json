@@ -7261,18 +7261,29 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Work that finishes later; every CLR call returning a .NET Task hands one back. Result is a snapshot that never waits, Await(task) and Wait([Timeout]) are the waiting forms, and Then(fn) reacts without blocking.",
+                     "notes":  "Work that finishes later; every CLR call returning a .NET Task hands one back. Active/Succeeded/Failed/Canceled expose its outcome, Result is a non-blocking snapshot, and Await and Wait are the waiting forms. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation.",
                      "tested-by":  "directive-csharp-async.ahk"
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "TaskSource",
-                     "syntax":  "Task.Source()",
+                     "feature":  "Task.Create()",
+                     "syntax":  "Task.Create(Producer)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The settling half of a Task the script owns: hand .Task to whoever waits, then Resolve([Value]) or Reject([Reason]) when the answer arrives. This is how a hotkey or GUI event takes part in Task.WhenAny.",
+                     "notes":  "Calls Producer synchronously with the positional prefix it accepts of Succeed, Fail and Cancel, and returns the Task they settle; Producer's return value is ignored. First settlement wins; Succeed adopts asynchronous work's eventual value, failure or cancellation, and an early producer error fails the Task.",
+                     "tested-by":  "directive-csharp-async.ahk"
+                 },
+                 {
+                     "category":  "Core Language",
+                     "feature":  "__Await()",
+                     "syntax":  "__Await()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Lets a script object expose asynchronous work without inheriting from Task. The zero-argument method returns a Task, CLR Task or ValueTask, worker RealThread, or another __Await object; Await, Task(Value), either Then callback's direct return, Task.Create settlement and Task combinators consume it.",
                      "tested-by":  "directive-csharp-async.ahk"
                  },
                  {
@@ -7283,7 +7294,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Waits for a Task, a RealThread, or a CLR task and returns its value. Blocks the calling pseudo-thread while pumping everything else, like Sleep, so it is an interruption point rather than a suspension.",
+                     "notes":  "Waits for a Task, a RealThread, a CLR task or value task, or an object implementing __Await(), and returns its value. Blocks the calling pseudo-thread while pumping everything else, like Sleep, so it is an interruption point rather than a suspension. Timing out does not cancel the work.",
                      "tested-by":  "directive-csharp-async.ahk"
                  },
                  {
@@ -8933,7 +8944,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Represents a real background thread handle/promise.",
+                     "notes":  "Represents a real background thread. Active/Succeeded/Failed/Canceled match Task outcome names; Result is available only after successful completion.",
                      "tested-by":  "flow-realthreads.ahk"
                  },
                  {
@@ -9109,7 +9120,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Invokes work on the underlying real thread context."
+                     "notes":  "Creates a new real worker thread and runs the callback on it."
                  },
                  {
                      "category":  "Automation",

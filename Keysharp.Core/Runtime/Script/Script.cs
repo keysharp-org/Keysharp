@@ -347,6 +347,7 @@ namespace Keysharp.Runtime
 		internal DateTime timeLastInputMouse;
 		internal DateTime timeLastInputPhysical = DateTime.UtcNow;
 		internal int totalExistingThreads;//Even though the thread stacks are on a per-real-thread basis, we keep a global count of threads. This may need to change in the future.
+		private int pendingSchedulerWorkCount;
 		internal long pseudoThreadSequence;
 		internal int uninterruptibleTime = 17;
 		private static int instanceCount;
@@ -376,6 +377,7 @@ namespace Keysharp.Runtime
 		private ProcessesData processesData;
 		private RegExData regExData;
 		private StringsData stringsData;
+		private readonly ConditionalWeakTable<System.Threading.Tasks.Task, Keysharp.Builtins.Ks.KeysharpTask> taskWrappers = new();
 		private ToolTipData toolTipData;
 		private Dictionary<string, WindowGroup> windowGroups;
 		private int disposeStarted;
@@ -471,6 +473,7 @@ namespace Keysharp.Runtime
 		internal ReflectionsData ReflectionsData { get; } = new ();//Don't lazy initialize, it's always needed in every Script.TheScript.
 		internal RegExData RegExData => regExData ?? (regExData = new ());
 		internal StringsData StringsData => stringsData ?? (stringsData = new ());
+		internal ConditionalWeakTable<System.Threading.Tasks.Task, Keysharp.Builtins.Ks.KeysharpTask> TaskWrappers => taskWrappers;
 		internal ToolTipData ToolTipData => toolTipData ?? (toolTipData = new ());
 		/// <summary>Named window groups (GroupAdd/GroupActivate), keyed case-insensitively. Per-Script state
 		/// (was <c>WindowManagerBase.Groups</c>, reached through the deleted WindowProvider).</summary>
@@ -1701,6 +1704,9 @@ namespace Keysharp.Runtime
 			if (totalExistingThreads > 0)
 				return true;
 
+			if (Volatile.Read(ref pendingSchedulerWorkCount) > 0)
+				return true;
+
 			if (Gui.AnyExistingVisibleWindows(this))
 				return true;
 
@@ -1730,6 +1736,9 @@ namespace Keysharp.Runtime
 
 			return false;
 		}
+
+		internal void AdjustPendingSchedulerWork(int delta)
+			=> _ = Interlocked.Add(ref pendingSchedulerWorkCount, delta);
 
 		internal ResultType IsCycleComplete(int aSleepDuration, DateTime aStartTime, bool aAllowEarlyReturn)
 		// This function is used just to make MsgSleep() more readable/understandable.

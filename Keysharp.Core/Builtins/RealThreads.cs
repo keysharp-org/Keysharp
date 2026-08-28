@@ -10,21 +10,21 @@ namespace Keysharp.Builtins
 		/// Runs a function object inside of a lock statement.
 		/// This is useful for calling a function inside of a real thread.
 		/// </summary>
-		/// <param name="lockObj">The object to lock on when calling the function. Must be an object: a number
+		/// <param name="LockObject">The object to lock on when calling the function. Must be an object: a number
 		/// is boxed afresh at each call site, which would produce a different monitor every time and therefore
 		/// no mutual exclusion at all.</param>
-		/// <param name="callback">The name of the function or a function object.</param>
-		/// <param name="args">The arguments to pass to the function.</param>
+		/// <param name="Callback">The name of the function or a function object.</param>
+		/// <param name="Arguments">The arguments to pass to the function.</param>
 		/// <returns>The object the function object returned.</returns>
-		public static object LockRun(object lockObj, object callback, params object[] args)
+		public static object LockRun(object LockObject, object Callback, params object[] Arguments)
 		{
-			if (lockObj is null || lockObj.GetType().IsValueType)
-				return Errors.TypeErrorOccurred(lockObj, typeof(object));
+			if (LockObject is null || LockObject.GetType().IsValueType)
+				return Errors.TypeErrorOccurred(LockObject, typeof(object));
 
-			lock (lockObj)
+			lock (LockObject)
 			{
-				var funcObj = Functions.GetKeysharpFunc(callback, null, true);
-				return funcObj.Call(funcObj.Inst == null ? args : new[] { funcObj.Inst }.Concat(args));
+				var funcObj = Functions.GetKeysharpFunc(Callback, null, true);
+				return funcObj.Call(funcObj.Inst == null ? Arguments : new[] { funcObj.Inst }.Concat(Arguments));
 			}
 		}
 
@@ -41,15 +41,14 @@ namespace Keysharp.Builtins
 		/// <c>RealThread.Main.Post(fn)</c> the supported way to marshal work back to the main thread.</para>
 		/// <para>
 		/// Exactly one object exists per real thread, so identity comparison answers which kind one is:
-		/// <c>rt == RealThread.Main</c>. There is deliberately no <c>IsMain</c> property for that, and no
-		/// <c>IsAlive</c> separate from <see cref="Status"/> — a thread can be given work exactly while it is
-		/// <c>"Running"</c>.</para>
+		/// <c>rt == RealThread.Main</c>. There is deliberately no <c>IsMain</c> property for that;
+		/// <see cref="Active"/> says whether a thread has not yet finished.</para>
 		/// </summary>
 		public sealed class RealThread : KeysharpObject
 		{
 			private readonly Script owner;
 
-			// Completed by the worker loop when the body has finished. Null for the main and adopted threads,
+			// Completed by the worker loop when the worker has finished. Null for the main and adopted threads,
 			// which never complete, and is what distinguishes them throughout this class.
 			private readonly TaskCompletionSource<object> completion;
 			// Resolved by the worker once its scheduler exists. For main/adopted threads it is already resolved.
@@ -57,13 +56,17 @@ namespace Keysharp.Builtins
 			// False until this worker's thread has actually been launched. A ContinueWith continuation exists as an
 			// object long before that, and waiting on its scheduler would block the caller for the whole of the
 			// antecedent's run; this lets that state be reported instead of stalled on.
-			private volatile bool started;
-			private int status;
+			private int launchState;
+			private int outcome;
 			private object result = DefaultObject;
 
-			private const int StatusRunning = 0;
-			private const int StatusDone = 1;
-			private const int StatusError = 2;
+			private const int LaunchPending = 0;
+			private const int LaunchStarted = 1;
+			private const int LaunchCanceled = 2;
+			private const int OutcomeActive = 0;
+			private const int OutcomeSucceeded = 1;
+			private const int OutcomeFailed = 2;
+			private const int OutcomeCanceled = 3;
 
 			/// <summary>Creates a worker object. Its thread is started separately by <see cref="Start"/>.</summary>
 			private RealThread(Script owner)
@@ -77,7 +80,7 @@ namespace Keysharp.Builtins
 			private RealThread(ScriptEventScheduler scheduler)
 			{
 				owner = scheduler?.Owner ?? throw new ArgumentNullException(nameof(scheduler));
-				started = true;
+				launchState = LaunchStarted;
 				schedulerSource = new TaskCompletionSource<ScriptEventScheduler>(TaskCreationOptions.RunContinuationsAsynchronously);
 				_ = schedulerSource.TrySetResult(scheduler);
 			}
@@ -97,14 +100,14 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Runs a function object on a new real thread. Extra arguments are passed to the function.
 			/// </summary>
-			/// <param name="callback">The name of the function or a function object.</param>
-			/// <param name="args">The arguments to pass to the function.</param>
+			/// <param name="Callback">The name of the function or a function object.</param>
+			/// <param name="Arguments">The arguments to pass to the function.</param>
 			/// <returns>The <see cref="RealThread"/> object.</returns>
-			public static object staticCall(object @this, object callback, params object[] args)
+			public static object staticCall(object @this, object Callback, params object[] Arguments)
 			{
-				var funcObj = Functions.GetKeysharpFunc(callback, null, true);
+				var funcObj = Functions.GetKeysharpFunc(Callback, null, true);
 				var rt = new RealThread(Script.TheScript);
-				rt.Start(() => funcObj.Call(args));
+				rt.Start(() => funcObj.Call(Arguments));
 				return rt;
 			}
 
@@ -151,27 +154,29 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public long Id => GetAliveScheduler()?.OwnerManagedThreadId ?? (long)ReportThreadNotAlive(0L);
 
-			/// <summary>
-			/// <c>"Running"</c> until this thread has finished, then <c>"Done"</c> if its body returned or exited
-			/// and <c>"Error"</c> if it ended by throwing. Tracks the same moment <see cref="Wait"/> waits for, so
-			/// a worker that keeps pumping events after its body returns is still <c>"Running"</c>. The main and
-			/// adopted threads are always <c>"Running"</c>: their schedulers are never disposed, so
-			/// <c>Status == "Running"</c> is also the answer to "can this thread still be given work".
-			/// </summary>
-			public string Status => !HasFinished
-				? "Running"
-				: Volatile.Read(ref status) == StatusError ? "Error" : "Done";
+			/// <summary>True while this thread has not finished.</summary>
+			public bool Active => !HasFinished;
+
+			/// <summary>True only when this worker finished successfully.</summary>
+			public bool Succeeded => HasOutcome(OutcomeSucceeded);
+
+			/// <summary>True only when this worker finished because of an error.</summary>
+			public bool Failed => HasOutcome(OutcomeFailed);
+
+			/// <summary>True only when <see cref="Exit"/> ended this worker before its body returned.</summary>
+			public bool Canceled => HasOutcome(OutcomeCanceled);
 
 			/// <summary>
 			/// The value this thread's body returned, or an empty string while it is still running, if it ended by
 			/// throwing, or if it exited early. An uncaught error is reported on the thread where it happened, in
 			/// the same way as one in a timer or hotkey, so it is never delivered here.
 			/// </summary>
-			public object Result => HasFinished && Volatile.Read(ref status) == StatusDone ? result : DefaultObject;
+			public object Result => Succeeded ? result : DefaultObject;
 
-			// The status field is published with a full fence before the completion is set, so any reader that sees
-			// the task completed also sees the final status.
+			// The outcome is published with a full fence before the completion is set, so any reader that sees the
+			// task completed also sees the terminal outcome.
 			private bool HasFinished => IsWorker && Task.IsCompleted;
+			private bool HasOutcome(int expected) => HasFinished && Volatile.Read(ref outcome) == expected;
 
 			/// <summary>
 			/// The active pseudo-threads of this real thread as an <see cref="Array"/>, oldest first, so
@@ -202,32 +207,32 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Encapsulates a call to <see cref="Task.ContinueWith()"/>.
 			/// </summary>
-			/// <param name="callback">The name of the function or a function object.</param>
-			/// <param name="args">The arguments to pass to the function.</param>
+			/// <param name="Callback">The name of the function or a function object.</param>
+			/// <param name="Arguments">The arguments to pass to the function.</param>
 			/// <returns>The new <see cref="RealThread"/> object</returns>
-			public object ContinueWith(object callback, params object[] args)
+			public object ContinueWith(object Callback, params object[] Arguments)
 			{
 				if (!IsWorker)
 					return ReportNotAWorker();
 
-				var fo = Functions.GetKeysharpFunc(callback, null, true);
+				var fo = Functions.GetKeysharpFunc(Callback, null, true);
 				var rt = new RealThread(owner);
-				_ = Task.ContinueWith(_ => rt.Start(() => fo.Call(args)), TaskScheduler.Default);
+				_ = Task.ContinueWith(_ => rt.Start(() => fo.Call(Arguments)), TaskScheduler.Default);
 				return rt;
 			}
 
 			/// <summary>
 			/// Queues work onto this worker thread and returns immediately.
 			/// </summary>
-			public object Post(object callback, params object[] args)
+			public object Post(object Callback, params object[] Arguments)
 			{
-				var fo = Functions.GetKeysharpFunc(callback, null, true);
+				var fo = Functions.GetKeysharpFunc(Callback, null, true);
 				var scheduler = GetAliveScheduler();
 
 				if (scheduler == null)
 					return ReportThreadNotAlive();
 
-				var queuedEvent = new PostQueuedEvent(scheduler, fo, args);
+				var queuedEvent = new PostQueuedEvent(scheduler, fo, Arguments);
 
 				if (!scheduler.Enqueue(ScriptEventQueue.Normal, 0, queuedEvent.Execute))
 					return ReportThreadNotAlive();
@@ -238,9 +243,9 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Executes work on this worker thread synchronously and returns the callback result.
 			/// </summary>
-			public object Send(object callback, params object[] args)
+			public object Send(object Callback, params object[] Arguments)
 			{
-				var fo = Functions.GetKeysharpFunc(callback, null, true);
+				var fo = Functions.GetKeysharpFunc(Callback, null, true);
 				var scheduler = GetAliveScheduler();
 
 				if (scheduler == null)
@@ -250,7 +255,8 @@ namespace Keysharp.Builtins
 				{
 					return scheduler.InvokeSynchronous(() =>
 					{
-						var executionResult = RunOnSchedulerThread(scheduler, () => fo.Call(args), false, out var result);
+						var executionResult = RunOnSchedulerThread(scheduler, () => fo.Call(Arguments), false,
+							out var result, out _);
 						return executionResult == ScriptEventExecutionResult.Executed
 							? result
 							: Errors.ErrorOccurred("Unable to execute callback on RealThread.");
@@ -265,12 +271,12 @@ namespace Keysharp.Builtins
 			// ---- lifetime -------------------------------------------------------------------------------------
 
 			/// <summary>
-			/// Waits for this thread's body to finish, pumping events while it waits.
+			/// Waits for this thread to finish, pumping events while it waits.
 			/// </summary>
-			/// <param name="timeout">The time to wait in milliseconds. Default: wait indefinitely.</param>
+			/// <param name="Timeout">The time to wait in milliseconds. Default: wait indefinitely.</param>
 			/// <returns>True if the thread finished, false if the timeout elapsed first. Read
 			/// <see cref="Result"/> for the value the body returned.</returns>
-			public object Wait(object timeout = null)
+			public object Wait(object Timeout = null)
 			{
 				if (!IsWorker)
 					return ReportNotAWorker(false);
@@ -278,7 +284,7 @@ namespace Keysharp.Builtins
 				if (OwnsCurrentThread())
 					return Errors.TargetErrorOccurred("A real thread cannot wait on itself.", false);
 
-				return Keysharp.Internals.Flow.WaitForTask(Task, timeout.Ai(-1));
+				return Keysharp.Internals.Flow.WaitForTask(Task, Timeout.Ai(-1));
 			}
 
 			/// <summary>
@@ -287,18 +293,31 @@ namespace Keysharp.Builtins
 			/// cooperative: it does not asynchronously abort managed code. Called on the thread itself
 			/// (<c>A_RealThread.Exit()</c>) the current pseudo-thread exits immediately and this does not return.
 			/// </summary>
-			/// <param name="exitCode">The process exit code to apply to the pseudo-threads being exited. Default: 0.</param>
-			public object Exit(object exitCode = null)
+			/// <param name="ExitCode">The process exit code to apply to the pseudo-threads being exited. Default: 0.</param>
+			public object Exit(object ExitCode = null)
 			{
 				if (!IsWorker)
 					return ReportNotAWorker();
+
+				if (HasFinished)
+					return DefaultObject;
+
+				if (Interlocked.CompareExchange(ref launchState, LaunchCanceled, LaunchPending) == LaunchPending)
+				{
+					_ = Interlocked.Exchange(ref outcome, OutcomeCanceled);
+					_ = schedulerSource.TrySetResult(null);
+					_ = completion.TrySetResult(DefaultObject);
+					return DefaultObject;
+				}
+
+				_ = Interlocked.CompareExchange(ref outcome, OutcomeCanceled, OutcomeActive);
 
 				var scheduler = GetAliveScheduler();
 
 				if (scheduler == null)//Already gone: shutting down what has shut down is not an error.
 					return DefaultObject;
 
-				var code = exitCode.Ai();
+				var code = ExitCode.Ai();
 				scheduler.RequestWorkerExit();
 				var mgr = scheduler.threadManager;
 
@@ -329,7 +348,9 @@ namespace Keysharp.Builtins
 
 			private void Start(Func<object> body)
 			{
-				started = true;
+				if (Interlocked.CompareExchange(ref launchState, LaunchStarted, LaunchPending) != LaunchPending)
+					return;
+
 				_ = System.Threading.Tasks.Task.Factory.StartNew(() => RunWorkerLoop(body), CancellationToken.None,
 						TaskCreationOptions.LongRunning, TaskScheduler.Default);
 			}
@@ -346,19 +367,25 @@ namespace Keysharp.Builtins
 					scheduler.realThread = this;
 					_ = schedulerSource.TrySetResult(scheduler);
 					SynchronizationContext.SetSynchronizationContext(scheduler.DispatchContext);
-					var launchResult = RunOnSchedulerThread(scheduler, body, true, out var bodyResult);
+					var launchResult = RunOnSchedulerThread(scheduler, body, true, out var bodyResult,
+						out var bodyExited);
 
 					if (launchResult == ScriptEventExecutionResult.Executed)
 					{
-						result = bodyResult;
-						_ = Interlocked.Exchange(ref status, StatusDone);
+						if (bodyExited)
+							_ = Interlocked.CompareExchange(ref outcome, OutcomeCanceled, OutcomeActive);
+						else
+						{
+							result = bodyResult;
+							_ = Interlocked.CompareExchange(ref outcome, OutcomeSucceeded, OutcomeActive);
+						}
 					}
 					else
 					{
 						if (launchResult != ScriptEventExecutionResult.Dropped)//Dropped means the body reported its own error.
 							_ = Errors.ErrorOccurred($"Unable to start RealThread worker body ({launchResult}).");
 
-						_ = Interlocked.Exchange(ref status, StatusError);
+						_ = Interlocked.Exchange(ref outcome, OutcomeFailed);
 					}
 
 					scheduler.RunWorkerEventLoop();
@@ -372,7 +399,11 @@ namespace Keysharp.Builtins
 					// this class was reworked to remove. HandleCaughtException also swallows a UserRequestedExitException
 					// (an Exit that unwound the event loop), which is an ordinary end, not an error.
 					var exited = Keysharp.Internals.Flow.TryGetException<Keysharp.Builtins.Flow.UserRequestedExitException>(ex, out _);
-					_ = Interlocked.Exchange(ref status, exited ? StatusDone : StatusError);
+
+					if (exited)
+						_ = Interlocked.CompareExchange(ref outcome, OutcomeCanceled, OutcomeActive);
+					else
+						_ = Interlocked.Exchange(ref outcome, OutcomeFailed);
 					_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
 					return result;
 				}
@@ -403,9 +434,11 @@ namespace Keysharp.Builtins
 			/// error path on this thread, exactly as one thrown by a timer or hotkey body, and the result is
 			/// <see cref="ScriptEventExecutionResult.Dropped"/>. This is what keeps a failing RealThread body from
 			/// disappearing into an unobserved task.</param>
-			private static ScriptEventExecutionResult RunOnSchedulerThread(ScriptEventScheduler scheduler, Func<object> work, bool handleExceptions, out object result)
+			private static ScriptEventExecutionResult RunOnSchedulerThread(ScriptEventScheduler scheduler,
+				Func<object> work, bool handleExceptions, out object result, out bool exited)
 			{
 				result = DefaultObject;
+				exited = false;
 				using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, ThreadKind.RealThread);
 
 				if (!thread.Started)
@@ -421,10 +454,11 @@ namespace Keysharp.Builtins
 				{
 					result = work();
 				}
-				catch (Keysharp.Builtins.Flow.UserRequestedExitException)
+				catch (Exception ex) when (Keysharp.Internals.Flow.TryGetException(ex,
+					out Flow.UserRequestedExitException _))
 				{
-					// Exit() inside the body ends this pseudo-thread, not the process, so the thread simply has no
-					// result. Reported as a normal completion because nothing went wrong.
+					// Exit() ends this pseudo-thread, not the process, so it simply has no result.
+					exited = true;
 					return ScriptEventExecutionResult.Executed;
 				}
 				catch (Exception ex)
@@ -445,7 +479,7 @@ namespace Keysharp.Builtins
 			/// </summary>
 			private ScriptEventScheduler GetAliveScheduler()
 			{
-				if (!started)
+				if (Volatile.Read(ref launchState) != LaunchStarted)
 					return null;
 
 				var scheduler = schedulerSource.Task.GetAwaiter().GetResult();
@@ -470,7 +504,7 @@ namespace Keysharp.Builtins
 			}
 
 			private object ReportThreadNotAlive(object ret = null)
-				=> Errors.ErrorOccurred(IsWorker && !started
+				=> Errors.ErrorOccurred(IsWorker && Volatile.Read(ref launchState) == LaunchPending
 						? "Real thread has not started yet."
 						: "Real thread is no longer alive.", ret);
 
@@ -483,7 +517,7 @@ namespace Keysharp.Builtins
 			private sealed class PostQueuedEvent(ScriptEventScheduler scheduler, KeysharpFunc callback, object[] args)
 			{
 				internal ScriptEventExecutionResult Execute()
-					=> RunOnSchedulerThread(scheduler, () => callback.Call(args), true, out _);
+					=> RunOnSchedulerThread(scheduler, () => callback.Call(args), true, out _, out _);
 			}
 		}
 	}

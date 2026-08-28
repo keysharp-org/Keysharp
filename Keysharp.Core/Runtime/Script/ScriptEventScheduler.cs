@@ -258,6 +258,7 @@ namespace Keysharp.Runtime
 		private readonly Lock ownedResourceCleanupGate = new();
 		private readonly Lock ownedDelegateGate = new();
 		private readonly HashSet<DelegateHolder> ownedDelegates = [];
+		private readonly HashSet<Action> pendingCallbacks = [];
 		private readonly LinkedList<ScriptQueueEntry> interactiveQueue = new();
 		private readonly LinkedList<ScriptQueueEntry> normalQueue = new();
 		// Reused by EnqueueDueTimers (only the owning thread calls it), so the per-pump due-check doesn't allocate.
@@ -338,6 +339,34 @@ internal bool HasBlockedQueuedWork
 			}
 
 			SignalWorkerPump();
+		}
+
+		internal bool RegisterPendingCallback(Action invalidated)
+		{
+			lock (ownedResourceCleanupGate)
+			{
+				if (ownedResourcesDisposed || IsDisposed)
+					return false;
+
+				if (!pendingCallbacks.Add(invalidated))
+					return false;
+
+				AdjustPersistenceRoot(1);
+				script.AdjustPendingSchedulerWork(1);
+				return true;
+			}
+		}
+
+		internal void ReleasePendingCallback(Action invalidated)
+		{
+			lock (ownedResourceCleanupGate)
+			{
+				if (!pendingCallbacks.Remove(invalidated))
+					return;
+
+				AdjustPersistenceRoot(-1);
+				script.AdjustPendingSchedulerWork(-1);
+			}
 		}
 
 		internal bool RegisterOwnedDelegate(DelegateHolder holder)
@@ -1159,11 +1188,26 @@ internal bool HasBlockedQueuedWork
 				DisposeOwnedWinEventHandlers();
 				DisposeOwnedClrSubscriptions();
 				DelegateHolder.DisposeOwnedByScheduler(this);
+				InvalidatePendingCallbacks();
 				_ = Interlocked.Exchange(ref persistentRegistrationCount, 0);
 
 				if (hotkeysChanged || hotstringsChanged)
 					_ = Keysharp.Internals.Input.Keyboard.HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(script);
 			}
+		}
+
+		private void InvalidatePendingCallbacks()
+		{
+			if (pendingCallbacks.Count == 0)
+				return;
+
+			var callbacks = pendingCallbacks.ToArray();
+			pendingCallbacks.Clear();
+			AdjustPersistenceRoot(-callbacks.Length);
+			script.AdjustPendingSchedulerWork(-callbacks.Length);
+
+			foreach (var callback in callbacks)
+				callback();
 		}
 
 		private void DisposeOwnedTimers()

@@ -1,7 +1,7 @@
 #ErrorStdOut
 #Warn All, StdOut
 #NoTrayIcon
-#import KS { Task, RealThread, Await, Clr }
+#import KS { Task, RealThread, Await, Clr, A_RealThread }
 #Include <assert>
 
 #CSharp
@@ -21,6 +21,9 @@ public static async Task<object> Boom()
 
 public static Task<object> Immediate() => Task.FromResult((object)42L);
 
+public static Task<object> Nested()
+    => Task.FromResult((object)Task.FromResult((object)43L));
+
 // A non-generic `async Task`: the state-machine box is a Task<VoidTaskResult>, so a naive "is it generic"
 // test hands the script that internal BCL marker instead of nothing.
 public static async Task Fire()
@@ -28,12 +31,35 @@ public static async Task Fire()
     await Task.Delay(1);
 }
 
-public static async Task<object> SlowFail(long ms)
-{
-    await Task.Delay((int)ms);
-    throw new System.InvalidOperationException("slow-boom");
-}
+public static Task<object> CapturedExit()
+    => Task.FromException<object>(new Keysharp.Builtins.Flow.UserRequestedExitException());
 #EndCSharp
+
+class Awaitable
+{
+    __New(Value) => this.Value := Value
+    __Await() => this.Value
+}
+
+class ManualGate
+{
+    __New() => this.Task := Task.Create(Succeed => this.Succeed := Succeed)
+
+    Resolve(Value := "") => this.Succeed.Call(Value)
+    __Await() => this.Task
+}
+
+class TaskArityProbe
+{
+    Zero() => 70
+    Pair(First, Second) => First + Second
+    Producer(A, B, C, D) => ""
+}
+
+class ExitAwaitable
+{
+    __Await() => Exit()
+}
 
 ; --- an inline async member comes back as a Task, not a raw CLR object -----------------------
 t := Immediate()
@@ -46,10 +72,10 @@ AssertEq(Await(SlowSum(20, 5)), 25, A_LineNumber)
 
 ; --- Result is a snapshot: it never waits ----------------------------------------------------
 slow := SlowSum(400, 1)
-AssertEq(slow.Status, "Running", A_LineNumber)
+Assert(slow.Active && !slow.Succeeded && !slow.Failed && !slow.Canceled, A_LineNumber)
 AssertEq(slow.Result, "", A_LineNumber)
 AssertEq(Await(slow), 401, A_LineNumber)
-AssertEq(slow.Status, "Done", A_LineNumber)
+Assert(!slow.Active && slow.Succeeded && !slow.Failed && !slow.Canceled, A_LineNumber)
 AssertEq(slow.Result, 401, A_LineNumber)
 
 ; --- identity: one wrapper per underlying task, across separate crossings ----------------------
@@ -60,40 +86,53 @@ AssertEq(Task(slow), slow, A_LineNumber)
 fire := Fire()
 AssertEq(Await(fire), "", A_LineNumber)
 AssertEq(fire.Result, "", A_LineNumber)
-AssertEq(fire.Status, "Done", A_LineNumber)
+Assert(fire.Succeeded, A_LineNumber)
 
 ; --- the raw CLR surface stays reachable ------------------------------------------------------
 Assert(slow.Clr.IsCompleted, A_LineNumber)
 
-; --- failure maps to a catchable Keysharp error -----------------------------------------------
-caught := false
-try
-    Await(Boom())
-catch Error as e
-    caught := InStr(e.Message, "boom") > 0
-Assert(caught, A_LineNumber)
-
-; --- a faulted task observed through Status/Error does not throw -------------------------------
+; --- a faulted task observed through its state/Error does not throw ----------------------------
 bad := Boom()
 Assert(bad.Wait(5000), A_LineNumber)                    ; it settles, and Wait does not rethrow
-AssertEq(bad.Status, "Error", A_LineNumber)
+Assert(bad.Failed, A_LineNumber)
 Assert(bad.Error is Error, A_LineNumber)                ; an Error object, the same one Await would have thrown
 Assert(InStr(bad.Error.Message, "boom") > 0, A_LineNumber)
+mappedError := bad.Error
+identityCaught := false
+try
+    Await(bad)
+catch Error as e
+    identityCaught := e == mappedError
+Assert(identityCaught, A_LineNumber)                     ; Error and Await publish the same object
 
-; --- WhenAny whose winner failed must settle, not hang ----------------------------------------
-anyFailed := false
+thenCalls := 0
+failedChain := bad.Then(_ => thenCalls += 1)
+Throws(() => Await(failedChain), A_LineNumber, Error)
+Assert(failedChain.Failed && thenCalls == 0 && failedChain.Error == bad.Error, A_LineNumber)
+
+handledErrors := [], unexpectedSuccesses := []
+recovered := bad.Then(_ => unexpectedSuccesses.Push(1),
+    Failure => (handledErrors.Push(Failure), Nested()))
+AssertEq(Await(recovered), 43, A_LineNumber)
+Assert(unexpectedSuccesses.Length == 0 && handledErrors[1] == bad.Error, A_LineNumber)
+failureCalls := []
+AssertEq(Await(Immediate().Then(Value => Value, _ => failureCalls.Push(1))), 42, A_LineNumber)
+AssertEq(failureCalls.Length, 0, A_LineNumber)
+
+; --- WhenAny transfers the first value, failure or cancellation --------------------------------
+firstFailed := false
 try
     Await(Task.WhenAny(Boom(), SlowSum(4000, 0)), 5000)
 catch Error as e
-    anyFailed := InStr(e.Message, "boom") > 0
-Assert(anyFailed, A_LineNumber)
+    firstFailed := InStr(e.Message, "boom") > 0
+Assert(firstFailed, A_LineNumber)
 
 ; --- WhenAll propagates a failure and, on success, yields the results in order -----------------
 allFailed := false
 try
-    Await(Task.WhenAll(SlowSum(10, 1), SlowFail(20)), 5000)
+    Await(Task.WhenAll(SlowSum(10, 1), Boom()), 5000)
 catch Error as e
-    allFailed := InStr(e.Message, "slow-boom") > 0
+    allFailed := InStr(e.Message, "boom") > 0
 Assert(allFailed, A_LineNumber)
 
 results := Await(Task.WhenAll(SlowSum(10, 1), SlowSum(20, 2)))
@@ -102,70 +141,214 @@ Assert(results is Array && results.Length == 2 && results[1] == 11 && results[2]
 ; --- Await of a non-awaitable is a TypeError, not a silent pass-through ------------------------
 Throws(() => Await(42), A_LineNumber, TypeError)
 
-; --- WhenAll / WhenAny ------------------------------------------------------------------------
-a := SlowSum(60, 1), b := SlowSum(30, 2)
-Await(Task.WhenAll(a, b))
-Assert(a.Result == 61 && b.Result == 32, A_LineNumber)
+; --- first success and empty combinators -------------------------------------------------------
 AssertEq(Await(Task.WhenAny(SlowSum(10, 3), SlowSum(900, 4))), 13, A_LineNumber)
+emptyResults := Await(Task.WhenAll())
+Assert(emptyResults is Array && emptyResults.Length == 0, A_LineNumber)
+Throws(() => Task.WhenAny(), A_LineNumber, ValueError)
 
-; --- Then runs on the script thread, after the task, without blocking -------------------------
-thenRan := 0
-thenValue := ""
-
-OnDone(task)
-{
-    global thenRan, thenValue
-    thenRan += 1
-    thenValue := task.Result
-    return "chained"
-}
-
-chained := SlowSum(30, 7).Then(OnDone)
-AssertEq(thenRan, 0, A_LineNumber)  ; Then does not run inline
+; --- Then receives the value on the registering script thread, without blocking ---------------
+thenValues := []
+chained := SlowSum(30, 7).Then(Value => (thenValues.Push(Value), "chained"))
+AssertEq(thenValues.Length, 0, A_LineNumber)  ; Then does not run inline
 AssertEq(Await(chained), "chained", A_LineNumber)  ; the returned Task settles when the callback has run
-AssertEq(thenRan, 1, A_LineNumber)
-AssertEq(thenValue, 37, A_LineNumber)
+Assert(thenValues.Length == 1 && thenValues[1] == 37, A_LineNumber)
+
+; A callback refused while Critical is retried with its captured references intact.
+blockedGate := ManualGate()
+blockedChain := blockedGate.Task.Then(Value => Value)
+Critical
+blockedGate.Resolve(5)
+Sleep 100
+Assert(blockedChain.Active, A_LineNumber)
+Critical "Off"
+AssertEq(Await(blockedChain), 5, A_LineNumber)
 
 ; a callback that wants nothing may declare nothing
-noArgRan := 0
-NoArg() {
-    global noArgRan
-    noArgRan += 1
-    return "bare"
-}
-AssertEq(Await(SlowSum(10, 0).Then(NoArg)), "bare", A_LineNumber)
-AssertEq(noArgRan, 1, A_LineNumber)
+noArgCalls := []
+AssertEq(Await(SlowSum(10, 0).Then(() => (noArgCalls.Push(1), "bare"))), "bare", A_LineNumber)
+AssertEq(noArgCalls.Length, 1, A_LineNumber)
+Throws(() => Immediate().Then((A, B) => A + B), A_LineNumber, ValueError)
+Throws(() => Immediate().Then(_ => 0, (A, B) => A + B), A_LineNumber, ValueError)
+
+arityProbe := TaskArityProbe()
+AssertEq(Await(Immediate().Then(ObjBindMethod(arityProbe, "Zero"))), 70, A_LineNumber)
+Throws(() => Immediate().Then(ObjBindMethod(arityProbe, "Pair")), A_LineNumber, ValueError)
+AssertEq(Await(Immediate().Then(ObjBindMethod(arityProbe, "Pair", 1))), 43, A_LineNumber)
+Throws(() => Task.Create(ObjBindMethod(arityProbe, "Producer")), A_LineNumber, ValueError)
 
 ; a callback that throws faults the chained task rather than resolving it to nothing
 chainFailed := false
 try
-    Await(SlowSum(10, 0).Then(done => Throw(ValueError("in-then"))))
+    Await(SlowSum(10, 0).Then(value => Throw(ValueError("in-then"))))
 catch ValueError as e
     chainFailed := InStr(e.Message, "in-then") > 0
 Assert(chainFailed, A_LineNumber)
 
-; --- Task.Source: a task the script settles itself ---------------------------------------------
-src := Task.Source()
-AssertEq(Type(src), "TaskSource", A_LineNumber)
-AssertEq(src.Task.Status, "Running", A_LineNumber)
-Assert(src.Resolve(7), A_LineNumber)                      ; first settle wins and reports it
-Assert(!src.Resolve(9), A_LineNumber)                     ; settling again is a no-op, not an error
-AssertEq(Await(src.Task), 7, A_LineNumber)
+nestedFailure := Immediate().Then(_ => Boom())
+Throws(() => Await(nestedFailure), A_LineNumber, Error)
+Assert(nestedFailure.Failed, A_LineNumber)
+AssertEq(Await(Immediate().Then(_ => Nested())), 43, A_LineNumber)
+valueTask := Clr.System.Threading.Tasks.ValueTask(Clr.System.Threading.Tasks.Task.Delay(10).Clr)
+AssertEq(Await(Immediate().Then(_ => valueTask)), "", A_LineNumber)
+AssertEq(Await(Immediate().Then(_ => RealThread(() => 77))), 77, A_LineNumber)
+Throws(() => Await(Immediate().Then(_ => RealThread.Main)), A_LineNumber, TargetError)
 
-bad := Task.Source()
-bad.Reject(ValueError("nope"))
-AssertEq(bad.Task.Status, "Error", A_LineNumber)
-rejected := false
-try
-    Await(bad.Task)
-catch ValueError as e
-    rejected := InStr(e.Message, "nope") > 0
-Assert(rejected, A_LineNumber)                            ; the Error object survives the round trip
+cycleGate := ManualGate()
+cycle := ""
+cycle := cycleGate.Task.Then(_ => cycle)
+cycleGate.Resolve()
+Throws(() => Await(cycle), A_LineNumber, Error)
 
-; --- and the reason it exists: racing script-driven work against a real task --------------------
-gate := Task.Source()
-SetTimer(() => gate.Resolve("timer"), -80)
-AssertEq(Await(Task.WhenAny(gate.Task, SlowSum(3000, 0))), "timer", A_LineNumber)
+; affinity is captured on registration, and a discarded continuation keeps that worker alive
+detachedInput := ManualGate(), detachedDone := ManualGate()
+detachedWorker := RealThread(RegisterDetachedContinuation, detachedInput.Task, detachedDone)
+detachedId := detachedWorker.Id
+Assert(detachedWorker.Active, A_LineNumber)
+detachedInput.Resolve(1)
+AssertEq(Await(detachedDone), detachedId, A_LineNumber)
+Assert(detachedWorker.Wait(5000) && detachedWorker.Succeeded && detachedWorker.Result == 99, A_LineNumber)
+
+RegisterDetachedContinuation(task, done)
+{
+    task.Then(_ => SlowSum(20, 79)).Then(value => done.Resolve(value == 99 ? A_RealThread.Id : 0))
+    return 99
+}
+
+; Once its callback returns, Then no longer keeps that callback's worker alive for nested CLR work.
+nestedGate := ManualGate(), nestedPublished := [], nestedReady := ManualGate()
+nestedOwner := RealThread(PublishNestedChain, nestedGate.Task, nestedPublished, nestedReady)
+Await(nestedReady)
+nestedChain := nestedPublished[1]
+Assert(nestedOwner.Wait(5000) && nestedOwner.Succeeded, A_LineNumber)
+nestedGate.Resolve(23)
+AssertEq(Await(nestedChain), 23, A_LineNumber)
+
+PublishNestedChain(inner, published, ready)
+{
+    published.Push(Immediate().Then(_ => inner))
+    ready.Resolve()
+    return 0
+}
+
+; tearing down a continuation's owning worker settles the chained Task instead of stranding it
+abandonedInput := ManualGate(), publishedChain := [], publishedReady := ManualGate()
+abandonedOwner := RealThread(RegisterAbandonedContinuation, abandonedInput.Task, publishedChain, publishedReady)
+Await(publishedReady)
+abandonedChain := publishedChain[1]
+abandonedOwner.Exit()
+Assert(abandonedOwner.Wait(5000) && abandonedOwner.Succeeded, A_LineNumber)
+Throws(() => Await(abandonedChain), A_LineNumber, Error)
+abandonedInput.Resolve(1)
+
+RegisterAbandonedContinuation(task, published, ready)
+{
+    chain := task.Then(_ => 1)
+    published.Push(chain)
+    ready.Resolve()
+    return 0
+}
+
+; Task.Wait has the same self-deadlock guard as RealThread.Wait and Await
+selfWaitWorker := RealThread(SelfTaskWaitIsRejected)
+Assert(selfWaitWorker.Wait(5000) && selfWaitWorker.Succeeded && selfWaitWorker.Result, A_LineNumber)
+
+SelfTaskWaitIsRejected()
+{
+    try
+        Task(A_RealThread).Wait(Timeout: 10)
+    catch TargetError
+        return true
+    return false
+}
+
+; Exit can cancel a RealThread.ContinueWith result before its antecedent finishes.
+parentGate := ManualGate(), pendingChildCalls := 0
+parentWorker := RealThread(() => Await(parentGate))
+pendingChild := parentWorker.ContinueWith(() => pendingChildCalls += 1)
+pendingChild.Exit()
+Assert(pendingChild.Wait(1000) && pendingChild.Canceled, A_LineNumber)
+parentGate.Resolve(1)
+Assert(parentWorker.Wait(5000), A_LineNumber)
+Sleep 50
+AssertEq(pendingChildCalls, 0, A_LineNumber)
+
+; --- Task.Create: synchronous producer, arity trimming and first-settlement wins ----------------
+settlers := []
+src := Task.Create((Succeed, Fail, Cancel) => settlers.Push(Succeed, Fail, Cancel))
+Assert(src.Active && settlers.Length == 3, A_LineNumber)
+Assert(settlers[1](Value: 7), A_LineNumber)
+Assert(!settlers[1](9) && !settlers[2]("late") && !settlers[3](), A_LineNumber)
+AssertEq(Await(src), 7, A_LineNumber)
+
+returnSettlers := []
+returnIgnored := Task.Create(Succeed => (returnSettlers.Push(Succeed), "ignored"))
+Assert(returnIgnored.Active, A_LineNumber)
+returnSettlers[1](6)
+AssertEq(Await(returnIgnored), 6, A_LineNumber)
+
+rejection := ValueError("nope")
+bad := Task.Create((Succeed, Fail) => Fail(Reason: rejection))
+AssertEq(bad.Error, rejection, A_LineNumber)
+
+canceledThenCalls := 0
+canceledResults := []
+canceledSource := Task.Create((Succeed, Fail, Cancel) =>
+    canceledResults.Push(Cancel(), Succeed(1), Fail("late")))
+canceledChain := canceledSource.Then(_ => canceledThenCalls += 1, _ => canceledThenCalls += 1)
+Assert(canceledResults[1] && !canceledResults[2] && !canceledResults[3], A_LineNumber)
+Assert(!canceledSource.Active && !canceledSource.Succeeded
+    && !canceledSource.Failed && canceledSource.Canceled, A_LineNumber)
+Assert(canceledChain.Wait(5000) && canceledChain.Canceled && canceledThenCalls == 0, A_LineNumber)
+flattenedCancel := Immediate().Then(_ => canceledSource)
+Assert(flattenedCancel.Wait(5000) && flattenedCancel.Canceled, A_LineNumber)
+Throws(() => Await(canceledChain), A_LineNumber, Error)
+anyCanceled := Task.WhenAny(canceledSource, SlowSum(1000, 0))
+allCanceled := Task.WhenAll(Immediate(), canceledSource)
+Assert(anyCanceled.Wait(5000) && anyCanceled.Canceled, A_LineNumber)
+Assert(allCanceled.Wait(5000) && allCanceled.Canceled, A_LineNumber)
+
+producerError := ValueError("producer")
+producerFailure := Task.Create(Succeed => Throw(producerError))
+Assert(producerFailure.Failed && producerFailure.Error == producerError, A_LineNumber)
+Throws(() => Task.Create((A, B, C, D) => ""), A_LineNumber, ValueError)
+
+AssertEq(Await(Task.Create(Succeed => Succeed(Awaitable(Immediate())))), 42, A_LineNumber)
+createdFailure := Task.Create(Succeed => Succeed(bad))
+createdCancel := Task.Create(Succeed => Succeed(canceledSource))
+Assert(createdFailure.Wait(5000) && createdFailure.Failed && createdFailure.Error == bad.Error, A_LineNumber)
+Assert(createdCancel.Wait(5000) && createdCancel.Canceled, A_LineNumber)
+
+; Exit remains pseudo-thread control flow rather than becoming a failed Task.
+createExitWorker := RealThread(() => (Task.Create(_ => Exit()), 99))
+awaitExitWorker := RealThread(() => (Task.Create(Succeed => Succeed(ExitAwaitable())), 99))
+Assert(createExitWorker.Wait(5000) && createExitWorker.Canceled && createExitWorker.Result != 99, A_LineNumber)
+Assert(awaitExitWorker.Wait(5000) && awaitExitWorker.Canceled && awaitExitWorker.Result != 99, A_LineNumber)
+
+exitChain := Immediate().Then(_ => Exit())
+capturedExitChain := Immediate().Then(_ => CapturedExit())
+Assert(exitChain.Wait(5000) && exitChain.Canceled, A_LineNumber)
+Assert(capturedExitChain.Wait(5000) && capturedExitChain.Canceled, A_LineNumber)
+
+; --- __Await lets script objects expose work without inheriting from Task -----------------------
+wrappedTask := Immediate()
+wrapped := Awaitable(Awaitable(wrappedTask))
+AssertEq(Await(wrapped), 42, A_LineNumber)
+AssertEq(Task(wrapped), wrappedTask, A_LineNumber)
+AssertEq(Await(Immediate().Then(_ => Awaitable(Immediate()))), 42, A_LineNumber)
+AssertEq(Await(Task.WhenAll(Awaitable(Immediate())))[1], 42, A_LineNumber)
+wrappedFailure := Boom()
+adoptedFailure := Immediate().Then(_ => Awaitable(wrappedFailure))
+Throws(() => Await(adoptedFailure), A_LineNumber, Error)
+Assert(adoptedFailure.Error == wrappedFailure.Error, A_LineNumber)
+Throws(() => Await(Awaitable(42)), A_LineNumber, TypeError)
+cycleAwaitable := Awaitable("")
+cycleAwaitable.Value := cycleAwaitable
+Throws(() => Await(cycleAwaitable), A_LineNumber, Error)
+
+; callback-shaped work can participate directly in a race
+gate := Task.Create(Succeed => SetTimer(() => Succeed("timer"), -80))
+AssertEq(Await(Task.WhenAny(gate, SlowSum(3000, 0))), "timer", A_LineNumber)
 
 ; --- the same Await on a RealThread, whose SynchronizationContext is the scheduler itself ----------
 ; The async body captures that context, so its continuation is posted into the very queue this Await
@@ -220,16 +403,20 @@ StartOnWorker()
     return SlowSum(300, 25)
 }
 
-; --- timeouts: Wait reports one, Await raises one ---------------------------------------------
-Assert(!SlowSum(3000, 0).Wait(50), A_LineNumber)
-Throws(() => Await(SlowSum(3000, 0), 50), A_LineNumber, TimeoutError)
+; --- timeouts stop only the wait; they do not cancel the work ---------------------------------
+timeoutGate := ManualGate()
+Assert(!timeoutGate.Task.Wait(20) && timeoutGate.Task.Active, A_LineNumber)
+Throws(() => Await(timeoutGate, 20), A_LineNumber, TimeoutError)
+Assert(timeoutGate.Task.Active, A_LineNumber)
+timeoutGate.Resolve(12)
+AssertEq(Await(timeoutGate), 12, A_LineNumber)
 
-; --- cancellation: the token goes into the call; there is no Cancel() on the task     ---------------
+; --- cancellation: a consumed task mirrors its producer's token -------------------------------
 cts := Clr.System.Threading.CancellationTokenSource()
 cancellable := Clr.System.Threading.Tasks.Task.Delay(5000, cts.Token)
 cts.Cancel()
 Assert(cancellable.Wait(5000), A_LineNumber)
-AssertEq(cancellable.Status, "Canceled", A_LineNumber)
+Assert(cancellable.Canceled, A_LineNumber)
 
 ; --- a RealThread is awaitable, and one with no body to wait for is not -------------------------
 AssertEq(Await(RealThread(() => 77)), 77, A_LineNumber)

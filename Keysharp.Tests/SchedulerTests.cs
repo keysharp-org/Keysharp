@@ -177,19 +177,24 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
-		public void UnobservedFaultLookupUsesWrappedTaskOwner()
+		public void TaskContinuationKeepsScriptPersistent()
+			=> Assert.IsTrue(TestScript("task-continuation-persistence", false));
+
+		[Test, Category("Threading")]
+		public void UnobservedFaultLookupRejectsRetiredScriptOwner()
 		{
 			var ownedTask = Task.FromResult(Guid.NewGuid());
 			var hostTask = Task.FromResult(Guid.NewGuid());
 			var wrapper = Ks.KeysharpTask.Wrap(ownedTask);
 			var scheduler = s.EventScheduler;
+			Assert.AreSame(scheduler, Ks.KeysharpTask.GetUnobservedScheduler(ownedTask));
+			Assert.IsNull(Ks.KeysharpTask.GetUnobservedScheduler(hostTask));
 			var incomplete = (Script)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Script));
 			Script.TheScript = incomplete;
 
 			try
 			{
-				Assert.AreSame(scheduler, Ks.KeysharpTask.GetUnobservedScheduler(ownedTask));
-				Assert.IsNull(Ks.KeysharpTask.GetUnobservedScheduler(hostTask));
+				Assert.IsNull(Ks.KeysharpTask.GetUnobservedScheduler(ownedTask));
 			}
 			finally
 			{

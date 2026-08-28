@@ -3,7 +3,7 @@ namespace Keysharp.Builtins
 	public partial class Ks
 	{
 		/// <summary>
-		/// Waits for <paramref name="value"/> to finish and returns what it produced.
+		/// Waits for <paramref name="Value"/> to finish and returns what it produced.
 		/// <para>
 		/// This is Keysharp's <c>await</c>. It does not suspend the script thread the way C#'s <c>await</c>
 		/// suspends a method — a Keysharp pseudo-thread runs to completion on its own frame — so it blocks the
@@ -15,45 +15,42 @@ namespace Keysharp.Builtins
 		/// and reentrant — a timer that acquires and releases the same lock during an <c>Await</c> releases the
 		/// waiting thread's acquisition. Use <c>Critical</c> to hold a section closed across a wait.</para>
 		/// </summary>
-		/// <param name="value">A <c>Task</c>, a <c>RealThread</c>, or a CLR task reached through <c>Ks.Clr</c>.
+		/// <param name="Value">A <c>Task</c>, a <c>RealThread</c>, a CLR task reached through <c>Ks.Clr</c>, or a
+		/// script object whose zero-argument <c>__Await()</c> method returns one.
 		/// A <c>RealThread</c> reports a failing body on its own thread rather than through here, so awaiting one
-		/// yields its <c>Result</c> -- empty if it failed -- and never rethrows. Check its <c>Status</c>.</param>
-		/// <param name="timeout">Milliseconds to wait. Default: wait indefinitely.</param>
+		/// yields its <c>Result</c> -- empty if it failed -- and never rethrows. Check its outcome properties.</param>
+		/// <param name="Timeout">Milliseconds to wait. Default: wait indefinitely. Timing out does not cancel the work.</param>
 		/// <returns>The value the work produced, or an empty string if it produced none.</returns>
+		/// <exception cref="Error">The work was canceled.</exception>
 		/// <exception cref="TimeoutError">The timeout elapsed before the work finished.</exception>
-		/// <exception cref="TypeError"><paramref name="value"/> is not something that finishes later.</exception>
-		public static object Await(object value, object timeout = null)
+		/// <exception cref="TypeError"><paramref name="Value"/> is not something that finishes later.</exception>
+		public static object Await(object Value, object Timeout = null)
 		{
-			// The main and adopted real threads never finish, so there is nothing to wait for. Reported in
-			// RealThread's own wording rather than as a type error about Task, which describes the wrong thing.
-			if (value is Ks.RealThread { Task: null })
-				return Errors.TargetErrorOccurred(KeysharpTask.NoBodyToWaitFor);
-
 			// Deliberately not lenient: returning a non-task unchanged would make `Await(MakeDocx)` -- the
 			// missing-parens typo -- quietly hand back the function object. Same reasoning as LockRun rejecting
 			// a value type instead of silently not locking.
-			var task = KeysharpTask.FromScriptValue(value);
+			var task = KeysharpTask.FromAwaitable(Value);
 
 			if (task == null)
-				return Errors.TypeErrorOccurred(value, typeof(KeysharpTask));
-
-			var script = Script.TheScript;
+				return Errors.TypeErrorOccurred(Value, typeof(KeysharpTask));
 
 			// Waiting on the thread whose completion we are waiting for can never finish: a worker's completion
 			// is only set after its body returns, and this call is inside that body. RealThread.Wait refuses the
 			// same thing.
-			if (script != null && script.CurrentSchedulerIfCreated is { } scheduler && scheduler.realThread is { } rt
-					&& ReferenceEquals(rt.Task, task))
+			if (KeysharpTask.IsCurrentRealThreadTask(task))
 				return Errors.TargetErrorOccurred("A real thread cannot wait on itself.");
 
-			if (!Keysharp.Internals.Flow.WaitForTask(task, timeout.Ai(-1)))
+			if (!Keysharp.Internals.Flow.WaitForTask(task, Timeout.Ai(-1)))
 				return Errors.TimeoutErrorOccurred("Await timed out.");
 
 			if (task.IsCanceled)
 				return Errors.ErrorOccurred("The awaited work was canceled.");
 
 			if (task.IsFaulted)
-				return ManagedInvoke.ThrowMapped(KeysharpTask.Unwrap(task.Exception), "Await");
+			{
+				var error = (Value as KeysharpTask ?? KeysharpTask.Wrap(task)).GetMappedError();
+				return Errors.ErrorOccurred(error) ? throw error : DefaultObject;
+			}
 
 			return KeysharpTask.ReadResult(task);
 		}

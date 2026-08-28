@@ -505,8 +505,7 @@ namespace Keysharp.Runtime
 		}
 
 		/// <summary>
-		/// How many of a collection callback's two arguments (Value, Index) it can actually accept, capped at 2.
-		/// Used by Array.Filter / FindIndex / MapTo, whose callbacks "may declare only the parameters they need".
+		/// How many callback arguments it can actually accept, capped at <paramref name="maxArgs"/>.
 		/// <para>
 		/// <c>MaxParams</c> IS the answer: a <c>KeysharpFunc</c>'s counts describe the caller-visible signature,
 		/// with an attached receiver already consumed by the <see cref="KeysharpFunc.Inst"/> setter's accounting.
@@ -515,42 +514,74 @@ namespace Keysharp.Runtime
 		/// <para>
 		/// Two shapes carry no usable signature of their own: an <c>ObjBindMethod</c> BoundFunc, whose placeholder
 		/// claims to be variadic because its target is not resolved until the call, and a callable object, whose
-		/// Call is found by name. Both are answered by looking up the member that will actually run -- without
-		/// meta-dispatch, so asking a signature question cannot run script.
+		/// Call is found by name. Both are answered by looking up the member that will actually run, without
+		/// meta-dispatch. A concrete getter can still run, so Exit propagates and ordinary lookup errors fail open.
 		/// </para>
 		/// </summary>
-		internal static int CallbackArgCount(object callback)
+		internal static int CallbackArgCount(object callback, int maxArgs = 2)
+			=> CallbackArgCounts(callback, maxArgs).Accepted;
+
+		/// <summary>
+		/// The arguments a callback requires and the prefix it accepts from those offered. An unresolved
+		/// name-bound target is treated as variadic because no reliable minimum is available yet.
+		/// </summary>
+		internal static (long Required, int Accepted) CallbackArgCounts(object callback, int offered = 2)
 		{
-			var f = callback as KeysharpFunc;
-			var inst = f?.Inst;
+			var (f, inst) = ResolveCallbackSignature(callback);
 
 			if (f?.Mph?.parameters == null)
-			{
-				var recv = f != null ? f.Inst : callback;
-				var name = f != null ? f.Mph.Name : "Call";
-
-				try
-				{
-					if (recv != null && GetMethodOrProperty(recv, name, -1, throwIfMissing: false, invokeMeta: false).Item2 is KeysharpFunc target)
-					{
-						f = target;
-						inst = recv;   // the receiver the target runs on, not whatever Inst the lookup handed back
-					}
-				}
-				catch
-				{
-					// Discovering an arity must not be able to fail the operation; fall through to "pass everything".
-				}
-			}
-
-			if (f?.Mph?.parameters == null || f.IsVariadic)
-				return 2;
+				return (0, offered);
 
 			// The lookup above can supply a receiver the target's own Inst accounting has not seen (an unattached
 			// method found on recv), so correct by the DIFFERENCE -- an already-attached receiver is not
 			// subtracted twice, and the ordinary path (inst == f.Inst) adds nothing.
 			var extra = f.Mph.ReceiverCorrection(inst) - f.Mph.ReceiverCorrection(f.Inst);
-			return (int)Math.Clamp(f.MaxParams + extra, 0, 2);
+			var required = Math.Max(f.MinParams + extra, 0L);
+			var accepted = f.IsVariadic ? offered : (int)Math.Clamp(f.MaxParams + extra, 0, offered);
+			return (required, accepted);
+		}
+
+		private static (KeysharpFunc Function, object Instance) ResolveCallbackSignature(object callback)
+		{
+			var f = callback as KeysharpFunc;
+			var inst = f?.Inst;
+
+			if (f?.Mph?.parameters != null)
+				return (f, inst);
+
+			var recv = f != null ? f.Inst : callback;
+			var name = f != null ? f.Mph.Name : "Call";
+
+			KeysharpFunc target;
+
+			try
+			{
+				target = recv == null
+					? null
+					: GetMethodOrProperty(recv, name, -1, throwIfMissing: false, invokeMeta: false).Item2 as KeysharpFunc;
+			}
+			catch (Exception ex) when (Keysharp.Internals.Flow.TryGetException<
+				Keysharp.Builtins.Flow.UserRequestedExitException>(ex, out var exit))
+			{
+				throw exit;
+			}
+			catch
+			{
+				// Signature discovery must not invoke meta-dispatch or turn an otherwise callable object into an error.
+				return (f, inst);
+			}
+
+			if (target == null || target is BoundFunc)
+				return (f, inst);
+
+			if (f is BoundFunc bound)
+			{
+				var args = NamedArgBinder.Append(bound.boundargs, bound.boundnamed, null);
+				var resolved = new BoundFunc(target.Mph, args, recv);
+				return (resolved, resolved.Inst);
+			}
+
+			return (target, recv);
 		}
 
 		public static bool IsCallable(object item)

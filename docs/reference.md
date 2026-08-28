@@ -841,26 +841,28 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Pseudo-thread state is pooled and reused, so a `Thread` object captures its ID and re-checks it on every access. Once its pseudo-thread ends, `Id` and `Index` still answer from captured values and `IsActive` reports false, while everything else throws `TargetError` — a stored object can never silently describe a later pseudo-thread that reused the slot.
 		+ Boolean members follow the library-wide naming rule: `IsActive`/`IsInterruptible` are read-only, `Critical`/`Paused` are settable.
 		+ `Critical`, an exhausted `#MaxThreads` and a visible menu refuse a *thread launch*; they do not stop message dispatch. A posted continuation, and on the main thread a pending `__Delete`, are still served at the uninterruptible thread's pump points, matching AHK, where a Critical thread inside `Sleep` still processes sent messages. Queued timers and hotkeys wait until launches are admitted again, in the order their own queue holds them. `RealThread.Send` is not in this group: its callback runs as a thread of its own on the target, so an uninterruptible target refuses it outright rather than deferring it.
-		+ There is deliberately no `IsCurrent` property, and likewise no `IsMain`/`IsAlive` on `RealThread` — anything derivable from an identity comparison or from `Status` is left out.
+		+ There is deliberately no `IsCurrent` property, and likewise no `IsMain` on `RealThread` — identity comparison answers both questions. `RealThread.Active` reports whether a real thread has not yet finished.
 		+ A `Thread` object may be read from any real thread, but every setter and `Exit` throw `TargetError` when called from a real thread other than its owner. Pseudo-thread stacks are per real thread and are mutated without locking.
 	+ `RealThread`: Manages real threads which are not related to the green threads that are used for the rest of the project.
 		+ A `RealThread` is created by calling the `RealThread` class static instance.
 			```
 			class RealThread
 			{
-				static Call(funcobj [, params*]) => RealThread ; Runs `funcobj` on a new real thread, passing `params` to it.
-				RealThread(funcobj [, params*])
+				static Call(Callback [, Arguments*]) => RealThread ; Runs `Callback` on a new real thread.
+				RealThread(Callback [, Arguments*])
 				static Main => RealThread ; The script's main thread.
 				Id => Integer             ; Managed id of the backing OS thread.
-				Status => String          ; "Running" until it finishes, then "Done" or "Error".
-				                          ; Work can be given to it exactly while it is "Running".
+				Active => Boolean         ; True while this thread has not finished.
+				Succeeded => Boolean      ; True only after successful completion.
+				Failed => Boolean         ; True only after completion with an error.
+				Canceled => Boolean       ; True only when Exit ended it before its body returned.
 				Result => Any             ; The body's return value; "" while running, on error, or if it exited early.
 				Threads => Array          ; The active ScriptThreads of this real thread, oldest first.
-				Post(funcobj [, params*])              ; Queue work and return immediately.
-				Send(funcobj [, params*]) => Any       ; Run work there, wait, return its value.
-				Wait([timeout := -1]) => Boolean       ; True if it finished, false if the timeout elapsed first.
-				ContinueWith(funcobj [, params*]) => RealThread ; Runs `funcobj` on a new real thread after this one finishes.
-				Exit([exitCode := 0])                  ; Cooperative shutdown request.
+				Post(Callback [, Arguments*])              ; Queue work and return immediately.
+				Send(Callback [, Arguments*]) => Any       ; Run work there, wait, return its value.
+				Wait([Timeout := -1]) => Boolean           ; True if it finished, false on timeout.
+				ContinueWith(Callback [, Arguments*]) => RealThread ; Start after this one finishes.
+				Exit([ExitCode := 0])                      ; Cooperative shutdown request.
 			}
 
 			ThreadFunc(obj)
@@ -873,54 +875,52 @@ Controlling another application needs **Automation** permission, granted per tar
 			```
 		+ `RealThread.Main.Post(fn)` is the supported way to move work back onto the main thread from a worker. `A_RealThread` is the calling thread's object; on the main thread it is literally the same object as `RealThread.Main`, so `A_RealThread == RealThread.Main` is the test for "am I on the main thread".
 		+ `Wait` reports *completion*, not the body's value — that is `Result` — so a timeout is distinguishable from a body that returned nothing.
-		+ An uncaught error in a body is reported on the thread where it happened, exactly like one in a timer or hotkey body, and sets `Status` to `"Error"`. It is never smuggled to a later `Wait`.
+		+ Exactly one of `Active`, `Succeeded`, `Failed` and `Canceled` is true. An uncaught body error is reported on the thread where it happened, exactly like one in a timer or hotkey body, and ends in `Failed`; it is never smuggled to a later `Wait`.
+		+ `Exit` before or during the body ends in `Canceled`. If the body already returned successfully and the worker stayed alive to serve registrations, `Exit` preserves `Succeeded` and `Result`.
 		+ A worker that registered a timer, hotkey or callback keeps serving them after its body returns; `Exit` is how it is shut down. `Wait`, `ContinueWith` and `Exit` throw `TargetError` on `RealThread.Main` and on adopted threads, which have no body of their own.
 	+ `Task`: Work that finishes later. Every CLR call returning a .NET `Task` hands one of these back, so `Ks.Clr` and `#CSharp` agree on what work-in-flight looks like.
 		```
 		class Task
 		{
-			static Call(clrTask) => Task        ; wrap a Task or ValueTask reached some other way
-			Result => Any                       ; the value if it has finished, "" otherwise. Never waits.
-			Status => String                    ; "Running", then "Done", "Error" or "Canceled"
+			static Call(Value) => Task          ; wrap native work or an object implementing __Await()
+			Active => Boolean                   ; true until a terminal outcome
+			Succeeded => Boolean                ; true only after successful completion
+			Failed => Boolean                   ; true only after completion with an error
+			Canceled => Boolean                 ; true only after cancellation
+			Result => Any                       ; the successful value, "" otherwise. Never waits.
 			Error => Any                        ; the failure as a catchable error object, "" otherwise
 			Clr => Any                          ; the underlying CLR task, for IsCompleted/ContinueWith/…
-			Wait([Timeout := -1]) => Boolean     ; true if it finished, false if the timeout elapsed first
-			Then(funcobj) => Task               ; run funcobj(task) afterwards, on this script thread
-			                                    ; funcobj may declare no parameter if it does not want the task
-			static WhenAll(tasks*) => Task      ; finishes when all do; Result is an Array of their results
-			static WhenAny(tasks*) => Task      ; finishes when the first does; Result is that one's result
-			static Source() => TaskSource       ; a task the script settles itself
-		}
-
-		class TaskSource
-		{
-			Task => Task                        ; the task to hand to Await/Then/WhenAll/WhenAny
-			Resolve([Value]) => Boolean         ; finish it successfully; true if this call settled it
-			Reject([Reason]) => Boolean         ; finish it as failed; Reason may be an Error or a string
+			Wait([Timeout := -1]) => Boolean    ; true if it finished, false on timeout; never cancels it
+			Then(OnSuccess [, OnFailure]) => Task ; handle a value or error on this script thread
+			                                      ; cancellation propagates; returned work is flattened
+			static WhenAll(Tasks*) => Task      ; finishes when all do; Result preserves input order
+			static WhenAny(Tasks*) => Task      ; transfers the first value, failure or cancellation
+			static Create(Producer) => Task      ; Producer receives Succeed, Fail and Cancel callbacks
 		}
 		```
-		+ `Result` is a snapshot and never blocks, exactly like `RealThread.Result`. `Await(task)` and `Wait` are the waiting forms, and both pump, so timers, hotkeys and the GUI stay alive while a script waits.
-		+ `Then` is the only non-blocking way to react. Its callback receives the task and may declare no parameter if it does not want it; it runs on the script thread that owns the task, in its own pseudo-thread, so `A_*` variables, `Critical` and GUI access all behave normally. It returns a new `Task` carrying the callback's own outcome — its return value, or its failure — so `Await` on a chain reports what went wrong instead of resolving to nothing. `Then` does not flatten: a callback returning a `Task` yields a `Task` whose `Result` is that inner task.
-		+ `Task.Source()` makes a task the script settles itself, which is how a callback-shaped source of events — a hotkey, a GUI control, a device notification — takes part in `WhenAny` or is handed to `Await`. Settling is one-shot and idempotent: the first `Resolve` or `Reject` decides the outcome and returns true, later calls return false without raising, so several handlers may safely race.
+		+ Exactly one of `Active`, `Succeeded`, `Failed` and `Canceled` is true. `Result` is a snapshot and never blocks, exactly like `RealThread.Result`. `Await(task)` and `Wait` are the waiting forms, and both pump, so timers, hotkeys and the GUI stay alive while a script waits.
+		+ `Then` reacts without blocking. `OnSuccess` receives the unwrapped value after success; optional `OnFailure` receives the same catchable `Error` exposed by `Task.Error` and can recover the returned chain. Either may declare no parameter. Requiring more than one raises `ValueError` immediately when the target signature can be resolved; a method bound by name is checked when its concrete member can be found, otherwise invocation performs the check. Cancellation invokes neither callback and propagates unchanged. The selected callback runs as a pseudo-thread on the script thread where `Then` was called. Tasks and CLR tasks or value tasks returned at any depth are flattened, and a custom awaitable returned directly is adopted. A returned `RealThread` follows `Await(realThread)` semantics: the chain receives its `Result`, while a body error remains reported on that worker and is visible through its `Failed` property. Raw `task.Clr.ContinueWith` instead uses CLR scheduling and provides neither this script affinity nor result flattening.
+		+ A pending `Then` keeps its owner alive until its callback has run. Background work returned by that callback does not itself make a script persistent; a downstream `Then` registers its own callback and therefore its own lifetime root. If the owner is torn down before a pending callback can run, the returned task fails instead of hanging.
+		+ `Task.Create(Producer)` turns a callback-shaped API — a hotkey, a GUI control, a device notification — into a task. `Producer` runs synchronously before `Create` returns and receives only the positional prefix it declares, up to `Succeed`, `Fail` and `Cancel`; its own return value is ignored. Each settlement function returns true only if it won: `Succeed([Value])` settles from `Value` and adopts asynchronous work's eventual value, failure or cancellation, `Fail([Reason])` accepts an `Error` or description, and `Cancel()` produces a canceled task. A producer error before settlement fails the returned task; after settlement it has no effect.
 			```
-			gate := Task.Source()
-			OnKey() => gate.Resolve("user")               ; from a hotkey, a GUI event, anywhere
-			winner := Await(Task.WhenAny(gate.Task, Download()))
+			gate := Task.Create(Succeed => Hotkey("Esc", (*) => Succeed("user")))
+			winnerValue := Await(Task.WhenAny(gate, Download()))
 			```
-		+ There is deliberately no `Cancel()`: .NET cannot cancel a task it did not create. Pass a token instead — `cts := Clr.System.Threading.CancellationTokenSource()`, `t := api.FooAsync(url, cts.Token)`, `cts.Cancel()` — and `Status` then reports `"Canceled"`. Likewise no `Delay`/`Completed`/`Run`: `Clr.System.Threading.Tasks.Task.Delay(ms)` and `.FromResult(v)` both come back as a `Task` through the ordinary boundary, and `RealThread(fn)` runs script code on another thread.
+		+ A task has no public `Cancel()` because a consumer cannot safely cancel work it did not create. Cancellation belongs to the producer: use the `Cancel` callback inside `Task.Create`, or pass a cancellation token to CLR work. Likewise there is no `Delay`/`Completed`/`Run`: CLR tasks cross the ordinary boundary, and `RealThread(Callback)` runs script code on another thread.
 		+ A failure nobody ever looks at is reported as an ordinary script error when the task is collected — the same terms .NET reports one on, so a task you are about to `Await` is never reported out from under you.
-		+ `Await`, `WhenAll` and `WhenAny` also accept a `RealThread`. A `RealThread` reports a failing body on its own thread (like a timer or hotkey body), so awaiting one yields its `Result` — empty if it failed — and never rethrows; check its `Status` instead. `RealThread.Main` and adopted threads have no body to wait for and raise a `TargetError`.
+		+ `Wait` never throws or marks a task failure observed; `Error` and `Await` observe it, and a failure read through both routes is the same error object. A timeout stops only that wait and does not cancel the work. `WhenAny` transfers only the winner's outcome; it neither observes nor cancels the losers. `WhenAll` fails if an input fails, or is canceled if at least one input is canceled and none fail.
+		+ `Await`, `Task(Value)`, `WhenAll` and `WhenAny` also accept a `RealThread` or a script object implementing `__Await()`. The zero-argument method must return a `Task`, CLR task or value task, worker `RealThread`, or another object implementing `__Await()`; protocol chains are followed until native work is reached. It is called synchronously on each consumption, so an implementation should cache stable work rather than create a fresh operation each time, especially for a `ValueTask`. An exception raised there is synchronous unless `Then` or `Succeed` is consuming it, in which case it becomes that operation's outcome. This lets a domain object expose asynchronous work without inheriting from `Task`. A `RealThread` reports a failing body on its own thread, so awaiting one yields an empty `Result` and never rethrows; check `Failed`. `RealThread.Main` and adopted threads have no body to wait for and raise `TargetError`.
 
-	+ `Await(value [, timeout := -1])`: Waits for work that finishes later — a `Task`, a `RealThread`, or a CLR task reached through `Ks.Clr` — and returns what it produced. This is Keysharp's `await`.
+	+ `Await(value [, timeout := -1])`: Waits for work that finishes later — a `Task`, a `RealThread`, a CLR task reached through `Ks.Clr`, or an object implementing `__Await()` — and returns what it produced. This is Keysharp's `await`.
 		+ It does not suspend the way C#'s `await` suspends a method: a Keysharp pseudo-thread runs to completion on its own frame. Instead it blocks the calling thread and pumps everything else, exactly as `Sleep`, `WinWait` and `RealThread.Wait` do, so timers, hotkeys and the GUI stay alive throughout.
 		+ Because it pumps, it is an interruption point: another pseudo-thread can start while it waits, just as inside `Sleep`. That matters most around `Lock`, whose ownership is per real thread and reentrant — a timer that acquires and releases the same lock during an `Await` releases the waiting thread's acquisition. Use `Critical` to hold a section closed across a wait.
-		+ A failure is rethrown as a catchable Keysharp error; a timeout raises `TimeoutError`. `task.Wait(timeout)` is the non-throwing form. Passing something that does not finish later raises a `TypeError` rather than silently handing the value back.
+		+ A failure is rethrown as its catchable Keysharp error; canceled work raises a base `Error` (cancellation is not failure, so `Task.Error` stays empty). A timeout raises `TimeoutError` without canceling the work. `task.Wait(timeout)` is the non-throwing form. Passing something that does not finish later raises a `TypeError` rather than silently handing the value back.
 		```
 		#import KS { Task, Await }
 		docx := Await(MakeDocx(html))                 ; block here, stay responsive
 		d := MakeDocx(html), p := MakePdf(html)       ; or run both, then join
 		results := Await(Task.WhenAll(d, p))
-		MakePdf(html).Then(t => FileAppend(t.Result, out))   ; or never block at all
+		MakePdf(html).Then(path => FileAppend(path, out))       ; or never block at all
 		```
 	+ `Lock`: Guards code shared between real threads where `LockRun` cannot — a timed acquire, or a lock held across several statements. `LockRun` remains the one-call form and is not duplicated on the class.
 		```

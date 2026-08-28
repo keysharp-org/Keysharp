@@ -82,6 +82,7 @@ Status legend:
 | [ ... ] / Map | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Map literal. |
 | ^ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise XOR operator |
 | ^= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| __Await() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Lets a script object expose asynchronous work without inheriting from Task. The zero-argument method returns a Task, CLR Task or ValueTask, worker RealThread, or another __Await object; Await, Task(Value), either Then callback's direct return, Task.Create settlement and Task combinators consume it. |
 | __Call | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when calling a missing method or property. |
 | __Delete | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when an object is being deleted. |
 | __Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns an enumerator for the object. |
@@ -347,7 +348,7 @@ Status legend:
 | Asin() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc sine. Throws an exception if the argument value is not between -1 and 1. |
 | Atan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc tangent. |
 | ATan2() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc tangent by using two numbers. |
-| Await() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for a Task, a RealThread, or a CLR task and returns its value. Blocks the calling pseudo-thread while pumping everything else, like Sleep, so it is an interruption point rather than a suspension. |
+| Await() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for a Task, a RealThread, a CLR task or value task, or an object implementing __Await(), and returns its value. Blocks the calling pseudo-thread while pumping everything else, like Sleep, so it is an interruption point rather than a suspension. Timing out does not cancel the work. |
 | Base | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the value's base object. |
 | Base64Decode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Decodes a Base64 string to binary data. |
 | Base64Encode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Encodes binary data to a Base64 string. |
@@ -884,8 +885,8 @@ Status legend:
 | Props | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Helper for creating property definitions. |
 | Random() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes a random number in the range of x to y. |
 | RandomSeed() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets seed for the pseudo-random generator used by Random(). |
-| RealThread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Represents a real background thread handle/promise. |
-| RealThread.Call() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Invokes work on the underlying real thread context. |
+| RealThread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Represents a real background thread. Active/Succeeded/Failed/Canceled match Task outcome names; Result is available only after successful completion. |
+| RealThread.Call() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new real worker thread and runs the callback on it. |
 | RealThread.ContinueWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Schedules continuation after thread task completion. |
 | RealThread.Wait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for real thread completion. |
 | RegCreateKey() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The RegCreateKey function creates a registry key without writing a value. |
@@ -980,9 +981,9 @@ Status legend:
 | Tan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the tangent of a number. |
 | Tanh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic tangent of a number. |
 | TargetError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
-| Task | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Work that finishes later; every CLR call returning a .NET Task hands one back. Result is a snapshot that never waits, Await(task) and Wait([Timeout]) are the waiting forms, and Then(fn) reacts without blocking. |
+| Task | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Work that finishes later; every CLR call returning a .NET Task hands one back. Active/Succeeded/Failed/Canceled expose its outcome, Result is a non-blocking snapshot, and Await and Wait are the waiting forms. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation. |
+| Task.Create() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls Producer synchronously with the positional prefix it accepts of Succeed, Fail and Cancel, and returns the Task they settle; Producer's return value is ignored. First settlement wins; Succeed adopts asynchronous work's eventual value, failure or cancellation, and an early producer error fails the Task. |
 | Taskbar | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, reaches only docks implementing it, and decorates the entry named by DESKTOP_ENTRY; macOS badges the dock tile with text and draws progress on the tile, also application-wide. Linux and macOS are compile-checked only. |
-| TaskSource | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The settling half of a Task the script owns: hand .Task to whoever waits, then Resolve([Value]) or Reject([Reason]) when the answer arrives. This is how a hotkey or GUI event takes part in Task.WhenAny. |
 | Thread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Thread settings and controls. |
 | Thread (object) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Thread is a class rather than a function: calling it runs the AHK sub-functions (NoTimers/Priority/Interrupt) unchanged, and an instance describes one pseudo-thread: Id, Index (1-based), IsActive, Kind, Elapsed, Priority, Critical, Paused, IsInterruptible, Underlying and Exit. An Is prefix marks a read-only predicate; a settable mode is named for the mode. Obtained from A_Thread, Under or RealThread.Threads, never constructed. There is one object per pseudo-thread, so `thr == A_Thread` tests whether it is the running one. It revalidates its identity on every access, so one held past its pseudo-thread's life reports IsActive false rather than describing whichever pseudo-thread reused the pooled slot. Reads work from any real thread; setters and Exit require the owning one. |
 | Throw | 🟡 Partial | 🟡 Partial | 🟡 Partial | 🟡 Partial | Rethrowing with throw is only allowed directly within the scope of catch, not from an arbitrary point (eg from functions). |

@@ -7,20 +7,19 @@ namespace Keysharp.Builtins
 		/// <c>Task</c>; the CLR type is named differently because <c>Task</c> is already taken in C#, the same
 		/// reason <c>Lock</c> is <see cref="KeysharpLock"/> and <c>Func</c> is <c>KeysharpFunc</c>.
 		/// <para>
-		/// The one thing here a script could not write for itself is <see cref="Then"/>: a continuation which
-		/// runs on the owning script thread and yields a further <c>Task</c> carrying the callback's own
-		/// outcome. <see cref="Result"/> is a snapshot and does not wait, matching
+		/// <see cref="Then"/> runs a continuation on the calling script thread and yields a further <c>Task</c>
+		/// carrying the callback's own outcome. <see cref="Result"/> is a snapshot and does not wait, matching
 		/// <see cref="RealThread.Result"/>; <c>Await</c> and <see cref="Wait"/> are the waiting forms.</para>
 		/// <para>
-		/// <see cref="Wrap"/> is the only producer, so exactly one wrapper exists per underlying task and
-		/// <c>t1 == t2</c> answers "the same work".</para>
+		/// <see cref="Wrap"/> is the only producer, so exactly one wrapper exists per underlying task in each
+		/// script and <c>t1 == t2</c> answers "the same work".</para>
 		/// </summary>
 		[UserDeclaredName("Task")]
 		public class KeysharpTask : KeysharpObject
 		{
-			// One wrapper per underlying task. ConvertOut runs at every CLR->script crossing, so without this a
-			// script would get a different object for the same work each time and identity would mean nothing.
-			private static readonly ConditionalWeakTable<Task, KeysharpTask> wrappers = new();
+			// UnobservedTaskException is process-wide, so this table retains only a weak route back to the active
+			// script which received each task. Wrapper identity itself is scoped to Script.
+			private static readonly ConditionalWeakTable<Task, WeakReference<Script>> unobservedOwners = new();
 			// Task<T>.Result is reached by reflection (T is not known here) and Result is read once per element
 			// of a WhenAll, so the accessor is resolved once per closed type rather than per read.
 			private static readonly ConcurrentDictionary<Type, Func<Task, object>> resultReaders = new();
@@ -30,29 +29,18 @@ namespace Keysharp.Builtins
 			private static int unobservedHooked;
 
 			private readonly Task task;
-			// The scheduler owning the thread this task was first seen on. Continuations go here rather than to
-			// whatever SynchronizationContext happens to be current, which is what gives a Then handler a real
-			// pseudo-thread with correct A_* state.
-			private readonly ScriptEventScheduler ownerScheduler;
 			private Error mappedError;
 
-			private KeysharpTask(Task task, ScriptEventScheduler owner)
-			{
-				this.task = task;
-				ownerScheduler = owner;
-			}
+			private KeysharpTask(Task task) => this.task = task;
 
 			/// <summary>
 			/// Wraps a task or value task reached some other way. One returned from a CLR call is wrapped
 			/// already, so this is only for one a script got hold of by another route.
 			/// </summary>
-			public static object staticCall(object @this, object value)
+			public static object staticCall(object @this, object Value)
 			{
-				if (value is RealThread { Task: null })
-					return Errors.TargetErrorOccurred(NoBodyToWaitFor);
-
-				var t = FromScriptValue(value);
-				return t == null ? Errors.TypeErrorOccurred(value, typeof(KeysharpTask)) : Wrap(t);
+				var t = FromAwaitable(Value);
+				return t == null ? Errors.TypeErrorOccurred(Value, typeof(KeysharpTask)) : Wrap(t);
 			}
 
 			// The main and adopted threads are not workers, so every entry point which accepts a RealThread says
@@ -65,16 +53,16 @@ namespace Keysharp.Builtins
 				if (t == null)
 					return null;
 
-				if (wrappers.TryGetValue(t, out var existing))
-					return existing;
-
 				EnsureUnobservedHook();
-				var owner = Script.TheScript?.EventScheduler;
-				// The owner is resolved inside the factory so it belongs to the wrapper which actually wins:
-				// ConditionalWeakTable runs the factory outside its lock, so several threads can each build one
-				// and all but one are discarded. Nothing may happen in the constructor for the same reason -- a
-				// side effect there would be performed once per loser and never undone.
-				return wrappers.GetValue(t, key => new KeysharpTask(key, owner));
+				var script = Script.TheScript;
+
+				if (script != null)
+					unobservedOwners.GetValue(t, _ => new(script)).SetTarget(script);
+
+				if (script == null)
+					return new KeysharpTask(t);
+
+				return script.TaskWrappers.GetValue(t, static key => new KeysharpTask(key));
 			}
 
 			/// <summary>The underlying <see cref="Task"/>, for runtime code that needs it rather than the wrapper.</summary>
@@ -82,17 +70,17 @@ namespace Keysharp.Builtins
 
 			// ---- properties -------------------------------------------------------------------------------
 
-			/// <summary>
-			/// <c>"Running"</c> until the work finishes, then <c>"Done"</c>, <c>"Error"</c> or <c>"Canceled"</c>.
-			/// Cancellation comes from a <c>CancellationToken</c> the script passed into the call which produced
-			/// this task; there is deliberately no <c>Cancel()</c> here, because .NET cannot cancel a task it did
-			/// not create.
-			/// </summary>
-			public string Status =>
-				!task.IsCompleted ? "Running"
-				: task.IsCanceled ? "Canceled"
-				: task.IsFaulted ? "Error"
-				: "Done";
+			/// <summary>True while the task has not reached any terminal outcome.</summary>
+			public bool Active => !task.IsCompleted;
+
+			/// <summary>True only when the task completed successfully.</summary>
+			public bool Succeeded => task.IsCompletedSuccessfully;
+
+			/// <summary>True only when the task completed with an error.</summary>
+			public bool Failed => task.IsFaulted;
+
+			/// <summary>True only when the task completed as canceled.</summary>
+			public bool Canceled => task.IsCanceled;
 
 			/// <summary>
 			/// The value this task produced, or an empty string while it is still running, if it failed, or if it
@@ -106,22 +94,12 @@ namespace Keysharp.Builtins
 			/// string. It is the same object <c>Await</c> would have thrown, so a script reads <c>Error.Message</c>
 			/// the same way whichever route it took.
 			/// </summary>
-			public object Error
-			{
-				get
-				{
-					if (!task.IsFaulted)
-						return DefaultObject;
-
-					// Mapped once so repeated reads hand back the same object, which is what lets a script compare
-					// or store it, and so a read costs nothing after the first.
-					return mappedError ??= ManagedInvoke.MapException(Unwrap(task.Exception), "Task");
-				}
-			}
+			public object Error => task.IsFaulted ? GetMappedError() : DefaultObject;
 
 			/// <summary>
 			/// The underlying CLR task as an ordinary <c>Ks.Clr</c> object, so members this class does not mirror
-			/// — <c>IsCompleted</c>, <c>Exception</c>, <c>ContinueWith</c> — stay reachable.
+			/// — <c>IsCompleted</c>, <c>Exception</c>, <c>ContinueWith</c> — stay reachable. CLR
+			/// <c>ContinueWith</c> has neither <see cref="Then"/>'s script-thread affinity nor its result flattening.
 			/// </summary>
 			public object Clr => ManagedInvoke.WrapManaged(task);
 
@@ -129,128 +107,221 @@ namespace Keysharp.Builtins
 
 			/// <summary>
 			/// Waits for this task to finish, pumping events while it waits so timers, hotkeys and the GUI stay
-			/// responsive. It does not throw on failure — read <see cref="Status"/> and <see cref="Error"/>.
+			/// responsive. It does not throw on failure; read <see cref="Failed"/> and <see cref="Error"/>. A timeout
+			/// stops only this wait and does not cancel the task.
 			/// </summary>
-			/// <param name="timeout">Milliseconds to wait. Default: wait indefinitely.</param>
+			/// <param name="Timeout">Milliseconds to wait. Default: wait indefinitely.</param>
 			/// <returns>True if the task finished, false if the timeout elapsed first.</returns>
-			public object Wait(object timeout = null) => Keysharp.Internals.Flow.WaitForTask(task, timeout.Ai(-1));
+			public object Wait(object Timeout = null)
+			{
+				if (IsCurrentRealThreadTask(task))
+					return Errors.TargetErrorOccurred("A real thread cannot wait on itself.", false);
+
+				return Keysharp.Internals.Flow.WaitForTask(task, Timeout.Ai(-1));
+			}
 
 			// ---- continuation -----------------------------------------------------------------------------
 
 			/// <summary>
-			/// Runs <paramref name="callback"/> once this task finishes, without blocking. The callback receives
-			/// this <c>Task</c>, and may declare no parameter at all if it does not want it.
+			/// Runs <paramref name="OnSuccess"/> after this task succeeds, or <paramref name="OnFailure"/> after it
+			/// fails, without blocking. The selected callback receives the value or catchable <c>Error</c>, and may
+			/// declare no parameter if it does not want it. With no failure callback, the same error propagates;
+			/// cancellation invokes neither callback and propagates unchanged.
 			/// <para>
-			/// It runs on the script thread which owns this task, in its own pseudo-thread, so <c>A_*</c>
+			/// It runs on the script thread where <c>Then</c> was called, in its own pseudo-thread, so <c>A_*</c>
 			/// variables, <c>Critical</c> and GUI access all behave normally.</para>
 			/// </summary>
 			/// <returns>
-			/// A new <c>Task</c> carrying the callback's own outcome — its return value, or its failure — so a
-			/// chain reports what went wrong rather than swallowing it.
+			/// A new <c>Task</c> carrying the selected callback's outcome. Native tasks and value tasks returned at
+			/// any depth are adopted rather than nested; a directly returned <c>__Await()</c> object is adopted too. A
+			/// <c>RealThread</c> follows <c>Await</c> semantics: its body error remains reported on that worker and the
+			/// chain receives its <c>Result</c>.
 			/// </returns>
-			public object Then(object callback)
+			public object Then(object OnSuccess, object OnFailure = null)
 			{
-				var fo = Functions.GetKeysharpFunc(callback, null, null, true);
+				var success = Functions.GetKeysharpFunc(OnSuccess, null, null, true);
+
+				if (success == null)
+					return DefaultObject;
+
+				var successArity = Script.CallbackArgCounts(success, 1);
+
+				if (successArity.Required > 1)
+					return Errors.ValueErrorOccurred(
+						$"Task.Then OnSuccess requires at least {successArity.Required} parameters, but receives at most one.");
+
+				var failure = OnFailure == null ? null : Functions.GetKeysharpFunc(OnFailure, null, null, true);
+
+				if (OnFailure != null && failure == null)
+					return DefaultObject;
+
+				if (failure != null)
+				{
+					var failureArity = Script.CallbackArgCounts(failure, 1);
+
+					if (failureArity.Required > 1)
+						return Errors.ValueErrorOccurred(
+							$"Task.Then OnFailure requires at least {failureArity.Required} parameters, but receives at most one.");
+				}
+
 				var completion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-				_ = task.ContinueWith((_, state) => ((KeysharpTask)state).Dispatch(fo, completion), this,
-									  CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+				var continuation = new TaskContinuation(this, Script.TheScript?.EventScheduler, success, failure, completion);
+				continuation.Attach(task);
 				return Wrap(completion.Task);
 			}
 
 			// ---- combinators ------------------------------------------------------------------------------
 
 			/// <summary>
-			/// A task that finishes when every one of <paramref name="tasks"/> has finished, producing an
+			/// A task that finishes when every one of <paramref name="Tasks"/> has finished, producing an
 			/// <see cref="Array"/> of their results in the order they were given. If any of them fails, so does
-			/// this one, so <c>Await</c> on it reports the failure.
+			/// this one, so <c>Await</c> on it reports the failure. If at least one is canceled and none fail, this
+			/// task is canceled.
 			/// </summary>
-			public static object staticWhenAll(object @this, params object[] tasks)
+			public static object staticWhenAll(object @this, params object[] Tasks)
 			{
-				var underlying = Underlyings(tasks);
+				var underlying = Underlyings(Tasks);
+				return underlying == null ? DefaultObject : Wrap(CompleteAll(underlying));
+			}
+
+			/// <summary>
+			/// A task that finishes with the first outcome among <paramref name="Tasks"/>: the winner's value,
+			/// failure or cancellation. The other tasks keep running and are not observed or canceled here.
+			/// </summary>
+			public static object staticWhenAny(object @this, params object[] Tasks)
+			{
+				var underlying = Underlyings(Tasks);
 
 				if (underlying == null)
 					return DefaultObject;
 
-				var all = Task.WhenAll(underlying);
-				var completion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-				_ = all.ContinueWith(t => Settle(completion, t, () =>
+				if (underlying.Length == 0)
+					return Errors.ValueErrorOccurred("Task.WhenAny requires at least one task.");
+
+				return Wrap(CompleteFirst(underlying));
+			}
+
+			/// <summary>
+			/// Creates a task and synchronously calls <paramref name="Producer"/> with the prefix it accepts of
+			/// Succeed, Fail and Cancel settlement functions. The first settlement wins; the producer's return value
+			/// is ignored.
+			/// </summary>
+			public static object staticCreate(object @this, object Producer)
+			{
+				var producer = Functions.GetKeysharpFunc(Producer, null, null, true);
+
+				if (producer == null)
+					return DefaultObject;
+
+				var arity = Script.CallbackArgCounts(producer, 3);
+
+				if (arity.Required > 3)
+					return Errors.ValueErrorOccurred(
+						$"Task.Create producer requires at least {arity.Required} parameters, but receives at most three.");
+
+				var source = new TaskProducerCompletion();
+				var args = new object[]
 				{
-					var results = new List<object>(underlying.Length);
+					new KeysharpFunc((Func<object, object>)source.Succeed),
+					new KeysharpFunc((Func<object, object>)source.Fail),
+					new KeysharpFunc((Func<object>)source.Cancel)
+				};
 
-					foreach (var u in underlying)
-						results.Add(ReadResult(u));
+				try
+				{
+					_ = producer.Call(args[.. arity.Accepted]);
+				}
+				catch (Exception ex) when (TryGetUserExit(ex, out var exit))
+				{
+					_ = source.Cancel();
+					throw exit;
+				}
+				catch (Exception ex)
+				{
+					_ = source.Fail(ex);
+				}
 
-					return new Array(results);
-				}), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
-				return Wrap(completion.Task);
+				return Wrap(source.Task);
 			}
-
-			/// <summary>
-			/// A task that finishes as soon as the first of <paramref name="tasks"/> finishes, producing that
-			/// one's outcome — its value, or its failure. The others keep running; nothing here cancels them.
-			/// </summary>
-			public static object staticWhenAny(object @this, params object[] tasks)
-			{
-				var underlying = Underlyings(tasks);
-
-				if (underlying == null)
-					return DefaultObject;
-
-				// A loser which fails still has to have its failure looked at, or it surfaces as an uncaught script
-				// error at collection long after the race was decided.
-				foreach (var u in underlying)
-					_ = u.ContinueWith(static x => _ = x.Exception, CancellationToken.None,
-									   TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-									   TaskScheduler.Default);
-
-				var any = Task.WhenAny(underlying);
-				var completion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-				// WhenAny's own task never fails -- it succeeds carrying whichever task won, however that one
-				// ended. So the winner's outcome has to be unpacked here; reading its Result blindly would throw
-				// inside the continuation and leave this completion unset, hanging every waiter forever.
-				_ = any.ContinueWith(t => Settle(completion, t.Result, () => ReadResult(t.Result)),
-									 CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
-				return Wrap(completion.Task);
-			}
-
-			/// <summary>
-			/// Creates a task the script settles itself. This is what turns a callback-shaped API -- a hotkey, a
-			/// GUI event, a device notification -- into something <see cref="staticWhenAny"/> can race against
-			/// real work, and it is the one shape a script cannot otherwise build.
-			/// </summary>
-			public static object staticSource(object @this) => new TaskSource();
 
 			public override string ToString() => "Task";
 
 			// ---- internals --------------------------------------------------------------------------------
 
-			/// <summary>
-			/// Copies <paramref name="settled"/>'s outcome onto <paramref name="completion"/>, projecting a value
-			/// only when it actually succeeded. Any throw from <paramref name="project"/> faults the completion
-			/// rather than escaping the continuation, where it would strand every waiter.
-			/// </summary>
-			private static void Settle(TaskCompletionSource<object> completion, Task settled, Func<object> project)
+			private static async Task<object> CompleteAll(Task[] tasks)
 			{
-				try
+				await Task.WhenAll(tasks).ConfigureAwait(false);
+				return new Array(tasks.Select(ReadResult));
+			}
+
+			private static async Task<object> CompleteFirst(Task[] tasks)
+			{
+				var winner = await Task.WhenAny(tasks).ConfigureAwait(false);
+				await winner.ConfigureAwait(false);
+				return ReadResult(winner);
+			}
+
+			private sealed class TaskProducerCompletion
+			{
+				private readonly TaskCompletionSource<object> completion =
+					new(TaskCreationOptions.RunContinuationsAsynchronously);
+				private int settled;
+
+				internal Task Task => completion.Task;
+
+				internal object Succeed(object Value = null)
 				{
-					if (settled.IsFaulted)
-						_ = completion.TrySetException(Unwrap(settled.Exception));
-					else if (settled.IsCanceled)
+					if (Interlocked.CompareExchange(ref settled, 1, 0) != 0)
+						return false;
+
+					ResolveCompletion(completion, Value);
+					return true;
+				}
+
+				internal object Fail(object Reason = null)
+				{
+					if (Interlocked.CompareExchange(ref settled, 1, 0) != 0)
+						return false;
+
+					try
+					{
+						_ = completion.TrySetException(Reason switch
+						{
+							Error e => e.Exception,
+							Exception ex => ex,
+							null => new Error("The task failed.").Exception,
+							_ => new Error(Reason.As()).Exception
+						});
+					}
+					catch (Exception ex) when (TryGetUserExit(ex, out var exit))
+					{
 						_ = completion.TrySetCanceled();
-					else
-						_ = completion.TrySetResult(project());
+						throw exit;
+					}
+					catch (Exception ex)
+					{
+						_ = completion.TrySetException(ex);
+					}
+
+					return true;
 				}
-				catch (Exception ex)
+
+				internal object Cancel()
 				{
-					_ = completion.TrySetException(ex);
+					if (Interlocked.CompareExchange(ref settled, 1, 0) != 0)
+						return false;
+
+					_ = completion.TrySetCanceled();
+					return true;
 				}
+
 			}
 
 			/// <summary>
 			/// Reports a failure nobody ever looked at, on the same terms .NET does: at collection, once the task
 			/// can no longer be observed. Reporting at fault time instead would give the script a window of zero
 			/// -- <c>t := Foo()</c> on one line and <c>Await(t)</c> on the next would race it -- and would fire
-			/// for every loser of a <c>WhenAny</c>, where a failure is the expected outcome.
+			/// for work a combinator has not selected, where the caller may still choose to inspect it.
 			/// </summary>
 			private static void EnsureUnobservedHook()
 			{
@@ -267,9 +338,8 @@ namespace Keysharp.Builtins
 					if (scheduler == null)
 						return;
 
-					e.SetObserved();
 					var ex = Unwrap(e.Exception);
-					_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
+					if (scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
 					{
 						using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, ThreadKind.Clr);
 
@@ -278,81 +348,287 @@ namespace Keysharp.Builtins
 
 						_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
 						return ScriptEventExecutionResult.Executed;
-					});
+					}))
+						e.SetObserved();
 				};
 			}
 
 			internal static ScriptEventScheduler GetUnobservedScheduler(object sender)
 			{
 				if (sender is not Task task
-						|| !wrappers.TryGetValue(task, out var wrapper)
-						|| wrapper.ownerScheduler is not { IsDisposed: false } scheduler
-						|| scheduler.Owner is not { hasExited: false, IsDisposed: false })
+						|| !unobservedOwners.TryGetValue(task, out var owner)
+						|| !owner.TryGetTarget(out var script)
+						|| script is not { hasExited: false, IsDisposed: false }
+						|| !ReferenceEquals(Script.TheScript, script)
+						|| script.uiEventScheduler is not { IsDisposed: false } scheduler)
 					return null;
 
 				return scheduler;
 			}
 
-			/// <summary>
-			/// Runs a <see cref="Then"/> callback on the owning script thread. Same rule as a CLR event handler:
-			/// inline when we are already there, otherwise queued as a normal pseudo-thread on its owner. Never a
-			/// synchronous hop onto the script thread -- a pool thread blocking on a script thread deadlocks
-			/// whenever that script thread is itself inside a CLR call.
-			/// </summary>
-			private void Dispatch(KeysharpFunc fo, TaskCompletionSource<object> completion)
+			private sealed class TaskContinuation
 			{
-				var scheduler = ownerScheduler;
-				var script = scheduler?.Owner;
+				private const string OwnerUnavailable = "The Task continuation could not run because its owning script thread is no longer available.";
+				private KeysharpTask antecedent;
+				private ScriptEventScheduler scheduler;
+				private KeysharpFunc successCallback;
+				private KeysharpFunc failureCallback;
+				private readonly TaskCompletionSource<object> completion;
+				private readonly Action invalidated;
 
-				if (scheduler == null || scheduler.IsDisposed || script is not { hasExited: false, IsDisposed: false })
+				internal TaskContinuation(KeysharpTask antecedent, ScriptEventScheduler scheduler,
+					KeysharpFunc successCallback, KeysharpFunc failureCallback, TaskCompletionSource<object> completion)
 				{
-					_ = completion.TrySetResult(DefaultObject);
-					return;
+					this.antecedent = antecedent;
+					this.scheduler = scheduler;
+					this.successCallback = successCallback;
+					this.failureCallback = failureCallback;
+					this.completion = completion;
+					invalidated = OwnerInvalidated;
 				}
 
-				if (scheduler.OwnsCurrentThread)
+				internal void Attach(Task task)
 				{
-					RunCallback(fo, completion);
-					return;
-				}
-
-				if (!scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
-				{
-					using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, ThreadKind.Clr);
-
-					if (!thread.Started)
+					if (scheduler == null || !scheduler.RegisterPendingCallback(invalidated))
 					{
-						// GlobalBlocked and LocalBlocked ask for a retry -- the entry goes back on the queue and
-						// runs later -- so settling here would resolve the chained task before the callback has
-						// run at all, and under Critical that is the ordinary path rather than an edge case. Only
-						// Dropped means it will never run.
-						if (thread.Result == ScriptEventExecutionResult.Dropped)
-							_ = completion.TrySetResult(DefaultObject);
-
-						return thread.Result;
+						Finish();
+						return;
 					}
 
-					RunCallback(fo, completion);
-					script.ExitIfNotPersistent();
-					return ScriptEventExecutionResult.Executed;
-				}))
-					_ = completion.TrySetResult(DefaultObject);
+					try
+					{
+						_ = task.ContinueWith(static (_, state) => ((TaskContinuation)state).Dispatch(), this,
+							CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+					}
+					catch (Exception ex)
+					{
+						Finish(ex);
+					}
+				}
+
+				private void Dispatch()
+				{
+					var owner = Volatile.Read(ref scheduler);
+					var source = Volatile.Read(ref antecedent);
+
+					if (owner == null || source == null)
+						return;
+
+					var script = owner.Owner;
+
+					try
+					{
+						if (source.Canceled || (source.Failed && Volatile.Read(ref failureCallback) == null))
+						{
+							if (source.Canceled)
+								_ = completion.TrySetCanceled();
+							else
+								_ = completion.TrySetException(source.GetMappedError().Exception);
+
+							Release();
+							return;
+						}
+
+						if (owner.IsDisposed || script is not { hasExited: false, IsDisposed: false }
+								|| !owner.Enqueue(ScriptEventQueue.Normal, 0, Run))
+						{
+							Finish();
+						}
+					}
+					catch (Exception ex)
+					{
+						Finish(ex);
+					}
+					finally
+					{
+						if (!script.IsDisposed)
+							script.ExitIfNotPersistent();
+					}
+				}
+
+				private ScriptEventExecutionResult Run()
+				{
+					var owner = Volatile.Read(ref scheduler);
+					var source = Volatile.Read(ref antecedent);
+					var action = source?.Failed == true
+						? Volatile.Read(ref failureCallback)
+						: Volatile.Read(ref successCallback);
+
+					if (owner == null || action == null || source == null)
+						return ScriptEventExecutionResult.Dropped;
+
+					var result = ScriptEventExecutionResult.Dropped;
+
+					try
+					{
+						using (var thread = owner.StartPseudoThreadScope(0, false, false, false, ThreadKind.Clr))
+						{
+							result = thread.Result;
+
+							if (!thread.Started)
+							{
+								if (result != ScriptEventExecutionResult.Dropped)
+									return result;
+
+								Fail();
+							}
+							else
+							{
+								result = ScriptEventExecutionResult.Executed;
+								var argument = source.Failed ? source.GetMappedError() : source.Result;
+								var value = Script.CallbackArgCount(action, 1) == 0
+									? action.Call() : action.Call(argument);
+								ResolveCompletion(completion, value);
+							}
+						}
+					}
+					catch (Exception ex) when (TryGetUserExit(ex, out _))
+					{
+						_ = completion.TrySetCanceled();
+					}
+					catch (Exception ex)
+					{
+						Fail(ex);
+					}
+
+					// Returned background work is not rooted; a downstream Then owns its own callback root.
+					Release();
+
+					if (!owner.Owner.IsDisposed)
+						owner.Owner.ExitIfNotPersistent();
+
+					return result;
+				}
+
+				private void Fail(Exception exception = null)
+					=> _ = completion.TrySetException(exception ?? new InvalidOperationException(OwnerUnavailable));
+
+				private void Finish(Exception exception = null)
+				{
+					Fail(exception);
+					Release();
+				}
+
+				private void OwnerInvalidated() => Finish();
+
+				private void Release()
+				{
+					var owner = Volatile.Read(ref scheduler);
+					owner?.ReleasePendingCallback(invalidated);
+					Volatile.Write(ref antecedent, null);
+					Volatile.Write(ref scheduler, null);
+					Volatile.Write(ref successCallback, null);
+					Volatile.Write(ref failureCallback, null);
+				}
 			}
 
-			private void RunCallback(KeysharpFunc fo, TaskCompletionSource<object> completion)
+			private static void ResolveCompletion(TaskCompletionSource<object> completion, object value)
 			{
 				try
 				{
-					// Arity-trimmed: a handler which does not want the task may declare no parameter, the same
-					// allowance CLR event handlers get.
-					_ = completion.TrySetResult(fo.MaxParams == 0 && !fo.IsVariadic ? fo.Call() : fo.Call(this));
+					var nested = FromAwaitable(value);
+
+					if (nested == null)
+						_ = completion.TrySetResult(value ?? DefaultObject);
+					else
+						_ = CompleteFrom(completion, nested);
+				}
+				catch (Exception ex) when (TryGetUserExit(ex, out var exit))
+				{
+					_ = completion.TrySetCanceled();
+					throw exit;
 				}
 				catch (Exception ex)
 				{
-					// The chained task carries the failure, so `Await(t.Then(cb))` reports it like any other call
-					// instead of resolving to nothing. If nobody looks at that task, the unobserved hook reports
-					// it, which is the same treatment any other dropped failure gets.
 					_ = completion.TrySetException(ex);
+				}
+			}
+
+			private static async Task CompleteFrom(TaskCompletionSource<object> completion, Task nested)
+			{
+				try
+				{
+					var seen = new HashSet<Task>();
+
+					while (true)
+					{
+						if (ReferenceEquals(nested, completion.Task) || !seen.Add(nested))
+						{
+							_ = completion.TrySetException(new InvalidOperationException("Task resolution cycle detected."));
+							return;
+						}
+
+						try
+						{
+							await nested.ConfigureAwait(false);
+						}
+						catch (Exception ex)
+						{
+							if (nested.IsCanceled || (nested.IsFaulted && IsSoleUserExit(nested.Exception)))
+								_ = completion.TrySetCanceled();
+							else if (nested.IsFaulted)
+								_ = completion.TrySetException(Wrap(nested).GetMappedError().Exception);
+							else
+								_ = completion.TrySetException(ex);
+
+							return;
+						}
+
+						var value = ReadRawResult(nested);
+
+						if (value is RealThread { Task: null })
+						{
+							_ = completion.TrySetException(new TargetError(NoBodyToWaitFor).Exception);
+							return;
+						}
+
+						nested = FromScriptValue(value);
+
+						if (nested == null)
+						{
+							_ = completion.TrySetResult(value ?? DefaultObject);
+							return;
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					_ = completion.TrySetException(ex);
+				}
+			}
+
+			/// <summary>Also accepts a script object whose zero-argument <c>__Await()</c> leads to native work.</summary>
+			internal static Task FromAwaitable(object value)
+			{
+				HashSet<object> seen = null;
+
+				while (true)
+				{
+					var task = FromScriptValue(value);
+
+					if (task != null)
+						return task;
+
+					if (value is RealThread { Task: null })
+						throw new TargetError(NoBodyToWaitFor).Exception;
+
+					if (value is not Any || Script.ResolveMember(value, "__Await", out _) is not KeysharpFunc awaitMethod)
+					{
+						if (seen == null)
+							return null;
+
+						throw new TypeError("__Await() must return awaitable work.").Exception;
+					}
+
+					seen ??= new(ReferenceEqualityComparer.Instance);
+
+					if (!seen.Add(value))
+						throw new Error("__Await resolution cycle detected.").Exception;
+
+					if (awaitMethod.MinParams > 1)
+						throw new TypeError("__Await() must not require arguments.").Exception;
+
+					value = awaitMethod.Call(value);
 				}
 			}
 
@@ -391,49 +667,47 @@ namespace Keysharp.Builtins
 						 : null
 				};
 
-			private static Task[] Underlyings(object[] tasks)
+			private static Task[] Underlyings(object[] Tasks)
 			{
-				var list = new List<Task>(tasks?.Length ?? 0);
+				var underlyings = new Task[Tasks?.Length ?? 0];
 
-				if (tasks != null)
+				for (var i = 0; i < underlyings.Length; i++)
 				{
-					foreach (var t in tasks)
+					var value = Tasks[i];
+					// Null rather than skipping the element: OnError can suppress the raise, and waiting on the
+					// rest would report success for a set the script never asked for.
+					if (value is RealThread { Task: null })
 					{
-						// Null rather than skipping the element: OnError can suppress the raise, and waiting on the
-						// rest would report success for a set the script never asked for.
-						if (t is RealThread { Task: null })
-						{
-							_ = Errors.TargetErrorOccurred(NoBodyToWaitFor);
-							return null;
-						}
-
-						var u = FromScriptValue(t);
-
-						if (u == null)
-						{
-							_ = Errors.TypeErrorOccurred(t, typeof(KeysharpTask));
-							return null;
-						}
-
-						list.Add(u);
+						_ = Errors.TargetErrorOccurred(NoBodyToWaitFor);
+						return null;
 					}
+
+					var underlying = FromAwaitable(value);
+
+					if (underlying == null)
+					{
+						_ = Errors.TypeErrorOccurred(value, typeof(KeysharpTask));
+						return null;
+					}
+
+					underlyings[i] = underlying;
 				}
 
-				return [.. list];
+				return underlyings;
 			}
 
 			/// <summary>
-			/// Reads <c>Task&lt;T&gt;.Result</c> without knowing T, converted for the script.
+			/// Reads <c>Task&lt;T&gt;.Result</c> without knowing T. <see cref="ReadResult"/> performs the script conversion.
 			/// <para>
 			/// The runtime type is not a usable test on its own: an <c>async Task</c> method's state-machine box
 			/// is a <c>Task&lt;VoidTaskResult&gt;</c>, so asking whether the type is generic answers yes for the
 			/// most common async signature there is and hands the script that internal marker struct. The closed
 			/// <c>Task&lt;T&gt;</c> base is what actually says whether there is a value.</para>
 			/// </summary>
-			internal static object ReadResult(Task t)
+			private static object ReadRawResult(Task t)
 			{
 				if (t == null)
-					return DefaultObject;
+					return null;
 
 				var reader = resultReaders.GetOrAdd(t.GetType(), static type =>
 				{
@@ -452,60 +726,49 @@ namespace Keysharp.Builtins
 					return null;
 				});
 
-				if (reader == null)
-					return DefaultObject;
+				return reader?.Invoke(t);
+			}
 
-				var value = reader(t);
+			internal static object ReadResult(Task t)
+			{
+				var value = ReadRawResult(t);
 				return value == null ? DefaultObject : ManagedInvoke.ConvertOut(value);
+			}
+
+			internal Error GetMappedError()
+				=> LazyInitializer.EnsureInitialized(ref mappedError,
+					() => ManagedInvoke.MapException(Unwrap(task.Exception), "Task"));
+
+			internal static bool IsCurrentRealThreadTask(Task candidate)
+			{
+				var scheduler = Script.TheScript?.CurrentSchedulerIfCreated;
+				return scheduler?.realThread is { } realThread && ReferenceEquals(realThread.Task, candidate);
 			}
 
 			internal static Exception Unwrap(Exception ex) =>
 				ex is AggregateException agg && agg.InnerExceptions.Count == 1 ? agg.InnerExceptions[0] : ex;
-		}
 
-		/// <summary>
-		/// The settling half of a <see cref="KeysharpTask"/> the script owns: hand <see cref="Task"/> to whoever
-		/// waits, then call <see cref="Resolve"/> or <see cref="Reject"/> when the answer arrives. Without it a
-		/// script could only consume tasks the CLR produced, so a hotkey or GUI event could never be raced
-		/// against real work in <c>Task.WhenAny</c>.
-		/// <para>
-		/// Settling is one-shot and idempotent: the first call decides the outcome and returns true, later ones
-		/// return false without raising, which is what makes it safe from several handlers racing.</para>
-		/// <para>
-		/// <c>Task.Source()</c> is the spelling the docs use, so a single <c>#import KS { Task }</c> reaches the
-		/// whole surface. Constructing this class directly does the same, as it does for any class.</para>
-		/// </summary>
-		public class TaskSource : KeysharpObject
-		{
-			private readonly TaskCompletionSource<object> completion =
-				new(TaskCreationOptions.RunContinuationsAsynchronously);
+			private static bool TryGetUserExit(Exception ex, out Flow.UserRequestedExitException exit)
+				=> Keysharp.Internals.Flow.TryGetException(ex, out exit);
 
-			public TaskSource(params object[] args) : base(args) { }
-
-			/// <summary>The task to hand to <c>Await</c>, <c>Then</c>, <c>WhenAll</c> or <c>WhenAny</c>.</summary>
-			public object Task => KeysharpTask.Wrap(completion.Task);
-
-			/// <summary>
-			/// Finishes the task successfully with <paramref name="value"/>.
-			/// </summary>
-			/// <returns>True if this call settled the task, false if it was already settled.</returns>
-			public object Resolve(object value = null) => completion.TrySetResult(value ?? DefaultObject);
-
-			/// <summary>
-			/// Finishes the task as failed. <paramref name="reason"/> may be an <see cref="Error"/> object, which
-			/// is what <c>Await</c> rethrows and <c>Task.Error</c> hands back, or a string to describe one.
-			/// </summary>
-			/// <returns>True if this call settled the task, false if it was already settled.</returns>
-			public object Reject(object reason = null) =>
-				completion.TrySetException(reason switch
+			private static bool IsSoleUserExit(Exception ex)
+			{
+				while (ex != null && ex is not Flow.UserRequestedExitException)
 				{
-					Error e => e.Exception,
-					Exception ex => ex,
-					null => new Error("The task was rejected.").Exception,
-					_ => new Error(reason.As()).Exception
-				});
+					if (ex is AggregateException aggregate)
+					{
+						if (aggregate.InnerExceptions.Count != 1)
+							return false;
 
-			public override string ToString() => "TaskSource";
+						ex = aggregate.InnerExceptions[0];
+					}
+					else
+						ex = ex.InnerException;
+				}
+
+				return ex != null;
+			}
 		}
+
 	}
 }
