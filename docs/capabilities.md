@@ -514,6 +514,26 @@ Status legend:
 | False | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Boolean false constant. |
 | File | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | File object type. |
 | File and directory operations | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | macOS recycle/trash and privacy-scoped file access still evolving. |
+| File.AtEOF | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the read position is at end of input. |
+| File.Close() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Closes the file or stream. |
+| File.Encoding | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the encoding used by text read and write members. |
+| File.Flush() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Flushes pending buffered output. |
+| File.Handle | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | OS file handle for path-backed files; 0 for memory-backed files. |
+| File.Length | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets stream length. |
+| File.Pos | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Current stream position; assigning seeks. |
+| File.RawRead() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads raw bytes into a destination exposing Ptr and Size. |
+| File.RawWrite() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes raw bytes from a source exposing Ptr and Size. |
+| File.Read() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads text from the current position. |
+| File.ReadChar() / File.ReadUChar() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads an 8-bit signed or unsigned value. |
+| File.ReadDouble() / File.ReadFloat() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads an IEEE floating-point value. |
+| File.ReadInt() / File.ReadUInt() / File.ReadInt64() / File.ReadShort() / File.ReadUShort() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads a binary integer of the requested width and signedness. |
+| File.ReadLine() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads one text line. |
+| File.Seek() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves the file position. |
+| File.Write() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes text at the current position. |
+| File.WriteChar() / File.WriteUChar() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes an 8-bit signed or unsigned value. |
+| File.WriteDouble() / File.WriteFloat() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes an IEEE floating-point value. |
+| File.WriteInt() / File.WriteUInt() / File.WriteInt64() / File.WriteShort() / File.WriteUShort() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a binary integer of the requested width and signedness. |
+| File.WriteLine() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes text followed by a line ending. |
 | FileAppend() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes text or binary data to the end of a file (first creating the file, if necessary). |
 | FileCopy() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies one or more files. |
 | FileCreateShortcut() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Windows creates .lnk files. Linux and macOS create symbolic links or freedesktop .desktop launchers; Windows-only icon-number, hotkey, and run-state metadata is not represented, and macOS aliases are not created. |
@@ -549,6 +569,14 @@ Status legend:
 | FormatCs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text using C#-style format placeholders (1-based indexing adaptation). |
 | FormatTime | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats a datetime string according to the parameters. All C# formatting options are supported. Supports all V2 functionality except for the Dn and Tn options. If you want to specify a specific format, do it in the format parameter. |
 | Func | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Function object type. |
+| Func.IsBuiltIn | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the function object targets a built-in member. |
+| Func.IsByRef() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether any parameter, or the specified 1-based parameter, is ByRef. |
+| Func.IsClosure | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the function object represents a closure over captured locals. |
+| Func.IsMethod | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the function object requires a receiver. |
+| Func.IsOptional() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether any parameter, or the specified 1-based parameter, is optional. |
+| Func.IsVariadic | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the target has a variadic trailing parameter. |
+| Func.MaxParams | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Maximum number of positional arguments the function object currently accepts. |
+| Func.MinParams | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Minimum number of positional arguments the function object currently requires. |
 | Func.Params | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. An Array describing the function's parameters (Name, Index, Optional, ByRef, Variadic, and Default when there is a real one). Reports exactly the names named-argument binding uses, excluding the receiver, internal parameters, and a bound function's already-bound ones. Unset when the parameters cannot be known (ObjBindMethod). |
 | FuncObj | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Managed function-object type name accepted by compatibility type checks alongside Func. |
 | GetKeyboardLayout() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a readable platform-native identifier for the active keyboard layout. |
@@ -655,7 +683,10 @@ Status legend:
 | IniWrite() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a value or section to a standard format.ini file. |
 | InputBox() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InputBox function displays an input box to ask the user to enter a string. On Linux and macOS the dialog is built with Eto and honours only the Password option; the W, H, X, Y and T (timeout) options are ignored, so Result never returns "Timeout". |
 | InputHook.BackspaceIsUndo | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Treats Backspace as undo for collected input. |
+| InputHook.BeforeHotkeys | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether InputHook receives events before hotkeys process them. |
+| InputHook.BufferLengthMax | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Maximum text buffer length before capture ends. |
 | InputHook.CaseSensitive | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether match checks are case-sensitive. |
+| InputHook.EndCharMode | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether termination characters remain in collected input. |
 | InputHook.EndKey | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Key that ended the input hook. |
 | InputHook.EndMods | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Modifier-state snapshot when input ended. |
 | InputHook.EndReason | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Reason the input hook ended. |
@@ -670,10 +701,14 @@ Status legend:
 | InputHook.OnEnd | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked when input capture ends. |
 | InputHook.OnKeyDown | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked on key-down events. |
 | InputHook.OnKeyUp | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked on key-up events. |
+| InputHook.OnMouseDown | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked on mouse-button press events. |
 | InputHook.OnMouseMove | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | OnMouseMove(hook, dx, dy) queues every move report, including (0, 0). Windows derives deltas from desktop-clamped hook positions, so outward movement at an edge can be zero; macOS uses Quartz deltas. Linux requires a matching keysharp-inputd 1.1 daemon and mouse-hook permission (without either, no moves are reported): relative values are raw device-specific evdev counts, while physical absolute values are changes in normalized [0,65535] axes. Linux A_EventInfo includes DeviceId (0 synthetic, positive physical) and IsAbsolute; synthetic absolute deltas are zero because no relative sample exists. Windows and macOS instead provide global-screen X/Y when available and omit DeviceId; X/Y need not equal the prior position plus dx/dy, and macOS reports the frozen cursor position while movement is suppressed. |
+| InputHook.OnMouseUp | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked on mouse-button release events. |
 | InputHook.Start() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Starts capturing input. |
 | InputHook.Stop() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Stops capturing input. |
 | InputHook.Timeout | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Maximum capture duration in seconds. |
+| InputHook.TranscribeModifiedKeys | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether typed characters should reflect active modifier changes. |
+| InputHook.VisibleMouseMove | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether mouse movement remains visible while capture is active. |
 | InputHook.VisibleNonText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible non-text keys are collected. |
 | InputHook.VisibleText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible text characters are collected. |
 | InputHook.Wait() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Waits until capture ends or times out. |
