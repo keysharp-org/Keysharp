@@ -98,7 +98,8 @@ namespace Keysharp.Main
 					&& command.Defines.Length == 0
 					&& ShouldUseDaemon())
 			{
-				switch (CompileClient.CompileViaServer(command.ScriptName, out var daemonBytes, out var daemonErr, out var daemonWarnings))
+				switch (CompileClient.CompileViaServer(command.ScriptName, out var daemonBytes, out _,
+					out var daemonWarnings))
 				{
 					case CompileDaemonStatus.Compiled:
 						// The daemon compiled in a process whose stderr goes nowhere, so its #Warning text rides back
@@ -119,13 +120,8 @@ namespace Keysharp.Main
 							return RunCompiledBytes(daemonBytes, command.ScriptArgs);
 
 					case CompileDaemonStatus.CompileFailed:
-
-						// --validate wanted exactly this answer, unrestored #Packages included.
-						if (command.Validate)
-							return ReportDaemonFailure(command, daemonErr);
-
-						// A run may fetch what the daemon won't, so recompile in-process - on the error path,
-						// where the second compile costs nothing anyone is waiting on.
+						// Recompile locally so source-level load policy is handled by the ordinary parser. Package restore
+						// remains disabled for --validate, just as it was in the daemon.
 						break;
 
 						// Unreachable + unspawnable: fall through to the in-process runner below.
@@ -246,7 +242,7 @@ namespace Keysharp.Main
 			}
 
 			if (arr == null)
-				return Runner.Message(compileResult, true);
+				return Runner.Message(compileResult, true, exeCompilation.ErrorStdOut);
 
 			// #Warning from the compiled script; on the failure path above it is already inside compileResult.
 			if (!string.IsNullOrEmpty(exeCompilation?.WarningText))
@@ -280,10 +276,10 @@ namespace Keysharp.Main
 #elif WINDOWS
 				var ver = GetLatestDotNetVersion();
 				finalPath = $"{path}.exe";
-				// #ConsoleApp inverts this: it is the PE subsystem field, and it is what makes a shell wait for the
-				// process and hand it the terminal's stdin/stdout. Windows reads it before the process starts, so it
-				// can only be chosen here, at build time - nothing the script does at runtime can change either
-				// behaviour. GUI stays the default so a double-clicked script never flashes a console window.
+				// `#App { ConsoleApp: true }` inverts this: it is the PE subsystem field, and it is what makes a shell
+				// wait for the process and hand it the terminal's stdin/stdout. Windows reads it before the process
+				// starts, so it can only be chosen here, at build time - nothing the script does at runtime can change
+				// either behaviour. GUI stays the default so a double-clicked script never flashes a console window.
 				HostWriter.CreateAppHost(
 					appHostSourceFilePath: @$"{WindowsHostPackRoot}{ver}\runtimes\{WindowsHostRid}\native\apphost.exe",
 					appHostDestinationFilePath: finalPath,

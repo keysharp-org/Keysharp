@@ -609,7 +609,7 @@ namespace Keysharp.Main
 					RuntimeDirectory = exeDir,
 					Output = ScriptCompilationOutput.InMemory,
 					// A shared background process does no network I/O for a caller it cannot see: an unrestored
-					// #Package fails here, and the client reports it (--validate) or recompiles in-process.
+					// #Package fails here, and the client recompiles in-process.
 					AllowPackageRestore = false,
 				});
 				bytes = compilation.AssemblyBytes;
@@ -682,7 +682,8 @@ namespace Keysharp.Main
 		/// pipe until warmup has finished, so no client can reach a half-initialised daemon; it just fails to
 		/// connect and keeps polling.
 		/// </summary>
-		internal static CompileDaemonStatus CompileViaServer(string scriptPath, out byte[] bytes, out string error, out string warnings)
+		internal static CompileDaemonStatus CompileViaServer(string scriptPath, out byte[] bytes, out string error,
+			out string warnings)
 		{
 			var status = TryCompile(scriptPath, out bytes, out error, out warnings, connectTimeoutMs: 300);
 
@@ -713,7 +714,8 @@ namespace Keysharp.Main
 		/// Attempts a single compile against an already-running daemon. Returns
 		/// <see cref="CompileDaemonStatus.Unreachable"/> (no exception) when no daemon is listening.
 		/// </summary>
-		internal static CompileDaemonStatus TryCompile(string scriptPath, out byte[] bytes, out string error, out string warnings, int connectTimeoutMs = 1000)
+		internal static CompileDaemonStatus TryCompile(string scriptPath, out byte[] bytes, out string error,
+			out string warnings, int connectTimeoutMs = 1000)
 		{
 			bytes = null;
 			error = null;

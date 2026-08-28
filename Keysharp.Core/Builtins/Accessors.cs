@@ -13,7 +13,9 @@ namespace Keysharp.Builtins
 		internal string guiTheme = "System";
 #endif
 		internal bool? iconFrozen;
+		internal string iconFile = "";
 		internal bool iconHidden;
+		internal object iconNumber = 1L;
 		internal long inputLevel;
 		internal string menuMaskKey = "";
 		internal long clipboardTimeout = 1000L;
@@ -480,7 +482,11 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Blank unless a custom tray icon has been specified via Menu, tray, icon -- in which case it's the full path and name of the icon's file.
 		/// </summary>
-		public static string A_IconFile { get; internal set; } = "";
+		public static string A_IconFile
+		{
+			get => Script.TheScript.AccessorData.iconFile;
+			internal set => Script.TheScript.AccessorData.iconFile = value;
+		}
 
 		/// <summary>
 		/// Contains true if the tray icon is currently hidden or false otherwise. The icon can be hidden via #NoTrayIcon or the Menu command.
@@ -525,7 +531,11 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Blank if A_IconFile is blank. Otherwise, it's the number of the icon in A_IconFile (typically 1) or a string name of an icon in a resource in a .NET DLL.
 		/// </summary>
-		public static object A_IconNumber { get; internal set; } = 1L;
+		public static object A_IconNumber
+		{
+			get => Script.TheScript.AccessorData.iconNumber;
+			internal set => Script.TheScript.AccessorData.iconNumber = value;
+		}
 
 		/// <summary>
 		/// Blank unless a custom tooltip for the tray icon has been specified via Menu, Tray, Tip -- in which case it's the text of the tip.
@@ -1767,7 +1777,7 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// The company of the assembly that is currently executing, specified with the #ASSEMBLYCOMPANY directive.
+		/// The company of the assembly that is currently executing, specified with the #App Company key.
 		/// </summary>
 		public static string A_AssemblyCompany
 		{
@@ -1779,7 +1789,7 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// The configuration of the assembly that is currently executing, specified with the #ASSEMBLYCONFIGURATION directive.
+		/// The configuration of the assembly that is currently executing, specified with the #App Configuration key.
 		/// </summary>
 		public static string A_AssemblyConfiguration
 		{
@@ -1791,7 +1801,7 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// The copyright of the assembly that is currently executing, specified with the #ASSEMBLYCOPYRIGHT directive.
+		/// The copyright of the assembly that is currently executing, specified with the #App Copyright key.
 		/// </summary>
 		public static string A_AssemblyCopyright
 		{
@@ -1803,7 +1813,7 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// The description of the assembly that is currently executing, specified with the #ASSEMBLYDESCRIPTION directive.
+		/// The description of the assembly that is currently executing, specified with the #App Description key.
 		/// </summary>
 		public static string A_AssemblyDescription
 		{
@@ -1815,7 +1825,7 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// The product of the assembly that is currently executing, specified with the #ASSEMBLYPRODUCT directive.
+		/// The product of the assembly that is currently executing, specified with the #App Product key.
 		/// </summary>
 		public static string A_AssemblyProduct
 		{
@@ -1827,7 +1837,7 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// The title of the assembly that is currently executing, specified with the #ASSEMBLYTITLE directive.
+		/// The title of the assembly that is currently executing, specified with the #App Title key.
 		/// </summary>
 		public static string A_AssemblyTitle
 		{
@@ -1839,14 +1849,14 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// The name of the assembly that is currently executing, specified with the #ASSEMBLYNAME directive.
+		/// The name of the assembly that is currently executing, specified with the #App Name key.
 		/// This is the assembly's identity rather than an attribute, so it is read from the assembly name itself and
 		/// always has a value: without the directive it is the name the script was compiled under.
 		/// </summary>
 		public static string A_AssemblyName => GetAssembly().GetName().Name ?? DefaultObject;
 
 		/// <summary>
-		/// The trademark of the assembly that is currently executing, specified with the #ASSEMBLYTRADEMARK directive.
+		/// The trademark of the assembly that is currently executing, specified with the #App Trademark key.
 		/// </summary>
 		public static string A_AssemblyTrademark
 		{
@@ -2106,52 +2116,13 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static object A_GuiTheme
 		{
-			get
-			{
-#if WINDOWS
-				return Script.TheScript.InvokeOnUIThread(() => Application.ColorMode.ToString());
-#else
-				var app = Application.Instance;
-
-				if (app == null || Script.IsUiInitializationBlocked)
-					return Script.TheScript.AccessorData.guiTheme;
-
-				return Script.TheScript.InvokeOnUIThread(() =>
-				{
-					var theme = app.Theme;
-
-					if (theme == Themes.System)
-						return "System";
-
-					if (theme == Themes.Dark)
-						return "Dark";
-
-					if (theme == Themes.Light)
-						return "Classic";
-
-					return Script.TheScript.AccessorData.guiTheme;
-				});
-#endif
-			}
+			get => Script.TheScript.GetGuiTheme();
 			set
 			{
-				if (!TryParseGuiTheme(value?.ToString(), out var normalizedTheme
-#if WINDOWS
-					, out var colorMode
-#endif
-					))
+				if (!Script.TheScript.TrySetGuiTheme(value?.ToString()))
 				{
 					_ = Errors.ValueErrorOccurred($"Invalid gui theme {value}");
-					return;
 				}
-
-				Script.TheScript.AccessorData.guiTheme = normalizedTheme;
-#if WINDOWS
-				Script.TheScript.InvokeOnUIThread(() => Application.SetColorMode(colorMode));
-#else
-				if (!Script.IsUiInitializationBlocked && Application.Instance is { } app)
-					Script.TheScript.InvokeOnUIThread(() => Script.ApplyEtoGuiTheme(app, normalizedTheme));
-#endif
 			}
 		}
 
@@ -2172,48 +2143,6 @@ namespace Keysharp.Builtins
 				}
 
 				return new Map(timerData.ToArray());
-			}
-		}
-
-		private static bool TryParseGuiTheme(string value, out string normalizedTheme
-#if WINDOWS
-			, out System.Windows.Forms.SystemColorMode colorMode
-#endif
-			)
-		{
-			normalizedTheme = null;
-#if WINDOWS
-			colorMode = System.Windows.Forms.SystemColorMode.Classic;
-#endif
-
-			if (string.IsNullOrWhiteSpace(value))
-				return false;
-
-			switch (value.Trim().ToLower())
-			{
-				case "classic":
-					normalizedTheme = "Classic";
-#if WINDOWS
-					colorMode = System.Windows.Forms.SystemColorMode.Classic;
-#endif
-					return true;
-
-				case "system":
-					normalizedTheme = "System";
-#if WINDOWS
-					colorMode = System.Windows.Forms.SystemColorMode.System;
-#endif
-					return true;
-
-				case "dark":
-					normalizedTheme = "Dark";
-#if WINDOWS
-					colorMode = System.Windows.Forms.SystemColorMode.Dark;
-#endif
-					return true;
-
-				default:
-					return false;
 			}
 		}
 

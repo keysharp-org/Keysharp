@@ -352,7 +352,7 @@ namespace Keysharp.Builtins
 				if (icon != null)
 				{
 					A_IconFile = filename;
-					A_IconNumber = iconNumber == null ? 1L : iconNumber.Al();
+					A_IconNumber = ImageHelper.IconNumberForDisplay(iconNumber);
 					//The icon this replaces is deliberately NOT freed here. Everything still showing it holds a
 					//managed reference -- Form.Icon on a Gui built while it was current, NotifyIcon.Icon, and
 					//InputDialog's own field -- so it stays alive exactly as long as something is drawing it, and
@@ -368,7 +368,8 @@ namespace Keysharp.Builtins
 				A_IconFile = "";
 				A_IconNumber = 1L;
 				script.customIcon = null;
-				script.PostToUIThread(() => ApplyScriptIcon(script, script.normalIcon));
+				//Use the embedded defaults rather than normalIcon: #App Icon and #TrayIcon can each replace one.
+				script.PostToUIThread(() => ApplyScriptIcon(script, script.scriptIcon, script.trayDefaultIcon));
 			}
 
 			return DefaultObject;
@@ -376,12 +377,13 @@ namespace Keysharp.Builtins
 
 		/// <summary>
 		/// Puts the script's icon on the chrome that follows it: the tray icon and the main window. Guis pick it up
-		/// when they are created, so only windows that already exist are touched here.
+		/// when they are created, so only windows that already exist are touched here. The tray can differ from the
+		/// windows only on the "*" reset, where a <c>#TrayIcon</c> selection is its default.
 		/// </summary>
-		private static void ApplyScriptIcon(Script script, Icon icon)
+		private static void ApplyScriptIcon(Script script, Icon icon, Icon trayIcon = null)
 		{
 			if (script.Tray != null)
-				script.Tray.Icon = icon;
+				script.Tray.Icon = trayIcon ?? icon;
 
 			if (script.mainWindow != null)
 				script.mainWindow.Icon = icon;

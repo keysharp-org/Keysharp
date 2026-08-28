@@ -206,6 +206,8 @@ public sealed class ScriptSyntaxValidationResult
 {
 	public IReadOnlyList<ScriptDiagnostic> Diagnostics { get; init; } = Array.Empty<ScriptDiagnostic>();
 	public bool Success => Diagnostics.All(diagnostic => diagnostic.Severity != ScriptDiagnosticSeverity.Error);
+	/// <summary>True when the source requests stderr routing for a syntax error.</summary>
+	public bool ErrorStdOut { get; init; }
 }
 
 public sealed class ScriptCompileRequest
@@ -234,9 +236,16 @@ public interface IScriptCompilationResult
 	IReadOnlyCollection<string> RequiredComponents { get; }
 
 	/// <summary>
-	/// True when the script carries `#ConsoleApp`, asking for a console (CUI) executable rather than a GUI one.
-	/// Only an executable can honour it: Windows fixes the choice in the PE subsystem field before the process
-	/// starts, so the host applies it when it stamps the apphost.
+	/// True when a source-level <c>#ErrorStdOut</c> requests that a
+	/// compilation failure be written to stderr. This hint is available before a successful parse or lowering.
+	/// The default keeps older compiler components binary-compatible with this additive contract member.
+	/// </summary>
+	bool ErrorStdOut => false;
+
+	/// <summary>
+	/// True when the script's `#App` block sets `ConsoleApp: true`, asking for a console (CUI) executable
+	/// rather than a GUI one. Only an executable can honour it: Windows fixes the choice in the PE subsystem
+	/// field before the process starts, so the host applies it when it stamps the apphost.
 	/// </summary>
 	bool ConsoleApp { get; }
 }

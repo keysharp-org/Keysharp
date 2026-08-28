@@ -692,6 +692,91 @@ namespace Keysharp.Tests
 		[Test, Category("FileAndDir")]
 		public void FileInstall()
 		{
+			var workingDirectory = Environment.CurrentDirectory;
+
+			try
+			{
+				Environment.CurrentDirectory = path;
+				Assert.IsTrue(TestScript("file-fileinstall", false));
+			}
+			finally
+			{
+				Environment.CurrentDirectory = workingDirectory;
+			}
+		}
+
+		[Test, Category("FileAndDir")]
+		public void FileInstallResources()
+		{
+			const string resourcePrefix = "Keysharp.App.Files/";
+			var scriptPath = Path.Combine(path, "file-fileinstall.ahk");
+			var helper = new CompilerHelper();
+			var (memoryBytes, memoryError, memoryCompilation) = helper.CompileCodeToByteArray(
+				scriptPath, "file-install-memory", compileToFile: false, sourceIsFile: true);
+			Assert.IsNotNull(memoryBytes, memoryError);
+			NUnit.Framework.Legacy.CollectionAssert.AreEqual(
+				new[] { "file-fileinstall.ahk", "Gui/monkey.ico" }, memoryCompilation.Manifest.Files);
+			Assert.IsEmpty(memoryCompilation.Manifest.FileSources,
+				"source execution keeps logical declarations but must not carry build-machine payload paths");
+			var memoryAssembly = Assembly.Load(memoryBytes);
+			Assert.IsFalse(memoryAssembly.GetManifestResourceNames().Any(n => n.StartsWith(resourcePrefix, StringComparison.Ordinal)));
+
+			var (artifactBytes, artifactError, artifactCompilation) = helper.CompileCodeToByteArray(
+				scriptPath, "file-install-artifact", compileToFile: true, sourceIsFile: true);
+			Assert.IsNotNull(artifactBytes, artifactError);
+			Assert.AreEqual(2, artifactCompilation.Manifest.FileSources.Count);
+			var artifactAssembly = Assembly.Load(artifactBytes);
+			var resources = artifactAssembly.GetManifestResourceNames();
+			NUnit.Framework.Legacy.CollectionAssert.IsSubsetOf(new[]
+			{
+				resourcePrefix + "file-fileinstall.ahk",
+				resourcePrefix + "Gui/monkey.ico",
+			}, resources);
+			Assert.IsFalse(resources.Any(n => n.Contains("Keysharp_clone", StringComparison.OrdinalIgnoreCase)),
+				"managed resource names must not expose the physical build path");
+			using (var manifestStream = artifactAssembly.GetManifestResourceStream("Keysharp.App.json"))
+			{
+				Assert.IsNotNull(manifestStream);
+				var json = new StreamReader(manifestStream).ReadToEnd();
+				var physicalPath = Path.GetFullPath(path);
+				Assert.IsFalse(json.Contains(physicalPath, StringComparison.OrdinalIgnoreCase), json);
+				Assert.IsFalse(json.Contains(physicalPath.Replace("\\", "\\\\"), StringComparison.OrdinalIgnoreCase), json);
+			}
+
+			var priorAssembly = ScriptExecutionState.Assembly;
+			var priorProgramType = s.ProgramType;
+			var priorWorkingDirectory = Environment.CurrentDirectory;
+			var temp = Path.Combine(Path.GetTempPath(), "keysharp-fileinstall-" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(temp);
+
+			try
+			{
+				s.SetName(scriptPath);
+				Environment.CurrentDirectory = temp;
+				ScriptExecutionState.Assembly = memoryAssembly;
+				s.ProgramType = memoryAssembly.GetType("Keysharp.CompiledMain.Program");
+				var fallbackDest = Path.Combine(temp, "source.ahk");
+				_ = Files.FileInstall("file-fileinstall.ahk", fallbackDest);
+				Assert.AreEqual(File.ReadAllText(scriptPath), File.ReadAllText(fallbackDest));
+				_ = Files.FileInstall(scriptPath, scriptPath);
+
+				s.SetName(Path.Combine(temp, "missing-script.ahk"));
+				ScriptExecutionState.Assembly = artifactAssembly;
+				s.ProgramType = artifactAssembly.GetType("Keysharp.CompiledMain.Program");
+				var iconDest = Path.Combine(temp, "icon.ico");
+				_ = Files.FileInstall(@"Gui\monkey.ico", iconDest);
+				NUnit.Framework.Legacy.CollectionAssert.AreEqual(
+					File.ReadAllBytes(Path.Combine(path, "Gui", "monkey.ico")), File.ReadAllBytes(iconDest));
+			}
+			finally
+			{
+				ScriptExecutionState.Assembly = priorAssembly;
+				s.ProgramType = priorProgramType;
+				Environment.CurrentDirectory = priorWorkingDirectory;
+
+				if (Directory.Exists(temp))
+					Directory.Delete(temp, true);
+			}
 		}
 
 		[Test, Category("FileAndDir")]

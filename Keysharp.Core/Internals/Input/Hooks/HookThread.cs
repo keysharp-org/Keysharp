@@ -125,7 +125,7 @@ namespace Keysharp.Internals.Input.Hooks
 		private static long hotIfCallbackDeadline;
 
 		internal Mutex keybdMutex = null, mouseMutex = null;
-		/// <summary>Per-Script, so #HookMutexName cannot rebind a later Script in this process.</summary>
+		/// <summary>Per-Script, so one script's `#App { HookMutexName: ... }` cannot rebind a later Script in this process.</summary>
 		internal readonly string KeybdMutexName;
 		internal Dictionary<string, uint> keyToSc = null;
 		internal Dictionary<string, uint>.AlternateLookup<ReadOnlySpan<char>> keyToScAlt;

@@ -26,12 +26,13 @@ namespace Keysharp.Compilation
 
 		internal IReadOnlyCollection<string> RequiredComponents { get; set; } = [];
 
-		/// <summary>True when `#ConsoleApp` asked for a console (CUI) executable rather than a GUI one.</summary>
-		internal bool ConsoleApp { get; set; }
+		/// <summary>The resolved application startup handoff, or null when the script declares no application data or
+		/// startup controls. Embedded in the assembly for the runtime to read.</summary>
+		internal Keysharp.Internals.Scripting.AppManifest Manifest { get; set; }
+
+		internal bool ErrorStdOut { get; set; }
 
 		internal PackageManifest Packages { get; set; }
-
-		internal string DeclaredAssemblyName { get; set; }
 
 		/// <summary>Formatted script and inline-C# warnings.</summary>
 		public string Warnings { get; internal set; }

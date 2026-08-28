@@ -107,9 +107,13 @@ public sealed class ParserComponent : IScriptSyntaxValidator, IScriptTokenizer
 	public ScriptSyntaxValidationResult ValidateSyntax(ScriptSyntaxValidationRequest request)
 	{
 		ArgumentNullException.ThrowIfNull(request);
-		var (_, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(
+		var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(
 			request.SourceText ?? "", request.IncludeDirectory, request.ScriptPath, request.Defines);
-		return new() { Diagnostics = diagnostics.Select(diagnostic => ToDiagnostic(diagnostic, request.ScriptPath)).ToArray() };
+		return new()
+		{
+			Diagnostics = diagnostics.Select(diagnostic => ToDiagnostic(diagnostic, request.ScriptPath)).ToArray(),
+			ErrorStdOut = program.ErrorStdOut,
+		};
 	}
 
 	private static ScriptDiagnostic ToDiagnostic(string diagnostic, string defaultFile)

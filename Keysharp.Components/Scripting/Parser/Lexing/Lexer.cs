@@ -936,7 +936,7 @@ namespace Keysharp.Parsing.Lexing
 		// versus normally-lexed tokens, when it validates per-directive argument counts.
 		internal static readonly HashSet<string> RawArgDirectives = new(System.StringComparer.OrdinalIgnoreCase)
 		{
-			"hotstring", "requires", "dllload", "singleinstance", "warn", "hookmutexname", "errorstdout", "package",
+			"hotstring", "requires", "dllload", "singleinstance", "warn", "errorstdout", "package",
 			// #Error/#Warning carry an English sentence, so they are the likeliest of all to contain an apostrophe or a
 			// brace. Lexed as code, `#Warning don't` is an unterminated string and `#Warning fix the {` swallows every
 			// following line until the braces balance — for #Warning silently, since it does not fail the build.

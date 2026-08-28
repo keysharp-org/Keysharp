@@ -43,16 +43,320 @@ namespace Keysharp.Tests
 			var ver = asm.GetCustomAttribute<AssemblyFileVersionAttribute>();
 			Assert.IsNotNull(ver);
 			Assert.AreEqual(ver.Version, "9.8.7.6");
+			Assert.AreEqual(new Version(9, 8, 7, 6), asm.GetName().Version);
 			//
-			// #AssemblyName sets the assembly's identity rather than an attribute, so it is read from the name and
-			// not via GetCustomAttribute. It overrides the name derived from the script file.
+			// `#App { Name: ... }` sets the assembly's identity rather than an attribute, so it is read from the
+			// name and not via GetCustomAttribute. It overrides the name derived from the script file.
 			Assert.AreEqual("ThisIsAnAsmName", asm.GetName().Name);
+			//
+			// The whole manifest also rides in the assembly as a JSON resource, readable without executing it.
+			using (var res = asm.GetManifestResourceStream("Keysharp.App.json"))
+			{
+				Assert.IsNotNull(res, "the #App manifest must be embedded as a resource");
+				var json = new StreamReader(res).ReadToEnd();
+				Assert.IsTrue(json.Contains("ThisIsAnAsmName"), "the embedded manifest should carry the declared keys; got: " + json);
+			}
 			//
 			Assert.IsTrue(TestScript("directive-asminfo", false));
 		}
 
 		[Test, Category("Directives")]
+		public void AppErrors()
+		{
+			// #App is validated at compile time: every diagnostic here would otherwise produce a silently wrong program.
+			static (string[] diags, string[] parse) Lower(string src)
+			{
+				try
+				{
+					var (prog, parseDiags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(src);
+
+					if (parseDiags.Count > 0)
+						return ([], parseDiags.ToArray());
+
+					var lowerer = new Keysharp.Compilation.Syntax.Lowerer();
+					_ = lowerer.Build(prog, "Test");
+					return (lowerer.Diagnostics.ToArray(), []);
+				}
+				catch (Keysharp.Builtins.ParseException pe)
+				{
+					return ([], [pe.Message]);
+				}
+			}
+
+			static void Rejects(string src, string expect)
+			{
+				var (diags, parse) = Lower(src);
+				var all = string.Join("; ", diags.Concat(parse));
+				Assert.IsTrue(all.Contains(expect, StringComparison.OrdinalIgnoreCase),
+					$"expected '{expect}' for {src.Replace("\n", "\\n")} but got: {(all.Length == 0 ? "no diagnostic at all" : all)}");
+			}
+
+			Rejects("#App { NoSuchKey: 1 }\nx := 1\n", "unknown #App key");
+			Rejects("#App { Title: A_ScriptDir }\nx := 1\n", "compile-time constant");
+			Rejects("x := 1\n#Module M\n#App { Title: \"a\" }\n", "before any #Module");
+			Rejects("#App { TrayIcon: \"icon.ico\" }\nx := 1\n", "unknown #App key");
+			Rejects("#App { NoTrayIcon: true }\nx := 1\n", "unknown #App key");
+			Rejects("#App { SingleInstance: \"Force\" }\nx := 1\n", "unknown #App key");
+			Rejects("#App { ErrorStdOut: true }\nx := 1\n", "unknown #App key");
+			Rejects("#App { ErrorStdOut: A_ScriptDir }\nx := 1\n", "unknown #App key");
+			Rejects("#App { GuiTheme: \"Neon\" }\nx := 1\n", "must be Classic, System or Dark");
+			Rejects("#App { Version: \"not-a-version\" }\nx := 1\n", "2 to 4 decimal components");
+			Rejects("#App { Version: \"1\" }\nx := 1\n", "2 to 4 decimal components");
+			Rejects("#App { Version: \"1.2.3.4.5\" }\nx := 1\n", "2 to 4 decimal components");
+			Rejects("#App { Version: \"1.65535\" }\nx := 1\n", "0 to 65534");
+			Rejects("#App { Title: -\"text\" }\nx := 1\n", "compile-time constant");
+			Rejects("#App { Title: [1] . \"text\" }\nx := 1\n", "compile-time constant");
+			Rejects("#App { ConsoleApp: \"maybe\" }\nx := 1\n", "must be true or false");
+			Rejects("#App { Icon: \"missing.png\" }\nx := 1\n", "must be a .ico file");
+			Rejects("#App { Files: \"not-an-array\" }\nx := 1\n", "array of path strings");
+			var rootedFile = Path.GetFullPath(string.Concat(path, "directive-misc.ahk"));
+			var rootedIcon = Path.GetFullPath(string.Concat(path, "Gui/monkey.ico"));
+			Rejects($"#App {{ Files: [\"{rootedFile}\"] }}\nx := 1\n", "relative paths");
+			Rejects($"#App {{ Icon: \"{rootedIcon}\" }}\nx := 1\n", "relative path");
+			Rejects("#App\nx := 1\n", "requires a { key: value");
+			Rejects("#NoTrayIcon false\nx := 1\n", "#NoTrayIcon accepts no arguments");
+			Rejects("#ErrorStdOut false\nx := 1\n", "#ErrorStdOut accepts no arguments");
+
+			// Unsupported directive spellings point at the accepted #App key instead of a generic unknown-directive error.
+			Rejects("#AssemblyTitle t\nx := 1\n", "#App { Title:");
+			Rejects("#AssemblyName n\nx := 1\n", "#App { Name:");
+			Rejects("#ConsoleApp\nx := 1\n", "#App { ConsoleApp:");
+			Rejects("#HookMutexName m\nx := 1\n", "#App { HookMutexName:");
+
+			// Valid blocks still compile: canonical directives beside independent keys, concatenation, and `.`-built values.
+			foreach (var ok in new[]
+			{
+				"#SingleInstance Ignore\n#ErrorStdOut\n#NoTrayIcon\n#App { Title: \"a\" . \"b\" }\nx := 1\n",
+				"#SingleInstance Force\n#App { Title: \"a\" }\nx := 1\n",
+				"#App { Title: \"first\", Files: [] }\n#App { Title: \"second\", Files: [] }\nx := 1\n",
+				"#App { Title: \"first\", Title: true . false . -2, Version: \"0.65534.2.3\" }\nx := 1\n",
+				"#App {\n\tTitle: \"multi\",\n\tCompany: \"line\",\n}\nx := 1\n",
+			})
+			{
+				var (diags, parse) = Lower(ok);
+				Assert.IsEmpty(string.Join("; ", diags.Concat(parse)), "valid #App rejected: " + ok.Replace("\n", "\\n"));
+			}
+		}
+
+		[Test, Category("Directives")]
+		public void AppSyntax()
+		{
+			static void Rejects(string src, string expect)
+			{
+				var (_, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(src);
+				var all = string.Join("; ", diagnostics);
+				Assert.IsTrue(all.Contains(expect, StringComparison.OrdinalIgnoreCase),
+					$"expected '{expect}' for {src.Replace("\n", "\\n")} but got: {(all.Length == 0 ? "no parse diagnostic" : all)}");
+			}
+
+			Rejects("f() {\n#App { Title: \"a\" }\n}\nf()\n", "top level of the main module");
+			Rejects("class C {\n#App { Title: \"a\" }\n}\n", "top level of the main module");
+			Rejects("x := {\n#App { Title: \"a\" }\na: 1\n}\n", "top level of the main module");
+			Rejects("#App { Title: \"a\" } FileAppend(\"x\", \"*\")\n", "must be alone on its line");
+		}
+
+		[Test, Category("Directives")]
 		public void IncludeAsmInfo() => Assert.IsTrue(TestScript("directive-include-asminfo", false));
+
+		[Test, Category("Directives")]
+		public void AppData()
+		{
+			var ch = new CompilerHelper();
+
+			// Tray suppression is explicit in the startup manifest and independent of a custom tray source.
+			var (arrMani, codeMani, _) = ch.CompileCodeToByteArray("#NoTrayIcon\nx := 1\n", "app-mani", null, false, true);
+			Assert.IsNotNull(arrMani, codeMani);
+			var asm = Assembly.Load(arrMani);
+			using (var res = asm.GetManifestResourceStream("Keysharp.App.json"))
+			{
+				Assert.IsNotNull(res, "canonical directives alone must still produce the manifest resource");
+				var json = new StreamReader(res).ReadToEnd();
+				Assert.IsTrue(json.Contains("\"noTrayIcon\":true"), json);
+			}
+
+			// #App Icon and #TrayIcon are validated at compile time and embedded as distinct managed resources.
+			var icon = Path.GetFullPath(string.Concat(path, "Gui/monkey.ico"));
+			Assert.IsTrue(File.Exists(icon), $"test icon missing at {icon}");
+			var iconRelative = @"Gui\monkey.ico";
+			var (arrIcon, codeIcon, _) = ch.CompileCodeToByteArray(
+				$"#App {{ Icon: \"{iconRelative}\" }}\n#TrayIcon \"{iconRelative}\", 1\nx := 1\n",
+				"app-icon", null, false, true, includeDirOverride: path);
+			Assert.IsNotNull(arrIcon, codeIcon);
+			var iconAsm = Assembly.Load(arrIcon);
+			using var iconRes = iconAsm.GetManifestResourceStream("Keysharp.App.ico");
+			Assert.IsNotNull(iconRes, "the #App icon must be embedded as a managed resource");
+			Assert.AreEqual(new FileInfo(icon).Length, iconRes.Length, "the embedded icon must be the declared file");
+			using var trayRes = iconAsm.GetManifestResourceStream("Keysharp.App.Tray.ico");
+			Assert.IsNotNull(trayRes, "the #TrayIcon payload must be embedded as its own managed resource");
+			using (var iconManifest = iconAsm.GetManifestResourceStream("Keysharp.App.json"))
+			{
+				Assert.IsNotNull(iconManifest);
+				var json = new StreamReader(iconManifest).ReadToEnd();
+				Assert.IsTrue(json.Contains("\"icon\":\"Gui/monkey.ico\"")
+					&& json.Contains("\"trayIcon\":\"Gui/monkey.ico\"")
+					&& json.Contains("\"trayIconNumber\":1"), json);
+				Assert.IsFalse(json.Contains(Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase), json);
+			}
+
+			// Blocks and duplicate keys are applied in source order. Files: [] clears an earlier payload, while scalar
+			// concatenation uses AHK's boolean spelling.
+			var lastWinsSource = "#App { Title: \"first\", Files: [\"directive-misc.ahk\"] }\n"
+				+ "#App { Title: \"second\", Files: [] }\n"
+				+ "#App { Title: \"third\", Title: true . false . -2, Version: \"0.65534.2.3\" }\n"
+				+ "x := 1\n";
+			var (arrLast, codeLast, lastCompilation) = ch.CompileCodeToByteArray(lastWinsSource, "app-last",
+				emitCode: true, compileToFile: true, includeDirOverride: path);
+			Assert.IsNotNull(arrLast, codeLast);
+			Assert.IsEmpty(lastCompilation.Manifest.FileSources);
+			var lastAsm = Assembly.Load(arrLast);
+			Assert.IsFalse(lastAsm.GetManifestResourceNames().Any(n => n.StartsWith(AppManifest.FileResourcePrefix, StringComparison.Ordinal)));
+			using (var lastManifest = lastAsm.GetManifestResourceStream("Keysharp.App.json"))
+			{
+				var json = new StreamReader(lastManifest).ReadToEnd();
+				Assert.IsTrue(json.Contains("\"title\":\"10-2\"") && json.Contains("\"files\":[]"), json);
+				Assert.IsFalse(json.Contains("trayIcon", StringComparison.OrdinalIgnoreCase), json);
+			}
+
+			// A script with no manifest keys or canonical manifest directives embeds no manifest at all.
+			var (arrNone, codeNone, _) = ch.CompileCodeToByteArray("x := 1\n", "app-none", null, false, true);
+			Assert.IsNotNull(arrNone, codeNone);
+			Assert.IsNull(Assembly.Load(arrNone).GetManifestResourceStream("Keysharp.App.json"),
+				"a manifest-less script must not carry an empty manifest resource");
+		}
+
+		[Test, Category("Directives")]
+		public void TrayIcon()
+		{
+			static (Keysharp.Compilation.Syntax.Lowerer lowerer, string errors) Lower(string source, string root)
+			{
+				var (program, parseDiagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source, root);
+
+				if (parseDiagnostics.Count > 0)
+					return (null, string.Join("; ", parseDiagnostics));
+
+				var lowerer = new Keysharp.Compilation.Syntax.Lowerer();
+				_ = lowerer.Build(program, "tray-icon-directive", includeDir: root);
+				return (lowerer, string.Join("; ", lowerer.Diagnostics));
+			}
+
+			static Keysharp.Compilation.Syntax.Lowerer Accepts(string source, string root)
+			{
+				var (lowerer, errors) = Lower(source, root);
+				Assert.IsEmpty(errors, $"valid #TrayIcon rejected: {source.Replace("\n", "\\n")}");
+				return lowerer;
+			}
+
+			static void Rejects(string source, string root, string expected)
+			{
+				var (_, errors) = Lower(source, root);
+				Assert.IsTrue(errors.Contains(expected, StringComparison.OrdinalIgnoreCase),
+					$"expected '{expected}' for {source.Replace("\n", "\\n")} but got: {(errors.Length == 0 ? "no diagnostic" : errors)}");
+			}
+
+			var root = Path.Combine(Path.GetTempPath(), "keysharp-tray-directive-" + Guid.NewGuid().ToString("N"));
+
+			try
+			{
+				Directory.CreateDirectory(root);
+				const string logicalIcon = "tray,icon.ico";
+				File.Copy(Path.GetFullPath(string.Concat(path, "Gui/monkey.ico")), Path.Combine(root, logicalIcon));
+
+				var ordinal = Accepts($"#TrayIcon \"{logicalIcon}\", 2\nx := 1\n", root).Manifest;
+				Assert.AreEqual(logicalIcon, ordinal.TrayIcon);
+				Assert.AreEqual(2L, ordinal.TrayIconNumber);
+				Assert.IsNull(ordinal.TrayIconResource);
+				Assert.IsNotEmpty(ordinal.TrayIconBytes);
+
+				var resourceId = Accepts($"#TrayIcon \"{logicalIcon}\", -14\nx := 1\n", root).Manifest;
+				Assert.AreEqual(-14L, resourceId.TrayIconNumber);
+
+				// Build a real managed-resource DLL so this exercises the string selector rather than assuming one of
+				// Keysharp's implementation assemblies happens to expose a particular .resx key.
+				var managedPath = Path.Combine(root, "managed-icons.dll");
+				byte[] managedResources;
+				using (var resourceStream = new MemoryStream())
+				{
+					using (var writer = new System.Resources.ResourceWriter(resourceStream))
+					{
+						writer.AddResource("ApplicationIcon", File.ReadAllBytes(Path.Combine(root, logicalIcon)));
+						writer.Generate();
+					}
+					managedResources = resourceStream.ToArray();
+				}
+				var managedCompilation = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create(
+					"ManagedIcons",
+					[Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText("internal sealed class IconMarker { }")],
+					[Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+					new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(
+						Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary));
+				using (var managedOutput = File.Create(managedPath))
+				{
+					var emitted = managedCompilation.Emit(managedOutput, manifestResources:
+					[
+						new Microsoft.CodeAnalysis.ResourceDescription("ManagedIcons.resources",
+							() => new MemoryStream(managedResources, writable: false), isPublic: true)
+					]);
+					Assert.IsTrue(emitted.Success, string.Join(Environment.NewLine, emitted.Diagnostics));
+				}
+
+				var managed = Accepts("#TrayIcon \"managed-icons.dll\", \"ApplicationIcon\"\nx := 1\n", root).Manifest;
+				Assert.AreEqual("ApplicationIcon", managed.TrayIconResource);
+				Assert.IsNull(managed.TrayIconNumber);
+
+				var restoredFromSuppressed = Accepts("#NoTrayIcon\n#TrayIcon\nx := 1\n", root).Manifest;
+				Assert.IsNull(restoredFromSuppressed.TrayIcon);
+				Assert.IsNull(restoredFromSuppressed.NoTrayIcon);
+				Assert.IsNull(restoredFromSuppressed.TrayIconBytes);
+
+				var suppressedLast = Accepts("#TrayIcon\n#NoTrayIcon\nx := 1\n", root).Manifest;
+				Assert.AreEqual(true, suppressedLast.NoTrayIcon);
+				Assert.IsNull(suppressedLast.TrayIcon);
+
+				var customLast = Accepts($"#NoTrayIcon\n#TrayIcon \"{logicalIcon}\"\nx := 1\n", root).Manifest;
+				Assert.AreEqual(logicalIcon, customLast.TrayIcon);
+				Assert.IsNull(customLast.NoTrayIcon);
+
+				var restoredLast = Accepts($"#TrayIcon \"{logicalIcon}\", 1\n#TrayIcon\nx := 1\n", root).Manifest;
+				Assert.IsNull(restoredLast.TrayIcon);
+				Assert.IsNull(restoredLast.TrayIconNumber);
+				Assert.IsNull(restoredLast.TrayIconResource);
+
+				// Load-time directives are lexical, even in AST containers whose normal lowering order differs.
+				var conditionalOrder = Accepts("if true {\n#NoTrayIcon\n} else {\n#TrayIcon\n}\nx := 1\n", root).Manifest;
+				Assert.IsNull(conditionalOrder.NoTrayIcon);
+				var classOrder = Accepts("class C {\n#NoTrayIcon\nM() {\n#TrayIcon\n}\n}\nx := 1\n", root).Manifest;
+				Assert.IsNull(classOrder.NoTrayIcon);
+
+				// A directive contributed by an include still resolves its source against the main program root.
+				var includeDirectory = Path.Combine(root, "included");
+				Directory.CreateDirectory(includeDirectory);
+				File.WriteAllText(Path.Combine(includeDirectory, "tray.ahk"), $"#TrayIcon \"{logicalIcon}\"\n");
+				var included = Accepts("#Include \"included/tray.ahk\"\nx := 1\n", root).Manifest;
+				Assert.AreEqual(logicalIcon, included.TrayIcon);
+				Assert.IsNotEmpty(included.TrayIconBytes);
+
+#if WINDOWS
+				// Exercise the selector against real native module resources rather than merely retaining it beside an .ico.
+				var nativeOrdinal = Accepts("#TrayIcon \"shell32.dll\", 2\nx := 1\n", Environment.SystemDirectory).Manifest;
+				Assert.AreEqual(2L, nativeOrdinal.TrayIconNumber);
+				Assert.IsNotEmpty(nativeOrdinal.TrayIconBytes);
+				var nativeResource = Accepts("#TrayIcon \"user32.dll\", -32512\nx := 1\n", Environment.SystemDirectory).Manifest;
+				Assert.AreEqual(-32512L, nativeResource.TrayIconNumber);
+				Assert.IsNotEmpty(nativeResource.TrayIconBytes);
+#endif
+
+				Rejects("#TrayIcon *\nx := 1\n", root, "bare #TrayIcon");
+				Rejects($"#TrayIcon \"{logicalIcon}\", 0\nx := 1\n", root, "non-zero integer");
+				Rejects($"#TrayIcon \"{logicalIcon}\", Keysharp.ico\nx := 1\n", root, "quoted managed-resource name");
+				Rejects($"#TrayIcon \"{logicalIcon}\", 1, 2\nx := 1\n", root, "at most 2 arguments");
+				Rejects($"#TrayIcon \"{Path.GetFullPath(Path.Combine(root, logicalIcon))}\"\nx := 1\n", root,
+					"relative to the main program root");
+			}
+			finally
+			{
+				try { Directory.Delete(root, true); } catch { }
+			}
+		}
 
 		[Test, Category("Directives")]
 		public void Include() => Assert.IsTrue(TestScript("directive-include", false));

@@ -431,14 +431,15 @@ Controlling another application needs **Automation** permission, granted per tar
 * If a `ComObject` with `VarType` of `VT_DISPATCH` and a null pointer value is assigned a non-null pointer value, its type does not change. The `Ptr` member remains available.
 * `A_LineNumber` is not a reliable indicator of the line number because the preprocessor condenses the code before parsing and compiling it.
 * The Optimization section of the `#HotIf` documentation doesn't apply to Keysharp because it uses compiled code, thus the expressions are never re-evaluated.
-* The `#ErrorStdOut` directive will not print to the console unless piping is used. For example:
+* The standalone `#ErrorStdOut` directive sends subsequent load-time errors and uncaught runtime errors to standard error instead of a dialog. The `--errorstdout` command-line switch applies to load-time errors from the start of loading. A GUI-subsystem process's error stream is visible when captured by piping or redirection. For example:
 	+ `.\Keysharp.exe .\test.ahk | more`
 	+ `.\Keysharp.exe .\test.ahk | more > out.txt`
-* The `#ConsoleApp` directive is Keysharp-only, and is the equivalent of Ahk2Exe's `;@Ahk2Exe-ConsoleApp`. It makes `--compile exe` produce a console application rather than the default GUI one, which is what a command-line script needs:
+* The `#App { ConsoleApp: true }` key is Keysharp-only, and is the equivalent of Ahk2Exe's `;@Ahk2Exe-ConsoleApp`. It makes `--compile exe` produce a console application rather than the default GUI one, which is what a command-line script needs:
 	+ A shell waits for the program to exit and reports its exit code, and its standard streams are the terminal's, so `FileAppend(text, "*")` prints and `FileOpen("*", "r")` reads typed input without any redirection.
-	+ On Windows this is the executable's PE subsystem field, which the shell reads before the process starts. Nothing done at runtime can substitute for it, which is why it is a build-time directive rather than a setting.
+	+ On Windows this is the executable's PE subsystem field, which the shell reads before the process starts. It belongs to the generated host shape in `#App` because runtime code cannot substitute for it.
 	+ Without it the executable stays a GUI one, so a double-clicked script never flashes a console window. That is also the trade-off: a console-subsystem executable launched from Explorer gets a console window of its own.
 	+ It is ignored when the script is interpreted or compiled to a `.cks`, since neither writes an executable, and it is inert on Linux and macOS, where executables have no subsystem and a shell always waits.
+* `FileInstall(source, dest, overwrite?)` extracts a file embedded via `#App { Files: [...] }` (matching its canonical script-relative path) to dest. When no matching payload is embedded — including source/in-memory execution — `source` is resolved relative to the script and copied with `FileCopy` semantics; copying a file onto itself is a no-op. Both branches require dest's parent directory to exist, and an existing dest is replaced only when overwrite is true. Unlike Ahk2Exe, Keysharp does not scan `FileInstall` calls to decide what to embed: the final `Files` list is the single authority.
 * If a script is compiled then none of Keysharp or AutoHotkey command parameters apply.
 
 ### Syntax
@@ -664,14 +665,14 @@ Controlling another application needs **Automation** permission, granted per tar
 * New accessors:
 	+ All of these live in the `KS` module, so a script must import the ones it uses: `#import KS { A_DirSeparator }`.
 	+ `A_AllowTimers` returns whether timers are allowed or not. It's also easier to set this value rather than call `Thread("NoTimers")`.
-	+ `A_AssemblyCompany` returns the value set by the `#AssemblyCompany` directive.
-	+ `A_AssemblyConfiguration` returns the value set by the `#AssemblyConfiguration` directive.
-	+ `A_AssemblyCopyright` returns the value set by the `#AssemblyCopyright` directive.
-	+ `A_AssemblyDescription` returns the value set by the `#AssemblyDescription` directive.
-	+ `A_AssemblyName` returns the value set by the `#AssemblyName` directive.
-	+ `A_AssemblyProduct` returns the value set by the `#AssemblyProduct` directive.
-	+ `A_AssemblyTrademark` returns the value set by the `#AssemblyTrademark` directive.
-	+ `A_AssemblyVersion` returns the value set by the `#AssemblyVersion` directive.
+	+ `A_AssemblyCompany` returns the value set by the `#App` `Company` key.
+	+ `A_AssemblyConfiguration` returns the value set by the `#App` `Configuration` key.
+	+ `A_AssemblyCopyright` returns the value set by the `#App` `Copyright` key.
+	+ `A_AssemblyDescription` returns the value set by the `#App` `Description` key.
+	+ `A_AssemblyName` returns the value set by the `#App` `Name` key.
+	+ `A_AssemblyProduct` returns the value set by the `#App` `Product` key.
+	+ `A_AssemblyTrademark` returns the value set by the `#App` `Trademark` key.
+	+ `A_AssemblyVersion` returns the value set by the `#App` `Version` key.
 	+ `A_PeekFrequency` gets or sets the current thread's message-check interval in milliseconds.
 	+ `A_ClipboardTimeout` can be used at any point in the program to get or set the value normally specified by `#ClipboardTimeout`.
 	+ `A_CommandLine` returns the command line string. This is preferred over passing `GetCommandLine` to `DllCall()` as noted above.
@@ -694,7 +695,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `A_KeysharpCorePath` provides the full path to the Keysharp.Core.dll file.
 	+ `A_LoopRegValue` which makes it easy to get a registry value when using `Loop Reg`.
 	+ `A_MaxThreads` returns the value `n` specified with `#MaxThreads n`.
-	+ `A_NoTrayIcon` returns whether the tray icon was hidden with #NoTrayIcon.
+	+ `A_NoTrayIcon` returns whether the tray icon is hidden, including when its startup state was selected by `#NoTrayIcon` or `#TrayIcon`.
 	+ `A_NowMs`/`A_NowUTCMs` returns the current local/UTC time formatted to include milliseconds like so "YYYYMMDDHH24MISS.ff".
 		+ These can be used with `DateAdd()`/`DateDiff()` using `"L"` for the `TimeUnits` parameter.
 	+ `A_RealThread` is the real OS thread the current pseudo-thread runs on, as a `RealThread` object.
@@ -1003,16 +1004,32 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ Usings are shared within a module but isolated between modules. Script preprocessor symbols and C# `unsafe` are supported. Calls use normal script dispatch, so group substantial work across the boundary.
 		+ `#Package [*i] id [version]` resolves a NuGet package for `Ks.Clr` and inline C# at compile time. It follows `NuGet.Config` and supports managed, resource and native assets, but not package build hooks. `*i` makes a missing package optional.
 		+ `Clr.LoadPackage(id, version?, optional?)` loads a NuGet package at runtime. Prefer `#Package` for known dependencies.
-		+ `#HookMutexName <name>` allows renaming the mutex objects created to detect keyboard and mouse hooks in other running scripts. The default name is "Keysharp".
-		+ Assembly description attributes may be changed with the following directives, with the desired value as the only argument of the directive:
-			+ `#AssemblyName`
-			+ `#AssemblyDescription`
-			+ `#AssemblyConfiguration`
-			+ `#AssemblyCompany`
-			+ `#AssemblyProduct`
-			+ `#AssemblyCopyright`
-			+ `#AssemblyTrademark`
-			+ `#AssemblyVersion`
+		+ `#App { key: value, ... }` declares final application facts: identity and metadata, packaged assets, generated host shape, presentation defaults, and fixed integration identifiers. Its blocks merge into one key/value map; no key acts as a source command or observes intermediate state.
+			```
+			#App {
+				Name: "MyTool",              ; assembly identity (Assembly.GetName().Name)
+				Title: "My Tool",            ; assembly metadata attributes, read back by A_Assembly*
+				Description: "Does things",
+				Company: "Acme Corp",
+				Product: "MyTool",
+				Copyright: "© Acme",
+				Trademark: "Acme™",
+				Configuration: "Release",
+				Version: "1.2.0",            ; AssemblyVersion + FileVersion; visible in Explorer properties
+				Icon: "assets/app.ico",      ; application presentation icon; also stamped into a compiled exe
+				GuiTheme: "Dark",            ; presentation default applied before runtime UI and auto-execute errors
+				ConsoleApp: false,           ; generated Windows executable subsystem
+				HookMutexName: "MyMutex",    ; fixed hook-interoperability namespace
+				Files: ["assets/*.wav"],     ; embedded into the compiled script; extracted with FileInstall
+			}
+			```
+			+ The block uses normal object-literal syntax (comments, multi-line, trailing commas), but every value must be a compile-time constant: a quoted string, a number, `true`/`false`, scalar `.` concatenation, or an array. Concatenation spells booleans as `1`/`0`; unary minus accepts numeric constants only. Unknown keys, malformed values and missing `Icon`/`Files` paths are compile-time errors. `Version` has 2–4 decimal components, each from 0 through 65534.
+			+ Any number of blocks may appear at the top level of the main module (an `#Include`d file is fine; a `#Module` or an imported module file is not). They are evaluated in source order, and a later occurrence of a key wins, including duplicates within one block. `Files: []` clears an earlier file list.
+			+ The manifest is embedded in the compiled assembly as the JSON resource `Keysharp.App.json`, so a `.cks` or compiled exe can be inspected without executing it, and the runtime applies the keys before any tray icon, window or dialog exists — regardless of where in the file the block sits. An assembly without that resource simply has no manifest; a present but unreadable or malformed resource is a hard load error.
+			+ `Icon` and every `Files` entry must be relative to the main script's directory (the program include root), even when the `#App` block comes from an included file. This is the same root used by `FileInstall` in source mode. `\` and `/` are separators on every platform, while the manifest stores one canonical `/`-separated logical path and never the resolved build-machine path. `Files` patterns (`*`/`?`) expand in the file-name segment only. Files are embedded only for artifact-producing compile modes; source/in-memory execution retains and validates the logical list but `FileInstall` copies the live script-relative file.
+			+ Standalone directives select compiler or execution policy. `#ErrorStdOut` changes diagnostic routing when the parser reaches it, while `#SingleInstance` selects launch policy and `#NoTrayIcon`/`#TrayIcon` form a source-ordered tray-state family whose startup values use the internal manifest transport.
+		+ `#App Icon` is the application-wide icon for the artifact, windows and dialogs, and is the tray fallback. `#TrayIcon` selects the tray-specific startup state: bare `#TrayIcon` restores that fallback (or Keysharp's built-in default) and makes the tray visible. The file form is `#TrayIcon FileName [, IconNumber]`: `FileName` is relative to the main script's directory even when the directive comes from an included file, and the compiler embeds the selected icon as the tray default restored by `TraySetIcon("*")`, so the source file is not needed at run time. While that default is active, `A_IconFile` is blank and `A_IconNumber` is 1. With no selector, the first icon group is used; a positive integer selects a 1-based icon group, a negative integer selects the absolute resource ID, and a nonnumeric quoted string selects a named resource from a managed .NET assembly. Numeric icon selection from a native module is Windows-only.
+			+ `#TrayIcon` and `#NoTrayIcon` are applied in source order. A later `#TrayIcon`, with or without a file, cancels an earlier `#NoTrayIcon`; a later `#NoTrayIcon` hides an icon selected earlier.
 	+ Command line switches may start with `/`, `-` or `--`, and must appear before the script or assembly input. After the input is found, all remaining arguments are passed to the script or assembly entry point. The exception is `--compile asm`, which runs nothing: further script paths there are read as additional scripts to compile.
 	+ Started with no input at all, Keysharp looks for a script named after its own executable — `Keysharp.ahk`, `Keysharp.ks`, then `Keysharp.cks` — first in the working directory and then beside the executable. Every package ships the Dash as `Keysharp.cks` at the install root, so that probe is what opens it on a bare launch; a script of your own placed alongside takes precedence.
 	+ Command line switches

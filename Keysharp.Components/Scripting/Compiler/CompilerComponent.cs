@@ -70,7 +70,8 @@ public sealed class CompilerComponent : IScriptCompiler
 		private readonly string runtimeDirectory;
 		private readonly ScriptCompilationResult compilation;
 
-		internal CompilationResult(ScriptCompileRequest request, string runtimeDirectory, byte[] bytes, string text, ScriptCompilationResult compilation)
+		internal CompilationResult(ScriptCompileRequest request, string runtimeDirectory, byte[] bytes, string text,
+			ScriptCompilationResult compilation)
 		{
 			this.request = request;
 			this.runtimeDirectory = runtimeDirectory;
@@ -78,6 +79,7 @@ public sealed class CompilerComponent : IScriptCompiler
 			AssemblyBytes = bytes;
 			GeneratedCode = bytes == null ? null : text;
 			ErrorText = bytes == null ? text : null;
+			ErrorStdOut = compilation?.ErrorStdOut == true;
 		}
 
 		public bool Success => AssemblyBytes != null;
@@ -87,7 +89,8 @@ public sealed class CompilerComponent : IScriptCompiler
 		public string WarningText => compilation?.Warnings;
 		public string InlineCode => compilation?.InlineCode;
 		public IReadOnlyCollection<string> RequiredComponents => compilation?.RequiredComponents ?? [];
-		public bool ConsoleApp => compilation?.ConsoleApp ?? false;
+		public bool ErrorStdOut { get; }
+		public bool ConsoleApp => compilation?.Manifest?.ConsoleApp ?? false;
 
 		internal string DeploySupportFiles(string destination)
 		{

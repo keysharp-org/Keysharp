@@ -62,7 +62,7 @@ namespace Keysharp.Runtime
 			trayIcon.MouseClick += TrayIcon_MouseClick;
 			trayIcon.MouseDoubleClick += TrayIcon_MouseDoubleClick;
 
-			if (scriptIcon is Icon icon)
+			if (trayDefaultIcon is Icon icon)
 			{
 				trayIcon.Icon = icon;
 				trayIcon.Visible = true;
@@ -81,7 +81,7 @@ namespace Keysharp.Runtime
 					script.suspendMenuItem?.Checked = suspended;
 					script.mainWindow?.SuspendHotkeysToolStripMenuItem.Checked = suspended;
 					if (!(bool)A_IconFrozen)
-						script.Tray?.Icon = suspended ? script.suspendedIcon : script.scriptIcon;
+						script.Tray?.Icon = suspended ? script.suspendedIcon : script.trayDefaultIcon;
 				});
 			}
 

@@ -50,6 +50,32 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Misc")]
+		public void ErrorStdOutRouting()
+		{
+			var previousError = Console.Error;
+			var previousArgs = s.KeysharpArgs;
+			using var output = new StringWriter();
+
+			try
+			{
+				Console.SetError(output);
+				s.KeysharpArgs = [];
+				Assert.AreEqual(1, Runner.Message("source routing", true, errorStdOut: true));
+				Assert.IsTrue(output.ToString().Contains("source routing", StringComparison.Ordinal));
+
+				output.GetStringBuilder().Clear();
+				s.KeysharpArgs = ["--errorstdout"];
+				Assert.AreEqual(1, Runner.Message("command-line routing", true, errorStdOut: false));
+				Assert.IsTrue(output.ToString().Contains("command-line routing", StringComparison.Ordinal));
+			}
+			finally
+			{
+				s.KeysharpArgs = previousArgs;
+				Console.SetError(previousError);
+			}
+		}
+
+		[Test, Category("Misc")]
 		public void AbsoluteScriptPath()
 		{
 			var scriptPath = Path.GetTempFileName();

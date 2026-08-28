@@ -605,7 +605,7 @@ namespace Keysharp.Internals.Scripting
 			});
 
 			if (compilation.AssemblyBytes is not { } arr)
-				return Message(compilation.ErrorText, true);
+				return Message(compilation.ErrorText, true, compilation.ErrorStdOut);
 
 			// Failed-compilation text already includes its warnings.
 			if (!string.IsNullOrEmpty(compilation.WarningText))
@@ -680,7 +680,7 @@ namespace Keysharp.Internals.Scripting
 				return Message(transpileErr, true);
 
 			if (arr == null)
-				return Message(result, true);
+				return Message(result, true, compilation.ErrorStdOut);
 
 			if (command.Transpile)
 				return 0;
@@ -730,7 +730,7 @@ namespace Keysharp.Internals.Scripting
 					location += $"{(location.Length > 0 ? ":" : "")}{diagnostic.Line}:{diagnostic.Column}";
 				return location.Length > 0 ? $"{location}: {diagnostic.Message}" : diagnostic.Message;
 			}));
-			return Message(text, true);
+			return Message(text, true, result.ErrorStdOut);
 		}
 
 		private static MethodInfo LoadAssemblyEntryPoint(CliCommand command)
@@ -1013,7 +1013,7 @@ namespace Keysharp.Internals.Scripting
 
 		// Reports a message to the user. Errors go through the compiler-error reporter (an error dialog on
 		// Windows, or stdout/stderr when redirected/headless); informational text uses an info box or stdout.
-		internal static int Message(string text, bool error)
+		internal static int Message(string text, bool error, bool errorStdOut = false)
 		{
 			const string marker = "\nusing static ";
 			int idx = text.IndexOf(marker, StringComparison.Ordinal);
@@ -1025,7 +1025,7 @@ namespace Keysharp.Internals.Scripting
 			{
 				try
 				{
-					if (ReportCompilerErrors(text))
+					if (ReportCompilerErrors(text, errorStdOut))
 						return RestartCurrentProcess();
 				}
 				catch (Exception ex)
@@ -1051,7 +1051,7 @@ namespace Keysharp.Internals.Scripting
 			return error ? 1 : 0;
 		}
 
-		private static bool ReportCompilerErrors(string text)
+		private static bool ReportCompilerErrors(string text, bool errorStdOut)
 		{
 			//FindCommandLineArg reads TheScript.KeysharpArgs, which does not exist yet for a failure this early.
 			//Fall back to the raw process arguments then: an --errorstdout launch must never block on a modal
@@ -1060,7 +1060,7 @@ namespace Keysharp.Internals.Scripting
 			//authority, since a raw scan cannot tell a launcher switch from a script argument (everything after
 			//the script path belongs to the script) — so every compile path must thread command.KeysharpArgs
 			//onto its parse Script.
-			if (Env.FindCommandLineArg("errorstdout") != null
+			if (errorStdOut || Env.FindCommandLineArg("errorstdout") != null
 					|| (Script.TheScript == null && Environment.GetCommandLineArgs().Any(
 						a => a.TrimStart('-', '/').Equals("errorstdout", StringComparison.OrdinalIgnoreCase))))
 			{

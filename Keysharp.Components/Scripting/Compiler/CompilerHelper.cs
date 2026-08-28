@@ -337,7 +337,8 @@ namespace Keysharp.Compilation
 				);
 				var tree = SyntaxFactory.SyntaxTree(compilation.Unit, parseOptions);
 				return CompileFromTree(tree, outputname, currentDir, minimalexeout, BuildInlineTrees(compilation, parseOptions),
-					diagnoseSink, compilation.Packages, compilation.RequiredProviders, compilation.RequiredComponents);
+					diagnoseSink, compilation.Packages, compilation.RequiredProviders, compilation.RequiredComponents,
+					compilation.Manifest);
 			}
 			catch (Exception e)
 			{
@@ -438,7 +439,7 @@ namespace Keysharp.Compilation
 			return ([.. diags], ex);
 		}
 
-		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null, IReadOnlyCollection<string> requiredProviders = null, IReadOnlyCollection<string> requiredComponents = null)
+		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null, IReadOnlyCollection<string> requiredProviders = null, IReadOnlyCollection<string> requiredComponents = null, Keysharp.Internals.Scripting.AppManifest appManifest = null)
 		{
 			IEnumerable<ResourceDescription> resourceDescriptions = null;
 			HashSet<string> allDependencies = null;
@@ -670,6 +671,39 @@ namespace Keysharp.Compilation
 				}));
 			}
 
+			// The application startup handoff travels inside the assembly: the Script constructor reads it before any
+			// chrome exists (tray icon, theme, hook mutex, …), and external tools can inspect a compiled script
+			// without executing it. Declared `Files:` are embedded beside it for FileInstall to extract.
+			if (appManifest != null)
+			{
+				var appJson = appManifest.Write();
+				resourceDescriptions = (resourceDescriptions ?? []).Append(
+										   new ResourceDescription(Keysharp.Internals.Scripting.AppManifest.ResourceName,
+																   () => new MemoryStream(Encoding.UTF8.GetBytes(appJson)), true));
+
+				// The icons ride as managed resources too: the win32 copy below is Windows-only and unreadable
+				// from a byte-loaded assembly, while the tray needs the bytes on every platform.
+				if (appManifest.IconSourcePath is { } iconSource)
+					resourceDescriptions = resourceDescriptions.Append(
+						new ResourceDescription(Keysharp.Internals.Scripting.AppManifest.IconResourceName,
+							() => File.OpenRead(iconSource), true));
+
+				if (appManifest.HasCustomTrayIcon)
+				{
+					if (appManifest.TrayIconBytes is not { Length: > 0 } trayIconBytes)
+						throw new InvalidDataException("The custom tray icon was not materialized before assembly emission.");
+
+					resourceDescriptions = resourceDescriptions.Append(
+						new ResourceDescription(Keysharp.Internals.Scripting.AppManifest.TrayIconResourceName,
+							() => new MemoryStream(trayIconBytes, writable: false), true));
+				}
+
+				foreach (var (relative, source) in appManifest.FileSources)
+					resourceDescriptions = resourceDescriptions.Append(
+						new ResourceDescription(Keysharp.Internals.Scripting.AppManifest.FileResourceName(relative),
+							() => File.OpenRead(source), true));
+			}
+
 			var ms = new MemoryStream();
 			// AnyCpu, like the rest of Keysharp: the script assembly is loaded into this very process (or one
 			// built the same way), and the CLR rejects an assembly whose machine type doesn't match the
@@ -739,7 +773,11 @@ namespace Keysharp.Compilation
 				writer.Write(manifestContents);
 				writer.Flush();
 				manifestStream.Position = 0;
-				using var msi = Assembly.GetEntryAssembly().GetManifestResourceStream("Keysharp.Keysharp.ico");
+				// The #App icon becomes the assembly's win32 icon; CreateAppHost's resource copy then puts it on
+				// the compiled exe (along with the version info built from the assembly attributes).
+				using var msi = appManifest?.IconSourcePath is { } appIcon
+					? (Stream)File.OpenRead(appIcon)
+					: Assembly.GetEntryAssembly().GetManifestResourceStream("Keysharp.Keysharp.ico");
 				using var res = compilation.CreateDefaultWin32Resources(true, false, manifestStream, msi);//The first argument must be true to embed version/assembly information.
 				compilationResult = compilation.Emit(ms, win32Resources: res, manifestResources: resourceDescriptions);
 			}
@@ -837,6 +875,7 @@ namespace Keysharp.Compilation
 
 				if (parseDiags.Count > 0)
 				{
+					compilation.ErrorStdOut = prog.ErrorStdOut;
 					foreach (var d in parseDiags)
 						_ = errors.Add(ToCompilerError(d, scriptPath));
 				}
@@ -844,13 +883,13 @@ namespace Keysharp.Compilation
 				{
 					var lowerer = new Syntax.Lowerer();
 					compilation.Unit = lowerer.Build(prog, buildName, scriptPath, startupName, includeDir, source, compileToFile, defines);
-					compilation.DeclaredAssemblyName = lowerer.AssemblyName;
+					compilation.Manifest = lowerer.Manifest;
 					compilation.InlineCode = lowerer.InlineSource;
 					compilation.InlineSources = lowerer.InlineSources;
 					compilation.InlineDefines = lowerer.InlineDefines;
 					compilation.RequiredProviders = lowerer.RequiredProviders;
 					compilation.RequiredComponents = lowerer.RequiredComponents;
-					compilation.ConsoleApp = lowerer.ConsoleApp;
+					compilation.ErrorStdOut = lowerer.ErrorStdOut;
 
 					if (compilation.Unit == null || lowerer.Diagnostics.Count > 0)
 						foreach (var d in lowerer.Diagnostics)
@@ -976,7 +1015,7 @@ namespace Keysharp.Compilation
 				compilation.RequiredComponents = compilation.RequiredComponents.Except(excludeComponents, StringComparer.OrdinalIgnoreCase).ToArray();
 			var unit = compilation.Unit;
 			var errs = compilation.Errors;
-			var assemblyName = compilation.DeclaredAssemblyName ?? nameNoExt ?? "*";
+			var assemblyName = compilation.Manifest?.Name ?? nameNoExt ?? "*";
 			// Let each host route warnings to its own output surface.
 			if (errs.HasWarnings)
 				compilation.AppendWarnings(GetCompilerErrors(errs).Item2);

@@ -1,5 +1,6 @@
 using Keysharp.Components.Scripting.Compiler;
 using Keysharp.Components.Scripting;
+using Keysharp.Components.Scripting.Parser;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
 using StringAssert = NUnit.Framework.Legacy.StringAssert;
@@ -44,6 +45,10 @@ namespace Keysharp.Tests
 			Assert.IsNotEmpty(invalid.Diagnostics);
 			Assert.IsTrue(invalid.Diagnostics.All(diagnostic => diagnostic.FilePath == scriptPath),
 				"parser diagnostics should retain the caller's complete script path");
+
+			var routed = parser.ValidateSyntax(new ScriptSyntaxValidationRequest { SourceText = "#ErrorStdOut\nx := (" });
+			Assert.IsFalse(routed.Success);
+			Assert.IsTrue(routed.ErrorStdOut);
 		}
 
 		[Test]
@@ -70,6 +75,109 @@ namespace Keysharp.Tests
 				SourceText = "x := 1",
 				ScriptPath = "script.ks",
 			}));
+		}
+
+		[TestCase("#ErrorStdOut\nx := (\n", true)]
+		[TestCase("x := (\n#ErrorStdOut\n", false)]
+		[TestCase("text := \"#ErrorStdOut\"\n; #ErrorStdOut\nx := (\n", false)]
+		[TestCase("#if false\n#ErrorStdOut\n#endif\nx := (\n", false)]
+		[TestCase("#if false\n#ErrorStdOut\n#else\n#ErrorStdOut\n#endif\nx := (\n", true)]
+		[TestCase("#if false\nx := \"unterminated\n#endif\n#ErrorStdOut\nx := (\n", true)]
+		[TestCase("#ErrorStdOut\n#EndIf\n", true)]
+		[TestCase("#EndIf\n#ErrorStdOut\n", false)]
+		[TestCase("#ErrorStdOut\nx := \"unterminated\n", true)]
+		[TestCase("x := \"unterminated\n#ErrorStdOut\n", false)]
+		public void ErrorStdOutOrder(string source, bool expected)
+		{
+			var result = new ParserComponent().ValidateSyntax(new ScriptSyntaxValidationRequest { SourceText = source });
+			Assert.IsFalse(result.Success);
+			Assert.AreEqual(expected, result.ErrorStdOut);
+		}
+
+		[Test]
+		public void ErrorStdOutIncludes()
+		{
+			var root = NewComponentRoot();
+			Directory.CreateDirectory(root);
+			var dependency = Path.Combine(root, "Routing.ahk");
+			var parser = new ParserComponent();
+
+			try
+			{
+				ScriptSyntaxValidationResult Validate(string source) => parser.ValidateSyntax(new()
+				{
+					SourceText = source,
+					ScriptPath = Path.Combine(root, "main.ahk"),
+					IncludeDirectory = root,
+				});
+
+				Assert.IsTrue(Validate("#ErrorStdOut\n#Include \"missing.ahk\"\n").ErrorStdOut);
+				Assert.IsFalse(Validate("#Include \"missing.ahk\"\n#ErrorStdOut\n").ErrorStdOut);
+
+				foreach (var body in new[] { "#ErrorStdOut\n#EndIf\n", "#ErrorStdOut\nx := \"unterminated\n" })
+				{
+					File.WriteAllText(dependency, body);
+					var included = Validate("#Include \"Routing.ahk\"\nx := 1\n");
+					Assert.IsFalse(included.Success);
+					Assert.IsTrue(included.ErrorStdOut);
+				}
+
+				IScriptCompilationResult CompileImport(string source) => new CompilerComponent().Compile(new ScriptCompileRequest
+				{
+					SourceText = source,
+					IncludeDirectory = root,
+					CompilationName = "routing-import",
+					Output = ScriptCompilationOutput.InMemory,
+				});
+
+				File.WriteAllText(dependency, "#ErrorStdOut\nvalue := (\n");
+				var imported = CompileImport("#Import \"Routing\"\nvalue := 1\n");
+				Assert.IsFalse(imported.Success);
+				Assert.IsTrue(imported.ErrorStdOut);
+				StringAssert.Contains("Routing.ahk", imported.ErrorText);
+
+				File.WriteAllText(dependency, "value := (\n");
+				Assert.IsTrue(CompileImport("#ErrorStdOut\n#Import \"Routing\"\n").ErrorStdOut);
+				Assert.IsFalse(CompileImport("#Import \"Routing\"\n#ErrorStdOut\n").ErrorStdOut);
+			}
+			finally
+			{
+				try { Directory.Delete(root, true); } catch { }
+			}
+		}
+
+		[TestCase("#ErrorStdOut\nx := (\n", null, true)]
+		[TestCase("#ErrorStdOut invalid\nx := 1\n", "accepts no arguments", true)]
+		[TestCase("#ErrorStdOut\n#App { GuiTheme: \"Bad\" }\n", "GuiTheme", true)]
+		[TestCase("#App { GuiTheme: \"Bad\" }\n#ErrorStdOut\n", "GuiTheme", false)]
+		public void ErrorStdOutCompilation(string source, string diagnostic, bool expected)
+		{
+			var result = new CompilerComponent().Compile(new ScriptCompileRequest
+			{
+				SourceText = source,
+				CompilationName = "routing-error",
+				Output = ScriptCompilationOutput.InMemory,
+			});
+			Assert.IsFalse(result.Success);
+			Assert.AreEqual(expected, result.ErrorStdOut);
+			if (diagnostic != null) StringAssert.Contains(diagnostic, result.ErrorText);
+		}
+
+		[Test]
+		public void AppThemeIsolation()
+		{
+			const string hostTheme = "HostTheme";
+			s.AccessorData.guiTheme = hostTheme;
+			var result = new CompilerComponent().Compile(new ScriptCompileRequest
+			{
+				SourceText = "#App { GuiTheme: \"Dark\" }\nx := 1\n",
+				CompilationName = "app-theme-host-isolation",
+				Output = ScriptCompilationOutput.InMemory,
+			});
+
+			Assert.IsTrue(result.Success, result.ErrorText);
+			Assert.AreSame(s, Script.TheScript);
+			Assert.AreEqual(hostTheme, s.AccessorData.guiTheme);
 		}
 
 		[Test]
@@ -415,14 +523,14 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// #ConsoleApp builds a console (CUI) executable instead of the default GUI one. On Windows that choice is
+		/// `#App { ConsoleApp: true }` builds a console (CUI) executable instead of the default GUI one. On Windows that choice is
 		/// the PE subsystem field, which the shell reads before the process starts to decide whether to wait for it
 		/// and whether to hand it the terminal's stdio - so it can only be made at build time, and the produced file
 		/// is the only place it can be checked. Other platforms have no subsystem: there the directive is inert and
 		/// only its acceptance (a clean compile) is asserted.
 		/// </summary>
 		[Test, NonParallelizable]
-		public void ConsoleAppDirective()
+		public void ConsoleHost()
 		{
 			var root = Path.Combine(Path.GetTempPath(), "ks-component-console-" + Guid.NewGuid().ToString("N"));
 			Directory.CreateDirectory(root);
@@ -433,12 +541,12 @@ namespace Keysharp.Tests
 				const string body = "#NoTrayIcon\n#ErrorStdOut\nFileAppend('console-pass', '*')\nExitApp(0)\n";
 				var consoleScript = Path.Combine(root, "console.ks");
 				var guiScript = Path.Combine(root, "gui.ks");
-				File.WriteAllText(consoleScript, "#ConsoleApp\n" + body);
+				File.WriteAllText(consoleScript, "#App { ConsoleApp: true }\n" + body);
 				File.WriteAllText(guiScript, body);
 				var consoleExe = BuildExecutable(consoleScript);
 				var guiExe = BuildExecutable(guiScript);
 #if WINDOWS
-				Assert.AreEqual(3, PeSubsystem(consoleExe), "#ConsoleApp must produce a console-subsystem executable");
+				Assert.AreEqual(3, PeSubsystem(consoleExe), "#App { ConsoleApp: true } must produce a console-subsystem executable");
 				Assert.AreEqual(2, PeSubsystem(guiExe), "without the directive the executable must stay a GUI one");
 #endif
 				// The stamped host still has to run: a subsystem edit that corrupted it would fail only here.

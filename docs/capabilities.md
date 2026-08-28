@@ -18,16 +18,8 @@ Status legend:
 | !~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regular-expression not-match operator. |
 | != | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inequality operator |
 | !== | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Strict inequality operator. |
-| #AssemblyCompany | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly company metadata for compiled scripts. |
-| #AssemblyConfiguration | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly configuration metadata for compiled scripts. |
-| #AssemblyCopyright | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly copyright metadata for compiled scripts. |
-| #AssemblyDescription | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly description metadata for compiled scripts. |
-| #AssemblyName | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the compiled assembly's identity, which is what Assembly.GetName().Name reports. Unlike the other #Assembly* directives this is not an attribute (.NET has no AssemblyNameAttribute), so it is passed to the compiler rather than emitted as one; A_AssemblyName reads it back. |
-| #AssemblyProduct | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly product metadata for compiled scripts. |
-| #AssemblyTrademark | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly trademark metadata for compiled scripts. |
-| #AssemblyVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets assembly version metadata for compiled scripts. |
+| #App | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-only descriptor for assembly metadata, Icon, GuiTheme, ConsoleApp, HookMutexName and Files; multiple blocks merge independently by key in source order, later keys win, and Files: [] clears the list. Asset paths are main-script-relative logical paths and artifact builds embed Files. |
 | #ClipboardTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets how long clipboard operations should wait before timing out. |
-| #ConsoleApp | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-only, and the AutoHotkey equivalent of Ahk2Exe's ;@Ahk2Exe-ConsoleApp. Builds a --compile exe executable as a console (CUI) application, so a shell waits for it and its stdin/stdout are the terminal's. Windows fixes this in the PE subsystem before the process starts, so it cannot be a runtime setting; GUI remains the default so a double-clicked script never flashes a console window. Ignored when the script is interpreted or compiled to a .cks, since neither writes an executable, and inert on Linux and macOS, where executables have no subsystem and a shell always waits. |
 | #CSharp | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Keysharp-only. Embeds C# members into the script assembly at module or class scope; `#CSharp <Library>` uses #Include's Lib-folder search order, `.cs` extension and underscore fallback. |
 | #Define | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Defines a conditional compilation symbol. |
 | #DllLoad | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #DllLoad directive loads a DLL or EXE file before the script starts executing. |
@@ -36,8 +28,7 @@ Status legend:
 | #EndIf | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ends a conditional compilation block. |
 | #EndRegion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Accepted; a source-folding marker with no runtime semantics. |
 | #Error | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Emits the given message as a compile-time diagnostic. |
-| #ErrorStdOut | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #ErrorStdOut directive sends any syntax error that prevents a script from launching to the standard error stream (stderr) rather than displaying a dialog. |
-| #HookMutexName | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the mutex name used for global hook synchronization. |
+| #ErrorStdOut | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Standalone directive that sends subsequent load-time errors and uncaught runtime errors to standard error instead of displaying a dialog. The command-line switch applies to load-time errors from the start of loading. |
 | #HotIf | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #HotIf directive creates context-sensitive hotkeys and hotstrings. They perform a different action (or none at all) depending on any condition (an expression). |
 | #HotIfTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #HotIfTimeout directive sets the maximum time that may be spent evaluating a single #HotIf expression. |
 | #Hotstring | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Hotstring directive changes hotstring options or ending characters. |
@@ -51,7 +42,7 @@ Status legend:
 | #MaxThreadsBuffer | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #MaxThreadsBuffer directive causes some or all hotkeys to buffer rather than ignore keypresses when their #MaxThreadsPerHotkey limit has been reached. |
 | #MaxThreadsPerHotkey | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #MaxThreadsPerHotkey directive sets the maximum number of simultaneous threads per hotkey or hotstring. |
 | #Module | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Module directive starts a new module or reopens an existing module. |
-| #NoTrayIcon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #NoTrayIcon directive disables the showing of a tray icon. |
+| #NoTrayIcon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Disables the startup tray icon. #NoTrayIcon and #TrayIcon apply in source order, so the later directive determines visibility. |
 | #Nullable | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Accepted; nullable-context state is a no-op in Keysharp. |
 | #Package | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Keysharp-only. Resolves NuGet packages at compile time for Clr and inline C#. Supports managed, resource and native assets, but not package build hooks. Windows verified. |
 | #Pragma | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Accepted; preprocessor pragma options are a no-op. |
@@ -60,6 +51,7 @@ Status legend:
 | #SingleInstance | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #SingleInstance directive determines whether a script is allowed to run again when it is already running. |
 | #StructPack | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the maximum alignment for subsequent typed struct fields. |
 | #SuspendExempt | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #SuspendExempt directive exempts subsequent hotkeys and hotstrings from suspension. |
+| #TrayIcon | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Keysharp-only standalone directive that selects the script's embedded tray default; #TrayIcon and #NoTrayIcon apply in source order, and bare #TrayIcon restores the #App Icon or Keysharp default. FileName is main-script-relative; omitted, positive, negative and quoted-string selectors mean the first group, a 1-based group, a native resource ID or a managed resource name, respectively, and native-module selection is Windows-only. |
 | #Undef | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Undefines a conditional compilation symbol. |
 | #UseHook | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #UseHook directive forces the use of the hook to implement all or some keyboard hotkeys. |
 | #Warn | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enables warnings (VarUnset, Unreachable, LocalSameAsGlobal, NamedArg); VarUnset, Unreachable and NamedArg are on by default. |
@@ -133,15 +125,15 @@ Status legend:
 | A_AppData | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %APPDATA% on Windows; $XDG_CONFIG_HOME else ~/.config on Linux; ~/Library/Application Support on macOS. |
 | A_AppDataCommon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %ProgramData% on Windows; the first entry of $XDG_CONFIG_DIRS else /etc/xdg on Linux; /Library/Application Support on macOS. Writable only by an administrator, like %ProgramData%. |
 | A_Args | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable containing command-line arguments passed to the script. |
-| A_AssemblyCompany | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly company metadata set by #AssemblyCompany. |
-| A_AssemblyConfiguration | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly configuration metadata set by #AssemblyConfiguration. |
-| A_AssemblyCopyright | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly copyright metadata set by #AssemblyCopyright. |
-| A_AssemblyDescription | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly description metadata set by #AssemblyDescription. |
-| A_AssemblyName | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The executing assembly's identity, set by #AssemblyName. Unlike the other A_Assembly* variables this reads the assembly name rather than an attribute, so it always has a value: without the directive it is the name the script was compiled under. |
-| A_AssemblyProduct | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly product metadata set by #AssemblyProduct. |
-| A_AssemblyTitle | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly title metadata set by #AssemblyTitle. |
-| A_AssemblyTrademark | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly trademark metadata set by #AssemblyTrademark. |
-| A_AssemblyVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly version metadata set by #AssemblyVersion. |
+| A_AssemblyCompany | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly company metadata set by the #App Company key. |
+| A_AssemblyConfiguration | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly configuration metadata set by the #App Configuration key. |
+| A_AssemblyCopyright | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly copyright metadata set by the #App Copyright key. |
+| A_AssemblyDescription | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly description metadata set by the #App Description key. |
+| A_AssemblyName | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The executing assembly's identity, set by the #App Name key. Unlike the other A_Assembly* variables this reads the assembly name rather than an attribute, so it always has a value: without the key it is the name the script was compiled under. |
+| A_AssemblyProduct | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly product metadata set by the #App Product key. |
+| A_AssemblyTitle | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly title metadata set by the #App Title key. |
+| A_AssemblyTrademark | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly trademark metadata set by the #App Trademark key. |
+| A_AssemblyVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly version metadata set by the #App Version key. |
 | A_Clipboard | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | A_Clipboard is a built-in variable that reflects the current contents of the Windows clipboard. |
 | A_ClipboardTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets clipboard operation timeout used by Keysharp. |
 | A_CommandLine | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the current script command line. |
@@ -187,9 +179,9 @@ Status legend:
 | A_HotkeyInterval | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_HotkeyModifierTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_Hour | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The current 2 digit hour 00 - 23. |
-| A_IconFile | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Blank unless a custom tray icon has been specified via Menu, tray, icon, in which case it's the full path and name of the icon's file. |
+| A_IconFile | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The full path of a runtime custom tray icon selected by TraySetIcon; blank while the script's embedded/default tray icon is active, including one selected by #TrayIcon. |
 | A_IconHidden | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets whether the system tray icon is hidden. 1 for hidden, 0 for visible. |
-| A_IconNumber | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | If A_IconFile has been specified, gets the number of the icon of the icon file used for the system tray icon. Otherwise blank. |
+| A_IconNumber | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The selector of a runtime custom tray icon. Reads 1 while the script's embedded/default tray icon is active, including one selected by #TrayIcon, and when TraySetIcon omits its selector. |
 | A_IconTip | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the tool tip text of the system tray icon. |
 | A_Index | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_InitialWorkingDir | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
@@ -536,7 +528,7 @@ Status legend:
 | FileGetSize() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the size of a file. Also allows for passing "t" to return the size in terms of terrabytes. |
 | FileGetTime() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the datetime stamp of a file or folder. |
 | FileGetVersion() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Retrieves the version of a file. Version metadata availability differs by platform file formats. |
-| FileInstall() | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | All scripts are converted into compiled executables, so this doesn't apply. |
+| FileInstall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Extracts the #App Files payload matching Source's canonical script-relative key; otherwise it uses live script-relative FileCopy semantics, and copying onto itself is a no-op. Dest's parent must exist, Overwrite=false atomically preserves existing files, and only the final Files list—not FileInstall calls—selects artifact payloads. |
 | FileMove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves or renames one or more files. |
 | FileOpen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform statuses inherited from curated 'File and directory operations'; per-function validation pending. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
 | FileRead() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the contents of a file. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |

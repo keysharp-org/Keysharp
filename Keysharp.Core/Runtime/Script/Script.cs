@@ -155,6 +155,10 @@ namespace Keysharp.Runtime
 		public uint MaxThreadsTotal = 12u;
 		public bool NoMainWindow = false;
 		public bool NoTrayIcon = false;
+		/// <summary>The application startup handoff embedded in the script assembly, or null when it declares none. Loaded in the
+		/// constructor — before the hook thread or any chrome — and the source of NoTrayIcon/theme/icon
+		/// defaults as well as the FileInstall lookup.</summary>
+		internal Keysharp.Internals.Scripting.AppManifest Manifest;
 		public bool ErrorStdOut = false;   // #ErrorStdOut: write uncaught errors to stderr instead of showing a dialog
 
 		public bool ValidateThenExit;
@@ -266,7 +270,66 @@ namespace Keysharp.Runtime
 		//The icon loaded by TraySetIcon, null while the script still uses its default icon. As in AHK, it is also worn
 		//by the main window and by every Gui created after it was set; already open Guis keep the icon they were made with.
 		internal Icon customIcon;
-		internal Icon scriptIcon => customIcon ?? normalIcon;
+		//The #App Icon and #TrayIcon defaults, embedded in the script assembly at compile time.
+		//Materialized lazily so a headless run never touches icon/GDI machinery; TraySetIcon still overrides
+		//them, and TraySetIcon("*") restores them (the manifest icons ARE the script's default icons, like a
+		//compiled AHK exe's).
+		private Icon _manifestIcon, _manifestTrayIcon;
+		private bool _manifestIconLoaded, _manifestTrayIconLoaded;
+		private Icon LoadManifestIcon(string resourceName)
+		{
+			try
+			{
+				using var stream = ProgramType?.Assembly.GetManifestResourceStream(resourceName);
+
+				if (stream != null)
+				{
+					using var buffer = new MemoryStream();
+					stream.CopyTo(buffer);
+					return ImageHelper.IconFromByteArray(buffer.ToArray());
+				}
+			}
+			catch (Exception ex)
+			{
+				Keysharp.Internals.Diagnostics.Debug.WriteLine($"Unable to load an embedded application icon ({resourceName}): {ex.Message}");
+			}
+
+			return null;
+		}
+		internal Icon manifestIcon
+		{
+			get
+			{
+				if (!_manifestIconLoaded)
+				{
+					_manifestIconLoaded = true;
+
+					if (Manifest?.Icon != null)
+						_manifestIcon = LoadManifestIcon(Keysharp.Internals.Scripting.AppManifest.IconResourceName);
+				}
+
+				return _manifestIcon;
+			}
+		}
+		internal Icon manifestTrayIcon
+		{
+			get
+			{
+				if (!_manifestTrayIconLoaded)
+				{
+					_manifestTrayIconLoaded = true;
+
+					if (Manifest?.HasCustomTrayIcon == true)
+						_manifestTrayIcon = LoadManifestIcon(Keysharp.Internals.Scripting.AppManifest.TrayIconResourceName);
+				}
+
+				return _manifestTrayIcon;
+			}
+		}
+		internal Icon scriptIcon => customIcon ?? manifestIcon ?? normalIcon;
+		//What the tray shows when nothing script-driven (TraySetIcon, pause/suspend) overrides it: the
+		//manifest's tray-specific icon when one was declared, else the script icon like AHK.
+		internal Icon trayDefaultIcon => customIcon ?? manifestTrayIcon ?? scriptIcon;
 		private Icon _pausedIcon;
 		internal Icon pausedIcon => _pausedIcon ??= ImageHelper.IconFromByteArray(Keysharp.Internals.Properties.Resources.Keysharp_p_ico);
 		private Icon _suspendedIcon;
@@ -507,6 +570,11 @@ namespace Keysharp.Runtime
 
 		public Script(Type program = null, string hookMutexName = null)
 		{
+			// A present manifest is part of the program assembly's load contract. Read and validate it before
+			// constructing or publishing this Script so a bad artifact leaves the current process-wide engine intact.
+			var programType = program ?? GetCallingType();
+			var manifest = Keysharp.Internals.Scripting.AppManifest.FromAssembly(programType?.Assembly);
+
 			DestructorPump = new(this);
 			WinEventManager = new(this);
 			MonitorEventManager = new(this);
@@ -522,8 +590,18 @@ namespace Keysharp.Runtime
 			NativeMainThreadID = CurrentThreadId();
 			ManagedMainThreadID = Environment.CurrentManagedThreadId;
 
-			ProgramType = program ?? GetCallingType();
+			ProgramType = programType;
 			ProgramNamespace = ProgramType.Namespace;
+			// The application startup handoff rides inside the script assembly itself, so it is available here — before the
+			// hook thread, tray chrome, main window or any dialog exists — in every execution mode (interpreted,
+			// .cks, exe). Null for a non-script Script (compile context, tests, embedding hosts).
+			Manifest = manifest;
+			// A manifest tray icon is the compiled script's default, not a TraySetIcon override.
+			AccessorData.iconFile = "";
+			AccessorData.iconNumber = 1L;
+
+			if (Manifest?.TrayIconSuppressed == true)
+				NoTrayIcon = true;
 
 			timeLastInputPhysical = DateTime.UtcNow;
 			timeLastInputKeyboard = timeLastInputPhysical;
@@ -539,7 +617,7 @@ namespace Keysharp.Runtime
 			threads = new(() => new Threads(this));
 			Threads.EnsureCurrentThreadVariables();
 			mainEventScheduler = ThreadScheduler;
-			HookThread = CreateHookThread(hookMutexName);
+			HookThread = CreateHookThread(hookMutexName ?? Manifest?.HookMutexName);
 			SetInitialFloatFormat();
 
 #if WINDOWS
@@ -547,6 +625,15 @@ namespace Keysharp.Runtime
 #endif
 
 			MainWindow.ResetDebugOutputBuffer();
+
+			// Initial GUI theme, applied before runtime chrome and the auto-exec section so script-startup errors
+			// render themed. Skipped headless / under a test host: nothing will paint there,
+			// and WinForms SetColorMode has deadlocked test hosts before (see GuiTests).
+			if (!string.IsNullOrEmpty(Manifest?.GuiTheme) && !IsUiInitializationBlocked && !IsHeadless && !IsTestHost)
+			{
+				try { _ = TrySetGuiTheme(Manifest.GuiTheme); }
+				catch (Exception ex) { Keysharp.Internals.Diagnostics.Debug.WriteLine($"Unable to apply the #App GuiTheme: {ex.Message}"); }
+			}
 
 #if WINDOWS
 			Application.AddMessageFilter(msgFilter);
@@ -977,6 +1064,60 @@ namespace Keysharp.Runtime
 			// the script is past teardown, so the work is dropped rather than run on the wrong thread.
 			else if (uiEventScheduler is { IsDisposed: false } ui)
 				_ = ui.EnqueueCallback(RunIfAlive);
+		}
+
+		internal string GetGuiTheme()
+		{
+#if WINDOWS
+			return InvokeOnUIThread(() => Application.ColorMode.ToString());
+#else
+			var app = Application.Instance;
+
+			if (app == null || IsUiInitializationBlocked)
+				return AccessorData.guiTheme;
+
+			return InvokeOnUIThread(() =>
+			{
+				var theme = app.Theme;
+				return theme == Themes.System ? "System"
+					: theme == Themes.Dark ? "Dark"
+					: theme == Themes.Light ? "Classic"
+					: AccessorData.guiTheme;
+			});
+#endif
+		}
+
+		internal bool TrySetGuiTheme(string value)
+		{
+			if (!TryNormalizeGuiTheme(value, out var normalizedTheme))
+				return false;
+
+			AccessorData.guiTheme = normalizedTheme;
+#if WINDOWS
+			var colorMode = normalizedTheme switch
+			{
+				"System" => System.Windows.Forms.SystemColorMode.System,
+				"Dark" => System.Windows.Forms.SystemColorMode.Dark,
+				_ => System.Windows.Forms.SystemColorMode.Classic
+			};
+			InvokeOnUIThread(() => Application.SetColorMode(colorMode));
+#else
+			if (!IsUiInitializationBlocked && Application.Instance is { } app)
+				InvokeOnUIThread(() => ApplyEtoGuiTheme(app, normalizedTheme));
+#endif
+			return true;
+		}
+
+		internal static bool TryNormalizeGuiTheme(string value, out string normalizedTheme)
+		{
+			normalizedTheme = value?.Trim().ToLowerInvariant() switch
+			{
+				"classic" => "Classic",
+				"system" => "System",
+				"dark" => "Dark",
+				_ => null
+			};
+			return normalizedTheme != null;
 		}
 
 #if !WINDOWS
@@ -1463,6 +1604,11 @@ namespace Keysharp.Runtime
 					}
 				}, false);
 			});
+			// Chrome no longer holds these defaults, so their native icon handles can be released deterministically.
+			Teardown(() => _manifestTrayIcon?.Dispose());
+			Teardown(() => _manifestIcon?.Dispose());
+			_manifestTrayIcon = null;
+			_manifestIcon = null;
 		}
 
 		private void DisposeTrayIcon()

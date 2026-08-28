@@ -12,19 +12,19 @@
 #WINACTIVATEFORCE
 #DLLLOAD *i user32.dll
 ; Compile-time only (it picks the PE subsystem of a --compile exe build), so here it just has to be accepted and do nothing.
-#CONSOLEAPP
+#App { ConsoleApp: true }
 #Include <assert>
 
 AssertEq(A_ClipboardTimeout, 2000, A_LineNumber)
 
 Assert(A_UseHook, A_LineNumber)
-	
+
 Assert(A_MaxThreadsBuffer, A_LineNumber)
 
 AssertEq(A_MaxThreadsPerHotkey, 150, A_LineNumber)
 
 Assert(A_NoTrayIcon, A_LineNumber)
-	
+
 Assert(A_SuspendExempt, A_LineNumber)
 
 Assert(A_WinActivateForce, A_LineNumber)

@@ -17,8 +17,10 @@ namespace Keysharp.Parsing.Syntax
 	/// </summary>
 	internal sealed partial class Parser
 	{
-		private readonly List<Token> _t;
+		private List<Token> _t = [];
 		private int _pos;
+		private long _nextDirectiveOrder;
+		private bool _errorStdOut;
 		private int _groupDepth;   // >0 inside ()/[] — newlines are insignificant
 		private int _exprDepth;    // recursion guard for ParseExpression (defensive cap against malformed/unsupported input)
 		private const int MaxExprDepth = 250;
@@ -71,15 +73,16 @@ namespace Keysharp.Parsing.Syntax
 		};
 
 		// `defines` are the caller's extra preprocessor symbols for this compilation (null when there are none).
-		public Parser(List<Token> tokens, string includeDir = null, IEnumerable<string> defines = null)
+		private Parser(string includeDir = null, IEnumerable<string> defines = null)
 		{
 			_includeDir = includeDir;
 
 			if (defines != null)
 				foreach (var d in defines) _ = _defines.Add(d);
-
-			_t = Preprocess(tokens);
 		}
+
+		private void LoadTokens(List<Token> tokens, IReadOnlyList<string> lexDiagnostics = null) =>
+			_t = Preprocess(tokens, _includeDir, lexDiagnostics);
 
 		public static ProgramNode Parse(string source, string includeDir = null, string scriptFile = null) => ParseWithDiagnostics(source, includeDir, scriptFile).program;
 
@@ -89,23 +92,25 @@ namespace Keysharp.Parsing.Syntax
 		public static (ProgramNode program, List<string> diagnostics) ParseWithDiagnostics(string source, string includeDir = null, string scriptFile = null, IEnumerable<string> defines = null)
 		{
 			var diags = new List<string>();
+			var parser = new Parser(includeDir, defines);
 			try
 			{
 				var lexer = new Lexer(source, scriptFile);
 				var tokens = LexForParsing(lexer);
-				// A lex error (e.g. an unterminated string) terminates immediately — before parsing — with the first one.
-				if (lexer.Diagnostics.Count > 0)
-					throw new Keysharp.Builtins.ParseException(PrefixDiagnostic(scriptFile, lexer.Diagnostics[0]));
-				var parser = new Parser(tokens, includeDir, defines);
+				parser.LoadTokens(tokens, lexer.Diagnostics);
+				// Preprocessing has finished. Parse directives again in statement order so a later #ErrorStdOut cannot
+				// retroactively route an earlier syntax error.
+				parser._errorStdOut = false;
 				var prog = parser.ParseProgram();
 				// Publish the parser-owned final symbol set without another copy.
 				prog.Defines = parser._defines;
+				prog.ErrorStdOut = parser._errorStdOut;
 				return (prog, parser.Diagnostics);
 			}
 			catch (Keysharp.Builtins.ParseException ex)
 			{
 				diags.Add(ex.Message);
-				return (new ProgramNode(new List<Stmt>()), diags);
+				return (new ProgramNode(new List<Stmt>()) { ErrorStdOut = parser._errorStdOut }, diags);
 			}
 		}
 
@@ -126,7 +131,8 @@ namespace Keysharp.Parsing.Syntax
 				if (lexer.Diagnostics.Count > 0)
 					throw new Keysharp.Builtins.ParseException(lexer.Diagnostics[0]);
 
-				var parser = new Parser(tokens, null);
+				var parser = new Parser();
+				parser.LoadTokens(tokens);
 				var expr = parser.ParseExpression(0);
 				parser.SkipNewlines();
 
@@ -272,7 +278,7 @@ namespace Keysharp.Parsing.Syntax
 			while (!At(TokenKind.EOF))
 			{
 				var p = _pos;
-				var s = ParseStatement();
+				var s = ParseStatement(programScope: true);
 				if (s != null) body.Add(s);
 				// Drain directives lifted out of an object literal in this statement at THIS position, so they stay in
 				// the correct #Module segment (appending at the end would misplace them into the last module).
@@ -288,17 +294,17 @@ namespace Keysharp.Parsing.Syntax
 		// bare return, declarations). The file goes with it: line numbers are per-file, so a statement from an
 		// #included file is only locatable when both travel together. Sub-parsers that already set a more specific
 		// position are left as-is.
-		private Stmt ParseStatement()
+		private Stmt ParseStatement(bool programScope = false)
 		{
 			SkipNewlines();
 			int line = Current.Line, col = Current.Column;
 			var file = Current.File;
-			var s = ParseStatementCore();
+			var s = ParseStatementCore(programScope);
 			if (s != null && s.Line == 0) { s.Line = line; s.Column = col; s.File = file; }
 			return s;
 		}
 
-		private Stmt ParseStatementCore()
+		private Stmt ParseStatementCore(bool programScope)
 		{
 			SkipNewlines();
 			if (At(TokenKind.RemapSourceKey))
@@ -309,7 +315,7 @@ namespace Keysharp.Parsing.Syntax
 			}
 			if (At(TokenKind.HotkeyTrigger)) return ParseHotkey();
 			if (At(TokenKind.HotstringTrigger)) return ParseHotstring();
-			if (At(TokenKind.Hash)) return ParseDirective();
+			if (At(TokenKind.Hash)) return ParseDirective(programScope);
 			if (At(TokenKind.LBrace)) return ParseBlock();
 			if (AtKeyword("if")) return ParseIf();
 			if (AtKeyword("while")) return ParseWhile();
@@ -607,14 +613,37 @@ namespace Keysharp.Parsing.Syntax
 		}
 
 		// #DirectiveName trailing-args  — the trailing text is consumed raw (directives use unquoted args).
-		private Stmt ParseDirective()
+		private Stmt ParseDirective(bool programScope = false)
 		{
 			// Positioned here rather than only in ParseStatement: a directive is also parsed straight from a class body
 			// and from an object literal, and those callers would otherwise produce an unlocatable #Warning/#Error.
+			var dirToken = Current;
 			int dirLine = Current.Line, dirCol = Current.Column;
 			var dirFile = Current.File;
+			var sourceOrder = ++_nextDirectiveOrder;
 			Advance(); // #
 			var name = At(TokenKind.Identifier) ? Advance().Text : "";
+			if (name.Equals("errorstdout", System.StringComparison.OrdinalIgnoreCase))
+				_errorStdOut = true;
+
+			// #App carries one object-literal block. The `{` must open on the directive's own line; the literal
+			// itself may then span as many lines as it likes (ParseObjectLiteral skips newlines inside `{ }`).
+			if (name.Equals("app", System.StringComparison.OrdinalIgnoreCase))
+			{
+				if (!programScope)
+					ErrorAt(dirToken, "#App is only allowed at the top level of the main module");
+
+				if (!At(TokenKind.LBrace))
+					Error("#App requires a { key: value, ... } block opening on the same line");
+
+				var value = (ObjectExpr)ParseObjectLiteral();
+
+				if (!At(TokenKind.Newline) && !At(TokenKind.EOF))
+					Error($"unexpected '{Current.Text}' after #App — a directive must be alone on its line");
+
+				var appDir = new AppDirective(value) { Line = dirLine, Column = dirCol, File = dirFile, SourceOrder = sourceOrder };
+				return appDir;
+			}
 
 			// #CSharp carries either one verbatim block token or a quoted path.
 			if (name.Equals("csharp", System.StringComparison.OrdinalIgnoreCase))
@@ -623,6 +652,7 @@ namespace Keysharp.Parsing.Syntax
 				cs.Line = dirLine;
 				cs.Column = dirCol;
 				cs.File = dirFile;
+				cs.SourceOrder = sourceOrder;
 				cs.Defines = _csharpDefineSnapshots?.Count > 0 ? _csharpDefineSnapshots.Dequeue() : [];
 				return cs;
 			}
@@ -640,7 +670,7 @@ namespace Keysharp.Parsing.Syntax
 				sb.Append(Advance().Text);
 			}
 			var args = sb.ToString();
-			Stmt dir;
+			DirectiveStmt dir;
 
 			if (name.Equals("import", System.StringComparison.OrdinalIgnoreCase))
 				dir = ParseImportDirective(args, argToks);
@@ -653,6 +683,7 @@ namespace Keysharp.Parsing.Syntax
 			dir.Line = dirLine;
 			dir.Column = dirCol;
 			dir.File = dirFile;
+			dir.SourceOrder = sourceOrder;
 			return dir;
 		}
 
@@ -725,6 +756,11 @@ namespace Keysharp.Parsing.Syntax
 		{
 			int maxArgs = MaxDirectiveArgs(name);
 			if (maxArgs < 0 || toks.Count == 0) return;   // -1: the line is one literal value (path/message/options) — commas are literal
+			if (maxArgs == 0)
+			{
+				ErrorAt(toks[0], $"#{name} accepts no arguments");
+				return;
+			}
 
 			// The lexer captures a few directives' arguments verbatim as a single token (Lexer.RawArgDirectives), so for
 			// those any value-separating commas live inside the token text; all other directives are normally lexed and
@@ -809,7 +845,9 @@ namespace Keysharp.Parsing.Syntax
 		// text, not argument separators. Values taken from the AHK v2 source (Script::IsDirective).
 		private static int MaxDirectiveArgs(string name) => name.ToUpperInvariant() switch
 		{
+			"NOTRAYICON" or "ERRORSTDOUT" => 0,
 			"WARN" => 2,   // #Warn [Type], [Mode]
+			"TRAYICON" => 2,   // #TrayIcon [FileName [, IconNumber]]
 			"HOTIF" or "HOTIFTIMEOUT" or "INPUTLEVEL" or "CLIPBOARDTIMEOUT" or "MAXTHREADS"
 				or "MAXTHREADSPERHOTKEY" or "MAXTHREADSBUFFER" or "SUSPENDEXEMPT" or "USEHOOK"
 				or "SINGLEINSTANCE" or "STRUCTPACK" or "PERSISTENT" => 1,
@@ -883,13 +921,28 @@ namespace Keysharp.Parsing.Syntax
 		// Each directive still owns its own line, though: the condition is everything up to the newline, so the
 		// one-line form (`if (#if WINDOWS cond1 #else cond2 #endif)`) does NOT work — the first directive swallows
 		// the rest of the line. Only tokens in the active branch survive; the directive lines themselves are removed.
-		private List<Token> Preprocess(List<Token> src) => Preprocess(src, _includeDir);
+		private List<Token> Preprocess(List<Token> src) => Preprocess(src, _includeDir, null);
 
 		// `includeDir` is the directory relative includes in THIS token stream resolve against (the main script dir, or
 		// an #included file's own dir for its nested includes).
-		private List<Token> Preprocess(List<Token> src, string includeDir)
+		private List<Token> Preprocess(List<Token> src, string includeDir, IReadOnlyList<string> lexDiagnostics)
 		{
 			var outp = new List<Token>(src.Count);
+			var lexDiagnostic = lexDiagnostics?.FirstOrDefault();
+			var (diagnosticLine, diagnosticColumn) = LexDiagnosticPosition(lexDiagnostic);
+			var diagnosticFile = src.Count > 0 ? src[0].File : null;
+
+			void ThrowLexDiagnostic(Token token)
+			{
+				if (lexDiagnostic != null && (token.Line > diagnosticLine
+						|| (token.Line == diagnosticLine && token.Column >= diagnosticColumn)))
+				{
+					if (Emit())
+						throw new Keysharp.Builtins.ParseException(PrefixDiagnostic(token.File ?? diagnosticFile, lexDiagnostic));
+
+					lexDiagnostic = null;
+				}
+			}
 			// `dirIdx` indexes the opening #if's name token in `src`, so an unterminated block can point back at it
 			// (an index, not the Token itself: this tuple is copied on every Emit() below); `seenElse` rejects a
 			// duplicate #else and an #elif that follows one.
@@ -902,6 +955,7 @@ namespace Keysharp.Parsing.Syntax
 			while (i < src.Count)
 			{
 				var t = src[i];
+				ThrowLexDiagnostic(t);
 				// #include / #includeagain <file>: read the file, lex it, and splice its tokens in (recursing into the
 				// outer loop handles nested includes). Plain #include dedups already-included files; #includeagain doesn't.
 				if (_includeDir != null && t.Kind == TokenKind.Hash && i + 1 < src.Count && src[i + 1].Kind == TokenKind.Identifier
@@ -923,7 +977,8 @@ namespace Keysharp.Parsing.Syntax
 							if (j < src.Count && src[j].Kind == TokenKind.RParen) j++;
 						}
 					}
-					var included = ResolveAndLexInclude(fileToks, again, curDir, t, out var includedDir, out var dirChange);
+					var included = ResolveAndLexInclude(fileToks, again, curDir, t, out var includedDir,
+						out var dirChange, out var includedDiagnostics);
 					// `#Include <dir>` names a directory rather than a file: it changes the base directory for the rest
 					// of THIS file's relative includes and splices no content. Otherwise recursively preprocess the
 					// included tokens against THEIR directory (so nested relative includes resolve correctly) and emit.
@@ -935,7 +990,7 @@ namespace Keysharp.Parsing.Syntax
 						if (++_includeDepth > MaxIncludeDepth)
 							throw new Keysharp.Builtins.ParseException(Diagnostic(t,
 								"Too many nested #include directives (possible circular #includeagain)"));
-						outp.AddRange(Preprocess(included, includedDir));
+						outp.AddRange(Preprocess(included, includedDir, includedDiagnostics));
 						_includeDepth--;
 					}
 					i = j;
@@ -997,6 +1052,11 @@ namespace Keysharp.Parsing.Syntax
 				}
 				if (Emit())
 				{
+					if (t.Kind == TokenKind.Hash && i + 1 < src.Count
+						&& src[i + 1].Kind == TokenKind.Identifier
+						&& src[i + 1].Text.Equals("errorstdout", System.StringComparison.OrdinalIgnoreCase))
+						_errorStdOut = true;
+
 					if (t.Kind == TokenKind.Hash && i + 1 < src.Count && src[i + 1].IsKeyword("csharp"))
 						(_csharpDefineSnapshots ??= new()).Enqueue([.. _defines]);
 
@@ -1004,6 +1064,8 @@ namespace Keysharp.Parsing.Syntax
 				}
 				i++;
 			}
+			if (lexDiagnostic != null && Emit())
+				throw new Keysharp.Builtins.ParseException(PrefixDiagnostic(diagnosticFile, lexDiagnostic));
 			if (stack.Count > 0)   // innermost unterminated block; without this its excluded region silently eats the rest of the file
 			{
 				var open = src[stack.Peek().dirIdx];
@@ -1016,14 +1078,28 @@ namespace Keysharp.Parsing.Syntax
 			return outp;
 		}
 
+		private static (int Line, int Column) LexDiagnosticPosition(string diagnostic)
+		{
+			if (diagnostic == null) return (int.MaxValue, int.MaxValue);
+			var first = diagnostic.IndexOf(':');
+			var second = first < 0 ? -1 : diagnostic.IndexOf(':', first + 1);
+			return first > 0 && second > first
+				&& int.TryParse(diagnostic.AsSpan(0, first), out var line)
+				&& int.TryParse(diagnostic.AsSpan(first + 1, second - first - 1), out var column)
+				? (line, column)
+				: (int.MaxValue, int.MaxValue);
+		}
+
 		// Reconstructs the include filename from its tokens, expands %BuiltInVar% references, and resolves it against
 		// the include dir, returning the included file's tokens (minus EOF). Returns null with `dirChange` set for the
 		// `#Include <dir>` directory form, and null for a deduped or *i-ignored file. A missing file/dir WITHOUT the
 		// *i flag throws, so a broken #include fails loudly instead of silently doing nothing.
-		private List<Token> ResolveAndLexInclude(List<Token> fileToks, bool again, string baseDir, Token directive, out string includedDir, out string dirChange)
+		private List<Token> ResolveAndLexInclude(List<Token> fileToks, bool again, string baseDir, Token directive,
+			out string includedDir, out string dirChange, out IReadOnlyList<string> lexDiagnostics)
 		{
 			includedDir = baseDir;
 			dirChange = null;
+			lexDiagnostics = null;
 			if (fileToks.Count == 0) return null;
 			string file;
 			if (fileToks.Count == 1 && fileToks[0].Kind == TokenKind.String && fileToks[0].Text.Length >= 2)
@@ -1070,9 +1146,7 @@ namespace Keysharp.Parsing.Syntax
 			// The lexer stamps each token with this file's full path for diagnostics and A_LineFile.
 			var lexer = new Lexing.Lexer(System.IO.File.ReadAllText(path), path);
 			var toks = LexForParsing(lexer);
-			// A lex error in the included file terminates immediately, reported against that file.
-			if (lexer.Diagnostics.Count > 0)
-				throw new Keysharp.Builtins.ParseException(PrefixDiagnostic(path, lexer.Diagnostics[0]));
+			lexDiagnostics = lexer.Diagnostics;
 			if (toks.Count > 0 && toks[^1].Kind == TokenKind.EOF) toks.RemoveAt(toks.Count - 1);   // drop the included EOF
 			toks.Insert(0, new Token(TokenKind.Newline, "\n", 0, 0, 0, 0, true, path));   // keep line separation from the host
 			return toks;

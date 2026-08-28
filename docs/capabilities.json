@@ -81,93 +81,16 @@
                  },
                  {
                      "category":  "Environment/System",
-                     "feature":  "#AssemblyCompany",
-                     "syntax":  "",
+                     "feature":  "#App",
+                     "syntax":  "#App { key: value, ... }",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Sets assembly company metadata for compiled scripts.",
-                     "tested-by":  "directive-asminfo.ahk"
-                 },
-                 {
-                     "category":  "Environment/System",
-                     "feature":  "#AssemblyConfiguration",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Sets assembly configuration metadata for compiled scripts.",
-                     "tested-by":  "directive-asminfo.ahk"
-                 },
-                 {
-                     "category":  "Environment/System",
-                     "feature":  "#AssemblyCopyright",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Sets assembly copyright metadata for compiled scripts.",
-                     "tested-by":  "directive-asminfo.ahk"
-                 },
-                 {
-                     "category":  "Environment/System",
-                     "feature":  "#AssemblyDescription",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Sets assembly description metadata for compiled scripts.",
-                     "tested-by":  "directive-asminfo.ahk"
-                 },
-                 {
-                     "category":  "Environment/System",
-                     "feature":  "#AssemblyName",
-                     "syntax":  "#AssemblyName <Name>",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Sets the compiled assembly's identity, which is what Assembly.GetName().Name reports. Unlike the other #Assembly* directives this is not an attribute (.NET has no AssemblyNameAttribute), so it is passed to the compiler rather than emitted as one; A_AssemblyName reads it back.",
-                     "tested-by":  "directive-asminfo.ahk"
-                 },
-                 {
-                     "category":  "Environment/System",
-                     "feature":  "#AssemblyProduct",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Sets assembly product metadata for compiled scripts.",
-                     "tested-by":  "directive-asminfo.ahk"
-                 },
-                 {
-                     "category":  "Environment/System",
-                     "feature":  "#AssemblyTrademark",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Sets assembly trademark metadata for compiled scripts.",
-                     "tested-by":  "directive-asminfo.ahk"
-                 },
-                 {
-                     "category":  "Environment/System",
-                     "feature":  "#AssemblyVersion",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Sets assembly version metadata for compiled scripts.",
-                     "tested-by":  "directive-asminfo.ahk"
-                 },
-                 {
+                     "notes":  "Keysharp-only descriptor for assembly metadata, Icon, GuiTheme, ConsoleApp, HookMutexName and Files; multiple blocks merge independently by key in source order, later keys win, and Files: [] clears the list. Asset paths are main-script-relative logical paths and artifact builds embed Files.",
+                     "tested-by":  "directive-asminfo.ahk; directive-misc.ahk; file-fileinstall.ahk; DirectiveTests.AppErrors; DirectiveTests.AppData; FileAndDirTests.FileInstallResources"
+                  },
+                  {
                      "category":  "Environment/System",
                      "feature":  "#ClipboardTimeout",
                      "syntax":  "",
@@ -176,17 +99,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Sets how long clipboard operations should wait before timing out.",
-                     "tested-by":  "directive-misc.ahk"
-                 },
-                 {
-                     "category":  "Environment/System",
-                     "feature":  "#ConsoleApp",
-                     "syntax":  "#ConsoleApp",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Keysharp-only, and the AutoHotkey equivalent of Ahk2Exe's ;@Ahk2Exe-ConsoleApp. Builds a --compile exe executable as a console (CUI) application, so a shell waits for it and its stdin/stdout are the terminal's. Windows fixes this in the PE subsystem before the process starts, so it cannot be a runtime setting; GUI remains the default so a double-clicked script never flashes a console window. Ignored when the script is interpreted or compiled to a .cks, since neither writes an executable, and inert on Linux and macOS, where executables have no subsystem and a shell always waits.",
                      "tested-by":  "directive-misc.ahk"
                  },
                  {
@@ -279,23 +191,13 @@
                  {
                      "category":  "Environment/System",
                      "feature":  "#ErrorStdOut",
-                     "syntax":  "",
+                     "syntax":  "#ErrorStdOut",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #ErrorStdOut directive sends any syntax error that prevents a script from launching to the standard error stream (stderr) rather than displaying a dialog.",
-                     "tested-by":  "directive-misc.ahk"
-                 },
-                 {
-                     "category":  "Environment/System",
-                     "feature":  "#HookMutexName",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Sets the mutex name used for global hook synchronization."
+                     "notes":  "Standalone directive that sends subsequent load-time errors and uncaught runtime errors to standard error instead of displaying a dialog. The command-line switch applies to load-time errors from the start of loading.",
+                     "tested-by":  "directive-misc.ahk; ScriptingComponentTests.ErrorStdOutOrder; ScriptingComponentTests.ErrorStdOutIncludes; ScriptingComponentTests.ErrorStdOutCompilation"
                  },
                  {
                      "category":  "Environment/System",
@@ -446,8 +348,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #NoTrayIcon directive disables the showing of a tray icon.",
-                     "tested-by":  "directive-misc.ahk"
+                     "notes":  "Disables the startup tray icon. #NoTrayIcon and #TrayIcon apply in source order, so the later directive determines visibility.",
+                     "tested-by":  "directive-misc.ahk; DirectiveTests.TrayIcon"
                  },
                  {
                      "category":  "Environment/System",
@@ -530,8 +432,19 @@
                      "macos":  "full",
                      "notes":  "The #SuspendExempt directive exempts subsequent hotkeys and hotstrings from suspension.",
                      "tested-by":  "directive-misc.ahk"
-                 },
-                 {
+                  },
+                  {
+                     "category":  "Environment/System",
+                     "feature":  "#TrayIcon",
+                     "syntax":  "#TrayIcon  |  #TrayIcon FileName [, IconNumber]",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Keysharp-only standalone directive that selects the script's embedded tray default; #TrayIcon and #NoTrayIcon apply in source order, and bare #TrayIcon restores the #App Icon or Keysharp default. FileName is main-script-relative; omitted, positive, negative and quoted-string selectors mean the first group, a 1-based group, a native resource ID or a managed resource name, respectively, and native-module selection is Windows-only.",
+                     "tested-by":  "DirectiveTests.TrayIcon"
+                  },
+                  {
                      "category":  "Environment/System",
                      "feature":  "#Undef",
                      "syntax":  "",
@@ -1818,7 +1731,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Blank unless a custom tray icon has been specified via Menu, tray, icon, in which case it\u0027s the full path and name of the icon\u0027s file.",
+                     "notes":  "The full path of a runtime custom tray icon selected by TraySetIcon; blank while the script\u0027s embedded/default tray icon is active, including one selected by #TrayIcon.",
                      "tested-by":  "props-script-settings.ahk"
                  },
                  {
@@ -1840,7 +1753,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "If A_IconFile has been specified, gets the number of the icon of the icon file used for the system tray icon. Otherwise blank.",
+                     "notes":  "The selector of a runtime custom tray icon. Reads 1 while the script\u0027s embedded/default tray icon is active, including one selected by #TrayIcon, and when TraySetIcon omits its selector.",
                      "tested-by":  "props-script-settings.ahk"
                  },
                  {
@@ -5394,12 +5307,13 @@
                  {
                      "category":  "FileSystem",
                      "feature":  "FileInstall()",
-                     "syntax":  "FileInstall(\"file.txt\")",
-                     "windows":  "unsupported",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "All scripts are converted into compiled executables, so this doesn\u0027t apply."
+                     "syntax":  "FileInstall(Source, Dest [, Overwrite])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Extracts the #App Files payload matching Source\u0027s canonical script-relative key; otherwise it uses live script-relative FileCopy semantics, and copying onto itself is a no-op. Dest\u0027s parent must exist, Overwrite=false atomically preserves existing files, and only the final Files list—not FileInstall calls—selects artifact payloads.",
+                     "tested-by":  "file-fileinstall.ahk; FileAndDirTests.FileInstallResources"
                  },
                  {
                      "category":  "FileSystem",
@@ -11079,7 +10993,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Assembly company metadata set by #AssemblyCompany."
+                     "notes":  "Assembly company metadata set by the #App Company key."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -11089,7 +11003,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Assembly configuration metadata set by #AssemblyConfiguration."
+                     "notes":  "Assembly configuration metadata set by the #App Configuration key."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -11099,7 +11013,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Assembly copyright metadata set by #AssemblyCopyright."
+                     "notes":  "Assembly copyright metadata set by the #App Copyright key."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -11109,7 +11023,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Assembly description metadata set by #AssemblyDescription."
+                     "notes":  "Assembly description metadata set by the #App Description key."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -11119,7 +11033,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Assembly product metadata set by #AssemblyProduct."
+                     "notes":  "Assembly product metadata set by the #App Product key."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -11129,7 +11043,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Assembly title metadata set by #AssemblyTitle."
+                     "notes":  "Assembly title metadata set by the #App Title key."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -11139,7 +11053,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The executing assembly's identity, set by #AssemblyName. Unlike the other A_Assembly* variables this reads the assembly name rather than an attribute, so it always has a value: without the directive it is the name the script was compiled under.",
+                     "notes":  "The executing assembly's identity, set by the #App Name key. Unlike the other A_Assembly* variables this reads the assembly name rather than an attribute, so it always has a value: without the key it is the name the script was compiled under.",
                      "tested-by":  "directive-asminfo.ahk"
                  },
                  {
@@ -11150,7 +11064,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Assembly trademark metadata set by #AssemblyTrademark."
+                     "notes":  "Assembly trademark metadata set by the #App Trademark key."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -11160,7 +11074,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Assembly version metadata set by #AssemblyVersion."
+                     "notes":  "Assembly version metadata set by the #App Version key."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

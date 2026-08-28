@@ -1,15 +1,17 @@
 #import KS { A_AssemblyCompany, A_AssemblyConfiguration, A_AssemblyCopyright, A_AssemblyDescription, A_AssemblyName, A_AssemblyProduct, A_AssemblyTitle, A_AssemblyTrademark, A_AssemblyVersion }
 #NoTrayIcon
 
-#ASSEMBLYTITLE This is a title!
-#ASSEMBLYDESCRIPTION This is a description!
-#ASSEMBLYCONFIGURATION This is a config!
-#ASSEMBLYCOMPANY This is a company!
-#ASSEMBLYPRODUCT This is a product!
-#ASSEMBLYCOPYRIGHT This is a copyright!
-#ASSEMBLYTRADEMARK This is a trademark!
-#ASSEMBLYVERSION 9.8.7.6
-#ASSEMBLYNAME ThisIsAnAsmName
+#App {
+	Name: "ThisIsAnAsmName",
+	Title: "This is a title!",
+	Description: "This is a description!",
+	Configuration: "This is a config!",
+	Company: "This is a company!",
+	Product: "This is a product!",
+	Copyright: "This is a copyright!",
+	Trademark: "This is a trademark!",
+	Version: "9.8.7.6",
+}
 #Include <assert>
 
 AssertEq(A_AssemblyTitle, "This is a title!", A_LineNumber)

@@ -884,10 +884,82 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Unsupported functionality which always throws an exception.
+		/// Extracts a file embedded into the script's assembly via `#App { Files: [...] }` to dest. Source must
+		/// match the path listed there (relative to the script, / or \ separators). When the file is not embedded,
+		/// source resolves relative to the live script and the call uses <see cref="FileCopy"/> semantics.
 		/// </summary>
-		/// <exception cref="Error">An <see cref="Error"/> is always thrown.</exception>
-		public static string FileInstall(object source, object dest, object overwrite = null) => (string)Errors.ErrorOccurred("Compiling files into an executable is not supported in Keysharp");
+		/// <param name="source">The embedded logical path or live script-relative source path.</param>
+		/// <param name="dest">The destination file name, assumed to be in <see cref="A_WorkingDir"/> if an absolute path isn't specified. Its parent directory must exist.</param>
+		/// <param name="overwrite">True to overwrite an existing destination file; if omitted or false, an existing file raises an error.</param>
+		/// <exception cref="Error">An <see cref="Error"/> is thrown on failure.</exception>
+		public static object FileInstall(object source, object dest, object overwrite = null)
+		{
+			var src = source.As();
+			var asm = Accessors.GetAssembly();
+			var resourceKey = AppResourcePath.Normalize(src);
+			var wanted = resourceKey != null ? AppManifest.FileResourceName(resourceKey) : null;
+			var stream = wanted != null ? asm?.GetManifestResourceStream(wanted) : null;
+
+			if (stream == null && asm != null && wanted != null)
+			{
+				var match = asm.GetManifestResourceNames().FirstOrDefault(n =>
+								n.StartsWith(AppManifest.FileResourcePrefix, StringComparison.Ordinal)
+								&& n.Equals(wanted, StringComparison.OrdinalIgnoreCase));
+
+				if (match != null)
+					stream = asm.GetManifestResourceStream(match);
+			}
+
+			if (stream == null)
+			{
+				var sourcePath = AppResourcePath.ToFileSystemPath(src);
+				var destPath = AppResourcePath.ToFileSystemPath(dest.As());
+
+				try
+				{
+					if (!Path.IsPathRooted(sourcePath) && Accessors.A_ScriptDir is { Length: > 0 } scriptDir)
+						sourcePath = Path.Combine(scriptDir, sourcePath);
+
+					var sourceFull = Path.GetFullPath(sourcePath);
+					var destFull = Path.GetFullPath(destPath);
+					var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+					if (File.Exists(sourceFull) && sourceFull.Equals(destFull, comparison))
+						return DefaultObject;
+				}
+				catch (Exception ex) when (ex is not KeysharpException)
+				{
+					return Errors.ErrorOccurred($"FileInstall of {src} failed: {ex.Message}");
+				}
+
+				return FileCopy(sourcePath, destPath, overwrite);
+			}
+
+			using (stream)
+			{
+				var dst = AppResourcePath.ToFileSystemPath(dest.As());
+				EnsureFilePermission(dst, FilePermissionAccess.Write, "FileInstall destination");
+
+				try
+				{
+					var destPath = Path.GetFullPath(dst);
+					var destDir = Path.GetDirectoryName(destPath);
+
+					if (string.IsNullOrEmpty(destDir) || !Directory.Exists(destDir))
+						return Errors.ErrorOccurred($"Folder {destDir} did not exist.");
+
+					using var fs = new FileStream(destPath, overwrite.Ab() ? FileMode.Create : FileMode.CreateNew,
+						FileAccess.Write, FileShare.None);
+					stream.CopyTo(fs);
+				}
+				catch (Exception ex) when (ex is not KeysharpException)
+				{
+					return Errors.ErrorOccurred($"FileInstall of {src} failed: {ex.Message}");
+				}
+			}
+
+			return DefaultObject;
+		}
 
 		/// <summary>
 		/// Moves or renames one or more files.

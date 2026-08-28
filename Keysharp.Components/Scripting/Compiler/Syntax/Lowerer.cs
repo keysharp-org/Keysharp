@@ -90,9 +90,21 @@ namespace Keysharp.Compilation.Syntax
 		private readonly HashSet<string> _emittedFuncImpls = new();   // guards against duplicate hoisted nested functions
 		private readonly List<Type> _wildcardModules = new();   // `#import "Mod" { * }` types — members resolved on demand
 		private readonly List<string> _classFieldIds = new();   // class slot fields — referenced at auto-exec start to force static init
-		private readonly List<(string Attr, string Value)> _asmAttributes = new();   // #Assembly* directives -> [assembly: …]
-		/// <summary>`#AssemblyName`, or null when the script does not set one. Read by CompilerHelper after Build.</summary>
-		public string AssemblyName;
+		// The application startup handoff: #App { … } data plus resolved standalone controls
+		// (#SingleInstance and #NoTrayIcon/#TrayIcon). Sharing transport does not make those controls
+		// #App keys. CompilerHelper applies the artifact fields and Script reads the startup state before chrome exists.
+		private readonly Keysharp.Internals.Scripting.AppManifest _manifest = new();
+		private bool _manifestTouched;
+		// #App blocks accepted by the prescan (main-module top level); one reaching LowerDirective unseen is misplaced.
+		private readonly HashSet<Stmt> _appSeen = new(ReferenceEqualityComparer.Instance);
+		// Applied once by a lexical-order prescan; ordinary lowering may visit nested branches and class-member buckets
+		// in a different order and must not mutate final manifest state again.
+		private readonly HashSet<DirectiveStmt> _manifestDirectivesSeen = new(ReferenceEqualityComparer.Instance);
+		/// <summary>The script's app manifest, or null when it sets nothing. Read by CompilerHelper after Build.</summary>
+		internal Keysharp.Internals.Scripting.AppManifest Manifest => _manifestTouched ? _manifest : null;
+		private bool _errorStdOutActive;
+		private bool? _errorStdOutAtDiagnostic;
+		internal bool ErrorStdOut => _errorStdOutAtDiagnostic ?? _errorStdOutActive;
 		// Package resolution is program-wide; identity tracking catches declarations below module scope.
 		private readonly List<Keysharp.Internals.Os.PackageResolver.PackageRef> _packages = [];
 		private readonly HashSet<Stmt> _packagesSeen = new(ReferenceEqualityComparer.Instance);
@@ -100,13 +112,6 @@ namespace Keysharp.Compilation.Syntax
 		private readonly HashSet<string> _requiredComponents = new(System.StringComparer.OrdinalIgnoreCase);
 		public IReadOnlyCollection<string> RequiredProviders => _requiredProviders;
 		public IReadOnlyCollection<string> RequiredComponents => _requiredComponents;
-
-		// #ConsoleApp: build the executable as a console (CUI) application rather than a GUI one. Compile-time
-		// only - it emits no code, and is surfaced to the host through the compilation result (see
-		// CompilerHelper.Build), which stamps the PE subsystem when it writes the apphost.
-		private bool _consoleApp;
-		/// <summary>True when the script asked to be built as a console application via `#ConsoleApp`.</summary>
-		public bool ConsoleApp => _consoleApp;
 
 		// Inline C# is emitted as one additional tree per script module; identity tracking catches unsupported nesting.
 		private List<(string Module, string ClassPath, CSharpDirective Dir)> _inlineBlocks;
@@ -129,9 +134,6 @@ namespace Keysharp.Compilation.Syntax
 		private readonly List<MemberDeclarationSyntax> _hotMembers = new();
 		private readonly List<StatementSyntax> _dhhr = new();
 		private bool _persistent;            // a hotkey/hotstring makes the script persistent
-		private string _singleInstanceMode;  // #SingleInstance mode (Force/Ignore/Prompt/Off), null = directive absent
-		private bool _noTrayIcon;            // #NoTrayIcon present: applied at the top of Main, before any tray chrome is created
-		private string _hookMutexName;       // #HookMutexName argument (passed to the Script constructor), null = absent
 		// #Warn config: per-type output mode ("MsgBox"/"StdOut"/"OutputDebug") or null when that warning is off.
 		// Matching AHK, VarUnset and Unreachable are ENABLED by default (MsgBox mode); LocalSameAsGlobal is off until a
 		// `#Warn` directive turns it on. A `#Warn` directive overrides these. `_warnDefaultMode` is the program-wide
@@ -299,7 +301,7 @@ namespace Keysharp.Compilation.Syntax
 		// This compilation's caller-supplied preprocessor symbols (null when there are none), forwarded to the separate
 		// parse that each imported module file gets so its #if branches resolve as they do in the main script.
 		private IEnumerable<string> _defines;
-		private bool _compileToFile;   // emitting a distributable .cks/.exe: relativize #include paths in A_LineFile
+		private bool _compileToFile;   // emitting an artifact: relativize #include paths and attach declared file payloads
 
 		public CompilationUnitSyntax Build(ProgramNode prog, string name, string scriptPath = "*", string startupName = null, string includeDir = null, string source = null, bool compileToFile = false, IEnumerable<string> defines = null)
 		{
@@ -316,6 +318,10 @@ namespace Keysharp.Compilation.Syntax
 			// prog.Body covers both: the multi-module path partitions this same list into modules, so every module's
 			// top-level statements are already here.
 			PrescanPackageDirectives(prog.Body);
+			PrescanManifestDirectives(prog.Body);
+			// #App blocks are program-wide and location-independent, so evaluate them before either lowering path;
+			// assembly metadata and BuildMain both need their final merged values.
+			PrescanAppDirectives(prog.Body);
 			// Prescan after module partitioning so blocks keep their declaring module.
 			// Use the dedicated multi-module path when the file defines/uses modules: a `#Module`, an `export`, or a
 			// `#import "name"` that resolves to a separate <name>.ahk file. Otherwise the common single-module path is
@@ -371,8 +377,9 @@ namespace Keysharp.Compilation.Syntax
 			while (queue.Count > 0)
 			{
 				var m = queue.Dequeue();
-				foreach (var im in m.AllImports)   // load files for imports at ANY nesting depth, not just module scope
+				foreach (var im in m.AllImports.OrderBy(import => import.SourceOrder))   // lexical discovery, regardless of AST member grouping
 				{
+					ActivateErrorStdOutBefore(m.Body, im.SourceOrder);
 					var modName = im.Module;
 					if (modName.Length == 0 || byName.ContainsKey(modName) || modName.Equals("AHK", System.StringComparison.OrdinalIgnoreCase)) continue;
 					// Resolve via the AHK module search: the importing file's own directory first, then the search path.
@@ -387,7 +394,10 @@ namespace Keysharp.Compilation.Syntax
 						// explicitly — its #if branches must resolve the same way they do in the main script.
 						// `file` (not null) stamps its tokens with their real path, so %A_LineFile% resolves to the
 						// module file rather than its directory, and #Warn/diagnostics raised inside it name it.
-						var (p, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(System.IO.File.ReadAllText(file), fileDir, file, _defines);
+						var moduleSource = System.IO.File.ReadAllText(file);
+
+						var (p, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(moduleSource, fileDir, file, _defines);
+						_errorStdOutActive |= p.ErrorStdOut;
 						// A parse error in the imported module file is surfaced as the script's error (prefixed with the
 						// module file name), not swallowed — otherwise the user would only see a misleading "module not
 						// found" for a file that does exist. BuildMultiModule aborts as soon as a diagnostic is recorded.
@@ -409,6 +419,9 @@ namespace Keysharp.Compilation.Syntax
 					{
 						if (fm.Name == "__Main") fm.Name = modName;
 						if (byName.ContainsKey(fm.Name)) continue;
+						// Imported files have their own parser-local directive sequence. Apply each accepted module segment
+						// once, in deterministic file/segment discovery order, before its body is later lowered.
+						PrescanManifestDirectives(fm.Body);
 						fm.Dir = fileDir;
 						ScanExports(fm);
 						mods.Add(fm); byName[fm.Name] = fm; queue.Enqueue(fm);
@@ -1817,7 +1830,7 @@ namespace Keysharp.Compilation.Syntax
 
 		// Value-setting directives lower to an assignment of the matching runtime accessor/field at their position in
 		// the auto-exec (matches the canonical, which assigns the same A_* / Script members). Unknown or purely
-		// load-time directives (#Requires, #ErrorStdOut, #MaxThreads, #DllLoad, #Include, #import handled elsewhere…)
+		// load-time directives (#Requires, #MaxThreads, #DllLoad, #Include, #import handled elsewhere…)
 		// are no-ops here.
 		private StatementSyntax LowerDirective(DirectiveStmt d)
 		{
@@ -1845,19 +1858,23 @@ namespace Keysharp.Compilation.Syntax
 					long.TryParse(args, out var mtph);
 					return Set("Keysharp.Builtins.Ks.A_MaxThreadsPerHotkey", Num(System.Math.Clamp(mtph, 1, 255).ToString()));
 				case "USEHOOK": return Set("MainScript.ForceKeybdHook", Op("ForceBool", NumArg(0)));
-				// #NoTrayIcon: recorded here and applied at the top of Main (see BuildMain), before any tray
-				// chrome is created. Emitting it inline in the auto-exec section runs too late -- the default
-				// tray icon would already have been created/shown by RunMainWindow, so the directive would be
-				// ignored (a brief tray flash on Linux).
-				case "NOTRAYICON": _noTrayIcon = true; return null;
-				// #ConsoleApp: build the compiled executable as a console (CUI) application, so a shell waits for it
-				// and its stdout/stdin are the terminal's. Windows decides both from the PE subsystem field, which is
-				// fixed before the process starts, so this cannot be a runtime setting - it is recorded here and
-				// applied when the host stamps the apphost (see Program.CompileToExe). It affects `--compile exe`
-				// only: running the script through the interpreter, or compiling it to a .cks, writes no apphost.
-				// Elsewhere it is simply inert - Linux and macOS have no subsystem concept, so a shell there always
-				// waits and stdio is always connected.
-				case "CONSOLEAPP": _consoleApp = true; return null;
+				// #NoTrayIcon is applied through the manifest before any tray chrome is created.
+				case "NOTRAYICON": case "TRAYICON": case "SINGLEINSTANCE":
+					ApplyManifestDirectiveOnce(d);
+					return null;
+				// The parser uses the same directive as load-error routing; successful scripts retain Keysharp's runtime
+				// behavior by assigning the flag at the directive's source position.
+				case "ERRORSTDOUT":
+					_errorStdOutActive = true;
+					return Set("MainScript.ErrorStdOut", True);
+				// `#App { key: value, … }`: accepted only at the top level of the main module, where the prescan
+				// (PrescanAppDirective) already evaluated it into the manifest. One reaching this switch unseen is
+				// misplaced — nested in a scope, in a `#Module`, or in an imported module file.
+				case "APP":
+					if (!_appSeen.Contains(d))
+						Diag($"{DirectiveAnchor(d)}#App must appear at the top level of the main module");
+
+					return null;
 				case "NOMAINWINDOW": return Set("MainScript.NoMainWindow", True);
 				case "WINACTIVATEFORCE": return Set("MainScript.WinActivateForce", True);
 				// #MaxThreads N: global concurrent-thread cap (AHK clamps 1..255). MaxThreadsTotal is a uint field.
@@ -1896,23 +1913,6 @@ namespace Keysharp.Compilation.Syntax
 				case "PERSISTENT":
 					if (!(args.Equals("false", System.StringComparison.OrdinalIgnoreCase) || args == "0")) _persistent = true;
 					return null;
-				// #SingleInstance [Force|Ignore|Prompt|Off]: recorded here and emitted as a HandleSingleInstance guard at
-				// the top of Main (see BuildMain). Default option is Force (matches AHK v2 and the canonical).
-				case "SINGLEINSTANCE":
-					_singleInstanceMode = args.Length == 0 ? "Force" : args.ToUpperInvariant() switch
-					{
-						"FORCE" => "Force", "IGNORE" => "Ignore", "PROMPT" => "Prompt", "OFF" => "Off",
-						_ => null
-					};
-					if (_singleInstanceMode == null) Diag($"#SingleInstance: unrecognized option '{args}'");
-					return null;
-				// #HookMutexName <name>: names the keyboard/mouse hook mutex (so multiple scripts can share a hook). Passed
-				// to the Script constructor (see AssembleProgram), which sets HookThread.MutexName.
-				case "HOOKMUTEXNAME":
-					if (args.Length > 0) _hookMutexName = args.Trim('"', '\'');
-					return null;
-				// #ErrorStdOut: send uncaught errors to stderr instead of a dialog (runtime honors MainScript.ErrorStdOut).
-				case "ERRORSTDOUT": return Set("MainScript.ErrorStdOut", True);
 				// #Requires capability <Name, ...>: request the listed platform capabilities at startup so a script's
 				// permissions are resolved up front (one batched prompt) rather than sprung on the user the first time
 				// a gated feature runs. Emitted at the directive's position in the auto-exec, i.e. before the script's
@@ -1954,26 +1954,23 @@ namespace Keysharp.Compilation.Syntax
 				case "WARNING":
 					CompileWarnings.Add(DirectiveMessage(d, args, "#Warning directive"));
 					return null;
-				// #Assembly* metadata -> assembly attributes on the generated unit (A_Assembly* read them at runtime).
-				case "ASSEMBLYTITLE": _asmAttributes.Add(("System.Reflection.AssemblyTitleAttribute", args)); return null;
-				case "ASSEMBLYDESCRIPTION": _asmAttributes.Add(("System.Reflection.AssemblyDescriptionAttribute", args)); return null;
-				case "ASSEMBLYCONFIGURATION": _asmAttributes.Add(("System.Reflection.AssemblyConfigurationAttribute", args)); return null;
-				case "ASSEMBLYCOMPANY": _asmAttributes.Add(("System.Reflection.AssemblyCompanyAttribute", args)); return null;
-				case "ASSEMBLYPRODUCT": _asmAttributes.Add(("System.Reflection.AssemblyProductAttribute", args)); return null;
-				case "ASSEMBLYCOPYRIGHT": _asmAttributes.Add(("System.Reflection.AssemblyCopyrightAttribute", args)); return null;
-				case "ASSEMBLYTRADEMARK": _asmAttributes.Add(("System.Reflection.AssemblyTrademarkAttribute", args)); return null;
-				case "ASSEMBLYVERSION":
-					_asmAttributes.Add(("System.Reflection.AssemblyVersionAttribute", args));
-					_asmAttributes.Add(("System.Reflection.AssemblyFileVersionAttribute", args));   // A_AssemblyVersion reads FileVersion
+				// These application facts are accepted only as #App keys. A targeted error names the valid syntax;
+				// the generic unknown-directive error would send the user hunting for a typo that is not there.
+				case "ASSEMBLYTITLE": case "ASSEMBLYDESCRIPTION": case "ASSEMBLYCONFIGURATION": case "ASSEMBLYCOMPANY":
+				case "ASSEMBLYPRODUCT": case "ASSEMBLYCOPYRIGHT": case "ASSEMBLYTRADEMARK": case "ASSEMBLYVERSION":
+				case "ASSEMBLYNAME": case "CONSOLEAPP": case "HOOKMUTEXNAME":
+				{
+					var key = d.Name.ToUpperInvariant() switch
+					{
+						"ASSEMBLYTITLE" => "Title", "ASSEMBLYDESCRIPTION" => "Description",
+						"ASSEMBLYCONFIGURATION" => "Configuration", "ASSEMBLYCOMPANY" => "Company",
+						"ASSEMBLYPRODUCT" => "Product", "ASSEMBLYCOPYRIGHT" => "Copyright",
+						"ASSEMBLYTRADEMARK" => "Trademark", "ASSEMBLYVERSION" => "Version",
+						"ASSEMBLYNAME" => "Name", "CONSOLEAPP" => "ConsoleApp", _ => "HookMutexName",
+					};
+					Diag($"{DirectiveAnchor(d)}#{d.Name} is not a supported directive; use #App {{ {key}: ... }}");
 					return null;
-				// #AssemblyName <name>: the assembly's identity, which is what Assembly.GetName().Name reports. Unlike
-				// its siblings this is not an attribute — .NET has no AssemblyNameAttribute — so it is surfaced to the
-				// compiler instead (see AssemblyName below), which passes it to CSharpCompilation.Create.
-				case "ASSEMBLYNAME":
-					if (args.Length > 0)
-						AssemblyName = args.Trim('"', '\'');
-
-					return null;
+				}
 				default:
 					// A directive nobody handles is a typo, a v1 leftover, or an unsupported feature. Letting it vanish
 					// means the script runs with the setting silently absent and fails somewhere unrelated later, so it
@@ -1997,6 +1994,675 @@ namespace Keysharp.Compilation.Syntax
 			"Include", "IncludeAgain", "Import", "Module", "Export", "HotIf", "Hotstring",
 			"Define", "Undef", "If", "ElIf", "Else", "EndIf",
 		};
+
+		// ---- application startup directives ----
+
+		private void PrescanManifestDirectives(IEnumerable<Stmt> body)
+		{
+			var directives = new List<DirectiveStmt>();
+
+			foreach (var stmt in body ?? [])
+				CollectManifestDirectives(stmt, directives);
+
+			var active = _errorStdOutActive;
+
+			foreach (var directive in directives.OrderBy(directive => directive.SourceOrder))
+				if (directive.Name.Equals("ErrorStdOut", System.StringComparison.OrdinalIgnoreCase))
+					_errorStdOutActive = true;
+				else if (IsCanonicalManifestDirective(directive))
+					ApplyManifestDirectiveOnce(directive);
+
+			_errorStdOutActive = active;
+		}
+
+		private void ActivateErrorStdOutBefore(IEnumerable<Stmt> body, long sourceOrder)
+		{
+			var directives = new List<DirectiveStmt>();
+
+			foreach (var stmt in body ?? [])
+				CollectManifestDirectives(stmt, directives);
+
+			if (directives.Any(directive => directive.SourceOrder < sourceOrder
+					&& directive.Name.Equals("ErrorStdOut", System.StringComparison.OrdinalIgnoreCase)))
+				_errorStdOutActive = true;
+		}
+
+		private static bool IsCanonicalManifestDirective(DirectiveStmt directive) =>
+			directive.Name.Equals("NoTrayIcon", System.StringComparison.OrdinalIgnoreCase)
+			|| directive.Name.Equals("TrayIcon", System.StringComparison.OrdinalIgnoreCase)
+			|| directive.Name.Equals("SingleInstance", System.StringComparison.OrdinalIgnoreCase);
+
+		private static void CollectManifestDirectives(Stmt stmt, List<DirectiveStmt> into)
+		{
+			if (stmt == null) return;
+
+			switch (stmt)
+			{
+				case DirectiveStmt directive: into.Add(directive); break;
+				case ExpressionStmt expression: CollectManifestDirectives(expression.Expr, into); break;
+				case Block block: foreach (var child in block.Body) CollectManifestDirectives(child, into); break;
+				case IfStmt conditional:
+					CollectManifestDirectives(conditional.Cond, into);
+					CollectManifestDirectives(conditional.Then, into);
+					CollectManifestDirectives(conditional.Else, into);
+					break;
+				case WhileStmt whileLoop:
+					CollectManifestDirectives(whileLoop.Cond, into);
+					CollectManifestDirectives(whileLoop.Body, into);
+					CollectManifestDirectives(whileLoop.Until, into);
+					CollectManifestDirectives(whileLoop.Else, into);
+					break;
+				case LoopStmt countedLoop:
+					CollectManifestDirectives(countedLoop.Count, into);
+					CollectManifestDirectives(countedLoop.Body, into);
+					CollectManifestDirectives(countedLoop.Until, into);
+					CollectManifestDirectives(countedLoop.Else, into);
+					break;
+				case SpecialLoopStmt specialLoop:
+					foreach (var argument in specialLoop.Args ?? []) CollectManifestDirectives(argument, into);
+					CollectManifestDirectives(specialLoop.Body, into);
+					CollectManifestDirectives(specialLoop.Until, into);
+					CollectManifestDirectives(specialLoop.Else, into);
+					break;
+				case ForStmt forLoop:
+					CollectManifestDirectives(forLoop.Enumerable, into);
+					CollectManifestDirectives(forLoop.Body, into);
+					CollectManifestDirectives(forLoop.Until, into);
+					CollectManifestDirectives(forLoop.Else, into);
+					break;
+				case SwitchStmt choice:
+					CollectManifestDirectives(choice.Value, into);
+					CollectManifestDirectives(choice.CaseSense, into);
+					foreach (var branch in choice.Cases)
+					{
+						foreach (var value in branch.Values) CollectManifestDirectives(value, into);
+						foreach (var child in branch.Body) CollectManifestDirectives(child, into);
+					}
+					if (choice.Default != null)
+						foreach (var child in choice.Default) CollectManifestDirectives(child, into);
+					break;
+				case TryStmt attempt:
+					CollectManifestDirectives(attempt.Body, into);
+					foreach (var catcher in attempt.Catches) CollectManifestDirectives(catcher.Body, into);
+					CollectManifestDirectives(attempt.Else, into);
+					CollectManifestDirectives(attempt.Finally, into);
+					break;
+				case ReturnStmt ret: CollectManifestDirectives(ret.Value, into); break;
+				case ThrowStmt thrown: CollectManifestDirectives(thrown.Value, into); break;
+				case DeclStmt declaration:
+					foreach (var item in declaration.Items) CollectManifestDirectives(item, into);
+					break;
+				case ExportStmt export: CollectManifestDirectives(export.Decl, into); break;
+				case HotkeyDef hotkey:
+					CollectManifestDirectives(hotkey.Body, into);
+					CollectManifestDirectives(hotkey.Func, into);
+					break;
+				case HotstringDef hotstring:
+					CollectManifestDirectives(hotstring.Body, into);
+					CollectManifestDirectives(hotstring.Func, into);
+					break;
+				case FunctionDecl function:
+					foreach (var parameter in function.Params) CollectManifestDirectives(parameter.Default, into);
+					CollectManifestDirectives(function.Body, into);
+					CollectManifestDirectives(function.ArrowBody, into);
+					break;
+				case ClassDecl type:
+					foreach (var field in type.Fields)
+					{
+						CollectManifestDirectives(field.Init, into);
+						CollectManifestDirectives(field.TypeExpr, into);
+					}
+					foreach (var method in type.Methods)
+					{
+						foreach (var parameter in method.Params) CollectManifestDirectives(parameter.Default, into);
+						CollectManifestDirectives(method.Body, into);
+						CollectManifestDirectives(method.ArrowBody, into);
+					}
+					foreach (var property in type.Properties)
+					{
+						foreach (var parameter in property.Params) CollectManifestDirectives(parameter.Default, into);
+						CollectManifestDirectives(property.GetBody, into);
+						CollectManifestDirectives(property.GetArrow, into);
+						CollectManifestDirectives(property.SetBody, into);
+						CollectManifestDirectives(property.SetArrow, into);
+					}
+					foreach (var init in type.StaticInit) CollectManifestDirectives(init, into);
+					foreach (var init in type.InstanceInit) CollectManifestDirectives(init, into);
+					foreach (var nested in type.Nested) CollectManifestDirectives(nested, into);
+					break;
+			}
+		}
+
+		private static void CollectManifestDirectives(Expr expression, List<DirectiveStmt> into)
+		{
+			if (expression == null) return;
+
+			void Arguments(IEnumerable<Argument> arguments)
+			{
+				foreach (var argument in arguments)
+				{
+					CollectManifestDirectives(argument.Value, into);
+					CollectManifestDirectives(argument.NameExpr, into);
+				}
+			}
+
+			switch (expression)
+			{
+				case UnaryExpr unary: CollectManifestDirectives(unary.Operand, into); break;
+				case BinaryExpr binary:
+					CollectManifestDirectives(binary.Left, into);
+					CollectManifestDirectives(binary.Right, into);
+					break;
+				case AssignExpr assignment:
+					CollectManifestDirectives(assignment.Target, into);
+					CollectManifestDirectives(assignment.Value, into);
+					break;
+				case TernaryExpr ternary:
+					CollectManifestDirectives(ternary.Cond, into);
+					CollectManifestDirectives(ternary.Then, into);
+					CollectManifestDirectives(ternary.Else, into);
+					break;
+				case CallExpr call:
+					CollectManifestDirectives(call.Callee, into);
+					Arguments(call.Args);
+					break;
+				case MemberExpr member: CollectManifestDirectives(member.Target, into); break;
+				case DynMemberExpr dynamicMember:
+					CollectManifestDirectives(dynamicMember.Target, into);
+					CollectManifestDirectives(dynamicMember.NameExpr, into);
+					break;
+				case IndexExpr index:
+					CollectManifestDirectives(index.Target, into);
+					Arguments(index.Args);
+					break;
+				case GroupExpr group: CollectManifestDirectives(group.Inner, into); break;
+				case SequenceExpr sequence:
+					foreach (var item in sequence.Items) CollectManifestDirectives(item, into);
+					break;
+				case DerefExpr dereference: CollectManifestDirectives(dereference.Name, into); break;
+				case ArrayExpr array: Arguments(array.Elements); break;
+				case MapExpr map:
+					foreach (var entry in map.Entries)
+					{
+						CollectManifestDirectives(entry.Key, into);
+						CollectManifestDirectives(entry.Value, into);
+					}
+					break;
+				case ObjectExpr obj:
+					foreach (var entry in obj.Entries)
+					{
+						CollectManifestDirectives(entry.Key, into);
+						CollectManifestDirectives(entry.Value, into);
+					}
+					break;
+				case FatArrowExpr function:
+					foreach (var parameter in function.Params) CollectManifestDirectives(parameter.Default, into);
+					CollectManifestDirectives(function.Body, into);
+					CollectManifestDirectives(function.BlockBody, into);
+					break;
+			}
+		}
+
+		private void ApplyManifestDirectiveOnce(DirectiveStmt directive)
+		{
+			if (!_manifestDirectivesSeen.Add(directive)) return;
+
+			var args = (directive.Args ?? "").Trim();
+			var anchor = DirectiveAnchor(directive);
+
+			switch (directive.Name.ToUpperInvariant())
+			{
+				case "NOTRAYICON":
+					if (args.Length > 0) Diag($"{anchor}#NoTrayIcon accepts no arguments");
+					else SetManifest(_manifest.SetTrayIconSuppressed);
+					break;
+				case "TRAYICON":
+					ApplyTrayIconDirective(directive, args);
+					break;
+				case "SINGLEINSTANCE":
+				{
+					var mode = args.Length == 0 ? "Force" : args.ToUpperInvariant() switch
+					{
+						"FORCE" => "Force", "IGNORE" => "Ignore", "PROMPT" => "Prompt", "OFF" => "Off",
+						_ => null
+					};
+					if (mode == null) Diag($"{anchor}#SingleInstance: unrecognized option '{args}'");
+					else SetManifest(() => _manifest.SingleInstance = mode);
+					break;
+				}
+			}
+		}
+
+		private void SetManifest(System.Action write)
+		{
+			_manifestTouched = true;
+			write();
+		}
+
+		private void ApplyTrayIconDirective(DirectiveStmt d, string args)
+		{
+			var anchor = DirectiveAnchor(d);
+
+			if (args.Length == 0)
+			{
+				SetManifest(_manifest.SetTrayIconDefault);
+				return;
+			}
+
+			var separator = FindUnquotedComma(args);
+			var rawPath = (separator < 0 ? args : args.Substring(0, separator)).Trim();
+			var rawSelector = separator < 0 ? null : args.Substring(separator + 1).Trim();
+
+			if (rawPath.Length == 0)
+			{
+				Diag($"{anchor}#TrayIcon requires a file name before the selector");
+				return;
+			}
+
+			if (rawSelector != null && (rawSelector.Length == 0 || FindUnquotedComma(rawSelector) >= 0))
+			{
+				Diag($"{anchor}#TrayIcon accepts FileName and one optional IconNumber selector");
+				return;
+			}
+
+			var path = IsQuotedDirectiveValue(rawPath) ? DecodeString(rawPath) : rawPath;
+
+			if (path == "*")
+			{
+				Diag($"{anchor}#TrayIcon * is invalid; use bare #TrayIcon to restore the default icon");
+				return;
+			}
+
+			var logical = Keysharp.Internals.Scripting.AppResourcePath.Normalize(path);
+
+			if (logical == null)
+			{
+				Diag($"{anchor}#TrayIcon FileName must be a non-empty path relative to the main program root");
+				return;
+			}
+
+			if (ResolveAppPath(logical) is not string physical)
+			{
+				Diag($"{anchor}#TrayIcon FileName cannot be resolved without a main program root");
+				return;
+			}
+
+			if (!System.IO.File.Exists(physical))
+			{
+				Diag($"{anchor}#TrayIcon file not found: {physical}");
+				return;
+			}
+
+			object selector = null;
+
+			if (rawSelector != null)
+			{
+				if (IsQuotedDirectiveValue(rawSelector))
+					selector = DecodeString(rawSelector);
+				else if (long.TryParse(rawSelector, System.Globalization.NumberStyles.Integer,
+						System.Globalization.CultureInfo.InvariantCulture, out var number) && number != 0)
+					selector = number;
+				else
+				{
+					Diag($"{anchor}#TrayIcon IconNumber must be a non-zero integer or a quoted managed-resource name");
+					return;
+				}
+			}
+
+			if (!_manifest.TrySetTrayIcon(logical, physical, selector, out var error))
+			{
+				Diag($"{anchor}#TrayIcon: {error}");
+				return;
+			}
+
+			_manifestTouched = true;
+		}
+
+		private static int FindUnquotedComma(string text)
+		{
+			var quote = '\0';
+
+			for (var i = 0; i < text.Length; i++)
+			{
+				var c = text[i];
+
+				if (quote != '\0')
+				{
+					if (c == '`' && i + 1 < text.Length) i++;
+					else if (c == quote) quote = '\0';
+				}
+				else if (c is '\'' or '"') quote = c;
+				else if (c == ',') return i;
+			}
+
+			return -1;
+		}
+
+		private static bool IsQuotedDirectiveValue(string text) =>
+			text.Length >= 2 && text[0] == text[^1] && text[0] is '\'' or '"';
+
+		// Accepts #App blocks from the main module's top level (before any #Module) and evaluates them in source
+		// order. Runs before lowering so BuildMain and assembly emission see the final values.
+		private void PrescanAppDirectives(List<Stmt> body)
+		{
+			var afterModule = false;
+			var active = _errorStdOutActive;
+
+			foreach (var s in body)
+			{
+				if (s is AppDirective app)
+				{
+					ActivateErrorStdOutBefore(body, app.SourceOrder);
+					_ = _appSeen.Add(app);
+
+					if (afterModule)
+						Diag($"{DirectiveAnchor(app)}#App must appear in the main module, before any #Module");
+					else
+						EvaluateAppDirective(app);
+				}
+				else if (s is DirectiveStmt d && d.Name.Equals("Module", System.StringComparison.OrdinalIgnoreCase))
+					afterModule = true;
+			}
+
+			_errorStdOutActive = active;
+		}
+
+		private void EvaluateAppDirective(AppDirective app)
+		{
+			var anchor = DirectiveAnchor(app);
+
+			foreach (var e in app.Value.Entries)
+			{
+				var key = e.Key switch
+				{
+					NameExpr n => n.Name,
+					LiteralExpr { Kind: LiteralKind.String } l => DecodeString(l.Raw),
+					_ => null
+				};
+
+				if (string.IsNullOrWhiteSpace(key))
+				{
+					Diag($"{anchor}#App keys must be plain names");
+					continue;
+				}
+
+				var canonicalKey = CanonicalAppKey(key);
+
+				if (canonicalKey == null)
+				{
+					Diag($"{anchor}unknown #App key '{key}'");
+					continue;
+				}
+
+				if (!TryEvalAppConst(e.Value, out var val))
+				{
+					Diag($"{anchor}#App '{key}' must be a compile-time constant (a literal, `.` concatenation, or an array of them)");
+					continue;
+				}
+
+				ApplyAppKey(app, canonicalKey, val);
+			}
+		}
+
+		private static string CanonicalAppKey(string key) => key.ToUpperInvariant() switch
+		{
+			"NAME" => "Name", "TITLE" => "Title", "DESCRIPTION" => "Description", "CONFIGURATION" => "Configuration",
+			"COMPANY" => "Company", "PRODUCT" => "Product", "COPYRIGHT" => "Copyright", "TRADEMARK" => "Trademark",
+			"VERSION" => "Version", "ICON" => "Icon", "GUITHEME" => "GuiTheme", "CONSOLEAPP" => "ConsoleApp",
+			"HOOKMUTEXNAME" => "HookMutexName", "FILES" => "Files", _ => null
+		};
+
+		private void ApplyAppKey(AppDirective app, string canon, object val)
+		{
+			var anchor = DirectiveAnchor(app);
+
+			string AsString()
+			{
+				if (val is string s && s.Length > 0) return s;
+				Diag($"{anchor}#App '{canon}' must be a non-empty string");
+				return null;
+			}
+			bool? AsBool() => val switch
+			{
+				bool b => b,
+				"0" => false,
+				"1" => true,
+				_ => ((System.Func<bool?>)(() => { Diag($"{anchor}#App '{canon}' must be true or false"); return null; }))()
+			};
+			// The application icon doubles as a win32 icon resource, so it must be a relative .ico file.
+			string ValidateIconPath(string p, string keyName, out string logical)
+			{
+				logical = Keysharp.Internals.Scripting.AppResourcePath.Normalize(p);
+
+				if (logical == null)
+				{ Diag($"{anchor}#App '{keyName}' must be a relative path"); return null; }
+
+				if (!logical.EndsWith(".ico", System.StringComparison.OrdinalIgnoreCase))
+				{ Diag($"{anchor}#App '{keyName}' must be a .ico file (it is embedded in the compiled script)"); return null; }
+
+				if (ResolveAppPath(p) is not string full)
+				{ Diag($"{anchor}#App '{keyName}' path cannot be resolved without a source or include directory"); return null; }
+
+				if (!System.IO.File.Exists(full))
+				{ Diag($"{anchor}#App '{keyName}' file not found: {full}"); return null; }
+
+				return full;
+			}
+
+			_manifestTouched = true;
+
+			switch (canon)
+			{
+				case "Name": _manifest.Name = AsString(); break;
+				case "Title": _manifest.Title = AsString(); break;
+				case "Description": _manifest.Description = AsString(); break;
+				case "Configuration": _manifest.Configuration = AsString(); break;
+				case "Company": _manifest.Company = AsString(); break;
+				case "Product": _manifest.Product = AsString(); break;
+				case "Copyright": _manifest.Copyright = AsString(); break;
+				case "Trademark": _manifest.Trademark = AsString(); break;
+				case "Version":
+					if (AsString() is string ver)
+					{
+						// AssemblyVersionAttribute wants major.minor[.build[.revision]]; catching a bad one here
+						// beats a cryptic Roslyn CS7034 later.
+						if (Keysharp.Internals.Scripting.AppManifest.IsValidAssemblyVersion(ver)) _manifest.Version = ver;
+						else Diag($"{anchor}#App 'Version' must contain 2 to 4 decimal components from 0 to 65534; got \"{ver}\"");
+					}
+					break;
+				case "Icon":
+					if (AsString() is string icon && ValidateIconPath(icon, "Icon", out var iconLogical) is string iconFull)
+					{
+						_manifest.Icon = iconLogical;
+						_manifest.IconSourcePath = iconFull;
+					}
+					break;
+				case "GuiTheme":
+					if (AsString() is string theme)
+					{
+						var t = theme.Trim().ToUpperInvariant() switch
+						{ "CLASSIC" => "Classic", "SYSTEM" => "System", "DARK" => "Dark", _ => null };
+						if (t == null) Diag($"{anchor}#App 'GuiTheme' must be Classic, System or Dark");
+						else _manifest.GuiTheme = t;
+					}
+					break;
+				case "ConsoleApp": _manifest.ConsoleApp = AsBool(); break;
+				case "HookMutexName": _manifest.HookMutexName = AsString(); break;
+				case "Files":
+					_manifest.Files.Clear();
+					_manifest.FileSources.Clear();
+
+					if (val is not List<object> entries || entries.Any(x => x is not string))
+						Diag($"{anchor}#App 'Files' must be an array of path strings");
+					else
+						foreach (var entry in entries.Cast<string>())
+							AddAppFile(anchor, entry);
+					break;
+			}
+		}
+
+		// Adds one `Files:` entry: a literal script-relative path, or a `*`/`?` pattern in its file segment
+		// (expanded non-recursively). Every match is retained logically; artifact builds also attach its payload.
+		private void AddAppFile(string anchor, string entry)
+		{
+			var relativePattern = Keysharp.Internals.Scripting.AppResourcePath.Normalize(entry);
+
+			if (relativePattern == null)
+			{
+				Diag($"{anchor}#App 'Files' entries must be relative paths: {entry}");
+				return;
+			}
+
+			var slash = relativePattern.LastIndexOf('/');
+			var relDir = slash < 0 ? "" : relativePattern.Substring(0, slash);
+
+			if (relDir.IndexOfAny(['*', '?']) >= 0)
+			{
+				Diag($"{anchor}#App 'Files': wildcards are only supported in the file name, not a directory: {entry}");
+				return;
+			}
+
+			var physicalEntry = Keysharp.Internals.Scripting.AppResourcePath.ToFileSystemPath(entry);
+			var physicalDirectory = System.IO.Path.GetDirectoryName(physicalEntry);
+			var file = System.IO.Path.GetFileName(physicalEntry);
+
+			if (ResolveAppPath(string.IsNullOrEmpty(physicalDirectory) ? "." : physicalDirectory) is not string dir)
+			{
+				Diag($"{anchor}#App 'Files' path cannot be resolved without a source or include directory");
+				return;
+			}
+
+			var full = System.IO.Path.Combine(dir, file);
+
+			void Add(string path)
+			{
+				var rel = Keysharp.Internals.Scripting.AppResourcePath.Normalize(
+					(relDir.Length > 0 ? relDir + "/" : "") + System.IO.Path.GetFileName(path));
+
+				if (_manifest.Files.Contains(rel, System.StringComparer.OrdinalIgnoreCase))
+					Diag($"{anchor}#App 'Files': duplicate embedded path: {rel}");
+				else
+				{
+					_manifest.Files.Add(rel);
+
+					if (_compileToFile)
+						_manifest.FileSources.Add((rel, path));
+				}
+			}
+
+			if (file.IndexOfAny(['*', '?']) >= 0)
+			{
+				var matches = System.IO.Directory.Exists(dir) ? System.IO.Directory.GetFiles(dir, file) : System.Array.Empty<string>();
+
+				if (matches.Length == 0)
+					Diag($"{anchor}#App 'Files' pattern matches no files: {entry}");
+				else
+					foreach (var m in matches.OrderBy(p => p, System.StringComparer.OrdinalIgnoreCase))
+						Add(m);
+			}
+			else if (!System.IO.File.Exists(full))
+				Diag($"{anchor}#App 'Files' file not found: {full}");
+			else
+				Add(full);
+		}
+
+		// Every #App asset key is program-relative, matching FileInstall's source fallback against A_ScriptDir.
+		// Null only when a from-string compilation supplied neither an include root nor a main script path.
+		private string ResolveAppPath(string path)
+		{
+			path = Keysharp.Internals.Scripting.AppResourcePath.ToFileSystemPath(path);
+
+			if (System.IO.Path.IsPathRooted(path))
+				return System.IO.Path.GetFullPath(path);
+
+			var baseDir = _includeDir;
+
+			if (baseDir == null && _scriptPath is { Length: > 0 } && _scriptPath != "*")
+				baseDir = System.IO.Path.GetDirectoryName(_scriptPath);
+
+			return baseDir == null ? null : System.IO.Path.GetFullPath(System.IO.Path.Combine(baseDir, path));
+		}
+
+		// The #App constant subset: literals, true/false, numeric unary minus, scalar `.` concatenation, and arrays.
+		// Numbers stay raw text because each consuming key validates its own syntax.
+		private static bool TryEvalAppConst(Expr e, out object val)
+		{
+			val = null;
+
+			switch (e)
+			{
+				case LiteralExpr l:
+					val = l.Kind == LiteralKind.String ? DecodeString(l.Raw) : l.Raw;
+					return true;
+				case NameExpr n when n.Name.Equals("true", System.StringComparison.OrdinalIgnoreCase):
+					val = true;
+					return true;
+				case NameExpr n when n.Name.Equals("false", System.StringComparison.OrdinalIgnoreCase):
+					val = false;
+					return true;
+				case UnaryExpr { Op: "-", Postfix: false } u when TryGetAppNumber(u.Operand, out var num):
+					val = "-" + num;
+					return true;
+				case GroupExpr g:
+					return TryEvalAppConst(g.Inner, out val);
+				case BinaryExpr { Op: "." } b when TryEvalAppConst(b.Left, out var lv)
+					&& TryEvalAppConst(b.Right, out var rv)
+					&& TryFormatAppScalar(lv, out var left)
+					&& TryFormatAppScalar(rv, out var right):
+					val = left + right;
+					return true;
+				case ArrayExpr a:
+				{
+					var list = new List<object>();
+
+					foreach (var el in a.Elements)
+					{
+						if (el.Spread || el.Value == null || !TryEvalAppConst(el.Value, out var ev))
+							return false;
+
+						list.Add(ev);
+					}
+
+					val = list;
+					return true;
+				}
+				default:
+					return false;
+			}
+		}
+
+		private static bool TryGetAppNumber(Expr expression, out string number)
+		{
+			while (expression is GroupExpr group)
+				expression = group.Inner;
+
+			if (expression is LiteralExpr { Kind: LiteralKind.Number } literal)
+			{
+				number = literal.Raw;
+				return true;
+			}
+
+			number = null;
+			return false;
+		}
+
+		private static bool TryFormatAppScalar(object value, out string text)
+		{
+			if (value is string str)
+			{
+				text = str;
+				return true;
+			}
+
+			if (value is bool boolean)
+			{
+				text = boolean ? "1" : "0";
+				return true;
+			}
+
+			text = null;
+			return false;
+		}
 
 		// ---- #Warn (compile-time warning analysis) ----
 
@@ -2795,10 +3461,14 @@ namespace Keysharp.Compilation.Syntax
 		// runtime so a malformed provider/id/version is a compile error before provider resolution begins.
 		private void PrescanPackageDirectives(List<Stmt> body)
 		{
+			var active = _errorStdOutActive;
+
 			foreach (var s in body)
 			{
 				if (s is not DirectiveStmt d || !d.Name.Equals("Package", System.StringComparison.OrdinalIgnoreCase))
 					continue;
+
+				ActivateErrorStdOutBefore(body, d.SourceOrder);
 
 				var args = (d.Args ?? "").Trim();
 
@@ -2886,6 +3556,8 @@ namespace Keysharp.Compilation.Syntax
 
 				_packages.Add(new Keysharp.Internals.Os.PackageResolver.PackageRef(id, version, optional, provider));
 			}
+
+			_errorStdOutActive = active;
 		}
 
 		/// <summary>
@@ -5858,14 +6530,14 @@ namespace Keysharp.Compilation.Syntax
 		// DHHR + per-module auto-exec in execution order) and the compilation unit (+ #Assembly* attributes).
 		private CompilationUnitSyntax AssembleProgram(string name, IEnumerable<MemberDeclarationSyntax> moduleClasses, IReadOnlyList<string> execOrder)
 		{
+			// The Script constructor reads the manifest (hook mutex name, tray icon, theme, …) from the Program
+			// type's assembly itself, so nothing manifest-driven is passed here.
 			var mainScriptField = SyntaxFactory.FieldDeclaration(
 				SyntaxFactory.VariableDeclaration(Ty("Keysharp.Runtime.Script")).AddVariables(
 					SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("MainScript")).WithInitializer(SyntaxFactory.EqualsValueClause(
 						SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Runtime.Script"))
 							.WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(
-								_hookMutexName == null
-									? new[] { Arg(SyntaxFactory.TypeOfExpression(Id("Program"))) }
-									: new[] { Arg(SyntaxFactory.TypeOfExpression(Id("Program"))), Arg(Str(_hookMutexName)) })))))))
+								new[] { Arg(SyntaxFactory.TypeOfExpression(Id("Program"))) })))))))
 				.AddModifiers(PrivateTok, StaticTok);
 
 			var programMembers = new List<MemberDeclarationSyntax> { BuildMain(name), mainScriptField };
@@ -5882,13 +6554,31 @@ namespace Keysharp.Compilation.Syntax
 			// System.*). A user class/module that would shadow such a root is given a non-colliding C# type name by the
 			// mangler (NameMangler.ClassType / ModuleClass) + [UserDeclaredName], so no aliases/global:: are ever needed.
 			var unit = SyntaxFactory.CompilationUnit().AddMembers(ns);
-			// #Assembly* directives -> `[assembly: System.Reflection.Assembly*Attribute("value")]` on the compiled unit.
-			foreach (var (attr, value) in _asmAttributes)
+			// #App metadata keys -> `[assembly: System.Reflection.Assembly*Attribute("value")]` on the compiled unit
+			// (A_Assembly* read them back at runtime).
+			foreach (var (attr, value) in ManifestAssemblyAttributes())
 				unit = unit.AddAttributeLists(SyntaxFactory.AttributeList(SyntaxFactory.SingletonSeparatedList(
 						SyntaxFactory.Attribute(QName(attr)).WithArgumentList(SyntaxFactory.AttributeArgumentList(
 							SyntaxFactory.SingletonSeparatedList(SyntaxFactory.AttributeArgument(Str(value)))))))
 					.WithTarget(SyntaxFactory.AttributeTargetSpecifier(SyntaxFactory.Token(SyntaxKind.AssemblyKeyword))));
 			return unit;
+		}
+
+		private IEnumerable<(string Attr, string Value)> ManifestAssemblyAttributes()
+		{
+			if (_manifest.Title != null) yield return ("System.Reflection.AssemblyTitleAttribute", _manifest.Title);
+			if (_manifest.Description != null) yield return ("System.Reflection.AssemblyDescriptionAttribute", _manifest.Description);
+			if (_manifest.Configuration != null) yield return ("System.Reflection.AssemblyConfigurationAttribute", _manifest.Configuration);
+			if (_manifest.Company != null) yield return ("System.Reflection.AssemblyCompanyAttribute", _manifest.Company);
+			if (_manifest.Product != null) yield return ("System.Reflection.AssemblyProductAttribute", _manifest.Product);
+			if (_manifest.Copyright != null) yield return ("System.Reflection.AssemblyCopyrightAttribute", _manifest.Copyright);
+			if (_manifest.Trademark != null) yield return ("System.Reflection.AssemblyTrademarkAttribute", _manifest.Trademark);
+
+			if (_manifest.Version != null)
+			{
+				yield return ("System.Reflection.AssemblyVersionAttribute", _manifest.Version);
+				yield return ("System.Reflection.AssemblyFileVersionAttribute", _manifest.Version);   // A_AssemblyVersion reads FileVersion
+			}
 		}
 
 		private MemberDeclarationSyntax BuildMain(string name)
@@ -5910,16 +6600,14 @@ namespace Keysharp.Compilation.Syntax
 			{
 				ExprStmt(Inv(Member(Id("MainScript"), "SetName"), setNameArgs.ToArray())),
 			};
-			// #NoTrayIcon: suppress the tray icon before RunMainWindow creates the default tray chrome.
-			if (_noTrayIcon)
-				tryStmts.Add(ExprStmt(Assign(Access("MainScript.NoTrayIcon"),
-					SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression))));
-			// #SingleInstance: bail out (return 0) when another instance already handles this one — placed right after
+			// NoTrayIcon, the tray icon and the theme need no emission here: the Script constructor
+			// applies them from the manifest embedded in this very assembly, before any chrome exists.
+			// SingleInstance keeps a guard because it must be able to `return 0` from Main — placed right after
 			// SetName so A_ScriptName is set, before any window/auto-exec runs (matches the canonical Main).
-			if (_singleInstanceMode != null)
+			if (_manifest.SingleInstance != null)
 				tryStmts.Add(SyntaxFactory.IfStatement(
 					Inv(Access("Keysharp.Runtime.Script.HandleSingleInstance"),
-						Access("Keysharp.Builtins.Accessors.A_ScriptName"), Access("Keysharp.Runtime.eScriptInstance." + _singleInstanceMode)),
+						Access("Keysharp.Builtins.Accessors.A_ScriptName"), Access("Keysharp.Runtime.eScriptInstance." + _manifest.SingleInstance)),
 					SyntaxFactory.ReturnStatement(IntLit(0))));
 			tryStmts.Add(CallStmt("Keysharp.Builtins.Env.HandleCommandLineParams", Id("args")));
 			// Load after runtime identity/error options, but before JITting auto-exec can resolve package-backed fields.
@@ -6351,6 +7039,10 @@ namespace Keysharp.Compilation.Syntax
 			return (all, byRef);
 		}
 
-		private void Diag(string msg) => Diagnostics.Add(msg);
+		private void Diag(string msg)
+		{
+			_errorStdOutAtDiagnostic ??= _errorStdOutActive;
+			Diagnostics.Add(msg);
+		}
 	}
 }

@@ -28,6 +28,8 @@ namespace Keysharp.Parsing.Syntax
 
 		/// <summary>The final preprocessor symbol set.</summary>
 		public IReadOnlyCollection<string> Defines = [];
+		/// <summary>Whether an active #ErrorStdOut was encountered before parsing stopped.</summary>
+		public bool ErrorStdOut;
 		public ProgramNode(List<Stmt> body) => Body = body;
 	}
 
@@ -309,6 +311,9 @@ namespace Keysharp.Parsing.Syntax
 	{
 		public readonly string Name;
 		public readonly string Args;
+		// Monotonic within one parsed source program (including recursively expanded #Includes). Load-time directive
+		// prescans use this instead of AST traversal order, which may group class members or lower an else branch first.
+		public long SourceOrder;
 		public DirectiveStmt(string name, string args) { Name = name; Args = args; }
 	}
 
@@ -338,6 +343,14 @@ namespace Keysharp.Parsing.Syntax
 			: base("CSharp", options ?? "") { Code = code; CodeLine = codeLine; }
 
 		public bool IsFileForm => FilePath != null;
+	}
+
+	// `#App { key: value, … }` — the application descriptor block. The parser only captures the object literal;
+	// the lowerer constant-evaluates and validates it (keys, value types, placement).
+	internal sealed class AppDirective : DirectiveStmt
+	{
+		public readonly ObjectExpr Value;
+		public AppDirective(ObjectExpr value) : base("App", "") => Value = value;
 	}
 
 	internal sealed class DeclStmt : Stmt

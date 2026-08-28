@@ -7,6 +7,14 @@ Keysharp treats source processing as two optional, first-party deployment units:
 
 `Keysharp.Core` references only the small `Keysharp.Components.Scripting` contract assembly. A compiled script which does not process source therefore needs neither implementation unit nor Roslyn.
 
+## Application configuration boundary
+
+`#App` is the declarative application descriptor. A key belongs there when it independently states a final application fact: identity or metadata, packaged assets, generated host shape, a presentation default, or a fixed integration identifier. Multiple blocks merge by key; no key is a source command or observes intermediate state.
+
+Standalone directives select compiler or execution policy: front-end behavior, launch behavior, or source-ordered state transitions. The parser applies `#ErrorStdOut` when it reaches the directive, `#SingleInstance` selects launch policy, and `#NoTrayIcon`/`#TrayIcon` form one ordered tray-state directive family. `#App Icon` is instead the application-wide presentation icon used by the artifact, windows and dialogs, with the tray using it as its fallback.
+
+`AppManifest` carries descriptor data and startup controls which must reach a compiled script before chrome exists. `#ErrorStdOut` instead travels on a failed parser/compiler result and lowers to its source-ordered runtime assignment on success. Manifest JSON contains only runtime values and canonical main-script-relative resource keys; resolved build paths and payload worklists remain compiler-only, and payload bytes are separate assembly resources.
+
 ## Identity and compatibility
 
 The IDs are fixed. This boundary supports optional first-party packaging and capability discovery; it is not a general third-party provider-selection API. Each `component.json` declares:

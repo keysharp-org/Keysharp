@@ -20,6 +20,102 @@ namespace Keysharp.Internals.Images
 #endif
 		}
 
+		private static byte[] IconToByteArray(Icon icon)
+		{
+			if (icon == null)
+				return null;
+
+#if WINDOWS
+			try
+			{
+				using var stream = new MemoryStream();
+				icon.Save(stream);
+				return stream.ToArray();
+			}
+			catch
+			{
+				using var bitmap = icon.ToBitmap();
+				return BuildIconFile([EncodeIconFrame(bitmap)]);
+			}
+#else
+			var frames = icon.Frames.Select(frame => EncodeIconFrame(frame.Bitmap)).ToArray();
+
+			if (frames.Length == 0)
+			{
+				using var bitmap = icon.ToBitmap();
+				frames = [EncodeIconFrame(bitmap)];
+			}
+
+			return BuildIconFile(frames);
+#endif
+		}
+
+		private static (byte[] Bytes, int Width, int Height) EncodeIconFrame(Bitmap bitmap)
+		{
+			if (bitmap == null)
+				return ([], 0, 0);
+
+			var width = bitmap.Width;
+			var height = bitmap.Height;
+			Bitmap resized = null;
+
+			if (width > 256 || height > 256)
+			{
+				var scale = Math.Min(256d / width, 256d / height);
+				width = Math.Max(1, (int)Math.Round(width * scale));
+				height = Math.Max(1, (int)Math.Round(height * scale));
+#if WINDOWS
+				resized = bitmap.Resize(width, height);
+#else
+				resized = new Bitmap(bitmap, width, height, ImageInterpolation.Default);
+#endif
+			}
+
+			try
+			{
+				return (ToPngBytes(resized ?? bitmap), width, height);
+			}
+			finally
+			{
+				resized?.Dispose();
+			}
+		}
+
+		private static byte[] BuildIconFile(IReadOnlyList<(byte[] Bytes, int Width, int Height)> frames)
+		{
+			var usable = frames.Where(frame => frame.Bytes is { Length: > 0 } && frame.Width > 0 && frame.Height > 0)
+				.Take(ushort.MaxValue).ToArray();
+
+			if (usable.Length == 0)
+				return null;
+
+			using var stream = new MemoryStream();
+			using var writer = new BinaryWriter(stream);
+			writer.Write((ushort)0);
+			writer.Write((ushort)1);
+			writer.Write((ushort)usable.Length);
+			var offset = 6 + (16 * usable.Length);
+
+			foreach (var frame in usable)
+			{
+				writer.Write((byte)(frame.Width >= 256 ? 0 : frame.Width));
+				writer.Write((byte)(frame.Height >= 256 ? 0 : frame.Height));
+				writer.Write((byte)0);
+				writer.Write((byte)0);
+				writer.Write((ushort)1);
+				writer.Write((ushort)32);
+				writer.Write(frame.Bytes.Length);
+				writer.Write(offset);
+				offset += frame.Bytes.Length;
+			}
+
+			foreach (var frame in usable)
+				writer.Write(frame.Bytes);
+
+			writer.Flush();
+			return stream.ToArray();
+		}
+
 		internal static Bitmap ConvertCursorToBitmap(Cursor c)
 		{
 #if WINDOWS
@@ -1084,6 +1180,24 @@ namespace Keysharp.Internals.Images
 				return null;
 			}
 		}
+
+		/// <summary>Resolves a TraySetIcon source and selector now, returning a portable .ico payload suitable
+		/// for embedding in a compiled script.</summary>
+		internal static byte[] LoadIconSetBytes(string filename, object iconNumber)
+		{
+			try
+			{
+				using var icon = LoadIconSet(filename, PrepareIconNumber(iconNumber));
+				return IconToByteArray(icon);
+			}
+			catch
+			{
+				return null;
+			}
+		}
+
+		internal static object IconNumberForDisplay(object iconNumber) =>
+			iconNumber == null ? 1L : iconNumber.TryCoerceLong(out var number) ? number : iconNumber;
 
 		/// <summary>
 		/// Turns one bitmap into an icon. The bitmap is only read; the icon owns its own handle.

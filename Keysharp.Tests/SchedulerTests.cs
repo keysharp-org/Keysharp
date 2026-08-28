@@ -57,11 +57,11 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// #HookMutexName is per-Script. It used to be a static whose value the hook thread's name fields were
-		/// initialized from, so one script naming its mutex silently rebound every later script in the process.
+		/// The hook mutex name (`#App { HookMutexName: ... }`, or the constructor argument used here) is per-Script;
+		/// a replacement script must retain its own default.
 		/// </summary>
 		[Test, Category("Threading")]
-		public void HookMutexNameDoesNotLeakIntoReplacement()
+		public void HookMutexIsolation()
 		{
 			s.Dispose();//Otherwise it stays in KeysharpInputdManager.owners and blocks every later DisconnectClients.
 
