@@ -334,7 +334,7 @@ namespace Keysharp.Builtins
 		{
 			if (Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
 			{
-				var control = controlOverride ?? ActiveControl;
+				var control = controlOverride ?? this.ActiveControl;
 
 				if (control is ListBox lb)
 					_ = (contextMenuChangedHandlers?.InvokeWindowMessageHandlers(g, control, lb.SelectedIndex + 1L, wasRightClick, (long)x, (long)y));
