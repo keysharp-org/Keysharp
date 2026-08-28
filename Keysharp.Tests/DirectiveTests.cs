@@ -900,10 +900,13 @@ namespace Keysharp.Tests
 				Assert.Greater(helperClass, -1, "the module's partial class must be emitted:\n" + mod.Inline);
 				Assert.Greater(onlyDecl, helperClass, "the member must land inside the module that declared it:\n" + mod.Inline);
 
-				// A block in an `export class` reaches that class rather than disappearing.
-				var exp = Compile("#NoTrayIcon\nexport class E {\n#CSharp\npublic static object Who(object @this) => \"e\";\n#EndCSharp\n}\n", "exp");
-				Assert.IsNotNull(exp.Arr, "a #CSharp block in an export class must compile:\n" + exp.Code);
-				Assert.IsTrue(exp.Inline.Contains("Who"), "its members must not silently vanish:\n" + exp.Inline);
+				// A block in a class body belongs to THAT class, the same way the module case above does.
+				var cls = Compile("#NoTrayIcon\nclass Holder {\n#CSharp\npublic static object Who(object @this) => \"e\";\n#EndCSharp\n}\n", "cls");
+				Assert.IsNotNull(cls.Arr, "a #CSharp block in a class body must compile:\n" + cls.Code);
+				var holderClass = cls.Inline.IndexOf("class Holder", StringComparison.Ordinal);
+				var whoDecl = cls.Inline.IndexOf("Who(", StringComparison.Ordinal);
+				Assert.Greater(holderClass, -1, "the class's partial must be emitted:\n" + cls.Inline);
+				Assert.Greater(whoDecl, holderClass, "the member must land inside the class that declared it:\n" + cls.Inline);
 
 				// Below the top level of a script/module/class there is no type for members to belong to.
 				var fn = Compile("#NoTrayIcon\nf() {\n#CSharp\npublic static long N() => 1;\n#EndCSharp\n}\nf()\n", "fn");

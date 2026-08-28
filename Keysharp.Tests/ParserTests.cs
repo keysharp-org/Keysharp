@@ -5,10 +5,14 @@ namespace Keysharp.Tests
 {
 	public class ParserTests : TestRunner
 	{
-		private static (byte[] Bytes, string Error) Compile(string source)
+		private static (byte[] Bytes, string Error) Compile(string source) => CompileRaw("#ErrorStdOut\n" + source);
+
+		// Compiles the source exactly as written, with no leading directive. Only a case whose subject is the FIRST
+		// line of the file needs this — a continuation section there merges onto whatever Compile prepends.
+		private static (byte[] Bytes, string Error) CompileRaw(string source)
 		{
 			var name = "parser_" + Guid.NewGuid().ToString("N");
-			var (bytes, error, _) = new CompilerHelper().CompileCodeToByteArray("#ErrorStdOut\n" + source, name);
+			var (bytes, error, _) = new CompilerHelper().CompileCodeToByteArray(source, name);
 			return (bytes, error);
 		}
 
@@ -152,21 +156,26 @@ namespace Keysharp.Tests
 		// real syntax, and a name or operator can be split across them. See Code/string-continuation.ahk for what
 		// each of these produces.
 		[Test, Category("Parser")]
-		public void ContinuationSections() => AssertCompiles(
-			"Var :=\n(\n\"Quote marks are not escaped here.\nSpecify variables as follows: \" Var \"\nA line of text.\"\n)\n",  // docs example #2
-			"a := Array(\n(Join,\n1\n2\n3\n)\n)\n",                    // the Join builds the argument list
-			"MyVar := 1\nn :=\n(Join\nMyV\nar\n)\n",                   // one name split across the content lines
-			"MyVar := 1\nt :=\n(Join\nMy\n)Var\n",                     // …and across the ')', whose trailing text joins on
-			"n :=\n(JoinrL\nSt\nen(\"abcde\")\n)\n",                   // …with the Join string itself part of the name
-			"(Joinpp\nFileA\nend \"x\", \"*\"\n)\n",                   // a section opening the file merges onto nothing above it
-			"v := Array(\n(Join,\na\nb\n)\n(Join,\nc\nd\n)\n)\n",      // a second section re-applies the name-character space
-			"op :\n(Join\n= 5\n)\n",                                   // an operator split at the opening line
-			"c :=\n(Join\n1 >\n= 1\n)\n",                              // …and between two content lines
-			"v := 12\nr := v\n(\n34\n)\n",                             // a name character above the section gets a space after it
-			"o := {p: 1}\nq := o\n(\n.p\n)\n",                         // …but an operator does not, so this stays member access
-			"x :=\n(RTrim0 LTrim\n    \"abc\n    def\"\n)\n",          // trimming options apply inside the string too
-			"y :=\n(Comments\n\"abc   ; stripped\ndef\"\n)\n",         // as does comment stripping
-			"z := 1\n(\n  + 2\n)\n");                                  // the plain form is unchanged
+		public void ContinuationSections()
+		{
+			AssertCompiles(
+				"Var :=\n(\n\"Quote marks are not escaped here.\nSpecify variables as follows: \" Var \"\nA line of text.\"\n)\n",  // docs example #2
+				"a := Array(\n(Join,\n1\n2\n3\n)\n)\n",                    // the Join builds the argument list
+				"MyVar := 1\nn :=\n(Join\nMyV\nar\n)\n",                   // one name split across the content lines
+				"MyVar := 1\nt :=\n(Join\nMy\n)Var\n",                     // …and across the ')', whose trailing text joins on
+				"n :=\n(JoinrL\nSt\nen(\"abcde\")\n)\n",                   // …with the Join string itself part of the name
+				"v := Array(\n(Join,\na\nb\n)\n(Join,\nc\nd\n)\n)\n",      // a second section re-applies the name-character space
+				"op :\n(Join\n= 5\n)\n",                                   // an operator split at the opening line
+				"c :=\n(Join\n1 >\n= 1\n)\n",                              // …and between two content lines
+				"v := 12\nr := v\n(\n34\n)\n",                             // a name character above the section gets a space after it
+				"o := {p: 1}\nq := o\n(\n.p\n)\n",                         // …but an operator does not, so this stays member access
+				"x :=\n(RTrim0 LTrim\n    \"abc\n    def\"\n)\n",          // trimming options apply inside the string too
+				"y :=\n(Comments\n\"abc   ; stripped\ndef\"\n)\n",         // as does comment stripping
+				"z := 1\n(\n  + 2\n)\n");                                  // the plain form is unchanged
+			// A section opening the file merges onto nothing above it, so it has to bypass Compile's prefix.
+			var (bytes, error) = CompileRaw("(Joinpp\nFileA\nend \"x\", \"*\"\n)\n");
+			Assert.IsNotNull(bytes, error);
+		}
 
 		[Test, Category("Parser")]
 		public void MalformedInput()

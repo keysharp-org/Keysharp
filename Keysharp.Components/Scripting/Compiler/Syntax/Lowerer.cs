@@ -2046,7 +2046,7 @@ namespace Keysharp.Compilation.Syntax
 		/// </summary>
 		private static readonly HashSet<string> DirectivesHandledElsewhere = new(System.StringComparer.OrdinalIgnoreCase)
 		{
-			"Include", "IncludeAgain", "Import", "Module", "Export", "HotIf", "Hotstring",
+			"Include", "IncludeAgain", "Import", "Module", "HotIf", "Hotstring",
 			"Define", "Undef", "If", "ElIf", "Else", "EndIf",
 		};
 
