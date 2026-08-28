@@ -963,7 +963,7 @@ done
 # it. Runs against the just-published host, which is what makes each .cks match this build.
 echo "Staging install payload..."
 dotnet msbuild "${ROOT}/Keysharp.Install/payload/Keysharp.Payload.proj" \
-  -p:PayloadDir="${PUBLISH_DIR}/Keysharp" --nologo -v:minimal
+  -p:PayloadDir="${PUBLISH_DIR}/Keysharp" -p:KpmRid="${RID}" --nologo -v:minimal
 
 echo "Staging package at ${PKG_DIR}..."
 rm -rf "${PKG_DIR}"

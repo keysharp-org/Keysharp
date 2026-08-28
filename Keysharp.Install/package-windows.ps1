@@ -358,7 +358,7 @@ function Invoke-Publish {
     # Quoted as one token: an unquoted (Join-Path ...) becomes a separate argument, which MSBuild then
     # reads as a second project, and a space in the path would split it.
     $payloadDir = Join-Path $PublishRoot "Keysharp"
-    dotnet msbuild $payloadProject "-p:PayloadDir=$payloadDir" --nologo -v:minimal
+    dotnet msbuild $payloadProject "-p:PayloadDir=$payloadDir" "-p:KpmRid=$RuntimeIdentifier" --nologo -v:minimal
     if ($LASTEXITCODE -ne 0) {
         throw "Staging the install payload failed with exit code $LASTEXITCODE."
     }

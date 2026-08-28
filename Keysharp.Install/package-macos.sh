@@ -164,7 +164,7 @@ publish_projects() {
   # .app because that is where macOS publishes; the other two packagers publish a plain tree.
   log "Staging install payload..."
   dotnet msbuild "${ROOT}/Keysharp.Install/payload/Keysharp.Payload.proj" \
-    -p:PayloadDir="$(resolve_app_source Keysharp)/Contents/MacOS" --nologo -v:minimal
+    -p:PayloadDir="$(resolve_app_source Keysharp)/Contents/MacOS" -p:KpmRid="${RID}" --nologo -v:minimal
 }
 
 resolve_app_source() {

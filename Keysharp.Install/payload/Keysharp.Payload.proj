@@ -19,9 +19,43 @@
 		<_DashInPlace>$(_Out)Scripts/Dash.cks</_DashInPlace>
 		<_DashAsm>$(_Out)Keysharp.cks</_DashAsm>
 		<_DashFallback>$(_Out)Keysharp.ks</_DashFallback>
+		<!-- The kpm build to ship. Framework-dependent, because Keysharp already requires a .NET
+		     runtime and a second copy would take a 21 MB install past 90 MB; this one is 465 KB.
+		     Pinned, so a Keysharp release states which kpm it carried. -->
+		<KpmVersion Condition="'$(KpmVersion)' == ''">v0.1.2</KpmVersion>
+		<KpmRepository Condition="'$(KpmRepository)' == ''">keysharp-org/KPM</KpmRepository>
+		<!-- Which runtime's kpm to fetch. Passed by the packager, since only it knows whether this
+		     is a cross-build; the host's own architecture is merely the likeliest default. -->
+		<KpmRid Condition="'$(KpmRid)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">win-x64</KpmRid>
+		<KpmRid Condition="'$(KpmRid)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">osx-arm64</KpmRid>
+		<KpmRid Condition="'$(KpmRid)' == ''">linux-x64</KpmRid>
+		<_KpmArchive>kpm-$(KpmVersion)-$(KpmRid)-framework-dependent.zip</_KpmArchive>
+		<_KpmUrl>https://github.com/$(KpmRepository)/releases/download/$(KpmVersion)/$(_KpmArchive)</_KpmUrl>
+		<_KpmTemp>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', 'obj', 'kpm', '$(KpmRid)'))</_KpmTemp>
 	</PropertyGroup>
 
-	<Target Name="StagePayload" DependsOnTargets="CopyPayload;PrecompileScripts" />
+	<Target Name="StagePayload" DependsOnTargets="CopyPayload;StageKpm;PrecompileScripts" />
+
+	<!-- Ships the package manager beside the host, so an install can add libraries without first
+	     going and finding a tool. Never fatal: kpm travels with Keysharp rather than being part of
+	     it, so a failed download costs the convenience and not the release. -->
+	<Target Name="StageKpm">
+		<MakeDir Directories="$(_KpmTemp)" />
+		<DownloadFile SourceUrl="$(_KpmUrl)" DestinationFolder="$(_KpmTemp)" DestinationFileName="$(_KpmArchive)"
+					  SkipUnchangedFiles="true" ContinueOnError="WarnAndContinue" />
+		<PropertyGroup>
+			<_KpmDownloaded>$(_KpmTemp)$(_KpmArchive)</_KpmDownloaded>
+		</PropertyGroup>
+		<Unzip SourceFiles="$(_KpmDownloaded)" DestinationFolder="$(_Out)" OverwriteReadOnlyFiles="true"
+			   Condition="Exists('$(_KpmDownloaded)')" ContinueOnError="WarnAndContinue" />
+		<!-- Zip carries no executable bit that Unzip restores, so the apphost arrives unrunnable
+		     everywhere it matters. -->
+		<Exec Command="chmod +x &quot;$(_Out)kpm&quot;" Condition="Exists('$(_Out)kpm')"
+			  ContinueOnError="WarnAndContinue" />
+		<Warning Condition="!Exists('$(_KpmDownloaded)')"
+				 Text="kpm was not bundled: $(_KpmUrl) could not be downloaded. The install is complete without it; users can get kpm from https://github.com/$(KpmRepository)/releases." />
+		<Message Importance="high" Condition="Exists('$(_KpmDownloaded)')" Text="Bundled kpm $(KpmVersion) for $(KpmRid)." />
+	</Target>
 
 	<Target Name="CopyPayload">
 		<Error Condition="'$(PayloadDir)' == ''" Text="PayloadDir is required: the published app directory to add the install payload to." />
@@ -34,12 +68,8 @@
 			     registrations in the MSI, the MSIX manifest and the CLI install switch. Both live here rather
 			     than in Keysharp\Scripts because neither is part of Keysharp. -->
 			<_InstallScript Include="$(MSBuildThisFileDirectory)Dash.ks;$(MSBuildThisFileDirectory)Template.ks" />
-			<!-- Straight to Lib: OCR.ks is a pure "#include <OCR>" library with no entry point, and Lib is
-			     where the include resolver looks. Capital L - it matters on a case-sensitive filesystem. -->
-			<_InstallLibrary Include="$(_Repo)Keysharp/Scripts/OCR.ks" />
 		</ItemGroup>
 		<Copy SourceFiles="@(_InstallScript)" DestinationFolder="$(_Out)Scripts" SkipUnchangedFiles="true" />
-		<Copy SourceFiles="@(_InstallLibrary)" DestinationFolder="$(_Out)Lib" SkipUnchangedFiles="true" />
 		<Copy SourceFiles="@(_Demo)" DestinationFolder="$(_Out)Demos" SkipUnchangedFiles="true" />
 	</Target>
 
