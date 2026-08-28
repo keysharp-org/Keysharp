@@ -176,7 +176,7 @@ namespace Keysharp.Tests
 			if (worker == null)
 				return;
 
-			_ = SpinWait.SpinUntil(() => !worker.Active, 2000);
+			_ = SpinWait.SpinUntil(() => !worker.IsActive, 2000);
 		}
 
 		[Test, Category("Threading"), Category("UI")]
@@ -253,7 +253,7 @@ namespace Keysharp.Tests
 				Assert.IsTrue(WaitWithUiPump(() => registered.IsSet), "Worker did not finish registration setup.");
 				if (workerSetupException != null)
 					Assert.Fail(workerSetupException.ToString());
-				Assert.IsTrue(worker.Active, "Worker should stay alive while it owns persistent registrations.");
+				Assert.IsTrue(worker.IsActive, "Worker should stay alive while it owns persistent registrations.");
 				Assert.AreEqual(registrations.WorkerThreadId, worker.Id);
 				Assert.IsTrue(registrations.WorkerHasSchedulerContext);
 
@@ -294,7 +294,7 @@ namespace Keysharp.Tests
 				ShutdownWorker(s, worker);
 			}
 
-			AssertEventually(() => !worker.Active, "Worker should be fully stopped after shutdown.");
+			AssertEventually(() => !worker.IsActive, "Worker should be fully stopped after shutdown.");
 			AssertEventually(() => s.FlowData.timers.Find(registrations.TimerFunc, registrations.TimerScheduler) == null, "Worker-owned timer was not removed.");
 			AssertEventually(() => registrations.HotkeyBinding.OwnerScheduler == null, "Worker-owned hotkey scheduler affinity was not cleared.");
 			AssertEventually(() => !registrations.HotkeyBinding.IsActive, "Worker-owned hotkey binding was not disabled.");
@@ -324,7 +324,7 @@ namespace Keysharp.Tests
 				});
 
 				Assert.IsTrue(WaitWithUiPump(() => ready.IsSet), "Worker did not become ready.");
-				Assert.IsTrue(worker.Active, "Worker must still be alive before Send.");
+				Assert.IsTrue(worker.IsActive, "Worker must still be alive before Send.");
 
 				var result = worker.Send(new KeysharpFunc((Func<object>)(() =>
 				{
@@ -647,7 +647,7 @@ namespace Keysharp.Tests
 			_ = s.EventScheduler;
 			var worker = StartWorker(() => { });
 
-			AssertEventually(() => !worker.Active, "Worker with no persistent registrations should exit on its own.");
+			AssertEventually(() => !worker.IsActive, "Worker with no persistent registrations should exit on its own.");
 
 			var postError = AssertScriptError(() => worker.Post(new KeysharpFunc((Func<object>)(() => 0L))));
 			var sendError = AssertScriptError(() => worker.Send(new KeysharpFunc((Func<object>)(() => 0L))));

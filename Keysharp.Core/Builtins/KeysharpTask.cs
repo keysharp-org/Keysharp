@@ -71,16 +71,16 @@ namespace Keysharp.Builtins
 			// ---- properties -------------------------------------------------------------------------------
 
 			/// <summary>True while the task has not reached any terminal outcome.</summary>
-			public bool Active => !task.IsCompleted;
+			public bool IsActive => !task.IsCompleted;
 
 			/// <summary>True only when the task completed successfully.</summary>
-			public bool Succeeded => task.IsCompletedSuccessfully;
+			public bool IsSuccessful => task.IsCompletedSuccessfully;
 
 			/// <summary>True only when the task completed with an error.</summary>
-			public bool Failed => task.IsFaulted;
+			public bool IsFailed => task.IsFaulted;
 
 			/// <summary>True only when the task completed as canceled.</summary>
-			public bool Canceled => task.IsCanceled;
+			public bool IsCanceled => task.IsCanceled;
 
 			/// <summary>
 			/// The value this task produced, or an empty string while it is still running, if it failed, or if it
@@ -107,7 +107,7 @@ namespace Keysharp.Builtins
 
 			/// <summary>
 			/// Waits for this task to finish, pumping events while it waits so timers, hotkeys and the GUI stay
-			/// responsive. It does not throw on failure; read <see cref="Failed"/> and <see cref="Error"/>. A timeout
+			/// responsive. It does not throw on failure; read <see cref="IsFailed"/> and <see cref="Error"/>. A timeout
 			/// stops only this wait and does not cancel the task.
 			/// </summary>
 			/// <param name="Timeout">Milliseconds to wait. Default: wait indefinitely.</param>
@@ -418,9 +418,9 @@ namespace Keysharp.Builtins
 
 					try
 					{
-						if (source.Canceled || (source.Failed && Volatile.Read(ref failureCallback) == null))
+						if (source.IsCanceled || (source.IsFailed && Volatile.Read(ref failureCallback) == null))
 						{
-							if (source.Canceled)
+							if (source.IsCanceled)
 								_ = completion.TrySetCanceled();
 							else
 								_ = completion.TrySetException(source.GetMappedError().Exception);
@@ -450,7 +450,7 @@ namespace Keysharp.Builtins
 				{
 					var owner = Volatile.Read(ref scheduler);
 					var source = Volatile.Read(ref antecedent);
-					var action = source?.Failed == true
+					var action = source?.IsFailed == true
 						? Volatile.Read(ref failureCallback)
 						: Volatile.Read(ref successCallback);
 
@@ -475,7 +475,7 @@ namespace Keysharp.Builtins
 							else
 							{
 								result = ScriptEventExecutionResult.Executed;
-								var argument = source.Failed ? source.GetMappedError() : source.Result;
+								var argument = source.IsFailed ? source.GetMappedError() : source.Result;
 								var value = Script.CallbackArgCount(action, 1) == 0
 									? action.Call() : action.Call(argument);
 								ResolveCompletion(completion, value);

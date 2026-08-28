@@ -400,7 +400,7 @@ Status legend:
 | ComObjArray() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjArray function creates a SafeArray for use with COM. |
 | ComObjArray.__Enum() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Enumerates a COM SAFEARRAY. COM is available only on Windows. |
 | ComObjArray.__Item | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Gets or sets a COM SAFEARRAY element. COM is available only on Windows. |
-| ComObjConnect() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObjConnect function connects a COM object's event source to the script, enabling events to be handled. Subscribes D-Bus signals on Linux; on macOS it subscribes the application's distributed notifications, which no terminology describes and which many applications never publish. |
+| ComObjConnect() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObjConnect function connects a COM object's event source to the script, enabling events to be handled. |
 | ComObject() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObject function creates a COM object. On Linux the target is a D-Bus service name; on macOS it is an application (bundle id, name, path or a pid), and the second parameter selects an interface or a suite. The macOS backend is not yet verified on hardware. |
 | ComObjFlags() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjFlags function retrieves or changes flags which control a COM wrapper object's behaviour. |
 | ComObjFromPtr() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjFromPtr function wraps a raw IDispatch pointer (COM object) for use by the script. |
@@ -884,7 +884,7 @@ Status legend:
 | Props | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Helper for creating property definitions. |
 | Random() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes a random number in the range of x to y. |
 | RandomSeed() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets seed for the pseudo-random generator used by Random(). |
-| RealThread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Represents a real background thread. Active/Succeeded/Failed/Canceled match Task outcome names; Result is available only after successful completion. |
+| RealThread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Represents a real background thread. IsActive/IsSuccessful/IsFailed/IsCanceled match Task outcome names; Result is available only after successful completion. |
 | RealThread.Call() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new real worker thread and runs the callback on it. |
 | RealThread.ContinueWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Schedules continuation after thread task completion. |
 | RealThread.Wait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for real thread completion. |
@@ -980,7 +980,7 @@ Status legend:
 | Tan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the tangent of a number. |
 | Tanh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic tangent of a number. |
 | TargetError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
-| Task | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Work that finishes later; every CLR call returning a .NET Task hands one back. Active/Succeeded/Failed/Canceled expose its outcome, Result is a non-blocking snapshot, and Await and Wait are the waiting forms. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation. |
+| Task | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Work that finishes later; every CLR call returning a .NET Task hands one back. IsActive/IsSuccessful/IsFailed/IsCanceled expose its outcome, Result is a non-blocking snapshot, and Await and Wait are the waiting forms. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation. |
 | Task.Create() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls Producer synchronously with the positional prefix it accepts of Succeed, Fail and Cancel, and returns the Task they settle; Producer's return value is ignored. First settlement wins; Succeed adopts asynchronous work's eventual value, failure or cancellation, and an early producer error fails the Task. |
 | Taskbar | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, reaches only docks implementing it, and decorates the entry named by DESKTOP_ENTRY; macOS badges the dock tile with text and draws progress on the tile, also application-wide. Linux and macOS are compile-checked only. |
 | Thread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Thread settings and controls. |

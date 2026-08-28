@@ -42,7 +42,7 @@ namespace Keysharp.Builtins
 		/// <para>
 		/// Exactly one object exists per real thread, so identity comparison answers which kind one is:
 		/// <c>rt == RealThread.Main</c>. There is deliberately no <c>IsMain</c> property for that;
-		/// <see cref="Active"/> says whether a thread has not yet finished.</para>
+		/// <see cref="IsActive"/> says whether a thread has not yet finished.</para>
 		/// </summary>
 		public sealed class RealThread : KeysharpObject
 		{
@@ -155,23 +155,23 @@ namespace Keysharp.Builtins
 			public long Id => GetAliveScheduler()?.OwnerManagedThreadId ?? (long)ReportThreadNotAlive(0L);
 
 			/// <summary>True while this thread has not finished.</summary>
-			public bool Active => !HasFinished;
+			public bool IsActive => !HasFinished;
 
 			/// <summary>True only when this worker finished successfully.</summary>
-			public bool Succeeded => HasOutcome(OutcomeSucceeded);
+			public bool IsSuccessful => HasOutcome(OutcomeSucceeded);
 
 			/// <summary>True only when this worker finished because of an error.</summary>
-			public bool Failed => HasOutcome(OutcomeFailed);
+			public bool IsFailed => HasOutcome(OutcomeFailed);
 
 			/// <summary>True only when <see cref="Exit"/> ended this worker before its body returned.</summary>
-			public bool Canceled => HasOutcome(OutcomeCanceled);
+			public bool IsCanceled => HasOutcome(OutcomeCanceled);
 
 			/// <summary>
 			/// The value this thread's body returned, or an empty string while it is still running, if it ended by
 			/// throwing, or if it exited early. An uncaught error is reported on the thread where it happened, in
 			/// the same way as one in a timer or hotkey, so it is never delivered here.
 			/// </summary>
-			public object Result => Succeeded ? result : DefaultObject;
+			public object Result => IsSuccessful ? result : DefaultObject;
 
 			// The outcome is published with a full fence before the completion is set, so any reader that sees the
 			// task completed also sees the terminal outcome.

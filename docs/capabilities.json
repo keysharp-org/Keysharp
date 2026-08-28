@@ -7250,7 +7250,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Work that finishes later; every CLR call returning a .NET Task hands one back. Active/Succeeded/Failed/Canceled expose its outcome, Result is a non-blocking snapshot, and Await and Wait are the waiting forms. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation.",
+                     "notes":  "Work that finishes later; every CLR call returning a .NET Task hands one back. IsActive/IsSuccessful/IsFailed/IsCanceled expose its outcome, Result is a non-blocking snapshot, and Await and Wait are the waiting forms. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation.",
                      "tested-by":  "directive-csharp-async.ahk"
                  },
                  {
@@ -8933,7 +8933,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Represents a real background thread. Active/Succeeded/Failed/Canceled match Task outcome names; Result is available only after successful completion.",
+                     "notes":  "Represents a real background thread. IsActive/IsSuccessful/IsFailed/IsCanceled match Task outcome names; Result is available only after successful completion.",
                      "tested-by":  "flow-realthreads.ahk"
                  },
                  {

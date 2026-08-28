@@ -80,12 +80,12 @@ AssertEq(tot, 10000, A_LineNumber)
 ; Wait must honour its timeout instead of blocking until the body finishes.
 slowWorker := RealThread(() => Sleep(2000))
 
-Assert(!slowWorker.Wait(50) && slowWorker.Active && !slowWorker.Succeeded
-	&& !slowWorker.Failed && !slowWorker.Canceled, A_LineNumber)
+Assert(!slowWorker.Wait(50) && slowWorker.IsActive && !slowWorker.IsSuccessful
+	&& !slowWorker.IsFailed && !slowWorker.IsCanceled, A_LineNumber)
 
 slowWorker.Wait()
 
-Assert(!slowWorker.Active && slowWorker.Succeeded && !slowWorker.Failed && !slowWorker.Canceled, A_LineNumber)
+Assert(!slowWorker.IsActive && slowWorker.IsSuccessful && !slowWorker.IsFailed && !slowWorker.IsCanceled, A_LineNumber)
 
 ; A body error is reported where it occurs and leaves a failed worker outcome.
 suppressExpected := (args*) => -1
@@ -93,7 +93,7 @@ OnError(suppressExpected)
 failedWorker := RealThread(() => Throw(Error("expected worker failure")))
 failedWorker.Wait()
 OnError(suppressExpected, 0)
-Assert(!failedWorker.Active && !failedWorker.Succeeded && failedWorker.Failed && !failedWorker.Canceled, A_LineNumber)
+Assert(!failedWorker.IsActive && !failedWorker.IsSuccessful && failedWorker.IsFailed && !failedWorker.IsCanceled, A_LineNumber)
 
 ; Starting arguments, Send, and self-identification from inside the worker.
 argWorker := RealThread(RealThreadArgEntry, 21)
@@ -104,7 +104,7 @@ argWorker.Post(() => argWorker.Exit())
 argWorker.Wait()
 
 AssertEq(argWorker.Result, 42, A_LineNumber)
-Assert(argWorker.Succeeded, A_LineNumber)
+Assert(argWorker.IsSuccessful, A_LineNumber)
 
 RealThreadArgEntry(n) {
 	; Keeps the worker's event loop alive until Exit() is requested, so Post/Send have somewhere to land.
