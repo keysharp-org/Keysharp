@@ -421,10 +421,13 @@ if [ -n "${CONSOLE_USER}" ] && [ "${CONSOLE_USER}" != "root" ]; then
     launchctl asuser "${CONSOLE_UID}" sudo -u "${CONSOLE_USER}" tccutil reset All "${badid}" >/dev/null 2>&1 || true
   done
 
+  # No one may be watching an install driven by MDM, ssh or a script, and `display dialog` waits
+  # for a click forever, so the installer's 600s script timeout kills the whole install rather than
+  # just the prompt. `giving up after` returns an empty button, which falls through to No below.
   ask_yes_no() {
     local prompt="$1"
     local result
-    result="$(launchctl asuser "${CONSOLE_UID}" sudo -u "${CONSOLE_USER}" osascript -e "display dialog \"${prompt}\" buttons {\"No\", \"Yes\"} default button \"Yes\" with title \"Keysharp\"" 2>/dev/null || echo "button returned:No")"
+    result="$(launchctl asuser "${CONSOLE_UID}" sudo -u "${CONSOLE_USER}" osascript -e "display dialog \"${prompt}\" buttons {\"No\", \"Yes\"} default button \"Yes\" with title \"Keysharp\" giving up after 60" 2>/dev/null || echo "button returned:No")"
     case "${result}" in *"Yes"*) return 0 ;; *) return 1 ;; esac
   }
 
@@ -437,10 +440,15 @@ if [ -n "${CONSOLE_USER}" ] && [ "${CONSOLE_USER}" != "root" ]; then
 
   if [ -n "${CONSOLE_HOME}" ] && ask_yes_no "Install the VS Code AutoHotkey v2 extension compatibility shim (~/.local/bin/AutoHotkey.exe)?"; then
     DEST="${CONSOLE_HOME}/.local/bin/AutoHotkey.exe"
-    launchctl asuser "${CONSOLE_UID}" sudo -u "${CONSOLE_USER}" mkdir -p "$(dirname "${DEST}")"
-    printf '#!/bin/sh\nexec "/Applications/Keysharp.app/Contents/MacOS/Keysharp" "$@"\n' > "${DEST}"
-    chown "${CONSOLE_USER}" "${DEST}"
-    chmod 0755 "${DEST}"
+    # An optional per-user shim must not fail the install: under `set -e` an unwritable home
+    # (network account, full disk) would abort postinstall after the payload is already placed.
+    if launchctl asuser "${CONSOLE_UID}" sudo -u "${CONSOLE_USER}" mkdir -p "$(dirname "${DEST}")" &&
+       printf '#!/bin/sh\nexec "/Applications/Keysharp.app/Contents/MacOS/Keysharp" "$@"\n' > "${DEST}"; then
+      chown "${CONSOLE_USER}" "${DEST}"
+      chmod 0755 "${DEST}"
+    else
+      echo "Warning: could not install ${DEST}." >&2
+    fi
   fi
 fi
 
