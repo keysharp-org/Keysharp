@@ -81,10 +81,14 @@ foreach ($line in $tableAll) { $docsLines.Add($line) }
 
 $docsSection = [string]::Join("`n", $docsLines)
 
-$docsDir = Split-Path -Parent $DocsOut
+#This expects to be run from the Keysharp folder, not the scripts folder this script resides in.
+$cur = $pwd
+$docsOutFullPath = [System.IO.Path]::Combine($cur, $DocsOut)
+$docsDir = [System.IO.Path]::GetDirectoryName($docsOutFullPath)
+
 if ($docsDir -and -not (Test-Path $docsDir)) { New-Item -ItemType Directory -Path $docsDir | Out-Null }
 
-[System.IO.File]::WriteAllText($DocsOut, $docsSection, [System.Text.UTF8Encoding]::new($false))
+[System.IO.File]::WriteAllText($docsOutFullPath, $docsSection, [System.Text.UTF8Encoding]::new($false))
 
 # Build concise overview matrix for injection between the CAPABILITIES_OVERVIEW markers.
 $overviewFeatures = @(
@@ -134,7 +138,8 @@ if (Test-Path $OverviewPath) {
 	$replacement = $startMarker + $overviewNewline + ($overviewSection -replace "`n", $overviewNewline) + $overviewNewline + $endMarker
 	if ([regex]::IsMatch($overviewText, $pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)) {
 		$newOverview = [regex]::Replace($overviewText, $pattern, $replacement, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-		[System.IO.File]::WriteAllText($OverviewPath, $newOverview, [System.Text.UTF8Encoding]::new($false))
+        $overviewOutFullPath = [System.IO.Path]::Combine($cur, $OverviewPath)
+		[System.IO.File]::WriteAllText($overviewOutFullPath, $newOverview, [System.Text.UTF8Encoding]::new($false))
 		$overviewInjected = $true
 	}
 	else {
