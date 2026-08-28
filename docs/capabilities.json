@@ -245,13 +245,13 @@
                  {
                      "category":  "Environment/System",
                      "feature":  "#Import",
-                     "syntax":  "",
+                     "syntax":  "#Import [Export] ModuleName [as Alias] [{ Name [as Alias], * }]",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Imports exported names from another module/script file. Keysharp extension: an #import inside a function/method/property body or a class body binds the imported names lexically to that scope (in AutoHotkey v2.1 it binds module-wide); control-flow-nested and top-level imports match AutoHotkey and bind at module scope. Module loading and execution order stay eager regardless of nesting.",
-                     "tested-by":  "module-scoped-import.ahk"
+                     "notes":  "Imports a module object and/or names from another module or script file. Module globals are implicitly available for wildcard import; imported aliases are re-exported only with #Import Export. Wildcards exclude names beginning with underscore, while explicit imports may name them. Bare unquoted imports and `as` aliases bind the module object; there are no default exports. Keysharp extension: an #Import inside a function, method, property or class body binds names lexically to that scope (AutoHotkey binds them module-wide); module loading and execution order remain eager.",
+                     "tested-by":  "module-export.ahk; module-basic.ahk; module-scoped-import.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -3551,7 +3551,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Retrieves the caret position. Linux uses native GTK geometry for script-owned controls and AT-SPI for foreign applications, normalizing Wayland-local coordinates through compositor window geometry when needed. macOS uses the Accessibility API and requires Accessibility permission."
+                     "notes":  "Retrieves the caret position. If no caret position is available, it returns false and sets both output variables to blank. Linux uses native GTK geometry for script-owned controls and AT-SPI for foreign applications, normalizing Wayland-local coordinates through compositor window geometry when needed. macOS uses the Accessibility API and requires Accessibility permission."
                  },
                  {
                      "category":  "Flow/Expressions",
@@ -5098,17 +5098,6 @@
                  },
                  {
                      "category":  "Core Language",
-                     "feature":  "Export",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "An Export declaration marks a function, class or variable for wildcard import, and optionally marks it as the default export.",
-                     "tested-by":  "module_import_file_target.ahk"
-                 },
-                 {
-                     "category":  "Core Language",
                      "feature":  "extends",
                      "syntax":  "",
                      "windows":  "full",
@@ -5257,7 +5246,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Windows reads .lnk metadata. Linux and macOS read symbolic links or freedesktop .desktop launchers; Windows-only icon-number and run-state metadata is unavailable, and argument extraction from .desktop Exec fields is approximate.",
+                     "notes":  "Windows reads .lnk metadata and reports a blank icon number when the shortcut has no icon location. Linux and macOS read symbolic links or freedesktop .desktop launchers; Windows-only icon-number and run-state metadata is unavailable, and argument extraction from .desktop Exec fields is approximate.",
                      "tested-by":  "file-filegetshortcut.ahk"
                  },
                  {
@@ -8240,7 +8229,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The MouseGetPos function retrieves the current position of the mouse cursor, and optionally which window and control it is hovering over.",
+                     "notes":  "Retrieves the current mouse position and, optionally, the window and control beneath it. A requested window or control output is blank when there is no corresponding target.",
                      "tested-by":  "ControlTests/control_get_focus.ahk"
                  },
                  {
@@ -8703,7 +8692,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Searches a region of the screen for a pixel of the specified color. Differs in that instead of writing to ref arguments, it returns a structure whose fields are what the original input parameter names would have been.",
+                     "notes":  "Searches a region of the screen for a pixel of the specified color. On no match it returns false and sets both output variables to blank.",
                      "tested-by":  "screen-pixelsearch.ahk"
                  },
                  {
@@ -9313,7 +9302,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The Run and RunWait functions run an external program. RunWait will wait until the program finishes before continuing.",
+                     "notes":  "Run and RunWait launch an external program; RunWait waits for it to finish. A successful call which has no process identifier sets a requested PID output to blank.",
                      "tested-by":  "ProcessTests.ProcessRunWaitClose; process-run-wait-close.ahk"
                  },
                  {

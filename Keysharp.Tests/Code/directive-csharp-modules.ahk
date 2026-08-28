@@ -15,7 +15,7 @@ AssertEq(Crunch(), "fast", A_LineNumber)
 AssertEq(Aliased(), "fast", A_LineNumber)
 AssertEq(ExplicitOwn(), "fast-local", A_LineNumber)
 AssertEq(nestedOwn(), "fast-local", A_LineNumber)
-AssertEq(Fast(), "leaf-default", A_LineNumber)
+AssertEq(Fast.FAST(), "module member", A_LineNumber)
 AssertEq(Own(), "main", A_LineNumber)
 Assert(!IsSet(Hidden), A_LineNumber)
 Assert(!IsSet(ForeignMarked), A_LineNumber)
@@ -32,8 +32,8 @@ FileAppend "pass", "*"
 [Export]
 public static object Crunch() => "fast";
 
-[Export(Default = true)]
-public static object FAST() => "leaf-default";
+[Export]
+public static object FAST() => "module member";
 
 public static object Own() => "fast-local";
 

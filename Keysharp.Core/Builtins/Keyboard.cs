@@ -56,8 +56,8 @@ namespace Keysharp.Builtins
 
 			if (targetWindow == 0) // No window is in the foreground, report blank coordinate.
 			{
-				if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", 0L);
-				if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", 0L);
+				if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", "");
+				if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", "");
 				return false;
 			}
 
@@ -67,8 +67,8 @@ namespace Keysharp.Builtins
 
 			if (!result)
 			{
-				if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", 0L);
-				if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", 0L);
+				if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", "");
+				if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", "");
                 return false;
 			}
 
@@ -104,8 +104,8 @@ namespace Keysharp.Builtins
 
 			if (!caret.Found)
 			{
-				Script.SetPropertyValue(outputVarX, "__Value", 0L);
-				Script.SetPropertyValue(outputVarY, "__Value", 0L);
+				Script.SetPropertyValue(outputVarX, "__Value", "");
+				Script.SetPropertyValue(outputVarY, "__Value", "");
 				return false;
 			}
 

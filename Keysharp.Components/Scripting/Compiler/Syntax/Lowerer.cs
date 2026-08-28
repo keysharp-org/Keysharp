@@ -155,16 +155,6 @@ namespace Keysharp.Compilation.Syntax
 		// number against the main script's text quotes an unrelated line (and blames the wrong file).
 		private readonly List<(string mode, int line, string desc, string file)> _warnings = new();
 		private int _hotCount;
-		private readonly HashSet<string> _exportedNames = new(System.StringComparer.OrdinalIgnoreCase);   // names marked `export`
-
-		private static string ExportName(Stmt decl) => decl switch
-		{
-			FunctionDecl f => f.Name,
-			ClassDecl c => c.Name,
-			ExpressionStmt { Expr: AssignExpr { Target: NameExpr n } } => n.Name,
-			_ => ""
-		};
-
 		private HashSet<string> _locals;
 		// Locals of ENCLOSING function scopes — a nested closure (fat-arrow/local fn) that references one captures it
 		// by reference (it's the same C# local the C# local function closes over), rather than making its own.
@@ -323,7 +313,7 @@ namespace Keysharp.Compilation.Syntax
 			// assembly metadata and BuildMain both need their final merged values.
 			PrescanAppDirectives(prog.Body);
 			// Prescan after module partitioning so blocks keep their declaring module.
-			// Use the dedicated multi-module path when the file defines/uses modules: a `#Module`, an `export`, or a
+			// Use the dedicated multi-module path when the file defines/uses modules: a `#Module` or a
 			// `#import "name"` that resolves to a separate <name>.ahk file. Otherwise the common single-module path is
 			// completely unaffected (a builtin `#import "Ks"` stays here). The file-import scan is DEEP (any nesting):
 			// a `#import "helper"` inside a function must still trigger module loading, even though its binding is
@@ -333,12 +323,10 @@ namespace Keysharp.Compilation.Syntax
 			var allImports = new List<ImportDirective>();
 			foreach (var s in prog.Body) CollectAllImports(s, allImports);
 			if (prog.Body.Any(s => s is DirectiveStmt d && d.Name.Equals("Module", System.StringComparison.OrdinalIgnoreCase))
-				|| prog.Body.Any(s => s is ExportStmt)
 				|| allImports.Any(IsFileImport))
 				return BuildMultiModule(prog, name);
 
-			// `export <decl>` outside a `#Module` file is just a normal top-level declaration.
-			var body = prog.Body.Select(s => s is ExportStmt e ? e.Decl : s).ToList();
+			var body = prog.Body;
 			_moduleCompat = ScanRequires(body) ?? Keysharp.Runtime.Script.DefaultCompatibilityVersion;
 			_currentCompat = _moduleCompat;
 			// Prescan before lowering so C# function calls resolve normally.
@@ -349,9 +337,9 @@ namespace Keysharp.Compilation.Syntax
 			return BuildUnit(name, members, auto);
 		}
 
-		// ---- multi-module (`#Module` / `export` / cross-module `#import`) ----
+		// ---- multi-module (`#Module` / cross-module `#import`) ----
 
-		private enum ExportK { Function, Variable, Type }
+		private enum ExportK { Function, Variable, Type, Module }
 		private sealed class ModInfo
 		{
 			public string Name;
@@ -363,9 +351,8 @@ namespace Keysharp.Compilation.Syntax
 			// bodies) — drives file loading and execution order, which stay eager and scope-blind. Superset of the above.
 			public List<ImportDirective> AllImports = new();
 			public Dictionary<string, ExportK> Exports = new(System.StringComparer.OrdinalIgnoreCase);
+			public HashSet<string> DirectVariables = new(System.StringComparer.OrdinalIgnoreCase);
 			public HashSet<string> InlineMembers;
-			public string DefaultName;          // user name of the explicit or same-name implicit default (or null)
-			public bool HasExplicitExports;
 		}
 
 		// For each quoted `#import "name"` whose module isn't defined in this file (and isn't the built-in AHK module),
@@ -441,6 +428,17 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var sep = System.Math.Max(modName.LastIndexOf('/'), modName.LastIndexOf('\\'));
 			return sep >= 0 ? modName.Substring(sep + 1) : modName;
+		}
+
+		private static IEnumerable<(string Name, string Alias)> NamedImports(string names)
+		{
+			foreach (var raw in names?.Split(',') ?? [])
+			{
+				var part = raw.Trim();
+				if (part.Length == 0) continue;
+				var at = part.IndexOf(" as ", System.StringComparison.OrdinalIgnoreCase);
+				yield return at < 0 ? (part, part) : (part.Substring(0, at).Trim(), part.Substring(at + 4).Trim());
+			}
 		}
 
 		// The #import search path, mirroring AutoHotkey's InitModuleSearchPath: the AhkImportPath environment variable
@@ -520,7 +518,11 @@ namespace Keysharp.Compilation.Syntax
 				{
 					cur.Body.Add(s);
 					CollectNestedImports(s, cur.ModuleBindings);   // control-flow-nested → module-scope binding
-					CollectAllImports(s, cur.AllImports);          // any nesting → loading / execution order
+					var all = new List<ImportDirective>();
+					CollectAllImports(s, all);                     // any nesting → loading / execution order
+					cur.AllImports.AddRange(all);
+					foreach (var import in all)
+						if (import.ReExport && !cur.ModuleBindings.Contains(import)) cur.ModuleBindings.Add(import);
 				}
 			}
 			return mods;
@@ -579,7 +581,6 @@ namespace Keysharp.Compilation.Syntax
 					if (t.Finally != null) CollectAllImports(t.Finally, into);
 					break;
 				case FunctionDecl fn: if (fn.Body != null) CollectAllImports(fn.Body, into); break;
-				case ExportStmt ex: CollectAllImports(ex.Decl, into); break;
 				case HotkeyDef hk: if (hk.Body != null) CollectAllImports(hk.Body, into); if (hk.Func?.Body != null) CollectAllImports(hk.Func.Body, into); break;
 				case HotstringDef hs: if (hs.Body != null) CollectAllImports(hs.Body, into); if (hs.Func?.Body != null) CollectAllImports(hs.Func.Body, into); break;
 				case ClassDecl cd: CollectClassImports(cd, into); break;
@@ -598,39 +599,109 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var nc in cd.Nested) CollectClassImports(nc, into);
 		}
 
-		// Collects a module's exports. Explicit `export` declarations win; a module with none implicitly exports all of
-		// its top-level functions/classes/variables. In that implicit form, a function or class matching the module's
-		// leaf name is also its default export (`OCR.ks` containing `class OCR`), regardless of additional helpers.
+		// Script declarations are implicitly exportable. Inline C# retains its explicit [Export] wildcard boundary.
 		private static void ScanExports(ModInfo m)
 		{
+			var assigned = new List<string>();
+			var seen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
 			foreach (var s in m.Body)
-			{
-				if (s is ExportStmt e)
-				{
-					m.HasExplicitExports = true;
-					var nm = ExportName(e.Decl);
-					var kind = e.Decl is FunctionDecl ? ExportK.Function : e.Decl is ClassDecl ? ExportK.Type : ExportK.Variable;
-					if (nm.Length > 0) m.Exports[nm] = kind;
-					if (e.Default && nm.Length > 0) m.DefaultName = nm;
-				}
-			}
-			if (m.HasExplicitExports) return;
-			foreach (var s in m.Body)   // no explicit exports -> everything top-level is exportable
 			{
 				switch (s)
 				{
 					case FunctionDecl f: m.Exports[f.Name] = ExportK.Function; break;
 					case ClassDecl c: m.Exports[c.Name] = ExportK.Type; break;
-					case ExpressionStmt { Expr: AssignExpr { Target: NameExpr n } }: m.Exports[n.Name] = ExportK.Variable; break;
+					case DeclStmt d:
+						foreach (var item in d.Items)
+							if (item is NameExpr n) { m.Exports[n.Name] = ExportK.Variable; m.DirectVariables.Add(n.Name); }
+							else if (item is AssignExpr { Target: NameExpr n2 }) { m.Exports[n2.Name] = ExportK.Variable; m.DirectVariables.Add(n2.Name); }
+						CollectAssignedStmt(d, assigned, seen);
+						break;
+					default: CollectAssignedStmt(s, assigned, seen); break;
 				}
 			}
-			var leaf = ImportBindingName(m.Name);
-			foreach (var ex in m.Exports)
-				if (ex.Value != ExportK.Variable && ex.Key.Equals(leaf, System.StringComparison.OrdinalIgnoreCase))
+			foreach (var name in assigned) { m.Exports[name] = ExportK.Variable; m.DirectVariables.Add(name); }
+		}
+
+		private static Dictionary<string, ExportK> BuiltinExportKinds(string module)
+		{
+			var exports = new Dictionary<string, ExportK>(System.StringComparer.OrdinalIgnoreCase);
+			var rd = Script.TheScript.ReflectionsData;
+			if (module.Equals("AHK", System.StringComparison.OrdinalIgnoreCase))
+			{
+				foreach (var name in rd.flatPublicStaticMethods.Keys) exports[name] = ExportK.Function;
+				foreach (var name in rd.flatPublicStaticProperties.Keys) exports[name] = ExportK.Variable;
+				foreach (var (name, globalType) in rd.stringToTypes)
+					if (IsGlobalAhkClass(globalType)) exports[name] = ExportK.Function;
+				return exports;
+			}
+			if (!rd.stringToTypes.TryGetValue(module, out var type) || !typeof(Keysharp.Runtime.Module).IsAssignableFrom(type))
+				return exports;
+			const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.DeclaredOnly;
+			var properties = type.GetProperties(flags).Select(property => Script.GetUserDeclaredName(property) ?? property.Name)
+				.ToHashSet(System.StringComparer.OrdinalIgnoreCase);
+			foreach (var name in BuiltinMemberNames(type)) exports[name] = properties.Contains(name) ? ExportK.Variable : ExportK.Function;
+			return exports;
+		}
+
+		private static void ResolveReExports(List<ModInfo> mods, Dictionary<string, ModInfo> byName)
+		{
+			Dictionary<string, ExportK> Source(string module)
+			{
+				var exports = BuiltinExportKinds(module);
+				if (byName.TryGetValue(module, out var script))
+					foreach (var export in script.Exports) exports[export.Key] = export.Value;
+				return exports;
+			}
+			bool TryMember(string moduleName, string name, HashSet<string> seen, out ExportK kind)
+			{
+				if (Source(moduleName).TryGetValue(name, out kind)) return true;
+				if (!byName.TryGetValue(moduleName, out var module) || !seen.Add(moduleName)) return false;
+				foreach (var import in module.ModuleBindings)
 				{
-					m.DefaultName = ex.Key;
-					break;
+					var moduleAlias = import.Alias ?? (!import.Quoted ? ImportBindingName(import.Module) : null);
+					if (moduleAlias?.Equals(name, System.StringComparison.OrdinalIgnoreCase) == true) { kind = ExportK.Module; return true; }
+					foreach (var item in NamedImports(import.Named))
+						if (item.Name != "*" && item.Alias.Equals(name, System.StringComparison.OrdinalIgnoreCase)
+							&& TryMember(import.Module, item.Name, seen, out kind)) return true;
 				}
+				if (!name.StartsWith('_'))
+					for (var i = module.ModuleBindings.Count - 1; i >= 0; i--)
+						if (NamedImports(module.ModuleBindings[i].Named).Any(item => item.Name == "*")
+							&& TryMember(module.ModuleBindings[i].Module, name, seen, out kind)) return true;
+				seen.Remove(moduleName);
+				return false;
+			}
+			bool HasImport(ModInfo module, string name) => module.ModuleBindings.Any(import =>
+			{
+				var moduleAlias = import.Alias ?? (!import.Quoted ? ImportBindingName(import.Module) : null);
+				return moduleAlias?.Equals(name, System.StringComparison.OrdinalIgnoreCase) == true
+					|| NamedImports(import.Named).Any(item => item.Name != "*" && item.Alias.Equals(name, System.StringComparison.OrdinalIgnoreCase)
+						|| item.Name == "*" && !name.StartsWith('_')
+							&& TryMember(import.Module, name, new(System.StringComparer.OrdinalIgnoreCase), out _));
+			});
+			foreach (var module in mods)
+				foreach (var import in module.AllImports)
+					if (byName.TryGetValue(import.Module, out var source))
+						foreach (var (name, _) in NamedImports(import.Named))
+							if (name != "*" && !source.Exports.ContainsKey(name) && !HasImport(source, name)) source.Exports[name] = ExportK.Variable;
+			for (var pass = 0; pass < mods.Count; pass++)
+				foreach (var module in mods)
+					foreach (var import in module.ModuleBindings)
+					{
+						if (!import.ReExport || !ModuleResolves(import.Module, byName)) continue;
+						void Add(string name, ExportK kind) => module.Exports.TryAdd(name, kind);
+						if (import.Alias != null) Add(import.Alias, ExportK.Module);
+						else if (!import.Quoted) Add(ImportBindingName(import.Module), ExportK.Module);
+						if (import.Named == null) continue;
+						var source = Source(import.Module);
+						foreach (var (name, alias) in NamedImports(import.Named))
+							if (name == "*")
+							{
+								foreach (var export in source)
+									if (!export.Key.StartsWith('_')) Add(export.Key, export.Value);
+							}
+							else if (TryMember(import.Module, name, new(System.StringComparer.OrdinalIgnoreCase), out var kind)) Add(alias, kind);
+					}
 		}
 
 		// Execution order: a module runs after the modules it imports (topological); ties/cycles fall back to declaration
@@ -666,7 +737,7 @@ namespace Keysharp.Compilation.Syntax
 			_staticFieldSink = _fieldDecls;   // module scope until a class redirects it
 
 			_inlineAliases.Clear(); _wildcardModules.Clear(); _classFieldIds.Clear(); _emittedFuncImpls.Clear();
-			_exportedNames.Clear(); _pendingLambdas.Clear(); _inlineFuncNames?.Clear(); _scopeTemps.Clear(); _tempCounter = 0;
+			_pendingLambdas.Clear(); _inlineFuncNames?.Clear(); _scopeTemps.Clear(); _tempCounter = 0;
 			_importScopes.Clear();   // class/function import frames never straddle a module boundary
 		}
 
@@ -690,6 +761,7 @@ namespace Keysharp.Compilation.Syntax
 				// Imports need inline members and exports before binding.
 				RegisterInlineModuleMembers(m);
 			}
+			ResolveReExports(mods, byName);
 
 			var execOrder = ComputeExecOrder(mods, byName);
 
@@ -706,8 +778,9 @@ namespace Keysharp.Compilation.Syntax
 				_currentCompat = _moduleCompat;
 				RegisterInlineFunctionsFor(m.Name);
 				var importMembers = EmitImports(m, byName);
-				var body = m.Body.Select(s => s is ExportStmt e ? e.Decl : s).ToList();
-				var (members, auto) = LowerProgramBody(body);
+				foreach (var export in m.Exports)
+					if (export.Value == ExportK.Variable) EnsureGlobalField(export.Key.ToLowerInvariant());
+				var (members, auto) = LowerProgramBody(m.Body);
 				if (Diagnostics.Count > 0) return null;
 				MarkExports(m);
 				moduleClasses.Add(BuildModuleClass(m.Name, _fieldDecls, members, _pendingLambdas,
@@ -720,17 +793,17 @@ namespace Keysharp.Compilation.Syntax
 		private static ExpressionSyntax ModuleMemberField(string modName, string memberName) =>
 			Member(Member(Id("Program"), NameMangler.ModuleClass(modName)), NameMangler.Global(memberName));
 
-		// The fallback value of a whole-module import with no default export: a fresh MODULE INSTANCE.
+		// The value of a whole-module import.
 		// Script modules → `new Program.<Mod>()`; the built-in catch-all AHK module → the Ahk meta-object;
 		// a built-in Module type (Ks, …) → `new <Type>()`. All derive from Module and implement IMetaObject, so member
 		// access and method calls (`Ks.Cosh(0)`) dispatch through Get/Call — a Statics *class* singleton would not.
 		// Returns null if the name is not a known module. Shared by the single- and multi-module binding paths.
 		private static ExpressionSyntax ModuleObjectExpr(string modName, bool isAhk, bool isScript)
 		{
-			if (isScript)
-				return SyntaxFactory.ObjectCreationExpression(Ty("Program." + NameMangler.ModuleClass(modName))).WithArgumentList(SyntaxFactory.ArgumentList());
 			if (isAhk)
 				return SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Runtime.Ahk")).WithArgumentList(SyntaxFactory.ArgumentList());
+			if (isScript)
+				return SyntaxFactory.ObjectCreationExpression(Ty("Program." + NameMangler.ModuleClass(modName))).WithArgumentList(SyntaxFactory.ArgumentList());
 			return Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(modName, out var t)
 				&& typeof(Keysharp.Runtime.Module).IsAssignableFrom(t)
 				? SyntaxFactory.ObjectCreationExpression(Ty(t.FullName.Replace('+', '.'))).WithArgumentList(SyntaxFactory.ArgumentList()) : null;
@@ -770,8 +843,7 @@ namespace Keysharp.Compilation.Syntax
 			var set = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
 			foreach (var s in body)
 			{
-				var st = s is ExportStmt e ? e.Decl : s;
-				switch (st)
+				switch (s)
 				{
 					case FunctionDecl fd: set.Add(fd.Name); break;
 					case ClassDecl cd: set.Add(cd.Name); break;
@@ -786,11 +858,12 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var props = new List<MemberDeclarationSyntax>();
 			var localNames = CollectLocalDeclNames(m.Body);
+			bool BlocksWildcard(string name) => localNames.Contains(name) || m.DirectVariables.Contains(name);
 			// Local inline exports shadow imports like script declarations do.
 			if (_inlineFuncNames != null) localNames.UnionWith(_inlineFuncNames);
 			// Wildcard `{ * }` exports are deferred and resolved with LAST-import-wins (a later `#import "B" { * }`
 			// overrides an earlier `#import "A" { * }` for a shared name); explicit imports and locals take priority.
-			var wild = new Dictionary<string, (string mod, string key, ExportK kind)>(System.StringComparer.OrdinalIgnoreCase);
+			var wild = new Dictionary<string, (string mod, string key, ExportK kind, bool builtin)>(System.StringComparer.OrdinalIgnoreCase);
 			foreach (var im in m.ModuleBindings)   // module-scope bindings only; function/class-nested imports are scoped elsewhere
 			{
 				var (modName, alias, named, quoted) = (im.Module, im.Alias, im.Named, im.Quoted);
@@ -803,67 +876,64 @@ namespace Keysharp.Compilation.Syntax
 				bool isAhk = modName.Equals("AHK", System.StringComparison.OrdinalIgnoreCase);
 				bool isScript = byName.ContainsKey(modName);
 
-				// `as Alias`: bind the module's default export if it has one, else the module object. Use the same named
-				// binding path as `{ Name as Alias }` so type defaults stay lazy and variable defaults write through.
+				// A whole-module alias always binds the module object.
 				if (alias != null && !localNames.Contains(alias))
 				{
-					var script = isScript ? byName[modName] : null;
-					if (script?.DefaultName != null && script.Exports.TryGetValue(script.DefaultName, out var defaultKind))
-						BindNamedImport(modName, script.DefaultName, alias, defaultKind, props);
-					else if (ModuleObjectExpr(modName, isAhk, isScript) is { } val)
+					if (ModuleObjectExpr(modName, isAhk, isScript) is { } val)
 						RegisterImportField(alias, val);
 				}
+				else if (!quoted && !localNames.Contains(ImportBindingName(modName))
+					&& ModuleObjectExpr(modName, isAhk, isScript) is { } val)
+					RegisterImportField(ImportBindingName(modName), val);
 				// Named imports `{ a, b as c, * }`.
 				if (named != null)
 				{
-					foreach (var raw in named.Split(','))
+					foreach (var (impName, impAlias) in NamedImports(named))
 					{
-						var part = raw.Trim();
-						if (part.Length == 0) continue;
-						if (part == "*")   // wildcard: record every export (resolved last-wins after the loop)
+						if (impName == "*")   // wildcard: record every export (resolved last-wins after the loop)
 						{
+							if (isAhk || !isScript && im.ReExport)
+								foreach (var ex in BuiltinExportKinds(modName))
+									if (!ex.Key.StartsWith('_') && !BlocksWildcard(ex.Key)) wild[ex.Key] = (modName, ex.Key, ex.Value, true);
 							if (isScript)
 								foreach (var ex in byName[modName].Exports)
-									if (!localNames.Contains(ex.Key)) wild[ex.Key] = (modName, ex.Key, ex.Value);
+									if (!ex.Key.StartsWith('_') && !BlocksWildcard(ex.Key)) wild[ex.Key] = (modName, ex.Key, ex.Value, false);
 							// A built-in `{ * }` resolves members on demand (matching the single-module RegisterImport
 							// path) instead of eagerly emitting every export — the module type is consulted in NameRef.
-							else if (!isAhk && Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(modName, out var wt) && !_wildcardModules.Contains(wt))
+							else if (!isScript && Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(modName, out var wt) && !_wildcardModules.Contains(wt))
 								_wildcardModules.Add(wt);
 							continue;
 						}
-						string impName = part, impAlias = part;
-						var asIdx = part.IndexOf(" as ", System.StringComparison.OrdinalIgnoreCase);
-						if (asIdx >= 0) { impName = part.Substring(0, asIdx).Trim(); impAlias = part.Substring(asIdx + 4).Trim(); }
 						if (localNames.Contains(impAlias)) continue;   // a local declaration overrides this import
 						wild.Remove(impAlias);                         // an explicit import overrides a wildcard one
 						if (isScript && byName[modName].Exports.TryGetValue(impName, out var k))
 							BindNamedImport(modName, impName, impAlias, k, props);
-						else if (isScript)
-							RegisterImportField(impAlias, ModuleMemberField(modName, impName));   // best-effort (script modules bind non-exported declarations too)
+						else if (isScript && im.ReExport && m.Exports.TryGetValue(impAlias, out var reKind))
+							BindNamedImport(modName, impName, impAlias, reKind, props);
 						else if (BindBuiltinMember(modName, isAhk, impName) is { } bind)
 							BindBuiltinImport(impAlias, bind, ResolvedBuiltinProperty(modName, isAhk, impName), props);   // built-in method/type/property
+						else if (isScript)
+							RegisterImportField(impAlias, ModuleMemberField(modName, impName));   // best-effort (script modules bind non-exported declarations too)
 						else if (!isAhk && Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(modName, out var bmt) && BuiltinModuleHasMember(bmt, impName))
 							{ }                                                                    // has the member but not bindable here — leave to ambient resolution
 						else
 							Diag($"{im.Line}:{im.Column}: #Import: module '{modName}' has no exported member named '{impName}'");
 					}
 				}
-				// A bare `#import Mod` (no alias/braces) binds its default export under the module leaf name when one
-				// exists, otherwise the module object. A quoted `#import "Mod"` introduces no name unless aliased.
-				var bareName = ImportBindingName(modName);
-				if (alias == null && named == null && !quoted && !localNames.Contains(bareName))
-				{
-					var script = isScript ? byName[modName] : null;
-					if (script?.DefaultName != null && script.Exports.TryGetValue(script.DefaultName, out var defaultKind))
-						BindNamedImport(modName, script.DefaultName, bareName, defaultKind, props);
-					else if (ModuleObjectExpr(modName, isAhk, isScript) is { } bareObj)
-						RegisterImportField(bareName, bareObj);
-				}
 			}
 			// Emit the surviving wildcard bindings (those not shadowed by an explicit import or local declaration).
 			foreach (var (lower, w) in wild)
 				if (!_fields.ContainsKey(lower.ToLowerInvariant()))
-					BindNamedImport(w.mod, w.key, w.key, w.kind, props);
+				{
+					if (!w.builtin)
+						BindNamedImport(w.mod, w.key, w.key, w.kind, props);
+					else
+					{
+						var isAhk = w.mod.Equals("AHK", System.StringComparison.OrdinalIgnoreCase);
+						if (BindBuiltinMember(w.mod, isAhk, w.key) is { } bind)
+							BindBuiltinImport(w.key, bind, ResolvedBuiltinProperty(w.mod, isAhk, w.key), props);
+					}
+				}
 			return props;
 		}
 
@@ -871,7 +941,7 @@ namespace Keysharp.Compilation.Syntax
 		// (preserving lazy class initialization); and a variable export binds as a get/set property so writes propagate.
 		private void BindNamedImport(string modName, string name, string alias, ExportK kind, List<MemberDeclarationSyntax> props)
 		{
-			if (kind == ExportK.Function)
+			if (kind is ExportK.Function or ExportK.Module)
 				RegisterImportField(alias, ModuleMemberField(modName, name));
 			else
 			{
@@ -1164,32 +1234,28 @@ namespace Keysharp.Compilation.Syntax
 			// Functions are known before their backing global fields are emitted.
 			bool IsUserDeclared(string n) => _userFuncByLower.ContainsKey(n.ToLowerInvariant());
 
-			// `#import Mod as Alias`: the alias binds the module object (single-module has no script modules, so no
-			// default-export form). A bindable module object is required; otherwise the alias is left unbound.
+			// `#import Mod as Alias`: the alias binds the module object when one is available.
 			if (alias != null && !IsUserDeclared(alias) && ModuleObjectExpr(modName, isAhk, false) is { } aliasVal)
 				RegisterImportField(alias, aliasVal);
+			else if (!d.Quoted && !IsUserDeclared(ImportBindingName(modName))
+				&& ModuleObjectExpr(modName, isAhk, false) is { } moduleVal)
+				RegisterImportField(ImportBindingName(modName), moduleVal);
 
-			var names = named ?? "*";
+			if (named == null)
+			{
+				return;
+			}
+			var names = named;
 			if (names == "*" || names.Length == 0)
 			{
-				// A bare unquoted `#import Mod` (no braces, no alias) also introduces the module NAME as the module
-				// object, so `Mod.Member` dispatches through IMetaObject (Get/Call) — matching the multi-module and
-				// function-scope paths. Members still resolve unqualified through the wildcard below (existing behavior).
-				if (named == null && alias == null && !d.Quoted && !IsUserDeclared(ImportBindingName(modName))
-						&& ModuleObjectExpr(modName, isAhk, false) is { } bareObj)
-					RegisterImportField(ImportBindingName(modName), bareObj);
 				if (!isAhk && Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(modName, out var wildType)
-					&& !_wildcardModules.Contains(wildType))   // `#import "Mod"` / `#import "Mod" { * }`: resolve members on demand
+					&& names.Length > 0 && !_wildcardModules.Contains(wildType))
 					_wildcardModules.Add(wildType);
 				return;
 			}
-			foreach (var raw in names.Split(','))
+			foreach (var (impName, impAlias) in NamedImports(names))
 			{
-				var part = raw.Trim();
-				if (part.Length == 0 || part == "*") continue;   // `*` is the wildcard branch above; ignore it inside a mixed list
-				string impName = part, impAlias = part;
-				var asIdx = part.IndexOf(" as ", System.StringComparison.OrdinalIgnoreCase);
-				if (asIdx >= 0) { impName = part.Substring(0, asIdx).Trim(); impAlias = part.Substring(asIdx + 4).Trim(); }
+				if (impName == "*") continue;
 				var lower = impAlias.ToLowerInvariant();
 				if (_fields.ContainsKey(lower) || _userFuncByLower.ContainsKey(lower)) continue;
 				var init = BindBuiltinMember(modName, isAhk, impName);
@@ -1264,37 +1330,27 @@ namespace Keysharp.Compilation.Syntax
 					? () => SyntaxFactory.ObjectCreationExpression(Ty("__Main")).WithArgumentList(SyntaxFactory.ArgumentList())
 					: () => ModuleObjectExpr(modName, isAhk, isScript);
 
-				// `as Alias`: the module's default export (script) or the module object.
+				// `as Alias` binds the module object.
 				if (alias != null)
 				{
 					var a = alias.ToLowerInvariant();
-					if (isScript && script.DefaultName != null)
-						Frame().Named[a] = ScopedMemberBinding(modName, isAhk, isScript, script, builtinType, script.DefaultName, im);
-					else
-						Frame().Named[a] = new ImportBinding { Read = ModuleObj };
+					Frame().Named[a] = new ImportBinding { Read = ModuleObj };
 				}
 				// Named `{ a, b as c, * }`.
 				if (named != null)
 				{
-					foreach (var raw in named.Split(','))
+					foreach (var (impName, impAlias) in NamedImports(named))
 					{
-						var part = raw.Trim();
-						if (part.Length == 0) continue;
-						if (part == "*") { Frame().Wildcards.Add(new ImportWildcard { ModName = modName, IsAhk = isAhk, BuiltinType = builtinType, Script = script }); continue; }
-						string impName = part, impAlias = part;
-						var asIdx = part.IndexOf(" as ", System.StringComparison.OrdinalIgnoreCase);
-						if (asIdx >= 0) { impName = part.Substring(0, asIdx).Trim(); impAlias = part.Substring(asIdx + 4).Trim(); }
+						if (impName == "*") { Frame().Wildcards.Add(new ImportWildcard { ModName = modName, IsAhk = isAhk, BuiltinType = builtinType, Script = script }); continue; }
 						var b = ScopedMemberBinding(modName, isAhk, isScript, script, builtinType, impName, im);
 						if (b != null) Frame().Named[impAlias.ToLowerInvariant()] = b;
 					}
 				}
-				// Bare `#import Mod` binds the default export under the module leaf when present, else the module object.
-				if (alias == null && named == null && !quoted)
+				// A bare unquoted import binds the module object.
+				if (alias == null && !quoted)
 				{
 					var bare = ImportBindingName(modName).ToLowerInvariant();
-					Frame().Named[bare] = isScript && script.DefaultName != null
-						? ScopedMemberBinding(modName, isAhk, isScript, script, builtinType, script.DefaultName, im)
-						: new ImportBinding { Read = ModuleObj };
+					Frame().Named[bare] = new ImportBinding { Read = ModuleObj };
 				}
 			}
 			return scope;
@@ -1306,22 +1362,22 @@ namespace Keysharp.Compilation.Syntax
 		// assignment diagnosed later in LowerAssign.
 		private ImportBinding ScopedMemberBinding(string modName, bool isAhk, bool isScript, ModInfo script, System.Type builtinType, string member, ImportDirective im)
 		{
-			if (isScript)
+			if (isScript && ScriptModuleHasMember(script, member))
 			{
 				// Reject a genuinely absent member (a typo like `Widht`) before binding: without this the frame would emit
 				// `Program.<Mod>.@G_Widht`, an undefined field → a confusing Roslyn CS0117 at a generated position. Leniency
 				// is preserved — a non-exported top-level declaration (`hiddenFn`/`hiddenVar`) is still importable by name.
-				if (!ScriptModuleHasMember(script, member))
-				{
-					Diag($"{im.Line}:{im.Column}: #Import: module '{modName}' has no exported member named '{member}'");
-					return null;
-				}
 				bool writable = script.Exports.TryGetValue(member, out var kind) && kind == ExportK.Variable;
 				return new ImportBinding
 				{
 					Read = () => ModuleMemberField(modName, member),
 					Write = writable ? () => ModuleMemberField(modName, member) : null,
 				};
+			}
+			if (isScript && !isAhk)
+			{
+				Diag($"{im.Line}:{im.Column}: #Import: module '{modName}' has no exported member named '{member}'");
+				return null;
 			}
 			var expr = BindBuiltinMember(modName, isAhk, member);
 			if (expr != null)
@@ -1340,7 +1396,7 @@ namespace Keysharp.Compilation.Syntax
 			return null;
 		}
 
-		// Whether a script module makes `member` importable by name: an explicit `export`, a top-level function/class/
+		// Whether a script module makes `member` importable by name: a top-level function/class/
 		// hotkey/hotstring, OR any variable assigned/declared at module scope — INCLUDING one inside top-level control
 		// flow (if/loop/while/for/switch/try). Such a name still materializes a module field (EnsureGlobalField) and was
 		// importable before this diagnostic existed, so it must stay accepted — see module-import.ahk's "Mixed"/"NoExports".
@@ -1387,7 +1443,7 @@ namespace Keysharp.Compilation.Syntax
 						if (Rec(st)) return true;
 				return false;
 			}
-			switch (s is ExportStmt e ? e.Decl : s)
+			switch (s)
 			{
 				case FunctionDecl f:
 					// The function name is a module member; its body can also declare module globals via `global`.
@@ -1459,6 +1515,7 @@ namespace Keysharp.Compilation.Syntax
 		// built-in A_* properties in NameRef so a wildcard never shadows a built-in variable (matching module scope).
 		private bool TryScopedWildcard(string lower, out ImportBinding binding)
 		{
+			if (lower.StartsWith('_')) { binding = null; return false; }
 			for (int i = _importScopes.Count - 1; i >= 0; i--)
 			{
 				var frame = _importScopes[i];
@@ -1502,21 +1559,18 @@ namespace Keysharp.Compilation.Syntax
 				if (!isScript && !isAhk) Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(modName, out builtinType);
 				if (named != null)
 				{
-					foreach (var raw in named.Split(','))
+					foreach (var (name, importAlias) in NamedImports(named))
 					{
-						var part = raw.Trim();
-						if (part.Length == 0) continue;
-						if (part == "*")
+						if (name == "*")
 						{
-							if (isScript) foreach (var k in script.Exports.Keys) into.Add(k.ToLowerInvariant());
+							if (isScript) foreach (var k in script.Exports.Keys) if (!k.StartsWith('_')) into.Add(k.ToLowerInvariant());
 							else if (builtinType != null) foreach (var nm in BuiltinMemberNames(builtinType)) into.Add(nm);
 							continue;   // an AHK `{ * }` provides every global — those already never warn
 						}
-						var asIdx = part.IndexOf(" as ", System.StringComparison.OrdinalIgnoreCase);
-						into.Add((asIdx >= 0 ? part.Substring(asIdx + 4).Trim() : part).ToLowerInvariant());
+						into.Add(importAlias.ToLowerInvariant());
 					}
 				}
-				if (alias == null && named == null && !quoted) into.Add(ImportBindingName(modName).ToLowerInvariant());
+				if (alias == null && !quoted) into.Add(ImportBindingName(modName).ToLowerInvariant());
 			}
 		}
 
@@ -1660,7 +1714,7 @@ namespace Keysharp.Compilation.Syntax
 			else if (Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(lower, out var type) && IsGlobalAhkClass(type))
 				init = TypeSingleton(type.FullName.Replace('+', '.'));
 			// (AHK class-name aliases Object/Func/File are resolved INLINE in NameRef, not as a cached field.)
-			else if (_wildcardModules.Select(t => BindModuleMember(t, lower)).FirstOrDefault(b => b != null) is { } wild)
+			else if (!lower.StartsWith('_') && _wildcardModules.Select(t => BindModuleMember(t, lower)).FirstOrDefault(b => b != null) is { } wild)
 				init = wild;   // resolved through a `#import "Mod" { * }` wildcard
 			else
 				init = Null;
@@ -1757,6 +1811,7 @@ namespace Keysharp.Compilation.Syntax
 		// access to it; otherwise null. Methods/types are fine cached as fields, but properties must be re-read.
 		private ExpressionSyntax WildcardLiveProperty(string lower)
 		{
+			if (lower.StartsWith('_')) return null;
 			// DeclaredOnly to match BindModuleMember: a wildcard binds what the module declares, not what it inherits.
 			const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.DeclaredOnly;
 			foreach (var modType in _wildcardModules)
@@ -2092,7 +2147,6 @@ namespace Keysharp.Compilation.Syntax
 				case DeclStmt declaration:
 					foreach (var item in declaration.Items) CollectManifestDirectives(item, into);
 					break;
-				case ExportStmt export: CollectManifestDirectives(export.Decl, into); break;
 				case HotkeyDef hotkey:
 					CollectManifestDirectives(hotkey.Body, into);
 					CollectManifestDirectives(hotkey.Func, into);
@@ -2709,7 +2763,7 @@ namespace Keysharp.Compilation.Syntax
 		private void PrescanCSharpDirectives(List<Stmt> body, string moduleName, string moduleDir)
 		{
 			foreach (var s in body)
-				if ((s is ExportStmt ex ? ex.Decl : s) is ClassDecl cd)
+				if (s is ClassDecl cd)
 					PrescanClassCSharp(cd, moduleName, moduleDir, null);
 
 			foreach (var s in body)
@@ -2837,8 +2891,6 @@ namespace Keysharp.Compilation.Syntax
 			if (_inlineBlocks == null)
 				return;
 
-			List<(CSharpDirective Directive, MethodDeclarationSyntax Method, AttributeSyntax Attribute)> inlineExports = null;
-
 			foreach (var (module, classPath, d) in _inlineBlocks)
 			{
 				if (module != m.Name || classPath != null)
@@ -2856,32 +2908,8 @@ namespace Keysharp.Compilation.Syntax
 					// Misuse (non-public, non-static, non-method) is diagnosed in BuildInlineSources, which every
 					// lowering path runs — this pass exists only on the multi-module one, and a library
 					// validated standalone must get the same verdict its importers will. Consume valid exports.
-					if (isPublicStaticMethod && InlineExportAttribute(mem) is { } attr)
-						(inlineExports ??= []).Add((d, method, attr));
-				}
-			}
-
-			if (inlineExports == null)
-				return;
-
-			if (!m.HasExplicitExports)
-			{
-				m.Exports.Clear();
-				m.DefaultName = null;
-				m.HasExplicitExports = true;
-			}
-
-			foreach (var (d, method, attr) in inlineExports)
-			{
-				var name = method.Identifier.Text;
-				m.Exports[name] = ExportK.Function;
-
-				if (InlineExportIsDefault(attr))
-				{
-					if (m.DefaultName != null && !m.DefaultName.Equals(name, System.StringComparison.OrdinalIgnoreCase))
-						Diag($"{InlineMemberLocation(d, method)}#CSharp: module '{m.Name}' has more than one default export");
-					else
-						m.DefaultName = name;
+					if (isPublicStaticMethod && InlineExportAttribute(mem) != null)
+						m.Exports[method.Identifier.Text] = ExportK.Function;
 				}
 			}
 		}
@@ -3055,11 +3083,6 @@ namespace Keysharp.Compilation.Syntax
 			member.AttributeLists.SelectMany(list => list.Attributes).FirstOrDefault(attr =>
 				attr.Name.ToString() is "Export" or "Keysharp.Runtime.Export" or "global::Keysharp.Runtime.Export");
 
-		private static bool InlineExportIsDefault(AttributeSyntax attr) =>
-			attr.ArgumentList?.Arguments.Any(arg =>
-				arg.NameEquals?.Name.Identifier.ValueText == "Default"
-				&& arg.Expression.IsKind(SyntaxKind.TrueLiteralExpression)) == true;
-
 		private string InlineMemberLocation(CSharpDirective directive, MemberDeclarationSyntax member)
 		{
 			var parsed = Parsed(directive);
@@ -3086,7 +3109,7 @@ namespace Keysharp.Compilation.Syntax
 					if (n.Equals(NameMangler.ModuleClass(module), System.StringComparison.Ordinal))
 						Diag($"{at}#CSharp: a public method cannot have its module's exact name ('{n}') — the generated module class "
 							 + "is named that, and C# forbids a member named like its enclosing type. Re-case it (but not to "
-							 + "all-lowercase); script calls and the default-export match are case-insensitive.");
+							 + "all-lowercase); script calls are case-insensitive.");
 					else if (n == n.ToLowerInvariant())
 						Diag($"{at}#CSharp: a public method cannot be all-lowercase ('{n}') — its script binding is emitted as a "
 							 + "field of that exact name in the same class. Capitalize any letter; script calls are case-insensitive.");

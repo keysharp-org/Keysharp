@@ -1,3 +1,3 @@
 #NoTrayIcon
 
-export PathSuccess() => "imported by path"
+PathSuccess() => "imported by path"

@@ -747,19 +747,21 @@ namespace Keysharp.Builtins
 					_ = (lostFocusHandlers?.InvokeEventHandlers(this, 0L));
 			}
 
-			internal void CallContextMenuChangeHandlers(bool wasRightClick, int x, int y)
+			internal object CallContextMenuChangeHandlers(bool wasRightClick, int x, int y, long? itemOverride = null)
 			{
 				if (!eventHandlerActive)
-					return;
+					return null;
 
 				if (_control is KeysharpListBox lb)
-					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(this, lb.SelectedIndex + 1L, wasRightClick, (long)x, (long)y));
+					return contextMenuChangedHandlers?.InvokeWindowMessageHandlers(this, lb.SelectedIndex + 1L, wasRightClick, (long)x, (long)y);
 				else if (_control is KeysharpListView lv)
-					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(this, lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L, wasRightClick, (long)x, (long)y));
+					return contextMenuChangedHandlers?.InvokeWindowMessageHandlers(this,
+						itemOverride ?? (lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L),
+						wasRightClick, (long)x, (long)y);
 				else if (_control is KeysharpTreeView tv)
-					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(this, tv.SelectedNode?.Handle.ToInt64() ?? 0, wasRightClick, (long)x, (long)y));
+					return contextMenuChangedHandlers?.InvokeWindowMessageHandlers(this, tv.SelectedNode?.Handle.ToInt64() ?? 0, wasRightClick, (long)x, (long)y);
 				else
-					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(this, _control.Handle.ToInt64().ToString(), wasRightClick, (long)x, (long)y));//Unsure what to pass for Item, so just pass handle.
+					return contextMenuChangedHandlers?.InvokeWindowMessageHandlers(this, _control.Handle.ToInt64().ToString(), wasRightClick, (long)x, (long)y);//Unsure what to pass for Item, so just pass handle.
 			}
 
 			internal void Cmb_SelectedIndexChanged(object sender, EventArgs e)

@@ -1,7 +1,7 @@
 #NoTrayIcon
 
-export Success() => "imported"
+Success() => "imported"
 
-export class ImportedClass {
+class ImportedClass {
 	static Value => 42
 }

@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-; The same-named class is the implicit default even when the module later gains helpers.
+; The same-named class remains reachable through the module object.
 class implicit_default_import_target {
 	static Value => 43
 }

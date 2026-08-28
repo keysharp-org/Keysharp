@@ -10,7 +10,7 @@ namespace Keysharp.Runtime
 		object IMetaObject.Get(string name, object[] args)
 		{
 			var moduleType = GetType();
-			var value = TheScript.Vars.GetVariable(moduleType, name, true);
+			var value = TheScript.Vars.GetVariable(moduleType, name);
 			if (args != null && args.Length > 0)
 				return Keysharp.Runtime.Script.GetIndexOrNull(value, args);
 			return value;

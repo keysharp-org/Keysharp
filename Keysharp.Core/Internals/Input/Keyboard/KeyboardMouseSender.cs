@@ -1281,6 +1281,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				if (vkIsMouse && targetWindow == 0)
 				{
 					MouseClick(vk, x, y, 1, tv.defaultMouseSpeed, eventType, moveOffset);
+					x = y = CoordUnspecified;
 				}
 				// Above: Since it's rare to send more than one click, it seems best to simplify and reduce code size
 				// by not doing more than one click at a time event when mode is SendInput/Play.

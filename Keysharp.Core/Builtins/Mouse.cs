@@ -260,8 +260,8 @@ namespace Keysharp.Builtins
 
 			if (child == null || child.Handle == 0)
 			{
-				if (outputVarWin != null) Script.SetPropertyValue(outputVarWin, "__Value", DefaultObject);
-				if (outputVarControl != null) Script.SetPropertyValue(outputVarControl, "__Value", DefaultObject);
+				if (outputVarWin != null) Script.SetPropertyValue(outputVarWin, "__Value", "");
+				if (outputVarControl != null) Script.SetPropertyValue(outputVarControl, "__Value", "");
 				return DefaultObject;
 			}
 
@@ -321,7 +321,7 @@ namespace Keysharp.Builtins
 
 			if (child.Handle == parent.Handle)//If there's no control per se, make it blank.
 			{
-				if (outputVarControl != null) Script.SetPropertyValue(outputVarControl, "__Value", DefaultObject);
+				if (outputVarControl != null) Script.SetPropertyValue(outputVarControl, "__Value", "");
 				return DefaultObject;
 			}
 

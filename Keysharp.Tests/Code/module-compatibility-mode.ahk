@@ -251,22 +251,22 @@ FileAppend "pass", "*"
 
 #Module Compat21
 #Requires AutoHotkey v2.1-alpha
-export NoReturn21() {
+NoReturn21() {
 }
-export EmptyReturn21() {
+EmptyReturn21() {
 	return
 }
-export ReturnNoReturn21() {
+ReturnNoReturn21() {
 	return NoReturn21()
 }
-export ReturnMaybeNoReturn21() {
+ReturnMaybeNoReturn21() {
 	return NoReturn21()?
 }
-export PropertyNoReturn21() {
+PropertyNoReturn21() {
 	c := Getter21()
 	return c.Prop
 }
-export PropertyMaybeNoReturn21() {
+PropertyMaybeNoReturn21() {
 	c := GetterMaybe21()
 	return (c.Prop?)
 }
@@ -276,22 +276,22 @@ class Getter21 {
 class GetterMaybe21 {
 	Prop => (NoReturn21()?)
 }
-export NestedDefault20() {
+NestedDefault20() {
 	#Requires AutoHotkey v2.0
 	Inner() {
 	}
 	return Inner()
 }
-export RuntimeDefault20() {
+RuntimeDefault20() {
 	#Requires AutoHotkey v2.0
 	return A_HotIf
 }
-export NestedDefault21() {
+NestedDefault21() {
 	Inner() {
 	}
 	return Inner()
 }
-export NestedRestore21() {
+NestedRestore21() {
 	#Requires AutoHotkey v2.1-alpha
 	Middle() {
 		#Requires AutoHotkey v2.0
@@ -308,11 +308,11 @@ export NestedRestore21() {
 #Module Compat20
 #Requires AutoHotkey v2.1-alpha
 #Requires AutoHotkey v2.0
-export NoReturn20() {
+NoReturn20() {
 }
 
 #Module InheritMain
-export NoReturnInherited() {
+NoReturnInherited() {
 }
 
 #Module ClassMode
@@ -322,7 +322,7 @@ class CompatClass {
 	NoReturn() {
 	}
 }
-export ClassNoReturn() {
+ClassNoReturn() {
 	c := CompatClass()
 	return c.NoReturn()
 }

@@ -42,7 +42,7 @@ FnModuleObject() {
 }
 AssertEq(FnModuleObject(), 1, A_LineNumber)
 
-; ---- 2. Function-scoped file import: a separate module's export, bound only inside the function
+; ---- 2. Function-scoped file import: a separate module member, bound only inside the function
 FnFile() {
     #import "module_scoped_import_helper" { HelperFn }
     return HelperFn()

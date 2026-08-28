@@ -328,7 +328,6 @@ namespace Keysharp.Parsing.Syntax
 			if (AtKeyword("continue")) { Advance(); return new ContinueStmt(ParseLoopJumpTarget()); }
 			if (AtKeyword("goto")) return ParseGoto();
 			if (AtKeyword("return")) return ParseReturn();
-			if (AtKeyword("export") && Peek(1).Kind == TokenKind.Identifier) return ParseExport();
 			if (AtKeyword("local") || AtKeyword("global") || AtKeyword("static")) return ParseDecl();
 			if (AtKeyword("class") && Peek(1).Kind == TokenKind.Identifier) return ParseClass();
 			if (AtKeyword("struct") && Peek(1).Kind == TokenKind.Identifier) return ParseClass(isStruct: true);
@@ -793,9 +792,21 @@ namespace Keysharp.Parsing.Syntax
 		{
 			int i = 0;
 			string module = "", alias = null, named = null;
-			bool quoted = false;
+			bool quoted = false, reExport = false;
 			if (toks.Count == 0)
-				return new ImportDirective(args, module, alias, named, quoted);   // nameless `#import` — a no-op for the lowerer
+				return new ImportDirective(args, module, alias, named, quoted, reExport);   // nameless `#import` — a no-op for the lowerer
+			// Preserve imports from a module literally named Export. The word is a modifier only when another module
+			// specifier follows it, rather than `{` or `as`.
+			if (toks.Count > 1 && toks[0].Kind == TokenKind.Identifier
+				&& toks[0].Text.Equals("Export", System.StringComparison.OrdinalIgnoreCase)
+				&& toks[1].LeadingWhitespace
+				&& toks[1].Kind != TokenKind.LBrace
+				&& !(toks[1].Kind == TokenKind.Identifier
+					&& toks[1].Text.Equals("as", System.StringComparison.OrdinalIgnoreCase)))
+			{
+				reExport = true;
+				i++;
+			}
 			if (toks[i].Kind == TokenKind.String) { quoted = true; module = Unquote(toks[i++].Text); }
 			else if (toks[i].Kind == TokenKind.Identifier)
 			{
@@ -833,7 +844,7 @@ namespace Keysharp.Parsing.Syntax
 			}
 			if (i < toks.Count)
 				ErrorAt(toks[i], $"unexpected '{toks[i].Text}' after #import — a directive must be alone on its line");
-			return new ImportDirective(args, module, alias, named, quoted);
+			return new ImportDirective(args, module, alias, named, quoted, reExport);
 		}
 
 		// Strips a matching pair of surrounding quotes (' or ") from a string-token's text.
@@ -853,15 +864,6 @@ namespace Keysharp.Parsing.Syntax
 				or "SINGLEINSTANCE" or "STRUCTPACK" or "PERSISTENT" => 1,
 			_ => -1,
 		};
-
-		// export [default] <function | class | variable-assignment> — marks a module export.
-		private Stmt ParseExport()
-		{
-			Advance();   // 'export'
-			bool isDefault = AtKeyword("default");
-			if (isDefault) Advance();
-			return new ExportStmt(isDefault, ParseStatement());
-		}
 
 		// hotkey : HotkeyTrigger (EOL HotkeyTrigger)* s* (functionDeclaration | statement)
 		// Stacked trigger-only lines share the single following body (block, statement, or named function).

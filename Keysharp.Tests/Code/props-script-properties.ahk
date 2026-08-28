@@ -82,7 +82,7 @@ AssertEq(A_IsUnicode, true, A_LineNumber)
 Assert(A_KeysharpPath = A_AhkPath && (A_NewLine = "`n" || A_NewLine = "`r`n"), A_LineNumber)
 
 ; The AutoHotkey version Keysharp implements.
-Assert(A_AhkVersion = "2.1-alpha.30", A_LineNumber)
+Assert(A_AhkVersion = "2.1-alpha.31", A_LineNumber)
 
 Assert(!IsSet(A_E) && !IsSet(A_IPAddress) && !IsSet(A_PeekFrequency) && !IsSet(A_PI) && !IsSet(A_TempFile)
 	&& !IsSet(A_ThisMenu) && !IsSet(A_ThisMenuItem) && !IsSet(A_ThisMenuItemPos), A_LineNumber)

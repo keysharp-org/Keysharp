@@ -305,8 +305,8 @@ namespace Keysharp.Builtins
 					return 1L;
 				}
 
-				if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", 0L);
-				if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", 0L);
+				if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", "");
+				if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", "");
 				return 0L;
 			}
 			catch (KeysharpException)

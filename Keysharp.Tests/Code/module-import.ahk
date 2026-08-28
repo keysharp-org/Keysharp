@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 
 ; =========================
 ; module-import.ahk
@@ -65,7 +67,7 @@ obj := {
 v := ObjectHello()
 AssertEq(v, "Hello", A_LineNumber)
 
-; ---- non-exported members should still be importable, but must be explicitly imported (not via wildcard)
+; ---- Direct module globals are implicitly exported and can be imported explicitly or by wildcard.
 
 #import "Mixed" {
     hiddenFn as h1,
@@ -95,25 +97,25 @@ Assert(cb == 7 && fgt == "dark", A_LineNumber)
 FileAppend "pass", "*"
 
 #Module X
-export Calculate() => 2
+Calculate() => 2
 
 #Module Y
-export Calculate() => 3
-export Check(n) => (n = Calculate())
+Calculate() => 3
+Check(n) => (n = Calculate())
 
 #Module A
-export Foo() => "A"
-export Bar() => "A"
+Foo() => "A"
+Bar() => "A"
 
 #Module B
-export Foo() => "B"
-export Bar() => "B"
+Foo() => "B"
+Bar() => "B"
 
 #Module Test
-export Hello() => "Hello"
+Hello() => "Hello"
 
 #Module Mixed
-export pubFn() => "pub"
+pubFn() => "pub"
 hiddenFn() => "hidden"
 hiddenVar := 42
 

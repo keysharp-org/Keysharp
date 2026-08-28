@@ -33,7 +33,7 @@ Status legend:
 | #HotIfTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #HotIfTimeout directive sets the maximum time that may be spent evaluating a single #HotIf expression. |
 | #Hotstring | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Hotstring directive changes hotstring options or ending characters. |
 | #If | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Begins a conditional compilation block. |
-| #Import | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Imports exported names from another module/script file. Keysharp extension: an #import inside a function/method/property body or a class body binds the imported names lexically to that scope (in AutoHotkey v2.1 it binds module-wide); control-flow-nested and top-level imports match AutoHotkey and bind at module scope. Module loading and execution order stay eager regardless of nesting. |
+| #Import | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Imports a module object and/or names from another module or script file. Module globals are implicitly available for wildcard import; imported aliases are re-exported only with #Import Export. Wildcards exclude names beginning with underscore, while explicit imports may name them. Bare unquoted imports and `as` aliases bind the module object; there are no default exports. Keysharp extension: an #Import inside a function, method, property or class body binds names lexically to that scope (AutoHotkey binds them module-wide); module loading and execution order remain eager. |
 | #Include | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Include and #IncludeAgain directives cause the script to behave as though the specified file's contents are present at this exact position. Path separators are platform-independent: a backslash in an #Include, #Import or #CSharp path separates directories on Linux and macOS too, so `#Include Lib\Thing.ahk` resolves everywhere. |
 | #IncludeAgain | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Include and #IncludeAgain directives cause the script to behave as though the specified file's contents are present at this exact position. Path separators are platform-independent: a backslash in an #Include, #Import or #CSharp path separates directories on Linux and macOS too, so `#Include Lib\Thing.ahk` resolves everywhere. |
 | #InputLevel | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #InputLevel directive controls which artificial keyboard and mouse events are ignored by hotkeys and hotstrings. |
@@ -363,7 +363,7 @@ Status legend:
 | Buffer.ToHex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns Buffer contents as a hexadecimal string. |
 | CallbackCreate() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. |
 | CallbackFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases a callback created by CallbackCreate on every platform. |
-| CaretGetPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the caret position. Linux uses native GTK geometry for script-owned controls and AT-SPI for foreign applications, normalizing Wayland-local coordinates through compositor window geometry when needed. macOS uses the Accessibility API and requires Accessibility permission. |
+| CaretGetPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the caret position. If no caret position is available, it returns false and sets both output variables to blank. Linux uses native GTK geometry for script-owned controls and AT-SPI for foreign applications, normalizing Wayland-local coordinates through compositor window geometry when needed. macOS uses the Accessibility API and requires Accessibility permission. |
 | Case | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Case branch label used by switch. |
 | Catch | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Handles an exception thrown by try/throw. |
 | Ceil() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the ceiling value of a number, rounding away from zero for positive numbers, and toward zero for negative numbers. |
@@ -510,7 +510,6 @@ Status legend:
 | Exit | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Exits the current pseudo-thread immediately. Terminating a different pseudo-thread is Thread.Exit(ExitCode?) on a Thread object, reached through KS.A_Thread.Underlying or KS.A_RealThread.Threads[i] (1-based, oldest first). An underlying target exits at its next cooperative event/message check; later requests overwrite its pending exit code. |
 | ExitApp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ExitApp function terminates the script. |
 | Exp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes e raised to the nth power. |
-| Export | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | An Export declaration marks a function, class or variable for wildcard import, and optionally marks it as the default export. |
 | extends | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keyword used to derive a class from a base class. |
 | False | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Boolean false constant. |
 | File | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | File object type. |
@@ -525,7 +524,7 @@ Status legend:
 | FileExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for the existence of a file or folder and returns its attributes. |
 | FileFullPath() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns absolute normalized full path. |
 | FileGetAttrib() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reports whether a file or folder is read-only, hidden, etc. |
-| FileGetShortcut() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Windows reads .lnk metadata. Linux and macOS read symbolic links or freedesktop .desktop launchers; Windows-only icon-number and run-state metadata is unavailable, and argument extraction from .desktop Exec fields is approximate. |
+| FileGetShortcut() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Windows reads .lnk metadata and reports a blank icon number when the shortcut has no icon location. Linux and macOS read symbolic links or freedesktop .desktop launchers; Windows-only icon-number and run-state metadata is unavailable, and argument extraction from .desktop Exec fields is approximate. |
 | FileGetSize() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the size of a file. Also allows for passing "t" to return the size in terms of terrabytes. |
 | FileGetTime() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the datetime stamp of a file or folder. |
 | FileGetVersion() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Retrieves the version of a file. Version metadata availability differs by platform file formats. |
@@ -816,7 +815,7 @@ Status legend:
 | MonitorGetWorkArea() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the selected monitor index and writes its native screen-coordinate work area to the supplied output variables. An out-of-range monitor index raises a ValueError, matching AutoHotkey v2. |
 | MouseClick() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The MouseClick function clicks or holds down a mouse button, or turns the mouse wheel. |
 | MouseClickDrag() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The MouseClickDrag function clicks and holds the specified mouse button, moves the mouse to the destination coordinates, then releases the button. |
-| MouseGetPos() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The MouseGetPos function retrieves the current position of the mouse cursor, and optionally which window and control it is hovering over. |
+| MouseGetPos() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Retrieves the current mouse position and, optionally, the window and control beneath it. A requested window or control output is blank when there is no corresponding target. |
 | MouseMove() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The MouseMove function moves the mouse cursor. |
 | MsgBox() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Displays the specified text in a small window containing one or more buttons. Option values 6, 768, 4096, 8192, 262144 and 16384 are not supported on any platform (there is no help button), and when a timeout or an owner window is used the text is right justified. On Linux and macOS the toolkit offers only the OK, OK/Cancel, Yes/No and Yes/No/Cancel button sets, so button options 2 (Abort/Retry/Ignore), 5 (Retry/Cancel) and 6 (Cancel/Try Again/Continue) are unavailable there and fall back to OK. The four icon options behave the same everywhere. |
 | Named parameters | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Binds an argument to the callee's parameter of that name instead of by position; must trail the positional arguments. Works for script functions, built-ins, methods, constructors (built-in classes included: Buffer(ByteCount: 16), Error(Message: msg)), bound functions, COM objects (via IDispatch DISPIDs) and Clr calls (where they also drive overload selection). Not available in '[]' (that is the map literal), and not for the receiver. A call's named arguments travel as one first-class value (Ks.NamedArgs, a case-insensitive Map whose keys are the names; the last argument slot is reserved for it): any variadic parameter collects the ones it does not declare as an ordinary trailing element and a variadic call re-emits it, so a wrapper forwards names without knowing they exist, and NamedArgs(name, value) — imported from the Ks module — makes a named call dynamically; a variadic that consumes its tail as values (Format, Push, Max) receives it as data. See #Warn NamedArg. |
@@ -862,7 +861,7 @@ Status legend:
 | Pause() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Pause function pauses the script's current thread or sets the pause state of the underlying thread. |
 | Persistent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Persistent function prevents the script from exiting automatically when its last thread completes, allowing it to stay running in an idle state. |
 | PixelGetColor() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Returns the pixel value at the specified coordinate as a hexadecimal string like 0x010203. Differs because the mode parameter is not supported because it is not needed. |
-| PixelSearch() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Searches a region of the screen for a pixel of the specified color. Differs in that instead of writing to ref arguments, it returns a structure whose fields are what the original input parameter names would have been. |
+| PixelSearch() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Searches a region of the screen for a pixel of the specified color. On no match it returns false and sets both output variables to blank. |
 | PostMessage() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The PostMessage function places a message in the message queue of a window or control. |
 | ProcessClose() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Forces the first matching process to close. |
 | ProcessExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks if the specified process exists. |
@@ -906,7 +905,7 @@ Status legend:
 | Return | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns from a function/subroutine, optionally with a value. |
 | Round() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes a number rounded to either the nearest integer, a specified number of decimal places, or a specified number of digits. |
 | RTrim() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Trims characters from the beginning of a string. |
-| Run() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Run and RunWait functions run an external program. RunWait will wait until the program finishes before continuing. |
+| Run() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Run and RunWait launch an external program; RunWait waits for it to finish. A successful call which has no process identifier sets a requested PID output to blank. |
 | RunAs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Specifies a set of user credentials to use for all subsequent uses of Run and RunWait. |
 | RunScript() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Executes script source text/file in a script engine context. Requires the optional compiler component at runtime; compiled artifacts detect this call and include the component unless it is explicitly excluded. |
 | RunWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Run and RunWait functions run an external program. RunWait will wait until the program finishes before continuing. |

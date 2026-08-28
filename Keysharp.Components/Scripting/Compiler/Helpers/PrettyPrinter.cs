@@ -270,7 +270,8 @@ namespace Keysharp.Compilation
 		static bool NeedsPropertyFieldSpacer(MemberDeclarationSyntax current, MemberDeclarationSyntax next) =>
 			current is PropertyDeclarationSyntax && next is not PropertyDeclarationSyntax;
 
-		static bool NeedsPropertySpacer(MemberDeclarationSyntax current, MemberDeclarationSyntax next) => false;
+		static bool NeedsPropertySpacer(MemberDeclarationSyntax current, MemberDeclarationSyntax next) =>
+			current is PropertyDeclarationSyntax && next is PropertyDeclarationSyntax && next.AttributeLists.Count > 0;
 
 		public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
 		{

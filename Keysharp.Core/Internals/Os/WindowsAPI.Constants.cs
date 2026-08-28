@@ -552,6 +552,8 @@ namespace Keysharp.Internals.Os.Windows
 
 		internal const int NM_FIRST = 0;
 		internal const int NM_CLICK = NM_FIRST - 2;
+		internal const int NM_RCLICK = NM_FIRST - 5;
+		internal const int NM_RDBLCLK = NM_FIRST - 6;
 		internal const int WM_REFLECT = 0x2000;
 		internal const int WM_NOTIFY = 0x004e;
 

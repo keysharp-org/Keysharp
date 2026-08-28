@@ -703,15 +703,14 @@ namespace Keysharp.Builtins
 				if (outIcon != null || outIconNum != null)
 				{
 					shellLink.GetIconLocation(sb, sb.Capacity, out int icon_index);
+					var iconstr = sb.ToString();
 					if (outIcon != null)
-					{
-						string iconstr = sb.ToString();
 						Script.SetPropertyValue(outIcon, "__Value", iconstr);
-					}
 					if (outIconNum != null)
 					{
-						icon_index += (icon_index >> 31) ^ 1; // Convert from 0-based to 1-based for consistency with the Menu command, etc. but leave negative resource IDs as-is.
-						Script.SetPropertyValue(outIconNum, "__Value", icon_index);
+						if (iconstr.Length > 0)
+							icon_index += (icon_index >> 31) ^ 1; // Convert from 0-based to 1-based for consistency with the Menu command, etc. but leave negative resource IDs as-is.
+						Script.SetPropertyValue(outIconNum, "__Value", iconstr.Length > 0 ? icon_index : "");
 					}
 				}
 				if (outRunState != null)

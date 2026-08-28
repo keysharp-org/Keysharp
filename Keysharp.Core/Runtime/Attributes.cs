@@ -94,8 +94,6 @@ namespace Keysharp.Runtime
 	[AttributeUsage(AttributeTargets.Field | AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Class, Inherited = false)]
 	public sealed class Export : Attribute
 	{
-		public bool Default { get; set; }
-
 		public Export()
 		{ }
 	}

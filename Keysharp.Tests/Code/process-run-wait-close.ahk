@@ -1,6 +1,10 @@
 #NoTrayIcon
 #Include <assert>
 
+pid := 123
+AssertEq(Run("", "", "", &pid), 1, A_LineNumber)
+AssertEq(pid, "", A_LineNumber)
+
 #if WINDOWS
 	pid := 0
 	Run("cmd.exe", "", "max", &pid)

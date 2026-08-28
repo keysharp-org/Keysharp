@@ -253,8 +253,15 @@ namespace Keysharp.Builtins.COM
 				if (CLSIDFromString(sidstr, out var sidGuid) >= 0 && CLSIDFromString(iidstr, out id) >= 0)
 				{
 					// Query for a service: use IServiceProvider::QueryService.
-					IServiceProvider sp = (IServiceProvider)Marshal.GetObjectForIUnknown(ptr);
-					hr = sp.QueryService(ref sidGuid, ref id, out resultPtr);
+					var sp = (IServiceProvider)Marshal.GetObjectForIUnknown(ptr);
+					try
+					{
+						hr = sp.QueryService(ref sidGuid, ref id, out resultPtr);
+					}
+					finally
+					{
+						_ = Marshal.ReleaseComObject(sp);
+					}
 				}
 			}
 			else if (sid != null)

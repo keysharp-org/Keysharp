@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 
 ; =========================
 ; module-basic.ahk
@@ -8,6 +10,7 @@
 #import Other
 #import Other as O
 #import AHK
+#import "AHK" { * }
 #Include <assert>
 
 ; Our own global var + function in __Main
@@ -22,17 +25,12 @@ AssertEq(a, 1, A_LineNumber)
 a := Other.ShowVar()
 AssertEq(a, 2, A_LineNumber)
 
-; ---- Test: alias refers to default export (module object)
+; ---- Test: alias refers to the module object
 a := O.ShowVar()
 AssertEq(a, 2, A_LineNumber)
 
-; ---- Test: non-exported module global var should be inaccessible (per docs example)
-a := ""
-try a := Other.MyVar
-catch
-    a := "inaccessible"
-
-AssertEq(a, "inaccessible", A_LineNumber)
+; ---- Every global declared directly by a module is visible through its module object.
+AssertEq(Other.MyVar, 2, A_LineNumber)
 
 ; ---- Test: shadow built-in function; access built-in via AHK module
 Abs(x) => "mine"
@@ -43,9 +41,18 @@ AssertEq(a, "mine", A_LineNumber)
 a := AHK.Abs(-5)
 AssertEq(a, 5, A_LineNumber)
 
+; ---- a custom AHK module can import from the script graph and override a built-in
+AssertEq(FromAhk(), 2, A_LineNumber)
+AssertEq(Ceil(0.2), "custom", A_LineNumber)
+
 
 FileAppend "pass", "*"
 
 #Module Other
 MyVar := 2
-export ShowVar() => MyVar
+ShowVar() => MyVar
+
+#Module AHK
+#Import "Other" { ShowVar as OtherShow }
+FromAhk() => OtherShow()
+Ceil(*) => "custom"

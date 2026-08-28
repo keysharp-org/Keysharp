@@ -327,8 +327,9 @@ namespace Keysharp.Parsing.Syntax
 		public readonly string Alias;
 		public readonly string Named;
 		public readonly bool Quoted;
-		public ImportDirective(string args, string module, string alias, string named, bool quoted)
-			: base("import", args) { Module = module; Alias = alias; Named = named; Quoted = quoted; }
+		public readonly bool ReExport;
+		public ImportDirective(string args, string module, string alias, string named, bool quoted, bool reExport)
+			: base("import", args) { Module = module; Alias = alias; Named = named; Quoted = quoted; ReExport = reExport; }
 	}
 
 	internal sealed class CSharpDirective : DirectiveStmt
@@ -358,14 +359,6 @@ namespace Keysharp.Parsing.Syntax
 		public readonly string Keyword;   // local / global / static
 		public readonly List<Expr> Items;
 		public DeclStmt(string keyword, List<Expr> items) { Keyword = keyword; Items = items; }
-	}
-
-	// `export <decl>` / `export default <decl>` — marks a function/class/variable declaration as a module export.
-	internal sealed class ExportStmt : Stmt
-	{
-		public readonly bool Default;
-		public readonly Stmt Decl;        // FunctionDecl, ClassDecl, or an ExpressionStmt assignment / DeclStmt
-		public ExportStmt(bool isDefault, Stmt decl) { Default = isDefault; Decl = decl; }
 	}
 
 	// One or more stacked hotkey triggers (each raw text ends with `::`) sharing one body: a block, a single
@@ -616,7 +609,6 @@ namespace Keysharp.Parsing.Syntax
 					sb.Append(')');
 					break;
 				case RemapDef rm: sb.Append("(remap ").Append(rm.Source).Append("::").Append(rm.Target).Append(')'); break;
-				case ExportStmt ex: sb.Append(ex.Default ? "(export-default " : "(export "); Write(sb, ex.Decl); sb.Append(')'); break;
 				case HotstringDef hs:
 					sb.Append("(hotstring ").Append(string.Join(",", hs.Triggers));
 					if (hs.Expansion != null) sb.Append(" => \"").Append(hs.Expansion).Append('"');

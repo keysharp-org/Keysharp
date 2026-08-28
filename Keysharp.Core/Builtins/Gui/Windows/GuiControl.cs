@@ -1490,18 +1490,37 @@ namespace Keysharp.Builtins
 				if (InvokeWindowMessageHandlers(ref m))
 					return true;
 
-				if (m.Msg == WindowsAPI.WM_NOTIFY || m.Msg == WindowsAPI.WM_REFLECT + WindowsAPI.WM_NOTIFY)
+				if ((m.Msg == WindowsAPI.WM_NOTIFY || m.Msg == WindowsAPI.WM_REFLECT + WindowsAPI.WM_NOTIFY)
+					&& m.LParam != 0)
 				{
-					if (notifyHandlers != null)
-					{
-						var nmhdr = (NMHDR)Marshal.PtrToStructure(m.LParam, typeof(NMHDR));
+					var nmhdr = (NMHDR)Marshal.PtrToStructure(m.LParam, typeof(NMHDR));
+					var notification = unchecked((int)nmhdr.code);
 
-						if (notifyHandlers.TryGetValue((int)nmhdr.code, out var handler))
+					if (notifyHandlers != null && notifyHandlers.TryGetValue(notification, out var handler))
+					{
+						var ret = handler?.InvokeWindowMessageHandlers(this, m.LParam.ToInt64());
+
+						if (CallbackStop.NonEmpty(ret))
 						{
-							var ret = handler?.InvokeEventHandlers(this, m.LParam.ToInt64());
 							m.Result = (nint)ret.Al();
 							return true;
 						}
+					}
+
+					if (_control is KeysharpListView && nmhdr.idFrom == 0 && nmhdr.hwndFrom != _control.Handle
+						&& notification is WindowsAPI.NM_RCLICK or WindowsAPI.NM_RDBLCLK)
+					{
+						if (GetCursorPos(out POINT cursor) && _control.FindForm() is KeysharpForm form)
+						{
+							var formPoint = form.PointToClient(new(cursor.X, cursor.Y));
+							var result = CallContextMenuChangeHandlers(true, formPoint.X, formPoint.Y, 0L);
+
+							if (!CallbackStop.NonEmpty(result) && !form.IsDisposed)
+								form.CallContextMenuChangeHandlers(true, formPoint.X, formPoint.Y, _control, 0L);
+						}
+
+						m.Result = 1;
+						return true;
 					}
 				}
 				else if (m.Msg == WindowsAPI.WM_COMMAND)

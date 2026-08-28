@@ -541,7 +541,10 @@ namespace Keysharp.Builtins
 			var useRunAs = RunAsSpecified();
 
 			if (string.IsNullOrEmpty(target))//AHK returns 1 as a success for an empty run target.
+			{
+				if (outputVarPID != null) Script.SetPropertyValue(outputVarPID, "__Value", "");
 				return 1L;
+			}
 
 			if (!string.IsNullOrEmpty(workingDir))
 			{
@@ -755,7 +758,7 @@ namespace Keysharp.Builtins
 				return (long)Errors.ErrorOccurred(ex.Message, DefaultErrorLong);
 			}
 
-            if (outputVarPID != null) Script.SetPropertyValue(outputVarPID, "__Value", pid);
+			if (outputVarPID != null) Script.SetPropertyValue(outputVarPID, "__Value", pid != 0 ? pid : "");
             return 0L;
 		}
 	}

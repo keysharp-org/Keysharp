@@ -6,8 +6,8 @@
 ; Execution order + exports callable before module body executes
 ; =========================
 
-; Export MainReady so other modules can access it via __Main module object.
-export MainReady := 1
+; MainReady is implicitly visible to other modules through the __Main module object.
+MainReady := 1
 
 #import Z
 #import Late as LateMod
@@ -23,7 +23,7 @@ AssertEq(a, "W executed", A_LineNumber)
 a := LateMod.GetLateBodyRan()
 AssertEq(a, "", A_LineNumber)  ; expecting unset/blank before Late executes
 
-; Exported function should be callable pre-exec and can see __Main export.
+; A module function should be callable pre-exec and can see __Main's globals.
 a := LateMod.GetMainReady()
 AssertEq(a, 1, A_LineNumber)
 
@@ -32,15 +32,15 @@ FileAppend "pass", "*"
 
 #Module W
 WState := "W executed"
-export GetWState() => WState
+GetWState() => WState
 
 #Module Z
 #import W
 Observed := W.GetWState()
-export ObservedW() => Observed
+ObservedW() => Observed
 
 #Module Late
 #import __Main as Main
-export GetMainReady() => Main.MainReady
-export GetLateBodyRan() => (IsSet(LateBodyRan) ? LateBodyRan : "")
+GetMainReady() => Main.MainReady
+GetLateBodyRan() => (IsSet(LateBodyRan) ? LateBodyRan : "")
 LateBodyRan := 1

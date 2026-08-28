@@ -329,20 +329,23 @@ namespace Keysharp.Builtins
 				| (escapeHandlers?.RemoveOwned(scheduler) == true)
 				| (sizeHandlers?.RemoveOwned(scheduler) == true);
 
-        internal void CallContextMenuChangeHandlers(bool wasRightClick, int x, int y)
+		internal void CallContextMenuChangeHandlers(bool wasRightClick, int x, int y, Control controlOverride = null,
+			long? itemOverride = null)
 		{
 			if (Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
 			{
-				var control = this.ActiveControl;
+				var control = controlOverride ?? ActiveControl;
 
 				if (control is ListBox lb)
-					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(g, control, lb.SelectedIndex + 1L, wasRightClick, (long)x, (long)y));
+					_ = (contextMenuChangedHandlers?.InvokeWindowMessageHandlers(g, control, lb.SelectedIndex + 1L, wasRightClick, (long)x, (long)y));
 				else if (control is KeysharpListView lv)
-					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(g, control, lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L, wasRightClick, (long)x, (long)y));
+					_ = (contextMenuChangedHandlers?.InvokeWindowMessageHandlers(g, control,
+						itemOverride ?? (lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L),
+						wasRightClick, (long)x, (long)y));
 				else if (control is KeysharpTreeView tv)
-					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(g, control, tv.SelectedNode.Handle, wasRightClick, (long)x, (long)y));
+					_ = (contextMenuChangedHandlers?.InvokeWindowMessageHandlers(g, control, tv.SelectedNode.Handle, wasRightClick, (long)x, (long)y));
 				else
-					_ = (contextMenuChangedHandlers?.InvokeEventHandlers(g, control, control != null ? control.Handle.ToInt64().ToString() : "", wasRightClick, (long)x, (long)y));//Unsure what to pass for Item, so just pass handle.
+					_ = (contextMenuChangedHandlers?.InvokeWindowMessageHandlers(g, control, control != null ? control.Handle.ToInt64().ToString() : "", wasRightClick, (long)x, (long)y));//Unsure what to pass for Item, so just pass handle.
 			}
 		}
 
