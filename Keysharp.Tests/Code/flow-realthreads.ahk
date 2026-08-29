@@ -68,7 +68,7 @@ Loop 100
 Loop 100
 {
 	; Wait reports completion; the body's value is read from Result.
-	Assert(!(!tharr[A_Index].Wait()), A_LineNumber)
+	Assert(tharr[A_Index].Wait(), A_LineNumber)
 
 	tot += tharr[A_Index].Result
 }
@@ -91,7 +91,7 @@ Assert(!slowWorker.IsActive && slowWorker.IsSuccessful && !slowWorker.IsFailed &
 suppressExpected := (args*) => -1
 OnError(suppressExpected)
 failedWorker := RealThread(() => Throw(Error("expected worker failure")))
-failedWorker.Wait()
+Assert(failedWorker.Wait(), A_LineNumber)
 OnError(suppressExpected, 0)
 Assert(!failedWorker.IsActive && !failedWorker.IsSuccessful && failedWorker.IsFailed && !failedWorker.IsCanceled, A_LineNumber)
 

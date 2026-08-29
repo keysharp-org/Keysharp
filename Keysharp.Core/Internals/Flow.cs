@@ -458,7 +458,7 @@ namespace Keysharp.Internals
 		/// <param name="task">The task to wait for.</param>
 		/// <param name="timeoutMs">Milliseconds to wait, or negative to wait indefinitely.</param>
 		/// <returns>True if the task finished, false if the timeout elapsed first.</returns>
-		internal static bool WaitForTask(Task task, int timeoutMs)
+		internal static bool WaitForCompletion(Task task, int timeoutMs)
 		{
 			if (task == null)
 				return true;

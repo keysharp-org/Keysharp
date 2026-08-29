@@ -285,7 +285,7 @@ namespace Keysharp.Builtins
 			/// Waits for this thread to finish, pumping events while it waits.
 			/// </summary>
 			/// <param name="Timeout">The time to wait in milliseconds. Default: wait indefinitely.</param>
-			/// <returns>True if the thread finished, false if the timeout elapsed first. Read
+			/// <returns>True if the thread finished before the timeout; false if the timeout elapsed first. Read
 			/// <see cref="Result"/> for the value the body returned.</returns>
 			public object Wait(object Timeout = null)
 			{
@@ -295,7 +295,7 @@ namespace Keysharp.Builtins
 				if (OwnsCurrentThread())
 					return Errors.TargetErrorOccurred("A real thread cannot wait on itself.", false);
 
-				return Keysharp.Internals.Flow.WaitForTask(Task, Timeout.Ai(-1));
+				return Keysharp.Internals.Flow.WaitForCompletion(Task, Timeout.Ai(-1));
 			}
 
 			/// <summary>

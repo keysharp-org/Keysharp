@@ -93,7 +93,7 @@ Assert(slow.ToClr().IsCompleted, A_LineNumber)
 
 ; --- a faulted task observed through its state/Error does not throw ----------------------------
 bad := Boom()
-Assert(bad.Wait(5000), A_LineNumber)                    ; it settles, and Wait does not rethrow
+Assert(bad.Wait(5000), A_LineNumber)                    ; failure is terminal, and Wait does not rethrow
 Assert(bad.IsFailed, A_LineNumber)
 Assert(bad.Error is Error, A_LineNumber)                ; an Error object, the same one Await would have thrown
 Assert(InStr(bad.Error.Message, "boom") > 0, A_LineNumber)
