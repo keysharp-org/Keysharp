@@ -82,7 +82,7 @@ namespace Keysharp.Builtins
 	/// Map class that wraps a <see cref="Dictionary{object, object}"/> which is sorted before enumeration
 	/// using MapComparer to keep compatibility with AutoHotkey.
 	/// </summary>
-	public class Map : KeysharpObject, I__Enum, IEnumerable<(object, object)>, ICollection
+	public class Map : KeysharpObject, I__Enum, IEnumerable<(object, object)>, ICollection, IDictionary<object, object>
 	{
         /// <summary>
         /// The underlying <see cref="Dictionary"/> that holds the values.
@@ -265,6 +265,12 @@ namespace Keysharp.Builtins
 			clone.enumerableMap = null;
 			return clone;
 		}
+
+		/// <summary>
+		/// This map as an ordinary <c>Ks.Clr</c> object, so its full CLR surface — including
+		/// <see cref="IDictionary{TKey, TValue}"/> — is reachable late-bound.
+		/// </summary>
+		public object ToClr() => ManagedInvoke.WrapManaged(this);
 
 		/// <summary>
 		/// Clears all elements from the map.
@@ -539,6 +545,13 @@ namespace Keysharp.Builtins
 		IEnumerator IEnumerable.GetEnumerator() => CreateEnumerator(2);
 
 		/// <summary>
+		/// Pattern-based enumerator, so a C# <c>foreach</c> keeps its tuple semantics now that the class
+		/// implements two <c>IEnumerable&lt;T&gt;</c> instantiations.
+		/// </summary>
+		[PublicHiddenFromUser]
+		public IEnumerator<(object, object)> GetEnumerator() => CreateEnumerator(2);
+
+		/// <summary>
 		/// Internal helper to insert a key,value pair into the map.
 		/// </summary>
 		/// <param name="key">The key to insert.</param>
@@ -638,6 +651,90 @@ namespace Keysharp.Builtins
 				Insert(key, value);
 			}
 		}
+
+		#region IDictionary<object, object>
+
+		//Plain .NET dictionary semantics for CLR consumers, which is what lets a Map be handed to a .NET API
+		//directly. The script-facing indexer keeps its own semantics (Default fallback, assigning null removes).
+		object IDictionary<object, object>.this[object key]
+		{
+			get => map[key];
+
+			set
+			{
+				if (enumerableMap != null)
+					enumerableMap = null;
+
+				map[key] = value;
+			}
+		}
+
+		ICollection<object> IDictionary<object, object>.Keys => map.Keys;
+
+		ICollection<object> IDictionary<object, object>.Values => map.Values;
+
+		void IDictionary<object, object>.Add(object key, object value)
+		{
+			if (enumerableMap != null)
+				enumerableMap = null;
+
+			map.Add(key, value);
+		}
+
+		bool IDictionary<object, object>.ContainsKey(object key) => map.ContainsKey(key);
+
+		bool IDictionary<object, object>.Remove(object key)
+		{
+			if (!map.Remove(key))
+				return false;
+
+			if (enumerableMap != null)
+				enumerableMap = null;
+
+			return true;
+		}
+
+		bool IDictionary<object, object>.TryGetValue(object key, out object value) => map.TryGetValue(key, out value);
+
+		int ICollection<KeyValuePair<object, object>>.Count => (int)Count;
+
+		bool ICollection<KeyValuePair<object, object>>.IsReadOnly => false;
+
+		void ICollection<KeyValuePair<object, object>>.Add(KeyValuePair<object, object> item)
+		{
+			if (enumerableMap != null)
+				enumerableMap = null;
+
+			map.Add(item.Key, item.Value);
+		}
+
+		void ICollection<KeyValuePair<object, object>>.Clear() => _ = Clear();
+
+		bool ICollection<KeyValuePair<object, object>>.Contains(KeyValuePair<object, object> item) =>
+			((ICollection<KeyValuePair<object, object>>)map).Contains(item);
+
+		//Enumeration through the CLR interfaces uses the same AHK-sorted order the script enumerator uses,
+		//so the two views of one map can never disagree about order.
+		void ICollection<KeyValuePair<object, object>>.CopyTo(KeyValuePair<object, object>[] array, int arrayIndex)
+		{
+			foreach (var kv in EnumerableMap)
+				array[arrayIndex++] = kv;
+		}
+
+		bool ICollection<KeyValuePair<object, object>>.Remove(KeyValuePair<object, object> item)
+		{
+			if (!((ICollection<KeyValuePair<object, object>>)map).Remove(item))
+				return false;
+
+			if (enumerableMap != null)
+				enumerableMap = null;
+
+			return true;
+		}
+
+		IEnumerator<KeyValuePair<object, object>> IEnumerable<KeyValuePair<object, object>>.GetEnumerator() => EnumerableMap.GetEnumerator();
+
+		#endregion
 	}
 
 	/// <summary>

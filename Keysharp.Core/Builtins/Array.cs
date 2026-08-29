@@ -151,6 +151,12 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	}
 
 	/// <summary>
+	/// This array as an ordinary <c>Ks.Clr</c> object, so its full CLR surface — including
+	/// <see cref="IList"/> — is reachable late-bound.
+	/// </summary>
+	public object ToClr() => ManagedInvoke.WrapManaged(this);
+
+	/// <summary>
 	/// Translates a 1-based index which allows negative nubmers to a 0-based positive only index.<br/>
 	/// This is used internally to do index conversions.
 	/// </summary>

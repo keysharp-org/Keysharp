@@ -383,6 +383,12 @@ namespace Keysharp.Builtins
 
 		public long Hwnd => form.Handle;
 
+		/// <summary>
+		/// The backing toolkit window as an ordinary <c>Ks.Clr</c> object. Its concrete type is platform-dependent
+		/// and unspecified; changes made through it bypass this class's own state and event wiring.
+		/// </summary>
+		public object ToClr() => ManagedInvoke.WrapManaged(form);
+
 		public long MarginX
 		{
 			get
@@ -1657,15 +1663,42 @@ namespace Keysharp.Builtins
 				break;
 #endif
 
-				case Keyword_WebBrowser:
+				case Keyword_WebView:
 				{
-					var web = new KeysharpWebBrowser()
+					Forms.Control web;
+
+					try
 					{
-						Font = Conversions.ConvertFont(form.Font)
-					};
-					web.Navigate(textStr);
+#if WINDOWS
+						//Edge when the script brought the WebView2 package, Internet Explorer when it did not.
+						web = KeysharpEdgeWebView.TryCreate(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
+							  ?? (Forms.Control)new KeysharpIeWebView(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle);
+#else
+						web = new KeysharpWebView(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle);
+#endif
+						web.Font = Conversions.ConvertFont(form.Font);
+					}
+#if WINDOWS
+					catch (Exception ex)
+					{
+						return Errors.ErrorOccurred($"The WebView control could not be created: {ex.Message}");
+					}
+
+#else
+					//Eto reaches WebKitGTK by P/Invoke, so a Linux desktop without it fails with only a loader
+					//message naming a library the reader has no reason to connect to this control.
+					catch (Exception ex)
+					{
+						return Errors.ErrorOccurred($"The WebView control could not be created. On Linux it needs WebKitGTK (libwebkit2gtk-4.1 or 4.0): {ex.Message}");
+					}
+
+#endif
 					ctrl = web;
-					holder = new WebBrowser(this, ctrl, typeo);
+					holder = new WebView(this, ctrl, typeo);
+
+					//An empty text argument means "no page yet": navigating to "" is an error on both backends.
+					if (!string.IsNullOrEmpty(textStr))
+						((WebView)holder).Url = textStr;
 				}
 				break;
 #if WINDOWS
@@ -1701,8 +1734,10 @@ namespace Keysharp.Builtins
 			if (opts.autosize.HasValue)
 				Reflections.SafeSetProperty(ctrl, "AutoSize", opts.autosize.Value);
 
+			//A WebView took its text as the URL to navigate to above, and the WinForms browser throws outright
+			//when Text is assigned.
 			if (textStr != null && ctrl is not KeysharpDateTimePicker && ctrl is not HotkeyBox
-			 && ctrl is not KeysharpLinkLabel)
+			 && ctrl is not KeysharpLinkLabel && ctrl is not IWebViewBackend)
 				ctrl.Text = textStr;
 
 			if (ctrl is not KeysharpStatusStrip)//Don't want status strip to have a margin, so it can be placed at the bottom of the form when autosize is true, and have it look exactly like it would if it were docked when autosize is false.
@@ -2474,6 +2509,8 @@ namespace Keysharp.Builtins
 
 		public object AddRadio(object options = null, object text = null) => Add(Keyword_Radio, options, text);
 
+		public object AddRichEdit(object options = null, object text = null) => Add(Keyword_Rich_Edit, options, text);
+
 		public object AddSlider(object options = null, object text = null) => Add(Keyword_Slider, options, text);
 
 		public object AddStatusBar(object options = null, object text = null) => Add(Keyword_StatusBar, options, text);
@@ -2489,7 +2526,7 @@ namespace Keysharp.Builtins
 
 		public object AddUpDown(object options = null, object text = null) => Add(Keyword_UpDown, options, text);
 
-		public object AddWebBrowser(object options = null, object text = null) => Add(Keyword_WebBrowser, options, text);
+		public object AddWebView(object options = null, object text = null) => Add(Keyword_WebView, options, text);
 
 		public object Destroy()
 		{
@@ -3453,7 +3490,8 @@ namespace Keysharp.Builtins
 					if (control is KeysharpTextBox || control is KeysharpPasswordBox || control is KeysharpDateTimePicker || control is KeysharpMonthCalendar)//Just use value because it's the same and consolidates the formatting in one place, despite being slightly slower.
 						result.DefinePropInternal(control.Name, new OwnPropsDesc(null, guictrl.Value));
 					else if (control is KeysharpRichEdit)
-						result.DefinePropInternal(control.Name,  new OwnPropsDesc(null, !guictrl.AltSubmit ? guictrl.Value : guictrl.RichText));
+						result.DefinePropInternal(control.Name,  new OwnPropsDesc(null,
+								!guictrl.AltSubmit || guictrl is not RichEdit re ? guictrl.Value : re.RichText));
 					else if (control is KeysharpNumericUpDown nud)
 					{
 #if WINDOWS
@@ -4217,8 +4255,6 @@ namespace Keysharp.Builtins
 
 		public class Radio(params object[] args) : Gui.Control(args) { }
 
-		public class RichEdit(params object[] args) : Gui.Control(args) { }
-
 		public class Slider(params object[] args) : Gui.Control(args) { }
 
 		public class StatusBar(params object[] args) : Gui.Control(args) { }
@@ -4229,7 +4265,8 @@ namespace Keysharp.Builtins
 
 		public class UpDown(params object[] args) : Gui.Control(args) { }
 
-		public class WebBrowser(params object[] args) : Gui.Control(args) { }
+		//Gui.RichEdit and Gui.WebView are the two control holders with members of their own; each lives in a
+		//file of its own, RichEdit.cs and WebView.cs.
 
 		internal class GuiOptions
 		{

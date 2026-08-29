@@ -132,6 +132,7 @@ namespace Keysharp.Main
 			{
 				CliCommandKind.CompileExe => CompileToExe(command),
 				CliCommandKind.Daemon => HandleDaemon(command.DaemonArgs),
+				CliCommandKind.Package => HandlePackage(command),
 #if WINDOWS
 				CliCommandKind.Install => InstallToPath(command.ExeDir, command.ScriptArgs),
 				CliCommandKind.Uninstall => RemoveFromPath(command.ExeDir, command.ScriptArgs),
@@ -182,6 +183,146 @@ namespace Keysharp.Main
 		{
 			Console.Error.WriteLine($"{problem} Valid forms: --daemon, --daemon stop, --daemon ping <script>.");
 			return 1;
+		}
+
+		// --kpm hands the rest of the command line to the package manager. Its commands, arguments and
+		// output are kpm's own, so there is one surface to learn and one implementation of it rather than a
+		// second copy here that would drift from the standalone tool.
+		//
+		// Reached by reflection, and deliberately not referenced at build time: KPM.Core travels with an
+		// install rather than being part of Keysharp, so a build that could not fetch it still compiles, still
+		// packages and still runs everything else. Its absence is a message, not a crash.
+		private static int HandlePackage(CliCommand command)
+		{
+			// Acquired before the first message and outside the try, because every path below reports through
+			// it - including the catch. A `using` inside the try would detach the console while unwinding, and
+			// send the failure message nowhere; and a plain Console.Error here reaches no terminal at all, since
+			// this is a GUI-subsystem process until the parent's console is attached.
+			using var console = ConsoleOutput.Acquire();
+			var library = Path.Combine(command.ExeDir, "KPM.Core.dll");
+
+			if (!File.Exists(library))
+			{
+				console.Error.WriteLine($"Package management is not available in this installation: {library} is missing."
+										+ "\nkpm can be installed on its own from https://github.com/keysharp-org/KPM/releases.");
+				return 1;
+			}
+
+			try
+			{
+				// A library too old to carry the command surface is the one failure worth naming: it says
+				// "upgrade this install", where the generic reflection error would say nothing useful.
+				var runner = Assembly.LoadFrom(library).GetType("Kpm.Cli.CommandRunner", throwOnError: false);
+				var run = runner?.GetMethod("Run", [typeof(string[]), typeof(TextWriter), typeof(TextWriter), typeof(TextReader)]);
+
+				if (run is null)
+				{
+					console.Error.WriteLine($"{library} is too old for this Keysharp: it does not provide the package"
+											+ " commands. Reinstall Keysharp, or replace that file from"
+											+ " https://github.com/keysharp-org/KPM/releases.");
+					return 1;
+				}
+
+				// Which engine the registry resolves for: this one, whatever the caller's environment says.
+				// The package manager reads it here rather than being told in every command.
+				Environment.SetEnvironmentVariable("KPM_ENGINE_VERSION", Version.ToString());
+				return (int)run.Invoke(null, [command.PackageArgs, console.Out, console.Error, console.In]);
+			}
+			catch (Exception ex)
+			{
+				// TargetInvocationException hides the real one, and a package command failing is ordinary news.
+				var reported = ex is TargetInvocationException { InnerException: { } inner } ? inner : ex;
+				console.Error.WriteLine($"package command failed: {reported.GetType().Name}: {reported.Message}");
+				return 1;
+			}
+		}
+
+		/// <summary>
+		/// Writers that reach the terminal the command was launched from. Keysharp is a GUI-subsystem binary,
+		/// so on Windows it starts with no console of its own: output to a redirected stdout arrives fine,
+		/// but output meant for an interactive terminal goes nowhere until the parent's console is attached.
+		/// Released again on dispose, so nothing later in the process inherits a console it did not ask for.
+		/// </summary>
+		private sealed class ConsoleOutput : IDisposable
+		{
+			private readonly bool attached;
+			private readonly StreamWriter standardOut;
+			private readonly StreamWriter standardError;
+			private readonly StreamReader standardIn;
+
+			internal TextWriter Out => standardOut ?? Console.Out;
+			internal TextWriter Error => standardError ?? Console.Error;
+			// Read the same way it is written. A prompt that asks before running a package's setup script
+			// must not decode the answer through a different code page than the question was printed in.
+			internal TextReader In => standardIn ?? Console.In;
+
+			private ConsoleOutput(bool attached, StreamWriter standardOut, StreamWriter standardError, StreamReader standardIn)
+			{
+				this.attached = attached;
+				this.standardOut = standardOut;
+				this.standardError = standardError;
+				this.standardIn = standardIn;
+			}
+
+			internal static ConsoleOutput Acquire()
+			{
+				var attached = false;
+#if WINDOWS
+				// Only when nothing is redirected: a pipe or a file already reaches the caller, and attaching
+				// would put the output on the terminal instead of where they asked for it.
+				if (!Console.IsOutputRedirected && !Console.IsErrorRedirected)
+					attached = AttachConsole(AttachParentProcess);
+
+#endif
+				// UTF-8 explicitly, on both paths. A GUI-subsystem process gets the ANSI code page by default,
+				// which turned the em dash in kpm's own help into a '?' — and package descriptions and author
+				// names are full of characters that would go the same way. No BOM: this is piped as often as
+				// it is read. On an attached console the code page has to be told as well, or it decodes those
+				// bytes as ANSI and mangles them a second time.
+				var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
+				if (attached)
+				{
+					try
+					{
+						Console.OutputEncoding = encoding;
+					}
+					catch (IOException) { }        // no console after all; the writers below still work
+				}
+
+				return new ConsoleOutput(attached,
+										 new StreamWriter(Console.OpenStandardOutput(), encoding) { AutoFlush = true },
+										 new StreamWriter(Console.OpenStandardError(), encoding) { AutoFlush = true },
+										 new StreamReader(Console.OpenStandardInput(), encoding));
+			}
+
+			public void Dispose()
+			{
+				try
+				{
+					standardOut?.Flush();
+					standardError?.Flush();
+				}
+				catch (IOException) { }        // the console went away first; there is nothing left to say
+
+#if WINDOWS
+				if (attached)
+					_ = FreeConsole();
+
+#endif
+			}
+
+#if WINDOWS
+			private const uint AttachParentProcess = 0xFFFFFFFF;
+
+			[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+			[return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+			private static extern bool AttachConsole(uint processId);
+
+			[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+			[return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+			private static extern bool FreeConsole();
+#endif
 		}
 
 		// Builds an executable from a script. Deferred to us by Runner because HostWriter.CreateAppHost

@@ -1406,7 +1406,7 @@ namespace Keysharp.Builtins
 
 		/// <summary>
 		/// Wraps a CLR object as a <c>Ks.Clr</c> instance without the Task interception <see cref="ConvertOut"/>
-		/// applies. This is what <c>Task.Clr</c> hands back, so the raw task surface stays reachable.
+		/// applies. This is what <c>Task.ToClr()</c> hands back, so the raw task surface stays reachable.
 		/// </summary>
 		internal static object WrapManaged(object value) =>
 			value == null ? null : new Clr.ManagedInstance(value.GetType(), value);

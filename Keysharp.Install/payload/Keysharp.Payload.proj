@@ -19,9 +19,107 @@
 		<_DashInPlace>$(_Out)Scripts/Dash.cks</_DashInPlace>
 		<_DashAsm>$(_Out)Keysharp.cks</_DashAsm>
 		<_DashFallback>$(_Out)Keysharp.ks</_DashFallback>
+		<!-- The kpm release whose library to ship. Pinned, so a Keysharp release states which package
+		     manager it carried. Must be a release that carries Kpm.Cli.CommandRunner - v0.1.2 and earlier
+		     kept the commands in the kpm executable, where the host cannot reach them. Until that tag
+		     exists the download simply fails, which is not fatal: packaging warns and the install says
+		     package management is unavailable. -->
+		<KpmVersion Condition="'$(KpmVersion)' == ''">v0.2.0</KpmVersion>
+		<KpmRepository Condition="'$(KpmRepository)' == ''">keysharp-org/KPM</KpmRepository>
+		<!-- Only the archive is per-runtime; the one file taken out of it is a managed library and is the
+		     same in all of them. Passed by the packager, since only it knows whether this is a cross-build. -->
+		<KpmRid Condition="'$(KpmRid)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">win-x64</KpmRid>
+		<KpmRid Condition="'$(KpmRid)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">osx-arm64</KpmRid>
+		<KpmRid Condition="'$(KpmRid)' == ''">linux-x64</KpmRid>
+		<_KpmArchive>kpm-$(KpmVersion)-$(KpmRid)-framework-dependent.zip</_KpmArchive>
+		<_KpmUrl>https://github.com/$(KpmRepository)/releases/download/$(KpmVersion)/$(_KpmArchive)</_KpmUrl>
+		<_KpmTemp>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', 'obj', 'kpm', '$(KpmRid)'))</_KpmTemp>
+		<!-- Development escape hatch: point this at a local KPM checkout to build the library from it
+		     instead of downloading the pinned release, e.g.
+		         dotnet msbuild Keysharp.Install/payload/Keysharp.Payload.proj -p:PayloadDir=... -p:KpmSourceDir=../KPM
+		     A change spanning both repos otherwise has to be tagged, released and published before this
+		     side can even be run against it. With this, both sides are developed against the working tree
+		     and one release is cut at the end, with the pin moved once.
+		     A release build must never set it: what ships is the pinned archive, so that a Keysharp release
+		     can say which kpm it carried. Note a source build's version is whatever the checkout declares,
+		     which is not the tag. -->
+		<_KpmProject Condition="'$(KpmSourceDir)' != ''">$([MSBuild]::NormalizePath('$(KpmSourceDir)', 'src', 'KPM.Core', 'KPM.Core.csproj'))</_KpmProject>
+		<!-- No trailing separator: this is passed to `dotnet build -o "..."`, and a path ending in a
+		     backslash would escape the closing quote and break the command line. -->
+		<_KpmSourceOut Condition="'$(KpmSourceDir)' != ''">$([MSBuild]::NormalizePath('$(_KpmTemp)', 'source'))</_KpmSourceOut>
 	</PropertyGroup>
 
-	<Target Name="StagePayload" DependsOnTargets="CopyPayload;PrecompileScripts" />
+	<Target Name="StagePayload" DependsOnTargets="CopyPayload;StageKpm;PrecompileScripts" />
+
+	<!-- What the host's `kpm` switch runs on. The library only, never the kpm executable: the commands
+	     live in KPM.Core (Kpm.Cli.CommandRunner) and the host calls them directly, so a second program on
+	     PATH, under a name several other package managers already use, would buy nothing.
+	     Its own dependencies are deliberately not taken from the archive. Semver and, through it,
+	     Microsoft.Extensions.Primitives are already in the payload at the same assembly versions, and kpm's
+	     copies are built for a different framework. Should Keysharp ever stop shipping Semver, this
+	     assembly stops loading and the switch reports that rather than anything worse happening.
+	     Never fatal: kpm travels with Keysharp rather than being part of it, so a failed download costs
+	     the convenience and not the release. -->
+	<Target Name="StageKpm" DependsOnTargets="StageKpmFromSource;StageKpmFromRelease">
+		<!-- A failed download is a warning; a failed source override is an error. The download can fail for
+		     reasons the person packaging does not control, and the release must survive that. An override is
+		     something they asked for by name, so silence would be the wrong answer. -->
+		<Warning Condition="!Exists('$(_Out)KPM.Core.dll') and '$(KpmSourceDir)' == ''"
+				 Text="Package management was not bundled: $(_KpmUrl) could not be downloaded. The install is complete without it and the kpm switch will say so; kpm is also available on its own from https://github.com/$(KpmRepository)/releases." />
+		<Error Condition="!Exists('$(_Out)KPM.Core.dll') and '$(KpmSourceDir)' != ''"
+			   Text="KpmSourceDir=$(KpmSourceDir) built no KPM.Core.dll into $(_KpmSourceOut)." />
+		<Message Importance="high" Condition="Exists('$(_Out)KPM.Core.dll') and '$(KpmSourceDir)' == ''" Text="Bundled kpm $(KpmVersion) (KPM.Core.dll)." />
+		<Message Importance="high" Condition="Exists('$(_Out)KPM.Core.dll') and '$(KpmSourceDir)' != ''" Text="Bundled kpm built from source at $(KpmSourceDir) - NOT the pinned $(KpmVersion) release." />
+	</Target>
+
+	<!-- The pinned release: what every real build uses. -->
+	<Target Name="StageKpmFromRelease" Condition="'$(KpmSourceDir)' == ''">
+		<MakeDir Directories="$(_KpmTemp)" />
+		<DownloadFile SourceUrl="$(_KpmUrl)" DestinationFolder="$(_KpmTemp)" DestinationFileName="$(_KpmArchive)"
+					  SkipUnchangedFiles="true" ContinueOnError="WarnAndContinue" />
+		<PropertyGroup>
+			<_KpmDownloaded>$(_KpmTemp)$(_KpmArchive)</_KpmDownloaded>
+			<_KpmAbiDir>$([MSBuild]::NormalizeDirectory('$(_KpmTemp)', 'abicheck'))</_KpmAbiDir>
+		</PropertyGroup>
+		<Unzip SourceFiles="$(_KpmDownloaded)" DestinationFolder="$(_Out)" Include="KPM.Core.dll"
+			   OverwriteReadOnlyFiles="true" Condition="Exists('$(_KpmDownloaded)')" ContinueOnError="WarnAndContinue" />
+		<!-- The archive's own Semver is unzipped only to be READ, never shipped: KPM.Core binds the copy the
+		     payload already carries, and this is where that pairing is decided. So this is where a mismatch
+		     must fail, as a packaging error naming both versions, not as a MissingMethodException in the
+		     middle of a user's kpm command months later. -->
+		<Unzip SourceFiles="$(_KpmDownloaded)" DestinationFolder="$(_KpmAbiDir)" Include="Semver.dll"
+			   OverwriteReadOnlyFiles="true" Condition="Exists('$(_KpmDownloaded)')" ContinueOnError="WarnAndContinue" />
+		<GetAssemblyIdentity AssemblyFiles="$(_KpmAbiDir)Semver.dll" Condition="Exists('$(_KpmAbiDir)Semver.dll')">
+			<Output TaskParameter="Assemblies" ItemName="_KpmSemverIdentity" />
+		</GetAssemblyIdentity>
+		<GetAssemblyIdentity AssemblyFiles="$(_Out)Semver.dll" Condition="Exists('$(_Out)Semver.dll')">
+			<Output TaskParameter="Assemblies" ItemName="_PayloadSemverIdentity" />
+		</GetAssemblyIdentity>
+		<PropertyGroup>
+			<_KpmSemverVersion>@(_KpmSemverIdentity->'%(Version)')</_KpmSemverVersion>
+			<_PayloadSemverVersion>@(_PayloadSemverIdentity->'%(Version)')</_PayloadSemverVersion>
+		</PropertyGroup>
+		<!-- Newer-than-payload cannot bind (the runtime accepts equal-or-higher, never lower); a differing
+		     older version binds but may hit members that moved, so it warns rather than fails. -->
+		<Error Condition="'$(_KpmSemverVersion)' != '' and '$(_PayloadSemverVersion)' != ''
+						  and $([System.Version]::Parse('$(_KpmSemverVersion)').CompareTo($([System.Version]::Parse('$(_PayloadSemverVersion)')))) &gt; 0"
+			   Text="kpm $(KpmVersion) was built against Semver $(_KpmSemverVersion) but the payload carries $(_PayloadSemverVersion); the bundled KPM.Core.dll would fail to load. Align the Semver reference in Keysharp.Core.csproj or pin a compatible kpm." />
+		<Warning Condition="'$(_KpmSemverVersion)' != '' and '$(_PayloadSemverVersion)' != ''
+							and '$(_KpmSemverVersion)' != '$(_PayloadSemverVersion)'
+							and $([System.Version]::Parse('$(_KpmSemverVersion)').CompareTo($([System.Version]::Parse('$(_PayloadSemverVersion)')))) &lt; 0"
+				 Text="kpm $(KpmVersion) was built against Semver $(_KpmSemverVersion); the payload carries the newer $(_PayloadSemverVersion). This binds, but members kpm uses may have changed - run `keysharp --kpm version` from the staged tree if in doubt." />
+		<Warning Condition="Exists('$(_Out)KPM.Core.dll') and !Exists('$(_Out)Semver.dll')"
+				 Text="KPM.Core.dll was bundled but the payload carries no Semver.dll, which it needs to load. The kpm switch will fail until the payload ships it." />
+	</Target>
+
+	<!-- The local checkout, for developing a change that spans both repos. Only KPM.Core.dll is taken, so
+	     this stages exactly what the release path stages and the two cannot diverge in shape. -->
+	<Target Name="StageKpmFromSource" Condition="'$(KpmSourceDir)' != ''">
+		<Error Condition="!Exists('$(_KpmProject)')"
+			   Text="KpmSourceDir=$(KpmSourceDir) does not look like a KPM checkout: $(_KpmProject) does not exist." />
+		<Exec Command="dotnet build &quot;$(_KpmProject)&quot; -c Release -o &quot;$(_KpmSourceOut)&quot; --nologo -v:minimal" />
+		<Copy SourceFiles="$([System.IO.Path]::Combine('$(_KpmSourceOut)', 'KPM.Core.dll'))" DestinationFolder="$(_Out)" OverwriteReadOnlyFiles="true" />
+	</Target>
 
 	<Target Name="CopyPayload">
 		<Error Condition="'$(PayloadDir)' == ''" Text="PayloadDir is required: the published app directory to add the install payload to." />
@@ -34,12 +132,8 @@
 			     registrations in the MSI, the MSIX manifest and the CLI install switch. Both live here rather
 			     than in Keysharp\Scripts because neither is part of Keysharp. -->
 			<_InstallScript Include="$(MSBuildThisFileDirectory)Dash.ks;$(MSBuildThisFileDirectory)Template.ks" />
-			<!-- Straight to Lib: OCR.ks is a pure "#include <OCR>" library with no entry point, and Lib is
-			     where the include resolver looks. Capital L - it matters on a case-sensitive filesystem. -->
-			<_InstallLibrary Include="$(_Repo)Keysharp/Scripts/OCR.ks" />
 		</ItemGroup>
 		<Copy SourceFiles="@(_InstallScript)" DestinationFolder="$(_Out)Scripts" SkipUnchangedFiles="true" />
-		<Copy SourceFiles="@(_InstallLibrary)" DestinationFolder="$(_Out)Lib" SkipUnchangedFiles="true" />
 		<Copy SourceFiles="@(_Demo)" DestinationFolder="$(_Out)Demos" SkipUnchangedFiles="true" />
 	</Target>
 

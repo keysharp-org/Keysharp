@@ -101,23 +101,23 @@ namespace Keysharp.Builtins
 			/// — <c>IsCompleted</c>, <c>Exception</c>, <c>ContinueWith</c> — stay reachable. CLR
 			/// <c>ContinueWith</c> has neither <see cref="Then"/>'s script-thread affinity nor its result flattening.
 			/// </summary>
-			public object Clr => ManagedInvoke.WrapManaged(task);
+			public object ToClr() => ManagedInvoke.WrapManaged(task);
 
 			// ---- waiting ----------------------------------------------------------------------------------
 
 			/// <summary>
 			/// Waits for this task to finish, pumping events while it waits so timers, hotkeys and the GUI stay
-			/// responsive. It does not throw on failure; read <see cref="IsFailed"/> and <see cref="Error"/>. A timeout
-			/// stops only this wait and does not cancel the task.
+			/// responsive. Returns false only if the timeout elapses before the task reaches a terminal outcome.
+			/// It does not rethrow or observe the task's failure, and a timeout does not cancel the task.
 			/// </summary>
 			/// <param name="Timeout">Milliseconds to wait. Default: wait indefinitely.</param>
-			/// <returns>True if the task finished, false if the timeout elapsed first.</returns>
+			/// <returns>True if the task finished before the timeout; false if the timeout elapsed first.</returns>
 			public object Wait(object Timeout = null)
 			{
 				if (IsCurrentRealThreadTask(task))
 					return Errors.TargetErrorOccurred("A real thread cannot wait on itself.", false);
 
-				return Keysharp.Internals.Flow.WaitForTask(task, Timeout.Ai(-1));
+				return Keysharp.Internals.Flow.WaitForCompletion(task, Timeout.Ai(-1));
 			}
 
 			// ---- continuation -----------------------------------------------------------------------------

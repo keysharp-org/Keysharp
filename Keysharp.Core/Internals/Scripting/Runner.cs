@@ -16,6 +16,7 @@ namespace Keysharp.Internals.Scripting
 		CompileAsm,
 		CompileExe,
 		Daemon,
+		Package,
 		Install,
 		Uninstall,
 		CloseInstances,
@@ -54,9 +55,12 @@ namespace Keysharp.Internals.Scripting
 		internal string AssemblyType = $"{Keywords.MainNamespaceName}.{Keywords.MainClassName}";
 		internal string AssemblyMethod = "Main";
 		internal string[] DaemonArgs = [];
+		// Everything after --kpm, passed to the package manager verbatim: they are its commands, not ours.
+		internal string[] PackageArgs = [];
 
 		internal bool RequiresLauncher => Kind is CliCommandKind.CompileExe
 												   or CliCommandKind.Daemon
+												   or CliCommandKind.Package
 												   or CliCommandKind.Install
 												   or CliCommandKind.Uninstall
 												   or CliCommandKind.CloseInstances;
@@ -173,6 +177,15 @@ namespace Keysharp.Internals.Scripting
 
 					case "daemon":
 						return new CliCommand { Kind = CliCommandKind.Daemon, EntryAssembly = asm, ExeDir = exeDir, DaemonArgs = [.. args.Skip(i)] };
+
+					// --kpm <command> [args]: everything after it belongs to the package manager, including
+					// anything that looks like a switch of ours - `--kpm validate .` validates a registry, not
+					// a script. Taking the rest of the line rather than parsing it here is what keeps the two
+					// command surfaces from having to agree on anything.
+					// Named for the tool rather than spelled --package, which would read as the #Package
+					// directive and therefore as NuGet.
+					case "kpm":
+						return new CliCommand { Kind = CliCommandKind.Package, EntryAssembly = asm, ExeDir = exeDir, PackageArgs = [.. args.Skip(i + 1)] };
 
 					case "validate":
 						validate = true;
@@ -811,6 +824,11 @@ namespace Keysharp.Internals.Scripting
 			  --daemon                Start the background compile server (speeds up startup).
 			  --daemon stop           Stop the running compile server.
 			  --daemon ping <script>  Compile <script> via a running daemon and report only.
+
+			Packages:
+			  --kpm <command> [args]  Run a package-manager command; everything after --kpm belongs to it.
+			                          "--kpm help" lists them. Common ones: add <owner/name>, remove, install,
+			                          update, search <text>, list.
 
 			Other:
 			  --version, -v           Print the version.

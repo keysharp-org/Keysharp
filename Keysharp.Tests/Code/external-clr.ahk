@@ -57,7 +57,7 @@ list[1] := 99
 AssertEq(list[1], 99, A_LineNumber)
 
 ; 10) Task.Run(Action) callback.
-;     A CLR call returning a Task hands back a Ks.Task, so Wait() reports whether it settled. The script
+;     A CLR call returning a Task hands back a Ks.Task, so Wait() reports whether it finished before timeout. The script
 ;     callback is marshalled onto the script thread and runs in its own pseudo-thread, which is what gives
 ;     it correct A_* state, safe GUI access, and an error path that reports rather than killing the
 ;     process. That makes it asynchronous, so the script has to reach a pump point before it has run.

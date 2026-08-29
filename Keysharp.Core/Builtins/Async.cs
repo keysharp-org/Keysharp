@@ -40,7 +40,7 @@ namespace Keysharp.Builtins
 			if (KeysharpTask.IsCurrentRealThreadTask(task))
 				return Errors.TargetErrorOccurred("A real thread cannot wait on itself.");
 
-			if (!Keysharp.Internals.Flow.WaitForTask(task, Timeout.Ai(-1)))
+			if (!Keysharp.Internals.Flow.WaitForCompletion(task, Timeout.Ai(-1)))
 				return Errors.TimeoutErrorOccurred("Await timed out.");
 
 			if (task.IsCanceled)

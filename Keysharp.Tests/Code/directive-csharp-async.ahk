@@ -79,7 +79,7 @@ Assert(!slow.IsActive && slow.IsSuccessful && !slow.IsFailed && !slow.IsCanceled
 AssertEq(slow.Result, 401, A_LineNumber)
 
 ; --- identity: one wrapper per underlying task, across separate crossings ----------------------
-AssertEq(Task(slow.Clr), slow, A_LineNumber)  ; re-wrapping the same CLR task yields the same object
+AssertEq(Task(slow.ToClr()), slow, A_LineNumber)  ; re-wrapping the same CLR task yields the same object
 AssertEq(Task(slow), slow, A_LineNumber)
 
 ; --- a non-generic `async Task` produces nothing, not a BCL marker object ----------------------
@@ -89,11 +89,11 @@ AssertEq(fire.Result, "", A_LineNumber)
 Assert(fire.IsSuccessful, A_LineNumber)
 
 ; --- the raw CLR surface stays reachable ------------------------------------------------------
-Assert(slow.Clr.IsCompleted, A_LineNumber)
+Assert(slow.ToClr().IsCompleted, A_LineNumber)
 
 ; --- a faulted task observed through its state/Error does not throw ----------------------------
 bad := Boom()
-Assert(bad.Wait(5000), A_LineNumber)                    ; it settles, and Wait does not rethrow
+Assert(bad.Wait(5000), A_LineNumber)                    ; failure is terminal, and Wait does not rethrow
 Assert(bad.IsFailed, A_LineNumber)
 Assert(bad.Error is Error, A_LineNumber)                ; an Error object, the same one Await would have thrown
 Assert(InStr(bad.Error.Message, "boom") > 0, A_LineNumber)
@@ -189,10 +189,17 @@ nestedFailure := Immediate().Then(_ => Boom())
 Throws(() => Await(nestedFailure), A_LineNumber, Error)
 Assert(nestedFailure.IsFailed, A_LineNumber)
 AssertEq(Await(Immediate().Then(_ => Nested())), 43, A_LineNumber)
-valueTask := Clr.System.Threading.Tasks.ValueTask(Clr.System.Threading.Tasks.Task.Delay(10).Clr)
+valueTask := Clr.System.Threading.Tasks.ValueTask(Clr.System.Threading.Tasks.Task.Delay(10).ToClr())
 AssertEq(Await(Immediate().Then(_ => valueTask)), "", A_LineNumber)
 AssertEq(Await(Immediate().Then(_ => RealThread(() => 77))), 77, A_LineNumber)
 Throws(() => Await(Immediate().Then(_ => RealThread.Main)), A_LineNumber, TargetError)
+
+; --- a worker's completion is reachable as a raw CLR task; main/adopted have none ---------------
+rtc := RealThread(() => 77)
+Assert(rtc.Wait(5000), A_LineNumber)
+Assert(rtc.ToClr().IsCompleted, A_LineNumber)
+AssertEq(Task(rtc.ToClr()).Result, 77, A_LineNumber)
+Throws(() => RealThread.Main.ToClr(), A_LineNumber, TargetError)
 
 cycleGate := ManualGate()
 cycle := ""

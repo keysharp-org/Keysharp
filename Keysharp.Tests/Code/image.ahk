@@ -20,6 +20,9 @@ transparent := Image.Create(8, 6)
 Assert(transparent.Width == 8 && transparent.Height == 6, A_LineNumber)
 AssertEq(Channel(transparent, 0, 0, 3), 0, A_LineNumber)
 
+; ToClr() hands out the underlying toolkit bitmap with pending work materialized.
+Assert(transparent.ToClr().Width == 8 && transparent.ToClr().Height == 6, A_LineNumber)
+
 colored := Image.Create(4, 3, "0xFF445566")
 AssertEq(Channel(colored, 0, 0, 0), 0x44, A_LineNumber)
 AssertEq(Channel(colored, 0, 0, 1), 0x55, A_LineNumber)

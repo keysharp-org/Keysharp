@@ -98,9 +98,17 @@ namespace Keysharp.Internals.Window.Linux.Proxies
 			{
 				if (_defaultDisp == 0)
 				{
-					_defaultDisp = Xlib.XOpenDisplay(0);
-					_ = defaultHandles.TryAdd(_defaultDisp, 0);
-					_default = new XDisplay(_defaultDisp);
+					// NULL means no reachable server: a headless session, or a DISPLAY nothing is listening on.
+					// Xlib takes the Display* unchecked, so this open is the one place that can test it — every
+					// call below would dereference it, starting with the XDefaultScreen in our own constructor.
+					var disp = Xlib.XOpenDisplay(0);
+
+					if (disp == 0)
+						return null;
+
+					_defaultDisp = disp;
+					_ = defaultHandles.TryAdd(disp, 0);
+					_default = new XDisplay(disp);
 				}
 
 				return _default;

@@ -736,6 +736,8 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ An enum-typed parameter or property takes a plain Integer, since a script has no enum type: `File.SetUnixFileMode(path, 0x180)`. The value does not have to be a declared member, so a flag combination can be built in script with `|`. The member itself works equally well when fetched through `Clr` (`System.StringComparison.OrdinalIgnoreCase`), and an enum coming back from CLR stays a wrapped member rather than widening to an Integer — take its name with `.ToString()`. A value with no numeric reading raises a `TypeError`, as it does for any other integral parameter.
 		+ `Clr.GetNamespaceName(ManagedNamespace)` returns the full intenal namespace name of the namespace wrapped by `ManagedNamespace`.
 		+ `Clr.GetTypeName(ManagedType)` returns the full internal type name of the type wrapped by `ManagedType`.
+		+ Built-in objects that stand in front of a CLR object expose it with a uniform `ToClr()` method returning an ordinary `Ks.Clr` object: `Task` (the underlying CLR task; replaces the former `Clr` property), a worker `RealThread` (its completion task; `TargetError` on the main and adopted threads), `Gui`, `Gui.Control` and `Menu` (the backing toolkit object, whose concrete type is platform-dependent and unspecified), and `Image` (the live underlying bitmap, with pending work materialized; stale after the next transform or `Dispose`). `Map` and `Array` are themselves CLR objects — a `Map` is a CLR `IDictionary<object, object>` and an `Array` an `IList`, so a CLR API declaring one accepts them directly — and their `ToClr()` exposes their full CLR surface late-bound. `ToClr()` is a deliberate escape hatch: changes made through the wrapper bypass the owning class's own state and event wiring.
+		+ Inline C# (`#CSharp`) holding a `ManagedInstance` reads the raw wrapped object from its `Native` property. Script member access on a wrapper always dispatches to the wrapped object, so `Native` is unreachable from script.
 	+ `Font`: A font as a value object, carrying the same information `Gui.SetFont(Options, FontName)` takes but addressable one property at a time. Available from the `KS` module: `#Import "Ks" { Font }`.
 		+ `Font(Options := "", Name := "")` takes SetFont's two arguments in SetFont's order, so an existing call converts by moving its arguments across.
 		+ Properties: `Name`, `Size`, `Color`, `Weight`, `Quality`, `Bold`, `Italic`, `Underline`, `Strike`. Each is independently **optional** and reads back as `""` when unset. `Bold` is `Weight` viewed as a boolean (reading is `Weight >= 700`, writing sets 700 or 400).
@@ -863,6 +865,7 @@ Controlling another application needs **Automation** permission, granted per tar
 				Wait([Timeout := -1]) => Boolean           ; True if it finished, false on timeout.
 				ContinueWith(Callback [, Arguments*]) => RealThread ; Start after this one finishes.
 				Exit([ExitCode := 0])                      ; Cooperative shutdown request.
+				ToClr() => Any                             ; The completion as a raw CLR task (workers only).
 			}
 
 			ThreadFunc(obj)
@@ -877,7 +880,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `Wait` reports *completion*, not the body's value — that is `Result` — so a timeout is distinguishable from a body that returned nothing.
 		+ Exactly one of `Active`, `Succeeded`, `Failed` and `Canceled` is true. An uncaught body error is reported on the thread where it happened, exactly like one in a timer or hotkey body, and ends in `Failed`; it is never smuggled to a later `Wait`.
 		+ `Exit` before or during the body ends in `Canceled`. If the body already returned successfully and the worker stayed alive to serve registrations, `Exit` preserves `Succeeded` and `Result`.
-		+ A worker that registered a timer, hotkey or callback keeps serving them after its body returns; `Exit` is how it is shut down. `Wait`, `ContinueWith` and `Exit` throw `TargetError` on `RealThread.Main` and on adopted threads, which have no body of their own.
+		+ A worker that registered a timer, hotkey or callback keeps serving them after its body returns; `Exit` is how it is shut down. `Wait`, `ContinueWith`, `Exit` and `ToClr` throw `TargetError` on `RealThread.Main` and on adopted threads, which have no body of their own.
 	+ `Task`: Work that finishes later. Every CLR call returning a .NET `Task` hands one of these back, so `Ks.Clr` and `#CSharp` agree on what work-in-flight looks like.
 		```
 		class Task
@@ -889,7 +892,7 @@ Controlling another application needs **Automation** permission, granted per tar
 			Canceled => Boolean                 ; true only after cancellation
 			Result => Any                       ; the successful value, "" otherwise. Never waits.
 			Error => Any                        ; the failure as a catchable error object, "" otherwise
-			Clr => Any                          ; the underlying CLR task, for IsCompleted/ContinueWith/…
+			ToClr() => Any                      ; the underlying CLR task, for IsCompleted/ContinueWith/…
 			Wait([Timeout := -1]) => Boolean    ; true if it finished, false on timeout; never cancels it
 			Then(OnSuccess [, OnFailure]) => Task ; handle a value or error on this script thread
 			                                      ; cancellation propagates; returned work is flattened
@@ -899,7 +902,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		}
 		```
 		+ Exactly one of `Active`, `Succeeded`, `Failed` and `Canceled` is true. `Result` is a snapshot and never blocks, exactly like `RealThread.Result`. `Await(task)` and `Wait` are the waiting forms, and both pump, so timers, hotkeys and the GUI stay alive while a script waits.
-		+ `Then` reacts without blocking. `OnSuccess` receives the unwrapped value after success; optional `OnFailure` receives the same catchable `Error` exposed by `Task.Error` and can recover the returned chain. Either may declare no parameter. Requiring more than one raises `ValueError` immediately when the target signature can be resolved; a method bound by name is checked when its concrete member can be found, otherwise invocation performs the check. Cancellation invokes neither callback and propagates unchanged. The selected callback runs as a pseudo-thread on the script thread where `Then` was called. Tasks and CLR tasks or value tasks returned at any depth are flattened, and a custom awaitable returned directly is adopted. A returned `RealThread` follows `Await(realThread)` semantics: the chain receives its `Result`, while a body error remains reported on that worker and is visible through its `Failed` property. Raw `task.Clr.ContinueWith` instead uses CLR scheduling and provides neither this script affinity nor result flattening.
+		+ `Then` reacts without blocking. `OnSuccess` receives the unwrapped value after success; optional `OnFailure` receives the same catchable `Error` exposed by `Task.Error` and can recover the returned chain. Either may declare no parameter. Requiring more than one raises `ValueError` immediately when the target signature can be resolved; a method bound by name is checked when its concrete member can be found, otherwise invocation performs the check. Cancellation invokes neither callback and propagates unchanged. The selected callback runs as a pseudo-thread on the script thread where `Then` was called. Tasks and CLR tasks or value tasks returned at any depth are flattened, and a custom awaitable returned directly is adopted. A returned `RealThread` follows `Await(realThread)` semantics: the chain receives its `Result`, while a body error remains reported on that worker and is visible through its `Failed` property. Raw `task.ToClr().ContinueWith` instead uses CLR scheduling and provides neither this script affinity nor result flattening.
 		+ A pending `Then` keeps its owner alive until its callback has run. Background work returned by that callback does not itself make a script persistent; a downstream `Then` registers its own callback and therefore its own lifetime root. If the owner is torn down before a pending callback can run, the returned task fails instead of hanging.
 		+ `Task.Create(Producer)` turns a callback-shaped API — a hotkey, a GUI control, a device notification — into a task. `Producer` runs synchronously before `Create` returns and receives only the positional prefix it declares, up to `Succeed`, `Fail` and `Cancel`; its own return value is ignored. Each settlement function returns true only if it won: `Succeed([Value])` settles from `Value` and adopts asynchronous work's eventual value, failure or cancellation, `Fail([Reason])` accepts an `Error` or description, and `Cancel()` produces a canceled task. A producer error before settlement fails the returned task; after settlement it has no effect.
 			```
@@ -1083,9 +1086,7 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ `Multiline` is `true` by default.
 			+ `WantReturn` and `Password` are not supported.
 			+ `Uppercase` and `Lowercase` are supported, but only for key presses, not for pasting.
-			+ The `Gui.Control.Value` property will only get/set the displayed text of the control. To get/set the raw rich text, use the new property `Gui.Control.RichText`.
-				+ Use `AltSubmit` with `Submit()` to get the raw rich text.
-				+ Attempting to use `Gui.Control.RichText` on any control other than `RichEdit` will throw an exception.
+			+ `Gui.Control.Value` gets/sets the displayed text only. The control's own members (below) reach everything else, and `Submit()` returns the plain text unless the control has `AltSubmit`, in which case it returns the RTF.
 	+ New methods and properties:
 		+ `Gui`:
 			+ `Visible`: Gets/sets whether the window is visible or not.
@@ -1100,6 +1101,16 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ `SetTabIcon(tabIndex, imageIndex)`: Relieves the caller of having to use `SendMessage()`.
 		+ `TreeView`:
 			+ `GetNode(nodeIndex) => TreeNode`: Retrieves a raw Winforms `TreeNode` object based on the passed in ID.
+		+ `RichEdit`: the control returned by `Gui.Add("RichEdit", ...)` carries its own members, because a range of characters in it has a font, two colours and a paragraph of its own. Every character position is 1-based and indexes the same text `Value` returns, one character per line break — so a position computed with `InStr()` or `RegExMatch()` over `Value` can be handed straight to `SetFormat()`. A position of `0` means "the current selection" wherever a range is asked for.
+			+ Content: `RichText` (the whole control as RTF), `SelectedText`, `SelectedRichText`, `TextLength`, `LineCount`, `Modified`, `ReadOnly`, `WordWrap`, `DetectUrls`, `HideSelection`, `Zoom`.
+			+ Selection and caret: `SelectionStart`, `SelectionLength`, `CurrentLine`, `CurrentCol`, `FirstVisibleLine`, `Select(start [, length])`, `SelectAll()`, `ScrollCaret()`.
+			+ Lines and positions: `GetLine(line)`, `LineLength(line)`, `LineFromPos(pos)`, `PosFromLine(line)`, `PosFromPoint(x, y)`, `PointFromPos(pos) => {X, Y}`.
+			+ Editing: `CanUndo`, `CanRedo`, `Undo()`, `Redo()`, `ClearUndo()`, `Cut()`, `Copy()`, `Paste()`, `Append(text)`, `Replace(start, length, text)`, `Find(needle [, start, options])` where the options are any of `MatchCase`, `WholeWord` and `Reverse`. `Find()` reports the 1-based position or `0` and leaves the selection alone.
+			+ Formatting: `SetFormat(start, length [, options, fontName])` and `GetFormat([start, length]) => Font`, plus `GetBackColor([start, length])` and the paragraph pair `SetParagraph(start, length, options)` / `GetParagraph([start, length])`. The formatting options are `Gui.SetFont`'s, extended with `Background<colour>` and `BackgroundDefault`; a `Ks.Font` object is accepted in their place. Anything the options do not mention is left as it was, which is what lets a highlighter colour a token without also deciding its size or weight — and, read back, an attribute that is not the same throughout the range comes back as `""`, the same as an unset one on any other `Ks.Font`. The paragraph options are `Left`, `Center`, `Right`, `Indent<n>`, `HangingIndent<n>`, `RightIndent<n>`, `Bullet` and `-Bullet`; `GetParagraph` reads only the paragraph the range starts in and returns them as a string `SetParagraph` accepts.
+			+ Batching: `BeginUpdate()` / `EndUpdate()` freeze the control and remember what was selected and scrolled to, so a re-highlight neither flickers nor drags the caret across the document. Pairs nest. **Wrap a whole highlighting pass in one**: on Windows it is worth roughly 30x, since without it each formatted range repaints.
+			+ Files: `LoadFile(path [, format])` and `SaveFile(path [, format])`, where the format is `"RTF"`, `"Text"`, or omitted to go by the file's extension.
+			+ Events: `Change` (as `Edit` has, and formatting does not raise it), plus `SelectionChange(ctrl, start, length)` and `LinkClick(ctrl, text, start, length)`.
+			+ Platform differences: only the Win32 control serves the whole surface. Off Windows there is no undo history (`CanUndo`/`CanRedo` are false and `Undo()`/`Redo()` do nothing), `DetectUrls` and `HideSelection` read back as false, `Zoom` scales the control's own font instead of magnifying, `GetFormat()` reports the formatting at the start of the range rather than detecting variation across it, and `SelectedRichText`, `SetParagraph`/`GetParagraph`, `PosFromPoint`/`PointFromPos` and `FirstVisibleLine` raise an error saying so. On Linux specifically, GTK's text widget knows nothing of RTF at all, so `RichText` and the RTF form of `LoadFile`/`SaveFile` raise as well; colours, fonts and styles are unaffected, and they are what syntax highlighting needs.
 	+ New classes:
 		+ `WinEvent`: For subscribing to window events (active/foreground change, appearance, disappearance, move/resize, minimize, restore, title change, and caret movement) across platforms, modeled on the popular AutoHotkey `WinEvent` library.
 			+ It is part of the `KS` module; import it with `#import KS { WinEvent }`.

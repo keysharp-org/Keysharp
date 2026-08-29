@@ -366,6 +366,18 @@ namespace Keysharp.Tests
 			}
 		}
 
+		/// <summary>
+		/// The RichEdit surface as a script reaches it. Driven from a script because its members live on the
+		/// holder the binder hands back, and because character positions are only worth checking against the
+		/// text a script sees. The script itself knows which parts of the surface each platform can serve.
+		/// </summary>
+		[Test, Category("Gui"), Category("Curated"), NonParallelizable]
+#if WINDOWS
+		//WinForms needs it; NUnit skips an apartment-bound test outright on the platforms that have no STA.
+		[Apartment(ApartmentState.STA)]
+#endif
+		public void RichEditScriptSurface() => Assert.IsTrue(TestScript("gui-richedit", false));
+
 #if WINDOWS
 		// The whole zero-copy design rests on one property: GDI+ drawing through the Bitmap and GDI reading
 		// through the DC address the same memory. If that ever stopped holding, presents would silently show
@@ -486,6 +498,14 @@ namespace Keysharp.Tests
 				}
 			}
 		}
+
+		/// <summary>
+		/// The WebView surface as a script reaches it. Driven from a script because the members live on the
+		/// holder the binder hands back, and because OnEvent's per-control event set is only visible from there.
+		/// </summary>
+		[Test, Category("Gui"), NonParallelizable]
+		[Apartment(ApartmentState.STA)]
+		public void WebViewScriptSurface() => Assert.IsTrue(TestScript("gui-webview", false));
 
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]

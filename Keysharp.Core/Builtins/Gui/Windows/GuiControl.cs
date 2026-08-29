@@ -383,6 +383,10 @@ namespace Keysharp.Builtins
 				{
 					txt.TextChanged += Txt_TextChanged;
 				}
+				else if (_control is KeysharpRichEdit rtb)
+				{
+					rtb.TextChanged += Txt_TextChanged;
+				}
 				else if (_control is KeysharpListBox lb)
 				{
 					lb.SelectedIndexChanged += Lb_SelectedIndexChanged;
@@ -1617,7 +1621,7 @@ namespace Keysharp.Builtins
 
 			internal void Txt_TextChanged(object sender, EventArgs e)
 			{
-				if (eventHandlerActive && _control is KeysharpTextBox)
+				if (eventHandlerActive && _control is KeysharpTextBox or KeysharpRichEdit)
 					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));
 			}
 		}

@@ -51,6 +51,50 @@ namespace Keysharp.Tests
 				Is.EqualTo(nativeBounds));
 		}
 
+		/// <summary>
+		/// Startup must survive having no display server, so scripts can run over ssh, in a container, or in CI.
+		/// Every Linux startup resolves the platform host, which asks whether X11 is available; that probe used
+		/// XOpenDisplay's result without testing it for NULL, so the answer "there is no display" was a
+		/// segmentation fault before argument parsing — taking --version down with it.
+		/// A separate process because the display is opened once per thread and cached, and this test host has one.
+		/// </summary>
+		[Test]
+		public void StartsWithoutADisplay()
+		{
+			using var process = new Process
+			{
+				StartInfo = new ProcessStartInfo("dotnet")
+				{
+					RedirectStandardOutput = true,
+					RedirectStandardError = true,
+					UseShellExecute = false,
+					CreateNoWindow = true,
+				}
+			};
+			process.StartInfo.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "Keysharp.dll"));
+			process.StartInfo.ArgumentList.Add("--version");
+			// A daemon started from this session would already hold a display, and answer without the child ever
+			// having to resolve one.
+			process.StartInfo.Environment["KEYSHARP_DAEMON"] = "0";
+			_ = process.StartInfo.Environment.Remove("DISPLAY");
+			_ = process.StartInfo.Environment.Remove("WAYLAND_DISPLAY");
+
+			process.Start();
+			var output = process.StandardOutput.ReadToEndAsync();
+			var error = process.StandardError.ReadToEndAsync();
+
+			if (!process.WaitForExit(120000))
+			{
+				try { process.Kill(true); } catch { }
+
+				Assert.Fail("Keysharp did not exit within 120 seconds with no display server.");
+			}
+
+			// 139 is the shell's spelling of SIGSEGV; .NET reports the raw negative signal.
+			Assert.That(process.ExitCode, Is.Zero,
+				$"Keysharp exited {process.ExitCode} with no display server.\nstdout: {output.Result}\nstderr: {error.Result}");
+			Assert.That(output.Result.Trim(), Is.Not.Empty, "--version printed nothing with no display server.");
+		}
 	}
 }
 #endif

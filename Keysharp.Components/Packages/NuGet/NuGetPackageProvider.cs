@@ -6,8 +6,10 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using NuGet.Commands;
 using NuGet.Common;
 using NuGet.Configuration;
@@ -341,6 +343,17 @@ public sealed class NuGetPackageProvider : IPackageProvider
 				|| !Collect(root, library.NativeLibraries, resolved.Native))
 				return Invalid($"package '{library.Name} {library.Version}' is missing a selected asset");
 
+			// Only when NuGet itself selected nothing: this fills a hole rather than competing with a choice
+			// NuGet already made. See TargetSuppliedAssemblies for what such a package looks like.
+			if (resolved.Compile.Count == 0 && resolved.Runtime.Count == 0 && library.Build?.Count > 0
+					&& TargetSuppliedAssemblies(root, library.Build, target.TargetFramework) is { Count: > 0 } supplied)
+			{
+				resolved.Compile.AddRange(supplied);
+				resolved.Runtime.AddRange(supplied);
+				result.Diagnostics.Add($"'{library.Name} {version}' publishes no assemblies NuGet can select; using the "
+					+ $"{Path.GetRelativePath(root, Path.GetDirectoryName(supplied[0]))} ones its own build targets reference");
+			}
+
 			result.Packages.Add(resolved);
 		}
 
@@ -361,6 +374,101 @@ public sealed class NuGetPackageProvider : IPackageProvider
 			}
 
 			return true;
+		}
+	}
+
+	/// <summary>
+	/// The assemblies a package hands over through its own MSBuild targets rather than a <c>lib/</c> folder
+	/// NuGet selects from, chosen for <paramref name="framework"/> exactly as a <c>lib/</c> folder would be.
+	/// The targets' own conditions are deliberately not evaluated; see docs/design-nuget-packages.md.
+	/// </summary>
+	private static List<string> TargetSuppliedAssemblies(string root, IEnumerable<LockFileItem> build, NuGetFramework framework)
+	{
+		var byFolder = ReadReferencedFiles(root, build)
+			.Where(path => path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+			.GroupBy(Path.GetDirectoryName)
+			.Select(group => (Framework: NuGetFramework.ParseFolder(Path.GetFileName(group.Key)), Files: group))
+			.Where(entry => !entry.Framework.IsUnsupported && !entry.Framework.IsAny)
+			.ToList();
+
+		return new FrameworkReducer().GetNearest(framework, byFolder.Select(entry => entry.Framework)) is { } nearest
+			   ? byFolder.First(entry => entry.Framework.Equals(nearest)).Files.Distinct().ToList()
+			   : null;
+	}
+
+	/// <summary>
+	/// Every file inside the package which its build targets name in a <c>Reference</c>, following
+	/// <c>Import</c>s which also stay inside it. A property this reader does not know expands to nothing,
+	/// which leaves a path relative to the package &mdash; where its files are anyway.
+	/// </summary>
+	private static List<string> ReadReferencedFiles(string root, IEnumerable<LockFileItem> build)
+	{
+		var inside = Path.GetFullPath(root) + Path.DirectorySeparatorChar;
+		var found = new List<string>();
+		var visited = new HashSet<string>();
+		var pending = new Queue<string>(build.Select(item => Resolve(item.Path)).Where(path => path != null));
+
+		while (pending.Count > 0)
+		{
+			var file = pending.Dequeue();
+
+			if (!visited.Add(file))
+				continue;
+
+			XDocument document;
+
+			try
+			{
+				document = XDocument.Load(file);
+			}
+			catch (Exception)//A build asset is not required to be XML this reader can make sense of.
+			{
+				continue;
+			}
+
+			//LocalName: an MSBuild file may or may not carry the 2003 namespace.
+			foreach (var element in document.Descendants())
+			{
+				var isImport = element.Name.LocalName == "Import";
+				var attribute = isImport ? element.Attribute("Project")
+							  : element.Name.LocalName == "Reference" ? element.Attribute("Include") : null;
+
+				if (attribute == null)
+					continue;
+
+				var expanded = Regex.Replace(attribute.Value, @"\$\(\w+\)", match => match.Value == "$(MSBuildThisFileDirectory)"
+											 ? Path.GetDirectoryName(file) + Path.DirectorySeparatorChar : "");
+
+				foreach (var piece in expanded.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+				{
+					if (Resolve(piece) is not { } path)
+						continue;
+
+					if (isImport)
+						pending.Enqueue(path);
+					else
+						found.Add(path);
+				}
+			}
+		}
+
+		return found;
+
+		//Anything which escapes the package is refused rather than read, package content being the input here.
+		//Combine leaves a rooted path alone, so an absolute one is rejected by that same test.
+		string Resolve(string text)
+		{
+			try
+			{
+				var separated = text.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+				//A leading separator is what an expanded-away property left behind, not an absolute path.
+				var full = Path.GetFullPath(Path.Combine(root, separated.TrimStart(Path.DirectorySeparatorChar)));
+				return full.StartsWith(inside, StringComparison.Ordinal) && File.Exists(full) ? full : null;
+			}
+			catch (Exception)//A path this malformed names nothing, which is the same answer as not finding it.
+			{
+				return null;
+			}
 		}
 	}
 

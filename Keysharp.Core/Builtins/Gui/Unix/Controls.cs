@@ -1887,7 +1887,7 @@ namespace Keysharp.Builtins
 		}
 	}
 
-	public class KeysharpRichEdit : RichTextArea
+	public partial class KeysharpRichEdit : RichTextArea
 	{
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
@@ -1905,10 +1905,18 @@ namespace Keysharp.Builtins
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
 			TextChanged += KeysharpRichEdit_TextChanged;
+			HookSelectionEvents();
 		}
 
 		private void KeysharpRichEdit_TextChanged(object sender, EventArgs e)
 		{
+			//Eto's text buffer reports a formatting change as a text change. Rewriting Text here would throw
+			//away the formatting that was just applied, and none of this is an edit the user made.
+			if (IsFormatting)
+				return;
+
+			Modified = true;
+
 			if (IsNumeric && Text.Any(ch => !char.IsDigit(ch)))
 				Text = string.Join("", Text.Where(ch => char.IsDigit(ch)));
 
@@ -2839,19 +2847,102 @@ namespace Keysharp.Builtins
 		}
 	}
 
-	public class KeysharpWebBrowser : WebView
+	/// <summary>
+	/// The backing control for <see cref="Gui.WebView"/> off Windows: WebKitGTK on Linux, WKWebView on macOS,
+	/// both through Eto. Eto's own WebView already carries most of what <see cref="IWebViewBackend"/> asks for,
+	/// so this mostly translates its events and answers the two members which would otherwise throw.
+	/// </summary>
+	public class KeysharpWebView : WebView, IWebViewBackend
 	{
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
+		private IWebViewEventSink sink;
 
-		public void Navigate (string url) => Url = new Uri(url);
-
-		public KeysharpWebBrowser(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
+		public KeysharpWebView(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
 			addStyle = _addStyle;
 			addExStyle = _addExStyle;
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
+			//Eto leaves this false, which suppresses the page's own context menu. Windows leaves it on, so
+			//turn it on here too and let BrowserContextMenuEnabled be the one place the choice is made.
+			BrowserContextMenuEnabled = true;
+		}
+
+		Uri IWebViewBackend.Url
+		{
+			get
+			{
+				try
+				{
+					return Url;
+				}
+				catch (Exception)//The GTK handler builds its Uri from a pointer that is null until something loads.
+				{
+					return null;
+				}
+			}
+			set => Url = value;
+		}
+
+		string IWebViewBackend.DocumentTitle => DocumentTitle ?? "";
+
+		bool IWebViewBackend.CanGoBack => CanGoBack;
+
+		bool IWebViewBackend.CanGoForward => CanGoForward;
+
+		bool IWebViewBackend.BrowserContextMenuEnabled
+		{
+			get => BrowserContextMenuEnabled;
+			set => BrowserContextMenuEnabled = value;
+		}
+
+		void IWebViewBackend.GoBack() => GoBack();
+
+		void IWebViewBackend.GoForward() => GoForward();
+
+		void IWebViewBackend.Stop() => Stop();
+
+		void IWebViewBackend.Reload() => Reload();
+
+		void IWebViewBackend.ShowPrintDialog() => ShowPrintDialog();
+
+		string IWebViewBackend.ExecuteScript(string script) => ExecuteScript(script) ?? "";
+
+		Task<string> IWebViewBackend.ExecuteScriptAsync(string script) => ExecuteScriptAsync(script);
+
+		void IWebViewBackend.LoadHtml(string html, Uri baseUri) => LoadHtml(html, baseUri);
+
+		void IWebViewBackend.AttachEvent(string e, IWebViewEventSink eventSink)
+		{
+			sink = eventSink;
+
+			switch (e)
+			{
+				case "navigated":
+					Navigated += (_, args) => sink.Navigated(args.Uri?.ToString() ?? "");
+					break;
+
+				case "documentloaded":
+					DocumentLoaded += (_, args) => sink.DocumentLoaded(args.Uri?.ToString() ?? "");
+					break;
+
+				case "documentloading":
+					DocumentLoading += (_, args) => args.Cancel = sink.DocumentLoading(args.Uri?.ToString() ?? "", args.IsMainFrame);
+					break;
+
+				case "opennewwindow":
+					OpenNewWindow += (_, args) => args.Cancel = sink.OpenNewWindow(args.Uri?.ToString() ?? "", args.NewWindowName ?? "");
+					break;
+
+				case "documenttitlechanged":
+					DocumentTitleChanged += (_, args) => sink.DocumentTitleChanged(args.Title ?? "");
+					break;
+
+				case "messagereceived":
+					MessageReceived += (_, args) => sink.MessageReceived(args.Message ?? "");
+					break;
+			}
 		}
 	}
 }

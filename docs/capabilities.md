@@ -345,6 +345,7 @@ Status legend:
 | Array.Remove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Array method. Removes the first occurrence of the value and returns true if one was found and removed, else false. Omitting the value removes the first element which has no value. |
 | Array.RemoveAt() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Removes the element at a given index, plus optionally a length. Returns the removed item if no length was specified. Returns the null if a length was specified. |
 | Array.Sort() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sorts array elements, optionally using a custom comparer callback. |
+| Array.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The array as a Ks.Clr object, exposing its full CLR surface late-bound. An Array is itself a CLR IList, so .NET APIs declaring one accept it directly. |
 | Asin() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc sine. Throws an exception if the argument value is not between -1 and 1. |
 | Atan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc tangent. |
 | ATan2() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc tangent by using two numbers. |
@@ -514,6 +515,26 @@ Status legend:
 | False | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Boolean false constant. |
 | File | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | File object type. |
 | File and directory operations | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | macOS recycle/trash and privacy-scoped file access still evolving. |
+| File.AtEOF | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the read position is at end of input. |
+| File.Close() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Closes the file or stream. |
+| File.Encoding | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the encoding used by text read and write members. |
+| File.Flush() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Flushes pending buffered output. |
+| File.Handle | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | OS file handle for path-backed files; 0 for memory-backed files. |
+| File.Length | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets stream length. |
+| File.Pos | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Current stream position; assigning seeks. |
+| File.RawRead() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads raw bytes into a destination exposing Ptr and Size. |
+| File.RawWrite() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes raw bytes from a source exposing Ptr and Size. |
+| File.Read() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads text from the current position. |
+| File.ReadChar() / File.ReadUChar() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads an 8-bit signed or unsigned value. |
+| File.ReadDouble() / File.ReadFloat() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads an IEEE floating-point value. |
+| File.ReadInt() / File.ReadUInt() / File.ReadInt64() / File.ReadShort() / File.ReadUShort() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads a binary integer of the requested width and signedness. |
+| File.ReadLine() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads one text line. |
+| File.Seek() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves the file position. |
+| File.Write() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes text at the current position. |
+| File.WriteChar() / File.WriteUChar() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes an 8-bit signed or unsigned value. |
+| File.WriteDouble() / File.WriteFloat() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes an IEEE floating-point value. |
+| File.WriteInt() / File.WriteUInt() / File.WriteInt64() / File.WriteShort() / File.WriteUShort() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a binary integer of the requested width and signedness. |
+| File.WriteLine() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes text followed by a line ending. |
 | FileAppend() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes text or binary data to the end of a file (first creating the file, if necessary). |
 | FileCopy() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies one or more files. |
 | FileCreateShortcut() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Windows creates .lnk files. Linux and macOS create symbolic links or freedesktop .desktop launchers; Windows-only icon-number, hotkey, and run-state metadata is not represented, and macOS aliases are not created. |
@@ -549,6 +570,14 @@ Status legend:
 | FormatCs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text using C#-style format placeholders (1-based indexing adaptation). |
 | FormatTime | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats a datetime string according to the parameters. All C# formatting options are supported. Supports all V2 functionality except for the Dn and Tn options. If you want to specify a specific format, do it in the format parameter. |
 | Func | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Function object type. |
+| Func.IsBuiltIn | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the function object targets a built-in member. |
+| Func.IsByRef() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether any parameter, or the specified 1-based parameter, is ByRef. |
+| Func.IsClosure | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the function object represents a closure over captured locals. |
+| Func.IsMethod | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the function object requires a receiver. |
+| Func.IsOptional() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether any parameter, or the specified 1-based parameter, is optional. |
+| Func.IsVariadic | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the target has a variadic trailing parameter. |
+| Func.MaxParams | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Maximum number of positional arguments the function object currently accepts. |
+| Func.MinParams | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Minimum number of positional arguments the function object currently requires. |
 | Func.Params | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. An Array describing the function's parameters (Name, Index, Optional, ByRef, Variadic, and Default when there is a real one). Reports exactly the names named-argument binding uses, excluding the receiver, internal parameters, and a bound function's already-bound ones. Unset when the parameters cannot be known (ObjBindMethod). |
 | FuncObj | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Managed function-object type name accepted by compatibility type checks alongside Func. |
 | GetKeyboardLayout() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a readable platform-native identifier for the active keyboard layout. |
@@ -594,6 +623,7 @@ Status legend:
 | Gui.Control.SetCue() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets cue banner (placeholder text) for the control. |
 | Gui.Control.SetFont() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the control font. |
 | Gui.Control.Text | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the control text. |
+| Gui.Control.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The backing toolkit control as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the control's own state and event wiring. |
 | Gui.Control.Type | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Control type name. |
 | Gui.Control.Value | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the control value. |
 | Gui.Control.Visible | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets whether the control is visible. |
@@ -616,6 +646,7 @@ Status legend:
 | Gui.OnEvent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Registers a GUI event callback. |
 | Gui.OnMessage() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Registers Callback(GuiObj, wParam, lParam, Msg) to run when the GUI window receives the given window message, ahead of the default window procedure. Matches AHK: a non-empty return claims the message (it becomes the reply, the remaining handlers are skipped and default processing is suppressed), while an empty string or no return at all lets the next handler and then the default window procedure run. An explicit 0 therefore claims the message and replies 0; a non-numeric value claims it and replies 0. AddRemove is 1 (append, default), -1 (prepend) or 0 (unregister); any other value is a ValueError. Off Windows the same synthesized input messages OnMessage() receives are delivered here, after the global monitors have had their turn; see that entry for which messages exist and what is missing. |
 | Gui.Opt() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sets options for the window. Raw Win32 style and extended-style options (+0x..., +E0x...) have no portable equivalent and are ignored on Linux and macOS; the named options are honoured through the toolkit's own properties. The Theme option is unsupported on every platform. +Round rounds the window's outer corners, on Windows 11 only. |
+| Gui.RichEdit | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The RichEdit control's own members: RichText, SelectedText/SelectedRichText, TextLength, LineCount, Modified, ReadOnly, WordWrap, DetectUrls, HideSelection and Zoom; SelectionStart/SelectionLength, CurrentLine/CurrentCol, FirstVisibleLine, Select, SelectAll and ScrollCaret; GetLine, LineLength, LineFromPos, PosFromLine, PosFromPoint and PointFromPos; CanUndo/CanRedo, Undo, Redo, ClearUndo, Cut, Copy, Paste, Append, Replace and Find; SetFormat/GetFormat, GetBackColor, SetParagraph/GetParagraph and the BeginUpdate/EndUpdate pair a highlighting pass wraps itself in; LoadFile/SaveFile; and the Change, SelectionChange and LinkClick events. Positions are 1-based and index the same text Value returns. Only the Win32 control serves all of it: off Windows there is no undo history, DetectUrls and HideSelection read back as false, Zoom scales the control font, GetFormat reports the start of the range rather than detecting variation, and SelectedRichText, the paragraph pair, the hit-testing pair and FirstVisibleLine raise. GTK has no RTF at all, so RichText and RTF files raise on Linux; colours, fonts and styles work everywhere. |
 | Gui.Restore() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Restores the GUI window from minimized or maximized state. |
 | Gui.SetFont() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the default font for subsequent controls. |
 | Gui.SetIcon() | 🟢 Full | 🟡 Partial | 🔴 Unsupported | 🔴 Unsupported | Gives one window an icon of its own, from a file, an icon resource in a module, an "HICON:"/"HBITMAP:" handle or an Image, applying to a window which is already open. Every size the source carries is kept, so each place the icon appears takes the one it wants; the Options "Wn" chooses the large (alt-tab and taskbar) size; a source carrying fixed sizes supplies the nearest it holds, one that is resampled anyway lands exactly. Unsupported on Wayland and macOS for the reason given under Gui.Icon. Partial on X11: icon resources inside a module are addressable by name but not by index, and the size option selects the nearest frame the source already carries rather than resampling. |
@@ -623,6 +654,7 @@ Status legend:
 | Gui.Submit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Submits control values and returns them to script variables. |
 | Gui.Tab.UseTab() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects the active tab page for subsequent control additions. |
 | Gui.Title | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the GUI window title. |
+| Gui.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The backing toolkit window as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the Gui's own state and event wiring. |
 | Gui.Visible | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets GUI visibility state. |
 | Gui() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Gui object provides an interface to create a window, add controls, modify the window, and retrieve information about the window. Such windows can be used as data entry forms or custom user interfaces. |
 | GuiCtrlFromHwnd() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The GuiCtrlFromHwnd function retrieves the GuiControl object of a GUI control associated with the specified window handle. |
@@ -655,7 +687,10 @@ Status legend:
 | IniWrite() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a value or section to a standard format.ini file. |
 | InputBox() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InputBox function displays an input box to ask the user to enter a string. On Linux and macOS the dialog is built with Eto and honours only the Password option; the W, H, X, Y and T (timeout) options are ignored, so Result never returns "Timeout". |
 | InputHook.BackspaceIsUndo | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Treats Backspace as undo for collected input. |
+| InputHook.BeforeHotkeys | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether InputHook receives events before hotkeys process them. |
+| InputHook.BufferLengthMax | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Maximum text buffer length before capture ends. |
 | InputHook.CaseSensitive | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether match checks are case-sensitive. |
+| InputHook.EndCharMode | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether termination characters remain in collected input. |
 | InputHook.EndKey | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Key that ended the input hook. |
 | InputHook.EndMods | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Modifier-state snapshot when input ended. |
 | InputHook.EndReason | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Reason the input hook ended. |
@@ -670,10 +705,14 @@ Status legend:
 | InputHook.OnEnd | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked when input capture ends. |
 | InputHook.OnKeyDown | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked on key-down events. |
 | InputHook.OnKeyUp | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked on key-up events. |
+| InputHook.OnMouseDown | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked on mouse-button press events. |
 | InputHook.OnMouseMove | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | OnMouseMove(hook, dx, dy) queues every move report, including (0, 0). Windows derives deltas from desktop-clamped hook positions, so outward movement at an edge can be zero; macOS uses Quartz deltas. Linux requires a matching keysharp-inputd 1.1 daemon and mouse-hook permission (without either, no moves are reported): relative values are raw device-specific evdev counts, while physical absolute values are changes in normalized [0,65535] axes. Linux A_EventInfo includes DeviceId (0 synthetic, positive physical) and IsAbsolute; synthetic absolute deltas are zero because no relative sample exists. Windows and macOS instead provide global-screen X/Y when available and omit DeviceId; X/Y need not equal the prior position plus dx/dy, and macOS reports the frozen cursor position while movement is suppressed. |
+| InputHook.OnMouseUp | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked on mouse-button release events. |
 | InputHook.Start() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Starts capturing input. |
 | InputHook.Stop() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Stops capturing input. |
 | InputHook.Timeout | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Maximum capture duration in seconds. |
+| InputHook.TranscribeModifiedKeys | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether typed characters should reflect active modifier changes. |
+| InputHook.VisibleMouseMove | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether mouse movement remains visible while capture is active. |
 | InputHook.VisibleNonText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible non-text keys are collected. |
 | InputHook.VisibleText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible text characters are collected. |
 | InputHook.Wait() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Waits until capture ends or times out. |
@@ -757,6 +796,7 @@ Status legend:
 | Map.MaxIndex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the largest integer key contained in the map. Returns empty string if no keys were integers. |
 | Map.MinIndex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the smallest integer key contained in the map. Returns empty string if no keys were integers. |
 | Map.Set() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets zero or more items. |
+| Map.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The map as a Ks.Clr object, exposing its full CLR surface late-bound. A Map is itself a CLR IDictionary&lt;object, object&gt;, so .NET APIs declaring one accept it directly. |
 | Max() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the larger of two numbers. If either is not numeric, the empty string is returned. The largest value of an array is computed if one is passed in. |
 | MemberError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | MemoryError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
@@ -776,6 +816,7 @@ Status legend:
 | Menu.SetColor() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets menu background color. |
 | Menu.SetIcon() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets icon for a menu item. |
 | Menu.Show() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Shows the menu at a screen position. |
+| Menu.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The backing toolkit menu as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass Menu's own state and event wiring. |
 | Menu.ToggleCheck() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles checked state of a menu item. |
 | Menu.ToggleEnable() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles enabled state of a menu item. |
 | Menu.ToggleItemVis() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles visibility of a menu item. |
@@ -887,6 +928,7 @@ Status legend:
 | RealThread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Represents a real background thread. IsActive/IsSuccessful/IsFailed/IsCanceled match Task outcome names; Result is available only after successful completion. |
 | RealThread.Call() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new real worker thread and runs the callback on it. |
 | RealThread.ContinueWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Schedules continuation after thread task completion. |
+| RealThread.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | A worker's completion task as a Ks.Clr object; unlike Result it answers as a raw CLR Task does. The main and adopted threads have no completion and raise TargetError. |
 | RealThread.Wait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for real thread completion. |
 | RegCreateKey() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The RegCreateKey function creates a registry key without writing a value. |
 | RegDelete | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Deletes a value from the registry. |
@@ -982,6 +1024,7 @@ Status legend:
 | TargetError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | Task | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Work that finishes later; every CLR call returning a .NET Task hands one back. IsActive/IsSuccessful/IsFailed/IsCanceled expose its outcome, Result is a non-blocking snapshot, and Await and Wait are the waiting forms. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation. |
 | Task.Create() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls Producer synchronously with the positional prefix it accepts of Succeed, Fail and Cancel, and returns the Task they settle; Producer's return value is ignored. First settlement wins; Succeed adopts asynchronous work's eventual value, failure or cancellation, and an early producer error fails the Task. |
+| Task.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The underlying CLR task as a Ks.Clr object, so members Task does not mirror (IsCompleted, ContinueWith, ...) stay reachable. Replaces the former Clr property. |
 | Taskbar | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, reaches only docks implementing it, and decorates the entry named by DESKTOP_ENTRY; macOS badges the dock tile with text and draws progress on the tile, also application-wide. Linux and macOS are compile-checked only. |
 | Thread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Thread settings and controls. |
 | Thread (object) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Thread is a class rather than a function: calling it runs the AHK sub-functions (NoTimers/Priority/Interrupt) unchanged, and an instance describes one pseudo-thread: Id, Index (1-based), IsActive, Kind, Elapsed, Priority, Critical, Paused, IsInterruptible, Underlying and Exit. An Is prefix marks a read-only predicate; a settable mode is named for the mode. Obtained from A_Thread, Under or RealThread.Threads, never constructed. There is one object per pseudo-thread, so `thr == A_Thread` tests whether it is the running one. It revalidates its identity on every access, so one held past its pseudo-thread's life reports IsActive false rather than describing whichever pseudo-thread reused the pooled slot. Reads work from any real thread; setters and Exit require the owning one. |
