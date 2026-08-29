@@ -10,7 +10,7 @@ CZ_ListBox := MyGui.Add("ListBox", "x10 h200 w160", ["Red","Green","Blue","Black
     , "朱红"])
 
 CZ_LbBtn1 := MyGui.Add("Button", "w140 x180 yp", "ControlGetClassNN")
-CZ_LbBtn1.OnEvent("Click", "GetClassNN")
+CZ_LbBtn1.OnEvent("Click", GetClassNN)
 
 
 MyGui.Show("w320" "h300")
@@ -18,4 +18,4 @@ MyGui.Show("w320" "h300")
 GetClassNN() {
     ClassNN := ControlGetClassNN(CZ_ListBox, MyGui)
     MsgBox(ClassNN)
-}
+}

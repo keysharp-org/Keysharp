@@ -4,13 +4,13 @@ Chk2 := MyGui.Add("CheckBox", "x10 y50 w120", "Walk")
 Chk3 := MyGui.Add("CheckBox", "x10 y90 h40 w120 Checked 1", "Stay home")
 
 ChkBtn1 := MyGui.Add("Button", "x10 y130 w80", "Toggle CBox 1")
-ChkBtn1.OnEvent("Click", "CheckOne")
+ChkBtn1.OnEvent("Click", CheckOne)
 
 ChkBtn2 := MyGui.Add("Button", "x10 y+10 w80", "Check CBox 2")
-ChkBtn2.OnEvent("Click", "CheckTwo")
+ChkBtn2.OnEvent("Click", CheckTwo)
 
 ChkBtn3 := MyGui.Add("Button", "x10 y+10 w80", "Uncheck CBox 3")
-ChkBtn3.OnEvent("Click", "CheckThree")
+ChkBtn3.OnEvent("Click", CheckThree)
 
 MyGui.Show("w200 h350")
 
@@ -24,4 +24,4 @@ CheckTwo() {
 
 CheckThree() {
     ControlSetChecked(0, Chk3)
-}
+}

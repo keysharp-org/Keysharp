@@ -136,7 +136,7 @@ namespace Keysharp.Builtins
 				if (gui == null || !gui.TryGetTarget(out var g))
 					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
 
-				var del = Functions.GetKeysharpFunc(h, g.form.eventObj, true);
+				var del = KeysharpForm.ResolveHandler(h, g.form.eventObj);
 
 				//ModifyEventHandlers ignores a null delegate, so a callback that did not resolve would otherwise
 				//register nothing and still report success, exactly as HandleOnCommandNotify used to.
@@ -296,7 +296,7 @@ namespace Keysharp.Builtins
 				if (gui == null || !gui.TryGetTarget(out var g))
 					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
 
-				var del = Functions.GetKeysharpFunc(callback, g.form.eventObj, true);
+				var del = KeysharpForm.ResolveHandler(callback, g.form.eventObj);
 
 				//ModifyEventHandlers ignores a null delegate, so a callback that did not resolve would
 				//otherwise register nothing and still report success. Gui.OnMessage() already rejects one.

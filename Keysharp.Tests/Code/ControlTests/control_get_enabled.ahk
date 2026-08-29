@@ -10,7 +10,7 @@ CZ_ListBox := MyGui.Add("ListBox", "x10 h200 w160", ["Red","Green","Blue","Black
     , "朱红"])
 
 CZ_LbBtn1 := MyGui.Add("Button", "w140 x180 yp", "ControlGetEnabled")
-CZ_LbBtn1.OnEvent("Click", "GetEnabled")
+CZ_LbBtn1.OnEvent("Click", GetEnabled)
 CZ_LbBtn2 := MyGui.Add("Button", "w140 x180 yp+40", "Disabled!")
 CZ_LbBtn2.Enabled := False
 
@@ -20,4 +20,4 @@ MyGui.Show("w320" "h300")
 GetEnabled() {
     Result := ControlGetEnabled(CZ_LbBtn2, MyGui)
     MsgBox(Result, "1: enabled 0: disabled")
-}
+}

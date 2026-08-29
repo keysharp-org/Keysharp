@@ -322,6 +322,17 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
+		/// Internal helper to handle type errors whose message says more than a conversion pair can.
+		/// Throws a <see cref="TypeError"/> or returns <see cref="DefaultObject"/>.
+		/// </summary>
+		[StackTraceHidden]
+		internal static object TypeErrorOccurred(string text, object ret = null)
+		{
+			Error err;
+			return ErrorOccurred(err = new TypeError(text)) ? throw err : ret ?? DefaultObject;
+		}
+
+		/// <summary>
 		/// Renders a value for an error message: its own text when it has any, else the name the script knows
 		/// its type by. An object that does not override ToString would otherwise print its CLR type name.
 		/// Never throws.

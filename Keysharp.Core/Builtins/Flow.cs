@@ -166,7 +166,7 @@ namespace Keysharp.Builtins
 		/// Registers a function to be called automatically whenever the script receives the specified message.
 		/// </summary>
 		/// <param name="msgNumber">The number of the message to monitor or query, which should be between 0 and 4294967295 (0xFFFFFFFF).</param>
-		/// <param name="callback">The name of a function to call whenever the specified message is received.<br/>
+		/// <param name="callback">The function object to call whenever the specified message is received.<br/>
 		/// The callback accepts four parameters as follows:<br/>
 		///     The message's WPARAM value.<br/>
 		///     The message's LPARAM value.<br/>

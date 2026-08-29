@@ -11,7 +11,7 @@ val := optfunc1() ?? 1
 AssertEq(val, 1, A_LineNumber)
 
 val := ""
-fo := Func("optfunc1")
+fo := optfunc1
 val := fo() ?? 2
 
 AssertEq(val, 2, A_LineNumber)
@@ -26,7 +26,7 @@ val := optfunc2(123) ?? 3
 AssertEq(val, 3, A_LineNumber)
 
 val := ""
-fo := Func("optfunc2")
+fo := optfunc2
 val := fo(123) ?? 4
 
 AssertEq(val, 4, A_LineNumber)
@@ -58,7 +58,7 @@ ga :=
 gb :=
 gc :=
 val := ""
-fo := Func("optfunc3")
+fo := optfunc3
 val := fo(123, 456) ?? 6
 
 AssertEq(ga, 123, A_LineNumber)
@@ -87,7 +87,7 @@ ga :=
 gb :=
 gc :=
 val := ""
-fo := Func("optfunc3")
+fo := optfunc3
 val := fo(123, 456, 789)
 
 AssertEq(ga, 123, A_LineNumber)

@@ -6,88 +6,111 @@ namespace Keysharp.Builtins
 	public static class Functions
 	{
 		/// <summary>
-		/// Creates a function object by searching for a method within the script if funcName was a string.
-		/// The search is done by matching the object type, name and parameter count.
-		/// If funcName was a delegate, then a new <see cref="KeysharpFunc"/> is returned using delegate.Method.
-		/// If funcName was already an <see cref="KeysharpFunc"/>, then it's just casted and returned.
-		/// Static functions use null for the object.
+		/// Returns a function as a function object.
+		/// If function was a delegate, then a new <see cref="KeysharpFunc"/> is returned using delegate.Method.
+		/// If function was already an <see cref="KeysharpFunc"/>, then it's just casted and returned.
 		/// </summary>
-		/// <param name="funcName">The name, delegate or KeysharpFunc of the method.</param>
-		/// <param name="obj">The object to call the method on. Default: null for static functions.</param>
-		/// <param name="paramCount">The number of parameters the method has. Default: use the first method found.</param>
+		/// <param name="function">The delegate or KeysharpFunc to return an object for.</param>
+		/// <param name="obj">The instance to bind a delegate to. Default: null for an unbound function.</param>
 		/// <returns>An <see cref="KeysharpFunc"/> which can later be called like a function.</returns>
 		[PublicHiddenFromUser]
-		public static KeysharpFunc Func(object funcName, object obj = null, object paramCount = null) => GetKeysharpFunc(funcName, obj, paramCount, obj != null);
+		public static KeysharpFunc Func(object function, object obj = null) => GetKeysharpFunc(function, obj, obj != null);
 		[PublicHiddenFromUser]
-		public static KeysharpFunc Func(object funcName, Type t, object paramCount = null) => GetKeysharpFunc(funcName, t, paramCount, t != null);
-		[PublicHiddenFromUser]
-		public static KeysharpFunc Func(Delegate del, object obj = null) => GetKeysharpFunc(del, obj, null, obj != null);
+		public static KeysharpFunc Func(Delegate del, object obj = null) => GetKeysharpFunc(del, obj, obj != null);
 		[PublicHiddenFromUser]
 		public static KeysharpFunc Closure(Delegate del, object obj = null) => new Closure(del, obj);
 
 		/// <summary>
-		/// Internal helper to get a function object which supports different ways of identifying such.
+		/// Resolves a function by name against a module, the global function table and the built-ins.
+		/// Name resolution is internal, for the places where a name is all there is: <c>%"Name"%</c> derefs,
+		/// <c>#Import</c> member binding and RegEx callouts. A callback reaches a built-in as a function object,
+		/// which <see cref="GetKeysharpFunc"/> handles.
 		/// </summary>
-		/// <param name="h">The object to examine. This can be a string or an existing function object.</param>
-		/// <param name="eventObj">The object to find the method on.</param>
+		/// <param name="name">The name of the function to find.</param>
+		/// <param name="moduleType">The module to search first, or null to search the current one and to let a
+		/// closure of the executing deref function win over it.</param>
+		/// <param name="paramCount">The number of parameters the function has. Default: use the first one found.</param>
+		/// <param name="throwIfBad">Whether to throw when the name resolves to nothing. Default: false.</param>
+		/// <returns>An <see cref="KeysharpFunc"/>, or null when the name names no function.</returns>
+		/// <exception cref="MethodError">A <see cref="MethodError"/> exception is thrown if throwIfBad was true and no function was found.</exception>
+		[PublicHiddenFromUser]
+		public static KeysharpFunc GetKeysharpFuncByName(object name, Type moduleType = null, object paramCount = null, bool throwIfBad = false)
+		{
+			var s = name.As();
+
+			if (s.Length == 0)
+				return null;//Empty string will just return null, which is a valid value in some cases.
+
+			var script = Script.TheScript;
+
+			if (moduleType == null)
+			{
+				// A currently-executing deref function exposes its locals/closures by name. Resolve a closure (a
+				// live KeysharpFunc instance, possibly capturing locals) ahead of the module/global tables — these are
+				// per-invocation and must never be cached.
+				var scope = Script.executingUserFunc;
+
+				if (scope != null && scope.TryGetVar(s, out var scopeVal) && scopeVal is KeysharpFunc scopeFo && scopeFo.IsValid)
+					return scopeFo;
+
+				moduleType = script.CurrentModuleType;
+			}
+
+			var cachedKeysharpFunc = script.FunctionData.cachedKeysharpFunc;
+			KeysharpFunc del;
+
+			if (moduleType != null)
+			{
+				var key = new ModuleFuncKey(s, moduleType, paramCount.Ai(-1));
+				del = script.FunctionData.cachedModuleKeysharpFunc.GetOrAdd(
+					key,
+					(k) => new KeysharpFunc(s, moduleType, paramCount)
+				);
+
+				if (!del.IsValid)
+				{
+					// Fall back to global/built-in functions when the module doesn't define the method.
+					del = cachedKeysharpFunc.GetOrAdd(s, (key) => new KeysharpFunc(s, (object)null, paramCount));
+				}
+			}
+			else
+				del = cachedKeysharpFunc.GetOrAdd(s, (key) => new KeysharpFunc(s, (object)null, paramCount));
+
+			if (del.IsValid)
+				return del;
+
+			if (throwIfBad)
+				_ = Errors.MethodErrorOccurred($"Unable to retrieve method {s} when creating a function object.");
+
+			return null;
+		}
+
+		/// <summary>
+		/// Internal helper to get a function object which supports different ways of identifying such.
+		/// This is the boundary every built-in that takes a callback goes through, so it accepts only things
+		/// which already are a function: an existing function object or a delegate.
+		/// </summary>
+		/// <param name="h">The object to examine. This can be an existing function object or a delegate.</param>
+		/// <param name="inst">The instance to bind a delegate to. Default: null for an unbound function.</param>
 		/// <param name="throwIfBad">Whether throw an exception if the method could not be found. Default: false.</param>
 		/// <returns>An <see cref="KeysharpFunc"/> which may be a newly recreated one, or h if it was already one.</returns>
 		/// <exception cref="MethodError">A <see cref="MethodError"/> exception is thrown if a function object couldn't be created</exception>
-		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if h was not a string or existing function object.</exception>
+		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if h is not a function.</exception>
 		[PublicHiddenFromUser]
-		public static KeysharpFunc GetKeysharpFunc(object h, object eventObj, object paramCount = null, bool throwIfBad = false)
+		public static KeysharpFunc GetKeysharpFunc(object h, object inst = null, bool throwIfBad = false)
 		{
 			KeysharpFunc del = null;
-			var cachedKeysharpFunc = Script.TheScript.FunctionData.cachedKeysharpFunc;
-			var moduleType = eventObj as Type;
-			if (moduleType == null && eventObj == null)
-				moduleType = Script.TheScript.CurrentModuleType;
 
 			if (h is string s)
 			{
-				if (s.Length > 0)
-				{
-					// A currently-executing deref function exposes its locals/closures by name. Resolve a closure (a
-					// live KeysharpFunc instance, possibly capturing locals) ahead of the module/global tables — these are
-					// per-invocation and must never be cached. Only for a bare name (no explicit object/module target).
-					if (eventObj == null)
-					{
-						var scope = Script.executingUserFunc;
-						if (scope != null && scope.TryGetVar(s, out var scopeVal) && scopeVal is KeysharpFunc scopeFo && scopeFo.IsValid)
-							return scopeFo;
-					}
+				if (s.Length == 0)
+					return null;//Empty string will just return null, which is a valid value in some cases.
 
-					if (moduleType != null)
-					{
-						var key = new ModuleFuncKey(s, moduleType, paramCount.Ai(-1));
-						del = Script.TheScript.FunctionData.cachedModuleKeysharpFunc.GetOrAdd(
-							key,
-							(k) => new KeysharpFunc(s, moduleType, paramCount)
-						);
-						if (!del.IsValid)
-						{
-							// Fall back to global/built-in functions when the module doesn't define the method.
-							del = cachedKeysharpFunc.GetOrAdd(s, (key) => new KeysharpFunc(s, (object)null, paramCount));
-						}
-					}
-					else if (eventObj != null)
-					{
-						del = new KeysharpFunc(s, eventObj, paramCount);
-					}
-					else
-						del = cachedKeysharpFunc.GetOrAdd(s, (key) => new KeysharpFunc(s, eventObj, paramCount));
-
-					if (!del.IsValid)
-					{
-						del = null;
-
-						if (throwIfBad)
-						{
-							_ = Errors.MethodErrorOccurred($"Unable to retrieve method {s} when creating a function object.");
-							return default;
-						}
-					}
-				}//Empty string will just return null, which is a valid value in some cases.
+				// Its own branch rather than the type check below, which reports only when throwIfBad is set: a name
+				// is the one wrong value worth naming a remedy for, and worth reporting to every caller.
+				// %"Name"% resolves before the call, so what arrives here is always the function object itself.
+				_ = Errors.TypeErrorOccurred($"Cannot use the string \"{s}\" as a function. Pass the function itself, or %\"{s}\"% to resolve a name at run time.");
+				return default;
 			}
 			else if (h is KeysharpFunc fo)
 			{
@@ -106,10 +129,11 @@ namespace Keysharp.Builtins
 			}
 			else if (h is Delegate d)
 			{
-				if (moduleType == null)
-					del = new KeysharpFunc(d, eventObj);
-				else
-					del = cachedKeysharpFunc.GetOrAdd(d, (key) => new KeysharpFunc(d, eventObj));
+				// An unbound delegate answers the same for the life of the script, so it is worth caching by its
+				// own identity. One bound to an instance is per-instance and cannot be shared.
+				del = inst == null
+					  ? Script.TheScript.FunctionData.cachedKeysharpFunc.GetOrAdd(d, (key) => new KeysharpFunc((Delegate)key, null))
+					  : new KeysharpFunc(d, inst);
 
 				if (!del.IsValid)
 				{

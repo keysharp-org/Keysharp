@@ -13,7 +13,7 @@ namespace Keysharp.Builtins
 		/// <param name="LockObject">The object to lock on when calling the function. Must be an object: a number
 		/// is boxed afresh at each call site, which would produce a different monitor every time and therefore
 		/// no mutual exclusion at all.</param>
-		/// <param name="Callback">The name of the function or a function object.</param>
+		/// <param name="Callback">The function object to run.</param>
 		/// <param name="Arguments">The arguments to pass to the function.</param>
 		/// <returns>The object the function object returned.</returns>
 		public static object LockRun(object LockObject, object Callback, params object[] Arguments)
@@ -111,7 +111,7 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Runs a function object on a new real thread. Extra arguments are passed to the function.
 			/// </summary>
-			/// <param name="Callback">The name of the function or a function object.</param>
+			/// <param name="Callback">The function object to run.</param>
 			/// <param name="Arguments">The arguments to pass to the function.</param>
 			/// <returns>The <see cref="RealThread"/> object.</returns>
 			public static object staticCall(object @this, object Callback, params object[] Arguments)
@@ -218,7 +218,7 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Encapsulates a call to <see cref="Task.ContinueWith()"/>.
 			/// </summary>
-			/// <param name="Callback">The name of the function or a function object.</param>
+			/// <param name="Callback">The function object to run.</param>
 			/// <param name="Arguments">The arguments to pass to the function.</param>
 			/// <returns>The new <see cref="RealThread"/> object</returns>
 			public object ContinueWith(object Callback, params object[] Arguments)

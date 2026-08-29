@@ -234,7 +234,10 @@ namespace Keysharp.Builtins
 
 			if (action != null)
 			{
-				fo = Functions.GetKeysharpFunc(action, null);//Don't throw on failure because returning null is a valid action.
+				//A string is an alt-tab action or the name of an existing hotkey to copy.
+				if (action is not string)
+					fo = Functions.GetKeysharpFunc(action, null, true);
+
 				var tv = script.Threads.CurrentThread;
 
 				//Hotkey callbacks are invoked with one argument (the hotkey name). A function requiring more can
@@ -268,7 +271,7 @@ namespace Keysharp.Builtins
 break_twice:;
 
 					if (fo == null)
-						return Errors.ErrorOccurred($"Unable to find existing hotkey handler: {label}");
+						return Errors.ErrorOccurred($"Unable to find existing hotkey handler: {label}. A callback is passed as a function object.");
 				}
 
 				if (fo == null)
@@ -392,10 +395,11 @@ break_twice:;
 
 			if (replacementVal != null)
 			{
-				if ((ifunc = Functions.GetKeysharpFunc(replacementVal, null, false)) is not null)
-				{
-				}
-				else if (executeAction)
+				//A string is the replacement text.
+				if (replacementVal is not string)
+					ifunc = Functions.GetKeysharpFunc(replacementVal, null, true);
+
+				if (ifunc == null && executeAction)
 					return Errors.ValueErrorOccurred("The 'X' option must be used together with a function object.");
 			}
 

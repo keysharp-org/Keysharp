@@ -4,7 +4,7 @@ Btn2 := MyGui.Add("Button", "x10 y50", "X = 10 Y = 50")
 Btn3 := MyGui.Add("Button", "x10 y90 h40", "X = 10 Y = 90")
 
 BtnShow := MyGui.Add("Button", "x10 y130", "Get positions")
-BtnShow.OnEvent("Click", "GetPos")
+BtnShow.OnEvent("Click", GetPos)
 
 MyGui.Show()
 
@@ -15,4 +15,4 @@ GetPos() {
     MsgBox("X: " x1 " Y: " y1 " Width: " w1 " Height: " h1, "Button 1")
     MsgBox("X: " x2 " Y: " y2 " Width: " w2 " Height: " h2, "Button 2")
     MsgBox("X: " x3 " Y: " y3 " Width: " w3 " Height: " h3, "Button 3")
-}
+}

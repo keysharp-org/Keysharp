@@ -14,8 +14,8 @@ if (!Pics.Length)
 ; Add the picture control, preserving the aspect ratio of the first picture.
 MyGui := Gui()
 Pic := MyGui.Add("Pic", "w600 h-1 +Border", "HBITMAP:*" Pics[1]["Handle"])
-MyGui.OnEvent("Escape", "CloseMe")
-MyGui.OnEvent("Close", "CloseMe")
+MyGui.OnEvent("Escape", CloseMe)
+MyGui.OnEvent("Close", CloseMe)
 MyGui.Title := "Keysharp Wallpaper"
 MyGui.Show()
 Loop 
@@ -27,4 +27,4 @@ Loop
 
 CloseMe() {
     ExitApp()
-}
+}

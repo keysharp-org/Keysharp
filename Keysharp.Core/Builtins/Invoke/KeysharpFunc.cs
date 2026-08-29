@@ -367,8 +367,8 @@ namespace Keysharp.Builtins
 
 		public KeysharpFunc(params object[] args) : base(args) { }
 
-		public static object staticCall(object @this, object funcName, object obj = null, object paramCount = null)
-			=> Functions.GetKeysharpFunc(funcName, obj, paramCount, obj != null);
+		public static object staticCall(object @this, object Function, object Obj = null)
+			=> Functions.GetKeysharpFunc(Function, Obj, Obj != null);
 
         private static MethodInfo GetMethodInfo(string s, object o, object paramCount)
         {
@@ -408,7 +408,11 @@ namespace Keysharp.Builtins
 		{
 			mph = m;
 			mi = m?.mi;
-			moduleType = mph?.moduleType;
+			// Only a script-compiled module brackets a call. Ks and Ahk derive from Module so #import has something
+			// to bind against, but their members are builtins with no script scope of their own -- making one the
+			// current module would resolve a callback name, a global or the compatibility version against Keysharp's
+			// own module rather than the caller's.
+			moduleType = mph?.moduleType is Type mt && mt.Assembly != typeof(Keysharp.Runtime.Module).Assembly ? mt : null;
 
 			if (mph != null)
 			{

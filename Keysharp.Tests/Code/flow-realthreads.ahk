@@ -21,7 +21,7 @@ rtfunc1(obj)
 	LockRun(lockit, (o) => rtAddTot(o), obj)
 }
 
-fo := Func("rtfunc1")
+fo := rtfunc1
 
 Loop 100
 {
@@ -58,7 +58,7 @@ rtfunc2()
 	return rtSumTot()
 }
 
-fo := Func("rtfunc2")
+fo := rtfunc2
 
 Loop 100
 {
@@ -76,6 +76,19 @@ Loop 100
 tharr.Length := 0
 
 AssertEq(tot, 10000, A_LineNumber)
+
+; A named function reaches a worker as a plain reference, both when it starts one and when it continues one.
+rtNamed(n) => n * 2
+
+named := RealThread(rtNamed, 21)
+Assert(named.Wait(), A_LineNumber)
+AssertEq(named.Result, 42, A_LineNumber)
+
+chained := RealThread(rtNamed, 4).ContinueWith(rtNamed, 5)
+Assert(chained.Wait(), A_LineNumber)
+AssertEq(chained.Result, 10, A_LineNumber)
+
+AssertEq(LockRun(lockit, rtNamed, 3), 6, A_LineNumber)
 
 ; Wait must honour its timeout instead of blocking until the body finishes.
 slowWorker := RealThread(() => Sleep(2000))

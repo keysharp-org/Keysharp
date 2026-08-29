@@ -94,7 +94,7 @@ namespace Keysharp.Runtime
 			if (rd.flatPublicStaticProperties.TryGetValue(name, out var prop))
 				value = prop.GetValue(null);
 			else if (rd.flatPublicStaticMethods.TryGetValue(name, out var mi))
-				value = Keysharp.Builtins.Functions.Func(name, mi.DeclaringType);
+				value = Keysharp.Builtins.Functions.GetKeysharpFuncByName(name, mi.DeclaringType, throwIfBad: true);
 			else if (rd.stringToTypes.TryGetValue(name, out var type))
 				value = Script.TheScript.Vars.Statics[type];
 			else
@@ -150,7 +150,7 @@ namespace Keysharp.Runtime
 
 			if (rd.flatPublicStaticMethods.TryGetValue(name, out var mi))
 			{
-				var fn = Keysharp.Builtins.Functions.Func(name, mi.DeclaringType);
+				var fn = Keysharp.Builtins.Functions.GetKeysharpFuncByName(name, mi.DeclaringType, throwIfBad: true);
 				return fn.Call(args);
 			}
 

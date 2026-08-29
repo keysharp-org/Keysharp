@@ -10,7 +10,7 @@ CZ_ListBox := MyGui.Add("ListBox", "x10 h200 w160", ["Red","Green","Blue","Black
     , "朱红"])
 
 CZ_LbBtn1 := MyGui.Add("Button", "x180 yp", "ControlGetChoice")
-CZ_LbBtn1.OnEvent("Click", "GetChoice")
+CZ_LbBtn1.OnEvent("Click", GetChoice)
 
 
 MyGui.Show()
@@ -18,4 +18,4 @@ MyGui.Show()
 GetChoice() {
     Choice := ControlGetChoice(CZ_ListBox, MyGui)
     MsgBox(Choice)
-}
+}

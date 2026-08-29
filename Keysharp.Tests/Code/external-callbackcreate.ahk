@@ -4,10 +4,10 @@
 #Include <assert>
 val := ""
 #if WINDOWS
-callback := CallbackCreate("TheFunc", "&")
+callback := CallbackCreate(TheFunc, "&")
 DllCall(callback, "float", 10.5, "int64", 42)
 #elif LINUX || OSX
-callback := CallbackCreate("TheFunc", "&", 2)
+callback := CallbackCreate(TheFunc, "&", 2)
 DllCall(callback, "ptr", 10, "ptr", 42)
 #endif
 
@@ -29,7 +29,7 @@ AssertEq(val, 52, A_LineNumber)
 
 val := ""
 CallbackFree(callback)
-callback := CallbackCreate("FuncNoParams")
+callback := CallbackCreate(FuncNoParams)
 DllCall(callback)
 
 FuncNoParams()
@@ -58,7 +58,7 @@ CriticalCallback()
 }
 
 #if WINDOWS
-EnumAddress := CallbackCreate("EnumWindowsProc")
+EnumAddress := CallbackCreate(EnumWindowsProc)
 DetectHiddenWindows(True)
 ct := 0
 DllCall("EnumWindows", "Ptr", EnumAddress, "Ptr", 0)

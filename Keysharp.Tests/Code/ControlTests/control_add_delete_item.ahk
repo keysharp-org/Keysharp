@@ -1,9 +1,9 @@
 MyGui := Gui()
 MyListBox := MyGui.Add("ListBox", "r5 w110", ["Red","Green","Blue","Black","White"])
 MyLbBtn1 := MyGui.Add("Button", "x+10 yp", "Delete White")
-MyLbBtn1.OnEvent("Click", "DeleteWhite")
+MyLbBtn1.OnEvent("Click", DeleteWhite)
 MyLbBtn2 := MyGui.Add("Button", "x+10 yp", "Add White")
-MyLbBtn2.OnEvent("Click", "AddWhite")
+MyLbBtn2.OnEvent("Click", AddWhite)
 
 MyGui.Show()
 

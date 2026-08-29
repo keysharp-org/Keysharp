@@ -334,7 +334,7 @@ namespace Keysharp.Runtime
 			if (TryGetClassValue(key, out var classValue))
 				return classValue;
 
-			return Functions.Func(key, moduleType);
+			return Functions.GetKeysharpFuncByName(key, moduleType, throwIfBad: moduleType != null);
 		}
 
 		public object SetVariable(string key, object value) => SetVariable(script.CurrentModuleType, key, value);

@@ -5,7 +5,7 @@ MyRE2 := MyGui.Add("RichEdit", "w400 h400")
 MyPic := LoadPicture(A_ScriptDir "\Robin.png")
 Clipboard.Image := "HBITMAP:" MyPic["Handle"]
 ShowBtn2 := MyGui.Add("Button", "x10 y+10", "Paste Pic")
-ShowBtn2.OnEvent("Click", "PastePic2")
+ShowBtn2.OnEvent("Click", PastePic2)
 MyGui.Show()
 
 PastePic2() {

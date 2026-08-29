@@ -79,10 +79,10 @@ LVFolder := A_MyDocuments
 ; │  Tab One Menu  │
 ; └────────────────┘
 FileMenu := Menu()
-FileMenu.Add("&System", "MenuHandler")
-FileMenu.Add("S&cript Icon", "MenuHandler")
-FileMenu.Add("S&uspend Icon", "MenuHandler")
-FileMenu.Add("&Pause Icon", "MenuHandler")
+FileMenu.Add("&System", MenuHandler)
+FileMenu.Add("S&cript Icon", MenuHandler)
+FileMenu.Add("S&uspend Icon", MenuHandler)
+FileMenu.Add("&Pause Icon", MenuHandler)
 #if WINDOWS
 	FileMenu.SetIcon("&System", "Shell32.dll", 174) ; 2nd icon group from the file
 #endif
@@ -92,14 +92,14 @@ FileMenu.SetIcon("&Pause Icon", A_KeysharpCorePath, "Keysharp_p.ico")
 
 ; Create another menu destined to become a submenu of the above menu.
 MainSubmenu1 := Menu()
-MainSubmenu1.Add("Item &A", "MenuHandler")
-MainSubmenu1.Add("Item &B", "MenuHandler")
+MainSubmenu1.Add("Item &A", MenuHandler)
+MainSubmenu1.Add("Item &B", MenuHandler)
 
 ; Create a submenu in the first menu (a right-arrow indicator). When the user selects it, the second menu is displayed.
 FileMenu.Add("My Su&bmenu", MainSubmenu1)
 
 ImgSrchMenu := Menu()
-ImgSrchMenu.Add("&Image Search Test", "ImgSrch")
+ImgSrchMenu.Add("&Image Search Test", ImgSrch)
 
 ; Menu presentation options added in v2.1:
 ;   Radio changes a checked item's mark from a tick to a bullet.
@@ -110,18 +110,18 @@ ImgSrchMenu.Add("&Image Search Test", "ImgSrch")
 ; here are wired up to be checked by hand: the three radio items act as one group where picking any of them
 ; moves the bullet, and the tick item turns its checkmark on and off.
 PresentationMenu := Menu()
-PresentationMenu.Add("Radio choice &1", "PickPresentationRadio", "Radio")
-PresentationMenu.Add("Radio choice &2", "PickPresentationRadio", "Radio")
-PresentationMenu.Add("Radio choice &3", "PickPresentationRadio", "Radio")
+PresentationMenu.Add("Radio choice &1", PickPresentationRadio, "Radio")
+PresentationMenu.Add("Radio choice &2", PickPresentationRadio, "Radio")
+PresentationMenu.Add("Radio choice &3", PickPresentationRadio, "Radio")
 PresentationMenu.Check("Radio choice &1")
 PresentationMenu.Add()  ; Add a separator line.
-PresentationMenu.Add("Toggle my chec&kmark", "TogglePresentationCheck")
+PresentationMenu.Add("Toggle my chec&kmark", TogglePresentationCheck)
 PresentationMenu.Check("Toggle my chec&kmark")
-PresentationMenu.Add("RTL sample: שלום", "MenuHandler", "RTL")
-PresentationMenu.Add("Break: column two", "MenuHandler", "Break")
-PresentationMenu.Add("Second-column item", "MenuHandler")
-PresentationMenu.Add("BarBreak: column three", "MenuHandler", "BarBreak")
-PresentationMenu.Add("Third-column item", "MenuHandler")
+PresentationMenu.Add("RTL sample: שלום", MenuHandler, "RTL")
+PresentationMenu.Add("Break: column two", MenuHandler, "Break")
+PresentationMenu.Add("Second-column item", MenuHandler)
+PresentationMenu.Add("BarBreak: column three", MenuHandler, "BarBreak")
+PresentationMenu.Add("Third-column item", MenuHandler)
 
 MyMenuBar := MenuBar()
 MyMenuBar.Add("&Menu Icon Test", FileMenu)
@@ -129,9 +129,9 @@ MyMenuBar.Add("&Image Search", ImgSrchMenu)
 MyMenuBar.Add("&Presentation", PresentationMenu, "Right")
 
 MyGui := Gui(, "KEYSHARP TESTS")
-MyGui.OnEvent("Close", "CloseApp")
+MyGui.OnEvent("Close", CloseApp)
 #if WINDOWS
-OnMessage(0x0233, "WM_DROPFILES_CZ")
+OnMessage(0x0233, WM_DROPFILES_CZ)
 #endif
 
 CloseApp(*) {
@@ -171,25 +171,25 @@ TEST_HEADER := MyGui.Add("Text", "s20 w1200","Keysharp GUI Tests")
 ; │  Add button to change header font  │
 ; └────────────────────────────────────┘
 headerBtn := MyGui.Add("Button", "s8 xc+10 y+10", "Make header font larger Comic Sans MS")
-headerBtn.OnEvent("Click", "ChangeFont")
+headerBtn.OnEvent("Click", ChangeFont)
 
 ; ┌──────────────────────────────┐
 ; │  Add button to restore font  │
 ; └──────────────────────────────┘
 headerBtn2 := MyGui.Add("Button", "s8 x+10 yp", "Restore header font")
-headerBtn2.OnEvent("Click", "ChangeFontBack")
+headerBtn2.OnEvent("Click", ChangeFontBack)
 
 ; ┌───────────────────────────────────┐
 ; │  Add button to change background  │
 ; └───────────────────────────────────┘
 bgBtn := MyGui.Add("Button", "s8 x+10 yp", "Change GUI Backgroud")
-bgBtn.OnEvent("Click", "ChangeBG")
+bgBtn.OnEvent("Click", ChangeBG)
 
 ; ┌────────────────────────────────────┐
 ; │  Add button to restore background  │
 ; └────────────────────────────────────┘
 bgBtn2 := MyGui.Add("Button", "s8 x+10 yp", "Restore GUI Backgroud")
-bgBtn2.OnEvent("Click", "RestoreBG")
+bgBtn2.OnEvent("Click", RestoreBG)
 
 ; ┌─────────────────┐
 ; │  GroupBox test  │
@@ -210,7 +210,7 @@ LV := MyGui.Add("ListView", "r9 w300 xc+10 y+5 BackgroundTeal", ["Name","Size (K
 ; ┌────────────────────────────────────────────────────────────┐
 ; │  Notify the script whenever the user double clicks a row:  │
 ; └────────────────────────────────────────────────────────────┘
-LV.OnEvent("DoubleClick", "LV_DoubleClick")
+LV.OnEvent("DoubleClick", LV_DoubleClick)
 
 ; ┌─────────────────────────────────────────────────────────────────────────────┐
 ; │  Gather a list of file names from a folder and put them into the ListView:  │
@@ -221,9 +221,9 @@ PopulateMainListView()
 ; │  Show an input box and retrieve the result  │
 ; └─────────────────────────────────────────────┘
 InputBtn := MyGui.Add("Button", "s8 xc+10 y+10", "Input Test")
-InputBtn.OnEvent("Click", "InputTest")
+InputBtn.OnEvent("Click", InputTest)
 DirSelectBtn := MyGui.Add("Button", "s8 x+5 yp", "DirSelect")
-DirSelectBtn.OnEvent("Click", "DirSelectForLV")
+DirSelectBtn.OnEvent("Click", DirSelectForLV)
 
 ; GetContentBtn := MyGui.Add("Button", "xc+100 yp", "Get LV Content")
 
@@ -237,11 +237,11 @@ LV.ModifyCol(2, "Integer")  ; For sorting purposes, indicate that column 2 is an
 RadioText := MyGui.Add("Text", "w200 h20 xc+10", "Radio group tests")
 RadioText.SetFont("cBlue s10")
 RadioOne := MyGui.Add("Radio", "vMyRadioGroup", "Change header font (alternate)")
-RadioOne.OnEvent("Click", "ChangeFont")
+RadioOne.OnEvent("Click", ChangeFont)
 RadioTwo := MyGui.Add("Radio", "vMyRadioGroup", "Restore header font (alternate)")
-RadioTwo.OnEvent("Click", "ChangeFontBack")
+RadioTwo.OnEvent("Click", ChangeFontBack)
 RadioThree := MyGui.Add("Radio", "vMyRadioGroup", "Please click me")
-RadioThree.OnEvent("Click", "RadioThreeClicked")
+RadioThree.OnEvent("Click", RadioThreeClicked)
 
 ; ┌──────────────────┐
 ; │  Add checkboxes  │
@@ -250,7 +250,7 @@ RadioThree.OnEvent("Click", "RadioThreeClicked")
 CheckBoxText := MyGui.Add("Text", "w200 h20", "Checkbox test")
 CheckBoxText.SetFont("cBlue s10")
 CheckBoxOne := MyGui.Add("CheckBox", "w200 xc+10 yp+20", "If this text is long, it will wrap automatically")
-CheckBoxOne.OnEvent("Click", "CheckBoxOneClicked")
+CheckBoxOne.OnEvent("Click", CheckBoxOneClicked)
 
 ; ┌────────────────────────────────┐
 ; │  Notify User about Popup Menu  │
@@ -262,17 +262,17 @@ Menu_Label := MyGui.Add("Text", "w400 h28 xc+10 y+10","Press Win-Z to see popup 
 Menu_Label.SetFont("cBlue s14")
 
 checkBtn := MyGui.Add("Button", "xc+10 y+3", "ControlSetChecked")
-checkBtn.OnEvent("Click", "SetChecked")
+checkBtn.OnEvent("Click", SetChecked)
 
 menuIndexBtn := MyGui.Add("Button", "x+5 yp", "Select menu by index")
-menuIndexBtn.OnEvent("Click", "SelectMenuByIndex")
+menuIndexBtn.OnEvent("Click", SelectMenuByIndex)
 
 menuStringBtn := MyGui.Add("Button", "xc+10 y+3", "Select menu by string")
-menuStringBtn.OnEvent("Click", "SelectByString")
+menuStringBtn.OnEvent("Click", SelectByString)
 
 #if WINDOWS
 sysMenuMinimizeBtn := MyGui.Add("Button", "x+5 yp", "Minimize by system menu")
-sysMenuMinimizeBtn.OnEvent("Click", "MinimizeBySystemMenu")
+sysMenuMinimizeBtn.OnEvent("Click", MinimizeBySystemMenu)
 #endif
 
 MyGui.UseGroup()
@@ -291,8 +291,8 @@ g2Btn1.SetFont("s10 cBlue")
 g2Btn2 := MyGui.Add("Button", "xc+100 yp", "Reset")
 g2Btn2.SetFont("s10 cBlue")
 
-g2Btn1.OnEvent("Click", "Set_Style")
-g2Btn2.OnEvent("Click", "Reset_Style")
+g2Btn1.OnEvent("Click", Set_Style)
+g2Btn2.OnEvent("Click", Reset_Style)
 
 g2Label3 := MyGui.Add("Text", "xc+10 w200 cBlue S10", "Click buttons to alter Edit style")
 g2Label4 := MyGui.Add("Text", "xc+10", "Uppercase - restrict or reset")
@@ -305,8 +305,8 @@ g2Btn3.SetFont("s8 cBlue")
 g2Btn4 := MyGui.Add("Button", "xc+100 yp", "Unrestrict")
 g2Btn4.SetFont("s8 cBlue")
 
-g2Btn3.OnEvent("Click", "Set_Edit_Style")
-g2Btn4.OnEvent("Click", "Reset_Edit_Style")
+g2Btn3.OnEvent("Click", Set_Edit_Style)
+g2Btn4.OnEvent("Click", Reset_Edit_Style)
 
 
 ; (IniRead/IniWrite are exercised by the NUnit unit tests; this manual harness does not duplicate them.)
@@ -333,11 +333,11 @@ SecondEdit := MyGui.Add("Edit", "xc+10 yc+20 w300 h110")
 SecondEditText := MyGui.Add("Text", "cBlue s10 w200", "ControlSetText Test")
 HwndSecondEdit := SecondEdit.Hwnd
 EditBtn1 := MyGui.Add("Button", "xp y+10", "Text -> Edit")
-EditBtn1.OnEvent("Click", "SendTextToEdit")
+EditBtn1.OnEvent("Click", SendTextToEdit)
 EditBtn2 := MyGui.Add("Button", "x+5 yp", "Clear Edit")
-EditBtn2.OnEvent("Click", "ClearEdit")
+EditBtn2.OnEvent("Click", ClearEdit)
 EditHwndBtn := MyGui.Add("Button", "x+5 yp", "Show Edit Hwnd")
-EditHwndBtn.OnEvent("Click", "ShowEditHwnd")
+EditHwndBtn.OnEvent("Click", ShowEditHwnd)
 
 ; ┌────────────┐
 ; │  RichEdit  │
@@ -345,20 +345,20 @@ EditHwndBtn.OnEvent("Click", "ShowEditHwnd")
 SecondRichEdit := MyGui.Add("RichEdit", "xc+10 w250 h90", "Try pasting rich text and/or images here!")
 SecondRichEditText := MyGui.Add("Text", "cBlue s10 w200", "ControlSetText Test (RichEdit)")
 RichEditBtn1 := MyGui.Add("Button", "xc+10 y+10", "Send Text to RichEdit")
-RichEditBtn1.OnEvent("Click", "SendTextToRichEdit")
+RichEditBtn1.OnEvent("Click", SendTextToRichEdit)
 RichEditBtn2 := MyGui.Add("Button", "x+5 yp", "Send Rtf to RichEdit")
-RichEditBtn2.OnEvent("Click", "SendRtfToRichEdit")
+RichEditBtn2.OnEvent("Click", SendRtfToRichEdit)
 RichEditBtn3 := MyGui.Add("Button", "xc+10 y+5", "Clear RichEdit")
-RichEditBtn3.OnEvent("Click", "ClearRichEdit")
+RichEditBtn3.OnEvent("Click", ClearRichEdit)
 LinesBtn := MyGui.Add("Button", "x+5 yp", "EditGetLineCount")
-LinesBtn.OnEvent("Click", "GetLineCount")
+LinesBtn.OnEvent("Click", GetLineCount)
 
 ; ┌────────────┐
 ; │  TreeView  │
 ; └────────────┘
 TreeViewText := MyGui.Add("Text", "xc+10 cBlue s10 w200", "TreeView Test")
 TV := MyGui.Add("TreeView", "xp w200 y+5 -ReadOnly") ; Need to work on -ReadOnly
-TV.OnEvent("ItemEdit", "MyTreeView_Edit")
+TV.OnEvent("ItemEdit", MyTreeView_Edit)
 P1 := TV.Add("First parent")
 P1C1 := TV.Add("Parent 1's first child", P1)  ; Specify P1 to be this item's parent.
 P2 := TV.Add("Second parent")
@@ -375,7 +375,7 @@ MousePosText := MyGui.Add("Text", "xc+10 y+10 cBlue s10 w200", "Uses SetTimer to
 ; its children) then reserves enough room. Enlarging the font afterwards via SetFont would be too late - the
 ; groupbox captures the control's smaller default-font height before the change takes effect.
 CoordText := MyGui.Add("Text", "xc+10 y+10 cLime s16 bold", "")
-SetTimer("UpdateOSD", 200)
+SetTimer(UpdateOSD, 200)
 UpdateOSD()  ; Make the first update immediate rather than waiting for the timer.
 
 ; (ImageSearch runs on the Image tab against the colour swatch in pixelGroup — see imgSearchBtn / ImgSrch.)
@@ -430,7 +430,7 @@ t2g2t4.SetFont("s10")
 #endif
 
 e3Btn := MyGui.Add("Button", "xp y+10", "Toggle ControlSetStyle Edit")
-e3Btn.OnEvent("Click", "ShowE3Hwnd")
+e3Btn.OnEvent("Click", ShowE3Hwnd)
 
 numericText := MyGui.Add("Text", "xc+10 y+10 Autosize", "The text box below should be numeric only")
 numericText.SetFont("s10 cBlue")
@@ -438,11 +438,11 @@ numericEdit := MyGui.Add("Edit", "w200 xp y+10 number")
 
 setNumericBtn := MyGui.Add("Button", "x+10 yp", "Num")
 setNumericBtn.SetFont("s8 cBlue")
-setNumericBtn.OnEvent("Click", "SetNumeric")
+setNumericBtn.OnEvent("Click", SetNumeric)
 
 resetNumericBtn := MyGui.Add("Button", "x+10 yp", "Unr")
 resetNumericBtn.SetFont("s8 cBlue")
-resetNumericBtn.OnEvent("Click", "ClearNumeric")
+resetNumericBtn.OnEvent("Click", ClearNumeric)
 
 SetNumeric(*)
 {
@@ -495,12 +495,12 @@ ThirdText1 := MyGui.Add("Text", "xc+10 yc+20 cBlue s10", "ListBox Test")
 ; │  ListBox test  │
 ; └────────────────┘
 MyListBox := MyGui.Add("ListBox", "xc+10 r4 w110", ["Red","Green","Blue","Black","White"])
-MyListBox.OnEvent("Change", "ListBoxClicked")
+MyListBox.OnEvent("Change", ListBoxClicked)
 
 MyLbBtn1 := MyGui.Add("Button", "x+10 yp", "Delete White")
-MyLbBtn1.OnEvent("Click", "DeleteWhite")
+MyLbBtn1.OnEvent("Click", DeleteWhite)
 MyLbBtn2 := MyGui.Add("Button", "x+10 yp", "Add White")
-MyLbBtn2.OnEvent("Click", "AddWhite")
+MyLbBtn2.OnEvent("Click", AddWhite)
 
 DeleteWhite(*) {
 
@@ -529,14 +529,14 @@ AddWhite(*) {
 ; the gap wouldn't account for the listbox height (which differs across platforms/fonts).
 ThirdText2 := MyGui.Add("Text", "xc+10 cBlue s10", "ListBox Test (Multi-Select)")
 MyMultiLB := MyGui.Add("ListBox", "+Multi r3 w110 xc+10 y+10", ["Reactionary Red","Garish Green","Beastly Blue","Banal Black","Washed-out White"])
-MyMultiLB.OnEvent("Change", "MultiLBClicked")
+MyMultiLB.OnEvent("Change", MultiLBClicked)
 
 ; ┌─────────────┐
 ; │  Drop-Down  │
 ; └─────────────┘
 ThirdText3 := MyGui.Add("Text", "xc+10 y+10 cBlue s10", "Drop-down List with 5 rows")
 MyDDL := MyGui.Add("DropDownList", "xc+10 y+10 r3", ["Orange","Purple","Fuchsia","Lime","Aqua"])
-MyDDL.OnEvent("Change", "DDLClicked")
+MyDDL.OnEvent("Change", DDLClicked)
 
 ; ┌─────────────┐
 ; │  Combo Box  │
@@ -545,10 +545,10 @@ ThirdText4 := MyGui.Add("Text", "xc+10 cBlue s10", "ComboBox with 3 rows")
 MyCB := MyGui.Add("ComboBox", "xc+10 y+10 r3", ["Orange","Purple","Fuchsia"])
 CB_Button := MyGui.Add("Button", "h25 w80 xc+10 y+10", "CB Selection")
 CB_AddBtn := MyGui.Add("Button", "h25 w80 xc+90 yp", "Add Yellow")
-CB_Button.OnEvent("Click", "CB_ButtonClicked")
-CB_AddBtn.OnEvent("Click", "AddYellow")
+CB_Button.OnEvent("Click", CB_ButtonClicked)
+CB_AddBtn.OnEvent("Click", AddYellow)
 CB_DeleteBtn := MyGui.Add("Button", "h25 w80 xc+170 yp", "Del Yellow")
-CB_DeleteBtn.OnEvent("Click", "DeleteYellow")
+CB_DeleteBtn.OnEvent("Click", DeleteYellow)
 
 AddYellow(*) {
 	ControlAddItem("Yellow", MyCB)
@@ -575,7 +575,7 @@ DeleteYellow(*) {
 
 ThirdText5 := MyGui.Add("Text", "xc+10 cBlue s10", "Moving slider shows position below")
 MySlider := MyGui.Add("Slider", "xc+10 y+10 +AltSubmit TickInterval10 Page10", 100)
-MySlider.OnEvent("Change", "SliderPos")
+MySlider.OnEvent("Change", SliderPos)
 MySliderPos := MyGui.Add("Text", "xc+10 y+5","")
 
 ; ┌───────────────────┐
@@ -596,8 +596,8 @@ MyVertProgress := MyGui.Add("Progress", "cRed BackgroundGreen Smooth x+70 yp-" .
 Pbtn1 := MyGui.Add("Button", "s8 xc+10 y+5", "Lower")
 Pbtn2 := MyGui.Add("Button", "s8 xc+100 yp", "Higher")
 ProgressStatusText := MyGui.Add("Text", "x+5 yp cBlue s10 Autosize", "Value: ")
-Pbtn1.OnEvent("Click", "Pbtn1Clicked")
-Pbtn2.OnEvent("Click", "Pbtn2Clicked")
+Pbtn1.OnEvent("Click", Pbtn1Clicked)
+Pbtn2.OnEvent("Click", Pbtn2Clicked)
 
 ; ┌─────────────┐
 ; │  Date Time  │
@@ -627,7 +627,7 @@ HwndMyText := MyText.Hwnd
 MySlider2 := MyGui.Add("Slider", "Range0-80 +AltSubmit TickInterval10 Page10 ToolTip", 10)
 MySlider2.Value := 10
 mybtn := MyGui.Add("Button", "w100 s8 cBlue", "Sliding Test")
-mybtn.OnEvent("Click", "STest")
+mybtn.OnEvent("Click", STest)
 FakeSep := MyGui.Add("Text", "xc+10 y+10", "__________________________________________________")
 FakeSep.SetFont("cTeal Bold")
 
@@ -654,7 +654,7 @@ MyLink := MyGui.Add("Link", "xc+10 y+5", 'Click this <a href="https://www.autoho
 MyHkInfoText := MyGui.Add("Text", "xc+10 y+5 w200", "Define Hotkey test`nFocus Edit and click hotkey(s)")
 MyHkInfoText.SetFont("cBlue s8")
 MyHotkey := MyGui.Add("Hotkey", "xc+10 y+5")
-MyHotkey.OnEvent("Change", "UpdateHK")
+MyHotkey.OnEvent("Change", UpdateHK)
 MyHkText := MyGui.Add("Text", "xc+10 y+5 w200" , MyHotkey.Value)
 ;MyHkText2 := MyGui.Add("Text", "xc+10 y+5 w200 cRed", "NOTE: Combos w/Win not working.")
 
@@ -667,15 +667,15 @@ FakeSep2.SetFont("cTeal Bold")
 
 MyGui.Add("Text", "xc+10 y+5", "UpDown: Range 1-10, `ninc 1 (mouse 8), def 5.")
 nud := MyGui.Add("UpDown", "xc+10 y+5 h25 vMyNud Range1-10", 5)
-nud.OnEvent("Change", "NudChange")
+nud.OnEvent("Change", NudChange)
 
 MyGui.Add("Text", "xc+10 y+5", "UpDown: Range -2000-2000, def 0,`ninc 100 (mouse 800), no separator.")
 nud2 := MyGui.Add("UpDown", "xc+10 y+5 h20 vMyNud2 Range-2000-2000 Increment100 0x80", 0)
-nud2.OnEvent("Change", "NudChange")
+nud2.OnEvent("Change", NudChange)
 
 MyGui.Add("Text", "xc+10 y+5", "UpDown: Range -1000-1000, def 0,`ninc 10 (mouse 80), hex.")
 nud3 := MyGui.Add("UpDown", "xc+10 y+5 h20 vMyNud3 Range-1000-1000 Increment10 hex 0x80", 0)
-nud3.OnEvent("Change", "NudChange")
+nud3.OnEvent("Change", NudChange)
 
 nudTxt := MyGui.Add("Text", "xc+10 y+5 w200", "Nud values:")
 
@@ -699,7 +699,7 @@ MyDateTime := MyGui.Add("DateTime", "s8 xc+16 y+8 w200", "LongDate")
 ThirdText8 := MyGui.Add("Text", "xc+16 y+12 cBlue s10", "MonthCal Test")
 MyMonthCal := MyGui.Add("MonthCal", "xc+16 y+5")
 MC_Btn := MyGui.Add("Button", "s8 xc+16 y+8", "Change Cal Colors (not implemented)")
-MC_Btn.OnEvent("Click", "MC_Colors")
+MC_Btn.OnEvent("Click", MC_Colors)
 MyGui.UseGroup()
 
 	; Image-copy (Paste Pic / Paste from File) and send-to-control-edit tests, grouped on the ControlZoo tab.
@@ -712,9 +712,9 @@ MyGui.UseGroup()
 	MySecondPic := LoadPicture(A_WorkingDir . A_DirSeparator . "Robin.png")
 	Clipboard.Image := "HBITMAP:" MySecondPic
 	ShowBtn := MyGui.Add("Button", "xc+16 y+8 w110", "Paste Pic")
-	ShowBtn.OnEvent("Click", "PastePic")
+	ShowBtn.OnEvent("Click", PastePic)
 	ShowBtn2 := MyGui.Add("Button", "x+10 yp w130", "Paste from file")
-	ShowBtn2.OnEvent("Click", "CopyPicFromFile")
+	ShowBtn2.OnEvent("Click", CopyPicFromFile)
 
 PastePic(*) {
 	ControlFocus(MyRE)
@@ -737,12 +737,12 @@ CopyPicFromFile(*) {
 	gb3Label.SetFont("s8 cBlue")
 	gb3Edit := MyGui.Add("Edit", "xc+16 y+8 w310 h130")
 	gb3Hwnd := gb3Edit.Hwnd
-	gb3Edit.OnEvent("Focus", "StartEditTooltip")
-	gb3Edit.OnEvent("LoseFocus", "StopToolTip")
+	gb3Edit.OnEvent("Focus", StartEditTooltip)
+	gb3Edit.OnEvent("LoseFocus", StopToolTip)
 	gb4Btn1 := MyGui.Add("Button", "xc+16 y+8 w110 cLime", "Send to GB3")
-	gb4Btn1.OnEvent("Click", "SendToGB3")
+	gb4Btn1.OnEvent("Click", SendToGB3)
 	gb4Btn2 := MyGui.Add("Button", "x+10 yp w110 cLime", "Clear GB3")
-	gb4Btn2.OnEvent("Click", "ClearGB3")
+	gb4Btn2.OnEvent("Click", ClearGB3)
 	MyGui.UseGroup()
 
 ; ┌────────────────┐
@@ -750,20 +750,20 @@ CopyPicFromFile(*) {
 ; └────────────────┘
 
 MyMenu := Menu()
-MyMenu.Add("Item 1", "MenuHandler")
-MyMenu.Add("Item 2", "MenuHandler")
+MyMenu.Add("Item 1", MenuHandler)
+MyMenu.Add("Item 2", MenuHandler)
 MyMenu.Add()  ; Add a separator line.
 
 ; Create another menu destined to become a submenu of the above menu.
 Submenu1 := Menu()
-Submenu1.Add("Item A", "MenuHandler")
-Submenu1.Add("Item B", "MenuHandler")
+Submenu1.Add("Item A", MenuHandler)
+Submenu1.Add("Item B", MenuHandler)
 
 ; Create a submenu in the first menu (a right-arrow indicator). When the user selects it, the second menu is displayed.
 MyMenu.Add("My Submenu", Submenu1)
 
 MyMenu.Add()  ; Add a separator line below the submenu.
-MyMenu.Add("Item 3", "MenuHandler")  ; Add another menu item beneath the submenu.
+MyMenu.Add("Item 3", MenuHandler)  ; Add another menu item beneath the submenu.
 
 MenuHandler(Item, *) {
 	MsgBox("You selected " Item, "ITEM SELECTED")
@@ -835,25 +835,25 @@ Loop Files A_MyDocuments . A_DirSeparator . "*.*"
 	LV2.Add(, A_LoopFileName, A_LoopFileSizeKB)
 
 LV2_Btn1 := MyGui.Add("Button", "xc+10 y+5 w76 h24" ,"Selected")
-LV2_Btn1.OnEvent("Click", "LV_Selected")
+LV2_Btn1.OnEvent("Click", LV_Selected)
 
 LV2_Btn2 := MyGui.Add("Button", "x+4 yp w76 h24" ,"Focused")
-LV2_Btn2.OnEvent("Click", "LV_Focused")
+LV2_Btn2.OnEvent("Click", LV_Focused)
 
 LV2_Btn3 := MyGui.Add("Button", "xc+10 y+4 w76 h24", "Column 1")
-LV2_Btn3.OnEvent("Click", "LV_Col1")
+LV2_Btn3.OnEvent("Click", LV_Col1)
 
 LV2_Btn4 := MyGui.Add("Button", "x+4 yp w76 h24", "Count")
-LV2_Btn4.OnEvent("Click", "LV_Count")
+LV2_Btn4.OnEvent("Click", LV_Count)
 
 LV2_Btn5 := MyGui.Add("Button", "xc+10 y+4 w156 h24", "Count Selected")
-LV2_Btn5.OnEvent("Click", "LV_CountSelected")
+LV2_Btn5.OnEvent("Click", LV_CountSelected)
 
 LV2_Btn6 := MyGui.Add("Button", "xc+10 y+4 w156 h24", "Row Focused")
-LV2_Btn6.OnEvent("Click", "LV_CountFocused")
+LV2_Btn6.OnEvent("Click", LV_CountFocused)
 
 LV2_Btn7 := MyGui.Add("Button", "xc+10 y+4 w156 h24", "Count Columns")
-LV2_Btn7.OnEvent("Click", "LV_CountCol")
+LV2_Btn7.OnEvent("Click", LV_CountCol)
 
 
 	; ┌─────────────────────────────────────────────┐
@@ -862,49 +862,49 @@ LV2_Btn7.OnEvent("Click", "LV_CountCol")
 
 
 CZ_LbBtn1 := MyGui.Add("Button", "xs+170 ys w120 h25 Section", "Add Fuchsia")
-CZ_LbBtn1.OnEvent("Click", "AddFuchsia")
+CZ_LbBtn1.OnEvent("Click", AddFuchsia)
 CZ_LbBtn2 := MyGui.Add("Button", "x+8 yp w120 h25", "Delete Fuchsia")
-CZ_LbBtn2.OnEvent("Click", "DeleteFuchsia")
-CZ_LbBtn2.OnEvent("Focus", "FuchsiaDeleteTrayTip")
+CZ_LbBtn2.OnEvent("Click", DeleteFuchsia)
+CZ_LbBtn2.OnEvent("Focus", FuchsiaDeleteTrayTip)
 CZ_LbBtn3 := MyGui.Add("Button", "xs y+4 w120 h25", "Purple (Index)")
-CZ_LbBtn3.OnEvent("Click", "ChooseIndex")
+CZ_LbBtn3.OnEvent("Click", ChooseIndex)
 CZ_LbBtn4 := MyGui.Add("Button", "x+8 yp w120 h25", "красный (String)")
-CZ_LbBtn4.OnEvent("Click", "ChooseString")
+CZ_LbBtn4.OnEvent("Click", ChooseString)
 CZ_LbBtn5 := MyGui.Add("Button", "xs y+4 w120 h25", "ControlGetChoice")
-CZ_LbBtn5.OnEvent("Click", "GetChoice")
+CZ_LbBtn5.OnEvent("Click", GetChoice)
 CZ_LbBtn19 := MyGui.Add("Button", "x+8 yp w120 h25", "ControlGetIndex")
-CZ_LbBtn19.OnEvent("Click", "GetIndex")
+CZ_LbBtn19.OnEvent("Click", GetIndex)
 CZ_LbBtn6 := MyGui.Add("Button", "xs y+4 w120 h25", "ControlGetClassNN")
-CZ_LbBtn6.OnEvent("Click", "GetClassNN")
+CZ_LbBtn6.OnEvent("Click", GetClassNN)
 
 CZ_LbBtn7 := MyGui.Add("Button", "x+8 yp w120 h25", "ControlGetEnabled")
-CZ_LbBtn7.OnEvent("Click", "GetEnabled")
+CZ_LbBtn7.OnEvent("Click", GetEnabled)
 CZ_LbBtn20 := MyGui.Add("Button", "xs y+4 w120 h25", "ControlSetEnabled")
-CZ_LbBtn20.OnEvent("Click", "SetEnabled")
+CZ_LbBtn20.OnEvent("Click", SetEnabled)
 CZ_LbBtn8 := MyGui.Add("Button", "x+8 yp w120 h25", "Disabled!")
 CZ_LbBtn8.Enabled := False
 
 CZ_LbBtn9 := MyGui.Add("Button", "xs y+4 w120 h25", "ControlGetHwnd")
-CZ_LbBtn9.OnEvent("Click", "GetHwnd")
+CZ_LbBtn9.OnEvent("Click", GetHwnd)
 
 CZ_LbBtn10 := MyGui.Add("Button", "x+8 yp w120 h25", "ControlGetText")
-CZ_LbBtn10.OnEvent("Click", "GetText")
+CZ_LbBtn10.OnEvent("Click", GetText)
 
 CZ_LbBtn11 := MyGui.Add("Button", "xs y+4 w120 h25", "ControlHide")
-CZ_LbBtn11.OnEvent("Click", "HideButton")
+CZ_LbBtn11.OnEvent("Click", HideButton)
 
 CZ_LbBtn12 := MyGui.Add("Button", "x+8 yp w120 h25", "ControlShow")
-CZ_LbBtn12.OnEvent("Click", "ShowButton")
+CZ_LbBtn12.OnEvent("Click", ShowButton)
 
 CZ_LbBtn13 := MyGui.Add("Button", "xs y+4 w120 h25", "Visible?")
-CZ_LbBtn13.OnEvent("Click", "IsItHidden")
+CZ_LbBtn13.OnEvent("Click", IsItHidden)
 
 CZ_LbBtn21 := MyGui.Add("Button", "x+8 yp w120 h25", "Get Focus")
-CZ_LbBtn21.OnEvent("Click", "GetFocusCtrl")
+CZ_LbBtn21.OnEvent("Click", GetFocusCtrl)
 
 #if WINDOWS
 CZ_LbBtn22 := MyGui.Add("Button", "xs y+4 w120 h25", "ControlSetExStyle")
-CZ_LbBtn22.OnEvent("Click", "ToggleEditExStyle")
+CZ_LbBtn22.OnEvent("Click", ToggleEditExStyle)
 
 CZ_LbBtn14 := MyGui.Add("Button", "x+8 yp w120 h25", "Edit Column #")
 #else
@@ -912,19 +912,19 @@ CZ_LbBtn14 := MyGui.Add("Button", "x+8 yp w120 h25", "Edit Column #")
 ; instead of placing this button to the right of "Get Focus" (which would overflow the group).
 CZ_LbBtn14 := MyGui.Add("Button", "xs y+4 w120 h25", "Edit Column #")
 #endif
-CZ_LbBtn14.OnEvent("Click", "GetCol")
+CZ_LbBtn14.OnEvent("Click", GetCol)
 
 CZ_LbBtn15 := MyGui.Add("Button", "xs y+4 w120 h25", "Edit Line #")
-CZ_LbBtn15.OnEvent("Click", "GetLine")
+CZ_LbBtn15.OnEvent("Click", GetLine)
 
 CZ_LbBtn16 := MyGui.Add("Button", "x+8 yp w120 h25", "Edit Line Text")
-CZ_LbBtn16.OnEvent("Click", "GetLineText")
+CZ_LbBtn16.OnEvent("Click", GetLineText)
 
 CZ_LbBtn17 := MyGui.Add("Button", "xs y+4 w120 h25", "Selected text")
-CZ_LbBtn17.OnEvent("Click", "GetSelectedText")
+CZ_LbBtn17.OnEvent("Click", GetSelectedText)
 
 CZ_LbBtn18 := MyGui.Add("Button", "x+8 yp w120 h25", "Edit Paste")
-CZ_LbBtn18.OnEvent("Click", "EditPaster")
+CZ_LbBtn18.OnEvent("Click", EditPaster)
 
 #if WINDOWS
 customText := MyGui.Add("Text", "xc+10", "Custom controls:")
@@ -1000,26 +1000,26 @@ gb2_CZ_CB := MyGui.Add("ComboBox", "xc+10 y+10 r5 Limit", ["Orange","Purple","Fu
 gb2_CZ_CB.SetCue("ComboBox cue text")
 #endif
 gb2_CZ_Btn1 := MyGui.Add("Button", "xc+10 y+5 w80 h25", "Add White")
-gb2_CZ_Btn1.OnEvent("Click", "AddWhite2")
+gb2_CZ_Btn1.OnEvent("Click", AddWhite2)
 gb2_CZ_Btn2 := MyGui.Add("Button", "xc+90 yp w80 h25", "Delete White")
-gb2_CZ_Btn2.OnEvent("Click", "DeleteWhite2")
+gb2_CZ_Btn2.OnEvent("Click", DeleteWhite2)
 gb2_CZ_Btn3 := MyGui.Add("Button", "xc+170 yp w80 h25", "-> Purple")
-gb2_CZ_Btn3.OnEvent("Click", "ChooseString_CB")
+gb2_CZ_Btn3.OnEvent("Click", ChooseString_CB)
 
 gb2_CZ_Btn4 := MyGui.Add("Button", "xc+10 y+5 w200 h25", "Click Win+R, show dropdown")
-gb2_CZ_Btn4.OnEvent("Click", "Click_CB")
+gb2_CZ_Btn4.OnEvent("Click", Click_CB)
 
 gb2_CZ_Btn5 := MyGui.Add("Button", "xc+10 y+5", "Show ListBox items")
-gb2_CZ_Btn5.OnEvent("Click", "Click_LB_Items")
+gb2_CZ_Btn5.OnEvent("Click", Click_LB_Items)
 
 gb2_CZ_Btn6 := MyGui.Add("Button", "x+5 yp", "Show ComboBox items")
-gb2_CZ_Btn6.OnEvent("Click", "Click_CB_Items")
+gb2_CZ_Btn6.OnEvent("Click", Click_CB_Items)
 
 gb2_CZ_Btn7 := MyGui.Add("Button", "xc+10 y+5", "Show ComboBox dropdown")
-gb2_CZ_Btn7.OnEvent("Click", "Click_CB_Show_Dropdown")
+gb2_CZ_Btn7.OnEvent("Click", Click_CB_Show_Dropdown)
 
 gb2_CZ_Btn8 := MyGui.Add("Button", "x+5 yp", "Hide ComboBox dropdown")
-gb2_CZ_Btn8.OnEvent("Click", "Click_CB_Hide_Dropdown")
+gb2_CZ_Btn8.OnEvent("Click", Click_CB_Hide_Dropdown)
 
 gb2_CZ_Text2 := MyGui.Add("Text", "xc+10 y+10 w325", "Move mouse to color. Press Ctrl+Alt+9.")
 gb2_CZ_Text2.SetFont("s8 cBlue")
@@ -1029,35 +1029,35 @@ MyColorText := MyGui.Add("Text", "w200 xc+10 y+10", "")
 
 ; "Control Tests Redux" buttons laid out in two columns so none clip off the bottom of the group.
 SecondGuiButton := MyGui.Add("Button", "xc+10 y+15 w160 h26 Section", "Control Tests Redux")
-SecondGuiButton.OnEvent("Click", "SecondGUI")
+SecondGuiButton.OnEvent("Click", SecondGUI)
 FindEdit := MyGui.Add("Button", "xc+10 y+5 w160 h26", "Get Edit Hwnd")
-FindEdit.OnEvent("Click", "FindSecondGuiEdit")
+FindEdit.OnEvent("Click", FindSecondGuiEdit)
 
 ThirdGuiButton := MyGui.Add("Button", "xc+10 y+5 w160 h26", "'Find By' Tests")
-ThirdGuiButton.OnEvent("Click", "ThirdGUI")
+ThirdGuiButton.OnEvent("Click", ThirdGUI)
 
 MouseMoveButton := MyGui.Add("Button", "xc+10 y+5 w160 h26", "Mouse-moving tests")
-MouseMoveButton.OnEvent("Click", "MoveTheMouse")
+MouseMoveButton.OnEvent("Click", MoveTheMouse)
 
 AddMsgMonitorButton := MyGui.Add("Button", "xc+10 y+5 w160 h26", "Add msg mon (edit clicks)")
-AddMsgMonitorButton.OnEvent("Click", "AddMsgMonitor")
+AddMsgMonitorButton.OnEvent("Click", AddMsgMonitor)
 
 RemoveMsgMonitorButton := MyGui.Add("Button", "xc+10 y+5 w160 h26", "Remove msg mon")
-RemoveMsgMonitorButton.OnEvent("Click", "RemoveMsgMonitor")
+RemoveMsgMonitorButton.OnEvent("Click", RemoveMsgMonitor)
 
 ; Second column (starts level with "Control Tests Redux")
 MinimizeAllButton := MyGui.Add("Button", "xs+170 ys w160 h26", "Minimize all")
-MinimizeAllButton.OnEvent("Click", "MinimizeAll")
+MinimizeAllButton.OnEvent("Click", MinimizeAll)
 UndoMinimizeAllButton := MyGui.Add("Button", "xs+170 y+5 w160 h26", "Undo minimize all")
-UndoMinimizeAllButton.OnEvent("Click", "UndoMinimizeAll")
+UndoMinimizeAllButton.OnEvent("Click", UndoMinimizeAll)
 MaximizeAllButton := MyGui.Add("Button", "xs+170 y+5 w160 h26", "Maximize all")
-MaximizeAllButton.OnEvent("Click", "MaximizeAll")
+MaximizeAllButton.OnEvent("Click", MaximizeAll)
 MoveAllButton := MyGui.Add("Button", "xs+170 y+5 w160 h26", "Move me")
-MoveAllButton.OnEvent("Click", "MoveButton")
+MoveAllButton.OnEvent("Click", MoveButton)
 CandyProgressButton := MyGui.Add("Button", "xs+170 y+5 w160 h26", "Candy progress")
-CandyProgressButton.OnEvent("Click", "CandyProgress")
+CandyProgressButton.OnEvent("Click", CandyProgress)
 TestTypesButton := MyGui.Add("Button", "xs+170 y+5 w160 h26", "Test types")
-TestTypesButton.OnEvent("Click", "TestTypes")
+TestTypesButton.OnEvent("Click", TestTypes)
 
 MinimizeAll(*)
 {
@@ -1086,7 +1086,7 @@ MoveButton(*)
 
 
 candygui := Gui("-DPIScale +E0x02080000", "Candy Progress")
-candygui.OnEvent("Close", "CloseCandy")
+candygui.OnEvent("Close", CloseCandy)
 candygui.BackColor := "FFCC00"
 
 CandyProgressBar := candygui.Add("Progress", "xc+15 yc+30 w436 h36 Smooth BackgroundSilver")
@@ -1099,7 +1099,7 @@ Icon3 := candygui.Add("Picture", "xc+433 yc+30 w18  h36 BackgroundTrans", "Icon3
 CandyText := candygui.Add("Text" ,"xc+15 yc+30 w436 h40 Center Middle BackgroundTrans")
 CandyText.SetFont("cFFFFFF")
 
-CandyTimerFunc := Func("CandyTimer")
+CandyTimerFunc := CandyTimer
 
 CloseCandy(*) {
 	global CandyTimerFunc
@@ -1188,16 +1188,16 @@ Gui2 := Gui(,"Testing Child GUI")
 Gui2.Opt("+Owner")
 
 Gui2StyleButton := Gui2.Add("Button", ,"Style Button")
-Gui2StyleButton.OnEvent("Click", "StyleTest")
+Gui2StyleButton.OnEvent("Click", StyleTest)
 
 Gui2GetControlsButton := Gui2.Add("Button", "xc+100 yp", "Get Ctrls")
-Gui2GetControlsButton.OnEvent("Click", "GetTheControls")
+Gui2GetControlsButton.OnEvent("Click", GetTheControls)
 
 Gui2FindCtrlsButton := Gui2.Add("Button", "xc+180 yp", "Enum Ctrls")
-Gui2FindCtrlsButton.OnEvent("Click", "EnumCtrls")
+Gui2FindCtrlsButton.OnEvent("Click", EnumCtrls)
 
 Gui2CtrlIndexButton := Gui2.Add("Button", "xc+260 yp", "Find by _Item")
-Gui2CtrlIndexButton.OnEvent("Click", "FindByItem")
+Gui2CtrlIndexButton.OnEvent("Click", FindByItem)
 
 Gui2Edit := Gui2.Add("Edit", "xc+10 y+20 h400 w500 +Multi")
 ;MsgBox(Gui2Edit.Hwnd, "Hwnd of Edit")
@@ -1268,15 +1268,15 @@ FindByItem(*) {
 Gui3 := Gui(, "KEYSHARP TESTS")
 Gui3.Name := "Howard"
 ButtonOne := Gui3.Add("Button", "w200", "Find by Text")
-ButtonOne.OnEvent("Click", "FindByText")
+ButtonOne.OnEvent("Click", FindByText)
 ButtonTwo := Gui3.Add("Button", "w200", "Find by Hwnd")
-ButtonTwo.OnEvent("Click", "FindByHwnd")
+ButtonTwo.OnEvent("Click", FindByHwnd)
 ;ButtonThree := Gui3.Add("Button", "w200", "Find by ClassNN")
-;ButtonThree.OnEvent("Click", "FindByClassNN")
+;ButtonThree.OnEvent("Click", FindByClassNN)
 ButtonFour := Gui3.Add("Button", "w200", "Find by NetClassNN")
-ButtonFour.OnEvent("Click", "FindByNetClassNN")
+ButtonFour.OnEvent("Click", FindByNetClassNN)
 ButtonFive := Gui3.Add("Button", "w200", "Find by Name")
-ButtonFive.OnEvent("Click", "FindByName")
+ButtonFive.OnEvent("Click", FindByName)
 
 ButtonDummy := Gui3.Add("Button", "w200", "Test Dummy")
 ButtonDummy.Name := "I am a dummy button"
@@ -1409,7 +1409,7 @@ WM_DROPFILES_CZ(wParam, lParam, msg, hwnd)
 }
 #endif
 
-;ReloaderBtn := MyGui.Add("Button", "w200 h25 xc+10 y+5", "Reload").OnEvent("Click", "Reload")
+;ReloaderBtn := MyGui.Add("Button", "w200 h25 xc+10 y+5", "Reload").OnEvent("Click", Reload)
 
 ;ReloadMe(*) {
 ;    Reload()
@@ -2624,43 +2624,43 @@ Tab.UseTab("Dll && COM")
 hideCursorDllLabel := MyGui.Add("Text", "w400 xc+10 y+10 cBlue S10","Press Win+C to hide the cursor, and press again to restore it.")
 
 dllMsgBoxBtn := MyGui.Add("Button", "xc+10 y+10", "Dll MsgBox()")
-dllMsgBoxBtn.OnEvent("Click", "DllMsgBox")
+dllMsgBoxBtn.OnEvent("Click", DllMsgBox)
 
 dllMsgBoxBtn := MyGui.Add("Button", "xc+10 y+10", "Dll IsWindowVisible() (run notepad then click this)")
-dllMsgBoxBtn.OnEvent("Click", "DllIsWindowVisible")
+dllMsgBoxBtn.OnEvent("Click", DllIsWindowVisible)
 
 dllWsprintfBtn := MyGui.Add("Button", "xc+10 y+10", "Dll wsprintf()")
-dllWsprintfBtn.OnEvent("Click", "DllWsprintf")
+dllWsprintfBtn.OnEvent("Click", DllWsprintf)
 
 dllPerformanceCounterBtn := MyGui.Add("Button", "xc+10 y+10", "Dll QueryPerformanceCounter()")
-dllPerformanceCounterBtn.OnEvent("Click", "DllPerformanceCounter")
+dllPerformanceCounterBtn.OnEvent("Click", DllPerformanceCounter)
 
 dllDllGetWindowRectBtn := MyGui.Add("Button", "xc+10 y+10", "Dll GetWindowRect()")
-dllDllGetWindowRectBtn.OnEvent("Click", "DllGetWindowRect")
+dllDllGetWindowRectBtn.OnEvent("Click", DllGetWindowRect)
 
 dllDllFillRectBtn := MyGui.Add("Button", "xc+10 y+10", "Dll FillRect()")
-dllDllFillRectBtn.OnEvent("Click", "DllFillRect")
+dllDllFillRectBtn.OnEvent("Click", DllFillRect)
 
 dllDllRemoveFromTaskbarBtn := MyGui.Add("Button", "xc+10 y+10", "Dll DeleteFromTaskbar() (clear for 3 seconds, then re-add)")
-dllDllRemoveFromTaskbarBtn.OnEvent("Click", "DllDeleteFromTaskbar")
+dllDllRemoveFromTaskbarBtn.OnEvent("Click", DllDeleteFromTaskbar)
 
 comDllRemoveFromTaskbarBtn := MyGui.Add("Button", "xc+10 y+10", "COM DeleteFromTaskbar() (clear for 3 seconds, then re-add)")
-comDllRemoveFromTaskbarBtn.OnEvent("Click", "ComDeleteFromTaskbar")
+comDllRemoveFromTaskbarBtn.OnEvent("Click", ComDeleteFromTaskbar)
 
 comDllRunWordBtn := MyGui.Add("Button", "xc+10 y+10", "COM run MS Word")
-comDllRunWordBtn.OnEvent("Click", "ComRunWord")
+comDllRunWordBtn.OnEvent("Click", ComRunWord)
 
 comDllRunWordListenerBtn := MyGui.Add("Button", "xc+10 y+10", "COM run MS Word with event listener")
-comDllRunWordListenerBtn.OnEvent("Click", "ComRunWordEventListener")
+comDllRunWordListenerBtn.OnEvent("Click", ComRunWordEventListener)
 
 comShellRunNotepad := MyGui.Add("Button", "xc+10 y+10", "COM shell Run() Notepad")
-comShellRunNotepad.OnEvent("Click", "ComRunNotepadShell")
+comShellRunNotepad.OnEvent("Click", ComRunNotepadShell)
 
 comShellExecNotepad := MyGui.Add("Button", "xc+10 y+10", "COM shell Exec() Notepad")
-comShellExecNotepad.OnEvent("Click", "ComExecNotepadShell")
+comShellExecNotepad.OnEvent("Click", ComExecNotepadShell)
 
 comFakeComCall := MyGui.Add("Button", "xc+10 y+10", "Fake COM call (hello)")
-comFakeComCall.OnEvent("Click", "FakeComCall")
+comFakeComCall.OnEvent("Click", FakeComCall)
 
 _ := MyGui.Add("Text", "xc+10 y+10 cBlue S10", "An animated Odie should appear below using ActiveX.")
 
@@ -2952,19 +2952,19 @@ btnMasterMute := MyGui.Add("Button", "xp y+10", "Mute")
 btnMasterUnmute := MyGui.Add("Button", "xp y+10", "Unmute")
 btnMasterRefresh := MyGui.Add("Button", "xp y+10", "Refresh")
 
-btnMasterMute.OnEvent("Click", "MasterMute")
+btnMasterMute.OnEvent("Click", MasterMute)
 MasterMute(*)
 {
 	TrySoundSetMute(true)
 }
 
-btnMasterUnmute.OnEvent("Click", "MasterUnmute")
+btnMasterUnmute.OnEvent("Click", MasterUnmute)
 MasterUnmute(*)
 {
 	TrySoundSetMute(false)
 }
 
-btnMasterRefresh.OnEvent("Click", "RefreshSound")
+btnMasterRefresh.OnEvent("Click", RefreshSound)
 RefreshSound(*)
 {
 	txtMasterName.Text := "Master: " . TrySoundGetName()
@@ -2977,7 +2977,7 @@ RefreshSound(*)
 
 txtMasterVolumeSlider := MyGui.Add("Text", "xc+10 cBlue s10", "Moving slider sets master volume")
 sldMasterVolume := MyGui.Add("Slider", "xp y+10 +AltSubmit Page10 ToolTip Range0-100", 100)
-sldMasterVolume.OnEvent("Change", "MasterVolumeSliderPos")
+sldMasterVolume.OnEvent("Change", MasterVolumeSliderPos)
 
 MasterVolumeSliderPos(*)
 {
@@ -2988,7 +2988,7 @@ MasterVolumeSliderPos(*)
 
 txtAdjMasterVolumeSlider := MyGui.Add("Text", "xc+10 cBlue s10", "Moving slider adjusts master volume")
 sldAdjMasterVolume := MyGui.Add("Slider", "xp y+10 +AltSubmit Page10 ToolTip Range-100-100", 100)
-sldAdjMasterVolume.OnEvent("Change", "AdjustMasterVolumeSliderPos")
+sldAdjMasterVolume.OnEvent("Change", AdjustMasterVolumeSliderPos)
 
 AdjustMasterVolumeSliderPos(*)
 {
@@ -3047,7 +3047,7 @@ MasterPeak()
 #endif
 
 beepBtn := MyGui.Add("Button", "xp y+10", "Beep")
-beepBtn.OnEvent("Click", "DoBeep")
+beepBtn.OnEvent("Click", DoBeep)
 
 DoBeep(*)
 {
@@ -3055,7 +3055,7 @@ DoBeep(*)
 }
 
 wavBtn := MyGui.Add("Button", "xp y+10", "Play wav")
-wavBtn.OnEvent("Click", "DoWav")
+wavBtn.OnEvent("Click", DoWav)
 
 wavTxt := MyGui.Add("Edit", "x+10 yp+2 w400")
 
@@ -3078,17 +3078,17 @@ imgGroup := MyGui.AddGroupBox("xc+10 yc+10 w500", "Images (Picture / ImageSearch
 MyGui.UseGroup(imgGroup)
 MyGui.AddText("xc+16 yc+24 w468 h44", "Display loads monkey/icon/svg Picture controls then destroys them; ImageSearch locates the colour swatch on screen and checks the coordinates against the swatch's own screen rect; ScreenClip captures a region and shows it. Pictures render on this tab.")
 imgDisplayBtn := MyGui.AddButton("xc+16 y+10 w150 h28", "Display Pictures")
-imgDisplayBtn.OnEvent("Click", "LoadPic")
+imgDisplayBtn.OnEvent("Click", LoadPic)
 #if WINDOWS
 ; DestroyPic destroys the picture controls with DllCall("DestroyWindow"), so it only exists on Windows
 ; (see its own #if WINDOWS) - registering it elsewhere raises, since the callback name resolves to nothing.
 imgDestroyBtn := MyGui.AddButton("x+10 yp w150 h28", "Destroy Pictures")
-imgDestroyBtn.OnEvent("Click", "DestroyPic")
+imgDestroyBtn.OnEvent("Click", DestroyPic)
 #endif
 imgSearchBtn := MyGui.AddButton("xc+16 y+10 w180 h28", "Image Search (swatch)")
-imgSearchBtn.OnEvent("Click", "ImgSrch")
+imgSearchBtn.OnEvent("Click", ImgSrch)
 imgScreenClipBtn := MyGui.AddButton("x+10 yp w120 h28", "Screen Clip")
-imgScreenClipBtn.OnEvent("Click", "LoadSC")
+imgScreenClipBtn.OnEvent("Click", LoadSC)
 imgOverlayBtn := MyGui.AddButton("xc+16 y+10 w230 h28", "Overlay Test (corner shapes + text)")
 imgOverlayBtn.OnEvent("Click", (*) => RunOverlayTest())
 MyGui.AddText("xc+16 y+12 w468", "Picture control render test (killbill.png, native size). NOTE: a rendered image file is not searchable — macOS/Wayland rescale it and macOS converts its colours — so Image Search uses the colour swatch instead:")
@@ -3224,22 +3224,22 @@ MyGui.UseGroup(guiSelfGroup)
 MoveText := MyGui.AddText("xc+16 yc+24 w380 h20", "Move this window to (100,100), then restore it (button colour tracks focus):")
 MoveText.SetFont("s9 cBlue")
 MoveButton := MyGui.AddButton("xc+16 y+6 w120 h26", "Move GUI")
-MoveButton.OnEvent("Focus", "ChangeMoveBtnColor")
-MoveButton.OnEvent("Click", "MoveGui")
+MoveButton.OnEvent("Focus", ChangeMoveBtnColor)
+MoveButton.OnEvent("Click", MoveGui)
 MoveButtonBack := MyGui.AddButton("x+8 yp w120 h26", "Move GUI Back")
-MoveButtonBack.OnEvent("Focus", "ChangeMoveBtnBackColor")
-MoveButtonBack.OnEvent("Click", "MoveGuiBack")
+MoveButtonBack.OnEvent("Focus", ChangeMoveBtnBackColor)
+MoveButtonBack.OnEvent("Click", MoveGuiBack)
 #if WINDOWS
 TitleInfo := MyGui.AddText("xc+420 yc+24 w340 h20", "Alter this window's title via SendMessage (WM_SETTEXT):")
 TitleInfo.SetFont("cBlue s9")
 SendBtn1 := MyGui.AddButton("xc+420 y+6 w120 h26", "Change Title")
-SendBtn1.OnEvent("Click", "ChangeTitle")
+SendBtn1.OnEvent("Click", ChangeTitle)
 SendBtn2 := MyGui.AddButton("x+8 yp w120 h26", "Restore Title")
-SendBtn2.OnEvent("Click", "RestoreTitle")
+SendBtn2.OnEvent("Click", RestoreTitle)
 PostInfo := MyGui.AddText("xc+800 yc+24 w300 h20", "Launch Notepad, PostMessage its About box, then close it:")
 PostInfo.SetFont("cBlue s9")
 PostBtn1 := MyGui.AddButton("xc+800 y+6 w190 h26", "Show Notepad 'About'")
-PostBtn1.OnEvent("Click", "AboutNotepad")
+PostBtn1.OnEvent("Click", AboutNotepad)
 #endif
 MyGui.UseGroup()
 Tab.UseTab()
@@ -3595,11 +3595,11 @@ btnSendPlayV := MyGui.AddButton("x+8 yp w110 h28", "SendPlay()")
 btnSendPlayV.OnEvent("Click", (*) => RunSendVariant("SendPlay"))
 ; SendEvent / ControlSend / ControlSendText — manual send tests grouped with the other Send buttons (they target gSendTarget too)
 BtnSendEvent := MyGui.AddButton("xc+16 y+8 w110 h28", "SendEvent()")
-BtnSendEvent.OnEvent("Click", "BtnSendEventFunc")
+BtnSendEvent.OnEvent("Click", BtnSendEventFunc)
 BtnControlSend := MyGui.AddButton("x+8 yp w110 h28", "ControlSend()")
-BtnControlSend.OnEvent("Click", "BtnControlSendFunc")
+BtnControlSend.OnEvent("Click", BtnControlSendFunc)
 BtnControlSendText := MyGui.AddButton("x+8 yp w130 h28", "ControlSendText()")
-BtnControlSendText.OnEvent("Click", "BtnControlSendTextFunc")
+BtnControlSendText.OnEvent("Click", BtnControlSendTextFunc)
 btnSendUnicode := MyGui.AddButton("xc+16 y+10 w150 h28", "Unicode SendText")
 btnSendUnicode.OnEvent("Click", (*) => RunSendScenario("SendText", "Mägi, Köln, São Paulo`n", "Unicode SendText"))
 btnSendEmoji := MyGui.AddButton("x+12 yp w150 h28", "Emoji SendText")
@@ -3666,13 +3666,13 @@ hotkeyGroup.GetPos(&_hgX, &_hgY, &_hgW, &_hgH)
 manualGroup := MyGui.AddGroupBox("xc+530 yc+" (10 + _hgH + 10) " w540", "Manual Hotkey() registration")
 MyGui.UseGroup(manualGroup)
 FuncBtnTwo := MyGui.AddButton("xc+16 yc+24 w150 h26", "RCtrl+RShift->AltTab")
-FuncBtnTwo.OnEvent("Click", "StupidTrickTwo")
+FuncBtnTwo.OnEvent("Click", StupidTrickTwo)
 FuncBtnFive := MyGui.AddButton("x+8 yp w110 h26", "Toggle AltTab")
-FuncBtnFive.OnEvent("Click", "ToggleHotkey")
+FuncBtnFive.OnEvent("Click", ToggleHotkey)
 FuncBtnSix := MyGui.AddButton("x+8 yp w180 h26", "RCtrl+LShift->AltTab(.INI)")
-FuncBtnSix.OnEvent("Click", "GrabFromIni")
+FuncBtnSix.OnEvent("Click", GrabFromIni)
 FuncBtnSeven := MyGui.AddButton("xc+16 y+8 w110 h26", "Toggle .INI")
-FuncBtnSeven.OnEvent("Click", "ToggleFromIni")
+FuncBtnSeven.OnEvent("Click", ToggleFromIni)
 MyGui.AddText("xc+16 y+10 w510", "Manual only: hold F1 = slow mouse; in Explorer select files + press F3 to list their names.")
 MyGui.UseGroup()
 Tab.UseTab()

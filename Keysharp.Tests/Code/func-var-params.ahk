@@ -30,7 +30,7 @@ varfunc1("firstparam", ,"thirdparam")
 
 AssertEq(x, true, A_LineNumber)
 
-varfo1 := Func("varfunc1")
+varfo1 := varfunc1
 
 x := false
 varfo1()
@@ -73,12 +73,12 @@ val := varfuncimplicit()
 
 AssertEq(val, 0, A_LineNumber)
 
-fo := Func("varfuncimplicit")
+fo := varfuncimplicit
 val := fo(arr*)
 
 AssertEq(val, 6, A_LineNumber)
 
-fo := Func("varfuncimplicit")
+fo := varfuncimplicit
 val := fo()
 
 AssertEq(val, 0, A_LineNumber)
@@ -149,17 +149,17 @@ val := varfunc5(1, 2, arr*)
 
 AssertEq(val, 9, A_LineNumber)
 
-fo := Func("varfunc3")
+fo := varfunc3
 val := fo(1, arr*)
 
 AssertEq(val, 7, A_LineNumber)
 
-fo := Func("varfunc4")
+fo := varfunc4
 val := fo(arr*)
 
 AssertEq(val, 6, A_LineNumber)
 
-fo := Func("varfunc5")
+fo := varfunc5
 val := fo(1, 2, arr*)
 
 AssertEq(val, 9, A_LineNumber)
@@ -178,7 +178,7 @@ varfunc6(args*)
 
 arr := [1, 2, 3]
 ; Test dynamic call passing two non variadic args plus a variadic arg passed to a func that takes one variadic param.
-val := Func("varfunc6").Call(1, 2, arr*)
+val := varfunc6.Call(1, 2, arr*)
 
 AssertEq(val, 9, A_LineNumber)
 
@@ -210,7 +210,7 @@ funca(a:=1)
 }
 
 ; Dynamically invoking a function with unset is a special case because it won't work unless unset is cast to object in the generated code.
-val := Func("funca").Call(unset)
+val := funca.Call(unset)
 
 AssertEq(val, 1, A_LineNumber)
 

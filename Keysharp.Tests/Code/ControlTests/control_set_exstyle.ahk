@@ -1,5 +1,5 @@
 MyGui := Gui(, "My Window")
-BtnOkay := MyGui.Add("Button", "x10 y+10 +AltSubmit", "Okay").OnEvent("Click", "OkayClicked")
+BtnOkay := MyGui.Add("Button", "x10 y+10 +AltSubmit", "Okay").OnEvent("Click", OkayClicked)
 MyEdit := MyGui.Add("Edit", "x10 y+10 w350 h80", "Test now")
 MyGui.Show("w400 h200")
 
@@ -12,4 +12,4 @@ OkayClicked() {
     Sleep(2000)
     ControlSetText("Test now", MyEdit.Hwnd)
     MyGui.Submit(False)
-}
+}

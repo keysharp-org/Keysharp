@@ -671,7 +671,7 @@ namespace Keysharp.Builtins
 		/// Note: Options N and P are ignored when the \ (backslash) option is present.
 		/// </param>
 		/// <param name="callback">If omitted, no custom sorting will be performed.<br/>
-		/// Otherwise, specify the name of a function or function object to call that compares any two items in the list.<br/>
+		/// Otherwise, specify a function object to call that compares any two items in the list.<br/>
 		/// The callback accepts three parameters and can be defined as follows:<br/>
 		///     The first item.<br/>
 		///     The second item.<br/>

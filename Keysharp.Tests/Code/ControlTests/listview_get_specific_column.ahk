@@ -10,7 +10,7 @@ Loop Files, A_MyDocuments "\*.*"
 
 
 LV2_Btn3 := MyGui.Add("Button", "x10 y+10", "Column 1")
-LV2_Btn3.OnEvent("Click", "LV_Col1")
+LV2_Btn3.OnEvent("Click", LV_Col1)
 
 
 MyGui.Show()

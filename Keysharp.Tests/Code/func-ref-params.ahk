@@ -178,7 +178,7 @@ reffunc3(a, &b, &c, theparams*)
 {
 }
 
-reffuncobj := Func("reffunc3")
+reffuncobj := reffunc3
 
 AssertEq(reffuncobj.IsByRef(1), false, A_LineNumber)
 	
@@ -347,7 +347,7 @@ func_bound(a, &b, c)
 	global z := c
 }
 
-fo := Func("func_bound")
+fo := func_bound
 bf := fo.Bind(5, ,7)
 bf(&y)
 

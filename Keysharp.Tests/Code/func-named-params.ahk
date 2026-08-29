@@ -286,11 +286,10 @@ AssertEq(posNA(manual*, "T2"), "hi/N:title: M/T2", A_LineNumber)  ; a spread's c
 mEmpty := [NamedArgs("opts", "B")]
 AssertEq(posNA(mEmpty*, "hi"), "N:opts: B/hi/-", A_LineNumber)
 
-; A function with an attached receiver reports the CALLER-visible signature: attaching consumes the
-; receiver slot (the same accounting Bind does for bound arguments), so Filter passes one argument to a
-; one-parameter method instead of failing on every element.
+; A bound function reports the CALLER-visible signature: a bound argument consumes its parameter slot, so
+; Filter passes one argument to a one-parameter method instead of failing on every element.
 hasMap := Map(2, "x")
-hasFn := Func("Has", hasMap)
+hasFn := Map.Prototype.Has.Bind(hasMap)
 Assert(hasFn.MinParams == 1 && hasFn.MaxParams == 1, A_LineNumber)
 AssertEq([1, 2, 3].Filter(hasFn).Length, 1, A_LineNumber)
 

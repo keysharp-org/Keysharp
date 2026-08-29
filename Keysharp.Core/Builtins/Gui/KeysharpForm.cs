@@ -530,13 +530,27 @@ namespace Keysharp.Builtins
 				_ = dpiChangeHandlers?.InvokeEventHandlers(g, oldDpi, newDpi);
 		}
 
+		/// <summary>
+		/// Resolves a handler for one of the Gui event registrations (OnEvent, OnMessage, OnNotify, OnCommand).
+		/// A Gui built with an event sink (AutoHotkey's EventObj parameter) also takes the name of one of that
+		/// sink's methods, which is the one place a callback is addressed by name; everywhere else, and at every
+		/// other built-in, a callback is a function object.
+		/// </summary>
+		/// <param name="handler">A function object, or the name of a method on eventObj.</param>
+		/// <param name="eventObj">The Gui's event sink, or null when it was built without one.</param>
+		/// <returns>The <see cref="KeysharpFunc"/> to register, or null when handler was blank.</returns>
+		internal static KeysharpFunc ResolveHandler(object handler, object eventObj) =>
+			handler is string name && name.Length > 0 && eventObj != null
+			? new KeysharpFunc(name, eventObj)
+			: Functions.GetKeysharpFunc(handler, null, true);
+
 		internal object OnEvent(object obj0, object obj1, object obj2 = null)
 		{
 			var e = obj0.As();
 			var h = obj1;
 			var i = obj2.Al(1);
 			e = e.ToLower();
-			var del = Functions.GetKeysharpFunc(h, eventObj, true);
+			var del = ResolveHandler(h, eventObj);
 
 			// ModifyEventHandlers ignores a null delegate, so a callback that did not resolve would otherwise
 			// register nothing and still report success.

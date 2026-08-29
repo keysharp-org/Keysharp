@@ -105,7 +105,7 @@ namespace Keysharp.Builtins
 			/// 0 = remove this callback. Matches Gui.OnEvent/OnMessage.</param>
 			private static object Subscribe(object instance, Type type, object scriptTarget, EventInfo ev, object callback, object addRemove)
 			{
-				var fo = Functions.GetKeysharpFunc(callback, null, null, true);
+				var fo = Functions.GetKeysharpFunc(callback, null, true);
 
 				if (fo == null)
 					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));

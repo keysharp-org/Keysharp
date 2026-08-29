@@ -5779,7 +5779,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Function object type.",
+                     "notes":  "Function object type. A callback is passed as a function object, with %\"Name\"% resolving a name known only at run time to one.",
                      "tested-by":  "assign-multiline.ahk; func-callable.ahk"
                  },
                  {

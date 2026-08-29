@@ -378,7 +378,9 @@ Controlling another application needs **Automation** permission, granted per tar
 * Function objects behave mostly the same as in AutoHotkey.
 	+ The underlying function object class is named `KeysharpFunc`, instead of `Func`, because C# already contains a built in class named `Func`.
 		+ Scripts only ever use the AutoHotkey name: `MsgBox is Func` works, `MsgBox is KeysharpFunc` does not.
-	+ Function objects can be created by passing the name of the function as a direct reference or as a string to `Func()`.
+	+ A function is handed to a callback parameter as a reference: `SetTimer(MyFunc)`. A string there raises `TypeError`, as it does in AutoHotkey v2; a name known only at run time is resolved with a double-deref first, `SetTimer(%"MyFunc"%)`.
+		+ A `Gui` built with an event sink, `Gui(options, title, eventObj)`, takes the name of one of that sink's methods in `OnEvent`/`OnNotify`/`OnCommand`/`OnMessage`, as in AutoHotkey. That is the one place a callback is named; elsewhere `ObjBindMethod(obj, "Method")` binds a method by name.
+		+ `Hotkey()`'s `action` takes an alt-tab action or another hotkey's name, and `Hotstring()`'s `replacement` takes replacement text.
 	+ Most built-in functions can also be used as function objects.
 * The `File` object is internally named `KeysharpFile` so that it doesn't conflict with `System.IO.File`. As with `Func` and `Object`, only the AutoHotkey name is usable from a script; the internal name appears solely in low-level diagnostics such as stack traces.
 * Error stack traces start from where the error was thrown, not where it was constructed.

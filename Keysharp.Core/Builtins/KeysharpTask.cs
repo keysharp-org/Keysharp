@@ -139,7 +139,7 @@ namespace Keysharp.Builtins
 			/// </returns>
 			public object Then(object OnSuccess, object OnFailure = null)
 			{
-				var success = Functions.GetKeysharpFunc(OnSuccess, null, null, true);
+				var success = Functions.GetKeysharpFunc(OnSuccess, null, true);
 
 				if (success == null)
 					return DefaultObject;
@@ -150,7 +150,7 @@ namespace Keysharp.Builtins
 					return Errors.ValueErrorOccurred(
 						$"Task.Then OnSuccess requires at least {successArity.Required} parameters, but receives at most one.");
 
-				var failure = OnFailure == null ? null : Functions.GetKeysharpFunc(OnFailure, null, null, true);
+				var failure = OnFailure == null ? null : Functions.GetKeysharpFunc(OnFailure, null, true);
 
 				if (OnFailure != null && failure == null)
 					return DefaultObject;
@@ -208,7 +208,7 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public static object staticCreate(object @this, object Producer)
 			{
-				var producer = Functions.GetKeysharpFunc(Producer, null, null, true);
+				var producer = Functions.GetKeysharpFunc(Producer, null, true);
 
 				if (producer == null)
 					return DefaultObject;

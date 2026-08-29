@@ -151,7 +151,7 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object OnChange(object @this, object callback, object count = null)
 			{
-				var fo = Functions.GetKeysharpFunc(callback, null, null, true);
+				var fo = Functions.GetKeysharpFunc(callback, null, true);
 
 				if (fo == null)
 					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));

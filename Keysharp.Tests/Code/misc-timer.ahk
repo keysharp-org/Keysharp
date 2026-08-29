@@ -5,7 +5,7 @@
 
 x := 0
 
-fo1 := Func("TimerHandler")
+fo1 := TimerHandler
 SetTimer(fo1, 100)
 
 TimerHandler(*)
@@ -24,7 +24,7 @@ Sleep(1000)
 AssertEq(x, 5, A_LineNumber)
 
 x := 0
-fo1 := Func("TimerHandler2")
+fo1 := TimerHandler2
 SetTimer(fo1, 10)
 
 TimerHandler2(*)

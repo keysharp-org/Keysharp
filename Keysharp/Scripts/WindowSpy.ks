@@ -27,8 +27,8 @@ WinSpyGui() {
 #endif
 
     oGui := Gui("AlwaysOnTop Resize MinSize +DPIScale","Window Spy for Keysharp")
-    oGui.OnEvent("Close","WinSpyClose")
-    oGui.OnEvent("Size","WinSpySize")
+    oGui.OnEvent("Close",WinSpyClose)
+    oGui.OnEvent("Size",WinSpySize)
 
 #if WINDOWS
     oGui.SetFont("s9", "Segoe UI")

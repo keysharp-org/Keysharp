@@ -111,7 +111,7 @@ namespace Keysharp.Builtins
 				{
 					string calloutString = pcre_callout.Number == 0 ? pcre_callout.String : null;
 					string name = calloutString != null && calloutString != "" ? calloutString : "pcre_callout";
-					callout = Functions.GetKeysharpFunc(name, null);
+					callout = Functions.GetKeysharpFuncByName(name);
 				}
 
 				// Expose A_EventInfo as a native PCRE1-layout pcre_callout_block so AHK-compatible callout

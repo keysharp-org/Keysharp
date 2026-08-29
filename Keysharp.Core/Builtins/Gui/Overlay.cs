@@ -461,7 +461,7 @@ namespace Keysharp.Builtins
 				if (mode is not (1L or -1L or 0L))
 					return Errors.ValueErrorOccurred("Overlay.OnEvent: AddRemove must be 1, -1 or 0.");
 
-				var fo = Functions.GetKeysharpFunc(Callback, null, null, true);
+				var fo = Functions.GetKeysharpFunc(Callback, null, true);
 
 				if (fo == null)
 					return Errors.TypeErrorOccurred(Callback, typeof(KeysharpFunc));

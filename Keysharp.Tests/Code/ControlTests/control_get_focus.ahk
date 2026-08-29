@@ -7,7 +7,7 @@ ThisChkBx := ThisGui.Add("CheckBox", "x90 w80 yp", "Click me")
 FocusText := ThisGui.Add("Text", "x10 y+10 cBlue s10 w200", "Focus test")
 CoordText := ThisGui.Add("Text", "x10 y+10 cRed", "")
 ;CoordText.SetFont("s20") 
-SetTimer("UpdateOSD", 400)
+SetTimer(UpdateOSD, 400)
 UpdateOSD()  ; Make the first update immediate rather than waiting for the timer.
 ThisGui.Show()
 
@@ -21,4 +21,4 @@ UpdateOSD()
     FocusedClassNN := ControlGetClassNN(FocusedHwnd)
     CoordText.Text := "Hwnd: " FocusedHwnd "`nClassNN: " FocusedClassNN
 
-}
+}

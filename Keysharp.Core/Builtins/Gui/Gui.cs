@@ -2671,7 +2671,7 @@ namespace Keysharp.Builtins
 			if (addremove < -1 || addremove > 1)
 				return Errors.ValueErrorOccurred($"Invalid AddRemove value: {addremove}.");
 
-			var del = Functions.GetKeysharpFunc(callback, form.eventObj, true);
+			var del = KeysharpForm.ResolveHandler(callback, form.eventObj);
 
 			if (del == null)
 				return Errors.ValueErrorOccurred("The callback was not a valid function.");

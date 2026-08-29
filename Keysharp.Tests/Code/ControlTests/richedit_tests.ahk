@@ -7,9 +7,9 @@ MyGui := Gui()
 SecondRichEdit := MyGui.Add("RichEdit", "x10 w250 h150", "Try pasting rich text and/or images here!")
 SecondRichEditText := MyGui.Add("Text", "cBlue s10 w200", "ControlSetText Test (RichEdit)")
 RichEditBtn1 := MyGui.Add("Button", "s8 x10 y+10", "Send Text to RichEdit")
-RichEditBtn1.OnEvent("Click", "SendTextToRichEdit")
+RichEditBtn1.OnEvent("Click", SendTextToRichEdit)
 RichEditBtn2 := MyGui.Add("Button", "s8 x150 yp", "Clear RichEdit")
-RichEditBtn2.OnEvent("Click", "ClearRichEdit")
+RichEditBtn2.OnEvent("Click", ClearRichEdit)
 
 MyGui.Show()
 
@@ -34,4 +34,4 @@ By default, the hard carriage return (Enter) between the previous line and this 
 ; └───────────────────────┘
 ClearRichEdit() {
     ControlSetText("", SecondRichEdit)
-}
+}
