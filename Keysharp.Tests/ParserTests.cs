@@ -35,6 +35,27 @@ namespace Keysharp.Tests
 		[Test, Category("Parser")]
 		public void Parser() => Assert.IsTrue(TestScript("parser", false));
 
+		// The included content lands in the emitted code, not in the returned Unit, so only the generated text can
+		// tell a resolved #Include from a skipped one. On failure Bytes is null and Text carries the diagnostics.
+		private static (byte[] Bytes, string Text) EmitWithInclude(string source, string includeDir = null)
+		{
+			var (bytes, text, _) = new CompilerHelper().CompileCodeToByteArray(source, "inc_" + Guid.NewGuid().ToString("N"),
+									   emitCode: true, includeDirOverride: includeDir, sourceIsFile: false);
+			return (bytes, text);
+		}
+
+		private static void AssertIncluded((byte[] Bytes, string Text) emitted)
+		{
+			Assert.IsNotNull(emitted.Bytes, emitted.Text);
+			StringAssert.Contains("class Included", emitted.Text);
+		}
+
+		private static void AssertIncludeNotFound((byte[] Bytes, string Text) emitted)
+		{
+			Assert.IsNull(emitted.Bytes, "A missing #Include must fail loudly, not be skipped.");
+			StringAssert.Contains("#Include file not found", emitted.Text);
+		}
+
 		[Test, Category("Parser"), Category("Internal")]
 		public void IncludeFromMemory()
 		{
@@ -56,8 +77,35 @@ namespace Keysharp.Tests
 					Assert.IsTrue(result?.Success == true, string.Join(Environment.NewLine, result?.Diagnostics ?? []));
 				}
 
-				var withoutInclude = helper.CreateCompilationUnitFromFile(source, "include_none");
-				Assert.IsFalse(withoutInclude.Unit?.ToFullString().Contains("class Included") == true);
+				// A relative include is what the base directory actually decides: it resolves against the override,
+				// and without one it is looked for in the working directory, where it is not.
+				var relative = "#include \"Included.ks\"\nx := Included()\n";
+				AssertIncluded(EmitWithInclude(relative, dir));
+				AssertIncludeNotFound(EmitWithInclude(relative));
+			}
+			finally
+			{
+				Directory.Delete(dir, true);
+			}
+		}
+
+		// An in-memory script (stdin, or a host handing over text) has no file of its own to resolve #Include
+		// against, so the base is the working directory — what A_ScriptDir reports for it. With no base at all the
+		// preprocessor skipped every #Include and the lowerer took the leftover directive for one handled
+		// elsewhere, so includes vanished in silence and even a missing file raised nothing.
+		[Test, Category("Parser"), Category("Internal")]
+		public void IncludeFromMemoryWithoutIncludeDir()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_include_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				var include = Path.Combine(dir, "Included.ks");
+				File.WriteAllText(include, "class Included {\n}\n");
+				var source = $"#include \"{include}\"\nx := Included()\n";
+				AssertIncluded(EmitWithInclude(source));
+				AssertIncludeNotFound(EmitWithInclude($"#include \"{Path.Combine(dir, "NoSuchFile.ks")}\"\n"));
 			}
 			finally
 			{

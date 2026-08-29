@@ -867,8 +867,10 @@ namespace Keysharp.Compilation
 			try
 			{
 				var source = isFile ? File.ReadAllText(fileName, enc) : fileName;
-				// Editors can supply an include base for in-memory source.
-				var includeDir = isFile ? Path.GetDirectoryName(scriptPath) : includeDirOverride;
+				// Editors can supply an include base for in-memory source; otherwise it is the working directory,
+				// which is what A_ScriptDir reports for such a script. Leaving it null instead disabled #Include
+				// silently, since the lowerer treats a surviving #Include as a directive handled elsewhere.
+				var includeDir = isFile ? Path.GetDirectoryName(scriptPath) : (includeDirOverride ?? Directory.GetCurrentDirectory());
 				var buildName = name ?? (isFile ? Path.GetFileNameWithoutExtension(scriptName) : "*");
 
 				var (prog, parseDiags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source, includeDir, isFile ? scriptPath : null, defines);
