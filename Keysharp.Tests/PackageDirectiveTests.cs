@@ -290,6 +290,42 @@ namespace Keysharp.Tests
 			}
 		}
 
+		/// <summary>
+		/// A package which hands its assemblies over through its own MSBuild targets rather than a lib/ folder
+		/// NuGet selects from. Restore succeeds either way; without the targets being read it contributes
+		/// nothing, and the feature built on it (Gui.WebView's Edge backend) silently never activates.
+		/// </summary>
+		[Test, Category("NuGet")]
+		public async Task ProviderTargetSuppliedAssemblies()
+		{
+			Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGet("nuget", out var provider, out var failure), failure);
+			var cache = Path.Combine(Path.GetTempPath(), "keysharp-provider-targets-" + Guid.NewGuid().ToString("N"));
+
+			try
+			{
+				//Its assemblies live under lib_manual/, and its only lib/ folder is net462, which NuGet will not
+				//select for a modern host. Its targets name the ones each framework should reference.
+				var context = new Keysharp.Components.Packages.PackageResolveContext(cache, Environment.CurrentDirectory,
+					Keysharp.Internals.Os.PackageResolver.TargetFramework, Keysharp.Internals.Os.PackageResolver.RuntimeId,
+					true, TimeSpan.FromMinutes(3), "target-supplied asset test");
+				var result = await provider.ResolveAsync(context,
+					[new Keysharp.Components.Packages.PackageRequest("Microsoft.Web.WebView2", "[1.0.2957.106]")], CancellationToken.None);
+				Assert.IsTrue(result.Success, result.Failure);
+				var resolved = result.Packages.Single(package => package.Id.Equals("Microsoft.Web.WebView2", StringComparison.OrdinalIgnoreCase));
+				Assert.IsNotEmpty(resolved.Runtime, "no assembly was taken from the package's own build targets");
+				CollectionAssert.Contains(resolved.Runtime.Select(Path.GetFileName).ToList(), "Microsoft.Web.WebView2.WinForms.dll");
+				CollectionAssert.Contains(resolved.Compile.Select(Path.GetFileName).ToList(), "Microsoft.Web.WebView2.Core.dll");
+				//Chosen the way a lib/ folder is chosen, not by replaying the targets' own conditions: every
+				//assembly must come from one framework-compatible directory.
+				Assert.AreEqual(1, resolved.Runtime.Select(Path.GetDirectoryName).Distinct().Count(),
+					"assemblies were taken from more than one framework folder");
+			}
+			finally
+			{
+				try { Directory.Delete(cache, true); } catch { }
+			}
+		}
+
 		[Test, Category("NuGet")]
 		public async Task ProviderWarmCacheValidation()
 		{
