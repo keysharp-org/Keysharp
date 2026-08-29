@@ -708,6 +708,86 @@
                  },
                  {
                      "category":  "Core Language",
+                     "feature":  "Func.IsByRef()",
+                     "syntax":  "FuncObj.IsByRef([ParamIndex])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Returns whether any parameter, or the specified 1-based parameter, is ByRef."
+                 },
+                 {
+                     "category":  "Core Language",
+                     "feature":  "Func.IsBuiltIn",
+                     "syntax":  "IsBuiltIn := FuncObj.IsBuiltIn",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Whether the function object targets a built-in member."
+                 },
+                 {
+                     "category":  "Core Language",
+                     "feature":  "Func.IsClosure",
+                     "syntax":  "IsClosure := FuncObj.IsClosure",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Whether the function object represents a closure over captured locals."
+                 },
+                 {
+                     "category":  "Core Language",
+                     "feature":  "Func.IsMethod",
+                     "syntax":  "IsMethod := FuncObj.IsMethod",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Whether the function object requires a receiver."
+                 },
+                 {
+                     "category":  "Core Language",
+                     "feature":  "Func.IsOptional()",
+                     "syntax":  "FuncObj.IsOptional([ParamIndex])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Returns whether any parameter, or the specified 1-based parameter, is optional."
+                 },
+                 {
+                     "category":  "Core Language",
+                     "feature":  "Func.IsVariadic",
+                     "syntax":  "IsVariadic := FuncObj.IsVariadic",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Whether the target has a variadic trailing parameter."
+                 },
+                 {
+                     "category":  "Core Language",
+                     "feature":  "Func.MaxParams",
+                     "syntax":  "Max := FuncObj.MaxParams",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Maximum number of positional arguments the function object currently accepts."
+                 },
+                 {
+                     "category":  "Core Language",
+                     "feature":  "Func.MinParams",
+                     "syntax":  "Min := FuncObj.MinParams",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Minimum number of positional arguments the function object currently requires."
+                 },
+                 {
+                     "category":  "Core Language",
                      "feature":  "Named parameters",
                      "syntax":  "f(a, Name: value)",
                      "windows":  "full",
@@ -5328,6 +5408,206 @@
                  },
                  {
                      "category":  "FileSystem",
+                     "feature":  "File.AtEOF",
+                     "syntax":  "AtEnd := FileObj.AtEOF",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Whether the read position is at end of input."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.Close()",
+                     "syntax":  "FileObj.Close()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Closes the file or stream."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.Encoding",
+                     "syntax":  "enc := FileObj.Encoding",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Gets or sets the encoding used by text read and write members."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.Flush()",
+                     "syntax":  "FileObj.Flush()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Flushes pending buffered output."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.Handle",
+                     "syntax":  "h := FileObj.Handle",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "OS file handle for path-backed files; 0 for memory-backed files."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.Length",
+                     "syntax":  "len := FileObj.Length",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Gets or sets stream length."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.Pos",
+                     "syntax":  "pos := FileObj.Pos",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Current stream position; assigning seeks."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.RawRead()",
+                     "syntax":  "bytes := FileObj.RawRead(Buffer, Bytes?)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Reads raw bytes into a destination exposing Ptr and Size."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.RawWrite()",
+                     "syntax":  "bytes := FileObj.RawWrite(Source, Bytes?)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Writes raw bytes from a source exposing Ptr and Size."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.Read()",
+                     "syntax":  "text := FileObj.Read(Characters?)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Reads text from the current position."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.ReadChar() / File.ReadUChar()",
+                     "syntax":  "n := FileObj.ReadChar()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Reads an 8-bit signed or unsigned value."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.ReadDouble() / File.ReadFloat()",
+                     "syntax":  "n := FileObj.ReadDouble()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Reads an IEEE floating-point value."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.ReadInt() / File.ReadUInt() / File.ReadInt64() / File.ReadShort() / File.ReadUShort()",
+                     "syntax":  "n := FileObj.ReadInt()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Reads a binary integer of the requested width and signedness."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.ReadLine()",
+                     "syntax":  "line := FileObj.ReadLine()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Reads one text line."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.Seek()",
+                     "syntax":  "FileObj.Seek(Distance [, Origin])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Moves the file position."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.Write()",
+                     "syntax":  "FileObj.Write(Text)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Writes text at the current position."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.WriteChar() / File.WriteUChar()",
+                     "syntax":  "FileObj.WriteChar(Number)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Writes an 8-bit signed or unsigned value."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.WriteDouble() / File.WriteFloat()",
+                     "syntax":  "FileObj.WriteDouble(Number)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Writes an IEEE floating-point value."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.WriteInt() / File.WriteUInt() / File.WriteInt64() / File.WriteShort() / File.WriteUShort()",
+                     "syntax":  "FileObj.WriteInt(Number)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Writes a binary integer of the requested width and signedness."
+                 },
+                 {
+                     "category":  "FileSystem",
+                     "feature":  "File.WriteLine()",
+                     "syntax":  "FileObj.WriteLine(Text)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Writes text followed by a line ending."
+                 },
+                 {
+                     "category":  "FileSystem",
                      "feature":  "FileRead()",
                      "syntax":  "FileRead(\"file.txt\")",
                      "windows":  "full",
@@ -6599,6 +6879,26 @@
                  },
                  {
                      "category":  "Input/Automation",
+                     "feature":  "InputHook.BeforeHotkeys",
+                     "syntax":  "",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Whether InputHook receives events before hotkeys process them."
+                 },
+                 {
+                     "category":  "Input/Automation",
+                     "feature":  "InputHook.BufferLengthMax",
+                     "syntax":  "",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Maximum text buffer length before capture ends."
+                 },
+                 {
+                     "category":  "Input/Automation",
                      "feature":  "InputHook.CaseSensitive",
                      "syntax":  "",
                      "windows":  "full",
@@ -6606,6 +6906,16 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Whether match checks are case-sensitive."
+                 },
+                 {
+                     "category":  "Input/Automation",
+                     "feature":  "InputHook.EndCharMode",
+                     "syntax":  "",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Whether termination characters remain in collected input."
                  },
                  {
                      "category":  "Input/Automation",
@@ -6749,6 +7059,16 @@
                  },
                  {
                      "category":  "Input/Automation",
+                     "feature":  "InputHook.OnMouseDown",
+                     "syntax":  "",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Callback invoked on mouse-button press events."
+                 },
+                 {
+                     "category":  "Input/Automation",
                      "feature":  "InputHook.OnMouseMove",
                      "syntax":  "",
                      "windows":  "full",
@@ -6756,6 +7076,16 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "OnMouseMove(hook, dx, dy) queues every move report, including (0, 0). Windows derives deltas from desktop-clamped hook positions, so outward movement at an edge can be zero; macOS uses Quartz deltas. Linux requires a matching keysharp-inputd 1.1 daemon and mouse-hook permission (without either, no moves are reported): relative values are raw device-specific evdev counts, while physical absolute values are changes in normalized [0,65535] axes. Linux A_EventInfo includes DeviceId (0 synthetic, positive physical) and IsAbsolute; synthetic absolute deltas are zero because no relative sample exists. Windows and macOS instead provide global-screen X/Y when available and omit DeviceId; X/Y need not equal the prior position plus dx/dy, and macOS reports the frozen cursor position while movement is suppressed."
+                 },
+                 {
+                     "category":  "Input/Automation",
+                     "feature":  "InputHook.OnMouseUp",
+                     "syntax":  "",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Callback invoked on mouse-button release events."
                  },
                  {
                      "category":  "Input/Automation",
@@ -6796,6 +7126,26 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Waits until capture ends or times out."
+                 },
+                 {
+                     "category":  "Input/Automation",
+                     "feature":  "InputHook.TranscribeModifiedKeys",
+                     "syntax":  "",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Whether typed characters should reflect active modifier changes."
+                 },
+                 {
+                     "category":  "Input/Automation",
+                     "feature":  "InputHook.VisibleMouseMove",
+                     "syntax":  "",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Whether mouse movement remains visible while capture is active."
                  },
                  {
                      "category":  "Input/Automation",
