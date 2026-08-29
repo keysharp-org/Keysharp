@@ -4539,10 +4539,19 @@ namespace Keysharp.Compilation.Syntax
 		private static readonly Dictionary<string, string> IsSetOrNull = new(System.StringComparer.Ordinal)
 		{ { "GetPropertyValue", "GetPropertyValueOrNull" }, { "GetIndex", "GetIndexOrNull" }, { "Invoke", "InvokeOrNull" } };
 
-		private static ExpressionSyntax RewriteToOrNull(ExpressionSyntax e)
+		// The same rewrite for a fat-arrow body, minus the property read. GetPropertyValueOrNull reports a member
+		// which does not exist and one which resolved to no value both as a null, so rewriting the read made
+		// `() => obj.NoSuchProperty` raise or not depending on whether the caller used what it returned - and an
+		// expression cannot depend on that. Left as the raising form, an arrow body reads a property exactly as a
+		// block body does, which is also what AutoHotkey v2.1 does with both. The two rewrites which remain are
+		// the ones that behave: GetIndexOrNull and InvokeOrNull still raise for an index or method that is absent.
+		private static readonly Dictionary<string, string> ArrowOrNull = new(System.StringComparer.Ordinal)
+		{ { "GetIndex", "GetIndexOrNull" }, { "Invoke", "InvokeOrNull" } };
+
+		private static ExpressionSyntax RewriteToOrNull(ExpressionSyntax e, Dictionary<string, string> map = null)
 		{
 			if (e is InvocationExpressionSyntax inv && inv.Expression is MemberAccessExpressionSyntax ma
-				&& IsSetOrNull.TryGetValue(ma.Name.Identifier.Text, out var orNull))
+				&& (map ?? IsSetOrNull).TryGetValue(ma.Name.Identifier.Text, out var orNull))
 				return inv.WithExpression(ma.WithName(SyntaxFactory.IdentifierName(orNull)));
 			return e;
 		}
@@ -6152,9 +6161,10 @@ namespace Keysharp.Compilation.Syntax
 					}
 
 			// A fat-arrow `=> expr` propagates an unset result rather than raising (unlike an explicit `return f()`),
-			// so its outermost call/member/index uses the non-raising *OrNull form.
+			// so its outermost call or index uses the non-raising *OrNull form. Its property read does not - see
+			// ArrowOrNull.
 			var setupEnd = body.Count;   // boundary after local hoists + param setup, before the executable body
-			if (arrowBody != null) body.Add(SyntaxFactory.ReturnStatement(RewriteToOrNull(LowerExpr(arrowBody))));
+			if (arrowBody != null) body.Add(SyntaxFactory.ReturnStatement(RewriteToOrNull(LowerExpr(arrowBody), ArrowOrNull)));
 			else if (bodyBlock != null) body.AddRange(LowerStmtList(bodyBlock.Body));
 
 			if (body.Count == 0 || body[^1] is not ReturnStatementSyntax)

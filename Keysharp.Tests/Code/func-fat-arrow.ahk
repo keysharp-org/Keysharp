@@ -423,4 +423,39 @@ x := pc.c
 
 AssertEq(x, 2, A_LineNumber)
 
+; A fat-arrow body reads a property exactly as a block body does: whether `obj.Prop` raises cannot depend on
+; whether the caller used what the arrow returned. This holds both for a member which is not there at all and
+; for one which resolves to no value, and matches AutoHotkey v2.1-alpha.31 in every shape below (which reports
+; the missing member as a PropertyError, where this reports an UnsetError).
+missing := {}
+readMissing := () => missing.NoSuchProperty
+readMissingDynamic := () => missing.%"NoSuchProperty"%
+Throws(() => Discard(readMissing()), A_LineNumber)   ; the value is used
+Throws(readMissing, A_LineNumber)                    ; and discarded: the same error
+Throws(readMissingDynamic, A_LineNumber)
+
+; The same for a member which exists but yields unset, and for the block form of both.
+holder := {}
+holder.DefineProp("Empty", {Get: (*) => unset})
+readEmpty := () => holder.Empty
+Throws(() => Discard(readEmpty()), A_LineNumber)
+Throws(readEmpty, A_LineNumber)
+Throws(BlockEmpty, A_LineNumber)
+Throws(BlockMissing, A_LineNumber)
+
+BlockEmpty() {
+	return holder.Empty
+}
+
+BlockMissing() {
+	return missing.NoSuchProperty
+}
+
+; A call or an index in an arrow body keeps propagating an unset result, which is what the arrow form is for.
+maybeEmpty := () => (holder.Empty?)
+maybeEmpty()
+
+Discard(*) {
+}
+
 FileAppend "pass", "*"
