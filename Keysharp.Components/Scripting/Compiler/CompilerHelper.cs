@@ -866,7 +866,10 @@ namespace Keysharp.Compilation
 
 			try
 			{
-				var source = isFile ? File.ReadAllText(fileName, enc) : fileName;
+				// A leading BOM is not program text: File.ReadAllText strips one, but in-memory source (stdin, or a
+				// host handing over decoded text) keeps it, where it lexes as an identifier and eats line 1's directive.
+				var source = isFile ? File.ReadAllText(fileName, enc)
+							 : fileName.Length > 0 && fileName[0] == '\uFEFF' ? fileName[1..] : fileName;
 				// Editors can supply an include base for in-memory source; otherwise it is the working directory,
 				// which is what A_ScriptDir reports for such a script. Leaving it null instead disabled #Include
 				// silently, since the lowerer treats a surviving #Include as a directive handled elsewhere.

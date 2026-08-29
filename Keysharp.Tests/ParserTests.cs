@@ -105,6 +105,9 @@ namespace Keysharp.Tests
 				File.WriteAllText(include, "class Included {\n}\n");
 				var source = $"#include \"{include}\"\nx := Included()\n";
 				AssertIncluded(EmitWithInclude(source));
+				// A BOM survives a pipe where File.ReadAllText would have eaten it; unstripped it lexes as an
+				// identifier and swallows the first line, which is exactly where an #Include sits.
+				AssertIncluded(EmitWithInclude("\uFEFF" + source));
 				AssertIncludeNotFound(EmitWithInclude($"#include \"{Path.Combine(dir, "NoSuchFile.ks")}\"\n"));
 			}
 			finally
