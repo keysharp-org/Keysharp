@@ -1003,7 +1003,7 @@ namespace Keysharp.Builtins
 #endif
 	}
 
-	public class KeysharpRichEdit : RichTextBox
+	public partial class KeysharpRichEdit : RichTextBox
 	{
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;

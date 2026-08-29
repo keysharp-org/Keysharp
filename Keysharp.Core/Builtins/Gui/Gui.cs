@@ -2474,6 +2474,8 @@ namespace Keysharp.Builtins
 
 		public object AddRadio(object options = null, object text = null) => Add(Keyword_Radio, options, text);
 
+		public object AddRichEdit(object options = null, object text = null) => Add(Keyword_Rich_Edit, options, text);
+
 		public object AddSlider(object options = null, object text = null) => Add(Keyword_Slider, options, text);
 
 		public object AddStatusBar(object options = null, object text = null) => Add(Keyword_StatusBar, options, text);
@@ -3453,7 +3455,8 @@ namespace Keysharp.Builtins
 					if (control is KeysharpTextBox || control is KeysharpPasswordBox || control is KeysharpDateTimePicker || control is KeysharpMonthCalendar)//Just use value because it's the same and consolidates the formatting in one place, despite being slightly slower.
 						result.DefinePropInternal(control.Name, new OwnPropsDesc(null, guictrl.Value));
 					else if (control is KeysharpRichEdit)
-						result.DefinePropInternal(control.Name,  new OwnPropsDesc(null, !guictrl.AltSubmit ? guictrl.Value : guictrl.RichText));
+						result.DefinePropInternal(control.Name,  new OwnPropsDesc(null,
+								!guictrl.AltSubmit || guictrl is not RichEdit re ? guictrl.Value : re.RichText));
 					else if (control is KeysharpNumericUpDown nud)
 					{
 #if WINDOWS
@@ -4216,8 +4219,6 @@ namespace Keysharp.Builtins
 		public class Progress(params object[] args) : Gui.Control(args) { }
 
 		public class Radio(params object[] args) : Gui.Control(args) { }
-
-		public class RichEdit(params object[] args) : Gui.Control(args) { }
 
 		public class Slider(params object[] args) : Gui.Control(args) { }
 

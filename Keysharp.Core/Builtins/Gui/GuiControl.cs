@@ -72,6 +72,7 @@ namespace Keysharp.Builtins
 				removedAny |= CallbackRegistry<CallbackRegistration>.RemoveOwned(notifyHandlers, scheduler);
 #endif
 				removedAny |= selectedItemChangedHandlers?.RemoveOwned(scheduler) == true;
+				removedAny |= (this as RichEdit)?.RemoveOwnedRichEditHandlers(scheduler) == true;
 
 #if WINDOWS
 				if (_control is StatusStrip ss)
@@ -102,6 +103,8 @@ namespace Keysharp.Builtins
 #endif
 				|| e switch
 			{
+				//A RichEdit's own events; no other control has a caret to move or a link to click.
+				_ when RichEdit.IsRichEditEvent(e) => this is RichEdit,
 				"change" => this is ComboBox or DDL or ListBox or Tab or Edit or RichEdit or DateTime or MonthCal or Hotkey or UpDown or Slider,
 				//Gui.Text spelled out: a bare "Text" binds to the Control.Text property instead.
 				"click" => this is Keysharp.Builtins.Gui.Text or Pic or Button or CheckBox or Radio or ListView or TreeView or Link or StatusBar,
@@ -140,7 +143,11 @@ namespace Keysharp.Builtins
 				if (!SupportsEvent(e))
 					return Errors.ValueErrorOccurred($"A {Type} control does not support the {eventName.As()} event.");
 
-				if (e == "change")
+				if (this is RichEdit re && RichEdit.IsRichEditEvent(e))
+				{
+					re.ModifyEventHandlers(e, del, i);
+				}
+				else if (e == "change")
 				{
 					if (changeHandlers == null)
 						changeHandlers = new();
@@ -349,23 +356,6 @@ namespace Keysharp.Builtins
 			}
 
 			internal KeysharpForm ParentForm => _control.FindParent<KeysharpForm>();
-			public object RichText
-			{
-				get
-				{
-					if (_control is KeysharpRichEdit rtf)
-						return Conversions.NormalizeEol(rtf.Text);
-
-					return Errors.ErrorOccurred($"Can only get RichText on a RichEdit control. Attempted on a {_control?.GetType().Name ?? "null"} control.");
-				}
-				set
-				{
-					if (_control is KeysharpRichEdit rtf)
-						rtf.Rtf = Conversions.NormalizeEol(value);
-					else
-						_ = Errors.ErrorOccurred($"Can only set RichText on a RichEdit control. Attempted on a {_control?.GetType().Name ?? "null"} control.");
-				}
-			}
 
 			public string Type => typename;
 

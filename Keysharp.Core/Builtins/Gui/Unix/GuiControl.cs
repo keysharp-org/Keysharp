@@ -2153,7 +2153,12 @@ namespace Keysharp.Builtins
 
 			internal void Txt_TextChanged(object sender, EventArgs e)
 			{
-				if (eventHandlerActive && (_control is KeysharpTextBox || _control is KeysharpPasswordBox || _control is KeysharpTextArea))
+				//A RichEdit reports a formatting change as a text change, which is not one a script asked about.
+				if (_control is KeysharpRichEdit { IsFormatting: true })
+					return;
+
+				if (eventHandlerActive && (_control is KeysharpTextBox || _control is KeysharpPasswordBox
+										   || _control is KeysharpTextArea || _control is KeysharpRichEdit))
 					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));
 			}
 		}

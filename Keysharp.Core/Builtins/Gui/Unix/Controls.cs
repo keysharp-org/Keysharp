@@ -1887,7 +1887,7 @@ namespace Keysharp.Builtins
 		}
 	}
 
-	public class KeysharpRichEdit : RichTextArea
+	public partial class KeysharpRichEdit : RichTextArea
 	{
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
@@ -1905,10 +1905,18 @@ namespace Keysharp.Builtins
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
 			TextChanged += KeysharpRichEdit_TextChanged;
+			HookSelectionEvents();
 		}
 
 		private void KeysharpRichEdit_TextChanged(object sender, EventArgs e)
 		{
+			//Eto's text buffer reports a formatting change as a text change. Rewriting Text here would throw
+			//away the formatting that was just applied, and none of this is an edit the user made.
+			if (IsFormatting)
+				return;
+
+			Modified = true;
+
 			if (IsNumeric && Text.Any(ch => !char.IsDigit(ch)))
 				Text = string.Join("", Text.Where(ch => char.IsDigit(ch)));
 

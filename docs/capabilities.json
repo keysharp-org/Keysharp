@@ -6163,6 +6163,17 @@
                  },
                  {
                      "category":  "Windowing/GUI",
+                     "feature":  "Gui.RichEdit",
+                     "syntax":  "",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "The RichEdit control's own members: RichText, SelectedText/SelectedRichText, TextLength, LineCount, Modified, ReadOnly, WordWrap, DetectUrls, HideSelection and Zoom; SelectionStart/SelectionLength, CurrentLine/CurrentCol, FirstVisibleLine, Select, SelectAll and ScrollCaret; GetLine, LineLength, LineFromPos, PosFromLine, PosFromPoint and PointFromPos; CanUndo/CanRedo, Undo, Redo, ClearUndo, Cut, Copy, Paste, Append, Replace and Find; SetFormat/GetFormat, GetBackColor, SetParagraph/GetParagraph and the BeginUpdate/EndUpdate pair a highlighting pass wraps itself in; LoadFile/SaveFile; and the Change, SelectionChange and LinkClick events. Positions are 1-based and index the same text Value returns. Only the Win32 control serves all of it: off Windows there is no undo history, DetectUrls and HideSelection read back as false, Zoom scales the control font, GetFormat reports the start of the range rather than detecting variation, and SelectedRichText, the paragraph pair, the hit-testing pair and FirstVisibleLine raise. GTK has no RTF at all, so RichText and RTF files raise on Linux; colours, fonts and styles work everywhere.",
+                     "tested-by":  "GuiTests/gui-richedit.ahk"
+                 },
+                 {
+                     "category":  "Windowing/GUI",
                      "feature":  "Gui.Restore()",
                      "syntax":  "",
                      "windows":  "full",

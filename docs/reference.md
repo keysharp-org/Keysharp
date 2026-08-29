@@ -1083,9 +1083,7 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ `Multiline` is `true` by default.
 			+ `WantReturn` and `Password` are not supported.
 			+ `Uppercase` and `Lowercase` are supported, but only for key presses, not for pasting.
-			+ The `Gui.Control.Value` property will only get/set the displayed text of the control. To get/set the raw rich text, use the new property `Gui.Control.RichText`.
-				+ Use `AltSubmit` with `Submit()` to get the raw rich text.
-				+ Attempting to use `Gui.Control.RichText` on any control other than `RichEdit` will throw an exception.
+			+ `Gui.Control.Value` gets/sets the displayed text only. The control's own members (below) reach everything else, and `Submit()` returns the plain text unless the control has `AltSubmit`, in which case it returns the RTF.
 	+ New methods and properties:
 		+ `Gui`:
 			+ `Visible`: Gets/sets whether the window is visible or not.
@@ -1100,6 +1098,16 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ `SetTabIcon(tabIndex, imageIndex)`: Relieves the caller of having to use `SendMessage()`.
 		+ `TreeView`:
 			+ `GetNode(nodeIndex) => TreeNode`: Retrieves a raw Winforms `TreeNode` object based on the passed in ID.
+		+ `RichEdit`: the control returned by `Gui.Add("RichEdit", ...)` carries its own members, because a range of characters in it has a font, two colours and a paragraph of its own. Every character position is 1-based and indexes the same text `Value` returns, one character per line break — so a position computed with `InStr()` or `RegExMatch()` over `Value` can be handed straight to `SetFormat()`. A position of `0` means "the current selection" wherever a range is asked for.
+			+ Content: `RichText` (the whole control as RTF), `SelectedText`, `SelectedRichText`, `TextLength`, `LineCount`, `Modified`, `ReadOnly`, `WordWrap`, `DetectUrls`, `HideSelection`, `Zoom`.
+			+ Selection and caret: `SelectionStart`, `SelectionLength`, `CurrentLine`, `CurrentCol`, `FirstVisibleLine`, `Select(start [, length])`, `SelectAll()`, `ScrollCaret()`.
+			+ Lines and positions: `GetLine(line)`, `LineLength(line)`, `LineFromPos(pos)`, `PosFromLine(line)`, `PosFromPoint(x, y)`, `PointFromPos(pos) => {X, Y}`.
+			+ Editing: `CanUndo`, `CanRedo`, `Undo()`, `Redo()`, `ClearUndo()`, `Cut()`, `Copy()`, `Paste()`, `Append(text)`, `Replace(start, length, text)`, `Find(needle [, start, options])` where the options are any of `MatchCase`, `WholeWord` and `Reverse`. `Find()` reports the 1-based position or `0` and leaves the selection alone.
+			+ Formatting: `SetFormat(start, length [, options, fontName])` and `GetFormat([start, length]) => Font`, plus `GetBackColor([start, length])` and the paragraph pair `SetParagraph(start, length, options)` / `GetParagraph([start, length])`. The formatting options are `Gui.SetFont`'s, extended with `Background<colour>` and `BackgroundDefault`; a `Ks.Font` object is accepted in their place. Anything the options do not mention is left as it was, which is what lets a highlighter colour a token without also deciding its size or weight — and, read back, an attribute that is not the same throughout the range comes back as `""`, the same as an unset one on any other `Ks.Font`. The paragraph options are `Left`, `Center`, `Right`, `Indent<n>`, `HangingIndent<n>`, `RightIndent<n>`, `Bullet` and `-Bullet`; `GetParagraph` reads only the paragraph the range starts in and returns them as a string `SetParagraph` accepts.
+			+ Batching: `BeginUpdate()` / `EndUpdate()` freeze the control and remember what was selected and scrolled to, so a re-highlight neither flickers nor drags the caret across the document. Pairs nest. **Wrap a whole highlighting pass in one**: on Windows it is worth roughly 30x, since without it each formatted range repaints.
+			+ Files: `LoadFile(path [, format])` and `SaveFile(path [, format])`, where the format is `"RTF"`, `"Text"`, or omitted to go by the file's extension.
+			+ Events: `Change` (as `Edit` has, and formatting does not raise it), plus `SelectionChange(ctrl, start, length)` and `LinkClick(ctrl, text, start, length)`.
+			+ Platform differences: only the Win32 control serves the whole surface. Off Windows there is no undo history (`CanUndo`/`CanRedo` are false and `Undo()`/`Redo()` do nothing), `DetectUrls` and `HideSelection` read back as false, `Zoom` scales the control's own font instead of magnifying, `GetFormat()` reports the formatting at the start of the range rather than detecting variation across it, and `SelectedRichText`, `SetParagraph`/`GetParagraph`, `PosFromPoint`/`PointFromPos` and `FirstVisibleLine` raise an error saying so. On Linux specifically, GTK's text widget knows nothing of RTF at all, so `RichText` and the RTF form of `LoadFile`/`SaveFile` raise as well; colours, fonts and styles are unaffected, and they are what syntax highlighting needs.
 	+ New classes:
 		+ `WinEvent`: For subscribing to window events (active/foreground change, appearance, disappearance, move/resize, minimize, restore, title change, and caret movement) across platforms, modeled on the popular AutoHotkey `WinEvent` library.
 			+ It is part of the `KS` module; import it with `#import KS { WinEvent }`.
