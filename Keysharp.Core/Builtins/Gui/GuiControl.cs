@@ -72,6 +72,7 @@ namespace Keysharp.Builtins
 				removedAny |= CallbackRegistry<CallbackRegistration>.RemoveOwned(notifyHandlers, scheduler);
 #endif
 				removedAny |= selectedItemChangedHandlers?.RemoveOwned(scheduler) == true;
+				removedAny |= (this as WebView)?.RemoveOwnedWebViewHandlers(scheduler) == true;
 				removedAny |= (this as RichEdit)?.RemoveOwnedRichEditHandlers(scheduler) == true;
 
 #if WINDOWS
@@ -97,12 +98,15 @@ namespace Keysharp.Builtins
 			/// </summary>
 			private bool SupportsEvent(string e) =>
 				//No AHK counterpart, so no documented event set to hold them to.
-				this is ActiveX or WebBrowser
+				this is ActiveX
 #if WINDOWS
 				|| this is Custom
 #endif
 				|| e switch
 			{
+				//A WebView's own events, which no other control raises. Its clicks belong to the page, so it
+				//is absent from the click/doubleclick sets below.
+				_ when WebView.IsWebViewEvent(e) => this is WebView,
 				//A RichEdit's own events; no other control has a caret to move or a link to click.
 				_ when RichEdit.IsRichEditEvent(e) => this is RichEdit,
 				"change" => this is ComboBox or DDL or ListBox or Tab or Edit or RichEdit or DateTime or MonthCal or Hotkey or UpDown or Slider,
@@ -143,7 +147,11 @@ namespace Keysharp.Builtins
 				if (!SupportsEvent(e))
 					return Errors.ValueErrorOccurred($"A {Type} control does not support the {eventName.As()} event.");
 
-				if (this is RichEdit re && RichEdit.IsRichEditEvent(e))
+				if (this is WebView wv && WebView.IsWebViewEvent(e))
+				{
+					wv.ModifyEventHandlers(e, del, i);
+				}
+				else if (this is RichEdit re && RichEdit.IsRichEditEvent(e))
 				{
 					re.ModifyEventHandlers(e, del, i);
 				}

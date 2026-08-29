@@ -1389,42 +1389,5 @@ namespace Keysharp.Builtins
 
 #endif
 	}
-
-	public class KeysharpWebBrowser : WebBrowser
-	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
-
-		public KeysharpWebBrowser(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
-		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
-		}
-
-#if WINDOWS
-
-		protected override void WndProc(ref Message m)
-		{
-			if (!GuiHelper.CallMessageHandler(this, ref m))
-				base.WndProc(ref m);
-		}
-
-#endif
-	}
 }
 #endif

@@ -499,6 +499,14 @@ namespace Keysharp.Tests
 			}
 		}
 
+		/// <summary>
+		/// The WebView surface as a script reaches it. Driven from a script because the members live on the
+		/// holder the binder hands back, and because OnEvent's per-control event set is only visible from there.
+		/// </summary>
+		[Test, Category("Gui"), NonParallelizable]
+		[Apartment(ApartmentState.STA)]
+		public void WebViewScriptSurface() => Assert.IsTrue(TestScript("gui-webview", false));
+
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
 		public void DpiResizeDefaults()

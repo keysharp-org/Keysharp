@@ -22,7 +22,7 @@ CallbackFree(callback)
 
 #Module QualifiedNames
 
-if !(Gui.List && Gui.WebBrowser)
+if !(Gui.List && Gui.WebView)
 	FileAppend "fail line " A_LineNumber "`n", "*"
 
 #Module ImportedNames

@@ -590,7 +590,7 @@ namespace Keysharp.Language
 		internal const string Keyword_WantReturn = "wantreturn";
 		internal const string Keyword_WantTab = "wanttab";
 		internal const string Keyword_WDay = "wday";
-		internal const string Keyword_WebBrowser = "webbrowser";
+		internal const string Keyword_WebView = "webview";
 		internal const string Keyword_Window = "window";
 		internal const string Keyword_Wrap = "wrap";
 		internal const string Keyword_X = "X";

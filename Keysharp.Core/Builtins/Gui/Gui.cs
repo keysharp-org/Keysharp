@@ -1657,15 +1657,42 @@ namespace Keysharp.Builtins
 				break;
 #endif
 
-				case Keyword_WebBrowser:
+				case Keyword_WebView:
 				{
-					var web = new KeysharpWebBrowser()
+					Forms.Control web;
+
+					try
 					{
-						Font = Conversions.ConvertFont(form.Font)
-					};
-					web.Navigate(textStr);
+#if WINDOWS
+						//Edge when the script brought the WebView2 package, Internet Explorer when it did not.
+						web = KeysharpEdgeWebView.TryCreate(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
+							  ?? (Forms.Control)new KeysharpIeWebView(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle);
+#else
+						web = new KeysharpWebView(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle);
+#endif
+						web.Font = Conversions.ConvertFont(form.Font);
+					}
+#if WINDOWS
+					catch (Exception ex)
+					{
+						return Errors.ErrorOccurred($"The WebView control could not be created: {ex.Message}");
+					}
+
+#else
+					//Eto reaches WebKitGTK by P/Invoke, so a Linux desktop without it fails with only a loader
+					//message naming a library the reader has no reason to connect to this control.
+					catch (Exception ex)
+					{
+						return Errors.ErrorOccurred($"The WebView control could not be created. On Linux it needs WebKitGTK (libwebkit2gtk-4.1 or 4.0): {ex.Message}");
+					}
+
+#endif
 					ctrl = web;
-					holder = new WebBrowser(this, ctrl, typeo);
+					holder = new WebView(this, ctrl, typeo);
+
+					//An empty text argument means "no page yet": navigating to "" is an error on both backends.
+					if (!string.IsNullOrEmpty(textStr))
+						((WebView)holder).Url = textStr;
 				}
 				break;
 #if WINDOWS
@@ -1701,8 +1728,10 @@ namespace Keysharp.Builtins
 			if (opts.autosize.HasValue)
 				Reflections.SafeSetProperty(ctrl, "AutoSize", opts.autosize.Value);
 
+			//A WebView took its text as the URL to navigate to above, and the WinForms browser throws outright
+			//when Text is assigned.
 			if (textStr != null && ctrl is not KeysharpDateTimePicker && ctrl is not HotkeyBox
-			 && ctrl is not KeysharpLinkLabel)
+			 && ctrl is not KeysharpLinkLabel && ctrl is not IWebViewBackend)
 				ctrl.Text = textStr;
 
 			if (ctrl is not KeysharpStatusStrip)//Don't want status strip to have a margin, so it can be placed at the bottom of the form when autosize is true, and have it look exactly like it would if it were docked when autosize is false.
@@ -2491,7 +2520,7 @@ namespace Keysharp.Builtins
 
 		public object AddUpDown(object options = null, object text = null) => Add(Keyword_UpDown, options, text);
 
-		public object AddWebBrowser(object options = null, object text = null) => Add(Keyword_WebBrowser, options, text);
+		public object AddWebView(object options = null, object text = null) => Add(Keyword_WebView, options, text);
 
 		public object Destroy()
 		{
@@ -4230,7 +4259,8 @@ namespace Keysharp.Builtins
 
 		public class UpDown(params object[] args) : Gui.Control(args) { }
 
-		public class WebBrowser(params object[] args) : Gui.Control(args) { }
+		//Gui.RichEdit and Gui.WebView are the two control holders with members of their own; each lives in a
+		//file of its own, RichEdit.cs and WebView.cs.
 
 		internal class GuiOptions
 		{
