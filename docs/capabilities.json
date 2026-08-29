@@ -5649,6 +5649,16 @@
                  },
                  {
                      "category":  "Windowing/GUI",
+                     "feature":  "Gui.ToClr()",
+                     "syntax":  "g.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The backing toolkit window as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the Gui's own state and event wiring."
+                 },
+                 {
+                     "category":  "Windowing/GUI",
                      "feature":  "Gui.__Enum()",
                      "syntax":  "",
                      "windows":  "full",
@@ -5768,6 +5778,16 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Sets keyboard focus to the control."
+                 },
+                 {
+                     "category":  "Windowing/GUI",
+                     "feature":  "Gui.Control.ToClr()",
+                     "syntax":  "ctrl.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The backing toolkit control as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the control's own state and event wiring."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6466,7 +6486,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Cross-platform image class for capturing, loading, or creating an image, then drawing, transforming, searching, and reading/writing its pixels before saving it or handing out a bitmap handle. Search/SearchAll/SearchPixel return match objects ({X, Y[, Color]}, \"\" or an empty array on a miss) with an optional flat (x, y, width, height) region; MeasureText returns {Width, Height}; fonts use Gui.SetFont-style (Options, FontName) arguments; the capture origin/density metadata is exposed as OriginX/OriginY/ScaleX/ScaleY (\"\" after Rotate/Flip until SetOrigin re-anchors); the per-pixel alpha transform is Alpha(0..1). Full on Windows, partial on Linux (X11); Wayland and macOS are unverified. Replaces the earlier ImageCapture() function.",
+                     "notes":  "Cross-platform image class for capturing, loading, or creating an image, then drawing, transforming, searching, and reading/writing its pixels before saving it or handing out a bitmap handle. Search/SearchAll/SearchPixel return match objects ({X, Y[, Color]}, \"\" or an empty array on a miss) with an optional flat (x, y, width, height) region; MeasureText returns {Width, Height}; fonts use Gui.SetFont-style (Options, FontName) arguments; the capture origin/density metadata is exposed as OriginX/OriginY/ScaleX/ScaleY (\"\" after Rotate/Flip until SetOrigin re-anchors); the per-pixel alpha transform is Alpha(0..1); ToClr() hands out the live underlying toolkit bitmap as a Ks.Clr object with pending work materialized (stale after the next transform or Dispose). Full on Windows, partial on Linux (X11); Wayland and macOS are unverified. Replaces the earlier ImageCapture() function.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -7266,6 +7286,17 @@
                  },
                  {
                      "category":  "Automation",
+                     "feature":  "Task.ToClr()",
+                     "syntax":  "task.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The underlying CLR task as a Ks.Clr object, so members Task does not mirror (IsCompleted, ContinueWith, ...) stay reachable. Replaces the former Clr property.",
+                     "tested-by":  "directive-csharp-async.ahk"
+                 },
+                 {
+                     "category":  "Automation",
                      "feature":  "Task.Create()",
                      "syntax":  "Task.Create(Producer)",
                      "windows":  "full",
@@ -7625,6 +7656,28 @@
                      "tested-by":  "collections-map.ahk"
                  },
                  {
+                     "category":  "Collections",
+                     "feature":  "Map.ToClr()",
+                     "syntax":  "m.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The map as a Ks.Clr object, exposing its full CLR surface late-bound. A Map is itself a CLR IDictionary<object, object>, so .NET APIs declaring one accept it directly.",
+                     "tested-by":  "directive-csharp-clr.ahk"
+                 },
+                 {
+                     "category":  "Collections",
+                     "feature":  "Array.ToClr()",
+                     "syntax":  "arr.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The array as a Ks.Clr object, exposing its full CLR surface late-bound. An Array is itself a CLR IList, so .NET APIs declaring one accept it directly.",
+                     "tested-by":  "directive-csharp-clr.ahk"
+                 },
+                 {
                      "category":  "Core Language",
                      "feature":  "Max()",
                      "syntax":  "z := Max(x, y)",
@@ -7759,6 +7812,16 @@
                      "macos":  "full",
                      "notes":  "Native menu handle.",
                      "tested-by":  "props-script-settings.ahk"
+                 },
+                 {
+                     "category":  "Windowing/GUI",
+                     "feature":  "Menu.ToClr()",
+                     "syntax":  "mnu.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The backing toolkit menu as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass Menu's own state and event wiring."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -9141,6 +9204,17 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Waits for real thread completion."
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "RealThread.ToClr()",
+                     "syntax":  "rt.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "A worker's completion task as a Ks.Clr object; unlike Result it answers as a raw CLR Task does. The main and adopted threads have no completion and raise TargetError.",
+                     "tested-by":  "directive-csharp-async.ahk"
                  },
                  {
                      "category":  "Core Language",

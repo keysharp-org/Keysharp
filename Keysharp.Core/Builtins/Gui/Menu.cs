@@ -303,6 +303,12 @@ namespace Keysharp.Builtins
 		public long Handle => GetMenu().Handle.ToInt64();
 
 		/// <summary>
+		/// The backing toolkit menu as an ordinary <c>Ks.Clr</c> object. Its concrete type is platform-dependent
+		/// and unspecified; changes made through it bypass this class's own state and event wiring.
+		/// </summary>
+		public object ToClr() => ManagedInvoke.WrapManaged(GetMenu());
+
+		/// <summary>
 		/// The number of sub items contained in the menu.
 		/// </summary>
 		public long MenuItemCount => GetMenu().Items.Count;

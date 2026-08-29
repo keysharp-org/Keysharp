@@ -451,7 +451,7 @@ namespace Keysharp.Internals
 		/// <para>
 		/// It blocks on a successful completion signal and pumps on each tick, rather than spinning. Pumping is what makes the
 		/// task progress when its continuation was posted to this thread's scheduler, which is why a wait that
-		/// cannot pump -- the raw <c>Task.Clr</c> surface, a tight loop -- can leave such a task unfinished.</para>
+		/// cannot pump -- the raw <c>Task.ToClr()</c> surface, a tight loop -- can leave such a task unfinished.</para>
 		/// <para>
 		/// Interruptible, like <c>Sleep</c>: new pseudo-threads may launch while it waits.</para>
 		/// </summary>

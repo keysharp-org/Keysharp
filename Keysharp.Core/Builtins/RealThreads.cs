@@ -90,8 +90,19 @@ namespace Keysharp.Builtins
 			/// rather than public on purpose: <c>Await</c> and <c>Task.WhenAll</c>/<c>WhenAny</c> take a
 			/// RealThread through this, but a script-visible <c>Task</c> property would be a second view of the
 			/// same body which answers differently from <see cref="Result"/> about whether it failed.
+			/// <see cref="ToClr"/> is the deliberate escape hatch to that view.
 			/// </summary>
 			internal Task<object> Task => completion?.Task;
+
+			/// <summary>
+			/// This worker's completion task as an ordinary <c>Ks.Clr</c> object. Unlike <see cref="Result"/> it
+			/// answers as a raw CLR <c>Task</c> does — a failed body reads as faulted, not as a stored
+			/// <c>Error</c> value. The main and adopted threads have no completion and report a
+			/// <c>TargetError</c>, as <see cref="Wait"/> does.
+			/// </summary>
+			public object ToClr() => completion == null
+				? Errors.TargetErrorOccurred(KeysharpTask.NoBodyToWaitFor)
+				: ManagedInvoke.WrapManaged(completion.Task);
 
 			private bool IsWorker => completion != null;
 

@@ -348,6 +348,13 @@ namespace Keysharp.Builtins
 			public bool AltSubmit { get; internal set; } = false;
 			internal Forms.Control Ctrl => _control;
 
+			/// <summary>
+			/// The backing toolkit control as an ordinary <c>Ks.Clr</c> object. Its concrete type is
+			/// platform-dependent and unspecified; changes made through it bypass this class's own state and
+			/// event wiring.
+			/// </summary>
+			public object ToClr() => ManagedInvoke.WrapManaged(_control);
+
 			public object Enabled
 			{
 				get => _control.Enabled;

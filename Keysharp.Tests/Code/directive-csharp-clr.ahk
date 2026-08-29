@@ -61,6 +61,17 @@ public static System.DateTime StoredWhenField = new System.DateTime(2018, 1, 1);
 public static long LockedModule { get; private set; } = 11;
 
 public static long WriteOnlyModule { private get; set; } = 12;
+
+public static long SumValues(IDictionary<object, object> d)
+{
+    long sum = 0;
+    foreach (var v in d.Values) sum += (long)v;
+    return sum;
+}
+
+public static bool AddViaDictionary(IDictionary<object, object> d) { d.Add("added", 9L); return d.ContainsKey("added"); }
+
+public static bool NativeIsSame(Keysharp.Builtins.Ks.Clr.ManagedInstance wrapper, object raw) => ReferenceEquals(wrapper.Native, raw);
 #EndCSharp
 
 class Meas
@@ -217,5 +228,19 @@ try
 catch PropertyError
     initSetFailed := true
 Assert(initSetFailed, A_LineNumber)
+
+; A Map is itself a CLR IDictionary, so a member declaring one receives the live map, not a copy.
+dict := Map("a", 1, "b", 2)
+AssertEq(SumValues(dict), 3, A_LineNumber)
+Assert(AddViaDictionary(dict), A_LineNumber)
+AssertEq(dict["added"], 9, A_LineNumber)
+
+; ToClr() is the Ks.Clr view of a script collection, and Native hands inline C# the raw object back.
+Assert(IsManagedInstance(dict.ToClr()), A_LineNumber)
+AssertEq(dict.ToClr().Count, 3, A_LineNumber)
+Assert(NativeIsSame(dict.ToClr(), dict), A_LineNumber)
+arr2 := [10, 20]
+Assert(IsManagedInstance(arr2.ToClr()), A_LineNumber)
+Assert(NativeIsSame(arr2.ToClr(), arr2), A_LineNumber)
 
 FileAppend "pass", "*"

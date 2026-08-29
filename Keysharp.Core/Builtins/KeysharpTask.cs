@@ -101,7 +101,7 @@ namespace Keysharp.Builtins
 			/// — <c>IsCompleted</c>, <c>Exception</c>, <c>ContinueWith</c> — stay reachable. CLR
 			/// <c>ContinueWith</c> has neither <see cref="Then"/>'s script-thread affinity nor its result flattening.
 			/// </summary>
-			public object Clr => ManagedInvoke.WrapManaged(task);
+			public object ToClr() => ManagedInvoke.WrapManaged(task);
 
 			// ---- waiting ----------------------------------------------------------------------------------
 

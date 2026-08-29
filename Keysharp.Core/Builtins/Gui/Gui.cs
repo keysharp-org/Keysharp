@@ -383,6 +383,12 @@ namespace Keysharp.Builtins
 
 		public long Hwnd => form.Handle;
 
+		/// <summary>
+		/// The backing toolkit window as an ordinary <c>Ks.Clr</c> object. Its concrete type is platform-dependent
+		/// and unspecified; changes made through it bypass this class's own state and event wiring.
+		/// </summary>
+		public object ToClr() => ManagedInvoke.WrapManaged(form);
+
 		public long MarginX
 		{
 			get

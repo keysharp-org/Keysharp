@@ -345,6 +345,7 @@ Status legend:
 | Array.Remove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Array method. Removes the first occurrence of the value and returns true if one was found and removed, else false. Omitting the value removes the first element which has no value. |
 | Array.RemoveAt() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Removes the element at a given index, plus optionally a length. Returns the removed item if no length was specified. Returns the null if a length was specified. |
 | Array.Sort() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sorts array elements, optionally using a custom comparer callback. |
+| Array.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The array as a Ks.Clr object, exposing its full CLR surface late-bound. An Array is itself a CLR IList, so .NET APIs declaring one accept it directly. |
 | Asin() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc sine. Throws an exception if the argument value is not between -1 and 1. |
 | Atan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc tangent. |
 | ATan2() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc tangent by using two numbers. |
@@ -594,6 +595,7 @@ Status legend:
 | Gui.Control.SetCue() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets cue banner (placeholder text) for the control. |
 | Gui.Control.SetFont() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the control font. |
 | Gui.Control.Text | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the control text. |
+| Gui.Control.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The backing toolkit control as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the control's own state and event wiring. |
 | Gui.Control.Type | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Control type name. |
 | Gui.Control.Value | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the control value. |
 | Gui.Control.Visible | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets whether the control is visible. |
@@ -624,6 +626,7 @@ Status legend:
 | Gui.Submit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Submits control values and returns them to script variables. |
 | Gui.Tab.UseTab() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects the active tab page for subsequent control additions. |
 | Gui.Title | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the GUI window title. |
+| Gui.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The backing toolkit window as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the Gui's own state and event wiring. |
 | Gui.Visible | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets GUI visibility state. |
 | Gui() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Gui object provides an interface to create a window, add controls, modify the window, and retrieve information about the window. Such windows can be used as data entry forms or custom user interfaces. |
 | GuiCtrlFromHwnd() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The GuiCtrlFromHwnd function retrieves the GuiControl object of a GUI control associated with the specified window handle. |
@@ -758,6 +761,7 @@ Status legend:
 | Map.MaxIndex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the largest integer key contained in the map. Returns empty string if no keys were integers. |
 | Map.MinIndex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the smallest integer key contained in the map. Returns empty string if no keys were integers. |
 | Map.Set() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets zero or more items. |
+| Map.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The map as a Ks.Clr object, exposing its full CLR surface late-bound. A Map is itself a CLR IDictionary&lt;object, object&gt;, so .NET APIs declaring one accept it directly. |
 | Max() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the larger of two numbers. If either is not numeric, the empty string is returned. The largest value of an array is computed if one is passed in. |
 | MemberError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | MemoryError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
@@ -777,6 +781,7 @@ Status legend:
 | Menu.SetColor() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets menu background color. |
 | Menu.SetIcon() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets icon for a menu item. |
 | Menu.Show() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Shows the menu at a screen position. |
+| Menu.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The backing toolkit menu as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass Menu's own state and event wiring. |
 | Menu.ToggleCheck() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles checked state of a menu item. |
 | Menu.ToggleEnable() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles enabled state of a menu item. |
 | Menu.ToggleItemVis() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles visibility of a menu item. |
@@ -888,6 +893,7 @@ Status legend:
 | RealThread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Represents a real background thread. IsActive/IsSuccessful/IsFailed/IsCanceled match Task outcome names; Result is available only after successful completion. |
 | RealThread.Call() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new real worker thread and runs the callback on it. |
 | RealThread.ContinueWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Schedules continuation after thread task completion. |
+| RealThread.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | A worker's completion task as a Ks.Clr object; unlike Result it answers as a raw CLR Task does. The main and adopted threads have no completion and raise TargetError. |
 | RealThread.Wait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for real thread completion. |
 | RegCreateKey() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The RegCreateKey function creates a registry key without writing a value. |
 | RegDelete | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Deletes a value from the registry. |
@@ -983,6 +989,7 @@ Status legend:
 | TargetError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | Task | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Work that finishes later; every CLR call returning a .NET Task hands one back. IsActive/IsSuccessful/IsFailed/IsCanceled expose its outcome, Result is a non-blocking snapshot, and Await and Wait are the waiting forms. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation. |
 | Task.Create() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls Producer synchronously with the positional prefix it accepts of Succeed, Fail and Cancel, and returns the Task they settle; Producer's return value is ignored. First settlement wins; Succeed adopts asynchronous work's eventual value, failure or cancellation, and an early producer error fails the Task. |
+| Task.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The underlying CLR task as a Ks.Clr object, so members Task does not mirror (IsCompleted, ContinueWith, ...) stay reachable. Replaces the former Clr property. |
 | Taskbar | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, reaches only docks implementing it, and decorates the entry named by DESKTOP_ENTRY; macOS badges the dock tile with text and draws progress on the tile, also application-wide. Linux and macOS are compile-checked only. |
 | Thread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Thread settings and controls. |
 | Thread (object) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Thread is a class rather than a function: calling it runs the AHK sub-functions (NoTimers/Priority/Interrupt) unchanged, and an instance describes one pseudo-thread: Id, Index (1-based), IsActive, Kind, Elapsed, Priority, Critical, Paused, IsInterruptible, Underlying and Exit. An Is prefix marks a read-only predicate; a settable mode is named for the mode. Obtained from A_Thread, Under or RealThread.Threads, never constructed. There is one object per pseudo-thread, so `thr == A_Thread` tests whether it is the running one. It revalidates its identity on every access, so one held past its pseudo-thread's life reports IsActive false rather than describing whichever pseudo-thread reused the pooled slot. Reads work from any real thread; setters and Exit require the owning one. |

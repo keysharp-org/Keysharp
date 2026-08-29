@@ -93,6 +93,17 @@ namespace Keysharp.Builtins
 
 			public KeysharpImage(params object[] args) : base(args) { }
 
+			/// <summary>
+			/// The current pixels as a <c>Ks.Clr</c> object over the underlying bitmap, with pending work
+			/// materialized first. The reference is to the live surface, so it goes stale once this image is
+			/// next transformed or disposed; changes made through it bypass this class's queued-work model.
+			/// </summary>
+			public object ToClr()
+			{
+				ThrowIfDisposed();
+				return ManagedInvoke.WrapManaged(PrepareForRead());
+			}
+
 			#region Reusable draw state
 
 			// Windows keeps a Graphics alive across draw ops on a stable surface. Eto drawing contexts cannot be

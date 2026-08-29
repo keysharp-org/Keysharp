@@ -377,6 +377,12 @@ namespace Keysharp.Builtins
 				internal readonly Type _type;
 				internal object _instance;
 
+				/// <summary>
+				/// The wrapped CLR object itself, for inline C# (<c>#CSharp</c>) code holding a wrapper. Script
+				/// member access on a ManagedInstance dispatches to the payload, so this is unreachable from script.
+				/// </summary>
+				public object Native => _instance;
+
 				public ManagedInstance(Type type, object instance) { _type = type; _instance = instance; }
 
 				// Instance method call: obj.Method(args...)
