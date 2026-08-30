@@ -547,7 +547,7 @@ namespace Keysharp.Builtins
 			var script = Script.TheScript;
 			var (windows, crit) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
 
-			if (crit != null && string.IsNullOrEmpty(crit.Group) && windows.Count == 0 && !script.IsMainWindowClosing)
+			if (crit != null && string.IsNullOrEmpty(crit.Group) && windows.Count == 0 && !script.IsTearingDown)
 				return Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText);
 
 			var unsupported = false;
@@ -653,7 +653,7 @@ namespace Keysharp.Builtins
 			{
 				return windows[^1].Handle.ToInt64();
 			}
-			else if (!script.IsMainWindowClosing)
+			else if (!script.IsTearingDown)
 				return (long)Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText, DefaultErrorLong);
 
 			return 0L;
@@ -823,7 +823,7 @@ namespace Keysharp.Builtins
 			var script = Script.TheScript;
 			var (windows, crit) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
 
-			if (crit != null && string.IsNullOrEmpty(crit.Group) && windows.Count == 0 && !script.IsMainWindowClosing)
+			if (crit != null && string.IsNullOrEmpty(crit.Group) && windows.Count == 0 && !script.IsTearingDown)
 				return Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText, DefaultErrorLong);
 
 			foreach (var win in windows)

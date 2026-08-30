@@ -389,7 +389,7 @@ namespace Keysharp.Builtins
 			//Do not close the window if the program is already exiting because it will throw
 			//an enumeration modified exception because Winforms is internally already iterating over
 			//all open windows to close them.
-			if (!OwnerScript.IsMainWindowClosing)
+			if (!OwnerScript.IsTearingDown)
 				this.CheckedInvoke(Close, false);
 
 			return DefaultObject;

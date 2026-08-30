@@ -435,7 +435,13 @@ namespace Keysharp.Runtime
 
 		internal ImageListData ImageListData => imageListData ?? (imageListData = new ());
 		internal InputData InputData => inputData ?? (inputData = new ());
-		internal bool IsMainWindowClosing => mainWindow == null || mainWindow.IsClosing;
+		/// <summary>
+		/// True while the script is shutting down, which is when work that would otherwise be started, reported or
+		/// closed is left alone: a window search matches nothing because the windows are going away, and an exit
+		/// is already under way. A main window that was never created is not shutdown -- a headless run and a
+		/// bare hosted Script never build one -- so both still raise, exit and close normally.
+		/// </summary>
+		internal bool IsTearingDown => hasExited || mainWindow is { IsClosing: true };
 
 		internal bool IsReadyToExecute => isReadyToExecute;
 		internal JoystickData JoystickData => joystickData ?? (joystickData = new ());
@@ -883,11 +889,11 @@ namespace Keysharp.Runtime
 		{
 			//Must use BeginInvoke() because this might be called from _ks_UserMainCode(),
 			//so it needs to run after that thread has exited.
-			if (!IsMainWindowClosing && totalExistingThreads == 0)
+			if (!IsTearingDown && totalExistingThreads == 0)
 			{
 				PostToUIThread(() =>
 				{
-					if (!IsMainWindowClosing && !AnyPersistent())
+					if (!IsTearingDown && !AnyPersistent())
 						_ = Keysharp.Internals.Flow.ExitAppInternal(this, exitReason, Environment.ExitCode, false);
 				});
 			}
@@ -1315,9 +1321,13 @@ namespace Keysharp.Runtime
 				try
 				{
 					RunAutoExecSection(userInit);
-					// There is no native event loop to perform the first scheduler turn. One turn lets immediate
-					// one-shot timers and deferred non-persistent teardown run without keeping headless hosts alive.
-					Keysharp.Internals.Flow.TryDoEvents();
+					// There is no native event loop, so turn the scheduler by hand: once, so immediate one-shot
+					// timers and deferred non-persistent teardown run, then while async work is in flight -- the
+					// one persistence root a host with no input can see through. Timers, hotkeys and windows are
+					// left out, so the run still ends on its own.
+					do
+						Keysharp.Internals.Flow.TryDoEvents();
+					while (!hasExited && HasPendingSchedulerWork);
 				}
 				finally
 				{
@@ -1704,7 +1714,7 @@ namespace Keysharp.Runtime
 			if (totalExistingThreads > 0)
 				return true;
 
-			if (Volatile.Read(ref pendingSchedulerWorkCount) > 0)
+			if (HasPendingSchedulerWork)
 				return true;
 
 			if (Gui.AnyExistingVisibleWindows(this))
@@ -1739,6 +1749,12 @@ namespace Keysharp.Runtime
 
 		internal void AdjustPendingSchedulerWork(int delta)
 			=> _ = Interlocked.Add(ref pendingSchedulerWorkCount, delta);
+
+		/// <summary>
+		/// True while async work registered against the scheduler -- a Task continuation, a live RealThread
+		/// worker -- has yet to settle.
+		/// </summary>
+		internal bool HasPendingSchedulerWork => Volatile.Read(ref pendingSchedulerWorkCount) > 0;
 
 		internal ResultType IsCycleComplete(int aSleepDuration, DateTime aStartTime, bool aAllowEarlyReturn)
 		// This function is used just to make MsgSleep() more readable/understandable.

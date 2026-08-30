@@ -142,6 +142,9 @@ namespace Keysharp.Tests
 		public void OnMessageLocalBlock()
 		{
 			var context = UseQueuedMainContext();
+			// A parked launch is not a persistence root, and OnMessage deliberately is not one either, so draining
+			// the first handler's completion would otherwise exit this script before the second is unblocked.
+			s.FlowData.persistentValueSetByUser = true;
 
 			var order = new List<string>();
 			const int msgId = 0x8005;

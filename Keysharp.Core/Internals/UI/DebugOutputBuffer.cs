@@ -29,7 +29,7 @@ namespace Keysharp.Internals.UI
 
 				buffer.Append(text);
 
-				if (mainWindow == null || script.IsMainWindowClosing || !mainWindow.Visible)
+				if (mainWindow == null || script.IsTearingDown || !mainWindow.Visible)
 					return;
 
 				if (!flushedToWindow)

@@ -16,6 +16,7 @@ namespace Keysharp.Builtins
 		internal string iconFile = "";
 		internal bool iconHidden;
 		internal object iconNumber = 1L;
+		internal string iconTip;
 		internal long inputLevel;
 		internal string menuMaskKey = "";
 		internal long clipboardTimeout = 1000L;
@@ -508,7 +509,7 @@ namespace Keysharp.Builtins
 				{
 					if (!val.Value && script.AccessorData.iconHidden)//Was true, switching to false, so show.
 					{
-						if (script.EnsureTrayMenu())
+						if (script.EnsureTrayIcon())
 						{
 							script.Tray.Icon = script.AccessorData.prevTrayIcon;
 							script.AccessorData.prevTrayIcon = null;
@@ -538,23 +539,14 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Blank unless a custom tooltip for the tray icon has been specified via Menu, Tray, Tip -- in which case it's the text of the tip.
+		/// The tray icon's tooltip, which defaults to the script name. It belongs to the script rather than to the
+		/// icon, so it reads and writes with no icon on screen and an icon shown later picks it up.
 		/// </summary>
 		public static object A_IconTip
 		{
-			get
-			{
-				var script = Script.TheScript;
-				return script.EnsureTrayMenu() ? script.Tray.Text : "";
-			}
+			get => Script.TheScript.TrayTip;
 
-			set
-			{
-				var script = Script.TheScript;
-
-				if (script.EnsureTrayMenu())
-					script.Tray.Text = value.ToString();
-			}
+			set => Script.TheScript.TrayTip = value.ToString();
 		}
 
 		/// <summary>

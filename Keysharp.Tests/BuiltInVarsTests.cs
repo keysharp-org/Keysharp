@@ -99,6 +99,13 @@ namespace Keysharp.Tests
 			Assert.IsTrue(TestScript("props-script-settings", false));
 		}
 
+		[Test, Category("BuiltInVars"), NonParallelizable]
+		public void PropsTrayMenuWithoutIcon()
+		{
+			SkipIfUiInitializationBlocked("Building a tray menu needs a usable UI toolkit.");
+			Assert.IsTrue(TestScript("props-tray-menu", false));
+		}
+
 		[Test, Category("BuiltInVars")]
 		public void PropsSpecialChars() => Assert.IsTrue(TestScript("props-special-chars", true));
 	}

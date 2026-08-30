@@ -17,7 +17,7 @@ namespace Keysharp.Builtins
 #endif
 				if (WindowQuery.IsWindow(ptr))
 					return WindowQuery.CreateWindow(ptr);
-				else if (throwifnull && !script.IsMainWindowClosing)
+				else if (throwifnull && !script.IsTearingDown)
 					_ = Errors.TargetErrorOccurred($"Could not find child control with handle: {ptr}");
 
 				return null;
@@ -106,7 +106,7 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			if (childitem == null && throwifnull && !script.IsMainWindowClosing)
+			if (childitem == null && throwifnull && !script.IsTearingDown)
 			{
 				_ = Errors.TargetErrorOccurred("Could not find child control using text or class name match \"" + s + $"\"", title, text, excludeTitle, excludeText);//Can't use interpolated string here because the AStyle formatter misinterprets it.
 				return default;
@@ -125,7 +125,7 @@ namespace Keysharp.Builtins
 			var script = Script.TheScript;
 			var win = WindowQuery.FindWindow(winTitle, winText, excludeTitle, excludeText, last);
 
-			if (win == null && throwifnull && !script.IsMainWindowClosing)
+			if (win == null && throwifnull && !script.IsTearingDown)
 			{
 				_ = Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText);
 				return default;
@@ -188,7 +188,7 @@ namespace Keysharp.Builtins
 
 				return arr;
 			}
-			else if (!script.IsMainWindowClosing)
+			else if (!script.IsTearingDown)
 				return Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText);
 
 			return DefaultObject;
