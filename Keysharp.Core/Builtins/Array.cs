@@ -264,12 +264,12 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	void IList.Clear() => array.Clear();
 
 	/// <summary>
-		/// Returns whether the passed in object is contained in the array.<br/>
-		/// Omitting value searches for an element which has no value, because an unset element is stored as null.
+	/// Returns whether the passed in object is contained in the array.<br/>
+	/// Omitting value searches for an element which has no value, because an unset element is stored as null.
 	/// </summary>
-		/// <param name="value">The value to search for. Default: unset, which searches for an element without a value.</param>
+	/// <param name="value">The value to search for. Default: unset, which searches for an element without a value.</param>
 	/// <returns>True if the value was found, else false.</returns>
-		public bool Contains(object value = null) => array.Contains(value);
+	public bool Contains(object value = null) => array.Contains(value);
 
 	/// <summary>
 	/// Removes the value of an array element, leaving the index without a value.<br/>
@@ -293,40 +293,40 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	}
 
 	/// <summary>
-		/// Wraps an element callback so it receives only the arguments it declares. Filter, FindIndex and MapTo all
-		/// document their callback as taking <c>(Value, Index)</c> where it "may declare only the parameters it
-		/// needs", but passing both unconditionally fails a one-parameter callback with "Too many arguments".
-		/// <para>
-		/// The arity is resolved once per operation rather than per element, and the returned delegate closes over
-		/// it. <c>Script.ResolveDirectCallTarget</c> likewise decides once whether the callback can be entered
-		/// without resolving "Call" by name on every element.
-		/// </para>
-		/// </summary>
-		/// <param name="requireResult">
-		/// Whether a callback that returns no value is an error. True for a predicate (Filter, FindIndex), whose
-		/// result is the whole point; false for a transform (MapTo), where an unset element is a legitimate result
-		/// and is how a sparse array is built.
-		/// </param>
-		private static Func<object, object, object> ElementInvoker(object callback, bool requireResult = true)
+	/// Wraps an element callback so it receives only the arguments it declares. Filter, FindIndex and MapTo all
+	/// document their callback as taking <c>(Value, Index)</c> where it "may declare only the parameters it
+	/// needs", but passing both unconditionally fails a one-parameter callback with "Too many arguments".
+	/// <para>
+	/// The arity is resolved once per operation rather than per element, and the returned delegate closes over
+	/// it. <c>Script.ResolveDirectCallTarget</c> likewise decides once whether the callback can be entered
+	/// without resolving "Call" by name on every element.
+	/// </para>
+	/// </summary>
+	/// <param name="requireResult">
+	/// Whether a callback that returns no value is an error. True for a predicate (Filter, FindIndex), whose
+	/// result is the whole point; false for a transform (MapTo), where an unset element is a legitimate result
+	/// and is how a sparse array is built.
+	/// </param>
+	private static Func<object, object, object> ElementInvoker(object callback, bool requireResult = true)
+	{
+		var argCount = Script.CallbackArgCount(callback);
+		var direct = Script.ResolveDirectCallTarget(callback);
+
+		return (value, index) =>
 		{
-			var argCount = Script.CallbackArgCount(callback);
-			var direct = Script.ResolveDirectCallTarget(callback);
+			// Ordered most-significant first, so what survives the trim is what a minimal callback expects.
+			var args = argCount == 0 ? System.Array.Empty<object>()
+						: argCount == 1 ? [value]
+						: new[] { value, index };
+			var result = direct != null ? direct.Call(args) : Script.InvokeOrNull(callback, null, args);
 
-			return (value, index) =>
-			{
-				// Ordered most-significant first, so what survives the trim is what a minimal callback expects.
-				var args = argCount == 0 ? System.Array.Empty<object>()
-						 : argCount == 1 ? [value]
-						 : new[] { value, index };
-				var result = direct != null ? direct.Call(args) : Script.InvokeOrNull(callback, null, args);
+			return result ?? (requireResult
+								? Errors.UnsetErrorOccurred($"Invoke result of method Call on function {(callback as KeysharpFunc)?.Name ?? callback}")
+								: null);
+		};
+	}
 
-				return result ?? (requireResult
-								  ? Errors.UnsetErrorOccurred($"Invoke result of method Call on function {(callback as KeysharpFunc)?.Name ?? callback}")
-								  : null);
-			};
-		}
-
-		/// <summary>
+	/// <summary>
 	/// Applies a filter to each element of the array and returns a new array
 	/// consisting of all elements for which the filter callback returned true.
 	/// </summary>
@@ -462,12 +462,12 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 
 	/// <summary>
 	/// The implementation for <see cref="IEnumerable{object}.GetEnumerator()"/> which returns an <see cref="Enumerator"/>.
+	/// Not an explicit interface implementation, unlike the sibling below and unlike the other
+	/// enumerable built-ins: Array implements two IEnumerable<T> instantiations, and C# resolves
+	/// `foreach (var x in arr)` and collection expressions through a public GetEnumerator. Making this
+	/// explicit would leave both instantiations equally applicable and break every such call site.
 	/// </summary>
 	/// <returns>An <see cref="IEnumerator{(object, object)}"/> which is an <see cref="Enumerator"/>.</returns>
-	// Not an explicit interface implementation, unlike the sibling below and unlike the other
-	// enumerable built-ins: Array implements two IEnumerable<T> instantiations, and C# resolves
-	// `foreach (var x in arr)` and collection expressions through a public GetEnumerator. Making this
-	// explicit would leave both instantiations equally applicable and break every such call site.
 	[PublicHiddenFromUser]
 	public IEnumerator<object> GetEnumerator() => CreateEnumerator(1);
 	IEnumerator<(object, object)> IEnumerable<(object, object)>.GetEnumerator() => CreateEnumerator(2);
@@ -498,29 +498,29 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <summary>
 	/// Returns the index of the first item in the array
 	/// which equals value, starting at startIndex.<br/>
-		/// If startIndex is negative, start the search from the end of the array and move toward the beginning.<br/>
-		/// Omitting value searches for an element which has no value, because an unset element is stored as null.
+	/// If startIndex is negative, start the search from the end of the array and move toward the beginning.<br/>
+	/// Omitting value searches for an element which has no value, because an unset element is stored as null.
 	/// </summary>
-		/// <param name="value">The value to search for. Default: unset, which searches for an element without a value.</param>
+	/// <param name="value">The value to search for. Default: unset, which searches for an element without a value.</param>
 	/// <param name="startIndex">The index to start searching at. Default: 1.</param>
 	/// <returns>The index that value was found at, else 0 if none was found.</returns>
-		/// <exception cref="IndexError">An <see cref="IndexError"/> exception is thrown if startIndex is out of bounds.</exception>
-		public long IndexOf(object value = null, object startIndex = null)
+	/// <exception cref="IndexError">An <see cref="IndexError"/> exception is thrown if startIndex is out of bounds.</exception>
+	public long IndexOf(object value = null, object startIndex = null)
 	{
-			//Nothing to search, so report "not found" rather than that no start index could be in bounds.
-			//This is what RemoveAt() does for an empty array.
-			if (array.Count == 0)
-			return 0L;
+		//Nothing to search, so report "not found" rather than that no start index could be in bounds.
+		//This is what RemoveAt() does for an empty array.
+		if (array.Count == 0)
+		return 0L;
 
-			long i = startIndex.Ai(1);//long, so that a startIndex of int.MinValue cannot overflow Math.Abs().
+		long i = startIndex.Ai(1);//long, so that a startIndex of int.MinValue cannot overflow Math.Abs().
 
-			//An out of bounds start index is an error rather than a silent 0, which is how the sibling searches
-			//FindIndex() and Filter() already treat one. Don't use TranslateIndex() here because it would do the
-			//logic twice.
-			if (i == 0 || Math.Abs(i) > array.Count)
-				return (long)Errors.IndexErrorOccurred($"Invalid search start index of {i}.", DefaultErrorLong);
+		//An out of bounds start index is an error rather than a silent 0, which is how the sibling searches
+		//FindIndex() and Filter() already treat one. Don't use TranslateIndex() here because it would do the
+		//logic twice.
+		if (i == 0 || Math.Abs(i) > array.Count)
+			return (long)Errors.IndexErrorOccurred($"Invalid search start index of {i}.", DefaultErrorLong);
 
-			return i < 0 ? array.LastIndexOf(value, array.Count + (int)i) + 1 : array.IndexOf(value, (int)i - 1) + 1;
+		return i < 0 ? array.LastIndexOf(value, array.Count + (int)i) + 1 : array.IndexOf(value, (int)i - 1) + 1;
 	}
 
 	/// <summary>
@@ -648,8 +648,9 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the array is empty.</exception>
 	public object Pop()
 	{
-            var index = array.Count - 1;
-            if (index < 0)
+		var index = array.Count - 1;
+
+		if (index < 0)
 		{
 			return Errors.ErrorOccurred($"Cannot pop an empty array.");
 		}
