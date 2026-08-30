@@ -273,7 +273,9 @@ namespace Keysharp.Builtins
 
 			set
 			{
-				if (GetMenuItem(value) is ToolStripMenuItem item)
+				// AutoHotkey's set_Default reads a blank name as "no default" and looks nothing up; any other
+				// name must name an item that exists.
+				if (value?.Length != 0 && GetExistingMenuItem(value) is ToolStripMenuItem item)
 				{
 					var allitems = GetMenu().GetItems();
 					defaultItem = item;
@@ -396,7 +398,7 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
-			return AddOrInsert("", menuItemName.As(), callbackOrSubmenu, options.As());
+			return AddOrInsert("", menuItemName.As(), callbackOrSubmenu, options.As(), false);
 		}
 
 		/// <summary>
@@ -567,7 +569,7 @@ namespace Keysharp.Builtins
 
 				clickHandlers.Clear();
 			}
-			else if (GetMenuItem(s) is ToolStripItem item)
+			else if (GetExistingMenuItem(s) is ToolStripItem item)
 			{
 				if (item == defaultItem)
 					defaultItem = null;
@@ -617,7 +619,7 @@ namespace Keysharp.Builtins
 		/// <param name="callbackOrSubmenu">See the <see cref="Add"/> method's callbackOrSubmenu parameter.</param>
 		/// <param name="options">See the <see cref="Add"/> method's options parameter.</param>
 		/// <returns>The newly create <see cref="ToolStripMenuItem"/>.</returns>
-		public object Insert(object menuItemName = null, object itemToInsert = null, object callbackOrSubmenu = null, object options = null) => AddOrInsert(menuItemName.As(), itemToInsert.As(), callbackOrSubmenu, options.As());
+		public object Insert(object menuItemName = null, object itemToInsert = null, object callbackOrSubmenu = null, object options = null) => AddOrInsert(menuItemName.As(), itemToInsert.As(), callbackOrSubmenu, options.As(), true);
 
 		/// <summary>
 		/// Gets the name of a menu item.
@@ -637,7 +639,7 @@ namespace Keysharp.Builtins
 		{
 			var name = menuItemName.As();
 			var newname = newName.As("-");
-			var item = GetMenuItem(name);
+			var item = GetExistingMenuItem(name);
 
 			if (item is ToolStripSeparator tss)
 			{
@@ -704,7 +706,7 @@ namespace Keysharp.Builtins
 			var iconnumber = ImageHelper.PrepareIconNumber(iconNumber);
 			var width = iconWidth.Ai();
 
-			if (GetMenuItem(name) is ToolStripItem tsmi)
+			if (GetExistingMenuItem(name) is ToolStripItem tsmi)
 			{
 				if (ImageHelper.LoadImage(filename, width, 0, iconnumber).Item1 is Bitmap bmp)
 					tsmi.Image = bmp;
@@ -867,13 +869,37 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
-		private object AddOrInsert(string insertbefore, string name, object funcorsub, string options)
+		/// <summary>
+		/// The item <paramref name="s"/> names, raising the way AutoHotkey's UserMenu::GetItem does when the menu
+		/// holds no such item. Every method that acts ON an item goes through this; <see cref="GetMenuItem"/> stays
+		/// the tolerant finder, for the callers where a miss is a legal answer rather than a mistake.
+		/// </summary>
+		protected object GetExistingMenuItem(string s)
+			=> GetMenuItem(s) is ToolStripItem item ? item : Errors.TargetErrorOccurred($"Nonexistent menu item: {s}");
+
+		/// <param name="insert">Whether the call came from Insert rather than Add. AutoHotkey looks an existing item
+		/// up for Add alone (script_menu.cpp's `if (!aInsertAt)`), so Insert always creates one — with no anchor it
+		/// appends — and its callback sits one parameter later.</param>
+		private object AddOrInsert(string insertbefore, string name, object funcorsub, string options, bool insert)
 		{
 			ToolStripMenuItem item = null;
+			// Only an EXISTING item may have its options retargeted with the callback omitted, so Insert always
+			// requires one. Both the lookup and the check happen before anything is added, so a rejected call
+			// leaves the menu exactly as it was rather than stranding an item that does nothing when chosen.
+			var existing = !insert && !string.IsNullOrEmpty(name)
+						   ? GetMenu().Items.Find(name, true).FirstOrDefault() as ToolStripMenuItem
+						   : null;
+			var canOmitCallback = existing != null && options.Length > 0;
+
+			// A blank name adds a separator, which never carries a callback.
+			if (funcorsub == null && !string.IsNullOrEmpty(name) && !canOmitCallback)
+				return Errors.ArgumentErrorOccurred(funcorsub, insert ? 3 : 2);
 
 			if (!string.IsNullOrEmpty(insertbefore))
 			{
-				if (GetMenu().Items.Find(insertbefore, true).FirstOrDefault() is ToolStripMenuItem tsmiinsert)
+				// The anchor has to exist; AutoHotkey's Insert raises ItemNotFoundError otherwise. Going through
+				// the shared lookup also accepts the "3&" position form and a separator as the anchor.
+				if (GetExistingMenuItem(insertbefore) is ToolStripItem tsmiinsert)
 				{
 					var index = GetIndex(tsmiinsert);
 
@@ -901,18 +927,15 @@ namespace Keysharp.Builtins
 					}
 				}
 			}
-			else
+			else if (existing != null)
 			{
-				if (GetMenu().Items.Find(name, true).FirstOrDefault() is ToolStripMenuItem tsmi)
-				{
-					item = tsmi;
-				}
-				else if (GetMenu().Items.Add(name) is ToolStripMenuItem tsmi2)
-				{
-					tsmi2.Click += Tsmi_Click;
-					tsmi2.Name = name;
-					item = tsmi2;
-				}
+				item = existing;
+			}
+			else if (GetMenu().Items.Add(name) is ToolStripMenuItem tsmi2)
+			{
+				tsmi2.Click += Tsmi_Click;
+				tsmi2.Name = name;
+				item = tsmi2;
 			}
 
 			if (item != null)
@@ -953,7 +976,10 @@ namespace Keysharp.Builtins
 					item.Owner?.SyncEtoItems();
 #endif
 				}
-				else
+				// An options-only call registers nothing, leaving the item's existing handler in place — the guard
+				// above has already established that omitting the callback is legal only in that case. AutoHotkey's
+				// ModifyItem does the same by returning before it assigns mCallback.
+				else if (funcorsub != null)
 				{
 					// Create the registration explicitly (not ModifyEventHandlers) so the "Pn" option parsed below can
 					// set its Priority — the priority then travels with the registration to the launch.
@@ -1012,7 +1038,7 @@ namespace Keysharp.Builtins
 
 		private bool Check(string s, eCheckToggle checktoggle)
 		{
-			if (GetMenuItem(s) is ToolStripMenuItem item)
+			if (GetExistingMenuItem(s) is ToolStripMenuItem item)
 			{
 				if (checktoggle == eCheckToggle.Check)
 					item.Checked = true;
@@ -1029,7 +1055,7 @@ namespace Keysharp.Builtins
 
 		private bool Enable(string s, eCheckToggle checktoggle)
 		{
-			if (GetMenuItem(s) is ToolStripItem item)
+			if (GetExistingMenuItem(s) is ToolStripItem item)
 			{
 				if (checktoggle == eCheckToggle.Check)
 					item.Enabled = true;
@@ -1046,7 +1072,7 @@ namespace Keysharp.Builtins
 
 		private bool MakeVisible(string s, eCheckToggle vis)
 		{
-			if (GetMenuItem(s) is ToolStripMenuItem item)
+			if (GetExistingMenuItem(s) is ToolStripMenuItem item)
 			{
 				if (vis == eCheckToggle.Toggle)
 					item.Visible = !item.Visible;
