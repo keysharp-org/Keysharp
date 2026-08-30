@@ -34,7 +34,8 @@ namespace Keysharp.Compilation.Syntax
 		public readonly List<string> CompileWarnings = new();
 
 		// Global slot table: lowercased name -> emitted C# field identifier (keyword-escaped).
-		private readonly Dictionary<string, string> _fields = new(System.StringComparer.Ordinal);
+		// Can be retrieved using any case. This is done to avoid unnecessary calls to string.ToLowerInvariant() when looking up a name.
+		private readonly Dictionary<string, string> _fields = new(System.StringComparer.OrdinalIgnoreCase);
 		// Names resolved INLINE to a fresh expression each reference (e.g. `#import __Main` self-import → `new __Main()`).
 		private readonly Dictionary<string, System.Func<ExpressionSyntax>> _inlineAliases = new(System.StringComparer.Ordinal);
 		private readonly List<MemberDeclarationSyntax> _fieldDecls = new();
@@ -923,7 +924,7 @@ namespace Keysharp.Compilation.Syntax
 			}
 			// Emit the surviving wildcard bindings (those not shadowed by an explicit import or local declaration).
 			foreach (var (lower, w) in wild)
-				if (!_fields.ContainsKey(lower.ToLowerInvariant()))
+				if (!_fields.ContainsKey(lower))
 				{
 					if (!w.builtin)
 						BindNamedImport(w.mod, w.key, w.key, w.kind, props);
@@ -945,8 +946,8 @@ namespace Keysharp.Compilation.Syntax
 				RegisterImportField(alias, ModuleMemberField(modName, name));
 			else
 			{
+				if (_fields.ContainsKey(alias)) return;
 				var lower = alias.ToLowerInvariant();
-				if (_fields.ContainsKey(lower)) return;
 				var id = NameMangler.Escape(lower);
 				_fields[lower] = id;
 				var src = ModuleMemberField(modName, name);
@@ -963,8 +964,8 @@ namespace Keysharp.Compilation.Syntax
 
 		private void RegisterImportField(string name, ExpressionSyntax value)
 		{
+			if (_fields.ContainsKey(name)) return;
 			var lower = name.ToLowerInvariant();
-			if (_fields.ContainsKey(lower)) return;
 			var id = NameMangler.Escape(lower);
 			_fields[lower] = id;
 			_fieldDecls.Add(ObjField(id, value));
@@ -985,8 +986,8 @@ namespace Keysharp.Compilation.Syntax
 				return;
 			}
 
+			if (_fields.ContainsKey(alias)) return;
 			var lower = alias.ToLowerInvariant();
-			if (_fields.ContainsKey(lower)) return;
 			var id = NameMangler.Escape(lower);
 			_fields[lower] = id;
 			var access = Access(prop.DeclaringType.FullName.Replace('+', '.') + "." + prop.Name);
@@ -1105,7 +1106,7 @@ namespace Keysharp.Compilation.Syntax
 					members.Add(LowerClass(cd));
 					// AHK initializes a class when execution reaches its declaration — model that by referencing the
 					// class slot at that point in the auto-exec, which triggers the lazy Statics[typeof(Class)] init.
-					auto.Add(ExprStmt(Op("MultiStatement", Id(_fields[cd.Name.ToLowerInvariant()]))));
+					auto.Add(ExprStmt(Op("MultiStatement", Id(_fields[cd.Name]))));
 				}
 				else if (s is HotkeyDef hk) LowerHotkey(hk);
 				else if (s is HotstringDef hs) LowerHotstring(hs);
