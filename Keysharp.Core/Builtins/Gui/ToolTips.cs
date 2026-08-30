@@ -227,7 +227,7 @@ namespace Keysharp.Builtins
 				if (last.x == sx && last.y == sy)
 					return live.Hwnd;
 
-				_ = live.Visible is true ? live.Move(sx, sy) : live.Show(sx, sy);
+				_ = live.IsVisible is true ? live.Move(sx, sy) : live.Show(sx, sy);
 				data.overlayTooltipStates[id] = (text, sx, sy, displayScale, geometry.Pixels.Width, geometry.Pixels.Height);
 				return live.Hwnd;
 			}
@@ -241,7 +241,7 @@ namespace Keysharp.Builtins
 			var overlay = overlays[id] ??= new Ks.KeysharpOverlay();
 			_ = overlay.SetImage(img, sx, sy, geometry.ScreenW, geometry.ScreenH);
 
-			if (overlay.Visible is not true)
+			if (overlay.IsVisible is not true)
 				_ = overlay.Show();
 
 			data.overlayTooltipStates[id] = (text, sx, sy, displayScale, geometry.Pixels.Width, geometry.Pixels.Height);

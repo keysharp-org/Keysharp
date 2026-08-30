@@ -15,10 +15,10 @@ namespace Keysharp.Builtins
 		/// and reentrant — a timer that acquires and releases the same lock during an <c>Await</c> releases the
 		/// waiting thread's acquisition. Use <c>Critical</c> to hold a section closed across a wait.</para>
 		/// </summary>
-		/// <param name="Value">A <c>Task</c>, a <c>RealThread</c>, a CLR task reached through <c>Ks.Clr</c>, or a
-		/// script object whose zero-argument <c>__Await()</c> method returns one.
-		/// A <c>RealThread</c> reports a failing body on its own thread rather than through here, so awaiting one
-		/// yields its <c>Result</c> -- empty if it failed -- and never rethrows. Check its outcome properties.</param>
+		/// <param name="Value">A <c>Task</c>, a CLR task reached through <c>Ks.Clr</c>, or a script object whose
+		/// zero-argument <c>__Await()</c> method returns one. A <c>RealThread</c> is deliberately not accepted:
+		/// it has two completions, and <c>worker.Task</c> (the entry function) and <c>worker.Terminated</c> (the
+		/// OS thread) must be named apart.</param>
 		/// <param name="Timeout">Milliseconds to wait. Default: wait indefinitely. Timing out does not cancel the work.</param>
 		/// <returns>The value the work produced, or an empty string if it produced none.</returns>
 		/// <exception cref="Error">The work was canceled.</exception>
@@ -26,19 +26,23 @@ namespace Keysharp.Builtins
 		/// <exception cref="TypeError"><paramref name="Value"/> is not something that finishes later.</exception>
 		public static object Await(object Value, object Timeout = null)
 		{
-			// Deliberately not lenient: returning a non-task unchanged would make `Await(MakeDocx)` -- the
-			// missing-parens typo -- quietly hand back the function object. Same reasoning as LockRun rejecting
-			// a value type instead of silently not locking.
+			// Not lenient: returning a non-task unchanged would make `Await(MakeDocx)` -- the missing-parens
+			// typo -- quietly hand back the function object.
 			var task = KeysharpTask.FromAwaitable(Value);
 
 			if (task == null)
 				return Errors.TypeErrorOccurred(Value, typeof(KeysharpTask));
 
-			// Waiting on the thread whose completion we are waiting for can never finish: a worker's completion
-			// is only set after its body returns, and this call is inside that body. RealThread.Wait refuses the
-			// same thing.
+			// Waiting on the entry task of the worker this call is running inside can never finish: that task is
+			// settled by the very body doing the waiting.
 			if (KeysharpTask.IsCurrentRealThreadTask(task))
-				return Errors.TargetErrorOccurred("A real thread cannot wait on itself.");
+				return Errors.TargetErrorOccurred("A real thread cannot wait on its own entry function.");
+
+			// A Post back to this same real thread, awaited while this thread is uninterruptible, is the other
+			// wait that can never finish: Await pumps, but the work needs a thread launch and Critical refuses it.
+			if ((Value as KeysharpTask ?? KeysharpTask.Wrap(task)).IsUnservableSelfPost())
+				return Errors.TargetErrorOccurred(
+						"Cannot await work posted to this same real thread while the current thread is uninterruptible.");
 
 			if (!Keysharp.Internals.Flow.WaitForCompletion(task, Timeout.Ai(-1)))
 				return Errors.TimeoutErrorOccurred("Await timed out.");

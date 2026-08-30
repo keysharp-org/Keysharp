@@ -8,8 +8,8 @@ namespace Keysharp.Builtins
 		/// reason <c>Lock</c> is <see cref="KeysharpLock"/> and <c>Func</c> is <c>KeysharpFunc</c>.
 		/// <para>
 		/// <see cref="Then"/> runs a continuation on the calling script thread and yields a further <c>Task</c>
-		/// carrying the callback's own outcome. <see cref="Result"/> is a snapshot and does not wait, matching
-		/// <see cref="RealThread.Result"/>; <c>Await</c> and <see cref="Wait"/> are the waiting forms.</para>
+		/// carrying the callback's own outcome. <see cref="Result"/> is a snapshot and does not wait;
+		/// <c>Await</c> and <see cref="Wait"/> are the waiting forms.</para>
 		/// <para>
 		/// <see cref="Wrap"/> is the only producer, so exactly one wrapper exists per underlying task in each
 		/// script and <c>t1 == t2</c> answers "the same work".</para>
@@ -30,6 +30,9 @@ namespace Keysharp.Builtins
 
 			private readonly Task task;
 			private Error mappedError;
+			// Set only for a RealThread.Post task: the scheduler that must run the work, which Await checks
+			// before waiting.
+			private ScriptEventScheduler postTarget;
 
 			private KeysharpTask(Task task) => this.task = task;
 
@@ -42,10 +45,6 @@ namespace Keysharp.Builtins
 				var t = FromAwaitable(Value);
 				return t == null ? Errors.TypeErrorOccurred(Value, typeof(KeysharpTask)) : Wrap(t);
 			}
-
-			// The main and adopted threads are not workers, so every entry point which accepts a RealThread says
-			// the same thing about them rather than reporting a type error about Task.
-			internal const string NoBodyToWaitFor = "The main and adopted real threads have no body to wait for.";
 
 			/// <summary>Returns the one wrapper for <paramref name="t"/>, creating it on first crossing.</summary>
 			internal static KeysharpTask Wrap(Task t)
@@ -70,17 +69,32 @@ namespace Keysharp.Builtins
 
 			// ---- properties -------------------------------------------------------------------------------
 
+			/// <summary>
+			/// This task's state: <c>"Pending"</c>, <c>"Succeeded"</c>, <c>"Failed"</c> or <c>"Canceled"</c>.
+			/// <para>
+			/// One read of one value, so a decision spanning more than one state gets a consistent snapshot. The
+			/// <c>Is*</c> predicates below are the single-question form: each is its own read, so two of them read
+			/// in sequence can straddle a transition. Ask <c>Status</c> once when that matters.</para>
+			/// </summary>
+			public string Status => task.Status switch
+			{
+				TaskStatus.RanToCompletion => "Succeeded",
+				TaskStatus.Faulted => "Failed",
+				TaskStatus.Canceled => "Canceled",
+				_ => "Pending"
+			};
+
 			/// <summary>True while the task has not reached any terminal outcome.</summary>
-			public bool IsActive => !task.IsCompleted;
+			public bool IsPending => task.Status is not (TaskStatus.RanToCompletion or TaskStatus.Faulted or TaskStatus.Canceled);
 
 			/// <summary>True only when the task completed successfully.</summary>
-			public bool IsSuccessful => task.IsCompletedSuccessfully;
+			public bool IsSucceeded => task.Status == TaskStatus.RanToCompletion;
 
 			/// <summary>True only when the task completed with an error.</summary>
-			public bool IsFailed => task.IsFaulted;
+			public bool IsFailed => task.Status == TaskStatus.Faulted;
 
 			/// <summary>True only when the task completed as canceled.</summary>
-			public bool IsCanceled => task.IsCanceled;
+			public bool IsCanceled => task.Status == TaskStatus.Canceled;
 
 			/// <summary>
 			/// The value this task produced, or an empty string while it is still running, if it failed, or if it
@@ -575,13 +589,6 @@ namespace Keysharp.Builtins
 						}
 
 						var value = ReadRawResult(nested);
-
-						if (value is RealThread { Task: null })
-						{
-							_ = completion.TrySetException(new TargetError(NoBodyToWaitFor).Exception);
-							return;
-						}
-
 						nested = FromScriptValue(value);
 
 						if (nested == null)
@@ -609,9 +616,6 @@ namespace Keysharp.Builtins
 					if (task != null)
 						return task;
 
-					if (value is RealThread { Task: null })
-						throw new TargetError(NoBodyToWaitFor).Exception;
-
 					if (value is not Any || Script.ResolveMember(value, "__Await", out _) is not KeysharpFunc awaitMethod)
 					{
 						if (seen == null)
@@ -632,7 +636,7 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			/// <summary>Accepts a Task, a wrapper, a RealThread, a ValueTask or a ManagedInstance over any of those.</summary>
+			/// <summary>Accepts a Task, a wrapper, a ValueTask or a ManagedInstance over any of those.</summary>
 			internal static Task FromScriptValue(object value)
 			{
 				switch (value)
@@ -642,11 +646,6 @@ namespace Keysharp.Builtins
 
 					case Task t:
 						return t;
-
-					case RealThread rt:
-						// Null for the main and adopted threads, which never finish. Callers report that in
-						// RealThread's own wording rather than as a type error.
-						return rt.Task;
 
 					case Clr.ManagedInstance mi:
 						return mi._instance is Task inner ? inner : AsTaskOrNull(mi._instance);
@@ -674,14 +673,6 @@ namespace Keysharp.Builtins
 				for (var i = 0; i < underlyings.Length; i++)
 				{
 					var value = Tasks[i];
-					// Null rather than skipping the element: OnError can suppress the raise, and waiting on the
-					// rest would report success for a set the script never asked for.
-					if (value is RealThread { Task: null })
-					{
-						_ = Errors.TargetErrorOccurred(NoBodyToWaitFor);
-						return null;
-					}
-
 					var underlying = FromAwaitable(value);
 
 					if (underlying == null)
@@ -739,10 +730,34 @@ namespace Keysharp.Builtins
 				=> LazyInitializer.EnsureInitialized(ref mappedError,
 					() => ManagedInvoke.MapException(Unwrap(task.Exception), "Task"));
 
+			internal void MarkPostTarget(ScriptEventScheduler target) => postTarget = target;
+
+			/// <summary>
+			/// True when awaiting this task on this thread can never finish: the work is a <c>Post</c> back to the
+			/// caller's own real thread, and the caller is uninterruptible. <c>Await</c> pumps, but <c>Post</c>
+			/// needs a thread launch, which <c>Critical</c> and an exhausted <c>#MaxThreads</c> refuse.
+			/// </summary>
+			internal bool IsUnservableSelfPost()
+			{
+				var script = Script.TheScript;
+
+				return postTarget != null
+					   && !task.IsCompleted
+					   && ReferenceEquals(postTarget, script?.CurrentSchedulerIfCreated)
+					   && !script.Threads.IsInterruptible();
+			}
+
+			/// <summary>
+			/// True when <paramref name="candidate"/> is the entry task of the worker whose thread is calling — a
+			/// wait that can never finish, because that task is settled by the body this call is inside. A settled
+			/// task is exempt, so a timer running on the worker after its body returned can still wait on it.
+			/// </summary>
 			internal static bool IsCurrentRealThreadTask(Task candidate)
 			{
 				var scheduler = Script.TheScript?.CurrentSchedulerIfCreated;
-				return scheduler?.realThread is { } realThread && ReferenceEquals(realThread.Task, candidate);
+				return scheduler?.realThread is { } realThread
+					   && ReferenceEquals(realThread.EntryTask, candidate)
+					   && !candidate.IsCompleted;
 			}
 
 			internal static Exception Unwrap(Exception ex) =>

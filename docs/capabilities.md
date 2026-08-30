@@ -161,7 +161,6 @@ Status legend:
 | A_DirSeparator | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the current platform directory separator character. |
 | A_EndChar | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_EventInfo | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
-| A_ExitReason | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Always null until the main form is closing, in which case the value will be "OnExit()". |
 | A_FileEncoding | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the encoding used for reading and writing files. This differs from AHK in that it only supports ASCII (ascii), UTF-8 (utf-8/utf8-raw) or Unicode (utf-16/utf16-raw or unicode). ASCII will always return us-ascii because that is the name of the encoding in C#. |
 | A_GuiTheme | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets the application-wide GUI theme. Accepted values: Classic, System, Dark. System selects the operating-system theme; Eto follows later system-theme changes, while WinForms resolves the setting when it is applied. Classic selects the Eto light theme on Linux and macOS. |
 | A_HotIf | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
@@ -754,8 +753,7 @@ Status legend:
 | ListViewGetContent() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The ListViewGetContent function returns content data from a list-view control, such as rows, columns, or count values. |
 | Ln() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the base e (natural) logarithm of a number. Throws an exception if a negative number is passed in. |
 | LoadPicture() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Loads an image, icon or cursor. Differs in that instead of writing to a ref argument, it returns a structure whose fields are Handle and ImageType. |
-| Lock | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | A mutual-exclusion lock for code shared between RealThreads: Acquire([Timeout]) and Release(). Covers what LockRun cannot - a timed acquire, and a lock held across several statements. Reentrant and owned by a real thread; Acquire blocks that whole real thread. |
-| LockRun() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs code under a lock to prevent concurrent execution overlap. |
+| Lock | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | A mutual-exclusion lock for code shared between RealThreads: Acquire([Timeout]) and Release(). This is the whole mechanism; the scoped form is ordinary script code around Acquire/Release in a try/finally. Reentrant and owned by a real thread; Acquire blocks that whole real thread. |
 | Log() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the base 10 logarithm of a number. Throws an exception if a negative number is passed in. |
 | Loop | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Loop statement. |
 | Loop (files & folders) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Language/runtime capability. |
@@ -913,11 +911,11 @@ Status legend:
 | Props | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Helper for creating property definitions. |
 | Random() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes a random number in the range of x to y. |
 | RandomSeed() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets seed for the pseudo-random generator used by Random(). |
-| RealThread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Represents a real background thread. IsActive/IsSuccessful/IsFailed/IsCanceled match Task outcome names; Result is available only after successful completion. |
+| RealThread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Represents a real background thread. It carries two separate completions: Task is the entry function's result and settles as the body leaves, while Terminated settles when the OS thread is gone (IsAlive is that as a poll). Post returns a Task; Send runs the work there and blocks. |
 | RealThread.Call() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new real worker thread and runs the callback on it. |
-| RealThread.ContinueWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Schedules continuation after thread task completion. |
-| RealThread.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | A worker's completion task as a Ks.Clr object; unlike Result it answers as a raw CLR Task does. The main and adopted threads have no completion and raise TargetError. |
-| RealThread.Wait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for real thread completion. |
+| RealThread.Post() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Queues work on that thread and returns the Task carrying its result: ignore it for fire-and-forget, Then it, or Await it. Queues as a thread launch, so an uninterruptible target defers the work rather than refusing it. |
+| RealThread.Task | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The entry function's eventual result, settled as the body leaves rather than when the thread ends, so the value is readable while a worker stays up serving registrations. Errors rethrow when it is awaited. The main and adopted threads have no body and raise TargetError. |
+| RealThread.Terminated | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Completes when the OS thread is gone. Reading it asks nothing of the thread; Exit requests shutdown and returns this same task. The main and adopted threads raise TargetError. |
 | RegCreateKey() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The RegCreateKey function creates a registry key without writing a value. |
 | RegDelete | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Deletes a value from the registry. |
 | RegDeleteKey() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Deletes a key from the registry. |
@@ -1010,7 +1008,7 @@ Status legend:
 | Tan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the tangent of a number. |
 | Tanh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic tangent of a number. |
 | TargetError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
-| Task | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Work that finishes later; every CLR call returning a .NET Task hands one back. IsActive/IsSuccessful/IsFailed/IsCanceled expose its outcome, Result is a non-blocking snapshot, and Await and Wait are the waiting forms. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation. |
+| Task | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Work that finishes later; every CLR call returning a .NET Task hands one back. Status is the canonical one-read state (Pending/Succeeded/Failed/Canceled) with IsPending/IsSucceeded/IsFailed/IsCanceled as single-question predicates, Result is a non-blocking snapshot, Await returns or throws the outcome, and Wait returns false only on timeout. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation. |
 | Task.Create() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls Producer synchronously with the positional prefix it accepts of Succeed, Fail and Cancel, and returns the Task they settle; Producer's return value is ignored. First settlement wins; Succeed adopts asynchronous work's eventual value, failure or cancellation, and an early producer error fails the Task. |
 | Task.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The underlying CLR task as a Ks.Clr object, so members Task does not mirror (IsCompleted, ContinueWith, ...) stay reachable. Replaces the former Clr property. |
 | Taskbar | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, reaches only docks implementing it, and decorates the entry named by DESKTOP_ENTRY; macOS badges the dock tile with text and draws progress on the tile, also application-wide. Linux and macOS are compile-checked only. |

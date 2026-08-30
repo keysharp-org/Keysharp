@@ -17,7 +17,7 @@ namespace Keysharp.Builtins
 		/// </param>
 		/// <returns>
 		/// An Object with a property per capability ("Granted"|"Denied"|"NotApplicable"|"Unsupported")
-		/// and a <c>Granted</c> property (1/0) that is true only when every <em>requested</em> capability
+		/// and an <c>IsGranted</c> property (1/0) that is true only when every <em>requested</em> capability
 		/// was granted or not applicable.
 		/// </returns>
 		public static KeysharpObject RequestCapabilities(params object[] capabilities)
@@ -42,7 +42,7 @@ namespace Keysharp.Builtins
 					allGranted &= permission.IsGranted;
 			}
 
-			result.DefinePropInternal("Granted", new OwnPropsDesc(result, allGranted ? 1L : 0L));
+			result.DefinePropInternal("IsGranted", new OwnPropsDesc(result, allGranted ? 1L : 0L));
 			return result;
 		}
 	}

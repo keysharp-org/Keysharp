@@ -110,6 +110,10 @@ namespace Keysharp.Internals.Threading
 
 			script.EventScheduler.SchedulePump();
 			script.ScheduleBlockedEventSchedulers();
+			// The thread beneath this one may have been paused while it was interrupted, by Pause(1), A_IsPaused
+			// or thr.Paused. Those only set a flag; this is the point AHK observes it, when the underlying thread
+			// resumes. Costs one bool read when nothing is paused.
+			Keysharp.Internals.Flow.WaitWhilePaused(CurrentThread);
 		}
 
 		internal bool TryPushThreadVariables(long priority, bool skipUninterruptible,

@@ -388,13 +388,7 @@ namespace Keysharp.Builtins
 			{
 				var tv = TheScript.Threads.CurrentThread;
 				tv.isPaused = true;
-				var threads = TheScript.Threads;
-				var prevAllowTimers = threads.AllowTimers;
-				threads.AllowTimers = false;
-
-				Keysharp.Internals.Flow.WaitWithMessagePump(() => tv.isPaused);
-
-				threads.AllowTimers = prevAllowTimers;
+				Keysharp.Internals.Flow.WaitWhilePaused(tv);
 			}
 			else
 			{

@@ -108,7 +108,7 @@ namespace Keysharp.Tests
 				Assert.AreEqual(42L, overlay.Y);
 				Assert.AreEqual(30L, overlay.Width);
 				Assert.AreEqual(18L, overlay.Height);
-				Assert.AreEqual(false, overlay.Visible);
+				Assert.AreEqual(false, overlay.IsVisible);
 			}
 			finally
 			{
@@ -135,7 +135,7 @@ namespace Keysharp.Tests
 				Assert.AreEqual(42L, overlay.Y);
 				Assert.AreEqual(30L, overlay.Width);
 				Assert.AreEqual(18L, overlay.Height);
-				Assert.AreEqual(false, overlay.Visible);
+				Assert.AreEqual(false, overlay.IsVisible);
 			}
 			finally
 			{

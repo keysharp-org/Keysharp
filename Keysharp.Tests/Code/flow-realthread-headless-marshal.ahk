@@ -1,7 +1,7 @@
 #ErrorStdOut
 #Warn All, StdOut
 #NoTrayIcon
-#import KS { RealThread }
+#import KS { RealThread, Await }
 #Include <assert>
 
 ; A worker marshalling back to the main thread must work when there is no UI framework.
@@ -22,8 +22,8 @@ marshalled := ""
 Sleep(150)
 
 worker := RealThread(WorkerBody)
-Assert(worker.Wait(15000), A_LineNumber)
-AssertEq(worker.Result, "from-main", A_LineNumber)
+Assert(worker.Task.Wait(15000), A_LineNumber)
+AssertEq(Await(worker.Task), "from-main", A_LineNumber)
 
 WorkerBody()
 {

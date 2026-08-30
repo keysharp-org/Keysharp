@@ -2,13 +2,24 @@
 #Warn All, StdOut
 #NoTrayIcon
 
-#import KS { RealThread, LockRun, A_RealThread, A_Thread, Lock }
+#import KS { RealThread, Await, A_RealThread, A_Thread, Lock }
 #MaxThreads 256
 #Include <assert>
-lockit := ""
+lockit := Lock()
 tharr := []
 tharr.Length := 100
 tot := 0
+
+; The scoped form of Lock, which is ordinary script code now that LockRun is gone.
+LockedCall(lock, callback, args*)
+{
+	lock.Acquire()
+
+	try
+		return callback(args*)
+	finally
+		lock.Release()
+}
 
 rtAddTot(o)
 {
@@ -18,19 +29,29 @@ rtAddTot(o)
 
 rtfunc1(obj)
 {
-	LockRun(lockit, (o) => rtAddTot(o), obj)
+	LockedCall(lockit, rtAddTot, obj)
 }
 
 fo := rtfunc1
 
 Loop 100
 {
-	tharr[A_Index] := RealThread(fo, A_Index).ContinueWith(fo, 1)
+	tharr[A_Index] := RealThread(fo, A_Index)
 }
 
 Loop 100
 {
-	tharr[A_Index].Wait()
+	Await(tharr[A_Index].Task)
+}
+
+Loop 100
+{
+	tharr[A_Index] := RealThread(fo, 1)
+}
+
+Loop 100
+{
+	Await(tharr[A_Index].Task)
 }
 
 tharr.Length := 0
@@ -67,57 +88,73 @@ Loop 100
 
 Loop 100
 {
-	; Wait reports completion; the body's value is read from Result.
-	Assert(tharr[A_Index].Wait(), A_LineNumber)
-
-	tot += tharr[A_Index].Result
+	; Await on the entry task both waits and yields the body's value.
+	tot += Await(tharr[A_Index].Task)
 }
 
 tharr.Length := 0
 
 AssertEq(tot, 10000, A_LineNumber)
 
-; A named function reaches a worker as a plain reference, both when it starts one and when it continues one.
+; A named function reaches a worker as a plain reference.
 rtNamed(n) => n * 2
 
 named := RealThread(rtNamed, 21)
-Assert(named.Wait(), A_LineNumber)
-AssertEq(named.Result, 42, A_LineNumber)
+AssertEq(Await(named.Task), 42, A_LineNumber)
+AssertEq(named.Task.Status, "Succeeded", A_LineNumber)
 
-chained := RealThread(rtNamed, 4).ContinueWith(rtNamed, 5)
-Assert(chained.Wait(), A_LineNumber)
-AssertEq(chained.Result, 10, A_LineNumber)
+; ContinueWith is gone; Task.Then is the continuation, and it runs on the thread that asked for it.
+chained := RealThread(rtNamed, 4)
+; A property, not a bare name: assigning one inside the lambda would declare a local and leave this empty.
+chainedBox := {Value: ""}
+Await(chained.Task.Then(v => chainedBox.Value := v + 1))
+AssertEq(chainedBox.Value, 9, A_LineNumber)
 
-AssertEq(LockRun(lockit, rtNamed, 3), 6, A_LineNumber)
+AssertEq(LockedCall(lockit, rtNamed, 3), 6, A_LineNumber)
 
-; Wait must honour its timeout instead of blocking until the body finishes.
+; Task.Wait honours its timeout instead of blocking until the body finishes, and never throws.
 slowWorker := RealThread(() => Sleep(2000))
 
-Assert(!slowWorker.Wait(50) && slowWorker.IsActive && !slowWorker.IsSuccessful
-	&& !slowWorker.IsFailed && !slowWorker.IsCanceled, A_LineNumber)
+Assert(!slowWorker.Task.Wait(50), A_LineNumber)
+Assert(slowWorker.Task.IsPending && slowWorker.Task.Status == "Pending", A_LineNumber)
+Assert(!slowWorker.Task.IsSucceeded && !slowWorker.Task.IsFailed && !slowWorker.Task.IsCanceled, A_LineNumber)
+Assert(slowWorker.IsAlive, A_LineNumber)
 
-slowWorker.Wait()
+Await(slowWorker.Task)
 
-Assert(!slowWorker.IsActive && slowWorker.IsSuccessful && !slowWorker.IsFailed && !slowWorker.IsCanceled, A_LineNumber)
+Assert(slowWorker.Task.IsSucceeded && slowWorker.Task.Status == "Succeeded", A_LineNumber)
+Assert(!slowWorker.Task.IsPending && !slowWorker.Task.IsFailed && !slowWorker.Task.IsCanceled, A_LineNumber)
 
-; A body error is reported where it occurs and leaves a failed worker outcome.
-suppressExpected := (args*) => -1
-OnError(suppressExpected)
+; A body error now travels on the entry task and rethrows when it is awaited.
 failedWorker := RealThread(() => Throw(Error("expected worker failure")))
-Assert(failedWorker.Wait(), A_LineNumber)
-OnError(suppressExpected, 0)
-Assert(!failedWorker.IsActive && !failedWorker.IsSuccessful && failedWorker.IsFailed && !failedWorker.IsCanceled, A_LineNumber)
+caught := ""
+
+try
+	Await(failedWorker.Task)
+catch Error as e
+	caught := e.Message
+
+AssertEq(caught, "expected worker failure", A_LineNumber)
+Assert(failedWorker.Task.IsFailed && failedWorker.Task.Status == "Failed", A_LineNumber)
+AssertEq(failedWorker.Task.Error.Message, "expected worker failure", A_LineNumber)
 
 ; Starting arguments, Send, and self-identification from inside the worker.
 argWorker := RealThread(RealThreadArgEntry, 21)
 
 AssertEq(argWorker.Send(() => A_RealThread.Id), argWorker.Id, A_LineNumber)
 
-argWorker.Post(() => argWorker.Exit())
-argWorker.Wait()
+; The entry task settles when the BODY returns, even though the worker stays up to serve its timer.
+AssertEq(Await(argWorker.Task), 42, A_LineNumber)
+Assert(argWorker.IsAlive, A_LineNumber)
 
-AssertEq(argWorker.Result, 42, A_LineNumber)
-Assert(argWorker.IsSuccessful, A_LineNumber)
+; Post returns a Task, so queued work is observable.
+AssertEq(Await(argWorker.Post(() => 7)), 7, A_LineNumber)
+
+argWorker.Post(() => argWorker.Exit())
+Await(argWorker.Terminated)
+
+Assert(!argWorker.IsAlive, A_LineNumber)
+Assert(argWorker.Task.IsSucceeded, A_LineNumber)
 
 RealThreadArgEntry(n) {
 	; Keeps the worker's event loop alive until Exit() is requested, so Post/Send have somewhere to land.
@@ -127,9 +164,8 @@ RealThreadArgEntry(n) {
 
 ; Thread.Kind names the launch site; a RealThread body reports RealThread, a timer Timer.
 kindWorker := RealThread(() => A_Thread.Kind)
-kindWorker.Wait()
 
-Assert(kindWorker.Result == "RealThread" && A_Thread.Kind == "Auto", A_LineNumber)
+Assert(Await(kindWorker.Task) == "RealThread" && A_Thread.Kind == "Auto", A_LineNumber)
 
 global kindFromTimer := ""
 SetTimer(CaptureTimerKind, -1)
@@ -170,7 +206,7 @@ Sleep 300
 
 Assert(!sharedLock.Acquire(50), A_LineNumber)
 
-holder.Wait()
+Await(holder.Task)
 
 Assert(sharedLock.Acquire(1000), A_LineNumber)
 
@@ -191,7 +227,7 @@ Loop 10000 {
 	DllCall(cb2)
 }
 
-coordWorker.Wait()
+Await(coordWorker.Task)
 
 Assert(A_CoordModeMouse = "Screen", A_LineNumber)
 
@@ -207,7 +243,7 @@ CoordMode "Mouse", "Client"
 ret1 := DllCall(workerCallback)
 ret2 := DllCall(workerCallback)
 workerStop := true
-workerThread.Wait()
+Await(workerThread.Task)
 
 Assert(ret1 = 101 && ret2 = 202 && A_CoordModeMouse = "Client", A_LineNumber)
 

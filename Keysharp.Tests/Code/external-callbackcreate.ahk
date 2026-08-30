@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import KS { RealThread }
+#import KS { RealThread, Await }
 #Include <assert>
 val := ""
 #if WINDOWS
@@ -94,7 +94,7 @@ CoordMode "Mouse", "Client"
 ret1 := DllCall(workerCallback)
 ret2 := DllCall(workerCallback)
 workerStop := true
-worker.Wait()
+Await(worker.Task)
 
 Assert(ret1 = 101 && ret2 = 202 && A_CoordModeMouse = "Client", A_LineNumber)
 #endif

@@ -7,11 +7,6 @@ namespace Keysharp.Builtins
 		/// <c>Lock</c>; the CLR type is named differently because <c>Lock</c> is <see cref="System.Threading.Lock"/>
 		/// in C#, the same reason <c>Func</c> is <c>KeysharpFunc</c>.
 		/// <para>
-		/// <see cref="LockRun"/> remains the way to hold a lock for the duration of one call and is not duplicated
-		/// here. This class exists for the two things <c>LockRun</c> cannot express: acquiring with a timeout, and
-		/// holding a lock across several statements. A <c>Lock</c> is itself an object, so <c>LockRun</c> accepts
-		/// one and the two forms exclude each other.</para>
-		/// <para>
 		/// The lock is held by a real thread, not by a script thread, and it is reentrant: the same real thread may
 		/// acquire it repeatedly, and must release it once per acquisition. <see cref="Acquire"/> blocks that whole
 		/// real thread, so acquiring on the main thread stalls the script's message loop until it succeeds — pass a
@@ -26,9 +21,8 @@ namespace Keysharp.Builtins
 		[UserDeclaredName("Lock")]
 		public class KeysharpLock : KeysharpObject
 		{
-			// Monitor is used directly on this object so that LockRun(lockObj, …), which locks whatever object it is
-			// given, and Acquire/Release refer to the same monitor. There is deliberately no IsHeld: its answer is
-			// stale the instant it is produced, so nothing can act on it — Acquire(0) is the usable form.
+			// No IsHeld: its answer is stale the instant it is produced, so nothing can act on it —
+			// Acquire(0) is the usable form.
 
 			public KeysharpLock(params object[] args) : base(args) { }
 

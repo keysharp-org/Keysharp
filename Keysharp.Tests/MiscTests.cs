@@ -226,14 +226,14 @@ namespace Keysharp.Tests
 			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "InputInjection"));
 			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "InputMonitoring"));
 			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "ScreenCapture"));
-			Assert.AreEqual(1L, Script.GetPropertyValue(caps, "Granted"));
+			Assert.AreEqual(1L, Script.GetPropertyValue(caps, "IsGranted"));
 #else
 			Assert.IsNotNull(Script.GetPropertyValue(caps, "AccessibilityAutomation"));
 			Assert.IsNotNull(Script.GetPropertyValue(caps, "BlockInput"));
 			Assert.IsNotNull(Script.GetPropertyValue(caps, "InputInjection"));
 			Assert.IsNotNull(Script.GetPropertyValue(caps, "InputMonitoring"));
 			Assert.IsNotNull(Script.GetPropertyValue(caps, "ScreenCapture"));
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "Granted"));
+			Assert.IsNotNull(Script.GetPropertyValue(caps, "IsGranted"));
 #endif
 		}
 

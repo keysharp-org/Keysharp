@@ -1722,16 +1722,6 @@
                  },
                  {
                      "category":  "Environment/System",
-                     "feature":  "A_ExitReason",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Always null until the main form is closing, in which case the value will be \"OnExit()\"."
-                 },
-                 {
-                     "category":  "Environment/System",
                      "feature":  "A_FileEncoding",
                      "syntax":  "",
                      "windows":  "full",
@@ -7621,7 +7611,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Work that finishes later; every CLR call returning a .NET Task hands one back. IsActive/IsSuccessful/IsFailed/IsCanceled expose its outcome, Result is a non-blocking snapshot, and Await and Wait are the waiting forms. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation.",
+                     "notes":  "Work that finishes later; every CLR call returning a .NET Task hands one back. Status is the canonical one-read state (Pending/Succeeded/Failed/Canceled) with IsPending/IsSucceeded/IsFailed/IsCanceled as single-question predicates, Result is a non-blocking snapshot, Await returns or throws the outcome, and Wait returns false only on timeout. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation.",
                      "tested-by":  "directive-csharp-async.ahk"
                  },
                  {
@@ -7676,18 +7666,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "A mutual-exclusion lock for code shared between RealThreads: Acquire([Timeout]) and Release(). Covers what LockRun cannot - a timed acquire, and a lock held across several statements. Reentrant and owned by a real thread; Acquire blocks that whole real thread.",
-                     "tested-by":  "flow-realthreads.ahk"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "LockRun()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Runs code under a lock to prevent concurrent execution overlap.",
+                     "notes":  "A mutual-exclusion lock for code shared between RealThreads: Acquire([Timeout]) and Release(). This is the whole mechanism; the scoped form is ordinary script code around Acquire/Release in a try/finally. Reentrant and owned by a real thread; Acquire blocks that whole real thread.",
                      "tested-by":  "flow-realthreads.ahk"
                  },
                  {
@@ -9347,7 +9326,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Represents a real background thread. IsActive/IsSuccessful/IsFailed/IsCanceled match Task outcome names; Result is available only after successful completion.",
+                     "notes":  "Represents a real background thread. It carries two separate completions: Task is the entry function's result and settles as the body leaves, while Terminated settles when the OS thread is gone (IsAlive is that as a poll). Post returns a Task; Send runs the work there and blocks.",
                      "tested-by":  "flow-realthreads.ahk"
                  },
                  {
@@ -9527,34 +9506,36 @@
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "RealThread.ContinueWith()",
-                     "syntax":  "",
+                     "feature":  "RealThread.Task",
+                     "syntax":  "rt.Task",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Schedules continuation after thread task completion."
+                     "notes":  "The entry function's eventual result, settled as the body leaves rather than when the thread ends, so the value is readable while a worker stays up serving registrations. Errors rethrow when it is awaited. The main and adopted threads have no body and raise TargetError.",
+                     "tested-by":  "flow-realthreads.ahk"
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "RealThread.Wait()",
-                     "syntax":  "",
+                     "feature":  "RealThread.Terminated",
+                     "syntax":  "rt.Terminated",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Waits for real thread completion."
+                     "notes":  "Completes when the OS thread is gone. Reading it asks nothing of the thread; Exit requests shutdown and returns this same task. The main and adopted threads raise TargetError.",
+                     "tested-by":  "flow-realthreads.ahk"
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "RealThread.ToClr()",
-                     "syntax":  "rt.ToClr()",
+                     "feature":  "RealThread.Post()",
+                     "syntax":  "rt.Post(Callback [, Arguments*])",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "A worker's completion task as a Ks.Clr object; unlike Result it answers as a raw CLR Task does. The main and adopted threads have no completion and raise TargetError.",
-                     "tested-by":  "directive-csharp-async.ahk"
+                     "notes":  "Queues work on that thread and returns the Task carrying its result: ignore it for fire-and-forget, Then it, or Await it. Queues as a thread launch, so an uninterruptible target defers the work rather than refusing it.",
+                     "tested-by":  "flow-realthreads.ahk"
                  },
                  {
                      "category":  "Core Language",

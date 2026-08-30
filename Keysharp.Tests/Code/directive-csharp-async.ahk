@@ -72,10 +72,10 @@ AssertEq(Await(SlowSum(20, 5)), 25, A_LineNumber)
 
 ; --- Result is a snapshot: it never waits ----------------------------------------------------
 slow := SlowSum(400, 1)
-Assert(slow.IsActive && !slow.IsSuccessful && !slow.IsFailed && !slow.IsCanceled, A_LineNumber)
+Assert(slow.IsPending && !slow.IsSucceeded && !slow.IsFailed && !slow.IsCanceled, A_LineNumber)
 AssertEq(slow.Result, "", A_LineNumber)
 AssertEq(Await(slow), 401, A_LineNumber)
-Assert(!slow.IsActive && slow.IsSuccessful && !slow.IsFailed && !slow.IsCanceled, A_LineNumber)
+Assert(!slow.IsPending && slow.IsSucceeded && !slow.IsFailed && !slow.IsCanceled && slow.Status == "Succeeded", A_LineNumber)
 AssertEq(slow.Result, 401, A_LineNumber)
 
 ; --- identity: one wrapper per underlying task, across separate crossings ----------------------
@@ -86,7 +86,7 @@ AssertEq(Task(slow), slow, A_LineNumber)
 fire := Fire()
 AssertEq(Await(fire), "", A_LineNumber)
 AssertEq(fire.Result, "", A_LineNumber)
-Assert(fire.IsSuccessful, A_LineNumber)
+Assert(fire.IsSucceeded, A_LineNumber)
 
 ; --- the raw CLR surface stays reachable ------------------------------------------------------
 Assert(slow.ToClr().IsCompleted, A_LineNumber)
@@ -160,7 +160,7 @@ blockedChain := blockedGate.Task.Then(Value => Value)
 Critical
 blockedGate.Resolve(5)
 Sleep 100
-Assert(blockedChain.IsActive, A_LineNumber)
+Assert(blockedChain.IsPending, A_LineNumber)
 Critical "Off"
 AssertEq(Await(blockedChain), 5, A_LineNumber)
 
@@ -191,15 +191,15 @@ Assert(nestedFailure.IsFailed, A_LineNumber)
 AssertEq(Await(Immediate().Then(_ => Nested())), 43, A_LineNumber)
 valueTask := Clr.System.Threading.Tasks.ValueTask(Clr.System.Threading.Tasks.Task.Delay(10).ToClr())
 AssertEq(Await(Immediate().Then(_ => valueTask)), "", A_LineNumber)
-AssertEq(Await(Immediate().Then(_ => RealThread(() => 77))), 77, A_LineNumber)
-Throws(() => Await(Immediate().Then(_ => RealThread.Main)), A_LineNumber, TargetError)
+AssertEq(Await(Immediate().Then(_ => RealThread(() => 77).Task)), 77, A_LineNumber)
+Throws(() => RealThread.Main.Task, A_LineNumber, TargetError)   ; the main thread has no entry body
 
 ; --- a worker's completion is reachable as a raw CLR task; main/adopted have none ---------------
 rtc := RealThread(() => 77)
-Assert(rtc.Wait(5000), A_LineNumber)
-Assert(rtc.ToClr().IsCompleted, A_LineNumber)
-AssertEq(Task(rtc.ToClr()).Result, 77, A_LineNumber)
-Throws(() => RealThread.Main.ToClr(), A_LineNumber, TargetError)
+Assert(rtc.Task.Wait(5000), A_LineNumber)
+Assert(rtc.Task.ToClr().IsCompleted, A_LineNumber)
+AssertEq(Task(rtc.Task.ToClr()).Result, 77, A_LineNumber)
+Throws(() => RealThread.Main.Terminated, A_LineNumber, TargetError)
 
 cycleGate := ManualGate()
 cycle := ""
@@ -211,10 +211,12 @@ Throws(() => Await(cycle), A_LineNumber, Error)
 detachedInput := ManualGate(), detachedDone := ManualGate()
 detachedWorker := RealThread(RegisterDetachedContinuation, detachedInput.Task, detachedDone)
 detachedId := detachedWorker.Id
-Assert(detachedWorker.IsActive, A_LineNumber)
+Assert(detachedWorker.IsAlive, A_LineNumber)
 detachedInput.Resolve(1)
 AssertEq(Await(detachedDone), detachedId, A_LineNumber)
-Assert(detachedWorker.Wait(5000) && detachedWorker.IsSuccessful && detachedWorker.Result == 99, A_LineNumber)
+AssertEq(Await(detachedWorker.Task), 99, A_LineNumber)
+; The worker outlives its body while the continuation is pending, then goes away on its own.
+Await(detachedWorker.Terminated)
 
 RegisterDetachedContinuation(task, done)
 {
@@ -227,7 +229,9 @@ nestedGate := ManualGate(), nestedPublished := [], nestedReady := ManualGate()
 nestedOwner := RealThread(PublishNestedChain, nestedGate.Task, nestedPublished, nestedReady)
 Await(nestedReady)
 nestedChain := nestedPublished[1]
-Assert(nestedOwner.Wait(5000) && nestedOwner.IsSuccessful, A_LineNumber)
+; Terminated, not Task: the claim under test is that the WORKER goes away once its callback returned,
+; which is the thread ending — the body returned long before this.
+Await(nestedOwner.Terminated)
 nestedGate.Resolve(23)
 AssertEq(Await(nestedChain), 23, A_LineNumber)
 
@@ -244,7 +248,7 @@ abandonedOwner := RealThread(RegisterAbandonedContinuation, abandonedInput.Task,
 Await(publishedReady)
 abandonedChain := publishedChain[1]
 abandonedOwner.Exit()
-Assert(abandonedOwner.Wait(5000) && abandonedOwner.IsSuccessful, A_LineNumber)
+Await(abandonedOwner.Terminated)
 Throws(() => Await(abandonedChain), A_LineNumber, Error)
 abandonedInput.Resolve(1)
 
@@ -256,41 +260,41 @@ RegisterAbandonedContinuation(task, published, ready)
     return 0
 }
 
-; Task.Wait has the same self-deadlock guard as RealThread.Wait and Await
+; Task.Wait has the same self-deadlock guard as Await: a worker cannot wait on its own entry task.
 selfWaitWorker := RealThread(SelfTaskWaitIsRejected)
-Assert(selfWaitWorker.Wait(5000) && selfWaitWorker.IsSuccessful && selfWaitWorker.Result, A_LineNumber)
+AssertEq(Await(selfWaitWorker.Task), true, A_LineNumber)
 
 SelfTaskWaitIsRejected()
 {
     try
-        Task(A_RealThread).Wait(Timeout: 10)
+        A_RealThread.Task.Wait(Timeout: 10)
     catch TargetError
         return true
     return false
 }
 
-; Exit can cancel a RealThread.ContinueWith result before its antecedent finishes.
-parentGate := ManualGate(), pendingChildCalls := 0
-parentWorker := RealThread(() => Await(parentGate))
-pendingChild := parentWorker.ContinueWith(() => pendingChildCalls += 1)
-pendingChild.Exit()
-Assert(pendingChild.Wait(1000) && pendingChild.IsCanceled, A_LineNumber)
-parentGate.Resolve(1)
-Assert(parentWorker.Wait(5000), A_LineNumber)
-Sleep 50
-AssertEq(pendingChildCalls, 0, A_LineNumber)
+; A RealThread is not awaitable: its two completions must be named apart.
+Throws(() => Await(RealThread(() => 1)), A_LineNumber, TypeError)
+Throws(() => Task(RealThread(() => 1)), A_LineNumber, TypeError)
+
+; Exit before the body runs cancels the entry task, and Terminated still completes.
+exitedEarly := RealThread(() => Sleep(5000))
+exitedEarly.Exit()
+Await(exitedEarly.Terminated)
+Assert(exitedEarly.Task.IsCanceled && exitedEarly.Task.Status == "Canceled", A_LineNumber)
+Assert(!exitedEarly.IsAlive, A_LineNumber)
 
 ; --- Task.Create: synchronous producer, arity trimming and first-settlement wins ----------------
 settlers := []
 src := Task.Create((Succeed, Fail, Cancel) => settlers.Push(Succeed, Fail, Cancel))
-Assert(src.IsActive && settlers.Length == 3, A_LineNumber)
+Assert(src.IsPending && settlers.Length == 3, A_LineNumber)
 Assert(settlers[1](Value: 7), A_LineNumber)
 Assert(!settlers[1](9) && !settlers[2]("late") && !settlers[3](), A_LineNumber)
 AssertEq(Await(src), 7, A_LineNumber)
 
 returnSettlers := []
 returnIgnored := Task.Create(Succeed => (returnSettlers.Push(Succeed), "ignored"))
-Assert(returnIgnored.IsActive, A_LineNumber)
+Assert(returnIgnored.IsPending, A_LineNumber)
 returnSettlers[1](6)
 AssertEq(Await(returnIgnored), 6, A_LineNumber)
 
@@ -304,7 +308,7 @@ canceledSource := Task.Create((Succeed, Fail, Cancel) =>
     canceledResults.Push(Cancel(), Succeed(1), Fail("late")))
 canceledChain := canceledSource.Then(_ => canceledThenCalls += 1, _ => canceledThenCalls += 1)
 Assert(canceledResults[1] && !canceledResults[2] && !canceledResults[3], A_LineNumber)
-Assert(!canceledSource.IsActive && !canceledSource.IsSuccessful
+Assert(!canceledSource.IsPending && !canceledSource.IsSucceeded
     && !canceledSource.IsFailed && canceledSource.IsCanceled, A_LineNumber)
 Assert(canceledChain.Wait(5000) && canceledChain.IsCanceled && canceledThenCalls == 0, A_LineNumber)
 flattenedCancel := Immediate().Then(_ => canceledSource)
@@ -329,8 +333,9 @@ Assert(createdCancel.Wait(5000) && createdCancel.IsCanceled, A_LineNumber)
 ; Exit remains pseudo-thread control flow rather than becoming a failed Task.
 createExitWorker := RealThread(() => (Task.Create(_ => Exit()), 99))
 awaitExitWorker := RealThread(() => (Task.Create(Succeed => Succeed(ExitAwaitable())), 99))
-Assert(createExitWorker.Wait(5000) && createExitWorker.IsCanceled && createExitWorker.Result != 99, A_LineNumber)
-Assert(awaitExitWorker.Wait(5000) && awaitExitWorker.IsCanceled && awaitExitWorker.Result != 99, A_LineNumber)
+Assert(createExitWorker.Task.Wait(5000) && createExitWorker.Task.IsCanceled, A_LineNumber)
+Assert(awaitExitWorker.Task.Wait(5000) && awaitExitWorker.Task.IsCanceled, A_LineNumber)
+Assert(createExitWorker.Task.Result != 99 && awaitExitWorker.Task.Result != 99, A_LineNumber)
 
 exitChain := Immediate().Then(_ => Exit())
 capturedExitChain := Immediate().Then(_ => CapturedExit())
@@ -362,8 +367,8 @@ AssertEq(Await(Task.WhenAny(gate, SlowSum(3000, 0))), "timer", A_LineNumber)
 ; is blocking on. It completes because a posted continuation is dispatch, not a thread launch, and the
 ; pump serves dispatch past the Critical-refused timer parked ahead of it. Break that and this hangs.
 rt := RealThread(WorkerBody)
-Assert(rt.Wait(20000), A_LineNumber)
-AssertEq(rt.Result, 1209, A_LineNumber)
+Assert(rt.Task.Wait(20000), A_LineNumber)
+AssertEq(Await(rt.Task), 1209, A_LineNumber)
 
 WorkerBody()
 {
@@ -402,8 +407,9 @@ AssertEq(sum, 1209, A_LineNumber)
 ; returns, long before the task settles, so the continuation arrives at a scheduler whose queue is gone.
 ; It must still run -- otherwise this Await never returns.
 workerTask := RealThread(StartOnWorker)
-Assert(workerTask.Wait(5000), A_LineNumber)
-AssertEq(Await(workerTask.Result), 325, A_LineNumber)
+Assert(workerTask.Task.Wait(5000), A_LineNumber)
+; The entry task carries the body's return value as-is, so its result is the inner Task, not 325.
+AssertEq(Await(workerTask.Task.Result), 325, A_LineNumber)
 
 StartOnWorker()
 {
@@ -412,9 +418,9 @@ StartOnWorker()
 
 ; --- timeouts stop only the wait; they do not cancel the work ---------------------------------
 timeoutGate := ManualGate()
-Assert(!timeoutGate.Task.Wait(20) && timeoutGate.Task.IsActive, A_LineNumber)
+Assert(!timeoutGate.Task.Wait(20) && timeoutGate.Task.IsPending, A_LineNumber)
 Throws(() => Await(timeoutGate, 20), A_LineNumber, TimeoutError)
-Assert(timeoutGate.Task.IsActive, A_LineNumber)
+Assert(timeoutGate.Task.IsPending, A_LineNumber)
 timeoutGate.Resolve(12)
 AssertEq(Await(timeoutGate), 12, A_LineNumber)
 
@@ -425,9 +431,10 @@ cts.Cancel()
 Assert(cancellable.Wait(5000), A_LineNumber)
 Assert(cancellable.IsCanceled, A_LineNumber)
 
-; --- a RealThread is awaitable, and one with no body to wait for is not -------------------------
-AssertEq(Await(RealThread(() => 77)), 77, A_LineNumber)
-Throws(() => Await(RealThread.Main), A_LineNumber, TargetError)
+; --- a RealThread is NOT awaitable; its two completions have to be named apart ------------------
+AssertEq(Await(RealThread(() => 77).Task), 77, A_LineNumber)
+Throws(() => Await(RealThread(() => 77)), A_LineNumber, TypeError)
+Throws(() => Await(RealThread.Main.Task), A_LineNumber, TargetError)
 
 ; --- a script Task goes back into a CLR API which expects a .NET one ----------------------------
 round := Clr.System.Threading.Tasks.Task.WhenAll(SlowSum(10, 1), SlowSum(10, 2))

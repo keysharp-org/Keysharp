@@ -503,14 +503,6 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `EnvUpdate()`: Retained from AutoHotkey v1 as a cross-platform environment notification mechanism. Windows broadcasts `WM_SETTINGCHANGE`; Linux publishes pending `EnvSet()` changes to the D-Bus activation environment and systemd user manager; macOS publishes them to the current launchd session. Linux and macOS updates affect future session-managed processes only and are not persistent.
 	+ `FormatCs()`: An alternative to `Format()`. The syntax used in `FormatCs()` is exactly that of `string.Format()` in C#, except with 1-based indexing.
 		+ Full documentation for the C# formatting rules can be found [here](https://learn.microsoft.com/en-us/dotnet/api/system.string.format).
-	+ `LockRun(lockobj, funcobj [, params*])`: Calls `funcobj` inside of a lock on `lockobj`, optionally passing `params` to it.
-		+ This is used to ensure only one `RealThread` at a time executes the code in `funcobj`.
-		+ `lockobj` must be an object (`Object()` or a `Lock`). A number throws `TypeError`: it boxes afresh at each call site, so every call would lock a different monitor and nothing would be serialized. A string works but is a poor lock, because identical literals are shared process-wide.
-			```
-			lockit := Object()
-			sharedvar := 0
-			LockRun(lockit, () => sharedvar++) ; If this were called in multiple threads, sharedvar would only ever be accessed by one thread at a time.
-			```
 	+ `Mail(recipients, subject, message, options)`: Sends an email.
 		+ `recipients`: A list of receivers of the message.
 		+ `subject`: Subject of the message.
@@ -527,11 +519,11 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `RequestCapabilities(capabilities*) => Object`: Requests one or more platform permissions and returns an object describing the outcome.
 		+ `capabilities`: zero or more capability name strings, each optionally comma- or space-delimited. Recognised names are the same as for `#Requires capability` above.
 		+ When called with no arguments, returns the current status of all capabilities without prompting.
-		+ Returns an `Object` with a property for each capability (`"Granted"`, `"Denied"`, `"NotApplicable"`, or `"Unsupported"`) and a `Granted` property (`1`/`0`) indicating whether every *requested* capability was granted or not applicable.
+		+ Returns an `Object` with a property for each capability (`"Granted"`, `"Denied"`, `"NotApplicable"`, or `"Unsupported"`) and an `IsGranted` property (`1`/`0`) indicating whether every *requested* capability was granted or not applicable.
 		+ On Linux, all input-related capabilities (`InputMonitoring`, `InputInjection`, `BlockInput`) plus `ScreenCapture` are batched into a single `keysharp-inputd` prompt when requested together, so the user sees at most one dialog per call.
 			```
 			caps := RequestCapabilities("InputMonitoring", "ScreenCapture")
-			if caps.Granted
+			if caps.IsGranted
 				MsgBox "All permissions granted"
 			MsgBox caps.ScreenCapture   ; "Granted", "Denied", "NotApplicable", or "Unsupported"
 
@@ -834,7 +826,8 @@ Controlling another application needs **Automation** permission, granted per tar
 				Elapsed => Integer       ; ms since launch
 				Priority => Integer      ; get/set; same storage as Thread "Priority"
 				Critical => Boolean      ; get/set; the object form of the Critical function
-				Paused => Boolean        ; get/set; the object form of Pause. A_IsPaused is this on Under
+				Paused => Boolean        ; get/set; the object form of Pause. Setting it takes effect when
+				                         ; that thread next resumes. A_IsPaused is this on Underlying
 				IsInterruptible => Boolean ; read-only
 				Underlying => Thread     ; the pseudo-thread this one interrupted, or ""
 				Exit([ExitCode := 0]) => Integer   ; cooperative; returns the target's Id
@@ -843,7 +836,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Pseudo-thread state is pooled and reused, so a `Thread` object captures its ID and re-checks it on every access. Once its pseudo-thread ends, `Id` and `Index` still answer from captured values and `IsActive` reports false, while everything else throws `TargetError` — a stored object can never silently describe a later pseudo-thread that reused the slot.
 		+ Boolean members follow the library-wide naming rule: `IsActive`/`IsInterruptible` are read-only, `Critical`/`Paused` are settable.
 		+ `Critical`, an exhausted `#MaxThreads` and a visible menu refuse a *thread launch*; they do not stop message dispatch. A posted continuation, and on the main thread a pending `__Delete`, are still served at the uninterruptible thread's pump points, matching AHK, where a Critical thread inside `Sleep` still processes sent messages. Queued timers and hotkeys wait until launches are admitted again, in the order their own queue holds them. `RealThread.Send` is not in this group: its callback runs as a thread of its own on the target, so an uninterruptible target refuses it outright rather than deferring it.
-		+ There is deliberately no `IsCurrent` property, and likewise no `IsMain` on `RealThread` — identity comparison answers both questions. `RealThread.Active` reports whether a real thread has not yet finished.
+		+ There is deliberately no `IsCurrent` property, and likewise no `IsMain` on `RealThread` — identity comparison answers both questions. `RealThread.IsAlive` reports whether the OS thread has not yet terminated.
 		+ A `Thread` object may be read from any real thread, but every setter and `Exit` throw `TargetError` when called from a real thread other than its owner. Pseudo-thread stacks are per real thread and are mutated without locking.
 	+ `RealThread`: Manages real threads which are not related to the green threads that are used for the rest of the project.
 		+ A `RealThread` is created by calling the `RealThread` class static instance.
@@ -854,18 +847,13 @@ Controlling another application needs **Automation** permission, granted per tar
 				RealThread(Callback [, Arguments*])
 				static Main => RealThread ; The script's main thread.
 				Id => Integer             ; Managed id of the backing OS thread.
-				Active => Boolean         ; True while this thread has not finished.
-				Succeeded => Boolean      ; True only after successful completion.
-				Failed => Boolean         ; True only after completion with an error.
-				Canceled => Boolean       ; True only when Exit ended it before its body returned.
-				Result => Any             ; The body's return value; "" while running, on error, or if it exited early.
+				IsAlive => Boolean        ; True while the OS thread has not terminated.
+				Task => Task              ; The entry function's eventual result (workers only).
+				Terminated => Task        ; Completes when the OS thread is gone (workers only).
 				Threads => Array          ; The active ScriptThreads of this real thread, oldest first.
-				Post(Callback [, Arguments*])              ; Queue work and return immediately.
-				Send(Callback [, Arguments*]) => Any       ; Run work there, wait, return its value.
-				Wait([Timeout := -1]) => Boolean           ; True if it finished, false on timeout.
-				ContinueWith(Callback [, Arguments*]) => RealThread ; Start after this one finishes.
-				Exit([ExitCode := 0])                      ; Cooperative shutdown request.
-				ToClr() => Any                             ; The completion as a raw CLR task (workers only).
+				Post(Callback [, Arguments*]) => Task      ; Queue work there; the Task is its result.
+				Send(Callback [, Arguments*]) => Any       ; Run work there now, block, return its value.
+				Exit([ExitCode := 0]) => Task              ; Shutdown request; returns Terminated.
 			}
 
 			ThreadFunc(obj)
@@ -873,27 +861,30 @@ Controlling another application needs **Automation** permission, granted per tar
 				; Long running operation to run on a real thread.
 			}
 
-			theThread := RealThread("ThreadFunc") ; Create and start the thread.
-			theThread.Wait() ; Wait for the thread to complete before continuing.
+			theThread := RealThread(ThreadFunc, 1)  ; Create and start the thread, passing 1 as obj.
+			result := Await(theThread.Task)         ; Wait for the body and take its value.
 			```
-		+ `RealThread.Main.Post(fn)` is the supported way to move work back onto the main thread from a worker. `A_RealThread` is the calling thread's object; on the main thread it is literally the same object as `RealThread.Main`, so `A_RealThread == RealThread.Main` is the test for "am I on the main thread".
-		+ `Wait` reports *completion*, not the body's value — that is `Result` — so a timeout is distinguishable from a body that returned nothing.
-		+ Exactly one of `Active`, `Succeeded`, `Failed` and `Canceled` is true. An uncaught body error is reported on the thread where it happened, exactly like one in a timer or hotkey body, and ends in `Failed`; it is never smuggled to a later `Wait`.
-		+ `Exit` before or during the body ends in `Canceled`. If the body already returned successfully and the worker stayed alive to serve registrations, `Exit` preserves `Succeeded` and `Result`.
-		+ A worker that registered a timer, hotkey or callback keeps serving them after its body returns; `Exit` is how it is shut down. `Wait`, `ContinueWith`, `Exit` and `ToClr` throw `TargetError` on `RealThread.Main` and on adopted threads, which have no body of their own.
+		+ **A worker has two completions and they are not the same event.** `Task` is the entry function's result and settles the moment the body leaves. `Terminated` settles when the OS thread is gone. A worker that registered a timer, hotkey or callback keeps serving them long after its body returned, so `Await(worker.Task)` returns while `worker.IsAlive` is still true; `Exit` is how such a worker is shut down.
+		+ `Task` follows the ordinary `Task` rules: it succeeds with the body's return value, fails with the body's error — which rethrows when awaited, and is reported as an unobserved failure if nobody ever looks — or is canceled if `Exit` ended the body first. `Task.Status` and its `Is*` predicates report which.
+		+ `Post` queues work and hands back the `Task` carrying its result: ignore it for fire-and-forget, `Then` it to react, or `Await` it to wait. Because it queues as a thread launch, an uninterruptible target or an exhausted `#MaxThreads` **defers** the work.
+		+ `Send` is not `Await(Post(...))` spelled differently. A call to your own thread is a direct call, the main thread is reached through the UI framework, and the request is served past queued work whose launch is parked — after which an uninterruptible target refuses it outright. Use `Send` when a busy target should fail fast and `Await(Post(...))` when it should be waited for.
+		+ `RealThread.Main.Post(fn)` and `RealThread.Main.Send(fn)` are the supported ways to move work back onto the main thread from a worker. `A_RealThread` is the calling thread's object; on the main thread it is literally the same object as `RealThread.Main`, so `A_RealThread == RealThread.Main` is the test for "am I on the main thread".
+		+ `Task`, `Terminated` and `Exit` throw `TargetError` on `RealThread.Main` and on adopted threads, which have no body and no end this class controls. `Post` and `Send` raise on a thread that is no longer alive.
+		+ `Exit` called on the worker's own thread (`A_RealThread.Exit()`) unwinds immediately and does not return, so its task is unobservable there.
 	+ `Task`: Work that finishes later. Every CLR call returning a .NET `Task` hands one of these back, so `Ks.Clr` and `#CSharp` agree on what work-in-flight looks like.
 		```
 		class Task
 		{
 			static Call(Value) => Task          ; wrap native work or an object implementing __Await()
-			Active => Boolean                   ; true until a terminal outcome
-			Succeeded => Boolean                ; true only after successful completion
-			Failed => Boolean                   ; true only after completion with an error
-			Canceled => Boolean                 ; true only after cancellation
+			Status => String                    ; "Pending" | "Succeeded" | "Failed" | "Canceled"
+			IsPending => Boolean                ; true until a terminal outcome
+			IsSucceeded => Boolean              ; true only after successful completion
+			IsFailed => Boolean                 ; true only after completion with an error
+			IsCanceled => Boolean               ; true only after cancellation
 			Result => Any                       ; the successful value, "" otherwise. Never waits.
 			Error => Any                        ; the failure as a catchable error object, "" otherwise
 			ToClr() => Any                      ; the underlying CLR task, for IsCompleted/ContinueWith/…
-			Wait([Timeout := -1]) => Boolean    ; true if it finished, false on timeout; never cancels it
+			Wait([Timeout := -1]) => Boolean    ; true if it finished; false only on timeout; never cancels it
 			Then(OnSuccess [, OnFailure]) => Task ; handle a value or error on this script thread
 			                                      ; cancellation propagates; returned work is flattened
 			static WhenAll(Tasks*) => Task      ; finishes when all do; Result preserves input order
@@ -901,8 +892,9 @@ Controlling another application needs **Automation** permission, granted per tar
 			static Create(Producer) => Task      ; Producer receives Succeed, Fail and Cancel callbacks
 		}
 		```
-		+ Exactly one of `Active`, `Succeeded`, `Failed` and `Canceled` is true. `Result` is a snapshot and never blocks, exactly like `RealThread.Result`. `Await(task)` and `Wait` are the waiting forms, and both pump, so timers, hotkeys and the GUI stay alive while a script waits.
-		+ `Then` reacts without blocking. `OnSuccess` receives the unwrapped value after success; optional `OnFailure` receives the same catchable `Error` exposed by `Task.Error` and can recover the returned chain. Either may declare no parameter. Requiring more than one raises `ValueError` immediately when the target signature can be resolved; a method bound by name is checked when its concrete member can be found, otherwise invocation performs the check. Cancellation invokes neither callback and propagates unchanged. The selected callback runs as a pseudo-thread on the script thread where `Then` was called. Tasks and CLR tasks or value tasks returned at any depth are flattened, and a custom awaitable returned directly is adopted. A returned `RealThread` follows `Await(realThread)` semantics: the chain receives its `Result`, while a body error remains reported on that worker and is visible through its `Failed` property. Raw `task.ToClr().ContinueWith` instead uses CLR scheduling and provides neither this script affinity nor result flattening.
+		+ `Status` is the canonical value — **one read, one instant**, so a decision spanning more than one state gets a consistent snapshot. The four `Is*` predicates ask the same question one at a time; each is its own read, so two of them read in sequence can straddle a transition. Use a predicate for a single question and `Status` when it matters that the answers agree. Prefer them to comparing `Status` against a string literal: `t.IsFaild` raises, `t.Status = "Faild"` is silently false, and `==` compares case-sensitively where `=` does not.
+		+ `Result` is a snapshot and never blocks. `Await(task)` and `Wait` are the waiting forms, and both pump, so timers, hotkeys and the GUI stay alive while a script waits.
+		+ `Then` reacts without blocking. `OnSuccess` receives the unwrapped value after success; optional `OnFailure` receives the same catchable `Error` exposed by `Task.Error` and can recover the returned chain. Either may declare no parameter. Requiring more than one raises `ValueError` immediately when the target signature can be resolved; a method bound by name is checked when its concrete member can be found, otherwise invocation performs the check. Cancellation invokes neither callback and propagates unchanged. The selected callback runs as a pseudo-thread on the script thread where `Then` was called. Tasks and CLR tasks or value tasks returned at any depth are flattened, and a custom awaitable returned directly is adopted. A `RealThread` is not awaitable, so return `worker.Task` (or `worker.Terminated`) rather than the worker itself. Raw `task.ToClr().ContinueWith` instead uses CLR scheduling and provides neither this script affinity nor result flattening.
 		+ A pending `Then` keeps its owner alive until its callback has run. Background work returned by that callback does not itself make a script persistent; a downstream `Then` registers its own callback and therefore its own lifetime root. If the owner is torn down before a pending callback can run, the returned task fails instead of hanging.
 		+ `Task.Create(Producer)` turns a callback-shaped API — a hotkey, a GUI control, a device notification — into a task. `Producer` runs synchronously before `Create` returns and receives only the positional prefix it declares, up to `Succeed`, `Fail` and `Cancel`; its own return value is ignored. Each settlement function returns true only if it won: `Succeed([Value])` settles from `Value` and adopts asynchronous work's eventual value, failure or cancellation, `Fail([Reason])` accepts an `Error` or description, and `Cancel()` produces a canceled task. A producer error before settlement fails the returned task; after settlement it has no effect.
 			```
@@ -911,13 +903,13 @@ Controlling another application needs **Automation** permission, granted per tar
 			```
 		+ A task has no public `Cancel()` because a consumer cannot safely cancel work it did not create. Cancellation belongs to the producer: use the `Cancel` callback inside `Task.Create`, or pass a cancellation token to CLR work. Likewise there is no `Delay`/`Completed`/`Run`: CLR tasks cross the ordinary boundary, and `RealThread(Callback)` runs script code on another thread.
 		+ A failure nobody ever looks at is reported as an ordinary script error when the task is collected — the same terms .NET reports one on, so a task you are about to `Await` is never reported out from under you.
-		+ `Wait` never throws or marks a task failure observed; `Error` and `Await` observe it, and a failure read through both routes is the same error object. A timeout stops only that wait and does not cancel the work. `WhenAny` transfers only the winner's outcome; it neither observes nor cancels the losers. `WhenAll` fails if an input fails, or is canceled if at least one input is canceled and none fail.
-		+ `Await`, `Task(Value)`, `WhenAll` and `WhenAny` also accept a `RealThread` or a script object implementing `__Await()`. The zero-argument method must return a `Task`, CLR task or value task, worker `RealThread`, or another object implementing `__Await()`; protocol chains are followed until native work is reached. It is called synchronously on each consumption, so an implementation should cache stable work rather than create a fresh operation each time, especially for a `ValueTask`. An exception raised there is synchronous unless `Then` or `Succeed` is consuming it, in which case it becomes that operation's outcome. This lets a domain object expose asynchronous work without inheriting from `Task`. A `RealThread` reports a failing body on its own thread, so awaiting one yields an empty `Result` and never rethrows; check `Failed`. `RealThread.Main` and adopted threads have no body to wait for and raise `TargetError`.
+		+ `Wait` returns true when the task reaches any terminal outcome before the timeout and false only when the timeout elapses first. It neither rethrows nor marks the task's failure observed; inspect `Status` or the `Is*` predicates, while `Error` and `Await` observe a failure and expose the same error object. A timeout stops only that wait and does not cancel the work. `WhenAny` transfers only the winner's outcome; it neither observes nor cancels the losers. `WhenAll` fails if an input fails, or is canceled if at least one input is canceled and none fail.
+		+ `Await`, `Task(Value)`, `WhenAll` and `WhenAny` also accept a script object implementing `__Await()`. The zero-argument method must return a `Task`, CLR task or value task, or another object implementing `__Await()`; protocol chains are followed until native work is reached. It is called synchronously on each consumption, so an implementation should cache stable work rather than create a fresh operation each time, especially for a `ValueTask`. An exception raised there is synchronous unless `Then` or `Succeed` is consuming it, in which case it becomes that operation's outcome. This lets a domain object expose asynchronous work without inheriting from `Task`. A `RealThread` is deliberately not accepted: it has two completions, so `worker.Task` and `worker.Terminated` must be named apart.
 
-	+ `Await(value [, timeout := -1])`: Waits for work that finishes later — a `Task`, a `RealThread`, a CLR task reached through `Ks.Clr`, or an object implementing `__Await()` — and returns what it produced. This is Keysharp's `await`.
-		+ It does not suspend the way C#'s `await` suspends a method: a Keysharp pseudo-thread runs to completion on its own frame. Instead it blocks the calling thread and pumps everything else, exactly as `Sleep`, `WinWait` and `RealThread.Wait` do, so timers, hotkeys and the GUI stay alive throughout.
+	+ `Await(value [, timeout := -1])`: Waits for work that finishes later — a `Task`, a CLR task reached through `Ks.Clr`, or an object implementing `__Await()` — and returns what it produced. This is Keysharp's `await`.
+		+ It does not suspend the way C#'s `await` suspends a method: a Keysharp pseudo-thread runs to completion on its own frame. Instead it blocks the calling thread and pumps everything else, exactly as `Sleep` and `WinWait` do, so timers, hotkeys and the GUI stay alive throughout.
 		+ Because it pumps, it is an interruption point: another pseudo-thread can start while it waits, just as inside `Sleep`. That matters most around `Lock`, whose ownership is per real thread and reentrant — a timer that acquires and releases the same lock during an `Await` releases the waiting thread's acquisition. Use `Critical` to hold a section closed across a wait.
-		+ A failure is rethrown as its catchable Keysharp error; canceled work raises a base `Error` (cancellation is not failure, so `Task.Error` stays empty). A timeout raises `TimeoutError` without canceling the work. `task.Wait(timeout)` is the non-throwing form. Passing something that does not finish later raises a `TypeError` rather than silently handing the value back.
+		+ A failure is rethrown as its catchable Keysharp error; canceled work raises a base `Error` (cancellation is not failure, so `Task.Error` stays empty). A timeout raises `TimeoutError` without canceling the work. `task.Wait(timeout)` is the non-throwing form and returns false only on timeout. Passing something that does not finish later raises a `TypeError` rather than silently handing the value back.
 		```
 		#import KS { Task, Await }
 		docx := Await(MakeDocx(html))                 ; block here, stay responsive
@@ -925,7 +917,17 @@ Controlling another application needs **Automation** permission, granted per tar
 		results := Await(Task.WhenAll(d, p))
 		MakePdf(html).Then(path => FileAppend(path, out))       ; or never block at all
 		```
-	+ `Lock`: Guards code shared between real threads where `LockRun` cannot — a timed acquire, or a lock held across several statements. `LockRun` remains the one-call form and is not duplicated on the class.
+	+ `Lock`: Guards code shared between real threads. This is the whole mechanism — the free function `LockRun` has been removed, because a lock that accepts any object has to document which objects are bad locks (a number boxes afresh per call site; a string literal is shared process-wide), and a type that can only be a lock cannot be misused that way. The scoped form is ordinary script code:
+		```
+		LockedCall(lock, callback, args*)
+		{
+		    lock.Acquire()
+		    try
+		        return callback(args*)
+		    finally
+		        lock.Release()
+		}
+		```
 		```
 		class Lock
 		{
@@ -936,7 +938,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		```
 		+ The lock belongs to a *real* thread and is reentrant. `Acquire` blocks the whole real thread, so acquiring on the main thread stalls the message loop — pass a timeout there.
 	+ New class `Image` provides cross-platform image capture and manipulation. Capture with `Image.FromDesktop()`, `Image.FromMonitor(n)`, `Image.FromRect(x, y, width, height)`, `Image.FromWindow(winTitle [, options])`, load with `Image.FromFile(path)` / `Image.FromBitmap(handle)` / `Image.FromClipboard()` (an alias of the `Clipboard.Image` getter; returns `""` when the clipboard holds no image, and the write direction is `Clipboard.Image := img`), or create a blank ARGB canvas to draw on with `Image.Create(width, height [, background])` (omit `background` or pass `""` for fully transparent), or build one from raw pixel bytes with `Image.FromBuffer(data, width, height [, bytesPerPixel := 4])` — the inverse of `GetPixelData`, where `bytesPerPixel` 1 = 8-bit grayscale and 4 = RGBA. Paint shapes and text with `Clear([color])`, `DrawLine(x1, y1, x2, y2 [, color, thickness])`, `DrawRect`/`FillRect(x, y, width, height [, color, thickness])`, `DrawRoundRect`/`FillRoundRect(x, y, width, height, radius [, color, thickness])`, `DrawEllipse`/`FillEllipse(x, y, width, height [, color, thickness])`, `DrawText(text, x, y [, color, font])` (`font` is `"Name size"` with optional trailing style keywords `bold`, `italic`, `underline`, `strike`, e.g. `"Sans 16 bold italic"`), and `DrawImage(image [, x, y, width, height])` (stamp another image onto this one). A color is a name (`"Red"`), a `0xRRGGBB` value (opaque), or — for a non-opaque alpha — a `0xAARRGGBB` value given either as a number (e.g. `0x80FF0000`) or an 8-hex-digit string; a fully-transparent `0x00` alpha survives only as an 8-hex-digit string, since a numeric `0x00RRGGBB` collapses to a plain opaque `0xRRGGBB`. Queue chainable transforms — geometry (`Scale`, `Resize(width, height)` for an absolute resize where a single negative dimension keeps the aspect ratio, `Rotate`, `Flip`, `Crop`) and color (`Grayscale()`, `Opacity(factor)` with `factor` 0-1, `Brightness(amount)` and `Contrast(amount)` with `amount` -1 to 1); the draw ops and transforms all apply lazily and chain, then output via `Save(filename)` or `ToBitmap()`, show it in a window with `Show([title, wait])` (`wait` = block until the preview window closes), read/write pixels with `GetPixel(x, y)` (returns the full `0xAARRGGBB`, alpha included) and `SetPixel(x, y, color)` (a `0xRRGGBB` opaque or `0xAARRGGBB` value), or search it — the three search methods return a boolean found? and write the result(s) into a leading `&match` output variable, and matching is RGB-only (alpha is ignored, since capture alpha is unreliable): `Search(&match, needle [, variation, trans, direction])` locates a sub-image and on a hit sets `match := {X, Y}` (the match's top-left as absolute image pixels) and returns `true`, else returns `false` and sets `match := ""` (`trans` = a needle color that matches anything, ImageSearch's `*TransN`; `direction` = ImageSearch's `*DirN` scan order 1-9 selecting which match wins); `SearchAll(&matches, needle [, variation, trans, direction])` sets `matches := [{X, Y}, {X, Y}, …]` (all matches, an empty array `[]` when none) and returns `true` when there is at least one; `SearchPixel(&match, color [, variation])` finds the first matching pixel — PixelSearch over a capture instead of the live screen — and on a hit sets `match := {X, Y, Color}` where `Color` is the actual matched pixel's full `0xAARRGGBB` (the value `GetPixel` returns). Each also takes an optional `(x, y, width, height)` region right after `&match` (`Search(&match, x, y, width, height, needle [, …])`, likewise `SearchAll`/`SearchPixel`) to search only inside that rectangle (clamped to the image); returned coordinates stay absolute image pixels. The region form is selected by argument count — 5+ arguments after `&match` means a region; `SearchPixel` with 3 or 4 arguments (neither the plain nor the region form) raises a ValueError. Additional surface: `Copy()` duplicates the image; `MeasureText(text, font, &w, &h)` measures a string with the same font spec `DrawText` uses; `GetPixelData([bytesPerPixel := 1, buffer]) => Buffer` copies the pixels into a tightly packed `Buffer` (`bytesPerPixel` 1 = grayscale, 4 = RGBA) for `DllCall`/OCR interop — pass `buffer` (a `Buffer`, or any object exposing `Ptr` and `Size`) to write into storage you already own instead of allocating a new one, and that same object is returned; it must hold at *least* `Width * Height * bytesPerPixel` bytes (a ValueError otherwise), exactly that many are written from the start, and anything beyond is left alone, so one buffer sized for the largest capture can serve smaller ones too (`data := img.GetPixelData(4, data)` in a capture loop) — and `SetPixelData(data [, bytesPerPixel := 4])` overwrites the current image's pixels from such a buffer; and the read-only `X`/`Y`/`ScaleX`/`ScaleY` properties report the capture's screen origin and HiDPI pixel scale so coordinates found in the image map back to screen coordinates. `FromWindow` captures the whole window (title bar included; occluded windows capture correctly everywhere except foreign-toplevel-only compositors) and accepts an `options` object/mode (matching OCR.ahk): on Windows it selects the capture technique — `0`/`1` = GetDC + BitBlt, `2`/`3` = PrintWindow, `4` (default) = PrintWindow + PW_RENDERFULLCONTENT for hardware-accelerated windows (mode `5`, UWP capture, is not yet implemented) — and `{decorations: false}` requests a client-area-only grab where the platform can honor it (KWin); elsewhere the flag is ignored. `Image.FromRect` takes absolute screen coordinates and deliberately ignores the Pixel `CoordMode` (unlike `PixelGetColor`/`ImageSearch`), matching its sibling capture factories. Replaces the earlier `ImageCapture` function — e.g. `Image.FromRect(x, y, width, height).Save(filename)` or `.ToBitmap()`. Using a disposed `Image` now throws rather than silently returning `0`, and because `Rotate`/`Flip` invalidate the `X`/`Y` screen-origin mapping (`Rotate` also invalidates `ScaleX`/`ScaleY`), don't rely on those properties after rotating or flipping.
-		* New KS class `Overlay` provides a click-through, always-on-top image surface. Use `Overlay()` when `SetImage` will supply its size, `Overlay(x, y, width, height)` for a drawable blank canvas, or `Overlay.FromImage(source [, x, y, width, height])` to start with a copied image. Geometry uses native screen units while the platform chooses the backing-pixel density. Draw through the borrowed `Canvas` image and call `Present()` to publish a completed frame without changing visibility. `SetImage(source [, x, y, width, height])` copies an image and applies geometry together; `Redraw(callback [, x, y, width, height])` gives `callback(canvas)` a private target-sized canvas and presents it as one completed frame. Canvas operations that replace or transform its pixels are refused; use `Canvas.Copy()` for an independent image. `Show`, `Move`, `Hide`, and `Destroy` control the surface; `Width`/`Height` resize its display rectangle without discarding the canvas. `Opacity`, `ClickThrough`, `Visible`, `Hwnd`, and `OnEvent` expose presentation and pointer state. `Highlight` and, on Linux/macOS, `ToolTip` use the same primitive. GNOME/Cinnamon Wayland draw a click-through overlay inside the shell itself, so it is not a window and takes no taskbar entry; its frames are handed over as shared memory to keep animation cheap. An interactive overlay (`ClickThrough := false`) has to be a real surface there and does appear in the window list. macOS behavior is unverified.
+		* New KS class `Overlay` provides a click-through, always-on-top image surface. Use `Overlay()` when `SetImage` will supply its size, `Overlay(x, y, width, height)` for a drawable blank canvas, or `Overlay.FromImage(source [, x, y, width, height])` to start with a copied image. Geometry uses native screen units while the platform chooses the backing-pixel density. Draw through the borrowed `Canvas` image and call `Present()` to publish a completed frame without changing visibility. `SetImage(source [, x, y, width, height])` copies an image and applies geometry together; `Redraw(callback [, x, y, width, height])` gives `callback(canvas)` a private target-sized canvas and presents it as one completed frame. Canvas operations that replace or transform its pixels are refused; use `Canvas.Copy()` for an independent image. `Show`, `Move`, `Hide`, and `Destroy` control the surface; `Width`/`Height` resize its display rectangle without discarding the canvas. `Opacity`, `ClickThrough`, `IsVisible`, `Hwnd`, and `OnEvent` expose presentation and pointer state. `Highlight` and, on Linux/macOS, `ToolTip` use the same primitive. GNOME/Cinnamon Wayland draw a click-through overlay inside the shell itself, so it is not a window and takes no taskbar entry; its frames are handed over as shared memory to keep animation cheap. An interactive overlay (`ClickThrough := false`) has to be a real surface there and does appear in the window list. macOS behavior is unverified.
 * Syntax:
 	+ The spread operator `*` may be used multiple times in one function call: `MyFunc(arr1*, arr2*)`.
 	+ The 40 character limit for hotstring abbreviations has been removed. There is no limit to the length.
@@ -1139,12 +1141,14 @@ Controlling another application needs **Automation** permission, granted per tar
 					; Per-hook
 					Stop()                       ; Cancel the subscription so the callback no longer fires.
 					Pause(newState := 1) => Boolean ; Pause (1), unpause (0) or toggle (-1) this hook; returns the new paused state.
-					Paused => Boolean            ; Get/set whether this hook is paused (paused hooks stay registered but don't fire).
-					IsActive => Boolean          ; Whether the subscription is still receiving events.
+					Paused => Boolean            ; Get/set this hook's own pause switch. A stopped hook reports false.
+					Status => String             ; "Active" | "Paused" | "Stopped" — the effective state.
+					IsActive => Boolean          ; Whether the hook is firing. A paused hook is NOT active.
 					EventType => String          ; The event kind, e.g. "Active" or "Move".
 					Count => Integer             ; Remaining number of times the callback will fire (-1 = unlimited).
 				}
 				```
+			+ `Status` is the one value that separates the three states a hook can be in; `IsActive` is the single question "is it firing?", and is false while the hook is paused — by its own `Paused` or by the global `WinEvent.Paused`, both of which suppress dispatch. `Stopped` is permanent: `Paused` reports false on a stopped hook and writes to it are ignored. `Ks.MonitorHook` and `ClipboardHook` carry the same three members with the same meanings, minus the global switch.
 			+ Platform support for `WinEvent`:
 				+ Windows: Uses `SetWinEventHook()` and supports every event type.
 				+ Linux: The events come from a GDK/X11 event filter on the UI thread (covering X11 and XWayland windows); native Wayland sources (GNOME/KWin/wlroots) are not yet wired, and `Restore`/`Close`-on-hide are not yet emitted.
@@ -1217,8 +1221,9 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ The address of a variable cannot be taken using the reference operator.
 		+ It returns a VarRef object as in AutoHotkey.
 * Miscellaneous behavior:
-	+ Pausing a script is not supported because a Keysharp script is actually a running program.
-		+ The pause menu item and `Pause()` function have been removed.
+	+ Pausing the whole *script* is not supported, because a Keysharp script is actually a running program.
+		+ The tray menu's Pause item has been removed. `Pause()` and `A_IsPaused` remain and act on pseudo-threads, as in AHK: `Pause()` suspends the calling pseudo-thread until something clears its flag, and `Pause(1|0|-1)` sets, clears or toggles the flag on the *underlying* thread, which observes it when it resumes.
+		+ A paused thread keeps pumping, so hotkeys and work posted from another real thread still run and can unpause it — but timers are suspended for the duration, matching AHK. An `ExitApp` releases it.
 	+ The `/script` command line switch for compiled scripts does not apply and is therefore not implemented.
 	* The `/Debug` command line switch is not implemented.
 	+ The Help menu item is not implemented yet.

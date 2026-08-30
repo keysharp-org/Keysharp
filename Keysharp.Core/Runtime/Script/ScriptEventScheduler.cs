@@ -1178,6 +1178,8 @@ internal bool HasBlockedQueuedWork
 
 				ownedResourcesDisposed = true;
 				ClearQueues();
+				// Queued posts can no longer run, and their tasks are what an Await is holding.
+				realThread?.FailPendingPosts();
 				DisposeOwnedTimers();
 				DisposeOwnedClipboardHandlers();
 				var hotkeysChanged = Keysharp.Internals.Input.Keyboard.HotkeyDefinition.DisableOwnedVariants(this);

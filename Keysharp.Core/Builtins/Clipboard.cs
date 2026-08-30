@@ -369,22 +369,32 @@ namespace Keysharp.Builtins
 			/// <summary>The script function this hook calls.</summary>
 			public object Callback => callback;
 
-			/// <summary>True while the subscription is still receiving events.</summary>
-			public bool IsActive => active;
+			/// <summary>
+			/// This hook's effective state: <c>"Active"</c> (registered and firing), <c>"Paused"</c> (registered
+			/// but suppressed) or <c>"Stopped"</c> (unregistered, which is permanent).
+			/// </summary>
+			public string Status => !active ? "Stopped" : paused ? "Paused" : "Active";
+
+			/// <summary>True only while this hook is firing; <see cref="Status"/> separates paused from stopped.</summary>
+			public bool IsActive => active && !paused;
 
 			/// <summary>Remaining number of times the callback will fire (-1 = unlimited).</summary>
 			public long Count => active ? remaining : 0L;
 
-			/// <summary>Gets or sets whether this hook is paused (a paused hook stays registered but does not fire).</summary>
+			/// <summary>Gets or sets this hook's pause switch. A stopped hook reports false and ignores writes.</summary>
+			// Unregister clears `active` and leaves `paused` intact, so these gate on liveness.
 			public object Paused
 			{
-				get => paused;
-				set => paused = value.Ab();
+				get => active && paused;
+				set { if (active) paused = value.Ab(); }
 			}
 
 			/// <summary>Pauses (1), unpauses (0) or toggles (-1) this hook. Returns the resulting paused state.</summary>
 			public object Pause(object newState = null)
 			{
+				if (!active)
+					return false;
+
 				var ns = newState.Al(1L);
 				paused = ns == -1 ? !paused : ns != 0;
 				return paused;

@@ -206,7 +206,8 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			public object Visible => isMapped;
+			/// <summary>Whether the overlay is currently on screen.</summary>
+			public object IsVisible => isMapped;
 
 			// Return 0 without allocating an overlay id when nothing has been shown yet: a backing only exists once
 			// an id has been allocated (on the first Show), so overlayId == 0 means there is no window/handle. Reading

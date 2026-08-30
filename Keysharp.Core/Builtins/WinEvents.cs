@@ -104,35 +104,48 @@ namespace Keysharp.Builtins
 			/// <summary>The event type this subscription listens for (e.g. "Active", "Move").</summary>
 			public string EventType => reg?.type.ToString() ?? "";
 
-			/// <summary>True while the subscription is still receiving events.</summary>
-			public bool IsActive => reg?.active ?? false;
+			/// <summary>
+			/// This hook's effective state: <c>"Active"</c> (registered and firing), <c>"Paused"</c> (registered
+			/// but suppressed) or <c>"Stopped"</c> (unregistered, which is permanent). The global
+			/// <c>WinEvent.Paused</c> reads as <c>"Paused"</c> here because it suppresses dispatch exactly as this
+			/// hook's own <see cref="Paused"/> does, while <see cref="Paused"/> stays this hook's own switch.
+			/// </summary>
+			public string Status => !IsLive ? "Stopped"
+									: reg.paused || (Script.TheScript?.WinEventManager?.GlobalPaused ?? false) ? "Paused"
+									: "Active";
+
+			/// <summary>True only while this hook is firing; <see cref="Status"/> separates paused from stopped.</summary>
+			public bool IsActive => Status == "Active";
 
 			/// <summary>Remaining number of times the callback will fire (-1 = unlimited).</summary>
 			public long Count => reg?.Remaining ?? 0L;
 
-			/// <summary>Gets or sets whether this hook is paused (paused hooks stay registered but don't fire).</summary>
+			/// <summary>Gets or sets this hook's own pause switch. A stopped hook reports false and ignores writes.</summary>
 			// Historical: a script's `true` arrives as an Integer, and a bool-typed setter used to fail the dynamic
 			// invoke with an InvalidCastException that no script try/catch could intercept. ArgCoercer lifted that
 			// constraint, so a bool-typed member would be safe now; this stays object-typed only to keep the
 			// property accepting the same range of values it always has.
 			public object Paused
 			{
-				get => reg?.paused ?? false;
-				set { if (reg != null) reg.paused = value.Ab(); }
+				get => IsLive && reg.paused;
+				set { if (IsLive) reg.paused = value.Ab(); }
 			}
 
 			/// <summary>Pauses (1), unpauses (0) or toggles (-1) this hook. Returns the resulting paused state.</summary>
 			public object Pause(object newState = null)
 			{
-				var r = reg;
-
-				if (r == null)
+				if (!IsLive)
 					return false;
 
+				var r = reg;
 				var ns = newState.Al(1L);
 				r.paused = ns == -1 ? !r.paused : ns != 0;
 				return r.paused;
 			}
+
+			// Unregister clears `active` and leaves `reg` and `reg.paused` intact, so liveness is what the
+			// members above gate on, not a null check.
+			private bool IsLive => reg is { active: true };
 
 			/// <summary>Cancels the subscription so the callback no longer fires.</summary>
 			public object Stop()

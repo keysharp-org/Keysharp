@@ -91,7 +91,7 @@ namespace Keysharp.Builtins
 			public object Thickness { get => (long)thickness; set { thickness = Math.Max(0, value.Ai()); Refresh(); } }
 
 			/// <summary>Whether the overlay is currently on screen.</summary>
-			public object Visible => shown;
+			public object IsVisible => shown;
 
 			/// <summary>Native handle of the overlay window where the backing has one (Eto/WinForms/layer surface),
 			/// otherwise 0 (a compositor-drawn overlay has no client-side window).</summary>
@@ -199,7 +199,7 @@ namespace Keysharp.Builtins
 					builtPixelH = pixels.Height;
 					builtColor = color;
 
-					if (overlay.Visible is not true)
+					if (overlay.IsVisible is not true)
 						_ = overlay.Show();
 				}
 				else if (!shown)

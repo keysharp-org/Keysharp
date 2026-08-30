@@ -429,33 +429,42 @@ namespace Keysharp.Builtins
 
 			internal MonitorHook() : base() { }
 
-			/// <summary>True while the subscription is still receiving events.</summary>
-			public bool IsActive => reg?.active ?? false;
+			/// <summary>
+			/// This hook's effective state: <c>"Active"</c> (registered and firing), <c>"Paused"</c> (registered
+			/// but suppressed) or <c>"Stopped"</c> (unregistered, which is permanent).
+			/// </summary>
+			public string Status => !IsLive ? "Stopped" : reg.paused ? "Paused" : "Active";
+
+			/// <summary>True only while this hook is firing; <see cref="Status"/> separates paused from stopped.</summary>
+			public bool IsActive => IsLive && !reg.paused;
 
 			/// <summary>Remaining number of times the callback will fire (-1 = unlimited).</summary>
 			public long Count => reg?.Remaining ?? 0L;
 
-			/// <summary>Gets or sets whether this hook is paused (paused hooks stay registered but don't fire).</summary>
+			/// <summary>Gets or sets this hook's pause switch. A stopped hook reports false and ignores writes.</summary>
 			// object-typed, not bool, for the same reason as WinEvent.Paused: a script's `true` arrives as an Integer
 			// and a bool-typed setter fails the dynamic invoke with an uncatchable InvalidCastException.
 			public object Paused
 			{
-				get => reg?.paused ?? false;
-				set { if (reg != null) reg.paused = value.Ab(); }
+				get => IsLive && reg.paused;
+				set { if (IsLive) reg.paused = value.Ab(); }
 			}
 
 			/// <summary>Pauses (1), unpauses (0) or toggles (-1) this hook. Returns the resulting paused state.</summary>
 			public object Pause(object newState = null)
 			{
-				var r = reg;
-
-				if (r == null)
+				if (!IsLive)
 					return false;
 
+				var r = reg;
 				var ns = newState.Al(1L);
 				r.paused = ns == -1 ? !r.paused : ns != 0;
 				return r.paused;
 			}
+
+			// Unregister clears `active` and leaves `reg` and `reg.paused` intact, so liveness is what the
+			// members above gate on, not a null check.
+			private bool IsLive => reg is { active: true };
 
 			/// <summary>Cancels the subscription so the callback no longer fires.</summary>
 			public object Stop()

@@ -1,7 +1,7 @@
 #ErrorStdOut
 #Warn All, StdOut
 #NoTrayIcon
-#import KS { RealThread }
+#import KS { RealThread, Await }
 #Include <assert>
 
 ; A RealThread worker which leaves a permanently unrunnable entry on its own queue must still finish.
@@ -22,7 +22,7 @@
 
 worker := RealThread(WorkerBody)
 
-Assert(worker.Wait(15000) && worker.Result == 42, A_LineNumber)
+Assert(worker.Task.Wait(15000) && Await(worker.Task) == 42, A_LineNumber)
 
 WorkerBody()
 {

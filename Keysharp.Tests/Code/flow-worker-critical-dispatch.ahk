@@ -1,7 +1,7 @@
 #ErrorStdOut
 #Warn All, StdOut
 #NoTrayIcon
-#import KS { RealThread }
+#import KS { RealThread, Await }
 #Include <assert>
 
 ; Work posted to a scheduler must still be served while that scheduler is refusing thread launches.
@@ -47,8 +47,8 @@ public static long WasDelivered() => Volatile.Read(ref delivered);
 
 worker := RealThread(WorkerBody)
 
-Assert(worker.Wait(15000), A_LineNumber)
-AssertEq(worker.Result, 1, A_LineNumber)
+Assert(worker.Task.Wait(15000), A_LineNumber)
+AssertEq(Await(worker.Task), 1, A_LineNumber)
 
 WorkerBody()
 {
