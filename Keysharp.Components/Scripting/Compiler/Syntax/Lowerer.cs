@@ -4282,7 +4282,7 @@ namespace Keysharp.Compilation.Syntax
 					{
 						// `x[idx*] := v`: the flattened index and the value share SetObject's params array, value last.
 						if (ie.Args.Any(x => x.Spread))
-							return Op("SetObject", target, SpreadParams(ie.Args, trailing: LowerExpr(a.Value))
+							return Op("SetObject", target, SpreadParams(ie.Args, trailing: LowerExpr(a.Value)));
 						var argv = new List<ExpressionSyntax> { target };
 						argv.AddRange(LowerArgs(ie.Args));
 						argv.Add(LowerExpr(a.Value));
@@ -4322,11 +4322,11 @@ namespace Keysharp.Compilation.Syntax
 				var argTemps = loweredArgs.Select(_ => NewTemp()).ToArray();
 				var ops = new List<ExpressionSyntax> { Assign(Id(tt), LowerExpr(ie.Target)) };
 				for (int k = 0; k < argTemps.Length; k++) ops.Add(Assign(Id(argTemps[k]), loweredArgs[k]));
-				IEnumerable<ExpressionSyntax> IdxIds() => argTemps.Select(n => (ExpressionSyntax)Id(n));
-				var newVal = CompoundValue(a.Op[..^1], Op("GetIndex", Cons(Id(tt), IdxIds().ToList())), LowerExpr(a.Value));
+				var idxIds = argTemps.Select(n => (ExpressionSyntax)Id(n)).ToList();
+				var newVal = CompoundValue(a.Op[..^1], Op("GetIndex", Cons(Id(tt), idxIds)), LowerExpr(a.Value));
 				if (newVal == null) { Diag($"compound assignment to an index ('{a.Op}') not yet lowerable"); return Str(""); }
 				var setArgs = new List<ExpressionSyntax> { Id(tt) };
-				setArgs.AddRange(IdxIds());
+				setArgs.AddRange(idxIds);
 				setArgs.Add(newVal);
 				ops.Add(Op("SetObject", setArgs.ToArray()));
 				return Op("MultiStatement", ops.ToArray());
@@ -4505,11 +4505,11 @@ namespace Keysharp.Compilation.Syntax
 					var idx = LowerArgs(ie.Args);
 					var argTemps = idx.Select(_ => NewTemp()).ToArray();
 					for (int k = 0; k < argTemps.Length; k++) setup.Add(Assign(Id(argTemps[k]), idx[k]));
-					IEnumerable<ExpressionSyntax> IdxIds() => argTemps.Select(n => (ExpressionSyntax)Id(n));
-					read = Op("GetIndex", Cons(Id(it), IdxIds().ToList()));
+					var idxIds = argTemps.Select(n => (ExpressionSyntax)Id(n)).ToList();
+					read = Op("GetIndex", Cons(Id(it), idxIds));
 					var setArgs = new List<ExpressionSyntax> { Id(it) };
-					setArgs.AddRange(IdxIds());
-					setArgs.Add(Op(op, Op("GetIndex", Cons(Id(it), IdxIds().ToList())), Num("1")));
+					setArgs.AddRange(idxIds);
+					setArgs.Add(Op(op, Op("GetIndex", Cons(Id(it), idxIds)), Num("1")));
 					write = Op("SetObject", setArgs.ToArray());
 					break;
 				case DerefExpr dr:   // %n%++ : write back through the deref machinery
