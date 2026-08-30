@@ -50,7 +50,7 @@ namespace Keysharp.Compilation.Syntax
 		private readonly Dictionary<string, FunctionDecl> _userFuncDeclByLower = new(System.StringComparer.Ordinal);
 		// The same for classes, so a constructor call `MyClass(x: 1)` can be checked against __New's parameters.
 		private readonly Dictionary<string, ClassDecl> _userClassDeclByLower = new(System.StringComparer.Ordinal);
-		private readonly Dictionary<string, string> _userClassByLower = new(System.StringComparer.Ordinal);
+		private readonly Dictionary<string, string> _userClassByLower = new(System.StringComparer.OrdinalIgnoreCase);
 		private bool _inMethod;
 		private string _currentClassBase;   // base type name of the class being lowered (for `super`)
 		// Dotted C# path of the class currently being lowered (e.g. "Outer.Inner"), or null at module scope. Used to make
@@ -832,7 +832,7 @@ namespace Keysharp.Compilation.Syntax
 		// type (Ks) via BindModuleMember (method→Func, nested type→singleton, property→access); the catch-all
 		// AHK module via the global built-in tables. Returns null when the module genuinely has no such member.
 		private ExpressionSyntax BindBuiltinMember(string modName, bool isAhk, string member) =>
-			isAhk ? ResolveGlobalBuiltin(member.ToLowerInvariant())
+			isAhk ? ResolveGlobalBuiltin(member)
 				: Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(modName, out var t) ? BindModuleMember(t, member) : null;
 
 		// Emits the import binding members for a module (and registers the bound names in `_fields`). Returns property
@@ -2722,8 +2722,12 @@ namespace Keysharp.Compilation.Syntax
 
 		private static readonly HashSet<string> WarnModeNames = new(System.StringComparer.OrdinalIgnoreCase)
 		{ "MsgBox", "StdOut", "OutputDebug", "Off", "On" };
-		private static string CanonWarnMode(string m) => m.ToLowerInvariant() switch
-		{ "stdout" => "StdOut", "outputdebug" => "OutputDebug", _ => "MsgBox" };
+		private static string CanonWarnMode(string m) => m switch
+		{
+			string s when s.Equals("stdout", System.StringComparison.OrdinalIgnoreCase) => "StdOut",
+			string s when s.Equals("outputdebug", System.StringComparison.OrdinalIgnoreCase) => "OutputDebug",
+			_ => "MsgBox"
+		};
 
 		// Applies one `#Warn [Type], [Mode]` directive to the per-type mode config (see the field declarations).
 		private void ApplyWarnDirective(string args)
@@ -2748,15 +2752,18 @@ namespace Keysharp.Compilation.Syntax
 			}
 			var mode = modeStr.Length == 0 || modeStr.Equals("On", System.StringComparison.OrdinalIgnoreCase) ? _warnDefaultMode
 					 : modeStr.Equals("Off", System.StringComparison.OrdinalIgnoreCase) ? null : CanonWarnMode(modeStr);
-			switch (typeStr.ToLowerInvariant())
-			{
-				case "": case "all": _warnVarUnset = _warnUnreachable = _warnLocalSameAsGlobal = _warnNamedArg = mode; break;
-				case "varunset": _warnVarUnset = mode; break;
-				case "unreachable": _warnUnreachable = mode; break;
-				case "localsameasglobal": _warnLocalSameAsGlobal = mode; break;
-				case "namedarg": _warnNamedArg = mode; break;
-				default: Diag($"#Warn: unrecognized warning type '{typeStr}'"); break;
-			}
+			if (typeStr.Length == 0 || typeStr.Equals("all", System.StringComparison.OrdinalIgnoreCase))
+				_warnVarUnset = _warnUnreachable = _warnLocalSameAsGlobal = _warnNamedArg = mode;
+			else if (typeStr.Equals("varunset", System.StringComparison.OrdinalIgnoreCase))
+				_warnVarUnset = mode;
+			else if (typeStr.Equals("unreachable", System.StringComparison.OrdinalIgnoreCase))
+				_warnUnreachable = mode;
+			else if (typeStr.Equals("localsameasglobal", System.StringComparison.OrdinalIgnoreCase))
+				_warnLocalSameAsGlobal = mode;
+			else if (typeStr.Equals("namedarg", System.StringComparison.OrdinalIgnoreCase))
+				_warnNamedArg = mode;
+			else
+				Diag($"#Warn: unrecognized warning type '{typeStr}'");
 		}
 
 		// ---- #CSharp ----
@@ -3109,7 +3116,7 @@ namespace Keysharp.Compilation.Syntax
 						Diag($"{at}#CSharp: a public method cannot have its module's exact name ('{n}') — the generated module class "
 							 + "is named that, and C# forbids a member named like its enclosing type. Re-case it (but not to "
 							 + "all-lowercase); script calls are case-insensitive.");
-					else if (n == n.ToLowerInvariant())
+					else if (!n.Any(char.IsUpper))
 						Diag($"{at}#CSharp: a public method cannot be all-lowercase ('{n}') — its script binding is emitted as a "
 							 + "field of that exact name in the same class. Capitalize any letter; script calls are case-insensitive.");
 
@@ -5213,9 +5220,8 @@ namespace Keysharp.Compilation.Syntax
 		// Resolve a catch type name to a C# type: a user class, a known builtin, else Keysharp.Builtins.<name>.
 		private string ResolveErrorType(string name)
 		{
-			var lower = name.ToLowerInvariant();
-			if (_userClassByLower.TryGetValue(lower, out var ut)) return ut;
-			if (Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(lower, out var type)) return type.FullName.Replace('+', '.');
+			if (_userClassByLower.TryGetValue(name, out var ut)) return ut;
+			if (Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(name, out var type)) return type.FullName.Replace('+', '.');
 			return "Keysharp.Builtins." + name;
 		}
 
@@ -5239,7 +5245,7 @@ namespace Keysharp.Compilation.Syntax
 		{
 			if (dotted == null || !dotted.Contains('.')) return null;
 			var parts = dotted.Split('.');
-			var rootLower = parts[0].ToLowerInvariant();
+			var rootLower = parts[0];
 			if (!Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(rootLower, out var t)) return null;
 			for (int i = 1; i < parts.Length && t != null; i++)
 				t = t.GetNestedTypes(System.Reflection.BindingFlags.Public).FirstOrDefault(n => n.Name.Equals(parts[i], System.StringComparison.OrdinalIgnoreCase));
