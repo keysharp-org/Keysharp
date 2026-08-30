@@ -22,8 +22,14 @@ namespace Keysharp.Builtins
 
 		private static DisplayInfo ResolvePrimaryDisplay(DisplayInfo[] displays)
 		{
+			// An OSError rather than a raw InvalidOperationException so a script can catch it: only a Keysharp
+			// Error is unwrapped for `catch`. As above, a suppressing OnError handler falls through to a zero
+			// display rather than leaving the caller with nothing.
 			if (displays.Length == 0)
-				throw new InvalidOperationException("No monitors are available.");
+			{
+				_ = Errors.OSErrorOccurredWithMessage("No monitors are available.");
+				return default;
+			}
 
 			foreach (var display in displays)
 				if (display.IsPrimary)
@@ -76,7 +82,10 @@ namespace Keysharp.Builtins
 			DisplayInfo[] displays)
 		{
 			if (!DisplayTopology.TryFind(displays, rect, out var selected))
-				throw new InvalidOperationException("No monitors are available.");
+			{
+				_ = Errors.OSErrorOccurredWithMessage("No monitors are available.");
+				return (selected, 1L);
+			}
 
 			return (selected, IndexOf(displays, selected));
 		}
@@ -106,12 +115,6 @@ namespace Keysharp.Builtins
 		{
 			var (display, _) = ResolveDisplay(null);
 			return display.WorkArea.ToRectangle();
-		}
-
-		internal static (long Width, long Height) GetVirtualScreenSize()
-		{
-			var (_, _, width, height) = GetVirtualScreenBounds();
-			return (width, height);
 		}
 
 		/// <summary>

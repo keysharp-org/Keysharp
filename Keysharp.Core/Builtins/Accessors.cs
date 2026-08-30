@@ -1990,30 +1990,6 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// The height of the working area of the primary screen.
-		/// </summary>
-		public static long A_WorkAreaHeight
-		{
-			get
-			{
-				try { return Convert.ToInt64(Keysharp.Builtins.Monitor.GetPrimaryWorkArea().Height); }
-				catch { return 0L; }
-			}
-		}
-
-		/// <summary>
-		/// The width of the working area of the primary screen.
-		/// </summary>
-		public static long A_WorkAreaWidth
-		{
-			get
-			{
-				try { return Convert.ToInt64(Keysharp.Builtins.Monitor.GetPrimaryWorkArea().Width); }
-				catch { return 0L; }
-			}
-		}
-
-		/// <summary>
 		/// Gets or sets the current thread's message-check interval in milliseconds.
 		/// </summary>
 		public static object A_PeekFrequency
@@ -2079,12 +2055,6 @@ namespace Keysharp.Builtins
 				return ver != null ? ver.Version : "";
 			}
 		}
-		/// <summary>
-		/// The primary screen's authored-size scale: 1.0 is 100%, 1.5 is 150%, and so on. It is not a
-		/// screen-coordinate conversion and must not be applied to absolute positions. Mixed-monitor code should use
-		/// <c>Monitor.Scale</c> for the target monitor. Keysharp-specific, so scripts reach it through KS.
-		/// </summary>
-		public static double A_ScreenScale => Keysharp.Internals.ScaleFactor.PrimaryScale;
 		/// <summary>
 		/// Whether timers are allowed to operate in the current thread. Default: true.
 		/// </summary>
@@ -2371,26 +2341,6 @@ namespace Keysharp.Builtins
 			get => Script.TheScript.HotstringManager.hsSuspendExempt;
 			set => Script.TheScript.HotstringManager.hsSuspendExempt = ForceBool(value);
 		}
-
-		/// <summary>
-		/// The total height in pixels of the virtual screen.
-		/// </summary>
-			public static long A_TotalScreenHeight =>
-#if WINDOWS
-				SystemInformation.VirtualScreen.Height;
-#else
-				Monitor.GetVirtualScreenSize().Height;
-#endif
-
-		/// <summary>
-		/// The total width in pixels of the virtual screen.
-		/// </summary>
-			public static long A_TotalScreenWidth =>
-#if WINDOWS
-				SystemInformation.VirtualScreen.Width;
-#else
-				Monitor.GetVirtualScreenSize().Width;
-#endif
 
 		/// <summary>
 		/// The value specified by #UseHook.

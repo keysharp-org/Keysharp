@@ -185,6 +185,37 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
+		/// The script-level half matters as much as the C# half: calling staticget_VirtualScreen directly bypasses
+		/// the registration that makes <c>Monitor.VirtualScreen</c> resolve from a script.
+		/// </summary>
+		[Test, Category("Monitor")]
+		public void MonitorVirtualScreen()
+		{
+			SkipIfGuiHeadless();
+			var v = Builtins.Ks.KeysharpMonitor.staticget_VirtualScreen(null) as Builtins.KeysharpObject;
+			Assert.IsNotNull(v);
+
+			var (left, top, width, height) = Builtins.Monitor.GetVirtualScreenBounds();
+			Assert.AreEqual(left, Script.GetPropertyValue(v, "X").Al());
+			Assert.AreEqual(top, Script.GetPropertyValue(v, "Y").Al());
+			Assert.AreEqual(width, Script.GetPropertyValue(v, "Width").Al());
+			Assert.AreEqual(height, Script.GetPropertyValue(v, "Height").Al());
+
+			// The union must cover every monitor, origin included.
+			var all = Builtins.Ks.KeysharpMonitor.staticget_All(null) as Builtins.Array;
+
+			for (var i = 1L; i <= all.Count; i++)
+			{
+				var m = all[i] as Builtins.Ks.KeysharpMonitor;
+				Assert.IsTrue(m.X >= left && m.Y >= top);
+				Assert.IsTrue(m.X + m.Width <= left + width);
+				Assert.IsTrue(m.Y + m.Height <= top + height);
+			}
+
+			Assert.IsTrue(TestScript("monitor-virtualscreen", true));
+		}
+
+		/// <summary>
 		/// Metadata is hardware-dependent, so this asserts the CONTRACT rather than any particular value: a field
 		/// is either a plausible value or the unset marker, and is never a fabricated stand-in.
 		/// </summary>

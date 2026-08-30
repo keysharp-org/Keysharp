@@ -212,7 +212,7 @@ namespace Keysharp.Internals
 
 		/// <summary>
 		/// The primary display's authored-size scale: 1.0 is 100%, 1.5 is 150%. Not a screen-coordinate
-		/// conversion. The script-facing <c>Ks.A_ScreenScale</c> wraps this.
+		/// conversion. Scripts reach this as <c>Monitor.Primary.Scale</c>.
 		/// </summary>
 		internal static double PrimaryScale
 			=> Normalize(Keysharp.Builtins.Monitor.ResolveDisplay(null).Display.SizeScale);

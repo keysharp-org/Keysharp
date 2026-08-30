@@ -75,6 +75,17 @@ namespace Keysharp.Builtins
 				return result;
 			}
 
+			/// <summary>
+			/// The union of every monitor — the whole desktop — as <c>{X, Y, Width, Height}</c> in native screen
+			/// coordinates (script: <c>Monitor.VirtualScreen</c>). The origin is not always 0,0: it goes negative when
+			/// a display sits left of or above the primary, which is why this reports a rectangle rather than a size.
+			/// </summary>
+			public static object staticget_VirtualScreen(object @this)
+			{
+				var (left, top, width, height) = Monitor.GetVirtualScreenBounds();
+				return Objects.RectObject(left, top, width, height);
+			}
+
 			/// <summary>The monitor containing a native screen point, or the nearest one when the point falls in a
 			/// gap between monitors (script: <c>Monitor.FromPoint(x, y)</c>).</summary>
 			[Static]
@@ -227,11 +238,11 @@ namespace Keysharp.Builtins
 			/// <summary>Height in native screen units.</summary>
 			public long Height => display.Bounds.Height;
 
-			/// <summary>The full monitor rectangle as <c>{x, y, w, h}</c>.</summary>
+			/// <summary>The full monitor rectangle as <c>{X, Y, Width, Height}</c>.</summary>
 			public object Bounds => Rect(display.Bounds);
 
 			/// <summary>The monitor's work area (the desktop minus taskbars/docks/panels) as
-			/// <c>{x, y, w, h}</c>.</summary>
+			/// <c>{X, Y, Width, Height}</c>.</summary>
 			public object WorkArea => Rect(display.WorkArea);
 
 			/// <summary>This monitor's authored-size scale: 1.0 is 100%, 1.5 is 150%. It maps deliberately authored

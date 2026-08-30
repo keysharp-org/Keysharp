@@ -480,25 +480,7 @@ class OCRSnip {
     }
 
     static GetVirtualDesktop() {
-        local count := MonitorGetCount()
-        local left := 0, top := 0, right := A_TotalScreenWidth, bottom := A_TotalScreenHeight
-        local l, t, r, b
-
-        if (count > 0) {
-            Loop count {
-                MonitorGet(A_Index, &l, &t, &r, &b)
-                if (A_Index = 1) {
-                    left := l, top := t, right := r, bottom := b
-                } else {
-                    left := Min(left, l)
-                    top := Min(top, t)
-                    right := Max(right, r)
-                    bottom := Max(bottom, b)
-                }
-            }
-        }
-
-        return {X: left, Y: top, Width: Max(1, right - left), Height: Max(1, bottom - top)}
+        return Monitor.VirtualScreen
     }
 
     static NormalizeRect(x1, y1, x2, y2) {

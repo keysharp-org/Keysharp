@@ -6,7 +6,7 @@ namespace Keysharp.Builtins
 	public static class Objects
 	{
 		/// <summary>
-		/// Builds the <c>{ x, y, w, h }</c> rectangle object that is Keysharp's one shape for handing a rectangle
+		/// Builds the <c>{ X, Y, Width, Height }</c> rectangle object that is Keysharp's one shape for handing a rectangle
 		/// back to a script — <c>WinEvent</c>'s Move/CaretMove <c>A_EventInfo</c>, <c>Monitor.Bounds</c> and
 		/// <c>Monitor.WorkArea</c> all use it, so they stay literally the same shape rather than three lookalikes.
 		/// </summary>
