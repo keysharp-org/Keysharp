@@ -392,7 +392,7 @@ namespace Keysharp.Internals.UI.Unix
 
 		private void MainWindow_Closing(object sender, CancelEventArgs e)
 		{
-			if (string.IsNullOrEmpty(A_ExitReason as string))
+			if (Script.TheScript?.FlowData?.exitReason == null)
 			{
 				e.Cancel = true;
 				this.Hide();

@@ -118,26 +118,16 @@ Status legend:
 | >>> | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical right shift operator |
 | >>>= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
 | 1, 2, 3 | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comma operator evaluates expressions left-to-right and returns the last value. |
-| A_AhkBuildVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Build version stamped onto the running script assembly. |
 | A_AhkPath | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The full path to the executable compiling the script. For compiled scripts, it's the path to the compiled executable. |
 | A_AhkVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The version of the program used to compile the script. |
 | A_AllowMainWindow | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_AllowTimers | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets whether timers are allowed to run. |
+| App | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The running application as a class: Name/Title/Description/Configuration/Company/Product/Copyright/Trademark/Version report the assembly metadata the matching #App key sets, CommandLine reports the process command line, and ExitReason/ExitCode report an exit in progress to code that is not an OnExit callback. Read-only; an undeclared key reads as "". Replaces the removed A_Assembly*, A_CommandLine and A_HasExited. |
 | A_AppData | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %APPDATA% on Windows; $XDG_CONFIG_HOME else ~/.config on Linux; ~/Library/Application Support on macOS. |
 | A_AppDataCommon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %ProgramData% on Windows; the first entry of $XDG_CONFIG_DIRS else /etc/xdg on Linux; /Library/Application Support on macOS. Writable only by an administrator, like %ProgramData%. |
 | A_Args | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable containing command-line arguments passed to the script. |
-| A_AssemblyCompany | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly company metadata set by the #App Company key. |
-| A_AssemblyConfiguration | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly configuration metadata set by the #App Configuration key. |
-| A_AssemblyCopyright | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly copyright metadata set by the #App Copyright key. |
-| A_AssemblyDescription | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly description metadata set by the #App Description key. |
-| A_AssemblyName | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The executing assembly's identity, set by the #App Name key. Unlike the other A_Assembly* variables this reads the assembly name rather than an attribute, so it always has a value: without the key it is the name the script was compiled under. |
-| A_AssemblyProduct | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly product metadata set by the #App Product key. |
-| A_AssemblyTitle | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly title metadata set by the #App Title key. |
-| A_AssemblyTrademark | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly trademark metadata set by the #App Trademark key. |
-| A_AssemblyVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assembly version metadata set by the #App Version key. |
 | A_Clipboard | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | A_Clipboard is a built-in variable that reflects the current contents of the Windows clipboard. |
 | A_ClipboardTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets clipboard operation timeout used by Keysharp. |
-| A_CommandLine | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the current script command line. |
 | A_ComputerName | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_ComSpec | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_ControlDelay | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the delay in milliseconds that will occur after each control-modifying command. |
@@ -174,7 +164,6 @@ Status legend:
 | A_ExitReason | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Always null until the main form is closing, in which case the value will be "OnExit()". |
 | A_FileEncoding | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the encoding used for reading and writing files. This differs from AHK in that it only supports ASCII (ascii), UTF-8 (utf-8/utf8-raw) or Unicode (utf-16/utf16-raw or unicode). ASCII will always return us-ascii because that is the name of the encoding in C#. |
 | A_GuiTheme | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets the application-wide GUI theme. Accepted values: Classic, System, Dark. System selects the operating-system theme; Eto follows later system-theme changes, while WinForms resolves the setting when it is applied. Classic selects the Eto light theme on Linux and macOS. |
-| A_HasExited | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether script termination has been requested/completed. |
 | A_HotIf | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_HotIfTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the timeout for evaluating #HotIf criteria. |
 | A_HotkeyInterval | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
@@ -201,7 +190,6 @@ Status legend:
 | A_KeyDuration | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the delay that will occur between the key down and key up events of each keystroke sent by Send and ControlSend. |
 | A_KeyDurationPlay | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the delay that will occur between the key down and key up events of each keystroke sent by Send and ControlSend in SendPlay mode. |
 | A_KeysharpCorePath | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the path to Keysharp.Core. |
-| A_KeysharpPath | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Alias of A_AhkPath containing the running executable path. |
 | A_KsVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the Keysharp runtime version. |
 | A_Language | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_LastError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |

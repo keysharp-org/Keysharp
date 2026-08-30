@@ -667,17 +667,8 @@ Controlling another application needs **Automation** permission, granted per tar
 * New accessors:
 	+ All of these live in the `KS` module, so a script must import the ones it uses: `#import KS { A_DirSeparator }`.
 	+ `A_AllowTimers` returns whether timers are allowed or not. It's also easier to set this value rather than call `Thread("NoTimers")`.
-	+ `A_AssemblyCompany` returns the value set by the `#App` `Company` key.
-	+ `A_AssemblyConfiguration` returns the value set by the `#App` `Configuration` key.
-	+ `A_AssemblyCopyright` returns the value set by the `#App` `Copyright` key.
-	+ `A_AssemblyDescription` returns the value set by the `#App` `Description` key.
-	+ `A_AssemblyName` returns the value set by the `#App` `Name` key.
-	+ `A_AssemblyProduct` returns the value set by the `#App` `Product` key.
-	+ `A_AssemblyTrademark` returns the value set by the `#App` `Trademark` key.
-	+ `A_AssemblyVersion` returns the value set by the `#App` `Version` key.
 	+ `A_PeekFrequency` gets or sets the current thread's message-check interval in milliseconds.
 	+ `A_ClipboardTimeout` can be used at any point in the program to get or set the value normally specified by `#ClipboardTimeout`.
-	+ `A_CommandLine` returns the command line string. This is preferred over passing `GetCommandLine` to `DllCall()` as noted above.
 	+ `A_DefaultHotstringCaseSensitive` returns the default hotstring case sensitivity mode.
 	+ `A_DefaultHotstringConformToCase` returns the default hotstring case conformity mode.
 	+ `A_DefaultHotstringDetectWhenInsideWord` returns the default hotstring word detection mode.
@@ -693,7 +684,6 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `A_DefaultHotstringSendRaw` returns the default hotstring raw sending mode.
 	+ `A_DirSeparator` returns the directory separator character which is `\` on Windows and `/` elsewhere.
 	+ `A_GuiTheme` gets/sets the application-wide GUI theme. Accepted values are `Classic`, `System`, and `Dark`. `System` selects the operating-system theme; Eto follows later system-theme changes, while WinForms resolves the setting when it is applied. On Linux and macOS, `Classic` selects Eto's light theme.
-	+ `A_HasExited` returns whether shutdown has been initiated.
 	+ `A_KeysharpCorePath` provides the full path to the Keysharp.Core.dll file.
 	+ `A_LoopRegValue` which makes it easy to get a registry value when using `Loop Reg`.
 	+ `A_MaxThreads` returns the value `n` specified with `#MaxThreads n`.
@@ -714,6 +704,14 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `A_WorkAreaWidth` returns the width of the working area of the primary screen.
 	+ `A_Timers` returns a `Map` of (`Func`, `Boolean`) pairs where the key is the function object of the timer and the value is the enabled state of the associated timer.
 * New classes:
+	+ `App`: The running application — its identity, its invocation and its exit state. Available from the `KS` module: `#Import Ks { App }`, or as `Ks.App`, which needs no import.
+		+ `#App` declares what must be fixed before the application starts; `App` reports the application while it runs. Where they name the same fact, `App` reads the running assembly, not the declaration — normally the same string, but not under a host that supplies its own. Several application facts are AutoHotkey's and keep their `A_` names; several `#App` keys have no script-visible runtime reader at all.
+		+ Every member is read-only. `Name`, `Title`, `Description`, `Configuration`, `Company`, `Product`, `Copyright` and `Trademark` are the assembly metadata the matching `#App` key sets, and `Version` is its assembly version — two to four components from 0 to 65534, so never a semver prerelease tag. `A_AhkVersion` is the AutoHotkey compatibility level targeted and `A_KsVersion` is the engine build; `App.Version` is your application's.
+		+ Reading a key that was never declared returns `""` and never raises, in both compatibility modes. `App.Company != ""` is therefore the has-a-value test — `HasOwnProp` is not, because every declared property is reported present whether or not the key was set. `App.Name` is the exception: it is an identity rather than an attribute, so without the key it is the script's file name without its extension and is never blank.
+		+ `App.Title` is assembly metadata, not the default dialog or window title, which remains `A_ScriptName`.
+		+ `App.CommandLine` is the *process's* invocation: the host executable followed by every argument. In an interpreted run token 0 is the Keysharp executable and any engine switches precede the script path, so it is not the script's own input — that is `A_Args`.
+		+ `App.ExitReason` and `App.ExitCode` report an exit in progress to code that is **not** an `OnExit` callback — a `__Delete`, a timer, a library — and stay readable through the whole teardown. `ExitReason` is `""` when nothing is exiting and `""` again once a callback cancels an exit. Inside a callback the pending code for that exit is the callback's second parameter, which remains the authority; `App.ExitCode` reports the status currently armed.
+		+ The `#App` keys `Icon`, `TrayIcon`, `GuiTheme`, `ConsoleApp`, `ErrorStdOut`, `SingleInstance`, `HookMutexName` and `Files` are deliberately absent: each either already has a live spelling that would disagree with the declared one, or is a build decision with no runtime state to report.
 	+ `Boolean`: The type of a truth value, extending `Integer`. Available from the `KS` module.
 		+ Every operator that yields a truth value yields a `Boolean`: a comparison (`a > b`, `a = b`, `a != b`), a negation (`!a`), and `Map.Has()`. The `true` and `false` keywords are `Boolean` values too.
 		+ It behaves as the Integer 1 or 0 everywhere: `Type()` reports `"Integer"`, `x is Integer` is true, it compares equal to 1 and 0, it does arithmetic as one, and it converts to `"1"` and `"0"`. AutoHotkey v2 has no boolean type and the global namespace is AutoHotkey's, which is why the name is in `KS` rather than global — but only the *name* needs the import, never the values.
@@ -1014,7 +1012,7 @@ Controlling another application needs **Automation** permission, granted per tar
 			```
 			#App {
 				Name: "MyTool",              ; assembly identity (Assembly.GetName().Name)
-				Title: "My Tool",            ; assembly metadata attributes, read back by A_Assembly*
+				Title: "My Tool",            ; assembly metadata attributes, read back by the App class
 				Description: "Does things",
 				Company: "Acme Corp",
 				Product: "MyTool",

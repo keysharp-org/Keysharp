@@ -1291,6 +1291,16 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
+                     "feature":  "App",
+                     "syntax":  "#import KS { App }",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The running application as a class: Name, Title, Description, Configuration, Company, Product, Copyright, Trademark and Version report the assembly metadata the matching #App key sets, CommandLine reports the process command line, and ExitReason/ExitCode report an exit in progress to code that is not an OnExit callback. Every member is read-only, and an undeclared key reads as an empty string in both compatibility modes. Replaces the removed A_Assembly*, A_CommandLine and A_HasExited variables."
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
                      "feature":  "A_AllowTimers",
                      "syntax":  "",
                      "windows":  "full",
@@ -1351,16 +1361,6 @@
                      "macos":  "full",
                      "notes":  "Gets/sets clipboard operation timeout used by Keysharp.",
                      "tested-by":  "assign-dyn-var.ahk"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_CommandLine",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Gets the current script command line."
                  },
                  {
                      "category":  "Environment/System",
@@ -1751,16 +1751,6 @@
                      "macos":  "full",
                      "notes":  "Gets/sets the application-wide GUI theme. Accepted values: Classic, System, Dark. System selects the operating-system theme; Eto follows later system-theme changes, while WinForms resolves the setting when it is applied. Classic selects the Eto light theme on Linux and macOS.",
                      "tested-by":  "GuiTests.Theme"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_HasExited",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns whether script termination has been requested/completed."
                  },
                  {
                      "category":  "Environment/System",
@@ -11412,107 +11402,6 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_AhkBuildVersion",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Build version stamped onto the running script assembly."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_AssemblyCompany",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Assembly company metadata set by the #App Company key."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_AssemblyConfiguration",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Assembly configuration metadata set by the #App Configuration key."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_AssemblyCopyright",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Assembly copyright metadata set by the #App Copyright key."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_AssemblyDescription",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Assembly description metadata set by the #App Description key."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_AssemblyProduct",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Assembly product metadata set by the #App Product key."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_AssemblyTitle",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Assembly title metadata set by the #App Title key."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_AssemblyName",
-                     "syntax":  "#import KS { A_AssemblyName }",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The executing assembly's identity, set by the #App Name key. Unlike the other A_Assembly* variables this reads the assembly name rather than an attribute, so it always has a value: without the key it is the name the script was compiled under.",
-                     "tested-by":  "directive-asminfo.ahk"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_AssemblyTrademark",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Assembly trademark metadata set by the #App Trademark key."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_AssemblyVersion",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Assembly version metadata set by the #App Version key."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
                      "feature":  "A_HotIfTimeout",
                      "syntax":  "",
                      "windows":  "full",
@@ -11540,16 +11429,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Reports whether the script is persistent."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_KeysharpPath",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Alias of A_AhkPath containing the running executable path."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

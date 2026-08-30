@@ -86,9 +86,9 @@ FileMenu.Add("&Pause Icon", MenuHandler)
 #if WINDOWS
 	FileMenu.SetIcon("&System", "Shell32.dll", 174) ; 2nd icon group from the file
 #endif
-FileMenu.SetIcon("S&cript Icon", A_KeysharpCorePath, "Keysharp.ico")
-FileMenu.SetIcon("S&uspend Icon", A_KeysharpCorePath, "Keysharp_s.ico")
-FileMenu.SetIcon("&Pause Icon", A_KeysharpCorePath, "Keysharp_p.ico")
+FileMenu.SetIcon("S&cript Icon", A_KsCorePath, "Keysharp.ico")
+FileMenu.SetIcon("S&uspend Icon", A_KsCorePath, "Keysharp_s.ico")
+FileMenu.SetIcon("&Pause Icon", A_KsCorePath, "Keysharp_p.ico")
 
 ; Create another menu destined to become a submenu of the above menu.
 MainSubmenu1 := Menu()
@@ -769,15 +769,15 @@ MenuHandler(Item, *) {
 	MsgBox("You selected " Item, "ITEM SELECTED")
 
 	if (Item == "S&cript Icon")
-		TraySetIcon(A_KeysharpCorePath, "Keysharp.ico")
+		TraySetIcon(A_KsCorePath, "Keysharp.ico")
 	else if (Item == "S&uspend Icon")
-		TraySetIcon(A_KeysharpCorePath, "Keysharp_s.ico")
+		TraySetIcon(A_KsCorePath, "Keysharp_s.ico")
 	else if (Item == "&Pause Icon")
-		TraySetIcon(A_KeysharpCorePath, "Keysharp_p.ico")
+		TraySetIcon(A_KsCorePath, "Keysharp_p.ico")
 	else if (Item == "&System")
 		TraySetIcon("Shell32.dll", 174)
 	else
-		TraySetIcon(A_KeysharpCorePath, "Keysharp.ico")
+		TraySetIcon(A_KsCorePath, "Keysharp.ico")
 }
 
 ; The three radio items behave as one group, so picking any of them should move the bullet off whichever
@@ -2338,8 +2338,8 @@ svgToHBITMAP(svgPath,width,height) {
 ListBoxClicked(*) {
 	; MsgBox(MyListBox.Text, "ListBox")
 	;MySB.SetIcon("Shell32.dll", 2)
-	; MsgBox("Icon lives at " . A_KeysharpCorePath)
-	MySB.SetIcon(A_KeysharpCorePath, "Keysharp.ico")
+	; MsgBox("Icon lives at " . A_KsCorePath)
+	MySB.SetIcon(A_KsCorePath, "Keysharp.ico")
 	MySB.SetFont("Norm cBlack")   ; clear any leftover green/red bold from a PASS/FAIL verdict
 	MySB.SetText(MyListBox.Text . " selected in ListBox")
 }
@@ -3404,7 +3404,7 @@ SetWindowIconFromModule(*) {
 	global MyGui
 
 	; A named resource inside a .NET assembly, which is the one module form that works off Windows too.
-	MyGui.SetIcon(A_KeysharpCorePath, "Keysharp_s.ico")
+	MyGui.SetIcon(A_KsCorePath, "Keysharp_s.ico")
 	SetStatus("window_taskbar", "Window icon: the suspend icon out of Keysharp.Core - PASS if the title bar shows the Keysharp 'S' icon")
 }
 
@@ -3421,7 +3421,7 @@ CopyWindowIconToProbe(*) {
 TraySetIconThenNewWindow(*) {
 	global gTraySetIconGui
 
-	TraySetIcon(A_KeysharpCorePath, "Keysharp_p.ico")
+	TraySetIcon(A_KsCorePath, "Keysharp_p.ico")
 
 	; Destroyed and rebuilt rather than reshown, because the point is what a window picks up when it is
 	; created: one already open keeps the icon it was made with.
@@ -3456,7 +3456,7 @@ SetTaskbarBadgeFromFile(*) {
 }
 
 SetTaskbarBadgeFromModule(*) {
-	TaskbarApplyBadge(A_KeysharpCorePath, "Keysharp_s.ico", "12 waiting")
+	TaskbarApplyBadge(A_KsCorePath, "Keysharp_s.ico", "12 waiting")
 	SetStatus("window_taskbar", "Badge: the suspend icon on " TaskbarTargetName() " - PASS if the badge changed from the monkey to the Keysharp 'S'")
 }
 
@@ -3472,10 +3472,10 @@ TwoWindowBadgeCheck(*) {
 
 	probe := TaskbarProbeWindow()
 	Taskbar(MyGui.Hwnd).SetBadge(gIconAssetPath, 1, "1")
-	Taskbar(probe.Hwnd).SetBadge(A_KeysharpCorePath, "Keysharp_s.ico", "2")
+	Taskbar(probe.Hwnd).SetBadge(A_KsCorePath, "Keysharp_s.ico", "2")
 	SetStatus("window_taskbar", "Badge check: both buttons badged separately, monkey here and Keysharp 'S' on the probe - look now, the application badge follows in 3 seconds")
 	Sleep(3000)
-	Taskbar.SetBadge(A_KeysharpCorePath, "Keysharp_p.ico", "3")
+	Taskbar.SetBadge(A_KsCorePath, "Keysharp_p.ico", "3")
 	SetStatus("window_taskbar", "Badge check: PASS if BOTH buttons now show the pause icon - a window still showing its earlier badge is the stale state the application form is there to clear")
 }
 
@@ -3747,11 +3747,11 @@ UpdateResultStatusBar(text) {
 
 	up := StrUpper(text)
 	if InStr(up, "FAIL") {
-		MySB.SetIcon(A_KeysharpCorePath, "Keysharp.ico")
+		MySB.SetIcon(A_KsCorePath, "Keysharp.ico")
 		MySB.SetFont("Bold cRed")
 		MySB.SetText("FAIL  -  " text)
 	} else if (InStr(up, "PASS") && !InStr(up, "PASS IF")) {
-		MySB.SetIcon(A_KeysharpCorePath, "Keysharp.ico")
+		MySB.SetIcon(A_KsCorePath, "Keysharp.ico")
 		MySB.SetFont("Bold cGreen")
 		MySB.SetText("PASS  -  " text)
 	}

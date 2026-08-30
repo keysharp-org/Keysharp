@@ -185,7 +185,7 @@ namespace Keysharp.Internals.UI.Windows
 					break;
 
 				case WindowsAPI.WM_ENDSESSION:
-					_ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, (m.Msg & WindowsAPI.ENDSESSION_LOGOFF) != 0 ? Keysharp.Builtins.Flow.ExitReasons.LogOff : Keysharp.Builtins.Flow.ExitReasons.Shutdown, null, false);
+					_ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, (m.Msg & WindowsAPI.ENDSESSION_LOGOFF) != 0 ? Keysharp.Builtins.Flow.ExitReasons.Logoff : Keysharp.Builtins.Flow.ExitReasons.Shutdown, null, false);
 					break;
 
 				// WM_HOTKEY is delivery for OS-registered (RegisterHotKey) hotkeys, which is Windows-only. On Linux/macOS
@@ -273,7 +273,7 @@ namespace Keysharp.Internals.UI.Windows
 		/// <param name="e"></param>
 		private void MainWindow_FormClosing(object sender, FormClosingEventArgs e)
 		{
-			if (string.IsNullOrEmpty(A_ExitReason as string) && e.CloseReason == CloseReason.UserClosing)
+			if (Script.TheScript?.FlowData?.exitReason == null && e.CloseReason == CloseReason.UserClosing)
 			{
 				e.Cancel = true;
 				this.Hide();

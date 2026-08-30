@@ -230,9 +230,10 @@ namespace Keysharp.Builtins
 			if (script.scriptPath == "*")
 				return DefaultObject;
 			//Just calling Application.Restart will not always trigger ExitAppInternal().
+			// The reason is published by ExitAppInternal once its OnExit callbacks decline to cancel — a Reload is
+			// vetoable like any other exit, so it must not be announced here, before they have run.
 			script.PostToUIThread(() =>
 			{
-				A_ExitReason = ExitReasons.Reload;
 #if WINDOWS
 				Application.Restart();//This will pass the same command line args to the new instance that were passed to this instance.
 #else
@@ -447,7 +448,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public enum ExitReasons
 		{
-			Critical = -2, Destroy = -1, None = 0, Error, LogOff, Shutdown, Close, Menu, Exit, Reload, Single
+			Critical = -2, Destroy = -1, None = 0, Error, Logoff, Shutdown, Close, Menu, Exit, Reload, Single
 		}
 	}
 
@@ -470,6 +471,9 @@ namespace Keysharp.Builtins
 		// ExitAppInternal. Matches AHK: an OnExit error terminates the script, and calling ExitApp in a callback
 		// prevents the remaining callbacks.
 		internal bool exitHandlersRunning;
+		// The reason for the exit in progress, null while none is certain. Set once the OnExit callbacks have all
+		// declined to cancel, and left set through teardown so Ks.App.ExitReason answers from a __Delete too.
+		internal Flow.ExitReasons? exitReason;
 		internal Timer1 mainTimer;
 		internal int NoSleep = -1;
 		internal bool persistentValueSetByUser;

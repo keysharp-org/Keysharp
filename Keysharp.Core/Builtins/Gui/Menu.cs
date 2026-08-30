@@ -463,13 +463,13 @@ namespace Keysharp.Builtins
 				_ = menu.Items.Add(new ToolStripSeparator());
 
 			// Resolve a bundled helper script (WindowSpy/AtSpi/Ax) from its "Scripts" folder.
-			// Normally that folder sits beside the running executable, but A_KeysharpPath is the
+			// Normally that folder sits beside the running executable, but A_AhkPath is the
 			// process host -- which is the dotnet host (e.g. /usr/lib/dotnet/dotnet) when Keysharp
 			// is launched via "dotnet" while debugging from an IDE. In that case fall back to the
 			// directory of Keysharp.Core.dll, where the Scripts folder is also copied in build output.
 			static string ResolveBundledScript(string name)
 			{
-				foreach (var baseDir in new[] { Path.GetDirectoryName(Ks.A_KeysharpPath), Path.GetDirectoryName(Ks.A_KeysharpCorePath) })
+				foreach (var baseDir in new[] { Path.GetDirectoryName(Accessors.A_AhkPath), Path.GetDirectoryName(Ks.A_KsCorePath) })
 				{
 					if (string.IsNullOrEmpty(baseDir))
 						continue;
@@ -494,7 +494,7 @@ namespace Keysharp.Builtins
 
 				if (spy == null)
 				{
-					_ = Dialogs.MsgBox($"Window Spy script not found in a Scripts folder beside:\n{Ks.A_KeysharpPath}\nor\n{Ks.A_KeysharpCorePath}", "Keysharp", "Icon!");
+					_ = Dialogs.MsgBox($"Window Spy script not found in a Scripts folder beside:\n{Accessors.A_AhkPath}\nor\n{Ks.A_KsCorePath}", "Keysharp", "Icon!");
 					return DefaultObject;
 				}
 
@@ -514,7 +514,7 @@ namespace Keysharp.Builtins
 
 				if (spy == null)
 				{
-					_ = Dialogs.MsgBox($"{accessibilitySpyName} accessibility inspector script not found in a Scripts folder beside:\n{Ks.A_KeysharpPath}\nor\n{Ks.A_KeysharpCorePath}", "Keysharp", "Icon!");
+					_ = Dialogs.MsgBox($"{accessibilitySpyName} accessibility inspector script not found in a Scripts folder beside:\n{Accessors.A_AhkPath}\nor\n{Ks.A_KsCorePath}", "Keysharp", "Icon!");
 					return DefaultObject;
 				}
 

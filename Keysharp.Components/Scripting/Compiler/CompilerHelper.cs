@@ -450,10 +450,10 @@ namespace Keysharp.Compilation
 #if WINDOWS
 			var desktopDir = Path.GetDirectoryName(typeof(Form).GetTypeInfo().Assembly.Location);
 #endif
-			var ksCoreDir = Path.GetDirectoryName(Keysharp.Builtins.Ks.A_KeysharpCorePath);
+			var ksCoreDir = Path.GetDirectoryName(Keysharp.Builtins.Ks.A_KsCorePath);
 
 #if OSX
-			// In macOS .app bundles, A_KeysharpCorePath may not resolve to the runtime folder.
+			// In macOS .app bundles, A_KsCorePath may not resolve to the runtime folder.
 			// Probe common bundle/runtime paths for managed dependency files.
 			if (string.IsNullOrWhiteSpace(ksCoreDir) || !Directory.Exists(ksCoreDir))
 			{

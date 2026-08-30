@@ -1,4 +1,4 @@
-#import KS { A_KeysharpPath, A_NewLine, A_ProcessArch, A_OSArch }
+#import KS { A_NewLine, A_ProcessArch, A_OSArch }
 #NoTrayIcon
 #Include <assert>
 
@@ -79,7 +79,7 @@ myfunc()
 
 AssertEq(A_IsUnicode, true, A_LineNumber)
 
-Assert(A_KeysharpPath = A_AhkPath && (A_NewLine = "`n" || A_NewLine = "`r`n"), A_LineNumber)
+Assert(A_NewLine = "`n" || A_NewLine = "`r`n", A_LineNumber)
 
 ; The AutoHotkey version Keysharp implements.
 Assert(A_AhkVersion = "2.1-alpha.31", A_LineNumber)

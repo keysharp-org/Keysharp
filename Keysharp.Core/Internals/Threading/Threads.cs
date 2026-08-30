@@ -188,7 +188,8 @@ namespace Keysharp.Internals.Threading
 			if (tv.requestedExitCode is not int exitCode)
 				return;
 
-			Accessors.A_ExitReason = exitCode;
+			// Ending one pseudo-thread is not an application exit, so only the code is recorded here — never the
+			// application-level exit reason.
 			Environment.ExitCode = exitCode;
 			throw new Keysharp.Builtins.Flow.UserRequestedExitException();
 		}

@@ -94,7 +94,6 @@ namespace Keysharp.Internals
 			Dialogs.CloseDialogs(script);
 			Dialogs.CloseToolTips(script);
 			var ec = exitCode.Ai();
-			Accessors.A_ExitReason = exitReason.ToString();
 			var allowInterruptionPrev = fd.allowInterruption;
 			fd.allowInterruption = false;
 
@@ -111,7 +110,9 @@ namespace Keysharp.Internals
 
 				try
 				{
-					result = script.onExitHandlers.InvokeExitHandlers(Accessors.A_ExitReason, ec);
+					// The callbacks are told the PROPOSED reason as an argument. Ks.App.ExitReason stays empty
+					// throughout, because until the veto check below the exit is only proposed, not certain.
+					result = script.onExitHandlers.InvokeExitHandlers(exitReason.ToString(), ec);
 				}
 				finally
 				{
@@ -132,11 +133,18 @@ namespace Keysharp.Internals
 
 			if (exitReason >= Keysharp.Builtins.Flow.ExitReasons.None && result.Al() != 0L)
 			{
-				Accessors.A_ExitReason = "";
 				fd.allowInterruption = allowInterruptionPrev;
 				return true;
 			}
 
+			// The exit is certain from here: every callback has had its chance to cancel it and none did. Publishing
+			// the reason and arming the exit code at this one point is what lets Ks.App.ExitReason mean "the script
+			// is going down and nothing can stop it" — the guard a __Delete, a timer or a library needs — and lets
+			// Ks.App.ExitCode be read back by the teardown sweep below. Neither may move earlier: before the veto
+			// check they would publish a cancelled exit, and Script.cs's ExitIfNotPersistent would later hand that
+			// stale code to an unrelated auto-exit.
+			fd.exitReason = exitReason;
+			Environment.ExitCode = ec;
 			script.onExitHandlers.Clear();
 			script.SuppressErrorOccurredDialog = true;
 
@@ -178,7 +186,6 @@ namespace Keysharp.Internals
 			script.FlowData.timers.Clear();
 
 			Gui.DestroyAll(script);
-			Environment.ExitCode = ec;
 			script.Dispose();
 
 #if !WINDOWS

@@ -1674,15 +1674,6 @@ namespace Keysharp.Builtins
 		public static long True => 1L;
 
 		/// <summary>
-		/// The most recent reason the script was asked to terminate. This variable is blank unless the script has an OnExit subroutine and that subroutine is currently running or has been called at least once by an exit attempt. See OnExit for details.
-		/// </summary>
-		internal static object A_ExitReason
-		{
-			get;
-			set;
-		} = "";
-
-		/// <summary>
 		/// Internal helper to get/set whether the script's icon is frozen due to <see cref="TraySetIcon"/>.
 		/// </summary>
 		internal static object A_IconFrozen
@@ -1722,9 +1713,14 @@ namespace Keysharp.Builtins
 		//if (A_IsCompiled != 0)//  return Path.GetFileName(GetAssembly().Location);//else if (scriptName == "*")//  return "*";//else//  return Path.GetFileName(scriptName);
 
 		/// <summary>
-		/// Internal helper to get the executing assembly.
+		/// The assembly a script's own facts are read from.
 		/// </summary>
-		/// <returns>If compiled, the entry assembly, else the executing assembly.</returns>
+		/// <remarks>
+		/// The compiled script's own assembly whenever the process has one, which covers every normal run: an
+		/// interpreted script, a .cks and a compiled exe all have a <see cref="Script.ProgramType"/>. Otherwise the
+		/// process's entry assembly — for a script launched by the launcher that is Keysharp itself, which is the
+		/// right answer to "what application is this?" when no script has claimed an identity of its own.
+		/// </remarks>
 		internal static Assembly GetAssembly() => Script.TheScript?.ProgramType?.Assembly ?? ScriptExecutionState.Assembly
 			?? Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
 
@@ -1762,124 +1758,6 @@ namespace Keysharp.Builtins
 		// Accessors so that a script's global namespace stays identical to AutoHotkey's; scripts
 		// reach them with #Import Ks.
 		/// <summary>
-		/// The version of the assembly that was used to compile the script that is currently running.
-		/// This queries the AssemblyBuildVersionAttribute of the generated code, which is automatically added by the script compiler
-		/// to match the version of the program the script compiler is being run from.
-		/// This allows for a consistent value whether compiling and running a script, or running a compilex exe.
-		/// </summary>
-		public static string A_AhkBuildVersion
-		{
-			get
-			{
-				var ver = GetAssembly().GetCustomAttribute<AssemblyBuildVersionAttribute>();
-				return ver != null ? ver.Version : "";
-			}
-		}
-
-		/// <summary>
-		/// The company of the assembly that is currently executing, specified with the #App Company key.
-		/// </summary>
-		public static string A_AssemblyCompany
-		{
-			get
-			{
-				var ver = GetAssembly().GetCustomAttribute<AssemblyCompanyAttribute>();
-				return ver != null ? ver.Company : DefaultObject;
-			}
-		}
-
-		/// <summary>
-		/// The configuration of the assembly that is currently executing, specified with the #App Configuration key.
-		/// </summary>
-		public static string A_AssemblyConfiguration
-		{
-			get
-			{
-				var ver = GetAssembly().GetCustomAttribute<AssemblyConfigurationAttribute>();
-				return ver != null ? ver.Configuration : DefaultObject;
-			}
-		}
-
-		/// <summary>
-		/// The copyright of the assembly that is currently executing, specified with the #App Copyright key.
-		/// </summary>
-		public static string A_AssemblyCopyright
-		{
-			get
-			{
-				var ver = GetAssembly().GetCustomAttribute<AssemblyCopyrightAttribute>();
-				return ver != null ? ver.Copyright : DefaultObject;
-			}
-		}
-
-		/// <summary>
-		/// The description of the assembly that is currently executing, specified with the #App Description key.
-		/// </summary>
-		public static string A_AssemblyDescription
-		{
-			get
-			{
-				var ver = GetAssembly().GetCustomAttribute<AssemblyDescriptionAttribute>();
-				return ver != null ? ver.Description : DefaultObject;
-			}
-		}
-
-		/// <summary>
-		/// The product of the assembly that is currently executing, specified with the #App Product key.
-		/// </summary>
-		public static string A_AssemblyProduct
-		{
-			get
-			{
-				var ver = GetAssembly().GetCustomAttribute<AssemblyProductAttribute>();
-				return ver != null ? ver.Product : DefaultObject;
-			}
-		}
-
-		/// <summary>
-		/// The title of the assembly that is currently executing, specified with the #App Title key.
-		/// </summary>
-		public static string A_AssemblyTitle
-		{
-			get
-			{
-				var ver = GetAssembly().GetCustomAttribute<AssemblyTitleAttribute>();
-				return ver != null ? ver.Title : DefaultObject;
-			}
-		}
-
-		/// <summary>
-		/// The name of the assembly that is currently executing, specified with the #App Name key.
-		/// This is the assembly's identity rather than an attribute, so it is read from the assembly name itself and
-		/// always has a value: without the directive it is the name the script was compiled under.
-		/// </summary>
-		public static string A_AssemblyName => GetAssembly().GetName().Name ?? DefaultObject;
-
-		/// <summary>
-		/// The trademark of the assembly that is currently executing, specified with the #App Trademark key.
-		/// </summary>
-		public static string A_AssemblyTrademark
-		{
-			get
-			{
-				var ver = GetAssembly().GetCustomAttribute<AssemblyTrademarkAttribute>();
-				return ver != null ? ver.Trademark : "";
-			}
-		}
-
-		/// <summary>
-		/// The version of the assembly that is currently executing, specified with the #ASSEMBLVERSION directive.
-		/// </summary>
-		public static string A_AssemblyVersion
-		{
-			get
-			{
-				var ver = GetAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>();//For some reason it likes AssemblyFileVersionAttribute better than AssemblyVersionAttribute.
-				return ver != null ? ver.Version : DefaultObject;
-			}
-		}
-
-		/// <summary>
 		/// The time in milliseconds to wait when reading the clipboard before a timeout is triggered.
 		/// </summary>
 		public static object A_ClipboardTimeout
@@ -1914,11 +1792,6 @@ namespace Keysharp.Builtins
 			get => TheScript.persistent;
 			set => TheScript.persistent = ForceBool(value);
 		}
-
-		/// <summary>
-		/// <see cref="A_AhkPath"/>.
-		/// </summary>
-		public static string A_KeysharpPath => A_AhkPath;
 
 		/// <summary>
 		/// The current object key in a fpr-each loop.
@@ -2045,7 +1918,8 @@ namespace Keysharp.Builtins
 		};
 
 		/// <summary>
-		/// The version of Keysharp.Builtins.dll
+		/// The Keysharp build running the script, read from Keysharp.Core.dll. Distinct from
+		/// <see cref="Accessors.A_AhkVersion"/>, which is the AutoHotkey version Keysharp targets.
 		/// </summary>
 		public static string A_KsVersion
 		{
@@ -2113,51 +1987,6 @@ namespace Keysharp.Builtins
 				}
 
 				return new Map(timerData.ToArray());
-			}
-		}
-
-		/// <summary>
-		/// The command line string used to run the script.
-		/// </summary>
-		public static string A_CommandLine
-		{
-			get
-			{
-				var exe =
-#if WINDOWS
-					Application.ExecutablePath;
-#else
-					Environment.ProcessPath ?? string.Empty;
-#endif
-
-				if (exe.Contains(' '))
-				{
-					if (!exe.StartsWith('"'))
-						exe = '"' + exe;
-
-					if (!exe.EndsWith('"'))
-						exe += '"';
-				}
-
-				var args = new List<string>();
-
-				foreach (var arg in Environment.GetCommandLineArgs().Skip(1))
-				{
-					var quotedArg = arg;
-
-					if (quotedArg.Contains(' '))
-					{
-						if (!quotedArg.StartsWith('"'))
-							quotedArg = '"' + quotedArg;
-
-						if (!quotedArg.EndsWith('"'))
-							quotedArg += '"';
-					}
-
-					args.Add(quotedArg);
-				}
-
-				return args.Count > 0 ? exe + " " + string.Join(' ', args) : exe;
 			}
 		}
 
@@ -2276,14 +2105,9 @@ namespace Keysharp.Builtins
 		public static string A_DirSeparator => Path.DirectorySeparatorChar.ToString();
 
 		/// <summary>
-		/// Whether the script has exited yet.
+		/// The full path of Keysharp.Core.dll, the assembly holding the engine and its built-in library.
 		/// </summary>
-		public static bool A_HasExited => Script.TheScript.hasExited;
-
-		/// <summary>
-		/// The path to Keysharp.Builtins.Dll
-		/// </summary>
-		public static string A_KeysharpCorePath => Assembly.GetAssembly(typeof(Accessors)).Location;
+		public static string A_KsCorePath => Assembly.GetAssembly(typeof(Accessors)).Location;
 
 #if WINDOWS
 		/// <summary>

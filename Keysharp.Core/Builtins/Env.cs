@@ -703,7 +703,7 @@ namespace Keysharp.Builtins
 					SourceText = File.Exists(script) ? null : script,
 					ScriptPath = File.Exists(script) ? script : null,
 					CompilationName = nameVal,
-					RuntimeDirectory = Path.GetDirectoryName(Ks.A_KeysharpCorePath),
+					RuntimeDirectory = Path.GetDirectoryName(Ks.A_KsCorePath),
 					Defines = defineNames ?? [],
 					Output = Keysharp.Components.Scripting.ScriptCompilationOutput.InMemory,
 				});
@@ -826,7 +826,7 @@ namespace Keysharp.Builtins
 				SourceText = isFile ? null : source,
 				ScriptPath = isFile ? source : null,
 				CompilationName = isFile ? Path.GetFileNameWithoutExtension(source) : "ParseScript",
-				RuntimeDirectory = Path.GetDirectoryName(Ks.A_KeysharpCorePath),
+				RuntimeDirectory = Path.GetDirectoryName(Ks.A_KsCorePath),
 				Output = Keysharp.Components.Scripting.ScriptCompilationOutput.InMemory,
 				AllowPackageRestore = false,
 			});
