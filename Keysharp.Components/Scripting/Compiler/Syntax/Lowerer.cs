@@ -1013,7 +1013,7 @@ namespace Keysharp.Compilation.Syntax
 
 			if (isAhk)
 			{
-				var lower = member.ToLowerInvariant();
+				var lower = member;
 				return rd.flatPublicStaticMethods.ContainsKey(lower) ? null
 					   : rd.flatPublicStaticProperties.TryGetValue(lower, out var globalProp) ? globalProp : null;
 			}
@@ -1656,7 +1656,7 @@ namespace Keysharp.Compilation.Syntax
 			System.Reflection.PropertyInfo prop = null;
 
 			if (isAhk)
-				_ = Script.TheScript.ReflectionsData.flatPublicStaticProperties.TryGetValue(name.ToLowerInvariant(), out prop);
+				_ = Script.TheScript.ReflectionsData.flatPublicStaticProperties.TryGetValue(name, out prop);
 			else if (modType != null)
 			{
 				const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.DeclaredOnly;
