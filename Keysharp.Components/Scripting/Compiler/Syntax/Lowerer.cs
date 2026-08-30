@@ -1082,7 +1082,7 @@ namespace Keysharp.Compilation.Syntax
 				foreach (var s in body) if (s is not ImportDirective) CollectNestedImports(s, lifted);
 				foreach (var dir in lifted) RegisterImport(dir);
 			}
-			foreach (var lower in _userFuncByLower.Keys.ToList())
+			foreach (var lower in _userFuncByLower.Keys)
 				EnsureGlobalField(lower);
 
 			// #Warn: apply directive config (location-independent) then run the warning analysis over the whole module,
@@ -2970,7 +2970,7 @@ namespace Keysharp.Compilation.Syntax
 			var normalized = code.Replace("\r\n", "\n");
 			var unit = SyntaxFactory.ParseCompilationUnit(normalized, options: options);
 			var firstMember = unit.Members.FirstOrDefault()?.SpanStart ?? int.MaxValue;
-			var directives = unit.Usings.Where(u => u.SpanStart < firstMember && !u.SemicolonToken.IsMissing).ToList();
+			var directives = unit.Usings.Where(u => u.SpanStart < firstMember && !u.SemicolonToken.IsMissing).ToArray();//Avoid multiple enumeration.
 			// One C# tree is emitted per script module. Treat `global using` as module-global by placing the
 			// normalized directive inside that tree's namespace; a real C# global using would leak into every
 			// imported module because Roslyn applies it compilation-wide, across syntax trees.
@@ -3026,10 +3026,9 @@ namespace Keysharp.Compilation.Syntax
 		private bool ReportInlineSyntaxErrors(ParsedBlock parsed, int lineOffset, string file)
 		{
 			var errors = parsed.Probe.GetDiagnostics()
-						 .Where(x => x.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-						 .ToList();
+						 .Where(x => x.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
 
-			if (errors.Count == 0)
+			if (!errors.Any())
 				return true;
 
 			var shortFile = string.IsNullOrEmpty(file) ? "" : System.IO.Path.GetFileName(file);
@@ -3315,7 +3314,7 @@ namespace Keysharp.Compilation.Syntax
 			// every module/class block in that tree, but not to another module's declaration of the same namespace.
 			foreach (var module in _inlineBlocks.Select(block => block.Module).Distinct(System.StringComparer.Ordinal))
 			{
-				var blocks = _inlineBlocks.Where(block => block.Module == module).ToList();
+				var blocks = _inlineBlocks.Where(block => block.Module == module).ToList();//Avoid multiple enumeration in the two loops below.
 				var usings = new List<string>();
 				var seenUsing = new HashSet<string>(System.StringComparer.Ordinal);
 
@@ -4283,8 +4282,7 @@ namespace Keysharp.Compilation.Syntax
 					{
 						// `x[idx*] := v`: the flattened index and the value share SetObject's params array, value last.
 						if (ie.Args.Any(x => x.Spread))
-							return Op("SetObject", target, SpreadParams(ie.Args, trailing: LowerExpr(a.Value)));
-
+							return Op("SetObject", target, SpreadParams(ie.Args, trailing: LowerExpr(a.Value))
 						var argv = new List<ExpressionSyntax> { target };
 						argv.AddRange(LowerArgs(ie.Args));
 						argv.Add(LowerExpr(a.Value));
@@ -4304,9 +4302,9 @@ namespace Keysharp.Compilation.Syntax
 					return NullCondWrap(ie.Target, target =>
 					{
 						var lowered = LowerArgs(ie.Args);
-						var temps = lowered.Select(_ => NewTemp()).ToList();
+						var temps = lowered.Select(_ => NewTemp()).ToArray();
 						var ops = new List<ExpressionSyntax>();
-						for (var k = 0; k < temps.Count; ++k)
+						for (var k = 0; k < temps.Length; ++k)
 							ops.Add(Assign(Id(temps[k]), lowered[k]));
 						var ids = temps.Select(name => (ExpressionSyntax)Id(name)).ToList();
 						var newValue = CompoundValue(a.Op[..^1], Op("GetIndex", Cons(target, ids)), LowerExpr(a.Value));
@@ -4321,11 +4319,11 @@ namespace Keysharp.Compilation.Syntax
 				// Compound: capture the target and each index once.
 				var tt = NewTemp();
 				var loweredArgs = LowerArgs(ie.Args);
-				var argTemps = loweredArgs.Select(_ => NewTemp()).ToList();
+				var argTemps = loweredArgs.Select(_ => NewTemp()).ToArray();
 				var ops = new List<ExpressionSyntax> { Assign(Id(tt), LowerExpr(ie.Target)) };
-				for (int k = 0; k < argTemps.Count; k++) ops.Add(Assign(Id(argTemps[k]), loweredArgs[k]));
-				List<ExpressionSyntax> IdxIds() => argTemps.Select(n => (ExpressionSyntax)Id(n)).ToList();
-				var newVal = CompoundValue(a.Op[..^1], Op("GetIndex", Cons(Id(tt), IdxIds())), LowerExpr(a.Value));
+				for (int k = 0; k < argTemps.Length; k++) ops.Add(Assign(Id(argTemps[k]), loweredArgs[k]));
+				IEnumerable<ExpressionSyntax> IdxIds() => argTemps.Select(n => (ExpressionSyntax)Id(n));
+				var newVal = CompoundValue(a.Op[..^1], Op("GetIndex", Cons(Id(tt), IdxIds().ToList())), LowerExpr(a.Value));
 				if (newVal == null) { Diag($"compound assignment to an index ('{a.Op}') not yet lowerable"); return Str(""); }
 				var setArgs = new List<ExpressionSyntax> { Id(tt) };
 				setArgs.AddRange(IdxIds());
@@ -4505,13 +4503,13 @@ namespace Keysharp.Compilation.Syntax
 					var it = NewTemp();
 					setup.Add(Assign(Id(it), LowerExpr(ie.Target)));
 					var idx = LowerArgs(ie.Args);
-					var argTemps = idx.Select(_ => NewTemp()).ToList();
-					for (int k = 0; k < argTemps.Count; k++) setup.Add(Assign(Id(argTemps[k]), idx[k]));
-					List<ExpressionSyntax> IdxIds() => argTemps.Select(n => (ExpressionSyntax)Id(n)).ToList();
-					read = Op("GetIndex", Cons(Id(it), IdxIds()));
+					var argTemps = idx.Select(_ => NewTemp()).ToArray();
+					for (int k = 0; k < argTemps.Length; k++) setup.Add(Assign(Id(argTemps[k]), idx[k]));
+					IEnumerable<ExpressionSyntax> IdxIds() => argTemps.Select(n => (ExpressionSyntax)Id(n));
+					read = Op("GetIndex", Cons(Id(it), IdxIds().ToList()));
 					var setArgs = new List<ExpressionSyntax> { Id(it) };
 					setArgs.AddRange(IdxIds());
-					setArgs.Add(Op(op, Op("GetIndex", Cons(Id(it), IdxIds())), Num("1")));
+					setArgs.Add(Op(op, Op("GetIndex", Cons(Id(it), IdxIds().ToList())), Num("1")));
 					write = Op("SetObject", setArgs.ToArray());
 					break;
 				case DerefExpr dr:   // %n%++ : write back through the deref machinery
@@ -5025,15 +5023,15 @@ namespace Keysharp.Compilation.Syntax
 
 			// AHK scopes for-loop variables: they're restored to their pre-loop values after the loop. Back each one
 			// up into a temp before the loop and restore it in the finally (matches the canonical backup/restore).
-			var loopVars = fr.Vars.Where(v => v != null).ToList();
-			var backups = loopVars.Select(_ => NewTemp()).ToList();
+			var loopVars = fr.Vars.Where(v => v != null).ToArray();
+			var backups = loopVars.Select(_ => NewTemp()).ToArray();
 
 			var finallyStmts = new List<StatementSyntax>();
-			for (int i = 0; i < loopVars.Count; i++) finallyStmts.Add(ExprStmt(Assign(NameRef(loopVars[i]), Id(backups[i]))));
+			for (int i = 0; i < loopVars.Length; i++) finallyStmts.Add(ExprStmt(Assign(NameRef(loopVars[i]), Id(backups[i]))));
 			finallyStmts.Add(LoopFinally(fr.Else));
 
 			var block = new List<StatementSyntax> { CallStmt("Keysharp.Runtime.Loops.Push") };
-			for (int i = 0; i < loopVars.Count; i++) block.Add(ExprStmt(Assign(Id(backups[i]), NameRef(loopVars[i]))));
+			for (int i = 0; i < loopVars.Length; i++) block.Add(ExprStmt(Assign(Id(backups[i]), NameRef(loopVars[i]))));
 			block.Add(LocalDeclVar(ev, enumInit));
 			block.Add(TryFinally(loop, finallyStmts.Count == 1 ? finallyStmts[0] : SyntaxFactory.Block(finallyStmts)));
 			if (frame.NeedsEnd) block.Add(EndLabel(id));
@@ -5303,13 +5301,13 @@ namespace Keysharp.Compilation.Syntax
 			// Nested classes become nested C# types; the runtime registers them as static properties on the parent.
 			foreach (var nc in c.Nested) members.Add(LowerClass(nc));
 
-			var instFields = c.Fields.Where(f => !f.Static && f.Init != null).ToList();
-			if (instFields.Count > 0 || c.InstanceInit.Count > 0)
+			var instFields = c.Fields.Where(f => !f.Static && f.Init != null);
+			if (instFields.Any() || c.InstanceInit.Count > 0)
 				members.Add(InitMethod(NameMangler.InstanceInit, baseType, instFields, null, c.InstanceInit, staticCtx: false));
-			var statFields = c.Fields.Where(f => f.Static && f.Init != null).ToList();
+			var statFields = c.Fields.Where(f => f.Static && f.Init != null);
 			// A struct's typed fields are registered on the prototype (DefineStructFieldOnPrototype with the field's .NET type) in the
 			// static initializer, so the runtime knows the struct layout.
-			var typedFields = c.Fields.Where(f => f.TypeExpr != null).ToList();
+			var typedFields = c.Fields.Where(f => f.TypeExpr != null);
 			_structTypeName = typeName;
 			var savedInMethod = _inMethod;
 			var savedMethodStatic = _currentMethodStatic;
@@ -5317,11 +5315,11 @@ namespace Keysharp.Compilation.Syntax
 			_inMethod = true;
 			_currentMethodStatic = true;
 			_currentThisFuncName = ClassMemberFuncName("__Init", true);
-			var staticPre = typedFields.Select(StructFieldDefineProp).Where(s => s != null).ToList();
+			var staticPre = typedFields.Select(StructFieldDefineProp).Where(s => s != null);
 			_inMethod = savedInMethod;
 			_currentMethodStatic = savedMethodStatic;
 			_currentThisFuncName = savedThisFuncName;
-			if (statFields.Count > 0 || staticPre.Count > 0 || c.StaticInit.Count > 0)
+			if (statFields.Any() || staticPre.Any() || c.StaticInit.Count > 0)
 				members.Add(InitMethod(NameMangler.StaticInit(), null, statFields, staticPre, c.StaticInit, staticCtx: true));
 
 			// Emit this class's collected static-local backing fields as its own members, then restore the sink/path/frame.
@@ -5365,8 +5363,8 @@ namespace Keysharp.Compilation.Syntax
 
 		// __Init / static__Init: optionally chain the base prototype's __Init, then run extra prologue statements
 		// (typed struct-field registrations) and set each field.
-		private MemberDeclarationSyntax InitMethod(string name, string baseProtoType, List<ClassField> fields,
-			List<StatementSyntax> prologue = null, List<Stmt> extra = null, bool staticCtx = false)
+		private MemberDeclarationSyntax InitMethod(string name, string baseProtoType, IEnumerable<ClassField> fields,
+			IEnumerable<StatementSyntax> prologue = null, IEnumerable<Stmt> extra = null, bool staticCtx = false)
 		{
 			var savedThisFuncName = _currentThisFuncName;
 			_currentThisFuncName = ClassMemberFuncName("__Init", staticCtx);
@@ -5384,7 +5382,7 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var f in fields) stmts.Add(FieldSet(f));
 			// Member/index-target initializers (`static x.y := z`) run after the plain field sets, with `this` bound to
 			// the class object (static) or instance.
-			if (extra != null && extra.Count > 0)
+			if (extra != null && extra.Any())
 			{
 				var savedM = _inMethod; var savedS = _currentMethodStatic; _inMethod = true; _currentMethodStatic = staticCtx;
 				foreach (var st in extra) { var ls = LowerStmt(st); if (ls != null) stmts.Add(ls); }
@@ -5449,7 +5447,7 @@ namespace Keysharp.Compilation.Syntax
 			var (idxLowers, byRefParams) = ParamSets(pr.Params);
 			// Index params with full variadic (`a*` -> params object[]) / optional handling, like a normal param list.
 			// wrapVariadics so the body sees an Array (`__Item[a*]` uses `a.Length`); LowerCallableBody adds the wrap.
-			List<ParameterSyntax> IdxParams() => ParamDecls(pr.Params, includeThis: false, wrapVariadics: true).Parameters.ToList();
+			ParameterSyntax[] IdxParams() => ParamDecls(pr.Params, includeThis: false, wrapVariadics: true).Parameters.ToArray();
 			// A static property's accessors get the ClassStaticPrefix (registered on the class's static object); `this`
 			// inside them is the static class object. Otherwise identical to instance-property accessors.
 			var getterName = pr.Static ? NameMangler.StaticGetter(pr.Name) : NameMangler.Getter(pr.Name);
@@ -5462,7 +5460,7 @@ namespace Keysharp.Compilation.Syntax
 				var body = LowerCallableBody(new HashSet<string>(idxLowers), pr.GetBody, pr.GetArrow, getterName,
 					thisFuncName, byRefParams, pr.Params);
 				_inMethod = savedM; _currentMethodStatic = savedS;
-				var ps = SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(Prepend(ThisParam(), IdxParams().ToArray())));
+				var ps = SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(Prepend(ThisParam(), IdxParams())));
 				result.Add(ObjMethod(getterName, ps, body, Attr("Keysharp.Runtime.UserDeclaredName", Str(pr.Name))));
 			}
 			if (pr.HasSet)
@@ -5476,7 +5474,7 @@ namespace Keysharp.Compilation.Syntax
 				var idx = IdxParams();
 				// `value` is always the LAST setter param, so a trailing `params object[]` index param drops `params`
 				// (C# requires params to be last) — it becomes a plain object[] the runtime fills with the index args.
-				if (idx.Count > 0 && idx[^1].Modifiers.Any(SyntaxKind.ParamsKeyword))
+				if (idx.Length > 0 && idx[^1].Modifiers.Any(SyntaxKind.ParamsKeyword))
 					idx[^1] = idx[^1].WithModifiers(SyntaxFactory.TokenList());
 				var all = new List<ParameterSyntax> { ThisParam() };
 				all.AddRange(idx);
