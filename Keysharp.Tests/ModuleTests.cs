@@ -1,3 +1,4 @@
+using Microsoft.CodeAnalysis;
 using static Keysharp.Builtins.External;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
@@ -51,6 +52,42 @@ namespace Keysharp.Tests
 
 		[Test, Category("Module")]
 		public void ScopedImport() => Assert.IsTrue(TestScript("module-scoped-import", false));
+
+		/// <summary>
+		/// A module name reaches a script only through an import, as in AutoHotkey, where a module is named by no
+		/// variable until #Import binds one. This asserts on the GENERATED CODE rather than on diagnostics: an
+		/// unimported `Ks` produces no diagnostic either way — it is simply an unset global — so a compile-only
+		/// check cannot tell the two bindings apart, which is exactly how the leak survived.
+		/// </summary>
+		[Test, Category("Module")]
+		public void ModuleNameNeedsImport()
+		{
+			static string Emit(string src)
+			{
+				var (prog, parseDiags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(src);
+				Assert.IsEmpty(parseDiags, "unexpected parse diagnostics: " + string.Join("; ", parseDiags));
+				var lowerer = new Keysharp.Compilation.Syntax.Lowerer();
+				var unit = lowerer.Build(prog, "Test");
+				Assert.IsEmpty(lowerer.Diagnostics, "unexpected diagnostics: " + string.Join("; ", lowerer.Diagnostics));
+				return unit.NormalizeWhitespace().ToFullString();
+			}
+
+			// Unimported, a module name binds to nothing. Binding it to the Statics entry instead would compile and
+			// then fail at run time, because that entry is the members-less class object Script.InitClass leaves
+			// behind for a Module type, not the IMetaObject a member access needs.
+			foreach (var (name, type) in new[] { ("Ks", "Keysharp.Builtins.Ks"), ("Ahk", "Keysharp.Runtime.Ahk") })
+			{
+				var bare = Emit($"x := {name}.App\n");
+				Assert.IsTrue(bare.Contains($"{name.ToLowerInvariant()} = null"),
+							  $"an unimported {name} must bind to null, got: " + bare);
+				Assert.IsFalse(bare.Contains($"Statics[typeof({type})]"),
+							   $"an unimported {name} must not bind to the Statics class object");
+			}
+
+			// Imported, the name binds to the module OBJECT, which dispatches member access through IMetaObject.
+			Assert.IsTrue(Emit("#import KS\nx := Ks.App\n").Contains("new Keysharp.Builtins.Ks()"),
+						  "an imported Ks must bind to the module object");
+		}
 
 		[Test, Category("Module")]
 		public void ImportDiagnostics()

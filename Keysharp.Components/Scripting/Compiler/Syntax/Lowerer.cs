@@ -1692,8 +1692,12 @@ namespace Keysharp.Compilation.Syntax
 		// (Array, Map, Gui, ...). Nested types remain available through their declaring class or module
 		// (Gui.List, an imported Ks.Highlight, Clr.ManagedType), but must not leak into the global namespace.
 		// Static method containers (Dir, Files, Maths -- their methods are global functions) are not classes.
+		// A module (Ks, Ahk) is a Module, which is itself Any-derived: AutoHotkey binds a module name only through
+		// #Import, so the name stays out of the global namespace and the binding that does happen is the module
+		// OBJECT that ModuleObjectExpr builds -- not the members-less Statics entry a class singleton would give.
 		private static bool IsGlobalAhkClass(System.Type type) =>
 			!type.IsNested
+			&& !typeof(Keysharp.Runtime.Module).IsAssignableFrom(type)
 			&& typeof(Keysharp.Builtins.Any).IsAssignableFrom(type);
 
 		private string EnsureGlobalField(string lower)
