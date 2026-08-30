@@ -376,7 +376,11 @@ namespace Keysharp.Tests
 		//WinForms needs it; NUnit skips an apartment-bound test outright on the platforms that have no STA.
 		[Apartment(ApartmentState.STA)]
 #endif
-		public void RichEditScriptSurface() => Assert.IsTrue(TestScript("gui-richedit", false));
+		public void RichEditScriptSurface()
+		{
+			SkipIfUiInitializationBlocked("Creating an AppKit window requires OS thread 1.");
+			Assert.IsTrue(TestScript("gui-richedit", false));
+		}
 
 #if WINDOWS
 		// The whole zero-copy design rests on one property: GDI+ drawing through the Bitmap and GDI reading
