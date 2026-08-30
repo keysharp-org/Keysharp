@@ -44,7 +44,7 @@ namespace Keysharp.Compilation.Syntax
 		// methods in different classes would collide). Defaults to _fieldDecls (module class); LowerClass redirects it to
 		// the class's own field list while lowering that class's members. `_staticFieldDeclIdx` indexes into THIS list.
 		private List<MemberDeclarationSyntax> _staticFieldSink;
-		private readonly Dictionary<string, string> _userFuncByLower = new(System.StringComparer.Ordinal);
+		private readonly Dictionary<string, string> _userFuncByLower = new(System.StringComparer.OrdinalIgnoreCase);
 		// The same top-level functions, keeping their declarations so #Warn NamedArg can check a named argument
 		// against the callee's parameter list.
 		private readonly Dictionary<string, FunctionDecl> _userFuncDeclByLower = new(System.StringComparer.Ordinal);
@@ -1233,7 +1233,7 @@ namespace Keysharp.Compilation.Syntax
 			bool isAhk = modName.Equals("AHK", System.StringComparison.OrdinalIgnoreCase);
 
 			// Functions are known before their backing global fields are emitted.
-			bool IsUserDeclared(string n) => _userFuncByLower.ContainsKey(n.ToLowerInvariant());
+			bool IsUserDeclared(string n) => _userFuncByLower.ContainsKey(n);
 
 			// `#import Mod as Alias`: the alias binds the module object when one is available.
 			if (alias != null && !IsUserDeclared(alias) && ModuleObjectExpr(modName, isAhk, false) is { } aliasVal)
@@ -1257,8 +1257,7 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var (impName, impAlias) in NamedImports(names))
 			{
 				if (impName == "*") continue;
-				var lower = impAlias.ToLowerInvariant();
-				if (_fields.ContainsKey(lower) || _userFuncByLower.ContainsKey(lower)) continue;
+				if (_fields.ContainsKey(impAlias) || _userFuncByLower.ContainsKey(impAlias)) continue;
 				var init = BindBuiltinMember(modName, isAhk, impName);
 				if (init == null)
 				{
@@ -2930,9 +2929,8 @@ namespace Keysharp.Compilation.Syntax
 						continue;
 
 					var name = meth.Identifier.Text;
-					var lower = name.ToLowerInvariant();
 
-					if (_userFuncByLower.TryGetValue(lower, out var existing))
+					if (_userFuncByLower.TryGetValue(name, out var existing))
 					{
 						// The script-function pre-pass reports the opposite collision direction.
 						var line = d.CodeLine - 1 + meth.GetLocation().GetLineSpan().StartLinePosition.Line - parsed.WrapperOffset + 1;
@@ -2941,6 +2939,7 @@ namespace Keysharp.Compilation.Syntax
 						continue;
 					}
 
+					var lower = name.ToLowerInvariant();
 					_userFuncByLower[lower] = name;
 					_ = (_inlineFuncNames ??= new(System.StringComparer.OrdinalIgnoreCase)).Add(name);
 				}
