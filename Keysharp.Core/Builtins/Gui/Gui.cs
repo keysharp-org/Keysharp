@@ -3538,7 +3538,7 @@ namespace Keysharp.Builtins
 
 							if (named.Count == 1)
 							{
-								for (var i = 0; i < rbs.Count(); i++)
+								for (var i = 0; i < rbs.Count; i++)
 								{
 									if (rbs[i].Checked)
 									{
