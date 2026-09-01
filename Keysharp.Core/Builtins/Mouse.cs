@@ -49,7 +49,7 @@ namespace Keysharp.Builtins
 		public static object Click(object coords = null, object whichButton = null, object clickCount = null, object downOrUp = null, object relative = null, object options = null)
 		{
 			var script = Script.TheScript;
-			_ = script.Permissions.EnsureInputInjection(operation: "Click");
+			_ = script.Permissions.EnsureInputControl(operation: "Click");
 			int x = 0, y = 0;
 			var vk = 0u;
 			var eventType = KeyEventTypes.KeyDown;
@@ -256,6 +256,7 @@ namespace Keysharp.Builtins
 			if (outputVarWin == null && outputVarControl == null)
 				return DefaultObject;
 
+			_ = script.Permissions.EnsureWindowMonitoring(operation: "MouseGetPos window/control query");
 			var child = WindowQuery.ChildWindowFromPoint(pos);
 
 			if (child == null || child.Handle == 0)
@@ -351,7 +352,7 @@ namespace Keysharp.Builtins
 		public static object MouseMove(object x, object y, object speed = null, object relative = null)
 		{
 			var script = Script.TheScript;
-			_ = script.Permissions.EnsureInputInjection(operation: "MouseMove");
+			_ = script.Permissions.EnsureInputControl(operation: "MouseMove");
 			var ix = x.Ai(KeyboardMouseSender.CoordUnspecified);
 			var iy = y.Ai(KeyboardMouseSender.CoordUnspecified);
 			var s = (int)speed.Al(ThreadAccessors.A_DefaultMouseSpeed);
@@ -416,7 +417,7 @@ namespace Keysharp.Builtins
 										 , int speed, string relative, long repeatCount, string downUp)
 		{
 			var script = Script.TheScript;
-			_ = script.Permissions.EnsureInputInjection(operation: "mouse operation");
+			_ = script.Permissions.EnsureInputControl(operation: "mouse operation");
 			uint vk;
 			var ht = script.HookThread;
 

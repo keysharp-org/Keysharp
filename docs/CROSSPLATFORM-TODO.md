@@ -29,7 +29,7 @@ touch core subsystems, so care is needed.
 
 - [ ] **Mouse button swap (logical → physical) outside X11.**
   `UnixKeyboardMouseSender.MouseButtonsSwapped` reads the X11 pointer map, so the X11 path is
-  implemented. `InputdKeyboardMouseSender` (native Wayland/inputd) and macOS still return false.
+  implemented. `LinuxKeyboardMouseSender` (native Linux input service) and macOS still return false.
   Their desktop-specific primary-button settings need to be mapped without double-swapping input
   that the compositor already remaps.
 
@@ -53,7 +53,7 @@ touch core subsystems, so care is needed.
   origin using a containment heuristic that has not been exercised on a real compositor yet.
 - [ ] **Linux volume labels.** On disposable ext4, FAT/exFAT, NTFS, XFS and btrfs volumes, change and
   restore the label and record which filesystem utilities/privileges are required.
-- [ ] **Linux BlockInput movement-only mode.** With the existing `keysharp-inputd` mouse hook active,
+- [ ] **Linux BlockInput movement-only mode.** With the `keysharp-input` mouse hook active,
   confirm on a physical mouse that `MouseMove` suppresses motion while buttons and the wheel still
   pass through, then confirm that `MouseMoveOff` restores motion. Exercising an exclusive evdev grab
   and its synchronous hook decisions is intentionally not automated.
@@ -79,7 +79,7 @@ on real hardware and under real permission grants, not that they are missing.
   that the reported handle is the window containing the edited element (`AXWindow`, falling back to
   the app's focused window), and that the `A_EventInfo` rectangle agrees with `CaretGetPos`.
 
-- [ ] **BlockInput event-tap modes.** With Input Monitoring permission granted, verify `On`/`Off`,
+- [ ] **BlockInput event-tap modes.** With InputControl granted (and InputMonitoring for movement-only mode), verify `On`/`Off`,
   send-time blocking and movement-only blocking. In particular, `MouseMove` must suppress physical
   movement without suppressing physical buttons or wheel events, and synthetic input must pass.
 

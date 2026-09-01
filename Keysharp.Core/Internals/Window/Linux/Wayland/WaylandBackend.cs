@@ -881,10 +881,6 @@ for (var __i = 0; __i < __order.length; ++__i) {
 				public OverlayShowResult TryShowImageOverlay(uint id, int x, int y, int width, int height, byte[] pngBytes)
 					=> GnomeShellBridge.SendShowImageOverlay(id, x, y, width, height, pngBytes);
 
-				public OverlayShowResult TryShowImageOverlayShm(uint id, int x, int y, int width, int height,
-					string shmPath, int pixelWidth, int pixelHeight, int stride)
-					=> GnomeShellBridge.SendShowImageOverlayShm(id, x, y, width, height, shmPath, pixelWidth, pixelHeight, stride);
-
 				public bool TryMoveImageOverlay(uint id, int x, int y, int width, int height)
 					=> GnomeShellBridge.SendMoveImageOverlay(id, x, y, width, height);
 
@@ -939,16 +935,16 @@ for (var __i = 0; __i < __order.length; ++__i) {
 			};
 
 			public bool TrySendMouseMoveAbsolute(int x, int y)
-				=> GnomeShellBridge.SendMouseMoveAbsolute(x, y);
+				=> DesktopClient.SendMouseMoveAbsolute("gnome", x, y);
 
 			public bool TrySendMouseMoveRelative(int dx, int dy)
-				=> GnomeShellBridge.SendMouseMoveRelative(dx, dy);
+				=> DesktopClient.SendMouseMoveRelative("gnome", dx, dy);
 
 			public bool TrySendMouseButton(uint button, bool pressed)
-				=> GnomeShellBridge.SendMouseButton(button, pressed);
+				=> DesktopClient.SendMouseButton("gnome", button, pressed);
 
 			public bool TrySendMouseScroll(int delta, bool vertical)
-				=> GnomeShellBridge.SendMouseScroll(delta, vertical);
+				=> DesktopClient.SendMouseScroll("gnome", delta, vertical);
 
 				// Clipboard runs only through the extension (Mutter exposes no data-control protocol). The recovering
 				// clipboard router uses this real protocol probe (not mere name ownership) to promote/demote at runtime.
@@ -1081,7 +1077,7 @@ for (var __i = 0; __i < __order.length; ++__i) {
 
 			// Sway is selected purely by $SWAYSOCK, which says nothing about whether this build
 			// actually advertises zwlr_virtual_pointer_manager_v1 -- SupportsMouse reflects the real,
-			// probed capability so WaylandMouseInjection.Backend() can fall through to inputd gracefully.
+			// probed capability so WaylandMouseInjection.Backend() can fall through to input service gracefully.
 			public bool SupportsMouse => WaylandVirtualPointerClient.Current != null;
 
 			public bool TrySendMouseMoveAbsolute(int x, int y)
@@ -1174,7 +1170,7 @@ for (var __i = 0; __i < __order.length; ++__i) {
 
 			// Hyprland is selected purely by $HYPRLAND_INSTANCE_SIGNATURE, which says nothing about
 			// whether this build actually advertises zwlr_virtual_pointer_manager_v1 -- SupportsMouse
-			// reflects the real, probed capability so the caller can fall through to inputd gracefully.
+			// reflects the real, probed capability so the caller can fall through to input service gracefully.
 			public bool SupportsMouse => WaylandVirtualPointerClient.Current != null;
 
 			public bool TrySendMouseMoveAbsolute(int x, int y)
@@ -1262,7 +1258,7 @@ for (var __i = 0; __i < __order.length; ++__i) {
 
 			// COSMIC is selected purely by $XDG_CURRENT_DESKTOP, which says nothing about whether
 			// this build actually advertises zwlr_virtual_pointer_manager_v1 -- SupportsMouse reflects
-			// the real, probed capability so the caller can fall through to inputd gracefully.
+			// the real, probed capability so the caller can fall through to input service gracefully.
 			public bool SupportsMouse => WaylandVirtualPointerClient.Current != null;
 
 			public bool TrySendMouseMoveAbsolute(int x, int y)

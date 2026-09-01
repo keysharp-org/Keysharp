@@ -1,6 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Keysharp Screen Capture Helper
-Exec=/usr/local/lib/keysharp/keysharp-helper
-NoDisplay=true
-X-KDE-DBUS-Restricted-Interfaces=org.kde.kwin.Screenshot,org.kde.KWin.ScreenShot2

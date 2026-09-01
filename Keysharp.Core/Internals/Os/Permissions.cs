@@ -1,6 +1,7 @@
 using Keysharp.Builtins;
 #if LINUX
 using Keysharp.Internals.Input.Linux;
+using Keysharp.Internals.Linux;
 using Keysharp.Internals.Window.Linux.Wayland;
 using Keysharp.Internals.Os.Unix;
 #endif
@@ -31,17 +32,35 @@ namespace Keysharp.Internals.Os
 
 	internal interface IPermissionManager
 	{
-		PermissionResult RequestAccessibilityAutomation(bool? prompt = null, string operation = null);
 		PermissionResult RequestInputMonitoring(bool? prompt = null, string operation = null);
-		PermissionResult RequestInputInjection(bool? prompt = null, string operation = null);
-		PermissionResult RequestInputCapabilities(bool monitoring, bool injection, bool blockInput, bool screenCapture = false, bool accessibilityAutomation = false, bool? prompt = null, string operation = null);
+		PermissionResult RequestInputControl(bool? prompt = null, string operation = null);
+		PermissionResult RequestWindowMonitoring(bool? prompt = null, string operation = null);
+		PermissionResult RequestWindowControl(bool? prompt = null, string operation = null);
 		PermissionResult RequestScreenCapture(bool? prompt = null, string operation = null);
+		PermissionResult RequestAudioCapture(bool? prompt = null, string operation = null);
+		PermissionResult RequestCameraCapture(bool? prompt = null, string operation = null);
+		PermissionResult RequestClipboardMonitoring(bool? prompt = null, string operation = null);
+		PermissionResult RequestCapabilities(
+			bool inputMonitoring = false,
+			bool inputControl = false,
+			bool windowMonitoring = false,
+			bool windowControl = false,
+			bool screenCapture = false,
+			bool audioCapture = false,
+			bool cameraCapture = false,
+			bool clipboardMonitoring = false,
+			bool? prompt = null,
+			string operation = null);
 		PermissionResult RequestFileAccess(string path, FilePermissionAccess access, bool? prompt = null, string operation = null);
 
-		PermissionResult EnsureAccessibilityAutomation(bool? prompt = null, string operation = null);
 		PermissionResult EnsureInputMonitoring(bool? prompt = null, string operation = null);
-		PermissionResult EnsureInputInjection(bool? prompt = null, string operation = null);
+		PermissionResult EnsureInputControl(bool? prompt = null, string operation = null);
+		PermissionResult EnsureWindowMonitoring(bool? prompt = null, string operation = null);
+		PermissionResult EnsureWindowControl(bool? prompt = null, string operation = null);
 		PermissionResult EnsureScreenCapture(bool? prompt = null, string operation = null);
+		PermissionResult EnsureAudioCapture(bool? prompt = null, string operation = null);
+		PermissionResult EnsureCameraCapture(bool? prompt = null, string operation = null);
+		PermissionResult EnsureClipboardMonitoring(bool? prompt = null, string operation = null);
 		PermissionResult EnsureFileAccess(string path, FilePermissionAccess access, bool? prompt = null, string operation = null);
 	}
 
@@ -49,38 +68,61 @@ namespace Keysharp.Internals.Os
 	{
 		protected static bool ResolvePrompt(bool? prompt) => Script.IsHeadless ? false : prompt ?? true;
 
-		public virtual PermissionResult RequestAccessibilityAutomation(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
 		public virtual PermissionResult RequestInputMonitoring(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
-		public virtual PermissionResult RequestInputInjection(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
+		public virtual PermissionResult RequestInputControl(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
+		public virtual PermissionResult RequestWindowMonitoring(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
+		public virtual PermissionResult RequestWindowControl(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
+		public virtual PermissionResult RequestScreenCapture(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
+		public virtual PermissionResult RequestAudioCapture(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
+		public virtual PermissionResult RequestCameraCapture(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
+		public virtual PermissionResult RequestClipboardMonitoring(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
 
-		public virtual PermissionResult RequestInputCapabilities(bool monitoring, bool injection, bool blockInput, bool screenCapture = false, bool accessibilityAutomation = false, bool? prompt = null, string operation = null)
+		public virtual PermissionResult RequestCapabilities(
+			bool inputMonitoring = false,
+			bool inputControl = false,
+			bool windowMonitoring = false,
+			bool windowControl = false,
+			bool screenCapture = false,
+			bool audioCapture = false,
+			bool cameraCapture = false,
+			bool clipboardMonitoring = false,
+			bool? prompt = null,
+			string operation = null)
 		{
-			// Aggregate to the WORST (least-granted) status across every requested capability rather than
-			// whichever happens to be checked last, so a denial of one capability is never masked by a later
-			// Granted/NotApplicable. blockInput carries no per-capability status of its own here.
+			// Preserve the first denial across a multi-capability request.
 			var result = new PermissionResult(PermissionStatus.NotApplicable);
-			if (accessibilityAutomation) result = Combine(result, RequestAccessibilityAutomation(prompt, operation));
-			if (monitoring)    result = Combine(result, RequestInputMonitoring(prompt, operation));
-			if (injection)     result = Combine(result, RequestInputInjection(prompt, operation));
-			if (screenCapture) result = Combine(result, RequestScreenCapture(prompt, operation));
+			if (inputMonitoring)     result = Combine(result, RequestInputMonitoring(prompt, operation));
+			if (inputControl)        result = Combine(result, RequestInputControl(prompt, operation));
+			if (windowMonitoring)    result = Combine(result, RequestWindowMonitoring(prompt, operation));
+			if (windowControl)       result = Combine(result, RequestWindowControl(prompt, operation));
+			if (screenCapture)       result = Combine(result, RequestScreenCapture(prompt, operation));
+			if (audioCapture)        result = Combine(result, RequestAudioCapture(prompt, operation));
+			if (cameraCapture)       result = Combine(result, RequestCameraCapture(prompt, operation));
+			if (clipboardMonitoring) result = Combine(result, RequestClipboardMonitoring(prompt, operation));
 			return result;
 		}
 
-		// Keeps the first NON-granted result (its status + message); a granted/NotApplicable result never
-		// overrides an earlier denial, so a batched request reports success only when every part succeeded.
+		// A batched request succeeds only when every part succeeds.
 		protected static PermissionResult Combine(PermissionResult accumulated, PermissionResult next)
 			=> accumulated.IsGranted ? next : accumulated;
-		public virtual PermissionResult RequestScreenCapture(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
 		public virtual PermissionResult RequestFileAccess(string path, FilePermissionAccess access, bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
 
-		public virtual PermissionResult EnsureAccessibilityAutomation(bool? prompt = null, string operation = null)
-			=> EnsureGranted(RequestAccessibilityAutomation(prompt, operation), operation ?? "accessibility automation");
 		public virtual PermissionResult EnsureInputMonitoring(bool? prompt = null, string operation = null)
 			=> EnsureGranted(RequestInputMonitoring(prompt, operation), operation ?? "keyboard/mouse monitoring");
-		public virtual PermissionResult EnsureInputInjection(bool? prompt = null, string operation = null)
-			=> EnsureGranted(RequestInputInjection(prompt, operation), operation ?? "keyboard/mouse sending");
+		public virtual PermissionResult EnsureInputControl(bool? prompt = null, string operation = null)
+			=> EnsureGranted(RequestInputControl(prompt, operation), operation ?? "keyboard/mouse control");
+		public virtual PermissionResult EnsureWindowMonitoring(bool? prompt = null, string operation = null)
+			=> EnsureGranted(RequestWindowMonitoring(prompt, operation), operation ?? "window monitoring");
+		public virtual PermissionResult EnsureWindowControl(bool? prompt = null, string operation = null)
+			=> EnsureGranted(RequestWindowControl(prompt, operation), operation ?? "window control");
 		public virtual PermissionResult EnsureScreenCapture(bool? prompt = null, string operation = null)
 			=> EnsureGranted(RequestScreenCapture(prompt, operation), operation ?? "screen capture");
+		public virtual PermissionResult EnsureAudioCapture(bool? prompt = null, string operation = null)
+			=> EnsureGranted(RequestAudioCapture(prompt, operation), operation ?? "audio capture");
+		public virtual PermissionResult EnsureCameraCapture(bool? prompt = null, string operation = null)
+			=> EnsureGranted(RequestCameraCapture(prompt, operation), operation ?? "camera capture");
+		public virtual PermissionResult EnsureClipboardMonitoring(bool? prompt = null, string operation = null)
+			=> EnsureGranted(RequestClipboardMonitoring(prompt, operation), operation ?? "clipboard monitoring");
 		public virtual PermissionResult EnsureFileAccess(string path, FilePermissionAccess access, bool? prompt = null, string operation = null)
 			=> EnsureGranted(RequestFileAccess(path, access, prompt, operation), operation ?? "file access");
 
@@ -98,14 +140,29 @@ namespace Keysharp.Internals.Os
 #if OSX
 	internal sealed class MacPermissionManager : DefaultPermissionManager
 	{
-		public override PermissionResult RequestAccessibilityAutomation(bool? prompt = null, string operation = null)
+		public override PermissionResult RequestWindowMonitoring(bool? prompt = null, string operation = null)
 		{
-			operation ??= "accessibility automation";
+			operation ??= "window monitoring";
+			var allowInteraction = ResolvePrompt(prompt);
+			if (!MacAccessibility.EnsureAccessibilityAccess(operation, allowInteraction))
+				return new(PermissionStatus.Denied,
+					$"macOS Accessibility permission is required for '{operation}'. Grant access in System Settings -> Privacy & Security -> Accessibility, then restart the app.");
+
+			if (!MacAccessibility.EnsureScreenCaptureAccess(operation, allowInteraction))
+				return new(PermissionStatus.Denied,
+					$"macOS Screen Recording permission is required for '{operation}' to enumerate foreign window titles. Grant access in System Settings -> Privacy & Security -> Screen Recording, then restart the app.");
+
+			return new(PermissionStatus.Granted);
+		}
+
+		public override PermissionResult RequestWindowControl(bool? prompt = null, string operation = null)
+		{
+			operation ??= "window control";
 			if (MacAccessibility.EnsureAccessibilityAccess(operation, ResolvePrompt(prompt)))
 				return new(PermissionStatus.Granted);
 
 			return new(PermissionStatus.Denied,
-					$"macOS Accessibility permission is required for '{operation}'. Grant access in System Settings -> Privacy & Security -> Accessibility, then restart the app.");
+				$"macOS Accessibility permission is required for '{operation}'. Grant access in System Settings -> Privacy & Security -> Accessibility, then restart the app.");
 		}
 
 		public override PermissionResult RequestInputMonitoring(bool? prompt = null, string operation = null)
@@ -118,7 +175,7 @@ namespace Keysharp.Internals.Os
 					$"macOS Input Monitoring permission is required for '{operation}'. Grant access in System Settings -> Privacy & Security -> Input Monitoring, then restart the app.");
 		}
 
-		public override PermissionResult RequestInputInjection(bool? prompt = null, string operation = null)
+		public override PermissionResult RequestInputControl(bool? prompt = null, string operation = null)
 		{
 			operation ??= "keyboard/mouse sending";
 			if (MacAccessibility.EnsurePostEventAccess(operation, ResolvePrompt(prompt)))
@@ -148,91 +205,109 @@ namespace Keysharp.Internals.Os
 			return new(PermissionStatus.NotApplicable, $"'{operation}' uses on-demand OS file permission prompts.");
 		}
 
-		// macOS uses separate system dialogs per permission type, so each is requested individually. Aggregate to
-		// the worst-of (see DefaultPermissionManager.Combine) so an earlier denial isn't masked by a later grant.
-		public override PermissionResult RequestInputCapabilities(bool monitoring, bool injection, bool blockInput, bool screenCapture = false, bool accessibilityAutomation = false, bool? prompt = null, string operation = null)
-		{
-			var result = new PermissionResult(PermissionStatus.NotApplicable);
-			if (accessibilityAutomation) result = Combine(result, RequestAccessibilityAutomation(prompt, operation));
-			if (monitoring || blockInput) result = Combine(result, RequestInputMonitoring(prompt, operation));
-			if (injection)     result = Combine(result, RequestInputInjection(prompt, operation));
-			if (screenCapture) result = Combine(result, RequestScreenCapture(prompt, operation));
-			return result;
-		}
 	}
 #endif
 
 #if LINUX
 	internal sealed class LinuxPermissionManager : DefaultPermissionManager
 	{
-		public override PermissionResult RequestAccessibilityAutomation(bool? prompt = null, string operation = null)
-		{
-			if (Script.IsHeadless)
-				return new PermissionResult(PermissionStatus.NotApplicable);
+		public override PermissionResult RequestWindowMonitoring(bool? prompt = null, string operation = null)
+			=> DesktopClient.RequestAuthorization(LinuxPermissionScope.WindowMonitoring,
+				ResolvePrompt(prompt), forcePrompt: prompt == true);
 
-			var result = KeysharpInputdManager.EnsureCapabilities(
-				KeysharpInputdClient.Capabilities.AccessibilityAutomation,
-				operation ?? "accessibility automation",
-				forcePrompt: prompt == true);
+		public override PermissionResult RequestWindowControl(bool? prompt = null, string operation = null)
+			=> DesktopClient.RequestAuthorization(LinuxPermissionScope.WindowControl,
+				ResolvePrompt(prompt), forcePrompt: prompt == true);
 
-			return result.IsGranted ? result : new PermissionResult(PermissionStatus.NotApplicable, result.Message);
-		}
+		public override PermissionResult RequestAudioCapture(bool? prompt = null, string operation = null)
+			=> DesktopClient.RequestAuthorization(LinuxPermissionScope.AudioCapture,
+				ResolvePrompt(prompt), forcePrompt: prompt == true);
+
+		public override PermissionResult RequestCameraCapture(bool? prompt = null, string operation = null)
+			=> DesktopClient.RequestAuthorization(LinuxPermissionScope.CameraCapture,
+				ResolvePrompt(prompt), forcePrompt: prompt == true);
+
+		public override PermissionResult RequestClipboardMonitoring(bool? prompt = null, string operation = null)
+			=> DesktopClient.RequestAuthorization(LinuxPermissionScope.ClipboardMonitoring,
+				ResolvePrompt(prompt), forcePrompt: prompt == true);
 
 		public override PermissionResult RequestInputMonitoring(bool? prompt = null, string operation = null)
 		{
-			var caps = KeysharpInputdClient.Capabilities.HookKeyboard | KeysharpInputdClient.Capabilities.HookMouse;
+			const LinuxPermissionScope scope = LinuxPermissionScope.InputMonitoring;
+			var allowInteraction = ResolvePrompt(prompt);
 
-			// prompt:false is a status query — peek, never prompt.
-			if (prompt == false)
-				return KeysharpInputdManager.PeekInputCapability(caps);
+			// Status queries and headless scripts only consult the persistent grant.
+			if (!allowInteraction)
+				return KeysharpInputManager.PeekInputPermission(scope);
 
-			// Hooking a device also needs replay/synthesis, so the prompt covers the whole set up front.
-			return KeysharpInputdManager.EnsureCapabilities(KeysharpInputdManager.ExpandInputPermissionRequest(caps),
+			return KeysharpInputManager.EnsurePermissionScope(scope,
 					operation ?? "keyboard/mouse monitoring", forcePrompt: prompt == true);
 		}
 
-		public override PermissionResult RequestInputInjection(bool? prompt = null, string operation = null)
+		public override PermissionResult RequestInputControl(bool? prompt = null, string operation = null)
 		{
-			var caps = KeysharpInputdClient.Capabilities.SynthKeyboard | KeysharpInputdClient.Capabilities.SynthMouse;
+			const LinuxPermissionScope scope = LinuxPermissionScope.InputControl;
+			var allowInteraction = ResolvePrompt(prompt);
+			var result = allowInteraction
+				? KeysharpInputManager.EnsurePermissionScope(scope,
+					operation ?? "keyboard/mouse control", forcePrompt: prompt == true)
+				: KeysharpInputManager.PeekInputPermission(scope);
 
-			if (prompt == false)
-				return KeysharpInputdManager.PeekInputCapability(caps);
-
-			return KeysharpInputdManager.EnsureCapabilities(caps, operation ?? "keyboard/mouse sending", forcePrompt: prompt == true);
+			return result.Status == PermissionStatus.Unsupported
+				? DesktopClient.RequestAuthorization(scope, allowInteraction,
+					forcePrompt: prompt == true)
+				: result;
 		}
 
 		public override PermissionResult RequestScreenCapture(bool? prompt = null, string operation = null)
 		{
-			// The compositor-specific authorization (KWin/GNOME keysharp-helper, or NotApplicable) is resolved
-			// once inside Platform.Screen — no IsWaylandSession/backend test here.
-			return Platform.Screen.RequestCaptureAuthorization(operation ?? "screen capture", prompt == true);
+			return DesktopClient.RequestAuthorization(LinuxPermissionScope.ScreenCapture,
+				ResolvePrompt(prompt), forcePrompt: prompt == true);
 		}
 
-		// Input capabilities (hooks/synth/block) are one enforcement domain (keysharp-inputd)
-		// and screen capture is a SEPARATE one (keysharp-helper) with its own prompt — like
-		// macOS's separate Accessibility and Screen Recording permissions. So they are
-		// requested independently: the inputd request coalesces to the full input set
-		// (ExpandInputPermissionRequest) for a single input prompt, and screen capture
-		// prompts on its own. Aggregate to the worst status (Combine).
-		public override PermissionResult RequestInputCapabilities(bool monitoring, bool injection, bool blockInput, bool screenCapture = false, bool accessibilityAutomation = false, bool? prompt = null, string operation = null)
+		// Combine scopes handled by the same authority into one polkit transaction.
+		public override PermissionResult RequestCapabilities(
+			bool inputMonitoring = false,
+			bool inputControl = false,
+			bool windowMonitoring = false,
+			bool windowControl = false,
+			bool screenCapture = false,
+			bool audioCapture = false,
+			bool cameraCapture = false,
+			bool clipboardMonitoring = false,
+			bool? prompt = null,
+			string operation = null)
 		{
-			var flags = KeysharpInputdClient.Capabilities.None;
-
-			if (accessibilityAutomation) flags |= KeysharpInputdClient.Capabilities.AccessibilityAutomation;
-			if (monitoring)    flags |= KeysharpInputdClient.Capabilities.HookKeyboard | KeysharpInputdClient.Capabilities.HookMouse;
-			if (injection)     flags |= KeysharpInputdClient.Capabilities.SynthKeyboard | KeysharpInputdClient.Capabilities.SynthMouse;
-			if (blockInput)
-				flags |= KeysharpInputdClient.Capabilities.BlockInput | KeysharpInputdClient.Capabilities.HookMouse;
-
 			var result = new PermissionResult(PermissionStatus.NotApplicable);
+			var allowInteraction = ResolvePrompt(prompt);
+			var desktopScopes = LinuxPermissionScope.None;
+			if (windowMonitoring)    desktopScopes |= LinuxPermissionScope.WindowMonitoring;
+			if (windowControl)       desktopScopes |= LinuxPermissionScope.WindowControl;
+			if (screenCapture)       desktopScopes |= LinuxPermissionScope.ScreenCapture;
+			if (audioCapture)        desktopScopes |= LinuxPermissionScope.AudioCapture;
+			if (cameraCapture)       desktopScopes |= LinuxPermissionScope.CameraCapture;
+			if (clipboardMonitoring) desktopScopes |= LinuxPermissionScope.ClipboardMonitoring;
 
-			if (flags != KeysharpInputdClient.Capabilities.None)
-				result = Combine(result, KeysharpInputdManager.EnsureCapabilities(
-						KeysharpInputdManager.ExpandInputPermissionRequest(flags),
-						operation ?? "RequestCapabilities", forcePrompt: prompt == true));
+			var inputScopes = inputMonitoring
+				? LinuxPermissionScope.InputMonitoring
+					| (inputControl ? LinuxPermissionScope.InputControl : LinuxPermissionScope.None)
+				: LinuxPermissionScope.None;
 
-			if (screenCapture)
-				result = Combine(result, RequestScreenCapture(prompt, operation));
+			if (inputScopes != LinuxPermissionScope.None)
+			{
+				result = Combine(result, allowInteraction
+					? KeysharpInputManager.EnsurePermissionScope(
+						inputScopes, operation ?? "RequestCapabilities", forcePrompt: prompt == true)
+					: KeysharpInputManager.PeekInputPermission(inputScopes));
+			}
+			else if (inputControl && desktopScopes == LinuxPermissionScope.None)
+				result = Combine(result, RequestInputControl(prompt, operation));
+			else if (inputControl)
+				desktopScopes |= LinuxPermissionScope.InputControl;
+
+			if (desktopScopes != LinuxPermissionScope.None)
+				result = Combine(result, DesktopClient.RequestAuthorization(desktopScopes,
+					allowInteraction, forcePrompt: prompt == true));
 
 			return result;
 		}

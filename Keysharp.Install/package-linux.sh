@@ -63,16 +63,16 @@ source "${COMPONENT_LOCK}"
 
 validate_component_lock() {
   local package
-  [[ "${KEYSHARP_INPUT_DEBIAN_PROTOCOL_PACKAGE}" \
-      == "keysharp-input-protocol-${KEYSHARP_INPUT_PROTOCOL_MAJOR}.${KEYSHARP_INPUT_PROTOCOL_MINOR}" ]] \
-    || { echo "The input Debian protocol package does not match the locked protocol." >&2; return 1; }
-  [[ "${KEYSHARP_DESKTOP_DEBIAN_PROTOCOL_PACKAGE}" \
-      == "keysharp-desktop-protocol-${KEYSHARP_DESKTOP_PROTOCOL_MAJOR}.${KEYSHARP_DESKTOP_PROTOCOL_MINOR}" ]] \
-    || { echo "The desktop Debian protocol package does not match the locked protocol." >&2; return 1; }
-  for package in "${KEYSHARP_INPUT_DEBIAN_PROTOCOL_PACKAGE}" \
-      "${KEYSHARP_DESKTOP_DEBIAN_PROTOCOL_PACKAGE}"; do
+  [[ "${KEYSHARP_INPUT_DEBIAN_CLIENT_PACKAGE}" \
+      == "keysharp-input-client-abi-${KEYSHARP_INPUT_CLIENT_ABI}" ]] \
+    || { echo "The input Debian capability does not match the locked client ABI." >&2; return 1; }
+  [[ "${KEYSHARP_DESKTOP_DEBIAN_CLIENT_PACKAGE}" \
+      == "keysharp-desktop-client-abi-${KEYSHARP_DESKTOP_CLIENT_ABI}" ]] \
+    || { echo "The desktop Debian capability does not match the locked client ABI." >&2; return 1; }
+  for package in "${KEYSHARP_INPUT_DEBIAN_CLIENT_PACKAGE}" \
+      "${KEYSHARP_DESKTOP_DEBIAN_CLIENT_PACKAGE}"; do
     [[ "${package}" =~ ^[a-z0-9][a-z0-9+.-]+$ ]] \
-      || { echo "Invalid Debian protocol package name: ${package}" >&2; return 1; }
+      || { echo "Invalid Debian client ABI package name: ${package}" >&2; return 1; }
   done
 }
 
@@ -134,8 +134,8 @@ component_expected_sha() {
   local arch_key value_name
   arch_key="$(printf '%s' "${RID}" | tr '[:lower:]-' '[:upper:]_')"
   case "${component}" in
-    keysharp-input) value_name="KEYSHARP_INPUT_SHA256_${arch_key}" ;;
-    keysharp-desktop) value_name="KEYSHARP_DESKTOP_SHA256_${arch_key}" ;;
+    keysharp-input) value_name="KEYSHARP_INPUT_TARBALL_SHA256_${arch_key}" ;;
+    keysharp-desktop) value_name="KEYSHARP_DESKTOP_TARBALL_SHA256_${arch_key}" ;;
     *) return 1 ;;
   esac
   printf '%s\n' "${!value_name:-}"
@@ -182,29 +182,13 @@ find_local_component_archive() {
   return 1
 }
 
-component_archive_info_value() {
-  local info="$1"
-  shift
-  local key value
-  for key in "$@"; do
-    value="$(printf '%s\n' "${info}" | sed -n "s/^${key}=//p" | head -n 1)"
-    if [[ -n "${value}" ]]; then
-      printf '%s\n' "${value}"
-      return 0
-    fi
-  done
-  return 1
-}
-
 validate_component_archive() {
   local component="$1"
   local version="$2"
-  local protocol_name="$3"
-  local protocol_major="$4"
-  local protocol_minor="$5"
-  local archive="$6"
-  local archive_name archive_root listing detail type entry temporary binary info
-  local actual_version actual_protocol actual_major actual_minor runner=()
+  local client_abi="$3"
+  local archive="$4"
+  local archive_name archive_root listing detail type entry target temporary
+  local library binary installer uninstaller
 
   archive_name="$(basename -- "${archive}")"
   archive_root="${archive_name%.tar.gz}"
@@ -231,8 +215,15 @@ validate_component_archive() {
     type="${detail:0:1}"
     case "${type}" in
       -|d) ;;
+      l)
+        target="${detail##* -> }"
+        [[ "${target}" =~ ^[A-Za-z0-9._+-]+$ ]] || {
+          echo "Standalone archive has an unsafe symbolic link: ${archive_name}" >&2
+          return 1
+        }
+        ;;
       *)
-        echo "Standalone archives may contain only regular files and directories: ${archive_name}" >&2
+        echo "Standalone archive has an unsupported entry type: ${archive_name}" >&2
         return 1
         ;;
     esac
@@ -244,50 +235,23 @@ validate_component_archive() {
     rm -rf -- "${temporary}"
     return 1
   fi
-  case "${component}" in
-    keysharp-input)
-      binary="${temporary}/${archive_root}/bin/keysharp-inputd"
-      ;;
-    keysharp-desktop)
-      binary="${temporary}/${archive_root}/payload/usr/local/bin/keysharp-desktop"
-      ;;
-    *)
-      rm -rf -- "${temporary}"
-      return 1
-      ;;
-  esac
-  if [[ ! -x "${binary}" \
-      || ! -x "${temporary}/${archive_root}/install.sh" \
-      || ! -x "${temporary}/${archive_root}/uninstall.sh" ]]; then
-    echo "Standalone archive has an incomplete executable layout: ${archive_name}" >&2
+  binary="$(find "${temporary}/${archive_root}" -type f -name "${component}" -print -quit)"
+  library="$(find "${temporary}/${archive_root}" \
+    \( -type f -o -type l \) -name "lib${component}.so.${client_abi}" -print -quit)"
+  installer="${temporary}/${archive_root}/install.sh"
+  uninstaller="${temporary}/${archive_root}/uninstall.sh"
+  if [[ -z "${binary}" || ! -x "${binary}" || -z "${library}" \
+      || ! -f "${installer}" || ! -f "${uninstaller}" ]]; then
+    echo "Standalone archive does not contain ${component} and client ABI ${client_abi}: ${archive_name}" >&2
     rm -rf -- "${temporary}"
     return 1
   fi
-  if ! bash -n "${temporary}/${archive_root}/install.sh" \
-      "${temporary}/${archive_root}/uninstall.sh"; then
+  if ! bash -n "${installer}" "${uninstaller}"; then
     echo "Standalone archive has an invalid lifecycle script: ${archive_name}" >&2
     rm -rf -- "${temporary}"
     return 1
   fi
-  command -v timeout >/dev/null 2>&1 && runner=(timeout 5)
-  case "${component}" in
-    keysharp-input) info="$("${runner[@]}" "${binary}" --info 2>/dev/null || true)" ;;
-    keysharp-desktop) info="$("${runner[@]}" "${binary}" version 2>/dev/null || true)" ;;
-  esac
   rm -rf -- "${temporary}"
-
-  actual_version="$(component_archive_info_value "${info}" version product_version 2>/dev/null || true)"
-  actual_protocol="$(component_archive_info_value "${info}" protocol-name protocol_name 2>/dev/null || true)"
-  actual_major="$(component_archive_info_value "${info}" protocol-major protocol_major 2>/dev/null || true)"
-  actual_minor="$(component_archive_info_value "${info}" protocol-minor protocol_minor 2>/dev/null || true)"
-  if [[ "${actual_version}" != "${version}" \
-      || "${actual_protocol}" != "${protocol_name}" \
-      || "${actual_major}" != "${protocol_major}" \
-      || "${actual_minor}" != "${protocol_minor}" ]]; then
-    echo "Standalone archive metadata mismatch for ${archive_name}." >&2
-    echo "Expected product ${version}, protocol ${protocol_name} ${protocol_major}.${protocol_minor}." >&2
-    return 1
-  fi
 }
 
 download_component_archive() {
@@ -322,9 +286,7 @@ stage_component_archive() {
   local component="$1"
   local repository="$2"
   local version="$3"
-  local protocol_name="$4"
-  local protocol_major="$5"
-  local protocol_minor="$6"
+  local client_abi="$4"
   local archive_name source_archive destination expected_sha actual_sha
 
   archive_name="$(component_archive_name "${component}" "${version}")"
@@ -355,13 +317,12 @@ stage_component_archive() {
     echo "SHA-256 mismatch for ${archive_name}: expected ${expected_sha}, got ${actual_sha}." >&2
     return 1
   fi
-  validate_component_archive "${component}" "${version}" "${protocol_name}" \
-    "${protocol_major}" "${protocol_minor}" "${source_archive}"
+  validate_component_archive "${component}" "${version}" "${client_abi}" \
+    "${source_archive}"
 
   cp "${source_archive}" "${destination}"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "${component}" "${version}" "${protocol_name}" "${protocol_major}" \
-    "${protocol_minor}" "${archive_name}" "${actual_sha}" \
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "${component}" "${version}" "${client_abi}" "${archive_name}" "${actual_sha}" \
     >> "${PKG_DIR}/components/manifest.tsv"
 }
 
@@ -372,26 +333,24 @@ stage_components() {
   fi
 
   mkdir -p "${PKG_DIR}/components"
-  printf '# component\tproduct-version\tprotocol-name\tprotocol-major\tprotocol-minor\tarchive\tsha256\n' \
+  printf '# component\tproduct-version\tclient-abi\tarchive\tsha256\n' \
     > "${PKG_DIR}/components/manifest.tsv"
 
   stage_component_archive \
     keysharp-input "${KEYSHARP_INPUT_REPOSITORY}" "${KEYSHARP_INPUT_VERSION}" \
-    "${KEYSHARP_INPUT_PROTOCOL_NAME}" "${KEYSHARP_INPUT_PROTOCOL_MAJOR}" \
-    "${KEYSHARP_INPUT_PROTOCOL_MINOR}"
+    "${KEYSHARP_INPUT_CLIENT_ABI}"
   stage_component_archive \
     keysharp-desktop "${KEYSHARP_DESKTOP_REPOSITORY}" "${KEYSHARP_DESKTOP_VERSION}" \
-    "${KEYSHARP_DESKTOP_PROTOCOL_NAME}" "${KEYSHARP_DESKTOP_PROTOCOL_MAJOR}" \
-    "${KEYSHARP_DESKTOP_PROTOCOL_MINOR}"
+    "${KEYSHARP_DESKTOP_CLIENT_ABI}"
 }
 
 preflight_component_archives() {
-  local component repository version protocol_name protocol_major protocol_minor
+  local component repository version client_abi
   local archive_name source_archive expected_sha actual_sha
 
   [[ "${PACKAGE_COMPONENTS}" == true ]] || return 0
 
-  while read -r component repository version protocol_name protocol_major protocol_minor; do
+  while read -r component repository version client_abi; do
     archive_name="$(component_archive_name "${component}" "${version}")"
     source_archive="$(find_local_component_archive \
       "${component}" "${archive_name}" || true)"
@@ -424,12 +383,12 @@ preflight_component_archives() {
       echo "SHA-256 mismatch for ${archive_name}: expected ${expected_sha}, got ${actual_sha}." >&2
       return 1
     fi
-    validate_component_archive "${component}" "${version}" "${protocol_name}" \
-      "${protocol_major}" "${protocol_minor}" "${source_archive}" \
+    validate_component_archive "${component}" "${version}" "${client_abi}" \
+      "${source_archive}" \
       || return 1
   done <<EOF
-keysharp-input ${KEYSHARP_INPUT_REPOSITORY} ${KEYSHARP_INPUT_VERSION} ${KEYSHARP_INPUT_PROTOCOL_NAME} ${KEYSHARP_INPUT_PROTOCOL_MAJOR} ${KEYSHARP_INPUT_PROTOCOL_MINOR}
-keysharp-desktop ${KEYSHARP_DESKTOP_REPOSITORY} ${KEYSHARP_DESKTOP_VERSION} ${KEYSHARP_DESKTOP_PROTOCOL_NAME} ${KEYSHARP_DESKTOP_PROTOCOL_MAJOR} ${KEYSHARP_DESKTOP_PROTOCOL_MINOR}
+keysharp-input ${KEYSHARP_INPUT_REPOSITORY} ${KEYSHARP_INPUT_VERSION} ${KEYSHARP_INPUT_CLIENT_ABI}
+keysharp-desktop ${KEYSHARP_DESKTOP_REPOSITORY} ${KEYSHARP_DESKTOP_VERSION} ${KEYSHARP_DESKTOP_CLIENT_ABI}
 EOF
 }
 
@@ -496,7 +455,7 @@ Architecture: ${DEB_ARCH}
 Maintainer: Descolada <16986957+Descolada@users.noreply.github.com>
 Homepage: https://github.com/keysharp-org/Keysharp
 Depends: dotnet-runtime-10.0, libx11-6, libxtst6, libxinerama1, libxt6, libx11-xcb1, libxkbcommon-x11-0, libxcb-xtest0, libgtk-3-0, libglib2.0-0, libnotify4, libatspi2.0-0, at-spi2-core, pulseaudio-utils
-Recommends: keysharp-input (>= ${KEYSHARP_INPUT_VERSION}), ${KEYSHARP_INPUT_DEBIAN_PROTOCOL_PACKAGE}, keysharp-desktop (>= ${KEYSHARP_DESKTOP_VERSION}), ${KEYSHARP_DESKTOP_DEBIAN_PROTOCOL_PACKAGE}
+Recommends: ${KEYSHARP_INPUT_DEBIAN_CLIENT_PACKAGE}, ${KEYSHARP_DESKTOP_DEBIAN_CLIENT_PACKAGE}
 Description: A cross-platform C# port and enhancement of the AutoHotkey program
 EOF
 }

@@ -12,8 +12,9 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="capabilities">
 		/// Zero or more capability names (strings or Arrays of strings). Names may be comma/space-delimited.
-		/// Recognised aliases: "accessibility", "blockinput", "inputinjection"/"synthinput",
-		/// "inputmonitoring"/"hook", "screencapture"/"capture".
+		/// The canonical names are InputMonitoring, InputControl, WindowMonitoring, WindowControl,
+		/// ScreenCapture, AudioCapture, CameraCapture and ClipboardMonitoring. Names are case-insensitive;
+		/// aliases are not accepted.
 		/// </param>
 		/// <returns>
 		/// An Object with a property per capability ("Granted"|"Denied"|"NotApplicable"|"Unsupported")

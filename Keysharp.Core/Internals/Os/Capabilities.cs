@@ -10,11 +10,14 @@ namespace Keysharp.Internals.Os
 	/// </summary>
 	internal enum KeysharpCapability
 	{
-		AccessibilityAutomation,
-		BlockInput,
-		InputInjection,
 		InputMonitoring,
-		ScreenCapture
+		InputControl,
+		WindowMonitoring,
+		WindowControl,
+		ScreenCapture,
+		AudioCapture,
+		CameraCapture,
+		ClipboardMonitoring
 	}
 
 	/// <summary>
@@ -27,21 +30,17 @@ namespace Keysharp.Internals.Os
 		{
 			var permissions = Script.TheScript.Permissions;
 
-			var monitoring    = requested.Contains(KeysharpCapability.InputMonitoring);
-			var injection     = requested.Contains(KeysharpCapability.InputInjection);
-			var blockInput    = requested.Contains(KeysharpCapability.BlockInput);
-			var screenCapture = requested.Contains(KeysharpCapability.ScreenCapture);
-			var accessibility = requested.Contains(KeysharpCapability.AccessibilityAutomation);
-
-			// Input capabilities (hooks/synth/block) are one enforcement domain and screen
-			// capture is a SEPARATE one, each with its own prompt — like macOS's separate
-			// Accessibility and Screen Recording permissions. Request each exactly once
-			// (screenCapture:false here so it is not also asked for inside the input call).
-			if (monitoring || injection || blockInput || accessibility)
-				permissions.RequestInputCapabilities(monitoring, injection, blockInput, screenCapture: false, accessibility, prompt: true, operation: "RequestCapabilities");
-
-			if (screenCapture)
-				permissions.RequestScreenCapture(prompt: true, operation: "RequestCapabilities");
+			_ = permissions.RequestCapabilities(
+				inputMonitoring: requested.Contains(KeysharpCapability.InputMonitoring),
+				inputControl: requested.Contains(KeysharpCapability.InputControl),
+				windowMonitoring: requested.Contains(KeysharpCapability.WindowMonitoring),
+				windowControl: requested.Contains(KeysharpCapability.WindowControl),
+				screenCapture: requested.Contains(KeysharpCapability.ScreenCapture),
+				audioCapture: requested.Contains(KeysharpCapability.AudioCapture),
+				cameraCapture: requested.Contains(KeysharpCapability.CameraCapture),
+				clipboardMonitoring: requested.Contains(KeysharpCapability.ClipboardMonitoring),
+				prompt: true,
+				operation: "RequestCapabilities");
 		}
 
 		internal static PermissionResult QueryStatus(KeysharpCapability capability)
@@ -50,34 +49,24 @@ namespace Keysharp.Internals.Os
 
 			return capability switch
 				{
-					KeysharpCapability.AccessibilityAutomation
-						=> permissions.RequestAccessibilityAutomation(prompt: false),
-					KeysharpCapability.InputInjection
-						=> permissions.RequestInputInjection(prompt: false),
 					KeysharpCapability.InputMonitoring
 						=> permissions.RequestInputMonitoring(prompt: false),
+					KeysharpCapability.InputControl
+						=> permissions.RequestInputControl(prompt: false),
+					KeysharpCapability.WindowMonitoring
+						=> permissions.RequestWindowMonitoring(prompt: false),
+					KeysharpCapability.WindowControl
+						=> permissions.RequestWindowControl(prompt: false),
 					KeysharpCapability.ScreenCapture
 						=> permissions.RequestScreenCapture(prompt: false),
-					KeysharpCapability.BlockInput
-						=> QueryBlockInputCapability(),
+					KeysharpCapability.AudioCapture
+						=> permissions.RequestAudioCapture(prompt: false),
+					KeysharpCapability.CameraCapture
+						=> permissions.RequestCameraCapture(prompt: false),
+					KeysharpCapability.ClipboardMonitoring
+						=> permissions.RequestClipboardMonitoring(prompt: false),
 				_ => new PermissionResult(PermissionStatus.Unsupported)
 			};
-		}
-
-		private static PermissionResult QueryBlockInputCapability()
-		{
-#if LINUX
-			// Status query — peek, never prompt. BlockInput's movement-only mode is served by the mouse hook,
-			// so both capabilities are part of the answer.
-			return Keysharp.Internals.Input.Linux.KeysharpInputdManager.PeekInputCapability(
-				Keysharp.Internals.Input.Linux.KeysharpInputdClient.Capabilities.BlockInput
-				| Keysharp.Internals.Input.Linux.KeysharpInputdClient.Capabilities.HookMouse);
-#elif OSX
-			// BlockInput is implemented by the same active event tap used for input monitoring.
-			return Script.TheScript.Permissions.RequestInputMonitoring(prompt: false, operation: "BlockInput");
-#else
-			return new PermissionResult(PermissionStatus.NotApplicable);
-#endif
 		}
 
 		internal static List<KeysharpCapability> ParseRequested(object[] capabilities)
@@ -109,53 +98,42 @@ namespace Keysharp.Internals.Os
 			if (string.IsNullOrWhiteSpace(name))
 				return;
 
-			var capability = ParseName(name);
+			AddUnique(requested, ParseName(name.Trim()));
+		}
 
+		private static void AddUnique(List<KeysharpCapability> requested, KeysharpCapability capability)
+		{
 			if (!requested.Contains(capability))
 				requested.Add(capability);
 		}
 
 		private static KeysharpCapability ParseName(string name)
 		{
-			var normalized = NormalizeName(name);
-
-			return normalized switch
+			return name.ToLowerInvariant() switch
 			{
-				"accessibility" or "accessibilityautomation" or "automation" or "windowautomation"
-					=> KeysharpCapability.AccessibilityAutomation,
-				"blockinput" or "inputblock" or "inputblocking"
-					=> KeysharpCapability.BlockInput,
-				"inputinjection" or "inputsending" or "inputsend" or "sendinput" or "synthinput" or "synthesizeinput"
-					=> KeysharpCapability.InputInjection,
-				"inputmonitoring" or "inputhook" or "inputhooks" or "hookinput" or "keyboardmousemonitoring"
-					=> KeysharpCapability.InputMonitoring,
-				"screencapture" or "screenrecording" or "capture" or "imagecapture"
-					=> KeysharpCapability.ScreenCapture,
+				"inputcontrol" => KeysharpCapability.InputControl,
+				"inputmonitoring" => KeysharpCapability.InputMonitoring,
+				"windowmonitoring" => KeysharpCapability.WindowMonitoring,
+				"windowcontrol" => KeysharpCapability.WindowControl,
+				"screencapture" => KeysharpCapability.ScreenCapture,
+				"audiocapture" => KeysharpCapability.AudioCapture,
+				"cameracapture" => KeysharpCapability.CameraCapture,
+				"clipboardmonitoring" => KeysharpCapability.ClipboardMonitoring,
 				_ => throw new ValueError($"Unknown capability name: {name}.")
 			};
-		}
-
-		private static string NormalizeName(string name)
-		{
-			var builder = new StringBuilder(name.Length);
-
-			foreach (var ch in name)
-			{
-				if (char.IsLetterOrDigit(ch))
-					builder.Append(char.ToLowerInvariant(ch));
-			}
-
-			return builder.ToString();
 		}
 
 		internal static string NameOf(KeysharpCapability capability)
 			=> capability switch
 			{
-				KeysharpCapability.AccessibilityAutomation => "AccessibilityAutomation",
-				KeysharpCapability.BlockInput => "BlockInput",
-				KeysharpCapability.InputInjection => "InputInjection",
 				KeysharpCapability.InputMonitoring => "InputMonitoring",
+				KeysharpCapability.InputControl => "InputControl",
+				KeysharpCapability.WindowMonitoring => "WindowMonitoring",
+				KeysharpCapability.WindowControl => "WindowControl",
 				KeysharpCapability.ScreenCapture => "ScreenCapture",
+				KeysharpCapability.AudioCapture => "AudioCapture",
+				KeysharpCapability.CameraCapture => "CameraCapture",
+				KeysharpCapability.ClipboardMonitoring => "ClipboardMonitoring",
 				_ => capability.ToString()
 			};
 	}

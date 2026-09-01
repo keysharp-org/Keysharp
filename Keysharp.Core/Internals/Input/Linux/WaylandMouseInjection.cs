@@ -2,14 +2,9 @@
 namespace Keysharp.Internals.Input.Linux
 {
 	/// <summary>
-	/// Shared resolver for the active compositor's mouse-injection backend, used by both Linux keyboard/mouse
-	/// senders (legacy-X11 <see cref="LinuxKeyboardMouseSender"/> and <see cref="InputdKeyboardMouseSender"/>) to
-	/// route synthesized mouse events through the compositor on Wayland. Returns null off-Wayland or when the
-	/// active backend can't inject mouse input, so the caller falls back to inputd/uinput.
-	///
-	/// NOTE: deliberately NOT <c>Platform.Mouse</c> — that path also performs an X11 <c>XWarpPointer</c> on a
-	/// non-Wayland session, which would wrongly suppress the inputd/uinput fallback. The senders
-	/// specifically want "the compositor mouse backend, or nothing".
+	/// Resolves the active Wayland compositor's mouse-injection backend for Linux keyboard/mouse senders.
+	/// This bypasses <c>Platform.Mouse</c> because that path may perform an X11 warp instead of allowing the
+	/// caller to fall back to keysharp-input.
 	/// </summary>
 	internal static class WaylandMouseInjection
 	{

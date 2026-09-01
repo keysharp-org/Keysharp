@@ -2,7 +2,7 @@
 namespace Keysharp.Internals.Input.Keyboard
 {
 	/// <summary>
-	/// VK/SC dispatch for the non-Windows backends. On Linux SC is an inputd evdev
+	/// VK/SC dispatch for the non-Windows backends. On Linux SC is an input service evdev
 	/// code; on macOS SC is the kVK code.
 	/// </summary>
 	internal static partial class KeyCodes

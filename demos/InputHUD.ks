@@ -1,5 +1,5 @@
 #Requires AutoHotkey v2.0
-#Requires capability InputMonitoring   ; the passive keyboard/mouse hook; prompted at startup by this directive
+#Requires capability InputMonitoring, InputControl   ; passive event display plus the HUD's suppressing control/drag hotkeys
 #SingleInstance Force
 #include Shell.ks
 

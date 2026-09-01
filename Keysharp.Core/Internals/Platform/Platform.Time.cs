@@ -43,7 +43,7 @@ namespace Keysharp.Internals
 				if (Keysharp.Internals.Window.Linux.Wayland.WaylandBackend.Current?.TryGetIdleTime(out milliseconds) == true)
 					return true;
 
-				return Keysharp.Internals.Input.Linux.KeysharpInputdManager.TryGetIdleTime(out milliseconds);
+				return Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetIdleTime(out milliseconds);
 			}
 #endif
 		}

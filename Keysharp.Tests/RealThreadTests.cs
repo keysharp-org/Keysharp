@@ -664,7 +664,7 @@ namespace Keysharp.Tests
 			_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(s);
 
 			// Installing a real global hook needs devices to grab: a headless container (WSL/CI has no /dev/input
-			// and no keysharp-inputd) cannot, so there is nothing to assert about unhooking there.
+			// and no keysharp-input) cannot, so there is nothing to assert about unhooking there.
 			if (!s.HookThread.HasKbdHook())
 				Assert.Ignore("No global keyboard hook in this environment; hook installation needs real input devices.");
 

@@ -1396,21 +1396,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (keys?.Length == 0)
 				return;
 
-			script.Permissions.EnsureInputInjection(operation: "SendKeys");
-			var ht = script.HookThread;
-
-			// EnsureInputInjection may have switched the active transport (e.g. inputd
-			// injection denied on an X11 session activates the XTEST fallback, which
-			// swaps kbdMsSender). SendKeys is already dispatched on this instance, so
-			// re-dispatch to the current sender rather than running on a stale one.
-			// Normally a no-op (this == kbdMsSender).
-			var activeSender = ht.kbdMsSender;
-
-			if (!ReferenceEquals(this, activeSender))
-			{
-				activeSender.SendKeys(keys, sendRaw, sendModeOrig, targetWindow);
-				return;
-			}
+			script.Permissions.EnsureInputControl(operation: "SendKeys");
 
 			try
 			{
@@ -2715,7 +2701,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		// Send a UTF-16 surrogate pair as one logical unit. Default: two
 		// SendUnicodeChar calls (Windows/Unix/macOS reconstruct the codepoint
-		// per-unit). The Linux inputd sender overrides this to emit both units in a
+		// per-unit). The Linux input service sender overrides this to emit both units in a
 		// single synthesis batch, so the daemon's per-batch high-surrogate reset
 		// cannot drop the high half between two separate batches (astral chars in
 		// SendMode Event with no hook installed would otherwise vanish).

@@ -1,4 +1,4 @@
-﻿using Assert = NUnit.Framework.Legacy.ClassicAssert;
+using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests
 {
@@ -63,7 +63,7 @@ namespace Keysharp.Tests
 		[Test, Category("Threading")]
 		public void HookMutexIsolation()
 		{
-			s.Dispose();//Otherwise it stays in KeysharpInputdManager.owners and blocks every later DisconnectClients.
+			s.Dispose();//Otherwise it stays in KeysharpInputManager.owners and blocks every later DisconnectClients.
 
 			using (var named = new Script(typeof(SchedulerTests), "CustomHookMutex"))
 			{

@@ -74,7 +74,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	///
 	/// Compositors with no introspection IPC (labwc, river without flowing, GNOME for foreign
 	/// clients) get the null backend: every Try* method returns false and the caller falls
-	/// back to whatever degraded path it has (keysharp-inputd, Forms.Mouse, or a hard error).
+	/// back to whatever degraded path it has (keysharp-input, Forms.Mouse, or a hard error).
 	/// </summary>
 	internal interface IWaylandBackend
 	{
@@ -85,7 +85,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// True when the backend can simulate mouse input via
 		/// <see cref="TrySendMouseMoveAbsolute"/>, <see cref="TrySendMouseButton"/>, etc.
 		/// Used by <see cref="Keysharp.Internals.Input.Linux.LinuxKeyboardMouseSender"/>
-		/// to prefer compositor-native mouse injection over inputd on Wayland.
+		/// to prefer compositor-native mouse injection over input service on Wayland.
 		/// </summary>
 		bool SupportsMouse => false;
 
@@ -234,17 +234,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		OverlayShowResult TryShowImageOverlay(uint id, int x, int y, int width, int height, byte[] pngBytes)
 			=> OverlayShowResult.Failed;
 
-		/// <summary>The same overlay, taking the frame as shared memory instead of encoded PNG: the client writes
-		/// premultiplied BGRA into <paramref name="shmPath"/> and the shell maps the same file, so an animated
-		/// overlay costs one texture upload per frame rather than a PNG encode, a multi-megabyte D-Bus payload and
-		/// a PNG decode. <paramref name="pixelWidth"/>/<paramref name="pixelHeight"/>/<paramref name="stride"/>
-		/// describe the buffer; width/height stay the on-screen size. A resized overlay must name a NEW path -- that
-		/// is how the shell knows to re-map. Returns <see cref="OverlayShowResult.Failed"/> where unsupported (which
-		/// includes an installed extension too old to have the method), so the caller can drop back to PNG.</summary>
-		OverlayShowResult TryShowImageOverlayShm(uint id, int x, int y, int width, int height,
-			string shmPath, int pixelWidth, int pixelHeight, int stride)
-			=> OverlayShowResult.Failed;
-
 		/// <summary>Reposition/resize an existing image overlay by id, reusing the pixels already uploaded to the
 		/// compositor (no re-encode). False = unsupported or no such overlay; the caller should re-Show instead.</summary>
 		bool TryMoveImageOverlay(uint id, int x, int y, int width, int height) => false;
@@ -285,8 +274,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		// ---- Mouse simulation -------------------------------------------
 		// Default implementations return false (backend does not support it).
-		// GnomeBackend overrides these to use Clutter.VirtualInputDevice via
-		// the shell extension D-Bus service.
 
 		bool TrySendMouseMoveAbsolute(int x, int y) => false;
 

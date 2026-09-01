@@ -5,7 +5,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	/// Pure conversion from a global screen-pixel coordinate to zwlr_virtual_pointer_v1's
 	/// motion_absolute wire arguments. The compositor computes position as x/x_extent (a [0,1]
 	/// fraction of the whole output-layout bounding box when no output is pinned to the pointer),
-	/// so this mirrors InputdKeyboardMouseSender's virtual-desktop-origin translation for the
+	/// so this mirrors LinuxKeyboardMouseSender's virtual-desktop-origin translation for the
 	/// uinput fallback (targetX - vb.Left, etc.) rather than a [0,65535] uinput-style normalization.
 	/// wlroots silently drops the request if either extent is 0, so extents are clamped to a
 	/// minimum of 1.

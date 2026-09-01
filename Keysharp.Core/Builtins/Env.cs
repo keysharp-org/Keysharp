@@ -59,6 +59,7 @@ namespace Keysharp.Builtins
 		/// <returns>True if it did not time out, else false.</returns>
 		public static bool ClipWait(object timeout = null, object waitFor = null)
 		{
+			ClipboardPermission.EnsureMonitoring("ClipWait");
 			var to = timeout.Ad(double.MinValue);
 			var condition = ParseWaitCondition(waitFor);
 			var checktime = to != double.MinValue;
@@ -269,7 +270,12 @@ namespace Keysharp.Builtins
 				if (callback is KeysharpFunc fo)
 				{
 					var script = Script.TheScript;
-					if (script.ClipFunctions.ModifyEventHandlers(fo, addRemove.Al(1)))
+					var change = addRemove.Al(1);
+
+					if (change != 0)
+						ClipboardPermission.EnsureMonitoring("OnClipboardChange");
+
+					if (script.ClipFunctions.ModifyEventHandlers(fo, change))
 						script.UpdateClipboardMonitoring();
 
 					return DefaultObject;
@@ -526,7 +532,7 @@ namespace Keysharp.Builtins
 		/// </para>
 		/// <para>
 		/// Per-backend accuracy is therefore whatever the sender reports: X11 reads the pointer map, while the native
-		/// Wayland/inputd and macOS senders currently answer false unconditionally. That is a pre-existing gap rather
+		/// Wayland/input service and macOS senders currently answer false unconditionally. That is a pre-existing gap rather
 		/// than a regression here — consolidating removes a second, differently-wrong answer, and closing the
 		/// remaining one belongs in the senders, where the send path picks it up at the same time.
 		/// </para>
@@ -568,6 +574,9 @@ namespace Keysharp.Builtins
 		// arity/defaults/named binding follow from it (see Buffer.__New and Any's constructor).
 		public new object __New(object Data = null, object Size = null)
 		{
+			if (Data == null)
+				ClipboardPermission.EnsureMonitoring("ClipboardAll");
+
 			var bytes = Data == null
 						? Platform.Clipboard.CaptureAll()
 						: Env.ExtractClipboardAllBytes(Data, Size is not null ? Size.ToLong() : long.MinValue);

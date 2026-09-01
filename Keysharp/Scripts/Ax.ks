@@ -37,7 +37,7 @@
         Running this file directly opens Ax.Viewer for inspection.
 */
 
-#Requires capability AccessibilityAutomation, InputMonitoring
+#Requires capability WindowMonitoring, WindowControl, InputMonitoring, InputControl
 #import KS { Highlight }
 
 #DllLoad /System/Library/Frameworks/ApplicationServices.framework/ApplicationServices

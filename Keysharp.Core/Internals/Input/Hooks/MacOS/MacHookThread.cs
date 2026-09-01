@@ -24,12 +24,6 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 		[DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
 		private static extern int CGAssociateMouseAndMouseCursorPosition(int connected);
 
-		protected override void EnsureCursorClipPermissions()
-		{
-			base.EnsureCursorClipPermissions();
-			_ = script.Permissions.EnsureInputInjection(operation: "ClipCursor");
-		}
-
 		protected override bool CanClipCursor(out string reason)
 		{
 			var active = HasMouseHook();
@@ -417,7 +411,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			var continuous = MacNativeInput.CGEventGetIntegerValueField(cgEvent,
 				MacNativeInput.kCGScrollWheelEventIsContinuous) != 0;
 
-			// Windows and inputd expose wheel deltas in WHEEL_DELTA (120) units. Quartz line
+			// Windows and input service expose wheel deltas in WHEEL_DELTA (120) units. Quartz line
 			// fields are notch/line units, while the fixed field preserves fractional lines for
 			// continuous devices. Select the precise representation without changing the public unit.
 			if (continuous && fixedLine != 0)
@@ -485,7 +479,8 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 				return true;
 
 			var requestedMask = MacNativeInput.EventMaskFor(wantKeyboard, wantMouse);
-			if (nativeEventTap is { IsRunning: true, EventMask: var activeMask } && activeMask == requestedMask)
+			if (nativeEventTap is { IsRunning: true, EventMask: var activeMask }
+				&& activeMask == requestedMask)
 				return true;
 
 			if (!TryDisposeNativeTap(out var disposalFailure))
@@ -494,7 +489,19 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 				return false;
 			}
 
-			_ = script.Permissions.EnsureInputMonitoring(operation: "install keyboard/mouse hooks");
+			var permission = script.Permissions.RequestCapabilities(
+				inputMonitoring: true,
+				inputControl: true,
+				operation: "install keyboard/mouse hooks");
+
+			if (!permission.IsGranted)
+			{
+				message = permission.Message.IsNullOrEmpty()
+					? "Permission is required to install keyboard/mouse hooks."
+					: permission.Message;
+				return false;
+			}
+
 			// This is the only synchronous UI/layout preparation point. Once the native tap starts,
 			// key mapping is snapshot-only and can never wait on the UI thread.
 			KeyCodes.PrepareForInputHook(script);

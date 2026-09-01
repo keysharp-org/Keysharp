@@ -27,7 +27,7 @@
             Running this file directly opens AtSpi.Viewer for inspection.
 */
 
-#Requires capability AccessibilityAutomation, InputMonitoring
+#Requires capability WindowMonitoring, WindowControl, InputMonitoring, InputControl
 
 #import KS { WinFromPoint, Highlight }
 

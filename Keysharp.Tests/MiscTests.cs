@@ -1,4 +1,5 @@
 using Keysharp.Internals.Invoke;
+using Keysharp.Internals.Os;
 using static Keysharp.Builtins.Types;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
@@ -221,20 +222,40 @@ namespace Keysharp.Tests
 			var caps = Keysharp.Builtins.Ks.RequestCapabilities();
 
 #if WINDOWS
-			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "AccessibilityAutomation"));
-			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "BlockInput"));
-			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "InputInjection"));
 			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "InputMonitoring"));
+			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "InputControl"));
+			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "WindowMonitoring"));
+			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "WindowControl"));
 			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "ScreenCapture"));
+			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "AudioCapture"));
+			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "CameraCapture"));
+			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "ClipboardMonitoring"));
 			Assert.AreEqual(1L, Script.GetPropertyValue(caps, "IsGranted"));
 #else
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "AccessibilityAutomation"));
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "BlockInput"));
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "InputInjection"));
 			Assert.IsNotNull(Script.GetPropertyValue(caps, "InputMonitoring"));
+			Assert.IsNotNull(Script.GetPropertyValue(caps, "InputControl"));
+			Assert.IsNotNull(Script.GetPropertyValue(caps, "WindowMonitoring"));
+			Assert.IsNotNull(Script.GetPropertyValue(caps, "WindowControl"));
 			Assert.IsNotNull(Script.GetPropertyValue(caps, "ScreenCapture"));
+			Assert.IsNotNull(Script.GetPropertyValue(caps, "AudioCapture"));
+			Assert.IsNotNull(Script.GetPropertyValue(caps, "CameraCapture"));
+			Assert.IsNotNull(Script.GetPropertyValue(caps, "ClipboardMonitoring"));
 			Assert.IsNotNull(Script.GetPropertyValue(caps, "IsGranted"));
 #endif
+			Assert.IsNull(Script.GetPropertyValueOrNull(caps, "AccessibilityAutomation"));
+			Assert.IsNull(Script.GetPropertyValueOrNull(caps, "InputInjection"));
+			Assert.IsNull(Script.GetPropertyValueOrNull(caps, "BlockInput"));
+
+			foreach (var rejected in new[]
+				{
+					"AccessibilityAutomation", "InputInjection", "BlockInput",
+					"hook", "inputhook", "synthinput", "sendinput", "capture", "imagecapture",
+					"accessibility", "automation", "input-monitoring", "input_monitoring"
+				})
+			{
+				var error = Assert.Throws<KeysharpException>(() => CapabilityRequests.ParseRequested([rejected]));
+				Assert.IsInstanceOf<ValueError>(error.UserError);
+			}
 		}
 
 		[Test, Category("Misc"), NonParallelizable]

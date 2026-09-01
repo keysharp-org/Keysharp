@@ -795,7 +795,7 @@ TogglePresentationCheck(Item, Pos, MenuObj) {
 
 #z::
 {
-	KeyWait "LWin" ; This is necessary in X11+inputd, when a grab on Win can block the context menu from showing
+	KeyWait "LWin" ; This is necessary in X11+input service, when a grab on Win can block the context menu from showing
 	MyMenu.Show()  ; i.e. press the Win-Z hotkey to show the menu.
 }
 ;#z::Run("Notepad.exe")
@@ -4489,7 +4489,7 @@ RunSendScenario(mode, expected, label := "") {
 				Send("{Text}" expected)
 			case "SendText":
 #if LINUX
-				; keysharp-inputd types Unicode as Ctrl+Shift+U + hex codepoint, and the input bus handling
+				; keysharp-input types Unicode as Ctrl+Shift+U + hex codepoint, and the input bus handling
 				; that is async and slow, so Input mode outruns it and drops characters. Leaks SendMode and
 				; SetKeyDelay for the rest of the run, which is fine in a one-shot test.
 				SendMode "Event"

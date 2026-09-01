@@ -2,6 +2,12 @@ using Keysharp.Internals;
 
 namespace Keysharp.Builtins
 {
+	internal static class ClipboardPermission
+	{
+		internal static void EnsureMonitoring(string operation)
+			=> _ = Script.TheScript.Permissions.EnsureClipboardMonitoring(operation: operation);
+	}
+
 	public partial class Ks
 	{
 		/// <summary>
@@ -32,7 +38,11 @@ namespace Keysharp.Builtins
 
 			/// <summary>The clipboard's text, identical to <see cref="Accessors.A_Clipboard"/>. Setting "" clears the
 			/// clipboard entirely, as <c>A_Clipboard := ""</c> does.</summary>
-			public static object staticget_Text(object @this) => Platform.Clipboard.GetText();
+			public static object staticget_Text(object @this)
+			{
+				ClipboardPermission.EnsureMonitoring("Clipboard.Text");
+				return Platform.Clipboard.GetText();
+			}
 
 			public static object staticset_Text(object @this, object value)
 			{
@@ -44,6 +54,7 @@ namespace Keysharp.Builtins
 			/// accepts anything <c>Image(source)</c> does: an Image, a file path, a bitmap handle, or "HBITMAP:n".</summary>
 			public static object staticget_Image(object @this)
 			{
+				ClipboardPermission.EnsureMonitoring("Clipboard.Image");
 				// The resolved backend hands back a private copy (or null); on Cinnamon/Muffin Wayland that reads the
 				// image through the shell extension, elsewhere through the native/Eto clipboard.
 				var bmp = Platform.Clipboard.GetImage();
@@ -73,6 +84,7 @@ namespace Keysharp.Builtins
 			/// takes an Array of paths (or a single path) and publishes them with copy semantics.</summary>
 			public static object staticget_Files(object @this)
 			{
+				ClipboardPermission.EnsureMonitoring("Clipboard.Files");
 				var files = Platform.Clipboard.GetFiles();
 				return files == null || files.Length == 0 ? "" : new Array(files);
 			}
@@ -82,12 +94,20 @@ namespace Keysharp.Builtins
 			/// <summary>The clipboard's HTML markup, or "" when it holds none. This is the FRAGMENT: on Windows the
 			/// CF_HTML header is added on write and stripped on read, so what a script sets is what other applications
 			/// paste. Use <c>GetData("HTML Format")</c> for the raw envelope.</summary>
-			public static object staticget_Html(object @this) => Platform.Clipboard.GetKindText(ClipboardKind.Html);
+			public static object staticget_Html(object @this)
+			{
+				ClipboardPermission.EnsureMonitoring("Clipboard.Html");
+				return Platform.Clipboard.GetKindText(ClipboardKind.Html);
+			}
 
 			public static object staticset_Html(object @this, object value) => WriteOne(ClipboardKind.Html, value.As());
 
 			/// <summary>The clipboard's RTF source, or "" when it holds none.</summary>
-			public static object staticget_Rtf(object @this) => Platform.Clipboard.GetKindText(ClipboardKind.Rtf);
+			public static object staticget_Rtf(object @this)
+			{
+				ClipboardPermission.EnsureMonitoring("Clipboard.Rtf");
+				return Platform.Clipboard.GetKindText(ClipboardKind.Rtf);
+			}
 
 			public static object staticset_Rtf(object @this, object value) => WriteOne(ClipboardKind.Rtf, value.As());
 
@@ -97,13 +117,21 @@ namespace Keysharp.Builtins
 
 			/// <summary>Whether the clipboard holds nothing at all, in any format — including the private formats a
 			/// well-known-name probe cannot see.</summary>
-			public static object staticget_IsEmpty(object @this) => Platform.Clipboard.IsEmpty;
+			public static object staticget_IsEmpty(object @this)
+			{
+				ClipboardPermission.EnsureMonitoring("Clipboard.IsEmpty");
+				return Platform.Clipboard.IsEmpty;
+			}
 
 			/// <summary>Every format the clipboard advertises, under the names THIS platform uses ("HTML Format",
 			/// "FileDrop" on Windows; "text/html", "text/uri-list" elsewhere). Deliberately not normalized: a script
 			/// reading this is platform-specific by construction, and normalizing would hide the private formats that
 			/// are the reason to look.</summary>
-			public static object staticget_Formats(object @this) => new Array(Platform.Clipboard.GetFormats());
+			public static object staticget_Formats(object @this)
+			{
+				ClipboardPermission.EnsureMonitoring("Clipboard.Formats");
+				return new Array(Platform.Clipboard.GetFormats());
+			}
 
 			/// <summary>
 			/// Whether the clipboard holds a given kind — "Text", "Image", "Files", "Html" or "Rtf" — or, for anything
@@ -118,6 +146,7 @@ namespace Keysharp.Builtins
 				if (name.Length == 0)
 					return false;
 
+				ClipboardPermission.EnsureMonitoring("Clipboard.Has");
 				return Conversions.ConvertClipboardKind(name) is { } parsed ? Platform.Clipboard.HasKind(parsed) : Platform.Clipboard.Has(name);
 			}
 
@@ -145,6 +174,7 @@ namespace Keysharp.Builtins
 				if (name.Length == 0)
 					return Errors.ValueErrorOccurred("A clipboard format name is required.");
 
+				ClipboardPermission.EnsureMonitoring("Clipboard.GetData");
 				var bytes = Platform.Clipboard.GetData(name);
 				return bytes == null ? "" : new Buffer(bytes);
 			}
@@ -206,7 +236,11 @@ namespace Keysharp.Builtins
 			/// putting back around a paste: <c>saved := Clipboard.All</c> … <c>Clipboard.All := saved</c>. The same
 			/// pair as <c>ClipboardAll()</c> / <c>A_Clipboard := saved</c>, spelled so that the round trip is visible.
 			/// </summary>
-			public static object staticget_All(object @this) => new ClipboardAll();
+			public static object staticget_All(object @this)
+			{
+				ClipboardPermission.EnsureMonitoring("Clipboard.All");
+				return new ClipboardAll();
+			}
 
 			public static object staticset_All(object @this, object value)
 			{
@@ -241,6 +275,7 @@ namespace Keysharp.Builtins
 				if (callback is not KeysharpFunc fo)
 					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc), DefaultObject);
 
+				ClipboardPermission.EnsureMonitoring("Clipboard.OnChange");
 				return new ClipboardHook(fo, count.Al(-1L));
 			}
 

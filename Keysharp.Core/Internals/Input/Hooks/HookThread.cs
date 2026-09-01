@@ -105,7 +105,7 @@ namespace Keysharp.Internals.Input.Hooks
 		internal const uint INPUT_KEY_VISIBLE = 0x08;
 		internal const int HotIfCallbackBudgetMilliseconds = 500;
 		internal const int SC_ARRAY_COUNT = SC_MAX + 1;
-		// SC is the hook backend's low-level key code. Linux inputd follows evdev
+		// SC is the hook backend's low-level key code. Linux input service follows evdev
 		// KEY_* up through KEY_MAX; Windows and the other backends keep the AHK range.
 #if LINUX
 		internal const int SC_MAX = 0x2FF;
@@ -1676,7 +1676,7 @@ namespace Keysharp.Internals.Input.Hooks
 			EnsureCursorClipPermissions();
 
 			// Make sure the mouse hook is running before checking environment-specific support.
-			// Linux needs this to verify that the active hook backend is inputd, rather than the
+			// Linux needs this to verify that the active hook backend is input service, rather than the
 			// non-suppressing native fallback. The hook is left installed after ClearCursorClip
 			// (mirrors BlockInput's "MouseMoveOff").
 			HotkeyDefinition.InstallMouseHook(script);
@@ -1733,7 +1733,17 @@ namespace Keysharp.Internals.Input.Hooks
 
 		/// <summary>Requests permissions needed to monitor and enforce cursor clipping.</summary>
 		protected virtual void EnsureCursorClipPermissions()
-			=> _ = script.Permissions.EnsureInputMonitoring(operation: "ClipCursor");
+		{
+			var result = script.Permissions.RequestCapabilities(
+				inputMonitoring: true,
+				inputControl: true,
+				operation: "ClipCursor");
+
+			if (!result.IsGranted)
+				throw new InvalidOperationException(result.Message.IsNullOrEmpty()
+					? "Permission is required for 'ClipCursor'."
+					: result.Message);
+		}
 
 		/// <summary>Whether ClipCursor can work in the current platform/environment.</summary>
 		protected virtual bool CanClipCursor(out string reason) { reason = ""; return true; }
@@ -2048,7 +2058,7 @@ namespace Keysharp.Internals.Input.Hooks
 		{
 			POINT? screenPosition = null;
 
-			// Only surface X/Y when the event actually carries a position. On Linux inputd, button/wheel events
+			// Only surface X/Y when the event actually carries a position. On Linux input service, button/wheel events
 			// don't (HasPosition == false), so they leave A_EventInfo without X/Y rather than reporting a bogus
 			// (0,0) -- callers that need the location query it themselves off the hook thread.
 			if (e is MouseHookEventArgs mouse && mouse.HasPosition)

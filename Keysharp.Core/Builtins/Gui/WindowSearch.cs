@@ -6,6 +6,7 @@ namespace Keysharp.Builtins
 	{
 		internal static WindowInfoBase SearchControl(object ctrl, object title, object text, object excludeTitle, object excludeText, bool throwifnull = true)
 		{
+			EnsureWindowMonitoringPermission("control query");
 			var (parsed, ptr) = CtrlTonint(ctrl);
 			var script = Script.TheScript;
 
@@ -122,6 +123,7 @@ namespace Keysharp.Builtins
 				bool throwifnull,
 				bool last = false)
 		{
+			EnsureWindowMonitoringPermission("window query");
 			var script = Script.TheScript;
 			var win = WindowQuery.FindWindow(winTitle, winText, excludeTitle, excludeText, last);
 
@@ -136,6 +138,7 @@ namespace Keysharp.Builtins
 
 		internal static WindowInfoBase SearchActiveWindow(SearchCriteria criteria, bool emptyMatchesActive = false)
 		{
+			EnsureWindowMonitoringPermission("active window query");
 			var activeWindow = WindowQuery.ActiveWindow;
 
 			if (activeWindow == null || !activeWindow.IsSpecified)
@@ -149,6 +152,7 @@ namespace Keysharp.Builtins
 				object excludeTitle = null,
 				object excludeText = null)
 		{
+			EnsureWindowMonitoringPermission("window list query");
 			var (windows, _) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
 			return windows;
 		}
@@ -159,6 +163,7 @@ namespace Keysharp.Builtins
 				object excludeTitle,
 				object excludeText)
 		{
+			EnsureWindowMonitoringPermission("window control list query");
 			var script = Script.TheScript;
 			var win = WindowQuery.FindWindow(winTitle, winText, excludeTitle, excludeText);
 

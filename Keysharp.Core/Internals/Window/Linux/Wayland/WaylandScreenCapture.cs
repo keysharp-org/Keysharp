@@ -42,7 +42,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// <summary>
 		/// wlroots zwlr_screencopy region grab. The compositor flavor is already resolved by the
 		/// <c>WlrootsScreen</c> impl (the only caller), so there is no backend dispatch here — just the protocol.
-		/// KWin/GNOME region grabs go through <c>HelperClient</c> directly from their own IScreen impls.
+		/// KWin/GNOME region grabs go through <c>DesktopClient</c> directly from their own IScreen impls.
 		/// </summary>
 		internal static Bitmap TryCapture(int x, int y, int w, int h)
 		{

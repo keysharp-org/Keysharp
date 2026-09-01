@@ -3,7 +3,7 @@
 ;
 
 #Requires AutoHotkey v2.0
-#Requires capability ScreenCapture, InputMonitoring
+#Requires capability ScreenCapture, WindowMonitoring
 #Import Ks { A_GuiTheme }
 
 #NoTrayIcon

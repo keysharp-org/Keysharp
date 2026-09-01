@@ -1,4 +1,4 @@
-﻿using Keysharp.Builtins;
+using Keysharp.Builtins;
 using System.Text;
 
 namespace Keysharp.Internals.Input.Keyboard
@@ -11,7 +11,7 @@ namespace Keysharp.Internals.Input.Keyboard
 	/// Terminology:
 	///   VK  = Windows virtual key code (always, on every platform).
 	///   SC  = the active hook backend's low-level code (Windows scan code,
-	///         inputd evdev code, or macOS kVK code).
+	///         input service evdev code, or macOS kVK code).
 	/// </summary>
 	internal static partial class KeyCodes
 	{

@@ -1,5 +1,5 @@
 #Requires AutoHotkey v2.0
-#Requires capability InputMonitoring, InputInjection   ; the hotkey keyboard hook + Send (paste); macOS asks for Accessibility on first paste-back
+#Requires capability InputMonitoring, InputControl, WindowMonitoring, WindowControl, ClipboardMonitoring   ; hotkeys, paste-back, target-window activation, and clipboard history
 #SingleInstance Force
 #include Shell.ks
 

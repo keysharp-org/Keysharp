@@ -105,26 +105,6 @@
       <arg direction="in" type="i" name="ttlMs"/>
       <arg direction="out" type="b" name="value"/>
     </method>
-    <method name="SendMouseButton">
-      <arg direction="in" type="u" name="button"/>
-      <arg direction="in" type="b" name="pressed"/>
-      <arg direction="out" type="b" name="value"/>
-    </method>
-    <method name="SendMouseMoveAbsolute">
-      <arg direction="in" type="i" name="x"/>
-      <arg direction="in" type="i" name="y"/>
-      <arg direction="out" type="b" name="value"/>
-    </method>
-    <method name="SendMouseMoveRelative">
-      <arg direction="in" type="i" name="dx"/>
-      <arg direction="in" type="i" name="dy"/>
-      <arg direction="out" type="b" name="value"/>
-    </method>
-    <method name="SendMouseScroll">
-      <arg direction="in" type="i" name="delta"/>
-      <arg direction="in" type="b" name="vertical"/>
-      <arg direction="out" type="b" name="value"/>
-    </method>
     <method name="SetClipboardContent">
       <arg direction="in" type="s" name="mimetype"/>
       <arg direction="in" type="ay" name="bytes"/>
@@ -163,20 +143,6 @@
       <arg direction="in" type="i" name="width"/>
       <arg direction="in" type="i" name="height"/>
       <arg direction="in" type="ay" name="pngBytes"/>
-      <arg direction="out" type="b" name="value"/>
-    </method>
-    <method name="ShowImageOverlayShm">
-      <arg direction="in" type="u" name="id"/>
-      <arg direction="in" type="s" name="ownerKey"/>
-      <arg direction="in" type="s" name="busName"/>
-      <arg direction="in" type="i" name="x"/>
-      <arg direction="in" type="i" name="y"/>
-      <arg direction="in" type="i" name="width"/>
-      <arg direction="in" type="i" name="height"/>
-      <arg direction="in" type="s" name="shmPath"/>
-      <arg direction="in" type="i" name="pixelWidth"/>
-      <arg direction="in" type="i" name="pixelHeight"/>
-      <arg direction="in" type="i" name="stride"/>
       <arg direction="out" type="b" name="value"/>
     </method>
     <signal name="ActiveWindowChanged">

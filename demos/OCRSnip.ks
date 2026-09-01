@@ -1,5 +1,5 @@
 #Requires AutoHotkey v2.0
-#Requires capability ScreenCapture, InputMonitoring   ; prompts at startup (before any snip) so the screen-capture grant isn't sprung on you mid-drag
+#Requires capability ScreenCapture, InputMonitoring, InputControl   ; screen capture, arbitrary button polling, and suppressing snip hotkeys
 #SingleInstance Force
 
 #import KS { * }

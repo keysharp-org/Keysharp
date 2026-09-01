@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <KeysharpVersion Condition="'$(KeysharpVersion)' == ''">0.0.0.16</KeysharpVersion>
+    <KeysharpVersion Condition="'$(KeysharpVersion)' == ''">0.0.0.17</KeysharpVersion>
     <Version Condition="'$(Version)' == ''">$(KeysharpVersion)</Version>
     <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">$(KeysharpVersion)</AssemblyVersion>
     <FileVersion Condition="'$(FileVersion)' == ''">$(KeysharpVersion)</FileVersion>

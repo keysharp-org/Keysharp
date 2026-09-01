@@ -317,7 +317,7 @@ class Shell {
 
     ; A mouse HotIf/callback should hit-test the event which triggered it, not issue a second cursor query after
     ; the pointer may already have moved. Where the platform carries a click's screen coordinates on the event
-    ; (Windows, macOS) they're exposed through A_EventInfo.X/Y and used directly. On Linux the inputd hook has no
+    ; (Windows, macOS) they're exposed through A_EventInfo.X/Y and used directly. On Linux the input service hook has no
     ; position for a button event, so A_EventInfo omits X/Y — and there (like a non-mouse caller) we fall back to
     ; the live cursor, which for a click just fired is effectively the event position anyway.
     static EventPos(&x, &y) {

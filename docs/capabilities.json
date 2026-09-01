@@ -1975,7 +1975,7 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_KeysharpCorePath",
+                     "feature":  "A_KsCorePath",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -1992,16 +1992,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Gets the Keysharp runtime version."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_ScreenScale",
-                     "syntax":  "#import KS { A_ScreenScale }",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The primary monitor's authored-size scale in native screen units. 1.0 is 100%; Windows and X11 can return a larger value, while macOS and Wayland return 1.0 because their native coordinate spaces already account for UI scaling. Apply it to deliberately scalable dimensions, never absolute positions; use Monitor.Scale for mixed-monitor layouts."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -2943,26 +2933,6 @@
                      "tested-by":  "props-script-settings.ahk"
                  },
                  {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_TotalScreenHeight",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Gets total virtual screen height across monitors."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_TotalScreenWidth",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Gets total virtual screen width across monitors."
-                 },
-                 {
                      "category":  "Environment/System",
                      "feature":  "A_TrayMenu",
                      "syntax":  "",
@@ -3037,26 +3007,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Built-in variable."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_WorkAreaHeight",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Gets primary work area height."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_WorkAreaWidth",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Gets primary work area width."
                  },
                  {
                      "category":  "Environment/System",
@@ -3506,7 +3456,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Disables or enables physical keyboard and mouse input while allowing synthetic input. Linux suppresses movement-only mode through its existing keysharp-inputd mouse hook and uses the daemon block mask for all-input mode; the X11 xinput fallback is device-wide and cannot preserve buttons while blocking only movement. macOS uses event taps and requires Input Monitoring permission."
+                     "notes":  "Disables or enables physical keyboard and mouse input while allowing synthetic input. Full On blocking requires InputControl; movement-only blocking uses an observing and suppressing hook, so it requires both InputMonitoring and InputControl. Off and teardown never request permission. Linux uses keysharp-input and fails closed if that authority is unavailable or revokes access. macOS uses event taps."
                  },
                  {
                      "category":  "Core Language",
@@ -3665,7 +3615,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Clicks, holds, releases, wheels, or moves the mouse through the platform input backend. Wayland requires a supported compositor input backend or keysharp-inputd; macOS requires Accessibility permission.",
+                     "notes":  "Clicks, holds, releases, wheels, or moves the mouse through the platform input backend and requires InputControl. Wayland requires a supported compositor input backend or keysharp-input; macOS maps InputControl to Accessibility.",
                      "tested-by":  "ControlTests/control_add_delete_item.ahk"
                  },
                  {
@@ -3676,7 +3626,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Confines physical cursor movement to a screen-coordinate rectangle with exclusive right/bottom edges; call without arguments to release. Coordinates ignore CoordMode Mouse. Artificial cursor movement is allowed. Linux requires the keysharp-inputd mouse hook and uses suppress-and-warp-back enforcement, so the cursor may briefly cross the boundary. Wayland also requires a compositor backend that can query and move the global cursor. macOS suppresses out-of-bounds movement and requires Input Monitoring and Accessibility permissions."
+                     "notes":  "Confines physical cursor movement to a screen-coordinate rectangle with exclusive right/bottom edges; call without arguments to release. Coordinates ignore CoordMode Mouse. Artificial cursor movement is allowed. Enforcing the boundary observes and suppresses motion, so it requires InputMonitoring and InputControl; releasing it never requests permission. Linux requires keysharp-input and uses suppress-and-warp-back enforcement, so the cursor may briefly cross the boundary. Wayland also requires a compositor backend that can query and move the global cursor. macOS maps the two capabilities to Input Monitoring and Accessibility."
                  },
                  {
                      "category":  "Clipboard",
@@ -5790,7 +5740,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns logical, physical, and toggle state. Linux queries keysharp-inputd first for keyboard keys and all five mouse buttons without installing a hook (input-monitoring permission is required), with X11 core queries as a basic fallback and no XInput2 path. macOS uses combined-session and HID-system state APIs.",
+                     "notes":  "Returns logical, physical, and toggle state. Polling an arbitrary key or mouse button requires InputMonitoring. Modifier state and CapsLock/NumLock/ScrollLock toggle state are ungated; polling whether a lock key is physically down still requires InputMonitoring. Linux uses keysharp-input without installing a hook and fails closed for arbitrary state if its authority is unavailable or revokes access; X11 fallback is limited to the ungated modifier and lock-toggle snapshots. macOS uses combined-session and HID-system state APIs.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -5894,7 +5844,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "GUI control types are elements of interaction which can be added to a GUI window using the Gui object\u0027s Add method. ActiveX and Custom are Win32-only and raise a ValueError on Linux and macOS; every other type is available on all platforms. ListView additionally supports only the Report view there (see Gui.Add)."
+                     "notes":  "GUI control types are elements of interaction which can be added to a GUI window using the Gui object\u0027s Add method. ActiveX and Custom are Win32-only and raise a ValueError on Linux and macOS; every other type is available on all platforms. ListView additionally supports only the Report view there (see Gui.Add). WebView is backed by whichever browser engine the operating system provides, so what it renders differs by platform (see Gui.WebView), and RichEdit is available everywhere but only the Win32 control serves its whole member surface (see Gui.RichEdit)."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -5955,7 +5905,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS. A ListView created with a view option other than +Report (+Icon, +IconSmall, +Tile, +List) is not implemented there either.",
+                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS. A ListView created with a view option other than +Report (+Icon, +IconSmall, +Tile, +List) is not implemented there either. Adding a WebView on Linux fails unless WebKitGTK is installed.",
                      "tested-by":  "ControlTests/control_add_delete_item.ahk"
                  },
                  {
@@ -6539,6 +6489,17 @@
                  },
                  {
                      "category":  "Windowing/GUI",
+                     "feature":  "Gui.WebView",
+                     "syntax":  "",
+                     "windows":  "partial",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "unknown",
+                     "notes":  "A browser control with Url, DocumentTitle, CanGoBack/CanGoForward, BrowserContextMenuEnabled and Engine; GoBack, GoForward, Stop, Reload, ExecuteScript, ExecuteScriptAsync, LoadHtml and ShowPrintDialog; and the Navigated, DocumentLoading, DocumentLoaded, DocumentTitleChanged, OpenNewWindow and MessageReceived events. No engine is shipped. Windows prefers Edge through WebView2 when a script asks for it with #Package \"Microsoft.Web.WebView2\" and falls back to Internet Explorer, where modern pages may not render, the OpenNewWindow URL is recovered from the focused element, and a page cannot post a message before its document has loaded. Linux uses WebKitGTK and needs libwebkit2gtk-4.1 or 4.0 installed or the control cannot be created.",
+                     "tested-by":  "GuiTests/gui-webview.ahk"
+                 },
+                 {
+                     "category":  "Windowing/GUI",
                      "feature":  "GuiCtrlFromHwnd()",
                      "syntax":  "",
                      "windows":  "full",
@@ -6684,7 +6645,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Depends on hook and key-state parity."
+                     "notes":  "Linux and macOS use a suppression-capable global hook, which requires InputMonitoring and InputControl."
                  },
                  {
                      "category":  "Input/Automation",
@@ -7055,7 +7016,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "OnMouseMove(hook, dx, dy) queues every move report, including (0, 0). Windows derives deltas from desktop-clamped hook positions, so outward movement at an edge can be zero; macOS uses Quartz deltas. Linux requires a matching keysharp-inputd 1.1 daemon and mouse-hook permission (without either, no moves are reported): relative values are raw device-specific evdev counts, while physical absolute values are changes in normalized [0,65535] axes. Linux A_EventInfo includes DeviceId (0 synthetic, positive physical) and IsAbsolute; synthetic absolute deltas are zero because no relative sample exists. Windows and macOS instead provide global-screen X/Y when available and omit DeviceId; X/Y need not equal the prior position plus dx/dy, and macOS reports the frozen cursor position while movement is suppressed."
+                     "notes":  "OnMouseMove(hook, dx, dy) queues every move report, including (0, 0). Windows derives deltas from desktop-clamped hook positions, so outward movement at an edge can be zero; macOS uses Quartz deltas. Linux requires keysharp-input plus InputMonitoring and InputControl for the suppression-capable callback stream. Relative values are raw device-specific evdev counts, while physical absolute values are changes in normalized [0,65535] axes. Linux A_EventInfo includes DeviceId (0 synthetic, positive physical) and IsAbsolute; synthetic absolute deltas are zero because no relative sample exists. Windows and macOS instead provide global-screen X/Y when available and omit DeviceId; X/Y need not equal the prior position plus dx/dy, and macOS reports the frozen cursor position while movement is suppressed."
                  },
                  {
                      "category":  "Input/Automation",
@@ -7075,7 +7036,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Starts capturing input."
+                     "notes":  "Starts capturing input. Linux and macOS use a suppression-capable global hook, which requires InputMonitoring and InputControl."
                  },
                  {
                      "category":  "Input/Automation",
@@ -8415,7 +8376,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "The monitor the cursor is on. On Wayland the cursor position is only available through a compositor backend, matching MouseGetPos.",
+                     "notes":  "The monitor the cursor is on. Cursor position is not permission-gated. On Wayland it is available only when the active compositor or keysharp-input can provide it.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {
@@ -8432,12 +8393,12 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Monitor.X / .Y / .Width / .Height / .Bounds / .WorkArea",
-                     "syntax":  "m.X, m.WorkArea.w",
+                     "syntax":  "m.X, m.WorkArea.Width",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unknown",
-                     "notes":  "Geometry in native screen coordinates, the same space MonitorGet reports. Bounds and WorkArea are objects with x, y, w and h.",
+                     "notes":  "Geometry in native screen coordinates, the same space MonitorGet reports. Bounds and WorkArea are objects with X, Y, Width and Height.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {
@@ -8449,6 +8410,17 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The monitor's authored-size scale; 1.0 is 100%. It scales dimensions, never absolute positions. Replaces the removed Ks.MonitorGetScale() function. Wayland and macOS always report 1.0 because their native coordinate spaces already account for UI scaling, so the value only varies on Windows and X11.",
+                     "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.VirtualScreen",
+                     "syntax":  "v := Monitor.VirtualScreen",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "The union of every monitor - the whole desktop - as an object with X, Y, Width and Height, in native screen coordinates. The origin is negative when a display sits left of or above the primary.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {
@@ -8622,7 +8594,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Retrieves the current mouse position and, optionally, the window and control beneath it. A requested window or control output is blank when there is no corresponding target.",
+                     "notes":  "Retrieves the current mouse position and, optionally, the window and control beneath it. Cursor coordinates are not permission-gated. Requesting a window or control output requires WindowMonitoring and returns blank when there is no corresponding target.",
                      "tested-by":  "ControlTests/control_get_focus.ahk"
                  },
                  {
@@ -9021,7 +8993,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. Pointer events require ClickThrough := false; On GNOME/Cinnamon a click-through overlay is drawn inside the shell, so it is not a window and takes no taskbar entry; frames reach it as shared memory. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS.",
+                     "notes":  "Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. Pointer events require ClickThrough := false; On GNOME/Cinnamon a click-through overlay is drawn inside the shell, so it is not a window and takes no taskbar entry; frames are transferred as bounded PNG data. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS.",
                      "tested-by":  "overlay-canvas.ahk; GuiTests.ExplicitPresent; OverlayLinuxTests.cs"
                  },
                  {
@@ -9761,7 +9733,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Creating and driving the script\u0027s own GUI windows. Built on WinForms (Windows) and Eto (Linux/macOS); the object model, events, controls, menus, ListView and TreeView all behave the same. Remaining differences: the ActiveX and Custom control types are Win32-only, ListView supports only the Report view off Windows, raw Win32 style options are ignored, per-monitor DPI re-layout is Windows-only, and a client cannot position its own window on Wayland without a compositor backend."
+                     "notes":  "Creating and driving the script\u0027s own GUI windows. Built on WinForms (Windows) and Eto (Linux/macOS); the object model, events, controls, menus, ListView and TreeView all behave the same. Remaining differences: the ActiveX and Custom control types are Win32-only, ListView supports only the Report view off Windows, raw Win32 style options are ignored, the WebView control renders with whichever browser engine the platform provides, per-monitor DPI re-layout is Windows-only, and a client cannot position its own window on Wayland without a compositor backend."
                  },
                  {
                      "category":  "Input/Automation",
@@ -10904,7 +10876,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Returns window handle located at screen coordinates."
+                     "notes":  "Returns the window handle at screen coordinates and requires WindowMonitoring. Omitting the coordinates uses the current cursor position, which is not separately permission-gated."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11711,7 +11683,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Requests or queries platform permissions and returns the status of each capability."
+                     "notes":  "Requests or queries the eight canonical platform permissions and returns each status: InputMonitoring, InputControl, WindowMonitoring, WindowControl, ScreenCapture, AudioCapture, CameraCapture, and ClipboardMonitoring. Linux requires keysharp-input for InputMonitoring and keysharp-desktop for the desktop scopes; either helper can manage the shared InputControl grant. On macOS, WindowMonitoring reflects both Accessibility and Screen Recording because foreign window titles require both; WindowControl maps to Accessibility. AudioCapture and CameraCapture are requestable Linux scopes but no current capture operation consumes them."
                  },
                  {
                      "category":  "Interop/Memory",

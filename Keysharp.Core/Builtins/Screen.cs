@@ -380,7 +380,7 @@ namespace Keysharp.Builtins
 		/// <param name="y2">The exclusive y coordinate of the opposite corner.</param>
 		/// <remarks>The corners may be given in any order and are always in screen coordinates.
 		/// Throws an <see cref="OSError"/> if clipping is unsupported in the current environment
-		/// (e.g. on Wayland without keysharp-inputd and a compositor mouse backend).</remarks>
+		/// (e.g. on Wayland without keysharp-input and a compositor mouse backend).</remarks>
 		public static object ClipCursor(object x1 = null, object y1 = null, object x2 = null, object y2 = null)
 		{
 			var ht = Script.TheScript.HookThread;

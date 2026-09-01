@@ -30,6 +30,8 @@ namespace Keysharp.Builtins
 		/// <returns>The window handle at the specified point, or 0 if none is found.</returns>
 		public static long WinFromPoint(object x = null, object y = null)
 		{
+			EnsureWindowMonitoringPermission("WinFromPoint");
+
 			if (x == null || y == null)
 			{
 				GetCursorPos(out var point);
@@ -57,7 +59,7 @@ namespace Keysharp.Builtins
 
 		public static long GroupActivate(object groupName, object mode = null)
 		{
-			EnsureWindowAutomationPermission("GroupActivate");
+			EnsureWindowControlPermission("GroupActivate");
 			var name = groupName.As().ToLowerInvariant();
 			var m = mode.As();
 			var script = Script.TheScript;
@@ -124,7 +126,7 @@ namespace Keysharp.Builtins
 
 		public static object GroupClose(object groupName, object mode = null)
 		{
-			EnsureWindowAutomationPermission("GroupClose");
+			EnsureWindowControlPermission("GroupClose");
 			var name = groupName.As().ToLowerInvariant();
 			var m = mode.As();
 			var windowGroups = Script.TheScript.WindowGroups;
@@ -177,7 +179,7 @@ namespace Keysharp.Builtins
 
 		public static object GroupDeactivate(object groupName, object mode = null)
 		{
-			EnsureWindowAutomationPermission("GroupDeactivate");
+			EnsureWindowControlPermission("GroupDeactivate");
 			var name = groupName.As().ToLowerInvariant();
 			var m = mode.As();
 			var script = Script.TheScript;
@@ -243,7 +245,7 @@ namespace Keysharp.Builtins
 										object excludeTitle = null,
 										object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("MenuSelect");
+			EnsureWindowControlPermission("MenuSelect");
 			Platform.Control.MenuSelect(
 				winTitle,
 				winText,
@@ -268,6 +270,7 @@ namespace Keysharp.Builtins
 										 object excludeTitle = null,
 										 object excludeText = null)
 		{
+			EnsureWindowControlPermission("PostMessage");
 			Platform.Control.PostMessage(
 				msgNumber.Aui(),
 				wParam.Ai(),
@@ -288,7 +291,10 @@ namespace Keysharp.Builtins
 									   object winText = null,
 									   object excludeTitle = null,
 									   object excludeText = null,
-									   object timeout = null) => Platform.Control.SendMessage(
+									   object timeout = null)
+		{
+			EnsureWindowControlPermission("SendMessage");
+			return Platform.Control.SendMessage(
 										   msgNumber.Aui(),
 										   wParam,
 										   lParam,
@@ -298,6 +304,7 @@ namespace Keysharp.Builtins
 										   excludeTitle.As(),
 										   excludeText.As(),
 										   timeout.Ai(5000));
+		}
 
 		public static object SetControlDelay(object delay)
 		{
@@ -483,7 +490,7 @@ namespace Keysharp.Builtins
 										 object excludeTitle = null,
 										 object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("WinActivate");
+			EnsureWindowControlPermission("WinActivate");
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
 				if (!Platform.Window.TryActivate(win.Handle))
@@ -499,7 +506,7 @@ namespace Keysharp.Builtins
 											   object excludeTitle = null,
 											   object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("WinActivateBottom");
+			EnsureWindowControlPermission("WinActivateBottom");
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true, true) is WindowInfoBase win)
 			{
 				if (!Platform.Window.TryActivate(win.Handle))
@@ -542,7 +549,7 @@ namespace Keysharp.Builtins
 									  object excludeTitle = null,
 									  object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("WinClose");
+			EnsureWindowControlPermission("WinClose");
 			var seconds = secondsToWait.Ad(double.MinValue);
 			var script = Script.TheScript;
 			var (windows, crit) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
@@ -646,6 +653,7 @@ namespace Keysharp.Builtins
 										object excludeTitle = null,
 										object excludeText = null)
 		{
+			EnsureWindowMonitoringPermission("WinGetIDLast");
 			var script = Script.TheScript;
 			var (windows, criteria) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
 
@@ -662,14 +670,17 @@ namespace Keysharp.Builtins
 		public static Array WinGetList(object winTitle = null,
 									   object winText = null,
 									   object excludeTitle = null,
-									   object excludeText = null) =>
-		new Array((
+									   object excludeText = null)
+		{
+			EnsureWindowMonitoringPermission("WinGetList");
+			return new Array((
 					  winTitle.IsNullOrEmpty()
 					  && winText.IsNullOrEmpty()
 					  && excludeTitle.IsNullOrEmpty()
 					  && excludeText.IsNullOrEmpty()
 					  ? WindowQuery.AllWindows
 					  : SearchWindows(winTitle, winText, excludeTitle, excludeText)).Select(item => item.Handle.ToInt64()).ToList());
+		}
 
 		public static long WinGetMinMax(object winTitle = null,
 										object winText = null,
@@ -818,7 +829,7 @@ namespace Keysharp.Builtins
 									 object excludeTitle = null,
 									 object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("WinKill");
+			EnsureWindowControlPermission("WinKill");
 			var seconds = secondsToWait.Ad(double.MinValue);
 			var script = Script.TheScript;
 			var (windows, crit) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
@@ -931,7 +942,7 @@ namespace Keysharp.Builtins
 									 object excludeTitle = null,
 									 object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("WinMove");
+			EnsureWindowControlPermission("WinMove");
 			var _x = (x is null ? int.MinValue : x.ToInt());
 			var _y = (y is null ? int.MinValue : y.ToInt());
 			var w = (width is null ? int.MinValue : width.ToInt());
@@ -1054,7 +1065,7 @@ namespace Keysharp.Builtins
 										  object excludeTitle = null,
 										  object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("WinSetRegion");
+			EnsureWindowControlPermission("WinSetRegion");
 			var opts = options.As();
 
 			if (!(SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win))
@@ -1155,7 +1166,7 @@ namespace Keysharp.Builtins
 										 object excludeTitle = null,
 										 object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("WinSetTitle");
+			EnsureWindowControlPermission("WinSetTitle");
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
 				if (!Platform.Window.TrySetTitle(win.Handle, newTitle.As()))
@@ -1173,7 +1184,7 @@ namespace Keysharp.Builtins
 											  object excludeTitle = null,
 											  object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("WinSetTransColor");
+			EnsureWindowControlPermission("WinSetTransColor");
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
 				if (!Platform.Window.TrySetTransparentColor(win.Handle, color))
@@ -1191,7 +1202,7 @@ namespace Keysharp.Builtins
 											   object excludeTitle = null,
 											   object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("WinSetTransparent");
+			EnsureWindowControlPermission("WinSetTransparent");
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
 				if (!Platform.Window.TrySetTransparency(win.Handle, n))
@@ -1208,7 +1219,7 @@ namespace Keysharp.Builtins
 									 object excludeTitle = null,
 									 object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("WinShow");
+			EnsureWindowControlPermission("WinShow");
 			var tv = Script.TheScript.Threads.CurrentThread.configData;
 			var prev = tv.detectHiddenWindows;
 			var unsupported = false;
@@ -1236,6 +1247,7 @@ namespace Keysharp.Builtins
 								   object excludeTitle = null,
 								   object excludeText = null)
 		{
+			EnsureWindowMonitoringPermission("WinWait");
 			var seconds = timeout.Ad();
 			WindowInfoBase win;
 			var start = DateTime.UtcNow;
@@ -1271,6 +1283,7 @@ namespace Keysharp.Builtins
 										 object excludeTitle = null,
 										 object excludeText = null)
 		{
+			EnsureWindowMonitoringPermission("WinWaitActive");
 			var b = false;
 			var seconds = timeout.Ad();
 			var start = DateTime.UtcNow;
@@ -1314,6 +1327,7 @@ namespace Keysharp.Builtins
 										object excludeTitle = null,
 										object excludeText = null)
 		{
+			EnsureWindowMonitoringPermission("WinWaitClose");
 			var seconds = timeout.Ad();
 			var start = DateTime.UtcNow;
 			var criteria = SearchCriteria.FromString(winTitle, winText, excludeTitle, excludeText);
@@ -1348,6 +1362,7 @@ namespace Keysharp.Builtins
 											object excludeTitle = null,
 											object excludeText = null)
 		{
+			EnsureWindowMonitoringPermission("WinWaitNotActive");
 			var b = false;
 			var seconds = timeout.Ad();
 			var start = DateTime.UtcNow;

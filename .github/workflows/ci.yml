@@ -83,7 +83,7 @@ jobs:
 
     steps:
       - name: Checkout keysharp
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -172,6 +172,30 @@ jobs:
           }
 
           Write-Host "Verified macOS $actualVersion on $actualArch."
+
+      - name: Check Linux package lifecycle scripts
+        if: ${{ matrix.platform == 'linux' }}
+        shell: bash
+        run: |
+          bash -n \
+            Keysharp.Install/package-linux.sh \
+            Keysharp.Install/package-linux-deb-bundle.sh \
+            Keysharp.Install/linux/install.sh \
+            Keysharp.Install/linux/install-components.sh \
+            Keysharp.Install/linux/install-deb-bundle.sh \
+            Keysharp.Install/linux/uninstall.sh \
+            Keysharp.Install/linux/tests/application-channel-policy.sh \
+            Keysharp.Install/linux/tests/component-resource-policy.sh \
+            Keysharp.Install/linux/tests/deb-bundle-policy.sh
+          sh -n Keysharp.Install/linux/debian/preinst
+          bash Keysharp.Install/package-linux.sh --help >/dev/null
+          bash Keysharp.Install/package-linux-deb-bundle.sh --help >/dev/null
+          bash Keysharp.Install/linux/install-components.sh --help >/dev/null
+          bash Keysharp.Install/linux/install-deb-bundle.sh --help >/dev/null
+          bash Keysharp.Install/linux/uninstall.sh --help >/dev/null
+          bash Keysharp.Install/linux/tests/application-channel-policy.sh
+          bash Keysharp.Install/linux/tests/component-resource-policy.sh
+          bash Keysharp.Install/linux/tests/deb-bundle-policy.sh
 
       # The whole solution, never a list of projects. Naming projects individually is what let
       # Keysharp.Components, Keysharp.Tests, Keyview and the rest go uncompiled here: a hand-maintained list

@@ -4,8 +4,21 @@ namespace Keysharp.Builtins
 {
 	internal static class WindowHelper
 	{
-		internal static void EnsureWindowAutomationPermission(string operation)
-			=> _ = Script.TheScript.Permissions.EnsureAccessibilityAutomation(operation: operation);
+		internal static void EnsureWindowMonitoringPermission(string operation)
+			=> _ = Script.TheScript.Permissions.EnsureWindowMonitoring(operation: operation);
+
+		internal static void EnsureWindowControlPermission(string operation)
+		{
+			var result = Script.TheScript.Permissions.RequestCapabilities(
+				windowMonitoring: true,
+				windowControl: true,
+				operation: operation);
+
+			if (!result.IsGranted)
+				throw new InvalidOperationException(result.Message.IsNullOrEmpty()
+					? $"Permission is required for '{operation}'."
+					: result.Message);
+		}
 
 		internal static object WindowOperationUnsupported(string commandName)
 			=> Errors.OSErrorOccurred("", $"{commandName} is not implemented on {WindowOperationPlatformName()}.");
@@ -55,7 +68,7 @@ namespace Keysharp.Builtins
 
 		internal static void DoDelayedAction(Action act)
 		{
-			EnsureWindowAutomationPermission("window operation");
+			EnsureWindowControlPermission("window operation");
 			act();
 			WindowInfoBase.DoWinDelay();
 		}
@@ -64,7 +77,7 @@ namespace Keysharp.Builtins
 		// (WinMoveTop, WinMoveBottom, WinRedraw — see win.cpp WinMoveTopBottom/WinRedraw, neither calls DoWinDelay).
 		internal static void DoAction(Action act)
 		{
-			EnsureWindowAutomationPermission("window operation");
+			EnsureWindowControlPermission("window operation");
 			act();
 		}
 
@@ -114,7 +127,7 @@ namespace Keysharp.Builtins
 											   object excludeTitle = null,
 											   object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("window style operation");
+			EnsureWindowControlPermission("window style operation");
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
 				var val = value;
@@ -173,7 +186,7 @@ namespace Keysharp.Builtins
 										   object excludeTitle = null,
 										   object excludeText = null)
 		{
-			EnsureWindowAutomationPermission("window toggle operation");
+			EnsureWindowControlPermission("window toggle operation");
 			var val = value.Ai();
 
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)

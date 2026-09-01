@@ -647,7 +647,7 @@ namespace Keysharp.Runtime
 #if WINDOWS
 			Application.AddMessageFilter(msgFilter);
 #elif LINUX
-			Keysharp.Internals.Input.Linux.KeysharpInputdManager.RegisterOwner(this);
+			Keysharp.Internals.Input.Linux.KeysharpInputManager.RegisterOwner(this);
 #endif
 		}
 
@@ -1577,7 +1577,7 @@ namespace Keysharp.Runtime
 			Teardown(ComMethodData.Dispose);
 #endif
 #if LINUX
-			Teardown(() => Keysharp.Internals.Input.Linux.KeysharpInputdManager.DisconnectClients(this));
+			Teardown(() => Keysharp.Internals.Input.Linux.KeysharpInputManager.DisconnectClients(this));
 #endif
 			Teardown(() => stringsData?.Free());
 			Teardown(() => flowData?.Dispose());

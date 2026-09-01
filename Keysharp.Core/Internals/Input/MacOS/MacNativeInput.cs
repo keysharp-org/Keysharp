@@ -468,7 +468,7 @@ namespace Keysharp.Internals.Input.MacOS
 
 			if (ev != nint.Zero)
 			{
-				// Quartz's line constructor accepts only integers, while Windows/inputd carry a
+				// Quartz's line constructor accepts only integers, while Windows/input service carry a
 				// signed 120-unit delta (including partial notches). Mark partial values continuous
 				// and populate the 16.16 fixed-point line field so the value survives our hook and
 				// applications which consume precise scrolling.

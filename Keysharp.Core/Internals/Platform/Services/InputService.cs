@@ -2,11 +2,11 @@ namespace Keysharp.Internals
 {
 #if LINUX
 	/// <summary>
-	/// Linux input-injection transport, currently backed by keysharp-inputd.
+	/// Linux input-injection transport, currently backed by keysharp-input.
 	/// </summary>
 	internal sealed class LinuxInput : IInput
 	{
-		public InputTransport ActiveTransport => InputTransport.Inputd;
+		public InputTransport ActiveTransport => InputTransport.Service;
 	}
 #elif WINDOWS
 	internal sealed class WindowsInput : IInput

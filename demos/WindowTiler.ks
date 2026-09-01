@@ -1,5 +1,5 @@
 #Requires AutoHotkey v2.0
-#Requires capability InputMonitoring   ; the CapsLock-chord keyboard hook (macOS asks for Accessibility on first window move)
+#Requires capability InputMonitoring, InputControl, WindowMonitoring, WindowControl   ; suppressing hotkeys plus foreign-window queries and moves
 #SingleInstance Force
 #import KS { Highlight }
 #include Shell.ks

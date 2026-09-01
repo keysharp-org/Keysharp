@@ -60,27 +60,98 @@ PATH and shell integration are separate MSI features. The Customize page lets yo
 ## Linux Platform Support
 Linux support is in active development. The following table summarises what works and what requires user action.
 
-| Platform / compositor | Without root access | Root-access helpers add / enable | Notes |
+| Platform / compositor | Without system components | Standalone system components add / enable | Notes |
 |---|---|---|---|
-| **X11** | Full window management and screen capture; partial input hooks with X11, input synthesis, and hotkeys/hotstrings | Full input hooks/synthesis, `BlockInput`, reliable hotkeys/hotstrings via `keysharp-inputd` | Root mainly upgrades input control |
-| **Wayland – GNOME** | Full window management and mouse synthesis via GNOME Shell extension | Keyboard synthesis, hooks, `BlockInput`, hotkeys/hotstrings via `keysharp-inputd`; screen capture permission via `keysharp-helper` | Shell extension must be enabled which requires a logout after install; `keysharp-helper` must be installed for capture authorization |
-| **Wayland – Cinnamon** | Full window management, mouse synthesis, and push window events via Cinnamon extension, with Eval fallback when the extension is absent | Keyboard synthesis, hooks, `BlockInput`, hotkeys/hotstrings via `keysharp-inputd` | Installer enables and asks a running Cinnamon session to load/reload the extension; manual installs may still need a Cinnamon restart or logout |
-| **Wayland – KWin / KDE Plasma** | Full window management via KWin scripting; mouse synthesis via FakeInput | Screen capture via `keysharp-helper`; keyboard synthesis, hooks, `BlockInput`, hotkeys/hotstrings via `keysharp-inputd` | `keysharp-helper` must be root-owned setuid with desktop file |
-| **Wayland – COSMIC** | Native window listing, active-window detection, geometry, and window events | Input synthesis, hooks, `BlockInput`, hotkeys/hotstrings via `keysharp-inputd` | Bare-Wayland window integration is untested on a real COSMIC session; coordinate hit-testing is limited to the active window, and window actions are not implemented |
-| **Wayland – other compositors**<br>Sway, Hyprland, Wayfire, labwc, etc. | Protocol-dependent window listing, active-window detection, activation, and screen capture | Input synthesis, hooks, `BlockInput`, hotkeys/hotstrings via `keysharp-inputd` | Depends on foreign-toplevel and screencopy protocol support |
+| **X11** | Core runtime plus ungated cursor, modifier, and lock-state queries; permission-scoped input and desktop operations are unavailable | Full input hooks/synthesis, `BlockInput`, and reliable hotkeys/hotstrings via `keysharp-input`; authorized screen capture and window/clipboard grants via `keysharp-desktop` | X11 cannot technically enforce capture authorization, so the desktop broker is an awareness gate there |
+| **Wayland – GNOME** | Core runtime; permission-scoped input and desktop operations are unavailable | `keysharp-desktop` supplies the Shell provider for window automation and a per-user broker for authorized capture; `keysharp-input` supplies reliable input | Enabling a newly installed Shell extension may require logging out and back in |
+| **Wayland – Cinnamon** | Core runtime; permission-scoped input and desktop operations are unavailable | `keysharp-desktop` supplies the Shell provider for push window events, window actions, and mouse synthesis, plus the brokered capture path; `keysharp-input` supplies reliable keyboard input | A Cinnamon restart or logout may be needed after first provider installation |
+| **Wayland – KWin / KDE Plasma** | Core runtime; permission-scoped input and desktop operations are unavailable | Window permission grants and authorized screen capture via `keysharp-desktop`; reliable input via `keysharp-input` | `keysharp-desktop` owns the KWin-restricted desktop entry and capture broker |
+| **Wayland – COSMIC** | Core runtime; permission-scoped input and desktop operations are unavailable | Desktop-scope authorization via `keysharp-desktop`; input synthesis, hooks, `BlockInput`, and hotkeys/hotstrings via `keysharp-input` | Bare-Wayland window integration is untested on a real COSMIC session; coordinate hit-testing is limited to the active window, and window actions are not implemented |
+| **Wayland – other compositors**<br>Sway, Hyprland, Wayfire, labwc, etc. | Core runtime; permission-scoped input and desktop operations are unavailable | Desktop-scope authorization and capture via `keysharp-desktop`; input synthesis, hooks, `BlockInput`, and hotkeys/hotstrings via `keysharp-input` | Depends on foreign-toplevel and screencopy protocol support |
 
 ### Installing on Linux
-* Download and extract the Keysharp installer tarball from the [Releases](https://github.com/keysharp-org/Keysharp/releases) page.
-+ Either run the .deb file to install, or run the install.sh script with sudo: `sudo bash ./install.sh` which does the following:
-	+ Installs the Linux runtime dependencies and attempts to install the .NET 10 runtime if it is missing.
-		+ If your distribution does not provide the .NET 10 runtime package, install it manually using the instructions [here](https://learn.microsoft.com/en-us/dotnet/core/install/linux).
-	+ Registers Keysharp as the default program to open `.ks` and `.cks` files. So after installing, double click any `.ks` source script or `.cks` compiled script to run it.
-	+ Creates a symlink at `/usr/local/bin/keysharp` so you can run it from the command line from anywhere.
-	+ Installs root-owned `keysharp-inputd` daemon for evdev device access and a uinput virtual device, enabling reliable keyboard/mouse hooks, input synthesis, and `BlockInput` on both X11 and Wayland.
-	+ Installs root-owned setuid `keysharp-helper`, the screen-capture trust gate: it prompts for and remembers the user's screen-capture consent, then performs or authorizes the grab. On KWin it does the `ScreenShot2` capture directly; on GNOME/Cinnamon it is the only caller the shell extensions accept for capture; on X11 and other Wayland compositors it prompts for consent before Keysharp's own grab (consent/awareness only there, since capture cannot be enforced). Without it (no root install) capture proceeds ungated as before.
-	+ Installs a GNOME Shell extension (`keysharp@keysharp.io`) for the invoking desktop user, which is required in GNOME for screen capture, mouse location queries, and window automation. This requires a logout or reboot to take effect. If GNOME is not installed then this has no effect.
-	+ Installs a Cinnamon extension (`keysharp@keysharp.io`) for the invoking desktop user, which improves Cinnamon Wayland window inventory, window events, window actions, and mouse synthesis. If Cinnamon is running, the installer asks it to load or reload the extension immediately.
-+ Without sudo, Keysharp is installed under `$HOME/.local` and the privileged helpers are skipped. Linux input hooks/synthesis and compositor paths which require `keysharp-helper` will be unavailable; a desktop's Screenshot portal can still provide capture according to that compositor's portal policy.
+
+Keysharp runs on its own. Two standalone system components, [`keysharp-input`](https://github.com/keysharp-org/keysharp-input) and [`keysharp-desktop`](https://github.com/keysharp-org/keysharp-desktop), add the privileged input and desktop features listed in the table above; see [System components](#system-components).
+
+On Arch-based systems Keysharp is also available as an [AUR package](https://aur.archlinux.org/packages/keysharp-git).
+
+#### Debian, Ubuntu and derivatives
+
+Download the single `keysharp-*-deb-bundle.tar.gz` for your architecture from the [Releases](https://github.com/keysharp-org/Keysharp/releases) page, then extract and install it:
+
+```sh
+tar -xzf keysharp-*-deb-bundle.tar.gz
+cd keysharp-*-deb-bundle
+sudo bash ./install.sh
+```
+
+The bundle is offline: it contains all three packages. Its installer verifies checksums and package metadata before invoking apt. An installed package or standalone component that supplies the required public client ABI is left untouched.
+
+Keysharp recommends the virtual packages `keysharp-input-client-abi-0` and `keysharp-desktop-client-abi-0`. The bundle supplies them with the default helper packages, while any installed alternative that provides the same client ABI is left in place. Product versions select release artifacts; the client ABI decides compatibility. Keysharp still runs when either component is absent, but its corresponding privileged features are unavailable.
+
+#### Other distributions
+
+Download and extract the Keysharp installer tarball from the [Releases](https://github.com/keysharp-org/Keysharp/releases) page, then:
+
+```sh
+sudo bash ./install.sh
+```
+
+The installer:
+
+* Installs the Linux runtime dependencies, and the .NET 10 runtime if your distribution provides it. If it does not, install it manually using [these instructions](https://learn.microsoft.com/en-us/dotnet/core/install/linux).
+* Registers Keysharp as the default program for `.ks` and `.cks` files, so double-clicking a script runs it.
+* Creates a `/usr/local/bin/keysharp` symlink so you can run Keysharp from anywhere.
+* Installs a bundled component only when its command and public client library are not already present. Nothing is downloaded at install time.
+
+Run `install.sh` without `sudo` to install under `$HOME/.local` instead. The system components are then not installed, but Keysharp still uses any already present on the system.
+
+#### Verifying the installation
+
+```sh
+keysharp-input probe
+keysharp-desktop probe
+```
+
+Each command reports service readiness and available operations. On GNOME and Cinnamon, enable the installed Shell extension after installation; this may require logging out and back in.
+
+#### Uninstalling
+
+For the `.deb`, run `sudo apt remove keysharp`. This does not remove either helper in the same transaction. Helpers first installed by the offline bundle are marked automatic, so a later `sudo apt autoremove` can remove one only when Keysharp and every other package have stopped recommending or depending on its ABI. Pre-existing helpers keep their previous automatic or manual state. Permission grants remain under `/var/lib/keysharp-permissions/v1`.
+
+The tarball's uninstaller removes only Keysharp. It always leaves both components installed, because other applications may use them, and it never deletes permission grants. Remove a component separately only after establishing that nothing else needs it:
+
+```sh
+sudo /usr/local/share/doc/keysharp-input/uninstall.sh
+sudo /usr/local/share/doc/keysharp-desktop/uninstall.sh
+```
+
+#### Installation channels
+
+The `.deb` application under `/usr` and the root tarball application under `/usr/local` are alternative system-wide channels, not layers. A fresh installation refuses to cross channels, so uninstall the current system-wide application before switching. This does not apply to running the extracted application in place, or to a non-root installation under `$HOME/.local`.
+
+The same rule applies to the components: a component `.deb` refuses to unpack over a tarball-installed component under `/usr/local`, whose unit files would otherwise shadow the package's. Run that component's portable uninstaller first.
+
+The standalone Keysharp `.deb` is intended for package repositories and machines that already have compatible component packages. Until an apt repository is published, use the offline bundle rather than adding an unsigned package source.
+
+#### System components
+
+`keysharp-input` provides global input hooks, synthesis, `BlockInput`, and reliable hotkeys and hotstrings. `keysharp-desktop` provides authorized capture, window and clipboard integration, including GNOME and Cinnamon providers.
+
+Both are independently versioned MIT-licensed projects with their own installation and removal lifecycle. Applications call their stable C libraries, `libkeysharp-input.so.0` and `libkeysharp-desktop.so.0`; the libraries hide the private service protocol. Both helpers pin the same `keysharp-permissions` source submodule, so the grant-store contract has one implementation without adding a third runtime package.
+
+They authenticate the real connecting process and record permanent per-application grants in a namespace the two share. The first use of a capability an application has not been granted opens a polkit authentication; a denial or cancelled authentication is not stored. Cursor position, modifier state, and lock-toggle state are never permission-gated. Grants remain until revoked:
+
+```sh
+keysharp-input permissions list
+keysharp-input permissions revoke --hash <hash> input-monitoring
+keysharp-desktop permissions list
+keysharp-desktop permissions revoke --hash <hash> screen-capture
+```
+
+The capability names match those used by `#Requires capability` and `RequestCapabilities`. The two components share the same versioned grant store, so a scope granted through one is visible to the other when applicable.
+
+#### VS Code extension
 
 For thqby's **AutoHotkey v2 Language Support** VS Code extension, create an `AutoHotkey.exe` compatibility symlink because the extension requires that filename:
 ```sh
@@ -92,10 +163,10 @@ Then use `/home/YOUR_USERNAME/.local/bin/AutoHotkey.exe` as the interpreter path
 ### Building from source on Linux
 * Install the .NET 10 SDK (not just the runtime) as described in "Installing on Linux"
 * In the same parent folder as keysharp, clone the Keysharp branch of [the Keysharp fork of Eto](https://github.com/keysharp-org/Eto/tree/Keysharp); if keysharp is at `foo/keysharp`, clone Eto to `foo/Eto` by running `git clone -b Keysharp https://github.com/keysharp-org/Eto.git` from within `foo`.
-* Run `Keysharp.Install/package-linux.sh`
-* A build folder and a tarball of said build folder will be placed in `dist/keysharp-linux-x64` and `dist/keysharp-linux-x64.tar.gz` respectively. If `dpkg-deb` is installed, a Debian package such as `dist/keysharp_<version>_amd64.deb` will also be created.
-* The build folder and tarball can be installed via the steps in "Installing on Linux" above. The `.deb` can be installed with `sudo apt install ./dist/keysharp_<version>_amd64.deb`.
-* The folder and tarball are portable so both source repositories can be safely deleted.
+* Build the helper versions in `Keysharp.Install/linux/component-versions.conf`, place their release archives in one directory, and run `Keysharp.Install/package-linux.sh --dependency-dir <directory>`. `--download-components` remains disabled until the published 0.2.0 asset hashes are added to that file.
+* The unpacked tree is placed in `dist/staging/linux-x64/keysharp-linux-x64`, and the installable tarball is `dist/keysharp-linux-x64.tar.gz`. If `dpkg-deb` is installed, a Debian package such as `dist/keysharp_<version>_amd64.deb` is also created.
+* To build the offline Debian bundle, place the matching helper `.deb` files in one directory and run `Keysharp.Install/package-linux-deb-bundle.sh --keysharp-deb dist/keysharp_<version>_<arch>.deb --dependency-dir <directory>`. Release automation uses `--download-components`, verifies the separate pinned `.deb` hashes, and publishes `keysharp-<version>-<rid>-deb-bundle.tar.gz`. The generic tarball continues to bundle the separately verified standalone installers for non-Debian systems.
+* The staged folder and tarball are portable, so all three source repositories can be safely deleted after packaging.
 * **Alternatively**, on arch-based systems keysharp is provided as an [AUR package](https://aur.archlinux.org/packages/keysharp-git)
 
 ## macOS Platform Support
@@ -104,9 +175,9 @@ macOS support is in active development. The following table summarises what work
 | Feature | Status | Notes |
 |---|---|---|
 | Script execution | Working | Parser, compiler, and runtime are functional |
-| Hotkeys / Hotstrings | Working | Requires **Input Monitoring** permission on first use. #/Win maps to the Command key, !/Alt maps to the Option key |
+| Hotkeys / Hotstrings | Working | The suppression-capable hook requires **Input Monitoring** and **Accessibility** on first use. #/Win maps to the Command key, !/Alt maps to the Option key |
 | Keyboard & mouse send | Working | Requires **Accessibility** permission on first use |
-| Global keyboard/mouse hooks | Working | Requires **Input Monitoring** permission on first use |
+| Global keyboard/mouse hooks | Working | Requires **Input Monitoring** and **Accessibility** because the hook can suppress events |
 | Cursor confinement | Partial | `ClipCursor` suppresses out-of-bounds movement; requires **Input Monitoring** and **Accessibility** permissions |
 | GUI windows | Working | Eto.Forms backend; some controls differ from Windows |
 | Screen capture / pixel functions | Working | Requires **Screen Recording** permission on first use |
@@ -172,8 +243,8 @@ On first use, macOS will ask for several permissions:
 | Permission | Required for |
 |---|---|
 | **Input Monitoring** | Hotkeys, hotstrings, and reading keyboard/mouse input |
-| **Accessibility** | Controlling and querying other application windows |
-| **Screen Recording** | `PixelGetColor`, `ImageSearch`, `Image` |
+| **Accessibility** | `WindowMonitoring`, `WindowControl`, input synthesis, and suppression-capable global hooks |
+| **Screen Recording** | `ScreenCapture`; also `WindowMonitoring`, because macOS omits foreign window titles from the current window-inventory API without this grant |
 
 Grant each permission in **System Settings → Privacy & Security** when prompted. Keysharp will wait up to 60 seconds for each permission to be granted before continuing, but usually the script will have to be restarted after granting capabilities. You can also request permissions explicitly at the top of a script:
 ```ahk
@@ -258,8 +329,8 @@ Status legend:
 | Keyboard/Mouse send (synthetic input) | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Requires platform permissions on macOS. |
 | Global keyboard hooks | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Linux uses evdev/uinput, macOS uses CGEventTap. |
 | Global mouse hooks | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Suppression/injection semantics differ by platform. |
-| Hotkeys/Hotstrings | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Depends on hook and key-state parity. |
-| Script-owned window management | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Creating and driving the script's own GUI windows. Built on WinForms (Windows) and Eto (Linux/macOS); the object model, events, controls, menus, ListView and TreeView all behave the same. Remaining differences: the ActiveX and Custom control types are Win32-only, ListView supports only the Report view off Windows, raw Win32 style options are ignored, per-monitor DPI re-layout is Windows-only, and a client cannot position its own window on Wayland without a compositor backend. |
+| Hotkeys/Hotstrings | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Linux and macOS use a suppression-capable global hook, which requires InputMonitoring and InputControl. |
+| Script-owned window management | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Creating and driving the script's own GUI windows. Built on WinForms (Windows) and Eto (Linux/macOS); the object model, events, controls, menus, ListView and TreeView all behave the same. Remaining differences: the ActiveX and Custom control types are Win32-only, ListView supports only the Report view off Windows, raw Win32 style options are ignored, the WebView control renders with whichever browser engine the platform provides, per-monitor DPI re-layout is Windows-only, and a client cannot position its own window on Wayland without a compositor backend. |
 | Foreign window management (non-Keysharp apps) | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process window/control interaction. COSMIC supplies native listing, active state, geometry, and window events. Coordinate hit-testing is limited to the active window because the protocol exposes neither workspace membership nor stacking order; window actions and general move/resize are not supported. macOS currently relies on Accessibility APIs with permission requirements. |
 | Tray icon and menu | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Tray icon, its menu and TrayTip notifications. On Linux the tray depends on the desktop providing a StatusNotifier/AppIndicator host - some environments need an extension before an icon appears at all - and notifications go through the desktop notification service. macOS uses a status item in the menu bar. |
 | Screen capture and pixel/image functions | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Pixel/image search and screen capture depend on platform-specific backends. |
@@ -452,18 +523,21 @@ Controlling another application needs **Automation** permission, granted per tar
 * The `#Requires` directive differs in the following ways:
 	+ In addition to supporting `AutoHotkey`, it also supports `Keysharp`.
 	+ Sub versions such as -alpha and -beta are not supported. Only the four numerical values values contained in the assembly version in the form of `0.0.0.0` are supported.
-	+ A new `capability` form requests one or more platform permissions at script startup, before hotkeys are registered, so the user sees a single combined prompt rather than separate prompts on first use:
+	+ A new `capability` form requests one or more platform permissions together at script startup, before hotkeys are registered. A platform can still show one authorization dialog per independent system service:
 		```
 		#Requires capability InputMonitoring, ScreenCapture
 		```
-		Recognised capability names (case-insensitive, aliases accepted):
-		| Name | Aliases | Description |
-		|---|---|---|
-		| `InputMonitoring` | `hook`, `inputhook` | Monitor keyboard and mouse input (required for hotkeys/hotstrings) |
-		| `InputInjection` | `synthinput`, `sendinput` | Synthesize keyboard and mouse input (`Send`, `Click`, etc.) |
-		| `BlockInput` | | Suppress input events |
-		| `ScreenCapture` | `capture`, `imagecapture` | Capture screen pixels (`PixelGetColor`, `ImageSearch`, `Image`) |
-		| `AccessibilityAutomation` | `accessibility`, `automation` | Access UI accessibility trees (AT-SPI on Linux) |
+		The eight canonical capability names are case-insensitive. Other spellings and aliases are rejected:
+		| Name | Description |
+		|---|---|
+		| `InputMonitoring` | Observe keyboard/mouse input or poll arbitrary key/button state. Modifier state, lock-toggle state, and cursor position are ungated. |
+		| `InputControl` | Synthesize or suppress keyboard/mouse input, including `BlockInput`. A suppressing hook needs both InputMonitoring and InputControl. |
+		| `WindowMonitoring` | Query, enumerate, identify, or subscribe to events from foreign windows and controls. |
+		| `WindowControl` | Activate or mutate foreign windows and controls. Target resolution can also require WindowMonitoring. |
+		| `ScreenCapture` | Capture screen pixels (`PixelGetColor`, `ImageSearch`, `Image`). |
+		| `AudioCapture` | Reserve permission for audio capture. No current capture API consumes it. |
+		| `CameraCapture` | Reserve permission for camera capture. No current capture API consumes it. |
+		| `ClipboardMonitoring` | Read or listen to the clipboard. Clipboard writes remain ungated. |
 * For any `__Enum()` class method, it should have a parameter value of 2 when returning `Array` or `Map`, since their enumerators have two fields.
 * RegEx uses PCRE2 engine powered by the PCRE.NET library. There are a few limitations compared to the AutoHotkey implementation:
 	+ The following options are different:
@@ -520,7 +594,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `capabilities`: zero or more capability name strings, each optionally comma- or space-delimited. Recognised names are the same as for `#Requires capability` above.
 		+ When called with no arguments, returns the current status of all capabilities without prompting.
 		+ Returns an `Object` with a property for each capability (`"Granted"`, `"Denied"`, `"NotApplicable"`, or `"Unsupported"`) and an `IsGranted` property (`1`/`0`) indicating whether every *requested* capability was granted or not applicable.
-		+ On Linux, all input-related capabilities (`InputMonitoring`, `InputInjection`, `BlockInput`) plus `ScreenCapture` are batched into a single `keysharp-inputd` prompt when requested together, so the user sees at most one dialog per call.
+		+ On Linux, `InputMonitoring` belongs to `keysharp-input`, while the desktop scopes belong to `keysharp-desktop`. Both helpers can manage the shared `InputControl` grant: it is batched with `InputMonitoring` when both are requested, or with desktop scopes when requested alongside them. A request spanning both helpers may require one polkit authentication per helper. Successful grants persist until manually revoked.
 			```
 			caps := RequestCapabilities("InputMonitoring", "ScreenCapture")
 			if caps.IsGranted
@@ -560,7 +634,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		```
 	+ Waiting and events:
 		+ `Clipboard.Wait(timeout?, waitFor?)`: as `ClipWait`, and additionally accepts a kind name — `"Text"`, `"Any"`, `"Image"`, `"Files"`, `"Html"` or `"Rtf"`. `ClipWait` accepts those too.
-		+ `Clipboard.OnChange(callback, count?) => ClipboardHook`: calls `callback(hook, type)` on every change, where type is 0 (now empty), 1 (text or files) or 2 (anything else). The returned hook has `Stop()`, `Pause(newState?)`, `Paused`, `IsActive` and `Count`, matching `Ks.WinEvent`. Prefer this over `OnClipboardChange` when the callback is a closure: unregistering there requires the very same function object back.
+		+ `Clipboard.OnChange(callback, count?) => ClipboardHook`: calls `callback(hook, type)` on every change, where type is 0 (now empty), 1 (text or files) or 2 (anything else). The returned hook has `Stop()`, `Pause(newState?)`, `Paused`, `Status`, `IsActive` and `Count`, matching `Ks.WinEvent`. `Status` is `"Active"`, `"Paused"` or `"Stopped"`, and `IsActive` means *firing*, so a paused hook is not active. Prefer this over `OnClipboardChange` when the callback is a closure: unregistering there requires the very same function object back.
 	+ Platform notes: on a Wayland session driven through a shell extension (Cinnamon/Muffin) the compositor's selection source can advertise only one type, so `Clipboard.Set` and `ClipboardAll` restore a single, most-useful representation rather than every format.
 * New debugging functions:
 	+ `ShowDebug()`: Shows the main window and focuses the debug output tab.
@@ -676,7 +750,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `A_DefaultHotstringSendRaw` returns the default hotstring raw sending mode.
 	+ `A_DirSeparator` returns the directory separator character which is `\` on Windows and `/` elsewhere.
 	+ `A_GuiTheme` gets/sets the application-wide GUI theme. Accepted values are `Classic`, `System`, and `Dark`. `System` selects the operating-system theme; Eto follows later system-theme changes, while WinForms resolves the setting when it is applied. On Linux and macOS, `Classic` selects Eto's light theme.
-	+ `A_KeysharpCorePath` provides the full path to the Keysharp.Core.dll file.
+	+ `A_KsCorePath` provides the full path to the Keysharp.Core.dll file.
 	+ `A_LoopRegValue` which makes it easy to get a registry value when using `Loop Reg`.
 	+ `A_MaxThreads` returns the value `n` specified with `#MaxThreads n`.
 	+ `A_NoTrayIcon` returns whether the tray icon is hidden, including when its startup state was selected by `#NoTrayIcon` or `#TrayIcon`.
@@ -688,12 +762,8 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `A_Thread` is the current pseudo-thread as a `Thread` object.
 		+ Every per-pseudo-thread fact is a property on the object rather than its own importable global, so the surface extends without new names. See the `Thread` class under *New classes*.
 		+ There is exactly one object per pseudo-thread, so "is this the one I am in" is `thr == A_Thread`.
-	+ `A_TotalScreenHeight` returns the total height in pixels of the virtual screen.
-	+ `A_TotalScreenWidth` returns the total width in pixels of the virtual screen.
 	+ `A_UseHook` returns the value `n` specified with `#UseHook n`.
 	+ `A_WinActivateForce` returns whether the forceful method of activating a window is in effect because `#WinActivateForce` was specified.
-	+ `A_WorkAreaHeight` returns the height of the working area of the primary screen.
-	+ `A_WorkAreaWidth` returns the width of the working area of the primary screen.
 	+ `A_Timers` returns a `Map` of (`Func`, `Boolean`) pairs where the key is the function object of the timer and the value is the enabled state of the associated timer.
 * New classes:
 	+ `App`: The running application — its identity, its invocation and its exit state. Available from the `KS` module: `#Import Ks { App }`, or `#Import Ks` and then `Ks.App`.
@@ -938,7 +1008,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		```
 		+ The lock belongs to a *real* thread and is reentrant. `Acquire` blocks the whole real thread, so acquiring on the main thread stalls the message loop — pass a timeout there.
 	+ New class `Image` provides cross-platform image capture and manipulation. Capture with `Image.FromDesktop()`, `Image.FromMonitor(n)`, `Image.FromRect(x, y, width, height)`, `Image.FromWindow(winTitle [, options])`, load with `Image.FromFile(path)` / `Image.FromBitmap(handle)` / `Image.FromClipboard()` (an alias of the `Clipboard.Image` getter; returns `""` when the clipboard holds no image, and the write direction is `Clipboard.Image := img`), or create a blank ARGB canvas to draw on with `Image.Create(width, height [, background])` (omit `background` or pass `""` for fully transparent), or build one from raw pixel bytes with `Image.FromBuffer(data, width, height [, bytesPerPixel := 4])` — the inverse of `GetPixelData`, where `bytesPerPixel` 1 = 8-bit grayscale and 4 = RGBA. Paint shapes and text with `Clear([color])`, `DrawLine(x1, y1, x2, y2 [, color, thickness])`, `DrawRect`/`FillRect(x, y, width, height [, color, thickness])`, `DrawRoundRect`/`FillRoundRect(x, y, width, height, radius [, color, thickness])`, `DrawEllipse`/`FillEllipse(x, y, width, height [, color, thickness])`, `DrawText(text, x, y [, color, font])` (`font` is `"Name size"` with optional trailing style keywords `bold`, `italic`, `underline`, `strike`, e.g. `"Sans 16 bold italic"`), and `DrawImage(image [, x, y, width, height])` (stamp another image onto this one). A color is a name (`"Red"`), a `0xRRGGBB` value (opaque), or — for a non-opaque alpha — a `0xAARRGGBB` value given either as a number (e.g. `0x80FF0000`) or an 8-hex-digit string; a fully-transparent `0x00` alpha survives only as an 8-hex-digit string, since a numeric `0x00RRGGBB` collapses to a plain opaque `0xRRGGBB`. Queue chainable transforms — geometry (`Scale`, `Resize(width, height)` for an absolute resize where a single negative dimension keeps the aspect ratio, `Rotate`, `Flip`, `Crop`) and color (`Grayscale()`, `Opacity(factor)` with `factor` 0-1, `Brightness(amount)` and `Contrast(amount)` with `amount` -1 to 1); the draw ops and transforms all apply lazily and chain, then output via `Save(filename)` or `ToBitmap()`, show it in a window with `Show([title, wait])` (`wait` = block until the preview window closes), read/write pixels with `GetPixel(x, y)` (returns the full `0xAARRGGBB`, alpha included) and `SetPixel(x, y, color)` (a `0xRRGGBB` opaque or `0xAARRGGBB` value), or search it — the three search methods return a boolean found? and write the result(s) into a leading `&match` output variable, and matching is RGB-only (alpha is ignored, since capture alpha is unreliable): `Search(&match, needle [, variation, trans, direction])` locates a sub-image and on a hit sets `match := {X, Y}` (the match's top-left as absolute image pixels) and returns `true`, else returns `false` and sets `match := ""` (`trans` = a needle color that matches anything, ImageSearch's `*TransN`; `direction` = ImageSearch's `*DirN` scan order 1-9 selecting which match wins); `SearchAll(&matches, needle [, variation, trans, direction])` sets `matches := [{X, Y}, {X, Y}, …]` (all matches, an empty array `[]` when none) and returns `true` when there is at least one; `SearchPixel(&match, color [, variation])` finds the first matching pixel — PixelSearch over a capture instead of the live screen — and on a hit sets `match := {X, Y, Color}` where `Color` is the actual matched pixel's full `0xAARRGGBB` (the value `GetPixel` returns). Each also takes an optional `(x, y, width, height)` region right after `&match` (`Search(&match, x, y, width, height, needle [, …])`, likewise `SearchAll`/`SearchPixel`) to search only inside that rectangle (clamped to the image); returned coordinates stay absolute image pixels. The region form is selected by argument count — 5+ arguments after `&match` means a region; `SearchPixel` with 3 or 4 arguments (neither the plain nor the region form) raises a ValueError. Additional surface: `Copy()` duplicates the image; `MeasureText(text, font, &w, &h)` measures a string with the same font spec `DrawText` uses; `GetPixelData([bytesPerPixel := 1, buffer]) => Buffer` copies the pixels into a tightly packed `Buffer` (`bytesPerPixel` 1 = grayscale, 4 = RGBA) for `DllCall`/OCR interop — pass `buffer` (a `Buffer`, or any object exposing `Ptr` and `Size`) to write into storage you already own instead of allocating a new one, and that same object is returned; it must hold at *least* `Width * Height * bytesPerPixel` bytes (a ValueError otherwise), exactly that many are written from the start, and anything beyond is left alone, so one buffer sized for the largest capture can serve smaller ones too (`data := img.GetPixelData(4, data)` in a capture loop) — and `SetPixelData(data [, bytesPerPixel := 4])` overwrites the current image's pixels from such a buffer; and the read-only `X`/`Y`/`ScaleX`/`ScaleY` properties report the capture's screen origin and HiDPI pixel scale so coordinates found in the image map back to screen coordinates. `FromWindow` captures the whole window (title bar included; occluded windows capture correctly everywhere except foreign-toplevel-only compositors) and accepts an `options` object/mode (matching OCR.ahk): on Windows it selects the capture technique — `0`/`1` = GetDC + BitBlt, `2`/`3` = PrintWindow, `4` (default) = PrintWindow + PW_RENDERFULLCONTENT for hardware-accelerated windows (mode `5`, UWP capture, is not yet implemented) — and `{decorations: false}` requests a client-area-only grab where the platform can honor it (KWin); elsewhere the flag is ignored. `Image.FromRect` takes absolute screen coordinates and deliberately ignores the Pixel `CoordMode` (unlike `PixelGetColor`/`ImageSearch`), matching its sibling capture factories. Replaces the earlier `ImageCapture` function — e.g. `Image.FromRect(x, y, width, height).Save(filename)` or `.ToBitmap()`. Using a disposed `Image` now throws rather than silently returning `0`, and because `Rotate`/`Flip` invalidate the `X`/`Y` screen-origin mapping (`Rotate` also invalidates `ScaleX`/`ScaleY`), don't rely on those properties after rotating or flipping.
-		* New KS class `Overlay` provides a click-through, always-on-top image surface. Use `Overlay()` when `SetImage` will supply its size, `Overlay(x, y, width, height)` for a drawable blank canvas, or `Overlay.FromImage(source [, x, y, width, height])` to start with a copied image. Geometry uses native screen units while the platform chooses the backing-pixel density. Draw through the borrowed `Canvas` image and call `Present()` to publish a completed frame without changing visibility. `SetImage(source [, x, y, width, height])` copies an image and applies geometry together; `Redraw(callback [, x, y, width, height])` gives `callback(canvas)` a private target-sized canvas and presents it as one completed frame. Canvas operations that replace or transform its pixels are refused; use `Canvas.Copy()` for an independent image. `Show`, `Move`, `Hide`, and `Destroy` control the surface; `Width`/`Height` resize its display rectangle without discarding the canvas. `Opacity`, `ClickThrough`, `IsVisible`, `Hwnd`, and `OnEvent` expose presentation and pointer state. `Highlight` and, on Linux/macOS, `ToolTip` use the same primitive. GNOME/Cinnamon Wayland draw a click-through overlay inside the shell itself, so it is not a window and takes no taskbar entry; its frames are handed over as shared memory to keep animation cheap. An interactive overlay (`ClickThrough := false`) has to be a real surface there and does appear in the window list. macOS behavior is unverified.
+		* New KS class `Overlay` provides a click-through, always-on-top image surface. Use `Overlay()` when `SetImage` will supply its size, `Overlay(x, y, width, height)` for a drawable blank canvas, or `Overlay.FromImage(source [, x, y, width, height])` to start with a copied image. Geometry uses native screen units while the platform chooses the backing-pixel density. Draw through the borrowed `Canvas` image and call `Present()` to publish a completed frame without changing visibility. `SetImage(source [, x, y, width, height])` copies an image and applies geometry together; `Redraw(callback [, x, y, width, height])` gives `callback(canvas)` a private target-sized canvas and presents it as one completed frame. Canvas operations that replace or transform its pixels are refused; use `Canvas.Copy()` for an independent image. `Show`, `Move`, `Hide`, and `Destroy` control the surface; `Width`/`Height` resize its display rectangle without discarding the canvas. `Opacity`, `ClickThrough`, `IsVisible`, `Hwnd`, and `OnEvent` expose presentation and pointer state. `Highlight` and, on Linux/macOS, `ToolTip` use the same primitive. GNOME/Cinnamon Wayland draw a click-through overlay inside the shell itself, so it is not a window and takes no taskbar entry; its frames are transferred as bounded PNG data. An interactive overlay (`ClickThrough := false`) has to be a real surface there and does appear in the window list. macOS behavior is unverified.
 * Syntax:
 	+ The spread operator `*` may be used multiple times in one function call: `MyFunc(arr1*, arr2*)`.
 	+ The 40 character limit for hotstring abbreviations has been removed. There is no limit to the length.
@@ -1081,9 +1151,9 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Gui controls support taking a boolean `Autosize` (default: `false`) argument in the `Add()` method to allow them to optimally size themselves.
 		+ Loading icons from .NET DLLs is supported by passing the name of the icon resource in place of the icon number.
 			+ To set the tray icon to the built in suspended icon:
-				+ `TraySetIcon(A_KeysharpCorePath, "Keysharp_s.ico")`
+				+ `TraySetIcon(A_KsCorePath, "Keysharp_s.ico")`
 			+ To set a menu item to the same:
-				+ `parentMenu.SetIcon("Menu caption", A_KeysharpCorePath, "Keysharp_s.ico")`
+				+ `parentMenu.SetIcon("Menu caption", A_KsCorePath, "Keysharp_s.ico")`
 		+ Rich text boxes are supported by passing `RichEdit` to `Gui.Add()`. The same options from `Edit` are supported with the following caveats:
 			+ `Multiline` is `true` by default.
 			+ `WantReturn` and `Password` are not supported.
@@ -1155,6 +1225,7 @@ Controlling another application needs **Automation** permission, granted per tar
 				+ macOS: Only active-application changes are currently reported (window-granular events via the accessibility APIs are planned).
 		+ `Monitor`: One display, carrying the metadata and device control the AHK-compatible `MonitorGet*` functions do not expose — model, manufacturer, serial, a stable id, refresh rate, physical size, orientation, connection kind, and brightness / raw DDC-CI control.
 			+ It is part of the `KS` module; import it with `#import KS { Monitor }`. It does not replace the AHK `MonitorGet*` functions, which are unchanged apart from now raising a `ValueError` on an out-of-range monitor index instead of silently substituting the primary (matching AutoHotkey v2). `Image.FromMonitor()` inherits that same validation.
+			+ It is where the Keysharp-specific screen facts live: the primary monitor's work area is `Monitor.Primary.WorkArea`, its scale is `Monitor.Primary.Scale`, and the whole desktop is `Monitor.VirtualScreen` — each available for *any* monitor, not just the primary. The AHK-standard `A_ScreenWidth`, `A_ScreenHeight` and `A_ScreenDPI` remain global. Note `A_ScreenDPI` is **not** `Monitor.Dpi`: the former is the system's logical text-size DPI (normally 96), the latter is computed from the panel's physical size. Hoist the rect when reading more than one field — `wa := Monitor.Primary.WorkArea` once, then `wa.Width`/`wa.Height` — since each read re-enumerates the topology.
 			+ A `Monitor` is a **snapshot** of the topology plus a **live** handle to the device: identity and geometry are read once when the object is created, so a loop over `Monitor.All` sees one consistent picture, while `Brightness` and the VCP methods always talk to the hardware at the moment they are called. `Refresh()` re-reads the snapshot in place and returns the same object, or `""` when that monitor is no longer attached.
 			+ Metadata beyond plain geometry costs a native query, so it is resolved on the first property that needs it and then cached on the object; constructing a `Monitor`, or reading only its geometry, never pays for it. Any field the display does not report is `""` rather than a fabricated value.
 			+ `Id` is derived from the panel's EDID identity and is the value to persist (for example, to restore a window layout per monitor set); pass it back to `Monitor.FromId()`. Panels that report no serial are disambiguated by connector on Windows and Linux, making the id stable per *port* rather than per panel; on macOS such a panel falls back to a per-*model* id that two identical displays would share.
@@ -1165,6 +1236,7 @@ Controlling another application needs **Automation** permission, granted per tar
 					static Count => Integer        ; The number of monitors.
 					static Primary => Monitor
 					static All => Array            ; Every monitor, in index order, from ONE topology enumeration.
+					static VirtualScreen => Object ; The union of every monitor: { X, Y, Width, Height }. The origin is negative when a display sits left of/above the primary.
 					static FromPoint(x, y) => Monitor    ; The monitor containing a native screen point, or the nearest one when it falls in a gap.
 					static FromMouse() => Monitor
 					static FromWindow([winTitle, winText, excludeTitle, excludeText]) => Monitor  ; The monitor a window overlaps most.

@@ -15,7 +15,7 @@ namespace Keysharp.Internals
 	}
 
 	/// <summary>
-	/// Shared Linux base: cursor-shape get/set, plus the absolute-pointer→pixel scaling used by the inputd
+	/// Shared Linux base: cursor-shape get/set, plus the absolute-pointer→pixel scaling used by the input service
 	/// position fallback. (Mouse-event injection is NOT here — it lives in the keyboard/mouse senders, unified
 	/// with keyboard input; this service only covers cursor state.)
 	/// </summary>
@@ -29,7 +29,7 @@ namespace Keysharp.Internals
 		public abstract bool SupportsCursorQueryAndMove { get; }
 		public abstract bool TryMoveAbsolute(int x, int y);
 
-		// Default: unknown. X11 answers via XQueryPointer, Wayland via the inputd daemon.
+		// Default: unknown. X11 answers via XQueryPointer, Wayland via the input service daemon.
 		public virtual bool TryGetButtonStateLogical(uint vk, out bool down)
 		{
 			down = false;
@@ -70,26 +70,36 @@ namespace Keysharp.Internals
 		// We can both read (XQueryPointer) and move (XWarpPointer) the cursor whenever an X display is reachable.
 		public override bool SupportsCursorQueryAndMove => TryGetX11CursorPos(out _, out _);
 
-		// XWarpPointer is pixel-accurate, unlike inputd's normalised uinput abs path.
+		// XWarpPointer is pixel-accurate, unlike input service's normalised uinput abs path.
 		public override bool TryMoveAbsolute(int x, int y) => TryX11Warp(x, y);
 
-		// inputd supplies logical and physical state for all five buttons without installing a hook. If it is
+		// input service supplies logical and physical state for all five buttons without installing a hook. If it is
 		// unavailable or permission is denied, the X11 core pointer mask can still answer the three standard
 		// buttons. XButton1/2 deliberately have no XInput2 fallback.
 		public override bool TryGetButtonStateLogical(uint vk, out bool down)
 		{
-			if (KeysharpInputdManager.TryGetButtonStateLogical(vk, out down))
+			if (KeysharpInputManager.TryGetButtonStateLogical(vk, out down))
 				return true;
 
-			return TryQueryX11ButtonState(vk, out down);
+			if (KeysharpInputManager.HasInputOperation(
+				KeysharpInputClient.Operations.QueryPointerButtons))
+				return TryQueryX11ButtonState(vk, out down);
+
+			down = false;
+			return false;
 		}
 
 		public override bool TryGetButtonStatePhysical(uint vk, out bool down)
 		{
-			if (KeysharpInputdManager.TryGetButtonStatePhysical(vk, out down))
+			if (KeysharpInputManager.TryGetButtonStatePhysical(vk, out down))
 				return true;
 
-			return TryQueryX11ButtonState(vk, out down);
+			if (KeysharpInputManager.HasInputOperation(
+				KeysharpInputClient.Operations.QueryPointerButtons))
+				return TryQueryX11ButtonState(vk, out down);
+
+			down = false;
+			return false;
 		}
 
 		private static bool TryQueryX11ButtonState(uint vk, out bool down)
@@ -161,7 +171,7 @@ namespace Keysharp.Internals
 			return false;
 		}
 
-		// Moves the pointer in Keysharp's native X11 root-pixel coordinates (XWarpPointer). Used by inputd cursor-clip
+		// Moves the pointer in Keysharp's native X11 root-pixel coordinates (XWarpPointer). Used by input service cursor-clip
 		// correction; lives here so the X11 move path is owned by the resolved Mouse service. False if no X display.
 		private static bool TryX11Warp(int x, int y)
 		{
@@ -188,7 +198,7 @@ namespace Keysharp.Internals
 	/// Wayland: the core protocol forbids foreign clients from querying or moving the global cursor, so everything
 	/// goes through the resolved compositor backend (KWin/GNOME/…). The backend is resolved ONCE at construction;
 	/// it is null when the session has no usable backend, in which case cursor POSITION still falls back to the
-	/// inputd pointer report, but injection is unavailable.
+	/// input service pointer report, but injection is unavailable.
 	/// </summary>
 	internal sealed class WaylandMouse : LinuxMouseBase
 	{
@@ -201,13 +211,13 @@ namespace Keysharp.Internals
 			if (backend != null && backend.TryGetCursorPos(out x, out y))
 				return true;
 
-			// No compositor cursor query (or no backend): for an absolute-positioning device, derive it from inputd's
+			// No compositor cursor query (or no backend): for an absolute-positioning device, derive it from input service's
 			// last report (normalised across the virtual desktop) scaled onto the virtual-desktop bounds. A_ScreenWidth/
 			// Height are the PRIMARY monitor size and assume a 0 origin, which clamps a second-monitor cursor onto the
 			// primary; the virtual-desktop bounds carry the true size and (possibly negative) origin.
 			var vb = Keysharp.Builtins.Monitor.GetVirtualScreenBounds();
 
-			if (KeysharpInputdManager.TryGetPointerPosition(
+			if (KeysharpInputManager.TryGetPointerPosition(
 					out var rawX, out var rawY, out var minX, out var maxX, out var minY, out var maxY)
 				&& TryScalePointerAxis(rawX, minX, maxX, (int)vb.Left, (int)vb.Width, out x)
 				&& TryScalePointerAxis(rawY, minY, maxY, (int)vb.Top, (int)vb.Height, out y))
@@ -223,12 +233,12 @@ namespace Keysharp.Internals
 		public override bool TryMoveAbsolute(int x, int y) => backend?.TrySendMouseMoveAbsolute(x, y) == true;
 
 		public override bool TryGetButtonStateLogical(uint vk, out bool down)
-			=> KeysharpInputdManager.TryGetButtonStateLogical(vk, out down);
+			=> KeysharpInputManager.TryGetButtonStateLogical(vk, out down);
 
-		// Wayland forbids clients from querying global pointer state, so ask the inputd daemon: it reads evdev
+		// Wayland forbids clients from querying global pointer state, so ask the input service daemon: it reads evdev
 		// and can snapshot the current button state (EVIOCGKEY) without grabbing the mouse or installing a hook.
 		public override bool TryGetButtonStatePhysical(uint vk, out bool down)
-			=> KeysharpInputdManager.TryGetButtonStatePhysical(vk, out down);
+			=> KeysharpInputManager.TryGetButtonStatePhysical(vk, out down);
 	}
 #elif WINDOWS
 	internal sealed class WindowsMouse : IMouse

@@ -1,5 +1,5 @@
 #Requires AutoHotkey v2.0
-#Requires capability InputMonitoring   ; the mouse hook; moving/fading foreign windows uses X11/compositor, not a gated capability (macOS asks for Accessibility on first use)
+#Requires capability InputMonitoring, InputControl, WindowMonitoring, WindowControl   ; suppressing mouse hotkeys plus foreign-window queries and changes
 #SingleInstance Force
 #include Shell.ks
 

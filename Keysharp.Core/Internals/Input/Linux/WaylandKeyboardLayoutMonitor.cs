@@ -10,7 +10,7 @@ namespace Keysharp.Internals.Input.Linux
 {
 	/// <summary>
 	/// Minimal Wayland keyboard listener used only to mirror the compositor-provided XKB keymap
-	/// into the managed layout mapper. The input hook itself still comes from keysharp-inputd.
+	/// into the managed layout mapper. The input hook itself still comes from keysharp-input.
 	/// </summary>
 	internal sealed class WaylandKeyboardLayoutMonitor : IDisposable
 	{

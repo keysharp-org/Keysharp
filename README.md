@@ -49,9 +49,9 @@ Prebuilt packages are on the [Releases](https://github.com/keysharp-org/Keysharp
 
 ### Linux
 
-- **Install:** extract the tarball, then `sudo bash ./install.sh` — the root install adds privileged helpers for reliable input hooks, input synthesis, and direct or compositor-specific capture paths. Run without `sudo` for a user-local install under `~/.local` that skips those helpers.
+- **Install on Debian/Ubuntu:** download the single `keysharp-*-deb-bundle.tar.gz`, extract it, and run `sudo bash ./install.sh`. It contains Keysharp plus the independent [`keysharp-input`](https://github.com/keysharp-org/keysharp-input) and [`keysharp-desktop`](https://github.com/keysharp-org/keysharp-desktop) packages, so there are no separate downloads. On other distributions, use the regular Linux tarball. Compatible system components are reused instead of reinstalled.
 - **Run:** `keysharp hello.ks`.
-- **Uninstall:** `sudo bash ./uninstall.sh` (use the same privilege level you installed with).
+- **Uninstall:** use `sudo apt remove keysharp` for the Debian bundle, or `sudo bash ./uninstall.sh` for the tar channel. Both remove only Keysharp. They never remove `keysharp-input`, `keysharp-desktop`, or shared permission grants; the package manager or each component's separate uninstaller owns that lifecycle.
 - **VS Code:** the extension needs an `.exe` name, so create a shim:
   ```sh
   mkdir -p ~/.local/bin && ln -sf "$(command -v keysharp)" ~/.local/bin/AutoHotkey.exe

@@ -1,5 +1,10 @@
 * text=auto
 
+# Linux lifecycle inputs must remain usable from a Windows checkout through WSL.
+*.sh text eol=lf
+*.conf text eol=lf
+/Keysharp.Install/linux/debian/preinst text eol=lf
+
 *.bmp binary
 *.cur binary
 *.dll binary

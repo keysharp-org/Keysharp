@@ -34,7 +34,7 @@ env:
   # nothing, so `dotnet test -c ""` fails immediately. Give each a default at that point (ci.yml shows the
   # `github.event_name == 'workflow_dispatch' && inputs.x || '<default>'` form).
   BUILD_CONFIGURATION: ${{ inputs.configuration }}
-  # Category=RequiresHook is excluded: those tests need the keysharp-inputd global hook and, on a desktop with
+  # Category=RequiresHook is excluded: those tests need the keysharp-input global hook and, on a desktop with
   # the daemon, prompt for input-access permission. The curated set must run without any user interaction, so
   # hook-dependent tests do not belong in it. The full (interactive) test run does not apply this exclusion.
   # The clipboard entries are named individually on purpose: they are the ClipboardTests that touch no clipboard
@@ -87,7 +87,7 @@ jobs:
 
     steps:
       - name: Checkout keysharp
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5

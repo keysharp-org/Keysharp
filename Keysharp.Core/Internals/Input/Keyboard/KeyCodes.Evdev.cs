@@ -4,16 +4,16 @@ using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 namespace Keysharp.Internals.Input.Keyboard
 {
 	/// <summary>
-	/// Windows VK ⇄ Linux evdev (inputd) scan code tables. Fixed mappings used by the
-	/// inputd backend. Part of the unified <see cref="KeyCodes"/> facade.
+	/// Windows VK ⇄ Linux evdev (input service) scan code tables. Fixed mappings used by the
+	/// input service backend. Part of the unified <see cref="KeyCodes"/> facade.
 	/// <para>
-	/// This is a second copy of the daemon's table in <c>native/keysharp-inputd/src/platform/vk_evdev.c</c>, and
+	/// This is a second copy of the daemon's table in <c>keysharp-input/src/platform/vk_evdev.c</c>, and
 	/// the two must agree: the daemon stamps the VK on every hook event it delivers, while this table answers
 	/// the client-side questions (key names, VK→code synthesis, key-state bitmaps) — so a divergence would make
 	/// one key report one VK when pressed and a different one when queried. They cannot be shared because they
 	/// live in different processes and languages; both sides are covered by tests
 	/// (<c>LinuxEvdevMappingsCoverPortableAndAlternateKeyCodes</c> here, and the VK/evdev case in
-	/// <c>native/keysharp-inputd/tests/daemon_unit_tests.c</c>), so add every new mapping to both.
+	/// <c>keysharp-input/tests/daemon_unit_tests.c</c>), so add every new mapping to both.
 	/// </para>
 	/// </summary>
 	internal static partial class KeyCodes

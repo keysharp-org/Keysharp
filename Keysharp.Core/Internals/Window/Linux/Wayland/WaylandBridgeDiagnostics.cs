@@ -31,7 +31,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 	}
 
-	/// <summary>Failure diagnostics for compositor D-Bus bridges, sent to the same debug output used by inputd.</summary>
+	/// <summary>Failure diagnostics for compositor D-Bus bridges, sent to the same debug output used by input service.</summary>
 	internal static class WaylandBridgeDiagnostics
 	{
 		private static readonly WaylandDiagnosticThrottle throttle = new(5000);

@@ -29,7 +29,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static DbusSession idleMonitorSession;
 		private static long clipboardSupportCacheUntil;
 		private static bool clipboardSupportCached;
-		private static RetryGate clipboardProbes;
+		private static readonly object clipboardSupportSync = new();
 
 		// Overlay-ownership plumbing (mirrors CinnamonBackend): our stable process key, the unique name of
 		// our D-Bus connection, and the sticky "already registered under this connection" latch + retry gate.
@@ -49,24 +49,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				(c, d, p) => new Gnome.GnomeShell1(c, d, p));
 			highlightOwnerRegistration = new RetryGate(maximumAttempts: 3,
 				initialRetryDelay: TimeSpan.FromMilliseconds(500), maximumRetryDelay: TimeSpan.FromSeconds(5));
-			clipboardProbes = new RetryGate(maximumAttempts: 3,
-				initialRetryDelay: TimeSpan.FromMilliseconds(250), maximumRetryDelay: TimeSpan.FromSeconds(2));
 			extension.AvailabilityChanged += ExtensionAvailabilityChanged;
 		}
 
 		// ---- public query/command surface used by GnomeBackend ----------
 
 		internal static bool QueryCursorPosition(out int x, out int y)
-		{
-			x = 0;
-			y = 0;
-
-			if (!TryRun(p => p.GetCursorPositionAsync(), out (int X, int Y) result))
-				return false;
-
-			(x, y) = result;
-			return true;
-		}
+			=> DesktopClient.QueryCursorPosition("gnome", out x, out y);
 
 		internal static bool QueryIdleTime(out long milliseconds)
 		{
@@ -106,59 +95,48 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		internal static bool QueryWorkArea(out Rectangle area)
-		{
-			area = Rectangle.Empty;
-
-			if (!TryRun(p => p.GetWorkAreaAsync(), out (int X, int Y, int Width, int Height) result))
-				return false;
-
-			if (result.Width <= 0 || result.Height <= 0)
-				return false;
-
-			area = new Rectangle(result.X, result.Y, result.Width, result.Height);
-			return true;
-		}
+			=> DesktopClient.QueryWorkArea("gnome", out area);
 
 		internal static string QueryWindowList(bool includeHidden)
-			=> Run(p => p.GetWindowListAsync(includeHidden));
+			=> DesktopClient.QueryWindowList("gnome", includeHidden);
 
 		internal static string QueryActiveWindow()
-			=> Run(p => p.GetActiveWindowAsync());
+			=> DesktopClient.QueryActiveWindow("gnome");
 
 		internal static bool SendFocusWindow(ulong handle)
-			=> Run(p => p.FocusWindowAsync(handle));
+			=> DesktopClient.FocusWindow("gnome", handle);
 
 		internal static bool SendRaiseWindow(ulong handle)
-			=> Run(p => p.RaiseWindowAsync(handle));
+			=> DesktopClient.RaiseWindow("gnome", handle);
 
 		internal static bool SendLowerWindow(ulong handle)
-			=> Run(p => p.LowerWindowAsync(handle));
+			=> DesktopClient.LowerWindow("gnome", handle);
 
 		// Ask the shell to place the NEXT window this process creates, before it is first painted. Fails closed
 		// against an extension that predates the method, leaving the caller on the correlate-then-move path.
 		internal static bool SendReserveWindow(ulong cookie, int x, int y, int ttlMs)
-			=> Run(p => p.ReserveWindowAsync(Environment.ProcessId, cookie, x, y, ttlMs));
+			=> DesktopClient.ReserveWindow("gnome", cookie, x, y, ttlMs);
 
 		internal static string SendGetReservedWindow(ulong cookie)
-			=> Run(p => p.GetReservedWindowAsync(Environment.ProcessId, cookie)) ?? "";
+			=> DesktopClient.GetReservedWindow("gnome", cookie);
 
 		internal static bool SendMoveResize(ulong handle, int x, int y, int width, int height)
-			=> Run(p => p.MoveResizeWindowAsync(handle, x, y, width, height));
+			=> DesktopClient.MoveResizeWindow("gnome", handle, x, y, width, height);
 
 		// Move/resize by X11 window id (X11 sessions). GNOME Shell disables Eval, so this relies on the
 		// extension method; a window is unreachable (returns false → caller falls back to XMoveWindow) until
 		// an extension carrying MoveResizeWindowByXid is installed and the shell reloaded.
 		internal static bool SendMoveResizeByXid(ulong xid, int x, int y, int width, int height)
-			=> Run(p => p.MoveResizeWindowByXidAsync(xid, x, y, width, height));
+			=> DesktopClient.MoveResizeWindowByXid("gnome", xid, x, y, width, height);
 
 		internal static bool SendSetWindowState(ulong handle, int state)
-			=> Run(p => p.SetWindowStateAsync(handle, state));
+			=> DesktopClient.SetWindowState("gnome", handle, state);
 
 		internal static bool SendSetWindowAbove(ulong handle, bool above)
-			=> Run(p => p.SetWindowAboveAsync(handle, above));
+			=> DesktopClient.SetWindowAbove("gnome", handle, above);
 
 		internal static bool SendSetWindowDecorated(ulong handle, bool decorated)
-			=> Run(p => p.SetWindowDecoratedAsync(handle, decorated));
+			=> DesktopClient.SetWindowDecorated("gnome", handle, decorated);
 
 		internal static bool SendSetOpacity(ulong handle, object value)
 		{
@@ -167,26 +145,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				? 255
 				: Math.Clamp((int)value.Al(), 0, 255);
 
-			return Run(p => p.SetWindowOpacityAsync(handle, alpha));
+			return DesktopClient.SetWindowOpacity("gnome", handle, alpha);
 		}
 
 		internal static bool SendCloseWindow(ulong handle)
-			=> Run(p => p.CloseWindowAsync(handle));
+			=> DesktopClient.CloseWindow("gnome", handle);
 
 		internal static bool SendKillWindow(ulong handle)
-			=> Run(p => p.KillWindowAsync(handle));
+			=> DesktopClient.KillWindow("gnome", handle);
 
 		internal static OverlayShowResult SendShowImageOverlay(uint id, int x, int y, int width, int height, byte[] pngBytes)
 			=> pngBytes is { Length: > 0 }
 			   ? RunShow(p => p.ShowImageOverlayAsync(id, HighlightOwnerKey, connectionLocalName, x, y, width, height, pngBytes),
-						 ImageOverlayTimeoutMs)
-			   : OverlayShowResult.Failed;
-
-		internal static OverlayShowResult SendShowImageOverlayShm(uint id, int x, int y, int width, int height,
-			string shmPath, int pixelWidth, int pixelHeight, int stride)
-			=> !shmPath.IsNullOrEmpty()
-			   ? RunShow(p => p.ShowImageOverlayShmAsync(id, HighlightOwnerKey, connectionLocalName, x, y, width, height,
-														 shmPath, pixelWidth, pixelHeight, stride),
 						 ImageOverlayTimeoutMs)
 			   : OverlayShowResult.Failed;
 
@@ -196,70 +166,35 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal static bool SendHideImageOverlay(uint id)
 			=> Run(p => p.HideImageOverlayAsync(id, HighlightOwnerKey, connectionLocalName));
 
-		internal static bool SendMouseMoveAbsolute(int x, int y)
-			=> Run(p => p.SendMouseMoveAbsoluteAsync(x, y));
-
-		internal static bool SendMouseMoveRelative(int dx, int dy)
-			=> Run(p => p.SendMouseMoveRelativeAsync(dx, dy));
-
-		internal static bool SendMouseButton(uint button, bool pressed)
-			=> Run(p => p.SendMouseButtonAsync(button, pressed));
-
-		internal static bool SendMouseScroll(int delta, bool vertical)
-			=> Run(p => p.SendMouseScrollAsync(delta, vertical));
-
-		internal static byte[] CaptureArea(int x, int y, int w, int h)
-		{
-			const int captureTimeoutMs = 10_000;
-
-			if (!TryRun(p => p.CaptureAreaAsync(x, y, w, h), out byte[] bytes, captureTimeoutMs))
-				return null;
-
-			return bytes is { Length: > 0 } ? bytes : null;
-		}
-
 		internal static IDisposable WatchActiveWindowChanged(Action<string> handler)
-		{
-			return TryRun(p => p.WatchActiveWindowChangedAsync(handler, emitOnCapturedContext: false).AsTask(), out IDisposable subscription)
-				? subscription : null;
-		}
+			=> handler == null ? null : DesktopClient.WatchWindowEvents("gnome",
+				(type, json) =>
+				{
+					if (type == "active-state")
+						handler(json);
+				});
 
 		internal static IDisposable WatchWindowEvent(Action<string, string> handler, Action<Exception> onError = null)
-		{
-			return TryRun(p => p.WatchWindowEventAsync(DBusSignals.Adapt<(string, string)>(e => handler(e.Item1, e.Item2), onError),
-												   DBusSignals.FlagsFor(onError), emitOnCapturedContext: false).AsTask(), out IDisposable subscription)
-				? subscription : null;
-		}
+			=> DesktopClient.WatchWindowEvents("gnome", handler, onError);
 
-		// Whether the extension actually answers clipboard calls. The overlay path can gate on cheap name
-		// ownership because it reacts to a per-call tri-state (a definitive failure falls back to Eto), but the
-		// the recovering clipboard router uses this as its current liveness signal, so a stale/incompatible extension
-		// that owns the D-Bus name yet no longer speaks the clipboard protocol must not be treated as usable. Verify
-		// with a cheap, side-effect-free
-		// GetClipboardMimetypes round-trip (null = absent/failed, any array = answered) and cache the result.
+		// Probe the capability-free broker handshake, then let the first read perform the grant check.
 		internal static bool SupportsClipboard()
 		{
-			var now = Environment.TickCount64;
-
 			if (!ExtensionServiceHasOwner())
 				return false;
 
-			if (now < clipboardSupportCacheUntil)
+			lock (clipboardSupportSync)
+			{
+				var now = Environment.TickCount64;
+
+				if (now < clipboardSupportCacheUntil)
+					return clipboardSupportCached;
+
+				clipboardSupportCached = DesktopClient.ProbeProvider("gnome");
+				clipboardSupportCacheUntil = now + (clipboardSupportCached
+					? ExtensionPresentCacheMs : ExtensionMissingCacheMs);
 				return clipboardSupportCached;
-
-			using var attempt = clipboardProbes.TryBegin();
-
-			if (attempt == null)
-				return false;
-
-			var ok = Run(p => p.GetClipboardMimetypesAsync()) != null;
-			clipboardSupportCached = ok;
-			clipboardSupportCacheUntil = now + (ok ? ExtensionPresentCacheMs : ExtensionMissingCacheMs);
-
-			if (ok)
-				attempt.Succeed();
-
-			return ok;
+			}
 		}
 
 		// Clipboard access runs only through the extension (Mutter exposes no data-control protocol, so a
@@ -267,26 +202,22 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// so every format round-trips. Getters return null when the extension is absent/failed (vs an empty
 		// array/"" for a legitimately empty clipboard).
 		internal static string[] GetClipboardMimetypes()
-			=> Run(p => p.GetClipboardMimetypesAsync());
+			=> DesktopClient.GetClipboardMimetypes("gnome");
 
 		internal static byte[] GetClipboardContent(string mimetype)
-			=> Run(p => p.GetClipboardContentAsync(mimetype));
+			=> DesktopClient.GetClipboardContent("gnome", mimetype);
 
 		internal static bool SetClipboardContent(string mimetype, byte[] bytes)
 			=> Run(p => p.SetClipboardContentAsync(mimetype, bytes ?? System.Array.Empty<byte>()));
 
 		internal static string GetClipboardText()
-			=> Run(p => p.GetClipboardTextAsync());
+			=> DesktopClient.GetClipboardText("gnome");
 
 		internal static bool SetClipboardText(string text)
 			=> Run(p => p.SetClipboardTextAsync(text ?? string.Empty));
 
 		internal static IDisposable WatchClipboardChanged(Action<string, string[]> handler, Action<Exception> onError = null)
-		{
-			return TryRun(p => p.WatchClipboardChangedAsync(DBusSignals.Adapt<(string, string[])>(e => handler(e.Item1, e.Item2), onError),
-													   DBusSignals.FlagsFor(onError), emitOnCapturedContext: false).AsTask(), out IDisposable subscription)
-				? subscription : null;
-		}
+			=> DesktopClient.WatchClipboardChanges("gnome", handler, onError);
 
 		// ---- connection management ---------------------------------------
 
@@ -381,9 +312,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			registeredHighlightOwnerBusName = "";
 			highlightOwnerRegistration.Rearm();
-			clipboardSupportCached = false;
-			clipboardSupportCacheUntil = 0;
-			clipboardProbes.Rearm();
+			lock (clipboardSupportSync)
+			{
+				clipboardSupportCached = false;
+				clipboardSupportCacheUntil = 0;
+			}
 		}
 
 		internal static bool ExtensionServiceHasOwner() => extension.HasOwner;

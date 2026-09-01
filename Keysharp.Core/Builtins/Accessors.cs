@@ -152,7 +152,11 @@ namespace Keysharp.Builtins
 			// Platform.Clipboard marshals to the UI thread itself (see PlatformHost.CreateClipboard), so this — like every
 			// other clipboard seam — is a plain call. The backend behind it (Windows raw-Win32, a Wayland shell
 			// extension, or Eto) was chosen once at startup; see LinuxClipboards.Resolve.
-			get => Platform.Clipboard.GetText();
+			get
+			{
+				ClipboardPermission.EnsureMonitoring("A_Clipboard");
+				return Platform.Clipboard.GetText();
+			}
 
 			set
 			{

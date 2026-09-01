@@ -503,7 +503,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			} // End of second pass loop.
 
 #if !WINDOWS
-			// On Linux we always rely on keysharp-inputd hooks, so force hook handling
+			// On Linux we always rely on keysharp-input hooks, so force hook handling
 			// for all active hotkeys rather than attempting RegisterHotkey-style optimization.
 			hkd.whichHookNeeded = 0;
 			for (i = 0; i < shk.Length; ++i)
@@ -518,7 +518,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				// ^LButton, "RButton & Space", "MButton::AltTabAndMenu"). The Windows branch below limits this
 				// promotion to WIN modifiers because there the mouse hook fetches modifier state via
 				// GetAsyncKeyState regardless of any hook. On Linux there is no such hook-independent OS query on
-				// the primary (inputd) and Wayland paths: the mouse hook reads modifiers from modifiersLRLogical,
+				// the primary (input service) and Wayland paths: the mouse hook reads modifiers from modifiersLRLogical,
 				// which is only maintained while the keyboard hook is installed. Without it,
 				// GetModifierLRState()/IsKeyDownLogical() report no modifiers down, so *any* modified mouse hotkey
 				// silently fails to fire. Hence promote on ANY consolidated modifier, not just WIN. Installing the
@@ -686,10 +686,10 @@ namespace Keysharp.Internals.Input.Keyboard
 				hkd.whichHookNeeded |= HookType.Mouse;
 
 #if LINUX
-			// Global input hooks require a real session/seat (keysharp-inputd, or an interactive display). On a
+			// Global input hooks require a real session/seat (keysharp-input, or an interactive display). On a
 			// headless Linux host they can never be installed, so don't attempt to manifest them there: the
 			// hotkeys/hotstrings stay registered in memory (the passes above already ran) but no hook is started
-			// and no reader thread / inputd connection is opened. Non-headless Linux and the other platforms
+			// and no reader thread / input service connection is opened. Non-headless Linux and the other platforms
 			// manifest as usual below.
 			if (Script.IsHeadless)
 				return DefaultObject;
@@ -725,7 +725,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		}
 
 #if LINUX
-		// When a script registers hotkeys/hotstrings that need a global hook but keysharp-inputd could not install
+		// When a script registers hotkeys/hotstrings that need a global hook but keysharp-input could not install
 		// it, surface a NON-FATAL, continuable warning instead of throwing: a missing hook must not abort the
 		// auto-execute section (which would, for a persistent script, leave the Eto/GTK loop with nothing to quit
 		// it -- see the func-hotkey-local hang) nor crash a plain call to a hotstring/hotkey API. On a desktop the
@@ -750,14 +750,14 @@ namespace Keysharp.Internals.Input.Keyboard
 				_ => "keyboard and mouse hooks"
 			};
 			var reason = ht.GetHookActivationFailureReason();
-			var message = $"keysharp-inputd is required for global Linux hotkeys/hotstrings, but the required {hookText} could not be installed, so they will not fire.";
+			var message = $"keysharp-input is required for global Linux hotkeys/hotstrings, but the required {hookText} could not be installed, so they will not fire.";
 
 			if (!string.IsNullOrWhiteSpace(reason))
 				message += $" {reason}";
 			else
-				message += " keysharp-inputd is unavailable.";
+				message += " keysharp-input is unavailable.";
 
-			message += " Install and enable keysharp-inputd to use hotkeys/hotstrings on Linux.";
+			message += " Install and enable keysharp-input to use hotkeys/hotstrings on Linux.";
 			_ = Errors.ShowWarning(message);
 		}
 #endif

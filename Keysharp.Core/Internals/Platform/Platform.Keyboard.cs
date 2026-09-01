@@ -7,7 +7,7 @@ namespace Keysharp.Internals
 	{
 		/// <summary>
 		/// VK ⇄ char / scancode translation and layout handle. These helpers are platform-specific but
-		/// compile-time (no runtime session fork), with Linux mapping consulting the active xkb / inputd
+		/// compile-time (no runtime session fork), with Linux mapping consulting the active xkb / input service
 		/// layout via KeyCodes.
 		/// </summary>
 		internal static class Keys

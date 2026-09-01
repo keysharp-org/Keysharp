@@ -168,13 +168,12 @@ namespace Keysharp.Internals
 			return LinuxMonitorDetails.Get(display, refresh, orientation);
 		}
 
-		// X11 lets any client grab the screen without asking, so routing capture through keysharp-helper is
+		// X11 lets any client grab the screen without asking, so gating capture through keysharp-desktop is
 		// consent/awareness only — a determined script could call XGetImage directly and bypass it. It still
-		// lets the user see and refuse Keysharp-driven capture, and unifies the prompt with the Wayland paths.
-		// The consent is resolved once (cached) and degrades to "allow" when no privileged helper is installed.
+		// lets the user see and refuse capture initiated through this API and unifies the prompt with Wayland.
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			if (!Wl.HelperClient.EnsureCaptureConsent())
+			if (!Wl.DesktopClient.EnsureCaptureConsent())
 			{
 				bmp = null;
 				return false;
@@ -188,7 +187,7 @@ namespace Keysharp.Internals
 		{
 			pixelScale = PixelScale.One;
 
-			if (!Wl.HelperClient.EnsureCaptureConsent())
+			if (!Wl.DesktopClient.EnsureCaptureConsent())
 			{
 				bmp = null;
 				return false;
@@ -208,7 +207,7 @@ namespace Keysharp.Internals
 		// prompt == true is an explicit request (may prompt); prompt == false is a status query
 		// (RequestCapabilities with no request) which must never prompt — peek the cached decision instead.
 		public override Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt)
-			=> prompt ? Wl.HelperClient.AuthorizeCapture(true) : Wl.HelperClient.PeekCaptureConsent();
+			=> prompt ? Wl.DesktopClient.AuthorizeCapture(true) : Wl.DesktopClient.PeekCaptureConsent();
 	}
 
 	/// <summary>Shared Wayland-compositor base: work area comes from the compositor (a client can't compute it),
@@ -281,7 +280,7 @@ namespace Keysharp.Internals
 		}
 	}
 
-	/// <summary>KWin Wayland via the keysharp-helper: region grabs through the ScreenShot2 interface,
+	/// <summary>KWin Wayland via keysharp-desktop: region grabs through the ScreenShot2 interface,
 	/// window grabs keyed by the window's internalId UUID (occlusion-independent).</summary>
 	internal sealed class KWinScreen : WaylandScreen
 	{
@@ -291,9 +290,10 @@ namespace Keysharp.Internals
 
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			bmp = Wl.HelperClient.Capture(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+			bmp = Wl.DesktopClient.Capture(bounds.X, bounds.Y, bounds.Width, bounds.Height);
 
 			if (bmp != null) return true;
+			if (!Wl.DesktopClient.EnsureCaptureConsent()) return false;
 
 			return base.TryCaptureRegion(bounds, out bmp);
 		}
@@ -306,7 +306,7 @@ namespace Keysharp.Internals
 			// without a real internalId (the "windowId:" fallback) miss here → caller rectangle-grabs.
 			if (kwin.TryGetWindowUuid(h, out var uuid))
 			{
-				bmp = Wl.HelperClient.CaptureKWinWindow(uuid, includeDecoration);
+				bmp = Wl.DesktopClient.CaptureKWinWindow(uuid, includeDecoration);
 				return bmp != null;
 			}
 
@@ -317,10 +317,10 @@ namespace Keysharp.Internals
 		public override bool RequiresAuthorization => true;
 
 		public override Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt)
-			=> Wl.HelperClient.Authorize(operation, prompt);
+			=> Wl.DesktopClient.Authorize(operation, prompt);
 	}
 
-	/// <summary>GNOME Wayland via the keysharp-helper + Shell extension: region grabs through the
+	/// <summary>GNOME Wayland via keysharp-desktop + Shell extension: region grabs through the
 	/// extension, window grabs image the window actor's own buffer (occlusion-independent; includes decoration).</summary>
 	internal sealed class GnomeScreen : WaylandScreen
 	{
@@ -330,9 +330,10 @@ namespace Keysharp.Internals
 
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			bmp = Wl.HelperClient.CaptureGnome(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+			bmp = Wl.DesktopClient.CaptureGnome(bounds.X, bounds.Y, bounds.Width, bounds.Height);
 
 			if (bmp != null) return true;
+			if (!Wl.DesktopClient.EnsureCaptureConsent()) return false;
 
 			return base.TryCaptureRegion(bounds, out bmp);
 		}
@@ -345,7 +346,7 @@ namespace Keysharp.Internals
 			// the actor image is clipped to the frame rect (includes decorations), so includeDecoration is ignored.
 			if (gnome.TryGetWindowSeq(h, out var seq))
 			{
-				bmp = Wl.HelperClient.CaptureGnomeWindow(seq);
+				bmp = Wl.DesktopClient.CaptureGnomeWindow(seq);
 
 				if (bmp == null)
 					return false;
@@ -366,11 +367,11 @@ namespace Keysharp.Internals
 		public override bool RequiresAuthorization => true;
 
 		public override Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt)
-			=> Wl.HelperClient.AuthorizeGnome(operation, prompt);
+			=> Wl.DesktopClient.AuthorizeGnome(operation, prompt);
 	}
 
-	/// <summary>Cinnamon Wayland via the keysharp-helper + Shell extension: region grabs go through
-	/// keysharp-helper --serve cinnamon (which enforces the user's capture consent) to the extension, which
+	/// <summary>Cinnamon Wayland via keysharp-desktop + Shell extension: region grabs go through
+	/// the broker (which enforces the user's capture consent) to the extension, which
 	/// captures via Cinnamon.Screenshot. Window capture images the window actor's own buffer through the
 	/// extension's CaptureWindow (occlusion-independent, like KWin/GNOME), falling back to a rectangle grab
 	/// of the on-screen frame when the extension can't capture (older extension, minimized window).</summary>
@@ -382,9 +383,10 @@ namespace Keysharp.Internals
 
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			bmp = Wl.HelperClient.CaptureCinnamon(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+			bmp = Wl.DesktopClient.CaptureCinnamon(bounds.X, bounds.Y, bounds.Width, bounds.Height);
 
 			if (bmp != null) return true;
+			if (!Wl.DesktopClient.EnsureCaptureConsent()) return false;
 
 			return base.TryCaptureRegion(bounds, out bmp);
 		}
@@ -400,7 +402,7 @@ namespace Keysharp.Internals
 			var bounds = Platform.Window.GetBounds(h);
 
 			if (cinnamon.TryGetWindowSeq(h, out var seq)
-					&& Wl.HelperClient.CaptureCinnamonWindow(seq) is Bitmap actorBmp)
+					&& Wl.DesktopClient.CaptureCinnamonWindow(seq) is Bitmap actorBmp)
 			{
 				bmp = actorBmp;
 
@@ -410,11 +412,11 @@ namespace Keysharp.Internals
 			}
 
 			// Fallback (older installed extension, minimized window): rectangle-grab the on-screen frame —
-			// occlusion-dependent, but still routed through the consent-enforcing helper.
+			// occlusion-dependent, but still routed through the consent-enforcing broker.
 			if (bounds.Width <= 0 || bounds.Height <= 0)
 				return false;
 
-			bmp = Wl.HelperClient.CaptureCinnamon(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+			bmp = Wl.DesktopClient.CaptureCinnamon(bounds.X, bounds.Y, bounds.Width, bounds.Height);
 
 			if (bmp == null)
 				return false;
@@ -428,7 +430,7 @@ namespace Keysharp.Internals
 		public override bool RequiresAuthorization => true;
 
 		public override Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt)
-			=> Wl.HelperClient.AuthorizeCinnamon(operation, prompt);
+			=> Wl.DesktopClient.AuthorizeCinnamon(operation, prompt);
 	}
 
 	/// <summary>wlroots compositors (sway/Hyprland/Wayfire/…): region grabs via zwlr_screencopy; no foreign
@@ -438,11 +440,11 @@ namespace Keysharp.Internals
 		internal WlrootsScreen(Wl.IWaylandBackend backend) : base(backend) { }
 
 		// wlroots screencopy is a direct client protocol (no consent), so — like X11 — gating through
-		// keysharp-helper is consent/awareness only. Window capture inherits the rectangle-grab fallback,
+		// keysharp-desktop is consent/awareness only. Window capture inherits the rectangle-grab fallback,
 		// which routes back through this (gated) region path, so no separate window gate is needed.
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			if (!Wl.HelperClient.EnsureCaptureConsent())
+			if (!Wl.DesktopClient.EnsureCaptureConsent())
 			{
 				bmp = null;
 				return false;
@@ -460,7 +462,7 @@ namespace Keysharp.Internals
 		// prompt == true is an explicit request (may prompt); prompt == false is a status query
 		// (RequestCapabilities with no request) which must never prompt — peek the cached decision instead.
 		public override Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt)
-			=> prompt ? Wl.HelperClient.AuthorizeCapture(true) : Wl.HelperClient.PeekCaptureConsent();
+			=> prompt ? Wl.DesktopClient.AuthorizeCapture(true) : Wl.DesktopClient.PeekCaptureConsent();
 	}
 
 	/// <summary>COSMIC capture through staging image-copy, with the desktop Screenshot portal as a bounded fallback.</summary>
@@ -470,7 +472,7 @@ namespace Keysharp.Internals
 
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			var direct = Wl.CosmicImageCapture.Capture(bounds, Wl.HelperClient.EnsureCaptureConsent, out bmp);
+			var direct = Wl.CosmicImageCapture.Capture(bounds, Wl.DesktopClient.EnsureCaptureConsent, out bmp);
 
 			if (direct == Wl.CosmicCaptureStatus.Captured)
 				return true;
@@ -492,13 +494,13 @@ namespace Keysharp.Internals
 		{
 			if (prompt)
 				return Wl.CosmicImageCapture.IsAvailable()
-					? Wl.HelperClient.AuthorizeCapture(true)
+					? Wl.DesktopClient.AuthorizeCapture(true)
 					: new Os.PermissionResult(Os.PermissionStatus.NotApplicable);
 
 			// A status check must not make a Wayland round trip or cause a prompt. Before native capture has
-			// actually been found, the portal-only path has no Keysharp-helper authorization to report.
+			// actually been found, the portal-only path has no keysharp-desktop authorization to report.
 			return Wl.CosmicImageCapture.WasAvailable
-				? Wl.HelperClient.PeekCaptureConsent()
+				? Wl.DesktopClient.PeekCaptureConsent()
 				: new Os.PermissionResult(Os.PermissionStatus.NotApplicable);
 		}
 	}

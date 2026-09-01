@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Four-part release version, for example 0.0.0.15"
+        description: "Four-part version of an existing release tag, for example 0.0.0.15"
         required: true
         type: string
       draft:
@@ -17,7 +17,7 @@ on:
         default: true
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -38,28 +38,69 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       draft: ${{ steps.version.outputs.draft }}
+      source_sha: ${{ steps.refs.outputs.source_sha }}
+      eto_sha: ${{ steps.refs.outputs.eto_sha }}
     steps:
       - name: Resolve version
         id: version
-        shell: pwsh
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_DRAFT: ${{ inputs.draft }}
+          TRIGGER_REF_NAME: ${{ github.ref_name }}
         run: |
-          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
-            $version = '${{ inputs.version }}'.Trim()
-            $tag = "v$version"
-            $draft = '${{ inputs.draft }}'.ToLowerInvariant()
-          } else {
-            $tag = '${{ github.ref_name }}'
-            $version = $tag -replace '^v', ''
-            $draft = 'true'
-          }
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="$REQUESTED_VERSION"
+            tag="v$version"
+            draft="${REQUESTED_DRAFT,,}"
+          else
+            tag="$TRIGGER_REF_NAME"
+            version="${tag#v}"
+            draft=true
+          fi
 
-          if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') {
-            throw "Release version must have four numeric parts, for example 0.0.0.15. Got '$version'."
-          }
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$tag" != "v$version" ]]; then
+            echo "Release tag must contain a four-part numeric version, for example v0.0.0.15. Got '$tag'." >&2
+            exit 1
+          fi
+          if [[ "$draft" != "true" && "$draft" != "false" ]]; then
+            echo "Draft must be true or false. Got '$draft'." >&2
+            exit 1
+          fi
 
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-          "draft=$draft" >> $env:GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ steps.version.outputs.tag }}
+
+      - name: Resolve immutable source revisions
+        id: refs
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          source_sha=$(git rev-parse HEAD)
+          tag_sha=$(git rev-list -n 1 "$RELEASE_TAG")
+          if [[ "$source_sha" != "$tag_sha" ]]; then
+            echo "Checked out $source_sha, but $RELEASE_TAG resolves to $tag_sha." >&2
+            exit 1
+          fi
+
+          read -r eto_sha _ < <(git ls-remote "$ETO_REPOSITORY" "refs/heads/$ETO_BRANCH")
+          if [[ ! "$eto_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Could not resolve $ETO_REPOSITORY branch $ETO_BRANCH." >&2
+            exit 1
+          fi
+
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "eto_sha=$eto_sha" >> "$GITHUB_OUTPUT"
+          echo "Resolved release source $source_sha and Eto $ETO_BRANCH at $eto_sha."
 
   package:
     needs: prepare
@@ -85,7 +126,7 @@ jobs:
             rid: win-arm64
           - name: Linux x64
             platform: linux
-            os: ubuntu-latest
+            os: ubuntu-24.04
             rid: linux-x64
           - name: Linux arm64
             platform: linux
@@ -106,7 +147,9 @@ jobs:
 
     steps:
       - name: Checkout keysharp
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -118,26 +161,13 @@ jobs:
             **/*.wixproj
             **/packages.lock.json
 
-      - name: Resolve latest Eto ref (non-Windows)
-        if: ${{ matrix.platform != 'windows' }}
-        id: eto-ref
-        shell: pwsh
-        run: |
-          $line = git ls-remote $env:ETO_REPOSITORY "refs/heads/$env:ETO_BRANCH"
-          $sha = ($line -split "\s+")[0]
-          if (-not $sha) {
-            throw "Could not resolve $env:ETO_REPOSITORY branch $env:ETO_BRANCH."
-          }
-          "sha=$sha" >> $env:GITHUB_OUTPUT
-          Write-Host "Resolved Eto $env:ETO_BRANCH to $sha"
-
       - name: Cache Eto (non-Windows)
         if: ${{ matrix.platform != 'windows' }}
         id: eto-cache
         uses: actions/cache@v5
         with:
           path: ${{ runner.workspace }}/Eto
-          key: eto-${{ matrix.os }}-${{ matrix.rid }}-${{ steps.eto-ref.outputs.sha }}
+          key: eto-${{ matrix.os }}-${{ matrix.rid }}-${{ needs.prepare.outputs.eto_sha }}
 
       - name: Checkout Eto (non-Windows, cache miss)
         if: ${{ matrix.platform != 'windows' && steps.eto-cache.outputs.cache-hit != 'true' }}
@@ -148,7 +178,7 @@ jobs:
             Remove-Item -LiteralPath $etoDir -Recurse -Force
           }
           git clone --branch "$env:ETO_BRANCH" --recurse-submodules $env:ETO_REPOSITORY $etoDir
-          git -C $etoDir checkout "${{ steps.eto-ref.outputs.sha }}"
+          git -C $etoDir checkout "${{ needs.prepare.outputs.eto_sha }}"
           git -C $etoDir submodule update --init --recursive
 
       - name: Verify Eto checkout (non-Windows)
@@ -156,7 +186,7 @@ jobs:
         shell: pwsh
         run: |
           $etoDir = Join-Path $env:RUNNER_WORKSPACE "Eto"
-          $expected = "${{ steps.eto-ref.outputs.sha }}"
+          $expected = "${{ needs.prepare.outputs.eto_sha }}"
           $current = git -C $etoDir rev-parse HEAD
           if ($current -ne $expected) {
             Write-Host "Cached Eto checkout was $current; updating to $expected."
@@ -211,33 +241,29 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            cmake \
+            curl \
             dbus-x11 \
             dpkg-dev \
             fakeroot \
             libappindicator3-1 \
             libatspi2.0-0 \
-            libevdev-dev \
-            libglib2.0-dev \
+            libevdev2 \
             libgtk-3-0 \
             libnotify4 \
-            libudev-dev \
-            pkg-config \
+            libudev1 \
+            ripgrep \
             rsync || sudo apt-get install -y \
-            build-essential \
-            cmake \
+            curl \
             dbus-x11 \
             dpkg-dev \
             fakeroot \
             libayatana-appindicator3-1 \
             libatspi2.0-0 \
-            libevdev-dev \
-            libglib2.0-dev \
+            libevdev2 \
             libgtk-3-0 \
             libnotify4 \
-            libudev-dev \
-            pkg-config \
+            libudev1 \
+            ripgrep \
             rsync
 
       # The installer is a WiX v5 SDK-style project whose toolset restores from NuGet, so the Windows
@@ -277,11 +303,17 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           RID: ${{ matrix.rid }}
           CONFIG: Release
+          KEYSHARP_DOWNLOAD_COMPONENTS: true
         run: |
-          chmod +x Keysharp.Install/package-linux.sh
+          chmod +x Keysharp.Install/package-linux.sh Keysharp.Install/package-linux-deb-bundle.sh
           Keysharp.Install/package-linux.sh
+          Keysharp.Install/package-linux-deb-bundle.sh \
+            --keysharp-deb "dist/keysharp_${VERSION}_$(dpkg --print-architecture).deb" \
+            --download-components
           mkdir -p dist/release-assets
           mv "dist/keysharp-${RID}.tar.gz" "dist/release-assets/keysharp-${VERSION}-${RID}.tar.gz"
+          mv "dist/keysharp-${VERSION}-${RID}-deb-bundle.tar.gz" \
+            "dist/release-assets/keysharp-${VERSION}-${RID}-deb-bundle.tar.gz"
           # The .deb keeps Debian's name_version_arch convention (e.g. keysharp_0.0.0.15_amd64.deb); rename the
           # release asset to the RID form so it lines up with the tar.gz / .msi / .pkg assets. dpkg reads the arch
           # from the control file, not the filename, so "apt install ./<file>.deb" still works.
@@ -347,7 +379,7 @@ jobs:
         run: security delete-keychain "$SIGNING_KEYCHAIN" || true
 
       - name: Upload release assets
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: release-assets-${{ matrix.rid }}
           path: dist/release-assets/*
@@ -359,16 +391,28 @@ jobs:
       - package
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    # Job-level block overrides the top-level `contents: write`, so it must be repeated here. id-token +
+    # This job needs more access than the top-level read-only permission. id-token +
     # attestations are what actions/attest-build-provenance needs to mint an OIDC-signed provenance and
     # push it to the repo's attestation store.
     permissions:
       contents: write       # create/update the release and upload assets
       id-token: write       # OIDC token used to sign the provenance (Sigstore)
       attestations: write   # write the attestation to the repo's attestation store
+      artifact-metadata: write # create the artifact record associated with actions/attest
     steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ needs.prepare.outputs.tag }}
+
+      - name: Verify release tag did not move
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.prepare.outputs.source_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
       - name: Download release assets
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: release-assets-*
           path: dist/release-assets
@@ -394,7 +438,7 @@ jobs:
       # can `gh attestation verify <file> --repo <owner>/<repo>`. SHA256SUMS is attested too, giving it
       # provenance as well. Bump the major if a newer one ships.
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest@v4
         with:
           subject-path: 'dist/release-assets/*'
 
@@ -413,12 +457,21 @@ jobs:
             exit 1
           fi
 
-          # This job doesn't check out the repo, so gh can't infer the repository from a local git remote
-          # (it shells out to git and fails with "not a git repository"). Pass it explicitly instead.
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          if is_draft=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ "$is_draft" == "true" ]]; then
+              gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+            else
+              if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$DRAFT" == "true" ]]; then
+                echo "Refusing to turn published release $TAG back into a mutable draft." >&2
+                exit 1
+              fi
+              gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY"
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+              gh release edit "$TAG" --draft="$DRAFT" --repo "$GITHUB_REPOSITORY"
+            fi
           else
-            args=(release create "$TAG" "${assets[@]}" --title "$TAG" --generate-notes --repo "$GITHUB_REPOSITORY")
+            args=(release create "$TAG" "${assets[@]}" --verify-tag --title "$TAG" --generate-notes --repo "$GITHUB_REPOSITORY")
             if [ "$DRAFT" = "true" ]; then
               args+=(--draft)
             fi

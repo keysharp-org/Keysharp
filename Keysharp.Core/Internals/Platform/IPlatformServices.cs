@@ -7,7 +7,7 @@ namespace Keysharp.Internals
 
 	/// <summary>The currently-live keyboard/mouse injection transport. Kept as a typed value (not a bool)
 	/// so additional transports/state can be added without churning consumers.</summary>
-	internal enum InputTransport { None, Inputd, Mac, Windows }
+	internal enum InputTransport { None, Service, Mac, Windows }
 
 	/// <summary>Foreign window READ surface (by handle). The Linux impl internally composes X11 + the active
 	/// Wayland backend; routing re-resolves the backend from the handle on each call.</summary>
@@ -120,17 +120,18 @@ namespace Keysharp.Internals
 	/// and mutate (<see cref="IWindowControl"/>) surfaces — <c>Platform.Window</c>.</summary>
 	internal interface IWindow : IWindowQuery, IWindowControl { }
 
-	/// <summary>Cursor STATE: position (MouseGetPos), shape (A_Cursor), and the clip-warp positioning the inputd
+	/// <summary>Cursor STATE: position (MouseGetPos), shape (A_Cursor), and the clip-warp positioning the input service
 	/// cursor-clip enforcement needs. NOT mouse-event injection — synthesized mouse input (MouseMove/Click/Send)
 	/// is produced by the input/sender subsystem, unified with keyboard, not here.</summary>
 	internal interface IMouse
 	{
+		/// <summary>Queries only capabilities already granted; this service-layer method must never prompt.</summary>
 		bool TryGetCursorPos(out int x, out int y);
 		string GetCursorShape();
 		void SetCursorShape(string ahkName);
 
 		/// <summary>Whether this service can BOTH query the cursor position AND move it — the exact capability
-		/// the inputd cursor-clip enforcement needs. Resolves the X11-vs-Wayland question once so callers
+		/// the input service cursor-clip enforcement needs. Resolves the X11-vs-Wayland question once so callers
 		/// (e.g. the hook thread's <c>CanClipCursor</c>) don't re-derive the session shape.</summary>
 		bool SupportsCursorQueryAndMove { get; }
 
@@ -145,7 +146,7 @@ namespace Keysharp.Internals
 		/// <summary>Live PHYSICAL state of a mouse button (VK_LBUTTON/RBUTTON/MBUTTON/XBUTTON1/2), for
 		/// GetKeyState(.., "P") when no mouse hook is tracking it — the cross-platform analogue of Win32
 		/// GetAsyncKeyState (X11 <c>XQueryPointer</c> mask, macOS <c>CGEventSourceButtonState</c>, Wayland via
-		/// the inputd daemon's evdev read). Returns false if this platform cannot answer, so the caller falls
+		/// the input service daemon's evdev read). Returns false if this platform cannot answer, so the caller falls
 		/// back to the hook-tracked state.</summary>
 		bool TryGetButtonStatePhysical(uint vk, out bool down);
 	}
@@ -177,7 +178,7 @@ namespace Keysharp.Internals
 		bool TryCaptureWindow(nint h, bool includeDecoration, out Bitmap bmp, out PixelScale pixelScale);
 		bool RequiresAuthorization { get; }
 
-		/// <summary>Gate a capture against the compositor's authorization (KWin/GNOME keysharp-helper
+		/// <summary>Gate a capture against the compositor's authorization (keysharp-desktop
 		/// handshake); returns NotApplicable where capture needs no separate grant. Resolved per-compositor, so
 		/// no <c>is …Backend</c> test at the call site.</summary>
 		Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt);

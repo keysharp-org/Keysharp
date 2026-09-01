@@ -98,16 +98,16 @@ namespace Keysharp.Internals
 	}
 
 	/// <summary>
-	/// Uses inputd as the compositor-independent source of logical and physical keyboard state.
-	/// X11 core queries remain a best-effort fallback when the daemon is unavailable or permission is denied.
+	/// Uses keysharp-input as the compositor-independent source of logical and physical keyboard state.
+	/// X11 core queries are an unprivileged fallback only for the fixed modifier and lock-toggle snapshots.
 	/// </summary>
 	internal sealed class LinuxKeyboard(IKeyboard fallback) : IKeyboard
 	{
-		private readonly InputdKeyboard inputd = new();
+		private readonly NativeInputKeyboard nativeInput = new();
 
 		public bool TryGetModifierLRStateLogical(out uint mods, byte[] keymapBuffer = null)
 		{
-			if (inputd.TryGetModifierLRStateLogical(out mods, keymapBuffer))
+			if (nativeInput.TryGetModifierLRStateLogical(out mods, keymapBuffer))
 				return true;
 
 			if (fallback != null)
@@ -119,7 +119,7 @@ namespace Keysharp.Internals
 
 		public bool TryGetModifierLRStatePhysical(out uint mods)
 		{
-			if (inputd.TryGetModifierLRStatePhysical(out mods))
+			if (nativeInput.TryGetModifierLRStatePhysical(out mods))
 				return true;
 
 			if (fallback != null)
@@ -131,10 +131,10 @@ namespace Keysharp.Internals
 
 		public bool TryGetKeyStateLogical(uint vk, out bool isDown)
 		{
-			if (inputd.TryGetKeyStateLogical(vk, out isDown))
+			if (nativeInput.TryGetKeyStateLogical(vk, out isDown))
 				return true;
 
-			if (fallback != null)
+			if (fallback != null && MayUseUnprivilegedKeyStateFallback(vk))
 				return fallback.TryGetKeyStateLogical(vk, out isDown);
 
 			isDown = false;
@@ -143,10 +143,10 @@ namespace Keysharp.Internals
 
 		public bool TryGetKeyStatePhysical(uint vk, out bool isDown)
 		{
-			if (inputd.TryGetKeyStatePhysical(vk, out isDown))
+			if (nativeInput.TryGetKeyStatePhysical(vk, out isDown))
 				return true;
 
-			if (fallback != null)
+			if (fallback != null && MayUseUnprivilegedKeyStateFallback(vk))
 				return fallback.TryGetKeyStatePhysical(vk, out isDown);
 
 			isDown = false;
@@ -155,7 +155,7 @@ namespace Keysharp.Internals
 
 		public bool TryGetIndicatorStatesLogical(out bool capsOn, out bool numOn, out bool scrollOn)
 		{
-			if (inputd.TryGetIndicatorStatesLogical(out capsOn, out numOn, out scrollOn))
+			if (nativeInput.TryGetIndicatorStatesLogical(out capsOn, out numOn, out scrollOn))
 				return true;
 
 			if (fallback != null)
@@ -164,9 +164,12 @@ namespace Keysharp.Internals
 			capsOn = numOn = scrollOn = false;
 			return false;
 		}
+
+		internal static bool MayUseUnprivilegedKeyStateFallback(uint vk)
+			=> IsModifierVk(vk);
 	}
 
-	internal sealed class InputdKeyboard : IKeyboard
+	internal sealed class NativeInputKeyboard : IKeyboard
 	{
 		internal const uint LLKHF_CAPS_LOCK_ON = 0x04u;
 		internal const uint LLKHF_NUM_LOCK_ON = 0x08u;
@@ -177,28 +180,12 @@ namespace Keysharp.Internals
 		private static bool indicatorSnapshotScroll;
 
 		public bool TryGetModifierLRStateLogical(out uint mods, byte[] keymapBuffer = null)
-			=> Keysharp.Internals.Input.Linux.KeysharpInputdManager.TryGetKeyState(out mods, out _, out _, out _);
+			=> Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
+				out mods, out _, out _, out _, out _);
 
 		public bool TryGetModifierLRStatePhysical(out uint mods)
-		{
-			mods = 0u;
-
-			if (!Keysharp.Internals.Input.Linux.KeysharpInputdManager.TryGetKeyState(
-				out _, out _, out _, out _, out _, out var physicalKeys))
-				return false;
-
-			var success = true;
-
-			foreach (var vk in ModifierLRVks)
-			{
-				if (!TryGetVkFromEvdevBitmap(vk, physicalKeys, out var down))
-					success = false;
-				else if (down)
-					mods |= ModifierLRMaskFromVK(vk);
-			}
-
-			return success;
-		}
+			=> Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
+				out _, out mods, out _, out _, out _);
 
 		public bool TryGetKeyStateLogical(uint vk, out bool isDown)
 		{
@@ -207,17 +194,21 @@ namespace Keysharp.Internals
 			if (vk == 0)
 				return false;
 
-			if (!Keysharp.Internals.Input.Linux.KeysharpInputdManager.TryGetKeyState(
-				out var mods, out _, out var numLock, out _, out var logicalKeys, out _))
-				return false;
-
 			var modifierMask = ModifierLRMaskFromVK(vk);
 
 			if (modifierMask != 0)
 			{
-				isDown = (mods & modifierMask) != 0;
+				if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
+						out var modifierState, out _, out _, out _, out _))
+					return false;
+
+				isDown = (modifierState & modifierMask) != 0;
 				return true;
 			}
+
+			if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetKeyState(
+				out var mods, out _, out var numLock, out _, out var logicalKeys, out _))
+				return false;
 
 			var shiftDown = (mods & (MOD_LSHIFT | MOD_RSHIFT)) != 0;
 			return TryGetVkFromEvdevBitmap(vk, logicalKeys, numLock, shiftDown, out isDown);
@@ -230,7 +221,19 @@ namespace Keysharp.Internals
 			if (vk == 0)
 				return false;
 
-			if (!Keysharp.Internals.Input.Linux.KeysharpInputdManager.TryGetKeyState(
+			var modifierMask = ModifierLRMaskFromVK(vk);
+
+			if (modifierMask != 0)
+			{
+				if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
+						out _, out var modifierState, out _, out _, out _))
+					return false;
+
+				isDown = (modifierState & modifierMask) != 0;
+				return true;
+			}
+
+			if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetKeyState(
 				out var mods, out _, out var numLock, out _, out _, out var physicalKeys))
 				return false;
 
@@ -243,7 +246,8 @@ namespace Keysharp.Internals
 			if (Keysharp.Internals.Input.Hooks.Linux.LinuxHookThread.IsInHookCallback && TryGetIndicatorSnapshot(out capsOn, out numOn, out scrollOn))
 				return true;
 
-			return Keysharp.Internals.Input.Linux.KeysharpInputdManager.TryGetKeyState(out _, out capsOn, out numOn, out scrollOn);
+			return Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
+				out _, out _, out capsOn, out numOn, out scrollOn);
 		}
 
 		internal static bool HookFlagsNumLockOn(uint flags) => (flags & LLKHF_NUM_LOCK_ON) != 0;
@@ -317,9 +321,7 @@ namespace Keysharp.Internals
 					return true;
 			}
 
-			// An empty bitmap is not "nothing is down": QueryKeyState leaves it empty when the daemon's reply
-			// carries no key bitmaps at all (an older protocol version). Report "can't answer" so the caller
-			// falls back to another source instead of being told every key is up.
+			// A missing bitmap is not a valid all-keys-up snapshot.
 			if (keys == null || keys.Length == 0)
 				return false;
 

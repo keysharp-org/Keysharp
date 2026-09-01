@@ -10,11 +10,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	// Internals/Linux/DBus/Interfaces/Cinnamon.xml and FreedesktopDBus.xml.
 
 	/// <summary>
-	/// Static bridge to Cinnamon's org.Cinnamon.Eval D-Bus method. Mirrors
-	/// <see cref="GnomeShellBridge"/>'s lazy, thread-safe, timeout-guarded connection
-	/// handling. Each query runs a small self-contained JS snippet whose return value is
-	/// a JSON string; Cinnamon JSON-encodes that return value again, so results come back
-	/// double-encoded and are unwrapped in <see cref="EvalJson"/>.
+	/// Static bridge to the Cinnamon shell services. Permission-gated window and clipboard
+	/// operations use <c>keysharp-desktop</c>; process-owned overlays and input conveniences
+	/// use the extension or Cinnamon's <c>Eval</c> service.
 	/// </summary>
 	internal static class CinnamonShellBridge
 	{
@@ -30,31 +28,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private const int    ImageOverlayTimeoutMs = 10_000;
 		private const int    ExtensionMissingCacheMs = 5000;
 		private const int    ExtensionPresentCacheMs = 1000;
-		// Shared JS helpers injected into every query: window-type filter, window->info
-		// serializer (identical shape to the GNOME extension so the parser is shared in
-		// spirit), and a stable_sequence lookup. Uses single-quoted JS string literals so
-		// the surrounding C# string needs no escaping.
-		private const string JsHelpers =
-			"const Meta=imports.gi.Meta;" +
-			"function tracked(w){switch(w.window_type){case Meta.WindowType.NORMAL:case Meta.WindowType.DIALOG:case Meta.WindowType.MODAL_DIALOG:case Meta.WindowType.UTILITY:return true;default:return false;}}" +
-			"function clamp255(v){v=Number(v);if(!isFinite(v))v=255;if(v<0)v=0;if(v>255)v=255;return Math.round(v);}" +
-			// -1 = the compositor has no explicit opacity for this window (no actor / read failed); it is preserved as
-			// the cross-platform "no transparency set" sentinel (WinGetTransparent -> ""), NOT clamped to 0.
-			"function opacity(w){try{const a=w.get_compositor_private?w.get_compositor_private():null;return a?(a.get_opacity?a.get_opacity():a.opacity):-1;}catch(e){return -1;}}" +
-			// An unmanaged window stays in global.get_window_actors() for the length of the shell's close
-			// animation, and Muffin's meta_window_wayland_get_client_pid() dereferences the already-freed
-			// wl_resource without a NULL check: asking a dying window for its pid segfaults the whole shell.
-			// Nothing about such a window is worth reporting either, so every walk below skips it.
-			"function live(w){try{const a=w?w.get_compositor_private():null;if(!a)return false;return typeof a.is_destroyed!=='function'||!a.is_destroyed();}catch(e){return false;}}" +
-			"function pid(w){try{return live(w)?(w.get_pid()>0?w.get_pid():(w.get_client_pid?w.get_client_pid():-1)):-1;}catch(e){return -1;}}" +
-			// buffer = the surface as the client drew it, shadow included. It is the only origin a GTK client
-			// can be located against: on Wayland it is never told where its surface is, so every coordinate it
-			// reports is relative to that rectangle. Absent on a compositor too old to answer, which leaves the
-			// consumer uncorrected rather than wrong.
-			"function buffer(w){try{const b=w.get_buffer_rect();return b?{x:b.x,y:b.y,width:b.width,height:b.height}:null;}catch(e){return null;}}" +
-			"function info(w){const f=w.get_frame_rect();return{id:String(w.get_stable_sequence()),buffer:buffer(w),title:w.get_title()||'',appId:w.get_wm_class()||w.get_wm_class_instance()||'',pid:pid(w),frame:{x:f.x,y:f.y,width:f.width,height:f.height},client:{x:f.x,y:f.y,width:f.width,height:f.height},active:!!w.appears_focused,minimized:!!w.minimized,maximized:!!(w.maximized_horizontally&&w.maximized_vertically),visible:!w.minimized,alwaysOnTop:(w.is_above?w.is_above():!!w.above),decorated:w.decorated!==false,transparency:(function(){const o=opacity(w);return o<0?-1:clamp255(o);})()};}" +
-			"function find(s){const a=global.get_window_actors();for(let i=0;i<a.length;i++){const w=a[i].get_meta_window();if(w&&live(w)&&w.get_stable_sequence()===s)return w;}return null;}";
-
 		private static RecoverableService<DbusSession> sessions;
 		private static WatchedDbusService<Cin.Cinnamon> cinnamonService;
 		private static WatchedDbusService<Cin.CinnamonShell1> extension;
@@ -63,7 +36,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static DbusSession idleMonitorSession;
 		private static long clipboardSupportCacheUntil;
 		private static bool clipboardSupportCached;
-		private static RetryGate clipboardProbes;
+		private static readonly object clipboardSupportSync = new();
 		private static string connectionLocalName = "";
 		private static string registeredHighlightOwnerBusName = "";
 		private static readonly string HighlightOwnerKey = WaylandOverlayOwner.Key;
@@ -82,18 +55,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				new ObjectPath(ExtensionObjectPath), TimeoutMs, (c, d, p) => new Cin.CinnamonShell1(c, d, p));
 			highlightOwnerRegistration = new RetryGate(maximumAttempts: 3,
 				initialRetryDelay: TimeSpan.FromMilliseconds(500), maximumRetryDelay: TimeSpan.FromSeconds(5));
-			clipboardProbes = new RetryGate(maximumAttempts: 3,
-				initialRetryDelay: TimeSpan.FromMilliseconds(250), maximumRetryDelay: TimeSpan.FromSeconds(2));
 			extension.AvailabilityChanged += ExtensionAvailabilityChanged;
 		}
 
 		internal static string QueryActiveWindow()
-		{
-			var json = RunExtension(p => p.GetActiveWindowAsync());
-			return JsonOk(json)
-				? json
-				: EvalJson("(function(){try{" + JsHelpers + "const w=global.display.get_focus_window();return JSON.stringify({ok:true,window:(w&&live(w)&&tracked(w))?info(w):null});}catch(e){return JSON.stringify({ok:false});}})()");
-		}
+			=> DesktopClient.QueryActiveWindow("cinnamon");
 
 		internal static bool QueryIdleTime(out long milliseconds)
 		{
@@ -132,112 +98,58 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		internal static string QueryWindowList(bool includeHidden)
-		{
-			var json = RunExtension(p => p.GetWindowListAsync(includeHidden));
-			return JsonOk(json)
-				? json
-				: EvalJson("(function(){try{" + JsHelpers + "const a=global.get_window_actors();const out=[];for(let i=0;i<a.length;i++){const w=a[i].get_meta_window();if(!w||!live(w)||!tracked(w))continue;if(!" + (includeHidden ? "true" : "false") + "&&w.minimized)continue;out.push(info(w));}return JSON.stringify({ok:true,windows:out});}catch(e){return JSON.stringify({ok:false,windows:[]});}})()");
-		}
+			=> DesktopClient.QueryWindowList("cinnamon", includeHidden);
 
 		internal static bool QueryCursorPosition(out int x, out int y)
-		{
-			x = 0;
-			y = 0;
-
-			if (QueryExtensionCursorPosition(out x, out y))
-				return true;
-
-			var json = EvalJson("(function(){try{const p=global.get_pointer();return JSON.stringify({ok:true,x:Math.round(p[0]),y:Math.round(p[1])});}catch(e){return JSON.stringify({ok:false});}})()");
-
-			if (json.IsNullOrEmpty())
-				return false;
-
-			try
-			{
-				using var doc = JsonDocument.Parse(json);
-				var root = doc.RootElement;
-
-				if (!GetBool(root, "ok"))
-					return false;
-
-				x = GetInt(root, "x");
-				y = GetInt(root, "y");
-				return true;
-			}
-			catch
-			{
-				return false;
-			}
-		}
+			=> DesktopClient.QueryCursorPosition("cinnamon", out x, out y);
 
 		internal static bool QueryWorkArea(out Rectangle area)
-		{
-			area = Rectangle.Empty;
-
-			if (!TryRunExtension(p => p.GetWorkAreaAsync(), out (int X, int Y, int Width, int Height) result))
-				return false;
-
-			if (result.Width <= 0 || result.Height <= 0)
-				return false;
-
-			area = new Rectangle(result.X, result.Y, result.Width, result.Height);
-			return true;
-		}
+			=> DesktopClient.QueryWorkArea("cinnamon", out area);
 
 		internal static bool SendFocusWindow(ulong seq)
-			=> RunExtensionBool(p => p.FocusWindowAsync(seq))
-			   || RunOk("(function(){try{" + JsHelpers + "const w=find(" + seq + ");if(w){if(w.minimized)w.unminimize();w.activate(global.get_current_time());}return JSON.stringify({ok:!!w});}catch(e){return JSON.stringify({ok:false});}})()");
+			=> DesktopClient.FocusWindow("cinnamon", seq);
 
 		internal static bool SendRaiseWindow(ulong seq)
-			=> RunExtensionBool(p => p.RaiseWindowAsync(seq))
-			   || RunOk("(function(){try{" + JsHelpers + "const w=find(" + seq + ");if(w){if(w.minimized)w.unminimize();w.activate(global.get_current_time());}return JSON.stringify({ok:!!w});}catch(e){return JSON.stringify({ok:false});}})()");
+			=> DesktopClient.RaiseWindow("cinnamon", seq);
 
 		internal static bool SendLowerWindow(ulong seq)
-			=> RunExtensionBool(p => p.LowerWindowAsync(seq))
-			   || RunOk("(function(){try{" + JsHelpers + "const w=find(" + seq + ");let ok=false;if(w){try{if(typeof w.lower_with_transients==='function'){w.lower_with_transients();ok=true;}else if(typeof w.lower==='function'){w.lower();ok=true;}}catch(e){ok=false;}}return JSON.stringify({ok:ok});}catch(e){return JSON.stringify({ok:false});}})()");
+			=> DesktopClient.LowerWindow("cinnamon", seq);
 
 		// Ask the shell to place the NEXT window this process creates, before it is first painted. There is no
 		// Eval fallback: this needs a live window-created hook in the extension, which an Eval snippet cannot
 		// register safely. Fails closed against an extension that predates the method, leaving the caller on
 		// the normal correlate-then-move path.
 		internal static bool SendReserveWindow(ulong cookie, int x, int y, int ttlMs)
-			=> RunExtensionBool(p => p.ReserveWindowAsync(Environment.ProcessId, cookie, x, y, ttlMs));
+			=> DesktopClient.ReserveWindow("cinnamon", cookie, x, y, ttlMs);
 
 		// The compositor window a reservation landed on, or "" if it was never consumed.
 		internal static string SendGetReservedWindow(ulong cookie)
-			=> RunExtension(p => p.GetReservedWindowAsync(Environment.ProcessId, cookie)) ?? "";
+			=> DesktopClient.GetReservedWindow("cinnamon", cookie);
 
 		internal static bool SendMoveResize(ulong seq, int x, int y, int width, int height)
-			=> RunExtensionBool(p => p.MoveResizeWindowAsync(seq, x, y, width, height))
-			   || RunOk("(function(){try{" + JsHelpers + "const w=find(" + seq + ");if(w){if(w.maximized_horizontally||w.maximized_vertically)w.unmaximize(3);const f=w.get_frame_rect();w.move_resize_frame(true," + x + "===-2147483648?f.x:" + x + "," + y + "===-2147483648?f.y:" + y + "," + width + ">0?" + width + ":f.width," + height + ">0?" + height + ":f.height);}return JSON.stringify({ok:!!w});}catch(e){return JSON.stringify({ok:false});}})()");
+			=> DesktopClient.MoveResizeWindow("cinnamon", seq, x, y, width, height);
 
 		// Move/resize by X11 window id (X11 sessions). Tries the extension method, then an org.Cinnamon.Eval
 		// fallback that finds the window by get_xwindow() — so this works even against an installed extension
 		// that predates MoveResizeWindowByXid. user_op = true is what lets it reach off-screen (see the
 		// extension comment). Position sentinel int.MinValue = unchanged; size <= 0 = unchanged.
 		internal static bool SendMoveResizeByXid(ulong xid, int x, int y, int width, int height)
-			=> RunExtensionBool(p => p.MoveResizeWindowByXidAsync(xid, x, y, width, height))
-			   || RunOk("(function(){try{" + JsHelpers + "let w=null;for(const a of global.get_window_actors()){const m=a.get_meta_window();if(m&&live(m)&&typeof m.get_xwindow==='function'&&Number(m.get_xwindow())===" + xid + "){w=m;break;}}if(w){if(w.maximized_horizontally||w.maximized_vertically)w.unmaximize(3);const f=w.get_frame_rect();w.move_resize_frame(true," + x + "===-2147483648?f.x:" + x + "," + y + "===-2147483648?f.y:" + y + "," + width + ">0?" + width + ":f.width," + height + ">0?" + height + ":f.height);}return JSON.stringify({ok:!!w});}catch(e){return JSON.stringify({ok:false});}})()");
+			=> DesktopClient.MoveResizeWindowByXid("cinnamon", xid, x, y, width, height);
 
 		internal static bool SendSetWindowState(ulong seq, int state)
-			=> RunExtensionBool(p => p.SetWindowStateAsync(seq, state))
-			   || RunOk("(function(){try{" + JsHelpers + "const w=find(" + seq + ");if(w){if(" + state + "===1){w.minimize();}else if(" + state + "===2){if(w.minimized)w.unminimize();w.maximize(Meta.MaximizeFlags.BOTH);}else{if(w.minimized)w.unminimize();w.unmaximize(Meta.MaximizeFlags.BOTH);}}return JSON.stringify({ok:!!w});}catch(e){return JSON.stringify({ok:false});}})()");
+			=> DesktopClient.SetWindowState("cinnamon", seq, state);
 
 		internal static bool SendCloseWindow(ulong seq)
-			=> RunExtensionBool(p => p.CloseWindowAsync(seq))
-			   || RunOk("(function(){try{" + JsHelpers + "const w=find(" + seq + ");if(w)w.delete(global.get_current_time());return JSON.stringify({ok:!!w});}catch(e){return JSON.stringify({ok:false});}})()");
+			=> DesktopClient.CloseWindow("cinnamon", seq);
 
 		internal static bool SendKillWindow(ulong seq)
-			=> RunExtensionBool(p => p.KillWindowAsync(seq))
-			   || RunOk("(function(){try{" + JsHelpers + "const w=find(" + seq + ");let ok=false;if(w){try{if(typeof w.kill==='function'){w.kill();ok=true;}else if(typeof w.delete==='function'){w.delete(global.get_current_time());ok=true;}}catch(e){ok=false;}}return JSON.stringify({ok:ok});}catch(e){return JSON.stringify({ok:false});}})()");
+			=> DesktopClient.KillWindow("cinnamon", seq);
 
 		internal static bool SendSetAlwaysOnTop(ulong seq, bool above)
-			=> RunExtensionBool(p => p.SetWindowAboveAsync(seq, above))
-			   || RunOk("(function(){try{" + JsHelpers + "const w=find(" + seq + ");if(w){if(" + (above ? "true" : "false") + "){if(!w.is_above())w.make_above();}else{if(w.is_above())w.unmake_above();}}return JSON.stringify({ok:!!w});}catch(e){return JSON.stringify({ok:false});}})()");
+			=> DesktopClient.SetWindowAbove("cinnamon", seq, above);
 
 		internal static bool SendSetNoBorder(ulong seq, bool noBorder)
-			=> RunExtensionBool(p => p.SetWindowDecoratedAsync(seq, !noBorder))
-			   || RunOk("(function(){try{" + JsHelpers + "const w=find(" + seq + ");if(w)w.decorated=" + (noBorder ? "false" : "true") + ";return JSON.stringify({ok:!!w});}catch(e){return JSON.stringify({ok:false});}})()");
+			=> DesktopClient.SetWindowDecorated("cinnamon", seq, !noBorder);
 
 		internal static bool SendSetOpacity(ulong seq, object value)
 		{
@@ -245,52 +157,32 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				? 255
 				: Math.Clamp((int)value.Al(), 0, 255);
 
-			return RunExtensionBool(p => p.SetWindowOpacityAsync(seq, alpha))
-				   || RunOk("(function(){try{" + JsHelpers + "const w=find(" + seq + ");const a=w&&w.get_compositor_private?w.get_compositor_private():null;if(a){if(a.set_opacity)a.set_opacity(" + alpha.ToString(CultureInfo.InvariantCulture) + ");else a.opacity=" + alpha.ToString(CultureInfo.InvariantCulture) + ";}return JSON.stringify({ok:!!a});}catch(e){return JSON.stringify({ok:false});}})()");
+			return DesktopClient.SetWindowOpacity("cinnamon", seq, alpha);
 		}
 
-		// Whether the extension actually answers clipboard calls. The overlay path can gate on cheap name
-		// ownership because it reacts to a per-call tri-state (a definitive failure falls back to Eto), but the
-		// the recovering clipboard router uses this as its current liveness signal, so a stale/incompatible extension
-		// that owns the D-Bus name yet no longer speaks the clipboard protocol must not be treated as usable. Verify
-		// with a cheap, side-effect-free
-		// GetClipboardMimetypes round-trip (null = absent/failed, any array = answered) and cache the result.
+		// Probe the capability-free broker handshake, then let the first read perform the grant check.
 		internal static bool SupportsClipboard()
 		{
-			var now = Environment.TickCount64;
-
 			if (!ExtensionServiceHasOwner())
 				return false;
 
-			if (now < clipboardSupportCacheUntil)
+			lock (clipboardSupportSync)
+			{
+				var now = Environment.TickCount64;
+
+				if (now < clipboardSupportCacheUntil)
+					return clipboardSupportCached;
+
+				clipboardSupportCached = DesktopClient.ProbeProvider("cinnamon");
+				clipboardSupportCacheUntil = now + (clipboardSupportCached
+					? ExtensionPresentCacheMs : ExtensionMissingCacheMs);
 				return clipboardSupportCached;
-
-			using var attempt = clipboardProbes.TryBegin();
-
-			if (attempt == null)
-				return false;
-
-			var ok = RunExtension(p => p.GetClipboardMimetypesAsync()) != null;
-			clipboardSupportCached = ok;
-			clipboardSupportCacheUntil = now + (ok ? ExtensionPresentCacheMs : ExtensionMissingCacheMs);
-
-			if (ok)
-				attempt.Succeed();
-
-			return ok;
+			}
 		}
 
 			internal static OverlayShowResult SendShowImageOverlay(uint id, int x, int y, int width, int height, byte[] pngBytes)
 				=> pngBytes is { Length: > 0 }
 				   ? RunShow(p => p.ShowImageOverlayAsync(id, HighlightOwnerKey, connectionLocalName, x, y, width, height, pngBytes),
-							 ImageOverlayTimeoutMs)
-				   : OverlayShowResult.Failed;
-
-			internal static OverlayShowResult SendShowImageOverlayShm(uint id, int x, int y, int width, int height,
-				string shmPath, int pixelWidth, int pixelHeight, int stride)
-				=> !shmPath.IsNullOrEmpty()
-				   ? RunShow(p => p.ShowImageOverlayShmAsync(id, HighlightOwnerKey, connectionLocalName, x, y, width, height,
-															 shmPath, pixelWidth, pixelHeight, stride),
 							 ImageOverlayTimeoutMs)
 				   : OverlayShowResult.Failed;
 
@@ -305,58 +197,25 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			// MIME-type <-> bytes so every format round-trips. Getters return null when the extension is
 			// absent/failed (vs an empty array/"" for a legitimately empty clipboard).
 			internal static string[] GetClipboardMimetypes()
-				=> RunExtension(p => p.GetClipboardMimetypesAsync());
+				=> DesktopClient.GetClipboardMimetypes("cinnamon");
 
 			internal static byte[] GetClipboardContent(string mimetype)
-				=> RunExtension(p => p.GetClipboardContentAsync(mimetype));
+				=> DesktopClient.GetClipboardContent("cinnamon", mimetype);
 
 			internal static bool SetClipboardContent(string mimetype, byte[] bytes)
 				=> RunExtensionBool(p => p.SetClipboardContentAsync(mimetype, bytes ?? System.Array.Empty<byte>()));
 
 			internal static string GetClipboardText()
-				=> RunExtension(p => p.GetClipboardTextAsync());
+				=> DesktopClient.GetClipboardText("cinnamon");
 
 			internal static bool SetClipboardText(string text)
 				=> RunExtensionBool(p => p.SetClipboardTextAsync(text ?? string.Empty));
 
 			internal static IDisposable WatchClipboardChanged(Action<string, string[]> handler, Action<Exception> onError = null)
-				=> TryRunExtension(p => p.WatchClipboardChangedAsync(
-						DBusSignals.Adapt<(string, string[])>(e => handler(e.Item1, e.Item2), onError),
-						DBusSignals.FlagsFor(onError), emitOnCapturedContext: false).AsTask(), out IDisposable subscription)
-					? subscription : null;
-
-		// Lazily creates a Clutter virtual pointer (Muffin is Clutter-based, same API as the
-		// GNOME extension) and stashes it on `global` so it persists across Eval calls.
-		private const string JsVPointer =
-			"const Clutter=imports.gi.Clutter;const GLib=imports.gi.GLib;" +
-			"if(!global._ksVPointer){global._ksVPointer=Clutter.get_default_backend().get_default_seat().create_virtual_device(Clutter.InputDeviceType.POINTER_DEVICE);}" +
-			"const vp=global._ksVPointer;";
-
-		internal static bool SendMouseMoveAbsolute(int x, int y)
-			=> RunExtensionBool(p => p.SendMouseMoveAbsoluteAsync(x, y))
-			   || RunOk("(function(){try{" + JsVPointer + "vp.notify_absolute_motion(GLib.get_monotonic_time()," + x + "," + y + ");return JSON.stringify({ok:true});}catch(e){return JSON.stringify({ok:false});}})()");
-
-		internal static bool SendMouseMoveRelative(int dx, int dy)
-			=> RunExtensionBool(p => p.SendMouseMoveRelativeAsync(dx, dy))
-			   || RunOk("(function(){try{" + JsVPointer + "const p=global.get_pointer();vp.notify_absolute_motion(GLib.get_monotonic_time(),p[0]+(" + dx + "),p[1]+(" + dy + "));return JSON.stringify({ok:true});}catch(e){return JSON.stringify({ok:false});}})()");
-
-		internal static bool SendMouseButton(uint button, bool pressed)
-			=> RunExtensionBool(p => p.SendMouseButtonAsync(button, pressed))
-			   || RunOk("(function(){try{" + JsVPointer + "vp.notify_button(GLib.get_monotonic_time()," + button + ",Clutter.ButtonState." + (pressed ? "PRESSED" : "RELEASED") + ");return JSON.stringify({ok:true});}catch(e){return JSON.stringify({ok:false});}})()");
-
-		internal static bool SendMouseScroll(int delta, bool vertical)
-		{
-			var dir = vertical ? (delta > 0 ? "UP" : "DOWN") : (delta > 0 ? "RIGHT" : "LEFT");
-			var notches = Math.Max(1, Math.Abs((int)Math.Round(delta / 120.0)));
-			return RunExtensionBool(p => p.SendMouseScrollAsync(delta, vertical))
-				   || RunOk("(function(){try{" + JsVPointer + "const t=GLib.get_monotonic_time();for(let i=0;i<" + notches + ";i++)vp.notify_discrete_scroll(t,Clutter.ScrollDirection." + dir + ",Clutter.ScrollSource.WHEEL);return JSON.stringify({ok:true});}catch(e){return JSON.stringify({ok:false});}})()");
-		}
+				=> DesktopClient.WatchClipboardChanges("cinnamon", handler, onError);
 
 		internal static IDisposable WatchWindowEvent(Action<string, string> handler, Action<Exception> onError = null)
-			=> TryRunExtension(p => p.WatchWindowEventAsync(
-					DBusSignals.Adapt<(string, string)>(e => handler(e.Item1, e.Item2), onError),
-					DBusSignals.FlagsFor(onError), emitOnCapturedContext: false).AsTask(),
-				out IDisposable subscription) ? subscription : null;
+			=> DesktopClient.WatchWindowEvents("cinnamon", handler, onError);
 
 		private static bool RunOk(string js)
 		{
@@ -414,19 +273,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				return null;
 			}
-		}
-
-		private static bool QueryExtensionCursorPosition(out int x, out int y)
-		{
-			x = 0;
-			y = 0;
-
-			if (!TryRunExtension(p => p.GetCursorPositionAsync(), out (int X, int Y) result))
-				return false;
-
-			x = result.X;
-			y = result.Y;
-			return true;
 		}
 
 		private static T RunExtension<T>(Func<Cin.CinnamonShell1, Task<T>> call,
@@ -515,22 +361,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 
-		private static bool JsonOk(string json)
-		{
-			if (json.IsNullOrEmpty())
-				return false;
-
-			try
-			{
-				using var doc = JsonDocument.Parse(json);
-				return doc.RootElement.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True;
-			}
-			catch
-			{
-				return false;
-			}
-		}
-
 		private static void RegisterHighlightOwner(Cin.CinnamonShell1 p)
 		{
 			if (p == null || connectionLocalName.IsNullOrEmpty() || registeredHighlightOwnerBusName == connectionLocalName)
@@ -589,9 +419,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			registeredHighlightOwnerBusName = "";
 			highlightOwnerRegistration.Rearm();
-			clipboardSupportCached = false;
-			clipboardSupportCacheUntil = 0;
-			clipboardProbes.Rearm();
+			lock (clipboardSupportSync)
+			{
+				clipboardSupportCached = false;
+				clipboardSupportCacheUntil = 0;
+			}
 		}
 
 		internal static void Reset()
@@ -626,10 +458,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		public string Name => "Cinnamon";
 
-		// Inject pointer events through Muffin's Clutter virtual device (same approach as the
-		// GNOME/KWin backends). The inputd sender prefers this for absolute moves/clicks/scroll
-		// because uinput's normalized coordinates don't map reliably on Wayland; relative moves
-		// still use inputd. Falls back to inputd automatically if any Eval call fails.
 		public bool SupportsMouse => true;
 
 		internal static bool IsAvailable()
@@ -803,16 +631,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			=> TryHandleToSeq(handle, out var seq) && CinnamonShellBridge.SendKillWindow(seq);
 
 		public bool TrySendMouseMoveAbsolute(int x, int y)
-			=> CinnamonShellBridge.SendMouseMoveAbsolute(x, y);
+			=> DesktopClient.SendMouseMoveAbsolute("cinnamon", x, y);
 
 		public bool TrySendMouseMoveRelative(int dx, int dy)
-			=> CinnamonShellBridge.SendMouseMoveRelative(dx, dy);
+			=> DesktopClient.SendMouseMoveRelative("cinnamon", dx, dy);
 
 		public bool TrySendMouseButton(uint button, bool pressed)
-			=> CinnamonShellBridge.SendMouseButton(button, pressed);
+			=> DesktopClient.SendMouseButton("cinnamon", button, pressed);
 
 		public bool TrySendMouseScroll(int delta, bool vertical)
-			=> CinnamonShellBridge.SendMouseScroll(delta, vertical);
+			=> DesktopClient.SendMouseScroll("cinnamon", delta, vertical);
 
 			// The Keysharp extension owns the compositor-drawn overlay + clipboard surface, so its D-Bus
 			// service ownership is the single capability gate for both. A stale/broken extension that owns
@@ -826,10 +654,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			public OverlayShowResult TryShowImageOverlay(uint id, int x, int y, int width, int height, byte[] pngBytes)
 				=> CinnamonShellBridge.SendShowImageOverlay(id, x, y, width, height, pngBytes);
-
-			public OverlayShowResult TryShowImageOverlayShm(uint id, int x, int y, int width, int height,
-				string shmPath, int pixelWidth, int pixelHeight, int stride)
-				=> CinnamonShellBridge.SendShowImageOverlayShm(id, x, y, width, height, shmPath, pixelWidth, pixelHeight, stride);
 
 			public bool TryMoveImageOverlay(uint id, int x, int y, int width, int height)
 				=> CinnamonShellBridge.SendMoveImageOverlay(id, x, y, width, height);

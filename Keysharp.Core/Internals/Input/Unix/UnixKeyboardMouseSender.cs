@@ -60,7 +60,7 @@ namespace Keysharp.Internals.Input.Unix
 		}
 
 		protected void EnsureInputSendPermission(string operation)
-			=> _ = script.Permissions.EnsureInputInjection(operation: operation);
+			=> _ = script.Permissions.EnsureInputControl(operation: operation);
 
 		internal override bool MouseButtonsSwapped
 		{
@@ -1188,7 +1188,7 @@ namespace Keysharp.Internals.Input.Unix
 
 			public void KeyDown(uint vk, DateTime ms, long extraInfo)
 			{
-				_ = owner.Permissions.EnsureInputInjection(operation: "send keyboard input");
+				_ = owner.Permissions.EnsureInputControl(operation: "send keyboard input");
 #if OSX
 				if (vk == VK_CAPITAL && Keysharp.Internals.Input.MacOS.MacCapsLockState.TryToggle())
 					return;
@@ -1198,7 +1198,7 @@ namespace Keysharp.Internals.Input.Unix
 
 			public void KeyUp(uint vk, DateTime ms, long extraInfo)
 			{
-				_ = owner.Permissions.EnsureInputInjection(operation: "send keyboard input");
+				_ = owner.Permissions.EnsureInputControl(operation: "send keyboard input");
 #if OSX
 				// The toggle was already applied by the paired KeyDown; a CapsLock
 				// key-up has no effect on the lock state, so don't post anything.

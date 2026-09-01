@@ -173,6 +173,7 @@ namespace Keysharp.Builtins
 				if (fo == null)
 					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));
 
+				_ = Script.TheScript.Permissions.EnsureWindowMonitoring(operation: $"WinEvent.{type}");
 				var criteria = BuildCriteria(winTitle, winText, excludeTitle, excludeText);
 				var remaining = count.Al(-1L);
 				var script = Script.TheScript;

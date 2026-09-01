@@ -1,0 +1,54 @@
+#!/bin/sh
+set -eu
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+unset CDPATH ENV BASH_ENV LD_LIBRARY_PATH LD_PRELOAD 2>/dev/null || true
+
+link_resolves_to_one_of() {
+  link_path="$1"
+  shift
+
+  [ -L "${link_path}" ] || return 1
+  actual_target="$(readlink -m -- "${link_path}" 2>/dev/null)" || return 1
+  for expected_target in "$@"; do
+    expected_target="$(readlink -m -- "${expected_target}" 2>/dev/null)" || continue
+    [ "${actual_target}" = "${expected_target}" ] && return 0
+  done
+  return 1
+}
+
+path_is_distinct() {
+  candidate="$1"
+  shift
+
+  [ -e "${candidate}" ] || [ -L "${candidate}" ] || return 1
+  link_resolves_to_one_of "${candidate}" "$@" && return 1
+  return 0
+}
+
+distinct_local_install_present() {
+  path_is_distinct /usr/local/lib/keysharp /usr/lib/keysharp && return 0
+  path_is_distinct /usr/local/bin/keysharp /usr/bin/keysharp /usr/lib/keysharp/Keysharp && return 0
+  path_is_distinct /usr/local/bin/keyview /usr/bin/keyview /usr/lib/keysharp/Keyview && return 0
+  return 1
+}
+
+case "${1:-}" in
+  install)
+    if distinct_local_install_present; then
+      echo "A distinct Keysharp tar installation exists below /usr/local." >&2
+      echo "Run that tarball's 'sudo bash ./uninstall.sh' before installing this package." >&2
+      exit 1
+    fi
+    ;;
+  upgrade)
+    if distinct_local_install_present; then
+      echo "Warning: a distinct Keysharp tar installation remains below /usr/local." >&2
+      echo "The package upgrade will continue so the installed package is not stranded." >&2
+      echo "Afterward, run the tarball's uninstaller and reinstall this package to repair shared desktop and MIME integration." >&2
+    fi
+    ;;
+esac
+
+exit 0
