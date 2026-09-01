@@ -528,10 +528,10 @@ namespace Keysharp.Internals.Strings
 		/// <returns>The bytes, or null if value is none of those. Null rather than an empty array, so that a
 		/// caller which is not throwing reports nothing instead of operating on no bytes at all.</returns>
 		/// <exception cref="TypeError">Thrown if value is none of those.</exception>
-		internal static byte[] ToByteArray(object value, Encoding enc)
+		internal static byte[] ToByteArray(object value, Encoding enc = null)
 		{
 			if (value is string s)
-				return enc.GetBytes(s);
+				return (enc ?? Encoding.Default).GetBytes(s);
 
 			if (value is byte[] b)
 				return b;

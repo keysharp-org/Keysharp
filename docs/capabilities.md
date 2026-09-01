@@ -342,7 +342,6 @@ Status legend:
 | Buffer.__Item[] | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer for reading/writing bytes in Buffer by offset. |
 | Buffer.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Constructs a new Buffer object. |
 | Buffer.ToBase64() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns Buffer contents as a Base64 string. |
-| Buffer.ToByteArray() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns Buffer contents as a byte array. |
 | Buffer.ToHex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns Buffer contents as a hexadecimal string. |
 | CallbackCreate() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. |
 | CallbackFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases a callback created by CallbackCreate on every platform. |

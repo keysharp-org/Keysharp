@@ -3513,16 +3513,6 @@
                  },
                  {
                      "category":  "Core Language",
-                     "feature":  "Buffer.ToByteArray()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns Buffer contents as a byte array."
-                 },
-                 {
-                     "category":  "Core Language",
                      "feature":  "Buffer.ToHex()",
                      "syntax":  "",
                      "windows":  "full",

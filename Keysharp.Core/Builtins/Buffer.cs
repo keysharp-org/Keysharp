@@ -172,7 +172,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Returns the contents of the buffer as a byte array.
 		/// </summary>
-		public byte[] ToByteArray()
+		internal byte[] ToByteArray()
 		{
 			int size = (int)(long)Size;
 			byte[] dataArray = new byte[size];
