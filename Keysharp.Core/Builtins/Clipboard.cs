@@ -371,7 +371,12 @@ namespace Keysharp.Builtins
 			internal ClipboardHook(KeysharpFunc callback, long count) : base()
 			{
 				this.callback = callback;
-				remaining = count == 0 ? -1L : count;
+				if (count == 0 || count < -1) 
+				{
+					Errors.ValueErrorOccurred("Count must be -1 (unlimited) or a positive number.", 0);
+					return;
+				}
+				remaining = count;
 				bridge = new KeysharpFunc((Func<object, object>)Dispatch);
 				var script = Script.TheScript;
 

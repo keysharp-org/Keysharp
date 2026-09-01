@@ -28,6 +28,11 @@ namespace Keysharp.Internals.Window
 		{
 			this.callback = callback;
 			this.ownerScheduler = ownerScheduler;
+			if (count == 0 || count < -1) 
+			{
+				Errors.ValueErrorOccurred("Count must be -1 (unlimited) or a positive number.", 0);
+				return;
+			}
 			remaining = count;
 			active = true;
 			registration = new CallbackRegistration(callback, ownerScheduler, true);
