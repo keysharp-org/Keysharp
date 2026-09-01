@@ -2503,7 +2503,7 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_NowUtcMs",
+                     "feature":  "A_NowUTCMs",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",

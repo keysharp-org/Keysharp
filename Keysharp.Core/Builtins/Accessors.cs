@@ -2151,7 +2151,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The current Coordinated Universal Time (UTC) in YYYYMMDDHH24MISS.fff format.
 		/// </summary>
-		public static string A_NowUtcMs => Conversions.ToYYYYMMDDHH24MISSFFF(DateTime.UtcNow);
+		public static string A_NowUTCMs => Conversions.ToYYYYMMDDHH24MISSFFF(DateTime.UtcNow);
 
 		/// <summary>
 		/// Whether the script is exempt from being able to be suspended.

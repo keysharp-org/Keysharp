@@ -238,7 +238,7 @@ Status legend:
 | A_Now | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The current local time in YYYYMMDDHH24MISS format. |
 | A_NowMs | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets current local timestamp including milliseconds. |
 | A_NowUTC | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The current Coordinated Universal Time (UTC) in YYYYMMDDHH24MISS format. |
-| A_NowUtcMs | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets current UTC timestamp including milliseconds. |
+| A_NowUTCMs | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets current UTC timestamp including milliseconds. |
 | A_OSArch | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | CPU architecture of the OS, same names as A_ProcessArch. Differs from it only when the process is emulated, e.g. an X64 build on ARM64 Windows. |
 | A_OSType | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Current platform symbol: WINDOWS, LINUX or OSX. |
 | A_OSVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
