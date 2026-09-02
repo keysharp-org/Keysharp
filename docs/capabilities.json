@@ -3735,7 +3735,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unknown",
-                     "notes":  "Returns a ClipboardHook with Stop/Pause/Paused/IsActive/Count, matching Ks.WinEvent. Registers into the same handler list as OnClipboardChange, so there is one native clipboard monitor either way. The callback is called as callback(hook, type). No callback has been observed firing from a real clipboard change on Linux or macOS.",
+                     "notes":  "Returns a ClipboardHook with Stop/Pause/Paused/Status/IsActive/Count, matching Ks.WinEvent. Independent of the OnClipboardChange handler chain - its return value is discarded and its callback runs on its own pseudo-thread - though both drive one native clipboard monitor. The callback is called as callback(hook, type). No callback has been observed firing from a real clipboard change on Linux or macOS.",
                      "tested-by":  "clipboard-class.ahk"
                  },
                  {

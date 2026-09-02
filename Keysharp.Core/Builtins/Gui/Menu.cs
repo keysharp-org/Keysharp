@@ -1,5 +1,4 @@
 ﻿using Keysharp.Runtime;
-using CallbackHub = Keysharp.Internals.Scripting.CallbackRegistry<Keysharp.Internals.Scripting.CallbackRegistration>;
 
 namespace Keysharp.Builtins
 {
@@ -257,7 +256,7 @@ namespace Keysharp.Builtins
 		/// Click handlers for all menu items within this menu.
 		/// Each item can have more than one click handler.
 		/// </summary>
-		private readonly ConcurrentDictionary<ToolStripItem, CallbackHub> clickHandlers = new();
+		private readonly ConcurrentDictionary<ToolStripItem, CallbackRegistry> clickHandlers = new();
 
 		/// <summary>
 		/// How many times the tray icon must be clicked to select its default menu item.
@@ -357,7 +356,7 @@ namespace Keysharp.Builtins
 		}
 
 		internal bool RemoveOwnedHandlers(ScriptEventScheduler scheduler)
-			=> CallbackRegistry<CallbackRegistration>.RemoveOwned(clickHandlers, scheduler);
+			=> CallbackRegistry.RemoveOwned(clickHandlers, scheduler);
 
 		/// <summary>
 		/// Adds or modifies a menu item.<br/>

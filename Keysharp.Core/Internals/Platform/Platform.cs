@@ -37,11 +37,9 @@ namespace Keysharp.Internals
 		// Convenience accessors — a field read through Instance, then the service. Grouped and named to match
 		// PlatformHost; see the grouping note there.
 		internal static IWindow Window => Instance.Window;
-		internal static IWindowEvents WindowEvents => Instance.WindowEvents;
 		internal static ControlManagerBase Control => Instance.Control;
 		internal static IScreen Screen => Instance.Screen;
 		internal static IMonitorControl MonitorControl => Instance.MonitorControl;
-		internal static IMonitorEvents MonitorEvents => Instance.MonitorEvents;
 		internal static IOverlay Overlay => Instance.Overlay;
 		internal static IMouse Mouse => Instance.Mouse;
 		internal static IKeyboard Keyboard => Instance.Keyboard;

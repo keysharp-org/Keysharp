@@ -3,7 +3,6 @@ using NativeColor = System.Drawing.Color;
 #else
 using NativeColor = Eto.Drawing.Color;
 #endif
-using CallbackHub = Keysharp.Internals.Scripting.CallbackRegistry<Keysharp.Internals.Scripting.CallbackRegistration>;
 using Opts = Keysharp.Internals.Strings.Options;
 
 namespace Keysharp.Builtins
@@ -240,8 +239,8 @@ namespace Keysharp.Builtins
 			//fetching the whole document from the widget once per call would make that quadratic.
 			private string cachedText;
 			private int[] lineStarts;
-			private CallbackHub selectionChangeHandlers;
-			private CallbackHub linkClickHandlers;
+			private CallbackRegistry selectionChangeHandlers;
+			private CallbackRegistry linkClickHandlers;
 			//Each of this control's own events is wired to the widget only once a script asks for it, and then
 			//stays wired: a handler list which has emptied and refilled must not wire a second one.
 			private bool selectionChangeWired, linkClickWired;

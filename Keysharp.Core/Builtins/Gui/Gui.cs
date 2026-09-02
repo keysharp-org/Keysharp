@@ -1,4 +1,3 @@
-using CallbackHub = Keysharp.Internals.Scripting.CallbackRegistry<Keysharp.Internals.Scripting.CallbackRegistration>;
 
 namespace Keysharp.Builtins
 {
@@ -2691,7 +2690,7 @@ namespace Keysharp.Builtins
 
 		//Keyed by window message number, populated by OnMessage() and drained from KeysharpForm.WndProc
 		//on Windows and from EtoMessageSource elsewhere.
-		private ConcurrentDictionary<int, CallbackHub> messageHandlers;
+		private ConcurrentDictionary<int, CallbackRegistry> messageHandlers;
 
 		/// <summary>
 		/// Whether this GUI has an OnMessage() handler for the given message. Lets the off-Windows message

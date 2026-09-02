@@ -386,22 +386,6 @@ namespace Keysharp.Internals
 		IDisposable Subscribe(Action onChanged);
 	}
 
-	/// <summary>Window lifecycle/state events. Owns the per-platform window-event backend selection and
-	/// exposes the chosen one.</summary>
-	internal interface IWindowEvents
-	{
-		Keysharp.Internals.Window.IWindowEventBackend CreateBackend(Script owner);
-	}
-
-	/// <summary>Display-configuration change notifications, behind <c>Ks.Monitor.OnChange</c>. Its own service
-	/// rather than another property on <see cref="IWindowEvents"/>: the native sources have nothing in common with
-	/// the window-event ones (SystemEvents / GDK monitor signals / CoreGraphics reconfiguration), and on Linux this
-	/// one needs no per-compositor selection at all.</summary>
-	internal interface IMonitorEvents
-	{
-		Keysharp.Internals.Window.IMonitorEventBackend CreateBackend(Script owner);
-	}
-
 	/// <summary>Session control (logout/shutdown/reboot), DE-keyed on Linux. <paramref name="flags"/> follows
 	/// the AHK Shutdown codes (1=shutdown, 2=reboot, 4=force, 8=power-down, 0=logoff).</summary>
 	internal interface ISession

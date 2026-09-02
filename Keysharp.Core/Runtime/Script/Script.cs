@@ -190,7 +190,7 @@ namespace Keysharp.Runtime
 		[ThreadStatic]
 		private static bool currentCompatibilityReturnsUnsetByDefault;
 		internal Semver.SemVersion CurrentCompatibilityVersion => currentCompatibilityVersion ?? DefaultCompatibilityVersion;
-		internal CallbackRegistry<CallbackRegistration> ClipFunctions = new();
+		internal CallbackRegistry ClipFunctions = new();
 		internal List<KeysharpFunc> hotCriterions = [];
 		internal List<KeysharpFunc> hotExprs = [];
 		internal InputType input;
@@ -251,8 +251,8 @@ namespace Keysharp.Runtime
 		/// Read by every scheduler pump, so it is a counter rather than a scan of the pending-request map.</summary>
 		internal int pendingMsgBoxShows;
 #endif
-		internal CallbackRegistry<CallbackRegistration> onErrorHandlers = new();
-		internal CallbackRegistry<CallbackRegistration> onExitHandlers = new();
+		internal CallbackRegistry onErrorHandlers = new();
+		internal CallbackRegistry onExitHandlers = new();
 		private Icon _normalIcon = null;
 		public Icon normalIcon
 		{
@@ -494,6 +494,11 @@ namespace Keysharp.Runtime
 		/// until the first subscription.</summary>
 		internal MonitorEventManager MonitorEventManager { get; }
 
+		/// <summary>Per-script engine for <c>Clipboard.OnChange</c> subscriptions. Separate from
+		/// <see cref="ClipFunctions"/>, which is the AHK <c>OnClipboardChange</c> handler chain; both want the same
+		/// native monitor, and <see cref="ClipboardMonitoringWanted"/> is what reconciles them.</summary>
+		internal ClipboardEventManager ClipboardEventManager { get; }
+
 		/// <summary>Registry of live CLR event subscriptions made through <c>Clr</c>.s <c>OnEvent</c>.</summary>
 		internal ClrEventManager ClrEventManager { get; }
 
@@ -587,6 +592,7 @@ namespace Keysharp.Runtime
 			DestructorPump = new(this);
 			WinEventManager = new(this);
 			MonitorEventManager = new(this);
+			ClipboardEventManager = new(this);
 			ClrEventManager = new();
 #if WINDOWS
 			ComMethodData = new(this);
@@ -1270,6 +1276,9 @@ namespace Keysharp.Runtime
 			MainWindow.ResetDebugOutputFlush();
 			mainWindowGui = new Gui(this, null, null, null, mainWindow);
 			mainWindow.AllowShowDisplay = false;
+			// Clipboard monitoring is installed on the main window, so a subscription made before there was one
+			// asked for nothing. Re-apply now that there is a host to install it on.
+			UpdateClipboardMonitoring();
 		}
 
 		/// <summary>
@@ -1569,6 +1578,7 @@ namespace Keysharp.Runtime
 			// Same reasoning as ClrEventManager below: the monitor backend hangs off the *static*
 			// SystemEvents.DisplaySettingsChanged, so it has to be detached explicitly or it roots this Script.
 			Teardown(MonitorEventManager.Dispose);
+			Teardown(ClipboardEventManager.Dispose);
 			// Before anything else managed goes away: a subscription to a *static* CLR event is a root the runtime
 			// holds indefinitely, so leaving one attached keeps the callback -- and the engine behind it -- alive past
 			// dispose. This is the orphaned-callback case teardown has to cover.
@@ -1811,12 +1821,14 @@ namespace Keysharp.Runtime
 
 		private void PrivateClipboardUpdate(params object[] o)
 		{
-			// Just dispatch to the OnClipboardChange handlers and discard the aggregate result. It must NOT be
-			// wrapped in IfTest/ForceBool: InvokeEventHandlers returns null when a handler is deferred (e.g. a
-			// re-entrant A_Clipboard:= from a hotkey thread) or returns nothing, and ForceBool(null) throws
-			// "input was unset". The other InvokeEventHandlers call sites already just discard the result.
-			// The resolved clipboard backend reports the event type (0 = empty, 1 = text, 2 = other).
-			_ = ClipFunctions.InvokeEventHandlers(Clipboard.ChangeType());
+			// The resolved clipboard backend reports the event type (0 = empty, 1 = text, 2 = other), read once for
+			// both consumers so they cannot disagree about what changed.
+			var changeType = Clipboard.ChangeType();
+			// Dispatch to the OnClipboardChange handlers and discard the aggregate result. It must NOT be wrapped
+			// in IfTest/ForceBool: InvokeEventHandlers returns null when a handler is deferred (e.g. a re-entrant
+			// A_Clipboard:= from a hotkey thread) or returns nothing, and ForceBool(null) throws "input was unset".
+			_ = ClipFunctions.InvokeEventHandlers(changeType);
+			ClipboardEventManager.Dispatch(changeType);
 		}
 
 		internal Type GetNativeType(Any obj)
@@ -1838,14 +1850,22 @@ namespace Keysharp.Runtime
 				return typeof(Any);
 		}
 
-		internal void UpdateClipboardMonitoring()
+		/// <summary>Whether anything wants the native clipboard-change source: an <c>OnClipboardChange</c> handler,
+		/// or a <c>Clipboard.OnChange</c> hook. The two register separately and either one is enough.</summary>
+		internal bool ClipboardMonitoringWanted => ClipFunctions.Count > 0 || ClipboardEventManager.HasSubscriptions;
+
+		internal void UpdateClipboardMonitoring() => ApplyClipboardMonitoring(ClipboardMonitoringWanted);
+
+		/// <summary>Installs or removes the native clipboard-change source. A caller that already knows what it
+		/// wants passes it, so a manager mid-registration does not have to ask a registry it is already inside.</summary>
+		internal void ApplyClipboardMonitoring(bool enabled)
 		{
 			var window = mainWindow;
 
+			// No host yet: EnsureMainWindowHandle re-applies once there is one, so an early subscription is not lost.
 			if (window == null)
 				return;
 
-			var enabled = ClipFunctions.Count > 0;
 			PostToUIThread(() =>
 			{
 				if (window.IsClosing)

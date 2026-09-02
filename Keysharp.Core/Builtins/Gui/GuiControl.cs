@@ -1,5 +1,4 @@
 using Keysharp.Runtime;
-using CallbackHub = Keysharp.Internals.Scripting.CallbackRegistry<Keysharp.Internals.Scripting.CallbackRegistration>;
 
 namespace Keysharp.Builtins
 {
@@ -15,36 +14,36 @@ namespace Keysharp.Builtins
 		{
 			private string typename;
 			private WeakReference<Gui> gui;
-			private readonly CallbackHub clickHandlers = new();
-			private readonly CallbackHub doubleClickHandlers = new();
+			private readonly CallbackRegistry clickHandlers = new();
+			private readonly CallbackRegistry doubleClickHandlers = new();
 			internal bool DpiScaling => ((Gui)Gui).DpiScale != 1.0;
 			private Forms.Control _control;
 
 			// Normal event handlers can't be used because they need to return a value.
 			// The returned values are then inspected to determine whether subsequent handlers should be called.
-			private CallbackHub changeHandlers;
-			private CallbackHub columnClickHandlers;
+			private CallbackRegistry changeHandlers;
+			private CallbackRegistry columnClickHandlers;
 #if WINDOWS
-			private ConcurrentDictionary<int, CallbackHub> commandHandlers;
+			private ConcurrentDictionary<int, CallbackRegistry> commandHandlers;
 #endif
-			private CallbackHub contextMenuChangedHandlers;
+			private CallbackRegistry contextMenuChangedHandlers;
 #if WINDOWS
 			private nint dummyHandle;
 #endif
-			private CallbackHub focusedItemChangedHandlers;
-			private CallbackHub focusHandlers;
-			private CallbackHub itemCheckHandlers;
-			private CallbackHub itemEditHandlers;
-			private CallbackHub itemExpandHandlers;
-			private CallbackHub lostFocusHandlers;
+			private CallbackRegistry focusedItemChangedHandlers;
+			private CallbackRegistry focusHandlers;
+			private CallbackRegistry itemCheckHandlers;
+			private CallbackRegistry itemEditHandlers;
+			private CallbackRegistry itemExpandHandlers;
+			private CallbackRegistry lostFocusHandlers;
 			//Keyed by window message number, for OnMessage(). Separate from commandHandlers/notifyHandlers
 			//because those key on a WM_COMMAND notification code / WM_NOTIFY code, not on the message itself.
-			private ConcurrentDictionary<int, CallbackHub> messageHandlers;
+			private ConcurrentDictionary<int, CallbackRegistry> messageHandlers;
 #if WINDOWS
-			private ConcurrentDictionary<int, CallbackHub> notifyHandlers;
+			private ConcurrentDictionary<int, CallbackRegistry> notifyHandlers;
 #endif
 			private long parenthandle;
-			private CallbackHub selectedItemChangedHandlers;
+			private CallbackRegistry selectedItemChangedHandlers;
 			internal Size requestedSize = new (int.MinValue, int.MinValue);
 			internal bool eventHandlerActive = true;
 			//"+/-DPIResize": whether this control is re-laid out when the GUI's DPI changes. Seeded from the
@@ -58,7 +57,7 @@ namespace Keysharp.Builtins
 				removedAny |= changeHandlers?.RemoveOwned(scheduler) == true;
 				removedAny |= columnClickHandlers?.RemoveOwned(scheduler) == true;
 #if WINDOWS
-				removedAny |= CallbackRegistry<CallbackRegistration>.RemoveOwned(commandHandlers, scheduler);
+				removedAny |= CallbackRegistry.RemoveOwned(commandHandlers, scheduler);
 #endif
 				removedAny |= contextMenuChangedHandlers?.RemoveOwned(scheduler) == true;
 				removedAny |= focusedItemChangedHandlers?.RemoveOwned(scheduler) == true;
@@ -67,9 +66,9 @@ namespace Keysharp.Builtins
 				removedAny |= itemEditHandlers?.RemoveOwned(scheduler) == true;
 				removedAny |= itemExpandHandlers?.RemoveOwned(scheduler) == true;
 				removedAny |= lostFocusHandlers?.RemoveOwned(scheduler) == true;
-				removedAny |= CallbackRegistry<CallbackRegistration>.RemoveOwned(messageHandlers, scheduler);
+				removedAny |= CallbackRegistry.RemoveOwned(messageHandlers, scheduler);
 #if WINDOWS
-				removedAny |= CallbackRegistry<CallbackRegistration>.RemoveOwned(notifyHandlers, scheduler);
+				removedAny |= CallbackRegistry.RemoveOwned(notifyHandlers, scheduler);
 #endif
 				removedAny |= selectedItemChangedHandlers?.RemoveOwned(scheduler) == true;
 				removedAny |= (this as WebView)?.RemoveOwnedWebViewHandlers(scheduler) == true;
@@ -291,7 +290,7 @@ namespace Keysharp.Builtins
 				return result;
 			}
 
-			internal object HandleOnCommandNotify(long code, object callback, long addremove, ref ConcurrentDictionary<int, CallbackHub> handlers)
+			internal object HandleOnCommandNotify(long code, object callback, long addremove, ref ConcurrentDictionary<int, CallbackRegistry> handlers)
 			{
 				if (gui == null || !gui.TryGetTarget(out var g))
 					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");

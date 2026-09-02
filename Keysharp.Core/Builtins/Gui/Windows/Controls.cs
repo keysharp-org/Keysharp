@@ -1,5 +1,4 @@
 #if WINDOWS
-using CallbackHub = Keysharp.Internals.Scripting.CallbackRegistry<Keysharp.Internals.Scripting.CallbackRegistration>;
 using Label = System.Windows.Forms.Label;
 
 namespace Keysharp.Builtins
@@ -1281,7 +1280,7 @@ namespace Keysharp.Builtins
 
 	public class KeysharpToolStripStatusLabel : ToolStripStatusLabel
 	{
-		internal readonly CallbackHub doubleClickHandlers = new();
+		internal readonly CallbackRegistry doubleClickHandlers = new();
 		//No WndProc method to override because TSSL is not a Control.
 
 		public KeysharpToolStripStatusLabel(string text = "")

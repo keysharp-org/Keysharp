@@ -31,7 +31,7 @@ namespace Keysharp.Internals.Scripting
 		internal static readonly Func<object, bool> NonEmpty = static r => !r.IsNullOrEmpty();
 	}
 
-	internal sealed class CallbackRegistry<TRegistration> where TRegistration : CallbackRegistration
+	internal class CallbackRegistry<TRegistration> where TRegistration : CallbackRegistration
 	{
 		private readonly Lock gate = new();
 		private readonly List<TRegistration> ordered = [];
@@ -189,26 +189,25 @@ namespace Keysharp.Internals.Scripting
 			}
 		}
 
-		internal bool ModifyEventHandlers(KeysharpFunc callback, long addRemove, Func<KeysharpFunc, long, TRegistration> createRegistration = null, bool matchCurrentSchedulerOnRemove = true)
+		/// <summary>The scheduler a registration made right now belongs to: the one that owns this registry, or the
+		/// current script's when the registry has not seen an owner yet.</summary>
+		protected ScriptEventScheduler CurrentScheduler
+		{
+			get
+			{
+				Script currentOwner;
+
+				lock (gate)
+					currentOwner = script;
+
+				return (currentOwner ?? Script.TheScript)?.EventScheduler;
+			}
+		}
+
+		internal bool ModifyEventHandlers(KeysharpFunc callback, long addRemove, Func<KeysharpFunc, long, TRegistration> createRegistration, bool matchCurrentSchedulerOnRemove = true)
 		{
 			if (callback == null)
 				return false;
-
-			Script currentOwner;
-
-			lock (gate)
-				currentOwner = script;
-
-			var currentScheduler = (currentOwner ?? Script.TheScript)?.EventScheduler;
-
-			if (createRegistration == null)
-			{
-				if (typeof(TRegistration) != typeof(CallbackRegistration))
-					throw new InvalidOperationException($"A registration factory is required for {typeof(TRegistration).Name}.");
-
-				createRegistration = (Func<KeysharpFunc, long, TRegistration>)(object)new Func<KeysharpFunc, long, CallbackRegistration>(
-					(cb, _) => new CallbackRegistration(cb, currentScheduler, true));
-			}
 
 			if (addRemove > 0)
 				return Add(createRegistration(callback, addRemove));
@@ -216,15 +215,7 @@ namespace Keysharp.Internals.Scripting
 			if (addRemove < 0)
 				return Add(createRegistration(callback, addRemove), true);
 
-			return Remove(callback, matchCurrentSchedulerOnRemove ? currentScheduler : null, matchCurrentSchedulerOnRemove);
-		}
-
-		internal bool ModifyGlobalEventHandlers(KeysharpFunc callback, long addRemove)
-		{
-			if (typeof(TRegistration) != typeof(CallbackRegistration))
-				throw new InvalidOperationException($"Global callback registration is only supported for {typeof(CallbackRegistration).Name}.");
-
-			return ModifyEventHandlers(callback, addRemove, (Func<KeysharpFunc, long, TRegistration>)(object)CallbackRegistration.CreateGlobal, false);
+			return Remove(callback, matchCurrentSchedulerOnRemove ? CurrentScheduler : null, matchCurrentSchedulerOnRemove);
 		}
 
 		/// <summary>
@@ -355,27 +346,6 @@ namespace Keysharp.Internals.Scripting
 			return result;
 		}
 
-		internal static bool RemoveOwned<TKey>(ConcurrentDictionary<TKey, CallbackRegistry<TRegistration>> hubs, ScriptEventScheduler scheduler)
-		{
-			if (hubs == null || scheduler == null)
-				return false;
-
-			var removedAny = false;
-
-			foreach (var kv in hubs.ToArray())
-			{
-				if (!kv.Value.RemoveOwned(scheduler))
-					continue;
-
-				removedAny = true;
-
-				if (kv.Value.IsEmpty)
-					_ = hubs.TryRemove(kv.Key, out _);
-			}
-
-			return removedAny;
-		}
-
 		private bool RemoveRegistrationsLocked(IReadOnlyCollection<TRegistration> removals)
 		{
 			if (removals == null || removals.Count == 0)
@@ -442,6 +412,49 @@ namespace Keysharp.Internals.Scripting
 
 			if (registrations.Count == 0)
 				_ = index.Remove(key);
+		}
+	}
+
+	/// <summary>
+	/// A registry of plain <see cref="CallbackRegistration"/> entries — every handler family except OnMessage,
+	/// which carries per-registration instance limits and so supplies its own registration type. Because the
+	/// registration type is known here, callers need not pass a factory, and "register globally" (no owning
+	/// scheduler, for OnError/OnExit) is expressible at all.
+	/// </summary>
+	internal sealed class CallbackRegistry : CallbackRegistry<CallbackRegistration>
+	{
+		internal bool ModifyEventHandlers(KeysharpFunc callback, long addRemove, bool matchCurrentSchedulerOnRemove = true)
+		{
+			var scheduler = CurrentScheduler;
+			return ModifyEventHandlers(callback, addRemove, (cb, _) => new CallbackRegistration(cb, scheduler, true), matchCurrentSchedulerOnRemove);
+		}
+
+		/// <summary>Registers a handler owned by no scheduler, so it survives the registering thread and is removed
+		/// by callback identity from any thread (OnError/OnExit).</summary>
+		internal bool ModifyGlobalEventHandlers(KeysharpFunc callback, long addRemove)
+			=> ModifyEventHandlers(callback, addRemove, CallbackRegistration.CreateGlobal, false);
+
+		/// <summary>Sweeps a scheduler's registrations out of a keyed set of registries, dropping the ones left
+		/// empty (Gui/GuiControl keep one registry per message or notification code).</summary>
+		internal static bool RemoveOwned<TKey>(ConcurrentDictionary<TKey, CallbackRegistry> hubs, ScriptEventScheduler scheduler)
+		{
+			if (hubs == null || scheduler == null)
+				return false;
+
+			var removedAny = false;
+
+			foreach (var kv in hubs.ToArray())
+			{
+				if (!kv.Value.RemoveOwned(scheduler))
+					continue;
+
+				removedAny = true;
+
+				if (kv.Value.IsEmpty)
+					_ = hubs.TryRemove(kv.Key, out _);
+			}
+
+			return removedAny;
 		}
 	}
 

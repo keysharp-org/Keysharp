@@ -14,21 +14,22 @@ namespace Keysharp.Internals.Window
 		: EventSubscriptionBase(callback, count, ownerScheduler)
 	{
 		internal readonly MonitorEventManager manager = manager;
+
+		internal override void Unregister() => manager.Unregister(this);
 	}
 
 	/// <summary>
-	/// The per-<see cref="Script"/> engine behind <c>Ks.Monitor.OnChange</c>. It owns the platform
-	/// <see cref="IMonitorEventBackend"/>, which is installed only while at least one subscription exists, and turns
-	/// each native "something changed" notification into a classified script callback marshalled onto its owning
-	/// scheduler (the same path <c>OnMessage</c> and <c>Ks.WinEvent</c> use, so script code always runs on its own
-	/// pseudo-thread).
+	/// The per-<see cref="Script"/> engine behind <c>Ks.Monitor.OnChange</c>. <see cref="EventManagerBase{TRegistration, TBackend, TPayload}"/>
+	/// owns the subscriptions, the backend lifecycle and the dispatch tail; what is left here is the part that is
+	/// actually about displays — turning one native "something changed" notification into a classified script event.
 	/// <para>
 	/// Classification is done here rather than per platform, by diffing the previous topology snapshot against a
 	/// fresh one — see <see cref="IMonitorEventBackend"/> for why the backends report only one bit. A notification
 	/// whose diff is empty fires nothing, which is what absorbs the duplicate notifications every platform emits.
 	/// </para>
 	/// </summary>
-	internal sealed class MonitorEventManager : IDisposable
+	internal sealed class MonitorEventManager(Script script)
+		: EventManagerBase<MonitorEventRegistration, IMonitorEventBackend, MonitorEventManager.Payload>(script)
 	{
 		/// <summary>The set of attached monitors changed — one was plugged in, unplugged, or the session docked.</summary>
 		internal const string KindTopology = "topology";
@@ -36,86 +37,39 @@ namespace Keysharp.Internals.Window
 		/// scale or which one is primary.</summary>
 		internal const string KindSettings = "settings";
 
-		private readonly Script script;
-		private readonly Lock gate = new();
-		private readonly List<MonitorEventRegistration> registrations = new();
-		private IMonitorEventBackend backend;
-		private bool backendInitFailed;
-		private bool started;
-		private bool disposed;
+		/// <summary>What a classified change carries to the callback: the monitor count after it. A plain long, so
+		/// nothing is allocated to reach <c>A_EventInfo</c>.</summary>
+		internal readonly record struct Payload(long Count);
 
-		// The topology the last dispatch was measured against. Only touched under `gate`. Seeded at the first
-		// registration so the first real change is diffed against the layout that existed when the script subscribed,
-		// rather than firing spuriously for the initial state.
+		// Serializes topology diffing, so one notification's baseline update cannot interleave with another's.
+		// Separate from `gate` because the enumeration it guards is slow (a per-display DPI query on every
+		// platform), and holding the registration gate across it would block Register/Stop for the length of a
+		// display reconfiguration. Where both are taken, `classifyGate` is taken first.
+		private readonly Lock classifyGate = new();
+		private bool started;
+
+		// The topology the last dispatch was measured against. Only touched under `classifyGate`. Seeded at the
+		// first registration so the first real change is diffed against the layout that existed when the script
+		// subscribed, rather than firing spuriously for the initial state.
 		private DisplayInfo[] lastTopology = [];
 
-		internal MonitorEventManager(Script script) => this.script = script;
+		protected override ThreadKind CallbackThreadKind => ThreadKind.Event;
 
-		// ---- registration ------------------------------------------------------------------
+		// ---- source hooks --------------------------------------------------------------------
 
-		internal void Register(MonitorEventRegistration reg)
+		protected override IMonitorEventBackend CreateBackend()
 		{
-			lock (gate)
-			{
-				if (disposed)
-					return;
+			var created = Platform.MonitorEvents.CreateBackend(script);
 
-				// Seed from the layout as it is right now, so the first callback reports a change the script could
-				// not already see at subscription time. An enumeration that fails here leaves the baseline empty,
-				// which costs one spurious "topology" on the next notification — better than a null baseline, and
-				// the alternative (refusing to subscribe) would be worse.
-				if (registrations.Count == 0)
-					lastTopology = Snapshot() ?? [];
+			if (created != null)
+				created.Sink = OnNativeChange;
 
-				registrations.Add(reg);
-				SyncBackend();
-			}
-		}
-
-		internal void Unregister(MonitorEventRegistration reg)
-		{
-			lock (gate)
-			{
-				RemoveLocked(reg);
-				SyncBackend();
-			}
-		}
-
-		private void RemoveLocked(MonitorEventRegistration reg)
-		{
-			reg.active = false;
-			reg.registration.Clear();
-			_ = registrations.Remove(reg);
-		}
-
-		/// <summary>Removes every subscription owned by <paramref name="scheduler"/> (deterministic teardown when a
-		/// worker thread/scheduler is disposed — does not rely on GC/__Delete).</summary>
-		internal bool RemoveOwned(ScriptEventScheduler scheduler)
-		{
-			if (scheduler == null)
-				return false;
-
-			var removedAny = false;
-
-			lock (gate)
-			{
-				for (var i = registrations.Count - 1; i >= 0; i--)
-					if (ReferenceEquals(registrations[i].ownerScheduler, scheduler))
-					{
-						RemoveLocked(registrations[i]);
-						removedAny = true;
-					}
-
-				if (removedAny)
-					SyncBackend();
-			}
-
-			return removedAny;
+			return created;
 		}
 
 		/// <summary>Starts the native notification on the first subscription and stops it after the last one, so a
 		/// script that never calls OnChange pays nothing.</summary>
-		private void SyncBackend()
+		protected override void SyncNativeLocked()
 		{
 			var wanted = registrations.Count > 0 && !disposed;
 
@@ -133,34 +87,31 @@ namespace Keysharp.Internals.Window
 			}
 			else
 			{
-				backend?.Stop();
+				Backend?.Stop();
 			}
 
 			started = wanted;
 		}
 
-		private IMonitorEventBackend EnsureBackend()
+		/// <summary>
+		/// Seeds the baseline from the layout as it is right now, so the first callback reports a change the script
+		/// could not already see at subscription time. An enumeration that fails here leaves the baseline empty,
+		/// which costs one spurious "topology" on the next notification — better than a null baseline, and the
+		/// alternative (refusing to subscribe) would be worse.
+		/// </summary>
+		protected override void PrepareRegistration(MonitorEventRegistration reg, bool isFirst)
 		{
-			if (backend != null || backendInitFailed)
-				return backend;
+			if (!isFirst)
+				return;
 
-			try
-			{
-				backend = Platform.MonitorEvents.CreateBackend(script);
-
-				if (backend != null)
-					backend.Sink = OnNativeChange;
-				else
-					backendInitFailed = true;
-			}
-			catch (Exception ex)
-			{
-				backendInitFailed = true;
-				Diagnostics.Debug.WriteLine($"Monitor event backend creation failed: {ex.Message}");
-			}
-
-			return backend;
+			lock (classifyGate)
+				lastTopology = Snapshot() ?? [];
 		}
+
+		/// <summary>A_EventInfo holds the monitor count after the change — the fact a "topology" handler most often
+		/// branches on (docked vs undocked).</summary>
+		protected override void ApplyThreadState(ThreadVariables tv, MonitorEventRegistration reg, in Payload payload)
+			=> tv.eventInfo = payload.Count;
 
 		// ---- native intake (arbitrary thread) ----------------------------------------------
 
@@ -173,9 +124,9 @@ namespace Keysharp.Internals.Window
 			long count;
 			MonitorEventRegistration[] toFire;
 
-			lock (gate)
+			lock (classifyGate)
 			{
-				if (disposed || registrations.Count == 0)
+				if (disposed || !HasSubscriptions)
 					return;
 
 				var current = Snapshot();
@@ -195,7 +146,14 @@ namespace Keysharp.Internals.Window
 
 				count = current.Length;
 				lastTopology = current;
-				toFire = registrations.ToArray();
+			}
+
+			lock (gate)
+			{
+				if (disposed)
+					return;
+
+				toFire = [.. registrations];
 			}
 
 			foreach (var reg in toFire)
@@ -206,54 +164,23 @@ namespace Keysharp.Internals.Window
 		{
 			// A paused hook stays registered and keeps the topology baseline current, but doesn't fire or consume
 			// its remaining-count budget.
-			if (reg.paused)
+			if (reg.Suppressed || !reg.TryConsumeFire())
 				return;
 
-			if (!reg.TryConsumeFire())
-				return;
+			var scheduler = DispatchTarget(reg);
 
-			var scheduler = reg.ownerScheduler;
-
-			if (scheduler == null || scheduler.IsDisposed)
+			if (scheduler == null)
 				return;
 
 			// Callback shape (locked): (hook, kind). Everything else a handler needs is a plain read of Monitor.All /
 			// Monitor.Count at callback time, which is also the only way to get it consistently — the layout can
 			// change again between the event and the callback running.
 			object[] args = [reg.scriptObject, kind];
-			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunOnSchedulerThread(scheduler, reg, args, count));
+			var payload = new Payload(count);
+			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, args, payload));
 
 			if (reg.IsExhausted)
 				Unregister(reg);
-		}
-
-		private ScriptEventExecutionResult RunOnSchedulerThread(ScriptEventScheduler scheduler,
-			MonitorEventRegistration reg, object[] args, long count)
-		{
-			// No reg.active re-check here, for the same reason as WinEventManager: TryConsumeFire at enqueue time is
-			// the authoritative gate, and re-checking would drop the last allowed callback of a counted subscription.
-			using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, ThreadKind.Event);
-
-			if (!thread.Started)
-				return thread.Result;
-
-			try
-			{
-				// A_EventInfo holds the monitor count after the change — the fact a "topology" handler most often
-				// branches on (docked vs undocked), and a plain long, so nothing is allocated to carry it.
-				thread.ThreadVariables.eventInfo = count;
-				_ = reg.callback.Call(args);
-			}
-			catch (Exception ex)
-			{
-				_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
-			}
-			finally
-			{
-				script.ExitIfNotPersistent();
-			}
-
-			return ScriptEventExecutionResult.Executed;
 		}
 
 		// ---- topology diffing --------------------------------------------------------------
@@ -343,36 +270,6 @@ namespace Keysharp.Internals.Window
 			}
 
 			return true;
-		}
-
-		// ---- teardown ----------------------------------------------------------------------
-
-		public void Dispose()
-		{
-			lock (gate)
-			{
-				if (disposed)
-					return;
-
-				disposed = true;
-
-				foreach (var reg in registrations.ToArray())
-					RemoveLocked(reg);
-
-				started = false;
-			}
-
-			// Outside the lock: a backend's Stop/Dispose may marshal onto another thread that calls back in.
-			try
-			{
-				backend?.Dispose();
-			}
-			catch (Exception ex)
-			{
-				Diagnostics.Debug.WriteLine($"Monitor event backend disposal failed: {ex.Message}");
-			}
-
-			backend = null;
 		}
 	}
 }

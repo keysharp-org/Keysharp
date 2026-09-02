@@ -1,7 +1,7 @@
 #if !WINDOWS
 using System.Diagnostics;
 using WinForms = System.Windows.Forms;
-using CallbackRegistry = Keysharp.Internals.Scripting.CallbackRegistry<Keysharp.Internals.Scripting.CallbackRegistration>;
+using CallbackRegistry = Keysharp.Internals.Scripting.CallbackRegistry;
 
 namespace Keysharp.Builtins
 {

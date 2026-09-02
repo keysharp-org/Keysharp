@@ -399,6 +399,15 @@ namespace Keysharp.Tests
 			Assert.IsTrue((bool)Ks.KeysharpClipboard.Wait(Clip, 1, 1));
 		}
 
+		/// <summary>Fires one clipboard change at the hooks and drains the scheduler. Hook callbacks run on their
+		/// owner's pseudo-thread rather than inline, so the drain is what makes the effect observable here.</summary>
+		private static void DispatchClipboardChange(long dataType)
+		{
+			var script = Script.TheScript;
+			script.ClipboardEventManager.Dispatch(dataType);
+			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+		}
+
 		/// <summary>The hook's own bookkeeping — Pause, Count and Stop — without needing a real clipboard event,
 		/// which no headless environment can be relied on to deliver.</summary>
 		[Test, Category("Clipboard"), Category("Internal"), NonParallelizable]
@@ -417,21 +426,28 @@ namespace Keysharp.Tests
 				return;
 			}
 
-			Assert.IsTrue(hook.IsActive);
-			Assert.AreEqual(-1L, hook.Count);
-			Assert.AreEqual(false, hook.Paused);
-			Assert.AreEqual(true, hook.Pause());
-			_ = hook.Dispatch(1L);
-			Assert.AreEqual(0, calls.Count, "A paused hook must not fire.");
-			Assert.AreEqual(false, hook.Pause(0));
-			_ = hook.Dispatch(1L);
-			Assert.AreEqual(1, calls.Count);
-			Assert.AreSame(hook, calls[0][0], "The callback receives the hook as its first argument.");
-			Assert.AreEqual(1L, calls[0][1]);
-			_ = hook.Stop();
-			Assert.IsFalse(hook.IsActive);
-			_ = hook.Dispatch(1L);
-			Assert.AreEqual(1, calls.Count, "A stopped hook must not fire.");
+			try
+			{
+				Assert.IsTrue(hook.IsActive);
+				Assert.AreEqual(-1L, hook.Count);
+				Assert.AreEqual(false, hook.Paused);
+				Assert.AreEqual(true, hook.Pause());
+				DispatchClipboardChange(1L);
+				Assert.AreEqual(0, calls.Count, "A paused hook must not fire.");
+				Assert.AreEqual(false, hook.Pause(0));
+				DispatchClipboardChange(1L);
+				Assert.AreEqual(1, calls.Count);
+				Assert.AreSame(hook, calls[0][0], "The callback receives the hook as its first argument.");
+				Assert.AreEqual(1L, calls[0][1]);
+				_ = hook.Stop();
+				Assert.IsFalse(hook.IsActive);
+				DispatchClipboardChange(1L);
+				Assert.AreEqual(1, calls.Count, "A stopped hook must not fire.");
+			}
+			finally
+			{
+				_ = hook.Stop();
+			}
 		}
 
 		/// <summary>Count stops the hook by itself, and does so BEFORE the final call so a handler that writes the
@@ -452,16 +468,55 @@ namespace Keysharp.Tests
 				return;
 			}
 
-			Assert.AreEqual(2L, hook.Count);
-			_ = hook.Dispatch(1L);
-			Assert.AreEqual(1L, hook.Count);
-			Assert.IsTrue(hook.IsActive);
-			_ = hook.Dispatch(1L);
-			Assert.AreEqual(2, calls);
-			Assert.IsFalse(hook.IsActive, "The hook stops itself once the count is exhausted.");
-			Assert.AreEqual(0L, hook.Count);
-			_ = hook.Dispatch(1L);
-			Assert.AreEqual(2, calls);
+			try
+			{
+				Assert.AreEqual(2L, hook.Count);
+				DispatchClipboardChange(1L);
+				Assert.AreEqual(1L, hook.Count);
+				Assert.IsTrue(hook.IsActive);
+				DispatchClipboardChange(1L);
+				Assert.AreEqual(2, calls);
+				Assert.IsFalse(hook.IsActive, "The hook stops itself once the count is exhausted.");
+				Assert.AreEqual(0L, hook.Count);
+				DispatchClipboardChange(1L);
+				Assert.AreEqual(2, calls);
+			}
+			finally
+			{
+				_ = hook.Stop();
+			}
+		}
+
+		/// <summary>A hook's return value is its own business: it must not reach the OnClipboardChange chain, whose
+		/// non-zero rule would otherwise let an incidental return suppress unrelated handlers.</summary>
+		[Test, Category("Clipboard"), Category("Internal"), NonParallelizable]
+		public void OnChangeHookDoesNotSuppressTheHandlerChain()
+		{
+			var chainCalls = 0;
+			var chain = new KeysharpFunc((Func<object, object>)(_ => { chainCalls++; return ""; }));
+			// A hook that returns non-zero — the value that stops the OnClipboardChange chain.
+			var hookCb = new KeysharpFunc((Func<object, object, object>)((_, _) => 1L));
+
+			if (Ks.KeysharpClipboard.OnChange(null, hookCb) is not Ks.ClipboardHook hook)
+			{
+				Assert.Fail("OnChange did not return a hook.");
+				return;
+			}
+
+			try
+			{
+				_ = Env.OnClipboardChange(chain);
+				var script = Script.TheScript;
+				_ = script.ClipFunctions.InvokeEventHandlers(1L);
+				script.ClipboardEventManager.Dispatch(1L);
+				Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				Assert.AreEqual(1, chainCalls, "The chain handler runs regardless of what a hook returns.");
+			}
+			finally
+			{
+				_ = hook.Stop();
+				_ = Env.OnClipboardChange(chain, 0L);
+			}
 		}
 
 		[Test, Category("Clipboard"), NonParallelizable]

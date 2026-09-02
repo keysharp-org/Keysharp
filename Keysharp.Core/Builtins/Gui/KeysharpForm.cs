@@ -1,5 +1,4 @@
 using Keysharp.Runtime;
-using CallbackHub = Keysharp.Internals.Scripting.CallbackRegistry<Keysharp.Internals.Scripting.CallbackRegistration>;
 
 namespace Keysharp.Builtins
 {
@@ -8,14 +7,14 @@ namespace Keysharp.Builtins
 		internal Script OwnerScript { get; }
 
 		public bool AllowShowDisplay = true;
-		internal CallbackHub closedHandlers;
-		internal CallbackHub contextMenuChangedHandlers;
-		internal CallbackHub dpiChangeHandlers;
-		internal CallbackHub dropFilesHandlers;
-		internal CallbackHub escapeHandlers;
+		internal CallbackRegistry closedHandlers;
+		internal CallbackRegistry contextMenuChangedHandlers;
+		internal CallbackRegistry dpiChangeHandlers;
+		internal CallbackRegistry dropFilesHandlers;
+		internal CallbackRegistry escapeHandlers;
 		internal object eventObj;
 		internal bool showWithoutActivation;
-		internal CallbackHub sizeHandlers;
+		internal CallbackRegistry sizeHandlers;
 		private readonly int addStyle, addExStyle, removeStyle, removeExStyle;
 		internal bool beenShown = false;
 		internal bool beenConstructed = false;

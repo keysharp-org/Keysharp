@@ -1,4 +1,3 @@
-using CallbackHub = Keysharp.Internals.Scripting.CallbackRegistry<Keysharp.Internals.Scripting.CallbackRegistration>;
 
 namespace Keysharp.Builtins
 {
@@ -18,12 +17,12 @@ namespace Keysharp.Builtins
 			//Each event is wired to the backend only once a script asks for it: registering MessageReceived
 			//costs a script injected into every page, and OpenNewWindow changes how popups behave.
 			private HashSet<string> attachedEvents;
-			private CallbackHub navigatedHandlers;
-			private CallbackHub documentLoadedHandlers;
-			private CallbackHub documentLoadingHandlers;
-			private CallbackHub openNewWindowHandlers;
-			private CallbackHub documentTitleChangedHandlers;
-			private CallbackHub messageReceivedHandlers;
+			private CallbackRegistry navigatedHandlers;
+			private CallbackRegistry documentLoadedHandlers;
+			private CallbackRegistry documentLoadingHandlers;
+			private CallbackRegistry openNewWindowHandlers;
+			private CallbackRegistry documentTitleChangedHandlers;
+			private CallbackRegistry messageReceivedHandlers;
 
 			private IWebViewBackend Web => Ctrl as IWebViewBackend;
 
@@ -239,7 +238,7 @@ namespace Keysharp.Builtins
 			bool IWebViewEventSink.OpenNewWindow(string url, string targetName)
 				=> RaiseCancellable(openNewWindowHandlers, url, targetName);
 
-			private void Raise(CallbackHub hub, object arg)
+			private void Raise(CallbackRegistry hub, object arg)
 			{
 				if (eventHandlerActive)
 					_ = (hub?.InvokeEventHandlers(this, arg));
@@ -249,7 +248,7 @@ namespace Keysharp.Builtins
 			/// Runs the handlers for an event the page can be stopped by. A handler returning a non-empty value
 			/// claims the event, which is the same rule GUI message monitors use, and here means "cancel".
 			/// </summary>
-			private bool RaiseCancellable(CallbackHub hub, object arg, object arg2)
+			private bool RaiseCancellable(CallbackRegistry hub, object arg, object arg2)
 				=> eventHandlerActive && CallbackStop.NonEmpty(hub?.InvokeWindowMessageHandlers(this, arg, arg2));
 		}
 	}

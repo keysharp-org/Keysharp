@@ -1,5 +1,4 @@
 #if WINDOWS
-using CallbackHub = Keysharp.Internals.Scripting.CallbackRegistry<Keysharp.Internals.Scripting.CallbackRegistration>;
 namespace Keysharp.Builtins
 {
 	public partial class Gui : KeysharpObject, I__Enum, IEnumerable<(object, object)>

@@ -11,7 +11,10 @@ namespace Keysharp.Internals.Scripting
 			=> Set(ownerScheduler, active);
 
 		internal ScriptEventScheduler OwnerScheduler { get; private set; }
-		internal bool IsActive { get; private set; }
+		// Volatile: the window-event intake reads liveness without taking the manager gate.
+		private volatile bool isActive;
+
+		internal bool IsActive => isActive;
 
 		/// <summary>
 		/// The thread priority this registration launches its callback at (default 0). Timers set it from SetTimer's
@@ -29,7 +32,7 @@ namespace Keysharp.Internals.Scripting
 
 			UpdatePersistence(false);
 			OwnerScheduler = ownerScheduler;
-			IsActive = active;
+			isActive = active;
 			UpdatePersistence(active && ownerScheduler != null);
 		}
 
@@ -37,7 +40,7 @@ namespace Keysharp.Internals.Scripting
 		{
 			UpdatePersistence(false);
 			OwnerScheduler = null;
-			IsActive = false;
+			isActive = false;
 		}
 
 		private void UpdatePersistence(bool shouldHold)

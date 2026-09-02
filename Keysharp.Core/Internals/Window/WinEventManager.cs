@@ -35,6 +35,11 @@ namespace Keysharp.Internals.Window
 		/// <summary>True for any subscription that maintains a matching-window set (Exist/NotExist).</summary>
 		internal bool TracksMembership => matchingWindows != null;
 
+		/// <summary>Window events have a manager-wide pause switch (<c>WinEvent.Paused</c>) on top of each hook's own.</summary>
+		internal override bool Suppressed => paused || manager.GlobalPaused;
+
+		internal override void Unregister() => manager.Unregister(this);
+
 		internal WinEventRegistration(WindowEventType type, SearchCriteria criteria, KeysharpFunc callback, long count,
 			ScriptEventScheduler ownerScheduler, WinEventManager manager)
 			: base(callback, count, ownerScheduler)
@@ -64,29 +69,45 @@ namespace Keysharp.Internals.Window
 				TitleMatchModeSpeed = config.titleMatchModeSpeed
 			};
 		}
-
 	}
 
 	/// <summary>
-	/// The per-<see cref="Script"/> engine behind <c>Ks.WinEvent</c>. It owns the platform
-	/// <see cref="IWindowEventBackend"/> directly, installs/uninstalls native hooks for exactly the categories its
-	/// subscriptions need, and for each incoming <see cref="WindowEventRaw"/> performs window-criteria matching,
-	/// the remaining-fire count, and marshalling of the script callback onto its owning scheduler (the same path
-	/// <c>OnMessage</c> uses, so script code always runs on its own pseudo-thread). Move events are delivered
-	/// as-is (no coalescing).
+	/// The per-<see cref="Script"/> engine behind <c>Ks.WinEvent</c>. <see cref="EventManagerBase{TRegistration, TBackend, TPayload}"/>
+	/// owns the subscriptions, the backend lifecycle and the dispatch tail; what is left here is the part that is
+	/// actually about windows — installing native hooks for exactly the categories the subscriptions need, and
+	/// turning each incoming <see cref="WindowEventRaw"/> into criteria matching, membership transitions and
+	/// per-subscription dedup. Move events are delivered as-is (no coalescing).
 	/// </summary>
-	internal sealed class WinEventManager : IDisposable
+	internal sealed class WinEventManager(Script script)
+		: EventManagerBase<WinEventRegistration, IWindowEventBackend, WinEventManager.Payload>(script)
 	{
-		private readonly Script script;
-		private readonly Lock gate = new();
-		private readonly Dictionary<WindowEventType, List<WinEventRegistration>> buckets = new();
-		private IWindowEventBackend backend;
-		private bool backendInitFailed;
+		private static readonly int typeCount = Enum.GetValues<WindowEventType>().Length;
+
+		/// <summary>
+		/// What one window event carries to the callback's thread state.
+		/// <para>
+		/// Callback-time contract (locked, cross-platform): <c>TimeMs</c> — the callback's 3rd argument, and
+		/// <c>A_EventInfo</c> for every event that does not carry a rectangle — is a 64-bit monotonic
+		/// milliseconds-since-boot timestamp on the <c>Environment.TickCount64</c> timebase, reporting when the
+		/// event occurred wherever possible. Windows reconstructs it from the native event time
+		/// (<c>WindowEventBackend.ToMonotonicMs</c>); macOS stamps it at delivery. On X11 it is the X server time
+		/// converted to that base for events that carry one (PropertyNotify → Active/TitleChange/Minimize/Restore/
+		/// Create/Close), else the receipt time (ConfigureNotify/Map/Unmap → Move/Show/Minimize). It never wraps
+		/// (unlike Windows' raw 32-bit dwmsEventTime) and is comparable across backends, but is NOT wall-clock
+		/// time — only meaningful relative to itself.
+		/// </para>
+		/// </summary>
+		internal readonly record struct Payload(long TimeMs, nint Hwnd, Rectangle? Bounds);
+
+		// The intake's read-only view of the subscriptions, indexed by (int)WindowEventType and republished as a
+		// whole on every registration change. Native events arrive at Move/CaretMove rates, so reading them must
+		// neither take `gate` nor allocate; every array here is immutable once published, so an intake that reads
+		// the field once sees one consistent generation.
+		private volatile WinEventRegistration[][] byType = Empty();
 		private WindowEventMask installedMask = WindowEventMask.None;
 		private volatile bool globalPaused;
-		private bool disposed;
 
-		internal WinEventManager(Script script) => this.script = script;
+		protected override ThreadKind CallbackThreadKind => ThreadKind.WinEvent;
 
 		// ---- global pause ------------------------------------------------------------------
 
@@ -100,100 +121,42 @@ namespace Keysharp.Internals.Window
 			return globalPaused;
 		}
 
-		// ---- registration ------------------------------------------------------------------
+		// ---- source hooks --------------------------------------------------------------------
 
-		internal void Register(WinEventRegistration reg)
+		protected override IWindowEventBackend CreateBackend()
 		{
-			lock (gate)
-			{
-				if (disposed)
-					return;
+			var created = Platform.WindowEvents.CreateBackend(script);
 
-				if (!buckets.TryGetValue(reg.type, out var list))
-					buckets[reg.type] = list = new List<WinEventRegistration>();
+			if (created != null)
+				created.Sink = OnNativeEvent;
 
-				list.Add(reg);
-
-				// Seed the matching-window set so a Close fires for windows that existed before the subscription,
-				// and so Exist/NotExist only fire on genuine transitions (not for windows already matching at
-				// registration). Mirrors the AHK WinEvent library seeding its MatchingWinList up front.
-				if (reg.TracksMembership)
-					SeedMatches(reg);
-
-				SyncBackendMask();
-			}
+			return created;
 		}
-
-		internal void Unregister(WinEventRegistration reg)
-		{
-			lock (gate)
-			{
-				RemoveLocked(reg);
-				SyncBackendMask();
-			}
-		}
-
-		private void RemoveLocked(WinEventRegistration reg)
-		{
-			reg.active = false;
-			reg.registration.Clear();
-
-			if (buckets.TryGetValue(reg.type, out var list))
-			{
-				_ = list.Remove(reg);
-
-				if (list.Count == 0)
-					_ = buckets.Remove(reg.type);
-			}
-		}
-
-		/// <summary>Removes every subscription owned by <paramref name="scheduler"/> (deterministic teardown
-		/// when a worker thread/scheduler is disposed — does not rely on GC/__Delete).</summary>
-		internal bool RemoveOwned(ScriptEventScheduler scheduler)
-		{
-			if (scheduler == null)
-				return false;
-
-			var removedAny = false;
-
-			lock (gate)
-			{
-				foreach (var reg in buckets.Values.SelectMany(l => l).Where(r => ReferenceEquals(r.ownerScheduler, scheduler)).ToArray())
-				{
-					RemoveLocked(reg);
-					removedAny = true;
-				}
-
-				if (removedAny)
-					SyncBackendMask();
-			}
-
-			return removedAny;
-		}
-
-		// ---- native hook management ---------------------------------------------------------
 
 		/// <summary>Recomputes which event categories are needed and installs/uninstalls native hooks on the
-		/// backend to match. Must be called under <see cref="gate"/>.</summary>
-		private void SyncBackendMask()
+		/// backend to match.</summary>
+		protected override void SyncNativeLocked()
 		{
 			var desired = WindowEventMask.None;
+			var tracksMembership = false;
+			var hasActive = false;
 
-			foreach (var type in buckets.Keys)
-				desired |= type.ToMask();
+			foreach (var reg in registrations)
+			{
+				desired |= reg.type.ToMask();
+				tracksMembership |= reg.TracksMembership;
+				hasActive |= reg.type == WindowEventType.Active;
+			}
 
 			// Exist/NotExist are membership transitions derived from the lifecycle events, so they need every event
 			// that can move a window into or out of the matching set: appear (Create/Show/Restore), disappear
 			// (Close/Minimize) and re-match (TitleChange).
-			if ((buckets.TryGetValue(WindowEventType.Exist, out var existList) && existList.Count > 0)
-				|| (buckets.TryGetValue(WindowEventType.NotExist, out var notExistList) && notExistList.Count > 0))
-			{
+			if (tracksMembership)
 				desired |= WindowEventMask.Create | WindowEventMask.Show | WindowEventMask.Restore
 						   | WindowEventMask.Close | WindowEventMask.Minimize | WindowEventMask.TitleChange;
-			}
 
 			// Active also fires on the active window's title change, so observe TitleChange when any Active sub exists.
-			if (buckets.TryGetValue(WindowEventType.Active, out var activeList) && activeList.Count > 0)
+			if (hasActive)
 				desired |= WindowEventMask.TitleChange;
 
 			if (desired == installedMask)
@@ -217,36 +180,80 @@ namespace Keysharp.Internals.Window
 			}
 			else
 			{
-				backend?.Stop(installedMask);
+				Backend?.Stop(installedMask);
 			}
 
 			installedMask = desired;
 		}
 
-		private IWindowEventBackend EnsureBackend()
+		/// <summary>Seeds the matching-window set so a Close fires for windows that existed before the subscription,
+		/// and so Exist/NotExist only fire on genuine transitions (not for windows already matching at
+		/// registration). Mirrors the AHK WinEvent library seeding its MatchingWinList up front.</summary>
+		protected override void PrepareRegistration(WinEventRegistration reg, bool isFirst)
 		{
-			if (backend != null || backendInitFailed)
-				return backend;
+			if (!reg.TracksMembership)
+				return;
 
 			try
 			{
-				backend = Platform.WindowEvents.CreateBackend(script);
-
-				if (backend != null)
-					backend.Sink = OnNativeEvent;
-				else
-					backendInitFailed = true;
+				// EnumerateWindows already yields top-level windows respecting the captured DetectHiddenWindows.
+				foreach (var win in WindowQuery.EnumerateWindows(reg.detectHidden))
+					if (win.IsSpecified && SubscriptionMatches(reg, win))
+						lock (reg.matchGate)
+							_ = reg.matchingWindows.Add(win.Handle);
 			}
 			catch (Exception ex)
 			{
-				backendInitFailed = true;
-				Diagnostics.Debug.WriteLine($"Window event backend creation failed: {ex.Message}");
+				Diagnostics.Debug.WriteLine($"WinEvent match seed failed: {ex.Message}");
 			}
-
-			return backend;
 		}
 
-		// ---- native event intake (arbitrary thread, from the hub) ---------------------------
+		protected override void OnRegistrationsChangedLocked()
+		{
+			var grouped = new List<WinEventRegistration>[typeCount];
+
+			foreach (var reg in registrations)
+				(grouped[(int)reg.type] ??= []).Add(reg);
+
+			var next = new WinEventRegistration[typeCount][];
+
+			for (var i = 0; i < typeCount; i++)
+				next[i] = grouped[i] is { } list ? [.. list] : [];
+
+			byType = next;
+		}
+
+		/// <summary>
+		/// Move (window geometry) and CaretMove (caret rectangle) expose their rectangle via A_EventInfo, built only
+		/// if the callback reads it; every other event keeps the event time there. The geometry itself was captured
+		/// at event time by the intake, so this only allocates.
+		/// </summary>
+		protected override void ApplyThreadState(ThreadVariables tv, WinEventRegistration reg, in Payload payload)
+		{
+			if (reg.type is WindowEventType.Move or WindowEventType.CaretMove)
+			{
+				var bounds = payload.Bounds;
+				tv.SetEventInfo(() => BuildRectEventInfo(bounds));
+			}
+			else
+			{
+				tv.eventInfo = payload.TimeMs;
+			}
+
+			tv.hwndLastUsed = payload.Hwnd.ToInt64();
+		}
+
+		private static WinEventRegistration[][] Empty()
+		{
+			var empty = new WinEventRegistration[typeCount][];
+
+			for (var i = 0; i < empty.Length; i++)
+				empty[i] = [];
+
+			return empty;
+		}
+
+		// ---- native event intake (arbitrary thread, from the backend) -----------------------
 
 		private void OnNativeEvent(WindowEventRaw raw)
 		{
@@ -267,15 +274,10 @@ namespace Keysharp.Internals.Window
 			if (raw.Type == WindowEventType.TitleChange)
 				DispatchActiveOnTitleChange(raw.Hwnd, raw.TimeMs);
 
-			WinEventRegistration[] snapshot;
+			var snapshot = byType[(int)raw.Type];
 
-			lock (gate)
-			{
-				if (!buckets.TryGetValue(raw.Type, out var list) || list.Count == 0)
-					return;
-
-				snapshot = list.ToArray();
-			}
+			if (snapshot.Length == 0)
+				return;
 
 			if (raw.Type == WindowEventType.Active)
 			{
@@ -284,7 +286,7 @@ namespace Keysharp.Internals.Window
 				// active window (handled in DispatchActiveOnTitleChange) does not duplicate.
 				foreach (var reg in snapshot)
 				{
-					if (!reg.active)
+					if (!reg.IsActive)
 						continue;
 
 					var matched = Matches(reg, raw.Hwnd);
@@ -301,8 +303,7 @@ namespace Keysharp.Internals.Window
 			// window may have drifted during a drag/backlog), but only once a registration actually matches: a full
 			// WindowQuery per unrelated window drag on the pump thread is wasteful, so defer the query to the first
 			// matching reg and memoize it for the rest. Nothing is queried when nothing matches. The Wayland backends
-			// carry the bounds on the event (raw.Bounds); X11/Windows do the cheap local query here. Only the
-			// script-object construction is deferred further (BuildRectEventInfo via SetEventInfo).
+			// carry the bounds on the event (raw.Bounds); X11/Windows do the cheap local query here.
 			var isMove = raw.Type == WindowEventType.Move;
 			var isCaret = raw.Type == WindowEventType.CaretMove;
 
@@ -316,7 +317,7 @@ namespace Keysharp.Internals.Window
 
 			foreach (var reg in snapshot)
 			{
-				if (!reg.active || !Matches(reg, raw.Hwnd))
+				if (!reg.IsActive || !Matches(reg, raw.Hwnd))
 					continue;
 
 				if (isCaret)
@@ -349,23 +350,13 @@ namespace Keysharp.Internals.Window
 			if (hwnd == 0 || hwnd != WindowQuery.GetForegroundWindowHandle())
 				return;
 
-			WinEventRegistration[] activeSubs;
-
-			lock (gate)
-			{
-				if (!buckets.TryGetValue(WindowEventType.Active, out var list) || list.Count == 0)
-					return;
-
-				activeSubs = list.ToArray();
-			}
-
-			foreach (var reg in activeSubs)
+			foreach (var reg in byType[(int)WindowEventType.Active])
 			{
 				// Only criteria subscriptions need the title-change re-fire — it exists to catch a window that
 				// became active before its title (hence its match) was set. A match-any Active subscription
 				// already fired on the activation itself, so re-firing on its title changes is pure duplication.
 				// activeReported then dedupes the case where the activation already matched and fired.
-				if (reg.active && reg.criteria != null && reg.activeReported != hwnd && Matches(reg, hwnd))
+				if (reg.IsActive && reg.criteria != null && reg.activeReported != hwnd && Matches(reg, hwnd))
 				{
 					reg.activeReported = hwnd;
 					FireOnce(reg, hwnd, timeMs);
@@ -427,61 +418,34 @@ namespace Keysharp.Internals.Window
 			if (hwnd == 0)
 				return;
 
-			WinEventRegistration[] subs;
+			// One read of the published view, so both membership kinds are evaluated against the same generation.
+			var view = byType;
 
-			lock (gate)
-			{
-				var hasExist = buckets.TryGetValue(WindowEventType.Exist, out var existList) && existList.Count > 0;
-				var hasNotExist = buckets.TryGetValue(WindowEventType.NotExist, out var notExistList) && notExistList.Count > 0;
+			foreach (var reg in view[(int)WindowEventType.Exist])
+				UpdateMembershipFor(reg, hwnd, timeMs, windowGone);
 
-				if (!hasExist && !hasNotExist)
-					return;
-
-				subs = (hasExist ? existList : Enumerable.Empty<WinEventRegistration>())
-					   .Concat(hasNotExist ? notExistList : Enumerable.Empty<WinEventRegistration>())
-					   .ToArray();
-			}
-
-			foreach (var reg in subs)
-			{
-				if (!reg.active)
-					continue;
-
-				var matches = !windowGone && CurrentlyMatches(reg, hwnd);
-
-				// Test-and-set the membership atomically: HashSet.Add/Remove return whether the set actually changed,
-				// so the fire decision is driven by the real transition under a single lock. (Snapshotting Contains
-				// and then mutating under a second lock would let two threads both observe the same pre-state and
-				// double-fire one transition — the matching set exists precisely to make each transition fire once.)
-				bool changed;
-
-				lock (reg.matchGate)
-					changed = matches ? reg.matchingWindows.Add(hwnd) : reg.matchingWindows.Remove(hwnd);
-
-				if (changed && ((matches && reg.IsExist) || (!matches && reg.IsNotExist)))
-					FireOnce(reg, hwnd, timeMs);
-			}
+			foreach (var reg in view[(int)WindowEventType.NotExist])
+				UpdateMembershipFor(reg, hwnd, timeMs, windowGone);
 		}
 
-		/// <summary>Seeds a membership subscription (Exist/NotExist) with the windows that already satisfy it, so
-		/// Exist/NotExist only fire on genuine later transitions (not for windows already present at registration).
-		/// Called under <see cref="gate"/>.</summary>
-		private static void SeedMatches(WinEventRegistration reg)
+		private void UpdateMembershipFor(WinEventRegistration reg, nint hwnd, long timeMs, bool windowGone)
 		{
-			try
-			{
-				// EnumerateWindows already yields top-level windows respecting the captured DetectHiddenWindows.
-				foreach (var win in WindowQuery.EnumerateWindows(reg.detectHidden))
-				{
-					if (win.IsSpecified && SubscriptionMatches(reg, win))
-						lock (reg.matchGate)
-							_ = reg.matchingWindows.Add(win.Handle);
-				}
-			}
-			catch (Exception ex)
-			{
-				Diagnostics.Debug.WriteLine($"WinEvent match seed failed: {ex.Message}");
-			}
+			if (!reg.IsActive)
+				return;
+
+			var matches = !windowGone && CurrentlyMatches(reg, hwnd);
+
+			// Test-and-set the membership atomically: HashSet.Add/Remove return whether the set actually changed,
+			// so the fire decision is driven by the real transition under a single lock. (Snapshotting Contains
+			// and then mutating under a second lock would let two threads both observe the same pre-state and
+			// double-fire one transition — the matching set exists precisely to make each transition fire once.)
+			bool changed;
+
+			lock (reg.matchGate)
+				changed = matches ? reg.matchingWindows.Add(hwnd) : reg.matchingWindows.Remove(hwnd);
+
+			if (changed && ((matches && reg.IsExist) || (!matches && reg.IsNotExist)))
+				FireOnce(reg, hwnd, timeMs);
 		}
 
 		/// <summary>Whether <paramref name="win"/> (a live top-level window) satisfies membership subscription
@@ -498,32 +462,19 @@ namespace Keysharp.Internals.Window
 		{
 			// A paused hook (or globally paused manager) stays registered and keeps its matching-window set
 			// current, but doesn't fire or consume its remaining-count budget.
-			if (globalPaused || reg.paused)
+			if (reg.Suppressed || !reg.TryConsumeFire())
 				return;
 
-			if (!reg.TryConsumeFire())
+			var scheduler = DispatchTarget(reg);
+
+			if (scheduler == null)
 				return;
 
-			var scheduler = reg.ownerScheduler;
-
-			if (scheduler == null || scheduler.IsDisposed)
-				return;
-
-			// Every event uses the same callback shape: (hook, hwnd, time). Event-specific extras live in A_EventInfo
-			// instead — for Move, an object with { x, y, w, h } (the window's position/size, matching WinGetPos), and
-			// for CaretMove the same shape holding the caret's screen rectangle. The geometry was captured at event
-			// time by the caller (eventBounds); only building the script object is deferred (see
-			// RunOnSchedulerThread), so no allocation happens unless A_EventInfo is read.
-			//
-			// Callback-time contract (locked, cross-platform): the 3rd arg is a 64-bit monotonic milliseconds-since-boot
-			// timestamp on the Environment.TickCount64 timebase, reporting when the event occurred wherever possible.
-			// Windows reconstructs it from the native event time (WindowEventBackend.ToMonotonicMs); macOS stamps it at
-			// delivery. On X11 it is the X server time converted to that base for events that carry one (PropertyNotify
-			// → Active/TitleChange/Minimize/Restore/Create/Close), else the receipt time (ConfigureNotify/Map/Unmap →
-			// Move/Show/Minimize). It never wraps (unlike Windows' raw 32-bit dwmsEventTime) and is comparable across
-			// backends, but is NOT wall-clock time — only meaningful relative to itself.
+			// Every event uses the same callback shape: (hook, hwnd, time). Event-specific extras live in
+			// A_EventInfo instead — see Payload for what the timestamp means, and ApplyThreadState for the rest.
 			object[] args = [reg.scriptObject, hwnd.ToInt64(), timeMs];
-			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunOnSchedulerThread(scheduler, reg, hwnd, timeMs, args, eventBounds));
+			var payload = new Payload(timeMs, hwnd, eventBounds);
+			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, args, payload));
 
 			if (reg.IsExhausted)
 				Unregister(reg);
@@ -548,85 +499,11 @@ namespace Keysharp.Internals.Window
 
 		/// <summary>Builds the A_EventInfo object for a Move (the window's rectangle, in WinGetPos coordinates) or
 		/// CaretMove (the caret's screen rectangle) event — <c>{ x, y, w, h }</c> — from the already-captured
-		/// event-time bounds. Invoked lazily (only if the callback reads A_EventInfo); whatever produced
-		/// <paramref name="bounds"/> happened eagerly at event time, so this just allocates.</summary>
+		/// event-time bounds.</summary>
 		private static object BuildRectEventInfo(Rectangle? bounds)
 		{
 			var r = bounds ?? Rectangle.Empty;
 			return Keysharp.Builtins.Objects.RectObject(r.X, r.Y, r.Width, r.Height);
-		}
-
-		private ScriptEventExecutionResult RunOnSchedulerThread(ScriptEventScheduler scheduler, WinEventRegistration reg, nint hwnd, long timeMs, object[] args, Rectangle? eventBounds)
-		{
-			// No reg.active re-check here: TryConsumeFire (at enqueue time) is the authoritative gate. Re-checking
-			// would drop callbacks that were already consumed/queued when the subscription auto-stops on its last
-			// allowed fire (Count reaching 0 deactivates the registration before the queued callback runs).
-			using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, ThreadKind.WinEvent);
-
-			if (!thread.Started)
-				return thread.Result;
-
-			try
-			{
-				var tv = thread.ThreadVariables;
-
-				// Move (window geometry) and CaretMove (caret rectangle) expose their rectangle via A_EventInfo
-				// (lazily); all other events keep the event time there, as before.
-				if (reg.type is WindowEventType.Move or WindowEventType.CaretMove)
-					tv.SetEventInfo(() => BuildRectEventInfo(eventBounds));
-				else
-					tv.eventInfo = timeMs;
-
-				tv.hwndLastUsed = hwnd.ToInt64();
-				_ = reg.callback.Call(args);
-			}
-			catch (Exception ex)
-			{
-				_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
-			}
-			finally
-			{
-				script.ExitIfNotPersistent();
-			}
-
-			return ScriptEventExecutionResult.Executed;
-		}
-
-		// ---- teardown -----------------------------------------------------------------------
-
-		public void Dispose()
-		{
-			List<WinEventRegistration> all;
-
-			IWindowEventBackend toDispose;
-
-			lock (gate)
-			{
-				if (disposed)
-					return;
-
-				disposed = true;
-				all = buckets.Values.SelectMany(l => l).ToList();
-				buckets.Clear();
-				toDispose = backend;
-				backend = null;
-				installedMask = WindowEventMask.None;
-			}
-
-			foreach (var reg in all)
-			{
-				reg.active = false;
-				reg.registration.Clear();
-			}
-
-			try
-			{
-				toDispose?.Dispose();
-			}
-			catch (Exception ex)
-			{
-				Diagnostics.Debug.WriteLine($"Window event backend dispose failed: {ex.Message}");
-			}
 		}
 	}
 }

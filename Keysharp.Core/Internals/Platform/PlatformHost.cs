@@ -6,17 +6,14 @@ namespace Keysharp.Internals
 	/// </summary>
 	internal abstract class PlatformHost : IDisposable
 	{
-		// Grouped by subject, and every service is named for the subject it serves — so the two event sources read
-		// as the pair they are (WindowEvents / MonitorEvents) rather than one of them owning the generic name.
+		// Grouped by subject, and every service is named for the subject it serves.
 		// Windows
 		internal abstract IWindow Window { get; }
-		internal abstract IWindowEvents WindowEvents { get; }
 		internal abstract ControlManagerBase Control { get; }
 
 		// Displays
 		internal abstract IScreen Screen { get; }
 		internal abstract IMonitorControl MonitorControl { get; }
-		internal abstract IMonitorEvents MonitorEvents { get; }
 		internal abstract IOverlay Overlay { get; }
 
 		// Input
@@ -64,11 +61,9 @@ namespace Keysharp.Internals
 	internal sealed class WindowsPlatformHost : PlatformHost
 	{
 		private readonly IWindow window = new WindowsWindow();
-		private readonly IWindowEvents windowEvents = new WindowsEvents();
 		private readonly ControlManagerBase control = new Os.Windows.ControlManager();
 		private readonly IScreen screen = new WindowsScreen();
 		private readonly IMonitorControl monitorControl = new WindowsMonitorControl();
-		private readonly IMonitorEvents monitorEvents = new WindowsMonitorEvents();
 		private readonly IOverlay overlay = new WindowsOverlay();
 		private readonly IMouse mouse = new WindowsMouse();
 		private readonly IKeyboard keyboard = new WindowsKeyboard();
@@ -78,11 +73,9 @@ namespace Keysharp.Internals
 		private readonly IPermissionManager permissions = new DefaultPermissionManager();
 
 		internal override IWindow Window => window;
-		internal override IWindowEvents WindowEvents => windowEvents;
 		internal override ControlManagerBase Control => control;
 		internal override IScreen Screen => screen;
 		internal override IMonitorControl MonitorControl => monitorControl;
-		internal override IMonitorEvents MonitorEvents => monitorEvents;
 		internal override IOverlay Overlay => overlay;
 		internal override IMouse Mouse => mouse;
 		internal override IKeyboard Keyboard => keyboard;
@@ -96,7 +89,6 @@ namespace Keysharp.Internals
 	internal sealed class LinuxPlatformHost : PlatformHost
 	{
 		private readonly IWindow window = LinuxWindows.Resolve();
-		private readonly IWindowEvents windowEvents = new LinuxEvents();
 		private readonly ControlManagerBase control = new Os.Unix.ControlManager();
 		// Lazy: choosing the per-compositor IScreen needs the resolved Wayland backend, which must not be probed
 		// at host construction. The compositor flavor is inspected once, on first Screen use.
@@ -104,7 +96,6 @@ namespace Keysharp.Internals
 		// Not lazy and not per-compositor: DDC/CI over i2c and logind's backlight interface are kernel/session
 		// facilities, identical under X11 and every Wayland compositor.
 		private readonly IMonitorControl monitorControl = new LinuxMonitorControl();
-		private readonly IMonitorEvents monitorEvents = new LinuxMonitorEvents();
 		private readonly IOverlay overlay = new LinuxOverlay();
 		private readonly IMouse mouse = LinuxMice.Resolve();
 		private readonly IKeyboard keyboard = LinuxKeyboards.Resolve();
@@ -117,11 +108,9 @@ namespace Keysharp.Internals
 		private readonly Lazy<IClipboard> clipboard = new (LinuxClipboards.Resolve);
 
 		internal override IWindow Window => window;
-		internal override IWindowEvents WindowEvents => windowEvents;
 		internal override ControlManagerBase Control => control;
 		internal override IScreen Screen => screen.Value;
 		internal override IMonitorControl MonitorControl => monitorControl;
-		internal override IMonitorEvents MonitorEvents => monitorEvents;
 		internal override IOverlay Overlay => overlay;
 		internal override IMouse Mouse => mouse;
 		internal override IKeyboard Keyboard => keyboard;
@@ -143,11 +132,9 @@ namespace Keysharp.Internals
 	internal sealed class MacPlatformHost : PlatformHost
 	{
 		private readonly IWindow window = new MacWindow();
-		private readonly IWindowEvents windowEvents = new MacEvents();
 		private readonly ControlManagerBase control = new Os.Unix.ControlManager();
 		private readonly IScreen screen = new MacScreen();
 		private readonly IMonitorControl monitorControl = new MacMonitorControl();
-		private readonly IMonitorEvents monitorEvents = new MacMonitorEvents();
 		private readonly IOverlay overlay = new MacOverlay();
 		private readonly IMouse mouse = new MacMouse();
 		private readonly IKeyboard keyboard = new MacKeyboard();
@@ -159,11 +146,9 @@ namespace Keysharp.Internals
 		private readonly IClipboard clipboard = new EtoClipboard();
 
 		internal override IWindow Window => window;
-		internal override IWindowEvents WindowEvents => windowEvents;
 		internal override ControlManagerBase Control => control;
 		internal override IScreen Screen => screen;
 		internal override IMonitorControl MonitorControl => monitorControl;
-		internal override IMonitorEvents MonitorEvents => monitorEvents;
 		internal override IOverlay Overlay => overlay;
 		internal override IMouse Mouse => mouse;
 		internal override IKeyboard Keyboard => keyboard;

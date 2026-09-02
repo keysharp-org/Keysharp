@@ -275,8 +275,19 @@ namespace Keysharp.Builtins
 				if (callback is not KeysharpFunc fo)
 					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc), DefaultObject);
 
+				var remaining = count.Al(-1L);
+
+				if (!EventSubscriptionBase.IsValidCount(remaining))
+					return Errors.ValueErrorOccurred(EventSubscriptionBase.CountErrorMessage, remaining);
+
 				ClipboardPermission.EnsureMonitoring("Clipboard.OnChange");
-				return new ClipboardHook(fo, count.Al(-1L));
+				var script = Script.TheScript;
+				var manager = script.ClipboardEventManager;
+				var reg = new ClipboardEventRegistration(fo, remaining, script.EventScheduler, manager);
+				var hook = new ClipboardHook { sub = reg };
+				reg.scriptObject = hook;
+				manager.Register(reg);
+				return hook;
 			}
 
 			#endregion
@@ -353,125 +364,24 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// One <c>Clipboard.OnChange</c> subscription. Carries the same surface as a <c>Ks.WinEvent</c> hook —
-		/// <c>Stop</c>, <c>Pause</c>, <c>Paused</c>, <c>IsActive</c>, <c>Count</c> — so every event subscription in
-		/// Keysharp is managed the same way. It registers into the SAME handler list as <c>OnClipboardChange</c>, so
-		/// there is one native clipboard monitor no matter which spelling a script uses.
+		/// One <c>Clipboard.OnChange</c> subscription — the object that factory returns and the first argument every
+		/// change callback receives. Its whole surface (<c>Status</c>, <c>IsActive</c>, <c>Count</c>, <c>Paused</c>,
+		/// <c>Pause</c>, <c>Stop</c>) comes from <see cref="EventHook"/>, so it is managed exactly like a
+		/// <c>Ks.WinEvent</c> or <c>Ks.MonitorHook</c>.
+		/// <para>
+		/// A hook is NOT part of the AHK <c>OnClipboardChange</c> handler chain: its return value is discarded, so it
+		/// cannot suppress handlers registered there, and its callback runs on its own pseudo-thread rather than
+		/// inline. Both spellings drive the same single native clipboard monitor.
+		/// </para>
 		/// </summary>
-		public sealed class ClipboardHook : KeysharpObject
+		public sealed class ClipboardHook : EventHook
 		{
-			private readonly KeysharpFunc callback;
-			private readonly KeysharpFunc bridge;
-			private long remaining;
-			private bool active;
-			private bool paused;
-
 			public ClipboardHook(params object[] args) : base(args) { }
 
-			internal ClipboardHook(KeysharpFunc callback, long count) : base()
-			{
-				this.callback = callback;
-				if (count == 0 || count < -1) 
-				{
-					Errors.ValueErrorOccurred("Count must be -1 (unlimited) or a positive number.", 0);
-					return;
-				}
-				remaining = count;
-				bridge = new KeysharpFunc((Func<object, object>)Dispatch);
-				var script = Script.TheScript;
-
-				if (script.ClipFunctions.ModifyEventHandlers(bridge, 1L))
-				{
-					active = true;
-					script.UpdateClipboardMonitoring();
-				}
-			}
-
-			/// <summary>
-			/// The function actually registered with the clipboard-change list. It exists to turn the AHK-shaped
-			/// <c>(type)</c> callback into this family's <c>(hook, type)</c> one, and to apply Paused/Count without
-			/// the registry needing to know about either. Hidden from scripts: they hold the hook, not this.
-			/// </summary>
-			[PublicHiddenFromUser]
-			public object Dispatch(object dataType)
-			{
-				if (!active || paused)
-					return DefaultObject;
-
-				// Unregister BEFORE the final call, not after: a handler that writes the clipboard re-enters here,
-				// and a hook whose last fire is still in progress must not be admitted again by its own write.
-				if (remaining > 0 && --remaining == 0)
-					_ = Unregister();
-
-				return callback.Call(this, dataType);
-			}
+			internal ClipboardHook() : base() { }
 
 			/// <summary>The script function this hook calls.</summary>
-			public object Callback => callback;
-
-			/// <summary>
-			/// This hook's effective state: <c>"Active"</c> (registered and firing), <c>"Paused"</c> (registered
-			/// but suppressed) or <c>"Stopped"</c> (unregistered, which is permanent).
-			/// </summary>
-			public string Status => !active ? "Stopped" : paused ? "Paused" : "Active";
-
-			/// <summary>True only while this hook is firing; <see cref="Status"/> separates paused from stopped.</summary>
-			public bool IsActive => active && !paused;
-
-			/// <summary>Remaining number of times the callback will fire (-1 = unlimited).</summary>
-			public long Count => active ? remaining : 0L;
-
-			/// <summary>Gets or sets this hook's pause switch. A stopped hook reports false and ignores writes.</summary>
-			// Unregister clears `active` and leaves `paused` intact, so these gate on liveness.
-			public object Paused
-			{
-				get => active && paused;
-				set { if (active) paused = value.Ab(); }
-			}
-
-			/// <summary>Pauses (1), unpauses (0) or toggles (-1) this hook. Returns the resulting paused state.</summary>
-			public object Pause(object newState = null)
-			{
-				if (!active)
-					return false;
-
-				var ns = newState.Al(1L);
-				paused = ns == -1 ? !paused : ns != 0;
-				return paused;
-			}
-
-			/// <summary>Cancels the subscription so the callback no longer fires.</summary>
-			public object Stop()
-			{
-				_ = Unregister();
-				return DefaultObject;
-			}
-
-			/// <summary>Auto-stops when the script drops the hook. GC timing is unpredictable, so a script that cares
-			/// when the callback stops should call <c>Stop()</c> — same contract as a <c>Ks.WinEvent</c> hook.</summary>
-			public override object __Delete()
-			{
-				_ = Unregister();
-				return base.__Delete();
-			}
-
-			private bool Unregister()
-			{
-				if (!active)
-					return false;
-
-				active = false;
-				var script = Script.TheScript;
-
-				if (script == null)
-					return false;
-
-				// matchCurrentSchedulerOnRemove: false — Stop() may be called from a different pseudo-thread than the
-				// one that created the hook, and the registration belongs to the hook, not to whoever ends it.
-				var removed = script.ClipFunctions.ModifyEventHandlers(bridge, 0L, null, false);
-				script.UpdateClipboardMonitoring();
-				return removed;
-			}
+			public object Callback => sub?.Callback ?? (object)DefaultObject;
 		}
 	}
 }
