@@ -125,13 +125,13 @@ namespace Keysharp.Builtins
 
 				if (args.Length == 1)
 				{
-					Script.SetPropertyValue(args[0], "__Value", CurrentValue);
+					Refs.SetValue(args[0], CurrentValue);
 				}
 				else
 				{
 					var pair = GetCurrentPair();
-					Script.SetPropertyValue(args[0], "__Value", pair.Item1);
-					Script.SetPropertyValue(args[1], "__Value", pair.Item2);
+					Refs.SetValue(args[0], pair.Item1);
+					Refs.SetValue(args[1], pair.Item2);
 				}
 
 				return true;

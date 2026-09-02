@@ -141,10 +141,10 @@ namespace Keysharp.Builtins
 			var (display, monitorIndex) = ResolveDisplay(n);
 			var bounds = display.Bounds;
 
-			if (left != null) Script.SetPropertyValue(left, "__Value", (long)bounds.X);
-			if (top != null) Script.SetPropertyValue(top, "__Value", (long)bounds.Y);
-			if (right != null) Script.SetPropertyValue(right, "__Value", (long)bounds.Right);
-			if (bottom != null) Script.SetPropertyValue(bottom, "__Value", (long)bounds.Bottom);
+			if (left != null) Refs.SetValue(left, (long)bounds.X);
+			if (top != null) Refs.SetValue(top, (long)bounds.Y);
+			if (right != null) Refs.SetValue(right, (long)bounds.Right);
+			if (bottom != null) Refs.SetValue(bottom, (long)bounds.Bottom);
 			return monitorIndex;
 		}
 
@@ -172,10 +172,10 @@ namespace Keysharp.Builtins
 			var (display, monitorIndex) = ResolveDisplay(n);
 			var workArea = display.WorkArea;
 
-			if (left != null) Script.SetPropertyValue(left, "__Value", (long)workArea.X);
-			if (top != null) Script.SetPropertyValue(top, "__Value", (long)workArea.Y);
-			if (right != null) Script.SetPropertyValue(right, "__Value", (long)workArea.Right);
-			if (bottom != null) Script.SetPropertyValue(bottom, "__Value", (long)workArea.Bottom);
+			if (left != null) Refs.SetValue(left, (long)workArea.X);
+			if (top != null) Refs.SetValue(top, (long)workArea.Y);
+			if (right != null) Refs.SetValue(right, (long)workArea.Right);
+			if (bottom != null) Refs.SetValue(bottom, (long)workArea.Bottom);
 			return monitorIndex;
 		}
 	}

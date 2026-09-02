@@ -179,9 +179,8 @@ namespace Keysharp.Builtins
 		/// <returns>1 if the target is not null, else 0.</returns>
 		public static long IsSetRef(object @ref)
 		{
-			Any val = @ref as Any;
-			if (val == null) return (long)Errors.ErrorOccurred("IsSetRef requires a VarRef parameter.", DefaultErrorLong);
-			return GetPropertyValueOrNull(val, "__Value") is object ? 1L : 0L;
+			Refs.Demand(@ref, mustBeVarRef: true);
+			return Refs.GetValueOrNull(@ref) is object ? 1L : 0L;
 		}
 
 		/// <summary>

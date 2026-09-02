@@ -179,23 +179,17 @@ jobs:
         run: |
           bash -n \
             Keysharp.Install/package-linux.sh \
-            Keysharp.Install/package-linux-deb-bundle.sh \
             Keysharp.Install/linux/install.sh \
-            Keysharp.Install/linux/install-components.sh \
-            Keysharp.Install/linux/install-deb-bundle.sh \
             Keysharp.Install/linux/uninstall.sh \
             Keysharp.Install/linux/tests/application-channel-policy.sh \
-            Keysharp.Install/linux/tests/component-resource-policy.sh \
-            Keysharp.Install/linux/tests/deb-bundle-policy.sh
+            Keysharp.Install/linux/tests/setup-resolution-policy.sh
           sh -n Keysharp.Install/linux/debian/preinst
+          sh -n Keysharp.Install/linux/keysharp-linux-setup.sh
           bash Keysharp.Install/package-linux.sh --help >/dev/null
-          bash Keysharp.Install/package-linux-deb-bundle.sh --help >/dev/null
-          bash Keysharp.Install/linux/install-components.sh --help >/dev/null
-          bash Keysharp.Install/linux/install-deb-bundle.sh --help >/dev/null
           bash Keysharp.Install/linux/uninstall.sh --help >/dev/null
+          sh Keysharp.Install/linux/keysharp-linux-setup.sh --help >/dev/null
           bash Keysharp.Install/linux/tests/application-channel-policy.sh
-          bash Keysharp.Install/linux/tests/component-resource-policy.sh
-          bash Keysharp.Install/linux/tests/deb-bundle-policy.sh
+          bash Keysharp.Install/linux/tests/setup-resolution-policy.sh
 
       # The whole solution, never a list of projects. Naming projects individually is what let
       # Keysharp.Components, Keysharp.Tests, Keyview and the rest go uncompiled here: a hand-maintained list

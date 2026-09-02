@@ -49,9 +49,14 @@ Prebuilt packages are on the [Releases](https://github.com/keysharp-org/Keysharp
 
 ### Linux
 
-- **Install on Debian/Ubuntu:** download the single `keysharp-*-deb-bundle.tar.gz`, extract it, and run `sudo bash ./install.sh`. It contains Keysharp plus the independent [`keysharp-input`](https://github.com/keysharp-org/keysharp-input) and [`keysharp-desktop`](https://github.com/keysharp-org/keysharp-desktop) packages, so there are no separate downloads. On other distributions, use the regular Linux tarball. Compatible system components are reused instead of reinstalled.
+- **Install:** download `keysharp-linux-setup.sh` from the [Releases](https://github.com/keysharp-org/Keysharp/releases) page, check it against the release's `SHA256SUMS`, and run it:
+  ```sh
+  sudo sh ./keysharp-linux-setup.sh
+  ```
+  It installs Keysharp and, when they are missing, the independent [`keysharp-input`](https://github.com/keysharp-org/keysharp-input) and [`keysharp-desktop`](https://github.com/keysharp-org/keysharp-desktop) components its privileged Linux features need. Each is downloaded from its own release, verified, and installed by its own installer — Debian and Ubuntu get packages, everything else gets tarballs. A component already present at a compatible client ABI is left alone. Pass `--skip-input` or `--skip-desktop` to leave one out, or `--dry-run` to see the plan first.
+- **Install one project only:** each project's release also carries a tarball and a `.deb` that install just that project. Keysharp runs without either component; the features each one provides are unavailable until it is installed.
 - **Run:** `keysharp hello.ks`.
-- **Uninstall:** use `sudo apt remove keysharp` for the Debian bundle, or `sudo bash ./uninstall.sh` for the tar channel. Both remove only Keysharp. They never remove `keysharp-input`, `keysharp-desktop`, or shared permission grants; the package manager or each component's separate uninstaller owns that lifecycle.
+- **Uninstall:** `sudo apt remove keysharp`, or `sudo bash ./uninstall.sh` for the tar channel. Both remove only Keysharp. They never remove `keysharp-input`, `keysharp-desktop`, or shared permission grants; each component's own uninstaller owns that lifecycle.
 - **VS Code:** the extension needs an `.exe` name, so create a shim:
   ```sh
   mkdir -p ~/.local/bin && ln -sf "$(command -v keysharp)" ~/.local/bin/AutoHotkey.exe

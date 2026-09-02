@@ -303,17 +303,16 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           RID: ${{ matrix.rid }}
           CONFIG: Release
-          KEYSHARP_DOWNLOAD_COMPONENTS: true
         run: |
-          chmod +x Keysharp.Install/package-linux.sh Keysharp.Install/package-linux-deb-bundle.sh
+          chmod +x Keysharp.Install/package-linux.sh
           Keysharp.Install/package-linux.sh
-          Keysharp.Install/package-linux-deb-bundle.sh \
-            --keysharp-deb "dist/keysharp_${VERSION}_$(dpkg --print-architecture).deb" \
-            --download-components
           mkdir -p dist/release-assets
           mv "dist/keysharp-${RID}.tar.gz" "dist/release-assets/keysharp-${VERSION}-${RID}.tar.gz"
-          mv "dist/keysharp-${VERSION}-${RID}-deb-bundle.tar.gz" \
-            "dist/release-assets/keysharp-${VERSION}-${RID}-deb-bundle.tar.gz"
+          # The setup script resolves all three projects from their own releases, so it ships once,
+          # from the x64 job, rather than per architecture.
+          if [ "${RID}" = linux-x64 ]; then
+            install -m 0755 Keysharp.Install/linux/keysharp-linux-setup.sh dist/release-assets/keysharp-linux-setup.sh
+          fi
           # The .deb keeps Debian's name_version_arch convention (e.g. keysharp_0.0.0.15_amd64.deb); rename the
           # release asset to the RID form so it lines up with the tar.gz / .msi / .pkg assets. dpkg reads the arch
           # from the control file, not the filename, so "apt install ./<file>.deb" still works.
@@ -321,6 +320,7 @@ jobs:
             for deb in dist/keysharp_${VERSION}_*.deb; do
               mv "$deb" "dist/release-assets/keysharp-${VERSION}-${RID}.deb"
             done
+          fi
           fi
 
       - name: Import macOS signing certificate

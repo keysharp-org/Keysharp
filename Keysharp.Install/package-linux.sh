@@ -4,44 +4,25 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ASSETS_DIR="${ROOT}/Keysharp.Install/linux"
-COMPONENT_LOCK="${ASSETS_DIR}/component-versions.conf"
 CONFIG="${CONFIG:-Release}"
-COMPONENT_DIR="${KEYSHARP_COMPONENT_DIR:-}"
-DOWNLOAD_COMPONENTS="${KEYSHARP_DOWNLOAD_COMPONENTS:-false}"
-PACKAGE_COMPONENTS=true
+# The client ABI capabilities the Debian package recommends. Each component
+# provides its own capability; Keysharp only names them.
+INPUT_CLIENT_ABI_PACKAGE="keysharp-input-client-abi-0"
+DESKTOP_CLIENT_ABI_PACKAGE="keysharp-desktop-client-abi-0"
 
 usage() {
   cat <<'EOF'
 Usage: package-linux.sh [options]
 
 Options:
-  --dependency-dir DIR  Use exact standalone-component archives from DIR.
-  --download-components
-                        Download versions pinned in component-versions.conf.
-  --without-components  Build a development tarball without component installers.
   -h, --help            Show this help.
 
-KEYSHARP_COMPONENT_DIR and KEYSHARP_DOWNLOAD_COMPONENTS are equivalent
-environment settings. KEYSHARP_DIST_DIR selects an alternate output/work
-directory. Release builds should always include components.
+KEYSHARP_DIST_DIR selects an alternate output/work directory.
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dependency-dir)
-      [[ $# -ge 2 ]] || { echo "--dependency-dir requires a path" >&2; exit 2; }
-      COMPONENT_DIR="$2"
-      shift 2
-      ;;
-    --download-components)
-      DOWNLOAD_COMPONENTS=true
-      shift
-      ;;
-    --without-components)
-      PACKAGE_COMPONENTS=false
-      shift
-      ;;
     -h|--help)
       usage
       exit 0
@@ -53,30 +34,6 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-
-if [[ ! -f "${COMPONENT_LOCK}" ]]; then
-  echo "Standalone-component lock file is missing: ${COMPONENT_LOCK}" >&2
-  exit 1
-fi
-# shellcheck source=linux/component-versions.conf
-source "${COMPONENT_LOCK}"
-
-validate_component_lock() {
-  local package
-  [[ "${KEYSHARP_INPUT_DEBIAN_CLIENT_PACKAGE}" \
-      == "keysharp-input-client-abi-${KEYSHARP_INPUT_CLIENT_ABI}" ]] \
-    || { echo "The input Debian capability does not match the locked client ABI." >&2; return 1; }
-  [[ "${KEYSHARP_DESKTOP_DEBIAN_CLIENT_PACKAGE}" \
-      == "keysharp-desktop-client-abi-${KEYSHARP_DESKTOP_CLIENT_ABI}" ]] \
-    || { echo "The desktop Debian capability does not match the locked client ABI." >&2; return 1; }
-  for package in "${KEYSHARP_INPUT_DEBIAN_CLIENT_PACKAGE}" \
-      "${KEYSHARP_DESKTOP_DEBIAN_CLIENT_PACKAGE}"; do
-    [[ "${package}" =~ ^[a-z0-9][a-z0-9+.-]+$ ]] \
-      || { echo "Invalid Debian client ABI package name: ${package}" >&2; return 1; }
-  done
-}
-
-validate_component_lock
 
 detect_default_rid() {
   case "$(uname -m)" in
@@ -124,273 +81,6 @@ PATH_MAP="${ROOT}=/_/keysharp"
 if [[ -n "${ETO_DIR}" ]]; then
   PATH_MAP="${PATH_MAP}%2c${ETO_DIR}=/_/Eto"
 fi
-
-component_archive_name() {
-  printf '%s-%s-%s.tar.gz\n' "$1" "$2" "${RID}"
-}
-
-component_expected_sha() {
-  local component="$1"
-  local arch_key value_name
-  arch_key="$(printf '%s' "${RID}" | tr '[:lower:]-' '[:upper:]_')"
-  case "${component}" in
-    keysharp-input) value_name="KEYSHARP_INPUT_TARBALL_SHA256_${arch_key}" ;;
-    keysharp-desktop) value_name="KEYSHARP_DESKTOP_TARBALL_SHA256_${arch_key}" ;;
-    *) return 1 ;;
-  esac
-  printf '%s\n' "${!value_name:-}"
-}
-
-validate_download_pins() {
-  local component expected_sha
-  [[ "${PACKAGE_COMPONENTS}" == true && "${DOWNLOAD_COMPONENTS}" == true \
-      && -z "${COMPONENT_DIR}" ]] || return 0
-  for component in keysharp-input keysharp-desktop; do
-    expected_sha="$(component_expected_sha "${component}")"
-    if [[ ! "${expected_sha}" =~ ^[0-9a-f]{64}$ ]]; then
-      echo "Cannot download ${component}: its ${RID} SHA-256 is not pinned in ${COMPONENT_LOCK}." >&2
-      return 1
-    fi
-  done
-}
-
-validate_download_pins
-
-find_local_component_archive() {
-  local component="$1"
-  local archive_name="$2"
-  local repository_dir candidate
-  local candidates=()
-
-  if [[ -n "${COMPONENT_DIR}" ]]; then
-    candidates+=("${COMPONENT_DIR}/${archive_name}")
-  else
-    repository_dir="${ROOT}/../${component}"
-    candidates+=(
-      "${repository_dir}/dist/release-assets/${archive_name}"
-      "${repository_dir}/dist/${archive_name}"
-      "${repository_dir}/build/release/${archive_name}"
-    )
-  fi
-
-  for candidate in "${candidates[@]}"; do
-    if [[ -f "${candidate}" ]]; then
-      printf '%s\n' "${candidate}"
-      return 0
-    fi
-  done
-  return 1
-}
-
-validate_component_archive() {
-  local component="$1"
-  local version="$2"
-  local client_abi="$3"
-  local archive="$4"
-  local archive_name archive_root listing detail type entry target temporary
-  local library binary installer uninstaller
-
-  archive_name="$(basename -- "${archive}")"
-  archive_root="${archive_name%.tar.gz}"
-  listing="$(tar -tzf "${archive}")" || {
-    echo "Unable to list standalone archive: ${archive_name}" >&2
-    return 1
-  }
-  while IFS= read -r entry; do
-    entry="${entry#./}"
-    case "${entry}" in
-      "${archive_root}"|"${archive_root}/"|"${archive_root}/"*) ;;
-      *)
-        echo "Standalone archive has a path outside ${archive_root}: ${entry}" >&2
-        return 1
-        ;;
-    esac
-    case "${entry}" in
-      /|/*|..|../*|*/../*|*/..) return 1 ;;
-    esac
-  done <<< "${listing}"
-
-  listing="$(tar -tvzf "${archive}")" || return 1
-  while IFS= read -r detail; do
-    type="${detail:0:1}"
-    case "${type}" in
-      -|d) ;;
-      l)
-        target="${detail##* -> }"
-        [[ "${target}" =~ ^[A-Za-z0-9._+-]+$ ]] || {
-          echo "Standalone archive has an unsafe symbolic link: ${archive_name}" >&2
-          return 1
-        }
-        ;;
-      *)
-        echo "Standalone archive has an unsupported entry type: ${archive_name}" >&2
-        return 1
-        ;;
-    esac
-  done <<< "${listing}"
-
-  mkdir -p "${STAGING_DIR}"
-  temporary="$(mktemp -d "${STAGING_DIR}/component-check.XXXXXXXXXX")" || return 1
-  if ! tar -xzf "${archive}" -C "${temporary}"; then
-    rm -rf -- "${temporary}"
-    return 1
-  fi
-  binary="$(find "${temporary}/${archive_root}" -type f -name "${component}" -print -quit)"
-  library="$(find "${temporary}/${archive_root}" \
-    \( -type f -o -type l \) -name "lib${component}.so.${client_abi}" -print -quit)"
-  installer="${temporary}/${archive_root}/install.sh"
-  uninstaller="${temporary}/${archive_root}/uninstall.sh"
-  if [[ -z "${binary}" || ! -x "${binary}" || -z "${library}" \
-      || ! -f "${installer}" || ! -f "${uninstaller}" ]]; then
-    echo "Standalone archive does not contain ${component} and client ABI ${client_abi}: ${archive_name}" >&2
-    rm -rf -- "${temporary}"
-    return 1
-  fi
-  if ! bash -n "${installer}" "${uninstaller}"; then
-    echo "Standalone archive has an invalid lifecycle script: ${archive_name}" >&2
-    rm -rf -- "${temporary}"
-    return 1
-  fi
-  rm -rf -- "${temporary}"
-}
-
-download_component_archive() {
-  local repository="$1"
-  local version="$2"
-  local archive_name="$3"
-  local expected_sha="$4"
-  local destination="$5"
-  local partial="${destination}.partial.$$"
-
-  if [[ -z "${expected_sha}" ]]; then
-    echo "Refusing to download ${archive_name}: its SHA-256 is not pinned in ${COMPONENT_LOCK}." >&2
-    echo "Publish the standalone release and update the lock file first." >&2
-    return 1
-  fi
-  command -v curl >/dev/null 2>&1 || {
-    echo "curl is required for --download-components." >&2
-    return 1
-  }
-
-  rm -f -- "${partial}"
-  if ! curl --fail --location --proto '=https' --tlsv1.2 \
-      --output "${partial}" \
-      "https://github.com/${repository}/releases/download/v${version}/${archive_name}"; then
-    rm -f -- "${partial}"
-    return 1
-  fi
-  mv -f -- "${partial}" "${destination}"
-}
-
-stage_component_archive() {
-  local component="$1"
-  local repository="$2"
-  local version="$3"
-  local client_abi="$4"
-  local archive_name source_archive destination expected_sha actual_sha
-
-  archive_name="$(component_archive_name "${component}" "${version}")"
-  destination="${PKG_DIR}/components/${archive_name}"
-  expected_sha="$(component_expected_sha "${component}")"
-  source_archive=""
-  if [[ -n "${COMPONENT_DIR}" || "${DOWNLOAD_COMPONENTS}" != true ]]; then
-    source_archive="$(find_local_component_archive "${component}" "${archive_name}" || true)"
-  fi
-
-  if [[ -z "${source_archive}" ]]; then
-    if [[ "${DOWNLOAD_COMPONENTS}" != true ]]; then
-      echo "Required standalone archive not found: ${archive_name}" >&2
-      echo "Use --dependency-dir, KEYSHARP_COMPONENT_DIR, or --download-components." >&2
-      return 1
-    fi
-    source_archive="${STAGING_DIR}/downloaded-components/${archive_name}"
-    mkdir -p "$(dirname "${source_archive}")"
-    if [[ ! -f "${source_archive}" ]]; then
-      download_component_archive \
-        "${repository}" "${version}" "${archive_name}" "${expected_sha}" "${source_archive}"
-    fi
-  fi
-
-  actual_sha="$(sha256sum "${source_archive}" | awk '{print $1}')"
-  if [[ "${DOWNLOAD_COMPONENTS}" == true && -z "${COMPONENT_DIR}" \
-      && -n "${expected_sha}" && "${actual_sha}" != "${expected_sha}" ]]; then
-    echo "SHA-256 mismatch for ${archive_name}: expected ${expected_sha}, got ${actual_sha}." >&2
-    return 1
-  fi
-  validate_component_archive "${component}" "${version}" "${client_abi}" \
-    "${source_archive}"
-
-  cp "${source_archive}" "${destination}"
-  printf '%s\t%s\t%s\t%s\t%s\n' \
-    "${component}" "${version}" "${client_abi}" "${archive_name}" "${actual_sha}" \
-    >> "${PKG_DIR}/components/manifest.tsv"
-}
-
-stage_components() {
-  if [[ "${PACKAGE_COMPONENTS}" != true ]]; then
-    echo "Building without standalone components (development-only)."
-    return 0
-  fi
-
-  mkdir -p "${PKG_DIR}/components"
-  printf '# component\tproduct-version\tclient-abi\tarchive\tsha256\n' \
-    > "${PKG_DIR}/components/manifest.tsv"
-
-  stage_component_archive \
-    keysharp-input "${KEYSHARP_INPUT_REPOSITORY}" "${KEYSHARP_INPUT_VERSION}" \
-    "${KEYSHARP_INPUT_CLIENT_ABI}"
-  stage_component_archive \
-    keysharp-desktop "${KEYSHARP_DESKTOP_REPOSITORY}" "${KEYSHARP_DESKTOP_VERSION}" \
-    "${KEYSHARP_DESKTOP_CLIENT_ABI}"
-}
-
-preflight_component_archives() {
-  local component repository version client_abi
-  local archive_name source_archive expected_sha actual_sha
-
-  [[ "${PACKAGE_COMPONENTS}" == true ]] || return 0
-
-  while read -r component repository version client_abi; do
-    archive_name="$(component_archive_name "${component}" "${version}")"
-    source_archive="$(find_local_component_archive \
-      "${component}" "${archive_name}" || true)"
-    if [[ -z "${source_archive}" ]]; then
-      if [[ "${DOWNLOAD_COMPONENTS}" == true ]]; then
-        expected_sha="$(component_expected_sha "${component}")"
-        if [[ ! "${expected_sha}" =~ ^[0-9a-f]{64}$ ]]; then
-          echo "Cannot download ${component}: its ${RID} SHA-256 is not pinned in ${COMPONENT_LOCK}." >&2
-          return 1
-        fi
-        source_archive="${STAGING_DIR}/downloaded-components/${archive_name}"
-        mkdir -p "$(dirname "${source_archive}")"
-        if [[ ! -f "${source_archive}" ]]; then
-          download_component_archive "${repository}" "${version}" \
-            "${archive_name}" "${expected_sha}" "${source_archive}"
-        fi
-      else
-        echo "Required standalone archive not found: ${archive_name}" >&2
-        echo "Use --dependency-dir, KEYSHARP_COMPONENT_DIR, or --download-components." >&2
-        return 1
-      fi
-    fi
-
-    actual_sha="$(sha256sum "${source_archive}" | awk '{print $1}')" \
-      || return 1
-    [[ "${actual_sha}" =~ ^[0-9a-f]{64}$ ]] || return 1
-    expected_sha="$(component_expected_sha "${component}")"
-    if [[ "${DOWNLOAD_COMPONENTS}" == true && -z "${COMPONENT_DIR}" \
-        && -n "${expected_sha}" && "${actual_sha}" != "${expected_sha}" ]]; then
-      echo "SHA-256 mismatch for ${archive_name}: expected ${expected_sha}, got ${actual_sha}." >&2
-      return 1
-    fi
-    validate_component_archive "${component}" "${version}" "${client_abi}" \
-      "${source_archive}" \
-      || return 1
-  done <<EOF
-keysharp-input ${KEYSHARP_INPUT_REPOSITORY} ${KEYSHARP_INPUT_VERSION} ${KEYSHARP_INPUT_CLIENT_ABI}
-keysharp-desktop ${KEYSHARP_DESKTOP_REPOSITORY} ${KEYSHARP_DESKTOP_VERSION} ${KEYSHARP_DESKTOP_CLIENT_ABI}
-EOF
-}
 
 relocate_library_scripts() {
   if [[ -f "${APP_DIR}/Scripts/AtSpi.ks" ]]; then
@@ -455,7 +145,7 @@ Architecture: ${DEB_ARCH}
 Maintainer: Descolada <16986957+Descolada@users.noreply.github.com>
 Homepage: https://github.com/keysharp-org/Keysharp
 Depends: dotnet-runtime-10.0, libx11-6, libxtst6, libxinerama1, libxt6, libx11-xcb1, libxkbcommon-x11-0, libxcb-xtest0, libgtk-3-0, libglib2.0-0, libnotify4, libatspi2.0-0, at-spi2-core, pulseaudio-utils
-Recommends: ${KEYSHARP_INPUT_DEBIAN_CLIENT_PACKAGE}, ${KEYSHARP_DESKTOP_DEBIAN_CLIENT_PACKAGE}
+Recommends: ${INPUT_CLIENT_ABI_PACKAGE}, ${DESKTOP_CLIENT_ABI_PACKAGE}
 Description: A cross-platform C# port and enhancement of the AutoHotkey program
 EOF
 }
@@ -570,8 +260,6 @@ build_deb() {
   echo "Debian package ready at ${deb_out}"
 }
 
-preflight_component_archives
-
 echo "Publishing Keysharp and Keyview (CONFIG=${CONFIG}, RID=${RID})..."
 mkdir -p "${DIST_DIR}"
 rm -rf -- "${PUBLISH_DIR}/Keysharp" "${PUBLISH_DIR}/Keyview"
@@ -598,21 +286,13 @@ verify_dash_present
 normalize_app_permissions
 verify_no_local_paths "${APP_DIR}"
 
-cp "${ASSETS_DIR}/install.sh" "${ASSETS_DIR}/uninstall.sh" \
-  "${ASSETS_DIR}/install-components.sh" "${PKG_DIR}/"
+cp "${ASSETS_DIR}/install.sh" "${ASSETS_DIR}/uninstall.sh" "${PKG_DIR}/"
 cp "${ASSETS_DIR}/keyview.desktop" "${ASSETS_DIR}/keysharp.desktop" \
 	"${ASSETS_DIR}/keysharp.xml" "${ASSETS_DIR}/70-keysharp-i2c-uaccess.rules" "${PKG_DIR}/"
 cp "${ROOT}/assets/Keysharp.png" "${PKG_DIR}/"
-stage_components
-
-chmod 0755 "${PKG_DIR}/install.sh" "${PKG_DIR}/uninstall.sh" \
-  "${PKG_DIR}/install-components.sh"
+chmod 0755 "${PKG_DIR}/install.sh" "${PKG_DIR}/uninstall.sh"
 chmod 0644 "${PKG_DIR}/keyview.desktop" "${PKG_DIR}/keysharp.desktop" \
 	"${PKG_DIR}/keysharp.xml" "${PKG_DIR}/70-keysharp-i2c-uaccess.rules" "${PKG_DIR}/Keysharp.png"
-if [[ -d "${PKG_DIR}/components" ]]; then
-  find "${PKG_DIR}/components" -type d -exec chmod 0755 {} +
-  find "${PKG_DIR}/components" -type f -exec chmod 0644 {} +
-fi
 
 build_tarball
 build_deb

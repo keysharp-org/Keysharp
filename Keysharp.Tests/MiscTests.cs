@@ -301,6 +301,9 @@ namespace Keysharp.Tests
 		[Test, Category("Misc"), NonParallelizable]
 		public void PropRef() => Assert.IsTrue(TestScript("misc-prop-ref", false));
 
+		[Test, Category("Misc"), NonParallelizable]
+		public void VarRefOutputs() => Assert.IsTrue(TestScript("misc-var-ref", false));
+
 		private static long PropLong(object obj, string name) => Convert.ToInt64(Script.GetPropertyValue(obj, name));
 
 		private static string PropString(object obj, string name) => Script.GetPropertyValue(obj, name).As();

@@ -209,8 +209,8 @@ namespace Keysharp.Runtime
 			{
 				// VarRef fast-path: only for a ref that is exactly a VarRef (see VarRef.IsPlain). A subclass may
 				// declare its own __Value, so it resolves through ordinary dispatch below, which is the point of it
-				// being a property. This and its twin in SetPropertyValue are IsPlain's only two callers -- every
-				// other path that touches a ref comes through here and inherits the shortcut.
+				// being a property. Refs holds the same shortcut for the same reason; this one covers a ref reached
+				// as an ordinary property access rather than through Refs.
 				if (item is VarRef vr && vr.IsPlain && namestr.Equals("__Value", StringComparison.OrdinalIgnoreCase))
 				{
 					return vr.__Value;
@@ -280,31 +280,11 @@ namespace Keysharp.Runtime
 					}
 				}
 
-				if (item != null && item is not Any)
-				{
-#if WINDOWS
-					// COM
-					if (Marshal.IsComObject(item))
-					{
-						// IDispatch takes named arguments natively: InvokeMember's `namedParameters` becomes
-						// DISPPARAMS.rgdispidNamedArgs, resolved through GetIDsOfNames. ToComLayout reorders the
-						// named values to the front, which is the layout that overload expects.
-						var comArgs = NamedArgBinder.ToComLayout(args, out var comNames);
-						return comNames.Length == 0
-							   ? item.GetType().InvokeMember(namestr, BindingFlags.InvokeMethod | BindingFlags.GetProperty, null, item, comArgs)
-							   : item.GetType().InvokeMember(namestr, BindingFlags.InvokeMethod | BindingFlags.GetProperty, null, item,
-															 comArgs, null, null, comNames);
-					}
-#endif
-					// Reflection property (non-indexed only)
-					if (args.Length == 0)
-					{
-						if (Reflections.FindAndCacheProperty(item.GetType(), namestr, 0) is MethodPropertyHolder mph)
-						{
-							return mph.CallFunc(item, null);
-						}
-					}
-				}
+				// Nothing follows the Any and primitive paths above. Every value a script can hold arrives as one of
+				// them -- a COM object is wrapped as ComObject/ComValue and a CLR object as a Clr instance, both of
+				// which are Any -- so a reflection or IDispatch fallback here could only serve a value that should
+				// never have reached a script unwrapped, at the cost of making whatever CLR member a name happened
+				// to match look like part of the language.
 			}
 			catch (Exception e) when (e.InnerException is KeysharpException ke)
 			{
@@ -602,7 +582,19 @@ namespace Keysharp.Runtime
 			return false;
 		}
 
-		public static object SetPropertyValue(object item, object name, params object[] args)
+		public static object SetPropertyValue(object item, object name, params object[] args) =>
+			SetPropertyValueCore(item, name, args, allowCreate: true);
+
+		/// <summary>
+		/// Writes a reference's <c>__Value</c> without letting the write define the property it did not find.
+		/// A target that turns out to have no such property is a caller error -- an ordinary object handed to an
+		/// output parameter -- and must surface as one rather than quietly growing a <c>__Value</c> that nothing
+		/// will ever read. This is AutoHotkey's <c>IF_NO_NEW_PROPS</c> for the same write.
+		/// </summary>
+		internal static object SetRefValue(object item, object value) =>
+			SetPropertyValueCore(item, Refs.ValueName, [value], allowCreate: false);
+
+		private static object SetPropertyValueCore(object item, object name, object[] args, bool allowCreate)
 		{
 			var namestr = name.ToString();
 			Any kso = null;
@@ -742,38 +734,24 @@ namespace Keysharp.Runtime
 					}
 
 					// Define new own data prop when target is a KeysharpObject and it's a simple assignment
-					if (args.Length == 1 && item is KeysharpObject ksoObj)
+					if (allowCreate && args.Length == 1 && item is KeysharpObject ksoObj)
 					{
 						ksoObj.DefinePropInternal(namestr, new OwnPropsDesc(ksoObj, value));
 						return value;
 					}
 				}
 
-				// Reflection property
-				if (item != null)
-				{
-					var t = item.GetType();
-					if (!namestr.Equals("base", StringComparison.OrdinalIgnoreCase)
-						&& Reflections.FindAndCacheProperty(t, namestr, 0) is MethodPropertyHolder mph)
-					{
-						mph.SetProp(item, value);
-						return value;
-					}
-
-					// Indexer fallback set_Item
-					if (Reflections.FindAndCacheInstanceMethod(t, "set_Item", 2) is MethodPropertyHolder mphSetItem)
-					{
-						_ = mphSetItem.CallFunc(item, args);
-						return value;
-					}
-				}
 			}
 			catch (Exception e) when (e.InnerException is KeysharpException ke)
 			{
 				ExceptionDispatchInfo.Throw(ke);
 			}
 
-			return Errors.ErrorOccurred($"Attempting to set property {namestr} on object {item} to value {value} failed.");
+			// A reference write reaching here found no property to write, which under allowCreate would have
+			// defined one; say what is actually wrong instead of reporting a failed assignment.
+			return allowCreate
+				   ? Errors.ErrorOccurred($"Attempting to set property {namestr} on object {item} to value {value} failed.")
+				   : Errors.PropertyErrorOccurred($"This value of type {Types.Type(item)} has no property named {namestr}.");
 
 			static object[] GetIndexArgs(object[] a)
 			{

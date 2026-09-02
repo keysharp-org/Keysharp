@@ -154,7 +154,7 @@ namespace Keysharp.Builtins
 				long pos = match.Success ? match.Index + 1 : 0;
 				if (outputVar != null)
 				{
-					Script.SetPropertyValue(outputVar, "__Value", pos > 0 ? new RegExMatchInfo(match, exp) : DefaultObject);
+					Refs.SetValue(outputVar, pos > 0 ? new RegExMatchInfo(match, exp) : DefaultObject);
 				}
 				return pos;
 			}
@@ -273,7 +273,7 @@ namespace Keysharp.Builtins
 			{
 				string result = exp.regex.Replace(input, CalloutHandler, l, index);
 				if (outputVarCount != null)
-					Script.SetPropertyValue(outputVarCount, "__Value", (long)n);
+					Refs.SetValue(outputVarCount, (long)n);
 				return result;
 			}
 			catch (Exception ex)

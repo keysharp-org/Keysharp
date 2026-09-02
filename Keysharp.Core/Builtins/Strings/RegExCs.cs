@@ -76,7 +76,7 @@ namespace Keysharp.Builtins
 				try
 				{
 					var res = new RegExMatchInfoCs(exp.Match(input, index));
-					Script.SetPropertyValue(outputVar, "__Value", res);
+					Refs.SetValue(outputVar, res);
 					return res.Pos();
 				}
 				catch (Exception ex)
@@ -179,7 +179,7 @@ namespace Keysharp.Builtins
 				try
 				{
 					var result = exp.Replace(input, match, l, index);
-					Script.SetPropertyValue(outputVarCount, "__Value", (long)n);
+					Refs.SetValue(outputVarCount, (long)n);
 					return result;
 				}
 				catch (Exception ex)

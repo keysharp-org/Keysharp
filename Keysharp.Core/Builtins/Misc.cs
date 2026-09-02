@@ -22,9 +22,7 @@ namespace Keysharp.Builtins
 		public static object MakeVarRef(Func<object> getter, Action<object> setter)
 		{
 			var v = getter();
-			if (v is VarRef || (v is KeysharpObject kso && Functions.HasProp(kso, "__Value") != 0))
-				return v;
-			return new VarRef(getter, setter);
+			return Refs.DeclaresValue(v) ? v : new VarRef(getter, setter);
 		}
 
 	}

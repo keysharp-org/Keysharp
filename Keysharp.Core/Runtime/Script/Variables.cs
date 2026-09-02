@@ -403,8 +403,9 @@ namespace Keysharp.Runtime
 
 		public object this[object key]
         {
-			get => GetPropertyValueOrNull(key, "__Value") ?? GetVariable(key.ToString()) ?? "";
-			set => _ = (key is KeysharpObject kso && Functions.HasProp(kso, "__Value") == 1) ? Script.SetPropertyValue(kso, "__Value", value) : SetVariable(key.ToString(), value);
+			// A key is either a variable NAME or a reference standing in for one; see ModuleData's indexer.
+			get => (Refs.DeclaresValue(key) ? Refs.GetValueOrNull(key) : null) ?? GetVariable(key.ToString()) ?? "";
+			set => _ = Refs.DeclaresValue(key) ? Refs.SetValue(key, value) : SetVariable(key.ToString(), value);
 		}
 	}
 }

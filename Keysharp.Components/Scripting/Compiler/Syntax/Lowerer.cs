@@ -1767,7 +1767,7 @@ namespace Keysharp.Compilation.Syntax
 		{
 			if (_inMethod && lower == "this") { _capturedInScope = true; return Id("@this"); }
 			if (_byRefParams != null && _byRefParams.Contains(lower))   // &param read: through the VarRef
-				return Op("GetPropertyValue", Id(NameMangler.Escape(lower)), Str("__Value"));
+				return RefOp("GetValue", Id(NameMangler.Escape(lower)), Str(lower));
 			if (_statics != null && _statics.TryGetValue(lower, out var sf)) return Id(sf);
 			if (_forcedGlobals != null && _forcedGlobals.Contains(lower)) return Id(EnsureGlobalField(lower));
 			if (_locals != null && _locals.Contains(lower)) return Id(NameMangler.Escape(lower));
@@ -4353,9 +4353,9 @@ namespace Keysharp.Compilation.Syntax
 			{
 				var refId = Id(NameMangler.Escape(lower));
 				var rv = a.Op == ":=" ? LowerExpr(a.Value)
-					: CompoundValue(a.Op[..^1], Op("GetPropertyValue", refId, Str("__Value")), LowerExpr(a.Value));
+					: CompoundValue(a.Op[..^1], RefOp("GetValue", refId, Str(lower)), LowerExpr(a.Value));
 				if (rv == null) { Diag($"compound assignment '{a.Op}' not yet lowerable"); return Str(""); }
-				return Op("SetPropertyValue", refId, Str("__Value"), rv);
+				return RefOp("SetValue", refId, rv, Str(lower));
 			}
 			// A scoped `#import` binding is a valid assignment target only when it is a writable script VARIABLE export
 			// (the write goes through to the source module's field). Assigning to an imported function/type/module
@@ -4491,8 +4491,8 @@ namespace Keysharp.Compilation.Syntax
 					if (_byRefParams != null && _byRefParams.Contains(lower))
 					{
 						var brefId = Id(NameMangler.Escape(lower));
-						read = Op("GetPropertyValue", brefId, Str("__Value"));
-						write = Op("SetPropertyValue", brefId, Str("__Value"), Op(op, Op("GetPropertyValue", brefId, Str("__Value")), Num("1")));
+						read = RefOp("GetValue", brefId, Str(lower));
+						write = RefOp("SetValue", brefId, Op(op, RefOp("GetValue", brefId, Str(lower)), Num("1")), Str(lower));
 					}
 					else
 					{
@@ -4546,7 +4546,8 @@ namespace Keysharp.Compilation.Syntax
 		// GetPropertyValue/GetIndex/Invoke to its *OrNull variant (which yields null instead of erroring),
 		// then IsSet's plain null-check works. Mirrors the canonical RewriteIsSetArgumentList.
 		private static readonly Dictionary<string, string> IsSetOrNull = new(System.StringComparer.Ordinal)
-		{ { "GetPropertyValue", "GetPropertyValueOrNull" }, { "GetIndex", "GetIndexOrNull" }, { "Invoke", "InvokeOrNull" } };
+		{ { "GetPropertyValue", "GetPropertyValueOrNull" }, { "GetIndex", "GetIndexOrNull" }, { "Invoke", "InvokeOrNull" },
+		  { "GetValue", "GetValueOrNull" } };  // Refs.GetValue: a by-ref parameter read (see RefOp)
 
 		// The same rewrite for a fat-arrow body, minus the property read. GetPropertyValueOrNull reports a member
 		// which does not exist and one which resolved to no value both as a null, so rewriting the read made
@@ -6751,6 +6752,12 @@ namespace Keysharp.Compilation.Syntax
 
 		private static ExpressionSyntax Op(string method, params ExpressionSyntax[] args) =>
 			Inv(Access("Keysharp.Runtime.Script." + method), args);
+
+		// A by-ref parameter is read and written through Refs rather than as a plain __Value property access, so a
+		// caller that passed something which is not a reference is named in the error instead of the write silently
+		// defining a __Value on it. The parameter's own name is passed along for that message.
+		private static ExpressionSyntax RefOp(string method, params ExpressionSyntax[] args) =>
+			Inv(Access("Keysharp.Builtins.Refs." + method), args);
 
 		// AHK's `??` / `??=`: yield the left operand if it is set (non-null), otherwise the right. Lowered to C#'s native
 		// null-coalescing operator so the right operand is NOT evaluated when the left is set (true short-circuit) — a plain

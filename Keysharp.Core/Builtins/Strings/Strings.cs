@@ -1094,13 +1094,15 @@ namespace Keysharp.Builtins
 			if (value is StringBuffer sb) {
 				return sb.Ptr;
 			}
-			else if (value is KeysharpObject kso)
+			//A reference is entangled with a buffer so a native call can write back through it. Nothing declares this
+			//parameter a reference, so an object only takes that path if it provably carries a __Value.
+			else if (Refs.DeclaresValue(value))
 			{
-				var str = Script.GetPropertyValue(kso, "__Value");
+				var str = Refs.GetValue(value);
 				if (str is StringBuffer sb2)
 					return sb2.Ptr;
 				var sbr = new StringBuffer(str);
-				sbr.EntangledString = kso;
+				sbr.EntangledString = value;
 				return sbr;
 			}
 			value = Encoding.Unicode.GetBytes(value.ToString());
@@ -1318,7 +1320,7 @@ namespace Keysharp.Builtins
 
 			if (IsAnyBlank(input, search))
 			{
-                if (outputVarCount != null) Script.SetPropertyValue(outputVarCount, "__Value", 0L);
+                if (outputVarCount != null) Refs.SetValue(outputVarCount, 0L);
                 return input;
 			}
 
@@ -1343,7 +1345,7 @@ namespace Keysharp.Builtins
 			if (n < input.Length)
 				_ = buf.Append(input, n, input.Length - n);
 
-			if (outputVarCount != null) Script.SetPropertyValue(outputVarCount, "__Value", ct);
+			if (outputVarCount != null) Refs.SetValue(outputVarCount, ct);
 			return buf.ToString();
 		}
 
@@ -1518,10 +1520,8 @@ namespace Keysharp.Builtins
 		/// <returns>StringBuffer</returns>
 		public static object VarSetStrCapacity([ByRef] object targetVar, object requestedCapacity = null)
 		{
-			if (!(targetVar is KeysharpObject))
-				throw new TypeError($"Expected argument of type VarRef, but received {targetVar.GetType()}");
-
-			var target = Script.GetPropertyValueOrNull(targetVar, "__Value") ?? "";
+			Refs.Demand(targetVar);
+			var target = Refs.GetValueOrNull(targetVar) ?? "";
 			int capacity;
 			if (target is string targetStr)
 			{
@@ -1531,7 +1531,7 @@ namespace Keysharp.Builtins
 				if (capacity < 0)
 					return (long)targetStr.Length;
                 var sbr = new StringBuffer(targetStr, capacity);
-				Script.SetPropertyValue(targetVar, "__Value", sbr);
+				Refs.SetValue(targetVar, sbr);
 				return (long)capacity;
 			}
 			else if (target is StringBuffer sbr)
@@ -1543,7 +1543,7 @@ namespace Keysharp.Builtins
 				if (capacity == -1)
 				{
 					var str = sbr.ToString();
-					Script.SetPropertyValue(targetVar, "__Value", str);
+					Refs.SetValue(targetVar, str);
 					return (long)str.Length;
 				}
 				else

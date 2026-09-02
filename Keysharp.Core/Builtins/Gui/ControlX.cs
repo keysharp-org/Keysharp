@@ -292,10 +292,10 @@ namespace Keysharp.Builtins
 				winText,
 				excludeTitle,
 				excludeText);
-			if (outX != null) Script.SetPropertyValue(outX, "__Value", valX);
-			if (outY != null) Script.SetPropertyValue(outY, "__Value", valY);
-			if (outWidth != null) Script.SetPropertyValue(outWidth, "__Value", valWidth);
-			if (outHeight != null) Script.SetPropertyValue(outHeight, "__Value", valHeight);
+			if (outX != null) Refs.SetValue(outX, valX);
+			if (outY != null) Refs.SetValue(outY, valY);
+			if (outWidth != null) Refs.SetValue(outWidth, valWidth);
+			if (outHeight != null) Refs.SetValue(outHeight, valHeight);
             return DefaultObject;
 		}
 

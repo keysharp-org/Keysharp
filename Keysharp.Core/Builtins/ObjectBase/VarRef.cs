@@ -28,18 +28,15 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// True when this ref's <c>__Value</c> is the built-in property above, letting
+		/// True when this ref's <c>__Value</c> is the built-in property above, letting <see cref="Refs"/> and
 		/// <c>GetPropertyValueOrNull</c>/<c>SetPropertyValue</c> read or write it directly instead of dispatching.
-		/// They are the only two callers: everything else that touches a ref goes through them and inherits the
-		/// shortcut, so the rule lives in one place.
 		/// <para>
-		/// Subclassing is the only way a script can put something else behind <c>__Value</c> -- <c>DefineProp</c> is
-		/// not reachable on a ref, since VarRef derives from <see cref="Any"/> rather than Object and so has no such
-		/// member -- which is why one type test answers it. A subclass declaring its own <c>__Value</c> is honoured;
-		/// <see cref="Get"/>/<see cref="Set"/> are private to the C# constructors, so that is also the only shape
-		/// that can work.
+		/// Two things can put something else behind the name, and both have to be excluded. A subclass may redefine
+		/// <c>__Value</c> -- a script class extending VarRef does so through its PROTOTYPE, which no test on the CLR
+		/// type can see, so any subclass dispatches -- and <c>DefineProp</c> can place an own property in front of
+		/// it on a particular instance, which is what the <see cref="Any.op"/> test covers.
 		/// </para>
 		/// </summary>
-		internal bool IsPlain => GetType() == typeof(VarRef);
+		internal bool IsPlain => op == null && GetType() == typeof(VarRef);
 	}
 }

@@ -634,44 +634,44 @@ namespace Keysharp.Builtins
 				if (string.IsNullOrEmpty(dest) || link == dest)//Was not just a simple symlink.
 				{
 					var sc = new ShortcutCreator(link);
-					if (outTarget != null) Script.SetPropertyValue(outTarget, "__Value", sc.Get("Exec"));
-					if (outDir != null) Script.SetPropertyValue(outDir, "__Value", sc.Get("Path"));
-					if (outDescription != null) Script.SetPropertyValue(outDescription, "__Value", sc.Get("Comment"));
-					if (outIcon != null) Script.SetPropertyValue(outIcon, "__Value", sc.Get("Icon"));
-					if (outType != null) Script.SetPropertyValue(outType, "__Value", sc.Get("Type"));
+					if (outTarget != null) Refs.SetValue(outTarget, sc.Get("Exec"));
+					if (outDir != null) Refs.SetValue(outDir, sc.Get("Path"));
+					if (outDescription != null) Refs.SetValue(outDescription, sc.Get("Comment"));
+					if (outIcon != null) Refs.SetValue(outIcon, sc.Get("Icon"));
+					if (outType != null) Refs.SetValue(outType, sc.Get("Type"));
 
-					if (outTarget != null && GetPropertyValue(outTarget, "__Value") is string s && s.Length > 0)
+					if (outTarget != null && Refs.GetValue(outTarget) is string s && s.Length > 0)
 					{
 						if (s[0] != '"' && s[0] != '\'')
 						{
 							var splits = s.Split(SpaceTab, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
 							if (splits.Length > 1)
-								Script.SetPropertyValue(outArgs, "__Value", splits[1]);
+								Refs.SetValue(outArgs, splits[1]);
 							else
-								Script.SetPropertyValue(outArgs, "__Value", "");
+								Refs.SetValue(outArgs, "");
 						}
 						else//It was quoted.
 						{
 							var firstArgIndex = s.FindFirstNotInQuotes(" ");
 							var tempArgs = firstArgIndex != -1 && firstArgIndex < s.Length - 1 ? s.Substring(firstArgIndex + 1) : "";
-							Script.SetPropertyValue(outArgs, "__Value", tempArgs.Trim());
+							Refs.SetValue(outArgs, tempArgs.Trim());
 						}
 					}
 					else if (outArgs != null)
-						Script.SetPropertyValue(outArgs, "__Value", "");//No way to determine args.
+						Refs.SetValue(outArgs, "");//No way to determine args.
 				}
 				else
 				{
-					if (outTarget != null) Script.SetPropertyValue(outTarget, "__Value", dest);
-					if (outDir != null) Script.SetPropertyValue(outDir, "__Value", Path.GetDirectoryName(dest));
-					if (outArgs != null) Script.SetPropertyValue(outArgs, "__Value", "");
-					if (outDescription != null) Script.SetPropertyValue(outDescription, "__Value", "");
-					if (outIcon != null) Script.SetPropertyValue(outIcon, "__Value", "");
-					if (outType != null) Script.SetPropertyValue(outType, "__Value", "");
+					if (outTarget != null) Refs.SetValue(outTarget, dest);
+					if (outDir != null) Refs.SetValue(outDir, Path.GetDirectoryName(dest));
+					if (outArgs != null) Refs.SetValue(outArgs, "");
+					if (outDescription != null) Refs.SetValue(outDescription, "");
+					if (outIcon != null) Refs.SetValue(outIcon, "");
+					if (outType != null) Refs.SetValue(outType, "");
 				}
 
-				Script.SetPropertyValue(outRunState, "__Value", "");
+				Refs.SetValue(outRunState, "");
 #elif WINDOWS
 
 				var shellLink = (WindowsAPI.IShellLinkW)new WindowsAPI.ShellLink();
@@ -682,57 +682,57 @@ namespace Keysharp.Builtins
 				{
 					shellLink.GetPath(sb, sb.Capacity, 0, 0x2); // SLGP_UNCPRIORITY
 					string TargetPath = sb.ToString();
-					Script.SetPropertyValue(outTarget, "__Value", TargetPath);
+					Refs.SetValue(outTarget, TargetPath);
 				}
 				if (outDir != null)
 				{
 					shellLink.GetWorkingDirectory(sb, sb.Capacity);
 					string WorkingDirectory = sb.ToString();
-					Script.SetPropertyValue(outDir, "__Value", WorkingDirectory);
+					Refs.SetValue(outDir, WorkingDirectory);
 				}
 				if (outArgs != null) {
 					shellLink.GetArguments(sb, sb.Capacity);
 					string Arguments = sb.ToString();
-					Script.SetPropertyValue(outArgs, "__Value", Arguments);
+					Refs.SetValue(outArgs, Arguments);
 				}
 				if (outDescription != null) {
 					shellLink.GetDescription(sb, sb.Capacity);
 					string Description = sb.ToString();
-					Script.SetPropertyValue(outDescription, "__Value", Description);
+					Refs.SetValue(outDescription, Description);
 				}
 				if (outIcon != null || outIconNum != null)
 				{
 					shellLink.GetIconLocation(sb, sb.Capacity, out int icon_index);
 					var iconstr = sb.ToString();
 					if (outIcon != null)
-						Script.SetPropertyValue(outIcon, "__Value", iconstr);
+						Refs.SetValue(outIcon, iconstr);
 					if (outIconNum != null)
 					{
 						if (iconstr.Length > 0)
 							icon_index += (icon_index >> 31) ^ 1; // Convert from 0-based to 1-based for consistency with the Menu command, etc. but leave negative resource IDs as-is.
-						Script.SetPropertyValue(outIconNum, "__Value", iconstr.Length > 0 ? icon_index : "");
+						Refs.SetValue(outIconNum, iconstr.Length > 0 ? icon_index : "");
 					}
 				}
 				if (outRunState != null)
 				{
 					shellLink.GetShowCmd(out int WindowStyle);
-					Script.SetPropertyValue(outRunState, "__Value", WindowStyle);
+					Refs.SetValue(outRunState, WindowStyle);
 				}
 #endif
 			}
 			catch (Exception ex)
 			{
-				if (outTarget != null) Script.SetPropertyValue(outTarget, "__Value", null);
-				if (outDir != null) Script.SetPropertyValue(outDir, "__Value", null);
-				if (outArgs != null) Script.SetPropertyValue(outArgs, "__Value", null);
-				if (outDescription != null) Script.SetPropertyValue(outDescription, "__Value", null);
-				if (outIcon != null) Script.SetPropertyValue(outIcon, "__Value", null);
+				if (outTarget != null) Refs.SetValue(outTarget, null);
+				if (outDir != null) Refs.SetValue(outDir, null);
+				if (outArgs != null) Refs.SetValue(outArgs, null);
+				if (outDescription != null) Refs.SetValue(outDescription, null);
+				if (outIcon != null) Refs.SetValue(outIcon, null);
 #if WINDOWS
-				if (outIconNum != null) Script.SetPropertyValue(outIconNum, "__Value", null);
+				if (outIconNum != null) Refs.SetValue(outIconNum, null);
 #else
-				if (outType != null) Script.SetPropertyValue(outType, "__Value", null);
+				if (outType != null) Refs.SetValue(outType, null);
 #endif
-				if (outRunState != null) Script.SetPropertyValue(outRunState, "__Value", null);
+				if (outRunState != null) Refs.SetValue(outRunState, null);
 				return Errors.OSErrorOccurred(ex, $"Error getting shortcut information for {linkFile}");
 			}
 			return DefaultObject;

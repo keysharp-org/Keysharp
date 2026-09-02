@@ -884,7 +884,7 @@ namespace Keysharp.Runtime
 		public static object DerefGet(FuncScope.Reader reader, object name)
 		{
 			if (name is VarRef vr)
-				return GetPropertyValueOrNull(vr, "__Value");
+				return Refs.GetValueOrNull(vr);
 
 			var v = reader(name);
 			return ReferenceEquals(v, DerefMiss) ? TheScript.ModuleData.Vars[name] : v;
@@ -896,7 +896,7 @@ namespace Keysharp.Runtime
 		{
 			if (name is VarRef vr)
 			{
-				_ = SetPropertyValue(vr, "__Value", value);
+				_ = Refs.SetValue(vr, value);
 				return value;
 			}
 

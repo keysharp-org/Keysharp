@@ -269,8 +269,8 @@ namespace Keysharp.Builtins
 			{
 				if (arg is null) return null;
 
-				// ByRef box
-				if (arg is KeysharpObject box && Script.GetPropertyValueOrNull(box, "__Value") is object v)
+				// ByRef box: nothing declares this argument a reference, so it must prove it carries a __Value.
+				if (Refs.DeclaresValue(arg) && Refs.GetValueOrNull(arg) is object v)
 					arg = v;
 
 				if (arg is Clr.ManagedInstance mi) return mi._type;

@@ -157,13 +157,13 @@ has_dotnet10() {
 }
 
 install_deps() {
-  # The bundled standalone-component archives install files and services, but
-  # distribution package managers remain responsible for their runtime libraries.
-  local packages_apt=(libx11-6 libxtst6 libxinerama1 libxt6 libx11-xcb1 libxkbcommon-x11-0 libxcb-xtest0 libgtk-3-0 libglib2.0-0 libnotify4 libatspi2.0-0 at-spi2-core pulseaudio-utils libudev1 libevdev2 polkitd udev kmod systemd)
-  local packages_dnf=(libX11 libXtst libXinerama libXt libxkbcommon-x11 libxcb libX11-xcb gtk3 glib2 libnotify at-spi2-core systemd-libs libevdev polkit kmod systemd)
-  local packages_yum=(libX11 libXtst libXinerama libXt libxcb xorg-x11-xkb-utils gtk3 glib2 libnotify at-spi2-core systemd-libs libevdev polkit kmod systemd)
-  local packages_zypper=(libX11-6 libXtst6 libXinerama1 libXt6 libxkbcommon-x11-0 libxcb1 gtk3 glib2 libnotify4 at-spi2-core libudev1 libevdev2 polkit systemd kmod)
-  local packages_pacman=(libx11 libxtst libxinerama libxt libxkbcommon-x11 libxcb gtk3 glib2 libnotify at-spi2-core systemd libevdev polkit kmod)
+  # Keysharp's own runtime dependencies only. Each standalone component brings its
+  # own, through its package or its installer.
+  local packages_apt=(libx11-6 libxtst6 libxinerama1 libxt6 libx11-xcb1 libxkbcommon-x11-0 libxcb-xtest0 libgtk-3-0 libglib2.0-0 libnotify4 libatspi2.0-0 at-spi2-core pulseaudio-utils)
+  local packages_dnf=(libX11 libXtst libXinerama libXt libxkbcommon-x11 libxcb libX11-xcb gtk3 glib2 libnotify at-spi2-core)
+  local packages_yum=(libX11 libXtst libXinerama libXt libxcb xorg-x11-xkb-utils gtk3 glib2 libnotify at-spi2-core)
+  local packages_zypper=(libX11-6 libXtst6 libXinerama1 libXt6 libxkbcommon-x11-0 libxcb1 gtk3 glib2 libnotify4 at-spi2-core)
+  local packages_pacman=(libx11 libxtst libxinerama libxt libxkbcommon-x11 libxcb gtk3 glib2 libnotify at-spi2-core)
 
   if ! has_dotnet10; then
     packages_apt+=("${DOTNET_PACKAGE}")
@@ -225,14 +225,14 @@ if [[ ! -d "${APP_DIR_SOURCE}" ]]; then
 fi
 
 # The root tar and distribution-package application channels share /usr/share
-# integration files, so establish the channel before dependencies or components
+# integration files, so establish the channel before dependencies
 # can be changed.
 check_system_channel_conflict
 
 if [[ "${ROOT_INSTALL}" == "true" ]]; then
-  echo "Installing Keysharp system-wide. Compatible standalone Linux components will be reused unchanged."
+  echo "Installing Keysharp system-wide."
 else
-  echo "Installing Keysharp for the current user. Missing system components will not be installed."
+  echo "Installing Keysharp for the current user."
 fi
 
 if [[ "${INSTALL_DEPS}" == "true" && "${ROOT_INSTALL}" == "true" ]]; then
@@ -243,13 +243,6 @@ else
   echo "Skipping dependency installation (INSTALL_DEPS=false)."
 fi
 check_dotnet
-
-# Install optional system components before replacing the application directory.
-if [[ "${ROOT_INSTALL}" == "true" && -x "${SCRIPT_DIR}/install-components.sh" ]]; then
-  if ! "${SCRIPT_DIR}/install-components.sh"; then
-    echo "Warning: standalone Linux component setup was incomplete; Keysharp will continue without affected features." >&2
-  fi
-fi
 
 maybe_run pkill -x '[Kk]eysharp' || true
 maybe_run pkill -x '[Kk]eyview' || true

@@ -263,8 +263,8 @@ namespace Keysharp.Internals.Interop
 						isPtrObject = true;
 						p = kptr;
 					}
-					else if (Script.GetPropertyValueOrNull(kso, "__Value") is object inner)
-						p = inner;
+					else if (Refs.DeclaresValue(kso))
+						p = Refs.GetValueOrNull(kso) ?? "";
 				}
 
 				//The argument's own slot holds the value, seeded with whatever came in so that an in/out
@@ -357,15 +357,17 @@ namespace Keysharp.Internals.Interop
 				}
 			}
 			//A string is always passed by reference, so a reference holding one is an output even without a '*'.
-			else if (p is Any kso && Script.GetPropertyValueOrNull(kso, "__Value") is object inner)
+			//An unset reference is still one -- the call is what fills it in -- so it starts from an empty string.
+			else if (Refs.DeclaresValue(p))
 			{
+				var inner = Refs.GetValueOrNull(p) ?? "";
 				AddOutput(n, paramIndex, NativeTypeCode.Ptr, OutputTarget.Value);
 
 				if (inner is string entangled)
 				{
 					var buffer = code == NativeTypeCode.AStr ? new StringBuffer(entangled, null, "ANSI") : new StringBuffer(entangled);
 					slots[n].Handle = GCHandle.Alloc(buffer, GCHandleType.Normal);
-					buffer.EntangledString = kso;
+					buffer.EntangledString = p;
 					parameters[paramIndex] = buffer;
 					args[n] = buffer.Ptr;
 					return true;
@@ -458,8 +460,8 @@ namespace Keysharp.Internals.Interop
 
 				if (slot.Kind == OutputTarget.Struct)
 				{
-					if (parameters[pi] is Any structRef && Script.GetPropertyValueOrNull(structRef, "__Value") is Struct structValue)
-						_ = Script.SetPropertyValue(structRef, "__Value", Struct.GetOutputValue(structValue));
+					if (parameters[pi] is Any structRef && Refs.GetValueOrNull(structRef) is Struct structValue)
+						_ = Refs.SetValue(structRef, Struct.GetOutputValue(structValue));
 
 					continue;
 				}
@@ -471,8 +473,10 @@ namespace Keysharp.Internals.Interop
 					sb.UpdateEntangledStringFromBuffer();
 					parameters[pi] = sb.EntangledString;
 				}
-				else if (parameters[pi] is Any kso)
-					_ = Script.SetPropertyValue(kso, slot.Kind == OutputTarget.Ptr ? "ptr" : "__Value", NativeType.ReadMemory(slot.Code, address));
+				else if (slot.Kind == OutputTarget.Ptr && parameters[pi] is Any kso)
+					_ = Script.SetPropertyValue(kso, "ptr", NativeType.ReadMemory(slot.Code, address));
+				else if (parameters[pi] is Any)
+					_ = Refs.SetValue(parameters[pi], NativeType.ReadMemory(slot.Code, address));
 				else
 					parameters[pi] = NativeType.ReadMemory(slot.Code, address);
 			}
@@ -600,7 +604,7 @@ namespace Keysharp.Internals.Interop
 			// The caller's ref, read through the property so a subclass overriding __Value is honored. The plain-ref
 			// fast path lives inside GetPropertyValueOrNull, so reading it this way costs nothing extra.
 			var targetRef = value as VarRef;
-			var input = targetRef != null ? Script.GetPropertyValueOrNull(targetRef, "__Value") : value;
+			var input = targetRef != null ? Refs.GetValueOrNull(targetRef) : value;
 			var hasInput = input != null;
 
 			if (!hasInput && targetRef == null)
@@ -616,7 +620,7 @@ namespace Keysharp.Internals.Interop
 
 			if (targetRef != null)
 			{
-				parameters[paramIndex] = new VarRef(() => structValue, value => _ = Script.SetPropertyValue(targetRef, "__Value", value));
+				parameters[paramIndex] = new VarRef(() => structValue, value => _ = Refs.SetValue(targetRef, value));
 				AddOutput(n, paramIndex, NativeTypeCode.Ptr, OutputTarget.Struct);
 			}
 			else if (!ReferenceEquals(structValue, input))

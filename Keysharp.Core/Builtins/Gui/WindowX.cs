@@ -611,10 +611,10 @@ namespace Keysharp.Builtins
 		{
             object valX = null, valY = null, valWidth = null, valHeight = null;
 			WinPosHelper(true, ref valX, ref valY, ref valWidth, ref valHeight, winTitle, winText, excludeTitle, excludeText);
-            if (outX != null) Script.SetPropertyValue(outX, "__Value", valX);
-			if (outY != null) Script.SetPropertyValue(outY, "__Value", valY);
-			if (outWidth != null) Script.SetPropertyValue(outWidth, "__Value", valWidth);
-			if (outHeight != null) Script.SetPropertyValue(outHeight, "__Value", valHeight);
+            if (outX != null) Refs.SetValue(outX, valX);
+			if (outY != null) Refs.SetValue(outY, valY);
+			if (outWidth != null) Refs.SetValue(outWidth, valWidth);
+			if (outHeight != null) Refs.SetValue(outHeight, valHeight);
 			return DefaultObject;
 		}
 
@@ -721,10 +721,10 @@ namespace Keysharp.Builtins
 		{
             object valX = null, valY = null, valWidth = null, valHeight = null;
 			WinPosHelper(false, ref valX, ref valY, ref valWidth, ref valHeight, winTitle, winText, excludeTitle, excludeText);
-            if (outX != null) Script.SetPropertyValue(outX, "__Value", valX);
-			if (outY != null) Script.SetPropertyValue(outY, "__Value", valY);
-			if (outWidth != null) Script.SetPropertyValue(outWidth, "__Value", valWidth);
-			if (outHeight != null) Script.SetPropertyValue(outHeight, "__Value", valHeight);
+            if (outX != null) Refs.SetValue(outX, valX);
+			if (outY != null) Refs.SetValue(outY, valY);
+			if (outWidth != null) Refs.SetValue(outWidth, valWidth);
+			if (outHeight != null) Refs.SetValue(outHeight, valHeight);
             return null;
 		}
 

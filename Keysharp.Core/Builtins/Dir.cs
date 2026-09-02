@@ -238,7 +238,7 @@ namespace Keysharp.Builtins
 			{
 				var uri = new Uri(p);
 				string drive = uri.Scheme + "://" + uri.Host;
-				if (outDrive != null) Script.SetPropertyValue(outDrive, "__Value", drive);
+				if (outDrive != null) Refs.SetValue(outDrive, drive);
 				var lastSlash = uri.LocalPath.LastIndexOf('/');
 				var localPath = uri.LocalPath;
 
@@ -248,20 +248,20 @@ namespace Keysharp.Builtins
 
 					if (tempFilename.Contains('.'))
 					{
-						if (outFileName != null) Script.SetPropertyValue(outFileName, "__Value", tempFilename);
-						if (outExtension != null) Script.SetPropertyValue(outExtension, "__Value", Path.GetExtension(tempFilename).Trim('.'));
-						if (outNameNoExt != null) Script.SetPropertyValue(outNameNoExt, "__Value", Path.GetFileNameWithoutExtension(tempFilename));
+						if (outFileName != null) Refs.SetValue(outFileName, tempFilename);
+						if (outExtension != null) Refs.SetValue(outExtension, Path.GetExtension(tempFilename).Trim('.'));
+						if (outNameNoExt != null) Refs.SetValue(outNameNoExt, Path.GetFileNameWithoutExtension(tempFilename));
 						localPath = localPath.Substring(0, lastSlash);
 					}
 					else
 					{
-						if (outFileName != null) Script.SetPropertyValue(outFileName, "__Value", "");
-						if (outExtension != null) Script.SetPropertyValue(outExtension, "__Value", "");
-						if (outNameNoExt != null) Script.SetPropertyValue(outNameNoExt, "__Value", "");
+						if (outFileName != null) Refs.SetValue(outFileName, "");
+						if (outExtension != null) Refs.SetValue(outExtension, "");
+						if (outNameNoExt != null) Refs.SetValue(outNameNoExt, "");
                     }
 				}
 
-				if (outDir != null) Script.SetPropertyValue(outDir, "__Value", (drive + localPath).TrimEnd('/'));
+				if (outDir != null) Refs.SetValue(outDir, (drive + localPath).TrimEnd('/'));
 			}
 			else
 			{
@@ -274,16 +274,16 @@ namespace Keysharp.Builtins
 					var lastSlash = input.LastIndexOf('\\');
 					var hasFileComponent = input.Contains('.') && lastSlash > nextSlash && lastSlash >= 0 && lastSlash + 1 < input.Length;
 
-					if (outFileName != null) Script.SetPropertyValue(outFileName, "__Value", hasFileComponent ? input[(lastSlash + 1)..] : "");
-					if (outExtension != null) Script.SetPropertyValue(outExtension, "__Value", hasFileComponent ? Path.GetExtension(input).Trim('.') : "");
-					if (outNameNoExt != null) Script.SetPropertyValue(outNameNoExt, "__Value", hasFileComponent ? Path.GetFileNameWithoutExtension(input[(lastSlash + 1)..]) : "");
+					if (outFileName != null) Refs.SetValue(outFileName, hasFileComponent ? input[(lastSlash + 1)..] : "");
+					if (outExtension != null) Refs.SetValue(outExtension, hasFileComponent ? Path.GetExtension(input).Trim('.') : "");
+					if (outNameNoExt != null) Refs.SetValue(outNameNoExt, hasFileComponent ? Path.GetFileNameWithoutExtension(input[(lastSlash + 1)..]) : "");
 
 					if (outDrive != null)
 					{
 						if (nextSlash == -1)
-							Script.SetPropertyValue(outDrive, "__Value", p);
+							Refs.SetValue(outDrive, p);
 						else
-							Script.SetPropertyValue(outDrive, "__Value", input.Substring(0, nextSlash));
+							Refs.SetValue(outDrive, input.Substring(0, nextSlash));
 					}
 
 					if (outDir != null)
@@ -291,21 +291,21 @@ namespace Keysharp.Builtins
 						if (input.Contains('.'))
 						{
 							if (lastSlash == -1)
-								Script.SetPropertyValue(outDir, "__Value", input);
+								Refs.SetValue(outDir, input);
 							else
-								Script.SetPropertyValue(outDir, "__Value", input.AsSpan().Slice(0, lastSlash).TrimEnd('\\').ToString());
+								Refs.SetValue(outDir, input.AsSpan().Slice(0, lastSlash).TrimEnd('\\').ToString());
 						}
 						else
-							Script.SetPropertyValue(outDir, "__Value", input.TrimEnd('\\'));
+							Refs.SetValue(outDir, input.TrimEnd('\\'));
 					}
 				}
 				else
 				{
-					if (outFileName != null) Script.SetPropertyValue(outFileName, "__Value", Path.GetFileName(input) ?? DefaultObject);
-					if (outExtension != null) Script.SetPropertyValue(outExtension, "__Value", Path.GetExtension(input)?.Trim('.') ?? DefaultObject);
-					if (outNameNoExt != null) Script.SetPropertyValue(outNameNoExt, "__Value", Path.GetFileNameWithoutExtension(input) ?? DefaultObject);
-					if (outDir != null) Script.SetPropertyValue(outDir, "__Value", Path.GetDirectoryName(input)?.TrimEnd('\\') ?? DefaultObject);
-					if (outDrive != null) Script.SetPropertyValue(outDrive, "__Value", Path.GetPathRoot(input)?.TrimEnd('\\') ?? DefaultObject);
+					if (outFileName != null) Refs.SetValue(outFileName, Path.GetFileName(input) ?? DefaultObject);
+					if (outExtension != null) Refs.SetValue(outExtension, Path.GetExtension(input)?.Trim('.') ?? DefaultObject);
+					if (outNameNoExt != null) Refs.SetValue(outNameNoExt, Path.GetFileNameWithoutExtension(input) ?? DefaultObject);
+					if (outDir != null) Refs.SetValue(outDir, Path.GetDirectoryName(input)?.TrimEnd('\\') ?? DefaultObject);
+					if (outDrive != null) Refs.SetValue(outDrive, Path.GetPathRoot(input)?.TrimEnd('\\') ?? DefaultObject);
 				}
 			}
 

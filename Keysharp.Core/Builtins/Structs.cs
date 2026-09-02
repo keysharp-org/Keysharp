@@ -501,7 +501,7 @@ namespace Keysharp.Builtins
 			}
 
 			if (GetFieldValue(field) is Struct nested && HasCustomValueProperty(nested, Script.OwnPropsMapType.Set))
-				return Script.SetPropertyValue(nested, "__Value", value);
+				return Refs.SetValue(nested, value);
 
 			return Errors.ErrorOccurred("Assignment to struct is not supported.");
 		}
@@ -765,7 +765,7 @@ namespace Keysharp.Builtins
 
 		internal static object GetOutputValue(Struct value) =>
 			HasCustomValueProperty(value, Script.OwnPropsMapType.Get | Script.OwnPropsMapType.Value)
-				? Script.GetPropertyValue(value, "__Value")
+				? Refs.GetValue(value)
 				: IsPrimitive(value.StructType)
 					? value.GetPrimitiveValue()
 					: value;
@@ -775,7 +775,7 @@ namespace Keysharp.Builtins
 			if (!HasCustomValueProperty(value, Script.OwnPropsMapType.Set) && !IsPrimitive(value.StructType))
 				_ = Errors.TypeErrorOccurred(input, value.StructType);
 
-			_ = Script.SetPropertyValue(value, "__Value", input);
+			_ = Refs.SetValue(value, input);
 		}
 
 		private static bool HasCustomValueProperty(Struct value, Script.OwnPropsMapType requiredType)

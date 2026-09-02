@@ -75,23 +75,23 @@ Keysharp runs on its own. Two standalone system components, [`keysharp-input`](h
 
 On Arch-based systems Keysharp is also available as an [AUR package](https://aur.archlinux.org/packages/keysharp-git).
 
-#### Debian, Ubuntu and derivatives
+#### All three projects at once
 
-Download the single `keysharp-*-deb-bundle.tar.gz` for your architecture from the [Releases](https://github.com/keysharp-org/Keysharp/releases) page, then extract and install it:
+`keysharp-linux-setup.sh` on the [Releases](https://github.com/keysharp-org/Keysharp/releases) page resolves and installs all three. Download it, check it against the release's `SHA256SUMS`, then run it:
 
 ```sh
-tar -xzf keysharp-*-deb-bundle.tar.gz
-cd keysharp-*-deb-bundle
-sudo bash ./install.sh
+sudo sh ./keysharp-linux-setup.sh
 ```
 
-The bundle is offline: it contains all three packages. Its installer verifies checksums and package metadata before invoking apt. An installed package or standalone component that supplies the required public client ABI is left untouched.
+It carries no payload. Each project is downloaded from its own latest release, verified against that release's `SHA256SUMS`, and installed by that project's own installer. On a dpkg host it fetches the three `.deb` files and installs them in one apt transaction, so Keysharp's recommendations resolve; elsewhere it installs the three tarballs, components first. A component already installed at a compatible client ABI is skipped, so a rerun installs only what is missing.
 
-Keysharp recommends the virtual packages `keysharp-input-client-abi-0` and `keysharp-desktop-client-abi-0`. The bundle supplies them with the default helper packages, while any installed alternative that provides the same client ABI is left in place. Product versions select release artifacts; the client ABI decides compatibility. Keysharp still runs when either component is absent, but its corresponding privileged features are unavailable.
+`--dry-run` reports the plan without downloading. `--skip-input` and `--skip-desktop` leave a component out. `--keysharp-version`, `--input-version` and `--desktop-version` pin a version instead of taking the latest; there is no cross-project version lock, because the client ABI is what decides compatibility.
 
-#### Other distributions
+Keysharp recommends the virtual packages `keysharp-input-client-abi-0` and `keysharp-desktop-client-abi-0`. Any installed alternative that provides the same client ABI is left in place. Product versions select release artifacts; the client ABI decides compatibility. Keysharp still runs when either component is absent, but its corresponding privileged features are unavailable.
 
-Download and extract the Keysharp installer tarball from the [Releases](https://github.com/keysharp-org/Keysharp/releases) page, then:
+#### Keysharp on its own
+
+The Keysharp `.deb` and the Keysharp tarball each install Keysharp and nothing else. From the tarball:
 
 ```sh
 sudo bash ./install.sh
@@ -102,9 +102,9 @@ The installer:
 * Installs the Linux runtime dependencies, and the .NET 10 runtime if your distribution provides it. If it does not, install it manually using [these instructions](https://learn.microsoft.com/en-us/dotnet/core/install/linux).
 * Registers Keysharp as the default program for `.ks` and `.cks` files, so double-clicking a script runs it.
 * Creates a `/usr/local/bin/keysharp` symlink so you can run Keysharp from anywhere.
-* Installs a bundled component only when its command and public client library are not already present. Nothing is downloaded at install time.
+* Installs nothing but Keysharp. Use `keysharp-linux-setup.sh` to add the components, or each component's own installer.
 
-Run `install.sh` without `sudo` to install under `$HOME/.local` instead. The system components are then not installed, but Keysharp still uses any already present on the system.
+Run `install.sh` without `sudo` to install under `$HOME/.local` instead. Keysharp still uses any system component already present.
 
 #### Verifying the installation
 
@@ -117,7 +117,7 @@ Each command reports service readiness and available operations. On GNOME and Ci
 
 #### Uninstalling
 
-For the `.deb`, run `sudo apt remove keysharp`. This does not remove either helper in the same transaction. Helpers first installed by the offline bundle are marked automatic, so a later `sudo apt autoremove` can remove one only when Keysharp and every other package have stopped recommending or depending on its ABI. Pre-existing helpers keep their previous automatic or manual state. Permission grants remain under `/var/lib/keysharp-permissions/v1`.
+For the `.deb`, run `sudo apt remove keysharp`. This does not remove either component in the same transaction. Components apt installed as a recommendation are marked automatic, so a later `sudo apt autoremove` can remove one only when Keysharp and every other package have stopped recommending or depending on its ABI. Components installed manually keep their manual state. Permission grants remain under `/var/lib/keysharp-permissions/v1`.
 
 The tarball's uninstaller removes only Keysharp. It always leaves both components installed, because other applications may use them, and it never deletes permission grants. Remove a component separately only after establishing that nothing else needs it:
 
@@ -132,7 +132,7 @@ The `.deb` application under `/usr` and the root tarball application under `/usr
 
 The same rule applies to the components: a component `.deb` refuses to unpack over a tarball-installed component under `/usr/local`, whose unit files would otherwise shadow the package's. Run that component's portable uninstaller first.
 
-The standalone Keysharp `.deb` is intended for package repositories and machines that already have compatible component packages. Until an apt repository is published, use the offline bundle rather than adding an unsigned package source.
+Until an apt repository is published, `keysharp-linux-setup.sh` is the way to install the `.deb` channel: it fetches each project's verified package directly, rather than adding an unsigned package source.
 
 #### System components
 
@@ -163,10 +163,9 @@ Then use `/home/YOUR_USERNAME/.local/bin/AutoHotkey.exe` as the interpreter path
 ### Building from source on Linux
 * Install the .NET 10 SDK (not just the runtime) as described in "Installing on Linux"
 * In the same parent folder as keysharp, clone the Keysharp branch of [the Keysharp fork of Eto](https://github.com/keysharp-org/Eto/tree/Keysharp); if keysharp is at `foo/keysharp`, clone Eto to `foo/Eto` by running `git clone -b Keysharp https://github.com/keysharp-org/Eto.git` from within `foo`.
-* Build the helper versions in `Keysharp.Install/linux/component-versions.conf`, place their release archives in one directory, and run `Keysharp.Install/package-linux.sh --dependency-dir <directory>`. `--download-components` remains disabled until the published 0.2.0 asset hashes are added to that file.
+* Run `Keysharp.Install/package-linux.sh`. It packages Keysharp alone; the two components are built and released from their own repositories.
 * The unpacked tree is placed in `dist/staging/linux-x64/keysharp-linux-x64`, and the installable tarball is `dist/keysharp-linux-x64.tar.gz`. If `dpkg-deb` is installed, a Debian package such as `dist/keysharp_<version>_amd64.deb` is also created.
-* To build the offline Debian bundle, place the matching helper `.deb` files in one directory and run `Keysharp.Install/package-linux-deb-bundle.sh --keysharp-deb dist/keysharp_<version>_<arch>.deb --dependency-dir <directory>`. Release automation uses `--download-components`, verifies the separate pinned `.deb` hashes, and publishes `keysharp-<version>-<rid>-deb-bundle.tar.gz`. The generic tarball continues to bundle the separately verified standalone installers for non-Debian systems.
-* The staged folder and tarball are portable, so all three source repositories can be safely deleted after packaging.
+* The staged folder and tarball are portable, so both source repositories can be safely deleted after packaging.
 * **Alternatively**, on arch-based systems keysharp is provided as an [AUR package](https://aur.archlinux.org/packages/keysharp-git)
 
 ## macOS Platform Support

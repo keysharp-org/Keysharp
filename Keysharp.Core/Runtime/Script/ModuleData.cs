@@ -68,12 +68,12 @@ namespace Keysharp.Runtime
 
 		public object this[object key]
 		{
-			get => GetPropertyValueOrNull(key, "__Value") ?? Script.TheScript.Vars.GetVariable(moduleType, key.ToString()) ?? "";
-			// A VarRef (or any object exposing a settable __Value) is written through, symmetrically with the
-			// get above. Tested as Any rather than KeysharpObject because VarRef derives from Any -- and that one
-			// test is enough for it too, since SetPropertyValue holds the plain-ref fast path itself.
-			set => _ = (key is Any anyKey && Functions.HasProp(anyKey, "__Value") == 1)
-				? Script.SetPropertyValue(anyKey, "__Value", value)
+			// The key is either a variable NAME or a reference standing in for one, so the reference test has to be
+			// the provable one: anything else is a name, and a value that merely might answer to __Value would be
+			// read as a reference here and never resolve as the name it is.
+			get => (Refs.DeclaresValue(key) ? Refs.GetValueOrNull(key) : null) ?? Script.TheScript.Vars.GetVariable(moduleType, key.ToString()) ?? "";
+			set => _ = Refs.DeclaresValue(key)
+				? Refs.SetValue(key, value)
 				: Script.TheScript.Vars.SetVariable(moduleType, key.ToString(), value);
 		}
 

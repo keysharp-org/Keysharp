@@ -173,13 +173,13 @@ namespace Keysharp.Builtins
 					var location = searchBounds.PixelToScreen(match, new PixelSize(capture.Width, capture.Height));
 					int foundX = location.X, foundY = location.Y;
 					ScreenToCoord(ref foundX, ref foundY, CoordMode.Pixel);
-					if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", (long)foundX);
-					if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", (long)foundY);
+					if (outputVarX != null) Refs.SetValue(outputVarX, (long)foundX);
+					if (outputVarY != null) Refs.SetValue(outputVarY, (long)foundY);
 					return 1L;
 				}
 
-				if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", "");
-				if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", "");
+				if (outputVarX != null) Refs.SetValue(outputVarX, "");
+				if (outputVarY != null) Refs.SetValue(outputVarY, "");
 				return 0L;
 			}
 			catch (KeysharpException)
@@ -300,13 +300,13 @@ namespace Keysharp.Builtins
 					var location = bounds.PixelToScreen(match, new PixelSize(capture.Width, capture.Height));
 					int foundX = location.X, foundY = location.Y;
 					ScreenToCoord(ref foundX, ref foundY, CoordMode.Pixel);
-					if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", (long)foundX);
-					if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", (long)foundY);
+					if (outputVarX != null) Refs.SetValue(outputVarX, (long)foundX);
+					if (outputVarY != null) Refs.SetValue(outputVarY, (long)foundY);
 					return 1L;
 				}
 
-				if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", "");
-				if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", "");
+				if (outputVarX != null) Refs.SetValue(outputVarX, "");
+				if (outputVarY != null) Refs.SetValue(outputVarY, "");
 				return 0L;
 			}
 			catch (KeysharpException)

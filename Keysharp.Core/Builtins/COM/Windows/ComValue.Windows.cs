@@ -355,11 +355,14 @@ namespace Keysharp.Builtins.COM
 				var pm = new ParameterModifier(inputParameters.Length);
 				for (int i = 0; i < inputParameters.Length; i++)
 				{
-					if (inputParameters[i] is KeysharpObject kso && Script.GetPropertyValueOrNull(kso, "__Value") is object refval)
+					// Nothing has said which parameters are by-reference yet -- that is what this pass guesses from the
+					// arguments -- so a value must prove it carries a __Value. A ComValue or ComObject argument is
+					// being passed, not written back into.
+					if (Refs.DeclaresValue(inputParameters[i]))
 					{
 						pm[i] = true;
-						refs[i] = kso; // remember for write-back
-						inputParameters[i] = refval; // unwrap to the current value for packing
+						refs[i] = inputParameters[i]; // remember for write-back
+						inputParameters[i] = Refs.GetValueOrNull(inputParameters[i]); // unwrap to the current value for packing
 					}
 				}
 				modifiers = [pm];
@@ -393,10 +396,11 @@ namespace Keysharp.Builtins.COM
 				{
 					for (int i = 0; i < inputParameters.Length; i++)
 					{
-						if (modifiers[0][i] && inputParameters[i] is KeysharpObject kso)
+						// An out parameter the target has not filled in yet reads as unset, which is not an error here.
+						if (modifiers[0][i] && Refs.DeclaresValue(inputParameters[i]))
 						{
-							refs[i] = kso;
-							inputParameters[i] = Script.GetPropertyValue(kso, "__Value");
+							refs[i] = inputParameters[i];
+							inputParameters[i] = Refs.GetValueOrNull(inputParameters[i]);
 						}
 					}
 				}
@@ -411,7 +415,7 @@ namespace Keysharp.Builtins.COM
 				// Update byref parameters
 				foreach (var kvp in refs)
 				{
-					Script.SetPropertyValue(kvp.Value, "__Value", inputParameters[kvp.Key]);
+					Refs.SetValue(kvp.Value, inputParameters[kvp.Key]);
 				}
 			}
 
@@ -422,7 +426,7 @@ namespace Keysharp.Builtins.COM
 		{
 			int hr = RawGetIDsOfNames(propertyName, out int dispId);
 			if (hr < 0)
-				return Errors.ErrorOccurred($"Property '{propertyName}' not found");
+				return Errors.PropertyErrorOccurred($"This value of type {Types.Type(this)} has no property named {propertyName}.");
 			TryGetTypeInfo(dispId, propertyName, args.Length, out var expectedTypes, out _, out var invokeKind, INVOKEKIND.INVOKE_FUNC | INVOKEKIND.INVOKE_PROPERTYGET);
 
 			object result;
@@ -443,8 +447,14 @@ namespace Keysharp.Builtins.COM
 		internal unsafe void RawSetProperty(string propertyName, object[] args, object value)
 		{
 			int hr = RawGetIDsOfNames(propertyName, out int dispId);
+
 			if (hr < 0)
-				throw new COMException($"Property '{propertyName}' not found");
+			{
+				// A bare COMException here reaches the script as an uncatchable CLR exception; a name this value
+				// does not expose is the same PropertyError the read path raises.
+				_ = Errors.PropertyErrorOccurred($"This value of type {Types.Type(this)} has no property named {propertyName}.");
+				return;
+			}
 
 			if (!TryGetTypeInfo(dispId, propertyName, args.Length, out var expectedTypes, out var modifiers, out var invokeKind, INVOKEKIND.INVOKE_PROPERTYPUT | INVOKEKIND.INVOKE_PROPERTYPUTREF))
 				invokeKind = INVOKEKIND.INVOKE_PROPERTYPUT;

@@ -685,10 +685,10 @@ namespace Keysharp.Builtins
 
 				if (Math.Abs(scale - 1.0) < 0.0001)
 				{
-					if (outX != null) Script.SetPropertyValue(outX, "__Value", (long)rect.X);
-					if (outY != null) Script.SetPropertyValue(outY, "__Value", (long)rect.Y);
-					if (outWidth != null) Script.SetPropertyValue(outWidth, "__Value", (long)rect.Width);
-					if (outHeight != null) Script.SetPropertyValue(outHeight, "__Value", (long)rect.Height);
+					if (outX != null) Refs.SetValue(outX, (long)rect.X);
+					if (outY != null) Refs.SetValue(outY, (long)rect.Y);
+					if (outWidth != null) Refs.SetValue(outWidth, (long)rect.Width);
+					if (outHeight != null) Refs.SetValue(outHeight, (long)rect.Height);
 				}
 				else
 				{
@@ -696,12 +696,12 @@ namespace Keysharp.Builtins
 					// Screen positions stay in the platform's native virtual-desktop space. Only control-local authored
 					// positions and GUI sizes use the window's per-monitor scale.
 					var localPosition = !client && control?.Parent != null;
-					if (outX != null) Script.SetPropertyValue(outX, "__Value", localPosition
+					if (outX != null) Refs.SetValue(outX, localPosition
 						? (long)Math.Ceiling(rect.X * inverse) : (long)rect.X);
-					if (outY != null) Script.SetPropertyValue(outY, "__Value", localPosition
+					if (outY != null) Refs.SetValue(outY, localPosition
 						? (long)Math.Ceiling(rect.Y * inverse) : (long)rect.Y);
-					if (outWidth != null) Script.SetPropertyValue(outWidth, "__Value", (long)Math.Ceiling(rect.Width * inverse));
-					if (outHeight != null) Script.SetPropertyValue(outHeight, "__Value", (long)Math.Ceiling(rect.Height * inverse));
+					if (outWidth != null) Refs.SetValue(outWidth, (long)Math.Ceiling(rect.Width * inverse));
+					if (outHeight != null) Refs.SetValue(outHeight, (long)Math.Ceiling(rect.Height * inverse));
 				}
 			}
 

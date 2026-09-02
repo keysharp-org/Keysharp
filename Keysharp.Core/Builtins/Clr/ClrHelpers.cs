@@ -932,7 +932,7 @@ namespace Keysharp.Builtins
 				if (callArgs == null) continue;
 
 				object[] inArgs;
-				List<(int, KeysharpObject)> boxes;
+				List<(int, object)> boxes;
 
 				if (!TryBuildArguments(callArgs, ps, out inArgs, out boxes))
 					continue;
@@ -999,7 +999,7 @@ namespace Keysharp.Builtins
 
 		// Build full argument array for MethodInfo.Invoke, handling optionals and params arrays.
 		private static bool TryBuildArguments(object[] src, ParameterInfo[] ps, out object[] finalArgs,
-											 out List<(int, KeysharpObject)> boxes)
+											 out List<(int, object)> boxes)
 		{
 			src ??= System.Array.Empty<object>();
 			var argc = src.Length;
@@ -1290,24 +1290,27 @@ namespace Keysharp.Builtins
 
 		// -------- Conversions (Keysharp <-> CLR) --------
 
-		private static (object[] converted, List<(int i, KeysharpObject box)> boxes) ConvertIn(
+		private static (object[] converted, List<(int i, object box)> boxes) ConvertIn(
 			object[] src, Type declaringType, Type[] desired, out bool[] byRefMask)
 		{
 			byRefMask = null;
 			if (src == null || src.Length == 0) return (System.Array.Empty<object>(), null);
 
 			object[] dst = new object[src.Length];
-			var boxes = new List<(int, KeysharpObject)>();
+			var boxes = new List<(int, object)>();
 
 			for (int i = 0; i < src.Length; i++)
 			{
 				var s = src[i];
 
-				// Keysharp "ByRef": box with __Value
-				if (s is KeysharpObject kso && Script.GetPropertyValueOrNull(kso, "__Value") is object v)
+				// Keysharp "ByRef": a reference standing in for the argument. Nothing here declares which parameters
+				// are by-reference, so the argument must prove it carries a __Value -- an ordinary object being
+				// passed to the call, a Clr instance among them, is not one. Its target being unset does not make it
+				// any less a reference, though: the call is what fills it in, so the shape decides, not the value.
+				if (Refs.DeclaresValue(s))
 				{
-					boxes.Add((i, kso));
-					s = v;
+					boxes.Add((i, s));
+					s = Refs.GetValueOrNull(s);
 				}
 
 				var want = desired != null && i < desired.Length ? desired[i] : null;
@@ -1316,11 +1319,11 @@ namespace Keysharp.Builtins
 			return (dst, boxes.Count > 0 ? boxes : null);
 		}
 
-		private static void WriteBackRefs(object[] original, List<(int i, KeysharpObject box)> boxes)
+		private static void WriteBackRefs(object[] original, List<(int i, object box)> boxes)
 		{
 			if (boxes == null) return;
 			foreach (var (i, kso) in boxes)
-				Script.SetPropertyValue(kso, "__Value", original[i]);
+				Refs.SetValue(kso, original[i]);
 		}
 
 		internal static object CoerceToType(object value, Type target) => ConvertScalarToCLR(value, target);

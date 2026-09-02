@@ -21,10 +21,9 @@ require_literal() {
 
 preflight_line="$(grep -n '^check_system_channel_conflict$' "${INSTALLER}" | cut -d: -f1)"
 dependency_line="$(grep -n '^  install_deps$' "${INSTALLER}" | cut -d: -f1)"
-component_line="$(grep -n '^  if ! "${SCRIPT_DIR}/install-components.sh"; then$' "${INSTALLER}" | cut -d: -f1)"
-[[ -n "${preflight_line}" && -n "${dependency_line}" && -n "${component_line}" ]] \
+[[ -n "${preflight_line}" && -n "${dependency_line}" ]] \
   || fail "could not locate the tar install lifecycle boundaries"
-(( preflight_line < dependency_line && preflight_line < component_line )) \
+(( preflight_line < dependency_line )) \
   || fail "the tar channel preflight runs after a dependency/component mutation"
 
 for literal in \
@@ -41,9 +40,8 @@ require_literal "${PACKAGER}" 'install -m 0755 "${ASSETS_DIR}/debian/preinst" "$
 require_literal "${PACKAGER}" 'write_deb_preinst "${debian_dir}/preinst"'
 require_literal "${PACKAGER}" '"${debian_dir}/preinst" "${debian_dir}/postinst"'
 require_literal "${PACKAGER}" '-p:PublishDir="${PUBLISH_DIR}/${project}/"'
-require_literal "${PACKAGER}" 'preflight_component_archives'
-require_literal "${PACKAGER}" '${KEYSHARP_INPUT_DEBIAN_CLIENT_PACKAGE}'
-require_literal "${PACKAGER}" '${KEYSHARP_DESKTOP_DEBIAN_CLIENT_PACKAGE}'
+require_literal "${PACKAGER}" '${INPUT_CLIENT_ABI_PACKAGE}'
+require_literal "${PACKAGER}" '${DESKTOP_CLIENT_ABI_PACKAGE}'
 
 for literal in \
     'remove_shared_integration_file "${DESKTOP_DIR}/keyview.desktop"' \
@@ -62,9 +60,10 @@ control_function="${temporary}/write-deb-control.sh"
 sed -n '/^write_deb_control() {$/,/^}$/p' "${PACKAGER}" \
   > "${control_function}"
 # shellcheck source=/dev/null
-source "${REPOSITORY_ROOT}/Keysharp.Install/linux/component-versions.conf"
-# shellcheck source=/dev/null
 source "${control_function}"
+# The packager declares the two capabilities; read them from it so a rename there
+# is compared against the literals below rather than silently agreeing with them.
+eval "$(grep -E '^(INPUT|DESKTOP)_CLIENT_ABI_PACKAGE=' "${PACKAGER}")"
 DEB_PKG_NAME=keysharp
 VERSION=0.0.0.17
 DEB_ARCH=amd64
@@ -74,50 +73,9 @@ write_deb_control "${control_root}/DEBIAN/control"
 dpkg-deb --build --root-owner-group "${control_root}" \
   "${temporary}/control-package.deb" >/dev/null
 recommends="$(dpkg-deb -f "${temporary}/control-package.deb" Recommends)"
-expected_recommends="${KEYSHARP_INPUT_DEBIAN_CLIENT_PACKAGE}, ${KEYSHARP_DESKTOP_DEBIAN_CLIENT_PACKAGE}"
+expected_recommends="keysharp-input-client-abi-0, keysharp-desktop-client-abi-0"
 [[ "${recommends}" == "${expected_recommends}" ]] \
   || fail "generated Debian Recommends is not the two exact client ABIs: ${recommends}"
-
-missing_output="${temporary}/missing-components.out"
-if KEYSHARP_DIST_DIR="${temporary}/missing-dist" VERSION=0.0.0.17 RID=linux-x64 \
-    bash "${PACKAGER}" --dependency-dir "${temporary}/missing" \
-      >"${missing_output}" 2>&1; then
-  fail "packager accepted a missing local component directory"
-fi
-grep -Fq 'Required standalone archive not found' "${missing_output}" \
-  || fail "packager did not diagnose a missing local component before publish"
-if grep -Fq 'Publishing Keysharp and Keyview' "${missing_output}"; then
-  fail "packager started managed publishing before checking local components"
-fi
-
-bad_components="${temporary}/bad-components"
-bad_input_name="keysharp-input-${KEYSHARP_INPUT_VERSION}-linux-x64"
-bad_input_root="${temporary}/${bad_input_name}"
-mkdir -p "${bad_components}" "${bad_input_root}/bin"
-cat > "${bad_input_root}/bin/keysharp-input" <<EOF
-#!/bin/sh
-exit 0
-EOF
-cat > "${bad_input_root}/install.sh" <<'EOF'
-#!/bin/sh
-exit 0
-EOF
-cp "${bad_input_root}/install.sh" "${bad_input_root}/uninstall.sh"
-chmod 0755 "${bad_input_root}/bin/keysharp-input" \
-  "${bad_input_root}/install.sh" "${bad_input_root}/uninstall.sh"
-tar -C "${temporary}" -czf "${bad_components}/${bad_input_name}.tar.gz" \
-  "${bad_input_name}"
-bad_metadata_output="${temporary}/bad-metadata.out"
-if KEYSHARP_DIST_DIR="${temporary}/bad-metadata-dist" VERSION=0.0.0.17 \
-    RID=linux-x64 bash "${PACKAGER}" --dependency-dir "${bad_components}" \
-      >"${bad_metadata_output}" 2>&1; then
-  fail "packager accepted a standalone archive without the client ABI library"
-fi
-grep -Fq 'does not contain keysharp-input and client ABI' "${bad_metadata_output}" \
-  || fail "packager did not diagnose the missing standalone client ABI"
-if grep -Fq 'Publishing Keysharp and Keyview' "${bad_metadata_output}"; then
-  fail "packager started managed publishing before checking standalone metadata"
-fi
 
 portable_app="${temporary}/usr/local/lib/keysharp"
 portable_keysharp="${temporary}/usr/local/bin/keysharp"

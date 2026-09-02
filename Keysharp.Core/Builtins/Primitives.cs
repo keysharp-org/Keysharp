@@ -28,6 +28,13 @@ namespace Keysharp.Builtins
 		public static object staticCall(object @this, object value) => value.As(DefaultObject);
 
 		/// <summary>
+		/// The number of characters in a string, the same count <see cref="Strings.StrLen"/> returns.
+		/// </summary>
+		/// <param name="this">The string to measure.</param>
+		/// <returns>The length of the string.</returns>
+		public static long get_Length(object @this) => @this.As().Length;
+
+		/// <summary>
 		/// Determines whether a string starts with a given string.
 		/// </summary>
 		/// <param name="this">The string to examine the start of.</param>

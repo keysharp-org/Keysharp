@@ -62,8 +62,8 @@ namespace Keysharp.Builtins
 
 			if (targetWindow == 0) // No window is in the foreground, report blank coordinate.
 			{
-				if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", "");
-				if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", "");
+				if (outputVarX != null) Refs.SetValue(outputVarX, "");
+				if (outputVarY != null) Refs.SetValue(outputVarY, "");
 				return false;
 			}
 
@@ -73,8 +73,8 @@ namespace Keysharp.Builtins
 
 			if (!result)
 			{
-				if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", "");
-				if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", "");
+				if (outputVarX != null) Refs.SetValue(outputVarX, "");
+				if (outputVarY != null) Refs.SetValue(outputVarY, "");
                 return false;
 			}
 
@@ -90,8 +90,8 @@ namespace Keysharp.Builtins
 			CoordToScreen(ref x, ref y, CoordMode.Caret);// Now convert back to whatever is expected for the current mode.
 			pt.X -= x;
 			pt.Y -= y;
-			if (outputVarX != null) Script.SetPropertyValue(outputVarX, "__Value", (long)pt.X);
-			if (outputVarY != null) Script.SetPropertyValue(outputVarY, "__Value", (long)pt.Y);
+			if (outputVarX != null) Refs.SetValue(outputVarX, (long)pt.X);
+			if (outputVarY != null) Refs.SetValue(outputVarY, (long)pt.Y);
 			return true;
 #else
 #if LINUX
@@ -110,8 +110,8 @@ namespace Keysharp.Builtins
 
 			if (!caret.Found)
 			{
-				Script.SetPropertyValue(outputVarX, "__Value", "");
-				Script.SetPropertyValue(outputVarY, "__Value", "");
+				Refs.SetValue(outputVarX, "");
+				Refs.SetValue(outputVarY, "");
 				return false;
 			}
 
@@ -119,8 +119,8 @@ namespace Keysharp.Builtins
 			var originX = 0;
 			var originY = 0;
 			CoordToScreen(ref originX, ref originY, CoordMode.Caret);
-			Script.SetPropertyValue(outputVarX, "__Value", (long)(caret.X - originX));
-			Script.SetPropertyValue(outputVarY, "__Value", (long)(caret.Y - originY));
+			Refs.SetValue(outputVarX, (long)(caret.X - originX));
+			Refs.SetValue(outputVarY, (long)(caret.Y - originY));
 			return true;
 #endif
 		}

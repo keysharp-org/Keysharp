@@ -59,7 +59,7 @@ namespace Keysharp.Builtins
 					if (ImageHandleManager.TryAddCursor(cur, out var cursorHandle))
 					{
 						handleValue = cursorHandle.ToInt64();
-						Script.SetPropertyValue(outImageType, "__Value", 2L);
+						Refs.SetValue(outImageType, 2L);
 						return handleValue;
 					}
 
@@ -75,7 +75,7 @@ namespace Keysharp.Builtins
 				}
 
 				if (wantType)
-					Script.SetPropertyValue(outImageType, "__Value", 0L);
+					Refs.SetValue(outImageType, 0L);
 #else
 				var cur = new Cursor(file);
 
@@ -94,7 +94,7 @@ namespace Keysharp.Builtins
 				}
 
 				if (wantType)
-					Script.SetPropertyValue(outImageType, "__Value", 2L);
+					Refs.SetValue(outImageType, 2L);
 #endif
 				return handleValue;
 			}
@@ -121,7 +121,7 @@ namespace Keysharp.Builtins
 					handleValue = bmpHandle.ToInt64();
 
 				if (wantType)
-					Script.SetPropertyValue(outImageType, "__Value", isIcon ? 1L : 0L);
+					Refs.SetValue(outImageType, isIcon ? 1L : 0L);
 
 				if (ret.Item2 is IDisposable disposable && !ReferenceEquals(ret.Item2, bmp))
 					disposable.Dispose();

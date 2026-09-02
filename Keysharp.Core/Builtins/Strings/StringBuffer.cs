@@ -98,12 +98,12 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			public object UpdateEntangledStringFromBuffer() => EntangledString != null ? Script.SetPropertyValue(EntangledString, "__Value", ToString()) : null;
+			public object UpdateEntangledStringFromBuffer() => EntangledString != null ? Refs.SetValue(EntangledString, ToString()) : null;
 			public object UpdateBufferFromEntangledString()
 			{
 				if (EntangledString == null)
 					return null;
-				var str = Script.GetPropertyValue(EntangledString, "__Value") as string;
+				var str = Refs.GetValue(EntangledString) as string;
 				str ??= "";
 				var requiredCapacity = Math.Max(_capacity, str.Length);
 				EnsureCapacity(requiredCapacity);
