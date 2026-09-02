@@ -842,8 +842,9 @@ namespace Keysharp.Runtime
 			//Restrict the search to windows belonging to this executable, otherwise an unrelated
 			//app whose window title happens to match the script's filename  would be mistaken for 
 			// another running instance.
-			using var currentProcess = Process.GetCurrentProcess();
-			title = $"{title} ahk_exe {currentProcess.ProcessName}";
+			//ahk_exe matches the image file NAME, extension and all, which is what WinGetProcessName reports.
+			//ProcessName drops the extension, so the criteria never matched a running instance at all.
+			title = $"{title} ahk_exe {Path.GetFileName(Environment.ProcessPath)}";
 			var exit = false;
 			var oldDetect = WindowX.DetectHiddenWindows(true);
 			var oldMatchMode = WindowX.SetTitleMatchMode(3);//Require exact match.
@@ -852,7 +853,11 @@ namespace Keysharp.Runtime
 			{
 				case eScriptInstance.Force:
 				{
-					_ = WindowX.WinClose(title, "", 2);
+					//WinClose raises a TargetError when it matches nothing, which is every first run.
+					var running = WindowX.WinExist(title);
+
+					if (running != 0)
+						_ = WindowX.WinClose(running, "", 2);
 				}
 				break;
 
