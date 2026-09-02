@@ -401,14 +401,14 @@ namespace Keysharp.Builtins
 			{
 				var coords = PointToClient(new Point(e.X, e.Y));
 				var files = (string[])e.Data.GetData(DataFormats.FileDrop);
-				_ = dropFilesHandlers?.InvokeEventHandlers(g, ActiveControl, new Array(files), coords.X, coords.Y);
+				dropFilesHandlers?.InvokeEventHandlers(g, ActiveControl, new Array(files), coords.X, coords.Y);
 			}
 #else
 			if (e.Data.ContainsUris && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
 			{
 				var coords = PointFromScreen(e.Location);
 				var files = (string[])e.Data.Uris.Select(uri => uri.ToString());
-				_ = dropFilesHandlers?.InvokeEventHandlers(g, sender, new Array(files), coords.X, coords.Y);
+				dropFilesHandlers?.InvokeEventHandlers(g, sender, new Array(files), coords.X, coords.Y);
 			}
 #endif
 		}
@@ -423,7 +423,7 @@ namespace Keysharp.Builtins
 			{
 				if (!closingFromDestroy)
 				{
-					var result = closedHandlers?.InvokeEventHandlers(g);
+					var result = closedHandlers?.InvokeSynchronousEventHandlers(g);
 					e.Cancel = true;
 
 					if (result.Al() != 0L)
@@ -444,7 +444,7 @@ namespace Keysharp.Builtins
 			if ((e.KeyCode == Keys.Apps || (e.KeyCode == Keys.F10 && ((ModifierKeys & Keys.Shift) == Keys.Shift))) && GetCursorPos(out POINT pt))
 				CallContextMenuChangeHandlers(true, pt.X, pt.Y);
 			else if (e.KeyCode == Keys.Escape && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
-				_ = escapeHandlers?.InvokeEventHandlers(g);
+				escapeHandlers?.InvokeEventHandlers(g);
 #else
 #if !OSX
 			// The Menu/context-menu key and Shift+F10 open the context menu on Windows and Linux.
@@ -454,7 +454,7 @@ namespace Keysharp.Builtins
 			else
 #endif
 			if (e.Key == Forms.Keys.Escape && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
-				_ = escapeHandlers?.InvokeEventHandlers(g);
+				escapeHandlers?.InvokeEventHandlers(g);
 #endif
 		}
 
@@ -484,10 +484,12 @@ namespace Keysharp.Builtins
 
 				Size client = ClientSize;
 
+				//Deferrable: a programmatic resize raises this inside the thread which asked for it, and that
+				//thread is uninterruptible for its first 17ms and for as long as it is Critical.
 				if (g.DpiScale != 1.0)
-					_ = sizeHandlers?.InvokeEventHandlers(g, state, (long)(client.Width / g.DpiScale), (long)(client.Height / g.DpiScale));
+					sizeHandlers?.InvokeEventHandlers(g, state, (long)(client.Width / g.DpiScale), (long)(client.Height / g.DpiScale));
 				else
-					_ = sizeHandlers?.InvokeEventHandlers(g, state, (long)client.Width, (long)client.Height);
+					sizeHandlers?.InvokeEventHandlers(g, state, (long)client.Width, (long)client.Height);
 			}
 
 			UpdateStatusStripLayout();
@@ -526,7 +528,7 @@ namespace Keysharp.Builtins
 		internal void CallDpiChangeHandlers(long oldDpi, long newDpi)
 		{
 			if (Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
-				_ = dpiChangeHandlers?.InvokeEventHandlers(g, oldDpi, newDpi);
+				dpiChangeHandlers?.InvokeEventHandlers(g, oldDpi, newDpi);
 		}
 
 		/// <summary>

@@ -1068,13 +1068,13 @@ namespace Keysharp.Builtins
 
 				lastSelStart = start;
 				lastSelLength = len;
-				_ = (selectionChangeHandlers?.InvokeEventHandlers(this, start + 1, len));
+				selectionChangeHandlers?.InvokeEventHandlers(this, start + 1, len);
 			}
 
 			private void Rt_LinkClick(object sender, RichEditLinkEventArgs e)
 			{
 				if (eventHandlerActive)
-					_ = (linkClickHandlers?.InvokeEventHandlers(this, e.LinkText, (long)(e.LinkStart + 1), (long)e.LinkLength));
+					linkClickHandlers?.InvokeEventHandlers(this, e.LinkText, (long)(e.LinkStart + 1), (long)e.LinkLength);
 			}
 
 			// ---- internals -------------------------------------------------------------------------------

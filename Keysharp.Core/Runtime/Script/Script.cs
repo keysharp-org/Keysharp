@@ -1832,7 +1832,7 @@ namespace Keysharp.Runtime
 			// Dispatch to the OnClipboardChange handlers and discard the aggregate result. It must NOT be wrapped
 			// in IfTest/ForceBool: InvokeEventHandlers returns null when a handler is deferred (e.g. a re-entrant
 			// A_Clipboard:= from a hotkey thread) or returns nothing, and ForceBool(null) throws "input was unset".
-			_ = ClipFunctions.InvokeEventHandlers(changeType);
+			ClipFunctions.InvokeEventHandlers(changeType);
 			ClipboardEventManager.Dispatch(changeType);
 		}
 

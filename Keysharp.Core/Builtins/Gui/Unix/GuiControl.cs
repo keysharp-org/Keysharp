@@ -1064,7 +1064,7 @@ namespace Keysharp.Builtins
 					}
 
 					if ((lvo.focused ?? false) && focusedItemChangedHandlers != null && listViewFocusedRow >= 0)
-						_ = focusedItemChangedHandlers.InvokeEventHandlers(this, (long)(listViewFocusedRow + 1));
+						focusedItemChangedHandlers.InvokeEventHandlers(this, (long)(listViewFocusedRow + 1));
 
 					if (needsRefresh)
 						lv.RefreshDataStore();
@@ -1855,9 +1855,9 @@ namespace Keysharp.Builtins
 				else if (_control is KeysharpListView lv)
 				{
 					if (lv.SelectedIndices.Count > 0)
-						_ = clickHandlers.InvokeEventHandlers(this, lv.SelectedIndices[0] + 1L);
+						clickHandlers.InvokeEventHandlers(this, lv.SelectedIndices[0] + 1L);
 					else
-						_ = clickHandlers.InvokeEventHandlers(this, 0L);
+						clickHandlers.InvokeEventHandlers(this, 0L);
 				}
 				else if (_control is KeysharpLinkLabel ll)
 				{
@@ -1871,11 +1871,11 @@ namespace Keysharp.Builtins
 						if (!ll.clickSet)
 							KeysharpLinkLabel.OpenUrl(url);
 						else
-							_ = clickHandlers.InvokeEventHandlers(this, id != "" ? id : idx + 1L, url);
+							clickHandlers.InvokeEventHandlers(this, id != "" ? id : idx + 1L, url);
 					}
 				}
 				else if (_control is KeysharpStatusStrip sbar)
-					_ = clickHandlers.InvokeEventHandlers(this, sbar.PartFromPoint());
+					clickHandlers.InvokeEventHandlers(this, sbar.PartFromPoint());
 				//else if (_control is KeysharpButton)
 				//{
 				//  //mousecount ^= 1;//Button click events get fired twice, because we have double click and standard click enabled, so filter the second click here.
@@ -1883,7 +1883,7 @@ namespace Keysharp.Builtins
 				//  _ = clickHandlers.InvokeEventHandlers(this, 0L);
 				//}
 				else
-					_ = clickHandlers.InvokeEventHandlers(this, 0L);
+					clickHandlers.InvokeEventHandlers(this, 0L);
 			}
 
 			internal void _control_KeyDown(object sender, KeyEventArgs e)
@@ -1912,7 +1912,7 @@ namespace Keysharp.Builtins
 			internal void Tv_AfterExpand(object sender, TreeGridViewItemEventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpTreeView)
-					_ = (itemExpandHandlers?.InvokeEventHandlers(this, (e.Item as TreeNode)?.Handle.ToInt64() ?? 0L, e.Item.Expanded ? 1L : 0L));
+					itemExpandHandlers?.InvokeEventHandlers(this, (e.Item as TreeNode)?.Handle.ToInt64() ?? 0L, e.Item.Expanded ? 1L : 0L);
 			}
 
 			internal void Lv_AfterLabelEdit(object sender, GridViewCellEventArgs e)
@@ -1934,11 +1934,11 @@ namespace Keysharp.Builtins
 						listViewCheckClickActive = false;
 						return;
 					}
-					_ = (itemCheckHandlers?.InvokeEventHandlers(this, rowIndex + 1L, item.Checked ? 1L : 0L));
+					itemCheckHandlers?.InvokeEventHandlers(this, rowIndex + 1L, item.Checked ? 1L : 0L);
 					return;
 				}
 
-				_ = (itemEditHandlers?.InvokeEventHandlers(this, rowIndex + 1L));
+				itemEditHandlers?.InvokeEventHandlers(this, rowIndex + 1L);
 			}
 
 			internal void Tv_AfterLabelEdit(object sender, GridViewCellEventArgs e)
@@ -1947,7 +1947,7 @@ namespace Keysharp.Builtins
 					return;
 
 				if (e.Item is TreeNode node)
-					_ = (itemEditHandlers?.InvokeEventHandlers(this, node.Handle.ToInt64()));
+					itemEditHandlers?.InvokeEventHandlers(this, node.Handle.ToInt64());
 			}
 
 			internal void Tv_AfterCheck(object sender, GridViewCellEventArgs e)
@@ -1956,7 +1956,7 @@ namespace Keysharp.Builtins
 					return;
 
 				if (e.Column == tv.Columns.IndexOf(tv.CheckColumn) && e.Item is TreeNode node)
-					_ = (itemCheckHandlers?.InvokeEventHandlers(this, node.Handle.ToInt64(), node.Checked ? 1L : 0L));
+					itemCheckHandlers?.InvokeEventHandlers(this, node.Handle.ToInt64(), node.Checked ? 1L : 0L);
 			}
 
 			internal void Tv_CellClick(object sender, GridCellMouseEventArgs e)
@@ -1969,7 +1969,7 @@ namespace Keysharp.Builtins
 				{
 					node.Checked = !node.Checked;
 					tv.CheckedBeginInvoke(new Action(tv.ReloadData), true, false);
-					_ = (itemCheckHandlers?.InvokeEventHandlers(this, node.Handle.ToInt64(), node.Checked ? 1L : 0L));
+					itemCheckHandlers?.InvokeEventHandlers(this, node.Handle.ToInt64(), node.Checked ? 1L : 0L);
 					return;
 				}
 
@@ -1983,7 +1983,7 @@ namespace Keysharp.Builtins
 					if (tv.SelectedItem != node)
 						tv.SelectedItem = node;
 
-					_ = (clickHandlers?.InvokeEventHandlers(this, node.Handle.ToInt64()));
+					clickHandlers?.InvokeEventHandlers(this, node.Handle.ToInt64());
 				}
 			}
 
@@ -2016,7 +2016,7 @@ namespace Keysharp.Builtins
 					listViewCheckClickActive = true;
 					item.Checked = !item.Checked;
 					lv.RefreshDataStore();
-					_ = (itemCheckHandlers?.InvokeEventHandlers(this, rowIndex + 1L, item.Checked ? 1L : 0L));
+					itemCheckHandlers?.InvokeEventHandlers(this, rowIndex + 1L, item.Checked ? 1L : 0L);
 					_ = Eto.Forms.Application.Instance.InvokeAsync(() => listViewCheckClickActive = false);
 
 					if (lv.MultiSelect)
@@ -2073,13 +2073,13 @@ namespace Keysharp.Builtins
 					foreach (var row in current)
 					{
 						if (!previous.Contains(row))
-							_ = selectedItemChangedHandlers.InvokeEventHandlers(this, (long)row, 1L);
+							selectedItemChangedHandlers.InvokeEventHandlers(this, (long)row, 1L);
 					}
 
 					foreach (var row in previous)
 					{
 						if (!current.Contains(row))
-							_ = selectedItemChangedHandlers.InvokeEventHandlers(this, (long)row, 0L);
+							selectedItemChangedHandlers.InvokeEventHandlers(this, (long)row, 0L);
 					}
 				}
 
@@ -2101,13 +2101,13 @@ namespace Keysharp.Builtins
 				}
 
 				if (focusedItemChangedHandlers != null && listViewFocusedRow >= 0 && listViewFocusedRow != prevFocusedRow)
-					_ = focusedItemChangedHandlers.InvokeEventHandlers(this, (long)(listViewFocusedRow + 1));
+					focusedItemChangedHandlers.InvokeEventHandlers(this, (long)(listViewFocusedRow + 1));
 			}
 
 			internal void Lv_ColumnClick(int columnIndex)
 			{
 				if (eventHandlerActive && _control is KeysharpListView)
-					_ = (columnClickHandlers?.InvokeEventHandlers(this, columnIndex + 1L));
+					columnClickHandlers?.InvokeEventHandlers(this, columnIndex + 1L);
 			}
 
 			internal void Lv_KeyDownEdit(object sender, KeyEventArgs e)
@@ -2148,7 +2148,7 @@ namespace Keysharp.Builtins
 			internal void Tv_AfterSelect(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpTreeView tv)
-					_ = (selectedItemChangedHandlers?.InvokeEventHandlers(this, (tv.SelectedItem as TreeNode)?.Handle.ToInt64() ?? 0L));
+					selectedItemChangedHandlers?.InvokeEventHandlers(this, (tv.SelectedItem as TreeNode)?.Handle.ToInt64() ?? 0L);
 			}
 
 			internal void Txt_TextChanged(object sender, EventArgs e)
@@ -2159,7 +2159,7 @@ namespace Keysharp.Builtins
 
 				if (eventHandlerActive && (_control is KeysharpTextBox || _control is KeysharpPasswordBox
 										   || _control is KeysharpTextArea || _control is KeysharpRichEdit))
-					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));
+					changeHandlers?.InvokeEventHandlers(this, 0L);
 			}
 		}
 	}

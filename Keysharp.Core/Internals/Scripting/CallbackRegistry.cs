@@ -219,13 +219,44 @@ namespace Keysharp.Internals.Scripting
 		}
 
 		/// <summary>
-		/// Invoke all registered event handlers, with each being called in its own pseudo-thread.<br/>
-		/// If any event handler returns a non-zero result, no further calls are made.
+		/// Invoke all registered event handlers, each in its own pseudo-thread, from the scheduler's queue
+		/// rather than from the caller.
+		/// <para>
+		/// AutoHotkey raises these by posting a window message (<c>POST_AHK_GUI_ACTION</c>) and launching the
+		/// thread when the message loop reaches it. Two things follow, and both are the point of queueing here:
+		/// a handler never runs inside the code which raised the event, so a resize or a click cannot re-enter
+		/// the script mid-statement; and an event raised while no thread may launch — the raising thread is
+		/// still inside its uninterruptible window, or is Critical — waits rather than being lost.</para>
+		/// <para>
+		/// The chain is queued as one item, not one per handler, so a handler which stops the chain still stops
+		/// the ones after it. Nothing can read a result from here; an event whose return value decides what
+		/// happens next needs <see cref="InvokeSynchronousEventHandlers"/> or
+		/// <see cref="InvokeWindowMessageHandlers"/>.</para>
+		/// </summary>
+		/// <param name="args">The parameters to pass to each event handler.</param>
+		internal void InvokeEventHandlers(params object[] args)
+		{
+			if (IsEmpty || CurrentScheduler is not { } scheduler)
+				return;
+
+			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0,
+								  () => InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false,
+													   checkPersistence: true, stopWhen: null, out _));
+		}
+
+		/// <summary>
+		/// Invoke handlers for an event whose return value decides what happens next, such as Close, where a
+		/// handler returning non-zero keeps the window open. Runs inline, because the answer is needed before
+		/// the caller can go on.
 		/// </summary>
 		/// <param name="args">The parameters to pass to each event handler.</param>
 		/// <returns>The result of the last event handler that was called.</returns>
-		internal object InvokeEventHandlers(params object[] args) =>
-			InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false, checkPersistence: true);
+		internal object InvokeSynchronousEventHandlers(params object[] args)
+		{
+			_ = InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false,
+							   checkPersistence: true, stopWhen: null, out var result);
+			return result;
+		}
 
 		/// <summary>
 		/// Invoke handlers as part of the exit sequence (i.e. OnExit). Each is launched on a pseudo-thread with the
@@ -236,8 +267,12 @@ namespace Keysharp.Internals.Scripting
 		/// honours any non-zero (veto) return. Without this admission, OnExit handlers silently never run: the exit
 		/// path sets allowInterruption=false first, so a normal (interruptible) start request is refused at the gate.
 		/// </summary>
-		internal object InvokeExitHandlers(params object[] args) =>
-			InvokeHandlers(args, skipUninterruptible: true, allowEmergencyOverflow: true, checkPersistence: false);
+		internal object InvokeExitHandlers(params object[] args)
+		{
+			_ = InvokeHandlers(args, skipUninterruptible: true, allowEmergencyOverflow: true,
+							   checkPersistence: false, stopWhen: null, out var result);
+			return result;
+		}
 
 		/// <summary>
 		/// Invoke handlers for a window message (GuiObj.OnMessage / GuiCtrlObj.OnMessage). Identical to
@@ -246,17 +281,32 @@ namespace Keysharp.Internals.Scripting
 		/// </summary>
 		/// <param name="args">The parameters to pass to each event handler.</param>
 		/// <returns>The result of the last event handler that was called.</returns>
-		internal object InvokeWindowMessageHandlers(params object[] args) =>
-			InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false, checkPersistence: true, CallbackStop.NonEmpty);
+		internal object InvokeWindowMessageHandlers(params object[] args)
+		{
+			_ = InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false,
+							   checkPersistence: true, CallbackStop.NonEmpty, out var result);
+			return result;
+		}
 
-		private object InvokeHandlers(object[] args, bool skipUninterruptible, bool allowEmergencyOverflow, bool checkPersistence, Func<object, bool> stopWhen = null)
+		/// <summary>
+		/// Runs the chain. The status is what the scheduler's queue reads: a chain whose FIRST handler could not
+		/// start is reported blocked so the queue keeps it and tries again, while one which got going reports
+		/// Executed, since replaying it would call the handlers that already ran a second time.
+		/// </summary>
+		private ScriptEventExecutionResult InvokeHandlers(object[] args, bool skipUninterruptible, bool allowEmergencyOverflow,
+				bool checkPersistence, Func<object, bool> stopWhen, out object result)
 		{
 			stopWhen ??= CallbackStop.NonZero;
-			object result = null;
+			var anyRan = false;
+			var blocked = ScriptEventExecutionResult.Executed;
+			//A local rather than the out parameter directly: RunHandler below assigns it, and a local function
+			//cannot capture an out parameter.
+			object chainResult = null;
+			result = null;
 			var snapshot = GetSnapshot();
 
 			if (snapshot.Length == 0)
-				return result;
+				return ScriptEventExecutionResult.Executed;
 
 			var inst = args.Length > 0 ? args[0].GetControl() : null;
 			Script registryOwner;
@@ -290,7 +340,7 @@ namespace Keysharp.Internals.Scripting
 					if (inst is Control ctrl && ctrl.FindForm() is Form form)
 						script.HwndLastUsed = form.Handle;
 
-					result = handler.Call(args);
+					chainResult = handler.Call(args);
 				}
 				catch (Exception ex)
 				{
@@ -322,7 +372,7 @@ namespace Keysharp.Internals.Scripting
 				if (targetScheduler.IsDisposed)
 				{
 					executionResult = ScriptEventExecutionResult.Dropped;
-					result = null;
+					chainResult = null;
 				}
 				else if (targetScheduler.OwnsCurrentThread)
 				{
@@ -333,17 +383,23 @@ namespace Keysharp.Internals.Scripting
 					executionResult = targetScheduler.InvokeSynchronous(() => RunHandler(targetScheduler, script, handler, priority));
 				}
 
+				if (executionResult is ScriptEventExecutionResult.GlobalBlocked or ScriptEventExecutionResult.LocalBlocked)
+					blocked = executionResult;
+
 				if (executionResult != ScriptEventExecutionResult.Executed)
 					continue;
 
-				if (stopWhen(result))
+				anyRan = true;
+
+				if (stopWhen(chainResult))
 					break;
 			}
 
 			if (checkPersistence)
 				registryOwner?.ExitIfNotPersistent();
 
-			return result;
+			result = chainResult;
+			return anyRan ? ScriptEventExecutionResult.Executed : blocked;
 		}
 
 		private bool RemoveRegistrationsLocked(IReadOnlyCollection<TRegistration> removals)

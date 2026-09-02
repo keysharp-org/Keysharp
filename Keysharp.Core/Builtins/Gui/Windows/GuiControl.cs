@@ -1450,9 +1450,9 @@ namespace Keysharp.Builtins
 				else if (_control is KeysharpListView lv)
 				{
 					if (lv.SelectedIndices.Count > 0)
-						_ = clickHandlers.InvokeEventHandlers(this, lv.SelectedIndices[0] + 1L);
+						clickHandlers.InvokeEventHandlers(this, lv.SelectedIndices[0] + 1L);
 					else
-						_ = clickHandlers.InvokeEventHandlers(this, 0L);
+						clickHandlers.InvokeEventHandlers(this, 0L);
 				}
 				else if (_control is KeysharpLinkLabel ll)
 				{
@@ -1461,7 +1461,7 @@ namespace Keysharp.Builtins
 						if (!ll.clickSet)
 							_ = KeysharpLinkLabel.OnLinkLabelClicked(ll, lllce);
 						else if (lllce.Link.LinkData is Tuple<string, string> tss)
-							_ = clickHandlers.InvokeEventHandlers(this, tss.Item1 != "" ? tss.Item1 : ll.Links.IndexOf(lllce.Link) + 1L, tss.Item2);
+							clickHandlers.InvokeEventHandlers(this, tss.Item1 != "" ? tss.Item1 : ll.Links.IndexOf(lllce.Link) + 1L, tss.Item2);
 					}
 				}
 				//else if (_control is KeysharpButton)
@@ -1471,7 +1471,7 @@ namespace Keysharp.Builtins
 				//  _ = clickHandlers.InvokeEventHandlers(this, 0L);
 				//}
 				else
-					_ = clickHandlers.InvokeEventHandlers(this, 0L);
+					clickHandlers.InvokeEventHandlers(this, 0L);
 			}
 
 			internal void _control_KeyDown(object sender, KeyEventArgs e)
@@ -1535,7 +1535,7 @@ namespace Keysharp.Builtins
 
 						if (commandHandlers.TryGetValue(val, out var handler))
 						{
-							var ret = handler?.InvokeEventHandlers(this);
+							var ret = handler?.InvokeSynchronousEventHandlers(this);
 							m.Result = (nint)ret.Al();
 							return true;
 						}
@@ -1549,55 +1549,55 @@ namespace Keysharp.Builtins
 			internal void Lv_AfterLabelEdit(object sender, LabelEditEventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpListView)
-					_ = (itemEditHandlers?.InvokeEventHandlers(this, e.Item + 1L));//The documentation says to pass "item". Not really sure if that means index, or something else.
+					itemEditHandlers?.InvokeEventHandlers(this, e.Item + 1L);//The documentation says to pass "item". Not really sure if that means index, or something else.
 			}
 
 			internal void Lv_ColumnClick(object sender, ColumnClickEventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpListView)
-					_ = (columnClickHandlers?.InvokeEventHandlers(this, e.Column + 1L));
+					columnClickHandlers?.InvokeEventHandlers(this, e.Column + 1L);
 			}
 
 			internal void Lv_ItemChecked(object sender, ItemCheckedEventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpListView)
-					_ = (itemCheckHandlers?.InvokeEventHandlers(this, e.Item.Index + 1L, e.Item.Checked ? 1L : 0L));
+					itemCheckHandlers?.InvokeEventHandlers(this, e.Item.Index + 1L, e.Item.Checked ? 1L : 0L);
 			}
 
 			internal void Lv_ItemSelectionChanged(object sender, ListViewItemSelectionChangedEventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpListView)
-					_ = (selectedItemChangedHandlers?.InvokeEventHandlers(this, e.Item.Index + 1L, e.Item.Selected ? 1L : 0L));
+					selectedItemChangedHandlers?.InvokeEventHandlers(this, e.Item.Index + 1L, e.Item.Selected ? 1L : 0L);
 			}
 
 			internal void Ss_ItemClicked(object sender, ToolStripItemClickedEventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpStatusStrip ss)
-					_ = (clickHandlers?.InvokeEventHandlers(this, ss.Items.IndexOf(e.ClickedItem) + 1L));
+					clickHandlers?.InvokeEventHandlers(this, ss.Items.IndexOf(e.ClickedItem) + 1L);
 			}
 
 			internal void Tv_AfterCheck(object sender, TreeViewEventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpTreeView)
-					_ = (itemCheckHandlers?.InvokeEventHandlers(this, e.Node.Handle.ToInt64(), e.Node.Checked ? 1L : 0L));
+					itemCheckHandlers?.InvokeEventHandlers(this, e.Node.Handle.ToInt64(), e.Node.Checked ? 1L : 0L);
 			}
 
 			internal void Tv_AfterExpand(object sender, TreeViewEventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpTreeView)
-					_ = (itemExpandHandlers?.InvokeEventHandlers(this, e.Node.Handle.ToInt64(), e.Node.IsExpanded ? 1L : 0L));
+					itemExpandHandlers?.InvokeEventHandlers(this, e.Node.Handle.ToInt64(), e.Node.IsExpanded ? 1L : 0L);
 			}
 
 			internal void Tv_AfterLabelEdit(object sender, NodeLabelEditEventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpTreeView)
-					_ = (itemEditHandlers?.InvokeEventHandlers(this, e.Node.Handle.ToInt64()));
+					itemEditHandlers?.InvokeEventHandlers(this, e.Node.Handle.ToInt64());
 			}
 
 			internal void Tv_AfterSelect(object sender, TreeViewEventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpTreeView)
-					_ = (selectedItemChangedHandlers?.InvokeEventHandlers(this, e.Node.Handle.ToInt64()));
+					selectedItemChangedHandlers?.InvokeEventHandlers(this, e.Node.Handle.ToInt64());
 			}
 
 			internal void Tv_NodeMouseClick(object sender, TreeNodeMouseClickEventArgs e)
@@ -1614,14 +1614,14 @@ namespace Keysharp.Builtins
 					if (tv.SelectedNode != e.Node)
 						tv.SelectedNode = e.Node;
 
-					_ = (clickHandlers?.InvokeEventHandlers(this, e.Node.Handle.ToInt64()));
+					clickHandlers?.InvokeEventHandlers(this, e.Node.Handle.ToInt64());
 				}
 			}
 
 			internal void Txt_TextChanged(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpTextBox or KeysharpRichEdit)
-					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));
+					changeHandlers?.InvokeEventHandlers(this, 0L);
 			}
 		}
 

@@ -710,31 +710,31 @@ namespace Keysharp.Builtins
 					return;
 
 				if (_control is KeysharpTreeView tv)
-					_ = doubleClickHandlers.InvokeEventHandlers(this, GetSelection());
+					doubleClickHandlers.InvokeEventHandlers(this, GetSelection());
 				else if (_control is KeysharpListView lv)
 				{
 					if (lv.SelectedIndices.Count > 0)
-						_ = doubleClickHandlers.InvokeEventHandlers(this, lv.SelectedIndices[0] + 1L);
+						doubleClickHandlers.InvokeEventHandlers(this, lv.SelectedIndices[0] + 1L);
 					else
-						_ = doubleClickHandlers.InvokeEventHandlers(this, 0L);
+						doubleClickHandlers.InvokeEventHandlers(this, 0L);
 				}
 				else if (_control is KeysharpListBox lb)
 				{
 					if (lb.SelectedIndices.Count > 0)
-						_ = doubleClickHandlers.InvokeEventHandlers(this, lb.SelectedIndices[0] + 1L);
+						doubleClickHandlers.InvokeEventHandlers(this, lb.SelectedIndices[0] + 1L);
 					else
-						_ = doubleClickHandlers.InvokeEventHandlers(this, 0L);
+						doubleClickHandlers.InvokeEventHandlers(this, 0L);
 				}
 #if !WINDOWS
 				//Off Windows a StatusBar is one control whose parts are child controls, so the part has to be
 				//resolved from where the click landed. On Windows each part raises its own event instead - see
 				//the note below.
 				else if (_control is KeysharpStatusStrip sbar)
-					_ = doubleClickHandlers.InvokeEventHandlers(this, sbar.PartFromPoint());
+					doubleClickHandlers.InvokeEventHandlers(this, sbar.PartFromPoint());
 
 #endif
 				else
-					_ = doubleClickHandlers.InvokeEventHandlers(this, 0L);
+					doubleClickHandlers.InvokeEventHandlers(this, 0L);
 
 				//Status strip items are handled in a separate special handler contained within each item.
 			}
@@ -742,13 +742,13 @@ namespace Keysharp.Builtins
 			internal void _control_GotFocus(object sender, EventArgs e)
 			{
 				if (eventHandlerActive)
-					_ = (focusHandlers?.InvokeEventHandlers(this, 0L));
+					focusHandlers?.InvokeEventHandlers(this, 0L);
 			}
 
 			internal void _control_LostFocus(object sender, EventArgs e)
 			{
 				if (eventHandlerActive)
-					_ = (lostFocusHandlers?.InvokeEventHandlers(this, 0L));
+					lostFocusHandlers?.InvokeEventHandlers(this, 0L);
 			}
 
 			internal object CallContextMenuChangeHandlers(bool wasRightClick, int x, int y, long? itemOverride = null)
@@ -771,60 +771,60 @@ namespace Keysharp.Builtins
 			internal void Cmb_SelectedIndexChanged(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpComboBox)
-					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));
+					changeHandlers?.InvokeEventHandlers(this, 0L);
 			}
 
 			internal void Dtp_ValueChanged(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpDateTimePicker)
-					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));
+					changeHandlers?.InvokeEventHandlers(this, 0L);
 			}
 			internal void Hkb_TextChanged(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is HotkeyBox)
-					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));
+					changeHandlers?.InvokeEventHandlers(this, 0L);
 			}
 			internal void Lb_SelectedIndexChanged(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpListBox)
-					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));
+					changeHandlers?.InvokeEventHandlers(this, 0L);
 			}
 
 			internal void Lv_SelectedIndexChanged(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpListView lv)
-					_ = (focusedItemChangedHandlers?.InvokeEventHandlers(this, lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L));
+					focusedItemChangedHandlers?.InvokeEventHandlers(this, lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L);
 			}
 
 			internal void Nud_ValueChanged(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpNumericUpDown)
-					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));
+					changeHandlers?.InvokeEventHandlers(this, 0L);
 			}
 
 			internal void Tb_MouseCaptureChanged(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpTrackBar && !AltSubmit)
-					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));//Winforms doesn't support the ability to pass the method by which the slider was changed.
+					changeHandlers?.InvokeEventHandlers(this, 0L);//Winforms doesn't support the ability to pass the method by which the slider was changed.
 			}
 
 			internal void Tb_ValueChanged(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpTrackBar && AltSubmit)
-					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));//Winforms doesn't support the ability to pass the method by which the slider was changed.
+					changeHandlers?.InvokeEventHandlers(this, 0L);//Winforms doesn't support the ability to pass the method by which the slider was changed.
 			}
 
 
 			internal void Tc_Selected(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpTabControl)
-					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));
+					changeHandlers?.InvokeEventHandlers(this, 0L);
 			}
 
 			internal void Mc_DateChanged(object sender, EventArgs e)
 			{
 				if (eventHandlerActive && _control is KeysharpMonthCalendar)
-					_ = (changeHandlers?.InvokeEventHandlers(this, 0L));
+					changeHandlers?.InvokeEventHandlers(this, 0L);
 			}
 		}
 	}

@@ -201,15 +201,20 @@ Throws(() => re.LoadFile(A_Temp . "/ks-richedit-missing.txt", "Text"), A_LineNum
 seen := {changes: 0, selchanges: 0}
 re.OnEvent("Change", (*) => seen.changes += 1)
 re.OnEvent("SelectionChange", (*) => seen.selchanges += 1)
+; A GUI event runs from the queue, not inside the statement which raised it, so each of these yields before
+; asking what happened - including the ones expecting nothing, which would otherwise pass without waiting.
 re.Value := "abc"
+Sleep(50)
 Assert(seen.changes > 0, A_LineNumber)
 
 ; Formatting is not an edit, so it raises no Change.
 before := seen.changes
 re.SetFormat(1, 3, "cRed")
+Sleep(50)
 AssertEq(seen.changes, before, A_LineNumber)
 
 re.Select(2, 1)
+Sleep(50)
 Assert(seen.selchanges > 0, A_LineNumber)
 
 ; Neither applying nor reading formatting is a selection change, though both have to move the selection.
@@ -217,6 +222,7 @@ before := seen.selchanges
 re.SetFormat(1, 2, "cBlue")
 re.GetFormat(1, 2)
 re.GetBackColor(1, 2)
+Sleep(50)
 AssertEq(seen.selchanges, before, A_LineNumber)
 AssertEq(re.SelectionStart, 2, A_LineNumber)
 AssertEq(re.SelectionLength, 1, A_LineNumber)

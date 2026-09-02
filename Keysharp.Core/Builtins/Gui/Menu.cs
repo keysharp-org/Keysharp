@@ -824,7 +824,7 @@ namespace Keysharp.Builtins
 				if (clickHandlers.TryGetValue(tsmi, out var handler))
 				{
 					var index = GetIndex(tsmi);
-					_ = handler.InvokeEventHandlers(tsmi.Text, ++index, this);
+					handler.InvokeEventHandlers(tsmi.Text, ++index, this);
 				}
 			}
 		}

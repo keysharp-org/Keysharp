@@ -241,7 +241,7 @@ namespace Keysharp.Builtins
 			private void Raise(CallbackRegistry hub, object arg)
 			{
 				if (eventHandlerActive)
-					_ = (hub?.InvokeEventHandlers(this, arg));
+					hub?.InvokeEventHandlers(this, arg);
 			}
 
 			/// <summary>

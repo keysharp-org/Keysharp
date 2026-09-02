@@ -200,7 +200,7 @@ namespace Keysharp.Builtins.COM
 
 		internal void CallEvents()
 		{
-			_ = handlers.InvokeEventHandlers(this);
+			handlers.InvokeEventHandlers(this);
 		}
 
 		internal void Clear()
