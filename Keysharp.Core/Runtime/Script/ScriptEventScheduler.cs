@@ -1187,7 +1187,7 @@ internal bool HasBlockedQueuedWork
 				DisposeOwnedMessageHandlers();
 				DisposeOwnedGuiHandlers();
 				DisposeOwnedMenuHandlers();
-				DisposeOwnedWinEventHandlers();
+				DisposeOwnedEventSubscriptions();
 				DisposeOwnedClrSubscriptions();
 				DelegateHolder.DisposeOwnedByScheduler(this);
 				InvalidatePendingCallbacks();
@@ -1236,10 +1236,11 @@ internal bool HasBlockedQueuedWork
 			}
 		}
 
-		private void DisposeOwnedWinEventHandlers()
+		private void DisposeOwnedEventSubscriptions()
 		{
 			_ = script.WinEventManager.RemoveOwned(this);
 			_ = script.MonitorEventManager.RemoveOwned(this);
+			_ = script.ClipboardEventManager.RemoveOwned(this);
 		}
 
 		private void DisposeOwnedClrSubscriptions()

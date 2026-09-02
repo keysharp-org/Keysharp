@@ -30,6 +30,9 @@ namespace Keysharp.Internals.Os
 #pragma warning restore CA2255 // The 'ModuleInitializer' attribute should not be used in libraries
 		public static void Initialize()
 		{
+			NativeLibrary.SetDllImportResolver(
+				typeof(EmbeddedDependencyLoader).Assembly, ResolveNativeFromResources);
+
 			if (assemblyResources.Count > 0)
 				AppDomain.CurrentDomain.AssemblyResolve += ResolveFromResources;
 		}
@@ -45,7 +48,19 @@ namespace Keysharp.Internals.Os
 			else if (assemblyResources.TryGetValue("Deps." + resourceName, out resourceAsm))
 				rs = resourceAsm.GetManifestResourceStream("Deps." + resourceName);
 
-			if (rs == null) return 0;
+			if (rs == null)
+			{
+#if LINUX
+				if (libName is "libkeysharp-input.so.0" or "libkeysharp-desktop.so.0")
+				{
+					var systemProfilePath = Path.Combine(
+						"/run/current-system/sw/lib", libName);
+					if (NativeLibrary.TryLoad(systemProfilePath, out var systemProfileLibrary))
+						return systemProfileLibrary;
+				}
+#endif
+				return 0;
+			}
 
 			var tmp = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath), resourceName);
 

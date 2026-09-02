@@ -126,6 +126,35 @@ namespace Keysharp.Tests
 			"+'::;\n",
 			"*\"::a\n");
 
+		// A comma glued to the word that starts a statement is the v1 command syntax, which AutoHotkey rejects
+		// (script.cpp: the word must end at whitespace, '(' or end of line to be a call). Without this the line
+		// silently reads the name as a variable and calls nothing.
+		[Test, Category("Parser")]
+		public void CommandCommaErrors()
+		{
+			const string expected = "use a comma only between parameters";
+			AssertCompileError("MsgBox, \"a\"\n", expected);
+			AssertCompileError("MsgBox,\"a\"\n", expected);
+			AssertCompileError("x, y := 2\n", expected);
+			AssertCompileError("obj := {}\nobj.Method, 1\n", expected);
+			AssertCompileError("and, x := 2\n", expected);
+			AssertCompileError("Goto, lbl\n", expected);
+			AssertCompileError("for, k, v in Map()\n{\n}\n", expected);
+		}
+
+		// The same rule's exemptions: whitespace before the comma omits the first argument, and a chain that indexes
+		// or calls ends its leading word at the '[' or '(', leaving an ordinary comma sequence.
+		[Test, Category("Parser")]
+		public void CommandCommaExemptionsCompile() => AssertCompiles(
+			"MsgBox , \"a\"\n",
+			"MsgBox   ,   \"a\"\n",
+			"x := 1, y := 2\n",
+			"arr := [1]\narr[1], x := 4\n",
+			"arr := [1]\narr[1].b, x := 4\n",
+			"foo() {\n}\nfoo(), x := 4\n",
+			"obj := {}\nobj.Method , 1\n",
+			"Loop Parse, \"a,b\", \",\"\n{\n}\n");
+
 		[Test, Category("Parser")]
 		public void DelimiterErrors()
 		{

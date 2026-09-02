@@ -256,6 +256,15 @@ namespace Keysharp.Parsing.Syntax
 				ErrorAt(at, $"'{name}' is a reserved word and cannot be used as {role}");
 		}
 
+		// AutoHotkey recognizes the word that starts a statement only when it ends at whitespace, a '(' or end of line.
+		// A comma glued to it is the v1 command syntax, which both engines reject (script.cpp:4601).
+		private const string commandCommaMessage = "function calls require a space or \"(\" — use a comma only between parameters";
+
+		private void RejectAdjacentComma()
+		{
+			if (At(TokenKind.Comma) && !Current.LeadingWhitespace) Error(commandCommaMessage);
+		}
+
 		// A lex/parse error terminates parsing immediately by throwing (caught in ParseWithDiagnostics and surfaced as a
 		// single diagnostic), so error-recovery can't silently produce a wrong AST or cascade bogus follow-on errors.
 		private void Error(string msg) => ErrorAt(Current, msg);
@@ -486,6 +495,7 @@ namespace Keysharp.Parsing.Syntax
 		private Stmt ParseFor()
 		{
 			Advance(); // for
+			RejectAdjacentComma();
 			bool paren = Match(TokenKind.LParen);   // optional parens around the header: for (i, v in arr)
 			var vars = new List<string> { ParseForVar() };
 			while (Match(TokenKind.Comma)) vars.Add(ParseForVar());
@@ -1413,6 +1423,7 @@ namespace Keysharp.Parsing.Syntax
 		private Stmt ParseGoto()
 		{
 			Advance(); // goto
+			RejectAdjacentComma();
 			Match(TokenKind.Comma);
 			bool paren = Match(TokenKind.LParen);
 			var target = ExpectIdentifier("goto target");
@@ -1613,37 +1624,39 @@ namespace Keysharp.Parsing.Syntax
 		private bool IsCommandStatement()
 		{
 			if (!At(TokenKind.Identifier)) return false;
-			if (verbalOps.Contains(Current.Text)) return false;   // `not x`, `a and b` are operators, not commands
 			var i = _pos + 1;   // past the leading identifier
-			bool sawDot = false;
+			bool sawDot = false, sawBracket = false;
 			while (i < _t.Count)
 			{
 				var t = _t[i];
 				if (t.Kind == TokenKind.Dot && !t.LeadingWhitespace)
 				{ sawDot = true; i++; if (i < _t.Count && _t[i].Kind == TokenKind.Identifier) i++; continue; }     // .member
 				if (t.Kind == TokenKind.LBracket && !t.LeadingWhitespace)
-				{ var d = 1; i++; while (i < _t.Count && d > 0) { if (_t[i].Kind == TokenKind.LBracket) d++; else if (_t[i].Kind == TokenKind.RBracket) d--; i++; } continue; }  // [index]
+				{ sawBracket = true; var d = 1; i++; while (i < _t.Count && d > 0) { if (_t[i].Kind == TokenKind.LBracket) d++; else if (_t[i].Kind == TokenKind.RBracket) d--; i++; } continue; }  // [index]
 				break;
 			}
+			// A comma glued to a name or member chain is the v1 command syntax (`MsgBox, "a"`), which would otherwise
+			// read `MsgBox` as a variable and call nothing at all. AutoHotkey rejects it because the word starting the
+			// line ends at the comma rather than at whitespace, and for the same reason exempts a chain that indexes
+			// (`arr[1], x := 1`) or calls (`fn(), x := 1`), whose leading word ends at the '[' or '('.
+			if (i < _t.Count && _t[i].Kind == TokenKind.Comma && !_t[i].LeadingWhitespace && !sawBracket)
+				ErrorAt(_t[i], commandCommaMessage);
+			if (verbalOps.Contains(Current.Text)) return false;   // `not x`, `a and b` are operators, not commands
 			// A primary-expression chain (`name`, `obj.method`) ending the line is a zero-arg function-call statement
 			// (`ExitApp`, `obj.Method`). An index-access end (`arr[i]`) is an expression statement, not a call (mirrors
 			// the canonical isFunctionCallStatement, which rejects a trailing CloseBracket).
 			if (i >= _t.Count || _t[i].Kind == TokenKind.Newline || _t[i].Kind == TokenKind.EOF || _t[i].Kind == TokenKind.RBrace)
 			{
-				// …unless a leading comma on a following line continues it. Joined, `Name` + `, x := 1` is
-				// `Name, x := 1`, and an ADJACENT comma makes that a comma-sequence expression statement (which
-				// evaluates `Name` without calling it), so hand it to ParseStatement rather than calling it here.
-				var j = i;
-				while (j < _t.Count && _t[j].Kind == TokenKind.Newline) j++;
-				if (j < _t.Count && _t[j].Kind == TokenKind.Comma) return false;
+				// A leading comma on a following line continues it: AutoHotkey joins the two lines with a SPACE
+				// between them, so `Name` + `, x := 1` is `Name , x := 1` — a call whose first argument is omitted.
 				return _t[i - 1].Kind != TokenKind.RBracket && (sawDot || _t[i - 1].Kind == TokenKind.Identifier);
 			}
 			var next = _t[i];
 			if (next.Kind == TokenKind.LParen && !next.LeadingWhitespace) return false;   // Name(...) call expression
 			// A command-call statement (`MsgBox "x", "y"`) requires the name/chain to be followed by whitespace (then an
-			// argument or a leading-comma omitted first argument), a comment, or end-of-line. Anything ADJACENT — `,`
-			// `:=` `.` `[` … — makes it an expression statement instead, so `MsgBox, "x"` and `a[i], b := 1` are
-			// comma-sequences, while `MsgBox ,"x"` (space before the comma) is a call with the first arg omitted.
+			// argument or a leading-comma omitted first argument), a comment, or end-of-line. Anything ADJACENT —
+			// `:=` `.` `[` … — makes it an expression statement instead, so `a[i], b := 1` is a comma-sequence, while
+			// `MsgBox ,"x"` (space before the comma) is a call with the first arg omitted.
 			if (!next.LeadingWhitespace) return false;                                     // adjacent operator/comma/postfix => expression
 			switch (next.Kind)
 			{
@@ -1673,6 +1686,11 @@ namespace Keysharp.Parsing.Syntax
 		{
 			var args = new List<Argument>();
 			var named = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+			// A leading comma on the FOLLOWING line continues this call, so step over the break to reach it — the
+			// loop then reads the comma as an omitted first argument, which is what AutoHotkey's join produces.
+			var lead = _pos;
+			SkipNewlines();
+			if (!At(TokenKind.Comma)) _pos = lead;
 			while (!At(TokenKind.Newline) && !At(TokenKind.EOF) && !At(TokenKind.RBrace))
 			{
 				if (At(TokenKind.Comma))

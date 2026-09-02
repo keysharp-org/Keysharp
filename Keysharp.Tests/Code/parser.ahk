@@ -100,12 +100,14 @@ LeadRec leadLog, 1   ; several continuation lines, one carrying an omitted argum
 , , 4
 AssertEq(leadLog[3], "1|2|-|4", A_LineNumber)
 
-; A zero-arg call statement plus a leading comma joins to `Name, expr`, where the adjacent comma makes it a
-; comma sequence that evaluates the name without calling it (so nothing is appended to leadLog).
+; A zero-argument call statement plus a leading comma joins to `Name , expr` — AutoHotkey separates the joined
+; lines with a space — so the name IS called, with its first argument omitted.
+leadOmitLog := []
+LeadOmit(p1?, p2?) => leadOmitLog.Push((IsSet(p1) ? p1 : "-") "|" (IsSet(p2) ? p2 : "-"))
 leadZero := 0
-LeadRec
+LeadOmit
 , leadZero := 5
-Assert(leadZero == 5 && leadLog.Length == 3, A_LineNumber)
+Assert(leadZero == 5 && leadOmitLog.Length == 1 && leadOmitLog[1] == "-|5", A_LineNumber)
 
 escaped := "a`"b ; not comment"
 AssertEq(escaped, 'a"b ; not comment', A_LineNumber)

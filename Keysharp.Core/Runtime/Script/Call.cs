@@ -59,6 +59,45 @@ namespace Keysharp.Runtime
 			}
         }
 
+		/// <summary>
+		/// The descriptor a property READ resolves to, in AutoHotkey's order (script_object.cpp, Object::GetProperty):
+		/// the nearest descriptor holding a value or a getter wins, one that can only be set is walked past, and a
+		/// Call-only one is used only once nothing above it has yielded a value. One walk, so a method read as a value
+		/// (<c>cb := obj.Handler</c>) does not pay for a second.
+		/// </summary>
+		internal static bool TryGetGettableProp(Any baseObj, string key, out OwnPropsDesc opm)
+		{
+			OwnPropsDesc method = null;
+
+			for (var cur = baseObj; ; cur = cur.Base)
+			{
+				var ownProps = cur.op;
+
+				if (ownProps != null && ownProps.TryGetValue(key, out opm))
+				{
+					if ((opm.Type & (OwnPropsMapType.Value | OwnPropsMapType.Get)) != 0)
+						return true;
+
+					if (method == null && (opm.Type & OwnPropsMapType.Call) != 0)
+						method = opm;
+				}
+
+				// `base` is the object's own, so it is answered before the chain is walked — and regardless of what
+				// the descriptors along it hold.
+				if (cur == baseObj && key.Equals("base", StringComparison.OrdinalIgnoreCase))
+				{
+					opm = new OwnPropsDesc(baseObj, baseObj.Base);
+					return true;
+				}
+
+				if (cur.Base == null)
+					break;
+			}
+
+			opm = method;
+			return method != null;
+		}
+
 		public static bool TryGetProps(Any baseObj, out Dictionary<string, OwnPropsDesc> props, bool searchBase = true, OwnPropsMapType type = 0)
 		{
 			props = new(StringComparer.OrdinalIgnoreCase);
@@ -122,13 +161,14 @@ namespace Keysharp.Runtime
 				// ---------- Keysharp object (Any) path ----------
 				if (kso != null)
 				{
-					// Own props: prefer Call > Get > Value > Set
-					if (TryGetOwnPropsMap(kso, key, out var opm, searchBase: checkBase))
+					// Own props: prefer Call > Get > Value. A setter is never a method, so a setter-only descriptor
+					// does not end the search — the method may still be defined further up the chain.
+					if (TryGetOwnPropsMap(kso, key, out var opm, searchBase: checkBase,
+										  type: OwnPropsMapType.Call | OwnPropsMapType.Get | OwnPropsMapType.Value))
 					{
 						if (opm.Call != null) return (item, opm.Call); // (this, …)
 						if (opm.Get != null) return (item, Invoke(opm.Get, null, item)); // getter call, no params
 						if (opm.Value != null) return (item, opm.Value);
-						if (opm.Set != null) return (item, opm.Set);
 
 						return Errors.ErrorOccurred(err = new Error($"Attempting to get method or property {key} on object {Errors.Describe(opm)} failed."))
 							   ? throw err : (null, null);
@@ -197,7 +237,31 @@ namespace Keysharp.Runtime
 
 		// . strict base, strict result
 		public static object GetPropertyValue(object item, object name, params object[] args) =>
-			GetPropertyValueOrNull(item, name, args) ?? Errors.UnsetErrorOccurred($"Property {name} of {item}");
+			GetPropertyValueOrNull(item, name, args) ?? MissingPropertyError(item, name);
+
+		/// <summary>
+		/// Nothing yielded a value. That is an unset property when the chain holds one which could have (a getter that
+		/// returned nothing, <c>base</c> with no base), and otherwise a property the value simply does not have —
+		/// which is what a setter-only descriptor with nothing above it leaves behind.
+		/// </summary>
+		private static object MissingPropertyError(object item, object name)
+		{
+			var searched = item;
+
+			// A super access arrives as the (prototype, this) tuple: the prototype is what was searched, while the
+			// message is about the receiver.
+			if (item is ITuple tup && tup.Length > 1 && tup[0] is Any proto)
+			{
+				searched = proto;
+				item = tup[1];
+			}
+
+			if (searched is Any any && TryGetOwnPropsMap(any, name.ToString(), out var desc)
+					&& (desc.Type == OwnPropsMapType.None || (desc.Type & (OwnPropsMapType.Value | OwnPropsMapType.Get)) != 0))
+				return Errors.UnsetErrorOccurred($"Property {name} of {item}");
+
+			return Errors.PropertyErrorOccurred($"This value of type {Types.Type(item)} has no property named {name}.");
+		}
 		// . in ?? context: strict base, allow null result
 		public static object GetPropertyValueOrNull(object item, object name, params object[] args)
 		{
@@ -236,7 +300,7 @@ namespace Keysharp.Runtime
 				// Keysharp object path
 				if (kso != null)
 				{
-					if (TryGetOwnPropsMap(kso, namestr, out var opm))
+					if (TryGetGettableProp(kso, namestr, out var opm))
 					{
 						if (opm.StructField != null && item is Struct getStruct)
 						{
@@ -265,7 +329,7 @@ namespace Keysharp.Runtime
 							return opm.Call; // expose function object
 						}
 
-						return null;
+						return null;   // `base` with no base: the synthetic descriptor carries a null Value
 					}
 
 					// __Get meta (function or callable object), only queried for Call and Value (but not Get)

@@ -5377,9 +5377,36 @@ namespace Keysharp.Compilation.Syntax
 		private MemberDeclarationSyntax InitMethod(string name, string baseProtoType, IEnumerable<ClassField> fields,
 			IEnumerable<StatementSyntax> prologue = null, IEnumerable<Stmt> extra = null, bool staticCtx = false)
 		{
+			var fieldList = fields as IList<ClassField> ?? fields.ToList();
+			var extraList = extra as IList<Stmt> ?? extra?.ToList();
 			var savedThisFuncName = _currentThisFuncName;
 			_currentThisFuncName = ClassMemberFuncName("__Init", staticCtx);
 			var savedScopeFuncs = _pendingScopeFuncs; _pendingScopeFuncs = new();   // field-init fat-arrow local funcs
+			var savedTemps = _scopeTemps; _scopeTemps = new();
+			var savedLocals = _locals; var savedDeref = _inDerefFunc; var savedStatics = _statics;
+			// A callable scope always has a statics map (DerefArms enumerates it); a class body on its own does not.
+			_statics ??= new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+			// AutoHotkey parses each field initializer as an expression statement inside __Init, so only the field's
+			// own name becomes a property on `this`; every other name assigned there is a local of this __Init, and a
+			// name that is merely read still reaches the module variable. `static __Init` is its own scope, which
+			// falls out of the two InitMethod calls each computing this from their own field list.
+			var assignedOrdered = new List<string>();
+			var seen = new HashSet<string>();
+			foreach (var f in fieldList) if (f.Init != null) CollectAssignedExpr(f.Init, assignedOrdered, seen);
+			if (extraList != null) foreach (var st in extraList) CollectAssignedStmt(st, assignedOrdered, seen);
+			_locals = new HashSet<string>();
+			foreach (var n in assignedOrdered)
+				if ((_forcedGlobals == null || !_forcedGlobals.Contains(n))
+						&& (_statics == null || !_statics.ContainsKey(n))
+						&& !_enclosingLocals.Contains(n) && !BoundByEnclosingImport(n))
+					_locals.Add(n);
+			_locals.Remove("this");
+			bool InitHas(Func<Expr, bool> pred) =>
+				fieldList.Any(f => AnyExpr(f.Init, pred)) || (extraList != null && extraList.Any(s => AnyStmt(s, pred)));
+			// A `%name%` in an initializer must resolve against those locals, so route it through this scope's
+			// reader/writer as a function body does. The scope is not published (Script.EnterScope): __Init is not
+			// entered through KeysharpFunc.Call, which is what restores the ambient scope afterwards.
+			_inDerefFunc = InitHas(IsDeref);
 			var stmts = new List<StatementSyntax>();
 			if (prologue != null) stmts.AddRange(prologue);
 			if (baseProtoType != null)
@@ -5390,17 +5417,41 @@ namespace Keysharp.Compilation.Syntax
 					SyntaxFactory.TupleExpression(SyntaxFactory.SeparatedList(new[] { Arg(proto), Arg(Id("@this")) })));
 				stmts.Add(ExprStmt(Op("Invoke", tuple, Str("__Init"))));
 			}
-			foreach (var f in fields) stmts.Add(FieldSet(f));
+			var declared = new List<string>();
+			foreach (var n in assignedOrdered)
+				if (_locals.Contains(n))
+				{
+					var e = NameMangler.Escape(n);
+					declared.Add(e);
+					stmts.Add(DeclLocal(ObjType, e, Null));
+				}
+			if (_inDerefFunc)
+			{
+				stmts.Add(LocalDecl(Ty("Keysharp.Runtime.FuncScope.Reader"), "KS_readVar", BuildReaderLambda()));
+				if (InitHas(IsDerefWrite))
+					stmts.Add(LocalDecl(Ty("Keysharp.Runtime.FuncScope.Writer"), "KS_writeVar", BuildWriterLambda()));
+			}
+			var setupEnd = stmts.Count;
+			foreach (var f in fieldList) stmts.Add(FieldSet(f));
 			// Member/index-target initializers (`static x.y := z`) run after the plain field sets, with `this` bound to
 			// the class object (static) or instance.
-			if (extra != null && extra.Any())
+			if (extraList != null && extraList.Count > 0)
 			{
 				var savedM = _inMethod; var savedS = _currentMethodStatic; _inMethod = true; _currentMethodStatic = staticCtx;
-				foreach (var st in extra) { var ls = LowerStmt(st); if (ls != null) stmts.Add(ls); }
+				foreach (var st in extraList) { var ls = LowerStmt(st); if (ls != null) stmts.Add(ls); }
 				_inMethod = savedM; _currentMethodStatic = savedS;
 			}
-			stmts.AddRange(_pendingScopeFuncs);   // fat-arrow field values become local funcs that capture @this
 			stmts.Add(SyntaxFactory.ReturnStatement(Str("")));
+			int execStart = setupEnd, execEnd = stmts.Count;
+			// Temps an initializer needed (postfix ++/--, compound member assignment) belong to THIS scope.
+			for (int i = _scopeTemps.Count - 1; i >= 0; i--) stmts.Insert(0, DeclLocal(ObjType, _scopeTemps[i], Null));
+			execStart += _scopeTemps.Count; execEnd += _scopeTemps.Count;
+			stmts.AddRange(_pendingScopeFuncs);   // fat-arrow field values become local funcs that capture @this
+			WrapBodyWithKeepAlive(stmts, declared, execStart, execEnd);
+			_inDerefFunc = savedDeref;
+			_locals = savedLocals;
+			_statics = savedStatics;
+			_scopeTemps = savedTemps;
 			_pendingScopeFuncs = savedScopeFuncs;
 			_currentThisFuncName = savedThisFuncName;
 			return ObjMethod(name, ParamThis(), SyntaxFactory.Block(stmts));

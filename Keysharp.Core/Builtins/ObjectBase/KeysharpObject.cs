@@ -80,12 +80,15 @@ namespace Keysharp.Builtins
 
 		public static object DefineProp(object @this, object name, object descriptor) => Objects.DefineProp(@this, name, descriptor);
 
-		public static object DeleteProp(object @this, object name) => (@this as Any).DeleteOwnPropInternal(name.As());
+		public static object DeleteProp(object @this, object name) =>
+			@this is Any target ? target.DeleteOwnPropInternal(name.As()) : Errors.TypeErrorOccurred(@this, typeof(Any));
 
 		public static object GetOwnPropDesc(object @this, object name)
 		{
+			if (@this is not Any obj)
+				return Errors.TypeErrorOccurred(@this, typeof(Any));
+
 			var nameVal = name.As();
-			var obj = @this as Any;
 
 			if (obj.op != null && obj.op.TryGetValue(nameVal, out var dynProp))
 			{
@@ -117,7 +120,11 @@ namespace Keysharp.Builtins
 
 		public static long HasOwnProp(object @this, object name)
 		{
-			var obj = @this as Any;
+			// Reached with a primitive receiver through the free function ObjHasOwnProp, which — unlike the method
+			// form — has no prototype lookup to fail first.
+			if (@this is not Any obj)
+				return (long)Errors.TypeErrorOccurred(@this, typeof(Any), 0L);
+
 			var nameVal = name.As();
 
 			if (obj.op != null && obj.op.ContainsKey(nameVal))
@@ -128,7 +135,11 @@ namespace Keysharp.Builtins
 
 		public static long OwnPropCount(object @this)
 		{
-			var obj = @this as Any;
+			// Reached with a primitive through the free function ObjOwnPropCount, which — unlike the method form —
+			// has no prototype lookup to fail first.
+			if (@this is not Any obj)
+				return (long)Errors.TypeErrorOccurred(@this, typeof(Any), 0L);
+
 			var ct = 0L;
 			var type = obj.GetType();
 			var isMapOnly = type == typeof(Map);
@@ -157,7 +168,9 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static object OwnProps(object @this)
 		{
-			var obj = @this as Any;
+			if (@this is not Any obj)
+				return Errors.TypeErrorOccurred(@this, typeof(Any));
+
 			var props = new Dictionary<object, object>();
 
 			if (obj.op != null)

@@ -530,14 +530,21 @@ namespace Keysharp.Internals.Strings
 		/// <exception cref="TypeError">Thrown if value is none of those.</exception>
 		internal static byte[] ToByteArray(object value, Encoding enc = null)
 		{
-			if (value is string s)
-				return (enc ?? Encoding.Default).GetBytes(s);
-
 			if (value is byte[] b)
 				return b;
 
 			if (value is Keysharp.Builtins.Buffer buf)
 				return buf.ToByteArray();
+
+			if (value is string s)
+				return (enc ?? Encoding.Default).GetBytes(s);
+
+			if (value is Any any && Reflections.TryGetPtrProperty(any, out long ptr) && Reflections.TryGetSizeProperty(any, out long size))
+			{
+				var bytes = new byte[size];
+				Marshal.Copy((nint)ptr, bytes, 0, (int)size);
+				return bytes;
+			}
 
 			if (value is Keysharp.Builtins.Array arr)
 			{

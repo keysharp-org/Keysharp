@@ -387,4 +387,106 @@ opGettable := {}
 opGettable.DefineProp("G", {get: (this) => 11, call: (this) => 7})
 AssertEq(OwnPropKeys(opGettable, true), "G|", A_LineNumber)
 
+; A descriptor that cannot produce a value does not end the property search: a setter-only one is walked past,
+; and a Call-only one is taken only once nothing further up the chain has yielded a value.
+class OpShadowBase
+{
+	fromField := 1
+	getter => 5
+	method() => "method"
+}
+
+class OpShadowDerived extends OpShadowBase
+{
+}
+
+opShadow := OpShadowDerived()
+
+opShadow.DefineProp("fromField", {set: (*) => 1})
+
+; The instance field WAS the only holder of the value, so nothing is left to read.
+Throws(() => opShadow.fromField, A_LineNumber)
+
+Assert(opShadow.HasOwnProp("fromField") && ObjHasOwnProp(opShadow, "fromField"), A_LineNumber)
+
+opShadow.DefineProp("getter", {set: (*) => 1})
+
+AssertEq(opShadow.getter, 5, A_LineNumber)
+
+opShadow.DefineProp("method", {set: (*) => 1})
+
+AssertEq(Type(opShadow.method), "Func", A_LineNumber)
+
+AssertEq(opShadow.method(), "method", A_LineNumber)
+
+opCallShadow := OpShadowDerived()
+
+opCallShadow.DefineProp("getter", {call: (*) => "callonly"})
+
+AssertEq(opCallShadow.getter, 5, A_LineNumber)
+
+; A descriptor names at least one of Value, Get, Set and Call; Value cannot accompany the other three; and each of
+; Get, Set and Call holds a function object. A rejected descriptor leaves the property untouched.
+opDesc := {}
+
+opFn := (*) => 1
+
+Throws(() => opDesc.DefineProp("d", {}), A_LineNumber)
+
+Throws(() => opDesc.DefineProp("d", {note: "x"}), A_LineNumber)
+
+Throws(() => opDesc.DefineProp("d", {value: 1, call: opFn}), A_LineNumber)
+
+Throws(() => opDesc.DefineProp("d", {value: 1, get: opFn}), A_LineNumber)
+
+Throws(() => opDesc.DefineProp("d", {value: 1, set: opFn}), A_LineNumber)
+
+Throws(() => opDesc.DefineProp("d", {get: 5}), A_LineNumber)
+
+Assert(!opDesc.HasOwnProp("d"), A_LineNumber)
+
+; Extra keys alongside Value are ignored rather than rejected, and the accepted shapes still define.
+opDesc.DefineProp("d", {value: 7, note: "x"})
+
+AssertEq(opDesc.d, 7, A_LineNumber)
+
+opDesc.DefineProp("e", {get: (*) => 11, set: (*) => 0})
+
+AssertEq(opDesc.e, 11, A_LineNumber)
+
+opDesc.DefineProp("f", {call: (*) => "called"})
+
+AssertEq(opDesc.f(), "called", A_LineNumber)
+
+; Reading a name nothing in the chain has is a PropertyError, and the free function matches the method form.
+Throws(() => ({}).noSuchProperty, A_LineNumber)
+
+AssertEq(({}).noSuchProperty ?? "DEFAULT", "DEFAULT", A_LineNumber)
+
+Throws(() => ObjHasOwnProp(5, "x"), A_LineNumber)
+
+Throws(() => ObjOwnPropCount("str"), A_LineNumber)
+
+Throws(() => ObjOwnProps(5), A_LineNumber)
+
+; A property whose getter yields nothing is unset, not missing — carrying a Set slot as well does not change that.
+OpUnsetValue()
+{
+	local u
+	return u
+}
+
+opUnset := {}
+
+opUnset.DefineProp("g", {get: (*) => OpUnsetValue(), set: (*) => 0})
+
+opUnsetKind := ""
+
+try
+	opUnset.g
+catch as opErr
+	opUnsetKind := Type(opErr)
+
+AssertEq(opUnsetKind, "UnsetError", A_LineNumber)
+
 FileAppend "pass", "*"

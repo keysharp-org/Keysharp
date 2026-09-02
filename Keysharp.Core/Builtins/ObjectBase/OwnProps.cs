@@ -202,110 +202,36 @@ namespace Keysharp.Builtins
 			Call = set_Call;
 		}
 
-		public OwnPropsDesc(Any kso, Map map)
-		{
-			Parent = kso;
-			Merge(map);
-		}
-
 		public bool IsEmpty
 		{
 			get => Type == OwnPropsMapType.None;
 		}
 
-		internal void Merge(Dictionary<string, OwnPropsDesc> map)
-		{
-			foreach ((var key, var desc) in map)
-			{
-				switch (key.ToUpper())
-				{
-					case "VALUE":
-						Value = desc.Value;
-						break;
-
-					case "GET":
-						Get = desc.Get;
-						break;
-
-					case "SET":
-						Set = desc.Set;
-						break;
-
-					case "CALL":
-						Call = desc.Call;
-						break;
-				}
-			}
-		}
-
-		internal void MergeOwnPropsValues(Dictionary<string, OwnPropsDesc> map)
-		{
-			foreach ((var name, var desc) in map)
-			{
-				var v = desc.Get ?? desc.Value;
-
-				switch (name.ToUpper())
-				{
-					case "VALUE":
-						Value = v;
-						break;
-
-					case "GET":
-						Get = v;
-						break;
-
-					case "SET":
-						Set = v;
-						break;
-
-					case "CALL":
-						Call = v;
-						break;
-				}
-			}
-		}
-
 		internal void Merge(OwnPropsDesc opd)
 		{
-			if (opd.Value != null)
-				Value = opd.Value;
-
-			if (opd.Get != null)
-				Get = opd.Get;
-
-			if (opd.Set != null)
-				Set = opd.Set;
-
-			if (opd.Call != null)
-				Call = opd.Call;
+			Merge(opd.Value, opd.Get, opd.Set, opd.Call);
 
 			if (opd.StructField != null)
 				StructField = opd.StructField;
 		}
 
-		public void Merge(Map map)
+		/// <summary>
+		/// Applies the slots a descriptor supplied, leaving the ones it did not. A slot a descriptor names always
+		/// carries a value, so null is what "absent" looks like here.
+		/// </summary>
+		internal void Merge(object value, object get, object set, object call)
 		{
-			foreach ((var key, var value) in map.map)
-			{
-				switch (key.ToString().ToUpper())
-				{
-					case "VALUE":
-						Value = value;
-						break;
+			if (value != null)
+				Value = value;
 
-					case "GET":
-						Get = value;
-						break;
+			if (get != null)
+				Get = get;
 
-					case "SET":
-						Set = value;
-						break;
+			if (set != null)
+				Set = set;
 
-					case "CALL":
-						Call = value;
-						break;
-				}
-			}
+			if (call != null)
+				Call = call;
 		}
 
 		public KeysharpObject GetDesc()

@@ -87,15 +87,27 @@ namespace Keysharp.Internals.Events
 			}
 
 			PrepareRegistration(reg, first);
+			var scheduler = reg.OwnerScheduler;
 
-			lock (gate)
+			// Adding under the owning scheduler's cleanup gate makes "registered" and "will be swept" one step: a
+			// scheduler that has already torn down refuses, leaving the subscription inactive rather than stranded
+			// in a manager nothing will ever sweep. This is the same rule CallbackRegistry follows, and the same
+			// lock order teardown takes (cleanup gate, then this manager's), so the two cannot invert.
+			if (scheduler != null ? !scheduler.TryRegisterOwnedResource(AddCore) : !AddCore())
+				reg.Clear();
+
+			bool AddCore()
 			{
-				if (disposed)
-					return;
+				lock (gate)
+				{
+					if (disposed)
+						return false;
 
-				registrations.Add(reg);
-				OnRegistrationsChangedLocked();
-				SyncNativeLocked();
+					registrations.Add(reg);
+					OnRegistrationsChangedLocked();
+					SyncNativeLocked();
+					return true;
+				}
 			}
 		}
 

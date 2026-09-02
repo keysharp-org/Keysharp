@@ -105,6 +105,21 @@ namespace Keysharp.Parsing.Lexing
 		// number). `c >= 0x80` (not char.IsLetter) is what AHK uses, so non-ASCII symbols (€, ①, …) are allowed too.
 		private static bool IsIdentStart(char c) => c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= (char)0x80;
 		private static bool IsIdentPart(char c) => IsIdentStart(c) || (c >= '0' && c <= '9');
+		// A character that ends a numeric literal in AHK (EXPR_OPERAND_TERMINATORS, script.h:815). '%' opens a
+		// dynamic member name and '!'/'~' would leave their operand unconsumed, so neither is included here.
+		private static bool IsOperandTerminator(char c) =>
+			IsInlineWhitespace(c) || c == '\n' || c == '\0' || "<>=/|^,?:*&()[]{}+-.".IndexOf(c) >= 0;
+
+		// The last token that is not trivia. A comment occupies a slot in the token stream but is whitespace to
+		// every adjacency decision, so nothing looking backwards may stop on one.
+		private static TokenKind LastKind(List<Token> tokens)
+		{
+			for (var i = tokens.Count - 1; i >= 0; i--)
+				if (tokens[i].Kind != TokenKind.Comment)
+					return tokens[i].Kind;
+
+			return TokenKind.Newline;   // nothing but trivia so far — still the start of a line
+		}
 		private static bool IsInlineWhitespace(char c) =>
 			c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v' || c == ' ';
 
@@ -179,7 +194,7 @@ namespace Keysharp.Parsing.Lexing
 
 				// At the beginning of a logical line, a `::` (outside strings/comments) marks a hotkey, remap, or
 				// hotstring definition. The trigger text is taken raw (it can contain operator characters).
-				if (!_mergedLine && (tokens.Count == 0 || tokens[^1].Kind == TokenKind.Newline))
+				if (!_mergedLine && LastKind(tokens) == TokenKind.Newline)
 				{
 					MaybeTrackHotstringDirective();   // `#Hotstring X` sets the default execute mode for later hotstrings
 					// Capture C# before other line-start scanners can interpret its body.
@@ -194,13 +209,14 @@ namespace Keysharp.Parsing.Lexing
 				// A leading '.' is only a number ('.5') at the start of an expression. After a value
 				// (identifier, literal, or closing bracket) a '.' is the member/concat operator, and
 				// whether it's member or concat is decided later by the parser from the adjacency flag.
-				var prevIsValue = tokens.Count > 0 && tokens[^1].Kind is
+				var prevKind = LastKind(tokens);
+				var prevIsValue = prevKind is
 					TokenKind.Identifier or TokenKind.Number or TokenKind.String or
 					TokenKind.RParen or TokenKind.RBracket or TokenKind.RBrace;
 
 				if (IsDigit(c) || (c == '.' && IsDigit(At(1)) && !prevIsValue))
 				{
-					ScanNumber();
+					ScanNumber(memberName: prevKind == TokenKind.Dot);
 					kind = TokenKind.Number;
 				}
 				else if (c == '"' || c == '\'')
@@ -230,7 +246,9 @@ namespace Keysharp.Parsing.Lexing
 			return tokens;
 		}
 
-		private void ScanNumber()
+		// `memberName`: the number sits in member position (`o.1`), where AHK scans the name with an identifier
+		// scanner that never takes a '.', so `o.1.="C"` stays a concat-assign.
+		private void ScanNumber(bool memberName = false)
 		{
 			var c = _s[_pos];
 
@@ -259,7 +277,7 @@ namespace Keysharp.Parsing.Lexing
 				else
 				{
 					while (IsDigit(Cur) || Cur == '_') Advance();
-					if (Cur == '.' && IsDigit(At(1)))
+					if (Cur == '.' && (IsDigit(At(1)) || (!memberName && TrailingDotEndsNumber())))
 					{
 						Advance();
 						while (IsDigit(Cur) || Cur == '_') Advance();
@@ -279,6 +297,30 @@ namespace Keysharp.Parsing.Lexing
 			}
 
 			if (Cur == 'n') Advance();  // bigint suffix
+		}
+
+		// Whether a '.' with no digit after it still belongs to the number being scanned. AutoHotkey reads the
+		// literal with strtod and keeps the float when the character it stopped at is an operand terminator
+		// (script.cpp:8654), so `1. 2` is the float 1.0 beside an operand — implicitly concatenated — while
+		// `1.Foo` is the integer 1 with a member access. Called with Cur == '.' and no digit after it.
+		private bool TrailingDotEndsNumber()
+		{
+			var k = 1;                                  // At(1): the character after the '.'
+
+			if (At(k) == 'e' || At(k) == 'E')
+			{
+				var e = k + 1;
+
+				if (At(e) == '+' || At(e) == '-') e++;
+
+				if (IsDigit(At(e)))
+				{
+					while (IsDigit(At(e)) || At(e) == '_') e++;
+					k = e;                              // `1.e3` — the exponent belongs to the literal
+				}
+			}
+
+			return IsOperandTerminator(At(k));
 		}
 
 		private void ScanString()
@@ -1154,6 +1196,19 @@ namespace Keysharp.Parsing.Lexing
 					return -1;                                        // a real string opener: not a hotkey
 				}
 				if (!escaped && (c == ' ' || c == '\t') && i + 1 < _n && _s[i + 1] == ';') return -1; // comment
+
+				// A block comment is whitespace, so a `::` inside one is comment text and not a separator
+				// (`x := 1 /* a :: b */`). One that is unterminated or spans lines takes the rest of the line with it.
+				if (!escaped && c == '/' && i + 1 < _n && _s[i + 1] == '*')
+				{
+					var end = _s.IndexOf("*/", i + 2, StringComparison.Ordinal);
+
+					if (end < 0 || _s.IndexOf('\n', i, end - i) >= 0) return -1;
+
+					i = end + 1;   // the loop's i++ steps past the '/'
+					continue;
+				}
+
 				if (!escaped && c == ':' && i + 1 < _n && _s[i + 1] == ':')
 				{
 					if (allowEmpty || i > from) return i;             // at least one trigger char required

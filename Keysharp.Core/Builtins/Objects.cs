@@ -39,7 +39,7 @@ namespace Keysharp.Builtins
 		/// <param name="obj">The obj to search for an OwnProp on.</param>
 		/// <param name="name">The OwnProp name to search for.</param>
 		/// <returns>Returns 1 if an object owns a property by the specified name, otherwise 0.</returns>
-		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if obj was not of type KeysharpObject.</exception>
+		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if obj is not an object.</exception>
 		public static long ObjHasOwnProp(object obj, object name) => KeysharpObject.HasOwnProp(obj, name);
 
 		/// <summary>
@@ -63,14 +63,8 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="obj">The object whose OwnProps will be retrieved.</param>
 		/// <returns>An <see cref="Enumerator"/> object for obj.</returns>
-		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if obj was not of type KeysharpObject.</exception>
-		public static object ObjOwnProps(object obj)
-		{
-			if (obj is Any kso)
-				return KeysharpObject.OwnProps(kso);
-
-			return Errors.ErrorOccurred($"Object of type {obj.GetType()} was not of type Any.");
-		}
+		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if obj is not an object.</exception>
+		public static object ObjOwnProps(object obj) => KeysharpObject.OwnProps(obj);
 
 		/// <summary>
 		/// Returns a Props iterator for the given value.
@@ -210,6 +204,15 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
+		/// <summary>
+		/// One slot of a property descriptor, read the way AutoHotkey reads it (script_object.cpp, Object::DefineProp,
+		/// through GetOwnProp): as an own value property. A slot inherited from a base object is invisible to it, so is
+		/// a dynamic own property, and a Map's items are not own properties — only what was defined on the Map itself.
+		/// A slot a descriptor names always carries a value, so null is what "absent" looks like.
+		/// </summary>
+		private static object DescriptorSlot(Any descriptor, string slot) =>
+			descriptor.op != null && descriptor.op.TryGetValue(slot, out var desc) ? desc.Value : null;
+
 		public static object DefineProp(object obj, object name, object descriptor)
 		{
 			if (obj is not Any target)
@@ -220,40 +223,34 @@ namespace Keysharp.Builtins
 			if (Struct.TryDefineFieldOnPrototype(target, nameVal, descriptor, out var structResult))
 				return structResult ?? Errors.ValueErrorOccurred("Type is only valid for struct fields.");
 
-			var op = target.EnsureOwnProps();
-
-			if (descriptor is Map map)
-			{
-				if (!op.ContainsKey(nameVal))
-					op[nameVal] = new OwnPropsDesc(target, map);
-				else
-				{
-					if (map.map.Count > 1 && map.map.Any(k => k.Key.ToString().Equals("value", StringComparison.OrdinalIgnoreCase)))
-						return Errors.ValueErrorOccurred("Value can't be defined along with get, set, or call.");
-
-					op[nameVal].Merge(map);
-				}
-			}
-			else if (descriptor is Any kso)
-			{
-				if (kso.op != null)//&& kso.op.TryGetValue(nameVal, out var opm))
-				{
-					if (kso.op.Count > 2 && kso.op.Any(k => k.Key.ToString().Equals("value", StringComparison.OrdinalIgnoreCase)))
-						return Errors.ValueErrorOccurred("Value can't be defined along with get, set, or call.");
-
-					if (op.TryGetValue(nameVal, out var currProp))
-						currProp.MergeOwnPropsValues(kso.op);
-					else
-					{
-						op[nameVal] = new OwnPropsDesc();
-						op[nameVal].MergeOwnPropsValues(kso.op);
-					}
-				}
-			}
-			else
+			if (descriptor is not Any kso)
 				return Errors.ArgumentErrorOccurred(descriptor, 2);
 
-			target.OnPropertyChanged(nameVal, op[nameVal].Type);
+			var value = DescriptorSlot(kso, "Value");
+			var get = DescriptorSlot(kso, "Get");
+			var set = DescriptorSlot(kso, "Set");
+			var call = DescriptorSlot(kso, "Call");
+
+			// What AutoHotkey rejects, checked before the property is touched so a bad descriptor leaves nothing
+			// half-defined: one naming none of the four, a Value alongside any of the other three, and a Get, Set or
+			// Call that is not an object.
+			if (value == null && get == null && set == null && call == null)
+				return Errors.ValueErrorOccurred("A property descriptor must define Value, Get, Set or Call.", descriptor);
+
+			if (value != null && (get != null || set != null || call != null))
+				return Errors.ValueErrorOccurred("Value can't be defined along with get, set, or call.", descriptor);
+
+			if (get is not (null or Any) || set is not (null or Any) || call is not (null or Any))
+				return Errors.ValueErrorOccurred("Get, Set and Call must each be a function object.", descriptor);
+
+			var op = target.EnsureOwnProps();
+
+			if (op.TryGetValue(nameVal, out var currProp))
+				currProp.Merge(value, get, set, call);
+			else
+				op[nameVal] = currProp = new OwnPropsDesc(target, value, get, set, call);
+
+			target.OnPropertyChanged(nameVal, currProp.Type);
 
 			return target;
 		}

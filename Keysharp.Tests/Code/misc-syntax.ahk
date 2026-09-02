@@ -375,6 +375,26 @@ a := __()
 
 Assert(a = 2, A_LineNumber)
 
+; An inline block comment is whitespace, which nothing looking backwards may stop on: the `::` inside one is
+; comment text rather than a hotkey separator, and a comment before a '.' leaves it a member access.
+blockCommentSep := 1 /* a :: b */
+
+AssertEq(blockCommentSep, 1, A_LineNumber)
+
+blockCommentTight := 2 /*::*/
+
+AssertEq(blockCommentTight, 2, A_LineNumber)
+
+/*c*/blockCommentLead := 3
+
+AssertEq(blockCommentLead, 3, A_LineNumber)
+
+blockCommentStr := "X"
+
+Throws(() => blockCommentStr/*c*/.5, A_LineNumber)
+
+Throws(() => blockCommentStr .5, A_LineNumber)
+
 ;Test ending a file with a multiline comment.
 FileAppend "pass", "*"
 
