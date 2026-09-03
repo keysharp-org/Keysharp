@@ -203,13 +203,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				=> DesktopClient.GetClipboardContent("cinnamon", mimetype);
 
 			internal static bool SetClipboardContent(string mimetype, byte[] bytes)
-				=> RunExtensionBool(p => p.SetClipboardContentAsync(mimetype, bytes ?? System.Array.Empty<byte>()));
+				=> DesktopClient.SetClipboardContent("cinnamon", mimetype, bytes);
 
 			internal static string GetClipboardText()
 				=> DesktopClient.GetClipboardText("cinnamon");
 
 			internal static bool SetClipboardText(string text)
-				=> RunExtensionBool(p => p.SetClipboardTextAsync(text ?? string.Empty));
+				=> DesktopClient.SetClipboardText("cinnamon", text);
 
 			internal static IDisposable WatchClipboardChanged(Action<string, string[]> handler, Action<Exception> onError = null)
 				=> DesktopClient.WatchClipboardChanges("cinnamon", handler, onError);

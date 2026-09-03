@@ -22,6 +22,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private const int MaxCaptureBytes = 256 * 1024 * 1024;
 		private const int MaxCaptureDimension = 32_768;
 		private const int MaxMimetypeBytes = 1024;
+		private const int MaxClipboardWriteBytes = 4_193_272;
 		private const int MaxMimetypes = 4096;
 		private const int MaxWindowHandleBytes = 128;
 		private const string SocketEnvironmentVariable = "KEYSHARP_DESKTOP_SOCKET";
@@ -99,7 +100,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			MouseScroll = 1UL << 25,
 			CursorPosition = 1UL << 26,
 			WorkArea = 1UL << 27,
-			All = (1UL << 28) - 1,
+			ClipboardSetContent = 1UL << 28,
+			All = ((1UL << 28) - 1) | ClipboardSetContent,
 		}
 
 		private enum CaptureFormat : ushort
@@ -308,6 +310,34 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			string value = null;
 			return ClipboardMonitoringSession(backend).TryUse(Operation.ClipboardText,
 				connection => connection.ClipboardText(out value)) ? value : null;
+		}
+
+		internal static bool SetClipboardContent(string backend, string mimetype, byte[] bytes)
+		{
+			var data = bytes ?? System.Array.Empty<byte>();
+
+			if (string.IsNullOrEmpty(mimetype)
+				|| StrictUtf8.GetByteCount(mimetype) > MaxMimetypeBytes
+				|| data.Length > MaxClipboardWriteBytes)
+				return false;
+
+			return QuerySession(backend).TryUse(Operation.ClipboardSetContent,
+				connection => connection.SetClipboardContent(mimetype, data));
+		}
+
+		internal static bool SetClipboardText(string backend, string text)
+		{
+			var value = text ?? string.Empty;
+			int length;
+
+			try { length = StrictUtf8.GetByteCount(value); }
+			catch (EncoderFallbackException) { return false; }
+
+			if (length > MaxClipboardWriteBytes)
+				return false;
+
+			return QuerySession(backend).TryUse(Operation.ClipboardSetContent,
+				connection => connection.SetClipboardText(value));
 		}
 
 		internal static bool SendMouseMoveAbsolute(string backend, int x, int y)
@@ -1284,6 +1314,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				}
 			}
 
+			internal CallResult SetClipboardContent(string mimetype, byte[] data)
+				=> Invoke("write clipboard content",
+					(IntPtr connection, ref NativeError error)
+						=> Native.ksd_clipboard_set_content(connection, mimetype, data,
+							(UIntPtr)data.Length, ref error));
+
+			internal CallResult SetClipboardText(string text)
+				=> Invoke("write clipboard text",
+					(IntPtr connection, ref NativeError error)
+						=> Native.ksd_clipboard_set_text(connection, text, ref error));
+
 			internal CallResult ClipboardText(out string value)
 				=> ReadString("read clipboard text",
 					(IntPtr connection, ref NativeString result, ref NativeError error)
@@ -1922,6 +1963,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_clipboard_text(IntPtr connection,
 				ref NativeString value, ref NativeError error);
+
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl,
+				CharSet = CharSet.Ansi)]
+			internal static extern uint ksd_clipboard_set_content(IntPtr connection,
+				[MarshalAs(UnmanagedType.LPUTF8Str)] string mimetype,
+				byte[] data, UIntPtr length, ref NativeError error);
+
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl,
+				CharSet = CharSet.Ansi)]
+			internal static extern uint ksd_clipboard_set_text(IntPtr connection,
+				[MarshalAs(UnmanagedType.LPUTF8Str)] string text, ref NativeError error);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_mouse_move_absolute(IntPtr connection,

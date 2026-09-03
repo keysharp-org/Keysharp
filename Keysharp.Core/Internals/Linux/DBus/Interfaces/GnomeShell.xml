@@ -105,15 +105,6 @@
       <arg direction="in" type="i" name="ttlMs"/>
       <arg direction="out" type="b" name="value"/>
     </method>
-    <method name="SetClipboardContent">
-      <arg direction="in" type="s" name="mimetype"/>
-      <arg direction="in" type="ay" name="bytes"/>
-      <arg direction="out" type="b" name="value"/>
-    </method>
-    <method name="SetClipboardText">
-      <arg direction="in" type="s" name="text"/>
-      <arg direction="out" type="b" name="value"/>
-    </method>
     <method name="SetWindowAbove">
       <arg direction="in" type="t" name="handle"/>
       <arg direction="in" type="b" name="above"/>
