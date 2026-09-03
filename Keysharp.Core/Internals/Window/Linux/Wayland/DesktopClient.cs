@@ -64,6 +64,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			Kwin = 1,
 			Gnome = 2,
 			Cinnamon = 3,
+			Generic = 4,
 		}
 
 		[Flags]
@@ -1009,10 +1010,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					var operations = (Operation)info.AvailableOperations;
 					var granted = (LinuxPermissionScope)info.GrantedScopes;
 
+					// A newer service may report a backend value or operation bits this build does not
+					// name. Both are delivered verbatim and never inferred as supported; support is read
+					// from AvailableOperations, which the service computes. Framing stays strict.
 					if (info.StructSize != NativeServiceInfoStructSize
 						|| info.ClientAbiMajor != 0 || info.ClientAbiMinor < 1
-						|| backend is < Backend.None or > Backend.Cinnamon
-						|| (operations & ~Operation.All) != 0
 						|| (granted & ~LinuxPermissionScope.All) != 0)
 						throw new InvalidDataException(
 							"libkeysharp-desktop returned incompatible service information.");
