@@ -66,6 +66,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			Gnome = 2,
 			Cinnamon = 3,
 			Generic = 4,
+			X11 = 5,
 		}
 
 		[Flags]
@@ -136,6 +137,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			LinuxPermissionScope.None);
 		private static readonly DesktopRpcSession cinnamonQueries = new(Backend.Cinnamon,
 			LinuxPermissionScope.None);
+		// The broker serves these from the X server itself on a session with no
+		// Wayland compositor, which is every bare X11 desktop as well as XFCE and
+		// MATE. The scopes are the same ones the compositor backends use, because
+		// the operations are the same.
+		private static readonly DesktopRpcSession x11Queries = new(Backend.X11,
+			LinuxPermissionScope.None);
+		private static readonly DesktopRpcSession x11WindowMonitoring = new(Backend.X11,
+			LinuxPermissionScope.WindowMonitoring);
 
 		internal static Bitmap Capture(int x, int y, int width, int height)
 			=> CaptureArea(kwinCapture, x, y, width, height);
@@ -574,6 +583,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				Backend.Gnome => gnomeWindowMonitoring,
 				Backend.Cinnamon => cinnamonWindowMonitoring,
+				Backend.X11 => x11WindowMonitoring,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
@@ -606,6 +616,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				Backend.Gnome => gnomeQueries,
 				Backend.Cinnamon => cinnamonQueries,
+				Backend.X11 => x11Queries,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
@@ -615,6 +626,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				"kwin" => Backend.Kwin,
 				"gnome" => Backend.Gnome,
 				"cinnamon" => Backend.Cinnamon,
+				"x11" => Backend.X11,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
