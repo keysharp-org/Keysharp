@@ -367,6 +367,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				BackendFromName(backend), handler, onError);
 
 		private static readonly object authorizationSync = new();
+		private static readonly object promptSync = new();
 		private static readonly List<AuthorizationLease> authorizationLeases = [];
 		private static LinuxPermissionScope declinedScopes;
 		private static bool authorizationExitHookInstalled;
@@ -386,55 +387,109 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return new PermissionResult(PermissionStatus.Unsupported,
 					"Invalid keysharp-desktop permission scope.");
 
+			if (TrySettleAuthorization(requestedScopes, prompt, forcePrompt, out var settled))
+				return settled;
+
+			// Prompts are serialised against each other, because two polkit dialogs racing for
+			// the same user is worse than making the second caller wait. This is deliberately not
+			// authorizationSync: that lock guards the lease list, and holding it across a dialog
+			// that can sit for AuthorizationTimeoutMs waiting for a human would stall every
+			// unrelated consent check in the process, including ones already granted.
+			lock (promptSync)
+			{
+				// Another thread may have obtained the scope, or been declined for it, while this
+				// one waited for the prompt gate.
+				if (TrySettleAuthorization(requestedScopes, prompt, forcePrompt, out settled))
+					return settled;
+
+				return AcquireAuthorization(requestedScopes, prompt);
+			}
+		}
+
+		// Answers from the lease list alone. Returns false when only a prompt can settle it.
+		private static bool TrySettleAuthorization(LinuxPermissionScope requestedScopes,
+			bool prompt, bool forcePrompt, out PermissionResult result)
+		{
 			lock (authorizationSync)
 			{
 				PruneAuthorizationLeasesLocked();
 				var missing = requestedScopes & ~GrantedScopesLocked();
 
 				if (missing == LinuxPermissionScope.None)
-					return new PermissionResult(PermissionStatus.Granted);
+				{
+					result = new PermissionResult(PermissionStatus.Granted);
+					return true;
+				}
 
 				if (forcePrompt)
-					declinedScopes &= ~missing;
-				else if (prompt && (declinedScopes & missing) != 0)
-					return new PermissionResult(PermissionStatus.Denied,
-						"Desktop permission denied.");
-
-				DesktopConnection connection = null;
-
-				try
 				{
-					connection = DesktopConnection.Connect(null,
-						ConnectionRole.AuthorizationLease, AuthorizationTimeoutMs);
-					var result = connection.Authorize(missing, prompt
-						? AuthorizationMode.Request : AuthorizationMode.Check,
-						out var granted);
+					declinedScopes &= ~missing;
+				}
+				else if (prompt && (declinedScopes & missing) != 0)
+				{
+					result = new PermissionResult(PermissionStatus.Denied,
+						"Desktop permission denied.");
+					return true;
+				}
+			}
 
-					if (!result.IsSuccess)
+			result = default;
+			return false;
+		}
+
+		private static PermissionResult AcquireAuthorization(
+			LinuxPermissionScope requestedScopes, bool prompt)
+		{
+			LinuxPermissionScope missing;
+
+			lock (authorizationSync)
+				missing = requestedScopes & ~GrantedScopesLocked();
+
+			if (missing == LinuxPermissionScope.None)
+				return new PermissionResult(PermissionStatus.Granted);
+
+			DesktopConnection connection = null;
+
+			try
+			{
+				connection = DesktopConnection.Connect(null,
+					ConnectionRole.AuthorizationLease, AuthorizationTimeoutMs);
+				var result = connection.Authorize(missing, prompt
+					? AuthorizationMode.Request : AuthorizationMode.Check,
+					out var granted);
+
+				if (!result.IsSuccess)
+				{
+					connection.Dispose();
+
+					if (prompt && result.Status == NativeClientStatus.Denied)
 					{
-						connection.Dispose();
-
-						if (prompt && result.Status == NativeClientStatus.Denied)
+						lock (authorizationSync)
 							declinedScopes |= missing;
-
-						return PermissionFailure(result);
 					}
 
-					var lease = new AuthorizationLease(connection, granted);
-					connection = null;
+					return PermissionFailure(result);
+				}
+
+				var lease = new AuthorizationLease(connection, granted);
+				connection = null;
+
+				lock (authorizationSync)
+				{
 					authorizationLeases.Add(lease);
 					declinedScopes &= ~granted;
 					InstallAuthorizationExitHookLocked();
 					lease.Start();
-					return new PermissionResult(PermissionStatus.Granted);
 				}
-				catch (Exception exception)
-				{
-					connection?.Dispose();
-					DebugLine($"keysharp-desktop authorization failed: {exception.Message}");
-					return new PermissionResult(PermissionStatus.Unsupported,
-						$"keysharp-desktop is unavailable. {exception.Message}");
-				}
+
+				return new PermissionResult(PermissionStatus.Granted);
+			}
+			catch (Exception exception)
+			{
+				connection?.Dispose();
+				DebugLine($"keysharp-desktop authorization failed: {exception.Message}");
+				return new PermissionResult(PermissionStatus.Unsupported,
+					$"keysharp-desktop is unavailable. {exception.Message}");
 			}
 		}
 
