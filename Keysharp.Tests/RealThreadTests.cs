@@ -271,10 +271,10 @@ namespace Keysharp.Tests
 				Assert.IsTrue(filter.CallEventHandlers(ref msg));
 				Assert.IsTrue(probe.WaitFor("message"));
 
-				_ = form.closedHandlers.InvokeEventHandlers("close");
+				form.closedHandlers.InvokeEventHandlers("close");
 				Assert.IsTrue(probe.WaitFor("gui"));
 
-				_ = s.ClipFunctions.InvokeEventHandlers(1L);
+				s.ClipFunctions.InvokeEventHandlers(1L);
 				Assert.IsTrue(probe.WaitFor("clipboard"));
 
 				Assert.AreEqual(0L, Dll.DllCall((long)registrations.CallbackHolder.Ptr));
