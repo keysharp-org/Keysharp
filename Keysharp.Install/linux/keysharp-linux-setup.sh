@@ -176,6 +176,79 @@ report_plan() {
     fi
 }
 
+# Turns on the keysharp-desktop shell extension for the user running sudo.
+#
+# The tarball channel gets this from keysharp-desktop's own installer, but the
+# deb channel ends at apt-get, and its maintainer scripts deliberately do not
+# touch a user's dconf. Neither runs at all when the installed keysharp-desktop
+# is already compatible -- which is exactly the state of someone rerunning this
+# to fix a session whose backend reports None because the extension was never
+# enabled. So this runs regardless of channel, and regardless of whether
+# keysharp-desktop was installed just now.
+#
+# Advisory throughout. The extension is per-user and per-desktop: a KWin or X11
+# machine has nothing to enable, and nothing here may fail the setup.
+enable_desktop_extension() {
+    extension_uid=${SUDO_UID:-}
+    case "$extension_uid" in
+        ''|*[!0-9]*|0) return 0 ;;
+    esac
+    [ -x /usr/bin/getent ] && [ -x /usr/bin/awk ] && [ -x /usr/bin/stat ] \
+        && [ -x /usr/sbin/runuser ] && [ -x /usr/bin/env ] || return 0
+    extension_passwd=$(/usr/bin/getent passwd "$extension_uid" 2>/dev/null) \
+        || return 0
+    extension_name=$(printf '%s\n' "$extension_passwd" | /usr/bin/awk -F: \
+        -v expected="$extension_uid" '$3 == expected { print $1; exit }')
+    extension_home=$(printf '%s\n' "$extension_passwd" | /usr/bin/awk -F: \
+        -v expected="$extension_uid" '$3 == expected { print $6; exit }')
+    case "$extension_name" in
+        ''|-*|*[!A-Za-z0-9._-]*) return 0 ;;
+    esac
+    case "$extension_home" in
+        /*) ;;
+        *) return 0 ;;
+    esac
+    # The checks keysharp-desktop's own installer makes before trusting a
+    # runtime directory: ours, not group- or world-writable, not a symlink, and
+    # carrying a real session bus socket. Without them the write can land on a
+    # bus nobody reads.
+    extension_runtime=/run/user/$extension_uid
+    extension_metadata=$(/usr/bin/stat -Lc '%u %a' -- "$extension_runtime" \
+        2>/dev/null) || return 0
+    # shellcheck disable=SC2086 # deliberate split into uid and mode
+    set -- $extension_metadata
+    [ "$1" = "$extension_uid" ] && [ $((0$2 & 022)) -eq 0 ] \
+        && [ ! -L "$extension_runtime" ] \
+        && [ -S "$extension_runtime/bus" ] \
+        && [ ! -L "$extension_runtime/bus" ] || return 0
+
+    for extension_binary in /usr/bin/keysharp-desktop \
+        /run/current-system/sw/bin/keysharp-desktop \
+        /usr/local/bin/keysharp-desktop; do
+        [ -x "$extension_binary" ] || continue
+        extension_status=0
+        # env -i leaves PATH as /usr/bin:/bin, which does not contain
+        # /usr/local/bin, so the binary is named absolutely.
+        /usr/sbin/runuser -u "$extension_name" -- /usr/bin/env -i \
+            HOME="$extension_home" USER="$extension_name" \
+            LOGNAME="$extension_name" LANG=C PATH=/usr/bin:/bin \
+            XDG_RUNTIME_DIR="$extension_runtime" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=$extension_runtime/bus" \
+            "$extension_binary" enable-extension >/dev/null 2>&1 \
+            || extension_status=$?
+        case "$extension_status" in
+            0) return 0 ;;
+            3) printf '%s\n' \
+                "keysharp-desktop shell extension enabled. Log out and back in to load it." ;;
+            *) printf '%s\n' \
+                "Could not enable the keysharp-desktop shell extension. On GNOME or Cinnamon, run this as yourself:" \
+                "  keysharp-desktop enable-extension" ;;
+        esac
+        return 0
+    done
+    return 0
+}
+
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --channel)
@@ -267,7 +340,7 @@ if [ "$channel" = deb ]; then
         download_verified "$DESKTOP_REPOSITORY" "v$desktop_resolved" "$asset" "$work"
         set -- "$@" "$work/$asset"
     fi
-    asset="keysharp-${keysharp_resolved}-${arch_tag}.deb"
+    asset="keysharp_${keysharp_resolved}_${deb_arch}.deb"
     download_verified "$KEYSHARP_REPOSITORY" "v$keysharp_resolved" "$asset" "$work"
     set -- "$@" "$work/$asset"
     # One transaction, so the components satisfy Keysharp's Recommends and the
@@ -294,5 +367,7 @@ else
     tar -xzf "$work/$asset" -C "$work"
     (cd "$work/keysharp-${arch_tag}" && sh ./install.sh)
 fi
+
+enable_desktop_extension
 
 printf '%s\n' "Keysharp $keysharp_resolved is installed. Run 'keysharp --version' to confirm."

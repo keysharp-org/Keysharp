@@ -102,7 +102,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			CursorPosition = 1UL << 26,
 			WorkArea = 1UL << 27,
 			ClipboardSetContent = 1UL << 28,
-			All = ((1UL << 28) - 1) | ClipboardSetContent,
+			// Enumeration without properties. Ungated, unlike WindowList.
+			WindowHandles = 1UL << 29,
+			All = ((1UL << 28) - 1) | ClipboardSetContent | WindowHandles,
 		}
 
 		private enum CaptureFormat : ushort
@@ -256,6 +258,20 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			string value = null;
 			return WindowMonitoringSession(backend).TryUse(Operation.WindowList,
 				connection => connection.WindowList(includeHidden, out value)) ? value : null;
+		}
+
+		/// <summary>
+		/// Every window's handle and nothing else. Runs on the QUERY session, which
+		/// carries no permission scope, so it raises no prompt: a handle says a window
+		/// exists, which is not something a consent dialog can meaningfully ask about.
+		/// Reading a window's title, class, owner or geometry is QueryWindowList, and
+		/// that does need a grant.
+		/// </summary>
+		internal static string QueryWindowHandles(string backend)
+		{
+			string value = null;
+			return QuerySession(backend).TryUse(Operation.WindowHandles,
+				connection => connection.WindowHandles(out value)) ? value : null;
 		}
 
 		internal static string QueryActiveWindow(string backend)
@@ -1166,8 +1182,31 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 							"libkeysharp-desktop returned incompatible service information.");
 
 					if (expectedBackend.HasValue && backend != expectedBackend.Value)
-						throw new InvalidOperationException(
-							$"keysharp-desktop selected {backend}, not {expectedBackend.Value}.");
+					{
+						var detail = $"keysharp-desktop selected {backend}, not {expectedBackend.Value}.";
+
+						// That sentence names the symptom and none of its causes, which sent a
+						// real diagnosis through the daemon, the socket and the provider in turn
+						// before landing on the actual fault: the shell extension that provides
+						// the GNOME/Cinnamon backend is installed but was never enabled.
+						//
+						// Keyed on the backend we EXPECTED, not the one we got, because that one
+						// cause produces three different answers. The daemon waits for a provider
+						// and then registers the generic backend; an X11 session resolves to the
+						// X11 backend instead; and None appears only when nothing registered for
+						// this user at all. Testing for None -- the obvious reading of the
+						// symptom -- would miss the two commonest forms of it.
+						//
+						// Restricted to the backends that come from an extension, so a genuine
+						// KWin-versus-GNOME mismatch is not told to go and enable one.
+						if ((expectedBackend.Value == Backend.Gnome || expectedBackend.Value == Backend.Cinnamon)
+								&& (backend == Backend.None || backend == Backend.Generic || backend == Backend.X11))
+							detail += " The keysharp-desktop shell extension is probably not enabled."
+									  + " Run 'keysharp-desktop enable-extension' as yourself (not with sudo),"
+									  + " then log out and back in.";
+
+						throw new InvalidOperationException(detail);
+					}
 
 					var connection = new DesktopConnection(nativeHandle, backend, operations);
 					nativeHandle = IntPtr.Zero;
@@ -1274,6 +1313,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					(IntPtr connection, ref NativeString result, ref NativeError error)
 						=> Native.ksd_window_list_json(connection,
 							includeHidden ? 1u : 0u, ref result, ref error), out value);
+
+			internal CallResult WindowHandles(out string value)
+				=> ReadString("list window handles",
+					(IntPtr connection, ref NativeString result, ref NativeError error)
+						=> Native.ksd_window_handles_json(connection, ref result, ref error),
+					out value);
 
 			internal CallResult ActiveWindow(out string value)
 				=> ReadString("query active window",
@@ -2001,6 +2046,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_window_list_json(IntPtr connection,
 				uint includeHidden, ref NativeString value, ref NativeError error);
+
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksd_window_handles_json(IntPtr connection,
+				ref NativeString value, ref NativeError error);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_window_active_json(IntPtr connection,
