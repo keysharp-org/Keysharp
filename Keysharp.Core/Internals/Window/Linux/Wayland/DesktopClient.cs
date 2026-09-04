@@ -145,6 +145,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			LinuxPermissionScope.None);
 		private static readonly DesktopRpcSession x11WindowMonitoring = new(Backend.X11,
 			LinuxPermissionScope.WindowMonitoring);
+		private static readonly DesktopRpcSession x11Capture = new(Backend.X11,
+			LinuxPermissionScope.ScreenCapture, interactive: true);
+		private static readonly DesktopRpcSession x11WindowControl = new(Backend.X11,
+			LinuxPermissionScope.WindowControl);
+		// Reads only. The broker does not advertise clipboard writes on X11: owning a
+		// selection means staying alive to serve it, and the worker that answers exits
+		// with its one operation, so the content would vanish behind the caller.
+		private static readonly DesktopRpcSession x11ClipboardMonitoring = new(Backend.X11,
+			LinuxPermissionScope.ClipboardMonitoring);
 
 		internal static Bitmap Capture(int x, int y, int width, int height)
 			=> CaptureArea(kwinCapture, x, y, width, height);
@@ -169,6 +178,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		internal static Bitmap CaptureCinnamonWindow(ulong handle)
 			=> CaptureWindow(cinnamonCapture, Invariant(handle), includeDecoration: false);
+
+		internal static Bitmap CaptureX11(int x, int y, int width, int height)
+			=> CaptureArea(x11Capture, x, y, width, height);
+
+		// The handle is an XID here, which the broker checks fits in 32 bits rather than
+		// truncating a wider one onto whatever window wears the low half.
+		internal static Bitmap CaptureX11Window(ulong handle, bool includeDecoration)
+			=> CaptureWindow(x11Capture, Invariant(handle), includeDecoration);
+
+		internal static PermissionResult AuthorizeX11(string operation, bool prompt = false)
+			=> x11Capture.Authorize(prompt);
 
 		internal static PermissionResult AuthorizeCinnamon(string operation, bool prompt = false)
 			=> cinnamonCapture.Authorize(prompt);
@@ -592,6 +612,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				Backend.Gnome => gnomeWindowControl,
 				Backend.Cinnamon => cinnamonWindowControl,
+				Backend.X11 => x11WindowControl,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
@@ -600,6 +621,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				Backend.Gnome => gnomeClipboardMonitoring,
 				Backend.Cinnamon => cinnamonClipboardMonitoring,
+				Backend.X11 => x11ClipboardMonitoring,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
