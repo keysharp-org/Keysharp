@@ -154,6 +154,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// with its one operation, so the content would vanish behind the caller.
 		private static readonly DesktopRpcSession x11ClipboardMonitoring = new(Backend.X11,
 			LinuxPermissionScope.ClipboardMonitoring);
+		// Every Wayland compositor with no extension of its own: sway, Hyprland,
+		// COSMIC, niri, river. The broker answers these as an ordinary client on the
+		// OUTSIDE of the compositor, so it serves only what the shared protocols
+		// expose -- clipboard reads and a window list, and nothing that changes a
+		// window, because no Wayland protocol lets one client do that to another.
+		private static readonly DesktopRpcSession genericQueries = new(Backend.Generic,
+			LinuxPermissionScope.None);
+		private static readonly DesktopRpcSession genericWindowMonitoring = new(Backend.Generic,
+			LinuxPermissionScope.WindowMonitoring);
+		private static readonly DesktopRpcSession genericClipboardMonitoring = new(Backend.Generic,
+			LinuxPermissionScope.ClipboardMonitoring);
 
 		internal static Bitmap Capture(int x, int y, int width, int height)
 			=> CaptureArea(kwinCapture, x, y, width, height);
@@ -604,6 +615,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				Backend.Gnome => gnomeWindowMonitoring,
 				Backend.Cinnamon => cinnamonWindowMonitoring,
 				Backend.X11 => x11WindowMonitoring,
+				Backend.Generic => genericWindowMonitoring,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
@@ -622,6 +634,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				Backend.Gnome => gnomeClipboardMonitoring,
 				Backend.Cinnamon => cinnamonClipboardMonitoring,
 				Backend.X11 => x11ClipboardMonitoring,
+				Backend.Generic => genericClipboardMonitoring,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
@@ -649,6 +662,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				"gnome" => Backend.Gnome,
 				"cinnamon" => Backend.Cinnamon,
 				"x11" => Backend.X11,
+				"generic" => Backend.Generic,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
