@@ -165,6 +165,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			LinuxPermissionScope.WindowMonitoring);
 		private static readonly DesktopRpcSession genericClipboardMonitoring = new(Backend.Generic,
 			LinuxPermissionScope.ClipboardMonitoring);
+		// KWin serves these through its script, which the broker reaches over the
+		// socket the session daemon hands it at registration. Captures do not use
+		// that channel at all -- they run in the forked worker -- which is why they
+		// keep working when the script is wedged.
+		private static readonly DesktopRpcSession kwinQueries = new(Backend.Kwin,
+			LinuxPermissionScope.None);
+		private static readonly DesktopRpcSession kwinWindowMonitoring = new(Backend.Kwin,
+			LinuxPermissionScope.WindowMonitoring);
+		private static readonly DesktopRpcSession kwinWindowControl = new(Backend.Kwin,
+			LinuxPermissionScope.WindowControl);
 
 		internal static Bitmap Capture(int x, int y, int width, int height)
 			=> CaptureArea(kwinCapture, x, y, width, height);
@@ -616,6 +626,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				Backend.Cinnamon => cinnamonWindowMonitoring,
 				Backend.X11 => x11WindowMonitoring,
 				Backend.Generic => genericWindowMonitoring,
+				Backend.Kwin => kwinWindowMonitoring,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
@@ -625,6 +636,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				Backend.Gnome => gnomeWindowControl,
 				Backend.Cinnamon => cinnamonWindowControl,
 				Backend.X11 => x11WindowControl,
+				Backend.Kwin => kwinWindowControl,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
@@ -652,6 +664,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				Backend.Gnome => gnomeQueries,
 				Backend.Cinnamon => cinnamonQueries,
 				Backend.X11 => x11Queries,
+				Backend.Kwin => kwinQueries,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
