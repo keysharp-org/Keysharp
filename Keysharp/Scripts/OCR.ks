@@ -312,16 +312,16 @@ class OCR {
     }
 
     class Common {
-        x {
+        X {
             get => this.BoundingRect.X
         }
-        y {
+        Y {
             get => this.BoundingRect.Y
         }
-        w {
+        Width {
             get => this.BoundingRect.Width
         }
-        h {
+        Height {
             get => this.BoundingRect.Height
         }
 
@@ -838,8 +838,8 @@ class OCR {
             rect := x
             x := rect.X, y := rect.Y, w := rect.Width, h := rect.Height
         }
-        ; Store the geometry as a single BoundingRect value property: OCR.Common's x/y/w/h getters read straight
-        ; from it, so there is no need to (redundantly) define x/y/w/h as their own per-object value properties.
+        ; Store the geometry as a single BoundingRect value property: OCR.Common's geometry getters read straight
+        ; from it, so there is no need to define them redundantly as per-object value properties.
         obj.BoundingRect := {X: x, Y: y, Width: w, Height: h}
         return obj
     }
