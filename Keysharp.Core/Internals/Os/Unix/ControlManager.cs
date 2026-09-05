@@ -243,16 +243,16 @@ namespace Keysharp.Internals.Os.Unix
 			if (!Platform.Desktop.IsX11Available)
 				return;
 
-			Buttons button;
-			if (vk == VK_LBUTTON) button = Buttons.Left;
-			else if (vk == VK_RBUTTON) button = Buttons.Right;
-			else if (vk == VK_MBUTTON) button = Buttons.Middle;
-			else if (vk == VK_XBUTTON1) button = Buttons.Four;
-			else if (vk == VK_XBUTTON2) button = Buttons.Five;
-			else if (vk == VK_WHEEL_UP) button = Buttons.Four;
-			else if (vk == VK_WHEEL_DOWN) button = Buttons.Five;
-			else if (vk == VK_WHEEL_LEFT) button = (Buttons)6;
-			else if (vk == VK_WHEEL_RIGHT) button = (Buttons)7;
+			uint button;
+			if (vk == VK_LBUTTON) button = 1;
+			else if (vk == VK_RBUTTON) button = 3;
+			else if (vk == VK_MBUTTON) button = 2;
+			else if (vk == VK_XBUTTON1) button = 8;
+			else if (vk == VK_XBUTTON2) button = 9;
+			else if (vk == VK_WHEEL_UP) button = 4;
+			else if (vk == VK_WHEEL_DOWN) button = 5;
+			else if (vk == VK_WHEEL_LEFT) button = 6;
+			else if (vk == VK_WHEEL_RIGHT) button = 7;
 			else return;
 
 #elif OSX
@@ -267,15 +267,13 @@ namespace Keysharp.Internals.Os.Unix
 #if LINUX
 				if (vkIsWheel || !u)
 				{
-					SendX11MouseEvent(item.Handle, XEventName.ButtonPress, EventMasks.ButtonPress, button, clickPoint);
-					_ = Xlib.XFlush(XDisplay.Default.Handle);
+					if (!SendX11MouseEvent(item.Handle, button, clickPoint, true)) return;
 					WindowInfoBase.DoControlDelay();
 				}
 
 				if (vkIsWheel || !d)
 				{
-					SendX11MouseEvent(item.Handle, XEventName.ButtonRelease, EventMasks.ButtonRelease, button, clickPoint);
-					_ = Xlib.XFlush(XDisplay.Default.Handle);
+					if (!SendX11MouseEvent(item.Handle, button, clickPoint, false)) return;
 					WindowInfoBase.DoControlDelay();
 				}
 #elif OSX
@@ -290,23 +288,10 @@ namespace Keysharp.Internals.Os.Unix
 		}
 
 #if LINUX
-		private static void SendX11MouseEvent(nint handle, XEventName evName, EventMasks evMask, Buttons button, Point location)
-		{
-			var display = XDisplay.Default;
-			var ev = new XEvent();
-			ev.ButtonEvent = new XButtonEvent();
-			ev.ButtonEvent.type = evName;
-			ev.ButtonEvent.send_event = true;
-			ev.ButtonEvent.display = display.Handle;
-			ev.ButtonEvent.window = handle;
-			ev.ButtonEvent.subwindow = handle;
-			ev.ButtonEvent.x = location.X;
-			ev.ButtonEvent.y = location.Y;
-			ev.ButtonEvent.root = new nint(display.Root.ID);
-			ev.ButtonEvent.same_screen = true;
-			ev.ButtonEvent.button = button;
-			_ = Xlib.XSendEvent(display.Handle, handle.ToInt64(), true, evMask, ref ev);
-		}
+		private static bool SendX11MouseEvent(nint handle, uint button, Point location, bool down)
+			=> handle.ToInt64() is > 0 and <= uint.MaxValue
+				&& Keysharp.Internals.Window.Linux.Wayland.DesktopClient.SendWindowButton("x11",
+					(ulong)handle, location.X, location.Y, button, down);
 #endif
 
 		internal override void ControlDeleteItem(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
@@ -359,10 +344,7 @@ namespace Keysharp.Internals.Os.Unix
 					ctrl2.Focus();
 				else
 #if LINUX
-					// Native (non-Eto) X11 child window: focus the control directly. item.Active=true
-					// only activates the containing top-level window, which does not move keyboard
-					// focus onto the sub-control. XSetInputFocus targets the child window itself.
-					_ = XDisplay.Default.TrySetInputFocus(item.Handle.ToInt64());
+					_ = Keysharp.Internals.Window.Linux.Wayland.DesktopClient.FocusChildWindow("x11", (ulong)item.Handle);
 #else
 					item.Focus();
 #endif

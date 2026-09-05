@@ -46,14 +46,18 @@ namespace Keysharp.Internals
 #if WINDOWS
 				return new Keysharp.Internals.Window.Windows.WindowEventBackend(owner);
 #elif LINUX
-				// The compositor-native backend sees both native Wayland and XWayland windows, but only where the
-				// active compositor can push events; the X11 backend still observes XWayland windows through the
-				// always-present X server.
-				if (Desktop.IsWaylandSession
-						&& Keysharp.Internals.Window.Linux.Wayland.WaylandBackend.Current is { SupportsWindowEvents: true } wayland)
-					return new Keysharp.Internals.Window.Linux.Wayland.WaylandWindowEventBackend(owner, wayland);
+				if (Desktop.IsWaylandSession)
+				{
+					if (Keysharp.Internals.Window.Linux.Wayland.WaylandBackend.Current is { SupportsWindowEvents: true } wayland)
+						return new Keysharp.Internals.Window.Linux.Wayland.WaylandWindowEventBackend(owner, wayland);
 
-				return new Keysharp.Internals.Window.Linux.WindowEventBackend(owner);
+					// GDK's display is a native Wayland display here, so it cannot be passed to Xlib even when
+					// XWayland is running. An unsupported compositor has no safe global event source.
+					return null;
+				}
+
+				return new Keysharp.Internals.Window.Linux.Wayland.WaylandWindowEventBackend(owner,
+					Keysharp.Internals.Window.Linux.Wayland.X11BrokerBackend.Instance);
 #elif OSX
 				return new Keysharp.Internals.Window.MacOS.WindowEventBackend(owner);
 #else

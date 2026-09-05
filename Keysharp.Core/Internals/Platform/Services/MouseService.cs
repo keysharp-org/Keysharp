@@ -1,3 +1,6 @@
+#if LINUX
+using Wl = Keysharp.Internals.Window.Linux.Wayland;
+#endif
 namespace Keysharp.Internals
 {
 #if LINUX
@@ -29,7 +32,7 @@ namespace Keysharp.Internals
 		public abstract bool SupportsCursorQueryAndMove { get; }
 		public abstract bool TryMoveAbsolute(int x, int y);
 
-		// Default: unknown. X11 answers via XQueryPointer, Wayland via the input service daemon.
+		// Button state requires the input service monitoring grant.
 		public virtual bool TryGetButtonStateLogical(uint vk, out bool down)
 		{
 			down = false;
@@ -60,138 +63,20 @@ namespace Keysharp.Internals
 	}
 
 	/// <summary>
-	/// X11 (and the X11 fallback on no-IPC Wayland-less sessions): the cursor is read with <c>XQueryPointer</c> and
-	/// moved with <c>XWarpPointer</c>, straight through the X server.
+	/// X11 pointer queries and movement are served by keysharp-desktop.
 	/// </summary>
 	internal sealed class X11Mouse : LinuxMouseBase
 	{
-		public override bool TryGetCursorPos(out int x, out int y) => TryGetX11CursorPos(out x, out y);
-
-		// We can both read (XQueryPointer) and move (XWarpPointer) the cursor whenever an X display is reachable.
-		public override bool SupportsCursorQueryAndMove => TryGetX11CursorPos(out _, out _);
-
-		// XWarpPointer is pixel-accurate, unlike input service's normalised uinput abs path.
-		public override bool TryMoveAbsolute(int x, int y) => TryX11Warp(x, y);
-
-		// input service supplies logical and physical state for all five buttons without installing a hook. If it is
-		// unavailable or permission is denied, the X11 core pointer mask can still answer the three standard
-		// buttons. XButton1/2 deliberately have no XInput2 fallback.
+		public override bool TryGetCursorPos(out int x, out int y)
+			=> Wl.DesktopClient.QueryCursorPosition("x11", out x, out y);
+		public override bool SupportsCursorQueryAndMove
+			=> Wl.DesktopClient.ProviderSupportsAbsolutePointer("x11");
+		public override bool TryMoveAbsolute(int x, int y)
+			=> Wl.DesktopClient.SendMouseMoveAbsolute("x11", x, y);
 		public override bool TryGetButtonStateLogical(uint vk, out bool down)
-		{
-			if (KeysharpInputManager.TryGetButtonStateLogical(vk, out down))
-				return true;
-
-			if (KeysharpInputManager.HasInputOperation(
-				KeysharpInputClient.Operations.QueryPointerButtons))
-				return TryQueryX11ButtonState(vk, out down);
-
-			down = false;
-			return false;
-		}
-
+			=> KeysharpInputManager.TryGetButtonStateLogical(vk, out down);
 		public override bool TryGetButtonStatePhysical(uint vk, out bool down)
-		{
-			if (KeysharpInputManager.TryGetButtonStatePhysical(vk, out down))
-				return true;
-
-			if (KeysharpInputManager.HasInputOperation(
-				KeysharpInputClient.Operations.QueryPointerButtons))
-				return TryQueryX11ButtonState(vk, out down);
-
-			down = false;
-			return false;
-		}
-
-		private static bool TryQueryX11ButtonState(uint vk, out bool down)
-		{
-			down = false;
-
-			// Button1Mask=0x100 (left), Button2Mask=0x200 (middle), Button3Mask=0x400 (right).
-			uint mask = vk switch
-			{
-				0x01u => 0x100u, // VK_LBUTTON
-				0x04u => 0x200u, // VK_MBUTTON
-				0x02u => 0x400u, // VK_RBUTTON
-				_ => 0u
-			};
-
-			if (mask == 0)
-				return false;
-
-			try
-			{
-				var display = Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default;
-
-				if (display == null || display.Handle == 0)
-					return false;
-
-				var root = Keysharp.Internals.Window.Linux.X11.Xlib.XDefaultRootWindow(display.Handle);
-
-				if (Keysharp.Internals.Window.Linux.X11.Xlib.XQueryPointer(display.Handle, root,
-						out _, out _, out _, out _, out _, out _, out var state))
-				{
-					down = (state & mask) != 0;
-					return true;
-				}
-			}
-			catch
-			{
-			}
-
-			return false;
-		}
-
-		// Reads the pointer straight from the X server (root window = virtual desktop). Safe from any thread.
-		private static bool TryGetX11CursorPos(out int x, out int y)
-		{
-			x = 0;
-			y = 0;
-
-			try
-			{
-				var display = Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default;
-
-				if (display == null || display.Handle == 0)
-					return false;
-
-				var root = Keysharp.Internals.Window.Linux.X11.Xlib.XDefaultRootWindow(display.Handle);
-
-				if (Keysharp.Internals.Window.Linux.X11.Xlib.XQueryPointer(display.Handle, root,
-						out _, out _, out var rootX, out var rootY, out _, out _, out _))
-				{
-					x = rootX;
-					y = rootY;
-					return true;
-				}
-			}
-			catch
-			{
-			}
-
-			return false;
-		}
-
-		// Moves the pointer in Keysharp's native X11 root-pixel coordinates (XWarpPointer). Used by input service cursor-clip
-		// correction; lives here so the X11 move path is owned by the resolved Mouse service. False if no X display.
-		private static bool TryX11Warp(int x, int y)
-		{
-			try
-			{
-				var display = Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default;
-
-				if (display == null || display.Handle == 0)
-					return false;
-
-				var root = Keysharp.Internals.Window.Linux.X11.Xlib.XDefaultRootWindow(display.Handle);
-				_ = Keysharp.Internals.Window.Linux.X11.Xlib.XWarpPointer(display.Handle, 0, root, 0, 0, 0, 0, x, y);
-				_ = Keysharp.Internals.Window.Linux.X11.Xlib.XFlush(display.Handle);
-				return true;
-			}
-			catch
-			{
-				return false;
-			}
-		}
+			=> KeysharpInputManager.TryGetButtonStatePhysical(vk, out down);
 	}
 
 	/// <summary>

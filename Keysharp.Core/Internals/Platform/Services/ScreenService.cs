@@ -1,6 +1,5 @@
 #if LINUX
 using Wl = Keysharp.Internals.Window.Linux.Wayland;
-using X11Cap = Keysharp.Internals.Window.Linux.X11.X11ScreenCapture;
 #endif
 
 namespace Keysharp.Internals
@@ -82,7 +81,7 @@ namespace Keysharp.Internals
 
 			return Wl.WaylandBackend.Current switch
 			{
-				Wl.WaylandBackend.KWinBackend kwin => new KWinScreen(kwin),
+				Wl.KWinBrokerBackend kwin => new KWinScreen(kwin),
 				Wl.WaylandBackend.GnomeBackend gnome => new GnomeScreen(gnome),
 				Wl.CinnamonBackend cinnamon => new CinnamonScreen(cinnamon),
 				Wl.WaylandBackend.CosmicBackend cosmic => new CosmicScreen(cosmic),
@@ -151,8 +150,7 @@ namespace Keysharp.Internals
 	}
 
 	/// <summary>X11 (including KDE/GNOME/Cinnamon under X11): public coordinates are native root-window pixels.
-	/// Region/window capture and foreign-window geometry therefore cross into Xlib without rescaling. Window capture uses
-	/// <c>XGetImage</c> + XComposite redirection, so occluded windows still capture.</summary>
+	/// Capture runs through keysharp-desktop without rescaling; its XComposite path also supports occluded windows.</summary>
 	internal sealed class X11Screen : EtoScreen
 	{
 		public override IReadOnlyList<DisplayInfo> GetDisplays()
@@ -168,46 +166,24 @@ namespace Keysharp.Internals
 			return LinuxMonitorDetails.Get(display, refresh, orientation);
 		}
 
-		// X11 lets any client grab the screen without asking, so gating capture through keysharp-desktop is
-		// consent/awareness only — a determined script could call XGetImage directly and bypass it. It still
-		// lets the user see and refuse capture initiated through this API and unifies the prompt with Wayland.
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			if (!Wl.DesktopClient.EnsureCaptureConsent())
-			{
-				bmp = null;
-				return false;
-			}
-
-			bmp = X11ScreenCapture.TryCaptureRegion(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+			bmp = Wl.DesktopClient.CaptureX11(bounds.X, bounds.Y, bounds.Width, bounds.Height);
 			return bmp != null;
 		}
 
 		public override bool TryCaptureWindow(nint h, bool includeDecoration, out Bitmap bmp, out PixelScale pixelScale)
 		{
+			bmp = h.ToInt64() is > 0 and <= uint.MaxValue
+				? Wl.DesktopClient.CaptureX11Window((ulong)h, includeDecoration) : null;
 			pixelScale = PixelScale.One;
-
-			if (!Wl.DesktopClient.EnsureCaptureConsent())
-			{
-				bmp = null;
-				return false;
-			}
-
-			// X11 images the client window, so decorations are never included (the flag is moot here).
-			bmp = X11Cap.TryCaptureWindow(h.ToInt64());
-
-			if (bmp != null)
-				pixelScale = PixelScale.From(bmp, Platform.Window.GetClientBounds(h));
-
 			return bmp != null;
 		}
 
 		public override bool RequiresAuthorization => true;
 
-		// prompt == true is an explicit request (may prompt); prompt == false is a status query
-		// (RequestCapabilities with no request) which must never prompt — peek the cached decision instead.
 		public override Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt)
-			=> prompt ? Wl.DesktopClient.AuthorizeCapture(true) : Wl.DesktopClient.PeekCaptureConsent();
+			=> Wl.DesktopClient.AuthorizeX11(operation, prompt);
 	}
 
 	/// <summary>Shared Wayland-compositor base: work area comes from the compositor (a client can't compute it),
@@ -284,9 +260,9 @@ namespace Keysharp.Internals
 	/// window grabs keyed by the window's internalId UUID (occlusion-independent).</summary>
 	internal sealed class KWinScreen : WaylandScreen
 	{
-		private readonly Wl.WaylandBackend.KWinBackend kwin;
+		private readonly Wl.KWinBrokerBackend kwin;
 
-		internal KWinScreen(Wl.WaylandBackend.KWinBackend backend) : base(backend) => kwin = backend;
+		internal KWinScreen(Wl.KWinBrokerBackend backend) : base(backend) => kwin = backend;
 
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
@@ -433,76 +409,57 @@ namespace Keysharp.Internals
 			=> Wl.DesktopClient.AuthorizeCinnamon(operation, prompt);
 	}
 
-	/// <summary>wlroots compositors (sway/Hyprland/Wayfire/…): region grabs via zwlr_screencopy; no foreign
+	/// <summary>wlroots compositors (sway/Hyprland/Wayfire/…): region grabs through keysharp-desktop; no foreign
 	/// per-window protocol, so window capture falls back to a rectangle grab.</summary>
 	internal sealed class WlrootsScreen : WaylandScreen
 	{
 		internal WlrootsScreen(Wl.IWaylandBackend backend) : base(backend) { }
 
-		// wlroots screencopy is a direct client protocol (no consent), so — like X11 — gating through
-		// keysharp-desktop is consent/awareness only. Window capture inherits the rectangle-grab fallback,
-		// which routes back through this (gated) region path, so no separate window gate is needed.
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			if (!Wl.DesktopClient.EnsureCaptureConsent())
-			{
-				bmp = null;
-				return false;
-			}
-
-			bmp = Wl.WaylandScreenCapture.TryCapture(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+			bmp = Wl.DesktopClient.CaptureGeneric(bounds.X, bounds.Y, bounds.Width, bounds.Height);
 
 			if (bmp != null) return true;
+			if (!Wl.DesktopClient.EnsureCaptureConsent()) return false;
 
 			return base.TryCaptureRegion(bounds, out bmp);
 		}
 
 		public override bool RequiresAuthorization => true;
 
-		// prompt == true is an explicit request (may prompt); prompt == false is a status query
-		// (RequestCapabilities with no request) which must never prompt — peek the cached decision instead.
 		public override Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt)
-			=> prompt ? Wl.DesktopClient.AuthorizeCapture(true) : Wl.DesktopClient.PeekCaptureConsent();
+			=> Wl.DesktopClient.AuthorizeGeneric(operation, prompt);
 	}
 
-	/// <summary>COSMIC capture through staging image-copy, with the desktop Screenshot portal as a bounded fallback.</summary>
+	/// <summary>COSMIC capture through keysharp-desktop. A failed region capture retries as one complete-desktop
+	/// image so the broker can use its bounded portal fallback without changing CaptureArea semantics.</summary>
 	internal sealed class CosmicScreen : WaylandScreen
 	{
 		internal CosmicScreen(Wl.WaylandBackend.CosmicBackend backend) : base(backend) { }
 
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			var direct = Wl.CosmicImageCapture.Capture(bounds, Wl.DesktopClient.EnsureCaptureConsent, out bmp);
+			var direct = Wl.DesktopClient.CaptureGenericWithStatus(
+				bounds.X, bounds.Y, bounds.Width, bounds.Height, out bmp);
 
-			if (direct == Wl.CosmicCaptureStatus.Captured)
+			if (direct == Wl.DesktopCaptureStatus.Captured)
 				return true;
 
 			// A stopped session can represent an explicit user stop, so it is as authoritative as helper denial.
-			if (!ShouldTryPortal(direct))
+			if (!ShouldTryDesktopFallback(direct))
 				return false;
 
-			var status = Wl.PortalScreenCapture.Capture(bounds, GetDisplays(), out bmp);
-			return status == Wl.PortalCaptureStatus.Captured;
+			var status = Wl.BrokerDesktopCapture.Capture(bounds, GetDisplays(), out bmp);
+			return status == Wl.DesktopCaptureStatus.Captured;
 		}
 
-		internal static bool ShouldTryPortal(Wl.CosmicCaptureStatus status)
-			=> status is Wl.CosmicCaptureStatus.Unavailable or Wl.CosmicCaptureStatus.Failed;
+		internal static bool ShouldTryDesktopFallback(Wl.DesktopCaptureStatus status)
+			=> status is Wl.DesktopCaptureStatus.Unavailable or Wl.DesktopCaptureStatus.Failed;
 
 		public override bool RequiresAuthorization => true;
 
 		public override Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt)
-		{
-			if (prompt)
-				return Wl.CosmicImageCapture.IsAvailable()
-					? Wl.DesktopClient.AuthorizeCapture(true)
-					: new Os.PermissionResult(Os.PermissionStatus.NotApplicable);
-
-			// A status check must not make a Wayland round trip or cause a prompt. Before native capture has
-			// actually been found, the portal-only path has no keysharp-desktop authorization to report.
-			return Wl.CosmicImageCapture.WasAvailable
-				? Wl.DesktopClient.PeekCaptureConsent()
-				: new Os.PermissionResult(Os.PermissionStatus.NotApplicable);
-		}
+			=> Wl.DesktopClient.AuthorizeGeneric(operation, prompt);
 	}
 
 	/// <summary>Unrecognized Wayland compositor: standard output topology with the existing toolkit capture fallback.</summary>

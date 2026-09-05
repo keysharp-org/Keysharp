@@ -64,7 +64,6 @@
 		<AdditionalFiles Include="Internals\Linux\DBus\Interfaces\Logind.xml"        Namespace="Keysharp.Internals.DBus.Generated.Logind"    DBusGeneratorMode="Proxy" />
 		<AdditionalFiles Include="Internals\Linux\DBus\Interfaces\Cinnamon.xml"      Namespace="Keysharp.Internals.DBus.Generated.Cinnamon"  DBusGeneratorMode="Proxy" />
 		<AdditionalFiles Include="Internals\Linux\DBus\Interfaces\GnomeShell.xml"    Namespace="Keysharp.Internals.DBus.Generated.Gnome"     DBusGeneratorMode="Proxy" />
-		<AdditionalFiles Include="Internals\Linux\DBus\Interfaces\Portal.xml"        Namespace="Keysharp.Internals.DBus.Generated.Portal"    DBusGeneratorMode="Proxy" />
 		<AdditionalFiles Include="Internals\Linux\DBus\Interfaces\KWin.xml"          Namespace="Keysharp.Internals.DBus.Generated.KWin"      DBusGeneratorMode="Proxy" />
 		<!-- KWinBridge/KWinQueryBridge and LauncherEntry are objects Keysharp itself serves. One XML cannot carry
 		     two modes: a second AdditionalFiles entry for the same path merges metadata rather than adding an item. -->

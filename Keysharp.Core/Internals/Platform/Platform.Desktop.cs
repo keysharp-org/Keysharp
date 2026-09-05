@@ -34,7 +34,7 @@ namespace Keysharp.Internals
 #if OSX
 				false;
 #else
-				Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default is { Handle: not 0 };
+				!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"));
 #endif
 
 			// XDG_SESSION_TYPE is authoritative: an X11 session can inherit a stray WAYLAND_DISPLAY (a nested

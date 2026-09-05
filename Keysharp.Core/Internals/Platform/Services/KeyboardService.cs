@@ -99,7 +99,7 @@ namespace Keysharp.Internals
 
 	/// <summary>
 	/// Uses keysharp-input as the compositor-independent source of logical and physical keyboard state.
-	/// X11 core queries are an unprivileged fallback only for the fixed modifier and lock-toggle snapshots.
+	/// Desktop module queries are an unprivileged fallback only for the fixed modifier and lock-toggle snapshots.
 	/// </summary>
 	internal sealed class LinuxKeyboard(IKeyboard fallback) : IKeyboard
 	{
@@ -357,76 +357,37 @@ namespace Keysharp.Internals
 	{
 		public bool TryGetModifierLRStateLogical(out uint mods, byte[] keymapBuffer = null)
 		{
-			mods = 0u;
-
-			if (!TryQueryKeymap(out var keymap, keymapBuffer))
-				return false;
-
-			var display = Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default;
-
-			for (var keycode = 8; keycode < 256; keycode++)
-			{
-				if (!KeymapHas(keymap, keycode))
-					continue;
-
-				var keysym = (ulong)display.XKeycodeToKeysym(keycode, 0);
-
-				switch (keysym)
-				{
-					case 0xFFE1: mods |= MOD_LSHIFT; break;
-					case 0xFFE2: mods |= MOD_RSHIFT; break;
-					case 0xFFE3: mods |= MOD_LCONTROL; break;
-					case 0xFFE4: mods |= MOD_RCONTROL; break;
-					case 0xFFE9: mods |= MOD_LALT; break;
-					case 0xFFEA: mods |= MOD_RALT; break;
-					case 0xFFEB: mods |= MOD_LWIN; break;
-					case 0xFFEC: mods |= MOD_RWIN; break;
-				}
-			}
-
-			return true;
+			var snapshot = Keysharp.Internals.Input.Linux.DesktopKeyboardState.X11.Get();
+			mods = snapshot?.Modifiers ?? 0;
+			return snapshot?.ModifiersKnown ?? false;
 		}
 
 		public bool TryGetModifierLRStatePhysical(out uint mods)
 		{
-			mods = 0u;
+			mods = 0;
 			return false;
 		}
 
 		public bool TryGetKeyStateLogical(uint vk, out bool isDown)
 		{
 			isDown = false;
-
-			if (vk == 0)
-				return false;
-
-			if (!TryQueryKeymap(out var keymap))
-				return false;
-
-			var expected = KeyCodes.VkToKeysyms(vk);
-
-			if (expected.Count == 0)
-				return false;
-
-			var display = Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default;
-
-			for (var keycode = 8; keycode < 256; keycode++)
+			var mask = vk switch
 			{
-				if (!KeymapHas(keymap, keycode))
-					continue;
-
-				var keysym = (ulong)display.XKeycodeToKeysym(keycode, 0);
-
-				foreach (var candidate in expected)
-				{
-					if ((ulong)candidate != keysym)
-						continue;
-
-					isDown = true;
-					return true;
-				}
-			}
-
+				VK_SHIFT => MOD_LSHIFT | MOD_RSHIFT,
+				VK_CONTROL => MOD_LCONTROL | MOD_RCONTROL,
+				VK_MENU => MOD_LALT | MOD_RALT,
+				VK_LSHIFT => MOD_LSHIFT,
+				VK_RSHIFT => MOD_RSHIFT,
+				VK_LCONTROL => MOD_LCONTROL,
+				VK_RCONTROL => MOD_RCONTROL,
+				VK_LMENU => MOD_LALT,
+				VK_RMENU => MOD_RALT,
+				VK_LWIN => MOD_LWIN,
+				VK_RWIN => MOD_RWIN,
+				_ => 0u
+			};
+			if (mask == 0 || !TryGetModifierLRStateLogical(out var mods)) return false;
+			isDown = (mods & mask) != 0;
 			return true;
 		}
 
@@ -438,40 +399,14 @@ namespace Keysharp.Internals
 
 		public bool TryGetIndicatorStatesLogical(out bool capsOn, out bool numOn, out bool scrollOn)
 		{
-			capsOn = numOn = scrollOn = false;
-			var display = Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default.Handle;
-
-			if (display == nint.Zero)
-				return false;
-
-			const uint XkbUseCoreKbd = 0x0100;
-			const uint XK_Num_Lock = 0xff7f;
-			const uint XK_Scroll_Lock = 0xff14;
-
-			if (Keysharp.Internals.Window.Linux.X11.Xlib.XkbGetState(display, XkbUseCoreKbd, out var st) != 0)
-				return false;
-
-			capsOn = (st.locked_mods & (byte)Keysharp.Internals.Window.Linux.X11.KeyMasks.LockMask) != 0;
-
-			var numMask = Keysharp.Internals.Window.Linux.X11.Xlib.XkbKeysymToModifiers(display, XK_Num_Lock);
-			var scrollMask = Keysharp.Internals.Window.Linux.X11.Xlib.XkbKeysymToModifiers(display, XK_Scroll_Lock);
-
-			numOn = (st.locked_mods & (byte)numMask) != 0;
-			scrollOn = (st.locked_mods & (byte)scrollMask) != 0;
-			return true;
+			var snapshot = Keysharp.Internals.Input.Linux.DesktopKeyboardState.X11.Get();
+			capsOn = snapshot?.CapsLock ?? false;
+			numOn = snapshot?.NumLock ?? false;
+			scrollOn = snapshot?.ScrollLock ?? false;
+			return snapshot?.IndicatorsKnown ?? false;
 		}
-
-		private static bool TryQueryKeymap(out byte[] keymap, byte[] keymapBuffer = null)
-		{
-			keymap = keymapBuffer is { Length: 32 } buffer ? buffer : new byte[32];
-			var display = Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default;
-
-			return display.Handle != nint.Zero && display.XQueryKeymap(keymap) != 0;
-		}
-
-		private static bool KeymapHas(byte[] keymap, int keycode)
-			=> keycode is >= 0 and < 256 && (keymap[keycode >> 3] & (1 << (keycode & 7))) != 0;
 	}
+
 #endif
 
 #if OSX

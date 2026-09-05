@@ -7,8 +7,8 @@ ASSETS_DIR="${ROOT}/Keysharp.Install/linux"
 CONFIG="${CONFIG:-Release}"
 # The client ABI capabilities the Debian package recommends. Each component
 # provides its own capability; Keysharp only names them.
-INPUT_CLIENT_ABI_PACKAGE="keysharp-input-client-abi-0"
-DESKTOP_CLIENT_ABI_PACKAGE="keysharp-desktop-client-abi-0"
+INPUT_CLIENT_ABI_PACKAGE="keysharp-input-client-abi-0 (>= 0.2)"
+DESKTOP_CLIENT_ABI_PACKAGE="keysharp-desktop-client-abi-0 (>= 0.8)"
 
 usage() {
   cat <<'EOF'
@@ -76,7 +76,7 @@ if [[ -z "${VERSION}" ]]; then
   exit 1
 fi
 
-ETO_DIR="$(cd "${ROOT}/../Eto" 2>/dev/null && pwd || true)"
+ETO_DIR="$(if cd "${ROOT}/../Eto" 2>/dev/null; then pwd; fi)"
 PATH_MAP="${ROOT}=/_/keysharp"
 if [[ -n "${ETO_DIR}" ]]; then
   PATH_MAP="${PATH_MAP}%2c${ETO_DIR}=/_/Eto"

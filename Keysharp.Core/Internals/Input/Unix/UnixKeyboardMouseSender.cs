@@ -5,8 +5,7 @@ using System.Diagnostics;
 using System.Collections.Generic;
 using Keysharp.Builtins;
 #if LINUX
-using Keysharp.Internals.Window.Linux.Proxies;
-using Keysharp.Internals.Window.Linux.X11;
+using Keysharp.Internals.Input.Linux;
 #endif
 using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
@@ -70,16 +69,8 @@ namespace Keysharp.Internals.Input.Unix
 				if (!Platform.Desktop.IsX11Available)
 					return false;
 
-				// X11 supports up to 256 buttons, but 3 is enough for swap detection
-				byte[] map = new byte[3];
-				int count = Xlib.XGetPointerMapping(XDisplay.Default.Handle, map, map.Length);
-
-				if (count < 3)
-					return false;
-
-				// If physical button 1 does not map to logical button 1,
-				// the primary button is swapped.
-				return map[0] != 1;
+				var mapping = DesktopKeyboardState.X11.Get()?.PointerMapping;
+				return mapping is { Length: >= 3 } && mapping[0] != 1;
 #else
 				return false;
 #endif

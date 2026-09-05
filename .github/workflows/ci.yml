@@ -185,6 +185,7 @@ jobs:
             Keysharp.Install/linux/tests/setup-resolution-policy.sh
           sh -n Keysharp.Install/linux/debian/preinst
           sh -n Keysharp.Install/linux/keysharp-linux-setup.sh
+          python3 scripts/check-workflow-shell.py .github/workflows/release.yml
           bash Keysharp.Install/package-linux.sh --help >/dev/null
           bash Keysharp.Install/linux/uninstall.sh --help >/dev/null
           sh Keysharp.Install/linux/keysharp-linux-setup.sh --help >/dev/null

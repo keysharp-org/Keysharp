@@ -2848,7 +2848,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Built-in variable."
+                     "notes":  "Milliseconds since the last input. Linux uses keysharp-input’s compositor-independent device activity counter."
                  },
                  {
                      "category":  "Environment/System",
@@ -5644,7 +5644,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process window/control interaction. COSMIC supplies native listing, active state, geometry, and window events. Coordinate hit-testing is limited to the active window because the protocol exposes neither workspace membership nor stacking order; window actions and general move/resize are not supported. macOS currently relies on Accessibility APIs with permission requirements.",
+                     "notes":  "On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process control interaction. COSMIC supplies native listing, active state, geometry, polling-based events, focus, close, minimize, maximize and restore. wlroots compositors can supply listing, active/state facts and the same actions except geometry. Coordinate hit-testing remains limited without stacking order, and general move/resize is unavailable. macOS currently relies on Accessibility APIs with permission requirements.",
                      "tested-by":  "WaylandTests.cs"
                  },
                  {
@@ -5730,7 +5730,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns logical, physical, and toggle state. Polling an arbitrary key or mouse button requires InputMonitoring. Modifier state and CapsLock/NumLock/ScrollLock toggle state are ungated; polling whether a lock key is physically down still requires InputMonitoring. Linux uses keysharp-input without installing a hook and fails closed for arbitrary state if its authority is unavailable or revokes access; X11 fallback is limited to the ungated modifier and lock-toggle snapshots. macOS uses combined-session and HID-system state APIs.",
+                     "notes":  "Returns logical, physical, and toggle state. Polling an arbitrary key or mouse button requires InputMonitoring. Modifier state and CapsLock/NumLock/ScrollLock toggle state are ungated; polling whether a lock key is physically down still requires InputMonitoring. Linux uses keysharp-input without installing a hook and fails closed for arbitrary state if its authority is unavailable or revokes access; The keysharp-desktop X11 fallback is limited to ungated modifier and lock-toggle snapshots. macOS uses combined-session and HID-system state APIs.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -9299,7 +9299,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp-specific Ks class for cross-platform window-event subscriptions. Windows uses SetWinEventHook; Linux uses X11 or native compositor sources; macOS uses Accessibility AXObserver streams and requires Accessibility permission.",
+                     "notes":  "Keysharp-specific Ks class for cross-platform window-event subscriptions. Windows uses SetWinEventHook; Linux uses keysharp-desktop X11 or native compositor sources; macOS uses Accessibility AXObserver streams and requires Accessibility permission.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -9713,7 +9713,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Pixel/image search and screen capture depend on platform-specific backends."
+                     "notes":  "Pixel/image search and screen capture depend on platform-specific backends. On Linux, keysharp-desktop provides authorized X11, Wayland compositor, and portal capture."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11039,7 +11039,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Retrieves the style of the specified window. No non-Windows platform has a real Win32 style word, so for a script-owned window the toolkit state is projected onto the WS_* bits scripts actually test: WS_CAPTION/WS_POPUP from the border style, WS_SYSMENU, WS_THICKFRAME, WS_MINIMIZEBOX and WS_MAXIMIZEBOX from the frame buttons, plus WS_VISIBLE, WS_DISABLED, WS_MINIMIZE and WS_MAXIMIZE from the window state. Foreign windows expose no style word at all: X11 and macOS return 0, and Wayland reports only WS_CAPTION from the compositor decoration state.",
+                     "notes":  "Retrieves the style of the specified window. No non-Windows platform has a real Win32 style word, so for a script-owned window the toolkit state is projected onto the WS_* bits scripts actually test: WS_CAPTION/WS_POPUP from the border style, WS_SYSMENU, WS_THICKFRAME, WS_MINIMIZEBOX and WS_MAXIMIZEBOX from the frame buttons, plus WS_VISIBLE, WS_DISABLED, WS_MINIMIZE and WS_MAXIMIZE from the window state. Foreign windows expose no native Win32 style word: X11 and Wayland report WS_CAPTION from decoration state, and macOS returns 0.",
                      "tested-by":  "GuiTests.EtoWindowStyleBits"
                  },
                  {
@@ -11255,10 +11255,10 @@
                      "feature":  "WinSetStyle()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
+                     "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unsupported",
-                     "notes":  "Changes the style of the specified window. X11 has no way to write Win32 window styles: the call is accepted and does nothing on a script-owned window and raises an OSError on a foreign window. Wayland maps only WS_CAPTION, to the compositor decoration state, and only for compositor-backed windows. macOS has no equivalent.",
+                     "notes":  "Changes the style of the specified window. X11 and Wayland map WS_CAPTION to the desktop provider decoration state for foreign windows; other native Win32 style bits have no equivalent. Script-owned windows use toolkit behavior. macOS has no equivalent.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {

@@ -65,84 +65,6 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void AbsoluteMotion()
-		{
-			// Primary-only desktop, origin at (0,0): identity mapping, extent == width/height.
-			Assert.That(WaylandVirtualPointerCoordinates.ToMotionAbsolute(100, 50, 0, 0, 1920, 1080),
-				Is.EqualTo((100u, 50u, 1920u, 1080u)));
-
-			// Secondary monitor left-of-primary gives a negative-origin virtual desktop; the pixel must be
-			// translated into the layout's own non-negative coordinate space before being sent as x/y.
-			Assert.That(WaylandVirtualPointerCoordinates.ToMotionAbsolute(-500, 200, -1920, 0, 3840, 1080),
-				Is.EqualTo((1420u, 200u, 3840u, 1080u)));
-
-			// Out-of-bounds targets clamp into [0, extent] rather than wrapping/underflowing to a huge uint.
-			Assert.That(WaylandVirtualPointerCoordinates.ToMotionAbsolute(-10, -10, 0, 0, 1920, 1080),
-				Is.EqualTo((0u, 0u, 1920u, 1080u)));
-
-			// A zero-area virtual desktop (degenerate/pre-enumeration state) must not produce a zero extent --
-			// wlroots silently drops motion_absolute when x_extent or y_extent is 0.
-			Assert.That(WaylandVirtualPointerCoordinates.ToMotionAbsolute(0, 0, 0, 0, 0, 0),
-				Is.EqualTo((0u, 0u, 1u, 1u)));
-		}
-
-		[Test]
-		public void ScreencopyRetirement()
-		{
-			FakeSession current = new();
-			var first = current;
-			Assert.That(WaylandScreenCapture.RunWithReusableSession(ref current, _ => (new object(), true)), Is.Not.Null);
-			Assert.That(current, Is.SameAs(first));
-
-			Assert.That(WaylandScreenCapture.RunWithReusableSession<FakeSession, object>(ref current,
-				_ => (null, true)), Is.Null);
-			Assert.That(first.Disposed, Is.False);
-			Assert.That(current, Is.SameAs(first));
-
-			Assert.That(WaylandScreenCapture.RunWithReusableSession<FakeSession, object>(ref current,
-				_ => (null, false)), Is.Null);
-			Assert.That(first.Disposed, Is.True);
-			Assert.That(current, Is.Null);
-		}
-
-		[Test]
-		public void CosmicGeometryAndProtocolHelpers()
-		{
-			Assert.That(WaylandForeignToplevels.TryResolveGeometry(new Rectangle(120, 40, 800, 600),
-				new ScreenRect(-1920, 0, 1920, 1080), out var resolved), Is.True);
-			Assert.That(resolved, Is.EqualTo(new Rectangle(-1800, 40, 800, 600)));
-			Assert.That(WaylandForeignToplevels.TryResolveGeometry(new Rectangle(0, 0, 20, 20),
-				new ScreenRect(int.MaxValue - 10, 0, 10, 10), out _), Is.False);
-			Assert.That(WaylandForeignToplevels.TryResolveGeometry(new Rectangle(0, 0, 20, 20),
-				new ScreenRect(0, int.MaxValue - 10, 10, 10), out _), Is.False);
-			var first = WaylandForeignToplevels.NewHandle();
-			var second = WaylandForeignToplevels.NewHandle();
-			Assert.That(first.ToInt64(), Is.LessThan(0L));
-			Assert.That(second.ToInt64(), Is.LessThan(first.ToInt64()));
-			Assert.That(WaylandForeignToplevels.FoldBitSet([0u, 2u, 2u, 31u, 32u, uint.MaxValue], 32),
-				Is.EqualTo((1UL << 0) | (1UL << 2) | (1UL << 31)));
-			Assert.That(WaylandForeignToplevels.FoldBitSet([1u, 5u, 63u, 64u], 64),
-				Is.EqualTo((1UL << 1) | (1UL << 5) | (1UL << 63)));
-		}
-
-		[Test]
-		public void CosmicStateCommitsAtomically()
-		{
-			var output = new nint(7);
-			var state = new WaylandToplevel { State = 1, PendingState = 4 };
-			state.GeometryByOutput[output] = new Rectangle(1, 2, 3, 4);
-			state.PendingGeometryByOutput = new() { [output] = new Rectangle(10, 20, 30, 40) };
-			Assert.That(state.State, Is.EqualTo(1));
-			Assert.That(state.GeometryByOutput[output], Is.EqualTo(new Rectangle(1, 2, 3, 4)));
-			WaylandForeignToplevels.CommitCosmicUpdate(state);
-			Assert.That(state.State, Is.EqualTo(4));
-			Assert.That(state.GeometryByOutput[output], Is.EqualTo(new Rectangle(10, 20, 30, 40)));
-			Assert.That(state.CosmicReady, Is.True);
-			Assert.That(state.PendingState, Is.Null);
-			Assert.That(state.PendingGeometryByOutput, Is.Null);
-		}
-
-		[Test]
 		public void WaylandOutputChangesCommitAtomically()
 		{
 			var output = new WaylandOutput { Version = 4 };
@@ -193,6 +115,30 @@ namespace Keysharp.Tests
 			]), Is.EqualTo(new nint(20)));
 
 		[Test]
+		public void GenericWindowListUsesStableOpaqueHandles()
+		{
+			var backend = new GenericWaylandBackend();
+			const string first = "{\"ok\":true,\"windows\":[{\"id\":\"opaque:7\",\"title\":\"Editor\",\"class\":\"org.example.Editor\",\"frame\":{\"x\":-50,\"y\":20,\"width\":640,\"height\":480},\"client\":{\"x\":-48,\"y\":42,\"width\":636,\"height\":456},\"active\":true,\"visible\":false,\"decorated\":true}]}";
+			const string second = "{\"ok\":true,\"windows\":[{\"id\":\"opaque:7\",\"title\":\"Renamed\",\"class\":\"org.example.Editor\"}]}";
+
+			Assert.That(backend.TryParseWindowList(first, out var initial), Is.True);
+			Assert.That(backend.TryParseWindowList(second, out var refreshed), Is.True);
+			Assert.That(initial, Has.Count.EqualTo(1));
+			Assert.That(refreshed, Has.Count.EqualTo(1));
+			Assert.That(refreshed[0].Handle, Is.EqualTo(initial[0].Handle));
+			Assert.That(refreshed[0].Title, Is.EqualTo("Renamed"));
+			Assert.That(refreshed[0].ClassName, Is.EqualTo("org.example.Editor"));
+			Assert.That(initial[0].FrameGeometry, Is.EqualTo(new Rectangle(-50, 20, 640, 480)));
+			Assert.That(initial[0].ClientGeometry, Is.EqualTo(new Rectangle(-48, 42, 636, 456)));
+			Assert.That(initial[0].Active, Is.True);
+			Assert.That(initial[0].Visible, Is.False);
+			Assert.That(initial[0].Decorated, Is.True);
+			Assert.That(refreshed[0].Visible, Is.True,
+				"missing portable fields retain their conservative defaults");
+			Assert.That(backend.IsKnown(initial[0].Handle), Is.True);
+		}
+
+		[Test]
 		public void WindowEventRecovery()
 		{
 			var available = false;
@@ -240,12 +186,6 @@ namespace Keysharp.Tests
 			Assert.That(source.IsPreferred, Is.False);
 			Assert.That(preferred.Disposed, Is.True);
 			Assert.That(fallbackStarts, Is.EqualTo(2));
-		}
-
-		private sealed class FakeSession : IDisposable
-		{
-			internal bool Disposed;
-			public void Dispose() => Disposed = true;
 		}
 
 		private sealed class TrackingDisposable : IDisposable

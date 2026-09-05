@@ -90,9 +90,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		bool SupportsMouse => false;
 
 		/// <summary>
-		/// True when this backend can push window lifecycle/state events through
-		/// <see cref="SubscribeWindowEvents"/>. When false, the WinEvent layer either falls back to a generic
-		/// polling source (if the backend can list windows) or to the X11/XWayland backend.
+		/// True when this backend can supply window lifecycle/state events through
+		/// <see cref="SubscribeWindowEvents"/>, either from a native event channel or by polling its window list.
+		/// A native Wayland GDK display cannot be used by the X11 event backend, so false means WinEvent is
+		/// unavailable for this compositor.
 		/// </summary>
 		bool SupportsWindowEvents => false;
 
@@ -110,16 +111,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// false if the backend can't currently answer (compositor offline, IPC failed, etc.).
 		/// </summary>
 		bool TryGetCursorPos(out int x, out int y);
-
-		/// <summary>
-		/// Best-effort milliseconds since the compositor last received user input. Returns false when the
-		/// compositor does not expose an exact current-idle query (as opposed to idle timeout notifications).
-		/// </summary>
-		bool TryGetIdleTime(out long milliseconds)
-		{
-			milliseconds = 0;
-			return false;
-		}
 
 		/// <summary>Cheap membership test — does this handle belong to this backend (bit-tag or id-map check,
 		/// NO compositor IPC)? True does not guarantee the window still exists; commands verify that themselves.

@@ -11,8 +11,16 @@ using Keysharp.Internals.Os;
 
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
+	internal enum DesktopCaptureStatus
+	{
+		Unavailable,
+		Failed,
+		DeniedOrStopped,
+		Captured
+	}
+
 	/// <summary>Typed client for <c>libkeysharp-desktop.so.0</c>.</summary>
-	internal static unsafe class DesktopClient
+	internal static unsafe partial class DesktopClient
 	{
 		private const int RequestTimeoutMs = 30_000;
 		private const int AuthorizationTimeoutMs = 125_000;
@@ -104,7 +112,20 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			ClipboardSetContent = 1UL << 28,
 			// Enumeration without properties. Ungated, unlike WindowList.
 			WindowHandles = 1UL << 29,
-			All = ((1UL << 28) - 1) | ClipboardSetContent | WindowHandles,
+			WindowSetSkipTaskbar = 1UL << 30,
+			CaptureDesktop = 1UL << 31,
+			WindowQuery = 1UL << 32,
+			WindowChildren = 1UL << 33,
+			WindowAtPoint = 1UL << 34,
+			DisplayList = 1UL << 35,
+			KeyboardState = 1UL << 36,
+			WindowSetTitle = 1UL << 37,
+			WindowSetVisible = 1UL << 38,
+			WindowRedraw = 1UL << 39,
+			WindowClick = 1UL << 40,
+			WindowButton = 1UL << 41,
+			WindowFocusChild = 1UL << 42,
+			All = (1UL << 43) - 1,
 		}
 
 		private enum CaptureFormat : ushort
@@ -120,21 +141,21 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static readonly DesktopRpcSession cinnamonCapture = new(Backend.Cinnamon,
 			LinuxPermissionScope.ScreenCapture, interactive: true);
 		private static readonly DesktopRpcSession gnomeWindowMonitoring = new(Backend.Gnome,
-			LinuxPermissionScope.WindowMonitoring);
+			LinuxPermissionScope.WindowMonitoring, interactive: true);
 		private static readonly DesktopRpcSession gnomeWindowControl = new(Backend.Gnome,
-			LinuxPermissionScope.WindowControl);
+			LinuxPermissionScope.WindowControl, interactive: true);
 		private static readonly DesktopRpcSession gnomeClipboardMonitoring = new(Backend.Gnome,
 			LinuxPermissionScope.ClipboardMonitoring);
 		private static readonly DesktopRpcSession gnomeInputControl = new(Backend.Gnome,
-			LinuxPermissionScope.InputControl);
+			LinuxPermissionScope.InputControl, interactive: true);
 		private static readonly DesktopRpcSession cinnamonWindowMonitoring = new(Backend.Cinnamon,
-			LinuxPermissionScope.WindowMonitoring);
+			LinuxPermissionScope.WindowMonitoring, interactive: true);
 		private static readonly DesktopRpcSession cinnamonWindowControl = new(Backend.Cinnamon,
-			LinuxPermissionScope.WindowControl);
+			LinuxPermissionScope.WindowControl, interactive: true);
 		private static readonly DesktopRpcSession cinnamonClipboardMonitoring = new(Backend.Cinnamon,
 			LinuxPermissionScope.ClipboardMonitoring);
 		private static readonly DesktopRpcSession cinnamonInputControl = new(Backend.Cinnamon,
-			LinuxPermissionScope.InputControl);
+			LinuxPermissionScope.InputControl, interactive: true);
 		private static readonly DesktopRpcSession gnomeQueries = new(Backend.Gnome,
 			LinuxPermissionScope.None);
 		private static readonly DesktopRpcSession cinnamonQueries = new(Backend.Cinnamon,
@@ -146,27 +167,34 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static readonly DesktopRpcSession x11Queries = new(Backend.X11,
 			LinuxPermissionScope.None);
 		private static readonly DesktopRpcSession x11WindowMonitoring = new(Backend.X11,
-			LinuxPermissionScope.WindowMonitoring);
+			LinuxPermissionScope.WindowMonitoring, interactive: true);
 		private static readonly DesktopRpcSession x11Capture = new(Backend.X11,
 			LinuxPermissionScope.ScreenCapture, interactive: true);
+		private static readonly DesktopRpcSession x11InputControl = new(Backend.X11,
+			LinuxPermissionScope.InputControl, interactive: true);
 		private static readonly DesktopRpcSession x11WindowControl = new(Backend.X11,
-			LinuxPermissionScope.WindowControl);
-		// Reads only. The broker does not advertise clipboard writes on X11: owning a
-		// selection means staying alive to serve it, and the worker that answers exits
-		// with its one operation, so the content would vanish behind the caller.
+			LinuxPermissionScope.WindowControl, interactive: true);
+		// X11 clipboard reads are brokered; selection ownership stays with the GUI toolkit.
 		private static readonly DesktopRpcSession x11ClipboardMonitoring = new(Backend.X11,
 			LinuxPermissionScope.ClipboardMonitoring);
 		// Every Wayland compositor with no extension of its own: sway, Hyprland,
 		// COSMIC, niri, river. The broker answers these as an ordinary client on the
-		// OUTSIDE of the compositor, so it serves only what the shared protocols
-		// expose -- clipboard reads and a window list, and nothing that changes a
-		// window, because no Wayland protocol lets one client do that to another.
+		// OUTSIDE of the compositor, so it serves only the shared protocols the
+		// compositor advertises: wlroots window control and capture where present,
+		// plus clipboard reads and portable foreign-window enumeration.
+		private static readonly DesktopRpcSession keyboardQueries = new(null, LinuxPermissionScope.None);
 		private static readonly DesktopRpcSession genericQueries = new(Backend.Generic,
 			LinuxPermissionScope.None);
 		private static readonly DesktopRpcSession genericWindowMonitoring = new(Backend.Generic,
-			LinuxPermissionScope.WindowMonitoring);
+			LinuxPermissionScope.WindowMonitoring, interactive: true);
+		private static readonly DesktopRpcSession genericWindowControl = new(Backend.Generic,
+			LinuxPermissionScope.WindowControl, interactive: true);
 		private static readonly DesktopRpcSession genericClipboardMonitoring = new(Backend.Generic,
 			LinuxPermissionScope.ClipboardMonitoring);
+		private static readonly DesktopRpcSession genericCapture = new(Backend.Generic,
+			LinuxPermissionScope.ScreenCapture, interactive: true);
+		private static readonly DesktopRpcSession genericInputControl = new(Backend.Generic,
+			LinuxPermissionScope.InputControl, interactive: true);
 		// KWin serves these through its script, which the broker reaches over the
 		// socket the session daemon hands it at registration. Captures do not use
 		// that channel at all -- they run in the forked worker -- which is why they
@@ -174,9 +202,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static readonly DesktopRpcSession kwinQueries = new(Backend.Kwin,
 			LinuxPermissionScope.None);
 		private static readonly DesktopRpcSession kwinWindowMonitoring = new(Backend.Kwin,
-			LinuxPermissionScope.WindowMonitoring);
+			LinuxPermissionScope.WindowMonitoring, interactive: true);
 		private static readonly DesktopRpcSession kwinWindowControl = new(Backend.Kwin,
-			LinuxPermissionScope.WindowControl);
+			LinuxPermissionScope.WindowControl, interactive: true);
 
 		internal static Bitmap Capture(int x, int y, int width, int height)
 			=> CaptureArea(kwinCapture, x, y, width, height);
@@ -205,6 +233,66 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal static Bitmap CaptureX11(int x, int y, int width, int height)
 			=> CaptureArea(x11Capture, x, y, width, height);
 
+		internal static Bitmap CaptureGeneric(int x, int y, int width, int height)
+			=> CaptureArea(genericCapture, x, y, width, height);
+
+		internal static DesktopCaptureStatus CaptureGenericWithStatus(int x, int y,
+			int width, int height, out Bitmap bitmap)
+		{
+			bitmap = null;
+
+			if (width <= 0 || height <= 0)
+				return DesktopCaptureStatus.Failed;
+
+			Bitmap captured = null;
+			var success = genericCapture.TryUse(Operation.CaptureArea,
+				connection => connection.CaptureArea(x, y, checked((uint)width),
+					checked((uint)height), out captured), out var status);
+
+			if (success)
+			{
+				bitmap = captured;
+				return DesktopCaptureStatus.Captured;
+			}
+
+			captured?.Dispose();
+			return status switch
+			{
+				NativeClientStatus.Denied or NativeClientStatus.Cancelled
+					or NativeClientStatus.Revoked => DesktopCaptureStatus.DeniedOrStopped,
+				NativeClientStatus.Unsupported or NativeClientStatus.Unavailable
+					=> DesktopCaptureStatus.Unavailable,
+				_ => DesktopCaptureStatus.Failed,
+			};
+		}
+
+		internal static DesktopCaptureStatus CaptureGenericDesktopWithStatus(out Bitmap bitmap)
+		{
+			bitmap = null;
+			Bitmap captured = null;
+			var success = genericCapture.TryUse(Operation.CaptureDesktop,
+				connection => connection.CaptureDesktop(out captured), out var status);
+
+			if (success)
+			{
+				bitmap = captured;
+				return DesktopCaptureStatus.Captured;
+			}
+
+			captured?.Dispose();
+			return status switch
+			{
+				NativeClientStatus.Denied or NativeClientStatus.Cancelled
+					or NativeClientStatus.Revoked => DesktopCaptureStatus.DeniedOrStopped,
+				NativeClientStatus.Unsupported or NativeClientStatus.Unavailable
+					=> DesktopCaptureStatus.Unavailable,
+				_ => DesktopCaptureStatus.Failed,
+			};
+		}
+
+		internal static PermissionResult AuthorizeGeneric(string operation, bool prompt = false)
+			=> genericCapture.Authorize(Operation.CaptureArea | Operation.CaptureDesktop, prompt);
+
 		// The handle is an XID here, which the broker checks fits in 32 bits rather than
 		// truncating a wider one onto whatever window wears the low half.
 		internal static Bitmap CaptureX11Window(ulong handle, bool includeDecoration)
@@ -229,6 +317,24 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return false;
 			}
 		}
+
+		internal static bool ProviderSupportsWindowList(string backend)
+			=> ProviderSupports(backend, Operation.WindowList | Operation.WindowHandles);
+
+		internal static bool ProviderSupportsAbsolutePointer(string backend)
+			=> ProviderSupports(backend, Operation.MouseMoveAbsolute);
+
+		internal static bool ProviderSupportsClipboard(string backend)
+			=> ProviderSupports(backend,
+				Operation.ClipboardMimetypes | Operation.ClipboardContent
+				| Operation.ClipboardText | Operation.ClipboardWatch
+				| Operation.ClipboardSetContent);
+
+		private static bool ProviderSupports(string backend, Operation operations)
+			=> QuerySession(backend).Supports(operations);
+
+		internal static bool ProbeKWinProvider()
+			=> kwinQueries.Supports(Operation.WindowHandles | Operation.WindowSetSkipTaskbar);
 
 		internal static bool QueryCursorPosition(string backend, out int x, out int y)
 		{
@@ -338,6 +444,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			=> WindowControlSession(backend).TryUse(Operation.WindowSetDecorated,
 				connection => connection.SetWindowValue(Operation.WindowSetDecorated,
 					handle, decorated ? 1u : 0u));
+
+		internal static bool SetWindowSkipTaskbar(string backend, ulong handle, bool skip)
+			=> WindowControlSession(backend).TryUse(Operation.WindowSetSkipTaskbar,
+				connection => connection.SetWindowValue(Operation.WindowSetSkipTaskbar,
+					handle, skip ? 1u : 0u));
 
 		internal static bool ReserveWindow(string backend, ulong cookie, int x, int y, int ttlMs)
 			=> cookie != 0 && ttlMs > 0
@@ -653,6 +764,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				Backend.Cinnamon => cinnamonWindowControl,
 				Backend.X11 => x11WindowControl,
 				Backend.Kwin => kwinWindowControl,
+				Backend.Generic => genericWindowControl,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
@@ -669,8 +781,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static DesktopRpcSession InputControlSession(string backend)
 			=> BackendFromName(backend) switch
 			{
+				Backend.X11 => x11InputControl,
 				Backend.Gnome => gnomeInputControl,
 				Backend.Cinnamon => cinnamonInputControl,
+				Backend.Generic => genericInputControl,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
@@ -681,6 +795,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				Backend.Cinnamon => cinnamonQueries,
 				Backend.X11 => x11Queries,
 				Backend.Kwin => kwinQueries,
+				Backend.Generic => genericQueries,
 				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
 			};
 
@@ -718,7 +833,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		private sealed class DesktopRpcSession
 		{
-			private readonly Backend backend;
+			private readonly Backend? backend;
 			private readonly LinuxPermissionScope requiredScope;
 			private readonly bool interactive;
 			private readonly object sync = new();
@@ -726,7 +841,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			private bool promptDeclined;
 			private bool exitHookInstalled;
 
-			internal DesktopRpcSession(Backend backend,
+			internal DesktopRpcSession(Backend? backend,
 				LinuxPermissionScope requiredScope, bool interactive = false)
 			{
 				this.backend = backend;
@@ -735,6 +850,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 
 			internal PermissionResult Authorize(bool prompt)
+				=> Authorize(Operation.None, prompt);
+
+			internal PermissionResult Authorize(Operation operation, bool prompt)
 			{
 				lock (sync)
 				{
@@ -742,73 +860,100 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						promptDeclined = false;
 
 					if (ConnectionUsableLocked())
-						return new PermissionResult(PermissionStatus.Granted);
+						return operation == Operation.None
+							|| (connection.AvailableOperations & operation) != 0
+							? new PermissionResult(PermissionStatus.Granted)
+							: new PermissionResult(PermissionStatus.NotApplicable);
 
 					ResetLocked();
-					return StartLocked(prompt);
+					return StartLocked(prompt, operation);
 				}
 			}
 
 			internal bool TryUse(Operation operation,
 				Func<DesktopConnection, CallResult> request)
+				=> TryUse(operation, request, out _);
+
+			internal bool TryUse(Operation operation,
+				Func<DesktopConnection, CallResult> request,
+				out NativeClientStatus status)
 			{
 				lock (sync)
 				{
-					for (var attempt = 0; attempt < 2; attempt++)
+					status = NativeClientStatus.Unsupported;
+					if (!ConnectionUsableLocked())
 					{
-						if (!ConnectionUsableLocked())
+						ResetLocked();
+						var allowPrompt = interactive && !Script.IsHeadless && !promptDeclined;
+						var permission = StartLocked(allowPrompt, operation);
+						if (!permission.IsGranted)
 						{
-							ResetLocked();
-							var allowPrompt = interactive && !Script.IsHeadless && !promptDeclined;
-							var permission = StartLocked(allowPrompt);
-
-							if (!permission.IsGranted)
-							{
-								DebugLine($"keysharp-desktop {backend} permission failed: {permission.Message}");
-								return false;
-							}
-						}
-
-						if ((connection.AvailableOperations & operation) == 0)
-							return false;
-
-						try
-						{
-							var result = request(connection);
-
-							if (result.IsSuccess)
-								return true;
-
-							DebugLine($"keysharp-desktop {backend} operation failed: {result.Message}");
-
-							if (result.Status == NativeClientStatus.Revoked)
-								ResetLocked();
-							else if (result.ShouldReconnect)
-							{
-								ResetLocked();
-								continue;
-							}
-
-							return false;
-						}
-						catch (Exception exception)
-						{
-							DebugLine($"keysharp-desktop {backend} operation failed: {exception.Message}");
-							ResetLocked();
+							DebugLine($"keysharp-desktop {backend} permission failed: {permission.Message}");
+							status = permission.Status == PermissionStatus.Denied
+								? NativeClientStatus.Denied : NativeClientStatus.Unsupported;
 							return false;
 						}
 					}
-
-					return false;
+					if ((connection.AvailableOperations & operation) == 0) return false;
+					try
+					{
+						var result = request(connection);
+						status = result.Status;
+						if (result.IsSuccess) return true;
+						DebugLine($"keysharp-desktop {backend} operation failed: {result.Message}");
+						// A lost reply can follow a completed mutation. Reconnect on the next call without replaying it.
+						if (result.Status == NativeClientStatus.Revoked || result.ShouldReconnect) ResetLocked();
+						return false;
+					}
+					catch (Exception exception)
+					{
+						DebugLine($"keysharp-desktop {backend} operation failed: {exception.Message}");
+						status = NativeClientStatus.Internal;
+						ResetLocked();
+						return false;
+					}
 				}
 			}
 
-			private PermissionResult StartLocked(bool prompt)
+			private long retryProbeAt;
+
+			internal bool Supports(Operation operations)
+			{
+				lock (sync)
+				{
+					if (ConnectionUsableLocked())
+						return (connection.AvailableOperations & operations) == operations;
+					if (Environment.TickCount64 < retryProbeAt) return false;
+					ResetLocked();
+					try
+					{
+						connection = DesktopConnection.Connect(backend, ConnectionRole.Rpc, ProbeTimeoutMs);
+						InstallExitHookLocked();
+						return (connection.AvailableOperations & operations) == operations;
+					}
+					catch
+					{
+						retryProbeAt = Environment.TickCount64 + 1000;
+						ResetLocked();
+						return false;
+					}
+				}
+			}
+
+			private PermissionResult StartLocked(bool prompt,
+				Operation operation = Operation.None)
 			{
 				try
 				{
 					connection = DesktopConnection.Connect(backend,
 						ConnectionRole.Rpc, prompt ? AuthorizationTimeoutMs : RequestTimeoutMs);
+
+					if (operation != Operation.None
+						&& (connection.AvailableOperations & operation) == 0)
+					{
+						ResetLocked();
+						return new PermissionResult(PermissionStatus.NotApplicable);
+					}
 
 					if (requiredScope != LinuxPermissionScope.None)
 					{
@@ -1055,7 +1200,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 							if (result.IsSuccess)
 							{
 								windowHandler(WindowEventName(kind), json);
-								continue;
 							}
 						}
 						else
@@ -1066,7 +1210,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 							if (result.IsSuccess)
 							{
 								clipboardHandler(text, mimetypes);
-								continue;
 							}
 						}
 
@@ -1101,7 +1244,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		private sealed class DesktopConnection : IDisposable
+		private sealed partial class DesktopConnection : IDisposable
 		{
 			private readonly object gate = new();
 			private IntPtr handle;
@@ -1180,6 +1323,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						|| (granted & ~LinuxPermissionScope.All) != 0)
 						throw new InvalidDataException(
 							"libkeysharp-desktop returned incompatible service information.");
+
+					// A service can be newer than the loaded client library. Do not call an
+					// entry point that ABI minor 7 introduced merely because that service
+					// advertised the matching operation bit.
+					if (info.ClientAbiMinor < 8)
+						operations &= (Operation)((1UL << 32) - 1);
+
+					if (info.ClientAbiMinor < 7)
+						operations &= ~Operation.CaptureDesktop;
 
 					if (expectedBackend.HasValue && backend != expectedBackend.Value)
 					{
@@ -1272,6 +1424,28 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						(IntPtr connection, ref NativeError error)
 							=> Native.ksd_capture_area(connection, x, y, width, height,
 								ref capture, ref error));
+
+					if (result.IsSuccess)
+						bitmap = ReadCapture(in capture);
+
+					return result;
+				}
+				finally
+				{
+					Native.ksd_capture_clear(ref capture);
+				}
+			}
+
+			internal CallResult CaptureDesktop(out Bitmap bitmap)
+			{
+				Native.ksd_capture_init(out var capture);
+				bitmap = null;
+
+				try
+				{
+					var result = Invoke("capture desktop",
+						(IntPtr connection, ref NativeError error)
+							=> Native.ksd_capture_desktop(connection, ref capture, ref error));
 
 					if (result.IsSuccess)
 						bitmap = ReadCapture(in capture);
@@ -1409,6 +1583,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					Operation.WindowSetDecorated => Invoke("set window decoration",
 						(IntPtr connection, ref NativeError error)
 							=> Native.ksd_window_set_decorated(connection, window, value, ref error)),
+					Operation.WindowSetSkipTaskbar => Invoke("set window taskbar visibility",
+						(IntPtr connection, ref NativeError error)
+							=> Native.ksd_window_set_skip_taskbar(connection, window, value, ref error)),
 					_ => throw new ArgumentOutOfRangeException(nameof(operation)),
 				};
 
@@ -1956,7 +2133,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			private fixed uint reserved[8];
 		}
 
-		private static class Native
+		private static partial class Native
 		{
 			private const string Library = "libkeysharp-desktop.so.0";
 
@@ -2037,6 +2214,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				int x, int y, uint width, uint height, ref NativeCapture capture,
 				ref NativeError error);
 
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksd_capture_desktop(IntPtr connection,
+				ref NativeCapture capture, ref NativeError error);
+
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl,
 				CharSet = CharSet.Ansi)]
 			internal static extern uint ksd_capture_window(IntPtr connection,
@@ -2105,6 +2286,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_window_set_decorated(IntPtr connection,
+				ulong window, uint value, ref NativeError error);
+
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksd_window_set_skip_taskbar(IntPtr connection,
 				ulong window, uint value, ref NativeError error);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]

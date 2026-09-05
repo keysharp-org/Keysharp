@@ -52,7 +52,10 @@ namespace Keysharp.Internals.Input.Linux
 			QueryPointerButtons = 1UL << 8,
 			QueryIdleTime = 1UL << 9,
 			QueryModifiers = 1UL << 10,
-			All = (1UL << 11) - 1,
+			ObserveKeyboard = 1UL << 11,
+			ObserveMouse = 1UL << 12,
+			QueryDevices = 1UL << 13,
+			All = (1UL << 14) - 1,
 		}
 
 		internal enum HookType : uint
@@ -159,6 +162,7 @@ namespace Keysharp.Internals.Input.Linux
 		private NativeHookEvent currentHookEvent;
 		private ulong currentHookEventId;
 		private int nestedDepth;
+		private volatile bool disposePending;
 		private GCHandle callbackHandle;
 		private Action<KeysharpInputClient, HookEvent> nestedHookEventHandler;
 		private Action<HookQuarantine> hookQuarantineHandler;
@@ -175,7 +179,7 @@ namespace Keysharp.Internals.Input.Linux
 
 		internal LinuxPermissionScope GrantedScopes { get; private set; }
 		internal Operations AvailableOperations { get; }
-		internal bool IsConnected => Volatile.Read(ref connection) != 0;
+		internal bool IsConnected => !disposePending && Volatile.Read(ref connection) != 0;
 
 		internal static string DefaultSocketPath
 		{
@@ -215,13 +219,12 @@ namespace Keysharp.Internals.Input.Linux
 						|| info.ClientAbiMajor != 0 || info.ClientAbiMinor < 1)
 						throw new InvalidDataException(
 							$"Unsupported keysharp-input client ABI {info.ClientAbiMajor}.{info.ClientAbiMinor}.");
-					if ((info.GrantedScopes & ~(uint)ManagedScopes) != 0
-						|| (info.AvailableOperations & ~(ulong)Operations.All) != 0)
+					if ((info.GrantedScopes & ~(uint)ManagedScopes) != 0)
 						throw new InvalidDataException("keysharp-input returned unknown capability bits.");
 
 					var client = new KeysharpInputClient(connection, role,
 						(LinuxPermissionScope)info.GrantedScopes,
-						(Operations)info.AvailableOperations);
+						(Operations)info.AvailableOperations & Operations.All);
 					connection = 0;
 
 					if ((client.AvailableOperations & requested) != requested)
@@ -304,7 +307,8 @@ namespace Keysharp.Internals.Input.Linux
 		{
 			var scopes = LinuxPermissionScope.None;
 			if ((operations & (Operations.HookKeyboard | Operations.HookMouse
-				| Operations.QueryKeyState | Operations.QueryPointerButtons)) != 0)
+				| Operations.QueryKeyState | Operations.QueryPointerButtons
+				| Operations.ObserveKeyboard | Operations.ObserveMouse | Operations.QueryDevices)) != 0)
 				scopes |= LinuxPermissionScope.InputMonitoring;
 			if ((operations & (Operations.SynthesizeKeyboard | Operations.SynthesizeMouse
 				| Operations.BlockInput)) != 0)
@@ -672,18 +676,19 @@ namespace Keysharp.Internals.Input.Linux
 			*reply = NewReply(HookDecision.Pass, null, 0);
 			nestedReplies[depth] = (nint)reply;
 			nestedEventIds[depth] = hookEvent->RequestId;
+			NativeMemory.Free((void*)nestedReplacementBuffers[depth]);
 			nestedReplacementBuffers[depth] = 0;
 			nestedDepth = depth + 1;
 
 			try
 			{
-				nestedHookEventHandler?.Invoke(this, ToManaged(*hookEvent));
+				if (!disposePending) nestedHookEventHandler?.Invoke(this, ToManaged(*hookEvent));
 				return NativeClientStatus.Ok;
 			}
 			finally
 			{
-				NativeMemory.Free((void*)nestedReplacementBuffers[depth]);
-				nestedReplacementBuffers[depth] = 0;
+				// Native code serializes the reply after this callback returns. Each depth
+				// retains its buffer until the next callback at that depth or disconnect.
 				nestedReplies[depth] = 0;
 				nestedEventIds[depth] = 0;
 				nestedDepth = depth;
@@ -695,6 +700,7 @@ namespace Keysharp.Internals.Input.Linux
 		{
 			var count = replacementInputs?.Count ?? 0;
 			NativeMemory.Free((void*)nestedReplacementBuffers[depth]);
+			nestedReplacementBuffers[depth] = 0;
 			NativeInput* inputs = null;
 			if (count != 0)
 			{
@@ -798,7 +804,7 @@ namespace Keysharp.Internals.Input.Linux
 
 		private void ThrowIfDisposed()
 		{
-			if (connection == 0)
+			if (connection == 0 || disposePending)
 				throw new ObjectDisposedException(nameof(KeysharpInputClient));
 		}
 
@@ -806,10 +812,25 @@ namespace Keysharp.Internals.Input.Linux
 		{
 			lock (nativeLock)
 			{
+				if (nestedDepth != 0)
+				{
+					// A callback still has native stack frames using this connection and its reply buffers.
+					if (!disposePending)
+					{
+						disposePending = true;
+						ThreadPool.QueueUserWorkItem(static client => client.Dispose(), this, preferLocal: false);
+					}
+					return;
+				}
 				var handle = Interlocked.Exchange(ref connection, 0);
 				if (handle == 0)
 					return;
 				Native.ksi_disconnect(handle);
+				for (var depth = 0; depth < nestedReplacementBuffers.Length; depth++)
+				{
+					NativeMemory.Free((void*)nestedReplacementBuffers[depth]);
+					nestedReplacementBuffers[depth] = 0;
+				}
 				if (callbackHandle.IsAllocated)
 					callbackHandle.Free();
 			}

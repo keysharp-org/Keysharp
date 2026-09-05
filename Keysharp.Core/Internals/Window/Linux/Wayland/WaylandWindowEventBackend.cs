@@ -11,9 +11,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	/// translates each <see cref="WaylandWindowEvent"/> into the platform-neutral <see cref="WindowEventRaw"/> the
 	/// <c>WinEventManager</c> consumes — mirroring what the X11 backend does on X11.
 	/// <para>
-	/// The compositor pushes every event kind; the desired-category mask from Start/Stop is applied here as a
-	/// filter rather than as a native subscribe/unsubscribe, since none of the IPC channels expose per-category
-	/// subscription. A "Created" event also raises Show, mirroring how opening a window on Windows fires both.
+	/// The compositor source produces every event kind; the desired-category mask from Start/Stop is applied here
+	/// as a filter rather than as a native subscribe/unsubscribe, since none of the IPC channels expose
+	/// per-category subscription. A "Created" event also raises Show, mirroring how opening a window on Windows
+	/// fires both.
 	/// </para>
 	/// <para>
 	/// Compositor callbacks arrive on D-Bus / IPC threads, and the consumer (the WinEvent manager) immediately

@@ -321,8 +321,6 @@ jobs:
               mv "$deb" "dist/release-assets/keysharp-${VERSION}-${RID}.deb"
             done
           fi
-          fi
-
       - name: Import macOS signing certificate
         if: ${{ matrix.platform == 'macos' && env.MACOS_CERT_P12_BASE64 != '' }}
         shell: bash

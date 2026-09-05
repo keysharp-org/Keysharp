@@ -49,19 +49,16 @@ Prebuilt packages are on the [Releases](https://github.com/keysharp-org/Keysharp
 
 ### Linux
 
-- **Install:** download `keysharp-linux-setup.sh` from the [Releases](https://github.com/keysharp-org/Keysharp/releases) page, check it against the release's `SHA256SUMS`, and run it:
+- Download `keysharp-linux-setup.sh` from a [release](https://github.com/keysharp-org/Keysharp/releases), then run:
   ```sh
   sudo sh ./keysharp-linux-setup.sh
   ```
-  It installs Keysharp and, when they are missing, the independent [`keysharp-input`](https://github.com/keysharp-org/keysharp-input) and [`keysharp-desktop`](https://github.com/keysharp-org/keysharp-desktop) components its privileged Linux features need. Each is downloaded from its own release, verified, and installed by its own installer — Debian and Ubuntu get packages, everything else gets tarballs. A component already present at a compatible client ABI is left alone. Pass `--skip-input` or `--skip-desktop` to leave one out, or `--dry-run` to see the plan first.
-- **Install one project only:** each project's release also carries a tarball and a `.deb` that install just that project. Keysharp runs without either component; the features each one provides are unavailable until it is installed.
-- **Run:** `keysharp hello.ks`.
-- **Uninstall:** `sudo apt remove keysharp`, or `sudo bash ./uninstall.sh` for the tar channel. Both remove only Keysharp. They never remove `keysharp-input`, `keysharp-desktop`, or shared permission grants; each component's own uninstaller owns that lifecycle.
-- **VS Code:** the extension needs an `.exe` name, so create a shim:
-  ```sh
-  mkdir -p ~/.local/bin && ln -sf "$(command -v keysharp)" ~/.local/bin/AutoHotkey.exe
-  ```
-  Then use `~/.local/bin/AutoHotkey.exe` as the interpreter path.
+- Log out and back in if setup reports a newly enabled compositor extension.
+- Run `keysharp hello.ks`.
+
+Setup adds the optional `keysharp-input` and `keysharp-desktop` services and keeps
+healthy compatible installations. [Linux installation](docs/install-linux.md) covers
+updates, optional components, diagnosis, portable installs, removal and VS Code.
 
 ### macOS
 
@@ -100,18 +97,9 @@ Prebuilt packages are on the [Releases](https://github.com/keysharp-org/Keysharp
 
 ## Building From Source
 
-Keysharp targets .NET 10. Linux and macOS builds also need the sibling [Keysharp Eto fork](https://github.com/keysharp-org/Eto/tree/Keysharp) cloned next to this repository.
-
-| Platform | Command |
-|---|---|
-| Windows | Open `Keysharp.sln` in Visual Studio 2022 (with the .NET 10 SDK) and build. `Keysharp.Install\package-windows.ps1` produces the MSI and portable ZIP in `dist\`; add `-Msix` for the Microsoft Store package. |
-| Linux | `bash ./Keysharp.Install/package-linux.sh` → output in `dist/` |
-| macOS | `bash ./Keysharp.Install/package-macos.sh` → output in `dist/` |
-
-The Windows MSI is built with [WiX v5](https://wixtoolset.org/), whose toolset restores from NuGet, so the
-.NET SDK is the only prerequisite — Visual Studio is not needed to package. Pass
-`-RuntimeIdentifier win-arm64` for an ARM64 build. Full step-by-step instructions for each platform are in
-the [detailed reference](docs/reference.md#building-from-source-on-windows).
+Install the .NET 10 SDK and run `dotnet build Keysharp.sln -c Debug`. Linux and macOS
+also need the sibling [Keysharp Eto fork](https://github.com/keysharp-org/Eto/tree/Keysharp).
+See [building and packaging](docs/building.md) for the commands and prerequisites.
 
 ## Documentation
 

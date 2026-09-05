@@ -1,15 +1,7 @@
 #if LINUX
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
-	/// <summary>
-	/// The neutral window for a compositor-backed Wayland window: a <see cref="WindowInfoBase"/> that holds the
-	/// compositor's one-pass payload (KWin/GNOME/Cinnamon IPC) directly — no separate snapshot object, since the
-	/// payload is eager and immutable. Symmetric with the Eto <c>ControlInfo</c> and macOS's <c>MacWindowInfo</c>:
-	/// a per-backend subtype that reads scalars from its own source. The non-scalar members (text, children,
-	/// parent, client-origin) come from the shared <see cref="WindowInfoBase"/>. Windows/X11 use the lazy
-	/// <see cref="WindowInfo"/>. The backend-shaped fields (AppId, Minimized/Maximized, Decorated, *Geometry) are
-	/// translated to the neutral surface here; the Wayland-specific extras are exposed on top.
-	/// </summary>
+	/// <summary>An immutable window snapshot from keysharp-desktop, including native X11 handles.</summary>
 	internal sealed class WaylandWindowInfo : WindowInfoBase
 	{
 		private const long WsCaption = 0x00C00000L;   // WS_CAPTION: a decorated (titlebar) toplevel
@@ -35,13 +27,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// <summary>False when the window lives on another (non-active) workspace: it still exists for
 		/// enumeration/matching, but must not win at-point hit-tests.</summary>
 		public bool OnCurrentWorkspace { get; }
+		internal nint ParentHandle { get; }
+		internal nint TopLevelHandle { get; }
+		internal IReadOnlySet<string> ValidFields { get; }
 
 		internal WaylandWindowInfo(nint handle, string compositorId = "", string title = "", string appId = "",
 								   long pid = 0, Rectangle frameGeometry = default, Rectangle clientGeometry = default,
 								   Rectangle surfaceGeometry = default,
 								   bool active = false, bool minimized = false, bool maximized = false,
 								   bool visible = false, bool alwaysOnTop = false, bool decorated = true,
-								   object transparency = null, bool onCurrentWorkspace = true) : base(handle)
+								   object transparency = null, bool onCurrentWorkspace = true,
+								   nint parentHandle = 0, nint topLevelHandle = 0, IReadOnlySet<string> validFields = null) : base(handle)
 		{
 			CompositorId = compositorId ?? string.Empty;
 			winTitle = title ?? string.Empty;
@@ -62,6 +58,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			// has no transparency level). Only a genuinely translucent 0-254 alpha is reported as a number.
 			this.transparency = transparency is long t && t >= 0 && t < 255 ? t : -1L;
 			OnCurrentWorkspace = onCurrentWorkspace;
+			ParentHandle = parentHandle;
+			TopLevelHandle = topLevelHandle;
+			ValidFields = validFields;
 		}
 
 		internal override string Title => winTitle;
@@ -83,7 +82,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		// A compositor toplevel is its own non-child parent, and its client origin is already in the
 		// payload — the base implementations would re-fetch this same window through Platform.Window.
-		internal override WindowInfoBase NonChildParentWindow => this;
+		internal override WindowInfoBase NonChildParentWindow => TopLevelHandle != 0 && TopLevelHandle != Handle
+			? new WindowInfo(TopLevelHandle) : this;
+		internal override WindowInfoBase ParentWindow => TopLevelHandle != 0
+			? ParentHandle == 0 ? null : new WindowInfo(ParentHandle) : base.ParentWindow;
 		internal override POINT ClientToScreen() => new (ClientGeometry.X, ClientGeometry.Y);
 	}
 }

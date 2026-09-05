@@ -124,7 +124,6 @@ namespace Keysharp.Internals
 		{
 			Keysharp.Internals.Window.Linux.Wayland.GnomeShellBridge.Reset();
 			Keysharp.Internals.Window.Linux.Wayland.CinnamonShellBridge.Reset();
-			Keysharp.Internals.Window.Linux.Wayland.KWinDBusBridge.Reset();
 			Keysharp.Internals.Window.Linux.Wayland.WaylandBackend.Reset();
 		}
 	}

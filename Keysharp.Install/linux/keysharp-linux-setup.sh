@@ -13,10 +13,12 @@ KEYSHARP_REPOSITORY=keysharp-org/Keysharp
 INPUT_REPOSITORY=keysharp-org/keysharp-input
 DESKTOP_REPOSITORY=keysharp-org/keysharp-desktop
 
-# A component is compatible when its public client library reports this major.
+# A component needs this ABI major and at least this additive minor.
 # Product versions select artifacts; the client ABI decides compatibility.
 INPUT_CLIENT_ABI_MAJOR=0
+INPUT_CLIENT_ABI_MINOR=2
 DESKTOP_CLIENT_ABI_MAJOR=0
+DESKTOP_CLIENT_ABI_MINOR=8
 
 channel=auto
 keysharp_version=latest
@@ -25,6 +27,10 @@ desktop_version=latest
 want_input=true
 want_desktop=true
 dry_run=false
+diagnose=false
+upgrade_components=false
+input_explicit=false
+desktop_explicit=false
 
 usage() {
     cat <<'EOF'
@@ -40,6 +46,8 @@ Options:
   --keysharp-version V  Install this version instead of the latest.
   --input-version V     Install this keysharp-input version.
   --desktop-version V   Install this keysharp-desktop version.
+  --upgrade-components Upgrade components through their existing install channel.
+  --diagnose            Report installed versions, ABI and service health; no network.
   --skip-input          Do not install keysharp-input.
   --skip-desktop        Do not install keysharp-desktop.
   --dry-run             Resolve and report the plan; download nothing.
@@ -77,6 +85,11 @@ detect_channel() {
     if [ "$channel" != auto ]; then
         return 0
     fi
+    if [ -x /usr/local/lib/keysharp/Keysharp ] \
+        && is_protected_path /usr/local/lib/keysharp/Keysharp; then
+        channel=tar
+        return 0
+    fi
     if command -v apt-get >/dev/null 2>&1 && command -v dpkg >/dev/null 2>&1; then
         channel=deb
     else
@@ -88,12 +101,16 @@ detect_channel() {
 # an API token, a rate limit, or a JSON parser.
 resolve_version() {
     resolve_repository=$1
-    resolve_requested=$2
+    resolve_requested=${2#v}
+    case "$resolve_requested" in
+        latest) ;;
+        *[!0-9.]*|'') echo "Invalid release version: $2" >&2; return 1 ;;
+    esac
     if [ "$resolve_requested" != latest ]; then
         printf '%s\n' "$resolve_requested"
         return 0
     fi
-    resolve_url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+    resolve_url=$(curl -fsSLI --connect-timeout 15 --max-time 60 -o /dev/null -w '%{url_effective}' \
         --proto '=https' --tlsv1.2 \
         "https://github.com/$resolve_repository/releases/latest") || {
         echo "Could not reach the $resolve_repository releases page." >&2
@@ -134,12 +151,12 @@ download_verified() {
     download_asset=$3
     download_dir=$4
     download_base="https://github.com/$download_repository/releases/download/$download_tag"
-    curl -fsSL --proto '=https' --tlsv1.2 \
+    curl -fsSL --connect-timeout 15 --max-time 600 --proto '=https' --tlsv1.2 \
         -o "$download_dir/$download_asset" "$download_base/$download_asset" || {
         echo "Could not download $download_asset from $download_repository $download_tag." >&2
         return 1
     }
-    curl -fsSL --proto '=https' --tlsv1.2 \
+    curl -fsSL --connect-timeout 15 --max-time 600 --proto '=https' --tlsv1.2 \
         -o "$download_dir/SHA256SUMS" "$download_base/SHA256SUMS" || {
         echo "Could not download SHA256SUMS from $download_repository $download_tag." >&2
         return 1
@@ -151,28 +168,166 @@ download_verified() {
     rm -f -- "$download_dir/SHA256SUMS"
 }
 
-# The component's own CLI answers what it provides, which is the same contract
-# its installer and its Debian capability express.
-component_is_compatible() {
-    component_command=$1
+# Only run installed binaries whose path and resolved target are root protected.
+is_protected_path() {
+    protected_path=$1
+    while :; do
+        protected_metadata=$(stat -Lc '%u %a' -- "$protected_path" 2>/dev/null) || return 1
+        # shellcheck disable=SC2086 # stat emits two numeric fields
+        set -- $protected_metadata
+        [ "$1" = 0 ] || return 1
+        if [ $((0$2 & 022)) -ne 0 ]; then
+            [ "$protected_path" = /nix/store ] \
+                && [ $((0$2 & 002)) -eq 0 ] && [ $((0$2 & 01000)) -ne 0 ] || return 1
+        fi
+        [ "$protected_path" = / ] && return 0
+        protected_path=${protected_path%/*}
+        [ -n "$protected_path" ] || protected_path=/
+    done
+}
+
+component_candidates() {
+    printf '%s\n' "/usr/bin/$1" "/run/current-system/sw/bin/$1" "/usr/local/bin/$1"
+}
+
+info_field() {
+    printf '%s\n' "$component_info" | awk -F= -v key="$1" '
+        $1 == key { value = $2; count++ }
+        END { if (count == 1) print value }'
+}
+
+inspect_component() {
+    component_name=$1
     component_major=$2
-    command -v "$component_command" >/dev/null 2>&1 || return 1
-    "$component_command" info 2>/dev/null \
-        | grep -q "^client_abi_major=$component_major$"
+    component_minor=$3
+    component_path=
+    component_version=unknown
+    component_channel=$channel
+    component_health=missing
+    component_compatible=false
+    component_abi=unknown
+    for component_candidate in $(component_candidates "$component_name"); do
+        [ -x "$component_candidate" ] || continue
+        component_resolved=$(readlink -f -- "$component_candidate") || continue
+        if ! is_protected_path "$component_candidate" \
+            || ! is_protected_path "$component_resolved"; then continue; fi
+        if [ -n "$component_path" ] && [ "$component_path" != "$component_resolved" ]; then
+            component_health=conflicting-installations
+            component_compatible=false
+            return 0
+        fi
+        component_path=$component_resolved
+    done
+    [ -n "$component_path" ] || return 0
+    component_prefix=${component_path%/bin/*}
+    case "$component_path" in
+        /usr/local/*) component_channel=tar ;;
+        /nix/store/*) component_channel=nix ;;
+        *)
+            if command -v dpkg-query >/dev/null 2>&1 \
+                && dpkg-query -S "$component_path" >/dev/null 2>&1; then
+                component_channel=deb
+            else
+                component_channel=system
+            fi ;;
+    esac
+    component_health=unloadable-client
+    component_info=$("$component_path" info 2>/dev/null) || return 0
+    component_version=$(info_field product_version)
+    component_actual_major=$(info_field client_abi_major)
+    component_actual_minor=$(info_field client_abi_minor)
+    component_abi=$component_actual_major.$component_actual_minor
+    case "$component_actual_minor" in ''|*[!0-9]*) return 0 ;; esac
+    component_health=incompatible-abi
+    [ "$component_actual_major" = "$component_major" ] \
+        && [ "$component_actual_minor" -ge "$component_minor" ] || return 0
+    component_compatible=true
+    component_health=incomplete-installation
+    case "$component_name" in
+        keysharp-input) component_socket=keysharp-input.socket; component_policy=org.keysharp.input.policy ;;
+        keysharp-desktop) component_socket=keysharp-desktop-authority.socket; component_policy=org.keysharp.desktop.policy
+            for component_resource in libexec/keysharp-desktop-capture-worker \
+                share/gnome-shell/extensions/keysharp@keysharp.io/metadata.json \
+                share/cinnamon/extensions/keysharp@keysharp.io/metadata.json \
+                share/kwin/scripts/io.github.keysharp.desktop.kwin/metadata.json; do
+                is_protected_path "$component_prefix/$component_resource" || return 0
+            done ;;
+    esac
+    component_policy_path=/usr/share/polkit-1/actions/$component_policy
+    [ "$component_channel" != nix ] \
+        || component_policy_path=/run/current-system/sw/share/polkit-1/actions/$component_policy
+    is_protected_path "$component_policy_path" || return 0
+    command -v systemctl >/dev/null 2>&1 || return 0
+    [ "$(systemctl show --property=LoadState --value "$component_socket" 2>/dev/null)" = loaded ] || return 0
+    component_health=inactive-socket
+    systemctl is-active --quiet "$component_socket" || return 0
+    component_health=failed-service
+    if systemctl is-failed --quiet "${component_socket%.socket}.service"; then return 0; fi
+    if [ "$component_name" = keysharp-desktop ]; then
+        component_health=disabled-session-service
+        [ "$(systemctl --global is-enabled keysharp-desktop.service 2>/dev/null)" = enabled ] || return 0
+    fi
+    component_health=ready
+}
+
+abi_compatible() {
+    [ "$1" = "$3" ] || return 1
+    case "$2" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$2" -ge "$4" ]
+}
+
+verify_deb_abi() {
+    deb_abi=$(dpkg-deb -f "$1" Provides | tr ',' '\n' | awk -v name="$2-client-abi-$3" '
+        $1 == name && $2 == "(=" && NF == 3 { sub(/\)$/, "", $3); print $3 }')
+    if ! abi_compatible "${deb_abi%%.*}" "${deb_abi#*.}" "$3" "$4"; then
+        echo "$1 does not provide the required $2 client ABI $3.$4 or newer minor." >&2
+        return 1
+    fi
+}
+
+verify_archive_abi() {
+    archive_prefix=$1
+    [ "$2" != keysharp-desktop ] || archive_prefix=$1/payload/usr/local
+    component_info=$(LD_LIBRARY_PATH="$archive_prefix/lib" "$archive_prefix/bin/$2" info)
+    if ! abi_compatible "$(info_field client_abi_major)" "$(info_field client_abi_minor)" "$3" "$4"; then
+        echo "$1 does not provide the required $2 client ABI $3.$4 or newer minor." >&2
+        return 1
+    fi
+}
+
+component_needs_install() {
+    [ "$component_health" != ready ] || [ "$component_compatible" != true ] \
+        || [ "$upgrade_components" = true ] || [ "$1" = true ]
+}
+
+report_component() {
+    printf '%s\n' "  $1: $2; version=$3 ABI=$4 channel=$5"
+    case "$2" in
+        ready|skipped) ;;
+        missing) printf '%s\n' "    Run setup to install it." ;;
+        inactive-socket|failed-service|disabled-session-service)
+            printf '%s\n' "    Repair through the existing installer, or inspect systemctl status $1*." ;;
+        *) printf '%s\n' "    Repair through the owning install channel before using this component." ;;
+    esac
 }
 
 report_plan() {
-    printf '%s\n' "Channel: $channel ($arch_tag)"
-    printf '%s\n' "  Keysharp $keysharp_resolved"
-    if [ "$want_input" = true ]; then
-        printf '%s\n' "  keysharp-input $input_resolved"
+    printf '%s\n' "Keysharp channel: $channel ($arch_tag)"
+    [ "$diagnose" = true ] || printf '%s\n' "  Keysharp $keysharp_resolved"
+    report_component keysharp-input "$input_health" "$input_installed_version" "$input_abi" "$input_channel"
+    report_component keysharp-desktop "$desktop_health" "$desktop_installed_version" "$desktop_abi" "$desktop_channel"
+    [ -z "$input_resolved" ] || printf '%s\n' "  Install keysharp-input $input_resolved ($input_channel)"
+    [ -z "$desktop_resolved" ] || printf '%s\n' "  Install keysharp-desktop $desktop_resolved ($desktop_channel)"
+}
+
+release_asset() {
+    if [ "$2" = deb ]; then
+        case "$1" in
+            keysharp) printf 'keysharp-%s-%s.deb\n' "$3" "$arch_tag" ;;
+            *) printf '%s_%s_%s.deb\n' "$1" "$3" "$deb_arch" ;;
+        esac
     else
-        printf '%s\n' "  keysharp-input: already compatible or skipped"
-    fi
-    if [ "$want_desktop" = true ]; then
-        printf '%s\n' "  keysharp-desktop $desktop_resolved"
-    else
-        printf '%s\n' "  keysharp-desktop: already compatible or skipped"
+        printf '%s-%s-%s.tar.gz\n' "$1" "$3" "$arch_tag"
     fi
 }
 
@@ -267,16 +422,20 @@ while [ "$#" -gt 0 ]; do
         --input-version)
             [ "$#" -ge 2 ] || { echo "--input-version requires a version" >&2; exit 2; }
             input_version=$2
+            input_explicit=true
             shift 2
             ;;
         --desktop-version)
             [ "$#" -ge 2 ] || { echo "--desktop-version requires a version" >&2; exit 2; }
             desktop_version=$2
+            desktop_explicit=true
             shift 2
             ;;
         --skip-input) want_input=false; shift ;;
         --skip-desktop) want_desktop=false; shift ;;
         --dry-run) dry_run=true; shift ;;
+        --diagnose) diagnose=true; shift ;;
+        --upgrade-components) upgrade_components=true; shift ;;
         -h|--help) usage; exit 0 ;;
         *)
             echo "Unknown option: $1" >&2
@@ -286,88 +445,119 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ "$dry_run" != true ] && [ "$(id -u)" -ne 0 ]; then
+if [ "$dry_run" != true ] && [ "$diagnose" != true ] && [ "$(id -u)" -ne 0 ]; then
     echo "keysharp-linux-setup.sh must be run as root" >&2
     exit 1
 fi
 
-need_cmd curl
-need_cmd sha256sum
 detect_arch
 detect_channel
-if [ "$channel" = tar ]; then
-    need_cmd tar
-fi
-
-# Skip what is already usable, so a rerun installs only what is missing.
-if [ "$want_input" = true ] \
-    && component_is_compatible keysharp-input "$INPUT_CLIENT_ABI_MAJOR"; then
-    want_input=false
-fi
-if [ "$want_desktop" = true ] \
-    && component_is_compatible keysharp-desktop "$DESKTOP_CLIENT_ABI_MAJOR"; then
-    want_desktop=false
-fi
-
-keysharp_resolved=$(resolve_version "$KEYSHARP_REPOSITORY" "$keysharp_version")
 input_resolved=
 desktop_resolved=
-if [ "$want_input" = true ]; then
-    input_resolved=$(resolve_version "$INPUT_REPOSITORY" "$input_version")
+keysharp_resolved=
+inspect_component keysharp-input "$INPUT_CLIENT_ABI_MAJOR" "$INPUT_CLIENT_ABI_MINOR"
+input_channel=$component_channel
+input_health=$component_health
+input_installed_version=$component_version
+input_abi=$component_abi
+if [ "$want_input" = false ]; then input_health=skipped
+elif ! component_needs_install "$input_explicit"; then want_input=false
 fi
-if [ "$want_desktop" = true ]; then
-    desktop_resolved=$(resolve_version "$DESKTOP_REPOSITORY" "$desktop_version")
+inspect_component keysharp-desktop "$DESKTOP_CLIENT_ABI_MAJOR" "$DESKTOP_CLIENT_ABI_MINOR"
+desktop_channel=$component_channel
+desktop_health=$component_health
+desktop_installed_version=$component_version
+desktop_abi=$component_abi
+enable_desktop=$want_desktop
+if [ "$want_desktop" = false ]; then desktop_health=skipped
+elif ! component_needs_install "$desktop_explicit"; then want_desktop=false
 fi
-
-report_plan
-if [ "$dry_run" = true ]; then
+if [ "$diagnose" = true ]; then
+    report_plan
+    printf '%s\n' "Run each component's probe as your graphical user to inspect session capabilities."
     exit 0
 fi
 
+for selected_channel in "$channel" \
+    "$(if [ "$want_input" = true ]; then printf '%s' "$input_channel"; fi)" \
+    "$(if [ "$want_desktop" = true ]; then printf '%s' "$desktop_channel"; fi)"; do
+    case "$selected_channel" in
+        deb) need_cmd apt-get; need_cmd dpkg-deb ;;
+        tar) need_cmd tar ;;
+        '') ;;
+        *) echo "Update or repair the $selected_channel component through its package manager; setup will not replace it." >&2; exit 1 ;;
+    esac
+done
+if [ "$input_health" = conflicting-installations ] || [ "$desktop_health" = conflicting-installations ]; then
+    report_plan
+    echo "Remove the conflicting component installation through its owner before rerunning setup." >&2
+    exit 1
+fi
+need_cmd curl
+need_cmd sha256sum
+keysharp_resolved=$(resolve_version "$KEYSHARP_REPOSITORY" "$keysharp_version")
+[ "$want_input" != true ] || input_resolved=$(resolve_version "$INPUT_REPOSITORY" "$input_version")
+[ "$want_desktop" != true ] || desktop_resolved=$(resolve_version "$DESKTOP_REPOSITORY" "$desktop_version")
+report_plan
+[ "$dry_run" != true ] || exit 0
+
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT HUP INT TERM
-
-if [ "$channel" = deb ]; then
-    need_cmd apt-get
-    set --
-    if [ "$want_input" = true ]; then
-        asset="keysharp-input_${input_resolved}_${deb_arch}.deb"
-        download_verified "$INPUT_REPOSITORY" "v$input_resolved" "$asset" "$work"
+set --
+input_tree=
+desktop_tree=
+keysharp_tree=
+if [ "$want_input" = true ]; then
+    asset=$(release_asset keysharp-input "$input_channel" "$input_resolved")
+    download_verified "$INPUT_REPOSITORY" "v$input_resolved" "$asset" "$work"
+    if [ "$input_channel" = deb ]; then
+        verify_deb_abi "$work/$asset" keysharp-input "$INPUT_CLIENT_ABI_MAJOR" "$INPUT_CLIENT_ABI_MINOR"
         set -- "$@" "$work/$asset"
+    else input_tree=$work/keysharp-input-$input_resolved-$arch_tag
+        tar -xzf "$work/$asset" -C "$work"
     fi
-    if [ "$want_desktop" = true ]; then
-        asset="keysharp-desktop_${desktop_resolved}_${deb_arch}.deb"
-        download_verified "$DESKTOP_REPOSITORY" "v$desktop_resolved" "$asset" "$work"
+fi
+if [ "$want_desktop" = true ]; then
+    asset=$(release_asset keysharp-desktop "$desktop_channel" "$desktop_resolved")
+    download_verified "$DESKTOP_REPOSITORY" "v$desktop_resolved" "$asset" "$work"
+    if [ "$desktop_channel" = deb ]; then
+        verify_deb_abi "$work/$asset" keysharp-desktop "$DESKTOP_CLIENT_ABI_MAJOR" "$DESKTOP_CLIENT_ABI_MINOR"
         set -- "$@" "$work/$asset"
-    fi
-    asset="keysharp_${keysharp_resolved}_${deb_arch}.deb"
-    download_verified "$KEYSHARP_REPOSITORY" "v$keysharp_resolved" "$asset" "$work"
-    set -- "$@" "$work/$asset"
-    # One transaction, so the components satisfy Keysharp's Recommends and the
-    # order of the packages on the command line does not matter.
-    apt-get install -y "$@"
-else
-    # Components first, so Keysharp's post-install probe sees what is present.
-    if [ "$want_input" = true ]; then
-        asset="keysharp-input-${input_resolved}-${arch_tag}.tar.gz"
-        download_verified "$INPUT_REPOSITORY" "v$input_resolved" "$asset" "$work"
+    else desktop_tree=$work/keysharp-desktop-$desktop_resolved-$arch_tag
         tar -xzf "$work/$asset" -C "$work"
-        (cd "$work/keysharp-input-${input_resolved}-${arch_tag}" \
-            && sh ./install.sh --skip-if-compatible)
     fi
-    if [ "$want_desktop" = true ]; then
-        asset="keysharp-desktop-${desktop_resolved}-${arch_tag}.tar.gz"
-        download_verified "$DESKTOP_REPOSITORY" "v$desktop_resolved" "$asset" "$work"
-        tar -xzf "$work/$asset" -C "$work"
-        (cd "$work/keysharp-desktop-${desktop_resolved}-${arch_tag}" \
-            && sh ./install.sh --skip-if-compatible)
-    fi
-    asset="keysharp-${keysharp_resolved}-${arch_tag}.tar.gz"
-    download_verified "$KEYSHARP_REPOSITORY" "v$keysharp_resolved" "$asset" "$work"
+fi
+asset=$(release_asset keysharp "$channel" "$keysharp_resolved")
+download_verified "$KEYSHARP_REPOSITORY" "v$keysharp_resolved" "$asset" "$work"
+if [ "$channel" = deb ]; then set -- "$@" "$work/$asset"
+else keysharp_tree=$work/keysharp-$arch_tag
     tar -xzf "$work/$asset" -C "$work"
-    (cd "$work/keysharp-${arch_tag}" && sh ./install.sh)
 fi
 
-enable_desktop_extension
-
+# No installed files are changed until every requested artifact is verified.
+for component_tree in "$input_tree" "$desktop_tree"; do
+    [ -n "$component_tree" ] || continue
+    if [ ! -f "$component_tree/check-runtime.sh" ]; then
+        echo "This component release has no dependency preflight. Install its documented runtime dependencies and use its own installer." >&2
+        exit 1
+    fi
+done
+for component_tree in "$input_tree" "$desktop_tree"; do
+    [ -z "$component_tree" ] || sh "$component_tree/check-runtime.sh" --install
+done
+if [ -n "$keysharp_tree" ]; then
+    bash "$keysharp_tree/install.sh" --install-dependencies
+fi
+for component_tree in "$input_tree" "$desktop_tree"; do
+    [ -z "$component_tree" ] || sh "$component_tree/check-runtime.sh"
+done
+[ -z "$input_tree" ] || verify_archive_abi "$input_tree" keysharp-input "$INPUT_CLIENT_ABI_MAJOR" "$INPUT_CLIENT_ABI_MINOR"
+[ -z "$desktop_tree" ] || verify_archive_abi "$desktop_tree" keysharp-desktop "$DESKTOP_CLIENT_ABI_MAJOR" "$DESKTOP_CLIENT_ABI_MINOR"
+# Components supplied as local archives must not be replaced by apt Recommends.
+if [ "$#" -gt 0 ]; then apt-get install -y --reinstall --no-install-recommends "$@"; fi
+for component_tree in "$input_tree" "$desktop_tree"; do
+    [ -z "$component_tree" ] || sh "$component_tree/install.sh"
+done
+[ -z "$keysharp_tree" ] || INSTALL_DEPS=false bash "$keysharp_tree/install.sh"
+[ "$enable_desktop" != true ] || enable_desktop_extension
 printf '%s\n' "Keysharp $keysharp_resolved is installed. Run 'keysharp --version' to confirm."
