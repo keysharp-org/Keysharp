@@ -14,6 +14,9 @@ namespace Keysharp.Internals.Input.Linux
 		internal const string DefaultSocketPathValue = "/run/keysharp-input/keysharp-input.sock";
 		internal const int MaxInputsPerRequest = 1024;
 		internal const int KeyStateBitmapBytes = 96;
+		internal const int DeviceNameCapacity = 256;
+		internal const int DeviceAxisCapacity = 64;
+		internal const int DeviceButtonCapacity = 128;
 		internal const int DefaultRequestTimeoutMs = 5000;
 		internal const int AuthorizationTimeoutMs = 125_000;
 		private const int HookPollTimeoutMs = 500;
@@ -22,6 +25,7 @@ namespace Keysharp.Internals.Input.Linux
 			LinuxPermissionScope.InputMonitoring | LinuxPermissionScope.InputControl;
 		private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 		private static readonly Native.NestedHookHandler NestedHookThunk = DispatchNestedHook;
+		private static readonly Native.DeviceVisitor GamepadVisitorThunk = CollectGamepad;
 		private static readonly uint NativeServiceInfoStructSize =
 			checked((uint)sizeof(NativeServiceInfo));
 
@@ -55,7 +59,8 @@ namespace Keysharp.Internals.Input.Linux
 			ObserveKeyboard = 1UL << 11,
 			ObserveMouse = 1UL << 12,
 			QueryDevices = 1UL << 13,
-			All = (1UL << 14) - 1,
+			QueryGamepads = 1UL << 14,
+			All = (1UL << 15) - 1,
 		}
 
 		internal enum HookType : uint
@@ -179,6 +184,13 @@ namespace Keysharp.Internals.Input.Linux
 		internal readonly record struct ModifierStateSnapshot(uint LogicalModifiersLR,
 			uint PhysicalModifiersLR, bool CapsLock, bool NumLock, bool ScrollLock);
 		internal readonly record struct PointerButtons(uint LogicalButtons, uint PhysicalButtons);
+		internal readonly record struct GamepadAxis(uint Code, int Minimum, int Maximum);
+		internal readonly record struct GamepadInfo(uint DeviceId, string Name,
+			int ButtonCount, GamepadAxis[] Axes);
+		/// <summary>Live gamepad reading. Buttons holds the first 32 buttons in the device's
+		/// button order, which is as many as a script can address.</summary>
+		internal readonly record struct GamepadState(uint DeviceId, ulong Generation,
+			int ButtonCount, uint Buttons, int[] AxisValues);
 
 		private readonly Lock nativeLock = new();
 		private readonly ConnectionRole connectionRole;
@@ -542,6 +554,89 @@ namespace Keysharp.Internals.Input.Linux
 				milliseconds = native.IdleTimeMs;
 				return native.Valid != 0;
 			}
+		}
+
+		/// <summary>Enumerates connected gamepads, ordered so that a device's position is stable
+		/// across restarts. Needs no grant, as with pointer position and idle time.</summary>
+		internal List<GamepadInfo> ListGamepads(out ulong generation)
+		{
+			RequireOperations(Operations.QueryGamepads);
+			var gamepads = new List<GamepadInfo>();
+			var handle = GCHandle.Alloc(gamepads);
+			generation = 0;
+
+			lock (nativeLock)
+			{
+				ThrowIfDisposed();
+				Native.ksi_error_init(out var error);
+
+				try
+				{
+					ThrowIfFailed((NativeClientStatus)Native.ksi_gamepads_list(connection,
+						GamepadVisitorThunk, GCHandle.ToIntPtr(handle), out generation, ref error),
+						"list gamepads", error);
+				}
+				finally
+				{
+					handle.Free();
+				}
+			}
+
+			return gamepads;
+		}
+
+		/// <summary>Reads one gamepad's buttons and axes. Returns false when the device is gone or
+		/// the device set changed since <paramref name="generation"/> was taken.</summary>
+		internal bool TryGetGamepadState(uint deviceId, ulong generation, out GamepadState state)
+		{
+			RequireOperations(Operations.QueryGamepads);
+			state = default;
+
+			lock (nativeLock)
+			{
+				ThrowIfDisposed();
+				Native.ksi_gamepad_state_init(out var native);
+				Native.ksi_error_init(out var error);
+				var status = (NativeClientStatus)Native.ksi_get_gamepad_state(connection,
+					deviceId, generation, ref native, ref error);
+
+				if (status is NativeClientStatus.NotFound or NativeClientStatus.Busy)
+					return false;
+
+				ThrowIfFailed(status, "query gamepad state", error);
+				var axisCount = (int)Math.Min(native.AxisCount, DeviceAxisCapacity);
+				var values = axisCount != 0 ? new int[axisCount] : [];
+				var axes = (NativeGamepadAxisState*)native.Axes;
+
+				for (var i = 0; i < axisCount; i++)
+					values[i] = axes[i].Value;
+
+				uint buttons = 0;
+
+				for (var i = 0; i < 4; i++)
+					buttons |= (uint)native.Buttons[i] << (i * 8);
+
+				state = new(native.DeviceId, native.DeviceGeneration,
+					(int)Math.Min(native.ButtonCount, DeviceButtonCapacity), buttons, values);
+				return true;
+			}
+		}
+
+		private static bool CollectGamepad(NativeDeviceInfo* device, nint context)
+		{
+			if (GCHandle.FromIntPtr(context).Target is not List<GamepadInfo> gamepads)
+				return false;
+
+			var axisCount = (int)Math.Min(device->AxisCount, DeviceAxisCapacity);
+			var axes = axisCount != 0 ? new GamepadAxis[axisCount] : [];
+			var native = (NativeDeviceAxisInfo*)device->Axes;
+
+			for (var i = 0; i < axisCount; i++)
+				axes[i] = new(native[i].Code, native[i].Minimum, native[i].Maximum);
+
+			gamepads.Add(new(device->DeviceId, device->GetName(),
+				(int)Math.Min(device->ButtonCount, DeviceButtonCapacity), axes));
+			return true;
 		}
 
 		internal HookEvent ReadHookEvent()
@@ -1119,6 +1214,79 @@ namespace Keysharp.Internals.Input.Linux
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
+		private struct NativeDeviceAxisInfo
+		{
+			internal uint StructSize;
+			internal uint Code;
+			internal int Minimum;
+			internal int Maximum;
+			internal int Fuzz;
+			internal int Flat;
+			internal int Resolution;
+			private uint reserved;
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
+		private struct NativeDeviceInfo
+		{
+			internal uint StructSize;
+			internal uint DeviceId;
+			internal uint Capabilities;
+			internal ushort BusType;
+			internal ushort Vendor;
+			internal ushort Product;
+			internal ushort Version;
+			private uint reserved0;
+			private fixed byte name[DeviceNameCapacity];
+			private fixed byte path[512];
+			private fixed byte physical[256];
+			private fixed byte unique[128];
+			internal uint AxisCount;
+			private uint reserved1;
+			internal fixed byte Axes[DeviceAxisCapacity * 32];
+			internal uint ButtonCount;
+			private uint reserved2;
+			internal fixed ushort ButtonCodes[DeviceButtonCapacity];
+			private fixed ulong reserved[4];
+
+			internal string GetName()
+			{
+				fixed (byte* pointer = name)
+				{
+					var length = 0;
+
+					while (length < DeviceNameCapacity && pointer[length] != 0)
+						length++;
+
+					try { return StrictUtf8.GetString(pointer, length); }
+					catch (DecoderFallbackException) { return string.Empty; }
+				}
+			}
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
+		private struct NativeGamepadAxisState
+		{
+			internal uint StructSize;
+			internal uint Code;
+			internal int Value;
+			private uint reserved;
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
+		private struct NativeGamepadState
+		{
+			internal uint StructSize;
+			internal uint DeviceId;
+			internal ulong DeviceGeneration;
+			internal uint ButtonCount;
+			internal uint AxisCount;
+			internal fixed byte Buttons[DeviceButtonCapacity / 8];
+			internal fixed byte Axes[DeviceAxisCapacity * 16];
+			private fixed ulong reserved[4];
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
 		private struct NativeModifierState
 		{
 			internal uint StructSize;
@@ -1134,6 +1302,10 @@ namespace Keysharp.Internals.Input.Linux
 		private static class Native
 		{
 			private const string Library = "libkeysharp-input.so.0";
+
+			[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+			[return: MarshalAs(UnmanagedType.U1)]
+			internal delegate bool DeviceVisitor(NativeDeviceInfo* device, nint context);
 
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 			internal delegate uint NestedHookHandler(nint connection,
@@ -1158,6 +1330,14 @@ namespace Keysharp.Internals.Input.Linux
 			internal static extern void ksi_idle_time_init(out NativeIdleTime idleTime);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksi_modifier_state_init(out NativeModifierState state);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern void ksi_gamepad_state_init(out NativeGamepadState state);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksi_gamepads_list(nint connection, DeviceVisitor visitor,
+				nint context, out ulong generation, ref NativeError error);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksi_get_gamepad_state(nint connection, uint deviceId,
+				ulong generation, ref NativeGamepadState state, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_connect(ref NativeConnectOptions options,
 				out nint connection, ref NativeServiceInfo info, ref NativeError error);

@@ -140,6 +140,61 @@ namespace Keysharp.Internals.Input.Linux
 			return true;
 		}
 
+		/// <summary>Enumerates connected gamepads. Gamepad access is ungated, so this needs no grant
+		/// and never prompts.</summary>
+		internal static bool TryListGamepads(out List<KeysharpInputClient.GamepadInfo> gamepads,
+			out ulong generation)
+		{
+			gamepads = null;
+			ulong captured = 0;
+			List<KeysharpInputClient.GamepadInfo> captureList = null;
+
+			try
+			{
+				if (!TryUseQueryClient(qc =>
+				{
+					captureList = qc.ListGamepads(out captured);
+					return true;
+				}))
+				{
+					generation = 0;
+					return false;
+				}
+			}
+			catch (Exception ex)
+			{
+				Diagnostics.Debug.WriteLine($"keysharp-input: gamepad list failed: {ex.Message}");
+				generation = 0;
+				return false;
+			}
+
+			gamepads = captureList;
+			generation = captured;
+			return true;
+		}
+
+		/// <summary>Reads one gamepad's buttons and axes, as taken at <paramref name="generation"/>.</summary>
+		internal static bool TryGetGamepadState(uint deviceId, ulong generation,
+			out KeysharpInputClient.GamepadState state)
+		{
+			var captured = default(KeysharpInputClient.GamepadState);
+			state = default;
+
+			try
+			{
+				if (!TryUseQueryClient(qc => qc.TryGetGamepadState(deviceId, generation, out captured)))
+					return false;
+			}
+			catch (Exception ex)
+			{
+				Diagnostics.Debug.WriteLine($"keysharp-input: gamepad state query failed: {ex.Message}");
+				return false;
+			}
+
+			state = captured;
+			return true;
+		}
+
 		internal static bool TryGetPointerPosition(
 			out int x,
 			out int y,
