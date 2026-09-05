@@ -19,7 +19,7 @@ namespace Keysharp.Builtins
 			private long _position = 0;
 			private Encoding _encoding;
 			private int _bytesPerChar;
-			public object EntangledString { get; set; }
+			internal object EntangledString { get; set; }
 
 			public StringBuffer(params object[] args) : base(args) { }
 
@@ -98,8 +98,8 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			public object UpdateEntangledStringFromBuffer() => EntangledString != null ? Refs.SetValue(EntangledString, ToString()) : null;
-			public object UpdateBufferFromEntangledString()
+			internal object UpdateEntangledStringFromBuffer() => EntangledString != null ? Refs.SetValue(EntangledString, ToString()) : null;
+			internal object UpdateBufferFromEntangledString()
 			{
 				if (EntangledString == null)
 					return null;

@@ -271,7 +271,7 @@ namespace Keysharp.Tests
 				Assert.IsTrue(filter.CallEventHandlers(ref msg));
 				Assert.IsTrue(probe.WaitFor("message"));
 
-				form.closedHandlers.InvokeEventHandlers("close");
+				_ = form.closedHandlers.InvokeSynchronousEventHandlers("close");
 				Assert.IsTrue(probe.WaitFor("gui"));
 
 				s.ClipFunctions.InvokeEventHandlers(1L);

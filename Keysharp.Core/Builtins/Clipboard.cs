@@ -379,9 +379,6 @@ namespace Keysharp.Builtins
 			public ClipboardHook(params object[] args) : base(args) { }
 
 			internal ClipboardHook() : base() { }
-
-			/// <summary>The script function this hook calls.</summary>
-			public object Callback => sub?.Callback ?? (object)DefaultObject;
 		}
 	}
 }
