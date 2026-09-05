@@ -1,12 +1,12 @@
 #if LINUX
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
-using static Keysharp.Internals.Window.Linux.X11.Xlib;
+using System.Runtime.InteropServices;
 
 namespace Keysharp.Internals.Input.Keyboard
 {
 	/// <summary>
 	/// X11 keysym <-> Windows VK tables. These are fixed layout-independent mappings
-	/// used by XQueryKeymap state queries when the active hook scan-code space is evdev.
+	/// interpreted locally against the keymap supplied by keysharp-desktop.
 	/// </summary>
 	internal static partial class KeyCodes
 	{
@@ -87,76 +87,76 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			return vk switch
 			{
-				VK_LSHIFT => XStringToKeysym("Shift_L"),
-				VK_RSHIFT => XStringToKeysym("Shift_R"),
-				VK_LCONTROL => XStringToKeysym("Control_L"),
-				VK_RCONTROL => XStringToKeysym("Control_R"),
-				VK_LMENU => XStringToKeysym("Alt_L"),
-				VK_RMENU => XStringToKeysym("Alt_R"),
-				VK_LWIN => XStringToKeysym("Super_L"),
-				VK_RWIN => XStringToKeysym("Super_R"),
-				VK_CAPITAL => XStringToKeysym("Caps_Lock"),
-				VK_NUMLOCK => XStringToKeysym("Num_Lock"),
-				VK_SCROLL => XStringToKeysym("Scroll_Lock"),
-				VK_BACK => XStringToKeysym("BackSpace"),
-				VK_DELETE => XStringToKeysym("Delete"),
-				VK_INSERT => XStringToKeysym("Insert"),
-				VK_HOME => XStringToKeysym("Home"),
-				VK_END => XStringToKeysym("End"),
-				VK_PRIOR => XStringToKeysym("Prior"),
-				VK_NEXT => XStringToKeysym("Next"),
-				VK_SNAPSHOT => XStringToKeysym("Print"),
-				VK_PAUSE => XStringToKeysym("Pause"),
-				VK_APPS => XStringToKeysym("Menu"),
-				VK_RETURN => XStringToKeysym("Return"),
-				VK_TAB => XStringToKeysym("Tab"),
-				VK_ESCAPE => XStringToKeysym("Escape"),
-				VK_SPACE => XStringToKeysym("space"),
-				VK_LEFT => XStringToKeysym("Left"),
-				VK_RIGHT => XStringToKeysym("Right"),
-				VK_UP => XStringToKeysym("Up"),
-				VK_DOWN => XStringToKeysym("Down"),
-				VK_OEM_MINUS => XStringToKeysym("minus"),
-				VK_OEM_PLUS => XStringToKeysym("equal"),
-				VK_OEM_4 => XStringToKeysym("bracketleft"),
-				VK_OEM_6 => XStringToKeysym("bracketright"),
-				VK_OEM_5 => XStringToKeysym("backslash"),
-				VK_OEM_1 => XStringToKeysym("semicolon"),
-				VK_OEM_7 => XStringToKeysym("apostrophe"),
-				VK_OEM_COMMA => XStringToKeysym("comma"),
-				VK_OEM_PERIOD => XStringToKeysym("period"),
-				VK_OEM_2 => XStringToKeysym("slash"),
-				VK_OEM_3 => XStringToKeysym("grave"),
-				_ when (vk >= VK_F1 && vk <= VK_F24) => XStringToKeysym($"F{(int)(vk - VK_F1 + 1)}"),
-				_ when (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) => XStringToKeysym($"KP_{(int)(vk - VK_NUMPAD0)}"),
-				VK_DIVIDE => XStringToKeysym("KP_Divide"),
-				VK_MULTIPLY => XStringToKeysym("KP_Multiply"),
-				VK_SUBTRACT => XStringToKeysym("KP_Subtract"),
-				VK_ADD => XStringToKeysym("KP_Add"),
-				VK_DECIMAL => XStringToKeysym("KP_Decimal"),
-				VK_SEPARATOR => XStringToKeysym("KP_Separator"),
-				VK_CLEAR => XStringToKeysym("Clear"),
-				VK_CANCEL => XStringToKeysym("Cancel"),
-				VK_HELP => XStringToKeysym("Help"),
-				VK_SLEEP => XStringToKeysym("XF86Sleep"),
-				VK_VOLUME_MUTE => XStringToKeysym("XF86AudioMute"),
-				VK_VOLUME_DOWN => XStringToKeysym("XF86AudioLowerVolume"),
-				VK_VOLUME_UP => XStringToKeysym("XF86AudioRaiseVolume"),
-				VK_MEDIA_PLAY_PAUSE => XStringToKeysym("XF86AudioPlay"),
-				VK_MEDIA_STOP => XStringToKeysym("XF86AudioStop"),
-				VK_MEDIA_PREV_TRACK => XStringToKeysym("XF86AudioPrev"),
-				VK_MEDIA_NEXT_TRACK => XStringToKeysym("XF86AudioNext"),
-				VK_BROWSER_BACK => XStringToKeysym("XF86Back"),
-				VK_BROWSER_FORWARD => XStringToKeysym("XF86Forward"),
-				VK_BROWSER_STOP => XStringToKeysym("XF86Stop"),
-				VK_BROWSER_REFRESH => XStringToKeysym("XF86Refresh"),
-				VK_BROWSER_SEARCH => XStringToKeysym("XF86Search"),
-				VK_BROWSER_FAVORITES => XStringToKeysym("XF86Favorites"),
-				VK_BROWSER_HOME => XStringToKeysym("XF86HomePage"),
-				VK_LAUNCH_MAIL => XStringToKeysym("XF86Mail"),
-				VK_LAUNCH_MEDIA_SELECT => XStringToKeysym("XF86AudioMedia"),
-				VK_LAUNCH_APP1 => XStringToKeysym("XF86Launch1"),
-				VK_LAUNCH_APP2 => XStringToKeysym("XF86Launch2"),
+				VK_LSHIFT => KeysymFromName("Shift_L"),
+				VK_RSHIFT => KeysymFromName("Shift_R"),
+				VK_LCONTROL => KeysymFromName("Control_L"),
+				VK_RCONTROL => KeysymFromName("Control_R"),
+				VK_LMENU => KeysymFromName("Alt_L"),
+				VK_RMENU => KeysymFromName("Alt_R"),
+				VK_LWIN => KeysymFromName("Super_L"),
+				VK_RWIN => KeysymFromName("Super_R"),
+				VK_CAPITAL => KeysymFromName("Caps_Lock"),
+				VK_NUMLOCK => KeysymFromName("Num_Lock"),
+				VK_SCROLL => KeysymFromName("Scroll_Lock"),
+				VK_BACK => KeysymFromName("BackSpace"),
+				VK_DELETE => KeysymFromName("Delete"),
+				VK_INSERT => KeysymFromName("Insert"),
+				VK_HOME => KeysymFromName("Home"),
+				VK_END => KeysymFromName("End"),
+				VK_PRIOR => KeysymFromName("Prior"),
+				VK_NEXT => KeysymFromName("Next"),
+				VK_SNAPSHOT => KeysymFromName("Print"),
+				VK_PAUSE => KeysymFromName("Pause"),
+				VK_APPS => KeysymFromName("Menu"),
+				VK_RETURN => KeysymFromName("Return"),
+				VK_TAB => KeysymFromName("Tab"),
+				VK_ESCAPE => KeysymFromName("Escape"),
+				VK_SPACE => KeysymFromName("space"),
+				VK_LEFT => KeysymFromName("Left"),
+				VK_RIGHT => KeysymFromName("Right"),
+				VK_UP => KeysymFromName("Up"),
+				VK_DOWN => KeysymFromName("Down"),
+				VK_OEM_MINUS => KeysymFromName("minus"),
+				VK_OEM_PLUS => KeysymFromName("equal"),
+				VK_OEM_4 => KeysymFromName("bracketleft"),
+				VK_OEM_6 => KeysymFromName("bracketright"),
+				VK_OEM_5 => KeysymFromName("backslash"),
+				VK_OEM_1 => KeysymFromName("semicolon"),
+				VK_OEM_7 => KeysymFromName("apostrophe"),
+				VK_OEM_COMMA => KeysymFromName("comma"),
+				VK_OEM_PERIOD => KeysymFromName("period"),
+				VK_OEM_2 => KeysymFromName("slash"),
+				VK_OEM_3 => KeysymFromName("grave"),
+				_ when (vk >= VK_F1 && vk <= VK_F24) => KeysymFromName($"F{(int)(vk - VK_F1 + 1)}"),
+				_ when (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) => KeysymFromName($"KP_{(int)(vk - VK_NUMPAD0)}"),
+				VK_DIVIDE => KeysymFromName("KP_Divide"),
+				VK_MULTIPLY => KeysymFromName("KP_Multiply"),
+				VK_SUBTRACT => KeysymFromName("KP_Subtract"),
+				VK_ADD => KeysymFromName("KP_Add"),
+				VK_DECIMAL => KeysymFromName("KP_Decimal"),
+				VK_SEPARATOR => KeysymFromName("KP_Separator"),
+				VK_CLEAR => KeysymFromName("Clear"),
+				VK_CANCEL => KeysymFromName("Cancel"),
+				VK_HELP => KeysymFromName("Help"),
+				VK_SLEEP => KeysymFromName("XF86Sleep"),
+				VK_VOLUME_MUTE => KeysymFromName("XF86AudioMute"),
+				VK_VOLUME_DOWN => KeysymFromName("XF86AudioLowerVolume"),
+				VK_VOLUME_UP => KeysymFromName("XF86AudioRaiseVolume"),
+				VK_MEDIA_PLAY_PAUSE => KeysymFromName("XF86AudioPlay"),
+				VK_MEDIA_STOP => KeysymFromName("XF86AudioStop"),
+				VK_MEDIA_PREV_TRACK => KeysymFromName("XF86AudioPrev"),
+				VK_MEDIA_NEXT_TRACK => KeysymFromName("XF86AudioNext"),
+				VK_BROWSER_BACK => KeysymFromName("XF86Back"),
+				VK_BROWSER_FORWARD => KeysymFromName("XF86Forward"),
+				VK_BROWSER_STOP => KeysymFromName("XF86Stop"),
+				VK_BROWSER_REFRESH => KeysymFromName("XF86Refresh"),
+				VK_BROWSER_SEARCH => KeysymFromName("XF86Search"),
+				VK_BROWSER_FAVORITES => KeysymFromName("XF86Favorites"),
+				VK_BROWSER_HOME => KeysymFromName("XF86HomePage"),
+				VK_LAUNCH_MAIL => KeysymFromName("XF86Mail"),
+				VK_LAUNCH_MEDIA_SELECT => KeysymFromName("XF86AudioMedia"),
+				VK_LAUNCH_APP1 => KeysymFromName("XF86Launch1"),
+				VK_LAUNCH_APP2 => KeysymFromName("XF86Launch2"),
 				_ => 0
 			};
 		}
@@ -249,6 +249,9 @@ namespace Keysharp.Internals.Input.Keyboard
 			};
 		}
 
+		[DllImport("libxkbcommon.so.0", EntryPoint = "xkb_keysym_from_name")]
+		private static extern uint KeysymFromName([MarshalAs(UnmanagedType.LPUTF8Str)] string name, uint flags = 0);
+
 		internal static bool ResolveVkToXKeycode(uint vk, out uint xcode, bool returnSecondary = false)
 		{
 			xcode = 0;
@@ -256,16 +259,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (!Platform.Desktop.IsX11Available || vk == 0)
 				return false;
 
-			if (TryMapVkToXKeycode(vk, out xcode, returnSecondary))
-				return true;
-
-			var keysym = VkToKeysym(vk);
-
-			if (keysym == 0)
-				return false;
-
-			xcode = (uint)Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default.XKeysymToKeycode((nint)keysym);
-			return xcode != 0;
+			return TryMapVkToXKeycode(vk, out xcode, returnSecondary);
 		}
 	}
 }

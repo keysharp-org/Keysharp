@@ -1,6 +1,6 @@
 namespace Keysharp.Internals
 {
-	/// <summary>Maintains a preferred subscription, an optional fallback, and a bounded reattach policy.</summary>
+	/// <summary>Keeps a subscription available through fallback and bounded-backoff retries.</summary>
 	internal sealed class RecoveringSubscription : IDisposable
 	{
 		private const int MaximumAttempts = 3;
@@ -10,11 +10,12 @@ namespace Keysharp.Internals
 		private readonly Func<bool> preferredAvailable;
 		private readonly Action<bool> stateChanged;
 		private readonly bool keepFallbackWarm;
+		private readonly int retryIntervalMs;
 		private readonly System.Threading.Timer timer;
 		private IDisposable preferred, fallback, availability;
-		private int generation, activeGeneration, failedGeneration, failures, attaching;
-		private long epoch;
-		private bool disposed;
+		private object attempt;
+		private int failures;
+		private bool creatingFallback, disposed;
 
 		internal RecoveringSubscription(Func<Action<Exception>, IDisposable> subscribePreferred,
 			Func<IDisposable> subscribeFallback, Func<bool> preferredAvailable,
@@ -26,20 +27,17 @@ namespace Keysharp.Internals
 			this.preferredAvailable = preferredAvailable;
 			this.stateChanged = stateChanged;
 			this.keepFallbackWarm = keepFallbackWarm;
+			this.retryIntervalMs = Math.Max(1, retryIntervalMs);
 			timer = new System.Threading.Timer(_ => TryAttachPreferred(), null, Timeout.Infinite, Timeout.Infinite);
-			RetryIntervalMs = Math.Max(1, retryIntervalMs);
-			availability = subscribeAvailability?.Invoke(AvailabilityChanged);
+			availability = subscribeAvailability?.Invoke(() => PreferredFailed(null));
 		}
 
-		private int RetryIntervalMs { get; }
 		internal bool IsPreferred { get { lock (sync) return preferred != null; } }
 
 		internal static RecoveringSubscription Create(Func<Action<Exception>, IDisposable> preferred,
-			Func<IDisposable> fallback, Func<bool> available, Func<Action, IDisposable> availability,
-			Action<bool> changed = null, bool keepFallbackWarm = false, int retryIntervalMs = 1000)
+			Func<IDisposable> fallback, Func<bool> available, Func<Action, IDisposable> availability)
 		{
-			var subscription = new RecoveringSubscription(preferred, fallback, available, availability,
-				changed, keepFallbackWarm, retryIntervalMs);
+			var subscription = new RecoveringSubscription(preferred, fallback, available, availability);
 			subscription.Start();
 			return subscription;
 		}
@@ -55,120 +53,109 @@ namespace Keysharp.Internals
 
 		internal bool TryAttachPreferred()
 		{
-			if (Interlocked.Exchange(ref attaching, 1) != 0)
-				return false;
+			object candidate;
+			lock (sync)
+			{
+				if (disposed || attempt != null)
+					return preferred != null;
 
-			var retryStale = false;
+				attempt = candidate = new object();
+			}
+
+			IDisposable subscription = null, retireFallback = null;
 			try
 			{
-				lock (sync)
-					if (disposed || preferred != null)
-						return preferred != null;
+				if (preferredAvailable?.Invoke() != false)
+					subscription = subscribePreferred?.Invoke(_ => PreferredFailed(candidate));
+			}
+			catch { }
 
-				bool available;
-				try { available = preferredAvailable?.Invoke() != false; }
-				catch { available = false; }
-
-				if (!available)
+			lock (sync)
+			{
+				// One identity covers setup and the live stream. Failure or an owner change clears it,
+				// so a result arriving after either cannot revive the retired subscription.
+				if (!disposed && ReferenceEquals(attempt, candidate))
 				{
-					if (availability == null)
-						FailedAttempt();
-					return false;
-				}
-
-				var candidate = Interlocked.Increment(ref generation);
-				long candidateEpoch;
-				lock (sync) candidateEpoch = epoch;
-				IDisposable subscription;
-				try { subscription = subscribePreferred?.Invoke(error => PreferredFailed(candidate)); }
-				catch { subscription = null; }
-
-				if (subscription == null || Volatile.Read(ref failedGeneration) == candidate)
-				{
-					subscription?.Dispose();
-					FailedAttempt();
-					return false;
-				}
-
-				IDisposable retireFallback = null;
-				lock (sync)
-				{
-					if (disposed || preferred != null || epoch != candidateEpoch)
-					{
-						subscription.Dispose();
-						retryStale = !disposed && preferred == null;
-						return preferred != null;
-					}
-
 					preferred = subscription;
-					activeGeneration = candidate;
-					failures = 0;
-					timer.Change(Timeout.Infinite, Timeout.Infinite);
-					if (!keepFallbackWarm) { retireFallback = fallback; fallback = null; }
+					subscription = null;
+
+					if (preferred == null)
+					{
+						attempt = null;
+						ScheduleRetryLocked();
+					}
+					else
+					{
+						failures = 0;
+						timer.Change(Timeout.Infinite, Timeout.Infinite);
+						if (!keepFallbackWarm) { retireFallback = fallback; fallback = null; }
+					}
 				}
+			}
 
-				retireFallback?.Dispose();
+			subscription?.Dispose();
+			retireFallback?.Dispose();
+			var attached = IsPreferred;
+			if (attached)
 				stateChanged?.Invoke(true);
-				return true;
-			}
-			finally
-			{
-				Volatile.Write(ref attaching, 0);
-				if (retryStale) ThreadPool.QueueUserWorkItem(_ => TryAttachPreferred());
-			}
+			return attached;
 		}
 
-		private void PreferredFailed(int failed)
+		private void PreferredFailed(object failed)
 		{
-			Volatile.Write(ref failedGeneration, failed);
 			IDisposable retire;
 			lock (sync)
 			{
-				if (disposed || failed != activeGeneration)
+				if (disposed || (failed != null && !ReferenceEquals(attempt, failed)))
 					return;
+
 				retire = preferred;
 				preferred = null;
-				activeGeneration = 0;
+				attempt = null;
+				if (failed == null)
+					failures = 0;
+				else
+					ScheduleRetryLocked();
 			}
 
 			retire?.Dispose();
+			stateChanged?.Invoke(false);
 			EnsureFallback();
-			stateChanged?.Invoke(false);
-			FailedAttempt();
+			if (failed == null)
+				TryAttachPreferred();
 		}
 
-		private void AvailabilityChanged()
+		private void ScheduleRetryLocked()
 		{
-			IDisposable retire;
-			lock (sync)
-			{
-				if (disposed) return;
-				epoch++;
-				failures = 0;
-				retire = preferred;
-				preferred = null;
-				activeGeneration = 0;
-			}
-			retire?.Dispose();
-			stateChanged?.Invoke(false);
-			if (!TryAttachPreferred()) EnsureFallback();
-		}
+			failures = Math.Min(MaximumAttempts, failures + 1);
 
-		private void FailedAttempt()
-		{
-			lock (sync)
-			{
-				failures = Math.Min(MaximumAttempts, failures + 1);
-				if (!disposed && preferred == null && failures < MaximumAttempts)
-					timer.Change(RetryIntervalMs * (1 << Math.Min(failures, 2)), Timeout.Infinite);
-			}
+			if (failures < MaximumAttempts)
+				timer.Change((int)Math.Min(int.MaxValue, (long)retryIntervalMs << failures), Timeout.Infinite);
 		}
 
 		private void EnsureFallback()
 		{
 			lock (sync)
-				if (!disposed && preferred == null && fallback == null)
-					try { fallback = subscribeFallback?.Invoke(); } catch { }
+			{
+				if (disposed || fallback != null || creatingFallback || (!keepFallbackWarm && preferred != null))
+					return;
+				creatingFallback = true;
+			}
+
+			IDisposable candidate;
+			try { candidate = subscribeFallback?.Invoke(); }
+			catch { candidate = null; }
+
+			lock (sync)
+			{
+				creatingFallback = false;
+				if (!disposed && (keepFallbackWarm || preferred == null))
+				{
+					fallback = candidate;
+					candidate = null;
+				}
+			}
+			candidate?.Dispose();
 		}
 
 		public void Dispose()
@@ -177,7 +164,8 @@ namespace Keysharp.Internals
 			lock (sync)
 			{
 				if (disposed) return;
-				disposed = true; epoch++;
+				disposed = true;
+				attempt = null;
 				p = preferred; f = fallback; a = availability;
 				preferred = fallback = availability = null;
 			}

@@ -165,9 +165,6 @@ namespace Keysharp.Internals.Events
 			try
 			{
 				backend = CreateBackend();
-
-				if (backend == null)
-					backendInitFailed = true;
 			}
 			catch (Exception ex)
 			{

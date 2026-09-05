@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Functions and their globals are sourced from the installer for isolated fixtures.
+# shellcheck disable=SC2034,SC2154,SC2317
 set -euo pipefail
 
 REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -35,7 +37,7 @@ done
 
 # Every download must be verified, so the only curl that writes an artifact is
 # the one download_verified performs.
-downloads="$(grep -c 'curl -fsSL --proto' "${SETUP}")"
+downloads="$(grep -c 'curl -fsSL --connect-timeout' "${SETUP}")"
 [[ "${downloads}" -eq 2 ]] \
   || fail "expected exactly the asset and SHA256SUMS downloads, found ${downloads}"
 
@@ -106,5 +108,77 @@ detect_channel
 # A pinned version must not reach the network.
 [[ "$(resolve_version keysharp-org/Keysharp 0.0.0.17)" == "0.0.0.17" ]] \
   || fail "a pinned version was not returned verbatim"
+
+arch_tag=linux-x64
+deb_arch=amd64
+[[ "$(release_asset keysharp deb 0.0.0.17)" == keysharp_0.0.0.17_amd64.deb ]] \
+  || fail "Keysharp Debian asset does not match release.yml"
+[[ "$(release_asset keysharp-input deb 0.2.0)" == keysharp-input_0.2.0_amd64.deb ]] \
+  || fail "input Debian asset name is incorrect"
+[[ "$(release_asset keysharp-desktop tar 0.2.0)" == keysharp-desktop-0.2.0-linux-x64.tar.gz ]] \
+  || fail "desktop archive asset name is incorrect"
+# shellcheck disable=SC2016 # Match the workflow's literal variable expressions.
+grep -Fq 'for deb in dist/keysharp_${VERSION}_*.deb' \
+  "${REPOSITORY_ROOT}/.github/workflows/release.yml" \
+  || fail "Keysharp release asset convention changed; update the setup contract"
+
+component_health=ready
+component_compatible=true
+upgrade_components=false
+if component_needs_install false; then fail "healthy compatible component should be reused"; fi
+component_needs_install true || fail "an explicit component version must be honored"
+upgrade_components=true
+component_needs_install false || fail "component upgrades must not be skipped"
+upgrade_components=false
+component_health=inactive-socket
+component_needs_install false || fail "ABI compatibility must not hide a broken service"
+
+# The installed path is independent of the caller's PATH. All system interaction
+# is stubbed: this fixture neither connects to a broker nor changes a service.
+fixture="${temporary}/component"
+mkdir -p "${fixture}/bin"
+cat > "${fixture}/bin/keysharp-input" <<'EOF'
+#!/bin/sh
+printf '%s\n' product_version=0.2.0 client_abi_major=0 client_abi_minor=1
+EOF
+chmod 0755 "${fixture}/bin/keysharp-input"
+(
+  is_protected_path() { return 0; }
+  component_candidates() { printf '%s\n' "${fixture}/bin/keysharp-input"; }
+  systemctl() {
+    case "$1" in
+      show) echo loaded ;;
+      is-active) return 0 ;;
+      is-failed) return 1 ;;
+    esac
+  }
+  inspect_component keysharp-input 0 1
+  [[ "$component_path" == "${fixture}/bin/keysharp-input" && "$component_health" == ready ]] \
+    || fail "an explicit installed path outside PATH was not discovered"
+  inspect_component keysharp-input 0 2
+  [[ "$component_compatible" == false && "$component_health" == incompatible-abi ]] \
+    || fail "a client below the minimum ABI minor was accepted"
+  component_info=$'client_abi_minor=1\nclient_abi_minor=99'
+  [[ -z "$(info_field client_abi_minor)" ]] || fail "duplicate ABI fields were accepted"
+)
+[[ "$(component_candidates keysharp-input)" == *'/usr/local/bin/keysharp-input'* ]] \
+  || fail "portable component discovery is missing"
+
+abi_compatible 0 8 0 8 || fail "matching ABI was rejected"
+abi_compatible 0 9 0 8 || fail "newer additive ABI was rejected"
+if abi_compatible 0 7 0 8 || abi_compatible 1 8 0 8; then
+  fail "incompatible downloaded ABI was accepted"
+fi
+(
+  dpkg-deb() { echo 'other-package, keysharp-desktop-client-abi-0 (= 0.8)'; }
+  verify_deb_abi fixture.deb keysharp-desktop 0 8 || fail "versioned Debian ABI was rejected"
+  dpkg-deb() { echo 'keysharp-desktop-client-abi-0'; }
+  if verify_deb_abi fixture.deb keysharp-desktop 0 8 2>/dev/null; then
+    fail "unversioned Debian ABI cannot promise the required minor"
+  fi
+  if verify_archive_abi "$fixture" keysharp-input 0 2 2>/dev/null; then
+    fail "archive with an older ABI was accepted"
+  fi
+)
 
 echo "Keysharp setup resolution checks passed."

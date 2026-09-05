@@ -174,7 +174,7 @@ namespace Keysharp.Internals
 			// Screen-relative, like GetClientBounds below: own *windows* are resolved by the platform backend
 			// before they reach here, so this branch is an own child control, whose Eto bounds are parent-relative.
 			if (TryOwnControl(h, out var control))
-				return control.GetScreenBounds();
+				return control.GetScreenBounds(true);
 #endif
 			return NotYet<Rectangle>();
 		}
@@ -182,7 +182,7 @@ namespace Keysharp.Internals
 		{
 #if !WINDOWS
 			if (TryOwnControl(h, out var control))
-				return control.GetClientScreenRect();
+				return control.GetClientScreenRect(true);
 #endif
 			return NotYet<Rectangle>();
 		}

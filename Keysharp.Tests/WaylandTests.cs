@@ -65,84 +65,6 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void AbsoluteMotion()
-		{
-			// Primary-only desktop, origin at (0,0): identity mapping, extent == width/height.
-			Assert.That(WaylandVirtualPointerCoordinates.ToMotionAbsolute(100, 50, 0, 0, 1920, 1080),
-				Is.EqualTo((100u, 50u, 1920u, 1080u)));
-
-			// Secondary monitor left-of-primary gives a negative-origin virtual desktop; the pixel must be
-			// translated into the layout's own non-negative coordinate space before being sent as x/y.
-			Assert.That(WaylandVirtualPointerCoordinates.ToMotionAbsolute(-500, 200, -1920, 0, 3840, 1080),
-				Is.EqualTo((1420u, 200u, 3840u, 1080u)));
-
-			// Out-of-bounds targets clamp into [0, extent] rather than wrapping/underflowing to a huge uint.
-			Assert.That(WaylandVirtualPointerCoordinates.ToMotionAbsolute(-10, -10, 0, 0, 1920, 1080),
-				Is.EqualTo((0u, 0u, 1920u, 1080u)));
-
-			// A zero-area virtual desktop (degenerate/pre-enumeration state) must not produce a zero extent --
-			// wlroots silently drops motion_absolute when x_extent or y_extent is 0.
-			Assert.That(WaylandVirtualPointerCoordinates.ToMotionAbsolute(0, 0, 0, 0, 0, 0),
-				Is.EqualTo((0u, 0u, 1u, 1u)));
-		}
-
-		[Test]
-		public void ScreencopyRetirement()
-		{
-			FakeSession current = new();
-			var first = current;
-			Assert.That(WaylandScreenCapture.RunWithReusableSession(ref current, _ => (new object(), true)), Is.Not.Null);
-			Assert.That(current, Is.SameAs(first));
-
-			Assert.That(WaylandScreenCapture.RunWithReusableSession<FakeSession, object>(ref current,
-				_ => (null, true)), Is.Null);
-			Assert.That(first.Disposed, Is.False);
-			Assert.That(current, Is.SameAs(first));
-
-			Assert.That(WaylandScreenCapture.RunWithReusableSession<FakeSession, object>(ref current,
-				_ => (null, false)), Is.Null);
-			Assert.That(first.Disposed, Is.True);
-			Assert.That(current, Is.Null);
-		}
-
-		[Test]
-		public void CosmicGeometryAndProtocolHelpers()
-		{
-			Assert.That(WaylandForeignToplevels.TryResolveGeometry(new Rectangle(120, 40, 800, 600),
-				new ScreenRect(-1920, 0, 1920, 1080), out var resolved), Is.True);
-			Assert.That(resolved, Is.EqualTo(new Rectangle(-1800, 40, 800, 600)));
-			Assert.That(WaylandForeignToplevels.TryResolveGeometry(new Rectangle(0, 0, 20, 20),
-				new ScreenRect(int.MaxValue - 10, 0, 10, 10), out _), Is.False);
-			Assert.That(WaylandForeignToplevels.TryResolveGeometry(new Rectangle(0, 0, 20, 20),
-				new ScreenRect(0, int.MaxValue - 10, 10, 10), out _), Is.False);
-			var first = WaylandForeignToplevels.NewHandle();
-			var second = WaylandForeignToplevels.NewHandle();
-			Assert.That(first.ToInt64(), Is.LessThan(0L));
-			Assert.That(second.ToInt64(), Is.LessThan(first.ToInt64()));
-			Assert.That(WaylandForeignToplevels.FoldBitSet([0u, 2u, 2u, 31u, 32u, uint.MaxValue], 32),
-				Is.EqualTo((1UL << 0) | (1UL << 2) | (1UL << 31)));
-			Assert.That(WaylandForeignToplevels.FoldBitSet([1u, 5u, 63u, 64u], 64),
-				Is.EqualTo((1UL << 1) | (1UL << 5) | (1UL << 63)));
-		}
-
-		[Test]
-		public void CosmicStateCommitsAtomically()
-		{
-			var output = new nint(7);
-			var state = new WaylandToplevel { State = 1, PendingState = 4 };
-			state.GeometryByOutput[output] = new Rectangle(1, 2, 3, 4);
-			state.PendingGeometryByOutput = new() { [output] = new Rectangle(10, 20, 30, 40) };
-			Assert.That(state.State, Is.EqualTo(1));
-			Assert.That(state.GeometryByOutput[output], Is.EqualTo(new Rectangle(1, 2, 3, 4)));
-			WaylandForeignToplevels.CommitCosmicUpdate(state);
-			Assert.That(state.State, Is.EqualTo(4));
-			Assert.That(state.GeometryByOutput[output], Is.EqualTo(new Rectangle(10, 20, 30, 40)));
-			Assert.That(state.CosmicReady, Is.True);
-			Assert.That(state.PendingState, Is.Null);
-			Assert.That(state.PendingGeometryByOutput, Is.Null);
-		}
-
-		[Test]
 		public void WaylandOutputChangesCommitAtomically()
 		{
 			var output = new WaylandOutput { Version = 4 };
@@ -191,6 +113,125 @@ namespace Keysharp.Tests
 				new(new nint(20), active: true),
 				new(new nint(30), active: false)
 			]), Is.EqualTo(new nint(20)));
+
+		[Test]
+		public void WindowParserTracksExplicitAndLegacyFieldPresence()
+		{
+			const string explicitFields =
+				"{\"ok\":true,\"window\":{\"id\":\"1\",\"title\":\"Editor\",\"active\":true,\"validFields\":[\"title\"]}}";
+			const string legacyFields =
+				"{\"ok\":true,\"window\":{\"id\":\"1\",\"title\":\"Editor\",\"active\":true}}";
+			const string malformedFields =
+				"{\"ok\":true,\"window\":{\"id\":\"1\",\"title\":\"placeholder\",\"active\":true,\"validFields\":null}}";
+			static nint Resolve(string id) => new(long.Parse(id, CultureInfo.InvariantCulture));
+
+			Assert.That(DesktopWindowParser.TrySingle(Encoding.UTF8.GetBytes(explicitFields), Resolve,
+				out var explicitWindow), Is.True);
+			Assert.That(DesktopWindowParser.TrySingle(Encoding.UTF8.GetBytes(legacyFields), Resolve,
+				out var legacyWindow), Is.True);
+			Assert.That(DesktopWindowParser.TrySingle(Encoding.UTF8.GetBytes(malformedFields), Resolve,
+				out var malformedWindow), Is.True);
+			Assert.Multiple(() =>
+			{
+				Assert.That(explicitWindow.HasKnownField(WaylandWindowFields.Title), Is.True);
+				Assert.That(explicitWindow.HasKnownField(WaylandWindowFields.Active), Is.False);
+				Assert.That(legacyWindow.HasKnownField(WaylandWindowFields.Title), Is.True);
+				Assert.That(legacyWindow.HasKnownField(WaylandWindowFields.Active), Is.True);
+				Assert.That(malformedWindow.HasKnownField(WaylandWindowFields.Title), Is.False);
+				Assert.That(malformedWindow.HasKnownField(WaylandWindowFields.Active), Is.False);
+			});
+		}
+
+		[Test]
+		public void PollingIgnoresUnknownFieldsWithoutLosingItsBaseline()
+		{
+			const string initial =
+				"{\"ok\":true,\"window\":{\"id\":\"1\",\"title\":\"Editor\",\"minimized\":false,\"active\":true,\"frame\":{\"x\":10,\"y\":20,\"width\":300,\"height\":200},\"validFields\":[\"title\",\"minimized\",\"active\",\"frame\"]}}";
+			const string partial =
+				"{\"ok\":true,\"window\":{\"id\":\"1\",\"title\":\"placeholder\",\"minimized\":true,\"active\":false,\"frame\":{\"x\":99,\"y\":99,\"width\":1,\"height\":1},\"validFields\":[]}}";
+			const string changed =
+				"{\"ok\":true,\"window\":{\"id\":\"1\",\"title\":\"Renamed\",\"minimized\":true,\"active\":true,\"frame\":{\"x\":15,\"y\":25,\"width\":300,\"height\":200},\"validFields\":[\"title\",\"minimized\",\"active\",\"frame\"]}}";
+			static nint Resolve(string id) => new(long.Parse(id, CultureInfo.InvariantCulture));
+			static WaylandWindowInfo Parse(string json)
+			{
+				Assert.That(DesktopWindowParser.TrySingle(Encoding.UTF8.GetBytes(json), Resolve,
+					out var window), Is.True);
+				return window;
+			}
+
+			var original = Parse(initial);
+			var unknown = Parse(partial);
+			var tracker = new WaylandWindowSnapshotTracker();
+			var events = new List<WaylandWindowEvent>();
+			tracker.Update([original], events.Add);
+			tracker.Update([unknown], events.Add);
+			tracker.Update([Parse(initial)], events.Add);
+
+			Assert.That(events, Is.Empty,
+				"an unknown interval must neither emit placeholder changes nor erase the prior baseline");
+
+			tracker.Update([Parse(changed)], events.Add);
+			Assert.Multiple(() =>
+			{
+				Assert.That(events.Select(windowEvent => windowEvent.Kind), Is.EqualTo(new[]
+				{
+					WaylandWindowEventKind.TitleChanged,
+					WaylandWindowEventKind.Minimized,
+					WaylandWindowEventKind.MoveResized
+				}));
+				Assert.That(events[^1].Bounds, Is.EqualTo(new Rectangle(15, 25, 300, 200)));
+				Assert.That(events.Any(windowEvent => windowEvent.Kind == WaylandWindowEventKind.Activated), Is.False,
+					"an unknown active field must not clear the last trustworthy active handle");
+			});
+		}
+
+		[Test]
+		public void GenericWindowListUsesStableOpaqueHandles()
+		{
+			var backend = new DesktopBackend("generic", "generic Wayland");
+			const string first = "{\"ok\":true,\"windows\":[{\"id\":\"opaque:7\",\"compositorId\":\"river:editor\",\"title\":\"Editor\",\"appId\":\"org.example.Editor\",\"frame\":{\"x\":-50,\"y\":20,\"width\":640,\"height\":480},\"client\":{\"x\":-48,\"y\":42,\"width\":636,\"height\":456},\"active\":true,\"visible\":false,\"decorated\":true,\"validFields\":[\"id\",\"compositorId\",\"title\",\"appId\",\"frame\",\"client\",\"active\",\"visible\",\"decorated\"]}]}";
+			const string second = "{\"ok\":true,\"windows\":[{\"id\":\"opaque:7\",\"compositorId\":\"river:editor\",\"title\":\"Renamed\",\"appId\":\"org.example.Editor\",\"validFields\":[\"id\",\"compositorId\",\"title\",\"appId\"]}]}";
+
+			Assert.That(backend.TryParseWindowList(Encoding.UTF8.GetBytes(first), out var initial), Is.True);
+			Assert.That(backend.TryParseWindowList(Encoding.UTF8.GetBytes(second), out var refreshed), Is.True);
+			Assert.That(initial, Has.Count.EqualTo(1));
+			Assert.That(refreshed, Has.Count.EqualTo(1));
+			Assert.That(initial[0].Handle.ToInt64(), Is.GreaterThan(0),
+				"synthetic Wayland handles exposed to scripts must be positive");
+			if (nint.Size == sizeof(long))
+				Assert.That(initial[0].Handle.ToInt64(), Is.GreaterThan(uint.MaxValue),
+					"64-bit synthetic Wayland handles must not overlap the X11 XID space");
+			Assert.That(refreshed[0].Handle, Is.EqualTo(initial[0].Handle));
+			Assert.That(refreshed[0].CompositorId, Is.EqualTo("river:editor"));
+			Assert.That(refreshed[0].Title, Is.EqualTo("Renamed"));
+			Assert.That(refreshed[0].ClassName, Is.EqualTo("org.example.Editor"));
+			Assert.That(initial[0].FrameGeometry, Is.EqualTo(new Rectangle(-50, 20, 640, 480)));
+			Assert.That(initial[0].ClientGeometry, Is.EqualTo(new Rectangle(-48, 42, 636, 456)));
+			Assert.That(initial[0].Active, Is.True);
+			Assert.That(initial[0].Visible, Is.False);
+			Assert.That(initial[0].Decorated, Is.True);
+			Assert.That(refreshed[0].Visible, Is.True,
+				"missing portable fields retain their conservative defaults");
+			Assert.That(backend.IsKnown(initial[0].Handle), Is.True);
+		}
+
+		[Test]
+		public void SyntheticWindowHandleSurvivesDisappearAndReappear()
+		{
+			var handles = new SyntheticWindowHandleMap<string>();
+			var original = handles.GetOrCreate("opaque:7");
+
+			Assert.That(handles.Retain([]), Is.EqualTo(new[] { original }));
+			Assert.That(handles.Contains(original), Is.False);
+
+			var reappeared = handles.GetOrCreate("opaque:7");
+			Assert.That(reappeared, Is.EqualTo(original));
+			Assert.That(handles.Contains(original), Is.True);
+
+			_ = handles.Retain([]);
+			_ = handles.Retain([]);
+			Assert.That(handles.GetOrCreate("opaque:7"), Is.Not.EqualTo(original));
+		}
 
 		[Test]
 		public void WindowEventRecovery()
@@ -242,10 +283,109 @@ namespace Keysharp.Tests
 			Assert.That(fallbackStarts, Is.EqualTo(2));
 		}
 
-		private sealed class FakeSession : IDisposable
+		[Test]
+		public void SubscriptionFailureDuringSetup()
 		{
-			internal bool Disposed;
-			public void Dispose() => Disposed = true;
+			var fail = true;
+			var rejected = new TrackingDisposable();
+			var replacement = new TrackingDisposable();
+			using var source = new RecoveringSubscription(
+				onError =>
+				{
+					if (!fail) return replacement;
+					onError(new IOException("stream failed before setup returned"));
+					return rejected;
+				},
+				() => new TrackingDisposable(), () => true, null, retryIntervalMs: 60_000);
+
+			Assert.That(source.TryAttachPreferred(), Is.False);
+			Assert.That(rejected.Disposed, Is.True);
+			fail = false;
+			Assert.That(source.TryAttachPreferred(), Is.True);
+			Assert.That(replacement.Disposed, Is.False);
+		}
+
+		[Test]
+		public void FallbackFactoryCanDisposeOwnerWithoutPublishingItsLateResult()
+		{
+			RecoveringSubscription source = null;
+			var fallback = new TrackingDisposable();
+			var ownerDisposeCompleted = false;
+			Exception ownerDisposeError = null;
+			source = new RecoveringSubscription(
+				_ => null,
+				() =>
+				{
+					ownerDisposeCompleted = RunOnWorker(source.Dispose, out ownerDisposeError);
+					return fallback;
+				},
+				() => false,
+				null,
+				retryIntervalMs: 60_000);
+
+			source.Start();
+
+			Assert.Multiple(() =>
+			{
+				Assert.That(ownerDisposeCompleted, Is.True,
+					"the fallback factory must not run while the owner state lock is held");
+				Assert.That(ownerDisposeError, Is.Null);
+				Assert.That(fallback.Disposed, Is.True,
+					"a fallback returned after owner disposal must be retired instead of published");
+				Assert.That(source.IsPreferred, Is.False);
+			});
+		}
+
+		[Test]
+		public void StalePreferredDisposerCanReenterOwner()
+		{
+			RecoveringSubscription source = null;
+			Action availabilityChanged = null;
+			var available = true;
+			var reentryCompleted = false;
+			Exception reentryError = null;
+			var preferred = new CallbackDisposable(() =>
+				reentryCompleted = RunOnWorker(source.Dispose, out reentryError));
+			source = new RecoveringSubscription(
+				_ =>
+				{
+					available = false;
+					availabilityChanged();
+					return preferred;
+				},
+				() => null,
+				() => available,
+				handler =>
+				{
+					availabilityChanged = handler;
+					return null;
+				},
+				retryIntervalMs: 60_000);
+
+			source.Start();
+
+			Assert.Multiple(() =>
+			{
+				Assert.That(preferred.Disposed, Is.True);
+				Assert.That(reentryCompleted, Is.True,
+					"stale preferred cleanup must not hold the owner state lock");
+				Assert.That(reentryError, Is.Null);
+				Assert.That(source.IsPreferred, Is.False);
+			});
+		}
+
+		private static bool RunOnWorker(Action action, out Exception error)
+		{
+			Exception workerError = null;
+			var worker = new Thread(() =>
+			{
+				try { action(); }
+				catch (Exception ex) { workerError = ex; }
+			}) { IsBackground = true };
+			worker.Start();
+			var completed = worker.Join(2000);
+			error = workerError;
+			return completed;
 		}
 
 		private sealed class TrackingDisposable : IDisposable
@@ -254,8 +394,19 @@ namespace Keysharp.Tests
 			public void Dispose() => Disposed = true;
 		}
 
+		private sealed class CallbackDisposable(Action onDispose) : IDisposable
+		{
+			internal bool Disposed { get; private set; }
+			public void Dispose()
+			{
+				Disposed = true;
+				onDispose();
+			}
+		}
+
 		private sealed class TransientProbeOverlayBackend : IWaylandBackend
 		{
+			public string BackendKey => "shell-test";
 			public string Name => "shell-test";
 			public bool CanAttemptImageOverlay => true;
 

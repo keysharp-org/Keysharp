@@ -127,7 +127,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal Action<OverlayPointerKind, double, double> PointerSink;
 
 		internal void DeliverPointer(OverlayPointerKind kind, double sx, double sy)
-			=> PointerSink?.Invoke(kind, sx, sy);
+		{
+			try { PointerSink?.Invoke(kind, sx, sy); }
+			catch (Exception exception)
+			{
+				Diagnostics.Debug.WriteLine($"Wayland overlay pointer sink failed: {exception.Message}");
+			}
+		}
 
 		internal WaylandImageOverlay(WaylandLayerShellClient client)
 		{

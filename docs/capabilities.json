@@ -87,8 +87,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp-only descriptor for assembly metadata, Icon, GuiTheme, ConsoleApp, HookMutexName and Files; multiple blocks merge independently by key in source order, later keys win, and Files: [] clears the list. Asset paths are main-script-relative logical paths and artifact builds embed Files.",
-                     "tested-by":  "directive-asminfo.ahk; directive-misc.ahk; file-fileinstall.ahk; DirectiveTests.AppErrors; DirectiveTests.AppData; FileAndDirTests.FileInstallResources"
+                     "notes":  "Keysharp-only descriptor for assembly metadata, Icon, GuiTheme, ConsoleApp, HookMutexName, Linux DesktopEntry and Files; multiple blocks merge independently by key in source order, later keys win, and Files: [] clears the list. DesktopEntry selects the Linux desktop file, Wayland app_id and Taskbar target unless DESKTOP_ENTRY overrides it. Asset paths are main-script-relative logical paths and artifact builds embed Files.",
+                     "tested-by":  "directive-asminfo.ahk; directive-misc.ahk; file-fileinstall.ahk; DirectiveTests.AppErrors; DirectiveTests.AppData; IconInternals.LinuxDesktopEntryControlsWindowAndTaskbarIdentity; FileAndDirTests.FileInstallResources"
                   },
                   {
                      "category":  "Environment/System",
@@ -2848,7 +2848,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Built-in variable."
+                     "notes":  "Milliseconds since the last input. Linux uses keysharp-input’s compositor-independent device activity counter."
                  },
                  {
                      "category":  "Environment/System",
@@ -5644,7 +5644,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process window/control interaction. COSMIC supplies native listing, active state, geometry, and window events. Coordinate hit-testing is limited to the active window because the protocol exposes neither workspace membership nor stacking order; window actions and general move/resize are not supported. macOS currently relies on Accessibility APIs with permission requirements.",
+                     "notes":  "On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process control interaction. COSMIC supplies native listing, active state, geometry, polling-based events, focus, close, minimize, maximize and restore. wlroots compositors can supply listing, active/state facts and the same actions except geometry. Coordinate hit-testing remains limited without stacking order, and general move/resize is unavailable. macOS currently relies on Accessibility APIs with permission requirements.",
                      "tested-by":  "WaylandTests.cs"
                  },
                  {
@@ -5730,7 +5730,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns logical, physical, and toggle state. Polling an arbitrary key or mouse button requires InputMonitoring. Modifier state and CapsLock/NumLock/ScrollLock toggle state are ungated; polling whether a lock key is physically down still requires InputMonitoring. Linux uses keysharp-input without installing a hook and fails closed for arbitrary state if its authority is unavailable or revokes access; X11 fallback is limited to the ungated modifier and lock-toggle snapshots. macOS uses combined-session and HID-system state APIs.",
+                     "notes":  "Returns logical, physical, and toggle state. Polling an arbitrary key or mouse button requires InputMonitoring. Modifier state and CapsLock/NumLock/ScrollLock toggle state are ungated; polling whether a lock key is physically down still requires InputMonitoring. Linux uses keysharp-input without installing a hook and fails closed for arbitrary state if its authority is unavailable or revokes access; The keysharp-desktop X11 fallback is limited to ungated modifier and lock-toggle snapshots. Joystick controls (Joy1, JoyX, JoyPOV, JoyName, ...) read the winmm joystick API on Windows and keysharp-input's ungated gamepad path on Linux, which needs neither a grant nor `input` group membership; buttons are numbered as the kernel's joydev driver numbers them and controllers are ordered by device node. macOS has no joystick backend and reports every joystick control as unavailable.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -9299,7 +9299,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp-specific Ks class for cross-platform window-event subscriptions. Windows uses SetWinEventHook; Linux uses X11 or native compositor sources; macOS uses Accessibility AXObserver streams and requires Accessibility permission.",
+                     "notes":  "Keysharp-specific Ks class for cross-platform window-event subscriptions. Windows uses SetWinEventHook; Linux uses keysharp-desktop X11 or native compositor sources; macOS uses Accessibility AXObserver streams and requires Accessibility permission.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -9713,7 +9713,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Pixel/image search and screen capture depend on platform-specific backends."
+                     "notes":  "Pixel/image search and screen capture depend on platform-specific backends. On Linux, keysharp-desktop provides authorized X11, Wayland compositor, and portal capture."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10233,8 +10233,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, reaches only docks implementing it, and decorates the entry named by DESKTOP_ENTRY; macOS badges the dock tile with text and draws progress on the tile, also application-wide. Linux and macOS are compile-checked only.",
-                     "tested-by":  "IconInternals.cs"
+                     "notes":  "Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, and decorates the desktop entry selected by DESKTOP_ENTRY, then #App DesktopEntry, then Keysharp. Plasma and implementing docks consume it natively; the keysharp-desktop extension maps it onto GNOME's stock overview dash and Cinnamon's grouped-window-list. macOS badges the dock tile with text and draws progress on the tile, also application-wide. Cinnamon 6.6.9 is runtime-verified; GNOME, Plasma and macOS are compile-checked or source-verified only.",
+                     "tested-by":  "IconInternals.cs; Gui/guitest.ks"
                  },
                  {
                      "category":  "Interop/Memory",
@@ -10957,7 +10957,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetID function returns the unique ID (HWND) of the specified window."
+                     "notes":  "The WinGetID function returns the unique ID (HWND) of the specified window. Wayland foreign windows receive positive process-local synthetic handles which can be reused with ahk_id and other window functions."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10977,7 +10977,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetList function returns an array of unique IDs (HWNDs) for all existing windows that match the specified criteria.",
+                     "notes":  "The WinGetList function returns an array of unique IDs (HWNDs) for all existing windows that match the specified criteria. Wayland foreign-window IDs are positive process-local synthetic handles.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11039,7 +11039,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Retrieves the style of the specified window. No non-Windows platform has a real Win32 style word, so for a script-owned window the toolkit state is projected onto the WS_* bits scripts actually test: WS_CAPTION/WS_POPUP from the border style, WS_SYSMENU, WS_THICKFRAME, WS_MINIMIZEBOX and WS_MAXIMIZEBOX from the frame buttons, plus WS_VISIBLE, WS_DISABLED, WS_MINIMIZE and WS_MAXIMIZE from the window state. Foreign windows expose no style word at all: X11 and macOS return 0, and Wayland reports only WS_CAPTION from the compositor decoration state.",
+                     "notes":  "Retrieves the style of the specified window. No non-Windows platform has a real Win32 style word, so for a script-owned window the toolkit state is projected onto the WS_* bits scripts actually test: WS_CAPTION/WS_POPUP from the border style, WS_SYSMENU, WS_THICKFRAME, WS_MINIMIZEBOX and WS_MAXIMIZEBOX from the frame buttons, plus WS_VISIBLE, WS_DISABLED, WS_MINIMIZE and WS_MAXIMIZE from the window state. Foreign windows expose no native Win32 style word: X11 and Wayland report WS_CAPTION from decoration state, and macOS returns 0.",
                      "tested-by":  "GuiTests.EtoWindowStyleBits"
                  },
                  {
@@ -11178,7 +11178,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMoveBottom function sends the specified window to the bottom of stack; that is, beneath all other windows. On Wayland this is provided by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.orderBack(); macOS provides no API to lower another process\u0027s window."
+                     "notes":  "The WinMoveBottom function sends the specified window to the bottom of stack; that is, beneath all other windows. On Wayland this is provided by the Keysharp KWin provider or the GNOME/Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.orderBack(); macOS provides no API to lower another process\u0027s window.",
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11225,10 +11226,10 @@
                      "feature":  "WinSetEnabled()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "full",
+                     "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unsupported",
-                     "notes":  "Enables or disables the specified window. macOS has no faithful public equivalent of Win32 EnableWindow for another application, so the feature is intentionally unsupported there."
+                     "notes":  "Enables or disables the specified window. Linux supports script-owned windows, but neither X11 nor Wayland has a faithful equivalent of Win32 EnableWindow for another application's window, so a foreign target raises OSError. macOS has no faithful public equivalent and is intentionally unsupported."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11255,10 +11256,10 @@
                      "feature":  "WinSetStyle()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
+                     "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unsupported",
-                     "notes":  "Changes the style of the specified window. X11 has no way to write Win32 window styles: the call is accepted and does nothing on a script-owned window and raises an OSError on a foreign window. Wayland maps only WS_CAPTION, to the compositor decoration state, and only for compositor-backed windows. macOS has no equivalent.",
+                     "notes":  "Changes the style of the specified window. X11 and Wayland map WS_CAPTION to the desktop provider decoration state for foreign windows; other native Win32 style bits have no equivalent. Script-owned windows use toolkit behavior. macOS has no equivalent.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11269,7 +11270,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinSetTitle function changes the title of the specified window. On macOS, windows owned by the calling process have their title set directly; for windows owned by other applications, setting AXTitle via the Accessibility API is attempted, but most applications treat it as read-only and the call has no effect."
+                     "notes":  "The WinSetTitle function changes the title of the specified window. On Wayland, script-owned titles can be changed but no supported compositor backend exposes title mutation for another application, so a foreign target raises OSError. On macOS, windows owned by the calling process have their title set directly; for windows owned by other applications, setting AXTitle via the Accessibility API is attempted, but most applications treat it as read-only and the call has no effect."
                  },
                  {
                      "category":  "Windowing/GUI",

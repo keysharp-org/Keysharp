@@ -21,7 +21,7 @@ namespace Keysharp.Builtins
 		}
 
 		internal static object WindowOperationUnsupported(string commandName)
-			=> Errors.OSErrorOccurred("", $"{commandName} is not implemented on {WindowOperationPlatformName()}.");
+			=> Errors.OSErrorOccurredWithMessage($"{commandName} is not implemented on {WindowOperationPlatformName()}.");
 
 		private static string WindowOperationPlatformName()
 		{
@@ -187,17 +187,17 @@ namespace Keysharp.Builtins
 										   object excludeText = null)
 		{
 			EnsureWindowControlPermission("window toggle operation");
-			var val = value.Ai();
+			var val = Conversions.ConvertOnOffToggle(value);
 
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
 				var supported = true;
 
-				if (val == 0)
+				if (val == ToggleValueType.Off)
 					supported = set(win, false);
-				else if (val == 1)
+				else if (val == ToggleValueType.On)
 					supported = set(win, true);
-				else if (val == -1)
+				else if (val == ToggleValueType.Toggle)
 					supported = set(win, !get(win));
 
 				if (!supported)

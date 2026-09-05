@@ -153,7 +153,7 @@ namespace Keysharp.Builtins
 				object excludeText = null)
 		{
 			EnsureWindowMonitoringPermission("window list query");
-			var (windows, _) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
+			var (windows, _) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText, true);
 			return windows;
 		}
 

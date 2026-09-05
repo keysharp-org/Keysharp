@@ -27,11 +27,12 @@ touch core subsystems, so care is needed.
 
 ## Features that need a non-Windows implementation
 
-- [ ] **Mouse button swap (logical → physical) outside X11.**
-  `UnixKeyboardMouseSender.MouseButtonsSwapped` reads the X11 pointer map, so the X11 path is
-  implemented. `LinuxKeyboardMouseSender` (native Linux input service) and macOS still return false.
-  Their desktop-specific primary-button settings need to be mapped without double-swapping input
-  that the compositor already remaps.
+- [ ] **Mouse button swap (logical → physical) on Linux and macOS.**
+  `keysharp-desktop` exposes the X11 pointer map, but
+  `LinuxKeyboardMouseSender.MouseButtonsSwapped` and
+  `MacKeyboardMouseSenderBase.MouseButtonsSwapped` still return false. Their desktop-specific
+  primary-button settings need to be mapped without double-swapping input that the compositor
+  already remaps.
 
 - [ ] **Joystick polling on macOS.** `Keysharp.Core/Internals/Input/Joystick/Joystick.cs`
   Linux has an evdev implementation in `Internals/Input/Linux/LinuxJoystick.cs`, including

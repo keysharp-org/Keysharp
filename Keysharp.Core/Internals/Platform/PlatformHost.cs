@@ -2,7 +2,7 @@ namespace Keysharp.Internals
 {
 	/// <summary>
 	/// The resolved-once bundle of platform capability services, one per process. OS selection happens at
-	/// compile time; Linux services choose their concrete session backend once during host construction.
+	/// compile time; Linux services resolve their concrete session backend when first used.
 	/// </summary>
 	internal abstract class PlatformHost : IDisposable
 	{
@@ -88,7 +88,7 @@ namespace Keysharp.Internals
 #elif LINUX
 	internal sealed class LinuxPlatformHost : PlatformHost
 	{
-		private readonly IWindow window = LinuxWindows.Resolve();
+		private readonly Lazy<IWindow> window = new (LinuxWindows.Resolve);
 		private readonly ControlManagerBase control = new Os.Unix.ControlManager();
 		// Lazy: choosing the per-compositor IScreen needs the resolved Wayland backend, which must not be probed
 		// at host construction. The compositor flavor is inspected once, on first Screen use.
@@ -97,7 +97,7 @@ namespace Keysharp.Internals
 		// facilities, identical under X11 and every Wayland compositor.
 		private readonly IMonitorControl monitorControl = new LinuxMonitorControl();
 		private readonly IOverlay overlay = new LinuxOverlay();
-		private readonly IMouse mouse = LinuxMice.Resolve();
+		private readonly Lazy<IMouse> mouse = new (LinuxMice.Resolve);
 		private readonly IKeyboard keyboard = LinuxKeyboards.Resolve();
 		private readonly IInput input = new LinuxInput();
 		private readonly IHotkeys hotkeys = new LinuxHotkeys();
@@ -107,12 +107,12 @@ namespace Keysharp.Internals
 		// only meaningful once the toolkit is up.
 		private readonly Lazy<IClipboard> clipboard = new (LinuxClipboards.Resolve);
 
-		internal override IWindow Window => window;
+		internal override IWindow Window => window.Value;
 		internal override ControlManagerBase Control => control;
 		internal override IScreen Screen => screen.Value;
 		internal override IMonitorControl MonitorControl => monitorControl;
 		internal override IOverlay Overlay => overlay;
-		internal override IMouse Mouse => mouse;
+		internal override IMouse Mouse => mouse.Value;
 		internal override IKeyboard Keyboard => keyboard;
 		internal override IInput Input => input;
 		internal override IHotkeys Hotkeys => hotkeys;
@@ -122,9 +122,6 @@ namespace Keysharp.Internals
 
 		public override void Dispose()
 		{
-			Keysharp.Internals.Window.Linux.Wayland.GnomeShellBridge.Reset();
-			Keysharp.Internals.Window.Linux.Wayland.CinnamonShellBridge.Reset();
-			Keysharp.Internals.Window.Linux.Wayland.KWinDBusBridge.Reset();
 			Keysharp.Internals.Window.Linux.Wayland.WaylandBackend.Reset();
 		}
 	}

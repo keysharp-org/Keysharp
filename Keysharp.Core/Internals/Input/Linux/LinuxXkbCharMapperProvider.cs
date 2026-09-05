@@ -2,7 +2,6 @@ using Keysharp.Builtins;
 #if LINUX
 using System.Runtime.InteropServices;
 using Keysharp.Internals.Input.Linux;
-using Keysharp.Internals.Window.Linux.X11;
 
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 
@@ -12,6 +11,10 @@ namespace Keysharp.Internals.Input.Unix
 	{
 		private readonly object initLock = new();
 		private readonly Func<uint?> activeLayoutOverride;
+		private readonly Func<DesktopKeyboardSnapshot> desktopStateOverride;
+		private DesktopKeyboardSnapshot desktopSnapshot;
+		private string appliedDesktopKeymap;
+		private int operationDepth;
 
 		private bool initTried;
 		private bool ready;
@@ -24,7 +27,6 @@ namespace Keysharp.Internals.Input.Unix
 
 		private IntPtr ctx;
 		private IntPtr keymap;
-		private WaylandKeyboardLayoutMonitor waylandMonitor;
 
 		private int minKeycode;
 		private int maxKeycode;
@@ -34,7 +36,7 @@ namespace Keysharp.Internals.Input.Unix
 		private uint lastDeadKeyLayout = uint.MaxValue;
 
 		private readonly Dictionary<(uint keysym, uint layout), (uint vk, bool s, bool g)> cache = new(256);
-		private readonly Dictionary<uint, List<uint>> vkToKeycodesCache = new(128);
+		private readonly Dictionary<(uint vk, uint group), List<uint>> vkToKeycodesCache = new(128);
 		private readonly Dictionary<uint, uint> keycodeToVkCache = new(128);
 
 		// Pending dead-key composition for TranslateKeyWithDeadKeys: the combining mark used for
@@ -98,13 +100,15 @@ namespace Keysharp.Internals.Input.Unix
 			["COMP"] = VK_APPS,
 		};
 
-		internal LinuxXkbCharMapperProvider(Func<uint?> activeLayoutOverride = null)
+		internal LinuxXkbCharMapperProvider(Func<uint?> activeLayoutOverride = null, Func<DesktopKeyboardSnapshot> desktopStateOverride = null)
 		{
 			this.activeLayoutOverride = activeLayoutOverride;
+			this.desktopStateOverride = desktopStateOverride;
 		}
 
 		public bool TryMapRuneToKeystroke(Rune rune, nint? layout, out uint vk, out bool needShift, out bool needAltGr)
 		{
+			using var operation = EnterOperation();
 			vk = 0;
 			needShift = false;
 			needAltGr = false;
@@ -160,6 +164,7 @@ namespace Keysharp.Internals.Input.Unix
 
 		public bool TryMapKeystrokeToRune(uint vk, bool shift, bool altGr, out Rune rune)
 		{
+			using var operation = EnterOperation();
 			rune = default;
 
 			if (!TryMapVkToXKeycode(vk, out var keycode, false))
@@ -202,6 +207,7 @@ namespace Keysharp.Internals.Input.Unix
 
 		public int TranslateKeyWithDeadKeys(uint vk, bool shift, bool altGr, bool capsLock, Span<char> buffer)
 		{
+			using var operation = EnterOperation();
 			var activeLayout = GetActiveLayout();
 
 			if (activeLayout != lastDeadKeyLayout)
@@ -227,8 +233,7 @@ namespace Keysharp.Internals.Input.Unix
 				return bn;
 			}
 
-			// Reuse the layout group already resolved above so we don't trigger a second XkbGetState X
-			// protocol round-trip inside TryGetKeysymForKeystroke for the same physical key.
+			// Reuse the layout group already resolved for this event.
 			if (!TryGetKeysymForKeystroke(vk, shift, altGr, activeLayout, out var keysym))
 				return KeyCodes.TranslateNotHandled;
 
@@ -289,12 +294,13 @@ namespace Keysharp.Internals.Input.Unix
 
 		public void ResetDeadKeyState()
 		{
+			using var operation = EnterOperation();
 			lock (initLock)
 				pendingDead.Clear();
 		}
 
 		// activeLayout is the raw layout group snapshotted once per keystroke by the caller, so this method
-		// does not issue its own XkbGetState round-trip; it is normalized per-key below.
+		// stays consistent throughout this translation; it is normalized per-key below.
 		private bool TryGetKeysymForKeystroke(uint vk, bool shift, bool altGr, uint activeLayout, out uint keysym)
 		{
 			keysym = 0;
@@ -367,6 +373,7 @@ namespace Keysharp.Internals.Input.Unix
 
 		public bool TryMapXKeycodeToVk(uint keycode, out uint vk)
 		{
+			using var operation = EnterOperation();
 			vk = 0;
 
 			if (keycode == 0 || !TryGetReadyKeymap(out _))
@@ -387,13 +394,15 @@ namespace Keysharp.Internals.Input.Unix
 
 		public bool TryMapVkToXKeycode(uint vk, out uint keycode, bool returnSecondary)
 		{
+			using var operation = EnterOperation();
 			keycode = 0;
 
 			if (vk == 0 || !TryGetReadyKeymap(out _))
 				return false;
 
-			if (!vkToKeycodesCache.TryGetValue(vk, out var keycodes))
-				vkToKeycodesCache[vk] = keycodes = BuildKeycodesForVk(vk);
+			var cacheKey = (vk, GetActiveLayout());
+			if (!vkToKeycodesCache.TryGetValue(cacheKey, out var keycodes))
+				vkToKeycodesCache[cacheKey] = keycodes = BuildKeycodesForVk(vk);
 
 			if (keycodes.Count == 0)
 				return false;
@@ -417,13 +426,19 @@ namespace Keysharp.Internals.Input.Unix
 
 		public nint GetCurrentKeymapHandle()
 		{
+			using var operation = EnterOperation();
 			return TryGetReadyKeymap(out var currentKeymap) ? currentKeymap : nint.Zero;
 		}
 
-		public uint GetActiveLayoutGroup() => GetActiveLayout();
+		public uint GetActiveLayoutGroup()
+		{
+			using var operation = EnterOperation();
+			return GetActiveLayout();
+		}
 
 		public string GetCurrentKeymapName()
 		{
+			using var operation = EnterOperation();
 			if (TryGetReadyKeymap(out var currentKeymap))
 			{
 				var activeLayout = NormalizeLayoutIndex(currentKeymap, GetActiveLayout());
@@ -438,6 +453,7 @@ namespace Keysharp.Internals.Input.Unix
 
 		public nint ResolveKeyboardLayout(string layout)
 		{
+			using var operation = EnterOperation();
 			// Read-only, matching the macOS provider: this provider owns a single process-wide keymap, so
 			// reconfiguring it here (ConfigureLayout rebuilds the keymap and nothing restores it) would
 			// persistently change the layout used by every subsequent Send/hotstring. A key-info query must
@@ -449,7 +465,41 @@ namespace Keysharp.Internals.Input.Unix
 		public void Dispose()
 		{
 			lock (initLock)
-				ResetState(disposeWaylandMonitor: true);
+				ResetState();
+		}
+
+		private Operation EnterOperation()
+		{
+			System.Threading.Monitor.Enter(initLock);
+			try
+			{
+				if (operationDepth == 0 && !HasPreferredLayoutNames())
+				{
+					var snapshot = desktopStateOverride != null ? desktopStateOverride() : DesktopKeyboardState.Current.Get();
+					if (snapshot?.Keymap != appliedDesktopKeymap)
+					{
+						ResetState();
+						appliedDesktopKeymap = snapshot?.Keymap;
+					}
+					desktopSnapshot = snapshot;
+				}
+				operationDepth++;
+				return new Operation(this);
+			}
+			catch
+			{
+				System.Threading.Monitor.Exit(initLock);
+				throw;
+			}
+		}
+
+		private readonly struct Operation(LinuxXkbCharMapperProvider owner) : IDisposable
+		{
+			public void Dispose()
+			{
+				owner.operationDepth--;
+				System.Threading.Monitor.Exit(owner.initLock);
+			}
 		}
 
 		private void EnsureInitialized()
@@ -478,16 +528,7 @@ namespace Keysharp.Internals.Input.Unix
 						return;
 					}
 
-					if (Platform.Desktop.IsWaylandSession)
-					{
-						if (BuildKeymapFromWayland())
-						{
-							FinalizeKeymapCommon();
-							ready = true;
-							return;
-						}
-					}
-					else if (BuildKeymapFromDisplay())
+					if (BuildKeymapFromDisplay())
 					{
 						FinalizeKeymapCommon();
 						ready = true;
@@ -545,75 +586,31 @@ namespace Keysharp.Internals.Input.Unix
 					keycodes.Add(key);
 			}
 
+			if (keycodes.Count == 0)
+			{
+				var symbols = KeyCodes.VkToKeysyms(targetVk);
+				for (uint key = (uint)minKeycode; key <= (uint)maxKeycode; key++)
+				{
+					var group = NormalizeLayoutForKey(keymap, key, GetActiveLayout());
+					var levels = xkb_keymap_num_levels_for_key(keymap, key, group);
+					for (uint level = 0; level < levels; level++)
+					{
+						if (!symbols.Any(symbol => LevelHasKeysym(keymap, key, group, level, symbol))) continue;
+						keycodes.Add(key);
+						break;
+					}
+				}
+			}
+
 			return keycodes;
-		}
-
-		private bool BuildKeymapFromWayland()
-		{
-			var monitor = EnsureWaylandMonitor();
-
-			if (monitor == null || !monitor.TryGetKeymap(out var text) || string.IsNullOrEmpty(text))
-				return false;
-
-			keymap = xkb_keymap_new_from_string(ctx, text, XkbKeymapFormatTextV1, 0);
-			return keymap != IntPtr.Zero;
 		}
 
 		private bool BuildKeymapFromDisplay()
 		{
-			var display = XDisplay.Default.Handle;
-
-			if (display == IntPtr.Zero)
-				return false;
-
-			try
-			{
-				var connection = XGetXCBConnection(display);
-
-				if (connection == IntPtr.Zero)
-					return false;
-
-				if (!xkb_x11_setup_xkb_extension(connection, 1, 0, 0, out _, out _, out _, out _))
-					return false;
-
-				var deviceId = xkb_x11_get_core_keyboard_device_id(connection);
-
-				if (deviceId < 0)
-					return false;
-
-				keymap = xkb_x11_keymap_new_from_device(ctx, connection, deviceId, 0);
-				return keymap != IntPtr.Zero;
-			}
-			catch (DllNotFoundException)
-			{
-				return false;
-			}
-			catch (EntryPointNotFoundException)
-			{
-				return false;
-			}
-		}
-
-		private WaylandKeyboardLayoutMonitor EnsureWaylandMonitor()
-		{
-			if (!Platform.Desktop.IsWaylandSession)
-				return null;
-
-			return waylandMonitor ??= new WaylandKeyboardLayoutMonitor(ResetFromExternalKeymapChange);
-		}
-
-		private void ResetFromExternalKeymapChange()
-		{
-			lock (initLock)
-				ResetState(disposeWaylandMonitor: false);
-		}
-
-		public void StartLayoutChangeMonitoring()
-		{
-			if (!Platform.Desktop.IsWaylandSession)
-				return;
-
-			_ = EnsureWaylandMonitor()?.TryGetKeymap(out _);
+			var text = desktopSnapshot?.Keymap;
+			if (string.IsNullOrEmpty(text)) return false;
+			keymap = xkb_keymap_new_from_string(ctx, text, XkbKeymapFormatTextV1, 0);
+			return keymap != IntPtr.Zero;
 		}
 
 		private uint GetActiveLayout()
@@ -626,23 +623,9 @@ namespace Keysharp.Internals.Input.Unix
 					return overridden.Value;
 			}
 
-			if (Platform.Desktop.IsWaylandSession)
-			{
-				var monitor = EnsureWaylandMonitor();
-
-				if (monitor != null && monitor.TryGetGroup(out var waylandGroup))
-					return waylandGroup;
-
-				return 0;
-			}
-
-			var display = XDisplay.Default.Handle;
-
-			if (display != IntPtr.Zero
-				&& Xlib.XkbGetState(display, XkbUseCoreKbd, out var state) == 0)
-				return state.group;
-
-			return 0;
+			// A compositor may provide the map without a globally active group. Use its
+			// first layout as the same fallback used for an unavailable layout query.
+			return desktopSnapshot?.Group ?? 0;
 		}
 
 		private static uint NormalizeLayoutForKey(IntPtr map, uint key, uint layout)
@@ -850,7 +833,7 @@ namespace Keysharp.Internals.Input.Unix
 			return mem;
 		}
 
-		private void ResetState(bool disposeWaylandMonitor = false)
+		private void ResetState()
 		{
 			ResetNativeHandles();
 			cache.Clear();
@@ -866,11 +849,6 @@ namespace Keysharp.Internals.Input.Unix
 			hasModsForLevel = false;
 			lastDeadKeyLayout = uint.MaxValue;
 
-			if (disposeWaylandMonitor)
-			{
-				waylandMonitor?.Dispose();
-				waylandMonitor = null;
-			}
 		}
 
 		private void ResetNativeHandles()
@@ -889,9 +867,6 @@ namespace Keysharp.Internals.Input.Unix
 		}
 
 		private const string LibXkbCommon = "libxkbcommon.so.0";
-		private const string LibXkbCommonX11 = "libxkbcommon-x11.so.0";
-		private const string LibX11Xcb = "libX11-xcb.so.1";
-		private const uint XkbUseCoreKbd = 0x0100;
 		private const int XkbKeymapFormatTextV1 = 1;
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -922,10 +897,6 @@ namespace Keysharp.Internals.Input.Unix
 		private static extern nuint xkb_keymap_key_get_mods_for_level(IntPtr keymap, uint key, uint layout, uint level, IntPtr masksOut, nuint masksOutSize);
 		[DllImport(LibXkbCommon)] private static extern IntPtr xkb_keymap_key_get_name(IntPtr keymap, uint key);
 		[DllImport(LibXkbCommon)] private static extern uint xkb_keysym_to_utf32(uint keysym);
-		[DllImport(LibX11Xcb)] private static extern IntPtr XGetXCBConnection(IntPtr display);
-		[DllImport(LibXkbCommonX11)] private static extern bool xkb_x11_setup_xkb_extension(IntPtr connection, ushort majorXkbVersion, ushort minorXkbVersion, uint flags, out ushort majorXkbVersionOut, out ushort minorXkbVersionOut, out byte baseEventOut, out byte baseErrorOut);
-		[DllImport(LibXkbCommonX11)] private static extern int xkb_x11_get_core_keyboard_device_id(IntPtr connection);
-		[DllImport(LibXkbCommonX11)] private static extern IntPtr xkb_x11_keymap_new_from_device(IntPtr ctx, IntPtr connection, int deviceId, uint flags);
 	}
 }
 #endif

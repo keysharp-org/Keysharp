@@ -663,11 +663,10 @@ namespace Keysharp.Internals
 		internal static IClipboard Resolve()
 		{
 			var eto = new EtoClipboard();
-			var backend = Wl.WaylandBackend.Current;
 
 			// Eto's WaylandClipboardHandler has a compositor data-control channel and remains authoritative. On X11,
-			// or when no compositor backend exists, there is likewise nothing useful to recover/promote to.
-			if (backend == null
+			// there is likewise nothing useful to recover/promote to.
+			if (!IsWaylandSession
 				|| Eto.Forms.Clipboard.Instance?.Handler is Eto.GtkSharp.Forms.WaylandClipboardHandler)
 				return eto;
 
@@ -675,17 +674,16 @@ namespace Keysharp.Internals
 			return new RecoveringLinuxClipboard(
 				eto,
 				compositor,
-				() => backend.SupportsClipboard,
+				() => Wl.WaylandBackend.Current?.SupportsClipboard == true,
 				(onChanged, onError) => compositor.SubscribeRecovering(onChanged, onError),
-				backend.SubscribeClipboardAvailability);
+				onChanged => Wl.WaylandBackend.Current?.SubscribeClipboardAvailability(onChanged));
 		}
 	}
 
 	/// <summary>
 	/// Routes each operation to the compositor clipboard while it is live, otherwise to Eto. Unlike choosing a
 	/// concrete implementation from a one-shot startup probe, this object is safe to cache process-wide: every later
-	/// operation can promote after a transient miss, and a monitoring subscription retries until the shell signal is
-	/// available (then retries again if its D-Bus stream fails).
+	/// operation can promote after a transient miss, while monitoring uses bounded retries and availability signals.
 	/// </summary>
 	internal sealed class RecoveringLinuxClipboard(
 		IClipboard fallback,

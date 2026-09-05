@@ -437,6 +437,28 @@ namespace Keysharp.Internals
 	}
 
 #elif LINUX
+	internal static class LinuxDesktopIdentity
+	{
+		private const string DesktopSuffix = ".desktop";
+
+		internal static string DesktopEntryId => ResolveDesktopEntryId(
+			Environment.GetEnvironmentVariable("DESKTOP_ENTRY"), Script.TheScript?.Manifest?.DesktopEntry);
+
+		internal static string ResolveDesktopEntryId(string environmentValue, string declaredValue)
+		{
+			var desktopEntry = string.IsNullOrWhiteSpace(environmentValue) ? declaredValue : environmentValue;
+			desktopEntry = desktopEntry?.Trim();
+
+			if (string.IsNullOrEmpty(desktopEntry))
+				return "keysharp.desktop";
+
+			return desktopEntry.EndsWith(DesktopSuffix, StringComparison.OrdinalIgnoreCase)
+				? desktopEntry : desktopEntry + DesktopSuffix;
+		}
+
+		internal static string ApplicationId => DesktopEntryId[..^DesktopSuffix.Length];
+	}
+
 	/// <summary>
 	/// The Unity LauncherEntry protocol: a broadcast <c>Update</c> signal carrying the application's .desktop id
 	/// and the badge/progress state, which a dock that implements the protocol picks up. There is no reply and
@@ -467,23 +489,11 @@ namespace Keysharp.Internals
 
 		/// <summary>
 		/// The .desktop file the launcher entry decorates. A dock can only badge an icon it already knows, so this
-		/// has to name an installed entry. Read from DESKTOP_ENTRY, the variable libunity consumers and Eto's own
-		/// handler already use, so a packaged application sets it in its launcher and nothing new is invented;
-		/// otherwise Keysharp's own entry, which is right for an ordinary script. Read per signal so a script can
-		/// set it with EnvSet before its first call.
+		/// has to name an installed entry. DESKTOP_ENTRY, the variable libunity consumers and Eto's own handler use,
+		/// overrides #App DesktopEntry; otherwise Keysharp's own entry is right for an ordinary script. Read per
+		/// signal so a script can set the environment value before its first call.
 		/// </summary>
-		private static string AppId
-		{
-			get
-			{
-				var desktopEntry = Environment.GetEnvironmentVariable("DESKTOP_ENTRY");
-
-				if (string.IsNullOrWhiteSpace(desktopEntry))
-					return "keysharp.desktop";
-
-				return desktopEntry.EndsWith(".desktop", StringComparison.OrdinalIgnoreCase) ? desktopEntry : desktopEntry + ".desktop";
-			}
-		}
+		private static string AppId => LinuxDesktopIdentity.DesktopEntryId;
 
 		internal static void Update(long? count = null, bool? countVisible = null, double? progress = null,
 									   bool? progressVisible = null, bool? urgent = null)

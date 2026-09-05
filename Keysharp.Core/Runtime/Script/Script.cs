@@ -548,13 +548,10 @@ namespace Keysharp.Runtime
 #endif
 
 #if LINUX
-			// Keysharp still uses X11 from multiple threads on X11 sessions (and via XWayland fallbacks), so
-			// Xlib must be put into threaded mode before any display connection is opened.
+			// Initialize Xlib threading before GTK creates its own GUI connections.
 			_ = Keysharp.Internals.Window.Linux.X11.Xlib.XInitThreads();
 
-			// Resolve the platform host on the startup thread — the deterministic resolution point, before any
-			// hook/IPC thread can freeze a thread-affine probe (IsX11Available reads the [ThreadStatic] XDisplay).
-			// Construction is trivial; each service resolves its session/backend lazily on first use.
+			// Resolve the platform host before any hook or IPC thread starts.
 			_ = Platform.Instance;
 
 			// Use GTK's native backend per session: Wayland on a Wayland session, X11 on an X11 session. We

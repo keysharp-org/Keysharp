@@ -8,6 +8,7 @@ namespace Keysharp.Internals.Input.Linux
 	internal static class KeysharpInputManager
 	{
 		private static readonly Lock gate = new();
+		private static readonly Lock authorizationGate = new();
 		private static readonly Lock queryGate = new();
 		private static readonly HashSet<Script> owners = new();
 		private static readonly RetryGate connectionRetries = new(maximumAttempts: 3,
@@ -19,6 +20,10 @@ namespace Keysharp.Internals.Input.Linux
 		// Volatile lets reachability checks avoid blocking behind a prompt.
 		private static volatile KeysharpInputClient client;
 		private static KeysharpInputClient queryClient;
+		private static KeysharpInputClient blockClient;
+		private static Timer blockHeartbeat;
+		private static Script blockOwner;
+		private static KeysharpInputClient.BlockInputMask appliedBlockMask;
 		// Avoid repeated prompts after a denial until an explicit re-request.
 		private static LinuxPermissionScope declinedScopes;
 
@@ -30,7 +35,7 @@ namespace Keysharp.Internals.Input.Linux
 
 			if (hookClient != null)
 			{
-				EnsureSynthesisCapabilityNoPrompt(hookClient, "hook");
+				EnsureSynthesisCapabilityNoPrompt(hookClient, inputs, "hook");
 				hookClient.SendInput(inputs, flags,
 					Keysharp.Internals.Input.Hooks.Linux.LinuxHookThread.CurrentHookEventId);
 				return;
@@ -38,20 +43,20 @@ namespace Keysharp.Internals.Input.Linux
 
 			if (!TryUseQueryClient(qc =>
 			{
-				EnsureSynthesisCapabilityNoPrompt(qc, "query");
+				EnsureSynthesisCapabilityNoPrompt(qc, inputs, "query");
 				qc.SendInput(inputs, flags);
 				return true;
 			}))
 				throw new InvalidOperationException("keysharp-input query channel is unavailable for synthesis.");
 		}
 
-		private static void EnsureSynthesisCapabilityNoPrompt(KeysharpInputClient connectedClient, string channel)
+		private static void EnsureSynthesisCapabilityNoPrompt(KeysharpInputClient connectedClient,
+			IReadOnlyList<KeysharpInputClient.Input> inputs, string channel)
 		{
-			var synthesis = KeysharpInputClient.Operations.SynthesizeKeyboard
-				| KeysharpInputClient.Operations.SynthesizeMouse;
+			var synthesis = KeysharpInputClient.RequiredSynthesisOperations(inputs);
 
-			if (!HasOperations(connectedClient, synthesis)
-				&& !connectedClient.TryRequestOperations(synthesis, out _, checkOnly: true))
+			if (synthesis != KeysharpInputClient.Operations.None
+				&& !EnsureQueryCapabilityNoPrompt(connectedClient, synthesis))
 				throw new InvalidOperationException(
 					$"keysharp-input {channel} channel does not hold the InputControl grant required for synthesis.");
 		}
@@ -68,9 +73,6 @@ namespace Keysharp.Internals.Input.Linux
 			capsLock = false;
 			numLock = false;
 			scrollLock = false;
-
-			if (!TryEnsureCaplessQueryConnection("modifier state query"))
-				return false;
 
 			if (!TryQuery(
 					KeysharpInputClient.Operations.QueryModifiers,
@@ -93,10 +95,6 @@ namespace Keysharp.Internals.Input.Linux
 		internal static bool TryGetIdleTime(out long milliseconds)
 		{
 			milliseconds = 0;
-
-			lock (gate)
-				if (!TryEnsureConnected("query idle time", out _, out _))
-					return false;
 
 			ulong captured = 0;
 
@@ -142,6 +140,61 @@ namespace Keysharp.Internals.Input.Linux
 			return true;
 		}
 
+		/// <summary>Enumerates connected gamepads. Gamepad access is ungated, so this needs no grant
+		/// and never prompts.</summary>
+		internal static bool TryListGamepads(out List<KeysharpInputClient.GamepadInfo> gamepads,
+			out ulong generation)
+		{
+			gamepads = null;
+			ulong captured = 0;
+			List<KeysharpInputClient.GamepadInfo> captureList = null;
+
+			try
+			{
+				if (!TryUseQueryClient(qc =>
+				{
+					captureList = qc.ListGamepads(out captured);
+					return true;
+				}))
+				{
+					generation = 0;
+					return false;
+				}
+			}
+			catch (Exception ex)
+			{
+				Diagnostics.Debug.WriteLine($"keysharp-input: gamepad list failed: {ex.Message}");
+				generation = 0;
+				return false;
+			}
+
+			gamepads = captureList;
+			generation = captured;
+			return true;
+		}
+
+		/// <summary>Reads one gamepad's buttons and axes, as taken at <paramref name="generation"/>.</summary>
+		internal static bool TryGetGamepadState(uint deviceId, ulong generation,
+			out KeysharpInputClient.GamepadState state)
+		{
+			var captured = default(KeysharpInputClient.GamepadState);
+			state = default;
+
+			try
+			{
+				if (!TryUseQueryClient(qc => qc.TryGetGamepadState(deviceId, generation, out captured)))
+					return false;
+			}
+			catch (Exception ex)
+			{
+				Diagnostics.Debug.WriteLine($"keysharp-input: gamepad state query failed: {ex.Message}");
+				return false;
+			}
+
+			state = captured;
+			return true;
+		}
+
 		internal static bool TryGetPointerPosition(
 			out int x,
 			out int y,
@@ -151,9 +204,6 @@ namespace Keysharp.Internals.Input.Linux
 			out int yMax)
 		{
 			x = y = xMin = xMax = yMin = yMax = 0;
-
-			if (!TryEnsureCaplessQueryConnection("pointer position query"))
-				return false;
 
 			if (!TryQuery(
 					KeysharpInputClient.Operations.QueryPointerPosition,
@@ -265,17 +315,8 @@ namespace Keysharp.Internals.Input.Linux
 
 		private static void InvalidateScopesAfterQueryDenial(KeysharpInputClient.Operations required)
 		{
-			lock (gate)
+			lock (authorizationGate)
 				client?.InvalidateScopes(KeysharpInputClient.RequiredScopes(required));
-		}
-
-		private static bool TryEnsureCaplessQueryConnection(string operation)
-		{
-			if (Keysharp.Internals.Input.Hooks.Linux.LinuxHookThread.CurrentHookClient != null)
-				return true;
-
-			lock (gate)
-				return TryEnsureConnected(operation, out _, out _);
 		}
 
 		private static KeysharpInputClient GetOrCreateQueryClient()
@@ -285,40 +326,34 @@ namespace Keysharp.Internals.Input.Linux
 			if (hookClient != null)
 				return hookClient;
 
-			lock (gate)
+			lock (queryGate)
 			{
-				if (client == null)
+				if (queryClient != null && queryClient.IsConnected)
+					return queryClient;
+
+				if (queryClient != null)
+				{
+					try { queryClient.Dispose(); } catch { }
+					queryClient = null;
+					queryRetries.Rearm();
+				}
+
+				using var attempt = queryRetries.TryBegin();
+
+				if (attempt == null)
 					return null;
 
-				lock (queryGate)
+				try
 				{
-					if (queryClient != null && queryClient.IsConnected)
-						return queryClient;
-
-					if (queryClient != null)
-					{
-						try { queryClient.Dispose(); } catch { }
-						queryClient = null;
-						queryRetries.Rearm();
-					}
-
-					using var attempt = queryRetries.TryBegin();
-
-					if (attempt == null)
-						return null;
-
-					try
-					{
-						queryClient = KeysharpInputClient.Connect();
-						attempt.Succeed();
-					}
-					catch (Exception ex) when (IsConnectException(ex))
-					{
-						attempt.Fail(ex);
-					}
-
-					return queryClient;
+					queryClient = KeysharpInputClient.Connect();
+					attempt.Succeed();
 				}
+				catch (Exception ex) when (IsConnectException(ex))
+				{
+					attempt.Fail(ex);
+				}
+
+				return queryClient;
 			}
 		}
 
@@ -341,10 +376,6 @@ namespace Keysharp.Internals.Input.Linux
 					Diagnostics.Debug.WriteLine($"keysharp-input hook channel lost: {ex.Message}");
 					return false;
 				}
-				catch (NativeClientException)
-				{
-					throw;
-				}
 			}
 
 			lock (queryGate)
@@ -364,71 +395,140 @@ namespace Keysharp.Internals.Input.Linux
 					queryRetries.Rearm();
 					return false;
 				}
-				catch (NativeClientException)
-				{
-					throw;
-				}
 			}
 		}
 
-		internal static bool TrySetBlockInput(KeysharpInputClient.BlockInputMask mask, out string message)
+		internal static bool TrySetBlockInput(Script owner,
+			KeysharpInputClient.BlockInputMask mask, out string message)
 		{
+			ArgumentNullException.ThrowIfNull(owner);
+
+			if (mask != KeysharpInputClient.BlockInputMask.None)
+			{
+				var permission = EnsureOperations(KeysharpInputClient.Operations.BlockInput,
+					"block input", checkOnly: Script.IsHeadless);
+
+				if (!permission.IsGranted)
+				{
+					message = permission.Message;
+					return false;
+				}
+			}
+
+			var invalidateControlGrant = false;
+			var success = false;
+
 			lock (gate)
 			{
-				// Teardown must be able to release blocking without opening a prompt.
-				if (mask == KeysharpInputClient.BlockInputMask.None
-					&& (client == null || !HasOperations(client, KeysharpInputClient.Operations.BlockInput)))
+				if (!owners.Contains(owner))
 				{
+					message = "The script owning this BlockInput request has already stopped.";
+					return false;
+				}
+
+				if (mask == appliedBlockMask
+					&& (mask == KeysharpInputClient.BlockInputMask.None
+						|| blockClient != null))
+				{
+					blockOwner = mask == KeysharpInputClient.BlockInputMask.None ? null : owner;
+					if (mask != KeysharpInputClient.BlockInputMask.None)
+						StartBlockHeartbeatLocked();
 					message = string.Empty;
 					return true;
 				}
 
-				if (!TryEnsureConnected("block input", out _, out message))
-					return false;
-
-				if (!HasOperations(client, KeysharpInputClient.Operations.BlockInput))
+				if (mask == KeysharpInputClient.BlockInputMask.None)
 				{
-					var want = KeysharpInputClient.Operations.BlockInput;
-					var wantedScope = KeysharpInputClient.RequiredScopes(want);
-
-					// Respect the session declined latch so block input does not re-prompt
-					// after the user already declined input access this run.
-					var checkOnly = Script.IsHeadless;
-					if ((!checkOnly && (wantedScope & declinedScopes) == wantedScope)
-						|| !client.TryRequestOperations(want, want, out _, checkOnly: checkOnly))
-					{
-						if (!checkOnly && !HasOperations(client, KeysharpInputClient.Operations.BlockInput))
-							declinedScopes |= wantedScope;
-
-						message = $"keysharp-input did not grant InputControl. Granted scopes: {client.GrantedScopes}.";
-						return false;
-					}
+					StopBlockClientLocked();
+					blockOwner = null;
+					message = string.Empty;
+					return true;
 				}
 
 				try
 				{
-					var granted = client.SetBlockInput(mask);
+					blockOwner = owner;
+					blockClient ??= KeysharpInputClient.Connect(
+						KeysharpInputClient.Operations.BlockInput);
+					var granted = blockClient.SetBlockInput(mask);
 
 					if (granted != mask)
+					{
 						Diagnostics.Debug.WriteLine($"BlockInput: daemon granted {granted}, requested {mask}.");
+						StopBlockClientLocked();
+						ClearManagedBlockStateLocked();
+						message = $"keysharp-input granted {granted}, but {mask} was requested.";
+						return false;
+					}
 
+					appliedBlockMask = granted;
+					StartBlockHeartbeatLocked();
 					message = string.Empty;
-					return true;
+					success = true;
 				}
 				catch (Exception ex) when (IsTransportException(ex))
 				{
-					HandleConnectionLost();
+					StopBlockClientLocked();
+					ClearManagedBlockStateLocked();
 					message = ex.Message;
-					return false;
 				}
 				catch (NativeClientException ex)
-					when (ex.Status is NativeClientStatus.Denied or NativeClientStatus.Revoked)
 				{
-					client?.InvalidateScopes(LinuxPermissionScope.InputControl);
+					if (ex.Status is NativeClientStatus.Denied or NativeClientStatus.Revoked)
+						invalidateControlGrant = true;
+					StopBlockClientLocked();
+					ClearManagedBlockStateLocked();
 					message = ex.Message;
-					return false;
 				}
 			}
+
+			if (invalidateControlGrant)
+				lock (authorizationGate)
+					client?.InvalidateScopes(LinuxPermissionScope.InputControl);
+
+			return success;
+		}
+
+		private static void StopBlockClientLocked()
+		{
+			blockHeartbeat?.Dispose();
+			blockHeartbeat = null;
+			blockClient?.Dispose();
+			blockClient = null;
+			appliedBlockMask = KeysharpInputClient.BlockInputMask.None;
+		}
+
+		private static void StartBlockHeartbeatLocked()
+		{
+			// Nonzero blocking has a 15-second daemon lease; renew well before it expires.
+			blockHeartbeat ??= new Timer(static _ =>
+			{
+				lock (gate)
+				{
+					if (blockClient == null)
+						return;
+
+					try
+					{
+						blockClient.Ping();
+					}
+					catch (Exception ex)
+					{
+						StopBlockClientLocked();
+						ClearManagedBlockStateLocked();
+						Diagnostics.Debug.WriteLine($"BlockInput lease renewal failed: {ex.Message}");
+					}
+				}
+			}, null, 5000, 5000);
+		}
+
+		private static void ClearManagedBlockStateLocked()
+		{
+			if (blockOwner != null)
+				blockOwner.KeyboardData.blockInput = false;
+
+			blockOwner = null;
+			appliedBlockMask = KeysharpInputClient.BlockInputMask.None;
 		}
 
 		/// <summary>
@@ -450,20 +550,27 @@ namespace Keysharp.Internals.Input.Linux
 			return c != null && c.HasOperations(required);
 		}
 
-		internal static PermissionResult EnsurePermissionScope(
-			LinuxPermissionScope required,
-			string operation = null,
-			bool forcePrompt = false,
-			bool checkOnly = false)
+		internal static PermissionResult EnsurePermissionScope(LinuxPermissionScope required,
+			string operation = null, bool forcePrompt = false, bool checkOnly = false)
 		{
 			if (required == LinuxPermissionScope.None
 				|| (required & ~(LinuxPermissionScope.InputMonitoring | LinuxPermissionScope.InputControl)) != 0)
 				throw new ArgumentOutOfRangeException(nameof(required));
 
-			operation ??= "input permission";
-			checkOnly |= Script.IsHeadless;
+			return EnsureAuthorization(required, KeysharpInputClient.Operations.None,
+				operation ?? "input permission", forcePrompt, checkOnly);
+		}
 
-			lock (gate)
+		internal static PermissionResult EnsureOperations(KeysharpInputClient.Operations required,
+			string operation = null, bool forcePrompt = false, bool checkOnly = false)
+			=> EnsureAuthorization(KeysharpInputClient.RequiredScopes(required), required,
+				operation ?? "input automation", forcePrompt, checkOnly);
+
+		private static PermissionResult EnsureAuthorization(LinuxPermissionScope required,
+			KeysharpInputClient.Operations operations, string operation, bool forcePrompt, bool checkOnly)
+		{
+			checkOnly |= Script.IsHeadless;
+			lock (authorizationGate)
 			{
 				if (forcePrompt)
 				{
@@ -471,90 +578,40 @@ namespace Keysharp.Internals.Input.Linux
 					connectionRetries.Rearm();
 				}
 
-				if (!checkOnly && !forcePrompt && (declinedScopes & required) == required)
-					return new PermissionResult(PermissionStatus.Denied, DeclinedForRunMessage);
-
 				if (!TryEnsureConnected(operation, out var connectStatus, out var connectMessage))
 					return new PermissionResult(connectStatus, connectMessage);
 
-				if ((client.GrantedScopes & required) == required)
-					return new PermissionResult(PermissionStatus.Granted);
+				bool Request(bool noninteractive, out int status)
+					=> operations != KeysharpInputClient.Operations.None || required == LinuxPermissionScope.None
+						? client.TryRequestOperations(operations, out status, noninteractive)
+						: client.TryRequestScopes(required, out status, noninteractive);
 
 				try
 				{
-					if (client.TryRequestScopes(required, out var requestStatus, checkOnly))
+					// A noninteractive refresh observes external revocation before using a cached grant.
+					if (Request(true, out var status))
+					{
+						declinedScopes &= ~required;
 						return new PermissionResult(PermissionStatus.Granted);
+					}
 
-					if (!checkOnly)
+					if (!checkOnly && status != (int)NativeClientStatus.Unsupported)
+					{
+						if (!forcePrompt && required != LinuxPermissionScope.None
+							&& (declinedScopes & required) == required)
+							return new PermissionResult(PermissionStatus.Denied, DeclinedForRunMessage);
+
+						if (Request(false, out status))
+						{
+							declinedScopes &= ~required;
+							return new PermissionResult(PermissionStatus.Granted);
+						}
 						declinedScopes |= required;
+					}
 
-					var status = (NativeClientStatus)(uint)requestStatus;
-					if (status is NativeClientStatus.Unsupported or NativeClientStatus.Unavailable)
-						return new PermissionResult(PermissionStatus.Unsupported,
-							$"keysharp-input cannot authorize {required} for '{operation}'.");
-
-					return new PermissionResult(PermissionStatus.Denied,
-						$"keysharp-input did not grant {required} for '{operation}'" +
-						(checkOnly ? " (noninteractive check)." : "."));
-				}
-				catch (Exception ex) when (IsTransportException(ex))
-				{
-					HandleConnectionLost();
-					return new PermissionResult(PermissionStatus.Unsupported,
-						$"keysharp-input connection lost while preparing '{operation}': {ex.Message}");
-				}
-			}
-		}
-
-		/// <summary>Requests exactly <paramref name="required"/>.</summary>
-		internal static PermissionResult EnsureOperations(
-			KeysharpInputClient.Operations required,
-			string operation = null,
-			bool forcePrompt = false,
-			bool checkOnly = false)
-		{
-			operation ??= "input automation";
-			checkOnly |= Script.IsHeadless;
-
-			lock (gate)
-			{
-				var requiredScopes = KeysharpInputClient.RequiredScopes(required);
-
-				// An explicit request clears the denial latch and retry budget.
-				if (forcePrompt)
-				{
-					declinedScopes &= ~requiredScopes;
-					connectionRetries.Rearm();
-				}
-
-				// Keep the polling path allocation-free after a denial.
-				if (!checkOnly && !forcePrompt && requiredScopes != LinuxPermissionScope.None
-					&& !MainClientHasOperation(required)
-					&& (requiredScopes & declinedScopes) == requiredScopes)
-					return new PermissionResult(PermissionStatus.Denied, DeclinedForRunMessage);
-
-				if (!TryEnsureConnected(operation, out var connectStatus, out var connectMessage))
-					return new PermissionResult(connectStatus, connectMessage);
-
-				try
-				{
-					if ((!checkOnly && !forcePrompt && HasOperations(client, required))
-						|| client.TryRequestOperations(required, required, out var requestStatus, checkOnly: checkOnly))
-						return new PermissionResult(PermissionStatus.Granted);
-
-					// A noninteractive miss is only a status result. An interactive denial is
-					// latched so ordinary operations do not create a prompt storm.
-					if (!checkOnly)
-						declinedScopes |= requiredScopes;
-
-					if (requestStatus == (int)NativeClientStatus.Unsupported)
-						return new PermissionResult(PermissionStatus.Unsupported,
-							$"keysharp-input does not provide the operations required for '{operation}': {required}.");
-
-					return new PermissionResult(PermissionStatus.Denied,
-						$"keysharp-input did not grant the required permission for '{operation}'" +
-						(checkOnly ? " (noninteractive check). " : ". ") +
-						$"Required scopes: {requiredScopes}; granted scopes: {client.GrantedScopes}.");
+					return new PermissionResult(status == (int)NativeClientStatus.Unsupported
+						? PermissionStatus.Unsupported : PermissionStatus.Denied,
+						$"keysharp-input could not authorize '{operation}'. Required scopes: {required}; granted scopes: {client.GrantedScopes}.");
 				}
 				catch (Exception ex) when (IsTransportException(ex))
 				{
@@ -604,9 +661,6 @@ namespace Keysharp.Internals.Input.Linux
 				status = PermissionStatus.Granted;
 				message = string.Empty;
 
-				ThreadPool.QueueUserWorkItem(
-					_ => { try { GetOrCreateQueryClient(); } catch { } });
-
 				return true;
 			}
 			catch (Exception ex) when (IsConnectException(ex))
@@ -620,9 +674,6 @@ namespace Keysharp.Internals.Input.Linux
 			}
 		}
 
-		private static bool HasOperations(KeysharpInputClient connectedClient, KeysharpInputClient.Operations required)
-			=> connectedClient.HasOperations(required);
-
 		private static bool IsConnectException(Exception ex)
 			=> ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException
 				or ObjectDisposedException or InvalidDataException
@@ -634,16 +685,10 @@ namespace Keysharp.Internals.Input.Linux
 			=> IsConnectException(ex) || ex is EndOfStreamException
 				|| ex is NativeClientException { Status: NativeClientStatus.Cancelled };
 
-		private static bool MainClientHasOperation(KeysharpInputClient.Operations operation)
-		{
-			var c = client;
-			return c != null && c.HasOperations(operation);
-		}
-
 		// Queries may use a persistent grant but never prompt.
 		private static bool EnsureQueryCapabilityNoPrompt(KeysharpInputClient qc, KeysharpInputClient.Operations required)
 		{
-			if (HasOperations(qc, required))
+			if (qc.HasOperations(required))
 				return true;
 
 			return qc.TryRequestOperations(required, out _, checkOnly: true);
@@ -674,15 +719,33 @@ namespace Keysharp.Internals.Input.Linux
 		internal static void DisconnectClients(Script owner)
 		{
 			ArgumentNullException.ThrowIfNull(owner);
+			var possiblyLastOwner = false;
 
 			lock (gate)
 			{
 				_ = owners.Remove(owner);
+				possiblyLastOwner = owners.Count == 0;
 
+				if (possiblyLastOwner || ReferenceEquals(blockOwner, owner))
+				{
+					StopBlockClientLocked();
+					ClearManagedBlockStateLocked();
+				}
+			}
+
+			if (!possiblyLastOwner)
+				return;
+
+			// Authorization owns the main client. Recheck owner state after acquiring
+			// that lock so a concurrently starting script does not lose its connection.
+			lock (authorizationGate)
+			lock (gate)
+			{
 				if (owners.Count != 0)
 					return;
 
 				DisposeClient();
+				declinedScopes = LinuxPermissionScope.None;
 				connectionRetries.Rearm();
 				queryRetries.Rearm();
 			}

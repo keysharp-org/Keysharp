@@ -670,7 +670,7 @@ namespace Keysharp.Builtins
 				{
 					// The client area's on-screen rectangle (client origin mapped to the screen, plus the client
 					// size). Mirrors AHK's GetClientPos. The per-toolkit mapping lives in GetClientScreenRect.
-					rect = control.GetClientScreenRect();
+					rect = control.GetClientScreenRect(true);
 				}
 				else
 				{

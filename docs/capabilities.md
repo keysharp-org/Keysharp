@@ -12,13 +12,47 @@ Status legend:
 
 | Capability | Windows | Linux (X11) | Linux (Wayland) | macOS | Notes |
 |---|---|---|---|---|---|
+| __Await() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Lets a script object expose asynchronous work without inheriting from Task. The zero-argument method returns a Task, CLR Task or ValueTask, worker RealThread, or another __Await object; Await, Task(Value), either Then callback's direct return, Task.Create settlement and Task combinators consume it. |
+| __Call | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when calling a missing method or property. |
+| __Delete | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when an object is being deleted. |
+| __Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns an enumerator for the object. |
+| __Get | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when getting a missing property. |
+| __Init() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Class initialization method executed once before first use. |
+| __Item | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer meta-property for bracket access. |
+| __New | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when constructing a new object. |
+| __Set | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when setting a missing property. |
 | - | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Subtraction / unary minus operator |
 | -- | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Decrement operator |
+| -= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| , | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comma/sequence operator |
+| := | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assignment operator |
 | ! | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical NOT operator |
-| !~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regular-expression not-match operator. |
 | != | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inequality operator |
 | !== | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Strict inequality operator. |
-| #App | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-only descriptor for assembly metadata, Icon, GuiTheme, ConsoleApp, HookMutexName and Files; multiple blocks merge independently by key in source order, later keys win, and Files: [] clears the list. Asset paths are main-script-relative logical paths and artifact builds embed Files. |
+| !~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regular-expression not-match operator. |
+| ?: | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ternary operator |
+| ?? | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Null coalescing operator |
+| ??= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Null-coalescing assignment operator |
+| . | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Concatenation operator |
+| .= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| [ ... ] / Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Array literal. |
+| [ ... ] / Map | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Map literal. |
+| { ... } (Block) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a block scope for one or more statements. |
+| { ... } / Object | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Object literal. |
+| {Blind} | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Send option which preserves modifier state while sending keys; parsed and applied by the shared cross-platform sender. |
+| * | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Multiplication operator |
+| ** | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Power operator |
+| **= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| *= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| / | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Division operator |
+| // | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Integer division operator |
+| //= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| /= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| & | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise AND operator |
+| & (VarRef) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | VarRef/address-of operator |
+| && | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical AND operator |
+| &= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| #App | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-only descriptor for assembly metadata, Icon, GuiTheme, ConsoleApp, HookMutexName, Linux DesktopEntry and Files; multiple blocks merge independently by key in source order, later keys win, and Files: [] clears the list. DesktopEntry selects the Linux desktop file, Wayland app_id and Taskbar target unless DESKTOP_ENTRY overrides it. Asset paths are main-script-relative logical paths and artifact builds embed Files. |
 | #ClipboardTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets how long clipboard operations should wait before timing out. |
 | #CSharp | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Keysharp-only. Embeds C# members into the script assembly at module or class scope; `#CSharp <Library>` uses #Include's Lib-folder search order, `.cs` extension and underscore fallback. |
 | #Define | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Defines a conditional compilation symbol. |
@@ -59,46 +93,8 @@ Status legend:
 | #Warning | 🟠 Planned | 🟠 Planned | 🟠 Planned | 🟠 Planned | Intended to emit a compile-time warning message. No handler exists, so using it is a load-time error. Distinct from #Warn, which is implemented. |
 | #WinActivateForce | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #WinActivateForce directive skips the gentle method of activating a window and goes straight to the forceful method. |
 | %...% / Dereference | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Performs dynamic dereferencing (double-deref) to resolve a variable name stored in another variable. |
-| & | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise AND operator |
-| & (VarRef) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | VarRef/address-of operator |
-| && | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical AND operator |
-| &= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| * | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Multiplication operator |
-| ** | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Power operator |
-| **= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| *= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| , | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comma/sequence operator |
-| . | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Concatenation operator |
-| .= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| / | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Division operator |
-| // | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Integer division operator |
-| //= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| /= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| := | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assignment operator |
-| ?: | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ternary operator |
-| ?? | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Null coalescing operator |
-| ??= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Null-coalescing assignment operator |
-| [ ... ] / Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Array literal. |
-| [ ... ] / Map | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Map literal. |
 | ^ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise XOR operator |
 | ^= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| __Await() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Lets a script object expose asynchronous work without inheriting from Task. The zero-argument method returns a Task, CLR Task or ValueTask, worker RealThread, or another __Await object; Await, Task(Value), either Then callback's direct return, Task.Create settlement and Task combinators consume it. |
-| __Call | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when calling a missing method or property. |
-| __Delete | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when an object is being deleted. |
-| __Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns an enumerator for the object. |
-| __Get | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when getting a missing property. |
-| __Init() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Class initialization method executed once before first use. |
-| __Item | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer meta-property for bracket access. |
-| __New | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when constructing a new object. |
-| __Set | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when setting a missing property. |
-| { ... } (Block) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a block scope for one or more statements. |
-| { ... } / Object | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Object literal. |
-| {Blind} | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Send option which preserves modifier state while sending keys; parsed and applied by the shared cross-platform sender. |
-| \\| | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise OR operator |
-| \\|\\| | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical OR operator |
-| \\|= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| ~ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise NOT operator |
-| ~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regex match operator |
 | + | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Addition / unary plus operator |
 | ++ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Increment operator |
 | += | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
@@ -108,7 +104,6 @@ Status legend:
 | <= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comparison operator |
 | <> | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inequality alias operator |
 | = | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Case-insensitive equality operator |
-| -= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
 | == | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Case-sensitive equality operator |
 | => | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fat-arrow function operator. |
 | > | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comparison operator |
@@ -117,6 +112,11 @@ Status legend:
 | >>= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
 | >>> | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical right shift operator |
 | >>>= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| \\| | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise OR operator |
+| \\|= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
+| \\|\\| | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical OR operator |
+| ~ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise NOT operator |
+| ~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regex match operator |
 | 1, 2, 3 | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comma operator evaluates expressions left-to-right and returns the last value. |
 | A_AhkPath | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The full path to the executable compiling the script. For compiled scripts, it's the path to the compiled executable. |
 | A_AhkVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The version of the program used to compile the script. |
@@ -276,7 +276,7 @@ Status legend:
 | A_ThisHotkey | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_Thread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The current pseudo-thread as a Thread object. Id keeps the former A_ThreadId layout: a 48-bit creation sequence and a 16-bit zero-based stack position. |
 | A_TickCount | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The number of milliseconds since the system started. Note this is not limited to 49.7 days like AHK because it uses a long integer. |
-| A_TimeIdle | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
+| A_TimeIdle | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Milliseconds since the last input. Linux uses keysharp-input’s compositor-independent device activity counter. |
 | A_TimeIdleKeyboard | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_TimeIdleMouse | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_TimeIdlePhysical | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
@@ -338,11 +338,11 @@ Status legend:
 | BlockInput() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Disables or enables physical keyboard and mouse input while allowing synthetic input. Full On blocking requires InputControl; movement-only blocking uses an observing and suppressing hook, so it requires both InputMonitoring and InputControl. Off and teardown never request permission. Linux uses keysharp-input and fails closed if that authority is unavailable or revokes access. macOS uses event taps. |
 | Boolean | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The type of a truth value, extending Integer, so it reads as 1 or 0 everywhere except a type test. Boolean(Value) converts a value the way `if` decides it. |
 | Break | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Exits the current loop. |
-| Buffer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Buffer object encapsulates a block of memory for use with advanced techniques such as DllCall, structures, StrPut and raw file I/O. |
 | Buffer.__Item[] | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer for reading/writing bytes in Buffer by offset. |
 | Buffer.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Constructs a new Buffer object. |
 | Buffer.ToBase64() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns Buffer contents as a Base64 string. |
 | Buffer.ToHex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns Buffer contents as a hexadecimal string. |
+| Buffer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Buffer object encapsulates a block of memory for use with advanced techniques such as DllCall, structures, StrPut and raw file I/O. |
 | CallbackCreate() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. |
 | CallbackFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases a callback created by CallbackCreate on every platform. |
 | CaretGetPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the caret position. If no caret position is available, it returns false and sets both output variables to blank. Linux uses native GTK geometry for script-owned controls and AT-SPI for foreign applications, normalizing Wayland-local coordinates through compositor window geometry when needed. macOS uses the Accessibility API and requires Accessibility permission. |
@@ -364,7 +364,6 @@ Status legend:
 | ClipboardAll() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | Captures and restores all advertised clipboard formats on Windows, X11, and macOS. The Wayland extension fallback can restore only one selected MIME representation at a time. |
 | ClipCursor() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Confines physical cursor movement to a screen-coordinate rectangle with exclusive right/bottom edges; call without arguments to release. Coordinates ignore CoordMode Mouse. Artificial cursor movement is allowed. Enforcing the boundary observes and suppresses motion, so it requires InputMonitoring and InputControl; releasing it never requests permission. Linux requires keysharp-input and uses suppress-and-warp-back enforcement, so the cursor may briefly cross the boundary. Wayland also requires a compositor backend that can query and move the global cursor. macOS maps the two capabilities to Input Monitoring and Accessibility. |
 | ClipWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits until the native platform clipboard contains data. |
-| Clr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates the platform-independent CLR interop facade for loading and invoking .NET types. |
 | Clr.GetNamespaceName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the namespace name for a managed wrapper or type; implemented by the shared managed runtime. |
 | Clr.GetTypeName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the type name for a managed wrapper or object; implemented by the shared managed runtime. |
 | Clr.Load() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Loads a managed assembly for CLR interop through the shared .NET runtime. |
@@ -375,13 +374,14 @@ Status legend:
 | Clr.ManagedNamespace | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed namespace wrapper used for type resolution. |
 | Clr.ManagedType | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed type wrapper for reflection and invocation. |
 | Clr.Type() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Resolves managed types through the platform-independent CLR interop surface. |
+| Clr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates the platform-independent CLR interop facade for loading and invoking .NET types. |
 | Collect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Forces garbage collection and finalizer processing. |
 | COM APIs | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Real COM on Windows; the same late-bound surface is backed by D-Bus on Linux and by Apple Events on macOS, so target strings and member names differ per platform. The macOS backend is implemented but not yet verified on hardware. Functions that need vtables, reference counts or raw pointers throw off Windows. |
 | ComCall() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComCall function calls a native COM interface method by index. A return type of 'void' means the call returns no value. |
 | ComObjActive() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObjActive function retrieves a registered COM object. Attaches to a running D-Bus service on Linux and to a running application on macOS, never starting one; the macOS backend is not yet verified on hardware. |
-| ComObjArray() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjArray function creates a SafeArray for use with COM. |
 | ComObjArray.__Enum() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Enumerates a COM SAFEARRAY. COM is available only on Windows. |
 | ComObjArray.__Item | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Gets or sets a COM SAFEARRAY element. COM is available only on Windows. |
+| ComObjArray() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjArray function creates a SafeArray for use with COM. |
 | ComObjConnect() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObjConnect function connects a COM object's event source to the script, enabling events to be handled. |
 | ComObject() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObject function creates a COM object. On Linux the target is a D-Bus service name; on macOS it is an application (bundle id, name, path or a pid), and the second parameter selects an interface or a suite. The macOS backend is not yet verified on hardware. |
 | ComObjFlags() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjFlags function retrieves or changes flags which control a COM wrapper object's behaviour. |
@@ -546,7 +546,7 @@ Status legend:
 | Floor() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes a number rounded down to the nearest integer. Rounds toward zero for positive numbers and away from zero for negative numbers. |
 | Font | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | A font as a value object carrying what Gui.SetFont takes, each property optional, plus the platform's Ui/Emoji/GuiDefault/Monospace families. |
 | For | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Iterates over enumerable values or key/value pairs. |
-| Foreign window management (non-Keysharp apps) | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process window/control interaction. COSMIC supplies native listing, active state, geometry, and window events. Coordinate hit-testing is limited to the active window because the protocol exposes neither workspace membership nor stacking order; window actions and general move/resize are not supported. macOS currently relies on Accessibility APIs with permission requirements. |
+| Foreign window management (non-Keysharp apps) | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process control interaction. COSMIC supplies native listing, active state, geometry, polling-based events, focus, close, minimize, maximize and restore. wlroots compositors can supply listing, active/state facts and the same actions except geometry. Coordinate hit-testing remains limited without stacking order, and general move/resize is unavailable. macOS currently relies on Accessibility APIs with permission requirements. |
 | Format() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text by substituting placeholders with argument values. |
 | FormatCs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text using C#-style format placeholders (1-based indexing adaptation). |
 | FormatTime | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats a datetime string according to the parameters. All C# formatting options are supported. Supports all V2 functionality except for the Dn and Tn options. If you want to specify a specific format, do it in the format parameter. |
@@ -565,7 +565,7 @@ Status legend:
 | GetKeyInfo() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns layout-aware portable VK, platform-native SC, key name, and modifier information on every platform. |
 | GetKeyName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the portable name or text of a key from Windows scan codes, Linux evdev codes, or macOS kVK codes. |
 | GetKeySC() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the platform-native physical key code: a Windows scan code, Linux evdev KEY_* code, or macOS kVK code. Returns 0 for a portable key which has no native physical code on that platform. |
-| GetKeyState() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns logical, physical, and toggle state. Polling an arbitrary key or mouse button requires InputMonitoring. Modifier state and CapsLock/NumLock/ScrollLock toggle state are ungated; polling whether a lock key is physically down still requires InputMonitoring. Linux uses keysharp-input without installing a hook and fails closed for arbitrary state if its authority is unavailable or revokes access; X11 fallback is limited to the ungated modifier and lock-toggle snapshots. macOS uses combined-session and HID-system state APIs. |
+| GetKeyState() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns logical, physical, and toggle state. Polling an arbitrary key or mouse button requires InputMonitoring. Modifier state and CapsLock/NumLock/ScrollLock toggle state are ungated; polling whether a lock key is physically down still requires InputMonitoring. Linux uses keysharp-input without installing a hook and fails closed for arbitrary state if its authority is unavailable or revokes access; The keysharp-desktop X11 fallback is limited to ungated modifier and lock-toggle snapshots. Joystick controls (Joy1, JoyX, JoyPOV, JoyName, ...) read the winmm joystick API on Windows and keysharp-input's ungated gamepad path on Linux, which needs neither a grant nor `input` group membership; buttons are numbered as the kernel's joydev driver numbers them and controllers are ordered by device node. macOS has no joystick backend and reports every joystick control as unavailable. |
 | GetKeyVK() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns Keysharp's portable Windows-compatible VK for a named key or platform-native physical key code. |
 | GetMethod() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The GetMethod function retrieves the implementation function of a method. |
 | Global keyboard hooks | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Linux uses evdev/uinput, macOS uses CGEventTap. |
@@ -576,7 +576,6 @@ Status legend:
 | GroupClose() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The GroupClose function closes the active window if it was just activated by the GroupActivate or GroupDeactivate function. |
 | GroupDeactivate() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The GroupDeactivate function is similar to the GroupActivate function but activates the next window not in the group. |
 | Gui control types | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | GUI control types are elements of interaction which can be added to a GUI window using the Gui object's Add method. ActiveX and Custom are Win32-only and raise a ValueError on Linux and macOS; every other type is available on all platforms. ListView additionally supports only the Report view there (see Gui.Add). WebView is backed by whichever browser engine the operating system provides, so what it renders differs by platform (see Gui.WebView), and RichEdit is available everywhere but only the Win32 control serves its whole member surface (see Gui.RichEdit). |
-| Gui() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Gui object provides an interface to create a window, add controls, modify the window, and retrieve information about the window. Such windows can be used as data entry forms or custom user interfaces. |
 | Gui.__Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns an enumerator for GUI controls. |
 | Gui.__Item | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer property for retrieving controls by name or key. |
 | Gui.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Constructs a new GUI window object. |
@@ -639,6 +638,7 @@ Status legend:
 | Gui.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The backing toolkit window as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the Gui's own state and event wiring. |
 | Gui.Visible | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets GUI visibility state. |
 | Gui.WebView | 🟡 Partial | 🟡 Partial | 🟡 Partial | ⚪ Unknown | A browser control with Url, DocumentTitle, CanGoBack/CanGoForward, BrowserContextMenuEnabled and Engine; GoBack, GoForward, Stop, Reload, ExecuteScript, ExecuteScriptAsync, LoadHtml and ShowPrintDialog; and the Navigated, DocumentLoading, DocumentLoaded, DocumentTitleChanged, OpenNewWindow and MessageReceived events. No engine is shipped. Windows prefers Edge through WebView2 when a script asks for it with #Package "Microsoft.Web.WebView2" and falls back to Internet Explorer, where modern pages may not render, the OpenNewWindow URL is recovered from the focused element, and a page cannot post a message before its document has loaded. Linux uses WebKitGTK and needs libwebkit2gtk-4.1 or 4.0 installed or the control cannot be created. |
+| Gui() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Gui object provides an interface to create a window, add controls, modify the window, and retrieve information about the window. Such windows can be used as data entry forms or custom user interfaces. |
 | GuiCtrlFromHwnd() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The GuiCtrlFromHwnd function retrieves the GuiControl object of a GUI control associated with the specified window handle. |
 | GuiFromHwnd() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The GuiFromHwnd function retrieves the Gui object of a GUI window associated with the specified window handle. |
 | HasBase() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The HasBase function returns a non-zero number if the specified value is derived from the specified base object. |
@@ -668,7 +668,6 @@ Status legend:
 | IniRead() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads a value, section or list of section names from a standard format.ini file. |
 | IniWrite() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a value or section to a standard format.ini file. |
 | InputBox() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InputBox function displays an input box to ask the user to enter a string. On Linux and macOS the dialog is built with Eto and honours only the Password option; the W, H, X, Y and T (timeout) options are ignored, so Result never returns "Timeout". |
-| InputHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InputHook function creates an object which can be used to collect or intercept keyboard input. |
 | InputHook.BackspaceIsUndo | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Treats Backspace as undo for collected input. |
 | InputHook.BeforeHotkeys | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether InputHook receives events before hotkeys process them. |
 | InputHook.BufferLengthMax | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Maximum text buffer length before capture ends. |
@@ -699,6 +698,7 @@ Status legend:
 | InputHook.VisibleNonText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible non-text keys are collected. |
 | InputHook.VisibleText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible text characters are collected. |
 | InputHook.Wait() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Waits until capture ends or times out. |
+| InputHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InputHook function creates an object which can be used to collect or intercept keyboard input. |
 | InstallKeybdHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InstallKeybdHook function installs or uninstalls the keyboard hook. |
 | InstallMouseHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InstallMouseHook function installs or uninstalls the mouse hook. |
 | InStr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Searches for a string within another string, returning the 1-based index where it was found. Use negative numbers for searching in reverse order. |
@@ -781,7 +781,6 @@ Status legend:
 | Max() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the larger of two numbers. If either is not numeric, the empty string is returned. The largest value of an array is computed if one is passed in. |
 | MemberError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | MemoryError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
-| Menu() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Menu/MenuBar object provides an interface to create and modify a menu or menu bar, add and modify menu items, and retrieve information about the menu or menu bar. |
 | Menu.Add() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Adds an item to a menu. The Right and RTL item options are Win32 menu attributes with no Eto counterpart, so they are parsed and ignored on Linux and macOS; every other option, including the Break/BarBreak column controls, works on all platforms. |
 | Menu.AddStandard() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Adds standard tray menu items. |
 | Menu.Check() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks a menu item. |
@@ -803,6 +802,7 @@ Status legend:
 | Menu.ToggleEnable() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles enabled state of a menu item. |
 | Menu.ToggleItemVis() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles visibility of a menu item. |
 | Menu.Uncheck() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Unchecks a menu item. |
+| Menu() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Menu/MenuBar object provides an interface to create and modify a menu or menu bar, add and modify menu items, and retrieve information about the menu or menu bar. |
 | MenuBar() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Menu/MenuBar object provides an interface to create and modify a menu or menu bar, add and modify menu items, and retrieve information about the menu or menu bar. |
 | MenuFromHandle() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The MenuFromHandle function retrieves the Menu or MenuBar object corresponding to a Win32 menu handle. |
 | MenuSelect() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The MenuSelect function invokes a menu item from the menu bar of the specified window. Like the Control functions, on Linux and macOS it can only reach menus of windows created by this script, not those of other applications. |
@@ -849,9 +849,9 @@ Status legend:
 | NumPut() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The NumPut function stores one or more numbers in binary format at the specified address+offset. A type or value which does not name a number raises a ValueError. |
 | ObjAddRef() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ObjAddRef and ObjRelease functions increment or decrement an object's reference count. |
 | ObjBindMethod() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ObjBindMethod function creates a BoundFunc object which calls a method of a given object. |
-| Object() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new Object; optional key/value arguments initialize own properties. |
 | Object.__Ref() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a property-reference (PropRef) object. |
 | Object.OwnPropCount() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns number of own properties defined directly on the object. |
+| Object() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new Object; optional key/value arguments initialize own properties. |
 | ObjFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases object references associated with a pointer/COM wrapper context. |
 | ObjFromPtr() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Creates or retrieves an object wrapper from a raw pointer. |
 | ObjFromPtrAddRef() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Creates/retrieves an object wrapper from a pointer and increments its reference count. |
@@ -933,7 +933,7 @@ Status legend:
 | RunAs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Specifies a set of user credentials to use for all subsequent uses of Run and RunWait. |
 | RunScript() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Executes script source text/file in a script engine context. Requires the optional compiler component at runtime; compiled artifacts detect this call and include the component unless it is explicitly excluded. |
 | RunWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Run and RunWait functions run an external program. RunWait will wait until the program finishes before continuing. |
-| Screen capture and pixel/image functions | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Pixel/image search and screen capture depend on platform-specific backends. |
+| Screen capture and pixel/image functions | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Pixel/image search and screen capture depend on platform-specific backends. On Linux, keysharp-desktop provides authorized X11, Wayland compositor, and portal capture. |
 | Script-owned window management | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Creating and driving the script's own GUI windows. Built on WinForms (Windows) and Eto (Linux/macOS); the object model, events, controls, menus, ListView and TreeView all behave the same. Remaining differences: the ActiveX and Custom control types are Win32-only, ListView supports only the Report view off Windows, raw Win32 style options are ignored, the WebView control renders with whichever browser engine the platform provides, per-monitor DPI re-layout is Windows-only, and a client cannot position its own window on Wayland without a compositor backend. |
 | Send() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends simulated keystrokes. |
 | SendEvent() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends keystrokes via Event mode. |
@@ -977,9 +977,9 @@ Status legend:
 | StatusBarWait() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Waits for native Win32 status-bar text and depends on StatusBarGetText; no non-Windows status-bar accessibility backend is implemented. |
 | StrCompare() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compares two strings alphabetically. Note this supports local, human readable comparison as well. |
 | StrGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a string from a memory address or buffer, optionally converting it from a given code page. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
-| String() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a value to a string. For an object, the result is whatever its ToString() returned, so a ToString() which returns no value makes String() return no value too rather than raising. |
 | String.EndsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a string ends with the specified suffix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given. |
 | String.StartsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a string starts with the specified prefix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given. |
+| String() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a value to a string. For an object, the result is whatever its ToString() returned, so a ToString() which returns no value makes String() return no value too rather than raising. |
 | StringBuffer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a mutable string buffer object. |
 | StrLen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the count of how many characters are in a string. |
 | StrLower() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a string to lowercase. |
@@ -1007,7 +1007,7 @@ Status legend:
 | Task | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Work that finishes later; every CLR call returning a .NET Task hands one back. Status is the canonical one-read state (Pending/Succeeded/Failed/Canceled) with IsPending/IsSucceeded/IsFailed/IsCanceled as single-question predicates, Result is a non-blocking snapshot, Await returns or throws the outcome, and Wait returns false only on timeout. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation. |
 | Task.Create() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls Producer synchronously with the positional prefix it accepts of Succeed, Fail and Cancel, and returns the Task they settle; Producer's return value is ignored. First settlement wins; Succeed adopts asynchronous work's eventual value, failure or cancellation, and an early producer error fails the Task. |
 | Task.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The underlying CLR task as a Ks.Clr object, so members Task does not mirror (IsCompleted, ContinueWith, ...) stay reachable. Replaces the former Clr property. |
-| Taskbar | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, reaches only docks implementing it, and decorates the entry named by DESKTOP_ENTRY; macOS badges the dock tile with text and draws progress on the tile, also application-wide. Linux and macOS are compile-checked only. |
+| Taskbar | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, and decorates the desktop entry selected by DESKTOP_ENTRY, then #App DesktopEntry, then Keysharp. Plasma and implementing docks consume it natively; the keysharp-desktop extension maps it onto GNOME's stock overview dash and Cinnamon's grouped-window-list. macOS badges the dock tile with text and draws progress on the tile, also application-wide. Cinnamon 6.6.9 is runtime-verified; GNOME, Plasma and macOS are compile-checked or source-verified only. |
 | Thread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Thread settings and controls. |
 | Thread (object) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Thread is a class rather than a function: calling it runs the AHK sub-functions (NoTimers/Priority/Interrupt) unchanged, and an instance describes one pseudo-thread: Id, Index (1-based), IsActive, Kind, Elapsed, Priority, Critical, Paused, IsInterruptible, Underlying and Exit. An Is prefix marks a read-only predicate; a settable mode is named for the mode. Obtained from A_Thread, Under or RealThread.Threads, never constructed. There is one object per pseudo-thread, so `thr == A_Thread` tests whether it is the running one. It revalidates its identity on every access, so one held past its pseudo-thread's life reports IsActive false rather than describing whichever pseudo-thread reused the pooled slot. Reads work from any real thread; setters and Exit require the owning one. |
 | Throw | 🟡 Partial | 🟡 Partial | 🟡 Partial | 🟡 Partial | Rethrowing with throw is only allowed directly within the scope of catch, not from an arbitrary point (eg from functions). |
@@ -1048,7 +1048,7 @@ Status legend:
 | WinActivateBottom() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinActivateBottom function is similar to the WinActivate function but it activates the bottommost matching window rather than the topmost. |
 | WinActive() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinActive function checks if the specified window is active and returns its unique ID (HWND). |
 | WinClose() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinClose function closes the specified window. |
-| WinEvent | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Ks class for cross-platform window-event subscriptions. Windows uses SetWinEventHook; Linux uses X11 or native compositor sources; macOS uses Accessibility AXObserver streams and requires Accessibility permission. |
+| WinEvent | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Ks class for cross-platform window-event subscriptions. Windows uses SetWinEventHook; Linux uses keysharp-desktop X11 or native compositor sources; macOS uses Accessibility AXObserver streams and requires Accessibility permission. |
 | WinEvent.Active() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Subscribes to active/foreground window changes; also fires when the active window's title changes (so late-matching criteria are caught). Callback receives (hook, hwnd, dwmsEventTime). |
 | WinEvent.CaretMove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Subscribes to text caret (insertion point) movement. hwnd is the caret owner's top-level window and A_EventInfo holds the caret rectangle { X, Y, Width, Height } in screen coordinates; unchanged positions are suppressed. Sourced from the same accessibility plumbing as CaretGetPos, so coverage matches it: Windows uses the MSAA caret (EVENT_OBJECT_LOCATIONCHANGE on OBJID_CARET), Linux the AT-SPI object:text-caret-moved signal, macOS the AXSelectedTextChanged notification. Applications that draw their own caret without exposing it to accessibility report nothing. |
 | WinEvent.Count | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Remaining number of times the callback will fire (-1 = unlimited). |
@@ -1073,15 +1073,15 @@ Status legend:
 | WinGetCount() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetCount function returns the number of existing windows that match the specified criteria. |
 | WinGetEnabled() | 🟢 Full | 🟢 Full | 🟡 Partial | 🔴 Unsupported | Retrieves the enabled/disabled state of the specified window. On macOS this always reflects whether the window exists, not its true enabled state, since there is no API to query it. |
 | WinGetExStyle() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves the extended style of the specified window. Neither X11, Wayland nor macOS has an equivalent of Win32 extended window styles; all three always return 0. |
-| WinGetID() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetID function returns the unique ID (HWND) of the specified window. |
+| WinGetID() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetID function returns the unique ID (HWND) of the specified window. Wayland foreign windows receive positive process-local synthetic handles which can be reused with ahk_id and other window functions. |
 | WinGetIDLast() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetIDLast function returns the unique ID (HWND) of the last/bottommost window if there is more than one match. |
-| WinGetList() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetList function returns an array of unique IDs (HWNDs) for all existing windows that match the specified criteria. |
+| WinGetList() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetList function returns an array of unique IDs (HWNDs) for all existing windows that match the specified criteria. Wayland foreign-window IDs are positive process-local synthetic handles. |
 | WinGetMinMax() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetMinMax function returns a non-zero number if the specified window is maximized or minimized. |
 | WinGetPID() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetPID function returns the Process ID (PID) of the specified window. |
 | WinGetPos() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetPos function retrieves the position and size of the specified window. |
 | WinGetProcessName() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetProcessName function returns the name of the process that owns the specified window. |
 | WinGetProcessPath() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetProcessPath function returns the full path and name of the process that owns the specified window. |
-| WinGetStyle() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Retrieves the style of the specified window. No non-Windows platform has a real Win32 style word, so for a script-owned window the toolkit state is projected onto the WS_* bits scripts actually test: WS_CAPTION/WS_POPUP from the border style, WS_SYSMENU, WS_THICKFRAME, WS_MINIMIZEBOX and WS_MAXIMIZEBOX from the frame buttons, plus WS_VISIBLE, WS_DISABLED, WS_MINIMIZE and WS_MAXIMIZE from the window state. Foreign windows expose no style word at all: X11 and macOS return 0, and Wayland reports only WS_CAPTION from the compositor decoration state. |
+| WinGetStyle() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Retrieves the style of the specified window. No non-Windows platform has a real Win32 style word, so for a script-owned window the toolkit state is projected onto the WS_* bits scripts actually test: WS_CAPTION/WS_POPUP from the border style, WS_SYSMENU, WS_THICKFRAME, WS_MINIMIZEBOX and WS_MAXIMIZEBOX from the frame buttons, plus WS_VISIBLE, WS_DISABLED, WS_MINIMIZE and WS_MAXIMIZE from the window state. Foreign windows expose no native Win32 style word: X11 and Wayland report WS_CAPTION from decoration state, and macOS returns 0. |
 | WinGetText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Retrieves the text from a window. On X11 the text is gathered by walking the X window tree and reading each child's WM_NAME, so a modern GTK or Qt application - whose widgets are drawn client-side and are not X windows - yields little or nothing. Wayland exposes no window text at all and returns empty; macOS reads it through the Accessibility API. |
 | WinGetTitle() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetTitle function retrieves the title of the specified window. |
 | WinGetTransColor() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves the transparency colour key of the specified window. No non-Windows backend implements a per-colour transparency key; X11, Wayland and macOS always return 0. |
@@ -1094,16 +1094,16 @@ Status legend:
 | WinMinimizeAll() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinMinimizeAll and WinMinimizeAllUndo functions minimize or unminimize all windows. |
 | WinMinimizeAllUndo() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinMinimizeAll and WinMinimizeAllUndo functions minimize or unminimize all windows. |
 | WinMove() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinMove function changes the position and/or size of the specified window. |
-| WinMoveBottom() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinMoveBottom function sends the specified window to the bottom of stack; that is, beneath all other windows. On Wayland this is provided by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.orderBack(); macOS provides no API to lower another process's window. |
+| WinMoveBottom() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinMoveBottom function sends the specified window to the bottom of stack; that is, beneath all other windows. On Wayland this is provided by the Keysharp KWin provider or the GNOME/Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.orderBack(); macOS provides no API to lower another process's window. |
 | WinMoveTop() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinMoveTop function brings the specified window to the top of the stack without explicitly activating it. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS this is done via the Accessibility AXRaise action, which raises the window within its owning application without activating that application. |
 | WinRedraw() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🔴 Unsupported | Redraws a window. Own windows are invalidated through the toolkit on every platform. For a foreign window X11 approximates it with XClearWindow, Wayland has no equivalent and raises an OSError, and macOS reports success without doing anything because AppKit owns repainting. |
 | WinRestore() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinRestore function unminimizes or unmaximizes the specified window if it is minimized or maximized. |
 | WinSetAlwaysOnTop() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinSetAlwaysOnTop function makes the specified window stay on top of all other windows (except other always-on-top windows). On macOS, only supported for windows owned by the calling process; macOS provides no API to change another process's window level, and raising it via Accessibility would require repeatedly stealing focus, so it is a no-op for windows owned by other applications. |
-| WinSetEnabled() | 🟢 Full | 🟢 Full | 🟡 Partial | 🔴 Unsupported | Enables or disables the specified window. macOS has no faithful public equivalent of Win32 EnableWindow for another application, so the feature is intentionally unsupported there. |
+| WinSetEnabled() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🔴 Unsupported | Enables or disables the specified window. Linux supports script-owned windows, but neither X11 nor Wayland has a faithful equivalent of Win32 EnableWindow for another application's window, so a foreign target raises OSError. macOS has no faithful public equivalent and is intentionally unsupported. |
 | WinSetExStyle() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Changes the extended style of the specified window. Neither X11, Wayland nor macOS has an equivalent of Win32 extended window styles. On a script-owned window the call is accepted and does nothing; on a foreign window it raises an OSError. |
 | WinSetRegion() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The WinSetRegion function changes the shape of the specified window to be the specified rectangle, ellipse, or polygon. This is implemented purely via the Win32 GDI region APIs (HRGN/SetWindowRgn) and is Windows-only; non-rectangular window shaping has no equivalent implementation on Linux or macOS. |
-| WinSetStyle() | 🟢 Full | 🔴 Unsupported | 🟡 Partial | 🔴 Unsupported | Changes the style of the specified window. X11 has no way to write Win32 window styles: the call is accepted and does nothing on a script-owned window and raises an OSError on a foreign window. Wayland maps only WS_CAPTION, to the compositor decoration state, and only for compositor-backed windows. macOS has no equivalent. |
-| WinSetTitle() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinSetTitle function changes the title of the specified window. On macOS, windows owned by the calling process have their title set directly; for windows owned by other applications, setting AXTitle via the Accessibility API is attempted, but most applications treat it as read-only and the call has no effect. |
+| WinSetStyle() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🔴 Unsupported | Changes the style of the specified window. X11 and Wayland map WS_CAPTION to the desktop provider decoration state for foreign windows; other native Win32 style bits have no equivalent. Script-owned windows use toolkit behavior. macOS has no equivalent. |
+| WinSetTitle() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinSetTitle function changes the title of the specified window. On Wayland, script-owned titles can be changed but no supported compositor backend exposes title mutation for another application, so a foreign target raises OSError. On macOS, windows owned by the calling process have their title set directly; for windows owned by other applications, setting AXTitle via the Accessibility API is attempted, but most applications treat it as read-only and the call has no effect. |
 | WinSetTransColor() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Makes all pixels of the chosen colour invisible. No non-Windows backend implements a per-colour transparency key; X11, Wayland and macOS raise an OSError. Whole-window opacity via WinSetTransparent is supported instead. |
 | WinSetTransparent() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinSetTransparent function makes the specified window semi-transparent. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.alphaValue; macOS provides no public API to change another process's window opacity. |
 | WinShow() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinShow function unhides the specified window. On macOS, windows owned by the calling process are restored individually; for windows owned by other applications, the entire owning application is unhidden (the inverse of WinHide's fallback). |

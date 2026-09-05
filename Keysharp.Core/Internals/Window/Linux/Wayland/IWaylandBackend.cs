@@ -4,7 +4,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	/// <summary>Outcome of a compositor-extension image-overlay Show. The middle state is the important one: a
 	/// compositor overlay is drawn by a shell extension over an asynchronous D-Bus call, so a slow (cold, large)
 	/// upload can exceed our client-side deadline even though the shell received it and created the actor. We must
-	/// NOT treat that ambiguous timeout as a failure — doing so and falling back to an Eto window leaves two
+	/// not treat that ambiguous timeout as a failure — doing so and falling back to an Eto window leaves two
 	/// overlays on screen (the shell's actor plus a mis-positioned Eto twin). Only a definitive rejection/absence
 	/// is a <see cref="Failed"/>.</summary>
 	internal enum OverlayShowResult
@@ -31,7 +31,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		TitleChanged,
 		Minimized,
 		Restored,
-		MoveResized
+		MoveResized,
+		ActiveStateChanged
 	}
 
 	/// <summary>A normalized window event produced by an <see cref="IWaylandBackend"/> event source, carrying the
@@ -57,28 +58,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		};
 	}
 
-	/// <summary>
-	/// Compositor-specific privileged-introspection backend. Wayland's core protocol forbids
-	/// foreign clients from querying things like the global cursor position, other windows'
-	/// geometry, or other windows' z-order; the only way to get this information correctly is
-	/// to talk to the compositor itself through whatever IPC channel it offers (D-Bus for
-	/// KWin, JSON over Unix socket for sway and hyprland, a private Wayland extension for
-	/// COSMIC, etc).
-	///
-	/// This interface abstracts those backends so the call sites in <c>MouseGetPos</c>,
-	/// <c>WinGetPos</c>, etc. don't have to know which one is active. Implementations should
-	/// return <c>false</c> from any Try* method they don't (yet) implement, so a partially
-	/// finished backend is still usable for the methods it does cover. The factory at
-	/// <see cref="WaylandBackend"/> picks one backend per process based on
-	/// detection.
-	///
-	/// Compositors with no introspection IPC (labwc, river without flowing, GNOME for foreign
-	/// clients) get the null backend: every Try* method returns false and the caller falls
-	/// back to whatever degraded path it has (keysharp-input, Forms.Mouse, or a hard error).
-	/// </summary>
+	/// <summary>The keysharp-desktop surface for foreign windows and compositor-owned input,
+	/// clipboard and overlays. Unsupported operations return false so callers can degrade.</summary>
 	internal interface IWaylandBackend
 	{
-		/// <summary>Human-readable name for diagnostics ("KWin", "sway", "hyprland", ...).</summary>
+		/// <summary>Stable key used by the native desktop service.</summary>
+		string BackendKey { get; }
+
+		/// <summary>Human-readable name for diagnostics.</summary>
 		string Name { get; }
 
 		/// <summary>
@@ -90,11 +77,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		bool SupportsMouse => false;
 
 		/// <summary>
-		/// True when this backend can push window lifecycle/state events through
-		/// <see cref="SubscribeWindowEvents"/>. When false, the WinEvent layer either falls back to a generic
-		/// polling source (if the backend can list windows) or to the X11/XWayland backend.
+		/// True when this backend can supply window lifecycle/state events through
+		/// <see cref="SubscribeWindowEvents"/>, either from a native event channel or by polling its window list.
+		/// A native Wayland GDK display cannot be used by the X11 event backend, so false means WinEvent is
+		/// unavailable for this compositor.
 		/// </summary>
 		bool SupportsWindowEvents => false;
+
+		/// <summary>True when window events come from a push channel rather than list polling.</summary>
+		bool SupportsPushWindowEvents => false;
 
 		/// <summary>
 		/// Subscribe to window events (create/close/activate/title-change/minimize/restore/move). The sink may be
@@ -111,20 +102,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// </summary>
 		bool TryGetCursorPos(out int x, out int y);
 
-		/// <summary>
-		/// Best-effort milliseconds since the compositor last received user input. Returns false when the
-		/// compositor does not expose an exact current-idle query (as opposed to idle timeout notifications).
-		/// </summary>
-		bool TryGetIdleTime(out long milliseconds)
-		{
-			milliseconds = 0;
-			return false;
-		}
-
 		/// <summary>Cheap membership test — does this handle belong to this backend (bit-tag or id-map check,
-		/// NO compositor IPC)? True does not guarantee the window still exists; commands verify that themselves.
+		/// without compositor IPC)? True does not guarantee the window still exists; commands verify that themselves.
 		/// Use this to guard routing decisions; use <see cref="TryGetWindow"/> only when the info is consumed.</summary>
 		bool IsKnown(nint handle) => false;
+
+		/// <summary>Translate a managed window handle to the identifier used for native capture.</summary>
+		bool TryGetNativeWindowId(nint handle, out string id)
+		{
+			id = null;
+			return false;
+		}
 
 		bool TryListWindows(bool includeHidden, out IReadOnlyList<WaylandWindowInfo> windows)
 		{
@@ -204,13 +192,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		bool TrySetTransparency(nint handle, object alpha) => false;
 
 		/// <summary>True when <see cref="TrySetTransparency"/> is implemented at all. Lets a request against one of
-		/// OUR OWN windows be accepted before the window exists compositor-side (transparency set before Show) without
+		/// the process's own windows be accepted before the window exists compositor-side without
 		/// claiming success on a compositor that could never honour it.</summary>
 		bool SupportsTransparency => false;
 
 		bool TryCloseWindow(nint handle) => false;
 
-		bool TryKillWindow(nint handle) => TryCloseWindow(handle);
+		bool TryKillWindow(nint handle) => false;
 
 		// ---- Compositor-drawn overlay ------------------------------------
 		// On a compositor with no wlr-layer-shell (notably GNOME/Mutter), Keysharp cannot create a

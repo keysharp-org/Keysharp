@@ -313,15 +313,12 @@ jobs:
           if [ "${RID}" = linux-x64 ]; then
             install -m 0755 Keysharp.Install/linux/keysharp-linux-setup.sh dist/release-assets/keysharp-linux-setup.sh
           fi
-          # The .deb keeps Debian's name_version_arch convention (e.g. keysharp_0.0.0.15_amd64.deb); rename the
-          # release asset to the RID form so it lines up with the tar.gz / .msi / .pkg assets. dpkg reads the arch
-          # from the control file, not the filename, so "apt install ./<file>.deb" still works.
-          if compgen -G "dist/keysharp_${VERSION}_*.deb" > /dev/null; then
-            for deb in dist/keysharp_${VERSION}_*.deb; do
-              mv "$deb" "dist/release-assets/keysharp-${VERSION}-${RID}.deb"
-            done
-          fi
-          fi
+          # The .deb keeps Debian's name_version_arch convention, which is what dpkg, apt and a
+          # package repository expect, and what the two component projects publish.
+          for deb in dist/keysharp_${VERSION}_*.deb; do
+            [ -e "$deb" ] || continue
+            mv "$deb" dist/release-assets/
+          done
 
       - name: Import macOS signing certificate
         if: ${{ matrix.platform == 'macos' && env.MACOS_CERT_P12_BASE64 != '' }}
@@ -425,8 +422,9 @@ jobs:
           cd dist/release-assets
           shopt -s nullglob
           # Bare filenames (not paths) so users can `sha256sum -c SHA256SUMS` from the download folder.
-          # The keysharp-* glob self-excludes the SHA256SUMS file being written.
-          files=(keysharp-*)
+          # Both separators are matched because the .deb carries Debian's name_version_arch form;
+          # SHA256SUMS itself starts with neither, so it excludes the file being written.
+          files=(keysharp-* keysharp_*)
           if [ "${#files[@]}" -eq 0 ]; then
             echo "No release assets found to checksum." >&2
             exit 1

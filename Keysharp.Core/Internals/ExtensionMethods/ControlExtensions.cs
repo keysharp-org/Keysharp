@@ -748,7 +748,8 @@ namespace System.Windows.Forms
 		/// client size. Mirrors AHK's GetClientPos (GetClientRect followed by MapWindowPoints to the screen).
 		/// </summary>
 		/// <param name="control">The <see cref="Control"/> whose client-area screen rectangle to return.</param>
-		internal static Rectangle GetClientScreenRect(this Forms.Control control)
+		/// <param name="resolveWaylandSurface">Whether an explicit query may resolve an uncached Wayland surface.</param>
+		internal static Rectangle GetClientScreenRect(this Forms.Control control, bool resolveWaylandSurface = false)
 		{
 #if WINDOWS
 			// PointToScreen maps the client origin to the screen; ClientSize is the client area (excluding
@@ -765,7 +766,7 @@ namespace System.Windows.Forms
 			// A window's client origin is where its CONTENT starts, not where its surface does: the menu bar and
 			// toolbars pack above the content, and client-side decorations sit outside it again.
 			var anchor = control is Forms.Window w && w.Content is Control content ? content : control;
-			var sp = anchor.ScreenOrigin();
+			var sp = anchor.ScreenOrigin(resolveWaylandSurface);
 			var cs = control is Container cont ? cont.ClientSize : control.GetSize();
 			return new Rectangle((int)Math.Round(sp.X), (int)Math.Round(sp.Y), cs.Width, cs.Height);
 #endif
@@ -780,14 +781,15 @@ namespace System.Windows.Forms
 		/// place on the desktop. Windows has no need for this - it reads any HWND's screen rect via GetWindowRect.
 		/// </summary>
 		/// <param name="control">The <see cref="Control"/> whose screen rectangle to return.</param>
-		internal static Rectangle GetScreenBounds(this Forms.Control control)
+		/// <param name="resolveWaylandSurface">Whether an explicit query may resolve an uncached Wayland surface.</param>
+		internal static Rectangle GetScreenBounds(this Forms.Control control, bool resolveWaylandSurface = false)
 		{
 			// A window's own bounds are already absolute and include the title bar/borders, both of which
 			// PointToScreen would drop - it maps the *client* origin.
 			if (control is Forms.Window window)
 				return window.Bounds;
 
-			var sp = control.ScreenOrigin();
+			var sp = control.ScreenOrigin(resolveWaylandSurface);
 			var size = control.GetSize();
 			return new Rectangle((int)Math.Round(sp.X), (int)Math.Round(sp.Y), size.Width, size.Height);
 		}
@@ -798,7 +800,8 @@ namespace System.Windows.Forms
 		/// can say where that is.
 		/// </summary>
 		/// <param name="control">The <see cref="Control"/> whose screen origin to return.</param>
-		internal static PointF ScreenOrigin(this Forms.Control control)
+		/// <param name="resolveWaylandSurface">Whether an explicit query may resolve an uncached Wayland surface.</param>
+		internal static PointF ScreenOrigin(this Forms.Control control, bool resolveWaylandSurface = false)
 		{
 			var point = control.PointToScreen(Point.Empty);
 #if LINUX
@@ -806,9 +809,16 @@ namespace System.Windows.Forms
 			//Both terms are logical pixels at scale 1, the only scale GTK3 and the compositor are known to agree
 			//on: GTK3 renders at an integer scale and the compositor downscales, so a fractional scale makes them
 			//diverge with distance from the window.
-			if (control.FindForm() is Forms.Form form
-					&& global::Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.TryGetSurfaceOrigin(form, out var origin))
-				point = new PointF(point.X + origin.X, point.Y + origin.Y);
+			if (control.FindForm() is Forms.Form form)
+			{
+				var found = global::Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.TryGetSurfaceOrigin(form, out var origin);
+
+				if (!found && resolveWaylandSurface)
+					found = global::Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.TryResolveSurfaceOrigin(form, out origin);
+
+				if (found)
+					point = new PointF(point.X + origin.X, point.Y + origin.Y);
+			}
 
 #endif
 			return point;

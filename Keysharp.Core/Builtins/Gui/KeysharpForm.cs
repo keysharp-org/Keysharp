@@ -181,13 +181,16 @@ namespace Keysharp.Builtins
 #else
 				lastDpi = CurrentDpi;
 				_ = this.Handle;
-				// On Wayland the titlebar/taskbar icon is resolved from the window's app_id (matched to an
-				// installed keysharp.desktop), not from the Window.Icon pixbuf — GTK3 has no per-window icon
-				// protocol there, so that pixbuf only feeds X11's _NET_WM_ICON. Tag the window with our
-				// app_id so the compositor shows the Keysharp logo. The GdkWindow may still be unmapped at
-				// Shown on Wayland, so retry once the map has settled.
-				if (!Eto.Forms.EtoExtensions.SetWaylandAppId(this, "keysharp"))
-					Eto.Forms.Application.Instance.AsyncInvoke(() => Eto.Forms.EtoExtensions.SetWaylandAppId(this, "keysharp"));
+				#if LINUX
+				// On Wayland the titlebar/taskbar icon is resolved from the window's app_id (matched to the
+				// DESKTOP_ENTRY-selected file), not from the Window.Icon pixbuf. Use the same identity as
+				// LauncherEntry so a packaged script can own its icon and taskbar state. The GdkWindow may
+				// still be unmapped at Shown, so retry once the map has settled.
+				var waylandAppId = Keysharp.Internals.LinuxDesktopIdentity.ApplicationId;
+
+				if (!Eto.Forms.EtoExtensions.SetWaylandAppId(this, waylandAppId))
+					Eto.Forms.Application.Instance.AsyncInvoke(() => Eto.Forms.EtoExtensions.SetWaylandAppId(this, waylandAppId));
+				#endif
 				// The GTK input shape needs a realized GdkWindow, which only exists once the window has
 				// been shown, so (re)apply any requested click-through here.
 				if (clickThrough)

@@ -1,6 +1,11 @@
+#ErrorStdOut
+#Warn All, StdOut
+#Requires capability InputMonitoring, InputControl, WindowMonitoring, WindowControl, ScreenCapture, ClipboardMonitoring
+
 #import KS { * }
 ; OCR library (cross-platform). Relative path from Code/Gui to Keysharp/Scripts.
 #include ../../../Keysharp/Scripts/OCR.ks
+
 If (FileExist(A_Desktop . "/MyScreenClip.png"))
 	FileDelete(A_Desktop . "/MyScreenClip.png")
 
@@ -29,6 +34,21 @@ global gInputHookExpected := ""
 global gInputHookActual := ""
 global gWindowTitleEdit := ""
 global gWindowInfoEdit := ""
+global gWindowResults := ""
+global gWindowEnvironment := ""
+global gWindowSummary := ""
+global gWindowRunButton := ""
+global gWindowResultRows := []
+global gWindowSuiteRunning := false
+global gWindowFixturePid := 0
+global gWindowCapturePid := 0
+global gWindowFixturePrefix := ""
+global gWindowFixtureCommandPath := ""
+global gWindowFixtureCommandSequence := 0
+global gWindowPrimaryHwnd := 0
+global gWindowSecondaryHwnd := 0
+global gWindowEventSeen := Map()
+global gWindowEventExpected := Map()
 global gClipboardTextEdit := ""
 global gOcrResultEdit := ""
 global gClipboardMonitorEnabled := false
@@ -41,9 +61,6 @@ global gInputHookObj := ""
 global gInputHookLastText := ""
 global gInputHookLastReason := ""
 global gWinEventHooks := []
-global gWinEventCount := 0
-global gWinEventMoveCount := 0
-global gWinEventCaretCount := 0
 global gMonitorHook := ""
 global gMonitorChangeCount := 0
 global gMonitorList := ""
@@ -68,10 +85,8 @@ global gTaskbarProbeGui := ""
 global gTraySetIconGui := ""
 global gTaskbarProgressValue := 0
 
-winposx := ""
-winposy := ""
-winposw := ""
-winposh := ""
+OnExit(WindowSuiteExit)
+
 origBackColor := ""
 LVFolder := A_MyDocuments
 
@@ -156,7 +171,7 @@ MySB := MyGui.Add("StatusBar", "h36", "                       ")
 ; │  Start TAB  │
 ; └─────────────┘
 
-Tab := MyGui.Add("Tab3", , ["Lists, Menus && Styles", "Edits && Messages", "Pickers && Sliders", "ControlZoo", "Send && Hotkey", "Dll && COM", "Image", "Windows", "Monitors", "Clipboard", "Sound"])
+Tab := MyGui.Add("Tab3", , ["Lists, Menus && Styles", "Edits && Messages", "Pickers && Sliders", "ControlZoo", "Send && Hotkey", "Dll && COM", "Image", "Windows", "Shell", "Monitors", "Clipboard", "Sound"])
 
 Tab.UseTab("Lists, Menus & Styles")
 
@@ -359,11 +374,11 @@ LinesBtn.OnEvent("Click", GetLineCount)
 TreeViewText := MyGui.Add("Text", "xc+10 cBlue s10 w200", "TreeView Test")
 TV := MyGui.Add("TreeView", "xp w200 y+5 -ReadOnly") ; Need to work on -ReadOnly
 TV.OnEvent("ItemEdit", MyTreeView_Edit)
-P1 := TV.Add("First parent")
-P1C1 := TV.Add("Parent 1's first child", P1)  ; Specify P1 to be this item's parent.
-P2 := TV.Add("Second parent")
-P2C1 := TV.Add("Parent 2's first child", P2)
-P2C2 := TV.Add("Parent 2's second child", P2)
+TreeParentOne := TV.Add("First parent")
+P1C1 := TV.Add("Parent 1's first child", TreeParentOne)
+TreeParentTwo := TV.Add("Second parent")
+P2C1 := TV.Add("Parent 2's first child", TreeParentTwo)
+P2C2 := TV.Add("Parent 2's second child", TreeParentTwo)
 P2C2C1 := TV.Add("Child 2's first child", P2C2)
 
 ; ┌──────────────────────────┐
@@ -1739,11 +1754,11 @@ LoadSC(*) {
 		Image.FromRect(100, 100, 200, 200).Save(path)
 		Sleep(100)
 	}
-	MyThirdPic := LoadPicture(path)
+	loadedBitmap := LoadPicture(path)
 
 	; Show the clip at its native captured size. Passing "w160 h160" would scale the 200x200 capture down to
 	; 160x160 (AHK sizes a Picture to its explicit width/height); omit them so the clip displays 1:1.
-	MyLoadedPic := MyGui.Add("Picture", "xc+90 yc+158 border", "HBITMAP:" MyThirdPic)
+	MyLoadedPic := MyGui.Add("Picture", "xc+90 yc+158 border", "HBITMAP:" loadedBitmap)
 	Sleep(2000)
 
 #if WINDOWS
@@ -1751,9 +1766,8 @@ LoadSC(*) {
 #endif
 	; Tab.UseTab()
 	FileDelete(path)
-	MyThirdPic := ""
+	loadedBitmap := ""
 	MyLoadedPic := ""
-	MyThirdPic := ""
 }
 
 ; ┌───────────────────────┐
@@ -1916,10 +1930,10 @@ getSelected(*) { ; https://www.autohotkey.com/boards/viewtopic.php?style=17&t=60
 ; │  FUNCTIONS AND CALLBACKS  │
 ; └───────────────────────────┘
 
-LV_DoubleClick(LV, RowNumber)
+LV_DoubleClick(listViewControl, RowNumber)
 {
-	RowText := LV.GetText(RowNumber, 1)  ; Get the text from the row's first field.
-	ColumnText := LV.GetText(RowNumber, 2)
+	RowText := listViewControl.GetText(RowNumber, 1)  ; Get the text from the row's first field.
+	ColumnText := listViewControl.GetText(RowNumber, 2)
 	ToolTip("You double-clicked row number " RowNumber ". File '" RowText "' has size " ColumnText "kb.")
 }
 
@@ -2044,9 +2058,9 @@ MinimizeBySystemMenu(*)
 ; ┌─────────────────┐
 ; │  TreeView Edit  │
 ; └─────────────────┘
-MyTreeView_Edit(TV, Item) {
+MyTreeView_Edit(treeViewControl, Item) {
 	;MsgBox("Sort Not Implemented", "Men at Work")
-	TV.Modify(TV.GetParent(Item), "Sort")  ; This works even if the item has no parent.
+	treeViewControl.Modify(treeViewControl.GetParent(Item), "Sort")  ; This works even if the item has no parent.
 }
 
 ; ┌───────────────────────────────────────────────────────────────────────────┐
@@ -2468,6 +2482,7 @@ Reset_Style(*) {
 
 Set_Edit_Style(*)
 {
+	global HwndMyEdit, MyEdit2
 #if WINDOWS
 	ControlSetStyle("+0x8", HwndMyEdit)   ; 0x8 = ES_UPPERCASE
 	ControlFocus(HwndMyEdit)
@@ -2488,6 +2503,7 @@ Set_Edit_Style(*)
 
 Reset_Edit_Style(*)
 {
+	global HwndMyEdit, MyEdit2
 #if WINDOWS
 	ControlSetStyle("-0x8", HwndMyEdit)
 	ControlFocus(HwndMyEdit)
@@ -2504,21 +2520,6 @@ Reset_Edit_Style(*)
 	HwndMyEdit := MyEdit2.Hwnd
 	ControlFocus(HwndMyEdit)
 #endif
-}
-
-; ┌──────────────────────┐
-; │  Move Gui functions  │
-; └──────────────────────┘
-
-MoveGui(*) {
-	global winposx, winposy, winposw, winposh
-	WinGetPos(&winposx, &winposy, &winposw, &winposh, MyGui)
-	WinMove(100, 100, , , MyGui)
-}
-
-MoveGuiBack(*) {
-	global winposx, winposy, winposw, winposh
-	WinMove(winposx, winposy, winposw, winposh, MyGui)
 }
 
 ; ┌──────────────────────────┐
@@ -3125,35 +3126,47 @@ gStatus["pixel_main"] := pixelStatus
 MyGui.UseGroup()
 Tab.UseTab()
 
-; ── Windows tab: window capture (Ks Image.FromWindow) + WinEvent probes (guitest's window move/min/max tests move here too) ──
+; ── Windows tab: an automated foreign-process suite plus an ad-hoc inspector. ──
 Tab.UseTab("Windows")
-externalWinGroup := MyGui.AddGroupBox("xc+16 yc+10 w540", "Window Capture / Activate / Move")
-MyGui.UseGroup(externalWinGroup)
-MyGui.AddText("xc+16 yc+24 w508 h34", "Use Capture Active Window to prefill the title field, or type your own title match. Activate and Move are semi-automated and should be confirmed by the tester.")
-gWindowTitleEdit := MyGui.AddEdit("xc+16 y+8 w508", "")
-btnCaptureActive := MyGui.AddButton("xc+16 y+10 w150 h28", "Capture Active")
-btnCaptureActive.OnEvent("Click", (*) => CaptureActiveWindow())
-btnActivateTarget := MyGui.AddButton("x+10 yp w150 h28", "Activate Title")
-btnActivateTarget.OnEvent("Click", (*) => ActivateExternalWindow())
-btnMoveTarget := MyGui.AddButton("x+10 yp w188 h28", "Move Title +40,+40")
-btnMoveTarget.OnEvent("Click", (*) => MoveExternalWindow())
-btnFromPoint := MyGui.AddButton("xc+16 y+10 w220 h28", "Use Window From Mouse Point")
-btnFromPoint.OnEvent("Click", (*) => CaptureWindowFromPoint())
-MyGui.AddText("x+12 yp w276 h34", "Reads the window under the current mouse cursor and fills the target title.")
-gWindowInfoEdit := MyGui.AddEdit("xc+16 y+10 w508 h140 ReadOnly -Wrap")
-externalStatus := MyGui.AddText("xc+16 y+8 w508 h28", "External status: waiting for a target title")
-gStatus["window_external"] := externalStatus
+windowSuiteGroup := MyGui.AddGroupBox("xc+16 yc+10 w1114", "Foreign Window Suite")
+MyGui.UseGroup(windowSuiteGroup)
+gWindowEnvironment := MyGui.AddText("xc+16 yc+24 w1082 h38", WindowEnvironmentText())
+gWindowRunButton := MyGui.AddButton("xc+16 y+8 w180 h30", "Run Full Suite")
+gWindowRunButton.OnEvent("Click", (*) => RunWindowSuite("full"))
+btnWindowReadSuite := MyGui.AddButton("x+10 yp w180 h30", "Run Queries Only")
+btnWindowReadSuite.OnEvent("Click", (*) => RunWindowSuite("queries"))
+MyGui.AddText("x+18 yp+5 w650 h26", "Two fixture windows; capture runs in a separate process with a 20-second deadline.")
+gWindowSummary := MyGui.AddText("xc+16 y+8 w1082 h28", "Window suite: not run")
+gStatus["window_helper"] := gWindowSummary
 MyGui.UseGroup()
+
 Tab.UseTab("Windows")
-winEventGroup := MyGui.AddGroupBox("xc+570 yc+10 w560", "WinEvent (Ks.WinEvent) Window Event Subscriptions")
-MyGui.UseGroup(winEventGroup)
-MyGui.AddText("xc+16 yc+24 w528 h54", "Subscribes to Active / Exist / NotExist / Move / Minimize / Restore / TitleChange / CaretMove through Ks.WinEvent and logs them. Move and CaretMove events are counted (not logged) to avoid flooding. After starting, switch, open, close, minimize, restore, and drag windows, and type into a text field.")
-btnStartWinEvent := MyGui.AddButton("xc+16 y+10 w200 h28", "Start WinEvent Probe")
-btnStartWinEvent.OnEvent("Click", (*) => StartWinEventProbe())
-btnStopWinEvent := MyGui.AddButton("x+10 yp w200 h28", "Stop WinEvent Probe")
-btnStopWinEvent.OnEvent("Click", (*) => StopWinEventProbe())
-winEventStatus := MyGui.AddText("xc+16 y+10 w528 h24", "WinEvent: not started")
-gStatus["window_winevent"] := winEventStatus
+windowResultsGroup := MyGui.AddGroupBox("xc+16 y+10 w1114", "Results (PASS / FAIL / SKIP / BLOCKED)")
+MyGui.UseGroup(windowResultsGroup)
+gWindowResults := MyGui.AddListView("xc+16 yc+24 w1082 r11 Grid", ["Area", "Test", "Result", "Expected", "Actual"])
+gWindowResults.ModifyCol(1, 105)
+gWindowResults.ModifyCol(2, 225)
+gWindowResults.ModifyCol(3, 85)
+gWindowResults.ModifyCol(4, 285)
+gWindowResults.ModifyCol(5, 340)
+MyGui.UseGroup()
+
+Tab.UseTab("Windows")
+adHocWindowGroup := MyGui.AddGroupBox("xc+16 y+10 w1114", "Ad-hoc Window Inspector")
+MyGui.UseGroup(adHocWindowGroup)
+MyGui.AddText("xc+16 yc+24 w1082 h28", "Inspect a typed WinTitle selector, or use an automatic picker below.")
+gWindowTitleEdit := MyGui.AddEdit("xc+16 y+6 w818", "")
+btnInspectTarget := MyGui.AddButton("x+8 yp w128 h28", "Inspect Selector")
+btnInspectTarget.OnEvent("Click", (*) => InspectExternalWindow())
+btnActivateTarget := MyGui.AddButton("x+8 yp w112 h28", "Activate")
+btnActivateTarget.OnEvent("Click", (*) => ActivateExternalWindow())
+btnCaptureActive := MyGui.AddButton("xc+16 y+8 w152 h28", "Inspect Active Window")
+btnCaptureActive.OnEvent("Click", (*) => CaptureActiveWindow())
+btnFromPoint := MyGui.AddButton("x+8 yp w168 h28", "Inspect Window at Mouse")
+btnFromPoint.OnEvent("Click", (*) => CaptureWindowFromPoint())
+gWindowInfoEdit := MyGui.AddEdit("xc+16 y+8 w1082 h112 ReadOnly -Wrap")
+externalStatus := MyGui.AddText("xc+16 y+6 w1082 h26", "External status: waiting for a target")
+gStatus["window_external"] := externalStatus
 MyGui.UseGroup()
 Tab.UseTab()
 
@@ -3213,46 +3226,17 @@ gStatus["monitor_change"] := monitorChangeStatus
 MyGui.UseGroup()
 Tab.UseTab()
 
-; This-window tests (they manipulate whole windows). "Move GUI" moves THIS window only; arbitrary-title
-; moves live in the Window Capture / Activate / Move group above.
-Tab.UseTab("Windows")
-; Span below the taller of the two (now auto-height) groups on the first row.
-externalWinGroup.GetPos(&_ewX, &_ewY, &_ewW, &_ewH)
-winEventGroup.GetPos(&_weX, &_weY, &_weW, &_weH)
-guiSelfGroup := MyGui.AddGroupBox("xc+16 yc+" (10 + Max(_ewH, _weH) + 10) " w1114", "This-window tests (Move / Title / Notepad)")
-MyGui.UseGroup(guiSelfGroup)
-MoveText := MyGui.AddText("xc+16 yc+24 w380 h20", "Move this window to (100,100), then restore it (button colour tracks focus):")
-MoveText.SetFont("s9 cBlue")
-MoveButton := MyGui.AddButton("xc+16 y+6 w120 h26", "Move GUI")
-MoveButton.OnEvent("Focus", ChangeMoveBtnColor)
-MoveButton.OnEvent("Click", MoveGui)
-MoveButtonBack := MyGui.AddButton("x+8 yp w120 h26", "Move GUI Back")
-MoveButtonBack.OnEvent("Focus", ChangeMoveBtnBackColor)
-MoveButtonBack.OnEvent("Click", MoveGuiBack)
-#if WINDOWS
-TitleInfo := MyGui.AddText("xc+420 yc+24 w340 h20", "Alter this window's title via SendMessage (WM_SETTEXT):")
-TitleInfo.SetFont("cBlue s9")
-SendBtn1 := MyGui.AddButton("xc+420 y+6 w120 h26", "Change Title")
-SendBtn1.OnEvent("Click", ChangeTitle)
-SendBtn2 := MyGui.AddButton("x+8 yp w120 h26", "Restore Title")
-SendBtn2.OnEvent("Click", RestoreTitle)
-PostInfo := MyGui.AddText("xc+800 yc+24 w300 h20", "Launch Notepad, PostMessage its About box, then close it:")
-PostInfo.SetFont("cBlue s9")
-PostBtn1 := MyGui.AddButton("xc+800 y+6 w190 h26", "Show Notepad 'About'")
-PostBtn1.OnEvent("Click", AboutNotepad)
-#endif
-MyGui.UseGroup()
-Tab.UseTab()
-
-; ── Windows tab: the window's own icon, and the badge / progress a shell draws on its taskbar button ──
+; ── Shell tab: the window's own icon, and the badge / progress a shell draws on its taskbar button ──
 ; Nothing here can check itself: a shell draws the result, so each button says what to look for and the
 ; status line reports "PASS if ...", which leaves the pass/fail bar alone.
-Tab.UseTab("Windows")
-; "y+10" after re-selecting the tab references the last group added to it, which is guiSelfGroup above.
-iconTaskbarGroup := MyGui.AddGroupBox("xc+16 y+10 w1114", "Window Icon && Taskbar Button (Gui.Icon / Gui.SetIcon / Ks.Taskbar)")
+Tab.UseTab("Shell")
+iconTaskbarGroup := MyGui.AddGroupBox("xc+16 yc+10 w1114", "Window Icon && Taskbar Button (Gui.Icon / Gui.SetIcon / Ks.Taskbar)")
 MyGui.UseGroup(iconTaskbarGroup)
 
-MyGui.AddText("xc+16 yc+22 w348 h44", "Gui.SetIcon gives one window its own icon; TraySetIcon changes the script's, which every window opened after it wears. Watch the title bar, the taskbar button and alt-tab.")
+shellIconHelp := (A_OSType = "LINUX" && StrLower(EnvGet("XDG_SESSION_TYPE")) = "wayland")
+	? "Wayland gets the window icon from the installed .desktop entry; it has no per-window icon protocol, so the Gui.SetIcon buttons below only exercise loading and Gui.Icon copying."
+	: "Gui.SetIcon gives one window its own icon; TraySetIcon changes the script's, which every window opened after it wears. Watch the title bar, the taskbar button and alt-tab."
+MyGui.AddText("xc+16 yc+22 w348 h44", shellIconHelp)
 btnIconFile := MyGui.AddButton("xc+16 y+6 w170 h26", "Icon: monkey.ico")
 btnIconFile.OnEvent("Click", (*) => SetWindowIconFromFile())
 btnIconLarge := MyGui.AddButton("x+8 yp w170 h26", "Icon: monkey.ico w256")
@@ -3451,13 +3435,13 @@ ResetWindowIcon(*) {
 SetTaskbarBadgeFromFile(*) {
 	global gIconAssetPath
 
-	TaskbarApplyBadge(gIconAssetPath, 1, "7 monkeys")
+	TaskbarApplyBadge(gIconAssetPath, 1, Taskbar.HasBadgeIcon ? "7 monkeys" : "7")
 	SetStatus("window_taskbar", "Badge: monkey.ico on " TaskbarTargetName() " - PASS if a small monkey sits in the corner of that taskbar button, or the count 7 where the badge cannot be an icon")
 }
 
 SetTaskbarBadgeFromModule(*) {
-	TaskbarApplyBadge(A_KsCorePath, "Keysharp_s.ico", "12 waiting")
-	SetStatus("window_taskbar", "Badge: the suspend icon on " TaskbarTargetName() " - PASS if the badge changed from the monkey to the Keysharp 'S'")
+	TaskbarApplyBadge(A_KsCorePath, "Keysharp_s.ico", Taskbar.HasBadgeIcon ? "12 waiting" : "12")
+	SetStatus("window_taskbar", "Badge: changed on " TaskbarTargetName() " - PASS if it is now the Keysharp 'S' icon, or the count 12 where the badge cannot be an icon")
 }
 
 ClearTaskbarBadge(*) {
@@ -3528,37 +3512,6 @@ ClearTaskbarProgress(*) {
 	TaskbarApplyProgress("")
 	SetStatus("window_taskbar", "Progress: cleared on " TaskbarTargetName() " - PASS if the bar is gone, colour and all, after an Error or Paused state")
 }
-
-ChangeMoveBtnColor(*) {
-	MoveButton.SetFont("cRed")
-	MoveButtonBack.SetFont("cBlack")
-}
-
-ChangeMoveBtnBackColor(*) {
-	MoveButton.SetFont("cBlack")
-	MoveButtonBack.SetFont("cRed")
-}
-
-#if WINDOWS
-ChangeTitle(*) {
-	Title := "KEYSHARP'S BRAND SPANKING NEW TITLE"
-	SendMessage(0x000C, 0, Title)  ; 0X000C is WM_SETTEXT
-}
-
-RestoreTitle(*) {
-	Title := "KEYSHARP TESTS"
-	SendMessage(0x000C, 0, Title)  ; 0X000C is WM_SETTEXT
-}
-
-AboutNotepad(*) {
-	SetTitleMatchMode(2)
-	Run("Notepad.exe")
-	Sleep(1000)
-	PostMessage(0x0111, 65, 0, , "Untitled - Notepad")
-	Sleep(2000)
-	WinKill("ahk_exe Notepad.exe")
-}
-#endif
 
 ; ── Clipboard tab ──
 Tab.UseTab("Clipboard")
@@ -3772,92 +3725,14 @@ ResetStatuses() {
 	SetStatus("clipboard_monitor", "Clipboard monitor: " (gClipboardMonitorEnabled ? "enabled" : "disabled"))
 	SetStatus("sound_main", "Sound status: Not run")
 	SetStatus("sound_control", "Sound control status: waiting")
-	SetStatus("window_winevent", "WinEvent: not started")
 	SetStatus("window_taskbar", "Window icon / Taskbar: not run")
 	AppendLog("Status text reset.")
 }
 
-; Single callback for every WinEvent subscription. The event kind is read from hook.EventType,
-; so one handler covers Active/Exist/NotExist/Move/Minimize/Restore/TitleChange/CaretMove. Move and
-; CaretMove fire very frequently (once per drag step / per keystroke), so they are counted and
-; surfaced in the status line rather than written to the log, while every other event is logged with
-; the affected window's title. Both also carry a rectangle in A_EventInfo, which the status line shows
-; for CaretMove so the reported caret position can be eyeballed against where the caret actually is.
-OnWinEvent(hook, hwnd, dwmsEventTime) {
-	global gWinEventCount, gWinEventMoveCount, gWinEventCaretCount
-
-	evType := hook.EventType
-
-	if (evType = "Move") {
-		gWinEventMoveCount++
-		SetStatus("window_winevent", "WinEvent: " gWinEventCount " events, " gWinEventMoveCount " moves (last hwnd " Format("0x{:X}", hwnd) ")")
-		return
-	}
-
-	if (evType = "CaretMove") {
-		gWinEventCaretCount++
-		caret := A_EventInfo
-		SetStatus("window_winevent", "WinEvent: " gWinEventCount " events, " gWinEventCaretCount " caret moves (last at "
-			caret.X "," caret.Y " " caret.Width "x" caret.Height " in hwnd " Format("0x{:X}", hwnd) ")")
-		return
-	}
-
-	gWinEventCount++
-
-	; Look up the title by the *pure* window id (integer), not an "ahk_id <id>" string: the integer form
-	; matches regardless of A_DetectHiddenWindows, so hidden helper windows don't raise a "window not found"
-	; error. Even so, a window seen by NotExist is gone by the time the callback runs, so its title lookup is
-	; skipped, and every lookup is wrapped to keep the probe from ever throwing.
-	title := "<n/a>"
-	if (evType != "NotExist") {
-		try
-			title := WinGetTitle(hwnd)
-		catch
-			title := "<unavailable>"
-	}
-
-	AppendLog("WinEvent " evType ": hwnd=" Format("0x{:X}", hwnd) " title=" (title = "" ? "<none>" : title))
-	SetStatus("window_winevent", "WinEvent: " gWinEventCount " events, " gWinEventMoveCount " moves (last " evType ")")
-}
-
-StartWinEventProbe() {
-	global gWinEventHooks, gWinEventCount, gWinEventMoveCount, gWinEventCaretCount
-
-	StopWinEventProbe()
-	gWinEventCount := 0
-	gWinEventMoveCount := 0
-	gWinEventCaretCount := 0
-
-	try {
-		gWinEventHooks.Push(WinEvent.Active(OnWinEvent))
-		gWinEventHooks.Push(WinEvent.Exist(OnWinEvent))
-		gWinEventHooks.Push(WinEvent.NotExist(OnWinEvent))
-		gWinEventHooks.Push(WinEvent.Move(OnWinEvent))
-		gWinEventHooks.Push(WinEvent.Minimize(OnWinEvent))
-		gWinEventHooks.Push(WinEvent.Restore(OnWinEvent))
-		gWinEventHooks.Push(WinEvent.TitleChange(OnWinEvent))
-		gWinEventHooks.Push(WinEvent.CaretMove(OnWinEvent))
-		SetStatus("window_winevent", "WinEvent: probe started — switch, open, close, and drag windows")
-		AppendLog("WinEvent probe started (" gWinEventHooks.Length " subscriptions). Activate, open, close, minimize, restore, and drag windows, and type in a text field.")
-	} catch as err {
-		SetStatus("window_winevent", "WinEvent: BLOCKED/ERROR")
-		AppendLog("WinEvent probe failed: " err.Message)
-	}
-}
-
-StopWinEventProbe() {
-	global gWinEventHooks
-
-	if (gWinEventHooks.Length = 0)
-		return
-
-	for hook in gWinEventHooks {
-		try hook.Stop()
-	}
-
-	gWinEventHooks := []
-	SetStatus("window_winevent", "WinEvent: stopped")
-	AppendLog("WinEvent probe stopped.")
+OnWinEvent(hook, *) {
+	global gWindowEventSeen
+	if gWindowEventSeen.Has(hook.EventType)
+		gWindowEventSeen[hook.EventType]++
 }
 
 ; ── Ks.Monitor: listing, metadata, and per-monitor device control ─────────────────────────────────────────
@@ -4763,18 +4638,745 @@ ToggleBlockMButton() {
 	SetStatus("input_mouse", "Mouse hook: MButton " (blocked ? "SUPPRESSED (middle-click should do nothing)" : "visible"))
 	AppendLog("MButton suppression " (blocked ? "enabled" : "disabled") " via KeyOpt.")
 }
-CaptureActiveWindow() {
-	global gWindowTitleEdit, gWindowInfoEdit
+
+; ── Automated foreign-window suite ───────────────────────────────────────────────────────────────────────
+
+WindowEnvironmentText(caps?) {
+	if !IsSet(caps)
+		caps := RequestCapabilities()
+#if WINDOWS
+	platform := "Windows"
+#elif OSX
+	platform := "macOS"
+#else
+	platform := "Linux/" (IsWaylandWindowSession() ? "Wayland" : "X11")
+	desktop := EnvGet("XDG_CURRENT_DESKTOP")
+	if (desktop != "")
+		platform .= " (" desktop ")"
+#endif
+	return platform " | monitor=" caps.WindowMonitoring " control=" caps.WindowControl " capture=" caps.ScreenCapture
+}
+
+IsWaylandWindowSession() {
+#if LINUX
+	return StrLower(EnvGet("XDG_SESSION_TYPE")) = "wayland"
+		|| (EnvGet("XDG_SESSION_TYPE") = "" && EnvGet("WAYLAND_DISPLAY") != "")
+#else
+	return false
+#endif
+}
+
+CapabilityReady(status) => status = "Granted" || status = "NotApplicable"
+
+RunWindowSuite(mode := "full") {
+	global gWindowSuiteRunning, gWindowRunButton, gWindowEnvironment, gWindowSummary
+	global btnWindowReadSuite
+
+	if gWindowSuiteRunning
+		return
+
+	oldHidden := A_DetectHiddenWindows
+	oldMatch := A_TitleMatchMode
+	oldDelay := A_WinDelay
+	gWindowSuiteRunning := true
 
 	try {
+		gWindowRunButton.Enabled := false
+		btnWindowReadSuite.Enabled := false
+		ClearWindowSuiteResults()
+		gWindowSummary.Value := "Window suite: requesting permissions..."
+		Sleep(-1)
+		caps := mode = "queries"
+			? RequestCapabilities("WindowMonitoring", "ScreenCapture")
+			: RequestCapabilities("WindowMonitoring", "WindowControl", "ScreenCapture")
+		gWindowEnvironment.Value := WindowEnvironmentText(caps)
+		monitorReady := CapabilityReady(caps.WindowMonitoring)
+		controlReady := CapabilityReady(caps.WindowControl)
+		captureReady := CapabilityReady(caps.ScreenCapture)
+		AddWindowResult("Setup", "Capabilities", monitorReady ? "PASS" : "BLOCKED",
+			"Window monitoring available",
+			"monitor=" caps.WindowMonitoring ", control=" caps.WindowControl ", capture=" caps.ScreenCapture)
+
+		if monitorReady {
+			SetTitleMatchMode(2)
+			DetectHiddenWindows(false)
+			SetWinDelay(-1)
+			if StartWindowFixture() {
+				RunForeignWindowQueries(captureReady)
+				if (mode = "full") {
+					if controlReady {
+						RunForeignWindowMutations()
+						RunWindowLifecycleTests()
+					} else
+						AddWindowResult("Setup", "Window control", "BLOCKED", "Granted or NotApplicable", caps.WindowControl)
+				}
+				ReportWindowEvents()
+			}
+		}
+	} catch as err
+		AddWindowResult("Suite", "Unhandled error", "FAIL", "No uncaught error", err.Message)
+	finally {
+		try CleanupWindowFixture()
+		catch as err
+			AddWindowResult("Cleanup", "Fixture resources", "FAIL", "Children stopped and files deleted", err.Message)
+		finally {
+			try {
+				DetectHiddenWindows(oldHidden)
+				SetTitleMatchMode(oldMatch)
+				SetWinDelay(oldDelay)
+			} finally {
+				gWindowSuiteRunning := false
+				gWindowRunButton.Enabled := true
+				btnWindowReadSuite.Enabled := true
+				UpdateWindowSuiteSummary(true)
+			}
+		}
+	}
+}
+
+ClearWindowSuiteResults() {
+	global gWindowResults, gWindowResultRows
+	gWindowResults.Delete()
+	gWindowResultRows := []
+}
+
+AddWindowResult(area, testName, result, expected, actual) {
+	global gWindowResults, gWindowResultRows
+
+	expected := SubStr(expected "", 1, 300)
+	actual := SubStr(actual "", 1, 500)
+	gWindowResults.Add(, area, testName, result, expected, actual)
+	gWindowResultRows.Push(result)
+	line := result " | " area " | " testName " | expected: " expected " | actual: " actual
+	AppendLog("Window suite " line)
+	UpdateWindowSuiteSummary()
+}
+
+AddWindowError(area, testName, err) {
+	message := err.Message
+	lower := StrLower(message)
+	result := InStr(lower, "permission") || InStr(lower, "authorization") ? "BLOCKED"
+		: (InStr(lower, "is not implemented on") ? "SKIP" : "FAIL")
+	AddWindowResult(area, testName, result, "Operation succeeds", message)
+}
+
+UpdateWindowSuiteSummary(final := false) {
+	global gWindowResultRows, gWindowSummary
+	pass := 0, fail := 0, skip := 0, blocked := 0
+
+	for result in gWindowResultRows {
+		switch result {
+			case "PASS": pass++
+			case "FAIL": fail++
+			case "SKIP": skip++
+			case "BLOCKED": blocked++
+		}
+	}
+
+	gWindowSummary.Value := (final ? "Window suite complete: " : "Window suite running: ")
+		. pass " PASS, " fail " FAIL, " skip " SKIP, " blocked " BLOCKED"
+	if final && fail
+		UpdateResultStatusBar("Window suite: FAIL (" fail " failed)")
+	else if final && blocked
+		UpdateResultStatusBar("Window suite: BLOCKED (" blocked " blocked)")
+	else if final
+		UpdateResultStatusBar("Window suite: PASS (" pass " passed, " skip " skipped)")
+}
+
+StartWindowFixture() {
+	global gWindowFixturePid, gWindowFixturePrefix, gWindowSummary, gWindowEventExpected
+	global gWindowFixtureCommandPath, gWindowFixtureCommandSequence
+	global gWindowPrimaryHwnd, gWindowSecondaryHwnd
+
+	CleanupWindowFixture()
+	token := ProcessExist() "-" A_TickCount
+	gWindowFixturePrefix := "KS Window Fixture " token
+	gWindowFixtureCommandPath := A_Temp A_DirSeparator "keysharp-window-" token ".command"
+	gWindowFixtureCommandSequence := 0
+	StartWindowSuiteEvents()
+	gWindowEventExpected["Exist"] := 1
+	gWindowSummary.Value := "Window suite: waiting for two fixture windows..."
+
+	try {
+		LaunchWindowFixture(&gWindowFixturePid, token, gWindowFixtureCommandPath)
+		ok := WaitForWindow(FixtureWindowsReady, 20000, gWindowFixturePid)
+		AddWindowResult("Fixture", "Launch", ok ? "PASS" : "FAIL",
+			"Two foreign windows from a live child process",
+			"PID=" gWindowFixturePid " alive=" ProcessExist(gWindowFixturePid)
+				" handles=" gWindowPrimaryHwnd "/" gWindowSecondaryHwnd)
+		return ok
+	} catch as err {
+		AddWindowError("Fixture", "Launch", err)
+		return false
+	}
+}
+
+FixtureWindowsReady() {
+	global gWindowPrimaryHwnd, gWindowSecondaryHwnd, gWindowFixturePrefix
+	gWindowPrimaryHwnd := WinExist(gWindowFixturePrefix " Primary")
+	gWindowSecondaryHwnd := WinExist(gWindowFixturePrefix " Secondary")
+	return gWindowPrimaryHwnd && gWindowSecondaryHwnd
+}
+
+LaunchWindowFixture(&pid, token, commandPath, captureTitle := "") {
+	helperPath := A_ScriptDir A_DirSeparator "window-fixture.ks"
+	if !FileExist(helperPath)
+		throw Error("Fixture script is missing: " helperPath)
+	launcher := WindowFixtureLauncher()
+	args := launcher["Prefix"] "--errorstdout " QuoteWindowProcessArg(helperPath) " " QuoteWindowProcessArg(token)
+	args .= " " ProcessExist() " " QuoteWindowProcessArg(commandPath)
+	if (captureTitle != "")
+		args .= " " QuoteWindowProcessArg(captureTitle)
+#if LINUX
+	if IsWaylandWindowSession()
+		Run("/usr/bin/env", A_ScriptDir, , &pid,
+			"GDK_BACKEND=wayland " QuoteWindowProcessArg(launcher["Target"]) " " args)
+	else
+		Run(launcher["Target"], A_ScriptDir, , &pid, args)
+#else
+	Run(launcher["Target"], A_ScriptDir, , &pid, args)
+#endif
+	if !pid
+		throw Error("The fixture launcher did not return a PID.")
+}
+
+WindowFixtureLauncher() {
+	target := A_AhkPath
+	prefix := ""
+	SplitPath(target, &hostName)
+
+	if (StrLower(hostName) = "dotnet" || StrLower(hostName) = "dotnet.exe") {
+		entryAssembly := Clr.System.Reflection.Assembly.GetEntryAssembly().Location
+		if (entryAssembly = "")
+			throw Error("The dotnet host did not report the Keysharp entry assembly path.")
+		prefix := QuoteWindowProcessArg(entryAssembly) " "
+	}
+
+	return Map("Target", target, "Prefix", prefix)
+}
+
+QuoteWindowProcessArg(value) => Chr(34) StrReplace(value "", Chr(34), "\" Chr(34)) Chr(34)
+
+WriteWindowFixtureCommand(command) {
+	global gWindowFixtureCommandPath, gWindowFixtureCommandSequence
+	if (gWindowFixtureCommandPath = "")
+		return
+	gWindowFixtureCommandSequence++
+	if FileExist(gWindowFixtureCommandPath)
+		FileDelete(gWindowFixtureCommandPath)
+	FileAppend(gWindowFixtureCommandSequence "|" command, gWindowFixtureCommandPath, "UTF-8-RAW")
+}
+
+CleanupWindowFixture() {
+	global gWindowFixturePid, gWindowCapturePid, gWindowFixturePrefix
+	global gWindowFixtureCommandPath, gWindowPrimaryHwnd, gWindowSecondaryHwnd
+
+	errors := ""
+	try StopWindowSuiteEvents()
+	catch as err
+		errors .= err.Message "`n"
+	try StopWindowProcess(&gWindowCapturePid)
+	catch as err
+		errors .= err.Message "`n"
+	try {
+		if (gWindowFixturePid && ProcessExist(gWindowFixturePid)) {
+			try WriteWindowFixtureCommand("exit")
+			WaitForWindow((*) => !ProcessExist(gWindowFixturePid), 1200)
+		}
+		StopWindowProcess(&gWindowFixturePid)
+	} catch as err
+		errors .= err.Message "`n"
+
+	if (!gWindowFixturePid && !gWindowCapturePid) {
+		try {
+			if (gWindowFixtureCommandPath != "") {
+				for filePath in [gWindowFixtureCommandPath, gWindowFixtureCommandPath ".capture"]
+					if FileExist(filePath)
+						FileDelete(filePath)
+			}
+			gWindowFixtureCommandPath := ""
+			gWindowFixturePrefix := ""
+			gWindowPrimaryHwnd := 0
+			gWindowSecondaryHwnd := 0
+		} catch as err
+			errors .= err.Message "`n"
+	}
+	if (errors != "")
+		throw Error(RTrim(errors, "`n"))
+}
+
+StopWindowProcess(&pid) {
+	if (pid && ProcessExist(pid)) {
+		ProcessClose(pid)
+		if !WaitForWindow((*) => !ProcessExist(pid), 1500)
+			throw Error("Could not stop fixture process " pid ".")
+	}
+	pid := 0
+}
+
+WindowSuiteExit(*) {
+	try CleanupWindowFixture()
+	catch as err
+		FileAppend("Window suite cleanup failed: " err.Message "`n", "**")
+	return 0
+}
+
+StartWindowSuiteEvents() {
+	global gWinEventHooks, gWindowEventSeen, gWindowEventExpected, gWindowFixturePrefix
+
+	StopWindowSuiteEvents()
+	gWindowEventSeen := Map()
+	gWindowEventExpected := Map()
+	oldHidden := A_DetectHiddenWindows
+	try {
+		; A minimized Wayland window is hidden before the polling source observes the transition. Capture true
+		; in these registrations so the Minimize callback can still match the window that just became hidden.
+		DetectHiddenWindows(true)
+		for eventName in ["Exist", "NotExist", "Active", "Move", "Minimize", "Restore", "TitleChange"] {
+			try {
+				hook := WinEvent.%eventName%(OnWinEvent, gWindowFixturePrefix)
+				gWinEventHooks.Push(hook)
+				if !hook.IsActive
+					throw Error("Subscription is not active.")
+				gWindowEventSeen[eventName] := 0
+			} catch as err
+				AddWindowError("WinEvent", eventName " registration", err)
+		}
+	} finally
+		DetectHiddenWindows(oldHidden)
+}
+
+StopWindowSuiteEvents() {
+	global gWinEventHooks
+	errors := ""
+	index := gWinEventHooks.Length
+	while (index > 0) {
+		try {
+			gWinEventHooks[index].Stop()
+			gWinEventHooks.RemoveAt(index)
+		} catch as err
+			errors .= err.Message "`n"
+		index--
+	}
+	if (errors != "")
+		throw Error(RTrim(errors, "`n"))
+}
+
+ReportWindowEvents() {
+	global gWindowEventSeen, gWindowEventExpected
+	WaitForWindow(WindowEventsDelivered, 1500)
+	for eventName, count in gWindowEventSeen {
+		if gWindowEventExpected.Has(eventName)
+			AddWindowResult("WinEvent", eventName, count >= gWindowEventExpected[eventName] ? "PASS" : "FAIL",
+				"At least " gWindowEventExpected[eventName] " events after successful transitions", count)
+		else
+			AddWindowResult("WinEvent", eventName, "SKIP", "A successful transition exercises this event", "Not exercised")
+	}
+}
+
+WindowEventsDelivered() {
+	global gWindowEventSeen, gWindowEventExpected
+	for eventName, expected in gWindowEventExpected
+		if gWindowEventSeen.Has(eventName) && gWindowEventSeen[eventName] < expected
+			return false
+	return true
+}
+
+RunForeignWindowQueries(captureReady) {
+	global gWindowFixturePid, gWindowFixturePrefix, gWindowPrimaryHwnd, gWindowSecondaryHwnd
+	primaryTitle := gWindowFixturePrefix " Primary"
+
+	try {
+		list := WinGetList(gWindowFixturePrefix)
+		count := WinGetCount(gWindowFixturePrefix)
+		ok := count = 2 && list.Length = 2
+			&& WindowArrayHas(list, gWindowPrimaryHwnd) && WindowArrayHas(list, gWindowSecondaryHwnd)
+		AddWindowResult("Search", "Count and list", ok ? "PASS" : "FAIL", "Exactly both fixture handles",
+			"count=" count " list=" WindowHandleArrayText(list))
+	} catch as err
+		AddWindowError("Search", "Count and list", err)
+
+	try {
+		first := WinGetID(gWindowFixturePrefix)
+		last := WinGetIDLast(gWindowFixturePrefix)
+		ok := first && last && first != last
+		AddWindowResult("Search", "First and last ID", ok ? "PASS" : "FAIL", "Two distinct handles", first "/" last)
+
+		oldMatch := A_TitleMatchMode
+		try {
+			SetTitleMatchMode(3)
+			exact := WinExist(primaryTitle)
+			SetTitleMatchMode("RegEx")
+			regex := WinExist("^" gWindowFixturePrefix " Primary$")
+		} finally
+			SetTitleMatchMode(oldMatch)
+		AddWindowResult("Search", "Exact and RegEx matching",
+			exact = gWindowPrimaryHwnd && regex = gWindowPrimaryHwnd ? "PASS" : "FAIL",
+			gWindowPrimaryHwnd, exact "/" regex)
+	} catch as err
+		AddWindowError("Search", "ID and title modes", err)
+
+	try {
+		title := WinGetTitle(gWindowPrimaryHwnd)
+		className := WinGetClass(gWindowPrimaryHwnd)
+		pid := WinGetPID(gWindowPrimaryHwnd)
+		ok := title = primaryTitle && (pid = 0 || pid = gWindowFixturePid)
+		AddWindowResult("Info", "Title, class and PID", ok ? "PASS" : "FAIL",
+			"Known title; PID is child or unavailable",
+			"title=" title ", class=" (className = "" ? "<empty>" : className) ", PID=" pid)
+
+		name := WinGetProcessName(gWindowPrimaryHwnd)
+		path := WinGetProcessPath(gWindowPrimaryHwnd)
+		AddWindowResult("Info", "Process name and path",
+			pid = 0 ? "SKIP" : (name != "" && path != "" ? "PASS" : "FAIL"),
+			"Non-empty when PID is exposed", name " | " path)
+	} catch as err
+		AddWindowError("Info", "Identity and process", err)
+
+	try {
+		WinGetPos(&x, &y, &width, &height, gWindowPrimaryHwnd)
+		WinGetClientPos(&clientX, &clientY, &clientWidth, &clientHeight, gWindowPrimaryHwnd)
+		ok := width > 0 && height > 0 && clientWidth > 0 && clientHeight > 0
+		AddWindowResult("Info", "Frame and client geometry", ok ? "PASS" : "FAIL",
+			"Positive frame and client sizes",
+			x "," y " " width "x" height " | " clientX "," clientY " " clientWidth "x" clientHeight)
+	} catch as err
+		AddWindowError("Info", "Frame and client geometry", err)
+
+	try {
+		alpha := WinGetTransparent(gWindowPrimaryHwnd)
+		actual := "state=" WinGetMinMax(gWindowPrimaryHwnd)
+			", enabled=" WinGetEnabled(gWindowPrimaryHwnd)
+			", top=" WinGetAlwaysOnTop(gWindowPrimaryHwnd)
+			", alpha=" (alpha = "" ? "<opaque>" : alpha)
+		AddWindowResult("Info", "State and attributes", "PASS", "Readable values", actual)
+		AddWindowResult("Info", "Style and ExStyle", "PASS", "Readable platform projection",
+			Format("0x{1:X} / 0x{2:X}", WinGetStyle(gWindowPrimaryHwnd), WinGetExStyle(gWindowPrimaryHwnd)))
+	} catch as err
+		AddWindowError("Info", "State, attributes and style", err)
+
+	try {
+		text := WinGetText(gWindowPrimaryHwnd)
+		controls := WinGetControls(gWindowPrimaryHwnd)
+		handles := WinGetControlsHwnd(gWindowPrimaryHwnd)
+		AddWindowResult("Info", "Text and controls", "PASS", "Platform-dependent result",
+			"text=" StrLen(text) " chars, controls=" controls.Length ", handles=" handles.Length)
+	} catch as err
+		AddWindowError("Info", "Text and controls", err)
+
+	try {
+		WinExist(primaryTitle)
+		lastFound := WinGetTitle()
+		excluded := WinExist(gWindowFixturePrefix, , gWindowFixturePrefix " Secondary")
+		ok := lastFound = primaryTitle && excluded = gWindowPrimaryHwnd
+		AddWindowResult("Search", "Last-found and ExcludeTitle", ok ? "PASS" : "FAIL",
+			primaryTitle " / " gWindowPrimaryHwnd, lastFound " / " excluded)
+	} catch as err
+		AddWindowError("Search", "Last-found and ExcludeTitle", err)
+
+	if captureReady
+		RunWindowCaptureTest()
+	else
+		AddWindowResult("Capture", "Image.FromWindow", "BLOCKED", "ScreenCapture granted", "Permission unavailable")
+}
+
+RunWindowCaptureTest() {
+	global gWindowCapturePid, gWindowFixturePrefix, gWindowFixtureCommandPath, gWindowSummary
+	resultPath := gWindowFixtureCommandPath ".capture"
+	try {
+		gWindowSummary.Value := "Window suite: capturing the fixture in a separate process (20s maximum)..."
+		LaunchWindowFixture(&gWindowCapturePid, "capture", resultPath, gWindowFixturePrefix " Primary")
+		if !WaitForWindow((*) => !ProcessExist(gWindowCapturePid), 20000)
+			throw Error("Capture process did not exit within 20 seconds.")
+		if !FileExist(resultPath)
+			throw Error("Capture process exited without a result.")
+		result := StrSplit(FileRead(resultPath, "UTF-8-RAW"), "`n", "`r", 2)
+		if (result.Length != 2)
+			throw Error("Capture process returned an incomplete result.")
+		if (result[1] = "ERROR")
+			throw Error(result[2])
+		if (result[1] != "PASS" && result[1] != "FAIL")
+			throw Error("Capture process returned an invalid status.")
+		AddWindowResult("Capture", "Image.FromWindow", result[1],
+			"Image larger than 100x100 with coordinate mapping", result[2])
+	} catch as err
+		AddWindowError("Capture", "Image.FromWindow", err)
+	finally {
+		StopWindowProcess(&gWindowCapturePid)
+		if FileExist(resultPath)
+			FileDelete(resultPath)
+	}
+}
+
+RunForeignWindowMutations() {
+	global gWindowFixturePrefix, gWindowPrimaryHwnd
+	global gWindowEventSeen, gWindowEventExpected
+	primaryTitle := gWindowFixturePrefix " Primary"
+
+	WindowChange("Focus", "Activate", (*) => WinActivate(gWindowPrimaryHwnd),
+		(*) => WinActive(gWindowPrimaryHwnd), "Window becomes active", "Active")
+
+	try {
+		WinGetPos(&oldX, &oldY, &oldWidth, &oldHeight, gWindowPrimaryHwnd)
+		if (oldWidth > 0 && oldHeight > 0) {
+			targetX := oldX > 50 ? oldX - 23 : oldX + 23
+			targetY := oldY > 50 ? oldY - 19 : oldY + 19
+			targetWidth := oldWidth + 31
+			targetHeight := oldHeight + 27
+			WindowChange("Geometry", "Move and resize",
+				(*) => WinMove(targetX, targetY, targetWidth, targetHeight, gWindowPrimaryHwnd),
+				(*) => WindowGeometryMatches(gWindowPrimaryHwnd, targetX, targetY, targetWidth, targetHeight),
+				targetX "," targetY " " targetWidth "x" targetHeight, "Move")
+			try {
+				WinMove(oldX, oldY, oldWidth, oldHeight, gWindowPrimaryHwnd)
+				WaitForWindow((*) => WindowGeometryMatches(gWindowPrimaryHwnd, oldX, oldY, oldWidth, oldHeight))
+			}
+
+			WindowChange("Focus", "WinFromPoint", (*) => WinActivate(gWindowPrimaryHwnd),
+				(*) => WinFromPoint(oldX + oldWidth // 2, oldY + oldHeight // 2) = gWindowPrimaryHwnd,
+				"Center point resolves to fixture")
+		}
+	} catch as err
+		AddWindowError("Geometry", "Move, resize and point query", err)
+
+	for step in [
+		["Minimize", WinMinimize, -1, "Minimize"],
+		["Restore after minimize", WinRestore, 0, "Restore"],
+		["Maximize", WinMaximize, 1, ""],
+		["Restore after maximize", WinRestore, 0, ""]
+	] {
+		action := step[2], expectedState := step[3]
+		WindowChange("State", step[1], (*) => action.Call(gWindowPrimaryHwnd),
+			(*) => WinGetMinMax(gWindowPrimaryHwnd) = expectedState, expectedState, step[4])
+	}
+
+	WindowChange("Attributes", "Always-on-top on", (*) => WinSetAlwaysOnTop("On", gWindowPrimaryHwnd),
+		(*) => WinGetAlwaysOnTop(gWindowPrimaryHwnd), 1)
+	WindowChange("Attributes", "Always-on-top off", (*) => WinSetAlwaysOnTop("Off", gWindowPrimaryHwnd),
+		(*) => !WinGetAlwaysOnTop(gWindowPrimaryHwnd), 0)
+	WindowChange("Attributes", "Transparency 128", (*) => WinSetTransparent(128, gWindowPrimaryHwnd),
+		(*) => WinGetTransparent(gWindowPrimaryHwnd) = 128, 128)
+	WindowChange("Attributes", "Transparency off", (*) => WinSetTransparent("Off", gWindowPrimaryHwnd),
+		(*) => WinGetTransparent(gWindowPrimaryHwnd) = "", "opaque")
+
+	WindowChange("Attributes", "WinSetTitle", (*) => WinSetTitle(gWindowFixturePrefix " Parent Retitle", gWindowPrimaryHwnd),
+		(*) => WinGetTitle(gWindowPrimaryHwnd) = gWindowFixturePrefix " Parent Retitle",
+		"Parent Retitle", "TitleChange")
+	try WinSetTitle(primaryTitle, gWindowPrimaryHwnd)
+
+#if WINDOWS
+	WindowChange("Attributes", "Disable", (*) => WinSetEnabled(false, gWindowPrimaryHwnd),
+		(*) => !WinGetEnabled(gWindowPrimaryHwnd), 0)
+	WindowChange("Attributes", "Enable", (*) => WinSetEnabled(true, gWindowPrimaryHwnd),
+		(*) => WinGetEnabled(gWindowPrimaryHwnd), 1)
+#else
+	AddWindowResult("Attributes", "Disable", "SKIP", "Foreign window enable state is supported",
+		"Unsupported on this platform")
+	AddWindowResult("Attributes", "Enable", "SKIP", "Foreign window enable state is supported",
+		"Unsupported on this platform")
+#endif
+
+	try {
+		WinRedraw(gWindowPrimaryHwnd)
+		AddWindowResult("Attributes", "WinRedraw", "PASS", "No error", "Accepted")
+	} catch as err
+		AddWindowError("Attributes", "WinRedraw", err)
+
+	try {
+		originalStyle := WinGetStyle(gWindowPrimaryHwnd)
+		WinSetStyle("-0xC00000", gWindowPrimaryHwnd)
+		changed := !(WinGetStyle(gWindowPrimaryHwnd) & 0xC00000)
+		if (originalStyle & 0xC00000)
+			WinSetStyle("+0xC00000", gWindowPrimaryHwnd)
+		AddWindowResult("Attributes", "Caption style", changed ? "PASS" : "FAIL",
+			"WS_CAPTION clears", changed)
+	} catch as err
+		AddWindowError("Attributes", "Caption style", err)
+
+	RunHiddenWindowTargetingTest()
+	WindowChange("Z-order", "Move top", (*) => WinMoveTop(gWindowPrimaryHwnd),
+		(*) => WinGetID(gWindowFixturePrefix) = gWindowPrimaryHwnd, "Primary is first")
+	WindowChange("Z-order", "Move bottom", (*) => WinMoveBottom(gWindowPrimaryHwnd),
+		(*) => WinGetIDLast(gWindowFixturePrefix) = gWindowPrimaryHwnd, "Primary is last")
+
+	titleEventCount := gWindowEventSeen.Get("TitleChange", 0)
+	WriteWindowFixtureCommand("retitle")
+	changed := WaitForWindow((*) => WinGetTitle(gWindowPrimaryHwnd) = gWindowFixturePrefix " Primary Retitled")
+	AddWindowResult("Info", "Foreign title refresh", changed ? "PASS" : "FAIL",
+		"Fixture-owned title change is observed", changed)
+	if changed {
+		expectedCount := Max(gWindowEventExpected.Get("TitleChange", 0), titleEventCount) + 1
+		gWindowEventExpected["TitleChange"] := expectedCount
+		WaitForWindow((*) => WindowEventCountAtLeast("TitleChange", expectedCount))
+	}
+	WriteWindowFixtureCommand("reset-title")
+	WaitForWindow((*) => WinGetTitle(gWindowPrimaryHwnd) = primaryTitle)
+}
+
+WindowChange(area, testName, action, verify, expected, eventName := "") {
+	global gWindowEventSeen, gWindowEventExpected
+	try {
+		already := eventName != "" && verify.Call()
+		before := gWindowEventSeen.Get(eventName, 0)
+		action.Call()
+		ok := WaitForWindow(verify)
+		AddWindowResult(area, testName, ok ? "PASS" : "FAIL", expected, ok ? "Observed" : "Not observed within 2.5 seconds")
+		if (ok && !already && eventName != "") {
+			expectedCount := Max(gWindowEventExpected.Get(eventName, 0), before) + 1
+			gWindowEventExpected[eventName] := expectedCount
+			WaitForWindow((*) => WindowEventCountAtLeast(eventName, expectedCount))
+		}
+	} catch as err
+		AddWindowError(area, testName, err)
+}
+
+WindowEventCountAtLeast(eventName, expectedCount) {
+	global gWindowEventSeen
+	return gWindowEventSeen.Get(eventName, 0) >= expectedCount
+}
+
+WindowGeometryMatches(hwnd, x, y, width, height) {
+	WinGetPos(&actualX, &actualY, &actualWidth, &actualHeight, hwnd)
+	return Abs(actualX - x) <= 3 && Abs(actualY - y) <= 3
+		&& Abs(actualWidth - width) <= 3 && Abs(actualHeight - height) <= 3
+}
+
+RunHiddenWindowTargetingTest() {
+	global gWindowFixturePrefix, gWindowPrimaryHwnd
+	oldHidden := A_DetectHiddenWindows
+	hidden := false
+
+	try {
+		DetectHiddenWindows(false)
+		WinHide(gWindowPrimaryHwnd)
+		hidden := true
+		WaitForWindow((*) => !WinExist(gWindowFixturePrefix " Primary"))
+		titleOff := WinExist(gWindowFixturePrefix " Primary")
+		direct := WinExist(gWindowPrimaryHwnd)
+		DetectHiddenWindows(true)
+		titleOn := WinExist(gWindowFixturePrefix " Primary")
+		WinShow(gWindowPrimaryHwnd)
+		DetectHiddenWindows(false)
+		shown := WaitForWindow((*) => WinExist(gWindowFixturePrefix " Primary"))
+		hidden := !shown
+		ok := !titleOff && direct = gWindowPrimaryHwnd && titleOn = gWindowPrimaryHwnd && shown
+		AddWindowResult("Visibility", "Hidden-window targeting", ok ? "PASS" : "FAIL",
+			"title hidden/off=0, handle and hidden/on find it, show restores",
+			titleOff "/" direct "/" titleOn "/" shown)
+	} catch as err
+		AddWindowError("Visibility", "Hidden-window targeting", err)
+	finally {
+		try {
+			if hidden {
+				WinShow(gWindowPrimaryHwnd)
+				DetectHiddenWindows(false)
+				if !WaitForWindow((*) => WinExist(gWindowFixturePrefix " Primary"))
+					throw Error("Could not restore the hidden fixture window.")
+			}
+		} finally
+			DetectHiddenWindows(oldHidden)
+	}
+}
+
+RunWindowLifecycleTests() {
+	global gWindowFixturePid, gWindowPrimaryHwnd, gWindowSecondaryHwnd
+	global gWindowEventSeen, gWindowEventExpected
+
+	try {
+		before := gWindowEventSeen.Get("NotExist", 0)
+		WinClose(gWindowSecondaryHwnd)
+		closed := WinWaitClose(gWindowSecondaryHwnd, , 3)
+		AddWindowResult("Lifecycle", "WinClose / WinWaitClose", closed ? "PASS" : "FAIL", 1, closed)
+		if closed
+			gWindowEventExpected["NotExist"] := before + 1
+	} catch as err
+		AddWindowError("Lifecycle", "WinClose / WinWaitClose", err)
+
+	try {
+		WinKill(gWindowPrimaryHwnd)
+		gone := WaitForWindow((*) => !ProcessExist(gWindowFixturePid), 3000)
+		AddWindowResult("Lifecycle", "WinKill / process exit", gone ? "PASS" : "FAIL",
+			"Fixture process exits", gone)
+	} catch as err
+		AddWindowError("Lifecycle", "WinKill / process exit", err)
+}
+
+WaitForWindow(check, timeoutMs := 2500, alivePid := 0) {
+	deadline := A_TickCount + timeoutMs
+	while (A_TickCount < deadline) {
+		if (alivePid && !ProcessExist(alivePid))
+			return false
+		if check.Call()
+			return true
+		Sleep(25)
+	}
+	return false
+}
+
+WindowArrayHas(items, expected) {
+	for item in items
+		if (item = expected)
+			return true
+	return false
+}
+
+WindowHandleArrayText(items) {
+	text := ""
+	for item in items
+		text .= (text = "" ? "" : ", ") item
+	return text
+}
+
+InspectExternalWindow() {
+	global gWindowTitleEdit, gWindowInfoEdit
+	selector := Trim(gWindowTitleEdit.Value)
+
+	if (selector = "") {
+		SetStatus("window_external", "External status: enter or pick a target first")
+		return
+	}
+
+	try {
+		hwnd := WinExist(selector)
+		if !hwnd
+			throw Error("No window matched <" selector ">.")
+		ShowExternalWindowInfo(hwnd)
+	} catch as err {
+		SetStatus("window_external", "External status: BLOCKED/ERROR")
+		gWindowInfoEdit.Value := err.Message
+	}
+}
+
+ShowExternalWindowInfo(hwnd, heading := "") {
+	global gWindowTitleEdit, gWindowInfoEdit
+
+	WinGetPos(&x, &y, &width, &height, hwnd)
+	WinGetClientPos(&clientX, &clientY, &clientWidth, &clientHeight, hwnd)
+	alpha := WinGetTransparent(hwnd)
+	title := WinGetTitle(hwnd)
+	report := heading (heading = "" ? "" : "`r`n") "Title: " title "`r`nClass/AppId: " WinGetClass(hwnd)
+	report .= "`r`nHandle: " hwnd "    PID: " WinGetPID(hwnd)
+	report .= "`r`nProcess: " WinGetProcessName(hwnd) "`r`nPath: " WinGetProcessPath(hwnd)
+	report .= "`r`nFrame: " x "," y "  " width "x" height
+	report .= "`r`nClient: " clientX "," clientY "  " clientWidth "x" clientHeight
+	report .= "`r`nState: " WinGetMinMax(hwnd) "    Enabled: " WinGetEnabled(hwnd)
+		"    AlwaysOnTop: " WinGetAlwaysOnTop(hwnd)
+	report .= "`r`nTransparent: " (alpha = "" ? "<opaque>" : alpha)
+		"    Style: " Format("0x{1:X}", WinGetStyle(hwnd))
+		"    ExStyle: " Format("0x{1:X}", WinGetExStyle(hwnd))
+	report .= "`r`nText chars: " StrLen(WinGetText(hwnd))
+		"    Controls: " WinGetControls(hwnd).Length
+	gWindowTitleEdit.Value := "ahk_id " hwnd
+	gWindowInfoEdit.Value := report
+	SetStatus("window_external", "External status: inspected handle " hwnd)
+	return title
+}
+
+CaptureActiveWindow() {
+	try {
 		hwnd := WinExist("A")
-		title := WinGetTitle("ahk_id " hwnd)
-		className := WinGetClass("ahk_id " hwnd)
-		WinGetPos(&x, &y, &w, &h, "ahk_id " hwnd)
-		gWindowTitleEdit.Value := title
-		gWindowInfoEdit.Value := "Title: " title "`r`nClass: " className "`r`nHwnd: " hwnd "`r`nPos: " x "," y "  Size: " w "x" h
-		SetStatus("window_external", "External status: captured active window")
-		AppendLog("Captured active window: " title " [" className "]")
+		title := ShowExternalWindowInfo(hwnd, "Picked active window")
+		AppendLog("Captured active window: " title " [" hwnd "]")
 	} catch as err {
 		SetStatus("window_external", "External status: BLOCKED/ERROR")
 		AppendLog("Capture active window failed: " err.Message)
@@ -4782,8 +5384,6 @@ CaptureActiveWindow() {
 }
 
 CaptureWindowFromPoint() {
-	global gWindowTitleEdit, gWindowInfoEdit
-
 	try {
 		CoordMode "Mouse", "Screen"
 		MouseGetPos(&mx, &my)
@@ -4792,12 +5392,7 @@ CaptureWindowFromPoint() {
 		if !hwnd
 			throw Error("WinFromPoint returned no hwnd for " mx "," my ".")
 
-		title := WinGetTitle("ahk_id " hwnd)
-		className := WinGetClass("ahk_id " hwnd)
-		WinGetPos(&x, &y, &w, &h, "ahk_id " hwnd)
-		gWindowTitleEdit.Value := title
-		gWindowInfoEdit.Value := "From point: " mx "," my "`r`nTitle: " title "`r`nClass: " className "`r`nHwnd: " hwnd "`r`nPos: " x "," y "  Size: " w "x" h
-		SetStatus("window_external", "External status: captured window from mouse point")
+		title := ShowExternalWindowInfo(hwnd, "Picked at mouse point " mx "," my)
 		AppendLog("CaptureWindowFromPoint found hwnd " hwnd " with title <" title "> at mouse point " mx "," my ".")
 	} catch as err {
 		SetStatus("window_external", "External status: BLOCKED/ERROR")
@@ -4823,41 +5418,6 @@ ActivateExternalWindow() {
 	} catch as err {
 		SetStatus("window_external", "External status: BLOCKED/ERROR")
 		AppendLog("ActivateExternalWindow failed for <" title ">: " err.Message)
-	}
-}
-
-MoveExternalWindow() {
-	global gWindowTitleEdit, gWindowInfoEdit
-
-	title := Trim(gWindowTitleEdit.Value)
-
-	if (title = "") {
-		SetStatus("window_external", "External status: enter or capture a title first")
-		return
-	}
-
-	try {
-		WinGetPos(&x1, &y1, &w1, &h1, title)
-		WinMove(x1 + 40, y1 + 40, w1, h1, title)
-		Sleep(200)
-		WinGetPos(&x2, &y2, &w2, &h2, title)
-		gWindowInfoEdit.Value := "Before: " x1 "," y1 "  " w1 "x" h1 "`r`nAfter:  " x2 "," y2 "  " w2 "x" h2
-
-		; Auto-verify: the window should have moved by exactly +40,+40. Allow a couple of
-		; pixels of slack for window-manager frame rounding, but still catch a missed move
-		; or a move along the wrong axis.
-		dx := x2 - x1, dy := y2 - y1
-		tol := 2
-		if (Abs(dx - 40) <= tol && Abs(dy - 40) <= tol) {
-			SetStatus("window_external", "External status: PASS (moved by " dx "," dy ")")
-			AppendLog("MoveExternalWindow PASS for <" title ">. Before=" x1 "," y1 " After=" x2 "," y2 " delta=" dx "," dy ".")
-		} else {
-			SetStatus("window_external", "External status: FAIL (expected +40,+40 but moved " dx "," dy ")")
-			AppendLog("MoveExternalWindow FAIL for <" title ">. Before=" x1 "," y1 " After=" x2 "," y2 " delta=" dx "," dy " (expected 40,40).")
-		}
-	} catch as err {
-		SetStatus("window_external", "External status: BLOCKED/ERROR")
-		AppendLog("MoveExternalWindow failed for <" title ">: " err.Message)
 	}
 }
 

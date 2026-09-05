@@ -155,7 +155,7 @@ namespace Keysharp.Tests
 			var res = DBusCalls.Call(DBusBus.Session, ServiceName, ObjPath, Iface, "GiveDict", "", [], "a{sv}");
 			var map = (Keysharp.Builtins.Map)res[0];
 			// Values inside a{sv} arrive already unwrapped (the VariantValue's Type is the inner type, not
-			// Variant); PortalScreenCapture's "uri" lookup depends on that, so it is pinned here.
+			// Variant), which is the script-visible D-Bus marshalling contract pinned here.
 			Assert.That(map.map["text"], Is.EqualTo("hello"));
 			Assert.That(map.map["number"], Is.EqualTo(42L));
 			Assert.That(map.map["flag"], Is.EqualTo(true));

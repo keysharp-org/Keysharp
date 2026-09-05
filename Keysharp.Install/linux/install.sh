@@ -38,6 +38,14 @@ MIME_DIR="${MIME_ROOT}/packages"
 ICON_DIR="${ICON_ROOT}/256x256/apps"
 INSTALL_DEPS="${INSTALL_DEPS:-true}"
 DOTNET_PACKAGE="${DOTNET_PACKAGE:-dotnet-runtime-10.0}"
+DEPENDENCIES_ONLY=false
+case "${1:-}" in
+  "") ;;
+  --install-dependencies) DEPENDENCIES_ONLY=true ;;
+  -h|--help) echo "Usage: install.sh [--install-dependencies]"; exit 0 ;;
+  *) echo "Usage: install.sh [--install-dependencies]" >&2; exit 2 ;;
+esac
+[[ $# -le 1 ]] || exit 2
 
 maybe_run() { command -v "$1" >/dev/null 2>&1 && "$@"; }
 have_pkg() { command -v "$1" >/dev/null 2>&1; }
@@ -174,9 +182,8 @@ install_deps() {
   fi
 
   if have_pkg apt-get; then
-    apt-get update || echo "Warning: apt-get update failed; using existing package indexes." >&2
-    DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages_apt[@]}" \
-      || echo "Warning: apt-get dependency installation returned an error." >&2
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages_apt[@]}"
   elif have_pkg dnf; then
     dnf install -y "${packages_dnf[@]}"
   elif have_pkg yum; then
@@ -184,7 +191,7 @@ install_deps() {
   elif have_pkg zypper; then
     zypper install -y "${packages_zypper[@]}"
   elif have_pkg pacman; then
-    pacman -Sy --noconfirm "${packages_pacman[@]}"
+    pacman -S --needed --noconfirm "${packages_pacman[@]}"
   else
     echo "Package manager not detected; ensure .NET 10, X11, GTK3, libnotify and AT-SPI2 are installed." >&2
   fi
@@ -243,6 +250,10 @@ else
   echo "Skipping dependency installation (INSTALL_DEPS=false)."
 fi
 check_dotnet
+if [[ "${DEPENDENCIES_ONLY}" == "true" ]]; then
+  echo "Keysharp runtime dependencies are ready."
+  exit 0
+fi
 
 maybe_run pkill -x '[Kk]eysharp' || true
 maybe_run pkill -x '[Kk]eyview' || true

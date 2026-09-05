@@ -507,7 +507,7 @@ namespace Keysharp.Tests
 			{
 				_ = Env.OnClipboardChange(chain);
 				var script = Script.TheScript;
-				_ = script.ClipFunctions.InvokeEventHandlers(1L);
+				script.ClipFunctions.InvokeEventHandlers(1L);
 				script.ClipboardEventManager.Dispatch(1L);
 				Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
 				Assert.AreEqual(1, chainCalls, "The chain handler runs regardless of what a hook returns.");

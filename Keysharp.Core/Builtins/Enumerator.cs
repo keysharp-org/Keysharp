@@ -15,14 +15,14 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The source object being enumerated.
 		/// </summary>
-		public object Source { get; }
+		internal object Source { get; }
 
 		/// <summary>
 		/// The number of items to return for each iteration. Allowed values are 1 and 2:
 		/// 1: return just the value in the first position
 		/// 2: return the index in the first position and the value in the second.
 		/// </summary>
-		public long Count { get; }
+		internal long Count { get; }
 
 		// The single-value form of the current item, shared by both Current implementations below. The
 		// interface members are implemented explicitly so that enumeration plumbing stays off the

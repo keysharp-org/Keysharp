@@ -20,11 +20,6 @@ namespace Keysharp.Internals.Input.Linux
 	{
 		internal LinuxKeyboardMouseSender(Script script) : base(script) { }
 
-		// These values are also part of the native client ABI.
-		private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
-		private const uint KEYEVENTF_KEYUP = 0x0002;
-		private const uint KEYEVENTF_UNICODE = 0x0004;
-		private const uint KEYEVENTF_SCANCODE = 0x0008;
 		private const int MaxInputBatchSize = KeysharpInputClient.MaxInputsPerRequest;
 		private const int MaxMouseMoveChunk = 1000;
 
@@ -120,8 +115,8 @@ namespace Keysharp.Internals.Input.Linux
 			}
 
 			var flags = (KeysharpInputClient.KeyEventFlags)eventFlags;
-			var isKeyUp = (eventFlags & KEYEVENTF_KEYUP) != 0;
-			var isUnicode = (eventFlags & KEYEVENTF_UNICODE) != 0;
+			var isKeyUp = (flags & KeysharpInputClient.KeyEventFlags.KeyUp) != 0;
+			var isUnicode = (flags & KeysharpInputClient.KeyEventFlags.Unicode) != 0;
 
 			if (isKeyUp)
 				eventModifiersLR &= ~keyAsModifiersLR;
@@ -241,13 +236,14 @@ namespace Keysharp.Internals.Input.Linux
 				SendInputBatches(
 				[
 					KeysharpInputClient.Input.Key((ushort)vk, (ushort)sc, keyFlags, extraInfo: (ulong)extraInfo),
-					KeysharpInputClient.Input.Key((ushort)vk, (ushort)sc, keyFlags | (KeysharpInputClient.KeyEventFlags)KEYEVENTF_KEYUP, extraInfo: (ulong)extraInfo),
+					KeysharpInputClient.Input.Key((ushort)vk, (ushort)sc,
+						keyFlags | KeysharpInputClient.KeyEventFlags.KeyUp, extraInfo: (ulong)extraInfo),
 				]);
 				return;
 			}
 
 			if (eventType == KeyEventTypes.KeyUp)
-				keyFlags |= (KeysharpInputClient.KeyEventFlags)KEYEVENTF_KEYUP;
+				keyFlags |= KeysharpInputClient.KeyEventFlags.KeyUp;
 
 			SendInputBatches(
 			[
@@ -311,8 +307,11 @@ namespace Keysharp.Internals.Input.Linux
 
 			for (var i = 0; i < units.Length; i++)
 			{
-				inputs[i * 2] = KeysharpInputClient.Input.Key(0, units[i], (KeysharpInputClient.KeyEventFlags)KEYEVENTF_UNICODE, extraInfo: (ulong)extraInfo);
-				inputs[i * 2 + 1] = KeysharpInputClient.Input.Key(0, units[i], (KeysharpInputClient.KeyEventFlags)(KEYEVENTF_UNICODE | KEYEVENTF_KEYUP), extraInfo: (ulong)extraInfo);
+				inputs[i * 2] = KeysharpInputClient.Input.Key(0, units[i],
+					KeysharpInputClient.KeyEventFlags.Unicode, extraInfo: (ulong)extraInfo);
+				inputs[i * 2 + 1] = KeysharpInputClient.Input.Key(0, units[i],
+					KeysharpInputClient.KeyEventFlags.Unicode | KeysharpInputClient.KeyEventFlags.KeyUp,
+					extraInfo: (ulong)extraInfo);
 			}
 
 			if (sendMode != SendModes.Event)
@@ -406,12 +405,12 @@ namespace Keysharp.Internals.Input.Linux
 			AddOrQueue(events, KeysharpInputClient.Input.Key(
 				0,
 				ch,
-				(KeysharpInputClient.KeyEventFlags)KEYEVENTF_UNICODE,
+				KeysharpInputClient.KeyEventFlags.Unicode,
 				extraInfo: (ulong)extraInfo));
 			AddOrQueue(events, KeysharpInputClient.Input.Key(
 				0,
 				ch,
-				(KeysharpInputClient.KeyEventFlags)(KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
+				KeysharpInputClient.KeyEventFlags.Unicode | KeysharpInputClient.KeyEventFlags.KeyUp,
 				extraInfo: (ulong)extraInfo));
 		}
 
@@ -427,7 +426,7 @@ namespace Keysharp.Internals.Input.Linux
 		private void QueueKey(List<KeysharpInputClient.Input> events, KeyEventTypes eventType, uint vk, long extraInfo)
 		{
 			var downFlags = (KeysharpInputClient.KeyEventFlags)0;
-			var upFlags = (KeysharpInputClient.KeyEventFlags)KEYEVENTF_KEYUP;
+			var upFlags = KeysharpInputClient.KeyEventFlags.KeyUp;
 
 			if (eventType != KeyEventTypes.KeyUp)
 				AddOrQueue(events, KeysharpInputClient.Input.Key((ushort)vk, 0, downFlags, extraInfo: (ulong)extraInfo));
@@ -439,7 +438,8 @@ namespace Keysharp.Internals.Input.Linux
 		internal override void MouseEvent(uint eventFlags, uint data, int x = CoordUnspecified, int y = CoordUnspecified)
 		{
 			// Prefer compositor injection for button/scroll events when available.
-			if ((eventFlags & (uint)MOUSEEVENTF.MOVE) == 0)
+			if (sendMode == SendModes.Event
+				&& (eventFlags & (uint)MOUSEEVENTF.MOVE) == 0)
 			{
 				var compositorMouse = WaylandMouseInjection.Backend();
 
@@ -490,6 +490,7 @@ namespace Keysharp.Internals.Input.Linux
 			CoordToScreen(ref targetX, ref targetY, CoordMode.Mouse);
 
 			// Fall back to uinput when the compositor rejects absolute injection.
+			if (sendMode == SendModes.Event)
 			{
 				var compositorMouse = WaylandMouseInjection.Backend();
 
@@ -641,40 +642,15 @@ namespace Keysharp.Internals.Input.Linux
 			if (dx == 0 && dy == 0)
 				return;
 
-			var stepCount = Math.Max(Math.Abs(dx), Math.Abs(dy));
-			var events = new List<KeysharpInputClient.Input>(Math.Min(stepCount, MaxMouseMoveChunk));
-			var previousX = 0;
-			var previousY = 0;
-
-			for (var step = 1; step <= stepCount; step++)
-			{
-				var nextX = dx * step / stepCount;
-				var nextY = dy * step / stepCount;
-				var stepDx = nextX - previousX;
-				var stepDy = nextY - previousY;
-
-				if (stepDx != 0 || stepDy != 0)
-				{
-					events.Add(KeysharpInputClient.Input.MouseEvent(
-						stepDx,
-						stepDy,
-						0,
-						KeysharpInputClient.MouseEventFlags.Move,
-						extraInfo: extraInfo));
-				}
-
-				if (events.Count == MaxMouseMoveChunk)
-				{
-					KeysharpInputManager.SendInputViaSynthesisChannel(events);
-					events.Clear();
-				}
-
-				previousX = nextX;
-				previousY = nextY;
-			}
-
-			if (events.Count != 0)
-				KeysharpInputManager.SendInputViaSynthesisChannel(events);
+			KeysharpInputManager.SendInputViaSynthesisChannel(
+			[
+				KeysharpInputClient.Input.MouseEvent(
+					dx,
+					dy,
+					0,
+					KeysharpInputClient.MouseEventFlags.Move,
+					extraInfo: extraInfo)
+			]);
 		}
 
 		private void QueueRelativeMouseMove(int dx, int dy)
@@ -682,23 +658,7 @@ namespace Keysharp.Internals.Input.Linux
 			if (dx == 0 && dy == 0)
 				return;
 
-			var stepCount = Math.Max(Math.Abs(dx), Math.Abs(dy));
-			var previousX = 0;
-			var previousY = 0;
-
-			for (var step = 1; step <= stepCount; step++)
-			{
-				var nextX = dx * step / stepCount;
-				var nextY = dy * step / stepCount;
-				var stepDx = nextX - previousX;
-				var stepDy = nextY - previousY;
-
-				if (stepDx != 0 || stepDy != 0)
-					PutMouseEventIntoArray((uint)MOUSEEVENTF.MOVE, 0, stepDx, stepDy);
-
-				previousX = nextX;
-				previousY = nextY;
-			}
+			PutMouseEventIntoArray((uint)MOUSEEVENTF.MOVE, 0, dx, dy);
 		}
 
 
@@ -724,10 +684,10 @@ namespace Keysharp.Internals.Input.Linux
 			KeysharpInputClient.KeyEventFlags flags)
 		{
 			if ((sc & 0x100) != 0)
-				flags |= (KeysharpInputClient.KeyEventFlags)KEYEVENTF_EXTENDEDKEY;
+				flags |= KeysharpInputClient.KeyEventFlags.ExtendedKey;
 
 			if (vk == 0 && (sc & 0xFF) != 0)
-				flags |= (KeysharpInputClient.KeyEventFlags)KEYEVENTF_SCANCODE;
+				flags |= KeysharpInputClient.KeyEventFlags.ScanCode;
 
 			sc &= 0xFF;
 			return flags;

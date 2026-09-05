@@ -1023,7 +1023,8 @@ break_twice:;
 				blockMask = Keysharp.Internals.Input.Linux.KeysharpInputClient.BlockInputMask.Keyboard
 					| Keysharp.Internals.Input.Linux.KeysharpInputClient.BlockInputMask.Mouse;
 
-			var directBlockApplied = Keysharp.Internals.Input.Linux.KeysharpInputManager.TrySetBlockInput(blockMask, out var blockMessage);
+			var directBlockApplied = Keysharp.Internals.Input.Linux.KeysharpInputManager.TrySetBlockInput(
+				script, blockMask, out var blockMessage);
 			var mouseMoveApplied = !script.KeyboardData.blockMouseMove || script.HookThread.HasMouseHook();
 			var platformApplied = directBlockApplied && (script.KeyboardData.blockInput || mouseMoveApplied);
 
