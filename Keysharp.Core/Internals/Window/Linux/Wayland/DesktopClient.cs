@@ -159,6 +159,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			out NativeClientStatus status)
 			=> sessions[ScopeFor(operation)].TryUse(operation, request, out status);
 
+		private static bool Call(Operation operation, Func<DesktopConnection, CallResult> request,
+			NativeClientStatus suppressedFailure)
+			=> sessions[ScopeFor(operation)].TryUse(operation, request, out _, suppressedFailure);
+
 		private static LinuxPermissionScope ScopeFor(Operation operation)
 		{
 			if (operation == Operation.None)
@@ -695,7 +699,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			internal bool TryUse(Operation operation,
 				Func<DesktopConnection, CallResult> request,
-				out NativeClientStatus status)
+				out NativeClientStatus status,
+				NativeClientStatus? suppressedFailure = null)
 			{
 				lock (sync)
 				{
@@ -705,7 +710,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						return false;
 
 					if (ConnectionUsableLocked())
-						return InvokeLocked(request, out status);
+						return InvokeLocked(request, out status, suppressedFailure);
 				}
 
 				var permission = RequestAuthorization(requiredScope, prompt: false);
@@ -740,7 +745,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						return false;
 					}
 
-					return InvokeLocked(request, out status);
+					return InvokeLocked(request, out status, suppressedFailure);
 				}
 			}
 
@@ -849,7 +854,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 
 			private bool InvokeLocked(Func<DesktopConnection, CallResult> request,
-				out NativeClientStatus status)
+				out NativeClientStatus status, NativeClientStatus? suppressedFailure)
 			{
 				try
 				{
@@ -859,7 +864,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					if (result.IsSuccess)
 						return true;
 
-					DebugLine($"keysharp-desktop {result.Operation} failed ({result.Status}): {result.Message}");
+					if (result.Status != suppressedFailure)
+						DebugLine($"keysharp-desktop {result.Operation} failed ({result.Status}): {result.Message}");
 
 					// A lost reply can follow a completed mutation. Reconnect on the next call without replaying it.
 					if (result.Status == NativeClientStatus.Revoked || result.ShouldReconnect)

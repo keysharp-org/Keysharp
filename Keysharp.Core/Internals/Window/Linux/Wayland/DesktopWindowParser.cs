@@ -149,6 +149,25 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
+		internal static bool TryWindowEvent(ReadOnlyMemory<byte> json, Func<string, nint> resolve,
+			out WaylandWindowInfo window)
+		{
+			window = null;
+
+			if (json.IsEmpty || resolve == null)
+				return false;
+
+			try
+			{
+				using var document = JsonDocument.Parse(json);
+				return TryParse(document.RootElement, resolve, out window);
+			}
+			catch (JsonException)
+			{
+				return false;
+			}
+		}
+
 		private static bool TryList(JsonElement root, Func<string, nint> resolve,
 			out IReadOnlyList<WaylandWindowInfo> windows)
 		{

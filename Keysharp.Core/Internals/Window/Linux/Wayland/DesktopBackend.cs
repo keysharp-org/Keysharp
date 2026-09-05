@@ -47,7 +47,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			void OnEvent(WaylandWindowEventKind kind, byte[] json)
 			{
-				if (TryParseWindow(json, out var window))
+				if (TryParseWindowEvent(json, out var window))
 				{
 					var bounds = window.FrameGeometry.Width > 0 && window.FrameGeometry.Height > 0
 						? window.FrameGeometry : (Rectangle?)null;
@@ -322,6 +322,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			lock (windowListSync)
 			{
 				var parsed = DesktopWindowParser.TrySingle(json, Resolve, out window);
+
+				if (parsed)
+					RememberWindows([window], false);
+
+				return parsed;
+			}
+		}
+
+		private bool TryParseWindowEvent(ReadOnlyMemory<byte> json, out WaylandWindowInfo window)
+		{
+			lock (windowListSync)
+			{
+				var parsed = DesktopWindowParser.TryWindowEvent(json, Resolve, out window);
 
 				if (parsed)
 					RememberWindows([window], false);

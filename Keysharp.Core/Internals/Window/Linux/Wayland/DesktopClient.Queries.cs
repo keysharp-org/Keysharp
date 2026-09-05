@@ -1,5 +1,6 @@
 #if LINUX
 using System.Runtime.InteropServices;
+using Keysharp.Internals.Linux;
 
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
@@ -9,7 +10,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			byte[] value = null;
 			return Call(Operation.WindowQuery,
-				connection => connection.WindowQuery(handle, out value)) ? value : null;
+				connection => connection.WindowQuery(handle, out value),
+				NativeClientStatus.NotFound) ? value : null;
 		}
 
 		internal static byte[] QueryChildren(ulong handle)

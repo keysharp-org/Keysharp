@@ -178,6 +178,26 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
+		public void ProviderWindowEventsParseWithoutRpcEnvelope()
+		{
+			const string json = """
+				{"id":"24","title":"Editor","active":true,
+				"frame":{"x":1,"y":2,"width":300,"height":200},
+				"validFields":["id","title","active","frame"]}
+				""";
+
+			Assert.That(DesktopWindowParser.TryWindowEvent(Encoding.UTF8.GetBytes(json),
+				id => new nint(long.Parse(id, CultureInfo.InvariantCulture)), out var window), Is.True);
+			Assert.Multiple(() =>
+			{
+				Assert.That(window.Handle, Is.EqualTo(new nint(24)));
+				Assert.That(window.Title, Is.EqualTo("Editor"));
+				Assert.That(window.Active, Is.True);
+				Assert.That(window.Bounds, Is.EqualTo(new Rectangle(1, 2, 300, 200)));
+			});
+		}
+
+		[Test]
 		public void GenericSnapshotsRetainOpaqueIdentity()
 		{
 			const string json = """
