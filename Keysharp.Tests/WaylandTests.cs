@@ -196,8 +196,11 @@ namespace Keysharp.Tests
 			Assert.That(backend.TryParseWindowList(Encoding.UTF8.GetBytes(second), out var refreshed), Is.True);
 			Assert.That(initial, Has.Count.EqualTo(1));
 			Assert.That(refreshed, Has.Count.EqualTo(1));
-			Assert.That(initial[0].Handle.ToInt64(), Is.LessThan(0),
-				"synthetic Wayland handles must not overlap the non-negative X11 XID space");
+			Assert.That(initial[0].Handle.ToInt64(), Is.GreaterThan(0),
+				"synthetic Wayland handles exposed to scripts must be positive");
+			if (nint.Size == sizeof(long))
+				Assert.That(initial[0].Handle.ToInt64(), Is.GreaterThan(uint.MaxValue),
+					"64-bit synthetic Wayland handles must not overlap the X11 XID space");
 			Assert.That(refreshed[0].Handle, Is.EqualTo(initial[0].Handle));
 			Assert.That(refreshed[0].CompositorId, Is.EqualTo("river:editor"));
 			Assert.That(refreshed[0].Title, Is.EqualTo("Renamed"));

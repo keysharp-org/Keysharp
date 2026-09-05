@@ -239,7 +239,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			=> TryGetServiceHandle(handle, out var id) && DesktopClient.CloseWindow(id);
 
 		public bool TryKillWindow(nint handle)
-			=> TryGetServiceHandle(handle, out var id) && DesktopClient.KillWindow(id);
+		{
+			if (!TryGetServiceHandle(handle, out var id))
+				return false;
+
+			// A force-kill is compositor-specific on Wayland. Where it is absent, retain WinKill's
+			// documented graceful-close fallback instead of sending an operation the provider rejected.
+			return DesktopClient.ProviderSupportsWindowKill()
+				? DesktopClient.KillWindow(id)
+				: DesktopClient.CloseWindow(id);
+		}
 
 		internal bool TryRedrawWindow(nint handle)
 			=> TryGetServiceHandle(handle, out var id) && DesktopClient.RedrawWindow(id);

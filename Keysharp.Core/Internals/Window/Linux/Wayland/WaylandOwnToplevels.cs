@@ -350,6 +350,27 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return known;
 		}
 
+		/// <summary>
+		/// Resolves the form's compositor identity when necessary, then returns the surface origin. This may
+		/// pump while correlation completes, so callers use it only for an explicit screen-coordinate query;
+		/// pointer and event paths continue to use the cached-only <see cref="TryGetSurfaceOrigin"/>.
+		/// </summary>
+		internal static bool TryResolveSurfaceOrigin(Eto.Forms.Form form, out Point origin)
+		{
+			if (TryGetSurfaceOrigin(form, out origin))
+				return true;
+
+			origin = default;
+
+			if (form is not { IsDisposed: false })
+				return false;
+
+			var size = form.GetSize();
+
+			return TryGetCompositorHandle(form, form.Title, size.Width, size.Height, out _)
+				&& TryGetSurfaceOrigin(form, out origin);
+		}
+
 		internal static bool TryGetCompositorHandle(Eto.Forms.Form form, string title, int matchW, int matchH, out nint compositorHandle)
 		{
 			compositorHandle = 0;
@@ -991,8 +1012,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			// than the correlation loop (one cheap query, only the first buffer is being waited for), but never
 			// past the caller's own deadline.
 			var readable = false;
+			WaylandWindowInfo info = null;
 
-			while (!(readable = backend.TryGetWindow(reserved, out var info) && info != null
+			while (!(readable = backend.TryGetWindow(reserved, out info) && info != null
 					 && info.FrameGeometry.Width > 0 && info.FrameGeometry.Height > 0)
 					&& Environment.TickCount64 < deadline)
 				PollWait(ReservedGeometryPollMs);
@@ -1012,6 +1034,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 				state.CompositorHandle = reserved;
 				state.CompositorId = reservedId;
+				SetSurfaceOriginLocked(state, info);
 				_ = claimedIds.Add(reservedId);
 			}
 
@@ -1045,9 +1068,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 				state.CompositorHandle = pick.Handle;
 				state.CompositorId = pick.CompositorId;
+				SetSurfaceOriginLocked(state, pick);
 				_ = claimedIds.Add(pick.CompositorId);
 				return true;
 			}
+		}
+
+		private static void SetSurfaceOriginLocked(FormState state, WaylandWindowInfo info)
+		{
+			var surface = info?.SurfaceGeometry ?? Rectangle.Empty;
+			state.SurfaceKnown = surface.Width > 0 && surface.Height > 0;
+			state.SurfaceOrigin = state.SurfaceKnown ? new Point(surface.X, surface.Y) : default;
+			state.SurfaceTick = Environment.TickCount64;
 		}
 
 		private static bool TrySetAppIdOnUiThread(Eto.Forms.Form form, string appId)

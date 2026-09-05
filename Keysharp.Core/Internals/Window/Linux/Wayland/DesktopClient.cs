@@ -259,6 +259,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal static bool ProviderSupportsTransparency()
 			=> ProviderSupports(Operation.WindowSetOpacity);
 
+		internal static bool ProviderSupportsWindowKill()
+			=> ProviderSupports(Operation.WindowKill);
+
 		internal static bool ProviderSupportsClipboard()
 			=> ProviderSupports(
 				Operation.ClipboardMimetypes | Operation.ClipboardContent

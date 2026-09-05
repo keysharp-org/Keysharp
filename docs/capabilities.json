@@ -10957,7 +10957,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetID function returns the unique ID (HWND) of the specified window."
+                     "notes":  "The WinGetID function returns the unique ID (HWND) of the specified window. Wayland foreign windows receive positive process-local synthetic handles which can be reused with ahk_id and other window functions."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10977,7 +10977,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetList function returns an array of unique IDs (HWNDs) for all existing windows that match the specified criteria.",
+                     "notes":  "The WinGetList function returns an array of unique IDs (HWNDs) for all existing windows that match the specified criteria. Wayland foreign-window IDs are positive process-local synthetic handles.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11178,7 +11178,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMoveBottom function sends the specified window to the bottom of stack; that is, beneath all other windows. On Wayland this is provided by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.orderBack(); macOS provides no API to lower another process\u0027s window."
+                     "notes":  "The WinMoveBottom function sends the specified window to the bottom of stack; that is, beneath all other windows. On Wayland this is provided by the Keysharp KWin provider or the GNOME/Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.orderBack(); macOS provides no API to lower another process\u0027s window.",
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11269,7 +11270,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinSetTitle function changes the title of the specified window. On macOS, windows owned by the calling process have their title set directly; for windows owned by other applications, setting AXTitle via the Accessibility API is attempted, but most applications treat it as read-only and the call has no effect."
+                     "notes":  "The WinSetTitle function changes the title of the specified window. On Wayland, script-owned titles can be changed but no supported compositor backend exposes title mutation for another application, so a foreign target raises OSError. On macOS, windows owned by the calling process have their title set directly; for windows owned by other applications, setting AXTitle via the Accessibility API is attempted, but most applications treat it as read-only and the call has no effect."
                  },
                  {
                      "category":  "Windowing/GUI",

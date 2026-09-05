@@ -14,7 +14,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private readonly HashSet<nint> liveHandles = [];
 		private readonly HashSet<nint> retainedHandles = [];
 		private readonly List<nint> expiredHandles = [];
-		private int nextHandle;
+		private long nextHandle = nint.Size == sizeof(long) ? uint.MaxValue : int.MaxValue;
 
 		internal nint GetOrCreate(T value)
 		{
@@ -27,12 +27,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					return existing;
 				}
 
-				// X11 resource identifiers occupy the non-negative range on supported X servers.
-				// Negative values keep opaque Wayland identities distinct on both 32- and 64-bit runtimes.
-				if (nextHandle == int.MinValue)
+				// Keep script-visible handles positive. A 64-bit process starts above the complete X11 XID
+				// range; a 32-bit process allocates downward because it has no separate positive range.
+				if (nextHandle is 0 or long.MaxValue)
 					throw new InvalidOperationException("The compositor window-handle space is exhausted.");
 
-				var handle = new nint(--nextHandle);
+				var handle = nint.Size == sizeof(long)
+					? new nint(++nextHandle)
+					: new nint((int)nextHandle--);
 				handlesByValue[value] = handle;
 				valuesByHandle[handle] = value;
 				_ = liveHandles.Add(handle);

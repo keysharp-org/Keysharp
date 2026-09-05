@@ -100,7 +100,7 @@ namespace Keysharp.Internals.Window.Unix
 			}
 		}
 
-		internal override Rectangle ClientBounds => control?.GetClientScreenRect() ?? Rectangle.Empty;
+		internal override Rectangle ClientBounds => control?.GetClientScreenRect(true) ?? Rectangle.Empty;
 
 		internal override bool Enabled => control?.Enabled ?? false;
 
@@ -112,7 +112,7 @@ namespace Keysharp.Internals.Window.Unix
 
 		// Screen-relative, matching WindowInfo (see WinPosHelper). Eto's own bounds are relative to the parent,
 		// so WinGetPos on a control used to report its Gui-relative offset as if it were a desktop position.
-		internal override Rectangle Bounds => control?.GetScreenBounds() ?? Rectangle.Empty;
+		internal override Rectangle Bounds => control?.GetScreenBounds(true) ?? Rectangle.Empty;
 
 		internal override WindowInfoBase NonChildParentWindow => ParentWindow;
 
@@ -155,7 +155,7 @@ namespace Keysharp.Internals.Window.Unix
 				return new POINT();
 
 			//ScreenOrigin, so this answers in the same space as Bounds and ClientBounds on this same object.
-			var pt = control.ScreenOrigin();
+			var pt = control.ScreenOrigin(true);
 			return new POINT(Convert.ToInt32(pt.X), Convert.ToInt32(pt.Y));
 		}
 

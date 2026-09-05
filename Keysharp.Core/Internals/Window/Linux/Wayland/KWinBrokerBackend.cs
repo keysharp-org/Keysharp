@@ -19,12 +19,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return focused;
 		}
 
-		// KWin advertises raise but not lower; sending a window behind every other window
-		// would not be an equivalent fallback.
-		public override bool TrySetZOrder(nint handle, ZOrder z)
-			=> z == ZOrder.Top && TryGetServiceHandle(handle, out var id)
-				&& DesktopClient.RaiseWindow(id);
-
 		public override bool TryGetNativeWindowId(nint handle, out string id)
 		{
 			lock (captureLock)

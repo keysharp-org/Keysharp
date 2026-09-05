@@ -3154,13 +3154,13 @@ MyGui.UseGroup()
 Tab.UseTab("Windows")
 adHocWindowGroup := MyGui.AddGroupBox("xc+16 y+10 w1114", "Ad-hoc Window Inspector")
 MyGui.UseGroup(adHocWindowGroup)
-MyGui.AddText("xc+16 yc+24 w1082 h28", "Optional diagnostics for a real third-party window. Type any normal WinTitle selector or pick the active/window-under-pointer target.")
+MyGui.AddText("xc+16 yc+24 w1082 h28", "Pick a window to inspect it automatically, or type any WinTitle selector and click Inspect Selector.")
 gWindowTitleEdit := MyGui.AddEdit("xc+16 y+6 w1082", "")
 btnCaptureActive := MyGui.AddButton("xc+16 y+8 w112 h28", "Pick Active")
 btnCaptureActive.OnEvent("Click", (*) => CaptureActiveWindow())
 btnFromPoint := MyGui.AddButton("x+8 yp w112 h28", "Pick at Mouse")
 btnFromPoint.OnEvent("Click", (*) => CaptureWindowFromPoint())
-btnInspectTarget := MyGui.AddButton("x+8 yp w112 h28", "Inspect")
+btnInspectTarget := MyGui.AddButton("x+8 yp w128 h28", "Inspect Selector")
 btnInspectTarget.OnEvent("Click", (*) => InspectExternalWindow())
 btnActivateTarget := MyGui.AddButton("x+8 yp w112 h28", "Activate")
 btnActivateTarget.OnEvent("Click", (*) => ActivateExternalWindow())
@@ -4924,16 +4924,23 @@ StartWindowSuiteEvents() {
 	StopWindowSuiteEvents()
 	gWindowEventSeen := Map()
 	gWindowEventExpected := Map()
-	for eventName in ["Exist", "NotExist", "Active", "Move", "Minimize", "Restore", "TitleChange"] {
-		try {
-			hook := WinEvent.%eventName%(OnWinEvent, gWindowFixturePrefix)
-			gWinEventHooks.Push(hook)
-			if !hook.IsActive
-				throw Error("Subscription is not active.")
-			gWindowEventSeen[eventName] := 0
-		} catch as err
-			AddWindowError("WinEvent", eventName " registration", err)
-	}
+	oldHidden := A_DetectHiddenWindows
+	try {
+		; A minimized Wayland window is hidden before the polling source observes the transition. Capture true
+		; in these registrations so the Minimize callback can still match the window that just became hidden.
+		DetectHiddenWindows(true)
+		for eventName in ["Exist", "NotExist", "Active", "Move", "Minimize", "Restore", "TitleChange"] {
+			try {
+				hook := WinEvent.%eventName%(OnWinEvent, gWindowFixturePrefix)
+				gWinEventHooks.Push(hook)
+				if !hook.IsActive
+					throw Error("Subscription is not active.")
+				gWindowEventSeen[eventName] := 0
+			} catch as err
+				AddWindowError("WinEvent", eventName " registration", err)
+		}
+	} finally
+		DetectHiddenWindows(oldHidden)
 }
 
 StopWindowSuiteEvents() {
@@ -5330,41 +5337,43 @@ InspectExternalWindow() {
 		hwnd := WinExist(selector)
 		if !hwnd
 			throw Error("No window matched <" selector ">.")
-
-		WinGetPos(&x, &y, &width, &height, hwnd)
-		WinGetClientPos(&clientX, &clientY, &clientWidth, &clientHeight, hwnd)
-		alpha := WinGetTransparent(hwnd)
-		report := "Title: " WinGetTitle(hwnd) "`r`nClass/AppId: " WinGetClass(hwnd)
-		report .= "`r`nHandle: " hwnd "    PID: " WinGetPID(hwnd)
-		report .= "`r`nProcess: " WinGetProcessName(hwnd) "`r`nPath: " WinGetProcessPath(hwnd)
-		report .= "`r`nFrame: " x "," y "  " width "x" height
-		report .= "`r`nClient: " clientX "," clientY "  " clientWidth "x" clientHeight
-		report .= "`r`nState: " WinGetMinMax(hwnd) "    Enabled: " WinGetEnabled(hwnd)
-			"    AlwaysOnTop: " WinGetAlwaysOnTop(hwnd)
-		report .= "`r`nTransparent: " (alpha = "" ? "<opaque>" : alpha)
-			"    Style: " Format("0x{1:X}", WinGetStyle(hwnd))
-			"    ExStyle: " Format("0x{1:X}", WinGetExStyle(hwnd))
-		report .= "`r`nText chars: " StrLen(WinGetText(hwnd))
-			"    Controls: " WinGetControls(hwnd).Length
-		gWindowInfoEdit.Value := report
-		SetStatus("window_external", "External status: inspected handle " hwnd)
+		ShowExternalWindowInfo(hwnd)
 	} catch as err {
 		SetStatus("window_external", "External status: BLOCKED/ERROR")
 		gWindowInfoEdit.Value := err.Message
 	}
 }
-CaptureActiveWindow() {
+
+ShowExternalWindowInfo(hwnd, heading := "") {
 	global gWindowTitleEdit, gWindowInfoEdit
 
+	WinGetPos(&x, &y, &width, &height, hwnd)
+	WinGetClientPos(&clientX, &clientY, &clientWidth, &clientHeight, hwnd)
+	alpha := WinGetTransparent(hwnd)
+	title := WinGetTitle(hwnd)
+	report := heading (heading = "" ? "" : "`r`n") "Title: " title "`r`nClass/AppId: " WinGetClass(hwnd)
+	report .= "`r`nHandle: " hwnd "    PID: " WinGetPID(hwnd)
+	report .= "`r`nProcess: " WinGetProcessName(hwnd) "`r`nPath: " WinGetProcessPath(hwnd)
+	report .= "`r`nFrame: " x "," y "  " width "x" height
+	report .= "`r`nClient: " clientX "," clientY "  " clientWidth "x" clientHeight
+	report .= "`r`nState: " WinGetMinMax(hwnd) "    Enabled: " WinGetEnabled(hwnd)
+		"    AlwaysOnTop: " WinGetAlwaysOnTop(hwnd)
+	report .= "`r`nTransparent: " (alpha = "" ? "<opaque>" : alpha)
+		"    Style: " Format("0x{1:X}", WinGetStyle(hwnd))
+		"    ExStyle: " Format("0x{1:X}", WinGetExStyle(hwnd))
+	report .= "`r`nText chars: " StrLen(WinGetText(hwnd))
+		"    Controls: " WinGetControls(hwnd).Length
+	gWindowTitleEdit.Value := "ahk_id " hwnd
+	gWindowInfoEdit.Value := report
+	SetStatus("window_external", "External status: inspected handle " hwnd)
+	return title
+}
+
+CaptureActiveWindow() {
 	try {
 		hwnd := WinExist("A")
-		title := WinGetTitle("ahk_id " hwnd)
-		className := WinGetClass("ahk_id " hwnd)
-		WinGetPos(&x, &y, &w, &h, "ahk_id " hwnd)
-		gWindowTitleEdit.Value := title
-		gWindowInfoEdit.Value := "Title: " title "`r`nClass: " className "`r`nHwnd: " hwnd "`r`nPos: " x "," y "  Size: " w "x" h
-		SetStatus("window_external", "External status: captured active window")
-		AppendLog("Captured active window: " title " [" className "]")
+		title := ShowExternalWindowInfo(hwnd, "Picked active window")
+		AppendLog("Captured active window: " title " [" hwnd "]")
 	} catch as err {
 		SetStatus("window_external", "External status: BLOCKED/ERROR")
 		AppendLog("Capture active window failed: " err.Message)
@@ -5372,8 +5381,6 @@ CaptureActiveWindow() {
 }
 
 CaptureWindowFromPoint() {
-	global gWindowTitleEdit, gWindowInfoEdit
-
 	try {
 		CoordMode "Mouse", "Screen"
 		MouseGetPos(&mx, &my)
@@ -5382,12 +5389,7 @@ CaptureWindowFromPoint() {
 		if !hwnd
 			throw Error("WinFromPoint returned no hwnd for " mx "," my ".")
 
-		title := WinGetTitle("ahk_id " hwnd)
-		className := WinGetClass("ahk_id " hwnd)
-		WinGetPos(&x, &y, &w, &h, "ahk_id " hwnd)
-		gWindowTitleEdit.Value := title
-		gWindowInfoEdit.Value := "From point: " mx "," my "`r`nTitle: " title "`r`nClass: " className "`r`nHwnd: " hwnd "`r`nPos: " x "," y "  Size: " w "x" h
-		SetStatus("window_external", "External status: captured window from mouse point")
+		title := ShowExternalWindowInfo(hwnd, "Picked at mouse point " mx "," my)
 		AppendLog("CaptureWindowFromPoint found hwnd " hwnd " with title <" title "> at mouse point " mx "," my ".")
 	} catch as err {
 		SetStatus("window_external", "External status: BLOCKED/ERROR")
