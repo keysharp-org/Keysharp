@@ -15,7 +15,7 @@ provides, and listing one of those here fails the build.
 `flake.nix` pins nixpkgs and Eto to exact revisions. Every other packager builds the tip of Eto's
 `Keysharp` branch, so move the Eto pin when that moves.
 
-`.github/workflows/nixos.yml` builds the package, checks what it contains, and regenerates `deps.json` to
-compare against the committed one.
+The `nixos` job in `.github/workflows/ci.yml` builds the package, checks what it contains, and
+regenerates `deps.json` to compare against the committed one.
 
 `docs/linux-nixos.md` covers installing and running Keysharp on NixOS.

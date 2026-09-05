@@ -18,6 +18,7 @@ on:
           - windows
           - linux
           - macos
+          - nixos
       configuration:
         description: "Build configuration"
         required: true
@@ -67,6 +68,10 @@ jobs:
             'gate' {
               $matrix = '{"include":[{"name":"Windows x64","os":"windows-latest","platform":"windows","rid":"win-x64"},{"name":"Linux x64","os":"ubuntu-latest","platform":"linux","rid":"linux-x64"},{"name":"macOS 15 arm64","os":"macos-15","platform":"macos","rid":"osx-arm64","macos_version":"15","arch":"arm64"}]}'
             }
+            'nixos' {
+              # The NixOS leg is its own job and shares none of this matrix's steps; build is skipped for it.
+              $matrix = '{"include":[]}'
+            }
             default {
               $matrix = '{"include":[{"name":"Windows x64","os":"windows-latest","platform":"windows","rid":"win-x64"},{"name":"Linux x64","os":"ubuntu-latest","platform":"linux","rid":"linux-x64"},{"name":"macOS 15 arm64","os":"macos-15","platform":"macos","rid":"osx-arm64","macos_version":"15","arch":"arm64"},{"name":"macOS 26 arm64","os":"macos-26","platform":"macos","rid":"osx-arm64","macos_version":"26","arch":"arm64"},{"name":"macOS 15 Intel","os":"macos-15-intel","platform":"macos","rid":"osx-x64","macos_version":"15","arch":"x64"},{"name":"macOS 26 Intel","os":"macos-26-intel","platform":"macos","rid":"osx-x64","macos_version":"26","arch":"x64"}]}'
             }
@@ -75,6 +80,7 @@ jobs:
 
   build:
     needs: prepare
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target_platform != 'nixos' }}
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -185,7 +191,7 @@ jobs:
             Keysharp.Install/linux/tests/setup-resolution-policy.sh
           sh -n Keysharp.Install/linux/debian/preinst
           sh -n Keysharp.Install/linux/keysharp-linux-setup.sh
-          python3 scripts/check-workflow-shell.py .github/workflows/release.yml .github/workflows/nixos.yml
+          python3 scripts/check-workflow-shell.py .github/workflows/release.yml .github/workflows/ci.yml
           bash Keysharp.Install/package-linux.sh --help >/dev/null
           bash Keysharp.Install/linux/uninstall.sh --help >/dev/null
           sh Keysharp.Install/linux/keysharp-linux-setup.sh --help >/dev/null
@@ -217,3 +223,176 @@ jobs:
         shell: pwsh
         run: |
           dotnet build Keysharp.sln -c Debug --nologo
+
+  # A leg of its own rather than a row in the matrix above: it shares none of those steps. The flake
+  # pins its own SDK and Eto revision, so there is no setup-dotnet, no Eto checkout and no solution
+  # build here - what this checks is that Keysharp still packages, which the compile legs cannot see.
+  nixos:
+    name: Build (NixOS)
+    if: >-
+      ${{ github.event_name != 'workflow_dispatch'
+      || inputs.target_platform == 'all'
+      || inputs.target_platform == 'nixos' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout keysharp
+        uses: actions/checkout@v7
+
+      # The .NET closure plus the offline NuGet set does not fit alongside the runner's preinstalled
+      # toolchains.
+      - name: Free disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo rm -rf "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
+          df -h /
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # Inputs are revision-pinned in flake.nix, so a missing lock file is not a drift risk; it is still
+      # published here so it can be committed and give the two inputs a content hash as well.
+      - name: Resolve inputs
+        shell: bash
+        run: nix flake lock
+
+      - name: Upload flake.lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-lock
+          path: flake.lock
+
+      # Evaluates every output for both supported architectures and builds checks.nixos-module, which
+      # composes nixosModules.default into a real NixOS system. Only this runner's architecture is built;
+      # the aarch64 outputs are evaluated, which is what catches a broken option or udev rule.
+      - name: Check flake
+        shell: bash
+        run: nix flake check -L --all-systems
+
+      - name: Build keysharp
+        shell: bash
+        run: nix build .#keysharp -L
+
+      # What the packaging steps are actually for, checked on the built store path rather than inferred
+      # from the log. The scripting components are the fragile one: nothing references them at compile
+      # time, so they are only present if the payload staging really ran.
+      - name: Verify package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=result/lib/keysharp
+
+          for path in \
+            result/bin/keysharp \
+            result/bin/keyview \
+            "$app/Keysharp" \
+            "$app/Keyview" \
+            "$app/components/scripting/compiler/Keysharp.Components.Scripting.Compiler.dll" \
+            "$app/components/scripting/parser/Keysharp.Components.Scripting.Parser.dll" \
+            "$app/components/packages/nuget/Keysharp.Components.Packages.NuGet.dll" \
+            "$app/Lib/AtSpi.ks" \
+            result/share/applications/keysharp.desktop \
+            result/share/applications/keyview.desktop \
+            result/share/mime/packages/keysharp.xml \
+            result/share/icons/hicolor/256x256/apps/keysharp.png
+          do
+            if [ ! -e "$path" ]; then
+              echo "Missing from the built package: $path" >&2
+              exit 1
+            fi
+          done
+
+          if [ ! -e "$app/Keysharp.cks" ] && [ ! -e "$app/Keysharp.ks" ]; then
+            echo "The package ships no Dash (neither Keysharp.cks nor Keysharp.ks)." >&2
+            exit 1
+          fi
+          if [ ! -e "$app/Keysharp.cks" ]; then
+            echo "::warning::The Dash shipped as source; it will be compiled on every start."
+          fi
+
+          grep -q "^Exec=keysharp " result/share/applications/keysharp.desktop
+
+      # Runs the wrapper the way a user would, with no display available.
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$(sed -n 's/.*<KeysharpVersion[^>]*>\([0-9.]*\)<\/KeysharpVersion>.*/\1/p' Directory.Build.props)
+          reported=$(result/bin/keysharp --version)
+          echo "Directory.Build.props: $expected, keysharp --version: $reported"
+          test "$expected" = "$reported"
+
+      # nix/deps.json is what makes the sandboxed restore work offline, and nothing in the .NET build
+      # reports that it has gone stale. The build above already fails on a missing or wrong-hashed
+      # entry; this says which one, and leaves a corrected file to commit.
+      - name: Regenerate the offline NuGet set
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          nix build .#keysharp.fetch-deps -L
+          ./result "$PWD/regenerated-deps.json"
+
+      - name: Upload regenerated set
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-deps
+          path: regenerated-deps.json
+
+      # fetch-deps takes its runtime IDs from meta.platforms, so the regenerated set already covers both
+      # architectures and should match. An extra entry is not free either: one that duplicates a package
+      # the SDK supplies makes configureNuget fail with "ln: File exists".
+      - name: Compare against nix/deps.json
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import sys
+
+
+          # NuGet ids are case-insensitive, and the two files do not have to agree on casing: fetch-deps
+          # writes the id as the package declares it, a set read back from a packages folder is lowercase.
+          def load(path):
+              return {
+                  (e["pname"].lower(), e["version"]): (e["pname"], e["hash"])
+                  for e in json.load(open(path))
+              }
+
+
+          def name(mapping, key):
+              return mapping[key][0]
+
+
+          committed = load("nix/deps.json")
+          regenerated = load("regenerated-deps.json")
+
+          missing = sorted(set(regenerated) - set(committed))
+          extra = sorted(set(committed) - set(regenerated))
+          changed = sorted(
+              key for key in set(committed) & set(regenerated)
+              if committed[key][1] != regenerated[key][1]
+          )
+
+          for key in extra:
+              print(f"::warning::nix/deps.json carries an entry the restore did not ask for, which collides with the SDK's own copy if it supplies one: {name(committed, key)} {key[1]}")
+          for key in missing:
+              print(f"::error::nix/deps.json is missing {name(regenerated, key)} {key[1]}")
+          for key in changed:
+              print(f"::error::nix/deps.json has the wrong hash for {name(regenerated, key)} {key[1]}")
+
+          if missing or changed:
+              print(
+                  "\nDownload the regenerated-deps artifact and merge it into nix/deps.json.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          print(f"nix/deps.json covers all {len(regenerated)} restored packages.")
+          PY

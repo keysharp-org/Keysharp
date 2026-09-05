@@ -92,9 +92,19 @@ buildDotnetModule rec {
 
   inherit src;
 
+  # Eto's T4 outputs are committed beside their templates, and its Transform target is incremental. The
+  # copy gives every file the same fresh timestamp, so whether the target reruns comes down to which file
+  # cp happened to touch last - and rerunning it means `dotnet tool restore`, which the sandbox has no
+  # network for. Making each output newer than its template keeps the committed source, deterministically.
   postPatch = ''
     cp -R ${etoSrc} ../Eto
     chmod -R u+w ../Eto
+    for template in $(find ../Eto -name '*.tt'); do
+      generated="$(dirname "$template")/$(basename "$template" .tt).cs"
+      if [ -f "$generated" ]; then
+        touch "$generated"
+      fi
+    done
   '';
 
   projectFile = [
