@@ -1,0 +1,232 @@
+name: NixOS
+
+# Packaging-only gate. Compilation itself is already covered by the Linux leg of ci.yml, so this runs on
+# the files that decide whether the flake still builds: the expressions, the offline NuGet set, and the
+# project/payload inputs those are derived from.
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - flake.nix
+      - flake.lock
+      - nix/**
+      - .github/workflows/nixos.yml
+      - "**/*.csproj"
+      - Directory.Build.props
+      - Directory.Build.targets
+      - Keysharp.Install/payload/**
+      - Keysharp.Install/linux/keysharp.desktop
+      - Keysharp.Install/linux/keyview.desktop
+      - Keysharp.Install/linux/keysharp.xml
+      - Keysharp.Install/linux/70-keysharp-i2c-uaccess.rules
+  pull_request:
+    paths:
+      - flake.nix
+      - flake.lock
+      - nix/**
+      - .github/workflows/nixos.yml
+      - "**/*.csproj"
+      - Directory.Build.props
+      - Directory.Build.targets
+      - Keysharp.Install/payload/**
+      - Keysharp.Install/linux/keysharp.desktop
+      - Keysharp.Install/linux/keyview.desktop
+      - Keysharp.Install/linux/keysharp.xml
+      - Keysharp.Install/linux/70-keysharp-i2c-uaccess.rules
+  workflow_dispatch:
+
+concurrency:
+  group: nixos-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flake:
+    name: Flake and module evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # Inputs are revision-pinned in flake.nix, so a missing lock file is not a drift risk; it is still
+      # published here so it can be committed and give the two inputs a content hash as well.
+      - name: Resolve inputs
+        shell: bash
+        run: |
+          nix flake lock
+          nix flake metadata --json | python3 -m json.tool | head -40
+
+      - name: Upload flake.lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-lock
+          path: flake.lock
+
+      # Evaluates every output for both supported architectures and builds checks.nixos-module, which
+      # composes nixosModules.default into a real NixOS system. Only this runner's architecture is built;
+      # the aarch64 outputs are evaluated, which is what catches a broken option or udev rule.
+      - name: Check flake
+        shell: bash
+        run: nix flake check -L --all-systems
+
+  build:
+    name: Build package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # The .NET closure plus the offline NuGet set does not fit alongside the runner's preinstalled
+      # toolchains.
+      - name: Free disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo rm -rf "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
+          df -h /
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build keysharp
+        shell: bash
+        run: nix build .#keysharp -L
+
+      # What the packaging steps are actually for, checked on the built store path rather than inferred
+      # from the log. The scripting components are the fragile one: nothing references them at compile
+      # time, so they are only present if the payload staging really ran.
+      - name: Verify package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=result/lib/keysharp
+
+          for path in \
+            result/bin/keysharp \
+            result/bin/keyview \
+            "$app/Keysharp" \
+            "$app/Keyview" \
+            "$app/components/scripting/compiler/Keysharp.Components.Scripting.Compiler.dll" \
+            "$app/components/scripting/parser/Keysharp.Components.Scripting.Parser.dll" \
+            "$app/components/packages/nuget/Keysharp.Components.Packages.NuGet.dll" \
+            "$app/Lib/AtSpi.ks" \
+            result/share/applications/keysharp.desktop \
+            result/share/applications/keyview.desktop \
+            result/share/mime/packages/keysharp.xml \
+            result/share/icons/hicolor/256x256/apps/keysharp.png
+          do
+            if [ ! -e "$path" ]; then
+              echo "Missing from the built package: $path" >&2
+              exit 1
+            fi
+          done
+
+          if [ ! -e "$app/Keysharp.cks" ] && [ ! -e "$app/Keysharp.ks" ]; then
+            echo "The package ships no Dash (neither Keysharp.cks nor Keysharp.ks)." >&2
+            exit 1
+          fi
+          if [ ! -e "$app/Keysharp.cks" ]; then
+            echo "::warning::The Dash shipped as source; it will be compiled on every start."
+          fi
+
+          grep -q "^Exec=keysharp " result/share/applications/keysharp.desktop
+
+      # Runs the wrapper the way a user would, with no display available.
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$(sed -n 's/.*<KeysharpVersion[^>]*>\([0-9.]*\)<\/KeysharpVersion>.*/\1/p' Directory.Build.props)
+          reported=$(result/bin/keysharp --version)
+          echo "Directory.Build.props: $expected, keysharp --version: $reported"
+          test "$expected" = "$reported"
+
+  deps:
+    name: Offline NuGet set
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Free disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo rm -rf "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
+          df -h /
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # nix/deps.json is what makes the sandboxed restore work offline, and nothing in the .NET build
+      # reports that it has gone stale - the build just fails with a package it cannot find. This
+      # regenerates it from the real restore and compares.
+      - name: Regenerate
+        shell: bash
+        run: |
+          set -euo pipefail
+          nix build .#keysharp.fetch-deps -L
+          ./result "$PWD/regenerated-deps.json"
+
+      - name: Upload regenerated set
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-deps
+          path: regenerated-deps.json
+
+      # fetch-deps takes its runtime IDs from meta.platforms, so the regenerated set already covers both
+      # architectures and should match. An extra entry is not free either: one that duplicates a package
+      # the SDK supplies makes configureNuget fail with "ln: File exists". The build job is what catches
+      # that, so extras are reported here rather than enforced.
+      - name: Compare against nix/deps.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import sys
+
+
+          def load(path):
+              return {(e["pname"], e["version"]): e["hash"] for e in json.load(open(path))}
+
+
+          committed = load("nix/deps.json")
+          regenerated = load("regenerated-deps.json")
+
+          missing = sorted(set(regenerated) - set(committed))
+          extra = sorted(set(committed) - set(regenerated))
+          changed = sorted(
+              key for key in set(committed) & set(regenerated)
+              if committed[key] != regenerated[key]
+          )
+
+          for key in extra:
+              print(f"::warning::nix/deps.json carries an entry the restore did not ask for, which collides with the SDK's own copy if it supplies one: {key[0]} {key[1]}")
+          for key in missing:
+              print(f"::error::nix/deps.json is missing {key[0]} {key[1]}")
+          for key in changed:
+              print(f"::error::nix/deps.json has the wrong hash for {key[0]} {key[1]}")
+
+          if missing or changed:
+              print(
+                  "\nDownload the regenerated-deps artifact and merge it into nix/deps.json.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          print(f"nix/deps.json covers all {len(regenerated)} restored packages.")
+          PY

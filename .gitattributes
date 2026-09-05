@@ -4,6 +4,8 @@
 *.sh text eol=lf
 *.conf text eol=lf
 /Keysharp.Install/linux/debian/preinst text eol=lf
+# Nix reads these literally: a CRLF inside one of its shell fragments becomes a lone \r the builder runs.
+*.nix text eol=lf
 
 *.bmp binary
 *.cur binary

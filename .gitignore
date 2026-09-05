@@ -33,3 +33,10 @@ SignCert*
 .DS_Store
 demos/*.gif
 /BenchmarkDotNet.Artifacts
+
+# Design/working notes stay local; they are not part of what ships.
+/docs/design-*.md
+
+# nix build result symlinks.
+/result
+/result-*

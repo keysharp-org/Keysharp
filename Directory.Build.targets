@@ -8,12 +8,14 @@
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>
   </PropertyGroup>
 
+  <!-- Each payload target below builds its component, so none of them may inherit NoBuild from an outer
+       publish that sets it: the SDK rejects that combination outright (NETSDK1085). -->
   <Target Name="GetBundledPackageProviderPayload"
           Condition="'$(ShipsPackageProviders)' == 'true'">
     <MSBuild Projects="$(MSBuildThisFileDirectory)Keysharp.Components\Packages\NuGet\Keysharp.Components.Packages.NuGet.csproj"
              Targets="GetPackageProviderPayload"
              Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework)"
-             RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed">
+             RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed;NoBuild">
       <Output TaskParameter="TargetOutputs" ItemName="_BundledPackageProviderPayload" />
     </MSBuild>
   </Target>
@@ -23,13 +25,13 @@
     <MSBuild Projects="$(MSBuildThisFileDirectory)Keysharp.Components\Scripting\Compiler\Keysharp.Components.Scripting.Compiler.csproj"
              Targets="GetScriptingComponentPayload"
              Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework)"
-             RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed">
+             RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed;NoBuild">
       <Output TaskParameter="TargetOutputs" ItemName="_BundledScriptingComponentPayload" />
     </MSBuild>
     <MSBuild Projects="$(MSBuildThisFileDirectory)Keysharp.Components\Scripting\Parser\Keysharp.Components.Scripting.Parser.csproj"
              Targets="GetScriptingComponentPayload"
              Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework)"
-             RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed">
+             RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed;NoBuild">
       <Output TaskParameter="TargetOutputs" ItemName="_BundledScriptingComponentPayload" />
     </MSBuild>
   </Target>
