@@ -880,7 +880,6 @@ CZ_LbBtn1 := MyGui.Add("Button", "xs+170 ys w120 h25 Section", "Add Fuchsia")
 CZ_LbBtn1.OnEvent("Click", AddFuchsia)
 CZ_LbBtn2 := MyGui.Add("Button", "x+8 yp w120 h25", "Delete Fuchsia")
 CZ_LbBtn2.OnEvent("Click", DeleteFuchsia)
-CZ_LbBtn2.OnEvent("Focus", FuchsiaDeleteTrayTip)
 CZ_LbBtn3 := MyGui.Add("Button", "xs y+4 w120 h25", "Purple (Index)")
 CZ_LbBtn3.OnEvent("Click", ChooseIndex)
 CZ_LbBtn4 := MyGui.Add("Button", "x+8 yp w120 h25", "красный (String)")
@@ -1442,6 +1441,7 @@ AddWhite2(*) {
 	ControlAddItem("White", gb2_CZ_CB)
 }
 
+; Also exercises ControlFindItem.
 DeleteFuchsia(*) {
 	Try
 	{
@@ -1469,14 +1469,6 @@ DeleteWhite2(*) {
 	}
 
 	ControlDeleteItem(WhiteIndex, gb2_CZ_CB)
-}
-
-FuchsiaDeleteTrayTip(*) {
-#if LINUX || OSX
-	TrayTip("Also tests ControlFindItem`nClick into another edit box to dismiss this.")
-#else
-	TrayTip("Also tests ControlFindItem")
-#endif
 }
 
 ChooseIndex(*) {
