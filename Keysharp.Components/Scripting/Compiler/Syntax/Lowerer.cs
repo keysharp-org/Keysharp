@@ -109,6 +109,8 @@ namespace Keysharp.Compilation.Syntax
 		// Package resolution is program-wide; identity tracking catches declarations below module scope.
 		private readonly List<Keysharp.Internals.Os.PackageResolver.PackageRef> _packages = [];
 		private readonly HashSet<Stmt> _packagesSeen = new(ReferenceEqualityComparer.Instance);
+		private readonly List<string> _capabilityRequirements = [];
+		private readonly HashSet<DirectiveStmt> _capabilityRequirementsSeen = new(ReferenceEqualityComparer.Instance);
 		private readonly HashSet<string> _requiredProviders = new(System.StringComparer.OrdinalIgnoreCase);
 		private readonly HashSet<string> _requiredComponents = new(System.StringComparer.OrdinalIgnoreCase);
 		public IReadOnlyCollection<string> RequiredProviders => _requiredProviders;
@@ -309,6 +311,7 @@ namespace Keysharp.Compilation.Syntax
 			// prog.Body covers both: the multi-module path partitions this same list into modules, so every module's
 			// top-level statements are already here.
 			PrescanPackageDirectives(prog.Body);
+			PrescanCapabilityRequirements(prog.Body);
 			PrescanManifestDirectives(prog.Body);
 			// #App blocks are program-wide and location-independent, so evaluate them before either lowering path;
 			// assembly metadata and BuildMain both need their final merged values.
@@ -757,6 +760,7 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var m in mods)
 			{
 				PrescanPackageDirectives(m.Body);
+				PrescanCapabilityRequirements(m.Body);
 				// Attribute blocks to their declaring module.
 				PrescanCSharpDirectives(m.Body, m.Name, m.Dir);
 				// Imports need inline members and exports before binding.
@@ -1972,18 +1976,13 @@ namespace Keysharp.Compilation.Syntax
 				case "PERSISTENT":
 					if (!(args.Equals("false", System.StringComparison.OrdinalIgnoreCase) || args == "0")) _persistent = true;
 					return null;
-				// #Requires capability <Name, ...>: request the listed platform capabilities at startup so a script's
-				// permissions are resolved up front (one batched prompt) rather than sprung on the user the first time
-				// a gated feature runs. Emitted at the directive's position in the auto-exec, i.e. before the script's
-				// own hotkeys/hooks/actions. A version requirement (`#Requires AutoHotkey v2.0`) carries no capability
-				// list and is handled by the compatibility scan (ScanRequires/MapRequires) — a no-op here.
+				// Top-level capability requirements are emitted together before hook setup by BuildOuterAuto. Preserve
+				// the existing source-position behavior for one nested in control flow or another unsupported scope.
+				// Version requirements are handled by ScanRequires/MapRequires and remain a no-op here.
 				case "REQUIRES":
 				{
-					var reqParts = args.Split((char[])null, 2, System.StringSplitOptions.RemoveEmptyEntries);
-					if (reqParts.Length == 2
-						&& (reqParts[0].Equals("capability", System.StringComparison.OrdinalIgnoreCase)
-							|| reqParts[0].Equals("capabilities", System.StringComparison.OrdinalIgnoreCase))
-						&& reqParts[1].Trim() is { Length: > 0 } caps)
+					if (TryGetCapabilityRequirement(d, out var caps)
+						&& !_capabilityRequirementsSeen.Contains(d))
 						// RequireCapabilities (not RequestCapabilities): a #Requires directive is a hard
 						// requirement, so a denied prompt exits the app. The runtime builtin does not exit.
 						return ExprStmt(Inv(Access("Keysharp.Runtime.Script.RequireCapabilities"), Str(caps)));
@@ -3487,6 +3486,36 @@ namespace Keysharp.Compilation.Syntax
 			if (method?.DeclaringType == typeof(Keysharp.Builtins.Ks)
 					&& method.Name is nameof(Keysharp.Builtins.Ks.RunScript) or nameof(Keysharp.Builtins.Ks.ParseScript))
 				_ = _requiredComponents.Add(ScriptingComponentIds.Compiler);
+		}
+
+		private static bool TryGetCapabilityRequirement(DirectiveStmt directive, out string capabilities)
+		{
+			capabilities = null;
+
+			if (!directive.Name.Equals("Requires", System.StringComparison.OrdinalIgnoreCase))
+				return false;
+
+			var parts = (directive.Args ?? "").Trim().Split((char[])null, 2,
+				System.StringSplitOptions.RemoveEmptyEntries);
+
+			if (parts.Length != 2
+				|| (!parts[0].Equals("capability", System.StringComparison.OrdinalIgnoreCase)
+					&& !parts[0].Equals("capabilities", System.StringComparison.OrdinalIgnoreCase)))
+				return false;
+
+			capabilities = parts[1].Trim();
+			return capabilities.Length > 0;
+		}
+
+		// Requirements must run before DHHR manifests static hooks. Gather every top-level declaration so one
+		// runtime call can batch scopes across the main script and imported modules.
+		private void PrescanCapabilityRequirements(List<Stmt> body)
+		{
+			foreach (var statement in body)
+				if (statement is DirectiveStmt directive
+					&& TryGetCapabilityRequirement(directive, out var capabilities)
+					&& _capabilityRequirementsSeen.Add(directive))
+					_capabilityRequirements.Add(capabilities);
 		}
 
 		// Gathers the program's `#Package [*i] <id> [version]` directives into one package set (see the _packages field
@@ -6741,6 +6770,9 @@ namespace Keysharp.Compilation.Syntax
 			var stmts = new List<StatementSyntax>();
 			// #Warn output runs first (at load time, before any script logic), per the configured mode.
 			stmts.AddRange(EmitWarnings());
+			if (_capabilityRequirements.Count > 0)
+				stmts.Add(ExprStmt(Inv(Access("Keysharp.Runtime.Script.RequireCapabilities"),
+					_capabilityRequirements.Select(Str).ToArray())));
 			// DHHR: hotkey/hotstring/remap registration runs before the manifest, then Persistent() if any were defined.
 			stmts.AddRange(_dhhr);
 			if (_persistent) stmts.Add(CallStmt("Keysharp.Builtins.Flow.Persistent"));

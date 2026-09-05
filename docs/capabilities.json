@@ -11225,10 +11225,10 @@
                      "feature":  "WinSetEnabled()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "full",
+                     "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unsupported",
-                     "notes":  "Enables or disables the specified window. macOS has no faithful public equivalent of Win32 EnableWindow for another application, so the feature is intentionally unsupported there."
+                     "notes":  "Enables or disables the specified window. Linux supports script-owned windows, but neither X11 nor Wayland has a faithful equivalent of Win32 EnableWindow for another application's window, so a foreign target raises OSError. macOS has no faithful public equivalent and is intentionally unsupported."
                  },
                  {
                      "category":  "Windowing/GUI",

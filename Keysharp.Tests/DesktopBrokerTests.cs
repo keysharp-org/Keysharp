@@ -8,6 +8,10 @@ namespace Keysharp.Tests
 	[TestFixture, Category("Internal"), Category("Curated")]
 	public class DesktopBrokerTests
 	{
+		[Test]
+		public void X11UsesSnapshotWindowEvents()
+			=> Assert.That(DesktopBackend.X11.SupportsPushWindowEvents, Is.False);
+
 		[TestCase((int)NativeClientStatus.Ok, 0, false, false, true)]
 		[TestCase((int)NativeClientStatus.Unavailable, 0, true, false, false)]
 		[TestCase((int)NativeClientStatus.Timeout, 110, true, false, false)]

@@ -28,6 +28,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private const int CapabilityCacheMs = 1_000;
 		private const int EventPollTimeoutMs = 1_000;
 		private const uint NativeErrorStructSize = 304;
+		private const string AuthorizationPendingMessage =
+			"Desktop authorization is currently being requested.";
 
 		private const LinuxPermissionScope DesktopAuthorizationScopes =
 			LinuxPermissionScope.InputControl |
@@ -457,7 +459,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			if (!prompt && !Monitor.TryEnter(promptSync))
 				return new PermissionResult(PermissionStatus.Unsupported,
-					"Desktop authorization is currently being requested.");
+					AuthorizationPendingMessage);
 
 			if (!prompt)
 			{
@@ -613,6 +615,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return new PermissionResult(status, result.Message);
 		}
 
+		private static bool IsExpectedAuthorizationWait(PermissionResult result)
+			=> result.Status == PermissionStatus.Denied
+				|| result.Message == AuthorizationPendingMessage;
+
+		private static bool IsExpectedAuthorizationFailure(in CallResult result)
+			=> result.Status is NativeClientStatus.Denied or NativeClientStatus.Cancelled;
+
 		private static string Invariant(ulong value)
 			=> value.ToString(CultureInfo.InvariantCulture);
 
@@ -675,7 +684,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 				if (!permission.IsGranted)
 				{
-					DebugLine($"keysharp-desktop permission failed: {permission.Message}");
+					if (!IsExpectedAuthorizationWait(permission))
+						DebugLine($"keysharp-desktop permission failed: {permission.Message}");
 					status = permission.Status == PermissionStatus.Denied
 						? NativeClientStatus.Denied : NativeClientStatus.Unsupported;
 					return false;
@@ -692,7 +702,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					if (!authorization.IsSuccess)
 					{
 						status = authorization.Status;
-						DebugLine($"keysharp-desktop permission failed: {authorization.Message}");
+						if (!IsExpectedAuthorizationFailure(authorization))
+							DebugLine($"keysharp-desktop permission failed: {authorization.Message}");
 
 						if (authorization.Status == NativeClientStatus.Revoked
 							|| authorization.ShouldReconnect)
@@ -1051,7 +1062,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						AuthorizationMode.Check, out _);
 
 					if (!authorization.IsSuccess)
+					{
+						if (IsExpectedAuthorizationFailure(authorization))
+						{
+							connection.Dispose();
+							return null;
+						}
+
 						throw authorization.Exception;
+					}
 
 					if ((connection.AvailableOperations & operation) == 0)
 						throw new NotSupportedException(

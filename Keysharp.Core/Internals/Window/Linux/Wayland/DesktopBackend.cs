@@ -6,17 +6,20 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	{
 		internal const string X11BackendKey = "x11";
 		internal static readonly DesktopBackend X11 = new(X11BackendKey,
-			"X11 (keysharp-desktop)", nativeHandles: true);
+			"X11 (keysharp-desktop)", nativeHandles: true, usePushWindowEvents: false);
 
 		private readonly object windowListSync = new();
 		private readonly SyntheticWindowHandleMap<string> handles = new();
 		private readonly bool nativeHandles;
+		private readonly bool usePushWindowEvents;
 
-		internal DesktopBackend(string backendKey, string name, bool nativeHandles = false)
+		internal DesktopBackend(string backendKey, string name, bool nativeHandles = false,
+			bool usePushWindowEvents = true)
 		{
 			BackendKey = backendKey;
 			Name = name;
 			this.nativeHandles = nativeHandles;
+			this.usePushWindowEvents = usePushWindowEvents;
 		}
 
 		public string BackendKey { get; }
@@ -24,10 +27,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		public virtual bool SupportsWindowEvents
 			=> DesktopClient.ProviderSupportsWindowList();
 		public virtual bool SupportsPushWindowEvents
-			=> DesktopClient.ProviderSupportsWindowWatch();
+			=> usePushWindowEvents && DesktopClient.ProviderSupportsWindowWatch();
 
 		public virtual IDisposable SubscribeWindowEvents(Action<WaylandWindowEvent> sink)
-			=> SubscribeBrokerWindowEvents(sink, null);
+		{
+			if (sink == null || !SupportsWindowEvents)
+				return null;
+
+			return usePushWindowEvents
+				? SubscribeBrokerWindowEvents(sink, null)
+				: new WaylandPollingEventSource(this, sink);
+		}
 
 		protected IDisposable SubscribeBrokerWindowEvents(Action<WaylandWindowEvent> sink,
 			Func<Action, IDisposable> subscribeAvailability)

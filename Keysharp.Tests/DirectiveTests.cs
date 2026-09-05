@@ -710,6 +710,9 @@ namespace Keysharp.Tests
 			Assert.IsNotNull(arr, code);
 			Assert.IsTrue(code.Contains("RequireCapabilities(\"ScreenCapture, InputMonitoring\")"),
 				"the capability directive should emit a RequireCapabilities call; generated:\n" + code);
+			Assert.That(code.IndexOf("RequireCapabilities(\"ScreenCapture, InputMonitoring\")", StringComparison.Ordinal),
+				Is.LessThan(code.IndexOf("ManifestAllHotkeysHotstringsHooks", StringComparison.Ordinal)),
+				"capabilities must be granted before static hooks can request them independently; generated:\n" + code);
 
 			// The plural alias also works.
 			var (arrPl, codePl, _) = ch.CompileCodeToByteArray(

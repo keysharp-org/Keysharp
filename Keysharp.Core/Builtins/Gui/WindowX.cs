@@ -655,7 +655,7 @@ namespace Keysharp.Builtins
 		{
 			EnsureWindowMonitoringPermission("WinGetIDLast");
 			var script = Script.TheScript;
-			var (windows, criteria) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
+			var (windows, criteria) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText, true);
 
 			if (windows != null && windows.Count > 0)
 			{
