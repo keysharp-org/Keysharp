@@ -5,8 +5,7 @@ namespace Keysharp.Internals
 {
 	internal sealed class X11Window : LinuxWindow
 	{
-		private const string Backend = X11BrokerBackend.BackendName;
-		private static X11BrokerBackend Broker => X11BrokerBackend.Instance;
+		private static DesktopBackend Broker => DesktopBackend.X11;
 		private static WaylandWindowInfo Query(nint handle)
 			=> Broker.TryGetWindow(handle, out var window) ? window : null;
 		private static bool Valid(nint handle) => Broker.IsKnown(handle);
@@ -119,22 +118,20 @@ namespace Keysharp.Internals
 
 		public override bool TrySetAlwaysOnTop(nint h, bool value)
 			=> TryOwnControl(h, out _) ? base.TrySetAlwaysOnTop(h, value)
-				: Valid(h) && DesktopClient.SetWindowAbove(Backend, (ulong)h, value);
+				: Broker.TrySetAlwaysOnTop(h, value);
 		public override bool TryClose(nint h)
-			=> TryOwnControl(h, out _) ? base.TryClose(h) : Valid(h) && DesktopClient.CloseWindow(Backend, (ulong)h);
+			=> TryOwnControl(h, out _) ? base.TryClose(h) : Broker.TryCloseWindow(h);
 		public override bool TryKill(nint h)
-			=> TryOwnControl(h, out _) ? base.TryKill(h) : Valid(h) && DesktopClient.KillWindow(Backend, (ulong)h);
+			=> TryOwnControl(h, out _) ? base.TryKill(h) : Broker.TryKillWindow(h);
 		public override bool TrySetZOrder(nint h, ZOrder value)
 			=> TryOwnControl(h, out _) ? base.TrySetZOrder(h, value)
-				: Valid(h) && (value == ZOrder.Top ? DesktopClient.RaiseWindow(Backend, (ulong)h)
-					: value == ZOrder.Bottom && DesktopClient.LowerWindow(Backend, (ulong)h));
+				: Broker.TrySetZOrder(h, value);
 		public override bool TryHide(nint h) => TrySetVisible(h, false);
 		public override bool TryShow(nint h) => TrySetVisible(h, true);
 		public override bool TryRedraw(nint h)
-			=> TryOwnControl(h, out _) ? base.TryRedraw(h) : Valid(h) && DesktopClient.RedrawWindow(Backend, (ulong)h);
+			=> TryOwnControl(h, out _) ? base.TryRedraw(h) : Broker.TryRedrawWindow(h);
 		public override bool TrySetState(nint h, FormWindowState state)
-			=> TryOwnControl(h, out _) ? base.TrySetState(h, state) : Valid(h)
-				&& DesktopClient.SetWindowState(Backend, (ulong)h, WaylandWindowStateProtocol.ToShellExtensionState(state));
+			=> TryOwnControl(h, out _) ? base.TrySetState(h, state) : Broker.TrySetWindowState(h, state);
 		public override bool TryMoveResize(nint h, Rectangle bounds, bool setPos, bool setSize)
 		{
 			if (TryOwnControl(h, out var control))
@@ -149,26 +146,24 @@ namespace Keysharp.Internals
 				bounds = new Rectangle(setPos ? bounds.X : current.Bounds.X, setPos ? bounds.Y : current.Bounds.Y,
 					setSize ? bounds.Width : current.Bounds.Width, setSize ? bounds.Height : current.Bounds.Height);
 			}
-			return DesktopClient.MoveResizeWindow(Backend, (ulong)h, bounds.X, bounds.Y, bounds.Width, bounds.Height);
+			return Broker.TryMoveResizeWindow(h, bounds, true, true);
 		}
 		public override bool TryActivate(nint h)
-			=> TryOwnControl(h, out _) ? base.TryActivate(h) : Valid(h) && DesktopClient.FocusWindow(Backend, (ulong)h);
+			=> TryOwnControl(h, out _) ? base.TryActivate(h) : Broker.TryActivateWindow(h);
 		public override bool TrySetStyle(nint h, long style)
 			=> TryOwnControl(h, out _) ? base.TrySetStyle(h, style)
-				: Valid(h) && DesktopClient.SetWindowDecorated(Backend, (ulong)h, (style & 0x00C00000L) != 0);
+				: Broker.TrySetNoBorder(h, (style & 0x00C00000L) == 0);
 		public override bool TrySetExStyle(nint h, long style)
 			=> TryOwnControl(h, out _) && base.TrySetExStyle(h, style);
 		public override bool TrySetTransparency(nint h, object alpha)
-			=> TryOwnControl(h, out _) ? base.TrySetTransparency(h, alpha) : Valid(h)
-				&& DesktopClient.SetWindowOpacity(Backend, (ulong)h,
-					alpha is string value && value.Equals("Off", StringComparison.OrdinalIgnoreCase) ? 255 : Math.Clamp((int)alpha.Al(), 0, 255));
+			=> TryOwnControl(h, out _) ? base.TrySetTransparency(h, alpha) : Broker.TrySetTransparency(h, alpha);
 		public override bool TryClick(nint h, Point at, uint button, int count)
 			=> TryOwnControl(h, out _) ? base.TryClick(h, at, button, count)
-				: Valid(h) && DesktopClient.ClickWindow(Backend, (ulong)h, at.X, at.Y, button, count);
+				: Broker.TryClickWindow(h, at, button, count);
 		public override bool TrySetTitle(nint h, string title)
-			=> TryOwnControl(h, out _) ? base.TrySetTitle(h, title) : Valid(h) && DesktopClient.SetWindowTitle(Backend, (ulong)h, title);
+			=> TryOwnControl(h, out _) ? base.TrySetTitle(h, title) : Broker.TrySetWindowTitle(h, title);
 		public override bool TrySetVisible(nint h, bool visible)
-			=> TryOwnControl(h, out _) ? base.TrySetVisible(h, visible) : Valid(h) && DesktopClient.SetWindowVisible(Backend, (ulong)h, visible);
+			=> TryOwnControl(h, out _) ? base.TrySetVisible(h, visible) : Broker.TrySetWindowVisible(h, visible);
 		public override bool TrySetEnabled(nint h, bool enabled)
 			=> TryOwnControl(h, out _) && base.TrySetEnabled(h, enabled);
 		public override bool TrySetTransparentColor(nint h, object color)

@@ -2,9 +2,9 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.X86;
 using System.Text;
 using System.Threading;
+using System.Threading.Channels;
 using Eto.Drawing;
 using Keysharp.Internals.Linux;
 using Keysharp.Internals.Os;
@@ -25,25 +25,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private const int RequestTimeoutMs = 30_000;
 		private const int AuthorizationTimeoutMs = 125_000;
 		private const int ProbeTimeoutMs = 2_000;
+		private const int CapabilityCacheMs = 1_000;
 		private const int EventPollTimeoutMs = 1_000;
-		private const int MaxTextBytes = 4 * 1024 * 1024;
-		private const int MaxCaptureBytes = 256 * 1024 * 1024;
-		private const int MaxCaptureDimension = 32_768;
-		private const int MaxMimetypeBytes = 1024;
-		private const int MaxClipboardWriteBytes = 4_193_272;
-		private const int MaxMimetypes = 4096;
-		private const int MaxWindowHandleBytes = 128;
-		private const string SocketEnvironmentVariable = "KEYSHARP_DESKTOP_SOCKET";
-		private static readonly UTF8Encoding StrictUtf8 = new(false, true);
-		private static readonly uint NativeBytesStructSize = checked((uint)sizeof(NativeBytes));
-		private static readonly uint NativeStringStructSize = checked((uint)sizeof(NativeString));
-		private static readonly uint NativeStringListStructSize = checked((uint)sizeof(NativeStringList));
-		private static readonly uint NativeCaptureStructSize = checked((uint)sizeof(NativeCapture));
-		private static readonly uint NativeWindowEventStructSize = checked((uint)sizeof(NativeWindowEvent));
-		private static readonly uint NativeClipboardEventStructSize = checked((uint)sizeof(NativeClipboardEvent));
-		private static readonly uint NativeServiceInfoStructSize = checked((uint)sizeof(NativeServiceInfo));
-		private static readonly uint NativePointStructSize = checked((uint)sizeof(NativePoint));
-		private static readonly uint NativeRectangleStructSize = checked((uint)sizeof(NativeRectangle));
+		private const uint NativeErrorStructSize = 304;
 
 		private const LinuxPermissionScope DesktopAuthorizationScopes =
 			LinuxPermissionScope.InputControl |
@@ -67,7 +51,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			Request = 1,
 		}
 
-		private enum Backend : uint
+		internal enum Backend : uint
 		{
 			None = 0,
 			Kwin = 1,
@@ -92,7 +76,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			WindowClose = 1UL << 8,
 			WindowKill = 1UL << 9,
 			WindowMoveResize = 1UL << 10,
-			WindowMoveResizeXid = 1UL << 11,
 			WindowSetState = 1UL << 12,
 			WindowSetOpacity = 1UL << 13,
 			WindowSetAbove = 1UL << 14,
@@ -125,7 +108,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			WindowClick = 1UL << 40,
 			WindowButton = 1UL << 41,
 			WindowFocusChild = 1UL << 42,
-			All = (1UL << 43) - 1,
 		}
 
 		private enum CaptureFormat : ushort
@@ -134,109 +116,76 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			Bgra8Premultiplied = 2,
 		}
 
-		private static readonly DesktopRpcSession kwinCapture = new(Backend.Kwin,
-			LinuxPermissionScope.ScreenCapture, interactive: true);
-		private static readonly DesktopRpcSession gnomeCapture = new(Backend.Gnome,
-			LinuxPermissionScope.ScreenCapture, interactive: true);
-		private static readonly DesktopRpcSession cinnamonCapture = new(Backend.Cinnamon,
-			LinuxPermissionScope.ScreenCapture, interactive: true);
-		private static readonly DesktopRpcSession gnomeWindowMonitoring = new(Backend.Gnome,
-			LinuxPermissionScope.WindowMonitoring, interactive: true);
-		private static readonly DesktopRpcSession gnomeWindowControl = new(Backend.Gnome,
-			LinuxPermissionScope.WindowControl, interactive: true);
-		private static readonly DesktopRpcSession gnomeClipboardMonitoring = new(Backend.Gnome,
-			LinuxPermissionScope.ClipboardMonitoring);
-		private static readonly DesktopRpcSession gnomeInputControl = new(Backend.Gnome,
-			LinuxPermissionScope.InputControl, interactive: true);
-		private static readonly DesktopRpcSession cinnamonWindowMonitoring = new(Backend.Cinnamon,
-			LinuxPermissionScope.WindowMonitoring, interactive: true);
-		private static readonly DesktopRpcSession cinnamonWindowControl = new(Backend.Cinnamon,
-			LinuxPermissionScope.WindowControl, interactive: true);
-		private static readonly DesktopRpcSession cinnamonClipboardMonitoring = new(Backend.Cinnamon,
-			LinuxPermissionScope.ClipboardMonitoring);
-		private static readonly DesktopRpcSession cinnamonInputControl = new(Backend.Cinnamon,
-			LinuxPermissionScope.InputControl, interactive: true);
-		private static readonly DesktopRpcSession gnomeQueries = new(Backend.Gnome,
-			LinuxPermissionScope.None);
-		private static readonly DesktopRpcSession cinnamonQueries = new(Backend.Cinnamon,
-			LinuxPermissionScope.None);
-		// The broker serves these from the X server itself on a session with no
-		// Wayland compositor, which is every bare X11 desktop as well as XFCE and
-		// MATE. The scopes are the same ones the compositor backends use, because
-		// the operations are the same.
-		private static readonly DesktopRpcSession x11Queries = new(Backend.X11,
-			LinuxPermissionScope.None);
-		private static readonly DesktopRpcSession x11WindowMonitoring = new(Backend.X11,
-			LinuxPermissionScope.WindowMonitoring, interactive: true);
-		private static readonly DesktopRpcSession x11Capture = new(Backend.X11,
-			LinuxPermissionScope.ScreenCapture, interactive: true);
-		private static readonly DesktopRpcSession x11InputControl = new(Backend.X11,
-			LinuxPermissionScope.InputControl, interactive: true);
-		private static readonly DesktopRpcSession x11WindowControl = new(Backend.X11,
-			LinuxPermissionScope.WindowControl, interactive: true);
-		// X11 clipboard reads are brokered; selection ownership stays with the GUI toolkit.
-		private static readonly DesktopRpcSession x11ClipboardMonitoring = new(Backend.X11,
-			LinuxPermissionScope.ClipboardMonitoring);
-		// Every Wayland compositor with no extension of its own: sway, Hyprland,
-		// COSMIC, niri, river. The broker answers these as an ordinary client on the
-		// OUTSIDE of the compositor, so it serves only the shared protocols the
-		// compositor advertises: wlroots window control and capture where present,
-		// plus clipboard reads and portable foreign-window enumeration.
-		private static readonly DesktopRpcSession keyboardQueries = new(null, LinuxPermissionScope.None);
-		private static readonly DesktopRpcSession genericQueries = new(Backend.Generic,
-			LinuxPermissionScope.None);
-		private static readonly DesktopRpcSession genericWindowMonitoring = new(Backend.Generic,
-			LinuxPermissionScope.WindowMonitoring, interactive: true);
-		private static readonly DesktopRpcSession genericWindowControl = new(Backend.Generic,
-			LinuxPermissionScope.WindowControl, interactive: true);
-		private static readonly DesktopRpcSession genericClipboardMonitoring = new(Backend.Generic,
-			LinuxPermissionScope.ClipboardMonitoring);
-		private static readonly DesktopRpcSession genericCapture = new(Backend.Generic,
-			LinuxPermissionScope.ScreenCapture, interactive: true);
-		private static readonly DesktopRpcSession genericInputControl = new(Backend.Generic,
-			LinuxPermissionScope.InputControl, interactive: true);
-		// KWin serves these through its script, which the broker reaches over the
-		// socket the session daemon hands it at registration. Captures do not use
-		// that channel at all -- they run in the forked worker -- which is why they
-		// keep working when the script is wedged.
-		private static readonly DesktopRpcSession kwinQueries = new(Backend.Kwin,
-			LinuxPermissionScope.None);
-		private static readonly DesktopRpcSession kwinWindowMonitoring = new(Backend.Kwin,
-			LinuxPermissionScope.WindowMonitoring, interactive: true);
-		private static readonly DesktopRpcSession kwinWindowControl = new(Backend.Kwin,
-			LinuxPermissionScope.WindowControl, interactive: true);
+		private static readonly (Operation Operations, LinuxPermissionScope Scope)[] operationScopes =
+		[
+			(Operation.CaptureArea | Operation.CaptureWindow | Operation.CaptureDesktop,
+				LinuxPermissionScope.ScreenCapture),
+			(Operation.WindowList | Operation.WindowActive | Operation.WindowWatch
+				| Operation.WindowQuery | Operation.WindowChildren | Operation.WindowAtPoint,
+				LinuxPermissionScope.WindowMonitoring),
+			(Operation.WindowFocus | Operation.WindowRaise | Operation.WindowLower
+				| Operation.WindowClose | Operation.WindowKill | Operation.WindowMoveResize
+				| Operation.WindowSetState | Operation.WindowSetOpacity | Operation.WindowSetAbove
+				| Operation.WindowSetDecorated | Operation.WindowReserve | Operation.WindowGetReserved
+				| Operation.WindowSetSkipTaskbar | Operation.WindowSetTitle | Operation.WindowSetVisible
+				| Operation.WindowRedraw | Operation.WindowClick | Operation.WindowButton
+				| Operation.WindowFocusChild, LinuxPermissionScope.WindowControl),
+			(Operation.ClipboardMimetypes | Operation.ClipboardContent | Operation.ClipboardText
+				| Operation.ClipboardWatch, LinuxPermissionScope.ClipboardMonitoring),
+			(Operation.MouseMoveAbsolute | Operation.MouseMoveRelative | Operation.MouseButton
+				| Operation.MouseScroll, LinuxPermissionScope.InputControl),
+			(Operation.CursorPosition | Operation.WorkArea | Operation.ClipboardSetContent
+				| Operation.WindowHandles | Operation.DisplayList | Operation.KeyboardState,
+				LinuxPermissionScope.None),
+		];
 
-		internal static Bitmap Capture(int x, int y, int width, int height)
-			=> CaptureArea(kwinCapture, x, y, width, height);
+		private static readonly Dictionary<LinuxPermissionScope, DesktopRpcSession> sessions = new()
+		{
+			[LinuxPermissionScope.None] = new(LinuxPermissionScope.None),
+			[LinuxPermissionScope.ScreenCapture] = new(LinuxPermissionScope.ScreenCapture),
+			[LinuxPermissionScope.WindowMonitoring] = new(LinuxPermissionScope.WindowMonitoring),
+			[LinuxPermissionScope.WindowControl] = new(LinuxPermissionScope.WindowControl),
+			[LinuxPermissionScope.ClipboardMonitoring] = new(LinuxPermissionScope.ClipboardMonitoring),
+			[LinuxPermissionScope.InputControl] = new(LinuxPermissionScope.InputControl),
+		};
 
-		internal static PermissionResult Authorize(string operation, bool prompt = false)
-			=> kwinCapture.Authorize(prompt);
+		private static bool Call(Operation operation, Func<DesktopConnection, CallResult> request)
+			=> sessions[ScopeFor(operation)].TryUse(operation, request, out _);
 
-		internal static Bitmap CaptureKWinWindow(string uuid, bool includeDecoration)
-			=> CaptureWindow(kwinCapture, uuid, includeDecoration);
+		private static bool Call(Operation operation, Func<DesktopConnection, CallResult> request,
+			out NativeClientStatus status)
+			=> sessions[ScopeFor(operation)].TryUse(operation, request, out status);
 
-		internal static Bitmap CaptureGnome(int x, int y, int width, int height)
-			=> CaptureArea(gnomeCapture, x, y, width, height);
+		private static LinuxPermissionScope ScopeFor(Operation operation)
+		{
+			if (operation == Operation.None)
+				return LinuxPermissionScope.None;
 
-		internal static Bitmap CaptureGnomeWindow(ulong handle)
-			=> CaptureWindow(gnomeCapture, Invariant(handle), includeDecoration: false);
+			foreach (var entry in operationScopes)
+				if ((entry.Operations & operation) == operation)
+					return entry.Scope;
 
-		internal static PermissionResult AuthorizeGnome(string operation, bool prompt = false)
-			=> gnomeCapture.Authorize(prompt);
+			throw new ArgumentOutOfRangeException(nameof(operation), operation,
+				"Desktop operation has no permission-scope mapping.");
+		}
 
-		internal static Bitmap CaptureCinnamon(int x, int y, int width, int height)
-			=> CaptureArea(cinnamonCapture, x, y, width, height);
+		internal static Bitmap CaptureWindow(string handle,
+			bool includeDecoration)
+		{
+			if (string.IsNullOrWhiteSpace(handle))
+				return null;
 
-		internal static Bitmap CaptureCinnamonWindow(ulong handle)
-			=> CaptureWindow(cinnamonCapture, Invariant(handle), includeDecoration: false);
+			Bitmap bitmap = null;
+			return Call(Operation.CaptureWindow,
+				connection => connection.CaptureWindow(handle, includeDecoration,
+					out bitmap)) ? bitmap : null;
+		}
 
-		internal static Bitmap CaptureX11(int x, int y, int width, int height)
-			=> CaptureArea(x11Capture, x, y, width, height);
+		internal static Bitmap CaptureWindow(ulong handle,
+			bool includeDecoration = false)
+			=> CaptureWindow(Invariant(handle), includeDecoration);
 
-		internal static Bitmap CaptureGeneric(int x, int y, int width, int height)
-			=> CaptureArea(genericCapture, x, y, width, height);
-
-		internal static DesktopCaptureStatus CaptureGenericWithStatus(int x, int y,
+		internal static DesktopCaptureStatus CaptureWithStatus(int x, int y,
 			int width, int height, out Bitmap bitmap)
 		{
 			bitmap = null;
@@ -245,7 +194,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return DesktopCaptureStatus.Failed;
 
 			Bitmap captured = null;
-			var success = genericCapture.TryUse(Operation.CaptureArea,
+			var success = Call(Operation.CaptureArea,
 				connection => connection.CaptureArea(x, y, checked((uint)width),
 					checked((uint)height), out captured), out var status);
 
@@ -256,21 +205,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 
 			captured?.Dispose();
-			return status switch
-			{
-				NativeClientStatus.Denied or NativeClientStatus.Cancelled
-					or NativeClientStatus.Revoked => DesktopCaptureStatus.DeniedOrStopped,
-				NativeClientStatus.Unsupported or NativeClientStatus.Unavailable
-					=> DesktopCaptureStatus.Unavailable,
-				_ => DesktopCaptureStatus.Failed,
-			};
+			return CaptureStatus(status);
 		}
 
-		internal static DesktopCaptureStatus CaptureGenericDesktopWithStatus(out Bitmap bitmap)
+		internal static DesktopCaptureStatus CaptureDesktopWithStatus(out Bitmap bitmap)
 		{
 			bitmap = null;
 			Bitmap captured = null;
-			var success = genericCapture.TryUse(Operation.CaptureDesktop,
+			var success = Call(Operation.CaptureDesktop,
 				connection => connection.CaptureDesktop(out captured), out var status);
 
 			if (success)
@@ -280,7 +222,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 
 			captured?.Dispose();
-			return status switch
+			return CaptureStatus(status);
+		}
+
+		private static DesktopCaptureStatus CaptureStatus(NativeClientStatus status)
+			=> status switch
 			{
 				NativeClientStatus.Denied or NativeClientStatus.Cancelled
 					or NativeClientStatus.Revoked => DesktopCaptureStatus.DeniedOrStopped,
@@ -288,69 +234,52 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					=> DesktopCaptureStatus.Unavailable,
 				_ => DesktopCaptureStatus.Failed,
 			};
-		}
 
-		internal static PermissionResult AuthorizeGeneric(string operation, bool prompt = false)
-			=> genericCapture.Authorize(Operation.CaptureArea | Operation.CaptureDesktop, prompt);
+		internal static bool AllowsCaptureFallback(DesktopCaptureStatus status)
+			=> status is DesktopCaptureStatus.Unavailable or DesktopCaptureStatus.Failed;
 
-		// The handle is an XID here, which the broker checks fits in 32 bits rather than
-		// truncating a wider one onto whatever window wears the low half.
-		internal static Bitmap CaptureX11Window(ulong handle, bool includeDecoration)
-			=> CaptureWindow(x11Capture, Invariant(handle), includeDecoration);
+		internal static bool ProbeProvider()
+			=> sessions[LinuxPermissionScope.None].Supports(Operation.None);
 
-		internal static PermissionResult AuthorizeX11(string operation, bool prompt = false)
-			=> x11Capture.Authorize(prompt);
+		internal static bool TryProbeBackend(out Backend backend)
+			=> sessions[LinuxPermissionScope.None].TryGetBackend(out backend);
 
-		internal static PermissionResult AuthorizeCinnamon(string operation, bool prompt = false)
-			=> cinnamonCapture.Authorize(prompt);
+		internal static bool ProviderSupportsAbsolutePointer()
+			=> ProviderSupports(Operation.MouseMoveAbsolute);
 
-		internal static bool ProbeProvider(string backend)
-		{
-			try
-			{
-				using var connection = DesktopConnection.Connect(BackendFromName(backend),
-					ConnectionRole.Rpc, ProbeTimeoutMs);
-				return true;
-			}
-			catch
-			{
-				return false;
-			}
-		}
+		internal static bool ProviderSupportsWindowList()
+			=> ProviderSupports(Operation.WindowList);
 
-		internal static bool ProviderSupportsWindowList(string backend)
-			=> ProviderSupports(backend, Operation.WindowList | Operation.WindowHandles);
+		internal static bool ProviderSupportsWindowWatch()
+			=> ProviderSupports(Operation.WindowWatch);
 
-		internal static bool ProviderSupportsAbsolutePointer(string backend)
-			=> ProviderSupports(backend, Operation.MouseMoveAbsolute);
+		internal static bool ProviderSupportsTransparency()
+			=> ProviderSupports(Operation.WindowSetOpacity);
 
-		internal static bool ProviderSupportsClipboard(string backend)
-			=> ProviderSupports(backend,
+		internal static bool ProviderSupportsClipboard()
+			=> ProviderSupports(
 				Operation.ClipboardMimetypes | Operation.ClipboardContent
 				| Operation.ClipboardText | Operation.ClipboardWatch
 				| Operation.ClipboardSetContent);
 
-		private static bool ProviderSupports(string backend, Operation operations)
-			=> QuerySession(backend).Supports(operations);
+		private static bool ProviderSupports(Operation operations)
+			=> sessions[LinuxPermissionScope.None].Supports(operations);
 
-		internal static bool ProbeKWinProvider()
-			=> kwinQueries.Supports(Operation.WindowHandles | Operation.WindowSetSkipTaskbar);
-
-		internal static bool QueryCursorPosition(string backend, out int x, out int y)
+		internal static bool QueryCursorPosition(out int x, out int y)
 		{
 			var point = default(Point);
-			var result = QuerySession(backend).TryUse(Operation.CursorPosition,
+			var result = Call(Operation.CursorPosition,
 				connection => connection.CursorPosition(out point));
 			x = point.X;
 			y = point.Y;
 			return result;
 		}
 
-		internal static bool QueryWorkArea(string backend, out Rectangle area)
+		internal static bool QueryWorkArea(out Rectangle area)
 		{
 			area = Rectangle.Empty;
 			var value = Rectangle.Empty;
-			var result = QuerySession(backend).TryUse(Operation.WorkArea,
+			var result = Call(Operation.WorkArea,
 				connection => connection.WorkArea(out value));
 
 			if (result)
@@ -359,10 +288,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return result;
 		}
 
-		internal static string QueryWindowList(string backend, bool includeHidden)
+		internal static byte[] QueryWindowList(bool includeHidden)
 		{
-			string value = null;
-			return WindowMonitoringSession(backend).TryUse(Operation.WindowList,
+			byte[] value = null;
+			return Call(Operation.WindowList,
 				connection => connection.WindowList(includeHidden, out value)) ? value : null;
 		}
 
@@ -373,188 +302,147 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// Reading a window's title, class, owner or geometry is QueryWindowList, and
 		/// that does need a grant.
 		/// </summary>
-		internal static string QueryWindowHandles(string backend)
+		internal static byte[] QueryWindowHandles()
 		{
-			string value = null;
-			return QuerySession(backend).TryUse(Operation.WindowHandles,
+			byte[] value = null;
+			return Call(Operation.WindowHandles,
 				connection => connection.WindowHandles(out value)) ? value : null;
 		}
 
-		internal static string QueryActiveWindow(string backend)
+		internal static byte[] QueryActiveWindow()
 		{
-			string value = null;
-			return WindowMonitoringSession(backend).TryUse(Operation.WindowActive,
+			byte[] value = null;
+			return Call(Operation.WindowActive,
 				connection => connection.ActiveWindow(out value)) ? value : null;
 		}
 
-		internal static bool FocusWindow(string backend, ulong handle)
-			=> WindowControlSession(backend).TryUse(Operation.WindowFocus,
-				connection => connection.WindowAction(Operation.WindowFocus, handle));
+		internal static bool FocusWindow(ulong handle)
+			=> Call(Operation.WindowFocus, connection => connection.FocusWindow(handle));
 
-		internal static bool RaiseWindow(string backend, ulong handle)
-			=> WindowControlSession(backend).TryUse(Operation.WindowRaise,
-				connection => connection.WindowAction(Operation.WindowRaise, handle));
+		internal static bool RaiseWindow(ulong handle)
+			=> Call(Operation.WindowRaise, connection => connection.RaiseWindow(handle));
 
-		internal static bool LowerWindow(string backend, ulong handle)
-			=> WindowControlSession(backend).TryUse(Operation.WindowLower,
-				connection => connection.WindowAction(Operation.WindowLower, handle));
+		internal static bool LowerWindow(ulong handle)
+			=> Call(Operation.WindowLower, connection => connection.LowerWindow(handle));
 
-		internal static bool CloseWindow(string backend, ulong handle)
-			=> WindowControlSession(backend).TryUse(Operation.WindowClose,
-				connection => connection.WindowAction(Operation.WindowClose, handle));
+		internal static bool CloseWindow(ulong handle)
+			=> Call(Operation.WindowClose, connection => connection.CloseWindow(handle));
 
-		internal static bool KillWindow(string backend, ulong handle)
-			=> WindowControlSession(backend).TryUse(Operation.WindowKill,
-				connection => connection.WindowAction(Operation.WindowKill, handle));
+		internal static bool KillWindow(ulong handle)
+			=> Call(Operation.WindowKill, connection => connection.KillWindow(handle));
 
-		internal static bool MoveResizeWindow(string backend, ulong handle,
+		internal static bool MoveResizeWindow(ulong handle,
 			int x, int y, int width, int height)
 			=> width >= 0 && height >= 0
-				&& (x != int.MinValue || y != int.MinValue || width != 0 || height != 0)
-				&& WindowControlSession(backend).TryUse(Operation.WindowMoveResize,
-					connection => connection.MoveResize(false, handle, x, y,
+				&& Call(Operation.WindowMoveResize,
+					connection => connection.MoveResize(handle, x, y,
 						checked((uint)width), checked((uint)height)));
 
-		internal static bool MoveResizeWindowByXid(string backend, ulong handle,
-			int x, int y, int width, int height)
-			=> width >= 0 && height >= 0
-				&& (x != int.MinValue || y != int.MinValue || width != 0 || height != 0)
-				&& WindowControlSession(backend).TryUse(Operation.WindowMoveResizeXid,
-					connection => connection.MoveResize(true, handle, x, y,
-						checked((uint)width), checked((uint)height)));
+		internal static bool SetWindowState(ulong handle, int state)
+			=> Call(Operation.WindowSetState,
+					connection => connection.SetWindowState(handle, (uint)state));
 
-		internal static bool SetWindowState(string backend, ulong handle, int state)
-			=> state is >= 0 and <= 2
-				&& WindowControlSession(backend).TryUse(Operation.WindowSetState,
-					connection => connection.SetWindowValue(Operation.WindowSetState,
-						handle, (uint)state));
+		internal static bool SetWindowOpacity(ulong handle, int opacity)
+			=> Call(Operation.WindowSetOpacity,
+					connection => connection.SetWindowOpacity(handle, (uint)opacity));
 
-		internal static bool SetWindowOpacity(string backend, ulong handle, int opacity)
-			=> opacity is >= 0 and <= 255
-				&& WindowControlSession(backend).TryUse(Operation.WindowSetOpacity,
-					connection => connection.SetWindowValue(Operation.WindowSetOpacity,
-						handle, (uint)opacity));
+		internal static bool SetWindowAbove(ulong handle, bool above)
+			=> Call(Operation.WindowSetAbove,
+				connection => connection.SetWindowAbove(handle, above));
 
-		internal static bool SetWindowAbove(string backend, ulong handle, bool above)
-			=> WindowControlSession(backend).TryUse(Operation.WindowSetAbove,
-				connection => connection.SetWindowValue(Operation.WindowSetAbove,
-					handle, above ? 1u : 0u));
+		internal static bool SetWindowDecorated(ulong handle, bool decorated)
+			=> Call(Operation.WindowSetDecorated,
+				connection => connection.SetWindowDecorated(handle, decorated));
 
-		internal static bool SetWindowDecorated(string backend, ulong handle, bool decorated)
-			=> WindowControlSession(backend).TryUse(Operation.WindowSetDecorated,
-				connection => connection.SetWindowValue(Operation.WindowSetDecorated,
-					handle, decorated ? 1u : 0u));
+		internal static bool SetWindowSkipTaskbar(ulong handle, bool skip)
+			=> Call(Operation.WindowSetSkipTaskbar,
+				connection => connection.SetWindowSkipTaskbar(handle, skip));
 
-		internal static bool SetWindowSkipTaskbar(string backend, ulong handle, bool skip)
-			=> WindowControlSession(backend).TryUse(Operation.WindowSetSkipTaskbar,
-				connection => connection.SetWindowValue(Operation.WindowSetSkipTaskbar,
-					handle, skip ? 1u : 0u));
-
-		internal static bool ReserveWindow(string backend, ulong cookie, int x, int y, int ttlMs)
-			=> cookie != 0 && ttlMs > 0
-				&& WindowControlSession(backend).TryUse(Operation.WindowReserve,
+		internal static bool ReserveWindow(ulong cookie, int x, int y, int ttlMs)
+			=> ttlMs >= 0 && Call(Operation.WindowReserve,
 					connection => connection.ReserveWindow(cookie, x, y, checked((uint)ttlMs)));
 
-		internal static string GetReservedWindow(string backend, ulong cookie)
+		internal static string GetReservedWindow(ulong cookie)
 		{
 			ulong handle = 0;
-			return cookie != 0 && WindowControlSession(backend).TryUse(
+			return Call(
 				Operation.WindowGetReserved,
 				connection => connection.GetReservedWindow(cookie, out handle))
 				? Invariant(handle) : string.Empty;
 		}
 
-		internal static string[] GetClipboardMimetypes(string backend)
+		internal static string[] GetClipboardMimetypes()
 		{
 			string[] value = null;
-			return ClipboardMonitoringSession(backend).TryUse(Operation.ClipboardMimetypes,
+			return Call(Operation.ClipboardMimetypes,
 				connection => connection.ClipboardMimetypes(out value)) ? value : null;
 		}
 
-		internal static byte[] GetClipboardContent(string backend, string mimetype)
+		internal static byte[] GetClipboardContent(string mimetype)
 		{
-			if (string.IsNullOrEmpty(mimetype)
-				|| StrictUtf8.GetByteCount(mimetype) > MaxMimetypeBytes)
+			if (string.IsNullOrEmpty(mimetype))
 				return null;
 
 			byte[] value = null;
-			return ClipboardMonitoringSession(backend).TryUse(Operation.ClipboardContent,
+			return Call(Operation.ClipboardContent,
 				connection => connection.ClipboardContent(mimetype, out value)) ? value : null;
 		}
 
-		internal static string GetClipboardText(string backend)
+		internal static string GetClipboardText()
 		{
 			string value = null;
-			return ClipboardMonitoringSession(backend).TryUse(Operation.ClipboardText,
+			return Call(Operation.ClipboardText,
 				connection => connection.ClipboardText(out value)) ? value : null;
 		}
 
-		internal static bool SetClipboardContent(string backend, string mimetype, byte[] bytes)
+		internal static bool SetClipboardContent(string mimetype, byte[] bytes)
 		{
 			var data = bytes ?? System.Array.Empty<byte>();
 
-			if (string.IsNullOrEmpty(mimetype)
-				|| StrictUtf8.GetByteCount(mimetype) > MaxMimetypeBytes
-				|| data.Length > MaxClipboardWriteBytes)
+			if (string.IsNullOrEmpty(mimetype))
 				return false;
 
-			return QuerySession(backend).TryUse(Operation.ClipboardSetContent,
+			return Call(Operation.ClipboardSetContent,
 				connection => connection.SetClipboardContent(mimetype, data));
 		}
 
-		internal static bool SetClipboardText(string backend, string text)
+		internal static bool SetClipboardText(string text)
 		{
 			var value = text ?? string.Empty;
-			int length;
-
-			try { length = StrictUtf8.GetByteCount(value); }
-			catch (EncoderFallbackException) { return false; }
-
-			if (length > MaxClipboardWriteBytes)
-				return false;
-
-			return QuerySession(backend).TryUse(Operation.ClipboardSetContent,
+			return Call(Operation.ClipboardSetContent,
 				connection => connection.SetClipboardText(value));
 		}
 
-		internal static bool SendMouseMoveAbsolute(string backend, int x, int y)
-			=> InputControlSession(backend).TryUse(Operation.MouseMoveAbsolute,
+		internal static bool SendMouseMoveAbsolute(int x, int y)
+			=> Call(Operation.MouseMoveAbsolute,
 				connection => connection.MouseCoordinates(true, x, y));
 
-		internal static bool SendMouseMoveRelative(string backend, int dx, int dy)
-			=> InputControlSession(backend).TryUse(Operation.MouseMoveRelative,
+		internal static bool SendMouseMoveRelative(int dx, int dy)
+			=> Call(Operation.MouseMoveRelative,
 				connection => connection.MouseCoordinates(false, dx, dy));
 
-		internal static bool SendMouseButton(string backend, uint button, bool pressed)
-			=> InputControlSession(backend).TryUse(Operation.MouseButton,
+		internal static bool SendMouseButton(uint button, bool pressed)
+			=> Call(Operation.MouseButton,
 				connection => connection.MouseButton(button, pressed));
 
-		internal static bool SendMouseScroll(string backend, int delta, bool vertical)
-			=> InputControlSession(backend).TryUse(Operation.MouseScroll,
+		internal static bool SendMouseScroll(int delta, bool vertical)
+			=> Call(Operation.MouseScroll,
 				connection => connection.MouseScroll(delta, vertical));
 
-		internal static IDisposable WatchWindowEvents(string backend,
-			Action<string, string> handler, Action<Exception> onError = null)
+		internal static IDisposable WatchWindowEvents(
+			Action<WaylandWindowEventKind, byte[]> handler, Action<Exception> onError = null)
 			=> handler == null ? null : DesktopSubscription.StartWindow(
-				BackendFromName(backend), handler, onError);
+				handler, onError);
 
-		internal static IDisposable WatchClipboardChanges(string backend,
+		internal static IDisposable WatchClipboardChanges(
 			Action<string, string[]> handler, Action<Exception> onError = null)
 			=> handler == null ? null : DesktopSubscription.StartClipboard(
-				BackendFromName(backend), handler, onError);
+				handler, onError);
 
 		private static readonly object authorizationSync = new();
 		private static readonly object promptSync = new();
-		private static readonly List<AuthorizationLease> authorizationLeases = [];
+		private static AuthorizationLease authorizationLease;
 		private static LinuxPermissionScope declinedScopes;
-		private static bool authorizationExitHookInstalled;
-
-		internal static PermissionResult AuthorizeCapture(bool recheck = false)
-			=> RequestAuthorization(LinuxPermissionScope.ScreenCapture,
-				prompt: true, forcePrompt: recheck);
-
-		internal static PermissionResult PeekCaptureConsent()
-			=> RequestAuthorization(LinuxPermissionScope.ScreenCapture, prompt: false);
 
 		internal static PermissionResult RequestAuthorization(
 			LinuxPermissionScope requestedScopes, bool prompt, bool forcePrompt = false)
@@ -567,15 +455,26 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (TrySettleAuthorization(requestedScopes, prompt, forcePrompt, out var settled))
 				return settled;
 
-			// Prompts are serialised against each other, because two polkit dialogs racing for
-			// the same user is worse than making the second caller wait. This is deliberately not
-			// authorizationSync: that lock guards the lease list, and holding it across a dialog
-			// that can sit for AuthorizationTimeoutMs waiting for a human would stall every
-			// unrelated consent check in the process, including ones already granted.
+			if (!prompt && !Monitor.TryEnter(promptSync))
+				return new PermissionResult(PermissionStatus.Unsupported,
+					"Desktop authorization is currently being requested.");
+
+			if (!prompt)
+			{
+				try
+				{
+					return TrySettleAuthorization(requestedScopes, false, forcePrompt,
+						out settled) ? settled : AcquireAuthorization(requestedScopes, false);
+				}
+				finally
+				{
+					Monitor.Exit(promptSync);
+				}
+			}
+
+			// The prompt gate serializes polkit dialogs without holding the lease-state lock.
 			lock (promptSync)
 			{
-				// Another thread may have obtained the scope, or been declined for it, while this
-				// one waited for the prompt gate.
 				if (TrySettleAuthorization(requestedScopes, prompt, forcePrompt, out settled))
 					return settled;
 
@@ -583,13 +482,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		// Answers from the lease list alone. Returns false when only a prompt can settle it.
+		// Answers from current state alone. Returns false when a native check is needed.
 		private static bool TrySettleAuthorization(LinuxPermissionScope requestedScopes,
 			bool prompt, bool forcePrompt, out PermissionResult result)
 		{
 			lock (authorizationSync)
 			{
-				PruneAuthorizationLeasesLocked();
+				PruneAuthorizationLeaseLocked();
 				var missing = requestedScopes & ~GrantedScopesLocked();
 
 				if (missing == LinuxPermissionScope.None)
@@ -625,19 +524,39 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (missing == LinuxPermissionScope.None)
 				return new PermissionResult(PermissionStatus.Granted);
 
-			DesktopConnection connection = null;
+			AuthorizationLease lease = null;
+			var created = false;
 
 			try
 			{
-				connection = DesktopConnection.Connect(null,
-					ConnectionRole.AuthorizationLease, AuthorizationTimeoutMs);
-				var result = connection.Authorize(missing, prompt
+				lock (authorizationSync)
+				{
+					PruneAuthorizationLeaseLocked();
+					lease = authorizationLease;
+				}
+
+				if (lease == null)
+				{
+					lease = new AuthorizationLease(DesktopConnection.Connect(
+						ConnectionRole.AuthorizationLease, AuthorizationTimeoutMs));
+					created = true;
+				}
+
+				var result = lease.Authorize(missing, prompt
 					? AuthorizationMode.Request : AuthorizationMode.Check,
 					out var granted);
 
 				if (!result.IsSuccess)
 				{
-					connection.Dispose();
+					if (created || result.ShouldReconnect
+						|| result.Status == NativeClientStatus.Revoked)
+					{
+						lease.Dispose();
+
+						lock (authorizationSync)
+							if (ReferenceEquals(authorizationLease, lease))
+								authorizationLease = null;
+					}
 
 					if (prompt && result.Status == NativeClientStatus.Denied)
 					{
@@ -648,69 +567,42 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					return PermissionFailure(result);
 				}
 
-				var lease = new AuthorizationLease(connection, granted);
-				connection = null;
+				if (created)
+				{
+					lock (authorizationSync)
+					{
+						authorizationLease = lease;
+						lease.Start();
+					}
+				}
 
 				lock (authorizationSync)
-				{
-					authorizationLeases.Add(lease);
 					declinedScopes &= ~granted;
-					InstallAuthorizationExitHookLocked();
-					lease.Start();
-				}
 
 				return new PermissionResult(PermissionStatus.Granted);
 			}
 			catch (Exception exception)
 			{
-				connection?.Dispose();
+				if (created)
+					lease?.Dispose();
+
 				DebugLine($"keysharp-desktop authorization failed: {exception.Message}");
+				// A missing library reports through the loader's own multi-line probe list, which says nothing a
+				// user can act on; name the component and how to install it instead.
 				return new PermissionResult(PermissionStatus.Unsupported,
-					$"keysharp-desktop is unavailable. {exception.Message}");
+					exception is DllNotFoundException
+					? "keysharp-desktop is not installed. Install it with keysharp-linux-setup.sh to use window, capture and clipboard operations."
+					: $"keysharp-desktop is unavailable. {exception.Message}");
 			}
 		}
-
-		internal static bool EnsureCaptureConsent()
-			=> (Script.IsHeadless ? PeekCaptureConsent() : AuthorizeCapture()).IsGranted;
 
 		private static LinuxPermissionScope GrantedScopesLocked()
+			=> authorizationLease?.Scopes ?? LinuxPermissionScope.None;
+
+		private static void PruneAuthorizationLeaseLocked()
 		{
-			var granted = LinuxPermissionScope.None;
-
-			foreach (var lease in authorizationLeases)
-				granted |= lease.Scopes;
-
-			return granted;
-		}
-
-		private static void PruneAuthorizationLeasesLocked()
-		{
-			for (var index = authorizationLeases.Count - 1; index >= 0; index--)
-			{
-				if (authorizationLeases[index].IsAlive)
-					continue;
-
-				authorizationLeases[index].Dispose();
-				authorizationLeases.RemoveAt(index);
-			}
-		}
-
-		private static void InstallAuthorizationExitHookLocked()
-		{
-			if (authorizationExitHookInstalled)
-				return;
-
-			authorizationExitHookInstalled = true;
-			AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-			{
-				lock (authorizationSync)
-				{
-					foreach (var lease in authorizationLeases)
-						lease.Dispose();
-
-					authorizationLeases.Clear();
-				}
-			};
+			if (authorizationLease?.IsAlive == false)
+				authorizationLease = null;
 		}
 
 		private static PermissionResult PermissionFailure(in CallResult result)
@@ -721,102 +613,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return new PermissionResult(status, result.Message);
 		}
 
-		private static Bitmap CaptureArea(DesktopRpcSession session,
-			int x, int y, int width, int height)
-		{
-			if (width <= 0 || height <= 0)
-				return null;
-
-			Bitmap bitmap = null;
-			return session.TryUse(Operation.CaptureArea,
-				connection => connection.CaptureArea(x, y, checked((uint)width),
-					checked((uint)height), out bitmap)) ? bitmap : null;
-		}
-
-		private static Bitmap CaptureWindow(DesktopRpcSession session,
-			string handle, bool includeDecoration)
-		{
-			if (string.IsNullOrWhiteSpace(handle)
-				|| StrictUtf8.GetByteCount(handle) > MaxWindowHandleBytes)
-				return null;
-
-			Bitmap bitmap = null;
-			return session.TryUse(Operation.CaptureWindow,
-				connection => connection.CaptureWindow(handle, includeDecoration,
-					out bitmap)) ? bitmap : null;
-		}
-
-		private static DesktopRpcSession WindowMonitoringSession(string backend)
-			=> BackendFromName(backend) switch
-			{
-				Backend.Gnome => gnomeWindowMonitoring,
-				Backend.Cinnamon => cinnamonWindowMonitoring,
-				Backend.X11 => x11WindowMonitoring,
-				Backend.Generic => genericWindowMonitoring,
-				Backend.Kwin => kwinWindowMonitoring,
-				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
-			};
-
-		private static DesktopRpcSession WindowControlSession(string backend)
-			=> BackendFromName(backend) switch
-			{
-				Backend.Gnome => gnomeWindowControl,
-				Backend.Cinnamon => cinnamonWindowControl,
-				Backend.X11 => x11WindowControl,
-				Backend.Kwin => kwinWindowControl,
-				Backend.Generic => genericWindowControl,
-				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
-			};
-
-		private static DesktopRpcSession ClipboardMonitoringSession(string backend)
-			=> BackendFromName(backend) switch
-			{
-				Backend.Gnome => gnomeClipboardMonitoring,
-				Backend.Cinnamon => cinnamonClipboardMonitoring,
-				Backend.X11 => x11ClipboardMonitoring,
-				Backend.Generic => genericClipboardMonitoring,
-				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
-			};
-
-		private static DesktopRpcSession InputControlSession(string backend)
-			=> BackendFromName(backend) switch
-			{
-				Backend.X11 => x11InputControl,
-				Backend.Gnome => gnomeInputControl,
-				Backend.Cinnamon => cinnamonInputControl,
-				Backend.Generic => genericInputControl,
-				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
-			};
-
-		private static DesktopRpcSession QuerySession(string backend)
-			=> BackendFromName(backend) switch
-			{
-				Backend.Gnome => gnomeQueries,
-				Backend.Cinnamon => cinnamonQueries,
-				Backend.X11 => x11Queries,
-				Backend.Kwin => kwinQueries,
-				Backend.Generic => genericQueries,
-				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
-			};
-
-		private static Backend BackendFromName(string backend)
-			=> backend switch
-			{
-				"kwin" => Backend.Kwin,
-				"gnome" => Backend.Gnome,
-				"cinnamon" => Backend.Cinnamon,
-				"x11" => Backend.X11,
-				"generic" => Backend.Generic,
-				_ => throw new ArgumentOutOfRangeException(nameof(backend)),
-			};
-
 		private static string Invariant(ulong value)
 			=> value.ToString(CultureInfo.InvariantCulture);
 
+		[System.Diagnostics.Conditional("DEBUG")]
+		[System.Diagnostics.Conditional("DEBUG")]
 		private static void DebugLine(string message)
 			=> Diagnostics.Debug.WriteLine(message);
 
-		private readonly record struct CallResult(
+		internal readonly record struct CallResult(
 			NativeClientStatus Status,
 			uint Detail,
 			int SystemError,
@@ -824,55 +629,32 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			string Operation)
 		{
 			internal bool IsSuccess => Status == NativeClientStatus.Ok;
-			internal bool ShouldReconnect => Status == NativeClientStatus.Unavailable;
-			internal string Message => new NativeClientException("keysharp-desktop",
-				Operation, Status, Detail, SystemError, Diagnostic).Message;
+			internal bool ShouldReconnect => Status == NativeClientStatus.Unavailable
+				|| (Status == NativeClientStatus.Timeout && SystemError != 0);
+			internal bool IsExpectedPollTimeout
+				=> Status == NativeClientStatus.Timeout && SystemError == 0;
+			internal bool ShouldContinueEventPolling => IsSuccess || IsExpectedPollTimeout;
+			internal string Message => NativeClientException.BuildMessage("keysharp-desktop",
+				Operation, Status, Detail, SystemError, Diagnostic);
 			internal Exception Exception => new NativeClientException("keysharp-desktop",
 				Operation, Status, Detail, SystemError, Diagnostic);
 		}
 
 		private sealed class DesktopRpcSession
 		{
-			private readonly Backend? backend;
 			private readonly LinuxPermissionScope requiredScope;
-			private readonly bool interactive;
 			private readonly object sync = new();
 			private DesktopConnection connection;
-			private bool promptDeclined;
-			private bool exitHookInstalled;
+			private long retryProbeAt;
+			private long supportsProbeUntil;
+			private Backend supportsProbeBackend;
+			private Operation supportsProbeOperations;
+			private bool hasSupportsProbe;
 
-			internal DesktopRpcSession(Backend? backend,
-				LinuxPermissionScope requiredScope, bool interactive = false)
+			internal DesktopRpcSession(LinuxPermissionScope requiredScope)
 			{
-				this.backend = backend;
 				this.requiredScope = requiredScope;
-				this.interactive = interactive;
 			}
-
-			internal PermissionResult Authorize(bool prompt)
-				=> Authorize(Operation.None, prompt);
-
-			internal PermissionResult Authorize(Operation operation, bool prompt)
-			{
-				lock (sync)
-				{
-					if (prompt)
-						promptDeclined = false;
-
-					if (ConnectionUsableLocked())
-						return operation == Operation.None
-							|| (connection.AvailableOperations & operation) != 0
-							? new PermissionResult(PermissionStatus.Granted)
-							: new PermissionResult(PermissionStatus.NotApplicable);
-
-					ResetLocked();
-					return StartLocked(prompt, operation);
-				}
-			}
-
-			internal bool TryUse(Operation operation,
-				Func<DesktopConnection, CallResult> request)
-				=> TryUse(operation, request, out _);
 
 			internal bool TryUse(Operation operation,
 				Func<DesktopConnection, CallResult> request,
@@ -881,106 +663,136 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				lock (sync)
 				{
 					status = NativeClientStatus.Unsupported;
-					if (!ConnectionUsableLocked())
+
+					if (!PrepareLocked(operation, out status))
+						return false;
+
+					if (ConnectionUsableLocked())
+						return InvokeLocked(request, out status);
+				}
+
+				var permission = RequestAuthorization(requiredScope, prompt: false);
+
+				if (!permission.IsGranted)
+				{
+					DebugLine($"keysharp-desktop permission failed: {permission.Message}");
+					status = permission.Status == PermissionStatus.Denied
+						? NativeClientStatus.Denied : NativeClientStatus.Unsupported;
+					return false;
+				}
+
+				lock (sync)
+				{
+					if (!PrepareLocked(operation, out status))
+						return false;
+
+					var authorization = connection.Authorize(requiredScope,
+						AuthorizationMode.Check, out _);
+
+					if (!authorization.IsSuccess)
 					{
-						ResetLocked();
-						var allowPrompt = interactive && !Script.IsHeadless && !promptDeclined;
-						var permission = StartLocked(allowPrompt, operation);
-						if (!permission.IsGranted)
-						{
-							DebugLine($"keysharp-desktop {backend} permission failed: {permission.Message}");
-							status = permission.Status == PermissionStatus.Denied
-								? NativeClientStatus.Denied : NativeClientStatus.Unsupported;
-							return false;
-						}
-					}
-					if ((connection.AvailableOperations & operation) == 0) return false;
-					try
-					{
-						var result = request(connection);
-						status = result.Status;
-						if (result.IsSuccess) return true;
-						DebugLine($"keysharp-desktop {backend} operation failed: {result.Message}");
-						// A lost reply can follow a completed mutation. Reconnect on the next call without replaying it.
-						if (result.Status == NativeClientStatus.Revoked || result.ShouldReconnect) ResetLocked();
+						status = authorization.Status;
+						DebugLine($"keysharp-desktop permission failed: {authorization.Message}");
+
+						if (authorization.Status == NativeClientStatus.Revoked
+							|| authorization.ShouldReconnect)
+							ResetLocked();
+
 						return false;
 					}
-					catch (Exception exception)
-					{
-						DebugLine($"keysharp-desktop {backend} operation failed: {exception.Message}");
-						status = NativeClientStatus.Internal;
-						ResetLocked();
-						return false;
-					}
+
+					return InvokeLocked(request, out status);
 				}
 			}
-
-			private long retryProbeAt;
 
 			internal bool Supports(Operation operations)
 			{
 				lock (sync)
+					return TryProbeLocked(out _, out var available)
+						&& (available & operations) == operations;
+			}
+
+			internal bool TryGetBackend(out Backend backend)
+			{
+				lock (sync)
+					return TryProbeLocked(out backend, out _);
+			}
+
+			private bool TryProbeLocked(out Backend backend, out Operation operations)
+			{
+				if (connection?.IsOpen == true)
 				{
-					if (ConnectionUsableLocked())
-						return (connection.AvailableOperations & operations) == operations;
-					if (Environment.TickCount64 < retryProbeAt) return false;
-					ResetLocked();
+					backend = connection.Backend;
+					operations = connection.AvailableOperations;
+					return true;
+				}
+
+				var now = Environment.TickCount64;
+
+				if (now >= supportsProbeUntil)
 					try
 					{
-						connection = DesktopConnection.Connect(backend, ConnectionRole.Rpc, ProbeTimeoutMs);
-						InstallExitHookLocked();
-						return (connection.AvailableOperations & operations) == operations;
+						using var probe = DesktopConnection.Connect(ConnectionRole.Rpc, ProbeTimeoutMs);
+						hasSupportsProbe = true;
+						supportsProbeBackend = probe.Backend;
+						supportsProbeOperations = probe.AvailableOperations;
 					}
 					catch
 					{
-						retryProbeAt = Environment.TickCount64 + 1000;
+						hasSupportsProbe = false;
 						ResetLocked();
+					}
+					finally
+					{
+						supportsProbeUntil = now + CapabilityCacheMs;
+					}
+
+				backend = supportsProbeBackend;
+				operations = supportsProbeOperations;
+				return hasSupportsProbe;
+			}
+
+			private bool PrepareLocked(Operation operation,
+				out NativeClientStatus status)
+			{
+				status = NativeClientStatus.Unsupported;
+
+				if (connection?.IsOpen != true)
+				{
+					ResetLocked();
+
+					try
+					{
+						connection = DesktopConnection.Connect(ConnectionRole.Rpc,
+							RequestTimeoutMs);
+						retryProbeAt = Environment.TickCount64 + CapabilityCacheMs;
+					}
+					catch (NativeClientException exception)
+					{
+						status = exception.Status;
+						DebugLine($"keysharp-desktop connection failed: {exception.Message}");
+						return false;
+					}
+					catch (Exception exception)
+					{
+						status = NativeClientStatus.Internal;
+						DebugLine($"keysharp-desktop connection failed: {exception.Message}");
 						return false;
 					}
 				}
-			}
 
-			private PermissionResult StartLocked(bool prompt,
-				Operation operation = Operation.None)
-			{
-				try
+				if ((connection.AvailableOperations & operation) == 0)
 				{
-					connection = DesktopConnection.Connect(backend,
-						ConnectionRole.Rpc, prompt ? AuthorizationTimeoutMs : RequestTimeoutMs);
-
-					if (operation != Operation.None
-						&& (connection.AvailableOperations & operation) == 0)
+					if (Environment.TickCount64 >= retryProbeAt)
 					{
 						ResetLocked();
-						return new PermissionResult(PermissionStatus.NotApplicable);
+						return PrepareLocked(operation, out status);
 					}
 
-					if (requiredScope != LinuxPermissionScope.None)
-					{
-						var result = connection.Authorize(requiredScope, prompt
-							? AuthorizationMode.Request : AuthorizationMode.Check,
-							out _);
-
-						if (!result.IsSuccess)
-						{
-							if (prompt && result.Status == NativeClientStatus.Denied)
-								promptDeclined = true;
-
-							var permission = PermissionFailure(result);
-							ResetLocked();
-							return permission;
-						}
-					}
-
-					InstallExitHookLocked();
-					return new PermissionResult(PermissionStatus.Granted);
+					return false;
 				}
-				catch (Exception exception)
-				{
-					ResetLocked();
-					return new PermissionResult(PermissionStatus.Unsupported,
-						exception.Message);
-				}
+
+				return true;
 			}
 
 			private bool ConnectionUsableLocked()
@@ -997,17 +809,32 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				}
 			}
 
-			private void InstallExitHookLocked()
+			private bool InvokeLocked(Func<DesktopConnection, CallResult> request,
+				out NativeClientStatus status)
 			{
-				if (exitHookInstalled)
-					return;
-
-				exitHookInstalled = true;
-				AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+				try
 				{
-					lock (sync)
+					var result = request(connection);
+					status = result.Status;
+
+					if (result.IsSuccess)
+						return true;
+
+					DebugLine($"keysharp-desktop operation failed: {result.Message}");
+
+					// A lost reply can follow a completed mutation. Reconnect on the next call without replaying it.
+					if (result.Status == NativeClientStatus.Revoked || result.ShouldReconnect)
 						ResetLocked();
-				};
+
+					return false;
+				}
+				catch (Exception exception)
+				{
+					DebugLine($"keysharp-desktop operation failed: {exception.Message}");
+					status = NativeClientStatus.Internal;
+					ResetLocked();
+					return false;
+				}
 			}
 
 			private void ResetLocked()
@@ -1020,17 +847,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private sealed class AuthorizationLease : IDisposable
 		{
 			private readonly DesktopConnection connection;
+			private readonly Channel<AuthorizationRequest> requests = Channel.CreateUnbounded<AuthorizationRequest>();
 			private Task reader;
 			private uint scopes;
 			private int disposed;
 			private int readerThreadId;
 
-			internal AuthorizationLease(DesktopConnection connection,
-				LinuxPermissionScope scopes)
-			{
-				this.connection = connection;
-				this.scopes = (uint)scopes;
-			}
+			internal AuthorizationLease(DesktopConnection connection)
+				=> this.connection = connection;
 
 			internal LinuxPermissionScope Scopes
 				=> (LinuxPermissionScope)Volatile.Read(ref scopes);
@@ -1043,28 +867,51 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal void Start()
 				=> reader = Task.Run(ReadEvents);
 
+			internal CallResult Authorize(LinuxPermissionScope requestedScopes,
+				AuthorizationMode mode, out LinuxPermissionScope granted)
+			{
+				if (Volatile.Read(ref disposed) != 0)
+					throw new ObjectDisposedException(nameof(AuthorizationLease));
+
+				if (reader == null)
+				{
+					var result = connection.Authorize(requestedScopes, mode, out granted);
+
+					if (result.IsSuccess)
+						Volatile.Write(ref scopes, (uint)granted);
+
+					return result;
+				}
+
+				var request = new AuthorizationRequest(requestedScopes, mode);
+
+				if (!requests.Writer.TryWrite(request))
+					throw new ObjectDisposedException(nameof(AuthorizationLease));
+
+				var response = request.Completion.Task.WaitAsync(TimeSpan.FromMilliseconds(
+					AuthorizationTimeoutMs + EventPollTimeoutMs * 2)).GetAwaiter().GetResult();
+				granted = response.Granted;
+				return response.Result;
+			}
+
 			private void ReadEvents()
 			{
 				Volatile.Write(ref readerThreadId, Environment.CurrentManagedThreadId);
+				Exception failure = null;
 
 				try
 				{
 					while (Volatile.Read(ref disposed) == 0)
 					{
+						DrainAuthorizationRequests();
+
+						if (Volatile.Read(ref disposed) != 0)
+							break;
+
 						var result = connection.LeaseNext(EventPollTimeoutMs, out var revoked);
 
-						if (result.Status == NativeClientStatus.Timeout)
-						{
-							if (Volatile.Read(ref disposed) == 0)
-							{
-								var ping = connection.Ping();
-
-								if (!ping.IsSuccess)
-									throw ping.Exception;
-							}
-
+						if (result.IsExpectedPollTimeout)
 							continue;
-						}
 
 						if (!result.IsSuccess && result.Status != NativeClientStatus.Revoked)
 							throw result.Exception;
@@ -1079,14 +926,47 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				}
 				catch (Exception exception) when (Volatile.Read(ref disposed) == 0)
 				{
+					failure = exception;
 					DebugLine($"keysharp-desktop authorization lease ended: {exception.Message}");
 				}
 				finally
 				{
 					Interlocked.Exchange(ref disposed, 1);
 					Volatile.Write(ref scopes, 0);
+
+					CloseRequests(failure
+						?? new ObjectDisposedException(nameof(AuthorizationLease)));
+
 					connection.Dispose();
 				}
+			}
+
+			private void DrainAuthorizationRequests()
+			{
+				while (requests.Reader.TryRead(out var request))
+				{
+					try
+					{
+						var result = connection.Authorize(request.Scopes, request.Mode,
+							out var granted);
+
+						if (result.IsSuccess)
+							Volatile.Write(ref scopes, (uint)granted);
+
+						request.Completion.TrySetResult(new(result, granted));
+					}
+					catch (Exception exception)
+					{
+						request.Completion.TrySetException(exception);
+					}
+				}
+			}
+
+			private void CloseRequests(Exception failure)
+			{
+				requests.Writer.TryComplete();
+				while (requests.Reader.TryRead(out var request))
+					request.Completion.TrySetException(failure);
 			}
 
 			public void Dispose()
@@ -1095,6 +975,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					return;
 
 				Volatile.Write(ref scopes, 0);
+				CloseRequests(new ObjectDisposedException(nameof(AuthorizationLease)));
 
 				if (reader == null)
 				{
@@ -1105,12 +986,30 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (Volatile.Read(ref readerThreadId) != Environment.CurrentManagedThreadId)
 					try { reader.Wait(EventPollTimeoutMs * 2); } catch { }
 			}
+
+			private sealed class AuthorizationRequest
+			{
+				internal AuthorizationRequest(LinuxPermissionScope scopes,
+					AuthorizationMode mode)
+				{
+					Scopes = scopes;
+					Mode = mode;
+				}
+
+				internal LinuxPermissionScope Scopes { get; }
+				internal AuthorizationMode Mode { get; }
+				internal TaskCompletionSource<AuthorizationResponse> Completion { get; }
+					= new(TaskCreationOptions.RunContinuationsAsynchronously);
+			}
+
+			private readonly record struct AuthorizationResponse(
+				CallResult Result, LinuxPermissionScope Granted);
 		}
 
 		private sealed class DesktopSubscription : IDisposable
 		{
 			private readonly DesktopConnection connection;
-			private readonly Action<string, string> windowHandler;
+			private readonly Action<WaylandWindowEventKind, byte[]> windowHandler;
 			private readonly Action<string, string[]> clipboardHandler;
 			private readonly Action<Exception> onError;
 			private Task reader;
@@ -1118,7 +1017,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			private int readerThreadId;
 
 			private DesktopSubscription(DesktopConnection connection,
-				Action<string, string> windowHandler,
+				Action<WaylandWindowEventKind, byte[]> windowHandler,
 				Action<string, string[]> clipboardHandler,
 				Action<Exception> onError)
 			{
@@ -1128,19 +1027,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				this.onError = onError;
 			}
 
-			internal static IDisposable StartWindow(Backend backend,
-				Action<string, string> handler, Action<Exception> onError)
-				=> Start(backend, LinuxPermissionScope.WindowMonitoring,
-					Operation.WindowWatch, handler, null, onError);
+			internal static IDisposable StartWindow(Action<WaylandWindowEventKind, byte[]> handler,
+				Action<Exception> onError)
+				=> Start(Operation.WindowWatch, handler, null, onError);
 
-			internal static IDisposable StartClipboard(Backend backend,
-				Action<string, string[]> handler, Action<Exception> onError)
-				=> Start(backend, LinuxPermissionScope.ClipboardMonitoring,
-					Operation.ClipboardWatch, null, handler, onError);
+			internal static IDisposable StartClipboard(Action<string, string[]> handler,
+				Action<Exception> onError)
+				=> Start(Operation.ClipboardWatch, null, handler, onError);
 
-			private static IDisposable Start(Backend backend,
-				LinuxPermissionScope scope, Operation operation,
-				Action<string, string> windowHandler,
+			private static IDisposable Start(Operation operation,
+				Action<WaylandWindowEventKind, byte[]> windowHandler,
 				Action<string, string[]> clipboardHandler,
 				Action<Exception> onError)
 			{
@@ -1148,9 +1044,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 				try
 				{
-					connection = DesktopConnection.Connect(backend,
-						ConnectionRole.EventStream, RequestTimeoutMs);
-					var authorization = connection.Authorize(scope,
+					connection = DesktopConnection.Connect(ConnectionRole.EventStream,
+						RequestTimeoutMs);
+
+					var authorization = connection.Authorize(ScopeFor(operation),
 						AuthorizationMode.Check, out _);
 
 					if (!authorization.IsSuccess)
@@ -1197,9 +1094,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 							result = connection.NextWindowEvent(EventPollTimeoutMs,
 								out var kind, out var json);
 
-							if (result.IsSuccess)
+							if (result.IsSuccess && WindowEventKind(kind) is { } eventKind)
 							{
-								windowHandler(WindowEventName(kind), json);
+								try { windowHandler(eventKind, json); }
+								catch (Exception exception)
+								{
+									DebugLine($"keysharp-desktop window event handler failed: {exception.Message}");
+								}
 							}
 						}
 						else
@@ -1209,15 +1110,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 							if (result.IsSuccess)
 							{
-								clipboardHandler(text, mimetypes);
+								try { clipboardHandler(text, mimetypes); }
+								catch (Exception exception)
+								{
+									DebugLine($"keysharp-desktop clipboard event handler failed: {exception.Message}");
+								}
 							}
 						}
 
-						if (result.Status == NativeClientStatus.Timeout)
+						if (result.ShouldContinueEventPolling)
 							continue;
-
-						if (result.Status == NativeClientStatus.Revoked)
-							break;
 
 						throw result.Exception;
 					}
@@ -1272,93 +1174,39 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					lock (gate)
 					{
 						ThrowIfClosed();
-						var scopes = (LinuxPermissionScope)Native.ksd_connection_granted_scopes(handle);
-
-						if ((scopes & ~LinuxPermissionScope.All) != 0)
-							throw new InvalidDataException(
-								"libkeysharp-desktop returned invalid permission scopes.");
-
-						return scopes;
+						return (LinuxPermissionScope)Native.ksd_connection_granted_scopes(handle);
 					}
 				}
 			}
 
-			internal static DesktopConnection Connect(Backend? expectedBackend,
-				ConnectionRole role, int timeoutMs)
+			internal static DesktopConnection Connect(ConnectionRole role, int timeoutMs)
 			{
 				Native.ksd_connect_options_init(out var options);
 				Native.ksd_service_info_init(out var info);
-				Native.ksd_error_init(out var error);
-				var socket = Environment.GetEnvironmentVariable(SocketEnvironmentVariable);
-				var socketPointer = IntPtr.Zero;
+				var error = new NativeError { StructSize = NativeErrorStructSize };
 				IntPtr nativeHandle = IntPtr.Zero;
 
 				try
 				{
-					if (!string.IsNullOrWhiteSpace(socket))
-					{
-						socketPointer = Marshal.StringToCoTaskMemUTF8(socket);
-						options.SocketPath = socketPointer;
-					}
-
 					options.Role = (uint)role;
 					options.AuthorizationMode = (uint)AuthorizationMode.Check;
 					options.TimeoutMs = checked((uint)timeoutMs);
-					var status = NormalizeStatus(Native.ksd_connect(ref options,
-						out nativeHandle, ref info, ref error));
+					var status = (NativeClientStatus)Native.ksd_connect(ref options,
+						ref nativeHandle, ref info, ref error);
 					var result = Result(status, in error, "connect");
 
 					if (!result.IsSuccess)
 						throw result.Exception;
 
-					var backend = (Backend)info.Backend;
+					var reportedBackend = (Backend)info.Backend;
+					var backend = Enum.IsDefined(reportedBackend)
+						? reportedBackend : Backend.Generic;
 					var operations = (Operation)info.AvailableOperations;
-					var granted = (LinuxPermissionScope)info.GrantedScopes;
 
-					// A newer service may report a backend value or operation bits this build does not
-					// name. Both are delivered verbatim and never inferred as supported; support is read
-					// from AvailableOperations, which the service computes. Framing stays strict.
-					if (info.StructSize != NativeServiceInfoStructSize
-						|| info.ClientAbiMajor != 0 || info.ClientAbiMinor < 1
-						|| (granted & ~LinuxPermissionScope.All) != 0)
+					if (info.ClientAbiMajor != 0 || info.ClientAbiMinor < 8)
 						throw new InvalidDataException(
-							"libkeysharp-desktop returned incompatible service information.");
-
-					// A service can be newer than the loaded client library. Do not call an
-					// entry point that ABI minor 7 introduced merely because that service
-					// advertised the matching operation bit.
-					if (info.ClientAbiMinor < 8)
-						operations &= (Operation)((1UL << 32) - 1);
-
-					if (info.ClientAbiMinor < 7)
-						operations &= ~Operation.CaptureDesktop;
-
-					if (expectedBackend.HasValue && backend != expectedBackend.Value)
-					{
-						var detail = $"keysharp-desktop selected {backend}, not {expectedBackend.Value}.";
-
-						// That sentence names the symptom and none of its causes, which sent a
-						// real diagnosis through the daemon, the socket and the provider in turn
-						// before landing on the actual fault: the shell extension that provides
-						// the GNOME/Cinnamon backend is installed but was never enabled.
-						//
-						// Keyed on the backend we EXPECTED, not the one we got, because that one
-						// cause produces three different answers. The daemon waits for a provider
-						// and then registers the generic backend; an X11 session resolves to the
-						// X11 backend instead; and None appears only when nothing registered for
-						// this user at all. Testing for None -- the obvious reading of the
-						// symptom -- would miss the two commonest forms of it.
-						//
-						// Restricted to the backends that come from an extension, so a genuine
-						// KWin-versus-GNOME mismatch is not told to go and enable one.
-						if ((expectedBackend.Value == Backend.Gnome || expectedBackend.Value == Backend.Cinnamon)
-								&& (backend == Backend.None || backend == Backend.Generic || backend == Backend.X11))
-							detail += " The keysharp-desktop shell extension is probably not enabled."
-									  + " Run 'keysharp-desktop enable-extension' as yourself (not with sudo),"
-									  + " then log out and back in.";
-
-						throw new InvalidOperationException(detail);
-					}
+							$"libkeysharp-desktop client ABI {info.ClientAbiMajor}.{info.ClientAbiMinor} "
+							+ "is incompatible; Keysharp requires ABI 0.8 or later.");
 
 					var connection = new DesktopConnection(nativeHandle, backend, operations);
 					nativeHandle = IntPtr.Zero;
@@ -1368,9 +1216,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				{
 					if (nativeHandle != IntPtr.Zero)
 						Native.ksd_disconnect(nativeHandle);
-
-					if (socketPointer != IntPtr.Zero)
-						Marshal.FreeCoTaskMem(socketPointer);
 				}
 			}
 
@@ -1382,18 +1227,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					=> Native.ksd_authorize(connection, (uint)mode, (uint)scopes,
 						out nativeGranted, ref error));
 				granted = (LinuxPermissionScope)nativeGranted;
-
-				if (result.IsSuccess && ((granted & ~LinuxPermissionScope.All) != 0
-					|| (granted & scopes) != scopes))
-					throw new InvalidDataException(
-						"libkeysharp-desktop returned invalid authorization scopes.");
-
 				return result;
 			}
-
-			internal CallResult Ping()
-				=> Invoke("ping", (IntPtr connection, ref NativeError error)
-					=> Native.ksd_ping(connection, ref error));
 
 			internal CallResult LeaseNext(int timeoutMs,
 				out LinuxPermissionScope revoked)
@@ -1404,11 +1239,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						=> Native.ksd_lease_next(connection, checked((uint)timeoutMs),
 							out nativeRevoked, ref error));
 				revoked = (LinuxPermissionScope)nativeRevoked;
-
-				if ((revoked & ~LinuxPermissionScope.All) != 0)
-					throw new InvalidDataException(
-						"libkeysharp-desktop returned invalid revoked scopes.");
-
 				return result;
 			}
 
@@ -1482,20 +1312,20 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				}
 			}
 
-			internal CallResult WindowList(bool includeHidden, out string value)
-				=> ReadString("list windows",
+			internal CallResult WindowList(bool includeHidden, out byte[] value)
+				=> ReadUtf8("list windows",
 					(IntPtr connection, ref NativeString result, ref NativeError error)
 						=> Native.ksd_window_list_json(connection,
 							includeHidden ? 1u : 0u, ref result, ref error), out value);
 
-			internal CallResult WindowHandles(out string value)
-				=> ReadString("list window handles",
+			internal CallResult WindowHandles(out byte[] value)
+				=> ReadUtf8("list window handles",
 					(IntPtr connection, ref NativeString result, ref NativeError error)
 						=> Native.ksd_window_handles_json(connection, ref result, ref error),
 					out value);
 
-			internal CallResult ActiveWindow(out string value)
-				=> ReadString("query active window",
+			internal CallResult ActiveWindow(out byte[] value)
+				=> ReadUtf8("query active window",
 					(IntPtr connection, ref NativeString result, ref NativeError error)
 						=> Native.ksd_window_active_json(connection, ref result, ref error),
 					out value);
@@ -1506,10 +1336,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				var result = Invoke("query cursor position",
 					(IntPtr connection, ref NativeError error)
 						=> Native.ksd_cursor_position(connection, ref value, ref error));
-
-				if (result.IsSuccess && value.StructSize != NativePointStructSize)
-					throw new InvalidDataException(
-						"libkeysharp-desktop returned an incompatible point.");
 
 				point = result.IsSuccess ? new Point(value.X, value.Y) : default;
 				return result;
@@ -1522,72 +1348,58 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					(IntPtr connection, ref NativeError error)
 						=> Native.ksd_work_area(connection, ref value, ref error));
 
-				if (result.IsSuccess && (value.StructSize != NativeRectangleStructSize
-					|| value.Width == 0 || value.Height == 0
-					|| value.Width > int.MaxValue || value.Height > int.MaxValue))
-					throw new InvalidDataException(
-						"libkeysharp-desktop returned an invalid work area.");
-
 				rectangle = result.IsSuccess
 					? new Rectangle(value.X, value.Y, checked((int)value.Width),
 						checked((int)value.Height)) : Rectangle.Empty;
 				return result;
 			}
 
-			internal CallResult WindowAction(Operation operation, ulong window)
-				=> operation switch
-				{
-					Operation.WindowFocus => Invoke("focus window",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_focus(connection, window, ref error)),
-					Operation.WindowRaise => Invoke("raise window",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_raise(connection, window, ref error)),
-					Operation.WindowLower => Invoke("lower window",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_lower(connection, window, ref error)),
-					Operation.WindowClose => Invoke("close window",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_close(connection, window, ref error)),
-					Operation.WindowKill => Invoke("kill window",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_kill(connection, window, ref error)),
-					_ => throw new ArgumentOutOfRangeException(nameof(operation)),
-				};
+			internal CallResult FocusWindow(ulong window)
+				=> Invoke("focus window", (IntPtr connection, ref NativeError error)
+					=> Native.ksd_window_focus(connection, window, ref error));
 
-			internal CallResult MoveResize(bool xid, ulong window, int x, int y,
+			internal CallResult RaiseWindow(ulong window)
+				=> Invoke("raise window", (IntPtr connection, ref NativeError error)
+					=> Native.ksd_window_raise(connection, window, ref error));
+
+			internal CallResult LowerWindow(ulong window)
+				=> Invoke("lower window", (IntPtr connection, ref NativeError error)
+					=> Native.ksd_window_lower(connection, window, ref error));
+
+			internal CallResult CloseWindow(ulong window)
+				=> Invoke("close window", (IntPtr connection, ref NativeError error)
+					=> Native.ksd_window_close(connection, window, ref error));
+
+			internal CallResult KillWindow(ulong window)
+				=> Invoke("kill window", (IntPtr connection, ref NativeError error)
+					=> Native.ksd_window_kill(connection, window, ref error));
+
+			internal CallResult MoveResize(ulong window, int x, int y,
 				uint width, uint height)
-				=> xid
-					? Invoke("move or resize X11 window",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_move_resize_xid(connection, window,
-								x, y, width, height, ref error))
-					: Invoke("move or resize window",
+				=> Invoke("move or resize window",
 						(IntPtr connection, ref NativeError error)
 							=> Native.ksd_window_move_resize(connection, window,
 								x, y, width, height, ref error));
 
-			internal CallResult SetWindowValue(Operation operation, ulong window,
-				uint value)
-				=> operation switch
-				{
-					Operation.WindowSetState => Invoke("set window state",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_set_state(connection, window, value, ref error)),
-					Operation.WindowSetOpacity => Invoke("set window opacity",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_set_opacity(connection, window, value, ref error)),
-					Operation.WindowSetAbove => Invoke("set window above",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_set_above(connection, window, value, ref error)),
-					Operation.WindowSetDecorated => Invoke("set window decoration",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_set_decorated(connection, window, value, ref error)),
-					Operation.WindowSetSkipTaskbar => Invoke("set window taskbar visibility",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_set_skip_taskbar(connection, window, value, ref error)),
-					_ => throw new ArgumentOutOfRangeException(nameof(operation)),
-				};
+			internal CallResult SetWindowState(ulong window, uint state)
+				=> Invoke("set window state", (IntPtr connection, ref NativeError error)
+					=> Native.ksd_window_set_state(connection, window, state, ref error));
+
+			internal CallResult SetWindowOpacity(ulong window, uint opacity)
+				=> Invoke("set window opacity", (IntPtr connection, ref NativeError error)
+					=> Native.ksd_window_set_opacity(connection, window, opacity, ref error));
+
+			internal CallResult SetWindowAbove(ulong window, bool above)
+				=> Invoke("set window above", (IntPtr connection, ref NativeError error)
+					=> Native.ksd_window_set_above(connection, window, above ? 1u : 0u, ref error));
+
+			internal CallResult SetWindowDecorated(ulong window, bool decorated)
+				=> Invoke("set window decoration", (IntPtr connection, ref NativeError error)
+					=> Native.ksd_window_set_decorated(connection, window, decorated ? 1u : 0u, ref error));
+
+			internal CallResult SetWindowSkipTaskbar(ulong window, bool skip)
+				=> Invoke("set window taskbar visibility", (IntPtr connection, ref NativeError error)
+					=> Native.ksd_window_set_skip_taskbar(connection, window, skip ? 1u : 0u, ref error));
 
 			internal CallResult ReserveWindow(ulong cookie, int x, int y, uint ttlMs)
 				=> Invoke("reserve window",
@@ -1642,7 +1454,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 								ref bytes, ref error));
 
 					if (result.IsSuccess)
-						value = CopyBytes(in bytes, MaxTextBytes);
+						value = CopyBytes(in bytes);
 
 					return result;
 				}
@@ -1701,7 +1513,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						=> Native.ksd_clipboard_watch_subscribe(connection, ref error));
 
 			internal CallResult NextWindowEvent(int timeoutMs, out ushort kind,
-				out string json)
+				out byte[] json)
 			{
 				Native.ksd_window_event_init(out var nativeEvent);
 				kind = 0;
@@ -1716,12 +1528,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 					if (result.IsSuccess)
 					{
-						if (nativeEvent.StructSize != NativeWindowEventStructSize)
-							throw new InvalidDataException(
-								"libkeysharp-desktop returned an incompatible window event.");
-
 						kind = nativeEvent.Kind;
-						json = CopyString(in nativeEvent.WindowJson, MaxTextBytes);
+						json = CopyUtf8(in nativeEvent.WindowJson);
 					}
 
 					return result;
@@ -1748,11 +1556,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 					if (result.IsSuccess)
 					{
-						if (nativeEvent.StructSize != NativeClipboardEventStructSize)
-							throw new InvalidDataException(
-								"libkeysharp-desktop returned an incompatible clipboard event.");
-
-						text = CopyString(in nativeEvent.Text, MaxTextBytes);
+						text = CopyString(in nativeEvent.Text);
 						mimetypes = CopyStringList(in nativeEvent.Mimetypes);
 					}
 
@@ -1777,7 +1581,30 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 							=> call(connection, ref nativeString, ref error));
 
 					if (result.IsSuccess)
-						value = CopyString(in nativeString, MaxTextBytes);
+						value = CopyString(in nativeString);
+
+					return result;
+				}
+				finally
+				{
+					Native.ksd_string_clear(ref nativeString);
+				}
+			}
+
+			private CallResult ReadUtf8(string operation, NativeStringCall call,
+				out byte[] value)
+			{
+				Native.ksd_string_init(out var nativeString);
+				value = null;
+
+				try
+				{
+					var result = Invoke(operation,
+						(IntPtr connection, ref NativeError error)
+							=> call(connection, ref nativeString, ref error));
+
+					if (result.IsSuccess)
+						value = CopyUtf8(in nativeString);
 
 					return result;
 				}
@@ -1792,8 +1619,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				lock (gate)
 				{
 					ThrowIfClosed();
-					Native.ksd_error_init(out var error);
-					var status = NormalizeStatus(call(handle, ref error));
+					var error = new NativeError { StructSize = NativeErrorStructSize };
+					var status = (NativeClientStatus)call(handle, ref error);
 					return Result(status, in error, operation);
 				}
 			}
@@ -1826,46 +1653,22 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			=> new(status, error.Detail, error.SystemError,
 				error.GetMessage(), operation);
 
-		private static NativeClientStatus NormalizeStatus(uint value)
-		{
-			var status = (NativeClientStatus)value;
-			return status is NativeClientStatus.Ok
-				or NativeClientStatus.Denied
-				or NativeClientStatus.Unsupported
-				or NativeClientStatus.InvalidRequest
-				or NativeClientStatus.Unavailable
-				or NativeClientStatus.Busy
-				or NativeClientStatus.NotFound
-				or NativeClientStatus.ResourceExhausted
-				or NativeClientStatus.Timeout
-				or NativeClientStatus.Cancelled
-				or NativeClientStatus.Revoked
-				or NativeClientStatus.Internal ? status : NativeClientStatus.Internal;
-		}
-
-		private static string WindowEventName(ushort kind)
+		private static WaylandWindowEventKind? WindowEventKind(ushort kind)
 			=> kind switch
 			{
-				1 => "create",
-				2 => "close",
-				3 => "active",
-				4 => "title",
-				5 => "minimize",
-				6 => "restore",
-				7 => "move",
-				8 => "active-state",
-				_ => throw new InvalidDataException(
-					"libkeysharp-desktop returned an unknown window event kind."),
+				1 => WaylandWindowEventKind.Created,
+				2 => WaylandWindowEventKind.Closed,
+				3 => WaylandWindowEventKind.Activated,
+				4 => WaylandWindowEventKind.TitleChanged,
+				5 => WaylandWindowEventKind.Minimized,
+				6 => WaylandWindowEventKind.Restored,
+				7 => WaylandWindowEventKind.MoveResized,
+				8 => WaylandWindowEventKind.ActiveStateChanged,
+				_ => null,
 			};
 
-		private static byte[] CopyBytes(in NativeBytes bytes, int maximumLength)
+		private static byte[] CopyBytes(in NativeBytes bytes)
 		{
-			if (bytes.StructSize != NativeBytesStructSize
-				|| bytes.Length > (nuint)maximumLength || bytes.Length > int.MaxValue
-				|| bytes.Length != 0 && bytes.Data == IntPtr.Zero)
-				throw new InvalidDataException(
-					"libkeysharp-desktop returned an invalid byte buffer.");
-
 			if (bytes.Length == 0)
 				return [];
 
@@ -1873,65 +1676,42 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				checked((int)bytes.Length)).ToArray();
 		}
 
-		private static string CopyString(in NativeString value, int maximumLength)
+		private static string CopyString(in NativeString value)
 		{
-			if (value.StructSize != NativeStringStructSize
-				|| value.Length > (nuint)maximumLength || value.Length > int.MaxValue
-				|| value.Length != 0 && value.Data == IntPtr.Zero)
-				throw new InvalidDataException(
-					"libkeysharp-desktop returned an invalid string.");
-
-			return value.Length == 0 ? string.Empty : StrictUtf8.GetString(
+			return value.Length == 0 ? string.Empty : Encoding.UTF8.GetString(
 				new ReadOnlySpan<byte>((void*)value.Data, checked((int)value.Length)));
 		}
 
+		private static byte[] CopyUtf8(in NativeString value)
+			=> value.Length == 0 ? [] : new ReadOnlySpan<byte>((void*)value.Data,
+				checked((int)value.Length)).ToArray();
+
 		private static string[] CopyStringList(in NativeStringList list)
 		{
-			if (list.StructSize != NativeStringListStructSize
-				|| list.Count > MaxMimetypes || list.Count > int.MaxValue
-				|| list.Count != 0 && list.Items == IntPtr.Zero)
-				throw new InvalidDataException(
-					"libkeysharp-desktop returned an invalid string list.");
-
 			var values = new string[checked((int)list.Count)];
 			var items = (NativeString*)list.Items;
 
 			for (var index = 0; index < values.Length; index++)
-				values[index] = CopyString(in items[index], MaxMimetypeBytes);
+				values[index] = CopyString(in items[index]);
 
 			return values;
 		}
 
 		private static Bitmap ReadCapture(in NativeCapture capture)
 		{
-			if (capture.StructSize != NativeCaptureStructSize
-				|| capture.Data.StructSize != NativeBytesStructSize
-				|| capture.Width is 0 or > MaxCaptureDimension
-				|| capture.Height is 0 or > MaxCaptureDimension
-				|| capture.Data.Length is 0 or > MaxCaptureBytes
-				|| capture.Data.Length > int.MaxValue || capture.Data.Data == IntPtr.Zero)
-				throw new InvalidDataException(
-					"libkeysharp-desktop returned an invalid capture.");
-
-			var data = new ReadOnlySpan<byte>((void*)capture.Data.Data,
-				checked((int)capture.Data.Length));
-
 			if ((CaptureFormat)capture.Format == CaptureFormat.Png)
 			{
-				if (capture.Stride != 0)
-					throw new InvalidDataException(
-						"A PNG desktop capture has a non-zero stride.");
-
-				using var stream = new MemoryStream(data.ToArray(), writable: false);
+				using var stream = new UnmanagedMemoryStream((byte*)capture.Data.Data,
+					checked((long)capture.Data.Length));
 				return new Bitmap(stream);
 			}
 
-			if ((CaptureFormat)capture.Format != CaptureFormat.Bgra8Premultiplied
-				|| capture.Stride < (ulong)capture.Width * 4
-				|| capture.Data.Length != (nuint)((ulong)capture.Stride * capture.Height))
+			if ((CaptureFormat)capture.Format != CaptureFormat.Bgra8Premultiplied)
 				throw new InvalidDataException(
-					"libkeysharp-desktop returned invalid pixel data.");
+					"libkeysharp-desktop returned an unknown capture format.");
 
+			var data = new ReadOnlySpan<byte>((void*)capture.Data.Data,
+				checked((int)capture.Data.Length));
 			return BuildBitmapFromBgra(data, checked((int)capture.Width),
 				checked((int)capture.Height), checked((int)capture.Stride));
 		}
@@ -1976,13 +1756,20 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			var index = 0;
 
-			if (Ssse3.IsSupported)
+			if (Vector128.IsHardwareAccelerated)
 			{
 				for (; index + 4 <= width; index += 4)
 				{
-					var pixels = Sse2.LoadVector128(source + (index * 4));
-					pixels = Ssse3.Shuffle(pixels, BgraToRgbaShuffleMask);
-					Sse2.Store(destination + (index * 4), pixels);
+					var input = source + (index * 4);
+					var output = destination + (index * 4);
+					var pixels = Vector128.Load(input);
+					Vector128.Shuffle(pixels, BgraToRgbaShuffleMask)
+						.Store(output);
+
+					if (input[3] != byte.MaxValue || input[7] != byte.MaxValue
+						|| input[11] != byte.MaxValue || input[15] != byte.MaxValue)
+						for (var pixel = 0; pixel < 4; pixel++)
+							UnpremultiplyPixel(output + pixel * 4);
 				}
 			}
 
@@ -1994,8 +1781,31 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				output[1] = input[1];
 				output[2] = input[0];
 				output[3] = input[3];
+				UnpremultiplyPixel(output);
 			}
 		}
+
+		private static void UnpremultiplyPixel(byte* pixel)
+		{
+			var alpha = pixel[3];
+
+			if (alpha == byte.MaxValue)
+				return;
+
+			if (alpha == 0)
+			{
+				pixel[0] = pixel[1] = pixel[2] = 0;
+				return;
+			}
+
+			pixel[0] = Unpremultiply(pixel[0], alpha);
+			pixel[1] = Unpremultiply(pixel[1], alpha);
+			pixel[2] = Unpremultiply(pixel[2], alpha);
+		}
+
+		private static byte Unpremultiply(byte component, byte alpha)
+			=> (byte)Math.Min(byte.MaxValue,
+				(component * byte.MaxValue + alpha / 2) / alpha);
 
 		[StructLayout(LayoutKind.Sequential)]
 		private struct NativeError
@@ -2016,8 +1826,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					while (length < 256 && pointer[length] != 0)
 						length++;
 
-					try { return StrictUtf8.GetString(pointer, length); }
-					catch (DecoderFallbackException) { return string.Empty; }
+					return Encoding.UTF8.GetString(pointer, length);
 				}
 			}
 		}
@@ -2138,9 +1947,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			private const string Library = "libkeysharp-desktop.so.0";
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern void ksd_error_init(out NativeError error);
-
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksd_connect_options_init(out NativeConnectOptions options);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
@@ -2190,7 +1996,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_connect(ref NativeConnectOptions options,
-				out IntPtr connection, ref NativeServiceInfo info, ref NativeError error);
+				ref IntPtr connection, ref NativeServiceInfo info, ref NativeError error);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksd_disconnect(IntPtr connection);
@@ -2198,9 +2004,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_authorize(IntPtr connection, uint mode,
 				uint requestedScopes, out uint grantedScopes, ref NativeError error);
-
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksd_ping(IntPtr connection, ref NativeError error);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_connection_granted_scopes(IntPtr connection);
@@ -2218,8 +2021,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal static extern uint ksd_capture_desktop(IntPtr connection,
 				ref NativeCapture capture, ref NativeError error);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl,
-				CharSet = CharSet.Ansi)]
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_capture_window(IntPtr connection,
 				[MarshalAs(UnmanagedType.LPUTF8Str)] string windowId,
 				uint includeDecoration, ref NativeCapture capture, ref NativeError error);
@@ -2269,10 +2071,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				ulong window, int x, int y, uint width, uint height, ref NativeError error);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksd_window_move_resize_xid(IntPtr connection,
-				ulong window, int x, int y, uint width, uint height, ref NativeError error);
-
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_window_set_state(IntPtr connection,
 				ulong window, uint value, ref NativeError error);
 
@@ -2304,8 +2102,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal static extern uint ksd_clipboard_mimetypes(IntPtr connection,
 				ref NativeStringList values, ref NativeError error);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl,
-				CharSet = CharSet.Ansi)]
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_clipboard_content(IntPtr connection,
 				[MarshalAs(UnmanagedType.LPUTF8Str)] string mimetype,
 				ref NativeBytes value, ref NativeError error);
@@ -2314,14 +2111,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal static extern uint ksd_clipboard_text(IntPtr connection,
 				ref NativeString value, ref NativeError error);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl,
-				CharSet = CharSet.Ansi)]
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_clipboard_set_content(IntPtr connection,
 				[MarshalAs(UnmanagedType.LPUTF8Str)] string mimetype,
 				byte[] data, UIntPtr length, ref NativeError error);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl,
-				CharSet = CharSet.Ansi)]
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_clipboard_set_text(IntPtr connection,
 				[MarshalAs(UnmanagedType.LPUTF8Str)] string text, ref NativeError error);
 

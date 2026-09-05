@@ -289,9 +289,8 @@ namespace Keysharp.Internals.Os.Unix
 
 #if LINUX
 		private static bool SendX11MouseEvent(nint handle, uint button, Point location, bool down)
-			=> handle.ToInt64() is > 0 and <= uint.MaxValue
-				&& Keysharp.Internals.Window.Linux.Wayland.DesktopClient.SendWindowButton("x11",
-					(ulong)handle, location.X, location.Y, button, down);
+			=> Keysharp.Internals.Window.Linux.Wayland.DesktopBackend.X11
+				.TrySendWindowButton(handle, location, button, down);
 #endif
 
 		internal override void ControlDeleteItem(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
@@ -344,7 +343,8 @@ namespace Keysharp.Internals.Os.Unix
 					ctrl2.Focus();
 				else
 #if LINUX
-					_ = Keysharp.Internals.Window.Linux.Wayland.DesktopClient.FocusChildWindow("x11", (ulong)item.Handle);
+					_ = Keysharp.Internals.Window.Linux.Wayland.DesktopBackend.X11
+						.TryFocusChildWindow(item.Handle);
 #else
 					item.Focus();
 #endif

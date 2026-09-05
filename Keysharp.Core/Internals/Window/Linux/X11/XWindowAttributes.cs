@@ -1,37 +1,6 @@
-using Keysharp.Builtins;
 #if LINUX
 namespace Keysharp.Internals.Window.Linux.X11
 {
-	// X11 XRectangle: signed 16-bit origin, unsigned 16-bit size (8 bytes). Returned by XShapeGetRectangles.
-	[StructLayout(LayoutKind.Sequential)]
-	internal struct XRectangle
-	{
-		internal short x;
-		internal short y;
-		internal ushort width;
-		internal ushort height;
-	}
-
-	[StructLayout(LayoutKind.Sequential)]
-	internal struct XSetWindowAttributes
-	{
-		internal nint background_pixmap;
-		internal nint background_pixel;
-		internal nint border_pixmap;
-		internal nint border_pixel;
-		internal Gravity bit_gravity;
-		internal Gravity win_gravity;
-		internal int backing_store;
-		internal nint backing_planes;
-		internal nint backing_pixel;
-		internal bool save_under;
-		internal nint event_mask;
-		internal nint do_not_propagate_mask;
-		internal bool override_redirect;
-		internal nint colormap;
-		internal nint cursor;
-	}
-
 	[StructLayout(LayoutKind.Sequential)]
 	internal struct XWindowAttributes
 	{

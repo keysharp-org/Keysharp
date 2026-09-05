@@ -49,7 +49,7 @@ Prebuilt packages are on the [Releases](https://github.com/keysharp-org/Keysharp
 
 ### Linux
 
-- Download `keysharp-linux-setup.sh` from a [release](https://github.com/keysharp-org/Keysharp/releases), then run:
+- Download `keysharp-linux-setup.sh` and `SHA256SUMS` from a [release](https://github.com/keysharp-org/Keysharp/releases), verify it with `sha256sum --check --ignore-missing SHA256SUMS` or `gh attestation verify keysharp-linux-setup.sh --repo keysharp-org/Keysharp`, then run:
   ```sh
   sudo sh ./keysharp-linux-setup.sh
   ```

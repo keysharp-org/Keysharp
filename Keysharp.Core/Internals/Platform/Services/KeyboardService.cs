@@ -287,9 +287,6 @@ namespace Keysharp.Internals
 			return true;
 		}
 
-		private static bool TryGetVkFromEvdevBitmap(uint vk, byte[] keys, out bool isDown)
-			=> TryGetVkFromEvdevBitmap(vk, keys, numLockOn: false, shiftDown: false, out isDown);
-
 		private static bool TryGetVkFromEvdevBitmap(
 			uint vk,
 			byte[] keys,

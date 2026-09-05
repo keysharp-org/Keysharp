@@ -111,14 +111,14 @@ detect_channel
 
 arch_tag=linux-x64
 deb_arch=amd64
-[[ "$(release_asset keysharp deb 0.0.0.17)" == keysharp-0.0.0.17-linux-x64.deb ]] \
+[[ "$(release_asset keysharp deb 0.0.0.17)" == keysharp_0.0.0.17_amd64.deb ]] \
   || fail "Keysharp Debian asset does not match release.yml"
 [[ "$(release_asset keysharp-input deb 0.2.0)" == keysharp-input_0.2.0_amd64.deb ]] \
   || fail "input Debian asset name is incorrect"
 [[ "$(release_asset keysharp-desktop tar 0.2.0)" == keysharp-desktop-0.2.0-linux-x64.tar.gz ]] \
   || fail "desktop archive asset name is incorrect"
 # shellcheck disable=SC2016 # Match the workflow's literal variable expressions.
-grep -Fq 'dist/release-assets/keysharp-${VERSION}-${RID}.deb' \
+grep -Fq 'for deb in dist/keysharp_${VERSION}_*.deb' \
   "${REPOSITORY_ROOT}/.github/workflows/release.yml" \
   || fail "Keysharp release asset convention changed; update the setup contract"
 

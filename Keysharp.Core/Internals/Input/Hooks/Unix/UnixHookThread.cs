@@ -3,6 +3,9 @@ using Keysharp.Builtins;
 using System;
 using System.Collections.Generic;
 using Keysharp.Internals.Input.Keyboard;
+#if LINUX
+using Keysharp.Internals.Input.Linux;
+#endif
 using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 using static Keysharp.Internals.Input.Keyboard.KeyboardMouseSender;
@@ -26,8 +29,6 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 		protected volatile bool keyboardEnabled;
 		protected volatile bool mouseEnabled;
 
-		protected readonly Dictionary<uint, bool> customPrefixSuppress = new();
-		protected readonly Dictionary<uint, List<(uint keycode, uint mods)>> dynamicPrefixGrabs = new();
 		private uint activeHotkeyVk;
 		private bool activeHotkeyDown;
 		internal uint ActiveHotkeyVk => activeHotkeyVk;
@@ -36,35 +37,6 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 		private readonly Dictionary<uint, int> suppressedHotkeyReleases = new();
 		protected uint lastKeyboardEventVk;
 		protected bool lastHookEventWasKeyboard;
-
-		private enum LockKeyKind
-		{
-			None,
-			CapsLock,
-			NumLock,
-			ScrollLock
-		}
-
-		private struct CustomPrefixState
-		{
-			public uint Vk;
-			public bool Suppressed;
-			public LockKeyKind LockKind;
-			public bool LockState;
-			public bool LockCaptured;
-			public bool Used;           // any other key pressed while held?
-			public bool FireOnRelease;  // whether to fire the prefix hotkey on release
-			public void Reset()
-			{
-				Vk = 0;
-				Suppressed = false;
-				LockKind = LockKeyKind.None;
-				LockState = false;
-				LockCaptured = false;
-				Used = false;
-				FireOnRelease = false;
-			}
-		}
 
 		// --- Simple hotkey map for Unix-style hooks (vk + LR-mods, up/down) ---
 		internal readonly Lock hkLock = new();
@@ -104,10 +76,15 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 		internal UnixHookThread(Script script, string mutexName) : base(script, mutexName)
 		{
 			ConfigureScanCodeNames();
+#if LINUX
+			_ = DesktopKeyboardState.Current.Get();
+#endif
 		}
 
+#if OSX
 		protected override KeyboardMouseSender CreateKbdMsSender()
-			=> new UnixKeyboardMouseSender(script);
+			=> new MacKeyboardMouseSenderBase(script);
+#endif
 
 		internal SendScope EnterSendScope() => new(this);
 
@@ -160,6 +137,7 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 				StopPlatformHookCore(dispose: true);
 				kbdHook = 0;
 				mouseHook = 0;
+				OnPlatformHookStateCommitted(HookType.None);
 			}
 
 			// Release the named hook mutexes now that no hooks are held (mirrors AddRemoveHooks; this path
@@ -217,6 +195,7 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 					kbdHook = 0;
 					mouseHook = 0;
 					StopPlatformHookCore(dispose: true);
+					OnPlatformHookStateCommitted(HookType.None);
 				}
 
 				lastHookActivationFailure = PlatformHookDisabledMessage;
@@ -246,6 +225,8 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 					if (!changeIsTemporary)
 						StopPlatformHookCore(dispose: true);
 
+					OnPlatformHookStateCommitted(HookType.None);
+
 					return;
 				}
 
@@ -261,6 +242,7 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 						Diagnostics.Debug.WriteLine(lastHookActivationFailure);
 
 					OnPlatformHookStartFailed(startFailure);
+					OnPlatformHookStateCommitted(HookType.None);
 					return;
 				}
 
@@ -286,6 +268,7 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 				kbdHook = wantKeyboard ? 1 : 0;
 				mouseHook = wantMouse ? 1 : 0;
 				lastHookActivationFailure = null;
+				OnPlatformHookStateCommitted(req);
 			}
 		}
 
@@ -302,6 +285,11 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 		}
 
 		protected virtual void OnPlatformHookStartFailed(string message)
+		{
+		}
+
+		/// <summary>Called after reset and publication of a successfully requested platform-hook state.</summary>
+		protected virtual void OnPlatformHookStateCommitted(HookType activeHooks)
 		{
 		}
 
@@ -322,8 +310,6 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 			lock (hkLock)
 			{
 				unixHotkeys.Clear();
-				customPrefixSuppress.Clear();
-				dynamicPrefixGrabs.Clear();
 
 				if (hk != null)
 				{
@@ -340,17 +326,6 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 							AllowExtra = def.allowExtraModifiers
 						};
 						unixHotkeys.Add(entry);
-
-						if (def.modifierVK != 0)
-						{
-							// By default, a custom prefix is suppressed unless the tilde prefix was used.
-							var suppressPrefix = (def.noSuppress & HotkeyDefinition.NO_SUPPRESS_PREFIX) == 0;
-
-							if (customPrefixSuppress.TryGetValue(def.modifierVK, out var suppressExisting))
-								customPrefixSuppress[def.modifierVK] = suppressExisting || suppressPrefix;
-							else
-								customPrefixSuppress[def.modifierVK] = suppressPrefix;
-						}
 					}
 				}
 
@@ -693,7 +668,9 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 			// v1.1.28.01: active_window is left as the active window; the above is not done because it disrupts
 			// hotstrings when the first keypress causes a change in focus, such as to enter editing mode in Excel.
 			// See Get_active_window_keybd_layout macro definition for related comments.
-#if OSX
+#if LINUX
+			var activeWindow = script.WinEventManager.ForegroundWindowHandle;
+#elif OSX
 			// On macOS, resolving the focused window per keystroke is expensive (Accessibility
 			// round-trips, sometimes a full CGWindowList snapshot) and would touch AppKit from this
 			// background hook thread. For hotstring buffer reset we only need an identity that changes
@@ -701,8 +678,6 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 			// tracked event-driven and cached, making this read effectively free. Tradeoff: switching
 			// between two windows of the same app won't reset the buffer.
 			var activeWindow = Keysharp.Internals.Window.MacOS.MacNativeWindows.ForegroundAppHandle;
-#else
-			var activeWindow = WindowQuery.GetForegroundWindowHandle(); // Set default in case there's no focused control.
 #endif
 			var activeWindowKeybdLayout = GetKeyboardLayout();
 			state.activeWindow = activeWindow;

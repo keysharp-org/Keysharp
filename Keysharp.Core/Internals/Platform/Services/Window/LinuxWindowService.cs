@@ -9,7 +9,7 @@ namespace Keysharp.Internals
 		internal static IWindow Resolve()
 		{
 			if (IsWaylandSession)
-				return new WaylandWindow(WaylandBackend.Current);
+				return new WaylandWindow();
 
 			if (IsX11Available)
 				return new X11Window();
@@ -44,20 +44,18 @@ namespace Keysharp.Internals
 	internal sealed class WaylandWindow : LinuxWindow
 	{
 		private const long WsCaption = 0x00C00000L;
-		private readonly IWaylandBackend wayland;
-
-		internal WaylandWindow(IWaylandBackend wayland) => this.wayland = wayland;
+		private static IWaylandBackend Wayland => WaylandBackend.Current;
 
 		private bool Backend(nint h, out WaylandWindowInfo info)
 		{
 			info = null;
-			return wayland != null && wayland.TryGetWindow(h, out info);
+			return Wayland?.TryGetWindow(h, out info) == true;
 		}
 
 		// Membership only, zero IPC (bit-tag / id-map check). Guards routing decisions; Backend(h, out info)
 		// is reserved for the sites that consume the fetched info.
 		private bool Known(nint h)
-			=> wayland != null && wayland.IsKnown(h);
+			=> Wayland?.IsKnown(h) == true;
 
 		// One of OUR OWN top-level windows lives in Eto/GTK land under a native handle the compositor backend
 		// doesn't key on, so Backend(h) misses and Eto's self position/query (which is a Wayland no-op) is used.
@@ -66,6 +64,8 @@ namespace Keysharp.Internals
 		private bool OwnBackend(nint h, out WaylandWindowInfo info)
 		{
 			info = null;
+
+			var wayland = Wayland;
 
 			if (wayland == null || !TryOwnControl(h, out var ctrl) || ctrl is not Form form)
 				return false;
@@ -298,7 +298,7 @@ namespace Keysharp.Internals
 
 		public override nint GetForegroundHandle()
 		{
-			if (wayland?.TryGetActiveWindow(out var active) == true)
+			if (Wayland?.TryGetActiveWindow(out var active) == true)
 				return AsOwn(active).Handle;
 
 			return 0;
@@ -306,7 +306,7 @@ namespace Keysharp.Internals
 
 		public override bool IsWindow(nint h)
 		{
-			if (wayland?.TryGetWindow(h, out _) == true)
+			if (Wayland?.TryGetWindow(h, out _) == true)
 				return true;
 
 			if (base.IsWindow(h))
@@ -322,7 +322,7 @@ namespace Keysharp.Internals
 			// false (so the neutral WindowInfo raises OSError) is correct; falling through to X11 would feed a
 			// synthetic compositor id to Xlib as if it were an XID.
 			if (Known(h))
-				return wayland.TrySetAlwaysOnTop(h, onTop);
+				return Wayland.TrySetAlwaysOnTop(h, onTop);
 
 			if (TryOwnControl(h, out _))
 				return base.TrySetAlwaysOnTop(h, onTop);
@@ -332,7 +332,7 @@ namespace Keysharp.Internals
 		public override bool TryClose(nint h)
 		{
 			if (Known(h))   // membership guard (see TrySetAlwaysOnTop): never fall a backend id through to X11.
-				return wayland.TryCloseWindow(h);
+				return Wayland.TryCloseWindow(h);
 
 			if (TryOwnControl(h, out _))
 				return base.TryClose(h);
@@ -342,7 +342,7 @@ namespace Keysharp.Internals
 		public override bool TryKill(nint h)
 		{
 			if (Known(h))
-				return wayland.TryKillWindow(h);
+				return Wayland.TryKillWindow(h);
 
 			if (TryOwnControl(h, out _))
 				return base.TryKill(h);
@@ -352,7 +352,7 @@ namespace Keysharp.Internals
 		public override bool TrySetZOrder(nint h, ZOrder z)
 		{
 			if (Known(h))
-				return wayland.TrySetZOrder(h, z);
+				return Wayland.TrySetZOrder(h, z);
 
 			if (TryOwnControl(h, out _))
 				return base.TrySetZOrder(h, z);
@@ -362,7 +362,7 @@ namespace Keysharp.Internals
 		public override bool TryHide(nint h)
 		{
 			if (Known(h))   // membership guard (see TrySetAlwaysOnTop).
-				return wayland.TrySetWindowState(h, FormWindowState.Minimized);
+				return Wayland.TrySetWindowState(h, FormWindowState.Minimized);
 
 			if (TryOwnControl(h, out _))
 				return base.TryHide(h);
@@ -372,7 +372,7 @@ namespace Keysharp.Internals
 		public override bool TryShow(nint h)
 		{
 			if (Known(h))   // membership guard (see TrySetAlwaysOnTop).
-				return wayland.TrySetWindowState(h, FormWindowState.Normal);
+				return Wayland.TrySetWindowState(h, FormWindowState.Normal);
 
 			if (TryOwnControl(h, out _))
 				return base.TryShow(h);
@@ -392,7 +392,7 @@ namespace Keysharp.Internals
 		public override bool TrySetState(nint h, FormWindowState state)
 		{
 			if (Known(h))   // membership guard (see TrySetAlwaysOnTop).
-				return wayland.TrySetWindowState(h, state);
+				return Wayland.TrySetWindowState(h, state);
 
 			if (TryOwnControl(h, out _))
 				return base.TrySetState(h, state);
@@ -413,7 +413,7 @@ namespace Keysharp.Internals
 				if (bounds.Width != WindowInfoBase.Unchanged) rect.Width = bounds.Width;
 				if (bounds.Height != WindowInfoBase.Unchanged) rect.Height = bounds.Height;
 
-				if (!wayland.TryMoveResizeWindow(h, rect, setPos, setSize))
+				if (!Wayland.TryMoveResizeWindow(h, rect, setPos, setSize))
 					return false;
 
 				if (setPos)
@@ -440,7 +440,7 @@ namespace Keysharp.Internals
 					if (bounds.X != WindowInfoBase.Unchanged) rect.X = bounds.X;
 					if (bounds.Y != WindowInfoBase.Unchanged) rect.Y = bounds.Y;
 
-					if (!wayland.TryMoveResizeWindow(own.Handle, rect, true, false))
+					if (!Wayland.TryMoveResizeWindow(own.Handle, rect, true, false))
 						return false;
 
 					WaylandOwnToplevels.NotifyExternalMove(own.Handle, bounds.X, bounds.Y);
@@ -455,7 +455,7 @@ namespace Keysharp.Internals
 		public override bool TryActivate(nint h)
 		{
 			if (Known(h))
-				return wayland.TryActivateWindow(h);
+				return Wayland.TryActivateWindow(h);
 
 			if (TryOwnControl(h, out _))
 				return base.TryActivate(h);
@@ -466,7 +466,7 @@ namespace Keysharp.Internals
 		{
 			// Only WS_CAPTION maps to a Wayland concept (the compositor's decoration state).
 			if (Known(h))
-				return wayland.TrySetNoBorder(h, (style & WsCaption) != WsCaption);
+				return Wayland.TrySetNoBorder(h, (style & WsCaption) != WsCaption);
 
 			if (TryOwnControl(h, out _))
 				return base.TrySetStyle(h, style);
@@ -484,7 +484,7 @@ namespace Keysharp.Internals
 		public override bool TrySetTransparency(nint h, object alpha)
 		{
 			if (Known(h))
-				return wayland.TrySetTransparency(h, alpha);
+				return Wayland.TrySetTransparency(h, alpha);
 
 			// A Wayland client cannot make its own surface translucent (GTK's window opacity is an X11-only path),
 			// so route our own windows through the compositor backend the way WinMove does. Via the positioner
@@ -517,7 +517,7 @@ namespace Keysharp.Internals
 		public override bool TrySetVisible(nint h, bool visible)
 		{
 			if (Known(h))
-				return wayland.TrySetWindowState(h, visible ? FormWindowState.Normal : FormWindowState.Minimized);
+				return Wayland.TrySetWindowState(h, visible ? FormWindowState.Normal : FormWindowState.Minimized);
 
 			if (TryOwnControl(h, out _))
 				return base.TrySetVisible(h, visible);
@@ -559,14 +559,14 @@ namespace Keysharp.Internals
 
 		public override WindowInfoBase ActiveWindow()
 		{
-			if (wayland?.TryGetActiveWindow(out var active) == true) return AsOwn(active);
+			if (Wayland?.TryGetActiveWindow(out var active) == true) return AsOwn(active);
 			return new WindowInfo(0);
 		}
 
 		public override IReadOnlyList<WindowInfoBase> Enumerate(bool includeHidden)
 		{
 			var list = new List<WindowInfoBase>();
-			if (wayland?.TryListWindows(includeHidden, out var backendWindows) == true)
+			if (Wayland?.TryListWindows(includeHidden, out var backendWindows) == true)
 			{
 				foreach (var w in backendWindows)
 					list.Add(AsOwn(w));
@@ -578,7 +578,7 @@ namespace Keysharp.Internals
 
 		public override bool TryGetAt(int x, int y, out nint child)
 		{
-			if (wayland?.TryGetWindowAt(x, y, out var info) == true)
+			if (Wayland?.TryGetWindowAt(x, y, out var info) == true)
 			{
 				child = AsOwn(info).Handle;
 				return true;
@@ -589,7 +589,7 @@ namespace Keysharp.Internals
 		}
 
 		public override WindowInfoBase WindowAt(int x, int y)
-			=> wayland?.TryGetWindowAt(x, y, out var info) == true ? AsOwn(info) : null;
+			=> Wayland?.TryGetWindowAt(x, y, out var info) == true ? AsOwn(info) : null;
 
 		public override uint GetFocusedControlThread(nint window = 0)
 		{

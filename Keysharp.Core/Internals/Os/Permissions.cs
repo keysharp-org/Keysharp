@@ -126,14 +126,37 @@ namespace Keysharp.Internals.Os
 		public virtual PermissionResult EnsureFileAccess(string path, FilePermissionAccess access, bool? prompt = null, string operation = null)
 			=> EnsureGranted(RequestFileAccess(path, access, prompt, operation), operation ?? "file access");
 
+		private static readonly HashSet<string> reportedUnavailable = [];
+
 		private static PermissionResult EnsureGranted(PermissionResult result, string operation)
 		{
 			if (result.IsGranted)
 				return result;
 
+			// A component that is not installed is a normal runtime condition, so the operation degrades to the
+			// empty result its backend already returns. Only a refusal, which the user chose, is an error.
+			if (result.Status == PermissionStatus.Unsupported)
+			{
+				ReportUnavailable(operation, result.Message);
+				return result;
+			}
+
 			throw new InvalidOperationException(result.Message.IsNullOrEmpty()
 				? $"Permission is required for '{operation}'."
 				: result.Message);
+		}
+
+		// Once per operation: a script may read the clipboard in a loop, and the first report is the useful one.
+		private static void ReportUnavailable(string operation, string message)
+		{
+			lock (reportedUnavailable)
+				if (!reportedUnavailable.Add(operation))
+					return;
+
+			var detail = message.IsNullOrEmpty() ? "the required component is unavailable" : message;
+
+			try { Diagnostics.Debug.WriteLine($"Keysharp: '{operation}' is unavailable: {detail}"); }
+			catch { }
 		}
 	}
 

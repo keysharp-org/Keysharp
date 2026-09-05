@@ -1,261 +1,351 @@
 #if LINUX
-using System.Collections.Concurrent;
 using Keysharp.Builtins;
 
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	/// <summary>
-	/// <see cref="IWindowEventBackend"/> for Wayland sessions. Wayland's core protocol gives a foreign client no
-	/// window-event stream at all, so this delegates to the active compositor's <see cref="IWaylandBackend"/>
-	/// (KWin via a persistent KWin script, GNOME via the shell extension, others via a generic polling source) and
-	/// translates each <see cref="WaylandWindowEvent"/> into the platform-neutral <see cref="WindowEventRaw"/> the
-	/// <c>WinEventManager</c> consumes — mirroring what the X11 backend does on X11.
-	/// <para>
-	/// The compositor source produces every event kind; the desired-category mask from Start/Stop is applied here
-	/// as a filter rather than as a native subscribe/unsubscribe, since none of the IPC channels expose
-	/// per-category subscription. A "Created" event also raises Show, mirroring how opening a window on Windows
-	/// fires both.
-	/// </para>
-	/// <para>
-	/// Compositor callbacks arrive on D-Bus / IPC threads, and the consumer (the WinEvent manager) immediately
-	/// issues <em>synchronous</em> D-Bus queries back to the compositor to resolve window state — calling that from
-	/// the IPC read/dispatch thread risks reentrancy and deadlock. So events are handed to a single dedicated
-	/// dispatcher thread, which both decouples from the IPC channel and gives the manager the ordered,
-	/// single-threaded delivery its per-subscription dedupe state assumes.
-	/// </para>
+	/// Adapts compositor window events to the platform-neutral stream consumed by
+	/// <see cref="WinEventManager"/>. Compositor callbacks are serialized on a bounded dispatcher because the
+	/// consumer may synchronously query the compositor and must never run on its IPC thread.
 	/// </summary>
 	internal sealed class WaylandWindowEventBackend : IWindowEventBackend
 	{
+		private const int QueueCapacity = 2048;
+
 		private readonly IWaylandBackend backend;
-		// No compositor exposes caret movement — the caret is an accessibility concept — so CaretMove is served by
-		// the same display-server-agnostic AT-SPI source the X11 backend uses, and a caret-only subscription never
-		// touches the compositor channel at all.
 		private readonly LinuxAccessibility.CaretEventSource caretSource;
 		private readonly Lock gate = new();
-		private WindowEventMask enabledMask = WindowEventMask.None;
+		private WindowEventMask enabledMask;
 		private IDisposable subscription;
-		private BlockingCollection<WaylandWindowEvent> queue;
-		private Thread worker;
+		private EventDispatcher dispatcher;
 		private bool disposed;
 
 		internal WaylandWindowEventBackend(Script owner, IWaylandBackend backend)
 		{
-			this.backend = backend;
+			this.backend = backend ?? throw new ArgumentNullException(nameof(backend));
 			caretSource = new LinuxAccessibility.CaretEventSource(owner);
 		}
 
 		public Action<WindowEventRaw> Sink { get; set; }
+		public bool SupportsEfficientActiveTracking => backend.SupportsPushWindowEvents;
 
 		public void Start(WindowEventMask mask)
 		{
-			if ((mask & WindowEventMask.CaretMove) != 0)
-				caretSource.Start(EmitCaretEvent);
+			if (mask == WindowEventMask.None)
+				return;
 
 			lock (gate)
 			{
 				if (disposed)
 					return;
 
+				var prior = enabledMask;
 				enabledMask |= mask;
 
-				if (subscription != null || !NeedsCompositor(enabledMask))
-					return;
-
-				// Spin up the dispatcher before subscribing so no event is dropped between the two.
-				queue = new BlockingCollection<WaylandWindowEvent>();
-				worker = new Thread(DispatchLoop) { IsBackground = true, Name = "WinEvent-Wayland" };
-				worker.Start();
+				if ((prior & WindowEventMask.CaretMove) == 0
+					&& (enabledMask & WindowEventMask.CaretMove) != 0)
+					caretSource.Start(EmitCaretEvent);
 			}
 
-			IDisposable sub;
-
-			try
-			{
-				sub = backend.SubscribeWindowEvents(Enqueue);
-			}
-			catch (Exception ex)
-			{
-				Diagnostics.Debug.WriteLine($"WinEvent Wayland subscribe failed ({backend?.Name}): {ex.Message}");
-				StopWorker();
-				return;
-			}
-
-			if (sub == null)
-			{
-				StopWorker();
-				return;
-			}
-
-			bool drop;
-
-			lock (gate)
-			{
-				drop = disposed || subscription != null;
-
-				if (!drop)
-					subscription = sub;
-			}
-
-			if (drop)
-			{
-				sub.Dispose();   // lost a race or disposed mid-subscribe
-				StopWorker();
-			}
+			EnsureCompositorSubscription();
 		}
 
 		public void Stop(WindowEventMask mask)
 		{
-			if ((mask & WindowEventMask.CaretMove) != 0)
-				caretSource.Stop();
-
-			IDisposable toDispose = null;
+			IDisposable retiredSubscription = null;
+			EventDispatcher retiredDispatcher = null;
 
 			lock (gate)
 			{
+				var prior = enabledMask;
 				enabledMask &= ~mask;
 
-				if (!NeedsCompositor(enabledMask))
-				{
-					toDispose = subscription;
-					subscription = null;
-				}
+				if ((prior & WindowEventMask.CaretMove) != 0
+					&& (enabledMask & WindowEventMask.CaretMove) == 0)
+					caretSource.Stop();
+
+				if (NeedsCompositor(enabledMask))
+					return;
+
+				retiredSubscription = subscription;
+				retiredDispatcher = dispatcher;
+				subscription = null;
+				dispatcher = null;
 			}
 
-			if (toDispose != null)
-			{
-				toDispose.Dispose();
-				StopWorker();
-			}
+			Retire(retiredSubscription, retiredDispatcher);
 		}
 
 		public void Dispose()
 		{
-			IDisposable toDispose;
+			IDisposable retiredSubscription;
+			EventDispatcher retiredDispatcher;
 
 			lock (gate)
 			{
+				if (disposed)
+					return;
+
 				disposed = true;
 				enabledMask = WindowEventMask.None;
-				toDispose = subscription;
+				retiredSubscription = subscription;
+				retiredDispatcher = dispatcher;
 				subscription = null;
+				dispatcher = null;
 			}
 
 			caretSource.Dispose();
-			toDispose?.Dispose();
-			StopWorker();
+			Retire(retiredSubscription, retiredDispatcher);
+			Sink = null;
 		}
 
-		/// <summary>Whether any category the compositor channel actually serves is enabled — i.e. anything but
-		/// CaretMove, which comes from AT-SPI instead.</summary>
-		private static bool NeedsCompositor(WindowEventMask mask) => (mask & ~WindowEventMask.CaretMove) != WindowEventMask.None;
+		private static bool NeedsCompositor(WindowEventMask mask)
+			=> (mask & ~WindowEventMask.CaretMove) != WindowEventMask.None;
 
-		private void EmitCaretEvent(WindowEventRaw ev) => Sink?.Invoke(ev);
-
-		private void StopWorker()
+		private void EnsureCompositorSubscription()
 		{
-			BlockingCollection<WaylandWindowEvent> q;
-
+			EventDispatcher candidateDispatcher;
 			lock (gate)
 			{
-				q = queue;
-				queue = null;
-				worker = null;
+				if (disposed || !NeedsCompositor(enabledMask) || dispatcher != null)
+					return;
+
+				candidateDispatcher = new EventDispatcher(Deliver, QueueCapacity, backend.Name);
+				dispatcher = candidateDispatcher;
 			}
 
-			try { q?.CompleteAdding(); }
-			catch { }
-		}
-
-		// Called on a compositor IPC thread — must not block; just hand off to the dispatcher.
-		private void Enqueue(WaylandWindowEvent ev)
-		{
-			if (ev.Handle == 0)
-				return;
-
-			var q = queue;
-
-			if (q == null)
-				return;
-
-			try { q.Add(ev); }
-			catch { }   // queue completed/disposed between the null check and Add
-		}
-
-		private void DispatchLoop()
-		{
-			BlockingCollection<WaylandWindowEvent> q;
-
-			lock (gate)
-				q = queue;
-
-			if (q == null)
-				return;
-
+			IDisposable candidate = null;
 			try
 			{
-				foreach (var ev in q.GetConsumingEnumerable())
+				// Backend subscriptions own their reconnection and polling fallback.
+				candidate = backend.SubscribeWindowEvents(candidateDispatcher.Enqueue);
+			}
+			catch (Exception exception)
+			{
+				Diagnostics.Debug.WriteLine(
+					$"WinEvent Wayland subscribe failed ({backend.Name}): {exception.Message}");
+			}
+
+			lock (gate)
+			{
+				if (ReferenceEquals(dispatcher, candidateDispatcher))
 				{
-					try
+					if (candidate != null)
 					{
-						Deliver(ev);
+						subscription = candidate;
+						return;
 					}
-					catch (Exception ex)
-					{
-						Diagnostics.Debug.WriteLine($"WinEvent Wayland dispatch error: {ex.Message}");
-					}
+					dispatcher = null;
 				}
 			}
-			catch (Exception)
-			{
-				// Collection disposed/completed — normal shutdown.
-			}
+			Retire(candidate, candidateDispatcher);
 		}
 
-		private void Deliver(WaylandWindowEvent ev)
+		private static void Retire(IDisposable retiredSubscription, EventDispatcher retiredDispatcher)
 		{
-			var sink = Sink;
+			try { retiredSubscription?.Dispose(); }
+			catch (Exception exception)
+			{
+				Diagnostics.Debug.WriteLine($"WinEvent Wayland unsubscribe failed: {exception.Message}");
+			}
+
+			retiredDispatcher?.Dispose();
+		}
+
+		private void EmitCaretEvent(WindowEventRaw windowEvent)
+		{
+			Action<WindowEventRaw> sink;
+
+			lock (gate)
+			{
+				if (disposed || (enabledMask & WindowEventMask.CaretMove) == 0)
+					return;
+
+				sink = Sink;
+			}
+
+			sink?.Invoke(windowEvent);
+		}
+
+		private void Deliver(EventDispatcher source, WaylandWindowEvent windowEvent)
+		{
+			Action<WindowEventRaw> sink;
+			WindowEventMask mask;
+
+			lock (gate)
+			{
+				if (disposed || !ReferenceEquals(dispatcher, source))
+					return;
+
+				sink = Sink;
+				mask = enabledMask;
+			}
 
 			if (sink == null)
 				return;
 
-			WindowEventMask mask;
+			var now = Environment.TickCount64;
 
-			lock (gate)
-				mask = enabledMask;
-
-			// Created maps to Create and (since a Wayland toplevel is shown when it appears) also Show.
-			if (ev.Kind == WaylandWindowEventKind.Created)
+			if (windowEvent.Kind == WaylandWindowEventKind.Created)
 			{
 				if ((mask & WindowEventMask.Create) != 0)
-					sink(new WindowEventRaw(WindowEventType.Create, ev.Handle, NowMs()));
+					sink(new WindowEventRaw(WindowEventType.Create, windowEvent.Handle, now));
 
 				if ((mask & WindowEventMask.Show) != 0)
-					sink(new WindowEventRaw(WindowEventType.Show, ev.Handle, NowMs()));
+					sink(new WindowEventRaw(WindowEventType.Show, windowEvent.Handle, now));
 
 				return;
 			}
 
-			var (type, bit) = Map(ev.Kind);
+			var (type, bit) = Map(windowEvent.Kind);
 
 			if (bit != WindowEventMask.None && (mask & bit) != 0)
-				// A compositor "toplevel closed" is an authoritative removal (like macOS AXUIElementDestroyed), so
-				// mark Close confirmed — the manager then drops the window from every Exist/NotExist set without
-				// re-checking a window list that may still momentarily resolve it.
-				sink(new WindowEventRaw(type, ev.Handle, NowMs()) { Bounds = ev.Bounds, DestroyConfirmed = type == WindowEventType.Close });
+				sink(new WindowEventRaw(type, windowEvent.Handle, now)
+				{
+					Bounds = windowEvent.Bounds,
+					DestroyConfirmed = type == WindowEventType.Close
+				});
 		}
 
-		private static (WindowEventType type, WindowEventMask bit) Map(WaylandWindowEventKind kind) => kind switch
-		{
-			WaylandWindowEventKind.Closed       => (WindowEventType.Close, WindowEventMask.Close),
-			WaylandWindowEventKind.Activated    => (WindowEventType.Active, WindowEventMask.Active),
-			WaylandWindowEventKind.TitleChanged => (WindowEventType.TitleChange, WindowEventMask.TitleChange),
-			WaylandWindowEventKind.Minimized    => (WindowEventType.Minimize, WindowEventMask.Minimize),
-			WaylandWindowEventKind.Restored     => (WindowEventType.Restore, WindowEventMask.Restore),
-			WaylandWindowEventKind.MoveResized  => (WindowEventType.Move, WindowEventMask.Move),
-			_                                   => (WindowEventType.Create, WindowEventMask.None)
-		};
+		private static (WindowEventType Type, WindowEventMask Bit) Map(WaylandWindowEventKind kind)
+			=> kind switch
+			{
+				WaylandWindowEventKind.Closed       => (WindowEventType.Close, WindowEventMask.Close),
+				WaylandWindowEventKind.Activated    => (WindowEventType.Active, WindowEventMask.Active),
+				WaylandWindowEventKind.TitleChanged => (WindowEventType.TitleChange, WindowEventMask.TitleChange),
+				WaylandWindowEventKind.Minimized    => (WindowEventType.Minimize, WindowEventMask.Minimize),
+				WaylandWindowEventKind.Restored     => (WindowEventType.Restore, WindowEventMask.Restore),
+				WaylandWindowEventKind.MoveResized  => (WindowEventType.Move, WindowEventMask.Move),
+				// WinEvent has no deactivation event; the following Active event identifies the new window.
+				WaylandWindowEventKind.ActiveStateChanged => (WindowEventType.Active, WindowEventMask.None),
+				_                                   => (WindowEventType.Create, WindowEventMask.None)
+			};
 
-		private static long NowMs() => Environment.TickCount64;
+		/// <summary>
+		/// A bounded, non-blocking producer queue. Repeated move events for one window replace their pending value;
+		/// lifecycle events evict a pending move first if the consumer falls behind.
+		/// </summary>
+		private sealed class EventDispatcher : IDisposable
+		{
+			private readonly object sync = new();
+			private readonly LinkedList<WaylandWindowEvent> pending = [];
+			private readonly Dictionary<nint, LinkedListNode<WaylandWindowEvent>> pendingMoves = [];
+			private readonly Action<EventDispatcher, WaylandWindowEvent> deliver;
+			private readonly Thread worker;
+			private readonly int capacity;
+			private readonly string backendName;
+			private bool overloadReported;
+			private bool stopped;
+
+			internal EventDispatcher(Action<EventDispatcher, WaylandWindowEvent> deliver, int capacity, string backendName)
+			{
+				this.deliver = deliver;
+				this.capacity = capacity;
+				this.backendName = backendName;
+				worker = new Thread(DispatchLoop) { IsBackground = true, Name = "WinEvent-Wayland" };
+				worker.Start();
+			}
+
+			internal void Enqueue(WaylandWindowEvent windowEvent)
+			{
+				if (windowEvent.Handle == 0)
+					return;
+
+				var move = windowEvent.Kind == WaylandWindowEventKind.MoveResized;
+				var dropped = false;
+
+				lock (sync)
+				{
+					if (stopped)
+						return;
+
+					if (move && pendingMoves.TryGetValue(windowEvent.Handle, out var existing))
+					{
+						existing.Value = windowEvent;
+						return;
+					}
+
+					if (pending.Count >= capacity)
+					{
+						if (pendingMoves.Count != 0)
+						{
+							var obsolete = pendingMoves.First();
+							pending.Remove(obsolete.Value);
+							pendingMoves.Remove(obsolete.Key);
+						}
+						else if (move)
+							dropped = true;
+						else
+							pending.RemoveFirst();
+					}
+
+					if (!dropped)
+					{
+						var node = pending.AddLast(windowEvent);
+
+						if (move)
+							pendingMoves[windowEvent.Handle] = node;
+
+						System.Threading.Monitor.Pulse(sync);
+					}
+
+					if ((dropped || pending.Count >= capacity) && !overloadReported)
+					{
+						overloadReported = true;
+						Diagnostics.Debug.WriteLine(
+							$"WinEvent Wayland queue overloaded ({backendName}); coalescing or dropping stale events.");
+					}
+				}
+			}
+
+			private void DispatchLoop()
+			{
+				while (true)
+				{
+					WaylandWindowEvent windowEvent;
+
+					lock (sync)
+					{
+						while (!stopped && pending.Count == 0)
+							System.Threading.Monitor.Wait(sync);
+
+						if (stopped)
+							return;
+
+						var first = pending.First;
+						pending.RemoveFirst();
+						windowEvent = first.Value;
+
+						if (windowEvent.Kind == WaylandWindowEventKind.MoveResized)
+							pendingMoves.Remove(windowEvent.Handle);
+					}
+
+					try { deliver(this, windowEvent); }
+					catch (Exception exception)
+					{
+						Diagnostics.Debug.WriteLine($"WinEvent Wayland dispatch error: {exception.Message}");
+					}
+				}
+			}
+
+			public void Dispose()
+			{
+				lock (sync)
+				{
+					if (stopped)
+						return;
+
+					stopped = true;
+					pending.Clear();
+					pendingMoves.Clear();
+					System.Threading.Monitor.PulseAll(sync);
+				}
+
+				if (Thread.CurrentThread != worker)
+					try { worker.Join(1000); }
+					catch { }
+			}
+		}
 	}
 }
 #endif

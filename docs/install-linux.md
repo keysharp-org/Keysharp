@@ -1,18 +1,26 @@
 # Install Keysharp on Linux
 
-Download `keysharp-linux-setup.sh` from a
-[release](https://github.com/keysharp-org/Keysharp/releases). In that directory:
+Download `keysharp-linux-setup.sh` and `SHA256SUMS` from a
+[release](https://github.com/keysharp-org/Keysharp/releases). In that directory,
+verify the script with either command before running it:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
+gh attestation verify keysharp-linux-setup.sh --repo keysharp-org/Keysharp
+```
 
 ```sh
 sudo sh ./keysharp-linux-setup.sh
 keysharp hello.ks
 ```
 
-Setup installs Keysharp and its optional input and desktop components from each
-project's own release. It verifies every download before installing anything.
+Setup is a system-wide installer and requires root when it changes the machine;
+`--diagnose` and `--dry-run` remain unprivileged. It installs Keysharp and its
+optional input and desktop components from each project's own release. It verifies
+every download before installing anything.
 Debian and Ubuntu use packages; other supported systemd distributions use archives.
-Archive dependency checks run before application files are changed. Newly enabled
-GNOME or Cinnamon extensions may need a logout; setup tells you when.
+Archive dependency checks run before application files are changed. GNOME or
+Cinnamon extensions may need a logout after installation or upgrade.
 
 ## Select or update components
 
@@ -28,14 +36,14 @@ be repaired or upgraded through their owner.
 sh ./keysharp-linux-setup.sh --diagnose
 sh ./keysharp-linux-setup.sh --dry-run
 sudo sh ./keysharp-linux-setup.sh --upgrade-components
-sudo sh ./keysharp-linux-setup.sh --input-version 0.2.0 --desktop-version 0.2.0
 ```
 
 `--diagnose` reads local metadata and service state without network access,
 permission dialogs or starting services. Run each component's `probe` command as
 your graphical user for live compositor/device capabilities.
 `--dry-run` resolves releases and prints the plan without downloading artifacts.
-Explicit component versions are honored even when an installed ABI is compatible.
+`--input-version` and `--desktop-version` pin component releases even when an
+installed ABI is compatible.
 The version may include its `v` prefix. `--keysharp-version` selects Keysharp;
 `--channel deb|tar` selects its channel and the default for missing components.
 
@@ -48,6 +56,7 @@ new capabilities; ordinary setup deliberately retains healthy existing brokers.
 ## Requirements and alternatives
 
 Setup needs `curl`, `sha256sum`, root privileges and an x64 or ARM64 Linux system.
+The archive channel also needs `bash` and `tar`.
 The broker services need systemd and polkit. The archive installers support apt,
 dnf, zypper and pacman for runtime dependencies. On another distribution, install
 the documented dependencies through its package manager first.

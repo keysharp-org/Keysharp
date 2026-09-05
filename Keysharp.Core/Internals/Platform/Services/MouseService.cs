@@ -13,7 +13,7 @@ namespace Keysharp.Internals
 	{
 		internal static IMouse Resolve()
 			=> IsWaylandSession
-				? new WaylandMouse(Keysharp.Internals.Window.Linux.Wayland.WaylandBackend.Current)
+				? new WaylandMouse()
 				: new X11Mouse();
 	}
 
@@ -33,17 +33,11 @@ namespace Keysharp.Internals
 		public abstract bool TryMoveAbsolute(int x, int y);
 
 		// Button state requires the input service monitoring grant.
-		public virtual bool TryGetButtonStateLogical(uint vk, out bool down)
-		{
-			down = false;
-			return false;
-		}
+		public bool TryGetButtonStateLogical(uint vk, out bool down)
+			=> KeysharpInputManager.TryGetButtonStateLogical(vk, out down);
 
-		public virtual bool TryGetButtonStatePhysical(uint vk, out bool down)
-		{
-			down = false;
-			return false;
-		}
+		public bool TryGetButtonStatePhysical(uint vk, out bool down)
+			=> KeysharpInputManager.TryGetButtonStatePhysical(vk, out down);
 
 		// Maps a daemon absolute-pointer axis (normalised to [min,max] across the whole virtual desktop) to a screen
 		// pixel. origin is the virtual desktop's Left/Top and size its Width/Height: the desktop can start at a
@@ -67,33 +61,28 @@ namespace Keysharp.Internals
 	/// </summary>
 	internal sealed class X11Mouse : LinuxMouseBase
 	{
+		private static Wl.DesktopBackend Broker => Wl.DesktopBackend.X11;
+
 		public override bool TryGetCursorPos(out int x, out int y)
-			=> Wl.DesktopClient.QueryCursorPosition("x11", out x, out y);
+			=> Broker.TryGetCursorPos(out x, out y);
 		public override bool SupportsCursorQueryAndMove
-			=> Wl.DesktopClient.ProviderSupportsAbsolutePointer("x11");
+			=> Broker.SupportsMouse;
 		public override bool TryMoveAbsolute(int x, int y)
-			=> Wl.DesktopClient.SendMouseMoveAbsolute("x11", x, y);
-		public override bool TryGetButtonStateLogical(uint vk, out bool down)
-			=> KeysharpInputManager.TryGetButtonStateLogical(vk, out down);
-		public override bool TryGetButtonStatePhysical(uint vk, out bool down)
-			=> KeysharpInputManager.TryGetButtonStatePhysical(vk, out down);
+			=> Broker.TrySendMouseMoveAbsolute(x, y);
 	}
 
 	/// <summary>
 	/// Wayland: the core protocol forbids foreign clients from querying or moving the global cursor, so everything
-	/// goes through the resolved compositor backend (KWin/GNOME/…). The backend is resolved ONCE at construction;
-	/// it is null when the session has no usable backend, in which case cursor POSITION still falls back to the
-	/// input service pointer report, but injection is unavailable.
+	/// goes through the current compositor backend. When no backend is available, cursor position still falls
+	/// back to the input service pointer report, while injection remains unavailable.
 	/// </summary>
 	internal sealed class WaylandMouse : LinuxMouseBase
 	{
-		private readonly Keysharp.Internals.Window.Linux.Wayland.IWaylandBackend backend;
-
-		internal WaylandMouse(Keysharp.Internals.Window.Linux.Wayland.IWaylandBackend backend) => this.backend = backend;
+		private static Wl.IWaylandBackend Backend => Wl.WaylandBackend.Current;
 
 		public override bool TryGetCursorPos(out int x, out int y)
 		{
-			if (backend != null && backend.TryGetCursorPos(out x, out y))
+			if (Backend?.TryGetCursorPos(out x, out y) == true)
 				return true;
 
 			// No compositor cursor query (or no backend): for an absolute-positioning device, derive it from input service's
@@ -113,17 +102,11 @@ namespace Keysharp.Internals
 			return false;
 		}
 
-		public override bool SupportsCursorQueryAndMove => backend?.SupportsMouse == true && backend.TryGetCursorPos(out _, out _);
+		public override bool SupportsCursorQueryAndMove
+			=> Backend is { SupportsMouse: true } backend && backend.TryGetCursorPos(out _, out _);
 
-		public override bool TryMoveAbsolute(int x, int y) => backend?.TrySendMouseMoveAbsolute(x, y) == true;
+		public override bool TryMoveAbsolute(int x, int y) => Backend?.TrySendMouseMoveAbsolute(x, y) == true;
 
-		public override bool TryGetButtonStateLogical(uint vk, out bool down)
-			=> KeysharpInputManager.TryGetButtonStateLogical(vk, out down);
-
-		// Wayland forbids clients from querying global pointer state, so ask the input service daemon: it reads evdev
-		// and can snapshot the current button state (EVIOCGKEY) without grabbing the mouse or installing a hook.
-		public override bool TryGetButtonStatePhysical(uint vk, out bool down)
-			=> KeysharpInputManager.TryGetButtonStatePhysical(vk, out down);
 	}
 #elif WINDOWS
 	internal sealed class WindowsMouse : IMouse

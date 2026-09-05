@@ -20,6 +20,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static readonly RetryGate probes = new(maximumAttempts: 3,
 			initialRetryDelay: TimeSpan.FromMilliseconds(200), maximumRetryDelay: TimeSpan.FromSeconds(2));
 		private static WaylandLayerShellClient current;
+		private static RetryGate.Attempt creating;
 
 		internal static object Sync => sync;
 
@@ -28,6 +29,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			get
 			{
 				WaylandLayerShellClient stale = null;
+				RetryGate.Attempt attempt;
 
 				lock (sync)
 				{
@@ -42,30 +44,36 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 					if (current != null)
 						return current;
+
+					attempt = creating == null ? probes.TryBegin() : null;
+					if (attempt != null)
+						creating = attempt;
 				}
 
-				// Joining the stale dispatcher while holding Sync can deadlock it between poll and dispatch.
+				// Native discovery performs round trips. No global Wayland lock is held while the compositor answers.
 				stale?.Dispose();
 
+				if (attempt == null)
+					return null;
+
+				var candidate = TryCreate(out var unavailable);
+				WaylandLayerShellClient result;
 				lock (sync)
 				{
-					if (current != null)
-						return current;
-
-					using var attempt = probes.TryBegin();
-
-					if (attempt == null)
-						return null;
-
-					current = TryCreate(out var unavailable);
-
-					if (current != null)
-						attempt.Succeed();
-					else if (unavailable)
-						probes.Suspend();
-
-					return current;
+					if (ReferenceEquals(creating, attempt))
+					{
+						creating = null;
+						current = candidate;
+						candidate = null;
+						if (current != null) attempt.Succeed();
+						if (unavailable) probes.Suspend();
+					}
+					result = current;
 				}
+
+				attempt.Dispose();
+				candidate?.Dispose();
+				return result;
 			}
 		}
 
@@ -104,6 +112,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private WaylandImageOverlay lastClickTarget;
 		private long lastClickTimeMs;
 		private double lastClickX, lastClickY;
+		private const int PointerQueueCapacity = 256;
+		private readonly object pointerQueueSync = new();
+		private readonly LinkedList<PointerDelivery> pointerQueue = [];
+		private bool pointerDrainScheduled;
+		private bool pointerQueueStopped;
+
+		private readonly record struct PointerDelivery(WaylandImageOverlay Target,
+			OverlayPointerKind Kind, double X, double Y);
 
 		private WaylandLayerShellClient() => selfHandle = GCHandle.Alloc(this);
 
@@ -332,6 +348,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			lock (sync)
 			{
+				creating = null;
 				retired = current;
 				current = null;
 				probes.Rearm();
@@ -556,7 +573,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			pointerX = sx;
 			pointerY = sy;
-			pointerFocus?.DeliverPointer(OverlayPointerKind.MouseMove, sx, sy);
+
+			if (pointerFocus != null)
+				QueuePointerDelivery(pointerFocus, OverlayPointerKind.MouseMove, sx, sy);
 		}
 
 		private void OnPointerButton(uint button, uint state)
@@ -568,7 +587,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			if (button == PointerButtonRight)
 			{
-				pointerFocus.DeliverPointer(OverlayPointerKind.ContextMenu, pointerX, pointerY);
+				QueuePointerDelivery(pointerFocus, OverlayPointerKind.ContextMenu, pointerX, pointerY);
 				return;
 			}
 
@@ -584,8 +603,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					&& Math.Abs(pointerX - lastClickX) <= DoubleClickSlop
 					&& Math.Abs(pointerY - lastClickY) <= DoubleClickSlop)
 			{
+				var target = pointerFocus;
 				lastClickTarget = null;
-				pointerFocus.DeliverPointer(OverlayPointerKind.DoubleClick, pointerX, pointerY);
+				QueuePointerDelivery(target, OverlayPointerKind.DoubleClick, pointerX, pointerY);
 				return;
 			}
 
@@ -593,7 +613,90 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			lastClickTimeMs = now;
 			lastClickX = pointerX;
 			lastClickY = pointerY;
-			pointerFocus.DeliverPointer(OverlayPointerKind.Click, pointerX, pointerY);
+			QueuePointerDelivery(pointerFocus, OverlayPointerKind.Click, pointerX, pointerY);
+		}
+
+		private void QueuePointerDelivery(WaylandImageOverlay target, OverlayPointerKind kind,
+			double x, double y)
+		{
+			var schedule = false;
+
+			lock (pointerQueueSync)
+			{
+				if (pointerQueueStopped || target == null)
+					return;
+
+				if (kind == OverlayPointerKind.MouseMove
+					&& pointerQueue.Last is { } last
+					&& last.Value.Kind == OverlayPointerKind.MouseMove
+					&& ReferenceEquals(last.Value.Target, target))
+				{
+					last.Value = new PointerDelivery(target, kind, x, y);
+					return;
+				}
+
+				if (pointerQueue.Count >= PointerQueueCapacity)
+				{
+					var staleMove = pointerQueue.First;
+
+					while (staleMove != null && staleMove.Value.Kind != OverlayPointerKind.MouseMove)
+						staleMove = staleMove.Next;
+
+					if (staleMove != null)
+						pointerQueue.Remove(staleMove);
+					else if (kind == OverlayPointerKind.MouseMove)
+						return;
+					else
+						pointerQueue.RemoveFirst();
+				}
+
+				pointerQueue.AddLast(new PointerDelivery(target, kind, x, y));
+
+				if (!pointerDrainScheduled)
+				{
+					pointerDrainScheduled = true;
+					schedule = true;
+				}
+			}
+
+			if (schedule)
+				ThreadPool.QueueUserWorkItem(static state => state.DrainPointerQueue(), this,
+					preferLocal: false);
+		}
+
+		private void DrainPointerQueue()
+		{
+			while (true)
+			{
+				PointerDelivery delivery;
+
+				lock (pointerQueueSync)
+				{
+					if (pointerQueueStopped || pointerQueue.Count == 0)
+					{
+						pointerDrainScheduled = false;
+						return;
+					}
+
+					delivery = pointerQueue.First.Value;
+					pointerQueue.RemoveFirst();
+				}
+
+				try { delivery.Target.DeliverPointer(delivery.Kind, delivery.X, delivery.Y); }
+				catch (Exception exception)
+				{
+					Diagnostics.Debug.WriteLine($"Wayland overlay pointer callback failed: {exception.Message}");
+				}
+			}
+		}
+
+		private void StopPointerQueue()
+		{
+			lock (pointerQueueSync)
+			{
+				pointerQueueStopped = true;
+				pointerQueue.Clear();
+			}
 		}
 
 		private void BindOutput(uint name, uint version)
@@ -729,6 +832,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				liveChildren = children.ToArray();
 			}
 
+			StopPointerQueue();
 			try { dispatcherCancel?.Cancel(); } catch { }
 			var dispatcherStopped = true;
 			try { dispatcherStopped = dispatcherThread?.Join(1000) ?? true; } catch { dispatcherStopped = false; }

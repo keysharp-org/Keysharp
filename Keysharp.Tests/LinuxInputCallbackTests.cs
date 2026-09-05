@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Keysharp.Internals;
 using Keysharp.Internals.Linux;
+using Keysharp.Internals.Input.Hooks.Linux;
 using Keysharp.Internals.Input.Linux;
 
 namespace Keysharp.Tests

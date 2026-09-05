@@ -176,12 +176,6 @@ namespace Keysharp.Internals
 		/// complete requested rectangle with one uniform pixel-to-screen transform.</summary>
 		bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp);
 		bool TryCaptureWindow(nint h, bool includeDecoration, out Bitmap bmp, out PixelScale pixelScale);
-		bool RequiresAuthorization { get; }
-
-		/// <summary>Gate a capture against the compositor's authorization (keysharp-desktop
-		/// handshake); returns NotApplicable where capture needs no separate grant. Resolved per-compositor, so
-		/// no <c>is …Backend</c> test at the call site.</summary>
-		Os.PermissionResult RequestCaptureAuthorization(string operation, bool prompt);
 	}
 
 	/// <summary>

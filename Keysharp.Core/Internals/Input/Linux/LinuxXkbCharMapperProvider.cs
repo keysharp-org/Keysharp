@@ -613,11 +613,6 @@ namespace Keysharp.Internals.Input.Unix
 			return keymap != IntPtr.Zero;
 		}
 
-		public void StartLayoutChangeMonitoring()
-		{
-			using var operation = EnterOperation();
-		}
-
 		private uint GetActiveLayout()
 		{
 			if (activeLayoutOverride != null)

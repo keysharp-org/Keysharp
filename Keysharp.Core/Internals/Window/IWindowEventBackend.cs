@@ -110,6 +110,9 @@ namespace Keysharp.Internals.Window
 	/// </summary>
 	internal interface IWindowEventBackend : IDisposable
 	{
+		/// <summary>Whether active-window events avoid a polling window-list scan.</summary>
+		bool SupportsEfficientActiveTracking => true;
+
 		/// <summary>Receives each native event. Set by the consumer before the first <see cref="Start"/> call.</summary>
 		Action<WindowEventRaw> Sink { get; set; }
 

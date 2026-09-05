@@ -74,7 +74,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private NameOwnerWatcher watcher;
 		private string owner;
 		private TProxy proxy;
-		private long generation;
 		private bool watching, disposed;
 
 		/// <param name="factory">Builds the generated proxy; passed in so no reflection is needed to construct one.</param>
@@ -89,7 +88,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		internal event Action AvailabilityChanged;
-		internal long Generation { get { lock (sync) return generation; } }
 
 		internal bool HasOwner
 		{
@@ -104,38 +102,70 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		internal bool TryUse<TResult>(Func<TProxy, TResult> action, out TResult result)
-			=> TryUse((service, _) => action(service), out result);
-
-		internal bool TryUse<TResult>(Func<TProxy, DbusSession, TResult> action, out TResult result)
+		/// <summary>
+		/// Starts an asynchronous proxy call and retains the underlying session until that call settles. A caller
+		/// may time out its own wait; the retired connection still cannot be disposed beneath the in-flight task.
+		/// </summary>
+		internal bool TryUseAsync<TResult>(Func<TProxy, DbusSession, Task<TResult>> action,
+			out Task<TResult> result)
 		{
-			result = default;
+			result = null;
 
 			if (action == null)
 				return false;
 
-			using var lease = sessions.TryAcquire();
+			var lease = sessions.TryAcquire();
 
-			if (lease == null || !EnsureWatch(lease.Value))
+			if (lease == null)
 				return false;
 
-			var current = RefreshOwner(lease.Value);
-
-			if (string.IsNullOrEmpty(current))
-				return false;
-
-			TProxy target;
-
-			lock (sync)
+			try
 			{
-				if (disposed || !ReferenceEquals(session, lease.Value) || !string.Equals(owner, current, StringComparison.Ordinal))
+				if (!EnsureWatch(lease.Value))
 					return false;
 
-				target = proxy ??= factory(lease.Value.Connection, current, path);
-			}
+				var current = RefreshOwner(lease.Value);
 
-			result = action(target, lease.Value);
-			return true;
+				if (string.IsNullOrEmpty(current))
+					return false;
+
+				TProxy target;
+
+				lock (sync)
+				{
+					if (disposed || !ReferenceEquals(session, lease.Value)
+						|| !string.Equals(owner, current, StringComparison.Ordinal))
+						return false;
+
+					target = proxy ??= factory(lease.Value.Connection, current, path);
+				}
+
+				var call = action(target, lease.Value);
+
+				if (call == null)
+					return false;
+
+				result = HoldLease(call, lease);
+				lease = null;
+				return true;
+			}
+			finally
+			{
+				lease?.Dispose();
+			}
+		}
+
+		private static async Task<TResult> HoldLease<TResult>(Task<TResult> task,
+			IDisposable lease)
+		{
+			try
+			{
+				return await task.ConfigureAwait(false);
+			}
+			finally
+			{
+				lease.Dispose();
+			}
 		}
 
 		internal void Invalidate(DbusSession failed, Exception error = null)
@@ -149,7 +179,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				{
 					owner = null;
 					proxy = null;
-					generation++;
 				}
 			}
 
@@ -204,7 +233,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				{
 					owner = current;
 					proxy = null;
-					generation++;
 					changed = true;
 				}
 			}
@@ -234,7 +262,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				session = candidate;
 				owner = null;
 				proxy = null;
-				generation++;
 			}
 
 			SafeDispose(old);
@@ -317,7 +344,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				session = null;
 				owner = null;
 				proxy = null;
-				generation++;
 			}
 
 			SafeDispose(retired);

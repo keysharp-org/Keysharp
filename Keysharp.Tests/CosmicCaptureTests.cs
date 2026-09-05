@@ -34,10 +34,10 @@ namespace Keysharp.Tests
 		[Test]
 		public void FallbackPolicyIsPrivacyConservative()
 		{
-			Assert.That(CosmicScreen.ShouldTryDesktopFallback(DesktopCaptureStatus.Unavailable), Is.True);
-			Assert.That(CosmicScreen.ShouldTryDesktopFallback(DesktopCaptureStatus.Failed), Is.True);
-			Assert.That(CosmicScreen.ShouldTryDesktopFallback(DesktopCaptureStatus.DeniedOrStopped), Is.False);
-			Assert.That(CosmicScreen.ShouldTryDesktopFallback(DesktopCaptureStatus.Captured), Is.False);
+			Assert.That(DesktopClient.AllowsCaptureFallback(DesktopCaptureStatus.Unavailable), Is.True);
+			Assert.That(DesktopClient.AllowsCaptureFallback(DesktopCaptureStatus.Failed), Is.True);
+			Assert.That(DesktopClient.AllowsCaptureFallback(DesktopCaptureStatus.DeniedOrStopped), Is.False);
+			Assert.That(DesktopClient.AllowsCaptureFallback(DesktopCaptureStatus.Captured), Is.False);
 		}
 
 		[Test]

@@ -1,8 +1,8 @@
-#if !WINDOWS
+#if OSX
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using Keysharp.Internals.Input.Hooks.Unix;
 using Keysharp.Internals.Input.Keyboard;
-using Keysharp.Internals.Input.Unix;
+using Keysharp.Internals.Input.MacOS;
 using static Keysharp.Internals.Input.Keyboard.KeyboardMouseSender;
 using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
@@ -10,9 +10,9 @@ using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 namespace Keysharp.Tests
 {
 	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
-	public class UnixInputArrayTests : TestRunner
+	public class MacInputArrayTests : TestRunner
 	{
-		private sealed class RecordingSender(Script owner) : UnixKeyboardMouseSender(owner)
+		private sealed class RecordingSender(Script owner) : MacKeyboardMouseSenderBase(owner)
 		{
 			internal bool ThrowDuringDispatch { get; set; }
 			internal int DispatchCount { get; private set; }

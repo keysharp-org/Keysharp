@@ -1,7 +1,30 @@
 #if LINUX
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
-	/// <summary>An immutable window snapshot from keysharp-desktop, including native X11 handles.</summary>
+	[Flags]
+	internal enum WaylandWindowFields : uint
+	{
+		None = 0,
+		CompositorId = 1u << 0,
+		Title = 1u << 1,
+		AppId = 1u << 2,
+		Pid = 1u << 3,
+		Frame = 1u << 4,
+		Client = 1u << 5,
+		Buffer = 1u << 6,
+		Active = 1u << 7,
+		Minimized = 1u << 8,
+		Maximized = 1u << 9,
+		Visible = 1u << 10,
+		AlwaysOnTop = 1u << 11,
+		Decorated = 1u << 12,
+		Transparency = 1u << 13,
+		OnCurrentWorkspace = 1u << 14,
+		CaptureId = 1u << 15,
+		All = (1u << 16) - 1
+	}
+
+	/// <summary>A window snapshot from keysharp-desktop with immutable payload fields and lazily cached parent wrappers.</summary>
 	internal sealed class WaylandWindowInfo : WindowInfoBase
 	{
 		private const long WsCaption = 0x00C00000L;   // WS_CAPTION: a decorated (titlebar) toplevel
@@ -14,6 +37,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		// --- Wayland-specific payload, read by LinuxWindow internals + WaylandOwnToplevels ---
 		public string CompositorId { get; }
+		internal string CaptureId { get; }
 		public string AppId { get; }
 		public Rectangle FrameGeometry { get; }
 		public Rectangle ClientGeometry { get; }
@@ -29,7 +53,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		public bool OnCurrentWorkspace { get; }
 		internal nint ParentHandle { get; }
 		internal nint TopLevelHandle { get; }
-		internal IReadOnlySet<string> ValidFields { get; }
+		internal WaylandWindowFields KnownFields { get; }
+		private WindowInfoBase nonChildParentWindow;
+		private WindowInfoBase parentWindow;
 
 		internal WaylandWindowInfo(nint handle, string compositorId = "", string title = "", string appId = "",
 								   long pid = 0, Rectangle frameGeometry = default, Rectangle clientGeometry = default,
@@ -37,9 +63,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 								   bool active = false, bool minimized = false, bool maximized = false,
 								   bool visible = false, bool alwaysOnTop = false, bool decorated = true,
 								   object transparency = null, bool onCurrentWorkspace = true,
-								   nint parentHandle = 0, nint topLevelHandle = 0, IReadOnlySet<string> validFields = null) : base(handle)
+								   nint parentHandle = 0, nint topLevelHandle = 0, string captureId = "",
+								   WaylandWindowFields knownFields = WaylandWindowFields.All) : base(handle)
 		{
 			CompositorId = compositorId ?? string.Empty;
+			CaptureId = captureId ?? string.Empty;
 			winTitle = title ?? string.Empty;
 			AppId = appId ?? string.Empty;
 			this.pid = pid;
@@ -60,8 +88,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			OnCurrentWorkspace = onCurrentWorkspace;
 			ParentHandle = parentHandle;
 			TopLevelHandle = topLevelHandle;
-			ValidFields = validFields;
+			KnownFields = knownFields;
 		}
+
+		internal bool HasKnownField(WaylandWindowFields field) => (KnownFields & field) != 0;
 
 		internal override string Title => winTitle;
 		internal override string ClassName => AppId;
@@ -83,9 +113,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// A compositor toplevel is its own non-child parent, and its client origin is already in the
 		// payload — the base implementations would re-fetch this same window through Platform.Window.
 		internal override WindowInfoBase NonChildParentWindow => TopLevelHandle != 0 && TopLevelHandle != Handle
-			? new WindowInfo(TopLevelHandle) : this;
+			? nonChildParentWindow ??= new WindowInfo(TopLevelHandle) : this;
 		internal override WindowInfoBase ParentWindow => TopLevelHandle != 0
-			? ParentHandle == 0 ? null : new WindowInfo(ParentHandle) : base.ParentWindow;
+			? ParentHandle == 0 ? null : parentWindow ??= new WindowInfo(ParentHandle) : base.ParentWindow;
 		internal override POINT ClientToScreen() => new (ClientGeometry.X, ClientGeometry.Y);
 	}
 }

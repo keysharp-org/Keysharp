@@ -425,7 +425,7 @@ namespace Keysharp.Internals
 					// id: leaving it would keep that id claimed, so a later overlay - a reshown card gets a new
 					// form - could never claim its own window.
 					if (form != null && Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
-						Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Forget(form.Handle);
+						Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Forget(form);
 
 #endif
 					form?.Close();

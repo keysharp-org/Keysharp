@@ -21,7 +21,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (!intersection.HasArea)
 				return DesktopCaptureStatus.Failed;
 
-			var status = DesktopClient.CaptureGenericDesktopWithStatus(out var desktopImage);
+			var status = DesktopClient.CaptureDesktopWithStatus(out var desktopImage);
 
 			if (status != DesktopCaptureStatus.Captured)
 				return status;

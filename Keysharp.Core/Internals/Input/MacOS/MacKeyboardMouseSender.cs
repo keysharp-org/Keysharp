@@ -9,7 +9,7 @@ using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 
 namespace Keysharp.Internals.Input.MacOS
 {
-	internal sealed class MacKeyboardMouseSender : Keysharp.Internals.Input.Unix.UnixKeyboardMouseSender
+	internal sealed class MacKeyboardMouseSender : MacKeyboardMouseSenderBase
 	{
 		private readonly MacKeyboardState keyboardState;
 		private readonly MacMouseEventStream mouseStream;

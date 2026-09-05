@@ -21,14 +21,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private readonly Action<WaylandWindowEvent> sink;
 		private readonly Thread thread;
 		private readonly int intervalMs;
+		private readonly WaylandWindowSnapshotTracker tracker = new();
 		private volatile bool stopped;
-
-		// Last-seen state, keyed by stable handle. Only touched on the poll thread.
-		private readonly Dictionary<nint, Snapshot> previous = new();
-		private nint previousActive;
-		private bool seeded;
-
-		private readonly record struct Snapshot(string Title, bool Minimized, Rectangle Frame);
 
 		internal WaylandPollingEventSource(IWaylandBackend backend, Action<WaylandWindowEvent> sink)
 		{
@@ -81,81 +75,148 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (!backend.TryListWindows(true, out var windows) || windows == null)
 				return;
 
-			var current = new Dictionary<nint, Snapshot>(windows.Count);
-			var activeHandle = ActiveHandle(windows);
-
-			foreach (var w in windows)
-			{
-				if (w.Handle == 0)
-					continue;
-
-				current[w.Handle] = new Snapshot(w.Title ?? string.Empty, w.Minimized, w.FrameGeometry);
-			}
-
-			// First successful poll just establishes the baseline — pre-existing windows must not fire Create.
-			if (!seeded)
-			{
-				foreach (var kvp in current)
-					previous[kvp.Key] = kvp.Value;
-
-				seeded = true;
-				previousActive = activeHandle;
-				return;
-			}
-
-			// Additions and per-window state changes.
-			foreach (var kvp in current)
-			{
-				if (!previous.TryGetValue(kvp.Key, out var old))
-				{
-					Emit(WaylandWindowEventKind.Created, kvp.Key);
-					continue;
-				}
-
-				if (!string.Equals(old.Title, kvp.Value.Title, StringComparison.Ordinal))
-					Emit(WaylandWindowEventKind.TitleChanged, kvp.Key);
-
-				if (old.Minimized != kvp.Value.Minimized)
-					Emit(kvp.Value.Minimized ? WaylandWindowEventKind.Minimized : WaylandWindowEventKind.Restored, kvp.Key);
-
-				if (old.Frame != kvp.Value.Frame)
-					Emit(WaylandWindowEventKind.MoveResized, kvp.Key, kvp.Value.Frame);
-			}
-
-			// Removals.
-			foreach (var handle in previous.Keys)
-				if (!current.ContainsKey(handle))
-					Emit(WaylandWindowEventKind.Closed, handle);
-
-			previous.Clear();
-
-			foreach (var kvp in current)
-				previous[kvp.Key] = kvp.Value;
-
-			if (activeHandle != 0 && activeHandle != previousActive)
-				Emit(WaylandWindowEventKind.Activated, activeHandle);
-
-			previousActive = activeHandle;
+			tracker.Update(windows, Emit);
 		}
 
 		internal static nint ActiveHandle(IReadOnlyList<WaylandWindowInfo> windows)
-		{
-			if (windows != null)
-				foreach (var window in windows)
-					if (window is { Active: true } && window.Handle != 0)
-						return window.Handle;
+			=> WaylandWindowSnapshotTracker.TryGetActiveHandle(windows, out var handle) ? handle : 0;
 
-			return 0;
-		}
-
-		private void Emit(WaylandWindowEventKind kind, nint handle, Rectangle? bounds = null)
+		private void Emit(WaylandWindowEvent windowEvent)
 		{
 			if (stopped)
 				return;
 
-			try { sink(new WaylandWindowEvent(kind, handle) { Bounds = bounds }); }
+			try { sink(windowEvent); }
 			catch { }
 		}
+	}
+
+	internal sealed class WaylandWindowSnapshotTracker
+	{
+		private const WaylandWindowFields TrackedFields = WaylandWindowFields.Title
+			| WaylandWindowFields.Minimized | WaylandWindowFields.Frame;
+
+		private Dictionary<nint, Snapshot> previous = [];
+		private nint previousActive;
+		private bool seeded;
+
+		private readonly record struct Snapshot(string Title, bool Minimized, Rectangle Frame,
+			WaylandWindowFields KnownFields)
+		{
+			internal bool Knows(WaylandWindowFields field) => (KnownFields & field) != 0;
+
+			internal static Snapshot From(WaylandWindowInfo window)
+				=> new(window.Title ?? string.Empty, window.Minimized, window.FrameGeometry,
+					window.KnownFields & TrackedFields);
+
+			internal static Snapshot Merge(Snapshot prior, Snapshot current)
+				=> new(
+					current.Knows(WaylandWindowFields.Title) ? current.Title : prior.Title,
+					current.Knows(WaylandWindowFields.Minimized) ? current.Minimized : prior.Minimized,
+					current.Knows(WaylandWindowFields.Frame) ? current.Frame : prior.Frame,
+					current.KnownFields | prior.KnownFields);
+		}
+
+		internal void Update(IReadOnlyList<WaylandWindowInfo> windows, Action<WaylandWindowEvent> emit)
+		{
+			ArgumentNullException.ThrowIfNull(windows);
+			ArgumentNullException.ThrowIfNull(emit);
+
+			var current = new Dictionary<nint, Snapshot>(windows.Count);
+			var activeKnown = TryGetActiveHandle(windows, out var activeHandle);
+
+			foreach (var window in windows)
+			{
+				if (window == null || window.Handle == 0 || current.ContainsKey(window.Handle))
+					continue;
+
+				var snapshot = Snapshot.From(window);
+
+				if (seeded)
+				{
+					if (!previous.TryGetValue(window.Handle, out var prior))
+						emit(new WaylandWindowEvent(WaylandWindowEventKind.Created, window.Handle));
+					else
+					{
+						EmitChanges(window.Handle, prior, snapshot, emit);
+						snapshot = Snapshot.Merge(prior, snapshot);
+					}
+				}
+
+				current[window.Handle] = snapshot;
+			}
+
+			if (!seeded)
+			{
+				seeded = true;
+				previous = current;
+
+				if (activeKnown)
+					previousActive = activeHandle;
+
+				return;
+			}
+
+			foreach (var handle in previous.Keys)
+				if (!current.ContainsKey(handle))
+					emit(new WaylandWindowEvent(WaylandWindowEventKind.Closed, handle));
+
+			previous = current;
+
+			if (activeKnown)
+			{
+				if (activeHandle != 0 && activeHandle != previousActive)
+					emit(new WaylandWindowEvent(WaylandWindowEventKind.Activated, activeHandle));
+
+				previousActive = activeHandle;
+			}
+			else if (previousActive != 0 && !current.ContainsKey(previousActive))
+				previousActive = 0;
+		}
+
+		internal static bool TryGetActiveHandle(IReadOnlyList<WaylandWindowInfo> windows, out nint handle)
+		{
+			handle = 0;
+
+			if (windows == null)
+				return false;
+
+			var allKnown = true;
+
+			foreach (var window in windows)
+			{
+				if (window == null || window.Handle == 0)
+					continue;
+
+				if (!window.HasKnownField(WaylandWindowFields.Active))
+					allKnown = false;
+				else if (window.Active)
+				{
+					handle = window.Handle;
+					return true;
+				}
+			}
+
+			return allKnown;
+		}
+
+		private static void EmitChanges(nint handle, Snapshot prior, Snapshot current,
+			Action<WaylandWindowEvent> emit)
+		{
+			if (prior.Knows(WaylandWindowFields.Title) && current.Knows(WaylandWindowFields.Title)
+				&& !string.Equals(prior.Title, current.Title, StringComparison.Ordinal))
+				emit(new WaylandWindowEvent(WaylandWindowEventKind.TitleChanged, handle));
+
+			if (prior.Knows(WaylandWindowFields.Minimized) && current.Knows(WaylandWindowFields.Minimized)
+				&& prior.Minimized != current.Minimized)
+				emit(new WaylandWindowEvent(current.Minimized
+					? WaylandWindowEventKind.Minimized : WaylandWindowEventKind.Restored, handle));
+
+			if (prior.Knows(WaylandWindowFields.Frame) && current.Knows(WaylandWindowFields.Frame)
+				&& prior.Frame != current.Frame)
+				emit(new WaylandWindowEvent(WaylandWindowEventKind.MoveResized, handle) { Bounds = current.Frame });
+		}
+
 	}
 }
 #endif

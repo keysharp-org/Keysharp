@@ -27,13 +27,8 @@ namespace Keysharp.Internals.Window.Linux
 			return 0;
 		}
 
-		/// <summary>Whether an X error was trapped on the current thread since the last <see cref="BeginErrorTrap"/>
-		/// or <see cref="ClearErrorTrap"/>.</summary>
+		/// <summary>Whether an X error was trapped on the current thread since the last <see cref="BeginErrorTrap"/>.</summary>
 		internal static bool ErrorTrapped => xErrorTrapped;
-
-		/// <summary>Resets this thread's trapped-error flag mid-sequence, for callers that re-check individual
-		/// Xlib operations without reinstalling the handler.</summary>
-		internal static void ClearErrorTrap() => xErrorTrapped = false;
 
 		/// <summary>Installs the shared (permanently rooted) X error handler and clears this thread's error
 		/// flag. Must be called under <see cref="xLibLock"/> and paired with <see cref="EndErrorTrap"/> in a

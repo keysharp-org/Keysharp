@@ -182,8 +182,8 @@ namespace Keysharp.Internals.Window.Linux.X11
 		private static List<NativeMonitor> QueryNativeScreens()
 		{
 			var result = new List<NativeMonitor>();
-			var json = Wayland.DesktopClient.QueryDisplays("x11");
-			if (string.IsNullOrEmpty(json)) return result;
+			var json = Wayland.DesktopClient.QueryDisplays();
+			if (json == null || json.Length == 0) return result;
 			try
 			{
 				using var document = System.Text.Json.JsonDocument.Parse(json);

@@ -57,7 +57,7 @@ namespace Keysharp.Internals
 				}
 
 				return new Keysharp.Internals.Window.Linux.Wayland.WaylandWindowEventBackend(owner,
-					Keysharp.Internals.Window.Linux.Wayland.X11BrokerBackend.Instance);
+					Keysharp.Internals.Window.Linux.Wayland.DesktopBackend.X11);
 #elif OSX
 				return new Keysharp.Internals.Window.MacOS.WindowEventBackend(owner);
 #else

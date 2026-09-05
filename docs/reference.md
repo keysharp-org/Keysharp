@@ -77,7 +77,7 @@ On Arch-based systems Keysharp is also available as an [AUR package](https://aur
 
 #### All three projects at once
 
-`keysharp-linux-setup.sh` on the [Releases](https://github.com/keysharp-org/Keysharp/releases) page resolves and installs all three. Download it, then run it:
+`keysharp-linux-setup.sh` on the [Releases](https://github.com/keysharp-org/Keysharp/releases) page resolves and installs all three system-wide. Installation requires root; the diagnosis and dry-run modes do not. Download it, then run it:
 
 ```sh
 sudo sh ./keysharp-linux-setup.sh
@@ -138,7 +138,7 @@ Until an apt repository is published, `keysharp-linux-setup.sh` is the way to in
 
 `keysharp-input` provides global input hooks, synthesis, `BlockInput`, idle and device-state queries, and reliable hotkeys and hotstrings. `keysharp-desktop` provides authorized capture, window and clipboard integration, including KWin, GNOME, and Cinnamon providers.
 
-On X11 and Wayland, foreign-window queries/control, capture, global cursor queries, and brokered clipboard access go through those component libraries. X11 display topology, keyboard layout, modifier state, and lock state also come from keysharp-desktop. Keysharp keeps script-owned GUI and overlay presentation in-process through GTK/Eto. Desktop operations use the same permission scopes on both session types; X11 authorization is an application consent boundary because the X server still accepts direct calls from other same-session applications.
+On X11 and Wayland, foreign-window queries/control, capture, global cursor queries, and brokered clipboard access go through those component libraries. X11 display topology, keyboard layout, modifier state, and lock state also come from keysharp-desktop. Keysharp keeps script-owned GUI and local GUI events in GTK/Eto. Overlay presentation prefers a layer-shell surface when available, then a GNOME/Cinnamon shell actor for click-through overlays, and otherwise an Eto window. Desktop operations use the same permission scopes on both session types; X11 authorization is an application consent boundary because the X server still accepts direct calls from other same-session applications.
 
 [Linux native integration](linux-native-integration.md) describes the API split, permission identities, and platform limits.
 

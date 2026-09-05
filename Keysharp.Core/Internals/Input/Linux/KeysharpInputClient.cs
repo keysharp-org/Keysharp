@@ -71,6 +71,33 @@ namespace Keysharp.Internals.Input.Linux
 			Modify = 2,
 		}
 
+		internal enum MessageKind : uint
+		{
+			KeyDown = 0x0100,
+			KeyUp = 0x0101,
+			SystemKeyDown = 0x0104,
+			SystemKeyUp = 0x0105,
+			MouseMove = 0x0200,
+			LeftButtonDown = 0x0201,
+			LeftButtonUp = 0x0202,
+			RightButtonDown = 0x0204,
+			RightButtonUp = 0x0205,
+			MiddleButtonDown = 0x0207,
+			MiddleButtonUp = 0x0208,
+			MouseWheel = 0x020A,
+			XButtonDown = 0x020B,
+			XButtonUp = 0x020C,
+			MouseHorizontalWheel = 0x020E,
+		}
+
+		[Flags]
+		internal enum HookFlags : uint
+		{
+			MouseInjected = 0x01,
+			KeyboardInjected = 0x10,
+			KeyboardUp = 0x80,
+		}
+
 		[Flags]
 		internal enum BlockInputMask : uint
 		{
@@ -159,6 +186,7 @@ namespace Keysharp.Internals.Input.Linux
 		private readonly ulong[] nestedEventIds = new ulong[NestedHookLimit];
 		private readonly nint[] nestedReplacementBuffers = new nint[NestedHookLimit];
 		private nint connection;
+		private int grantedScopes;
 		private NativeHookEvent currentHookEvent;
 		private ulong currentHookEventId;
 		private int nestedDepth;
@@ -177,7 +205,11 @@ namespace Keysharp.Internals.Input.Linux
 			AvailableOperations = availableOperations;
 		}
 
-		internal LinuxPermissionScope GrantedScopes { get; private set; }
+		internal LinuxPermissionScope GrantedScopes
+		{
+			get => (LinuxPermissionScope)(uint)Volatile.Read(ref grantedScopes);
+			private set => Volatile.Write(ref grantedScopes, unchecked((int)(uint)value));
+		}
 		internal Operations AvailableOperations { get; }
 		internal bool IsConnected => !disposePending && Volatile.Read(ref connection) != 0;
 
@@ -216,7 +248,7 @@ namespace Keysharp.Internals.Input.Linux
 				try
 				{
 					if (info.StructSize != NativeServiceInfoStructSize
-						|| info.ClientAbiMajor != 0 || info.ClientAbiMinor < 1)
+						|| info.ClientAbiMajor != 0 || info.ClientAbiMinor < 2)
 						throw new InvalidDataException(
 							$"Unsupported keysharp-input client ABI {info.ClientAbiMajor}.{info.ClientAbiMinor}.");
 					if ((info.GrantedScopes & ~(uint)ManagedScopes) != 0)
@@ -294,7 +326,8 @@ namespace Keysharp.Internals.Input.Linux
 			=> hookQuarantineHandler = handler;
 		internal void SetLeaseLivenessProbe(Func<bool> probe) => leaseLivenessProbe = probe;
 		internal void InvalidateScopes(LinuxPermissionScope scopes)
-			=> GrantedScopes &= ~(scopes & ManagedScopes);
+			=> Interlocked.And(ref grantedScopes,
+				unchecked((int)~(uint)(scopes & ManagedScopes)));
 
 		internal bool HasOperations(Operations operations)
 		{
@@ -331,6 +364,17 @@ namespace Keysharp.Internals.Input.Linux
 					(uint)mask, out var effective, ref error);
 				ThrowIfFailed(status, "set block input", error);
 				return (BlockInputMask)effective;
+			}
+		}
+
+		internal void Ping()
+		{
+			lock (nativeLock)
+			{
+				ThrowIfDisposed();
+				Native.ksi_error_init(out var error);
+				ThrowIfFailed((NativeClientStatus)Native.ksi_ping(connection, ref error),
+					"ping", error);
 			}
 		}
 
@@ -373,7 +417,7 @@ namespace Keysharp.Internals.Input.Linux
 			if (inputs.Count == 0)
 				return;
 
-			var required = Operations.None;
+			var required = RequiredSynthesisOperations(inputs);
 			NativeInput[] rented = null;
 			Span<NativeInput> nativeInputs = inputs.Count <= 64
 				? stackalloc NativeInput[inputs.Count]
@@ -383,12 +427,6 @@ namespace Keysharp.Internals.Input.Linux
 			{
 				for (var index = 0; index < inputs.Count; index++)
 				{
-					required |= inputs[index].Type switch
-					{
-						InputType.Keyboard => Operations.SynthesizeKeyboard,
-						InputType.Mouse => Operations.SynthesizeMouse,
-						_ => throw new NotSupportedException($"Input type {inputs[index].Type} is not supported."),
-					};
 					nativeInputs[index] = ToNative(inputs[index]);
 				}
 				RequireOperations(required);
@@ -408,6 +446,22 @@ namespace Keysharp.Internals.Input.Linux
 				if (rented != null)
 					ArrayPool<NativeInput>.Shared.Return(rented);
 			}
+		}
+
+		internal static Operations RequiredSynthesisOperations(IReadOnlyList<Input> inputs)
+		{
+			ArgumentNullException.ThrowIfNull(inputs);
+			var required = Operations.None;
+
+			for (var index = 0; index < inputs.Count; index++)
+				required |= inputs[index].Type switch
+				{
+					InputType.Keyboard => Operations.SynthesizeKeyboard,
+					InputType.Mouse => Operations.SynthesizeMouse,
+					_ => throw new NotSupportedException($"Input type {inputs[index].Type} is not supported."),
+				};
+
+			return required;
 		}
 
 		internal KeyStateSnapshot QueryKeyState()
@@ -507,6 +561,9 @@ namespace Keysharp.Internals.Input.Linux
 					Native.ksi_error_init(out error);
 					status = (NativeClientStatus)Native.ksi_hook_next(connection,
 						HookPollTimeoutMs, ref message, ref error);
+
+					if (status != NativeClientStatus.Timeout)
+						ThrowIfFailed(status, "read hook event", error);
 				}
 
 				if (status == NativeClientStatus.Timeout)
@@ -515,8 +572,6 @@ namespace Keysharp.Internals.Input.Linux
 						throw new IOException("keysharp-input hook consumer stopped responding.");
 					continue;
 				}
-				ThrowIfFailed(status, "read hook event", error);
-
 				switch (message.Kind)
 				{
 					case 1:
@@ -784,14 +839,15 @@ namespace Keysharp.Internals.Input.Linux
 		private void ThrowIfFailed(NativeClientStatus status,
 			string operation, in NativeError error)
 		{
-			if (status != NativeClientStatus.Ok)
-			{
-				if (connection != 0)
-					GrantedScopes = (LinuxPermissionScope)(
-						Native.ksi_connection_granted_scopes(connection) & (uint)ManagedScopes);
-				throw new NativeClientException("keysharp-input", operation, status,
-					error.Detail, error.SystemError, error.GetMessage());
-			}
+			if (status == NativeClientStatus.Ok)
+				return;
+
+			if (connection != 0)
+				GrantedScopes = (LinuxPermissionScope)(
+					Native.ksi_connection_granted_scopes(connection) & (uint)ManagedScopes);
+
+			throw new NativeClientException("keysharp-input", operation, status,
+				error.Detail, error.SystemError, error.GetMessage());
 		}
 
 		private static void ThrowConnectIfFailed(NativeClientStatus status,
@@ -1110,6 +1166,8 @@ namespace Keysharp.Internals.Input.Linux
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_authorize(nint connection, uint mode,
 				uint scopes, out uint grantedScopes, ref NativeError error);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksi_ping(nint connection, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_connection_granted_scopes(nint connection);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]

@@ -1,29 +1,22 @@
-#if !WINDOWS
+#if OSX
 
 using System.Text;
-using System.Diagnostics;
 using System.Collections.Generic;
 using Keysharp.Builtins;
-#if LINUX
-using Keysharp.Internals.Input.Linux;
-#endif
 using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 using Keysharp.Internals.Input.Mouse;
 using Keysharp.Internals.Input.Hooks;
 
-namespace Keysharp.Internals.Input.Unix
+namespace Keysharp.Internals.Input.MacOS
 {
-	/// <summary>
-	/// Shared non-Windows keyboard/mouse sender implementation.
-	/// </summary>
-	internal partial class UnixKeyboardMouseSender : KeyboardMouseSender
+	/// <summary>Shared implementation for the macOS keyboard/mouse sender.</summary>
+	internal class MacKeyboardMouseSenderBase : KeyboardMouseSender
 	{
 		internal PlatformEventSimulator sim => backend.sim;
-		protected PlatformEventSimulator Sim => backend.sim;
 		protected readonly PlatformKeySimulationBackend backend;
 
-		// Prefer Right-Alt as AltGr on Linux (prevents menu activation better than neutral Alt).
+		// Use right Alt for AltGr so it remains distinct from the menu modifier.
 		private const uint VK_ALTGR = VK_RMENU;
 
 		protected sealed class InputArrayState
@@ -53,7 +46,7 @@ namespace Keysharp.Internals.Input.Unix
 		// scalar (e.g. emoji) while sending in Event mode; see SendUnicodeChar.
 		private char pendingHighSurrogate;
 
-		internal UnixKeyboardMouseSender(Script script) : base(script)
+		internal MacKeyboardMouseSenderBase(Script script) : base(script)
 		{
 			backend = new PlatformKeySimulationBackend(script);
 		}
@@ -61,21 +54,7 @@ namespace Keysharp.Internals.Input.Unix
 		protected void EnsureInputSendPermission(string operation)
 			=> _ = script.Permissions.EnsureInputControl(operation: operation);
 
-		internal override bool MouseButtonsSwapped
-		{
-			get
-			{
-#if LINUX
-				if (!Platform.Desktop.IsX11Available)
-					return false;
-
-				var mapping = DesktopKeyboardState.X11.Get()?.PointerMapping;
-				return mapping is { Length: >= 3 } && mapping[0] != 1;
-#else
-				return false;
-#endif
-			}
-		}
+		internal override bool MouseButtonsSwapped => false;
 
 		#region Input array recording
 
@@ -225,7 +204,7 @@ namespace Keysharp.Internals.Input.Unix
 
 		internal override void PutMouseEventIntoArray(uint eventFlags, uint data, int x, int y)
 		{
-			// Linux MouseClick encodes type in the high word; handle that before the legacy MOUSEEVENTF path.
+			// MouseClick encodes type in the high word; handle that before the MOUSEEVENTF path.
 			if ((eventFlags & 0xFFFF0000) != 0)
 			{
 				var type = (KeyEventTypes)(eventFlags >> 16);
@@ -608,7 +587,7 @@ namespace Keysharp.Internals.Input.Unix
 
 		protected void ReplayImmediateMouseEvent(uint eventFlags, uint data, int x, int y)
 		{
-			// Legacy Linux usage: high word encodes KeyEventTypes, low word encodes vk.
+			// The high word encodes KeyEventTypes and the low word encodes the key.
 			if ((eventFlags & 0xFFFF0000) != 0)
 			{
 				var legacyButton = KeyCodes.VkToMouseButton(eventFlags & 0xFFFF);
@@ -848,7 +827,7 @@ namespace Keysharp.Internals.Input.Unix
 
 			// UTF-16 surrogate pairs (astral scalars such as emoji) arrive as two separate calls.
 			// In Event mode each unit is injected immediately, but the macOS
-			// (CGEventKeyboardSetUnicodeString) and X11 (Unicode-keysym remap) paths cannot
+			// (CGEventKeyboardSetUnicodeString) cannot
 			// reassemble a lone surrogate the way Windows' KEYEVENTF_UNICODE can. So buffer the
 			// high surrogate and emit the combined scalar once its low surrogate arrives. (Input
 			// mode is unaffected: it records each unit as a TextEvent and they are re-joined into
@@ -1026,7 +1005,7 @@ namespace Keysharp.Internals.Input.Unix
 
 		internal override int PbEventCount() => 0;
 
-		// No journal-playback hook exists on Unix/X11; SendPlay is sent as SendEvent (see WarnIfPlayUnsupported).
+		// macOS has no journal-playback hook; SendPlay is sent as SendEvent (see WarnIfPlayUnsupported).
 		protected override bool SupportsPlayMode => false;
 
 		internal override ResultType LayoutHasAltGrDirect(nint layout) => ResultType.ConditionFalse;
@@ -1086,61 +1065,12 @@ namespace Keysharp.Internals.Input.Unix
 
 		internal override int MouseCoordToAbs(int coord, int width_or_height) => ((65536 * coord) / width_or_height) + (coord < 0 ? -1 : 1);
 
-		#region SmartTextEmitter + sinks (used by SendEventArray + SendUnicodeChar Event-mode)
-
-		private interface IKeySink
-		{
-			void Down(uint vk, DateTime ms, long extraInfo);
-			void Up(uint vk, DateTime ms, long extraInfo);
-			void Stroke(uint vk, DateTime ms, long extraInfo);
-			void Flush(); // no-op for direct mode
-		}
-
-		private sealed class DirectKeySink : IKeySink
-		{
-			private readonly UnixKeyboardMouseSender self;
-			private readonly long keyDelay;
-			private readonly long keyDuration;
-
-			internal DirectKeySink(UnixKeyboardMouseSender self, long keyDelay, long keyDuration)
-			{
-				this.self = self;
-				this.keyDelay = keyDelay;
-				this.keyDuration = keyDuration;
-			}
-
-			public void Down(uint vk, DateTime ms, long extraInfo)
-			{
-				self.backend.KeyDown(vk, ms, extraInfo);
-				if (keyDuration >= 0)
-					Keysharp.Internals.Flow.SleepWithoutInterruption((int)keyDuration);
-			}
-
-			public void Up(uint vk, DateTime ms, long extraInfo)
-			{
-				self.backend.KeyUp(vk, ms, extraInfo);
-				if (keyDelay >= 0)
-					Keysharp.Internals.Flow.SleepWithoutInterruption((int)keyDelay);
-			}
-
-			public void Stroke(uint vk, DateTime ms, long extraInfo)
-			{
-				Down(vk, ms, extraInfo);
-				Up(vk, ms, extraInfo);
-			}
-
-			public void Flush() { /* no-op */ }
-		}
-
-		#endregion
-
 		#region PlatformKeySimulationBackend
 
 		internal sealed class PlatformEventSimulator
 		{
-#if OSX
 			private static void MissingMacBackend()
-				=> throw new InvalidOperationException("A macOS input path reached the generic no-op Unix simulator. Add an explicit MacKeyboardMouseSender implementation for this operation.");
+				=> throw new InvalidOperationException("A macOS input path has no native implementation in MacKeyboardMouseSender.");
 
 			public void SimulateKeyPress(uint vk) => MissingMacBackend();
 			public void SimulateKeyRelease(uint vk) => MissingMacBackend();
@@ -1152,18 +1082,6 @@ namespace Keysharp.Internals.Input.Unix
 			public void SimulateMouseRelease(short x, short y, MouseButton button) => MissingMacBackend();
 			public void SimulateMouseWheel(short delta, MouseWheelScrollDirection direction, MouseWheelScrollType type) => MissingMacBackend();
 			public void SimulateTextEntry(string text) => MissingMacBackend();
-#else
-			public void SimulateKeyPress(uint vk) { }
-			public void SimulateKeyRelease(uint vk) { }
-			public void SimulateMouseMovementRelative(short x, short y) { }
-			public void SimulateMouseMovement(short x, short y) { }
-			public void SimulateMousePress(MouseButton button) { }
-			public void SimulateMousePress(short x, short y, MouseButton button) { }
-			public void SimulateMouseRelease(MouseButton button) { }
-			public void SimulateMouseRelease(short x, short y, MouseButton button) { }
-			public void SimulateMouseWheel(short delta, MouseWheelScrollDirection direction, MouseWheelScrollType type) { }
-			public void SimulateTextEntry(string text) { }
-#endif
 		}
 
 		internal sealed class PlatformKeySimulationBackend
@@ -1180,22 +1098,18 @@ namespace Keysharp.Internals.Input.Unix
 			public void KeyDown(uint vk, DateTime ms, long extraInfo)
 			{
 				_ = owner.Permissions.EnsureInputControl(operation: "send keyboard input");
-#if OSX
-				if (vk == VK_CAPITAL && Keysharp.Internals.Input.MacOS.MacCapsLockState.TryToggle())
+				if (vk == VK_CAPITAL && MacCapsLockState.TryToggle())
 					return;
-#endif
 				sim.SimulateKeyPress(vk);
 			}
 
 			public void KeyUp(uint vk, DateTime ms, long extraInfo)
 			{
 				_ = owner.Permissions.EnsureInputControl(operation: "send keyboard input");
-#if OSX
 				// The toggle was already applied by the paired KeyDown; a CapsLock
 				// key-up has no effect on the lock state, so don't post anything.
-				if (vk == VK_CAPITAL && Keysharp.Internals.Input.MacOS.MacCapsLockState.IsAvailable)
+				if (vk == VK_CAPITAL && MacCapsLockState.IsAvailable)
 					return;
-#endif
 				sim.SimulateKeyRelease(vk);
 			}
 
@@ -1203,60 +1117,6 @@ namespace Keysharp.Internals.Input.Unix
 			{
 				KeyDown(vk, ms, extraInfo);
 				KeyUp(vk, ms, extraInfo);
-			}
-
-			public IKeySimulationSequence BeginSequence()
-				=> new PlatformKeySequence(this);
-		}
-
-		internal sealed class PlatformKeySequence : IKeySimulationSequence
-		{
-			private enum ActionType { Down, Up }
-
-			private readonly PlatformKeySimulationBackend backend;
-			private readonly List<(ActionType Type, uint Vk)> actions = new();
-			private bool committed;
-
-			public PlatformKeySequence(PlatformKeySimulationBackend backend)
-				=> this.backend = backend;
-
-			public void AddKeyDown(uint vk)
-				=> actions.Add((ActionType.Down, vk));
-
-			public void AddKeyUp(uint vk)
-				=> actions.Add((ActionType.Up, vk));
-
-			public void AddKeyStroke(uint vk)
-			{
-				AddKeyDown(vk);
-				AddKeyUp(vk);
-			}
-
-			public void Commit(long extraInfo)
-			{
-				if (committed) return;
-				committed = true;
-
-				var ms = DateTime.UtcNow;
-
-				if (actions.Count > 0)
-				{
-					foreach (var (type, vk) in actions)
-					{
-						if (type == ActionType.Down)
-							backend.KeyDown(vk, ms, extraInfo);
-						else
-							backend.KeyUp(vk, ms, extraInfo);
-					}
-				}
-
-				actions.Clear();
-			}
-
-			public void Dispose()
-			{
-				if (!committed)
-					Commit(0);
 			}
 		}
 

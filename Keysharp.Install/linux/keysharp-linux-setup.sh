@@ -143,8 +143,8 @@ verify_checksum() {
         | (cd "$verify_dir" && sha256sum -c -) >/dev/null 2>&1
 }
 
-# The release's own SHA256SUMS is the reference, so no checksum has to be
-# recorded here and go stale.
+# SHA256SUMS detects transfer corruption. GitHub provenance, when available,
+# additionally binds both downloads to the owning project's release workflow.
 download_verified() {
     download_repository=$1
     download_tag=$2
@@ -161,6 +161,18 @@ download_verified() {
         echo "Could not download SHA256SUMS from $download_repository $download_tag." >&2
         return 1
     }
+    if command -v gh >/dev/null 2>&1; then
+        gh attestation verify "$download_dir/SHA256SUMS" \
+            --repo "$download_repository" >/dev/null || {
+            echo "Provenance verification failed for SHA256SUMS from $download_repository $download_tag." >&2
+            return 1
+        }
+        gh attestation verify "$download_dir/$download_asset" \
+            --repo "$download_repository" >/dev/null || {
+            echo "Provenance verification failed for $download_asset from $download_repository $download_tag." >&2
+            return 1
+        }
+    fi
     verify_checksum "$download_dir" "$download_asset" "$download_dir/SHA256SUMS" || {
         echo "Checksum verification failed for $download_asset from $download_repository $download_tag." >&2
         return 1
@@ -322,10 +334,7 @@ report_plan() {
 
 release_asset() {
     if [ "$2" = deb ]; then
-        case "$1" in
-            keysharp) printf 'keysharp-%s-%s.deb\n' "$3" "$arch_tag" ;;
-            *) printf '%s_%s_%s.deb\n' "$1" "$3" "$deb_arch" ;;
-        esac
+        printf '%s_%s_%s.deb\n' "$1" "$3" "$deb_arch"
     else
         printf '%s-%s-%s.tar.gz\n' "$1" "$3" "$arch_tag"
     fi
@@ -488,6 +497,7 @@ for selected_channel in "$channel" \
         *) echo "Update or repair the $selected_channel component through its package manager; setup will not replace it." >&2; exit 1 ;;
     esac
 done
+[ "$channel" != tar ] || need_cmd bash
 if [ "$input_health" = conflicting-installations ] || [ "$desktop_health" = conflicting-installations ]; then
     report_plan
     echo "Remove the conflicting component installation through its owner before rerunning setup." >&2

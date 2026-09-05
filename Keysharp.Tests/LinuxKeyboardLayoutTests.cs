@@ -9,6 +9,7 @@ using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 
 namespace Keysharp.Tests
 {
+	[TestFixture, Category("Internal"), Category("Curated")]
 	public class LinuxKeyboardLayoutTests
 	{
 #if LINUX
@@ -47,6 +48,7 @@ namespace Keysharp.Tests
 		{
 			long now = 0;
 			int calls = 0;
+			var revisions = new List<string>();
 			var replies = new[]
 			{
 				"{\"ok\":true,\"mapRevision\":\"one\",\"keymap\":\"map text\",\"group\":1}",
@@ -54,12 +56,16 @@ namespace Keysharp.Tests
 				"{\"ok\":true,\"mapRevision\":\"one\",\"group\":2}",
 				"{\"ok\":true,\"mapRevision\":\"two\",\"validFields\":[\"mapRevision\"],\"group\":0}"
 			};
-			var state = new DesktopKeyboardState(() => replies[calls++], () => now);
+			var state = new DesktopKeyboardState(revision =>
+			{
+				revisions.Add(revision);
+				return replies[calls++] is string reply ? Encoding.UTF8.GetBytes(reply) : null;
+			}, () => now, action => action());
 			Assert.AreEqual("map text", state.Get().Keymap);
 			Assert.AreEqual(1u, state.Get().Group);
 			Assert.AreEqual(1, calls);
 			now = 16;
-			Assert.IsNull(state.Get());
+			Assert.AreEqual("map text", state.Get().Keymap);
 			now = 266;
 			var restored = state.Get();
 			Assert.AreEqual("map text", restored.Keymap);
@@ -71,11 +77,58 @@ namespace Keysharp.Tests
 			Assert.IsFalse(changed.GroupKnown);
 			Assert.IsFalse(changed.ModifiersKnown);
 			Assert.IsFalse(changed.IndicatorsKnown);
+			Assert.That(revisions, Is.EqualTo(new string[] { null, "one", "one", "one" }));
 			var malformed = DesktopKeyboardState.Parse("{\"ok\":true,\"group\":-1,\"modifiers\":\"0\",\"capsLock\":0,\"numLock\":false,\"scrollLock\":false,\"pointerMapping\":[\"3\",2,1]}");
 			Assert.IsFalse(malformed.GroupKnown);
 			Assert.IsFalse(malformed.ModifiersKnown);
 			Assert.IsFalse(malformed.IndicatorsKnown);
 			Assert.IsEmpty(malformed.PointerMapping);
+		}
+
+		[Test, Category("Internal")]
+		public void DesktopKeyboardStateOwnsTheRevisionSentToTheBroker()
+		{
+			long now = 0;
+			var calls = 0;
+			var revisions = new List<string>();
+			var replies = new[]
+			{
+				null,
+				"{\"ok\":true,\"mapRevision\":\"one\",\"keymap\":\"map text\"}",
+				"{\"ok\":true,\"mapRevision\":\"one\",\"group\":2}"
+			};
+			var state = new DesktopKeyboardState(revision =>
+			{
+				revisions.Add(revision);
+				return replies[calls++] is string reply ? Encoding.UTF8.GetBytes(reply) : null;
+			}, () => now, action => action());
+
+			Assert.IsNull(state.Get());
+			now = 250;
+			Assert.AreEqual("map text", state.Get().Keymap);
+			now = 266;
+			Assert.AreEqual("map text", state.Get().Keymap);
+			Assert.That(revisions, Is.EqualTo(new string[] { null, null, "one" }));
+		}
+
+		[Test, Category("Internal")]
+		public void DesktopKeyboardStateReadDoesNotRunTheQueryInline()
+		{
+			var calls = 0;
+			Action pending = null;
+			var state = new DesktopKeyboardState(_ =>
+			{
+				calls++;
+				return Encoding.UTF8.GetBytes(
+					"{\"ok\":true,\"mapRevision\":\"one\",\"keymap\":\"map text\"}");
+			}, () => 0, action => pending = action);
+
+			Assert.That(state.Get(), Is.Null);
+			Assert.That(calls, Is.Zero);
+			Assert.That(pending, Is.Not.Null);
+			pending();
+			Assert.That(state.Get()?.Keymap, Is.EqualTo("map text"));
+			Assert.That(calls, Is.EqualTo(1));
 		}
 
 		[Test, Category("Internal")]

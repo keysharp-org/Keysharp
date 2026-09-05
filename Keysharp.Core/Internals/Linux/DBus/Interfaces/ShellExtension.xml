@@ -1,8 +1,6 @@
-<!-- Direct compositor access remains only for process-owned overlays. Desktop
-     queries, control, capture, pointer, clipboard, and events use
-     libkeysharp-desktop. -->
+<!-- Direct compositor access remains only for process-owned overlays. -->
 <node>
-  <interface name="io.github.keysharp.GnomeShell1">
+  <interface name="io.github.keysharp.ShellExtension1">
     <method name="RegisterHighlightOwner">
       <arg direction="in" type="s" name="ownerKey"/>
       <arg direction="in" type="s" name="busName"/>

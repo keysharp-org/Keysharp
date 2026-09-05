@@ -47,7 +47,7 @@ namespace Keysharp.Internals.Linux
 			SystemError = systemError;
 		}
 
-		private static string BuildMessage(string component, string operation,
+		internal static string BuildMessage(string component, string operation,
 			NativeClientStatus status, uint detail, int systemError, string diagnostic)
 		{
 			if (!string.IsNullOrWhiteSpace(diagnostic))

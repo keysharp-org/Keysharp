@@ -90,11 +90,9 @@ namespace Keysharp.Internals.Window
 		/// <c>A_EventInfo</c> for every event that does not carry a rectangle — is a 64-bit monotonic
 		/// milliseconds-since-boot timestamp on the <c>Environment.TickCount64</c> timebase, reporting when the
 		/// event occurred wherever possible. Windows reconstructs it from the native event time
-		/// (<c>WindowEventBackend.ToMonotonicMs</c>); macOS stamps it at delivery. On X11 it is the X server time
-		/// converted to that base for events that carry one (PropertyNotify → Active/TitleChange/Minimize/Restore/
-		/// Create/Close), else the receipt time (ConfigureNotify/Map/Unmap → Move/Show/Minimize). It never wraps
-		/// (unlike Windows' raw 32-bit dwmsEventTime) and is comparable across backends, but is NOT wall-clock
-		/// time — only meaningful relative to itself.
+		/// (<c>WindowEventBackend.ToMonotonicMs</c>); Linux and macOS stamp it when the managed backend delivers
+		/// the event. It never wraps (unlike Windows' raw 32-bit dwmsEventTime) and is comparable across backends,
+		/// but is not wall-clock time and is only meaningful relative to itself.
 		/// </para>
 		/// </summary>
 		internal readonly record struct Payload(long TimeMs, nint Hwnd, Rectangle? Bounds);
@@ -106,6 +104,10 @@ namespace Keysharp.Internals.Window
 		private volatile WinEventRegistration[][] byType = Empty();
 		private WindowEventMask installedMask = WindowEventMask.None;
 		private volatile bool globalPaused;
+		private volatile bool foregroundTracking;
+		private volatile bool foregroundEvents;
+		private nint foregroundWindowHandle;
+		private long foregroundGeneration;
 
 		protected override ThreadKind CallbackThreadKind => ThreadKind.WinEvent;
 
@@ -113,6 +115,77 @@ namespace Keysharp.Internals.Window
 
 		/// <summary>True while all hooks are globally paused.</summary>
 		internal bool GlobalPaused => globalPaused;
+
+		/// <summary>The last foreground handle observed while the input hook requests tracking.</summary>
+		internal nint ForegroundWindowHandle
+		{
+			get
+			{
+				if (foregroundTracking && !foregroundEvents)
+					try { return WindowQuery.GetForegroundWindowHandle(); }
+					catch { }
+
+				return Volatile.Read(ref foregroundWindowHandle);
+			}
+		}
+
+		/// <summary>
+		/// Adds or removes the input hook's internal demand for foreground events. The input hook calls this on
+		/// its serialized background queue because native backend setup and teardown can block; later changes are
+		/// event-driven.
+		/// </summary>
+		internal void SetForegroundTracking(bool enabled)
+		{
+			long generation;
+
+			lock (gate)
+			{
+				if (disposed || foregroundTracking == enabled)
+					return;
+
+				foregroundTracking = enabled;
+				generation = ++foregroundGeneration;
+
+				if (!enabled)
+					Volatile.Write(ref foregroundWindowHandle, 0);
+
+				try
+				{
+					SyncNativeLocked();
+				}
+				catch (Exception exception)
+				{
+					if (enabled)
+					{
+						foregroundTracking = false;
+						generation = ++foregroundGeneration;
+						Volatile.Write(ref foregroundWindowHandle, 0);
+					}
+
+					Diagnostics.Debug.WriteLine(
+						$"Foreground window tracking could not be {(enabled ? "started" : "stopped")}: {exception.Message}");
+				}
+			}
+
+			if (!enabled)
+				return;
+
+			nint queried;
+
+			try
+			{
+				queried = WindowQuery.GetForegroundWindowHandle();
+			}
+			catch (Exception exception)
+			{
+				Diagnostics.Debug.WriteLine($"Foreground window query failed: {exception.Message}");
+				return;
+			}
+
+			lock (gate)
+				if (!disposed && foregroundTracking && foregroundGeneration == generation)
+					Volatile.Write(ref foregroundWindowHandle, queried);
+		}
 
 		/// <summary>Pauses (1), unpauses (0) or toggles (-1) all hooks; returns the resulting state.</summary>
 		internal bool SetGlobalPause(long newState)
@@ -147,6 +220,12 @@ namespace Keysharp.Internals.Window
 				tracksMembership |= reg.TracksMembership;
 				hasActive |= reg.type == WindowEventType.Active;
 			}
+
+			foregroundEvents = foregroundTracking && !disposed
+				&& (Backend ?? EnsureBackend())?.SupportsEfficientActiveTracking == true;
+
+			if (foregroundEvents)
+				desired |= WindowEventMask.Active | WindowEventMask.Close;
 
 			// Exist/NotExist are membership transitions derived from the lifecycle events, so they need every event
 			// that can move a window into or out of the matching set: appear (Create/Show/Restore), disappear
@@ -259,6 +338,27 @@ namespace Keysharp.Internals.Window
 		{
 			if (disposed)
 				return;
+
+			if (foregroundTracking
+				&& raw.Type is WindowEventType.Active or WindowEventType.Close)
+			{
+				lock (gate)
+				{
+					if (foregroundTracking)
+					{
+						if (raw.Type == WindowEventType.Active)
+						{
+							foregroundGeneration++;
+							Volatile.Write(ref foregroundWindowHandle, raw.Hwnd);
+						}
+						else if (ForegroundWindowHandle == raw.Hwnd)
+						{
+							foregroundGeneration++;
+							Volatile.Write(ref foregroundWindowHandle, 0);
+						}
+					}
+				}
+			}
 
 			// Drive Exist/NotExist membership transitions. Any lifecycle event that can move a window into or out of
 			// the matching set is a trigger: appear (Create/Show/Restore), disappear (Close/Minimize) or re-match
