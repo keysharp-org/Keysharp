@@ -2466,7 +2466,7 @@ namespace Keysharp.Compilation.Syntax
 			"NAME" => "Name", "TITLE" => "Title", "DESCRIPTION" => "Description", "CONFIGURATION" => "Configuration",
 			"COMPANY" => "Company", "PRODUCT" => "Product", "COPYRIGHT" => "Copyright", "TRADEMARK" => "Trademark",
 			"VERSION" => "Version", "ICON" => "Icon", "GUITHEME" => "GuiTheme", "CONSOLEAPP" => "ConsoleApp",
-			"HOOKMUTEXNAME" => "HookMutexName", "FILES" => "Files", _ => null
+			"HOOKMUTEXNAME" => "HookMutexName", "DESKTOPENTRY" => "DesktopEntry", "FILES" => "Files", _ => null
 		};
 
 		private void ApplyAppKey(AppDirective app, string canon, object val)
@@ -2545,6 +2545,7 @@ namespace Keysharp.Compilation.Syntax
 					break;
 				case "ConsoleApp": _manifest.ConsoleApp = AsBool(); break;
 				case "HookMutexName": _manifest.HookMutexName = AsString(); break;
+				case "DesktopEntry": _manifest.DesktopEntry = AsString(); break;
 				case "Files":
 					_manifest.Files.Clear();
 					_manifest.FileSources.Clear();

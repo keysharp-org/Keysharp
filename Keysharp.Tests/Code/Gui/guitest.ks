@@ -3233,7 +3233,10 @@ Tab.UseTab("Shell")
 iconTaskbarGroup := MyGui.AddGroupBox("xc+16 yc+10 w1114", "Window Icon && Taskbar Button (Gui.Icon / Gui.SetIcon / Ks.Taskbar)")
 MyGui.UseGroup(iconTaskbarGroup)
 
-MyGui.AddText("xc+16 yc+22 w348 h44", "Gui.SetIcon gives one window its own icon; TraySetIcon changes the script's, which every window opened after it wears. Watch the title bar, the taskbar button and alt-tab.")
+shellIconHelp := (A_OSType = "LINUX" && StrLower(EnvGet("XDG_SESSION_TYPE")) = "wayland")
+	? "Wayland gets the window icon from the installed .desktop entry; it has no per-window icon protocol, so the Gui.SetIcon buttons below only exercise loading and Gui.Icon copying."
+	: "Gui.SetIcon gives one window its own icon; TraySetIcon changes the script's, which every window opened after it wears. Watch the title bar, the taskbar button and alt-tab."
+MyGui.AddText("xc+16 yc+22 w348 h44", shellIconHelp)
 btnIconFile := MyGui.AddButton("xc+16 y+6 w170 h26", "Icon: monkey.ico")
 btnIconFile.OnEvent("Click", (*) => SetWindowIconFromFile())
 btnIconLarge := MyGui.AddButton("x+8 yp w170 h26", "Icon: monkey.ico w256")
@@ -3432,13 +3435,13 @@ ResetWindowIcon(*) {
 SetTaskbarBadgeFromFile(*) {
 	global gIconAssetPath
 
-	TaskbarApplyBadge(gIconAssetPath, 1, "7 monkeys")
+	TaskbarApplyBadge(gIconAssetPath, 1, Taskbar.HasBadgeIcon ? "7 monkeys" : "7")
 	SetStatus("window_taskbar", "Badge: monkey.ico on " TaskbarTargetName() " - PASS if a small monkey sits in the corner of that taskbar button, or the count 7 where the badge cannot be an icon")
 }
 
 SetTaskbarBadgeFromModule(*) {
-	TaskbarApplyBadge(A_KsCorePath, "Keysharp_s.ico", "12 waiting")
-	SetStatus("window_taskbar", "Badge: the suspend icon on " TaskbarTargetName() " - PASS if the badge changed from the monkey to the Keysharp 'S'")
+	TaskbarApplyBadge(A_KsCorePath, "Keysharp_s.ico", Taskbar.HasBadgeIcon ? "12 waiting" : "12")
+	SetStatus("window_taskbar", "Badge: changed on " TaskbarTargetName() " - PASS if it is now the Keysharp 'S' icon, or the count 12 where the badge cannot be an icon")
 }
 
 ClearTaskbarBadge(*) {

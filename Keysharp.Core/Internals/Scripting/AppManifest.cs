@@ -49,6 +49,8 @@ namespace Keysharp.Internals.Scripting
 		[JsonPropertyName("singleInstance")] public string SingleInstance { get; set; }
 		[JsonPropertyName("consoleApp")] public bool? ConsoleApp { get; set; }
 		[JsonPropertyName("hookMutexName")] public string HookMutexName { get; set; }
+		/// <summary>Linux desktop-file identity used for launcher integration and the Wayland app_id.</summary>
+		[JsonPropertyName("desktopEntry")] public string DesktopEntry { get; set; }
 		/// <summary>Script-relative, '/'-separated paths embedded for FileInstall.</summary>
 		[JsonPropertyName("files")] public List<string> Files { get; set; } = [];
 
@@ -279,7 +281,7 @@ namespace Keysharp.Internals.Scripting
 				("name", Name), ("title", Title), ("description", Description), ("configuration", Configuration),
 				("company", Company), ("product", Product), ("copyright", Copyright), ("trademark", Trademark),
 				("version", Version), ("icon", Icon), ("trayIcon", TrayIcon), ("trayIconResource", TrayIconResource), ("guiTheme", GuiTheme),
-				("singleInstance", SingleInstance), ("hookMutexName", HookMutexName)
+				("singleInstance", SingleInstance), ("hookMutexName", HookMutexName), ("desktopEntry", DesktopEntry)
 			})
 				if (value is { Length: 0 })
 					throw new InvalidDataException($"'{name}' must not be empty");

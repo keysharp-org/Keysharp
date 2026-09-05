@@ -91,6 +91,37 @@ namespace Keysharp.Tests
 			_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => bar.SetProgressState(""));
 		}
 
+		[Test, Category("Gui"), Category("Curated")]
+		public void LinuxDesktopEntryControlsWindowAndTaskbarIdentity()
+		{
+#if LINUX
+			var previous = Environment.GetEnvironmentVariable("DESKTOP_ENTRY");
+
+			try
+			{
+				Environment.SetEnvironmentVariable("DESKTOP_ENTRY", null);
+				Assert.AreEqual("keysharp.desktop", LinuxDesktopIdentity.DesktopEntryId);
+				Assert.AreEqual("keysharp", LinuxDesktopIdentity.ApplicationId);
+				Environment.SetEnvironmentVariable("DESKTOP_ENTRY", "example.product");
+				Assert.AreEqual("example.product.desktop", LinuxDesktopIdentity.DesktopEntryId);
+				Assert.AreEqual("example.product", LinuxDesktopIdentity.ApplicationId);
+				Environment.SetEnvironmentVariable("DESKTOP_ENTRY", "example.product.desktop");
+				Assert.AreEqual("example.product.desktop", LinuxDesktopIdentity.DesktopEntryId);
+				Assert.AreEqual("example.product", LinuxDesktopIdentity.ApplicationId);
+				Assert.AreEqual("declared.product.desktop",
+					LinuxDesktopIdentity.ResolveDesktopEntryId(null, "declared.product"));
+				Assert.AreEqual("environment.product.desktop",
+					LinuxDesktopIdentity.ResolveDesktopEntryId("environment.product", "declared.product"));
+			}
+			finally
+			{
+				Environment.SetEnvironmentVariable("DESKTOP_ENTRY", previous);
+			}
+#else
+			Assert.Ignore("DESKTOP_ENTRY is a Linux application identity.");
+#endif
+		}
+
 		/// <summary>
 		/// The flagship example on the Gui.Icon page: an icon copied from one window to another. It only works
 		/// because the getter hands back an Image the setter accepts, which is the whole reason for that type.

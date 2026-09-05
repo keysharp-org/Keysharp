@@ -13,6 +13,12 @@ foreign window, capture, pointer and keyboard queries use the component librarie
 | `keysharp-desktop` (client ABI 0.8+) | Window queries/actions/events, capture, pointer positioning, display topology, keyboard keymaps and compositor integration |
 | `keysharp-permissions` | Shared source library for identity and durable grants; bundled into the two services |
 
+On GNOME, the desktop extension also consumes the standard Unity
+`LauncherEntry` signal and maps its application-wide count, progress and urgent
+state onto the stock overview dash. The Cinnamon extension maps the same state
+onto the grouped-window-list. Plasma's task manager and compatible third-party
+docks consume the protocol themselves.
+
 System grants persist per user, executable identity and scope. Scripts and DLLs
 share their host executable's identity. Grants for protected executable paths survive
 upgrades; changed user-writable executables require renewed authorization.

@@ -107,6 +107,7 @@ namespace Keysharp.Tests
 			Rejects("#App { Title: -\"text\" }\nx := 1\n", "compile-time constant");
 			Rejects("#App { Title: [1] . \"text\" }\nx := 1\n", "compile-time constant");
 			Rejects("#App { ConsoleApp: \"maybe\" }\nx := 1\n", "must be true or false");
+			Rejects("#App { DesktopEntry: \"\" }\nx := 1\n", "must be a non-empty string");
 			Rejects("#App { Icon: \"missing.png\" }\nx := 1\n", "must be a .ico file");
 			Rejects("#App { Files: \"not-an-array\" }\nx := 1\n", "array of path strings");
 			var rootedFile = Path.GetFullPath(string.Concat(path, "directive-misc.ahk"));
@@ -128,7 +129,7 @@ namespace Keysharp.Tests
 			{
 				"#SingleInstance Ignore\n#ErrorStdOut\n#NoTrayIcon\n#App { Title: \"a\" . \"b\" }\nx := 1\n",
 				"#SingleInstance Force\n#App { Title: \"a\" }\nx := 1\n",
-				"#App { Title: \"first\", Files: [] }\n#App { Title: \"second\", Files: [] }\nx := 1\n",
+				"#App { Title: \"first\", Files: [] }\n#App { Title: \"second\", DesktopEntry: \"example.product\", Files: [] }\nx := 1\n",
 				"#App { Title: \"first\", Title: true . false . -2, Version: \"0.65534.2.3\" }\nx := 1\n",
 				"#App {\n\tTitle: \"multi\",\n\tCompany: \"line\",\n}\nx := 1\n",
 			})
@@ -202,18 +203,21 @@ namespace Keysharp.Tests
 			// concatenation uses AHK's boolean spelling.
 			var lastWinsSource = "#App { Title: \"first\", Files: [\"directive-misc.ahk\"] }\n"
 				+ "#App { Title: \"second\", Files: [] }\n"
-				+ "#App { Title: \"third\", Title: true . false . -2, Version: \"0.65534.2.3\" }\n"
+				+ "#App { Title: \"third\", Title: true . false . -2, Version: \"0.65534.2.3\", DesktopEntry: \"example.product\" }\n"
 				+ "x := 1\n";
 			var (arrLast, codeLast, lastCompilation) = ch.CompileCodeToByteArray(lastWinsSource, "app-last",
 				emitCode: true, compileToFile: true, includeDirOverride: path);
 			Assert.IsNotNull(arrLast, codeLast);
 			Assert.IsEmpty(lastCompilation.Manifest.FileSources);
+			Assert.AreEqual("example.product", lastCompilation.Manifest.DesktopEntry);
 			var lastAsm = Assembly.Load(arrLast);
 			Assert.IsFalse(lastAsm.GetManifestResourceNames().Any(n => n.StartsWith(AppManifest.FileResourcePrefix, StringComparison.Ordinal)));
 			using (var lastManifest = lastAsm.GetManifestResourceStream("Keysharp.App.json"))
 			{
 				var json = new StreamReader(lastManifest).ReadToEnd();
-				Assert.IsTrue(json.Contains("\"title\":\"10-2\"") && json.Contains("\"files\":[]"), json);
+				Assert.IsTrue(json.Contains("\"title\":\"10-2\"")
+					&& json.Contains("\"desktopEntry\":\"example.product\"")
+					&& json.Contains("\"files\":[]"), json);
 				Assert.IsFalse(json.Contains("trayIcon", StringComparison.OrdinalIgnoreCase), json);
 			}
 

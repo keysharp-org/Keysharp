@@ -87,8 +87,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp-only descriptor for assembly metadata, Icon, GuiTheme, ConsoleApp, HookMutexName and Files; multiple blocks merge independently by key in source order, later keys win, and Files: [] clears the list. Asset paths are main-script-relative logical paths and artifact builds embed Files.",
-                     "tested-by":  "directive-asminfo.ahk; directive-misc.ahk; file-fileinstall.ahk; DirectiveTests.AppErrors; DirectiveTests.AppData; FileAndDirTests.FileInstallResources"
+                     "notes":  "Keysharp-only descriptor for assembly metadata, Icon, GuiTheme, ConsoleApp, HookMutexName, Linux DesktopEntry and Files; multiple blocks merge independently by key in source order, later keys win, and Files: [] clears the list. DesktopEntry selects the Linux desktop file, Wayland app_id and Taskbar target unless DESKTOP_ENTRY overrides it. Asset paths are main-script-relative logical paths and artifact builds embed Files.",
+                     "tested-by":  "directive-asminfo.ahk; directive-misc.ahk; file-fileinstall.ahk; DirectiveTests.AppErrors; DirectiveTests.AppData; IconInternals.LinuxDesktopEntryControlsWindowAndTaskbarIdentity; FileAndDirTests.FileInstallResources"
                   },
                   {
                      "category":  "Environment/System",
@@ -10233,8 +10233,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, reaches only docks implementing it, and decorates the entry named by DESKTOP_ENTRY; macOS badges the dock tile with text and draws progress on the tile, also application-wide. Linux and macOS are compile-checked only.",
-                     "tested-by":  "IconInternals.cs"
+                     "notes":  "Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, and decorates the desktop entry selected by DESKTOP_ENTRY, then #App DesktopEntry, then Keysharp. Plasma and implementing docks consume it natively; the keysharp-desktop extension maps it onto GNOME's stock overview dash and Cinnamon's grouped-window-list. macOS badges the dock tile with text and draws progress on the tile, also application-wide. Cinnamon 6.6.9 is runtime-verified; GNOME, Plasma and macOS are compile-checked or source-verified only.",
+                     "tested-by":  "IconInternals.cs; Gui/guitest.ks"
                  },
                  {
                      "category":  "Interop/Memory",
