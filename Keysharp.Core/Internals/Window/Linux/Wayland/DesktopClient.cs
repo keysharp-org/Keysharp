@@ -24,6 +24,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	{
 		private const int RequestTimeoutMs = 30_000;
 		private const int AuthorizationTimeoutMs = 125_000;
+		private const int AuthorizationCheckTimeoutMs = 2_000;
 		private const int ProbeTimeoutMs = 2_000;
 		private const int CapabilityCacheMs = 1_000;
 		private const int EventPollTimeoutMs = 1_000;
@@ -466,7 +467,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				try
 				{
 					return TrySettleAuthorization(requestedScopes, false, forcePrompt,
-						out settled) ? settled : AcquireAuthorization(requestedScopes, false);
+						out settled) ? settled : CheckAuthorization(requestedScopes);
 				}
 				finally
 				{
@@ -480,7 +481,28 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (TrySettleAuthorization(requestedScopes, prompt, forcePrompt, out settled))
 					return settled;
 
-				return AcquireAuthorization(requestedScopes, prompt);
+				return AcquireAuthorization(requestedScopes);
+			}
+		}
+
+		private static PermissionResult CheckAuthorization(
+			LinuxPermissionScope requestedScopes)
+		{
+			try
+			{
+				// Status queries do not need a lease and should not queue behind its blocking revocation poll.
+				using var connection = DesktopConnection.Connect(ConnectionRole.Rpc,
+					AuthorizationCheckTimeoutMs);
+				var result = connection.Authorize(requestedScopes,
+					AuthorizationMode.Check, out _);
+				return result.IsSuccess
+					? new PermissionResult(PermissionStatus.Granted)
+					: PermissionFailure(result);
+			}
+			catch (Exception exception)
+			{
+				DebugLine($"keysharp-desktop authorization check failed: {exception.Message}");
+				return AuthorizationUnavailable(exception);
 			}
 		}
 
@@ -516,7 +538,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		private static PermissionResult AcquireAuthorization(
-			LinuxPermissionScope requestedScopes, bool prompt)
+			LinuxPermissionScope requestedScopes)
 		{
 			LinuxPermissionScope missing;
 
@@ -544,8 +566,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					created = true;
 				}
 
-				var result = lease.Authorize(missing, prompt
-					? AuthorizationMode.Request : AuthorizationMode.Check,
+				var result = lease.Authorize(missing, AuthorizationMode.Request,
 					out var granted);
 
 				if (!result.IsSuccess)
@@ -560,7 +581,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 								authorizationLease = null;
 					}
 
-					if (prompt && result.Status == NativeClientStatus.Denied)
+					if (result.Status == NativeClientStatus.Denied)
 					{
 						lock (authorizationSync)
 							declinedScopes |= missing;
@@ -589,13 +610,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					lease?.Dispose();
 
 				DebugLine($"keysharp-desktop authorization failed: {exception.Message}");
-				// A missing library reports through the loader's own multi-line probe list, which says nothing a
-				// user can act on; name the component and how to install it instead.
-				return new PermissionResult(PermissionStatus.Unsupported,
-					exception is DllNotFoundException
-					? "keysharp-desktop is not installed. Install it with keysharp-linux-setup.sh to use window, capture and clipboard operations."
-					: $"keysharp-desktop is unavailable. {exception.Message}");
+				return AuthorizationUnavailable(exception);
 			}
+		}
+
+		private static PermissionResult AuthorizationUnavailable(Exception exception)
+		{
+			// A missing library reports through the loader's own multi-line probe list, which says nothing a
+			// user can act on; name the component and how to install it instead.
+			return new PermissionResult(PermissionStatus.Unsupported,
+				exception is DllNotFoundException
+				? "keysharp-desktop is not installed. Install it with keysharp-linux-setup.sh to use window, capture and clipboard operations."
+				: $"keysharp-desktop is unavailable. {exception.Message}");
 		}
 
 		private static LinuxPermissionScope GrantedScopesLocked()
@@ -625,7 +651,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static string Invariant(ulong value)
 			=> value.ToString(CultureInfo.InvariantCulture);
 
-		[System.Diagnostics.Conditional("DEBUG")]
 		[System.Diagnostics.Conditional("DEBUG")]
 		private static void DebugLine(string message)
 			=> Diagnostics.Debug.WriteLine(message);
@@ -831,7 +856,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					if (result.IsSuccess)
 						return true;
 
-					DebugLine($"keysharp-desktop operation failed: {result.Message}");
+					DebugLine($"keysharp-desktop {result.Operation} failed ({result.Status}): {result.Message}");
 
 					// A lost reply can follow a completed mutation. Reconnect on the next call without replaying it.
 					if (result.Status == NativeClientStatus.Revoked || result.ShouldReconnect)

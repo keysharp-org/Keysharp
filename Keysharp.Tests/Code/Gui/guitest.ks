@@ -4638,8 +4638,9 @@ ToggleBlockMButton() {
 
 ; ── Automated foreign-window suite ───────────────────────────────────────────────────────────────────────
 
-WindowEnvironmentText() {
-	caps := RequestCapabilities()
+WindowEnvironmentText(caps?) {
+	if !IsSet(caps)
+		caps := RequestCapabilities()
 #if WINDOWS
 	platform := "Windows"
 #elif OSX
@@ -4685,7 +4686,7 @@ RunWindowSuite(mode := "full") {
 		caps := mode = "queries"
 			? RequestCapabilities("WindowMonitoring", "ScreenCapture")
 			: RequestCapabilities("WindowMonitoring", "WindowControl", "ScreenCapture")
-		gWindowEnvironment.Value := WindowEnvironmentText()
+		gWindowEnvironment.Value := WindowEnvironmentText(caps)
 		monitorReady := CapabilityReady(caps.WindowMonitoring)
 		controlReady := CapabilityReady(caps.WindowControl)
 		captureReady := CapabilityReady(caps.ScreenCapture)

@@ -469,6 +469,11 @@ namespace Keysharp.Internals.Window
 			if (hwnd == 0)
 				return false;
 
+			return EvaluateMatch(hwnd, () => MatchesCore(reg, hwnd));
+		}
+
+		private static bool MatchesCore(WinEventRegistration reg, nint hwnd)
+		{
 			if (reg.criteria == null)
 			{
 				// Match-any: respect the registration-time DetectHiddenWindows setting so the callback isn't
@@ -492,6 +497,11 @@ namespace Keysharp.Internals.Window
 			if (hwnd == 0)
 				return false;
 
+			return EvaluateMatch(hwnd, () => CurrentlyMatchesCore(reg, hwnd));
+		}
+
+		private static bool CurrentlyMatchesCore(WinEventRegistration reg, nint hwnd)
+		{
 			if (reg.criteria == null)
 			{
 				if (!WindowQuery.IsWindow(hwnd))
@@ -507,6 +517,14 @@ namespace Keysharp.Internals.Window
 			// destruction naturally fails the match (the criteria path also applies the captured DetectHiddenWindows).
 			var win = WindowQuery.CreateWindow(hwnd);
 			return win != null && win.IsSpecified && win.Equals(reg.criteria, reg.inheritedOptions);
+		}
+
+		private static bool EvaluateMatch(nint hwnd, Func<bool> match)
+		{
+			var control = Control.FromHandle(hwnd);
+
+			// Foreign-window queries stay on the event dispatcher. Eto controls have UI-thread affinity.
+			return control == null ? match() : control.CheckedInvoke(match, false);
 		}
 
 		/// <summary>Re-evaluates a window's membership against every Exist/NotExist subscription and fires the
