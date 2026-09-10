@@ -192,20 +192,6 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Calculates the MD5 hash of a value.
-			/// </summary>
-			/// <param name="this">The class object, supplied by the script-static call.</param>
-			/// <param name="value">The value to hash, as <see cref="Hash"/> takes it.</param>
-			/// <param name="encoding">The encoding a string <paramref name="value"/> is taken in, named as for
-			/// <see cref="A_FileEncoding"/>. Defaults to UTF-8.</param>
-			/// <returns>A 32-character hexadecimal number.</returns>
-			/// <exception cref="ValueError">Thrown if the encoding cannot be resolved.</exception>
-			/// <exception cref="TypeError">Thrown if the value holds no bytes.</exception>
-			/// <remarks>MD5 is unsuitable for anything that must resist a deliberate collision.</remarks>
-			[Static]
-			public static object MD5(object @this, object value, object encoding = null) => Hash(@this, value, "MD5", encoding);
-
-			/// <summary>
 			/// Derives key material from a password, by iterating a hash over it enough times to make guessing
 			/// the password expensive.
 			/// </summary>
@@ -318,65 +304,10 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Calculates the SHA1 hash of a value.
-			/// </summary>
-			/// <param name="this">The class object, supplied by the script-static call.</param>
-			/// <param name="value">The value to hash, as <see cref="Hash"/> takes it.</param>
-			/// <param name="encoding">The encoding a string <paramref name="value"/> is taken in, named as for
-			/// <see cref="A_FileEncoding"/>. Defaults to UTF-8.</param>
-			/// <returns>A 40-character hexadecimal number.</returns>
-			/// <exception cref="ValueError">Thrown if the encoding cannot be resolved.</exception>
-			/// <exception cref="TypeError">Thrown if the value holds no bytes.</exception>
-			/// <remarks>SHA1 is unsuitable for anything that must resist a deliberate collision.</remarks>
-			[Static]
-			public static object SHA1(object @this, object value, object encoding = null) => Hash(@this, value, "SHA1", encoding);
-
-			/// <summary>
-			/// Calculates the SHA256 hash of a value.
-			/// </summary>
-			/// <param name="this">The class object, supplied by the script-static call.</param>
-			/// <param name="value">The value to hash, as <see cref="Hash"/> takes it.</param>
-			/// <param name="encoding">The encoding a string <paramref name="value"/> is taken in, named as for
-			/// <see cref="A_FileEncoding"/>. Defaults to UTF-8.</param>
-			/// <returns>A 64-character hexadecimal number.</returns>
-			/// <exception cref="ValueError">Thrown if the encoding cannot be resolved.</exception>
-			/// <exception cref="TypeError">Thrown if the value holds no bytes.</exception>
-			[Static]
-			public static object SHA256(object @this, object value, object encoding = null) => Hash(@this, value, "SHA256", encoding);
-
-			/// <summary>
-			/// Calculates the SHA384 hash of a value.
-			/// </summary>
-			/// <param name="this">The class object, supplied by the script-static call.</param>
-			/// <param name="value">The value to hash, as <see cref="Hash"/> takes it.</param>
-			/// <param name="encoding">The encoding a string <paramref name="value"/> is taken in, named as for
-			/// <see cref="A_FileEncoding"/>. Defaults to UTF-8.</param>
-			/// <returns>A 96-character hexadecimal number.</returns>
-			/// <exception cref="ValueError">Thrown if the encoding cannot be resolved.</exception>
-			/// <exception cref="TypeError">Thrown if the value holds no bytes.</exception>
-			[Static]
-			public static object SHA384(object @this, object value, object encoding = null) => Hash(@this, value, "SHA384", encoding);
-
-			/// <summary>
-			/// Calculates the SHA512 hash of a value.
-			/// </summary>
-			/// <param name="this">The class object, supplied by the script-static call.</param>
-			/// <param name="value">The value to hash, as <see cref="Hash"/> takes it.</param>
-			/// <param name="encoding">The encoding a string <paramref name="value"/> is taken in, named as for
-			/// <see cref="A_FileEncoding"/>. Defaults to UTF-8.</param>
-			/// <returns>A 128-character hexadecimal number.</returns>
-			/// <exception cref="ValueError">Thrown if the encoding cannot be resolved.</exception>
-			/// <exception cref="TypeError">Thrown if the value holds no bytes.</exception>
-			[Static]
-			public static object SHA512(object @this, object value, object encoding = null) => Hash(@this, value, "SHA512", encoding);
-
-			/// <summary>
 			/// Hash, HMAC and derivation share name resolution and derive their accepted choices from this table.
 			/// </summary>
 			private static readonly (string Name, Func<HashAlgorithm> Create, HashAlgorithmName? Derivation, Func<byte[], HMAC> Authenticate)[] algorithms =
 			[
-				// Every factory is qualified because this class has a method of each of these names, which hides
-				// the type name here.
 				// MD5 hashes but does not derive: .NET's PBKDF2 rejects it on every platform, measured on Windows
 				// and Linux alike, so offering it would only produce an error at the point of use.
 				("MD5", System.Security.Cryptography.MD5.Create, null, null),

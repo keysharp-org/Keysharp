@@ -29,19 +29,25 @@ namespace Keysharp.Internals.Threading
 
 		/// <summary>
 		/// Whether timers may run in the current pseudo-thread. This is the runtime's own state, so the
-		/// scheduler and Flow read it here; the script-facing <c>Ks.A_AllowTimers</c> wraps this property.
+		/// scheduler and Flow read it here; the script-facing <c>A_Thread.AllowTimers</c> wraps this property.
 		/// </summary>
 		internal bool AllowTimers
 		{
 			get => CurrentThread?.configData.allowTimers ?? true;
-			set
-			{
-				if (CurrentThread is { } tv)
-					tv.configData.allowTimers = value;
+			set => SetAllowTimers(CurrentThread, value);
+		}
 
-				if (value)
-					script.CurrentSchedulerIfCreated?.WakeForTimerCheck();
-			}
+		/// <summary>
+		/// Sets whether timers may run in one pseudo-thread, waking the scheduler when they again may — an
+		/// overdue timer is otherwise waited out rather than run at the moment it becomes allowed.
+		/// </summary>
+		internal void SetAllowTimers(ThreadVariables tv, bool value)
+		{
+			if (tv != null)
+				tv.configData.allowTimers = value;
+
+			if (value)
+				script.CurrentSchedulerIfCreated?.WakeForTimerCheck();
 		}
 
 		internal void SetPriority(ThreadVariables target, long value)

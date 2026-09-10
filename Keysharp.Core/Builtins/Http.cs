@@ -534,7 +534,7 @@ namespace Keysharp.Builtins
 					if (buffer != null)
 						ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
 
-					// A Response is the only thing that keeps the message, for its headers and its ToClr.
+					// A Response is the only thing that keeps the message, for its headers and its Clr.Wrap view.
 					if (!kept)
 						message?.Dispose();
 

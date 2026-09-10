@@ -554,8 +554,8 @@ namespace Keysharp.Builtins
 			var h = obj1;
 			var i = obj2.Al(1);
 			e = e.ToLowerInvariant();
-			if (e is not ("close" or "contextmenu" or "dropfiles" or "dpichange" or "dpichanged" or "escape" or "size"))
-				return Errors.ValueErrorOccurred($"Unknown EventName \"{Errors.Describe(obj0)}\". Expected Close, ContextMenu, DropFiles, DpiChange, DpiChanged, Escape or Size.", obj0);
+			if (e is not ("close" or "contextmenu" or "dropfiles" or "dpichanged" or "escape" or "size"))
+				return Errors.ValueErrorOccurred($"Unknown EventName \"{Errors.Describe(obj0)}\". Expected Close, ContextMenu, DropFiles, DpiChanged, Escape or Size.", obj0);
 
 			var del = ResolveHandler(h, eventObj);
 
@@ -591,7 +591,7 @@ namespace Keysharp.Builtins
 
 				dropFilesHandlers.ModifyEventHandlers(del, i);
 			}
-			else if (e is "dpichange" or "dpichanged")
+			else if (e is "dpichanged")
 			{
 				if (dpiChangeHandlers == null)
 					dpiChangeHandlers = new();

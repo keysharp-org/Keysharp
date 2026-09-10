@@ -2,7 +2,7 @@
 #ErrorStdOut
 #Warn All, StdOut
 #Include <assert>
-#import KS { Font }
+#import KS { Font, A_OSType }
 
 ; The script-visible RichEdit surface. Everything checked here is synchronous and needs no window on screen,
 ; so the control is added but never shown: what matters is that the members read and write the same widget

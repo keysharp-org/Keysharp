@@ -59,7 +59,7 @@ namespace Keysharp.Tests
 #else
 			const string expectedOsType = "LINUX";
 #endif
-			Assert.AreEqual(expectedOsType, Accessors.A_OSType);
+			Assert.AreEqual(expectedOsType, Ks.A_OSType);
 			// A_ProcessArch must name the running process, not the OS, since it is what script code branches
 			// on when a DllCall/ComCall signature is architecture-specific.
 			Assert.AreEqual(Ks.ArchName(RuntimeInformation.ProcessArchitecture), Ks.A_ProcessArch);

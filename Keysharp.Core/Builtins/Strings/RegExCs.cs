@@ -28,7 +28,7 @@ namespace Keysharp.Builtins
 			/// Regardless of the value of startingPos, the return value is always relative to the first character of haystack.<br/>
 			/// For example, the position of "abc" in "123abc789" is always 4.
 			/// </param>
-			/// <returns>The <see cref="RegExMatchInfoCs"/> object which contains the matches, if any.</returns>
+			/// <returns>The <see cref="RegExMatchInfo"/> object which contains the matches, if any.</returns>
 			/// <exception cref="Error">An <see cref="Error"/> exception is thrown on failure.</exception>
 			public static long RegExMatchCs(object haystack, object needle, [ByRef] object outputVar = null, object startingPos = null)
 			{
@@ -75,9 +75,10 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					var res = new RegExMatchInfoCs(exp.Match(input, index));
-					Refs.SetValue(outputVar, res);
-					return res.Pos();
+					var match = exp.Match(input, index);
+					long pos = match.Success ? match.Index + 1 : 0;
+					Refs.SetValue(outputVar, pos > 0 ? new RegExMatchInfo(match) : DefaultObject);
+					return pos;
 				}
 				catch (Exception ex)
 				{

@@ -154,6 +154,16 @@ Any change to the **script-visible API surface** must be accompanied by a docume
 
 If KeysharpDocs is not present alongside this repo, still do steps 1–3 and note in the change description that the docs site needs the matching update.
 
+## API design principles
+
+These decide whether a script-visible API exists at all and what shape it takes; the conventions below decide how it is spelled. Apply these first — an API that fails one of them is not fixed by renaming it.
+
+- **Follow AutoHotkey.** Match AHK's name, shape and callback contract unless there is a clear reason a different approach is better. AHK precedent settles ties, and a Keysharp spelling that differs from AHK only by taste is a defect.
+- **Automation is the focus.** Input and window automation are the core, with image capture close behind. Game automation exercises those together, under timing and throughput that matter, and is a market worth serving. Surface serving those domains carries more weight in a review than general-purpose utility surface.
+- **One canonical way.** AHK offers a single way to do a thing and Keysharp does the same. Two functions, methods or properties covering similar jobs are a defect rather than a convenience, so removing surface is an ordinary outcome of a review and is cheapest before a release freezes the API.
+- **A builtin has to earn the engine.** It qualifies as a language feature a script cannot implement for itself, or as something hard to implement correctly — usually cross-platform work, as with `Image` and `Overlay`. It also has to work from a normal Keysharp install: a dependency the install itself brings — including a distro package the Linux packaging declares, as `Gui.WebView` does with `libwebkit2gtk` — is fine, while one the user has to go and fetch is not. OCR lives in `Keysharp/Scripts/OCR.ks` because it needs Tesseract, and Interception driver support stays out of the engine because it needs a user-installed kernel driver. Anything failing this test belongs outside it, as a script library or a separately distributed plugin.
+- **One vocabulary.** Naming and design stay consistent across the whole project, so a name learned on one class predicts the name on another.
+
 ## Conventions
 
 - Built-in AHK functions are `public static` methods in `Keysharp.Core/Builtins/` classes.

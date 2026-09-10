@@ -602,12 +602,6 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static bool A_IsPaused => ThreadAccessors.A_IsPaused;
 
-
-		/// <summary>
-		/// Only for compatibility with AHK, C# programs are always unicode.
-		/// </summary>
-		public static bool A_IsUnicode => true;
-
 		/// <summary>
 		/// Returns either 0, 1, 2 or 3:
 		///     0: No keyboard hook is installed.
@@ -784,11 +778,6 @@ namespace Keysharp.Builtins
 				return loop != null && loop.file is string s ? Loops.GetExactPath(s) : "";//This gives exact case.
 			}
 		}
-
-		/// <summary>
-		/// This is just a synonym for A_LoopFileFullPath.
-		/// </summary>
-		public static string A_LoopFileLongPath => A_LoopFileFullPath;
 
 		/// <summary>
 		/// The name of the file or folder currently retrieved (without the path).
@@ -1134,19 +1123,6 @@ namespace Keysharp.Builtins
 		/// The current Coordinated Universal Time (UTC) in YYYYMMDDHH24MISS format.
 		/// </summary>
 		public static string A_NowUTC => Conversions.ToYYYYMMDDHH24MISS(DateTime.UtcNow);
-
-		/// <summary>
-		/// Keysharp's current platform name, matching the corresponding script preprocessor symbol.
-		/// </summary>
-#if WINDOWS
-		public static string A_OSType => "WINDOWS";
-#elif OSX
-		public static string A_OSType => "OSX";
-#elif LINUX
-		public static string A_OSType => "LINUX";
-#else
-		public static string A_OSType => "UNKNOWN";
-#endif
 
 		/// <summary>
 		/// The Operating System version, e.g. WIN_VISTA, WIN_2003, WIN_XP, WIN_2000, WIN_NT4, WIN_95, WIN_98, WIN_ME.
@@ -1833,19 +1809,6 @@ namespace Keysharp.Builtins
 		public static string A_NewLine => Environment.NewLine;
 
 		/// <summary>
-		/// The running thread's priority; assigning to it is equivalent to <c>Thread "Priority", n</c>.
-		/// Every thread starts at 0. A thread is given a different priority only when it is launched
-		/// (SetTimer, Hotkey, a hotstring definition, Menu.Add) or by the thread itself through this, so
-		/// there is no process-wide default to change — writing this in the auto-execute section sets the
-		/// priority of that thread alone, exactly as AutoHotkey specifies.
-		/// </summary>
-		public static object A_Priority
-		{
-			get => ThreadAccessors.A_Priority;
-			set => ThreadAccessors.A_Priority = value.Al();
-		}
-
-		/// <summary>
 		/// Gets or sets the current thread's message-check interval in milliseconds.
 		/// </summary>
 		public static object A_PeekFrequency
@@ -1889,6 +1852,20 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static string A_OSArch => ArchName(RuntimeInformation.OSArchitecture);
 
+		/// <summary>
+		/// Keysharp's current platform name, matching the corresponding script preprocessor symbol.<br/>
+		/// Import with <c>#import Ks { A_OSType }</c>.
+		/// </summary>
+#if WINDOWS
+		public static string A_OSType => "WINDOWS";
+#elif OSX
+		public static string A_OSType => "OSX";
+#elif LINUX
+		public static string A_OSType => "LINUX";
+#else
+		public static string A_OSType => "UNKNOWN";
+#endif
+
 		// Kept in Keysharp's own casing rather than Architecture.ToString(), so the value is directly
 		// comparable to the preprocessor symbol and to A_OSType's uppercase style.
 		internal static string ArchName(Architecture arch) => arch switch
@@ -1910,30 +1887,6 @@ namespace Keysharp.Builtins
 			{
 				var ver = typeof(Accessors).Assembly.GetCustomAttribute<AssemblyFileVersionAttribute>();
 				return ver != null ? ver.Version : "";
-			}
-		}
-		/// <summary>
-		/// Whether timers are allowed to operate in the current thread. Default: true.
-		/// </summary>
-		public static object A_AllowTimers
-		{
-			get
-			{
-				var script = Script.TheScript;
-				return script?.Threads?.AllowTimers ?? true;
-			}
-
-			set
-			{
-				var script = Script.TheScript;
-
-				if (script == null)
-					return;
-
-				var val = Options.OnOff(value);
-
-				if (val.HasValue)
-					script.Threads.AllowTimers = val.Value;
 			}
 		}
 
@@ -2123,11 +2076,6 @@ namespace Keysharp.Builtins
 			get => Script.TheScript.HotstringManager.hsSuspendExempt;
 			set => Script.TheScript.HotstringManager.hsSuspendExempt = ForceBool(value);
 		}
-
-		/// <summary>
-		/// The value specified by #UseHook.
-		/// </summary>
-		public static bool A_UseHook => Script.TheScript.ForceKeybdHook;
 
 		/// <summary>
 		/// Whether #WinActivateForce was specified.

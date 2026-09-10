@@ -1300,16 +1300,6 @@
                      "notes":  "The running application as a class: Name, Title, Description, Configuration, Company, Product, Copyright, Trademark and Version report the assembly metadata the matching #App key sets, CommandLine reports the process command line, and ExitReason/ExitCode report an exit in progress to code that is not an OnExit callback. Every member is read-only, and an undeclared key reads as an empty string in both compatibility modes. Replaces the removed A_Assembly*, A_CommandLine and A_HasExited variables."
                  },
                  {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_AllowTimers",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Gets/sets whether timers are allowed to run."
-                 },
-                 {
                      "category":  "Environment/System",
                      "feature":  "A_AppData",
                      "syntax":  "",
@@ -1912,17 +1902,6 @@
                  },
                  {
                      "category":  "Environment/System",
-                     "feature":  "A_IsUnicode",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Whether the program uses unicode strings. Always returns true because C# programs are always unicode.",
-                     "tested-by":  "props-script-properties.ahk"
-                 },
-                 {
-                     "category":  "Environment/System",
                      "feature":  "A_KeybdHookInstalled",
                      "syntax":  "",
                      "windows":  "full",
@@ -1992,6 +1971,17 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Gets the Keysharp runtime version."
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "A_Thread.AllowTimers",
+                     "syntax":  "A_Thread.AllowTimers := false",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Whether timers may run in this thread -- the object form of `Thread \"NoTimers\"`, which sets the inverse. Accepts On/Off as well as a Boolean. Default: true.",
+                     "tested-by":  "ThreadTests.NoTimersLocal"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -2128,16 +2118,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "This is different than A_LoopFilePath in the following ways: 1) It always contains the absolute/complete path of the file even if FilePattern contains a relative path; 2) Any short (8.3) folder names in FilePattern itself are converted to their long names; 3) Characters in FilePattern are converted to uppercase or lowercase to match the case stored in the file system. This is useful for converting file names -- such as those passed into a script as command line parameters -- to their exact path names as shown by Explorer."
-                 },
-                 {
-                     "category":  "Environment/System",
-                     "feature":  "A_LoopFileLongPath",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "A synonym for A_LoopFileFullPath."
                  },
                  {
                      "category":  "Environment/System",
@@ -2944,17 +2924,6 @@
                      "tested-by":  "props-script-settings.ahk"
                  },
                  {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_UseHook",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Gets/sets whether keyboard hook usage is forced.",
-                     "tested-by":  "directive-misc.ahk"
-                 },
-                 {
                      "category":  "Environment/System",
                      "feature":  "A_UserName",
                      "syntax":  "",
@@ -3307,28 +3276,6 @@
                  },
                  {
                      "category":  "Collections",
-                     "feature":  "Array.MaxIndex()",
-                     "syntax":  "arr.MaxIndex()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns the largest integer contained in the array. Returns empty string if no integers are present.",
-                     "tested-by":  "collections-array.ahk"
-                 },
-                 {
-                     "category":  "Collections",
-                     "feature":  "Array.MinIndex()",
-                     "syntax":  "arr.MinIndex()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns the smallest integer contained in the array. Returns empty string if no integers are present.",
-                     "tested-by":  "collections-array.ahk"
-                 },
-                 {
-                     "category":  "Collections",
                      "feature":  "Array.Pop()",
                      "syntax":  "arr.Pop()",
                      "windows":  "full",
@@ -3357,7 +3304,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp-specific Array method. Removes the first occurrence of the value and returns true if one was found and removed, else false. Omitting the value removes the first element which has no value.",
+                     "notes":  "Keysharp-specific Array method. Removes the first occurrence of the value and returns true if one was found and removed, else false. Omitting the value removes the first element which has no value. What counts as a match is IndexOf's rule, which Contains uses too.",
                      "tested-by":  "collections-array.ahk"
                  },
                  {
@@ -3772,6 +3719,17 @@
                      "macos":  "full",
                      "notes":  "Creates the platform-independent CLR interop facade for loading and invoking .NET types.",
                      "tested-by":  "external-clr.ahk"
+                 },
+                 {
+                     "category":  "Interop/Memory",
+                     "feature":  "Clr.Wrap()",
+                     "syntax":  "native := Clr.Wrap(value)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "A value as an ordinary Ks.Clr object, so its own full CLR surface is reachable late-bound -- this is how an Array reaches its IList members and a Map its IDictionary ones. The result is always a view over the value itself; to reach the .NET object a builtin is a facade over, call that type's own ToClr(), which exists only on the types which have one. Wrapping something already wrapped is the identity.",
+                     "tested-by":  "directive-csharp-clr.ahk"
                  },
                  {
                      "category":  "Interop/Memory",
@@ -4540,17 +4498,6 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "Crypt.MD5()",
-                     "syntax":  "Digest := Crypt.MD5(Value [, Encoding := \"UTF-8\"])",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Computes the MD5 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text.",
-                     "tested-by":  "crypt-class.ahk"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
                      "feature":  "Crypt.PBKDF2()",
                      "syntax":  "Key := Crypt.PBKDF2(Password, Salt [, Iterations := 600000, Length := 32, Algorithm := \"SHA256\", Encoding := \"UTF-8\"])",
                      "windows":  "full",
@@ -4580,50 +4527,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Generates a cryptographically secure random number. Returns an integer unless either bound is a float.",
-                     "tested-by":  "crypt-class.ahk"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "Crypt.SHA1()",
-                     "syntax":  "Digest := Crypt.SHA1(Value [, Encoding := \"UTF-8\"])",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Computes the SHA-1 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text.",
-                     "tested-by":  "crypt-class.ahk"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "Crypt.SHA256()",
-                     "syntax":  "Digest := Crypt.SHA256(Value [, Encoding := \"UTF-8\"])",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Computes the SHA-256 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text.",
-                     "tested-by":  "crypt-class.ahk"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "Crypt.SHA384()",
-                     "syntax":  "Digest := Crypt.SHA384(Value [, Encoding := \"UTF-8\"])",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Computes the SHA-384 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text.",
-                     "tested-by":  "crypt-class.ahk"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "Crypt.SHA512()",
-                     "syntax":  "Digest := Crypt.SHA512(Value [, Encoding := \"UTF-8\"])",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Computes the SHA-512 hash of the input. A string is taken as its UTF-8 bytes, so the digest matches the one other tools print for the same text.",
                      "tested-by":  "crypt-class.ahk"
                  },
                  {
@@ -5873,16 +5776,6 @@
                  },
                  {
                      "category":  "Windowing/GUI",
-                     "feature":  "Gui.ToClr()",
-                     "syntax":  "g.ToClr()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The backing toolkit window as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the Gui's own state and event wiring."
-                 },
-                 {
-                     "category":  "Windowing/GUI",
                      "feature":  "Gui.__Enum()",
                      "syntax":  "",
                      "windows":  "full",
@@ -5910,6 +5803,16 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Constructs a new GUI window object."
+                 },
+                 {
+                     "category":  "GUI",
+                     "feature":  "Gui.ToClr()",
+                     "syntax":  "g.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The backing toolkit window as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the Gui's own state and event wiring."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -5994,6 +5897,16 @@
                      "notes":  "Gets or sets whether the control is enabled."
                  },
                  {
+                     "category":  "GUI",
+                     "feature":  "Gui.Control.ToClr()",
+                     "syntax":  "ctrl.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The backing toolkit control as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the control's own state and event wiring."
+                 },
+                 {
                      "category":  "Windowing/GUI",
                      "feature":  "Gui.Control.Focus()",
                      "syntax":  "",
@@ -6002,16 +5915,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Sets keyboard focus to the control."
-                 },
-                 {
-                     "category":  "Windowing/GUI",
-                     "feature":  "Gui.Control.ToClr()",
-                     "syntax":  "ctrl.ToClr()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The backing toolkit control as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the control's own state and event wiring."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6725,6 +6628,17 @@
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
+                     "category":  "Image",
+                     "feature":  "Image.ToClr()",
+                     "syntax":  "bmp := img.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The current pixels as a Ks.Clr object over the underlying toolkit bitmap, with pending work materialized first. The reference is to the live surface, so it goes stale once the image is next transformed or disposed.",
+                     "tested-by":  "image.ahk"
+                 },
+                 {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Image vector drawing",
                      "syntax":  "Path := Image.Path([FillRule]); Image.FillPath(Path [, ColorOrBrush]); Image.DrawPath(Path [, ColorOrBrush, Thickness])",
@@ -7361,17 +7275,6 @@
                      "tested-by":  "misc-is.ahk"
                  },
                  {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "Join()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Joins arguments into a string using a separator.",
-                     "tested-by":  "assign-multiline.ahk"
-                 },
-                 {
                      "category":  "Automation",
                      "feature":  "Keyboard/Mouse send (synthetic input)",
                      "syntax":  "",
@@ -7453,6 +7356,16 @@
                      "macos":  "full",
                      "notes":  "Adds a row to a ListView control.",
                      "tested-by":  "Gui/guitest.ks"
+                 },
+                 {
+                     "category":  "Windowing/GUI",
+                     "feature":  "ListView.ClearColors()",
+                     "syntax":  "LV.ClearColors()",
+                     "windows":  "full",
+                     "linux_x11":  "unknown",
+                     "linux_wayland":  "unknown",
+                     "macos":  "unknown",
+                     "notes":  "Clears row and cell overrides and returns the control. Successful row/column insertion or deletion and sorting also clear all colors; unsorted Add and Modify retain them. Windows native properties verified without a visible window; Linux and macOS unverified."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7548,6 +7461,16 @@
                  },
                  {
                      "category":  "Windowing/GUI",
+                     "feature":  "ListView.SetCellColor()",
+                     "syntax":  "LV.SetCellColor(Row, Column [, TextColor, BackColor])",
+                     "windows":  "full",
+                     "linux_x11":  "unknown",
+                     "linux_wayland":  "unknown",
+                     "macos":  "unknown",
+                     "notes":  "Sets a cell foreground and background using GUI color names, hexadecimal strings or RGB integers. Omitted, empty or Default components inherit the row then control. Requires existing 1-based indices; returns the control. Windows native properties verified; Linux and macOS unverified."
+                 },
+                 {
+                     "category":  "Windowing/GUI",
                      "feature":  "ListView.SetImageList()",
                      "syntax":  "",
                      "windows":  "full",
@@ -7555,6 +7478,16 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Assigns an image list for ListView icons."
+                 },
+                 {
+                     "category":  "Windowing/GUI",
+                     "feature":  "ListView.SetRowColor()",
+                     "syntax":  "LV.SetRowColor(Row [, TextColor, BackColor])",
+                     "windows":  "full",
+                     "linux_x11":  "unknown",
+                     "linux_wayland":  "unknown",
+                     "macos":  "unknown",
+                     "notes":  "Sets a row foreground and background using GUI colors. Omitted, empty or Default components inherit the control; cell overrides take precedence. Requires an existing 1-based row; returns the control. Structural edits and sorting clear assignments. Windows native properties verified; Linux and macOS unverified."
                  },
                  {
                      "category":  "Core Language",
@@ -7598,17 +7531,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Work that finishes later; every CLR call returning a .NET Task hands one back. Status is the canonical one-read state (Pending/Succeeded/Failed/Canceled) with IsPending/IsSucceeded/IsFailed/IsCanceled as single-question predicates, Result is a non-blocking snapshot, Await returns or throws the outcome, and Wait returns false only on timeout. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation.",
-                     "tested-by":  "directive-csharp-async.ahk"
-                 },
-                 {
-                     "category":  "Automation",
-                     "feature":  "Task.ToClr()",
-                     "syntax":  "task.ToClr()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The underlying CLR task as a Ks.Clr object, so members Task does not mirror (IsCompleted, ContinueWith, ...) stay reachable. Replaces the former Clr property.",
                      "tested-by":  "directive-csharp-async.ahk"
                  },
                  {
@@ -7775,16 +7697,6 @@
                      "tested-by":  "assign-multiline.ahk"
                  },
                  {
-                     "category":  "Automation",
-                     "feature":  "Mail()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Sends email via configured SMTP settings."
-                 },
-                 {
                      "category":  "Collections",
                      "feature":  "Map",
                      "syntax":  "",
@@ -7849,6 +7761,17 @@
                      "macos":  "full",
                      "notes":  "Retrieves or sets the map\u0027s case sensitivity setting.",
                      "tested-by":  "collections-map.ahk"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "Mail()",
+                     "syntax":  "",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Sends email through an SMTP server. The host and from options are required; an unrecognized option key raises. Reaches an unauthenticated relay, not a provider requiring a login.",
+                     "tested-by":  "mail.ahk"
                  },
                  {
                      "category":  "Collections",
@@ -7929,28 +7852,6 @@
                  },
                  {
                      "category":  "Collections",
-                     "feature":  "Map.MaxIndex()",
-                     "syntax":  "m.MaxIndex()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns the largest integer key contained in the map. Returns empty string if no keys were integers.",
-                     "tested-by":  "collections-map.ahk"
-                 },
-                 {
-                     "category":  "Collections",
-                     "feature":  "Map.MinIndex()",
-                     "syntax":  "m.MinIndex()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns the smallest integer key contained in the map. Returns empty string if no keys were integers.",
-                     "tested-by":  "collections-map.ahk"
-                 },
-                 {
-                     "category":  "Collections",
                      "feature":  "Map.Set()",
                      "syntax":  "m.Set(k1, v1, k2, v2, k3, v3)",
                      "windows":  "full",
@@ -7959,28 +7860,6 @@
                      "macos":  "full",
                      "notes":  "Sets zero or more items.",
                      "tested-by":  "collections-map.ahk"
-                 },
-                 {
-                     "category":  "Collections",
-                     "feature":  "Map.ToClr()",
-                     "syntax":  "m.ToClr()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The map as a Ks.Clr object, exposing its full CLR surface late-bound. A Map is itself a CLR IDictionary<object, object>, so .NET APIs declaring one accept it directly.",
-                     "tested-by":  "directive-csharp-clr.ahk"
-                 },
-                 {
-                     "category":  "Collections",
-                     "feature":  "Array.ToClr()",
-                     "syntax":  "arr.ToClr()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The array as a Ks.Clr object, exposing its full CLR surface late-bound. An Array is itself a CLR IList, so .NET APIs declaring one accept it directly.",
-                     "tested-by":  "directive-csharp-clr.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -8025,6 +7904,16 @@
                      "macos":  "full",
                      "notes":  "The Menu/MenuBar object provides an interface to create and modify a menu or menu bar, add and modify menu items, and retrieve information about the menu or menu bar.",
                      "tested-by":  "ControlTests/dir_select_hotkey.ahk"
+                 },
+                 {
+                     "category":  "GUI",
+                     "feature":  "Menu.ToClr()",
+                     "syntax":  "mnu.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The backing toolkit menu as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the Menu's own state and event wiring."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -8117,16 +8006,6 @@
                      "macos":  "full",
                      "notes":  "Native menu handle.",
                      "tested-by":  "props-script-settings.ahk"
-                 },
-                 {
-                     "category":  "Windowing/GUI",
-                     "feature":  "Menu.ToClr()",
-                     "syntax":  "mnu.ToClr()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The backing toolkit menu as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass Menu's own state and event wiring."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -8361,6 +8240,16 @@
                      "tested-by":  "audio-class.ahk; Gui/guitest.ks"
                  },
                  {
+                     "category":  "Audio",
+                     "feature":  "Audio.Device.ToClr() / Audio.Session.ToClr()",
+                     "syntax":  "native := Audio.DefaultDevice().ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "unsupported",
+                     "linux_wayland":  "unsupported",
+                     "macos":  "planned",
+                     "notes":  "The platform's own device or session object, for the Core Audio surface this class does not model such as ducking, per-channel volume and endpoint form factor. Its concrete type is platform-dependent and unspecified, and work done through it bypasses this class's caching. PulseAudio exposes no object of comparable reach, so Linux raises an actionable OSError instead."
+                 },
+                 {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Audio.Device.Volume / Audio.Device.Mute",
                      "syntax":  "Audio.DefaultDevice().Volume := 50",
@@ -8392,17 +8281,6 @@
                      "macos":  "planned",
                      "notes":  "Returns a Boolean indicating whether any application holds a live stream, including silent streams. False includes idle, unknown and missing devices; use Status to distinguish them. macOS may not track Bluetooth inputs.",
                      "tested-by":  "audio-class.ahk; Gui/guitest.ks"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "Audio.Device.ToClr() / Audio.Session.ToClr()",
-                     "syntax":  "native := Audio.DefaultDevice().ToClr()",
-                     "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "planned",
-                     "notes":  "The platform's own device or session object, for the Core Audio surface this class does not model such as ducking, per-channel volume and endpoint form factor. Its concrete type is platform-dependent and unspecified, and work done through it bypasses this class's caching. PulseAudio exposes no object of comparable reach, so Linux raises an actionable OSError instead.",
-                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -8861,17 +8739,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Returns a property-reference (PropRef) object."
-                 },
-                 {
-                     "category":  "Collections",
-                     "feature":  "Object.OwnPropCount()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns number of own properties defined directly on the object.",
-                     "tested-by":  "collections-object.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -10084,8 +9951,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The SetTimer function causes a function to be called automatically and repeatedly at a specified time interval.",
-                     "tested-by":  "ControlTests/control_get_focus.ahk"
+                     "notes":  "Periods are measured from callback start; overdue callbacks coalesce and remain due while blocked by priority or timer permission. Uses ordinary deadline-based waits without requesting higher timer resolution. Callbacks remain serialized on their owning scheduler.",
+                     "tested-by":  "timer-blocked-admission.ahk; timer-short-callback-keeps-period.ahk; timer-long-callback-coalesces.ahk; timer-during-callback-sleep.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -10391,6 +10258,17 @@
                      "macos":  "full",
                      "notes":  "Creates a mutable string buffer object.",
                      "tested-by":  "external-dllcall.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Task.ToClr()",
+                     "syntax":  "task.ToClr()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The underlying CLR task as a Ks.Clr object, so members Task does not mirror (IsCompleted, ContinueWith, ...) stay reachable. CLR ContinueWith has neither Then's script-thread affinity nor its result flattening.",
+                     "tested-by":  "directive-csharp-async.ahk"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -11583,23 +11461,13 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_Priority",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Gets or sets the running thread's priority; equivalent to `Thread \"Priority\", n`. Every thread starts at 0; there is no settable process-wide default."
-                 },
-                 {
-                     "category":  "Environment/System",
                      "feature":  "A_OSType",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Current platform symbol: WINDOWS, LINUX or OSX."
+                     "notes":  "Current platform symbol: WINDOWS, LINUX or OSX. Import with `#import Ks { A_OSType }`."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -11844,7 +11712,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "HTTP requests, as static shortcuts on a shared stateless client or as a session carrying default headers, credentials and cookies. A non-2xx status is an answer rather than an error. Options: Headers, Body, Json, Timeout (idle, seconds) and OnData per request; BaseUrl, Auth, Proxy, IgnoreCertificateErrors and Handler on a session, where the connection is configured. An unknown option key raises. Each method has an Async twin returning a Task. Download() fetches straight to a file, opened only once the response headers arrive. OnData(Chunk, Received, Total) streams the body and stops the transfer when it returns a non-zero Integer. Session.Close() releases connections, and ToClr() on the session and the response are the escape hatches.",
+                     "notes":  "HTTP requests, as static shortcuts on a shared stateless client or as a session carrying default headers, credentials and cookies. A non-2xx status is an answer rather than an error. Options: Headers, Timeout (idle, seconds), OnData and BaseUrl per request or as session defaults, each also readable as a session property; Body and Json describe one request and are refused on a session; Auth, Proxy, IgnoreCertificateErrors and Handler configure the connection and belong to Http(Options). An unknown option key raises. Each method has an Async twin returning a Task. Download() fetches straight to a file, opened only once the response headers arrive. OnData(Chunk, Received, Total) streams the body and stops the transfer when it returns a non-zero Integer. Session.Close() releases connections, and ToClr() on the session and the response are the escape hatches.",
                      "tested-by":  "http.ahk"
                  },
                  {
@@ -11878,26 +11746,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Normalizes all line endings to a requested or platform-default sequence."
-                 },
-                 {
-                     "category":  "Collections",
-                     "feature":  "ObjHasProp()",
-                     "syntax":  "ObjHasProp(Obj, Name)",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Checks for a property without invoking an overridden HasProp method."
-                 },
-                 {
-                     "category":  "Core Language",
-                     "feature":  "RegExMatchInfoCs",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Match object returned by the Keysharp case-sensitive .NET regular-expression helper."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

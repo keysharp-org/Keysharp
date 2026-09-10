@@ -323,6 +323,7 @@ namespace Keysharp.Language
 		internal const string Keyword_GuiSize = "size";
 		internal const string Keyword_H = "H";
 		internal const string Keyword_Hdr = "hdr";
+		internal const string Keyword_Headers = "headers";
 		internal const string Keyword_Hex = "hex";
 		internal const string Keyword_Hidden = "hidden";
 		internal const string Keyword_Hide = "hide";

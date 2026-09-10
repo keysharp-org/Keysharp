@@ -21,14 +21,6 @@ namespace Keysharp.Builtins
 		public static string FormatCs(object str, params object[] args) => string.Format(str.As(), nullPlaceholder.Concat(args));
 
 		/// <summary>
-		/// Joins together the string representation of all array elements, separated by the specified separator.
-		/// </summary>
-		/// <param name="sep">The separator to use between each item.</param>
-		/// <param name="args">The parameters to join together as a string.</param>
-		/// <returns>The newly joined string of all arguments separated by the specified separator.</returns>
-		public static string Join(object sep, params object[] args) => string.Join(sep.ToString(), args);
-
-		/// <summary>
 		/// Makes all line endings in a string match the value passed in, or the default newline (DefaultNewLine).
 		/// </summary>
 		/// <param name="str">The string whose line endings will be normalized.</param>

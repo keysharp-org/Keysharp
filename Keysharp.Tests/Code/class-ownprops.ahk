@@ -158,7 +158,7 @@ o1 := { one : 1}
 _ObjDefineProp := Object.Prototype.DefineProp
 _ObjDefineProp(Object.Prototype, "OwnPropCount", {call: (this) => ObjOwnPropCount(this)})
 
-AssertEq(o1.OwnPropCount(), 1, A_LineNumber)  ; Count all declared properties in object literal.
+AssertEq(ObjOwnPropCount(o1), 1, A_LineNumber)  ; Count all declared properties in object literal.
 
 Assert(ObjHasOwnProp(o1, "One") && !o1.HasOwnProp("two"), A_LineNumber)
 
@@ -166,13 +166,13 @@ o1.DefineProp("d", {
 		call : () => 123
 	})
 	
-AssertEq(o1.OwnPropCount(), 2, A_LineNumber)  ; Count all declared and dynamic properties in object literal.
+AssertEq(ObjOwnPropCount(o1), 2, A_LineNumber)  ; Count all declared and dynamic properties in object literal.
 	
 Assert(ObjHasOwnProp(o1, "one") && o1.HasOwnProp("d"), A_LineNumber)
 
 o1 := [1, 2, 3]
 
-Assert(o1.OwnPropCount() == 0 && ObjOwnPropCount(o1) == 0, A_LineNumber) ; Declared properties for built in types are not counted.
+Assert(ObjOwnPropCount(o1) == 0 && ObjOwnPropCount(o1) == 0, A_LineNumber) ; Declared properties for built in types are not counted.
 	
 Assert(!ObjHasOwnProp(o1, "capacity") && !o1.HasOwnProp("Count") && !o1.HasOwnProp("Length"), A_LineNumber)
 

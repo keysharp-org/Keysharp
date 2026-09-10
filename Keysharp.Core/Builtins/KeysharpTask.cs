@@ -112,7 +112,7 @@ namespace Keysharp.Builtins
 
 			/// <summary>
 			/// The underlying CLR task as an ordinary <c>Ks.Clr</c> object, so members this class does not mirror
-			/// — <c>IsCompleted</c>, <c>Exception</c>, <c>ContinueWith</c> — stay reachable. CLR
+			/// -- <c>IsCompleted</c>, <c>Exception</c>, <c>ContinueWith</c> -- stay reachable. CLR
 			/// <c>ContinueWith</c> has neither <see cref="Then"/>'s script-thread affinity nor its result flattening.
 			/// </summary>
 			public object ToClr() => ManagedInvoke.WrapManaged(task);

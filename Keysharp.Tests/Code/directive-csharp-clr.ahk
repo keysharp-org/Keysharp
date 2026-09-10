@@ -2,6 +2,7 @@
 #Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#import KS { Clr }
 
 #CSharp
 using System.Collections.Generic;
@@ -235,12 +236,17 @@ AssertEq(SumValues(dict), 3, A_LineNumber)
 Assert(AddViaDictionary(dict), A_LineNumber)
 AssertEq(dict["added"], 9, A_LineNumber)
 
-; ToClr() is the Ks.Clr view of a script collection, and Native hands inline C# the raw object back.
-Assert(IsManagedInstance(dict.ToClr()), A_LineNumber)
-AssertEq(dict.ToClr().Count, 3, A_LineNumber)
-Assert(NativeIsSame(dict.ToClr(), dict), A_LineNumber)
+; Clr.Wrap is the Ks.Clr view of a script collection, and Native hands inline C# the raw object back.
+Assert(IsManagedInstance(Clr.Wrap(dict)), A_LineNumber)
+AssertEq(Clr.Wrap(dict).Count, 3, A_LineNumber)
+Assert(NativeIsSame(Clr.Wrap(dict), dict), A_LineNumber)
 arr2 := [10, 20]
-Assert(IsManagedInstance(arr2.ToClr()), A_LineNumber)
-Assert(NativeIsSame(arr2.ToClr(), arr2), A_LineNumber)
+Assert(IsManagedInstance(Clr.Wrap(arr2)), A_LineNumber)
+Assert(NativeIsSame(Clr.Wrap(arr2), arr2), A_LineNumber)
+
+; Wrapping something which is already a Clr view is the identity, so a second Wrap does not build a
+; wrapper whose members reflect over the first one instead of the object it holds.
+AssertEq(Clr.Wrap(Clr.Wrap(dict)).Count, 3, A_LineNumber)
+Assert(NativeIsSame(Clr.Wrap(Clr.Wrap(dict)), dict), A_LineNumber)
 
 FileAppend "pass", "*"

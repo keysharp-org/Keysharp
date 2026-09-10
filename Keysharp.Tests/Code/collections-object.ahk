@@ -18,7 +18,7 @@ for name, value in ObjOwnProps(obj)
 
 Assert(count = 2, A_LineNumber)
 
-AssertEq(obj.OwnPropCount(), 2, A_LineNumber)
+AssertEq(ObjOwnPropCount(obj), 2, A_LineNumber)
 
 baseObj := { c: 3 }
 ObjSetBase(obj, baseObj)
@@ -51,7 +51,7 @@ Assert(defined = o4 && o4.answer = 42, A_LineNumber)
 
 base4 := {inherited: true}
 ObjSetBase(o4, base4)
-Assert(ObjHasProp(o4, "answer") && ObjHasProp(o4, "inherited")
-	&& !ObjHasProp(o4, "missing") && !ObjHasProp(0, "Base"), A_LineNumber)
+Assert(HasProp(o4, "answer") && HasProp(o4, "inherited")
+	&& !HasProp(o4, "missing") && !HasProp(0, "Base"), A_LineNumber)
 
 FileAppend "pass", "*"

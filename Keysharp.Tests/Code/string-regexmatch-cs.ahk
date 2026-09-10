@@ -118,7 +118,7 @@ CheckMatches(match, "0", "txt")
 
 RegExMatchCs("Michiganroad 72", "(.*) (?<nr>\d+)", &match)
 
-AssertEq(match.Count, 3, A_LineNumber)
+AssertEq(match.Count, 2, A_LineNumber)
 	
 AssertEq(match[1], "Michiganroad", A_LineNumber)
 	

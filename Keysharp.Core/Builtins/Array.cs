@@ -151,12 +151,6 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	}
 
 	/// <summary>
-	/// This array as an ordinary <c>Ks.Clr</c> object, so its full CLR surface — including
-	/// <see cref="IList"/> — is reachable late-bound.
-	/// </summary>
-	public object ToClr() => ManagedInvoke.WrapManaged(this);
-
-	/// <summary>
 	/// Translates a 1-based index which allows negative nubmers to a 0-based positive only index.<br/>
 	/// This is used internally to do index conversions.
 	/// </summary>
@@ -269,7 +263,8 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// </summary>
 	/// <param name="value">The value to search for. Default: unset, which searches for an element without a value.</param>
 	/// <returns>True if the value was found, else false.</returns>
-	public bool Contains(object value = null) => array.Contains(value);
+	// See Remove: one match rule for the whole value-search family.
+	public bool Contains(object value = null) => IndexOf(value) > 0;
 
 	/// <summary>
 	/// Removes the value of an array element, leaving the index without a value.<br/>
@@ -604,44 +599,6 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	}
 
 	/// <summary>
-	/// Returns the element with the greatest numerical value.
-	/// </summary>
-	/// <returns>The found element, else empty string.</returns>
-	public object MaxIndex()
-	{
-		var val = long.MinValue;
-
-		foreach (var el in array)
-		{
-			var temp = el.Al();
-
-			if (temp > val)
-				val = temp;
-		}
-
-		return val != long.MinValue ? val : DefaultObject;
-	}
-
-	/// <summary>
-	/// Returns the element with the least numerical value.
-	/// </summary>
-	/// <returns>The found element, else empty string.</returns>
-	public object MinIndex()
-	{
-		var val = long.MaxValue;
-
-		foreach (var el in array)
-		{
-			var temp = el.Al();
-
-			if (temp < val)
-				val = temp;
-		}
-
-		return val != long.MaxValue ? val : DefaultObject;
-	}
-
-	/// <summary>
 	/// Removes and returns the last array element.
 	/// </summary>
 	/// <returns>The last element.</returns>
@@ -678,15 +635,25 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// </summary>
 	/// <param name="value">The item to remove. Default: unset, which removes the first element without a value.</param>
 	/// <returns>True if the value was found and removed, else false.</returns>
-	public bool Remove(object value = null) => array.Remove(value);
+	// Built on IndexOf so that what counts as a match is decided in one place for the whole value-search
+	// family -- Contains, IndexOf and this -- rather than by three separate calls into the backing list.
+	public bool Remove(object value = null)
+	{
+		var found = IndexOf(value);
+
+		if (found == 0)
+			return false;
+
+		array.RemoveAt((int)found - 1);
+		return true;
+	}
 
 	/// <summary>
-	/// Implementation of <see cref="IList.Remove"/> which removes the first occurrence of <paramref name="value" />
-	/// from the array.
+	/// Implementation of <see cref="IList.Remove"/>.
 	/// This is not visible to the method lookup system, but is required for the <see cref="IList"/> interface.
 	/// </summary>
 	/// <param name="value">The value to remove.</param>
-	void IList.Remove(object value) => array.Remove(value);
+	void IList.Remove(object value) => Remove(value);
 
 	/// <summary>
 	/// Removes one or more items from the array and returns the removed item.<br/>

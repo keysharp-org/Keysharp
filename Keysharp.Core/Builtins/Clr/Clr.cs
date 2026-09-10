@@ -89,6 +89,21 @@ namespace Keysharp.Builtins
 				return new ManagedType(t);
 			}
 
+			/// <summary>
+			/// A value as an ordinary <c>Ks.Clr</c> object, so its own full CLR surface is reachable late-bound.
+			/// This is how an <c>Array</c> reaches its <see cref="IList"/> members and a <c>Map</c> its
+			/// <see cref="IDictionary{TKey, TValue}"/> ones.
+			///
+			/// <para>The result is always a view over <paramref name="Value"/> itself, whatever it is. To reach
+			/// the .NET object a builtin is a façade over — the toolkit window behind a <c>Gui</c>, the
+			/// <c>HttpClient</c> behind an <c>Ks.Http</c> — call that type's own <c>ToClr()</c>, which exists
+			/// only on the types which have one. Wrapping something already wrapped is the identity.</para>
+			/// </summary>
+			/// <param name="Value">The value to view as a CLR object.</param>
+			/// <returns>A <c>Ks.Clr</c> object over it.</returns>
+			public static object staticWrap(object @this, object Value)
+				=> Value is ManagedObject ? Value : ManagedInvoke.WrapManaged(Value);
+
 			public static object staticGetNamespaceName(object @this, object managedNamespace)
 			{
 				var ns = managedNamespace as ManagedNamespace;

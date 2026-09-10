@@ -43,14 +43,6 @@ namespace Keysharp.Builtins
 		public static long ObjHasOwnProp(object obj, object name) => KeysharpObject.HasOwnProp(obj, name);
 
 		/// <summary>
-		/// Returns whether an object or one of its base objects has a property by the specified name.
-		/// </summary>
-		/// <param name="obj">The object to search.</param>
-		/// <param name="name">The property name to search for.</param>
-		/// <returns>1 if the property exists, otherwise 0. Non-object values return 0.</returns>
-		public static long ObjHasProp(object obj, object name) => obj is Any ? Functions.HasProp(obj, name) : 0L;
-
-		/// <summary>
 		/// Returns the number of properties owned by an object.
 		/// </summary>
 		/// <param name="obj">The object to get the OwnProps count for.</param>

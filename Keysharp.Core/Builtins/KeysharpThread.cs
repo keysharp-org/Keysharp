@@ -112,14 +112,23 @@ namespace Keysharp.Builtins
 		public long Elapsed => Environment.TickCount64 - Live().threadStartTick;
 
 		/// <summary>
-		/// This thread's priority. Reads back what <c>Thread "Priority", n</c> or <c>A_Priority</c> set;
-		/// every thread starts at 0 unless its launcher (SetTimer, Hotkey, Menu.Add, a hotstring
-		/// definition) gave it one.
+		/// This thread's priority. Reads back what <c>Thread "Priority", n</c> set; every thread starts at 0
+		/// unless its launcher (SetTimer, Hotkey, Menu.Add, a hotstring definition) gave it one.
 		/// </summary>
 		public object Priority
 		{
 			get => Live().priority;
 			set => manager.Owner.Threads.SetPriority(Mutable(), value.Al());
+		}
+
+		/// <summary>
+		/// Whether timers may run in this thread — the object form of <c>Thread "NoTimers"</c>, which sets the
+		/// inverse. Accepts <c>On</c>/<c>Off</c> as well as a Boolean. Default: true.
+		/// </summary>
+		public object AllowTimers
+		{
+			get => Live().configData.allowTimers;
+			set => manager.Owner.Threads.SetAllowTimers(Mutable(), Options.OnOff(value) ?? value.Ab());
 		}
 
 		/// <summary>

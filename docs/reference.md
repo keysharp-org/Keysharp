@@ -580,18 +580,20 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `EnvUpdate()`: Retained from AutoHotkey v1 as a cross-platform environment notification mechanism. Windows broadcasts `WM_SETTINGCHANGE`; Linux publishes pending `EnvSet()` changes to the D-Bus activation environment and systemd user manager; macOS publishes them to the current launchd session. Linux and macOS updates affect future session-managed processes only and are not persistent.
 	+ `FormatCs()`: An alternative to `Format()`. The syntax used in `FormatCs()` is exactly that of `string.Format()` in C#, except with 1-based indexing.
 		+ Full documentation for the C# formatting rules can be found [here](https://learn.microsoft.com/en-us/dotnet/api/system.string.format).
-	+ `Mail(recipients, subject, message, options)`: Sends an email.
-		+ `recipients`: A list of receivers of the message.
+	+ `Mail(recipients, subject, message, options)`: Sends an email through an SMTP server. Returns once the server has accepted the message.
+		+ `recipients`: One address as a string, or several as an `Array` of strings. An empty `Array`, an empty address, or an entry which is not a string raises.
 		+ `subject`: Subject of the message.
 		+ `message`: Message body.
-		+ `options`: A `Map` with any the following optional key/value pairs:
-			+ "attachments": A string or `Array` of strings of file paths to send as attachments.
-			+ "bcc": A string or `Array` of strings of blind carbon copy recipients.
-			+ "cc": A string or `Array` of strings of carbon copy recipients.
-			+ "from": A string of comma separated from address.
-			+ "replyto": A string of comma separated reply address.
-			+ "host": The SMTP client hostname and port string in the form "hostname:port".
-			+ "header": A string of additional header information.
+		+ `options`: A `Map`. `host` and `from` are required, because SMTP has no default for either. An unrecognized key raises rather than becoming a header. `host`, `from` and `replyto` each also accept a one-element `Array`, so a script assembling options can use one shape throughout.
+			+ "host": Required. The server as "hostname" or "hostname:port". Port 25 if none is given; a bracketed IPv6 literal keeps its own colons.
+			+ "from": Required. The sender's address.
+			+ "cc": A further recipient, or an `Array` of them.
+			+ "bcc": A blind-copy recipient, or an `Array` of them. These reach the server but do not appear in the message headers.
+			+ "replyto": The address replies should go to, when it differs from `from`.
+			+ "attachments": A file path, or an `Array` of them. A path which cannot be read raises.
+			+ "headers": A `Map` of additional SMTP header names and values.
+		+ Raises `TypeError` for a `recipients` or `options` of the wrong type, `ValueError` for a missing or misshapen option or an address or port which cannot be parsed, and `OSError` when an attachment cannot be read or the server rejects the message or cannot be reached.
+		+ The connection is unauthenticated and unencrypted, so this reaches a relay which accepts the script's machine rather than a provider requiring a login.
 	+ `RandomSeed(Integer)`: Reinitializes the random number generator for the current thread with a specified numerical seed.
 	+ `RequestCapabilities(capabilities*) => Object`: Requests one or more platform permissions and returns an object describing the outcome.
 		+ `capabilities`: zero or more capability name strings, each optionally comma- or space-delimited. Recognised names are the same as for `#Requires capability` above.
@@ -647,7 +649,6 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ A digest is returned as uppercase hexadecimal; compare digests case-insensitively, since the tool a checksum came from may print it in lowercase.
 	+ `Crypt.Hash(value, algorithm := "SHA256", encoding := "UTF-8") => String`: hashes with `MD5`, `SHA1`, `SHA256`, `SHA384`, `SHA512` or `CRC32`, spelled with or without the `-`. An open `File` is read as a stream and left at the position it was on.
 	+ `Crypt.HashFile(path, algorithm := "SHA256") => String`: the same over a file, read as a stream so that its size does not matter.
-	+ `Crypt.MD5(value, encoding := "UTF-8") => String`, and likewise `Crypt.SHA1`, `Crypt.SHA256`, `Crypt.SHA384` and `Crypt.SHA512`.
 	+ `Crypt.CRC32(value, encoding := "UTF-8") => Integer`: Calculates the CRC32 polynomial of an object. `Crypt.Hash(value, "CRC32")` returns the same checksum as hexadecimal.
 	+ `Crypt.Encrypt(value, key, algorithm := "AES", mode := "CBC", iv?, encoding := "UTF-8") => Buffer` and `Crypt.Decrypt(...)` with the same parameters: symmetric encryption. `AES` is the only cipher so far and `mode` is `CBC`, `ECB` or `CFB`; the cipher is a parameter rather than part of the method name so that another one is a value this accepts, not a new method.
 		+ With *iv* omitted, each call draws a random 16-byte initialization vector and writes it in front of the ciphertext, where `Crypt.Decrypt` reads it back. Encrypting the same text twice therefore gives different results, which is the point: a fixed vector lets anyone holding the output see which encrypted values are equal. Supply *iv* only to match a format defined elsewhere — it is then used as it stands and is **not** written to the result, so `Crypt.Decrypt` needs the same one back.
@@ -668,7 +669,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `Tanh(value) => Double`
 * New RegEx functions:
 	+ `RegExMatchCs()` and `RegExReplaceCs()` which use the C# style regular expression syntax rather than PCRE2.
-		+ `OutputVar` in `RegExMatchCs()` will be of type `RegExMatchInfoCs`.
+		+ `OutputVar` in `RegExMatchCs()` will be of type `RegExMatchInfo`, the same class `RegExMatch()` produces, and a miss stores an empty value exactly as `RegExMatch()` does.
 		+ PCRE exceptions are not thrown when there is an error, instead C# regex exceptions are thrown.
 		+ To learn more about C# regular expressions, see [here](https://learn.microsoft.com/en-us/dotnet/standard/base-types/regular-expressions).
 		+ The following options are different from PCRE:
@@ -707,22 +708,17 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `IndexOf(value, startIndex := 1) => Integer`: Returns the index of the first item in the array which equals value, starting at `startIndex`. Returns 0 if value is not found.
 			+ If `startIndex` is negative, the search starts from the end of the array and moves toward the beginning.
 		+ `Join(separator := ',') => String`: Joins together the string representation of all array elements, separated by `separator`.
-		+ `MaxIndex()` and `MinIndex()` from AutoHotkey v1 are still supported.
-		+ `Remove(value) => Boolean`: Removes `value` from the array and returns `true` if found, else `false`.
 		+ `MapTo(callback: (value [, index]) => Any, startIndex := 1) => Array`: Maps each element of the array, starting at `startIndex`, into a new array where the mapping in `callback` performs some operation.
 			```
 			lam := (x, i) => x * i
 			arr := [10, 20, 30]
 			arr2 := arr.MapTo(lam) ; [10, 40, 90]
 			```
+		+ `Remove(value) => Boolean`: Removes the first occurrence of `value` and returns `true` if one was found and removed, else `false`. Omitting `value` removes the first element which has no value. A match is decided by `IndexOf`'s rule, which `Contains` uses too.
 		+ `Sort(callback: (a, b) => Integer) => this`: Sorts the array in place. The callback should use the usual logic of returning -1 when `a < b`, 0 when `a == b` and 1 otherwise.	
 	+ `Buffer`:
 		+ `__Item[]`: Indexer which can be used to read a byte at a 1-based offset.
 			+ Throws an `IndexError` if the offset out of range.
-	+ `Object`:
-		+ `OwnPropCount()`: Corresponds to the global function `ObjOwnPropCount()`.
-	+ `Map`:
-		+ `MaxIndex()` and `MinIndex()` from AutoHotkey v1 are still supported.
 	+ `String`:
 		+ `String.StartsWith(token [,comparison]) => Boolean` and `String.EndsWith(token [,comparison]) => Boolean`: Determines if the beginning or end of a string start/end with a given string.
 * Modified/extended accessors:
@@ -730,7 +726,6 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ When scrolling up, the value will be positive, and negative when scrolling down.
 * New accessors:
 	+ All of these live in the `KS` module, so a script must import the ones it uses: `#import KS { A_DirSeparator }`.
-	+ `A_AllowTimers` returns whether timers are allowed or not. It's also easier to set this value rather than call `Thread("NoTimers")`.
 	+ `A_PeekFrequency` gets or sets the current thread's message-check interval in milliseconds.
 	+ `A_ClipboardTimeout` can be used at any point in the program to get or set the value normally specified by `#ClipboardTimeout`.
 	+ `A_DefaultHotstringCaseSensitive` returns the default hotstring case sensitivity mode.
@@ -760,7 +755,6 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `A_Thread` is the current pseudo-thread as a `Thread` object.
 		+ Every per-pseudo-thread fact is a property on the object rather than its own importable global, so the surface extends without new names. See the `Thread` class under *New classes*.
 		+ There is exactly one object per pseudo-thread, so "is this the one I am in" is `thr == A_Thread`.
-	+ `A_UseHook` returns the value `n` specified with `#UseHook n`.
 	+ `A_WinActivateForce` returns whether the forceful method of activating a window is in effect because `#WinActivateForce` was specified.
 	+ `A_Timers` returns a `Map` of (`Func`, `Boolean`) pairs where the key is the function object of the timer and the value is the enabled state of the associated timer.
 * New classes:
@@ -813,7 +807,8 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ An enum-typed parameter or property takes a plain Integer, since a script has no enum type: `File.SetUnixFileMode(path, 0x180)`. The value does not have to be a declared member, so a flag combination can be built in script with `|`. The member itself works equally well when fetched through `Clr` (`System.StringComparison.OrdinalIgnoreCase`), and an enum coming back from CLR stays a wrapped member rather than widening to an Integer — take its name with `.ToString()`. A value with no numeric reading raises a `TypeError`, as it does for any other integral parameter.
 		+ `Clr.GetNamespaceName(ManagedNamespace)` returns the full intenal namespace name of the namespace wrapped by `ManagedNamespace`.
 		+ `Clr.GetTypeName(ManagedType)` returns the full internal type name of the type wrapped by `ManagedType`.
-		+ Built-in objects that stand in front of a CLR object expose it with a uniform `ToClr()` method returning an ordinary `Ks.Clr` object: `Task` (the underlying CLR task; replaces the former `Clr` property), a worker `RealThread` (its completion task; `TargetError` on the main and adopted threads), `Gui`, `Gui.Control` and `Menu` (the backing toolkit object, whose concrete type is platform-dependent and unspecified), and `Image` (the live underlying bitmap, with pending work materialized; stale after the next transform or `Dispose`). `Map` and `Array` are themselves CLR objects — a `Map` is a CLR `IDictionary<object, object>` and an `Array` an `IList`, so a CLR API declaring one accepts them directly — and their `ToClr()` exposes their full CLR surface late-bound. `ToClr()` is a deliberate escape hatch: changes made through the wrapper bypass the owning class's own state and event wiring.
+		+ `Clr.Wrap(Value)` returns any value as an ordinary `Ks.Clr` object, so its own full CLR surface is reachable late-bound. This is how a `Map` and an `Array` reach theirs — a `Map` is a CLR `IDictionary<object, object>` and an `Array` an `IList`, so a CLR API declaring one accepts them directly. The result is always a view over the value itself, and wrapping something already wrapped is the identity.
+		+ To reach the .NET object a built-in is a facade over, call that type's own `ToClr()`. It exists only on the types which have one, so its presence is the signal that there is a native object behind the class: `Ks.Task` (the underlying CLR task), `Gui`, `Gui.Control` and `Menu` (the backing toolkit object, whose concrete type is platform-dependent and unspecified), `Ks.Http` and `Ks.Http.Response` (the `HttpClient` and `HttpResponseMessage`), `Ks.Image` (the live underlying bitmap, with pending work materialized; stale after the next transform or `Dispose`), and `Ks.Audio.Device` and `Ks.Audio.Session` (the platform's own object, or an `OSError` where the platform has none). `ToClr()` is a deliberate escape hatch: work done through the result bypasses the owning class's own state and event wiring.
 		+ Inline C# (`#CSharp`) holding a `ManagedInstance` reads the raw wrapped object from its `Native` property. Script member access on a wrapper always dispatches to the wrapped object, so `Native` is unreachable from script.
 	+ `Font`: A font as a value object, carrying the same information `Gui.SetFont(Options, FontName)` takes but addressable one property at a time. Available from the `KS` module: `#Import "Ks" { Font }`.
 		+ `Font(Options := "", Name := "")` takes SetFont's two arguments in SetFont's order, so an existing call converts by moving its arguments across.

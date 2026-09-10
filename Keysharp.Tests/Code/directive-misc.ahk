@@ -17,8 +17,6 @@
 
 AssertEq(A_ClipboardTimeout, 2000, A_LineNumber)
 
-Assert(A_UseHook, A_LineNumber)
-
 Assert(A_MaxThreadsBuffer, A_LineNumber)
 
 AssertEq(A_MaxThreadsPerHotkey, 150, A_LineNumber)

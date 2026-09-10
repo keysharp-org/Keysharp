@@ -480,15 +480,6 @@ for k, v in m {
 	AssertEq(v, ["integer", "object", "string", "double"][i], A_LineNumber)
 }
 
-; MaxIndex/MinIndex must not throw on either a mixed-key or an all-string-key map.
-m := Map("one", 1, 2, "two", -5, "neg")
-m.MaxIndex()
-m.MinIndex()
-
-m := Map("one", 1, "two", 2)
-m.MaxIndex()
-m.MinIndex()
-
 ; Assigning unset to a map item REMOVES it, exactly as Delete does, so Has() and [] can never disagree.
 ; Every expectation here was measured against AutoHotkey v2.1-alpha.30.
 

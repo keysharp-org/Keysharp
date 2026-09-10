@@ -9,12 +9,12 @@ namespace Keysharp.Tests
 		[Test, Category("Threading")]
 		public void NoTimersLocal()
 		{
-			Assert.AreEqual(true, Ks.A_AllowTimers);
+			Assert.AreEqual(true, ((KeysharpThread)Ks.A_Thread).AllowTimers);
 			Assert.IsTrue(s.AccessorData.threadConfigDataPrototype.allowTimers);
 
 			_ = Keysharp.Builtins.KeysharpThread.staticCall(null, "NoTimers", true);
 
-			Assert.AreEqual(false, Ks.A_AllowTimers);
+			Assert.AreEqual(false, ((KeysharpThread)Ks.A_Thread).AllowTimers);
 			Assert.IsTrue(s.AccessorData.threadConfigDataPrototype.allowTimers);
 		}
 

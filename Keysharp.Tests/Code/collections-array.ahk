@@ -182,12 +182,6 @@ arr.Capacity := 2
 
 Assert(arr[1] == 1 && arr[2] == 2 && arr.Length == 2 && arr.Capacity == 2, A_LineNumber)
 
-arr := Array(400, 500, 2, 1000, 10000)
-minin := arr.MinIndex()
-maxin := arr.MaxIndex()
-
-Assert(minin == 2 && maxin == 10000, A_LineNumber)
-
 arr := Array(1, 2, 3)
 
 arr.DefineProp("a", {

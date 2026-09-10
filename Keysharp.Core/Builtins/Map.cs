@@ -272,12 +272,6 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// This map as an ordinary <c>Ks.Clr</c> object, so its full CLR surface — including
-		/// <see cref="IDictionary{TKey, TValue}"/> — is reachable late-bound.
-		/// </summary>
-		public object ToClr() => ManagedInvoke.WrapManaged(this);
-
-		/// <summary>
 		/// Clears all elements from the map.
 		/// </summary>
 		public object Clear()
@@ -375,44 +369,6 @@ namespace Keysharp.Builtins
 		/// <param name="key">The key to search for.</param>
 		/// <returns>True if key is found, else false.</returns>
 		public bool Has(object key) => map.ContainsKey(key);
-
-		/// <summary>
-		/// Returns the greatest integer key in the map.
-		/// </summary>
-		/// <returns>The greatest integer key if found, else empty string.</returns>
-		public object MaxIndex()
-		{
-			var val = long.MinValue;
-
-			foreach (var el in map)
-			{
-				var temp = el.Key.Al();
-
-				if (temp > val)
-					val = temp;
-			}
-
-			return val != long.MinValue ? val : string.Empty;
-		}
-
-		/// <summary>
-		/// Returns the least integer key in the map.
-		/// </summary>
-		/// <returns>The least integer key if found, else empty string.</returns>
-		public object MinIndex()
-		{
-			var val = long.MaxValue;
-
-			foreach (var el in map)
-			{
-				var temp = el.Key.Al();
-
-				if (temp < val)
-					val = temp;
-			}
-
-			return val != long.MaxValue ? val : string.Empty;
-		}
 
 		/// <summary>
 		/// Sets zero or more items.

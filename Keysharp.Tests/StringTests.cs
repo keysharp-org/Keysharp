@@ -34,9 +34,6 @@ namespace Keysharp.Tests
 		public void CompareCase() => Assert.IsTrue(TestScript("string-compare-case", true));
 
 		[Test, Category("String")]
-		public void Join() => Assert.IsTrue(TestScript("string-join", true));
-
-		[Test, Category("String")]
 		public void Concat() => Assert.IsTrue(TestScript("string-concat", true));
 
 		[Test, Category("String")]
@@ -332,46 +329,46 @@ namespace Keysharp.Tests
 		{
 			VarRef match = new(null);
 			_ = Ks.RegExMatchCs("abc123abc456", "abc\\d+", match, 1);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value)[0], "abc123");
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(), 1);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value)[0], "abc123");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(), 1);
 			_ = Ks.RegExMatchCs("abc123abc456", "456", match, -1);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value)[0], "456");
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(), 10);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value)[0], "456");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(), 10);
 			_ = Ks.RegExMatchCs("abc123abc456", "abc", match, -1);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value)[0], "abc");
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(), 7);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value)[0], "abc");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(), 7);
 			_ = Ks.RegExMatchCs("abc123abc456", "abc", match, -15);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value)[0], "abc");
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(), 7);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value)[0], "abc");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(), 7);
 			_ = Ks.RegExMatchCs("abc123abc456", "abc", match, -5);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value)[0], "abc");
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(), 1);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value)[0], "abc");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(), 1);
 			_ = Ks.RegExMatchCs("abc123abc456", "abc\\d+", match, 2);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value)[0], "abc456");
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(), 7);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value)[0], "abc456");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(), 7);
 			_ = Ks.RegExMatchCs("abc123123", "123$", match, 1);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(), 7);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(), 7);
 			_ = Ks.RegExMatchCs("xxxabc123xyz", "abc.*xyz", match, 1);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(), 4);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(), 4);
 			_ = Ks.RegExMatchCs("abc123123", "123$", match);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(), 7);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(), 7);
 			_ = Ks.RegExMatchCs("abc123", "i)^ABC", match);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(), 1);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(), 1);
 			_ = Ks.RegExMatchCs("abcXYZ123", "abc(.*)123", match);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value)[1], "XYZ");
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(1), 4);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value)[1], "XYZ");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(1), 4);
 			_ = Ks.RegExMatchCs("abcXYZ123", "abc(?<testname>.*)123", match);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value)["testname"], "XYZ");
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos("testname"), 4);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Name("testname"), "testname");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value)["testname"], "XYZ");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos("testname"), 4);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Name("testname"), "testname");
 			_ = Ks.RegExMatchCs(@"C:\Foo\Bar\Baz.txt", @"\w+$", match);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value)[0], "txt");
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Pos(), 16);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value)[0], "txt");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Pos(), 16);
 			_ = Ks.RegExMatchCs("Michiganroad 72", @"(.*) (?<nr>\d+)", match);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Count, 3);
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value)[1], "Michiganroad");
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value).Name(2), "nr");
-			Assert.AreEqual(((RegExMatchInfoCs)match.__Value)[2], "72");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Count, 2);
+			Assert.AreEqual(((RegExMatchInfo)match.__Value)[1], "Michiganroad");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value).Name(2), "nr");
+			Assert.AreEqual(((RegExMatchInfo)match.__Value)[2], "72");
 			Assert.IsTrue(TestScript("string-regexmatch-cs", false));
 		}
 

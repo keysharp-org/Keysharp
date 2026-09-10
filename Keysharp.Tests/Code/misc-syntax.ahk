@@ -184,7 +184,7 @@ Assert(m[1](0) == 0 && m[2](2) == 4 && m[3](3) == 9, A_LineNumber)
 
 x := 0
 
-AssertEq(x, {}.OwnPropCount(), A_LineNumber)
+AssertEq(x, ObjOwnPropCount({}), A_LineNumber)
 
 ;Function that takes a parameter and returns it.
 
@@ -225,10 +225,10 @@ AssertEq(m[3], 3, A_LineNumber)
 
 ;Construct a map on the fly with a comment inline and pass as a function argument to a function passed to a conditional.
 
-Assert(func1({ ; continuation
+Assert(ObjOwnPropCount(func1({ ; continuation
 	a
 	: "two"
-}).OwnPropCount() == 1, A_LineNumber)
+})) == 1, A_LineNumber)
 
 ;Combine multiline assignment with operators with .
 

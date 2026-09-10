@@ -14,19 +14,19 @@ CompareBuffers(a, b) {
     return 1
 }
 
-AssertEq(Crypt.MD5("abc"), "900150983CD24FB0D6963F7D28E17F72", A_LineNumber)
-AssertEq(Crypt.SHA1("abc"), "A9993E364706816ABA3E25717850C26C9CD0D89D", A_LineNumber)
-AssertEq(Crypt.SHA256("abc"), "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD", A_LineNumber)
-AssertEq(Crypt.SHA384("abc"), "CB00753F45A35E8BB5A03D699AC65007272C32AB0EDED1631A8B605A43FF5BED8086072BA1E7CC2358BAECA134C825A7", A_LineNumber)
-AssertEq(Crypt.SHA512("abc"), "DDAF35A193617ABACC417349AE20413112E6FA4E89A97EA20A9EEEE64B55D39A2192992A274FC1A836BA3C23A3FEEBBD454D4423643CE80E2A9AC94FA54CA49F", A_LineNumber)
-AssertEq(Crypt.SHA256(""), "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855", A_LineNumber)
+AssertEq(Crypt.Hash("abc", "MD5"), "900150983CD24FB0D6963F7D28E17F72", A_LineNumber)
+AssertEq(Crypt.Hash("abc", "SHA1"), "A9993E364706816ABA3E25717850C26C9CD0D89D", A_LineNumber)
+AssertEq(Crypt.Hash("abc", "SHA256"), "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD", A_LineNumber)
+AssertEq(Crypt.Hash("abc", "SHA384"), "CB00753F45A35E8BB5A03D699AC65007272C32AB0EDED1631A8B605A43FF5BED8086072BA1E7CC2358BAECA134C825A7", A_LineNumber)
+AssertEq(Crypt.Hash("abc", "SHA512"), "DDAF35A193617ABACC417349AE20413112E6FA4E89A97EA20A9EEEE64B55D39A2192992A274FC1A836BA3C23A3FEEBBD454D4423643CE80E2A9AC94FA54CA49F", A_LineNumber)
+AssertEq(Crypt.Hash("", "SHA256"), "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855", A_LineNumber)
 
 ; Hash defaults to SHA256, and takes the algorithm name in any case and with the "-" external tools print.
-AssertEq(Crypt.Hash("abc"), Crypt.SHA256("abc"), A_LineNumber)
-AssertEq(Crypt.Hash("abc", "sha-256"), Crypt.SHA256("abc"), A_LineNumber)
+AssertEq(Crypt.Hash("abc"), Crypt.Hash("abc", "SHA256"), A_LineNumber)
+AssertEq(Crypt.Hash("abc", "sha-256"), Crypt.Hash("abc", "SHA256"), A_LineNumber)
 
 ; The encoding a string is taken in is selectable, and this is the digest the old UTF-16 behavior produced.
-AssertEq(Crypt.SHA256("abc", "UTF-16"), "13E228567E8249FCE53337F25D7970DE3BD68AB2653424C7B8F9FD05E33CAEDF", A_LineNumber)
+AssertEq(Crypt.Hash("abc", "SHA256", "UTF-16"), "13E228567E8249FCE53337F25D7970DE3BD68AB2653424C7B8F9FD05E33CAEDF", A_LineNumber)
 
 ; CRC32 as the integer it is, and as the hexadecimal Hash returns for it.
 AssertEq(Crypt.CRC32("abc"), 891568578, A_LineNumber)
@@ -35,18 +35,18 @@ AssertEq(Crypt.Hash("abc", "CRC32"), "352441C2", A_LineNumber)
 ; Bytes already in memory are hashed as they stand, with no encoding involved.
 buf := Buffer(3)
 NumPut("UChar", 0x61, "UChar", 0x62, "UChar", 0x63, buf)
-AssertEq(Crypt.SHA256(buf), Crypt.SHA256("abc"), A_LineNumber)
+AssertEq(Crypt.Hash(buf, "SHA256"), Crypt.Hash("abc", "SHA256"), A_LineNumber)
 
 ; HashFile reads the file as a stream and agrees with hashing the same bytes in memory.
 path := A_Temp A_DirSeparator "keysharp-crypt-" A_TickCount ".bin"
 FileAppend "abc", path, "UTF-8-RAW"
-AssertEq(Crypt.HashFile(path), Crypt.SHA256("abc"), A_LineNumber)
-AssertEq(Crypt.HashFile(path, "MD5"), Crypt.MD5("abc"), A_LineNumber)
+AssertEq(Crypt.HashFile(path), Crypt.Hash("abc", "SHA256"), A_LineNumber)
+AssertEq(Crypt.HashFile(path, "MD5"), Crypt.Hash("abc", "MD5"), A_LineNumber)
 
 ; An open File hashes its whole content and is left at the position it was on.
 f := FileOpen(path, "r")
 f.Pos := 1
-AssertEq(Crypt.Hash(f), Crypt.SHA256("abc"), A_LineNumber)
+AssertEq(Crypt.Hash(f), Crypt.Hash("abc", "SHA256"), A_LineNumber)
 AssertEq(f.Pos, 1, A_LineNumber)
 f.Close()
 
@@ -56,7 +56,7 @@ Throws(() => Crypt.Hash(f), A_LineNumber, ValueError)
 ; Every digest entry point accepts a File, including the checksum one.
 of := FileOpen(path, "r")
 AssertEq(Crypt.CRC32(of), Crypt.CRC32("abc"), A_LineNumber)
-AssertEq(Crypt.SHA256(of), Crypt.SHA256("abc"), A_LineNumber)
+AssertEq(Crypt.Hash(of, "SHA256"), Crypt.Hash("abc", "SHA256"), A_LineNumber)
 of.Close()
 FileDelete path
 
@@ -71,8 +71,8 @@ loop 2000
 fh.Close()
 raw := FileRead(big, "RAW")
 AssertEq(raw.Size, 108000, A_LineNumber)
-AssertEq(Crypt.HashFile(big), Crypt.SHA256(raw), A_LineNumber)
-AssertEq(Crypt.HashFile(big, "MD5"), Crypt.MD5(raw), A_LineNumber)
+AssertEq(Crypt.HashFile(big), Crypt.Hash(raw, "SHA256"), A_LineNumber)
+AssertEq(Crypt.HashFile(big, "MD5"), Crypt.Hash(raw, "MD5"), A_LineNumber)
 AssertEq(Crypt.HashFile(big, "CRC32"), Crypt.Hash(raw, "CRC32"), A_LineNumber)
 FileDelete big
 
@@ -83,7 +83,7 @@ Throws(() => Crypt.HashFile(""), A_LineNumber, ValueError)
 
 ; An encoding name which cannot be resolved is an error, never a silent substitution, because the digest
 ; would otherwise be computed over the wrong bytes.
-Throws(() => Crypt.SHA256("abc", "no-such-encoding"), A_LineNumber, ValueError)
+Throws(() => Crypt.Hash("abc", "SHA256", "no-such-encoding"), A_LineNumber, ValueError)
 
 ; Encrypt/Decrypt round-trip, with the key and the text taken in the same encoding as everything else.
 secret := Crypt.Encrypt("hello", "key")
@@ -164,8 +164,8 @@ Throws(() => Crypt.PBKDF2("password", "salt", 0), A_LineNumber, ValueError)
 
 ; A name left blank falls back to the default, since an omitted argument reaches a function as "".
 blank := ""
-AssertEq(Crypt.Hash("abc", blank), Crypt.SHA256("abc"), A_LineNumber)
-AssertEq(Crypt.Hash("abc", blank, blank), Crypt.SHA256("abc"), A_LineNumber)
+AssertEq(Crypt.Hash("abc", blank), Crypt.Hash("abc", "SHA256"), A_LineNumber)
+AssertEq(Crypt.Hash("abc", blank, blank), Crypt.Hash("abc", "SHA256"), A_LineNumber)
 
 ; The upper bound of a SecureRandom range is included in it, as Random's is.
 hits := 0

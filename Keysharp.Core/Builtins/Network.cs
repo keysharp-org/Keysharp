@@ -6,130 +6,220 @@ namespace Keysharp.Builtins
 	public partial class Ks
 	{
 		/// <summary>
-		/// Sends an email.
+		/// Sends an email through an SMTP server.
 		/// </summary>
-		/// <param name="recipients">A list of receivers of the message.</param>
+		/// <param name="recipients">One address as a String, or several as an <see cref="Array"/> of Strings.</param>
 		/// <param name="subject">Subject of the message.</param>
 		/// <param name="message">Message body.</param>
-		/// <param name="options">A <see cref="Map"/> with any the following optional key/value pairs:<br/>
-		/// attachments: A string or <see cref="Array"/> of strings of file paths to send as attachments.<br/>
-		/// bcc: A string or <see cref="Array"/> of strings of blind carbon copy recipients.<br/>
-		/// cc: A string or <see cref="Array"/> of strings of carbon copy recipients.<br/>
-		/// from: A string of comma separated from address.<br/>
-		/// replyto: A string of comma separated reply address.<br/>
-		/// host: The SMTP client hostname and port string in the form "hostname:port".<br/>
-		/// header: A string of additional header information.
+		/// <param name="options">A <see cref="Map"/> carrying the settings below. <c>host</c> and <c>from</c> are
+		/// required, because SMTP has no sensible default for either. Every other key is optional, and an
+		/// unrecognized key raises rather than being sent as a header.<br/>
+		/// host: The SMTP server as "hostname" or "hostname:port". Port 25 if none is given.<br/>
+		/// from: The sender's address.<br/>
+		/// cc / bcc: A String or <see cref="Array"/> of Strings of further recipients.<br/>
+		/// replyto: The address replies should go to, when it differs from <c>from</c>.<br/>
+		/// attachments: A String or <see cref="Array"/> of Strings of file paths.<br/>
+		/// headers: A <see cref="Map"/> of additional SMTP header names and values.
 		/// </param>
-		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if any errors occur.</exception>
+		/// <exception cref="ValueError">Thrown if a required option is missing, an option's value has the wrong
+		/// shape, an address or port cannot be parsed, or an unrecognized key is present.</exception>
+		/// <exception cref="TypeError">Thrown if <paramref name="recipients"/> is neither a String nor an Array of them.</exception>
+		/// <exception cref="OSError">Thrown if an attachment cannot be read, or the server rejects the message or cannot be reached.</exception>
 		public static object Mail(object recipients, string subject, string message, Map options = null)
 		{
-			var msg = new MailMessage { Subject = subject, Body = message };
-			msg.From = new MailAddress(string.Concat(Environment.UserName, "@", Environment.UserDomainName));
+			var to = new List<string>();
 
 			if (recipients is string s)
 			{
-				msg.To.Add(new MailAddress(s));
+				if (s.Length != 0)
+					to.Add(s);
 			}
-			else if (recipients is IEnumerable enumerable)
+			else if (recipients is Array arr)
 			{
-				foreach (var item in enumerable)
-					if (!string.IsNullOrEmpty(item as string))
-						msg.To.Add((string)item);
+				for (var i = 0; i < arr.Count; i++)
+					if (arr.array[i] is not string entry)
+						return Errors.TypeErrorOccurred($"Recipient {i + 1} is {Errors.Describe(arr.array[i])}; every recipient must be a String.");
+					else if (entry.Length == 0)
+						return Errors.ValueErrorOccurred($"Recipient {i + 1} is empty.", recipients);
+					else
+						to.Add(entry);
 			}
 			else
-				return Errors.TypeErrorOccurred(recipients, typeof(IEnumerable));
+				return Errors.TypeErrorOccurred(recipients, typeof(string));
 
-			var smtpHost = "localhost";
-			int? smtpPort = null;
+			if (to.Count == 0)
+				return Errors.ValueErrorOccurred("At least one recipient is required.", recipients);
 
-			if (options == null)
-				goto send;
+			string host = null, from = null, replyTo = null;
+			var port = 25;
+			List<string> cc = null, bcc = null, attachments = null;
+			Map headers = null;
 
-			foreach (var (key, val) in options)
+			if (options != null)
 			{
-				var item = key as string;
-
-				if (string.IsNullOrEmpty(item))
-					continue;
-
-				string[] value;
-
-				if (val is string s2)
-					value = [s2];
-				//else if (val is string[] sa)//Probably would never be a raw array of strings.
-				//  value = sa;
-				else if (val is Array arr)
+				foreach (var (key, val) in options)
 				{
-					value = new string[arr.Count];
+					var item = key as string;
 
-					for (var i = 0; i < arr.Count; i++)
-						value[i] = arr.array[i].ToString();//Access the underlying ArrayList directly for performance.
-				}
-				else
-					continue;
+					if (string.IsNullOrEmpty(item))
+						continue;
 
-				switch (item)
-				{
-					case var x when x.Equals(Keyword_Attachments, StringComparison.OrdinalIgnoreCase):
-						foreach (var entry in value)
-							if (File.Exists(entry))
-								msg.Attachments.Add(new Attachment(entry));
-
-						break;
-
-					case var x when x.Equals(Keyword_Bcc, StringComparison.OrdinalIgnoreCase):
-						foreach (var entry in value)
-							msg.Bcc.Add(entry);
-
-						break;
-
-					case var x when x.Equals(Keyword_CC, StringComparison.OrdinalIgnoreCase):
-						foreach (var entry in value)
-							msg.CC.Add(entry);
-
-						break;
-
-					case var x when x.Equals(Keyword_From, StringComparison.OrdinalIgnoreCase):
-						msg.From = new MailAddress(value[0]);
-						break;
-
-					case var x when x.Equals(Keyword_ReplyTo, StringComparison.OrdinalIgnoreCase):
-						msg.ReplyToList.Add(new MailAddress(value[0]));
-						break;
-
-					case var x when x.Equals(Keyword_Host, StringComparison.OrdinalIgnoreCase):
+					switch (item)
 					{
-						smtpHost = value[0];
-						var z = smtpHost.LastIndexOf(Keyword_Port);
-
-						if (z != -1)
+						case var x when x.Equals(Keyword_Host, StringComparison.OrdinalIgnoreCase):
 						{
-							var port = smtpHost.AsSpan(z + 1);
-							smtpHost = smtpHost.Substring(0, z);
+							if (Single(val) is not string h)
+								return Errors.ValueErrorOccurred($"The \"{item}\" option must be a String.", val);
 
-							if (int.TryParse(port, out var n))
-								smtpPort = n;
+							// Rightmost colon only, and never one inside a bracketed IPv6 literal.
+							var z = h.LastIndexOf(Keyword_Port);
+
+							if (z != -1 && h.LastIndexOf(']') < z)
+							{
+								if (!int.TryParse(h.AsSpan(z + 1), out port) || port < 1 || port > 65535)
+									return Errors.ValueErrorOccurred($"\"{h[(z + 1)..]}\" is not a port between 1 and 65535.", val);
+
+								h = h[..z];
+							}
+
+							if (h.Length == 0)
+								return Errors.ValueErrorOccurred($"The \"{item}\" option names no server.", val);
+
+							host = h;
+							break;
 						}
-					}
-					break;
 
-					default:
-						msg.Headers.Add(item, value[0]);
-						break;
+						case var x when x.Equals(Keyword_From, StringComparison.OrdinalIgnoreCase):
+							if ((from = Single(val) as string) == null)
+								return Errors.ValueErrorOccurred($"The \"{item}\" option must be a String.", val);
+
+							break;
+
+						case var x when x.Equals(Keyword_ReplyTo, StringComparison.OrdinalIgnoreCase):
+							if ((replyTo = Single(val) as string) == null)
+								return Errors.ValueErrorOccurred($"The \"{item}\" option must be a String.", val);
+
+							break;
+
+						case var x when x.Equals(Keyword_CC, StringComparison.OrdinalIgnoreCase):
+							if ((cc = Many(val)) == null)
+								return Errors.ValueErrorOccurred($"The \"{item}\" option must be a String or an Array of them.", val);
+
+							break;
+
+						case var x when x.Equals(Keyword_Bcc, StringComparison.OrdinalIgnoreCase):
+							if ((bcc = Many(val)) == null)
+								return Errors.ValueErrorOccurred($"The \"{item}\" option must be a String or an Array of them.", val);
+
+							break;
+
+						case var x when x.Equals(Keyword_Attachments, StringComparison.OrdinalIgnoreCase):
+							if ((attachments = Many(val)) == null)
+								return Errors.ValueErrorOccurred($"The \"{item}\" option must be a String or an Array of them.", val);
+
+							break;
+
+						case var x when x.Equals(Keyword_Headers, StringComparison.OrdinalIgnoreCase):
+							if ((headers = val as Map) == null)
+								return Errors.ValueErrorOccurred($"The \"{item}\" option must be a Map of header names and values.", val);
+
+							break;
+
+						default:
+							return Errors.ValueErrorOccurred($"Unknown option \"{item}\". Accepted keys are host, from, cc, bcc, replyto, attachments and headers.", key);
+					}
 				}
 			}
 
-			send:
-			var client = smtpPort == null ? new SmtpClient(smtpHost) : new SmtpClient(smtpHost, (int)smtpPort);
+			if (host == null)
+				return Errors.ValueErrorOccurred("The \"host\" option is required: there is no default SMTP server.");
+
+			if (from == null)
+				return Errors.ValueErrorOccurred("The \"from\" option is required: SMTP has no sender to fall back on.");
+
+			// Every address and attachment below is script-supplied and throws out of the BCL when it cannot be
+			// parsed or read, so the whole build-and-send is guarded; the message and client are disposed either
+			// way, because an Attachment holds its file open until the message is.
+			MailMessage msg = null;
+			SmtpClient client = null;
 
 			try
 			{
+				msg = new MailMessage { Subject = subject, Body = message, From = new MailAddress(from) };
+
+				foreach (var entry in to)
+					msg.To.Add(new MailAddress(entry));
+
+				if (cc != null)
+					foreach (var entry in cc)
+						msg.CC.Add(new MailAddress(entry));
+
+				if (bcc != null)
+					foreach (var entry in bcc)
+						msg.Bcc.Add(new MailAddress(entry));
+
+				if (replyTo != null)
+					msg.ReplyToList.Add(new MailAddress(replyTo));
+
+				if (attachments != null)
+					foreach (var entry in attachments)
+						msg.Attachments.Add(new Attachment(entry));
+
+				if (headers != null)
+					foreach (var (name, value) in headers)
+						if (name is string header && header.Length != 0)
+							msg.Headers.Add(header, value?.ToString() ?? "");
+
+				client = new SmtpClient(host, port);
 				client.Send(msg);
 				return DefaultObject;
 			}
+			catch (FormatException ex)
+			{
+				return Errors.ValueErrorOccurred(ex.Message);
+			}
+			catch (ArgumentException ex)
+			{
+				return Errors.ValueErrorOccurred(ex.Message);
+			}
 			catch (Exception ex)
 			{
-				return Errors.ErrorOccurred(ex.Message);
+				// SmtpException says only "Failure sending mail."; the reason is always one level down.
+				return Errors.OSErrorOccurredWithMessage(ex.InnerException?.Message is string inner && inner.Length != 0
+						? $"{ex.Message} {inner}"
+						: ex.Message);
+			}
+			finally
+			{
+				msg?.Dispose();
+				client?.Dispose();
+			}
+
+			// An option taking exactly one value accepts a bare String or a one-element Array, so a script
+			// assembling options can use one shape throughout. Null means it was neither.
+			static object Single(object val) =>
+			val is string one ? one
+			: val is Array a && a.Count == 1 && a.array[0] is string only ? only
+			: null;
+
+			// An option taking any number of values. Null means the value was neither, or held a non-String.
+			static List<string> Many(object val)
+			{
+				if (val is string one)
+					return one.Length != 0 ? [one] : [];
+
+				if (val is not Array a)
+					return null;
+
+				var list = new List<string>(a.Count);
+
+				for (var i = 0; i < a.Count; i++)
+					if (a.array[i] is string entry && entry.Length != 0)
+						list.Add(entry);
+					else
+						return null;
+
+				return list;
 			}
 		}
 

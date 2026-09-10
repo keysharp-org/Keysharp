@@ -40,5 +40,12 @@ namespace Keysharp.Tests
 		/// </summary>
 		[Test, Category("Network"), NonParallelizable]
 		public void HttpClass() => Assert.IsTrue(TestScript("http", true));
+
+		/// <summary>
+		/// <c>Ks.Mail</c> against a loopback SMTP server the script starts itself, covering the envelope it
+		/// builds as well as every input it refuses.
+		/// </summary>
+		[Test, Category("Network"), NonParallelizable]
+		public void MailClass() => Assert.IsTrue(TestScript("mail", true));
 	}
 }

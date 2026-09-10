@@ -133,10 +133,9 @@ namespace Keysharp.Builtins
 			return Reflections.FindOwnProp(obj.GetType(), nameVal) ? 1L : 0L;
 		}
 
-		public static long OwnPropCount(object @this)
+		// The implementation behind ObjOwnPropCount, which accepts any value, so a primitive reaches here.
+		internal static long OwnPropCount(object @this)
 		{
-			// Reached with a primitive through the free function ObjOwnPropCount, which — unlike the method form —
-			// has no prototype lookup to fail first.
 			if (@this is not Any obj)
 				return (long)Errors.TypeErrorOccurred(@this, typeof(Any), 0L);
 

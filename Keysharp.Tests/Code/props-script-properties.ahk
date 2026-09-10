@@ -1,4 +1,4 @@
-#import KS { A_NewLine, A_ProcessArch, A_OSArch }
+#import KS { A_NewLine, A_ProcessArch, A_OSArch, A_OSType }
 #NoTrayIcon
 #Include <assert>
 
@@ -76,8 +76,6 @@ myfunc()
 }
 
 myfunc()
-
-AssertEq(A_IsUnicode, true, A_LineNumber)
 
 Assert(A_NewLine = "`n" || A_NewLine = "`r`n", A_LineNumber)
 

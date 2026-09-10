@@ -306,16 +306,6 @@ namespace Keysharp.Internals.Threading
 		}
 
 		/// <summary>
-		/// The running thread's priority. A thread whose priority is lower than the running one's cannot
-		/// interrupt it. Overdue timers wait until their priority allows them to run.
-		/// </summary>
-		internal static long A_Priority
-		{
-			get => Script.TheScript.Threads.CurrentThread.priority;
-			set => Script.TheScript.Threads.SetPriority(Script.TheScript.Threads.CurrentThread, value);
-		}
-
-		/// <summary>
 		/// The send mode to use for sending keys.<br/>
 		/// Possible values are Event, Input, Play, and InputThenPlay.
 		/// </summary>
