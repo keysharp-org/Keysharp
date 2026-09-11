@@ -34,7 +34,7 @@ namespace Keysharp.Internals
 	/// <para>So a badge icon degrades to a badge number or text, and a per-window call becomes an application-wide
 	/// one. Nothing here reports whether the shell actually drew anything, because two of the three platforms
 	/// cannot say -- the Linux signal is a broadcast with no reply. What can be answered honestly is what this
-	/// platform is able to draw at all: <see cref="HasBadgeIcon"/> and <see cref="IsPerWindow"/>.</para>
+	/// platform is able to draw at all: <see cref="IsBadgeIconSupported"/> and <see cref="IsPerWindow"/>.</para>
 	///
 	/// <para>Eto has a <c>Taskbar</c> of its own, and macOS progress is handed straight to it because its dock tile
 	/// handler is the better implementation. The other two deliberately are not. Eto's Windows handler declares
@@ -49,7 +49,7 @@ namespace Keysharp.Internals
 		/// <summary>
 		/// Whether the badge can be an icon. Only Windows draws one; the others have a number or a short string.
 		/// </summary>
-		internal static bool HasBadgeIcon =>
+		internal static bool IsBadgeIconSupported =>
 #if WINDOWS
 			true;
 #else

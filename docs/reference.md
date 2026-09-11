@@ -610,11 +610,11 @@ Controlling another application needs **Automation** permission, granted per tar
 			caps := RequestCapabilities()
 			```
 		+ Prefer `#Requires capability` for scripts that need permissions from startup. Use `RequestCapabilities` directly when you need to check or request permissions at a specific point in script execution, or when you want to inspect the current status.
-	+ `ComponentAvailable(capability)`: Returns true when the fixed first-party `"parser"` or `"compiler"` deployment unit is installed or embedded, compatible, and loadable. The aliases `"parsing"` and `"compilation"` are accepted. This check loads the requested unit, so checking `"compiler"` can load Roslyn. Unknown names raise a `ValueError`.
-	+ `ParseScript(code)`: Parses, lowers, and compilation-validates source text or a script file without running it. Returns an empty string on success or formatted errors on failure, and requires the compiler component. Use `--validate-syntax` when only Roslyn-free syntax validation is needed.
+	+ `IsComponentAvailable(capability)`: Returns true when the fixed first-party `"parser"` or `"compiler"` deployment unit is installed or embedded, compatible, and loadable. The aliases `"parsing"` and `"compilation"` are accepted. This check loads the requested unit, so checking `"compiler"` can load Roslyn. Unknown names raise a `ValueError`.
+	+ `ValidateScript(code)` and `CompileScript(code)`: Check a script without running it, as the `--validate-syntax` and `--validate` switches do. `code` is a script file path when a file by that name exists, and script source otherwise. `ValidateScript` only parses, with the parser component, so it is fast and loads no Roslyn; `CompileScript` compiles in memory with the compiler component, which also catches lowering and C# errors. Both return `{IsValid, Errors, Warnings}`, where `Errors` and `Warnings` are Arrays of messages (from `ValidateScript`, each prefixed with its file, line and column), and both raise an `Error` when their component is not installed.
 	+ `RunScript(code, callbackOrAsync?, name := "*", executable?)`: Dynamically parses, compiles, and runs the provided code. It requires the compiler component in the calling process. The default name `"*"` reflects that the script is fed to the target process via StdIn rather than loaded from disk. Optionally provide the script name; whether to run it asynchronously (non-unset non-zero `callbackOrAsync` causes async run without a callback); an executable path to run the compiled assembly (defaults to the current process).
-		+ If `callbackOrAsync` is provided a function then it is called after the script has finished with the `ProcessInfo` as the only argument. Over multiple runs `RunScript` is faster than running the process manually and writing to StdIn because of assembly and compilation caching.
-		+ Returns a `ProcessInfo` object encapsulating info and I/O for the process. Available properties: `HasExited`, `ExitCode`, `ExitTime` (YYYYMMDDHH24MISS), `StdOut`, `StdErr`, `StdIn` (as `KeysharpFile`). Available methods: `Kill()`.
+		+ If `callbackOrAsync` is provided a function then it is called after the script has finished with the `ScriptProcess` as the only argument. Over multiple runs `RunScript` is faster than running the process manually and writing to StdIn because of assembly and compilation caching.
+		+ Returns a `ScriptProcess` object encapsulating info and I/O for the process. Available properties: `HasExited`, `ExitCode`, `ExitTime` (YYYYMMDDHH24MISS), `StdOut`, `StdErr`, `StdIn` (as `KeysharpFile`). Available methods: `Kill()`.
 * New `Clipboard` class (available from the `KS` module) covering everything the clipboard holds, not just text. `A_Clipboard`, `ClipboardAll()`, `ClipWait()` and `OnClipboardChange()` are unchanged and remain the AutoHotkey-compatible surface.
 	+ There is one clipboard per session, so the class has no instances — every member is used directly, and `Clipboard()` raises an error.
 	+ **Every getter returns `""` when the clipboard does not hold that content**, so `if (files := Clipboard.Files)` is the idiom.
@@ -639,7 +639,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		```
 	+ Waiting and events:
 		+ `Clipboard.Wait(timeout?, waitFor?)`: as `ClipWait`, and additionally accepts a kind name — `"Text"`, `"Any"`, `"Image"`, `"Files"`, `"Html"` or `"Rtf"`. `ClipWait` accepts those too.
-		+ `Clipboard.OnChange(callback, count?) => ClipboardHook`: calls `callback(hook, type)` on every change, where type and `A_EventInfo` are 0 (empty), 1 (text or files) or 2 (other), matching the global `OnClipboardChange`. The returned hook has `Stop()`, `Pause(newState?)`, `Paused`, `Status`, `IsActive` and `Count`, matching `Ks.WinEvent`. `Status` is `"Active"`, `"Paused"` or `"Stopped"`, and `IsActive` means *firing*, so a paused hook is not active. Prefer this over `OnClipboardChange` when the callback is a closure: unregistering there requires the very same function object back. A hook is independent of the `OnClipboardChange` handler chain — its return value is discarded, so it cannot suppress handlers registered there, and its callback runs on its own pseudo-thread. Both spellings drive the same single native clipboard monitor.
+		+ `Clipboard.OnChange(callback) => ClipboardHook`: calls `callback(hook, type)` on every change, where type and `A_EventInfo` are 0 (empty), 1 (text or files) or 2 (other), matching the global `OnClipboardChange`. The returned hook is an `EventHook`, managed like a `WinEvent` hook, and `Clipboard.Hooks` lists the live ones. Prefer this over `OnClipboardChange` when the callback is a closure: unregistering there requires the very same function object back. A hook is independent of the `OnClipboardChange` handler chain — its return value is discarded, so it cannot suppress handlers registered there, and its callback runs on its own pseudo-thread. Both spellings drive the same single native clipboard monitor.
 	+ Platform notes: on a Wayland session driven through a shell extension (Cinnamon/Muffin) the compositor's selection source can advertise only one type, so `Clipboard.Set` and `ClipboardAll` restore a single, most-useful representation rather than every format.
 * New debugging functions:
 	+ `ShowDebug()`: Shows the main window and focuses the debug output tab.
@@ -691,9 +691,7 @@ Controlling another application needs **Automation** permission, granted per tar
 				+ -This is not supported.
 			+ `\K` is not supported, instead, try using `(?<=abc)`.
 * New string functions:
-	+ `NormalizeEol(str, eol) => String`: Makes all line endings in a string match the value passed in, or the default for the current environment.
-	+ `Join(separator, params*) => String`: Joins each parameter together as a string, separated by `separator`.
-		+ Pass params as `params*` if it's a collection.
+	+ `ReplaceLineEndings(str, endOfLine?) => String`: Makes all line endings in a string (CR LF, CR, LF, form feed, NEL, U+2028 and U+2029) match `endOfLine`, which defaults to `` `n `` on every platform.
 * New window functions:
 	+ `WinFromPoint(x, y)`: Gets the window at a specific screen position.
 	+ `WinMaximizeAll()`: Maximizes all windows.
@@ -708,11 +706,11 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `IndexOf(value, startIndex := 1) => Integer`: Returns the index of the first item in the array which equals value, starting at `startIndex`. Returns 0 if value is not found.
 			+ If `startIndex` is negative, the search starts from the end of the array and moves toward the beginning.
 		+ `Join(separator := ',') => String`: Joins together the string representation of all array elements, separated by `separator`.
-		+ `MapTo(callback: (value [, index]) => Any, startIndex := 1) => Array`: Maps each element of the array, starting at `startIndex`, into a new array where the mapping in `callback` performs some operation.
+		+ `Map(callback: (value [, index]) => Any, startIndex := 1) => Array`: Maps each element of the array, starting at `startIndex`, into a new array where the mapping in `callback` performs some operation.
 			```
 			lam := (x, i) => x * i
 			arr := [10, 20, 30]
-			arr2 := arr.MapTo(lam) ; [10, 40, 90]
+			arr2 := arr.Map(lam) ; [10, 40, 90]
 			```
 		+ `Remove(value) => Boolean`: Removes the first occurrence of `value` and returns `true` if one was found and removed, else `false`. Omitting `value` removes the first element which has no value. A match is decided by `IndexOf`'s rule, which `Contains` uses too.
 		+ `Sort(callback: (a, b) => Integer) => this`: Sorts the array in place. The callback should use the usual logic of returning -1 when `a < b`, 0 when `a == b` and 1 otherwise.	
@@ -765,7 +763,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Every admitted play returns a stable `Audio.Playback` with `Volume`, `Pan`, `Loop`, `Mute`, `PositionMilliseconds`, `Peak`, `Pause`, `Resume` and `Stop`. Its identity never rebinds, so a handle kept after its voice was stolen controls nothing rather than controlling a stranger. A bounded refusal from `Audio.Output.Play` is a blank return; callers who do not need control ignore the result.
 		+ `Audio.Devices()` and `Audio.DefaultDevice()` return `Audio.Device` snapshots carrying `Id`, `Name`, `Kind`, `Status`, `IsDefault`, `IsRunning`, `Volume`, `Mute`, `Refresh()` and `ToClr()`. The `Id` is opaque, exact and unique across outputs and inputs, and is the only durable selector: prefixes, enumeration indexes and `Name:Index` are deliberately not accepted.
 		+ `IsRunning` answers whether any application currently holds a live stream on a device, which is what makes "is my microphone being recorded" expressible. It always returns a Boolean. `Status` distinguishes `"Running"`, `"Idle"`, `"Unknown"` and `"Missing"`; `IsRunning` is true only for `"Running"`. An unavailable backend does not establish removal. Running is not the same as audible.
-		+ `Audio.OnDeviceChange(callback, kind)` fires `callback(hook, kind, device)` for `"Added"`, `"Removed"`, `"Changed"` and `"DefaultChanged"`, returning the shared `EventHook`. `Audio.Sessions()` and `Audio.SetApplicationVolume()` control other applications where the platform has a per-application model; `Audio.Meter` gives native level observation an explicit lifetime; `Audio.Recorder` captures a microphone or system output to a WAV file or to memory.
+		+ `Audio.OnDeviceChange(callback, kind)` fires `callback(hook, kind, device)` for `"Added"`, `"Removed"`, `"Changed"` and `"DefaultChanged"`, returning an `Audio.DeviceHook`, an `EventHook` like every other subscription; `Audio.Hooks` lists the live ones. `Audio.Sessions()` and `Audio.SetApplicationVolume()` control other applications where the platform has a per-application model; `Audio.Meter` gives native level observation an explicit lifetime; `Audio.Recorder` captures a microphone or system output to a WAV file or to memory.
 		+ Levels are 0 through 100 and pan is -100 through 100, matching `SoundSetVolume` rather than the 0..1 the platform APIs use. Out-of-range input raises a `ValueError` rather than being clamped. An absent value reads as `""`, and an unsupported capability raises an `OSError` naming what the host is missing.
 		+ Platform support: Windows uses WASAPI and is verified on hardware. The Linux libpulse backend compiles and has been exercised against a real PulseAudio server for enumeration, playback and recording, though its volume, session and meter paths have not; the macOS AudioQueue backend compiles against the audio contracts but has never been run. macOS has no public per-application audio model, so `Audio.IsSessionControlSupported` is false there.
 	+ `App`: The running application — its identity, its invocation and its exit state. Available from the `KS` module: `#Import Ks { App }`, or `#Import Ks` and then `Ks.App`.
@@ -1224,7 +1222,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		- `--validate-syntax`
 		  Parses without lowering, compiling, or loading Roslyn. `--syntax-only` and `--parse-only` are aliases.
 		- `--with-parser`, `--with-compiler`, `--with-component <parser|compiler>`
-		  Includes the selected optional first-party deployment unit in a `.cks` or executable. Compiler use by `Ks.RunScript` or `Ks.ParseScript` is detected and included automatically. The generic form accepts unit IDs, not capability aliases.
+		  Includes the selected optional first-party deployment unit in a `.cks` or executable. Compiler use by `Ks.RunScript` or `Ks.CompileScript`, and parser use by `Ks.ValidateScript`, is detected and included automatically. The generic form accepts unit IDs, not capability aliases.
 		- `--without-parser`, `--without-compiler`, `--without-component <parser|compiler>`
 		  Excludes a selected deployment unit, including an automatically detected compiler. This supports capability-gated code which remains usable when the compiler is intentionally absent.
 		- `--asm`, `--assembly`
@@ -1279,44 +1277,51 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ New classes:
 		+ `WinEvent`: For subscribing to window events (active/foreground change, appearance, disappearance, move/resize, minimize, restore, title change, and caret movement) across platforms, modeled on the popular AutoHotkey `WinEvent` library.
 			+ It is part of the `KS` module; import it with `#import KS { WinEvent }`.
-			+ Each subscription is created by calling a `WinEvent()` static method, which returns a subscription object whose callback fires until it is stopped. The argument order mirrors the reference library: `count` (default `-1` = unlimited) comes right after `winTitle`, with the rarely-used `winText`/`excludeTitle`/`excludeText` criteria last. The criteria use standard `WinTitle` matching, and `count` limits how many times the callback fires.
+			+ Each subscription is created by calling a `WinEvent` static method, which returns a `WinEvent` hook whose callback fires until it is stopped. The criteria use standard `WinTitle` matching and follow the reference library's order without its `count`: `winTitle`, then the rarely-used `winText`/`excludeTitle`/`excludeText`.
 			+ The callback receives `(hookObject, hwnd, dwmsEventTime)`. Event-specific extras arrive in `A_EventInfo` instead: `Move()` puts the window's new position and size there as an object with `x`, `y`, `w` and `h` (matching `WinGetPos()`), and `CaretMove()` the caret's rectangle in the same shape but in screen coordinates. Every other event type keeps the event time in `A_EventInfo`.
 			+ The registration-time values of `DetectHiddenWindows`, `DetectHiddenText`, and the title-match mode are captured and used for matching (as in the reference library); `Exist()` additionally forces hidden detection on. `Active()` also fires when the active window's title changes, and `NotExist()` fires when a window is destroyed or — for a `DetectHiddenWindows`-off subscription — hidden or cloaked. `Exist()`/`NotExist()` replace the reference library's `Create()`/`Close()` (those were just `Exist()`/`NotExist()` with `DetectHiddenWindows` on).
 			+ `CaretMove()` reports the caret owner's *top-level* window (not the focused edit control), suppresses events whose caret position is unchanged, and rides on the same accessibility plumbing as `CaretGetPos()` — so an application that draws its own caret without exposing it to accessibility reports nothing on any platform, and the Linux/macOS sources additionally need AT-SPI enabled / Accessibility permission granted.
-			+ Subscriptions are auto-stopped on `__Delete()`, but because garbage collection is unpredictable, call `Stop()` (or let the owning thread tear down) when you are done with one.
+			+ A subscription lives until `Stop()`, until the thread that made it ends, or until the script exits. Dropping the hook object does not stop it, so `WinEvent.Hooks` can always find it.
 				```
-				class WinEvent
+				class WinEvent extends EventHook
 				{
-					; Event subscriptions: (Callback, WinTitle, Count, WinText, ExcludeTitle, ExcludeText)
-					static Active(callback [, winTitle, count := -1, winText, excludeTitle, excludeText]) => WinEvent  ; The foreground/active window changed (or the active window's title changed).
-					static Exist(callback [, winTitle, count, ...]) => WinEvent        ; A matching window appeared (created, shown, or its title changed to match). Fires once per window; DetectHiddenWindows-aware.
-					static NotExist(callback [, winTitle, count, ...]) => WinEvent     ; A matching window disappeared (destroyed, hidden/cloaked, or its title changed to no longer match).
-					static Move(callback [, winTitle, count, ...]) => WinEvent         ; A window moved or resized (every event is delivered as-is, not coalesced).
-					static Minimize(callback [, winTitle, count, ...]) => WinEvent     ; A window was minimized.
-					static Restore(callback [, winTitle, count, ...]) => WinEvent      ; A window was restored from the minimized state.
-					static TitleChange(callback [, winTitle, count, ...]) => WinEvent  ; A window's title changed.
-					static CaretMove(callback [, winTitle, count, ...]) => WinEvent    ; The text caret moved inside a window; A_EventInfo holds its screen rectangle.
+					; Event subscriptions: (Callback, WinTitle, WinText, ExcludeTitle, ExcludeText)
+					static Active(callback [, winTitle, winText, excludeTitle, excludeText]) => WinEvent  ; The foreground/active window changed (or the active window's title changed).
+					static Exist(callback [, winTitle, ...]) => WinEvent        ; A matching window appeared (created, shown, or its title changed to match). Fires once per window; DetectHiddenWindows-aware.
+					static NotExist(callback [, winTitle, ...]) => WinEvent     ; A matching window disappeared (destroyed, hidden/cloaked, or its title changed to no longer match).
+					static Move(callback [, winTitle, ...]) => WinEvent         ; A window moved or resized (every event is delivered as-is, not coalesced).
+					static Minimize(callback [, winTitle, ...]) => WinEvent     ; A window was minimized.
+					static Restore(callback [, winTitle, ...]) => WinEvent      ; A window was restored from the minimized state.
+					static TitleChange(callback [, winTitle, ...]) => WinEvent  ; A window's title changed.
+					static CaretMove(callback [, winTitle, ...]) => WinEvent    ; The text caret moved inside a window; A_EventInfo holds its screen rectangle.
+					static Hooks => Array        ; Every live WinEvent hook, oldest first, from every thread. A snapshot.
 
-					; Global pause
-					static Pause(newState := 1) => Boolean  ; Pause (1), unpause (0) or toggle (-1) all hooks; returns the new paused state.
-					static Paused => Boolean                ; Get/set whether all hooks are paused.
-
-					; Per-hook
-					Stop()                       ; Cancel the subscription so the callback no longer fires.
-					Pause(newState := 1) => Boolean ; Pause (1), unpause (0) or toggle (-1) this hook; returns the new paused state.
-					Paused => Boolean            ; Get/set this hook's own pause switch. A stopped hook reports false.
-					Status => String             ; "Active" | "Paused" | "Stopped" — the effective state.
-					IsActive => Boolean          ; Whether the hook is firing. A paused hook is NOT active.
-					EventType => String          ; The event kind, e.g. "Active" or "Move".
-					Count => Integer             ; Remaining number of times the callback will fire (-1 = unlimited).
+					EventName => String          ; The event, e.g. "Active" or "Move".
+					; Start(), Stop(), Pause(), InProgress and EndReason come from EventHook; see below.
 				}
 				```
-			+ `Status` is the one value that separates the three states a hook can be in; `IsActive` is the single question "is it firing?", and is false while the hook is paused — by its own `Paused` or by the global `WinEvent.Paused`, both of which suppress dispatch. `Stopped` is permanent: `Paused` reports false on a stopped hook, writes to it are ignored, and `Count` reads 0. `Ks.MonitorHook` and `ClipboardHook` carry the same members with the same meanings, minus the global switch — all three derive from `Ks.EventHook`, which is where that surface is defined.
-			+ If `EventType` cannot identify the event, it raises a continuable `Error`. Continuing through the error dialog or `OnError` returns an empty string.
+			+ If `EventName` cannot identify the event, it raises a continuable `Error`. Continuing through the error dialog or `OnError` returns an empty string.
+			+ There is no bulk pause or stop. Iterate `Hooks` instead — `for hook in WinEvent.Hooks` then `hook.Pause()` — which reaches only the hooks that exist when it is read; a hook registered afterwards starts active.
 			+ Platform support for `WinEvent`:
 				+ Windows: Uses `SetWinEventHook()` and supports every event type.
 				+ Linux: X11 window events come from keysharp-desktop. Wayland uses compositor events where available and otherwise diffs broker window snapshots, including KWin, GNOME, Cinnamon, COSMIC and wlroots backends; caret movement comes from AT-SPI.
 				+ macOS: Only active-application changes are currently reported (window-granular events via the accessibility APIs are planned).
+		+ `EventHook`: The base class of every subscription handle — `WinEvent`, `MonitorHook` (`Monitor.OnChange`), `ClipboardHook` (`Clipboard.OnChange`), `Audio.DeviceHook` (`Audio.OnDeviceChange`) and `Clr.EventSubscription` (`OnEvent` on a CLR object) — and of AutoHotkey's `InputHook`, so `hook is EventHook` holds for all six.
+			+ It is part of the `KS` module; import it with `#import KS { EventHook }`. Handles come only from those factories and from `InputHook()`; the class cannot be constructed directly.
+				```
+				class EventHook
+				{
+					InProgress => Boolean  ; True while the hook delivers callbacks.
+					EndReason => String    ; "" while the hook is active or paused, otherwise why it ended.
+					Start()                ; Resume a paused hook. Does nothing to an active or ended one.
+					Pause()                ; Stop delivering callbacks without unregistering; Start() resumes.
+					Stop()                 ; End the hook for good and release its native event source.
+				}
+				```
+			+ A hook is in one of three states, read from the two properties: active (`InProgress` true), paused (`InProgress` false, `EndReason` `""`) and ended (`EndReason` non-empty). The five factory families end with `"Stopped"` (`Stop()`, or for a CLR subscription `OnEvent(name, callback, 0)`), `"Exit"` (the owning thread or the script ended) or `"Failed"` (the native event source could not be installed). The first reason is kept, and an ended factory hook stays ended: `Start()` cannot revive it. `InputHook` keeps its AutoHotkey reasons, and its `Start()` begins a fresh input after one has ended.
+			+ `Stop()` and `Pause()` take effect when called. A callback queued for the hook but not yet started is discarded; one already running finishes. An `InputHook`'s `OnEnd` is the exception — it reports the stop, so it always runs.
+			+ To handle an event once, call `hook.Stop()` as the callback's first statement. A second event queued before that callback started is then discarded. If the callback must do something that waits (`Sleep`, `MsgBox`, `WinWait`) before stopping, guard it with a static flag, because waiting lets the next queued callback run first.
+			+ Each family's host class has a static `Hooks` listing its live hooks: `WinEvent.Hooks`, `Monitor.Hooks`, `Clipboard.Hooks`, `Audio.Hooks` and `Clr.Hooks`. Each is an Array of that family's hooks from every thread, oldest first, as they stood when it was read. `Clipboard.Hooks` covers only `Clipboard.OnChange`, never `OnClipboardChange` handlers.
 		+ `Monitor`: One display, carrying the metadata and device control the AHK-compatible `MonitorGet*` functions do not expose — model, manufacturer, serial, a stable id, refresh rate, physical size, orientation, connection kind, and brightness / raw DDC-CI control.
 			+ It is part of the `KS` module; import it with `#import KS { Monitor }`. It does not replace the AHK `MonitorGet*` functions, which are unchanged apart from now raising a `ValueError` on an out-of-range monitor index instead of silently substituting the primary (matching AutoHotkey v2). `Image.FromMonitor()` inherits that same validation.
 			+ It is where the Keysharp-specific screen facts live: the primary monitor's work area is `Monitor.Primary.WorkArea`, its scale is `Monitor.Primary.Scale`, and the whole desktop is `Monitor.VirtualScreen` — each available for *any* monitor, not just the primary. The AHK-standard `A_ScreenWidth`, `A_ScreenHeight` and `A_ScreenDPI` remain global. Note `A_ScreenDPI` is **not** `Monitor.Dpi`: the former is the system's logical text-size DPI (normally 96), the latter is computed from the panel's physical size. Hoist the rect when reading more than one field — `wa := Monitor.Primary.WorkArea` once, then `wa.Width`/`wa.Height` — since each read re-enumerates the topology.
@@ -1335,7 +1340,8 @@ Controlling another application needs **Automation** permission, granted per tar
 					static FromMouse() => Monitor
 					static FromWindow([winTitle, winText, excludeTitle, excludeText]) => Monitor  ; The monitor a window overlaps most.
 					static FromId(id) => Monitor   ; The monitor whose Id matches, or "" when it is not attached.
-					static OnChange(callback [, count := -1]) => MonitorHook  ; Display-configuration changes; see below.
+					static OnChange(callback) => MonitorHook  ; Display-configuration changes; see below.
+					static Hooks => Array          ; Every live OnChange hook, oldest first. A snapshot.
 
 					; Identity
 					Index => Integer             ; 1-based, matching MonitorGet's numbering.
@@ -1359,12 +1365,12 @@ Controlling another application needs **Automation** permission, granted per tar
 
 					; Device control — each is a real hardware transaction, deliberately not cached
 					Brightness => Integer        ; Get/set, 0-100. OSError naming the reason where unsupported.
-					HasBrightness => Boolean     ; A real probe of the device, so it costs one brightness read.
-					GetVCP(code) => Object       ; Raw DDC/CI (MCCS) feature => { current, max }.
+					IsBrightnessSupported => Boolean ; A real probe of the device, so it costs one brightness read.
+					GetVCP(code) => Object       ; Raw DDC/CI (MCCS) feature => { Current, Maximum }.
 					SetVCP(code, value)          ; Experimental; see the warning below.
 				}
 				```
-			+ `Monitor.OnChange(Callback)` returns a hook carrying the same `Stop`/`Pause`/`Paused`/`Status`/`IsActive`/`Count` surface as a `WinEvent` hook, so the two subscription APIs are managed identically. The callback receives `(Hook, Kind)`, where `Kind` is `"Topology"` when the set of attached monitors changed (plug/unplug, dock/undock) and `"Settings"` when the same monitors are attached but their resolution, position, scale or primary assignment changed; `A_EventInfo` holds the monitor count after the change. The kind is derived by comparing topology snapshots, so the vocabulary is the same on every platform and redundant notifications are dropped. A handler holding a `Monitor` should call its `Refresh()` — which returns falsy if that is the display that was just unplugged — or simply re-read `Monitor.All`.
+			+ `Monitor.OnChange(Callback)` returns a `MonitorHook`, an `EventHook` managed exactly like a `WinEvent` hook. The callback receives `(Hook, Kind)`, where `Kind` is `"Topology"` when the set of attached monitors changed (plug/unplug, dock/undock) and `"Settings"` when the same monitors are attached but their resolution, position, scale or primary assignment changed; `A_EventInfo` holds the monitor count after the change. The kind is derived by comparing topology snapshots, so the vocabulary is the same on every platform and redundant notifications are dropped. A handler holding a `Monitor` should call its `Refresh()` — which returns falsy if that is the display that was just unplugged — or simply re-read `Monitor.All`.
 			+ **`SetVCP()` is a foot-gun.** Writing an input-source or power code will switch the monitor away from this computer, and a few displays react badly to codes they document but mishandle; verify a code against the monitor's own MCCS documentation first. The feature is read back before it is written, so a code the monitor does not implement raises an `OSError` rather than reporting a success the display silently ignored.
 			+ Platform support for `Monitor`:
 				+ Windows: Metadata from the DisplayConfig API plus the EDID Windows caches under the monitor's registry key; brightness through WMI for the built-in panel and DDC/CI (dxva2) for external monitors.

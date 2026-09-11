@@ -21,7 +21,7 @@ namespace Keysharp.Builtins
 		/// <see cref="Gui.SetIcon"/> or <see cref="ToolTips.TraySetIcon"/>. This is the small badge drawn over it,
 		/// and the progress bar drawn inside it.</para>
 		///
-		/// <para>Only Windows has all of it; <see cref="staticget_HasBadgeIcon"/> and
+		/// <para>Only Windows has all of it; <see cref="staticget_IsBadgeIconSupported"/> and
 		/// <see cref="staticget_IsPerWindow"/> say what the running platform can draw, and what each one does
 		/// instead is documented on the Taskbar reference page rather than repeated here.</para>
 		/// </summary>
@@ -51,7 +51,7 @@ namespace Keysharp.Builtins
 			/// Whether this platform can draw an icon as the badge. False on Linux and macOS, which have only a
 			/// number or a short string; a badge set there shows its <em>Text</em> instead.
 			/// </summary>
-			public static object staticget_HasBadgeIcon(object @this) => TaskbarService.HasBadgeIcon;
+			public static object staticget_IsBadgeIconSupported(object @this) => TaskbarService.IsBadgeIconSupported;
 
 			/// <summary>
 			/// Whether the badge and progress apply to this window alone. False on Linux and macOS, where they

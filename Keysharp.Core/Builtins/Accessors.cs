@@ -1744,12 +1744,14 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// True if the script is persistent.
+		/// Whether the script keeps running after its last thread ends. Assigning it is <c>Persistent(value)</c>, so
+		/// the same bookkeeping runs: clearing it records the choice as the user's and lets a script with nothing
+		/// else to do exit.
 		/// </summary>
-		public static object A_IsPersistent
+		public static object A_Persistent
 		{
 			get => TheScript.persistent;
-			set => TheScript.persistent = ForceBool(value);
+			set => _ = Keysharp.Builtins.Flow.Persistent(value);
 		}
 
 		/// <summary>

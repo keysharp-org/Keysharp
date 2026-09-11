@@ -37,7 +37,7 @@ Throws(() => g.SetIcon(A_Temp . "\keysharp-no-such-icon.ico"), A_LineNumber)
 
 ; --- Taskbar: the class form ------------------------------------------------------------------------------
 
-Assert(Taskbar.HasBadgeIcon = true || Taskbar.HasBadgeIcon = false, A_LineNumber)
+Assert(Taskbar.IsBadgeIconSupported = true || Taskbar.IsBadgeIconSupported = false, A_LineNumber)
 Assert(Taskbar.IsPerWindow = true || Taskbar.IsPerWindow = false, A_LineNumber)
 
 Taskbar.SetProgress(40)

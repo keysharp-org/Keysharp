@@ -9,9 +9,9 @@ namespace Keysharp.Internals.Window
 	/// script-facing <c>Ks.MonitorHook</c> object wraps one of these, mirroring how <c>Ks.WinEvent</c> wraps
 	/// <see cref="WinEventRegistration"/>.
 	/// </summary>
-	internal sealed class MonitorEventRegistration(KeysharpFunc callback, long count, ScriptEventScheduler ownerScheduler,
+	internal sealed class MonitorEventRegistration(KeysharpFunc callback, ScriptEventScheduler ownerScheduler,
 		MonitorEventManager manager)
-		: EventSubscriptionBase(callback, count, ownerScheduler)
+		: EventSubscriptionBase(callback, ownerScheduler)
 	{
 		internal readonly MonitorEventManager manager = manager;
 
@@ -81,7 +81,10 @@ namespace Keysharp.Internals.Window
 				var b = EnsureBackend();
 
 				if (b == null)
-					return;                                   // unsupported environment; nothing to install
+				{
+					FailAllLocked();                          // unsupported environment; these hooks can never fire
+					return;
+				}
 
 				b.Start();
 			}
@@ -162,9 +165,9 @@ namespace Keysharp.Internals.Window
 
 		private void Dispatch(MonitorEventRegistration reg, string kind, long count)
 		{
-			// A paused hook stays registered and keeps the topology baseline current, but doesn't fire or consume
-			// its remaining-count budget.
-			if (reg.Suppressed || !reg.TryConsumeFire())
+			// A paused hook is admitted and queued like any other; RunCallback discards it if it is still paused
+			// when it would run. Keeping the topology baseline current across the pause is what makes resume clean.
+			if (!reg.IsActive)
 				return;
 
 			var scheduler = DispatchTarget(reg);
@@ -178,9 +181,6 @@ namespace Keysharp.Internals.Window
 			object[] args = [reg.scriptObject, kind];
 			var payload = new Payload(count);
 			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, args, payload));
-
-			if (reg.IsExhausted)
-				Unregister(reg);
 		}
 
 		// ---- topology diffing --------------------------------------------------------------

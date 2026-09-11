@@ -1227,7 +1227,7 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// `--validate` and <c>Ks.ParseScript</c> are checks, not builds, so an unrestored package set must be
+		/// `--validate` and <c>Ks.CompileScript</c> are checks, not builds, so an unrestored package set must be
 		/// REPORTED rather than fetched. Without this a syntax check could block for up to three minutes on a
 		/// network restore the user never asked for — and Keyview runs one on a keystroke debounce.
 		/// </summary>

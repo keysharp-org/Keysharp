@@ -756,17 +756,17 @@ namespace Keysharp.Builtins
 	/// <summary>
 	/// Encapsulates information and I/O for a spawned <see cref="Process"/>.
 	/// </summary>
-	public class ProcessInfo : KeysharpObject, IDisposable
+	public class ScriptProcess : KeysharpObject, IDisposable
 	{
 		private Process _process;
 		private bool disposed;
 
-		public ProcessInfo(params object[] args) : base(args)
+		public ScriptProcess(params object[] args) : base(args)
 		{
 			_process = args[0] as Process;
 		}
 
-		~ProcessInfo() => Dispose(false);
+		~ScriptProcess() => Dispose(false);
 
 		public long HasExited => _process.HasExited ? 1L : 0L;
 		public long ExitCode => (long)_process.ExitCode;

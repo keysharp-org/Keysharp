@@ -703,7 +703,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp extension. An Array describing the function's parameters (Name, Index, Optional, ByRef, Variadic, and Default when there is a real one). Reports exactly the names named-argument binding uses, excluding the receiver, internal parameters, and a bound function's already-bound ones. Unset when the parameters cannot be known (ObjBindMethod).",
+                     "notes":  "Keysharp extension. An Array describing the function's parameters (Name, Index, IsOptional, IsByRef, IsVariadic, and Default when there is a real one). Reports exactly the names named-argument binding uses, excluding the receiver, internal parameters, and a bound function's already-bound ones. Unset when the parameters cannot be known (ObjBindMethod).",
                      "tested-by":  "func-named-params.ahk"
                  },
                  {
@@ -3265,7 +3265,7 @@
                  },
                  {
                      "category":  "Collections",
-                     "feature":  "Array.MapTo()",
+                     "feature":  "Array.Map()",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -3695,7 +3695,18 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unknown",
-                     "notes":  "Calls Callback(Hook, Type) with 0 (empty), 1 (text or files), or 2 (other); A_EventInfo has the same value. Returns a ClipboardHook and runs independently of OnClipboardChange. Native callbacks are unverified on Linux and macOS.",
+                     "notes":  "Calls Callback(Hook, Type) with 0 (empty), 1 (text or files), or 2 (other); A_EventInfo has the same value. Returns a ClipboardHook (an EventHook) and runs independently of OnClipboardChange. Native callbacks are unverified on Linux and macOS.",
+                     "tested-by":  "clipboard-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Clipboard.Hooks",
+                     "syntax":  "for hook in Clipboard.Hooks",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "An Array of every live Clipboard.OnChange hook, oldest first, from every thread. A snapshot; OnClipboardChange handlers are not included.",
                      "tested-by":  "clipboard-class.ahk"
                  },
                  {
@@ -3805,6 +3816,28 @@
                  },
                  {
                      "category":  "Interop/Memory",
+                     "feature":  "Clr.ManagedInstance.OnEvent()",
+                     "syntax":  "sub := obj.OnEvent(\"Name\", Callback [, AddRemove])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Subscribes to a .NET event on an instance (or a static event on a ManagedType), with the callback run on the subscribing thread. Returns a Clr.EventSubscription, an EventHook; Pause() detaches the delegate and Start() re-attaches it. AddRemove is 1 (add) or 0 (remove); any other value is a ValueError. add_X/remove_X route through the same path.",
+                     "tested-by":  "directive-csharp-events.ahk"
+                 },
+                 {
+                     "category":  "Interop/Memory",
+                     "feature":  "Clr.Hooks",
+                     "syntax":  "for sub in Clr.Hooks",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "An Array of every live CLR event subscription this script made, oldest first, mixing instance and static events. A snapshot.",
+                     "tested-by":  "directive-csharp-events.ahk"
+                 },
+                 {
+                     "category":  "Interop/Memory",
                      "feature":  "Clr.ManagedNamespace",
                      "syntax":  "",
                      "windows":  "full",
@@ -3835,8 +3868,8 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "ComponentAvailable()",
-                     "syntax":  "ComponentAvailable(\"parser\")",
+                     "feature":  "IsComponentAvailable()",
+                     "syntax":  "IsComponentAvailable(\"parser\")",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -6745,7 +6778,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The InputHook function creates an object which can be used to collect or intercept keyboard input."
+                     "notes":  "The InputHook function creates an object which can be used to collect or intercept keyboard input. In Keysharp it is an EventHook, so `ih is EventHook` holds and it gains Pause()."
                  },
                  {
                      "category":  "Input/Automation",
@@ -6825,7 +6858,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Reason the input hook ended."
+                     "notes":  "Why the input ended: Stopped, Timeout, Match, EndKey, Max or Failed (the hook could not be installed). \"\" while the input has not started, is in progress or is paused. Unlike AutoHotkey, a hook that was never started reports \"\", not \"Stopped\"."
                  },
                  {
                      "category":  "Input/Automation",
@@ -6845,7 +6878,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Whether the input hook is currently running."
+                     "notes":  "1 while the input is collecting; 0 before Start(), while paused and after it ends."
                  },
                  {
                      "category":  "Input/Automation",
@@ -6969,13 +7002,24 @@
                  },
                  {
                      "category":  "Input/Automation",
+                     "feature":  "InputHook.Pause()",
+                     "syntax":  "ih.Pause()",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Keysharp extension from EventHook. Suspends an input in progress without ending it: keys pass through uncollected and unsuppressed, no callback runs, and the Timeout clock stops. Start() resumes it; Stop() ends it.",
+                     "tested-by":  "InputHookTests.RunningAndPausedHooksReportNoEndReason; InputHookTests.QueuedNotificationsAreDiscardedAfterPauseOrStop"
+                 },
+                 {
+                     "category":  "Input/Automation",
                      "feature":  "InputHook.Start()",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Starts capturing input. Linux and macOS use a suppression-capable global hook, which requires InputMonitoring and InputControl."
+                     "notes":  "Starts capturing input, or resumes a paused input with its buffer and remaining Timeout intact; does nothing while one is in progress. Linux and macOS use a suppression-capable global hook, which requires InputMonitoring and InputControl."
                  },
                  {
                      "category":  "Input/Automation",
@@ -6985,7 +7029,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Stops capturing input."
+                     "notes":  "Ends an input that is in progress or paused with EndReason \"Stopped\" and calls OnEnd; notifications queued for OnChar, OnKeyDown, OnKeyUp and the mouse callbacks are discarded, while OnEnd always runs. On a hook that was never started it only sets EndReason to \"Stopped\"."
                  },
                  {
                      "category":  "Input/Automation",
@@ -8290,7 +8334,18 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "planned",
-                     "notes":  "Fires callback(hook, kind, device) when a device is added, removed, renamed or becomes the default, where kind is \"Added\", \"Removed\", \"Changed\" or \"DefaultChanged\". Returns the shared Ks.EventHook, so Status, IsActive, Count, Paused, Pause and Stop behave exactly as they do for WinEvent and Monitor.OnChange. The subscription is rooted until Stop, count exhaustion or script teardown, so dropping the handle does not unsubscribe it.",
+                     "notes":  "Fires callback(hook, kind, device) when a device is added, removed, renamed or becomes the default, where kind is \"Added\", \"Removed\", \"Changed\" or \"DefaultChanged\". Returns an Audio.DeviceHook, an EventHook managed exactly like WinEvent and Monitor.OnChange hooks; dropping the handle does not unsubscribe it.",
+                     "tested-by":  "audio-class.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Audio.Hooks",
+                     "syntax":  "for hook in Audio.Hooks",
+                     "windows":  "full",
+                     "linux_x11":  "unknown",
+                     "linux_wayland":  "unknown",
+                     "macos":  "planned",
+                     "notes":  "An Array of every live Audio.OnDeviceChange hook, oldest first, from every thread. A snapshot.",
                      "tested-by":  "audio-class.ahk"
                  },
                  {
@@ -8494,13 +8549,24 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Monitor.OnChange()",
-                     "syntax":  "hook := Monitor.OnChange(Callback [, Count])",
+                     "syntax":  "hook := Monitor.OnChange(Callback)",
                      "windows":  "full",
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
-                     "notes":  "Calls Callback(Hook, Kind) with \"Topology\" for attachment changes or \"Settings\" for changes to resolution, position, scale or primary monitor. Returns a MonitorHook; A_EventInfo is the current monitor count. Duplicate notifications with no changes are suppressed. Native callbacks are unverified on Linux and macOS.",
+                     "notes":  "Calls Callback(Hook, Kind) with \"Topology\" for attachment changes or \"Settings\" for changes to resolution, position, scale or primary monitor. Returns a MonitorHook (an EventHook); A_EventInfo is the current monitor count. Duplicate notifications with no changes are suppressed. Native callbacks are unverified on Linux and macOS.",
                      "tested-by":  "MonitorTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Monitor.Hooks",
+                     "syntax":  "for hook in Monitor.Hooks",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "An Array of every live Monitor.OnChange hook, oldest first, from every thread. A snapshot.",
+                     "tested-by":  "EventHookTests.RegisterEnumerateAndStopThroughTheManager"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -8532,13 +8598,13 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Get or set the monitor's brightness as a percentage (0-100). Each access is a real device transaction (tens of milliseconds over DDC/CI) and is deliberately not cached, because the monitor's own buttons can change the value too. Windows uses WMI for the built-in panel and DDC/CI for external monitors. Linux uses the kernel backlight class for the built-in panel (a direct sysfs write where permitted, else logind's SetBrightness) and DDC/CI over /dev/i2c-* for external monitors, which needs i2c-dev loaded and access to the bus (a root install adds a udev rule granting the local-seat user access to display-controller i2c buses only; ddcutil's own rule works too) - hence partial. macOS uses the private DisplayServices framework for the built-in panel and Apple's own displays, and DDC/CI for every other external monitor: on Apple Silicon over the private IOAVService (the only option, since IOFramebuffer does not exist under the DCP architecture), on Intel over the public IOKit I2C API - the Intel path is implemented but untested. Throws an OSError naming the reason where unsupported; test HasBrightness to branch without an exception.",
+                     "notes":  "Get or set the monitor's brightness as a percentage (0-100). Each access is a real device transaction (tens of milliseconds over DDC/CI) and is deliberately not cached, because the monitor's own buttons can change the value too. Windows uses WMI for the built-in panel and DDC/CI for external monitors. Linux uses the kernel backlight class for the built-in panel (a direct sysfs write where permitted, else logind's SetBrightness) and DDC/CI over /dev/i2c-* for external monitors, which needs i2c-dev loaded and access to the bus (a root install adds a udev rule granting the local-seat user access to display-controller i2c buses only; ddcutil's own rule works too) - hence partial. macOS uses the private DisplayServices framework for the built-in panel and Apple's own displays, and DDC/CI for every other external monitor: on Apple Silicon over the private IOAVService (the only option, since IOFramebuffer does not exist under the DCP architecture), on Intel over the public IOKit I2C API - the Intel path is implemented but untested. Throws an OSError naming the reason where unsupported; test IsBrightnessSupported to branch without an exception.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "Monitor.HasBrightness",
-                     "syntax":  "if m.HasBrightness",
+                     "feature":  "Monitor.IsBrightnessSupported",
+                     "syntax":  "if m.IsBrightnessSupported",
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
@@ -8554,7 +8620,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Read or write a raw DDC/CI VCP feature (MCCS): 0x10 brightness, 0x12 contrast, 0x60 input source, 0x62 speaker volume, 0xD6 power mode. GetVCP returns {current, max}. SetVCP drives the monitor's firmware directly - an input-source or power code will switch the monitor away from this computer, and some displays mishandle codes they document, so verify a code against the monitor's MCCS documentation first. SetVCP reads the feature back before writing it, on the transport it already has open, so a code the monitor does not implement raises an OSError instead of reporting a success the display silently ignored - a DDC/CI write is unacknowledged, so that read is the only evidence the code exists. Windows uses dxva2; Linux talks to /dev/i2c-* directly, which needs i2c-dev loaded and bus access (granted by the udev rule a root install adds). macOS reaches external monitors over DDC/CI - the private IOAVService on Apple Silicon, the public IOKit I2C API on Intel (implemented but untested) - and cannot reach the built-in panel at all, which has no DDC/CI connection.",
+                     "notes":  "Read or write a raw DDC/CI VCP feature (MCCS): 0x10 brightness, 0x12 contrast, 0x60 input source, 0x62 speaker volume, 0xD6 power mode. GetVCP returns {Current, Maximum}. SetVCP drives the monitor's firmware directly - an input-source or power code will switch the monitor away from this computer, and some displays mishandle codes they document, so verify a code against the monitor's MCCS documentation first. SetVCP reads the feature back before writing it, on the transport it already has open, so a code the monitor does not implement raises an OSError instead of reporting a success the display silently ignored - a DDC/CI write is unacknowledged, so that read is the only evidence the code exists. Windows uses dxva2; Linux talks to /dev/i2c-* directly, which needs i2c-dev loaded and bus access (granted by the udev rule a root install adds). macOS reaches external monitors over DDC/CI - the private IOAVService on Apple Silicon, the public IOKit I2C API on Intel (implemented but untested) - and cannot reach the built-in panel at all, which has no DDC/CI connection.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {
@@ -9033,13 +9099,25 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "ParseScript()",
-                     "syntax":  "",
+                     "feature":  "ValidateScript()",
+                     "syntax":  "result := ValidateScript(Code)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Parses, lowers, and compilation-validates script text with the optional compiler component. Returns an empty string on success or formatted errors on failure."
+                     "notes":  "Checks a script file or script text for syntax errors with the optional parser component, as the --validate-syntax switch does, without compiling it. Returns {IsValid, Errors, Warnings}, the last two Arrays of messages prefixed with file and line. Raises an Error if the parser component is not installed.",
+                     "tested-by":  "DirectiveTests.CompileScriptCSharp; ScriptingComponentTests.cs"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "CompileScript()",
+                     "syntax":  "result := CompileScript(Code)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Compiles a script file or script text in memory with the optional compiler component, as the --validate switch does, without running or writing it; this also catches lowering and C# errors. Returns {IsValid, Errors, Warnings}. Raises an Error if the compiler component is not installed.",
+                     "tested-by":  "DirectiveTests.CompileScriptCSharp; ScriptingComponentTests.cs"
                  },
                  {
                      "category":  "Environment/System",
@@ -9149,17 +9227,17 @@
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "ProcessInfo",
+                     "feature":  "ScriptProcess",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Represents process handle metadata and redirected I/O streams."
+                     "notes":  "The object RunScript returns: the child script process and its redirected I/O streams."
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "ProcessInfo.ExitCode",
+                     "feature":  "ScriptProcess.ExitCode",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -9169,7 +9247,7 @@
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "ProcessInfo.ExitTime",
+                     "feature":  "ScriptProcess.ExitTime",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -9179,7 +9257,7 @@
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "ProcessInfo.HasExited",
+                     "feature":  "ScriptProcess.HasExited",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -9189,7 +9267,7 @@
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "ProcessInfo.Kill()",
+                     "feature":  "ScriptProcess.Kill()",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -9199,7 +9277,7 @@
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "ProcessInfo.StdErr",
+                     "feature":  "ScriptProcess.StdErr",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -9209,7 +9287,7 @@
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "ProcessInfo.StdIn",
+                     "feature":  "ScriptProcess.StdIn",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -9219,7 +9297,7 @@
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "ProcessInfo.StdOut",
+                     "feature":  "ScriptProcess.StdOut",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -9339,7 +9417,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "WinEvent.Active()",
-                     "syntax":  "WinEvent.Active(cb, winTitle?, count?, winText?, exclTitle?, exclText?)",
+                     "syntax":  "WinEvent.Active(cb, winTitle?, winText?, exclTitle?, exclText?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9350,7 +9428,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "WinEvent.Exist()",
-                     "syntax":  "WinEvent.Exist(cb, winTitle?, count?, winText?, exclTitle?, exclText?)",
+                     "syntax":  "WinEvent.Exist(cb, winTitle?, winText?, exclTitle?, exclText?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9361,7 +9439,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "WinEvent.NotExist()",
-                     "syntax":  "WinEvent.NotExist(cb, winTitle?, count?, winText?, exclTitle?, exclText?)",
+                     "syntax":  "WinEvent.NotExist(cb, winTitle?, winText?, exclTitle?, exclText?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9372,7 +9450,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "WinEvent.Move()",
-                     "syntax":  "WinEvent.Move(cb, winTitle?, count?, winText?, exclTitle?, exclText?)",
+                     "syntax":  "WinEvent.Move(cb, winTitle?, winText?, exclTitle?, exclText?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9383,7 +9461,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "WinEvent.Minimize()",
-                     "syntax":  "WinEvent.Minimize(cb, winTitle?, count?, winText?, exclTitle?, exclText?)",
+                     "syntax":  "WinEvent.Minimize(cb, winTitle?, winText?, exclTitle?, exclText?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9394,7 +9472,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "WinEvent.Restore()",
-                     "syntax":  "WinEvent.Restore(cb, winTitle?, count?, winText?, exclTitle?, exclText?)",
+                     "syntax":  "WinEvent.Restore(cb, winTitle?, winText?, exclTitle?, exclText?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9405,7 +9483,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "WinEvent.TitleChange()",
-                     "syntax":  "WinEvent.TitleChange(cb, winTitle?, count?, winText?, exclTitle?, exclText?)",
+                     "syntax":  "WinEvent.TitleChange(cb, winTitle?, winText?, exclTitle?, exclText?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9416,7 +9494,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "WinEvent.CaretMove()",
-                     "syntax":  "WinEvent.CaretMove(cb, winTitle?, count?, winText?, exclTitle?, exclText?)",
+                     "syntax":  "WinEvent.CaretMove(cb, winTitle?, winText?, exclTitle?, exclText?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9426,69 +9504,80 @@
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "WinEvent.Stop()",
+                     "feature":  "WinEvent.EventName",
+                     "syntax":  "hook.EventName",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The event this subscription listens for, e.g. \"Active\" or \"Move\".",
+                     "tested-by":  "Gui/guitest.ks; EventHookTests.WinEventReportsItsEventName; EventHookTests.InvalidEventTypeErrorRecovery"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "WinEvent.Hooks",
+                     "syntax":  "for hook in WinEvent.Hooks",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "An Array of every live WinEvent hook, oldest first, from every thread. A snapshot: iterate it to pause or stop hooks in bulk.",
+                     "tested-by":  "EventHookTests.RegisterEnumerateAndStopThroughTheManager"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "EventHook",
+                     "syntax":  "hook is EventHook",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp-specific Ks base class of every subscription handle (WinEvent hooks, MonitorHook, ClipboardHook, Audio.DeviceHook, Clr.EventSubscription) and of InputHook. Handles come only from the factories, and a subscription lives until Stop(), its thread ending or the script exiting; dropping the handle does not stop it.",
+                     "tested-by":  "EventHookTests.AssertHookSurface; EventHookTests.DeleteDoesNotStopTheSubscription"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "EventHook.InProgress",
+                     "syntax":  "hook.InProgress",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "1 while the hook delivers callbacks; 0 while it is paused or has ended.",
+                     "tested-by":  "EventHookTests.AssertHookSurface"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "EventHook.EndReason",
+                     "syntax":  "hook.EndReason",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "\"\" while the hook is active or paused. Once it ends: \"Stopped\" (Stop() or a third-party detach), \"Exit\" (its thread or the script ended) or \"Failed\" (the native event source could not be installed). The first reason is kept.",
+                     "tested-by":  "EventHookTests.AssertHookSurface; EventHookTests.RegisterEnumerateAndStopThroughTheManager"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "EventHook.Pause() / .Start()",
+                     "syntax":  "hook.Pause(), hook.Start()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Pause() suspends delivery without unregistering: a callback that comes due while the hook is paused is discarded. Start() resumes it, and does nothing to an active or ended hook.",
+                     "tested-by":  "EventHookTests.AssertHookSurface; EventHookTests.QueuedCallbacksAreDiscardedAfterStopOrPause"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "EventHook.Stop()",
                      "syntax":  "hook.Stop()",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Cancels the subscription. Also runs on __Delete, but GC timing is unpredictable so call it (or let the owning thread tear down) explicitly.",
-                     "tested-by":  "Gui/guitest.ks"
-                 },
-                 {
-                     "category":  "Automation",
-                     "feature":  "WinEvent.IsActive",
-                     "syntax":  "hook.IsActive",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Whether the subscription is still receiving events.",
-                     "tested-by":  "Gui/guitest.ks"
-                 },
-                 {
-                     "category":  "Automation",
-                     "feature":  "WinEvent.EventType",
-                     "syntax":  "hook.EventType",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The event kind this subscription listens for, e.g. \"Active\" or \"Move\".",
-                     "tested-by":  "Gui/guitest.ks; EventHookTests.InvalidEventTypeErrorRecovery"
-                 },
-                 {
-                     "category":  "Automation",
-                     "feature":  "WinEvent.Count",
-                     "syntax":  "hook.Count",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Remaining number of times the callback will fire (-1 = unlimited).",
-                     "tested-by":  "Gui/guitest.ks"
-                 },
-                 {
-                     "category":  "Automation",
-                     "feature":  "WinEvent.Pause()",
-                     "syntax":  "hook.Pause(newState) / WinEvent.Pause(newState)",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Pauses (1), unpauses (0) or toggles (-1) a single hook (instance) or all hooks (static). A paused hook stays registered but does not fire. Returns the resulting paused state.",
-                     "tested-by":  "Gui/guitest.ks"
-                 },
-                 {
-                     "category":  "Automation",
-                     "feature":  "WinEvent.Paused",
-                     "syntax":  "hook.Paused / WinEvent.Paused",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Gets or sets whether a single hook (instance) or all hooks (static) are paused.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Ends the subscription for good with EndReason \"Stopped\". Callbacks already queued are discarded; one already running finishes. A one-shot hook calls it as the first statement of its callback.",
+                     "tested-by":  "EventHookTests.QueuedCallbacksAreDiscardedAfterStopOrPause"
                  },
                  {
                      "category":  "Automation",
@@ -10278,7 +10367,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. HasBadgeIcon/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, and decorates the desktop entry selected by DESKTOP_ENTRY, then #App DesktopEntry, then Keysharp. Plasma and implementing docks consume it natively; the keysharp-desktop extension maps it onto GNOME's stock overview dash and Cinnamon's grouped-window-list. macOS badges the dock tile with text and draws progress on the tile, also application-wide. Cinnamon 6.6.9 is runtime-verified; GNOME, Plasma and macOS are compile-checked or source-verified only.",
+                     "notes":  "Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. IsBadgeIconSupported/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, and decorates the desktop entry selected by DESKTOP_ENTRY, then #App DesktopEntry, then Keysharp. Plasma and implementing docks consume it natively; the keysharp-desktop extension maps it onto GNOME's stock overview dash and Cinnamon's grouped-window-list. macOS badges the dock tile with text and draws progress on the tile, also application-wide. Cinnamon 6.6.9 is runtime-verified; GNOME, Plasma and macOS are compile-checked or source-verified only.",
                      "tested-by":  "IconInternals.cs; Gui/guitest.ks"
                  },
                  {
@@ -11411,13 +11500,13 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_IsPersistent",
+                     "feature":  "A_Persistent",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Reports whether the script is persistent."
+                     "notes":  "Whether the script keeps running after its last thread ends. Assigning it calls Persistent(), so the same bookkeeping runs."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -11739,13 +11828,13 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "NormalizeEol()",
-                     "syntax":  "NormalizeEol(Text, Eol?)",
+                     "feature":  "ReplaceLineEndings()",
+                     "syntax":  "ReplaceLineEndings(Text, EndOfLine?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Normalizes all line endings to a requested or platform-default sequence."
+                     "notes":  "Replaces every line ending in Text (CR LF, CR, LF, form feed, NEL, U+2028, U+2029) with EndOfLine, which defaults to `n on every platform."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

@@ -153,5 +153,137 @@ namespace Keysharp.Tests
 				io.input.prev = null;
 			}
 		}
+
+		/// <summary>
+		/// A fresh InputHook is idle, not ended: EndReason is "" until something ends it. AutoHotkey reports
+		/// "Stopped" here because its single Off status covers both cases; a hook that has never run has not ended.
+		/// </summary>
+		[Test, Category("InputHook")]
+		public void FreshHookIsIdleNotEnded()
+		{
+			var io = (InputHook)new InputHook("");
+			Assert.IsFalse(io.InProgress);
+			Assert.AreEqual("", io.EndReason);
+			Assert.IsInstanceOf<Ks.EventHook>(io, "InputHook shares the hook vocabulary with every event family.");
+
+			_ = io.Stop();
+			Assert.AreEqual("Stopped", io.EndReason, "Stop on a never-started hook ends it.");
+			Assert.IsFalse(io.InProgress);
+		}
+
+		/// <summary>A running input has no end reason yet, and says so with "" rather than unset, so
+		/// <c>!ih.EndReason</c> is safe to write while it runs. It used to read null and raise UnsetError.</summary>
+		[Test, Category("InputHook")]
+		public void RunningAndPausedHooksReportNoEndReason()
+		{
+			var io = (InputHook)new InputHook("");
+
+			io.input.Start();
+			Assert.IsTrue(io.InProgress);
+			Assert.AreEqual("", io.EndReason);
+
+			io.input.status = InputStatusType.Paused;
+			Assert.IsFalse(io.InProgress);
+			Assert.AreEqual("", io.EndReason, "A paused input is idle, not ended.");
+		}
+
+		/// <summary>The documented argument-less <c>ih.Wait()</c> used to raise a missing-argument error.</summary>
+		[Test, Category("InputHook")]
+		public void WaitTakesNoArgument()
+		{
+			var io = (InputHook)new InputHook("");
+			Assert.AreEqual("", io.Wait(), "Waiting on a hook that is not running returns at once with its reason.");
+		}
+
+		/// <summary>
+		/// Pausing and stopping take effect at the call: a notification queued before either is discarded when it
+		/// would run. A paused input stays on the input stack, which is why the test is the status, not membership.
+		/// </summary>
+		[Test, Category("InputHook"), Category("Misc")]
+		public void QueuedNotificationsAreDiscardedAfterPauseOrStop()
+		{
+			var context = UseQueuedMainContext();
+			var calls = 0;
+			var io = (InputHook)new InputHook("");
+			io.OnMouseMove = new KeysharpFunc((Func<object, object, object, object>)((_, dx, dy) =>
+			{
+				calls++;
+				return 0L;
+			}));
+
+			var previous = s.input;
+			io.input.Start();
+			io.input.prev = previous;
+			s.input = io.input;
+
+			try
+			{
+				Assert.IsTrue(s.HookThread.CollectMouseMove(1, 1, 0, true, 10, deviceId: 1, isAbsolute: false));
+				_ = io.Pause();
+				context.DrainAll();
+				Assert.AreEqual(0, calls, "A notification queued before Pause is discarded while paused.");
+				Assert.AreSame(io.input, s.input, "Pausing leaves the input linked where it stood.");
+
+				io.input.status = InputStatusType.InProgress;
+				Assert.IsTrue(s.HookThread.CollectMouseMove(1, 1, 0, true, 11, deviceId: 1, isAbsolute: false));
+				context.DrainAll();
+				Assert.AreEqual(1, calls);
+
+				Assert.IsTrue(s.HookThread.CollectMouseMove(1, 1, 0, true, 12, deviceId: 1, isAbsolute: false));
+				io.input.status = InputStatusType.Off;
+				context.DrainAll();
+				Assert.AreEqual(1, calls, "A notification queued before the input ended is discarded.");
+			}
+			finally
+			{
+				s.input = previous;
+				io.input.prev = null;
+			}
+		}
+
+		/// <summary>
+		/// Ending an input unlinks it and releases the persistence roots its start took, whether or not it has an
+		/// OnEnd. Both used to be skipped for an input with OnChar but no OnEnd, which kept a script that was
+		/// otherwise done running forever.
+		/// </summary>
+		[Test, Category("InputHook"), Category("Misc")]
+		public void EndingWithoutOnEndStillReleases()
+		{
+			if (s.HookThread is not HookThread { kbdMsSender: not null })
+				Assert.Ignore("No input sender in this host, so an input cannot be ended through the hook.");
+
+			var context = UseQueuedMainContext();
+			// Releasing the last input rightly checks whether the script is done, and this fixture has nothing else
+			// keeping it alive, so without this the check would tear it down under the assertions.
+			s.FlowData.persistentValueSetByUser = true;
+			var io = (InputHook)new InputHook("");
+			io.OnChar = new KeysharpFunc((Func<object, object, object>)((_, ch) => 0L));
+			var slot = io.GetCallbackSlot(UserMessages.AHK_INPUT_CHAR);
+
+			var previous = s.input;
+			io.input.Start();
+			io.input.prev = previous;
+			s.input = io.input;
+			io.ActivateCallbackPersistence();
+
+			try
+			{
+				Assert.IsTrue(slot.IsActive, "Starting roots the input through its callbacks.");
+				io.input.Stop();
+				Assert.AreEqual("Stopped", io.EndReason);
+				context.DrainAll();
+
+				Assert.IsFalse(slot.IsActive, "The persistence root is released with no OnEnd to run.");
+				Assert.AreNotSame(io.input, s.input, "The input is unlinked.");
+			}
+			finally
+			{
+				if (ReferenceEquals(s.input, io.input))
+					s.input = previous;
+
+				io.input.prev = null;
+				io.DeactivateCallbackPersistence();
+			}
+		}
 	}
 }

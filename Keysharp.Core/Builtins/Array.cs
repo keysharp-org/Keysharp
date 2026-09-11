@@ -185,7 +185,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	///     object[]: adds each element to the underlying list.<br/>
 	///     <see cref="List{object}"/>: copies each element of the list to the underlying list.<br/>
 	///     <see cref="Array"/>: adds a single element to the underlying list with that element being the passed in <see cref="Array"/>.<br/>
-	///     <see cref="Map"/>: adds a single element to the underlying list with that element being the passed in <see cref="Map"/>.<br/>
+	///     <see cref="Keysharp.Builtins.Map"/>: adds a single element to the underlying list with that element being the passed in <see cref="Keysharp.Builtins.Map"/>.<br/>
 	///     <see cref="ICollection"/>: adds each element to the underlying list.
 	/// </param>
 	/// <returns>Empty string, unused.</returns>
@@ -288,7 +288,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	}
 
 	/// <summary>
-	/// Wraps an element callback so it receives only the arguments it declares. Filter, FindIndex and MapTo all
+	/// Wraps an element callback so it receives only the arguments it declares. Filter, FindIndex and Map all
 	/// document their callback as taking <c>(Value, Index)</c> where it "may declare only the parameters it
 	/// needs", but passing both unconditionally fails a one-parameter callback with "Too many arguments".
 	/// <para>
@@ -299,7 +299,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// </summary>
 	/// <param name="requireResult">
 	/// Whether a callback that returns no value is an error. True for a predicate (Filter, FindIndex), whose
-	/// result is the whole point; false for a transform (MapTo), where an unset element is a legitimate result
+	/// result is the whole point; false for a transform (Map), where an unset element is a legitimate result
 	/// and is how a sparse array is built.
 	/// </param>
 	private static Func<object, object, object> ElementInvoker(object callback, bool requireResult = true)
@@ -575,7 +575,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <returns>A new <see cref="Array"/> object consisting of the output of callback applied to all elements starting at startIndex.</returns>
 	/// <exception cref="IndexError">An <see cref="IndexError"/> exception is thrown if startIndex is out of bounds.</exception>
 	/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if callback is not of type <see cref="KeysharpFunc"/>.</exception>
-	public object MapTo(object callback, object startIndex = null)
+	public object Map(object callback, object startIndex = null)
 	{
 		if (callback is KeysharpFunc ifo)
 		{

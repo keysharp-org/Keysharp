@@ -315,11 +315,11 @@ AssertEq(str, "10-20-30-40-5-60-70-80-90-10", A_LineNumber)
 
 lam := (x, i) => x * i
 arr := [10, 20, 30]
-arr2 := arr.MapTo(lam)
+arr2 := arr.Map(lam)
 
 Assert(arr2.Length == 3 && arr2[1] == 10 && arr2[2] == 40 && arr2[3] == 90, A_LineNumber)
 
-arr2 := arr.MapTo(lam, 2)
+arr2 := arr.Map(lam, 2)
 
 Assert(arr2.Length == 2 && arr2[1] == 40 && arr2[2] == 90, A_LineNumber)
 

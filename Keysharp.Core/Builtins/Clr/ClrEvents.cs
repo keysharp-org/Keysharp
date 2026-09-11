@@ -16,37 +16,58 @@ namespace Keysharp.Builtins
 			/// so passing the same function to a raw remove_X accessor silently removes nothing. This object keeps the
 			/// delegate it attached, so <see cref="Stop"/> always detaches the right one.
 			/// </para>
+			/// <para>
+			/// Pausing detaches the delegate and <c>Start()</c> re-attaches it, rather than leaving a flagged handler in
+			/// the invocation list: a present-but-silent handler would still be invoked, and for a delegate with a
+			/// return value its empty result would overwrite the one an earlier handler produced. The cost is the
+			/// handler's position in the invocation list after a resume, which the CLR decides anyway.
+			/// </para>
 			/// </summary>
-			public sealed class EventSubscription : KeysharpObject
+			public sealed class EventSubscription : EventHook
 			{
 				internal ClrEventRegistration reg;
+
+				internal EventSubscription() : base() { }
 
 				/// <summary>The event this subscription is attached to.</summary>
 				public string EventName => reg?.eventInfo.Name ?? "";
 
-				/// <summary>True while the subscription is still attached.</summary>
-				public bool IsActive => reg?.active ?? false;
-
 				/// <summary>The ManagedInstance or ManagedType the subscription is attached to.</summary>
 				public object Target => reg?.scriptTarget ?? DefaultObject;
 
-				/// <summary>Detaches the handler. Idempotent.</summary>
-				public object Stop()
+				public override bool InProgress => reg is { active: true, paused: false };
+
+				public override string EndReason => reg?.EndReason ?? "";
+
+				public override object Start()
+				{
+					reg?.Resume();
+					return DefaultObject;
+				}
+
+				public override object Stop()
 				{
 					var r = reg;
 
 					if (r != null && r.active)
+					{
+						r.End(Keysharp.Internals.Events.EventSubscriptionBase.EndReasonStopped);
 						r.manager.Unregister(r);
+					}
 
 					return DefaultObject;
 				}
 
-				public override object __Delete()
+				public override object Pause()
 				{
-					_ = Stop();
-					return base.__Delete();
+					reg?.Pause();
+					return DefaultObject;
 				}
 			}
+
+			/// <summary>Every live CLR event subscription this script made, oldest first (script: <c>Clr.Hooks</c>) —
+			/// a snapshot to iterate and drop. It mixes instance and static events; filter with <c>Target</c>.</summary>
+			public static object staticget_Hooks(object @this) => Script.TheScript.ClrEventManager.Hooks();
 
 			/// <summary>
 			/// Intercepts the event-related spellings on a managed node, before ordinary member dispatch sees them:
@@ -101,8 +122,7 @@ namespace Keysharp.Builtins
 			/// Subscribes <paramref name="callback"/> to <paramref name="ev"/>. Shared by ManagedInstance (instance
 			/// events, <paramref name="instance"/> non-null) and ManagedType (static events).
 			/// </summary>
-			/// <param name="addRemove">1 = add (default), -1 = add ahead of previously registered handlers,
-			/// 0 = remove this callback. Matches Gui.OnEvent/OnMessage.</param>
+			/// <param name="addRemove">1 = add (default), 0 = remove this callback.</param>
 			private static object Subscribe(object instance, Type type, object scriptTarget, EventInfo ev, object callback, object addRemove)
 			{
 				var fo = Functions.GetKeysharpFunc(callback, null, true);
@@ -112,19 +132,27 @@ namespace Keysharp.Builtins
 
 				var script = Script.TheScript;
 				var manager = script.ClrEventManager;
+				var mode = addRemove.Al(1L);
 
-				if (addRemove.Al(1L) == 0)
+				// Gui.OnEvent's -1 ("call before the handlers already registered") cannot be honoured: a multicast
+				// delegate's invocation list is append-only from outside, and reordering it would mean detaching and
+				// reattaching handlers this script may not own. Refusing it is honest where accepting it as 1 was not.
+				if (mode is not (0L or 1L))
+					return Errors.ValueErrorOccurred($"AddRemove must be 1 (add) or 0 (remove), not {mode}. A CLR event decides the order of its own handlers.", addRemove);
+
+				if (mode == 0)
 				{
 					_ = manager.RemoveByCallback(instance, type, ev, fo);
 					return DefaultObject;
 				}
 
-				// -1 ("call before previously registered handlers") cannot be honoured through the CLR: a multicast
-				// delegate's invocation list is append-only from outside, and reordering it would mean detaching and
-				// reattaching handlers this script may not own. Ordering across *separate* subscriptions is the CLR's
-				// to decide, so -1 is accepted and behaves as 1 rather than failing.
 				var reg = new ClrEventRegistration(script, instance, type, ev, fo, scriptTarget, script.EventScheduler, manager);
-				return manager.Register(reg) ? new EventSubscription { reg = reg } : DefaultObject;
+				var subscription = new EventSubscription { reg = reg };
+
+				// Set before registering, so the manager roots the handle from the moment it lists the registration:
+				// dropping the handle then never detaches a live handler, matching every other event family.
+				reg.scriptObject = subscription;
+				return manager.Register(reg) ? subscription : DefaultObject;
 			}
 		}
 	}
@@ -139,8 +167,7 @@ namespace Keysharp.Builtins
 			KeysharpFunc callback, object scriptTarget, ScriptEventScheduler ownerScheduler, ClrEventManager manager)
 	{
 		private readonly Script script = script;
-		// Held directly, like WinEventRegistration/MonitorEventRegistration: __Delete unregisters from the
-		// finalizer path, where reaching the manager through the Script could otherwise create one to find it empty.
+		// Held directly, like every other event family's registration, so Stop reaches its manager without the Script.
 		internal readonly ClrEventManager manager = manager;
 		internal readonly object instance = instance;               // null for a static event
 		internal readonly Type type = type;
@@ -149,7 +176,74 @@ namespace Keysharp.Builtins
 		internal readonly object scriptTarget = scriptTarget;
 		internal readonly ScriptEventScheduler ownerScheduler = ownerScheduler;
 		internal Delegate handler;
-		internal bool active;
+		// Volatile: the CLR raises on any thread, and both are read there without the manager's gate.
+		internal volatile bool active;
+		internal volatile bool paused;
+		internal object scriptObject;                              // the EventSubscription handle, rooted through here
+
+		// Pairs the pause flag with whether the delegate is attached, so a pause racing a resume or a stop cannot
+		// leave the handler attached while reporting paused, or detach it twice.
+		private readonly Lock stateGate = new();
+		private string endReason;
+
+		/// <summary><c>""</c> while the subscription can still fire, otherwise why it ended.</summary>
+		internal string EndReason => Volatile.Read(ref endReason) ?? "";
+
+		/// <summary>Records why this subscription ended; the first reason wins. Written before liveness is cleared.</summary>
+		internal void End(string reason) => _ = Interlocked.CompareExchange(ref endReason, reason, null);
+
+		internal void Pause()
+		{
+			lock (stateGate)
+			{
+				if (!active || paused)
+					return;
+
+				paused = true;
+
+				try
+				{
+					eventInfo.RemoveEventHandler(instance, handler);
+				}
+				catch
+				{
+				}
+			}
+		}
+
+		internal void Resume()
+		{
+			lock (stateGate)
+			{
+				if (!active || !paused)
+					return;
+
+				try
+				{
+					eventInfo.AddEventHandler(instance, handler);
+				}
+				catch (Exception ex)
+				{
+					_ = ManagedInvoke.ThrowMapped(ex, $"{type.FullName}.{eventInfo.Name} (resume)");
+					return;
+				}
+
+				paused = false;
+			}
+		}
+
+		/// <summary>Marks the subscription dead and hands back the delegate that is still attached, if any, for the
+		/// caller to remove outside every lock. A paused subscription has already detached it.</summary>
+		internal Delegate Deactivate()
+		{
+			lock (stateGate)
+			{
+				var wasAttached = !paused;
+				active = false;
+				var del = Interlocked.Exchange(ref handler, null);
+				return wasAttached ? del : null;
+			}
+		}
 
 		/// <summary>
 		/// The threading rule: run inline when already on the owning script thread, otherwise enqueue.
@@ -169,7 +263,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		internal object Dispatch(object[] args)
 		{
-			if (!active)
+			if (!active || paused)
 				return DefaultObject;
 
 			var scheduler = ownerScheduler;
@@ -189,6 +283,11 @@ namespace Keysharp.Builtins
 
 		private ScriptEventExecutionResult RunOnSchedulerThread(ScriptEventScheduler scheduler, object[] args)
 		{
+			// The same gate every event family applies when a queued callback would run: stopping or pausing takes
+			// effect at the call, so an entry queued before it is discarded rather than delivered late.
+			if (!active || paused)
+				return ScriptEventExecutionResult.Dropped;
+
 			using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, ThreadKind.Clr);
 
 			if (!thread.Started)
@@ -225,6 +324,22 @@ namespace Keysharp.Builtins
 		private readonly List<ClrEventRegistration> registrations = [];
 		private bool disposed;
 
+		/// <summary>The handle of every live subscription, oldest first. A snapshot, built outside the gate.</summary>
+		internal Keysharp.Builtins.Array Hooks()
+		{
+			ClrEventRegistration[] all;
+
+			lock (gate)
+				all = [.. registrations];
+
+			var result = new Keysharp.Builtins.Array(new List<object>(all.Length));
+
+			foreach (var reg in all)
+				_ = result.Push(reg.scriptObject);
+
+			return result;
+		}
+
 		internal bool Register(ClrEventRegistration reg)
 		{
 			var handlerType = reg.eventInfo.EventHandlerType;
@@ -260,6 +375,7 @@ namespace Keysharp.Builtins
 			}
 
 			// Disposed while we were attaching: undo rather than leave a handler nothing will ever detach.
+			reg.End(Keysharp.Internals.Events.EventSubscriptionBase.EndReasonExit);
 			Detach(reg);
 			return false;
 		}
@@ -280,12 +396,14 @@ namespace Keysharp.Builtins
 			=> DetachWhere(r => ReferenceEquals(r.instance, instance)
 						   && r.type == type
 						   && r.eventInfo.MetadataToken == ev.MetadataToken
-						   && ReferenceEquals(r.callback, callback), single: true);
+						   && ReferenceEquals(r.callback, callback), single: true,
+						   Keysharp.Internals.Events.EventSubscriptionBase.EndReasonStopped);
 
 		/// <summary>Detaches every subscription owned by <paramref name="scheduler"/> (deterministic teardown when a
-		/// worker thread's scheduler goes away -- does not rely on GC/__Delete).</summary>
+		/// worker thread's scheduler goes away).</summary>
 		internal bool RemoveOwned(ScriptEventScheduler scheduler)
-			=> scheduler != null && DetachWhere(r => ReferenceEquals(r.ownerScheduler, scheduler), single: false);
+			=> scheduler != null && DetachWhere(r => ReferenceEquals(r.ownerScheduler, scheduler), single: false,
+												Keysharp.Internals.Events.EventSubscriptionBase.EndReasonExit);
 
 		public void Dispose()
 		{
@@ -302,14 +420,17 @@ namespace Keysharp.Builtins
 			}
 
 			foreach (var reg in all)
+			{
+				reg.End(Keysharp.Internals.Events.EventSubscriptionBase.EndReasonExit);
 				Detach(reg);
+			}
 		}
 
 		/// <summary>
 		/// Removes the matching registrations under the lock, then detaches them outside it -- RemoveEventHandler runs
 		/// arbitrary CLR code, which must never happen while holding the gate.
 		/// </summary>
-		private bool DetachWhere(Func<ClrEventRegistration, bool> match, bool single)
+		private bool DetachWhere(Func<ClrEventRegistration, bool> match, bool single, string reason)
 		{
 			List<ClrEventRegistration> hits = null;
 
@@ -332,15 +453,17 @@ namespace Keysharp.Builtins
 				return false;
 
 			foreach (var reg in hits)
+			{
+				reg.End(reason);
 				Detach(reg);
+			}
 
 			return true;
 		}
 
 		private static void Detach(ClrEventRegistration reg)
 		{
-			reg.active = false;
-			var del = Interlocked.Exchange(ref reg.handler, null);
+			var del = reg.Deactivate();
 
 			if (del == null)
 				return;

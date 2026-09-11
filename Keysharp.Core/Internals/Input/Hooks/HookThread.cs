@@ -4081,19 +4081,41 @@ namespace Keysharp.Internals.Input.Hooks
 					if (targetScheduler == null || targetScheduler.IsDisposed)
 						targetScheduler = script.UIEventScheduler;
 
-					return targetScheduler.EnqueueThreadLaunch(0, false, false, () => _ = Keysharp.Internals.Flow.TryCatch(() =>
+					// Teardown is not merely OnEnd's preamble: it unlinks the input and releases the persistence roots
+					// InputStart took. So it runs once whether or not an OnEnd exists and whether or not the launch is
+					// admitted; a blocked launch re-parks this entry, and the latch keeps the retry from repeating it.
+					var tornDown = false;
+					InputHook endHook = null;
+					KeysharpFunc endCallback = null;
+
+					return targetScheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
 					{
-						if (endInput.InputRelease() is InputType releasedInput
-							&& releasedInput.scriptObject is InputHook so)
+						if (!tornDown)
 						{
-							var endCallback = so.GetCallbackSlot(UserMessages.AHK_INPUT_END)?.Callback;
+							tornDown = true;
+							endHook = endInput.InputRelease()?.scriptObject;
+							endCallback = endHook?.GetCallbackSlot(UserMessages.AHK_INPUT_END)?.Callback;
 
-							if (endCallback != null)
-								_ = Script.Invoke(endCallback, null, [so]);
-
-							so.DeactivateCallbackPersistence();
+							if (endCallback == null)
+							{
+								endHook?.DeactivateCallbackPersistence();
+								script.ExitIfNotPersistent();
+								return ScriptEventExecutionResult.Dropped;
+							}
 						}
-					}), ThreadKind.Input);
+
+						var result = targetScheduler.TryExecuteThreadLaunch(0, false, false,
+							tv => _ = Keysharp.Internals.Flow.TryCatch(() => _ = Script.Invoke(endCallback, null, [endHook])), ThreadKind.Input);
+
+						// Anything but a re-park is final, so release now, as AHK does when it discards an OnEnd launch.
+						if (result != ScriptEventExecutionResult.GlobalBlocked)
+						{
+							endHook.DeactivateCallbackPersistence();
+							script.ExitIfNotPersistent();
+						}
+
+						return result;
+					});
 				}
 
 				case (uint)UserMessages.AHK_INPUT_KEYDOWN:
@@ -4120,14 +4142,13 @@ namespace Keysharp.Internals.Input.Hooks
 					return targetScheduler.EnqueueThreadLaunch(0, false, false, () => _ = Keysharp.Internals.Flow.TryCatch(() =>
 					{
 						script.Threads.CurrentThread.eventInfo = eventInfo;
-						InputType inputHook;
 
-						for (inputHook = script.input; inputHook != null && inputHook != inputHookParam; inputHook = inputHook.prev)
-						{
-						}
-
-						if (inputHook == null)
+						// Stopping or pausing takes effect at the call, so a notification queued before it is discarded
+						// here. A paused input stays linked, which is why being on the stack is not the test.
+						if (!inputHookParam.InProgress())
 							return;
+
+						var inputHook = inputHookParam;
 
 						var callback = inputHook.scriptObject.GetCallbackSlot((UserMessages)message)?.Callback;
 
@@ -4166,14 +4187,12 @@ namespace Keysharp.Internals.Input.Hooks
 					return targetScheduler.EnqueueThreadLaunch(0, false, false, () => _ = Keysharp.Internals.Flow.TryCatch(() =>
 					{
 						script.Threads.CurrentThread.eventInfo = eventInfo;
-						InputType inputHook;
 
-						for (inputHook = script.input; inputHook != null && inputHook != mouseInputParam; inputHook = inputHook.prev)
-						{
-						}
-
-						if (inputHook == null)
+						// As for the key notifications: the status, not stack membership, decides.
+						if (!mouseInputParam.InProgress())
 							return;
+
+						var inputHook = mouseInputParam;
 
 						var callback = inputHook.scriptObject.GetCallbackSlot((UserMessages)message)?.Callback;
 

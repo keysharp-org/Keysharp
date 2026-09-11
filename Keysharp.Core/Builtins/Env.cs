@@ -592,7 +592,7 @@ namespace Keysharp.Builtins
 	public partial class Ks
 	{
 		/// <summary>Returns whether an optional scripting capability is installed or embedded.</summary>
-		public static object ComponentAvailable(object capability)
+		public static object IsComponentAvailable(object capability)
 		{
 			var name = capability.As().Replace("-", "", StringComparison.Ordinal)
 				.Replace("_", "", StringComparison.Ordinal).ToUpperInvariant();
@@ -659,7 +659,7 @@ namespace Keysharp.Builtins
 		/// <param name="name">An optional name for the dynamically generated program; defaults to "*".</param>
 		/// <param name="executable">Optional executable path used to run the generated assembly; defaults to the currently running process.</param>
 		/// If provided a callback function then it's considered async and the function <c>Call</c> method will be
-		/// invoked when the process exits with the ProcessInfo as the only argument.</param>
+		/// invoked when the process exits with the ScriptProcess as the only argument.</param>
 		/// <param name="options">Optional Keysharp command-line arguments for this script, either as a string
 		/// (e.g. `--define:FEATURE_X --include "My include.ahk"`, split on whitespace with double quotes grouping) or
 		/// as an Array where each element is already one argument. Nothing is inherited from the calling script: this
@@ -667,7 +667,7 @@ namespace Keysharp.Builtins
 		/// the compile that happens HERE, since the launched process receives already-compiled bytes and a define
 		/// handed to it would arrive after the conditionals were resolved; every other argument goes to that process.</param>
 		/// <returns>
-		/// Returns a <see cref="ProcessInfo"/> wrapper around the spawned process.
+		/// Returns a <see cref="ScriptProcess"/> wrapper around the spawned process.
 		/// If compilation fails without a flagged error, returns <c>null</c>.
 		/// </returns>
 		/// <exception cref="Error">Throws any compilation as <see cref="Error"/>.</exception>
@@ -788,7 +788,7 @@ namespace Keysharp.Builtins
 			foreach (var arg in launcherArgs)
 				scriptProcess.StartInfo.ArgumentList.Add(arg);
 
-			var info = new ProcessInfo(scriptProcess);
+			var info = new ScriptProcess(scriptProcess);
 			scriptProcess.EnableRaisingEvents = true;
 			scriptProcess.Exited += (object sender, EventArgs e) => cb?.Call(info);
 			_ = scriptProcess.Start();
@@ -808,25 +808,57 @@ namespace Keysharp.Builtins
 			return info;
 		}
 
-		///
 		/// <summary>
-		/// Parses, lowers, and validates the provided script source or filename with the compiler component.
-		/// On success this method returns <c>""</c>. On failure it returns a string containing
-		/// the formatted compiler errors.
+		/// Checks a script's syntax without compiling it — what the <c>--validate-syntax</c> switch does — using the
+		/// parser component. <paramref name="code"/> is read as a file path when a file by that name exists, and as
+		/// script source otherwise.
 		/// </summary>
-		/// <param name="code">The script source or filename to parse.</param>
-		/// <returns>
-		/// Returns <see cref=""/> when parsing completes with no compiler errors and a valid compilation unit.
-		/// If the compiler reports errors or the first compilation unit is null, a string containing compiler error messages
-		/// (and warnings if present) is returned.
-		/// </returns>
-		/// <exception cref="Exception">
-		/// Any unexpected exception thrown by the installed compiler component will propagate to the caller.
-		/// </exception>
-		public static object ParseScript(object code)
+		/// <param name="code">A script file path, or script source.</param>
+		/// <returns>An object with <c>IsValid</c>, and <c>Errors</c> and <c>Warnings</c> as Arrays of messages, each
+		/// prefixed with its file and line where known.</returns>
+		/// <exception cref="Error">Thrown if the parser component is not installed.</exception>
+		public static object ValidateScript(object code)
+		{
+			if (!ScriptingComponentRegistry.TryGetSyntaxValidator(out var validator, out var failure))
+				return Errors.ErrorOccurred(failure);
+
+			var text = code.As();
+			var isFile = File.Exists(text);
+			var result = validator.ValidateSyntax(new Keysharp.Components.Scripting.ScriptSyntaxValidationRequest
+			{
+				SourceText = isFile ? File.ReadAllText(text) : text,
+				ScriptPath = isFile ? text : null,
+				IncludeDirectory = isFile ? Path.GetDirectoryName(Path.GetFullPath(text)) : null,
+			});
+
+			static string Describe(Keysharp.Components.Scripting.ScriptDiagnostic diagnostic)
+			{
+				var location = diagnostic.FilePath ?? "";
+
+				if (diagnostic.Line > 0)
+					location += $"{(location.Length > 0 ? ":" : "")}{diagnostic.Line}:{diagnostic.Column}";
+
+				return location.Length > 0 ? $"{location}: {diagnostic.Message}" : diagnostic.Message;
+			}
+
+			return ScriptCheckResult(result.Success,
+				result.Diagnostics.Where(d => d.Severity == Keysharp.Components.Scripting.ScriptDiagnosticSeverity.Error).Select(Describe),
+				result.Diagnostics.Where(d => d.Severity == Keysharp.Components.Scripting.ScriptDiagnosticSeverity.Warning).Select(Describe));
+		}
+
+		/// <summary>
+		/// Compiles a script in memory without running or writing it — what the <c>--validate</c> switch does —
+		/// using the compiler component. This catches everything <see cref="ValidateScript"/> does plus lowering and
+		/// C# compilation errors, and reports warnings a successful compile produced. <paramref name="code"/> is read
+		/// as a file path when a file by that name exists, and as script source otherwise.
+		/// </summary>
+		/// <param name="code">A script file path, or script source.</param>
+		/// <returns>An object with <c>IsValid</c>, and <c>Errors</c> and <c>Warnings</c> as Arrays of messages.</returns>
+		/// <exception cref="Error">Thrown if the compiler component is not installed.</exception>
+		public static object CompileScript(object code)
 		{
 			if (!ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var failure))
-				return failure;
+				return Errors.ErrorOccurred(failure);
 
 			var source = code.As();
 			var isFile = File.Exists(source);
@@ -834,12 +866,25 @@ namespace Keysharp.Builtins
 			{
 				SourceText = isFile ? null : source,
 				ScriptPath = isFile ? source : null,
-				CompilationName = isFile ? Path.GetFileNameWithoutExtension(source) : "ParseScript",
+				CompilationName = isFile ? Path.GetFileNameWithoutExtension(source) : "CompileScript",
 				RuntimeDirectory = Path.GetDirectoryName(Ks.A_KsCorePath),
 				Output = Keysharp.Components.Scripting.ScriptCompilationOutput.InMemory,
 				AllowPackageRestore = false,
 			});
-			return result.Success ? "" : result.ErrorText;
+
+			static IEnumerable<string> Lines(string text)
+				=> (text ?? "").Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+			return ScriptCheckResult(result.Success, result.Success ? [] : Lines(result.ErrorText), Lines(result.WarningText));
+		}
+
+		private static KeysharpObject ScriptCheckResult(bool isValid, IEnumerable<string> errors, IEnumerable<string> warnings)
+		{
+			var result = new KeysharpObject();
+			result.DefinePropInternal("IsValid", new OwnPropsDesc(result, isValid ? 1L : 0L));
+			result.DefinePropInternal("Errors", new OwnPropsDesc(result, new Keysharp.Builtins.Array(errors.Cast<object>().ToList())));
+			result.DefinePropInternal("Warnings", new OwnPropsDesc(result, new Keysharp.Builtins.Array(warnings.Cast<object>().ToList())));
+			return result;
 		}
 	}
 }

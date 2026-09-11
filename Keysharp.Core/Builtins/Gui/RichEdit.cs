@@ -1099,7 +1099,7 @@ namespace Keysharp.Builtins
 				if (cachedText != null)
 					return cachedText;
 
-				var text = Conversions.NormalizeEol(rt.Text ?? "");
+				var text = Conversions.ReplaceLineEndings(rt.Text ?? "");
 				var count = 1;
 
 				for (var i = 0; i < text.Length; i++)

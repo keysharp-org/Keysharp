@@ -268,27 +268,25 @@ namespace Keysharp.Builtins
 			/// type is 0 (empty), 1 (text or files) or 2 (other content). Returns a hook whose
 			/// <c>Stop()</c> ends the subscription — which is the reason to prefer this over the AHK-compatible
 			/// <c>OnClipboardChange</c>, since unregistering there needs the very same function object back.
-			/// <paramref name="count"/> (default -1 = unlimited) stops the hook automatically after that many calls.
 			/// </summary>
-			[Static] public static object OnChange(object @this, object callback, object count = null)
+			[Static] public static object OnChange(object @this, object callback)
 			{
 				if (callback is not KeysharpFunc fo)
 					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc), DefaultObject);
 
-				var remaining = count.Al(-1L);
-
-				if (!EventSubscriptionBase.IsValidCount(remaining))
-					return Errors.ValueErrorOccurred(EventSubscriptionBase.CountErrorMessage, remaining);
-
 				ClipboardPermission.EnsureMonitoring("Clipboard.OnChange");
 				var script = Script.TheScript;
 				var manager = script.ClipboardEventManager;
-				var reg = new ClipboardEventRegistration(fo, remaining, script.EventScheduler, manager);
+				var reg = new ClipboardEventRegistration(fo, script.EventScheduler, manager);
 				var hook = new ClipboardHook { sub = reg };
 				reg.scriptObject = hook;
 				manager.Register(reg);
 				return hook;
 			}
+
+			/// <summary>Every live <c>Clipboard.OnChange</c> subscription, oldest first (script: <c>Clipboard.Hooks</c>)
+			/// — a snapshot to iterate and drop. It never includes the AHK <c>OnClipboardChange</c> chain.</summary>
+			public static object staticget_Hooks(object @this) => Script.TheScript.ClipboardEventManager.Hooks();
 
 			#endregion
 
@@ -365,9 +363,8 @@ namespace Keysharp.Builtins
 
 		/// <summary>
 		/// One <c>Clipboard.OnChange</c> subscription — the object that factory returns and the first argument every
-		/// change callback receives. Its whole surface (<c>Status</c>, <c>IsActive</c>, <c>Count</c>, <c>Paused</c>,
-		/// <c>Pause</c>, <c>Stop</c>) comes from <see cref="EventHook"/>, so it is managed exactly like a
-		/// <c>Ks.WinEvent</c> or <c>Ks.MonitorHook</c>.
+		/// change callback receives. Its whole surface comes from <see cref="EventHook"/>, so it is managed exactly like
+		/// every other hook.
 		/// <para>
 		/// A hook is NOT part of the AHK <c>OnClipboardChange</c> handler chain: its return value is discarded, so it
 		/// cannot suppress handlers registered there, and its callback runs on its own pseudo-thread rather than
@@ -376,8 +373,6 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public sealed class ClipboardHook : EventHook
 		{
-			public ClipboardHook(params object[] args) : base(args) { }
-
 			internal ClipboardHook() : base() { }
 		}
 	}

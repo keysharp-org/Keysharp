@@ -1,5 +1,5 @@
 #NoTrayIcon
-#import KS { Clipboard, Image }
+#import KS { Clipboard, Image, EventHook }
 #Include <assert>
 
 ; The Clipboard class through real dynamic dispatch — which the C# tests bypass, so this is what proves the
@@ -61,14 +61,23 @@ Assert(!Clipboard.Has("Image") || (alias is Image && alias.Width == 20), A_LineN
 
 ; The hook surface: OnChange returns an object that can stop itself without the callback being kept around.
 hook := Clipboard.OnChange((h, type) => 0)
-Assert(hook.IsActive && hook.Count == -1 && !hook.Paused, A_LineNumber)
+Assert(hook.InProgress && hook.EndReason == "", A_LineNumber)
 
+; Three states from two members: paused is idle, not ended.
 hook.Pause()
-Assert(hook.Paused, A_LineNumber)
-hook.Pause(0)
+Assert(!hook.InProgress && !hook.EndReason, A_LineNumber)
+hook.Start()
+Assert(hook.InProgress, A_LineNumber)
+
+; A handle is listed until it is stopped.
+listed := false
+for h in Clipboard.Hooks
+	listed := listed || h == hook
+Assert(listed, A_LineNumber)
 
 hook.Stop()
-Assert(!hook.IsActive, A_LineNumber)
+AssertEq(hook.EndReason, "Stopped", A_LineNumber)
+Assert(hook is EventHook, A_LineNumber)
 
 AssertEq(Type(hook), "ClipboardHook", A_LineNumber)
 

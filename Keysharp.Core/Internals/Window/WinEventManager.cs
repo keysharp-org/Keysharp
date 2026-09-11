@@ -5,7 +5,7 @@ namespace Keysharp.Internals.Window
 {
 	/// <summary>
 	/// Engine-side state for a single <c>Ks.WinEvent</c> subscription: the event type, the parsed window-matching
-	/// criteria, the script callback, a remaining-fire counter, and a persistence registration. The script-facing
+	/// criteria, the script callback, and a persistence registration. The script-facing
 	/// <c>Ks.WinEvent</c> object wraps one of these, mirroring how <c>InputHook</c> wraps <c>InputType</c>.
 	/// </summary>
 	internal sealed class WinEventRegistration : EventSubscriptionBase
@@ -35,14 +35,11 @@ namespace Keysharp.Internals.Window
 		/// <summary>True for any subscription that maintains a matching-window set (Exist/NotExist).</summary>
 		internal bool TracksMembership => matchingWindows != null;
 
-		/// <summary>Window events have a manager-wide pause switch (<c>WinEvent.Paused</c>) on top of each hook's own.</summary>
-		internal override bool Suppressed => paused || manager.GlobalPaused;
-
 		internal override void Unregister() => manager.Unregister(this);
 
-		internal WinEventRegistration(WindowEventType type, SearchCriteria criteria, KeysharpFunc callback, long count,
+		internal WinEventRegistration(WindowEventType type, SearchCriteria criteria, KeysharpFunc callback,
 			ScriptEventScheduler ownerScheduler, WinEventManager manager)
-			: base(callback, count, ownerScheduler)
+			: base(callback, ownerScheduler)
 		{
 			this.type = type;
 			this.criteria = criteria;
@@ -103,7 +100,6 @@ namespace Keysharp.Internals.Window
 		// the field once sees one consistent generation.
 		private volatile WinEventRegistration[][] byType = Empty();
 		private WindowEventMask installedMask = WindowEventMask.None;
-		private volatile bool globalPaused;
 		private volatile bool foregroundTracking;
 		private volatile bool foregroundEvents;
 		private nint foregroundWindowHandle;
@@ -111,10 +107,7 @@ namespace Keysharp.Internals.Window
 
 		protected override ThreadKind CallbackThreadKind => ThreadKind.WinEvent;
 
-		// ---- global pause ------------------------------------------------------------------
-
-		/// <summary>True while all hooks are globally paused.</summary>
-		internal bool GlobalPaused => globalPaused;
+		// ---- foreground tracking -----------------------------------------------------------
 
 		/// <summary>The last foreground handle observed while the input hook requests tracking.</summary>
 		internal nint ForegroundWindowHandle
@@ -187,13 +180,6 @@ namespace Keysharp.Internals.Window
 					Volatile.Write(ref foregroundWindowHandle, queried);
 		}
 
-		/// <summary>Pauses (1), unpauses (0) or toggles (-1) all hooks; returns the resulting state.</summary>
-		internal bool SetGlobalPause(long newState)
-		{
-			globalPaused = newState == -1 ? !globalPaused : newState != 0;
-			return globalPaused;
-		}
-
 		// ---- source hooks --------------------------------------------------------------------
 
 		protected override IWindowEventBackend CreateBackend()
@@ -246,7 +232,10 @@ namespace Keysharp.Internals.Window
 				var b = EnsureBackend();
 
 				if (b == null)
-					return;                                   // unsupported environment; nothing to install
+				{
+					FailAllLocked();                          // unsupported environment; these hooks can never fire
+					return;
+				}
 
 				var toRemove = installedMask & ~desired;
 				var toAdd = desired & ~installedMask;
@@ -578,9 +567,9 @@ namespace Keysharp.Internals.Window
 
 		private void FireOnce(WinEventRegistration reg, nint hwnd, long timeMs, Rectangle? eventBounds = null)
 		{
-			// A paused hook (or globally paused manager) stays registered and keeps its matching-window set
-			// current, but doesn't fire or consume its remaining-count budget.
-			if (reg.Suppressed || !reg.TryConsumeFire())
+			// A paused hook stays registered, keeps its matching-window set current, and is queued like any other;
+			// RunCallback discards it if it is still paused when it would run.
+			if (!reg.IsActive)
 				return;
 
 			var scheduler = DispatchTarget(reg);
@@ -593,9 +582,6 @@ namespace Keysharp.Internals.Window
 			object[] args = [reg.scriptObject, hwnd.ToInt64(), timeMs];
 			var payload = new Payload(timeMs, hwnd, eventBounds);
 			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, args, payload));
-
-			if (reg.IsExhausted)
-				Unregister(reg);
 		}
 
 		/// <summary>The window's screen bounds (matching WinGetPos), or empty if it can't be resolved.</summary>

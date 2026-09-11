@@ -248,7 +248,7 @@ namespace Keysharp.Tests
 				// The capability probe must answer rather than throw, whatever the hardware or platform — it is
 				// the branch scripts are told to use instead of catching an OSError. This also runs the whole
 				// per-platform brightness lookup (WMI/DDC, sysfs backlight/i2c, DisplayServices) at least once.
-				var supported = m.HasBrightness;
+				var supported = m.IsBrightnessSupported;
 
 				if (supported)
 					Assert.IsTrue(m.Brightness.Al() is >= 0 and <= 100);
@@ -349,21 +349,20 @@ namespace Keysharp.Tests
 
 			try
 			{
-				Assert.IsTrue(hook.IsActive);
-				Assert.AreEqual(-1L, hook.Count);            // unlimited by default
-				Assert.AreEqual(false, hook.Paused);
-				Assert.AreEqual(true, hook.Pause(1L));
-				Assert.AreEqual(false, hook.Pause(0L));
-				Assert.AreEqual(true, hook.Pause(-1L));      // toggle
-				hook.Paused = false;
-				Assert.AreEqual(false, hook.Paused);
+				Assert.IsTrue(hook.InProgress);
+				Assert.AreEqual("", hook.EndReason);
+				_ = hook.Pause();
+				Assert.IsFalse(hook.InProgress);
+				Assert.AreEqual("", hook.EndReason, "A paused hook is idle, not ended.");
+				_ = hook.Start();
+				Assert.IsTrue(hook.InProgress);
 			}
 			finally
 			{
 				_ = hook.Stop();
 			}
 
-			Assert.IsFalse(hook.IsActive);
+			Assert.AreEqual("Stopped", hook.EndReason);
 			Assert.AreEqual(0L, fired, "No display change was made, so the callback must not have run.");
 		}
 

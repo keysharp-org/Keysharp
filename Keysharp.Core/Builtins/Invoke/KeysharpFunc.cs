@@ -320,9 +320,9 @@ namespace Keysharp.Builtins
 					var info = new KeysharpObject();
 					info.DefinePropInternal("Name", new OwnPropsDesc(info, d.Name));
 					info.DefinePropInternal("Index", new OwnPropsDesc(info, (long)(items.Count + 1)));
-					info.DefinePropInternal("Optional", new OwnPropsDesc(info, d.Optional ? 1L : 0L));
-					info.DefinePropInternal("ByRef", new OwnPropsDesc(info, d.ByRef ? 1L : 0L));
-					info.DefinePropInternal("Variadic", new OwnPropsDesc(info, d.Variadic ? 1L : 0L));
+					info.DefinePropInternal("IsOptional", new OwnPropsDesc(info, d.Optional ? 1L : 0L));
+					info.DefinePropInternal("IsByRef", new OwnPropsDesc(info, d.ByRef ? 1L : 0L));
+					info.DefinePropInternal("IsVariadic", new OwnPropsDesc(info, d.Variadic ? 1L : 0L));
 
 					// Only define Default when there is a real one: a parameter that is merely optional defaults to
 					// unset, and reporting a null would be indistinguishable from "defaults to null".

@@ -173,7 +173,7 @@ namespace Keysharp.Builtins
 					else if (_control is KeysharpActiveX kax)
 						return kax.Iid;
 					else if (_control is Forms.Control ctrl)
-						return Conversions.NormalizeEol(ctrl.Text);
+						return Conversions.ReplaceLineEndings(ctrl.Text);
 					return DefaultObject;
 				}
 				set
@@ -295,7 +295,7 @@ namespace Keysharp.Builtins
 						}
 					}
 					else if (_control is Forms.Control ctrl)
-						ctrl.Text = Conversions.NormalizeEol(val, Environment.NewLine);
+						ctrl.Text = Conversions.ReplaceLineEndings(val, Environment.NewLine);
 
 					if (ParentForm.Visible == true)
 						_control.Refresh();

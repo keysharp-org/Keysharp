@@ -20,52 +20,52 @@ namespace Keysharp.Builtins
 		/// and NotExist a window that is hidden when DetectHiddenWindows is off).</para>
 		/// <para>
 		/// Use as: <c>#import "Ks" { WinEvent }</c> then <c>hook := WinEvent.Active(MyCallback, "ahk_exe notepad.exe")</c>.
-		/// The argument order mirrors the reference library: <c>(Callback, WinTitle, Count, WinText, ExcludeTitle,
-		/// ExcludeText)</c> — <c>Count</c> (default -1 = unlimited) comes right after <c>WinTitle</c>, with the
-		/// rarely-used text/exclude criteria last. The subscription auto-stops on <c>__Delete</c>, but because GC
-		/// timing is unpredictable, also call <c>hook.Stop()</c> (or let the owning thread tear down) when done.
+		/// The arguments are <c>(Callback, WinTitle, WinText, ExcludeTitle, ExcludeText)</c>, with the rarely-used
+		/// text/exclude criteria last. The subscription is rooted by its manager, so dropping the handle does not
+		/// stop it: call <c>hook.Stop()</c>, or let the owning thread tear down. For a one-shot, call
+		/// <c>hook.Stop()</c> as the callback's first statement.
 		/// </para>
 		/// </summary>
 		public sealed class WinEvent : EventHook
 		{
 			internal WinEvent() : base() { }
 
-			// ---- event factories (Callback, WinTitle, Count, WinText, ExcludeTitle, ExcludeText) -------------
+			// ---- event factories (Callback, WinTitle, WinText, ExcludeTitle, ExcludeText) --------------------
 
 			/// <summary>Fires when a window becomes the active/foreground window. Script: <c>WinEvent.Active(cb, …)</c>.</summary>
-			[Static] public static object Active(object @this, object callback, object winTitle = null, object count = null, object winText = null, object excludeTitle = null, object excludeText = null)
-				=> Subscribe(WindowEventType.Active, callback, winTitle, winText, excludeTitle, excludeText, count);
+			[Static] public static object Active(object @this, object callback, object winTitle = null, object winText = null, object excludeTitle = null, object excludeText = null)
+				=> Subscribe(WindowEventType.Active, callback, winTitle, winText, excludeTitle, excludeText);
 
 			/// <summary>Fires when a window matching the criteria appears — created, shown, or its title changed so it
 			/// now matches. Fires once per matching window. Respects DetectHiddenWindows. Subsumes the old "Create"
 			/// event (which was just Exist with DetectHiddenWindows on). Script: <c>WinEvent.Exist(cb, …)</c>.</summary>
-			[Static] public static object Exist(object @this, object callback, object winTitle = null, object count = null, object winText = null, object excludeTitle = null, object excludeText = null)
-				=> Subscribe(WindowEventType.Exist, callback, winTitle, winText, excludeTitle, excludeText, count);
+			[Static] public static object Exist(object @this, object callback, object winTitle = null, object winText = null, object excludeTitle = null, object excludeText = null)
+				=> Subscribe(WindowEventType.Exist, callback, winTitle, winText, excludeTitle, excludeText);
 
 			/// <summary>Fires when a window matching the criteria disappears — destroyed, hidden/cloaked, or its title
 			/// changed so it no longer matches. DetectHiddenWindows-aware and subsumes the old "Close" event: with
 			/// DetectHiddenWindows off a hidden window counts as gone (fires), with it on only destruction does.
 			/// Script: <c>WinEvent.NotExist(cb, …)</c>.</summary>
-			[Static] public static object NotExist(object @this, object callback, object winTitle = null, object count = null, object winText = null, object excludeTitle = null, object excludeText = null)
-				=> Subscribe(WindowEventType.NotExist, callback, winTitle, winText, excludeTitle, excludeText, count);
+			[Static] public static object NotExist(object @this, object callback, object winTitle = null, object winText = null, object excludeTitle = null, object excludeText = null)
+				=> Subscribe(WindowEventType.NotExist, callback, winTitle, winText, excludeTitle, excludeText);
 
 			/// <summary>Fires when a window moves or resizes. Every move event is delivered as-is (not coalesced).
 			/// <c>A_EventInfo</c> holds the window's new position and size as an object <c>{ x, y, w, h }</c> (matching
 			/// <c>WinGetPos</c>), built on first access.</summary>
-			[Static] public static object Move(object @this, object callback, object winTitle = null, object count = null, object winText = null, object excludeTitle = null, object excludeText = null)
-				=> Subscribe(WindowEventType.Move, callback, winTitle, winText, excludeTitle, excludeText, count);
+			[Static] public static object Move(object @this, object callback, object winTitle = null, object winText = null, object excludeTitle = null, object excludeText = null)
+				=> Subscribe(WindowEventType.Move, callback, winTitle, winText, excludeTitle, excludeText);
 
 			/// <summary>Fires when a window is minimized.</summary>
-			[Static] public static object Minimize(object @this, object callback, object winTitle = null, object count = null, object winText = null, object excludeTitle = null, object excludeText = null)
-				=> Subscribe(WindowEventType.Minimize, callback, winTitle, winText, excludeTitle, excludeText, count);
+			[Static] public static object Minimize(object @this, object callback, object winTitle = null, object winText = null, object excludeTitle = null, object excludeText = null)
+				=> Subscribe(WindowEventType.Minimize, callback, winTitle, winText, excludeTitle, excludeText);
 
 			/// <summary>Fires when a window is restored from the minimized state.</summary>
-			[Static] public static object Restore(object @this, object callback, object winTitle = null, object count = null, object winText = null, object excludeTitle = null, object excludeText = null)
-				=> Subscribe(WindowEventType.Restore, callback, winTitle, winText, excludeTitle, excludeText, count);
+			[Static] public static object Restore(object @this, object callback, object winTitle = null, object winText = null, object excludeTitle = null, object excludeText = null)
+				=> Subscribe(WindowEventType.Restore, callback, winTitle, winText, excludeTitle, excludeText);
 
 			/// <summary>Fires when a window's title changes.</summary>
-			[Static] public static object TitleChange(object @this, object callback, object winTitle = null, object count = null, object winText = null, object excludeTitle = null, object excludeText = null)
-				=> Subscribe(WindowEventType.TitleChange, callback, winTitle, winText, excludeTitle, excludeText, count);
+			[Static] public static object TitleChange(object @this, object callback, object winTitle = null, object winText = null, object excludeTitle = null, object excludeText = null)
+				=> Subscribe(WindowEventType.TitleChange, callback, winTitle, winText, excludeTitle, excludeText);
 
 			/// <summary>Fires when the text caret (insertion point) moves inside a window — typing, clicking into text,
 			/// arrow keys, scrolling a text view, or focus moving to another text field. <c>hwnd</c> is the caret
@@ -81,31 +81,23 @@ namespace Keysharp.Builtins
 			/// notification. Applications that draw their own caret without exposing it to accessibility (many
 			/// browser-based/Electron editors, some game and terminal UIs) report nothing on any platform, and the
 			/// Linux/macOS sources additionally need AT-SPI enabled / Accessibility permission granted.</para></summary>
-			[Static] public static object CaretMove(object @this, object callback, object winTitle = null, object count = null, object winText = null, object excludeTitle = null, object excludeText = null)
-				=> Subscribe(WindowEventType.CaretMove, callback, winTitle, winText, excludeTitle, excludeText, count);
+			[Static] public static object CaretMove(object @this, object callback, object winTitle = null, object winText = null, object excludeTitle = null, object excludeText = null)
+				=> Subscribe(WindowEventType.CaretMove, callback, winTitle, winText, excludeTitle, excludeText);
 
-			// ---- global pause -------------------------------------------------------------------------------
+			// ---- enumeration --------------------------------------------------------------------------------
 
-			/// <summary>Pauses (1), unpauses (0) or toggles (-1) all event hooks. Returns the resulting paused state.</summary>
-			public static object staticPause(object @this, object newState = null)
-				=> Script.TheScript.WinEventManager.SetGlobalPause(newState.Al(1L));
-
-			/// <summary>Gets whether all event hooks are paused (script: <c>WinEvent.Paused</c>).</summary>
-			public static object staticget_Paused(object @this) => Script.TheScript.WinEventManager.GlobalPaused;
-
-			/// <summary>Sets whether all event hooks are paused (script: <c>WinEvent.Paused := …</c>).</summary>
-			public static object staticset_Paused(object @this, object value)
-				=> Script.TheScript.WinEventManager.SetGlobalPause(value.Ab() ? 1L : 0L);
+			/// <summary>Every live WinEvent subscription, oldest first (script: <c>WinEvent.Hooks</c>) — a snapshot to
+			/// iterate and drop, covering every thread's hooks. Pausing them all is a loop over this.</summary>
+			public static object staticget_Hooks(object @this) => Script.TheScript.WinEventManager.Hooks();
 
 			// ---- instance surface ----------------------------------------------------------------------------
 
 			/// <summary>The event this subscription listens for: "Active", "Exist", "NotExist", "Move",
 			/// "Minimize", "Restore", "TitleChange" or "CaretMove". Survives Stop because it describes the
 			/// subscription, not its state.</summary>
-			public string EventType => sub is WinEventRegistration reg ? EventTypeName(reg.type) : "";
+			public string EventName => sub is WinEventRegistration reg ? EventTypeName(reg.type) : "";
 
-			// Status, IsActive, Count, Paused, Pause, Stop and __Delete come from Ks.EventHook. The manager-wide
-			// WinEvent.Paused folds into Status through WinEventRegistration.Suppressed.
+			// InProgress, EndReason, Start, Stop and Pause come from Ks.EventHook.
 
 			// ---- helpers -------------------------------------------------------------------------------------
 
@@ -122,24 +114,19 @@ namespace Keysharp.Builtins
 				_ => (string)Errors.ErrorOccurred($"Unknown window event type \"{type}\". Expected Active, Exist, NotExist, Move, Minimize, Restore, TitleChange or CaretMove.", DefaultErrorString)
 			};
 
-			private static object Subscribe(WindowEventType type, object callback, object winTitle, object winText, object excludeTitle, object excludeText, object count)
+			private static object Subscribe(WindowEventType type, object callback, object winTitle, object winText, object excludeTitle, object excludeText)
 			{
 				var fo = Functions.GetKeysharpFunc(callback, null, true);
 
 				if (fo == null)
 					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));
 
-				var remaining = count.Al(-1L);
-
-				if (!EventSubscriptionBase.IsValidCount(remaining))
-					return Errors.ValueErrorOccurred(EventSubscriptionBase.CountErrorMessage, remaining);
-
 				_ = Script.TheScript.Permissions.EnsureWindowMonitoring(operation: $"WinEvent.{EventTypeName(type)}");
 				var criteria = BuildCriteria(winTitle, winText, excludeTitle, excludeText);
 				var script = Script.TheScript;
 				var manager = script.WinEventManager;
 				var scheduler = script.EventScheduler;
-				var reg = new WinEventRegistration(type, criteria, fo, remaining, scheduler, manager);
+				var reg = new WinEventRegistration(type, criteria, fo, scheduler, manager);
 				var we = new WinEvent { sub = reg };
 				reg.scriptObject = we;
 				manager.Register(reg);

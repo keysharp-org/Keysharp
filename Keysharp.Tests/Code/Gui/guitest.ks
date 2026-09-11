@@ -3634,7 +3634,7 @@ MyGui.UseGroup(monCtlGroup)
 MyGui.AddText("xc+16 yc+24 w508 h44", "Acts on the monitor selected in the list. These talk to the hardware, so each one takes tens of milliseconds and can fail on a display or platform that does not support it — a failure is reported as an OSError naming the reason, which is the expected result on unsupported hardware.")
 btnReadBrightness := MyGui.AddButton("xc+16 y+8 w170 h28", "Read Brightness")
 btnReadBrightness.OnEvent("Click", (*) => ReadSelectedBrightness())
-btnHasBrightness := MyGui.AddButton("x+10 yp w170 h28", "Probe HasBrightness")
+btnHasBrightness := MyGui.AddButton("x+10 yp w170 h28", "Probe IsBrightnessSupported")
 btnHasBrightness.OnEvent("Click", (*) => ProbeSelectedBrightnessSupport())
 MyGui.AddText("xc+16 y+10 w508 h20 cBlue", "Dragging the slider changes the selected monitor's brightness:")
 gBrightnessSlider := MyGui.Add("Slider", "xc+16 y+6 w508 +AltSubmit Page10 ToolTip Range0-100", 50)
@@ -3718,7 +3718,7 @@ btnProgClear := MyGui.AddButton("xc+748 y+8 w170 h26", "Clear Progress")
 btnProgClear.OnEvent("Click", (*) => ClearTaskbarProgress())
 
 ; Read from the class rather than restated here, so this line is the running platform's own answer.
-MyGui.AddText("xc+16 yc+222 w1082 h20 cBlue", "Taskbar.HasBadgeIcon: " (Taskbar.HasBadgeIcon ? "yes" : "no, the badge shows its Text instead") "      Taskbar.IsPerWindow: " (Taskbar.IsPerWindow ? "yes" : "no, every target decorates the whole application"))
+MyGui.AddText("xc+16 yc+222 w1082 h20 cBlue", "Taskbar.IsBadgeIconSupported: " (Taskbar.IsBadgeIconSupported ? "yes" : "no, the badge shows its Text instead") "      Taskbar.IsPerWindow: " (Taskbar.IsPerWindow ? "yes" : "no, every target decorates the whole application"))
 iconTaskbarStatus := MyGui.AddText("xc+16 y+6 w1082 h34", "Window icon / Taskbar: not run")
 gStatus["window_taskbar"] := iconTaskbarStatus
 MyGui.UseGroup()
@@ -3874,12 +3874,12 @@ ResetWindowIcon(*) {
 SetTaskbarBadgeFromFile(*) {
 	global gIconAssetPath
 
-	TaskbarApplyBadge(gIconAssetPath, 1, Taskbar.HasBadgeIcon ? "7 monkeys" : "7")
+	TaskbarApplyBadge(gIconAssetPath, 1, Taskbar.IsBadgeIconSupported ? "7 monkeys" : "7")
 	SetStatus("window_taskbar", "Badge: monkey.ico on " TaskbarTargetName() " - PASS if a small monkey sits in the corner of that taskbar button, or the count 7 where the badge cannot be an icon")
 }
 
 SetTaskbarBadgeFromModule(*) {
-	TaskbarApplyBadge(A_KsCorePath, "Keysharp_s.ico", Taskbar.HasBadgeIcon ? "12 waiting" : "12")
+	TaskbarApplyBadge(A_KsCorePath, "Keysharp_s.ico", Taskbar.IsBadgeIconSupported ? "12 waiting" : "12")
 	SetStatus("window_taskbar", "Badge: changed on " TaskbarTargetName() " - PASS if it is now the Keysharp 'S' icon, or the count 12 where the badge cannot be an icon")
 }
 
@@ -4173,8 +4173,8 @@ ResetStatuses() {
 
 OnWinEvent(hook, *) {
 	global gWindowEventSeen
-	if gWindowEventSeen.Has(hook.EventType)
-		gWindowEventSeen[hook.EventType]++
+	if gWindowEventSeen.Has(hook.EventName)
+		gWindowEventSeen[hook.EventName]++
 }
 
 ; ── Ks.Monitor: listing, metadata, and per-monitor device control ─────────────────────────────────────────
@@ -4313,19 +4313,19 @@ SelectMonitorUnderMouse() {
 	AppendLog("Monitor.FromMouse -> monitor " m.Index " (" m.Name ").")
 }
 
-; HasBrightness is a real probe of the device rather than a platform guess, so it costs one brightness read —
+; IsBrightnessSupported is a real probe of the device rather than a platform guess, so it costs one brightness read —
 ; hence its own button rather than being folded into the metadata pane.
 ProbeSelectedBrightnessSupport() {
 	if (!(m := SelectedMonitor()))
 		return
 
 	try {
-		supported := m.HasBrightness
+		supported := m.IsBrightnessSupported
 		SetStatus("monitor_brightness", "Brightness: monitor " m.Index (supported ? " SUPPORTS" : " does NOT support") " brightness control")
-		AppendLog("Monitor " m.Index " (" m.Name ") HasBrightness = " (supported ? 1 : 0) ".")
+		AppendLog("Monitor " m.Index " (" m.Name ") IsBrightnessSupported = " (supported ? 1 : 0) ".")
 	} catch as err {
 		SetStatus("monitor_brightness", "Brightness: probe ERROR")
-		AppendLog("HasBrightness on monitor " m.Index " failed: " err.Message)
+		AppendLog("IsBrightnessSupported on monitor " m.Index " failed: " err.Message)
 	}
 }
 
@@ -4417,7 +4417,7 @@ GetSelectedVcp() {
 		feature := m.GetVCP(code)
 		gVcpValueEdit.Value := feature.Current
 		SetStatus("monitor_vcp", "VCP: 0x" Format("{:02X}", code) " = " feature.Current " (max " feature.Max ")")
-		AppendLog("Monitor " m.Index " GetVCP(0x" Format("{:02X}", code) ") -> current=" feature.Current ", max=" feature.Max ".")
+		AppendLog("Monitor " m.Index " GetVCP(0x" Format("{:02X}", code) ") -> current=" feature.Current ", max=" feature.Maximum ".")
 	} catch as err {
 		SetStatus("monitor_vcp", "VCP: read UNSUPPORTED/ERROR (see log)")
 		AppendLog("GetVCP(0x" Format("{:02X}", code) ") on monitor " m.Index " failed: " err.Message)
@@ -5378,8 +5378,8 @@ StartWindowSuiteEvents() {
 			try {
 				hook := WinEvent.%eventName%(OnWinEvent, gWindowFixturePrefix)
 				gWinEventHooks.Push(hook)
-				if !hook.IsActive
-					throw Error("Subscription is not active.")
+				if !hook.InProgress
+					throw Error("Subscription is not running: " (hook.EndReason || "idle"))
 				gWindowEventSeen[eventName] := 0
 			} catch as err
 				AddWindowError("WinEvent", eventName " registration", err)

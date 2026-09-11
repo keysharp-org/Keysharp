@@ -164,12 +164,12 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Subscribes to device arrivals, removals, renames and default changes. The callback receives
 			/// <c>(hook, kind, device)</c>, where kind is "Added", "Removed", "Changed" or "DefaultChanged". The
-			/// subscription is rooted until <c>Stop()</c>, count exhaustion or script teardown, so dropping the
+			/// subscription is rooted until <c>Stop()</c> or script teardown, so dropping the
 			/// returned hook does not unsubscribe it. The Kind filter is "Output", "Input" or "All" (the default),
 			/// matched without regard to case.
 			/// </summary>
 			[Static]
-			public static object OnDeviceChange(object @this, object Callback, object Kind = null, object Count = null)
+			public static object OnDeviceChange(object @this, object Callback, object Kind = null)
 			{
 				var fo = Functions.GetKeysharpFunc(Callback, null, true);
 
@@ -179,17 +179,12 @@ namespace Keysharp.Builtins
 				if (!TryKind(Kind, "All", true, out var kind, out var all, out var failure))
 					return failure;
 
-				var remaining = Count.Al(-1L);
-
-				if (!EventSubscriptionBase.IsValidCount(remaining))
-					return Errors.ValueErrorOccurred(EventSubscriptionBase.CountErrorMessage, remaining);
-
 				if (!Service.Supports(Engine.AudioCapability.DeviceChange))
 					return Unsupported(Engine.AudioCapability.DeviceChange, "Audio.OnDeviceChange");
 
 				var script = Script.TheScript;
 				var manager = script.AudioEventManager;
-				var reg = new Engine.AudioEventRegistration(fo, remaining, script.EventScheduler, manager,
+				var reg = new Engine.AudioEventRegistration(fo, script.EventScheduler, manager,
 														   all ? "All" : KindName(kind));
 				var hook = new DeviceHook { sub = reg };
 				reg.scriptObject = hook;
@@ -198,14 +193,17 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// The handle <c>Audio.OnDeviceChange</c> returns. Its whole surface — Status, IsActive, Count,
-			/// Paused, Pause, Stop — comes from the shared <c>Ks.EventHook</c>, so audio adds no second spelling
-			/// of a contract every other event source already has.
+			/// The handle <c>Audio.OnDeviceChange</c> returns. Its whole surface comes from the shared
+			/// <c>Ks.EventHook</c>, so audio adds no second spelling of a contract every other event source already has.
 			/// </summary>
 			public sealed class DeviceHook : EventHook
 			{
 				internal DeviceHook() : base() { }
 			}
+
+			/// <summary>Every live <c>Audio.OnDeviceChange</c> subscription, oldest first (script: <c>Audio.Hooks</c>) —
+			/// a snapshot to iterate and drop. Device-change hooks only, never voices or meters.</summary>
+			public static object staticget_Hooks(object @this) => Script.TheScript.AudioEventManager.Hooks();
 
 			/// <summary>A device selector that accepts either kind, used where a session may live on either.</summary>
 			internal static bool TryResolveDeviceAnyKind(object selector, out Engine.AudioDeviceDescriptor device, out object failure)

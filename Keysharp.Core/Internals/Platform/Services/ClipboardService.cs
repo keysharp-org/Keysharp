@@ -1267,10 +1267,10 @@ namespace Keysharp.Internals
 					// The OS stores clipboard text with CRLF line endings; normalize to `n on the way out so
 					// script-visible text uses the same line ending as everywhere else in Keysharp.
 					if (Clipboard.TryGetData<string>(DataFormats.UnicodeText, out var uni) && !string.IsNullOrEmpty(uni))
-						return Conversions.NormalizeEol(uni);
+						return Conversions.ReplaceLineEndings(uni);
 
 					if (Clipboard.TryGetData<string>(DataFormats.Text, out var text) && !string.IsNullOrEmpty(text))
-						return Conversions.NormalizeEol(text);
+						return Conversions.ReplaceLineEndings(text);
 
 					if (attempt >= 3)
 						break;
@@ -1288,7 +1288,7 @@ namespace Keysharp.Internals
 					return sym;
 
 				if (Clipboard.TryGetData<string>(DataFormats.OemText, out var oem))
-					return Conversions.NormalizeEol(oem);
+					return Conversions.ReplaceLineEndings(oem);
 
 				if (Clipboard.TryGetData<string>(DataFormats.CommaSeparatedValue, out var csv))
 					return csv;
@@ -1313,7 +1313,7 @@ namespace Keysharp.Internals
 				{
 					// Store with native CRLF line endings (like Gui control text is written) so the text pastes
 					// correctly into other Windows apps. GetText normalizes back to `n on read.
-					var hglobal = Marshal.StringToHGlobalUni(Conversions.NormalizeEol(text, Environment.NewLine));
+					var hglobal = Marshal.StringToHGlobalUni(Conversions.ReplaceLineEndings(text, Environment.NewLine));
 
 					if (WindowsAPI.SetClipboardData(WindowsAPI.CF_UNICODETEXT, hglobal) == 0)
 						Marshal.FreeHGlobal(hglobal);//SetClipboardData failed, so ownership stays with us.
@@ -1458,7 +1458,7 @@ namespace Keysharp.Internals
 				case ClipboardKind.Text:
 				{
 					// CRLF on the way out, like SetText: this is what other Windows apps expect to paste.
-					var text = Conversions.NormalizeEol(entry.Value as string ?? "", Environment.NewLine);
+					var text = Conversions.ReplaceLineEndings(entry.Value as string ?? "", Environment.NewLine);
 					yield return (DataFormats.UnicodeText, Encoding.Unicode.GetBytes(text + "\0"));
 
 					break;

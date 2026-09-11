@@ -793,6 +793,9 @@ namespace Keysharp.Tests
 		[Test, Category("Directives")]
 		public void CSharpClrBoundary() => Assert.IsTrue(TestScript("directive-csharp-clr", false));
 
+		[Test, Category("Directives")]
+		public void CSharpClrEvents() => Assert.IsTrue(TestScript("directive-csharp-events", false));
+
 		[Test, Category("Directives"), NonParallelizable]
 		public void CSharpAsyncBoundary() => Assert.IsTrue(TestScript("directive-csharp-async", false));
 
@@ -1449,29 +1452,46 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void ParseScriptCSharp()
+		public void CompileScriptCSharp()
 		{
-			var dir = Path.Combine(Path.GetTempPath(), "ks_parsecs_" + Guid.NewGuid().ToString("N"));
+			var dir = Path.Combine(Path.GetTempPath(), "ks_compilecs_" + Guid.NewGuid().ToString("N"));
 			_ = Directory.CreateDirectory(dir);
 
 			try
 			{
-				string Parse(string body, string name)
+				string Write(string body, string name)
 				{
 					var p = Path.Combine(dir, name + ".ks");
 					File.WriteAllText(p, body);
-					return Ks.ParseScript(p) as string ?? "";
+					return p;
 				}
 
-				var bad = Parse("#NoTrayIcon\n#CSharp\npublic static object F() => new NoSuchType();\n#EndCSharp\nF()\n", "bad");
-				Assert.IsNotEmpty(bad, "a #CSharp block naming an unknown type must not be reported as valid");
-				Assert.IsTrue(bad.Contains("NoSuchType"), "the error should name the offending code; got:\n" + bad);
+				// "" when valid, otherwise the joined error messages; IsValid must agree with the errors either way.
+				string Check(Func<object, object> check, string path)
+				{
+					var result = check(path);
+					var errors = (Keysharp.Builtins.Array)Script.GetPropertyValue(result, "Errors");
+					var text = string.Join("\n", errors.array);
+					Assert.AreEqual(text.Length == 0 ? 1L : 0L, Script.GetPropertyValue(result, "IsValid"), text);
+					Assert.IsInstanceOf<Keysharp.Builtins.Array>(Script.GetPropertyValue(result, "Warnings"));
+					return text;
+				}
 
-				var ambig = Parse("#NoTrayIcon\n#CSharp\nusing Keysharp.Builtins;\npublic static object F() => Array.Empty<long>().Length;\n#EndCSharp\nF()\n", "ambig");
-				Assert.IsNotEmpty(ambig, "an ambiguous reference in a #CSharp block must not be reported as valid");
+				var bad = Write("#NoTrayIcon\n#CSharp\npublic static object F() => new NoSuchType();\n#EndCSharp\nF()\n", "bad");
+				var badErrors = Check(Ks.CompileScript, bad);
+				Assert.IsNotEmpty(badErrors, "a #CSharp block naming an unknown type must not be reported as valid");
+				Assert.IsTrue(badErrors.Contains("NoSuchType"), "the error should name the offending code; got:\n" + badErrors);
+				Assert.IsEmpty(Check(Ks.ValidateScript, bad), "a C# type error is a compile error, not a syntax error");
 
-				Assert.IsEmpty(Parse("#NoTrayIcon\n#CSharp\npublic static long F() => 42;\n#EndCSharp\nF()\n", "good") ?? "");
-				Assert.IsEmpty(Parse("#NoTrayIcon\nx := 1\n", "plain") ?? "");
+				var ambig = Write("#NoTrayIcon\n#CSharp\nusing Keysharp.Builtins;\npublic static object F() => Array.Empty<long>().Length;\n#EndCSharp\nF()\n", "ambig");
+				Assert.IsNotEmpty(Check(Ks.CompileScript, ambig), "an ambiguous reference in a #CSharp block must not be reported as valid");
+
+				Assert.IsEmpty(Check(Ks.CompileScript, Write("#NoTrayIcon\n#CSharp\npublic static long F() => 42;\n#EndCSharp\nF()\n", "good")));
+				Assert.IsEmpty(Check(Ks.CompileScript, Write("#NoTrayIcon\nx := 1\n", "plain")));
+
+				var broken = Write("#NoTrayIcon\nx := (\n", "broken");
+				Assert.IsNotEmpty(Check(Ks.ValidateScript, broken), "a syntax error fails ValidateScript");
+				Assert.IsNotEmpty(Check(Ks.CompileScript, broken), "and CompileScript, which parses first");
 			}
 			finally
 			{

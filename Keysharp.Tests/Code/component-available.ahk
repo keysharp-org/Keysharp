@@ -2,10 +2,10 @@
 #Warn All, StdOut
 #NoTrayIcon
 
-#import KS { ComponentAvailable }
+#import KS { IsComponentAvailable }
 
-parser := ComponentAvailable("parser")
-compiler := ComponentAvailable("compiler")
+parser := IsComponentAvailable("parser")
+compiler := IsComponentAvailable("compiler")
 if !(parser && compiler)
 	FileAppend "fail parser=" parser " compiler=" compiler, "*"
 

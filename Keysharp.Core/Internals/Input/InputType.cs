@@ -51,8 +51,10 @@ namespace Keysharp.Internals.Input
 		internal bool notifyNonText;
 		internal InputType prev;
 		internal InputHook scriptObject;
-		internal InputStatusType status = InputStatusType.Off;
+		// Volatile: the hook thread ends an input and queued callbacks re-read this when they would run.
+		internal volatile InputStatusType status = InputStatusType.NotStarted;
 		internal int timeout;
+		private int remainingTimeout;                          // what was left of the timeout when paused
 		internal DateTime timeoutAt;
 		internal bool transcribeModifiedKeys;
 		internal bool visibleText, visibleNonText = true;
@@ -279,6 +281,15 @@ namespace Keysharp.Internals.Input
 		{
 			var script = owner;
 
+			// A hook that has not ended has no reason: running, never started and paused all read "", as does an
+			// input with no hook to consult. AHK returns "" for its running arm too; a null here would make
+			// `!ih.EndReason` raise UnsetError on a running input.
+			if (status is InputStatusType.InProgress or InputStatusType.NotStarted or InputStatusType.Paused)
+				return "";
+
+			if (status == InputStatusType.Failed)
+				return "Failed";
+
 			if (script.HookThread is HookThread hook && hook.kbdMsSender != null)
 			{
 				switch (status)
@@ -345,7 +356,7 @@ namespace Keysharp.Internals.Input
 				}
 			}
 
-			return DefaultObject;
+			return "";
 		}
 
 		internal bool InProgress() => status == InputStatusType.InProgress;
@@ -395,29 +406,29 @@ namespace Keysharp.Internals.Input
 			prev = null;
 			ht.RefreshPlatformKeyGrabs();
 
-			if (scriptObject != null)
-			{
-				HotkeyDefinition.MaybeUninstallHook(script);
+			if (scriptObject == null)
+				return null;
 
-				if (scriptObject.OnEnd != null)
-					return this; // Return for caller to call OnEnd and Release.
+			HotkeyDefinition.MaybeUninstallHook(script);
 
-				//Original called Release() on ScriptObject, and the comments specifically differentiate between that and setting to null.
-				//So just don't do anything here.
-				// The following is not done because this Release() is only to counteract an AddRef() in
-				// InputStart().  ScriptObject != NULL indicates this input_type is actually embedded in
-				// the InputHook and as such the link should never be broken until both are deleted.
-				//aInput->ScriptObject = NULL;
-				//Seems extreme to do this, and the script should exit on its own if its not persistent.
-				//script.ExitIfNotPersistent(Keysharp.Builtins.Flow.ExitReasons.Exit); // In case this InputHook was the only thing keeping the script running.
-			}
-
-			return null;
+			// Returned whether or not there is an OnEnd: the caller releases the persistence roots InputStart took,
+			// which AHK does unconditionally, then runs OnEnd if one is set.
+			return this;
 		}
 
 		internal void InputStart()
 		{
 			var script = owner;
+
+#if LINUX
+			// A headless Linux host can never install the input hooks, so an input started there would report itself
+			// running while collecting nothing.
+			if (Script.IsHeadless)
+			{
+				status = InputStatusType.Failed;
+				return;
+			}
+#endif
 
 			// Set or update the timeout timer if needed.  The timer proc takes care to end
 			// only those inputs which are due, and will reset or kill the timer as needed.
@@ -743,13 +754,15 @@ namespace Keysharp.Internals.Input
 			}
 		}
 
-		internal void SetTimeoutTimer()
+		internal void SetTimeoutTimer() => SetTimeoutTimer(timeout);
+
+		internal void SetTimeoutTimer(int ms)
 		{
 			var script = owner;
 			var now = DateTime.UtcNow;
-			timeoutAt = now.AddMilliseconds(timeout);
+			timeoutAt = now.AddMilliseconds(ms);
 
-			if (!script.inputTimerExists || timeout < (script.inputTimeoutAt - now).TotalMilliseconds)
+			if (!script.inputTimerExists || ms < (script.inputTimeoutAt - now).TotalMilliseconds)
 			{
 				var inputTimer = script.InputData.inputTimer;
 				script.inputTimeoutAt = timeoutAt;
@@ -765,7 +778,7 @@ namespace Keysharp.Internals.Input
 					script.InputData.inputTimer = inputTimer;
 				}
 
-				inputTimer.Interval = timeout;
+				inputTimer.Interval = ms;
 				inputTimer.Start();
 				script.inputTimerExists = true;
 			}
@@ -775,6 +788,66 @@ namespace Keysharp.Internals.Input
 
 		internal void Stop() => EndByReason(InputStatusType.Off);
 
+		/// <summary>
+		/// Stops collecting and suppressing without ending. The input stays linked: every walk of the input stack is
+		/// gated on InProgress, so a paused one is skipped for free, while unlinking would re-push a resumed input
+		/// to the top of the stack. Deliberately not EndByReason, which posts AHK_INPUT_END and so fires OnEnd.
+		/// </summary>
+		internal void Pause()
+		{
+			if (status != InputStatusType.InProgress)
+				return;
+
+			var script = owner;
+			status = InputStatusType.Paused;
+
+			if (beforeHotkeys)
+				--script.inputBeforeHotkeysCount;
+
+			// A key pressed while suppressing would otherwise stay latched, so its next unrelated release after a
+			// resume would be swallowed for a press this input never saw.
+			for (var i = 0; i < keyVK.Length; i++)
+				keyVK[i] &= ~HookThread.INPUT_KEY_DOWN_SUPPRESSED;
+
+			for (var i = 0; i < keySC.Length; i++)
+				keySC[i] &= ~HookThread.INPUT_KEY_DOWN_SUPPRESSED;
+
+			// The deadline is absolute, so keep what is left of it. The shared timer skips a paused input, and if
+			// this was the only timed one it stops with nothing to re-arm it, which Resume does.
+			if (timeout > 0)
+				remainingTimeout = Math.Max(1, (int)(timeoutAt - DateTime.UtcNow).TotalMilliseconds);
+
+			script.HookThread.RefreshPlatformKeyGrabs();
+		}
+
+		/// <summary>
+		/// Resumes a paused input where it stood: the buffer, the stack position and the persistence roots are all
+		/// untouched. Re-runs only InputStart's tail, because the Visible* setters and KeyOpt install a needed hook
+		/// only while in progress, so an option changed during the pause may still need one.
+		/// </summary>
+		internal void Resume()
+		{
+			if (status != InputStatusType.Paused)
+				return;
+
+			var script = owner;
+			status = InputStatusType.InProgress;
+
+			if (beforeHotkeys)
+				++script.inputBeforeHotkeysCount;
+
+			if (timeout > 0)
+				SetTimeoutTimer(remainingTimeout);
+
+			if (KeyboardIsNeeded)
+				HotkeyDefinition.InstallKeybdHook(script);
+
+			if (MouseIsNeeded)
+				HotkeyDefinition.InstallMouseHook(script);
+
+			script.HookThread.RefreshPlatformKeyGrabs();
+		}
+
 		private void EndByReason(InputStatusType aReason)
 		{
 			var script = owner;
@@ -782,9 +855,12 @@ namespace Keysharp.Internals.Input
 			if (script.HookThread is HookThread hook && hook.kbdMsSender != null)
 			{
 				endingMods = hook.kbdMsSender.modifiersLRLogical; // Not relevant to all end reasons, but might be useful anyway.
+				var wasInProgress = status == InputStatusType.InProgress;
 				status = aReason;
 
-				if (beforeHotkeys)
+				// A paused input already gave its before-hotkeys place back; taking it again would disable that pass
+				// for every other input in the script.
+				if (beforeHotkeys && wasInProgress)
 					--script.inputBeforeHotkeysCount;
 
 				hook.RefreshPlatformKeyGrabs();
@@ -847,8 +923,11 @@ namespace Keysharp.Internals.Input
 
 	internal enum InputStatusType
 	{
+		NotStarted,
 		Off,
 		InProgress,
+		Paused,
+		Failed,
 		TimedOut,
 		TerminatedByMatch,
 		TerminatedByEndKey,

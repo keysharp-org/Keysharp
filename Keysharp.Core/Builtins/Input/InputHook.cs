@@ -5,8 +5,13 @@ namespace Keysharp.Builtins
 	/// <summary>
 	/// Collects or intercepts keyboard input. Scripts construct one by calling the class, as AutoHotkey does:
 	/// <c>ih := InputHook("V")</c>.
+	/// <para>
+	/// It shares its lifecycle vocabulary with every Keysharp event hook, but overrides all five members: it is
+	/// born idle rather than running, and <c>Stop()</c> is not final, because the options that describe its
+	/// source live on the handle, so <c>Start()</c> can begin again.
+	/// </para>
 	/// </summary>
-	public class InputHook : KeysharpObject
+	public class InputHook : Ks.EventHook
 	{
 		private const int CharCallbackIndex = 0;
 		private const int EndCallbackIndex = 1;
@@ -81,7 +86,10 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		public string EndReason
+		/// <summary><c>""</c> while running, paused or never started; otherwise why it ended: <c>"Stopped"</c>,
+		/// <c>"Timeout"</c>, <c>"Match"</c>, <c>"EndKey"</c>, <c>"Max"</c> or <c>"Failed"</c>. Cleared by the next
+		/// fresh <c>Start()</c>, so it describes the most recent run.</summary>
+		public override string EndReason
 		{
 			get
 			{
@@ -96,7 +104,7 @@ namespace Keysharp.Builtins
 			set => input.findAnywhere = value.Ab();
 		}
 
-		public bool InProgress => input.InProgress();
+		public override bool InProgress => input.InProgress();
 
 		public string Input => input.buffer;
 
@@ -369,24 +377,56 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
-		public object Start()
+		/// <summary>Collects again. Resumes a paused input where it stood, begins a never-started or ended one
+		/// fresh with an empty buffer, and does nothing to one already running.</summary>
+		public override object Start()
 		{
-			if (!input.InProgress())
+			switch (input.status)
 			{
-				input.buffer = "";
-				input.InputStart();
+				case InputStatusType.InProgress:
+					break;
+
+				case InputStatusType.Paused:
+					input.Resume();
+					break;
+
+				default:
+					input.buffer = "";
+					input.InputStart();
+					break;
 			}
+
 			return DefaultObject;
 		}
 
-		public object Stop()
+		/// <summary>Ends the input with <c>EndReason</c> "Stopped" and runs <c>OnEnd</c>. A paused input ends the
+		/// same way; a never-started one just reads as stopped, having nothing to release.</summary>
+		public override object Stop()
 		{
-			if (input.InProgress())
-				input.Stop();
+			switch (input.status)
+			{
+				case InputStatusType.InProgress:
+				case InputStatusType.Paused:
+					input.Stop();
+					break;
+
+				case InputStatusType.NotStarted:
+					input.status = InputStatusType.Off;
+					break;
+			}
+
 			return DefaultObject;
 		}
 
-		public object Wait(object maxTime)
+		/// <summary>Stops collecting and suppressing without ending, so <c>Start()</c> resumes with the buffer intact.
+		/// A paused input lets keys through and no longer shadows the inputs beneath it; <c>OnEnd</c> does not run.</summary>
+		public override object Pause()
+		{
+			input.Pause();
+			return DefaultObject;
+		}
+
+		public object Wait(object maxTime = null)
 		{
 			var ms = maxTime.Ad(double.MaxValue) * 1000.0;
 			var tickStart = DateTime.UtcNow;

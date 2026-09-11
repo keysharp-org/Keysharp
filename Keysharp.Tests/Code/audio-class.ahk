@@ -308,16 +308,17 @@ Throws(() => Audio.OnDeviceChange("not a function"), A_LineNumber)
 
 if (Audio.IsDeviceChangeSupported) {
     hook := Audio.OnDeviceChange(DeviceChanged, "Output")
-    AssertEq(hook.Status, "Active", A_LineNumber)
-    Assert(hook.IsActive, A_LineNumber)
-    AssertEq(hook.Count, -1, A_LineNumber)
-    hook.Paused := true
-    AssertEq(hook.Status, "Paused", A_LineNumber)
-    AssertEq(hook.IsActive, false, A_LineNumber)
-    hook.Paused := false
+    Assert(hook.InProgress, A_LineNumber)
+    AssertEq(hook.EndReason, "", A_LineNumber)
+    Assert(Audio.Hooks.Length >= 1, A_LineNumber)
+    hook.Pause()
+    AssertEq(hook.InProgress, false, A_LineNumber)
+    AssertEq(hook.EndReason, "", A_LineNumber)
+    hook.Start()
+    Assert(hook.InProgress, A_LineNumber)
     hook.Stop()
-    AssertEq(hook.Status, "Stopped", A_LineNumber)
-    AssertEq(hook.IsActive, false, A_LineNumber)
+    AssertEq(hook.InProgress, false, A_LineNumber)
+    AssertEq(hook.EndReason, "Stopped", A_LineNumber)
 }
 
 DeviceChanged(ChangedHook, Kind, Device) {

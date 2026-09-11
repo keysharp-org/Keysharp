@@ -49,6 +49,27 @@ namespace Keysharp.Internals.Events
 			}
 		}
 
+		/// <summary>
+		/// The script handle of every live subscription, oldest first. A snapshot: stopping a hook while iterating
+		/// mutates <see cref="registrations"/>, and a lazy view would have to hold <see cref="gate"/> across script
+		/// code. Script-wide rather than per thread, so a loop reaches library hooks and other threads' hooks too.
+		/// </summary>
+		internal Keysharp.Builtins.Array Hooks()
+		{
+			TRegistration[] all;
+
+			lock (gate)
+				all = [.. registrations];
+
+			// Built outside the gate, as the dispatch snapshots are, so the allocation is not under the lock.
+			var result = new Keysharp.Builtins.Array(new List<object>(all.Length));
+
+			foreach (var reg in all)
+				_ = result.Push(reg.scriptObject);
+
+			return result;
+		}
+
 		// ---- source hooks --------------------------------------------------------------------
 
 		/// <summary>Creates the platform backend and wires its sink. Returns null where the environment has none.</summary>
@@ -81,7 +102,12 @@ namespace Keysharp.Internals.Events
 			lock (gate)
 			{
 				if (disposed)
+				{
+					// Clear, not just return: the registration was born holding a persistence root, and a handle
+					// that is never listed here is never swept to release it.
+					EndAndClear(reg, EventSubscriptionBase.EndReasonExit);
 					return;
+				}
 
 				first = registrations.Count == 0;
 			}
@@ -94,7 +120,7 @@ namespace Keysharp.Internals.Events
 			// in a manager nothing will ever sweep. This is the same rule CallbackRegistry follows, and the same
 			// lock order teardown takes (cleanup gate, then this manager's), so the two cannot invert.
 			if (scheduler != null ? !scheduler.TryRegisterOwnedResource(AddCore) : !AddCore())
-				reg.Clear();
+				EndAndClear(reg, EventSubscriptionBase.EndReasonExit);
 
 			bool AddCore()
 			{
@@ -135,6 +161,7 @@ namespace Keysharp.Internals.Events
 				for (var i = registrations.Count - 1; i >= 0; i--)
 					if (ReferenceEquals(registrations[i].OwnerScheduler, scheduler))
 					{
+						registrations[i].End(EventSubscriptionBase.EndReasonExit);
 						RemoveLocked(registrations[i]);
 						removedAny = true;
 					}
@@ -153,6 +180,26 @@ namespace Keysharp.Internals.Events
 		{
 			reg.Clear();
 			_ = registrations.Remove(reg);
+		}
+
+		private static void EndAndClear(TRegistration reg, string reason)
+		{
+			reg.End(reason);
+			reg.Clear();
+		}
+
+		/// <summary>
+		/// Ends every subscription because the native source cannot be created. Called from a
+		/// <see cref="SyncNativeLocked"/> that found no backend, which only happens while something is subscribed —
+		/// and a hook left listed there would report itself running while never able to fire.
+		/// </summary>
+		protected void FailAllLocked()
+		{
+			foreach (var reg in registrations)
+				EndAndClear(reg, EventSubscriptionBase.EndReasonFailed);
+
+			registrations.Clear();
+			OnRegistrationsChangedLocked();
 		}
 
 		// ---- backend -------------------------------------------------------------------------
@@ -181,13 +228,19 @@ namespace Keysharp.Internals.Events
 		/// Runs one callback in a fresh pseudo-thread on its owner. Every source's dispatch ends here, so the
 		/// admission, the error handling and the persistence release are decided once.
 		/// <para>
-		/// There is deliberately no re-check of the subscription's liveness: <see cref="EventSubscriptionBase.TryConsumeFire"/>
-		/// at enqueue time is the authoritative gate, and re-checking would drop the last allowed callback of a
-		/// counted subscription (whose budget deactivates it before the queued callback runs).
+		/// This is the one place a stopped or paused hook is refused. Intake admits and queues regardless of pause,
+		/// so the rule a script can derive is simply that a callback checks whether its hook is running at the
+		/// moment it would run: <c>Stop()</c> and <c>Pause()</c> take effect when called, and a queued callback that
+		/// has not started is discarded rather than deferred. The callback already running always finishes.
 		/// </para>
 		/// </summary>
 		protected ScriptEventExecutionResult RunCallback(ScriptEventScheduler scheduler, TRegistration reg, object[] args, in TPayload payload)
 		{
+			// No exit check on this path: an event hook is not one of the things AnyPersistent counts, and a worker
+			// scheduler is already woken by the persistence release itself, so there is nothing for one to find.
+			if (!reg.IsActive || reg.Suppressed)
+				return ScriptEventExecutionResult.Dropped;
+
 			using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, CallbackThreadKind);
 
 			if (!thread.Started)
@@ -239,7 +292,7 @@ namespace Keysharp.Internals.Events
 			}
 
 			foreach (var reg in all)
-				reg.Clear();
+				EndAndClear(reg, EventSubscriptionBase.EndReasonExit);
 
 			// Outside the lock: a backend's Stop/Dispose may marshal onto another thread that calls back in.
 			try

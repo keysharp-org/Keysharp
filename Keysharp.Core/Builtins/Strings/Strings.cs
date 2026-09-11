@@ -26,7 +26,7 @@ namespace Keysharp.Builtins
 		/// <param name="str">The string whose line endings will be normalized.</param>
 		/// <param name="endOfLine">The line ending character to use. Default: DefaultNewLine.</param>
 		/// <returns>A new copy of the string with all line endings set to the specified value.</returns>
-		public static string NormalizeEol(object str, object endOfLine = null) => Conversions.NormalizeEol(str, endOfLine);
+		public static string ReplaceLineEndings(object str, object endOfLine = null) => Conversions.ReplaceLineEndings(str, endOfLine);
 	}
 
 	internal class StringsData

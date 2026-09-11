@@ -205,13 +205,14 @@ namespace Keysharp.Internals.Strings
 		};
 
 		/// <summary>
-		/// Makes all line endings in a string match the value passed in, or the default newline. The runtime
-		/// needs this on its own account — GUI edit controls and the Windows clipboard backend both normalize
-		/// what they read and write — and <c>Ks.NormalizeEol</c> is a thin wrapper over it.
+		/// Makes all line endings in a string match the value passed in, or <c>"\n"</c> when it is omitted, where
+		/// <see cref="string.ReplaceLineEndings()"/> defaults to <see cref="Environment.NewLine"/>. The runtime needs
+		/// this on its own account — GUI edit controls and the Windows clipboard backend both normalize what they read
+		/// and write — and <c>Ks.ReplaceLineEndings</c> is a thin wrapper over it.
 		/// </summary>
 		/// <param name="str">The string whose line endings will be normalized.</param>
 		/// <param name="endOfLine">The line ending character to use. Default: DefaultNewLine.</param>
-		internal static string NormalizeEol(object str, object endOfLine = null) =>
+		internal static string ReplaceLineEndings(object str, object endOfLine = null) =>
 			str.As().ReplaceLineEndings(endOfLine.As(DefaultNewLine));
 
 		internal static string FromFileAttribs(FileAttributes attribs)

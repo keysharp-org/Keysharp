@@ -408,7 +408,7 @@ namespace Keysharp.Tests
 			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
 		}
 
-		/// <summary>The hook's own bookkeeping — Pause, Count and Stop — without needing a real clipboard event,
+		/// <summary>The hook's own bookkeeping — Pause, Start and Stop — without needing a real clipboard event,
 		/// which no headless environment can be relied on to deliver.</summary>
 		[Test, Category("Clipboard"), Category("Internal"), NonParallelizable]
 		public void OnChangeHookSurface()
@@ -428,13 +428,14 @@ namespace Keysharp.Tests
 
 			try
 			{
-				Assert.IsTrue(hook.IsActive);
-				Assert.AreEqual(-1L, hook.Count);
-				Assert.AreEqual(false, hook.Paused);
-				Assert.AreEqual(true, hook.Pause());
+				Assert.IsTrue(hook.InProgress);
+				Assert.AreEqual("", hook.EndReason);
+				_ = hook.Pause();
+				Assert.IsFalse(hook.InProgress);
 				DispatchClipboardChange(1L);
 				Assert.AreEqual(0, calls.Count, "A paused hook must not fire.");
-				Assert.AreEqual(false, hook.Pause(0));
+				_ = hook.Start();
+				Assert.IsTrue(hook.InProgress);
 				DispatchClipboardChange(1L);
 				Assert.AreEqual(1, calls.Count);
 				Assert.AreSame(hook, calls[0][0], "The callback receives the hook as its first argument.");
@@ -459,7 +460,7 @@ namespace Keysharp.Tests
 				Assert.AreEqual(ownerThread, calls[3][3]);
 
 				_ = hook.Stop();
-				Assert.IsFalse(hook.IsActive);
+				Assert.AreEqual("Stopped", hook.EndReason);
 				DispatchClipboardChange(1L);
 				Assert.AreEqual(4, calls.Count, "A stopped hook must not fire.");
 			}
@@ -469,19 +470,20 @@ namespace Keysharp.Tests
 			}
 		}
 
-		/// <summary>Count stops the hook by itself, and does so BEFORE the final call so a handler that writes the
-		/// clipboard cannot re-admit itself.</summary>
+		/// <summary>A one-shot is <c>Stop()</c> as the callback's first statement: a second change admitted before the
+		/// first callback ran is discarded when it would run, so it cannot fire twice.</summary>
 		[Test, Category("Clipboard"), Category("Internal"), NonParallelizable]
-		public void OnChangeHookCount()
+		public void OnChangeHookOneShot()
 		{
 			var calls = 0;
-			var cb = new KeysharpFunc((Func<object, object, object>)((hook, type) =>
+			var cb = new KeysharpFunc((Func<object, object, object>)((h, type) =>
 			{
+				_ = ((Ks.ClipboardHook)h).Stop();
 				calls++;
 				return "";
 			}));
 
-			if (Ks.KeysharpClipboard.OnChange(null, cb, 2L) is not Ks.ClipboardHook hook)
+			if (Ks.KeysharpClipboard.OnChange(null, cb) is not Ks.ClipboardHook hook)
 			{
 				Assert.Fail("OnChange did not return a hook.");
 				return;
@@ -489,16 +491,12 @@ namespace Keysharp.Tests
 
 			try
 			{
-				Assert.AreEqual(2L, hook.Count);
-				DispatchClipboardChange(1L);
-				Assert.AreEqual(1L, hook.Count);
-				Assert.IsTrue(hook.IsActive);
-				DispatchClipboardChange(1L);
-				Assert.AreEqual(2, calls);
-				Assert.IsFalse(hook.IsActive, "The hook stops itself once the count is exhausted.");
-				Assert.AreEqual(0L, hook.Count);
-				DispatchClipboardChange(1L);
-				Assert.AreEqual(2, calls);
+				var script = Script.TheScript;
+				script.ClipboardEventManager.Dispatch(1L);
+				script.ClipboardEventManager.Dispatch(1L);
+				Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				Assert.AreEqual(1, calls, "Both changes were queued before the first ran, and the second is discarded.");
+				Assert.AreEqual("Stopped", hook.EndReason);
 			}
 			finally
 			{

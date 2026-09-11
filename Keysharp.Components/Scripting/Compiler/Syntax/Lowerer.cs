@@ -3484,11 +3484,17 @@ namespace Keysharp.Compilation.Syntax
 			return sources;
 		}
 
+		// A script that calls one of these at run time needs the component shipped beside it, so a compiled program
+		// carries it without the author listing it.
 		private void TrackRuntimeComponent(System.Reflection.MethodInfo method)
 		{
-			if (method?.DeclaringType == typeof(Keysharp.Builtins.Ks)
-					&& method.Name is nameof(Keysharp.Builtins.Ks.RunScript) or nameof(Keysharp.Builtins.Ks.ParseScript))
+			if (method?.DeclaringType != typeof(Keysharp.Builtins.Ks))
+				return;
+
+			if (method.Name is nameof(Keysharp.Builtins.Ks.RunScript) or nameof(Keysharp.Builtins.Ks.CompileScript))
 				_ = _requiredComponents.Add(ScriptingComponentIds.Compiler);
+			else if (method.Name is nameof(Keysharp.Builtins.Ks.ValidateScript))
+				_ = _requiredComponents.Add(ScriptingComponentIds.Parser);
 		}
 
 		private static bool TryGetCapabilityRequirement(DirectiveStmt directive, out string capabilities)

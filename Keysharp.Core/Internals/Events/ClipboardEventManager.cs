@@ -8,9 +8,9 @@ namespace Keysharp.Internals.Events
 	/// criteria and no per-event state, so it adds nothing to <see cref="EventSubscriptionBase"/>; the
 	/// script-facing <c>Ks.ClipboardHook</c> wraps one of these.
 	/// </summary>
-	internal sealed class ClipboardEventRegistration(KeysharpFunc callback, long count, ScriptEventScheduler ownerScheduler,
+	internal sealed class ClipboardEventRegistration(KeysharpFunc callback, ScriptEventScheduler ownerScheduler,
 		ClipboardEventManager manager)
-		: EventSubscriptionBase(callback, count, ownerScheduler)
+		: EventSubscriptionBase(callback, ownerScheduler)
 	{
 		internal readonly ClipboardEventManager manager = manager;
 
@@ -49,7 +49,13 @@ namespace Keysharp.Internals.Events
 
 		protected override NativeSource CreateBackend() => new(script);
 
-		protected override void SyncNativeLocked() => EnsureBackend()?.Apply(registrations.Count > 0);
+		protected override void SyncNativeLocked()
+		{
+			if (EnsureBackend() is { } source)
+				source.Apply(registrations.Count > 0);
+			else if (registrations.Count > 0)
+				FailAllLocked();                              // the monitor cannot be installed, so these can never fire
+		}
 
 		/// <summary>A_EventInfo holds the same data type the callback receives, so a handler that ignores its
 		/// parameter can still branch on it.</summary>
@@ -78,9 +84,9 @@ namespace Keysharp.Internals.Events
 
 		private void Fire(ClipboardEventRegistration reg, long dataType)
 		{
-			// A paused hook stays registered — and keeps the native monitor installed — but doesn't fire or consume
-			// its remaining-count budget.
-			if (reg.Suppressed || !reg.TryConsumeFire())
+			// A paused hook stays registered — and keeps the native monitor installed — and is queued like any other;
+			// RunCallback discards it if it is still paused when it would run.
+			if (!reg.IsActive)
 				return;
 
 			var scheduler = DispatchTarget(reg);
@@ -91,9 +97,6 @@ namespace Keysharp.Internals.Events
 			object[] args = [reg.scriptObject, dataType];
 			var payload = new Payload(dataType);
 			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, args, payload));
-
-			if (reg.IsExhausted)
-				Unregister(reg);
 		}
 	}
 }

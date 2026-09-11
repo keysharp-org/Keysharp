@@ -8,9 +8,9 @@ namespace Keysharp.Internals.Audio
 	/// Engine-side state for one <c>Audio.OnDeviceChange</c> subscription. A device-change subscription filters
 	/// only by kind, so that is all it adds to the shared subscription base.
 	/// </summary>
-	internal sealed class AudioEventRegistration(KeysharpFunc callback, long count, ScriptEventScheduler ownerScheduler,
+	internal sealed class AudioEventRegistration(KeysharpFunc callback, ScriptEventScheduler ownerScheduler,
 		AudioEventManager manager, string kind)
-		: EventSubscriptionBase(callback, count, ownerScheduler)
+		: EventSubscriptionBase(callback, ownerScheduler)
 	{
 		internal readonly AudioEventManager manager = manager;
 
@@ -90,7 +90,10 @@ namespace Keysharp.Internals.Audio
 			if (wanted)
 			{
 				if (EnsureBackend() is not { } watcher || !watcher.Start())
+				{
+					FailAllLocked();                          // no device notification here, so these can never fire
 					return;
+				}
 			}
 			else
 			{
@@ -180,9 +183,9 @@ namespace Keysharp.Internals.Audio
 				if (!KindMatches(reg.kind, device.Kind))
 					continue;
 
-				// A paused hook stays registered and keeps the baseline current, but does not fire or spend its
-				// remaining-count budget.
-				if (reg.Suppressed || !reg.TryConsumeFire())
+				// A paused hook stays registered, keeps the baseline current and is queued like any other;
+				// RunCallback discards it if it is still paused when it would run.
+				if (!reg.IsActive)
 					continue;
 
 				var scheduler = DispatchTarget(reg);
@@ -198,9 +201,6 @@ namespace Keysharp.Internals.Audio
 				object[] args = [reg.scriptObject, kind, wrapped];
 				var payload = new Payload(count);
 				_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, args, payload));
-
-				if (reg.IsExhausted)
-					Unregister(reg);
 			}
 		}
 

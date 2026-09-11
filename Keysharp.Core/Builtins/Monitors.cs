@@ -153,33 +153,32 @@ namespace Keysharp.Builtins
 			/// <c>"Settings"</c> when the same monitors are attached but something about them changed — resolution,
 			/// position, scale, or which one is primary. <c>A_EventInfo</c> holds the monitor count after the
 			/// change.</para>
-			/// <para><c>count</c> limits how many times it fires (default -1 = unlimited), matching
-			/// <c>Ks.WinEvent</c>. Because the monitor objects a script already holds are snapshots, a handler that
+			/// <para>The subscription is rooted until <c>Stop()</c> or the owning thread's teardown, so dropping the
+			/// handle does not stop it. Because the monitor objects a script already holds are snapshots, a handler that
 			/// keeps one should call its <c>Refresh()</c> — which returns falsy if that monitor is the one that was
 			/// just unplugged — or just re-read <c>Monitor.All</c>, which is what the layout looks like *now* rather
 			/// than at event time.</para>
 			/// </summary>
 			[Static]
-			public static object OnChange(object @this, object callback, object count = null)
+			public static object OnChange(object @this, object callback)
 			{
 				var fo = Functions.GetKeysharpFunc(callback, null, true);
 
 				if (fo == null)
 					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));
 
-				var remaining = count.Al(-1L);
-
-				if (!EventSubscriptionBase.IsValidCount(remaining))
-					return Errors.ValueErrorOccurred(EventSubscriptionBase.CountErrorMessage, remaining);
-
 				var script = Script.TheScript;
 				var manager = script.MonitorEventManager;
-				var reg = new MonitorEventRegistration(fo, remaining, script.EventScheduler, manager);
+				var reg = new MonitorEventRegistration(fo, script.EventScheduler, manager);
 				var hook = new MonitorHook { sub = reg };
 				reg.scriptObject = hook;
 				manager.Register(reg);
 				return hook;
 			}
+
+			/// <summary>Every live <c>Monitor.OnChange</c> subscription, oldest first (script: <c>Monitor.Hooks</c>) — a
+			/// snapshot to iterate and drop, covering every thread's hooks.</summary>
+			public static object staticget_Hooks(object @this) => Script.TheScript.MonitorEventManager.Hooks();
 
 			// ---- identity ----------------------------------------------------------------------------------
 
@@ -341,7 +340,7 @@ namespace Keysharp.Builtins
 			/// The monitor's brightness as a percentage, 0 to 100. Reading and writing both perform a real device
 			/// transaction: over DDC/CI that takes tens of milliseconds and is not cached, because the value can
 			/// also be changed with the monitor's own buttons. Throws an OSError, naming the reason, on a monitor
-			/// or platform that cannot do it — test <see cref="HasBrightness"/> first to branch without an
+			/// or platform that cannot do it — test <see cref="IsBrightnessSupported"/> first to branch without an
 			/// exception.
 			/// </summary>
 			public object Brightness
@@ -360,10 +359,10 @@ namespace Keysharp.Builtins
 
 			/// <summary>Whether <see cref="Brightness"/> works for this monitor. This is a real probe of the device,
 			/// not a platform guess, so it costs one brightness read.</summary>
-			public bool HasBrightness => Platform.MonitorControl.TryGetBrightness(display, Details, out _);
+			public bool IsBrightnessSupported => Platform.MonitorControl.TryGetBrightness(display, Details, out _);
 
 			/// <summary>
-			/// Reads one DDC/CI VCP feature, returning <c>{current, max}</c>. VCP codes are defined by the MCCS
+			/// Reads one DDC/CI VCP feature, returning <c>{Current, Maximum}</c>. VCP codes are defined by the MCCS
 			/// standard: <c>0x10</c> brightness, <c>0x12</c> contrast, <c>0x60</c> input source, <c>0x62</c> speaker
 			/// volume, <c>0xD6</c> power mode. Throws an OSError when the monitor does not answer.
 			/// </summary>
@@ -376,7 +375,7 @@ namespace Keysharp.Builtins
 
 				var result = new KeysharpObject();
 				result.DefinePropInternal("Current", new OwnPropsDesc(result, (long)current));
-				result.DefinePropInternal("Max", new OwnPropsDesc(result, (long)max));
+				result.DefinePropInternal("Maximum", new OwnPropsDesc(result, (long)max));
 				return result;
 			}
 
@@ -431,17 +430,13 @@ namespace Keysharp.Builtins
 
 		/// <summary>
 		/// A live <c>Monitor.OnChange</c> subscription — the object that factory returns and the first argument every
-		/// change callback receives. Deliberately the same surface as a <see cref="WinEvent"/> hook
-		/// (<c>Stop</c>/<c>Pause</c>/<c>Paused</c>/<c>IsActive</c>/<c>Count</c>), so the two subscription APIs are
-		/// managed the same way.
-		/// <para>The subscription auto-stops on <c>__Delete</c>, but because GC timing is unpredictable, also call
-		/// <c>hook.Stop()</c> (or let the owning thread tear down) when done.</para>
+		/// change callback receives. Its whole surface comes from <see cref="EventHook"/>, so it is managed exactly like
+		/// every other hook.
 		/// </summary>
 		public sealed class MonitorHook : EventHook
 		{
 			internal MonitorHook() : base() { }
 
-			// The whole surface — Status, IsActive, Count, Paused, Pause, Stop and __Delete — comes from Ks.EventHook.
 		}
 	}
 }

@@ -350,10 +350,10 @@ namespace Keysharp.Tests
 
 			Assert.AreEqual(CliCommandKind.Error, Runner.Parse(["--with-component", "parsing", script]).Kind,
 				"deployment policy accepts fixed unit IDs, not capability aliases");
-			Assert.IsTrue((bool)Ks.ComponentAvailable("parser"));
-			Assert.IsTrue((bool)Ks.ComponentAvailable("parsing"));
-			Assert.IsTrue((bool)Ks.ComponentAvailable("compiler"));
-			Assert.IsTrue((bool)Ks.ComponentAvailable("compilation"));
+			Assert.IsTrue((bool)Ks.IsComponentAvailable("parser"));
+			Assert.IsTrue((bool)Ks.IsComponentAvailable("parsing"));
+			Assert.IsTrue((bool)Ks.IsComponentAvailable("compiler"));
+			Assert.IsTrue((bool)Ks.IsComponentAvailable("compilation"));
 		}
 
 		[Test]
@@ -368,7 +368,7 @@ namespace Keysharp.Tests
 				var compiler = new CompilerComponent();
 				var automatic = compiler.Compile(new ScriptCompileRequest
 				{
-					SourceText = "#NoTrayIcon\n#ErrorStdOut\n#import \"Ks\" { ComponentAvailable, RunScript }\nif ComponentAvailable(\"compiler\")\n\tRunScript(\"x := 1\")\n",
+					SourceText = "#NoTrayIcon\n#ErrorStdOut\n#import \"Ks\" { IsComponentAvailable, RunScript }\nif IsComponentAvailable(\"compiler\")\n\tRunScript(\"x := 1\")\n",
 					CompilationName = "automatic-component",
 					RuntimeDirectory = AppContext.BaseDirectory,
 					Output = ScriptCompilationOutput.Assembly,
@@ -402,7 +402,7 @@ namespace Keysharp.Tests
 
 				var excluded = compiler.Compile(new ScriptCompileRequest
 				{
-					SourceText = "#NoTrayIcon\n#ErrorStdOut\n#import \"Ks\" { ComponentAvailable, RunScript }\nif ComponentAvailable(\"compiler\")\n\tRunScript(\"x := 1\")\n",
+					SourceText = "#NoTrayIcon\n#ErrorStdOut\n#import \"Ks\" { IsComponentAvailable, RunScript }\nif IsComponentAvailable(\"compiler\")\n\tRunScript(\"x := 1\")\n",
 					CompilationName = "excluded-component",
 					RuntimeDirectory = AppContext.BaseDirectory,
 					ExcludedComponents = [ScriptingComponentIds.Compiler],
@@ -411,15 +411,26 @@ namespace Keysharp.Tests
 				Assert.IsTrue(excluded.Success, excluded.ErrorText);
 				Assert.IsEmpty(excluded.RequiredComponents);
 
-				var parseScript = compiler.Compile(new ScriptCompileRequest
+				// Each run-time check pulls in the component it needs, so a compiled program carries it automatically.
+				var compileScript = compiler.Compile(new ScriptCompileRequest
 				{
-					SourceText = "#NoTrayIcon\n#ErrorStdOut\n#import \"Ks\" { ParseScript }\nresult := ParseScript(\"x := 1\")\n",
-					CompilationName = "automatic-parse-script-component",
+					SourceText = "#NoTrayIcon\n#ErrorStdOut\n#import \"Ks\" { CompileScript }\nresult := CompileScript(\"x := 1\")\n",
+					CompilationName = "automatic-compile-script-component",
 					RuntimeDirectory = AppContext.BaseDirectory,
 					Output = ScriptCompilationOutput.Assembly,
 				});
-				Assert.IsTrue(parseScript.Success, parseScript.ErrorText);
-				CollectionAssert.Contains(parseScript.RequiredComponents, "compiler");
+				Assert.IsTrue(compileScript.Success, compileScript.ErrorText);
+				CollectionAssert.Contains(compileScript.RequiredComponents, "compiler");
+
+				var validateScript = compiler.Compile(new ScriptCompileRequest
+				{
+					SourceText = "#NoTrayIcon\n#ErrorStdOut\n#import \"Ks\" { ValidateScript }\nresult := ValidateScript(\"x := 1\")\n",
+					CompilationName = "automatic-validate-script-component",
+					RuntimeDirectory = AppContext.BaseDirectory,
+					Output = ScriptCompilationOutput.Assembly,
+				});
+				Assert.IsTrue(validateScript.Success, validateScript.ErrorText);
+				CollectionAssert.Contains(validateScript.RequiredComponents, "parser");
 			}
 			finally
 			{
@@ -437,7 +448,7 @@ namespace Keysharp.Tests
 			{
 				var result = new CompilerComponent().Compile(new ScriptCompileRequest
 				{
-					SourceText = "#NoTrayIcon\n#ErrorStdOut\n#import \"Ks\" { ComponentAvailable, RunScript }\nif ComponentAvailable(\"compiler\")\n\tRunScript(\"x := 1\")\n",
+					SourceText = "#NoTrayIcon\n#ErrorStdOut\n#import \"Ks\" { IsComponentAvailable, RunScript }\nif IsComponentAvailable(\"compiler\")\n\tRunScript(\"x := 1\")\n",
 					CompilationName = "embedded-compiler",
 					RuntimeDirectory = AppContext.BaseDirectory,
 					Output = ScriptCompilationOutput.MinimalExecutable,

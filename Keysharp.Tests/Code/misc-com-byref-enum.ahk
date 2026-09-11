@@ -75,7 +75,7 @@ en := Map("a", 1).__Enum(2)
 Assert(en.IsByRef(1), A_LineNumber)
 Assert(en.IsByRef(2), A_LineNumber)
 Assert(en.IsByRef(), A_LineNumber)
-Assert(en.Params[1].ByRef = 1 && en.Params[1].Variadic = 1, A_LineNumber)
+Assert(en.Params[1].IsByRef = 1 && en.Params[1].IsVariadic = 1, A_LineNumber)
 
 ; A function with no ByRef parameters must still report none.
 Plain(a, b) => a + b

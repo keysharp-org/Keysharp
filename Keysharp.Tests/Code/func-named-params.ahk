@@ -74,7 +74,7 @@ AssertEq([1, 2, 3].Filter((v) => v > 1).Length, 2, A_LineNumber)
 AssertEq([1, 2, 3].Filter((v, i) => v > 1).Length, 2, A_LineNumber)
 AssertEq([1, 2, 3].Filter(() => true).Length, 3, A_LineNumber)
 AssertEq([1, 2, 3].Filter((a*) => a[1] > 1).Length, 2, A_LineNumber)
-AssertEq([1, 2, 3].MapTo((v) => v * 2).Join(","), "2,4,6", A_LineNumber)
+AssertEq([1, 2, 3].Map((v) => v * 2).Join(","), "2,4,6", A_LineNumber)
 AssertEq([1, 2, 3].FindIndex((v) => v > 1), 2, A_LineNumber)
 class NPPred {
     Pred(v) => v > 1
@@ -91,7 +91,7 @@ AssertEq([1, 2, 3].Filter(np2.Bind(1)).Length, 2, A_LineNumber)  ; bound: one sl
 
 ; A transform may yield nothing for an element: that is how a sparse array is built. A predicate, by contrast,
 ; still must return something.
-sparseM := [1, 2, 3].MapTo((v) => v = 2 ? unset : v)
+sparseM := [1, 2, 3].Map((v) => v = 2 ? unset : v)
 Assert(sparseM.Length == 3 && !sparseM.Has(2) && sparseM[1] == 1, A_LineNumber)
 
 ; The `object @this` convention: the receiver is not an argument and must not be bindable.
@@ -296,7 +296,7 @@ AssertEq([1, 2, 3].Filter(hasFn).Length, 1, A_LineNumber)
 ; Binding into a variadic function must not swallow the tail from Params: the tail is never used up.
 vfp(rest*) => rest.Length
 bvfp := vfp.Bind(1)
-Assert(bvfp.IsVariadic && bvfp.Params.Length == 1 && bvfp.Params[1].Variadic == 1, A_LineNumber)
+Assert(bvfp.IsVariadic && bvfp.Params.Length == 1 && bvfp.Params[1].IsVariadic == 1, A_LineNumber)
 
 ; Supplying the same parameter by name twice across Bind and the call reports "more than once" -- at that
 ; point the first supply is indistinguishable from a positional one, so the message must not claim either.
@@ -452,10 +452,10 @@ AssertEq(dname("A", gamma: "X", %n2%: "Y"), "A/B/Y", A_LineNumber)
 pinfo(alpha, beta := 5, &out?, rest*) => alpha
 pi := pinfo.Params
 AssertEq(pi.Length, 4, A_LineNumber)
-Assert(pi[1].Name == "alpha" && pi[1].Optional == 0 && !pi[1].HasOwnProp("Default"), A_LineNumber)
-Assert(pi[2].Name == "beta" && pi[2].Optional == 1 && pi[2].Default == 5, A_LineNumber)
-Assert(pi[3].Name == "out" && pi[3].ByRef == 1, A_LineNumber)
-Assert(pi[4].Name == "rest" && pi[4].Variadic == 1, A_LineNumber)
+Assert(pi[1].Name == "alpha" && pi[1].IsOptional == 0 && !pi[1].HasOwnProp("Default"), A_LineNumber)
+Assert(pi[2].Name == "beta" && pi[2].IsOptional == 1 && pi[2].Default == 5, A_LineNumber)
+Assert(pi[3].Name == "out" && pi[3].IsByRef == 1, A_LineNumber)
+Assert(pi[4].Name == "rest" && pi[4].IsVariadic == 1, A_LineNumber)
 AssertEq(SubStr.Params[1].Name, "string", A_LineNumber)  ; built-ins report their documented names
 AssertEq([].Get.Params[1].Name, "index", A_LineNumber)  ; the receiver is not reported
 

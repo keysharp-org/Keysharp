@@ -3,78 +3,72 @@ namespace Keysharp.Builtins
 	public partial class Ks
 	{
 		/// <summary>
-		/// The handle every event subscription hands back, and the first argument every such callback receives:
-		/// <c>Ks.WinEvent</c>, <c>Ks.MonitorHook</c> and <c>Ks.ClipboardHook</c> all are one. Because the surface
-		/// lives here once, the three cannot drift apart.
+		/// The base of every event subscription a script holds: <c>InputHook</c>, <c>Ks.WinEvent</c>,
+		/// <c>Ks.MonitorHook</c>, <c>Ks.ClipboardHook</c>, <c>Ks.Audio.DeviceHook</c> and
+		/// <c>Ks.Clr.EventSubscription</c>. A hook is always in one of three states, readable from two members:
+		/// <list type="bullet">
+		/// <item>Active — <c>InProgress</c> is true; the callback fires when the event happens.</item>
+		/// <item>Idle — <c>InProgress</c> is false and <c>EndReason</c> is <c>""</c>; <c>Start()</c> runs it.</item>
+		/// <item>Ended — <c>EndReason</c> says why: <c>"Stopped"</c>, <c>"Exit"</c>, <c>"Failed"</c>, or an
+		/// <c>InputHook</c>'s own reasons.</item>
+		/// </list>
 		/// <para>
-		/// <c>Status</c> is the one value that separates the three states a hook can be in — <c>"Active"</c>
-		/// (registered and firing), <c>"Paused"</c> (registered but suppressed) and <c>"Stopped"</c> (unregistered,
-		/// which is permanent). <c>IsActive</c> answers the single question "is it firing?", so a paused hook is
-		/// NOT active. A stopped hook reports <c>Paused</c> false and <c>Count</c> 0, and ignores writes to both.
+		/// <c>Stop()</c> is final for a hook a factory returned, because nothing is left to describe its source once
+		/// it is released; an <c>InputHook</c> carries its own description, so its <c>Start()</c> begins again.
+		/// Pause is cheap and reversible and keeps the native source installed; Stop is what releases it.
 		/// </para>
 		/// <para>
-		/// The subscription is rooted by the manager that owns it, so it keeps firing until <c>Stop()</c>, count
-		/// exhaustion, or teardown of the thread that made it — dropping the handle does not stop it.
+		/// <c>Stop()</c> and <c>Pause()</c> take effect when called: a callback that was queued but has not started
+		/// is discarded, while the one already running always finishes. A hook is rooted by the manager that owns
+		/// it, so dropping the handle never stops it — only <c>Stop()</c> or the owning thread's teardown does.
 		/// </para>
 		/// </summary>
 		public class EventHook : KeysharpObject
 		{
-			internal EventSubscriptionBase sub;
-
-			public EventHook(params object[] args) : base(args) { }
+			internal Keysharp.Internals.Events.EventSubscriptionBase sub;
 
 			internal EventHook() : base() { }
 
-			/// <summary>This hook's effective state: <c>"Active"</c>, <c>"Paused"</c> or <c>"Stopped"</c>.</summary>
-			public string Status => !IsLive ? "Stopped" : sub.Suppressed ? "Paused" : "Active";
+			// InputHook is constructed by scripts; nothing else here is.
+			private protected EventHook(params object[] args) : base(args) { }
 
-			/// <summary>True only while this hook is firing; <see cref="Status"/> separates paused from stopped.</summary>
-			public bool IsActive => Status == "Active";
+			/// <summary>True while the callback fires when the event happens.</summary>
+			public virtual bool InProgress => sub is { IsActive: true } && !sub.Suppressed;
 
-			/// <summary>Remaining number of times the callback will fire (-1 = unlimited, 0 once stopped).</summary>
-			public long Count => IsLive ? sub.Remaining : 0L;
+			/// <summary><c>""</c> while the hook can still fire, otherwise why it ended.</summary>
+			public virtual string EndReason => sub?.EndReason ?? "";
 
-			/// <summary>Gets or sets this hook's own pause switch. A stopped hook reports false and ignores writes.</summary>
-			// Object-typed rather than bool because a script's `true` arrives as an Integer, and this keeps the
-			// property accepting the same range of values it always has.
-			public object Paused
+			/// <summary>Makes this hook fire again. Resumes a paused hook and does nothing otherwise, so it needs no
+			/// state test in front of it.</summary>
+			public virtual object Start()
 			{
-				get => IsLive && sub.paused;
-				set { if (IsLive) sub.paused = value.Ab(); }
-			}
-
-			/// <summary>Pauses (1), unpauses (0) or toggles (-1) this hook. Returns the resulting paused state.</summary>
-			public object Pause(object newState = null)
-			{
-				if (!IsLive)
-					return false;
-
-				var s = sub;
-				var ns = newState.Al(1L);
-				s.paused = ns == -1 ? !s.paused : ns != 0;
-				return s.paused;
-			}
-
-			/// <summary>Cancels the subscription so the callback no longer fires. Idempotent and permanent.</summary>
-			public object Stop()
-			{
-				var s = sub;
-
-				if (s != null && s.IsActive)
-					s.Unregister();
+				if (sub is { IsActive: true } s)
+					s.paused = false;
 
 				return DefaultObject;
 			}
 
-			public override object __Delete()
+			/// <summary>Ends the hook and releases its native source. Idempotent; the first reason recorded wins. A
+			/// family that has an end callback runs it here.</summary>
+			public virtual object Stop()
 			{
-				_ = Stop();
-				return base.__Delete();
+				if (sub is { IsActive: true } s)
+				{
+					s.End(Keysharp.Internals.Events.EventSubscriptionBase.EndReasonStopped);
+					s.Unregister();
+				}
+
+				return DefaultObject;
 			}
 
-			// Unregistering clears the subscription's liveness and leaves its pause flag intact, so every member
-			// above gates on liveness rather than on a null check.
-			private bool IsLive => sub is { IsActive: true };
+			/// <summary>Stops firing and stays resumable, changing nothing else. <c>Start()</c> resumes.</summary>
+			public virtual object Pause()
+			{
+				if (sub is { IsActive: true } s)
+					s.paused = true;
+
+				return DefaultObject;
+			}
 		}
 	}
 }
