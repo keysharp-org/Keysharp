@@ -813,13 +813,16 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `Font(Options := "", Name := "")` takes SetFont's two arguments in SetFont's order, so an existing call converts by moving its arguments across.
 		+ Properties: `Name`, `Size`, `Color`, `Weight`, `Quality`, `Bold`, `Italic`, `Underline`, `Strike`. Each is independently **optional** and reads back as `""` when unset. `Bold` is `Weight` viewed as a boolean (reading is `Weight >= 700`, writing sets 700 or 400).
 		+ `Options` renders the font back into a SetFont option string containing **only** the properties that are set — a font that names nothing but a family yields `""`. The family is not part of it, because SetFont takes the name separately: `SetFont(f.Options, f.Name)`. A `norm` is emitted first when some style is explicitly off, since that is the only way an option string can turn one off.
-		+ `Font.Ui`, `Font.Emoji` and `Font.GuiDefault` are **fully resolved** — every property is set, so assigning one replaces the size and styles too, not just the family. They are the platform's UI font, its colour-emoji family, and the font a new `Gui` starts with (AutoHotkey's default, deliberately *not* the platform UI font, so a ported script lays out identically). Each read builds a fresh object.
+		+ `Font.UiDefault` queries the desktop interface font; `Font.GuiDefault` describes a new GUI's font. `Font.Emoji` selects the preferred installed emoji family or falls back to the interface font. Each read returns an independent object with size and styles when native lookup succeeds; before toolkit initialization it may contain only a fallback family. These selections do not set text color.
 		+ `Font.Monospace` is the platform's fixed-pitch family — the first of the usual candidates that is actually installed.
 		+ `Font.Exists(name)` reports whether a family is installed, and `Font.Families` lists them. Worth asking: a missing family renders silently in a fallback face, so nothing else will tell you.
 		+ Two fonts describing the same thing compare equal, so `f1 = f2` works on value rather than identity. The family compares case-insensitively.
+		+ Size must be finite, positive and fit native precision; Weight is an integer from 1 to 1000, and Quality from 0 to 5. Color is opaque RGB. A missing GUI family preserves the current family.
+		+ GUI/image weights below 700 render as normal, otherwise bold; Windows RichEdit preserves numeric weights. Non-default Quality is supported only for Windows image text; other targets raise Error.
+		+ `Options` emits `norm` to clear a style, resetting all styles. Pass the Font object directly in the options position to preserve unspecified styles.
 		+ `Gui.FontHandle` is a read-only Windows HFONT describing the current GUI font. It is borrowed: do not delete it or retain it across font changes or GUI destruction. Repeated reads reuse a cached handle, refreshed for a changed font and freed on disposal. Other platforms raise Error.
 		+ `Font` can be extended: `class MonoFont extends Font { __New() => super.__New("s10", "Consolas") }`.
-		+ `Gui.Font` and `Gui.Control.Font` get and set a `Font`. Reading returns a detached **snapshot**: mutating it changes nothing until it is assigned back, and one `Font` can be handed to any number of controls without aliasing them together. Assigning applies only the properties the font actually sets, so `MyGui.Font := Font.Emoji` swaps the family and leaves everything else alone.
+		+ `Gui.Font` and `Gui.Control.Font` get and set a `Font`. Reading returns a detached **snapshot**: mutating it changes nothing until it is assigned back, and one `Font` can be handed to any number of controls without aliasing them together. Assigning applies only the properties the font actually sets, including an explicit false style without resetting unrelated styles. `SetFont` also accepts a Font in its options position; an explicit font name overrides the object's Name.
 			```
 			#Import "Ks" { Font }
 			f := MyGui.Font          ; detached copy
@@ -828,7 +831,7 @@ Controlling another application needs **Automation** permission, granted per tar
 			MyGui.Font := f          ; now it applies
 			MyCtrl.Font := Font("s20 italic cBlue", "Georgia")
 			```
-		+ `Image`'s text calls take a `Font` in either slot: in the options slot it supplies the whole font (and seeds `DrawText`'s colour argument when that was omitted), and in the font-name slot only its family is used.
+		+ `Image`'s text calls take a `Font` in the options position, supplying its font attributes and seeding `DrawText`'s colour argument when omitted. An explicit font-name argument overrides the object's family and must be a string.
 			```
 			img.DrawText("hi", 10, 10, , Font("s14 bold cRed", "Verdana"))
 			sz := img.MeasureText("hi", Font.Monospace)

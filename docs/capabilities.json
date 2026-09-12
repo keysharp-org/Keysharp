@@ -5622,11 +5622,11 @@
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Font",
                      "syntax":  "#import KS { Font }",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
+                     "windows":  "partial",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "A font as a value object carrying what Gui.SetFont takes, each property optional, plus the platform's Ui/Emoji/GuiDefault/Monospace families.",
+                     "notes":  "Optional font attributes and system font selections. GUI/image weights map to normal or bold; Windows RichEdit preserves numeric weights. Non-default quality is supported only for Windows image text.",
                      "tested-by":  "ks-font.ahk"
                  },
                  {
@@ -5963,11 +5963,11 @@
                      "category":  "Windowing/GUI",
                      "feature":  "Gui.Control.Font",
                      "syntax":  "f := MyCtrl.Font",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
+                     "windows":  "partial",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Gets or sets the control\u0027s font as a detached Ks.Font snapshot; colour round-trips through ForeColor.",
+                     "notes":  "Detached Font snapshot; assignments apply only specified attributes. Weights map to normal or bold; non-default quality raises Error.",
                      "tested-by":  "ks-font.ahk"
                  },
                  {
@@ -6174,12 +6174,12 @@
                  {
                      "category":  "Windowing/GUI",
                      "feature":  "Gui.Font",
-                     "syntax":  "MyGui.Font := Font.Ui",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
+                     "syntax":  "MyGui.Font := Font.UiDefault",
+                     "windows":  "partial",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Gets or sets the font later controls inherit, as a detached Ks.Font snapshot.",
+                     "notes":  "Detached Font snapshot; assignments apply only specified attributes. Weights map to normal or bold; non-default quality raises Error.",
                      "tested-by":  "ks-font.ahk"
                  },
                  {

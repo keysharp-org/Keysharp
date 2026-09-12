@@ -27,6 +27,7 @@ namespace Keysharp.Builtins
 		private const int SCF_SELECTION = 0x0001;
 
 		private const int CFM_BOLD = 0x00000001;
+		private const int CFM_WEIGHT = 0x00400000;
 		private const int CFM_ITALIC = 0x00000002;
 		private const int CFM_UNDERLINE = 0x00000004;
 		private const int CFM_STRIKEOUT = 0x00000008;
@@ -135,10 +136,10 @@ namespace Keysharp.Builtins
 		{
 			var cf = new CHARFORMAT2W { cbSize = sizeof(CHARFORMAT2W) };
 
-			if (fmt.bold is bool b)
+			if (fmt.weight is int weight)
 			{
-				cf.dwMask |= CFM_BOLD;
-				cf.dwEffects |= b ? CFE_BOLD : 0;
+				cf.dwMask |= CFM_WEIGHT;
+				cf.wWeight = (short)weight;
 			}
 
 			if (fmt.italic is bool i)
@@ -215,7 +216,8 @@ namespace Keysharp.Builtins
 			var fmt = new RichEditFormat();
 
 			//For a selection, dwMask says which attributes are the same throughout it.
-			if ((cf.dwMask & CFM_BOLD) != 0) fmt.bold = (cf.dwEffects & CFE_BOLD) != 0;
+			if ((cf.dwMask & CFM_WEIGHT) != 0) fmt.weight = cf.wWeight;
+			else if ((cf.dwMask & CFM_BOLD) != 0) fmt.bold = (cf.dwEffects & CFE_BOLD) != 0;
 
 			if ((cf.dwMask & CFM_ITALIC) != 0) fmt.italic = (cf.dwEffects & CFE_ITALIC) != 0;
 
@@ -326,6 +328,7 @@ namespace Keysharp.Builtins
 			internal byte bCharSet;
 			internal byte bPitchAndFamily;
 			internal fixed char szFaceName[LfFaceSize];
+			private short charFormatPadding; // The native CHARFORMATW base occupies 92 bytes.
 			internal short wWeight;
 			internal short sSpacing;
 			internal int crBackColor;

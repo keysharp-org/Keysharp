@@ -535,24 +535,10 @@ namespace System.Windows.Forms
 		/// </summary>
 		/// <param name="control">The <see cref="Control"/> whose font will be set.</param>
 		/// <param name="options">The font options.</param>
-		/// <param name="family">The font family.</param>
-		internal static void SetFont(this Control control, object options = null, object family = null)
+		internal static void SetFont(this Control control, FontOptions options)
 		{
-			var opts = options.As();
-			control.Font = Keysharp.Internals.Strings.Conversions.ParseFont(control.Font, opts, family.As());
-			var c = Control.DefaultForeColor;
-
-			//Special processing is required to set the ForeColor that is not present in Conversions.ParseFont().
-			foreach (System.Range r in opts.AsSpan().SplitAny(Spaces))
-			{
-				var opt = opts.AsSpan(r).Trim();
-
-				if (opt.Length > 0 && Options.TryParse(opt, "c", ref c))
-				{
-					control.ForeColor = c;
-					break;
-				}
-			}
+			control.Font = Conversions.ApplyFont(control.Font, options);
+			if (options.color.HasValue) control.ForeColor = options.color.Value;
 		}
 
 		/// <summary>

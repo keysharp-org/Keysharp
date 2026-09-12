@@ -118,6 +118,21 @@ f3 := re.GetFormat(9, 5)
 AssertEq(f3.Color, "0000FF", A_LineNumber)
 AssertEq(f3.Underline, true, A_LineNumber)
 
+re.SetFormat(9, 5, "bold italic underline strike")
+partialFont := Font()
+partialFont.Italic := false
+re.SetFormat(9, 5, partialFont)
+f3 := re.GetFormat(9, 5)
+AssertEq(f3.Italic, false, A_LineNumber)
+AssertEq(f3.Bold, true, A_LineNumber)
+AssertEq(f3.Underline, true, A_LineNumber)
+AssertEq(f3.Strike, true, A_LineNumber)
+#if WINDOWS
+re.SetFormat(9, 5, "w500")
+AssertEq(re.GetFormat(9, 5).Weight, 500, A_LineNumber)
+#endif
+re.SetFormat(9, 5, "norm cBlue underline")
+
 ; Background is its own option, read back with GetBackColor.
 re.SetFormat(1, 3, "BackgroundYellow")
 AssertEq(re.GetBackColor(1, 3), "FFFF00", A_LineNumber)

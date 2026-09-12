@@ -107,14 +107,6 @@ namespace Keysharp.Internals.Strings
 		/// number a script would have written, so that reading a size and writing it back is a no-op on
 		/// macOS too. Not exactly lossless there, since ScaleFontSize rounds to whole points going in.
 		/// </summary>
-		/// <summary>Sets or clears one flag of an enum, since the toolkits model styles as flag sets.</summary>
-		private static T Flag<T>(T flags, T bit, bool on) where T : struct, Enum
-		{
-			var f = Convert.ToInt64(flags);
-			var b = Convert.ToInt64(bit);
-			return (T)Enum.ToObject(typeof(T), on ? f | b : f & ~b);
-		}
-
 		internal static float UnscaleFontSize(float size)
 		{
 #if OSX
@@ -363,78 +355,99 @@ namespace Keysharp.Internals.Strings
 			return StringComparison.OrdinalIgnoreCase;
 		}
 
-#if WINDOWS
-		internal static Font ParseFont(Font standard, string styles, string family = null)
-	{
-			family = string.IsNullOrEmpty(family) ? standard.FontFamily.Name : family;
-			//Tokenized by Ks.Font, which owns the whole option vocabulary; this only applies the result.
-			var spec = new Ks.Font(null);
-			spec.Parse(styles);
-			var size = spec.SizeOr(standard.Size);
-			var display = standard.Style;
-			display = Flag(display, FontStyle.Bold, spec.BoldOr(display.HasFlag(FontStyle.Bold)));
-			display = Flag(display, FontStyle.Italic, spec.ItalicOr(display.HasFlag(FontStyle.Italic)));
-			display = Flag(display, FontStyle.Underline, spec.UnderlineOr(display.HasFlag(FontStyle.Underline)));
-			display = Flag(display, FontStyle.Strikeout, spec.StrikeOr(display.HasFlag(FontStyle.Strikeout)));
-
-			FontFamily fam;
-			try
-			{
-				// new Font() doesn't throw if the font family is not found and just defaults
-				// to Microsoft Sans Serif, so do this roundabout way instead which does throw
-				fam = new FontFamily(family);
-			}
-			catch
-			{
-				return standard;
-			}
-			if (!fam.IsStyleAvailable(display))
-				display = FontStyle.Regular;
-
-			return ConvertFont(new Font(fam, size, display));
-		}
-#else
-		internal static Font ParseFont(Font standard, string styles, string family = null)
+		internal static FontOptions ParseFontOptions(object options, object family = null, bool strict = false)
 		{
-			string resolvedFamily = family;
-			try {
-				if (string.IsNullOrEmpty(family))
-					resolvedFamily = standard.FamilyName;
-			}
-			catch
-			{
-				return standard;
-			}
-			//Tokenized by Ks.Font, which owns the whole option vocabulary; this only applies the result.
-			var spec = new Ks.Font(null);
-			spec.Parse(styles);
-			//The script's size is in the Windows convention, so convert to this platform's points.
-			var size = spec.size.HasValue ? ScaleFontSize((float)spec.size.Value) : standard.Size;
-			var display = standard.FontStyle;
-			display = Flag(display, FontStyle.Bold, spec.BoldOr(display.HasFlag(FontStyle.Bold)));
-			display = Flag(display, FontStyle.Italic, spec.ItalicOr(display.HasFlag(FontStyle.Italic)));
-			var decorations = standard.FontDecoration;
-			decorations = Flag(decorations, FontDecoration.Underline, spec.UnderlineOr(decorations.HasFlag(FontDecoration.Underline)));
-			decorations = Flag(decorations, FontDecoration.Strikethrough, spec.StrikeOr(decorations.HasFlag(FontDecoration.Strikethrough)));
+			var fontOptions = options is FontOptions f ? f : new FontOptions();
+			if (options is not FontOptions)
+				fontOptions.Parse(options.As(), strict ? tok => Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\".") : null);
 
-			// When the requested family isn't installed on this system (e.g. "Comic Sans MS"
-			// on Linux), Eto's Font constructor throws ArgumentOutOfRangeException. Mirror
-			// AutoHotkey's behavior by still applying the size/style/decoration changes and
-			// falling back to the current font's family instead of discarding the call.
-			if (!string.IsNullOrEmpty(resolvedFamily)
-					&& !Eto.Platform.Instance.CreateShared<Fonts.IHandler>().FontFamilyAvailable(resolvedFamily))
-				resolvedFamily = standard.FamilyName;
+			if (family is Any)
+				_ = Errors.TypeErrorOccurred(family, typeof(string));
+			else if (family.As() is string name && name.Length > 0)
+				fontOptions.name = name;
+			return fontOptions;
+		}
 
-			try
+		internal static FontOptions ReadFontOptions(Font font)
+		{
+			var fontOptions = new FontOptions();
+			if (font == null) return fontOptions;
+#if WINDOWS
+			fontOptions.name = font.FontFamily.Name;
+			fontOptions.underline = font.Underline;
+			fontOptions.strike = font.Strikeout;
+#else
+			fontOptions.name = font.FamilyName;
+			fontOptions.underline = font.FontDecoration.HasFlag(FontDecoration.Underline);
+			fontOptions.strike = font.FontDecoration.HasFlag(FontDecoration.Strikethrough);
+#endif
+			fontOptions.size = Math.Round(Conversions.UnscaleFontSize(font.Size), 3);
+			fontOptions.italic = font.Italic;
+			fontOptions.weight = font.Bold ? 700 : 400;
+			return fontOptions;
+		}
+
+		internal static Font ApplyFont(Font standard, FontOptions fontOptions, bool forImage = false)
+		{
+			try { return CreateFont(standard, fontOptions, forImage); }
+			catch (Exception ex) when (ex is ArgumentException or ExternalException or OverflowException)
 			{
-				return ConvertFont(new Font(resolvedFamily, size, display, decorations));
-			}
-			catch
-			{
+				_ = Errors.ValueErrorOccurred($"Cannot create the requested font: {ex.Message}");
 				return standard;
 			}
 		}
+
+		private static Font CreateFont(Font standard, FontOptions fontOptions, bool forImage)
+		{
+			if (!forImage && fontOptions.quality is > 0)
+			{
+				_ = Errors.ErrorOccurred("GUI font rendering quality is not supported by the toolkit.");
+				return standard;
+			}
+			var current = ReadFontOptions(standard);
+			var size = fontOptions.size.HasValue ? (forImage ? (float)fontOptions.size.Value : ScaleFontSize((float)fontOptions.size.Value)) : standard.Size;
+			var family = string.IsNullOrEmpty(fontOptions.name) ? current.name : fontOptions.name;
+			var weight = fontOptions.weight ?? current.weight ?? 400;
+			var italic = fontOptions.italic ?? current.italic ?? false;
+			var underline = fontOptions.underline ?? current.underline ?? false;
+			var strike = fontOptions.strike ?? current.strike ?? false;
+			if (!forImage && size == standard.Size && family == current.name && (weight >= 700) == standard.Bold
+				&& italic == current.italic && underline == current.underline && strike == current.strike)
+				return standard;
+			Font result;
+#if WINDOWS
+			var style = System.Drawing.FontStyle.Regular;
+			if (weight >= 700) style |= System.Drawing.FontStyle.Bold;
+			if (italic) style |= System.Drawing.FontStyle.Italic;
+			if (underline) style |= System.Drawing.FontStyle.Underline;
+			if (strike) style |= System.Drawing.FontStyle.Strikeout;
+			System.Drawing.FontFamily resolved;
+			try { resolved = new System.Drawing.FontFamily(family); }
+			catch (ArgumentException) { resolved = new System.Drawing.FontFamily(current.name); }
+			using (resolved)
+			{
+				if (!resolved.IsStyleAvailable(style)) style = System.Drawing.FontStyle.Regular;
+				result = new Font(resolved, size, style);
+			}
+#else
+			if (fontOptions.quality is > 0)
+			{
+				_ = Errors.ErrorOccurred("Font rendering quality is not supported on this platform.");
+				return standard;
+			}
+			var style = Eto.Drawing.FontStyle.None;
+			if (weight >= 700) style |= Eto.Drawing.FontStyle.Bold;
+			if (italic) style |= Eto.Drawing.FontStyle.Italic;
+			var decoration = FontDecoration.None;
+			if (underline) decoration |= FontDecoration.Underline;
+			if (strike) decoration |= FontDecoration.Strikethrough;
+			if (!Eto.Platform.Instance.CreateShared<Fonts.IHandler>().FontFamilyAvailable(family)) family = current.name;
+			result = new Font(family, size, style, decoration);
 #endif
+			return result;
+		}
+		internal static Font ParseFont(Font standard, string styles, string family = null)
+			=> Conversions.ApplyFont(standard, Conversions.ParseFontOptions(styles, family));
 
 		internal static List<int> ParseRange(string[] splits)
 		{

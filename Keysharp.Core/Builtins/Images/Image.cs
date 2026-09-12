@@ -1150,9 +1150,8 @@ namespace Keysharp.Builtins
 				//A Ks.Font in the options slot carries its own colour, which is the one thing the option string
 				//cannot express here, so it seeds the colour argument when that was left out.
 				var (fontOptions, fontFamily) = SplitFontArgs(options, fontName);
-				var defaultArgb = options is Font sf && sf.color.HasValue
-								  ? unchecked((int)(0xFF000000u | (uint)(sf.color.Value.ToArgb() & 0x00FFFFFF)))
-								  : unchecked((int)0xFF000000u);
+				var defaultArgb = options is Font sf && sf.fontOptions.color.HasValue
+					? sf.fontOptions.color.Value.ToArgb() : unchecked((int)0xFF000000u);
 				if (!TryVectorPaint(color, defaultArgb, out var paint))
 					return this;
 
@@ -1165,7 +1164,10 @@ namespace Keysharp.Builtins
 				{
 					using var gl = DrawG(b, state);
 					var g = gl.Graphics;
-					var f = CreateFont(fontOptions, fontFamily);   // cached & reused; never disposed (see CreateFont)
+					var (f, quality) = CreateFont(fontOptions, fontFamily);
+#if WINDOWS
+					ConfigureFontGraphics(g, quality);
+#endif
 					var sz = default(SizeF);
 					var measured = !paint.IsSolid || damage != null;
 
@@ -1225,18 +1227,22 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Normalizes the <c>(options, fontName)</c> pair every text call takes, so either slot may also be
-			/// a <see cref="Ks.Font"/>: in the options slot it supplies both halves, and an explicit fontName
-			/// still wins; in the fontName slot only its family is used.
+			/// Normalizes a <see cref="Ks.Font"/> in the options position into options and family.
+			/// An explicit fontName overrides the object's family.
 			/// </summary>
 			internal static (string options, string name) SplitFontArgs(object options, object fontName)
 			{
-				var name = fontName is Font nf ? nf.name ?? "" : fontName.As();
+				if (fontName is Any)
+				{
+					_ = Errors.TypeErrorOccurred(fontName, typeof(string));
+					return ("", "");
+				}
+				var name = fontName.As();
 
 				if (options is not Font f)
 					return (options.As(), name);
 
-				return (f.OptionStringNoColor, name.Length > 0 ? name : f.name ?? "");
+				return (f.fontOptions.OptionsNoColor, name.Length > 0 ? name : f.fontOptions.name ?? "");
 			}
 
 			// Pixel size of text in the given font, measured on a throwaway 96-DPI surface so it matches
@@ -1247,9 +1253,12 @@ namespace Keysharp.Builtins
 				if (string.IsNullOrEmpty(text))
 					return (0.0, 0.0);
 
-				var f = CreateFont(options, fontName);   // cached & reused; never disposed (see CreateFont)
+				var (f, quality) = CreateFont(options, fontName);
 				using var bmp = ImageHelper.NewArgbCanvas(1, 1);
 				using var g = ImageHelper.MakeGraphics(bmp);
+#if WINDOWS
+				ConfigureFontGraphics(g, quality);
+#endif
 				var sz = ImageHelper.MeasureText(g, f, text);
 				return (sz.Width, sz.Height);
 			}
@@ -2552,64 +2561,43 @@ namespace Keysharp.Builtins
 			private static RectangleF MakeRectF(double x, double y, double w, double h)
 				=> new ((float)x, (float)y, (float)w, (float)h);
 
-			// Fonts are cached by (options, name) and never disposed. On Eto/GTK a Font's underlying handler is
-			// shared (from a system/toolkit cache), so disposing one — as the old `using var f = CreateFont(...)`
-			// did — left the next same-spec draw or measure pointing at a freed handle, throwing "Cannot access a
-			// disposed object: Font" after the first text was rendered. A script uses only a handful of distinct
-			// specs, so a permanent, reused cache is both cheap and the correct lifetime for a shared handle.
-			private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, string), NativeFont> fontCache = new ();
+			// Eto font handlers can be shared with the toolkit; cached fonts must not be disposed by callers.
+			private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, string), (NativeFont, int?)> fontCache = new ();
 
-			private static NativeFont CreateFont(string options, string name)
+			private static (NativeFont, int?) CreateFont(string options, string name)
 				=> fontCache.GetOrAdd((options ?? "", name ?? ""), key => CreateFontUncached(key.Item1, key.Item2));
 
-			private static NativeFont CreateFontUncached(string options, string name)
+			private static (NativeFont, int?) CreateFontUncached(string options, string name)
 			{
-				var (size, bold, italic, underline, strike) = ParseFontOptions(options);
-				var family = string.IsNullOrWhiteSpace(name) ? "Sans" : name.Trim();
-#if WINDOWS
-				var style = System.Drawing.FontStyle.Regular;
-
-				if (bold) style |= System.Drawing.FontStyle.Bold;
-				if (italic) style |= System.Drawing.FontStyle.Italic;
-				if (underline) style |= System.Drawing.FontStyle.Underline;
-				if (strike) style |= System.Drawing.FontStyle.Strikeout;
-
-				return new NativeFont(family, size, style);
-#else
-				var style = Eto.Drawing.FontStyle.None;
-
-				if (bold) style |= Eto.Drawing.FontStyle.Bold;
-				if (italic) style |= Eto.Drawing.FontStyle.Italic;
-
-				var deco = Eto.Drawing.FontDecoration.None;
-
-				if (underline) deco |= Eto.Drawing.FontDecoration.Underline;
-				if (strike) deco |= Eto.Drawing.FontDecoration.Strikethrough;
-
-				try { return new NativeFont(family, size, style, deco); }
-				catch { return SystemFonts.Default(size); }
-#endif
-			}
-
-			// Gui.SetFont-style font options: "s16 bold italic underline strike" (case-insensitive), plus for
-			// SetFont parity: "norm" (resets the styles), "wN" (weight — >= 600 renders bold, the same threshold
-			// Windows uses) and "qN" (quality — accepted and ignored; it has no effect on an image canvas).
-			// A "cColor" token is rejected with guidance (the text color is DrawText's color argument), as is any
-			// other unrecognized token, so a typo'd option fails loudly instead of silently rendering wrong.
-			// Tokenized by Ks.Font so the option vocabulary has one definition; only the canvas-specific rules
-			// live here - a minimum size of 1pt, and rejecting a colour, which belongs in DrawText's own colour
-			// argument because a measured or cached font carries none.
-			private static (float size, bool bold, bool italic, bool underline, bool strike) ParseFontOptions(string options)
-			{
-				var spec = new Font(null);
-				spec.Parse(options, tok => Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\"."));
-
-				if (spec.color.HasValue)
+				var fontOptions = Conversions.ParseFontOptions(options, name, strict: true);
+				if (fontOptions.color.HasValue)
 					_ = Errors.ValueErrorOccurred("Font colour belongs in DrawText's color argument, not in the font options.");
-
-				return (Math.Max(1f, spec.SizeOr(10f)), spec.BoldOr(false), spec.ItalicOr(false),
-						spec.UnderlineOr(false), spec.StrikeOr(false));
+#if WINDOWS
+				using var standard = new NativeFont(System.Drawing.FontFamily.GenericSansSerif, 10);
+#else
+				var standard = SystemFonts.Default(10);
+#endif
+				var font = Conversions.ApplyFont(standard, fontOptions, forImage: true);
+#if WINDOWS
+				// Error continuation can return the temporary fallback font.
+				if (ReferenceEquals(font, standard)) font = (NativeFont)standard.Clone();
+#endif
+				return (font, fontOptions.quality);
 			}
+
+#if WINDOWS
+			private static void ConfigureFontGraphics(Graphics graphics, int? quality)
+			{
+				graphics.TextRenderingHint = quality switch
+				{
+					0 => System.Drawing.Text.TextRenderingHint.SystemDefault,
+					1 => System.Drawing.Text.TextRenderingHint.SingleBitPerPixel,
+					2 or 3 => System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit,
+					5 => System.Drawing.Text.TextRenderingHint.ClearTypeGridFit,
+					_ => System.Drawing.Text.TextRenderingHint.AntiAliasGridFit
+				};
+			}
+#endif
 
 			// Formats the capture scale for the window title as a percentage: a single value when X and Y
 			// match (the usual case), otherwise "sx%/sy%". 1.0 -> "100%", 2.0 -> "200%", 1.5 -> "150%".

@@ -42,20 +42,22 @@ namespace Keysharp.Builtins
 	/// optional and an unset one leaves that attribute of the text alone, which is what lets a highlighter
 	/// colour a token without also deciding its size or weight.
 	/// <para>Read back by <c>GetFormat</c> as well, where an unset part means "not the same throughout the
-	/// range" - the same shape a sparse spec has, so a format read from one range applies to another unchanged.</para>
+	/// range" - the same shape a partial format has, so a format read from one range applies to another unchanged.</para>
 	/// </summary>
 	internal sealed class RichEditFormat
 	{
 		internal string name;
 		internal double? size;
 		internal NativeColor? color;
-		internal bool? bold, italic, underline, strike;
+		internal int? weight;
+		internal bool? bold { get => weight.HasValue ? weight.Value >= 700 : null; set => weight = value.HasValue ? (value.Value ? 700 : 400) : null; }
+		internal bool? italic, underline, strike;
 		internal NativeColor? back;
 
 		//"BackgroundDefault"/"-Background": back to the control's own colour rather than to a chosen one.
 		internal bool backDefault;
 
-		internal bool IsEmpty => name == null && !size.HasValue && !color.HasValue && !bold.HasValue
+		internal bool IsEmpty => name == null && !size.HasValue && !color.HasValue && !weight.HasValue
 								 && !italic.HasValue && !underline.HasValue && !strike.HasValue
 								 && !back.HasValue && !backDefault;
 
@@ -64,19 +66,14 @@ namespace Keysharp.Builtins
 		{
 			//null, not empty: Any's ctor runs __Init/__New for any non-null args, and a snapshot built here has
 			//nothing for them to do.
-			var f = new Ks.Font(null);
-			f.name = name;
-			f.size = size;
-			f.color = color;
-			f.weight = bold.HasValue ? (bold.Value ? 700 : 400) : null;
-			f.italic = italic;
-			f.underline = underline;
-			f.strike = strike;
-			return f;
+			return new Ks.Font(null) { fontOptions = new FontOptions {
+				name = name, size = size, color = color, weight = weight,
+				italic = italic, underline = underline, strike = strike
+			} };
 		}
 
 		/// <summary>
-		/// Reads a format spec from what a script passed: either a <see cref="Ks.Font"/> or an option string in
+		/// Reads formatting from what a script passed: either a <see cref="Ks.Font"/> or an option string in
 		/// the <c>Gui.SetFont</c> vocabulary, extended with <c>Background&lt;colour&gt;</c>.
 		/// </summary>
 		/// <param name="options">The font and background options, or a Ks.Font.</param>
@@ -87,18 +84,18 @@ namespace Keysharp.Builtins
 			var fmt = new RichEditFormat();
 
 			if (options is Ks.Font f)
-				fmt.TakeFont(f);
+				fmt.TakeFont(f.fontOptions);
 			else
 			{
 				var opts = options.As();
 
 				if (opts.Length > 0)
 				{
-					//Ks.Font owns the whole font vocabulary, so the two cannot drift apart; the background
+					//FontOptions owns the whole font vocabulary, so the two cannot drift apart; the background
 					//tokens reach the unknown-option handler because a font has nowhere to put them.
-					var spec = new Ks.Font(null);
+					var fontOptions = new FontOptions();
 					string bad = null;
-					spec.Parse(opts, tok =>
+					fontOptions.Parse(opts, tok =>
 					{
 						var span = tok.AsSpan();
 						var c = default(NativeColor);
@@ -114,13 +111,18 @@ namespace Keysharp.Builtins
 						else
 							bad ??= tok;
 					});
-					fmt.TakeFont(spec);
+					fmt.TakeFont(fontOptions);
 
 					if (bad != null)
 						error = bad;
 				}
 			}
 
+			if (fontName is Any)
+			{
+				_ = Errors.TypeErrorOccurred(fontName, typeof(string));
+				return fmt;
+			}
 			var n = fontName.As();
 
 			if (n.Length > 0)
@@ -131,13 +133,14 @@ namespace Keysharp.Builtins
 
 		//Copied out rather than held onto: a Ks.Font a script passed is its own object, and the family name
 		//argument would otherwise change it.
-		private void TakeFont(Ks.Font f)
+		private void TakeFont(FontOptions f)
 		{
+			if (f.quality is > 0)
+				_ = Errors.ErrorOccurred("RichEdit.SetFormat does not support per-range font rendering quality.");
 			name = f.name;
 			size = f.size;
 			color = f.color;
-			//Only <=400 and >=700 mean anything, which is the rule Ks.Font applies to a weight everywhere else.
-			bold = f.weight is int w ? (w >= 700 ? true : w <= 400 ? false : null) : null;
+			weight = f.weight;
 			italic = f.italic;
 			underline = f.underline;
 			strike = f.strike;

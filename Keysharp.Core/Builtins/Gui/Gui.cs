@@ -2975,8 +2975,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The font controls added from here on inherit, as a <see cref="Ks.Font"/>. Reading returns a
 		/// detached copy; assigning applies only the properties the font sets, so a font carrying nothing
-		/// but a family swaps the family and leaves the size alone. The Ui/Emoji/GuiDefault factories are
-		/// the other extreme - fully resolved, so assigning one of those replaces size and styles too.
+		/// but a family swaps the family and leaves the size alone.
 		/// </summary>
 		public object Font
 		{
@@ -2985,7 +2984,7 @@ namespace Keysharp.Builtins
 			set
 			{
 				if (value is Ks.Font f)
-					form.SetFont(f.Options, f.Name);
+					form.SetFont(f.fontOptions);
 				else
 					_ = Errors.TypeErrorOccurred(value, typeof(Ks.Font));
 			}
@@ -2993,7 +2992,7 @@ namespace Keysharp.Builtins
 
 		public object SetFont(object options = null, object fontName = null)
 		{
-			form.SetFont(options, fontName);
+			form.SetFont(Conversions.ParseFontOptions(options is Ks.Font f ? f.fontOptions : options, fontName));
 			return DefaultObject;
 		}
 

@@ -556,7 +556,7 @@ Status legend:
 | Float32 | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Predefined numeric struct type for typed fields and native calls. |
 | Float64 | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Predefined numeric struct type for typed fields and native calls. |
 | Floor() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes a number rounded down to the nearest integer. Rounds toward zero for positive numbers and away from zero for negative numbers. |
-| Font | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | A font as a value object carrying what Gui.SetFont takes, each property optional, plus the platform's Ui/Emoji/GuiDefault/Monospace families. |
+| Font | 🟡 Partial | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Optional font attributes and system font selections. GUI/image weights map to normal or bold; Windows RichEdit preserves numeric weights. Non-default quality is supported only for Windows image text. |
 | For | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Iterates over enumerable values or key/value pairs. |
 | Foreign window management (non-Keysharp apps) | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process control interaction. COSMIC supplies native listing, active state, geometry, polling-based events, focus, close, minimize, maximize and restore. wlroots compositors can supply listing, active/state facts and the same actions except geometry. Coordinate hit-testing remains limited without stacking order, and general move/resize is unavailable. macOS currently relies on Accessibility APIs with permission requirements. |
 | Format() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text by substituting placeholders with argument values. |
@@ -602,7 +602,7 @@ Status legend:
 | Gui.Control.Enabled | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets whether the control is enabled. |
 | Gui.Control.Focus() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets keyboard focus to the control. |
 | Gui.Control.Focused | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the control currently has focus. |
-| Gui.Control.Font | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Gets or sets the control's font as a detached Ks.Font snapshot; colour round-trips through ForeColor. |
+| Gui.Control.Font | 🟡 Partial | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Detached Font snapshot; assignments apply only specified attributes. Weights map to normal or bold; non-default quality raises Error. |
 | Gui.Control.GetPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the control position and size. |
 | Gui.Control.Gui | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Parent GUI object for the control. |
 | Gui.Control.Hwnd | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Native window handle of the control. |
@@ -624,7 +624,7 @@ Status legend:
 | Gui.Destroy() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Destroys the GUI window and releases associated resources. |
 | Gui.Flash() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Flashes the GUI window to attract attention. Backed by the Win32 FlashWindow API; the call is accepted and does nothing on Linux and macOS. |
 | Gui.FocusedCtrl | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Currently focused control in the GUI. |
-| Gui.Font | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Gets or sets the font later controls inherit, as a detached Ks.Font snapshot. |
+| Gui.Font | 🟡 Partial | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Detached Font snapshot; assignments apply only specified attributes. Weights map to normal or bold; non-default quality raises Error. |
 | Gui.FontHandle | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Read-only borrowed Win32 HFONT for the GUI's current default font. Repeated reads reuse the handle; font changes refresh it and GUI disposal releases it. Other platforms raise Error. |
 | Gui.GetClientPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the GUI client-area position and size. |
 | Gui.GetPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the GUI window position and size. |

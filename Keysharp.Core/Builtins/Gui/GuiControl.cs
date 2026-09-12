@@ -625,7 +625,7 @@ namespace Keysharp.Builtins
 				set
 				{
 					if (value is Ks.Font f)
-						_control.SetFont(f.Options, f.Name);
+						_control.SetFont(f.fontOptions);
 					else
 						_ = Errors.TypeErrorOccurred(value, typeof(Ks.Font));
 				}
@@ -633,7 +633,7 @@ namespace Keysharp.Builtins
 
 			public object SetFont(object options = null, object fontName = null)
 			{
-				_control.SetFont(options, fontName);
+				_control.SetFont(Conversions.ParseFontOptions(options is Ks.Font f ? f.fontOptions : options, fontName));
 				return DefaultObject;
 			}
 
