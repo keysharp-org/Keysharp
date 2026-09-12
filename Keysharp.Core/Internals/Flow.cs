@@ -81,10 +81,11 @@ namespace Keysharp.Internals
 			return scope;
 		}
 
+		// As in AHK, the rare abnormal endings share the one word "Close" (lib/vars.cpp GetExitReasonString).
 		internal static string ExitReasonName(Keysharp.Builtins.Flow.ExitReasons reason) => reason switch
 		{
-			Keysharp.Builtins.Flow.ExitReasons.Critical => "Critical",
-			Keysharp.Builtins.Flow.ExitReasons.Destroy => "Destroy",
+			Keysharp.Builtins.Flow.ExitReasons.Critical => "Close",
+			Keysharp.Builtins.Flow.ExitReasons.Destroy => "Close",
 			Keysharp.Builtins.Flow.ExitReasons.None => "None",
 			Keysharp.Builtins.Flow.ExitReasons.Error => "Error",
 			Keysharp.Builtins.Flow.ExitReasons.Logoff => "Logoff",
