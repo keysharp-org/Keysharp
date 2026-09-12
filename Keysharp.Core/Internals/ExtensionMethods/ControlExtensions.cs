@@ -537,7 +537,7 @@ namespace System.Windows.Forms
 		/// <param name="options">The font options.</param>
 		internal static void SetFont(this Control control, FontOptions options)
 		{
-			control.Font = Conversions.ApplyFont(control.Font, options);
+			control.Font = Keysharp.Internals.Strings.Conversions.ApplyFont(control.Font, options);
 			if (options.color.HasValue) control.ForeColor = options.color.Value;
 		}
 
