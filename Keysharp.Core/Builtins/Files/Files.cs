@@ -1708,14 +1708,6 @@ namespace Keysharp.Builtins
 	public partial class Ks
 	{
 		/// <summary>
-		/// Returns the full path to the directory of the specified filename.<br/>
-		/// Ex: C:\dir1\dir2\file.txt => C:\dir1\dir2
-		/// </summary>
-		/// <param name="filename">The filename to examine.</param>
-		/// <returns>The full path to the directory of the specified filename, without the trailing directory separator.</returns>
-		public static string FileDirName(object filename) => Path.GetDirectoryName(Path.GetFullPath(filename.As()));
-
-		/// <summary>
 		/// Returns the full path of a filename which is assumed to be relative to <see cref="A_WorkingDir"/> if an absolute path isn't specified.
 		/// </summary>
 		/// <param name="filename">The filename to examine.</param>

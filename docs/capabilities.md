@@ -533,7 +533,6 @@ Status legend:
 | FileCreateShortcut() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Windows creates .lnk files. Linux and macOS create symbolic links or freedesktop .desktop launchers; Windows-only icon-number, hotkey, and run-state metadata is not represented, and macOS aliases are not created. |
 | FileCreateTemp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an empty temporary file and returns its full path. |
 | FileDelete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes one or more files. |
-| FileDirName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns directory portion of a file path. |
 | FileEncoding() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the default encoding for FileRead, Loop Read, FileAppend, and FileOpen. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
 | FileExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for the existence of a file or folder and returns its attributes. |
 | FileFullPath() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns absolute normalized full path. |

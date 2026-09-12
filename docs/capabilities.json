@@ -5144,17 +5144,6 @@
                      "tested-by":  "assign-multiline.ahk"
                  },
                  {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "FileDirName()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns directory portion of a file path.",
-                     "tested-by":  "file-filegetshortcut.ahk"
-                 },
-                 {
                      "category":  "FileSystem",
                      "feature":  "FileEncoding()",
                      "syntax":  "FileEncoding(\"utf-8\")",

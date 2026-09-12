@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#import KS { FileDirName, FileFullPath }
+#import KS { FileFullPath }
 #Include <assert>
 ; #Include %A_ScriptDir%/header.ahk
 
@@ -13,7 +13,7 @@ if (FileExist("./testshortcut.lnk"))
 path := A_ScriptDir . "/"
 dir := path . "DirCopy"
 DirCopy(dir, "./FileGetShortcut/")
-fullpath := FileDirName("./FileGetShortcut/file1.txt")
+SplitPath(FileFullPath("./FileGetShortcut/file1.txt"), , &fullpath)
 
 #if LINUX
 	FileCreateShortcut("./FileGetShortcut/file1.txt", "./testshortcut.lnk")

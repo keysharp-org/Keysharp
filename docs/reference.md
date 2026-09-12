@@ -660,7 +660,6 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Returns an `Integer` if neither argument is a `Double`. The range includes *max*, as `Random`'s does.
 	+ Data encrypted by the earlier `AES()` function does **not** decrypt with `Crypt.Decrypt` as it stands. That function derived its vector from the key instead of storing one, which is what made it deterministic, and that derivation has been removed. The vector it used was the first 16 bytes of SHA-1 over the 32-byte zero-padded key — with the key taken as UTF-16, since that was the old default encoding — so old data can still be read by rebuilding that vector and passing it as *iv* along with `encoding := "UTF-16"`. The key padding, CBC mode and PKCS7 padding are otherwise unchanged.
 * New file functions:
-	+ `FileDirName(filename) => String`: Returns the full path to filename, without the actual filename or trailing directory separator character.
 	+ `FileFullPath(filename) => String`: Returns the full path to filename.
 	+ `FileCreateTemp() => String`: Creates an empty temporary file and return its full path.
 * New math functions:
