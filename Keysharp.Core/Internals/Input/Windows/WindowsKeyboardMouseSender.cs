@@ -69,7 +69,6 @@ namespace Keysharp.Internals.Input.Windows
 
 		/// <summary>
 		/// Loads and reads the keyboard layout DLL to determine if it has AltGr.
-		/// Activates the layout as a side-effect, but reverts it if !aSideEffectsOK.
 		/// This is fast enough that there's no need to cache these values on startup.
 		/// </summary>
 		/// <param name="layout"></param>
@@ -78,7 +77,9 @@ namespace Keysharp.Internals.Input.Windows
 		{
 			const int KLLF_ALTGR = 0x0001;
 			var result = ResultType.Fail;
-			var hmod = LoadKeyboardLayoutModule(layout);
+			var klid = Platform.Keys.GetKeyboardLayoutKlid(layout);
+			var file = klid == "" ? "" : Platform.Keys.GetKeyboardLayoutValue(klid, "Layout File");
+			var hmod = file == "" ? 0 : WindowsAPI.LoadLibrary(file);
 
 			if (hmod != 0)
 			{
@@ -120,48 +121,6 @@ namespace Keysharp.Internals.Input.Windows
 		//  }
 		//  return hasAltGr;
 		//}
-		/// <summary>
-		/// Loads a keyboard layout DLL and returns its handle.
-		/// Activates the layout as a side-effect, but reverts it if !aSideEffectsOK.
-		/// </summary>
-		/// <param name="layout"></param>
-		/// <returns></returns>
-		internal static nint LoadKeyboardLayoutModule(nint layout)
-		{
-			nint hmod = 0;
-#if WINDOWS
-			// Unfortunately activating the layout seems to be the only way to retrieve it's name.
-			// This may have side-effects in general (such as the language selector flickering),
-			// but shouldn't have any in our case since we're only changing layouts for our thread,
-			// and only if some other window is active (because if our window was active, layout
-			// is already the current layout).
-			var oldLayout = ActivateKeyboardLayout(layout, 0);
-
-			if (oldLayout != 0)
-			{
-				var chars = new char[16];
-
-				if (GetKeyboardLayoutName(chars))
-				{
-					using (var key = Registry.LocalMachine.OpenSubKey($"SYSTEM\\CurrentControlSet\\Control\\Keyboard Layouts\\{new string(chars, 0, System.Array.IndexOf(chars, '\0'))}"))
-					{
-						if (key != null)
-						{
-							var o = key.GetValue("Layout File");
-
-							if (o is string s)
-								hmod = WindowsAPI.LoadLibrary(s);
-						}
-					}
-				}
-
-				if (layout.ToInt32() != oldLayout)
-					_ = ActivateKeyboardLayout(new nint(oldLayout), 0); // Nothing we can do if it fails.
-			}
-
-#endif
-			return hmod;
-		}
 
 		internal override void CleanupEventArray(long finalKeyDelay)
 		{

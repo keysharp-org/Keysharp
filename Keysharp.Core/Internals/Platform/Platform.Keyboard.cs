@@ -23,7 +23,7 @@ namespace Keysharp.Internals
 				if (klid == "")
 					klid = unchecked((uint)layout.ToInt64()).ToString("X8", CultureInfo.InvariantCulture);
 
-				var layoutText = GetKeyboardLayoutText(klid);
+				var layoutText = GetKeyboardLayoutValue(klid, "Layout Text");
 				return layoutText == "" ? klid : $"{klid}:{layoutText}";
 			}
 
@@ -45,12 +45,14 @@ namespace Keysharp.Internals
 				return GetKeyboardLayout();
 			}
 
-			private static string GetKeyboardLayoutKlid(nint layout)
+			public static string GetKeyboardLayoutKlid(nint layout)
 			{
-				// ActivateKeyboardLayout returns the previous HKL truncated to int; reinterpret the bits as
-				// uint and zero-extend so IME HKLs (high bit set, e.g. 0xE0010411) reconstruct correctly and
-				// the finally-block restore below targets the real handle.
-				var oldLayout = new nint(unchecked((uint)Os.Windows.WindowsAPI.ActivateKeyboardLayout(layout, 0)));
+				// Activating the layout is the only way to get its name. The switch is thread-local and
+				// reverted below.
+				var oldLayout = Os.Windows.WindowsAPI.ActivateKeyboardLayout(layout, 0);
+
+				if (oldLayout == 0)
+					return "";
 
 				try
 				{
@@ -64,17 +66,17 @@ namespace Keysharp.Internals
 				}
 				finally
 				{
-					if (oldLayout != 0 && oldLayout != layout)
+					if (oldLayout != layout)
 						_ = Os.Windows.WindowsAPI.ActivateKeyboardLayout(oldLayout, 0);
 				}
 			}
 
-			private static string GetKeyboardLayoutText(string klid)
+			public static string GetKeyboardLayoutValue(string klid, string name)
 			{
 				try
 				{
 					using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Control\Keyboard Layouts\{klid}");
-					return key?.GetValue("Layout Text") as string ?? "";
+					return key?.GetValue(name) as string ?? "";
 				}
 				catch
 				{

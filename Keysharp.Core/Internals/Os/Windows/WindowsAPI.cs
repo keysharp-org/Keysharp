@@ -937,7 +937,7 @@ namespace Keysharp.Internals.Os.Windows
 		internal static partial bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
 
 		[LibraryImport(user32, EntryPoint = "ActivateKeyboardLayout")]
-		internal static partial int ActivateKeyboardLayout(nint hkl, uint Flags);
+		internal static partial nint ActivateKeyboardLayout(nint hkl, uint Flags);
 
 		[LibraryImport(user32, EntryPoint = "GetKeyboardLayout")]
 		internal static partial nint GetKeyboardLayout(uint idThread);

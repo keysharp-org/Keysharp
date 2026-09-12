@@ -1,5 +1,6 @@
 #ErrorStdOut
 #Warn All, StdOut
+#Warn Experimental, Off
 #NoTrayIcon
 #import KS { Task, RealThread, Await, Clr, A_RealThread }
 #Include <assert>

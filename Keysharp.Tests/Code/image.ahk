@@ -1,5 +1,6 @@
 #ErrorStdOut
 #Warn All, StdOut
+#Warn Experimental, Off
 #import KS { Image, A_DirSeparator }
 #Include <assert>
 

@@ -1,6 +1,7 @@
 #NoTrayIcon
 #ErrorStdOut
 #Warn All, StdOut
+#Warn Experimental, Off
 
 #import KS { Clr }
 #Include <assert>

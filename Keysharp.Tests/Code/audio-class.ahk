@@ -1,5 +1,6 @@
 #ErrorStdOut
 #Warn All, StdOut
+#Warn Experimental, Off
 #NoTrayIcon
 #import KS { Audio }
 #Include <assert>

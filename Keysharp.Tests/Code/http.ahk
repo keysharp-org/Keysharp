@@ -1,5 +1,6 @@
 #ErrorStdOut
 #Warn All, StdOut
+#Warn Experimental, Off
 #NoTrayIcon
 #import KS { Http, Url, Await, Task, Clr, A_KsVersion, A_DirSeparator }
 #Include <assert>

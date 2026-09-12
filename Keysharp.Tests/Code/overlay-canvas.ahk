@@ -1,5 +1,6 @@
 #ErrorStdOut
 #Warn All, StdOut
+#Warn Experimental, Off
 #import KS { Overlay, Font, Image }
 #Include <assert>
 
