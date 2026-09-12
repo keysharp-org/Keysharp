@@ -14,6 +14,7 @@ namespace Keysharp.Builtins
 		/// monophonic file playback, while this class works from exactly identified devices and can overlap sounds.
 		/// </para>
 		/// </summary>
+		[Experimental]
 		public partial class Audio : KeysharpObject
 		{
 			public Audio(params object[] args) : base(args) { }

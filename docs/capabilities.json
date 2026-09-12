@@ -474,7 +474,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Enables warnings (VarUnset, Unreachable, LocalSameAsGlobal, NamedArg); VarUnset, Unreachable and NamedArg are on by default."
+                     "notes":  "Enables warnings (VarUnset, Unreachable, LocalSameAsGlobal, NamedArg, Experimental); VarUnset, Unreachable and NamedArg are on by default. Experimental reports resolved experimental class imports once per compilation; off by default and included in #Warn All. Dynamic object access is not checked."
                  },
                  {
                      "category":  "Environment/System",

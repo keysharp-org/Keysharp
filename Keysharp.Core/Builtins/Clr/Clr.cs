@@ -2,6 +2,7 @@ namespace Keysharp.Builtins
 {
 	public partial class Ks
 	{
+		[Experimental]
 		public partial class Clr : KeysharpObject
 		{
 			public static object staticLoad(object @this, object assemblyOrPath)

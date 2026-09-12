@@ -31,7 +31,7 @@ namespace Keysharp.Builtins
 		/// an endless loop, which presents as a hang rather than an error. Hand an image between real threads by
 		/// finishing with it first, or give each its own.
 		/// </summary>
-		[UserDeclaredName("Image")]
+		[UserDeclaredName("Image"), Experimental]
 		public partial class KeysharpImage : KeysharpObject, IDisposable
 		{
 			// The current materialized pixels. An owned image folds pending work into this bitmap; a borrowed

@@ -1,5 +1,6 @@
 #ErrorStdOut
 #Warn All, StdOut
+#Warn Experimental, Off
 #Import Ks { Image }
 #Include <assert>
 

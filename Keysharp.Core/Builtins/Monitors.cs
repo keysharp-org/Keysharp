@@ -27,7 +27,7 @@ namespace Keysharp.Builtins
 		/// <c>Keysharp.Builtins.Monitor</c> function holder and with <c>System.Threading.Monitor</c>; scripts see it
 		/// as <c>Monitor</c>.</para>
 		/// </summary>
-		[UserDeclaredName("Monitor")]
+		[UserDeclaredName("Monitor"), Experimental]
 		public class KeysharpMonitor : KeysharpObject
 		{
 			private DisplayInfo display;

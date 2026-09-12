@@ -510,6 +510,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * The standalone `#ErrorStdOut` directive sends subsequent load-time errors and uncaught runtime errors to standard error instead of a dialog. The `--errorstdout` command-line switch applies to load-time errors from the start of loading. A GUI-subsystem process's error stream is visible when captured by piping or redirection. For example:
 	+ `.\Keysharp.exe .\test.ahk | more`
 	+ `.\Keysharp.exe .\test.ahk | more > out.txt`
+* `#Warn Experimental` emits a compiler warning once per resolved experimental class import: `Image`, `Audio`, `Monitor`, `Clr` or `Overlay`. Off by default; `#Warn All` enables it. Dynamic object access is not checked. These APIs may change or be removed without deprecation.
 * The `#App { ConsoleApp: true }` key is Keysharp-only, and is the equivalent of Ahk2Exe's `;@Ahk2Exe-ConsoleApp`. It makes `--compile exe` produce a console application rather than the default GUI one, which is what a command-line script needs:
 	+ A shell waits for the program to exit and reports its exit code, and its standard streams are the terminal's, so `FileAppend(text, "*")` prints and `FileOpen("*", "r")` reads typed input without any redirection.
 	+ On Windows this is the executable's PE subsystem field, which the shell reads before the process starts. It belongs to the generated host shape in `#App` because runtime code cannot substitute for it.
@@ -1370,7 +1371,7 @@ Controlling another application needs **Automation** permission, granted per tar
 					Brightness => Integer        ; Get/set, 0-100. OSError naming the reason where unsupported.
 					IsBrightnessSupported => Boolean ; A real probe of the device, so it costs one brightness read.
 					GetVCP(code) => Object       ; Raw DDC/CI (MCCS) feature => { Current, Maximum }.
-					SetVCP(code, value)          ; Experimental; see the warning below.
+					SetVCP(code, value)          ; See the warning below.
 				}
 				```
 			+ `Monitor.OnChange(Callback)` returns a `MonitorHook`, an `EventHook` managed exactly like a `WinEvent` hook. The callback receives `(Hook, Kind)`, where `Kind` is `"Topology"` when the set of attached monitors changed (plug/unplug, dock/undock) and `"Settings"` when the same monitors are attached but their resolution, position, scale or primary assignment changed; `A_EventInfo` holds the monitor count after the change. The kind is derived by comparing topology snapshots, so the vocabulary is the same on every platform and redundant notifications are dropped. A handler holding a `Monitor` should call its `Refresh()` — which returns falsy if that is the display that was just unplugged — or simply re-read `Monitor.All`.

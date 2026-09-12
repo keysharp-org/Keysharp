@@ -14,7 +14,7 @@ namespace Keysharp.Builtins
 		/// input (an interactive HUD) instead of passing clicks through to the windows beneath it, and register
 		/// mouse handlers with <see cref="OnEvent"/> (Click/DoubleClick/ContextMenu/MouseMove).</para>
 		/// </summary>
-		[UserDeclaredName("Overlay")]
+		[UserDeclaredName("Overlay"), Experimental]
 		public class KeysharpOverlay : KeysharpObject
 		{
 			private const uint OverlayIdPrefix = 0x1000_0000u;

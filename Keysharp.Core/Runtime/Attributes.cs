@@ -113,6 +113,11 @@ namespace Keysharp.Runtime
 		{ }
 	}
 
+	/// <summary>Marks a script-visible class and its nested types as experimental. The compiler warns when an import
+	/// resolves to this class and #Warn Experimental is enabled.</summary>
+	[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+	public sealed class ExperimentalAttribute : Attribute { }
+
 	[AttributeUsage(AttributeTargets.Parameter)]
 	public sealed class ByRefAttribute : Attribute { }
 

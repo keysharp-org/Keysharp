@@ -28,7 +28,7 @@ namespace Keysharp.Compilation.Syntax
 	internal sealed class Lowerer
 	{
 		public readonly List<string> Diagnostics = new();
-		// Non-fatal compile-time messages (#Warning). Kept apart from Diagnostics because anything in that list aborts
+		// Non-fatal compiler messages (#Warning and #Warn Experimental). Entries in Diagnostics abort
 		// the build; these are surfaced alongside it and compilation continues. Named for the compile phase to keep it
 		// distinct from `_warnings` below, which is the unrelated #Warn analysis emitted into the generated program.
 		public readonly List<string> CompileWarnings = new();
@@ -146,6 +146,10 @@ namespace Keysharp.Compilation.Syntax
 		// (like VarUnset/Unreachable): the check is high-signal and its only false-positive shape is a script that
 		// reassigns a function name and calls the replacement by name.
 		private string _warnNamedArg = "MsgBox";
+		// Experimental reports resolved class imports during compilation. Off by default.
+		private string _warnExperimental = null;
+		private readonly HashSet<Type> _experimentalTypes = new();
+		private readonly HashSet<Type> _experimentalWarned = new();
 		private string _warnDefaultMode = "MsgBox";
 		private bool _warnScopeIsGlobal;   // current VarUnset-analysis scope is the module top-level (else a function)
 		// Names provided at the module top-level. Keysharp resolves any bare name that isn't a local to a module-level
@@ -737,6 +741,7 @@ namespace Keysharp.Compilation.Syntax
 
 		private void ClearPerModuleState()
 		{
+			_experimentalTypes.Clear();
 			_fields.Clear(); _fieldDecls.Clear(); _staticFieldDeclIdx.Clear(); _userFuncByLower.Clear(); _userFuncDeclByLower.Clear(); _userClassByLower.Clear(); _userClassDeclByLower.Clear();
 			_staticFieldSink = _fieldDecls;   // module scope until a class redirects it
 
@@ -1130,6 +1135,10 @@ namespace Keysharp.Compilation.Syntax
 			// Declare temps introduced by postfix ++/-- in the top-level (auto-execute) scope.
 			for (int i = _scopeTemps.Count - 1; i >= 0; i--) auto.Insert(0, DeclLocal(ObjType, _scopeTemps[i], Null));
 			auto.AddRange(_pendingScopeFuncs);   // top-level fat-arrow local functions (auto-exec scope)
+			if (_warnExperimental != null)
+				foreach (var type in _experimentalTypes)
+					if (_experimentalWarned.Add(type))
+						CompileWarnings.Add($"0:0: {Script.GetUserDeclaredName(type) ?? type.Name} is experimental and may change or be removed without deprecation.");
 			return (members, auto);
 		}
 
@@ -1646,7 +1655,12 @@ namespace Keysharp.Compilation.Syntax
 				return FuncBind(method.DeclaringType.FullName.Replace('+', '.') + "." + method.Name);
 			}
 			var nested = modType.GetNestedTypes(System.Reflection.BindingFlags.Public).FirstOrDefault(Matches);
-			if (nested != null) return TypeSingleton(nested.FullName.Replace('+', '.'));
+			if (nested != null)
+			{
+				if (nested.IsDefined(typeof(ExperimentalAttribute), false))
+					_experimentalTypes.Add(nested);
+				return TypeSingleton(nested.FullName.Replace('+', '.'));
+			}
 			var prop = modType.GetProperties(flags).FirstOrDefault(Matches);
 			if (prop != null) return Access(prop.DeclaringType.FullName.Replace('+', '.') + "." + prop.Name);
 			return null;
@@ -2754,12 +2768,13 @@ namespace Keysharp.Compilation.Syntax
 				if (_warnUnreachable != null) _warnUnreachable = _warnDefaultMode;
 				if (_warnLocalSameAsGlobal != null) _warnLocalSameAsGlobal = _warnDefaultMode;
 				if (_warnNamedArg != null) _warnNamedArg = _warnDefaultMode;
+				if (_warnExperimental != null) _warnExperimental = _warnDefaultMode;
 				return;
 			}
 			var mode = modeStr.Length == 0 || modeStr.Equals("On", System.StringComparison.OrdinalIgnoreCase) ? _warnDefaultMode
 					 : modeStr.Equals("Off", System.StringComparison.OrdinalIgnoreCase) ? null : CanonWarnMode(modeStr);
 			if (typeStr.Length == 0 || typeStr.Equals("all", System.StringComparison.OrdinalIgnoreCase))
-				_warnVarUnset = _warnUnreachable = _warnLocalSameAsGlobal = _warnNamedArg = mode;
+				_warnVarUnset = _warnUnreachable = _warnLocalSameAsGlobal = _warnNamedArg = _warnExperimental = mode;
 			else if (typeStr.Equals("varunset", System.StringComparison.OrdinalIgnoreCase))
 				_warnVarUnset = mode;
 			else if (typeStr.Equals("unreachable", System.StringComparison.OrdinalIgnoreCase))
@@ -2768,6 +2783,8 @@ namespace Keysharp.Compilation.Syntax
 				_warnLocalSameAsGlobal = mode;
 			else if (typeStr.Equals("namedarg", System.StringComparison.OrdinalIgnoreCase))
 				_warnNamedArg = mode;
+			else if (typeStr.Equals("experimental", System.StringComparison.OrdinalIgnoreCase))
+				_warnExperimental = mode;
 			else
 				Diag($"#Warn: unrecognized warning type '{typeStr}'");
 		}

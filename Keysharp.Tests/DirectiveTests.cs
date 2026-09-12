@@ -429,6 +429,32 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
+		public void WarnExperimental()
+		{
+			string[] Warnings(string source)
+			{
+				var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source);
+				Assert.IsEmpty(diagnostics);
+				var lowerer = new Keysharp.Compilation.Syntax.Lowerer();
+				Assert.IsNotNull(lowerer.Build(program, "Experimental"));
+				Assert.IsEmpty(lowerer.Diagnostics);
+				return lowerer.CompileWarnings.ToArray();
+			}
+
+			const string imports = "#Import Ks { Audio, Image, Monitor, Clr, Overlay }\n";
+			var warnings = Warnings("#Warn Experimental\n" + imports);
+			Assert.AreEqual(5, warnings.Length);
+			foreach (var name in new[] { "Audio", "Image", "Monitor", "Clr", "Overlay" })
+				Assert.IsTrue(warnings.Any(w => w.Contains(name + " is experimental")));
+			Assert.IsEmpty(Warnings(imports));
+			Assert.AreEqual(5, Warnings("#Warn All, StdOut\n" + imports).Length);
+			Assert.IsEmpty(Warnings(imports + "#Warn All, StdOut\n#Warn Experimental, Off\n"));
+			Assert.AreEqual(1, Warnings("#Warn Experimental\n#Import Ks { Image, Image as Picture }\n").Length);
+			Assert.AreEqual(1, Warnings("#Warn Experimental\n#Import Ks { * }\nx := Image\n").Length);
+			Assert.IsEmpty(Warnings("#Warn Experimental\n#Import Ks { * }\nclass Image {}\nx := Image\n"));
+		}
+
+		[Test, Category("Directives")]
 		public void WarningNonFatal()
 		{
 			// #Warning is #Error's non-fatal sibling: reported at compile time, but the build still produces a unit.
