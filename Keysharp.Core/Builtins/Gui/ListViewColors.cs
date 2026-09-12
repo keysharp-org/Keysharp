@@ -8,21 +8,21 @@ namespace Keysharp.Builtins
 			internal bool HasColors => colors.Count > 0;
 
 			/// <summary>Sets a row's colors. Omitted, empty, or Default colors inherit the control's colors.</summary>
-			/// <param name="Row">The existing, 1-based row number.</param>
-			/// <param name="TextColor">A GUI color name, hexadecimal string, or RGB integer.</param>
-			/// <param name="BackColor">A GUI color name, hexadecimal string, or RGB integer.</param>
+			/// <param name="row">The existing, 1-based row number.</param>
+			/// <param name="textColor">A GUI color name, hexadecimal string, or RGB integer.</param>
+			/// <param name="backColor">A GUI color name, hexadecimal string, or RGB integer.</param>
 			/// <returns>This control.</returns>
-			public object SetRowColor(object Row, object TextColor = null, object BackColor = null) =>
-				SetColors(Row, null, TextColor, BackColor);
+			public object SetRowColor(object row, object textColor = null, object backColor = null) =>
+				SetColors(row, null, textColor, backColor);
 
 			/// <summary>Sets a cell's colors. Omitted, empty, or Default colors inherit the row's colors.</summary>
-			/// <param name="Row">The existing, 1-based row number.</param>
-			/// <param name="Column">The existing, 1-based column number.</param>
-			/// <param name="TextColor">A GUI color name, hexadecimal string, or RGB integer.</param>
-			/// <param name="BackColor">A GUI color name, hexadecimal string, or RGB integer.</param>
+			/// <param name="row">The existing, 1-based row number.</param>
+			/// <param name="column">The existing, 1-based column number.</param>
+			/// <param name="textColor">A GUI color name, hexadecimal string, or RGB integer.</param>
+			/// <param name="backColor">A GUI color name, hexadecimal string, or RGB integer.</param>
 			/// <returns>This control.</returns>
-			public object SetCellColor(object Row, object Column, object TextColor = null, object BackColor = null) =>
-				SetColors(Row, Column, TextColor, BackColor);
+			public object SetCellColor(object row, object column, object textColor = null, object backColor = null) =>
+				SetColors(row, column, textColor, backColor);
 
 			/// <summary>Removes all row and cell colors. Structural edits and sorting also clear these index-based colors.</summary>
 			/// <returns>This control.</returns>

@@ -94,7 +94,7 @@ AssertEq([1, 2, 3].Filter(np2.Bind(1)).Length, 2, A_LineNumber)  ; bound: one sl
 sparseM := [1, 2, 3].Map((v) => v = 2 ? unset : v)
 Assert(sparseM.Length == 3 && !sparseM.Has(2) && sparseM[1] == 1, A_LineNumber)
 
-; The `object @this` convention: the receiver is not an argument and must not be bindable.
+; A bound member already supplies its `object @this` receiver, so it cannot be supplied again by name.
 o := {alpha: 1}
 AssertEq(o.HasProp(name: "alpha"), 1, A_LineNumber)
 
@@ -456,8 +456,19 @@ Assert(pi[1].Name == "alpha" && pi[1].IsOptional == 0 && !pi[1].HasOwnProp("Defa
 Assert(pi[2].Name == "beta" && pi[2].IsOptional == 1 && pi[2].Default == 5, A_LineNumber)
 Assert(pi[3].Name == "out" && pi[3].IsByRef == 1, A_LineNumber)
 Assert(pi[4].Name == "rest" && pi[4].IsVariadic == 1, A_LineNumber)
-AssertEq(SubStr.Params[1].Name, "string", A_LineNumber)  ; built-ins report their documented names
-AssertEq([].Get.Params[1].Name, "index", A_LineNumber)  ; the receiver is not reported
+AssertEq(SubStr.Params[1].Name, "String", A_LineNumber)  ; built-ins report their documented names
+
+; Reading a method does not bind its receiver.
+getFn := [].Get
+getParams := getFn.Params
+Assert(getFn.MinParams == 2 && getFn.MaxParams == 3 && getParams.Length == 3, A_LineNumber)
+Assert(getParams[1].Name == "this" && getParams[1].Index == 1 && getParams[1].IsOptional == 0, A_LineNumber)
+Assert(getParams[2].Name == "Index" && getParams[3].Name == "Default", A_LineNumber)
+AssertEq(getFn(["named receiver"], index: 1), "named receiver", A_LineNumber)
+
+rawHasProp := Object.Prototype.HasProp
+Assert(rawHasProp.MinParams == 2 && rawHasProp.MaxParams == 2 && rawHasProp.Params[1].Name == "this", A_LineNumber)
+AssertEq(rawHasProp({answer: 42}, name: "answer"), 1, A_LineNumber)
 
 ; ---------------------------------------------------------------- Func.Name
 ; A nested function or closure is lowered to a local function, which Roslyn renames to `<Outer>g__Name|n_m`.

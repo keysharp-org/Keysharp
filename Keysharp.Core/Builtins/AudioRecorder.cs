@@ -32,21 +32,21 @@ namespace Keysharp.Builtins
 				/// is a ValueError before anything is opened. Source defaults to "Microphone" and SampleFormat to
 				/// "Signed16"; their tokens are matched without regard to case.
 				/// </summary>
-				public object __New(object Source = null, object Path = null, object Device = null,
-									object SampleRate = null, object Channels = null, object SampleFormat = null,
-									object ChunkMilliseconds = null, object MaximumDurationMilliseconds = null)
+				public object __New(object source = null, object path = null, object device = null,
+									object sampleRate = null, object channels = null, object sampleFormat = null,
+									object chunkMilliseconds = null, object maximumDurationMilliseconds = null)
 				{
 					service = Service;
-					var sourceText = Source.As();
+					var sourceText = source.As();
 
 					if (sourceText.Length == 0 || string.Equals(sourceText, "Microphone", StringComparison.OrdinalIgnoreCase))
-						source = Engine.AudioCaptureSource.Microphone;
+						this.source = Engine.AudioCaptureSource.Microphone;
 					else if (string.Equals(sourceText, "SystemOutput", StringComparison.OrdinalIgnoreCase))
-						source = Engine.AudioCaptureSource.SystemOutput;
+						this.source = Engine.AudioCaptureSource.SystemOutput;
 					else
 						return Errors.ValueErrorOccurred($"Unknown Source \"{sourceText}\". Expected Microphone or SystemOutput.");
 
-					configuredPath = Path.As();
+					configuredPath = path.As();
 
 					if (configuredPath.Contains('\0'))
 						return Errors.ValueErrorOccurred("Path must not contain an embedded NUL.");
@@ -62,21 +62,21 @@ namespace Keysharp.Builtins
 						}
 						catch (Exception ex)
 						{
-							return Errors.ValueErrorOccurred($"Path is not a valid file path: {ex.Message}", Path);
+							return Errors.ValueErrorOccurred($"Path is not a valid file path: {ex.Message}", path);
 						}
 					}
 
-					rate = (int)(SampleRate == null ? 48000L : SampleRate.Al());
+					rate = (int)(sampleRate == null ? 48000L : sampleRate.Al());
 
 					if (!Engine.AudioFormats.IsValidSampleRate(rate))
-						return Errors.ValueErrorOccurred($"SampleRate must be from {Engine.AudioFormats.MinSampleRate} through {Engine.AudioFormats.MaxSampleRate}.", SampleRate);
+						return Errors.ValueErrorOccurred($"SampleRate must be from {Engine.AudioFormats.MinSampleRate} through {Engine.AudioFormats.MaxSampleRate}.", sampleRate);
 
-					channels = (int)(Channels == null ? 1L : Channels.Al());
+					this.channels = (int)(channels == null ? 1L : channels.Al());
 
-					if (!Engine.AudioFormats.IsValidChannels(channels))
-						return Errors.ValueErrorOccurred("Channels must be 1 or 2.", Channels);
+					if (!Engine.AudioFormats.IsValidChannels(this.channels))
+						return Errors.ValueErrorOccurred("Channels must be 1 or 2.", channels);
 
-					var formatToken = SampleFormat.As();
+					var formatToken = sampleFormat.As();
 
 					if (formatToken.Length == 0)
 						formatToken = Engine.AudioFormats.Signed16;
@@ -84,21 +84,21 @@ namespace Keysharp.Builtins
 					if (!Engine.AudioFormats.TryResolve(formatToken, out format, out _))
 						return Errors.ValueErrorOccurred($"Unknown SampleFormat \"{formatToken}\". Expected Unsigned8, Signed16, Signed24, Signed32 or Float32.");
 
-					chunkMs = ChunkMilliseconds == null ? 100L : ChunkMilliseconds.Al();
+					chunkMs = chunkMilliseconds == null ? 100L : chunkMilliseconds.Al();
 
 					if (chunkMs < 10 || chunkMs > 1000)
-						return Errors.ValueErrorOccurred("ChunkMilliseconds must be from 10 through 1000.", ChunkMilliseconds);
+						return Errors.ValueErrorOccurred("ChunkMilliseconds must be from 10 through 1000.", chunkMilliseconds);
 
-					maximumMs = MaximumDurationMilliseconds == null ? 0L : MaximumDurationMilliseconds.Al();
+					maximumMs = maximumDurationMilliseconds == null ? 0L : maximumDurationMilliseconds.Al();
 
 					if (maximumMs < 0 || maximumMs > 86_400_000)
-						return Errors.ValueErrorOccurred("MaximumDurationMilliseconds must be 0 for unbounded, or 1 through 86400000.", MaximumDurationMilliseconds);
+						return Errors.ValueErrorOccurred("MaximumDurationMilliseconds must be 0 for unbounded, or 1 through 86400000.", maximumDurationMilliseconds);
 
-					if (Device is Ks.Audio.Device || Device.As().Length > 0)
+					if (device is Ks.Audio.Device || device.As().Length > 0)
 					{
-						var kind = source == Engine.AudioCaptureSource.Microphone ? Engine.AudioDeviceKind.Input : Engine.AudioDeviceKind.Output;
+						var kind = this.source == Engine.AudioCaptureSource.Microphone ? Engine.AudioDeviceKind.Input : Engine.AudioDeviceKind.Output;
 
-						if (!TryResolveDevice(Device, kind, true, out var resolved, out var failure))
+						if (!TryResolveDevice(device, kind, true, out var resolved, out var failure))
 							return failure;
 
 						deviceSelector = resolved.Id;

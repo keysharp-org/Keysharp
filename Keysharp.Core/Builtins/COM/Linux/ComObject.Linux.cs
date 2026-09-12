@@ -37,7 +37,8 @@ namespace Keysharp.Builtins.COM
 		}
 
 		/// <summary>ComObject("[system:|session:]bus.name", "optional.interface").</summary>
-		public static object staticCall(object @this, object target, object iface = null)
+		public static object staticCall(object @this, [UserDeclaredName("CLSID")] object target,
+			[UserDeclaredName("IID")] object iface = null)
 			=> Create(target.As(), iface.As(), activate: true);
 
 		public override string ToString() => $"{service}{path}";

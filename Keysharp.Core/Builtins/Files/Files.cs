@@ -1472,7 +1472,8 @@ namespace Keysharp.Builtins
 		/// If R is omitted, files and folders in subfolders are not included.
 		/// </param>
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown on failure.</exception>
-		public static object FileSetTime(object yyyymmddhh24miss = null, object filePattern = null, object whichTime = null, object mode = null)
+		public static object FileSetTime([UserDeclaredName("YYYYMMDDHH24MISS")] object yyyymmddhh24miss = null,
+			object filePattern = null, object whichTime = null, object mode = null)
 		{
 			ThreadAccessors.A_LastError = 0;
 			var YYYYMMDDHH24MISS = yyyymmddhh24miss.As();

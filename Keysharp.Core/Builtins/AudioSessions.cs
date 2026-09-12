@@ -27,9 +27,9 @@ namespace Keysharp.Builtins
 			/// routinely owns several sessions, so every match is returned rather than the first.
 			/// </summary>
 			[Static]
-			public static object Sessions(object @this, object PIDOrName = null, object Device = null)
+			public static object Sessions(object @this, [UserDeclaredName("PIDOrName")] object pidOrName = null, object device = null)
 			{
-				if (!TryValidateSelector(PIDOrName, out var selectorFailure))
+				if (!TryValidateSelector(pidOrName, out var selectorFailure))
 					return selectorFailure;
 
 				var result = new Array();
@@ -40,16 +40,16 @@ namespace Keysharp.Builtins
 
 				var deviceId = "";
 
-				if (Device is Ks.Audio.Device || Device.As().Length > 0)
+				if (device is Ks.Audio.Device || device.As().Length > 0)
 				{
-					if (!TryResolveDeviceAnyKind(Device, out var resolved, out var failure))
+					if (!TryResolveDeviceAnyKind(device, out var resolved, out var failure))
 						return failure;
 
 					deviceId = resolved.Id;
 				}
 
 				foreach (var s in backend.EnumerateSessions(deviceId))
-					if (Matches(s, PIDOrName))
+					if (Matches(s, pidOrName))
 						_ = result.Push(Session.Wrap(Service, s));
 
 				return result;
@@ -60,13 +60,13 @@ namespace Keysharp.Builtins
 			/// zero when nothing matched; a per-session failure aggregates into one actionable error afterwards.
 			/// </summary>
 			[Static]
-			public static object SetApplicationVolume(object @this, object PIDOrName, object Volume, object Device = null)
-				=> ApplyToSessions(PIDOrName, Device, Volume, true);
+			public static object SetApplicationVolume(object @this, [UserDeclaredName("PIDOrName")] object pidOrName, object volume, object device = null)
+				=> ApplyToSessions(pidOrName, device, volume, true);
 
 			/// <summary>Sets one absolute mute state on every session of a process, and returns how many changed.</summary>
 			[Static]
-			public static object SetApplicationMute(object @this, object PIDOrName, object Mute, object Device = null)
-				=> ApplyToSessions(PIDOrName, Device, Mute, false);
+			public static object SetApplicationMute(object @this, [UserDeclaredName("PIDOrName")] object pidOrName, object mute, object device = null)
+				=> ApplyToSessions(pidOrName, device, mute, false);
 
 			private static object ApplyToSessions(object pidOrName, object device, object value, bool isVolume)
 			{
@@ -169,14 +169,14 @@ namespace Keysharp.Builtins
 			/// matched without regard to case.
 			/// </summary>
 			[Static]
-			public static object OnDeviceChange(object @this, object Callback, object Kind = null)
+			public static object OnDeviceChange(object @this, object callback, object kind = null)
 			{
-				var fo = Functions.GetKeysharpFunc(Callback, null, true);
+				var fo = Functions.GetKeysharpFunc(callback, null, true);
 
 				if (fo == null)
-					return Errors.TypeErrorOccurred(Callback, typeof(KeysharpFunc));
+					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));
 
-				if (!TryKind(Kind, "All", true, out var kind, out var all, out var failure))
+				if (!TryKind(kind, "All", true, out var deviceKind, out var all, out var failure))
 					return failure;
 
 				if (!Service.Supports(Engine.AudioCapability.DeviceChange))
@@ -185,7 +185,7 @@ namespace Keysharp.Builtins
 				var script = Script.TheScript;
 				var manager = script.AudioEventManager;
 				var reg = new Engine.AudioEventRegistration(fo, script.EventScheduler, manager,
-														   all ? "All" : KindName(kind));
+													   all ? "All" : KindName(deviceKind));
 				var hook = new DeviceHook { sub = reg };
 				reg.scriptObject = hook;
 				manager.Register(reg);
@@ -409,30 +409,30 @@ namespace Keysharp.Builtins
 				/// Snapshots a target without opening anything. A blank target takes the current default output,
 				/// which makes <c>Audio.Meter()</c> the useful minimal form.
 				/// </summary>
-				public object __New(object Target = null, object IntervalMilliseconds = null)
+				public object __New(object target = null, object intervalMilliseconds = null)
 				{
 					service = Service;
-					var interval = IntervalMilliseconds == null ? 50L : IntervalMilliseconds.Al();
+					var interval = intervalMilliseconds == null ? 50L : intervalMilliseconds.Al();
 
 					if (interval < 20 || interval > 1000)
-						return Errors.ValueErrorOccurred("IntervalMilliseconds must be from 20 through 1000.", IntervalMilliseconds);
+						return Errors.ValueErrorOccurred("IntervalMilliseconds must be from 20 through 1000.", intervalMilliseconds);
 
 					Interval = interval;
 
-					if (Target is Session s)
+					if (target is Session s)
 					{
-						target = s;
+						this.target = s;
 						targetId = s.Id;
 						isSession = true;
 						return DefaultObject;
 					}
 
-					if (Target is Ks.Audio.Device || Target.As().Length > 0)
+					if (target is Ks.Audio.Device || target.As().Length > 0)
 					{
-						if (!TryResolveDeviceAnyKind(Target, out var d, out var failure))
+						if (!TryResolveDeviceAnyKind(target, out var d, out var failure))
 							return failure;
 
-						target = Ks.Audio.Device.Wrap(service, d);
+						this.target = Ks.Audio.Device.Wrap(service, d);
 						targetId = d.Id;
 						return DefaultObject;
 					}
@@ -441,7 +441,7 @@ namespace Keysharp.Builtins
 
 					if (backend is { IsAvailable: true } && backend.TryGetDefaultDevice(Engine.AudioDeviceKind.Output, out var def))
 					{
-						target = Ks.Audio.Device.Wrap(service, def);
+						this.target = Ks.Audio.Device.Wrap(service, def);
 						targetId = def.Id;
 					}
 

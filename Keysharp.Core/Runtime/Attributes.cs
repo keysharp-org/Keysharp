@@ -139,8 +139,8 @@ namespace Keysharp.Runtime
 	/// <summary>
 	/// The name scripts know a class, member or parameter by, when it differs from the C# name (KeysharpObject is
 	/// <c>Object</c>, StructInt32 is <c>Int32</c>; on a parameter it is the spelling a named argument binds by,
-	/// <c>f(Name: value)</c>, for the residue where the documented name cannot be the C# identifier -- binding is
-	/// case-insensitive, so a parameter only carries one for a genuine spelling difference, never for casing).
+	/// <c>f(Name: value)</c>. Built-in C# parameter names follow camelCase and are projected to PascalCase, so a
+	/// parameter carries this only when capitalization cannot recover its documented spelling.
 	/// Never inherited: a derived class has its own name, and inheriting one would register every subclass of a
 	/// renamed class under the base class's name.
 	/// </summary>

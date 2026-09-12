@@ -245,8 +245,8 @@ namespace Keysharp.Builtins
 		}
 
 		public static object PostMessage(object msgNumber,
-										 object wParam = null,
-										 object lParam = null,
+										 [UserDeclaredName("wParam")] object wParam = null,
+										 [UserDeclaredName("lParam")] object lParam = null,
 										 object controlID = null,
 										 object winTitle = null,
 										 object winText = null,
@@ -267,8 +267,8 @@ namespace Keysharp.Builtins
 		}
 
 		public static long SendMessage(object msgNumber,
-									   object wParam = null,
-									   object lParam = null,
+									   [UserDeclaredName("wParam")] object wParam = null,
+									   [UserDeclaredName("lParam")] object lParam = null,
 									   object controlID = null,
 									   object winTitle = null,
 									   object winText = null,

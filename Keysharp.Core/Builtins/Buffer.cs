@@ -96,20 +96,20 @@ namespace Keysharp.Builtins
 		// AutoHotkey's own introspection (Buffer.Prototype.__New reports Min=1, Max=3, IsVariadic=0) instead of
 		// being restated out-of-band by a [TailNames] attribute.
 		// The parameters are PascalCase on purpose: these names ARE script-facing API (`Buffer(ByteCount: 16)`).
-		public unsafe object __New(object ByteCount = null, object FillByte = null)
+		public unsafe object __New(object byteCount = null, object fillByte = null)
 		{
-			if (ByteCount == null)//Also covers Buffer(), whose omitted first argument arrives as null.
+			if (byteCount == null)//Also covers Buffer(), whose omitted first argument arrives as null.
 			{
 				Size = 0;
 			}
-			else if (ByteCount is byte[] bytearray)//This will sometimes be passed internally within the library.
+			else if (byteCount is byte[] bytearray)//This will sometimes be passed internally within the library.
 			{
 				Size = bytearray.Length;//Performs the allocation.
 
 				if (size > 0)
 					Marshal.Copy(bytearray, 0, _ptr.DangerousGetHandle(), Math.Min((int)size, bytearray.Length));
 			}
-			else if (ByteCount is Array array)
+			else if (byteCount is Array array)
 			{
 				var ct = array.array.Count;
 				Size = ct;
@@ -120,8 +120,8 @@ namespace Keysharp.Builtins
 			}
 			else//This will be called by the user.
 			{
-				var bytecount = ByteCount.Al(0);
-				var fill = FillByte is not null ? FillByte.ToLong() : long.MinValue;
+				var bytecount = byteCount.Al(0);
+				var fill = fillByte is not null ? fillByte.ToLong() : long.MinValue;
 				Size = bytecount;
 
 				if (bytecount > 0)

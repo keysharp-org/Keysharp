@@ -582,23 +582,23 @@ namespace Keysharp.Builtins
 
 		public KeysharpFunc __Enum(object count) => CreateEnumerator(count.Ai());
 
-		public object __New(object Options = null, object Title = null, object EventObj = null)
+		public object __New(object options = null, object title = null, object eventObj = null)
 		{
 			if (form == null)//Don't allow derived classes to init twice.
 			{
 				Script.TheScript.InvokeOnUIThread(() =>
 				{
-					var options = Options != null ? Options.As() : null;
-					var caption = Title != null ? Title.As() : null;
-					var eventObj = EventObj;
+					var optionsText = options != null ? options.As() : null;
+					var caption = title != null ? title.As() : null;
+					var eventObjValue = eventObj;
 					var script = Script.TheScript;
 					var newCount = Interlocked.Increment(ref script.GuiData.windowCount);
 					//Get numeric creation params first.
 					int addStyle = 0, addExStyle = 0, removeStyle = 0, removeExStyle = 0;
-					Opt(options, ref addStyle, ref addExStyle, ref removeStyle, ref removeExStyle);
+					Opt(optionsText, ref addStyle, ref addExStyle, ref removeStyle, ref removeExStyle);
 					form = new KeysharpForm(Script.TheScript, addStyle, addExStyle, removeStyle, removeExStyle)
 					{
-						eventObj = eventObj,
+						eventObj = eventObjValue,
 						FormBorderStyle = FormBorderStyle.FixedSingle,//Default to a non-resizeable window, with the maximize box disabled.
 						Icon = script.scriptIcon,//TraySetIcon's icon when the script set one, else the default.
 						Name = $"Keysharp window {newCount}",
@@ -609,7 +609,7 @@ namespace Keysharp.Builtins
 					};
 					//Note that we don't do any Suspend/Resume layout calls when creating controls on the form as would normally
 					//be done in designer-generated code. It appears to cause layout problems.
-					_ = Opt(options);
+					_ = Opt(optionsText);
 					var formHandle = form.Handle;//Force the creation.
 					var handleStr = $"{formHandle}";
 #if !WINDOWS

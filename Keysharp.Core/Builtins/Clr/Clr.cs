@@ -45,17 +45,17 @@ namespace Keysharp.Builtins
 			/// everything requested so far — but assemblies already loaded by an earlier call cannot be unloaded, so a
 			/// genuine conflict is reported rather than repaired.</para>
 			/// </summary>
-			/// <param name="Name">The package name, as on the feed.</param>
-			/// <param name="Version">Omitted for the newest stable release; otherwise the same forms
+			/// <param name="name">The package name, as on the feed.</param>
+			/// <param name="version">Omitted for the newest stable release; otherwise the same forms
 			/// <c>#Package</c> accepts — partial (<c>13</c>), exact (<c>13.0.3</c>) or bounded (<c>&gt;=13.0 &lt;14</c>).</param>
-			/// <param name="Optional">When true, an unavailable package yields an empty return instead of an error.</param>
+			/// <param name="optional">When true, an unavailable package yields an empty return instead of an error.</param>
 			/// <returns>A ManagedAssembly over the package's own assemblies — so its types are reachable directly from
 			/// the return value as well as through <c>Clr</c> — or unset (an empty string under
 			/// <c>#Requires AutoHotkey v2.0</c>) when an optional package was unavailable.</returns>
-			public static object staticLoadPackage(object @this, object Name, object Version = null, object Optional = null)
+			public static object staticLoadPackage(object @this, object name, object version = null, object optional = null)
 			{
-				var id = Name.As();
-				var asms = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne(id, Version.As(), Optional.Ab(), out var error);
+				var id = name.As();
+				var asms = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne(id, version.As(), optional.Ab(), out var error);
 
 				if (error != null)
 					return Errors.ErrorOccurred(error);
@@ -95,15 +95,15 @@ namespace Keysharp.Builtins
 			/// This is how an <c>Array</c> reaches its <see cref="IList"/> members and a <c>Map</c> its
 			/// <see cref="IDictionary{TKey, TValue}"/> ones.
 			///
-			/// <para>The result is always a view over <paramref name="Value"/> itself, whatever it is. To reach
+			/// <para>The result is always a view over <paramref name="value"/> itself, whatever it is. To reach
 			/// the .NET object a builtin is a façade over — the toolkit window behind a <c>Gui</c>, the
 			/// <c>HttpClient</c> behind an <c>Ks.Http</c> — call that type's own <c>ToClr()</c>, which exists
 			/// only on the types which have one. Wrapping something already wrapped is the identity.</para>
 			/// </summary>
-			/// <param name="Value">The value to view as a CLR object.</param>
+			/// <param name="value">The value to view as a CLR object.</param>
 			/// <returns>A <c>Ks.Clr</c> object over it.</returns>
-			public static object staticWrap(object @this, object Value)
-				=> Value is ManagedObject ? Value : ManagedInvoke.WrapManaged(Value);
+			public static object staticWrap(object @this, object value)
+				=> value is ManagedObject ? value : ManagedInvoke.WrapManaged(value);
 
 			public static object staticGetNamespaceName(object @this, object managedNamespace)
 			{

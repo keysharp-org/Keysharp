@@ -572,14 +572,14 @@ namespace Keysharp.Builtins
 
 		// `new`, not `override`: construction dispatches by name, so the real signature is declared here and
 		// arity/defaults/named binding follow from it (see Buffer.__New and Any's constructor).
-		public new object __New(object Data = null, object Size = null)
+		public new object __New(object data = null, object size = null)
 		{
-			if (Data == null)
+			if (data == null)
 				ClipboardPermission.EnsureMonitoring("ClipboardAll");
 
-			var bytes = Data == null
+			var bytes = data == null
 						? Platform.Clipboard.CaptureAll()
-						: Env.ExtractClipboardAllBytes(Data, Size is not null ? Size.ToLong() : long.MinValue);
+						: Env.ExtractClipboardAllBytes(data, size is not null ? size.ToLong() : long.MinValue);
 
 			//Passed as the single ByteCount argument, not wrapped in an object[]: Buffer.__New now declares real
 			//parameters, so the byte[] must arrive as the argument itself (it has a dedicated branch there).

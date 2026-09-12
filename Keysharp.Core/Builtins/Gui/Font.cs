@@ -36,16 +36,16 @@ namespace Keysharp.Builtins
 			public Font(params object[] args) : base(args) { }
 
 			/// <summary>Takes <c>Gui.SetFont</c>'s two arguments in the same order.</summary>
-			public object __New(object Options = null, object Name = null)
+			public object __New(object options = null, object name = null)
 			{
-				if (Options is Any || Name is Any)
-					return Errors.TypeErrorOccurred(Options is Any ? Options : Name, typeof(string));
-				var n = Name.As();
+				if (options is Any || name is Any)
+					return Errors.TypeErrorOccurred(options is Any ? options : name, typeof(string));
+				var n = name.As();
 
 				if (n.Length > 0)
 					fontOptions.name = n;
 
-				fontOptions.Parse(Options.As(), tok => Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\"."));
+				fontOptions.Parse(options.As(), tok => Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\"."));
 				return DefaultObject;
 			}
 
@@ -229,9 +229,9 @@ namespace Keysharp.Builtins
 			/// Script: <c>Font.Exists("Consolas")</c>.
 			/// </summary>
 			[Static]
-			public static object Exists(object @this, object Name)
+			public static object Exists(object @this, object name)
 			{
-				var n = Name.As();
+				var n = name.As();
 				return n.Length > 0 && Families.Contains(n);
 			}
 

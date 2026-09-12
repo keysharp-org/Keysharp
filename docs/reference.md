@@ -453,8 +453,8 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ The underlying function object class is named `KeysharpFunc`, instead of `Func`, because C# already contains a built in class named `Func`.
 		+ Scripts only ever use the AutoHotkey name: `MsgBox is Func` works, `MsgBox is KeysharpFunc` does not.
 	+ A function is handed to a callback parameter as a reference: `SetTimer(MyFunc)`. A string there raises `TypeError`, as it does in AutoHotkey v2; a name known only at run time is resolved with a double-deref first, `SetTimer(%"MyFunc"%)`.
-		+ A `Gui` built with an event sink, `Gui(options, title, eventObj)`, takes the name of one of that sink's methods in `OnEvent`/`OnNotify`/`OnCommand`/`OnMessage`, as in AutoHotkey. That is the one place a callback is named; elsewhere `ObjBindMethod(obj, "Method")` binds a method by name.
-		+ `Hotkey()`'s `action` takes an alt-tab action or another hotkey's name, and `Hotstring()`'s `replacement` takes replacement text.
+		+ A `Gui` built with an event sink, `Gui(Options, Title, EventObj)`, takes the name of one of that sink's methods in `OnEvent`/`OnNotify`/`OnCommand`/`OnMessage`, as in AutoHotkey. That is the one place a callback is named; elsewhere `ObjBindMethod(obj, "Method")` binds a method by name.
+		+ `Hotkey()`'s `Action` takes an alt-tab action or another hotkey's name, and `Hotstring()`'s `Replacement` takes replacement text.
 	+ Most built-in functions can also be used as function objects.
 * The `File` object is internally named `KeysharpFile` so that it doesn't conflict with `System.IO.File`. As with `Func` and `Object`, only the AutoHotkey name is usable from a script; the internal name appears solely in low-level diagnostics such as stack traces.
 * Error stack traces start from where the error was thrown, not where it was constructed.
@@ -493,7 +493,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * Deleting a tab via `GuiCtrl.Delete()` does not reassociate the controls that it contains with the next tab. Instead, they are all deleted.
 * The size and positioning of some GUI components will be slightly different than AutoHotkey because WinForms uses different defaults.
 	+ There is an additional positioning option `xc` and `yc` which position the control relative to the container. For example inside a tab `xc+10` would position the control 10 pixels from the left side of the tab control.
-	+ GroupBoxes can be used as containers by calling `GuiObj.UseGroup(groupbox)`, and to exit the group call `GuiObj.UseGroup()`.
+	+ GroupBoxes can be used as containers by calling `GuiObj.UseGroup(GroupBox)`, and to exit the group call `GuiObj.UseGroup()`.
 * The class name for statusbar/statusstrip objects created by Keysharp is "WindowsForms10.Window.8.app.0.2b89eaa_r3_ad1". However, for accessing a statusbar created by another, non .NET program, the class name is still "msctls_statusbar321".
 * Menu items, whether shown or not, have no impact on threading.
 * Using the class name with `ClassNN` on .NET controls gives long, version specific names such as "WindowsForms10.Window.8.app.0.2b89eaa_r3_ad1" for a statusbar/statusstrip.
@@ -516,7 +516,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ On Windows this is the executable's PE subsystem field, which the shell reads before the process starts. It belongs to the generated host shape in `#App` because runtime code cannot substitute for it.
 	+ Without it the executable stays a GUI one, so a double-clicked script never flashes a console window. That is also the trade-off: a console-subsystem executable launched from Explorer gets a console window of its own.
 	+ It is ignored when the script is interpreted or compiled to a `.cks`, since neither writes an executable, and it is inert on Linux and macOS, where executables have no subsystem and a shell always waits.
-* `FileInstall(source, dest, overwrite?)` extracts a file embedded via `#App { Files: [...] }` (matching its canonical script-relative path) to dest. When no matching payload is embedded — including source/in-memory execution — `source` is resolved relative to the script and copied with `FileCopy` semantics; copying a file onto itself is a no-op. Both branches require dest's parent directory to exist, and an existing dest is replaced only when overwrite is true. Unlike Ahk2Exe, Keysharp does not scan `FileInstall` calls to decide what to embed: the final `Files` list is the single authority.
+* `FileInstall(Source, Dest, Overwrite?)` extracts a file embedded via `#App { Files: [...] }` (matching its canonical script-relative path) to `Dest`. When no matching payload is embedded — including source/in-memory execution — `Source` is resolved relative to the script and copied with `FileCopy` semantics; copying a file onto itself is a no-op. Both branches require `Dest`'s parent directory to exist, and an existing `Dest` is replaced only when `Overwrite` is true. Unlike Ahk2Exe, Keysharp does not scan `FileInstall` calls to decide what to embed: the final `Files` list is the single authority.
 * If a script is compiled then none of Keysharp or AutoHotkey command parameters apply.
 
 ### Syntax
@@ -564,15 +564,15 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Targeting an underlying pseudo-thread marks it to exit when it next resumes and reaches a cooperative event/message check (`TryDoEvents`). It does not asynchronously abort managed code.
 		+ A later request made before the target exits replaces its pending exit code.
 	+ `FileGetSize()` supports `G` and `T` for gigabytes and terabytes.
-	+ `ImageSearch()` takes an options string as a fifth parameter, rather than inserted in the string before the `imageFile` parameter.
-	+ `Log(number, base := 10)` is by default base 10, but it can accept a double as the second parameter to specify a custom base.
+	+ `ImageSearch()` takes an options string as a fifth parameter, rather than inserted in the string before the `ImageFile` parameter.
+	+ `Log(Number, Base := 10)` is by default base 10, but it can accept a double as the second parameter to specify a custom base.
 		+ In `SetTimer()`:
 			+ In the callback function, `A_EventInfo` is set to the function object used to create the timer.
 			+ This allows the handler to alter the timer by passing the function object back to another call to `SetTimer()`.
 			+ Timers are not disabled when the program menu is shown.
 	+ `Run/RunWait()` can take an extra string for the argument instead of appending it to the program name string. However, the original functionality still works too.
-		+ The new signature is: `Run/RunWait(target [, workingDir, options, &outputVarPID, args])`.
-	+ `SubStr()` uses a default of 1 for the second parameter, `startingPos`, to relieve the caller of always having to specify it.
+		+ The new signature is: `Run/RunWait(Target [, WorkingDir, Options, &OutputVarPID, Args])`.
+	+ `SubStr()` uses a default of 1 for the second parameter, `StartingPos`, to relieve the caller of always having to specify it.
 * New miscellaneous functions:
 	+ `Collect()`: Calls `GC.Collect()` to force a memory collection.
 		+ This rarely ever has to be used in properly written code.
@@ -581,11 +581,11 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `EnvUpdate()`: Retained from AutoHotkey v1 as a cross-platform environment notification mechanism. Windows broadcasts `WM_SETTINGCHANGE`; Linux publishes pending `EnvSet()` changes to the D-Bus activation environment and systemd user manager; macOS publishes them to the current launchd session. Linux and macOS updates affect future session-managed processes only and are not persistent.
 	+ `FormatCs()`: An alternative to `Format()`. The syntax used in `FormatCs()` is exactly that of `string.Format()` in C#, except with 1-based indexing.
 		+ Full documentation for the C# formatting rules can be found [here](https://learn.microsoft.com/en-us/dotnet/api/system.string.format).
-	+ `Mail(recipients, subject, message, options)`: Sends an email through an SMTP server. Returns once the server has accepted the message.
-		+ `recipients`: One address as a string, or several as an `Array` of strings. An empty `Array`, an empty address, or an entry which is not a string raises.
-		+ `subject`: Subject of the message.
-		+ `message`: Message body.
-		+ `options`: A `Map`. `host` and `from` are required, because SMTP has no default for either. An unrecognized key raises rather than becoming a header. `host`, `from` and `replyto` each also accept a one-element `Array`, so a script assembling options can use one shape throughout.
+	+ `Mail(Recipients, Subject, Message, Options)`: Sends an email through an SMTP server. Returns once the server has accepted the message.
+		+ `Recipients`: One address as a string, or several as an `Array` of strings. An empty `Array`, an empty address, or an entry which is not a string raises.
+		+ `Subject`: Subject of the message.
+		+ `Message`: Message body.
+		+ `Options`: A `Map`. `host` and `from` are required, because SMTP has no default for either. An unrecognized key raises rather than becoming a header. `host`, `from` and `replyto` each also accept a one-element `Array`, so a script assembling options can use one shape throughout.
 			+ "host": Required. The server as "hostname" or "hostname:port". Port 25 if none is given; a bracketed IPv6 literal keeps its own colons.
 			+ "from": Required. The sender's address.
 			+ "cc": A further recipient, or an `Array` of them.
@@ -593,7 +593,7 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ "replyto": The address replies should go to, when it differs from `from`.
 			+ "attachments": A file path, or an `Array` of them. A path which cannot be read raises.
 			+ "headers": A `Map` of additional SMTP header names and values.
-		+ Raises `TypeError` for a `recipients` or `options` of the wrong type, `ValueError` for a missing or misshapen option or an address or port which cannot be parsed, and `OSError` when an attachment cannot be read or the server rejects the message or cannot be reached.
+		+ Raises `TypeError` for `Recipients` or `Options` of the wrong type, `ValueError` for a missing or misshapen option or an address or port which cannot be parsed, and `OSError` when an attachment cannot be read or the server rejects the message or cannot be reached.
 		+ The connection is unauthenticated and unencrypted, so this reaches a relay which accepts the script's machine rather than a provider requiring a login.
 	+ `RandomSeed(Integer)`: Reinitializes the random number generator for the current thread with a specified numerical seed.
 	+ `RequestCapabilities(capabilities*) => Object`: Requests one or more platform permissions and returns an object describing the outcome.
@@ -611,10 +611,10 @@ Controlling another application needs **Automation** permission, granted per tar
 			caps := RequestCapabilities()
 			```
 		+ Prefer `#Requires capability` for scripts that need permissions from startup. Use `RequestCapabilities` directly when you need to check or request permissions at a specific point in script execution, or when you want to inspect the current status.
-	+ `IsComponentAvailable(capability)`: Returns true when the fixed first-party `"parser"` or `"compiler"` deployment unit is installed or embedded, compatible, and loadable. The aliases `"parsing"` and `"compilation"` are accepted. This check loads the requested unit, so checking `"compiler"` can load Roslyn. Unknown names raise a `ValueError`.
-	+ `ValidateScript(code)` and `CompileScript(code)`: Check a script without running it, as the `--validate-syntax` and `--validate` switches do. `code` is a script file path when a file by that name exists, and script source otherwise. `ValidateScript` only parses, with the parser component, so it is fast and loads no Roslyn; `CompileScript` compiles in memory with the compiler component, which also catches lowering and C# errors. Both return `{IsValid, Errors, Warnings}`, where `Errors` and `Warnings` are Arrays of messages (from `ValidateScript`, each prefixed with its file, line and column), and both raise an `Error` when their component is not installed.
-	+ `RunScript(code, callbackOrAsync?, name := "*", executable?)`: Dynamically parses, compiles, and runs the provided code. It requires the compiler component in the calling process. The default name `"*"` reflects that the script is fed to the target process via StdIn rather than loaded from disk. Optionally provide the script name; whether to run it asynchronously (non-unset non-zero `callbackOrAsync` causes async run without a callback); an executable path to run the compiled assembly (defaults to the current process).
-		+ If `callbackOrAsync` is provided a function then it is called after the script has finished with the `ScriptProcess` as the only argument. Over multiple runs `RunScript` is faster than running the process manually and writing to StdIn because of assembly and compilation caching.
+	+ `IsComponentAvailable(Capability)`: Returns true when the fixed first-party `"parser"` or `"compiler"` deployment unit is installed or embedded, compatible, and loadable. The aliases `"parsing"` and `"compilation"` are accepted. This check loads the requested unit, so checking `"compiler"` can load Roslyn. Unknown names raise a `ValueError`.
+	+ `ValidateScript(Code)` and `CompileScript(Code)`: Check a script without running it, as the `--validate-syntax` and `--validate` switches do. `Code` is a script file path when a file by that name exists, and script source otherwise. `ValidateScript` only parses, with the parser component, so it is fast and loads no Roslyn; `CompileScript` compiles in memory with the compiler component, which also catches lowering and C# errors. Both return `{IsValid, Errors, Warnings}`, where `Errors` and `Warnings` are Arrays of messages (from `ValidateScript`, each prefixed with its file, line and column), and both raise an `Error` when their component is not installed.
+	+ `RunScript(Code, CallbackOrAsync?, Name := "*", Executable?)`: Dynamically parses, compiles, and runs the provided code. It requires the compiler component in the calling process. The default name `"*"` reflects that the script is fed to the target process via StdIn rather than loaded from disk. Optionally provide the script name; whether to run it asynchronously (non-unset non-zero `CallbackOrAsync` causes async run without a callback); an executable path to run the compiled assembly (defaults to the current process).
+		+ If `CallbackOrAsync` is provided a function then it is called after the script has finished with the `ScriptProcess` as the only argument. Over multiple runs `RunScript` is faster than running the process manually and writing to StdIn because of assembly and compilation caching.
 		+ Returns a `ScriptProcess` object encapsulating info and I/O for the process. Available properties: `HasExited`, `ExitCode`, `ExitTime` (YYYYMMDDHH24MISS), `StdOut`, `StdErr`, `StdIn` (as `KeysharpFile`). Available methods: `Kill()`.
 * New `Clipboard` class (available from the `KS` module) covering everything the clipboard holds, not just text. `A_Clipboard`, `ClipboardAll()`, `ClipWait()` and `OnClipboardChange()` are unchanged and remain the AutoHotkey-compatible surface.
 	+ There is one clipboard per session, so the class has no instances — every member is used directly, and `Clipboard()` raises an error.
@@ -628,10 +628,10 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ State:
 		+ `Clipboard.IsEmpty`, `Clipboard.Clear()`.
 		+ `Clipboard.Formats => Array`: every advertised format, under the names **this** platform uses (`"HTML Format"`, `"FileDrop"` on Windows; `"text/html"`, `"text/uri-list"` elsewhere). Deliberately not normalized — a script reading it is platform-specific by construction.
-		+ `Clipboard.Has(kind) => Boolean`: `kind` is `"Text"`, `"Image"`, `"Files"`, `"Html"`, `"Rtf"`, or a platform-native format name.
+		+ `Clipboard.Has(Kind) => Boolean`: `Kind` is `"Text"`, `"Image"`, `"Files"`, `"Html"`, `"Rtf"`, or a platform-native format name.
 	+ Raw access — the escape hatch, as non-portable as the format names themselves:
-		+ `Clipboard.GetData(format) => Buffer`: one format's bytes exactly as the platform stores them. This is how private/application formats (Excel's `Biff12`, Visual Studio's `MSDEVColumnSelect`) are read.
-		+ `Clipboard.Set(bag)`: publishes several formats in **one** transaction, so they coexist and the change fires once — `Clipboard.Set({ Text: "Hello", Html: "<b>Hello</b>" })`. Keys are kind names or native format names; values are a String, Buffer, Image, or Array of paths. A `Map` is accepted as well as an object, because an object-literal key must be an identifier and a name like `"HTML Format"` can only be spelled as a Map key.
+		+ `Clipboard.GetData(Format) => Buffer`: one format's bytes exactly as the platform stores them. This is how private/application formats (Excel's `Biff12`, Visual Studio's `MSDEVColumnSelect`) are read.
+		+ `Clipboard.Set(Bag)`: publishes several formats in **one** transaction, so they coexist and the change fires once — `Clipboard.Set({ Text: "Hello", Html: "<b>Hello</b>" })`. Keys are kind names or native format names; values are a String, Buffer, Image, or Array of paths. A `Map` is accepted as well as an object, because an object-literal key must be an identifier and a name like `"HTML Format"` can only be spelled as a Map key.
 	+ Save and restore: `Clipboard.All` (get/set) is the `ClipboardAll()` / `A_Clipboard := saved` pair spelled so the round trip is visible:
 		```
 		saved := Clipboard.All
@@ -639,34 +639,34 @@ Controlling another application needs **Automation** permission, granted per tar
 		Clipboard.All := saved
 		```
 	+ Waiting and events:
-		+ `Clipboard.Wait(timeout?, waitFor?)`: as `ClipWait`, and additionally accepts a kind name — `"Text"`, `"Any"`, `"Image"`, `"Files"`, `"Html"` or `"Rtf"`. `ClipWait` accepts those too.
-		+ `Clipboard.OnChange(callback) => ClipboardHook`: calls `callback(hook, type)` on every change, where type and `A_EventInfo` are 0 (empty), 1 (text or files) or 2 (other), matching the global `OnClipboardChange`. The returned hook is an `EventHook`, managed like a `WinEvent` hook, and `Clipboard.Hooks` lists the live ones. Prefer this over `OnClipboardChange` when the callback is a closure: unregistering there requires the very same function object back. A hook is independent of the `OnClipboardChange` handler chain — its return value is discarded, so it cannot suppress handlers registered there, and its callback runs on its own pseudo-thread. Both spellings drive the same single native clipboard monitor.
+		+ `Clipboard.Wait(Timeout?, WaitFor?)`: as `ClipWait`, and additionally accepts a kind name — `"Text"`, `"Any"`, `"Image"`, `"Files"`, `"Html"` or `"Rtf"`. `ClipWait` accepts those too.
+		+ `Clipboard.OnChange(Callback) => ClipboardHook`: calls `Callback(hook, type)` on every change, where type and `A_EventInfo` are 0 (empty), 1 (text or files) or 2 (other), matching the global `OnClipboardChange`. The returned hook is an `EventHook`, managed like a `WinEvent` hook, and `Clipboard.Hooks` lists the live ones. Prefer this over `OnClipboardChange` when the callback is a closure: unregistering there requires the very same function object back. A hook is independent of the `OnClipboardChange` handler chain — its return value is discarded, so it cannot suppress handlers registered there, and its callback runs on its own pseudo-thread. Both spellings drive the same single native clipboard monitor.
 	+ Platform notes: on a Wayland session driven through a shell extension (Cinnamon/Muffin) the compositor's selection source can advertise only one type, so `Clipboard.Set` and `ClipboardAll` restore a single, most-useful representation rather than every format.
 * New debugging functions:
 	+ `ShowDebug()`: Shows the main window and focuses the debug output tab.
 	+ `OutputDebugLine()`: The same as `OutputDebug()` but appends a linebreak at the end of the string.
 * New `Crypt` class, holding hashing, key derivation, symmetric encryption and cryptographically secure random values (`#Import "Ks" { Crypt }`):
-	+ A String or `StringBuffer` is taken as its **UTF-8** bytes, so a digest is the one any other tool prints for the same text. Pass an `encoding` — the names `A_FileEncoding` takes — to use a different one, and note that a name which cannot be resolved raises rather than falling back. A `Buffer` or an `Array` of bytes is used as it stands; an open `File` is accepted by anything that hashes, but not by `Crypt.Encrypt`.
+	+ A String or `StringBuffer` is taken as its **UTF-8** bytes, so a digest is the one any other tool prints for the same text. Pass an `Encoding` — the names `A_FileEncoding` takes — to use a different one, and note that a name which cannot be resolved raises rather than falling back. A `Buffer` or an `Array` of bytes is used as it stands; an open `File` is accepted by anything that hashes, but not by `Crypt.Encrypt`.
 	+ A digest is returned as uppercase hexadecimal; compare digests case-insensitively, since the tool a checksum came from may print it in lowercase.
-	+ `Crypt.Hash(value, algorithm := "SHA256", encoding := "UTF-8") => String`: hashes with `MD5`, `SHA1`, `SHA256`, `SHA384`, `SHA512` or `CRC32`, spelled with or without the `-`. An open `File` is read as a stream and left at the position it was on.
-	+ `Crypt.HashFile(path, algorithm := "SHA256") => String`: the same over a file, read as a stream so that its size does not matter.
-	+ `Crypt.CRC32(value, encoding := "UTF-8") => Integer`: Calculates the CRC32 polynomial of an object. `Crypt.Hash(value, "CRC32")` returns the same checksum as hexadecimal.
-	+ `Crypt.Encrypt(value, key, algorithm := "AES", mode := "CBC", iv?, encoding := "UTF-8") => Buffer` and `Crypt.Decrypt(...)` with the same parameters: symmetric encryption. `AES` is the only cipher so far and `mode` is `CBC`, `ECB` or `CFB`; the cipher is a parameter rather than part of the method name so that another one is a value this accepts, not a new method.
-		+ With *iv* omitted, each call draws a random 16-byte initialization vector and writes it in front of the ciphertext, where `Crypt.Decrypt` reads it back. Encrypting the same text twice therefore gives different results, which is the point: a fixed vector lets anyone holding the output see which encrypted values are equal. Supply *iv* only to match a format defined elsewhere — it is then used as it stands and is **not** written to the result, so `Crypt.Decrypt` needs the same one back.
-		+ `mode := "GCM"` **authenticates** as well as encrypts: an altered message is detected on decryption and raises, where a chaining mode would decrypt it to rubbish without complaint. Its nonce is 12 bytes rather than 16, and its authentication tag is appended to the result. Prefer it unless a format defined elsewhere dictates otherwise.
-		+ `mode := "CFB"` is CFB8, the feedback size .NET and Windows CNG both default to — not the CFB128 that OpenSSL's plain `-aes-256-cfb` means.
-	+ `Crypt.RandomBytes(count) => Buffer` returns cryptographically secure bytes for a vector, a salt or a key.
-	+ `Crypt.PBKDF2(password, salt, iterations := 600000, length := 32, algorithm := "SHA256", encoding := "UTF-8") => Buffer` stretches a password into key material, which is what makes a passphrase usable as a key: `Crypt.Encrypt` otherwise takes the key exactly as it is given, zero-padded to the cipher's key size. *algorithm* is `SHA1`, `SHA256`, `SHA384` or `SHA512` — .NET rejects `MD5` for derivation on every platform, so it is not offered. The salt need not be secret but must differ per password, and must be stored alongside whatever the key protects.
-	+ `Crypt.SecureRandom(min, max) => Double`: Generates a secure cryptographic random number.
-		+ Returns an `Integer` if neither argument is a `Double`. The range includes *max*, as `Random`'s does.
-	+ Data encrypted by the earlier `AES()` function does **not** decrypt with `Crypt.Decrypt` as it stands. That function derived its vector from the key instead of storing one, which is what made it deterministic, and that derivation has been removed. The vector it used was the first 16 bytes of SHA-1 over the 32-byte zero-padded key — with the key taken as UTF-16, since that was the old default encoding — so old data can still be read by rebuilding that vector and passing it as *iv* along with `encoding := "UTF-16"`. The key padding, CBC mode and PKCS7 padding are otherwise unchanged.
+	+ `Crypt.Hash(Value, Algorithm := "SHA256", Encoding := "UTF-8") => String`: hashes with `MD5`, `SHA1`, `SHA256`, `SHA384`, `SHA512` or `CRC32`, spelled with or without the `-`. An open `File` is read as a stream and left at the position it was on.
+	+ `Crypt.HashFile(Path, Algorithm := "SHA256") => String`: the same over a file, read as a stream so that its size does not matter.
+	+ `Crypt.CRC32(Value, Encoding := "UTF-8") => Integer`: Calculates the CRC32 polynomial of an object. `Crypt.Hash(Value, "CRC32")` returns the same checksum as hexadecimal.
+	+ `Crypt.Encrypt(Value, Key, Algorithm := "AES", Mode := "CBC", IV?, Encoding := "UTF-8") => Buffer` and `Crypt.Decrypt(...)` with the same parameters: symmetric encryption. `AES` is the only cipher so far and `Mode` is `CBC`, `ECB` or `CFB`; the cipher is a parameter rather than part of the method name so that another one is a value this accepts, not a new method.
+		+ With *IV* omitted, each call draws a random 16-byte initialization vector and writes it in front of the ciphertext, where `Crypt.Decrypt` reads it back. Encrypting the same text twice therefore gives different results, which is the point: a fixed vector lets anyone holding the output see which encrypted values are equal. Supply *IV* only to match a format defined elsewhere — it is then used as it stands and is **not** written to the result, so `Crypt.Decrypt` needs the same one back.
+		+ `Mode := "GCM"` **authenticates** as well as encrypts: an altered message is detected on decryption and raises, where a chaining mode would decrypt it to rubbish without complaint. Its nonce is 12 bytes rather than 16, and its authentication tag is appended to the result. Prefer it unless a format defined elsewhere dictates otherwise.
+		+ `Mode := "CFB"` is CFB8, the feedback size .NET and Windows CNG both default to — not the CFB128 that OpenSSL's plain `-aes-256-cfb` means.
+	+ `Crypt.RandomBytes(Count) => Buffer` returns cryptographically secure bytes for a vector, a salt or a key.
+	+ `Crypt.PBKDF2(Password, Salt, Iterations := 600000, Length := 32, Algorithm := "SHA256", Encoding := "UTF-8") => Buffer` stretches a password into key material, which is what makes a passphrase usable as a key: `Crypt.Encrypt` otherwise takes the key exactly as it is given, zero-padded to the cipher's key size. *Algorithm* is `SHA1`, `SHA256`, `SHA384` or `SHA512` — .NET rejects `MD5` for derivation on every platform, so it is not offered. The salt need not be secret but must differ per password, and must be stored alongside whatever the key protects.
+	+ `Crypt.SecureRandom(Min, Max) => Double`: Generates a secure cryptographic random number.
+		+ Returns an `Integer` if neither argument is a `Double`. The range includes *Max*, as `Random`'s does.
+	+ Data encrypted by the earlier `AES()` function does **not** decrypt with `Crypt.Decrypt` as it stands. That function derived its vector from the key instead of storing one, which is what made it deterministic, and that derivation has been removed. The vector it used was the first 16 bytes of SHA-1 over the 32-byte zero-padded key — with the key taken as UTF-16, since that was the old default encoding — so old data can still be read by rebuilding that vector and passing it as *IV* along with `Encoding := "UTF-16"`. The key padding, CBC mode and PKCS7 padding are otherwise unchanged.
 * New file functions:
-	+ `FileFullPath(filename) => String`: Returns the full path to filename.
+	+ `FileFullPath(Filename) => String`: Returns the full path to `Filename`.
 	+ `FileCreateTemp() => String`: Creates an empty temporary file and return its full path.
 * New math functions:
-	+ `Sinh(value) => Double`
-	+ `Cosh(value) => Double`
-	+ `Tanh(value) => Double`
+	+ `Sinh(Number) => Double`
+	+ `Cosh(Number) => Double`
+	+ `Tanh(Number) => Double`
 * New RegEx functions:
 	+ `RegExMatchCs()` and `RegExReplaceCs()` which use the C# style regular expression syntax rather than PCRE2.
 		+ `OutputVar` in `RegExMatchCs()` will be of type `RegExMatchInfo`, the same class `RegExMatch()` produces, and a miss stores an empty value exactly as `RegExMatch()` does.
@@ -691,34 +691,34 @@ Controlling another application needs **Automation** permission, granted per tar
 				+ -This is not supported.
 			+ `\K` is not supported, instead, try using `(?<=abc)`.
 * New string functions:
-	+ `ReplaceLineEndings(str, endOfLine?) => String`: Makes all line endings in a string (CR LF, CR, LF, form feed, NEL, U+2028 and U+2029) match `endOfLine`, which defaults to `` `n `` on every platform.
+	+ `ReplaceLineEndings(Str, EndOfLine?) => String`: Makes all line endings in a string (CR LF, CR, LF, form feed, NEL, U+2028 and U+2029) match `EndOfLine`, which defaults to `` `n `` on every platform.
 * Window functions:
-	+ `WinFromPoint(x, y)`: Gets the window at a specific screen position.
+	+ `WinFromPoint(X, Y)`: Gets the window at a specific screen position.
 	+ `WinMinimizeAllUndo()`: Unminimizes top-level windows without clearing maximization; respects `DetectHiddenWindows`. Unlike AHK's shell undo, needs no preceding `WinMinimizeAll()` call.
 * New class methods:
 	+ `Array`:
 		+ All comparisons compare the actual underlying values, so `"1" != 1`.
 			+ This differs from the comparison rules in conditional statements, but makes more sense when searching arrays.
-		+ `Contains(value) => Boolean`: Returns `true` if `value` is contained in the array, else `false`.
-		+ `Filter(callback: (value [, index]) => Boolean) => Array`: Applies a filter to each element of the array and returns a new array consisting of all elements for which `callback` returned `true`.
-		+ `FindIndex(callback: (value [, index]) => Boolean, startIndex := 1) => Integer`: Returns the index of the first element for which `callback` returned `true`, starting at `startIndex`. Returns 0 if `callback` never returned `true`.
-			+ If `startIndex` is negative, the search starts from the end of the array and moves toward the beginning.
-		+ `IndexOf(value, startIndex := 1) => Integer`: Returns the index of the first item in the array which equals value, starting at `startIndex`. Returns 0 if value is not found.
-			+ If `startIndex` is negative, the search starts from the end of the array and moves toward the beginning.
-		+ `Join(separator := ',') => String`: Joins together the string representation of all array elements, separated by `separator`.
-		+ `Map(callback: (value [, index]) => Any, startIndex := 1) => Array`: Maps each element of the array, starting at `startIndex`, into a new array where the mapping in `callback` performs some operation.
+		+ `Contains(Value) => Boolean`: Returns `true` if `Value` is contained in the array, else `false`.
+		+ `Filter(Callback: (value [, index]) => Boolean) => Array`: Applies a filter to each element of the array and returns a new array consisting of all elements for which `Callback` returned `true`.
+		+ `FindIndex(Callback: (value [, index]) => Boolean, StartIndex := 1) => Integer`: Returns the index of the first element for which `Callback` returned `true`, starting at `StartIndex`. Returns 0 if `Callback` never returned `true`.
+			+ If `StartIndex` is negative, the search starts from the end of the array and moves toward the beginning.
+		+ `IndexOf(Value, StartIndex := 1) => Integer`: Returns the index of the first item in the array which equals value, starting at `StartIndex`. Returns 0 if value is not found.
+			+ If `StartIndex` is negative, the search starts from the end of the array and moves toward the beginning.
+		+ `Join(Separator := ',') => String`: Joins together the string representation of all array elements, separated by `Separator`.
+		+ `Map(Callback: (value [, index]) => Any, StartIndex := 1) => Array`: Maps each element of the array, starting at `StartIndex`, into a new array where the mapping in `Callback` performs some operation.
 			```
 			lam := (x, i) => x * i
 			arr := [10, 20, 30]
 			arr2 := arr.Map(lam) ; [10, 40, 90]
 			```
-		+ `Remove(value) => Boolean`: Removes the first occurrence of `value` and returns `true` if one was found and removed, else `false`. Omitting `value` removes the first element which has no value. A match is decided by `IndexOf`'s rule, which `Contains` uses too.
-		+ `Sort(callback: (a, b) => Integer) => this`: Sorts the array in place. The callback should use the usual logic of returning -1 when `a < b`, 0 when `a == b` and 1 otherwise.	
+		+ `Remove(Value) => Boolean`: Removes the first occurrence of `Value` and returns `true` if one was found and removed, else `false`. Omitting `Value` removes the first element which has no value. A match is decided by `IndexOf`'s rule, which `Contains` uses too.
+		+ `Sort(Callback: (a, b) => Integer) => this`: Sorts the array in place. The callback should use the usual logic of returning -1 when `a < b`, 0 when `a == b` and 1 otherwise.
 	+ `Buffer`:
 		+ `__Item[]`: Indexer which can be used to read a byte at a 1-based offset.
 			+ Throws an `IndexError` if the offset out of range.
 	+ `String`:
-		+ `String.StartsWith(token [,comparison]) => Boolean` and `String.EndsWith(token [,comparison]) => Boolean`: Determines if the beginning or end of a string start/end with a given string.
+		+ `String.StartsWith(Token [, CaseSense]) => Boolean` and `String.EndsWith(Token [, CaseSense]) => Boolean`: Determines if the beginning or end of a string start/end with a given string.
 * Modified/extended accessors:
 	+ `A_EventInfo` is not limited to positive values when reporting the mouse wheel scroll amount.
 		+ When scrolling up, the value will be positive, and negative when scrolling down.
@@ -794,9 +794,9 @@ Controlling another application needs **Automation** permission, granted per tar
 			Json.Encode(Map("ok", 1 > 0))   ; {"ok":true}
 			Json.Encode(Map("ok", 1))       ; {"ok":1}
 			```
-		+ `Boolean(value) => Boolean`: converts a value, deciding it exactly as `if` would — `Boolean("")` and `Boolean("0")` are false, `Boolean("x")` and `Boolean([])` are true. An unset value raises, as `if` on an unset variable does.
+		+ `Boolean(Value) => Boolean`: converts a value, deciding it exactly as `if` would — `Boolean("")` and `Boolean("0")` are false, `Boolean("x")` and `Boolean([])` are true. An unset value raises, as `if` on an unset variable does.
 	+ `Clr`: Experimental CLR interop with regular AutoHotkey syntax, meaning easy access to CLR libraries.
-		+ `Clr.Load(asmOrPath)` loads a CLR assembly from a dll file or assembly name, and returns a `ManagedAssembly` or `ManagedNamespace` object. Example: `System := Clr.Load("System")`
+		+ `Clr.Load(AssemblyOrPath)` loads a CLR assembly from a dll file or assembly name, and returns a `ManagedAssembly` or `ManagedNamespace` object. Example: `System := Clr.Load("System")`
 			+ `ManagedNamespace` can be accessed with property access syntax to get namespaces and types (`ManagedType`). Example: `linq := System.Linq.Enumerable`
 			+ `ManagedType` may be accessed for static methods/properties, or called to create a new `ManagedInstance`.
 			+ `ManagedInstance` may be accessed with normal AutoHotkey syntax for properties, methods, and indexer access. Example: `linq.Where(nums, isOdd)`
@@ -907,21 +907,21 @@ Controlling another application needs **Automation** permission, granted per tar
 			f.Close()
 			```
 		+ There is no WebSocket, HTTP server, multipart body, cookie inspection or retry policy. `System.Net.WebSockets` and `System.Net.Sockets` are reachable through `Clr` on every platform.
-	+ `Json`: Converts between JSON text and script values. Available from the `KS` module: `#Import "Ks" { Json }`, then `Json.Encode(value)` and `Json.Decode(text)`.
-		+ `Json.Encode(value [, indent, nullValue]) => String`: Returns the JSON text for a script value.
+	+ `Json`: Converts between JSON text and script values. Available from the `KS` module: `#Import "Ks" { Json }`, then `Json.Encode(Value)` and `Json.Decode(JsonText)`.
+		+ `Json.Encode(Value [, Indent, NullValue]) => String`: Returns the JSON text for a script value.
 			+ A `Map` becomes a JSON object, an `Array` becomes a JSON array, and any other object contributes its own value properties (a dynamic property is skipped rather than invoked, because encoding a value must not run script code). A `Map` enumerates in sorted key order, so encoding one sorts its keys and the same map always produces the same text regardless of insertion order.
-			+ `indent` follows the convention of JavaScript's `JSON.stringify` and Python's `json.dumps`: omitted, `""` or `0` writes the compact single-line form (the default); a number writes that many spaces per level; a string of spaces **or** of tabs is used as the indent unit itself, as in ``Json.Encode(value, "`t")``. The widest indent is 127; a mix of spaces and tabs, or any other string, raises a `ValueError`.
+			+ `Indent` follows the convention of JavaScript's `JSON.stringify` and Python's `json.dumps`: omitted, `""` or `0` writes the compact single-line form (the default); a number writes that many spaces per level; a string of spaces **or** of tabs is used as the indent unit itself, as in ``Json.Encode(Value, "`t")``. The widest indent is 127; a mix of spaces and tabs, or any other string, raises a `ValueError`.
 			+ Indented output separates lines with a single line feed on every platform — deliberately not the platform line ending, so that the same value always produces the same bytes and a hash taken over encoded JSON (a lock file, a cache key) is not host-dependent.
 			+ Quotes are escaped but non-ASCII text is not, so `Json.Encode("äöü")` is `"äöü"` rather than a run of `\uXXXX` escapes.
 			+ A reference cycle, or nesting deeper than 128 levels, raises a `ValueError`. Two distinct but equal containers are not a cycle.
-		+ `Json.Decode(text [, caseSense := true, nullValue])`: Returns the script value for JSON text.
+		+ `Json.Decode(JsonText [, CaseSense := true, NullValue])`: Returns the script value for JSON text.
 			+ A JSON object becomes a `Map` and a JSON array becomes an `Array`. An integral number becomes an `Integer`, and anything else — including a value too large for a 64-bit integer — becomes a `Float`.
-			+ `caseSense` is the case sensitivity given to **every** `Map` in the result, spelled as for `Map.CaseSense`: `true` (the default, matching `Map()`), `false`, or `"Locale"`. It has to be chosen here because `Map.CaseSense` cannot be assigned once a map holds entries. With `false`, keys differing only in case collapse into a single entry, as they do in any case-insensitive `Map`.
+			+ `CaseSense` is the case sensitivity given to **every** `Map` in the result, spelled as for `Map.CaseSense`: `true` (the default, matching `Map()`), `false`, or `"Locale"`. It has to be chosen here because `Map.CaseSense` cannot be assigned once a map holds entries. With `false`, keys differing only in case collapse into a single entry, as they do in any case-insensitive `Map`.
 			+ Trailing commas and `//` and `/* */` comments are accepted, because hand-written configuration files commonly carry them. Everything else follows the JSON grammar; malformed text, or nesting deeper than the 128 levels `Encode` also allows, raises a `ValueError`.
 		+ A `Boolean` — the `true` and `false` keywords, or any comparison, negation or `Map.Has()` result — is written as JSON `true`/`false`, where the Integer 1 or 0 is written as a number. That is what makes booleans survive a round trip, and `x is Boolean` is what tells the two apart in a decoded document.
 		+ Nulls: JSON has a `null`; the language has no value a container can hold for it. With no marker a JSON `null` decodes to **unset**, which means what `unset` means everywhere else — a `Map` key is simply absent, and an `Array` element is a hole that keeps the array's `Length`.
 			+ So `Json.Decode('{"a":null,"b":""}')` gives a Map with only `b`, and `Json.Decode('[1,null,3]')` gives a 3-element Array whose element 2 is a hole. `Has()` is the test, and a `null` no longer collides with an empty string.
-			+ `nullValue` overrides that on `Decode` — it is what a JSON `null` becomes — and on `Encode` it is the value written back out as `null`. Supply the same marker to both to tell a `null` apart from an *absent* key, which is the one distinction unset cannot carry.
+			+ `NullValue` overrides that on `Decode` — it is what a JSON `null` becomes — and on `Encode` it is the value written back out as `null`. Supply the same marker to both to tell a `null` apart from an *absent* key, which is the one distinction unset cannot carry.
 			+ `Encode` has no default marker, because defaulting it to anything would silently turn every occurrence of that value into a null.
 			+ An object marker is matched by identity, so it cannot collide with data; any other value is matched by value, which is a caller deliberately nominating every occurrence of it.
 			```
@@ -1263,25 +1263,25 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ `SetForeColor()`: Sets the fore (text) color of a menu item.
 			+ `MenuItemCount`: Gets the number of sub items within a menu.
 		+ `ListView`:
-			+ `DeleteCol(col) => Boolean` Removes a column and returns `true` if the column was found and deleted, else `false`.
+			+ `DeleteCol(Column) => Boolean` Removes a column and returns `true` if the column was found and deleted, else `false`.
 		+ `TabControl`:
-			+ `SetTabIcon(tabIndex, imageIndex)`: Relieves the caller of having to use `SendMessage()`.
+			+ `SetTabIcon(TabIndex, ImageIndex)`: Relieves the caller of having to use `SendMessage()`.
 		+ `TreeView`:
-			+ `GetNode(nodeIndex) => TreeNode`: Retrieves a raw Winforms `TreeNode` object based on the passed in ID.
+			+ `GetNode(ItemID) => TreeNode`: Retrieves a raw Winforms `TreeNode` object based on the passed in ID.
 		+ `RichEdit`: the control returned by `Gui.Add("RichEdit", ...)` carries its own members, because a range of characters in it has a font, two colours and a paragraph of its own. Every character position is 1-based and indexes the same text `Value` returns, one character per line break — so a position computed with `InStr()` or `RegExMatch()` over `Value` can be handed straight to `SetFormat()`. A position of `0` means "the current selection" wherever a range is asked for.
 			+ Content: `RichText` (the whole control as RTF), `SelectedText`, `SelectedRichText`, `TextLength`, `LineCount`, `Modified`, `ReadOnly`, `WordWrap`, `DetectUrls`, `HideSelection`, `Zoom`.
-			+ Selection and caret: `SelectionStart`, `SelectionLength`, `CurrentLine`, `CurrentCol`, `FirstVisibleLine`, `Select(start [, length])`, `SelectAll()`, `ScrollCaret()`.
-			+ Lines and positions: `GetLine(line)`, `LineLength(line)`, `LineFromPos(pos)`, `PosFromLine(line)`, `PosFromPoint(x, y)`, `PointFromPos(pos) => {X, Y}`.
-			+ Editing: `CanUndo`, `CanRedo`, `Undo()`, `Redo()`, `ClearUndo()`, `Cut()`, `Copy()`, `Paste()`, `Append(text)`, `Replace(start, length, text)`, `Find(needle [, start, options])` where the options are any of `MatchCase`, `WholeWord` and `Reverse`. `Find()` reports the 1-based position or `0` and leaves the selection alone.
-			+ Formatting: `SetFormat(start, length [, options, fontName])` and `GetFormat([start, length]) => Font`, plus `GetBackColor([start, length])` and the paragraph pair `SetParagraph(start, length, options)` / `GetParagraph([start, length])`. The formatting options are `Gui.SetFont`'s, extended with `Background<colour>` and `BackgroundDefault`; a `Ks.Font` object is accepted in their place. Anything the options do not mention is left as it was, which is what lets a highlighter colour a token without also deciding its size or weight — and, read back, an attribute that is not the same throughout the range comes back as `""`, the same as an unset one on any other `Ks.Font`. The paragraph options are `Left`, `Center`, `Right`, `Indent<n>`, `HangingIndent<n>`, `RightIndent<n>`, `Bullet` and `-Bullet`; `GetParagraph` reads only the paragraph the range starts in and returns them as a string `SetParagraph` accepts.
+			+ Selection and caret: `SelectionStart`, `SelectionLength`, `CurrentLine`, `CurrentCol`, `FirstVisibleLine`, `Select(Start [, Length])`, `SelectAll()`, `ScrollCaret()`.
+			+ Lines and positions: `GetLine(Line)`, `LineLength(Line)`, `LineFromPos(Pos)`, `PosFromLine(Line)`, `PosFromPoint(X, Y)`, `PointFromPos(Pos) => {X, Y}`.
+			+ Editing: `CanUndo`, `CanRedo`, `Undo()`, `Redo()`, `ClearUndo()`, `Cut()`, `Copy()`, `Paste()`, `Append(Text)`, `Replace(Start, Length, Text)`, `Find(Needle [, Start, Options])` where the options are any of `MatchCase`, `WholeWord` and `Reverse`. `Find()` reports the 1-based position or `0` and leaves the selection alone.
+			+ Formatting: `SetFormat(Start, Length [, Options, FontName])` and `GetFormat([Start, Length]) => Font`, plus `GetBackColor([Start, Length])` and the paragraph pair `SetParagraph(Start, Length, Options)` / `GetParagraph([Start, Length])`. The formatting options are `Gui.SetFont`'s, extended with `Background<colour>` and `BackgroundDefault`; a `Ks.Font` object is accepted in their place. Anything the options do not mention is left as it was, which is what lets a highlighter colour a token without also deciding its size or weight — and, read back, an attribute that is not the same throughout the range comes back as `""`, the same as an unset one on any other `Ks.Font`. The paragraph options are `Left`, `Center`, `Right`, `Indent<n>`, `HangingIndent<n>`, `RightIndent<n>`, `Bullet` and `-Bullet`; `GetParagraph` reads only the paragraph the range starts in and returns them as a string `SetParagraph` accepts.
 			+ Batching: `BeginUpdate()` / `EndUpdate()` freeze the control and remember what was selected and scrolled to, so a re-highlight neither flickers nor drags the caret across the document. Pairs nest. **Wrap a whole highlighting pass in one**: on Windows it is worth roughly 30x, since without it each formatted range repaints.
-			+ Files: `LoadFile(path [, format])` and `SaveFile(path [, format])`, where the format is `"RTF"`, `"Text"`, or omitted to go by the file's extension.
+			+ Files: `LoadFile(Path [, Format])` and `SaveFile(Path [, Format])`, where the format is `"RTF"`, `"Text"`, or omitted to go by the file's extension.
 			+ Events: `Change` (as `Edit` has, and formatting does not raise it), plus `SelectionChange(ctrl, start, length)` and `LinkClick(ctrl, text, start, length)`.
 			+ Platform differences: only the Win32 control serves the whole surface. Off Windows there is no undo history (`CanUndo`/`CanRedo` are false and `Undo()`/`Redo()` do nothing), `DetectUrls` and `HideSelection` read back as false, `Zoom` scales the control's own font instead of magnifying, `GetFormat()` reports the formatting at the start of the range rather than detecting variation across it, and `SelectedRichText`, `SetParagraph`/`GetParagraph`, `PosFromPoint`/`PointFromPos` and `FirstVisibleLine` raise an error saying so. On Linux specifically, GTK's text widget knows nothing of RTF at all, so `RichText` and the RTF form of `LoadFile`/`SaveFile` raise as well; colours, fonts and styles are unaffected, and they are what syntax highlighting needs.
 	+ New classes:
 		+ `WinEvent`: For subscribing to window events (active/foreground change, appearance, disappearance, move/resize, minimize, restore, title change, and caret movement) across platforms, modeled on the popular AutoHotkey `WinEvent` library.
 			+ It is part of the `KS` module; import it with `#import KS { WinEvent }`.
-			+ Each subscription is created by calling a `WinEvent` static method, which returns a `WinEvent` hook whose callback fires until it is stopped. The criteria use standard `WinTitle` matching and follow the reference library's order without its `count`: `winTitle`, then the rarely-used `winText`/`excludeTitle`/`excludeText`.
+			+ Each subscription is created by calling a `WinEvent` static method, which returns a `WinEvent` hook whose callback fires until it is stopped. The criteria use standard `WinTitle` matching and follow the reference library's order without its `count`: `WinTitle`, then the rarely-used `WinText`/`ExcludeTitle`/`ExcludeText`.
 			+ The callback receives `(hookObject, hwnd, dwmsEventTime)`. Event-specific extras arrive in `A_EventInfo` instead: `Move()` puts the window's new position and size there as an object with `x`, `y`, `w` and `h` (matching `WinGetPos()`), and `CaretMove()` the caret's rectangle in the same shape but in screen coordinates. Every other event type keeps the event time in `A_EventInfo`.
 			+ The registration-time values of `DetectHiddenWindows`, `DetectHiddenText`, and the title-match mode are captured and used for matching (as in the reference library); `Exist()` additionally forces hidden detection on. `Active()` also fires when the active window's title changes, and `NotExist()` fires when a window is destroyed or — for a `DetectHiddenWindows`-off subscription — hidden or cloaked. `Exist()`/`NotExist()` replace the reference library's `Create()`/`Close()` (those were just `Exist()`/`NotExist()` with `DetectHiddenWindows` on).
 			+ `CaretMove()` reports the caret owner's *top-level* window (not the focused edit control), suppresses events whose caret position is unchanged, and rides on the same accessibility plumbing as `CaretGetPos()` — so an application that draws its own caret without exposing it to accessibility reports nothing on any platform, and the Linux/macOS sources additionally need AT-SPI enabled / Accessibility permission granted.
@@ -1290,14 +1290,14 @@ Controlling another application needs **Automation** permission, granted per tar
 				class WinEvent extends EventHook
 				{
 					; Event subscriptions: (Callback, WinTitle, WinText, ExcludeTitle, ExcludeText)
-					static Active(callback [, winTitle, winText, excludeTitle, excludeText]) => WinEvent  ; The foreground/active window changed (or the active window's title changed).
-					static Exist(callback [, winTitle, ...]) => WinEvent        ; A matching window appeared (created, shown, or its title changed to match). Fires once per window; DetectHiddenWindows-aware.
-					static NotExist(callback [, winTitle, ...]) => WinEvent     ; A matching window disappeared (destroyed, hidden/cloaked, or its title changed to no longer match).
-					static Move(callback [, winTitle, ...]) => WinEvent         ; A window moved or resized (every event is delivered as-is, not coalesced).
-					static Minimize(callback [, winTitle, ...]) => WinEvent     ; A window was minimized.
-					static Restore(callback [, winTitle, ...]) => WinEvent      ; A window was restored from the minimized state.
-					static TitleChange(callback [, winTitle, ...]) => WinEvent  ; A window's title changed.
-					static CaretMove(callback [, winTitle, ...]) => WinEvent    ; The text caret moved inside a window; A_EventInfo holds its screen rectangle.
+					static Active(Callback [, WinTitle, WinText, ExcludeTitle, ExcludeText]) => WinEvent  ; The foreground/active window changed (or the active window's title changed).
+					static Exist(Callback [, WinTitle, ...]) => WinEvent        ; A matching window appeared (created, shown, or its title changed to match). Fires once per window; DetectHiddenWindows-aware.
+					static NotExist(Callback [, WinTitle, ...]) => WinEvent     ; A matching window disappeared (destroyed, hidden/cloaked, or its title changed to no longer match).
+					static Move(Callback [, WinTitle, ...]) => WinEvent         ; A window moved or resized (every event is delivered as-is, not coalesced).
+					static Minimize(Callback [, WinTitle, ...]) => WinEvent     ; A window was minimized.
+					static Restore(Callback [, WinTitle, ...]) => WinEvent      ; A window was restored from the minimized state.
+					static TitleChange(Callback [, WinTitle, ...]) => WinEvent  ; A window's title changed.
+					static CaretMove(Callback [, WinTitle, ...]) => WinEvent    ; The text caret moved inside a window; A_EventInfo holds its screen rectangle.
 					static Hooks => Array        ; Every live WinEvent hook, oldest first, from every thread. A snapshot.
 
 					EventName => String          ; The event, e.g. "Active" or "Move".
@@ -1386,8 +1386,8 @@ Controlling another application needs **Automation** permission, granted per tar
 * Removed/reduced functions:
 	+ `Download()`: Supports only the `*0` option; any other numerical value raises a `ValueError`. `http`, `https` and `ftp` URLs are supported; a `gopher` URL raises. An HTTP status outside 2xx saves whatever the server sent, as in AutoHotkey. An FTP directory URL saves the server's own plain-text `LIST` output, where WinInet writes an HTML listing; a path that is neither a file nor a directory raises rather than leaving an empty file.
 	+ `ListLines()`: Non-functional because C# doesn't support it.
-	+ `FormatTime()`: The `R`, `Dn` or `Tn` parameters in  are not supported, except for 0x80000000 to disallow user overrides.
-		+ If you want to specify a particular format or order, do it in the format argument. There is no need or reason to have one argument alter the other.
+	+ `FormatTime(YYYYMMDDHH24MISS?, Format?)`: The `R`, `Dn` or `Tn` options in `YYYYMMDDHH24MISS` are not supported, except for 0x80000000 to disallow user overrides.
+		+ Specify a particular format or order with `Format`.
 		+ [Here](https://docs.microsoft.com/en-us/dotnet/standard/base-types/custom-date-and-time-format-strings) is a list of the C# style `DateTime` formatters which are supported.
 	+ `ObjAddRef()` and `ObjPtrAddRef()` do not have an effect for non-COM objects. Instead, use the following:
 		+ `newref := theobj ; adds 1 to the reference count`
@@ -1415,9 +1415,9 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Only `Tab3` is supported, no older tab functionality is present.
 		+ When adding a `ListView`, the `Count` option is not supported because C# can't preallocate memory for a `ListView`.
 	+ Removed/reduced functions:
-		+ `IL_Create()` only takes one parameter: `largeIcons`. `initialCount` and `growCount` are no longer needed because memory is handled internally.
+		+ `IL_Create()` only takes one parameter: `LargeIcons`. `InitialCount` and `GrowCount` are no longer needed because memory is handled internally.
 		+ `LoadPicture()` does not accept a `GDI+` argument as an option.
-		+ `PixelGetColor()` ignores the `mode` parameter.
+		+ `PixelGetColor()` ignores the `Mode` parameter.
 		+ `DirSelect()`:
 			+ The `1`, `3` and `5` options don't apply and the New Folder button will always be shown.
 			+ Modality cannot be configured with `Gui.Opt("+OwnDialogs")` because the folder select dialog is always modal.

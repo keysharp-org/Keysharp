@@ -24,13 +24,13 @@ namespace Keysharp.Builtins
 													  excludeTitle,
 													  excludeText);
 
-		public static string EditGetLine(object N,
+		public static string EditGetLine(object n,
 										 object controlID,
 										 object winTitle = null,
 										 object winText = null,
 										 object excludeTitle = null,
 										 object excludeText = null) => Platform.Control.EditGetLine(
-											 N.Ai(),
+											 n.Ai(),
 											 controlID,
 											 winTitle,
 											 winText,

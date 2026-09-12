@@ -36,14 +36,14 @@ namespace Keysharp.Builtins
 			/// Taskbar(Hwnd) -- the taskbar button of the window with that handle. The object carries nothing but
 			/// the handle: the shell copies whatever it is given, so it can be built for one call and dropped.
 			/// </summary>
-			public object __New(object Hwnd)
+			public object __New(object hwnd)
 			{
-				var handle = Hwnd.Al();
+				var handle = hwnd.Al();
 
 				if (handle == 0)
-					return Errors.ValueErrorOccurred("Hwnd must name a window.", Hwnd);
+					return Errors.ValueErrorOccurred("Hwnd must name a window.", hwnd);
 
-				hwnd = new nint(handle);
+				this.hwnd = new nint(handle);
 				return DefaultObject;
 			}
 
@@ -62,14 +62,14 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Draws a badge over the window's taskbar button.
 			/// </summary>
-			/// <param name="Source">If omitted or blank, the badge is removed. Otherwise the path to an icon or image
+			/// <param name="source">If omitted or blank, the badge is removed. Otherwise the path to an icon or image
 			/// file, a module holding icon resources such as "shell32.dll", or a handle such as "HICON:" followed by
-			/// the handle. Platforms which cannot draw an icon badge show <paramref name="Text"/> instead.</param>
-			/// <param name="IconNumber">If omitted, it defaults to 1 (the first icon group in the file).</param>
-			/// <param name="Text">What the badge means, which Windows exposes to a screen reader. On Linux and macOS
+			/// the handle. Platforms which cannot draw an icon badge show <paramref name="text"/> instead.</param>
+			/// <param name="iconNumber">If omitted, it defaults to 1 (the first icon group in the file).</param>
+			/// <param name="text">What the badge means, which Windows exposes to a screen reader. On Linux and macOS
 			/// this is what the badge shows: a number there, a short string on macOS.</param>
-			public object SetBadge(object Source = null, object IconNumber = null, object Text = null)
-				=> Badge(hwnd, Source, IconNumber, Text);
+			public object SetBadge(object source = null, object iconNumber = null, object text = null)
+				=> Badge(hwnd, source, iconNumber, text);
 
 			/// <summary>
 			/// Draws a badge on the application's own taskbar button, and on those of the windows it opens later.
@@ -77,8 +77,8 @@ namespace Keysharp.Builtins
 			/// everywhere.
 			/// </summary>
 			[Static]
-			public static object SetBadge(object @this, object Source = null, object IconNumber = null, object Text = null)
-				=> Badge(null, Source, IconNumber, Text);
+			public static object SetBadge(object @this, object source = null, object iconNumber = null, object text = null)
+				=> Badge(null, source, iconNumber, text);
 
 			/// <param name="window">The button to decorate, or null for the application's own.</param>
 			private static object Badge(nint? window, object source, object iconNumber, object text)
@@ -118,11 +118,11 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Fills the window's taskbar button with a progress bar.
 			/// </summary>
-			/// <param name="Value">If omitted or blank, the bar is removed. Otherwise how far along the work is, out
-			/// of <paramref name="Maximum"/>.</param>
-			/// <param name="Maximum">If omitted, it defaults to 100, so <paramref name="Value"/> reads as a
+			/// <param name="value">If omitted or blank, the bar is removed. Otherwise how far along the work is, out
+			/// of <paramref name="maximum"/>.</param>
+			/// <param name="maximum">If omitted, it defaults to 100, so <paramref name="value"/> reads as a
 			/// percentage. Zero or less removes the bar, as a blank Value does.</param>
-			public object SetProgress(object Value = null, object Maximum = null) => Progress(hwnd, Value, Maximum);
+			public object SetProgress(object value = null, object maximum = null) => Progress(hwnd, value, maximum);
 
 			/// <summary>
 			/// Shows progress on the application's own taskbar button, which on Windows is the button of whichever
@@ -130,8 +130,8 @@ namespace Keysharp.Builtins
 			/// is the form that means the same thing everywhere.
 			/// </summary>
 			[Static]
-			public static object SetProgress(object @this, object Value = null, object Maximum = null)
-				=> Progress(null, Value, Maximum);
+			public static object SetProgress(object @this, object value = null, object maximum = null)
+				=> Progress(null, value, maximum);
 
 			/// <param name="window">The button to fill, or null for the application's own.</param>
 			private static object Progress(nint? window, object value, object maximum)
@@ -152,17 +152,17 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Sets the kind of progress the bar shows, which is what makes it amber, red or a marquee.
 			/// </summary>
-			/// <param name="State">"None" to remove the bar, "Normal" for an ordinary bar, "Indeterminate" for a
+			/// <param name="state">"None" to remove the bar, "Normal" for an ordinary bar, "Indeterminate" for a
 			/// marquee, "Paused" for amber or "Error" for red. Linux keeps only whether there is a bar at all, plus
 			/// Error, which it passes on as the launcher's urgent hint.</param>
-			public object SetProgressState(object State) => ProgressState(hwnd, State);
+			public object SetProgressState(object state) => ProgressState(hwnd, state);
 
 			/// <summary>
 			/// Sets the progress kind on the application's own taskbar button, which on Windows is the button of
 			/// whichever window represents the process.
 			/// </summary>
 			[Static]
-			public static object SetProgressState(object @this, object State) => ProgressState(null, State);
+			public static object SetProgressState(object @this, object state) => ProgressState(null, state);
 
 			/// <param name="window">The button to set, or null for the application's own.</param>
 			private static object ProgressState(nint? window, object state)

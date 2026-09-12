@@ -12,22 +12,22 @@ namespace Keysharp.Builtins
 			/// Encodes binary data as Base64 text.
 			/// </summary>
 			/// <param name="this">The class object, supplied by the script-static call.</param>
-			/// <param name="Value">A <see cref="Buffer"/>, an <see cref="Array"/> of bytes, a <see cref="StringBuffer"/> or a string.</param>
-			/// <param name="Encoding">The encoding a string or StringBuffer <paramref name="Value"/> is taken in, named as for
+			/// <param name="value">A <see cref="Buffer"/>, an <see cref="Array"/> of bytes, a <see cref="StringBuffer"/> or a string.</param>
+			/// <param name="encoding">The encoding a string or StringBuffer <paramref name="value"/> is taken in, named as for
 			/// <see cref="A_FileEncoding"/>. Defaults to UTF-8.</param>
 			/// <returns>The Base64 text.</returns>
 			/// <exception cref="ValueError">Thrown if the encoding cannot be resolved.</exception>
 			/// <exception cref="TypeError">Thrown if the value holds no bytes.</exception>
 			[Static]
-			public static object Encode(object @this, object Value, object Encoding = null)
+			public static object Encode(object @this, object value, object encoding = null)
 			{
-				var enc = Files.GetEncodingOrDefault(Encoding, System.Text.Encoding.UTF8);//Resolved first, so a misspelled name is reported even where no string is being converted.
+				var enc = Files.GetEncodingOrDefault(encoding, System.Text.Encoding.UTF8);//Resolved first, so a misspelled name is reported even where no string is being converted.
 
 				//A Buffer encodes straight out of its own memory; the general byte conversion would copy the whole of it first.
-				if (Value is Buffer b)
+				if (value is Buffer b)
 					return Convert.ToBase64String(b.AsSpan());
 
-				var raw = Conversions.ToByteArray(Value, enc);
+				var raw = Conversions.ToByteArray(value, enc);
 				return raw == null ? "" : Convert.ToBase64String(raw);
 			}
 
@@ -35,13 +35,13 @@ namespace Keysharp.Builtins
 			/// Decodes Base64 text to bytes.
 			/// </summary>
 			/// <param name="this">The class object, supplied by the script-static call.</param>
-			/// <param name="Text">The Base64 text to decode.</param>
+			/// <param name="text">The Base64 text to decode.</param>
 			/// <returns>A <see cref="Buffer"/> holding the decoded bytes.</returns>
 			/// <exception cref="ValueError">Thrown if the text is not well-formed Base64.</exception>
 			[Static]
-			public static object Decode(object @this, object Text)
+			public static object Decode(object @this, object text)
 			{
-				var s = Text.As();
+				var s = text.As();
 
 				try
 				{

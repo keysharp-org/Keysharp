@@ -445,11 +445,11 @@ namespace Keysharp.Builtins
 		// dispatches by NAME, most-derived first (Class.Call for scripts, Any's constructor for C#), so the
 		// signature is free to be the documented one and arity/defaults/named binding all come from it directly.
 		// The parameters are PascalCase on purpose: these names ARE script-facing API (`Error(Message: "x")`).
-		public object __New(object Message = null, object What = null, object Extra = null)
+		public object __New(object message = null, object what = null, object extra = null)
 		{
-			_message = Message == null ? GetType().Name : Message.As();
-			_what = What.As();
-			_extra = Extra.As();
+			_message = message == null ? GetType().Name : message.As();
+			_what = what.As();
+			_extra = extra.As();
 			Exception = new KeysharpException(this);
 			return DefaultObject;
 		}
@@ -881,11 +881,11 @@ namespace Keysharp.Builtins
 		/// <param name="args">The parameters to pass to the base.</param>
 		public OSError(params object[] args) : base(args) { }
 
-		public new object __New(object ErrorNumber = null, object What = null, object Extra = null)
+		public new object __New(object errorNumber = null, object what = null, object extra = null)
 		{
-			_ = base.__New(ErrorNumber, What, Extra);
+			_ = base.__New(errorNumber, what, extra);
 #if WINDOWS
-			var e = ErrorNumber as Exception;
+			var e = errorNumber as Exception;
 			Win32Exception w32ex = null;
 
 			if ((w32ex = e as Win32Exception) == null && e != null)

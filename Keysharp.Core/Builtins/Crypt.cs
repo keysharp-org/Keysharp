@@ -53,7 +53,8 @@ namespace Keysharp.Builtins
 			/// if the data cannot be decrypted with the key, mode and algorithm supplied.</exception>
 			/// <exception cref="TypeError">Thrown if the value or key holds no bytes.</exception>
 			[Static]
-			public static object Decrypt(object @this, object value, object key, object algorithm = null, object mode = null, object iv = null, object encoding = null)
+			public static object Decrypt(object @this, object value, object key, object algorithm = null, object mode = null,
+				[UserDeclaredName("IV")] object iv = null, object encoding = null)
 				=> Cipher(value, key, true, algorithm, mode, iv, encoding);
 
 			/// <summary>
@@ -81,7 +82,8 @@ namespace Keysharp.Builtins
 			/// vector. Under a chaining mode the result carries no authentication tag, so a modified ciphertext
 			/// decrypts to rubbish rather than being detected; under GCM it carries one and is detected.</remarks>
 			[Static]
-			public static object Encrypt(object @this, object value, object key, object algorithm = null, object mode = null, object iv = null, object encoding = null)
+			public static object Encrypt(object @this, object value, object key, object algorithm = null, object mode = null,
+				[UserDeclaredName("IV")] object iv = null, object encoding = null)
 				=> Cipher(value, key, false, algorithm, mode, iv, encoding);
 
 			/// <summary>
@@ -157,33 +159,33 @@ namespace Keysharp.Builtins
 			/// Authenticates a value with a secret key using HMAC.
 			/// </summary>
 			/// <param name="this">The class object, supplied by the script-static call.</param>
-			/// <param name="Value">The value to authenticate, as <see cref="Hash"/> takes it.</param>
-			/// <param name="Key">The secret key: a string, StringBuffer, Buffer or Array of bytes.</param>
-			/// <param name="Algorithm">SHA1, SHA256 (the default), SHA384 or SHA512, with the same name
+			/// <param name="value">The value to authenticate, as <see cref="Hash"/> takes it.</param>
+			/// <param name="key">The secret key: a string, StringBuffer, Buffer or Array of bytes.</param>
+			/// <param name="algorithm">SHA1, SHA256 (the default), SHA384 or SHA512, with the same name
 			/// matching as <see cref="Hash"/>.</param>
-			/// <param name="Encoding">The encoding of a string Value or Key, defaulting to UTF-8.</param>
+			/// <param name="encoding">The encoding of a string Value or Key, defaulting to UTF-8.</param>
 			/// <returns>The authentication code as uppercase hexadecimal.</returns>
 			/// <exception cref="ValueError">Thrown if the algorithm or encoding cannot be resolved,
 			/// the File is not open for reading, or authentication fails.</exception>
 			/// <exception cref="TypeError">Thrown if the value or key holds no bytes.</exception>
 			[Static]
-			public static object Hmac(object @this, object Value, object Key, object Algorithm = null, object Encoding = null)
+			public static object Hmac(object @this, object value, object key, object algorithm = null, object encoding = null)
 			{
-				var name = Named(Algorithm, DefaultAlgorithm);
+				var name = Named(algorithm, DefaultAlgorithm);
 
 				if (!TryFind(name, out var entry) || entry.Authenticate == null)
 					return Errors.ValueErrorOccurred($"Unknown HMAC algorithm \"{name}\". Expected {string.Join(", ", algorithms.Where(a => a.Authenticate != null).Select(a => a.Name))}.", name, "");
 
-				var enc = ResolveEncoding(Encoding);
-				var key = Conversions.ToByteArray(Key, enc);
+				var enc = ResolveEncoding(encoding);
+				var keyValue = Conversions.ToByteArray(key, enc);
 
-				if (key == null)
+				if (keyValue == null)
 					return "";
 
 				try
 				{
-					using var alg = entry.Authenticate(key);
-					return Digest(Value, alg, enc);
+					using var alg = entry.Authenticate(keyValue);
+					return Digest(value, alg, enc);
 				}
 				catch (CryptographicException ex)
 				{

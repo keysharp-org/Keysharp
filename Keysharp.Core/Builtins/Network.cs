@@ -244,7 +244,7 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">The transfer failed, or the server refused the request.</exception>
 		/// <exception cref="ValueError">The URL is not absolute, its scheme is not one of http, https and ftp, or a
 		/// cache flag other than <c>*0</c> was given.</exception>
-		public static object Download(object url, object filename)
+		public static object Download([UserDeclaredName("URL")] object url, object filename)
 		{
 			var address = url.As();
 			var file = filename.As();

@@ -283,9 +283,9 @@ namespace Keysharp.Builtins
 		/// </list>
 		/// </param>
 		/// <returns>An empty value; the constructed object is the instance being initialized.</returns>
-		public object __New(object Options = null, object EndKeys = null, object MatchList = null)
+		public object __New(object options = null, object endKeys = null, object matchList = null)
 		{
-			input = new InputType(this, Options.As(), EndKeys.As(), MatchList.As());
+			input = new InputType(this, options.As(), endKeys.As(), matchList.As());
 			return DefaultObject;
 		}
 

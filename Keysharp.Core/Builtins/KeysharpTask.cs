@@ -40,10 +40,10 @@ namespace Keysharp.Builtins
 			/// Wraps a task or value task reached some other way. One returned from a CLR call is wrapped
 			/// already, so this is only for one a script got hold of by another route.
 			/// </summary>
-			public static object staticCall(object @this, object Value)
+			public static object staticCall(object @this, object value)
 			{
-				var t = FromAwaitable(Value);
-				return t == null ? Errors.TypeErrorOccurred(Value, typeof(KeysharpTask)) : Wrap(t);
+				var t = FromAwaitable(value);
+				return t == null ? Errors.TypeErrorOccurred(value, typeof(KeysharpTask)) : Wrap(t);
 			}
 
 			/// <summary>Returns the one wrapper for <paramref name="t"/>, creating it on first crossing.</summary>
@@ -124,20 +124,20 @@ namespace Keysharp.Builtins
 			/// responsive. Returns false only if the timeout elapses before the task reaches a terminal outcome.
 			/// It does not rethrow or observe the task's failure, and a timeout does not cancel the task.
 			/// </summary>
-			/// <param name="Timeout">Milliseconds to wait. Default: wait indefinitely.</param>
+			/// <param name="timeout">Milliseconds to wait. Default: wait indefinitely.</param>
 			/// <returns>True if the task finished before the timeout; false if the timeout elapsed first.</returns>
-			public object Wait(object Timeout = null)
+			public object Wait(object timeout = null)
 			{
 				if (IsCurrentRealThreadTask(task))
 					return Errors.TargetErrorOccurred("A real thread cannot wait on itself.", false);
 
-				return Keysharp.Internals.Flow.WaitForCompletion(task, Timeout.Ai(-1));
+				return Keysharp.Internals.Flow.WaitForCompletion(task, timeout.Ai(-1));
 			}
 
 			// ---- continuation -----------------------------------------------------------------------------
 
 			/// <summary>
-			/// Runs <paramref name="OnSuccess"/> after this task succeeds, or <paramref name="OnFailure"/> after it
+			/// Runs <paramref name="onSuccess"/> after this task succeeds, or <paramref name="onFailure"/> after it
 			/// fails, without blocking. The selected callback receives the value or catchable <c>Error</c>, and may
 			/// declare no parameter if it does not want it. With no failure callback, the same error propagates;
 			/// cancellation invokes neither callback and propagates unchanged.
@@ -151,9 +151,9 @@ namespace Keysharp.Builtins
 			/// <c>RealThread</c> follows <c>Await</c> semantics: its body error remains reported on that worker and the
 			/// chain receives its <c>Result</c>.
 			/// </returns>
-			public object Then(object OnSuccess, object OnFailure = null)
+			public object Then(object onSuccess, object onFailure = null)
 			{
-				var success = Functions.GetKeysharpFunc(OnSuccess, null, true);
+				var success = Functions.GetKeysharpFunc(onSuccess, null, true);
 
 				if (success == null)
 					return DefaultObject;
@@ -164,9 +164,9 @@ namespace Keysharp.Builtins
 					return Errors.ValueErrorOccurred(
 						$"Task.Then OnSuccess requires at least {successArity.Required} parameters, but receives at most one.");
 
-				var failure = OnFailure == null ? null : Functions.GetKeysharpFunc(OnFailure, null, true);
+				var failure = onFailure == null ? null : Functions.GetKeysharpFunc(onFailure, null, true);
 
-				if (OnFailure != null && failure == null)
+				if (onFailure != null && failure == null)
 					return DefaultObject;
 
 				if (failure != null)
@@ -187,24 +187,24 @@ namespace Keysharp.Builtins
 			// ---- combinators ------------------------------------------------------------------------------
 
 			/// <summary>
-			/// A task that finishes when every one of <paramref name="Tasks"/> has finished, producing an
+			/// A task that finishes when every one of <paramref name="tasks"/> has finished, producing an
 			/// <see cref="Array"/> of their results in the order they were given. If any of them fails, so does
 			/// this one, so <c>Await</c> on it reports the failure. If at least one is canceled and none fail, this
 			/// task is canceled.
 			/// </summary>
-			public static object staticWhenAll(object @this, params object[] Tasks)
+			public static object staticWhenAll(object @this, params object[] tasks)
 			{
-				var underlying = Underlyings(Tasks);
+				var underlying = Underlyings(tasks);
 				return underlying == null ? DefaultObject : Wrap(CompleteAll(underlying));
 			}
 
 			/// <summary>
-			/// A task that finishes with the first outcome among <paramref name="Tasks"/>: the winner's value,
+			/// A task that finishes with the first outcome among <paramref name="tasks"/>: the winner's value,
 			/// failure or cancellation. The other tasks keep running and are not observed or canceled here.
 			/// </summary>
-			public static object staticWhenAny(object @this, params object[] Tasks)
+			public static object staticWhenAny(object @this, params object[] tasks)
 			{
-				var underlying = Underlyings(Tasks);
+				var underlying = Underlyings(tasks);
 
 				if (underlying == null)
 					return DefaultObject;
@@ -216,18 +216,18 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Creates a task and synchronously calls <paramref name="Producer"/> with the prefix it accepts of
+			/// Creates a task and synchronously calls <paramref name="producer"/> with the prefix it accepts of
 			/// Succeed, Fail and Cancel settlement functions. The first settlement wins; the producer's return value
 			/// is ignored.
 			/// </summary>
-			public static object staticCreate(object @this, object Producer)
+			public static object staticCreate(object @this, object producer)
 			{
-				var producer = Functions.GetKeysharpFunc(Producer, null, true);
+				var producerValue = Functions.GetKeysharpFunc(producer, null, true);
 
-				if (producer == null)
+				if (producerValue == null)
 					return DefaultObject;
 
-				var arity = Script.CallbackArgCounts(producer, 3);
+				var arity = Script.CallbackArgCounts(producerValue, 3);
 
 				if (arity.Required > 3)
 					return Errors.ValueErrorOccurred(
@@ -243,7 +243,7 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					_ = producer.Call(args[.. arity.Accepted]);
+					_ = producerValue.Call(args[.. arity.Accepted]);
 				}
 				catch (Exception ex) when (TryGetUserExit(ex, out var exit))
 				{

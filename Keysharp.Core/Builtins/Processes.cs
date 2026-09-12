@@ -40,7 +40,7 @@ namespace Keysharp.Builtins
 		/// The name is not case-sensitive.
 		/// </param>
 		/// <returns>The Process ID (PID) of the specified process. If a matching process is not found or cannot be manipulated, zero is returned.</returns>
-		public static long ProcessClose(object pidOrName)
+		public static long ProcessClose([UserDeclaredName("PIDOrName")] object pidOrName)
 		{
 			var name = pidOrName.As(); //Will handle name string or pid int.
 
@@ -75,7 +75,7 @@ namespace Keysharp.Builtins
 		/// The name is not case-sensitive.
 		/// </param>
 		/// <returns>The Process ID (PID) of the specified process. If there is no matching process, zero is returned.</returns>
-		public static long ProcessExist(object pidOrName = null)
+		public static long ProcessExist([UserDeclaredName("PIDOrName")] object pidOrName = null)
 		{
 			var name = pidOrName.As();
 
@@ -99,7 +99,7 @@ namespace Keysharp.Builtins
 		/// The executable name of the specified process, for example: <c>notepad.exe</c>.<br/>
 		/// Throws a TargetError if the process could not be found, or an OSError if the name could not be retrieved.
 		/// </returns>
-		public static string ProcessGetName(object pidOrName = null)
+		public static string ProcessGetName([UserDeclaredName("PIDOrName")] object pidOrName = null)
 		{
 			var name = pidOrName.As();
 
@@ -135,7 +135,7 @@ namespace Keysharp.Builtins
 		/// The full path of the specified processï¿½s executable, for example: <c>C:\Windows\notepad.exe</c>.<br/>
 		/// Throws a TargetError if the process could not be found, or an OSError if the path could not be retrieved.
 		/// </returns>
-		public static string ProcessGetPath(object pidOrName = null)
+		public static string ProcessGetPath([UserDeclaredName("PIDOrName")] object pidOrName = null)
 		{
 			var name = pidOrName.As();
 
@@ -176,7 +176,7 @@ namespace Keysharp.Builtins
 		/// The name is not case-sensitive.
 		/// </param>
 		/// <returns>Returns the Process ID (PID) of the specified process. If a matching process is not found or cannot be manipulated, zero is returned.</returns>
-		public static long ProcessSetPriority(object level, object pidOrName = null)
+		public static long ProcessSetPriority(object level, [UserDeclaredName("PIDOrName")] object pidOrName = null)
 		{
 			var lvl = level.As();
 			var name = pidOrName.As();
@@ -226,7 +226,7 @@ namespace Keysharp.Builtins
 		/// </param>
 		/// <param name="timeout">If omitted, the function will wait indefinitely. Otherwise, specify the number of seconds (can contain a decimal point) to wait before timing out.</param>
 		/// <returns>The Process ID (PID) of the discovered process. If the function times out, zero is returned.</returns>
-		public static long ProcessWait(object pidOrName, object timeout = null)
+		public static long ProcessWait([UserDeclaredName("PIDOrName")] object pidOrName, object timeout = null)
 		{
 			var name = pidOrName.As();
 			var time = timeout.Ad(-1.0);
@@ -273,7 +273,7 @@ namespace Keysharp.Builtins
 		/// </param>
 		/// <param name="timeout">If omitted, the function will wait indefinitely. Otherwise, specify the number of seconds (can contain a decimal point) to wait before timing out.</param>
 		/// <returns></returns>
-		public static long ProcessWaitClose(object pidOrName, object timeout = null)
+		public static long ProcessWaitClose([UserDeclaredName("PIDOrName")] object pidOrName, object timeout = null)
 		{
 			var name = pidOrName.As();
 			var time = timeout.Ad(-1.0);

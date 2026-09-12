@@ -11,13 +11,14 @@ namespace Keysharp.Builtins.COM
 	public static class Com
 	{
 		/// <summary>Attaches to an application that is already running; unlike ComObject it never launches one.</summary>
-		public static object ComObjActive(object name) => ComObject.Create(name.As(), "", activate: false);
+		public static object ComObjActive([UserDeclaredName("CLSID")] object name) => ComObject.Create(name.As(), "", activate: false);
 
 		/// <summary>Apple Events have no monikers, so this is ComObjActive: attach to a running application.</summary>
 		public static object ComObjGet(object name) => ComObject.Create(name.As(), "", activate: false);
 
 		/// <summary>Pins a suite on the same object — the Apple Events counterpart of QueryInterface.</summary>
-		public static object ComObjQuery(object comObj, object sid = null, object iid = null)
+		public static object ComObjQuery(object comObj, [UserDeclaredName("SID")] object sid = null,
+			[UserDeclaredName("IID")] object iid = null)
 		{
 			if (comObj is not ComObject co)
 				return Errors.TypeErrorOccurred(comObj, typeof(ComObject));

@@ -54,14 +54,14 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Creates a session: its own connection pool, cookie jar and default options.
 			/// </summary>
-			/// <param name="Options">A <see cref="Map"/> or object supplying any of the request options —
+			/// <param name="options">A <see cref="Map"/> or object supplying any of the request options —
 			/// <c>Headers</c>, <c>Body</c>, <c>Json</c>, <c>Timeout</c>, <c>OnData</c> — as defaults for every
 			/// request made through this session, plus the session-only <c>BaseUrl</c>, <c>Auth</c>, <c>Proxy</c>,
 			/// <c>IgnoreCertificateErrors</c> and <c>Handler</c>.</param>
 			/// <exception cref="ValueError">Thrown for an unknown option key or an unusable option value.</exception>
-			public object __New(object Options = null)
+			public object __New(object options = null)
 			{
-				if (RequestOptions.Parse(Options, isSession: true) is not { } parsed)
+				if (RequestOptions.Parse(options, isSession: true) is not { } parsed)
 				{
 					// The options were reported as they were read. This session keeps a usable shape so a later
 					// member access names the real cause rather than failing on a half-built object.
@@ -157,94 +157,94 @@ namespace Keysharp.Builtins
 			// ---- session requests ----------------------------------------------------------------------------
 
 			/// <summary>Sends a GET and waits for the response.</summary>
-			/// <param name="Url">Absolute, or relative to <see cref="BaseUrl"/>.</param>
-			/// <param name="Options">Per-request options, merged over the session's.</param>
+			/// <param name="url">Absolute, or relative to <see cref="BaseUrl"/>.</param>
+			/// <param name="options">Per-request options, merged over the session's.</param>
 			/// <returns>An <see cref="Response"/>, whatever the status.</returns>
 			/// <exception cref="OSError">The request never reached a reply.</exception>
 			/// <exception cref="TimeoutError">Nothing arrived within <see cref="Timeout"/>.</exception>
 			/// <exception cref="ValueError">The URL, an option or a header is unusable.</exception>
-			public object Get(object Url, object Options = null) => Run("GET", Url, null, Options, async: false);
+			public object Get(object url, object options = null) => Run("GET", url, null, options, async: false);
 
 			/// <summary>Sends a POST and waits for the response.</summary>
-			/// <param name="Url">Absolute, or relative to <see cref="BaseUrl"/>.</param>
-			/// <param name="Body">The request body: a String sent as UTF-8 text, or a <see cref="Buffer"/> sent as
+			/// <param name="url">Absolute, or relative to <see cref="BaseUrl"/>.</param>
+			/// <param name="body">The request body: a String sent as UTF-8 text, or a <see cref="Buffer"/> sent as
 			/// bytes. Positional sugar for the <c>Body</c> option.</param>
-			/// <param name="Options">Per-request options, merged over the session's.</param>
+			/// <param name="options">Per-request options, merged over the session's.</param>
 			/// <inheritdoc cref="Get"/>
-			public object Post(object Url, object Body = null, object Options = null) => Run("POST", Url, Body, Options, async: false);
+			public object Post(object url, object body = null, object options = null) => Run("POST", url, body, options, async: false);
 
 			/// <summary>Sends any method and waits for the response.</summary>
-			/// <param name="Method">The HTTP method, uppercased. <c>PUT</c>, <c>PATCH</c>, <c>DELETE</c> and
+			/// <param name="@method">The HTTP method, uppercased. <c>PUT</c>, <c>PATCH</c>, <c>DELETE</c> and
 			/// <c>HEAD</c> have no shortcut of their own and are spelled here.</param>
-			/// <param name="Url">Absolute, or relative to <see cref="BaseUrl"/>.</param>
-			/// <param name="Body">As for <see cref="Post"/>.</param>
-			/// <param name="Options">Per-request options, merged over the session's.</param>
+			/// <param name="url">Absolute, or relative to <see cref="BaseUrl"/>.</param>
+			/// <param name="body">As for <see cref="Post"/>.</param>
+			/// <param name="options">Per-request options, merged over the session's.</param>
 			/// <inheritdoc cref="Get"/>
-			public object Request(object Method, object Url, object Body = null, object Options = null)
-				=> Run(Method.As(), Url, Body, Options, async: false);
+			public object Request(object @method, object url, object body = null, object options = null)
+				=> Run(@method.As(), url, body, options, async: false);
 
 			/// <summary>The same as <see cref="Get"/>, but returns a <c>Task</c> rather than waiting.</summary>
-			public object GetAsync(object Url, object Options = null) => Run("GET", Url, null, Options, async: true);
+			public object GetAsync(object url, object options = null) => Run("GET", url, null, options, async: true);
 
 			/// <summary>The same as <see cref="Post"/>, but returns a <c>Task</c> rather than waiting.</summary>
-			public object PostAsync(object Url, object Body = null, object Options = null) => Run("POST", Url, Body, Options, async: true);
+			public object PostAsync(object url, object body = null, object options = null) => Run("POST", url, body, options, async: true);
 
 			/// <summary>The same as <see cref="Request"/>, but returns a <c>Task</c> rather than waiting.</summary>
-			public object RequestAsync(object Method, object Url, object Body = null, object Options = null)
-				=> Run(Method.As(), Url, Body, Options, async: true);
+			public object RequestAsync(object @method, object url, object body = null, object options = null)
+				=> Run(@method.As(), url, body, options, async: true);
 
 			/// <summary>Fetches a URL straight to a file, without it ever being a script value.</summary>
-			/// <param name="Url">Absolute, or relative to <see cref="BaseUrl"/>.</param>
-			/// <param name="Path">The file to create, overwriting any existing one. It is opened once the response
+			/// <param name="url">Absolute, or relative to <see cref="BaseUrl"/>.</param>
+			/// <param name="path">The file to create, overwriting any existing one. It is opened once the response
 			/// headers have arrived, so a request that never reaches a reply leaves an existing file alone.</param>
-			/// <param name="Options">Per-request options, merged over the session's. <c>OnData</c> is not one of
+			/// <param name="options">Per-request options, merged over the session's. <c>OnData</c> is not one of
 			/// them: the body goes to the file.</param>
 			/// <returns>The <see cref="Response"/>, whose <c>Body</c> is empty because the file took it.</returns>
 			/// <inheritdoc cref="Get"/>
-			public object Download(object Url, object Path, object Options = null)
-				=> Run("GET", Url, null, Options, async: false, path: Path.As());
+			public object Download(object url, object path, object options = null)
+				=> Run("GET", url, null, options, async: false, path: path.As());
 
 			/// <summary>The same as <see cref="Download"/>, but returns a <c>Task</c> rather than waiting.</summary>
-			public object DownloadAsync(object Url, object Path, object Options = null)
-				=> Run("GET", Url, null, Options, async: true, path: Path.As());
+			public object DownloadAsync(object url, object path, object options = null)
+				=> Run("GET", url, null, options, async: true, path: path.As());
 
 			// ---- stateless shortcuts -------------------------------------------------------------------------
 
 			/// <summary>Sends a GET on the shared stateless client and waits for the response.</summary>
 			/// <inheritdoc cref="Get"/>
-			public static object staticGet(object @this, object Url, object Options = null)
-				=> RunShared("GET", Url, null, Options, async: false);
+			public static object staticGet(object @this, object url, object options = null)
+				=> RunShared("GET", url, null, options, async: false);
 
 			/// <summary>Sends a POST on the shared stateless client and waits for the response.</summary>
 			/// <inheritdoc cref="Post"/>
-			public static object staticPost(object @this, object Url, object Body = null, object Options = null)
-				=> RunShared("POST", Url, Body, Options, async: false);
+			public static object staticPost(object @this, object url, object body = null, object options = null)
+				=> RunShared("POST", url, body, options, async: false);
 
 			/// <summary>Sends any method on the shared stateless client and waits for the response.</summary>
 			/// <inheritdoc cref="Request"/>
-			public static object staticRequest(object @this, object Method, object Url, object Body = null, object Options = null)
-				=> RunShared(Method.As(), Url, Body, Options, async: false);
+			public static object staticRequest(object @this, object @method, object url, object body = null, object options = null)
+				=> RunShared(@method.As(), url, body, options, async: false);
 
 			/// <summary>The same as <c>Http.Get</c>, but returns a <c>Task</c> rather than waiting.</summary>
-			public static object staticGetAsync(object @this, object Url, object Options = null)
-				=> RunShared("GET", Url, null, Options, async: true);
+			public static object staticGetAsync(object @this, object url, object options = null)
+				=> RunShared("GET", url, null, options, async: true);
 
 			/// <summary>The same as <c>Http.Post</c>, but returns a <c>Task</c> rather than waiting.</summary>
-			public static object staticPostAsync(object @this, object Url, object Body = null, object Options = null)
-				=> RunShared("POST", Url, Body, Options, async: true);
+			public static object staticPostAsync(object @this, object url, object body = null, object options = null)
+				=> RunShared("POST", url, body, options, async: true);
 
 			/// <summary>The same as <c>Http.Request</c>, but returns a <c>Task</c> rather than waiting.</summary>
-			public static object staticRequestAsync(object @this, object Method, object Url, object Body = null, object Options = null)
-				=> RunShared(Method.As(), Url, Body, Options, async: true);
+			public static object staticRequestAsync(object @this, object @method, object url, object body = null, object options = null)
+				=> RunShared(@method.As(), url, body, options, async: true);
 
 			/// <summary>Fetches a URL straight to a file on the shared stateless client.</summary>
 			/// <inheritdoc cref="Download"/>
-			public static object staticDownload(object @this, object Url, object Path, object Options = null)
-				=> RunShared("GET", Url, null, Options, async: false, path: Path.As());
+			public static object staticDownload(object @this, object url, object path, object options = null)
+				=> RunShared("GET", url, null, options, async: false, path: path.As());
 
 			/// <summary>The same as <c>Http.Download</c>, but returns a <c>Task</c> rather than waiting.</summary>
-			public static object staticDownloadAsync(object @this, object Url, object Path, object Options = null)
-				=> RunShared("GET", Url, null, Options, async: true, path: Path.As());
+			public static object staticDownloadAsync(object @this, object url, object path, object options = null)
+				=> RunShared("GET", url, null, options, async: true, path: path.As());
 
 			// ---- dispatch ------------------------------------------------------------------------------------
 

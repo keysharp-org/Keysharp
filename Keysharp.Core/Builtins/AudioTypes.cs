@@ -236,14 +236,14 @@ namespace Keysharp.Builtins
 				/// construction cannot fail for an absent device. VoicePolicy is "Oldest" (the default), "RoundRobin"
 				/// or "Reject", matched without regard to case.
 				/// </summary>
-				public object __New(object Device = null, object VoiceLimit = null, object VoicePolicy = null, object LatencyMilliseconds = null)
+				public object __New(object device = null, object voiceLimit = null, object voicePolicy = null, object latencyMilliseconds = null)
 				{
-					var voices = VoiceLimit == null ? 16L : VoiceLimit.Al();
+					var voices = voiceLimit == null ? 16L : voiceLimit.Al();
 
 					if (voices < 1 || voices > 256)
-						return Errors.ValueErrorOccurred("VoiceLimit must be from 1 through 256.", VoiceLimit);
+						return Errors.ValueErrorOccurred("VoiceLimit must be from 1 through 256.", voiceLimit);
 
-					var policy = VoicePolicy.As();
+					var policy = voicePolicy.As();
 
 					if (policy.Length == 0)
 						policy = Engine.AudioMixer.PolicyOldest;
@@ -254,18 +254,18 @@ namespace Keysharp.Builtins
 							 : null;
 
 					if (policy == null)
-						return Errors.ValueErrorOccurred($"Unknown VoicePolicy \"{Errors.Describe(VoicePolicy)}\". Expected Oldest, RoundRobin or Reject.", VoicePolicy);
+						return Errors.ValueErrorOccurred($"Unknown VoicePolicy \"{Errors.Describe(voicePolicy)}\". Expected Oldest, RoundRobin or Reject.", voicePolicy);
 
-					var latency = LatencyMilliseconds == null ? 20.0 : LatencyMilliseconds.Ad();
+					var latency = latencyMilliseconds == null ? 20.0 : latencyMilliseconds.Ad();
 
 					if (!double.IsFinite(latency) || latency < 5 || latency > 500)
-						return Errors.ValueErrorOccurred("LatencyMilliseconds must be a finite number from 5 through 500.", LatencyMilliseconds);
+						return Errors.ValueErrorOccurred("LatencyMilliseconds must be a finite number from 5 through 500.", latencyMilliseconds);
 
 					var deviceId = "";
 
-					if (Device is Ks.Audio.Device || Device.As().Length > 0)
+					if (device is Ks.Audio.Device || device.As().Length > 0)
 					{
-						if (!TryResolveDevice(Device, Engine.AudioDeviceKind.Output, true, out var resolved, out var failure))
+						if (!TryResolveDevice(device, Engine.AudioDeviceKind.Output, true, out var resolved, out var failure))
 							return failure;
 
 						deviceId = resolved.Id;
@@ -433,56 +433,56 @@ namespace Keysharp.Builtins
 				}
 
 				/// <summary>Converts a clip into this output's format ahead of time, so playing it never resamples.</summary>
-				public object Prepare(object Clip)
+				public object Prepare(object clip)
 				{
 					var c = Require(out var failure);
 
 					if (c == null)
 						return failure;
 
-					if (Clip is not Clip clip)
-						return Errors.TypeErrorOccurred(Clip, typeof(Clip));
+					if (clip is not Clip clipValue)
+						return Errors.TypeErrorOccurred(clip, typeof(Clip));
 
-					if (!c.TryPrepare(clip.Data, out var error))
+					if (!c.TryPrepare(clipValue.Data, out var error))
 						return Errors.OSErrorOccurredWithMessage(error);
 
 					return this;
 				}
 
-				public object IsPrepared(object Clip) => Clip is Clip clip && core != null && core.IsPrepared(clip.Data);
+				public object IsPrepared(object clip) => clip is Clip clipValue && core != null && core.IsPrepared(clipValue.Data);
 
 				/// <summary>
 				/// Submits one play. Returns a stable playback, or blank for a bounded refusal: not open, a full
 				/// command ring, or a "Reject" policy with no free voice. Callers that do not need control simply
 				/// ignore the result.
 				/// </summary>
-				public object Play(object Clip, object Volume = null, object Loop = null, object Pan = null, object StartMilliseconds = null)
+				public object Play(object clip, object volume = null, object loop = null, object pan = null, object startMilliseconds = null)
 				{
 					// Argument checking precedes the bounded refusal: otherwise the same wrong argument is a TypeError
 					// on an open output and a silent blank on a closed one.
-					if (Clip is not Clip clip)
-						return Errors.TypeErrorOccurred(Clip, typeof(Clip));
+					if (clip is not Clip clipValue)
+						return Errors.TypeErrorOccurred(clip, typeof(Clip));
 
 					if (core == null || core.Status != Engine.AudioOutputStatus.Open)
 						return "";
 
-					if (!TryLevel(Volume == null ? 100L : Volume, "Volume", out var volume, out var failure))
+					if (!TryLevel(volume == null ? 100L : volume, "Volume", out var volumeValue, out var failure))
 						return failure;
 
-					if (!TryPan(Pan == null ? 0L : Pan, out var pan, out failure))
+					if (!TryPan(pan == null ? 0L : pan, out var panValue, out failure))
 						return failure;
 
-					var startMs = StartMilliseconds == null ? 0.0 : StartMilliseconds.Ad();
+					var startMs = startMilliseconds == null ? 0.0 : startMilliseconds.Ad();
 
 					if (!double.IsFinite(startMs) || startMs < 0)
-						return Errors.ValueErrorOccurred("StartMilliseconds must be a finite number of 0 or more.", StartMilliseconds);
+						return Errors.ValueErrorOccurred("StartMilliseconds must be a finite number of 0 or more.", startMilliseconds);
 
-					var data = clip.Data;
+					var data = clipValue.Data;
 
 					if (data.DurationMilliseconds > 0 && startMs >= data.DurationMilliseconds)
 						return Errors.ValueErrorOccurred($"StartMilliseconds {startMs} is at or past the clip.s {data.DurationMilliseconds:0.##} ms duration.");
 
-					var control = core.TryPlay(data, volume, pan, Loop.Ab(), startMs, out var error);
+					var control = core.TryPlay(data, volumeValue, panValue, loop.Ab(), startMs, out var error);
 
 					if (control == null)
 						return error.IsNullOrEmpty() ? "" : Errors.OSErrorOccurredWithMessage(error);

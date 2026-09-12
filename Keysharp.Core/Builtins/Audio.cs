@@ -201,9 +201,9 @@ namespace Keysharp.Builtins
 
 			/// <summary>A conservative decoder probe. It accepts a token or extension and never inspects a file.</summary>
 			[Static]
-			public static object IsFormatSupported(object @this, object Format)
+			public static object IsFormatSupported(object @this, object format)
 			{
-				var text = Format.As().TrimStart('.');
+				var text = format.As().TrimStart('.');
 
 				// The managed WAV reader ships unconditionally; everything else depends on a codec the host
 				// already has, so the answer is whatever that host's decoder actually initialized with.
@@ -227,26 +227,26 @@ namespace Keysharp.Builtins
 
 			/// <summary>Decodes a file into a reusable immutable clip. Only WAV is decoded without a platform codec.</summary>
 			[Static]
-			public static object Load(object @this, object Path)
+			public static object Load(object @this, object path)
 			{
-				var path = Path.As();
+				var pathText = path.As();
 
-				if (path.Length == 0 || path.Contains('\0'))
+				if (pathText.Length == 0 || pathText.Contains('\0'))
 					return Errors.ValueErrorOccurred("Path must be a non-empty file path without embedded NUL.");
 
 				string full;
 
 				try
 				{
-					full = System.IO.Path.GetFullPath(path);
+					full = System.IO.Path.GetFullPath(pathText);
 				}
 				catch (Exception ex)
 				{
-					return Errors.ValueErrorOccurred($"Path is not a valid file path: {ex.Message}", path);
+					return Errors.ValueErrorOccurred($"Path is not a valid file path: {ex.Message}", pathText);
 				}
 
 				if (!File.Exists(full))
-					return Errors.OSErrorOccurredWithMessage($"Cannot read {path}: the file does not exist.");
+					return Errors.OSErrorOccurredWithMessage($"Cannot read {pathText}: the file does not exist.");
 
 				// WAV is read by the managed parser on every host, so the common case never depends on a platform
 				// codec. Anything else goes to whatever decoder this host already ships.
@@ -261,11 +261,11 @@ namespace Keysharp.Builtins
 					}
 					catch (Exception ex)
 					{
-						return Errors.OSErrorOccurredWithMessage($"Cannot read {path}: {ex.Message}");
+						return Errors.OSErrorOccurredWithMessage($"Cannot read {pathText}: {ex.Message}");
 					}
 
 					if (!Engine.WavCodec.TryDecode(bytes, out var wavSamples, out var wavRate, out var wavChannels, out var wavError))
-						return Errors.OSErrorOccurredWithMessage($"Cannot decode {path}: {wavError}");
+						return Errors.OSErrorOccurredWithMessage($"Cannot decode {pathText}: {wavError}");
 
 					return Clip.Wrap(new Engine.AudioClipData(wavSamples, wavRate, wavChannels, Engine.AudioFormats.Float32));
 				}
@@ -274,14 +274,14 @@ namespace Keysharp.Builtins
 
 				if (decoder == null || !Service.Supports(Engine.AudioCapability.Decoding) || decoder.SupportedFormats.Length == 0)
 					return Errors.OSErrorOccurredWithMessage(
-							   $"Cannot decode {path}: this host has no audio decoder beyond WAV. Convert the file to WAV, or check Audio.IsFormatSupported() first.");
+							   $"Cannot decode {pathText}: this host has no audio decoder beyond WAV. Convert the file to WAV, or check Audio.IsFormatSupported() first.");
 
 				if (!decoder.TryDecodeFile(full, out var samples, out var rate, out var channels, out var error))
-					return Errors.OSErrorOccurredWithMessage($"Cannot decode {path}: {error}");
+					return Errors.OSErrorOccurredWithMessage($"Cannot decode {pathText}: {error}");
 
 				if (!Engine.AudioFormats.IsValidSampleRate(rate) || !Engine.AudioFormats.IsValidChannels(channels))
 					return Errors.OSErrorOccurredWithMessage(
-							   $"Cannot decode {path}: it decoded to {rate} Hz and {channels} channels, which is outside the supported range.");
+							   $"Cannot decode {pathText}: it decoded to {rate} Hz and {channels} channels, which is outside the supported range.");
 
 				return Clip.Wrap(new Engine.AudioClipData(samples, rate, channels, Engine.AudioFormats.Float32));
 			}
@@ -293,14 +293,14 @@ namespace Keysharp.Builtins
 			/// matched without regard to case.
 			/// </summary>
 			[Static]
-			public static object FromPcm(object @this, object Data, object SampleRate, object Channels = null, object SampleFormat = null)
+			public static object FromPcm(object @this, object data, object sampleRate, object channels = null, object sampleFormat = null)
 			{
-				if (Data is not Buffer buffer)
-					return Errors.TypeErrorOccurred(Data, typeof(Buffer));
+				if (data is not Buffer buffer)
+					return Errors.TypeErrorOccurred(data, typeof(Buffer));
 
-				var rate = SampleRate.Al();
-				var channels = Channels == null ? 1L : Channels.Al();
-				var formatToken = SampleFormat.As();
+				var rate = sampleRate.Al();
+				var channelCount = channels == null ? 1L : channels.Al();
+				var formatToken = sampleFormat.As();
 
 				if (formatToken.Length == 0)
 					formatToken = Engine.AudioFormats.Signed16;
@@ -308,15 +308,15 @@ namespace Keysharp.Builtins
 				if (!Engine.AudioFormats.IsValidSampleRate(rate))
 					return Errors.ValueErrorOccurred($"SampleRate must be from {Engine.AudioFormats.MinSampleRate} through {Engine.AudioFormats.MaxSampleRate}.", rate);
 
-				if (!Engine.AudioFormats.IsValidChannels(channels))
-					return Errors.ValueErrorOccurred("Channels must be 1 or 2.", channels);
+				if (!Engine.AudioFormats.IsValidChannels(channelCount))
+					return Errors.ValueErrorOccurred("Channels must be 1 or 2.", channelCount);
 
 				if (!Engine.AudioFormats.TryResolve(formatToken, out var canonical, out var bytesPerSample))
 					return Errors.ValueErrorOccurred($"Unknown SampleFormat \"{formatToken}\". Expected Unsigned8, Signed16, Signed24, Signed32 or Float32.");
 
 				// The size is checked before the bytes are read: an empty Buffer has no allocation behind it, so
 				// reading it first would fail natively instead of raising the ValueError this contract promises.
-				var frameSize = (int)channels * bytesPerSample;
+				var frameSize = (int)channelCount * bytesPerSample;
 				var byteCount = buffer.Size.Al();
 
 				if (byteCount <= 0 || byteCount % frameSize != 0)
@@ -337,7 +337,7 @@ namespace Keysharp.Builtins
 				if (!Engine.AudioFormats.TryConvert(raw, canonical, samples, out var convertError))
 					return Errors.ValueErrorOccurred(convertError);
 
-				return Clip.Wrap(new Engine.AudioClipData(samples, (int)rate, (int)channels, canonical));
+				return Clip.Wrap(new Engine.AudioClipData(samples, (int)rate, (int)channelCount, canonical));
 			}
 
 			// ---- convenience playback -----------------------------------------------------------
@@ -364,15 +364,15 @@ namespace Keysharp.Builtins
 			/// has nowhere to report a bounded refusal.
 			/// </summary>
 			[Static]
-			public static object Play(object @this, object Source, object Volume = null, object Loop = null,
-									  object Pan = null, object StartMilliseconds = null, object Device = null)
+			public static object Play(object @this, object source, object volume = null, object loop = null,
+									  object pan = null, object startMilliseconds = null, object device = null)
 			{
 				if (!Service.Supports(Engine.AudioCapability.Playback))
 					return Unsupported(Engine.AudioCapability.Playback, "Audio.Play");
 
 				Engine.AudioClipData data;
 
-				if (Source is Clip clip)
+				if (source is Clip clip)
 				{
 					data = clip.Data;
 				}
@@ -381,7 +381,7 @@ namespace Keysharp.Builtins
 					// A path played repeatedly is decoded once. Beyond saving the read and the decode, this keeps the
 					// clip identity stable, which is what lets the output's prepared cache hit instead of growing an
 					// entry per call until nothing can play at all.
-					var full = FullPathOrEmpty(Source.As());
+					var full = FullPathOrEmpty(source.As());
 
 					if (full.Length > 0 && Service.TryGetDecoded(full, out var cached))
 					{
@@ -389,7 +389,7 @@ namespace Keysharp.Builtins
 					}
 					else
 					{
-						var loaded = Load(null, Source);
+						var loaded = Load(null, source);
 
 						if (loaded is not Clip loadedClip)
 							return loaded;   // an error already surfaced, or was suppressed by OnError
@@ -401,23 +401,23 @@ namespace Keysharp.Builtins
 					}
 				}
 
-				if (!TryLevel(Volume == null ? 100L : Volume, "Volume", out var volume, out var failure))
+				if (!TryLevel(volume == null ? 100L : volume, "Volume", out var volumeValue, out var failure))
 					return failure;
 
-				if (!TryPan(Pan == null ? 0L : Pan, out var pan, out failure))
+				if (!TryPan(pan == null ? 0L : pan, out var panValue, out failure))
 					return failure;
 
-				var loop = Loop.Ab();
-				var startMs = StartMilliseconds == null ? 0.0 : StartMilliseconds.Ad();
+				var loopValue = loop.Ab();
+				var startMs = startMilliseconds == null ? 0.0 : startMilliseconds.Ad();
 
 				if (!double.IsFinite(startMs) || startMs < 0)
-					return Errors.ValueErrorOccurred("StartMilliseconds must be a finite number of 0 or more.", StartMilliseconds);
+					return Errors.ValueErrorOccurred("StartMilliseconds must be a finite number of 0 or more.", startMilliseconds);
 
 				string deviceId = "";
 
-				if (Device is Device || Device.As().Length > 0)
+				if (device is Device || device.As().Length > 0)
 				{
-					if (!TryResolveDevice(Device, Engine.AudioDeviceKind.Output, true, out var resolved, out failure))
+					if (!TryResolveDevice(device, Engine.AudioDeviceKind.Output, true, out var resolved, out failure))
 						return failure;
 
 					deviceId = resolved.Id;
@@ -431,7 +431,7 @@ namespace Keysharp.Builtins
 				if (data.DurationMilliseconds > 0 && startMs >= data.DurationMilliseconds)
 					return Errors.ValueErrorOccurred($"StartMilliseconds {startMs} is at or past the clip.s {data.DurationMilliseconds:0.##} ms duration.");
 
-				var control = core.TryPlay(data, volume, pan, loop, startMs, out var playError);
+				var control = core.TryPlay(data, volumeValue, panValue, loopValue, startMs, out var playError);
 
 				if (control == null)
 					return Errors.OSErrorOccurredWithMessage(playError.IsNullOrEmpty()
@@ -446,9 +446,9 @@ namespace Keysharp.Builtins
 			/// <summary>Every usable device of Kind "Output", "Input" or "All" (the default), matched without regard
 			/// to case. Outputs precede inputs for "All".</summary>
 			[Static]
-			public static object Devices(object @this, object Kind = null)
+			public static object Devices(object @this, object kind = null)
 			{
-				if (!TryKind(Kind, "All", true, out var kind, out var all, out var failure))
+				if (!TryKind(kind, "All", true, out var deviceKind, out var all, out var failure))
 					return failure;
 
 				var result = new Array();
@@ -457,11 +457,11 @@ namespace Keysharp.Builtins
 				if (backend == null || !backend.IsAvailable)
 					return result;
 
-				if (all || kind == Engine.AudioDeviceKind.Output)
+				if (all || deviceKind == Engine.AudioDeviceKind.Output)
 					foreach (var d in backend.EnumerateDevices(Engine.AudioDeviceKind.Output))
 						_ = result.Push(Device.Wrap(Service, d));
 
-				if (all || kind == Engine.AudioDeviceKind.Input)
+				if (all || deviceKind == Engine.AudioDeviceKind.Input)
 					foreach (var d in backend.EnumerateDevices(Engine.AudioDeviceKind.Input))
 						_ = result.Push(Device.Wrap(Service, d));
 
@@ -471,13 +471,13 @@ namespace Keysharp.Builtins
 			/// <summary>The default device of Kind "Output" (the default) or "Input", matched without regard to case,
 			/// or blank when the host has none.</summary>
 			[Static]
-			public static object DefaultDevice(object @this, object Kind = null)
+			public static object DefaultDevice(object @this, object kind = null)
 			{
-				if (!TryKind(Kind, "Output", false, out var kind, out _, out var failure))
+				if (!TryKind(kind, "Output", false, out var deviceKind, out _, out var failure))
 					return failure;
 
 				var backend = Service.Backend;
-				return backend is { IsAvailable: true } && backend.TryGetDefaultDevice(kind, out var d) ? Device.Wrap(Service, d) : "";
+				return backend is { IsAvailable: true } && backend.TryGetDefaultDevice(deviceKind, out var d) ? Device.Wrap(Service, d) : "";
 			}
 		}
 	}

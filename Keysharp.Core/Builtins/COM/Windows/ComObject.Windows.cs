@@ -7,7 +7,8 @@ namespace Keysharp.Builtins.COM
 	{
 		public ComObject(params object[] args) : base(args) { }
 
-		public static object staticCall(object @this, object clsid, object iid = null)//progId, string iid)
+		public static object staticCall(object @this, [UserDeclaredName("CLSID")] object clsid,
+			[UserDeclaredName("IID")] object iid = null)//progId, string iid)
 		{
 			var cls = clsid.As();
 			var iidStr = iid.As();

@@ -75,20 +75,20 @@ namespace Keysharp.Builtins
 
 				public KeysharpPath(params object[] args) : base(args) { }
 
-				public object __New(object FillRule = null)
+				public object __New(object fillRule = null)
 				{
 					if (constructed)
 						return Errors.ValueErrorOccurred("An Image.Path's FillRule is fixed at construction.", ret: this);
 
-					if (FillRule != null)
+					if (fillRule != null)
 					{
-						if (FillRule is not string value || value.Length == 0)
-							return InvalidFillRule(FillRule);
+						if (fillRule is not string value || value.Length == 0)
+							return InvalidFillRule(fillRule);
 
 						if (value.Equals("NonZero", StringComparison.OrdinalIgnoreCase))
 							nonZero = true;
 						else if (!value.Equals("EvenOdd", StringComparison.OrdinalIgnoreCase))
-							return InvalidFillRule(FillRule);
+							return InvalidFillRule(fillRule);
 					}
 
 					SetFillMode(geometry, nonZero);
@@ -149,9 +149,9 @@ namespace Keysharp.Builtins
 					Include(new PointF((float)rightEdge, (float)bottomEdge));
 				}
 
-				public object MoveTo(object X, object Y)
+				public object MoveTo(object x, object y)
 				{
-					if (!TryVectorPoint(X, Y, out current))
+					if (!TryVectorPoint(x, y, out current))
 						return this;
 
 					geometry.StartFigure();
@@ -159,9 +159,9 @@ namespace Keysharp.Builtins
 					return this;
 				}
 
-				public object LineTo(object X, object Y)
+				public object LineTo(object x, object y)
 				{
-					if (!TryVectorPoint(X, Y, out var end))
+					if (!TryVectorPoint(x, y, out var end))
 						return this;
 
 					if (!hasCurrent)
@@ -175,12 +175,12 @@ namespace Keysharp.Builtins
 					return this;
 				}
 
-				public object CubicTo(object ControlX1, object ControlY1, object ControlX2, object ControlY2,
-					object X, object Y)
+				public object CubicTo(object controlX1, object controlY1, object controlX2, object controlY2,
+					object x, object y)
 				{
-					if (!TryVectorPoint(ControlX1, ControlY1, out var control1)
-						|| !TryVectorPoint(ControlX2, ControlY2, out var control2)
-						|| !TryVectorPoint(X, Y, out var end))
+					if (!TryVectorPoint(controlX1, controlY1, out var control1)
+						|| !TryVectorPoint(controlX2, controlY2, out var control2)
+						|| !TryVectorPoint(x, y, out var end))
 						return this;
 
 					if (!hasCurrent)
@@ -196,21 +196,21 @@ namespace Keysharp.Builtins
 					return this;
 				}
 
-				public object ArcTo(object X, object Y, object Width, object Height, object StartAngle, object SweepAngle)
+				public object ArcTo(object x, object y, object width, object height, object startAngle, object sweepAngle)
 				{
-					if (!TryVectorRect(X, Y, Width, Height, out var rect)
-						|| !TryVectorNumber(StartAngle, nameof(StartAngle), out var startAngle)
-						|| !TryVectorNumber(SweepAngle, nameof(SweepAngle), out var sweepAngle))
+					if (!TryVectorRect(x, y, width, height, out var rect)
+						|| !TryVectorNumber(startAngle, nameof(startAngle), out var startAngleValue)
+						|| !TryVectorNumber(sweepAngle, nameof(sweepAngle), out var sweepAngleValue))
 						return this;
 
-					if (Math.Abs(sweepAngle) > 360)
-						return Errors.ValueErrorOccurred("SweepAngle must be from -360 through 360.", SweepAngle, this);
+					if (Math.Abs(sweepAngleValue) > 360)
+						return Errors.ValueErrorOccurred("SweepAngle must be from -360 through 360.", sweepAngle, this);
 
-					if (rect.Width <= 0 || rect.Height <= 0 || sweepAngle == 0)
+					if (rect.Width <= 0 || rect.Height <= 0 || sweepAngleValue == 0)
 						return this;
 
-					startAngle = Math.IEEERemainder(startAngle, 360);
-					var first = ArcPoint(rect, startAngle);
+					startAngleValue = Math.IEEERemainder(startAngleValue, 360);
+					var first = ArcPoint(rect, startAngleValue);
 
 					if (hasCurrent)
 					{
@@ -221,10 +221,10 @@ namespace Keysharp.Builtins
 					else
 						geometry.StartFigure();
 
-					geometry.AddArc(rect.X, rect.Y, rect.Width, rect.Height, (float)startAngle, (float)sweepAngle);
+					geometry.AddArc(rect.X, rect.Y, rect.Width, rect.Height, (float)startAngleValue, (float)sweepAngleValue);
 					hasGeometry = true;
 					Include(rect);
-					current = ArcPoint(rect, startAngle + sweepAngle);
+					current = ArcPoint(rect, startAngleValue + sweepAngleValue);
 					hasCurrent = true;
 					return this;
 				}
@@ -248,9 +248,9 @@ namespace Keysharp.Builtins
 					return this;
 				}
 
-				public object AddRect(object X, object Y, object Width, object Height)
+				public object AddRect(object x, object y, object width, object height)
 				{
-					if (!TryVectorRect(X, Y, Width, Height, out var rect))
+					if (!TryVectorRect(x, y, width, height, out var rect))
 						return this;
 
 					if (rect.Width > 0 && rect.Height > 0)
@@ -264,17 +264,17 @@ namespace Keysharp.Builtins
 					return this;
 				}
 
-				public object AddRoundRect(object X, object Y, object Width, object Height, object Radius)
+				public object AddRoundRect(object x, object y, object width, object height, object radius)
 				{
-					if (!TryVectorRect(X, Y, Width, Height, out var rect)
-						|| !TryVectorNumber(Radius, nameof(Radius), out var radius))
+					if (!TryVectorRect(x, y, width, height, out var rect)
+						|| !TryVectorNumber(radius, nameof(radius), out var radiusValue))
 						return this;
 
 					if (rect.Width <= 0 || rect.Height <= 0)
 						return this;
 
 					using var rounded = MakeRoundRectPath(rect,
-						(float)Math.Clamp(radius, 0, Math.Min(rect.Width, rect.Height) / 2));
+						(float)Math.Clamp(radiusValue, 0, Math.Min(rect.Width, rect.Height) / 2));
 					geometry.AddPath(rounded, false);
 					hasGeometry = true;
 					Include(rect);
@@ -282,9 +282,9 @@ namespace Keysharp.Builtins
 					return this;
 				}
 
-				public object AddEllipse(object X, object Y, object Width, object Height)
+				public object AddEllipse(object x, object y, object width, object height)
 				{
-					if (!TryVectorRect(X, Y, Width, Height, out var rect))
+					if (!TryVectorRect(x, y, width, height, out var rect))
 						return this;
 
 					if (rect.Width > 0 && rect.Height > 0)
@@ -298,24 +298,24 @@ namespace Keysharp.Builtins
 					return this;
 				}
 
-				public object AddPolygon(object Points)
+				public object AddPolygon(object points)
 				{
-					if (Points is not Array points)
+					if (points is not Array parsedPoints)
 						return Errors.TypeErrorOccurred("Points must be an Array of objects with X and Y properties.", this);
 
-					var count = points.array?.Count ?? 0;
+					var count = parsedPoints.array?.Count ?? 0;
 
 					if (count == 0)
 						return this;
 
 					if (count < 3)
-						return Errors.ValueErrorOccurred("A nonempty polygon requires at least three points.", Points, this);
+						return Errors.ValueErrorOccurred("A nonempty polygon requires at least three points.", points, this);
 
 					var nativePoints = new PointF[count];
 
 					for (var i = 0; i < count; i++)
 					{
-						var point = points.array[i];
+						var point = parsedPoints.array[i];
 						var x = point is Any any ? Script.GetPropertyValueOrNull(any, "X") : null;
 						var y = point is Any anyY ? Script.GetPropertyValueOrNull(anyY, "Y") : null;
 
@@ -335,14 +335,14 @@ namespace Keysharp.Builtins
 					return this;
 				}
 
-				public object AddPath(object OtherPath, object Transform = null)
+				public object AddPath(object otherPath, object transform = null)
 				{
-					if (OtherPath is not KeysharpPath other)
+					if (otherPath is not KeysharpPath other)
 						return Errors.TypeErrorOccurred("OtherPath must be an Image.Path.", this);
 
-					var transform = VectorTransform.Identity;
+					var transformValue = VectorTransform.Identity;
 
-					if (Transform != null && !TryVectorTransform(Transform, transform, out transform))
+					if (transform != null && !TryVectorTransform(transform, transformValue, out transformValue))
 						return this;
 
 					if (!other.hasGeometry)
@@ -350,9 +350,9 @@ namespace Keysharp.Builtins
 
 					using var copy = other.CloneGeometry();
 
-					if (!transform.IsIdentity)
+					if (!transformValue.IsIdentity)
 					{
-						using NativeMatrix matrix = NativeVectorMatrix(transform);
+						using NativeMatrix matrix = NativeVectorMatrix(transformValue);
 						copy.Transform(matrix);
 					}
 
@@ -360,7 +360,7 @@ namespace Keysharp.Builtins
 					hasGeometry = true;
 
 					if (!other.TryGetBounds(out var sourceBounds)
-						|| !TryTransformBounds(sourceBounds, transform, out sourceBounds))
+						|| !TryTransformBounds(sourceBounds, transformValue, out sourceBounds))
 						boundsValid = false;
 					else
 						Include(sourceBounds);
@@ -438,37 +438,37 @@ namespace Keysharp.Builtins
 					Errors.ErrorOccurred("Image.Brush has no instances; use LinearGradient or RadialGradient.");
 
 				[Static]
-				public static object LinearGradient(object @this, object X1, object Y1, object X2, object Y2,
-					object StartColor, object EndColor)
+				public static object LinearGradient(object @this, object x1, object y1, object x2, object y2,
+					object startColor, object endColor)
 				{
-					if (!TryVectorPoint(X1, Y1, out var start)
-						|| !TryVectorPoint(X2, Y2, out var end)
-						|| !TryVectorColor(StartColor, nameof(StartColor), out var startColor)
-						|| !TryVectorColor(EndColor, nameof(EndColor), out var endColor))
+					if (!TryVectorPoint(x1, y1, out var start)
+						|| !TryVectorPoint(x2, y2, out var end)
+						|| !TryVectorColor(startColor, nameof(startColor), out var startColorValue)
+						|| !TryVectorColor(endColor, nameof(endColor), out var endColorValue))
 						return DefaultObject;
 
 					if (start.X == end.X && start.Y == end.Y)
 						return Errors.ValueErrorOccurred("Linear gradient endpoints must be distinct.");
 
-					return new KeysharpBrush(BrushKind.Linear, start, end, startColor, endColor);
+					return new KeysharpBrush(BrushKind.Linear, start, end, startColorValue, endColorValue);
 				}
 
 				[Static]
-				public static object RadialGradient(object @this, object CenterX, object CenterY,
-					object RadiusX, object RadiusY, object CenterColor, object EdgeColor)
+				public static object RadialGradient(object @this, object centerX, object centerY,
+					object radiusX, object radiusY, object centerColor, object edgeColor)
 				{
-					if (!TryVectorPoint(CenterX, CenterY, out var center)
-						|| !TryVectorNumber(RadiusX, nameof(RadiusX), out var radiusX)
-						|| !TryVectorNumber(RadiusY, nameof(RadiusY), out var radiusY)
-						|| !TryVectorColor(CenterColor, nameof(CenterColor), out var centerColor)
-						|| !TryVectorColor(EdgeColor, nameof(EdgeColor), out var edgeColor))
+					if (!TryVectorPoint(centerX, centerY, out var center)
+						|| !TryVectorNumber(radiusX, nameof(radiusX), out var radiusXValue)
+						|| !TryVectorNumber(radiusY, nameof(radiusY), out var radiusYValue)
+						|| !TryVectorColor(centerColor, nameof(centerColor), out var centerColorValue)
+						|| !TryVectorColor(edgeColor, nameof(edgeColor), out var edgeColorValue))
 						return DefaultObject;
 
-					if (radiusX <= 0 || radiusY <= 0)
+					if (radiusXValue <= 0 || radiusYValue <= 0)
 						return Errors.ValueErrorOccurred("Radial gradient radii must be positive.");
 
 					return new KeysharpBrush(BrushKind.Radial, center,
-						new PointF((float)radiusX, (float)radiusY), centerColor, edgeColor);
+						new PointF((float)radiusXValue, (float)radiusYValue), centerColorValue, edgeColorValue);
 				}
 			}
 
@@ -497,21 +497,21 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			public object Clip(object Path = null)
+			public object Clip(object path = null)
 			{
 				ThrowIfDisposed();
 
-				if (Path == null)
+				if (path == null)
 				{
 					drawingClip = null;
 					return this;
 				}
 
-				if (Path is not KeysharpPath path)
+				if (path is not KeysharpPath pathValue)
 					return Errors.TypeErrorOccurred("Clip requires an Image.Path, or no argument to reset clipping.", this);
 
-				var snapshot = path.CloneGeometry();
-				path.TryGetBounds(out var bounds);
+				var snapshot = pathValue.CloneGeometry();
+				pathValue.TryGetBounds(out var bounds);
 
 				if (!drawingTransform.IsIdentity)
 				{
@@ -530,41 +530,41 @@ namespace Keysharp.Builtins
 				return new VectorState(vectorOwner, SnapshotDrawingState());
 			}
 
-			public object RestoreState(object State)
+			public object RestoreState(object state)
 			{
 				ThrowIfDisposed();
 
-				if (State is not VectorState state)
+				if (state is not VectorState stateValue)
 					return Errors.TypeErrorOccurred("State must be a snapshot returned by Image.SaveState.", this);
 
-				if (!ReferenceEquals(state.Owner, vectorOwner))
-					return Errors.ValueErrorOccurred("State must be a snapshot created by this Image.", State, this);
+				if (!ReferenceEquals(stateValue.Owner, vectorOwner))
+					return Errors.ValueErrorOccurred("State must be a snapshot created by this Image.", state, this);
 
-				var drawingState = state.State;
+				var drawingState = stateValue.State;
 				drawingTransform = drawingState.Transform;
 				drawingClip = drawingState.Clip;
 				return this;
 			}
 
-			public object DrawPath(object Path, object Color = null, object Thickness = null)
+			public object DrawPath(object path, object color = null, object thickness = null)
 			{
 				ThrowIfDisposed();
 
-				if (Path is not KeysharpPath path)
+				if (path is not KeysharpPath pathValue)
 					return Errors.TypeErrorOccurred("Path must be an Image.Path.", this);
 
-				var thickness = 1.0;
+				var thicknessValue = 1.0;
 
-				if (!TryVectorPaint(Color, unchecked((int)0xFF000000u), out var paint)
-					|| (Thickness != null && !TryVectorNumber(Thickness, nameof(Thickness), out thickness)))
+				if (!TryVectorPaint(color, unchecked((int)0xFF000000u), out var paint)
+					|| (thickness != null && !TryVectorNumber(thickness, nameof(thickness), out thicknessValue)))
 					return this;
 
-				if (!path.HasGeometry || thickness <= 0 || paint.IsTransparent)
+				if (!pathValue.HasGeometry || thicknessValue <= 0 || paint.IsTransparent)
 					return this;
 
-				var snapshot = path.CloneGeometry();
-				var boundsKnown = path.TryGetBounds(out var bounds);
-				var coverage = ExpandBounds(bounds, thickness * 5 + 1);
+				var snapshot = pathValue.CloneGeometry();
+				var boundsKnown = pathValue.TryGetBounds(out var bounds);
+				var coverage = ExpandBounds(bounds, thicknessValue * 5 + 1);
 				var state = SnapshotDrawingState();
 
 				if (!eagerDraw)
@@ -579,14 +579,14 @@ namespace Keysharp.Builtins
 
 						if (paint.IsSolid)
 						{
-							using var pen = new Pen(ImageHelper.ArgbToColor(paint.Solid), (float)thickness);
+							using var pen = new Pen(ImageHelper.ArgbToColor(paint.Solid), (float)thicknessValue);
 							ConfigureVectorPen(pen);
 							graphics.DrawPath(pen, snapshot);
 						}
 						else
 						{
 							using var brush = CreateVectorBrush(paint.Brush, coverage);
-							using var pen = new Pen(brush, (float)thickness);
+							using var pen = new Pen(brush, (float)thicknessValue);
 							ConfigureVectorPen(pen);
 							graphics.DrawPath(pen, snapshot);
 						}
@@ -601,28 +601,28 @@ namespace Keysharp.Builtins
 				}
 
 				if (boundsKnown)
-					DamageVector(bounds, thickness * 5, state);
+					DamageVector(bounds, thicknessValue * 5, state);
 				else
 					DamageAll();
 
 				return this;
 			}
 
-			public object FillPath(object Path, object Color = null)
+			public object FillPath(object path, object color = null)
 			{
 				ThrowIfDisposed();
 
-				if (Path is not KeysharpPath path)
+				if (path is not KeysharpPath pathValue)
 					return Errors.TypeErrorOccurred("Path must be an Image.Path.", this);
 
-				if (!TryVectorPaint(Color, unchecked((int)0xFF000000u), out var paint))
+				if (!TryVectorPaint(color, unchecked((int)0xFF000000u), out var paint))
 					return this;
 
-				if (!path.HasGeometry || paint.IsTransparent)
+				if (!pathValue.HasGeometry || paint.IsTransparent)
 					return this;
 
-				var snapshot = path.CloneGeometry();
-				var boundsKnown = path.TryGetBounds(out var bounds);
+				var snapshot = pathValue.CloneGeometry();
+				var boundsKnown = pathValue.TryGetBounds(out var bounds);
 				var coverage = ExpandBounds(bounds, 1);
 				var state = SnapshotDrawingState();
 

@@ -78,14 +78,14 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Runs a function object on a new real thread. Extra arguments are passed to the function.
 			/// </summary>
-			/// <param name="Callback">The function object to run.</param>
-			/// <param name="Arguments">The arguments to pass to the function.</param>
+			/// <param name="callback">The function object to run.</param>
+			/// <param name="arguments">The arguments to pass to the function.</param>
 			/// <returns>The <see cref="RealThread"/> object.</returns>
-			public static object staticCall(object @this, object Callback, params object[] Arguments)
+			public static object staticCall(object @this, object callback, params object[] arguments)
 			{
-				var funcObj = Functions.GetKeysharpFunc(Callback, null, true);
+				var funcObj = Functions.GetKeysharpFunc(callback, null, true);
 				var rt = new RealThread(Script.TheScript);
-				rt.Start(() => funcObj.Call(Arguments));
+				rt.Start(() => funcObj.Call(arguments));
 				return rt;
 			}
 
@@ -187,15 +187,15 @@ namespace Keysharp.Builtins
 			/// work rather than refusing it. <see cref="Send"/> is the synchronous form and differs in more than
 			/// blocking — see its remarks.</para>
 			/// </summary>
-			public object Post(object Callback, params object[] Arguments)
+			public object Post(object callback, params object[] arguments)
 			{
-				var fo = Functions.GetKeysharpFunc(Callback, null, true);
+				var fo = Functions.GetKeysharpFunc(callback, null, true);
 				var scheduler = GetAliveScheduler();
 
 				if (scheduler == null)
 					return ReportThreadNotAlive();
 
-				var request = new PostRequest(this, scheduler, fo, Arguments);
+				var request = new PostRequest(this, scheduler, fo, arguments);
 				pendingPosts[request] = 0;
 
 				if (!scheduler.Enqueue(ScriptEventQueue.Normal, 0, request.Execute))
@@ -216,9 +216,9 @@ namespace Keysharp.Builtins
 			/// target refuses it outright. Use this when a busy target should fail fast, and
 			/// <c>Await(Post(...))</c> when it should be waited for.</para>
 			/// </summary>
-			public object Send(object Callback, params object[] Arguments)
+			public object Send(object callback, params object[] arguments)
 			{
-				var fo = Functions.GetKeysharpFunc(Callback, null, true);
+				var fo = Functions.GetKeysharpFunc(callback, null, true);
 				var scheduler = GetAliveScheduler();
 
 				if (scheduler == null)
@@ -228,7 +228,7 @@ namespace Keysharp.Builtins
 				{
 					return scheduler.InvokeSynchronous(() =>
 					{
-						var executionResult = RunOnSchedulerThread(scheduler, () => fo.Call(Arguments), out var result, out _);
+						var executionResult = RunOnSchedulerThread(scheduler, () => fo.Call(arguments), out var result, out _);
 						return executionResult == ScriptEventExecutionResult.Executed
 							? result
 							: Errors.ErrorOccurred("Unable to execute callback on RealThread.");
@@ -250,8 +250,8 @@ namespace Keysharp.Builtins
 			/// (<c>A_RealThread.Exit()</c>) the current pseudo-thread exits immediately and this does not return,
 			/// so the task is unobservable there.
 			/// </summary>
-			/// <param name="ExitCode">The process exit code to apply to the pseudo-threads being exited. Default: 0.</param>
-			public object Exit(object ExitCode = null)
+			/// <param name="exitCode">The process exit code to apply to the pseudo-threads being exited. Default: 0.</param>
+			public object Exit(object exitCode = null)
 			{
 				if (!IsWorker)
 					return ReportNotAWorker();
@@ -263,7 +263,7 @@ namespace Keysharp.Builtins
 				if (scheduler == null)//Already gone: shutting down what has shut down is not an error.
 					return terminatedTask;
 
-				var code = ExitCode.Ai();
+				var code = exitCode.Ai();
 				scheduler.RequestWorkerExit();
 				var mgr = scheduler.threadManager;
 

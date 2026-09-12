@@ -143,7 +143,7 @@ namespace Keysharp.Builtins.COM
 				ref Guid uuid,
 				[MarshalAs(UnmanagedType.IUnknown)] out object rReturnedComObject);
 
-		public static object ComObjActive(object clsid) => GetActiveObject(clsid.As());
+		public static object ComObjActive([UserDeclaredName("CLSID")] object clsid) => GetActiveObject(clsid.As());
 
 		internal static object ConvertToCOMType(object ret)
 		{
@@ -229,7 +229,8 @@ namespace Keysharp.Builtins.COM
 			return Errors.ErrorOccurred("Unknown COM object type");
 		}
 
-		public static object ComObjQuery(object comObj, object sid = null, object iid = null)
+		public static object ComObjQuery(object comObj, [UserDeclaredName("SID")] object sid = null,
+			[UserDeclaredName("IID")] object iid = null)
 		{
 			nint ptr;
 

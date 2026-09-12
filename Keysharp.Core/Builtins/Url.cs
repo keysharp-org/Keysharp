@@ -22,17 +22,17 @@ namespace Keysharp.Builtins
 			/// segment, a query value and a form field each need.
 			/// </summary>
 			/// <param name="this">The class object, supplied by the script-static call.</param>
-			/// <param name="Text">The text to encode.</param>
-			/// <param name="Encoding">The encoding the text's bytes are taken in, named as for
+			/// <param name="text">The text to encode.</param>
+			/// <param name="encoding">The encoding the text's bytes are taken in, named as for
 			/// <see cref="A_FileEncoding"/>. Defaults to UTF-8.</param>
 			/// <returns>The percent-encoded text. A space becomes <c>%20</c>, never <c>+</c>, which means a space
 			/// only inside a form body and would corrupt a path or a query value.</returns>
 			/// <exception cref="ValueError">Thrown if the encoding cannot be resolved.</exception>
 			[Static]
-			public static object Encode(object @this, object Text, object Encoding = null)
+			public static object Encode(object @this, object text, object encoding = null)
 			{
-				var s = Text.As();
-				var enc = Files.GetEncodingOrDefault(Encoding, System.Text.Encoding.UTF8);
+				var s = text.As();
+				var enc = Files.GetEncodingOrDefault(encoding, System.Text.Encoding.UTF8);
 
 				if (s.Length == 0)
 					return "";
@@ -84,18 +84,18 @@ namespace Keysharp.Builtins
 			/// Resolves percent-escapes.
 			/// </summary>
 			/// <param name="this">The class object, supplied by the script-static call.</param>
-			/// <param name="Text">The text to decode.</param>
-			/// <param name="Encoding">The encoding the escaped bytes are read in, named as for
+			/// <param name="text">The text to decode.</param>
+			/// <param name="encoding">The encoding the escaped bytes are read in, named as for
 			/// <see cref="A_FileEncoding"/>. Defaults to UTF-8.</param>
 			/// <returns>The decoded text. A <c>%</c> not followed by two hexadecimal digits stands for itself, as
 			/// a real URL commonly carries one, and so does <c>+</c>, which means a space only inside a form
 			/// body.</returns>
 			/// <exception cref="ValueError">Thrown if the encoding cannot be resolved.</exception>
 			[Static]
-			public static object Decode(object @this, object Text, object Encoding = null)
+			public static object Decode(object @this, object text, object encoding = null)
 			{
-				var s = Text.As();
-				var enc = Files.GetEncodingOrDefault(Encoding, System.Text.Encoding.UTF8);
+				var s = text.As();
+				var enc = Files.GetEncodingOrDefault(encoding, System.Text.Encoding.UTF8);
 
 				if (s.IndexOf('%') < 0)
 					return s;

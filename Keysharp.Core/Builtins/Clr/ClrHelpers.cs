@@ -616,7 +616,8 @@ namespace Keysharp.Builtins
 
 			// Every overload's parameter names, so the caller can see which spelling was meant. Overloads differ,
 			// hence the union rather than one list.
-			var accepted = set.Methods.SelectMany(m => Keysharp.Internals.Invoke.MethodPropertyHolder.GetOrAdd(m).ParamIndexByName.Keys)
+			var accepted = set.Methods.SelectMany(m => Keysharp.Internals.Invoke.MethodPropertyHolder.GetOrAdd(m).ParamScan
+													 .Where(p => !p.Variadic).Select(p => p.Name))
 									  .Distinct(StringComparer.OrdinalIgnoreCase)
 									  .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
 			var supplied = string.Join(", ", named.Store.Keys.Select(n => $"'{n}'"));

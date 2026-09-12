@@ -319,7 +319,7 @@ namespace Keysharp.Internals.Invoke
 			throw new ValueError(
 				map.ContainsKey(name)
 				? SuppliedTwiceMessage(name, Describe(mph))
-				: UnknownNameMessage(name, Describe(mph), map.OrderBy(kv => kv.Value).Select(kv => kv.Key)));
+				: UnknownNameMessage(name, Describe(mph), mph.ParamScan.Where(p => !p.Variadic).Select(p => p.Name)));
 		}
 
 		// The two diagnostics a named argument can produce, in one place: `#Warn NamedArg` reports the same two at

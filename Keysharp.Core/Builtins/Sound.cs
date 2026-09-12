@@ -64,7 +64,7 @@ namespace Keysharp.Builtins
 		/// e.g. 1, "Speakers", "Speakers:2" or "Speakers (Example HD Audio)".
 		/// </param>
 		/// <returns>The COM interface for the specified sound interface.</returns>
-		public static object SoundGetInterface(object iid, object component = null, object device = null) => DoSound(SoundCommands.SoundGetInterface, iid, component, device);
+		public static object SoundGetInterface([UserDeclaredName("IID")] object iid, object component = null, object device = null) => DoSound(SoundCommands.SoundGetInterface, iid, component, device);
 
 #endif
 

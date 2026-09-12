@@ -326,7 +326,7 @@ namespace Keysharp.Builtins
 		///     0x40000000 : Use the system ANSI code page for string translation instead of the locale's code page.
 		/// </param>
 		/// <returns>The formatted date/time string</returns>
-		public static string FormatTime(object timestamp = null, object format = null)
+		public static string FormatTime([UserDeclaredName("YYYYMMDDHH24MISS")] object timestamp = null, object format = null)
 		{
 			var s = timestamp.As();
 			var f = format.As();

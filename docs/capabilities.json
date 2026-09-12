@@ -703,7 +703,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp extension. An Array describing the function's parameters (Name, Index, IsOptional, IsByRef, IsVariadic, and Default when there is a real one). Reports exactly the names named-argument binding uses, excluding the receiver, internal parameters, and a bound function's already-bound ones. Unset when the parameters cannot be known (ObjBindMethod).",
+                     "notes":  "Keysharp extension. An Array describing the parameters a function object accepts (Name, Index, IsOptional, IsByRef, IsVariadic, and Default when present). An unbound method includes its required this receiver; supplied or bound parameters are omitted. Other names match named-argument binding. Unset when the signature is unknown (ObjBindMethod).",
                      "tested-by":  "func-named-params.ahk"
                  },
                  {
@@ -8439,7 +8439,7 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Monitor.FromWindow()",
-                     "syntax":  "m := Monitor.FromWindow(winTitle?, winText?, exclTitle?, exclText?)",
+                     "syntax":  "m := Monitor.FromWindow(WinTitle?, WinText?, ExcludeTitle?, ExcludeText?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",

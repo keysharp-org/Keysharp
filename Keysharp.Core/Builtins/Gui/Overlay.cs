@@ -68,37 +68,37 @@ namespace Keysharp.Builtins
 			/// supplies the initial pixels.
 			/// </summary>
 			// `new`, not `override`: lifecycle dispatch resolves the most-derived declaration by name.
-			public object __New(object X = null, object Y = null, object Width = null, object Height = null)
+			public object __New(object x = null, object y = null, object width = null, object height = null)
 			{
-				if (X == null && Y == null && Width == null && Height == null)
+				if (x == null && y == null && width == null && height == null)
 					return DefaultObject;
 
-				if (X == null || Y == null || Width == null || Height == null)
+				if (x == null || y == null || width == null || height == null)
 					return Errors.ValueErrorOccurred("Overlay requires either no arguments or X, Y, Width and Height.");
 
-				var nextX = X.Ai();
-				var nextY = Y.Ai();
-				var nextW = Width.Ai();
-				var nextH = Height.Ai();
+				var nextX = x.Ai();
+				var nextY = y.Ai();
+				var nextW = width.Ai();
+				var nextH = height.Ai();
 
 				if (nextW <= 0 || nextH <= 0)
 					return Errors.ValueErrorOccurred("Overlay Width and Height must be positive.");
 
-				x = nextX;
-				y = nextY;
+				this.x = nextX;
+				this.y = nextY;
 				w = nextW;
 				h = nextH;
 
 				return DefaultObject;
 			}
 
-			/// <summary>Creates a hidden overlay whose canvas is copied from <paramref name="Source"/>.</summary>
+			/// <summary>Creates a hidden overlay whose canvas is copied from <paramref name="source"/>.</summary>
 			[Static]
-			public static object FromImage(object @this, object Source, object X = null, object Y = null,
-				object Width = null, object Height = null)
+			public static object FromImage(object @this, object source, object x = null, object y = null,
+				object width = null, object height = null)
 			{
 				var overlay = new KeysharpOverlay();
-				_ = overlay.SetImage(Source, X, Y, Width, Height);
+				_ = overlay.SetImage(source, x, y, width, height);
 				return overlay.surface != null ? overlay : DefaultObject;
 			}
 
@@ -219,20 +219,20 @@ namespace Keysharp.Builtins
 			#region Frame building
 
 			/// <summary>Builds a complete replacement canvas off-screen, passing it to
-			/// <paramref name="Callback"/>, then presents its pixels and optional geometry as a completed frame.
+			/// <paramref name="callback"/>, then presents its pixels and optional geometry as a completed frame.
 			/// Drawing uses local native screen units while backing-pixel density is selected automatically for the target.
 			/// A drawing exception leaves the current frame unchanged. A failed presentation does not commit the
 			/// replacement canvas or geometry.</summary>
-			public object Redraw(object Callback, object X = null, object Y = null, object Width = null, object Height = null)
+			public object Redraw(object callback, object x = null, object y = null, object width = null, object height = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				if (Callback is not KeysharpFunc f)
+				if (callback is not KeysharpFunc f)
 					return Errors.ValueErrorOccurred("Overlay.Redraw requires a callable object.");
 
-				var nextX = X != null ? X.Ai() : x;
-				var nextY = Y != null ? Y.Ai() : y;
-				var nextW = Width != null ? Width.Ai() : w;
-				var nextH = Height != null ? Height.Ai() : h;
+				var nextX = x != null ? x.Ai() : this.x;
+				var nextY = y != null ? y.Ai() : this.y;
+				var nextW = width != null ? width.Ai() : w;
+				var nextH = height != null ? height.Ai() : h;
 				var oldGeometry = CurrentGeometry;
 
 				if (nextW < 0 || nextH < 0)
@@ -245,8 +245,8 @@ namespace Keysharp.Builtins
 					return Errors.ValueErrorOccurred("Overlay.Redraw requires a positive final width and height.");
 
 				var previousSurface = surface;
-				var previousX = x;
-				var previousY = y;
+				var previousX = this.x;
+				var previousY = this.y;
 				var previousW = w;
 				var previousH = h;
 				var previousAutoW = autoW;
@@ -256,8 +256,8 @@ namespace Keysharp.Builtins
 				// Draw into a private target-sized canvas. The live backing and previous model are untouched until the
 				// final upload succeeds, so a resize never publishes an empty/intermediate surface.
 				surface = replacement;
-				x = nextX;
-				y = nextY;
+				this.x = nextX;
+				this.y = nextY;
 				w = nextW;
 				h = nextH;
 
@@ -272,7 +272,7 @@ namespace Keysharp.Builtins
 				try
 				{
 					_ = f.Call(canvas);
-					var finalBounds = new ScreenRect(x, y, screenW, screenH);
+					var finalBounds = new ScreenRect(this.x, this.y, screenW, screenH);
 
 					if (requestedVisible && !TryPresent(replacement, finalBounds))
 						return this;
@@ -290,8 +290,8 @@ namespace Keysharp.Builtins
 					if (!committed)
 					{
 						surface = previousSurface;
-						x = previousX;
-						y = previousY;
+						this.x = previousX;
+						this.y = previousY;
 						w = previousW;
 						h = previousH;
 						autoW = previousAutoW;
@@ -331,22 +331,22 @@ namespace Keysharp.Builtins
 				return this;
 			}
 
-			/// <summary>Copies <paramref name="Source"/> into the canvas and optionally changes geometry. A failed
+			/// <summary>Copies <paramref name="source"/> into the canvas and optionally changes geometry. A failed
 			/// presentation does not commit requested geometry or a replacement canvas; a reused same-sized canvas
 			/// retains the copied pixels for the next presentation. This operation does not change visibility.</summary>
-			public object SetImage(object Source, object X = null, object Y = null, object Width = null,
-				object Height = null)
+			public object SetImage(object source, object x = null, object y = null, object width = null,
+				object height = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				var nextX = X != null ? X.Ai() : x;
-				var nextY = Y != null ? Y.Ai() : y;
-				var nextW = Width != null ? Width.Ai() : w;
-				var nextH = Height != null ? Height.Ai() : h;
+				var nextX = x != null ? x.Ai() : this.x;
+				var nextY = y != null ? y.Ai() : this.y;
+				var nextW = width != null ? width.Ai() : w;
+				var nextH = height != null ? height.Ai() : h;
 
 				if (nextW < 0 || nextH < 0)
 					return Errors.ValueErrorOccurred("Overlay SetImage Width and Height cannot be negative.");
 
-				if (!TryResolveSource(Source, nameof(SetImage), out var loaded, out var ownsLoaded))
+				if (!TryResolveSource(source, nameof(SetImage), out var loaded, out var ownsLoaded))
 					return this;
 
 				OverlaySurface replacement = null;
@@ -393,8 +393,8 @@ namespace Keysharp.Builtins
 						previous?.Dispose();
 					}
 
-					x = nextX;
-					y = nextY;
+					this.x = nextX;
+					this.y = nextY;
 					w = nextW;
 					h = nextH;
 
@@ -437,35 +437,35 @@ namespace Keysharp.Builtins
 
 			private static readonly string[] supportedEvents = ["click", "doubleclick", "contextmenu", "mousemove"];
 
-			/// <summary>Registers <paramref name="Callback"/> for a mouse event on this overlay, in the style of
+			/// <summary>Registers <paramref name="callback"/> for a mouse event on this overlay, in the style of
 			/// <c>Gui.OnEvent</c>. Events: <c>Click</c> (left button), <c>DoubleClick</c>, <c>ContextMenu</c>
 			/// (right button) and <c>MouseMove</c>. The callback receives <c>(overlay, x, y)</c> with x/y in the
 			/// overlay's local native units — the same units the draw ops use, so a hit-test against drawn
-			/// shapes needs no conversion. <paramref name="AddRemove"/>: 1 (default) = call after previously
+			/// shapes needs no conversion. <paramref name="addRemove"/>: 1 (default) = call after previously
 			/// registered handlers, -1 = call before them, 0 = unregister the callback.
 			/// <para>The overlay must not be click-through to receive mouse input: set
 			/// <see cref="ClickThrough"/> := false, or the events never fire (input passes through to the
 			/// windows beneath). Events require a backing with a client-side window (<see cref="Hwnd"/> != 0);
 			/// a compositor-drawn overlay cannot receive input. Registered handlers keep the script persistent;
 			/// <see cref="Destroy"/> removes them all.</para></summary>
-			public object OnEvent(object EventName, object Callback, object AddRemove = null)
+			public object OnEvent(object eventName, object callback, object addRemove = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				var rawName = EventName.As();
+				var rawName = eventName.As();
 				var name = rawName.ToLowerInvariant();
 
 				if (System.Array.IndexOf(supportedEvents, name) < 0)
 					return Errors.ValueErrorOccurred($"Unknown EventName \"{rawName}\". Expected Click, DoubleClick, ContextMenu or MouseMove.");
 
-				var mode = AddRemove == null ? 1L : AddRemove.Al();
+				var mode = addRemove == null ? 1L : addRemove.Al();
 
 				if (mode is not (1L or -1L or 0L))
 					return Errors.ValueErrorOccurred($"Invalid AddRemove \"{mode}\". Expected 1, -1 or 0.");
 
-				var fo = Functions.GetKeysharpFunc(Callback, null, true);
+				var fo = Functions.GetKeysharpFunc(callback, null, true);
 
 				if (fo == null)
-					return Errors.TypeErrorOccurred(Callback, typeof(KeysharpFunc));
+					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));
 
 				var anyLeft = true;
 
@@ -480,7 +480,7 @@ namespace Keysharp.Builtins
 					{
 						for (var i = list.Count - 1; i >= 0; i--)
 						{
-							if (ReferenceEquals(list[i].original, Callback) || Equals(list[i].original, Callback))
+							if (ReferenceEquals(list[i].original, callback) || Equals(list[i].original, callback))
 							{
 								list[i].reg.Clear();   // releases the persistence hold
 								list.RemoveAt(i);
@@ -489,7 +489,7 @@ namespace Keysharp.Builtins
 					}
 					else
 					{
-						var entry = (Callback, new CallbackRegistration(fo, Script.TheScript?.EventScheduler, true));
+						var entry = (callback, new CallbackRegistration(fo, Script.TheScript?.EventScheduler, true));
 
 						if (mode == -1L)
 							list.Insert(0, entry);
@@ -622,26 +622,26 @@ namespace Keysharp.Builtins
 
 			#region Show / Move / Hide / Destroy
 
-			public object Show(object X = null, object Y = null, object Width = null, object Height = null)
+			public object Show(object x = null, object y = null, object width = null, object height = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				var nextX = X != null ? X.Ai() : x;
-				var nextY = Y != null ? Y.Ai() : y;
-				var nextW = Width != null ? Width.Ai() : w;
-				var nextH = Height != null ? Height.Ai() : h;
+				var nextX = x != null ? x.Ai() : this.x;
+				var nextY = y != null ? y.Ai() : this.y;
+				var nextW = width != null ? width.Ai() : w;
+				var nextH = height != null ? height.Ai() : h;
 
 				if (nextW < 0 || nextH < 0)
 					return Errors.ValueErrorOccurred("Overlay Show Width and Height cannot be negative.");
 
-				x = nextX;
-				y = nextY;
+				this.x = nextX;
+				this.y = nextY;
 				w = nextW;
 				h = nextH;
 
-				if (Width != null && nextW == 0)
+				if (width != null && nextW == 0)
 					autoW = (int)(canvas?.Width ?? 0);
 
-				if (Height != null && nextH == 0)
+				if (height != null && nextH == 0)
 					autoH = (int)(canvas?.Height ?? 0);
 
 				if (!EnsureCanvas())
@@ -652,27 +652,27 @@ namespace Keysharp.Builtins
 				return this;
 			}
 
-			public object Move(object X = null, object Y = null, object Width = null, object Height = null)
+			public object Move(object x = null, object y = null, object width = null, object height = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				var nextX = X != null ? X.Ai() : x;
-				var nextY = Y != null ? Y.Ai() : y;
-				var nextW = Width != null ? Width.Ai() : w;
-				var nextH = Height != null ? Height.Ai() : h;
+				var nextX = x != null ? x.Ai() : this.x;
+				var nextY = y != null ? y.Ai() : this.y;
+				var nextW = width != null ? width.Ai() : w;
+				var nextH = height != null ? height.Ai() : h;
 
 				if (nextW < 0 || nextH < 0)
 					return Errors.ValueErrorOccurred("Overlay Move Width and Height cannot be negative.");
 
 				var previous = CurrentGeometry;
-				x = nextX;
-				y = nextY;
+				this.x = nextX;
+				this.y = nextY;
 				w = nextW;
 				h = nextH;
 
-				if (Width != null && nextW == 0)
+				if (width != null && nextW == 0)
 					autoW = (int)(canvas?.Width ?? 0);
 
-				if (Height != null && nextH == 0)
+				if (height != null && nextH == 0)
 					autoH = (int)(canvas?.Height ?? 0);
 
 				var current = CurrentGeometry;

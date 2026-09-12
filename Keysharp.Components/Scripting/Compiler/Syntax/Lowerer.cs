@@ -4685,9 +4685,6 @@ namespace Keysharp.Compilation.Syntax
 
 				if (mph.variadicParamIndex >= 0) return;
 
-				// ParamScan, not ParamIndexByName: the map can hold TWO spellings for one parameter ([UserDeclaredName]
-				// aliases), and a list index over it would no longer be a parameter position -- shifting the
-				// supplied-twice check for every name after an alias. The scan has one canonical entry per slot.
 				names = mph.ParamScan.Where(e => !e.Variadic).Select(e => e.Name).ToList();
 			}
 			// `Buffer(nosuch: 1)` constructs a BUILT-IN class: the names are its __New's, exactly as the
@@ -4700,9 +4697,6 @@ namespace Keysharp.Compilation.Syntax
 
 				if (mph.variadicParamIndex >= 0) return;
 
-				// ParamScan, not ParamIndexByName: the map can hold TWO spellings for one parameter ([UserDeclaredName]
-				// aliases), and a list index over it would no longer be a parameter position -- shifting the
-				// supplied-twice check for every name after an alias. The scan has one canonical entry per slot.
 				names = mph.ParamScan.Where(e => !e.Variadic).Select(e => e.Name).ToList();
 			}
 			else return;

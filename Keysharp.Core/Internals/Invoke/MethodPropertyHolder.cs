@@ -277,29 +277,18 @@ namespace Keysharp.Internals.Invoke
 		{
 			var scan = new List<ParamScanEntry>();
 
-			// name -> index, then inverted: the binder's map is the authority on which names bind, and on which
-			// parameters are addressable at all (the receiver and the variadic tail are already excluded there).
-			var byIndex = new Dictionary<int, string>();
-
-			foreach (var kv in ParamIndexByName)
-				if (!byIndex.ContainsKey(kv.Value))
-					byIndex[kv.Value] = kv.Key;
+			var byIndex = new HashSet<int>(ParamIndexByName.Values);
 
 			for (var i = 0; i < parameters.Length; i++)
 			{
 				var p = parameters[i];
 				var isVariadic = i == variadicParamIndex;
 
-				if (!isVariadic && !byIndex.ContainsKey(i))
-					continue;   // the receiver
+				if (!isVariadic && !byIndex.Contains(i))
+					continue;
 
 				var hasDefault = !isVariadic && p.HasDefaultValue && p.DefaultValue is object dv && dv is not DBNull;
-				// A lowered variadic parameter carries the `KS_` signature prefix (see Lowerer.VariadicRawName);
-				// scripts know it by the name they wrote.
-				var name = isVariadic && p.Name?.StartsWith(Keywords.InternalPrefix, StringComparison.Ordinal) == true
-						   ? p.Name.Substring(Keywords.InternalPrefix.Length)
-						   : isVariadic ? p.Name : byIndex[i];
-				scan.Add(new ParamScanEntry(i, name,
+				scan.Add(new ParamScanEntry(i, ScriptParameterName(p),
 											isVariadic || p.IsOptional,
 											p.GetCustomAttribute<Keysharp.Runtime.ByRefAttribute>() != null,
 											isVariadic,
@@ -308,6 +297,25 @@ namespace Keysharp.Internals.Invoke
 			}
 
 			return scan;
+		}
+
+		private string ScriptParameterName(ParameterInfo parameter)
+		{
+			var declared = parameter.GetCustomAttribute<Keysharp.Runtime.UserDeclaredNameAttribute>()?.Name;
+			var name = declared ?? parameter.Name ?? "";
+
+			if (name.StartsWith('@'))
+				name = name.Substring(1);
+
+			if (declared == null && parameter.Position == variadicParamIndex
+				&& name.StartsWith(Keywords.InternalPrefix, StringComparison.Ordinal))
+				name = name.Substring(Keywords.InternalPrefix.Length);
+
+			var builtin = memberInfo?.DeclaringType?.Assembly == typeof(Ks).Assembly
+				&& memberInfo.DeclaringType.Namespace?.StartsWith("Keysharp.Builtins", StringComparison.Ordinal) == true;
+			return declared == null && builtin && name.Length != 0
+				? char.ToUpperInvariant(name[0]) + name.Substring(1)
+				: name;
 		}
 
 		/// <summary>
@@ -386,7 +394,7 @@ namespace Keysharp.Internals.Invoke
 			bool Bindable(int i, out ParameterInfo p)
 			{
 				p = parameters[i];
-				return i != variadicParamIndex && !(i == 0 && IsExplicitThis(p));
+				return i != variadicParamIndex && !(IsStatic && i == 0 && IsExplicitThis(p));
 			}
 
 			// A lowered script assembly keeps the C# keyword escape in metadata (NameMangler.Escape emits the

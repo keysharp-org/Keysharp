@@ -57,7 +57,8 @@ namespace Keysharp.Builtins.COM
 		}
 
 		/// <summary>ComObject("bundle.id" | "Name" | "/path/App.app" | "pid:123", "optional suite").</summary>
-		public static object staticCall(object @this, object target, object suite = null)
+		public static object staticCall(object @this, [UserDeclaredName("CLSID")] object target,
+			[UserDeclaredName("IID")] object suite = null)
 			=> Create(target.As(), suite.As(), activate: true);
 
 		// Addresses nothing until Create fills it in, which is the state a prototype instance stays in.

@@ -11,13 +11,14 @@ namespace Keysharp.Builtins.COM
 	public static class Com
 	{
 		/// <summary>Connects to a service that is already on the bus; unlike ComObject it never activates one.</summary>
-		public static object ComObjActive(object name) => ComObject.Create(name.As(), "", activate: false);
+		public static object ComObjActive([UserDeclaredName("CLSID")] object name) => ComObject.Create(name.As(), "", activate: false);
 
 		/// <summary>On D-Bus there are no monikers, so this is ComObjActive: attach to a running service.</summary>
 		public static object ComObjGet(object name) => ComObject.Create(name.As(), "", activate: false);
 
 		/// <summary>Selects a different interface on the same object — the D-Bus counterpart of QueryInterface.</summary>
-		public static object ComObjQuery(object comObj, object sid = null, object iid = null)
+		public static object ComObjQuery(object comObj, [UserDeclaredName("SID")] object sid = null,
+			[UserDeclaredName("IID")] object iid = null)
 		{
 			if (comObj is not ComObject co)
 				return Errors.TypeErrorOccurred(comObj, typeof(ComObject));

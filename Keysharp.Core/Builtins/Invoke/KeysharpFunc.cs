@@ -266,7 +266,7 @@ namespace Keysharp.Builtins
 		}
 		internal Type DeclaringType => mi?.DeclaringType;
 		public bool IsClosure => Inst != null && mi != null && mi.DeclaringType?.DeclaringType == Inst.GetType();
-		public bool IsMethod => (mi != null && !mi.IsStatic) || (mph != null && mph.parameters?.First().Name == "@this");
+		public bool IsMethod => mi != null && (!mi.IsStatic || mph.receiverInCounts);
 		public virtual bool IsBuiltIn => mi != null && mi.DeclaringType.Namespace != TheScript.ProgramType.Namespace;
 		internal virtual bool IsValid => (mi != null && mph != null && mph.CallFunc != null) || (Inst is Any && mph.memberInfo == null);
 		public virtual string Name => mph.QualifiedName;
@@ -282,11 +282,8 @@ namespace Keysharp.Builtins
 		/// <item><c>ByRef</c> -- 1 if the parameter receives a VarRef (<c>&amp;name</c>).</item>
 		/// <item><c>Variadic</c> -- 1 for the trailing <c>name*</c> parameter.</item>
 		/// </list>
-		/// The receiver is excluded -- neither the implicit <c>this</c> of a built-in instance method nor the
-		/// explicit <c>object @this</c> convention is an argument. Names come from the same map the argument binder
-		/// uses, so what this reports is exactly what binds. On a bound function the already-bound parameters are
-		/// excluded too, so this agrees with <see cref="MinParams"/>/<see cref="MaxParams"/>, and
-		/// <c>Index</c> numbers the parameters that remain.
+		/// An unbound method includes its required <c>this</c> receiver. A supplied receiver and a bound function's
+		/// already-bound parameters are omitted, matching <see cref="MinParams"/> and <see cref="MaxParams"/>.
 		/// <para>
 		/// A fresh Array of fresh objects each time. Only the reflection scan behind it is cached -- on the
 		/// <see cref="MethodPropertyHolder"/>, since it is signature-level data shared by every function object over
@@ -307,7 +304,11 @@ namespace Keysharp.Builtins
 					return null;
 
 				var scan = mph.ParamScan;
-				var items = new List<object>(scan.Count);
+				var items = new List<object>(scan.Count + 1);
+				var receiverIndex = mph.IsStatic ? 0 : -1;
+
+				if (mph.receiverInCounts && Inst == null && !IsParamBound(receiverIndex))
+					Add(new MethodPropertyHolder.ParamScanEntry(receiverIndex, "this", false, false, false, false, null));
 
 				foreach (var d in scan)
 				{
@@ -317,6 +318,13 @@ namespace Keysharp.Builtins
 					if (!d.Variadic && IsParamBound(d.Index))
 						continue;
 
+					Add(d);
+				}
+
+				return new Keysharp.Builtins.Array(items);
+
+				void Add(MethodPropertyHolder.ParamScanEntry d)
+				{
 					var info = new KeysharpObject();
 					info.DefinePropInternal("Name", new OwnPropsDesc(info, d.Name));
 					info.DefinePropInternal("Index", new OwnPropsDesc(info, (long)(items.Count + 1)));
@@ -331,8 +339,6 @@ namespace Keysharp.Builtins
 
 					items.Add(info);
 				}
-
-				return new Keysharp.Builtins.Array(items);
 			}
 		}
 
@@ -367,8 +373,8 @@ namespace Keysharp.Builtins
 
 		public KeysharpFunc(params object[] args) : base(args) { }
 
-		public static object staticCall(object @this, object Function, object Obj = null)
-			=> Functions.GetKeysharpFunc(Function, Obj, Obj != null);
+		public static object staticCall(object @this, object function, object obj = null)
+			=> Functions.GetKeysharpFunc(function, obj, obj != null);
 
         private static MethodInfo GetMethodInfo(string s, object o, object paramCount)
         {
