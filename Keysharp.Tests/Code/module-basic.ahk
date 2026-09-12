@@ -53,6 +53,8 @@ AssertEq(Type(AHK.Gui), "Class", A_LineNumber)
 AssertEq(Type(AHK.Gui.Control), "Class", A_LineNumber)
 Throws(() => AHK.Control, A_LineNumber, PropertyError)
 Throws(() => AHK.NoSuchNameAtAll, A_LineNumber, PropertyError)
+; A static function container is not a class, so its name is unknown here too.
+Throws(() => AHK.Dialogs, A_LineNumber, PropertyError)
 
 FileAppend "pass", "*"
 
