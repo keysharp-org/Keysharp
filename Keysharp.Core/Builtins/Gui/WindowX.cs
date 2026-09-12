@@ -892,8 +892,7 @@ namespace Keysharp.Builtins
 		public static object WinMinimizeAll()
 		{
 #if WINDOWS
-			// The shell's native Minimize All: skips windows the shell exempts and lets
-			// WinMinimizeAllUndo restore each window's prior (e.g. maximized) state.
+			// The shell's native Minimize All skips windows the shell exempts.
 			DoDelayedAction(() => _ = WindowsAPI.PostMessage(WindowsAPI.FindWindow("Shell_TrayWnd", null), WindowsAPI.WM_COMMAND, new nint(419), 0));
 			return DefaultObject;
 #else
@@ -912,25 +911,15 @@ namespace Keysharp.Builtins
 #endif
 		}
 
-		public static object WinMinimizeAllUndo(params object[] obj)
+		public static object WinRestoreAll()
 		{
-#if WINDOWS
-			DoDelayedAction(() => _ = WindowsAPI.PostMessage(WindowsAPI.FindWindow("Shell_TrayWnd", null), WindowsAPI.WM_COMMAND, new nint(416), 0));
-			return DefaultObject;
-#else
 			var unsupported = false;
-			DoDelayedAction(() =>
-			{
-				foreach (var window in WindowQuery.AllWindows)
-					if (!Platform.Window.TrySetState(window.Handle, FormWindowState.Normal))
-						unsupported = true;
-			});
+			DoDelayedAction(() => unsupported = !Platform.Window.TryRestoreAll(ThreadAccessors.A_DetectHiddenWindows));
 
 			if (unsupported)
-				return WindowOperationUnsupported(nameof(WinMinimizeAllUndo));
+				return WindowOperationUnsupported(nameof(WinRestoreAll));
 
 			return DefaultObject;
-#endif
 		}
 
 		public static object WinMove(object x = null,
@@ -1018,7 +1007,7 @@ namespace Keysharp.Builtins
 			DoDelayedAction(() =>
 			{
 				foreach (var win in SearchWindows(winTitle, winText, excludeTitle, excludeText))
-					if (!Platform.Window.TrySetState(win.Handle, FormWindowState.Normal))
+					if (!Platform.Window.TryRestore(win.Handle))
 						unsupported = true;
 			});
 

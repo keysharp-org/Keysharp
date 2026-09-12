@@ -56,7 +56,7 @@ namespace Keysharp.Internals
 		public override bool GetEnabled(nint h) => IsSpecified(h) && WindowsAPI.IsWindowEnabled(h);
 		public override bool GetHung(nint h) => h != 0 && WindowsAPI.IsHungAppWindow(h);
 		public override bool GetExists(nint h) => IsSpecified(h) && WindowsAPI.IsWindow(h);
-		public override FormWindowState GetWindowState(nint h) => !IsSpecified(h) ? FormWindowState.Normal : WindowsAPI.IsZoomed(h) ? FormWindowState.Maximized : (WindowsAPI.IsIconic(h) ? FormWindowState.Minimized : FormWindowState.Normal);
+		public override FormWindowState GetWindowState(nint h) => !IsSpecified(h) ? FormWindowState.Normal : WindowsAPI.IsIconic(h) ? FormWindowState.Minimized : (WindowsAPI.IsZoomed(h) ? FormWindowState.Maximized : FormWindowState.Normal);
 		public override bool GetAlwaysOnTop(nint h) => IsSpecified(h) && (GetExStyle(h) & WindowsAPI.WS_EX_TOPMOST) != 0;
 
 		public override object GetTransparency(nint h)
@@ -213,6 +213,18 @@ namespace Keysharp.Internals
 
 			return true;
 		}
+
+		public override bool TryRestore(nint h)
+		{
+			// SW_NORMAL also unmaximizes a minimized window; SW_RESTORE preserves its prior state.
+			if (IsSpecified(h) && !GetHung(h))
+				_ = WindowsAPI.ShowWindow(h, WindowsAPI.SW_RESTORE);
+
+			return true;
+		}
+
+		public override bool TryUnminimize(nint h)
+			=> !WindowsAPI.IsIconic(h) || TryRestore(h);
 
 		public override bool TrySetStyle(nint h, long style)
 		{

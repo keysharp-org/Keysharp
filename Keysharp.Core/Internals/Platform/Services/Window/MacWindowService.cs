@@ -188,6 +188,20 @@ namespace Keysharp.Internals
 			return true;
 		}
 
+		public override bool TryUnminimize(nint h)
+		{
+			if (TryOwnControl(h, out _))
+				return base.TryUnminimize(h);
+
+			if (!TryNative(h, out var native))
+				return false;
+
+			if (!MacAccessibility.TrySetWindowState(native, FormWindowState.Normal))
+				_ = Errors.OSErrorOccurred("Unminimizing the macOS window failed.");
+
+			return true;
+		}
+
 		public override bool TrySetState(nint h, FormWindowState state)
 		{
 			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))

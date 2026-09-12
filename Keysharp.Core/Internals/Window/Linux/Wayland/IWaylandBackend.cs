@@ -49,6 +49,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal const int Normal = 0;
 		internal const int Minimized = 1;
 		internal const int Maximized = 2;
+		internal const int Unminimized = 3;
 
 		internal static int ToShellExtensionState(FormWindowState state) => state switch
 		{
@@ -176,6 +177,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		bool TrySetNoBorder(nint handle, bool noBorder) => false;
 
 		bool TrySetWindowState(nint handle, FormWindowState state) => false;
+		bool TryUnminimizeWindow(nint handle) => false;
 
 		/// <summary>Keep the window above (true) / clear keep-above (false). False = unsupported.</summary>
 		bool TrySetAlwaysOnTop(nint handle, bool onTop) => false;

@@ -211,6 +211,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				&& DesktopClient.SetWindowState(id,
 					WaylandWindowStateProtocol.ToShellExtensionState(state));
 
+		public bool TryUnminimizeWindow(nint handle)
+			=> TryGetServiceHandle(handle, out var id)
+				&& DesktopClient.SetWindowState(id, WaylandWindowStateProtocol.Unminimized);
+
 		public bool TrySetAlwaysOnTop(nint handle, bool onTop)
 			=> TryGetServiceHandle(handle, out var id)
 				&& DesktopClient.SetWindowAbove(id, onTop);

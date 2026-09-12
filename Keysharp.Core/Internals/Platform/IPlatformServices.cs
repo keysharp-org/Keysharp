@@ -99,6 +99,8 @@ namespace Keysharp.Internals
 		bool TrySetAlwaysOnTop(nint h, bool onTop);
 		bool TryMoveResize(nint h, Rectangle bounds, bool setPos, bool setSize);
 		bool TrySetState(nint h, FormWindowState state);
+		bool TryRestore(nint h);
+		bool TryRestoreAll(bool includeHidden);
 		bool TrySetStyle(nint h, long style);
 		bool TrySetExStyle(nint h, long exStyle);
 		bool TrySetTransparency(nint h, object alpha);

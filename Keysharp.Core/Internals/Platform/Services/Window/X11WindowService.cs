@@ -132,6 +132,8 @@ namespace Keysharp.Internals
 			=> TryOwnControl(h, out _) ? base.TryRedraw(h) : Broker.TryRedrawWindow(h);
 		public override bool TrySetState(nint h, FormWindowState state)
 			=> TryOwnControl(h, out _) ? base.TrySetState(h, state) : Broker.TrySetWindowState(h, state);
+		public override bool TryUnminimize(nint h)
+			=> TryOwnControl(h, out _) ? base.TryUnminimize(h) : Broker.TryUnminimizeWindow(h);
 		public override bool TryMoveResize(nint h, Rectangle bounds, bool setPos, bool setSize)
 		{
 			if (TryOwnControl(h, out var control))

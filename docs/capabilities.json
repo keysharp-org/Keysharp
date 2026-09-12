@@ -11279,19 +11279,19 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMinimizeAll and WinMinimizeAllUndo functions minimize or unminimize all windows.",
+                     "notes":  "Minimizes all windows; Windows follows Explorer's exemptions.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
-                     "feature":  "WinMinimizeAllUndo()",
-                     "syntax":  "",
+                     "feature":  "WinRestoreAll()",
+                     "syntax":  "WinRestoreAll()",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMinimizeAll and WinMinimizeAllUndo functions minimize or unminimize all windows.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Unminimizes top-level windows without clearing maximization; respects DetectHiddenWindows. Live Linux/macOS behavior remains unverified.",
+                     "tested-by":  "Gui/guitest.ks (manual)"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11343,7 +11343,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinRestore function unminimizes or unmaximizes the specified window if it is minimized or maximized."
+                     "notes":  "Restores minimized windows to their prior state and maximized windows to normal. Live Linux/macOS behavior remains unverified.",
+                     "tested-by":  "Gui/guitest.ks (manual)"
                  },
                  {
                      "category":  "Windowing/GUI",

@@ -1080,7 +1080,7 @@ MinimizeAll(*)
 
 UndoMinimizeAll(*)
 {
-	WinMinimizeAllUndo()
+	WinRestoreAll()
 }
 
 MaximizeAll(*)
@@ -5585,7 +5585,10 @@ RunForeignWindowMutations() {
 		["Minimize", WinMinimize, -1, "Minimize"],
 		["Restore after minimize", WinRestore, 0, "Restore"],
 		["Maximize", WinMaximize, 1, ""],
-		["Restore after maximize", WinRestore, 0, ""]
+		["Minimize maximized window", WinMinimize, -1, "Minimize"],
+		["Restore to maximized", WinRestore, 1, "Restore"],
+		["Restore after maximize", WinRestore, 0, ""],
+		["Restore normal window", WinRestore, 0, ""]
 	] {
 		action := step[2], expectedState := step[3]
 		WindowChange("State", step[1], (*) => action.Call(gWindowPrimaryHwnd),

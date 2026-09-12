@@ -695,6 +695,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * New window functions:
 	+ `WinFromPoint(x, y)`: Gets the window at a specific screen position.
 	+ `WinMaximizeAll()`: Maximizes all windows.
+	+ `WinRestoreAll()`: Unminimizes top-level windows without clearing maximization; respects `DetectHiddenWindows`. Replaces AHK's `WinMinimizeAllUndo` and needs no preceding `WinMinimizeAll()` call.
 * New class methods:
 	+ `Array`:
 		+ All comparisons compare the actual underlying values, so `"1" != 1`.

@@ -389,6 +389,9 @@ namespace Keysharp.Internals
 			return false;
 		}
 
+		public override bool TryUnminimize(nint h)
+			=> Known(h) ? Wayland.TryUnminimizeWindow(h) : base.TryUnminimize(h);
+
 		public override bool TrySetState(nint h, FormWindowState state)
 		{
 			if (Known(h))   // membership guard (see TrySetAlwaysOnTop).

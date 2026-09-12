@@ -351,6 +351,41 @@ namespace Keysharp.Internals
 #endif
 			return Unsupported();
 		}
+		public virtual bool TryRestore(nint h)
+			=> GetWindowState(h) == FormWindowState.Minimized ? TryUnminimize(h) : TrySetState(h, FormWindowState.Normal);
+
+		public virtual bool TryUnminimize(nint h)
+		{
+#if LINUX
+			if (TryOwnControl(h, out var control) && control is Eto.Forms.Window window)
+			{
+				// GTK deiconifies without clearing the maximized state.
+				window.BringToFront();
+				return true;
+			}
+#elif OSX
+			if (TryOwnControl(h, out var control) && control.ControlObject is MonoMac.AppKit.NSWindow window)
+			{
+				if (window.IsMiniaturized)
+					window.Deminiaturize(window);
+
+				return true;
+			}
+#endif
+			return Unsupported();
+		}
+
+		public bool TryRestoreAll(bool includeHidden)
+		{
+			var supported = true;
+
+			foreach (var window in Enumerate(includeHidden))
+				if (GetWindowState(window.Handle) == FormWindowState.Minimized && !TryUnminimize(window.Handle))
+					supported = false;
+
+			return supported;
+		}
+
 		public virtual bool TrySetStyle(nint h, long style)
 		{
 #if !WINDOWS
