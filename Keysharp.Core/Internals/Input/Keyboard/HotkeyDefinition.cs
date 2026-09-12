@@ -1567,16 +1567,19 @@ namespace Keysharp.Internals.Input.Keyboard
 			=> _ = script.UIEventScheduler.EnqueueThreadLaunch(0, false, false, () =>
 				_ = Keysharp.Internals.Flow.TryCatch(() => ExceptionDispatchInfo.Throw(error)));
 
-		internal static HotCriterionEnum GetHotCriterionType(KeysharpFunc criterion)
-			=> criterion?.Name switch
+		// A HotIfWin criterion is one of the HotIfWin*Private functions with its title and text bound, told apart by
+		// that function, since a bound function's Name is empty, as in AHK.
+		internal static HotCriterionEnum GetHotCriterionType(object criterion)
+			=> criterion == null ? HotCriterionEnum.NoCriterion
+			: criterion is BoundFunc { Mph.mi: { } mi } && mi.DeclaringType == typeof(HotkeyDefinition) ? mi.Name switch
 			{
-				"HotIfWinActivePrivate" => HotCriterionEnum.IfActive,
-				"HotIfWinNotActivePrivate" => HotCriterionEnum.IfNotActive,
-				"HotIfWinExistPrivate" => HotCriterionEnum.IfExist,
-				"HotIfWinNotExistPrivate" => HotCriterionEnum.IfNotExist,
-				null => HotCriterionEnum.NoCriterion,
+				nameof(HotIfWinActivePrivate) => HotCriterionEnum.IfActive,
+				nameof(HotIfWinNotActivePrivate) => HotCriterionEnum.IfNotActive,
+				nameof(HotIfWinExistPrivate) => HotCriterionEnum.IfExist,
+				nameof(HotIfWinNotExistPrivate) => HotCriterionEnum.IfNotExist,
 				_ => HotCriterionEnum.IfCallback
-			};
+			}
+			: HotCriterionEnum.IfCallback;
 
 		internal static bool HotCriterionRequiresReceiptReevaluation(KeysharpFunc criterion)
 			=> GetHotCriterionType(criterion) is HotCriterionEnum.IfActive or HotCriterionEnum.IfNotActive or HotCriterionEnum.IfExist or HotCriterionEnum.IfNotExist;
