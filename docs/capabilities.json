@@ -11295,8 +11295,8 @@
                  },
                  {
                      "category":  "Windowing/GUI",
-                     "feature":  "WinRestoreAll()",
-                     "syntax":  "WinRestoreAll()",
+                     "feature":  "WinMinimizeAllUndo()",
+                     "syntax":  "WinMinimizeAllUndo()",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",

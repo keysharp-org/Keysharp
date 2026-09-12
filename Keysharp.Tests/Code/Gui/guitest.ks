@@ -1080,7 +1080,7 @@ MinimizeAll(*)
 
 UndoMinimizeAll(*)
 {
-	WinRestoreAll()
+	WinMinimizeAllUndo()
 }
 
 MaximizeAll(*)

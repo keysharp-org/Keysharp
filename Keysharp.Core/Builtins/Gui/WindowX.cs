@@ -911,13 +911,13 @@ namespace Keysharp.Builtins
 #endif
 		}
 
-		public static object WinRestoreAll()
+		public static object WinMinimizeAllUndo()
 		{
 			var unsupported = false;
 			DoDelayedAction(() => unsupported = !Platform.Window.TryRestoreAll(ThreadAccessors.A_DetectHiddenWindows));
 
 			if (unsupported)
-				return WindowOperationUnsupported(nameof(WinRestoreAll));
+				return WindowOperationUnsupported(nameof(WinMinimizeAllUndo));
 
 			return DefaultObject;
 		}

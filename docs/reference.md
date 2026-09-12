@@ -692,10 +692,10 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ `\K` is not supported, instead, try using `(?<=abc)`.
 * New string functions:
 	+ `ReplaceLineEndings(str, endOfLine?) => String`: Makes all line endings in a string (CR LF, CR, LF, form feed, NEL, U+2028 and U+2029) match `endOfLine`, which defaults to `` `n `` on every platform.
-* New window functions:
+* Window functions:
 	+ `WinFromPoint(x, y)`: Gets the window at a specific screen position.
 	+ `WinMaximizeAll()`: Maximizes all windows.
-	+ `WinRestoreAll()`: Unminimizes top-level windows without clearing maximization; respects `DetectHiddenWindows`. Replaces AHK's `WinMinimizeAllUndo` and needs no preceding `WinMinimizeAll()` call.
+	+ `WinMinimizeAllUndo()`: Unminimizes top-level windows without clearing maximization; respects `DetectHiddenWindows`. Unlike AHK's shell undo, needs no preceding `WinMinimizeAll()` call.
 * New class methods:
 	+ `Array`:
 		+ All comparisons compare the actual underlying values, so `"1" != 1`.
