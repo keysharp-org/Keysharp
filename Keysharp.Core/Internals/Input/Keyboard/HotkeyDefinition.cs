@@ -2718,16 +2718,21 @@ namespace Keysharp.Internals.Input.Keyboard
 		{
 			var script = Script.TheScript;
 
-			if (obj0 != null || obj1 != null)
+			// A blank title and text are no criterion, as in AHK.
+			if (obj0 is not (null or string { Length: 0 }) || obj1 is not (null or string { Length: 0 }))
 			{
 				var mi = typeof(HotkeyDefinition).GetMethod(funcname, BindingFlags.NonPublic | BindingFlags.Static);
 				var fo = new KeysharpFunc(mi);
 				var bf = fo.Bind(obj0 ?? "", obj1 ?? "");//Must not pass null so that the logic in BoundFunc.Call() works.
 
-				if (FindHotkeyIf(bf, script.hotCriterions) == null)
-					script.hotCriterions.Add(bf);
+				// The criterion made by an earlier identical call, so hotkeys and hotstrings defined under either share
+				// their variants, as AHK finds the criterion by its kind, title and text.
+				var found = FindHotkeyIf(bf, script.hotCriterions);
 
-				script.Threads.CurrentThread.hotCriterion = bf;
+				if (found == null)
+					script.hotCriterions.Add(found = bf);
+
+				script.Threads.CurrentThread.hotCriterion = found;
 			}
 			else
 				script.Threads.CurrentThread.hotCriterion = null;

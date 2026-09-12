@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
@@ -103,5 +105,13 @@ finally
 	Func.Prototype.DefineProp("Call", prototypeCallDesc)
 
 AssertEq(prototype_call_probe(), "function body", A_LineNumber)
+
+; HotIfWin finds the criterion an identical call made, and a blank title and text are no criterion.
+HotIfWinActive("func-callable probe")
+firstCriterion := A_HotIf
+HotIfWinActive("func-callable probe")
+Assert(A_HotIf == firstCriterion, A_LineNumber)
+HotIfWinActive("")
+AssertEq(A_HotIf, "", A_LineNumber)
 
 FileAppend "pass", "*"
