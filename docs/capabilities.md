@@ -1104,7 +1104,6 @@ Status legend:
 | WinHide() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinHide function hides the specified window. On macOS, windows owned by the calling process are hidden individually; for windows owned by other applications, macOS provides no per-window hide API, so the entire owning application is hidden instead. |
 | WinKill() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinKill function forces the specified window to close. On Wayland a real force-kill is provided by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent), falling back to a graceful close request. |
 | WinMaximize() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinMaximize function enlarges the specified window to its maximum size. |
-| WinMaximizeAll() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Maximizes all top-level windows. |
 | WinMinimize() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinMinimize function collapses the specified window into a button on the task bar. |
 | WinMinimizeAll() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | Minimizes all windows; Windows follows Explorer's exemptions. |
 | WinMinimizeAllUndo() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | Unminimizes top-level windows without clearing maximization; respects DetectHiddenWindows. Live Linux/macOS behavior remains unverified. |

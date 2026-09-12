@@ -693,7 +693,6 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `ReplaceLineEndings(str, endOfLine?) => String`: Makes all line endings in a string (CR LF, CR, LF, form feed, NEL, U+2028 and U+2029) match `endOfLine`, which defaults to `` `n `` on every platform.
 * Window functions:
 	+ `WinFromPoint(x, y)`: Gets the window at a specific screen position.
-	+ `WinMaximizeAll()`: Maximizes all windows.
 	+ `WinMinimizeAllUndo()`: Unminimizes top-level windows without clearing maximization; respects `DetectHiddenWindows`. Unlike AHK's shell undo, needs no preceding `WinMinimizeAll()` call.
 * New class methods:
 	+ `Array`:

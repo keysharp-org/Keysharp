@@ -5,23 +5,6 @@ namespace Keysharp.Builtins
 {
 	public partial class Ks
 	{
-
-		public static object WinMaximizeAll()
-		{
-			var unsupported = false;
-			DoDelayedAction(() =>
-			{
-				foreach (var window in WindowQuery.AllWindows)
-					if (!Platform.Window.TrySetState(window.Handle, FormWindowState.Maximized))
-						unsupported = true;
-			});
-
-			if (unsupported)
-				return WindowOperationUnsupported(nameof(WinMaximizeAll));
-
-			return DefaultObject;
-		}
-
 		/// <summary>
 		/// Returns the handle of the window located at the given screen coordinates.
 		/// </summary>

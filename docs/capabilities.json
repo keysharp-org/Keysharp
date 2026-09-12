@@ -11250,17 +11250,6 @@
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "WinMaximizeAll()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "partial",
-                     "linux_wayland":  "partial",
-                     "macos":  "partial",
-                     "notes":  "Maximizes all top-level windows.",
-                     "tested-by":  "Gui/guitest.ks"
-                 },
-                 {
                      "category":  "Windowing/GUI",
                      "feature":  "WinMinimize()",
                      "syntax":  "",

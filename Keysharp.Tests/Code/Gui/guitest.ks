@@ -1085,7 +1085,8 @@ UndoMinimizeAll(*)
 
 MaximizeAll(*)
 {
-	WinMaximizeAll()
+	for hwnd in WinGetList()
+		WinMaximize(hwnd)
 }
 
 MoveButton(*)
