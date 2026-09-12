@@ -3,8 +3,7 @@ using BenchmarkDotNet.Order;
 namespace Keysharp.Benchmark;
 
 /// <summary>
-/// Draw-path cost for a hidden <see cref="Ks.KeysharpOverlay"/>. Presentation is main-thread-affine and is
-/// measured by <c>Keysharp/Scripts/Benchmarks/overlay-present.ks</c> instead.
+/// Drawing costs for a hidden <see cref="Ks.KeysharpOverlay"/>, excluding presentation.
 /// </summary>
 [Orderer(SummaryOrderPolicy.Declared)]
 public class OverlayBench : BaseTest
