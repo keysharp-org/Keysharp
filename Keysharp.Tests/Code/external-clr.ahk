@@ -285,4 +285,18 @@ catch TypeError
     caught := true
 Assert(caught, A_LineNumber)
 
+; 55) Buffer converts to byte[] at the CLR boundary.
+hiBuf := Buffer(3)
+NumPut("UChar", 72, "UChar", 105, "UChar", 33, hiBuf)
+AssertEq(System.Convert.ToBase64String(hiBuf), "SGkh", A_LineNumber)
+
+; 56) ReadOnlySpan<byte> overloads accept Buffer without copying.
+AssertEq(System.Text.Encoding.UTF8.GetString(hiBuf), "Hi!", A_LineNumber)
+
+; 57) Mutable Span<byte> writes directly into Buffer storage.
+stream := System.IO.MemoryStream(System.Convert.FromBase64String("SGkh"))
+dest := Buffer(3, 0)
+AssertEq(stream.Read(dest), 3, A_LineNumber)
+AssertEq(NumGet(dest, 0, "UChar"), 72, A_LineNumber)
+
 FileAppend "pass", "*"

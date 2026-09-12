@@ -1,4 +1,5 @@
 using Clr = Keysharp.Builtins.Ks.Clr;
+using System.Linq.Expressions;
 using System.Reflection.Metadata;
 
 namespace Keysharp.Builtins
@@ -534,6 +535,7 @@ namespace Keysharp.Builtins
 		internal static readonly ConcurrentDictionary<(Type t, string name), MemberSet> MemberCache = new();
 		internal static readonly ConcurrentDictionary<(Type t, string name, bool idxOnly), PropertyInfo[]> PropertyCache = new();
 		internal static readonly ConcurrentDictionary<(Type t, string name), FieldInfo> FieldCache = new();
+		private static readonly ConcurrentDictionary<MethodInfo, Func<object, object[], object>> ByteSpanInvokerCache = new();
 
 		// -------- Public entry points (used by proxies) --------
 
@@ -944,16 +946,23 @@ namespace Keysharp.Builtins
 				if (!TryBuildArguments(callArgs, ps, out inArgs, out boxes))
 					continue;
 
+				var usesByteSpan = ps.Any(p => ArgCoercer.IsByteSpan(p.ParameterType));
 				object callResult;
 				try
 				{
-					callResult = m.Invoke(m.IsStatic ? null : instance, inArgs);
+					callResult = usesByteSpan
+						? ByteSpanInvokerCache.GetOrAdd(m, CreateByteSpanInvoker)(instance, inArgs)
+						: m.Invoke(m.IsStatic ? null : instance, inArgs);
 					if (m.ReturnType == typeof(void))
 						callResult = DefaultObject;
 				}
 				catch (TargetInvocationException ex)
 				{
 					return ThrowInvokeError(ex.InnerException ?? ex, m);
+				}
+				catch (Exception ex) when (usesByteSpan)
+				{
+					return ThrowInvokeError(ex, m);
 				}
 
 				// push back ref/out into the array the call was built from (identical to `args` when no names
@@ -967,6 +976,55 @@ namespace Keysharp.Builtins
 				return true;
 			}
 			return false;
+		}
+
+		private static Func<object, object[], object> CreateByteSpanInvoker(MethodInfo method)
+		{
+			var instance = Expression.Parameter(typeof(object), "instance");
+			var args = Expression.Parameter(typeof(object[]), "args");
+			var parameters = method.GetParameters();
+			var callArgs = new Expression[parameters.Length];
+			var variables = new List<ParameterExpression>();
+			var before = new List<Expression>();
+			var after = new List<Expression>();
+
+			for (var i = 0; i < parameters.Length; i++)
+			{
+				var value = Expression.ArrayIndex(args, Expression.Constant(i));
+				var type = parameters[i].ParameterType;
+
+				if (type.IsByRef)
+				{
+					var variable = Expression.Variable(type.GetElementType()!);
+					variables.Add(variable);
+					if (!parameters[i].IsOut)
+						before.Add(Expression.Assign(variable, Expression.Convert(value, variable.Type)));
+					callArgs[i] = variable;
+					after.Add(Expression.Assign(value, Expression.Convert(variable, typeof(object))));
+					continue;
+				}
+
+				callArgs[i] = ArgCoercer.IsByteSpan(type)
+					? ArgCoercer.CoerceBoundary(value, type)
+					: Expression.Convert(value, type);
+			}
+
+			var call = method.IsStatic
+				? Expression.Call(method, callArgs)
+				: Expression.Call(Expression.Convert(instance, method.DeclaringType!), method, callArgs);
+			var body = new List<Expression>(before) { call };
+			body.AddRange(after);
+			body.Add(Expression.Constant(null, typeof(object)));
+
+			if (method.ReturnType != typeof(void))
+			{
+				var result = Expression.Variable(method.ReturnType);
+				variables.Add(result);
+				body[before.Count] = Expression.Assign(result, call);
+				body[^1] = Expression.Convert(result, typeof(object));
+			}
+
+			return Expression.Lambda<Func<object, object[], object>>(Expression.Block(variables, body), instance, args).Compile();
 		}
 
 		private static bool CanAcceptArgCount(ParameterInfo[] ps, int argc)
@@ -1173,6 +1231,9 @@ namespace Keysharp.Builtins
 					if (pt == taskType) { score += 0; continue; }
 					if (pt.IsAssignableFrom(taskType)) { score += 1; continue; }
 				}
+				if (arg is Buffer && pt == typeof(Span<byte>)) { continue; }
+				if (arg is Buffer && pt == typeof(ReadOnlySpan<byte>)) { score += 1; continue; }
+				if (arg is Buffer && pt == typeof(byte[])) { score += 2; continue; }
 
 				// numeric-ish
 				if (IsNumericType(pt) && IsNumericLike(arg)) { score += 1; continue; }
@@ -1192,6 +1253,10 @@ namespace Keysharp.Builtins
 		private static int ScoreMethodCandidate(MethodInfo m, object[] rawArgs)
 		{
 			var ps = m.GetParameters();
+
+			if (ps.Any(p => ArgCoercer.IsByteSpan(p.ParameterType)) && m.ReturnType.IsByRefLike)
+				return int.MaxValue;
+
 			int score = ScoreParameters(ps, rawArgs, favorDelegates: true, penalizeComparerForCallable: true);
 
 			// Method-only tie-breakers
@@ -1384,6 +1449,9 @@ namespace Keysharp.Builtins
 				return value;
 			}
 
+			if (ArgCoercer.IsByteSpan(target))
+				return value;
+
 			if (value is string && (target == typeof(char[]) || target.FullName == "System.ReadOnlySpan`1[System.Char]"))
 				return value;
 
@@ -1397,6 +1465,9 @@ namespace Keysharp.Builtins
 			// remaining candidates. Nothing is lost as things stand: TryBuildArguments only ever returns false for a
 			// missing required argument, which is an arity question a conversion could not have answered anyway. If
 			// it ever learns to reject a candidate on argument TYPE, this has to move inside the try below.
+			if (target == typeof(byte[]))
+				return ArgCoercer.CoerceCast(value, target);
+
 			var kind = ArgCoercer.KindOf(target);
 
 			if (kind != ArgCoercer.Kind.None && kind != ArgCoercer.Kind.Cast)

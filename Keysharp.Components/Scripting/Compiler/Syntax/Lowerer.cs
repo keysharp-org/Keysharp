@@ -3184,18 +3184,20 @@ namespace Keysharp.Compilation.Syntax
 		/// <summary>The T of a <c>Task&lt;T&gt;</c> in any spelling, else null.</summary>
 		private static TypeSyntax AwaitedTypeArgument(TypeSyntax type)
 		{
-			var generic = type switch
-			{
-				GenericNameSyntax g => g,
-				QualifiedNameSyntax { Right: GenericNameSyntax qg } => qg,
-				AliasQualifiedNameSyntax { Name: GenericNameSyntax ag } => ag,
-				_ => null
-			};
+			var generic = GenericNameOf(type);
 			return generic is { TypeArgumentList.Arguments.Count: 1 }
 				   && generic.Identifier.ValueText is "Task"
 				   ? generic.TypeArgumentList.Arguments[0]
 				   : null;
 		}
+
+		private static GenericNameSyntax GenericNameOf(TypeSyntax type) => type switch
+		{
+			GenericNameSyntax generic => generic,
+			QualifiedNameSyntax { Right: GenericNameSyntax generic } => generic,
+			AliasQualifiedNameSyntax { Name: GenericNameSyntax generic } => generic,
+			_ => null
+		};
 
 		/// <summary>The rightmost identifier of a named type in any spelling, else null.</summary>
 		private static string TypeNameOf(TypeSyntax type) => type switch
@@ -3206,6 +3208,18 @@ namespace Keysharp.Compilation.Syntax
 			AliasQualifiedNameSyntax alias => alias.Name.Identifier.ValueText,
 			_ => null
 		};
+
+		private static bool IsByteSpanBoundaryType(TypeSyntax type)
+		{
+			var generic = GenericNameOf(type);
+			if (generic is not { TypeArgumentList.Arguments.Count: 1 }
+				|| generic.Identifier.ValueText is not ("Span" or "ReadOnlySpan"))
+				return false;
+
+			var element = generic.TypeArgumentList.Arguments[0];
+			return element is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ByteKeyword }
+				|| TypeNameOf(element) is "Byte";
+		}
 
 		private static bool IsUnsupportedBoundaryType(TypeSyntax type)
 		{
@@ -3240,7 +3254,7 @@ namespace Keysharp.Compilation.Syntax
 		private bool CheckInlineBoundarySignature(MethodDeclarationSyntax meth, string at)
 		{
 			var bad = meth.ParameterList.Parameters.FirstOrDefault(p =>
-						  IsUnsupportedBoundaryType(p.Type)
+						  IsUnsupportedBoundaryType(p.Type) && !IsByteSpanBoundaryType(p.Type)
 						  || p.Modifiers.Any(t => t.IsKind(SyntaxKind.RefKeyword) || t.IsKind(SyntaxKind.OutKeyword) || t.IsKind(SyntaxKind.InKeyword))
 						  || p.Modifiers.Any(t => t.IsKind(SyntaxKind.ParamsKeyword)) && !IsObjectParams(p));
 

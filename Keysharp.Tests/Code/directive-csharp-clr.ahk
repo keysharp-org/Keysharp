@@ -74,6 +74,18 @@ public static long SumValues(IDictionary<object, object> d)
 public static bool AddViaDictionary(IDictionary<object, object> d) { d.Add("added", 9L); return d.ContainsKey("added"); }
 
 public static bool NativeIsSame(Keysharp.Builtins.Ks.Clr.ManagedInstance wrapper, object raw) => ReferenceEquals(wrapper.Native, raw);
+
+public static string BytesToBase64(byte[] bytes) => System.Convert.ToBase64String(bytes);
+
+public static void ScribbleArray(byte[] bytes) => bytes[0] = 0xFF;
+
+public static void ScribbleSpan(Span<byte> bytes) => bytes[0] = 0xFE;
+
+public static string ReadSpan(ReadOnlySpan<byte> bytes) => System.Convert.ToBase64String(bytes);
+
+public static byte[] ThreeBytes() => new byte[] { 1, 2, 3 };
+
+public static long ByteCount(byte[] bytes) => bytes.Length;
 #EndCSharp
 
 class Meas
@@ -249,5 +261,21 @@ Assert(NativeIsSame(Clr.Wrap(arr2), arr2), A_LineNumber)
 ; wrapper whose members reflect over the first one instead of the object it holds.
 AssertEq(Clr.Wrap(Clr.Wrap(dict)).Count, 3, A_LineNumber)
 Assert(NativeIsSame(Clr.Wrap(Clr.Wrap(dict)), dict), A_LineNumber)
+
+; A Buffer reaches a byte[] parameter as a copy of its bytes, so what the member writes there stays in the copy.
+hiBuf := Buffer(3)
+NumPut("UChar", 72, "UChar", 105, "UChar", 33, hiBuf)
+AssertEq(BytesToBase64(hiBuf), "SGkh", A_LineNumber)
+ScribbleArray(hiBuf)
+AssertEq(NumGet(hiBuf, 0, "UChar"), 72, A_LineNumber)
+
+; Span parameters view the Buffer directly.
+AssertEq(ReadSpan(hiBuf), "SGkh", A_LineNumber)
+ScribbleSpan(hiBuf)
+AssertEq(NumGet(hiBuf, 0, "UChar"), 0xFE, A_LineNumber)
+
+; A byte[] return is still a wrapped CLR array, and unwraps back into a byte[] parameter.
+Assert(IsManagedInstance(ThreeBytes()), A_LineNumber)
+AssertEq(ByteCount(ThreeBytes()), 3, A_LineNumber)
 
 FileAppend "pass", "*"

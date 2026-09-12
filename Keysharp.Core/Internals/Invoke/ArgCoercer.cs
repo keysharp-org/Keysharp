@@ -26,6 +26,8 @@ namespace Keysharp.Internals.Invoke
 	/// <c>ToString</c> override. Unset becomes <c>""</c>.</item>
 	/// <item>enum targets — <see cref="Enum.ToObject(Type, long)"/> over the same numeric conversion, since a
 	/// script has only the Integer to name a member (or a flag combination) with.</item>
+	/// <item><c>byte[]</c> — a <see cref="Keysharp.Builtins.Buffer"/> is copied to a new array; byte spans view its
+	/// storage directly for the duration of the call.</item>
 	/// <item>reference targets — a checked cast that raises a <see cref="TypeError"/> naming both types instead
 	/// of an uncatchable <see cref="InvalidCastException"/>. Unset passes through as null.</item>
 	/// </list>
@@ -100,6 +102,15 @@ namespace Keysharp.Internals.Invoke
 		/// <summary>The <see cref="Kind.Cast"/> conversion used by ordinary script calls.</summary>
 		internal static object CoerceCast(object value, Type target)
 		{
+			if (target == typeof(byte[]))
+			{
+				if (value is Ks.Clr.ManagedInstance mi)
+					value = mi._instance;
+
+				if (value is Keysharp.Builtins.Buffer)
+					return Conversions.ToByteArray(value);
+			}
+
 			if (value == null || target.IsInstanceOfType(value))
 				return value;
 
@@ -109,6 +120,25 @@ namespace Keysharp.Internals.Invoke
 			var fallback = Errors.TypeErrorOccurred(value, target);
 			return target.IsInstanceOfType(fallback) ? fallback : null;
 		}
+
+		internal static bool IsByteSpan(Type type) => type == typeof(Span<byte>) || type == typeof(ReadOnlySpan<byte>);
+
+		internal static Span<byte> CoerceByteSpan(object value)
+		{
+			if (value is Ks.Clr.ManagedInstance mi)
+				value = mi._instance;
+
+			if (value is Keysharp.Builtins.Buffer buffer)
+				return buffer.AsSpan();
+
+			if (value is byte[] bytes)
+				return bytes;
+
+			_ = Errors.TypeErrorOccurred(value, typeof(Span<byte>));
+			return [];
+		}
+
+		internal static ReadOnlySpan<byte> CoerceReadOnlyByteSpan(object value) => CoerceByteSpan(value);
 
 		/// <summary>
 		/// The <see cref="Kind.Enum"/> conversion. AutoHotkey has no enum type, so a script names a member of one
@@ -210,6 +240,12 @@ namespace Keysharp.Internals.Invoke
 		/// <summary>Builds the input conversion for a member explicitly marked as a CLR boundary.</summary>
 		internal static Expression CoerceBoundary(Expression value, Type target)
 		{
+			if (target == typeof(Span<byte>))
+				return Expression.Call(coerceByteSpanMethod, value);
+
+			if (target == typeof(ReadOnlySpan<byte>))
+				return Expression.Call(coerceReadOnlyByteSpanMethod, value);
+
 			var kind = KindOf(target);
 
 			if (NeedsBoundaryCast(target, kind))
@@ -258,7 +294,7 @@ namespace Keysharp.Internals.Invoke
 		}
 
 		private static bool NeedsBoundaryCast(Type target, Kind kind) =>
-			kind == Kind.Cast
+			kind == Kind.Cast && target != typeof(byte[])
 			// object[] is Kind.None because a packed params slot must stay untouched. CompileCore skips that slot,
 			// leaving a non-variadic object[] free to use the normal CLR-boundary conversion here.
 			|| kind == Kind.None && (target == typeof(object) || target == typeof(object[]) || target.IsValueType);
@@ -357,6 +393,8 @@ namespace Keysharp.Internals.Invoke
 		private static readonly MethodInfo coerceCastMethod = Bind(typeof(ArgCoercer), nameof(CoerceCast), typeof(object), typeof(Type));
 		private static readonly MethodInfo coerceEnumMethod = Bind(typeof(ArgCoercer), nameof(CoerceEnum), typeof(object), typeof(Type));
 		private static readonly MethodInfo coerceBoundaryCastMethod = Bind(typeof(ArgCoercer), nameof(CoerceBoundaryCast), typeof(object), typeof(Type));
+		private static readonly MethodInfo coerceByteSpanMethod = Bind(typeof(ArgCoercer), nameof(CoerceByteSpan), typeof(object));
+		private static readonly MethodInfo coerceReadOnlyByteSpanMethod = Bind(typeof(ArgCoercer), nameof(CoerceReadOnlyByteSpan), typeof(object));
 		private static readonly MethodInfo convertOutMethod = Bind(typeof(ManagedInvoke), nameof(ManagedInvoke.ConvertOut), typeof(object));
 	}
 }

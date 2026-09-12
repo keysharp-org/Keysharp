@@ -3728,7 +3728,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Creates the platform-independent CLR interop facade for loading and invoking .NET types.",
+                     "notes":  "Creates the platform-independent CLR interop facade for loading and invoking .NET types. Buffer arguments are copied to byte[] parameters; byte spans view Buffer storage directly.",
                      "tested-by":  "external-clr.ahk"
                  },
                  {
