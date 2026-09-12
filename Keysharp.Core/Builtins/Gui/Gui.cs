@@ -3682,7 +3682,15 @@ namespace Keysharp.Builtins
 					   () => iter = controls.GetEnumerator());
 		}
 
-		internal static bool AnyExistingVisibleWindows(Script script) => script.GuiData.allGuiHwnds.Values.Any(g => g.form != null && g.form.Visible);
+		// Avoid the Values snapshot allocation and locks on each persistence check.
+		internal static bool AnyExistingVisibleWindows(Script script)
+		{
+			foreach (var entry in script.GuiData.allGuiHwnds)
+				if (entry.Value.form is { Visible: true })
+					return true;
+
+			return false;
+		}
 
 		internal static void DestroyAll(Script script)
 		{
