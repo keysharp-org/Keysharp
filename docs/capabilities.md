@@ -625,6 +625,7 @@ Status legend:
 | Gui.Flash() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Flashes the GUI window to attract attention. Backed by the Win32 FlashWindow API; the call is accepted and does nothing on Linux and macOS. |
 | Gui.FocusedCtrl | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Currently focused control in the GUI. |
 | Gui.Font | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Gets or sets the font later controls inherit, as a detached Ks.Font snapshot. |
+| Gui.FontHandle | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Read-only borrowed Win32 HFONT for the GUI's current default font. Repeated reads reuse the handle; font changes refresh it and GUI disposal releases it. Other platforms raise Error. |
 | Gui.GetClientPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the GUI client-area position and size. |
 | Gui.GetPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the GUI window position and size. |
 | Gui.Hide() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Hides the GUI window. |

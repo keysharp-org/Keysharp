@@ -6184,6 +6184,17 @@
                  },
                  {
                      "category":  "Windowing/GUI",
+                     "feature":  "Gui.FontHandle",
+                     "syntax":  "MyGui.FontHandle",
+                     "windows":  "full",
+                     "linux_x11":  "unsupported",
+                     "linux_wayland":  "unsupported",
+                     "macos":  "unsupported",
+                     "notes":  "Read-only borrowed Win32 HFONT for the GUI's current default font. Repeated reads reuse the handle; font changes refresh it and GUI disposal releases it. Other platforms raise Error.",
+                     "tested-by":  "ks-font.ahk"
+                 },
+                 {
+                     "category":  "Windowing/GUI",
                      "feature":  "Gui.GetClientPos()",
                      "syntax":  "",
                      "windows":  "full",

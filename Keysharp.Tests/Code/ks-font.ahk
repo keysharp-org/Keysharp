@@ -193,6 +193,23 @@ Check("ctl size", cf.Size, 16)
 Check("ctl italic", cf.Italic, true)
 Check("ctl color", cf.Color, "0000FF")
 
+#if WINDOWS
+; Repeated FontHandle reads reuse the GUI's cached native font.
+g.SetFont("s12 norm", guiFamily)
+handle := g.FontHandle
+Check("FontHandle nonzero", handle != 0, true)
+Check("FontHandle stable", g.FontHandle, handle)
+nativeFont := Buffer(92, 0)
+Check("FontHandle is a font", DllCall("gdi32\GetObjectW", "Ptr", handle, "Int", nativeFont.Size, "Ptr", nativeFont, "Int"), 92)
+oldHeight := Abs(NumGet(nativeFont, 0, "Int"))
+g.SetFont("s24 bold")
+Check("FontHandle refreshes", g.FontHandle != handle, true)
+DllCall("gdi32\GetObjectW", "Ptr", g.FontHandle, "Int", nativeFont.Size, "Ptr", nativeFont, "Int")
+Check("FontHandle reflects bold", NumGet(nativeFont, 16, "Int"), 700)
+Check("FontHandle reflects size", Abs(NumGet(nativeFont, 0, "Int")), oldHeight * 2)
+Rejects("FontHandle read only", () => g.FontHandle := 0)
+#endif
+
 ; Assigning something that is not a Font must raise.
 Rejects("gui bad assign", () => g.Font := "s12")
 Rejects("ctl bad assign", () => ctl.Font := 5)
@@ -215,6 +232,14 @@ Check("font as name only", byName.Width, viaString.Width)
 img.DrawText("hi", 0, 0, , Font("s10 cFF0000", "Arial"))
 Rejects("colour option still rejected", () => img.MeasureText("Wg", "s10 cFF0000", "Arial"))
 img.Dispose()
+
+#if WINDOWS
+lastHandle := g.FontHandle
+g.Destroy()
+Check("FontHandle released with GUI", DllCall("gdi32\GetObjectW", "Ptr", lastHandle, "Int", nativeFont.Size, "Ptr", nativeFont, "Int"), 0)
+#else
+g.Destroy()
+#endif
 
 ; This file reports value diffs rather than line numbers, so it writes its own accumulated failure text.
 if (failed != 0)

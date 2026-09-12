@@ -817,6 +817,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `Font.Monospace` is the platform's fixed-pitch family — the first of the usual candidates that is actually installed.
 		+ `Font.Exists(name)` reports whether a family is installed, and `Font.Families` lists them. Worth asking: a missing family renders silently in a fallback face, so nothing else will tell you.
 		+ Two fonts describing the same thing compare equal, so `f1 = f2` works on value rather than identity. The family compares case-insensitively.
+		+ `Gui.FontHandle` is a read-only Windows HFONT describing the current GUI font. It is borrowed: do not delete it or retain it across font changes or GUI destruction. Repeated reads reuse a cached handle, refreshed for a changed font and freed on disposal. Other platforms raise Error.
 		+ `Font` can be extended: `class MonoFont extends Font { __New() => super.__New("s10", "Consolas") }`.
 		+ `Gui.Font` and `Gui.Control.Font` get and set a `Font`. Reading returns a detached **snapshot**: mutating it changes nothing until it is assigned back, and one `Font` can be handed to any number of controls without aliasing them together. Assigning applies only the properties the font actually sets, so `MyGui.Font := Font.Emoji` swaps the family and leaves everything else alone.
 			```

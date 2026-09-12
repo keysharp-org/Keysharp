@@ -2997,6 +2997,20 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
+		/// <summary>The borrowed Win32 HFONT for the GUI's current default font.</summary>
+		public object FontHandle
+		{
+			get
+			{
+#if WINDOWS
+				if (form.IsDisposed) return Errors.ErrorOccurred("GUI window is no longer available.");
+				return (long)HFontCache.Get(form);
+#else
+				return Errors.ErrorOccurred("Gui.FontHandle is only supported on Windows.");
+#endif
+			}
+		}
+
 		/// <summary>
 		/// The window's icon as an <see cref="Ks.KeysharpImage"/>, or "" when it has none. Assigning takes whatever
 		/// <see cref="ToolTips.TraySetIcon"/> takes: a file, an "HICON:"/"HBITMAP:" handle, an Image, or "*" for the
