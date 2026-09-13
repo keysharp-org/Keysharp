@@ -3183,7 +3183,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns a new array containing elements accepted by a callback predicate.",
+                     "notes":  "Returns a new array containing elements accepted by a callback predicate. An empty array returns empty without invoking the callback.",
                      "tested-by":  "collections-array.ahk"
                  },
                  {
@@ -3194,7 +3194,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the index of the first element matching a callback predicate.",
+                     "notes":  "Returns the first matching index, or 0. An empty array returns 0 without invoking the callback.",
                      "tested-by":  "collections-array.ahk"
                  },
                  {
@@ -3271,7 +3271,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns a new array transformed by a callback.",
+                     "notes":  "Returns a new array transformed by a callback. An empty array returns empty without invoking the callback.",
                      "tested-by":  "collections-array.ahk"
                  },
                  {

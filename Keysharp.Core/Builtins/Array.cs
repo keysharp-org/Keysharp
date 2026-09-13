@@ -330,7 +330,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// If the value is negative, the array is iterated from the end toward the beginning. Default: 1.
 	/// </param>
 	/// <returns>A new <see cref="Array"/> object consisting of all elements for which the filter callback returned true.</returns>
-	/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if startIndex is out of bounds.</exception>
+	/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if startIndex is out of bounds of a non-empty array.</exception>
 	/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if callback is not of type <see cref="KeysharpFunc"/>.</exception>
 	public object Filter(object callback, object startIndex = null)
 	{
@@ -338,13 +338,16 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 
 		if (callback is Any fo)
 		{
+			if (array.Count == 0)
+				return new Array();
+
 				var invoke = ElementInvoker(fo);
 
 			if (index < 0)
 			{
 					long i = array.Count + index + 1;   // long, so the callback sees an Integer like every other index
 
-				if (i >= 0 && i <= array.Count)
+				if (i > 0 && i <= array.Count)
 						return new Array(((IEnumerable<object>)array).Reverse().Skip(Math.Abs(index + 1)).Where(x => Script.ForceBool(invoke(x, i--))).ToList());
 				else
 					return Errors.ValueErrorOccurred($"Invalid find start index of {index}.");
@@ -369,8 +372,8 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// </summary>
 	/// <param name="callback">The callback to apply to each element, which takes the form of (value, index) => bool.</param>
 	/// <param name="startIndex">The start index to begin the search at. Default: 1.</param>
-	/// <returns>The index of the first element for which callback returned true, else -1 if not found.</returns>
-	/// <exception cref="IndexError">An <see cref="IndexError"/> exception is thrown if startIndex is out of bounds.</exception>
+	/// <returns>The index of the first element for which callback returned true, else 0 if none did or the array is empty.</returns>
+	/// <exception cref="IndexError">An <see cref="IndexError"/> exception is thrown if startIndex is out of bounds of a non-empty array.</exception>
 	/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if callback is not of type <see cref="KeysharpFunc"/>.</exception>
 	public long FindIndex(object callback, object startIndex = null)
 	{
@@ -378,6 +381,9 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 
 		if (callback is Any fo)
 		{
+			if (array.Count == 0)
+				return 0L;
+
 				var invoke = ElementInvoker(fo);
 
 			if (index <  0)
@@ -573,12 +579,15 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <param name="callback">The callback to apply to each element, which takes the form of (value, index) => newValue.</param>
 	/// <param name="startIndex">The index to start iterating at. Default: 1.</param>
 	/// <returns>A new <see cref="Array"/> object consisting of the output of callback applied to all elements starting at startIndex.</returns>
-	/// <exception cref="IndexError">An <see cref="IndexError"/> exception is thrown if startIndex is out of bounds.</exception>
+	/// <exception cref="IndexError">An <see cref="IndexError"/> exception is thrown if startIndex is out of bounds of a non-empty array.</exception>
 	/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if callback is not of type <see cref="KeysharpFunc"/>.</exception>
 	public object Map(object callback, object startIndex = null)
 	{
 		if (callback is Any ifo)
 		{
+			if (array.Count == 0)
+				return new Array();
+
 			var index = TranslateIndex(startIndex.Ai(1));
 
 			if (index >= 0 && index < array.Count)

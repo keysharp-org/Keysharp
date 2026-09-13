@@ -681,6 +681,29 @@ Assert(arr3.IndexOf(1) == 0 &&
 	arr3.IndexOf(1, 3) == 0 &&
 	arr3.IndexOf(1, -3) == 0, A_LineNumber)
 
+; Empty searches accept any numeric StartIndex and never call the callback.
+emptyCalls := 0
+recordCall := (*) => emptyCalls++
+
+for startIdx in [1, 0, 3, -1, -3]
+{
+	Assert(arr3.Filter(recordCall, startIdx).Length == 0 &&
+		arr3.Map(recordCall, startIdx).Length == 0 &&
+		arr3.FindIndex(recordCall, startIdx) == 0, A_LineNumber)
+}
+AssertEq(emptyCalls, 0, A_LineNumber)
+Throws(() => arr3.Filter(1), A_LineNumber, TypeError)
+Throws(() => arr3.FindIndex(1), A_LineNumber, TypeError)
+Throws(() => arr3.Map(1), A_LineNumber, TypeError)
+
+arr9 := [10, 20, 30]
+keepAll := (*) => true
+filtered := arr9.Filter(keepAll, -3)
+Assert(filtered.Length == 1 && filtered[1] == 10, A_LineNumber)
+
+for badIndex in [0, 4, -4, 99, -99]
+	Throws(() => arr9.Filter(keepAll, badIndex), A_LineNumber, ValueError)
+
 ; An explicitly unset argument behaves the same as omitting it.
 
 u := unset

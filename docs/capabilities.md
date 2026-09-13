@@ -307,15 +307,15 @@ Status legend:
 | Array.Contains() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Array method. Omitting the value searches for an element which has no value. |
 | Array.Default | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default value returned for missing indexes. |
 | Array.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the element at the specified index to null, returns the element at that index before it was cleared. |
-| Array.Filter() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a new array containing elements accepted by a callback predicate. |
-| Array.FindIndex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the index of the first element matching a callback predicate. |
+| Array.Filter() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a new array containing elements accepted by a callback predicate. An empty array returns empty without invoking the callback. |
+| Array.FindIndex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the first matching index, or 0. An empty array returns 0 without invoking the callback. |
 | Array.Get() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the value at an index with optional fallback default. |
 | Array.Has() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether an array contains a non-empty value at the given index. |
 | Array.IndexOf() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the index of the first occurrence of a value. Omitting the value searches for an element which has no value. An out of bounds StartIndex (0, or an absolute value exceeding the length) throws an IndexError, like the sibling FindIndex; an empty array returns 0. |
 | Array.InsertAt() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inserts an element or range of elements at a given index. |
 | Array.Join() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Joins array elements into a string with a separator. |
 | Array.Length | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets the logical length of the array. |
-| Array.Map() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a new array transformed by a callback. |
+| Array.Map() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a new array transformed by a callback. An empty array returns empty without invoking the callback. |
 | Array.Pop() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Removes and returns the last element of an array. An exception is thrown if the array was empty. |
 | Array.Push() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Appends values to the end of an array. |
 | Array.Remove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Array method. Removes the first occurrence of the value and returns true if one was found and removed, else false. Omitting the value removes the first element which has no value. What counts as a match is IndexOf's rule, which Contains uses too. |

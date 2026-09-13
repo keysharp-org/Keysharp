@@ -699,8 +699,9 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `Array`:
 		+ All comparisons compare the actual underlying values, so `"1" != 1`.
 			+ This differs from the comparison rules in conditional statements, but makes more sense when searching arrays.
+		+ On an empty array, `Filter` and `Map` return an empty array and `FindIndex` and `IndexOf` return 0, whatever `StartIndex` is. On any other array, a `StartIndex` of 0 or whose absolute value exceeds the length throws.
 		+ `Contains(Value) => Boolean`: Returns `true` if `Value` is contained in the array, else `false`.
-		+ `Filter(Callback: (value [, index]) => Boolean) => Array`: Applies a filter to each element of the array and returns a new array consisting of all elements for which `Callback` returned `true`.
+		+ `Filter(Callback: (value [, index]) => Boolean, StartIndex := 1) => Array`: Applies a filter to each element of the array and returns a new array consisting of all elements for which `Callback` returned `true`.
 		+ `FindIndex(Callback: (value [, index]) => Boolean, StartIndex := 1) => Integer`: Returns the index of the first element for which `Callback` returned `true`, starting at `StartIndex`. Returns 0 if `Callback` never returned `true`.
 			+ If `StartIndex` is negative, the search starts from the end of the array and moves toward the beginning.
 		+ `IndexOf(Value, StartIndex := 1) => Integer`: Returns the index of the first item in the array which equals value, starting at `StartIndex`. Returns 0 if value is not found.
