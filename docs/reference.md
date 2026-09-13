@@ -89,6 +89,8 @@ It carries no payload. Each project is downloaded from its own latest release, v
 
 Keysharp recommends the virtual packages `keysharp-input-client-abi-0` and `keysharp-desktop-client-abi-0`. Any installed alternative that provides the same client ABI is left in place. Product versions select release artifacts; the client ABI decides compatibility. Keysharp still runs when either component is absent, but its corresponding privileged features are unavailable.
 
+The `.deb` recommends WebKitGTK (`libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37`) for `Gui.WebView`, so a normal `apt install` brings the version available for the distribution. The tarball and `keysharp-linux-setup.sh` do not install recommendations; install the available package separately if a script uses `WebView`.
+
 #### Keysharp on its own
 
 The Keysharp `.deb` and the Keysharp tarball each install Keysharp and nothing else. From the tarball:

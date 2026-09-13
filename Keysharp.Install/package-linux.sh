@@ -145,7 +145,7 @@ Architecture: ${DEB_ARCH}
 Maintainer: Descolada <16986957+Descolada@users.noreply.github.com>
 Homepage: https://github.com/keysharp-org/Keysharp
 Depends: dotnet-runtime-10.0, libx11-6, libxtst6, libxinerama1, libxt6, libx11-xcb1, libxkbcommon-x11-0, libxcb-xtest0, libgtk-3-0, libglib2.0-0, libnotify4, libatspi2.0-0, at-spi2-core, pulseaudio-utils
-Recommends: ${INPUT_CLIENT_ABI_PACKAGE}, ${DESKTOP_CLIENT_ABI_PACKAGE}
+Recommends: ${INPUT_CLIENT_ABI_PACKAGE}, ${DESKTOP_CLIENT_ABI_PACKAGE}, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37
 Description: A cross-platform C# port and enhancement of the AutoHotkey program
  Keysharp runs on its own, but its privileged Linux features live in two
  standalone components. Full functionality needs both.
