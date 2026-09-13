@@ -142,9 +142,6 @@ namespace Keysharp.Tests
 		public void OnMessageLocalBlock()
 		{
 			var context = UseQueuedMainContext();
-			// A parked launch is not a persistence root, and OnMessage deliberately is not one either, so draining
-			// the first handler's completion would otherwise exit this script before the second is unblocked.
-			s.FlowData.persistentValueSetByUser = true;
 
 			var order = new List<string>();
 			const int msgId = 0x8005;
@@ -157,7 +154,7 @@ namespace Keysharp.Tests
 			monitor.ModifyRegistration(new KeysharpFunc((Func<object, object, object, object, object>)((wParam, lParam, msg, hwnd) =>
 			{
 				order.Add("B");
-				return 0L;
+				return "";
 			})), 1, s.EventScheduler);
 			s.GuiData.onMessageHandlers[msgId] = monitor;
 
@@ -173,7 +170,13 @@ namespace Keysharp.Tests
 			context.DrainAll();
 			Assert.That(order, Is.EqualTo(new[] { "B" }));
 
+			registrations[1].InstanceCount = registrations[1].MaxInstances;
+			Assert.IsFalse(CallBuffered(filter, ref msg));
+			context.DrainAll();
+			Assert.That(order, Is.EqualTo(new[] { "B" }));
+
 			registrations[0].InstanceCount = 0;
+			registrations[1].InstanceCount = 0;
 			s.EventScheduler.SchedulePump();
 			context.DrainAll();
 
@@ -210,6 +213,68 @@ namespace Keysharp.Tests
 			Assert.IsTrue(handled);
 			Assert.That(order, Is.EqualTo(new[] { "B" }));
 			Assert.AreEqual((nint)7, GetResult(msg));
+		}
+
+		[TestCase("zero", true, 0L)]
+		[TestCase("integer", true, 7L)]
+		[TestCase("string", true, 0L)]
+		[TestCase("blank", false, 0L)]
+		[TestCase("none", false, 0L)]
+		[TestCase("error", false, 0L)]
+		[TestCase("exit", false, 0L)]
+		[Category("Threading")]
+		public void OnMessageReturnControlsDispatch(string kind, bool claims, long reply)
+		{
+			_ = UseQueuedMainContext();
+			const int msgId = 0x8008;
+			var order = new List<string>();
+			var monitor = new MsgMonitor();
+			var filter = new MessageFilter(s);
+			monitor.ModifyRegistration(new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) =>
+			{
+				order.Add("first");
+				return kind switch
+				{
+					"zero" => 0L,
+					"integer" => 7L,
+					"string" => "abc",
+					"blank" => "",
+					"error" => throw new Keysharp.Builtins.Error("monitor failed"),
+					"exit" => Keysharp.Builtins.Flow.Exit(),
+					_ => null
+				};
+			})), 1, s.EventScheduler);
+			monitor.ModifyRegistration(new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) =>
+			{
+				order.Add("second");
+				return "";
+			})), 1, s.EventScheduler);
+			s.GuiData.onMessageHandlers[msgId] = monitor;
+			var msg = CreateMessage(msgId);
+
+			Assert.AreEqual(claims, filter.CallEventHandlers(ref msg));
+			Assert.AreEqual((nint)reply, GetResult(msg));
+			Assert.That(order, Is.EqualTo(claims ? new[] { "first" } : new[] { "first", "second" }));
+		}
+
+		[Test, Category("Threading")]
+		public void OnMessageUpdatesMaxThreadsInPlace()
+		{
+			_ = UseQueuedMainContext();
+			const int msgId = 0x8007;
+			var fn = new KeysharpFunc((Func<object, object, object, object, object>)((wParam, lParam, msg, hwnd) => 0L));
+
+			_ = Keysharp.Builtins.Flow.OnMessage(msgId, fn, 5L);
+			_ = Keysharp.Builtins.Flow.OnMessage(msgId, fn, 3L);
+			var monitor = s.GuiData.onMessageHandlers[msgId];
+			Assert.AreEqual(1, monitor.GetRegistrationsSnapshot().Length);
+			Assert.AreEqual(3, monitor.GetRegistrationsSnapshot()[0].MaxInstances);
+
+			_ = Keysharp.Builtins.Flow.OnMessage(msgId, fn);
+			Assert.AreEqual(3, monitor.GetRegistrationsSnapshot()[0].MaxInstances);
+			_ = Keysharp.Builtins.Flow.OnMessage(msgId, fn, 0L);
+			Assert.IsFalse(s.GuiData.onMessageHandlers.ContainsKey(msgId));
+			Assert.DoesNotThrow(() => Keysharp.Builtins.Flow.OnMessage(msgId, new KeysharpObject(), 0L));
 		}
 
 #if WINDOWS

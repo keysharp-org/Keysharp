@@ -50,19 +50,13 @@ namespace Keysharp.Internals.Window.Unix
 
 				if (buffered)
 				{
-					foreach (var registration in monitor.GetRegistrationsSnapshot())
-					{
-						var targetScheduler = registration.OwnerScheduler;
-						var queuedEvent = new MsgMonitorExtensions.BufferedMessageQueuedEvent(registration, script, args, eventInfo, hwnd);
-						targetScheduler.Enqueue(ScriptEventQueue.Normal, 0, queuedEvent.Execute);
-					}
+					var queuedEvent = new MsgMonitorExtensions.BufferedMessageQueuedEvent(monitor, script, args, eventInfo, hwnd);
+					_ = script.EventScheduler.Enqueue(ScriptEventQueue.Normal, 0, queuedEvent.Execute);
 				}
-				else if (monitor.TryExecuteEmergency(script, args, eventInfo, hwnd, out var result))
+				else if (monitor.TryExecuteEmergency(script, args, eventInfo, hwnd, out var reply))
 				{
-					m.Result = (nint)result;
-
-					if (m.Result != 0)
-						return true;
+					m.Result = (nint)reply;
+					return true;
 				}
 			}
 

@@ -5,15 +5,15 @@ namespace Keysharp.Internals.Window
 {
 	internal static class MsgMonitorExtensions
 	{
-		internal sealed class BufferedMessageQueuedEvent(MsgMonitorRegistration registration, Script script, object[] args, object eventInfo, long hwnd)
+		internal sealed class BufferedMessageQueuedEvent(MsgMonitor monitor, Script script, object[] args, object eventInfo, long hwnd)
 		{
 			internal ScriptEventExecutionResult Execute()
-				=> registration.TryExecuteBuffered(script, args, eventInfo, hwnd, out _);
+				=> monitor.RunMonitors(script, args, eventInfo, hwnd, false, out _);
 		}
 
-		private static ScriptEventExecutionResult ExecuteRegistration(this MsgMonitorRegistration registration, Script script, object[] args, object eventInfo, long hwnd, bool skipUninterruptible, bool allowEmergencyOverflow, out long result)
+		private static ScriptEventExecutionResult ExecuteRegistration(this MsgMonitorRegistration registration, Script script, object[] args, object eventInfo, long hwnd, bool emergency, out object result)
 		{
-			result = 0L;
+			result = null;
 			var targetScheduler = registration.OwnerScheduler;
 			registration.InstanceCount++;
 
@@ -23,11 +23,11 @@ namespace Keysharp.Internals.Window
 					return ScriptEventExecutionResult.Dropped;
 
 				if (targetScheduler.OwnsCurrentThread)
-					return InvokeRegistrationOnSchedulerThread(targetScheduler, registration, args, eventInfo, hwnd, skipUninterruptible, allowEmergencyOverflow, out result);
+					return InvokeRegistrationOnSchedulerThread(targetScheduler, registration, args, eventInfo, hwnd, emergency, out result);
 
 				var execution = targetScheduler.InvokeSynchronous(() =>
 				{
-					var status = InvokeRegistrationOnSchedulerThread(targetScheduler, registration, args, eventInfo, hwnd, skipUninterruptible, allowEmergencyOverflow, out var localResult);
+					var status = InvokeRegistrationOnSchedulerThread(targetScheduler, registration, args, eventInfo, hwnd, emergency, out var localResult);
 					return (status, localResult);
 				});
 				result = execution.localResult;
@@ -40,10 +40,10 @@ namespace Keysharp.Internals.Window
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		private static ScriptEventExecutionResult InvokeRegistrationOnSchedulerThread(ScriptEventScheduler targetScheduler, MsgMonitorRegistration registration, object[] args, object eventInfo, long hwnd, bool skipUninterruptible, bool allowEmergencyOverflow, out long result)
+		private static ScriptEventExecutionResult InvokeRegistrationOnSchedulerThread(ScriptEventScheduler targetScheduler, MsgMonitorRegistration registration, object[] args, object eventInfo, long hwnd, bool emergency, out object result)
 		{
-			result = 0L;
-			using var thread = targetScheduler.StartPseudoThreadScope(0, skipUninterruptible, false, allowEmergencyOverflow, ThreadKind.Message);
+			result = null;
+			using var thread = targetScheduler.StartPseudoThreadScope(0, emergency, false, emergency, ThreadKind.Message);
 
 			if (!thread.Started)
 				return thread.Result;
@@ -53,57 +53,65 @@ namespace Keysharp.Internals.Window
 				var tv = thread.ThreadVariables;
 				tv.eventInfo = eventInfo;
 				tv.hwndLastUsed = hwnd;
-				result = Script.InvokeOrNull(registration.Callback, null, args).Al();
+				result = Script.InvokeOrNull(registration.Callback, null, args);
 			}
 			catch (Exception ex)
 			{
+				// Errors and Exit leave the message unclaimed.
 				_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
-				result = 0L;
+				result = null;
 			}
 
 			return ScriptEventExecutionResult.Executed;
 		}
 
-		internal static ScriptEventExecutionResult TryExecuteBuffered(this MsgMonitorRegistration registration, Script script, object[] args, object eventInfo, long hwnd, out long result)
+		private static ScriptEventExecutionResult RunMonitors(this MsgMonitor monitor, Script script, object[] args, object eventInfo, long hwnd, bool emergency, out object claim)
 		{
-			result = 0L;
+			claim = null;
+			var anyRan = false;
+			var blocked = ScriptEventExecutionResult.Dropped;
 
-			if (!registration.IsActive)
-				return ScriptEventExecutionResult.Dropped;
+			foreach (var registration in monitor.GetRegistrationsSnapshot())
+			{
+				if (!registration.IsActive)
+					continue;
 
-			if (registration.InstanceCount >= registration.MaxInstances)
-				return ScriptEventExecutionResult.LocalBlocked;
+				var status = registration.InstanceCount >= registration.MaxInstances
+					? ScriptEventExecutionResult.LocalBlocked
+					: registration.ExecuteRegistration(script, args, eventInfo, hwnd, emergency, out claim);
 
-			// The callback ran on a pseudo-thread, whose end made the exit check.
-			return registration.ExecuteRegistration(script, args, eventInfo, hwnd, false, false, out result);
+				if (status != ScriptEventExecutionResult.Executed)
+				{
+					if (status != ScriptEventExecutionResult.Dropped)
+						blocked = status;
+
+					continue;
+				}
+
+				anyRan = true;
+
+				if (CallbackStop.NonEmpty(claim))
+					return status;
+			}
+
+			claim = null;
+			return anyRan ? ScriptEventExecutionResult.Executed : blocked;
 		}
 
-		internal static bool TryExecuteEmergency(this MsgMonitor monitor, Script script, object[] args, object eventInfo, long hwnd, out long result)
+		internal static bool TryExecuteEmergency(this MsgMonitor monitor, Script script, object[] args, object eventInfo, long hwnd, out long reply)
 		{
-			result = 0L;
+			reply = 0L;
 
 			if (monitor == null)
 				return false;
 
-			var executedAny = false;
+			_ = monitor.RunMonitors(script, args, eventInfo, hwnd, true, out var claim);
 
-			foreach (var registration in monitor.GetRegistrationsSnapshot())
-			{
-				if (!registration.IsActive || registration.InstanceCount >= registration.MaxInstances)
-					continue;
+			if (claim == null)
+				return false;
 
-				var executionResult = registration.ExecuteRegistration(script, args, eventInfo, hwnd, true, true, out result);
-
-				if (executionResult != ScriptEventExecutionResult.Executed)
-					continue;
-
-				executedAny = true;
-
-				if (result != 0L)
-					break;
-			}
-
-			return executedAny;
+			reply = claim.Al();
+			return true;
 		}
 	}
 }
