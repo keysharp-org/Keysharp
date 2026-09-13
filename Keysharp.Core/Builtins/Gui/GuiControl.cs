@@ -617,7 +617,7 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public object Font
 			{
-				get => Ks.Font.FromControl(_control.Font, _control.ForeColor);
+				get => Ks.Font.FromControl(_control);
 
 				set
 				{

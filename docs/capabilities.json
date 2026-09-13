@@ -5615,7 +5615,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Optional font attributes and system font selections. GUI/image weights map to normal or bold; Windows RichEdit preserves numeric weights. Non-default quality is supported only for Windows image text.",
+                     "notes":  "Optional font attributes and system font selections. GUI/image weights map to normal or bold; Windows RichEdit preserves numeric weights. Windows applies quality to GUI fonts and image text; other platforms reject non-default quality, as does per-range RichEdit formatting.",
                      "tested-by":  "ks-font.ahk"
                  },
                  {

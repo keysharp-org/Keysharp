@@ -399,11 +399,6 @@ namespace Keysharp.Internals.Strings
 
 		private static Font CreateFont(Font standard, FontOptions fontOptions, bool forImage)
 		{
-			if (!forImage && fontOptions.quality is > 0)
-			{
-				_ = Errors.ErrorOccurred("GUI font rendering quality is not supported by the toolkit.");
-				return standard;
-			}
 			var current = ReadFontOptions(standard);
 			var size = fontOptions.size.HasValue ? (forImage ? (float)fontOptions.size.Value : ScaleFontSize((float)fontOptions.size.Value)) : standard.Size;
 			var family = string.IsNullOrEmpty(fontOptions.name) ? current.name : fontOptions.name;

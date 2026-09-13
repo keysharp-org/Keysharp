@@ -1783,9 +1783,13 @@ namespace Keysharp.Builtins
 			// options string) on top of the inherited GUI font. Done before the control is attached and sized so
 			// the PreferredSize/autosize logic below reflects the final font.
 			if (!string.IsNullOrEmpty(opts.fontstyles))
-				ctrl.Font = Conversions.ParseFont(form.Font, opts.fontstyles);
+				ctrl.SetFont(Conversions.ParseFontOptions(opts.fontstyles));
 
-				var prevParent = LastContainer;
+#if WINDOWS
+			HFontCache.Inherit(form, ctrl);
+#endif
+
+			var prevParent = LastContainer;
 
 			if (opts.altsubmit.HasValue)
 				holder.AltSubmit = opts.altsubmit.Value;
@@ -2973,7 +2977,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public object Font
 		{
-			get => Ks.Font.FromControl(form.Font, form.ForeColor);
+			get => Ks.Font.FromControl(form);
 
 			set
 			{

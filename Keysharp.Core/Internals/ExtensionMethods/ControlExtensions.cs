@@ -557,6 +557,9 @@ namespace System.Windows.Forms
 		internal static void SetFont(this Control control, FontOptions options)
 		{
 			control.Font = Keysharp.Internals.Strings.Conversions.ApplyFont(control.Font, options);
+#if WINDOWS
+			HFontCache.SetQuality(control, options.quality);
+#endif
 			if (options.color.HasValue) control.ForeColor = options.color.Value;
 		}
 
@@ -667,6 +670,7 @@ namespace System.Windows.Forms
 			add.Tag = new GuiTag { Index = control.Controls.Count };
 			control.Controls.Add(add);
 			control.Controls.SetChildIndex(add, 0);//Required for proper Z ordering so that this control is on top.
+			HFontCache.Inherit(control, add);
 #else
 			add.Tag = new GuiTag { Index = GetChildCount(control) };
 			AddChildControl(control, add);
@@ -700,6 +704,7 @@ namespace System.Windows.Forms
 #if WINDOWS
 			control.Controls.Add(add.Ctrl);
 			control.Controls.SetChildIndex(add.Ctrl, 0);//Required for proper Z ordering so that this control is on top.
+			HFontCache.Inherit(control, add.Ctrl);
 #else
 			AddChildControl(control, add.Ctrl);
 #endif

@@ -602,10 +602,29 @@ namespace Keysharp.Builtins
 	{
 		private sealed class Entry : IDisposable
 		{
-			public Font Font { get; }
+			public Font Font { get; private set; }
+			public int? Quality { get; set; }
 			public nint HFont { get; private set; }
 
-			public Entry(Font f) { Font = f; HFont = f.ToHfont(); }
+			public Entry(Control control) => Refresh(control);
+
+			public void Refresh(Control control)
+			{
+				Dispose();
+				Font = control.Font;
+
+				if (Quality is not int quality)
+				{
+					HFont = Font.ToHfont();
+					return;
+				}
+
+				var logFont = new System.Drawing.Interop.LOGFONT();
+				Font.ToLogFont(logFont);
+				logFont.lfQuality = (byte)quality;
+				HFont = CreateFontIndirect(logFont);
+			}
+
 			public void Dispose()
 			{
 				if (HFont != 0)
@@ -618,45 +637,71 @@ namespace Keysharp.Builtins
 
 		private static readonly ConditionalWeakTable<Control, Entry> table = new();
 
-		public static nint Get(Control c)
+		private static Entry GetEntry(Control control)
 		{
-			if (!table.TryGetValue(c, out var e) || !ReferenceEquals(e.Font, c.Font))
+			if (!table.TryGetValue(control, out var entry))
 			{
-				e?.Dispose();
-				e = new Entry(c.Font);
-				table.Remove(c);
-				table.Add(c, e);
-
-				// ensure cleanup on change/dispose
-				c.FontChanged -= OnFontChanged;
-				c.Disposed -= OnDisposed;
-				c.HandleDestroyed -= OnDisposed;
-
-				c.FontChanged += OnFontChanged;
-				c.Disposed += OnDisposed;
-				c.HandleDestroyed += OnDisposed;
+				entry = new Entry(control);
+				table.Add(control, entry);
+				control.Disposed += OnDisposed;
+				control.HandleCreated += OnHandleCreated;
 			}
-			return e.HFont;
+			else if (!ReferenceEquals(entry.Font, control.Font) || entry.HFont == 0)
+				entry.Refresh(control);
+
+			return entry;
 		}
 
-		private static void OnFontChanged(object sender, EventArgs e) => Release((Control)sender);
-		private static void OnDisposed(object sender, EventArgs e) => Release((Control)sender);
+		internal static nint Get(Control control) => GetEntry(control).HFont;
 
-		public static void Release(Control c)
+		internal static int? GetQuality(Control control)
+			=> table.TryGetValue(control, out var entry) ? entry.Quality : null;
+
+		internal static void SetQuality(Control control, int? quality)
 		{
-			if (table.TryGetValue(c, out var e))
+			if (quality is int value)
 			{
-				e.Dispose();
-				table.Remove(c);
+				var entry = GetEntry(control);
+				if (entry.Quality != value)
+				{
+					entry.Quality = value;
+					entry.Refresh(control);
+				}
 			}
+
+			Apply(control);
 		}
 
-		[DllImport(WindowsAPI.gdi32)]
-		public static extern int GetObject(nint hgdiobj, int cbBuffer, out System.Drawing.Interop.LOGFONT lpvObject);
+		internal static void Inherit(Control parent, Control child)
+		{
+			if (GetQuality(child) == null && GetQuality(parent) is int quality)
+				SetQuality(child, quality);
+		}
+
+		private static void OnHandleCreated(object sender, EventArgs e) => Apply((Control)sender);
+
+		private static void OnDisposed(object sender, EventArgs e)
+		{
+			var control = (Control)sender;
+			if (table.TryGetValue(control, out var entry))
+				entry.Dispose();
+			table.Remove(control);
+		}
+
+		private static void Apply(Control control)
+		{
+			if (!control.IsHandleCreated || GetQuality(control) == null)
+				return;
+
+			_ = WindowsAPI.SendMessage(control.Handle, (uint)WindowsAPI.WM_SETFONT, Get(control), (nint)1);
+		}
+
+		[DllImport(WindowsAPI.gdi32, CharSet = CharSet.Unicode)]
+		private static extern nint CreateFontIndirect([In] System.Drawing.Interop.LOGFONT lplf);
 
 		[LibraryImport(WindowsAPI.gdi32, EntryPoint = "DeleteObject")]
 		[return: MarshalAs(UnmanagedType.Bool)]
-		internal static partial bool DeleteObject(nint hObject);
+		private static partial bool DeleteObject(nint hObject);
 
 
 	}

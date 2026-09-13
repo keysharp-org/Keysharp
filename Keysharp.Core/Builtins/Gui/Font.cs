@@ -169,7 +169,7 @@ namespace Keysharp.Builtins
 
 			/// <summary>
 			/// Rendering quality as SetFont's "qN" takes it, or "" when unset. Values 0 through 5 control
-			/// image text rendering on Windows. GUI fonts and other platforms support only the default.
+			/// GUI and image text rendering on Windows. Other platforms support only the default.
 			/// </summary>
 			public object Quality
 			{
@@ -294,13 +294,17 @@ namespace Keysharp.Builtins
 			// ---- internals -------------------------------------------------------------------------------
 
 			/// <summary>
-			/// A snapshot of a live control's font plus its text colour, which is passed separately because
-			/// neither toolkit's Font carries one; SetFont's "c" option lands on ForeColor instead.
+			/// A snapshot of a live control's font and text colour. Neither toolkit's Font carries colour;
+			/// SetFont's "c" option lands on ForeColor instead.
 			/// </summary>
-			internal static Font FromControl(NativeFont f, NativeColor foreColor)
+			internal static Font FromControl(Forms.Control control)
 			{
-				var font = FromNative(f, null);
-				font.fontOptions.color = FontOptions.Opaque(foreColor);
+				var font = FromNative(control.Font, null);
+				font.fontOptions.color = FontOptions.Opaque(control.ForeColor);
+#if WINDOWS
+				font.fontOptions.quality = HFontCache.GetQuality(control);
+#endif
+
 				return font;
 			}
 

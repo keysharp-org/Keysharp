@@ -822,7 +822,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `Font.Exists(name)` reports whether a family is installed, and `Font.Families` lists them. Worth asking: a missing family renders silently in a fallback face, so nothing else will tell you.
 		+ Two fonts describing the same thing compare equal, so `f1 = f2` works on value rather than identity. The family compares case-insensitively.
 		+ Size must be finite, positive and fit native precision; Weight is an integer from 1 to 1000, and Quality from 0 to 5. Color is opaque RGB. A missing GUI family preserves the current family.
-		+ GUI/image weights below 700 render as normal, otherwise bold; Windows RichEdit preserves numeric weights. Non-default Quality is supported only for Windows image text; other targets raise Error.
+		+ GUI/image weights below 700 render as normal, otherwise bold; Windows RichEdit preserves numeric weights. On Windows, Quality controls both GUI fonts and image text. Other platforms, and per-range RichEdit formatting, raise Error for a non-default Quality.
 		+ `Options` emits `norm` to clear a style, resetting all styles. Pass the Font object directly in the options position to preserve unspecified styles.
 		+ `Gui.FontHandle` is a read-only Windows HFONT describing the current GUI font. It is borrowed: do not delete it or retain it across font changes or GUI destruction. Repeated reads reuse a cached handle, refreshed for a changed font and freed on disposal. Other platforms raise Error.
 		+ `Font` can be extended: `class MonoFont extends Font { __New() => super.__New("s10", "Consolas") }`.
