@@ -1,19 +1,19 @@
 #Module GlobalNames
 #Include <assert>
 
+; DelegateHolder is an implementation detail; CallbackCreate returns an Integer, as in AutoHotkey.
 Assert(IsSet(Array) && IsSet(KeyError) && !IsSet(Dialogs)
 	&& !IsSet(List) && !IsSet(Highlight) && !IsSet(ManagedType)
-	&& IsSet(InputHook) && IsSet(DelegateHolder), A_LineNumber)
+	&& IsSet(InputHook) && !IsSet(DelegateHolder), A_LineNumber)
 
 InputHook.Prototype.DefineProp("ExtensionValue", {Get: (this) => 41})
 input := InputHook()
 
 AssertEq(input.ExtensionValue, 41, A_LineNumber)
 
-DelegateHolder.Prototype.DefineProp("ExtensionValue", {Get: (this) => 42})
 callback := CallbackCreate(() => 0)
 
-AssertEq(callback.ExtensionValue, 42, A_LineNumber)
+Assert(IsInteger(callback), A_LineNumber)
 
 CallbackFree(callback)
 

@@ -3500,7 +3500,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Releases a callback created by CallbackCreate on every platform.",
+                     "notes":  "Releases a live address returned by CallbackCreate; an invalid or already-freed address raises ValueError.",
                      "tested-by":  "external-callbackcreate.ahk"
                  },
                  {
@@ -11580,16 +11580,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Defines or modifies an own property without invoking an overridden method."
-                 },
-                 {
-                     "category":  "Interop/Memory",
-                     "feature":  "DelegateHolder",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Callback object type returned by CallbackCreate; exposes the native address through Ptr."
                  },
                  {
                      "category":  "Interop/Memory",

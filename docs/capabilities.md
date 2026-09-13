@@ -351,7 +351,7 @@ Status legend:
 | Buffer.__Item[] | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer for reading/writing bytes in Buffer by offset. |
 | Buffer.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Constructs a new Buffer object. |
 | CallbackCreate() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. |
-| CallbackFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases a callback created by CallbackCreate on every platform. |
+| CallbackFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases a live address returned by CallbackCreate; an invalid or already-freed address raises ValueError. |
 | CaretGetPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the caret position. If no caret position is available, it returns false and sets both output variables to blank. Linux uses native GTK geometry for script-owned controls and AT-SPI for foreign applications, normalizing Wayland-local coordinates through compositor window geometry when needed. macOS uses the Accessibility API and requires Accessibility permission. |
 | Case | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Case branch label used by switch. |
 | Catch | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Handles an exception thrown by try/throw. |
@@ -457,7 +457,6 @@ Status legend:
 | DateDiff() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DateDiff function compares two date-time values and returns the difference. |
 | Default | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default branch label used by switch. |
 | DefineProp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Defines or modifies an own property without invoking an overridden method. |
-| DelegateHolder | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Callback object type returned by CallbackCreate; exposes the native address through Ptr. |
 | DetectHiddenText() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DetectHiddenText function determines whether invisible text in a window is "seen" for the purpose of finding the window. |
 | DetectHiddenWindows() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DetectHiddenWindows function determines whether invisible windows are "seen" by the script. |
 | DirCopy() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a folder along with all its sub-folders and files (similar to xcopy). A .zip, .tar, .tar.gz or .tgz source is extracted into the destination folder; a plain .gz is decompressed to the destination as a single file. |

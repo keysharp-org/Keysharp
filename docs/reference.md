@@ -463,6 +463,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * `CallbackCreate()` does not support the `CDecl/C` option because the program will be run in 64-bit mode.
 	+ Passing string pointers to `DllCall()` when passing a created callback is recommended against. See explanation above under `StrPtr()`.
 	+ Usage of the created callback will be inefficient, so usage of `CallbackCreate()` is discouraged.
+	+ `CallbackFree()` raises `ValueError` for an invalid or already-freed address; AutoHotkey leaves most invalid addresses undefined.
 * `ControlMove()` and `ControlSetPos()` operate relative to their immediate parent, which may not be the main window if they are contained in a nested control.
 * `DirCopy()` extracts archives with .NET rather than the OS shell, so the supported formats are the same on every platform: `.zip`, `.tar`, `.tar.gz` and `.tgz` are extracted into *Dest* as a folder. AutoHotkey's format list instead depends on the Windows version (and RAR/7z are not supported at all here).
 	+ A plain `.gz` holds a single compressed file rather than an archive of entries, so *Dest* names the decompressed **file** and its parent folder is created if needed. This is the one case where *Dest* is not a directory.

@@ -120,12 +120,12 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Creates a <see cref="DelegateHolder"/> object that wraps a script function object.
+		/// Creates a native callback address which calls a script function object.
 		/// Passing string pointers to <see cref="DllCall"/> when passing a created callback is strongly recommended against.<br/>
 		/// This is because the string pointer cannot remain pinned, and is likely to crash the program if the pointer gets moved by the GC.
 		/// </summary>
 		/// <param name="function">
-		/// A function object to call automatically whenever the <see cref="DelegateHolder"/> is called, optionally passing arguments.<br/>
+		/// A function object to call automatically whenever the address is called, optionally passing arguments.<br/>
 		/// A closure or bound function can be used to differentiate between multiple callbacks which all call the same script function.<br/>
 		/// The callback retains a reference to the function object, and releases it when the script calls <see cref="CallbackFree"/>.
 		/// </param>
@@ -142,7 +142,7 @@ namespace Keysharp.Builtins
 		/// function must accept, or an array of parameter types followed by the return type.<br/>
 		/// In either case, ensure that the caller passes exactly this number of parameters.
 		/// </param>
-		/// <returns>A <see cref="DelegateHolder"/> object which internally holds a function pointer.<br/>
+		/// <returns>The callback's native address, as an integer, which stays valid until it is passed to <see cref="CallbackFree"/>.<br/>
 		/// This is typically passed to an external function via <see cref="DllCall"/> or placed in a struct using <see cref="NumPut"/>, but can also be called directly by <see cref="DllCall"/>.
 		/// </returns>
 		public static object CallbackCreate(object function, object options = null, object paramSpec = null)
@@ -206,7 +206,7 @@ namespace Keysharp.Builtins
 						return Errors.ValueErrorOccurred(error);
 				}
 
-				return new DelegateHolder(fo, conversions, typedVoid, fast, cdecl);
+				return new DelegateHolder(fo, conversions, typedVoid, fast, cdecl).Ptr;
 			}
 
 			long arity;
@@ -225,27 +225,23 @@ namespace Keysharp.Builtins
 			if (!Functions.ValidateFunctor(fo, reference ? 1 : (int)arity))
 				return DefaultObject;
 
-			return new DelegateHolder(fo, (int)arity, fast, reference);
+			return new DelegateHolder(fo, (int)arity, fast, reference).Ptr;
 		}
 
 		/// <summary>
 		/// Frees the specified callback.
 		/// </summary>
-		/// <param name="address">The <see cref="DelegateHolder"/> to be freed.</param>
+		/// <param name="address">The address <see cref="CallbackCreate"/> returned.</param>
+		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if the address is not one <see cref="CallbackCreate"/> returned, or that callback was already freed.</exception>
 		public static object CallbackFree(object address)
 		{
-			if (address is DelegateHolder dh)
-			{
+			if (!address.TryCoerceLong(out var ptr))
+				return Errors.TypeErrorOccurred(address, typeof(long));
 
-#if WINDOWS
-				//Before the thunk's address goes away. A shim keyed on it would otherwise sit in the cache for
-				//the life of the script, and a script that creates and frees callbacks in a loop would keep one
-				//executable chunk per callback it has ever made.
-				NativeInvoker.ReleaseShims((nint)dh.Ptr);
-#endif
-				((IDisposable)dh).Dispose();
-			}
-
+			// AutoHotkey rejects only an address below 64KB and crashes on any other it did not create. Every live
+			// callback is known here, so any other address, including one already freed, is that same error.
+			if (!DelegateHolder.TryDispose(ptr))
+				return Errors.ValueErrorOccurred("Parameter #1 is not a callback address, or that callback was already freed.", address);
 			return DefaultObject;
 		}
 	}

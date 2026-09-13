@@ -21,10 +21,13 @@ namespace Keysharp.Builtins
 	/// integer registers uses the very same arity delegates and slots, and only a floating-point parameter
 	/// or return value needs a native signature of its own, emitted by TypedCallbackSignature.
 	/// </summary>
-	public class DelegateHolder : KeysharpObject, IPointable, IDisposable
+	internal class DelegateHolder : IDisposable
 	{
 		// The most parameters a callback can have, which is how far the pre-declared delegates and slot buckets go.
 		internal const int MaxArity = AritySlots.MaxArity;
+
+		// Every live callback by the address CallbackCreate returned for it, which is all a script holds.
+		private static readonly ConcurrentDictionary<long, DelegateHolder> byAddress = new();
 
 		internal readonly Any funcObj;
 		// The target resolved once, so an invocation does not repeat a by-name member lookup for a receiver
@@ -46,7 +49,16 @@ namespace Keysharp.Builtins
 		internal ScriptEventScheduler OwnerScheduler => _ownerState.OwnerScheduler;
 
 		// Native function pointer to pass into unmanaged code.
-		public long Ptr { get => Volatile.Read(ref _ptr); internal set => Volatile.Write(ref _ptr, value); }
+		internal long Ptr { get => Volatile.Read(ref _ptr); set => Volatile.Write(ref _ptr, value); }
+
+		internal static bool TryDispose(long address)
+		{
+			if (!byAddress.TryRemove(address, out var holder))
+				return false;
+
+			((IDisposable)holder).Dispose();
+			return true;
+		}
 
 		/// <summary>
 		/// Creates a holder and receiving a delegate.
@@ -86,6 +98,7 @@ namespace Keysharp.Builtins
 			{
 				slotId = AritySlots.Rent(_arity, this);
 				Ptr = createPointer(slotId);
+				byAddress[Ptr] = this;
 				return slotId;
 			}
 			catch
@@ -130,15 +143,21 @@ namespace Keysharp.Builtins
 								: TypedCallbackSignature.GetOrCreate(conversions, cdecl, id));
 		}
 
-		// Should only be called in CallbackFree. DelegateHolder shouldn't need a finalizer because
-		// the reference is held in CallbackPointerCache until it's explicitly freed.
+		// DelegateHolder doesn't need a finalizer because the scheduler owns it until it is disposed.
 		void IDisposable.Dispose()
 		{
 			// Claim the disposal exactly once: CallbackFree can race another script thread, or the scheduler
 			// teardown in DisposeOwnedByScheduler, and returning the slot twice would hand one id to two holders.
-			if (Interlocked.Exchange(ref _ptr, 0) == 0)
+			var ptr = Interlocked.Exchange(ref _ptr, 0);
+
+			if (ptr == 0)
 				return;
 
+			// Before the slot goes back, since the next holder to rent it can be handed this same address.
+			_ = byAddress.TryRemove(new KeyValuePair<long, DelegateHolder>(ptr, this));
+#if WINDOWS
+			NativeInvoker.ReleaseShims((nint)ptr);
+#endif
 			var ownerScheduler = OwnerScheduler;
 			AritySlots.Return(_arity, _slotId);
 			ownerScheduler?.UnregisterOwnedDelegate(this);

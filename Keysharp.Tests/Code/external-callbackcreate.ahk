@@ -308,4 +308,13 @@ DllCall(strCb, "str*", &got)
 AssertEq(got, "hello from native", A_LineNumber)
 CallbackFree(strCb)
 
+; CallbackCreate returns its native address, and CallbackFree rejects invalid or stale addresses.
+addrCb := CallbackCreate(() => 7)
+Assert(IsInteger(addrCb) && addrCb != 0, A_LineNumber)
+AssertEq(DllCall(addrCb, "ptr"), 7, A_LineNumber)
+CallbackFree(addrCb)
+Throws(() => CallbackFree(addrCb), A_LineNumber, ValueError)
+Throws(() => CallbackFree(0), A_LineNumber, ValueError)
+Throws(() => CallbackFree({}), A_LineNumber, TypeError)
+
 FileAppend "pass", "*"
