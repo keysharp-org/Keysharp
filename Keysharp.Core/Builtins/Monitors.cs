@@ -343,7 +343,15 @@ namespace Keysharp.Builtins
 					: Errors.OSErrorOccurredWithMessage(BrightnessError("read"));
 				set
 				{
-					var percent = (int)Math.Clamp(value.Al(), 0L, 100L);
+					var requested = value.Al();
+
+					if (requested is < 0 or > 100)
+					{
+						_ = Errors.ValueErrorOccurred("Brightness must be from 0 through 100.", value);
+						return;
+					}
+
+					var percent = (int)requested;
 
 					if (!Platform.MonitorControl.TrySetBrightness(display, Details, percent))
 						_ = Errors.OSErrorOccurredWithMessage(BrightnessError("set"));

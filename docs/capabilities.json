@@ -2680,7 +2680,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Controls which artificial keyboard and mouse events are ignored by hotkeys and hotstrings.",
+                     "notes":  "Controls which artificial keyboard and mouse events are ignored by hotkeys and hotstrings. Assigning a value outside 0 through 100 raises ValueError.",
                      "tested-by":  "props-script-settings.ahk"
                  },
                  {
@@ -7339,7 +7339,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The KeyHistory function displays script info and a history of the most recent keystrokes and mouse clicks."
+                     "notes":  "Displays script info and a history of the most recent keystrokes and mouse clicks. MaxEvents must be from 0 through 500; another value raises ValueError."
                  },
                  {
                      "category":  "Input/Automation",
@@ -8590,7 +8590,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Get or set the monitor's brightness as a percentage (0-100). Each access is a real device transaction (tens of milliseconds over DDC/CI) and is deliberately not cached, because the monitor's own buttons can change the value too. Windows uses WMI for the built-in panel and DDC/CI for external monitors. Linux uses the kernel backlight class for the built-in panel (a direct sysfs write where permitted, else logind's SetBrightness) and DDC/CI over /dev/i2c-* for external monitors, which needs i2c-dev loaded and access to the bus (a root install adds a udev rule granting the local-seat user access to display-controller i2c buses only; ddcutil's own rule works too) - hence partial. macOS uses the private DisplayServices framework for the built-in panel and Apple's own displays, and DDC/CI for every other external monitor: on Apple Silicon over the private IOAVService (the only option, since IOFramebuffer does not exist under the DCP architecture), on Intel over the public IOKit I2C API - the Intel path is implemented but untested. Throws an OSError naming the reason where unsupported; test IsBrightnessSupported to branch without an exception.",
+                     "notes":  "Get or set the monitor's brightness as a percentage (0-100); assigning another value raises ValueError before any device transaction. Each access is a real device transaction (tens of milliseconds over DDC/CI) and is deliberately not cached, because the monitor's own buttons can change the value too. Windows uses WMI for the built-in panel and DDC/CI for external monitors. Linux uses the kernel backlight class for the built-in panel (a direct sysfs write where permitted, else logind's SetBrightness) and DDC/CI over /dev/i2c-* for external monitors, which needs i2c-dev loaded and access to the bus (a root install adds a udev rule granting the local-seat user access to display-controller i2c buses only; ddcutil's own rule works too) - hence partial. macOS uses the private DisplayServices framework for the built-in panel and Apple's own displays, and DDC/CI for every other external monitor: on Apple Silicon over the private IOAVService (the only option, since IOFramebuffer does not exist under the DCP architecture), on Intel over the public IOKit I2C API - the Intel path is implemented but untested. Throws an OSError naming the reason where unsupported; test IsBrightnessSupported to branch without an exception.",
                      "tested-by":  "MonitorTests.cs"
                  },
                  {
@@ -10163,7 +10163,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Emits a tone at the requested frequency and duration on every platform. Windows uses the Win32 Beep API. Linux and macOS synthesize the sine wave to an in-memory WAV and play it through the same backend as SoundPlay, so Frequency and Duration are honoured there too; Linux needs one of the players listed under SoundPlay to be installed.",
+                     "notes":  "Emits a tone at the requested frequency and duration on every platform. Frequency must be from 37 through 32767; another value raises ValueError. Windows uses the Win32 Beep API. Linux and macOS synthesize the sine wave to an in-memory WAV and play it through the same backend as SoundPlay, so Frequency and Duration are honoured there too; Linux needs one of the players listed under SoundPlay to be installed.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -10370,7 +10370,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. IsBadgeIconSupported/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, and decorates the desktop entry selected by DESKTOP_ENTRY, then #App DesktopEntry, then Keysharp. Plasma and implementing docks consume it natively; the keysharp-desktop extension maps it onto GNOME's stock overview dash and Cinnamon's grouped-window-list. macOS badges the dock tile with text and draws progress on the tile, also application-wide. Cinnamon 6.6.9 is runtime-verified; GNOME, Plasma and macOS are compile-checked or source-verified only.",
+                     "notes":  "Draws a badge and a progress bar on one window's taskbar button (SetBadge, SetProgress, SetProgressState). SetProgress raises ValueError when Value is outside 0 through Maximum. Called on the class it decorates the application's own button and every window opened afterwards, which is what Linux and macOS do in any case; constructed with a window handle it decorates that one button, a distinction only Windows makes. IsBadgeIconSupported/IsPerWindow report what the platform can draw. Windows uses ITaskbarList3, per window. Linux uses the Unity LauncherEntry protocol, which carries a number rather than an icon, covers the whole application, and decorates the desktop entry selected by DESKTOP_ENTRY, then #App DesktopEntry, then Keysharp. Plasma and implementing docks consume it natively; the keysharp-desktop extension maps it onto GNOME's stock overview dash and Cinnamon's grouped-window-list. macOS badges the dock tile with text and draws progress on the tile, also application-wide. Cinnamon 6.6.9 is runtime-verified; GNOME, Plasma and macOS are compile-checked or source-verified only.",
                      "tested-by":  "IconInternals.cs; Gui/guitest.ks"
                  },
                  {
@@ -11417,7 +11417,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinSetTransparent function makes the specified window semi-transparent. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.alphaValue; macOS provides no public API to change another process\u0027s window opacity."
+                     "notes":  "Makes the specified window semi-transparent. N must be blank, Off or from 0 through 255; another value raises ValueError. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.alphaValue; macOS provides no public API to change another process\u0027s window opacity."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11489,7 +11489,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets or sets the current thread input level."
+                     "notes":  "Gets or sets the current thread input level. Assigning a value outside 0 through 100 raises ValueError."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

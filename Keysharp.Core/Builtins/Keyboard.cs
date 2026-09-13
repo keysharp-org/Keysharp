@@ -535,7 +535,10 @@ break_twice:;
 
 			if (maxEvents != null)
 			{
-				var max = Math.Clamp(maxEvents.Al(), 0, 500);
+				var max = maxEvents.Al();
+
+				if (max is < 0 or > 500)
+					return Errors.ValueErrorOccurred("MaxEvents must be from 0 through 500.", maxEvents);
 
 				if (script.HookThread is HookThread ht)
 				{

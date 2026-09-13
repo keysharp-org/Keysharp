@@ -24,8 +24,6 @@ namespace Keysharp.Internals.Os
 		/// <param name="sampleRate">Sample rate; 44100 is universally supported by the players used here.</param>
 		internal static byte[] BuildToneWav(int frequency, int durationMs, int sampleRate = 44100)
 		{
-			// Clamp rather than throw: a script beeping over a computed pitch in a loop should not die on a
-			// stray value, and Win32 Beep() silently accepts the whole range too.
 			frequency = Math.Clamp(frequency, MinFrequency, MaxFrequency);
 			durationMs = Math.Max(0, durationMs);
 			const int channels = 1;

@@ -1290,7 +1290,15 @@ namespace Keysharp.Builtins
 		public static object A_SendLevel
 		{
 			get => ThreadAccessors.A_SendLevel;
-			set => ThreadAccessors.A_SendLevel = Math.Clamp(value.ToLong(), 0L, 100L);
+			set
+			{
+				var level = value.ToLong();
+
+				if (level is >= 0 and <= 100)
+					ThreadAccessors.A_SendLevel = level;
+				else
+					_ = Errors.ValueErrorOccurred("A_SendLevel must be from 0 through 100.", value);
+			}
 		}
 
 		/// <summary>
@@ -1740,7 +1748,15 @@ namespace Keysharp.Builtins
 		public static object A_InputLevel
 		{
 			get => Script.TheScript.AccessorData.inputLevel;
-			set => Script.TheScript.AccessorData.inputLevel = Math.Clamp(value.ToLong(), 0L, 100L);
+			set
+			{
+				var level = value.ToLong();
+
+				if (level is >= 0 and <= 100)
+					Script.TheScript.AccessorData.inputLevel = level;
+				else
+					_ = Errors.ValueErrorOccurred("A_InputLevel must be from 0 through 100.", value);
+			}
 		}
 
 		/// <summary>

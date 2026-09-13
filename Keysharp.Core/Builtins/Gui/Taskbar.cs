@@ -138,7 +138,12 @@ namespace Keysharp.Builtins
 			{
 				var total = maximum == null ? 100L : maximum.Al();
 				var blank = value == null || value.As().Length == 0 || total <= 0;
-				var completed = blank ? 0UL : (ulong)Math.Clamp(value.Al(), 0, total);
+				var requested = blank ? 0L : value.Al();
+
+				if (!blank && (requested < 0 || requested > total))
+					return Errors.ValueErrorOccurred($"Value must be from 0 through {total}.", value);
+
+				var completed = blank ? 0UL : (ulong)requested;
 				var outOf = blank ? 0UL : (ulong)total;
 
 				if (window is nint w)

@@ -1174,7 +1174,18 @@ namespace Keysharp.Builtins
 											   object excludeTitle = null,
 											   object excludeText = null)
 		{
+			var alphaText = n.As();
+
+			if (alphaText.Length > 0 && !alphaText.Equals("Off", StringComparison.OrdinalIgnoreCase))
+			{
+				if (!n.TryParseLong(out var alpha) || alpha is < 0 or > 255)
+					return Errors.ValueErrorOccurred("N must be from 0 through 255, blank or Off.", n);
+
+				n = alpha;
+			}
+
 			EnsureWindowControlPermission("WinSetTransparent");
+
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
 				if (!Platform.Window.TrySetTransparency(win.Handle, n))

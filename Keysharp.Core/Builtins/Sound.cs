@@ -37,9 +37,12 @@ namespace Keysharp.Builtins
 		{
 			var freq = frequency.Ai(523);
 			var time = duration.Ai(150);
+
+			if (freq is < SoundPlayback.MinFrequency or > SoundPlayback.MaxFrequency)
+				return Errors.ValueErrorOccurred($"Frequency must be from {SoundPlayback.MinFrequency} through {SoundPlayback.MaxFrequency}.", frequency);
 #if WINDOWS
 			// Console.Beep is Win32 Beep(), which is exactly what AHK calls.
-			Console.Beep(Math.Clamp(freq, SoundPlayback.MinFrequency, SoundPlayback.MaxFrequency), Math.Max(0, time));
+			Console.Beep(freq, Math.Max(0, time));
 #else
 
 			// Linux and macOS have no tone generator, so synthesize the sine and play it. This is what makes
