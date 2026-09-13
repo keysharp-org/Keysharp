@@ -402,7 +402,7 @@ Status legend:
 | ComObjType() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObjType function retrieves type information from a COM object. Off Windows the requests differ: Linux answers Name, IID and Path, and macOS answers the class name, Name, CLSID or IID, and Path. |
 | ComObjValue() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComObjValue function retrieves the value or pointer stored in a COM wrapper object. |
 | CompileScript() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compiles a script file or script text in memory with the optional compiler component, as the --validate switch does, without running or writing it; this also catches lowering and C# errors. Returns {IsValid, Errors, Warnings}. Raises an Error if the compiler component is not installed. |
-| ComValue() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComValue class wraps a value, SafeArray or COM object for use by the script or for passing to a COM method. Off Windows the first argument is a wire type rather than a VT_ constant: a D-Bus signature on Linux, a four-character descriptor type on macOS. The clean VT_ constants are still accepted. |
+| ComValue() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComValue class wraps a typed value. Off Windows, the type is a D-Bus signature on Linux or a four-character descriptor on macOS; supported VT_ constants are also accepted. VarType preserves the supplied notation and is assignable. |
 | ComValueRef | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Reference wrapper type for COM values. |
 | contains | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Substring containment operator. |
 | Continue | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Skips to the next loop iteration. |

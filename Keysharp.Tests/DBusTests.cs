@@ -332,6 +332,17 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
+		public void ComValueVarTypeReadsBackAsGiven()
+		{
+			var cv = new Keysharp.Builtins.COM.ComValue(19L, 1L);   // VT_UI4
+			Assert.That(cv.VarType, Is.EqualTo(19L));
+			Assert.That(new Keysharp.Builtins.COM.ComValue("a{sv}", null).VarType, Is.EqualTo("a{sv}"));
+			cv.VarType = "t";
+			Assert.That(cv.DBusSignature, Is.EqualTo("t"));
+			Assert.Throws<ArgumentException>(() => cv.VarType = 9L);   // VT_DISPATCH has no D-Bus equivalent
+		}
+
+		[Test]
 		public void VariantInferenceMatchesTheDocumentedRule()
 		{
 			Assert.That(DBusMarshal.InferVariantSignature("s"), Is.EqualTo("s"));

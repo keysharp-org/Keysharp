@@ -17,6 +17,19 @@ namespace Keysharp.Builtins.COM
 
 		public object Value { get; private set; }
 
+		private object varType;
+
+		/// <summary>The caller's type notation; assigning it also updates <see cref="DBusSignature"/>.</summary>
+		public object VarType
+		{
+			get => varType ?? DBusSignature;
+			set
+			{
+				DBusSignature = ResolveSignature(value);
+				varType = value is string ? value : value.Al();
+			}
+		}
+
 		public ComValue(params object[] args) : base(args) => Init(args);
 
 		public static object staticCall(object @this, object varType, object value = null, object flags = null)
@@ -29,7 +42,7 @@ namespace Keysharp.Builtins.COM
 			if (args == null || args.Length == 0)
 				return;
 
-			DBusSignature = ResolveSignature(args[0]);
+			VarType = args[0];
 			Value = args.Length > 1 ? args[1] : null;
 		}
 

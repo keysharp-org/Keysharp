@@ -4022,8 +4022,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "The ComValue class wraps a value, SafeArray or COM object for use by the script or for passing to a COM method. Off Windows the first argument is a wire type rather than a VT_ constant: a D-Bus signature on Linux, a four-character descriptor type on macOS. The clean VT_ constants are still accepted.",
-                     "tested-by":  "external-com.ahk"
+                     "notes":  "The ComValue class wraps a typed value. Off Windows, the type is a D-Bus signature on Linux or a four-character descriptor on macOS; supported VT_ constants are also accepted. VarType preserves the supplied notation and is assignable.",
+                     "tested-by":  "external-com.ahk; DBusTests.ComValueVarTypeReadsBackAsGiven"
                  },
                  {
                      "category":  "COM",
