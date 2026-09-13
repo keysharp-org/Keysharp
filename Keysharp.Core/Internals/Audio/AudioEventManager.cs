@@ -8,9 +8,9 @@ namespace Keysharp.Internals.Audio
 	/// Engine-side state for one <c>Audio.OnDeviceChange</c> subscription. A device-change subscription filters
 	/// only by kind, so that is all it adds to the shared subscription base.
 	/// </summary>
-	internal sealed class AudioEventRegistration(KeysharpFunc callback, ScriptEventScheduler ownerScheduler,
+	internal sealed class AudioEventRegistration(object callback, ScriptEventScheduler ownerScheduler,
 		AudioEventManager manager, string kind)
-		: EventSubscriptionBase(callback, ownerScheduler)
+		: EventSubscriptionBase(callback, ownerScheduler, manager.KeepsScriptRunning)
 	{
 		internal readonly AudioEventManager manager = manager;
 
@@ -18,6 +18,8 @@ namespace Keysharp.Internals.Audio
 		internal readonly string kind = kind;
 
 		internal override void Unregister() => manager.Unregister(this);
+
+		internal override void Register() => manager.Register(this);
 	}
 
 	/// <summary>
@@ -27,15 +29,12 @@ namespace Keysharp.Internals.Audio
 	/// platform emits.
 	/// </summary>
 	internal sealed class AudioEventManager(Script script)
-		: EventManagerBase<AudioEventRegistration, AudioEventManager.Watcher, AudioEventManager.Payload>(script)
+		: EventManagerBase<AudioEventRegistration, AudioEventManager.Watcher, ValueTuple>(script, false)
 	{
 		internal const string KindAdded = "Added";
 		internal const string KindRemoved = "Removed";
 		internal const string KindChanged = "Changed";
 		internal const string KindDefaultChanged = "DefaultChanged";
-
-		/// <summary>What one classified change carries: nothing but the count, so dispatch allocates nothing extra.</summary>
-		internal readonly record struct Payload(long Count);
 
 		/// <summary>
 		/// Holds the backend's notification registration. It is installed on the first subscription and released
@@ -116,9 +115,6 @@ namespace Keysharp.Internals.Audio
 				lastDevices = Snapshot() ?? [];
 		}
 
-		protected override void ApplyThreadState(ThreadVariables tv, AudioEventRegistration reg, in Payload payload)
-			=> tv.eventInfo = payload.Count;
-
 		// ---- native intake (arbitrary backend thread) ----------------------------------------
 
 		/// <summary>
@@ -160,10 +156,10 @@ namespace Keysharp.Internals.Audio
 			}
 
 			foreach (var (kind, device) in Classify(previous, current))
-				DispatchAll(kind, device, current.Length);
+				DispatchAll(kind, device);
 		}
 
-		private void DispatchAll(string kind, AudioDeviceDescriptor device, long count)
+		private void DispatchAll(string kind, AudioDeviceDescriptor device)
 		{
 			// Resolved once per dispatch rather than per registration, and from the script this manager was built
 			// for, which is the captured-service rule every object this class hands out already follows.
@@ -180,17 +176,7 @@ namespace Keysharp.Internals.Audio
 
 			foreach (var reg in toFire)
 			{
-				if (!KindMatches(reg.kind, device.Kind))
-					continue;
-
-				// A paused hook stays registered, keeps the baseline current and is queued like any other;
-				// RunCallback discards it if it is still paused when it would run.
-				if (!reg.IsActive)
-					continue;
-
-				var scheduler = DispatchTarget(reg);
-
-				if (scheduler == null)
+				if (!reg.IsActive || !KindMatches(reg.kind, device.Kind))
 					continue;
 
 				// A removed device is wrapped as gone, so operating on it inside the handler raises the
@@ -198,9 +184,7 @@ namespace Keysharp.Internals.Audio
 				var wrapped = kind == KindRemoved
 							  ? Ks.Audio.Device.WrapMissing(service, device)
 							  : Ks.Audio.Device.Wrap(service, device);
-				object[] args = [reg.scriptObject, kind, wrapped];
-				var payload = new Payload(count);
-				_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, args, payload));
+				Fire(reg, reg.Callback, [reg.scriptObject, kind, wrapped]);
 			}
 		}
 

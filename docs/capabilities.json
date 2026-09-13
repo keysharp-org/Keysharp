@@ -3690,13 +3690,13 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Clipboard.OnChange()",
-                     "syntax":  "hook := Clipboard.OnChange(cb)",
+                     "syntax":  "hook := Clipboard.OnChange(Callback)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unknown",
-                     "notes":  "Calls Callback(Hook, Type) with 0 (empty), 1 (text or files), or 2 (other); A_EventInfo has the same value. Returns a ClipboardHook (an EventHook) and runs independently of OnClipboardChange. Native callbacks are unverified on Linux and macOS.",
-                     "tested-by":  "clipboard-class.ahk"
+                     "notes":  "Calls Callback(Hook, DataType), where DataType is 0 (empty), 1 (text or files) or 2 (other). Returns a started, persistent ClipboardHook independent of OnClipboardChange.",
+                     "tested-by":  "clipboard-class.ahk; ClipboardTests.OnChangeHookSurface; EventHookTests.PersistenceFollowsTheFamily"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -3706,7 +3706,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unknown",
-                     "notes":  "An Array of every live Clipboard.OnChange hook, oldest first, from every thread. A snapshot; OnClipboardChange handlers are not included.",
+                     "notes":  "An Array of every running Clipboard.OnChange hook, in start order, from every thread. A snapshot; OnClipboardChange handlers are not included.",
                      "tested-by":  "clipboard-class.ahk"
                  },
                  {
@@ -3817,12 +3817,12 @@
                  {
                      "category":  "Interop/Memory",
                      "feature":  "Clr.ManagedInstance.OnEvent()",
-                     "syntax":  "sub := obj.OnEvent(\"Name\", Callback [, AddRemove])",
+                     "syntax":  "sub := obj.OnEvent(\"Name\", Callback)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Subscribes to a .NET event on an instance (or a static event on a ManagedType), with the callback run on the subscribing thread. Returns a Clr.EventSubscription, an EventHook; Pause() detaches the delegate and Start() re-attaches it. AddRemove is 1 (add) or 0 (remove); any other value is a ValueError. add_X/remove_X route through the same path.",
+                     "notes":  "Subscribes Callback to an instance or static .NET event on the calling thread. Returns a started Clr.EventSubscription; Stop() detaches it and Start() reattaches it. It does not keep the script running.",
                      "tested-by":  "directive-csharp-events.ahk"
                  },
                  {
@@ -3833,7 +3833,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "An Array of every live CLR event subscription this script made, oldest first, mixing instance and static events. A snapshot.",
+                     "notes":  "An Array of every running CLR event subscription this script made, in start order, mixing instance and static events. A snapshot.",
                      "tested-by":  "directive-csharp-events.ahk"
                  },
                  {
@@ -5031,8 +5031,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Exits the current pseudo-thread immediately. Terminating a different pseudo-thread is Thread.Exit(ExitCode?) on a Thread object, reached through KS.A_Thread.Underlying or KS.A_RealThread.Threads[i] (1-based, oldest first). An underlying target exits at its next cooperative event/message check; later requests overwrite its pending exit code.",
-                     "tested-by":  "FlowTests.FlowExit"
+                     "notes":  "Exits the current pseudo-thread immediately. Terminating a different pseudo-thread is Thread.Exit(ExitCode?) on a Thread object, reached through KS.A_Thread.Underlying or KS.A_RealThread.Threads[i] (1-based, oldest first). An underlying target exits at its next cooperative event/message check; later requests overwrite its pending exit code. As in AutoHotkey, the code is the process exit code if the script exits when that thread ends; the auto-execute section's stays pending until the next thread ends.",
+                     "tested-by":  "FlowTests.FlowExit; FlowTests.FlowExitRequests"
                  },
                  {
                      "category":  "Environment/System",
@@ -5648,7 +5648,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Function object type. A callback is passed as a function object, with %\"Name\"% resolving a name known only at run time to one.",
+                     "notes":  "Function object type. Callback parameters also accept other objects with a callable Call member; %\"Name\"% resolves a function name known only at run time.",
                      "tested-by":  "assign-multiline.ahk; func-callable.ahk"
                  },
                  {
@@ -6778,7 +6778,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The InputHook function creates an object which can be used to collect or intercept keyboard input. In Keysharp it is an EventHook, so `ih is EventHook` holds and it gains Pause()."
+                     "notes":  "Creates an AutoHotkey-compatible input collector. It derives from EventHook; callback properties validate arity and accept \"\" or unset to clear.",
+                     "tested-by":  "InputHookTests.CallbackPropertiesValidateAndClear"
                  },
                  {
                      "category":  "Input/Automation",
@@ -6798,7 +6799,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Whether InputHook receives events before hotkeys process them."
+                     "notes":  "Whether input is processed before hotkeys; fixed while running."
                  },
                  {
                      "category":  "Input/Automation",
@@ -6838,7 +6839,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Key that ended the input hook."
+                     "notes":  "Key that ended the input hook, or \"\" when it did not end by an EndKey."
                  },
                  {
                      "category":  "Input/Automation",
@@ -6858,7 +6859,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Why the input ended: Stopped, Timeout, Match, EndKey, Max or Failed (the hook could not be installed). \"\" while the input has not started, is in progress or is paused. Unlike AutoHotkey, a hook that was never started reports \"\", not \"Stopped\"."
+                     "notes":  "Why the input ended: Stopped, Timeout, Match, EndKey, Max or Failed. It is \"\" while running and \"Stopped\" before the first Start().",
+                     "tested-by":  "InputHookTests.FreshHookReadsStopped; InputHookTests.RunningHookReportsNoEndReason"
                  },
                  {
                      "category":  "Input/Automation",
@@ -6878,7 +6880,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "1 while the input is collecting; 0 before Start(), while paused and after it ends."
+                     "notes":  "1 while the input is collecting; 0 before Start() and after it ends."
                  },
                  {
                      "category":  "Input/Automation",
@@ -7002,24 +7004,13 @@
                  },
                  {
                      "category":  "Input/Automation",
-                     "feature":  "InputHook.Pause()",
-                     "syntax":  "ih.Pause()",
-                     "windows":  "full",
-                     "linux_x11":  "partial",
-                     "linux_wayland":  "partial",
-                     "macos":  "partial",
-                     "notes":  "Keysharp extension from EventHook. Suspends an input in progress without ending it: keys pass through uncollected and unsuppressed, no callback runs, and the Timeout clock stops. Start() resumes it; Stop() ends it.",
-                     "tested-by":  "InputHookTests.RunningAndPausedHooksReportNoEndReason; InputHookTests.QueuedNotificationsAreDiscardedAfterPauseOrStop"
-                 },
-                 {
-                     "category":  "Input/Automation",
                      "feature":  "InputHook.Start()",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Starts capturing input, or resumes a paused input with its buffer and remaining Timeout intact; does nothing while one is in progress. Linux and macOS use a suppression-capable global hook, which requires InputMonitoring and InputControl."
+                     "notes":  "Starts a new input with an empty buffer; does nothing while running. Linux and macOS require InputMonitoring and InputControl."
                  },
                  {
                      "category":  "Input/Automation",
@@ -7029,7 +7020,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Ends an input that is in progress or paused with EndReason \"Stopped\" and calls OnEnd; notifications queued for OnChar, OnKeyDown, OnKeyUp and the mouse callbacks are discarded, while OnEnd always runs. On a hook that was never started it only sets EndReason to \"Stopped\"."
+                     "notes":  "Ends a running input with EndReason \"Stopped\" and calls OnEnd. Other queued input callbacks are dropped unless another run starts first.",
+                     "tested-by":  "InputHookTests.QueuedNotificationsAreDiscardedAfterStop; InputHookTests.OnEndRunsForAnInputRestartedBeforeItsEnd"
                  },
                  {
                      "category":  "Input/Automation",
@@ -8334,8 +8326,8 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "planned",
-                     "notes":  "Fires callback(hook, kind, device) when a device is added, removed, renamed or becomes the default, where kind is \"Added\", \"Removed\", \"Changed\" or \"DefaultChanged\". Returns an Audio.DeviceHook, an EventHook managed exactly like WinEvent and Monitor.OnChange hooks; dropping the handle does not unsubscribe it.",
-                     "tested-by":  "audio-class.ahk"
+                     "notes":  "Calls Callback(Hook, Change, Device) for Added, Removed, Changed or DefaultChanged. Returns a started Audio.DeviceHook that does not keep the script running.",
+                     "tested-by":  "audio-class.ahk; EventHookTests.PersistenceFollowsTheFamily"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -8345,7 +8337,7 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "planned",
-                     "notes":  "An Array of every live Audio.OnDeviceChange hook, oldest first, from every thread. A snapshot.",
+                     "notes":  "An Array of every running Audio.OnDeviceChange hook, in start order, from every thread. A snapshot.",
                      "tested-by":  "audio-class.ahk"
                  },
                  {
@@ -8554,8 +8546,8 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
-                     "notes":  "Calls Callback(Hook, Kind) with \"Topology\" for attachment changes or \"Settings\" for changes to resolution, position, scale or primary monitor. Returns a MonitorHook (an EventHook); A_EventInfo is the current monitor count. Duplicate notifications with no changes are suppressed. Native callbacks are unverified on Linux and macOS.",
-                     "tested-by":  "MonitorTests.cs"
+                     "notes":  "Calls Callback(Hook, Change), where Change is \"Topology\" or \"Settings\". Returns a started MonitorHook that does not keep the script running; unchanged snapshots are ignored.",
+                     "tested-by":  "MonitorTests.cs; EventHookTests.PersistenceFollowsTheFamily"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -8565,7 +8557,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "An Array of every live Monitor.OnChange hook, oldest first, from every thread. A snapshot.",
+                     "notes":  "An Array of every running Monitor.OnChange hook, in start order, from every thread. A snapshot.",
                      "tested-by":  "EventHookTests.RegisterEnumerateAndStopThroughTheManager"
                  },
                  {
@@ -9007,8 +8999,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The OnExit function registers a function to be called automatically whenever the script exits.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "The OnExit function registers a function to be called automatically whenever the script exits. A failed auto-execute section reports Error.",
+                     "tested-by":  "Gui/guitest.ks; FlowTests.FlowExitRequests"
                  },
                  {
                      "category":  "Core Language",
@@ -9138,7 +9130,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The Persistent function prevents the script from exiting automatically when its last thread completes, allowing it to stay running in an idle state."
+                     "notes":  "Prevents automatic script exit. Running WinEvent, ClipboardHook and InputHook objects are also persistent; MonitorHook, Audio.DeviceHook and CLR event hooks are not.",
+                     "tested-by":  "FlowTests.FlowExitRequests; EventHookTests.PersistenceFollowsTheFamily"
                  },
                  {
                      "category":  "Core Language",
@@ -9406,112 +9399,122 @@
                  {
                      "category":  "Automation",
                      "feature":  "WinEvent",
-                     "syntax":  "hook := WinEvent.Active(cb)",
+                     "syntax":  "we := WinEvent(WinTitle?, WinText?, ExcludeTitle?, ExcludeText?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp-specific Ks class for cross-platform window-event subscriptions. Windows uses SetWinEventHook; Linux uses keysharp-desktop X11 or native compositor sources; macOS uses Accessibility AXObserver streams and requires Accessibility permission.",
+                     "notes":  "Cross-platform window events modeled on the AHK WinEvent library. Constructed idle with window criteria; its On* callbacks receive (Hook, Hwnd, Time). Windows uses SetWinEventHook, Linux keysharp-desktop, and macOS Accessibility observers.",
+                     "tested-by":  "Gui/guitest.ks; EventHookTests.WinEventIsConstructedIdleAndStarted"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "WinEvent.WinTitle / .WinText / .ExcludeTitle / .ExcludeText",
+                     "syntax":  "we.WinTitle",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "The criteria the hook was constructed with, read-only.",
+                     "tested-by":  "EventHookTests.WinEventIsConstructedIdleAndStarted"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "WinEvent.OnActive",
+                     "syntax":  "we.OnActive := Callback",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Fires when a matching window becomes foreground or the foreground window is retitled into a match. The window active at Start() is not reported.",
+                     "tested-by":  "Gui/guitest.ks; EventHookTests.WinEventIsConstructedIdleAndStarted; EventHookTests.ActiveAndNotActiveFollowTheForeground"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "WinEvent.OnNotActive",
+                     "syntax":  "we.OnNotActive := Callback",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Fires when the foreground leaves the matching set or its title ceases to match. Hwnd is the previously active matching window.",
+                     "tested-by":  "EventHookTests.ActiveAndNotActiveFollowTheForeground"
+                 },
+                 {
+                     "category":  "Automation",
+                     "feature":  "WinEvent.OnExist",
+                     "syntax":  "we.OnExist := Callback",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Fires when a window enters the matching set. Existing matches at Start() are not reported; use WinGetList to enumerate them.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "WinEvent.Active()",
-                     "syntax":  "WinEvent.Active(cb, winTitle?, winText?, exclTitle?, exclText?)",
+                     "feature":  "WinEvent.OnNotExist",
+                     "syntax":  "we.OnNotExist := Callback",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Subscribes to active/foreground window changes; also fires when the active window\u0027s title changes (so late-matching criteria are caught). Callback receives (hook, hwnd, dwmsEventTime).",
+                     "notes":  "Fires when a window leaves the matching set through destruction, hiding, cloaking or a title change. Hwnd may already be invalid.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "WinEvent.Exist()",
-                     "syntax":  "WinEvent.Exist(cb, winTitle?, winText?, exclTitle?, exclText?)",
+                     "feature":  "WinEvent.OnMove",
+                     "syntax":  "we.OnMove := Callback",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Subscribes to a matching window appearing (created, shown, or its title changed so it now matches); fires once per matching window and respects DetectHiddenWindows. Subsumes the reference library\u0027s Create. macOS uses per-application AXObserver streams and requires Accessibility permission.",
+                     "notes":  "Fires when a matching window moves or resizes. A_EventInfo is {X, Y, Width, Height}.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "WinEvent.NotExist()",
-                     "syntax":  "WinEvent.NotExist(cb, winTitle?, winText?, exclTitle?, exclText?)",
+                     "feature":  "WinEvent.OnMinimize",
+                     "syntax":  "we.OnMinimize := Callback",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Subscribes to a matching window disappearing (destroyed, hidden/cloaked, or its title changed so it no longer matches). Subsumes the reference library\u0027s Close. Tracks the set of matching top-level windows while they are alive (mirroring the reference library) so it fires reliably even though the window may be gone by the time the event arrives.",
+                     "notes":  "Fires when a matching window is minimized or iconified.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "WinEvent.Move()",
-                     "syntax":  "WinEvent.Move(cb, winTitle?, winText?, exclTitle?, exclText?)",
+                     "feature":  "WinEvent.OnRestore",
+                     "syntax":  "we.OnRestore := Callback",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Subscribes to window move/resize. Every event is delivered as-is (not coalesced).",
+                     "notes":  "Fires when a matching window is restored from a minimized state.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "WinEvent.Minimize()",
-                     "syntax":  "WinEvent.Minimize(cb, winTitle?, winText?, exclTitle?, exclText?)",
+                     "feature":  "WinEvent.OnTitleChange",
+                     "syntax":  "we.OnTitleChange := Callback",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Subscribes to window minimize/iconify.",
+                     "notes":  "Fires when a matching window's title changes.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "WinEvent.Restore()",
-                     "syntax":  "WinEvent.Restore(cb, winTitle?, winText?, exclTitle?, exclText?)",
+                     "feature":  "WinEvent.OnCaretMove",
+                     "syntax":  "we.OnCaretMove := Callback",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Subscribes to restoration from a minimized state. X11 derives it from _NET_WM_STATE_HIDDEN transitions, Wayland maps compositor restore events, and macOS uses AXWindowDeminiaturized.",
-                     "tested-by":  "Gui/guitest.ks"
-                 },
-                 {
-                     "category":  "Automation",
-                     "feature":  "WinEvent.TitleChange()",
-                     "syntax":  "WinEvent.TitleChange(cb, winTitle?, winText?, exclTitle?, exclText?)",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Subscribes to window title changes.",
-                     "tested-by":  "Gui/guitest.ks"
-                 },
-                 {
-                     "category":  "Automation",
-                     "feature":  "WinEvent.CaretMove()",
-                     "syntax":  "WinEvent.CaretMove(cb, winTitle?, winText?, exclTitle?, exclText?)",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Subscribes to text caret (insertion point) movement. hwnd is the caret owner's top-level window and A_EventInfo holds the caret rectangle { X, Y, Width, Height } in screen coordinates; unchanged positions are suppressed. Sourced from the same accessibility plumbing as CaretGetPos, so coverage matches it: Windows uses the MSAA caret (EVENT_OBJECT_LOCATIONCHANGE on OBJID_CARET), Linux the AT-SPI object:text-caret-moved signal, macOS the AXSelectedTextChanged notification. Applications that draw their own caret without exposing it to accessibility report nothing.",
-                     "tested-by":  "Gui/guitest.ks"
-                 },
-                 {
-                     "category":  "Automation",
-                     "feature":  "WinEvent.EventName",
-                     "syntax":  "hook.EventName",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The event this subscription listens for, e.g. \"Active\" or \"Move\".",
-                     "tested-by":  "Gui/guitest.ks; EventHookTests.WinEventReportsItsEventName; EventHookTests.InvalidEventTypeErrorRecovery"
+                     "notes":  "Fires when an accessible text caret moves inside a matching window. Hwnd is the top-level window and A_EventInfo is the caret rectangle {X, Y, Width, Height} in screen coordinates."
                  },
                  {
                      "category":  "Automation",
@@ -9521,7 +9524,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "An Array of every live WinEvent hook, oldest first, from every thread. A snapshot: iterate it to pause or stop hooks in bulk.",
+                     "notes":  "An Array of every running WinEvent, in start order, from every thread. A snapshot: iterate it to stop hooks in bulk.",
                      "tested-by":  "EventHookTests.RegisterEnumerateAndStopThroughTheManager"
                  },
                  {
@@ -9532,8 +9535,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp-specific Ks base class of every subscription handle (WinEvent hooks, MonitorHook, ClipboardHook, Audio.DeviceHook, Clr.EventSubscription) and of InputHook. Handles come only from the factories, and a subscription lives until Stop(), its thread ending or the script exiting; dropping the handle does not stop it.",
-                     "tested-by":  "EventHookTests.AssertHookSurface; EventHookTests.DeleteDoesNotStopTheSubscription"
+                     "notes":  "Base class of WinEvent, MonitorHook, ClipboardHook, Audio.DeviceHook, Clr.EventSubscription and InputHook. A running hook ends on Stop(), owner-thread exit or script exit.",
+                     "tested-by":  "EventHookTests.HookSurfaceIsIdenticalAcrossSources; EventHookTests.DeleteDoesNotStopTheSubscription; EventHookTests.PersistenceFollowsTheFamily; EventHookTests.RealThreadRootsFollowTheFamily"
                  },
                  {
                      "category":  "Automation",
@@ -9543,8 +9546,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "1 while the hook delivers callbacks; 0 while it is paused or has ended.",
-                     "tested-by":  "EventHookTests.AssertHookSurface"
+                     "notes":  "1 while the hook runs; 0 before its first Start() and after it ends.",
+                     "tested-by":  "EventHookTests.HookSurfaceIsIdenticalAcrossSources"
                  },
                  {
                      "category":  "Automation",
@@ -9554,19 +9557,19 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "\"\" while the hook is active or paused. Once it ends: \"Stopped\" (Stop() or a third-party detach), \"Exit\" (its thread or the script ended) or \"Failed\" (the native event source could not be installed). The first reason is kept.",
-                     "tested-by":  "EventHookTests.AssertHookSurface; EventHookTests.RegisterEnumerateAndStopThroughTheManager"
+                     "notes":  "\"\" while running; otherwise \"Stopped\", \"Exit\" or \"Failed\". InputHook also uses its AutoHotkey end reasons.",
+                     "tested-by":  "EventHookTests.HookSurfaceIsIdenticalAcrossSources; EventHookTests.RegisterEnumerateAndStopThroughTheManager"
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "EventHook.Pause() / .Start()",
-                     "syntax":  "hook.Pause(), hook.Start()",
+                     "feature":  "EventHook.Start()",
+                     "syntax":  "hook.Start()",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Pause() suspends delivery without unregistering: a callback that comes due while the hook is paused is discarded. Start() resumes it, and does nothing to an active or ended hook.",
-                     "tested-by":  "EventHookTests.AssertHookSurface; EventHookTests.QueuedCallbacksAreDiscardedAfterStopOrPause"
+                     "notes":  "Starts or restarts the hook with its callback and filter; does nothing while running. The calling thread owns the new run.",
+                     "tested-by":  "EventHookTests.HookSurfaceIsIdenticalAcrossSources; EventHookTests.QueuedCallbacksAreDiscardedAfterStop; EventHookTests.WinEventIsConstructedIdleAndStarted"
                  },
                  {
                      "category":  "Automation",
@@ -9576,8 +9579,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Ends the subscription for good with EndReason \"Stopped\". Callbacks already queued are discarded; one already running finishes. A one-shot hook calls it as the first statement of its callback.",
-                     "tested-by":  "EventHookTests.QueuedCallbacksAreDiscardedAfterStopOrPause"
+                     "notes":  "Ends the run with EndReason \"Stopped\"; Start() can begin another. Queued callbacks for the ended run are dropped.",
+                     "tested-by":  "EventHookTests.QueuedCallbacksAreDiscardedAfterStop"
                  },
                  {
                      "category":  "Automation",

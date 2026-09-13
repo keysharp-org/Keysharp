@@ -264,24 +264,24 @@ namespace Keysharp.Builtins
 		/// -1: Call the callback before any previously registered callbacks.<br/>
 		///  0: Do not call the callback.
 		/// </param>
-		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if callback is not of type <see cref="KeysharpFunc"/>.</exception>
-			public static object OnClipboardChange(object callback, object addRemove = null)
-			{
-				if (callback is KeysharpFunc fo)
-				{
-					var script = Script.TheScript;
-					var change = addRemove.Al(1);
+		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if callback is not an object.</exception>
+		/// <exception cref="MethodError">A <see cref="MethodError"/> exception is thrown if callback is an object which cannot be called.</exception>
+		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if callback cannot take one argument, or addRemove is not 1, -1 or 0.</exception>
+		public static object OnClipboardChange(object callback, object addRemove = null)
+		{
+			// Checked on every call, removal too, as AHK's OnScriptEvent checks it.
+			if (Functions.CheckedCallback(callback, 1) is not { } fn || !Functions.TryAddRemove(addRemove, out var change))
+				return DefaultObject;
 
-					if (change != 0)
-						ClipboardPermission.EnsureMonitoring("OnClipboardChange");
+			var script = Script.TheScript;
 
-					if (script.ClipFunctions.ModifyEventHandlers(fo, change))
-						script.UpdateClipboardMonitoring();
+			if (change != 0)
+				ClipboardPermission.EnsureMonitoring("OnClipboardChange");
 
-					return DefaultObject;
-				}
-				else
-				return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc), DefaultObject);
+			if (script.ClipFunctions.ModifyEventHandlers(fn, change))
+				script.UpdateClipboardMonitoring();
+
+			return DefaultObject;
 		}
 
 		/// <summary>

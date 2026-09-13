@@ -381,7 +381,9 @@ namespace Keysharp.Builtins
 				registeredHwnd = 0;
 				script.PostToUIThread(GC.Collect);
 			}
-			script.ExitIfNotPersistent();//Also does BeginInvoke(), so it will come after the GC.Collect() above.
+			//AHK reports Close when a hide or destroy ends the script. The check is posted, so it runs after the
+			//GC.Collect() above.
+			script.ExitIfNotPersistent(Keysharp.Builtins.Flow.ExitReasons.Close);
 		}
 
 		internal object Destroy()
@@ -542,77 +544,78 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="handler">A function object, or the name of a method on eventObj.</param>
 		/// <param name="eventObj">The Gui's event sink, or null when it was built without one.</param>
-		/// <returns>The <see cref="KeysharpFunc"/> to register, or null when handler was blank.</returns>
-		internal static KeysharpFunc ResolveHandler(object handler, object eventObj) =>
-			handler is string name && name.Length > 0 && eventObj != null
-			? new KeysharpFunc(name, eventObj)
-			: Functions.GetKeysharpFunc(handler, null, true);
+		/// <returns>The handler to register, or null once it has been refused.</returns>
+		internal static object ResolveHandler(object handler, object eventObj)
+		{
+			if (!IsMethodName(handler))
+				return Functions.ToCallback(handler);
+
+			// As AHK: a number names a method as its text does, and without a sink neither names anything.
+			var name = handler.As();
+
+			if (eventObj != null && name.Length > 0)
+				return new KeysharpFunc(name, eventObj);
+
+			_ = Errors.ValueErrorOccurred(name.Length > 0 && handler is string
+										  ? $"Cannot use the string \"{name}\" as a function, as this Gui has no event sink. Pass the function itself, or %\"{name}\"% to resolve a name at run time."
+										  : "Parameter #2 invalid.");
+			return null;
+		}
+
+		/// <summary>Whether a Gui event registration's handler is a method name, which only a sink resolves.</summary>
+		internal static bool IsMethodName(object handler) => handler is not (Any or Delegate or null);
+
+		/// <summary>
+		/// The AddRemove and handler of a Gui event registration, both checked as AHK's GuiType::OnEvent checks them:
+		/// AddRemove must be 1, -1 or 0, and a function object being added must take the <paramref name="argCount"/>
+		/// arguments the event passes. A sink method name and a removal are not checked. Null once refused.
+		/// </summary>
+		internal static object CheckedHandler(object handler, object eventObj, object addRemove, int argCount, out long change)
+		{
+			if (!Functions.TryAddRemove(addRemove, out change) || ResolveHandler(handler, eventObj) is not { } resolved)
+				return null;
+
+			return change == 0 || IsMethodName(handler) || Functions.ValidateFunctor(resolved, argCount) ? resolved : null;
+		}
 
 		internal object OnEvent(object obj0, object obj1, object obj2 = null)
 		{
-			var e = obj0.As();
-			var h = obj1;
-			var i = obj2.Al(1);
-			e = e.ToLowerInvariant();
-			if (e is not ("close" or "contextmenu" or "dropfiles" or "dpichanged" or "escape" or "size"))
+			var e = obj0.As().ToLowerInvariant();
+
+			// The arguments each event passes its callback.
+			var argCount = e switch
+			{
+				"close" or "escape" => 1,
+				"dpichanged" => 3,
+				"size" => 4,
+				"dropfiles" => 5,
+				"contextmenu" => 6,
+				_ => -1
+			};
+
+			if (argCount < 0)
 				return Errors.ValueErrorOccurred($"Unknown EventName \"{Errors.Describe(obj0)}\". Expected Close, ContextMenu, DropFiles, DpiChanged, Escape or Size.", obj0);
 
-			var del = ResolveHandler(h, eventObj);
+			if (CheckedHandler(obj1, eventObj, obj2, argCount, out var i) is not { } del)
+				return DefaultObject;
 
-			// ModifyEventHandlers ignores a null delegate, so a callback that did not resolve would otherwise
-			// register nothing and still report success.
-			if (del == null)
-				return Errors.ValueErrorOccurred("The callback was not a valid function.");
-
-			// Only detach the receiver GetKeysharpFunc just attached by resolving a method NAME on the sink, since
+			// Only detach the receiver ResolveHandler just attached by resolving a method NAME on the sink, since
 			// the Gui takes the receiver slot at dispatch. A function object the script supplied carries its own
 			// receiver, and is the script's own object, so clearing Inst on it would corrupt every other holder.
-			if (h is string && eventObj != null && ReferenceEquals(del?.Inst, eventObj))
-				del.Inst = null;
+			if (IsMethodName(obj1) && eventObj != null && del is KeysharpFunc named && ReferenceEquals(named.Inst, eventObj))
+				named.Inst = null;
 
-			if (e == "close")
+			var registry = e switch
 			{
-				if (closedHandlers == null)
-					closedHandlers = new();
+				"close" => closedHandlers ??= new(CallbackStop.NonEmpty),
+				"contextmenu" => contextMenuChangedHandlers ??= new(CallbackStop.NonEmpty),
+				"dropfiles" => dropFilesHandlers ??= new(CallbackStop.NonEmpty),
+				"dpichanged" => dpiChangeHandlers ??= new(CallbackStop.NonEmpty),
+				"escape" => escapeHandlers ??= new(CallbackStop.NonEmpty),
+				_ => sizeHandlers ??= new(CallbackStop.NonEmpty)
+			};
 
-				closedHandlers.ModifyEventHandlers(del, i);
-			}
-			else if (e == "contextmenu")
-			{
-				if (contextMenuChangedHandlers == null)
-					contextMenuChangedHandlers = new();
-
-				contextMenuChangedHandlers.ModifyEventHandlers(del, i);
-			}
-			else if (e == "dropfiles")
-			{
-				if (dropFilesHandlers == null)
-					dropFilesHandlers = new();
-
-				dropFilesHandlers.ModifyEventHandlers(del, i);
-			}
-			else if (e is "dpichanged")
-			{
-				if (dpiChangeHandlers == null)
-					dpiChangeHandlers = new();
-
-				dpiChangeHandlers.ModifyEventHandlers(del, i);
-			}
-			else if (e == "escape")
-			{
-				if (escapeHandlers == null)
-					escapeHandlers = new();
-
-				escapeHandlers.ModifyEventHandlers(del, i);
-			}
-			else if (e == "size")
-			{
-				if (sizeHandlers == null)
-					sizeHandlers = new();
-
-				sizeHandlers.ModifyEventHandlers(del, i);
-			}
-
+			_ = registry.ModifyEventHandlers(del, i);
 			return DefaultObject;
 		}
 

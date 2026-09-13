@@ -852,7 +852,7 @@ namespace Keysharp.Internals.Window.MacOS
 			/// AXBoundsForRange report the caret itself rather than the bounds of any selected text. Elements that
 			/// aren't text — or that don't expose these attributes — return false rather than an empty rectangle.
 			/// Shared by <see cref="TryGetCaretScreenPosition"/> (which asks the system-wide focused element) and the
-			/// AXSelectedTextChanged observer behind <c>WinEvent.CaretMove</c> (which asks the notified element), so
+			/// AXSelectedTextChanged observer behind <c>WinEvent.OnCaretMove</c> (which asks the notified element), so
 			/// the query and the event always report the same position.</summary>
 			internal static bool TryGetCaretRect(nint element, out Rectangle rect)
 			{

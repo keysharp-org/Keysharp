@@ -1201,7 +1201,7 @@ namespace Keysharp.Internals.Input.Hooks
 			{
 				if (input.BeforeHotkeys == early && input.IsInteresting(extraInfo) && input.InProgress())
 				{
-					if (input.scriptObject != null && input.scriptObject.OnKeyUp != null
+					if (input.scriptObject?.GetCallbackSlot(UserMessages.AHK_INPUT_KEYUP)?.Callback != null
 							&& (((input.keySC[sc] | input.keyVK[vk]) & INPUT_KEY_NOTIFY) != 0
 								|| (input.notifyNonText && (input.keyVK[vk] & INPUT_KEY_IS_TEXT) == 0)))
 					{
@@ -1305,7 +1305,7 @@ namespace Keysharp.Internals.Input.Hooks
 
 				// Posting the notifications after CollectChar() might reduce the odds of a race condition.
 				if (((keyFlags & INPUT_KEY_NOTIFY) != 0 || (input.notifyNonText && !treatAsText))
-						&& input.scriptObject != null && input.scriptObject.OnKeyDown != null)
+						&& input.scriptObject?.GetCallbackSlot(UserMessages.AHK_INPUT_KEYDOWN)?.Callback != null)
 				{
 					// input is passed because the alternative would require the main thread to
 					// iterate through the Input chain and determine which ones should be notified.
@@ -1326,7 +1326,7 @@ namespace Keysharp.Internals.Input.Hooks
 
 				// Seems best to not collect dead key chars by default; if needed, OnDeadChar
 				// could be added, or the script could mark each dead key for OnKeyDown.
-				if (collectChars && input.scriptObject != null && input.scriptObject.OnChar != null)
+				if (collectChars && input.scriptObject?.GetCallbackSlot(UserMessages.AHK_INPUT_CHAR)?.Callback != null)
 				{
 					_ = PostMessage(new KeysharpMsg()
 					{
@@ -4086,7 +4086,7 @@ namespace Keysharp.Internals.Input.Hooks
 					// admitted; a blocked launch re-parks this entry, and the latch keeps the retry from repeating it.
 					var tornDown = false;
 					InputHook endHook = null;
-					KeysharpFunc endCallback = null;
+					object endCallback = null;
 
 					return targetScheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
 					{
@@ -4098,19 +4098,22 @@ namespace Keysharp.Internals.Input.Hooks
 
 							if (endCallback == null)
 							{
-								endHook?.DeactivateCallbackPersistence();
+								endInput.ReleaseRootsIfEnded(endHook);
 								script.ExitIfNotPersistent();
 								return ScriptEventExecutionResult.Dropped;
 							}
 						}
 
 						var result = targetScheduler.TryExecuteThreadLaunch(0, false, false,
-							tv => _ = Keysharp.Internals.Flow.TryCatch(() => _ = Script.Invoke(endCallback, null, [endHook])), ThreadKind.Input);
+							tv => _ = Keysharp.Internals.Flow.TryCatch(() => _ = Script.InvokeOrNull(endCallback, null, endHook)), ThreadKind.Input);
 
-						// Anything but a re-park is final, so release now, as AHK does when it discards an OnEnd launch.
+						// Anything but a re-park is final, so release now, as AHK does when it discards an OnEnd launch. An
+						// input restarted meanwhile, by OnEnd or before this ran, keeps the roots for its new run. A re-parked
+						// OnEnd no longer counts toward persistence, but the blocking thread's end posts the pump that
+						// relaunches it before its exit check (Threads.EndThread), so it still runs first.
 						if (result != ScriptEventExecutionResult.GlobalBlocked)
 						{
-							endHook.DeactivateCallbackPersistence();
+							endInput.ReleaseRootsIfEnded(endHook);
 							script.ExitIfNotPersistent();
 						}
 
@@ -4143,8 +4146,8 @@ namespace Keysharp.Internals.Input.Hooks
 					{
 						script.Threads.CurrentThread.eventInfo = eventInfo;
 
-						// Stopping or pausing takes effect at the call, so a notification queued before it is discarded
-						// here. A paused input stays linked, which is why being on the stack is not the test.
+						// Stopping takes effect at the call, so a notification queued before it is discarded here. An
+						// ended input can still be linked until its end runs, which is why being on the stack is not the test.
 						if (!inputHookParam.InProgress())
 							return;
 
@@ -4158,7 +4161,7 @@ namespace Keysharp.Internals.Input.Hooks
 						var args = message == (uint)UserMessages.AHK_INPUT_CHAR
 							? new object[] { inputHook.scriptObject, new string(wParamVal == 0 ? [(char)lParamVal] : [(char)lParamVal, (char)wParamVal]) }
 							: [inputHook.scriptObject, lParamVal, wParamVal];
-						_ = Script.Invoke(callback, null, args);
+						_ = Script.InvokeOrNull(callback, null, args);
 					}), ThreadKind.Input);
 				}
 
@@ -4202,7 +4205,7 @@ namespace Keysharp.Internals.Input.Hooks
 						var args = message == (uint)UserMessages.AHK_INPUT_MOUSEMOVE
 							? new object[] { inputHook.scriptObject, mx, my }
 							: [inputHook.scriptObject, VKtoKeyName(vkVal, true), mx, my];
-						_ = Script.Invoke(callback, null, args);
+						_ = Script.InvokeOrNull(callback, null, args);
 					}), ThreadKind.Input);
 				}
 

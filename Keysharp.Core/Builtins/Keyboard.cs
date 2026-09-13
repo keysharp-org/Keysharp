@@ -235,25 +235,22 @@ namespace Keysharp.Builtins
 			var keyname = keyName.As();
 			var label = action.As();
 			var opt = options.As();
-			KeysharpFunc fo = null;
+			object fo = null;
 			var hook_action = 0u;
+
+			//A number is no text here, as AHK reads it, so it is the options-only form.
+			if (action is not (null or string or Any or Delegate))
+				action = label = "";
 
 			if (action != null)
 			{
 				//A string is an alt-tab action or the name of an existing hotkey to copy.
-				if (action is not string)
-					fo = Functions.GetKeysharpFunc(action, null, true);
+				// Called with the hotkey name, so a callback that cannot take exactly that is refused here, as AHK's
+				// Hotkey (hotkey.cpp, ValidateFunctor(aCallback, 1)) refuses it, rather than failing at every press.
+				if (action is not string && (fo = Functions.CheckedCallback(action, 1)) == null)
+					return DefaultObject;
 
 				var tv = script.Threads.CurrentThread;
-
-				//Hotkey callbacks are invoked with one argument (the hotkey name). A function requiring more can
-				//never run, so reject it at registration: the invocation path swallows callback exceptions, which
-				//used to turn this into a hotkey that silently did nothing. Declaring FEWER stays legal -- the
-				//name may be ignored, as in AutoHotkey.
-				if (fo != null && !fo.CanAcceptArgCount(1))
-					return Errors.ValueErrorOccurred(
-						$"Hotkey callback requires at least {fo.MinParams} parameter(s), but hotkey callbacks are called with one (the hotkey name).",
-						fo.Mph.QualifiedName);   //Not fo.Name: a bound function's Name is empty, so it would name nothing
 
 				if (fo == null && !string.IsNullOrEmpty(label) && ((hook_action = HotkeyDefinition.ConvertAltTab(label, true)) == 0))
 				{
@@ -291,7 +288,7 @@ break_twice:;
 		/// <summary>
 		/// Creates, modifies, enables, or disables a hotstring while the script is running.
 		/// </summary>
-		/// <param name="string">This can be a hotstring trigger string, or new options or a sub function.
+		/// <param name="@string">This can be a hotstring trigger string, or new options or a sub function.
 		/// Hotstring: The hotstring's trigger string, preceded by the usual colons and option characters. For example, "::btw" or ":*:]d".
 		/// NewOptions: To set new default options for subsequently created hotstrings, pass the options to the<br/>
 		///     Hotstring function without any leading or trailing colon. For example: Hotstring "T".<br/>
@@ -318,7 +315,8 @@ break_twice:;
 			var ht = script.HookThread;
 			var kbdMouseSender = ht.kbdMsSender;
 			var xOption = false;
-			var action = replacementVal as string;
+			// Any object is the callback, which AHK's Hotstring takes unchecked; anything else, a number too, is text.
+			var action = replacementVal is Any or Delegate ? null : replacementVal?.As();
 			var hm = script.HotstringManager;
 
 			if (string.Compare(name, "EndChars", true) == 0) // Equivalent to #Hotstring EndChars <action>
@@ -397,13 +395,12 @@ break_twice:;
 			if (hotstringOptions.Length > 0)
 				HotstringDefinition.ParseOptions(hotstringOptions, ref lun, ref lun, ref sm, ref caseSensitive, ref un, ref un, ref un, ref sr, ref un, ref detectInsideWord, ref un, ref executeAction, ref un);
 
-			KeysharpFunc ifunc = null;
+			object ifunc = null;
 
 			if (replacementVal != null)
 			{
-				//A string is the replacement text.
-				if (replacementVal is not string)
-					ifunc = Functions.GetKeysharpFunc(replacementVal, null, true);
+				if (replacementVal is Any or Delegate)
+					ifunc = Functions.ToCallback(replacementVal);
 
 				if (ifunc == null && executeAction)
 					return Errors.ValueErrorOccurred("The 'X' option must be used together with a function object.");
@@ -429,8 +426,8 @@ break_twice:;
 				{
 					string newReplacement = null; // Set default: not auto-replace.
 
-					if (ifunc == null && replacementVal is string rep) // Caller specified a replacement string ('E' option was handled above).
-						newReplacement = rep;
+					if (ifunc == null && action != null) // Caller specified a replacement string ('E' option was handled above).
+						newReplacement = action;
 
 					// Temporarily disable hook access without changing worker persistence mid-mutation.
 					existing.suspended |= HotstringDefinition.HS_TEMPORARILY_DISABLED;
@@ -866,20 +863,29 @@ break_twice:;
 		public static object HotIf(object callback = null)
 		{
 			var script = Script.TheScript;
+			object cp = null;
 
-			if (callback != null)
+			// Omitted or "" is no criterion. An object is checked as it first becomes one, with the hotkey name it is
+			// called with, as AHK's Hotkey::IfExpr checks it.
+			if (callback is not (null or string { Length: 0 }))
 			{
-				var funcobj = Functions.GetKeysharpFunc(callback, null, true);
-				var cp = HotkeyDefinition.FindHotkeyIf(funcobj, script.hotExprs);
+				// AHK looks text up among the #HotIf expressions; a compiled #HotIf keeps no text to match.
+				if (callback is not (Any or Delegate))
+					return Errors.ValueErrorOccurred("Parameter #1 must match an existing #HotIf expression.");
 
-				if (cp == null && funcobj != null)
-					script.hotExprs.Add(cp = funcobj);
+				if (Functions.ToCallback(callback) is not { } criterion)
+					return DefaultObject;
 
-				script.Threads.CurrentThread.hotCriterion = cp;
+				if ((cp = HotkeyDefinition.FindHotkeyIf(criterion, script.hotExprs)) == null)
+				{
+					if (!Functions.ValidateFunctor(criterion, 1))
+						return DefaultObject;
+
+					script.hotExprs.Add(cp = criterion);
+				}
 			}
-			else
-				script.Threads.CurrentThread.hotCriterion = null;
 
+			script.Threads.CurrentThread.hotCriterion = cp;
 			return DefaultObject;
 		}
 

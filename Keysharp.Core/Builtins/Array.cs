@@ -24,7 +24,7 @@ internal class KeysharpFuncComparer : IComparer<object>
 	/// <param name="left">The left object to compare.</param>
 	/// <param name="right">The right object to compare.</param>
 	/// <returns>An <see cref="int"/>-1 if left is less than right, 0 if left equals right, otherwise 1.</returns>
-	public int Compare(object left, object right) => Script.Invoke(ifo, null, left, right).Ai();
+	public int Compare(object left, object right) => Script.InvokeOrNull(ifo, null, left, right).Ai();
 }
 
 /// <summary>
@@ -577,7 +577,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if callback is not of type <see cref="KeysharpFunc"/>.</exception>
 	public object Map(object callback, object startIndex = null)
 	{
-		if (callback is KeysharpFunc ifo)
+		if (callback is Any ifo)
 		{
 			var index = TranslateIndex(startIndex.Ai(1));
 

@@ -389,10 +389,6 @@ namespace Keysharp.Builtins
 				{
 					_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
 				}
-				finally
-				{
-					script.ExitIfNotPersistent();
-				}
 
 				return ScriptEventExecutionResult.Executed;
 			});
@@ -404,7 +400,7 @@ namespace Keysharp.Builtins
 			if (func is KeysharpFunc fo) return fo.Call(args);
 			if (func is ClrCallbackShim shim) return shim.Invoke(args);
 			if (func is Delegate dnet) return dnet.DynamicInvoke(args);
-			return Script.Invoke(func, null, args);
+			return Script.InvokeOrNull(func, null, args);
 		}
 	}
 

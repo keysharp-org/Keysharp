@@ -422,11 +422,18 @@ namespace Keysharp.Runtime
 				// calls a function directly only while it has no own properties. Once it has any, even an unrelated
 				// one, Call resolves through the ordinary prototype path below. Other callable objects and COM objects
 				// always take that path too.
-				if (meth == null)
+				var nameless = meth == null;
+
+				if (nameless)
 				{
 					if (obj is KeysharpFunc fnObj && (fnObj.op == null || fnObj.op.Count == 0))
 						return fnObj.Call(parameters);
-
+#if WINDOWS
+					// A COM object's nameless call is its default member, DISPID_VALUE, as in AHK; "Call" would be a
+					// member name of its own.
+					if (obj is ComValue com)
+						return com.RawInvokeMethod(null, parameters);
+#endif
 					meth = "Call";
 				}
 
@@ -439,7 +446,11 @@ namespace Keysharp.Runtime
 				bool isSuper = obj is ITuple superT && superT.Length > 1 && superT[0] is Any;
 				object actualThis = isSuper ? ((ITuple)obj)[1] : obj;
 
-				var mitup = GetMethodOrProperty(obj, methName, -1, checkBase: true, throwIfMissing: true, invokeMeta: true);
+				var mitup = GetMethodOrProperty(obj, methName, -1, checkBase: true, throwIfMissing: !nameless, invokeMeta: true);
+
+				// An object called which cannot be: AHK's MethodError, as a callback site reports it.
+				if (nameless && mitup.Item2 == null)
+					return Errors.MethodErrorOccurred($"This value of type \"{Types.Type(actualThis)}\" has no method named \"Call\".");
 
 				switch (mitup.Item2)
 				{

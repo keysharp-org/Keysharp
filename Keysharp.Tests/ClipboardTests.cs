@@ -408,7 +408,7 @@ namespace Keysharp.Tests
 			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
 		}
 
-		/// <summary>The hook's own bookkeeping — Pause, Start and Stop — without needing a real clipboard event,
+		/// <summary>The hook's own bookkeeping — Start and Stop — without needing a real clipboard event,
 		/// which no headless environment can be relied on to deliver.</summary>
 		[Test, Category("Clipboard"), Category("Internal"), NonParallelizable]
 		public void OnChangeHookSurface()
@@ -416,7 +416,7 @@ namespace Keysharp.Tests
 			var calls = new List<object[]>();
 			var cb = new KeysharpFunc((Func<object, object, object>)((hook, type) =>
 			{
-				calls.Add([hook, type, Accessors.A_EventInfo, Environment.CurrentManagedThreadId]);
+				calls.Add([hook, type, Environment.CurrentManagedThreadId, Accessors.A_EventInfo]);
 				return "";
 			}));
 
@@ -430,23 +430,15 @@ namespace Keysharp.Tests
 			{
 				Assert.IsTrue(hook.InProgress);
 				Assert.AreEqual("", hook.EndReason);
-				_ = hook.Pause();
-				Assert.IsFalse(hook.InProgress);
-				DispatchClipboardChange(1L);
-				Assert.AreEqual(0, calls.Count, "A paused hook must not fire.");
-				_ = hook.Start();
-				Assert.IsTrue(hook.InProgress);
 				DispatchClipboardChange(1L);
 				Assert.AreEqual(1, calls.Count);
 				Assert.AreSame(hook, calls[0][0], "The callback receives the hook as its first argument.");
 				Assert.AreEqual(1L, calls[0][1]);
-				Assert.AreEqual(1L, calls[0][2]);
 				DispatchClipboardChange(0L);
 				Assert.AreEqual(0L, calls[1][1]);
-				Assert.AreEqual(0L, calls[1][2]);
 				DispatchClipboardChange(2L);
 				Assert.AreEqual(2L, calls[2][1]);
-				Assert.AreEqual(2L, calls[2][2]);
+				Assert.IsNull(calls[2][3], "The change type is an argument, and A_EventInfo is left unset.");
 
 				var ownerThread = Environment.CurrentManagedThreadId;
 				var script = Script.TheScript;
@@ -456,8 +448,7 @@ namespace Keysharp.Tests
 				Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
 				Assert.AreEqual(4, calls.Count);
 				Assert.AreEqual(0L, calls[3][1]);
-				Assert.AreEqual(0L, calls[3][2]);
-				Assert.AreEqual(ownerThread, calls[3][3]);
+				Assert.AreEqual(ownerThread, calls[3][2]);
 
 				_ = hook.Stop();
 				Assert.AreEqual("Stopped", hook.EndReason);

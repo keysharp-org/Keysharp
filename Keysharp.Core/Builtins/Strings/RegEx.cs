@@ -206,12 +206,16 @@ namespace Keysharp.Builtins
 			var input = haystack.As();
 			var needle = needleRegEx.As();
 			var rd = TheScript.RegExData;
-			KeysharpFunc callout = null;
+			object callout = null;
 			string replace = null;
 			Func<PcreMatch, string> replaceParser = null;
 
-			if (replacement is KeysharpFunc ifo)
-				callout = ifo;
+			// Any object is taken as a function called with the match, and refused if it cannot be one, as AHK does.
+			if (replacement is Any)
+			{
+				if ((callout = Functions.CheckedCallback(replacement, 1)) == null)
+					return DefaultErrorString;
+			}
 			else
 			{
 				replace = replacement.As();
@@ -264,7 +268,7 @@ namespace Keysharp.Builtins
 				n++;
 
 				if (callout != null)
-					return callout.Call(new RegExMatchInfo(match, exp)).As();
+					return Script.InvokeOrNull(callout, null, new RegExMatchInfo(match, exp)).As();
 
 				return replaceParser(match);
 			}

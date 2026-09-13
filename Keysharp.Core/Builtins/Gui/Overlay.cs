@@ -226,8 +226,9 @@ namespace Keysharp.Builtins
 			public object Redraw(object callback, object x = null, object y = null, object width = null, object height = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				if (callback is not KeysharpFunc f)
-					return Errors.ValueErrorOccurred("Overlay.Redraw requires a callable object.");
+				// Called once, with the canvas.
+				if (Functions.CheckedCallback(callback, 1) is not { } f)
+					return this;
 
 				var nextX = x != null ? x.Ai() : this.x;
 				var nextY = y != null ? y.Ai() : this.y;
@@ -271,7 +272,7 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					_ = f.Call(canvas);
+					_ = Script.InvokeOrNull(f, null, canvas);
 					var finalBounds = new ScreenRect(this.x, this.y, screenW, screenH);
 
 					if (requestedVisible && !TryPresent(replacement, finalBounds))
@@ -425,14 +426,11 @@ namespace Keysharp.Builtins
 
 			#region Events
 
-			// Registered pointer handlers by canonical event name ("click", "doubleclick", "contextmenu",
-			// "mousemove"). Each entry keeps the original script callback object for OnEvent(.., .., 0) removal
-			// (converting again yields a different wrapper, so identity must be tested against what was passed)
-			// and a CallbackRegistration whose active state holds script persistence, like other event hooks.
-			// handlerGate guards the map: OnEvent mutates on a script thread while HandlePointerEvent snapshots
-			// on the UI thread.
+			// One handler chain per canonical event name ("click", "doubleclick", "contextmenu", "mousemove"), each
+			// registration rooting the registering real thread's scheduler. handlerGate guards the map: OnEvent mutates
+			// on a script thread while HandlePointerEvent looks a chain up on the UI thread.
 			private readonly object handlerGate = new ();
-			private Dictionary<string, List<(object original, CallbackRegistration reg)>> eventHandlers;
+			private Dictionary<string, CallbackRegistry> eventHandlers;
 			private bool sinkArmed;
 
 			private static readonly string[] supportedEvents = ["click", "doubleclick", "contextmenu", "mousemove"];
@@ -443,10 +441,12 @@ namespace Keysharp.Builtins
 			/// overlay's local native units — the same units the draw ops use, so a hit-test against drawn
 			/// shapes needs no conversion. <paramref name="addRemove"/>: 1 (default) = call after previously
 			/// registered handlers, -1 = call before them, 0 = unregister the callback.
+			/// <para>One event's handlers run as one chain in registration order, under the <c>Gui.OnEvent</c> rule: a
+			/// handler that returns a non-empty value (0 included) or ends with an error stops the rest.</para>
 			/// <para>The overlay must not be click-through to receive mouse input: set
 			/// <see cref="ClickThrough"/> := false, or the events never fire (input passes through to the
 			/// windows beneath). Events require a backing with a client-side window (<see cref="Hwnd"/> != 0);
-			/// a compositor-drawn overlay cannot receive input. Registered handlers keep the script persistent;
+			/// a compositor-drawn overlay cannot receive input. Registered handlers keep the real thread that registered them running;
 			/// <see cref="Destroy"/> removes them all.</para></summary>
 			public object OnEvent(object eventName, object callback, object addRemove = null)
 			{
@@ -457,47 +457,30 @@ namespace Keysharp.Builtins
 				if (System.Array.IndexOf(supportedEvents, name) < 0)
 					return Errors.ValueErrorOccurred($"Unknown EventName \"{rawName}\". Expected Click, DoubleClick, ContextMenu or MouseMove.");
 
-				var mode = addRemove == null ? 1L : addRemove.Al();
+				if (!Functions.TryAddRemove(addRemove, out var mode) || Functions.ToCallback(callback) is not { } fo)
+					return this;
 
-				if (mode is not (1L or -1L or 0L))
-					return Errors.ValueErrorOccurred($"Invalid AddRemove \"{mode}\". Expected 1, -1 or 0.");
-
-				var fo = Functions.GetKeysharpFunc(callback, null, true);
-
-				if (fo == null)
-					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));
+				// A callback being added is checked against the (overlay, x, y) it is called with; a removal is not.
+				if (mode != 0L && !Functions.ValidateFunctor(fo, 3))
+					return this;
 
 				var anyLeft = true;
 
 				lock (handlerGate)
 				{
-					eventHandlers ??= new Dictionary<string, List<(object, CallbackRegistration)>>();
+					eventHandlers ??= new Dictionary<string, CallbackRegistry>();
 
-					if (!eventHandlers.TryGetValue(name, out var list))
-						eventHandlers[name] = list = [];
+					if (!eventHandlers.TryGetValue(name, out var registry))
+						eventHandlers[name] = registry = new (CallbackStop.NonEmpty);
 
+					// A callback is registered once per event whichever thread adds it, and removing it matches every
+					// thread's registration, so both bypass the registry's per-scheduler ModifyEventHandlers.
 					if (mode == 0L)
-					{
-						for (var i = list.Count - 1; i >= 0; i--)
-						{
-							if (ReferenceEquals(list[i].original, callback) || Equals(list[i].original, callback))
-							{
-								list[i].reg.Clear();   // releases the persistence hold
-								list.RemoveAt(i);
-							}
-						}
-					}
-					else
-					{
-						var entry = (callback, new CallbackRegistration(fo, Script.TheScript?.EventScheduler, true));
+						_ = registry.Remove(fo, null, false);
+					else if (!System.Array.Exists(registry.GetSnapshot(), reg => Functions.SameCallback(reg.Callback, fo)))
+						_ = registry.Add(new CallbackRegistration(fo, Script.TheScript?.EventScheduler, true), mode == -1L);
 
-						if (mode == -1L)
-							list.Insert(0, entry);
-						else
-							list.Add(entry);
-					}
-
-					anyLeft = eventHandlers.Any(kv => kv.Value.Count > 0);
+					anyLeft = eventHandlers.Values.Any(r => !r.IsEmpty);
 				}
 
 				// Arm (or disarm) the platform sink outside the handler lock: the service applies it under its
@@ -547,9 +530,8 @@ namespace Keysharp.Builtins
 				{
 					if (eventHandlers != null)
 					{
-						foreach (var list in eventHandlers.Values)
-							foreach (var (_, reg) in list)
-								reg.Clear();
+						foreach (var registry in eventHandlers.Values)
+							registry.Clear();
 
 						eventHandlers = null;
 					}
@@ -558,9 +540,9 @@ namespace Keysharp.Builtins
 				DisarmSink();
 			}
 
-			// UI-thread entry: fans one backing pointer event out to that event's registered handlers, each on
-			// its owning scheduler as a queued pseudo-thread (the same dispatch shape as WinEvent/Gui events).
-			private void HandlePointerEvent(OverlayPointerEvent ev)
+			// UI-thread entry (internal so tests can raise an event as a backing does): queues the event's chain as
+			// one item, as a Gui event's is, and each handler runs on its owning scheduler.
+			internal void HandlePointerEvent(OverlayPointerEvent ev)
 			{
 				var name = ev.Kind switch
 				{
@@ -570,52 +552,15 @@ namespace Keysharp.Builtins
 					_ => "mousemove",
 				};
 
-				(object original, CallbackRegistration reg)[] snapshot;
+				CallbackRegistry registry;
 
 				lock (handlerGate)
 				{
-					if (eventHandlers == null || !eventHandlers.TryGetValue(name, out var list) || list.Count == 0)
+					if (eventHandlers == null || !eventHandlers.TryGetValue(name, out registry))
 						return;
-
-					snapshot = [.. list];
 				}
 
-				foreach (var (_, reg) in snapshot)
-				{
-					var scheduler = reg.OwnerScheduler;
-
-					if (scheduler == null || scheduler.IsDisposed)
-						continue;
-
-					var r = reg;
-					// One args array per handler: a callback declaring a ByRef parameter writes into its argument
-					// slots, which must not leak into the next handler's arguments.
-					object[] args = [this, (long)ev.X, (long)ev.Y];
-					_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunPointerHandler(scheduler, r, args));
-				}
-			}
-
-			private static ScriptEventExecutionResult RunPointerHandler(ScriptEventScheduler scheduler, CallbackRegistration reg, object[] args)
-			{
-				using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, ThreadKind.Event);
-
-				if (!thread.Started)
-					return thread.Result;
-
-				try
-				{
-					_ = reg.Callback.Call(args);
-				}
-				catch (Exception ex)
-				{
-					_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
-				}
-				finally
-				{
-					scheduler.Owner.ExitIfNotPersistent();
-				}
-
-				return ScriptEventExecutionResult.Executed;
+				registry.InvokeEventHandlers(this, (long)ev.X, (long)ev.Y);
 			}
 
 			#endregion

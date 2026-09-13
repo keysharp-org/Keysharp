@@ -32,7 +32,10 @@ namespace Keysharp.Internals.Window
 		Exist,
 		/// <summary>A window matching the criteria left the matching set (destroyed/hidden/cloaked, or a title change
 		/// stopped it matching). Honors DetectHiddenWindows. Derived by <see cref="WinEventManager"/>; not a native hook.</summary>
-		NotExist
+		NotExist,
+		/// <summary>The foreground window stopped being one that matches the criteria. Derived by
+		/// <see cref="WinEventManager"/> from the Active and TitleChange events; not a native hook.</summary>
+		NotActive
 	}
 
 	/// <summary>
@@ -67,8 +70,8 @@ namespace Keysharp.Internals.Window
 			WindowEventType.Restore     => WindowEventMask.Restore,
 			WindowEventType.TitleChange => WindowEventMask.TitleChange,
 			WindowEventType.CaretMove   => WindowEventMask.CaretMove,
-			// Exist/NotExist are derived (membership transitions), not backed by a dedicated native hook — the
-			// backend mask they require is computed from the underlying events in WinEventManager.SyncBackendMask.
+			// Exist, NotExist and NotActive are derived, not backed by a native hook of their own: the
+			// WinEventRegistration constructor adds the events they come from to its mask, which SyncNativeLocked installs.
 			_ => WindowEventMask.None
 		};
 	}

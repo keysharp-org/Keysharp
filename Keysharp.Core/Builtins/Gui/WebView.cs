@@ -166,7 +166,7 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Registers one of this control's own events, wiring it to the backend on first use.
 			/// </summary>
-			internal void ModifyEventHandlers(string e, KeysharpFunc del, long addRemove)
+			internal void ModifyEventHandlers(string e, object del, long addRemove)
 			{
 				ref var hub = ref navigatedHandlers;
 
@@ -183,7 +183,7 @@ namespace Keysharp.Builtins
 					case "messagereceived": hub = ref messageReceivedHandlers; break;
 				}
 
-				hub ??= new();
+				hub ??= new(CallbackStop.NonEmpty);
 				_ = hub.ModifyEventHandlers(del, addRemove);
 
 				if (addRemove != 0 && (attachedEvents ??= []).Add(e))

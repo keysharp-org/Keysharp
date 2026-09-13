@@ -1023,11 +1023,11 @@ namespace Keysharp.Builtins
 			internal static bool IsRichEditEvent(string e) => e is "selectionchange" or "linkclick";
 
 			/// <summary>Registers one of this control's own events, wiring it to the widget on first use.</summary>
-			internal void ModifyEventHandlers(string e, KeysharpFunc del, long addRemove)
+			internal void ModifyEventHandlers(string e, object del, long addRemove)
 			{
 				var link = e == "linkclick";
 				ref var hub = ref link ? ref linkClickHandlers : ref selectionChangeHandlers;
-				hub ??= new();
+				hub ??= new(CallbackStop.NonEmpty);
 				_ = hub.ModifyEventHandlers(del, addRemove);
 
 				if (addRemove == 0 || Rt is not { } rt)

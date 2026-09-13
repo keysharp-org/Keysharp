@@ -191,8 +191,8 @@ namespace Keysharp.Runtime
 		private static bool currentCompatibilityReturnsUnsetByDefault;
 		internal Semver.SemVersion CurrentCompatibilityVersion => currentCompatibilityVersion ?? DefaultCompatibilityVersion;
 		internal CallbackRegistry ClipFunctions = new();
-		internal List<KeysharpFunc> hotCriterions = [];
-		internal List<KeysharpFunc> hotExprs = [];
+		internal List<object> hotCriterions = [];
+		internal List<object> hotExprs = [];
 		internal InputType input;
 		internal int inputBeforeHotkeysCount;
 		internal DateTime inputTimeoutAt = DateTime.UtcNow;
@@ -347,6 +347,11 @@ namespace Keysharp.Runtime
 		internal DateTime timeLastInputMouse;
 		internal DateTime timeLastInputPhysical = DateTime.UtcNow;
 		internal int totalExistingThreads;//Even though the thread stacks are on a per-real-thread basis, we keep a global count of threads. This may need to change in the future.
+		// The reason of the exit check waiting on the UI thread, or None. A second request joins it rather than asking
+		// OnExit twice, and Close, which AHK reports when the last window goes, replaces Exit.
+		private int pendingExitReason;
+		// AHK's mPendingExitCode: the code an Exit in the only running thread leaves for the exit that follows it.
+		private int pendingExitCode;
 		private int pendingSchedulerWorkCount;
 		internal long pseudoThreadSequence;
 		internal int uninterruptibleTime = 17;
@@ -434,7 +439,8 @@ namespace Keysharp.Runtime
 		}
 
 		internal ImageListData ImageListData => imageListData ?? (imageListData = new ());
-		internal InputData InputData => inputData ?? (inputData = new ());
+		// Created once even when two threads ask first, since its chain gate must be the one lock every input takes.
+		internal InputData InputData => LazyInitializer.EnsureInitialized(ref inputData);
 		/// <summary>
 		/// True while the script is shutting down, which is when work that would otherwise be started, reported or
 		/// closed is left alone: a window search matches nothing because the windows are going away, and an exit
@@ -904,18 +910,53 @@ namespace Keysharp.Runtime
 			return exit;
 		}
 
-		public void ExitIfNotPersistent(Keysharp.Builtins.Flow.ExitReasons exitReason = Keysharp.Builtins.Flow.ExitReasons.Exit)
+		/// <summary>
+		/// Exits the script if nothing keeps it running, as AHK's ExitIfNotPersistent does. While a pseudo-thread exists
+		/// it does nothing, because the last thread's end calls it again (<see cref="Threads.EndThread"/>), so a release
+		/// made inside a thread takes effect there. Only a script whose auto-execute section has run exits by itself,
+		/// which leaves a host or a test that never runs one alone.
+		/// </summary>
+		/// <returns>Whether an exit is now pending, so a caller can forget an Exit's code when none is, as AHK's
+		/// ResumeUnderlyingThread does.</returns>
+		public bool ExitIfNotPersistent(Keysharp.Builtins.Flow.ExitReasons exitReason = Keysharp.Builtins.Flow.ExitReasons.Exit)
 		{
-			//Must use BeginInvoke() because this might be called from _ks_UserMainCode(),
-			//so it needs to run after that thread has exited.
-			if (!IsTearingDown && totalExistingThreads == 0)
+			if (!isReadyToExecute || IsTearingDown || FlowData.exitReason != null || FlowData.exitHandlersRunning)
+				return false;
+
+			// Tested here so a persistent script posts nothing; the window term needs the main thread.
+			if (AnyPersistent(includeWindows: IsOnMainThread))
+				return false;
+
+			var pending = Interlocked.CompareExchange(ref pendingExitReason, (int)exitReason, 0);
+
+			if (pending == 0)
+				PostToUIThread(RunPendingExitCheck);
+			else if (exitReason == Keysharp.Builtins.Flow.ExitReasons.Close)
+				_ = Interlocked.CompareExchange(ref pendingExitReason, (int)exitReason, pending);
+
+			return true;
+		}
+
+		// Posted rather than run in place: the window test needs the UI thread, and the caller may be unwinding the
+		// thread that just ended.
+		private void RunPendingExitCheck()
+		{
+			var exitReason = (Keysharp.Builtins.Flow.ExitReasons)Interlocked.Exchange(ref pendingExitReason, 0);
+
+			// None: the check was spent by an exit decided elsewhere (a failed auto-execute section).
+			if (exitReason == Keysharp.Builtins.Flow.ExitReasons.None || IsTearingDown || FlowData.exitReason != null
+					|| FlowData.exitHandlersRunning)
+				return;
+
+			// Something kept the script running after all: as after any last-thread end that does not exit, forget the
+			// code. A thread running now is left to decide at its own end, as AHK's check waits for that end.
+			if (AnyPersistent())
 			{
-				PostToUIThread(() =>
-				{
-					if (!IsTearingDown && !AnyPersistent())
-						_ = Keysharp.Internals.Flow.ExitAppInternal(this, exitReason, Environment.ExitCode, false);
-				});
+				if (Volatile.Read(ref totalExistingThreads) == 0)
+					ForgetPendingExitCode();
 			}
+			else
+				_ = Keysharp.Internals.Flow.ExitAppInternal(this, exitReason, Volatile.Read(ref pendingExitCode), false);
 		}
 
 		public string GetPublicStaticPropertyNames()
@@ -1246,14 +1287,13 @@ namespace Keysharp.Runtime
 
 				try
 				{
-					autoExecResult = Keysharp.Internals.Flow.TryCatch(() =>
-					{
-						_ = userInit();
-						isReadyToExecute = true;
-					});
+					autoExecResult = Keysharp.Internals.Flow.TryCatch(() => _ = userInit());
 				}
 				finally
 				{
+					// Set even when the section failed: a failed script that something keeps running still exits by
+					// itself once that is released, as in AHK.
+					isReadyToExecute = true;
 					tv.configData = prevConfigData;
 				}
 			}, ThreadKind.Auto);
@@ -1269,16 +1309,17 @@ namespace Keysharp.Runtime
 				// GLib.ExceptionManager and terminates the host process. Swallow the
 				// expected exit signal here so a failing script reports a normal failure
 				// instead of crashing the test host.
+				// This decides the exit, so the check the auto-execute thread's end posted is spent and OnExit is asked once.
+				_ = Interlocked.Exchange(ref pendingExitReason, 0);
+
 				try
 				{
-					_ = Keysharp.Builtins.Flow.ExitApp(1);
+					_ = Keysharp.Internals.Flow.ExitAppInternal(this, Keysharp.Builtins.Flow.ExitReasons.Error, 1L);
 				}
 				catch (Exception ex) when (Keysharp.Internals.Flow.TryGetException<Keysharp.Builtins.Flow.UserRequestedExitException>(ex, out _))
 				{
 				}
 			}
-
-			ExitIfNotPersistent();
 		}
 
 		/// <summary>
@@ -1743,42 +1784,23 @@ namespace Keysharp.Runtime
 			t.CurrentCulture = ci;
 		}
 
-		internal bool AnyPersistent()
+		/// <summary>Leaves an Exit's code for the exit that may follow the current thread's end.</summary>
+		internal void SetPendingExitCode(int code) => Volatile.Write(ref pendingExitCode, code);
+
+		/// <summary>Forgets it, as AHK does after a launched thread's end that does not exit.</summary>
+		internal void ForgetPendingExitCode() => Volatile.Write(ref pendingExitCode, 0);
+
+		/// <param name="includeWindows">False to skip the visible-window test, the one term only the UI thread may read.</param>
+		internal bool AnyPersistent(bool includeWindows = true)
 		{
-			if (totalExistingThreads > 0)
+			// Plain reads first, then the terms that take a lock or walk the windows, since this runs at every last-thread end.
+			if (Volatile.Read(ref totalExistingThreads) > 0 || HasPendingSchedulerWork || FlowData.persistentValueSetByUser
+					|| input != null || HotkeyData.shk.Length > 0)
 				return true;
 
-			if (HasPendingSchedulerWork)
-				return true;
-
-			if (Gui.AnyExistingVisibleWindows(this))
-				return true;
-
-			if (HotkeyData.shk.Length > 0)
-				return true;
-
-			if (HotstringManager.shs.Count > 0)
-				return true;
-
-			if (!FlowData.timers.IsEmpty)
-				return true;
-
-			if (ClipFunctions.Count > 0)
-				return true;
-
-			if (FlowData.persistentValueSetByUser)
-				return true;
-
-			if (input != null)
-			{
-				for (var i = input; ; i = i.prev)
-				{
-					if (i != null)
-						return true;
-				}
-			}
-
-			return false;
+			return WinEventManager.IsKeepingScriptRunning || ClipboardEventManager.IsKeepingScriptRunning
+				   || HotstringManager.shs.Count > 0 || FlowData.timers.AnyEnabled || ClipFunctions.Count > 0
+				   || includeWindows && Gui.AnyExistingVisibleWindows(this);
 		}
 
 		internal void AdjustPendingSchedulerWork(int delta)

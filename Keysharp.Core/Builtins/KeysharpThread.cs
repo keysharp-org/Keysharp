@@ -16,8 +16,7 @@ namespace Keysharp.Builtins
 	/// Thread state is pooled and reused (see <see cref="ThreadVariableManager"/>), so every wrapper captures the ID
 	/// of the thread it was made for and re-checks it on each access. Once that thread ends the wrapper reports
 	/// <see cref="IsActive"/> false; <see cref="Id"/> and <see cref="Index"/> keep answering from captured values and
-	/// everything else throws <c>TargetError</c>, rather than silently describing whichever thread reused the
-	/// slot.</para>
+	/// everything else throws <c>TargetError</c>, rather than silently describing whichever thread reused the slot.</para>
 	/// <para>
 	/// Exactly one wrapper exists per thread, so identity comparison answers "is this the one I am in":
 	/// <c>thr == A_Thread</c>. There is deliberately no <c>IsCurrent</c> property for that.</para>
@@ -87,8 +86,8 @@ namespace Keysharp.Builtins
 		/// What launched this thread: <c>"Auto"</c>, <c>"Hotkey"</c>, <c>"Hotstring"</c>, <c>"Timer"</c>,
 		/// <c>"Event"</c>, <c>"Message"</c>, <c>"Callback"</c>, <c>"Input"</c>, <c>"WinEvent"</c>, <c>"Com"</c>,
 		/// <c>"Clr"</c> or <c>"RealThread"</c>, and an empty string when the launch site does not name one.
-		/// <c>"Event"</c> covers every registered handler — GUI events, menu items, OnExit, OnClipboardChange —
-		/// because they all dispatch through one registry.
+		/// <c>"Event"</c> covers every other registered handler: GUI events, menu items, OnExit, OnClipboardChange,
+		/// the Monitor, Clipboard and Audio hooks, and Overlay pointer handlers.
 		/// </summary>
 		public string Kind => Live().kind switch
 		{
@@ -216,7 +215,7 @@ namespace Keysharp.Builtins
 		/// any other one is marked and unwinds when it next resumes and processes events, which is cooperative and
 		/// does not asynchronously abort managed code. A later request replaces a pending exit code.
 		/// </summary>
-		/// <param name="exitCode">The process exit code to apply when the thread exits. Default: 0.</param>
+		/// <param name="exitCode">The process exit code to apply if the script exits when this thread ends. Default: 0.</param>
 		/// <returns>This thread's ID.</returns>
 		public object Exit(object exitCode = null) => manager.Owner.Threads.RequestExit(Mutable(), exitCode.Ai());
 

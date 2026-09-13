@@ -163,18 +163,16 @@ namespace Keysharp.Builtins
 
 			/// <summary>
 			/// Subscribes to device arrivals, removals, renames and default changes. The callback receives
-			/// <c>(hook, kind, device)</c>, where kind is "Added", "Removed", "Changed" or "DefaultChanged". The
-			/// subscription is rooted until <c>Stop()</c> or script teardown, so dropping the
-			/// returned hook does not unsubscribe it. The Kind filter is "Output", "Input" or "All" (the default),
-			/// matched without regard to case.
+			/// <c>(Hook, Change, Device)</c>, where Change is "Added", "Removed", "Changed" or "DefaultChanged". The
+			/// returned hook is started; it does not keep the script running, as an AHK script's device-change
+			/// OnMessage does not, and dropping it does not unsubscribe it. The Kind filter is "Output", "Input" or "All"
+			/// (the default), matched without regard to case.
 			/// </summary>
 			[Static]
 			public static object OnDeviceChange(object @this, object callback, object kind = null)
 			{
-				var fo = Functions.GetKeysharpFunc(callback, null, true);
-
-				if (fo == null)
-					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));
+				if (Functions.CheckedCallback(callback, 3) is not { } fo)
+					return DefaultObject;
 
 				if (!TryKind(kind, "All", true, out var deviceKind, out var all, out var failure))
 					return failure;
@@ -182,13 +180,8 @@ namespace Keysharp.Builtins
 				if (!Service.Supports(Engine.AudioCapability.DeviceChange))
 					return Unsupported(Engine.AudioCapability.DeviceChange, "Audio.OnDeviceChange");
 
-				var script = Script.TheScript;
-				var manager = script.AudioEventManager;
-				var reg = new Engine.AudioEventRegistration(fo, script.EventScheduler, manager,
-													   all ? "All" : KindName(deviceKind));
-				var hook = new DeviceHook { sub = reg };
-				reg.scriptObject = hook;
-				manager.Register(reg);
+				var hook = new DeviceHook(fo, all ? "All" : KindName(deviceKind));
+				_ = hook.Start();
 				return hook;
 			}
 
@@ -198,10 +191,18 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public sealed class DeviceHook : EventHook
 			{
-				internal DeviceHook() : base() { }
+				private readonly string kind;                  // "Output", "Input" or "All"
+
+				internal DeviceHook(object callback, string kind) : base(callback)
+				{
+					this.kind = kind;
+				}
+
+				private protected override EventSubscriptionBase NewRun(ScriptEventScheduler owner)
+					=> new Engine.AudioEventRegistration(callback, owner, Script.TheScript.AudioEventManager, kind);
 			}
 
-			/// <summary>Every live <c>Audio.OnDeviceChange</c> subscription, oldest first (script: <c>Audio.Hooks</c>) —
+			/// <summary>Every running <c>Audio.OnDeviceChange</c> hook, in start order (script: <c>Audio.Hooks</c>) —
 			/// a snapshot to iterate and drop. Device-change hooks only, never voices or meters.</summary>
 			public static object staticget_Hooks(object @this) => Script.TheScript.AudioEventManager.Hooks();
 

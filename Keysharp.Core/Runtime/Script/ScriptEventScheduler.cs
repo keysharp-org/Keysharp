@@ -976,7 +976,7 @@ internal bool HasBlockedQueuedWork
 							var btv = thread.ThreadVariables;
 							btv.currentTimer = timer;
 							btv.eventInfo = callback;
-							_ = callback.Call();
+							_ = Script.InvokeOrNull(callback, null);
 						}
 						catch (Exception ex)
 						{
@@ -987,8 +987,9 @@ internal bool HasBlockedQueuedWork
 
 				timers.MarkCallbackFinished(timer);
 
-				if (timer.Callback == null)
-					script.ExitIfNotPersistent();
+				// A thread that ran made its own check as it ended; one that never started did not, and its timer may be gone.
+				if (!executed && timer.Callback == null)
+					_ = script.ExitIfNotPersistent();
 
 				return executed
 					? ScriptEventExecutionResult.Executed

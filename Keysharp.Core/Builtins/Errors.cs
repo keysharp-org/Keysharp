@@ -35,7 +35,7 @@ namespace Keysharp.Builtins
 				{
 					foreach (var registration in script.onErrorHandlers.GetSnapshot())
 					{
-						var result = registration.Callback.Call(err, err.ExcType);
+						var result = Script.InvokeOrNull(registration.Callback, null, err, err.ExcType);
 						var lresult = result.Al();
 
 						if (lresult != 0L)
@@ -144,12 +144,10 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object OnError(object callback, object addRemove = null)
 		{
-			var e = callback;
-			var i = addRemove.Al(1L);
-			var del = Functions.GetKeysharpFunc(e, null, true);
-			var script = Script.TheScript;
+			// Checked on every call, removal too, as AHK's OnScriptEvent checks it.
+			if (Functions.CheckedCallback(callback, 2) is { } fn && Functions.TryAddRemove(addRemove, out var change))
+				_ = Script.TheScript.onErrorHandlers.ModifyGlobalEventHandlers(fn, change);
 
-			script.onErrorHandlers.ModifyGlobalEventHandlers(del, i);
 			return DefaultObject;
 		}
 

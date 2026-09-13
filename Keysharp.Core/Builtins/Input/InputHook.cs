@@ -6,9 +6,8 @@ namespace Keysharp.Builtins
 	/// Collects or intercepts keyboard input. Scripts construct one by calling the class, as AutoHotkey does:
 	/// <c>ih := InputHook("V")</c>.
 	/// <para>
-	/// It shares its lifecycle vocabulary with every Keysharp event hook, but overrides all five members: it is
-	/// born idle rather than running, and <c>Stop()</c> is not final, because the options that describe its
-	/// source live on the handle, so <c>Start()</c> can begin again.
+	/// It shares its lifecycle vocabulary with every Keysharp event hook and overrides its members, because it is
+	/// born idle rather than running and its state lives on its input rather than a subscription.
 	/// </para>
 	/// </summary>
 	public class InputHook : Ks.EventHook
@@ -20,6 +19,9 @@ namespace Keysharp.Builtins
 		private const int MouseDownCallbackIndex = 4;
 		private const int MouseUpCallbackIndex = 5;
 		private const int MouseMoveCallbackIndex = 6;
+		// The arguments each callback is called with, by index: OnChar (ih, char), OnEnd (ih), OnKeyDown and OnKeyUp
+		// (ih, vk, sc), OnMouseDown and OnMouseUp (ih, button, x, y), OnMouseMove (ih, dx, dy).
+		private static readonly int[] callbackArgCounts = [2, 1, 3, 3, 4, 4, 3];
 		internal InputType input;
 		private bool callbackPersistenceActive;
 		private readonly CallbackRegistration[] callbackSlots = [new(), new(), new(), new(), new(), new(), new()];
@@ -33,7 +35,24 @@ namespace Keysharp.Builtins
 		public object BeforeHotkeys
 		{
 			get => input.beforeHotkeys;
-			set => input.beforeHotkeys = value.Ab();
+			set
+			{
+				// A running input holds its place in the before-hotkeys count by this setting, so it is fixed for the run;
+				// tested and written with the start and end, which read it to take and give back that place.
+				var early = value.Ab();
+				bool running;
+
+				lock (input.ChainGate)
+				{
+					running = input.InProgress();
+
+					if (!running)
+						input.beforeHotkeys = early;
+				}
+
+				if (running)
+					_ = Errors.ValueErrorOccurred("BeforeHotkeys cannot change while the Input is in progress.");
+			}
 		}
 
 		public object BufferLengthMax
@@ -65,7 +84,7 @@ namespace Keysharp.Builtins
 					return str;
 				}
 
-				return DefaultObject;
+				return "";
 			}
 		}
 
@@ -86,9 +105,9 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		/// <summary><c>""</c> while running, paused or never started; otherwise why it ended: <c>"Stopped"</c>,
-		/// <c>"Timeout"</c>, <c>"Match"</c>, <c>"EndKey"</c>, <c>"Max"</c> or <c>"Failed"</c>. Cleared by the next
-		/// fresh <c>Start()</c>, so it describes the most recent run.</summary>
+		/// <summary><c>""</c> while running; otherwise why it ended: <c>"Stopped"</c>, which is also what a hook that
+		/// was never started reads, as in AHK, or <c>"Timeout"</c>, <c>"Match"</c>, <c>"EndKey"</c>, <c>"Max"</c> or
+		/// <c>"Failed"</c>. Cleared by the next <c>Start()</c>, so it describes the most recent run.</summary>
 		public override string EndReason
 		{
 			get
@@ -377,52 +396,21 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
-		/// <summary>Collects again. Resumes a paused input where it stood, begins a never-started or ended one
-		/// fresh with an empty buffer, and does nothing to one already running.</summary>
+		/// <summary>Begins collecting with an empty buffer, whether the input was never started or has ended; does
+		/// nothing to one already running.</summary>
 		public override object Start()
 		{
-			switch (input.status)
-			{
-				case InputStatusType.InProgress:
-					break;
-
-				case InputStatusType.Paused:
-					input.Resume();
-					break;
-
-				default:
-					input.buffer = "";
-					input.InputStart();
-					break;
-			}
-
+			input.InputStart();
 			return DefaultObject;
 		}
 
-		/// <summary>Ends the input with <c>EndReason</c> "Stopped" and runs <c>OnEnd</c>. A paused input ends the
-		/// same way; a never-started one just reads as stopped, having nothing to release.</summary>
+		/// <summary>Ends a running input with <c>EndReason</c> "Stopped" and runs <c>OnEnd</c>; does nothing
+		/// otherwise.</summary>
 		public override object Stop()
 		{
-			switch (input.status)
-			{
-				case InputStatusType.InProgress:
-				case InputStatusType.Paused:
-					input.Stop();
-					break;
+			if (input.InProgress())
+				input.Stop();
 
-				case InputStatusType.NotStarted:
-					input.status = InputStatusType.Off;
-					break;
-			}
-
-			return DefaultObject;
-		}
-
-		/// <summary>Stops collecting and suppressing without ending, so <c>Start()</c> resumes with the buffer intact.
-		/// A paused input lets keys through and no longer shadows the inputs beneath it; <c>OnEnd</c> does not run.</summary>
-		public override object Pause()
-		{
-			input.Pause();
 			return DefaultObject;
 		}
 
@@ -466,12 +454,16 @@ namespace Keysharp.Builtins
 				callbackSlot.SetActive(persistenceActive && callbackSlot.Callback != null);
 		}
 
-		private object GetCallback(int index) => callbackSlots[index].Callback ?? (object)DefaultObject;
+		private object GetCallback(int index) => callbackSlots[index].Callback ?? DefaultObject;
 
 		private void SetCallback(int index, object value)
 		{
-			var callback = Functions.GetKeysharpFunc(value, null, true);
-			callbackSlots[index].Set(callback, callback != null ? Script.TheScript?.EventScheduler : null, callbackPersistenceActive && callback != null);
+			if (!TrySlotCallback(value, callbackArgCounts[index], out var callback))
+				return;
+
+			// With the input's start and end, which flip the persistence flag this decision reads.
+			lock (input.ChainGate)
+				callbackSlots[index].Set(callback, callback != null ? Script.TheScript?.EventScheduler : null, callbackPersistenceActive && callback != null);
 		}
 
 		// Same as SetCallback, but ensures the low-level mouse hook is running if the callback is

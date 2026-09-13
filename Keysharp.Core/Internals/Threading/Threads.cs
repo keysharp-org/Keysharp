@@ -118,8 +118,10 @@ namespace Keysharp.Internals.Threading
 
 			tv.task = false;
 
+			var autoExecute = tv.kind == ThreadKind.Auto;         // read before the pop recycles the slot
+
 			PopThreadVariables(tv, checkThread);
-			_ = Interlocked.Decrement(ref script.totalExistingThreads);
+			var remaining = Interlocked.Decrement(ref script.totalExistingThreads);
 
 			// An ExitApp inside the pseudo-thread disposes the script before this unwind runs; resolving a
 			// scheduler then would throw and replace the in-flight UserRequestedExitException.
@@ -128,6 +130,13 @@ namespace Keysharp.Internals.Threading
 
 			script.EventScheduler.SchedulePump();
 			script.ScheduleBlockedEventSchedulers();
+
+			// AHK checks at every last-thread end (ResumeUnderlyingThread), which is where a release made inside a
+			// thread takes effect: Persistent(false), a deleted timer, a stopped hook. One that does not exit forgets
+			// an Exit's pending code, as AHK's does, except at the auto-execute section's end, which keeps it as AHK's does.
+			if (remaining == 0 && !script.ExitIfNotPersistent() && !autoExecute)
+				script.ForgetPendingExitCode();
+
 			// The thread beneath this one may have been paused while it was interrupted, by Pause(1), A_IsPaused
 			// or thr.Paused. Those only set a flag; this is the point AHK observes it, when the underlying thread
 			// resumes. Costs one bool read when nothing is paused.
@@ -149,9 +158,10 @@ namespace Keysharp.Internals.Threading
 
 			if (tv == null)
 			{
-				// Roll back counter (if we incremented it) and undo pause
-				if (inc)
-					_ = Interlocked.Decrement(ref script.totalExistingThreads);
+				// Roll back counter (if we incremented it) and undo pause. The reservation may have hidden a release
+				// from a check made meanwhile, so the last one to go checks, as a thread end would.
+				if (inc && Interlocked.Decrement(ref script.totalExistingThreads) == 0)
+					script.ExitIfNotPersistent();
 
 				return false;
 			}
@@ -210,9 +220,10 @@ namespace Keysharp.Internals.Threading
 			if (tv.requestedExitCode is not int exitCode)
 				return;
 
-			// Ending one pseudo-thread is not an application exit, so only the code is recorded here — never the
-			// application-level exit reason.
-			Environment.ExitCode = exitCode;
+			// As in AHK, the code is left for the exit that may follow only when this is the only running thread.
+			if (Volatile.Read(ref script.totalExistingThreads) <= 1)
+				script.SetPendingExitCode(exitCode);
+
 			throw new Keysharp.Builtins.Flow.UserRequestedExitException();
 		}
 

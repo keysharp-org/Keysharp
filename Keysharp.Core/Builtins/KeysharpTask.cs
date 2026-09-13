@@ -153,7 +153,9 @@ namespace Keysharp.Builtins
 			/// </returns>
 			public object Then(object onSuccess, object onFailure = null)
 			{
-				var success = Functions.GetKeysharpFunc(onSuccess, null, true);
+				// Called with the value or the Error, or with nothing when it takes nothing, so only that it is callable
+				// and needs no more than one argument is checked.
+				var success = Functions.CheckedCallback(onSuccess, -1);
 
 				if (success == null)
 					return DefaultObject;
@@ -164,7 +166,7 @@ namespace Keysharp.Builtins
 					return Errors.ValueErrorOccurred(
 						$"Task.Then OnSuccess requires at least {successArity.Required} parameters, but receives at most one.");
 
-				var failure = onFailure == null ? null : Functions.GetKeysharpFunc(onFailure, null, true);
+				var failure = onFailure == null ? null : Functions.CheckedCallback(onFailure, -1);
 
 				if (onFailure != null && failure == null)
 					return DefaultObject;
@@ -222,7 +224,7 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public static object staticCreate(object @this, object producer)
 			{
-				var producerValue = Functions.GetKeysharpFunc(producer, null, true);
+				var producerValue = Functions.CheckedCallback(producer, -1);
 
 				if (producerValue == null)
 					return DefaultObject;
@@ -243,7 +245,7 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					_ = producerValue.Call(args[.. arity.Accepted]);
+					_ = Script.InvokeOrNull(producerValue, null, args[.. arity.Accepted]);
 				}
 				catch (Exception ex) when (TryGetUserExit(ex, out var exit))
 				{
@@ -385,13 +387,13 @@ namespace Keysharp.Builtins
 				private const string OwnerUnavailable = "The Task continuation could not run because its owning script thread is no longer available.";
 				private KeysharpTask antecedent;
 				private ScriptEventScheduler scheduler;
-				private KeysharpFunc successCallback;
-				private KeysharpFunc failureCallback;
+				private object successCallback;
+				private object failureCallback;
 				private readonly TaskCompletionSource<object> completion;
 				private readonly Action invalidated;
 
 				internal TaskContinuation(KeysharpTask antecedent, ScriptEventScheduler scheduler,
-					KeysharpFunc successCallback, KeysharpFunc failureCallback, TaskCompletionSource<object> completion)
+					object successCallback, object failureCallback, TaskCompletionSource<object> completion)
 				{
 					this.antecedent = antecedent;
 					this.scheduler = scheduler;
@@ -491,7 +493,7 @@ namespace Keysharp.Builtins
 								result = ScriptEventExecutionResult.Executed;
 								var argument = source.IsFailed ? source.GetMappedError() : source.Result;
 								var value = Script.CallbackArgCount(action, 1) == 0
-									? action.Call() : action.Call(argument);
+									? Script.InvokeOrNull(action, null) : Script.InvokeOrNull(action, null, argument);
 								ResolveCompletion(completion, value);
 							}
 						}

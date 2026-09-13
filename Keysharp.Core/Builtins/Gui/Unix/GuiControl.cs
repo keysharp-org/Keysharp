@@ -1286,13 +1286,23 @@ namespace Keysharp.Builtins
 
 			//WM_COMMAND and WM_NOTIFY are Win32 concepts with no Eto/GTK/Cocoa equivalent, so this is accepted
 			//(so a cross-platform script still loads) but never fires.
-			public object OnCommand(object notifyCode, object callback, object addRemove = null) => DefaultObject;
+			public object OnCommand(object notifyCode, object callback, object addRemove = null) => CheckUnfired(callback, addRemove, 1);
 
 			//Boxed, because the shared GuiHelper.CallMessageHandler consumes the Windows overload's object
 			//return, and that one carries the WM_COMMAND/WM_NOTIFY reflection this platform has no use for.
 			internal object InvokeMessageHandlers(ref Message m) => InvokeWindowMessageHandlers(ref m);
 
-			public object OnNotify(object notifyCode, object callback, object addRemove = null) => DefaultObject;
+			public object OnNotify(object notifyCode, object callback, object addRemove = null) => CheckUnfired(callback, addRemove, 2);
+
+			//Checked as Windows checks it, so a registration refused there is refused here too.
+			private object CheckUnfired(object callback, object addRemove, int argCount)
+			{
+				if (gui == null || !gui.TryGetTarget(out var g))
+					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
+
+				_ = KeysharpForm.CheckedHandler(callback, g.form.eventObj, addRemove, argCount, out _);
+				return DefaultObject;
+			}
 			public object Opt(object options)
 			{
 				if (gui == null || !gui.TryGetTarget(out var g))

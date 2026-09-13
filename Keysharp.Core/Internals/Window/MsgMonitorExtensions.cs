@@ -53,7 +53,7 @@ namespace Keysharp.Internals.Window
 				var tv = thread.ThreadVariables;
 				tv.eventInfo = eventInfo;
 				tv.hwndLastUsed = hwnd;
-				result = registration.Callback.Call(args).Al();
+				result = Script.InvokeOrNull(registration.Callback, null, args).Al();
 			}
 			catch (Exception ex)
 			{
@@ -74,12 +74,8 @@ namespace Keysharp.Internals.Window
 			if (registration.InstanceCount >= registration.MaxInstances)
 				return ScriptEventExecutionResult.LocalBlocked;
 
-			var executionResult = registration.ExecuteRegistration(script, args, eventInfo, hwnd, false, false, out result);
-
-			if (executionResult == ScriptEventExecutionResult.Executed)
-				script.ExitIfNotPersistent();
-
-			return executionResult;
+			// The callback ran on a pseudo-thread, whose end made the exit check.
+			return registration.ExecuteRegistration(script, args, eventInfo, hwnd, false, false, out result);
 		}
 
 		internal static bool TryExecuteEmergency(this MsgMonitor monitor, Script script, object[] args, object eventInfo, long hwnd, out long result)
@@ -106,9 +102,6 @@ namespace Keysharp.Internals.Window
 				if (result != 0L)
 					break;
 			}
-
-			if (executedAny)
-				script.ExitIfNotPersistent();
 
 			return executedAny;
 		}

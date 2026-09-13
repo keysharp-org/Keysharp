@@ -640,7 +640,7 @@ namespace Keysharp.Builtins
 		/// <returns>The sorted version of the specified string.</returns>
 		public static string Sort(object @string, object options = null, object callback = null)
 		{
-			KeysharpFunc function = null;
+			object function = null;
 			var input = @string.As();
 			var opts = options.As();
 			var splits = opts.Split(' ');
@@ -736,7 +736,13 @@ namespace Keysharp.Builtins
 			}
 
 			if (callback != null)
-				function = Functions.GetKeysharpFunc(callback, null, true);//If supplied, throw if bad.
+			{
+				//Any object, unchecked, as AHK's Sort takes it; anything else is an invalid parameter, as there.
+				if (callback is not (Any or Delegate))
+					return (string)Errors.ValueErrorOccurred("Parameter #3 invalid.", null, "");
+
+				function = Functions.ToCallback(callback);
+			}
 
 			var list = input.Split([split], zopt ? StringSplitOptions.None : StringSplitOptions.RemoveEmptyEntries);
 
@@ -769,15 +775,25 @@ namespace Keysharp.Builtins
 					indexedlist[index] = (val, index++);
 
 				var args = new object[3];//Cache to avoid allocations inside of the sort function.
+				ExceptionDispatchInfo failure = null;
 				System.Array.Sort(indexedlist, delegate (ValueTuple<string, long> x, ValueTuple<string, long> y)
 				{
-					object value = null;
+					//As AHK: once the callback has failed, no comparison calls it again, and Sort raises that one error.
+					if (failure != null)
+						return 0;
+
+					object value;
 					args[0] = x.Item1;
 					args[1] = y.Item1;
 					args[2] = y.Item2 - x.Item2;
 
-					try { value = function.Call(args); }
-					catch (Exception) { }
+					//Captured rather than let through, which Array.Sort would wrap in an InvalidOperationException.
+					try { value = Script.InvokeOrNull(function, null, args); }
+					catch (Exception e)
+					{
+						failure = ExceptionDispatchInfo.Capture(e);
+						return 0;
+					}
 
 					if (value is long l)
 						return (int)l;
@@ -788,6 +804,7 @@ namespace Keysharp.Builtins
 					else
 						return 0;
 				});
+				failure?.Throw();
 				index = 0;
 
 				foreach (var val in indexedlist)

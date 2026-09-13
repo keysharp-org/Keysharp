@@ -351,11 +351,6 @@ namespace Keysharp.Tests
 			{
 				Assert.IsTrue(hook.InProgress);
 				Assert.AreEqual("", hook.EndReason);
-				_ = hook.Pause();
-				Assert.IsFalse(hook.InProgress);
-				Assert.AreEqual("", hook.EndReason, "A paused hook is idle, not ended.");
-				_ = hook.Start();
-				Assert.IsTrue(hook.InProgress);
 			}
 			finally
 			{
@@ -366,7 +361,7 @@ namespace Keysharp.Tests
 			Assert.AreEqual(0L, fired, "No display change was made, so the callback must not have run.");
 		}
 
-		/// <summary>A non-callable first argument is a TypeError, matching every other callback-taking factory.</summary>
+		/// <summary>A first argument which is not an object is a TypeError, matching every other callback-taking factory.</summary>
 		[Test, Category("Monitor")]
 		public void OnChangeCallback()
 		{

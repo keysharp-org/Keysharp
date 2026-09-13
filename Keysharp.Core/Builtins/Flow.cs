@@ -99,7 +99,8 @@ namespace Keysharp.Builtins
 		/// The exit is achieved by throwing an exception which will be caught in the catch
 		/// clause that wraps all threads.
 		/// </summary>
-		/// <param name="exitCode">The process exit code to apply when the pseudo-thread exits. Defaults to zero.</param>
+		/// <param name="exitCode">The code the script exits with if this is the only running thread and the script exits
+		/// when it ends. Default: 0.</param>
 		/// <returns>Does not return: the current pseudo-thread exits immediately. To terminate a different
 		/// pseudo-thread, call <c>Exit</c> on its <c>Thread</c> object (<c>A_Thread.Underlying.Exit()</c>,
 		/// <c>A_RealThread.Threads[1].Exit()</c>).</returns>
@@ -158,7 +159,10 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object OnExit(object callback, object addRemove = null)
 		{
-			Script.TheScript.onExitHandlers.ModifyGlobalEventHandlers(Functions.GetKeysharpFunc(callback, null, true), addRemove.Al(1L));
+			// Checked on every call, removal too, as AHK's OnScriptEvent checks it.
+			if (Functions.CheckedCallback(callback, 2) is { } fn && Functions.TryAddRemove(addRemove, out var change))
+				_ = Script.TheScript.onExitHandlers.ModifyGlobalEventHandlers(fn, change);
+
 			return DefaultObject;
 		}
 
@@ -182,11 +186,31 @@ namespace Keysharp.Builtins
 			var mt = maxThreads.Al(1);
 			var script = Script.TheScript;
 			var gd = script.GuiData;
-			var monitor = gd.onMessageHandlers.GetOrAdd(msg);
-			monitor.ModifyRegistration(Functions.GetKeysharpFunc(callback, null, true), mt, script.EventScheduler);
 
-			if (mt == 0 && monitor.IsEmpty)
-				_ = gd.onMessageHandlers.TryRemove(msg, out var _);
+			if (Functions.ToCallback(callback) is not { } fn)
+				return DefaultObject;
+
+			_ = gd.onMessageHandlers.TryGetValue(msg, out var monitor);
+
+			// As AHK: a callback already registered takes the new MaxThreads where it is, if one is given, and only one
+			// being added is checked, against the four arguments it is called with.
+			if (mt == 0)
+			{
+				if (monitor == null)
+					return DefaultObject;
+
+				monitor.ModifyRegistration(fn, 0, script.EventScheduler);
+
+				if (monitor.IsEmpty)
+					_ = gd.onMessageHandlers.TryRemove(msg, out var _);
+			}
+			else if (monitor?.TryUpdate(fn, maxThreads == null ? null : mt, script.EventScheduler) != true)
+			{
+				if (!Functions.ValidateFunctor(fn, 4))
+					return DefaultObject;
+
+				gd.onMessageHandlers.GetOrAdd(msg).ModifyRegistration(fn, mt, script.EventScheduler);
+			}
 
 #if !WINDOWS
 
@@ -216,7 +240,7 @@ namespace Keysharp.Builtins
 			script.persistent = script.FlowData.persistentValueSetByUser = b;
 
 			if (!script.persistent)
-				Script.TheScript.ExitIfNotPersistent();//Will internally call CheckedBeginInvoke().
+				Script.TheScript.ExitIfNotPersistent(); // for host code running no pseudo-thread, whose end would check
 
 			return old;
 		}
@@ -277,7 +301,7 @@ namespace Keysharp.Builtins
 			var p = period.Al(long.MaxValue);
 			var pri = priority.Al();
 			var once = p < 0;
-			var func = default(KeysharpFunc);
+			object func = null;
 			var script = Script.TheScript;
 			var ownerScheduler = script.EventScheduler;
 			ScriptTimerState timer = null;
@@ -286,23 +310,17 @@ namespace Keysharp.Builtins
 				p = -p;
 
 			if (f == null)
-				timer = script.Threads.CurrentThread.currentTimer;//This means: use the timer which has already been created for this thread/timer event which we are currently inside of.
+			{
+				//This means: use the timer which has already been created for this thread/timer event which we are currently inside of.
+				if ((timer = script.Threads.CurrentThread.currentTimer) == null)
+					return Errors.ValueErrorOccurred("Parameter #1 must not be omitted in this case.");
+			}
 			else
 			{
-				func = Functions.GetKeysharpFunc(f, null);
-
-				if (func == null)
-					return (long)Errors.TypeErrorOccurred(f, typeof(KeysharpFunc));
-
-				//Timer callbacks are invoked with no arguments, so a function that requires parameters can never
-				//run. Reject it HERE rather than at every tick: the invocation path swallows callback exceptions,
-				//so the only symptom used to be a timer that silently never fired.
-				if (!func.CanAcceptArgCount(0))
-					return (long)Errors.ValueErrorOccurred(
-						$"SetTimer callback requires at least {func.MinParams} parameter(s), but timer callbacks are called with none.",
-						//Mph.QualifiedName, not Name: a bound function's script-visible Name is empty, and an error that
-						//names nothing is worse than one naming the target it was bound to.
-						func.Mph.QualifiedName, DefaultErrorLong);
+				// Checked on every call that names one, a delete included, as AHK's ValidateFunctor(callback, 0): a
+				// callback requiring a parameter could never run, and failing at each tick would go unseen.
+				if ((func = Functions.CheckedCallback(f, 0)) == null)
+					return DefaultObject;
 
 				timer = script.FlowData.timers.Find(func, ownerScheduler);
 			}
@@ -310,7 +328,7 @@ namespace Keysharp.Builtins
 			if (p == 0)
 			{
 				script.FlowData.timers.DisableOrDelete(timer);
-				script.ExitIfNotPersistent();
+				script.ExitIfNotPersistent(); // for host code running no pseudo-thread, whose end would check
 				return DefaultObject;
 			}
 

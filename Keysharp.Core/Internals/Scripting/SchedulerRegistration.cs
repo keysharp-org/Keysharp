@@ -5,10 +5,16 @@ namespace Keysharp.Internals.Scripting
 {
 	internal class SchedulerRegistration
 	{
-		private bool persistenceHeld;
+		private int persistenceHeld;                          // 1 while this registration holds its owner's root
+		// False for a registration that must not keep its owning thread alive: an event hook whose AHK counterpart does
+		// not keep a script running.
+		private readonly bool holdsRoot;
 
-		internal SchedulerRegistration(ScriptEventScheduler ownerScheduler = null, bool active = false)
-			=> Set(ownerScheduler, active);
+		internal SchedulerRegistration(ScriptEventScheduler ownerScheduler = null, bool active = false, bool holdsRoot = true)
+		{
+			this.holdsRoot = holdsRoot;
+			Set(ownerScheduler, active);
+		}
 
 		internal ScriptEventScheduler OwnerScheduler { get; private set; }
 		// Volatile: the window-event intake reads liveness without taking the manager gate.
@@ -33,7 +39,7 @@ namespace Keysharp.Internals.Scripting
 			UpdatePersistence(false);
 			OwnerScheduler = ownerScheduler;
 			isActive = active;
-			UpdatePersistence(active && ownerScheduler != null);
+			UpdatePersistence(active && ownerScheduler != null && holdsRoot);
 		}
 
 		internal void Clear()
@@ -43,35 +49,36 @@ namespace Keysharp.Internals.Scripting
 			isActive = false;
 		}
 
+		// Exchanged, so a Stop() and a teardown clearing the same registration at once release its root only once.
 		private void UpdatePersistence(bool shouldHold)
 		{
-			if (persistenceHeld == shouldHold)
-				return;
+			var owner = OwnerScheduler;                       // read first: a concurrent Clear nulls it
+			var held = shouldHold ? 1 : 0;
 
-			OwnerScheduler?.AdjustPersistenceRoot(shouldHold ? 1 : -1);
-			persistenceHeld = shouldHold;
+			if (Interlocked.Exchange(ref persistenceHeld, held) != held)
+				owner?.AdjustPersistenceRoot(shouldHold ? 1 : -1);
 		}
 	}
 
+	/// <summary>A scheduler registration with the script's callback: the object the script gave, a function or any
+	/// other callable object, as AHK keeps it (<see cref="Functions.ToCallback"/>).</summary>
 	internal class CallbackRegistration : SchedulerRegistration
 	{
-		private KeysharpFunc callback;
+		private object callback;
 
-		internal CallbackRegistration(KeysharpFunc callback = null, ScriptEventScheduler ownerScheduler = null, bool active = false)
-			: base(ownerScheduler, active)
+		internal CallbackRegistration(object callback = null, ScriptEventScheduler ownerScheduler = null, bool active = false,
+				bool holdsRoot = true)
+			: base(ownerScheduler, active, holdsRoot)
 		{
 			this.callback = callback;
 		}
 
-		internal static CallbackRegistration CreateCurrent(KeysharpFunc callback, long _)
-			=> new(callback, Script.TheScript?.EventScheduler, true);
-
-		internal static CallbackRegistration CreateGlobal(KeysharpFunc callback, long _)
+		internal static CallbackRegistration CreateGlobal(object callback, long _)
 			=> new(callback, null, true);
 
-		internal KeysharpFunc Callback => callback;
+		internal object Callback => callback;
 
-		internal void Set(KeysharpFunc callback, ScriptEventScheduler ownerScheduler, bool active)
+		internal void Set(object callback, ScriptEventScheduler ownerScheduler, bool active)
 		{
 			this.callback = callback;
 			base.Set(ownerScheduler, active);

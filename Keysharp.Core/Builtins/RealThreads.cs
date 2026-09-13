@@ -83,9 +83,11 @@ namespace Keysharp.Builtins
 			/// <returns>The <see cref="RealThread"/> object.</returns>
 			public static object staticCall(object @this, object callback, params object[] arguments)
 			{
-				var funcObj = Functions.GetKeysharpFunc(callback, null, true);
+				if (Functions.CheckedCallback(callback, -1) is not { } funcObj)
+					return DefaultObject;
+
 				var rt = new RealThread(Script.TheScript);
-				rt.Start(() => funcObj.Call(arguments));
+				rt.Start(() => Script.InvokeOrNull(funcObj, null, arguments));
 				return rt;
 			}
 
@@ -189,7 +191,9 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public object Post(object callback, params object[] arguments)
 			{
-				var fo = Functions.GetKeysharpFunc(callback, null, true);
+				if (Functions.CheckedCallback(callback, -1) is not { } fo)
+					return DefaultObject;
+
 				var scheduler = GetAliveScheduler();
 
 				if (scheduler == null)
@@ -218,7 +222,9 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public object Send(object callback, params object[] arguments)
 			{
-				var fo = Functions.GetKeysharpFunc(callback, null, true);
+				if (Functions.CheckedCallback(callback, -1) is not { } fo)
+					return DefaultObject;
+
 				var scheduler = GetAliveScheduler();
 
 				if (scheduler == null)
@@ -228,7 +234,7 @@ namespace Keysharp.Builtins
 				{
 					return scheduler.InvokeSynchronous(() =>
 					{
-						var executionResult = RunOnSchedulerThread(scheduler, () => fo.Call(arguments), out var result, out _);
+						var executionResult = RunOnSchedulerThread(scheduler, () => Script.InvokeOrNull(fo, null, arguments), out var result, out _);
 						return executionResult == ScriptEventExecutionResult.Executed
 							? result
 							: Errors.ErrorOccurred("Unable to execute callback on RealThread.");
@@ -468,13 +474,13 @@ namespace Keysharp.Builtins
 			{
 				private readonly RealThread thread;
 				private readonly ScriptEventScheduler scheduler;
-				private readonly KeysharpFunc callback;
+				private readonly object callback;
 				private readonly object[] args;
 				private readonly TaskCompletionSource<object> completion =
 					new(TaskCreationOptions.RunContinuationsAsynchronously);
 				private readonly KeysharpTask task;
 
-				internal PostRequest(RealThread thread, ScriptEventScheduler scheduler, KeysharpFunc callback, object[] args)
+				internal PostRequest(RealThread thread, ScriptEventScheduler scheduler, object callback, object[] args)
 				{
 					this.thread = thread;
 					this.scheduler = scheduler;
@@ -500,7 +506,7 @@ namespace Keysharp.Builtins
 
 					try
 					{
-						result = RunOnSchedulerThread(scheduler, () => callback.Call(args), out value, out exited);
+						result = RunOnSchedulerThread(scheduler, () => Script.InvokeOrNull(callback, null, args), out value, out exited);
 					}
 					catch (Exception ex)
 					{

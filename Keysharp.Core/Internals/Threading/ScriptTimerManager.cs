@@ -6,7 +6,7 @@ namespace Keysharp.Internals.Threading
 {
 	internal sealed class ScriptTimerState : CallbackRegistration
 	{
-		internal ScriptTimerState(KeysharpFunc callback, ScriptEventScheduler ownerScheduler)
+		internal ScriptTimerState(object callback, ScriptEventScheduler ownerScheduler)
 			: base(callback, ownerScheduler, true)
 		{
 		}
@@ -19,7 +19,7 @@ namespace Keysharp.Internals.Threading
 		internal int RunningCount { get; set; }
 	}
 
-	internal sealed class ScriptTimerKeyComparer : IEqualityComparer<(KeysharpFunc Callback, ScriptEventScheduler OwnerScheduler)>
+	internal sealed class ScriptTimerKeyComparer : IEqualityComparer<(object Callback, ScriptEventScheduler OwnerScheduler)>
 	{
 		internal static readonly ScriptTimerKeyComparer Instance = new();
 
@@ -27,14 +27,14 @@ namespace Keysharp.Internals.Threading
 		{
 		}
 
-		public bool Equals((KeysharpFunc Callback, ScriptEventScheduler OwnerScheduler) x, (KeysharpFunc Callback, ScriptEventScheduler OwnerScheduler) y)
-			=> Equals(x.Callback, y.Callback) && ReferenceEquals(x.OwnerScheduler, y.OwnerScheduler);
+		public bool Equals((object Callback, ScriptEventScheduler OwnerScheduler) x, (object Callback, ScriptEventScheduler OwnerScheduler) y)
+			=> Functions.SameCallback(x.Callback, y.Callback) && ReferenceEquals(x.OwnerScheduler, y.OwnerScheduler);
 
-		public int GetHashCode((KeysharpFunc Callback, ScriptEventScheduler OwnerScheduler) obj)
+		public int GetHashCode((object Callback, ScriptEventScheduler OwnerScheduler) obj)
 		{
 			unchecked
 			{
-				return ((obj.Callback?.GetHashCode() ?? 0) * 397)
+				return (Functions.CallbackHash(obj.Callback) * 397)
 					^ (obj.OwnerScheduler != null ? RuntimeHelpers.GetHashCode(obj.OwnerScheduler) : 0);
 			}
 		}
@@ -43,7 +43,7 @@ namespace Keysharp.Internals.Threading
 	internal sealed class ScriptTimerManager : IDisposable
 	{
 		private readonly object gate = new();
-		private readonly Dictionary<(KeysharpFunc Callback, ScriptEventScheduler OwnerScheduler), ScriptTimerState> timers = new(ScriptTimerKeyComparer.Instance);
+		private readonly Dictionary<(object Callback, ScriptEventScheduler OwnerScheduler), ScriptTimerState> timers = new(ScriptTimerKeyComparer.Instance);
 		private readonly AutoResetEvent wakeEvent = new(false);
 		private Thread timerThread;
 		private bool disposed;
@@ -66,6 +66,23 @@ namespace Keysharp.Internals.Threading
 			}
 		}
 
+		/// <summary>Whether any timer is enabled, which is what keeps a script running, as AHK counts only enabled
+		/// timers. A run-once timer is disabled as its thread starts, so it no longer counts at that thread's end.</summary>
+		internal bool AnyEnabled
+		{
+			get
+			{
+				lock (gate)
+				{
+					foreach (var timer in timers.Values)
+						if (timer.IsActive)
+							return true;
+
+					return false;
+				}
+			}
+		}
+
 		internal ScriptTimerState[] GetSnapshot()
 		{
 			lock (gate)
@@ -77,7 +94,7 @@ namespace Keysharp.Internals.Threading
 			}
 		}
 
-		internal ScriptTimerState Find(KeysharpFunc callback, ScriptEventScheduler ownerScheduler)
+		internal ScriptTimerState Find(object callback, ScriptEventScheduler ownerScheduler)
 		{
 			if (callback == null)
 				return null;
@@ -88,7 +105,7 @@ namespace Keysharp.Internals.Threading
 			}
 		}
 
-		internal ScriptTimerState Upsert(KeysharpFunc callback, ScriptEventScheduler ownerScheduler, long periodMs, bool runOnce, long priority)
+		internal ScriptTimerState Upsert(object callback, ScriptEventScheduler ownerScheduler, long periodMs, bool runOnce, long priority)
 		{
 			ArgumentNullException.ThrowIfNull(callback);
 

@@ -150,7 +150,7 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 		}
 
-		/// <summary>Turns the caret half of the stream (AXSelectedTextChanged, behind <c>WinEvent.CaretMove</c>) on or
+		/// <summary>Turns the caret half of the stream (AXSelectedTextChanged, behind <c>WinEvent.OnCaretMove</c>) on or
 		/// off across every application observer, adding or removing that one notification in place so the rest of the
 		/// stream is untouched. It is registered separately from the always-on notifications because it is the only
 		/// one whose traffic is per-keystroke, and no script should pay for it without a CaretMove subscription. Any

@@ -3,17 +3,7 @@ using Keysharp.Internals.Scripting;
 
 namespace Keysharp.Internals.Events
 {
-	/// <summary>
-	/// Everything a per-<see cref="Script"/> event manager does that has nothing to do with what it listens to:
-	/// holding the subscriptions, sweeping them by owning scheduler and at teardown, creating the native backend
-	/// on first use and disposing it once, and running one callback in a pseudo-thread on its owner.
-	/// <para>
-	/// A subclass supplies only what genuinely differs per source: how the backend is created, how the native
-	/// source is started and stopped to match the current subscriptions, and what thread state a callback sees.
-	/// Everything above that was written twice before <c>Ks.WinEvent</c> and <c>Ks.Monitor.OnChange</c> shared
-	/// this, and had already drifted in half a dozen places.
-	/// </para>
-	/// </summary>
+	/// <summary>Owns one event family's subscriptions, native backend and callback dispatch.</summary>
 	/// <typeparam name="TRegistration">The source's subscription type.</typeparam>
 	/// <typeparam name="TBackend">The source's platform backend.</typeparam>
 	/// <typeparam name="TPayload">What one event carries from the native intake to the callback's thread state.
@@ -29,12 +19,24 @@ namespace Keysharp.Internals.Events
 
 		private TBackend backend;
 		private bool backendInitFailed;
+		private readonly bool keepsScriptRunning;
 		protected bool disposed;
+		private volatile bool keepingScriptRunning;
 
-		protected EventManagerBase(Script script) => this.script = script;
+		protected EventManagerBase(Script script, bool keepsScriptRunning)
+		{
+			this.script = script;
+			this.keepsScriptRunning = keepsScriptRunning;
+		}
 
 		/// <summary>The pseudo-thread kind this source's callbacks run as.</summary>
 		protected abstract ThreadKind CallbackThreadKind { get; }
+
+		internal bool KeepsScriptRunning => keepsScriptRunning;
+
+		/// <summary>Whether a hook of this source keeps the script running now: the rule above, applied to the running
+		/// hooks. Read without the gate by <see cref="Script.AnyPersistent"/>.</summary>
+		internal bool IsKeepingScriptRunning => keepingScriptRunning;
 
 		/// <summary>The backend, once created. Null before the first subscription and after teardown.</summary>
 		protected TBackend Backend => backend;
@@ -49,25 +51,15 @@ namespace Keysharp.Internals.Events
 			}
 		}
 
-		/// <summary>
-		/// The script handle of every live subscription, oldest first. A snapshot: stopping a hook while iterating
-		/// mutates <see cref="registrations"/>, and a lazy view would have to hold <see cref="gate"/> across script
-		/// code. Script-wide rather than per thread, so a loop reaches library hooks and other threads' hooks too.
-		/// </summary>
+		/// <summary>A snapshot of every running hook in start order.</summary>
 		internal Keysharp.Builtins.Array Hooks()
 		{
-			TRegistration[] all;
+			EventSubscriptionBase[] all;
 
 			lock (gate)
 				all = [.. registrations];
 
-			// Built outside the gate, as the dispatch snapshots are, so the allocation is not under the lock.
-			var result = new Keysharp.Builtins.Array(new List<object>(all.Length));
-
-			foreach (var reg in all)
-				_ = result.Push(reg.scriptObject);
-
-			return result;
+			return EventSubscriptionBase.Handles(all);
 		}
 
 		// ---- source hooks --------------------------------------------------------------------
@@ -83,15 +75,21 @@ namespace Keysharp.Internals.Events
 		/// <see cref="gate"/> after every registration change.</summary>
 		protected virtual void OnRegistrationsChangedLocked() { }
 
-		/// <summary>Captures whatever baseline a new subscription must be measured against — a window enumeration,
-		/// a display topology. Called OUTSIDE <see cref="gate"/> and before the subscription goes live, because
-		/// every implementation reads the platform and holding the gate across that blocks every other subscribe
-		/// and stop.</summary>
+		// Every change to the list passes here, so the published state cannot drift from it.
+		private void RegistrationsChangedLocked()
+		{
+			keepingScriptRunning = keepsScriptRunning && registrations.Count > 0;
+
+			OnRegistrationsChangedLocked();
+		}
+
+		/// <summary>Captures a new subscription's baseline outside <see cref="gate"/>.</summary>
 		/// <param name="isFirst">True when this is the only subscription, so the source can seed once.</param>
 		protected virtual void PrepareRegistration(TRegistration reg, bool isFirst) { }
 
-		/// <summary>Applies the thread state this source's callback expects — <c>A_EventInfo</c> and friends.</summary>
-		protected abstract void ApplyThreadState(ThreadVariables tv, TRegistration reg, in TPayload payload);
+		/// <summary>Applies the thread state this source's callback expects beyond its arguments, such as
+		/// <c>A_EventInfo</c>. Most sources pass everything as arguments.</summary>
+		protected virtual void ApplyThreadState(ThreadVariables tv, TRegistration reg, in TPayload payload) { }
 
 		// ---- registration --------------------------------------------------------------------
 
@@ -109,6 +107,8 @@ namespace Keysharp.Internals.Events
 					return;
 				}
 
+				// A Start retries a backend whose creation failed, so a failure that was transient can recover.
+				backendInitFailed = false;
 				first = registrations.Count == 0;
 			}
 
@@ -126,12 +126,24 @@ namespace Keysharp.Internals.Events
 			{
 				lock (gate)
 				{
-					if (disposed)
+					// A run stopped before it was listed stays out, or it would sit here counted as alive.
+					if (disposed || !reg.IsRunning)
 						return false;
 
 					registrations.Add(reg);
-					OnRegistrationsChangedLocked();
-					SyncNativeLocked();
+					RegistrationsChangedLocked();
+
+					if (!TrySyncNativeLocked("install"))
+					{
+						// A source that throws while installing ends the run Failed, as a missing one does, rather than
+						// leaving it listed and keeping the script alive while it can never fire. The source is then
+						// synced to the runs that remain, which undoes whatever part of the install took.
+						_ = reg.End(EventSubscriptionBase.EndReasonFailed);
+						_ = RemoveLocked(reg);
+						RegistrationsChangedLocked();
+						_ = TrySyncNativeLocked("recovery");
+					}
+
 					return true;
 				}
 			}
@@ -141,9 +153,12 @@ namespace Keysharp.Internals.Events
 		{
 			lock (gate)
 			{
-				RemoveLocked(reg);
-				OnRegistrationsChangedLocked();
-				SyncNativeLocked();
+				// Not listed (stopped before it was, or already swept): cleared, with nothing else to redo.
+				if (!RemoveLocked(reg))
+					return;
+
+				RegistrationsChangedLocked();
+				_ = TrySyncNativeLocked("uninstall");
 			}
 		}
 
@@ -162,24 +177,24 @@ namespace Keysharp.Internals.Events
 					if (ReferenceEquals(registrations[i].OwnerScheduler, scheduler))
 					{
 						registrations[i].End(EventSubscriptionBase.EndReasonExit);
-						RemoveLocked(registrations[i]);
+						_ = RemoveLocked(registrations[i]);
 						removedAny = true;
 					}
 
 				if (removedAny)
 				{
-					OnRegistrationsChangedLocked();
-					SyncNativeLocked();
+					RegistrationsChangedLocked();
+					_ = TrySyncNativeLocked("owner cleanup");
 				}
 			}
 
 			return removedAny;
 		}
 
-		private void RemoveLocked(TRegistration reg)
+		private bool RemoveLocked(TRegistration reg)
 		{
 			reg.Clear();
-			_ = registrations.Remove(reg);
+			return registrations.Remove(reg);
 		}
 
 		private static void EndAndClear(TRegistration reg, string reason)
@@ -188,18 +203,14 @@ namespace Keysharp.Internals.Events
 			reg.Clear();
 		}
 
-		/// <summary>
-		/// Ends every subscription because the native source cannot be created. Called from a
-		/// <see cref="SyncNativeLocked"/> that found no backend, which only happens while something is subscribed —
-		/// and a hook left listed there would report itself running while never able to fire.
-		/// </summary>
+		/// <summary>Ends every subscription after the native source cannot be created.</summary>
 		protected void FailAllLocked()
 		{
 			foreach (var reg in registrations)
 				EndAndClear(reg, EventSubscriptionBase.EndReasonFailed);
 
 			registrations.Clear();
-			OnRegistrationsChangedLocked();
+			RegistrationsChangedLocked();
 		}
 
 		// ---- backend -------------------------------------------------------------------------
@@ -222,23 +233,29 @@ namespace Keysharp.Internals.Events
 			return backend;
 		}
 
+		private bool TrySyncNativeLocked(string operation)
+		{
+			try
+			{
+				SyncNativeLocked();
+				return true;
+			}
+			catch (Exception ex)
+			{
+				Diagnostics.Debug.WriteLine($"{GetType().Name} native {operation} failed: {ex.Message}");
+				return false;
+			}
+		}
+
 		// ---- dispatch ------------------------------------------------------------------------
 
-		/// <summary>
-		/// Runs one callback in a fresh pseudo-thread on its owner. Every source's dispatch ends here, so the
-		/// admission, the error handling and the persistence release are decided once.
-		/// <para>
-		/// This is the one place a stopped or paused hook is refused. Intake admits and queues regardless of pause,
-		/// so the rule a script can derive is simply that a callback checks whether its hook is running at the
-		/// moment it would run: <c>Stop()</c> and <c>Pause()</c> take effect when called, and a queued callback that
-		/// has not started is discarded rather than deferred. The callback already running always finishes.
-		/// </para>
-		/// </summary>
-		protected ScriptEventExecutionResult RunCallback(ScriptEventScheduler scheduler, TRegistration reg, object[] args, in TPayload payload)
+		/// <summary>Runs a callback in a fresh pseudo-thread if its hook still runs.</summary>
+		protected ScriptEventExecutionResult RunCallback(ScriptEventScheduler scheduler, TRegistration reg, object callback,
+			object[] args, in TPayload payload)
 		{
-			// No exit check on this path: an event hook is not one of the things AnyPersistent counts, and a worker
-			// scheduler is already woken by the persistence release itself, so there is nothing for one to find.
-			if (!reg.IsActive || reg.Suppressed)
+			// No exit check on this path: a drop releases nothing, so there is nothing to re-check. A release made
+			// by the callback is checked when its thread ends.
+			if (!reg.IsRunning)
 				return ScriptEventExecutionResult.Dropped;
 
 			using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, CallbackThreadKind);
@@ -249,25 +266,24 @@ namespace Keysharp.Internals.Events
 			try
 			{
 				ApplyThreadState(thread.ThreadVariables, reg, payload);
-				_ = reg.Callback.Call(args);
+				_ = Script.InvokeOrNull(callback, null, args);
 			}
 			catch (Exception ex)
 			{
 				_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
 			}
-			finally
-			{
-				script.ExitIfNotPersistent();
-			}
 
 			return ScriptEventExecutionResult.Executed;
 		}
 
-		/// <summary>The scheduler a fired subscription should run on, or null when it can no longer run.</summary>
-		protected static ScriptEventScheduler DispatchTarget(TRegistration reg)
+		/// <summary>Queues one callback to the thread that owns <paramref name="reg"/>, where <see cref="RunCallback"/>
+		/// decides whether it still runs. A run that has ended, or whose thread is gone, queues nothing.</summary>
+		protected void Fire(TRegistration reg, object callback, object[] args, TPayload payload = default)
 		{
-			var scheduler = reg.OwnerScheduler;
-			return scheduler == null || scheduler.IsDisposed ? null : scheduler;
+			if (!reg.IsRunning || reg.OwnerScheduler is not { IsDisposed: false } scheduler)
+				return;
+
+			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, callback, args, payload));
 		}
 
 		// ---- teardown ------------------------------------------------------------------------
@@ -285,8 +301,8 @@ namespace Keysharp.Internals.Events
 				disposed = true;
 				all = [.. registrations];
 				registrations.Clear();
-				OnRegistrationsChangedLocked();
-				SyncNativeLocked();
+				RegistrationsChangedLocked();
+				_ = TrySyncNativeLocked("teardown");
 				toDispose = backend;
 				backend = null;
 			}

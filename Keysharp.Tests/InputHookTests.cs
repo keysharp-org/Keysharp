@@ -154,37 +154,52 @@ namespace Keysharp.Tests
 			}
 		}
 
-		/// <summary>
-		/// A fresh InputHook is idle, not ended: EndReason is "" until something ends it. AutoHotkey reports
-		/// "Stopped" here because its single Off status covers both cases; a hook that has never run has not ended.
-		/// </summary>
+		/// <summary>A fresh InputHook is idle and reads EndReason "Stopped", as in AHK, where one Off status covers both
+		/// a hook that never ran and one that was stopped.</summary>
 		[Test, Category("InputHook")]
-		public void FreshHookIsIdleNotEnded()
+		public void FreshHookReadsStopped()
 		{
 			var io = (InputHook)new InputHook("");
 			Assert.IsFalse(io.InProgress);
-			Assert.AreEqual("", io.EndReason);
+			Assert.AreEqual("Stopped", io.EndReason, "A never-started input reads Stopped, as in AHK.");
 			Assert.IsInstanceOf<Ks.EventHook>(io, "InputHook shares the hook vocabulary with every event family.");
 
 			_ = io.Stop();
-			Assert.AreEqual("Stopped", io.EndReason, "Stop on a never-started hook ends it.");
+			Assert.AreEqual("Stopped", io.EndReason, "Stop on a never-started hook does nothing.");
 			Assert.IsFalse(io.InProgress);
 		}
 
 		/// <summary>A running input has no end reason yet, and says so with "" rather than unset, so
 		/// <c>!ih.EndReason</c> is safe to write while it runs. It used to read null and raise UnsetError.</summary>
 		[Test, Category("InputHook")]
-		public void RunningAndPausedHooksReportNoEndReason()
+		public void RunningHookReportsNoEndReason()
 		{
 			var io = (InputHook)new InputHook("");
 
 			io.input.Start();
 			Assert.IsTrue(io.InProgress);
 			Assert.AreEqual("", io.EndReason);
+		}
 
-			io.input.status = InputStatusType.Paused;
-			Assert.IsFalse(io.InProgress);
-			Assert.AreEqual("", io.EndReason, "A paused input is idle, not ended.");
+		/// <summary>A callback property takes a callback the input can call with its arguments, as AHK's ValidateFunctor
+		/// checks, and "" or unset clears it; a refused value leaves the property as it was.</summary>
+		[Test, Category("InputHook")]
+		public void CallbackPropertiesValidateAndClear()
+		{
+			var io = (InputHook)new InputHook("");
+			var onChar = new KeysharpFunc((Func<object, object, object>)((_, ch) => 0L));
+			io.OnChar = onChar;
+			Assert.AreSame(onChar, io.OnChar);
+
+			Assert.IsInstanceOf<ValueError>(Assert.Throws<KeysharpException>(() => io.OnEnd = onChar).UserError, "OnEnd is called with one argument.");
+			Assert.IsInstanceOf<TypeError>(Assert.Throws<KeysharpException>(() => io.OnKeyDown = "not a function").UserError);
+			Assert.IsNotInstanceOf<KeysharpFunc>(io.OnEnd);
+			Assert.IsInstanceOf<TypeError>(Assert.Throws<KeysharpException>(() => io.OnChar = "not a function").UserError);
+			Assert.IsInstanceOf<MethodError>(Assert.Throws<KeysharpException>(() => io.OnChar = new KeysharpObject()).UserError);
+			Assert.AreSame(onChar, io.OnChar, "A refused value leaves the callback in place.");
+
+			io.OnChar = null;
+			Assert.IsNotInstanceOf<KeysharpFunc>(io.OnChar, "Unset clears a callback, as in AHK.");
 		}
 
 		/// <summary>The documented argument-less <c>ih.Wait()</c> used to raise a missing-argument error.</summary>
@@ -192,15 +207,16 @@ namespace Keysharp.Tests
 		public void WaitTakesNoArgument()
 		{
 			var io = (InputHook)new InputHook("");
-			Assert.AreEqual("", io.Wait(), "Waiting on a hook that is not running returns at once with its reason.");
+			Assert.AreEqual("Stopped", io.Wait(), "Waiting on a hook that is not running returns at once with its reason.");
 		}
 
 		/// <summary>
-		/// Pausing and stopping take effect at the call: a notification queued before either is discarded when it
-		/// would run. A paused input stays on the input stack, which is why the test is the status, not membership.
+		/// Stopping takes effect at the call: a notification queued before it is discarded when it would run, unless the
+		/// input has been started again by then. An ended input stays on the input stack until its end runs, which is why
+		/// the test is the status, not membership.
 		/// </summary>
 		[Test, Category("InputHook"), Category("Misc")]
-		public void QueuedNotificationsAreDiscardedAfterPauseOrStop()
+		public void QueuedNotificationsAreDiscardedAfterStop()
 		{
 			var context = UseQueuedMainContext();
 			var calls = 0;
@@ -218,13 +234,6 @@ namespace Keysharp.Tests
 
 			try
 			{
-				Assert.IsTrue(s.HookThread.CollectMouseMove(1, 1, 0, true, 10, deviceId: 1, isAbsolute: false));
-				_ = io.Pause();
-				context.DrainAll();
-				Assert.AreEqual(0, calls, "A notification queued before Pause is discarded while paused.");
-				Assert.AreSame(io.input, s.input, "Pausing leaves the input linked where it stood.");
-
-				io.input.status = InputStatusType.InProgress;
 				Assert.IsTrue(s.HookThread.CollectMouseMove(1, 1, 0, true, 11, deviceId: 1, isAbsolute: false));
 				context.DrainAll();
 				Assert.AreEqual(1, calls);
@@ -233,6 +242,46 @@ namespace Keysharp.Tests
 				io.input.status = InputStatusType.Off;
 				context.DrainAll();
 				Assert.AreEqual(1, calls, "A notification queued before the input ended is discarded.");
+
+				io.input.Start();
+				Assert.IsTrue(s.HookThread.CollectMouseMove(1, 1, 0, true, 13, deviceId: 1, isAbsolute: false));
+				io.input.status = InputStatusType.Off;
+				io.input.Start();
+				context.DrainAll();
+				Assert.AreEqual(2, calls, "One queued before an end is delivered if the input is started again first.");
+			}
+			finally
+			{
+				s.input = previous;
+				io.input.prev = null;
+			}
+		}
+
+		/// <summary>
+		/// An input restarted while its end was still queued stays linked when that end runs, as AHK's
+		/// InputUnlinkIfStopped keeps it: InputStart has already moved it to the top. Unlinking it there left a restarted
+		/// input reading InProgress while it collected nothing. An input that did end is unlinked, and one that is not in
+		/// the chain is a stale end.
+		/// </summary>
+		[Test, Category("InputHook")]
+		public void RestartBeforeTheEndRunsStaysLinked()
+		{
+			var io = (InputHook)new InputHook("");
+			var previous = s.input;
+			io.input.Start();
+			io.input.prev = previous;
+			s.input = io.input;
+
+			try
+			{
+				Assert.AreSame(io.input, io.input.InputUnlinkIfStopped(io.input), "A running input is found.");
+				Assert.AreSame(io.input, s.input, "A running input stays linked.");
+
+				io.input.status = InputStatusType.Off;
+				Assert.AreSame(io.input, io.input.InputUnlinkIfStopped(io.input), "An ended input is found.");
+				Assert.AreSame(previous, s.input, "An ended input is unlinked.");
+
+				Assert.IsNull(io.input.InputUnlinkIfStopped(io.input), "An input no longer in the chain is a stale end.");
 			}
 			finally
 			{
@@ -253,9 +302,6 @@ namespace Keysharp.Tests
 				Assert.Ignore("No input sender in this host, so an input cannot be ended through the hook.");
 
 			var context = UseQueuedMainContext();
-			// Releasing the last input rightly checks whether the script is done, and this fixture has nothing else
-			// keeping it alive, so without this the check would tear it down under the assertions.
-			s.FlowData.persistentValueSetByUser = true;
 			var io = (InputHook)new InputHook("");
 			io.OnChar = new KeysharpFunc((Func<object, object, object>)((_, ch) => 0L));
 			var slot = io.GetCallbackSlot(UserMessages.AHK_INPUT_CHAR);
@@ -275,6 +321,157 @@ namespace Keysharp.Tests
 
 				Assert.IsFalse(slot.IsActive, "The persistence root is released with no OnEnd to run.");
 				Assert.AreNotSame(io.input, s.input, "The input is unlinked.");
+			}
+			finally
+			{
+				if (ReferenceEquals(s.input, io.input))
+					s.input = previous;
+
+				io.input.prev = null;
+				io.DeactivateCallbackPersistence();
+			}
+		}
+
+		/// <summary>An input started again before its end runs keeps the roots and the link its new run needs: the
+		/// end releases only an input that is not in progress, as AHK's InputUnlinkIfStopped keeps a restarted one.</summary>
+		[Test, Category("InputHook"), Category("Misc")]
+		public void RestartBeforeTheEndKeepsTheRoots()
+		{
+			if (s.HookThread is not HookThread { kbdMsSender: not null })
+				Assert.Ignore("No input sender in this host, so an input cannot be ended through the hook.");
+
+			var context = UseQueuedMainContext();
+			var io = (InputHook)new InputHook("");
+			io.OnChar = new KeysharpFunc((Func<object, object, object>)((_, ch) => 0L));
+			var slot = io.GetCallbackSlot(UserMessages.AHK_INPUT_CHAR);
+
+			var previous = s.input;
+			Assert.IsTrue(io.input.LinkForStart(), "The chain half of Start() links the input.");
+
+			try
+			{
+				io.input.Stop();
+				Assert.IsTrue(io.input.LinkForStart(), "An ended input starts again.");
+				context.DrainAll();
+
+				Assert.IsTrue(slot.IsActive, "The restarted input keeps its persistence roots.");
+				Assert.AreSame(io.input, s.input, "The restarted input stays linked.");
+			}
+			finally
+			{
+				if (ReferenceEquals(s.input, io.input))
+					s.input = previous;
+
+				io.input.prev = null;
+				io.DeactivateCallbackPersistence();
+			}
+		}
+
+		/// <summary>A running input holds its place in the before-hotkeys count by its BeforeHotkeys setting, so the
+		/// setting is fixed until the input ends.</summary>
+		[Test, Category("InputHook")]
+		public void BeforeHotkeysIsFixedWhileRunning()
+		{
+			var io = (InputHook)new InputHook("");
+			io.BeforeHotkeys = true;
+			io.input.Start();
+
+			try
+			{
+				Assert.IsInstanceOf<ValueError>(Assert.Throws<KeysharpException>(() => io.BeforeHotkeys = false).UserError);
+				Assert.IsTrue(io.input.beforeHotkeys, "A refused change leaves the setting as it was.");
+			}
+			finally
+			{
+				io.input.status = InputStatusType.Off;
+			}
+
+			io.BeforeHotkeys = false;
+			Assert.IsFalse(io.input.beforeHotkeys, "An ended input takes the change.");
+		}
+
+		/// <summary>The first end wins, whichever thread gets there first: a later reason is ignored, one end is queued,
+		/// and the before-hotkeys count gives back exactly the place the start took.</summary>
+		[Test, Category("InputHook"), Category("Misc")]
+		public void FirstEndWinsAndGivesBackTheBeforeHotkeysPlace()
+		{
+			if (s.HookThread is not HookThread { kbdMsSender: not null })
+				Assert.Ignore("No input sender in this host, so an input cannot be ended through the hook.");
+
+			var context = UseQueuedMainContext();
+			var ends = 0;
+			var io = (InputHook)new InputHook("");
+			io.BeforeHotkeys = true;
+			io.OnEnd = new KeysharpFunc((Func<object, object>)(_ =>
+			{
+				ends++;
+				return 0L;
+			}));
+
+			var previous = s.input;
+			var places = s.inputBeforeHotkeysCount;
+			Assert.IsTrue(io.input.LinkForStart(), "The chain half of Start() links the input.");
+
+			try
+			{
+				Assert.AreEqual(places + 1, s.inputBeforeHotkeysCount, "A running before-hotkeys input takes a place.");
+				io.input.EndByTimeout();
+				io.input.Stop();
+				Assert.AreEqual("Timeout", io.EndReason, "The first reason stands.");
+				Assert.AreEqual(places, s.inputBeforeHotkeysCount, "The place is given back once.");
+
+				// Started again before the end runs, so every queued end finds the input linked and runs OnEnd: one end
+				// runs it once, where a second would run it again.
+				Assert.IsTrue(io.input.LinkForStart(), "The ended input starts again.");
+				context.DrainAll();
+				Assert.AreEqual(1, ends, "One end is queued, so OnEnd runs once.");
+			}
+			finally
+			{
+				if (io.input.InProgress())
+				{
+					io.input.Stop();
+					context.DrainAll();
+				}
+
+				if (ReferenceEquals(s.input, io.input))
+					s.input = previous;
+
+				io.input.prev = null;
+				io.DeactivateCallbackPersistence();
+			}
+		}
+
+		/// <summary>OnEnd runs for an input started again before its end is processed, as AHK's InputRelease finds the
+		/// restarted input and runs it. Restarting relinks the input at the top without running script code, so the
+		/// queued end still finds it in the chain.</summary>
+		[Test, Category("InputHook"), Category("Misc")]
+		public void OnEndRunsForAnInputRestartedBeforeItsEnd()
+		{
+			if (s.HookThread is not HookThread { kbdMsSender: not null })
+				Assert.Ignore("No input sender in this host, so an input cannot be ended through the hook.");
+
+			var context = UseQueuedMainContext();
+			var ends = 0;
+			var io = (InputHook)new InputHook("");
+			io.OnEnd = new KeysharpFunc((Func<object, object>)(_ =>
+			{
+				ends++;
+				return 0L;
+			}));
+
+			var previous = s.input;
+			Assert.IsTrue(io.input.LinkForStart(), "The chain half of Start() links the input.");
+
+			try
+			{
+				io.input.Stop();
+				Assert.IsTrue(io.input.LinkForStart(), "An ended input starts again.");
+				Assert.IsFalse(io.input.LinkForStart(), "A running input is not linked twice.");
+
+				context.DrainAll();
+				Assert.AreEqual(1, ends, "The restarted input's queued end runs OnEnd.");
+				Assert.AreSame(io.input, s.input, "The restarted input stays linked.");
 			}
 			finally
 			{

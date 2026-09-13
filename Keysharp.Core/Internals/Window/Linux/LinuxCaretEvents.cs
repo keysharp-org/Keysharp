@@ -4,7 +4,7 @@ using Keysharp.Builtins;
 namespace Keysharp.Internals.Window.Linux
 {
 	/// <summary>
-	/// AT-SPI caret-movement notifications, the Linux source behind <c>WinEvent.CaretMove</c>. Kept in the same
+	/// AT-SPI caret-movement notifications, the Linux source behind <c>WinEvent.OnCaretMove</c>. Kept in the same
 	/// partial class as the caret <em>query</em> (see <c>LinuxAccessibility.cs</c>) so all libatspi interop and the
 	/// caret-rectangle logic live together and the event and <c>CaretGetPos</c> always agree on a position.
 	/// </summary>
@@ -114,7 +114,7 @@ namespace Keysharp.Internals.Window.Linux
 
 				if (!EnsureInitialized())
 				{
-					Diagnostics.Debug.WriteLine("WinEvent.CaretMove: AT-SPI is unavailable, so caret movement cannot be observed.");
+					Diagnostics.Debug.WriteLine("WinEvent.OnCaretMove: AT-SPI is unavailable, so caret movement cannot be observed.");
 					return;
 				}
 
@@ -127,7 +127,7 @@ namespace Keysharp.Internals.Window.Linux
 
 				if (created == 0)
 				{
-					Diagnostics.Debug.WriteLine("WinEvent.CaretMove: creating the AT-SPI event listener failed.");
+					Diagnostics.Debug.WriteLine("WinEvent.OnCaretMove: creating the AT-SPI event listener failed.");
 					return;
 				}
 
@@ -137,7 +137,7 @@ namespace Keysharp.Internals.Window.Linux
 				if (ConsumeError(ref error) || !registered)
 				{
 					Unref(created);
-					Diagnostics.Debug.WriteLine($"WinEvent.CaretMove: registering for {CaretMovedEvent} failed.");
+					Diagnostics.Debug.WriteLine($"WinEvent.OnCaretMove: registering for {CaretMovedEvent} failed.");
 					return;
 				}
 
@@ -178,7 +178,7 @@ namespace Keysharp.Internals.Window.Linux
 				}
 				catch (Exception ex)
 				{
-					Diagnostics.Debug.WriteLine($"WinEvent.CaretMove: releasing the AT-SPI event listener failed: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"WinEvent.OnCaretMove: releasing the AT-SPI event listener failed: {ex.Message}");
 				}
 
 				activeCachedAt = 0;
@@ -214,7 +214,7 @@ namespace Keysharp.Internals.Window.Linux
 				}
 				catch (Exception ex)
 				{
-					Diagnostics.Debug.WriteLine($"WinEvent.CaretMove: AT-SPI caret event failed: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"WinEvent.OnCaretMove: AT-SPI caret event failed: {ex.Message}");
 				}
 			}
 
@@ -259,7 +259,7 @@ namespace Keysharp.Internals.Window.Linux
 				}
 				catch (Exception ex)
 				{
-					Diagnostics.Debug.WriteLine($"WinEvent.CaretMove: resolving the active window failed: {ex.Message}");
+					Diagnostics.Debug.WriteLine($"WinEvent.OnCaretMove: resolving the active window failed: {ex.Message}");
 				}
 
 				return activeCached;

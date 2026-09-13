@@ -200,7 +200,7 @@ namespace Keysharp.Builtins
 				if (timer.IsActive)
 				{
 					enabledTimers++;
-					_ = sb.Append($"{timer.Callback?.Name} ");
+					_ = sb.Append($"{Functions.CallbackName(timer.Callback)} ");
 				}
 			}
 

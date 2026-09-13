@@ -122,16 +122,15 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public object OnData
 			{
-				get => (object)session.OnData ?? "";
+				get => session.OnData ?? "";
 
 				set
 				{
+					// Called with a prefix of (Chunk, Received, Total), so only that it is callable is checked here.
 					if (value is null || (value is string s && s.Length == 0))
 						session.OnData = null;
-					else if (Functions.GetKeysharpFunc(value, null, true) is { } callback)
+					else if (Functions.CheckedCallback(value, -1) is { } callback)
 						session.OnData = callback;
-					else
-						_ = Errors.TypeErrorOccurred(value, typeof(KeysharpFunc));
 				}
 			}
 
@@ -579,7 +578,7 @@ namespace Keysharp.Builtins
 			/// are parked, and the pseudo-thread it starts is admitted unconditionally. Registering it as a pending
 			/// callback settles the wait if the scheduler is torn down while a chunk is in the air.</para>
 			/// </summary>
-			private static async Task<bool> DeliverAsync(KeysharpFunc onData, int arity, ScriptEventScheduler scheduler,
+			private static async Task<bool> DeliverAsync(object onData, int arity, ScriptEventScheduler scheduler,
 														 long priority, Buffer chunk, long received, long total)
 			{
 				var completion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -607,7 +606,7 @@ namespace Keysharp.Builtins
 						// would stall a synchronous request against the very thread that has to serve it.
 						// AutoHotkey serves a sent message on the same terms.
 						var status = scheduler.TryInvokePseudoThread(priority, skipUninterruptible: true, isCritical: false,
-									 _ => onData.Call(args), out var value, allowEmergencyOverflow: true);
+									 _ => Script.InvokeOrNull(onData, null, args), out var value, allowEmergencyOverflow: true);
 						_ = status == ScriptEventExecutionResult.Executed
 							? completion.TrySetResult(value)
 							: completion.TrySetException(
@@ -810,7 +809,7 @@ namespace Keysharp.Builtins
 				internal object Json;
 				internal bool HasJson;
 				internal double? Timeout;
-				internal KeysharpFunc OnData;
+				internal object OnData;
 
 				internal string BaseUrl;
 				internal NetworkCredential Credentials;
@@ -1003,11 +1002,8 @@ namespace Keysharp.Builtins
 								break;
 
 							case "ondata":
-								if (Functions.GetKeysharpFunc(value, null, true) is not { } callback)
-								{
-									_ = Errors.TypeErrorOccurred(value, typeof(KeysharpFunc));
+								if (Functions.CheckedCallback(value, -1) is not { } callback)
 									return null;
-								}
 
 								parsed.OnData = callback;
 								break;

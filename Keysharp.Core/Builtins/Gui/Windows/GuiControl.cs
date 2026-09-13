@@ -893,13 +893,13 @@ namespace Keysharp.Builtins
 
 			public object OnCommand(object notifyCode, object callback, object addRemove = null)
 			{
-				return HandleOnCommandNotify(notifyCode.Al(), callback, addRemove.Al(1L), ref commandHandlers);
+				return HandleOnCommandNotify(notifyCode.Al(), callback, addRemove, 1, ref commandHandlers);
 			}
 
 
 			public object OnNotify(object notifyCode, object callback, object addRemove = null)
 			{
-				return HandleOnCommandNotify(notifyCode.Al(), callback, addRemove.Al(1L), ref notifyHandlers);
+				return HandleOnCommandNotify(notifyCode.Al(), callback, addRemove, 2, ref notifyHandlers);
 			}
 
 			public object Opt(object options)

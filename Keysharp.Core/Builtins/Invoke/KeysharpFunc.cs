@@ -350,22 +350,6 @@ namespace Keysharp.Builtins
 		internal int VariadicIndex => mph.variadicParamIndex;
 		internal MethodPropertyHolder Mph => mph;
 
-		/// <summary>
-		/// Whether this function can be invoked with exactly <paramref name="argCount"/> arguments, as a callback
-		/// registration site (SetTimer, Hotkey, OnMessage, ...) will invoke it.
-		/// <para>
-		/// Only rejects what is provably wrong -- a function that *requires* more parameters than it will ever be
-		/// given. Declaring FEWER is allowed on purpose: a hotkey callback is handed the hotkey name but may ignore
-		/// it, exactly as in AutoHotkey. Variadic functions accept anything.
-		/// </para>
-		/// <para>
-		/// Exists so registration fails loudly rather than silently. Without it a callback of the wrong arity
-		/// registers successfully and then throws on every invocation, where the callback dispatch path swallows the
-		/// exception -- a timer or hotkey that simply never runs, with no diagnostic at all.
-		/// </para>
-		/// </summary>
-		internal bool CanAcceptArgCount(long argCount) => IsVariadic || MinParams <= argCount;
-
 		internal KeysharpFunc(string s, object o = null, object paramCount = null)
 			: this(GetMethodInfo(s, o, paramCount), o)
 		{
@@ -373,8 +357,11 @@ namespace Keysharp.Builtins
 
 		public KeysharpFunc(params object[] args) : base(args) { }
 
+		// A callable object becomes a function that calls it, a conversion of its own; a function or delegate is itself.
 		public static object staticCall(object @this, object function, object obj = null)
-			=> Functions.GetKeysharpFunc(function, obj, obj != null);
+			=> function is KeysharpObject and not KeysharpFunc
+			   ? (Functions.ValidateFunctor(function, -1) ? Functions.ObjBindMethod(function) : DefaultObject)
+			   : Functions.GetKeysharpFunc(function, obj, obj != null);
 
         private static MethodInfo GetMethodInfo(string s, object o, object paramCount)
         {

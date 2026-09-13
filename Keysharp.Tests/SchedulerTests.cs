@@ -139,6 +139,45 @@ namespace Keysharp.Tests
 			Assert.AreEqual(0, s.ClipFunctions.Count);
 		}
 
+		/// <summary>A callback its owner already registered is not added again and keeps its place, as AHK's OnScriptEvent
+		/// finds it first. Any other object is found by reference, never by an Equals it overrides, and each closure is a
+		/// callback of its own, as in AHK, even two made from one function body.</summary>
+		[Test, Category("Threading")]
+		public void RegisteringACallbackTwiceKeepsOneRegistration()
+		{
+			var callback = new KeysharpFunc((Func<object, object>)(_ => 0L));
+			Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(callback, 1L));
+			Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(callback, -1L));
+			Assert.AreEqual(1, s.ClipFunctions.Count);
+
+			var first = new EqualsEverything();
+			var second = new EqualsEverything();
+			Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(first, 1L));
+			Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(second, 1L));
+			Assert.AreEqual(3, s.ClipFunctions.Count, "Two objects are two registrations, whatever their Equals says.");
+
+			Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(first, -1L));
+			var order = s.ClipFunctions.GetSnapshot();
+			Assert.AreEqual(3, order.Length);
+			Assert.AreSame(callback, order[0].Callback);
+			Assert.AreSame(first, order[1].Callback, "A callback added again keeps its place.");
+			Assert.AreSame(second, order[2].Callback);
+
+			Func<object, object> body = _ => 0L;
+			Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(Functions.Closure(body), 1L));
+			Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(Functions.Closure(body), 1L));
+			Assert.AreEqual(5, s.ClipFunctions.Count, "Each closure is a registration of its own.");
+
+			Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(first, 0L));
+			Assert.AreEqual(4, s.ClipFunctions.Count, "Removal finds the object it was given.");
+		}
+
+		private sealed class EqualsEverything : KeysharpObject
+		{
+			public override bool Equals(object obj) => true;
+			public override int GetHashCode() => 0;
+		}
+
 		[Test, Category("Threading")]
 		public void SchedulerCleanupRejectsLateCallbackRegistration()
 		{
@@ -260,7 +299,6 @@ namespace Keysharp.Tests
 		{
 			var context = UseQueuedMainContext();
 			var scheduler = s.EventScheduler;
-
 			Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() =>
 				scheduler.TryExecuteThreadLaunch(0, false, false, threadVariables =>
 				{
@@ -268,8 +306,6 @@ namespace Keysharp.Tests
 					Assert.DoesNotThrow(context.DrainAll);
 					Keysharp.Internals.Flow.TryDoEvents(scheduler, propagateExit: true, yieldTick: false, pumpUi: false);
 				}));
-
-			Assert.AreEqual(7, Environment.ExitCode);
 		}
 
 		[Test, Category("Threading")]

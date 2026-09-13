@@ -34,7 +34,8 @@ namespace Keysharp.Tests
 				Exit(2)
 				FileAppend('fail', '*')
 			", "4", true, false, 2)));
-			//Keysharp.Builtins.Flow.ResetState();
+			//As in AHK, the auto-execute section's Exit code stays pending while a timer keeps the script running, and the
+			//timer's thread ending with nothing left running exits with it.
 			Assert.IsTrue(HasPassed(RunScript(@"
 				SetTimer((*) => FileAppend('pass', '*'), -1)
 				Exit(1)
@@ -142,6 +143,181 @@ namespace Keysharp.Tests
             var deletes = output.Count(c => c == 'D');
             Assert.AreEqual(1, deletes, $"__Delete ran {deletes} time(s) during teardown; expected exactly 1. Raw output: [{output}]");
         }
+
+		// A release made inside a thread takes effect when the last thread ends, as in AHK. Only a script whose
+		// auto-execute section has run exits by itself; the C# fixture never runs one.
+		[Test, Category("Flow"), NonParallelizable]
+		public void FlowExitRequests()
+		{
+			// No check runs once an exit is committed: a __Delete in the exit sweep that releases and pumps must not
+			// re-enter it, which would sweep again.
+			Passes(RunScript(@"
+				class Cleaner {
+					__Delete() {
+						SetTimer(Nothing, 0)
+						Sleep(20)
+						FileAppend(exits = 1 ? 'pass' : 'fail exits ' exits, '*')
+					}
+				}
+				Nothing() {
+				}
+				Exiting(*) {
+					global exits += 1
+				}
+				exits := 0
+				swept := Cleaner()
+				OnExit(Exiting)
+			", "exit-request-delete", true, false, 0));
+
+			// The rest end the script after auto-execute, which needs the message loop.
+			if (Script.IsUiInitializationBlocked)
+				return;
+
+			// Persistent(false) inside a thread takes effect when that thread ends, not before.
+			Passes(RunScript(@"
+				Persistent()
+				OnExit(Exiting)
+				SetTimer(Release, -1)
+				Release() {
+					Persistent(false)
+					Sleep(50)
+					FileAppend('pass', '*')
+				}
+				Exiting(reason, *) {
+					if reason != 'Exit'
+						FileAppend(' fail reason ' reason, '*')
+				}
+			", "exit-request-persistent", true, false, 0));
+			// SetTimer(f, 0): a timer that stops itself ends the script when its thread ends.
+			Passes(RunScript(@"
+				SetTimer(Tick, 10)
+				Tick() {
+					static n := 0
+					if ++n < 3
+						return
+					SetTimer(Tick, 0)
+					Sleep(50)
+					FileAppend('pass', '*')
+				}
+			", "exit-request-settimer", true, false, 0));
+			// A release made while another thread runs takes effect when the last thread ends.
+			Passes(RunScript(@"
+				Persistent()
+				released := false
+				SetTimer(Outer, -1)
+				Outer() {
+					SetTimer(Inner, -1)
+					Sleep(100)
+					FileAppend(released ? 'pass' : 'fail: Inner did not run', '*')
+				}
+				Inner() {
+					global released := true
+					Persistent(false)
+				}
+			", "exit-request-nested", true, false, 0));
+			// The check at a thread end exits with the code that thread's Exit(n) set.
+			Passes(RunScript(@"
+				Persistent()
+				SetTimer(Release, -1)
+				Release() {
+					Persistent(false)
+					FileAppend('pass', '*')
+					Exit(3)
+				}
+			", "exit-request-code", true, false, 3));
+			// An Exit(n) in a thread that interrupted another is not left for the script's exit, as in AHK, where only
+			// the only running thread's is: the auto-execute section ends later, and the script exits with 0.
+			Passes(RunScript(@"
+				SetTimer(() => Exit(5), -1)
+				Sleep(100)
+				FileAppend('pass', '*')
+			", "exit-request-interrupted-code", true, false, 0));
+			// SetTimer with no function refers to the timer that launched the current thread, even after another
+			// timer's thread interrupted it and ended.
+			Passes(RunScript(@"
+				outerRuns := 0, innerRuns := 0
+				SetTimer(Outer, -1)
+				SetTimer(Finish, -300)
+				Outer() {
+					global outerRuns += 1
+					if outerRuns = 1 {
+						SetTimer(Inner, -1)
+						Sleep(50)
+						SetTimer(, -1)
+					}
+				}
+				Inner() {
+					global innerRuns += 1
+				}
+				Finish() {
+					FileAppend(outerRuns = 2 && innerRuns = 1 ? 'pass' : 'fail ' outerRuns ' ' innerRuns, '*')
+				}
+			", "exit-request-own-timer", true, false, 0));
+			// A failed auto-execute section ends a script nothing keeps running with the reason Error, as in AHK.
+			var failed = RunScript(@"
+				OnExit((reason, code) => FileAppend('reason ' reason ' ' code ';', '*'))
+				throw Error('expected auto-execute failure')
+			", "exit-request-autoexec-error", true, false, 1);
+			Assert.That(failed, Does.Contain("reason Error 1;"));
+			Assert.That(failed, Does.Not.Contain("fail exit"));
+#if WINDOWS
+			// That exit spends the check the section's end posted: a veto is not followed by a second, stale ask
+			// (reason Exit, code 0) before the message the vetoing handler posted exits with 5.
+			var vetoed = RunScript(@"
+				calls := 0
+				OnMessage(0x5555, (*) => ExitApp(5))
+				OnExit(Exiting)
+				Exiting(reason, code) {
+					global calls += 1
+					FileAppend('reason ' reason ' ' code ';', '*')
+					if calls = 1 {
+						DetectHiddenWindows(true)
+						PostMessage(0x5555, 0, 0, , A_ScriptHwnd)
+						return 1
+					}
+				}
+				throw Error('expected auto-execute failure')
+			", "exit-request-autoexec-veto", true, false, 5);
+			Assert.That(vetoed, Does.Contain("reason Error 1;reason Exit 5;"));
+			Assert.That(vetoed, Does.Not.Contain("fail exit"));
+			// OnClipboardChange(f, 0) emptying the chain releases what kept the script running.
+			Passes(RunScript(@"
+				OnClipboardChange(Changed)
+				SetTimer(Remove, -1)
+				Changed(*) {
+				}
+				Remove() {
+					OnClipboardChange(Changed, 0)
+					Sleep(50)
+					FileAppend('pass', '*')
+				}
+			", "exit-request-clipboard", true, false, 0));
+			// A vetoing OnExit is asked once per last-thread end: checks made before the posted one runs join it, and the
+			// next check waits for the message's thread to end.
+			Passes(RunScript(@"
+				calls := 0
+				messaged := false
+				OnMessage(0x5555, Received)
+				OnExit(Exiting)
+				SetTimer(Release, -1)
+				Release() => Persistent(false)
+				Received(*) {
+					global messaged := true
+				}
+				Exiting(reason, *) {
+					global calls += 1
+					if calls = 1 {
+						DetectHiddenWindows(true)
+						PostMessage(0x5555, 0, 0, , A_ScriptHwnd)
+						return 1
+					}
+					FileAppend(calls = 2 && messaged && reason = 'Exit' ? 'pass' : 'fail ' calls ' ' messaged ' ' reason, '*')
+				}
+			", "exit-request-veto", true, false, 0));
+#endif
+
+			static void Passes(string output) => Assert.IsTrue(HasPassed(output), $"[{output}]");
+		}
 
         [Test, Category("Flow")]
         public void FlowForIn() => Assert.IsTrue(TestScript("flow-for-in", false));

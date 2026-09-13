@@ -8,9 +8,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	/// It polls one complete backend snapshot on a background thread and diffs
 	/// successive snapshots to synthesize create/close/title/minimize/restore/move/active events.
 	/// <para>
-	/// This is the fallback for compositors that can enumerate windows but offer no push channel (e.g. Cinnamon), and
-	/// also the graceful degradation path for KWin/GNOME when their native push setup fails (extension missing,
-	/// scripting unavailable). Polling adds up to one interval of latency and a steady IPC trickle, so the
+	/// This is the source for X11 and for a desktop provider that can enumerate windows but offers no window-watch
+	/// push channel, and also the graceful degradation path for KWin/GNOME when their native push setup fails
+	/// (extension missing, scripting unavailable). Polling adds up to one interval of latency and a steady IPC trickle, so the
 	/// push backends prefer their native channels and only fall back to this. Interval is configurable via
 	/// <c>KEYSHARP_WAYLAND_POLL_MS</c> (default 250ms, clamped to [50, 5000]).
 	/// </para>

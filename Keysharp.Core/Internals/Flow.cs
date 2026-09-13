@@ -163,8 +163,7 @@ namespace Keysharp.Internals
 			// the reason and arming the exit code at this one point is what lets Ks.App.ExitReason mean "the script
 			// is going down and nothing can stop it" — the guard a __Delete, a timer or a library needs — and lets
 			// Ks.App.ExitCode be read back by the teardown sweep below. Neither may move earlier: before the veto
-			// check they would publish a cancelled exit, and Script.cs's ExitIfNotPersistent would later hand that
-			// stale code to an unrelated auto-exit.
+			// check they would publish an exit that was then cancelled.
 			fd.exitReason = exitReason;
 			Environment.ExitCode = ec;
 			script.onExitHandlers.Clear();

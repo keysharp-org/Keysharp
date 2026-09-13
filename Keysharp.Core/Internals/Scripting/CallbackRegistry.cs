@@ -17,12 +17,15 @@ namespace Keysharp.Internals.Scripting
 	/// chain. Keysharp's hand-rolled OnError loop (<c>Errors.cs:41</c>) applies the same rule inline.</item>
 	/// <item><see cref="NonEmpty"/> — the <c>(aMsg, aMsgType, aGui)</c> overload:
 	/// <c>if (result == EARLY_RETURN) break;</c>, where EARLY_RETURN means <c>CallMethod</c> saw a non-blank
-	/// return (<c>script_object.cpp:53</c>, via <c>TokenIsBlank</c>). Used only by GUI event/message monitors,
-	/// so <c>return 0</c> DOES stop the chain and reply 0, while <c>return ""</c> or no return continues.</item>
+	/// return (<c>script_object.cpp:53</c>, via <c>TokenIsBlank</c>). Used by every GUI event chain (OnEvent,
+	/// OnNotify, OnCommand, OnMessage), so <c>return 0</c> DOES stop the chain, while <c>return ""</c> or no
+	/// return continues. What the stopping value means is the event's own business: Close stays open only on a
+	/// non-zero one.</item>
 	/// </list>
 	/// <para>
 	/// Kept here, non-generic, because the rule has nothing to do with the registration type, and because a
 	/// caller deciding "was this handled?" must test the very predicate the loop broke on rather than restate it.
+	/// A registry takes its rule when constructed, so every Gui and GuiControl registry passes NonEmpty.
 	/// </para>
 	/// </summary>
 	internal static class CallbackStop
@@ -40,6 +43,10 @@ namespace Keysharp.Internals.Scripting
 		private Script script;
 		private TRegistration[] snapshot = [];
 		private bool snapshotDirty = true;
+		private readonly Func<object, bool> stopRule;
+
+		/// <param name="stopRule">The <see cref="CallbackStop"/> rule that ends this family's chain; NonZero when omitted.</param>
+		internal CallbackRegistry(Func<object, bool> stopRule = null) => this.stopRule = stopRule ?? CallbackStop.NonZero;
 
 		internal int Count
 		{
@@ -59,30 +66,47 @@ namespace Keysharp.Internals.Scripting
 			}
 		}
 
-		internal bool Add(TRegistration registration, bool addFirst = false)
+		internal bool Add(TRegistration registration, bool addFirst = false) => Add(registration, addFirst, false, out _);
+
+		// With unique, a callback already registered for the registration's owner is not added, and present says so.
+		private bool Add(TRegistration registration, bool addFirst, bool unique, out bool present)
 		{
+			present = false;
+
 			if (registration == null)
 				return false;
 
 			var scheduler = registration.OwnerScheduler;
 
 			if (scheduler == null)
-				return AddCore(registration, addFirst);
+				return AddCore(registration, addFirst, unique, ref present);
+
+			var found = false;
 
 			// Adding under the scheduler's cleanup gate is what makes "registered" and "will be cleaned up" one
 			// step: a scheduler that has already torn down refuses, leaving the registration inactive rather than
 			// stranded in a registry nothing will ever sweep.
-			if (scheduler.TryRegisterOwnedResource(() => AddCore(registration, addFirst)))
+			if (scheduler.TryRegisterOwnedResource(() => AddCore(registration, addFirst, unique, ref found)))
 				return true;
 
-			registration.SetActive(false);
+			if (!(present = found))
+				registration.SetActive(false);
+
 			return false;
 		}
 
-		private bool AddCore(TRegistration registration, bool addFirst)
+		private bool AddCore(TRegistration registration, bool addFirst, bool unique, ref bool present)
 		{
 			lock (gate)
 			{
+				// Decided under the gate the add takes, so two threads registering one callback at once add it once.
+				if (unique && byCallbackAndScheduler.TryGetValue(new CallbackRegistrationKey(registration.Callback, registration.OwnerScheduler), out var existing)
+						&& existing.Count > 0)
+				{
+					present = true;
+					return false;
+				}
+
 				script ??= registration.OwnerScheduler?.Owner ?? Script.TheScript;
 
 				if (addFirst)
@@ -105,7 +129,7 @@ namespace Keysharp.Internals.Scripting
 			}
 		}
 
-		internal TRegistration Find(KeysharpFunc callback, ScriptEventScheduler scheduler)
+		internal TRegistration Find(object callback, ScriptEventScheduler scheduler)
 		{
 			lock (gate)
 				return byCallbackAndScheduler.TryGetValue(new CallbackRegistrationKey(callback, scheduler), out var registrations) && registrations.Count > 0
@@ -113,7 +137,7 @@ namespace Keysharp.Internals.Scripting
 					: null;
 		}
 
-		internal bool Remove(KeysharpFunc callback, ScriptEventScheduler scheduler, bool matchScheduler = true)
+		internal bool Remove(object callback, ScriptEventScheduler scheduler, bool matchScheduler = true)
 		{
 			lock (gate)
 			{
@@ -131,7 +155,7 @@ namespace Keysharp.Internals.Scripting
 				{
 					var registration = ordered[i];
 
-					if (!Equals(registration.Callback, callback))
+					if (!Functions.SameCallback(registration.Callback, callback))
 						continue;
 
 					(removals ??= []).Add(registration);
@@ -204,18 +228,24 @@ namespace Keysharp.Internals.Scripting
 			}
 		}
 
-		internal bool ModifyEventHandlers(KeysharpFunc callback, long addRemove, Func<KeysharpFunc, long, TRegistration> createRegistration, bool matchCurrentSchedulerOnRemove = true)
+		internal bool ModifyEventHandlers(object callback, long addRemove, Func<object, long, TRegistration> createRegistration, bool matchCurrentSchedulerOnRemove = true)
 		{
 			if (callback == null)
 				return false;
 
-			if (addRemove > 0)
-				return Add(createRegistration(callback, addRemove));
+			if (addRemove == 0)
+				return Remove(callback, matchCurrentSchedulerOnRemove ? CurrentScheduler : null, matchCurrentSchedulerOnRemove);
 
-			if (addRemove < 0)
-				return Add(createRegistration(callback, addRemove), true);
+			var registration = createRegistration(callback, addRemove);
 
-			return Remove(callback, matchCurrentSchedulerOnRemove ? CurrentScheduler : null, matchCurrentSchedulerOnRemove);
+			// A callback its owner already registered stays where it is and is not added again, as AHK's OnScriptEvent
+			// and Gui OnEvent find it first.
+			var added = Add(registration, addRemove < 0, true, out var present);
+
+			if (present)
+				registration.Clear();
+
+			return added || present;
 		}
 
 		/// <summary>
@@ -240,8 +270,7 @@ namespace Keysharp.Internals.Scripting
 				return;
 
 			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0,
-								  () => InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false,
-													   checkPersistence: true, stopWhen: null, out _));
+								  () => InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false, stopWhen: null, out _));
 		}
 
 		/// <summary>
@@ -253,8 +282,7 @@ namespace Keysharp.Internals.Scripting
 		/// <returns>The result of the last event handler that was called.</returns>
 		internal object InvokeSynchronousEventHandlers(params object[] args)
 		{
-			_ = InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false,
-							   checkPersistence: true, stopWhen: null, out var result);
+			_ = InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false, stopWhen: null, out var result);
 			return result;
 		}
 
@@ -263,30 +291,36 @@ namespace Keysharp.Internals.Scripting
 		/// admission AHK specifies for the OnExit thread: skipUninterruptible (starts even though the exit sequence
 		/// has disabled interruption) and allowEmergencyOverflow (does not obey #MaxThreads — always launches). While
 		/// it runs it is uninterruptible because ExitAppInternal keeps allowInterruption=false throughout. Persistence
-		/// is NOT checked here (checkPersistence: false) — the caller (ExitAppInternal) drives the real exit and
+		/// is not checked here: the caller (ExitAppInternal) drives the real exit and
 		/// honours any non-zero (veto) return. Without this admission, OnExit handlers silently never run: the exit
 		/// path sets allowInterruption=false first, so a normal (interruptible) start request is refused at the gate.
 		/// </summary>
 		internal object InvokeExitHandlers(params object[] args)
 		{
-			_ = InvokeHandlers(args, skipUninterruptible: true, allowEmergencyOverflow: true,
-							   checkPersistence: false, stopWhen: null, out var result);
+			_ = InvokeHandlers(args, skipUninterruptible: true, allowEmergencyOverflow: true, stopWhen: null, out var result);
 			return result;
 		}
 
 		/// <summary>
-		/// Invoke handlers for a window message (GuiObj.OnMessage / GuiCtrlObj.OnMessage). Identical to
-		/// <see cref="InvokeEventHandlers"/> except that the chain stops on any NON-EMPTY return
-		/// (<see cref="CallbackStop.NonEmpty"/>) rather than a non-zero one.
+		/// Invoke handlers inline for a window message (GuiObj.OnMessage / GuiCtrlObj.OnMessage) or another event
+		/// whose non-empty return claims it. The chain stops on <see cref="CallbackStop.NonEmpty"/> whatever the
+		/// registry's own rule, because callers test that same predicate to decide whether it was claimed.
 		/// </summary>
 		/// <param name="args">The parameters to pass to each event handler.</param>
 		/// <returns>The result of the last event handler that was called.</returns>
 		internal object InvokeWindowMessageHandlers(params object[] args)
 		{
-			_ = InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false,
-							   checkPersistence: true, CallbackStop.NonEmpty, out var result);
+			_ = InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false, CallbackStop.NonEmpty, out var result);
 			return result;
 		}
+
+		/// <summary>
+		/// Runs the chain from inside an item already on the scheduler's queue, for an event whose one queued item spans
+		/// more than one registry (ContextMenu: the control's, then the window's). The status is the one that item reports
+		/// back to the queue, as <see cref="InvokeEventHandlers"/> reports it.
+		/// </summary>
+		internal ScriptEventExecutionResult InvokeQueuedEventHandlers(object[] args, out object result)
+			=> InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false, stopWhen: null, out result);
 
 		/// <summary>
 		/// Runs the chain. The status is what the scheduler's queue reads: a chain whose FIRST handler could not
@@ -294,14 +328,15 @@ namespace Keysharp.Internals.Scripting
 		/// Executed, since replaying it would call the handlers that already ran a second time.
 		/// </summary>
 		private ScriptEventExecutionResult InvokeHandlers(object[] args, bool skipUninterruptible, bool allowEmergencyOverflow,
-				bool checkPersistence, Func<object, bool> stopWhen, out object result)
+				Func<object, bool> stopWhen, out object result)
 		{
-			stopWhen ??= CallbackStop.NonZero;
+			stopWhen ??= stopRule;
 			var anyRan = false;
 			var blocked = ScriptEventExecutionResult.Executed;
 			//A local rather than the out parameter directly: RunHandler below assigns it, and a local function
 			//cannot capture an out parameter.
 			object chainResult = null;
+			var failed = false;
 			result = null;
 			var snapshot = GetSnapshot();
 
@@ -323,7 +358,7 @@ namespace Keysharp.Internals.Scripting
 			// tries to launch while it runs is refused at that same gate. Do NOT also pass isCritical: on a veto the
 			// exit is cancelled and the script keeps running, and a leftover Critical scope then wedges later thread
 			// launches (subsequent timers/hotkeys stop firing).
-			ScriptEventExecutionResult RunHandler(ScriptEventScheduler scheduler, Script script, KeysharpFunc handler, long priority)
+			ScriptEventExecutionResult RunHandler(ScriptEventScheduler scheduler, Script script, object handler, long priority)
 			{
 				var oldEventInfo = A_EventInfo;
 				using var thread = scheduler.StartPseudoThreadScope(priority, skipUninterruptible, false, allowEmergencyOverflow, ThreadKind.Event);
@@ -340,11 +375,13 @@ namespace Keysharp.Internals.Scripting
 					if (inst is Control ctrl && ctrl.FindForm() is Form form)
 						script.HwndLastUsed = form.Handle;
 
-					chainResult = handler.Call(args);
+					chainResult = Script.InvokeOrNull(handler, null, args);
 				}
 				catch (Exception ex)
 				{
-					_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
+					chainResult = null;
+					// HandleCaughtException is true only for Exit; anything else is an uncaught error which ended the thread.
+					failed = !Keysharp.Internals.Flow.HandleCaughtException(ex);
 				}
 
 				return ScriptEventExecutionResult.Executed;
@@ -391,12 +428,11 @@ namespace Keysharp.Internals.Scripting
 
 				anyRan = true;
 
-				if (stopWhen(chainResult))
+				// Both of AHK's MsgMonitorList::Call overloads break on FAIL (an uncaught error) whatever the stop rule,
+				// but not on EARLY_EXIT, so Exit ends only its own handler.
+				if (failed || stopWhen(chainResult))
 					break;
 			}
-
-			if (checkPersistence)
-				registryOwner?.ExitIfNotPersistent();
 
 			result = chainResult;
 			return anyRan ? ScriptEventExecutionResult.Executed : blocked;
@@ -479,7 +515,9 @@ namespace Keysharp.Internals.Scripting
 	/// </summary>
 	internal sealed class CallbackRegistry : CallbackRegistry<CallbackRegistration>
 	{
-		internal bool ModifyEventHandlers(KeysharpFunc callback, long addRemove, bool matchCurrentSchedulerOnRemove = true)
+		internal CallbackRegistry(Func<object, bool> stopRule = null) : base(stopRule) { }
+
+		internal bool ModifyEventHandlers(object callback, long addRemove, bool matchCurrentSchedulerOnRemove = true)
 		{
 			var scheduler = CurrentScheduler;
 			return ModifyEventHandlers(callback, addRemove, (cb, _) => new CallbackRegistration(cb, scheduler, true), matchCurrentSchedulerOnRemove);
@@ -487,7 +525,7 @@ namespace Keysharp.Internals.Scripting
 
 		/// <summary>Registers a handler owned by no scheduler, so it survives the registering thread and is removed
 		/// by callback identity from any thread (OnError/OnExit).</summary>
-		internal bool ModifyGlobalEventHandlers(KeysharpFunc callback, long addRemove)
+		internal bool ModifyGlobalEventHandlers(object callback, long addRemove)
 			=> ModifyEventHandlers(callback, addRemove, CallbackRegistration.CreateGlobal, false);
 
 		/// <summary>Sweeps a scheduler's registrations out of a keyed set of registries, dropping the ones left
@@ -514,16 +552,16 @@ namespace Keysharp.Internals.Scripting
 		}
 	}
 
-	internal readonly record struct CallbackRegistrationKey(KeysharpFunc Callback, ScriptEventScheduler Scheduler)
+	internal readonly record struct CallbackRegistrationKey(object Callback, ScriptEventScheduler Scheduler)
 	{
 		public bool Equals(CallbackRegistrationKey other)
-			=> Equals(Callback, other.Callback) && ReferenceEquals(Scheduler, other.Scheduler);
+			=> Functions.SameCallback(Callback, other.Callback) && ReferenceEquals(Scheduler, other.Scheduler);
 
 		public override int GetHashCode()
 		{
 			unchecked
 			{
-				return ((Callback?.GetHashCode() ?? 0) * 397) ^ (Scheduler != null ? RuntimeHelpers.GetHashCode(Scheduler) : 0);
+				return (Functions.CallbackHash(Callback) * 397) ^ (Scheduler != null ? RuntimeHelpers.GetHashCode(Scheduler) : 0);
 			}
 		}
 	}

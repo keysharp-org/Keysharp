@@ -8,13 +8,15 @@ namespace Keysharp.Internals.Events
 	/// criteria and no per-event state, so it adds nothing to <see cref="EventSubscriptionBase"/>; the
 	/// script-facing <c>Ks.ClipboardHook</c> wraps one of these.
 	/// </summary>
-	internal sealed class ClipboardEventRegistration(KeysharpFunc callback, ScriptEventScheduler ownerScheduler,
+	internal sealed class ClipboardEventRegistration(object callback, ScriptEventScheduler ownerScheduler,
 		ClipboardEventManager manager)
-		: EventSubscriptionBase(callback, ownerScheduler)
+		: EventSubscriptionBase(callback, ownerScheduler, manager.KeepsScriptRunning)
 	{
 		internal readonly ClipboardEventManager manager = manager;
 
 		internal override void Unregister() => manager.Unregister(this);
+
+		internal override void Register() => manager.Register(this);
 	}
 
 	/// <summary>
@@ -28,11 +30,8 @@ namespace Keysharp.Internals.Events
 	/// </para>
 	/// </summary>
 	internal sealed class ClipboardEventManager(Script script)
-		: EventManagerBase<ClipboardEventRegistration, ClipboardEventManager.NativeSource, ClipboardEventManager.Payload>(script)
+		: EventManagerBase<ClipboardEventRegistration, ClipboardEventManager.NativeSource, ValueTuple>(script, true)
 	{
-		/// <summary>0 = empty, 1 = text or files, 2 = other content.</summary>
-		internal readonly record struct Payload(long DataType);
-
 		/// <summary>
 		/// The clipboard's native source. Unlike the window and display sources there is nothing per-manager to own:
 		/// monitoring is a single switch on the script's main window, shared with the <c>OnClipboardChange</c> chain,
@@ -57,11 +56,6 @@ namespace Keysharp.Internals.Events
 				FailAllLocked();                              // the monitor cannot be installed, so these can never fire
 		}
 
-		/// <summary>A_EventInfo holds the same data type the callback receives, so a handler that ignores its
-		/// parameter can still branch on it.</summary>
-		protected override void ApplyThreadState(ThreadVariables tv, ClipboardEventRegistration reg, in Payload payload)
-			=> tv.eventInfo = payload.DataType;
-
 		/// <summary>Fans one clipboard change out to every hook, on whatever thread the notification arrived on.</summary>
 		internal void Dispatch(long dataType)
 		{
@@ -79,24 +73,7 @@ namespace Keysharp.Internals.Events
 			}
 
 			foreach (var reg in toFire)
-				Fire(reg, dataType);
-		}
-
-		private void Fire(ClipboardEventRegistration reg, long dataType)
-		{
-			// A paused hook stays registered — and keeps the native monitor installed — and is queued like any other;
-			// RunCallback discards it if it is still paused when it would run.
-			if (!reg.IsActive)
-				return;
-
-			var scheduler = DispatchTarget(reg);
-
-			if (scheduler == null)
-				return;
-
-			object[] args = [reg.scriptObject, dataType];
-			var payload = new Payload(dataType);
-			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, args, payload));
+				Fire(reg, reg.Callback, [reg.scriptObject, dataType]);
 		}
 	}
 }

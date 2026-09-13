@@ -2659,7 +2659,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="msgNumber">The number of the message to monitor.</param>
 		/// <param name="callback">The function to call, as <c>Callback(GuiObj, wParam, lParam, Msg)</c>.
-		/// If it returns a non-zero value, that value becomes the message's result and neither the remaining
+		/// If it returns a non-empty value, that value becomes the message's result and neither the remaining
 		/// handlers nor the default window procedure run.</param>
 		/// <param name="addRemove">If omitted, defaults to 1. Otherwise 1 to call this callback after any
 		/// previously registered ones, -1 to call it before them, or 0 to unregister it.</param>
@@ -2669,21 +2669,13 @@ namespace Keysharp.Builtins
 		/// </remarks>
 		public object OnMessage(object msgNumber, object callback, object addRemove = null)
 		{
-			var addremove = addRemove.Al(1L);
-
-			//AHK's GuiType::OnEvent rejects anything outside -1..1: a GUI event can only run one thread at a
-			//time, so the parameter is an ordering/removal switch rather than a thread count.
-			if (addremove < -1 || addremove > 1)
-				return Errors.ValueErrorOccurred($"Invalid AddRemove value: {addremove}.");
-
-			var del = KeysharpForm.ResolveHandler(callback, form.eventObj);
-
-			if (del == null)
-				return Errors.ValueErrorOccurred("The callback was not a valid function.");
+			// Called with (Gui, wParam, lParam, Msg).
+			if (KeysharpForm.CheckedHandler(callback, form.eventObj, addRemove, 4, out var addremove) is not { } del)
+				return DefaultObject;
 
 			var msg = (int)msgNumber.Al();
 			messageHandlers ??= new();
-			_ = messageHandlers.GetOrAdd(msg, static _ => new()).ModifyEventHandlers(del, addremove);
+			_ = messageHandlers.GetOrAdd(msg, static _ => new(CallbackStop.NonEmpty)).ModifyEventHandlers(del, addremove);
 #if !WINDOWS
 
 			//Pointer motion is only watched for while something is listening; see SyncMotionHooks().

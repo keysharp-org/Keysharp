@@ -15,6 +15,9 @@ namespace Keysharp.Internals.Input
 	internal class InputData : IDisposable
 	{
 		internal UITimer inputTimer;
+		// Script threads start inputs while the scheduled end unlinks them and the hook thread ends them, so edits of the
+		// input chain and an input's end take this; the hook thread's walks only read the chain.
+		internal readonly Lock chainGate = new();
 
 		public void Dispose()
 		{
@@ -52,9 +55,8 @@ namespace Keysharp.Internals.Input
 		internal InputType prev;
 		internal InputHook scriptObject;
 		// Volatile: the hook thread ends an input and queued callbacks re-read this when they would run.
-		internal volatile InputStatusType status = InputStatusType.NotStarted;
+		internal volatile InputStatusType status = InputStatusType.Off;
 		internal int timeout;
-		private int remainingTimeout;                          // what was left of the timeout when paused
 		internal DateTime timeoutAt;
 		internal bool transcribeModifiedKeys;
 		internal bool visibleText, visibleNonText = true;
@@ -281,11 +283,13 @@ namespace Keysharp.Internals.Input
 		{
 			var script = owner;
 
-			// A hook that has not ended has no reason: running, never started and paused all read "", as does an
-			// input with no hook to consult. AHK returns "" for its running arm too; a null here would make
-			// `!ih.EndReason` raise UnsetError on a running input.
-			if (status is InputStatusType.InProgress or InputStatusType.NotStarted or InputStatusType.Paused)
+			// A running input has no reason, as in AHK; a null here would make `!ih.EndReason` raise UnsetError. An
+			// input that was never started reads "Stopped", also as in AHK.
+			if (status == InputStatusType.InProgress)
 				return "";
+
+			if (status == InputStatusType.Off)
+				return EventSubscriptionBase.EndReasonStopped;
 
 			if (status == InputStatusType.Failed)
 				return "Failed";
@@ -350,9 +354,6 @@ namespace Keysharp.Internals.Input
 
 					case InputStatusType.LimitReached:
 						return "Max";
-
-					case InputStatusType.Off:
-						return "Stopped";
 				}
 			}
 
@@ -361,50 +362,26 @@ namespace Keysharp.Internals.Input
 
 		internal bool InProgress() => status == InputStatusType.InProgress;
 
-		internal InputType InputFindLink(InputType input)
+		internal Lock ChainGate => owner.InputData.chainGate;
+
+		/// <summary>Releases the persistence roots <paramref name="hook"/>'s start took, unless the input is running
+		/// again: one step with InputStart taking them, so a start from another thread cannot slip in between.</summary>
+		internal void ReleaseRootsIfEnded(InputHook hook)
 		{
-			var script = owner;
-
-			if (script.input == input)
-				return script.input;
-			else
-				for (var i = script.input; input != null; i = i.prev)
-					if (i.prev == input)
-						return i.prev;
-
-			return null;//input is not valid (faked AHK_INPUT_END message?) or not active.
+			lock (ChainGate)
+				if (!InProgress())
+					hook?.DeactivateCallbackPersistence();
 		}
 
 		internal InputType InputRelease()
 		{
 			var script = owner;
-			var ht = script.HookThread;
 
-			// Input should already have ended prior to this function being called.
-			// Otherwise, removal of aInput from the chain will end input collection.
-			if (script.input == this)
-			{
-				script.input = prev;
-			}
-			else
-			{
-				for (var input = script.input; ; input = input.prev)
-				{
-					if (input == null)
-						return null; // aInput is not valid (faked AHK_INPUT_END message?) or not active.
+			// Not in the chain: a stale end, which releases nothing.
+			if (InputUnlinkIfStopped(this) == null)
+				return null;
 
-					if (input.prev == this)
-					{
-						input.prev = prev;
-						break;
-					}
-				}
-			}
-
-			// Ensure any pending use of aInput by the hook is finished.
-			ht.WaitHookIdle();
-			prev = null;
-			ht.RefreshPlatformKeyGrabs();
+			script.HookThread.RefreshPlatformKeyGrabs();
 
 			if (scriptObject == null)
 				return null;
@@ -416,36 +393,14 @@ namespace Keysharp.Internals.Input
 			return this;
 		}
 
+		/// <summary>Starts the input with an empty buffer, whether it never ran or has ended; does nothing to one
+		/// already running, which two threads starting it at once would otherwise link twice.</summary>
 		internal void InputStart()
 		{
-			var script = owner;
-
-#if LINUX
-			// A headless Linux host can never install the input hooks, so an input started there would report itself
-			// running while collecting nothing.
-			if (Script.IsHeadless)
-			{
-				status = InputStatusType.Failed;
+			if (!LinkForStart())
 				return;
-			}
-#endif
 
-			// Set or update the timeout timer if needed.  The timer proc takes care to end
-			// only those inputs which are due, and will reset or kill the timer as needed.
-			if (timeout > 0)
-				SetTimeoutTimer();
-
-			// It is possible for &input to already be in the list if AHK_INPUT_END is still
-			// in the message queue, in which case it must be removed from its current position
-			// to prevent the list from looping back on itself.
-			_ = InputUnlinkIfStopped(this);
-			prev = script.input;
-			Start();
-			scriptObject?.ActivateCallbackPersistence();
-			script.input = this; // Signal the hook to start the input.
-
-			if (beforeHotkeys)
-				++script.inputBeforeHotkeysCount;
+			var script = owner;
 
 			if (KeyboardIsNeeded)
 				HotkeyDefinition.InstallKeybdHook(script); // Keyboard hook only when collecting/suppressing keyboard.
@@ -456,39 +411,88 @@ namespace Keysharp.Internals.Input
 			script.HookThread.RefreshPlatformKeyGrabs();
 		}
 
-		internal InputType InputUnlinkIfStopped(InputType input)
+		/// <summary>The chain half of <see cref="InputStart"/>: links the input at the top with an empty buffer and takes
+		/// its place in the counts. False when it was already running, or cannot run here.</summary>
+		internal bool LinkForStart()
 		{
-			InputType temp = null;
 			var script = owner;
 
+			lock (ChainGate)
+			{
+				if (InProgress())
+					return false;
+
+#if LINUX
+				// A headless Linux host can never install the input hooks, so an input started there would report itself
+				// running while collecting nothing.
+				if (Script.IsHeadless)
+				{
+					status = InputStatusType.Failed;
+					return false;
+				}
+#endif
+
+				buffer = "";
+
+				// Set or update the timeout timer if needed.  The timer proc takes care to end
+				// only those inputs which are due, and will reset or kill the timer as needed.
+				if (timeout > 0)
+					SetTimeoutTimer();
+
+				// It is possible for &input to already be in the list if AHK_INPUT_END is still
+				// in the message queue, in which case it must be removed from its current position
+				// to prevent the list from looping back on itself.
+				_ = UnlinkIfStoppedLocked(this);
+				prev = script.input;
+				Start();
+				scriptObject?.ActivateCallbackPersistence();
+				script.input = this; // Signal the hook to start the input.
+
+				if (beforeHotkeys)
+					_ = Interlocked.Increment(ref script.inputBeforeHotkeysCount);
+
+				return true;
+			}
+		}
+
+		/// <summary>
+		/// Finds <paramref name="input"/> in the chain and unlinks it unless it is running again, as AHK's
+		/// InputUnlinkIfStopped does: an input restarted while its end was still queued has already been moved to the top
+		/// by InputStart and must stay linked. Returns the input when it was in the chain, null when it was not.
+		/// </summary>
+		internal InputType InputUnlinkIfStopped(InputType input)
+		{
+			lock (ChainGate)
+				return UnlinkIfStoppedLocked(input);
+		}
+
+		private InputType UnlinkIfStoppedLocked(InputType input)
+		{
 			if (input == null)
 				return null;
 
-			if (script.input == input)
+			var script = owner;
+
+			for (InputType i = script.input, above = null; i != null; above = i, i = i.prev)
 			{
-				temp = script.input;
-				script.input = temp.prev;
-			}
-			else
-			{
-				for (var i = script.input; i != null; i = i.prev)
+				if (i != input)
+					continue;
+
+				// The input keeps its prev, so a hook walk standing on it still reaches the rest of the chain, and
+				// InputStart sets prev before relinking it. Nothing here waits, so no script code runs mid-edit; the cost is
+				// that a walk standing on it while it is relinked at the top passes the inputs above it once more.
+				if (!input.InProgress())
 				{
-					if (i.prev == input)
-					{
-						if (!input.InProgress())
-						{
-							temp = i.prev;
-							script.HookThread.WaitHookIdle();
-							i.prev = input.prev;
-						}
-					}
+					if (above == null)
+						script.input = input.prev;
+					else
+						above.prev = input.prev;
 				}
+
+				return input;
 			}
 
-			if (temp != null)
-				temp.prev = null;//Prev has been detached, so the caller cannot use this to iterate.
-
-			return temp;
+			return null;
 		}
 
 		internal bool IsInteresting(ulong dwExtraInfo)
@@ -754,15 +758,13 @@ namespace Keysharp.Internals.Input
 			}
 		}
 
-		internal void SetTimeoutTimer() => SetTimeoutTimer(timeout);
-
-		internal void SetTimeoutTimer(int ms)
+		internal void SetTimeoutTimer()
 		{
 			var script = owner;
 			var now = DateTime.UtcNow;
-			timeoutAt = now.AddMilliseconds(ms);
+			timeoutAt = now.AddMilliseconds(timeout);
 
-			if (!script.inputTimerExists || ms < (script.inputTimeoutAt - now).TotalMilliseconds)
+			if (!script.inputTimerExists || timeout < (script.inputTimeoutAt - now).TotalMilliseconds)
 			{
 				var inputTimer = script.InputData.inputTimer;
 				script.inputTimeoutAt = timeoutAt;
@@ -778,7 +780,7 @@ namespace Keysharp.Internals.Input
 					script.InputData.inputTimer = inputTimer;
 				}
 
-				inputTimer.Interval = ms;
+				inputTimer.Interval = timeout;
 				inputTimer.Start();
 				script.inputTimerExists = true;
 			}
@@ -788,80 +790,28 @@ namespace Keysharp.Internals.Input
 
 		internal void Stop() => EndByReason(InputStatusType.Off);
 
-		/// <summary>
-		/// Stops collecting and suppressing without ending. The input stays linked: every walk of the input stack is
-		/// gated on InProgress, so a paused one is skipped for free, while unlinking would re-push a resumed input
-		/// to the top of the stack. Deliberately not EndByReason, which posts AHK_INPUT_END and so fires OnEnd.
-		/// </summary>
-		internal void Pause()
-		{
-			if (status != InputStatusType.InProgress)
-				return;
-
-			var script = owner;
-			status = InputStatusType.Paused;
-
-			if (beforeHotkeys)
-				--script.inputBeforeHotkeysCount;
-
-			// A key pressed while suppressing would otherwise stay latched, so its next unrelated release after a
-			// resume would be swallowed for a press this input never saw.
-			for (var i = 0; i < keyVK.Length; i++)
-				keyVK[i] &= ~HookThread.INPUT_KEY_DOWN_SUPPRESSED;
-
-			for (var i = 0; i < keySC.Length; i++)
-				keySC[i] &= ~HookThread.INPUT_KEY_DOWN_SUPPRESSED;
-
-			// The deadline is absolute, so keep what is left of it. The shared timer skips a paused input, and if
-			// this was the only timed one it stops with nothing to re-arm it, which Resume does.
-			if (timeout > 0)
-				remainingTimeout = Math.Max(1, (int)(timeoutAt - DateTime.UtcNow).TotalMilliseconds);
-
-			script.HookThread.RefreshPlatformKeyGrabs();
-		}
-
-		/// <summary>
-		/// Resumes a paused input where it stood: the buffer, the stack position and the persistence roots are all
-		/// untouched. Re-runs only InputStart's tail, because the Visible* setters and KeyOpt install a needed hook
-		/// only while in progress, so an option changed during the pause may still need one.
-		/// </summary>
-		internal void Resume()
-		{
-			if (status != InputStatusType.Paused)
-				return;
-
-			var script = owner;
-			status = InputStatusType.InProgress;
-
-			if (beforeHotkeys)
-				++script.inputBeforeHotkeysCount;
-
-			if (timeout > 0)
-				SetTimeoutTimer(remainingTimeout);
-
-			if (KeyboardIsNeeded)
-				HotkeyDefinition.InstallKeybdHook(script);
-
-			if (MouseIsNeeded)
-				HotkeyDefinition.InstallMouseHook(script);
-
-			script.HookThread.RefreshPlatformKeyGrabs();
-		}
-
 		private void EndByReason(InputStatusType aReason)
 		{
 			var script = owner;
 
 			if (script.HookThread is HookThread hook && hook.kbdMsSender != null)
 			{
-				endingMods = hook.kbdMsSender.modifiersLRLogical; // Not relevant to all end reasons, but might be useful anyway.
-				var wasInProgress = status == InputStatusType.InProgress;
-				status = aReason;
+				bool early;
 
-				// A paused input already gave its before-hotkeys place back; taking it again would disable that pass
-				// for every other input in the script.
-				if (beforeHotkeys && wasInProgress)
-					--script.inputBeforeHotkeysCount;
+				// The hook thread and the timeout can both end an input: the first end wins, as a hook's first reason does.
+				// The before-hotkeys setting is read with it, so the count gives back exactly what the start took.
+				lock (ChainGate)
+				{
+					if (status != InputStatusType.InProgress)
+						return;
+
+					endingMods = hook.kbdMsSender.modifiersLRLogical; // Not relevant to all end reasons, but might be useful anyway.
+					status = aReason;
+					early = beforeHotkeys;
+				}
+
+				if (early)
+					_ = Interlocked.Decrement(ref script.inputBeforeHotkeysCount);
 
 				hook.RefreshPlatformKeyGrabs();
 
@@ -923,10 +873,8 @@ namespace Keysharp.Internals.Input
 
 	internal enum InputStatusType
 	{
-		NotStarted,
 		Off,
 		InProgress,
-		Paused,
 		Failed,
 		TimedOut,
 		TerminatedByMatch,

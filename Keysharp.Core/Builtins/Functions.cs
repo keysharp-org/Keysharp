@@ -85,10 +85,189 @@ namespace Keysharp.Builtins
 			return null;
 		}
 
+		/// <summary>Converts a callback value to the object a registration stores, or raises for a non-object value.</summary>
+		internal static object ToCallback(object value)
+		{
+			switch (value)
+			{
+				case KeysharpFunc or Delegate:
+					return GetKeysharpFunc(value, null, true);
+
+				case Any:
+					return value;
+
+				case string { Length: > 0 }:
+					return GetKeysharpFunc(value);            // raises, naming the %"Name"% remedy
+
+				default:
+					var type = Types.Type(value);
+					Error err = new TypeError($"Expected an object but got {(type.Length > 0 && "AEIOUaeiou".Contains(type[0]) ? "an" : "a")} {type}.",
+											  null, Errors.Describe(value));
+					return Errors.ErrorOccurred(err) ? throw err : null;
+			}
+		}
+
+		/// <summary>Validates a callback against AHK's functor rules. -1 checks only whether it is callable.</summary>
+		internal static bool ValidateFunctor(object callback, int argCount)
+		{
+			if (callback is KeysharpFunc fo)
+			{
+				if (argCount < 0 || fo.MinParams <= argCount && (fo.IsVariadic || fo.MaxParams >= argCount))
+					return true;
+
+				// QualifiedName rather than Name, which is empty for a bound function and would name nothing.
+				return InvalidCallback(fo.MinParams > argCount ? $"requires {fo.MinParams}" : $"accepts at most {fo.MaxParams}",
+									   argCount, fo.Mph.QualifiedName);
+			}
+
+			// A COM or CLR object is called through its own dispatch, which cannot be asked beforehand.
+			if (callback is not KeysharpObject obj)
+				return callback != null;
+
+			bool hasMin = false, hasMax = false;
+
+			if (argCount >= 0)
+			{
+				if (!TryCountProperty(obj, "MinParams", out var min, out hasMin))
+					return false;
+
+				if (hasMin && min > argCount)
+					return InvalidCallback($"requires {min}", argCount, Types.Type(obj));
+
+				// As AHK, MaxParams is asked only when it could matter, and IsVariadic only when MaxParams falls short.
+				if (argCount > 0 && !(hasMin && min == argCount))
+				{
+					if (!TryCountProperty(obj, "MaxParams", out var max, out hasMax))
+						return false;
+
+					if (hasMax && argCount > max)
+					{
+						if (!TryCountProperty(obj, "IsVariadic", out var variadic, out _))
+							return false;
+
+						if (variadic == 0)
+							return InvalidCallback($"accepts at most {max}", argCount, Types.Type(obj));
+					}
+				}
+			}
+
+			// An object that states a count is taken to be callable, as AHK takes it.
+			if (hasMin || hasMax || IsInvocable(obj))
+				return true;
+
+			_ = Errors.MethodErrorOccurred($"This value of type \"{Types.Type(obj)}\" has no method named \"Call\".");
+			return false;
+		}
+
+		/// <summary>Gets the callback's declared MinParams, or raises when a callable object does not provide it.</summary>
+		internal static bool TryMinParams(object callback, out long minParams)
+		{
+			minParams = 0;
+
+			if (callback is KeysharpFunc fo)
+			{
+				minParams = fo.MinParams;
+				return true;
+			}
+
+			if (callback is KeysharpObject obj)
+			{
+				if (!TryCountProperty(obj, "MinParams", out minParams, out var present))
+					return false;
+
+				if (present)
+					return true;
+			}
+
+			_ = Errors.PropertyErrorOccurred($"This value of type \"{Types.Type(callback)}\" has no property named \"MinParams\".");
+			return false;
+		}
+
+		/// <summary>Converts and validates a callback.</summary>
+		internal static object CheckedCallback(object value, int argCount)
+			=> ToCallback(value) is { } callback && ValidateFunctor(callback, argCount) ? callback : null;
+
+		/// <summary>Validates an event registration's AddRemove value.</summary>
+		internal static bool TryAddRemove(object value, out long addRemove)
+		{
+			addRemove = value.Al(1L);
+
+			if (addRemove is >= -1 and <= 1)
+				return true;
+
+			_ = Errors.ValueErrorOccurred($"AddRemove must be 1, -1 or 0, but was {addRemove}.");
+			return false;
+		}
+
+		/// <summary>Compares function wrappers by target and other callbacks by identity, as AHK does.</summary>
+		internal static bool SameCallback(object a, object b)
+			=> ReferenceEquals(a, b) || IsWrapper(a) && IsWrapper(b) && a.Equals(b);
+
+		/// <summary>The hash that agrees with <see cref="SameCallback"/>.</summary>
+		internal static int CallbackHash(object callback)
+			=> IsWrapper(callback) ? callback.GetHashCode() : callback != null ? RuntimeHelpers.GetHashCode(callback) : 0;
+
+		private static bool IsWrapper(object callback) => callback is KeysharpFunc and not Keysharp.Builtins.Closure;
+
+		/// <summary>A callback's name for a listing: a function's own, otherwise its type, as AHK names it.</summary>
+		internal static string CallbackName(object callback) => callback is KeysharpFunc f ? f.Name : Types.Type(callback);
+
+		private static bool InvalidCallback(string accepts, int argCount, string name)
+		{
+			_ = Errors.ValueErrorOccurred($"Invalid callback function: it {accepts} parameter(s), but is called with {argCount}.", name);
+			return false;
+		}
+
+		// A missing count is allowed; a present one must be an integer. Run its getter, as AHK does.
+		private static bool TryCountProperty(KeysharpObject obj, string name, out long value, out bool present)
+		{
+			value = 0;
+			present = HasProp(obj, name) != 0L;
+
+			if (!present)
+				return true;
+
+			switch (Script.GetPropertyValueOrNull(obj, name))
+			{
+				case long l: value = l; return true;
+				case int i: value = i; return true;
+				case bool b: value = b ? 1L : 0L; return true;
+			}
+
+			_ = Errors.TypeErrorOccurred($"Type mismatch: {name} must be an integer.");
+			return false;
+		}
+
+		// Include every route Script.InvokeOrNull can use for a nameless call.
+		private static bool IsInvocable(KeysharpObject obj)
+			=> HasMember(obj, "Call") || HasMember(obj, "__Call") || obj is IMetaObject;
+
+		// Match AHK Object::GetMethod without running a getter; a getter hides inherited values but not methods.
+		private static bool HasMember(Any obj, string name)
+		{
+			var getterSeen = false;
+
+			for (var o = obj; o != null; o = o.Base)
+			{
+				if (o.op == null || !o.op.TryGetValue(name, out var desc))
+					continue;
+
+				if (desc.Call != null)
+					return true;
+
+				if (desc.Get != null)
+					getterSeen = true;
+				else if (desc.Value != null)
+					return !getterSeen && desc.Value is Any;
+			}
+
+			return false;
+		}
+
 		/// <summary>
-		/// Internal helper to get a function object which supports different ways of identifying such.
-		/// This is the boundary every built-in that takes a callback goes through, so it accepts only things
-		/// which already are a function: an existing function object or a delegate.
+		/// Internal helper to get a function object which supports different ways of identifying such: a function
+		/// object as it is, or a delegate as the function object that stands for it. A callback site takes any other
+		/// callable object as well, through <see cref="ToCallback"/>.
 		/// </summary>
 		/// <param name="h">The object to examine. This can be an existing function object or a delegate.</param>
 		/// <param name="inst">The instance to bind a delegate to. Default: null for an unbound function.</param>

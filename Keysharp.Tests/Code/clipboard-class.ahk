@@ -63,12 +63,6 @@ Assert(!Clipboard.Has("Image") || (alias is Image && alias.Width == 20), A_LineN
 hook := Clipboard.OnChange((h, type) => 0)
 Assert(hook.InProgress && hook.EndReason == "", A_LineNumber)
 
-; Three states from two members: paused is idle, not ended.
-hook.Pause()
-Assert(!hook.InProgress && !hook.EndReason, A_LineNumber)
-hook.Start()
-Assert(hook.InProgress, A_LineNumber)
-
 ; A handle is listed until it is stopped.
 listed := false
 for h in Clipboard.Hooks
@@ -78,6 +72,11 @@ Assert(listed, A_LineNumber)
 hook.Stop()
 AssertEq(hook.EndReason, "Stopped", A_LineNumber)
 Assert(hook is EventHook, A_LineNumber)
+
+; A stopped hook begins again from the same callback, and a running one keeps the script alive, so stop it.
+hook.Start()
+Assert(hook.InProgress && hook.EndReason == "", A_LineNumber)
+hook.Stop()
 
 AssertEq(Type(hook), "ClipboardHook", A_LineNumber)
 

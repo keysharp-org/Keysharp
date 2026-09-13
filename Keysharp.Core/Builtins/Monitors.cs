@@ -145,38 +145,31 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Calls <paramref name="callback"/> whenever the display configuration changes, and returns a
-			/// <see cref="MonitorHook"/> whose <c>Stop()</c> cancels the subscription
+			/// Calls <paramref name="callback"/> whenever the display configuration changes, and returns a started
+			/// <see cref="MonitorHook"/> whose <c>Stop()</c> ends the subscription
 			/// (script: <c>hook := Monitor.OnChange(MyCallback)</c>).
-			/// <para>The callback takes <c>(Hook, Kind)</c>, where <c>Kind</c> is <c>"Topology"</c> when the set of
+			/// <para>The callback takes <c>(Hook, Change)</c>, where <c>Change</c> is <c>"Topology"</c> when the set of
 			/// attached monitors changed (one was plugged in or unplugged, or the machine docked) and
 			/// <c>"Settings"</c> when the same monitors are attached but something about them changed — resolution,
-			/// position, scale, or which one is primary. <c>A_EventInfo</c> holds the monitor count after the
-			/// change.</para>
-			/// <para>The subscription is rooted until <c>Stop()</c> or the owning thread's teardown, so dropping the
-			/// handle does not stop it. Because the monitor objects a script already holds are snapshots, a handler that
-			/// keeps one should call its <c>Refresh()</c> — which returns falsy if that monitor is the one that was
-			/// just unplugged — or just re-read <c>Monitor.All</c>, which is what the layout looks like *now* rather
-			/// than at event time.</para>
+			/// position, scale, or which one is primary.</para>
+			/// <para>A running hook does not keep the script running, as an AHK script's OnMessage for WM_DISPLAYCHANGE
+			/// does not; dropping the handle does not stop it. Because the monitor objects a script already holds are
+			/// snapshots, a handler that keeps one should call its <c>Refresh()</c> — which returns falsy if that monitor
+			/// is the one that was just unplugged — or just re-read <c>Monitor.All</c>, which is what the layout looks
+			/// like *now* rather than at event time.</para>
 			/// </summary>
 			[Static]
 			public static object OnChange(object @this, object callback)
 			{
-				var fo = Functions.GetKeysharpFunc(callback, null, true);
+				if (Functions.CheckedCallback(callback, 2) is not { } fo)
+					return DefaultObject;
 
-				if (fo == null)
-					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc));
-
-				var script = Script.TheScript;
-				var manager = script.MonitorEventManager;
-				var reg = new MonitorEventRegistration(fo, script.EventScheduler, manager);
-				var hook = new MonitorHook { sub = reg };
-				reg.scriptObject = hook;
-				manager.Register(reg);
+				var hook = new MonitorHook(fo);
+				_ = hook.Start();
 				return hook;
 			}
 
-			/// <summary>Every live <c>Monitor.OnChange</c> subscription, oldest first (script: <c>Monitor.Hooks</c>) — a
+			/// <summary>Every running <c>Monitor.OnChange</c> hook, in start order (script: <c>Monitor.Hooks</c>) — a
 			/// snapshot to iterate and drop, covering every thread's hooks.</summary>
 			public static object staticget_Hooks(object @this) => Script.TheScript.MonitorEventManager.Hooks();
 
@@ -435,8 +428,10 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public sealed class MonitorHook : EventHook
 		{
-			internal MonitorHook() : base() { }
+			internal MonitorHook(object callback) : base(callback) { }
 
+			private protected override EventSubscriptionBase NewRun(ScriptEventScheduler owner)
+				=> new MonitorEventRegistration(callback, owner, Script.TheScript.MonitorEventManager);
 		}
 	}
 }

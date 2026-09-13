@@ -579,7 +579,9 @@ namespace Keysharp.Builtins
 					GetMenu().Items.Remove(item);
 
 				GetMenu().Refresh();
-				_ = clickHandlers.TryRemove(item, out _);
+
+				if (clickHandlers.TryRemove(item, out var hub))
+					hub.Clear();
 			}
 
 			return DefaultObject;
@@ -894,6 +896,12 @@ namespace Keysharp.Builtins
 			if (funcorsub == null && !string.IsNullOrEmpty(name) && !canOmitCallback)
 				return Errors.ArgumentErrorOccurred(funcorsub, insert ? 3 : 2);
 
+			// Called with (ItemName, ItemPos, Menu), and checked before anything is added, as AHK's Menu.Add checks it.
+			object callback = null;
+
+			if (funcorsub is not (null or Menu) && (callback = Functions.CheckedCallback(funcorsub, 3)) == null)
+				return DefaultObject;
+
 			if (!string.IsNullOrEmpty(insertbefore))
 			{
 				// The anchor has to exist; AutoHotkey's Insert raises ItemNotFoundError otherwise. Going through
@@ -948,6 +956,10 @@ namespace Keysharp.Builtins
 
 				if (funcorsub is Menu mnu)
 				{
+					// A submenu item runs no callback, as AHK's ModifyItem sets its mCallback to null.
+					if (clickHandlers.TryRemove(item, out var oldHandlers))
+						oldHandlers.Clear();
+
 					var fromMenuItems = mnu.GetMenu().Items;
 
 					while (fromMenuItems.Count > 0)//Must use this because add range doesn't work.
@@ -978,12 +990,15 @@ namespace Keysharp.Builtins
 				// An options-only call registers nothing, leaving the item's existing handler in place — the guard
 				// above has already established that omitting the callback is legal only in that case. AutoHotkey's
 				// ModifyItem does the same by returning before it assigns mCallback.
-				else if (funcorsub != null)
+				else if (callback != null)
 				{
 					// Create the registration explicitly (not ModifyEventHandlers) so the "Pn" option parsed below can
-					// set its Priority — the priority then travels with the registration to the launch.
-					clickReg = new Keysharp.Internals.Scripting.CallbackRegistration(Functions.GetKeysharpFunc(funcorsub, null, true), Script.TheScript.EventScheduler, true);
-					clickHandlers.GetOrAdd(item, static _ => new()).Add(clickReg);
+					// set its Priority — the priority then travels with the registration to the launch. It replaces
+					// the item's handler, as AHK's ModifyItem replaces mCallback, rather than running beside it.
+					clickReg = new Keysharp.Internals.Scripting.CallbackRegistration(callback, Script.TheScript.EventScheduler, true);
+					var handlers = clickHandlers.GetOrAdd(item, static _ => new());
+					handlers.Clear();
+					_ = handlers.Add(clickReg);
 				}
 
 				foreach (Range r in options.AsSpan().SplitAny(Spaces))

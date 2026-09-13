@@ -120,7 +120,7 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Creates a <see cref="DelegateHolder"/> object that wraps a <see cref="KeysharpFunc"/>.
+		/// Creates a <see cref="DelegateHolder"/> object that wraps a script function object.
 		/// Passing string pointers to <see cref="DllCall"/> when passing a created callback is strongly recommended against.<br/>
 		/// This is because the string pointer cannot remain pinned, and is likely to crash the program if the pointer gets moved by the GC.
 		/// </summary>
@@ -137,8 +137,9 @@ namespace Keysharp.Builtins
 		///     <![CDATA[&]]>: Causes the address of the parameter list (a single integer) to be passed to function instead of the individual parameters. Parameter values can be retrieved by using <see cref="External.NumGet"/>.<br/>
 		/// </param>
 		/// <param name="paramSpec">
-		/// If omitted, it defaults to 0, which is usually the number of mandatory parameters in the definition of function.<br/>
-		/// Otherwise, specify the number of parameters that Address's caller will pass to it.<br/>
+		/// If omitted, it defaults to the function's MinParams, which an object used as the function must then define.<br/>
+		/// Otherwise, specify the number of parameters that Address's caller will pass to it, from 0 to 32, which the
+		/// function must accept, or an array of parameter types followed by the return type.<br/>
 		/// In either case, ensure that the caller passes exactly this number of parameters.
 		/// </param>
 		/// <returns>A <see cref="DelegateHolder"/> object which internally holds a function pointer.<br/>
@@ -146,9 +147,9 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static object CallbackCreate(object function, object options = null, object paramSpec = null)
 		{
-			Any fo = function is Any a ? a : (KeysharpFunc)Functions.GetKeysharpFunc(function, null, true);
-			if (fo == null)
-				return Errors.ErrorOccurred("Invalid function");
+			// Any object, as AHK's CallbackCreate takes it, checked below against the arguments it will be called with.
+			if (Functions.ToCallback(function) is not Any fo)
+				return DefaultObject;
 
 			var o = options.As();
 			bool fast = o.Contains('f', StringComparison.OrdinalIgnoreCase);
@@ -182,6 +183,9 @@ namespace Keysharp.Builtins
 				if (typedArity > DelegateHolder.MaxArity)
 					return Errors.ValueErrorOccurred($"A callback cannot have more than {DelegateHolder.MaxArity} parameters.");
 
+				if (!Functions.ValidateFunctor(fo, typedArity))
+					return DefaultObject;
+
 				var conversions = new Struct.CallbackConversion[typeSpecs.Count];
 				// "void" means the callback returns no value, so nothing is converted back. [v2.1-alpha.30+]
 				var typedVoid = typeSpecs[^1] is string text && text.Equals("void", StringComparison.OrdinalIgnoreCase);
@@ -205,11 +209,23 @@ namespace Keysharp.Builtins
 				return new DelegateHolder(fo, conversions, typedVoid, fast, cdecl);
 			}
 
-			int arity = Math.Clamp(paramSpec.Ai(-1) < 0
-								   ? (!reference && fo is KeysharpFunc f ? (int)f.MinParams : DelegateHolder.MaxArity)
-								   : paramSpec.Ai(-1), 0, DelegateHolder.MaxArity);
+			long arity;
 
-			return new DelegateHolder(fo, arity, fast, reference);
+			if (paramSpec != null)
+				arity = paramSpec.Al();
+			else if (reference)
+				arity = DelegateHolder.MaxArity;              // the native arguments the one address covers
+			else if (!Functions.TryMinParams(fo, out arity))  // as AHK: the callback's MinParams is the count
+				return DefaultObject;
+
+			if (arity < 0 || arity > DelegateHolder.MaxArity)
+				return Errors.ValueErrorOccurred($"A callback takes 0 to {DelegateHolder.MaxArity} parameters, not {arity}.");
+
+			// With & the callback is called with the one address of the arguments; otherwise with each of them.
+			if (!Functions.ValidateFunctor(fo, reference ? 1 : (int)arity))
+				return DefaultObject;
+
+			return new DelegateHolder(fo, (int)arity, fast, reference);
 		}
 
 		/// <summary>
@@ -220,6 +236,7 @@ namespace Keysharp.Builtins
 		{
 			if (address is DelegateHolder dh)
 			{
+
 #if WINDOWS
 				//Before the thunk's address goes away. A shim keyed on it would otherwise sit in the cache for
 				//the life of the script, and a script that creates and frees callbacks in a loop would keep one

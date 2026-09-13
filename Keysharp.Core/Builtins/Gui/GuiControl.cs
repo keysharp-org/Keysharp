@@ -14,8 +14,8 @@ namespace Keysharp.Builtins
 		{
 			private string typename;
 			private WeakReference<Gui> gui;
-			private readonly CallbackRegistry clickHandlers = new();
-			private readonly CallbackRegistry doubleClickHandlers = new();
+			private readonly CallbackRegistry clickHandlers = new(CallbackStop.NonEmpty);
+			private readonly CallbackRegistry doubleClickHandlers = new(CallbackStop.NonEmpty);
 			internal bool DpiScaling => ((Gui)Gui).DpiScale != 1.0;
 			private Forms.Control _control;
 
@@ -123,24 +123,26 @@ namespace Keysharp.Builtins
 				_ => false,//An event name that is not one of AHK's at all, rejected as AHK does.
 			};
 
+			// The arguments each event passes its callback, which a function object is checked against, as AHK counts them.
+			private int EventArgCount(string e) => e switch
+			{
+				"itemcheck" or "itemexpand" or "selectionchange" or "documentloading" or "opennewwindow" => 3,
+				"itemselect" => this is TreeView ? 2 : 3,
+				"click" => this is Link ? 3 : 2,
+				"linkclick" => 4,
+				"contextmenu" => 5,
+				_ => 2
+			};
+
 			/// <summary>
 			/// Registers a function to be called when the control raises the named event.
 			/// </summary>
 			public object OnEvent(object eventName, object callback, object addRemove = null)
 			{
 				var e = eventName.As().ToLower();
-				var h = callback;
-				var i = addRemove.Al(1);
 
 				if (gui == null || !gui.TryGetTarget(out var g))
 					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
-
-				var del = KeysharpForm.ResolveHandler(h, g.form.eventObj);
-
-				//ModifyEventHandlers ignores a null delegate, so a callback that did not resolve would otherwise
-				//register nothing and still report success, exactly as HandleOnCommandNotify used to.
-				if (del == null)
-					return Errors.ValueErrorOccurred("The callback was not a valid function.");
 
 				//Checked once here rather than per branch, so the branches below can assume the pair is valid.
 				if (!SupportsEvent(e))
@@ -151,6 +153,9 @@ namespace Keysharp.Builtins
 					var supported = string.Join(", ", eventNames.Where(name => SupportsEvent(name.ToLowerInvariant())));
 					return Errors.ValueErrorOccurred($"A {Type} control does not support the {eventName.As()} event. Expected {supported}.");
 				}
+
+				if (KeysharpForm.CheckedHandler(callback, g.form.eventObj, addRemove, EventArgCount(e), out var i) is not { } del)
+					return DefaultObject;
 
 				if (this is WebView wv && WebView.IsWebViewEvent(e))
 				{
@@ -163,7 +168,7 @@ namespace Keysharp.Builtins
 				else if (e == "change")
 				{
 					if (changeHandlers == null)
-						changeHandlers = new();
+						changeHandlers = new(CallbackStop.NonEmpty);
 
 					changeHandlers.ModifyEventHandlers(del, i);
 				}
@@ -198,63 +203,63 @@ namespace Keysharp.Builtins
 				else if (e == "focus")
 				{
 					if (focusHandlers == null)
-						focusHandlers = new();
+						focusHandlers = new(CallbackStop.NonEmpty);
 
 					focusHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "losefocus")
 				{
 					if (lostFocusHandlers == null)
-						lostFocusHandlers = new();
+						lostFocusHandlers = new(CallbackStop.NonEmpty);
 
 					lostFocusHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "colclick")
 				{
 					if (columnClickHandlers == null)
-						columnClickHandlers = new();
+						columnClickHandlers = new(CallbackStop.NonEmpty);
 
 					columnClickHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemcheck")
 				{
 					if (itemCheckHandlers == null)
-						itemCheckHandlers = new();
+						itemCheckHandlers = new(CallbackStop.NonEmpty);
 
 					itemCheckHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemedit")
 				{
 					if (itemEditHandlers == null)
-						itemEditHandlers = new();
+						itemEditHandlers = new(CallbackStop.NonEmpty);
 
 					itemEditHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemexpand")
 				{
 					if (itemExpandHandlers == null)
-						itemExpandHandlers = new();
+						itemExpandHandlers = new(CallbackStop.NonEmpty);
 
 					itemExpandHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemfocus")
 				{
 					if (focusedItemChangedHandlers == null)
-						focusedItemChangedHandlers = new();
+						focusedItemChangedHandlers = new(CallbackStop.NonEmpty);
 
 					focusedItemChangedHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemselect")
 				{
 					if (selectedItemChangedHandlers == null)
-						selectedItemChangedHandlers = new();
+						selectedItemChangedHandlers = new(CallbackStop.NonEmpty);
 
 					selectedItemChangedHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "contextmenu")
 				{
 					if (contextMenuChangedHandlers == null)
-						contextMenuChangedHandlers = new();
+						contextMenuChangedHandlers = new(CallbackStop.NonEmpty);
 
 					contextMenuChangedHandlers.ModifyEventHandlers(del, i);
 				}
@@ -277,15 +282,8 @@ namespace Keysharp.Builtins
 			/// </remarks>
 			public object OnMessage(object msgNumber, object callback, object addRemove = null)
 			{
-				var addremove = addRemove.Al(1L);
-
-				//AHK's GuiType::OnEvent rejects anything outside -1..1: a GUI event can only run one thread
-				//at a time, so the parameter is purely an ordering/removal switch, not a thread count.
-				if (addremove < -1 || addremove > 1)
-					return Errors.ValueErrorOccurred($"Invalid AddRemove value: {addremove}.");
-
 				var msg = msgNumber.Al();
-				var result = HandleOnCommandNotify(msg, callback, addremove, ref messageHandlers);
+				var result = HandleOnCommandNotify(msg, callback, addRemove, 4, ref messageHandlers);
 #if !WINDOWS
 
 				//Pointer motion is only watched for while something is listening; see SyncMotionHooks().
@@ -296,22 +294,20 @@ namespace Keysharp.Builtins
 				return result;
 			}
 
-			internal object HandleOnCommandNotify(long code, object callback, long addremove, ref ConcurrentDictionary<int, CallbackRegistry> handlers)
+			/// <param name="argCount">The arguments the registration's callback is called with: OnMessage 4, OnNotify 2,
+			/// OnCommand 1.</param>
+			internal object HandleOnCommandNotify(long code, object callback, object addRemove, int argCount, ref ConcurrentDictionary<int, CallbackRegistry> handlers)
 			{
 				if (gui == null || !gui.TryGetTarget(out var g))
 					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
 
-				var del = KeysharpForm.ResolveHandler(callback, g.form.eventObj);
-
-				//ModifyEventHandlers ignores a null delegate, so a callback that did not resolve would
-				//otherwise register nothing and still report success. Gui.OnMessage() already rejects one.
-				if (del == null)
-					return Errors.ValueErrorOccurred("The callback was not a valid function.");
+				if (KeysharpForm.CheckedHandler(callback, g.form.eventObj, addRemove, argCount, out var addremove) is not { } del)
+					return DefaultObject;
 
 				if (handlers == null)
 					handlers = new();
 
-				var h = handlers.GetOrAdd((int)code, static _ => new());
+				var h = handlers.GetOrAdd((int)code, static _ => new(CallbackStop.NonEmpty));
 				h.ModifyEventHandlers(del, addremove);
 				return DefaultObject;
 			}

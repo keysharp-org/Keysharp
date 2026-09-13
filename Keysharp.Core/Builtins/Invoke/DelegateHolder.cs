@@ -356,7 +356,9 @@ namespace Keysharp.Builtins
 				execution = launched.execution;
 			}
 
-			if (execution.completed)
+			// A Fast callback runs no pseudo-thread, so no thread end checks for it, however it ended; the other path's
+			// end already did.
+			if (_fast)
 				script.ExitIfNotPersistent();
 
 			return execution.value;

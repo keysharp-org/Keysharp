@@ -264,27 +264,22 @@ namespace Keysharp.Builtins
 				=> Env.ClipWait(timeout, waitFor);
 
 			/// <summary>
-			/// Calls <paramref name="callback"/> as <c>callback(hook, type)</c> whenever the clipboard changes, where
-			/// type is 0 (empty), 1 (text or files) or 2 (other content). Returns a hook whose
-			/// <c>Stop()</c> ends the subscription — which is the reason to prefer this over the AHK-compatible
-			/// <c>OnClipboardChange</c>, since unregistering there needs the very same function object back.
+			/// Calls <paramref name="callback"/> as <c>Callback(Hook, DataType)</c> whenever the clipboard changes, where
+			/// DataType is 0 (empty), 1 (text or files) or 2 (other content). Returns a started hook, which keeps the
+			/// script running as <c>OnClipboardChange</c> does, and whose <c>Stop()</c> ends the subscription. That is the
+			/// reason to prefer it over <c>OnClipboardChange</c>, where unregistering needs the very same function object back.
 			/// </summary>
 			[Static] public static object OnChange(object @this, object callback)
 			{
-				if (callback is not KeysharpFunc fo)
-					return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc), DefaultObject);
+				if (Functions.CheckedCallback(callback, 2) is not { } fo)
+					return DefaultObject;
 
-				ClipboardPermission.EnsureMonitoring("Clipboard.OnChange");
-				var script = Script.TheScript;
-				var manager = script.ClipboardEventManager;
-				var reg = new ClipboardEventRegistration(fo, script.EventScheduler, manager);
-				var hook = new ClipboardHook { sub = reg };
-				reg.scriptObject = hook;
-				manager.Register(reg);
+				var hook = new ClipboardHook(fo);
+				_ = hook.Start();
 				return hook;
 			}
 
-			/// <summary>Every live <c>Clipboard.OnChange</c> subscription, oldest first (script: <c>Clipboard.Hooks</c>)
+			/// <summary>Every running <c>Clipboard.OnChange</c> hook, in start order (script: <c>Clipboard.Hooks</c>)
 			/// — a snapshot to iterate and drop. It never includes the AHK <c>OnClipboardChange</c> chain.</summary>
 			public static object staticget_Hooks(object @this) => Script.TheScript.ClipboardEventManager.Hooks();
 
@@ -373,7 +368,14 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public sealed class ClipboardHook : EventHook
 		{
-			internal ClipboardHook() : base() { }
+			internal ClipboardHook(object callback) : base(callback) { }
+
+			// Every run watches the clipboard, so each asks for the permission first.
+			private protected override EventSubscriptionBase NewRun(ScriptEventScheduler owner)
+			{
+				ClipboardPermission.EnsureMonitoring("Clipboard.OnChange");
+				return new ClipboardEventRegistration(callback, owner, Script.TheScript.ClipboardEventManager);
+			}
 		}
 	}
 }

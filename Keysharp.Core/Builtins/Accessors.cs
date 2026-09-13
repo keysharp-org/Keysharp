@@ -402,7 +402,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The callback (function object) which represents the current HotIf criteria for the Hotkey and Hotstring functions, or blank if none.
 		/// </summary>
-		public static object A_HotIf => (Script.TheScript.Threads.CurrentThread.hotCriterion as KeysharpFunc) ?? (object)DefaultObject;
+		public static object A_HotIf => Script.TheScript.Threads.CurrentThread.hotCriterion ?? DefaultObject;
 
 
 		/// <summary>
@@ -1744,9 +1744,9 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Whether the script keeps running after its last thread ends. Assigning it is <c>Persistent(value)</c>, so
-		/// the same bookkeeping runs: clearing it records the choice as the user's and lets a script with nothing
-		/// else to do exit.
+		/// The <c>Persistent()</c> setting, not whether anything keeps the script running: a hotkey, a timer or a
+		/// visible window keeps it running whatever this reads. Assigning it is <c>Persistent(value)</c>, so clearing it
+		/// lets a script with nothing else to do exit when its last thread ends.
 		/// </summary>
 		public static object A_Persistent
 		{
@@ -1918,9 +1918,9 @@ namespace Keysharp.Builtins
 				var timerData = new List<object>();
 				foreach (var timer in Script.TheScript.FlowData.timers.GetSnapshot())
 				{
-					if (timer.Callback is KeysharpFunc func)
+					if (timer.Callback is { } callback)
 					{
-						timerData.AddRange(func, timer.IsActive);
+						timerData.AddRange(callback, timer.IsActive);
 					}
 				}
 

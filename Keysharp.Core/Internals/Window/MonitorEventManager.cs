@@ -9,13 +9,15 @@ namespace Keysharp.Internals.Window
 	/// script-facing <c>Ks.MonitorHook</c> object wraps one of these, mirroring how <c>Ks.WinEvent</c> wraps
 	/// <see cref="WinEventRegistration"/>.
 	/// </summary>
-	internal sealed class MonitorEventRegistration(KeysharpFunc callback, ScriptEventScheduler ownerScheduler,
+	internal sealed class MonitorEventRegistration(object callback, ScriptEventScheduler ownerScheduler,
 		MonitorEventManager manager)
-		: EventSubscriptionBase(callback, ownerScheduler)
+		: EventSubscriptionBase(callback, ownerScheduler, manager.KeepsScriptRunning)
 	{
 		internal readonly MonitorEventManager manager = manager;
 
 		internal override void Unregister() => manager.Unregister(this);
+
+		internal override void Register() => manager.Register(this);
 	}
 
 	/// <summary>
@@ -29,17 +31,13 @@ namespace Keysharp.Internals.Window
 	/// </para>
 	/// </summary>
 	internal sealed class MonitorEventManager(Script script)
-		: EventManagerBase<MonitorEventRegistration, IMonitorEventBackend, MonitorEventManager.Payload>(script)
+		: EventManagerBase<MonitorEventRegistration, IMonitorEventBackend, ValueTuple>(script, false)
 	{
 		/// <summary>The set of attached monitors changed — one was plugged in, unplugged, or the session docked.</summary>
 		internal const string KindTopology = "Topology";
 		/// <summary>The same monitors are attached, but something about them changed — resolution, position,
 		/// scale or which one is primary.</summary>
 		internal const string KindSettings = "Settings";
-
-		/// <summary>What a classified change carries to the callback: the monitor count after it. A plain long, so
-		/// nothing is allocated to reach <c>A_EventInfo</c>.</summary>
-		internal readonly record struct Payload(long Count);
 
 		// Serializes topology diffing, so one notification's baseline update cannot interleave with another's.
 		// Separate from `gate` because the enumeration it guards is slow (a per-display DPI query on every
@@ -111,11 +109,6 @@ namespace Keysharp.Internals.Window
 				lastTopology = Snapshot() ?? [];
 		}
 
-		/// <summary>A_EventInfo holds the monitor count after the change — the fact a "topology" handler most often
-		/// branches on (docked vs undocked).</summary>
-		protected override void ApplyThreadState(ThreadVariables tv, MonitorEventRegistration reg, in Payload payload)
-			=> tv.eventInfo = payload.Count;
-
 		// ---- native intake (arbitrary thread) ----------------------------------------------
 
 		private void OnNativeChange()
@@ -124,7 +117,6 @@ namespace Keysharp.Internals.Window
 				return;
 
 			string kind;
-			long count;
 			MonitorEventRegistration[] toFire;
 
 			lock (classifyGate)
@@ -147,7 +139,6 @@ namespace Keysharp.Internals.Window
 				if (kind == null)
 					return;
 
-				count = current.Length;
 				lastTopology = current;
 			}
 
@@ -159,28 +150,10 @@ namespace Keysharp.Internals.Window
 				toFire = [.. registrations];
 			}
 
+			// Callback shape: (Hook, Change). Everything else a handler needs is a plain read of Monitor.All or
+			// Monitor.Count at callback time, the only consistent way to get it, since the layout can change again first.
 			foreach (var reg in toFire)
-				Dispatch(reg, kind, count);
-		}
-
-		private void Dispatch(MonitorEventRegistration reg, string kind, long count)
-		{
-			// A paused hook is admitted and queued like any other; RunCallback discards it if it is still paused
-			// when it would run. Keeping the topology baseline current across the pause is what makes resume clean.
-			if (!reg.IsActive)
-				return;
-
-			var scheduler = DispatchTarget(reg);
-
-			if (scheduler == null)
-				return;
-
-			// Callback shape (locked): (hook, kind). Everything else a handler needs is a plain read of Monitor.All /
-			// Monitor.Count at callback time, which is also the only way to get it consistently — the layout can
-			// change again between the event and the callback running.
-			object[] args = [reg.scriptObject, kind];
-			var payload = new Payload(count);
-			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, args, payload));
+				Fire(reg, reg.Callback, [reg.scriptObject, kind]);
 		}
 
 		// ---- topology diffing --------------------------------------------------------------
