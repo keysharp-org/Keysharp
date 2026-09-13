@@ -431,6 +431,7 @@ namespace Keysharp.Builtins
 			// on a script thread while HandlePointerEvent looks a chain up on the UI thread.
 			private readonly object handlerGate = new ();
 			private Dictionary<string, CallbackRegistry> eventHandlers;
+			private Action<ScriptEventScheduler> ownedHandlerCleanup;
 			private bool sinkArmed;
 
 			private static readonly string[] supportedEvents = ["click", "doubleclick", "contextmenu", "mousemove"];
@@ -464,31 +465,43 @@ namespace Keysharp.Builtins
 				if (mode != 0L && !Functions.ValidateFunctor(fo, 3))
 					return this;
 
-				var anyLeft = true;
-
-				lock (handlerGate)
+				bool Modify()
 				{
-					eventHandlers ??= new Dictionary<string, CallbackRegistry>();
+					bool anyLeft;
+					bool modified;
 
-					if (!eventHandlers.TryGetValue(name, out var registry))
-						eventHandlers[name] = registry = new (CallbackStop.NonEmpty);
+					lock (handlerGate)
+					{
+						if (mode == 0L && (eventHandlers == null || !eventHandlers.TryGetValue(name, out var registry)))
+							return false;
 
-					// A callback is registered once per event whichever thread adds it, and removing it matches every
-					// thread's registration, so both bypass the registry's per-scheduler ModifyEventHandlers.
-					if (mode == 0L)
-						_ = registry.Remove(fo, null, false);
-					else if (!System.Array.Exists(registry.GetSnapshot(), reg => Functions.SameCallback(reg.Callback, fo)))
-						_ = registry.Add(new CallbackRegistration(fo, Script.TheScript?.EventScheduler, true), mode == -1L);
+						eventHandlers ??= new Dictionary<string, CallbackRegistry>();
 
-					anyLeft = eventHandlers.Values.Any(r => !r.IsEmpty);
+						if (!eventHandlers.TryGetValue(name, out registry))
+							eventHandlers[name] = registry = new (CallbackStop.NonEmpty);
+
+						modified = registry.ModifyEventHandlers(fo, mode);
+						anyLeft = eventHandlers.Values.Any(r => !r.IsEmpty);
+
+						if (anyLeft)
+							TrackHandlerCleanup();
+						else
+							ClearEventHandlersLocked();
+					}
+
+					if (anyLeft)
+						EnsureSinkArmed();
+					else
+						DisarmSink();
+
+					return modified;
 				}
 
-				// Arm (or disarm) the platform sink outside the handler lock: the service applies it under its
-				// own slot gate, and it survives backing recreation because it is stored by overlay id.
-				if (anyLeft)
-					EnsureSinkArmed();
+				// Registration and owner teardown take the scheduler gate in the same order.
+				if (mode != 0L)
+					_ = Script.TheScript.EventScheduler.TryRegisterOwnedResource(Modify);
 				else
-					DisarmSink();
+					_ = Modify();
 
 				return this;
 			}
@@ -527,14 +540,53 @@ namespace Keysharp.Builtins
 			private void ClearEventHandlers()
 			{
 				lock (handlerGate)
-				{
-					if (eventHandlers != null)
-					{
-						foreach (var registry in eventHandlers.Values)
-							registry.Clear();
+					ClearEventHandlersLocked();
 
-						eventHandlers = null;
-					}
+				DisarmSink();
+			}
+
+			private void ClearEventHandlersLocked()
+			{
+				if (eventHandlers != null)
+					foreach (var registry in eventHandlers.Values)
+						registry.Clear();
+
+				eventHandlers = null;
+				UntrackHandlerCleanup();
+			}
+
+			private void TrackHandlerCleanup()
+			{
+				if (ownedHandlerCleanup != null)
+					return;
+
+				ownedHandlerCleanup = RemoveOwnedHandlers;
+				Script.TheScript.GuiData.overlayHandlerCleanups[OverlayId] = new(ownedHandlerCleanup);
+			}
+
+			private void UntrackHandlerCleanup()
+			{
+				if (ownedHandlerCleanup == null)
+					return;
+
+				_ = Script.TheScript.GuiData.overlayHandlerCleanups.TryRemove(overlayId, out _);
+				ownedHandlerCleanup = null;
+			}
+
+			private void RemoveOwnedHandlers(ScriptEventScheduler scheduler)
+			{
+				lock (handlerGate)
+				{
+					if (eventHandlers == null)
+						return;
+
+					foreach (var registry in eventHandlers.Values)
+						_ = registry.RemoveOwned(scheduler);
+
+					if (eventHandlers.Values.Any(r => !r.IsEmpty))
+						return;
+
+					ClearEventHandlersLocked();
 				}
 
 				DisarmSink();

@@ -6,6 +6,7 @@ namespace Keysharp.Builtins
 		internal int windowCount = 0;
 		internal ConcurrentDictionary<long, Gui> allGuiHwnds = new ();
 		internal ConcurrentDictionary<int, WeakReference<Menu>> allMenus = new ();
+		internal ConcurrentDictionary<uint, WeakReference<Action<ScriptEventScheduler>>> overlayHandlerCleanups = new ();
 		internal ConcurrentDictionary<long, MsgMonitor> onMessageHandlers = new ();
 
 		/// <summary>

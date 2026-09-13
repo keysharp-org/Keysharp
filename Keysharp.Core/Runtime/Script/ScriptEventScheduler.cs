@@ -1237,6 +1237,14 @@ internal bool HasBlockedQueuedWork
 				foreach (var control in gui?.controls?.Values.OfType<Gui.Control>() ?? [])
 					_ = control?.RemoveOwnedHandlers(this);
 			}
+
+			foreach (var kv in script.GuiData.overlayHandlerCleanups.ToArray())
+			{
+				if (kv.Value.TryGetTarget(out var cleanup))
+					cleanup(this);
+				else
+					_ = script.GuiData.overlayHandlerCleanups.TryRemove(kv.Key, out _);
+			}
 		}
 
 		private void DisposeOwnedMenuHandlers()

@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Reflection;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
+using Keysharp.Internals;
 using Keysharp.Internals.Invoke;
 using Keysharp.Internals.Threading;
 using Keysharp.Internals.Window;
@@ -58,6 +59,7 @@ namespace Keysharp.Tests
 			internal HotkeyVariant HotkeyVariant;
 			internal HotstringDefinition Hotstring;
 			internal int MessageId;
+			internal Ks.KeysharpOverlay Overlay;
 			internal int WorkerThreadId;
 			internal bool WorkerHasSchedulerContext;
 			internal KeysharpFunc TimerFunc;
@@ -191,6 +193,7 @@ namespace Keysharp.Tests
 			var form = (KeysharpForm)RuntimeHelpers.GetUninitializedObject(typeof(KeysharpForm));
 			var gui = (Gui)RuntimeHelpers.GetUninitializedObject(typeof(Gui));
 			Ks.RealThread worker = null;
+			var overlayHandlersRemoved = false;
 
 			try
 			{
@@ -236,6 +239,10 @@ namespace Keysharp.Tests
 							form.closedHandlers ??= new();
 						form.closedHandlers.ModifyEventHandlers(new KeysharpFunc((Func<object, object>)(_ => probe.Record("gui"))), 1);
 
+						registrations.Overlay = new Ks.KeysharpOverlay();
+						_ = registrations.Overlay.__New(0L, 0L, 10L, 10L);
+						_ = registrations.Overlay.OnEvent("Click", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => probe.Record("overlay"))));
+
 						_ = Env.OnClipboardChange(new KeysharpFunc((Func<object, object>)(_ => probe.Record("clipboard"))));
 						registrations.CallbackHolder = (DelegateHolder)Dll.CallbackCreate(new KeysharpFunc((Func<object>)(() => probe.Record("callbackcreate"))));
 					}
@@ -274,6 +281,9 @@ namespace Keysharp.Tests
 				_ = form.closedHandlers.InvokeSynchronousEventHandlers("close");
 				Assert.IsTrue(probe.WaitFor("gui"));
 
+				registrations.Overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.Click, 1, 2));
+				Assert.IsTrue(probe.WaitFor("overlay"));
+
 				s.ClipFunctions.InvokeEventHandlers(1L);
 				Assert.IsTrue(probe.WaitFor("clipboard"));
 
@@ -283,7 +293,7 @@ namespace Keysharp.Tests
 				_ = worker.Post(new KeysharpFunc((Func<object>)(() => probe.Record("post"))));
 				Assert.IsTrue(probe.WaitFor("post"));
 
-				foreach (var name in new[] { "timer", "hotkey", "hotstring", "message", "gui", "clipboard", "callbackcreate", "post" })
+				foreach (var name in new[] { "timer", "hotkey", "hotstring", "message", "gui", "overlay", "clipboard", "callbackcreate", "post" })
 				{
 					Assert.AreEqual(registrations.WorkerThreadId, probe.ThreadIds[name], $"{name} callback did not run on the owning worker.");
 					Assert.IsTrue(probe.HasSchedulerContext[name], $"{name} callback did not observe the worker synchronization context.");
@@ -292,6 +302,8 @@ namespace Keysharp.Tests
 			finally
 			{
 				ShutdownWorker(s, worker);
+				overlayHandlersRemoved = SpinWait.SpinUntil(() => s.GuiData.overlayHandlerCleanups.IsEmpty, 2000);
+				_ = registrations.Overlay?.Destroy();
 			}
 
 			AssertEventually(() => !worker.IsAlive, "Worker should be fully stopped after shutdown.");
@@ -302,6 +314,7 @@ namespace Keysharp.Tests
 			AssertEventually(() => (registrations.Hotstring.suspended & HotstringDefinition.HS_TURNED_OFF) != 0, "Worker-owned hotstring was not turned off.");
 			AssertEventually(() => !s.GuiData.onMessageHandlers.ContainsKey(registrations.MessageId), "Worker-owned OnMessage registration was not removed.");
 			AssertEventually(() => form.closedHandlers.Count == 0, "Worker-owned GUI handlers were not removed.");
+			Assert.IsTrue(overlayHandlersRemoved, "Worker-owned Overlay handlers were not removed.");
 			AssertEventually(() => s.ClipFunctions.Count == 0, "Worker-owned clipboard handlers were not removed.");
 			AssertEventually(() => registrations.CallbackHolder.Ptr == 0L, "Worker-owned callback pointer was not freed.");
 		}
