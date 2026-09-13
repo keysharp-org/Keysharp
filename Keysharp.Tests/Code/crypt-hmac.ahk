@@ -33,10 +33,7 @@ AssertEq(Type(expected), "String", A_LineNumber)
 AssertEq(Crypt.Hmac("Hi There", key, "sha-256"), expected, A_LineNumber)
 AssertEq(Crypt.Hmac("Hi There", key, "", ""), expected, A_LineNumber)
 AssertEq(Crypt.Hmac(StringBuffer("Hi There"), key), expected, A_LineNumber)
-AssertEq(Crypt.Hmac([72, 105, 32, 84, 104, 101, 114, 101], key), expected, A_LineNumber)
-AssertEq(Crypt.Hmac(message, [74, 101, 102, 101]), Crypt.Hmac(message, "Jefe"), A_LineNumber)
 AssertEq(Crypt.Hmac(message, StringBuffer("Jefe")), Crypt.Hmac(message, "Jefe"), A_LineNumber)
-AssertEq(Crypt.Hmac("abc", "key", , "UTF-16"), Crypt.Hmac([97, 0, 98, 0, 99, 0], [107, 0, 101, 0, 121, 0]), A_LineNumber)
 AssertEq(Crypt.Hmac("", ""), Crypt.Hmac(Buffer(0), Buffer(0)), A_LineNumber)
 
 path := A_Temp A_DirSeparator "keysharp-hmac-" ProcessExist() "-" A_TickCount ".bin"

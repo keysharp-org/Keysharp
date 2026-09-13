@@ -278,4 +278,17 @@ AssertEq(NumGet(hiBuf, 0, "UChar"), 0xFE, A_LineNumber)
 Assert(IsManagedInstance(ThreeBytes()), A_LineNumber)
 AssertEq(ByteCount(ThreeBytes()), 3, A_LineNumber)
 
+; Any script object exposing Ptr and Size is accepted by byte-array and byte-span parameters.
+class ByteView {
+    __New(source) {
+        this.Ptr := source.Ptr
+        this.Size := source.Size
+    }
+}
+view := ByteView(hiBuf)
+AssertEq(BytesToBase64(view), "/mkh", A_LineNumber)
+AssertEq(ReadSpan(view), "/mkh", A_LineNumber)
+ScribbleSpan(view)
+AssertEq(NumGet(hiBuf, 0, "UChar"), 0xFE, A_LineNumber)
+
 FileAppend "pass", "*"

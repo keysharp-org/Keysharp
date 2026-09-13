@@ -82,7 +82,6 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="byteCount">The number of bytes to allocate. Corresponds to <see cref="Buffer.Size"/>.<br/>
 		/// If omitted, the <see cref="Buffer"/> is created with a null (zero) Ptr and zero Size.<br/>
-		/// This can optionally be a byte[] or an <see cref="Array"/> object.<br/>
 		/// </param>
 		/// <param name="fillByte">Specify a number between 0 and 255 to set each byte in the buffer to that number.<br/>
 		/// This should generally be omitted in cases where the buffer will be written into without first being read,<br/>
@@ -109,18 +108,9 @@ namespace Keysharp.Builtins
 				if (size > 0)
 					Marshal.Copy(bytearray, 0, _ptr.DangerousGetHandle(), Math.Min((int)size, bytearray.Length));
 			}
-			else if (byteCount is Array array)
-			{
-				var ct = array.array.Count;
-				Size = ct;
-				var bp = _ptr.DangerousGetHandle();
-
-				for (var i = 0; i < ct; i++)
-					Unsafe.Write((void*)nint.Add(bp, i), (byte)array.array[i].Al());//Access the underlying array[] directly for performance.
-			}
 			else//This will be called by the user.
 			{
-				var bytecount = byteCount.Al(0);
+				var bytecount = byteCount.ToLong();
 				var fill = fillByte is not null ? fillByte.ToLong() : long.MinValue;
 				Size = bytecount;
 

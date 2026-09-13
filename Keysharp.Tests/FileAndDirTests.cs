@@ -324,15 +324,12 @@ namespace Keysharp.Tests
 			var text = File.ReadAllText("./fileappend.txt");
 			Assert.AreEqual("test file texttest file text", text);
 			//
-			var data = new Builtins.Array(new byte[] { 1, 2, 3, 4 });
+			using var data = new Buffer(new byte[] { 1, 2, 3, 4 });
 			_ = Files.FileAppend(data, "./fileappend2.txt", "utf-8-raw");
 			Assert.IsTrue(File.Exists("./fileappend2.txt"));
-			var data2 = new Builtins.Array(File.ReadAllBytes("./fileappend2.txt"));
-			Assert.AreEqual(data, data2);
+			Assert.AreEqual(data.ToByteArray(), File.ReadAllBytes("./fileappend2.txt"));
 			_ = Files.FileAppend("abcd", "./fileappend2.txt", "utf-16-raw");
-			data2 = new Builtins.Array(File.ReadAllBytes("./fileappend2.txt"));
-			data.Push(new UnicodeEncoding(false, false).GetBytes("abcd").Cast<object>().ToArray());
-			Assert.AreEqual(data, data2);
+			Assert.AreEqual(new byte[] { 1, 2, 3, 4, 97, 0, 98, 0, 99, 0, 100, 0 }, File.ReadAllBytes("./fileappend2.txt"));
 
 			if (File.Exists("./fileappend.txt"))
 				File.Delete("./fileappend.txt");
@@ -850,7 +847,7 @@ namespace Keysharp.Tests
 			if (File.Exists(filename))
 				File.Delete(filename);
 
-			using (var f = (KeysharpFile)Files.FileOpen(filename, "rw"))//Read/write buffers and arrays.
+			using (var f = (KeysharpFile)Files.FileOpen(filename, "rw"))//Read/write buffers.
 			{
 				var buf = new Buffer(4);
 				unsafe
@@ -876,36 +873,6 @@ namespace Keysharp.Tests
 						Assert.AreEqual(p1[i], i);
 						Assert.AreEqual(i, p2[i]);
 					}
-				}
-			}
-
-			if (File.Exists(filename))
-				File.Delete(filename);
-
-			using (var f = (KeysharpFile)Files.FileOpen(filename, "rw"))//Read/write buffers and arrays.
-			{
-				var arr = new Array
-				{
-					Capacity = 4
-				};
-
-				for (var i = 0L; i < (long)arr.Capacity; i++)
-					arr.Push(i);
-
-				var count = f.RawWrite(arr);//The values added were longs, this internally converts them to bytes.
-				f.Seek(0);
-				var arr2 = new Array();
-				arr2.Push(0);
-				arr2.Push(0);
-				arr2.Push(0);
-				arr2.Push(0);
-				f.RawRead(arr2);
-
-				for (var i = 1; i <= arr.Count; i++)
-				{
-					Assert.AreEqual(arr[i], arr2[i]);//Array always expects a 1-based index.
-					Assert.AreEqual(i - 1, arr[i]);
-					Assert.AreEqual(i - 1, arr2[i]);
 				}
 			}
 

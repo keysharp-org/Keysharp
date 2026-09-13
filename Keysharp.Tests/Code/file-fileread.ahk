@@ -16,7 +16,9 @@ text := FileRead(dir, "m4 utf-8")
 AssertEq(text, "this", A_LineNumber)
 
 buf := FileRead(dir, "m4 raw")
-buf2 := Buffer([ 116, 104, 105, 115 ])
+buf2 := Buffer(4)
+Loop 4
+	NumPut("UChar", Ord(SubStr("this", A_Index, 1)), buf2, A_Index - 1)
 
 Assert(buf = buf2, A_LineNumber)
 

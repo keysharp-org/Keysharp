@@ -18,13 +18,12 @@ for vector in vectors {
     AssertEq(Hex.Encode(Hex.Decode(StrLower(vector[2]))), vector[2], A_LineNumber)
 }
 
-AssertEq(Hex.Encode([0, 15, 127, 128, 255]), "000F7F80FF", A_LineNumber)
 AssertEq(Hex.Encode(Hex.Decode("aBcDeF")), "ABCDEF", A_LineNumber)
 AssertEq(Hex.Encode(StringBuffer("foo")), "666F6F", A_LineNumber)
 AssertEq(Hex.Encode("abc", "UTF-16"), "610062006300", A_LineNumber)
 AssertEq(Hex.Encode(StringBuffer("abc"), "UTF-16"), "610062006300", A_LineNumber)
 AssertEq(Hex.Encode(Buffer(0)), "", A_LineNumber)
-AssertEq(Hex.Encode([]), "", A_LineNumber)
+Throws(() => Hex.Encode([]), A_LineNumber, TypeError)
 AssertEq(Hex.Encode(StringBuffer("")), "", A_LineNumber)
 
 bytes := Buffer(256)
@@ -44,6 +43,5 @@ for malformed in ["0", "ABC", "GG", "0x00", "0XFF", "AA BB", " AA", "AA ", "AA`n
 Throws(() => Hex.Encode("foo", "no-such-encoding"), A_LineNumber, ValueError)
 Throws(() => Hex.Encode(bytes, "no-such-encoding"), A_LineNumber, ValueError)
 Throws(() => Hex.Encode({}), A_LineNumber, TypeError)
-Throws(() => Hex.Encode(["not a byte"]), A_LineNumber, TypeError)
 
 FileAppend "pass", "*"

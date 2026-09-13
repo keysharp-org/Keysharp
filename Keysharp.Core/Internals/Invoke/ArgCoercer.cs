@@ -107,7 +107,8 @@ namespace Keysharp.Internals.Invoke
 				if (value is Ks.Clr.ManagedInstance mi)
 					value = mi._instance;
 
-				if (value is Keysharp.Builtins.Buffer)
+				if (value is Keysharp.Builtins.Buffer
+					|| value is Any any && Reflections.TryGetPtrProperty(any, out _) && Reflections.TryGetSizeProperty(any, out _))
 					return Conversions.ToByteArray(value);
 			}
 
@@ -123,7 +124,7 @@ namespace Keysharp.Internals.Invoke
 
 		internal static bool IsByteSpan(Type type) => type == typeof(Span<byte>) || type == typeof(ReadOnlySpan<byte>);
 
-		internal static Span<byte> CoerceByteSpan(object value)
+		internal static unsafe Span<byte> CoerceByteSpan(object value)
 		{
 			if (value is Ks.Clr.ManagedInstance mi)
 				value = mi._instance;
@@ -133,6 +134,17 @@ namespace Keysharp.Internals.Invoke
 
 			if (value is byte[] bytes)
 				return bytes;
+
+			if (value is Any any && Reflections.TryGetPtrProperty(any, out var ptr) && Reflections.TryGetSizeProperty(any, out var size))
+			{
+				if (size < 0 || size > int.MaxValue)
+				{
+					_ = Errors.ValueErrorOccurred($"Byte source Size must be between 0 and {int.MaxValue}.", size);
+					return [];
+				}
+
+				return new Span<byte>((void*)(nint)ptr, (int)size);
+			}
 
 			_ = Errors.TypeErrorOccurred(value, typeof(Span<byte>));
 			return [];

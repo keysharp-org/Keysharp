@@ -12,7 +12,7 @@ namespace Keysharp.Builtins
 			/// Encodes binary data as uppercase hexadecimal text.
 			/// </summary>
 			/// <param name="this">The class object, supplied by the script-static call.</param>
-			/// <param name="value">A <see cref="Buffer"/>, an <see cref="Array"/> of bytes, a <see cref="StringBuffer"/> or a string.</param>
+			/// <param name="value">A <see cref="Buffer"/>, <see cref="StringBuffer"/> or string.</param>
 			/// <param name="encoding">The encoding a string or StringBuffer <paramref name="value"/> is taken in, named as for
 			/// <see cref="A_FileEncoding"/>. Defaults to UTF-8.</param>
 			/// <returns>The hexadecimal text, with two characters per byte and no separators or prefix.</returns>

@@ -7,8 +7,8 @@ namespace Keysharp.Builtins
 		/// the KS module: <c>#Import "Ks" { Crypt }</c>, then <c>Crypt.SHA256("text")</c>.
 		/// <para>
 		/// A String is taken as its UTF-8 bytes, which is what every other tool means by the hash of a text;
-		/// pass <c>Encoding</c> to choose a different one. A Buffer or an Array of bytes is used as it stands,
-		/// so no encoding applies to those, and anything that hashes also accepts an open File.</para>
+		/// pass <c>Encoding</c> to choose a different one. A Buffer is used as it stands, so no encoding applies
+		/// to it, and anything that hashes also accepts an open File.</para>
 		/// <para>
 		/// A digest is returned as uppercase hexadecimal. Compare digests case-insensitively because an
 		/// external checksum may be lowercase; <see cref="Hex.Decode"/> converts a digest to raw bytes.</para>
@@ -160,7 +160,7 @@ namespace Keysharp.Builtins
 			/// </summary>
 			/// <param name="this">The class object, supplied by the script-static call.</param>
 			/// <param name="value">The value to authenticate, as <see cref="Hash"/> takes it.</param>
-			/// <param name="key">The secret key: a string, StringBuffer, Buffer or Array of bytes.</param>
+			/// <param name="key">The secret key: a string, StringBuffer or Buffer.</param>
 			/// <param name="algorithm">SHA1, SHA256 (the default), SHA384 or SHA512, with the same name
 			/// matching as <see cref="Hash"/>.</param>
 			/// <param name="encoding">The encoding of a string Value or Key, defaulting to UTF-8.</param>

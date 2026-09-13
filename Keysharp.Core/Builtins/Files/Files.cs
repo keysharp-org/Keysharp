@@ -164,13 +164,9 @@ namespace Keysharp.Builtins
 						else
 							tw.Write(s);
 					}
-					else if (tw is StreamWriter sw && (t is Array || t is Buffer || t is byte[] || t is IList))
+					else if (tw is StreamWriter sw && t is Buffer or byte[])
 					{
-						if (t is Array arr)//Most common will be array.
-						{
-							sw.BaseStream.Write(arr.ToByteArray().ToArray());
-						}
-						else if (t is Buffer buf)
+						if (t is Buffer buf)
 						{
 							var len = (int)(long)buf.Size;
 							unsafe
@@ -181,13 +177,7 @@ namespace Keysharp.Builtins
 							}
 						}
 						else if (t is byte[] ib)
-						{
 							sw.BaseStream.Write(ib);
-						}
-						else if (t is IList il)//It was some other type of container, rare.
-						{
-							sw.BaseStream.Write(il.ToByteArray().ToArray());
-						}
 					}
 					else if (t != null)//A non-string, non-binary value (e.g. a number): write its string form.
 					{

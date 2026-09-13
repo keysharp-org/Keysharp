@@ -692,48 +692,6 @@ namespace Keysharp.Internals.ExtensionMethods
 			return (r1, r2, r3);
 		}
 
-		/// <summary>
-		/// Converts an <see cref="IList"/> into an <see cref="IEnumerable{byte}"/>.<br/>
-		/// This will attempt to convert each element to a byte, which could be slow.
-		/// </summary>
-		/// <param name="list">The <see cref="IList"/> whose elements will be converted.</param>
-		/// <returns>An <see cref="IEnumerable{byte}"/>.</returns>
-		public static IEnumerable<byte> ToByteArray(this IList list)
-		{
-			IList<byte> arr;
-
-			if (list is IList<byte> bb)
-				arr = bb;
-			else if (list is IList<double> bd)//If values are passed directly, they'll be of type double.
-				arr = bd.Select(value => (byte)Convert.ToInt32(value)).ToList();
-			else if (list is Keysharp.Builtins.Array array)//Attempt to convert, slower.
-			{
-				arr = new List<byte>(list.Count);
-
-				foreach (var val in array)
-				{
-					if (val is byte b)
-						arr.Add(b);
-					else
-						arr.Add((byte)Convert.ToInt64(val));
-				}
-			}
-			else//Something else, probably an ArrayList, attempt to convert, slower.
-			{
-				arr = new List<byte>(list.Count);
-
-				foreach (var item in list)
-				{
-					if (item is byte b)
-						arr.Add(b);
-					else
-						arr.Add((byte)Convert.ToInt64(item));
-				}
-			}
-
-			return arr;
-		}
-
 		public static Stack<T> Clone<T>(this Stack<T> stack)
 		{
 			if (stack == null || stack.Count == 0)

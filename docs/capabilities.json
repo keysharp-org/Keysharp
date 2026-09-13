@@ -3403,7 +3403,7 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
-                     "notes":  "Encodes a String, StringBuffer, Buffer or byte Array as uppercase padded RFC 4648 Base32. Windows verified; Linux and macOS unverified.",
+                     "notes":  "Encodes a String, StringBuffer or Buffer as uppercase padded RFC 4648 Base32. Windows verified; Linux and macOS unverified.",
                      "tested-by":  "string-base32.ahk"
                  },
                  {
@@ -3728,8 +3728,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Creates the platform-independent CLR interop facade for loading and invoking .NET types. Buffer arguments are copied to byte[] parameters; byte spans view Buffer storage directly.",
-                     "tested-by":  "external-clr.ahk"
+                     "notes":  "Creates the platform-independent CLR interop facade for loading and invoking .NET types. Buffer and Ptr/Size objects are accepted by byte[] and byte-span parameters.",
+                     "tested-by":  "external-clr.ahk; directive-csharp-clr.ahk"
                  },
                  {
                      "category":  "Interop/Memory",
@@ -4504,7 +4504,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Hashes a String, Buffer, Array of bytes or open File with MD5, SHA1, SHA256, SHA384, SHA512 or CRC32 (spelled with or without a hyphen), returning uppercase hexadecimal. A File is read as a stream and left at the position it was on.",
+                     "notes":  "Hashes a String, Buffer or open File with MD5, SHA1, SHA256, SHA384, SHA512 or CRC32 (spelled with or without a hyphen), returning uppercase hexadecimal. A File is read as a stream and left at the position it was on.",
                      "tested-by":  "crypt-class.ahk"
                  },
                  {
@@ -11749,7 +11749,7 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
-                     "notes":  "Encodes a String, StringBuffer, Buffer or byte Array as uppercase hexadecimal without separators or prefix. Windows verified; Linux and macOS unverified.",
+                     "notes":  "Encodes a String, StringBuffer or Buffer as uppercase hexadecimal without separators or prefix. Windows verified; Linux and macOS unverified.",
                      "tested-by":  "string-hex.ahk; crypt-hmac.ahk"
                  },
                  {

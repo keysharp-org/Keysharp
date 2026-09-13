@@ -550,7 +550,7 @@ namespace Keysharp.Internals.Strings
 		/// Converts a script value to the bytes an API which works in bytes operates on.
 		/// </summary>
 		/// <param name="value">A String, <see cref="Keysharp.Builtins.Ks.StringBuffer"/>, <see cref="Keysharp.Builtins.Buffer"/>,
-		/// <see cref="Keysharp.Builtins.Array"/> or byte array. Unset is no bytes at all.</param>
+		/// an object exposing Ptr and Size, or a byte array. Unset is no bytes at all.</param>
 		/// <param name="enc">The encoding a string or StringBuffer is taken in.</param>
 		/// <returns>The bytes, or null if value is none of those. Null rather than an empty array, so that a
 		/// caller which is not throwing reports nothing instead of operating on no bytes at all.</returns>
@@ -574,25 +574,17 @@ namespace Keysharp.Internals.Strings
 
 			if (value is Any any && Reflections.TryGetPtrProperty(any, out long ptr) && Reflections.TryGetSizeProperty(any, out long size))
 			{
-				var bytes = new byte[size];
-				Marshal.Copy((nint)ptr, bytes, 0, (int)size);
+				if (size < 0 || size > int.MaxValue)
+					return (byte[])Errors.ValueErrorOccurred($"Byte source Size must be between 0 and {int.MaxValue}.", size, System.Array.Empty<byte>());
+
+				var bytes = new byte[(int)size];
+
+				if (size != 0)
+					Marshal.Copy((nint)ptr, bytes, 0, (int)size);
+
 				return bytes;
 			}
 
-			if (value is Keysharp.Builtins.Array arr)
-			{
-				try
-				{
-					return arr.ToByteArray().ToArray();
-				}
-				catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
-				{
-					// An Array holds anything, and the conversion coerces each element: a non-numeric one raises
-					// a .NET exception that no script can catch, so it is reported as the type error it is.
-					_ = Errors.TypeErrorOccurred(value, typeof(byte[]));
-					return null;
-				}
-			}
 
 			if (value == null)
 				return [];

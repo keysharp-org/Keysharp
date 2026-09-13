@@ -19,13 +19,11 @@ for vector in vectors {
     AssertEq(Base32.Encode(Base32.Decode(RTrim(StrLower(vector[2]), "="))), vector[2], A_LineNumber)
 }
 
-AssertEq(Base32.Encode([102, 111, 111]), "MZXW6===", A_LineNumber)
 AssertEq(Base32.Encode(StringBuffer("foo")), "MZXW6===", A_LineNumber)
-AssertEq(Base32.Encode("abc", "UTF-16"), Base32.Encode([97, 0, 98, 0, 99, 0]), A_LineNumber)
-AssertEq(Base32.Encode(StringBuffer("abc"), "UTF-16"), Base32.Encode([97, 0, 98, 0, 99, 0]), A_LineNumber)
+AssertEq(Base32.Encode(StringBuffer("abc"), "UTF-16"), Base32.Encode("abc", "UTF-16"), A_LineNumber)
 AssertEq(Base32.Encode(Buffer(0)), "", A_LineNumber)
 AssertEq(Base64.Encode(Buffer(0)), "", A_LineNumber)
-AssertEq(Base32.Encode([]), "", A_LineNumber)
+Throws(() => Base32.Encode([]), A_LineNumber, TypeError)
 
 bytes := Buffer(256)
 Loop 256
@@ -42,6 +40,5 @@ for malformed in ["A", "AAA", "AAAAAA", "MY=", "MY=====", "MY=======", "========
 Throws(() => Base32.Encode("foo", "no-such-encoding"), A_LineNumber, ValueError)
 Throws(() => Base32.Encode(bytes, "no-such-encoding"), A_LineNumber, ValueError)
 Throws(() => Base32.Encode({}), A_LineNumber, TypeError)
-Throws(() => Base32.Encode(["not a byte"]), A_LineNumber, TypeError)
 
 FileAppend "pass", "*"

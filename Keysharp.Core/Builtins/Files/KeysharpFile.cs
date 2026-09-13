@@ -320,15 +320,7 @@ namespace Keysharp.Builtins
 			{
 				byte[] val;
 
-				if (buf is Array arr)
-				{
-					val = count != long.MinValue ? br.ReadBytes((int)count) : br.ReadBytes(arr.Count);
-					len = Math.Min(val.Length, arr.Count);
-
-					for (var i = 0; i < len; i++)
-						arr.array[i] = val[i];//Access the underlying ArrayList directly for performance.
-				}
-				else if (Reflections.TryGetPtrProperty(buf, out var ptr))
+				if (Reflections.TryGetPtrProperty(buf, out var ptr))
 				{
 					int buflen = Reflections.TryGetSizeProperty(buf, out var sz) ? (int)sz : int.MinValue;
 					len = count == long.MinValue ? buflen : (buflen != int.MinValue ? Math.Min((int)count, buflen) : (int)count);
@@ -358,12 +350,7 @@ namespace Keysharp.Builtins
 
 			if (bw != null)
 			{
-				if (buf is Array arr)
-				{
-					len = count != long.MinValue ? Math.Min(arr.Count, (int)count) : arr.Count;
-					bw.Write(arr.array.ConvertAll(el => (byte)el.ParseLong().Value).ToArray(), 0, len);//No way to know what is in the array since they are objects, so convert them to bytes.
-				}
-				else if (buf is string s)
+				if (buf is string s)
 				{
 					var byteBuf = enc.GetBytes(s);
 					len = count != long.MinValue ? Math.Min(byteBuf.Length, (int)count) : byteBuf.Length;

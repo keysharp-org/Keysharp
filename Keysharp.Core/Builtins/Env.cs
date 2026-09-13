@@ -381,8 +381,6 @@ namespace Keysharp.Builtins
 			if (data is byte[] ba)
 				return CopyClipboardBytes(ba, size);
 
-			if (data is Array arr)
-				return CopyClipboardBytes(arr.ToByteArray().ToArray(), size);
 
 			if (Reflections.TryGetPtrProperty(data, out var ptr))
 			{
