@@ -99,6 +99,19 @@ namespace Keysharp.Runtime
 	}
 
 	/// <summary>
+	/// The built-in modules a script module imports with <c>#Import Mod { * }</c>, the most recent import first. The
+	/// compiler binds only the names the module's code writes, so a dynamic reference (<c>%"Name"%</c>) resolves the
+	/// rest through these at run time.
+	/// </summary>
+	[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+	public sealed class WildcardImportAttribute : Attribute
+	{
+		public Type[] Modules { get; }
+
+		public WildcardImportAttribute(params Type[] modules) => Modules = modules;
+	}
+
+	/// <summary>
 	/// Marks a public member or type as invisible to scripts. Consumers: <see cref="Variables.GatherTypeVariables"/>
 	/// (fields and properties), <see cref="Script.InitClass"/> (methods and nested types) and the exit-time
 	/// destructor sweep in <c>Flow</c>.

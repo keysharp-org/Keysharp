@@ -11,14 +11,12 @@ namespace Keysharp.Runtime
 	{
 		private readonly Script script;
 
-        public LazyDictionary<Type, Prototype> Prototypes = new();
+		public LazyDictionary<Type, Prototype> Prototypes = new();
 		public LazyDictionary<Type, Class> Statics = new();
-		// Internal rather than private: Lowerer.CheckNamedArgs resolves a bare built-in class name to its type so
-		// `#Warn NamedArg` can check a constructor call (`Buffer(nosuch: 1)`) against __New's parameter names.
-		internal readonly Dictionary<string, Type> classTypesByName = new(StringComparer.OrdinalIgnoreCase);
-        internal List<(string, bool)> preloadedDlls = [];
+		internal List<(string, bool)> preloadedDlls = [];
 		internal DateTime startTime = DateTime.UtcNow;
-		private readonly OrderedDictionary<Type, Dictionary<string, MethodPropertyHolder>> moduleVars;
+		private readonly ConcurrentDictionary<Type, ModuleScope> modules = new();
+		private readonly Type[] programModules;
 		// Defensive fallback for a script with no modules at all (the generated program always has the main module,
 		// so this is effectively never used).
 		private Dictionary<string, MethodPropertyHolder> programVars;
@@ -27,17 +25,40 @@ namespace Keysharp.Runtime
 		// the main module's store.
 		internal Dictionary<string, MethodPropertyHolder> GlobalVars => GetModuleVars(script.CurrentModuleType);
 		// All modules and their global-variable stores, in declaration order, for ListVars.
-		internal IEnumerable<KeyValuePair<Type, Dictionary<string, MethodPropertyHolder>>> AllModuleVars => moduleVars;
+		internal IEnumerable<KeyValuePair<Type, Dictionary<string, MethodPropertyHolder>>> AllModuleVars =>
+			programModules.Select(type => KeyValuePair.Create(type, modules[type].Variables));
 		private readonly Type defaultModuleType;
 		internal Type DefaultModuleType => defaultModuleType;
 
 		internal Variables(Script script)
 		{
 			this.script = script ?? throw new ArgumentNullException(nameof(script));
-			moduleVars = GatherModuleVariables(script.ProgramType);
-			if (moduleVars.Count == 0)
+			var flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
+			programModules = script.ProgramType?.GetNestedTypes(flags).Where(IsModuleType).ToArray() ?? [];
+
+			foreach (var type in programModules)
+				modules[type] = new(type);
+
+			if (programModules.Length == 0)
 				return;
-			defaultModuleType = moduleVars.Keys.FirstOrDefault(t => t.Name.Equals(Keywords.MainModuleName, StringComparison.OrdinalIgnoreCase)) ?? moduleVars.First().Key;
+
+			defaultModuleType = programModules.FirstOrDefault(t => t.Name.Equals(Keywords.MainModuleName, StringComparison.OrdinalIgnoreCase)) ?? programModules[0];
+		}
+
+		private sealed class ModuleScope
+		{
+			internal readonly Dictionary<string, MethodPropertyHolder> Variables;
+			internal readonly Dictionary<string, Type> Classes;
+			internal readonly Type[] WildcardImports;
+
+			internal ModuleScope(Type type)
+			{
+				Variables = GatherTypeVariables(type);
+				Classes = type.GetNestedTypes(BindingFlags.Public)
+					.Where(t => !Struct.IsAutoPointerClass(t) && !IsModuleType(t) && typeof(Any).IsAssignableFrom(t))
+					.ToDictionary(t => Script.GetUserDeclaredName(t) ?? t.Name, StringComparer.OrdinalIgnoreCase);
+				WildcardImports = type.GetCustomAttribute<WildcardImportAttribute>()?.Modules ?? [];
+			}
 		}
 
 		[Flags]
@@ -114,19 +135,6 @@ namespace Keysharp.Runtime
 		private static bool IsModuleType(Type type) =>
 			typeof(Module).IsAssignableFrom(type);
 
-		private static OrderedDictionary<Type, Dictionary<string, MethodPropertyHolder>> GatherModuleVariables(Type programType)
-		{
-			var map = new OrderedDictionary<Type, Dictionary<string, MethodPropertyHolder>>();
-			if (programType == null)
-				return map;
-
-			var flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
-			foreach (var nested in programType.GetNestedTypes(flags).Where(IsModuleType))
-				map[nested] = GatherTypeVariables(nested);
-
-			return map;
-		}
-
 		internal Dictionary<string, MethodPropertyHolder> GetModuleVars(Type moduleType)
 		{
 			// A null module means "the global scope": resolve to the main module's store. Only a script with no
@@ -135,13 +143,10 @@ namespace Keysharp.Runtime
 			if (moduleType == null)
 				return programVars ??= GatherTypeVariables(script.ProgramType);
 
-			if (moduleVars.TryGetValue(moduleType, out var vars))
-				return vars;
-
-			vars = GatherTypeVariables(moduleType);
-			moduleVars[moduleType] = vars;
-			return vars;
+			return GetModule(moduleType).Variables;
 		}
+
+		private ModuleScope GetModule(Type type) => modules.GetOrAdd(type, static t => new(t));
 
 		internal static string ExtractStaticLocalUserName(string staticFieldName, string funcName = null)
 		{
@@ -199,7 +204,6 @@ namespace Keysharp.Runtime
 				types = types.Concat(nested);
 			}
 			types = types.Distinct();
-			CacheClassTypeNames(types);
 
 			/*
             var types = AppDomain.CurrentDomain.GetAssemblies()
@@ -280,39 +284,20 @@ namespace Keysharp.Runtime
 			}
 		}
 
-		private void CacheClassTypeNames(IEnumerable<Type> types)
+		private bool TryGetClassValue(Type moduleType, string key, out object value)
 		{
-			foreach (var type in types)
-			{
-				if (Struct.IsAutoPointerClass(type))
-					continue;
-
-				// A class nested in another class is reached through its declaring class (Gui.Control,
-				// Audio.Device, Test.Nested), never as a name of its own, so its short name must not become a
-				// global variable that `%"Device"%` or a named-argument check could resolve.
-				if (Script.IsNestedInClass(type, script))
-					continue;
-
-				var name = Script.GetUserDeclaredName(type) ?? type.Name;
-
-				if (!string.IsNullOrEmpty(name))
-					classTypesByName[name] = type;
-			}
-		}
-
-		private bool TryGetClassValue(string key, out object value)
-		{
+			moduleType ??= defaultModuleType;
 			value = null;
-			if (!classTypesByName.TryGetValue(key, out var type))
+			Type type = null;
+
+			var found = (moduleType != null && GetModule(moduleType).Classes.TryGetValue(key, out type))
+				|| (script.ReflectionsData.stringToTypes.TryGetValue(key, out type) && Script.IsGlobalClass(type));
+
+			if (!found || !Statics.TryGetValue(type, out var staticObj))
 				return false;
 
-			if (Statics.TryGetValue(type, out var staticObj))
-			{
-				value = staticObj;
-				return true;
-			}
-
-			return false;
+			value = staticObj;
+			return true;
 		}
 
 		public bool HasVariable(string key) => HasVariable(script.CurrentModuleType, key);
@@ -337,10 +322,67 @@ namespace Keysharp.Runtime
 			if (rv != null)
 				return rv;
 
-			if (TryGetClassValue(key, out var classValue))
+			if (TryGetClassValue(moduleType, key, out var classValue))
 				return classValue;
 
+			if (TryGetWildcardImport(moduleType, key, out var imported))
+				return imported;
+
 			return Functions.GetKeysharpFuncByName(key, moduleType, throwIfBad: moduleType != null);
+		}
+
+		// Resolve built-in wildcard imports in compiler order: most recent first, then function, class and variable.
+		private bool TryGetWildcardImport(Type moduleType, string key, out object value)
+		{
+			value = null;
+
+			moduleType ??= defaultModuleType;
+			if (moduleType == null || key.StartsWith('_') || script.ReflectionsData.flatPublicStaticMethods.ContainsKey(key))
+				return false;
+
+			foreach (var module in GetModule(moduleType).WildcardImports)
+				if (TryGetBuiltinModuleMember(module, key, out value))
+					return true;
+
+			return false;
+		}
+
+		// A member a built-in module declares, in the order the compiler binds one: function, class, then variable.
+		private bool TryGetBuiltinModuleMember(Type module, string key, out object value)
+		{
+			var scope = GetModule(module);
+
+			if (Reflections.FindAndCacheStaticMethod(module, key, -1)?.mi is { IsSpecialName: false } method && method.DeclaringType == module)
+				value = Functions.GetKeysharpFuncByName(key, module);
+			else if (scope.Classes.TryGetValue(key, out var type) && Statics.TryGetValue(type, out var cls))
+				value = cls;
+			else if (scope.Variables.TryGetValue(key, out var mph))
+				value = mph.CallFunc(null, null);
+			else
+			{
+				value = null;
+				return false;
+			}
+
+			return true;
+		}
+
+		// Resolve a dynamic name beyond function locals. Write targets may name only variables; unset variables return null.
+		internal bool TryGetVariable(Type moduleType, string key, bool variableOnly, out object value)
+		{
+			if (GetModuleVars(moduleType).TryGetValue(key, out var mph))
+				value = mph.CallFunc(null, null);
+			else if (FindReservedVariable(key) is { CanRead: true } prop)
+				value = prop.GetValue(null);
+			else if (variableOnly)
+			{
+				value = null;
+				return false;
+			}
+			else if (!TryGetClassValue(moduleType, key, out value) && !TryGetWildcardImport(moduleType, key, out value))
+				return (value = Functions.GetKeysharpFuncByName(key, moduleType)) != null;
+
+			return true;
 		}
 
 		public object SetVariable(string key, object value) => SetVariable(script.CurrentModuleType, key, value);
@@ -354,6 +396,25 @@ namespace Keysharp.Runtime
 				_ = SetReservedVariable(key, value);
 
 			return value;
+		}
+
+		// Write a dynamic name beyond function locals. False means it names no variable.
+		internal bool TrySetVariable(Type moduleType, string key, object value)
+		{
+			if (GetModuleVars(moduleType).TryGetValue(key, out var mph))
+				SetMemberValue(mph, value);
+			else if (!SetReservedVariable(key, value))
+			{
+				if (FindReservedVariable(key) == null)
+					return false;
+
+				Error err = new Error("This built-in variable cannot be assigned a value.", null, key);
+
+				if (Errors.ErrorOccurred(err))
+					throw err;
+			}
+
+			return true;
 		}
 
 		private static void SetMemberValue(MethodPropertyHolder mph, object value)
@@ -403,15 +464,6 @@ namespace Keysharp.Runtime
 			}
 
 			return set;
-		}
-
-
-
-		public object this[object key]
-        {
-			// A key is either a variable NAME or a reference standing in for one; see ModuleData's indexer.
-			get => (Refs.DeclaresValue(key) ? Refs.GetValueOrNull(key) : null) ?? GetVariable(key.ToString()) ?? "";
-			set => _ = Refs.DeclaresValue(key) ? Refs.SetValue(key, value) : SetVariable(key.ToString(), value);
 		}
 	}
 }

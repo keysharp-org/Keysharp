@@ -122,4 +122,42 @@ loopelsederef()
 
 AssertEq(x, 1, A_LineNumber)  ; ...and did not leak to the global x
 
+ArgIsSet(p?) => IsSet(p)
+
+DynUnsetLocal()
+{
+	local unsetLocal
+	name := "unsetLocal"
+	Throws(() => %name%, A_LineNumber, UnsetError)
+	AssertEq(IsSet(%name%), 0, A_LineNumber)
+	ref := &%name%
+	Assert(!IsSetRef(ref), A_LineNumber)
+	%ref% := 3
+	AssertEq(unsetLocal, 3, A_LineNumber)
+}
+
+DynUnsetLocal()
+
+DynRead(name) => %name%
+DynWrite(name, value) => %name% := value
+DynMaybe(name) => [IsSet(%name%), %name% ?? "default", ArgIsSet(%name%?)]
+
+; A module variable read from inside a function.
+Assert(!IsSet(unsetGlobal), A_LineNumber)
+Throws(() => DynRead("unsetGlobal"), A_LineNumber, UnsetError)
+AssertEq(DynMaybe("unsetGlobal")[2], "default", A_LineNumber)
+setGlobal := 4
+AssertEq(DynRead("setGlobal"), 4, A_LineNumber)
+
+Throws(() => DynRead("noSuchVariable"), A_LineNumber, Error)
+Throws(() => DynWrite("noSuchVariable", 1), A_LineNumber, Error)
+maybe := DynMaybe("noSuchVariable")
+AssertEq(maybe[1], 0, A_LineNumber)
+AssertEq(maybe[2], "default", A_LineNumber)
+AssertEq(maybe[3], 0, A_LineNumber)
+
+undeclaredGlobal := 1
+DynWrite("undeclaredGlobal", 2)
+AssertEq(undeclaredGlobal, 2, A_LineNumber)
+
 FileAppend "pass", "*"

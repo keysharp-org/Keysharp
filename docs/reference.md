@@ -1167,6 +1167,8 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Note, this will send the string as UTF-16 Unicode. If you need to send to a program which expects ASCII, then you'll need to manually create the `COPYDATA` struct.
 	+ New preprocessor directives:
 		+ `#Module` starts or reopens a module, and `#Import` binds module objects or selected members. Script globals are implicitly wildcard-exportable; names beginning with `_` require an explicit import. Ordinary imported aliases remain explicitly importable and visible through the module object, but only `#Import Export` forwards them to wildcard consumers. Bare imports bind the module object; default exports and standalone `Export` declarations do not exist.
+			+ A dynamic reference (`%"Name"%`) resolves local declarations and imported names, including names supplied only by a wildcard import.
+			+ `#Warn NamedArg` checks a call by name against what the name binds to, so `Overlay(nosuch: 1)` after `#import KS { Overlay }` warns, as `Buffer(nosuch: 1)` does.
 		+ `#CSharp` embeds C# members in the script assembly for hot loops, buffer work and interop.
 			+ Use `#CSharp` … `#EndCSharp` for an inline block, `#CSharp "helper.cs"` for a file on the module search path, or `#CSharp <Helper>` for `Helper.cs` in the same Lib folders searched by `#Include <Helper>`. The library form also uses #Include's underscore fallback. Blocks may appear at module scope or directly in a class.
 			+ At module scope, `public static` methods are callable locally, through the module object and by an explicit `{ Name }` import. `[Export]` additionally exposes one to `{ * }`; the `Default` option is no longer supported.

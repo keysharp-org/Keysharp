@@ -297,13 +297,24 @@ namespace Keysharp.Runtime
 
 		/// <summary>
 		/// Whether a type is declared inside another script-visible CLASS, which is what earns it a dotted name
-		/// (Gui.Text, Audio.Device, Test.Nested) and keeps its short name out of the global namespace. A class a
-		/// module or the program type merely contains is a global class under its own name.
+		/// (Gui.Text, Audio.Device, Test.Nested). A class a module or the program type merely contains is named by
+		/// its short name.
 		/// </summary>
 		internal static bool IsNestedInClass(Type type, Script script) =>
 			type.DeclaringType != null
 			&& type.DeclaringType != script.ProgramType
 			&& !IsModuleContainer(type.DeclaringType, script);
+
+		/// <summary>
+		/// Whether a built-in type is a global class: top-level, Any-derived and not a module. A class nested in a
+		/// class or in the Ks module (Gui.Text, Ks.HashMap) is reached through its container, a static function
+		/// container (Dir, Maths) is no class, and a module name (Ks, Ahk) binds only through #Import, to the module
+		/// object rather than to a members-less class object.
+		/// </summary>
+		internal static bool IsGlobalClass(Type type) =>
+			!type.IsNested
+			&& typeof(Any).IsAssignableFrom(type)
+			&& !typeof(Module).IsAssignableFrom(type);
 
 		public static string GetUserDeclaredName(MemberInfo mb)
 		{

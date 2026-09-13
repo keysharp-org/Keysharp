@@ -873,37 +873,76 @@ namespace Keysharp.Runtime
 		public static void EnterScope(FuncScope.Reader reader, Func<string[]> namesFactory, string name) =>
 			executingUserFunc = new FuncScope(name, reader, namesFactory);
 
-		// Sentinel a scope reader/writer returns when the name isn't one of the function's variables (so DerefGet/
-		// DerefSet, and FuncScope, fall back to the module/global store). A private unique object — never a script value.
+		// Sentinel a scope reader/writer returns when the name isn't one of the function's variables (so the Deref
+		// helpers, and FuncScope, fall back to the module/global store). A private unique object — never a script value.
 		public static readonly object DerefMiss = new object();
 
-		// `%name%` read inside a deref function body: resolve through the function's reader, falling back to the
-		// module/global store when the name isn't one of the function's variables. `reader` is the cached per-function
-		// delegate (KS_r), so this also carries escaping `&%name%` references correctly.
-		// A VarRef operand (`r := &x` then `%r%`) dereferences the ref directly, per AHK v2 semantics.
-		public static object DerefGet(FuncScope.Reader reader, object name)
-		{
-			if (name is VarRef vr)
-				return Refs.GetValueOrNull(vr);
+		// A dynamic reference `%name%`. `reader`/`writer` are the executing function's delegates (KS_readVar/KS_writeVar),
+		// or null outside a deref function; a name they do not hold resolves in the module (Variables.TryGetVariable). A
+		// reference operand (`r := &x` then `%r%`) reaches its target. As in AutoHotkey, a read raises for a variable with
+		// no value, and every form but the maybe read raises for a name which names nothing.
+		public static object DerefGet(FuncScope.Reader reader, object name) =>
+			TryDeref(reader, name, false, out var value, out var local) ? value ?? DerefUnset(name, local) : DerefNotFound(name);
 
-			var v = reader(name);
-			return ReferenceEquals(v, DerefMiss) ? TheScript.ModuleData.Vars[name] : v;
-		}
+		// The maybe read -- IsSet(%name%), %name% ?? x, %name%? -- which yields unset where DerefGet raises, except for a
+		// blank name, which AutoHotkey rejects before looking it up.
+		public static object DerefGetOrNull(FuncScope.Reader reader, object name) =>
+			TryDeref(reader, name, false, out var value, out _) || ForceString(name).Length != 0 ? value : DerefNotFound(name);
 
-		// `%name% := value` inside a deref function body; mirrors DerefGet's fallback. Returns value so it composes
-		// as an expression (e.g. `x := (%name% := v)`). A VarRef operand writes through the ref (`%r% := v`).
+		// The current value of an assignment or reference target (`%name% op= v`, `%name%++`, `&%name%`), which must name
+		// a variable, found as a write finds one, but may have no value.
+		public static object DerefGetForWrite(FuncScope.Reader reader, object name) =>
+			TryDeref(reader, name, true, out var value, out _) ? value : DerefNotFound(name);
+
+		// `%name% := value`. Returns value so it composes as an expression (e.g. `x := (%name% := v)`).
 		public static object DerefSet(FuncScope.Writer writer, object name, object value)
 		{
-			if (name is VarRef vr)
-			{
-				_ = Refs.SetValue(vr, value);
-				return value;
-			}
+			if (Refs.DeclaresValue(name))
+				_ = Refs.SetValue(name, value);
+			else if ((writer == null || ReferenceEquals(writer(name, value), DerefMiss))
+					 && !TheScript.Vars.TrySetVariable(TheScript.CurrentModuleType, ForceString(name), value))
+				_ = DerefNotFound(name);
 
-			if (ReferenceEquals(writer(name, value), DerefMiss))
-				TheScript.ModuleData.Vars[name] = value;
 			return value;
 		}
+
+		private static bool TryDeref(FuncScope.Reader reader, object name, bool forWrite, out object value, out bool local)
+		{
+			local = false;
+
+			if (Refs.DeclaresValue(name))
+			{
+				value = Refs.GetValueOrNull(name);
+				return true;
+			}
+
+			if (reader != null && !ReferenceEquals(value = reader(name), DerefMiss))
+			{
+				local = true;
+				return true;
+			}
+
+			var key = ForceString(name);
+			value = null;
+			return key.Length != 0 && TheScript.Vars.TryGetVariable(TheScript.CurrentModuleType, key, forWrite, out value);
+		}
+
+		// AutoHotkey's errors for these (script_expression.cpp and Script::VarUnsetError), except that a name operand
+		// which is itself unset raises as any other unset operand does.
+		private static object DerefNotFound(object name) => name == null
+			? Errors.UnsetErrorOccurred("Operand of dereference")
+			: DerefError(ForceString(name) is { Length: > 0 } key ? new Error("Variable not found.", null, key) : new Error("This dynamic variable is blank."));
+
+		private static object DerefUnset(object name, bool local)
+		{
+			if (Refs.DeclaresValue(name))
+				return DerefError(new UnsetError("This variable has not been assigned a value."));
+
+			var scope = local ? "local" : "global";
+			return DerefError(new UnsetError($"This {scope} variable has not been assigned a value.", null, ForceString(name)));
+		}
+
+		private static object DerefError(Error err) => Errors.ErrorOccurred(err) ? throw err : DefaultObject;
 
 
 		// Unary operators

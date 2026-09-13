@@ -176,4 +176,34 @@ class DynMem {
 	static Twice(t) => t * 2
 }
 
+ArgIsSet(p?) => IsSet(p)
+
+Assert(!IsSet(unsetGlobal), A_LineNumber)
+name := "unsetGlobal"
+Throws(() => %name%, A_LineNumber, UnsetError)
+AssertEq(IsSet(%name%), 0, A_LineNumber)
+AssertEq(%name% ?? "default", "default", A_LineNumber)
+Assert(!ArgIsSet(%name%?), A_LineNumber)
+ref := &%name%
+Assert(!IsSetRef(ref), A_LineNumber)
+%ref% := 1
+AssertEq(unsetGlobal, 1, A_LineNumber)
+Assert(!IsSet(unsetConcat), A_LineNumber)
+concatName := "unsetConcat"
+%concatName% .= "x"
+AssertEq(unsetConcat, "x", A_LineNumber)
+
+Throws(() => %"noSuchVariable"%, A_LineNumber, Error)
+Throws(() => %"noSuchVariable"% := 1, A_LineNumber, Error)
+Throws(() => &%"noSuchVariable"%, A_LineNumber, Error)
+AssertEq(IsSet(%"noSuchVariable"%), 0, A_LineNumber)
+AssertEq(%"noSuchVariable"% ?? "default", "default", A_LineNumber)
+Assert(!ArgIsSet(%"noSuchVariable"%?), A_LineNumber)
+Throws(() => %""%, A_LineNumber, Error)
+
+keyDelay := "A_KeyDelay"
+%keyDelay% := 7
+AssertEq(%keyDelay%, 7, A_LineNumber)
+Throws(() => %"A_ScriptDir"% := "elsewhere", A_LineNumber, Error)
+
 FileAppend "pass", "*"

@@ -123,4 +123,34 @@ FnB() {
 }
 Assert(FnA() == 1 && FnB() == 0, A_LineNumber)
 
+; ---- 13. %name% resolves every name a scoped wildcard import brings in, written in the body or not
+FnWildDeref(name) {
+    #import KS { * }
+    return %name%
+}
+AssertEq(FnWildDeref("Cosh")(0), 1, A_LineNumber)
+AssertEq(Type(FnWildDeref("HashMap")), "Class", A_LineNumber)
+
+class WildDeref {
+    #import KS { * }
+    static Lookup(name) => %name%
+}
+AssertEq(WildDeref.Lookup("Sinh")(0), 0, A_LineNumber)
+
+; ---- 14. Of two scoped wildcard imports which supply a name, the later one wins
+FnHelperThenKs() {
+    #import "module_scoped_import_helper" { * }
+    #import KS { * }
+    name := "Cosh"
+    return Cosh(0) "," %name%(0)
+}
+FnKsThenHelper() {
+    #import KS { * }
+    #import "module_scoped_import_helper" { * }
+    name := "Cosh"
+    return Cosh(0) "," %name%(0)
+}
+AssertEq(FnHelperThenKs(), "1.0,1.0", A_LineNumber)
+AssertEq(FnKsThenHelper(), "helper,helper", A_LineNumber)
+
 FileAppend "pass", "*"

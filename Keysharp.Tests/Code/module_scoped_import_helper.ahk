@@ -5,3 +5,4 @@
 HelperFn() => 42
 helperVar := 100
 GetHelperVar() => helperVar
+Cosh(*) => "helper"   ; the KS module exports a Cosh too, for the import-order checks

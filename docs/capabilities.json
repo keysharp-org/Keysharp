@@ -516,7 +516,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Performs dynamic dereferencing (double-deref) to resolve a variable name stored in another variable.",
+                     "notes":  "Resolves an existing variable, function or class by a run-time name, including imported names. Blank and unknown names raise Error; reading an unset variable raises UnsetError except in optional-value contexts.",
                      "tested-by":  "op-dereference.ahk"
                  },
                  {

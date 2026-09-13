@@ -87,18 +87,12 @@ namespace Keysharp.Runtime
 		public Ahk(params object[] args) : base(args) { }
 
 		/// <summary>
-		/// Resolves a class the way a global name resolves. This module is AutoHotkey's global namespace, and a
-		/// class nested in another class (Gui.Control, Clr.ManagedType) is named only through the class that
-		/// declares it, so its short name resolves to nothing here. Only an Any-derived type is a class: a static
-		/// function container (Dir, Maths) or a CLR helper (KeysharpForm) has no Statics entry to resolve to.
+		/// Resolves a class the way a global name resolves. This module is AutoHotkey's global namespace, which
+		/// holds neither the Ks module nor a class it declares.
 		/// </summary>
 		private static bool TryGetGlobalClass(string name, out System.Type type)
 		{
-			var script = Script.TheScript;
-
-			if (script.ReflectionsData.stringToTypes.TryGetValue(name, out type)
-				&& typeof(Any).IsAssignableFrom(type)
-				&& !Script.IsNestedInClass(type, script))
+			if (Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(name, out type) && Script.IsGlobalClass(type))
 				return true;
 
 			type = null;

@@ -5,7 +5,7 @@ namespace Keysharp.Tests
 	public class AssignTests : TestRunner
 	{
 		[Test, Category("Assign")]
-		public void AssignDynVar() => Assert.IsTrue(TestScript("assign-dyn-var", false));//Dynamic variables only work as global statics, not function variables.
+		public void AssignDynVar() => Assert.IsTrue(TestScript("assign-dyn-var", false));
 
 		[Test, Category("Assign")]
 		public void AssignEmpty() => Assert.IsTrue(TestScript("assign-empty", true));

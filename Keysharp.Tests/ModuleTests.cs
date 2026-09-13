@@ -53,6 +53,9 @@ namespace Keysharp.Tests
 		[Test, Category("Module")]
 		public void ScopedImport() => Assert.IsTrue(TestScript("module-scoped-import", false));
 
+		[Test, Category("Module")]
+		public void DynamicNames() => Assert.IsTrue(TestScript("module-dynamic-names", false));
+
 		/// <summary>
 		/// A module name reaches a script only through an import, as in AutoHotkey, where a module is named by no
 		/// variable until #Import binds one. This asserts on the GENERATED CODE rather than on diagnostics: an

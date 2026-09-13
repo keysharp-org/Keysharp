@@ -77,6 +77,9 @@ namespace Keysharp.Builtins
 		}
 	}
 
+    // Every prototype object is one of these, and Type() reports "Prototype" for it, but as in AutoHotkey no global
+    // class of that name exists.
+    [PublicHiddenFromUser]
     public class Prototype : KeysharpObject
     {
         public Prototype(params object[] args) : base(args)

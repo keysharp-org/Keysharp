@@ -62,7 +62,7 @@ namespace Keysharp.Runtime
 			for (var i = 0; i < names.Length; i++)
 			{
 				var init = i < values.Length ? values[i] : i < defaults.Length ? defaults[i] : null;
-				Script.TheScript.Vars[names[i]] = init;
+				_ = Script.TheScript.Vars.SetVariable(names[i], init);
 			}
 		}
 	}

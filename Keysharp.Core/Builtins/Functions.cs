@@ -69,8 +69,12 @@ namespace Keysharp.Builtins
 
 				if (!del.IsValid)
 				{
-					// Fall back to global/built-in functions when the module doesn't define the method.
-					del = cachedKeysharpFunc.GetOrAdd(s, (key) => new KeysharpFunc(s, (object)null, paramCount));
+					// A variable of the module can hold a function (an import, a closure) and can change, so it is read
+					// each time. The name cache is shared by every module, so it holds only the built-in functions.
+					if (script.Vars.GetModuleVars(moduleType).TryGetValue(s, out var mph) && mph.CallFunc(null, null) is KeysharpFunc held && held.IsValid)
+						return held;
+
+					del = cachedKeysharpFunc.GetOrAdd(s, (key) => new KeysharpFunc(script.ReflectionsData.flatPublicStaticMethods.GetValueOrDefault(s)));
 				}
 			}
 			else

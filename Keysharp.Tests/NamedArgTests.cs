@@ -48,6 +48,33 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Misc")]
+		public void WarnNamedArgImportedClass()
+		{
+			var warning = Warnings("""
+#Import Ks { Overlay as Ov, * }
+ModuleAlias() => Ov(moduleBad: 1)
+Wildcard() => Overlay(wildcardBad: 1)
+Scoped() {
+	#Import Ks { Overlay as LocalOverlay }
+	return LocalOverlay(scopedBad: 1)
+}
+class C {
+	#Import Ks { Overlay as ClassOverlay }
+	M() => ClassOverlay(classBad: 1)
+}
+""");
+			foreach (var name in new[] { "moduleBad", "wildcardBad", "scopedBad", "classBad", "Width" })
+				Assert.IsTrue(warning.Contains(name), warning);
+
+			// Unimported, the name is no class, so nothing is checked against Overlay's parameters.
+			Assert.IsFalse(Warnings("#Warn VarUnset, Off\nf() => Overlay(nosuch: 1)\n").Contains("nosuch"));
+
+			// The call is checked against what the import binds, a function included, not the global class it shadows.
+			var shadowed = Warnings("#Import Ks { Cosh as Buffer }\nf() => Buffer(nosuch: 1)\n");
+			Assert.IsTrue(shadowed.Contains("nosuch") && !shadowed.Contains("ByteCount"), shadowed);
+		}
+
+		[Test, Category("Misc")]
 		public void DynamicCallWarning()
 		{
 			var warning = Warnings("f(alpha) => alpha\ng := f\nx := g(nosuch: 1)\n");

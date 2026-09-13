@@ -66,17 +66,6 @@ namespace Keysharp.Runtime
 			this.moduleType = moduleType ?? throw new System.ArgumentNullException(nameof(moduleType));
 		}
 
-		public object this[object key]
-		{
-			// The key is either a variable NAME or a reference standing in for one, so the reference test has to be
-			// the provable one: anything else is a name, and a value that merely might answer to __Value would be
-			// read as a reference here and never resolve as the name it is.
-			get => (Refs.DeclaresValue(key) ? Refs.GetValueOrNull(key) : null) ?? Script.TheScript.Vars.GetVariable(moduleType, key.ToString()) ?? "";
-			set => _ = Refs.DeclaresValue(key)
-				? Refs.SetValue(key, value)
-				: Script.TheScript.Vars.SetVariable(moduleType, key.ToString(), value);
-		}
-
 		public bool HasVariable(object key) => Script.TheScript.Vars.HasVariable(moduleType, key.ToString());
 		public object GetVariable(object key) => Script.TheScript.Vars.GetVariable(moduleType, key.ToString());
 		public object SetVariable(object key, object value) => Script.TheScript.Vars.SetVariable(moduleType, key.ToString(), value);
