@@ -77,6 +77,7 @@ namespace Keysharp.Internals.Scripting
 	/// </summary>
 	internal class Runner
 	{
+		internal const string RunScriptAssemblyEnvironmentVariable = "KEYSHARP_RUNSCRIPT_ASSEMBLY";
 		internal static CliCommand Parse(string[] args)
 		{
 			var asm = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
@@ -752,10 +753,29 @@ namespace Keysharp.Internals.Scripting
 
 			if (command.ScriptName == "*")
 			{
-				using var stdin = Console.OpenStandardInput();
-				using var ms = new MemoryStream();
-				stdin.CopyTo(ms);
-				asmBytes = ms.ToArray();
+				var transportedAssembly = Environment.GetEnvironmentVariable(RunScriptAssemblyEnvironmentVariable);
+				Environment.SetEnvironmentVariable(RunScriptAssemblyEnvironmentVariable, null);
+
+				if (!string.IsNullOrEmpty(transportedAssembly))
+				{
+					try
+					{
+						asmBytes = File.ReadAllBytes(transportedAssembly);
+					}
+					finally
+					{
+						try { File.Delete(transportedAssembly); }
+						catch (IOException) { }
+						catch (UnauthorizedAccessException) { }
+					}
+				}
+				else
+				{
+					using var stdin = Console.OpenStandardInput();
+					using var ms = new MemoryStream();
+					stdin.CopyTo(ms);
+					asmBytes = ms.ToArray();
+				}
 			}
 			else
 				asmBytes = File.ReadAllBytes(command.ScriptName);

@@ -9226,7 +9226,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The object RunScript returns: the child script process and its redirected I/O streams."
+                     "notes":  "The object RunScript returns: the child script process and its redirected standard-input, standard-output and standard-error streams.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
                  },
                  {
                      "category":  "Automation",
@@ -9236,7 +9237,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets process exit code after termination."
+                     "notes":  "Gets the process exit code after termination, or an empty string while it is running.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
                  },
                  {
                      "category":  "Automation",
@@ -9246,7 +9248,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets process exit time."
+                     "notes":  "Gets the process exit time after termination, or an empty string while it is running.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
                  },
                  {
                      "category":  "Automation",
@@ -9256,7 +9259,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns whether the process has exited."
+                     "notes":  "Returns whether the process has exited.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
                  },
                  {
                      "category":  "Automation",
@@ -9266,7 +9270,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Terminates the process."
+                     "notes":  "Terminates the process.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
                  },
                  {
                      "category":  "Automation",
@@ -9276,7 +9281,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets redirected standard-error stream."
+                     "notes":  "Gets the redirected standard-error stream.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
                  },
                  {
                      "category":  "Automation",
@@ -9286,7 +9292,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets redirected standard-input stream."
+                     "notes":  "Gets the redirected standard-input stream; dynamically compiled assemblies use a separate internal transport, so this stream remains available to the child.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
                  },
                  {
                      "category":  "Automation",
@@ -9296,7 +9303,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets redirected standard-output stream."
+                     "notes":  "Gets the redirected standard-output stream.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -9817,8 +9825,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Executes script source text/file in a script engine context. Requires the optional compiler component at runtime; compiled artifacts detect this call and include the component unless it is explicitly excluded.",
-                     "tested-by":  "external-com.ahk"
+                     "notes":  "Executes script source text/file in a child process and returns a ScriptProcess. Async controls waiting independently of the optional exit Callback, which runs on the caller's scheduler. All three standard streams are redirected. Requires the optional compiler component at runtime; compiled artifacts detect this call and include the component unless it is explicitly excluded.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk; external-com.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -9834,7 +9842,7 @@
                  {
                      "category":  "Imaging",
                      "feature":  "Screen capture and pixel/image functions",
-                     "syntax":  "",
+                     "syntax":  "RunScript(Code, Async := false, Callback?, Name := \"*\", Executable?, Options?)",
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",

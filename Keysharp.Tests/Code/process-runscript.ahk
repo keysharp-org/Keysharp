@@ -1,9 +1,11 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 
-#import KS { RunScript }
+#import KS { RunScript, A_RealThread }
 #Include <assert>
 
-headlessDirectives := "#NoTrayIcon`n"
+headlessDirectives := "#NoTrayIcon`n#ErrorStdOut`n#Warn All, StdOut`n"
 #if WINDOWS
 	hostBinary := "Keysharp.exe"
 #elif LINUX
@@ -12,35 +14,50 @@ headlessDirectives := "#NoTrayIcon`n"
 	hostBinary := "./osx-arm64/Keysharp.app/Contents/MacOS/Keysharp"
 #endif
 
-WaitForRunScriptExit(info, timeoutMs := 10000) {
-	loops := timeoutMs // 10
-	while (!info.HasExited && loops > 0)
+WaitForRunScriptExit(processInfo, timeoutMs := 10000) {
+	remaining := timeoutMs // 10
+	while (!processInfo.HasExited && remaining > 0)
 	{
 		Sleep 10
-		loops--
+		remaining--
 	}
 
-	if (!info.HasExited)
+	if (!processInfo.HasExited)
 	{
-		info.Kill()
+		processInfo.Kill()
 		return false
 	}
 
 	return true
 }
 
-info := RunScript(headlessDirectives . "ExitApp(0)",,, hostBinary)
-AssertEq(info.ExitCode, 0, A_LineNumber)
-
-info := ""
-info := RunScript(headlessDirectives . "ExitApp(1)",,, hostBinary)
+script := headlessDirectives . '
+(
+	stdout := FileOpen("*", "w")
+	stderr := FileOpen("**", "w")
+	Loop 2048
+	{
+		stdout.Write("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+-")
+		stderr.Write("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+-")
+	}
+	stdout.Flush()
+	stderr.Flush()
+	ExitApp(1)
+)'
+info := RunScript(script, false,,, hostBinary)
+AssertEq(Type(info), "ScriptProcess", A_LineNumber)
 AssertEq(info.ExitCode, 1, A_LineNumber)
+capturedOut := info.StdOut.Read()
+capturedErr := info.StdErr.Read()
+AssertEq(StrLen(capturedOut), 131072, A_LineNumber)
+AssertEq(StrLen(capturedErr), 131072, A_LineNumber)
 
 AsyncCallback(callbackinfo) {
-	global result := callbackinfo.ExitCode
+	global result := callbackinfo.ExitCode, callbackThreadId := A_RealThread.Id
 }
-info := "", result := ""
-info := RunScript(headlessDirectives . "ExitApp(3)", AsyncCallback,, hostBinary)
+info := "", result := "", callbackThreadId := 0
+ownerThreadId := A_RealThread.Id
+info := RunScript(headlessDirectives . "ExitApp(3)", true, AsyncCallback,, hostBinary)
 
 if (!WaitForRunScriptExit(info))
 {
@@ -58,14 +75,21 @@ while (result == "" && loops < 200)
 }
 
 AssertEq(result, 3, A_LineNumber)
+AssertEq(callbackThreadId, ownerThreadId, A_LineNumber)
 
 info := ""
 script := headlessDirectives . "
 (
-	stdout := FileOpen("*", "w")
-	stdout.WriteLine("aa")
+	stdin := FileOpen("*", "r")
+	FileAppend stdin.ReadLine(), "*"
+	FileAppend "stderr-ok", "**"
 )"
-info := RunScript(script, 1,, hostBinary)
+info := RunScript(script, true,,, hostBinary)
+AssertEq(info.HasExited, 0, A_LineNumber)
+AssertEq(info.ExitCode, "", A_LineNumber)
+AssertEq(info.ExitTime, "", A_LineNumber)
+info.StdIn.WriteLine("stdin-ok")
+info.StdIn.Close()
 
 if (!WaitForRunScriptExit(info))
 {
@@ -73,6 +97,7 @@ if (!WaitForRunScriptExit(info))
 	ExitApp(1)
 }
 
-AssertEq(info.StdOut.Read(2), "aa", A_LineNumber)
+AssertEq(info.StdOut.Read(), "stdin-ok", A_LineNumber)
+AssertEq(info.StdErr.Read(), "stderr-ok", A_LineNumber)
 
 FileAppend "pass", "*"

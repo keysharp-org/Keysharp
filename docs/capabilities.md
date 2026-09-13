@@ -938,18 +938,18 @@ Status legend:
 | RTrim() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Trims characters from the beginning of a string. |
 | Run() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Run and RunWait launch an external program; RunWait waits for it to finish. A successful call which has no process identifier sets a requested PID output to blank. |
 | RunAs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Specifies a set of user credentials to use for all subsequent uses of Run and RunWait. |
-| RunScript() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Executes script source text/file in a script engine context. Requires the optional compiler component at runtime; compiled artifacts detect this call and include the component unless it is explicitly excluded. |
+| RunScript() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Executes script source text/file in a child process and returns a ScriptProcess. Async controls waiting independently of the optional exit Callback, which runs on the caller's scheduler. All three standard streams are redirected. Requires the optional compiler component at runtime; compiled artifacts detect this call and include the component unless it is explicitly excluded. |
 | RunWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Run and RunWait functions run an external program. RunWait will wait until the program finishes before continuing. |
 | Screen capture and pixel/image functions | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Pixel/image search and screen capture depend on platform-specific backends. On Linux, keysharp-desktop provides authorized X11, Wayland compositor, and portal capture. |
 | Script-owned window management | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Creating and driving the script's own GUI windows. Built on WinForms (Windows) and Eto (Linux/macOS); the object model, events, controls, menus, ListView and TreeView all behave the same. Remaining differences: the ActiveX and Custom control types are Win32-only, ListView supports only the Report view off Windows, raw Win32 style options are ignored, the WebView control renders with whichever browser engine the platform provides, per-monitor DPI re-layout is Windows-only, and a client cannot position its own window on Wayland without a compositor backend. |
-| ScriptProcess | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The object RunScript returns: the child script process and its redirected I/O streams. |
-| ScriptProcess.ExitCode | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets process exit code after termination. |
-| ScriptProcess.ExitTime | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets process exit time. |
+| ScriptProcess | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The object RunScript returns: the child script process and its redirected standard-input, standard-output and standard-error streams. |
+| ScriptProcess.ExitCode | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the process exit code after termination, or an empty string while it is running. |
+| ScriptProcess.ExitTime | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the process exit time after termination, or an empty string while it is running. |
 | ScriptProcess.HasExited | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether the process has exited. |
 | ScriptProcess.Kill() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Terminates the process. |
-| ScriptProcess.StdErr | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets redirected standard-error stream. |
-| ScriptProcess.StdIn | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets redirected standard-input stream. |
-| ScriptProcess.StdOut | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets redirected standard-output stream. |
+| ScriptProcess.StdErr | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the redirected standard-error stream. |
+| ScriptProcess.StdIn | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the redirected standard-input stream; dynamically compiled assemblies use a separate internal transport, so this stream remains available to the child. |
+| ScriptProcess.StdOut | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the redirected standard-output stream. |
 | Send() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends simulated keystrokes. |
 | SendEvent() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends keystrokes via Event mode. |
 | SendInput() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends keystrokes via Input mode. |

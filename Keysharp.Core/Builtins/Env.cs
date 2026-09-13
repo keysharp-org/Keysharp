@@ -655,11 +655,10 @@ namespace Keysharp.Builtins
 		/// Compiles and executes a C# script dynamically in a separate process.
 		/// </summary>
 		/// <param name="code">The script source result (as any object with a valid string representation).</param>
-		/// <param name="callbackOrAsync">Whether to run the process as async (provide non-unset non-zero value) or not.
+		/// <param name="asyncValue">Whether to return immediately instead of waiting for the process to exit.</param>
+		/// <param name="callback">An optional function called with the ScriptProcess after the process exits.</param>
 		/// <param name="name">An optional name for the dynamically generated program; defaults to "*".</param>
 		/// <param name="executable">Optional executable path used to run the generated assembly; defaults to the currently running process.</param>
-		/// If provided a callback function then it's considered async and the function <c>Call</c> method will be
-		/// invoked when the process exits with the ScriptProcess as the only argument.</param>
 		/// <param name="options">Optional Keysharp command-line arguments for this script, either as a string
 		/// (e.g. `--define:FEATURE_X --include "My include.ahk"`, split on whitespace with double quotes grouping) or
 		/// as an Array where each element is already one argument. Nothing is inherited from the calling script: this
@@ -671,13 +670,15 @@ namespace Keysharp.Builtins
 		/// If compilation fails without a flagged error, returns <c>null</c>.
 		/// </returns>
 		/// <exception cref="Error">Throws any compilation as <see cref="Error"/>.</exception>
-		public static object RunScript(object code, object callbackOrAsync = null, object name = null, object executable = null, object options = null)
+		public static object RunScript(object code, [UserDeclaredName("Async")] object asyncValue = null,
+			object callback = null, object name = null, object executable = null, object options = null)
 		{
 			string script = code.As();
-			KeysharpFunc cb = null;
+			var runAsync = ForceBool(asyncValue ?? false);
+			var cb = callback == null ? null : Functions.CheckedCallback(callback, 1);
 
-			if (callbackOrAsync != null)
-				cb = Functions.Func(callbackOrAsync);
+			if (callback != null && cb == null)
+				return DefaultObject;
 
 			string nameVal = name?.As();
 			// --define selects which code is COMPILED, and that happens here — the launched process only ever receives
@@ -773,13 +774,34 @@ namespace Keysharp.Builtins
 					launcher = Environment.ProcessPath;
 			}
 
+			string transportPath = null;
+
+			if (compiledPath == null)
+			{
+				transportPath = Path.Combine(Path.GetTempPath(), $"keysharp-runscript-{Environment.ProcessId}-{Guid.NewGuid():N}.cks");
+
+				try
+				{
+					using var transport = new FileStream(transportPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+					transport.Write(compiledBytes);
+				}
+				catch
+				{
+					try { File.Delete(transportPath); }
+					catch (IOException) { }
+					catch (UnauthorizedAccessException) { }
+					throw;
+				}
+			}
+
 			var scriptProcess = new Process
 			{
 				StartInfo = new ProcessStartInfo
 				{
 					FileName = launcher,
-					RedirectStandardInput = compiledPath == null,
+					RedirectStandardInput = true,
 					RedirectStandardOutput = true,
+					RedirectStandardError = true,
 					UseShellExecute = false,
 					CreateNoWindow = true
 				}
@@ -788,22 +810,30 @@ namespace Keysharp.Builtins
 			foreach (var arg in launcherArgs)
 				scriptProcess.StartInfo.ArgumentList.Add(arg);
 
-			var info = new ScriptProcess(scriptProcess);
-			scriptProcess.EnableRaisingEvents = true;
-			scriptProcess.Exited += (object sender, EventArgs e) => cb?.Call(info);
-			_ = scriptProcess.Start();
+			if (transportPath != null)
+				scriptProcess.StartInfo.Environment[Runner.RunScriptAssemblyEnvironmentVariable] = transportPath;
 
-			// Source compiled in this process is still transferred as raw assembly bytes. A precompiled file is
-			// passed by path so its script identity and adjacent optional-component search root survive the launch.
-			if (compiledPath == null)
+			var info = new ScriptProcess(scriptProcess, transportPath);
+			var ownerScheduler = cb == null ? null : Script.TheScript?.EventScheduler;
+
+			if (!info.AttachExitCallback(cb, ownerScheduler))
 			{
-				using var stdin = scriptProcess.StandardInput.BaseStream;
-				stdin.Write(compiledBytes, 0, compiledBytes.Length);
-				stdin.Flush();
+				info.StartFailed();
+				return Errors.ErrorOccurred("RunScript's exit callback needs a live owner scheduler.");
 			}
 
-			if (!ForceBool(callbackOrAsync ?? false))
-				scriptProcess.WaitForExit();
+			try
+			{
+				_ = scriptProcess.Start();
+			}
+			catch
+			{
+				info.StartFailed();
+				throw;
+			}
+
+			if (!runAsync)
+				info.CaptureAndWait();
 
 			return info;
 		}

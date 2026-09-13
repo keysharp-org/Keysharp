@@ -758,44 +758,58 @@ namespace Keysharp.Builtins
 	/// </summary>
 	public class ScriptProcess : KeysharpObject, IDisposable
 	{
-		private Process _process;
+		private readonly Process process;
+		private string assemblyTransportPath;
+		private object exitCallback;
+		private ScriptEventScheduler callbackScheduler;
+		private Action callbackInvalidated;
+		private string capturedStdOut;
+		private string capturedStdErr;
 		private bool disposed;
 
 		public ScriptProcess(params object[] args) : base(args)
 		{
-			_process = args[0] as Process;
+			process = args[0] as Process;
+			WatchForExit();
+		}
+
+		internal ScriptProcess(Process process, string transportPath) : base(null)
+		{
+			this.process = process;
+			assemblyTransportPath = transportPath;
+			WatchForExit();
 		}
 
 		~ScriptProcess() => Dispose(false);
 
-		public long HasExited => _process.HasExited ? 1L : 0L;
-		public long ExitCode => (long)_process.ExitCode;
+		public long HasExited => process.HasExited ? 1L : 0L;
+		public object ExitCode => process.HasExited ? (long)process.ExitCode : "";
 		/// <summary>
-		/// Gets the exit time formatted as "YYYYMMDDHH24MISS".
+		/// Gets the exit time formatted as "YYYYMMDDHH24MISS", or an empty string while the process is running.
 		/// </summary>
-		public string ExitTime => Conversions.ToYYYYMMDDHH24MISS(_process.ExitTime);
+		public string ExitTime => process.HasExited ? Conversions.ToYYYYMMDDHH24MISS(process.ExitTime) : "";
 		/// <summary>
 		/// Returns a KeysharpFile wrapping the standard output stream.
 		/// </summary>
-		private object _StdOut = null;
-		public object StdOut => _StdOut ??= new KeysharpFile(_process.StandardOutput);
+		private object stdOut;
+		public object StdOut => GetOutput(false);
 		/// <summary>
 		/// Returns a KeysharpFile wrapping the standard error stream.
 		/// </summary>
-		private object _StdErr = null;
-		public object StdErr => _StdErr ??= new KeysharpFile(_process.StandardError);
+		private object stdErr;
+		public object StdErr => GetOutput(true);
 		/// <summary>
 		/// Returns a KeysharpFile wrapping the standard input stream.
 		/// </summary>
-		private object _StdIn = null;
-		public object StdIn => _StdIn ??= new KeysharpFile(_process.StandardInput);
+		private object stdIn;
+		public object StdIn => stdIn ??= new KeysharpFile(process.StandardInput);
 		/// <summary>
 		/// Immediately kills the underlying process.
 		/// </summary>
 		/// <returns></returns>
 		public object Kill()
 		{
-			_process.Kill();
+			process.Kill();
 			return DefaultObject;
 		}
 
@@ -807,19 +821,142 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
+		internal bool AttachExitCallback(object callback, ScriptEventScheduler scheduler)
+		{
+			if (callback == null)
+				return true;
+
+			exitCallback = callback;
+			callbackScheduler = scheduler;
+			callbackInvalidated = InvalidateCallback;
+
+			if (scheduler != null && scheduler.RegisterPendingCallback(callbackInvalidated))
+				return true;
+
+			InvalidateCallback();
+			return false;
+		}
+
+		internal void CaptureAndWait()
+		{
+			var stdout = process.StandardOutput.ReadToEndAsync();
+			var stderr = process.StandardError.ReadToEndAsync();
+			process.WaitForExit();
+			capturedStdOut = stdout.GetAwaiter().GetResult();
+			capturedStdErr = stderr.GetAwaiter().GetResult();
+		}
+
+		internal void StartFailed()
+		{
+			CleanupTransport();
+			_ = Close();
+		}
+
+		private void WatchForExit()
+		{
+			if (process == null)
+				return;
+
+			process.EnableRaisingEvents = true;
+			process.Exited += ProcessExited;
+		}
+
+		private void ProcessExited(object sender, EventArgs e)
+		{
+			CleanupTransport();
+			process.Exited -= ProcessExited;
+			DispatchCallback();
+		}
+
+		private object GetOutput(bool error)
+		{
+			ref var result = ref error ? ref stdErr : ref stdOut;
+
+			if (result != null)
+				return result;
+
+			var captured = error ? capturedStdErr : capturedStdOut;
+			return result = captured != null
+				? new KeysharpFile(new StringReader(captured))
+				: new KeysharpFile(error ? process.StandardError : process.StandardOutput);
+		}
+
+		private void DispatchCallback()
+		{
+			var scheduler = Volatile.Read(ref callbackScheduler);
+
+			if (scheduler == null || !scheduler.Enqueue(ScriptEventQueue.Normal, 0, RunCallback))
+				CancelCallback();
+		}
+
+		private ScriptEventExecutionResult RunCallback()
+		{
+			var scheduler = Volatile.Read(ref callbackScheduler);
+			var callback = Volatile.Read(ref exitCallback);
+
+			if (scheduler == null || callback == null)
+				return ScriptEventExecutionResult.Dropped;
+
+			var result = scheduler.TryExecuteThreadLaunch(0, false, false, threadVariables =>
+			{
+				try
+				{
+					_ = Keysharp.Internals.Flow.TryCatch(() => _ = Script.InvokeOrNull(callback, null, this));
+				}
+				finally
+				{
+					CancelCallback();
+				}
+			}, ThreadKind.Callback);
+
+			if (result == ScriptEventExecutionResult.Dropped)
+				CancelCallback();
+
+			return result;
+		}
+
+		private void InvalidateCallback()
+		{
+			_ = Interlocked.Exchange(ref exitCallback, null);
+			_ = Interlocked.Exchange(ref callbackScheduler, null);
+			_ = Interlocked.Exchange(ref callbackInvalidated, null);
+		}
+
+		private void CancelCallback()
+		{
+			var scheduler = Interlocked.Exchange(ref callbackScheduler, null);
+			var invalidated = Interlocked.Exchange(ref callbackInvalidated, null);
+			_ = Interlocked.Exchange(ref exitCallback, null);
+			scheduler?.ReleasePendingCallback(invalidated);
+		}
+
+		private void CleanupTransport()
+		{
+			var path = Interlocked.Exchange(ref assemblyTransportPath, null);
+
+			if (path == null)
+				return;
+
+			try { File.Delete(path); }
+			catch (IOException) { }
+			catch (UnauthorizedAccessException) { }
+		}
+
 		protected virtual void Dispose(bool disposing)
 		{
 			if (disposed)
 				return;
 
 			disposed = true;
+			CancelCallback();
 
 			if (disposing)
 			{
-				(_StdIn as IDisposable)?.Dispose();
-				(_StdOut as IDisposable)?.Dispose();
-				(_StdErr as IDisposable)?.Dispose();
-				_process?.Dispose();
+				process.Exited -= ProcessExited;
+				(stdIn as IDisposable)?.Dispose();
+				(stdOut as IDisposable)?.Dispose();
+				(stdErr as IDisposable)?.Dispose();
+				process?.Dispose();
 			}
 		}
 

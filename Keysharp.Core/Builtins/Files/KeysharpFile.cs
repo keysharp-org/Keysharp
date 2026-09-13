@@ -95,6 +95,12 @@ namespace Keysharp.Builtins
 			enc = sr.CurrentEncoding;
 		}
 
+		internal KeysharpFile(StringReader reader) : base(null)
+		{
+			tr = reader;
+			enc = System.Text.Encoding.UTF8;
+		}
+
 		/// <summary>
 		/// Initializes a File over memory the script already holds.
 		/// </summary>
