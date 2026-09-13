@@ -331,7 +331,15 @@ namespace Keysharp.Builtins.COM
 			// named values at the front of rgvarg where DISPPARAMS.rgdispidNamedArgs expects them.
 			inputParameters = Keysharp.Internals.Invoke.NamedArgBinder.StripNames(inputParameters, out var argNames);
 
-			if (argNames.Length != 0)
+			// No name is a nameless call, `obj()`: the default member, DISPID_VALUE, as AHK invokes it.
+			if (methodName == null)
+			{
+				if (argNames.Length != 0)
+					return Errors.ErrorOccurred($"A call to a COM object's default member cannot name its arguments ({string.Join(", ", argNames)}).");
+
+				dispId = 0;
+			}
+			else if (argNames.Length != 0)
 			{
 				hr = RawGetIDsOfNames(methodName, argNames, out dispId, out var ids);
 

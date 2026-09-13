@@ -13,6 +13,7 @@ dict.Add("Age", 30)
 dict.Add("Country", "USA")
 
 AssertEq(dict.Item("Name"), "Alice", A_LineNumber)
+AssertEq(dict("Name"), "Alice", A_LineNumber)
 
 Assert(dict.Exists("Age"), A_LineNumber)
 
