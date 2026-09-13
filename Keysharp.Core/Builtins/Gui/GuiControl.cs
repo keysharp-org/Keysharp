@@ -650,14 +650,14 @@ namespace Keysharp.Builtins
 			/// <returns>The Gui.Control or Gui for parent, or an empty value when it maps to neither.</returns>
 			internal static object ParentObject(Forms.Control parent)
 			{
-				if (parent == null)
-					return DefaultObject;
+				for (; parent != null; parent = parent.GetLogicalParent())
+				{
+					if (parent.GetGuiControl() is Gui.Control gc)
+						return gc;
 
-				if (parent.GetGuiControl() is Gui.Control gc)
-					return gc;
-
-				if (parent is KeysharpForm ksf && ksf.Tag is WeakReference<Gui> wr && wr.TryGetTarget(out var gui))
-					return gui;
+					if (parent is KeysharpForm form && form.Tag is WeakReference<Gui> wr && wr.TryGetTarget(out var gui))
+						return gui;
+				}
 
 				return DefaultObject;
 			}

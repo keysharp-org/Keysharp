@@ -113,7 +113,8 @@ namespace System.Windows.Forms
 		internal static Control GetLogicalParent(this Control control)
 		{
 #if WINDOWS
-			return control.Parent;
+			var parent = control?.Parent;
+			return parent is KeysharpForm form && ReferenceEquals(control, form.ContentContainer) ? form : parent;
 #else
 			var parent = control?.Parent;
 			while (parent is Layout layout && layout.Parent != null)
@@ -379,6 +380,17 @@ namespace System.Windows.Forms
 #endif
 		}
 
+#if WINDOWS
+		internal static bool TryForwardContextMenu(this Control control, ref Message message)
+		{
+			if (message.Msg != WindowsAPI.WM_CONTEXTMENU || control.FindForm() is not KeysharpForm form)
+				return false;
+
+			message.Result = WindowsAPI.SendMessage(form.Handle, (uint)message.Msg, message.WParam, message.LParam);
+			return true;
+		}
+#endif
+
 		/// <summary>
 		/// Gets the position of the <see cref="Control"/> relative to the client are of the Form.
 		/// </summary>
@@ -387,6 +399,13 @@ namespace System.Windows.Forms
 		{
 			if (control is Form)
 				return Point.Empty;
+
+#if WINDOWS
+			var content = control.FindForm() is KeysharpForm keysharpForm ? keysharpForm.ContentContainer : null;
+
+			if (ReferenceEquals(control, content))
+				return Point.Empty;
+#endif
 
 #if !WINDOWS
 			Form form;
@@ -427,7 +446,11 @@ namespace System.Windows.Forms
 
 			// This is done like this because Control.PointToScreen and similar functions
 			// apparently don't always work correctly if the Form is hidden.
-			while (parent != null && parent is not Form)
+			while (parent != null && parent is not Form
+#if WINDOWS
+				   && !ReferenceEquals(parent, content)
+#endif
+			)
 			{
 				p.Offset(parent.GetLocation());
 				parent = parent.Parent;
@@ -437,8 +460,7 @@ namespace System.Windows.Forms
 		}
 
 		/// <summary>
-		/// Finds the right most and bottom most child controls of a <see cref="Control"/>.<br/>
-		/// The .Right and .Bottom properties of the controls are used to identify the controls.
+		/// Finds the right-most and bottom-most child controls.
 		/// </summary>
 		/// <param name="control">The <see cref="Control"/> whose children will be traversed.</param>
 		/// <returns>A <see cref="Control"/>,<see cref="Control"/> tuple containing the right and bottom most child controls of the <see cref="Control"/>.
@@ -455,23 +477,20 @@ namespace System.Windows.Forms
 
 			foreach (Control ctrl in control.Controls)
 			{
-				if (ctrl is not KeysharpStatusStrip)//Don't count a status strip in the bounds since its placement is handled manually.
+				if (ctrl is KeysharpStatusStrip)//Don't count a status strip because its placement is handled manually.
+					continue;
+				var bounds = ctrl.GetBounds();
+
+				if (bounds.Right > maxx)
 				{
-					var temp = ctrl.Right;
+					maxx = bounds.Right;
+					p.right = ctrl;
+				}
 
-					if (temp > maxx)
-					{
-						maxx = temp;
-						p.right = ctrl;
-					}
-
-					temp = ctrl.Bottom;
-
-					if (temp > maxy)
-					{
-						maxy = temp;
-						p.bottom = ctrl;
-					}
+				if (bounds.Bottom > maxy)
+				{
+					maxy = bounds.Bottom;
+					p.bottom = ctrl;
 				}
 			}
 
@@ -738,11 +757,8 @@ namespace System.Windows.Forms
 		internal static Rectangle GetClientScreenRect(this Forms.Control control, bool resolveWaylandSurface = false)
 		{
 #if WINDOWS
-			// PointToScreen maps the client origin to the screen; ClientSize is the client area (excluding
-			// chrome). Both are already in logical (int) coordinates, so use them directly.
-			var sp = control.PointToScreen(Point.Empty);
-			var cs = control.ClientSize;
-			return new Rectangle(sp.X, sp.Y, cs.Width, cs.Height);
+			var client = control is KeysharpForm form ? form.ContentContainer : control;
+			return new Rectangle(client.PointToScreen(Point.Empty), client.ClientSize);
 #else
 			// PointToScreen maps the client origin, and a Container exposes its true client/content size
 			// (excluding chrome) via the native ClientSize - which the shim's ClientRectangle/ClientSize

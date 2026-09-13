@@ -3,6 +3,15 @@ using Label = System.Windows.Forms.Label;
 
 namespace Keysharp.Builtins
 {
+	internal sealed class KeysharpContentPanel : Panel
+	{
+		protected override void WndProc(ref Message m)
+		{
+			if (!this.TryForwardContextMenu(ref m))
+				base.WndProc(ref m);
+		}
+	}
+
 	public class KeysharpButton : Button
 	{
 		private readonly int addStyle, removeStyle;

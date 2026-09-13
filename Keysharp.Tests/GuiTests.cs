@@ -790,8 +790,12 @@ namespace Keysharp.Tests
 			{
 				var btn = (Gui.Control)gui.Add("Button", "x10 y20 w80 h24", "OK");
 				var lv = (Gui.Control)gui.Add("ListView", "x10 y60 w200 h100", "Name");
+				var hotkey = (Gui.Control)gui.Add("Hotkey", "x100 y20 w80 h24");
 				_ = lv.Add("", "one");
 				_ = lv.Add("", "two");
+				var menu = new Keysharp.Builtins.MenuBar();
+				_ = menu.Add("File", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => "")));
+				gui.MenuBar = menu;
 				var calls = new List<(string Who, object[] Args)>();
 				object ctrlReturns = "";
 				var ctrlHandler = new KeysharpFunc((Func<object, object, object, object, object, object>)((c, item, right, x, y) =>
@@ -806,6 +810,7 @@ namespace Keysharp.Tests
 				}));
 				_ = btn.OnEvent("ContextMenu", ctrlHandler);
 				_ = lv.OnEvent("ContextMenu", ctrlHandler);
+				_ = hotkey.OnEvent("ContextMenu", ctrlHandler);
 				_ = gui.OnEvent("ContextMenu", guiHandler);
 
 				//Shown once, offscreen: until then WinForms keeps the controls in its parking window, so a control's
@@ -848,11 +853,13 @@ namespace Keysharp.Tests
 				AssertArgs(calls[0].Args, [btn, 0L, 0L, expectedX, expectedY], "the control's handler");
 				AssertArgs(calls[1].Args, [gui, btn, 0L, 0L, expectedX, expectedY], "the window's handler");
 
-				//A right-click: IsRightClick 1. Its X/Y is the cursor's, which the test does not control.
+				//A right-click reports the supplied screen point in the same menu-free client coordinates.
 				var at = btn.Ctrl.PointToScreen(new Point(b.Width / 2, b.Height / 2));
 				Send(btn.Ctrl.Handle, ((at.Y & 0xFFFF) << 16) | (at.X & 0xFFFF));
 				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "a right-click");
 				Assert.AreEqual(1L, calls[0].Args[2]);
+				Assert.AreEqual((long)(b.Left + b.Width / 2), calls[0].Args[3]);
+				Assert.AreEqual((long)(b.Top + b.Height / 2), calls[0].Args[4]);
 				Assert.AreSame(btn, calls[1].Args[1]);
 				Assert.AreEqual(1L, calls[1].Args[3]);
 
@@ -904,6 +911,61 @@ namespace Keysharp.Tests
 				Assert.AreEqual(2L, calls[0].Args[1]);
 				Assert.AreEqual(0L, calls[0].Args[2]);
 				Assert.AreEqual(2L, calls[1].Args[2]);
+
+				//The Hotkey control suppresses its native edit menu, but still forwards WM_CONTEXTMENU to the Gui.
+				Send(hotkey.Ctrl.Handle, -1);
+				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the Menu key on a Hotkey control");
+				Assert.AreSame(hotkey, calls[0].Args[0]);
+				Assert.AreEqual(0L, calls[0].Args[2]);
+
+				Send(gui.form.ContentContainer.Handle, -1);
+				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "gui" }, Pump(), "the Menu key on the content background");
+				Assert.AreEqual("", calls[0].Args[1]);
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
+		[Test, Category("Gui")]
+		[Apartment(ApartmentState.STA)]
+		public void MenuBarUsesClientCoordinates()
+		{
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+
+			try
+			{
+				var button = (Gui.Control)gui.Add("Button", "x0 y0 w80 h24", "Top");
+				var menu = new Keysharp.Builtins.MenuBar();
+				_ = menu.Add("File", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => "")));
+				gui.MenuBar = menu;
+				var status = (Gui.Control)gui.Add("StatusBar", null, "Ready");
+				Assert.AreSame(gui.form.ContentContainer, button.Ctrl.Parent);
+				Assert.AreSame(gui, button.Parent);
+				Assert.AreSame(gui.form.ContentContainer, status.Ctrl.Parent);
+				Assert.AreEqual(0, button.Ctrl.Top, "adding a menu leaves the control at the content origin");
+
+				_ = gui.Show("NoActivate x-20000 y-20000 w200 h100");
+				Assert.AreEqual(menu.MenuStrip.Bottom, gui.form.ContentContainer.Top, "the content starts below the menu bar");
+				Assert.AreEqual((int)Math.Ceiling(100 * gui.DpiScale), gui.form.GuiClientSize.Height);
+				Assert.AreEqual(gui.form.GuiClientSize.Height, status.Ctrl.Bottom, "the status bar is docked within the client area");
+
+				var y = new VarRef(null);
+				var height = new VarRef(null);
+				_ = gui.GetClientPos(null, null, null, height);
+				Assert.AreEqual(100L, height.__Value);
+
+				_ = button.GetPos(null, y, null, null);
+				Assert.AreEqual(0L, y.__Value);
+				_ = button.Move(null, 10L);
+				_ = button.GetPos(null, y, null, null);
+				Assert.AreEqual(10L, y.__Value);
+
+				var nativeOrigin = gui.form.ContentContainer.PointToScreen(Point.Empty);
+				var publicOrigin = Platform.Window.ClientToScreen(gui.form.Handle);
+				Assert.AreEqual(nativeOrigin.Y, publicOrigin.Y, "CoordMode Client uses the content origin below the menu");
 			}
 			finally
 			{

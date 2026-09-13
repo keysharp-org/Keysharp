@@ -91,7 +91,7 @@ namespace Keysharp.Builtins
 					if (o is bool b)
 					{
 #if WINDOWS
-						f.form.AutoScroll = b;
+						f.form.ContentContainer.AutoScroll = b;
 #else
 						// EnsureLayoutContainer drills through the Scrollable (a Panel) into the inner
 						// PixelLayout, so controls still parent correctly once it is in place.
@@ -422,10 +422,18 @@ namespace Keysharp.Builtins
 
 			set
 			{
+#if WINDOWS
+				var previousClientSize = form.BeenShown ? form.GuiClientSize : (Size?)null;
+#endif
 				menuBar = (MenuBar)value;
 #if WINDOWS
 				form.TagAndAdd(menuBar.MenuStrip);
 				form.MainMenuStrip = menuBar.MenuStrip;
+				form.ContentContainer.BringToFront();//A frontmost fill panel is docked in the space left below the menu.
+				form.PerformLayout();
+
+				if (previousClientSize is Size size)
+					form.GuiClientSize = size;
 #else
 				menuBar.MenuStrip.SyncEtoMenuBar();
 				var systemItems = Eto.Forms.MenuBarSystemItems.None;
@@ -556,7 +564,7 @@ namespace Keysharp.Builtins
 				// Preserve prebuilt window content (e.g. main window tabs/menu container).
 				form.Content ??= new PixelLayout();
 #endif
-				LastContainer = form;
+				LastContainer = form.ContentContainer;
 				form.Register(this);//Calling handle forces the creation of the window.
 
 				if (lastfound)
@@ -616,7 +624,7 @@ namespace Keysharp.Builtins
 					// Ensure the Eto content container exists before we size it later.
 					form.Content ??= new PixelLayout();
 #endif
-					LastContainer = form;
+					LastContainer = form.ContentContainer;
 
 #if !WINDOWS
 					Keysharp.Internals.Window.Unix.EtoMessageSource.Attach(form);
@@ -1828,7 +1836,7 @@ namespace Keysharp.Builtins
 			}
 			else
 			{
-				var sizingParent = ctrl is KeysharpStatusStrip ? form : isTabControl ? prevParent : LastContainer;
+				var sizingParent = ctrl is KeysharpStatusStrip ? form.ContentContainer : isTabControl ? prevParent : LastContainer;
 				sizingParent.TagAndAdd(holder);
 			}
 
@@ -2264,13 +2272,6 @@ namespace Keysharp.Builtins
 			{
 				var top = (double)prevParent.Margin.Top;
 
-				if (prevParent is Form f && f.MainMenuStrip != null)
-				{
-#if WINDOWS
-					top += f.MainMenuStrip.GetSize().Height;
-#endif
-				}
-
 				if (loc.Y == int.MinValue && LastContainer is KeysharpGroupBox gblast)
 				{
 					//Top needs to be manually adjusted when the container is a GroupBox, we're adding the first control, and they haven't explicitly specified a Y coordinate.
@@ -2295,7 +2296,7 @@ namespace Keysharp.Builtins
 				else if (opts.bgcolor.HasValue)
 					ktc.SetColor(opts.bgcolor.Value);
 
-				if (prevParent != form)
+				if (prevParent != form.ContentContainer)
 				{
 					var parentSize = prevParent.GetSize();
 					var ctrlRight = loc.X + finalWidth;
@@ -3208,7 +3209,7 @@ namespace Keysharp.Builtins
 				var maxx = 0;
 				var maxy = 0;
 
-				foreach (Forms.Control ctrl in form.GetControls())
+				foreach (Forms.Control ctrl in form.ContentContainer.GetLayoutContainer().Controls)
 				{
 					if (ctrl != ss)
 					{
@@ -3234,7 +3235,7 @@ namespace Keysharp.Builtins
 			{
 				// Only the autosize path needs the status strip; computing it unconditionally allocated a status-strip
 				// array on every Show, including hot repeated repositions that pass an explicit size.
-				var status = form.GetControls().OfType<KeysharpStatusStrip>().ToArray();
+				var status = form.ContentContainer.GetLayoutContainer().Controls.OfType<KeysharpStatusStrip>().ToArray();
 				KeysharpStatusStrip ss = null;
 
 				if (status.Length > 0)
@@ -3255,7 +3256,7 @@ namespace Keysharp.Builtins
 			}
 			else
 			{
-				size = (form.BeenShown || showCalled) ? form.GetSize() : new Size(800, 500);//Using this size because PreferredSize is so small it just shows the title bar.
+				size = (form.BeenShown || showCalled) ? form.GuiClientSize : new Size(800, 500);//Using this size because PreferredSize is so small it just shows the title bar.
 
 				if (requestedSize.Width != int.MinValue)
 					size.Width = (int)Math.Ceiling(requestedSize.Width * dpiscale);
@@ -3275,7 +3276,7 @@ namespace Keysharp.Builtins
 #if WINDOWS
 			// Single ClientSize assignment for both the autosize and explicit-size branches. The explicit branch used
 			// to set it again above, resizing the form twice (two SetWindowPos round-trips) on every Show.
-			form.ClientSize = size;
+			form.GuiClientSize = size;
 			var screen = Forms.Screen.PrimaryScreen.Bounds;
 #else
 			form.Content.ClientSize = size;
@@ -3324,7 +3325,7 @@ namespace Keysharp.Builtins
 
 			if (!form.BeenShown && (requestedSize.Width == int.MinValue || requestedSize.Height == int.MinValue))
 			{
-				var currentSize = form.GetSize();
+				var currentSize = form.GuiClientSize;
 				if (requestedSize.Width == int.MinValue) requestedSize.Width = (int)Math.Ceiling(currentSize.Width / dpiscale);
 				if (requestedSize.Height == int.MinValue) requestedSize.Height = (int)Math.Ceiling(currentSize.Height / dpiscale);
 			}
@@ -3577,7 +3578,7 @@ namespace Keysharp.Builtins
 			if (groupBox is Gui.Control gctrl && gctrl.Ctrl is KeysharpGroupBox gb)
 				LastContainer = gb;
 			else
-				LastContainer = form;
+				LastContainer = form.ContentContainer;
 
 			return DefaultObject;
 		}

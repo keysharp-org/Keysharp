@@ -1847,6 +1847,9 @@ namespace Keysharp.Builtins
 			{
 				if (_control.ParentWindow is Window win)
 				{
+					if (win is KeysharpForm form)
+						return form.PointToGuiClient(new PointF(x, y));
+
 					var client = win.PointFromScreen(new PointF(x, y));
 					return new Point(Convert.ToInt32(client.X), Convert.ToInt32(client.Y));
 				}
@@ -1925,7 +1928,9 @@ namespace Keysharp.Builtins
 				var item = _control switch
 				{
 					KeysharpListBox lb => lb.SelectedIndex + 1L,
+					KeysharpListView lv when !fromKeyboard => lv.GetCellAt(location) is { RowIndex: >= 0 } cell ? cell.RowIndex + 1L : 0L,
 					KeysharpListView lv => lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L,
+					KeysharpTreeView tv when !fromKeyboard => (tv.GetCellAt(location)?.Item as TreeNode)?.Handle.ToInt64() ?? 0L,
 					KeysharpTreeView tv => tv.SelectedNode?.Handle.ToInt64() ?? 0L,
 					KeysharpStatusStrip sbar when !fromKeyboard => sbar.PartFromPoint(),
 					_ => 0L

@@ -74,6 +74,14 @@ namespace Keysharp.Builtins
 			};
 		}
 
+#if WINDOWS
+		protected override void WndProc(ref Message m)
+		{
+			if (!this.TryForwardContextMenu(ref m))
+				base.WndProc(ref m);
+		}
+#endif
+
 		private static bool IsModifierKey(Keys keyCode)
 		{
 #if WINDOWS

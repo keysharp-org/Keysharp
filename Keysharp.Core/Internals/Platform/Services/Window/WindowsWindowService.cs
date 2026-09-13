@@ -37,6 +37,9 @@ namespace Keysharp.Internals
 
 		public override Rectangle GetClientBounds(nint h)
 		{
+			if (Control.FromHandle(h) is KeysharpForm form)
+				return form.GetClientScreenRect();
+
 			if (!IsSpecified(h) || !WindowsAPI.GetClientRect(h, out var rect))
 				return Rectangle.Empty;
 
@@ -79,6 +82,12 @@ namespace Keysharp.Internals
 
 		public override POINT ClientToScreen(nint h)
 		{
+			if (Control.FromHandle(h) is KeysharpForm form)
+			{
+				var origin = form.ContentContainer.PointToScreen(Point.Empty);
+				return new POINT(origin.X, origin.Y);
+			}
+
 			var pt = new POINT();
 			_ = WindowsAPI.ClientToScreen(h, ref pt);
 			return pt;

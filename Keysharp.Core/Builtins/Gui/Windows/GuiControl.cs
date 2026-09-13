@@ -1587,7 +1587,7 @@ namespace Keysharp.Builtins
 
 						if (gui != null && gui.TryGetTarget(out var g) && GetCursorPos(out POINT cursor))
 						{
-							var client = g.form.PointToClient(new Point(cursor.X, cursor.Y));
+							var client = g.form.PointToGuiClient(new Point(cursor.X, cursor.Y));
 							g.form.RaiseContextMenu(this, row, true, client.X, client.Y);
 						}
 

@@ -31,6 +31,29 @@ namespace Keysharp.Builtins
 		internal bool BeenShown => beenShown;
 
 #if WINDOWS
+		internal readonly Panel ContentContainer = new KeysharpContentPanel { Dock = DockStyle.Fill };
+
+		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		internal Size GuiClientSize
+		{
+			get => ContentContainer.ClientSize;
+			set => ClientSize += value - ContentContainer.ClientSize;
+		}
+
+		internal Point PointToGuiClient(Point screen) => ContentContainer.PointToClient(screen);
+#else
+		internal Forms.Control ContentContainer => this;
+		internal Size GuiClientSize => ClientSize;
+
+		internal Point PointToGuiClient(PointF screen)
+		{
+			var anchor = Content as Forms.Control ?? this;
+			var client = anchor.PointFromScreen(screen);
+			return new Point(Convert.ToInt32(client.X), Convert.ToInt32(client.Y));
+		}
+#endif
+
+#if WINDOWS
 		protected override CreateParams CreateParams
 		{
 			get
@@ -136,6 +159,7 @@ namespace Keysharp.Builtins
 			AutoScaleMode = AutoScaleMode.None;
 			//See Gui.Show() for where the remainder of the properties get set, such as scaling values.
 			Font = MainWindow.OurDefaultFont;
+			Controls.Add(ContentContainer);
 			StartPosition = FormStartPosition.CenterScreen;
 			KeyPreview = true;
 			DoubleBuffered = true;
@@ -403,7 +427,7 @@ namespace Keysharp.Builtins
 				screenPoint = new Point(cursor.X, cursor.Y);
 			}
 
-			var target = hwnd != 0 ? FromChildHandle(hwnd) : null;
+			var target = hwnd != 0 ? Forms.Control.FromHandle(hwnd) ?? FromChildHandle(hwnd) : null;
 
 			if (target is MenuStrip)
 				return false;
@@ -414,7 +438,7 @@ namespace Keysharp.Builtins
 				ctrl = target.GetGuiControl();
 
 			var (item, at) = ctrl != null ? ctrl.ContextMenuTarget(fromKeyboard, screenPoint) : (0L, screenPoint);
-			var client = PointToClient(at);
+			var client = PointToGuiClient(at);
 			RaiseContextMenu(ctrl, item, !fromKeyboard, client.X, client.Y);
 			m.Result = 0;
 			return true;
@@ -488,14 +512,14 @@ namespace Keysharp.Builtins
 #if WINDOWS
 			if (e.Data.GetDataPresent(DataFormats.FileDrop) && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
 			{
-				var coords = PointToClient(new Point(e.X, e.Y));
+				var coords = PointToGuiClient(new Point(e.X, e.Y));
 				var files = (string[])e.Data.GetData(DataFormats.FileDrop);
 				dropFilesHandlers?.InvokeEventHandlers(g, ActiveControl, new Array(files), coords.X, coords.Y);
 			}
 #else
 			if (e.Data.ContainsUris && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
 			{
-				var coords = PointFromScreen(e.Location);
+				var coords = PointToGuiClient(e.Location);
 				var files = (string[])e.Data.Uris.Select(uri => uri.ToString());
 				dropFilesHandlers?.InvokeEventHandlers(g, sender, new Array(files), coords.X, coords.Y);
 			}
@@ -544,8 +568,8 @@ namespace Keysharp.Builtins
 					focused.RaiseContextMenu(true, default);
 				else if (TryBeginContextMenu() && GetCursorPos(out POINT pt))
 				{
-					var client = PointFromScreen(new PointF(pt.X, pt.Y));
-					RaiseContextMenu(null, 0L, false, Convert.ToInt32(client.X), Convert.ToInt32(client.Y));
+					var client = PointToGuiClient(new PointF(pt.X, pt.Y));
+					RaiseContextMenu(null, 0L, false, client.X, client.Y);
 				}
 			}
 			else
@@ -577,7 +601,7 @@ namespace Keysharp.Builtins
 				else
 					state = 0L;
 
-				Size client = ClientSize;
+				Size client = GuiClientSize;
 
 				//Deferrable: a programmatic resize raises this inside the thread which asked for it, and that
 				//thread is uninterruptible for its first 17ms and for as long as it is Critical.

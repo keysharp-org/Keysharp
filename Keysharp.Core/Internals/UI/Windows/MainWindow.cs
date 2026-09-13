@@ -23,6 +23,8 @@ namespace Keysharp.Internals.UI.Windows
 		internal MainWindow(Script owner) : base(owner)
 		{
 			InitializeComponent();
+			ContentContainer.Controls.Add(tcMain);
+			ContentContainer.BringToFront();
 			//FormBorderStyle = FormBorderStyle.SizableToolWindow;
 			SetStyle(ControlStyles.StandardClick, true);
 			SetStyle(ControlStyles.StandardDoubleClick, true);
