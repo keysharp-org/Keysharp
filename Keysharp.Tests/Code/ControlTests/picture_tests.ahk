@@ -14,7 +14,7 @@ MyGui.Show()
 ; └───────────┘
 
 
-LoadPic() {
+LoadPic(*) {
     MyPic := MyGui.Add("Picture", "x10 y60 w100 h-1", A_ScriptDir "\monkey.ico")
     ; MyGui.Opts("+Redraw")
 }

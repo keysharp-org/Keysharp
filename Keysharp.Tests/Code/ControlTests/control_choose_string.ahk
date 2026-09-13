@@ -16,6 +16,6 @@ CZ_LbBtn1.OnEvent("Click", ChooseString)
 
 MyGui.Show()
 
-ChooseString() {
+ChooseString(*) {
     ControlChooseString("красный", CZ_ListBox)
 }

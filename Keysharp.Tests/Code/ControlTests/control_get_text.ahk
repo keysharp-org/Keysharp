@@ -17,7 +17,7 @@ CZ_LbBtn2.Enabled := False
 
 MyGui.Show("w320" "h300")
 
-GetText() {
+GetText(*) {
     Result := ControlGetText(CZ_LbBtn2, MyGui)
     MsgBox(Result, "Target Button's TextFocused()")
 }

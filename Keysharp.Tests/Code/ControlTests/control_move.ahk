@@ -8,6 +8,6 @@ BtnMove.OnEvent("Click", MoveControl)
 
 MyGui.Show("w200 h500")
 
-MoveControl() {
+MoveControl(*) {
     ControlMove(10, 300, 86, 40, Btn1)
 }

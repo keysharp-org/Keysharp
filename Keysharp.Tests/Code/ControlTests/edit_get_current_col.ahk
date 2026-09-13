@@ -7,7 +7,7 @@ CZ_LbBtn14.OnEvent("Click", GetCol)
 
 MyGui.Show()
 
-GetCol() {
+GetCol(*) {
     CurrentCol := EditGetCurrentCol(CZ_Edit1, MyGui)
     MsgBox(CurrentCol, "Current Colum No.")
 }

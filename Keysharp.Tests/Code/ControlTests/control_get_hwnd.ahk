@@ -15,7 +15,7 @@ CZ_LbBtn1.OnEvent("Click", GetHwnd)
 
 MyGui.Show("w320" "h300")
 
-GetHwnd() {
+GetHwnd(*) {
     Result := ControlGetHwnd(CZ_ListBox, MyGui)
     MsgBox(Result, "Hwnd of ListBox")
 }

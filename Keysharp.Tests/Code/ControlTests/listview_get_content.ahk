@@ -32,43 +32,43 @@ LV2_Btn7.OnEvent("Click", LV_CountCol)
 
 MyGui.Show()
 
-LV_Selected() {
+LV_Selected(*) {
     List := ListViewGetContent("Selected", LV2, MyGui)
     MsgBox(List, "LV Selected")
     List := ""
 }
 
-LV_Focused() {
+LV_Focused(*) {
     List := ListViewGetContent("Focused", LV2, MyGui)
     MsgBox(List, "LV Focused")
     List := ""
 }
 
-LV_Col1() {
+LV_Col1(*) {
     List := ListViewGetContent("Col1", LV2, MyGui)
     MsgBox(List, "LV Column 1")
     List := ""
 }
 
-LV_Count() {
+LV_Count(*) {
     List := ListViewGetContent("Count", LV2, MyGui)
     MsgBox(List, "LV Row Count")
     List := ""
 }
 
-LV_CountSelected() {
+LV_CountSelected(*) {
     List := ListViewGetContent("Count Selected", LV2, MyGui)
     MsgBox(List, "LV Count Selected")
     List := ""
 }
 
-LV_CountFocused() {
+LV_CountFocused(*) {
     List := ListViewGetContent("Count Focused", LV2, MyGui)
     MsgBox(List, "LV Count Focused")
     List := ""
 }
 
-LV_CountCol() {
+LV_CountCol(*) {
     List := ListViewGetContent("Count Col", LV2, MyGui)
     MsgBox(List, "LV Column Count")
     List := ""

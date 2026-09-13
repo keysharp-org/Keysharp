@@ -8,7 +8,7 @@ ShowBtn := MyGui.Add("Button", "x10 y+10", "Paste Pic")
 ShowBtn.OnEvent("Click", PastePic)
 MyGui.Show()
 
-PastePic() {
+PastePic(*) {
     ControlFocus(MyRE)
     Send("^v")
 }

@@ -17,7 +17,7 @@ MyGui.Show()
 
 
 
-LV_GetCount() {
+LV_GetCount(*) {
     ;List := ListViewGetContent("Col1", LV2, MyGui)
     MsgBox(LV2.GetCount(), "LV Column 1")
     ;List := ""

@@ -14,21 +14,21 @@ EnBtn3.OnEvent("Click", Toggled)
 
 MyGui.Show("w200 h400")
 
-Enabled() {
+Enabled(*) {
     SetControlDelay(-1)
     ControlSetEnabled(1, BtnVictim, "Enable Control")
 }
 
-Disabled() {
+Disabled(*) {
     SetControlDelay(-1)
     ControlSetEnabled(0, BtnVictim, "Enable Control")
 }
 
-Toggled() {
+Toggled(*) {
     SetControlDelay(-1)
     ControlSetEnabled(-1, BtnVictim, "Enable Control")
 }
 
-RunMonkeyRun() {
+RunMonkeyRun(*) {
     MsgBox("Help me find a banana!", "Support hungry primates")
 }

@@ -12,7 +12,7 @@ RadioThree.OnEvent("Click", RadioThreeClicked)
 MyGui.Show()
 
 
-ChangeFont()
+ChangeFont(*)
 {
 ;global TEST_HEADER
 TEST_HEADER.SetFont("cBlue s14", "Comic Sans MS")
@@ -21,7 +21,7 @@ TEST_HEADER.SetFont("cBlue s14", "Comic Sans MS")
 ; ┌────────────────┐
 ; │  Restore font  │
 ; └────────────────┘
-ChangeFontBack()
+ChangeFontBack(*)
 {
 TEST_HEADER.SetFont("cBlack s8", "Arial")
 MsgBox("Done", "Restoring Font")
@@ -31,6 +31,6 @@ MsgBox("Done", "Restoring Font")
 ; │  RadioThree callback  │
 ; └───────────────────────┘
 
-RadioThreeClicked() {
+RadioThreeClicked(*) {
 MsgBox("You clicked the last radio button.", "Radio 3 Clicked")
 }

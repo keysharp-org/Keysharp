@@ -7,7 +7,7 @@ CZ_LbBtn18.OnEvent("Click", EditPaster)
 
 MyGui.Show()
 
-EditPaster() {
+EditPaster(*) {
     EditPasted := "How now brown cow"
     EditPaste(EditPasted, CZ_Edit1, MyGui)
 }

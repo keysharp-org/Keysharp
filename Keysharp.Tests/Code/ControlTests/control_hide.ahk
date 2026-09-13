@@ -19,6 +19,6 @@ CZ_LbBtn3.OnEvent("Click", HideButton)
 
 MyGui.Show("w320" "h300")
 
-HideButton() {
+HideButton(*) {
     ControlHide(CZ_LbBtn2, MyGui)
 }

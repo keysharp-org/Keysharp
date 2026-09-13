@@ -7,7 +7,7 @@ CZ_LbBtn17.OnEvent("Click", GetLineCount)
 
 MyGui.Show()
 
-GetLineCount() {
+GetLineCount(*) {
     LineCount := EditGetLineCount(CZ_Edit1, MyGui)
     MsgBox(LineCount, "Current Line Count")
 }

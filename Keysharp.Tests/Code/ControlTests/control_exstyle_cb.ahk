@@ -12,16 +12,16 @@ CB_ShowBtn.OnEvent("Click", ShowExStyle)
 
 MyGui.Show("w400 h200")
 
-CB_Extend() {
+CB_Extend(*) {
     ControlSetStyleEx("+0x00000020", MyCB)
     ;MsgBox("Extend", "Extend Ellipse")
 }
 
-CB_Retract() {
+CB_Retract(*) {
     ControlSetStyleEx("-0x00000020", MyCB)
     ;MsgBox("Retract Ellipse", "Retract Ellipse")
 }
 
-ShowExStyle() {
+ShowExStyle(*) {
     MsgBox("0x" Format("{1:X}", ControlGetExStyle(MyCB, MyGui.Title)), "Show ExStyle")
 }

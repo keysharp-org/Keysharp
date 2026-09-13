@@ -14,14 +14,14 @@ ChkBtn3.OnEvent("Click", CheckThree)
 
 MyGui.Show("w200 h350")
 
-CheckOne() {
+CheckOne(*) {
     ControlSetChecked(-1, Chk1)
 }
 
-CheckTwo() {
+CheckTwo(*) {
     ControlSetChecked(1, Chk2)
 }
 
-CheckThree() {
+CheckThree(*) {
     ControlSetChecked(0, Chk3)
 }

@@ -15,7 +15,7 @@ CZ_LbBtn1.OnEvent("Click", GetChoice)
 
 MyGui.Show()
 
-GetChoice() {
+GetChoice(*) {
     Choice := ControlGetChoice(CZ_ListBox, MyGui)
     MsgBox(Choice)
 }

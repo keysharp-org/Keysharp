@@ -3,7 +3,7 @@ BtnOkay := MyGui.Add("Button", "x10 y+10 +AltSubmit", "Okay").OnEvent("Click", O
 MyEdit := MyGui.Add("Edit", "x10 y+10 w350 h80", "Test now")
 MyGui.Show("w400 h200")
 
-OkayClicked() {
+OkayClicked(*) {
     CoordMode("Mouse", "Client")
     ControlSetExStyle("0x0010", MyEdit)
     Sleep(10)

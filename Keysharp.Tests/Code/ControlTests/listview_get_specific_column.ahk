@@ -17,7 +17,7 @@ MyGui.Show()
 
 
 
-LV_Col1() {
+LV_Col1(*) {
     List := ListViewGetContent("Col1", LV2, MyGui)
     MsgBox(List, "LV Column 1")
     List := ""

@@ -17,7 +17,7 @@ CZ_LbBtn2.Enabled := False
 
 MyGui.Show("w320" "h300")
 
-GetEnabled() {
+GetEnabled(*) {
     Result := ControlGetEnabled(CZ_LbBtn2, MyGui)
     MsgBox(Result, "1: enabled 0: disabled")
 }

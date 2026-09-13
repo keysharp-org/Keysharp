@@ -25,6 +25,6 @@ Loop
     Sleep 3000
 }
 
-CloseMe() {
+CloseMe(*) {
     ExitApp()
 }

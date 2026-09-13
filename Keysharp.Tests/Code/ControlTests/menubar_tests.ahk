@@ -6,10 +6,10 @@ MyGui.MenuBar := MyMenuBar
 MyEdit := MyGui.Add("Edit", "w200 h100")
 MyGui.Show()
 
-FileCallback() {
+FileCallback(*) {
     MsgBox("Clicked File")
 }
 
-EditCallback() {
+EditCallback(*) {
     MsgBox("Clicked Edit")
 }

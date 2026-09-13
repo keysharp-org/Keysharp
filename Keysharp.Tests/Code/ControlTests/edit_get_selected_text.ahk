@@ -7,7 +7,7 @@ CZ_LbBtn17.OnEvent("Click", GetSelectedText)
 
 MyGui.Show()
 
-GetSelectedText() {
+GetSelectedText(*) {
     SelectedText := EditGetSelectedText(CZ_Edit1, MyGui)
     MsgBox(SelectedText, "Selected text in Edit")
 }

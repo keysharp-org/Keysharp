@@ -15,7 +15,7 @@ CZ_LbBtn1.OnEvent("Click", GetClassNN)
 
 MyGui.Show("w320" "h300")
 
-GetClassNN() {
+GetClassNN(*) {
     ClassNN := ControlGetClassNN(CZ_ListBox, MyGui)
     MsgBox(ClassNN)
 }

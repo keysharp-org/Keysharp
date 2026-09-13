@@ -8,7 +8,7 @@ BtnShow.OnEvent("Click", GetPos)
 
 MyGui.Show()
 
-GetPos() {
+GetPos(*) {
     ControlGetPos(&x1, &y1, &w1, &h1, "X = 10 Y = 10", "Get Positions")
     ControlGetPos(&x2, &y2, &w2, &h2, "X = 10 Y = 50", "Get Positions")
     ControlGetPos(&x3, &y3, &w3, &h3, "X = 10 Y = 90", "Get Positions")

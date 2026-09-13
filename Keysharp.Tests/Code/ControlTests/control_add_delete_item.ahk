@@ -8,7 +8,7 @@ MyLbBtn2.OnEvent("Click", AddWhite)
 MyGui.Show()
 
 
-DeleteWhite() {
+DeleteWhite(*) {
 
     Try 
     {
@@ -23,7 +23,7 @@ DeleteWhite() {
     ControlDeleteItem(WhiteIndex, MyListBox)
 }
 
-AddWhite() {
+AddWhite(*) {
     ControlAddItem("White", MyListBox)
 }
 

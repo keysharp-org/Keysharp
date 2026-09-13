@@ -170,7 +170,7 @@ class Shell {
         local footer := "Don't show this card on startup"
         local closeHint := "✕ click to close"
 
-        ; Measure so the card fits its content exactly (MeasureText returns a {w, h} object).
+        ; Measure so the card fits its content exactly (MeasureText returns a {Width, Height} object).
         local m := Image.Create(1, 1)
         local titleW := m.MeasureText(title, titleFont, fontName).Width
         local keyWs := [], descW := 0

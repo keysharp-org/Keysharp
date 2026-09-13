@@ -7,7 +7,7 @@ CZ_LbBtn16.OnEvent("Click", GetLineText)
 
 MyGui.Show()
 
-GetLineText() {
+GetLineText(*) {
     CurrentLine := EditGetCurrentLine(CZ_Edit1, MyGui)
     Try
     {

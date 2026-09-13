@@ -23,15 +23,15 @@ CZ_LbBtn5.OnEvent("Click", IsItHidden)
 
 MyGui.Show("w320" "h300")
 
-HideButton() {
+HideButton(*) {
     ControlHide(CZ_LbBtn2, MyGui)
 }
 
-ShowButton() {
+ShowButton(*) {
     ControlShow(Cz_LbBtn2, MyGui)
 }
 
-IsItHidden() {
+IsItHidden(*) {
     Result := ControlGetVisible(Cz_LbBtn2, MyGui)
     If (Result != 0) {
         Result := "Visible"

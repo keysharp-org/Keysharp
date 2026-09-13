@@ -18,7 +18,7 @@ MyGui.Show()
 ; │  RichEdit Callbacks  │
 ; └──────────────────────┘
 
-SendTextToRichEdit() {
+SendTextToRichEdit(*) {
 RichEditVar := "
 (
 A line of text.
@@ -32,6 +32,6 @@ By default, the hard carriage return (Enter) between the previous line and this 
 ; ┌───────────────────────┐
 ; │  Clear Edit Callback  │
 ; └───────────────────────┘
-ClearRichEdit() {
+ClearRichEdit(*) {
     ControlSetText("", SecondRichEdit)
 }

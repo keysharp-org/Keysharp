@@ -6,7 +6,7 @@ MyEdit := MyGui.Add("Edit", "x10 h200 w200")
 
 MyGui.Show()
 
-EnumCtrls() {
+EnumCtrls(*) {
 
     for GuiCtrlObj in MyGui {
         theNN := ControlGetClassNN(GuiCtrlObj, MyGui)

@@ -14,6 +14,6 @@ CZ_LbBtn1.OnEvent("Click", ChooseIndex)
 
 MyGui.Show()
 
-ChooseIndex() {
+ChooseIndex(*) {
     ControlChooseIndex(13, CZ_ListBox)
 }
