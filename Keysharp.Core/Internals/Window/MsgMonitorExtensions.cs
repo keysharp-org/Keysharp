@@ -98,6 +98,28 @@ namespace Keysharp.Internals.Window
 			return anyRan ? ScriptEventExecutionResult.Executed : blocked;
 		}
 
+		/// <summary>
+		/// Runs the chain for a posted message before it is dispatched, as AHK does while the script is interruptible.
+		/// When no callback can start, the chain is queued for when one can and the message is dispatched meanwhile.
+		/// </summary>
+		internal static bool TryExecuteBeforeDispatch(this MsgMonitor monitor, Script script, object[] args, object eventInfo, long hwnd, out long reply)
+		{
+			reply = 0L;
+
+			if (monitor.RunMonitors(script, args, eventInfo, hwnd, false, out var claim) != ScriptEventExecutionResult.Executed)
+			{
+				var queuedEvent = new BufferedMessageQueuedEvent(monitor, script, args, eventInfo, hwnd);
+				_ = script.EventScheduler.Enqueue(ScriptEventQueue.Normal, 0, queuedEvent.Execute);
+				return false;
+			}
+
+			if (claim == null)
+				return false;
+
+			reply = claim.Al();
+			return true;
+		}
+
 		internal static bool TryExecuteEmergency(this MsgMonitor monitor, Script script, object[] args, object eventInfo, long hwnd, out long reply)
 		{
 			reply = 0L;

@@ -31,11 +31,22 @@ namespace Keysharp.Tests
 			var msg = CreateMessage(msgId);
 
 			filter.handledMsg = msg;
-			var handled = CallBuffered(filter, ref msg);
+			// While no thread can start, the message is let through and its callbacks wait.
+			Assert.IsTrue(s.Threads.TryBeginThread(out var critical));
 
-			Assert.IsFalse(handled);
-			Assert.AreEqual(0, calls);
+			try
+			{
+				_ = Keysharp.Builtins.Flow.Critical();
+				Assert.IsFalse(CallBuffered(filter, ref msg));
+				context.DrainAll();
+				Assert.AreEqual(0, calls);
+			}
+			finally
+			{
+				s.Threads.EndThread(critical);
+			}
 
+			s.EventScheduler.SchedulePump();
 			context.DrainAll();
 
 			Assert.AreEqual(1, calls);
@@ -278,6 +289,168 @@ namespace Keysharp.Tests
 		}
 
 #if WINDOWS
+		/// <summary>
+		/// While the script is interruptible, a posted message above 0x0311 runs its callbacks before it is dispatched,
+		/// as in AHK, so a claim keeps it from the window and from the Gui's own OnMessage.
+		/// </summary>
+		[TestCase(true), TestCase(false)]
+		[Category("Threading"), Category("Gui"), Apartment(ApartmentState.STA)]
+		public void PostedMessageClaimSkipsDispatch(bool claims)
+		{
+			const int msgId = 0x8009;
+			var order = new List<string>();
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+			var probe = new DispatchProbe(gui.form.Handle, msgId);
+
+			try
+			{
+				_ = Keysharp.Builtins.Flow.OnMessage(msgId, new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) =>
+				{
+					order.Add("global");
+					return claims ? 0L : "";
+				})));
+				_ = gui.OnMessage(msgId, new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) =>
+				{
+					order.Add("window");
+					return "";
+				})));
+
+				Assert.IsTrue(WindowsAPI.PostMessage(gui.form.Handle, msgId, 0, 0));
+				Application.DoEvents();
+
+				Assert.That(order, Is.EqualTo(claims ? new[] { "global" } : new[] { "global", "window" }));
+				Assert.AreEqual(claims ? 0 : 1, probe.Count);
+			}
+			finally
+			{
+				probe.ReleaseHandle();
+				_ = gui.Destroy();
+			}
+		}
+
+		/// <summary>
+		/// While the script is uninterruptible, a posted message above 0x0311 reaches its window first and its callbacks
+		/// run once a thread can start.
+		/// </summary>
+		[Test, Category("Threading"), Category("Gui"), Apartment(ApartmentState.STA)]
+		public void PostedMessageWhileUninterruptible()
+		{
+			const int msgId = 0x800A;
+			var calls = 0;
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+			var probe = new DispatchProbe(gui.form.Handle, msgId);
+
+			try
+			{
+				_ = Keysharp.Builtins.Flow.OnMessage(msgId, new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) =>
+				{
+					calls++;
+					return 0L;
+				})));
+				Assert.IsTrue(s.Threads.TryBeginThread(out var critical));
+
+				try
+				{
+					_ = Keysharp.Builtins.Flow.Critical();
+					Assert.IsTrue(WindowsAPI.PostMessage(gui.form.Handle, msgId, 0, 0));
+					Application.DoEvents();
+					Assert.AreEqual(1, probe.Count, "the window must get the message while no thread can start");
+					Assert.AreEqual(0, calls);
+				}
+				finally
+				{
+					s.Threads.EndThread(critical);
+				}
+
+				Keysharp.Internals.Flow.TryDoEvents(s.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				Assert.AreEqual(1, calls, "the callback must run once a thread can start");
+				Assert.AreEqual(1, probe.Count);
+			}
+			finally
+			{
+				probe.ReleaseHandle();
+				_ = gui.Destroy();
+			}
+		}
+
+		/// <summary>
+		/// A callback which pumps messages, as Sleep does, is called once for its message, not again when the message
+		/// is dispatched.
+		/// </summary>
+		[Test, Category("Threading"), Category("Gui"), Apartment(ApartmentState.STA)]
+		public void PumpingCallbackRunsOnce()
+		{
+			const int msgId = 0x800C;
+			var calls = 0;
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+			var handle = gui.form.Handle;
+
+			try
+			{
+				_ = Keysharp.Builtins.Flow.OnMessage(msgId, new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) =>
+				{
+					if (++calls == 1)
+					{
+						_ = WindowsAPI.PostMessage(handle, msgId + 1, 0, 0);
+						Application.DoEvents();
+					}
+
+					return "";
+				})));
+
+				Assert.IsTrue(WindowsAPI.PostMessage(handle, msgId, 0, 0));
+				Application.DoEvents();
+				Assert.AreEqual(1, calls);
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
+		[TestCase(0x0201), TestCase(0x800B)]
+		[Category("Threading")]
+		public void ClaimedMessageLeavesNoStash(int msgId)
+		{
+			_ = UseQueuedMainContext();
+			var claims = true;
+			s.GuiData.onMessageHandlers[msgId] = CreateMonitor((_, _, _, _) => claims ? 0L : "");
+			var filter = new MessageFilter(s);
+			var msg = CreateMessage(msgId);
+
+			// A claimed message is never dispatched, so WndProc would never clear a stash of it.
+			Assert.IsTrue(filter.PreFilterMessage(ref msg));
+			Assert.IsNull(filter.handledMsg);
+
+			claims = false;
+			Assert.IsFalse(filter.PreFilterMessage(ref msg));
+			Assert.IsTrue(filter.handledMsg == msg);
+		}
+
+		/// <summary>Counts one message reaching a window's procedure, whatever the script's thread state.</summary>
+		private sealed class DispatchProbe : NativeWindow
+		{
+			private readonly int msg;
+			internal int Count;
+
+			internal DispatchProbe(nint handle, int msg)
+			{
+				this.msg = msg;
+				AssignHandle(handle);
+			}
+
+			protected override void WndProc(ref Message m)
+			{
+				if (m.Msg == msg)
+					Count++;
+
+				base.WndProc(ref m);
+			}
+		}
+
 		private static Message CreateMessage(int msgId) => Message.Create(IntPtr.Zero, msgId, IntPtr.Zero, IntPtr.Zero);
 
 		private static bool CallBuffered(MessageFilter filter, ref Message message) => filter.CallEventHandlers(ref message, true);

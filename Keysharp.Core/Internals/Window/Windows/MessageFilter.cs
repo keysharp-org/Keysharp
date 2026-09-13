@@ -18,24 +18,16 @@ namespace Keysharp.Internals.Window.Windows
 
 			if (script.GuiData.onMessageHandlers.TryGetValue(m.Msg, out var monitor))
 			{
+				// Only a message PreFilterMessage took off the queue carries a post time.
+				object eventInfo = buffered ? WindowsAPI.GetMessageTime() : 0L;
 				buffered = buffered && m.Msg > 0x0311;
-				object eventInfo = 0L;
 				long hwnd = m.HWnd;
 				hwnd = WindowsAPI.GetNonChildParent((nint)hwnd);
-
-				if (handledMsg == m)
-				{
-					eventInfo = WindowsAPI.GetMessageTime();
-				}
-
 				object[] args = [m.WParam.ToInt64(), m.LParam.ToInt64(), (long)m.Msg, m.HWnd.ToInt64()];
 
-				if (buffered)
-				{
-					var queuedEvent = new MsgMonitorExtensions.BufferedMessageQueuedEvent(monitor, script, args, eventInfo, hwnd);
-					_ = script.EventScheduler.Enqueue(ScriptEventQueue.Normal, 0, queuedEvent.Execute);
-				}
-				else if (monitor.TryExecuteEmergency(script, args, eventInfo, hwnd, out var reply))
+				if (buffered
+						? monitor.TryExecuteBeforeDispatch(script, args, eventInfo, hwnd, out var reply)
+						: monitor.TryExecuteEmergency(script, args, eventInfo, hwnd, out reply))
 				{
 					m.Result = (nint)reply;
 					return true;
@@ -56,10 +48,11 @@ namespace Keysharp.Internals.Window.Windows
 					return false;
 			}
 
-			// Stash the message for later comparison in WndProc to determine whether it's already
-			// been handled here. See more thorough description in KeysharpForm.cs WndProc.
-			handledMsg = m;
-			return CallEventHandlers(ref m, true);
+			var claimed = CallEventHandlers(ref m, true);
+			// Stash a message about to be dispatched so KeysharpForm.WndProc knows it was handled here. Like AHK's flag
+			// around DispatchMessage it is set after the callbacks, which may pump or send messages of their own.
+			handledMsg = claimed ? null : m;
+			return claimed;
 		}
 	}
 }
