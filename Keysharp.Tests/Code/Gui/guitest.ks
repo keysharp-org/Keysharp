@@ -4417,7 +4417,7 @@ GetSelectedVcp() {
 	try {
 		feature := m.GetVCP(code)
 		gVcpValueEdit.Value := feature.Current
-		SetStatus("monitor_vcp", "VCP: 0x" Format("{:02X}", code) " = " feature.Current " (max " feature.Max ")")
+		SetStatus("monitor_vcp", "VCP: 0x" Format("{:02X}", code) " = " feature.Current " (max " feature.Maximum ")")
 		AppendLog("Monitor " m.Index " GetVCP(0x" Format("{:02X}", code) ") -> current=" feature.Current ", max=" feature.Maximum ".")
 	} catch as err {
 		SetStatus("monitor_vcp", "VCP: read UNSUPPORTED/ERROR (see log)")

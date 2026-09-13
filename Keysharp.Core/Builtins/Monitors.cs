@@ -357,11 +357,17 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Reads one DDC/CI VCP feature, returning <c>{Current, Maximum}</c>. VCP codes are defined by the MCCS
 			/// standard: <c>0x10</c> brightness, <c>0x12</c> contrast, <c>0x60</c> input source, <c>0x62</c> speaker
-			/// volume, <c>0xD6</c> power mode. Throws an OSError when the monitor does not answer.
+			/// volume, <c>0xD6</c> power mode. Throws a ValueError for a code outside 0-255, and an OSError when the
+			/// monitor does not answer.
 			/// </summary>
 			public object GetVCP(object code)
 			{
-				var feature = (byte)Math.Clamp(code.Al(), 0L, 255L);
+				var c = code.Al();
+
+				if (c is < 0 or > byte.MaxValue)
+					return Errors.ValueErrorOccurred("VCP code must be from 0 through 255.", code);
+
+				var feature = (byte)c;
 
 				if (!Platform.MonitorControl.TryGetVcp(display, Details, feature, out var current, out var max))
 					return Errors.OSErrorOccurredWithMessage(VcpError($"read VCP feature 0x{feature:X2} from"));
@@ -379,12 +385,23 @@ namespace Keysharp.Builtins
 			/// <para>The feature is read before it is written, so a code the monitor does not implement raises an
 			/// OSError rather than reporting a success the display silently ignored — DDC/CI writes are
 			/// unacknowledged, so the preceding read is the only evidence the code exists.</para>
+			/// <para>A code outside 0-255 or a value outside 0-65535 throws a ValueError before anything is sent.</para>
 			/// </summary>
 			public object SetVCP(object code, object value)
 			{
-				var feature = (byte)Math.Clamp(code.Al(), 0L, 255L);
+				var c = code.Al();
 
-				if (!Platform.MonitorControl.TrySetVcp(display, Details, feature, (int)value.Al()))
+				if (c is < 0 or > byte.MaxValue)
+					return Errors.ValueErrorOccurred("VCP code must be from 0 through 255.", code);
+
+				var v = value.Al();
+
+				if (v is < 0 or > ushort.MaxValue)
+					return Errors.ValueErrorOccurred("VCP value must be from 0 through 65535.", value);
+
+				var feature = (byte)c;
+
+				if (!Platform.MonitorControl.TrySetVcp(display, Details, feature, (int)v))
 					return Errors.OSErrorOccurredWithMessage(VcpError($"write VCP feature 0x{feature:X2} to"));
 
 				return DefaultObject;

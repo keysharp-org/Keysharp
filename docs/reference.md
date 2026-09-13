@@ -1340,8 +1340,8 @@ Controlling another application needs **Automation** permission, granted per tar
 					; Device control — each is a real hardware transaction, deliberately not cached
 					Brightness => Integer        ; Get/set, 0-100. OSError naming the reason where unsupported.
 					IsBrightnessSupported => Boolean ; A real probe of the device, so it costs one brightness read.
-					GetVCP(code) => Object       ; Raw DDC/CI (MCCS) feature => { Current, Maximum }.
-					SetVCP(code, value)          ; See the warning below.
+					GetVCP(Code) => Object       ; Raw DDC/CI (MCCS) feature => { Current, Maximum }. Code 0-255.
+					SetVCP(Code, Value)          ; Code 0-255, Value 0-65535. See the warning below.
 				}
 				```
 			+ `Monitor.OnChange(Callback)` returns a `MonitorHook`, an `EventHook` managed exactly like a `WinEvent` hook. The callback receives `(Hook, Kind)`, where `Kind` is `"Topology"` when the set of attached monitors changed (plug/unplug, dock/undock) and `"Settings"` when the same monitors are attached but their resolution, position, scale or primary assignment changed; `A_EventInfo` holds the monitor count after the change. The kind is derived by comparing topology snapshots, so the vocabulary is the same on every platform and redundant notifications are dropped. A handler holding a `Monitor` should call its `Refresh()` — which returns falsy if that is the display that was just unplugged — or simply re-read `Monitor.All`.

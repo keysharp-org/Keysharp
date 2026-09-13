@@ -259,6 +259,23 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Monitor")]
+		public void VcpRangeValidation()
+		{
+			var m = new Builtins.Ks.KeysharpMonitor();
+
+			void Rejects(TestDelegate call)
+				=> Assert.IsInstanceOf<Keysharp.Builtins.ValueError>(
+					Assert.Throws<Keysharp.Builtins.KeysharpException>(call).UserError);
+
+			Rejects(() => m.GetVCP(-1L));
+			Rejects(() => m.GetVCP(256L));
+			Rejects(() => m.SetVCP(-1L, 0L));
+			Rejects(() => m.SetVCP(256L, 0L));
+			Rejects(() => m.SetVCP(0L, -1L));
+			Rejects(() => m.SetVCP(0L, 65536L));
+		}
+
+		[Test, Category("Monitor")]
 		public void MonitorFactories()
 		{
 			SkipIfGuiHeadless();
