@@ -773,6 +773,144 @@ namespace Keysharp.Tests
 			}
 		}
 
+		/// <summary>
+		/// ContextMenu follows AHK's dispatch: the control's handlers first, then the window's with that control as
+		/// GuiCtrlObj, unless a control handler returned a non-empty value. Raised as the system raises it: a
+		/// WM_CONTEXTMENU sent to the control, which its default procedure passes up to the window, and a ListView's
+		/// NM_RCLICK, which carries the clicked row.
+		/// </summary>
+		[Test, Category("Gui")]
+		[Apartment(ApartmentState.STA)]
+		public void ContextMenuDispatch()
+		{
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+
+			try
+			{
+				var btn = (Gui.Control)gui.Add("Button", "x10 y20 w80 h24", "OK");
+				var lv = (Gui.Control)gui.Add("ListView", "x10 y60 w200 h100", "Name");
+				_ = lv.Add("", "one");
+				_ = lv.Add("", "two");
+				var calls = new List<(string Who, object[] Args)>();
+				object ctrlReturns = "";
+				var ctrlHandler = new KeysharpFunc((Func<object, object, object, object, object, object>)((c, item, right, x, y) =>
+				{
+					calls.Add(("ctrl", new object[] { c, item, right, x, y }));
+					return ctrlReturns;
+				}));
+				var guiHandler = new KeysharpFunc((Func<object, object, object, object, object, object, object>)((g, c, item, right, x, y) =>
+				{
+					calls.Add(("gui", new object[] { g, c, item, right, x, y }));
+					return "";
+				}));
+				_ = btn.OnEvent("ContextMenu", ctrlHandler);
+				_ = lv.OnEvent("ContextMenu", ctrlHandler);
+				_ = gui.OnEvent("ContextMenu", guiHandler);
+
+				//Shown once, offscreen: until then WinForms keeps the controls in its parking window, so a control's
+				//WM_CONTEXTMENU would go up to that rather than to the Gui.
+				_ = gui.Show("NoActivate x-20000 y-20000");
+				_ = gui.Hide();
+
+				void Send(nint hwnd, nint lParam)
+				{
+					calls.Clear();
+					_ = WindowsAPI.SendMessage(hwnd, (uint)WindowsAPI.WM_CONTEXTMENU, hwnd, lParam);
+				}
+
+				//The event is queued, as AHK posts it, so nothing runs until the queue is pumped.
+				string[] Pump()
+				{
+					Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+					return calls.Select(c => c.Who).ToArray();
+				}
+
+				void AssertArgs(object[] actual, object[] expected, string what)
+				{
+					Assert.AreEqual(expected.Length, actual.Length, what);
+
+					for (var i = 0; i < expected.Length; i++)
+					{
+						if (expected[i] is KeysharpObject)
+							Assert.AreSame(expected[i], actual[i], $"{what}: parameter {i + 1}");
+						else
+							Assert.AreEqual(expected[i], actual[i], $"{what}: parameter {i + 1}");
+					}
+				}
+
+				//The Menu key (lParam -1): IsRightClick 0, and X/Y at the control's left edge 2px below its middle, in
+				//the window's client coordinates.
+				var b = btn.Ctrl.Bounds;
+				long expectedX = b.Left, expectedY = b.Top + 2 + b.Height / 2;
+				Send(btn.Ctrl.Handle, -1);
+				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the control's handler runs first, then the window's");
+				AssertArgs(calls[0].Args, [btn, 0L, 0L, expectedX, expectedY], "the control's handler");
+				AssertArgs(calls[1].Args, [gui, btn, 0L, 0L, expectedX, expectedY], "the window's handler");
+
+				//A right-click: IsRightClick 1. Its X/Y is the cursor's, which the test does not control.
+				var at = btn.Ctrl.PointToScreen(new Point(b.Width / 2, b.Height / 2));
+				Send(btn.Ctrl.Handle, ((at.Y & 0xFFFF) << 16) | (at.X & 0xFFFF));
+				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "a right-click");
+				Assert.AreEqual(1L, calls[0].Args[2]);
+				Assert.AreSame(btn, calls[1].Args[1]);
+				Assert.AreEqual(1L, calls[1].Args[3]);
+
+				//Any non-empty return from the control's handler, 0 included, keeps the window's from running.
+				foreach (var stop in new object[] { 0L, "abc" })
+				{
+					ctrlReturns = stop;
+					Send(btn.Ctrl.Handle, -1);
+					NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl" }, Pump(), $"a control handler returning '{stop}'");
+				}
+
+				ctrlReturns = "";
+
+				//On the window itself there is no control: GuiCtrlObj is "" and Item 0.
+				Send(gui.form.Handle, -1);
+				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "gui" }, Pump(), "the window itself");
+				Assert.AreEqual("", calls[0].Args[1]);
+				Assert.AreEqual(0L, calls[0].Args[2]);
+
+				//A ListView's NM_RCLICK carries the clicked row, which both handlers receive as Item.
+				var hdrSize = Marshal.SizeOf<NMHDR>();
+				var nm = Marshal.AllocHGlobal(hdrSize + 64);
+
+				try
+				{
+					for (var i = 0; i < hdrSize + 64; i++)
+						Marshal.WriteByte(nm, i, 0);
+
+					Marshal.StructureToPtr(new NMHDR { hwndFrom = lv.Ctrl.Handle, code = unchecked((uint)WindowsAPI.NM_RCLICK) }, nm, false);
+					Marshal.WriteInt32(nm, hdrSize, 1);//NMITEMACTIVATE.iItem: the second row.
+					calls.Clear();
+					_ = WindowsAPI.SendMessage(gui.form.Handle, (uint)WindowsAPI.WM_NOTIFY, (nint)0, nm);
+					NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "a ListView row");
+					Assert.AreSame(lv, calls[0].Args[0]);
+					Assert.AreEqual(2L, calls[0].Args[1]);
+					Assert.AreEqual(1L, calls[0].Args[2]);
+					Assert.AreSame(lv, calls[1].Args[1]);
+					Assert.AreEqual(2L, calls[1].Args[2]);
+				}
+				finally
+				{
+					Marshal.FreeHGlobal(nm);
+				}
+
+				//The Menu key on a ListView reports its focused row.
+				((System.Windows.Forms.ListView)lv.Ctrl).Items[1].Focused = true;
+				Send(lv.Ctrl.Handle, -1);
+				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the Menu key on a ListView");
+				Assert.AreEqual(2L, calls[0].Args[1]);
+				Assert.AreEqual(0L, calls[0].Args[2]);
+				Assert.AreEqual(2L, calls[1].Args[2]);
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
 		public void ColumnedMenuSize()

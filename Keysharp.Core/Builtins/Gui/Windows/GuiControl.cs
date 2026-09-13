@@ -397,8 +397,6 @@ namespace Keysharp.Builtins
 
 				_control.GotFocus += _control_GotFocus;
 				_control.LostFocus += _control_LostFocus;
-				_control.KeyDown += _control_KeyDown;
-				_control.MouseDown += _control_MouseDown;
 				dummyHandle = _control.Handle;//Force creation of the handle.
 			}
 
@@ -1485,16 +1483,74 @@ namespace Keysharp.Builtins
 					clickHandlers.InvokeEventHandlers(this, 0L);
 			}
 
-			internal void _control_KeyDown(object sender, KeyEventArgs e)
+			/// <summary>Gets the ContextMenu item and screen position for this control.</summary>
+			internal unsafe (long item, Point at) ContextMenuTarget(bool fromKeyboard, Point cursor)
 			{
-				if ((eventHandlerActive && e.KeyCode == Keys.Apps || (e.KeyCode == Keys.F10 && ((System.Windows.Forms.Control.ModifierKeys & Keys.Shift) == Keys.Shift))) && GetCursorPos(out POINT pt))
-					CallContextMenuChangeHandlers(true, pt.X, pt.Y);
-			}
+				var item = 0L;
+				Rectangle? itemRect = null;//In the control's client coordinates.
+				RECT r = default;
 
-			internal void _control_MouseDown(object sender, MouseEventArgs e)
-			{
-				if (eventHandlerActive && e.Button == MouseButtons.Right)
-					CallContextMenuChangeHandlers(false, e.X, e.Y);
+				switch (_control)
+				{
+					//The focused item, which a right-click does not move.
+					case KeysharpListBox lb:
+					{
+						var caret = (int)WindowsAPI.SendMessage(lb.Handle, (uint)WindowsAPI.LB_GETCARETINDEX, (nint)0, (nint)0);
+						item = caret + 1L;
+
+						if (fromKeyboard && caret != -1 && (int)WindowsAPI.SendMessage(lb.Handle, (uint)WindowsAPI.LB_GETITEMRECT, (nint)caret, (nint)(&r)) != -1)
+							itemRect = Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom);
+
+						break;
+					}
+
+					//A right-click on a row arrives as NM_RCLICK instead; see InvokeMessageHandlers().
+					case KeysharpListView lv when fromKeyboard:
+						if (lv.FocusedItem is ListViewItem focused)
+						{
+							item = focused.Index + 1L;
+							itemRect = focused.GetBounds(ItemBoundsPortion.Label);
+						}
+
+						break;
+
+					case KeysharpTreeView tv:
+					{
+						var node = fromKeyboard ? tv.SelectedNode : tv.GetNodeAt(tv.PointToClient(cursor));
+						item = node?.Handle.ToInt64() ?? 0L;
+
+						if (fromKeyboard && node != null)
+							itemRect = node.Bounds;
+
+						break;
+					}
+
+					case KeysharpTrackBar tb when fromKeyboard:
+						_ = WindowsAPI.SendMessage(tb.Handle, WindowsAPI.TBM_GETTHUMBRECT, (nint)0, (nint)(&r));
+						itemRect = Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom);
+						break;
+
+					case KeysharpStatusStrip ss when !fromKeyboard:
+						if (ss.GetItemAt(ss.PointToClient(cursor)) is ToolStripItem part)
+							item = ss.Items.IndexOf(part) + 1L;
+
+						break;
+				}
+
+				if (!fromKeyboard)
+					return (item, cursor);
+
+				Rectangle screen;
+
+				if (itemRect is Rectangle rect)
+					screen = _control.RectangleToScreen(rect);
+				else
+				{
+					_ = WindowsAPI.GetWindowRect(_control.Handle, out var w);
+					screen = Rectangle.FromLTRB(w.Left, w.Top, w.Right, w.Bottom);
+				}
+
+				return (item, new Point(screen.Left, screen.Top + 2 + screen.Height / 2));
 			}
 
 			internal unsafe object InvokeMessageHandlers(ref Message m)
@@ -1521,16 +1577,18 @@ namespace Keysharp.Builtins
 						}
 					}
 
-					if (_control is KeysharpListView && nmhdr.idFrom == 0 && nmhdr.hwndFrom != _control.Handle
-						&& notification is WindowsAPI.NM_RCLICK or WindowsAPI.NM_RDBLCLK)
+					//As AHK: a right-click on a row (reflected back here) or on the header raises ContextMenu with the
+					//clicked row, 0 for the header or no row, and answers TRUE so the ListView does not follow up with a
+					//WM_CONTEXTMENU which would lack the row.
+					if (_control is KeysharpListView && notification is (WindowsAPI.NM_RCLICK or WindowsAPI.NM_RDBLCLK)
+						&& (m.Msg == WindowsAPI.WM_NOTIFY ? nmhdr.idFrom == 0 && nmhdr.hwndFrom != _control.Handle : nmhdr.hwndFrom == _control.Handle))
 					{
-						if (GetCursorPos(out POINT cursor) && _control.FindForm() is KeysharpForm form)
-						{
-							var formPoint = form.PointToClient(new(cursor.X, cursor.Y));
-							var result = CallContextMenuChangeHandlers(true, formPoint.X, formPoint.Y, 0L);
+						var row = nmhdr.hwndFrom == _control.Handle ? Marshal.ReadInt32(m.LParam, Marshal.SizeOf<NMHDR>()) + 1L : 0L;
 
-							if (!CallbackStop.NonEmpty(result) && !form.IsDisposed)
-								form.CallContextMenuChangeHandlers(true, formPoint.X, formPoint.Y, _control, 0L);
+						if (gui != null && gui.TryGetTarget(out var g) && GetCursorPos(out POINT cursor))
+						{
+							var client = g.form.PointToClient(new Point(cursor.X, cursor.Y));
+							g.form.RaiseContextMenu(this, row, true, client.X, client.Y);
 						}
 
 						m.Result = 1;

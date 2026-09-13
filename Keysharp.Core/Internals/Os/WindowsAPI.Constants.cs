@@ -139,6 +139,7 @@ namespace Keysharp.Internals.Os.Windows
 		internal const int WM_SETICON = 0x0080;
 		internal const int WM_SIZE = 0x0005;
 		internal const int WM_COMMAND = 0x0111;
+		internal const int WM_CONTEXTMENU = 0x007B;
 		internal const int WM_SETREDRAW = 0x000B;
 		internal const int WM_SETTEXT = 0x000C;
 		internal const int WM_GETTEXT = 0x000D;
@@ -296,6 +297,7 @@ namespace Keysharp.Internals.Os.Windows
 		internal const int ES_NUMBER = 0x2000;
 		internal const int CBS_AUTOHSCROLL = 0x0040;
 		internal const int BS_NOTIFY = 0x4000;
+		internal const uint TBM_GETTHUMBRECT = WM_USER + 25;
 		internal const uint TBM_SETTHUMBLENGTH = WM_USER + 27;
 		internal const uint TBM_SETTIPSIDE = WM_USER + 31;
 		internal const int TBS_FIXEDLENGTH = 0x0040;

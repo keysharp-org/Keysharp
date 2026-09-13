@@ -26,7 +26,8 @@ namespace Keysharp.Builtins
 #if WINDOWS
 			private ConcurrentDictionary<int, CallbackRegistry> commandHandlers;
 #endif
-			private CallbackRegistry contextMenuChangedHandlers;
+			//Run by KeysharpForm.RaiseContextMenu, ahead of the window's own.
+			internal CallbackRegistry contextMenuChangedHandlers;
 #if WINDOWS
 			private nint dummyHandle;
 #endif
@@ -751,23 +752,6 @@ namespace Keysharp.Builtins
 			{
 				if (eventHandlerActive)
 					lostFocusHandlers?.InvokeEventHandlers(this, 0L);
-			}
-
-			internal object CallContextMenuChangeHandlers(bool wasRightClick, int x, int y, long? itemOverride = null)
-			{
-				if (!eventHandlerActive)
-					return null;
-
-				if (_control is KeysharpListBox lb)
-					return contextMenuChangedHandlers?.InvokeWindowMessageHandlers(this, lb.SelectedIndex + 1L, wasRightClick, (long)x, (long)y);
-				else if (_control is KeysharpListView lv)
-					return contextMenuChangedHandlers?.InvokeWindowMessageHandlers(this,
-						itemOverride ?? (lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L),
-						wasRightClick, (long)x, (long)y);
-				else if (_control is KeysharpTreeView tv)
-					return contextMenuChangedHandlers?.InvokeWindowMessageHandlers(this, tv.SelectedNode?.Handle.ToInt64() ?? 0, wasRightClick, (long)x, (long)y);
-				else
-					return contextMenuChangedHandlers?.InvokeWindowMessageHandlers(this, _control.Handle.ToInt64().ToString(), wasRightClick, (long)x, (long)y);//Unsure what to pass for Item, so just pass handle.
 			}
 
 			internal void Cmb_SelectedIndexChanged(object sender, EventArgs e)

@@ -91,6 +91,9 @@ namespace Keysharp.Builtins
 					&& owningGui.InvokeWindowMessageHandlers(ref m))
 				return;
 
+			if (beenConstructed && m.Msg == WindowsAPI.WM_CONTEXTMENU && OnContextMenu(ref m))
+				return;
+
 			base.WndProc(ref m);
 		}
 
@@ -157,8 +160,8 @@ namespace Keysharp.Builtins
 #endif
 				DragDrop += Form_DragDrop;
 				KeyDown += Form_KeyDown;
-				MouseDown += Form_MouseDown;
 #if !WINDOWS
+				MouseDown += Form_MouseDown;
 
 				//On X11 the handle a window answers with changes the first time it is realized (widget pointer
 				//before, XID after), so the key it is registered under has to follow. Re-homed at realize
@@ -331,25 +334,106 @@ namespace Keysharp.Builtins
 				| (escapeHandlers?.RemoveOwned(scheduler) == true)
 				| (sizeHandlers?.RemoveOwned(scheduler) == true);
 
-		internal void CallContextMenuChangeHandlers(bool wasRightClick, int x, int y, Control controlOverride = null,
-			long? itemOverride = null)
+		/// <summary>Queues the control and window ContextMenu handlers as one event.</summary>
+		internal void RaiseContextMenu(Gui.Control ctrl, long item, bool isRightClick, long x, long y)
 		{
-			if (Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
-			{
-				var control = controlOverride ?? this.ActiveControl;
+			var ctrlHandlers = ctrl?.contextMenuChangedHandlers;
+			var guiHandlers = contextMenuChangedHandlers;
 
-				if (control is ListBox lb)
-					_ = (contextMenuChangedHandlers?.InvokeWindowMessageHandlers(g, control, lb.SelectedIndex + 1L, wasRightClick, (long)x, (long)y));
-				else if (control is KeysharpListView lv)
-					_ = (contextMenuChangedHandlers?.InvokeWindowMessageHandlers(g, control,
-						itemOverride ?? (lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L),
-						wasRightClick, (long)x, (long)y));
-				else if (control is KeysharpTreeView tv)
-					_ = (contextMenuChangedHandlers?.InvokeWindowMessageHandlers(g, control, tv.SelectedNode.Handle, wasRightClick, (long)x, (long)y));
-				else
-					_ = (contextMenuChangedHandlers?.InvokeWindowMessageHandlers(g, control, control != null ? control.Handle.ToInt64().ToString() : "", wasRightClick, (long)x, (long)y));//Unsure what to pass for Item, so just pass handle.
-			}
+			if ((ctrlHandlers == null || ctrlHandlers.IsEmpty) && (guiHandlers == null || guiHandlers.IsEmpty)
+					|| Tag is not WeakReference<Gui> wrg || !wrg.TryGetTarget(out var g) || OwnerScript.EventScheduler is not { } scheduler)
+				return;
+
+			var rightClick = isRightClick ? 1L : 0L;
+
+			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
+			{
+				var ran = false;
+
+				if (ctrlHandlers?.IsEmpty == false)
+				{
+					var status = ctrlHandlers.InvokeQueuedEventHandlers([ctrl, item, rightClick, x, y], out var result);
+
+					//Nothing ran, so the queue may retry the whole event.
+					if (status is ScriptEventExecutionResult.GlobalBlocked or ScriptEventExecutionResult.LocalBlocked)
+						return status;
+
+					if (CallbackStop.NonEmpty(result) || IsDisposed)
+						return ScriptEventExecutionResult.Executed;
+
+					ran = true;
+				}
+
+				var guiStatus = guiHandlers?.InvokeQueuedEventHandlers([g, (object)ctrl ?? "", item, rightClick, x, y], out _)
+								?? ScriptEventExecutionResult.Executed;
+				return ran ? ScriptEventExecutionResult.Executed : guiStatus;
+			});
 		}
+
+#if WINDOWS
+		/// <summary>Handles AHK-compatible mouse and keyboard context-menu messages.</summary>
+		private bool OnContextMenu(ref Message m)
+		{
+			if (Tag is not WeakReference<Gui>)//The main window and other forms which are not a Gui's.
+				return false;
+
+			var fromKeyboard = m.LParam == -1;
+			var hwnd = m.WParam;
+			Point screenPoint;
+
+			if (!fromKeyboard)
+			{
+				var lp = m.LParam.ToInt64();
+				screenPoint = new Point(unchecked((short)lp), unchecked((short)(lp >> 16)));
+
+				if (PointToClient(screenPoint).Y < 0)
+					return false;
+
+				//A click the window receives itself, as on a disabled control, goes to the control under it.
+				if (hwnd == Handle)
+				{
+					var pah = new PointAndHwnd(screenPoint);
+					Platform.Window.ChildFindPoint(Handle, pah);
+					hwnd = pah.hwndFound;
+				}
+			}
+			else
+			{
+				_ = GetCursorPos(out POINT cursor);
+				screenPoint = new Point(cursor.X, cursor.Y);
+			}
+
+			var target = hwnd != 0 ? FromChildHandle(hwnd) : null;
+
+			if (target is MenuStrip)
+				return false;
+
+			Gui.Control ctrl = null;
+
+			for (; target != null && target is not Form && ctrl == null; target = target.Parent)
+				ctrl = target.GetGuiControl();
+
+			var (item, at) = ctrl != null ? ctrl.ContextMenuTarget(fromKeyboard, screenPoint) : (0L, screenPoint);
+			var client = PointToClient(at);
+			RaiseContextMenu(ctrl, item, !fromKeyboard, client.X, client.Y);
+			m.Result = 0;
+			return true;
+		}
+#else
+		//Eto has no WM_CONTEXTMENU: a control and its window can each see one right-click or key, in an order which
+		//varies by backend, so the first to see it raises the event and the other stands down until the loop idles.
+		private bool contextMenuRaised;
+
+		internal bool TryBeginContextMenu()
+		{
+			if (contextMenuRaised)
+				return false;
+
+			contextMenuRaised = true;
+			Eto.Forms.Application.Instance.AsyncInvoke(() => contextMenuRaised = false);
+			return true;
+		}
+#endif
 
 		//The key this window is registered under, so a re-home drops the old one instead of searching for it:
 		//on X11 the handle changes the first time the window is realized.
@@ -446,16 +530,24 @@ namespace Keysharp.Builtins
 		internal void Form_KeyDown(object sender, KeyEventArgs e)
 		{
 #if WINDOWS
-			if ((e.KeyCode == Keys.Apps || (e.KeyCode == Keys.F10 && ((ModifierKeys & Keys.Shift) == Keys.Shift))) && GetCursorPos(out POINT pt))
-				CallContextMenuChangeHandlers(true, pt.X, pt.Y);
-			else if (e.KeyCode == Keys.Escape && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
+			//The Menu key and Shift+F10 arrive as WM_CONTEXTMENU; see OnContextMenu().
+			if (e.KeyCode == Keys.Escape && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
 				escapeHandlers?.InvokeEventHandlers(g);
 #else
 #if !OSX
 			// The Menu/context-menu key and Shift+F10 open the context menu on Windows and Linux.
 			// macOS has no such key (and uses Ctrl+click, handled in Form_MouseDown), so it is omitted there.
-			if ((e.Key == Forms.Keys.ContextMenu || (e.Key == Forms.Keys.F10 && ((e.Modifiers & Forms.Keys.Shift) == Forms.Keys.Shift))) && GetCursorPos(out POINT pt))
-				CallContextMenuChangeHandlers(true, pt.X, pt.Y);
+			if (e.Key == Forms.Keys.ContextMenu || (e.Key == Forms.Keys.F10 && ((e.Modifiers & Forms.Keys.Shift) == Forms.Keys.Shift)))
+			{
+				//For the focused control, whose own KeyDown may come after this one or not at all.
+				if (this.ActiveControl?.GetGuiControl() is Gui.Control focused)
+					focused.RaiseContextMenu(true, default);
+				else if (TryBeginContextMenu() && GetCursorPos(out POINT pt))
+				{
+					var client = PointFromScreen(new PointF(pt.X, pt.Y));
+					RaiseContextMenu(null, 0L, false, Convert.ToInt32(client.X), Convert.ToInt32(client.Y));
+				}
+			}
 			else
 #endif
 			if (e.Key == Forms.Keys.Escape && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
@@ -463,16 +555,14 @@ namespace Keysharp.Builtins
 #endif
 		}
 
+#if !WINDOWS
 		internal void Form_MouseDown(object sender, MouseEventArgs e)
 		{
-#if WINDOWS
-			if (e.Button == MouseButtons.Right)
-				CallContextMenuChangeHandlers(false, e.X, e.Y);
-#else
-				if (e.Buttons == MouseButtons.Alternate)
-					CallContextMenuChangeHandlers(false, Convert.ToInt32(e.Location.X), Convert.ToInt32(e.Location.Y));
+			//A right-click on a control reaches the control's MouseDown first, which raises the event for it.
+			if (e.Buttons == MouseButtons.Alternate && TryBeginContextMenu())
+				RaiseContextMenu(null, 0L, true, Convert.ToInt32(e.Location.X), Convert.ToInt32(e.Location.Y));
+		}
 #endif
-			}
 
 		internal void Form_Resize(object sender, EventArgs e)
 		{

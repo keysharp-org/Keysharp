@@ -1905,22 +1905,34 @@ namespace Keysharp.Builtins
 #if !OSX
 				// The Menu/context-menu key and Shift+F10 open the context menu on Windows and Linux.
 				// macOS has no such key (and uses Ctrl+click, handled in _control_MouseDown), so it is omitted there.
-				if ((eventHandlerActive && e.Key == Forms.Keys.ContextMenu || (e.Key == Forms.Keys.F10 && ((e.Modifiers & Forms.Keys.Shift) == Forms.Keys.Shift))) && GetCursorPos(out POINT pt))
-				{
-					var clientPt = ConvertToClientPoint(pt.X, pt.Y);
-					CallContextMenuChangeHandlers(true, clientPt.X, clientPt.Y);
-				}
+				if (e.Key == Forms.Keys.ContextMenu || (e.Key == Forms.Keys.F10 && ((e.Modifiers & Forms.Keys.Shift) == Forms.Keys.Shift)))
+					RaiseContextMenu(true, default);
 #endif
 			}
 
 			internal void _control_MouseDown(object sender, MouseEventArgs e)
 			{
-				if (eventHandlerActive && e.Buttons == MouseButtons.Alternate)
+				if (e.Buttons == MouseButtons.Alternate)
+					RaiseContextMenu(false, e.Location);
+			}
+
+			/// <summary>Raises one ContextMenu event through this control's window.</summary>
+			internal void RaiseContextMenu(bool fromKeyboard, PointF location)
+			{
+				if (!eventHandlerActive || gui == null || !gui.TryGetTarget(out var g) || !g.form.TryBeginContextMenu())
+					return;
+
+				var item = _control switch
 				{
-					var screenPt = _control.PointToScreen(e.Location);
-						var clientPt = ConvertToClientPoint(Convert.ToInt32(screenPt.X), Convert.ToInt32(screenPt.Y));
-					CallContextMenuChangeHandlers(false, clientPt.X, clientPt.Y);
-				}
+					KeysharpListBox lb => lb.SelectedIndex + 1L,
+					KeysharpListView lv => lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L,
+					KeysharpTreeView tv => tv.SelectedNode?.Handle.ToInt64() ?? 0L,
+					KeysharpStatusStrip sbar when !fromKeyboard => sbar.PartFromPoint(),
+					_ => 0L
+				};
+				var screen = _control.PointToScreen(fromKeyboard ? new PointF(0, 2 + _control.GetSize().Height / 2) : location);
+				var client = ConvertToClientPoint(Convert.ToInt32(screen.X), Convert.ToInt32(screen.Y));
+				g.form.RaiseContextMenu(this, item, !fromKeyboard, client.X, client.Y);
 			}
 
 			internal void Tv_AfterExpand(object sender, TreeGridViewItemEventArgs e)
