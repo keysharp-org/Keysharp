@@ -40,13 +40,17 @@ namespace Keysharp.Runtime
 				// which accept an explicit `@this` argument when that is more convenient.
 				var isBuiltin = script.ProgramType.Namespace != t.Namespace;
 
+				// Every module object is a Module, whichever module it is, so each has Module's prototype, the one which
+				// names the class, as in AutoHotkey.
 				if (isModuleType)
 				{
-					if (t != typeof(KeysharpFunc) && t != typeof(Any))
-					{
-						proto.SetBaseInternal(script.Vars.Prototypes[t.BaseType]);
-						staticInst.SetBaseInternal(script.Vars.Statics[t.BaseType]);
-					}
+					staticInst.SetBaseInternal(script.Vars.Statics[t.BaseType]);
+
+					if (t != typeof(Module))
+						return store.Prototypes[t] = script.Vars.Prototypes[typeof(Module)];
+
+					proto.SetBaseInternal(script.Vars.Prototypes[t.BaseType]);
+					proto.DefinePropInternal("__Class", new OwnPropsDesc(proto, "Module"));
 					return proto;
 				}
 
