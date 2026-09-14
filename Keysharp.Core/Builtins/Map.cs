@@ -59,7 +59,7 @@ namespace Keysharp.Builtins
 	{
 		/// <summary>
 		/// Map class that wraps a <see cref="Dictionary{object, object}"/> which does not sort the
-		/// entries before enumeration.
+		/// entries before enumeration. The enumeration order is unspecified.
 		/// </summary>
 		public class HashMap : Map
 		{

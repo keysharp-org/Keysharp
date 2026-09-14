@@ -58,13 +58,14 @@ namespace Keysharp.Builtins
 			EnsureFilePermission(file, FilePermissionAccess.Append, "FileAppend");
 			ThreadAccessors.A_LastError = 0;
 
+			if (text == null)
+				return Errors.ValueErrorOccurred("Missing a required parameter: Text");
+
 			//if (text.ToString() != "pass")
 			//  Console.WriteLine(text);
 
 			try
 			{
-				if (text == null)
-					throw new Keysharp.Builtins.ValueError("Missing a required parameter: Text");
 				var t = text;
 				var encoding = ThreadAccessors.A_FileEncodingRaw;
 				var raw = false;
@@ -1466,7 +1467,7 @@ namespace Keysharp.Builtins
 			object filePattern = null, object whichTime = null, object mode = null)
 		{
 			ThreadAccessors.A_LastError = 0;
-			var YYYYMMDDHH24MISS = yyyymmddhh24miss.As();
+			var timestamp = yyyymmddhh24miss.As();
 			var file = filePattern.As();
 			var whichtime = whichTime.As("M");
 			var m = mode.As();
@@ -1481,7 +1482,7 @@ namespace Keysharp.Builtins
 			if (file?.Length == 0)
 				file = A_LoopFileFullPath;
 
-			var time = Conversions.ToDateTime(YYYYMMDDHH24MISS);
+			var time = Conversions.ToDateTime(timestamp);
 
 			foreach (var path in Conversions.ToFiles(file, dofiles, dodirs, recurse))
 			{

@@ -40,9 +40,10 @@ namespace Keysharp.Builtins
 		/// Shows an always-on-top window anywhere on the screen.
 		/// </summary>
 		/// <param name="text">If blank or omitted, the existing tooltip (if any) will be hidden. Otherwise, specify the text to display in the tooltip.</param>
-		/// <param name="x,y">If omitted, the tooltip will be shown near the mouse cursor.<br/>
+		/// <param name="x">If omitted, the tooltip will be shown near the mouse cursor.<br/>
 		/// Otherwise, specify the X and Y position of the tooltip relative to the active window's client area (use CoordMode "ToolTip" to change to screen coordinates).
 		/// </param>
+		/// <param name="y">See <paramref name="x"/>.</param>
 		/// <param name="whichToolTip">If omitted, it defaults to 1 (the first tooltip).<br/>
 		/// Otherwise, specify a number between 1 and 20 to indicate which tooltip to operate upon when using multiple tooltips simultaneously.
 		/// </param>

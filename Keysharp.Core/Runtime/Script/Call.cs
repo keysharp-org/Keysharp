@@ -260,7 +260,7 @@ namespace Keysharp.Runtime
 					&& (desc.Type == OwnPropsMapType.None || (desc.Type & (OwnPropsMapType.Value | OwnPropsMapType.Get)) != 0))
 				return Errors.UnsetErrorOccurred($"Property {name} of {item}");
 
-			return Errors.PropertyErrorOccurred($"This value of type {Types.Type(item)} has no property named {name}.");
+			return Errors.PropertyErrorOccurred($"This value of type \"{Types.Type(item)}\" has no property named \"{name}\".");
 		}
 		// . in ?? context: strict base, allow null result
 		public static object GetPropertyValueOrNull(object item, object name, params object[] args)
@@ -361,7 +361,7 @@ namespace Keysharp.Runtime
 		public static object InvokeMeta(object obj, object meth, params object[] parameters)
 		{
 			if (obj == null)
-				throw new UnsetError("Cannot invoke property on an unset variable");
+				return Errors.ErrorOccurred(new UnsetError("Cannot invoke property on an unset variable"), DefaultObject);
 
 			try
 			{
@@ -498,7 +498,7 @@ namespace Keysharp.Runtime
 				ExceptionDispatchInfo.Throw(ke);
 			}
 
-			throw new MemberError($"Attempting to invoke method or property {meth} failed.");
+			return Errors.ErrorOccurred(new MemberError($"Attempting to invoke method or property {meth} failed."), (object)null);
 		}
 
 		/// <summary>
@@ -826,7 +826,7 @@ namespace Keysharp.Runtime
 			// defined one; say what is actually wrong instead of reporting a failed assignment.
 			return allowCreate
 				   ? Errors.ErrorOccurred($"Attempting to set property {namestr} on object {item} to value {value} failed.")
-				   : Errors.PropertyErrorOccurred($"This value of type {Types.Type(item)} has no property named {namestr}.");
+				   : Errors.PropertyErrorOccurred($"This value of type \"{Types.Type(item)}\" has no property named \"{namestr}\".");
 
 			static object[] GetIndexArgs(object[] a)
 			{

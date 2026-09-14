@@ -145,7 +145,7 @@ namespace Keysharp.Builtins
 			}
 			catch (Exception e)
 			{
-				throw new Error(e.Message);
+				return Errors.ErrorOccurred(e.Message);
 			}
 		}
 	}

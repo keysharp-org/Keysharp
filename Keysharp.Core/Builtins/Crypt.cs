@@ -4,7 +4,7 @@ namespace Keysharp.Builtins
 	{
 		/// <summary>
 		/// Hashing, symmetric encryption and cryptographically secure random numbers. Scripts reach it through
-		/// the KS module: <c>#Import "Ks" { Crypt }</c>, then <c>Crypt.SHA256("text")</c>.
+		/// the KS module: <c>#Import "Ks" { Crypt }</c>, then <c>Crypt.Hash("text", "SHA256")</c>.
 		/// <para>
 		/// A String is taken as its UTF-8 bytes, which is what every other tool means by the hash of a text;
 		/// pass <c>Encoding</c> to choose a different one. A Buffer is used as it stands, so no encoding applies
@@ -13,8 +13,8 @@ namespace Keysharp.Builtins
 		/// A digest is returned as uppercase hexadecimal. Compare digests case-insensitively because an
 		/// external checksum may be lowercase; <see cref="Hex.Decode"/> converts a digest to raw bytes.</para>
 		/// <para>
-		/// The per-algorithm methods are a closed set carried over from the global functions they replaced. An
-		/// algorithm added later is a name <see cref="Hash"/> accepts, not another method.</para>
+		/// An algorithm is a name <see cref="Hash"/> accepts, not a method of its own. <see cref="CRC32"/> is
+		/// the exception because it returns an integer rather than hexadecimal.</para>
 		/// </summary>
 		public class Crypt : KeysharpObject
 		{

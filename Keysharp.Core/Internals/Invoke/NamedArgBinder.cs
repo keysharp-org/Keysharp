@@ -89,7 +89,7 @@ namespace Keysharp.Internals.Invoke
 				foreach (var (name, value) in source.Entries())
 				{
 					if (merged.Store.ContainsKey(name))
-						throw new ValueError(SuppliedTwiceMessage(name, null));
+						_ = Errors.ValueErrorOccurred(SuppliedTwiceMessage(name, null));
 
 					merged[name] = value;
 				}
@@ -312,14 +312,15 @@ namespace Keysharp.Internals.Invoke
 		}
 
 		/// <summary>Raises for the name <see cref="TryPlace"/> could not place, naming the member and what it accepts.</summary>
-		internal static void ThrowPlaceFailure(MethodPropertyHolder mph, string name)
+		internal static object[] ThrowPlaceFailure(MethodPropertyHolder mph, string name)
 		{
 			var map = mph.ParamIndexByName;
 
-			throw new ValueError(
+			return Errors.ErrorOccurred(new ValueError(
 				map.ContainsKey(name)
 				? SuppliedTwiceMessage(name, Describe(mph))
-				: UnknownNameMessage(name, Describe(mph), mph.ParamScan.Where(p => !p.Variadic).Select(p => p.Name)));
+				: UnknownNameMessage(name, Describe(mph), mph.ParamScan.Where(p => !p.Variadic).Select(p => p.Name))),
+				System.Array.Empty<object>());
 		}
 
 		// The two diagnostics a named argument can produce, in one place: `#Warn NamedArg` reports the same two at
@@ -378,7 +379,7 @@ namespace Keysharp.Internals.Invoke
 								  allowSpill: absorb);
 
 			if (merged == null)
-				ThrowPlaceFailure(mph, failure);
+				return ThrowPlaceFailure(mph, failure);
 
 			if (spilled == null)
 				return merged;

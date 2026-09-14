@@ -102,7 +102,7 @@ namespace Keysharp.Builtins
 												 allowSpill: mph.variadicParamIndex >= 0);
 
 			if (merged == null)
-				NamedArgBinder.ThrowPlaceFailure(mph, failure);
+				return NamedArgBinder.ThrowPlaceFailure(mph, failure);
 
 			named = spilled;
 			return merged;
@@ -380,7 +380,7 @@ namespace Keysharp.Builtins
                 if (method != null)
                     return method.mi;
 
-				throw new TargetError("Unable to find a method object for the requested method " + s);
+				return Errors.ErrorOccurred(new TargetError("Unable to find a method object for the requested method " + s), (MethodInfo)null);
             }
 
             // Fallback to finding the method without an object

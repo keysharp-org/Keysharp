@@ -4187,11 +4187,11 @@ namespace Keysharp.Builtins
 					ktc.AdjustSize(dpiscale, gc.requestedSize);
 		}
 
-		public object this[object controlname]
+		public object this[object controlName]
 		{
 			get
 			{
-				var handle = controlname.ParseLong();
+				var handle = controlName.ParseLong();
 
 				if (handle.HasValue)
 				{
@@ -4199,7 +4199,7 @@ namespace Keysharp.Builtins
 						return gc;
 				}
 
-				if (controlname is string s)
+				if (controlName is string s)
 				{
 					foreach (var ctrlkv in controls)
 					{
@@ -4234,7 +4234,7 @@ namespace Keysharp.Builtins
 				}
 
 				return Script.CompatReturnsUnsetForMissing ? null
-					: Errors.ErrorOccurred($"No controls matched the handle, name, text, ClassNN or NetClassNN {controlname}.");
+					: Errors.ErrorOccurred($"No controls matched the handle, name, text, ClassNN or NetClassNN {controlName}.");
 			}
 		}
 

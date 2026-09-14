@@ -431,7 +431,7 @@ namespace Keysharp.Internals.Images
 			}
 			catch (Exception ex)
 			{
-				throw new TypeError(ex.Message);
+				return Errors.ErrorOccurred(new TypeError(ex.Message), ((Bitmap, object))(null, null));
 			}
 
 			return (bmp, temp);

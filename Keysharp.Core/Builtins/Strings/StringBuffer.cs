@@ -119,7 +119,7 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public object Append(string text)
 			{
-				if (text == null) throw new Error("String cannot be unset");
+				if (text == null) return Errors.ErrorOccurred("String cannot be unset");
 
 				int len = text.Length;
 				EnsureCapacity(_position + len);

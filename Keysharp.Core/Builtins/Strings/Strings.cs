@@ -1514,7 +1514,7 @@ namespace Keysharp.Builtins
 				}
 			}
 
-            throw new TypeError($"Expected referred argument of type string or StringBuffer, but received {target.GetType()}");
+			return Errors.TypeErrorOccurred($"Expected referred argument of type string or StringBuffer, but received {target.GetType()}");
         }
 
 		/// <summary>

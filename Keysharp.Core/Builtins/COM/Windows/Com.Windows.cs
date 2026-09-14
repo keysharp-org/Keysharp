@@ -473,12 +473,12 @@ namespace Keysharp.Builtins.COM
 			//Checked before the dereference below rather than after it, which is where the equivalent guard
 			//used to sit -- reading the vtable out of a null pointer faults before any check can report it.
 			if (pUnk == 0)
-				throw new Error("Invalid object pointer or vtable number");
+				return Errors.ErrorOccurred("Invalid object pointer or vtable number");
 
 			var vtbl = Marshal.ReadIntPtr(nint.Add(Marshal.ReadIntPtr(pUnk), idx * sizeof(nint)));
 
 			if (vtbl == 0)
-				throw new Error("Invalid object pointer or vtable number");
+				return Errors.ErrorOccurred("Invalid object pointer or vtable number");
 
 			//A COM method takes the object pointer as its first argument, so the list is one longer than the
 			//script's arguments and is built with that slot already in front: the helper fills the tail in

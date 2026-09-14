@@ -906,7 +906,7 @@ namespace Keysharp.Builtins
 			if (ptr == 0)
 			{
 				_ = Errors.ErrorOccurred("Struct storage has not been initialized.");
-				throw new Error("Struct storage has not been initialized.");
+				return 0;
 			}
 
 			return ptr;

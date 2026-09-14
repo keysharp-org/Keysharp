@@ -126,12 +126,16 @@ namespace Keysharp.Builtins.COM
 			get
 			{
 				int[] idx = ConvertIndices(indices);
+				if (idx == null)
+					return DefaultObject;
 				object val = GetElementAtIndices(idx);
 				return val;
 			}
 			set
 			{
 				int[] idx = ConvertIndices(indices);
+				if (idx == null)
+					return;
 				int hr = PutElementAtIndices(idx, value!);
 				_ = Errors.OSErrorOccurredForHR(hr);
 			}
@@ -178,7 +182,7 @@ namespace Keysharp.Builtins.COM
 		private int[] ConvertIndices(object[] indices)
 		{
 			if (indices == null || indices.Length != _dimensions)
-				throw new Error($"Expected {_dimensions} index(es), got {indices?.Length ?? 0}.");
+				return Errors.ErrorOccurred(new Error($"Expected {_dimensions} index(es), got {indices?.Length ?? 0}."), (int[])null);
 
 			int[] idx = new int[indices.Length];
 
@@ -195,7 +199,7 @@ namespace Keysharp.Builtins.COM
 					temp = lb + temp;
 
 				if (temp < lb || temp > ub)
-					throw new Error($"Index {i} out of range [{lb}, {ub}]");
+					return Errors.ErrorOccurred(new Error($"Index {i} out of range [{lb}, {ub}]"), (int[])null);
 
 				idx[i] = temp;
 			}

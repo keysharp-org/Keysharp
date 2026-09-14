@@ -434,7 +434,7 @@ namespace Keysharp.Builtins.COM
 		{
 			int hr = RawGetIDsOfNames(propertyName, out int dispId);
 			if (hr < 0)
-				return Errors.PropertyErrorOccurred($"This value of type {Types.Type(this)} has no property named {propertyName}.");
+				return Errors.PropertyErrorOccurred($"This value of type \"{Types.Type(this)}\" has no property named \"{propertyName}\".");
 			TryGetTypeInfo(dispId, propertyName, args.Length, out var expectedTypes, out _, out var invokeKind, INVOKEKIND.INVOKE_FUNC | INVOKEKIND.INVOKE_PROPERTYGET);
 
 			object result;
@@ -460,7 +460,7 @@ namespace Keysharp.Builtins.COM
 			{
 				// A bare COMException here reaches the script as an uncatchable CLR exception; a name this value
 				// does not expose is the same PropertyError the read path raises.
-				_ = Errors.PropertyErrorOccurred($"This value of type {Types.Type(this)} has no property named {propertyName}.");
+				_ = Errors.PropertyErrorOccurred($"This value of type \"{Types.Type(this)}\" has no property named \"{propertyName}\".");
 				return;
 			}
 
@@ -672,6 +672,12 @@ namespace Keysharp.Builtins.COM
 			int[] namedDispIds = null)
 		{
 			result = null;
+			bool isPut = (flags & INVOKEKIND.INVOKE_PROPERTYPUT) != 0;
+			bool isPutRef = (flags & INVOKEKIND.INVOKE_PROPERTYPUTREF) != 0;
+
+			if ((isPut || isPutRef) && namedDispIds is { Length: > 0 })
+				return Errors.ErrorOccurred(new ValueError("Named arguments are not supported when setting a COM property."), -1);
+
 			var vtbl = GetDispatchVtbl();
 			if (vtbl == null)
 				return -1;
@@ -797,17 +803,11 @@ namespace Keysharp.Builtins.COM
 				}
 
 				// ---- SPECIAL: PROPERTYPUT / PROPERTYPUTREF ----
-				bool isPut = (flags & INVOKEKIND.INVOKE_PROPERTYPUT) != 0;
-				bool isPutRef = (flags & INVOKEKIND.INVOKE_PROPERTYPUTREF) != 0;
-
 				if (isPut || isPutRef)
 				{
 					// A property put owns rgdispidNamedArgs for DISPID_PROPERTYPUT, so it cannot also carry
 					// per-parameter named DISPIDs. Nothing forwards both today; assert rather than leak the block
 					// allocated above and silently discard the names if a future caller tries.
-					if (namedDispIds != null && namedDispIds.Length > 0)
-						throw new ValueError("Named arguments are not supported when setting a COM property.");
-
 					// Must provide one named arg: DISPID_PROPERTYPUT
 					pNamed = Marshal.AllocHGlobal(sizeof(int));
 					Marshal.WriteInt32(pNamed, Com.DISPID_PROPERTYPUT);

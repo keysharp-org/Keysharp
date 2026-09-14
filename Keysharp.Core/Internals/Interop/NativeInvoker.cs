@@ -64,7 +64,7 @@ namespace Keysharp.Internals.Interop
 			//caller which forgets gets a script-level error rather than an IndexOutOfRangeException out of the
 			//invoker cache below.
 			if ((uint)n > MaxArguments)
-				throw new ValueError($"A native call cannot take more than {MaxArguments} arguments.");
+				return (long)Errors.ValueErrorOccurred($"A native call cannot take more than {MaxArguments} arguments.", ret: 0L);
 
 			var dllData = TheScript.DllData;
 			Delegate del;

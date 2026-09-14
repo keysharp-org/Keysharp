@@ -241,9 +241,16 @@ namespace Keysharp.Builtins
 						var genDef = TypeResolver.Resolve(genericName, _assemblies);
 						if (genDef != null && genDef.IsGenericTypeDefinition)
 						{
-							var typeArgs = args.Select(TypeResolver.ResolveTypeArg).ToArray();
-							var closed = genDef.MakeGenericType(typeArgs);
-							return new ManagedType(closed);
+							try
+							{
+								var typeArgs = args.Select(TypeResolver.ResolveTypeArg).ToArray();
+								var closed = genDef.MakeGenericType(typeArgs);
+								return new ManagedType(closed);
+							}
+							catch (ArgumentException ex)
+							{
+								return ManagedInvoke.ThrowMapped(ex, $"Closing generic type '{genDef.FullName}'");
+							}
 						}
 						// If not a generic definition, fall through and try non-generic lookup below.
 					}
@@ -394,8 +401,15 @@ namespace Keysharp.Builtins
 					if (!_type.IsGenericTypeDefinition)
 						return Errors.ErrorOccurred($"{_type.FullName} is not an open generic type.");
 
-					var closed = _type.MakeGenericType(typeArgs.Select(TypeResolver.ResolveTypeArg).ToArray());
-					return new ManagedType(closed);
+					try
+					{
+						var closed = _type.MakeGenericType(typeArgs.Select(TypeResolver.ResolveTypeArg).ToArray());
+						return new ManagedType(closed);
+					}
+					catch (ArgumentException ex)
+					{
+						return ManagedInvoke.ThrowMapped(ex, $"Closing generic type '{_type.FullName}'");
+					}
 				}
 
 				[PublicHiddenFromUser]
