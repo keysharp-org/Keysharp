@@ -171,6 +171,10 @@ namespace Keysharp.Builtins
 			return ErrorOccurred(err = new Error(text), excType) ? throw err : ret ?? DefaultObject;
 		}
 
+		[StackTraceHidden]
+		internal static T ErrorOccurred<T>(Error err, T ret)
+			=> ErrorOccurred(err) ? throw err : ret;
+
 		/// <summary>
 		/// Internal helper to handle errors. Throws a <see cref="Error"/> or returns <see cref="DefaultObject"/>.
 		/// </summary>
