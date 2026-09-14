@@ -91,10 +91,10 @@ namespace Keysharp.Tests
 			_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => bar.SetProgressState(""));
 		}
 
+#if LINUX
 		[Test, Category("Gui"), Category("Curated")]
 		public void LinuxDesktopEntryControlsWindowAndTaskbarIdentity()
 		{
-#if LINUX
 			var previous = Environment.GetEnvironmentVariable("DESKTOP_ENTRY");
 
 			try
@@ -117,10 +117,8 @@ namespace Keysharp.Tests
 			{
 				Environment.SetEnvironmentVariable("DESKTOP_ENTRY", previous);
 			}
-#else
-			Assert.Ignore("DESKTOP_ENTRY is a Linux application identity.");
-#endif
 		}
+#endif
 
 		/// <summary>
 		/// The flagship example on the Gui.Icon page: an icon copied from one window to another. It only works

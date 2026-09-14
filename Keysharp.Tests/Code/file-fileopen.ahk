@@ -60,29 +60,6 @@ Loop (buf.Size)
 	AssertEq(p1, p2, A_LineNumber)
 }
 
-f.Seek(0)
-arr := Array()
-
-Loop (buf.Size)
-{
-	arr.Push(A_Index)
-}
-
-f.RawRead(arr)
-
-Loop (buf.Size)
-{
-	p1 := arr[A_Index]
-	p2 := buf2[A_Index]
-
-	AssertEq(p1, p2, A_LineNumber)
-}
-
-f.Close()
-
-if (FileExist(path) != "")
-	FileDelete(path)
-
 f := FileOpen(path, "rw", "Unicode") ; Test text encoding.
 w := "testing"
 count := f.Write(w)

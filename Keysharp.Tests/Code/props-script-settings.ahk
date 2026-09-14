@@ -153,7 +153,18 @@ SendLevel 0
 
 AssertEq(A_SendLevel, 0, A_LineNumber)
 
-SendLevel -1
+threw := 0
+
+try
+{
+	SendLevel -1
+}
+catch ValueError
+{
+	threw := 1
+}
+
+AssertEq(threw, 1, A_LineNumber)
 
 AssertEq(A_SendLevel, 0, A_LineNumber)
 	
@@ -165,9 +176,18 @@ SendLevel 100
 
 AssertEq(A_SendLevel, 100, A_LineNumber)
 
-SendLevel 101
+threw := 0
 
-AssertEq(A_SendLevel, 100, A_LineNumber)
+try
+{
+	SendLevel 101
+}
+catch ValueError
+{
+	threw := 1
+}
+
+AssertEq(threw, 1, A_LineNumber)
 
 SendLevel 0 ; Reset it back for the function version of this test.
 
