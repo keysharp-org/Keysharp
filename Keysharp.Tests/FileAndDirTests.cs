@@ -572,12 +572,12 @@ namespace Keysharp.Tests
 			Dir.DirCopy(dir, "./FileGetShortcut/");
 			var patharg = Path.GetDirectoryName(Path.GetFullPath("./FileGetShortcut/file1.txt"));
 			VarRef outTarget = new(null);
-            VarRef outDir = new(null);
-            VarRef outArgs = new(null);
-            VarRef outDescription = new(null);
-            VarRef outIcon = new(null);
-            VarRef outIconNum = new(null);
-            VarRef outRunState = new(null);
+			VarRef outDir = new(null);
+			VarRef outArgs = new(null);
+			VarRef outDescription = new(null);
+			VarRef outIcon = new(null);
+			VarRef outIconNum = new(null);
+			VarRef outRunState = new(null);
 #if LINUX
 			//Test creating a basic symlink first on linux.
 			Keysharp.Builtins.Files.FileCreateShortcut
@@ -604,7 +604,7 @@ namespace Keysharp.Tests
 			if (System.IO.File.Exists("./testshortcut.lnk"))
 				System.IO.File.Delete("./testshortcut.lnk");
 #endif
-            Files.FileCreateShortcut
+			Files.FileCreateShortcut
 			(
 				"./FileGetShortcut/file1.txt",
 				"./testshortcut.lnk",
@@ -643,7 +643,7 @@ namespace Keysharp.Tests
 			Assert.AreEqual("", outRunState.__Value.ToString());
 #endif
 
-            if (File.Exists("./testshortcut.lnk"))
+			if (File.Exists("./testshortcut.lnk"))
 				File.Delete("./testshortcut.lnk");
 
 			Assert.IsTrue(TestScript("file-filegetshortcut", false));
@@ -1244,10 +1244,10 @@ groupkey13=groupval13
 		{
 			var fullpath = string.Concat(path, "DirCopy/file1.txt");
 			VarRef filename = new(null);
-            VarRef dir = new(null);
-            VarRef ext = new(null);
-            VarRef namenoext = new(null);
-            VarRef drive = new(null);
+			VarRef dir = new(null);
+			VarRef ext = new(null);
+			VarRef namenoext = new(null);
+			VarRef drive = new(null);
 			Dir.SplitPath(fullpath, filename, dir, ext, namenoext, drive);
 			Assert.AreEqual("file1.txt", filename.__Value);
 			Assert.AreEqual("txt", ext.__Value);
@@ -1262,7 +1262,7 @@ groupkey13=groupval13
 			Assert.AreEqual(true, dir.__Value.ToString().Replace('\\', '/').ToLowerInvariant().EndsWith("/keysharp.tests/code/dircopy"));
 			Assert.AreEqual("/", drive.__Value);
 #endif
-            var url = "https://domain.com";
+			var url = "https://domain.com";
 			Dir.SplitPath(url, filename, dir, ext, namenoext, drive);
 			Assert.AreEqual("", filename.__Value);
 			Assert.AreEqual("https://domain.com", dir.__Value);

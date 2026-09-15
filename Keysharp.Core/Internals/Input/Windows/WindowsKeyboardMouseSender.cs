@@ -99,29 +99,6 @@ namespace Keysharp.Internals.Input.Windows
 			return result;
 		}
 
-		/// <summary>
-		/// AHK says this works for all layouts except one Ukrainian and one North Korean. See line 3940 of keyboard_mouse.cpp
-		/// Their solution for those two was far more complex than we'd like to implement here.
-		/// So we acknowledge those two layouts won't support AltGr correctly.
-		/// Gotten from: https://stackoverflow.com/questions/54588823/detect-if-the-keyboard-layout-has-altgr-on-it-under-windows
-		/// </summary>
-		/// <param name="layout">The keyboard layout to examine</param>
-		/// <returns>True if the layout has AltGr, else false.</returns>
-		//private bool LayoutHasAltGr(nint layout)//Unsure if this is usable on linux, where the registry method used below obviously doesn't exist.
-		//{
-		//  var hasAltGr = false;
-		//  for (byte i = 32; i <= 255; ++i)
-		//  {
-		//      var scancode = WindowsAPI.VkKeyScanEx(i, layout);
-		//      if (scancode != -1 && (scancode & 0x600) == 0x600)//Ctrl + Alt means AltGr.
-		//      {
-		//          hasAltGr = true;
-		//          break;
-		//      }
-		//  }
-		//  return hasAltGr;
-		//}
-
 		internal override void CleanupEventArray(long finalKeyDelay)
 		{
 			if (sendMode == SendModes.Input)

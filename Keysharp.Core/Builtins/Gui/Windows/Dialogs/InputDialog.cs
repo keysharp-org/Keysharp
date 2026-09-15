@@ -1,3 +1,4 @@
+#if WINDOWS
 namespace Keysharp.Builtins
 {
 	//WinForms derives a decorated window class and owner-draws buttons, so only a native dialog can
@@ -550,3 +551,4 @@ namespace Keysharp.Builtins
 		}
 	}
 }
+#endif

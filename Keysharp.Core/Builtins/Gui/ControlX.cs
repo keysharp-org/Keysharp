@@ -296,7 +296,7 @@ namespace Keysharp.Builtins
 			if (outY != null) Refs.SetValue(outY, valY);
 			if (outWidth != null) Refs.SetValue(outWidth, valWidth);
 			if (outHeight != null) Refs.SetValue(outHeight, valHeight);
-            return DefaultObject;
+			return DefaultObject;
 		}
 
 		public static long ControlGetStyle(object controlID,

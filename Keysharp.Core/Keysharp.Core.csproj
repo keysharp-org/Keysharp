@@ -79,7 +79,6 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
-		<Compile Remove="Builtins\Gui\Windows\Dialogs\InputDialog.cs" />
 		<Compile Remove="Internals\Input\Windows\**\*.cs" />
 		<Compile Remove="Internals\Mapper\Windows\**\*.cs" />
 		<Compile Remove="Internals\Os\Windows\**\*.cs" />

@@ -36,24 +36,18 @@ namespace Keysharp.Builtins
 			addExStyle = _addExStyle;
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
-#if LINUX
-			FlatStyle = FlatStyle.Flat;
-#endif
+
 			//Any setting of this field causes click events to behave unpredictably, so don't use it, and therefor don't support double clicks.
 			//This differs from the documentation which says that double click is supported.
 			//This isn't worth implementing since it's behavior that will almost never be desired.
 			//SetStyle(ControlStyles.StandardClick | ControlStyles.StandardDoubleClick, true);
 		}
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public class KeysharpCheckBox : CheckBox
@@ -82,17 +76,10 @@ namespace Keysharp.Builtins
 			addExStyle = _addExStyle;
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
-#if WINDOWS
 
 			if ((addStyle & WindowsAPI.BS_NOTIFY) == WindowsAPI.BS_NOTIFY)
 				SetStyle(ControlStyles.StandardClick | ControlStyles.StandardDoubleClick, true);
-
-#else
-			FlatStyle = FlatStyle.Flat;
-#endif
 		}
-
-#if WINDOWS
 
 		protected override void OnMouseUp(MouseEventArgs e)
 		{
@@ -107,8 +94,6 @@ namespace Keysharp.Builtins
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public class KeysharpComboBox : ComboBox
@@ -137,15 +122,11 @@ namespace Keysharp.Builtins
 			removeExStyle = _removeExStyle;
 		}
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public class KeysharpDateTimePicker : DateTimePicker
@@ -174,18 +155,13 @@ namespace Keysharp.Builtins
 			removeExStyle = _removeExStyle;
 		}
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
-#if WINDOWS
 	public partial class KeysharpCustomControl : Control
 	{
 		private static readonly int ICC_ANIMATE_CLASS      = 0x00000080;
@@ -306,17 +282,12 @@ namespace Keysharp.Builtins
 			public int dwICC;
 		}
 	}
-#endif
 
 	public class KeysharpTextBox : TextBox
 	{
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-#if !WINDOWS
-		internal bool IsNumeric { get; set; }
-
-#endif
 		protected override CreateParams CreateParams
 		{
 			get
@@ -336,58 +307,14 @@ namespace Keysharp.Builtins
 			addExStyle = _addExStyle;
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
-#if !WINDOWS
-			KeyPress += KeysharpEdit_KeyPress;
-			Validating += KeysharpEdit_Validating;
-#endif
-		}
 
-#if WINDOWS
+		}
 
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#else
-
-		private void KeysharpEdit_Validating(object sender, System.ComponentModel.CancelEventArgs e)
-		{
-			if (IsNumeric)
-			{
-				if (Text.Any(ch => !char.IsDigit(ch)))
-					Text = string.Join("", Text.Where(ch => char.IsDigit(ch)));
-			}
-		}
-
-		private void KeysharpEdit_KeyPress(object sender, KeyPressEventArgs e)
-		{
-			if (IsNumeric)
-			{
-				if (ModifierKeys.HasFlag(Keys.Control))
-				{
-					var vch = '\u0016';
-
-					if (e.KeyChar == vch)
-					{
-						var text = Clipboard.GetText();
-
-						if (text.Any(ch => !char.IsDigit(ch)))
-						{
-							Text = string.Join("", Text.Where(ch => char.IsDigit(ch)));
-							e.Handled = true;
-						}
-					}
-				}
-
-				if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar))
-				{
-					e.Handled = true;
-				}
-			}
-		}
-#endif
 	}
 
 	public class KeysharpPasswordBox : KeysharpTextBox
@@ -424,15 +351,11 @@ namespace Keysharp.Builtins
 			removeExStyle = _removeExStyle;
 		}
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public class KeysharpLabel : Label
@@ -477,8 +400,6 @@ namespace Keysharp.Builtins
 			}
 		}
 
-#if WINDOWS
-
 		protected override void OnTextChanged(EventArgs e)
 		{
 			base.OnTextChanged(e);
@@ -492,13 +413,11 @@ namespace Keysharp.Builtins
 			}
 		}
 
-        protected override void WndProc(ref Message m)
+		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public class KeysharpLinkLabel : LinkLabel
@@ -547,30 +466,18 @@ namespace Keysharp.Builtins
 				if (!url.Contains("://"))
 					url = "https://" + url;
 
-#if WINDOWS
 				_ = Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-#else
-				System.Diagnostics.Process proc = new System.Diagnostics.Process();
-				proc.EnableRaisingEvents = false;
-				proc.StartInfo.FileName = "xdg-open";
-				proc.StartInfo.Arguments = url;
-				proc.Start();
-#endif
 				ll.Links[ll.Links.IndexOf(e.Link)].Visited = true;
 			}
 
 			return null;
 		}
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public class KeysharpListBox : ListBox
@@ -599,15 +506,11 @@ namespace Keysharp.Builtins
 			removeExStyle = _removeExStyle;
 		}
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public class KeysharpListView : ListView
@@ -676,27 +579,11 @@ namespace Keysharp.Builtins
 			RefreshColors();
 		}
 
-#if LINUX
-		//Linux has a bug where it will not draw the headers if the control is not initially shown.
-		//Eg: a ListView on a tab that is not selected.
-		//We had to make a new public method ListView.RedrawDetails() to expose this functionality
-		//so we could call it from here.
-		protected override void OnVisibleChanged(EventArgs e)
-		{
-			RedrawDetails();
-			base.OnVisibleChanged(e);
-		}
-#endif
-
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 
 		/// <summary>
 		/// Gotten from https://docs.microsoft.com/en-us/previous-versions/dotnet/articles/ms996467(v=msdn.10)
@@ -746,15 +633,11 @@ namespace Keysharp.Builtins
 			removeExStyle = _removeExStyle;
 		}
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public class KeysharpNumericUpDown : NumericUpDown
@@ -783,15 +666,12 @@ namespace Keysharp.Builtins
 			removeExStyle = _removeExStyle;
 			//We tried getting wrap to work but it's impossible within Winforms.
 		}
-#if WINDOWS
 
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	/// <summary>
@@ -872,15 +752,11 @@ namespace Keysharp.Builtins
 			base.OnPaint(pe);
 		}
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	/// <summary>
@@ -928,18 +804,13 @@ namespace Keysharp.Builtins
 
 				var rect = new Rectangle(0, 0, Width, Height);
 				var scaleFactor = ((double)Value - Minimum) / ((double)Maximum - Minimum);
-#if WINDOWS
 				var vert = (AddStyle & 0x04) == 0x04;
-#endif
 
 				if (ProgressBarRenderer.IsSupported)
 				{
-#if WINDOWS
-
 					if (vert)
 						ProgressBarRenderer.DrawVerticalBar(e.Graphics, rect);
 					else
-#endif
 						ProgressBarRenderer.DrawHorizontalBar(e.Graphics, rect);
 				}
 
@@ -948,7 +819,6 @@ namespace Keysharp.Builtins
 				var bw = 0;
 				var bh = 0;
 				var fy = inset;
-#if WINDOWS
 
 				if (vert)
 				{
@@ -961,7 +831,6 @@ namespace Keysharp.Builtins
 					bh = fy;
 				}
 				else
-#endif
 				{
 					rect.Width = (int)((rect.Width - inset) * scaleFactor);
 					rect.Height -= inset * 2;
@@ -990,21 +859,11 @@ namespace Keysharp.Builtins
 				base.OnPaint(e);
 		}
 
-		//protected override void OnPaintBackground(PaintEventArgs e)
-		//{
-		//  if (!customColors)
-		//      base.OnPaintBackground(e);
-		//}
-
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public class KeysharpRadioButton : RadioButton
@@ -1031,34 +890,22 @@ namespace Keysharp.Builtins
 			addExStyle = _addExStyle;
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
-#if WINDOWS
 
 			if ((addStyle & WindowsAPI.BS_NOTIFY) == WindowsAPI.BS_NOTIFY)
 				SetStyle(ControlStyles.StandardClick | ControlStyles.StandardDoubleClick, true);
-
-#endif
 		}
-
-#if WINDOWS
 
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public partial class KeysharpRichEdit : RichTextBox
 	{
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
-
-#if !WINDOWS
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-		internal bool IsNumeric { get; set; }
-#endif
 
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		internal CharacterCasing CharacterCasing { get; set; } = CharacterCasing.Normal;
@@ -1083,12 +930,7 @@ namespace Keysharp.Builtins
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
 			KeyPress += KeysharpRichEdit_KeyPress;
-#if !WINDOWS
-			Validating += KeysharpRichEdit_Validating;
-#endif
 		}
-
-#if WINDOWS
 
 		protected override void WndProc(ref Message m)
 		{
@@ -1096,61 +938,23 @@ namespace Keysharp.Builtins
 				base.WndProc(ref m);
 		}
 
-#else
-
-		private void KeysharpRichEdit_Validating(object sender, System.ComponentModel.CancelEventArgs e)
-		{
-			if (IsNumeric)
-			{
-				if (Text.Any(ch => !char.IsDigit(ch)))
-					Text = string.Join("", Text.Where(ch => char.IsDigit(ch)));
-			}
-		}
-#endif
-
 		private void KeysharpRichEdit_KeyPress(object sender, KeyPressEventArgs e)
 		{
-#if !WINDOWS
-
-			if (IsNumeric)
+			switch (CharacterCasing)
 			{
-				if (ModifierKeys.HasFlag(Keys.Control))
-				{
-					var vch = '\u0016';
+				case CharacterCasing.Normal:
+					break;
 
-					if (e.KeyChar == vch)
-					{
-						var text = Clipboard.GetText();
+				case CharacterCasing.Upper:
+					e.KeyChar = char.ToUpper(e.KeyChar);
+					break;
 
-						if (text.Any(ch => !char.IsDigit(ch)))
-							e.Handled = true;
-					}
-				}
+				case CharacterCasing.Lower:
+					e.KeyChar = char.ToLower(e.KeyChar);
+					break;
 
-				if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar))
-				{
-					e.Handled = true;
-				}
-			}
-			else
-#endif
-			{
-				switch (CharacterCasing)
-				{
-					case CharacterCasing.Normal:
-						break;
-
-					case CharacterCasing.Upper:
-						e.KeyChar = char.ToUpper(e.KeyChar);
-						break;
-
-					case CharacterCasing.Lower:
-						e.KeyChar = char.ToLower(e.KeyChar);
-						break;
-
-					default:
-						break;
-				}
+				default:
+					break;
 			}
 		}
 	}
@@ -1181,15 +985,11 @@ namespace Keysharp.Builtins
 			removeExStyle = _removeExStyle;
 		}
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public class KeysharpTabControl : TabControl
@@ -1217,10 +1017,8 @@ namespace Keysharp.Builtins
 			addExStyle = _addExStyle;
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
-#if WINDOWS
 			Click += KeysharpTabControl_Click;
 			Enter += KeysharpTabControl_Enter;
-#endif
 			ControlAdded += KeysharpTabControl_ControlAdded;
 			//SetStyle(ControlStyles.UserPaint, true);
 			//SetStyle(ControlStyles.AllPaintingInWmPaint, true);
@@ -1301,8 +1099,6 @@ namespace Keysharp.Builtins
 				base.OnDrawItem(e);
 		}
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
@@ -1316,8 +1112,6 @@ namespace Keysharp.Builtins
 		private void KeysharpTabControl_Click(object sender, EventArgs e) => _ = SelectedTab.Focus();
 
 		private void KeysharpTabControl_Enter(object sender, EventArgs e) => _ = SelectedTab.Focus();
-
-#endif
 
 		private void KeysharpTabControl_ControlAdded(object sender, ControlEventArgs e)
 		{
@@ -1375,15 +1169,11 @@ namespace Keysharp.Builtins
 			removeExStyle = _removeExStyle;
 		}
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 
 	public class KeysharpTreeView : TreeView
@@ -1426,15 +1216,11 @@ namespace Keysharp.Builtins
 
 		internal void RemoveMarkForExpansion(TreeNode node) => _ = expandStates.Remove(node);
 
-#if WINDOWS
-
 		protected override void WndProc(ref Message m)
 		{
 			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
-
-#endif
 	}
 }
 #endif

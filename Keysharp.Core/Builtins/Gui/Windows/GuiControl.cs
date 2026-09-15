@@ -859,18 +859,14 @@ namespace Keysharp.Builtins
 
 				if (_control is KeysharpTextBox tb)
 				{
-#if WINDOWS
-
 					if (!tb.Multiline)
 						WindowsAPI.SendMessage(tb.Handle, WindowsAPI.EM_SETCUEBANNER, showOnFocus, txt);
 					else
 						tb.PlaceholderText = txt;
 
-#endif
 					return DefaultObject;
 				}
 
-#if WINDOWS
 				else if (_control is KeysharpComboBox cb)
 				{
 					// Find the embedded Edit control
@@ -884,9 +880,6 @@ namespace Keysharp.Builtins
 				}
 
 				return Errors.ValueErrorOccurred($"Only Edit and ComboBox controls implement this method.");
-#else
-				return Errors.ValueErrorOccurred($"Only Edit controls implement this method.");
-#endif
 			}
 
 			public object OnCommand(object notifyCode, object callback, object addRemove = null)
@@ -1008,7 +1001,6 @@ namespace Keysharp.Builtins
 					if (opts.limit != int.MinValue)
 						txt.MaxLength = opts.limit;
 
-#if WINDOWS
 					long val;
 
 					if (opts.number)
@@ -1017,9 +1009,6 @@ namespace Keysharp.Builtins
 						val = WindowsAPI.GetWindowLongPtr(txt.Handle, WindowsAPI.GWL_STYLE).ToInt64() & ~0x2000;
 
 					_ = WindowsAPI.SetWindowLongPtr(txt.Handle, WindowsAPI.GWL_STYLE, new nint(val));
-#else
-					txt.IsNumeric = opts.number;
-#endif
 
 					if (opts.lowercase.IsTrue())
 						txt.CharacterCasing = CharacterCasing.Lower;
@@ -1053,7 +1042,6 @@ namespace Keysharp.Builtins
 					if (opts.limit != int.MinValue)
 						rtxt.MaxLength = opts.limit;
 
-#if WINDOWS
 					long val;
 
 					if (opts.number)
@@ -1062,9 +1050,6 @@ namespace Keysharp.Builtins
 						val = WindowsAPI.GetWindowLongPtr(rtxt.Handle, WindowsAPI.GWL_STYLE).ToInt64() & ~0x2000;
 
 					_ = WindowsAPI.SetWindowLongPtr(rtxt.Handle, WindowsAPI.GWL_STYLE, new nint(val));
-#else
-					rtxt.IsNumeric = opts.number;
-#endif
 
 					if (opts.lowercase.IsTrue())
 						rtxt.CharacterCasing = CharacterCasing.Lower;
@@ -1094,15 +1079,11 @@ namespace Keysharp.Builtins
 					if (opts.page != int.MinValue)
 						tb.LargeChange = opts.page;
 
-#if WINDOWS
-
 					if (opts.thick != int.MinValue)
 						_ = WindowsAPI.SendMessage(tb.Handle, WindowsAPI.TBM_SETTHUMBLENGTH, (uint)opts.thick, 0);
 
 					if (opts.tooltip)
 						_ = WindowsAPI.SendMessage(tb.Handle, WindowsAPI.TBM_SETTIPSIDE, (uint)opts.tooltipside, 0);
-
-#endif
 				}
 				else if (_control is KeysharpTreeView tv)
 				{
@@ -1555,8 +1536,6 @@ namespace Keysharp.Builtins
 
 			internal unsafe object InvokeMessageHandlers(ref Message m)
 			{
-#if WINDOWS
-
 				if (InvokeWindowMessageHandlers(ref m))
 					return true;
 
@@ -1611,7 +1590,6 @@ namespace Keysharp.Builtins
 					}
 				}
 
-#endif
 				return DefaultObject;
 			}
 
