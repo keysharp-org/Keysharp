@@ -17,6 +17,8 @@
 #import "AliasRelay" { * }
 #import "KindRelay" { Shared as LiveShared }
 #import VariableSource
+#import "VariableBridge" { Bridged as TopBridged }
+#import RelaySource
 #import Export { Literal as LiteralExport }
 
 ; quoted module import should not add module name unless alias is given
@@ -38,6 +40,18 @@ AssertEq(ExportValue, "ordinary identifier", A_LineNumber)
 AssertEq(ExplicitDefaultBare(), 321, A_LineNumber)
 Assert(!IsSet(LocalFn), A_LineNumber)
 AssertEq(ExplicitLocal(), 5, A_LineNumber)
+
+; ---- a name a module binds only through an import of its own is what that import binds, a variable included
+RelayedCounter() {
+	#import "VariableBridge" { Bridged }
+	Bridged += 1
+	return RelaySource.Counter
+}
+AssertEq(RelayedCounter(), 2, A_LineNumber)
+AssertEq(TopBridged, 2, A_LineNumber)
+TopBridged := 3
+AssertEq(RelaySource.Counter, 3, A_LineNumber)
+
 AssertEq(ForwardedAlias(), 5, A_LineNumber)
 Assert(!IsSet(_RePrivate), A_LineNumber)
 
@@ -107,6 +121,12 @@ Shared := 1
 #Module WildAlias
 #Import "FunctionSource" { * }
 #Import "VariableSource" { * }
+
+#Module RelaySource
+Counter := 1
+
+#Module VariableBridge
+#Import RelaySource { Counter as Bridged }
 
 #Module KindRelay
 #Import Export WildAlias { Shared }

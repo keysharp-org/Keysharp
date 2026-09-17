@@ -247,7 +247,7 @@ namespace Keysharp.Builtins
 				throw new Flow.UserRequestedExitException();
 			}
 
-			A_Args.array.AddRange(args);
+			A_Args = new Array(args);
 			return DefaultObject;
 		}
 

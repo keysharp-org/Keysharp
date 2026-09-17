@@ -358,12 +358,12 @@ a := __()
 
 Assert(a = 1, A_LineNumber)
 
-for _, __ in [6,7] {
+for loopIndex, loopValue in [6,7] {
     if (A_Index == 1) {
-        Assert(_ = 1 && __ = 6, A_LineNumber) 
+        Assert(loopIndex = 1 && loopValue = 6, A_LineNumber)
     }
     if (A_Index == 2) {
-        Assert(_ = 2 && __ = 7, A_LineNumber) 
+        Assert(loopIndex = 2 && loopValue = 7, A_LineNumber)
     }
 }
 

@@ -20,8 +20,8 @@ public static Raiser MakeRaiser() => new Raiser();
 #EndCSharp
 
 r := MakeRaiser()
-calls := 0
-sub := r.OnEvent("Fired", (*) => calls++)
+counter := { Value: 0 }
+sub := r.OnEvent("Fired", (*) => counter.Value++)
 
 ; A CLR subscription is an EventHook like every other, born running.
 Assert(sub is EventHook, A_LineNumber)
@@ -30,13 +30,13 @@ AssertEq(sub.EventName, "Fired", A_LineNumber)
 
 ; Raised on the script thread, so the callback runs inline.
 r.Raise()
-AssertEq(calls, 1, A_LineNumber)
+AssertEq(counter.Value, 1, A_LineNumber)
 
 ; Start() on a running subscription changes nothing, so it attaches no second handler.
 sub.Start()
 AssertEq(r.HandlerCount, 1, A_LineNumber)
 r.Raise()
-AssertEq(calls, 2, A_LineNumber)
+AssertEq(counter.Value, 2, A_LineNumber)
 
 ; A live subscription is listed, and the listing is the same object.
 listed := false
@@ -52,7 +52,7 @@ sub.Start()
 Assert(sub.InProgress && sub.EndReason == "", A_LineNumber)
 AssertEq(r.HandlerCount, 1, A_LineNumber)
 r.Raise()
-AssertEq(calls, 3, A_LineNumber)
+AssertEq(counter.Value, 3, A_LineNumber)
 sub.Stop()
 AssertEq(r.HandlerCount, 0, A_LineNumber)
 

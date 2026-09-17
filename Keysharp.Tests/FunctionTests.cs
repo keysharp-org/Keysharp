@@ -48,6 +48,59 @@ namespace Keysharp.Tests
 		[Test, Category("Function"), NonParallelizable]
 		public void DynVarsInFunc() => Assert.IsTrue(TestScript("func-dyn-vars", false));
 
+		// Writing the module's own function or class is a load-time error; writing a local of the same name is not.
+		[Test, Category("Function")]
+		public void ConstantAssignment()
+		{
+			static string[] Diagnostics(string source) => LoweringDiagnostics.Diagnostics("OwnF() => 1\nclass OwnC {\n}\n" + source);
+
+			const string output = "be used as an output variable", assigned = "be assigned a value", reference = "have its reference taken";
+
+			foreach (var (source, line, message) in new[]
+			{
+				("ownf := 1\n", 4, $"This Func cannot {output}: OwnF"),
+				("OwnC := 1\n", 4, $"This Class cannot {output}: OwnC"),
+				("OwnF += 1\n", 4, $"This Func cannot {assigned}: OwnF"),
+				("OwnF++\n", 4, $"This Func cannot {assigned}: OwnF"),
+				("y := OwnF := 1\n", 4, $"This Func cannot {assigned}: OwnF"),
+				("r := &OwnF\n", 4, $"This Func cannot {reference}: OwnF"),
+				("for OwnF in [1]\n\tx := 1\n", 4, $"This Func cannot {output}: OwnF"),
+				("F() {\n\tglobal\n\tOwnF := 1\n}\n", 6, $"This Func cannot {output}: OwnF"),
+				("F() {\n\tglobal OwnF\n\tOwnF := 1\n}\n", 6, $"This Func cannot {output}: OwnF"),
+				("F() {\n\tglobal OwnF := 1\n}\n", 5, $"This Func cannot {assigned}: OwnF"),
+				("F() {\n\tglobal\n\tInner() {\n\t\tOwnC := 1\n\t}\n}\n", 7, $"This Class cannot {output}: OwnC"),
+				("a_scriptdir := 1\n", 4, $"This built-in variable cannot {output}: a_scriptdir"),
+				("F() {\n\tInner() => 1\n\tInner := 1\n}\n", 6, $"This Func cannot {output}: Inner"),
+				("F() {\n\tinner() => 1\n\tr := &Inner\n}\n", 6, $"This Func cannot {reference}: inner"),
+				("r := &A_ScriptDir\n", 4, $"This built-in variable cannot {reference}: A_ScriptDir"),
+				("#Import Ks { Cosh }\ncosh := 1\n", 5, $"This Func cannot {output}: Cosh"),
+				("#Import Ks as KsModule\nksmodule := 1\n", 5, $"This Module cannot {output}: KsModule"),
+				("F() {\n\t#Import Ks { Cosh as Hyp }\n\thyp := 1\n}\n", 6, $"This Func cannot {output}: Hyp"),
+				("#Import __Main\n__main := 1\n", 5, $"This Module cannot {output}: __main"),
+				("F() {\n\tHelper() => 1\n\tG() {\n\t\tHelper := 5\n\t}\n}\n", 7, $"This Func cannot {output}: Helper"),
+			})
+			{
+				var diagnostics = Diagnostics(source);
+				Assert.IsTrue(System.Array.Exists(diagnostics, d => d.StartsWith($"{line}:") && d.EndsWith(message)),
+					$"expected '{message}' at line {line} for {source.Replace("\n", "\\n")}, got: " + string.Join("; ", diagnostics));
+			}
+
+			foreach (var source in new[] { "F() {\n\tOwnF := 1\n\tOwnC++\n}\n", "F() {\n\tglobal OwnF\n}\n", "F(&OwnF) {\n\tOwnF := 1\n}\n", "A_Args := 1\nA_Args .= 2\nr := &A_Args\n", "OwnC ??= 1\nA_ScriptDir ??= 1\nF() {\n\tglobal OwnF\n\tOwnF ??= 1\n}\n", "F() {\n\tglobal\n\tlocal StrLen := 1\n\tlocal OwnF := 1\n}\n", "#Import Ks { * }\nKeysharpImage := 1\n" })
+				Assert.IsEmpty(Diagnostics(source), source);
+		}
+
+		// A name which names no function adds no function object, so a probe such as IsSet(%name%) leaves nothing behind, and
+		// a built-in function is one object however it is reached.
+		[Test, Category("Function"), Category("Internal"), NonParallelizable]
+		public void FunctionObjectsByMethod()
+		{
+			var data = s.FunctionData;
+			var count = data.methodFunctions.Count;
+			Assert.IsNull(Functions.GetKeysharpFuncByName("NoSuchFunctionAnywhere"));
+			Assert.AreEqual(count, data.methodFunctions.Count);
+			Assert.AreSame(Functions.MethodFunction(s.ReflectionsData.flatPublicStaticMethods["MsgBox"]), Functions.GetKeysharpFuncByName("MsgBox"));
+		}
+
 		[Test, Category("Function"), NonParallelizable]
 		public void FatArrowFunc() => Assert.IsTrue(TestScript("func-fat-arrow", false));
 

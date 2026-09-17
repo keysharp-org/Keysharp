@@ -1453,6 +1453,7 @@ namespace Keysharp.Parsing.Syntax
 
 		private Stmt ParseClass(bool isStruct = false)
 		{
+			var start = Current;   // positions a nested class too, which ParseStatement does not stamp
 			Advance(); // class / struct
 			var nameTok = Current;
 			var name = ExpectIdentifier(isStruct ? "struct name" : "class name");
@@ -1592,7 +1593,10 @@ namespace Keysharp.Parsing.Syntax
 			}
 			Expect(TokenKind.RBrace, isStruct ? "struct body" : "class body");
 			return new ClassDecl(name, baseName, fields, methods, properties, nested, isStruct)
-			{ Requires = classRequires, Imports = classImports, StaticInit = staticInits, InstanceInit = instanceInits, CSharpBlocks = classCSharp };
+			{
+				Requires = classRequires, Imports = classImports, StaticInit = staticInits, InstanceInit = instanceInits, CSharpBlocks = classCSharp,
+				Line = start.Line, Column = start.Column, File = start.File,
+			};
 		}
 
 		// Property body: { get [=> expr | { ... }]  set [=> expr | { ... }] }

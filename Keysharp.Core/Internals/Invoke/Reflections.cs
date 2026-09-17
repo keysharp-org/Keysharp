@@ -23,6 +23,9 @@ namespace Keysharp.Internals.Invoke
 		internal ttsd typeToStringStaticMethods = new ();
 		internal ttsd typeToStringProperties = new ();
 		internal readonly Lock locker = new ();
+
+		/// <summary>The built-in global class a name denotes.</summary>
+		internal bool TryGetGlobalClass(string name, out Type type) => stringToTypes.TryGetValue(name, out type) && Script.IsGlobalClass(type);
 	}
 
 	internal class Reflections
@@ -63,7 +66,7 @@ namespace Keysharp.Internals.Invoke
 
 			foreach (var property in staticTypes
 					 .SelectMany(t => t.GetProperties(BindingFlags.Public | BindingFlags.Static))
-					 .Where(p => p.GetCustomAttribute<PublicHiddenFromUser>() == null))
+					 .Where(p => MethodPropertyHolder.HasScriptGetter(p) && p.GetCustomAttribute<PublicHiddenFromUser>() == null))
 				rd.flatPublicStaticProperties.TryAdd(Script.GetUserDeclaredName(property) ?? property.Name, property);
 
 			foreach (var method in staticTypes

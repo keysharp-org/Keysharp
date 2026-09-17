@@ -251,7 +251,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Imports a module object and/or names from another module or script file. Module globals are implicitly available for wildcard import; imported aliases are re-exported only with #Import Export. Wildcards exclude names beginning with underscore, while explicit imports may name them. Bare unquoted imports and `as` aliases bind the module object; there are no default exports. Keysharp extension: an #Import inside a function, method, property or class body binds names lexically to that scope (AutoHotkey binds them module-wide); module loading and execution order remain eager.",
-                     "tested-by":  "module-export.ahk; module-basic.ahk; module-scoped-import.ahk"
+                     "tested-by":  "module-export.ahk; module-basic.ahk; module-scoped-import.ahk; module-object-members.ahk; module-extends.ahk; module-wildcard-own-vars.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -516,8 +516,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Resolves an existing variable, function or class by a run-time name, including imported names. Blank and unknown names raise Error; reading an unset variable raises UnsetError except in optional-value contexts.",
-                     "tested-by":  "op-dereference.ahk"
+                     "notes":  "Resolves an existing variable, function or class by a run-time name, including imported names. Blank and unknown names raise Error, as do assigning a function, class or read-only built-in variable and assigning a global a function has not declared; reading an unset variable raises UnsetError except in optional-value contexts.",
+                     "tested-by":  "op-dereference.ahk; assign-dyn-var.ahk; func-dyn-vars.ahk; module-dynamic-names.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -1328,7 +1328,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Built-in variable containing command-line arguments passed to the script."
+                     "notes":  "Built-in variable containing command-line arguments passed to the script. Every module shares it, and a script may assign it any value."
                  },
                  {
                      "category":  "Clipboard",
@@ -5065,7 +5065,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Keyword used to derive a class from a base class.",
-                     "tested-by":  "class-extends.ahk"
+                     "tested-by":  "class-extends.ahk; module-extends.ahk"
                  },
                  {
                      "category":  "Core Language",

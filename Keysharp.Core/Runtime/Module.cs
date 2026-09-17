@@ -3,221 +3,93 @@ using Keysharp.Builtins;
 
 namespace Keysharp.Runtime
 {
+	/// <summary>
+	/// A module object. It answers only for the module's own names and its imports, and a name it lacks raises
+	/// PropertyError, or MethodError when called. It has no __Item, so indexing one raises PropertyError too.
+	/// </summary>
 	public class Module : Any, IMetaObject
 	{
 		public Module(params object[] args) : base(args) { }
 
-		object IMetaObject.Get(string name, object[] args)
+		private protected virtual bool TryGetMember(string name, out ScriptVar m) => TheScript.Vars.TryGetMember(GetType(), name, out m);
+
+		// Reads a member of the module, or is false for a name the module lacks, which its prototype may still have. A
+		// module's own names come first, as in AutoHotkey's ScriptModule::Invoke.
+		internal bool TryGetProperty(string name, object[] args, out object value)
 		{
-			var moduleType = GetType();
-			var value = TheScript.Vars.GetVariable(moduleType, name);
-			if (args != null && args.Length > 0)
-				return Keysharp.Runtime.Script.GetIndexOrNull(value, args);
-			return value;
+			value = null;
+
+			if (!TryGetMember(name, out var m))
+				return false;
+
+			var target = m.Get();
+			value = target == null ? Errors.VarUnsetErrorOccurred(null, m.DeclaredName(name))
+					: args != null && args.Length > 0 ? Script.GetIndexOrNull(target, args)
+					: target;
+			return true;
 		}
+
+		// Assigns a member of the module, `args` being any index arguments and then the value, or is false for a name the
+		// module lacks.
+		internal bool TrySetProperty(string name, object[] args)
+		{
+			if (!TryGetMember(name, out var m))
+				return false;
+
+			if (args.Length == 1)
+			{
+				if (m.RequireWritable(VarUsage.Assign, name))
+					m.Set(args[0]);
+			}
+			else
+			{
+				var target = m.Get();
+				_ = target == null ? Errors.VarUnsetErrorOccurred(null, m.DeclaredName(name)) : Script.SetObject(target, args);
+			}
+
+			return true;
+		}
+
+		// Null for a missing member, which the caller raises as for any object without the property.
+		object IMetaObject.Get(string name, object[] args) => TryGetProperty(name, args, out var value) ? value : null;
 
 		void IMetaObject.Set(string name, object[] args, object value)
 		{
-			var moduleType = GetType();
-			if (args != null && args.Length > 0)
-			{
-				var target = TheScript.Vars.GetVariable(moduleType, name);
-				var fullArgs = new object[args.Length + 1];
-				System.Array.Copy(args, fullArgs, args.Length);
-				fullArgs[^1] = value;
-				_ = Keysharp.Runtime.Script.SetObject(target, fullArgs);
-				return;
-			}
-
-			_ = TheScript.Vars.SetVariable(moduleType, name, value);
+			if (!TrySetProperty(name, [.. args ?? [], value]))
+				_ = Errors.MissingPropertyErrorOccurred(this, name);
 		}
 
 		object IMetaObject.Call(string name, object[] args)
 		{
-			var moduleType = GetType();
-			var target = TheScript.Vars.GetVariable(moduleType, name);
 			args ??= System.Array.Empty<object>();
 
-			if (target is KeysharpFunc fn)
-				return fn.Call(args);
-
-			return Keysharp.Runtime.Script.Invoke(target, null, args);
-		}
-
-		object IMetaObject.get_Item(object[] indexArgs)
-		{
-			if (indexArgs == null || indexArgs.Length == 0)
-				return null;
-
-			var moduleType = GetType();
-			var key = indexArgs[0]?.ToString();
-			var value = TheScript.Vars.GetVariable(moduleType, key);
-			if (indexArgs.Length == 1)
-				return value;
-
-			var tail = new object[indexArgs.Length - 1];
-			System.Array.Copy(indexArgs, 1, tail, 0, tail.Length);
-			return Keysharp.Runtime.Script.GetIndexOrNull(value, tail);
-		}
-
-		void IMetaObject.set_Item(object[] indexArgs, object value)
-		{
-			if (indexArgs == null || indexArgs.Length == 0)
-				return;
-
-			var moduleType = GetType();
-			var key = indexArgs[0]?.ToString();
-
-			if (indexArgs.Length == 1)
+			if (TryGetMember(name, out var m))
 			{
-				_ = TheScript.Vars.SetVariable(moduleType, key, value);
-				return;
+				var target = m.Get();
+				return target is KeysharpFunc fn ? fn.Call(args)
+					   : target == null ? Errors.VarUnsetErrorOccurred(null, m.DeclaredName(name))
+					   : Script.Invoke(target, null, args);
 			}
 
-			var target = TheScript.Vars.GetVariable(moduleType, key);
-			var tail = new object[indexArgs.Length];
-			System.Array.Copy(indexArgs, 1, tail, 0, indexArgs.Length - 1);
-			tail[^1] = value;
-			_ = Keysharp.Runtime.Script.SetObject(target, tail);
+			// The methods every value has, such as HasProp, come from the prototype.
+			if (Script.GetMethodOrProperty(this, name, -1, throwIfMissing: false, invokeMeta: false).Item2 is KeysharpFunc method)
+				return method.CallInst(this, args);
+
+			return Errors.MissingMethodErrorOccurred(this, name);
 		}
+
+		object IMetaObject.get_Item(object[] indexArgs) => Errors.MissingPropertyErrorOccurred(this, "__Item");
+
+		void IMetaObject.set_Item(object[] indexArgs, object value) => _ = Errors.MissingPropertyErrorOccurred(this, "__Item");
+
+		public override string ToString() => Script.GetUserDeclaredName(GetType()) ?? GetType().Name;
 	}
 
-	public class Ahk : Module, IMetaObject
+	/// <summary>The AHK module, which holds the built-in variables, functions and classes.</summary>
+	public class Ahk : Module
 	{
 		public Ahk(params object[] args) : base(args) { }
 
-		/// <summary>
-		/// Resolves a class the way a global name resolves. This module is AutoHotkey's global namespace, which
-		/// holds neither the Ks module nor a class it declares.
-		/// </summary>
-		private static bool TryGetGlobalClass(string name, out System.Type type)
-		{
-			if (Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(name, out type) && Script.IsGlobalClass(type))
-				return true;
-
-			type = null;
-			return false;
-		}
-
-		object IMetaObject.Get(string name, object[] args)
-		{
-			var rd = Script.TheScript.ReflectionsData;
-
-			object value = null;
-			if (rd.flatPublicStaticProperties.TryGetValue(name, out var prop))
-				value = prop.GetValue(null);
-			else if (rd.flatPublicStaticMethods.TryGetValue(name, out var mi))
-				value = Keysharp.Builtins.Functions.GetKeysharpFuncByName(name, mi.DeclaringType, throwIfBad: true);
-			else if (TryGetGlobalClass(name, out var type))
-				value = Script.TheScript.Vars.Statics[type];
-			else
-				return null;
-
-			if (args != null && args.Length > 0)
-				return Keysharp.Runtime.Script.GetIndexOrNull(value, args);
-			return value;
-		}
-
-		void IMetaObject.Set(string name, object[] args, object value)
-		{
-			var rd = Script.TheScript.ReflectionsData;
-			if (rd.flatPublicStaticProperties.TryGetValue(name, out var prop))
-			{
-				if (args != null && args.Length > 0)
-				{
-					var target = prop.GetValue(null);
-					var fullArgs = new object[args.Length + 1];
-					System.Array.Copy(args, fullArgs, args.Length);
-					fullArgs[^1] = value;
-					_ = Keysharp.Runtime.Script.SetObject(target, fullArgs);
-					return;
-				}
-
-				if (prop.CanWrite)
-					prop.SetValue(null, value);
-				else
-					Errors.ErrorOccurred($"{name} is read-only.");
-				return;
-			}
-
-			if (TryGetGlobalClass(name, out var type))
-			{
-				var target = Script.TheScript.Vars.Statics[type];
-				if (args != null && args.Length > 0)
-				{
-					var fullArgs = new object[args.Length + 1];
-					System.Array.Copy(args, fullArgs, args.Length);
-					fullArgs[^1] = value;
-					_ = Keysharp.Runtime.Script.SetObject(target, fullArgs);
-					return;
-				}
-			}
-
-			Errors.ErrorOccurred($"Unknown built-in variable '{name}'.");
-		}
-
-		object IMetaObject.Call(string name, object[] args)
-		{
-			var rd = Script.TheScript.ReflectionsData;
-			args ??= System.Array.Empty<object>();
-
-			if (rd.flatPublicStaticMethods.TryGetValue(name, out var mi))
-			{
-				var fn = Keysharp.Builtins.Functions.GetKeysharpFuncByName(name, mi.DeclaringType, throwIfBad: true);
-				return fn.Call(args);
-			}
-
-			if (rd.flatPublicStaticProperties.TryGetValue(name, out var prop))
-			{
-				var target = prop.GetValue(null);
-				if (target is KeysharpFunc fn)
-					return fn.Call(args);
-				return Keysharp.Runtime.Script.Invoke(target, null, args);
-			}
-
-			if (TryGetGlobalClass(name, out var type))
-			{
-				// Statics is typed as Class, which is unrelated to KeysharpFunc, so the test needs an object
-				// operand; a class object whose static side is callable still takes the Invoke path below.
-				object target = Script.TheScript.Vars.Statics[type];
-				if (target is KeysharpFunc fn)
-					return fn.Call(args);
-				return Keysharp.Runtime.Script.Invoke(target, null, args);
-			}
-
-			return Errors.ErrorOccurred($"Unknown built-in function '{name}'.");
-		}
-
-		object IMetaObject.get_Item(object[] indexArgs)
-		{
-			if (indexArgs == null || indexArgs.Length == 0)
-				return null;
-
-			var key = indexArgs[0]?.ToString();
-			if (indexArgs.Length == 1)
-				return ((IMetaObject)this).Get(key, null);
-
-			var tail = new object[indexArgs.Length - 1];
-			System.Array.Copy(indexArgs, 1, tail, 0, tail.Length);
-			return ((IMetaObject)this).Get(key, tail);
-		}
-
-		void IMetaObject.set_Item(object[] indexArgs, object value)
-		{
-			if (indexArgs == null || indexArgs.Length == 0)
-				return;
-
-			var key = indexArgs[0]?.ToString();
-			if (indexArgs.Length == 1)
-			{
-				((IMetaObject)this).Set(key, null, value);
-				return;
-			}
-
-			var tail = new object[indexArgs.Length - 1];
-			System.Array.Copy(indexArgs, 1, tail, 0, tail.Length);
-			((IMetaObject)this).Set(key, tail, value);
-		}
+		private protected override bool TryGetMember(string name, out ScriptVar m) => TheScript.Vars.TryGetAhkMember(name, out m);
 	}
 }
-

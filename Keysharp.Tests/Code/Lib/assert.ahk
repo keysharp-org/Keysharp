@@ -72,3 +72,18 @@ Throws(_cb, _line?, _expected?)
 
 	FileAppend("fail " . _tag . " (no throw)`n", "*")
 }
+
+; What an error says, as "Type: Message [Extra]".
+Described(_err) => Type(_err) . ": " . _err.Message . " [" . _err.Extra . "]"
+
+; Writes "fail <tag> (got <x> want <y>)" unless calling _cb throws an error described as _expected, or "none" for no
+; error.
+AssertError(_cb, _expected, _line?)
+{
+	try
+		_cb()
+	catch Any as _err
+		return AssertEq(Described(_err), _expected, _line?)
+
+	AssertEq("none", _expected, _line?)
+}

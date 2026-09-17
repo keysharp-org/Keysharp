@@ -13,6 +13,7 @@
 #Import OwnerThenKs
 #Import KsThenOwner
 #Import Assigner
+#Import GlobalDeclarer
 #Import AHK
 #Import Ks { * }
 #Include <assert>
@@ -79,6 +80,12 @@ AssertEq(Assigner.WasSet, 0, A_LineNumber)
 AssertEq(Assigner.WasSetDynamic, 0, A_LineNumber)
 AssertEq(Assigner.Dynamic("Font"), "Arial", A_LineNumber)
 AssertEq(Assigner.DynamicIsSet("HashMap"), 0, A_LineNumber)
+; A global declaration in a function or method declares the module's variable too, whether the module's code names
+; it literally (HashMap) or only dynamically (Font).
+AssertEq(GlobalDeclarer.Literal(), 0, A_LineNumber)
+AssertEq(GlobalDeclarer.DynamicIsSet("HashMap"), 0, A_LineNumber)
+AssertEq(GlobalDeclarer.DynamicIsSet("Font"), 0, A_LineNumber)
+AssertEq(GlobalDeclarer.DynamicIsSet("Cosh"), 1, A_LineNumber)
 
 FileAppend "pass", "*"
 
@@ -136,4 +143,17 @@ WasSet := IsSet(Font)
 WasSetDynamic := IsSet(%"Font"%)
 Font := "Arial"
 Dynamic(name) => %name%
+DynamicIsSet(name) => IsSet(%name%)
+
+#Module GlobalDeclarer
+#Import Ks { * }
+Declare() {
+	global HashMap
+}
+class Holder {
+	static Declare() {
+		global Font
+	}
+}
+Literal() => IsSet(HashMap)
 DynamicIsSet(name) => IsSet(%name%)

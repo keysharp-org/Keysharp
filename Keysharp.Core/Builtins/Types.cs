@@ -279,6 +279,10 @@ namespace Keysharp.Builtins
 			if (value == null)
 				return "unset";
 
+			// Every module object is an instance of Module, whichever module it is.
+			if (value is Keysharp.Runtime.Module)
+				return "Module";
+
 			// This must never throw: Type also names values in error messages and ListVars output, where an
 			// exception would replace the diagnostic being reported. Any failure falls back to the CLR name.
 			try

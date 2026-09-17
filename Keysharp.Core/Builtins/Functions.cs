@@ -21,73 +21,34 @@ namespace Keysharp.Builtins
 		public static KeysharpFunc Closure(Delegate del, object obj = null) => new Closure(del, obj);
 
 		/// <summary>
-		/// Resolves a function by name against a module, the global function table and the built-ins.
-		/// Name resolution is internal, for the places where a name is all there is: <c>%"Name"%</c> derefs,
-		/// <c>#Import</c> member binding and RegEx callouts. A callback reaches a built-in as a function object,
-		/// which <see cref="GetKeysharpFunc"/> handles.
+		/// Resolves a function by name as the executing function and then its module find it, for the places where a name
+		/// is all there is, such as RegEx callouts. A callback reaches a built-in as a function object, which
+		/// <see cref="GetKeysharpFunc"/> handles.
 		/// </summary>
 		/// <param name="name">The name of the function to find.</param>
-		/// <param name="moduleType">The module to search first, or null to search the current one and to let a
-		/// closure of the executing deref function win over it.</param>
-		/// <param name="paramCount">The number of parameters the function has. Default: use the first one found.</param>
-		/// <param name="throwIfBad">Whether to throw when the name resolves to nothing. Default: false.</param>
 		/// <returns>An <see cref="KeysharpFunc"/>, or null when the name names no function.</returns>
-		/// <exception cref="MethodError">A <see cref="MethodError"/> exception is thrown if throwIfBad was true and no function was found.</exception>
 		[PublicHiddenFromUser]
-		public static KeysharpFunc GetKeysharpFuncByName(object name, Type moduleType = null, object paramCount = null, bool throwIfBad = false)
+		public static KeysharpFunc GetKeysharpFuncByName(object name)
 		{
 			var s = name.As();
 
 			if (s.Length == 0)
-				return null;//Empty string will just return null, which is a valid value in some cases.
+				return null;
+
+			// A closure is a variable of the executing function, created per call, so it is never cached.
+			if (Threads.Current.executionScope is { } scope && scope.TryGetValue(s, out var own) && own is KeysharpFunc { IsValid: true } closure)
+				return closure;
 
 			var script = Script.TheScript;
-
-			if (moduleType == null)
-			{
-				// A currently-executing deref function exposes its locals/closures by name. Resolve a closure (a
-				// live KeysharpFunc instance, possibly capturing locals) ahead of the module/global tables — these are
-				// per-invocation and must never be cached.
-				var scope = Threads.Current.executionScope;
-
-				if (scope != null && scope.TryGetVar(s, out var scopeVal) && scopeVal is KeysharpFunc scopeFo && scopeFo.IsValid)
-					return scopeFo;
-
-				moduleType = script.CurrentModuleType;
-			}
-
-			var cachedKeysharpFunc = script.FunctionData.cachedKeysharpFunc;
-			KeysharpFunc del;
-
-			if (moduleType != null)
-			{
-				var key = new ModuleFuncKey(s, moduleType, paramCount.Ai(-1));
-				del = script.FunctionData.cachedModuleKeysharpFunc.GetOrAdd(
-					key,
-					(k) => new KeysharpFunc(s, moduleType, paramCount)
-				);
-
-				if (!del.IsValid)
-				{
-					// A variable of the module can hold a function (an import, a closure) and can change, so it is read
-					// each time. The name cache is shared by every module, so it holds only the built-in functions.
-					if (script.Vars.GetModuleVars(moduleType).TryGetValue(s, out var mph) && mph.CallFunc(null, null) is KeysharpFunc held && held.IsValid)
-						return held;
-
-					del = cachedKeysharpFunc.GetOrAdd(s, (key) => new KeysharpFunc(script.ReflectionsData.flatPublicStaticMethods.GetValueOrDefault(s)));
-				}
-			}
-			else
-				del = cachedKeysharpFunc.GetOrAdd(s, (key) => new KeysharpFunc(s, (object)null, paramCount));
-
-			if (del.IsValid)
-				return del;
-
-			if (throwIfBad)
-				_ = Errors.MethodErrorOccurred($"Unable to retrieve method {s} when creating a function object.");
-
-			return null;
+			return script.Vars.TryGetGlobal(script.CurrentModuleType, s, out var v) && v.Get() is KeysharpFunc { IsValid: true } f ? f : null;
 		}
+
+		/// <summary>
+		/// The function object of a static method, one per method whether a script names it, reaches it by %name% or through
+		/// a module object, or null when the method cannot be called.
+		/// </summary>
+		internal static KeysharpFunc MethodFunction(MethodInfo method) =>
+			Script.TheScript.FunctionData.methodFunctions.GetOrAdd(method, static key => new KeysharpFunc(key)) is { IsValid: true } f ? f : null;
 
 		/// <summary>Converts a callback value to the object a registration stores, or raises for a non-object value.</summary>
 		internal static object ToCallback(object value)
@@ -159,7 +120,7 @@ namespace Keysharp.Builtins
 			if (hasMin || hasMax || IsInvocable(obj))
 				return true;
 
-			_ = Errors.MethodErrorOccurred($"This value of type \"{Types.Type(obj)}\" has no method named \"Call\".");
+			_ = Errors.MissingMethodErrorOccurred(obj, "Call");
 			return false;
 		}
 
@@ -183,7 +144,7 @@ namespace Keysharp.Builtins
 					return true;
 			}
 
-			_ = Errors.PropertyErrorOccurred($"This value of type \"{Types.Type(callback)}\" has no property named \"MinParams\".");
+			_ = Errors.MissingPropertyErrorOccurred(callback, "MinParams");
 			return false;
 		}
 
@@ -312,11 +273,11 @@ namespace Keysharp.Builtins
 			}
 			else if (h is Delegate d)
 			{
-				// An unbound delegate answers the same for the life of the script, so it is worth caching by its
-				// own identity. One bound to an instance is per-instance and cannot be shared.
-				del = inst == null
-					  ? Script.TheScript.FunctionData.cachedKeysharpFunc.GetOrAdd(d, (key) => new KeysharpFunc((Delegate)key, null))
-					  : new KeysharpFunc(d, inst);
+				// An unbound delegate answers the same for the life of the script, so it is cached: a static method's by the
+				// method, as MethodFunction caches it. One bound to an instance is per-instance and cannot be shared.
+				del = inst != null ? new KeysharpFunc(d, inst)
+					  : d.Target == null ? Script.TheScript.FunctionData.methodFunctions.GetOrAdd(d.Method, static key => new KeysharpFunc(key))
+					  : Script.TheScript.FunctionData.cachedKeysharpFunc.GetOrAdd(d, static key => new KeysharpFunc(key, null));
 
 				if (!del.IsValid)
 				{
@@ -456,47 +417,10 @@ namespace Keysharp.Builtins
 		}
 	}
 
-	internal readonly struct ModuleFuncKey : IEquatable<ModuleFuncKey>
-	{
-		internal readonly string Name;
-		internal readonly Type ModuleType;
-		internal readonly int ParamCount;
-
-		internal ModuleFuncKey(string name, Type moduleType, int paramCount)
-		{
-			Name = name;
-			ModuleType = moduleType;
-			ParamCount = paramCount;
-		}
-
-		public bool Equals(ModuleFuncKey other)
-			=> ParamCount == other.ParamCount
-				&& ReferenceEquals(ModuleType, other.ModuleType)
-				&& string.Equals(Name, other.Name, StringComparison.OrdinalIgnoreCase);
-
-		public override bool Equals(object obj) => obj is ModuleFuncKey other && Equals(other);
-
-		public override int GetHashCode()
-		{
-			unchecked
-			{
-				int h = StringComparer.OrdinalIgnoreCase.GetHashCode(Name ?? string.Empty);
-				h = (h * 397) ^ (ModuleType?.GetHashCode() ?? 0);
-				h = (h * 397) ^ ParamCount;
-				return h;
-			}
-		}
-	}
-
-	internal sealed class ModuleFuncKeyComparer : IEqualityComparer<ModuleFuncKey>
-	{
-		public bool Equals(ModuleFuncKey x, ModuleFuncKey y) => x.Equals(y);
-		public int GetHashCode(ModuleFuncKey obj) => obj.GetHashCode();
-	}
-
 	internal class FunctionData
 	{
-		internal ConcurrentLfu<object, KeysharpFunc> cachedKeysharpFunc = new (Environment.ProcessorCount, 2000, new ThreadPoolScheduler(), new CaseEqualityComp(eCaseSense.Off));
-		internal ConcurrentLfu<ModuleFuncKey, KeysharpFunc> cachedModuleKeysharpFunc = new (Environment.ProcessorCount, 2000, new ThreadPoolScheduler(), new ModuleFuncKeyComparer());
+		// One function object per static method, never evicted, so a function is one object however a script reaches it.
+		internal readonly ConcurrentDictionary<MethodInfo, KeysharpFunc> methodFunctions = new();
+		internal ConcurrentLfu<Delegate, KeysharpFunc> cachedKeysharpFunc = new (Environment.ProcessorCount, 2000, new ThreadPoolScheduler(), EqualityComparer<Delegate>.Default);
 	}
 }

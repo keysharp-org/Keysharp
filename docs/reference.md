@@ -459,6 +459,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `Hotkey()`'s `Action` takes an alt-tab action or another hotkey's name, and `Hotstring()`'s `Replacement` takes replacement text.
 	+ Most built-in functions can also be used as function objects.
 * The `File` object is internally named `KeysharpFile` so that it doesn't conflict with `System.IO.File`. As with `Func` and `Object`, only the AutoHotkey name is usable from a script; the internal name appears solely in low-level diagnostics such as stack traces.
+* `A_Args` is a built-in variable which every module and function shares and a script may assign any value, unset included. In AutoHotkey it is a variable of the main module only, so another module has its own, and assigning it in a function without a global declaration creates a local variable.
 * Error stack traces start from where the error was thrown, not where it was constructed.
 * `throw` and `Throw()` throw a value which is not an `Error` as `Error(Value)`, so `catch` and `OnError` receive that `Error`, and a `catch` without a class catches it. AutoHotkey passes the value itself. If the value has a `Message` property, that becomes the wrapper's message.
 * An exception which is not a Keysharp error, such as one thrown by `#CSharp` code, reaches `OnError` when it ends the thread, as an `Error` describing it, or its inner exception when it wraps one.
@@ -527,6 +528,7 @@ Controlling another application needs **Automation** permission, granted per tar
 ### Syntax
 * AutoHotkey `unset` is implemented as `null`. `IsSet(x)` is equivalent to `x == null`.
 * Use of the dereference syntax `%expression%` inside functions is highly discouraged. This is because using it will cause every function call to construct an object which captures all local variables, and depending on the number of variables the performance loss may be significant.
+* In a closure or other nested function, `%expression%` reaches every variable of the enclosing functions that a plain reference there reaches, where AutoHotkey reaches only the ones the nested function names without `%`. After `x := 1`, a closure `() => %"x"%` in the same function returns 1, where AutoHotkey raises *Variable not found.* unless the closure also names `x` itself.
 * `Goto` statements cannot use any type of variable. They must be labels known at compile time and function just like goto statements in C#.
 * `Goto` statements being called as a function like `Goto("Label")` are not supported. Instead, just use `goto Label`.
 * The `#Requires` directive differs in the following ways:
@@ -1177,7 +1179,10 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ New preprocessor directives:
 		+ `#Module` starts or reopens a module, and `#Import` binds module objects or selected members. Script globals are implicitly wildcard-exportable; names beginning with `_` require an explicit import. Ordinary imported aliases remain explicitly importable and visible through the module object, but only `#Import Export` forwards them to wildcard consumers. Bare imports bind the module object; default exports and standalone `Export` declarations do not exist.
 			+ A dynamic reference (`%"Name"%`) resolves local declarations and imported names, including names supplied only by a wildcard import.
-			+ `#Warn NamedArg` checks a call by name against what the name binds to, so `Overlay(nosuch: 1)` after `#import KS { Overlay }` warns, as `Buffer(nosuch: 1)` does.
+			+ A wildcard import of the `Ks` module supplies no name the module assigns, as with any wildcard, so `A_PeekFrequency := 35` after `#import KS { * }` creates the module's own variable, and assigning the built-in takes `#import KS { A_PeekFrequency }`.
+			+ An `#Import` in a function or class body binds its names to that scope only. A wildcard there supplies no name the scope assigns or declares, and assigning a variable imported by name writes through to it.
+			+ `#Warn NamedArg` checks a call by name against what the name binds to, an import included, so `Overlay(nosuch: 1)` after `#import KS { Overlay }` warns, as `Buffer(nosuch: 1)` does.
+			+ `extends` resolves a base class as any name in the module does, so a class of the `Ks` module or of another module is a base class only through an import or a module object, as in `class MyMap extends HM` after `#Import Ks { HashMap as HM }`.
 		+ `#CSharp` embeds C# members in the script assembly for hot loops, buffer work and interop.
 			+ Use `#CSharp` … `#EndCSharp` for an inline block, `#CSharp "helper.cs"` for a file on the module search path, or `#CSharp <Helper>` for `Helper.cs` in the same Lib folders searched by `#Include <Helper>`. The library form also uses #Include's underscore fallback. Blocks may appear at module scope or directly in a class.
 			+ At module scope, `public static` methods are callable locally, through the module object and by an explicit `{ Name }` import. `[Export]` additionally exposes one to `{ * }`; the `Default` option is no longer supported.

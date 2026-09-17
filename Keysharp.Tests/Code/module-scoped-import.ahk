@@ -153,4 +153,112 @@ FnKsThenHelper() {
 AssertEq(FnHelperThenKs(), "1.0,1.0", A_LineNumber)
 AssertEq(FnKsThenHelper(), "helper,helper", A_LineNumber)
 
+; ---- 15. A scoped wildcard import supplies no name the scope assigns: an assignment makes a local, which %name%
+;          reaches too. A Ks property is no exception, and a script module's variable keeps its value.
+FnWildAssign() {
+    #import KS { * }
+    HashMap := "mine"
+    A_PeekFrequency := 35
+    return HashMap "," %"HashMap"% "," A_PeekFrequency
+}
+peekFrequency := Ks.A_PeekFrequency
+AssertEq(FnWildAssign(), "mine,mine,35", A_LineNumber)
+AssertEq(Ks.A_PeekFrequency, peekFrequency, A_LineNumber)
+
+FnWildScriptAssign() {
+    #import "module_scoped_import_helper" { * }
+    before := GetHelperVar()
+    helperVar := "local"
+    return helperVar "," (GetHelperVar() == before)
+}
+AssertEq(FnWildScriptAssign(), "local,1", A_LineNumber)
+
+; ---- 16. In a class body: a method which assigns the name has a local, one which only reads it has the import,
+;          and a name a field initializer assigns, other than the field's own, is a local of __Init.
+class WildAssign {
+    #import KS { * }
+    static Imported() => Cosh(0)
+    static Assigned() {
+        Cosh := "mine"
+        return Cosh "," %"Cosh"%
+    }
+    Field := (Sinh := "mine") "," Sinh
+}
+AssertEq(WildAssign.Imported(), 1, A_LineNumber)
+AssertEq(WildAssign.Assigned(), "mine,mine", A_LineNumber)
+AssertEq(WildAssign().Field, "mine,mine", A_LineNumber)
+
+; ---- 17. A global declaration makes the name the module's variable, in the function and in a closure nested in
+;          it, which no scoped wildcard import supplies.
+FnWildGlobal() {
+    #import KS { * }
+    global Tanh
+    Nested() => IsSet(Tanh) "," IsSet(%"Tanh"%)
+    return IsSet(Tanh) "," IsSet(%"Tanh"%) "," Nested()
+}
+AssertEq(FnWildGlobal(), "0,0,0,0", A_LineNumber)
+
+; ---- 18. `x++` is an assignment too, so it makes a local of a name a scoped wildcard import supplies.
+FnWildIncrement() {
+    #import "module_scoped_import_helper" { * }
+    before := GetHelperVar()
+    try
+        helperVar++
+    return IsSet(helperVar) "," (GetHelperVar() == before)
+}
+AssertEq(FnWildIncrement(), "0,1", A_LineNumber)
+
+; ---- 19. A function the scope imports is a constant: assigning or updating it by dynamic name, or taking a reference to
+;          it, raises as for a module's function, before any operator runs. A name a wildcard supplies is none to assign
+;          or take a reference to either.
+FnImportedConstant() {
+    #import KS { Cosh }
+    errors := ""
+    try
+        ref := &%"cosh"%
+    catch Error as err
+        errors .= err.Message " [" err.Extra "];"
+    try
+        %"COSH"% := 1
+    catch Error as err
+        errors .= err.Message " [" err.Extra "];"
+    try
+        %"COSH"% += 1
+    catch Error as err
+        errors .= err.Message " [" err.Extra "];"
+    return errors Cosh(0)
+}
+AssertEq(FnImportedConstant(), "This Func cannot have its reference taken. [Cosh];This Func cannot be assigned a value. [Cosh];This Func cannot be assigned a value. [Cosh];1.0", A_LineNumber)
+
+FnWildBuiltinWrite() {
+    #import KS { * }
+    errors := ""
+    try
+        ref := &%"A_PeekFrequency"%
+    catch Error as err
+        errors .= err.Message " [" err.Extra "];"
+    try
+        %"A_PeekFrequency"% := 35
+    catch Error as err
+        errors .= err.Message " [" err.Extra "];"
+    return errors
+}
+AssertEq(FnWildBuiltinWrite(), "Variable not found. [A_PeekFrequency];Variable not found. [A_PeekFrequency];", A_LineNumber)
+AssertEq(Ks.A_PeekFrequency, peekFrequency, A_LineNumber)
+
+; ---- 20. An assume-global function assigns the module's own global, which a scoped wildcard does not supply.
+FnHelperVar() {
+    #import "module_scoped_import_helper" { GetHelperVar }
+    return GetHelperVar()
+}
+FnWildAssumeGlobal() {
+    global
+    #import "module_scoped_import_helper" { * }
+    helperVar := "main"
+    return GetHelperVar()
+}
+helperBefore := FnHelperVar()
+AssertEq(FnWildAssumeGlobal(), helperBefore, A_LineNumber)
+AssertEq(helperVar, "main", A_LineNumber)
+
 FileAppend "pass", "*"

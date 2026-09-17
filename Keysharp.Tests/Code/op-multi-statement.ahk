@@ -14,8 +14,9 @@ Assert(y = 21, A_LineNumber)
 Assert(z = 31, A_LineNumber)
 
 ; Only the last item is the sequence's value; the others are evaluated for their side effects, so a
-; call which returns no value is simply discarded rather than raising.
-sideCount := 0
+; call which returns no value is simply discarded rather than raising. The count is global, declared so for the run
+; wrapped in a function too.
+global sideCount := 0
 
 NoValue() {
 }

@@ -260,7 +260,7 @@ namespace Keysharp.Runtime
 					&& (desc.Type == OwnPropsMapType.None || (desc.Type & (OwnPropsMapType.Value | OwnPropsMapType.Get)) != 0))
 				return Errors.UnsetErrorOccurred($"Property {name} of {item}");
 
-			return Errors.PropertyErrorOccurred($"This value of type \"{Types.Type(item)}\" has no property named \"{name}\".");
+			return Errors.MissingPropertyErrorOccurred(item, name);
 		}
 		// . in ?? context: strict base, allow null result
 		public static object GetPropertyValueOrNull(object item, object name, params object[] args)
@@ -300,6 +300,9 @@ namespace Keysharp.Runtime
 				// Keysharp object path
 				if (kso != null)
 				{
+					if (kso is Module module && module.TryGetProperty(namestr, args, out var moduleValue))
+						return moduleValue;
+
 					if (TryGetGettableProp(kso, namestr, out var opm))
 					{
 						if (opm.StructField != null && item is Struct getStruct)
@@ -450,7 +453,7 @@ namespace Keysharp.Runtime
 
 				// An object called which cannot be: AHK's MethodError, as a callback site reports it.
 				if (nameless && mitup.Item2 == null)
-					return Errors.MethodErrorOccurred($"This value of type \"{Types.Type(actualThis)}\" has no method named \"Call\".");
+					return Errors.MissingMethodErrorOccurred(actualThis, "Call");
 
 				switch (mitup.Item2)
 				{
@@ -704,6 +707,9 @@ namespace Keysharp.Runtime
 				// Keysharp object path
 				if (kso != null)
 				{
+					if (kso is Module module && module.TrySetProperty(namestr, args))
+						return value;
+
 					// Direct ownprop first
 					if (kso.op != null && kso.op.TryGetValue(namestr, out var own))
 					{
@@ -826,7 +832,7 @@ namespace Keysharp.Runtime
 			// defined one; say what is actually wrong instead of reporting a failed assignment.
 			return allowCreate
 				   ? Errors.ErrorOccurred($"Attempting to set property {namestr} on object {item} to value {value} failed.")
-				   : Errors.PropertyErrorOccurred($"This value of type \"{Types.Type(item)}\" has no property named \"{namestr}\".");
+				   : Errors.MissingPropertyErrorOccurred(item, namestr);
 
 			static object[] GetIndexArgs(object[] a)
 			{

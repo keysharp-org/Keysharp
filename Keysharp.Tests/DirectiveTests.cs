@@ -804,6 +804,38 @@ namespace Keysharp.Tests
 			}
 		}
 
+		// A global a function only declares has no value until something assigns it, so reading it warns, as in
+		// AutoHotkey, while one a function assigns does not, however it is global there.
+		[Test, Category("Directives")]
+		public void WarnVarUnsetDeclaredGlobal()
+		{
+			static string Compiled(string source)
+			{
+				var (bytes, code, _) = new CompilerHelper().CompileCodeToByteArray("#Warn VarUnset, StdOut\n" + source, "warn-declared-global", null, false, true);
+				Assert.IsNotNull(bytes, code);
+				return code;
+			}
+
+			static bool Warns(string source) => Compiled(source).Contains("appears to never be assigned a value: declaredOnly.");
+
+			Assert.IsTrue(Warns("F() {\n\tglobal declaredOnly\n}\nx := declaredOnly\n"));
+			Assert.IsTrue(Warns("F() {\n\tglobal declaredOnly\n}\nG() => declaredOnly\n"));
+			Assert.IsFalse(Warns("F() {\n\tglobal declaredOnly := 1\n}\nx := declaredOnly\n"));
+			Assert.IsFalse(Warns("x := declaredOnly\nF() {\n\tglobal declaredOnly\n\tdeclaredOnly := 1\n}\n"));
+			Assert.IsFalse(Warns("x := declaredOnly\nF() {\n\tglobal declaredOnly\n\tG() => declaredOnly := 1\n}\n"));
+			Assert.IsFalse(Warns("x := declaredOnly\nF() {\n\tglobal\n\tG() {\n\t\tdeclaredOnly := 1\n\t}\n}\n"));
+			// A parameter or local of an assume-global function is none of its globals.
+			Assert.IsTrue(Warns("x := declaredOnly\nF(declaredOnly) {\n\tglobal\n\tdeclaredOnly := 1\n}\n"));
+			Assert.IsTrue(Warns("x := declaredOnly\nF() {\n\tglobal\n\tlocal declaredOnly := 1\n}\n"));
+			// The top level assigns a global in any form, and a function's own variable is warned about as a local.
+			Assert.IsFalse(Warns("declaredOnly ??= 3\nx := declaredOnly\n"));
+			Assert.IsFalse(Warns("declaredOnly += 1\nx := declaredOnly\nF() => declaredOnly\n"));
+			Assert.IsTrue(Compiled("F() {\n\tglobal declaredOnly\n}\nG() {\n\tdeclaredOnly += 1\n}\n")
+				.Contains("This local variable appears to never be assigned a value: declaredOnly."));
+			// A function reading a global only an assume-global function assigns reads an assigned global.
+			Assert.IsFalse(Warns("F() {\n\tglobal\n\tdeclaredOnly := 1\n}\nG() {\n\treturn declaredOnly\n}\n"));
+		}
+
 		[Test, Category("Directives"), NonParallelizable]
 		public void CSharpBlock() => Assert.IsTrue(TestScript("directive-csharp", true));
 

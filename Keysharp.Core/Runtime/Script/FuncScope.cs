@@ -1,72 +1,95 @@
 namespace Keysharp.Runtime
 {
+	/// <summary>How a function's variable is declared, which is what an error about it calls it.</summary>
+	public enum VarKind : byte
+	{
+		Local,
+		ImplicitLocal,
+		Parameter,
+		Static,
+		ImplicitStatic,
+		Global,
+		/// <summary>A nested function, or a function, class, module or read-only built-in variable an import binds, which takes no write.</summary>
+		Constant
+	}
+
 	/// <summary>
-	/// Exposes the variables of a currently-executing user function to code outside its C# frame — primarily
-	/// closure resolution by name (e.g. a RegEx callout that names a closure, via
-	/// <see cref="Keysharp.Builtins.Functions.GetKeysharpFunc"/>) and ListVars enumeration.<br/>
-	/// A scope-publishing function (one that uses <c>%name%</c>, or calls a scope-consuming builtin) installs one
-	/// in its prologue through <see cref="Script.EnterScope"/>, over its generated reader/writer lambdas, and it is held
-	/// on the current pseudo-thread. <see cref="Keysharp.Builtins.KeysharpFunc.Call"/> clears it on entry to any user
-	/// function and restores it on return, so the scope visible at any point is the nearest enclosing user function's.
-	/// An interrupting thread (timer/hotkey) therefore starts with none, while a synchronous callout shares the calling
-	/// function's.
+	/// The variables of an executing user function, for dynamic references, A_ThisFunc, ListVars and closures resolved by
+	/// name. <see cref="Script.EnterScope"/> publishes it on the current pseudo-thread, and KeysharpFunc.Call restores the
+	/// previous one on return, so the scope visible at any point is the nearest enclosing user function's.
 	/// </summary>
 	public sealed class FuncScope
 	{
-		/// <summary>
-		/// Returns the value of one of the function's variables (the generated <c>KS_readVar</c> switch-expression
-		/// lambda), or <see cref="Script.DerefMiss"/> when the name is not one of its locals/statics/closures (callers
-		/// then fall back to the module/global store).
-		/// </summary>
+		/// <summary>Returns the value of one of the function's variables (null when it has none), <see cref="Undeclared"/> or <see cref="Global"/>.</summary>
 		public delegate object Reader(object name);
 
-		/// <summary>
-		/// Assigns one of the function's variables (the generated <c>KS_writeVar</c> switch-expression lambda) and
-		/// returns the assigned value, or <see cref="Script.DerefMiss"/> when the name is not one of its variables.
-		/// Used for in-body <c>%name% := …</c> writes; the FuncScope itself holds only the reader.
-		/// </summary>
+		/// <summary>Assigns one of the function's variables and returns the value, or returns <see cref="Undeclared"/> or <see cref="Global"/>.</summary>
 		public delegate object Writer(object name, object value);
 
-		/// <summary>The function's exact AHK-visible name, for A_ThisFunc and the ListVars header (empty for an
-		/// anonymous function). The Lowerer passes it as a literal to <see cref="Script.EnterScope"/>, so there is no
-		/// need to carry the live KeysharpFunc.</summary>
+		private sealed class Marker { }
+
+		// A name the function holds no write for: an Undeclared one is written only as a built-in variable, a Global one as
+		// any global.
+		public static readonly object Undeclared = new Marker(), Global = new Marker();
+
+		internal static bool IsOwn(object read) => read is not Marker;
+
+		/// <summary>A name the function declares or holds: the spelling it is declared by and how.</summary>
+		public readonly record struct Declaration(string Name, VarKind Kind);
+
+		/// <summary>The function's AHK-visible name, for A_ThisFunc and the ListVars header (empty for an anonymous function).</summary>
 		public readonly string Name;
 
-		private readonly Reader reader;
-		// Returns this scope's variable names (the reader's switch keys). The Lowerer passes a non-capturing
-		// lambda, which the C# compiler caches as a singleton — so building the scope costs no per-call allocation
-		// for the names, and the array itself is only materialised if ListVars actually enumerates.
-		private readonly System.Func<string[]> namesFactory;
+		internal readonly Reader Read;
+		internal readonly Writer Write;
+		// What a write finds for a name no declaration covers: Global in an assume-global function, else Undeclared.
+		internal readonly object Unheld;
+		// Non-capturing, so the C# compiler caches one delegate per function, which keys the one table every call shares.
+		private readonly System.Func<Declaration[]> factory;
+		private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<System.Func<Declaration[]>, Table> tables = new();
+		private Table declarations;
 
-		public FuncScope(string name, Reader reader, System.Func<string[]> namesFactory)
+		// A function's declarations in order, for ListVars, and by name.
+		private sealed class Table(Declaration[] rows)
+		{
+			internal static readonly Table Empty = new([]);
+			internal readonly Declaration[] Rows = rows;
+			internal readonly System.Collections.Generic.Dictionary<string, Declaration> ByName = rows
+				.DistinctBy(row => row.Name, System.StringComparer.OrdinalIgnoreCase)
+				.ToDictionary(row => row.Name, System.StringComparer.OrdinalIgnoreCase);
+		}
+
+		public FuncScope(string name, Reader read, Writer write, System.Func<Declaration[]> declarations, bool assumeGlobal)
 		{
 			Name = name ?? "";
-			this.reader = reader;
-			this.namesFactory = namesFactory;
+			Read = read;
+			Write = write;
+			factory = declarations;
+			Unheld = assumeGlobal ? Global : Undeclared;
 		}
 
-		/// <summary>
-		/// True (with <paramref name="value"/> set) when <paramref name="name"/> is one of this function's
-		/// variables; false for any other name.
-		/// </summary>
-		public bool TryGetVar(object name, out object value)
+		private Table Declarations => declarations ??= factory == null ? Table.Empty : tables.GetValue(factory, static build => new(build()));
+
+		internal bool TryGetDeclaration(string key, out Declaration declaration) => Declarations.ByName.TryGetValue(key, out declaration);
+
+		/// <summary>True (with <paramref name="value"/> set) when <paramref name="name"/> is one of this function's variables.</summary>
+		internal bool TryGetValue(object name, out object value)
 		{
-			var v = reader(name);
-			if (ReferenceEquals(v, Script.DerefMiss)) { value = null; return false; }
-			value = v;
-			return true;
+			value = Read(name);
+
+			if (IsOwn(value))
+				return true;
+
+			value = null;
+			return false;
 		}
 
-		/// <summary>This scope's variables as name/value pairs, for ListVars. Resolves each name through the reader,
-		/// so values reflect the moment of enumeration (snapshot synchronously on the owning thread).</summary>
-		public System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, object>> Enumerate()
+		/// <summary>This scope's variables as name/value pairs, for ListVars, read at the moment of enumeration.</summary>
+		internal System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, object>> Enumerate()
 		{
-			var names = namesFactory?.Invoke();
-			if (names == null)
-				yield break;
-			foreach (var n in names)
-				if (TryGetVar(n, out var v))
-					yield return new System.Collections.Generic.KeyValuePair<string, object>(n, v);
+			foreach (var row in Declarations.Rows)
+				if (row.Kind != VarKind.Constant && TryGetValue(row.Name, out var value))
+					yield return new System.Collections.Generic.KeyValuePair<string, object>(row.Name, value);
 		}
 	}
 }

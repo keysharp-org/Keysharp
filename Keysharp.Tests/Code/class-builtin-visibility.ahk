@@ -1,15 +1,23 @@
 #Module GlobalNames
 #Include <assert>
 
-; DelegateHolder is an implementation detail; CallbackCreate returns an Integer, as in AutoHotkey.
+; AutoHotkey has no DelegateHolder or Prototype class, so neither is a global name.
 Assert(IsSet(Array) && IsSet(KeyError) && !IsSet(Dialogs)
 	&& !IsSet(List) && !IsSet(Highlight) && !IsSet(ManagedType)
-	&& IsSet(InputHook) && !IsSet(DelegateHolder), A_LineNumber)
+	&& IsSet(InputHook) && !IsSet(DelegateHolder) && !IsSet(Prototype), A_LineNumber)
+
+; A module is not a class and the Ks module is not part of the global namespace, so without an import a
+; dynamic reference resolves neither it nor a class it declares.
+Throws(() => %"Ks"%, A_LineNumber)
+Throws(() => %"HashMap"%, A_LineNumber)
 
 InputHook.Prototype.DefineProp("ExtensionValue", {Get: (this) => 41})
 input := InputHook()
 
 AssertEq(input.ExtensionValue, 41, A_LineNumber)
+
+; A prototype object still reports its type as "Prototype", as in AutoHotkey.
+AssertEq(Type(InputHook.Prototype), "Prototype", A_LineNumber)
 
 callback := CallbackCreate(() => 0)
 
@@ -29,7 +37,8 @@ if !(Gui.List && Gui.WebView)
 
 #import KS { Clr, Highlight }
 
-if !(IsSet(Clr) && IsSet(Highlight) && Clr.ManagedType)
+; An imported name resolves dynamically as well, the module's own name included.
+if !(IsSet(Clr) && IsSet(Highlight) && Clr.ManagedType && %"Highlight"% == Highlight && %"KS"%.Clr == Clr)
 	FileAppend "fail line " A_LineNumber "`n", "*"
 
 FileAppend "pass", "*"

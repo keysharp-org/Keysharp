@@ -470,6 +470,69 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
+		/// The text of a read-only variable error without its name, such as "This Func cannot be assigned a value", which
+		/// the compiler also reports at load time.
+		/// </summary>
+		/// <param name="kind">What the variable is: a constant's type, such as Func, or "built-in variable".</param>
+		internal static string ReadOnlyMessage(string kind, VarUsage usage) =>
+			$"This {kind} cannot {usage switch { VarUsage.OutputVar => "be used as an output variable", VarUsage.Reference => "have its reference taken", _ => "be assigned a value" }}";
+
+		/// <summary>What a read-only error calls a variable holding this value: a function, class or module by its type, and any other a built-in variable.</summary>
+		internal static string ConstantKind(object value) => value is KeysharpFunc or Class or Keysharp.Runtime.Module ? Types.Type(value) : "built-in variable";
+
+		/// <summary>
+		/// Internal helper for writing a variable which takes no write, <paramref name="kind"/> being what it is, as
+		/// <see cref="ReadOnlyMessage"/> words it. The error is not continuable.
+		/// Throws an <see cref="Error"/> or returns <see cref="DefaultObject"/>.
+		/// </summary>
+		[StackTraceHidden]
+		internal static object VarReadOnlyErrorOccurred(string kind, string name, VarUsage usage)
+		{
+			Error err;
+			return ErrorOccurred(err = new Error(ReadOnlyMessage(kind, usage) + ".", null, name), ErrorMode.Exit) ? throw err : DefaultObject;
+		}
+
+		/// <summary>
+		/// Internal helper for reading a variable which has no value, worded as AutoHotkey words it: one
+		/// <paramref name="scope"/> declares is named by its declaration, with a hint when it is an undeclared local which
+		/// shares a global's name, and any other is a global. A null name is a reference's target.
+		/// Throws an <see cref="UnsetError"/> or returns <see cref="DefaultObject"/>.
+		/// </summary>
+		[StackTraceHidden]
+		internal static object VarUnsetErrorOccurred(FuncScope scope, string name)
+		{
+			string kind = name == null ? "variable" : "global variable", hint = "";
+
+			if (name != null && scope != null && scope.TryGetDeclaration(name, out var declared))
+			{
+				name = declared.Name;
+				kind = declared.Kind switch
+				{
+					VarKind.Parameter => "parameter",
+					VarKind.Static or VarKind.ImplicitStatic => "static variable",
+					VarKind.Local or VarKind.ImplicitLocal => "local variable",
+					_ => "global variable"
+				};
+
+				if (declared.Kind is VarKind.ImplicitLocal or VarKind.ImplicitStatic && TheScript.Vars.TryGetGlobal(TheScript.CurrentModuleType, name, out _))
+					hint = "\nA global declaration inside the function may be required.";
+			}
+
+			Error err;
+			return ErrorOccurred(err = new UnsetError($"This {kind} has not been assigned a value.{hint}", null, name)) ? throw err : DefaultObject;
+		}
+
+		/// <summary>Internal helper for a value which lacks a property. Throws a <see cref="PropertyError"/> or returns <see cref="DefaultObject"/>.</summary>
+		[StackTraceHidden]
+		internal static object MissingPropertyErrorOccurred(object target, object name) =>
+			PropertyErrorOccurred($"This value of type \"{Types.Type(target)}\" has no property named \"{name}\".");
+
+		/// <summary>Internal helper for a value which lacks a method. Throws a <see cref="MethodError"/> or returns <see cref="DefaultObject"/>.</summary>
+		[StackTraceHidden]
+		internal static object MissingMethodErrorOccurred(object target, string name) =>
+			MethodErrorOccurred($"This value of type \"{Types.Type(target)}\" has no method named \"{name}\".");
+
+		/// <summary>
 		/// Internal helper to handle zero division errors. Throws a <see cref="ZeroDivisionError"/> or returns <see cref="DefaultObject"/>.
 		/// </summary>
 		[StackTraceHidden]

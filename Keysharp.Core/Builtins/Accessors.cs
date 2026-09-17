@@ -132,9 +132,10 @@ namespace Keysharp.Builtins
 #endif
 
 		/// <summary>
-		/// An <see cref="Array"/> containing the command line arguments used to run the script.
+		/// An <see cref="Array"/> containing the command line arguments used to run the script. It is an ordinary
+		/// variable, so a script may assign it any value.
 		/// </summary>
-		public static Array A_Args { get; internal set; } = [];
+		public static object A_Args { get; set; } = new Array();
 
 
 

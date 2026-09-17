@@ -21,8 +21,7 @@ namespace Keysharp.Runtime
 		// so this is effectively never used).
 		private Dictionary<string, MethodPropertyHolder> programVars;
 		// The variable store for the module currently executing on this thread (the main module when none is active,
-		// e.g. on the UI thread). Replaces the former standalone globalVars field, which was only ever an alias of
-		// the main module's store.
+		// e.g. on the UI thread).
 		internal Dictionary<string, MethodPropertyHolder> GlobalVars => GetModuleVars(script.CurrentModuleType);
 		// All modules and their global-variable stores, in declaration order, for ListVars.
 		internal IEnumerable<KeyValuePair<Type, Dictionary<string, MethodPropertyHolder>>> AllModuleVars =>
@@ -49,15 +48,26 @@ namespace Keysharp.Runtime
 		{
 			internal readonly Dictionary<string, MethodPropertyHolder> Variables;
 			internal readonly Dictionary<string, Type> Classes;
+			// The functions the module type itself declares, so a name which is none costs one lookup.
+			internal readonly HashSet<string> Functions;
 			internal readonly Type[] WildcardImports;
+			internal readonly bool IsBuiltin;
 
 			internal ModuleScope(Type type)
 			{
 				Variables = GatherTypeVariables(type);
-				Classes = type.GetNestedTypes(BindingFlags.Public)
-					.Where(t => !Struct.IsAutoPointerClass(t) && !IsModuleType(t) && typeof(Any).IsAssignableFrom(t))
-					.ToDictionary(t => Script.GetUserDeclaredName(t) ?? t.Name, StringComparer.OrdinalIgnoreCase);
 				WildcardImports = type.GetCustomAttribute<WildcardImportAttribute>()?.Modules ?? [];
+				IsBuiltin = type.Assembly == typeof(Module).Assembly;
+
+				// A script module's functions and classes are among its variables, and its other methods are the compiler's own.
+				if (IsBuiltin)
+				{
+					Functions = type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
+						.Where(m => !m.IsSpecialName).Select(m => Script.GetUserDeclaredName(m) ?? m.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+					Classes = type.GetNestedTypes(BindingFlags.Public)
+						.Where(t => !Struct.IsAutoPointerClass(t) && !IsModuleType(t) && typeof(Any).IsAssignableFrom(t))
+						.ToDictionary(t => Script.GetUserDeclaredName(t) ?? t.Name, StringComparer.OrdinalIgnoreCase);
+				}
 			}
 		}
 
@@ -72,10 +82,9 @@ namespace Keysharp.Runtime
 
 		internal static Dictionary<string, MethodPropertyHolder> GatherTypeVariables(Type t, VariableType vartypes = VariableType.Field | VariableType.Property | VariableType.NormalName, string funcName = null)
 		{
-			// Public only. Everything the lowerer emits into a module class is `public static` (see ObjField),
-			// including the SL_ static-local backing fields, so NonPublic could only ever reach members no script
-			// wrote -- Program's own `MainScript`, and any private helper. It also made C# accessibility meaningless
-			// inside a `#CSharp` block, where `private static long[] scratch` still became a script global.
+			// Public only. The lowerer emits a module's variables, functions, classes and SL_ static-local fields `public static`,
+			// and a field caching a built-in it uses `private`, which is no script variable. NonPublic would also make C#
+			// accessibility meaningless inside a `#CSharp` block, where `private static long[] scratch` would become a script global.
 			var flags = BindingFlags.Static | BindingFlags.Public;
 			PropertyInfo[] props = null;
 			FieldInfo[] fields = null;
@@ -92,6 +101,7 @@ namespace Keysharp.Runtime
 
 			if (vartypes.HasFlag(VariableType.Field))
 			{
+				// A member's C# name decides what it is, and the name it is known by is its declared spelling where it has one.
 				foreach (var field in fields)
 				{
 					string name = field.Name;
@@ -109,7 +119,7 @@ namespace Keysharp.Runtime
 					}
 					else if (wantspecial) continue;
 					if (field.GetCustomAttribute<PublicHiddenFromUser>() != null) continue;
-					vars[name] = MethodPropertyHolder.GetOrAdd(field);
+					vars[Script.GetUserDeclaredName(field) ?? name] = MethodPropertyHolder.GetOrAdd(field);
 				}
 			}
 
@@ -123,7 +133,7 @@ namespace Keysharp.Runtime
 					if (wantspecial && !isSpecial) continue;
 					if (wantnormal && isSpecial) continue;
 					if (prop.GetCustomAttribute<PublicHiddenFromUser>() != null) continue;
-					vars[name] = MethodPropertyHolder.GetOrAdd(prop);
+					vars[Script.GetUserDeclaredName(prop) ?? name] = MethodPropertyHolder.GetOrAdd(prop);
 				}
 			}
 
@@ -284,186 +294,106 @@ namespace Keysharp.Runtime
 			}
 		}
 
-		private bool TryGetClassValue(Type moduleType, string key, out object value)
-		{
-			moduleType ??= defaultModuleType;
-			value = null;
-			Type type = null;
-
-			var found = (moduleType != null && GetModule(moduleType).Classes.TryGetValue(key, out type))
-				|| (script.ReflectionsData.stringToTypes.TryGetValue(key, out type) && Script.IsGlobalClass(type));
-
-			if (!found || !Statics.TryGetValue(type, out var staticObj))
-				return false;
-
-			value = staticObj;
-			return true;
-		}
-
 		public bool HasVariable(string key) => HasVariable(script.CurrentModuleType, key);
 
-		public bool HasVariable(Type moduleType, string key)
-		{
-			var vars = GetModuleVars(moduleType);
-			return vars.ContainsKey(key)
-				|| script.ReflectionsData.flatPublicStaticProperties.ContainsKey(key)
-				|| script.ReflectionsData.flatPublicStaticMethods.ContainsKey(key);
-		}
+		public bool HasVariable(Type moduleType, string key) => TryGetGlobal(moduleType, key, out _);
 
 		public object GetVariable(string key) => GetVariable(script.CurrentModuleType, key);
 
-		public object GetVariable(Type moduleType, string key, bool exportsOnly = false)
-		{
-			var vars = GetModuleVars(moduleType);
-			if (vars.TryGetValue(key, out var mph) && (!exportsOnly || mph.IsExported))
-				return mph.CallFunc(null, null);
-
-			var rv = GetReservedVariable(key);
-			if (rv != null)
-				return rv;
-
-			if (TryGetClassValue(moduleType, key, out var classValue))
-				return classValue;
-
-			if (TryGetWildcardImport(moduleType, key, out var imported))
-				return imported;
-
-			return Functions.GetKeysharpFuncByName(key, moduleType, throwIfBad: moduleType != null);
-		}
-
-		// Resolve built-in wildcard imports in compiler order: most recent first, then function, class and variable.
-		private bool TryGetWildcardImport(Type moduleType, string key, out object value)
-		{
-			value = null;
-
-			moduleType ??= defaultModuleType;
-			if (moduleType == null || key.StartsWith('_') || script.ReflectionsData.flatPublicStaticMethods.ContainsKey(key))
-				return false;
-
-			foreach (var module in GetModule(moduleType).WildcardImports)
-				if (TryGetBuiltinModuleMember(module, key, out value))
-					return true;
-
-			return false;
-		}
-
-		// A member a built-in module declares, in the order the compiler binds one: function, class, then variable.
-		private bool TryGetBuiltinModuleMember(Type module, string key, out object value)
-		{
-			var scope = GetModule(module);
-
-			if (Reflections.FindAndCacheStaticMethod(module, key, -1)?.mi is { IsSpecialName: false } method && method.DeclaringType == module)
-				value = Functions.GetKeysharpFuncByName(key, module);
-			else if (scope.Classes.TryGetValue(key, out var type) && Statics.TryGetValue(type, out var cls))
-				value = cls;
-			else if (scope.Variables.TryGetValue(key, out var mph))
-				value = mph.CallFunc(null, null);
-			else
-			{
-				value = null;
-				return false;
-			}
-
-			return true;
-		}
-
-		// Resolve a dynamic name beyond function locals. Write targets may name only variables; unset variables return null.
-		internal bool TryGetVariable(Type moduleType, string key, bool variableOnly, out object value)
-		{
-			if (GetModuleVars(moduleType).TryGetValue(key, out var mph))
-				value = mph.CallFunc(null, null);
-			else if (FindReservedVariable(key) is { CanRead: true } prop)
-				value = prop.GetValue(null);
-			else if (variableOnly)
-			{
-				value = null;
-				return false;
-			}
-			else if (!TryGetClassValue(moduleType, key, out value) && !TryGetWildcardImport(moduleType, key, out value))
-				return (value = Functions.GetKeysharpFuncByName(key, moduleType)) != null;
-
-			return true;
-		}
+		public object GetVariable(Type moduleType, string key) => TryGetGlobal(moduleType, key, out var v) ? v.Get() : null;
 
 		public object SetVariable(string key, object value) => SetVariable(script.CurrentModuleType, key, value);
 
 		public object SetVariable(Type moduleType, string key, object value)
 		{
-			var vars = GetModuleVars(moduleType);
-			if (vars.TryGetValue(key, out var mph))
-				SetMemberValue(mph, value);
-			else
-				_ = SetReservedVariable(key, value);
+			if (TryGetModuleWriteTarget(moduleType, key, out var v) && v.RequireWritable(VarUsage.Assign, key))
+				v.Set(value);
 
 			return value;
 		}
 
-		// Write a dynamic name beyond function locals. False means it names no variable.
-		internal bool TrySetVariable(Type moduleType, string key, object value)
+		// What a module-level write assigns: the module's own variable, else a built-in variable.
+		internal bool TryGetModuleWriteTarget(Type module, string key, out ScriptVar v) =>
+			TryGetModuleVar(module, key, out v) || TryGetBuiltinVar(key, out v);
+
+		// What a module itself declares, imports aside: for a script module a variable (which includes a name it binds by
+		// import), function or class, and for a built-in module a function, class or property, in the order the compiler
+		// binds each.
+		internal bool TryGetModuleVar(Type module, string key, out ScriptVar v)
 		{
-			if (GetModuleVars(moduleType).TryGetValue(key, out var mph))
-				SetMemberValue(mph, value);
-			else if (!SetReservedVariable(key, value))
-			{
-				if (FindReservedVariable(key) == null)
-					return false;
+			v = default;
 
-				Error err = new Error("This built-in variable cannot be assigned a value.", null, key);
+			if ((module ??= defaultModuleType) == null)
+				return false;
 
-				if (Errors.ErrorOccurred(err))
-					throw err;
-			}
+			var scope = GetModule(module);
 
-			return true;
+			if (!scope.IsBuiltin)
+				v = scope.Variables.TryGetValue(key, out var variable) ? ScriptVar.Of(variable) : default;
+			else if (scope.Functions.Contains(key) && Reflections.FindAndCacheStaticMethod(module, key, -1) is { } method
+				&& Functions.MethodFunction(method.mi) is { } f)
+				v = ScriptVar.Constant(f, f.Name);
+			else if (scope.Classes.TryGetValue(key, out var type) && Statics.TryGetValue(type, out var cls))
+				v = ScriptVar.Constant(cls, Script.GetUserDeclaredName(type) ?? type.Name);
+			else if (scope.Variables.TryGetValue(key, out var property))
+				v = ScriptVar.Of(property);
+
+			return v.Exists;
 		}
 
-		private static void SetMemberValue(MethodPropertyHolder mph, object value)
+		// What the module's wildcard imports supply, the latest import first, which is no name starting with an underscore.
+		private bool TryGetImported(Type module, string key, out ScriptVar v)
 		{
-			if (mph.SetProp != null)
-			{
-				mph.SetProp(null, value);
-				return;
-			}
+			v = default;
 
-			if (mph.pi != null)
-			{
-				_ = Errors.PropertyErrorOccurred($"Property {mph.pi.Name} is read-only.");
-				return;
-			}
+			if ((module ??= defaultModuleType) == null || key.StartsWith('_'))
+				return false;
 
-			if (mph.fi != null)
-			{
-				_ = Errors.PropertyErrorOccurred($"Field {mph.fi.Name} is read-only.");
-			}
+			foreach (var imported in GetModule(module).WildcardImports)
+				if (TryGetModuleVar(imported, key, out v))
+					return true;
+
+			return false;
 		}
 
-		private PropertyInfo FindReservedVariable(string name)
+		// What a module object answers for: what the module declares, then what its wildcard imports supply, which as the
+		// compiler's BuiltinWildcardSupplies rules is no name a built-in variable, function or class has.
+		internal bool TryGetMember(Type module, string key, out ScriptVar v)
 		{
-			_ = script.ReflectionsData.flatPublicStaticProperties.TryGetValue(name, out var prop);
-			return prop;
+			var rd = script.ReflectionsData;
+			v = default;
+			return TryGetModuleVar(module, key, out v)
+				   || !rd.flatPublicStaticProperties.ContainsKey(key) && !rd.flatPublicStaticMethods.ContainsKey(key) && !rd.TryGetGlobalClass(key, out _)
+				   && TryGetImported(module, key, out v);
 		}
 
-		private object GetReservedVariable(string name)
+		internal bool TryGetBuiltinVar(string key, out ScriptVar v)
 		{
-			var prop = FindReservedVariable(name);
-			return prop == null || !prop.CanRead ? null : prop.GetValue(null);
+			v = script.ReflectionsData.flatPublicStaticProperties.TryGetValue(key, out var prop) ? ScriptVar.Builtin(prop) : default;
+			return v.Exists;
 		}
 
-		private bool SetReservedVariable(string name, object value)
+		// What the AHK module holds: a built-in variable, else a built-in function or class.
+		internal bool TryGetAhkMember(string key, out ScriptVar v) =>
+			TryGetBuiltinVar(key, out v) || TryGetBuiltinFunction(key, out v) || TryGetGlobalClass(key, out v);
+
+		// What a global name finds from a module: its own variable, a built-in, then a wildcard import, which a built-in
+		// variable, function or class therefore wins over.
+		internal bool TryGetGlobal(Type module, string key, out ScriptVar v) =>
+			TryGetModuleVar(module, key, out v) || TryGetAhkMember(key, out v) || TryGetImported(module, key, out v);
+
+		private bool TryGetBuiltinFunction(string key, out ScriptVar v)
 		{
-			var prop = FindReservedVariable(name);
-			var set = prop != null && prop.CanWrite;
+			v = script.ReflectionsData.flatPublicStaticMethods.TryGetValue(key, out var method) && Functions.MethodFunction(method) is { } f
+				? ScriptVar.Constant(f, f.Name) : default;
+			return v.Exists;
+		}
 
-			if (set)
-			{
-				// The same policy typed parameters, properties and fields get, rather than the narrower one this
-				// used to have of its own (Script.ForceType, which handled only long/double/string and passed
-				// everything else straight to the reflection binder below to reject).
-				value = ArgCoercer.CoerceValue(value, prop.PropertyType);
-				prop.SetValue(null, value);
-			}
-
-			return set;
+		private bool TryGetGlobalClass(string key, out ScriptVar v)
+		{
+			v = script.ReflectionsData.TryGetGlobalClass(key, out var type) && Statics.TryGetValue(type, out var cls)
+				? ScriptVar.Constant(cls, Script.GetUserDeclaredName(type) ?? type.Name) : default;
+			return v.Exists;
 		}
 	}
 }

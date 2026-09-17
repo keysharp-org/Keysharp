@@ -40,6 +40,17 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Misc")]
+		public void ConstructorWarningStaticNew()
+		{
+			// A static __New initializes the class, so construction is checked against the instance __New alone, and a
+			// class with none takes an inherited one, which leaves nothing to check.
+			var warning = Warnings("class C {\nstatic __New() {\n}\n__New(beta) {\n}\n}\nclass D {\nstatic __New() {\n}\n}\n"
+				+ "Valid() => C(beta: 1)\nTypo() => C(nosuch: 1)\nInherited() => D(anything: 1)\n");
+			Assert.IsTrue(warning.Contains("'nosuch'"), warning);
+			Assert.IsFalse(warning.Contains("'beta'") || warning.Contains("'anything'"), warning);
+		}
+
+		[Test, Category("Misc")]
 		public void WarnNamedArgBuiltin()
 		{
 			var warning = Warnings("try b := Buffer(nosuch: 1)\ntry c := Buffer(ByteCount: 4)\n");
@@ -72,6 +83,43 @@ class C {
 			// The call is checked against what the import binds, a function included, not the global class it shadows.
 			var shadowed = Warnings("#Import Ks { Cosh as Buffer }\nf() => Buffer(nosuch: 1)\n");
 			Assert.IsTrue(shadowed.Contains("nosuch") && !shadowed.Contains("ByteCount"), shadowed);
+		}
+
+		[Test, Category("Misc")]
+		public void WarnNamedArgScriptModuleImport()
+		{
+			var warning = Warnings("""
+#Import Other { F, C, Variadic, Relayed }
+#Import Other { F as G }
+#Import Wild { * }
+Named() => F(nosuch: 1)
+Aliased() => G(aliasBad: 1)
+Constructed() => C(ctorBad: 1)
+Wildcard() => WildF(wildBad: 1)
+Relay() => Relayed(relayBad: 1)
+Absorbed() => Variadic(anything: 1)
+Valid() => F(alpha: 1)
+Scoped() {
+	#Import Other { F as LocalF }
+	return LocalF(scopedBad: 1)
+}
+#Module Other
+#Import Export Wild { WildF as Relayed }
+F(alpha) => alpha
+class C {
+	__New(beta) {
+	}
+}
+Variadic(args*) => 1
+#Module Wild
+WildF(gamma) => gamma
+""");
+			// Each is checked against the declaration the import binds, followed through a re-export.
+			foreach (var name in new[] { "'nosuch'", "'aliasBad'", "'ctorBad'", "'wildBad'", "'relayBad'", "'scopedBad'" })
+				Assert.IsTrue(warning.Contains(name), warning);
+
+			// A variadic function absorbs any name, as a local one does, and a declared name is no mistake.
+			Assert.IsFalse(warning.Contains("'anything'") || warning.Contains("'alpha' is not"), warning);
 		}
 
 		[Test, Category("Misc")]

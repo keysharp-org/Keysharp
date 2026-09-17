@@ -91,10 +91,10 @@ AssertEq(Task(slow.ToClr()), slow, A_LineNumber)  ; re-wrapping the same CLR tas
 AssertEq(Task(slow), slow, A_LineNumber)
 
 ; --- a non-generic `async Task` produces nothing, not a BCL marker object ----------------------
-fire := Fire()
-AssertEq(Await(fire), "", A_LineNumber)
-AssertEq(fire.Result, "", A_LineNumber)
-Assert(fire.IsSucceeded, A_LineNumber)
+fireTask := Fire()
+AssertEq(Await(fireTask), "", A_LineNumber)
+AssertEq(fireTask.Result, "", A_LineNumber)
+Assert(fireTask.IsSucceeded, A_LineNumber)
 
 ; --- the raw CLR surface stays reachable ------------------------------------------------------
 Assert(slow.ToClr().IsCompleted, A_LineNumber)

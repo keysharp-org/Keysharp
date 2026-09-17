@@ -91,7 +91,11 @@ namespace Keysharp.Runtime
 			left.Major != right.Major ? left.Major.CompareTo(right.Major) : left.Minor.CompareTo(right.Minor);
 	}
 
-	[AttributeUsage(AttributeTargets.Field | AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Class, Inherited = false)]
+	/// <summary>
+	/// Marks a public static method of a <c>#CSharp</c> block at module scope for wildcard imports. The compiler reads it
+	/// from the block's source; nothing reads it at run time.
+	/// </summary>
+	[AttributeUsage(AttributeTargets.Method, Inherited = false)]
 	public sealed class Export : Attribute
 	{
 		public Export()
@@ -153,11 +157,13 @@ namespace Keysharp.Runtime
 	/// The name scripts know a class, member or parameter by, when it differs from the C# name (KeysharpObject is
 	/// <c>Object</c>, StructInt32 is <c>Int32</c>; on a parameter it is the spelling a named argument binds by,
 	/// <c>f(Name: value)</c>. Built-in C# parameter names follow camelCase and are projected to PascalCase, so a
-	/// parameter carries this only when capitalization cannot recover its documented spelling.
+	/// parameter carries this only when capitalization cannot recover its documented spelling. The variables, functions,
+	/// classes and imports a script module declares carry it too, as their C# names are lowercased.
 	/// Never inherited: a derived class has its own name, and inheriting one would register every subclass of a
 	/// renamed class under the base class's name.
 	/// </summary>
-	[AttributeUsage(AttributeTargets.Method | AttributeTargets.Class | AttributeTargets.Parameter, Inherited = false)]
+	[AttributeUsage(AttributeTargets.Method | AttributeTargets.Class | AttributeTargets.Parameter |
+					AttributeTargets.Field | AttributeTargets.Property, Inherited = false)]
 	public sealed class UserDeclaredNameAttribute : Attribute
 	{
 		public string Name { get; }

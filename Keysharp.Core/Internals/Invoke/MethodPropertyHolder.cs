@@ -74,7 +74,6 @@ namespace Keysharp.Internals.Invoke
 		internal bool IsStaticFunc { get; private set; }
 		internal bool IsStaticProp { get; private set; }
 		internal bool IsVariadic => variadicParamIndex != -1;
-		internal bool IsExported => memberInfo?.GetCustomAttribute<Export>() != null;
 		internal int ParamLength { get; }
 		internal int MinParams = 0;
 		internal int MaxParams = 0;

@@ -434,7 +434,7 @@ namespace Keysharp.Builtins.COM
 		{
 			int hr = RawGetIDsOfNames(propertyName, out int dispId);
 			if (hr < 0)
-				return Errors.PropertyErrorOccurred($"This value of type \"{Types.Type(this)}\" has no property named \"{propertyName}\".");
+				return Errors.MissingPropertyErrorOccurred(this, propertyName);
 			TryGetTypeInfo(dispId, propertyName, args.Length, out var expectedTypes, out _, out var invokeKind, INVOKEKIND.INVOKE_FUNC | INVOKEKIND.INVOKE_PROPERTYGET);
 
 			object result;
@@ -460,7 +460,7 @@ namespace Keysharp.Builtins.COM
 			{
 				// A bare COMException here reaches the script as an uncatchable CLR exception; a name this value
 				// does not expose is the same PropertyError the read path raises.
-				_ = Errors.PropertyErrorOccurred($"This value of type \"{Types.Type(this)}\" has no property named \"{propertyName}\".");
+				_ = Errors.MissingPropertyErrorOccurred(this, propertyName);
 				return;
 			}
 

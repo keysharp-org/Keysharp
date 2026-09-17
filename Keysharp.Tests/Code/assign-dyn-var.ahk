@@ -1,4 +1,5 @@
 #import KS { A_ClipboardTimeout }
+#Import AHK
 #NoTrayIcon
 #Include <assert>
 
@@ -193,17 +194,154 @@ concatName := "unsetConcat"
 %concatName% .= "x"
 AssertEq(unsetConcat, "x", A_LineNumber)
 
-Throws(() => %"noSuchVariable"%, A_LineNumber, Error)
-Throws(() => %"noSuchVariable"% := 1, A_LineNumber, Error)
-Throws(() => &%"noSuchVariable"%, A_LineNumber, Error)
+; `%name% ??= value` finds its target once and evaluates the value only when the target has none.
+coalesceCount := 0
+Coalesced() {
+	global coalesceCount
+	return ++coalesceCount
+}
+CoalesceLocal(name) {
+	local unsetLocal
+	%name% ??= Coalesced()
+	return unsetLocal
+}
+Assert(!IsSet(unsetCoalesce), A_LineNumber)
+coalesceName := "unsetCoalesce"
+AssertEq(%coalesceName% ??= Coalesced(), 1, A_LineNumber)
+AssertEq(%coalesceName% ??= Coalesced(), 1, A_LineNumber)
+AssertEq(unsetCoalesce, 1, A_LineNumber)
+AssertEq(CoalesceLocal("unsetLocal"), 2, A_LineNumber)
+coalesceRef := &unsetCoalesceRef
+%coalesceRef% ??= Coalesced()
+AssertEq(unsetCoalesceRef, 3, A_LineNumber)
+
+
+; A name which finds nothing and a read-only built-in variable raise as in AutoHotkey, which names a built-in variable
+; as written. A blank name is checked by its message alone, as AutoHotkey's Extra is the expression's text.
+notFound := "Error: Variable not found. [noSuchVariable]"
+AssertError(() => %"noSuchVariable"%, notFound, A_LineNumber)
+AssertError(() => %"noSuchVariable"% := 1, notFound, A_LineNumber)
+AssertError(() => &%"noSuchVariable"%, notFound, A_LineNumber)
+AssertError(() => %"noSuchVariable"% ??= Coalesced(), notFound, A_LineNumber)
+AssertEq(coalesceCount, 3, A_LineNumber)
 AssertEq(IsSet(%"noSuchVariable"%), 0, A_LineNumber)
 AssertEq(%"noSuchVariable"% ?? "default", "default", A_LineNumber)
 Assert(!ArgIsSet(%"noSuchVariable"%?), A_LineNumber)
-Throws(() => %""%, A_LineNumber, Error)
+ReadBlank() => %""%
+blankErrors := []
+try
+	blankValue := %""%
+catch Any as err
+	blankErrors.Push(Described(err))
+try
+	ReadBlank()
+catch Any as err
+	blankErrors.Push(Described(err))
+AssertEq(blankErrors.Length, 2, A_LineNumber)
+for blankError in blankErrors
+	AssertEq(InStr(blankError, "Error: This dynamic variable is blank. ["), 1, A_LineNumber)
 
 keyDelay := "A_KeyDelay"
 %keyDelay% := 7
 AssertEq(%keyDelay%, 7, A_LineNumber)
-Throws(() => %"A_ScriptDir"% := "elsewhere", A_LineNumber, Error)
+keyDelayRef := &%keyDelay%
+%keyDelayRef% := 8
+AssertEq(A_KeyDelay, 8, A_LineNumber)
+AssertError(() => %"a_scriptDIR"% := "elsewhere", "Error: This built-in variable cannot be assigned a value. [a_scriptDIR]", A_LineNumber)
+AssertError(() => &%"a_scriptDIR"%, "Error: This built-in variable cannot have its reference taken. [a_scriptDIR]", A_LineNumber)
+AssertError(() => %"A_EndChar"% := "x", "Error: This built-in variable cannot be assigned a value. [A_EndChar]", A_LineNumber)
+
+; A dynamic target is found before the value is evaluated, so a target no write reaches evaluates none.
+valuesEvaluated := 0
+EvaluateValue() {
+	global valuesEvaluated
+	return ++valuesEvaluated
+}
+AssertError(() => %"noSuchVariable"% := EvaluateValue(), notFound, A_LineNumber)
+AssertError(() => %"noSuchVariable"% += EvaluateValue(), notFound, A_LineNumber)
+AssertError(() => %"A_ScriptDir"% .= EvaluateValue(), "Error: This built-in variable cannot be assigned a value. [A_ScriptDir]", A_LineNumber)
+AssertEq(valuesEvaluated, 0, A_LineNumber)
+
+; `??=` on a read-only variable with a value yields it, as AutoHotkey checks only an assignment it makes.
+AssertEq(%"A_ScriptDir"% ??= Coalesced(), A_ScriptDir, A_LineNumber)
+AssertEq(%"DynFunc"% ??= Coalesced(), DynFunc, A_LineNumber)
+AssertEq(A_ScriptDir ??= Coalesced(), A_ScriptDir, A_LineNumber)
+AssertEq(DynFunc ??= Coalesced(), DynFunc, A_LineNumber)
+AssertEq(coalesceCount, 3, A_LineNumber)
+
+; A_Args is an ordinary variable, which a script may assign any value.
+args := A_Args
+Assert(args is Array, A_LineNumber)
+A_Args := 1
+A_Args += 1
+AssertEq(A_Args, 2, A_LineNumber)
+SetByRef(&v, value) => v := value
+SetByRef(&A_Args, "ref")
+AssertEq(A_Args, "ref", A_LineNumber)
+%"a_args"% := "dynamic"
+AssertEq(A_Args, "dynamic", A_LineNumber)
+A_Args := unset
+Assert(!IsSet(A_Args), A_LineNumber)
+AssertError(() => AHK.A_Args, "UnsetError: This global variable has not been assigned a value. [A_Args]", A_LineNumber)
+AHK.A_Args := "module"
+AssertEq(A_Args, "module", A_LineNumber)
+A_Args := unset
+AssertEq(%"A_Args"% ??= args, args, A_LineNumber)
+AssertEq(A_Args, args, A_LineNumber)
+
+; A global declaration of a built-in variable names the built-in rather than declaring a variable of the module.
+DeclaresArgs() {
+	global A_Args
+	return A_Args
+}
+AssertEq(DeclaresArgs(), args, A_LineNumber)
+
+; A function or class is a constant, which a dynamic assignment or reference raises for, naming it as declared, a global
+; declaration of it included, while a built-in function is no variable of the module at all, even one the module's code
+; names.
+DynFunc() => 1
+global DynFunc
+AssertEq(StrLen("abc"), 3, A_LineNumber)
+AssertEq(Type(%"StrLen"%), "Func", A_LineNumber)
+constants := Map("DYNFUNC", "This Func cannot %s. [DynFunc]", "dynmem", "This Class cannot %s. [DynMem]", "StrLen", "Variable not found. [StrLen]")
+for dynName, expected in constants
+{
+	assignError := refError := compoundError := "none"
+	try
+		%dynName% := 1
+	catch Any as err
+		assignError := Described(err)
+	try
+		dynRef := &%dynName%
+	catch Any as err
+		refError := Described(err)
+	try
+		%dynName% += 1
+	catch Any as err
+		compoundError := Described(err)
+	AssertEq(assignError, "Error: " StrReplace(expected, "%s", "be assigned a value"), A_LineNumber)
+	AssertEq(refError, "Error: " StrReplace(expected, "%s", "have its reference taken"), A_LineNumber)
+	AssertEq(compoundError, "Error: " StrReplace(expected, "%s", "be assigned a value"), A_LineNumber)
+}
+AssertEq(Type(DynFunc), "Func", A_LineNumber)
+AssertEq(Type(DynMem), "Class", A_LineNumber)
+AssertEq(StrLen("abc"), 3, A_LineNumber)
+
+; A reference to a dynamically named variable stays bound to the variable its name found.
+boundA := 1, boundB := 2
+boundName := "boundA"
+boundRef := &%boundName%
+boundName := "boundB"
+%boundRef% := 100
+AssertEq(boundA, 100, A_LineNumber)
+AssertEq(boundB, 2, A_LineNumber)
+
+; A name operand which itself has no value raises as any unset operand does.
+Assert(!IsSet(unsetOperand), A_LineNumber)
+try
+	operandValue := %unsetOperand%
+catch Any as operandErr
+	operandError := Described(operandErr)
+AssertEq(operandError, "UnsetError: Operand of dereference was unset. []", A_LineNumber)
 
 FileAppend "pass", "*"

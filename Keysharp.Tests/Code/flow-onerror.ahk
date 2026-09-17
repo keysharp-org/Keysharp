@@ -161,6 +161,37 @@ RunThread(RaiseThrown.Bind("C3D38B48-thrown-negative"))
 Assert(started, A_LineNumber)
 AssertEq(modes, "Exit", A_LineNumber)
 
+; Writing a read-only variable is not continuable either.
+WriteReadOnly() {
+	global started, reached
+	started := true
+	%"A_ScriptDir"% := "C3D38B48-read-only"
+	reached := true
+}
+
+modes := ""
+RunThread(WriteReadOnly)
+Assert(started && !reached, A_LineNumber)
+AssertEq(modes, "Exit", A_LineNumber)
+
+; A continued error ends a dynamic update of a name which finds no variable, so it is reported once.
+modes := ""
+%"C3D38B48-no-such-variable"% += 1
+%"C3D38B48-no-such-variable"%++
+AssertEq(modes, "ReturnReturn", A_LineNumber)
+
+; So is `??=`, which evaluates no value for it, in either compatibility mode.
+coalesced := 0
+CoalescesMissing() {
+	#Requires AutoHotkey v2.1-alpha
+	global coalesced
+	%"C3D38B48-no-such-variable"% ??= (coalesced += 1)
+}
+modes := ""
+%"C3D38B48-no-such-variable"% ??= (coalesced += 1)
+CoalescesMissing()
+AssertEq(modes, "ReturnReturn", A_LineNumber)
+AssertEq(coalesced, 0, A_LineNumber)
 OnError(NegativeHandler, 0)
 
 ; A callback which fails stops the rest. The error it raises does not reach the callbacks again but gets the dialog

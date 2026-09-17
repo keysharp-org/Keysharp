@@ -128,7 +128,8 @@ namespace Keysharp.Internals.ExtensionMethods
 				return Script.ForceString(obj);
 
 			//A ToString() which returns no value yields def, rather than raising an UnsetError. [v2.1-alpha.30+]
-			return (obj is Any kso && Functions.HasMethod(kso, "ToString") != 0L ? Script.InvokeOrNull(kso, "ToString")?.ToString() : obj?.ToString()) ?? def;
+			//A module object calls ToString as it calls any member, so one which declares none raises a MethodError.
+			return (obj is Any kso && (kso is Module || Functions.HasMethod(kso, "ToString") != 0L) ? Script.InvokeOrNull(kso, "ToString")?.ToString() : obj?.ToString()) ?? def;
 		}
 
 		/// <summary>
