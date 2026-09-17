@@ -203,7 +203,7 @@ namespace Keysharp.Internals.DBus
 					// every other subscription goes silently dead — so even the reporting is guarded.
 					try
 					{
-						_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
+						_ = Keysharp.Builtins.Errors.ReportUncaught(ex);
 					}
 					catch
 					{

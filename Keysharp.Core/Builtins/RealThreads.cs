@@ -256,7 +256,8 @@ namespace Keysharp.Builtins
 			/// (<c>A_RealThread.Exit()</c>) the current pseudo-thread exits immediately and this does not return,
 			/// so the task is unobservable there.
 			/// </summary>
-			/// <param name="exitCode">The process exit code to apply to the pseudo-threads being exited. Default: 0.</param>
+			/// <param name="exitCode">The code the exited pseudo-threads end with: each one's <c>Thread.ExitCode</c>, and the
+			/// script's exit code under <c>Exit</c>'s rule. Default: 0.</param>
 			public object Exit(object exitCode = null)
 			{
 				if (!IsWorker)
@@ -327,9 +328,9 @@ namespace Keysharp.Builtins
 				{
 					// A failure outside the body; the body settles its own task above. Reported here because the
 					// task this runs on is unobserved, so a rethrow would fault it and .NET would drop the
-					// exception at GC. HandleCaughtException also swallows a UserRequestedExitException, which is
+					// exception at GC. ReportUncaught also swallows a UserRequestedExitException, which is
 					// an ordinary end.
-					_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
+					_ = Errors.ReportUncaught(ex);
 					return DefaultObject;
 				}
 				finally
@@ -369,7 +370,7 @@ namespace Keysharp.Builtins
 
 					if (launchResult != ScriptEventExecutionResult.Executed)
 						_ = entryCompletion.TrySetException(
-								new Error($"Unable to start RealThread worker body ({launchResult}).").Exception);
+								new Error($"Unable to start RealThread worker body ({launchResult}).").AsException());
 					else if (bodyExited)
 						_ = entryCompletion.TrySetCanceled();
 					else
@@ -401,8 +402,21 @@ namespace Keysharp.Builtins
 				if (!thread.Started)
 					return thread.Result;
 
+				// An Exit made before this pseudo-thread was pushed marked nothing, so it is honoured here. The fence orders
+				// the push before this read, as Exit orders its request before its walk of the pushed threads, so one of
+				// the two always sees the other.
+				Interlocked.MemoryBarrier();
+
+				if (scheduler.IsWorkerExitRequested)
+				{
+					exited = true;
+					return ScriptEventExecutionResult.Executed;
+				}
+
 				try
 				{
+					// The caller receives what the work raises.
+					using var tryScope = Keysharp.Runtime.Flow.EnterTry();
 					result = work();
 				}
 				catch (Exception ex) when (Keysharp.Internals.Flow.TryGetException(ex,
@@ -494,7 +508,7 @@ namespace Keysharp.Builtins
 
 				internal void Settle(string reason)
 				{
-					if (completion.TrySetException(new Error(reason).Exception))
+					if (completion.TrySetException(new Error(reason).AsException()))
 						thread.ForgetPost(this);
 				}
 
@@ -522,7 +536,7 @@ namespace Keysharp.Builtins
 
 					if (result != ScriptEventExecutionResult.Executed)
 						_ = completion.TrySetException(
-								new Error("The real thread dropped this work without running it.").Exception);
+								new Error("The real thread dropped this work without running it.").AsException());
 					else if (exited)
 						_ = completion.TrySetCanceled();
 					else

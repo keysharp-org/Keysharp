@@ -606,7 +606,12 @@ namespace Keysharp.Builtins
 						// would stall a synchronous request against the very thread that has to serve it.
 						// AutoHotkey serves a sent message on the same terms.
 						var status = scheduler.TryInvokePseudoThread(priority, skipUninterruptible: true, isCritical: false,
-									 _ => Script.InvokeOrNull(onData, null, args), out var value, allowEmergencyOverflow: true);
+									 _ =>
+									 {
+										 // The transfer fails with what the callback raises.
+										 using var tryScope = Keysharp.Runtime.Flow.EnterTry();
+										 return Script.InvokeOrNull(onData, null, args);
+									 }, out var value, allowEmergencyOverflow: true);
 						_ = status == ScriptEventExecutionResult.Executed
 							? completion.TrySetResult(value)
 							: completion.TrySetException(

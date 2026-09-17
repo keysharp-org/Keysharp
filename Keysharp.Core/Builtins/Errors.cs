@@ -1,77 +1,159 @@
 
 namespace Keysharp.Builtins
 {
+	/// <summary>What an error nothing catches does to its thread; OnError callbacks receive it by name.</summary>
+	internal enum ErrorMode : byte
+	{
+		Return,
+		Exit,
+		ExitApp
+	}
+
     /// <summary>
     /// Public interface for error-related functions and classes.
     /// </summary>
     public static class Errors
 	{
 		/// <summary>
-		/// Calls all registered error handlers, passing in the exception object to each.
-		/// If any callback returns a non-empty result, then no further callbacks are called.
-		/// If any callback returns -1 and err.ExcType == "Return", then the thread continues because
-		/// the calling code won't throw an exception.
+		/// Handles an error nothing catches: the OnError callbacks run on the raising thread, then the default dialog
+		/// unless one returns non-zero. A negative return continues an error of mode Return.
 		/// </summary>
 		/// <param name="err">The exception object to pass to each callback.</param>
-		/// <returns>True if err.ExcType is not "Return", else false.</returns>
-		internal static bool ErrorOccurred(Error err, string excType = Keyword_Return)
+		/// <returns>True if the thread must exit, false if it continues.</returns>
+		[StackTraceHidden]
+		internal static bool ErrorOccurred(Error err, ErrorMode mode = ErrorMode.Return)
 		{
-			var exitThread = true;
 			var script = Script.TheScript;
+
 			if (script == null)
-			{
-				err.ExcType = excType;
-				return excType != Keyword_Return;
-			}
+				return mode != ErrorMode.Return;
 
 			if (script.SuppressErrorOccurred != 0)
 				return false;
 
-			if (!err.Processed && !Loops.IsExceptionCaught(err.GetType()))
+			var exitThread = true;
+
+			if (!err.Reported && !Threads.Current.insideTry)
 			{
-				err.ExcType = excType;
+				var retval = script.onErrorHandlers.IsEmpty ? 0L : CallOnErrorHandlers(script, err, mode);
+				// Set after the callbacks, so one which rethrows this error does not report it a second time.
+				err.Reported = true;
 
-				if (!script.onErrorHandlers.IsEmpty)
+				if (retval != 0L)
+					exitThread = retval > 0L || mode != ErrorMode.Return;
+				else if (script.ErrorStdOut)
 				{
-					foreach (var registration in script.onErrorHandlers.GetSnapshot())
-					{
-						var result = Script.InvokeOrNull(registration.Callback, null, err, err.ExcType);
-						var lresult = result.Al();
-
-						if (lresult != 0L)
-						{
-							err.Handled = true;
-
-							//Calling code will not throw if this is true.
-							if (lresult == -1L && err.ExcType == Keyword_Return)
-								exitThread = false;
-
-							break;
-						}
-					}
-
-					err.Processed = true;
+					System.Console.Error.WriteLine(err.Message);
+					return true;
 				}
-
-				if (!err.Handled)
+				else if (!script.SuppressErrorOccurredDialog)
 				{
-					err.Handled = true;
-					err.Processed = true;
-					// #ErrorStdOut: write the error to stderr (no dialog) and exit the thread, like an uncaught error.
-					if (script.ErrorStdOut)
-					{
-						System.Console.Error.WriteLine(err.Message);
-						return true;
-					}
-					if (!script.SuppressErrorOccurredDialog)
-						return ErrorDialog.Show(err) != ErrorDialog.ErrorDialogResult.Continue;
+					err.EnsureStackInfo();
+					return ErrorDialog.Show(err, mode == ErrorMode.Return) != ErrorDialog.ErrorDialogResult.Continue;
 				}
 			}
 
-			if (err.ExcType == Keyword_ExitApp)
+			if (mode == ErrorMode.ExitApp)
 				_ = Keysharp.Internals.Flow.ExitAppInternal(script, Flow.ExitReasons.Critical, 2L, true);
 
 			return exitThread;
+		}
+
+		/// <summary>
+		/// Stops at the first non-zero return, or at a failure, which returns 1; an Exit ends only the callback. Returns 0
+		/// when none decides or this real thread is already running the callbacks.
+		/// </summary>
+		[StackTraceHidden]
+		private static long CallOnErrorHandlers(Script script, Error err, ErrorMode mode)
+		{
+			var manager = script.Threads.CurrentManager;
+
+			if (manager.onErrorRunning)
+				return 0L;
+
+			var exit = new Threads.ExitState(Threads.Current);
+			// The callback may read Stack, Line or What before the exception has ever been thrown.
+			err.EnsureStackInfo();
+			manager.onErrorRunning = true;
+
+			try
+			{
+				foreach (var registration in script.onErrorHandlers.GetSnapshot())
+				{
+					// One removed by an earlier callback in this dispatch is skipped.
+					if (!registration.IsActive)
+						continue;
+
+					try
+					{
+						var retval = Script.InvokeOrNull(registration.Callback, null, err, mode.ToString()).Al();
+
+						if (retval != 0L)
+							return retval;
+					}
+					catch (Exception ex) when (Keysharp.Internals.Flow.TryGetException<Flow.UserRequestedExitException>(ex, out _))
+					{
+						// ExitApp has torn the script down, and its unwind continues.
+						if (script.hasExited)
+							throw;
+
+						exit.Restore();
+					}
+					catch (Exception ex)
+					{
+						// The callback's own error gets the default dialog, never these callbacks, and the error they
+						// were called for is dropped.
+						_ = ReportUncaught(ex);
+						return 1L;
+					}
+				}
+
+				return 0L;
+			}
+			finally
+			{
+				manager.onErrorRunning = false;
+			}
+		}
+
+		/// <summary>
+		/// Reports an error which ended a thread unreported, such as an exception C# code threw. The stack has unwound,
+		/// so the mode is Exit.
+		/// </summary>
+		/// <returns>True if the script is exiting.</returns>
+		internal static bool ReportUncaught(Exception mainex)
+		{
+			if (Keysharp.Internals.Flow.TryGetException<Flow.UserRequestedExitException>(mainex, out _))
+				return true;
+
+			var ex = mainex is KeysharpException ? mainex : mainex.InnerException ?? mainex;
+
+			try
+			{
+				var err = ex is KeysharpException kex ? kex.UserError : new Error(ex);
+
+				if (err is { Reported: false })
+					_ = ErrorOccurred(err, ErrorMode.Exit);
+
+				if (err is not { Reported: true } && !Script.TheScript.SuppressErrorOccurredDialog)
+					ShowUncaughtErrorDialog(ex);
+
+				return false;
+			}
+			// An ExitApp in an OnError callback, or the dialog's Reload, tears the script down from inside this handling.
+			catch (Exception exit) when (Keysharp.Internals.Flow.TryGetException<Flow.UserRequestedExitException>(exit, out _))
+			{
+				return true;
+			}
+		}
+
+		private static void ShowUncaughtErrorDialog(Exception ex)
+		{
+			var script = Script.TheScript;
+			var scheduler = script.CurrentSchedulerIfCreated ?? script.EventScheduler;
+
+			if (scheduler.TryExecuteThreadLaunch(0, false, false, _ => ErrorDialog.Show(ex, false)) != ScriptEventExecutionResult.Executed)
+				_ = ErrorDialog.Show(ex, false);
 		}
 
 		/// <summary>
@@ -165,10 +247,10 @@ namespace Keysharp.Builtins
 		/// Internal helper to handle errors. Throws a <see cref="Error"/> or returns <see cref="DefaultObject"/>.
 		/// </summary>
 		[StackTraceHidden]
-		internal static object ErrorOccurred(string text, object ret = null, string excType = Keyword_Return)
+		internal static object ErrorOccurred(string text, object ret = null, ErrorMode mode = ErrorMode.Return)
 		{
 			Error err;
-			return ErrorOccurred(err = new Error(text), excType) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new Error(text), mode) ? throw err : ret ?? DefaultObject;
 		}
 
 		[StackTraceHidden]
@@ -179,10 +261,10 @@ namespace Keysharp.Builtins
 		/// Internal helper to handle errors. Throws a <see cref="Error"/> or returns <see cref="DefaultObject"/>.
 		/// </summary>
 		[StackTraceHidden]
-		internal static object ErrorOccurred(string text, object what, object extra, object ret = null, string excType = Keyword_Return)
+		internal static object ErrorOccurred(string text, object what, object extra, object ret = null, ErrorMode mode = ErrorMode.Return)
 		{
 			Error err;
-			return ErrorOccurred(err = new Error(text, what, extra, excType)) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new Error(text, what, extra), mode) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -222,7 +304,7 @@ namespace Keysharp.Builtins
 		internal static object OSErrorOccurred(object obj, string text = "", object ret = null)
 		{
 			Error err;
-			return ErrorOccurred(err = new OSError(obj, text), Keywords.Keyword_ExitThread) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new OSError(obj, text)) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -237,7 +319,7 @@ namespace Keysharp.Builtins
 		{
 			var err = new OSError(0L);
 			err.Message = message;
-			return ErrorOccurred(err, Keywords.Keyword_ExitThread) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -252,7 +334,7 @@ namespace Keysharp.Builtins
 				return ret ?? (long)hr;
 
 			Error err;
-			return ErrorOccurred(err = new OSError(Marshal.GetExceptionForHR(hr), ""), Keywords.Keyword_ExitThread) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new OSError(Marshal.GetExceptionForHR(hr), "")) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -403,7 +485,7 @@ namespace Keysharp.Builtins
 	/// </summary>
 	public class Error : KeysharpObject
 	{
-		internal Exception Exception;
+		private Exception Exception;
 		private string _message;
 		private string _what;
 		private string _extra;
@@ -430,9 +512,7 @@ namespace Keysharp.Builtins
 				_file = ue.File;
 				_line = ue.Line;
 				_stack = ue.Stack;
-				ExcType = ue.ExcType;
-				Handled = ue.Handled;
-				Processed = ue.Processed;
+				Reported = ue.Reported;
 				_stackInitialized = true;
 				return;
 			}
@@ -449,19 +529,13 @@ namespace Keysharp.Builtins
 		// The parameters are PascalCase on purpose: these names ARE script-facing API (`Error(Message: "x")`).
 		public object __New(object message = null, object what = null, object extra = null)
 		{
-			_message = message == null ? GetType().Name : message.As();
+			// An object message is empty text, not its ToString result.
+			_message = message == null ? GetType().Name : message is Any ? "" : message.As();
 			_what = what.As();
 			_extra = extra.As();
 			Exception = new KeysharpException(this);
 			return DefaultObject;
 		}
-
-		/// <summary>
-		/// Gets or sets the exception exit type.
-		/// This is used to determine whether the script should exit or not after an exception is thrown.
-		/// Must be ExcType and not Type, else the reflection dictionary sees it as a dupe from the base.
-		/// </summary>
-		internal string ExcType { get; set; } = Keyword_Exit;
 
 		/// <summary>
 		/// Gets or sets the extra text.
@@ -482,13 +556,6 @@ namespace Keysharp.Builtins
 
 			internal set => _file = value;
 		}
-
-		/// <summary>
-		/// Whether this exception has been handled yet.
-		/// If true, further error messages will not be shown.
-		/// This should only ever be used internally or by the generated script code.
-		/// </summary>
-		internal bool Handled { get; set; }
 
 		/// <summary>
 		/// Gets or sets the line the exception occured on.
@@ -515,14 +582,8 @@ namespace Keysharp.Builtins
 			internal set => _message = value;
 		}
 
-		/// <summary>
-		/// Whether the global error event handlers have been called as a result
-		/// of this exception yet.
-		/// If true, they won't be called again for this error.
-		/// Note, this is separate from Handled above.
-		/// This should only ever be used internally or by the generated script code.
-		/// </summary>
-		internal bool Processed { get; set; }
+		/// <summary>OnError and the default dialog have dealt with this raise.</summary>
+		internal bool Reported { get; set; }
 
 		/// <summary>
 		/// Gets or sets the stack trace of where the exception occurred.
@@ -552,7 +613,7 @@ namespace Keysharp.Builtins
 			set => _what = value;
 		}
 
-		private void EnsureStackInfo()
+		internal void EnsureStackInfo()
 		{
 			if (_stackInitialized || Exception == null)
 				return;
@@ -589,13 +650,17 @@ namespace Keysharp.Builtins
 		{
 			string modeStr = mode.As("Return").Trim();
 			bool allowContinue = modeStr.Equals("return", StringComparison.OrdinalIgnoreCase) || modeStr.Equals("warn", StringComparison.OrdinalIgnoreCase);
-			var result = ErrorDialog.Show(Exception, allowContinue);
+			var result = ErrorDialog.Show(AsException(), allowContinue);
 			if (result == ErrorDialog.ErrorDialogResult.Continue) return -1L;
 			return 1L;
 		}
 
+		/// <summary>The KeysharpException that carries this Error, which replaces a foreign exception this Error wraps.</summary>
+		internal KeysharpException AsException()
+			=> Exception is KeysharpException kex && kex.UserError == this ? kex : (KeysharpException)(Exception = new KeysharpException(this));
+
 		[PublicHiddenFromUser]
-		public static implicit operator Exception(Error err) => err.Exception;
+		public static implicit operator Exception(Error err) => err.AsException();
 	}
 
 	/// <summary>
@@ -1391,14 +1456,13 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="ex">The exception to show.</param>
 		/// <param name="allowContinue">
-		/// If <c>true</c>, the dialog will offer a “Continue” button (only enabled for KeysharpException of type Return).
-		/// Otherwise, only Abort/Exit/Reload options are shown.
+		/// If <c>true</c>, the dialog offers a “Continue” button. Otherwise, only Abort/Exit/Reload options are shown.
 		/// </param>
 		/// <returns>
 		/// The ErrorDialogResult value corresponding to the option the user chose.
 		/// </returns>
 		[StackTraceHidden]
-		internal static ErrorDialogResult Show(Exception ex, bool allowContinue = true)
+		internal static ErrorDialogResult Show(Exception ex, bool allowContinue)
 		{
 			KeysharpException kex = ex as KeysharpException;
 			// A plain .NET exception (never wrapped in a KeysharpException) still needs its internal frames
@@ -1407,7 +1471,7 @@ namespace Keysharp.Builtins
 			string msg = kex != null
 				? kex.ToString()
 				: $"Message: {ex.Message}{Environment.NewLine}Stack:{Environment.NewLine}\t{KeysharpException.FormatFilteredStack(ex)}";
-			using var dlg = new ErrorDialog(msg, ErrorDialogKind.RuntimeError, allowContinue && kex?.UserError != null ? kex.UserError.ExcType == Keyword_Return : false);
+			using var dlg = new ErrorDialog(msg, ErrorDialogKind.RuntimeError, allowContinue);
 			using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
 				dlg.ShowDialog();
 

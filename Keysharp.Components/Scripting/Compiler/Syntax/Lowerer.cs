@@ -4985,11 +4985,7 @@ namespace Keysharp.Compilation.Syntax
 			PopLoop();
 			var loop = SyntaxFactory.WhileStatement(
 						   Inv(Access("Keysharp.Runtime.Flow.IsTrueAndRunning"), LowerExpr(w.Cond)), body);
-			var block = new List<StatementSyntax> {
-				CallStmt("Keysharp.Runtime.Loops.Push", Access("Keysharp.Runtime.LoopType.Normal")),
-				TryFinally(loop, LoopFinally(w.Else)) };
-			if (frame.NeedsEnd) block.Add(EndLabel(id));
-			return SyntaxFactory.Block(block);
+			return LoopBlock(id, frame, "Normal", SyntaxFactory.Block(loop), w.Else);
 		}
 
 		private StatementSyntax LowerLoop(LoopStmt lp)
@@ -5005,12 +5001,7 @@ namespace Keysharp.Compilation.Syntax
 			var body = WrapLoopBody(AsBlock(LowerStmt(lp.Body)), lp.Until, frame);
 			PopLoop();
 			var loop = SyntaxFactory.WhileStatement(cond, body);
-			var block = new List<StatementSyntax> {
-				CallStmt("Keysharp.Runtime.Loops.Push", Access("Keysharp.Runtime.LoopType.Normal")),
-				LocalDecl(Ty("System.Collections.IEnumerator"), ev, enumInit),
-				TryFinally(loop, LoopFinally(lp.Else)) };
-			if (frame.NeedsEnd) block.Add(EndLabel(id));
-			return SyntaxFactory.Block(block);
+			return LoopBlock(id, frame, "Normal", SyntaxFactory.Block(LocalDeclVar(ev, enumInit), loop), lp.Else);
 		}
 
 		// Maps a specialized-loop sub-keyword to its (enumerator method, LoopType) pair.
@@ -5036,12 +5027,7 @@ namespace Keysharp.Compilation.Syntax
 			var body = WrapLoopBody(AsBlock(LowerStmt(sl.Body)), sl.Until, frame);
 			PopLoop();
 			var loop = SyntaxFactory.WhileStatement(cond, body);
-			var block = new List<StatementSyntax> {
-				CallStmt("Keysharp.Runtime.Loops.Push", Access("Keysharp.Runtime.LoopType." + loopType)),
-				LocalDecl(Ty("System.Collections.IEnumerator"), ev, enumInit),
-				TryFinally(loop, LoopFinally(sl.Else)) };
-			if (frame.NeedsEnd) block.Add(EndLabel(id));
-			return SyntaxFactory.Block(block);
+			return LoopBlock(id, frame, loopType, SyntaxFactory.Block(LocalDeclVar(ev, enumInit), loop), sl.Else);
 		}
 
 		private static bool IsLoopStmt(Stmt s) => s is WhileStmt or LoopStmt or SpecialLoopStmt or ForStmt;
@@ -5116,15 +5102,26 @@ namespace Keysharp.Compilation.Syntax
 			return result;
 		}
 
-		// The loop's `finally` body. Always pops the loop frame; when an `else` block is present it runs iff the
-		// loop body never executed (`Loops.Pop().index == 0`), mirroring AHK loop-else and the canonical visitor.
-		private StatementSyntax LoopFinally(Stmt elseStmt)
+		// { [var KS_loopN =] Push(type); [backups] try { loop } finally { [restores] Pop(); } [if (KS_loopN.index == 0) else] [_end:] }
+		// The else follows the try, so it runs only when the loop completed without an iteration, never while an
+		// exception unwinds, and it may return or break. Lowered after PopLoop, so its break targets the outer loop.
+		private BlockSyntax LoopBlock(int id, LoopFrame frame, string loopType, BlockSyntax loop, Stmt elseStmt,
+			List<StatementSyntax> backups = null, List<StatementSyntax> restores = null)
 		{
-			var pop = Inv(Access("Keysharp.Runtime.Loops.Pop"));
-			if (elseStmt == null) return ExprStmt(pop);
-			return SyntaxFactory.IfStatement(
-				SyntaxFactory.BinaryExpression(SyntaxKind.EqualsExpression, Member(pop, "index"), Num("0")),
-				AsBlock(LowerStmt(elseStmt)));
+			var info = "KS_loop" + id;
+			var push = Inv(Access("Keysharp.Runtime.Loops.Push"), Access("Keysharp.Runtime.LoopType." + loopType));
+			var block = new List<StatementSyntax> { elseStmt != null ? LocalDeclVar(info, push) : ExprStmt(push) };
+			if (backups != null) block.AddRange(backups);
+			var finallyStmts = new List<StatementSyntax>();
+			if (restores != null) finallyStmts.AddRange(restores);
+			finallyStmts.Add(CallStmt("Keysharp.Runtime.Loops.Pop"));
+			block.Add(TryFinally(loop, SyntaxFactory.Block(finallyStmts)));
+			if (elseStmt != null)
+				block.Add(SyntaxFactory.IfStatement(
+					SyntaxFactory.BinaryExpression(SyntaxKind.EqualsExpression, Member(Id(info), "index"), Num("0")),
+					AsBlock(LowerStmt(elseStmt))));
+			if (frame.NeedsEnd) block.Add(EndLabel(id));
+			return SyntaxFactory.Block(block);
 		}
 
 		private StatementSyntax LowerFor(ForStmt fr)
@@ -5148,16 +5145,9 @@ namespace Keysharp.Compilation.Syntax
 			var loopVars = fr.Vars.Where(v => v != null).ToArray();
 			var backups = loopVars.Select(_ => NewTemp()).ToArray();
 
-			var finallyStmts = new List<StatementSyntax>();
-			for (int i = 0; i < loopVars.Length; i++) finallyStmts.Add(ExprStmt(Assign(NameRef(loopVars[i]), Id(backups[i]))));
-			finallyStmts.Add(LoopFinally(fr.Else));
-
-			var block = new List<StatementSyntax> { CallStmt("Keysharp.Runtime.Loops.Push") };
-			for (int i = 0; i < loopVars.Length; i++) block.Add(ExprStmt(Assign(Id(backups[i]), NameRef(loopVars[i]))));
-			block.Add(LocalDeclVar(ev, enumInit));
-			block.Add(TryFinally(loop, finallyStmts.Count == 1 ? finallyStmts[0] : SyntaxFactory.Block(finallyStmts)));
-			if (frame.NeedsEnd) block.Add(EndLabel(id));
-			return SyntaxFactory.Block(block);
+			var saves = loopVars.Select((v, i) => ExprStmt(Assign(Id(backups[i]), NameRef(v)))).ToList();
+			var restores = loopVars.Select((v, i) => ExprStmt(Assign(NameRef(v), Id(backups[i])))).ToList();
+			return LoopBlock(id, frame, "Normal", SyntaxFactory.Block(LocalDeclVar(ev, enumInit), loop), fr.Else, saves, restores);
 		}
 
 		// Lowered as a real C# `switch` (not an if-chain) so that all case bodies share one label scope — a `goto`
@@ -5254,6 +5244,7 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var body = AsBlock(LowerStmt(tr.Body));
 			var finallyBlock = tr.Finally != null ? AsBlock(LowerStmt(tr.Finally)) : null;
+			StatementSyntax stmt;
 
 			// try/catch/else: the else body runs only if the try completed without an exception — guard with a flag.
 			if (tr.Else != null)
@@ -5264,11 +5255,24 @@ namespace Keysharp.Compilation.Syntax
 				var elseBlock = SyntaxFactory.Block(
 					LocalDecl(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.BoolKeyword)), ok, SyntaxFactory.LiteralExpression(SyntaxKind.FalseLiteralExpression)),
 					inner, SyntaxFactory.IfStatement(Id(ok), AsBlock(LowerStmt(tr.Else))));
-				if (finallyBlock == null) return elseBlock;
-				return SyntaxFactory.TryStatement().WithBlock(elseBlock).WithFinally(SyntaxFactory.FinallyClause(finallyBlock));
+				stmt = finallyBlock == null ? elseBlock : SyntaxFactory.TryStatement().WithBlock(elseBlock).WithFinally(SyntaxFactory.FinallyClause(finallyBlock));
 			}
+			else
+				stmt = BuildTry(body, tr.Catches, finallyBlock);
 
-			return BuildTry(body, tr.Catches, finallyBlock);
+			return tr.Catches.Count > 0 ? ReportPassed(stmt) : stmt;
+		}
+
+		// An error which passes a try with catches, a catch of another class or a bare rethrow in its catch, is reported once
+		// the try statement has run its finally block, unless an enclosing try may still catch it. Only an error path pays.
+		private StatementSyntax ReportPassed(StatementSyntax tryStmt)
+		{
+			var ex = "KS_ex" + (++_flowCounter);
+			var report = SyntaxFactory.CatchClause()
+				.WithDeclaration(SyntaxFactory.CatchDeclaration(Ty("Keysharp.Builtins.KeysharpException"), SyntaxFactory.Identifier(ex)))
+				.WithBlock(SyntaxFactory.Block(CallStmt("Keysharp.Runtime.Flow.ReportPassed", Id(ex)), SyntaxFactory.ThrowStatement()));
+			// Nested, as an exception thrown by a catch block skips the other catches of its own try statement.
+			return SyntaxFactory.TryStatement().WithBlock(AsBlock(tryStmt)).AddCatches(report);
 		}
 
 		private StatementSyntax BuildTry(BlockSyntax body, List<CatchBlock> catchBlocks, BlockSyntax finallyBlock)
@@ -5282,23 +5286,10 @@ namespace Keysharp.Compilation.Syntax
 					.WithDeclaration(SyntaxFactory.CatchDeclaration(Ty("Keysharp.Builtins.KeysharpException")))
 					.WithBlock(SyntaxFactory.Block()));
 
-			// When the try actually catches (has catch clauses), register the caught types on the runtime try-stack for
-			// the duration of the body, so a runtime-RAISED error (a ComCall HRESULT, a type/property error via
-			// Errors.*Occurred) knows it is inside a catching `try` and throws to be caught here rather than surfacing
-			// the unhandled-error dialog / exiting the thread. A `try`/`finally` with no catch does NOT catch, so it
-			// gets no PushTry. PopTry runs via an inner finally so it is balanced even when the body throws.
+			// Errors raised in this body are caught here, so built-ins throw them instead of reporting them (AHK's EXCPTMODE_CATCH).
 			if (catches.Count > 0)
-			{
-				var caughtTypes = new List<string>();
-				foreach (var cb in catchBlocks)
-					if (cb.Types.Count == 0) caughtTypes.Add("Keysharp.Builtins.Error");
-					else foreach (var t in cb.Types) caughtTypes.Add(ResolveErrorType(t));
-				if (catchBlocks.Count == 0) caughtTypes.Add("Keysharp.Builtins.Error");   // synthetic bare-`try` catch
-				var pushArgs = caughtTypes.Select(tn => (ExpressionSyntax)SyntaxFactory.TypeOfExpression(Ty(tn))).ToArray();
-				var innerTry = SyntaxFactory.TryStatement().WithBlock(body)
-					.WithFinally(SyntaxFactory.FinallyClause(SyntaxFactory.Block(CallStmt("Keysharp.Runtime.Loops.PopTry"))));
-				body = SyntaxFactory.Block(CallStmt("Keysharp.Runtime.Loops.PushTry", pushArgs), innerTry);
-			}
+				body = SyntaxFactory.Block(SyntaxFactory.UsingStatement(null,
+					Inv(Access("Keysharp.Runtime.Flow.EnterTry")), body));
 
 			var stmt = SyntaxFactory.TryStatement().WithBlock(body).WithCatches(SyntaxFactory.List(catches));
 			if (finallyBlock != null) stmt = stmt.WithFinally(SyntaxFactory.FinallyClause(finallyBlock));
@@ -5326,6 +5317,10 @@ namespace Keysharp.Compilation.Syntax
 					cond = cond == null ? test : SyntaxFactory.BinaryExpression(SyntaxKind.LogicalOrExpression, cond, test);
 				}
 			}
+
+			block = SyntaxFactory.Block(SyntaxFactory.UsingStatement(null,
+				Inv(Access("Keysharp.Runtime.Flow.EnterCatch"), userErr), block));
+
 			return SyntaxFactory.CatchClause()
 				.WithDeclaration(SyntaxFactory.CatchDeclaration(Ty("Keysharp.Builtins.KeysharpException"), SyntaxFactory.Identifier(ex)))
 				.WithFilter(SyntaxFactory.CatchFilterClause(cond))
@@ -5340,17 +5335,11 @@ namespace Keysharp.Compilation.Syntax
 			return "Keysharp.Builtins." + name;
 		}
 
-		private StatementSyntax LowerThrow(ThrowStmt th)
-		{
-			var errType = Ty("Keysharp.Builtins.Error");
-			if (th.Value == null)
-				return SyntaxFactory.ThrowStatement(SyntaxFactory.ObjectCreationExpression(errType).WithArgumentList(SyntaxFactory.ArgumentList()));
-			var v = LowerExpr(th.Value);
-			if (v is LiteralExpressionSyntax)
-				return SyntaxFactory.ThrowStatement(SyntaxFactory.ObjectCreationExpression(errType)
-					.WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(v)))));
-			return SyntaxFactory.ThrowStatement(SyntaxFactory.CastExpression(errType, SyntaxFactory.ParenthesizedExpression(v)));
-		}
+		// A value is a new throw site. A bare throw re-raises the active catch value and therefore lets finally blocks
+		// unwind before OnError; outside a catch it is a continuable Error in Return mode.
+		private StatementSyntax LowerThrow(ThrowStmt th) => th.Value == null
+			? ExprStmt(Inv(Access("Keysharp.Runtime.Flow.Rethrow")))
+			: SyntaxFactory.ThrowStatement(Inv(Access("Keysharp.Runtime.Flow.Throw"), LowerExpr(th.Value)));
 
 		// ---- classes ----
 
@@ -6296,7 +6285,7 @@ namespace Keysharp.Compilation.Syntax
 			{
 				// The reader (and writer, if any) lambdas, bound to typed delegates so the in-body %name% access and
 				// the scope external callers read share the one delegate, then publish the scope. KeysharpFunc.Call
-				// clears/restores executingUserFunc around the call, so no matching teardown is emitted here.
+				// restores the caller's scope on return, so no matching teardown is emitted here.
 				body.Add(LocalDecl(Ty("Keysharp.Runtime.FuncScope.Reader"), "KS_readVar", BuildReaderLambda()));
 				if (needsWriter) body.Add(LocalDecl(Ty("Keysharp.Runtime.FuncScope.Writer"), "KS_writeVar", BuildWriterLambda()));
 				body.Add(ExprStmt(Inv(Access("Keysharp.Runtime.Script.EnterScope"), Id("KS_readVar"), ScopeNamesLambda(), Str(thisFuncName ?? ""))));
@@ -6502,7 +6491,7 @@ namespace Keysharp.Compilation.Syntax
 			ReturnStmt r => AnyExpr(r.Value, pred),
 			Block b => b.Body.Any(x => AnyStmt(x, pred)),
 			IfStmt iff => AnyExpr(iff.Cond, pred) || AnyStmt(iff.Then, pred) || (iff.Else != null && AnyStmt(iff.Else, pred)),
-			// Each loop also lowers its trailing `Until` condition (WrapLoopBody) and `Else` body (LoopFinally), so a
+			// Each loop also lowers its trailing `Until` condition (WrapLoopBody) and `Else` body, so a
 			// %name% / scope-trigger / deref-write confined to either must be seen here too — else _inDerefFunc /
 			// needsWriter would be wrong (mislowering, or a missing KS_writeVar → CS0103). AnyExpr tolerates nulls.
 			WhileStmt w => AnyExpr(w.Cond, pred) || AnyStmt(w.Body, pred) || AnyExpr(w.Until, pred) || (w.Else != null && AnyStmt(w.Else, pred)),
@@ -6819,15 +6808,7 @@ namespace Keysharp.Compilation.Syntax
 			tryStmts.Add(ExprStmt(Inv(Member(Id("MainScript"), "RunMainWindow"), Access("Keysharp.Builtins.Accessors.A_ScriptName"), Id("AutoExecSection"), False)));
 			var catchStmts = new List<StatementSyntax>
 			{
-				LocalDeclVar("ex", Inv(Access("Keysharp.Runtime.Flow.UnwrapException"), Id("mainex"))),
-				SyntaxFactory.IfStatement(
-					SyntaxFactory.BinaryExpression(SyntaxKind.IsExpression, Id("ex"), Ty("Keysharp.Builtins.Flow.UserRequestedExitException")),
-					SyntaxFactory.ReturnStatement(Access("System.Environment.ExitCode"))),
-				SyntaxFactory.IfStatement(
-					SyntaxFactory.IsPatternExpression(Id("ex"), SyntaxFactory.DeclarationPattern(Ty("Keysharp.Builtins.KeysharpException"),
-						SyntaxFactory.SingleVariableDesignation(SyntaxFactory.Identifier("kserr")))),
-					ExprStmt(Op("TryProcessKeysharpException", Id("MainScript"), Id("kserr"))),
-					SyntaxFactory.ElseClause(ExprStmt(Op("TryProcessUnhandledException", Id("MainScript"), Id("ex"))))),
+				SyntaxFactory.IfStatement(Op("ReportUncaught", Id("mainex")), SyntaxFactory.ReturnStatement(Access("System.Environment.ExitCode"))),
 				ExprStmt(Op("SafeExit", IntLit(1))),
 			};
 			var catchClause = SyntaxFactory.CatchClause()

@@ -203,7 +203,7 @@ namespace Keysharp.Builtins
 			{
 				// Reported as an ordinary script error on the owning thread. Letting this escape would put an unhandled
 				// exception on a threadpool thread, which takes the process down.
-				_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
+				_ = Errors.ReportUncaught(ex);
 			}
 
 			return ScriptEventExecutionResult.Executed;

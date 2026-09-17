@@ -387,7 +387,7 @@ namespace Keysharp.Builtins
 				}
 				catch (Exception ex)
 				{
-					_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
+					_ = Errors.ReportUncaught(ex);
 				}
 
 				return ScriptEventExecutionResult.Executed;

@@ -967,7 +967,7 @@ internal bool HasBlockedQueuedWork
 						// Timers honour the Thread-Interrupt uninterruptible startup window like any new thread. The launch
 						// passed skipUninterruptible=true (the pump vetted admission above), which also skips the window setup,
 						// so apply it here.
-						thread.ThreadVariables.ApplyUninterruptibleStartupWindow(script);
+						thread.ThreadVariables.ApplyUninterruptibleStartupWindow();
 
 						executed = true;
 
@@ -980,7 +980,7 @@ internal bool HasBlockedQueuedWork
 						}
 						catch (Exception ex)
 						{
-							_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
+							_ = Errors.ReportUncaught(ex);
 						}
 					}
 				}

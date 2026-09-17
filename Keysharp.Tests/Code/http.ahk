@@ -559,7 +559,15 @@ Http.Get(root "/big", {OnData: (chunk, *) => (acc.seen += chunk.Size, "stop")})
 AssertEq(acc.seen, 300000, A_LineNumber)
 
 ; A callback that raises fails the request rather than being swallowed.
+httpUnhandled := []
+RecordHttpUnhandled(exception, mode) {
+	global httpUnhandled
+	httpUnhandled.Push(exception.Message " " mode)
+}
+OnError(RecordHttpUnhandled)
 Throws(() => Http.Get(root "/big", {OnData: (*) => Chr(-1)}), A_LineNumber)
+AssertEq(httpUnhandled.Length, 0, A_LineNumber)
+OnError(RecordHttpUnhandled, 0)
 
 ; Aborting an async transfer cancels its task rather than raising where it was started.
 t := Http.GetAsync(root "/big", {OnData: (*) => 1})

@@ -426,21 +426,13 @@ namespace Keysharp.Builtins
 		// thread object, which is what lets A_Thread's type simply be `Thread`.
 
 		/// <summary>
-		/// Throws the specified error object.
+		/// Throws the specified value, as the throw statement does.
 		/// </summary>
-		/// <param name="value">The error object to throw.<br/>
-		/// </param>
+		/// <param name="value">The value to throw, usually an <see cref="Error"/>. Anything else is thrown as Error(value).
+		/// If omitted, the error a catch is handling is rethrown, as a bare throw statement does.</param>
 		[StackTraceHidden]
 		public static object Throw(object value = null)
-		{
-			if (value is Error ex)
-				ExceptionDispatchInfo.Capture(ex.Exception).Throw();
-			else if (value == null)
-			{
-				throw new Error();
-			}
-			throw new Error("Invalid error object");
-		}
+			=> value == null ? Keysharp.Runtime.Flow.Rethrow() : throw Keysharp.Runtime.Flow.Throw(value);
 
 
         /// <summary>

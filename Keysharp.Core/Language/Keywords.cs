@@ -288,9 +288,6 @@ namespace Keysharp.Language
 		internal const string Keyword_Enabled = "enabled";
 		internal const string Keyword_Error = "error";
 		internal const string Keyword_Exist = "exist";
-		internal const string Keyword_Exit = "Exit";
-		internal const string Keyword_ExitApp = "ExitApp";
-		internal const string Keyword_ExitThread = "ExitThread";
 		internal const string Keyword_Exp = "exp";
 		internal const string Keyword_Expand = "expand";
 		internal const string Keyword_Expanded = "expanded";
@@ -501,7 +498,6 @@ namespace Keysharp.Language
 		internal const string Keyword_Resize = "resize";
 		internal const string Keyword_Restore = "restore";
 		internal const string Keyword_Retry = "retry";
-		internal const string Keyword_Return = "Return";
 		internal const string Keyword_RGB = "rgb";
 		internal const string Keyword_Rich_Edit = "richedit";
 		internal const string Keyword_Right = "right";

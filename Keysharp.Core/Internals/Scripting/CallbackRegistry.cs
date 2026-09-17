@@ -14,7 +14,7 @@ namespace Keysharp.Internals.Scripting
 	/// <list type="bullet">
 	/// <item><see cref="NonZero"/> — the <c>(aInitNewThreadIndex)</c> overload: <c>if (retval) break;</c>. Used
 	/// by OnError, OnExit and OnClipboardChange, so both <c>return 0</c> and <c>return ""</c> continue the
-	/// chain. Keysharp's hand-rolled OnError loop (<c>Errors.cs:41</c>) applies the same rule inline.</item>
+	/// chain. Keysharp's hand-rolled OnError loop (<c>Errors.CallOnErrorHandlers</c>) applies the same rule inline.</item>
 	/// <item><see cref="NonEmpty"/> — the <c>(aMsg, aMsgType, aGui)</c> overload:
 	/// <c>if (result == EARLY_RETURN) break;</c>, where EARLY_RETURN means <c>CallMethod</c> saw a non-blank
 	/// return (<c>script_object.cpp:53</c>, via <c>TokenIsBlank</c>). Used by every GUI event chain (OnEvent,
@@ -380,8 +380,8 @@ namespace Keysharp.Internals.Scripting
 				catch (Exception ex)
 				{
 					chainResult = null;
-					// HandleCaughtException is true only for Exit; anything else is an uncaught error which ended the thread.
-					failed = !Keysharp.Internals.Flow.HandleCaughtException(ex);
+					// ReportUncaught is true only for Exit; anything else is an uncaught error which ended the thread.
+					failed = !Errors.ReportUncaught(ex);
 				}
 
 				return ScriptEventExecutionResult.Executed;

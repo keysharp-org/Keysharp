@@ -286,15 +286,12 @@ namespace Keysharp.Builtins
 
 			if (dh == null)
 			{
-				// Nothing can be dispatched, and there is no return value that would be less wrong than another.
-				// Throwing does unwind through the caller's native frames, which is only safe when that caller is
-				// our own DllCall, but it is what makes calling a freed pointer a catchable script error instead
-				// of the silent corruption or crash it is in AutoHotkey. Exceptions from the callback itself do
-				// not come through here: ExecuteCallback contains those.
+				// Nothing can be dispatched, so this is raised like a built-in's error: a try catches it (its throw
+				// unwinds the native frames, which is safe only under our own DllCall), and a continued one returns 0.
 				if (Script.TheScript?.hasExited != false)
 					return 0L;
 
-				throw new Error("Stale callback pointer");
+				return Errors.ErrorOccurred(new Error("Stale callback pointer"), 0L);
 			}
 
 			// A typed callback interprets the same raw slots according to its declared types instead.
@@ -414,7 +411,7 @@ namespace Keysharp.Builtins
 			}
 			catch (Exception ex)
 			{
-				_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
+				_ = Errors.ReportUncaught(ex);
 			}
 
 			return (val, completed);

@@ -352,4 +352,88 @@ ffu1()
 	until false
 }
 
+; A loop setup expression can fail after its flow frame is pushed. Its finally removes that frame, and A_Index's
+; value outside loops remains the value stored on this pseudo-thread.
+FailLoopSetup() {
+	throw Error("loop setup")
+}
+
+A_Index := 37
+AssertEq(A_Index, 37, A_LineNumber)
+
+try
+	Loop FailLoopSetup() {
+	}
+catch Error
+	0
+AssertEq(A_Index, 37, A_LineNumber)
+
+try
+	Loop Parse FailLoopSetup(), "," {
+	}
+catch Error
+	0
+AssertEq(A_Index, 37, A_LineNumber)
+AssertEq(A_LoopField, "", A_LineNumber)
+
+try
+	for value in FailLoopSetup() {
+	}
+catch Error
+	0
+AssertEq(A_Index, 37, A_LineNumber)
+
+Loop 1
+	AssertEq(A_Index, 1, A_LineNumber)
+AssertEq(A_Index, 37, A_LineNumber)
+
+; A loop's else runs only when the loop completes without an iteration: it may return, break or continue an outer
+; loop, and it never runs after a break or while the loop's setup is failing.
+ForElseReturn() {
+	for value in []
+		return "item"
+	else
+		return "none"
+}
+
+AssertEq(ForElseReturn(), "none", A_LineNumber)
+
+whileElse := false
+
+try
+	while FailLoopSetup()
+		0
+	else
+		whileElse := true
+catch Error
+	0
+AssertEq(whileElse, false, A_LineNumber)
+
+n := 0
+
+Loop 2 {
+	for value in []
+		0
+	else
+		continue
+	n++
+}
+AssertEq(n, 0, A_LineNumber)
+
+Loop 1 {
+	while false
+		0
+	else
+		break
+	Assert(false, A_LineNumber)
+}
+
+loopElse := false
+
+Loop 3
+	break
+else
+	loopElse := true
+AssertEq(loopElse, false, A_LineNumber)
+
 FileAppend "pass", "*"

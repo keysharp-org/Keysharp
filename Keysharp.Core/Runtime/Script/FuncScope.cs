@@ -5,12 +5,11 @@ namespace Keysharp.Runtime
 	/// closure resolution by name (e.g. a RegEx callout that names a closure, via
 	/// <see cref="Keysharp.Builtins.Functions.GetKeysharpFunc"/>) and ListVars enumeration.<br/>
 	/// A scope-publishing function (one that uses <c>%name%</c>, or calls a scope-consuming builtin) installs one
-	/// in its prologue through <see cref="Script.EnterScope"/>, over its generated reader/writer lambdas. It is held
-	/// <c>[ThreadStatic]</c> on <see cref="Script.executingUserFunc"/>; <see cref="Keysharp.Builtins.KeysharpFunc.Call"/>
-	/// clears it on entry to any user function and restores it on return, so the scope visible at any point is the
-	/// nearest enclosing user function — and only that one. The pseudo-thread push/pop resets and restores it across
-	/// an interrupt boundary, so an interrupting thread (timer/hotkey) starts with none while a synchronous callout
-	/// shares the calling function's.
+	/// in its prologue through <see cref="Script.EnterScope"/>, over its generated reader/writer lambdas, and it is held
+	/// on the current pseudo-thread. <see cref="Keysharp.Builtins.KeysharpFunc.Call"/> clears it on entry to any user
+	/// function and restores it on return, so the scope visible at any point is the nearest enclosing user function's.
+	/// An interrupting thread (timer/hotkey) therefore starts with none, while a synchronous callout shares the calling
+	/// function's.
 	/// </summary>
 	public sealed class FuncScope
 	{

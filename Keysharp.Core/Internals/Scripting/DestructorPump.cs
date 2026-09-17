@@ -98,7 +98,9 @@ namespace Keysharp.Internals.Scripting
 #if WINDOWS
 						if (any is not ComValue)
 #endif
-							InvokeMeta(any, "__Delete");
+							// A drain can run inside a pumping call made in a try, whose catch must not swallow this error.
+							using (Keysharp.Runtime.Flow.EnterUnguarded())
+								InvokeMeta(any, "__Delete");
 						if (any is IDisposable idisp) idisp.Dispose();
 					}
 					catch { /* swallow per destructor semantics */ }

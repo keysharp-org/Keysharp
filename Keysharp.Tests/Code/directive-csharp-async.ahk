@@ -5,6 +5,13 @@
 #import KS { Task, RealThread, Await, Clr, A_RealThread }
 #Include <assert>
 
+asyncUnhandled := []
+RecordAsyncUnhandled(exception, mode) {
+    global asyncUnhandled
+    asyncUnhandled.Push(exception.Message " " mode)
+}
+OnError(RecordAsyncUnhandled)
+
 #CSharp
 using System.Threading.Tasks;
 
@@ -185,6 +192,7 @@ try
 catch ValueError as e
     chainFailed := InStr(e.Message, "in-then") > 0
 Assert(chainFailed, A_LineNumber)
+AssertEq(asyncUnhandled.Length, 0, A_LineNumber)
 
 nestedFailure := Immediate().Then(_ => Boom())
 Throws(() => Await(nestedFailure), A_LineNumber, Error)
@@ -323,6 +331,7 @@ Assert(allCanceled.Wait(5000) && allCanceled.IsCanceled, A_LineNumber)
 producerError := ValueError("producer")
 producerFailure := Task.Create(Succeed => Throw(producerError))
 Assert(producerFailure.IsFailed && producerFailure.Error == producerError, A_LineNumber)
+AssertEq(asyncUnhandled.Length, 0, A_LineNumber)
 Throws(() => Task.Create((A, B, C, D) => ""), A_LineNumber, ValueError)
 
 AssertEq(Await(Task.Create(Succeed => Succeed(Awaitable(Immediate())))), 42, A_LineNumber)

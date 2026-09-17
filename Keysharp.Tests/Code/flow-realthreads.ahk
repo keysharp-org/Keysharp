@@ -6,6 +6,14 @@
 #MaxThreads 256
 #Include <assert>
 lockit := Lock()
+threadUnhandled := []
+
+RecordThreadUnhandled(exception, mode) {
+	global threadUnhandled
+	threadUnhandled.Push(exception.Message " " mode)
+}
+
+OnError(RecordThreadUnhandled)
 tharr := []
 tharr.Length := 100
 tot := 0
@@ -137,6 +145,7 @@ catch Error as e
 AssertEq(caught, "expected worker failure", A_LineNumber)
 Assert(failedWorker.Task.IsFailed && failedWorker.Task.Status == "Failed", A_LineNumber)
 AssertEq(failedWorker.Task.Error.Message, "expected worker failure", A_LineNumber)
+AssertEq(threadUnhandled.Length, 0, A_LineNumber)
 
 ; Starting arguments, Send, and self-identification from inside the worker.
 argWorker := RealThread(RealThreadArgEntry, 21)
@@ -149,6 +158,17 @@ Assert(argWorker.IsAlive, A_LineNumber)
 
 ; Post returns a Task, so queued work is observable.
 AssertEq(Await(argWorker.Post(() => 7)), 7, A_LineNumber)
+
+postFailure := argWorker.Post(() => Throw(ValueError("expected post failure")))
+Throws(() => Await(postFailure), A_LineNumber, ValueError)
+
+sendCaught := false
+try
+	argWorker.Send(() => Throw(ValueError("expected send failure")))
+catch ValueError as e
+	sendCaught := e.Message == "expected send failure"
+Assert(sendCaught, A_LineNumber)
+AssertEq(threadUnhandled.Length, 0, A_LineNumber)
 
 argWorker.Post(() => argWorker.Exit())
 Await(argWorker.Terminated)

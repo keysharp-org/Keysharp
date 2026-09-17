@@ -71,43 +71,37 @@ namespace Keysharp.Internals.Os
 
 		internal static List<KeysharpCapability> ParseRequested(object[] capabilities)
 		{
-			var requested = new List<KeysharpCapability>();
+			var names = new List<string>();
 
 			foreach (var cap in capabilities)
 			{
 				if (cap is Keysharp.Builtins.Array arr)
 				{
 					foreach (var item in arr)
-						AddRequested(requested, item.As());
+					{
+						var name = item.As();
+
+						if (!string.IsNullOrWhiteSpace(name))
+							names.Add(name.Trim());
+					}
 				}
 				else
-				{
-					foreach (var part in cap.As().Split([' ', '\t', '\r', '\n', ',', ';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-						AddRequested(requested, part);
-				}
+					names.AddRange(cap.As().Split([' ', '\t', '\r', '\n', ',', ';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 			}
 
-			if (requested.Count == 0)
-				throw new ValueError("At least one capability name is required.");
+			var requested = new List<KeysharpCapability>();
+
+			if (names.Count == 0)
+				return Errors.ErrorOccurred(new ValueError("At least one capability name is required."), requested);
+
+			foreach (var name in names)
+				if (ParseName(name) is { } capability)
+					_ = requested.AddUnique(capability);
 
 			return requested;
 		}
 
-		private static void AddRequested(List<KeysharpCapability> requested, string name)
-		{
-			if (string.IsNullOrWhiteSpace(name))
-				return;
-
-			AddUnique(requested, ParseName(name.Trim()));
-		}
-
-		private static void AddUnique(List<KeysharpCapability> requested, KeysharpCapability capability)
-		{
-			if (!requested.Contains(capability))
-				requested.Add(capability);
-		}
-
-		private static KeysharpCapability ParseName(string name)
+		private static KeysharpCapability? ParseName(string name)
 		{
 			return name.ToLowerInvariant() switch
 			{
@@ -119,7 +113,7 @@ namespace Keysharp.Internals.Os
 				"audiocapture" => KeysharpCapability.AudioCapture,
 				"cameracapture" => KeysharpCapability.CameraCapture,
 				"clipboardmonitoring" => KeysharpCapability.ClipboardMonitoring,
-				_ => throw new ValueError($"Unknown capability name: {name}. Expected InputMonitoring, InputControl, WindowMonitoring, WindowControl, ScreenCapture, AudioCapture, CameraCapture or ClipboardMonitoring.")
+				_ => Errors.ErrorOccurred(new ValueError($"Unknown capability name: {name}. Expected InputMonitoring, InputControl, WindowMonitoring, WindowControl, ScreenCapture, AudioCapture, CameraCapture or ClipboardMonitoring."), (KeysharpCapability?)null)
 			};
 		}
 

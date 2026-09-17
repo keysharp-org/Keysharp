@@ -119,6 +119,34 @@ namespace Keysharp.Tests
 					A_RealThread.Threads[1].Exit(0)
 				}
 			", "13", true, false, 0)));
+			//A Thread object first read while its thread unwinds by Exit reports the code, and keeps it once a later
+			//thread reuses the pooled slot.
+			Assert.IsTrue(HasPassed(RunScript(@"
+				#import KS { A_Thread }
+				exited := later := 0
+				t0 := A_TickCount
+				SetTimer(ExitInTry, -1)
+				while !exited && A_TickCount - t0 < 4000
+					Sleep(1)
+				SetTimer(CaptureLater, -1)
+				while !later && A_TickCount - t0 < 4000
+					Sleep(1)
+				reused := exited && later && later.Index == exited.Index && later.Id != exited.Id
+				FileAppend(reused && exited.ExitCode == 5 && !exited.IsActive ? 'pass' : 'fail', '*')
+				ExitApp(0)
+
+				ExitInTry() {
+					global exited
+					try
+						Exit(5)
+					finally
+						exited := A_Thread
+				}
+
+				CaptureLater() {
+					global later := A_Thread
+				}
+			", "14", true, false, 0)));
         }
 
         // Regression for the double-teardown bug (ExitApp/Reload inside an OnExit handler). A nested ExitAppInternal
@@ -353,11 +381,37 @@ namespace Keysharp.Tests
         [Test, Category("Flow"), NonParallelizable]
         public void FlowMultiStatement() => Assert.IsTrue(TestScript("flow-multi-statement", false));
 
-        [Test, Category("Flow")]
+        [Test, Category("Flow"), NonParallelizable]
         public void FlowOnError()
 		{
 			SkipIfUiInitializationBlocked("Error dispatch path differs when UI initialization is blocked.");
-			Assert.IsTrue(TestScript("flow-onerror", false));
+			// The script's #ErrorStdOut makes the default error dialog its message on stderr, so the markers there
+			// name exactly the errors which got the dialog.
+			var previousError = Console.Error;
+			using var stderr = new StringWriter();
+
+			try
+			{
+				Console.SetError(stderr);
+				Assert.IsTrue(TestScript("flow-onerror", false));
+			}
+			finally
+			{
+				Console.SetError(previousError);
+			}
+
+			var shown = stderr.ToString();
+			int Count(string marker) => shown.Split("C3D38B48-" + marker).Length - 1;
+
+			foreach (var marker in new[] { "exit-then-zero", "zero-dialog", "inner-throw", "inner-builtin", "rethrown", "dialog-at-throw" })
+				Assert.AreEqual(1, Count(marker), $"{marker} must get the dialog once. stderr:\n{shown}");
+
+			foreach (var marker in new[] { "exit-then-continue", "one-silent", "thrown-negative", "outer-of-throw", "outer-of-builtin", "exitapp",
+					 "removed-callback", "located-builtin", "order-", "catch-rethrow", "bare-rethrow", "other-class", "caught", "late-builtin", "nested-other-class" })
+				Assert.AreEqual(0, Count(marker), $"{marker} must get no dialog. stderr:\n{shown}");
+
+			// A throw nothing catches gets its dialog before the stack unwinds, so ahead of the finally block's line.
+			Assert.Less(shown.IndexOf("C3D38B48-dialog-at-throw"), shown.IndexOf("C3D38B48-finally-after-dialog"), $"The dialog must precede the finally block. stderr:\n{shown}");
 		}
 
         [Test, Category("Flow"), NonParallelizable]
@@ -413,6 +467,9 @@ namespace Keysharp.Tests
 
         [Test, Category("Flow")]
         public void FlowTryCatch() => Assert.IsTrue(TestScript("flow-trycatch", false));
+
+        [Test, Category("Flow"), NonParallelizable]
+        public void FlowTryInterrupt() => Assert.IsTrue(TestScript("flow-try-interrupt", false));
 
         //Collections tests already test foreach in C#, so just test the script here.
         [Test, Category("Flow")]

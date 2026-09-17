@@ -58,7 +58,7 @@ namespace Keysharp.Internals.Window
 			catch (Exception ex)
 			{
 				// Errors and Exit leave the message unclaimed.
-				_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
+				_ = Errors.ReportUncaught(ex);
 				result = null;
 			}
 

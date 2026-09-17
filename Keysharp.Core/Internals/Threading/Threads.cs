@@ -17,10 +17,23 @@ namespace Keysharp.Internals.Threading
 		/// </summary>
 		private readonly ThreadLocal<ThreadVariableManager> tvm;
 
-		// The top of the current real thread's pseudo-thread stack. Derived from tvm on each read (a single
-		// ThreadLocal access plus a stack peek); there is intentionally no separate cache field, because every
-		// caller funnels through here and a stale cache would be a correctness hazard, not a speedup.
-		internal ThreadVariables CurrentThread => EnsureCurrentThreadVariables();
+		// The pseudo-thread running on this real thread.
+		[ThreadStatic]
+		private static ThreadVariables current;
+
+		/// <summary>The current pseudo-thread of <see cref="Script.TheScript"/>; never null while a script exists.</summary>
+		internal static ThreadVariables Current
+		{
+			[MethodImpl(MethodImplOptions.AggressiveInlining)]
+			get => current is { } tv && ReferenceEquals(tv.owner, Script.TheScript) ? tv : RefreshCurrent();
+		}
+
+		[MethodImpl(MethodImplOptions.NoInlining)]
+		private static ThreadVariables RefreshCurrent() => Script.TheScript?.Threads.EnsureCurrentThreadVariables();
+
+		// This script's current pseudo-thread, which differs from Current only for a script other than TheScript, such as the
+		// owner of a pump posted before another script replaced it.
+		internal ThreadVariables CurrentThread => current is { } tv && ReferenceEquals(tv.owner, script) ? tv : EnsureCurrentThreadVariables();
 
 		private ThreadVariableManager ThreadVariableManagerForCurrentThread => tvm.Value;
 
@@ -74,7 +87,7 @@ namespace Keysharp.Internals.Threading
 			var tvmLocal = ThreadVariableManagerForCurrentThread;
 
 			//Ensure there is always one thread in existence for reference purposes, but do not increment the actual thread counter.
-			return tvmLocal.threadVars.Index != 0
+			return current = tvmLocal.threadVars.Index != 0
 				   ? tvmLocal.threadVars.TryPeek()
 				   : tvmLocal.PushThreadVariables(0, true, false);
 		}
@@ -154,7 +167,8 @@ namespace Keysharp.Internals.Threading
 					return false;
 			}
 
-			tv = ThreadVariableManagerForCurrentThread.PushThreadVariables(priority, skipUninterruptible, isCritical, kind);
+			var manager = ThreadVariableManagerForCurrentThread;
+			tv = manager.PushThreadVariables(priority, skipUninterruptible, isCritical, kind);
 
 			if (tv == null)
 			{
@@ -166,11 +180,7 @@ namespace Keysharp.Internals.Threading
 				return false;
 			}
 
-			// Park the interrupted thread's executing-function scope on the pushed pseudo-thread and start fresh, so
-			// an interrupting timer/hotkey body never inherits or leaks it (restored in PopThreadVariables). The scope
-			// itself is [ThreadStatic] on Script; this is the rare interrupt boundary, not the hot call path.
-			tv.savedExecScope = Script.executingUserFunc;
-			Script.executingUserFunc = null;
+			current = tv;
 
 			//We successfully pushed—and if inc == true, we’ve already counted it
 			tv.task = true;
@@ -210,15 +220,45 @@ namespace Keysharp.Internals.Threading
 
 		/// <summary>
 		/// The script-visible <c>KeysharpThread</c> for the current pseudo-thread (<c>A_Thread</c>), created on first
-		/// read and cached on the pooled <see cref="ThreadVariables"/> so repeated reads do not allocate.
+		/// read or when Exit unwinds the thread, and cached on the pooled <see cref="ThreadVariables"/> so repeated reads
+		/// do not allocate.
 		/// </summary>
 		internal Keysharp.Builtins.KeysharpThread CurrentThreadObject
 			=> Keysharp.Builtins.KeysharpThread.Wrap(ThreadVariableManagerForCurrentThread, CurrentThread);
+
+		/// <summary>
+		/// An Exit inside an OnError callback ends only the callback (AHK EARLY_EXIT), so the thread takes back its exit state.
+		/// </summary>
+		internal readonly struct ExitState
+		{
+			private readonly ThreadVariables tv;
+			private readonly int? requested;
+			private readonly object recorded;
+
+			internal ExitState(ThreadVariables tv)
+			{
+				this.tv = tv;
+				requested = tv.requestedExitCode;
+				recorded = tv.threadObject?.RecordedExitCode;
+			}
+
+			internal void Restore()
+			{
+				tv.requestedExitCode = requested;
+
+				if (tv.threadObject is { } thread)
+					thread.RecordedExitCode = recorded;
+			}
+		}
 
 		internal void ThrowIfExitRequested(ThreadVariables tv)
 		{
 			if (tv.requestedExitCode is not int exitCode)
 				return;
+
+			// The code lives on the wrapper, which outlives the pooled slot, so it is made here when nothing has read it yet
+			// and a first read during the unwind still finds the code. Only an exiting thread pays for it.
+			Keysharp.Builtins.KeysharpThread.Wrap(ThreadVariableManagerForCurrentThread, tv).RecordedExitCode = (long)exitCode;
 
 			// As in AHK, the code is left for the exit that may follow only when this is the only running thread.
 			if (Volatile.Read(ref script.totalExistingThreads) <= 1)
@@ -271,10 +311,9 @@ namespace Keysharp.Internals.Threading
 
 		internal void PopThreadVariables(ThreadVariables tv, bool checkThread = false)
 		{
-			ThreadVariableManagerForCurrentThread.PopThreadVariables(tv, checkThread);
-			// Restore the executing-function scope captured when this pseudo-thread was pushed (see
-			// TryPushThreadVariables), so the interrupted thread resumes with its own scope.
-			Script.executingUserFunc = tv.savedExecScope;
+			var manager = ThreadVariableManagerForCurrentThread;
+			manager.PopThreadVariables(tv, checkThread);
+			current = manager.threadVars.TryPeek();
 		}
 	}
 }

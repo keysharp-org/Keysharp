@@ -237,8 +237,8 @@ namespace Keysharp.Internals.UI.Unix
 		internal object ShowInternalVars(bool showTab)
 		{
 			// Snapshot the running function's locals on THIS (script) thread before the async UI hop; the scope is
-			// [ThreadStatic], so the UI thread has its own (null) value and would otherwise see no executing-function scope.
-			var execScope = Script.executingUserFunc;
+			// pseudo-thread local, so the UI thread would otherwise see no executing-function scope.
+			var execScope = Threads.Current.executionScope;
 			var execLocals = execScope?.Enumerate().ToList();
 			var execName = execScope?.Name;
 			_ = QueueUiUpdate(() =>

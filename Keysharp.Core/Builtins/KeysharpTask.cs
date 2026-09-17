@@ -245,6 +245,8 @@ namespace Keysharp.Builtins
 
 				try
 				{
+					// The task fails with what the producer raises.
+					using var tryScope = Keysharp.Runtime.Flow.EnterTry();
 					_ = Script.InvokeOrNull(producerValue, null, args[.. arity.Accepted]);
 				}
 				catch (Exception ex) when (TryGetUserExit(ex, out var exit))
@@ -303,10 +305,10 @@ namespace Keysharp.Builtins
 					{
 						_ = completion.TrySetException(Reason switch
 						{
-							Error e => e.Exception,
+							Error e => e.AsException(),
 							Exception ex => ex,
-							null => new Error("The task failed.").Exception,
-							_ => new Error(Reason.As()).Exception
+							null => new Error("The task failed.").AsException(),
+							_ => new Error(Reason.As()).AsException()
 						});
 					}
 					catch (Exception ex) when (TryGetUserExit(ex, out var exit))
@@ -362,7 +364,7 @@ namespace Keysharp.Builtins
 						if (!thread.Started)
 							return thread.Result;
 
-						_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
+						_ = Errors.ReportUncaught(ex);
 						return ScriptEventExecutionResult.Executed;
 					}))
 						e.SetObserved();
@@ -439,7 +441,7 @@ namespace Keysharp.Builtins
 							if (source.IsCanceled)
 								_ = completion.TrySetCanceled();
 							else
-								_ = completion.TrySetException(source.GetMappedError().Exception);
+								_ = completion.TrySetException(source.GetMappedError().AsException());
 
 							Release();
 							return;
@@ -492,6 +494,8 @@ namespace Keysharp.Builtins
 							{
 								result = ScriptEventExecutionResult.Executed;
 								var argument = source.IsFailed ? source.GetMappedError() : source.Result;
+								// The continuation fails with what the callback raises.
+								using var tryScope = Keysharp.Runtime.Flow.EnterTry();
 								var value = Script.CallbackArgCount(action, 1) == 0
 									? Script.InvokeOrNull(action, null) : Script.InvokeOrNull(action, null, argument);
 								ResolveCompletion(completion, value);
@@ -583,7 +587,7 @@ namespace Keysharp.Builtins
 							if (nested.IsCanceled || (nested.IsFaulted && IsSoleUserExit(nested.Exception)))
 								_ = completion.TrySetCanceled();
 							else if (nested.IsFaulted)
-								_ = completion.TrySetException(Wrap(nested).GetMappedError().Exception);
+								_ = completion.TrySetException(Wrap(nested).GetMappedError().AsException());
 							else
 								_ = completion.TrySetException(ex);
 
@@ -623,16 +627,16 @@ namespace Keysharp.Builtins
 						if (seen == null)
 							return null;
 
-						throw new TypeError("__Await() must return awaitable work.").Exception;
+						throw new TypeError("__Await() must return awaitable work.");
 					}
 
 					seen ??= new(ReferenceEqualityComparer.Instance);
 
 					if (!seen.Add(value))
-						throw new Error("__Await resolution cycle detected.").Exception;
+						throw new Error("__Await resolution cycle detected.");
 
 					if (awaitMethod.MinParams > 1)
-						throw new TypeError("__Await() must not require arguments.").Exception;
+						throw new TypeError("__Await() must not require arguments.");
 
 					value = awaitMethod.Call(value);
 				}

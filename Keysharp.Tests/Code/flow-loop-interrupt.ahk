@@ -8,6 +8,8 @@
 class T {
     static Fired := false
     static Ticks := 0
+    static Index := ""
+    static Field := ""
 }
 
 Fire() {
@@ -83,5 +85,29 @@ Loop 10 {
         A_Index := 8
 }
 AssertEq(seen, 5, A_LineNumber)
+
+; A thread which interrupts a loop starts outside every loop, as a new AutoHotkey thread does: A_Index is 0 and
+; A_LoopField empty there, and its assignment to A_Index leaves the interrupted loop's own intact.
+LoopState() {
+    T.Index := A_Index
+    T.Field := A_LoopField
+    A_Index := 99
+}
+
+Loop Parse "a,b,c", "," {
+    if (A_Index != 2)
+        continue
+    SetTimer(LoopState, -1)
+    Sleep(100)
+    t0 := A_TickCount
+    while (T.Index == "" && A_TickCount - t0 < 4000)
+        Sleep(10)
+    resumedIndex := A_Index
+    resumedField := A_LoopField
+}
+AssertEq(T.Index, 0, A_LineNumber)
+AssertEq(T.Field, "", A_LineNumber)
+AssertEq(resumedIndex, 2, A_LineNumber)
+AssertEq(resumedField, "b", A_LineNumber)
 
 FileAppend "pass", "*"

@@ -31,6 +31,7 @@ namespace Keysharp.Builtins
 		private readonly ThreadVariableManager manager;
 		private readonly ThreadVariables tv;
 		private readonly long id;
+		private volatile object exitCode;                     // the boxed code, once the thread unwinds by Exit
 
 		internal KeysharpThread(ThreadVariableManager manager, ThreadVariables tv) : base()
 		{
@@ -215,9 +216,16 @@ namespace Keysharp.Builtins
 		/// any other one is marked and unwinds when it next resumes and processes events, which is cooperative and
 		/// does not asynchronously abort managed code. A later request replaces a pending exit code.
 		/// </summary>
-		/// <param name="exitCode">The process exit code to apply if the script exits when this thread ends. Default: 0.</param>
+		/// <param name="exitCode">The code the thread ends with: its <see cref="ExitCode"/>, and the process exit code if
+		/// the script exits when this thread ends. Default: 0.</param>
 		/// <returns>This thread's ID.</returns>
 		public object Exit(object exitCode = null) => manager.Owner.Threads.RequestExit(Mutable(), exitCode.Ai());
+
+		/// <summary>The code this thread's <c>Exit</c> ended it with, readable from any thread from the start of its
+		/// unwind; an empty string while it runs or when it ended some other way.</summary>
+		public object ExitCode => exitCode ?? "";
+
+		internal object RecordedExitCode { get => exitCode; set => exitCode = value; }
 
 		public override string ToString() => $"Thread {id}";
 

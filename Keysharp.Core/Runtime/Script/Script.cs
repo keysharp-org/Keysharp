@@ -377,7 +377,6 @@ namespace Keysharp.Runtime
 		private JoystickData joystickData;
 		private KeyboardData keyboardData;
 		private KeyboardUtilsData keyboardUtilsData;
-		private LoopData loopData;
 		private nint mainWindowHandle;
 		private ProcessesData processesData;
 		private RegExData regExData;
@@ -453,8 +452,6 @@ namespace Keysharp.Runtime
 		internal JoystickData JoystickData => joystickData ?? (joystickData = new ());
 		internal KeyboardData KeyboardData => keyboardData ?? (keyboardData = new ());
 		internal KeyboardUtilsData KeyboardUtilsData => keyboardUtilsData ?? (keyboardUtilsData = new ());
-		internal LoopData LoopData => loopData ?? (loopData = new ());
-
 		internal nint MainWindowHandle
 		{
 			get
@@ -615,6 +612,8 @@ namespace Keysharp.Runtime
 			//owned by another pumping thread) can dispatch a message the instant TheScript points at this instance,
 			//and KeysharpForm.WndProc reads the filter, so it must never observe a half-constructed script.
 			msgFilter = new MessageFilter(this);
+			//Threads.Current resolves through TheScript.Threads, so the lazy holder must exist once TheScript is published.
+			threads = new(() => new Threads(this));
 			Script.TheScript = this;//Everything resolving the current script from here on sees this instance.
 			NativeMainThreadID = CurrentThreadId();
 			ManagedMainThreadID = Environment.CurrentManagedThreadId;
@@ -643,7 +642,6 @@ namespace Keysharp.Runtime
 			//null base when Prototypes is still empty, so any object built on another thread before this runs is
 			//quietly malformed rather than failing.
 			Vars.InitClasses();
-			threads = new(() => new Threads(this));
 			Threads.EnsureCurrentThreadVariables();
 			mainEventScheduler = ThreadScheduler;
 			HookThread = CreateHookThread(hookMutexName ?? Manifest?.HookMutexName);
@@ -757,7 +755,7 @@ namespace Keysharp.Runtime
 				if (!SetDllDirectory(null))//An empty #DllLoad restores the default search order.
 					if (throwOnFailure)
 					{
-						_ = Errors.ErrorOccurred("Platform.Library.SetDllDirectory(null) failed.", null, Keyword_ExitApp);
+						_ = Errors.ErrorOccurred("Platform.Library.SetDllDirectory(null) failed.", null, ErrorMode.ExitApp);
 						return;
 					}
 			}
@@ -766,7 +764,7 @@ namespace Keysharp.Runtime
 				if (!SetDllDirectory(library))
 					if (throwOnFailure)
 					{
-						_ = Errors.ErrorOccurred($"Platform.Library.SetDllDirectory({library}) failed.", null, Keyword_ExitApp);
+						_ = Errors.ErrorOccurred($"Platform.Library.SetDllDirectory({library}) failed.", null, ErrorMode.ExitApp);
 						return;
 					}
 			}
@@ -801,7 +799,7 @@ namespace Keysharp.Runtime
 				}
 				else if (throwOnFailure)
 				{
-					_ = Errors.ErrorOccurred($"Failed to load DLL {libraryName}.", null, Keyword_ExitApp);
+					_ = Errors.ErrorOccurred($"Failed to load DLL {libraryName}.", null, ErrorMode.ExitApp);
 					return;
 				}
 			}
@@ -1492,62 +1490,21 @@ namespace Keysharp.Runtime
 
 		public void SetReady() => isReadyToExecute = true;
 
-		public static void ProcessUnhandledException(Script script, Exception ex)
-		{
-			if (ex == null)
-				return;
-
-			var unwrapped = Keysharp.Runtime.Flow.UnwrapException(ex);
-
-			if (unwrapped is Keysharp.Builtins.Flow.UserRequestedExitException)
-				return;
-
-			if (unwrapped is KeysharpException kserr)
-			{
-				var msg = "Uncaught Keysharp exception:\r\n" + kserr;
-				WriteUncaughtErrorToStdErr(msg);
-
-				if (script == null || !script.SuppressErrorOccurredDialog)
-					_ = ErrorDialog.Show(kserr, false);
-
-				return;
-			}
-
-			WriteUncaughtErrorToStdErr("Uncaught exception:\r\n" + unwrapped);
-
-			if (script == null || !script.SuppressErrorOccurredDialog)
-				_ = ErrorDialog.Show(unwrapped, false);
-		}
-
-		public static void TryProcessUnhandledException(Script script, Exception ex)
+		/// <summary>
+		/// Reports an exception which ended the auto-execute thread, as any thread's is reported, for the generated Main.
+		/// </summary>
+		/// <returns>True if the script is already exiting.</returns>
+		public static bool ReportUncaught(Exception ex)
 		{
 			try
 			{
-				ProcessUnhandledException(script, ex);
+				return Errors.ReportUncaught(ex);
 			}
+			// The script may be half torn down, and Main exits either way.
 			catch (Exception)
 			{
+				return false;
 			}
-		}
-
-		public static void TryProcessKeysharpException(Script script, KeysharpException kserr)
-		{
-			if (kserr == null)
-				return;
-
-			if (!kserr.UserError.Processed)
-			{
-				try
-				{
-					_ = Errors.ErrorOccurred(kserr.UserError, kserr.UserError.ExcType);
-				}
-				catch (Exception)
-				{
-				}
-			}
-
-			if (!kserr.UserError.Handled)
-				TryProcessUnhandledException(script, kserr);
 		}
 
 		public static void SafeExit(int code)
@@ -1562,8 +1519,6 @@ namespace Keysharp.Runtime
 			{
 			}
 		}
-
-		public void HandleUncaughtException(Exception ex) => ProcessUnhandledException(this, ex);
 
 		/// <summary>
 		/// Writes uncaught script errors to stderr in debug builds to improve test diagnostics.

@@ -13,22 +13,17 @@ namespace Keysharp.Tests
 	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class RealThreadTests : TestRunner
 	{
-		private static int hookWinCriterionCalls;
-		private static bool hookWinCriterionResult;
-
-		// A named callable that runs an arbitrary delegate. Derives from KeysharpFunc (rather than implementing
-		// an interface) and overrides every member used here, so none of the base implementation's reflection
-		// state is needed. These must be overrides, not new members: callers hold it as a KeysharpFunc.
-		private sealed class NamedCriterion(string name, Func<object> callback) : KeysharpFunc
+		// Dispatch treats this as a HotIfWinExist criterion because it binds that function, but it counts its
+		// evaluations and finds window 1 without searching.
+		private sealed class CountingWinCriterion() : BoundFunc(MethodPropertyHolder.GetOrAdd(typeof(HotkeyDefinition).GetMethod("HotIfWinExistPrivate", BindingFlags.NonPublic | BindingFlags.Static)), ["", ""])
 		{
-			public override bool IsBuiltIn => false;
-			internal override bool IsValid => true;
-			public override string Name => name;
-			public override KeysharpFunc Bind(params object[] obj) => this;
-			public override object Call(params object[] obj) => callback();
-			public override object CallInst(object inst, params object[] obj) => callback();
-			public override bool IsByRef(object obj = null) => false;
-			public override bool IsOptional(object obj = null) => false;
+			internal int calls;
+
+			public override object Call(params object[] args)
+			{
+				_ = Interlocked.Increment(ref calls);
+				return 1L;
+			}
 		}
 
 		private sealed class CallbackProbe
@@ -246,7 +241,8 @@ namespace Keysharp.Tests
 						_ = registrations.Overlay.OnEvent("Click", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => probe.Record("overlay"))));
 
 						_ = Env.OnClipboardChange(new KeysharpFunc((Func<object, object>)(_ => probe.Record("clipboard"))));
-						registrations.CallbackHolder = (DelegateHolder)Dll.CallbackCreate(new KeysharpFunc((Func<object>)(() => probe.Record("callbackcreate"))));
+						_ = Dll.CallbackCreate(new KeysharpFunc((Func<object>)(() => probe.Record("callbackcreate"))));
+						registrations.CallbackHolder = s.EventScheduler.GetOwnedDelegatesSnapshot().Single();
 					}
 					catch (Exception ex)
 					{
@@ -400,6 +396,7 @@ namespace Keysharp.Tests
 			var ready = new ManualResetEventSlim(false);
 			var exitRequested = new ManualResetEventSlim(false);
 			Ks.RealThread worker = null;
+			KeysharpThread targetThread = null;
 
 			try
 			{
@@ -413,7 +410,7 @@ namespace Keysharp.Tests
 				Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() =>
 					s.EventScheduler.TryExecuteThreadLaunch(0, false, false, tv =>
 					{
-						var targetThread = s.Threads.CurrentThreadObject;
+						targetThread = s.Threads.CurrentThreadObject;
 						_ = worker.Send(new KeysharpFunc((Func<object>)(() =>
 						{
 							s.UIEventScheduler.EnqueueCallback(() =>
@@ -426,7 +423,7 @@ namespace Keysharp.Tests
 						})));
 					}));
 
-				Assert.AreEqual(8, Environment.ExitCode);
+				Assert.AreEqual(8L, targetThread.ExitCode, "The exited thread keeps its code; the script does not exit here.");
 			}
 			finally
 			{
@@ -503,16 +500,11 @@ namespace Keysharp.Tests
 		{
 			var callbackRan = new ManualResetEventSlim(false);
 			var previousCriterion = s.Threads.CurrentThread.hotCriterion;
-			var previousCalls = Interlocked.Exchange(ref hookWinCriterionCalls, 0);
-			hookWinCriterionResult = true;
+			var criterion = new CountingWinCriterion();
 
 			try
 			{
-				s.Threads.CurrentThread.hotCriterion = new NamedCriterion("HotIfWinActivePrivate", () =>
-				{
-					_ = Interlocked.Increment(ref hookWinCriterionCalls);
-					return hookWinCriterionResult;
-				});
+				s.Threads.CurrentThread.hotCriterion = criterion;
 
 				var hk = new HotkeyDefinition(s, (uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ =>
 				{
@@ -525,7 +517,7 @@ namespace Keysharp.Tests
 				Assert.IsNotNull(buildMethod, "Hook hotkey message builder should exist.");
 				var args = new object[] { hk.id, 0UL, null, null, null };
 				Assert.IsTrue((bool)buildMethod.Invoke(s.HookThread, args), "Hook hotkey should qualify successfully.");
-				Assert.AreEqual(1, Volatile.Read(ref hookWinCriterionCalls), "Window-style criterion should be evaluated once on the hook side.");
+				Assert.AreEqual(1, Volatile.Read(ref criterion.calls), "Window-style criterion should be evaluated once on the hook side.");
 
 				var hookMsg = (HookHotkeyMsg)args[4];
 				Assert.IsNull(hookMsg.variant, "Window-style criteria should be re-evaluated on receipt instead of dispatching the prequalified variant directly.");
@@ -538,14 +530,13 @@ namespace Keysharp.Tests
 					obj = hookMsg
 				}));
 
-				Assert.IsTrue(WaitWithUiPump(() => Volatile.Read(ref hookWinCriterionCalls) == 2), "Window-style criterion was not re-evaluated on receipt.");
+				Assert.IsTrue(WaitWithUiPump(() => Volatile.Read(ref criterion.calls) == 2), "Window-style criterion was not re-evaluated on receipt.");
 				Assert.IsTrue(WaitWithUiPump(() => callbackRan.IsSet, 5000), "Re-evaluated hook hotkey did not dispatch.");
-				Assert.AreEqual(2, Volatile.Read(ref hookWinCriterionCalls), "Window-style criterion should be evaluated again when the message is received.");
+				Assert.AreEqual(2, Volatile.Read(ref criterion.calls), "Window-style criterion should be evaluated again when the message is received.");
 			}
 			finally
 			{
 				s.Threads.CurrentThread.hotCriterion = previousCriterion;
-				_ = Interlocked.Exchange(ref hookWinCriterionCalls, previousCalls);
 			}
 		}
 

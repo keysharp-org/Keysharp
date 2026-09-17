@@ -48,7 +48,7 @@ namespace Keysharp.Builtins
 				// A currently-executing deref function exposes its locals/closures by name. Resolve a closure (a
 				// live KeysharpFunc instance, possibly capturing locals) ahead of the module/global tables — these are
 				// per-invocation and must never be cached.
-				var scope = Script.executingUserFunc;
+				var scope = Threads.Current.executionScope;
 
 				if (scope != null && scope.TryGetVar(s, out var scopeVal) && scopeVal is KeysharpFunc scopeFo && scopeFo.IsValid)
 					return scopeFo;

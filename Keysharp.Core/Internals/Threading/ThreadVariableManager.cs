@@ -13,13 +13,16 @@ namespace Keysharp.Internals.Threading
 		/// So we create a SlimStack to be used as an object pool which we push and pop each time a thread starts and finishes.
 		/// </summary>
 		internal SlimStack<ThreadVariables> threadVars;
+		// Whether this real thread is running OnError callbacks, which do not run again for an error they raise. It is shared
+		// by its pseudo-threads, so one RealThread's error does not depend on whether another is inside OnError.
+		internal bool onErrorRunning;
 		internal Script Owner => script;
 		internal int PseudoThreadCount => Math.Max(0, threadVars.Index - 1);
 
 		internal ThreadVariableManager(Script script, int size)
 		{
 			this.script = script ?? throw new ArgumentNullException(nameof(script));
-			threadVars = new (size, () => new ThreadVariables());
+			threadVars = new (size, () => new ThreadVariables(script));
 		}
 
 		internal ThreadVariables TryGetPseudoThread(int index)
@@ -63,13 +66,13 @@ namespace Keysharp.Internals.Threading
 				{
 					if (!ReferenceEquals(tv, threadVarsToPop))
 					{
-						_ = Errors.ErrorOccurred("Severe threading error: Tried to pop a ThreadVariables object that was not at the top of the stack. This should never happen.", null, Keyword_ExitApp);
+						_ = Errors.ErrorOccurred("Severe threading error: Tried to pop a ThreadVariables object that was not at the top of the stack. This should never happen.", null, ErrorMode.ExitApp);
 						return;
 					}
 
 					if (checkThread && ctid != tv.threadId)
 					{
-						_ = Errors.ErrorOccurred($"Severe threading error: ThreadVariables.threadId {tv.threadId} did not match the current thread id {ctid}. This should never happen.", null, Keyword_ExitApp);
+						_ = Errors.ErrorOccurred($"Severe threading error: ThreadVariables.threadId {tv.threadId} did not match the current thread id {ctid}. This should never happen.", null, ErrorMode.ExitApp);
 						return;
 					}
 				}
@@ -83,7 +86,7 @@ namespace Keysharp.Internals.Threading
 
 			if (pushed)
 			{
-				tv.Init(script);
+				tv.Init();
 				tv.threadId = Thread.CurrentThread.ManagedThreadId;
 				tv.kind = kind;
 
@@ -109,7 +112,7 @@ namespace Keysharp.Internals.Threading
 					if (!tv.isCritical)
 						tv.isCritical = isCritical;
 
-					tv.ApplyUninterruptibleStartupWindow(script);
+					tv.ApplyUninterruptibleStartupWindow();
 				}
 			}
 

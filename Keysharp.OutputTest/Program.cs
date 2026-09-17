@@ -62,18 +62,8 @@ namespace Keysharp.CompiledMain
 			}
 			catch (System.Exception mainex)
 			{
-				var ex = Keysharp.Runtime.Flow.UnwrapException(mainex);
-				if (ex is Keysharp.Builtins.Flow.UserRequestedExitException)
+				if (Keysharp.Runtime.Script.ReportUncaught(mainex))
 					return System.Environment.ExitCode;
-				if (ex is Keysharp.Builtins.KeysharpException kserr)
-				{
-					Keysharp.Runtime.Script.TryProcessKeysharpException(MainScript, kserr);
-				}
-				else
-				{
-					Keysharp.Runtime.Script.TryProcessUnhandledException(MainScript, ex);
-				}
-
 				Keysharp.Runtime.Script.SafeExit(1);
 			}
 

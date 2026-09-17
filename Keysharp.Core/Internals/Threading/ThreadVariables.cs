@@ -96,6 +96,7 @@ namespace Keysharp.Internals.Threading
 	{
 		internal static readonly long DefaultPeekFrequency = 5L;
 		internal static readonly long DefaultUninterruptiblePeekFrequency = 16L;
+		internal readonly Script owner;
 
 		// These describe the runtime state of the pseudo-thread
 		//internal Task<object> task = null;
@@ -113,12 +114,15 @@ namespace Keysharp.Internals.Threading
 		// rarely read, so parking a factory lets producers (hook events, PCRE callouts) skip constructing the
 		// value unless the script actually inspects it. Use SetEventInfo to park a lazy value.
 		internal object eventInfo;
-		// The executing-function scope (Script.executingUserFunc) that was current when this pseudo-thread was
-		// pushed, parked here by Threads.TryPushThreadVariables and restored by PopThreadVariables. The scope itself
-		// lives [ThreadStatic] on Script (off the hot call path — see Script.executingUserFunc); this is only the
-		// per-pseudo-thread save slot used at the interrupt boundary, so an interrupting thread (timer/hotkey) starts
-		// with no scope and the interrupted one is restored on return.
-		internal Keysharp.Runtime.FuncScope savedExecScope;
+		internal Keysharp.Runtime.FuncScope executionScope;
+		// A pseudo-thread owns its flow state, so an interrupt starts outside the interrupted thread's loops and catches.
+		internal readonly Stack<Keysharp.Runtime.LoopInfo> loopStack = new ();
+		// A try, or a built-in standing in for one, catches what this pseudo-thread raises (AHK's EXCPTMODE_CATCH).
+		internal bool insideTry;
+		// The value the innermost active catch handles, which a bare throw re-raises.
+		internal Keysharp.Builtins.Error caughtError;
+		// A_Index while no loop runs, which a script may assign.
+		internal long indexOutsideLoops;
 		internal object hotCriterion;
 		internal long hwndLastUsed = 0;
 		internal long lastFoundForm;
@@ -132,10 +136,9 @@ namespace Keysharp.Internals.Threading
 		internal int lastError = 0;
 		// What launched this pseudo-thread; script-visible as Thread.Kind. Set once at push time.
 		internal ThreadKind kind;
-		// The script-visible KeysharpThread wrapper for this pseudo-thread, created on the first read of A_Thread and
-		// cleared on reuse. Scripts that never ask for it pay one null field on a pooled object. The wrapper captures
-		// pseudoThreadId and validates it on every access, so a wrapper held past this slot's reuse reports itself
-		// inactive rather than silently describing an unrelated later pseudo-thread.
+		// The script-visible KeysharpThread wrapper for this pseudo-thread, created on the first read of A_Thread or when
+		// Exit unwinds the thread, and cleared on reuse. The wrapper captures pseudoThreadId and validates it on every
+		// access, so a wrapper held past this slot's reuse reports itself inactive rather than describing a later thread.
 		internal Keysharp.Builtins.KeysharpThread threadObject;
 
 		// These describe the configuration defaults of the pseudo-thread,
@@ -150,70 +153,45 @@ namespace Keysharp.Internals.Threading
 
 		internal StringBuilder RegSb => regsb != null ? regsb : regsb = new StringBuilder(1024);
 
+		internal ThreadVariables(Script owner) => this.owner = owner;
+
 		// Every newly launched thread is uninterruptible for a startup window (the "Thread Interrupt" time) unless
 		// that time is 0; a Critical thread stays uninterruptible indefinitely (-1). The becoming-interruptible moment
 		// is locked in at launch so a later Thread('Interrupt', n) only affects FUTURE threads. See IsInterruptible().
-		internal void ApplyUninterruptibleStartupWindow(Script script)
+		internal void ApplyUninterruptibleStartupWindow()
 		{
-			if (script.uninterruptibleTime != 0 || isCritical)
+			if (owner.uninterruptibleTime != 0 || isCritical)
 			{
 				allowThreadToBeInterrupted = false;
 
-				if (isCritical || script.uninterruptibleTime < 0)
+				if (isCritical || owner.uninterruptibleTime < 0)
 					UninterruptibleDuration = -1;
 				else
 					// threadStartTick was already stamped by Init(); the uninterruptible window measures from the
 					// same launch instant, so there is nothing to re-read here.
-					UninterruptibleDuration = script.uninterruptibleTime;
+					UninterruptibleDuration = owner.uninterruptibleTime;
 			}
 		}
 
-		/// <summary>
-		/// The fields in this function must be kept in sync with the fields declared above.
-		/// </summary>
-		public void Clear()
-		{
-			task = false;// null;
-			isCritical = false;
-			allowThreadToBeInterrupted = true;
-			UninterruptibleDuration = 17;
-			threadStartTick = 0L;
-			currentTimer = null;
-			defaultGui = null;
-			dialogOwner = null;
-			eventInfo = null;
-			savedExecScope = null;
-			hotCriterion = null;
-			hwndLastUsed = 0;
-			lastFoundForm = 0L;
-			randomGenerator = null;
-			_ = (regsb?.Clear());
-			priority = 0L;
-			lastPeekTick = 0;
-			threadId = 0;
-			pseudoThreadId = 0L;
-			requestedExitCode = null;
-			lastError = 0;
-			kind = ThreadKind.None;
-			threadObject = null;
-		}
-
-		internal void Init(Script script)
+		internal void Init()
 		{
 			task = false;// null;
 			isCritical = false;
 			isPaused = false;
 			allowThreadToBeInterrupted = true;
-			UninterruptibleDuration = script.uninterruptibleTime;
+			UninterruptibleDuration = owner.uninterruptibleTime;
 			// Stamped unconditionally (not just when the uninterruptible window applies) so KeysharpThread.Elapsed
-			// always has a launch instant to measure from. One shared-page read per pseudo-thread launch, and
-			// ApplyUninterruptibleStartupWindow no longer reads it a second time.
+			// always has a launch instant to measure from, and ApplyUninterruptibleStartupWindow reuses it.
 			threadStartTick = Environment.TickCount64;
 			currentTimer = null;
 			defaultGui = null;
 			dialogOwner = null;
 			eventInfo = null;
-			savedExecScope = null;
+			executionScope = null;
+			loopStack.Clear();
+			insideTry = false;
+			caughtError = null;
+			indexOutsideLoops = 0;
 			hotCriterion = null;
 			hwndLastUsed = 0;
 			lastFoundForm = 0;
@@ -229,7 +207,7 @@ namespace Keysharp.Internals.Threading
 			threadObject = null;
 			// Instead of cloning the instance, copy the data because
 			// allocating the memory for new instances is expensive
-			configData.CopyFromPrototypeConfigData(script);
+			configData.CopyFromPrototypeConfigData(owner);
 			isCritical = configData.defaultIsCritical;
 		}
 

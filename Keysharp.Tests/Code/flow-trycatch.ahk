@@ -501,4 +501,45 @@ catch {
 
 Assert(b, A_LineNumber)
 
+; A try with a catch hides the outer caught value, so a bare throw in it raises a new Error.
+inner := ""
+
+try
+	throw ValueError("outer caught")
+catch ValueError {
+	try
+		throw
+	catch Error as inner
+		0
+}
+AssertEq(Type(inner) " " inner.Message, "Error An exception was thrown.", A_LineNumber)
+
+; Throw() with no value rethrows the error the catch is handling.
+caught := ValueError("rethrown by Throw()")
+outer := ""
+rethrow := () => Throw()
+
+try {
+	try
+		throw caught
+	catch ValueError
+		rethrow()
+}
+catch Error as outer
+	0
+Assert(outer == caught, A_LineNumber)
+
+; Outside a catch, Throw() with no value raises a new Error.
+outside := ""
+throwNothing := () => Throw()
+
+try
+	throwNothing()
+catch Error as outside
+	0
+AssertEq(Type(outside) " " outside.Message, "Error An exception was thrown.", A_LineNumber)
+
+; An object message is empty text, whatever properties the object has.
+AssertEq(Error({ Message: "x" }).Message, "", A_LineNumber)
+
 FileAppend "pass", "*"

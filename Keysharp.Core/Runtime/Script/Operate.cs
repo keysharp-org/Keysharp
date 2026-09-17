@@ -856,22 +856,10 @@ namespace Keysharp.Runtime
             variable = initFunc();
         }
 
-		// The scope of the user function currently executing on this thread, or null when none publishes one (a
-		// non-deref function, a builtin, or before any function runs). It is a pure call-stack concern: KeysharpFunc.Call
-		// brackets it with a local (clear on entry, restore on return) — which nests exactly like a synchronous
-		// callout or a nested call — and the pseudo-thread push/pop (Threads.TryPushThreadVariables / PopThreadVariables)
-		// resets and restores it across an interrupt boundary. Held [ThreadStatic] rather than on ThreadVariables so the
-		// hot call path needs no CurrentThread lookup; null is the correct default for every thread. Read by RegEx-callout
-		// closure resolution (Functions.GetKeysharpFunc) and ListVars (Debug.GetVars via MainWindow), always on the owning thread.
-		[ThreadStatic] internal static FuncScope executingUserFunc;
-
-		// Installs the executing-function scope for the current thread. Emitted into the prologue of any scope-publishing
-		// function so external code can resolve its locals/closures by name (and ListVars can show them). The Lowerer
-		// passes the function's exact AHK-visible name (used by A_ThisFunc and the ListVars header),
-		// so EnterScope reads nothing from thread state. KeysharpFunc.Call clears the scope on entry to and restores it on
-		// return from every user function, so no matching "leave" call is needed here.
+		// Publishes a function's scope on the current pseudo-thread. KeysharpFunc.Call restores the previous one on return,
+		// so no matching leave call is emitted.
 		public static void EnterScope(FuncScope.Reader reader, Func<string[]> namesFactory, string name) =>
-			executingUserFunc = new FuncScope(name, reader, namesFactory);
+			Threads.Current.executionScope = new FuncScope(name, reader, namesFactory);
 
 		// Sentinel a scope reader/writer returns when the name isn't one of the function's variables (so the Deref
 		// helpers, and FuncScope, fall back to the module/global store). A private unique object — never a script value.

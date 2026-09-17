@@ -9,7 +9,7 @@ namespace Keysharp.Runtime
 	/// </summary>
 	public static class Loops
 	{
-		internal static Stack<LoopInfo> LoopStack => Script.TheScript.LoopData.loopStack.Value;
+		internal static Stack<LoopInfo> LoopStack => Threads.Current.loopStack;
 
 		/// <summary>
 		/// Increments the loop counter variable for the current loop.<br/>
@@ -19,7 +19,7 @@ namespace Keysharp.Runtime
 		/// <returns>The newly incremented count of the most recent loop, else 0 if no loops.</returns>
 		public static long Inc()
 		{
-			var s = Script.TheScript.LoopData.loopStack.Value;
+			var s = LoopStack;
 			return s.TryPeek(out var l) ? ++l.index : 0L;
 		}
 
@@ -140,18 +140,6 @@ namespace Keysharp.Runtime
 			}
 
 			//Caller must call Pop() after the loop exits.
-		}
-
-		/// <summary>
-		/// Returns the loop counter variable for the current loop.<br/>
-		/// This should never be called directly by the user and instead is used<br/>
-		/// in the generated C# code.
-		/// </summary>
-		/// <returns>The count of the most recent loop, else 0 if no loops.</returns>
-		public static long LoopIndex()
-		{
-			var s = Script.TheScript.LoopData.loopStack.Value;
-			return s.TryPeek(out var l) ? l.index : 0;
 		}
 
 		/// <summary>
@@ -549,20 +537,13 @@ namespace Keysharp.Runtime
         /// <returns>The popped loop if any, else null.</returns>
         public static LoopInfo Pop()
 		{
-			var s = Script.TheScript.LoopData.loopStack.Value;
+			var s = LoopStack;
 
 			if (s.TryPop(out var info) && info != null && info.type == LoopType.File && info.sw != null)
 				info.sw.Close();
 
 			return info;
 		}
-
-		/// <summary>
-		/// Removes the current try block from the stack.
-		/// This should never be called directly by the user and instead is used<br/>
-		/// in the generated C# code.
-		/// </summary>
-		public static bool PopTry() => Script.TheScript.LoopData.tryStack.Value.TryPop(out _);
 
 		/// <summary>
 		/// Pushes a new loop onto the stack.
@@ -574,58 +555,8 @@ namespace Keysharp.Runtime
 		public static LoopInfo Push(LoopType t = LoopType.Normal)
 		{
 			var info = new LoopInfo { type = t };
-			Script.TheScript.LoopData.loopStack.Value.Push(info);
+			LoopStack.Push(info);
 			return info;
-		}
-
-		/// <summary>
-		/// Pushes a new try block onto the stack.
-		/// This should never be called directly by the user and instead is used<br/>
-		/// in the generated C# code.
-		/// </summary>
-		public static object PushTry(params Type[] exceptionTypes)
-		{
-			Script.TheScript.LoopData.tryStack.Value.Push(exceptionTypes);
-			return null;
-		}
-
-		/// <summary>
-		/// Allows using PushTry and PopTry with an using block
-		/// </summary>
-		internal sealed class TryScope : IDisposable
-		{
-			private bool disposed;
-
-			public TryScope(params Type[] exceptionTypes)
-			{
-				PushTry(exceptionTypes);
-			}
-
-			public void Dispose()
-			{
-				if (disposed)
-					return;
-
-				PopTry();   // Again, reuse your existing helper
-				disposed = true;
-			}
-		}
-
-		/// <summary>
-		/// Determines whether an exception type will be caught in any of the surrounding try blocks.
-		/// </summary>
-		public static bool IsExceptionCaught(Type exceptionType)
-		{
-			foreach (var handled in Script.TheScript.LoopData.tryStack.Value)
-			{
-				foreach (var t in handled)
-				{
-					if (t.IsAssignableFrom(exceptionType))
-						return true;
-				}
-			}
-
-			return false;
 		}
 
 		/// <summary>
@@ -634,7 +565,7 @@ namespace Keysharp.Runtime
 		/// <returns>The most recent directory loop if found, else null.</returns>
 		internal static LoopInfo GetDirLoop()
 		{
-			var s = Script.TheScript.LoopData.loopStack.Value;
+			var s = LoopStack;
 
 			foreach (var l in s)
 			{
@@ -654,7 +585,7 @@ namespace Keysharp.Runtime
 		/// <returns>The filename of the most recent directory loop if found, else null.</returns>
 		internal static string GetDirLoopFilename()
 		{
-			var s = Script.TheScript.LoopData.loopStack.Value;
+			var s = LoopStack;
 
 			if (s.Count == 0)
 				return DefaultObject;
@@ -716,11 +647,11 @@ namespace Keysharp.Runtime
 		/// Returns the most recent loop item without removing it.
 		/// </summary>
 		/// <returns>The most recent loop item if found, else null.</returns>
-		internal static LoopInfo Peek() => Script.TheScript.LoopData.loopStack.Value.PeekOrNull();
+		internal static LoopInfo Peek() => LoopStack.PeekOrNull();
 
 		internal static LoopInfo Peek(LoopType looptype)
 		{
-			var s = Script.TheScript.LoopData.loopStack.Value;
+			var s = LoopStack;
 
 			foreach (var l in s)
 				if (l.type == looptype)
@@ -941,20 +872,6 @@ namespace Keysharp.Runtime
 		public object result;
 		public TextWriter sw;
 		public LoopType type = LoopType.Normal;
-	}
-
-	internal class LoopData
-	{
-		/// <summary>
-		/// The stack which keeps track of all loops currently running in the script.<br/>
-		/// This is ThreadLocal<> because it must actually be thread safe for real threads.
-		/// </summary>
-		internal ThreadLocal<Stack<LoopInfo>> loopStack = new (() => new ());
-		/// <summary>
-		/// The stack which keeps track of all try blocks currently running in the script.<br/>
-		/// This is ThreadLocal<> because it must actually be thread safe for real threads.
-		/// </summary>
-		internal ThreadLocal<Stack<Type[]>> tryStack = new (() => new ());
 	}
 
 	/// <summary>

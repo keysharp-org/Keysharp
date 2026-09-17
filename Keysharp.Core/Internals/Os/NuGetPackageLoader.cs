@@ -91,13 +91,13 @@ namespace Keysharp.Internals.Os
 				if (manifest == null)
 				{
 					_ = Errors.ErrorOccurred($"{label}: this script declares packages but carries no package manifest "
-											 + "(this is a Keysharp bug, not a script error)", null, Keyword_ExitApp);
+											 + "(this is a Keysharp bug, not a script error)", null, ErrorMode.ExitApp);
 					return;
 				}
 
 				if (!manifest.TryLocate(scriptAssembly, out var resolved, out var missing))
 				{
-					_ = Errors.ErrorOccurred($"{label}: {missing}", null, Keyword_ExitApp);
+					_ = Errors.ErrorOccurred($"{label}: {missing}", null, ErrorMode.ExitApp);
 					return;
 				}
 
@@ -330,7 +330,7 @@ namespace Keysharp.Internals.Os
 							continue;
 
 						_ = Errors.ErrorOccurred($"{label}: failed to load \"{path}\" from package {pkg.Id} {pkg.Version}: {e.Message}",
-												 null, Keyword_ExitApp);
+												 null, ErrorMode.ExitApp);
 					}
 				}
 

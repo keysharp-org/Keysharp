@@ -101,7 +101,7 @@ x := 1
 y := "x"
 
 ; Regression (Lowerer.AnyStmt): a %name% deref confined to a loop's ELSE clause must still bind to the
-; function's local scope. The lowering walks the Else body (LoopFinally), so scope detection (BodyHas) must
+; function's local scope. The lowering walks the Else body, so scope detection (BodyHas) must
 ; too — otherwise the write mislowers to the global store and the local is never set.
 loopelsederef()
 {

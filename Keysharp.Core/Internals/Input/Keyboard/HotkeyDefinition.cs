@@ -2427,7 +2427,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				}
 				catch (Exception ex)
 				{
-					_ = Keysharp.Internals.Flow.HandleCaughtException(ex);
+					_ = Errors.ReportUncaught(ex);
 				}
 
 				return callbackExecuted

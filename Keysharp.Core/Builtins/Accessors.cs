@@ -505,15 +505,17 @@ namespace Keysharp.Builtins
 		{
 			get
 			{
-				var s = Loops.LoopStack;
-				return s.TryPeek(out var result) ? result.index : default;
+				var tv = Threads.Current;
+				return tv.loopStack.TryPeek(out var loop) ? loop.index : tv.indexOutsideLoops;
 			}
 			set
 			{
-				var s = Loops.LoopStack;
+				var tv = Threads.Current;
 
-				if (s.TryPeek(out var result))
-					result.index = value.ToLong();
+				if (tv.loopStack.TryPeek(out var loop))
+					loop.index = value.ToLong();
+				else
+					tv.indexOutsideLoops = value.ToLong();
 			}
 		}
 
@@ -1396,7 +1398,7 @@ namespace Keysharp.Builtins
 			[MethodImpl(MethodImplOptions.NoInlining)]
 			get
 			{
-				if (Script.executingUserFunc is { } scope)
+				if (Threads.Current.executionScope is { } scope)
 					return scope.Name;
 
 				foreach (var frame in new StackTrace(1, false).GetFrames())

@@ -1825,8 +1825,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Built-in variable.",
-                     "tested-by":  "assign-dyn-var.ahk"
+                     "notes":  "The current loop iteration. Outside a loop it is a value of the current pseudo-thread, 0 when it starts, which a script may assign.",
+                     "tested-by":  "assign-dyn-var.ahk; flow-loop-interrupt.ahk; flow-loop-throw.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -2013,7 +2013,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Thread is a class rather than a function: calling it runs the AHK sub-functions (NoTimers/Priority/Interrupt) unchanged, and an instance describes one pseudo-thread: Id, Index (1-based), IsActive, Kind, Elapsed, Priority, Critical, Paused, IsInterruptible, Underlying and Exit. An Is prefix marks a read-only predicate; a settable mode is named for the mode. Obtained from A_Thread, Under or RealThread.Threads, never constructed. There is one object per pseudo-thread, so `thr == A_Thread` tests whether it is the running one. It revalidates its identity on every access, so one held past its pseudo-thread's life reports IsActive false rather than describing whichever pseudo-thread reused the pooled slot. Reads work from any real thread; setters and Exit require the owning one.",
+                     "notes":  "Thread is a class rather than a function: calling it runs the AHK sub-functions (NoTimers/Priority/Interrupt) unchanged, and an instance describes one pseudo-thread: Id, Index (1-based), IsActive, Kind, Elapsed, Priority, Critical, Paused, IsInterruptible, Underlying, Exit and ExitCode (the code its Exit ended it with, readable after it ends). An Is prefix marks a read-only predicate; a settable mode is named for the mode. Obtained from A_Thread, Under or RealThread.Threads, never constructed. There is one object per pseudo-thread, so `thr == A_Thread` tests whether it is the running one. It revalidates its identity on every access, so one held past its pseudo-thread's life reports IsActive false rather than describing whichever pseudo-thread reused the pooled slot. Reads work from any real thread; setters and Exit require the owning one.",
                      "tested-by":  "FlowTests.FlowExit"
                  },
                  {
@@ -7566,7 +7566,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Work that finishes later; every CLR call returning a .NET Task hands one back. Status is the canonical one-read state (Pending/Succeeded/Failed/Canceled) with IsPending/IsSucceeded/IsFailed/IsCanceled as single-question predicates, Result is a non-blocking snapshot, Await returns or throws the outcome, and Wait returns false only on timeout. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. WhenAny transfers the first value, failure or cancellation.",
+                     "notes":  "Work that finishes later; every CLR call returning a .NET Task hands one back. Status is the canonical one-read state (Pending/Succeeded/Failed/Canceled) with IsPending/IsSucceeded/IsFailed/IsCanceled as single-question predicates, Result is a non-blocking snapshot, Await returns or throws the outcome, and Wait returns false only on timeout. Then receives the successful value, can optionally handle failure, adopts the selected callback's returned work, and propagates cancellation. Producer and Then callback errors fault the task without calling OnError at the throw site. WhenAny transfers the first value, failure or cancellation.",
                      "tested-by":  "directive-csharp-async.ahk"
                  },
                  {
@@ -8988,8 +8988,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The OnError function registers a function to be called automatically whenever an unhandled error occurs.",
-                     "tested-by":  "flow-onerror.ahk"
+                     "notes":  "Registers callbacks for errors nothing catches. An error reaches them where it is raised, before the stack unwinds, or, once it passes a try statement with catches, in mode Exit after that statement's finally.",
+                     "tested-by":  "flow-onerror.ahk; flow-try-interrupt.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -9401,7 +9401,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Represents a real background thread. It carries two separate completions: Task is the entry function's result and settles as the body leaves, while Terminated settles when the OS thread is gone (IsAlive is that as a poll). Post returns a Task; Send runs the work there and blocks.",
+                     "notes":  "Represents a real background thread. It carries two separate completions: Task is the entry function's result and settles as the body leaves, while Terminated settles when the OS thread is gone (IsAlive is that as a poll). Body and Post errors are carried by their tasks without calling OnError at the throw site; Send rethrows to its caller.",
                      "tested-by":  "flow-realthreads.ahk"
                  },
                  {
@@ -10624,12 +10624,12 @@
                      "category":  "Core Language",
                      "feature":  "Throw",
                      "syntax":  "",
-                     "windows":  "partial",
-                     "linux_x11":  "partial",
-                     "linux_wayland":  "partial",
-                     "macos":  "partial",
-                     "notes":  "Rethrowing with throw is only allowed directly within the scope of catch, not from an arbitrary point (eg from functions).",
-                     "tested-by":  "ControlTests/control_add_delete_item.ahk"
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Throws an Error, or another value wrapped as Error(Value). Without a value it rethrows the error an active catch handles, or raises the continuable Error(\"An exception was thrown.\").",
+                     "tested-by":  "flow-trycatch.ahk; flow-onerror.ahk"
                  },
                  {
                      "category":  "Errors",
