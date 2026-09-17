@@ -151,8 +151,8 @@ namespace Keysharp.Internals.Os
 				return false;
 			}
 
-			var root = Path.Combine(userRoot, "Keysharp", "embedded-components",
-				assembly.ManifestModule.ModuleVersionId.ToString("N"));
+			var cacheRoot = Path.Combine(userRoot, "Keysharp", "embedded-components");
+			var root = Path.Combine(cacheRoot, ContentKey(entry));
 			var seen = new HashSet<string>(PathComparer);
 
 			try
@@ -202,6 +202,7 @@ namespace Keysharp.Internals.Os
 				}
 
 				PackageProviderRegistry.AddSearchRoot(root);
+				ExtractionCache.TouchAndPrune(cacheRoot, root);
 				return true;
 			}
 			catch (Exception e)
@@ -209,6 +210,26 @@ namespace Keysharp.Internals.Os
 				failure = $"Preparing embedded package provider '{entry.Name}' failed: {e.Message}";
 				return false;
 			}
+		}
+
+		internal static string GetCacheDirectory(Assembly assembly, string providerName)
+		{
+			var entry = FromAssembly(assembly)?.Providers.FirstOrDefault(p =>
+				p.Name.Equals(providerName, StringComparison.OrdinalIgnoreCase));
+			var userRoot = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+			return entry == null || string.IsNullOrWhiteSpace(userRoot) ? null
+				: Path.Combine(userRoot, "Keysharp", "embedded-components", ContentKey(entry));
+		}
+
+		// Named by what the provider contains, so every build carrying the same provider shares one extraction.
+		private static string ContentKey(Entry entry)
+		{
+			var text = new StringBuilder("package-provider-v1\0").Append(entry.Name?.ToLowerInvariant()).Append('\0');
+
+			foreach (var asset in entry.Files.OrderBy(asset => asset.Deployed, StringComparer.Ordinal))
+				_ = text.Append(asset.Deployed?.Replace('\\', '/')).Append('\0').Append(asset.Hash?.ToUpperInvariant()).Append('\0');
+
+			return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString()))).ToLowerInvariant();
 		}
 
 		private static bool TryRead(Assembly assembly, out CompiledPackageProviderManifest manifest, out bool present, out string failure)

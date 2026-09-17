@@ -239,6 +239,8 @@ InputBtn := MyGui.Add("Button", "s8 xc+10 y+10", "Input Test")
 InputBtn.OnEvent("Click", InputTest)
 DirSelectBtn := MyGui.Add("Button", "s8 x+5 yp", "DirSelect")
 DirSelectBtn.OnEvent("Click", DirSelectForLV)
+FileSelectBtn := MyGui.Add("Button", "s8 x+5 yp", "FileSelect")
+FileSelectBtn.OnEvent("Click", ShowFileSelectMenu)
 
 ; GetContentBtn := MyGui.Add("Button", "xc+100 yp", "Get LV Content")
 
@@ -1949,6 +1951,37 @@ DirSelectForLV(*)
 
 	LVFolder := selected
 	PopulateMainListView()
+}
+
+; One entry per FileSelect mode, each opening in the test fixture folder.
+ShowFileSelectMenu(*)
+{
+	fsDir := A_ScriptDir A_DirSeparator ".." A_DirSeparator "DirCopy"
+	fsFile := fsDir A_DirSeparator "file1.txt"
+	fsFilter := "Text files (*.txt; *.wri; *.ini)"
+	fsMenu := Menu()
+	fsMenu.Add("Open", (*) => ShowFileSelectResult(FileSelect()))
+	fsMenu.Add("Open, starting at a file", (*) => ShowFileSelectResult(FileSelect("", fsFile, "Open - path and file")))
+	fsMenu.Add("Open, multiselect", (*) => ShowFileSelectResult(FileSelect("M", fsDir, "Open - multiselect")))
+	fsMenu.Add("Save at a file, overwrite prompt, filter", (*) => ShowFileSelectResult(FileSelect("S16", fsFile, "Save - prompt for overwrite", fsFilter)))
+	fsMenu.Add("Save in a folder, overwrite prompt, filter", (*) => ShowFileSelectResult(FileSelect("S16", fsDir A_DirSeparator, "Save - folder only", fsFilter)))
+	fsMenu.Add("Folder", (*) => ShowFileSelectResult(FileSelect("D", fsDir, "Select a folder")))
+	fsMenu.Show()
+}
+
+ShowFileSelectResult(fsResult)
+{
+	if (fsResult is Array)
+	{
+		fsText := ""
+
+		for fsPath in fsResult
+			fsText .= fsPath "`n"
+
+		fsResult := fsText
+	}
+
+	MsgBox(fsResult = "" ? "(cancelled)" : fsResult, "FileSelect result")
 }
 
 ; ┌──────────────────────┐

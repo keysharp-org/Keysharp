@@ -1,6 +1,3 @@
-using Keysharp.Internals.Invoke;
-using Keysharp.Internals.Os;
-using static Keysharp.Builtins.Types;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests
@@ -8,181 +5,10 @@ namespace Keysharp.Tests
 	public partial class MiscTests : TestRunner
 	{
 		[Test, Category("Misc"), NonParallelizable]
-		public void MiscIs()
-		{
-			var x = 1;
-			var o = new Keysharp.Builtins.Array(10, 20, 30);
-			var map = new Keysharp.Builtins.Map("one", 1, "two", 2, "three", 3);
-			Assert.IsTrue(IsInteger(x) == 1);
-			x = -1;
-			Assert.IsTrue(IsInteger(x) == 1);
-			var d = 1.234;
-			Assert.IsTrue(IsInteger(d) == 0);
-			var f = 1.234f;
-			Assert.IsTrue(IsInteger(f) == 0);
-			var m = 1.234m;
-			Assert.IsTrue(IsInteger(m) == 0);
-			var s = "1234";
-			Assert.IsTrue(IsInteger(s) == 1);
-			s = "-1234";
-			Assert.IsTrue(IsInteger(s) == 1);
-			s = "+1234";
-			Assert.IsTrue(IsInteger(s) == 1);
-			s = "1234.1234";
-			Assert.IsTrue(IsInteger(s) == 0);
-			s = "-1234.1234";
-			Assert.IsTrue(IsInteger(s) == 0);
-			s = "+1234.1234";
-			Assert.IsTrue(IsInteger(s) == 0);
-			Assert.IsTrue(IsInteger(o) == 0);
-			s = "A";
-			Assert.IsTrue(IsInteger(s) == 0);
-			s = "ABCDEF";
-			Assert.IsTrue(IsInteger(s) == 0);
-			s = "0xA";
-			Assert.IsTrue(IsInteger(s) == 1);
-			s = "0xABCDEF";
-			Assert.IsTrue(IsInteger(s) == 1);
-			//
-			d = 1.234;
-			Assert.IsTrue(IsFloat(d) == 1);
-			d = -1.234;
-			Assert.IsTrue(IsFloat(d) == 1);
-			f = 1.234f;
-			Assert.IsTrue(IsFloat(f) == 1);
-			m = 1.234m;
-			Assert.IsTrue(IsFloat(m) == 1);
-			s = "1234";
-			Assert.IsTrue(IsFloat(s) == 0);
-			s = "-1234";
-			Assert.IsTrue(IsFloat(s) == 0);
-			s = "+1234";
-			Assert.IsTrue(IsFloat(s) == 0);
-			Assert.IsTrue(IsFloat(o) == 0);
-			//
-			Assert.IsTrue(IsNumber(0) == 1);
-			Assert.IsTrue(IsNumber(1) == 1);
-			Assert.IsTrue(IsNumber(-1) == 1);
-			Assert.IsTrue(IsNumber(1.234) == 1);
-			Assert.IsTrue(IsNumber(-1.234) == 1);
-			Assert.IsTrue(IsNumber("1234") == 1);
-			Assert.IsTrue(IsNumber("-1234") == 1);
-			Assert.IsTrue(IsNumber("+1234") == 1);
-			Assert.IsTrue(IsNumber("1.234") == 1);
-			Assert.IsTrue(IsNumber("-1.234") == 1);
-			Assert.IsTrue(IsNumber("+1.234") == 1);
-			Assert.IsTrue(IsNumber(o) == 0);
-			//
-			Assert.IsTrue(IsObject(0) == 0);
-			Assert.IsTrue(IsObject(1.234) == 0);
-			Assert.IsTrue(IsObject("test") == 0);
-			Assert.IsTrue(IsObject(o) == 1);
-			Assert.IsTrue(IsObject(map) == 1);
-			//
-			Assert.IsTrue(IsDigit(1) == 1);
-			Assert.IsTrue(IsDigit(-1) == 0);
-			Assert.IsTrue(IsDigit(1.234) == 0);
-			Assert.IsTrue(IsDigit("0123456789") == 1);
-			Assert.IsTrue(IsDigit("1A") == 0);
-			Assert.IsTrue(IsDigit("A1") == 0);
-			Assert.IsTrue(IsDigit("0x01") == 0);
-			Assert.IsTrue(IsDigit(o) == 0);
-			Assert.IsTrue(IsDigit(m) == 0);
-			//
-			Assert.IsTrue(IsXDigit(1) == 1);
-			Assert.IsTrue(IsXDigit(-1) == 0);
-			Assert.IsTrue(IsXDigit(1.234) == 0);
-			Assert.IsTrue(IsXDigit("0123456789") == 1);
-			Assert.IsTrue(IsXDigit("1A") == 1);
-			Assert.IsTrue(IsXDigit("0x01ABCdef") == 1);
-			Assert.IsTrue(IsXDigit("0xg") == 0);
-			Assert.IsTrue(IsXDigit(o) == 0);
-			Assert.IsTrue(IsXDigit(m) == 0);
-			//
-			Assert.IsTrue(IsAlpha(1) == 0);
-			Assert.IsTrue(IsAlpha(-1) == 0);
-			Assert.IsTrue(IsAlpha(1.234) == 0);
-			Assert.IsTrue(IsAlpha("0123456789") == 0);
-			Assert.IsTrue(IsAlpha("ABC") == 1);
-			Assert.IsTrue(IsAlpha("abc") == 1);
-			Assert.IsTrue(IsAlpha("ABC123") == 0);
-			Assert.IsTrue(IsAlpha(".") == 0);
-			Assert.IsTrue(IsAlpha(o) == 0);
-			Assert.IsTrue(IsAlpha(m) == 0);
-			//
-			Assert.IsTrue(IsUpper(1) == 0);
-			Assert.IsTrue(IsUpper(-1) == 0);
-			Assert.IsTrue(IsUpper(1.234) == 0);
-			Assert.IsTrue(IsUpper("0123456789") == 0);
-			Assert.IsTrue(IsUpper("ABC") == 1);
-			Assert.IsTrue(IsUpper("abc") == 0);
-			Assert.IsTrue(IsUpper("AbC123") == 0);
-			Assert.IsTrue(IsUpper(".") == 0);
-			Assert.IsTrue(IsUpper(o) == 0);
-			Assert.IsTrue(IsUpper(m) == 0);
-			//
-			Assert.IsTrue(IsLower(1) == 0);
-			Assert.IsTrue(IsLower(-1) == 0);
-			Assert.IsTrue(IsLower(1.234) == 0);
-			Assert.IsTrue(IsLower("0123456789") == 0);
-			Assert.IsTrue(IsLower("ABC") == 0);
-			Assert.IsTrue(IsLower("abc") == 1);
-			Assert.IsTrue(IsLower("AbC123") == 0);
-			Assert.IsTrue(IsLower(".") == 0);
-			Assert.IsTrue(IsLower(o) == 0);
-			Assert.IsTrue(IsLower(m) == 0);
-			//
-			Assert.IsTrue(IsAlnum(1) == 1);
-			Assert.IsTrue(IsAlnum(-1) == 0);
-			Assert.IsTrue(IsAlnum(1.234) == 0);
-			Assert.IsTrue(IsAlnum("0123456789") == 1);
-			Assert.IsTrue(IsAlnum("ABC") == 1);
-			Assert.IsTrue(IsAlnum("abc") == 1);
-			Assert.IsTrue(IsAlnum("AbC123") == 1);
-			Assert.IsTrue(IsAlnum(".") == 0);
-			Assert.IsTrue(IsAlnum(o) == 0);
-			Assert.IsTrue(IsAlnum(m) == 0);
-			//
-			Assert.IsTrue(IsSpace(1) == 0);
-			Assert.IsTrue(IsSpace(-1) == 0);
-			Assert.IsTrue(IsSpace(1.234) == 0);
-			Assert.IsTrue(IsSpace("0123456789") == 0);
-			Assert.IsTrue(IsSpace("ABC") == 0);
-			Assert.IsTrue(IsSpace("abc") == 0);
-			Assert.IsTrue(IsSpace("AbC123") == 0);
-			Assert.IsTrue(IsSpace(".") == 0);
-			Assert.IsTrue(IsSpace(" 123") == 0);
-			Assert.IsTrue(IsSpace(" \t\n\r\v\f") == 1);
-			Assert.IsTrue(IsSpace(o) == 0);
-			Assert.IsTrue(IsSpace(m) == 0);
-			//
-			Assert.IsTrue(IsTime("2021") == 1);
-			Assert.IsTrue(IsTime("202106") == 1);
-			Assert.IsTrue(IsTime("202199") == 0);//Unrepresentable
-			Assert.IsTrue(IsTime("20211201") == 1);
-			Assert.IsTrue(IsTime("20211299") == 0);
-			Assert.IsTrue(IsTime("2021121513") == 1);
-			Assert.IsTrue(IsTime("2021121555") == 0);
-			Assert.IsTrue(IsTime("202112152033") == 1);
-			Assert.IsTrue(IsTime("202112152099") == 0);
-			Assert.IsTrue(IsTime("20211215203522") == 1);
-			Assert.IsTrue(IsTime("20211215203599") == 0);
-			Assert.IsTrue(IsTime(o) == 0);
-			Assert.IsTrue(IsTime(m) == 0);
-			//
-			Assert.IsTrue(TestScript("misc-is", true));
-		}
+		public void MiscIs() => Assert.IsTrue(TestScript("misc-is", true));
 
 		[Test, Category("Misc"), NonParallelizable]
-		public void MiscObject()
-		{
-			var a = new Keysharp.Builtins.Array(10L, 20L, 30L);
-			var fo = (KeysharpFunc)Keysharp.Builtins.Any.GetMethod(a, "Push");
-			_ = fo.Call(a, 40L);
-			Assert.AreEqual(4L, a.Length);
-			Assert.IsTrue(new KeysharpObject().Base.Base.type == typeof(Any));
-			Assert.IsTrue(TestScript("misc-object", true));
-		}
+		public void MiscObject() => Assert.IsTrue(TestScript("misc-object", true));
 
 		[Test, Category("Misc"), NonParallelizable]
 		public void MiscSyntax() => Assert.IsTrue(TestScript("misc-syntax", false));
@@ -194,9 +20,7 @@ namespace Keysharp.Tests
 		public void KsFont()
 		{
 			SkipIfUiInitializationBlocked("Creating an AppKit window requires OS thread 1.");
-			//Output passed as the assertion message, so a failure names the checks that broke.
-			var output = RunScript(Path.Combine(path, "ks-font.ahk"), "ks-font", true, false);
-			Assert.IsTrue(HasPassed(output), output);
+			Assert.IsTrue(TestScript("ks-font", false));
 		}
 
 #if WINDOWS
@@ -207,87 +31,16 @@ namespace Keysharp.Tests
 #endif
 
 		[Test, Category("Misc"), NonParallelizable]
-		public void ComponentDiscovery()
-		{
-			var output = RunScript(Path.Combine(path, "component-available.ahk"), "component-available", true, false);
-			Assert.IsTrue(HasPassed(output), output);
-		}
+		public void ComponentDiscovery() => Assert.IsTrue(TestScript("component-available", false));
 
 		[Test, Category("Misc"), NonParallelizable]
 		public void MiscReserved() => Assert.IsTrue(TestScript("misc-reserved", false));
 
 		[Test, Category("Misc"), NonParallelizable]
-		public void CapabilitiesStatus()
-		{
-			var caps = Keysharp.Builtins.Ks.RequestCapabilities();
-
-#if WINDOWS
-			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "InputMonitoring"));
-			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "InputControl"));
-			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "WindowMonitoring"));
-			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "WindowControl"));
-			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "ScreenCapture"));
-			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "AudioCapture"));
-			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "CameraCapture"));
-			Assert.AreEqual("NotApplicable", Script.GetPropertyValue(caps, "ClipboardMonitoring"));
-			Assert.AreEqual(1L, Script.GetPropertyValue(caps, "IsGranted"));
-#else
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "InputMonitoring"));
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "InputControl"));
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "WindowMonitoring"));
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "WindowControl"));
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "ScreenCapture"));
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "AudioCapture"));
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "CameraCapture"));
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "ClipboardMonitoring"));
-			Assert.IsNotNull(Script.GetPropertyValue(caps, "IsGranted"));
-#endif
-			Assert.IsNull(Script.GetPropertyValueOrNull(caps, "AccessibilityAutomation"));
-			Assert.IsNull(Script.GetPropertyValueOrNull(caps, "InputInjection"));
-			Assert.IsNull(Script.GetPropertyValueOrNull(caps, "BlockInput"));
-
-			foreach (var rejected in new[]
-				{
-					"AccessibilityAutomation", "InputInjection", "BlockInput",
-					"hook", "inputhook", "synthinput", "sendinput", "capture", "imagecapture",
-					"accessibility", "automation", "input-monitoring", "input_monitoring"
-				})
-			{
-				var error = Assert.Throws<KeysharpException>(() => CapabilityRequests.ParseRequested([rejected]));
-				Assert.IsInstanceOf<ValueError>(error.UserError);
-			}
-		}
+		public void CapabilitiesStatus() => Assert.IsTrue(TestScript("misc-capabilities", true));
 
 		[Test, Category("Misc"), NonParallelizable]
-		public void KeyboardLayout()
-		{
-			var layout = Keysharp.Builtins.Ks.GetKeyboardLayout();
-			Assert.IsFalse(string.IsNullOrWhiteSpace(layout));
-
-			var lower = Keysharp.Builtins.Ks.GetKeyInfo("a");
-			Assert.IsInstanceOf<KeysharpObject>(lower);
-			Assert.IsTrue(PropLong(lower, "VK") > 0);
-			Assert.IsFalse(string.IsNullOrEmpty(PropString(lower, "Name")));
-			Assert.IsNotNull(Script.GetPropertyValue(lower, "Prefix"));
-
-			var upper = Keysharp.Builtins.Ks.GetKeyInfo("A");
-			Assert.IsInstanceOf<KeysharpObject>(upper);
-			Assert.IsTrue((PropLong(upper, "Modifiers") & 4L) != 0);
-			Assert.IsTrue(PropString(upper, "Prefix").Contains('+'));
-
-			var newline = Keysharp.Builtins.Ks.GetKeyInfo("\n");
-			Assert.IsInstanceOf<KeysharpObject>(newline);
-			Assert.AreEqual("Enter", PropString(newline, "Name"));
-			Assert.AreEqual("", PropString(newline, "Prefix"));
-
-			var esc = Keysharp.Builtins.Ks.GetKeyInfo("Esc");
-			Assert.IsInstanceOf<KeysharpObject>(esc);
-			Assert.AreEqual(Keysharp.Builtins.Keyboard.GetKeyVK("Esc"), PropLong(esc, "VK"));
-			Assert.AreEqual(Keysharp.Builtins.Keyboard.GetKeySC("Esc"), PropLong(esc, "SC"));
-
-			var explicitLayout = Keysharp.Builtins.Ks.GetKeyInfo("a", layout);
-			Assert.IsInstanceOf<KeysharpObject>(explicitLayout);
-		}
+		public void KeyboardLayout() => Assert.IsTrue(TestScript("misc-keyboard-layout", true));
 
 		[Test, Category("Misc"), NonParallelizable]
 		public void MiscTimer()
@@ -303,9 +56,5 @@ namespace Keysharp.Tests
 
 		[Test, Category("Misc"), NonParallelizable]
 		public void VarRefOutputs() => Assert.IsTrue(TestScript("misc-var-ref", false));
-
-		private static long PropLong(object obj, string name) => Convert.ToInt64(Script.GetPropertyValue(obj, name));
-
-		private static string PropString(object obj, string name) => Script.GetPropertyValue(obj, name).As();
 	}
 }

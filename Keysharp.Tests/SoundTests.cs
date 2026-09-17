@@ -6,15 +6,7 @@ namespace Keysharp.Tests
 	public partial class SoundTests : TestRunner
 	{
 		[Test, Category("Sound")]
-		public void SoundBeep()
-		{
-			_ = Sound.SoundBeep();
-			_ = Sound.SoundBeep(700, 500);
-			_ = Sound.SoundBeep(800, 500);
-			_ = Sound.SoundBeep(900, 500);
-			_ = Sound.SoundBeep(1000, 500);
-			Assert.IsTrue(TestScript("sound-soundbeep", true));
-		}
+		public void SoundBeep() => Assert.IsTrue(TestScript("sound-soundbeep", true));
 
 		// The synthesized tone is what makes SoundBeep honour Frequency/Duration on Linux and macOS, so the
 		// WAV it produces is verified here rather than trusted — this runs on every platform and needs no

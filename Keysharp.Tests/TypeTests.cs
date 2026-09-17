@@ -12,33 +12,8 @@ namespace Keysharp.Tests
 		{
 			Assert.IsTrue(typeof(Keysharp.Builtins.KeysharpException).IsAssignableTo(typeof(System.Exception)));
 			Assert.IsTrue(typeof(Keysharp.Builtins.ParseException).IsAssignableTo(typeof(System.Exception)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.Error).IsAssignableTo(typeof(Keysharp.Builtins.Any)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.IndexError).IsAssignableTo(typeof(Keysharp.Builtins.Error)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.KeyError).IsAssignableTo(typeof(Keysharp.Builtins.Error)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.MemberError).IsAssignableTo(typeof(Keysharp.Builtins.UnsetError)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.UnsetItemError).IsAssignableTo(typeof(Keysharp.Builtins.UnsetError)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.MemoryError).IsAssignableTo(typeof(Keysharp.Builtins.Error)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.MethodError).IsAssignableTo(typeof(Keysharp.Builtins.MemberError)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.PropertyError).IsAssignableTo(typeof(Keysharp.Builtins.MemberError)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.OSError).IsAssignableTo(typeof(Keysharp.Builtins.Error)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.TargetError).IsAssignableTo(typeof(Keysharp.Builtins.Error)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.TimeoutError).IsAssignableTo(typeof(Keysharp.Builtins.Error)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.TypeError).IsAssignableTo(typeof(Keysharp.Builtins.Error)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.ValueError).IsAssignableTo(typeof(Keysharp.Builtins.Error)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.ZeroDivisionError).IsAssignableTo(typeof(Keysharp.Builtins.Error)));
-#if LINUX
-			Assert.IsTrue(typeof(Keysharp.Builtins.ClipboardAll).IsAssignableTo(typeof(Keysharp.Builtins.KeysharpObject)));
-#elif WINDOWS
-			Assert.IsTrue(typeof(Keysharp.Builtins.ClipboardAll).IsAssignableTo(typeof(Keysharp.Builtins.Buffer)));
-#endif
-			Assert.IsTrue(typeof(Keysharp.Builtins.Buffer).IsAssignableTo(typeof(Keysharp.Builtins.KeysharpObject)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.Array).IsAssignableTo(typeof(Keysharp.Builtins.KeysharpObject)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.Map).IsAssignableTo(typeof(Keysharp.Builtins.KeysharpObject)));
-			Assert.IsTrue(typeof(Keysharp.Builtins.KeysharpFile).IsAssignableTo(typeof(Keysharp.Builtins.KeysharpObject)));
-			Assert.IsTrue(Keysharp.Builtins.Types.Type(0L) == "Integer");
-			Assert.IsTrue(Keysharp.Builtins.Types.Type(1.2) == "Float");
-			Assert.IsTrue(Keysharp.Builtins.Types.Type(new KeysharpObject()) == "Object");
-			Assert.IsTrue(Keysharp.Builtins.Types.Type(null) == "unset");
+			// The script-visible class hierarchy and Type() results are checked in types-conversions.ahk.
+			Assert.AreEqual("unset", Keysharp.Builtins.Types.Type(null));
 			//Assure every public static function returns something other than void.
 			var loadedAssemblies = GetLoadedAssemblies();
 			var types = loadedAssemblies.Values.Where(asm => asm.FullName.StartsWith("Keysharp.Builtins,"))

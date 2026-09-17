@@ -833,13 +833,7 @@ namespace Keysharp.Tests
 			if (!File.Exists(launcher))
 				Assert.Ignore($"launcher not built at {launcher}");
 
-			// Emptied first and never the build output directory, so no stale deployment can satisfy the assertions.
-			var dir = Path.Combine(Path.GetTempPath(), "ks-package-compile", mode, Guid.NewGuid().ToString("N"));
-
-			if (Directory.Exists(dir))
-				Directory.Delete(dir, true);
-
-			_ = Directory.CreateDirectory(dir);
+			var dir = FixedTestDirectory(nameof(CompiledPackages), mode);
 			var script = Path.Combine(dir, "compiled.ks");
 			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Package Newtonsoft.Json 13.0.3\n#import \"Ks\" { Clr }\n"
 									  + "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([1, 2, 3]), \"*\")\nExitApp()\n");
@@ -906,8 +900,7 @@ namespace Keysharp.Tests
 			if (!File.Exists(launcher))
 				Assert.Ignore($"launcher not built at {launcher}");
 
-			var dir = Path.Combine(Path.GetTempPath(), "ks-runtime-provider", mode, Guid.NewGuid().ToString("N"));
-			_ = Directory.CreateDirectory(dir);
+			var dir = FixedTestDirectory(nameof(CompiledLoadPackageCarriesProvider), mode);
 
 			try
 			{
@@ -998,8 +991,7 @@ namespace Keysharp.Tests
 			if (!File.Exists(launcher))
 				Assert.Ignore($"launcher not built at {launcher}");
 
-			var dir = Path.Combine(Path.GetTempPath(), "ks-provider-cks", Guid.NewGuid().ToString("N"));
-			_ = Directory.CreateDirectory(dir);
+			var dir = FixedTestDirectory(nameof(CompiledCksUsesLauncherProviderWithoutSidecarCopy));
 
 			try
 			{
@@ -1021,6 +1013,21 @@ namespace Keysharp.Tests
 			{
 				try { Directory.Delete(dir, true); } catch { }
 			}
+		}
+
+		/// <summary>
+		/// The restore cache keys on the script's directory, so a fresh folder per run would cold-restore every time.
+		/// The path stays fixed per test case and its contents are emptied, so no earlier build output can satisfy the assertions.
+		/// </summary>
+		private static string FixedTestDirectory(string test, string mode = null)
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks-package-tests", test, mode ?? "");
+
+			if (Directory.Exists(dir))
+				Directory.Delete(dir, true);
+
+			_ = Directory.CreateDirectory(dir);
+			return dir;
 		}
 
 		private static int Run(string exe, string args, out string stdout, out string stderr)
@@ -1083,8 +1090,7 @@ namespace Keysharp.Tests
 		[Test, Category("NuGet"), NonParallelizable]
 		public void InlineCSharpPackage()
 		{
-			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgcs_" + Guid.NewGuid().ToString("N"));
-			_ = Directory.CreateDirectory(dir);
+			var dir = FixedTestDirectory(nameof(InlineCSharpPackage));
 
 			try
 			{
@@ -1122,8 +1128,7 @@ namespace Keysharp.Tests
 		[Test, Category("NuGet"), NonParallelizable]
 		public void PackageManifest()
 		{
-			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgman_" + Guid.NewGuid().ToString("N"));
-			_ = Directory.CreateDirectory(dir);
+			var dir = FixedTestDirectory(nameof(PackageManifest));
 
 			try
 			{
@@ -1199,8 +1204,7 @@ namespace Keysharp.Tests
 		[Test, Category("NuGet"), NonParallelizable]
 		public void PackageDeployment()
 		{
-			var dir = Path.Combine(Path.GetTempPath(), "ks_pkgcopy_" + Guid.NewGuid().ToString("N"));
-			_ = Directory.CreateDirectory(dir);
+			var dir = FixedTestDirectory(nameof(PackageDeployment));
 
 			try
 			{

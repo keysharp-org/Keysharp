@@ -1,12 +1,16 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
-l :=
-t :=
-r :=
-b :=
-monget := MonitorGetWorkArea(, &l, &t, &r, &b)
+; Coordinates are negative for a monitor left of or above the primary, so only the extent is checked.
+AssertEq(MonitorGetWorkArea(, &l, &t, &r, &b), MonitorGetPrimary(), A_LineNumber)
+Assert(r > l && b > t, A_LineNumber)
 
-Assert(l >= 0 && r >= 0 && t >= 0 && b >= 0 && monget > 0, A_LineNumber)
+Loop MonitorGetCount()
+{
+	AssertEq(MonitorGetWorkArea(A_Index, &l, &t, &r, &b), A_Index, A_LineNumber)
+	Assert(r > l && b > t, A_LineNumber)
+}
 
 FileAppend "pass", "*"

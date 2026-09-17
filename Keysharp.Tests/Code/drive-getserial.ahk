@@ -10,7 +10,7 @@
 
 	Assert(val >= 0, A_LineNumber)
 #else
-	val := DriveGetSerial("/dev/sda")
+	val := DriveGetSerial("/dev") ; the filesystem holding /dev, which every Linux machine has
 
 	Assert(val >= 0, A_LineNumber)
 #endif

@@ -13,6 +13,10 @@ val := IniRead("./testini2.ini", "sectionone", "keyval")
 
 AssertEq("theval", val, A_LineNumber)
 
+val := IniRead("./testini2.ini", "SectionOne", "keyval") ; Section names are case-insensitive.
+
+AssertEq("theval", val, A_LineNumber)
+
 val := IniRead("./testini2.ini", "sectiontwo")
 
 AssertEq("groupkey1=groupval1`ngroupkey2=groupval2`ngroupkey3=groupval3", val, A_LineNumber)
@@ -26,7 +30,7 @@ val := IniRead("./testini2.ini", "sectionone", "keyval")
 
 AssertEq("thevalnew", val, A_LineNumber)
 
-str := "groupkey11=groupval11`ngroupkey12=groupval12`ngroupkey13=groupval13"
+str := "groupkey11=groupval11`ngroupkey12=groupval12`ngroupkey13=groupval13`n"
 IniWrite(str, "./testini2.ini", "sectiontwo")
 val := IniRead("./testini2.ini", "sectiontwo")
 

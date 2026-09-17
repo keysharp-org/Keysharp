@@ -411,30 +411,28 @@ namespace Keysharp.Builtins
 		/// <param name="dividend">The dividend.</param>
 		/// <param name="divisor">The divisor.</param>
 		/// <returns>The remainder after dividing <paramref name="dividend"/> by <paramref name="divisor"/>.</returns>
-		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the divisor == 0.</exception>
+		/// <exception cref="ZeroDivisionError">A <see cref="ZeroDivisionError"/> exception is thrown if the divisor == 0.</exception>
+		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if either argument is not numeric.</exception>
 		public static object Mod(object dividend, object divisor)
 		{
-			if (dividend is double || divisor is double)
+			if (!Script.ParseNumericArgs(dividend, divisor, "Mod", out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
+				return DefaultObject;
+
+			if (!firstIsDouble && !secondIsDouble)
 			{
-				var divid = dividend.ToDouble();
-				var divis = divisor.ToDouble();
+				if (secondl == 0L)
+					return Errors.ZeroDivisionErrorOccurred("Mod() divisor");
 
-				if (divis == 0)
-					return Errors.ErrorOccurred($"Mod() divisor argument of {divis} was 0.");
-
-				//return Math.IEEERemainder(dividend, divisor);
-				return divid % divis;
+				// long.MinValue % -1 overflows in .NET; the mathematical remainder is 0.
+				return secondl == -1L ? 0L : firstl % secondl;
 			}
-			else
-			{
-				var divid = dividend.ToLong();
-				var divis = divisor.ToLong();
 
-				if (divis == 0)
-					return Errors.ErrorOccurred($"Mod() divisor argument of {divis} was 0.");
+			var divis = secondIsDouble ? secondd : secondl;
 
-				return divid % divis;
-			}
+			if (divis == 0.0)
+				return Errors.ZeroDivisionErrorOccurred("Mod() divisor");
+
+			return (firstIsDouble ? firstd : firstl) % divis;
 		}
 
 		/// <summary>
@@ -458,33 +456,58 @@ namespace Keysharp.Builtins
 			if (a is null && b is null)
 				return r.NextDouble();
 
-			if (a is long l0)
+			// As in AHK, a numeric string counts as the number it spells, and an omitted bound is 0.
+			if (!TryRandomBound(a, out var aIsDouble, out var ad, out var al)
+					|| !TryRandomBound(b, out var bIsDouble, out var bd, out var bl))
+				return DefaultObject;
+
+			if (aIsDouble || bIsDouble)
 			{
-				if (b is long l1)
-				{
-					var min = Math.Min(l0, l1);
-					var max = Math.Max(l0, l1);
-					return r.NextInt64(min, max + 1L);//Integer ranges include the max number.
-				}
-				else if (b is null)
-				{
-					var min = Math.Min(0L, l0);
-					var max = Math.Max(0L, l0);
-					return r.NextInt64(min, max + 1L);//If one param is omitted, it defaults to 0.
-				}
-			}
-			else if (b is long l11)
-			{
-				var min = Math.Min(0L, l11);
-				var max = Math.Max(0L, l11);
-				return r.NextInt64(min, max + 1L);//If one param is omitted, it defaults to 0.
+				var mind = aIsDouble ? ad : al;
+				var maxd = bIsDouble ? bd : bl;
+				return r.NextDouble(Math.Min(mind, maxd), Math.Max(mind, maxd));
 			}
 
-			var mind = a is null ? 0.0 : a.ToDouble();//If one param is omitted, it defaults to 0.
-			var maxd = b is null ? 0.0 : b.ToDouble();
-			var lower = Math.Min(mind, maxd);
-			var upper = Math.Max(mind, maxd);
-			return r.NextDouble(lower, upper);
+			var min = Math.Min(al, bl);
+			var max = Math.Max(al, bl);
+
+			// Integer ranges include max, so the exclusive bound must not overflow past long.MaxValue.
+			if (max < long.MaxValue)
+				return r.NextInt64(min, max + 1L);
+
+			if (min > long.MinValue)
+				return r.NextInt64(min - 1L, max) + 1L;
+
+			Span<byte> bytes = stackalloc byte[sizeof(long)];
+			r.NextBytes(bytes);
+			return BitConverter.ToInt64(bytes);
+
+			static bool TryRandomBound(object value, out bool isDouble, out double d, out long l)
+			{
+				isDouble = false;
+				d = 0.0;
+				l = 0L;
+
+				switch (value)
+				{
+					case null: return true;
+					case long lv: l = lv; return true;
+					case double dv: isDouble = true; d = dv; return true;
+					case bool bv: l = bv ? 1L : 0L; return true;
+				}
+
+				if (value.TryParseLong(out l))
+					return true;
+
+				if (value.TryParseDouble(out d, true))
+				{
+					isDouble = true;
+					return true;
+				}
+
+				_ = Errors.TypeErrorOccurred(value, typeof(double));
+				return false;
+			}
 		}
 
 		/// <summary>

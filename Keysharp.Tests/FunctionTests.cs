@@ -95,19 +95,5 @@ namespace Keysharp.Tests
 		[Test, Category("Function"), Category("RequiresHook"), NonParallelizable]
 		public void HotkeyLocalFunc() => Assert.IsTrue(TestScript("func-hotkey-local", false));
 
-		public object TestFunc(object a) => a;
-		[Test, Category("Function"), NonParallelizable]
-		public void FuncComparison()
-		{
-			var f1 = Keysharp.Builtins.Functions.Func(TestFunc);
-			var f2 = Keysharp.Builtins.Functions.Func(TestFunc, f1);
-			Assert.AreEqual(f1, f1);
-			Assert.AreNotEqual(f1, f2);
-
-			var bf1 = f1.Bind("1");
-			var bf2 = f2.Bind("1");
-			Assert.AreNotEqual(f1, bf2);
-			Assert.AreNotEqual(bf1, bf2);
-		}
 	}
 }

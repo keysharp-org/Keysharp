@@ -21,4 +21,6 @@ y := RTrim(x)
 
 Assert(y = "`ttest", A_LineNumber)
 
+AssertEq(RTrim(" `ttest`t "), " `ttest", A_LineNumber)
+
 FileAppend "pass", "*"

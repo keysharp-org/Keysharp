@@ -3,6 +3,6 @@
 
 x := Chr(116)
 
-Assert(x = "t", A_LineNumber)
+AssertEq(x, "t", A_LineNumber)
 
 FileAppend "pass", "*"

@@ -15,6 +15,14 @@ FileDelete("./FileCopy/file1.txt")
 
 Assert(!FileExist("./FileCopy/file1.txt"), A_LineNumber)
 
+FileCopy(dir . "/*.txt", "./FileCopy/")
+
+Assert(FileExist("./FileCopy/file1.txt"), A_LineNumber)
+
+Assert(FileExist("./FileCopy/file2.txt"), A_LineNumber)
+
+Assert(!FileExist("./FileCopy/file3txt"), A_LineNumber)
+
 if (DirExist("./FileCopy"))
 	DirDelete("./FileCopy", true)
 	
@@ -87,7 +95,7 @@ DirCreate("./FileCopy")
 
 try
 {
-    FileCopy(dir . "/*.txt", "./NonExistentDir/*")
+    FileCopy(dir . "/*.txt", "./FileCopy/NonExistentDir/*")
 }
 catch
 {

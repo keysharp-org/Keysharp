@@ -6,7 +6,7 @@
 x := 0
 
 fo1 := TimerHandler
-SetTimer(fo1, 100)
+SetTimer(fo1, 20)
 
 TimerHandler(*)
 {
@@ -19,7 +19,7 @@ global
 	}
 }
 
-Sleep(1000)
+Sleep(300) ; 15 periods: long enough to see a timer that failed to stop at 5
 
 AssertEq(x, 5, A_LineNumber)
 
@@ -62,13 +62,13 @@ AssertEq(x, 1, A_LineNumber)
 
 x := 0, doDelayEnd := 0
 ; Fill max threads with TimerHandler4, and ensure TimerHandler3 is queued behind it.
-SetTimer(TimerHandler3, -100)
+SetTimer(TimerHandler3, -30)
 SetTimer(TimerHandler4, -1)
 Sleep(-1)
 
 TimerHandler4() {
 	global
-	Sleep(120)
+	Sleep(80)
 	doDelayEnd := A_TickCount
 }
 
@@ -79,7 +79,7 @@ Assert(doDelayEnd != 0 && A_TickCount - doDelayEnd < 50, A_LineNumber)
 ; TimerHandler3 came due while TimerHandler4 held the thread, so it must be queued rather than dropped, and
 ; must still run exactly once. WHEN it runs is deliberately not asserted: Keysharp drains it before Sleep(-1)
 ; returns, while AutoHotkey v2.0.26 leaves it queued until the script sleeps again.
-Sleep(300)
+Sleep(100)
 
 AssertEq(x, 1, A_LineNumber)
 

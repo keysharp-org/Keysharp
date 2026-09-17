@@ -171,7 +171,7 @@ namespace Keysharp.Internals.Scripting
 				}
 
 				ScriptingComponentRegistry.AddSearchRoot(root);
-				TouchAndPruneCache(cacheRoot, root);
+				Keysharp.Internals.Os.ExtractionCache.TouchAndPrune(cacheRoot, root);
 				return true;
 			}
 			catch (Exception e)
@@ -202,27 +202,6 @@ namespace Keysharp.Internals.Scripting
 				_ = text.Append(asset.Deployed?.Replace('\\', '/')).Append('\0')
 					.Append(asset.Hash?.ToUpperInvariant()).Append('\0');
 			return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString()))).ToLowerInvariant();
-		}
-
-		private static void TouchAndPruneCache(string cacheRoot, string currentRoot)
-		{
-			try { Directory.SetLastWriteTimeUtc(currentRoot, DateTime.UtcNow); } catch { }
-			try
-			{
-				var cutoff = DateTime.UtcNow.AddDays(-30);
-				foreach (var directory in Directory.EnumerateDirectories(cacheRoot))
-				{
-					if (Path.GetFullPath(directory).Equals(Path.GetFullPath(currentRoot), PathComparison))
-						continue;
-					try
-					{
-						if (Directory.GetLastWriteTimeUtc(directory) < cutoff)
-							Directory.Delete(directory, true);
-					}
-					catch { }
-				}
-			}
-			catch { }
 		}
 
 		private static bool TryRead(Assembly assembly, out CompiledScriptingComponentManifest manifest, out bool present, out string failure)

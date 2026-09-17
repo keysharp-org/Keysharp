@@ -6,7 +6,7 @@
 #elif OSX
 	val := DriveGetSpaceFree("/")
 #else
-	val := DriveGetSpaceFree("/dev/sda")
+	val := DriveGetSpaceFree("/dev") ; the filesystem holding /dev, which every Linux machine has
 #endif
 			
 Assert(val > 10, A_LineNumber)

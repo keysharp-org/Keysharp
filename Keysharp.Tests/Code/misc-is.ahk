@@ -41,6 +41,14 @@ AssertEq(IsInteger(x), 0, A_LineNumber)
 
 AssertEq(IsInteger(a), 0, A_LineNumber)
 
+AssertEq(IsInteger("A"), 0, A_LineNumber)
+
+AssertEq(IsInteger("ABCDEF"), 0, A_LineNumber)
+
+AssertEq(IsInteger("0xA"), 1, A_LineNumber)
+
+AssertEq(IsInteger("0xABCDEF"), 1, A_LineNumber)
+
 x := 1.234
 
 AssertEq(IsFloat(x), 1, A_LineNumber)
@@ -240,6 +248,8 @@ AssertEq(IsSpace("abc"), 0, A_LineNumber)
 AssertEq(IsSpace("AbC123"), 0, A_LineNumber)
 
 AssertEq(IsSpace("."), 0, A_LineNumber)
+
+AssertEq(IsSpace(" 123"), 0, A_LineNumber)
 
 AssertEq(IsSpace(" `t`n`r`v`f"), 1, A_LineNumber)
 

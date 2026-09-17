@@ -843,67 +843,11 @@ namespace Keysharp.Tests
 					return compilation.InlineCode;
 				}
 
-				var plat = Inline("#if WINDOWS\npublic static long Pick() => 1;\n#else\npublic static long Pick() => 2;\n#endif", "plat");
-#if WINDOWS
-				Assert.IsTrue(plat.Contains("=> 1"), plat);
-				Assert.IsFalse(plat.Contains("=> 2"), plat);
-#else
-				Assert.IsTrue(plat.Contains("=> 2"), plat);
-				Assert.IsFalse(plat.Contains("=> 1"), plat);
-#endif
+				// Predefined and unknown symbols are covered by directive-csharp-symbols.ahk; a define supplied by the
+				// compilation's caller has no script spelling.
 				const string branch = "public static long Pick() => 1;\n#else\npublic static long Pick() => 2;\n#endif";
-				var ks = Inline("#if KEYSHARP\n" + branch, "ks");
-				Assert.IsTrue(ks.Contains("=> 1"), ks);
-				var undef = Inline("#if NOT_DEFINED_ANYWHERE\n" + branch, "undef");
-				Assert.IsTrue(undef.Contains("=> 2"), undef);
 				var sup = Inline("#if MYSYM\n" + branch, "sup", ["MYSYM"]);
 				Assert.IsTrue(sup.Contains("=> 1"), sup);
-			}
-			finally
-			{
-				try { Directory.Delete(dir, true); } catch { }
-			}
-		}
-
-		[Test, Category("Directives"), NonParallelizable]
-		public void CSharpGlobalUsings()
-		{
-			var dir = Path.Combine(Path.GetTempPath(), "ks_csusing_" + Guid.NewGuid().ToString("N"));
-			_ = Directory.CreateDirectory(dir);
-
-			try
-			{
-				var script = Path.Combine(dir, "usings.ks");
-				File.WriteAllText(script, """
-					#NoTrayIcon
-					#CSharp
-					global using TextBuilder = System.Text.StringBuilder;
-					#if WINDOWS
-					using PlatformType = System.Windows.Forms.Form;
-					#else
-					using PlatformType = System.IO.FileInfo;
-					#endif
-					public static object PlatformName() => typeof(PlatformType).Name;
-					#EndCSharp
-					class C {
-					#CSharp
-					public object Build() => new TextBuilder().Append("ok").ToString();
-					#EndCSharp
-					}
-					x := PlatformName()
-					y := C().Build()
-					""");
-				var ch = new CompilerHelper();
-				var (arr, code, compilation) = ch.CompileCodeToByteArray(script, "usings");
-				Assert.IsNotNull(arr, "conditional and global using directives must compile:\n" + code);
-				Assert.IsTrue(compilation.InlineCode.Contains("using TextBuilder"), compilation.InlineCode);
-#if WINDOWS
-				Assert.IsTrue(compilation.InlineCode.Contains("System.Windows.Forms.Form"), compilation.InlineCode);
-				Assert.IsFalse(compilation.InlineCode.Contains("System.IO.FileInfo"), compilation.InlineCode);
-#else
-				Assert.IsTrue(compilation.InlineCode.Contains("System.IO.FileInfo"), compilation.InlineCode);
-				Assert.IsFalse(compilation.InlineCode.Contains("System.Windows.Forms.Form"), compilation.InlineCode);
-#endif
 			}
 			finally
 			{
@@ -1478,51 +1422,6 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Directives")]
-		public void CompileScriptCSharp()
-		{
-			var dir = Path.Combine(Path.GetTempPath(), "ks_compilecs_" + Guid.NewGuid().ToString("N"));
-			_ = Directory.CreateDirectory(dir);
-
-			try
-			{
-				string Write(string body, string name)
-				{
-					var p = Path.Combine(dir, name + ".ks");
-					File.WriteAllText(p, body);
-					return p;
-				}
-
-				// "" when valid, otherwise the joined error messages; IsValid must agree with the errors either way.
-				string Check(Func<object, object> check, string path)
-				{
-					var result = check(path);
-					var errors = (Keysharp.Builtins.Array)Script.GetPropertyValue(result, "Errors");
-					var text = string.Join("\n", errors.array);
-					Assert.AreEqual(text.Length == 0 ? 1L : 0L, Script.GetPropertyValue(result, "IsValid"), text);
-					Assert.IsInstanceOf<Keysharp.Builtins.Array>(Script.GetPropertyValue(result, "Warnings"));
-					return text;
-				}
-
-				var bad = Write("#NoTrayIcon\n#CSharp\npublic static object F() => new NoSuchType();\n#EndCSharp\nF()\n", "bad");
-				var badErrors = Check(Ks.CompileScript, bad);
-				Assert.IsNotEmpty(badErrors, "a #CSharp block naming an unknown type must not be reported as valid");
-				Assert.IsTrue(badErrors.Contains("NoSuchType"), "the error should name the offending code; got:\n" + badErrors);
-				Assert.IsEmpty(Check(Ks.ValidateScript, bad), "a C# type error is a compile error, not a syntax error");
-
-				var ambig = Write("#NoTrayIcon\n#CSharp\nusing Keysharp.Builtins;\npublic static object F() => Array.Empty<long>().Length;\n#EndCSharp\nF()\n", "ambig");
-				Assert.IsNotEmpty(Check(Ks.CompileScript, ambig), "an ambiguous reference in a #CSharp block must not be reported as valid");
-
-				Assert.IsEmpty(Check(Ks.CompileScript, Write("#NoTrayIcon\n#CSharp\npublic static long F() => 42;\n#EndCSharp\nF()\n", "good")));
-				Assert.IsEmpty(Check(Ks.CompileScript, Write("#NoTrayIcon\nx := 1\n", "plain")));
-
-				var broken = Write("#NoTrayIcon\nx := (\n", "broken");
-				Assert.IsNotEmpty(Check(Ks.ValidateScript, broken), "a syntax error fails ValidateScript");
-				Assert.IsNotEmpty(Check(Ks.CompileScript, broken), "and CompileScript, which parses first");
-			}
-			finally
-			{
-				try { Directory.Delete(dir, true); } catch { }
-			}
-		}
+		public void CompileScriptCSharp() => Assert.IsTrue(TestScript("directive-csharp-compilescript", false));
 	}
 }

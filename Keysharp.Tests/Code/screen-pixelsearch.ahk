@@ -1,48 +1,45 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
-x := 0
-y := 0
-last := "0x000000"
-white := "0xffffff"
-black := "0x000000"
-found := false
-pix := ""
-CoordMode("Mouse", "Screen")
+CoordMode("Pixel", "Screen")
+MonitorGet(MonitorGetPrimary(), &left, &top, &right, &bottom)
 
-Loop 100
+; A sparse grid over the whole primary monitor stays fast yet reaches past a solid black or white area.
+stepX := Max(1, (right - left) // 32)
+stepY := Max(1, (bottom - top) // 32)
+found := ""
+foundX := foundY := 0
+py := top
+
+while (found = "" && py < bottom)
 {
-	y := 0
-	
-    Loop 100
+	px := left
+
+	while (px < right)
 	{
-		pix := PixelGetColor(x, y)
-		
-		if (pix != last && pix != white && pix != black)
-			found := true
+		pix := PixelGetColor(px, py)
 
-		if (found == true)
+		if (pix != "0xFFFFFF" && pix != "0x000000")
+		{
+			found := pix, foundX := px, foundY := py
 			break
-			
-		last = pix
-		y++
+		}
+
+		px += stepX
 	}
-    
-	if (found == true)
-		break
-		
-	x++
+
+	py += stepY
 }
 
-if (found == true)
+Assert(found != "", A_LineNumber)
+
+if (found != "")
 {
-	outx := 
-	outy := 0
-	PixelSearch(&outx, &outy, x, y, x + 1, y + 1, pix)
-	
-	Assert(outx == x && outy == y, A_LineNumber)
+	AssertEq(PixelSearch(&outX, &outY, foundX, foundY, foundX + 1, foundY + 1, found), 1, A_LineNumber)
+	AssertEq(outX, foundX, A_LineNumber)
+	AssertEq(outY, foundY, A_LineNumber)
 }
-else
-  	Assert(false, A_LineNumber)
 
 FileAppend "pass", "*"

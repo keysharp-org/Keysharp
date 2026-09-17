@@ -104,4 +104,21 @@ Assert(A_SendLevel = 5, A_LineNumber)
 
 A_SendLevel := 0
 
+; The built-in classes derive as in AutoHotkey.
+for classPair in [[Error, Any], [IndexError, Error], [KeyError, Error], [MemberError, UnsetError], [UnsetItemError, UnsetError],
+	[MemoryError, Error], [MethodError, MemberError], [PropertyError, MemberError], [OSError, Error], [TargetError, Error],
+	[TimeoutError, Error], [TypeError, Error], [ValueError, Error], [ZeroDivisionError, Error],
+	[Buffer, Object], [Array, Object], [Map, Object], [File, Object]]
+	Assert(HasBase(classPair[1].Prototype, classPair[2].Prototype), A_LineNumber)
+
+#if WINDOWS
+Assert(HasBase(ClipboardAll.Prototype, Buffer.Prototype), A_LineNumber)
+#else
+Assert(HasBase(ClipboardAll.Prototype, Object.Prototype), A_LineNumber)
+#endif
+
+AssertEq(Type(0), "Integer", A_LineNumber)
+AssertEq(Type(1.2), "Float", A_LineNumber)
+AssertEq(Type({}), "Object", A_LineNumber)
+
 FileAppend "pass", "*"

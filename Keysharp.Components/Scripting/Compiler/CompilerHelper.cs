@@ -326,7 +326,7 @@ namespace Keysharp.Compilation
 		}
 
 		/// <summary>Emits one self-contained parsed script.</summary>
-		public (EmitResult, MemoryStream, Exception) Compile(ScriptCompilationResult compilation, string outputname, string currentDir, bool minimalexeout = false, List<Diagnostic> diagnoseSink = null)
+		public (EmitResult, MemoryStream, Exception) Compile(ScriptCompilationResult compilation, string outputname, string currentDir, bool minimalexeout = false, List<Diagnostic> diagnoseSink = null, bool win32Resources = true)
 		{
 			try
 			{
@@ -338,7 +338,7 @@ namespace Keysharp.Compilation
 				var tree = SyntaxFactory.SyntaxTree(compilation.Unit, parseOptions);
 				return CompileFromTree(tree, outputname, currentDir, minimalexeout, BuildInlineTrees(compilation, parseOptions),
 					diagnoseSink, compilation.Packages, compilation.RequiredProviders, compilation.RequiredComponents,
-					compilation.Manifest);
+					compilation.Manifest, win32Resources);
 			}
 			catch (Exception e)
 			{
@@ -439,7 +439,7 @@ namespace Keysharp.Compilation
 			return ([.. diags], ex);
 		}
 
-		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null, IReadOnlyCollection<string> requiredProviders = null, IReadOnlyCollection<string> requiredComponents = null, Keysharp.Internals.Scripting.AppManifest appManifest = null)
+		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null, IReadOnlyCollection<string> requiredProviders = null, IReadOnlyCollection<string> requiredComponents = null, Keysharp.Internals.Scripting.AppManifest appManifest = null, bool win32Resources = true)
 		{
 			IEnumerable<ResourceDescription> resourceDescriptions = null;
 			HashSet<string> allDependencies = null;
@@ -734,6 +734,10 @@ namespace Keysharp.Compilation
 
 			EmitResult compilationResult = null;
 #if WINDOWS
+			// Only a file on disk exposes Win32 resources; a byte-loaded assembly never reads them.
+			if (!win32Resources)
+				return (compilation.Emit(ms, manifestResources: resourceDescriptions), ms, null);
+
 			// Apparently there isn't a good way to read app.manifest contents from the running process,
 			// so instead we recreate it here.
 			// Any change in the manifest should be reflected here and in Keysharp app.manifest file.
@@ -1058,7 +1062,7 @@ namespace Keysharp.Compilation
 			if (emitCode)
 				_ = GetCode();
 
-			var (results, ms, compileexc) = Compile(compilation, assemblyName, exeDir, minimalexeout);
+			var (results, ms, compileexc) = Compile(compilation, assemblyName, exeDir, minimalexeout, win32Resources: compileToFile);
 
 			try
 			{

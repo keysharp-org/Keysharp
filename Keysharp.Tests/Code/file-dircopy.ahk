@@ -5,6 +5,9 @@ if (DirExist("./DirCopy2"))
 	DirDelete("./DirCopy2", true)
 
 DirCopy("../../../Keysharp.Tests/Code/DirCopy", "./DirCopy2")
+VerifyAndDelete(false)
+
+DirCopy("../../../Keysharp.Tests/Code/DirCopy", "./DirCopy2", true)
 VerifyAndDelete(true)
 
 DirCopy("../../../Keysharp.Tests/Code/DirCopy/DirCopy.zip", "./DirCopy2", true)

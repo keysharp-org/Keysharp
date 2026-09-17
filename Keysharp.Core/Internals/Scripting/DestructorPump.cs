@@ -12,8 +12,14 @@ namespace Keysharp.Internals.Scripting
 		private readonly Queue<Any> _q = new();       // enqueued by finalizers (strong refs -> resurrection)
 		private bool _pending = false;
 		private bool stopped;
+		private int registrations;
 
 		internal DestructorPump(Script owner) => this.owner = owner;
+
+		/// <summary>Whether any object ever enabled GC-time cleanup, i.e. whether exit needs a collection to find them.</summary>
+		internal bool HasRegistrations => Volatile.Read(ref registrations) != 0;
+
+		internal void NoteRegistration() => Interlocked.Increment(ref registrations);
 
 		public void Enqueue(Any obj)
 		{

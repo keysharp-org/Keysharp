@@ -144,7 +144,7 @@ namespace Keysharp.Tests
 					try
 					{
 						Console.SetOut(writer);
-						GC.Collect(); //Necessary to prevent testhost.exe throwing an error on long runs
+						// Don't let finalizers queued by the previous run's teardown overlap this one.
 						GC.WaitForPendingFinalizers();
 
 						if (ScriptExecutionState.Assembly == null)

@@ -23,6 +23,11 @@ AssertEq(match.Pos(), 10, A_LineNumber)
 
 CheckMatches(match, "0", "456")
 
+; Starting at the last character leaves too little haystack for the needle.
+AssertEq(RegExMatch("abc123abc456", "456", &match, -1), 0, A_LineNumber)
+
+AssertEq(match, "", A_LineNumber)
+
 RegExMatch("abc123abc456", "abc", &match, -6)
 
 AssertEq(match[0], "abc", A_LineNumber)

@@ -1587,16 +1587,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Current year and week number (e.g. 200453) according to ISO 8601.
 		/// </summary>
-		public static string A_YWeek
-		{
-			get
-			{
-				var now = DateTime.Now;
-				var cal = new GregorianCalendar(GregorianCalendarTypes.Localized);
-				var week = cal.GetWeekOfYear(now, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
-				return $"{now:yyyy}{week:D2}";
-			}
-		}
+		public static string A_YWeek => Conversions.ToIsoYearWeek(DateTime.Now);
 
 		/// <summary>
 		/// See <see cref="A_Year"/>.

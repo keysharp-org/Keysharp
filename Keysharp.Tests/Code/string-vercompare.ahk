@@ -15,6 +15,19 @@ AssertEq(VerCompare("1.20.0", "=1.30"), 0, A_LineNumber)
 
 AssertEq(VerCompare("1.20.0", "=1.20.0"), 1, A_LineNumber)
 
+; Surrounding whitespace on either side is ignored.
+AssertEq(VerCompare(" 1.20.0", "<1.30"), 1, A_LineNumber)
+
+AssertEq(VerCompare("1.20.0 ", "<=1.30"), 1, A_LineNumber)
+
+AssertEq(VerCompare("1.20.0", " >1.30"), 0, A_LineNumber)
+
+AssertEq(VerCompare("1.20.0", " >=1.30 "), 0, A_LineNumber)
+
+AssertEq(VerCompare(" 1.20.0", " =1.30 "), 0, A_LineNumber)
+
+AssertEq(VerCompare(" 1.20.0 ", " =1.20.0 "), 1, A_LineNumber)
+
 ; Same, but with the first string being a C# style version strings with 4 numbers.
 Assert(VerCompare(" 1.20.0.1", "<1.30") = 1, A_LineNumber)
 

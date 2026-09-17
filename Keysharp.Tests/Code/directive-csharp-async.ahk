@@ -72,7 +72,7 @@ AssertEq(Await(Immediate()), 42, A_LineNumber)
 AssertEq(Await(SlowSum(20, 5)), 25, A_LineNumber)
 
 ; --- Result is a snapshot: it never waits ----------------------------------------------------
-slow := SlowSum(400, 1)
+slow := SlowSum(100, 301)
 Assert(slow.IsPending && !slow.IsSucceeded && !slow.IsFailed && !slow.IsCanceled, A_LineNumber)
 AssertEq(slow.Result, "", A_LineNumber)
 AssertEq(Await(slow), 401, A_LineNumber)
@@ -160,7 +160,7 @@ blockedGate := ManualGate()
 blockedChain := blockedGate.Task.Then(Value => Value)
 Critical
 blockedGate.Resolve(5)
-Sleep 100
+Sleep 30
 Assert(blockedChain.IsPending, A_LineNumber)
 Critical "Off"
 AssertEq(Await(blockedChain), 5, A_LineNumber)
@@ -379,7 +379,7 @@ WorkerBody()
     SetTimer(WorkerTick, 50)
     Sleep(120)
     Critical
-    r := Await(SlowSum(1200, 9))
+    r := Await(SlowSum(250, 959))
     Critical "Off"
     SetTimer(WorkerTick, 0)
     return r
@@ -399,7 +399,7 @@ Tick() {
 }
 SetTimer(Tick, 100)
 Critical
-sum := Await(SlowSum(1200, 9))
+sum := Await(SlowSum(300, 909))
 Critical "Off"
 SetTimer(Tick, 0)
 AssertEq(sum, 1209, A_LineNumber)
@@ -414,7 +414,7 @@ AssertEq(Await(workerTask.Task.Result), 325, A_LineNumber)
 
 StartOnWorker()
 {
-    return SlowSum(300, 25)
+    return SlowSum(100, 225)
 }
 
 ; --- timeouts stop only the wait; they do not cancel the work ---------------------------------

@@ -1,8 +1,9 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
-monget := MonitorGetPrimary()
-
-Assert(monget >= 0, A_LineNumber)
+primary := MonitorGetPrimary()
+Assert(primary > 0 && primary <= MonitorGetCount(), A_LineNumber)
 
 FileAppend "pass", "*"

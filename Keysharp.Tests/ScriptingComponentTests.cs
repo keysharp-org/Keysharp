@@ -16,6 +16,27 @@ namespace Keysharp.Tests
 		[TearDown]
 		public void ClearComponents() => ScriptingComponentRegistry.ResetForTests();
 
+		private const string embeddedCompilerSource = "#NoTrayIcon\n#ErrorStdOut\n#import \"Ks\" { IsComponentAvailable, RunScript }\nif IsComponentAvailable(\"compiler\")\n\tRunScript(\"x := 1\")\n";
+		private const string leanBody = "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\nFileAppend('lean-pass', '*')\nExitApp(0)\n";
+		private readonly string sharedRoot = Path.Combine(Path.GetTempPath(), "ks-component-shared-" + Guid.NewGuid().ToString("N"));
+		private readonly Lazy<IScriptCompilationResult> embeddedCompilerBuild;
+		private readonly Lazy<string> leanExecutable;
+		private readonly Lazy<(string Target, string HostRoot)> cksTarget;
+
+		// Artifacts that several tests only read are built on first use, so a filtered run pays only for what it needs.
+		public ScriptingComponentTests()
+		{
+			embeddedCompilerBuild = new(() => CompileEmbeddedCompiler("embedded-compiler"));
+			leanExecutable = new(BuildLeanExecutable);
+			cksTarget = new(BuildCksTarget);
+		}
+
+		[OneTimeTearDown]
+		public void DeleteSharedArtifacts()
+		{
+			try { Directory.Delete(sharedRoot, true); } catch { }
+		}
+
 		[Test]
 		public void RoslynIsolation()
 		{
@@ -446,13 +467,7 @@ namespace Keysharp.Tests
 			var staleRoot = default(string);
 			try
 			{
-				var result = new CompilerComponent().Compile(new ScriptCompileRequest
-				{
-					SourceText = "#NoTrayIcon\n#ErrorStdOut\n#import \"Ks\" { IsComponentAvailable, RunScript }\nif IsComponentAvailable(\"compiler\")\n\tRunScript(\"x := 1\")\n",
-					CompilationName = "embedded-compiler",
-					RuntimeDirectory = AppContext.BaseDirectory,
-					Output = ScriptCompilationOutput.MinimalExecutable,
-				});
+				var result = embeddedCompilerBuild.Value;
 				Assert.IsTrue(result.Success, result.ErrorText);
 				var assembly = Assembly.Load(result.AssemblyBytes);
 				Assert.IsTrue(CompiledScriptingComponentManifest.HasCapability(assembly, ScriptingCapability.Compilation));
@@ -483,17 +498,8 @@ namespace Keysharp.Tests
 		[Test]
 		public void ContentAddressedCache()
 		{
-			var compiler = new CompilerComponent();
-			IScriptCompilationResult Compile(string name) => compiler.Compile(new ScriptCompileRequest
-			{
-				SourceText = "#NoTrayIcon\n#ErrorStdOut\n#Import \"Ks\" { RunScript }\nRunScript('x := 1')\n",
-				CompilationName = name,
-				RuntimeDirectory = AppContext.BaseDirectory,
-				Output = ScriptCompilationOutput.MinimalExecutable,
-			});
-
-			var first = Compile("content-cache-a");
-			var second = Compile("content-cache-b");
+			var first = embeddedCompilerBuild.Value;
+			var second = CompileEmbeddedCompiler("content-cache-b");
 			Assert.IsTrue(first.Success, first.ErrorText);
 			Assert.IsTrue(second.Success, second.ErrorText);
 			var firstAssembly = Assembly.Load(first.AssemblyBytes);
@@ -507,30 +513,10 @@ namespace Keysharp.Tests
 		[Test, NonParallelizable]
 		public void LeanExecutable()
 		{
-			var root = Path.Combine(Path.GetTempPath(), "ks-component-lean-" + Guid.NewGuid().ToString("N"));
-			Directory.CreateDirectory(root);
-
-			try
-			{
-				var script = Path.Combine(root, "lean.ks");
-				File.WriteAllText(script,
-					"#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\nFileAppend('lean-pass', '*')\nExitApp(0)\n");
-
-				var executable = BuildExecutable(script);
-				Assert.IsFalse(Directory.Exists(Path.Combine(root, "components", "scripting")));
-				Assert.IsFalse(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Any(file =>
-					Path.GetFileName(file).StartsWith("Keysharp.Components.Scripting.Parser", StringComparison.OrdinalIgnoreCase)
-					|| Path.GetFileName(file).StartsWith("Keysharp.Components.Scripting.Compiler", StringComparison.OrdinalIgnoreCase)
-					|| Path.GetFileName(file).StartsWith("Microsoft.CodeAnalysis", StringComparison.OrdinalIgnoreCase)));
-
-				var run = RunProcess(executable, []);
-				Assert.AreEqual(0, run.ExitCode, run.StdErr);
-				Assert.AreEqual("lean-pass", run.StdOut.Trim(), run.StdErr);
-			}
-			finally
-			{
-				try { Directory.Delete(root, true); } catch { }
-			}
+			// BuildLeanExecutable asserts the build carries no scripting components.
+			var run = RunProcess(leanExecutable.Value, []);
+			Assert.AreEqual(0, run.ExitCode, run.StdErr);
+			Assert.AreEqual("lean-pass", run.StdOut.Trim(), run.StdErr);
 		}
 
 		/// <summary>
@@ -548,22 +534,18 @@ namespace Keysharp.Tests
 
 			try
 			{
-				// Same body twice, so the subsystem is the only difference between the two executables.
-				const string body = "#NoTrayIcon\n#ErrorStdOut\nFileAppend('console-pass', '*')\nExitApp(0)\n";
+				// Same body as the shared lean build, so the subsystem is the only difference between the two executables.
 				var consoleScript = Path.Combine(root, "console.ks");
-				var guiScript = Path.Combine(root, "gui.ks");
-				File.WriteAllText(consoleScript, "#App { ConsoleApp: true }\n" + body);
-				File.WriteAllText(guiScript, body);
+				File.WriteAllText(consoleScript, "#App { ConsoleApp: true }\n" + leanBody);
 				var consoleExe = BuildExecutable(consoleScript);
-				var guiExe = BuildExecutable(guiScript);
 #if WINDOWS
 				Assert.AreEqual(3, PeSubsystem(consoleExe), "#App { ConsoleApp: true } must produce a console-subsystem executable");
-				Assert.AreEqual(2, PeSubsystem(guiExe), "without the directive the executable must stay a GUI one");
+				Assert.AreEqual(2, PeSubsystem(leanExecutable.Value), "without the directive the executable must stay a GUI one");
 #endif
 				// The stamped host still has to run: a subsystem edit that corrupted it would fail only here.
 				var run = RunProcess(consoleExe, []);
 				Assert.AreEqual(0, run.ExitCode, run.StdErr);
-				Assert.AreEqual("console-pass", run.StdOut.Trim(), run.StdErr);
+				Assert.AreEqual("lean-pass", run.StdOut.Trim(), run.StdErr);
 			}
 			finally
 			{
@@ -602,61 +584,22 @@ namespace Keysharp.Tests
 		[Test, NonParallelizable]
 		public void CksSidecar()
 		{
-			var root = Path.Combine(Path.GetTempPath(), "ks-component-cks-" + Guid.NewGuid().ToString("N"));
-			var artifactRoot = Path.Combine(root, "artifact");
-			var hostRoot = Path.Combine(root, "host");
-			Directory.CreateDirectory(artifactRoot);
-			Directory.CreateDirectory(hostRoot);
-
-			try
-			{
-				var script = Path.Combine(root, "sidecar.ks");
-				var compiled = Path.Combine(artifactRoot, "sidecar.cks");
-				File.WriteAllText(script,
-					"#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Import \"Ks\" { RunScript }\n"
-					+ "info := RunScript(\"#NoTrayIcon`n#ErrorStdOut`nFileAppend('sidecar-pass', '*')`nExitApp(0)\")\n"
-					+ "FileAppend(info.ExitCode ':' info.StdOut.Read(64), '*')\nExitApp()\n");
-
-				var compile = RunLauncher(["--errorstdout", "--compile", "asm", "--with-compiler", "--dest", compiled, script]);
-				Assert.AreEqual(0, compile.ExitCode, "compile failed: " + compile.StdErr);
-				Assert.IsTrue(File.Exists(compiled));
-				Assert.IsTrue(File.Exists(Path.Combine(artifactRoot, "components", "scripting", "compiler", "component.json")));
-
-				CopyLeanHost(hostRoot);
-				Assert.IsFalse(Directory.Exists(Path.Combine(hostRoot, "components", "scripting")));
-				Assert.IsFalse(Directory.GetFiles(hostRoot, "Microsoft.CodeAnalysis*.dll", SearchOption.AllDirectories).Any());
-
-				var run = RunProcess("dotnet", [Path.Combine(hostRoot, "Keysharp.dll"), "--errorstdout", compiled]);
-				Assert.AreEqual(0, run.ExitCode, run.StdErr);
-				Assert.AreEqual("0:sidecar-pass", run.StdOut.Trim(), run.StdErr);
-			}
-			finally
-			{
-				try { Directory.Delete(root, true); } catch { }
-			}
+			// BuildCksTarget asserts the sidecar compiler was deployed and the host carries none of its own.
+			var (target, hostRoot) = cksTarget.Value;
+			var run = RunProcess("dotnet", [Path.Combine(hostRoot, "Keysharp.dll"), "--errorstdout", target]);
+			Assert.AreEqual(0, run.ExitCode, run.StdErr);
+			Assert.AreEqual($"{target}:0:nested-pass", run.StdOut.Trim(), run.StdErr);
 		}
 
 		[Test, NonParallelizable]
 		public void RunScriptCks()
 		{
+			var (target, hostRoot) = cksTarget.Value;
 			var root = Path.Combine(Path.GetTempPath(), "ks-component-runscript-cks-" + Guid.NewGuid().ToString("N"));
-			var artifactRoot = Path.Combine(root, "artifact");
-			var hostRoot = Path.Combine(root, "host");
-			Directory.CreateDirectory(artifactRoot);
-			Directory.CreateDirectory(hostRoot);
+			Directory.CreateDirectory(root);
 
 			try
 			{
-				var targetSource = Path.Combine(root, "target.ks");
-				var target = Path.Combine(artifactRoot, "target.cks");
-				File.WriteAllText(targetSource,
-					"#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Import \"Ks\" { RunScript }\n"
-					+ "ownPath := A_ScriptFullPath\n"
-					+ "info := RunScript(\"#NoTrayIcon`n#ErrorStdOut`nFileAppend('nested-pass', '*')`nExitApp(0)\")\n"
-					+ "FileAppend(ownPath ':' info.ExitCode ':' info.StdOut.Read(64), '*')\nExitApp()\n");
-				var targetCompile = RunLauncher(["--errorstdout", "--compile", "asm", "--with-compiler", "--dest", target, targetSource]);
-				Assert.AreEqual(0, targetCompile.ExitCode, "target compile failed: " + targetCompile.StdErr);
-
 				var outerSource = Path.Combine(root, "outer.ks");
 				var outer = Path.Combine(root, "outer.cks");
 				File.WriteAllText(outerSource,
@@ -668,7 +611,6 @@ namespace Keysharp.Tests
 				Assert.IsFalse(Directory.Exists(Path.Combine(root, "components", "scripting")),
 					"the outer artifact must not carry its own compiler");
 
-				CopyLeanHost(hostRoot);
 				var run = RunProcess("dotnet", [Path.Combine(hostRoot, "Keysharp.dll"), "--errorstdout", outer]);
 				Assert.AreEqual(0, run.ExitCode, run.StdErr);
 				Assert.AreEqual($"0:{target}:0:nested-pass", run.StdOut.Trim(), run.StdErr);
@@ -698,6 +640,60 @@ namespace Keysharp.Tests
 			{
 				try { Directory.Delete(root, true); } catch { }
 			}
+		}
+
+		private static IScriptCompilationResult CompileEmbeddedCompiler(string name) => new CompilerComponent().Compile(new ScriptCompileRequest
+		{
+			SourceText = embeddedCompilerSource,
+			CompilationName = name,
+			RuntimeDirectory = AppContext.BaseDirectory,
+			Output = ScriptCompilationOutput.MinimalExecutable,
+		});
+
+		private string BuildLeanExecutable()
+		{
+			var root = Path.Combine(sharedRoot, "lean");
+			Directory.CreateDirectory(root);
+			var script = Path.Combine(root, "lean.ks");
+			File.WriteAllText(script, leanBody);
+			var executable = BuildExecutable(script);
+			// Checked before any test runs it, so the lean shape cannot depend on test order.
+			Assert.IsFalse(Directory.Exists(Path.Combine(root, "components", "scripting")));
+			Assert.IsFalse(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Any(file =>
+				Path.GetFileName(file).StartsWith("Keysharp.Components.Scripting.Parser", StringComparison.OrdinalIgnoreCase)
+				|| Path.GetFileName(file).StartsWith("Keysharp.Components.Scripting.Compiler", StringComparison.OrdinalIgnoreCase)
+				|| Path.GetFileName(file).StartsWith("Microsoft.CodeAnalysis", StringComparison.OrdinalIgnoreCase)));
+			return executable;
+		}
+
+		/// <summary>
+		/// A .cks carrying a sidecar compiler, whose script runs a nested RunScript and prints its own path, plus a
+		/// launcher host with no compiler of its own. Tests only run these, never modify them.
+		/// </summary>
+		private (string Target, string HostRoot) BuildCksTarget()
+		{
+			var root = Path.Combine(sharedRoot, "cks");
+			var artifactRoot = Path.Combine(root, "artifact");
+			var hostRoot = Path.Combine(root, "host");
+			Directory.CreateDirectory(artifactRoot);
+			Directory.CreateDirectory(hostRoot);
+
+			var targetSource = Path.Combine(root, "target.ks");
+			var target = Path.Combine(artifactRoot, "target.cks");
+			File.WriteAllText(targetSource,
+				"#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Import \"Ks\" { RunScript }\n"
+				+ "ownPath := A_ScriptFullPath\n"
+				+ "info := RunScript(\"#NoTrayIcon`n#ErrorStdOut`nFileAppend('nested-pass', '*')`nExitApp(0)\")\n"
+				+ "FileAppend(ownPath ':' info.ExitCode ':' info.StdOut.Read(64), '*')\nExitApp()\n");
+			var targetCompile = RunLauncher(["--errorstdout", "--compile", "asm", "--with-compiler", "--dest", target, targetSource]);
+			Assert.AreEqual(0, targetCompile.ExitCode, "target compile failed: " + targetCompile.StdErr);
+			Assert.IsTrue(File.Exists(target));
+			Assert.IsTrue(File.Exists(Path.Combine(artifactRoot, "components", "scripting", "compiler", "component.json")));
+
+			CopyLeanHost(hostRoot);
+			Assert.IsFalse(Directory.Exists(Path.Combine(hostRoot, "components", "scripting")));
+			Assert.IsFalse(Directory.GetFiles(hostRoot, "Microsoft.CodeAnalysis*.dll", SearchOption.AllDirectories).Any());
+			return (target, hostRoot);
 		}
 
 		private static void CopyLeanHost(string destination)

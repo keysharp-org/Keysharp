@@ -9837,7 +9837,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The Run and RunWait functions run an external program. RunWait will wait until the program finishes before continuing.",
-                     "tested-by":  "ProcessTests.RunQuotedTarget; process-run-wait-close.ahk"
+                     "tested-by":  "process-run-wait-close.ahk"
                  },
                  {
                      "category":  "Imaging",

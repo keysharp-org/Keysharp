@@ -6,7 +6,9 @@ b64 := "SGVsbG8sIHdvcmxkIQ==" ; "Hello, world!"
 conv := Base64.Decode(b64)
 str2 := Base64.Encode(conv)
 
-Assert(b64 = str2, A_LineNumber)
+AssertEq(StrGet(conv, "UTF-8"), "Hello, world!", A_LineNumber)
+
+AssertEq(str2, b64, A_LineNumber)
 
 ; A string is taken as its UTF-8 bytes, so encoding the text produces what encoding those bytes does.
 AssertEq(Base64.Encode("Hello, world!"), b64, A_LineNumber)

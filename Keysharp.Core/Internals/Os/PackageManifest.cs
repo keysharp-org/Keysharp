@@ -251,12 +251,15 @@ namespace Keysharp.Internals.Os
 				if (string.IsNullOrEmpty(userRoot))
 					return false;
 
-				var root = Path.Combine(userRoot, "Keysharp", "embedded-packages",
-									assembly.ManifestModule.ModuleVersionId.ToString("N"));
+				var cacheRoot = Path.Combine(userRoot, "Keysharp", "embedded-packages");
+				var root = Path.Combine(cacheRoot, assembly.ManifestModule.ModuleVersionId.ToString("N"));
 				path = SafePath(root, asset.Deployed);
 
 				if (File.Exists(path))
+				{
+					ExtractionCache.Touch(root);
 					return true;
+				}
 
 				_ = Directory.CreateDirectory(Path.GetDirectoryName(path));
 				var temporary = path + "." + Environment.ProcessId + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -274,6 +277,8 @@ namespace Keysharp.Internals.Os
 					try { File.Delete(temporary); } catch { }
 				}
 
+				// Every build gets its own directory, so each extraction is also when old builds' copies are let go.
+				ExtractionCache.TouchAndPrune(cacheRoot, root);
 				return true;
 			}
 			catch

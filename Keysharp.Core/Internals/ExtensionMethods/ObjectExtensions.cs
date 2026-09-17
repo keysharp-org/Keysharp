@@ -349,14 +349,7 @@ namespace Keysharp.Internals.ExtensionMethods
 				return false;
 			}
 
-			if (double.TryParse(s, out outvar))
-				return true;
-
-			if (!char.IsNumber(s[s.Length - 1]))//Handle a string specifying a double like "123.0D".
-				if (double.TryParse(s.Slice(0, s.Length - 1), out outvar))
-					return true;
-
-			return false;
+			return double.TryParse(s, out outvar);
 		}
 
 		/// <summary>
@@ -418,10 +411,6 @@ namespace Keysharp.Internals.ExtensionMethods
 				outvar = l;
 				return true;
 			}
-
-			if (!char.IsNumber(s[s.Length - 1]))//Handle a string specifying a long like "123L".
-				if (long.TryParse(s.Slice(0, s.Length - 1), out outvar))
-					return true;
 
 			var neg = false;
 

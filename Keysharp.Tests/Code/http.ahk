@@ -169,21 +169,21 @@ static void Respond(NetworkStream stream, string method, string path,
         case "/slow":
             // Written in pieces with gaps wider than the OnData coalescing window, so a streaming callback is
             // called several times and an abort lands mid-body rather than after the last byte.
-            var piece = new byte[30000];
+            var piece = new byte[50000];
 
             for (var i = 0; i < piece.Length; i++)
                 piece[i] = (byte)'x';
 
             var head = Encoding.ASCII.GetBytes(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
-                + "Content-Length: " + (piece.Length * 10) + "\r\nConnection: close\r\n\r\n");
+                + "Content-Length: " + (piece.Length * 6) + "\r\nConnection: close\r\n\r\n");
             stream.Write(head, 0, head.Length);
 
-            for (var n = 0; n < 10; n++)
+            for (var n = 0; n < 6; n++)
             {
                 stream.Write(piece, 0, piece.Length);
                 stream.Flush();
-                Thread.Sleep(60);
+                Thread.Sleep(80);
             }
 
             return;
@@ -620,13 +620,14 @@ FileDelete(dl)
 
 ; ---- timeouts and transport failures ------------------------------------------------------------------
 
-; The timeout is idle rather than total. /slow takes about 600 ms in 60 ms steps, so a 0.3 s budget is under
+; The timeout is idle rather than total. /slow takes about 400 ms in 80 ms steps, so a 0.3 s budget is under
 ; the total and over every gap: a total timeout would raise here, and an idle one does not.
 AssertEq(Http.Get(root "/slow", {Timeout: 0.3}).Body.Size, 300000, A_LineNumber)
-Throws(() => Http.Get(root "/stall", {Timeout: 1}), A_LineNumber, TimeoutError)
+Throws(() => Http.Get(root "/stall", {Timeout: 0.3}), A_LineNumber, TimeoutError)
 
-; A host that cannot be reached is an OSError, not a status.
-Throws(() => Http.Get("http://127.0.0.1:1/nothing"), A_LineNumber, OSError)
+; A host that cannot be reached is an OSError, not a status. Port 0 fails the connect at once, where a refused port is
+; retried for about two seconds on Windows.
+Throws(() => Http.Get("http://127.0.0.1:0/nothing"), A_LineNumber, OSError)
 
 ; Http.Response is nameable but not constructible from script.
 AssertEq(Type(Http.Get(root "/text")), "Http.Response", A_LineNumber)
@@ -656,7 +657,7 @@ Throws(() => Download("*1 " root "/text", tmp), A_LineNumber, ValueError)   ; on
 
 ; A download that never reaches a reply leaves an existing file alone.
 FileAppend("keep", tmp)
-Throws(() => Download("http://127.0.0.1:1/nothing", tmp), A_LineNumber, OSError)
+Throws(() => Download("http://127.0.0.1:0/nothing", tmp), A_LineNumber, OSError)
 AssertEq(FileRead(tmp), "keep", A_LineNumber)
 FileDelete(tmp)
 

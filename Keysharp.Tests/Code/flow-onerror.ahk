@@ -34,7 +34,7 @@ AssertEq(x, 1, A_LineNumber)
 x := 0
 
 fo1 := TimerHandler
-SetTimer(fo1, 100)
+SetTimer(fo1, 20)
 
 TimerHandler(*)
 {
@@ -50,7 +50,16 @@ global
 	x := 123
 }
 
-Sleep(1000)
+; Wait for the first tick, then long enough for several more periods to show it turned itself off.
+Loop 200
+{
+	if x != 0
+		break
+
+	Sleep 10
+}
+
+Sleep(100)
 
 AssertEq(x, 1, A_LineNumber)
 

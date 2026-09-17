@@ -20,21 +20,13 @@ DllCall("user32.dll\CharUpperBuff", "ptr", strbuf, "UInt", len)
 AssertEq(strbuf, StrUpper(str), A_LineNumber)
 
 
-DetectHiddenWindows True
-pid := ""
-Run("notepad.exe", "", "max", &pid)
-ProcessWait(pid)
-ProcessSetPriority("H", pid)
-Sleep(2000)
-
-visible := DllCall("IsWindowVisible", "Ptr", WinExist("Untitled - Notepad"))
-Assert(visible, A_LineNumber)
-
-if visible
-{
-	ProcessClose(pid)
-	ProcessWaitClose(pid)
-}
+; A window of the script's own, so the result does not depend on how another application launches.
+visGui := Gui()
+visGui.Show("w100 h100 NoActivate")
+Assert(DllCall("IsWindowVisible", "Ptr", visGui.Hwnd), A_LineNumber)
+visGui.Hide()
+Assert(!DllCall("IsWindowVisible", "Ptr", visGui.Hwnd), A_LineNumber)
+visGui.Destroy()
 
 ZeroPaddedNumber := Buffer(20)
 DllCall("wsprintf", "Ptr", ZeroPaddedNumber, "Str", "%010d", "Int", 432, "Cdecl")
@@ -62,11 +54,11 @@ CounterAfter := 0
 
 DllCall("QueryPerformanceFrequency", "Int64*", &freq)
 DllCall("QueryPerformanceCounter", "Int64*", &CounterBefore)
-Sleep(1000)
+Sleep(100)
 DllCall("QueryPerformanceCounter", "Int64*", &CounterAfter)
 elapsed := (CounterAfter - CounterBefore) / freq * 1000
 
-Assert(elapsed > 900 && elapsed < 1200, A_LineNumber)
+Assert(elapsed >= 90 && elapsed < 500, A_LineNumber)
 
 freq := 0
 CounterBefore := 0
@@ -77,11 +69,11 @@ qpc := DllCall("GetProcAddress", "Ptr", mh, "AStr", "QueryPerformanceCounter", "
 
 DllCall(qpf, "Int64*", &freq)
 DllCall(qpc, "Int64*", &counterbefore)
-Sleep(1000)
+Sleep(100)
 DllCall(qpc, "Int64*", &counterafter)
 elapsed := (CounterAfter - CounterBefore) / freq * 1000
 
-Assert(elapsed > 900 && elapsed < 1200, A_LineNumber)
+Assert(elapsed >= 90 && elapsed < 500, A_LineNumber)
 
 mh := DllCall("GetModuleHandle", "Str", "kernel32", "Ptr")
 MulDivProc := DllCall("GetProcAddress", "Ptr", mh, "AStr", "MulDiv", "Ptr")

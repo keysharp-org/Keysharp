@@ -169,7 +169,10 @@ namespace Keysharp.Internals
 			script.onExitHandlers.Clear();
 			script.SuppressErrorOccurredDialog = true;
 
-			GC.Collect();
+			// A blocking full collection costs in proportion to the whole heap, so pay it only when something can be found.
+			if (script.DestructorPump.HasRegistrations)
+				GC.Collect();
+
 			GC.WaitForPendingFinalizers();
 			script.DestructorPump.RunPendingDestructors();
 

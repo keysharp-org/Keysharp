@@ -1520,30 +1520,6 @@ namespace Keysharp.Tests
 
 		[Test, Category("Gui")]
 #if WINDOWS
-		[Apartment(ApartmentState.STA)]
-#endif
-		public void FileSelect()
-		{
-			if (Script.IsHeadless)
-				Assert.Ignore("FileSelect requires an interactive desktop session.");
-
-			var fullpath = Path.GetFullPath(string.Concat(path, "DirCopy/file1.txt"));
-			var files = Dialogs.FileSelect();
-			//MsgBox(files);
-			files = Dialogs.FileSelect("", fullpath, "Filename - Path and file", "");
-			fullpath = Path.GetFullPath(string.Concat(path, "DirCopy/"));
-			files = Dialogs.FileSelect("M", fullpath, "Filename - Path only - Multiselect", "");
-			//MsgBox(files);
-			fullpath = Path.GetFullPath(string.Concat(path, "DirCopy/file1.txt"));
-			files = Dialogs.FileSelect("S16", fullpath, "Filename - Path and file - Text files filter - Save & prompt for overwrite", "Text files |*.txt;*.wri;*.ini");
-			fullpath = Path.GetFullPath(string.Concat(path, "DirCopy/"));
-			files = Dialogs.FileSelect("S16", fullpath, "Filename - Path only - Text files filter - Save & prompt for overwrite", "Text files |*.txt;*.wri;*.ini");
-			//MsgBox(files);
-			files = Dialogs.FileSelect("D", "D:\\", "", "");
-		}
-
-		[Test, Category("Gui")]
-#if WINDOWS
 		// Same STA apartment as Theme so the two share a per-test STA thread that is torn down afterward. Otherwise this
 		// test's message loop strands a SystemEvents (dark-mode/theming) subscription on the persistent runner thread,
 		// and Theme's Application.SetColorMode later deadlocks marshaling a synchronous notification back to it.
@@ -1758,10 +1734,14 @@ namespace Keysharp.Tests
 					{
 						_ = WindowsAPI.SetForegroundWindow(wnd);
 						SendKeys.SendWait(" ");
-						Thread.Sleep(100);
+
+						// Wait for this box to close rather than a fixed time, so the same one is not pressed twice.
+						// A keystroke that went nowhere is simply sent again once the wait gives up.
+						for (var i = 0; i < 60 && WindowsAPI.IsWindow(wnd); i++)
+							Thread.Sleep(5);
 					}
 					else
-						Thread.Sleep(50);
+						Thread.Sleep(10);
 				}
 			});
 #else

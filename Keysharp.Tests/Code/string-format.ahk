@@ -6,6 +6,8 @@
 s := Format("{1}", 123)
 AssertEq(s, "123", A_LineNumber)
 
+AssertEq(Format("{1}", 123.456), "123.456", A_LineNumber)
+
 ; Test 2: Zero padding with field width.
 s := Format("{1:08d}", 123)
 AssertEq(s, "00000123", A_LineNumber)

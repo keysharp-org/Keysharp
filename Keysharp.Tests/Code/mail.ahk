@@ -178,7 +178,8 @@ Assert(!InStr(log, "> Bcc:"), A_LineNumber)
 
 ; ---- an unreachable server --------------------------------------------------------------------------
 
+; 0.0.0.0 fails the connect at once; a refused loopback port is retried for about two seconds on Windows.
 StopServer()
-Throws(() => Mail("a@example.com", "s", "b", Map("host", "127.0.0.1:" port2, "from", "me@example.com")), A_LineNumber, OSError)
+Throws(() => Mail("a@example.com", "s", "b", Map("host", "0.0.0.0:" port2, "from", "me@example.com")), A_LineNumber, OSError)
 
 FileAppend "pass", "*"

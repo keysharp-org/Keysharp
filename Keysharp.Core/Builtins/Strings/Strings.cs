@@ -416,11 +416,7 @@ namespace Keysharp.Builtins
 						return output;
 
 					case Keyword_YWeek:
-					{
-						var week = ci.Calendar.GetWeekOfYear(time, CalendarWeekRule.FirstFourDayWeek, ci.DateTimeFormat.FirstDayOfWeek);
-						output = ci.Calendar.GetYear(time).ToString() + week;
-						return output;
-					}
+						return Conversions.ToIsoYearWeek(time);
 
 					default:
 						if (f.Contains('\''))

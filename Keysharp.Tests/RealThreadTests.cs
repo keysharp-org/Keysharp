@@ -178,6 +178,8 @@ namespace Keysharp.Tests
 			if (worker == null)
 				return;
 
+			// Scheduling only wakes a worker with queued work, so an idle one must be asked to exit.
+			_ = worker.Exit();
 			_ = SpinWait.SpinUntil(() => !worker.IsAlive, 2000);
 		}
 

@@ -523,4 +523,13 @@ um4["k"] := 2
 
 Assert(um4.Count == 1 && um4["k"] == 2, A_LineNumber)
 
+; Enumeration yields every key with its value, in key order.
+
+enumPairs := ""
+
+for enumKey, enumVal in Map("one", 1, "two", 2, "three", 3)
+	enumPairs .= enumKey "=" enumVal ","
+
+AssertEq(enumPairs, "one=1,three=3,two=2,", A_LineNumber)
+
 FileAppend "pass", "*"

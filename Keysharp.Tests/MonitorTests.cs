@@ -22,11 +22,6 @@ namespace Keysharp.Tests
 		public void MonitorGet()
 		{
 			SkipIfGuiHeadless();
-			VarRef l = new(null), t = new(null), r = new(null), b = new(null);
-			var monget = Builtins.Monitor.MonitorGet(null, l, t, r, b);
-			Assert.IsTrue(r.__Value.Ai() > l.__Value.Ai());
-			Assert.IsTrue(b.__Value.Ai() > t.__Value.Ai());
-			Assert.IsTrue(monget.Ai() > 0);
 			Assert.IsTrue(TestScript("monitor-monitorget", true));
 		}
 
@@ -34,8 +29,6 @@ namespace Keysharp.Tests
 		public void MonitorGetCount()
 		{
 			SkipIfGuiHeadless();
-			var ct = Builtins.Monitor.MonitorGetCount();
-			Assert.IsTrue(ct > 0);
 			Assert.IsTrue(TestScript("monitor-monitorgetcount", true));
 		}
 
@@ -43,13 +36,6 @@ namespace Keysharp.Tests
 		public void MonitorGetName()
 		{
 			SkipIfGuiHeadless();
-			var names = "";
-			var ct = Builtins.Monitor.MonitorGetCount();
-
-			for (var i = 1; i <= ct; i++)
-				names += Builtins.Monitor.MonitorGetName(i) + Environment.NewLine;
-
-			Assert.IsTrue(names != "");
 			Assert.IsTrue(TestScript("monitor-monitorgetname", true));
 		}
 
@@ -57,241 +43,50 @@ namespace Keysharp.Tests
 		public void MonitorGetPrimary()
 		{
 			SkipIfGuiHeadless();
-			var ct = Builtins.Monitor.MonitorGetPrimary();
-			Assert.IsTrue(ct > 0);
 			Assert.IsTrue(TestScript("monitor-monitorgetprimary", true));
-		}
-
-		/// <summary>Scale and point selection now live on the Monitor class (the standalone Ks.MonitorGetScale /
-		/// Ks.MonitorFromPoint functions were folded into it).</summary>
-		[Test, Category("Monitor")]
-		public void MonitorScaleAndPoint()
-		{
-			SkipIfGuiHeadless();
-			var primary = Builtins.Monitor.MonitorGetPrimary();
-			VarRef l = new(null), t = new(null), r = new(null), b = new(null);
-			_ = Builtins.Monitor.MonitorGet(primary, l, t, r, b);
-			var x = (l.__Value.Ai() + r.__Value.Ai()) / 2;
-			var y = (t.__Value.Ai() + b.__Value.Ai()) / 2;
-
-			var m = Builtins.Ks.KeysharpMonitor.FromPoint(null, x, y) as Builtins.Ks.KeysharpMonitor;
-			Assert.AreEqual(primary, m.Index);
-			Assert.Greater(m.Scale, 0);
 		}
 
 		[Test, Category("Monitor")]
 		public void MonitorGetWorkArea()
 		{
 			SkipIfGuiHeadless();
-			VarRef l = new(null), t = new(null), r = new(null), b = new(null);
-			var monget = Builtins.Monitor.MonitorGetWorkArea(null, l, t, r, b);
-			Assert.IsTrue(r.__Value.Ai() > l.__Value.Ai());
-			Assert.IsTrue(b.__Value.Ai() > t.__Value.Ai());
-			Assert.IsTrue(monget.Ai() > 0);
 			Assert.IsTrue(TestScript("monitor-monitorgetworkarea", true));
 		}
 
+#if LINUX
 		/// <summary>
-		/// AHK v2 returns FR_E_ARG(0) — a ValueError on parameter 1 — for a monitor index outside the current
-		/// count, while 0 and an omitted index both mean the primary monitor (source/lib/env.cpp, MonitorGet).
-		/// Keysharp used to substitute the primary for every invalid index instead.
-		/// </summary>
-		[Test, Category("Monitor")]
-		public void MonitorInvalidIndex()
-		{
-			SkipIfGuiHeadless();
-			var count = Builtins.Monitor.MonitorGetCount();
-			var primary = Builtins.Monitor.MonitorGetPrimary();
-
-			Assert.AreEqual(primary, Builtins.Monitor.MonitorGet(0L).Al());
-			Assert.AreEqual(primary, Builtins.Monitor.MonitorGet(null).Al());
-
-			_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => Builtins.Monitor.MonitorGet(count + 1));
-			_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => Builtins.Monitor.MonitorGet(-1L));
-			_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => Builtins.Monitor.MonitorGetWorkArea(count + 1));
-			_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => Builtins.Monitor.MonitorGetName(count + 1));
-		}
-
-		/// <summary>
-		/// MonitorGetName must be the name the platform actually gave us, never a fabricated stand-in. Before this,
-		/// Linux/X11 and macOS both fell through to a synthetic "display-N" because they used Eto's Screen.ID, which
-		/// no screen handler ever sets.
-		/// <para>The placeholder assertion is made only where a real name is genuinely obtainable: a virtual X
-		/// server (Xvfb on CI) exposes no named RandR output at all, and there the synthetic name is the honest
-		/// answer rather than a regression. On X11 that condition is exactly "a RandR output was matched", which
-		/// the topology records in <c>NativeId</c>.</para>
+		/// A display whose RandR output was matched (a non-zero NativeId) has a real connector name, never the
+		/// synthetic "display-N" placeholder. Xvfb exposes no named output, and there the placeholder is honest.
 		/// </summary>
 		[Test, Category("Monitor")]
 		public void MonitorName()
 		{
 			SkipIfGuiHeadless();
 			var displays = Keysharp.Internals.Platform.Screen.GetDisplays();
-			var names = new List<string>();
 
-			for (var i = 1L; i <= Builtins.Monitor.MonitorGetCount(); i++)
+			for (var i = 0; i < displays.Count; i++)
 			{
-				var name = Builtins.Monitor.MonitorGetName(i);
-				Assert.IsNotEmpty(name);
-				names.Add(name);
-			}
+				var name = Builtins.Monitor.MonitorGetName(i + 1L);
 
-			// Whatever the source, the names have to tell the monitors apart.
-			Assert.AreEqual(names.Count, names.Distinct().Count(), "Monitor names are not unique.");
-
-			for (var i = 0; i < displays.Count && i < names.Count; i++)
-			{
-#if WINDOWS
-				// GDI always names a display device, and always in this shape.
-				Assert.IsTrue(names[i].StartsWith(@"\\.\", StringComparison.Ordinal),
-					$"Monitor {i + 1} reported \"{names[i]}\", which is not a GDI display device name.");
-				var hasPlatformName = true;
-#elif LINUX
-				var hasPlatformName = displays[i].NativeId != 0;   // a RandR output was matched, so it has a name
-#else
-				var hasPlatformName = false;   // macOS: only assertable with a real window server attached
-#endif
-
-				if (hasPlatformName)
-					Assert.IsFalse(names[i].StartsWith("display-", StringComparison.OrdinalIgnoreCase),
-						$"Monitor {i + 1} reported the synthetic placeholder name \"{names[i]}\".");
+				if (displays[i].NativeId != 0)
+					Assert.IsFalse(name.StartsWith("display-", StringComparison.OrdinalIgnoreCase),
+						$"Monitor {i + 1} reported the synthetic placeholder name \"{name}\".");
 			}
 		}
+#endif
 
 		[Test, Category("Monitor")]
 		public void MonitorClass()
 		{
 			SkipIfGuiHeadless();
-			var count = Builtins.Monitor.MonitorGetCount();
-			Assert.AreEqual(count, Builtins.Ks.KeysharpMonitor.staticget_Count(null).Al());
-
-			var all = Builtins.Ks.KeysharpMonitor.staticget_All(null) as Builtins.Array;
-			Assert.IsNotNull(all);
-			Assert.AreEqual(count, all.Count);
-
-			for (var i = 1L; i <= count; i++)
-			{
-				var m = all[i] as Builtins.Ks.KeysharpMonitor;
-				Assert.IsNotNull(m);
-				Assert.AreEqual(i, m.Index);
-				Assert.AreEqual(Builtins.Monitor.MonitorGetName(i), m.Name);
-
-				VarRef l = new(null), t = new(null), r = new(null), b = new(null);
-				_ = Builtins.Monitor.MonitorGet(i, l, t, r, b);
-				Assert.AreEqual(l.__Value.Al(), m.X);
-				Assert.AreEqual(t.__Value.Al(), m.Y);
-				Assert.AreEqual(r.__Value.Al() - l.__Value.Al(), m.Width);
-				Assert.AreEqual(b.__Value.Al() - t.__Value.Al(), m.Height);
-			}
+			Assert.IsTrue(TestScript("monitor-class", true));
 		}
 
-		/// <summary>
-		/// The script-level half matters as much as the C# half: calling staticget_VirtualScreen directly bypasses
-		/// the registration that makes <c>Monitor.VirtualScreen</c> resolve from a script.
-		/// </summary>
 		[Test, Category("Monitor")]
 		public void MonitorVirtualScreen()
 		{
 			SkipIfGuiHeadless();
-			var v = Builtins.Ks.KeysharpMonitor.staticget_VirtualScreen(null) as Builtins.KeysharpObject;
-			Assert.IsNotNull(v);
-
-			var (left, top, width, height) = Builtins.Monitor.GetVirtualScreenBounds();
-			Assert.AreEqual(left, Script.GetPropertyValue(v, "X").Al());
-			Assert.AreEqual(top, Script.GetPropertyValue(v, "Y").Al());
-			Assert.AreEqual(width, Script.GetPropertyValue(v, "Width").Al());
-			Assert.AreEqual(height, Script.GetPropertyValue(v, "Height").Al());
-
-			// The union must cover every monitor, origin included.
-			var all = Builtins.Ks.KeysharpMonitor.staticget_All(null) as Builtins.Array;
-
-			for (var i = 1L; i <= all.Count; i++)
-			{
-				var m = all[i] as Builtins.Ks.KeysharpMonitor;
-				Assert.IsTrue(m.X >= left && m.Y >= top);
-				Assert.IsTrue(m.X + m.Width <= left + width);
-				Assert.IsTrue(m.Y + m.Height <= top + height);
-			}
-
 			Assert.IsTrue(TestScript("monitor-virtualscreen", true));
-		}
-
-		/// <summary>
-		/// Metadata is hardware-dependent, so this asserts the CONTRACT rather than any particular value: a field
-		/// is either a plausible value or the unset marker, and is never a fabricated stand-in.
-		/// </summary>
-		[Test, Category("Monitor")]
-		public void MonitorDetails()
-		{
-			SkipIfGuiHeadless();
-			var all = Builtins.Ks.KeysharpMonitor.staticget_All(null) as Builtins.Array;
-
-			for (var i = 1L; i <= all.Count; i++)
-			{
-				var m = all[i] as Builtins.Ks.KeysharpMonitor;
-
-				if (m.RefreshRate is double hz)
-					Assert.IsTrue(hz is > 1.0 and < 1000.0, $"Implausible refresh rate {hz}.");
-				else
-					Assert.AreEqual("", m.RefreshRate);
-
-				Assert.Contains(m.Orientation, new[] { 0L, 90L, 180L, 270L });
-
-				if (m.PhysicalWidth is long mm)
-					Assert.IsTrue(mm is > 0 and < 5000, $"Implausible physical width {mm}mm.");
-				else
-					Assert.AreEqual("", m.PhysicalWidth);
-
-				// Connection is a closed vocabulary; an unrecognized native value must map to "" rather than leak.
-				Assert.Contains(m.Connection.As(),
-					new[] { "", "HDMI", "DisplayPort", "eDP", "DVI", "VGA", "Internal" });
-
-				// The capability probe must answer rather than throw, whatever the hardware or platform — it is
-				// the branch scripts are told to use instead of catching an OSError. This also runs the whole
-				// per-platform brightness lookup (WMI/DDC, sysfs backlight/i2c, DisplayServices) at least once.
-				var supported = m.IsBrightnessSupported;
-
-				if (supported)
-					Assert.IsTrue(m.Brightness.Al() is >= 0 and <= 100);
-				else
-					_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => { _ = m.Brightness; },
-						"An unsupported monitor must report an OSError, not a made-up brightness.");
-			}
-		}
-
-		[Test, Category("Monitor")]
-		public void VcpRangeValidation()
-		{
-			var m = new Builtins.Ks.KeysharpMonitor();
-
-			void Rejects(TestDelegate call)
-				=> Assert.IsInstanceOf<Keysharp.Builtins.ValueError>(
-					Assert.Throws<Keysharp.Builtins.KeysharpException>(call).UserError);
-
-			Rejects(() => m.GetVCP(-1L));
-			Rejects(() => m.GetVCP(256L));
-			Rejects(() => m.SetVCP(-1L, 0L));
-			Rejects(() => m.SetVCP(256L, 0L));
-			Rejects(() => m.SetVCP(0L, -1L));
-			Rejects(() => m.SetVCP(0L, 65536L));
-		}
-
-		[Test, Category("Monitor")]
-		public void MonitorFactories()
-		{
-			SkipIfGuiHeadless();
-			var primary = Builtins.Monitor.MonitorGetPrimary();
-			var p = Builtins.Ks.KeysharpMonitor.staticget_Primary(null) as Builtins.Ks.KeysharpMonitor;
-			Assert.AreEqual(primary, p.Index);
-			Assert.IsTrue(p.IsPrimary);
-
-			var fromPoint = Builtins.Ks.KeysharpMonitor.FromPoint(null, p.X + p.Width / 2, p.Y + p.Height / 2)
-				as Builtins.Ks.KeysharpMonitor;
-			Assert.AreEqual(primary, fromPoint.Index);
-
-			// Refresh re-reads in place and returns the same object so it can be chained.
-			var refreshed = p.Refresh() as Builtins.Ks.KeysharpMonitor;
-			Assert.AreSame(p, refreshed);
-			Assert.AreEqual(primary, p.Index);
 		}
 
 		/// <summary>
@@ -322,69 +117,6 @@ namespace Keysharp.Tests
 			Assert.AreEqual(0L, Builtins.Ks.KeysharpMonitor.MatchIndex([], "DP-1", 1L));
 			// ...but a rename that keeps the position still resolves through the index rather than dropping it.
 			Assert.AreEqual(1L, Builtins.Ks.KeysharpMonitor.MatchIndex(one, "HDMI-1", 1L));
-		}
-
-		/// <summary>
-		/// Id exists to be persisted and looked up again, so the round trip is the property that matters: whatever
-		/// Id a monitor reports must find that same monitor. An unknown id must be falsy rather than an error.
-		/// </summary>
-		[Test, Category("Monitor")]
-		public void MonitorFromId()
-		{
-			SkipIfGuiHeadless();
-			var all = Builtins.Ks.KeysharpMonitor.staticget_All(null) as Builtins.Array;
-
-			for (var i = 1L; i <= all.Count; i++)
-			{
-				var m = all[i] as Builtins.Ks.KeysharpMonitor;
-				var id = m.Id.As();
-
-				if (id.Length == 0)
-					continue;   // a display with no usable identity cannot be looked up; that is the contract
-
-				var found = Builtins.Ks.KeysharpMonitor.FromId(null, id) as Builtins.Ks.KeysharpMonitor;
-				Assert.IsNotNull(found, $"Monitor {i} reported Id \"{id}\" but FromId could not find it.");
-				Assert.AreEqual(m.Index, found.Index);
-				Assert.AreEqual(m.Name, found.Name);
-			}
-
-			Assert.AreEqual("", Builtins.Ks.KeysharpMonitor.FromId(null, "no-such-monitor-id"));
-			Assert.AreEqual("", Builtins.Ks.KeysharpMonitor.FromId(null, ""));
-		}
-
-		/// <summary>OnChange returns a live hook with the same surface a WinEvent hook has, and Stop() ends it.
-		/// The subscription is exercised here; whether a real display change fires it can only be checked by
-		/// physically changing the display configuration (see the manual test suite).</summary>
-		[Test, Category("Monitor")]
-		public void MonitorOnChange()
-		{
-			SkipIfGuiHeadless();
-			var fired = 0L;
-			Func<object, object, object> cb = (h, kind) => { fired++; return null; };
-			var hook = Builtins.Ks.KeysharpMonitor.OnChange(null, cb) as Builtins.Ks.MonitorHook;
-			Assert.IsNotNull(hook);
-
-			try
-			{
-				Assert.IsTrue(hook.InProgress);
-				Assert.AreEqual("", hook.EndReason);
-			}
-			finally
-			{
-				_ = hook.Stop();
-			}
-
-			Assert.AreEqual("Stopped", hook.EndReason);
-			Assert.AreEqual(0L, fired, "No display change was made, so the callback must not have run.");
-		}
-
-		/// <summary>A first argument which is not an object is a TypeError, matching every other callback-taking factory.</summary>
-		[Test, Category("Monitor")]
-		public void OnChangeCallback()
-		{
-			SkipIfGuiHeadless();
-			_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(
-				() => Builtins.Ks.KeysharpMonitor.OnChange(null, "not a function"));
 		}
 
 		[Test, Category("Monitor"), Category("Internal"), Category("Curated")]

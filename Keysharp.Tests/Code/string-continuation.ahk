@@ -216,4 +216,32 @@ two
 
 AssertEq(rt, "one`ntwo   ", A_LineNumber)
 
+; ---- The documentation's second example: a quoted string opened on one content line and closed on a later one.
+contVar := "x"
+contDoc :=
+(
+"Quote marks are not escaped here.
+Specify variables as follows: " contVar "
+A line of text."
+)
+
+AssertEq(contDoc, "Quote marks are not escaped here.`nSpecify variables as follows: x`nA line of text.", A_LineNumber)
+
+; ---- Trimming options apply inside such a string too.
+contTrim :=
+(RTrim0 LTrim
+    "abc
+    def"
+)
+
+AssertEq(contTrim, "abc`ndef", A_LineNumber)
+
+; ---- A plain section continues the expression above it.
+contPlain := 1
+(
+  + 2
+)
+
+AssertEq(contPlain, 3, A_LineNumber)
+
 FileAppend "pass", "*"

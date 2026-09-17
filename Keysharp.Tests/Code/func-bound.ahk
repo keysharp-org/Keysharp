@@ -346,4 +346,14 @@ CallbackFree(cb)
 
 AssertEq(BoundMethodHost.log, "|BoundMethodHost:0,0", A_LineNumber)
 
+; A function is identical only to itself, and every Bind makes a new BoundFunc, even with the same arguments.
+cmpFirst := CmpTarget.Bind("1")
+cmpSecond := CmpTarget.Bind("1")
+Assert(CmpTarget == CmpTarget, A_LineNumber)
+Assert(cmpFirst == cmpFirst, A_LineNumber)
+Assert(CmpTarget !== cmpFirst, A_LineNumber)
+Assert(cmpFirst !== cmpSecond, A_LineNumber)
+
+CmpTarget(a) => a
+
 FileAppend "pass", "*"

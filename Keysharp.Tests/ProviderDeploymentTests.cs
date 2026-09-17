@@ -76,9 +76,7 @@ namespace Keysharp.Tests
 				Keysharp.Internals.Os.PackageProviderRegistry.ResetForTests();
 				Assert.IsTrue(Keysharp.Internals.Os.CompiledPackageProviderManifest.TryPrepare(assembly, "fake", out var failure), failure);
 				Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGetPayload("fake", out var payload));
-				var localRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-					"Keysharp", "embedded-components");
-				extractedRoot = Path.Combine(localRoot, assembly.ManifestModule.ModuleVersionId.ToString("N"));
+				extractedRoot = Keysharp.Internals.Os.CompiledPackageProviderManifest.GetCacheDirectory(assembly, "fake");
 				var expectedProviderRoot = Path.Combine(extractedRoot, "components", "packages", "fake");
 				Assert.IsTrue(payload.Root.Equals(expectedProviderRoot, StringComparison.OrdinalIgnoreCase),
 					"embedded providers must retain the components/packages/<name> hierarchy in the per-user component cache");

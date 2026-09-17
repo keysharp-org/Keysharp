@@ -932,6 +932,11 @@ namespace Keysharp.Internals.Strings
 
 		internal static string ToYYYYMMDDHH24MISSFFF(DateTime time) => time.ToString("yyyyMMddHHmmss.fff");
 
+		/// <summary>
+		/// The ISO 8601 week-numbering year and week as YYYYNN. The year can differ from the calendar year around New Year.
+		/// </summary>
+		internal static string ToIsoYearWeek(DateTime time) => $"{ISOWeek.GetYear(time):D4}{ISOWeek.GetWeekOfYear(time):D2}";
+
 		internal static bool TryParseColor(string name, out Color c)
 		{
 			var isnum = false;

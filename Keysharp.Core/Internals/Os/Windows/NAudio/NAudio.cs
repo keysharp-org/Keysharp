@@ -980,10 +980,7 @@ namespace Keysharp.Internals.Os.Windows
 				if (propertyStore == null)
 					GetPropertyInformation();
 
-				if (propertyStore.Contains(PropertyKeys.PKEY_Device_FriendlyName))
-					return (string)propertyStore[PropertyKeys.PKEY_Device_FriendlyName].Value;
-				else
-					return "Unknown";
+				return propertyStore[PropertyKeys.PKEY_Device_FriendlyName]?.Value as string ?? "Unknown";
 			}
 		}
 
@@ -997,10 +994,7 @@ namespace Keysharp.Internals.Os.Windows
 				if (propertyStore == null)
 					GetPropertyInformation();
 
-				if (propertyStore.Contains(PropertyKeys.PKEY_DeviceInterface_FriendlyName))
-					return (string)propertyStore[PropertyKeys.PKEY_DeviceInterface_FriendlyName].Value;
-				else
-					return "Unknown";
+				return propertyStore[PropertyKeys.PKEY_DeviceInterface_FriendlyName]?.Value as string ?? "Unknown";
 			}
 		}
 
@@ -1014,10 +1008,7 @@ namespace Keysharp.Internals.Os.Windows
 				if (propertyStore == null)
 					GetPropertyInformation();
 
-				if (propertyStore.Contains(PropertyKeys.PKEY_Device_IconPath))
-					return (string)propertyStore[PropertyKeys.PKEY_Device_IconPath].Value;
-
-				return "Unknown";
+				return propertyStore[PropertyKeys.PKEY_Device_IconPath]?.Value as string ?? "Unknown";
 			}
 		}
 
@@ -1031,10 +1022,7 @@ namespace Keysharp.Internals.Os.Windows
 				if (propertyStore == null)
 					GetPropertyInformation();
 
-				if (propertyStore.Contains(PropertyKeys.PKEY_Device_InstanceId))
-					return (string)propertyStore[PropertyKeys.PKEY_Device_InstanceId].Value;
-
-				return "Unknown";
+				return propertyStore[PropertyKeys.PKEY_Device_InstanceId]?.Value as string ?? "Unknown";
 			}
 		}
 
@@ -1339,20 +1327,7 @@ namespace Keysharp.Internals.Os.Windows
 		/// </summary>
 		/// <param name="key">Looks for a specific key</param>
 		/// <returns>True if found</returns>
-		internal bool Contains(PropertyKey key)
-		{
-			for (var i = 0; i < Count; i++)
-			{
-				var ikey = Get(i);
-
-				if ((ikey.formatId == key.formatId) && (ikey.propertyId == key.propertyId))
-				{
-					return true;
-				}
-			}
-
-			return false;
-		}
+		internal bool Contains(PropertyKey key) => this[key] != null;
 
 		/// <summary>
 		/// Gets property key at sepecified index
@@ -1408,18 +1383,12 @@ namespace Keysharp.Internals.Os.Windows
 		{
 			get
 			{
-				for (var i = 0; i < Count; i++)
-				{
-					var ikey = Get(i);
+				// The store looks a key up itself and reports an absent one as VT_EMPTY. Scanning every key instead costs
+				// hundreds of milliseconds on an endpoint with many properties.
+				if (storeInterface.GetValue(ref key, out var result) < 0 || result.vt == 0)
+					return null;
 
-					if ((ikey.formatId == key.formatId) && (ikey.propertyId == key.propertyId))
-					{
-						Marshal.ThrowExceptionForHR(storeInterface.GetValue(ref ikey, out var result));
-						return new PropertyStoreProperty(ikey, result);
-					}
-				}
-
-				return null;
+				return new PropertyStoreProperty(key, result);
 			}
 		}
 	}

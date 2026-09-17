@@ -15,6 +15,13 @@ Assert(FileExist("./FileRecycle/file2.txt"), A_LineNumber)
 
 Assert(FileExist("./FileRecycle/file3txt"), A_LineNumber)
 
+; A quote in the name must not break the platform's recycle command line.
+quotedPath := "./FileRecycle/file with ' quote.txt"
+FileAppend("argument safety", quotedPath)
+FileRecycle(quotedPath)
+
+Assert(!FileExist(quotedPath), A_LineNumber)
+
 FileRecycle("./FileRecycle/file1.txt")
 
 Assert(!FileExist("./FileRecycle/file1.txt"), A_LineNumber)

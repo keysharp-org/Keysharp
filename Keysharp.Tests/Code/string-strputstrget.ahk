@@ -34,4 +34,14 @@ gotten := StrGet(buf, 0, "UTF-8")
 
 Assert(gotten == "" && gotten is String, A_LineNumber)
 
+; Any object with Ptr and Size properties is a source, not only a Buffer, and its Size bounds the scan.
+duckBuf := Buffer(64, 0)
+StrPut("duck!", duckBuf)
+
+AssertEq(StrGet({Ptr: duckBuf.Ptr, Size: duckBuf.Size}), "duck!", A_LineNumber)
+
+AssertEq(StrGet({Ptr: duckBuf.Ptr, Size: 6}), "duc", A_LineNumber)
+
+AssertEq(StrGet(duckBuf), "duck!", A_LineNumber)
+
 FileAppend "pass", "*"

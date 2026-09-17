@@ -113,7 +113,7 @@ AssertEq(chainedBox.Value, 9, A_LineNumber)
 AssertEq(LockedCall(lockit, rtNamed, 3), 6, A_LineNumber)
 
 ; Task.Wait honours its timeout instead of blocking until the body finishes, and never throws.
-slowWorker := RealThread(() => Sleep(2000))
+slowWorker := RealThread(() => Sleep(400))
 
 Assert(!slowWorker.Task.Wait(50), A_LineNumber)
 Assert(slowWorker.Task.IsPending && slowWorker.Task.Status == "Pending", A_LineNumber)
@@ -201,8 +201,19 @@ Assert(sharedLock.Acquire(0), A_LineNumber)
 
 sharedLock.Release()
 
+holderReady := false
 holder := RealThread(HoldSharedLock)
-Sleep 300
+
+; Wait until the holder really owns the lock rather than guessing how long it takes to start.
+Loop 1000
+{
+	if holderReady
+		break
+
+	Sleep 5
+}
+
+Assert(holderReady, A_LineNumber)
 
 Assert(!sharedLock.Acquire(50), A_LineNumber)
 
@@ -213,8 +224,10 @@ Assert(sharedLock.Acquire(1000), A_LineNumber)
 sharedLock.Release()
 
 HoldSharedLock() {
+	global holderReady
 	sharedLock.Acquire()
-	Sleep 600
+	holderReady := true
+	Sleep 200
 	sharedLock.Release()
 }
 

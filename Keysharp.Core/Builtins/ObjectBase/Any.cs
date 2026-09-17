@@ -37,7 +37,10 @@ namespace Keysharp.Builtins
 				{
 					_hasFinalizer = value;
 					if (_hasFinalizer)
+					{
 						GC.ReRegisterForFinalize(this);
+						TheScript?.DestructorPump.NoteRegistration();
+					}
 					else
 						GC.SuppressFinalize(this);
 				}

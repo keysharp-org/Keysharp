@@ -43,6 +43,12 @@ AssertEq(a.Length, 2, A_LineNumber)
 
 Assert(a = [20, 30], A_LineNumber)
 
+plainObj := {}
+
+AssertEq(plainObj.Base, Object.Prototype, A_LineNumber)
+
+AssertEq(plainObj.Base.Base, Any.Prototype, A_LineNumber)
+
 #if WINDOWS
 obj := Map(1, "a", "b", 2)
 punk := ObjPtr(obj)
