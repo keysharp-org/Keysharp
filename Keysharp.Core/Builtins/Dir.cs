@@ -232,84 +232,95 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object SplitPath(object path, [ByRef] object outFileName = null, [ByRef] object outDir = null, [ByRef] object outExtension = null, [ByRef] object outNameNoExt = null, [ByRef] object outDrive = null)
 		{
-            var p = path.As();
+			var p = path.As();
+			var result = (outFileName ?? outDir ?? outExtension ?? outNameNoExt ?? outDrive) == null
+				? new KeysharpObject()
+				: null;
+
+			var fileName = OutputTarget.Create(result, outFileName, "FileName");
+			var dir = OutputTarget.Create(result, outDir, "Dir");
+			var extension = OutputTarget.Create(result, outExtension, "Extension");
+			var nameNoExt = OutputTarget.Create(result, outNameNoExt, "NameNoExt");
+			var drive = OutputTarget.Create(result, outDrive, "Drive");
 
 			if (p.Contains("://"))
 			{
 				var uri = new Uri(p);
-				string drive = uri.Scheme + "://" + uri.Host;
-				if (outDrive != null) Refs.SetValue(outDrive, drive);
-				var lastSlash = uri.LocalPath.LastIndexOf('/');
-				var localPath = uri.LocalPath;
+				var root = drive != null || dir != null
+					? uri.Scheme + "://" + uri.Host
+					: "";
 
-				if (lastSlash != -1)
+				drive?.Set(root);
+
+				// Avoid retrieving LocalPath when only Drive was requested.
+				if (fileName == null && dir == null && extension == null && nameNoExt == null)
+					return DefaultObject;
+
+				var localPath = uri.LocalPath.AsSpan();
+				var lastSlash = localPath.LastIndexOf('/');
+
+				// Objects get all properties; preserve the original by-reference behavior.
+				if (lastSlash >= 0 || result != null)
 				{
-					var tempFilename = localPath.Substring(lastSlash + 1);
+					var file = lastSlash >= 0 ? localPath[(lastSlash + 1)..] : default;
 
-					if (tempFilename.Contains('.'))
-					{
-						if (outFileName != null) Refs.SetValue(outFileName, tempFilename);
-						if (outExtension != null) Refs.SetValue(outExtension, Path.GetExtension(tempFilename).Trim('.'));
-						if (outNameNoExt != null) Refs.SetValue(outNameNoExt, Path.GetFileNameWithoutExtension(tempFilename));
-						localPath = localPath.Substring(0, lastSlash);
-					}
+					if (file.Contains('.'))
+						localPath = localPath[..lastSlash];
 					else
-					{
-						if (outFileName != null) Refs.SetValue(outFileName, "");
-						if (outExtension != null) Refs.SetValue(outExtension, "");
-						if (outNameNoExt != null) Refs.SetValue(outNameNoExt, "");
-                    }
+						file = default;
+
+					fileName?.Set(file.ToString());
+					extension?.Set(Path.GetExtension(file).Trim('.').ToString());
+					nameNoExt?.Set(Path.GetFileNameWithoutExtension(file).ToString());
 				}
 
-				if (outDir != null) Refs.SetValue(outDir, (drive + localPath).TrimEnd('/'));
+				dir?.Set(string.Concat(root.AsSpan(), localPath).TrimEnd('/'));
+			}
+			else if (p.StartsWith(@"\\"))
+			{
+				var serverEnd = p.IndexOf('\\', 2);
+				var lastSlash = p.LastIndexOf('\\');
+				var hasDot = p.Contains('.');
+				var hasFile = hasDot && lastSlash > serverEnd && lastSlash + 1 < p.Length;
+				var file = hasFile ? p.AsSpan(lastSlash + 1) : default;
+
+				fileName?.Set(file.ToString());
+				extension?.Set(hasFile ? Path.GetExtension(p).Trim('.') : "");
+				nameNoExt?.Set(Path.GetFileNameWithoutExtension(file).ToString());
+				drive?.Set(serverEnd < 0 ? p : p[..serverEnd]);
+				dir?.Set(hasDot
+					? p.AsSpan(0, lastSlash).TrimEnd('\\').ToString()
+					: p.TrimEnd('\\'));
 			}
 			else
 			{
-				var input = p == "" ? DefaultObject : (p.StartsWith(@"\\") ? p : Path.GetFullPath(p));
+				var input = p == "" ? DefaultObject : Path.GetFullPath(p);
 
-				if (p.StartsWith(@"\\"))
-				{
-					//There appear to be no built in methods to process UNC paths, so do it manually here.
-					var nextSlash = input.IndexOf('\\', 2);
-					var lastSlash = input.LastIndexOf('\\');
-					var hasFileComponent = input.Contains('.') && lastSlash > nextSlash && lastSlash >= 0 && lastSlash + 1 < input.Length;
-
-					if (outFileName != null) Refs.SetValue(outFileName, hasFileComponent ? input[(lastSlash + 1)..] : "");
-					if (outExtension != null) Refs.SetValue(outExtension, hasFileComponent ? Path.GetExtension(input).Trim('.') : "");
-					if (outNameNoExt != null) Refs.SetValue(outNameNoExt, hasFileComponent ? Path.GetFileNameWithoutExtension(input[(lastSlash + 1)..]) : "");
-
-					if (outDrive != null)
-					{
-						if (nextSlash == -1)
-							Refs.SetValue(outDrive, p);
-						else
-							Refs.SetValue(outDrive, input.Substring(0, nextSlash));
-					}
-
-					if (outDir != null)
-					{
-						if (input.Contains('.'))
-						{
-							if (lastSlash == -1)
-								Refs.SetValue(outDir, input);
-							else
-								Refs.SetValue(outDir, input.AsSpan().Slice(0, lastSlash).TrimEnd('\\').ToString());
-						}
-						else
-							Refs.SetValue(outDir, input.TrimEnd('\\'));
-					}
-				}
-				else
-				{
-					if (outFileName != null) Refs.SetValue(outFileName, Path.GetFileName(input) ?? DefaultObject);
-					if (outExtension != null) Refs.SetValue(outExtension, Path.GetExtension(input)?.Trim('.') ?? DefaultObject);
-					if (outNameNoExt != null) Refs.SetValue(outNameNoExt, Path.GetFileNameWithoutExtension(input) ?? DefaultObject);
-					if (outDir != null) Refs.SetValue(outDir, Path.GetDirectoryName(input)?.TrimEnd('\\') ?? DefaultObject);
-					if (outDrive != null) Refs.SetValue(outDrive, Path.GetPathRoot(input)?.TrimEnd('\\') ?? DefaultObject);
-				}
+				fileName?.Set(Path.GetFileName(input) ?? DefaultObject);
+				extension?.Set(Path.GetExtension(input)?.Trim('.') ?? DefaultObject);
+				nameNoExt?.Set(Path.GetFileNameWithoutExtension(input) ?? DefaultObject);
+				dir?.Set(Path.GetDirectoryName(input)?.TrimEnd('\\') ?? DefaultObject);
+				drive?.Set(Path.GetPathRoot(input)?.TrimEnd('\\') ?? DefaultObject);
 			}
 
-			return DefaultObject;
+			return (object)result ?? DefaultObject;
+		}
+
+		private readonly struct OutputTarget(KeysharpObject result, object reference, string property)
+		{
+			public static OutputTarget? Create(
+				KeysharpObject result, object reference, string property)
+				=> result == null && reference == null
+					? null
+					: new OutputTarget(result, reference, property);
+
+			public void Set(string value)
+			{
+				if (result != null)
+					result.DefinePropInternal(property, new OwnPropsDesc(result, value));
+				else
+					Refs.SetValue(reference, value);
+			}
 		}
 
 		/// <summary>
