@@ -52,7 +52,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Hard-coded AutoHotkey version which Keysharp should support
 		/// </summary>
-		public static string A_AhkVersion => "2.1-alpha.31";
+		public static string A_AhkVersion => "2.1-alpha.32";
 
 		/// <summary>
 		/// Whether the script's main window is allowed to be opened via the tray icon.

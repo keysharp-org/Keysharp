@@ -57,7 +57,7 @@ AsyncCallback(callbackinfo) {
 }
 info := "", result := "", callbackThreadId := 0
 ownerThreadId := A_RealThread.Id
-info := RunScript(headlessDirectives . "ExitApp(3)", true, AsyncCallback,, hostBinary)
+info := RunScript(headlessDirectives . "ExitApp(3)", Async: true, Callback: AsyncCallback, Executable: hostBinary)
 
 if (!WaitForRunScriptExit(info))
 {
@@ -99,5 +99,6 @@ if (!WaitForRunScriptExit(info))
 
 AssertEq(info.StdOut.Read(), "stdin-ok", A_LineNumber)
 AssertEq(info.StdErr.Read(), "stderr-ok", A_LineNumber)
+info.Close()
 
 FileAppend "pass", "*"

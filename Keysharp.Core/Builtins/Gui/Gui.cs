@@ -2994,16 +2994,21 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
-		/// <summary>The borrowed Win32 HFONT for the GUI's current default font.</summary>
+		/// <summary>
+		/// The borrowed native handle for the GUI's current default font: an HFONT on Windows, a
+		/// PangoFontDescription* on Linux and an NSFont* on macOS.
+		/// </summary>
 		public object FontHandle
 		{
 			get
 			{
-#if WINDOWS
 				if (form.IsDisposed) return Errors.ErrorOccurred("GUI window is no longer available.");
+#if WINDOWS
 				return (long)HFontCache.Get(form);
-#else
-				return Errors.ErrorOccurred("Gui.FontHandle is only supported on Windows.");
+#elif LINUX
+				return (long)((form.Font?.ControlObject as Pango.FontDescription)?.Handle ?? nint.Zero);
+#elif OSX
+				return (long)((form.Font?.ControlObject as MonoMac.AppKit.NSFont)?.Handle ?? nint.Zero);
 #endif
 			}
 		}

@@ -384,7 +384,7 @@ namespace Keysharp.Builtins
                     while ((nextBase = Base.Base) != null && nextBase != null && nextBase is KeysharpObject)
                     {
                         Base = (KeysharpObject)nextBase;
-						if (Base != null && Base.op.ContainsKey(n))
+						if (Base.op != null && Base.op.ContainsKey(n))
 							return 1L;
                     }
                 }

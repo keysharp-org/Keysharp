@@ -142,7 +142,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Renders a map as <c>name: {k: v, ...} (Type)</c> followed by any own properties.
 		/// Iterating the public enumerator preserves each map type's own ordering (sorted for
-		/// <see cref="Map"/>, insertion order for <c>HashMap</c>).
+		/// <see cref="Map"/>, unspecified for <c>HashMap</c>).
 		/// </summary>
 		private static void PrintMap(Map map, string name, PropPrintContext ctx)
 		{

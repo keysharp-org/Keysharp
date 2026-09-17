@@ -198,6 +198,44 @@ namespace Keysharp.Tests
 			}
 		}
 
+		/// <summary>
+		/// One Overlay event's handlers run as one chain, as a Gui event's do: a non-empty return (0 included) or an
+		/// uncaught error stops the rest, while "" or no return passes the event on.
+		/// </summary>
+		[Test, Category("Gui")]
+		public void OverlayEventChainStopsOnNonEmptyReturn()
+		{
+			var overlay = new Ks.KeysharpOverlay();
+			_ = overlay.__New(1L, 2L, 10L, 10L);
+			var throws = new object();
+
+			try
+			{
+				foreach (var (firstReturns, secondRuns) in new (object, bool)[] { ("", true), (null, true), (0L, false), ("abc", false), (throws, false) })
+				{
+					var what = ReferenceEquals(firstReturns, throws) ? "an error" : firstReturns == null ? "no return" : $"a return of '{firstReturns}'";
+					var order = new List<string>();
+					var first = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) =>
+					{
+						order.Add("first");
+						return ReferenceEquals(firstReturns, throws) ? throw new Keysharp.Builtins.Error("handler failed") : firstReturns;
+					}));
+					var second = new KeysharpFunc((Func<object, object, object, object>)((_, x, y) => { order.Add($"second {x},{y}"); return ""; }));
+					_ = overlay.OnEvent("Click", first);
+					_ = overlay.OnEvent("Click", second);
+					overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.Click, 3, 4));
+					Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+					NUnit.Framework.Legacy.CollectionAssert.AreEqual(secondRuns ? new[] { "first", "second 3,4" } : new[] { "first" }, order, $"Click after {what}");
+					_ = overlay.OnEvent("Click", first, 0L);
+					_ = overlay.OnEvent("Click", second, 0L);
+				}
+			}
+			finally
+			{
+				_ = overlay.Destroy();
+			}
+		}
+
 		// Script-visible canvas behaviour: what Canvas is, what it refuses, and that Copy escapes the refusals.
 		[Test, Category("Gui"), Category("Curated")]
 		public void OverlayCanvas()
@@ -565,6 +603,10 @@ namespace Keysharp.Tests
 		[Apartment(ApartmentState.STA)]
 		public void WebViewScriptSurface() => Assert.IsTrue(TestScript("gui-webview", false));
 
+		[Test, Category("Gui"), NonParallelizable]
+		[Apartment(ApartmentState.STA)]
+		public void OwnerKeepsHwnd() => Assert.IsTrue(TestScript("gui-owner", false));
+
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
 		public void DpiResizeDefaults()
@@ -599,6 +641,7 @@ namespace Keysharp.Tests
 			{
 				_ = gui.Destroy();
 			}
+
 		}
 
 		[Test, Category("Gui")]
@@ -634,6 +677,7 @@ namespace Keysharp.Tests
 			{
 				_ = gui.Destroy();
 			}
+
 		}
 
 		[Test, Category("Gui")]
@@ -646,7 +690,7 @@ namespace Keysharp.Tests
 
 			try
 			{
-				_ = gui.OnEvent("DPIChange", callback);
+				_ = gui.OnEvent("DpiChanged", callback);
 				Assert.AreEqual(1, gui.form.dpiChangeHandlers.Count);
 				// Dispatch depends on the script thread scheduler; this verifies registration and the native event bridge.
 				gui.form.CallDpiChangeHandlers(96, 144);
@@ -766,6 +810,123 @@ namespace Keysharp.Tests
 				Assert.AreEqual(1L, control.InvokeMessageHandlers(ref cm).Al());
 				Assert.AreEqual(1, ctrlHits);
 				Assert.AreEqual(3, cm.Result.ToInt64());
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
+		/// <summary>
+		/// Every GUI event chain stops on a non-empty return, as AHK's GUI MsgMonitorList does: 0 and a non-numeric
+		/// string stop it, while "" or no return passes the event on. Close runs its chain inline and DpiChanged
+		/// queues it, so both dispatch paths are covered.
+		/// </summary>
+		[Test, Category("Gui")]
+		[Apartment(ApartmentState.STA)]
+		public void EventChainStopsOnNonEmptyReturn()
+		{
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+
+			try
+			{
+				foreach (var (firstReturns, secondRuns) in new (object, bool)[] { ("", true), (null, true), (0L, false), ("abc", false) })
+				{
+					var what = firstReturns == null ? "(no return)" : $"'{firstReturns}'";
+					var expected = secondRuns ? new[] { "first", "second" } : new[] { "first" };
+					var order = new List<string>();
+
+					var firstClose = new KeysharpFunc((Func<object, object>)(_ => { order.Add("first"); return firstReturns; }));
+					var secondClose = new KeysharpFunc((Func<object, object>)(_ => { order.Add("second"); return ""; }));
+					_ = gui.OnEvent("Close", firstClose);
+					_ = gui.OnEvent("Close", secondClose);
+					var result = gui.form.closedHandlers.InvokeSynchronousEventHandlers(gui);
+					NUnit.Framework.Legacy.CollectionAssert.AreEqual(expected, order, $"Close after a return of {what}");
+
+					// Close decides whether the window stays open from the value that stopped the chain.
+					if (!secondRuns)
+						Assert.AreEqual(firstReturns, result);
+
+					_ = gui.OnEvent("Close", firstClose, 0L);
+					_ = gui.OnEvent("Close", secondClose, 0L);
+
+					order.Clear();
+					var firstDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => { order.Add("first"); return firstReturns; }));
+					var secondDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => { order.Add("second"); return ""; }));
+					_ = gui.OnEvent("DpiChanged", firstDpi);
+					_ = gui.OnEvent("DpiChanged", secondDpi);
+					gui.form.CallDpiChangeHandlers(96, 144);
+					Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+					NUnit.Framework.Legacy.CollectionAssert.AreEqual(expected, order, $"DpiChanged after a return of {what}");
+					_ = gui.OnEvent("DpiChanged", firstDpi, 0L);
+					_ = gui.OnEvent("DpiChanged", secondDpi, 0L);
+				}
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
+		/// <summary>
+		/// A handler whose thread ends with an uncaught error ends the chain, as AHK's MsgMonitorList breaks on FAIL,
+		/// while one which calls Exit (EARLY_EXIT) ends only itself and the next handler runs. Covers the inline
+		/// (Close), queued (DpiChanged) and window-message (OnMessage) paths.
+		/// </summary>
+		[Test, Category("Gui")]
+		[Apartment(ApartmentState.STA)]
+		public void EventChainStopsOnErrorButNotExit()
+		{
+			const int msgId = 0x8124;
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+
+			try
+			{
+				foreach (var (how, secondRuns) in new (string, bool)[] { ("throws", false), ("calls Exit", true) })
+				{
+					var expected = secondRuns ? new[] { "first", "second" } : new[] { "first" };
+					var order = new List<string>();
+
+					object First()
+					{
+						order.Add("first");
+						return secondRuns ? Keysharp.Builtins.Flow.Exit() : throw new Keysharp.Builtins.Error("handler failed");
+					}
+
+					var firstClose = new KeysharpFunc((Func<object, object>)(_ => First()));
+					var secondClose = new KeysharpFunc((Func<object, object>)(_ => { order.Add("second"); return ""; }));
+					_ = gui.OnEvent("Close", firstClose);
+					_ = gui.OnEvent("Close", secondClose);
+					var result = gui.form.closedHandlers.InvokeSynchronousEventHandlers(gui);
+					NUnit.Framework.Legacy.CollectionAssert.AreEqual(expected, order, $"Close when the first handler {how}");
+					Assert.IsTrue(result.IsNullOrEmpty(), $"a chain whose first handler {how} must not keep the window open");
+					_ = gui.OnEvent("Close", firstClose, 0L);
+					_ = gui.OnEvent("Close", secondClose, 0L);
+
+					order.Clear();
+					var firstDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => First()));
+					var secondDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => { order.Add("second"); return ""; }));
+					_ = gui.OnEvent("DpiChanged", firstDpi);
+					_ = gui.OnEvent("DpiChanged", secondDpi);
+					gui.form.CallDpiChangeHandlers(96, 144);
+					Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+					NUnit.Framework.Legacy.CollectionAssert.AreEqual(expected, order, $"DpiChanged when the first handler {how}");
+					_ = gui.OnEvent("DpiChanged", firstDpi, 0L);
+					_ = gui.OnEvent("DpiChanged", secondDpi, 0L);
+
+					order.Clear();
+					var firstMsg = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => First()));
+					var secondMsg = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("second"); return ""; }));
+					_ = gui.OnMessage(msgId, firstMsg);
+					_ = gui.OnMessage(msgId, secondMsg);
+					var m = Message.Create(gui.form.Handle, msgId, 0, 0);
+					Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m), $"a message whose first handler {how} must stay unclaimed");
+					NUnit.Framework.Legacy.CollectionAssert.AreEqual(expected, order, $"OnMessage when the first handler {how}");
+					_ = gui.OnMessage(msgId, firstMsg, 0L);
+					_ = gui.OnMessage(msgId, secondMsg, 0L);
+				}
 			}
 			finally
 			{

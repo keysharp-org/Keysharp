@@ -11,6 +11,7 @@ MainReady := 1
 
 #import Z
 #import Late as LateMod
+#import UntilTail
 
 ; ---- Dependency execution: Z imports W and captures WState
 a := Z.ObservedW()
@@ -26,6 +27,9 @@ AssertEq(a, "", A_LineNumber)  ; expecting unset/blank before Late executes
 ; A module function should be callable pre-exec and can see __Main's globals.
 a := LateMod.GetMainReady()
 AssertEq(a, 1, A_LineNumber)
+
+; ---- A module body, here the last one in the file, may end with Loop...Until. [v2.1-alpha.32]
+AssertEq(UntilTail.Count, 3, A_LineNumber)
 
 
 FileAppend "pass", "*"
@@ -44,3 +48,9 @@ ObservedW() => Observed
 GetMainReady() => Main.MainReady
 GetLateBodyRan() => (IsSet(LateBodyRan) ? LateBodyRan : "")
 LateBodyRan := 1
+
+#Module UntilTail
+Count := 0
+Loop
+	Count++
+Until Count = 3

@@ -291,4 +291,11 @@ AssertEq(ReadSpan(view), "/mkh", A_LineNumber)
 ScribbleSpan(view)
 AssertEq(NumGet(hiBuf, 0, "UChar"), 0xFE, A_LineNumber)
 
+; Invalid generic signatures are script-visible ValueErrors, not raw ArgumentExceptions.
+caught := false
+try Clr.Load("System").Collections.Generic.List["No.Such.Type"]
+catch ValueError
+    caught := true
+Assert(caught, A_LineNumber)
+
 FileAppend "pass", "*"

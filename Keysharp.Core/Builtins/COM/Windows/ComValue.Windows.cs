@@ -124,7 +124,8 @@ namespace Keysharp.Builtins.COM
 		{
 			if (args.Length == 0 || args[0] == null) return;
 			var value = args[1];
-			vt = (VarEnum)args[0].Al();
+			//Internal callers pass a VarEnum, which the script-integer coercion in Al() does not recognize.
+			vt = args[0] is VarEnum ve ? ve : (VarEnum)args[0].Al();
 			Ptr = value;
 			var flags = args.Length > 2 ? args[2] : null;
 			Flags = flags != null ? flags.Al() : 0L;

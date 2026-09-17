@@ -120,4 +120,24 @@ Loop Parse x, y
 
 AssertEq(z, "hello", A_LineNumber)
 
+ParseFields(input, delims := "", omit := "") {
+	s := ""
+
+	Loop Parse input, delims, omit
+		s .= "[" A_LoopField "]"
+
+	return s
+}
+
+; Without OmitChars nothing is trimmed, a space included, and an empty field is still a field.
+AssertEq(ParseFields("a b"), "[a][ ][b]", A_LineNumber)
+AssertEq(ParseFields(" a , b ", ","), "[ a ][ b ]", A_LineNumber)
+AssertEq(ParseFields("a,,b,", ","), "[a][][b][]", A_LineNumber)
+AssertEq(ParseFields("a,  ,b", ",", " "), "[a][][b]", A_LineNumber)
+AssertEq(ParseFields("a b", , " "), "[a][b]", A_LineNumber)
+AssertEq(ParseFields(" x , y ", "CSV", " "), "[x][y]", A_LineNumber)
+AssertEq(ParseFields(""), "", A_LineNumber)
+AssertEq(ParseFields("", ","), "", A_LineNumber)
+AssertEq(ParseFields("", "CSV"), "", A_LineNumber)
+
 FileAppend "pass", "*"

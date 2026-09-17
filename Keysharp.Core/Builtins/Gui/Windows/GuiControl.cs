@@ -866,7 +866,6 @@ namespace Keysharp.Builtins
 
 					return DefaultObject;
 				}
-
 				else if (_control is KeysharpComboBox cb)
 				{
 					// Find the embedded Edit control

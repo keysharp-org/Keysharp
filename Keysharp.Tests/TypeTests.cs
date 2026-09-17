@@ -1,4 +1,5 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
+using Keysharp.Internals.Invoke;
 
 namespace Keysharp.Tests
 {
@@ -14,50 +15,57 @@ namespace Keysharp.Tests
 			Assert.IsTrue(typeof(Keysharp.Builtins.ParseException).IsAssignableTo(typeof(System.Exception)));
 			// The script-visible class hierarchy and Type() results are checked in types-conversions.ahk.
 			Assert.AreEqual("unset", Keysharp.Builtins.Types.Type(null));
-			//Assure every public static function returns something other than void.
-			var loadedAssemblies = GetLoadedAssemblies();
-			var types = loadedAssemblies.Values.Where(asm => asm.FullName.StartsWith("Keysharp.Builtins,"))
-						.SelectMany(t => GetNestedTypes(t.GetExportedTypes()))
-						.Where(t => t.GetCustomAttribute<PublicHiddenFromUser>() == null && t.Namespace != null && t.Namespace.StartsWith("Keysharp.Builtins")
-							   && t.Namespace != "Keysharp.Builtins.Properties"
-							   && t.IsClass && (t.IsPublic || t.IsNestedPublic));
+			var types = typeof(Any).Assembly.GetExportedTypes()
+						.Where(t => t.Namespace?.StartsWith("Keysharp.Builtins", StringComparison.Ordinal) == true
+							   && t.Namespace != "Keysharp.Builtins.Properties" && t.IsClass
+							   && ((t.IsAbstract && t.IsSealed) || t.IsAssignableTo(typeof(Any))) && IsUserVisible(t))
+						.ToArray();
+			var methods = types.SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+						.Where(m => m.GetCustomAttribute<PublicHiddenFromUser>() == null).ToArray();
 
-			foreach (var method in types
-					 .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
-					 .Where(m => !m.IsSpecialName && m.GetCustomAttribute<PublicHiddenFromUser>() == null))
+			//Assure every public static function returns something other than void.
+			foreach (var method in methods.Where(m => m.IsStatic && !m.IsSpecialName))
 			{
 				Assert.IsTrue(method.ReturnType != typeof(void), $"Method {method.DeclaringType?.FullName}.{method.Name} should not return void.");
 			}
-		}
 
-		private static Dictionary<string, Assembly> GetLoadedAssemblies()
-		{
-			var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-			var dkt = new Dictionary<string, Assembly>(assemblies.Length);
+			foreach (var method in methods.Where(m => !m.IsSpecialName))
+				AssertParameterNames(method, method.GetParameters());
 
-			foreach (var assembly in assemblies)
+			foreach (var indexer in types.SelectMany(t => t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+					 .Where(p => p.GetIndexParameters().Length != 0))
+				AssertParameterNames(indexer, indexer.GetIndexParameters());
+
+			static bool IsUserVisible(Type type)
 			{
-				try
-				{
-					if (!assembly.IsDynamic)
-						dkt[assembly.Location] = assembly;
-				}
-				catch (Exception)
-				{
-				}
+				for (var current = type; current != null; current = current.DeclaringType)
+					if (current.GetCustomAttribute<PublicHiddenFromUser>() != null)
+						return false;
+
+				return true;
 			}
 
-			return dkt;
-		}
-
-		private static IEnumerable<Type> GetNestedTypes(Type[] types)
-		{
-			foreach (var t in types)
+			static void AssertParameterNames(MemberInfo member, IEnumerable<ParameterInfo> parameters)
 			{
-				yield return t;
+				var holder = member switch
+				{
+					MethodInfo method => MethodPropertyHolder.GetOrAdd(method),
+					PropertyInfo property => MethodPropertyHolder.GetOrAdd(property),
+					_ => null
+				};
+				var names = holder?.ParamScan.ToDictionary(parameter => parameter.Index, parameter => parameter.Name)
+					?? new Dictionary<int, string>();
 
-				foreach (var nested in GetNestedTypes(t.GetNestedTypes()))
-					yield return nested;
+				foreach (var parameter in parameters)
+				{
+					if (!names.TryGetValue(parameter.Position, out var name))
+						continue;
+
+					var declared = parameter.GetCustomAttribute<UserDeclaredNameAttribute>()?.Name;
+					var exempt = parameter.GetCustomAttribute<ParamArrayAttribute>() != null || declared is "wParam" or "lParam";
+					Assert.IsTrue(exempt || name.Length > 0 && char.IsUpper(name[0]),
+						$"Parameter {member.DeclaringType?.FullName}.{member.Name}({name}) should use PascalCase.");
+				}
 			}
 		}
 

@@ -161,6 +161,11 @@ namespace Keysharp.Runtime
 			var omit = omitChars.As();
 			var info = Peek(LoopType.Parse);//The calling code must have called Push() with this type.
 			var script = Script.TheScript;
+			//Trim(char[]) removes white space when given no characters, so an empty OmitChars must skip it.
+			var remove = omit.Length > 0 ? omit.ToCharArray() : null;
+
+			if (i.Length == 0)
+				yield break;
 
 			if (delimiters.Equals(Keyword_CSV, StringComparison.OrdinalIgnoreCase))
 			{
@@ -218,6 +223,10 @@ namespace Keysharp.Runtime
 					next = false;
 					var result = part.ToString();
 					part.Length = 0;
+
+					if (remove != null)
+						result = result.Trim(remove);
+
 					info.result = result;
 					info.index++;
 					yield return result;
@@ -226,22 +235,41 @@ namespace Keysharp.Runtime
 						break;
 				}
 			}
-			else
+			else if (delimiters.Length == 0)
 			{
-				string[] parts;
-
-				var remove = omit.ToCharArray();
-
-				if (string.IsNullOrEmpty(delimiters))
-					parts = i.ToCharArray().Select(x => x.ToString().Trim(remove)).Where(x => x != string.Empty).ToArray();
-				else
-					parts = i.Split(delimiters.ToCharArray(), StringSplitOptions.None).Select(x => x.Trim(remove)).Where(x => x != string.Empty).ToArray();
-
-				foreach (var part in parts)
+				//Each character is a field, and one in OmitChars is not seen at all.
+				foreach (var ch in i)
 				{
+					if (remove != null && omit.Contains(ch))
+						continue;
+
+					var part = ch.ToString();
 					info.result = part;
 					info.index++;
 					yield return part;
+				}
+			}
+			else
+			{
+				//As in AutoHotkey, an empty field is visited too, including one after a trailing delimiter.
+				var delims = delimiters.ToCharArray();
+
+				for (var start = 0; ;)
+				{
+					var end = i.IndexOfAny(delims, start);
+					var part = i.Substring(start, (end < 0 ? i.Length : end) - start);
+
+					if (remove != null)
+						part = part.Trim(remove);
+
+					info.result = part;
+					info.index++;
+					yield return part;
+
+					if (end < 0)
+						break;
+
+					start = end + 1;
 				}
 			}
 

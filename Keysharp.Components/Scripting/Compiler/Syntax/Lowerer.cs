@@ -2165,6 +2165,14 @@ namespace Keysharp.Compilation.Syntax
 				: args.Equals("true", System.StringComparison.OrdinalIgnoreCase) ? Num("1")
 				: args.Equals("false", System.StringComparison.OrdinalIgnoreCase) ? Num("0")
 				: Num(args);
+			bool BoolArg()
+			{
+				if (args.Length == 0 || args.Equals("true", System.StringComparison.OrdinalIgnoreCase) || args == "1") return true;
+				if (args.Equals("false", System.StringComparison.OrdinalIgnoreCase) || args == "0") return false;
+				Diag($"{NodeAnchor(d)}#{d.Name}: parameter must be true or false");
+				return true;
+			}
+			ExpressionSyntax BoolNum() => Num(BoolArg() ? "1" : "0");
 			StatementSyntax Set(string target, ExpressionSyntax val) => ExprStmt(Assign(Access(target), val));
 			var True = SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression);
 
@@ -2173,15 +2181,14 @@ namespace Keysharp.Compilation.Syntax
 				case "CLIPBOARDTIMEOUT": return Set("Keysharp.Builtins.Ks.A_ClipboardTimeout", NumArg(1000));
 				case "HOTIFTIMEOUT": return Set("Keysharp.Builtins.Ks.A_HotIfTimeout",
 						NumArg(Keysharp.Builtins.Accessors.DefaultHotIfTimeout));
-				case "INPUTLEVEL": return Set("Keysharp.Builtins.Ks.A_InputLevel", NumArg(0));   // setter clamps 0..100
-				case "SUSPENDEXEMPT": return Set("Keysharp.Builtins.Ks.A_SuspendExempt", NumArg(1));   // on Ks; setter ForceBools
+				case "INPUTLEVEL": return Set("Keysharp.Builtins.Ks.A_InputLevel", NumArg(0));   // setter validates 0..100
+				case "SUSPENDEXEMPT": return Set("Keysharp.Builtins.Ks.A_SuspendExempt", BoolNum());   // on Ks; setter ForceBools
 				case "MAXTHREADSBUFFER":
-					return Set("Keysharp.Builtins.Ks.A_MaxThreadsBuffer",
-						Num(args.Equals("false", System.StringComparison.OrdinalIgnoreCase) || args == "0" ? "0" : "1"));
+					return Set("Keysharp.Builtins.Ks.A_MaxThreadsBuffer", BoolNum());
 				case "MAXTHREADSPERHOTKEY":
 					long.TryParse(args, out var mtph);
 					return Set("Keysharp.Builtins.Ks.A_MaxThreadsPerHotkey", Num(System.Math.Clamp(mtph, 1, 255).ToString()));
-				case "USEHOOK": return Set("MainScript.ForceKeybdHook", Op("ForceBool", NumArg(0)));
+				case "USEHOOK": return Set("MainScript.ForceKeybdHook", BoolArg() ? True : False);
 				// #NoTrayIcon is applied through the manifest before any tray chrome is created.
 				case "NOTRAYICON": case "TRAYICON": case "SINGLEINSTANCE":
 					ApplyManifestDirectiveOnce(d);
@@ -2235,7 +2242,7 @@ namespace Keysharp.Compilation.Syntax
 				// #Persistent [false|0]: keep the script running with no hotkeys/timers. Sets the same flag the DHHR uses
 				// to emit Flow.Persistent() (see BuildOuterAuto); a `false`/`0` argument leaves it off.
 				case "PERSISTENT":
-					if (!(args.Equals("false", System.StringComparison.OrdinalIgnoreCase) || args == "0")) _persistent = true;
+					if (BoolArg()) _persistent = true;
 					return null;
 				// Top-level capability requirements are emitted together before hook setup by BuildOuterAuto. Preserve
 				// the existing source-position behavior for one nested in control flow or another unsupported scope.

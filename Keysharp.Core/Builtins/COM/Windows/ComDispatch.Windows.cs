@@ -374,13 +374,17 @@ namespace Keysharp.Builtins.COM
 			}
 			catch (Exception ex)
 			{
+				//As in AutoHotkey, a caller which takes no exception information cannot pass the error on, so it is reported.
+				if (pExcepInfo == 0)
+				{
+					_ = Errors.ReportUncaught(ex);
+					return DISP_E_EXCEPTION;
+				}
+
 				try
 				{
-					if (pExcepInfo != 0)
-					{
-						var ei = new EXCEPINFO { bstrDescription = ex.Message };
-						Marshal.StructureToPtr(ei, pExcepInfo, false);
-					}
+					var ei = new EXCEPINFO { bstrDescription = ex.Message };
+					Marshal.StructureToPtr(ei, pExcepInfo, false);
 				}
 				catch { }
 				return DISP_E_EXCEPTION;

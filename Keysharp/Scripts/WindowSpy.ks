@@ -66,7 +66,7 @@ WinSpyGui() {
     oGui.txtMouseCtrl := "Control Under Mouse Position"
     oGui.txtFocusCtrl := txtFocusCtrl
 
-    SetTimer "Update", 250
+    SetTimer Update, 250
 }
 
 WinSpySize(GuiObj, MinMax, Width, Height) {
@@ -75,7 +75,7 @@ WinSpySize(GuiObj, MinMax, Width, Height) {
     If !oGui.HasProp("txtNotFrozen") ; WinSpyGui() not done yet, return until it is
         return
 
-    SetTimer "Update", (MinMax=0)?250:0 ; suspend updates on minimize
+    SetTimer Update, (MinMax=0)?250:0 ; suspend updates on minimize
 
     ctrlW := Width - (oGui.MarginX * 2) ; ctrlW := Width - horzMargin
     list := "Title,MousePos,Ctrl,Pos,SBText,VisText,AllText,Freeze"
@@ -269,7 +269,7 @@ textMangle(x) {
 suspend_timer() {
     Global oGui
 
-    SetTimer "Update", 0
+    SetTimer Update, 0
     UpdateText("Ctrl_Freeze", oGui.txtFrozen)
 }
 
@@ -277,4 +277,4 @@ suspend_timer() {
 ~*Shift::
 ~*Ctrl::suspend_timer()
 ~*Ctrl up::
-~*Shift up::SetTimer "Update", 250
+~*Shift up::SetTimer Update, 250

@@ -170,12 +170,27 @@ struct CB_MIXED_DERIVED extends CB_INT_BASE {
 for badShape in [[CB_FLOAT_PAIR, Int32], [CB_BIG, Int32], [Int32, CB_BIG], [CB_FLOAT_DERIVED, Int32]] {
 	threw := false
 	try
-		CallbackCreate(AddTyped, "Fast", badShape)
+		CallbackCreate(v => v, "Fast", badShape)
 	catch ValueError
 		threw := true
 
 	Assert(threw, A_LineNumber)
 }
+
+; The callback is checked as AHK's CallbackCreate checks it: against ParamCount, against the one address with &, and,
+; with neither, by its MinParams, which becomes the count, so an object used as the callback must state it.
+class Counted {
+	MinParams => 2
+	Call(a, b) => a + b
+}
+countedCb := CallbackCreate(Counted())
+AssertEq(DllCall(countedCb, "ptr", 3, "ptr", 4, "ptr"), 7, A_LineNumber)
+CallbackFree(countedCb)
+Throws(() => CallbackCreate({Call: (this) => 0}), A_LineNumber, PropertyError)
+Throws(() => CallbackCreate(AddTyped,, 1), A_LineNumber, ValueError)
+Throws(() => CallbackCreate(AddTyped, "&"), A_LineNumber, ValueError)
+Throws(() => CallbackCreate(Variadic,, 33), A_LineNumber, ValueError)
+Throws(() => CallbackCreate({}), A_LineNumber, PropertyError)
 
 ; A mix of integer and floating-point fields is an integer slot everywhere, so it stays supported.
 struct CB_MIXED {

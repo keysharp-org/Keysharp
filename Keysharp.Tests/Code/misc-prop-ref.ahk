@@ -87,6 +87,27 @@ a := [5, 6, 7]
 bump(&a[3])
 AssertEq(a[3], 8, A_LineNumber)
 
+; A simple `x := p` reads through a ByRef parameter bound to a virtual reference, calling any getter,
+; rather than copying the reference itself. [v2.1-alpha.32]
+copyOut(&p) {
+    x := p
+    return x
+}
+copyToGlobal(&p) {
+    global copied
+    copied := p
+}
+class GetterOnly {
+    static reads := 0
+    prop => (GetterOnly.reads++, "got")
+}
+AssertEq(copyOut(&o.n), 11, A_LineNumber)
+AssertEq(copyOut(&GetterOnly().prop), "got", A_LineNumber)
+AssertEq(GetterOnly.reads, 1, A_LineNumber)
+AssertEq(copyOut(PropRef(o, "n")), 11, A_LineNumber)
+copyToGlobal(&o.n)
+AssertEq(copied, 11, A_LineNumber)
+
 ; --- 7. User override of __Ref -------------------------------------
 class CustomRef {
     store := Map()

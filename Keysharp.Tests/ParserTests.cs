@@ -193,6 +193,21 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Parser")]
+		public void BooleanDirectiveArgs()
+		{
+			var directives = new[] { "UseHook", "SuspendExempt", "MaxThreadsBuffer", "Persistent" };
+			AssertCompiles(string.Join("\n", directives.SelectMany(directive => new[]
+			{
+				$"#{directive}", $"#{directive} true", $"#{directive} false", $"#{directive} 1", $"#{directive} 0"
+			})) + "\n");
+
+			foreach (var directive in directives)
+				AssertCompileError($"#{directive} maybe\n", "parameter must be true or false");
+
+			AssertCompileError("#UseHook 2\n", "parameter must be true or false");
+		}
+
+		[Test, Category("Parser")]
 		public void ReservedNames()
 		{
 			foreach (var source in new[]

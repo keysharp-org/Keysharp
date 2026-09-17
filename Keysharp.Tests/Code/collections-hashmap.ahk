@@ -8,12 +8,17 @@ a.test := 2
 
 AssertEq(a["test"], 3, A_LineNumber)
 
-; HashMap should be unsorted, usually in insertion order (although this is an implementation detail)
+; HashMap's enumeration order is unspecified, so check only that every entry is visited once.
 m := HashMap(1.0, "double", 1, "integer", "1", "string", {}, "object")
-i := 0
+seen := Map()
 for k, v in m {
-	i++
-	AssertEq(v, ["double", "integer", "string", "object"][i], A_LineNumber)
+	AssertEq(m[k], v, A_LineNumber)
+	seen[v] := Type(k)
 }
+AssertEq(seen.Count, 4, A_LineNumber)
+AssertEq(seen["double"], "Float", A_LineNumber)
+AssertEq(seen["integer"], "Integer", A_LineNumber)
+AssertEq(seen["string"], "String", A_LineNumber)
+AssertEq(seen["object"], "Object", A_LineNumber)
 
 FileAppend "pass", "*"

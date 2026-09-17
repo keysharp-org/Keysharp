@@ -580,7 +580,6 @@ namespace Keysharp.Internals.Strings
 				return bytes;
 			}
 
-
 			if (value == null)
 				return [];
 

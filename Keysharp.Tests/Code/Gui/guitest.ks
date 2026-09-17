@@ -1360,12 +1360,12 @@ MoveTheMouse(*) {
 ; Not Windows-only: EtoMessageSource synthesizes WM_LBUTTONDOWN into the same global monitors.
 AddMsgMonitor(*)
 {
-	OnMessage 0x0201, "WM_LBUTTONDOWN"
+	OnMessage 0x0201, WM_LBUTTONDOWN
 }
 
 RemoveMsgMonitor(*)
 {
-	OnMessage 0x0201, "WM_LBUTTONDOWN", 0
+	OnMessage 0x0201, WM_LBUTTONDOWN, 0
 }
 
 WM_LBUTTONDOWN(wParam, lParam, msg, hwnd)
@@ -4205,10 +4205,10 @@ ResetStatuses() {
 	AppendLog("Status text reset.")
 }
 
-OnWinEvent(hook, *) {
+OnWinEvent(eventName, hook, *) {
 	global gWindowEventSeen
-	if gWindowEventSeen.Has(hook.EventName)
-		gWindowEventSeen[hook.EventName]++
+	if gWindowEventSeen.Has(eventName)
+		gWindowEventSeen[eventName]++
 }
 
 ; ── Ks.Monitor: listing, metadata, and per-monitor device control ─────────────────────────────────────────
@@ -5408,16 +5408,22 @@ StartWindowSuiteEvents() {
 		; A minimized Wayland window is hidden before the polling source observes the transition. Capture true
 		; in these registrations so the Minimize callback can still match the window that just became hidden.
 		DetectHiddenWindows(true)
+		; One object watches every event, each slot bound to its own name so the counts stay separate.
+		hook := WinEvent(gWindowFixturePrefix)
 		for eventName in ["Exist", "NotExist", "Active", "Move", "Minimize", "Restore", "TitleChange"] {
 			try {
-				hook := WinEvent.%eventName%(OnWinEvent, gWindowFixturePrefix)
-				gWinEventHooks.Push(hook)
-				if !hook.InProgress
-					throw Error("Subscription is not running: " (hook.EndReason || "idle"))
+				hook.%"On" eventName% := OnWinEvent.Bind(eventName)
 				gWindowEventSeen[eventName] := 0
 			} catch as err
 				AddWindowError("WinEvent", eventName " registration", err)
 		}
+		try {
+			hook.Start()
+			gWinEventHooks.Push(hook)
+			if !hook.InProgress
+				throw Error("The WinEvent is not running: " hook.EndReason)
+		} catch as err
+			AddWindowError("WinEvent", "Start", err)
 	} finally
 		DetectHiddenWindows(oldHidden)
 }

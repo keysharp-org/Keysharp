@@ -19,10 +19,11 @@ namespace Keysharp.Internals.Invoke
                     return _callFunc;
 
 				var del = DelegateFactory.CreateDelegate(this);
+				var call = del;
 
                 if (isGuiType)
                 {
-                    _callFunc = (inst, args) =>
+                    call = (inst, args) =>
                     {
                         var ctrl = (inst ?? args[0]).GetControl();
                         object ret = null;
@@ -33,10 +34,8 @@ namespace Keysharp.Internals.Invoke
                         return ret;
                     };
                 }
-                else
-                    _callFunc = del;
 
-                return _callFunc;
+                return _callFunc = call;
 			}
         }
 

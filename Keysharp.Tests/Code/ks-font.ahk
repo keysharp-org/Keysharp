@@ -266,19 +266,24 @@ ctl.SetFont(Font("s15", guiFamily))
 Check("control SetFont object name", ctl.Font.Name, guiFamily)
 Check("control SetFont object size", ctl.Font.Size, 15)
 
-#if WINDOWS
-; Repeated FontHandle reads reuse the GUI's cached native font.
+; Repeated FontHandle reads reuse the GUI's native font until the font itself changes.
 g.SetFont("s12 norm", guiFamily)
 handle := g.FontHandle
 Check("FontHandle nonzero", handle != 0, true)
 Check("FontHandle stable", g.FontHandle, handle)
 g.SetFont("cRed")
 Check("color-only update preserves FontHandle", g.FontHandle, handle)
+#if WINDOWS
 nativeFont := Buffer(92, 0)
 Check("FontHandle is a font", DllCall("gdi32\GetObjectW", "Ptr", handle, "Int", nativeFont.Size, "Ptr", nativeFont, "Int"), 92)
 oldHeight := Abs(NumGet(nativeFont, 0, "Int"))
+#elif LINUX
+oldSize := DllCall("libpango-1.0.so.0\pango_font_description_get_size", "Ptr", handle, "Int")
+#endif
 g.SetFont("s24 bold")
 Check("FontHandle refreshes", g.FontHandle != handle, true)
+Rejects("FontHandle read only", () => g.FontHandle := 0)
+#if WINDOWS
 DllCall("gdi32\GetObjectW", "Ptr", g.FontHandle, "Int", nativeFont.Size, "Ptr", nativeFont, "Int")
 Check("FontHandle reflects bold", NumGet(nativeFont, 16, "Int"), 700)
 Check("FontHandle reflects size", Abs(NumGet(nativeFont, 0, "Int")), oldHeight * 2)
@@ -290,7 +295,10 @@ appliedHandle := DllCall("user32\SendMessageW", "Ptr", qualityControl.Hwnd, "UIn
 Check("control has native font", appliedHandle != 0, true)
 DllCall("gdi32\GetObjectW", "Ptr", appliedHandle, "Int", nativeFont.Size, "Ptr", nativeFont, "Int")
 Check("native control font reflects quality", NumGet(nativeFont, 26, "UChar"), 3)
-Rejects("FontHandle read only", () => g.FontHandle := 0)
+#elif LINUX
+; A PangoFontDescription: PANGO_WEIGHT_BOLD is 700, and sizes are in Pango units.
+Check("FontHandle reflects bold", DllCall("libpango-1.0.so.0\pango_font_description_get_weight", "Ptr", g.FontHandle, "Int"), 700)
+Check("FontHandle reflects size", Abs(DllCall("libpango-1.0.so.0\pango_font_description_get_size", "Ptr", g.FontHandle, "Int") - oldSize * 2) <= 2, true)
 #endif
 
 ; Assigning something that is not a Font must raise.
