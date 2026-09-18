@@ -2071,7 +2071,7 @@ namespace Keysharp.Builtins
 						if (spec.LeftAlign)
 							charStr += new string(' ', pad);
 						else
-							charStr = new string(' ', pad) + charStr;
+							charStr = new string(spec.ZeroPad ? '0' : ' ', pad) + charStr;
 					}
 
 					return charStr;
@@ -2113,10 +2113,11 @@ namespace Keysharp.Builtins
 					{
 						int pad = spec.Width.Value - s.Length;
 
+						// AHK formats through MSVC's printf, whose %0Ns pads with zeros, so {:02} turns 9 into "09".
 						if (spec.LeftAlign)
 							s += new string(' ', pad);
 						else
-							s = new string(' ', pad) + s;
+							s = new string(spec.ZeroPad ? '0' : ' ', pad) + s;
 					}
 
 					return s;
