@@ -858,6 +858,13 @@ namespace Keysharp.Main
 
 				psi.ArgumentList.Add("--daemon");
 
+				// A compile is short and allocation-heavy: Dynamic PGO's instrumented tier never pays for itself in the
+				// daemon, and workstation GC leaves Roslyn's parallel binding waiting on collections (3.5 s → 1.7 s per
+				// warm compile of a 24k-line script). Scripts run in the launching process, which keeps the defaults.
+				psi.Environment.TryAdd("DOTNET_TieredPGO", "0");
+				psi.Environment.TryAdd("DOTNET_gcServer", "1");
+				psi.Environment.TryAdd("DOTNET_gcConcurrent", "0");
+
 				// The daemon must not inherit this process's standard handles. It outlives us by up to four
 				// hours, so a handle it keeps open is a pipe that never reaches end-of-stream: piping a
 				// Keysharp run and reading to EOF hangs long after the script exited (`keysharp x.ks | more`
