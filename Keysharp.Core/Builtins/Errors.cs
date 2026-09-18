@@ -417,6 +417,26 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
+		/// AHK's TypeError for a value which is not of the one type accepted, "Expected a MenuBar but got an Integer.",
+		/// with a primitive value as Extra. Throws a <see cref="TypeError"/> or returns <see cref="DefaultObject"/>.
+		/// </summary>
+		[StackTraceHidden]
+		internal static object ExpectedTypeErrorOccurred(string expectedType, object value, object ret = null)
+		{
+			static string An(string type) => "AEIOUaeiou".Contains(type[0]) ? "an " : "a ";
+			var (actualType, extra) = value switch
+			{
+				null => ("unset", ""),
+				"" => ("empty string", ""),
+				string or long or double or bool => (Types.Type(value), value.As()),
+				_ => (Types.Type(value), "")
+			};
+			Error err;
+			return ErrorOccurred(err = new TypeError($"Expected {An(expectedType)}{expectedType} but got {An(actualType)}{actualType}.", null, extra))
+				   ? throw err : ret ?? DefaultObject;
+		}
+
+		/// <summary>
 		/// Renders a value for an error message: its own text when it has any, else the name the script knows
 		/// its type by. An object that does not override ToString would otherwise print its CLR type name.
 		/// Never throws.

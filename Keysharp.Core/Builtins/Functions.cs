@@ -65,10 +65,8 @@ namespace Keysharp.Builtins
 					return GetKeysharpFunc(value);            // raises, naming the %"Name"% remedy
 
 				default:
-					var type = Types.Type(value);
-					Error err = new TypeError($"Expected an object but got {(type.Length > 0 && "AEIOUaeiou".Contains(type[0]) ? "an" : "a")} {type}.",
-											  null, Errors.Describe(value));
-					return Errors.ErrorOccurred(err) ? throw err : null;
+					_ = Errors.ExpectedTypeErrorOccurred("object", value);
+					return null;
 			}
 		}
 
