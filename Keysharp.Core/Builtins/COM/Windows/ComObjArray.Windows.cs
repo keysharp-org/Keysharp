@@ -367,7 +367,7 @@ namespace Keysharp.Builtins.COM
 					object src = value is ComValue c ? c.Ptr : value;
 					// Get a temporary COM pointer we own; SafeArray will AddRef its own copy.
 					pIface = (_baseType == VarEnum.VT_DISPATCH)
-							 ? Marshal.GetIDispatchForObject(src)
+							 ? Com.DispatchPointer(src)
 							 : Marshal.GetIUnknownForObject(src);
 					releaseInterface = true;
 				}

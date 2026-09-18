@@ -5,582 +5,397 @@ using static Keysharp.Runtime.Script;
 
 namespace Keysharp.Builtins
 {
-	public partial class Any : IReflect
+	/// <summary>
+	/// How a COM client sees a Keysharp object: through an IDispatch of the object's own, as AutoHotkey's objects have,
+	/// in place of the one the runtime would derive from the C# members of its class. Every name a client asks for gets
+	/// a DISPID, and what the object does with it, a meta-function included, is decided when it is invoked.
+	/// </summary>
+	public partial class Any : IDispatch, ICustomQueryInterface
 	{
-		#region IReflect implementation
+		private const int S_OK = 0;
+		private const int E_NOTIMPL = unchecked((int)0x80004001);
+		private const int DISP_E_MEMBERNOTFOUND = unchecked((int)0x80020003);
+		private const int DISP_E_UNKNOWNNAME = unchecked((int)0x80020006);
+		private const int DISP_E_EXCEPTION = unchecked((int)0x80020009);
+		private const int DISPID_VALUE = 0;
+		private const int DISPID_UNKNOWN = -1;
+		private const int DISPID_NEWENUM = -4;
 
-		FieldInfo? IReflect.GetField(string name, BindingFlags bindingAttr)
+		CustomQueryInterfaceResult ICustomQueryInterface.GetInterface(ref Guid iid, out nint ppv)
 		{
-			// only own (no base) and only if there's a Value slot
-			if (Script.TryGetOwnPropsMap(this, name, out _, searchBase: false, type: OwnPropsMapType.Value))
-				return new SimpleFieldInfo(name);
-			return null;
-		}
-		FieldInfo[] IReflect.GetFields(BindingFlags bindingAttr)
-		{
-			var list = new List<FieldInfo>();
-			if (op != null)
+			if (iid == Com.IID_IDispatch)
 			{
-				foreach (var kv in op)
-				{
-					if (kv.Value.Value != null)  // only explicit Value entries
-						list.Add(new SimpleFieldInfo(kv.Key));
-				}
+				ppv = Marshal.GetComInterfaceForObject(this, typeof(IDispatch), CustomQueryInterfaceMode.Ignore);
+				return CustomQueryInterfaceResult.Handled;
 			}
-			return [.. list];
-			}
-		MethodInfo IReflect.GetMethod(string name, BindingFlags bindingAttr)
-		{
-			// Look through the methods you already return in GetMethods(...)
-			return ((IReflect)this)
-				.GetMethods(bindingAttr)
-				.FirstOrDefault(m =>
-					string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)) ?? throw new NullReferenceException();
-		}
-		MethodInfo IReflect.GetMethod(string name, BindingFlags bindingAttr, Binder? binder, System.Type[] types, ParameterModifier[]? modifiers) => throw new NotImplementedException();
-		MethodInfo[] IReflect.GetMethods(BindingFlags bindingAttr)
-		{
-			List<MethodInfo> meths = [];
-			Any kso = this;
 
-			if (kso is KeysharpFunc sfo && sfo != null)
+			if (iid == Com.IID_KeysharpObject)
 			{
-				var mi = sfo.Mph.mi;
-				var name = sfo.Mph.Name;
-				if (mi.GetParameters()
-					.Any(p => p.IsDefined(typeof(ByRefAttribute), inherit: false)))
-				{
-					mi = ByRefWrapper.Create(mi);
-				}
-
-				if (mi.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-					meths.Add(mi);
-				else
-					meths.Add(new RenamedMethodInfo(mi, name));
+				ppv = Marshal.GetIUnknownForObject(this);
+				return CustomQueryInterfaceResult.Handled;
 			}
 
-			if (Script.TryGetProps(this, out var props, true, OwnPropsMapType.Call))
-			{
-				foreach (var prop in props)
-				{
-					var opm = prop.Value;
-					if (opm.Call is KeysharpFunc fo && fo != null)
-					{
-						var mi = fo.Mph.mi;
-						if (mi.GetParameters()
-							.Any(p => p.IsDefined(typeof(ByRefAttribute), inherit: false)))
-						{
-							mi = ByRefWrapper.Create(mi);
-						}
-
-						if (mi.Name.Equals(prop.Key, StringComparison.OrdinalIgnoreCase))
-							meths.Add(mi);
-						else
-							meths.Add(new RenamedMethodInfo(mi, prop.Key));
-					}
-				}
-			}
-
-			return [.. meths];
-		}
-		PropertyInfo[] IReflect.GetProperties(BindingFlags bindingAttr)
-		{
-			var list = new List<PropertyInfo>();
-			if (Script.TryGetProps(this, out var props, true, OwnPropsMapType.Get | OwnPropsMapType.Set))
-			{
-
-				foreach (var kv in props)
-					{
-					var opm = kv.Value;
-					bool hasGet = opm.Get != null;
-					bool hasSet = opm.Set != null;
-					list.Add(new SimplePropertyInfo(kv.Key, hasGet, hasSet));
-				}
-			}
-			return [.. list];
-		}
-		PropertyInfo IReflect.GetProperty(string name, BindingFlags bindingAttr) => throw new NotImplementedException();
-		PropertyInfo IReflect.GetProperty(string name, BindingFlags bindingAttr, Binder? binder, System.Type? type, System.Type[] types, ParameterModifier[]? modifiers) => throw new NotImplementedException();
-		MemberInfo[] IReflect.GetMember(string name, BindingFlags bindingAttr)
-		{
-			var list = new List<MemberInfo>();
-			var f = ((IReflect)this).GetField(name, bindingAttr);
-
-			if (f != null) list.Add(f);
-
-			var p = ((IReflect)this).GetProperty(name, bindingAttr);
-
-			if (p != null) list.Add(p);
-
-			var ms = ((IReflect)this).GetMethods(bindingAttr);
-
-			foreach (var m in ms) if (string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase))
-					list.Add(m);
-
-			return [.. list];
-		}
-		MemberInfo[] IReflect.GetMembers(BindingFlags bindingAttr)
-		{
-			var all = new List<MemberInfo>();
-			all.AddRange(((IReflect)this).GetFields(bindingAttr));
-			all.AddRange(((IReflect)this).GetProperties(bindingAttr));
-			all.AddRange(((IReflect)this).GetMethods(bindingAttr));
-			return [.. all];
+			ppv = 0;
+			return CustomQueryInterfaceResult.NotHandled;
 		}
 
-		const int DISPID_VALUE = 0;
-		const int DISPID_UNKNOWN = -1;
-		const int DISPID_PROPERTYPUT = -3;
-		const int DISPID_NEWENUM = -4;
-		const int DISPID_EVALUATE = -5;
-		const int DISPID_CONSTRUCTOR = -6;
-		const int DISPID_DESTRUCTOR = -7;
-		const int DISPID_COLLECT = -8;
-
-		object? IReflect.InvokeMember(
-			string name,
-			BindingFlags invokeAttr,
-			Binder? binder,
-			object? target,
-			object?[]? args,
-			ParameterModifier[]? modifiers,
-			System.Globalization.CultureInfo? culture,
-			string[]? namedParameters)
+		int IDispatch.GetTypeInfoCount(out uint info)
 		{
-			if (name == null || name == "")
-				throw new Error("Invoked member name can't be empty");
+			info = 0;
+			return S_OK;
+		}
 
-			args ??= [];
+		int IDispatch.GetTypeInfo(int iTInfo, int lcid, out ITypeInfo? ppTInfo)
+		{
+			ppTInfo = null;
+			return E_NOTIMPL;
+		}
 
-			object[] usedArgs = args!;
+		int IDispatch.GetIDsOfNames(ref Guid guid, string[] names, int cNames, int lcid, int[] rgDispId)
+		{
+			for (var i = 1; i < cNames; i++)
+				rgDispId[i] = DISPID_UNKNOWN;
 
-			var argCount = args.Length;
+			rgDispId[0] = ComDispatchNames.IdOf(names[0]);
+			// Only the member is named: the names of arguments are not resolved, as in AHK.
+			return cNames == 1 ? S_OK : DISP_E_UNKNOWNNAME;
+		}
 
-			if (args.Length > 0 && args[ ^ 1] is object[] tail && tail != null)
+		int IDispatch.Invoke(int dispIdMember, ref Guid riid, int lcid, INVOKEKIND wFlags, ref DISPPARAMS pDispParams, nint pVarResult, nint pExcepInfo, nint puArgErr)
+		{
+			string? name = null;
+			var newEnum = false;
+
+			if (dispIdMember > 0)
 			{
-				// Last parameter was variadic and C# converted the arguments to object[],
-				// so let's concat it back.
-				int headCount = argCount - 1;
-				int tailCount = tail.Length;
-				var result = new object[headCount + tailCount];
-				System.Array.Copy(args, 0, result, 0, headCount);
-				System.Array.Copy(tail, 0, result, headCount, tailCount);
-				usedArgs = result;
-				argCount = result.Length;
+				if ((name = ComDispatchNames.NameOf(dispIdMember)) == null)
+					return DISP_E_MEMBERNOTFOUND;
 			}
-
-			for (int i = 0; i < argCount; i++)
-			{
-				var val = args[i];
-
-				if (val is System.Reflection.Missing)
-					usedArgs[i] = null!;
-				else if (val is float f)
-					usedArgs[i] = (double)f;
-				else if (val is IConvertible conv)
-				{
-					switch (conv.GetTypeCode())
-					{
-						case TypeCode.Char:
-						case TypeCode.SByte:
-						case TypeCode.Byte:
-						case TypeCode.Int16:
-						case TypeCode.UInt16:
-						case TypeCode.Int32:
-						case TypeCode.UInt32:
-						case TypeCode.Int64:
-						case TypeCode.UInt64:
-							usedArgs[i] = conv.Al();
-							break;
-					}
-				}
-			}
-
-			if (name.Equals("_NewEnum", StringComparison.OrdinalIgnoreCase)
-					|| name.Equals($"[DISPID={DISPID_NEWENUM}]", StringComparison.OrdinalIgnoreCase))
+			else if (dispIdMember == DISPID_NEWENUM && (wFlags & (INVOKEKIND.INVOKE_FUNC | INVOKEKIND.INVOKE_PROPERTYGET)) != 0)
 			{
 				name = "__Enum";
-
-				if (args.Length == 0)
-					args = [2];
+				newEnum = true;
 			}
-			else if (name.Equals("__Item", StringComparison.OrdinalIgnoreCase)
-					 || name.Equals("_Item", StringComparison.OrdinalIgnoreCase)
-					 || name.Equals($"[DISPID={DISPID_VALUE}]", StringComparison.OrdinalIgnoreCase))
+			else if (dispIdMember != DISPID_VALUE)
+				return DISP_E_MEMBERNOTFOUND;
+
+			var exit = new Threads.ExitState(Threads.Current);
+
+			try
 			{
-				if ((invokeAttr & BindingFlags.InvokeMethod) != 0 && (target is not KeysharpFunc))
-					return Com.ConvertToCOMType(Script.Invoke(target ?? this, null, usedArgs));
+				// An error goes back to the caller, which is the one to handle it, rather than to a dialog.
+				using var caught = Keysharp.Runtime.Flow.EnterTry();
+				var args = ReadArguments(ref pDispParams, out var byRefs);
+				object? result;
 
-				if (this is Array)
+				if ((wFlags & (INVOKEKIND.INVOKE_PROPERTYPUT | INVOKEKIND.INVOKE_PROPERTYPUTREF)) != 0)
 				{
-					for (int i = 0; i < argCount - 1; i++)
-					{
-						usedArgs[i] = usedArgs[i].Ai() + 1;
-					}
+					// The value is the last argument, after any index.
+					_ = name == null ? SetObject(this, args) : SetPropertyValue(this, name, args);
+					return S_OK;
 				}
 
-				if (target != null && target is KeysharpFunc fo)
-				{
-					invokeAttr |= BindingFlags.InvokeMethod;
-					name = "Call";
-				}
+				if (newEnum)
+					result = new ComEnumerator(Invoke(this, name, 1L));
 				else
 				{
-					if (DISPID_VALUE == 0 && Functions.HasProp(this, "__Item") != 0L)
-					{
-						if ((invokeAttr & BindingFlags.GetProperty) != 0
-							|| (invokeAttr & BindingFlags.GetField) != 0)
-						{
-							return Com.ConvertToCOMType(Script.GetIndexOrNull(target ?? this, usedArgs));
-						}
-						else
-						{
-							return Com.ConvertToCOMType(Script.SetObject(target ?? this, usedArgs));
-						}
-					} else
-					{
-						if ((invokeAttr & BindingFlags.GetProperty) != 0
-							|| (invokeAttr & BindingFlags.GetField) != 0)
-						{
-							return Com.ConvertToCOMType(Script.GetPropertyValue(target ?? this, usedArgs[0]));
-						}
-						else
-						{
-							object value = argCount > 0 ? usedArgs[^1] : null!;
-							return Com.ConvertToCOMType(Script.SetPropertyValue(target ?? this, usedArgs[0], value));
-						}
-					}
+					var callable = Functions.HasMethod(this, name) != 0L;
+					var readable = Functions.HasProp(this, name ?? "__Item") != 0L;
+					// A client that cannot tell a call from an indexed read, as VBScript's obj.X(y) cannot, asks for both:
+					// a method is called, and failing that a property is read.
+					var call = (wFlags & INVOKEKIND.INVOKE_FUNC) != 0 && ((wFlags & INVOKEKIND.INVOKE_PROPERTYGET) == 0 || callable || !readable);
+
+					// What the object neither has nor answers for through a meta-function is not found, which is how a
+					// client tells a member that is missing from one that raised an error.
+					if (call ? !callable && !readable && !Answers(name, "__Call") : !readable && !Answers(name, "__Get"))
+						return DISP_E_MEMBERNOTFOUND;
+
+					result = call ? DispatchCall(name, args, byRefs) : name == null ? GetIndex(this, args) : GetPropertyValue(this, name, args);
 				}
-			}
 
-			// indexer? AutoHotkey uses DISPID=0 for __Item
-			else if (name.StartsWith("[DISPID=", StringComparison.OrdinalIgnoreCase))
-			{
-				// parse the number inside the brackets
-				var dispStr = name[8..^1]; // drop "[DISPID=" and "]"
-
-				if (!int.TryParse(dispStr, out int dispId))
-					throw new Error($"Failed to parse DISPID from {name}");
-
-				name = dispId switch
+				if (pVarResult != 0)
 				{
-					DISPID_CONSTRUCTOR => "__New",
-					DISPID_DESTRUCTOR => "__Delete",
-					_ => throw new Error($"Failed to invoke property/method for {name}"),
+					VariantHelper.VariantInit(pVarResult);
+					var variant = result is ComEnumerator enumerator ? enumerator.ToVariant() : VariantHelper.ResultToVariant(result);
+					Marshal.StructureToPtr(variant, pVarResult, false);
+				}
+
+				return S_OK;
+			}
+			// Exit ends only the call, which AutoHotkey reports to the caller as success; ExitApp goes on unwinding.
+			catch (Exception ex) when (!TheScript.hasExited && Keysharp.Internals.Flow.TryGetException<Flow.UserRequestedExitException>(ex, out _))
+			{
+				exit.Restore();
+				return S_OK;
+			}
+			catch (Exception ex)
+			{
+				// As in AutoHotkey, a caller which takes no exception information cannot pass the error on, so it is reported.
+				if (pExcepInfo == 0)
+				{
+					_ = Errors.ReportUncaught(ex);
+					return unchecked((int)0x80004005);//E_FAIL
+				}
+
+				var error = ex is KeysharpException ? ex : ex.InnerException ?? ex;
+				var info = new EXCEPINFO
+				{
+					scode = DISP_E_EXCEPTION,
+					bstrDescription = error.Message,
+					bstrSource = (error as KeysharpException)?.UserError?.What ?? ""
 				};
+				Marshal.StructureToPtr(info, pExcepInfo, false);
+				return DISP_E_EXCEPTION;
 			}
-
-			target ??= this;
-
-			// property getter?
-			if ((invokeAttr & BindingFlags.GetProperty) != 0 && argCount == 0 && Functions.HasProp(this, name) == 1L)
-				return Com.ConvertToCOMType(Script.GetPropertyValue(target, name));
-
-			// property setter?
-			if ((invokeAttr & BindingFlags.SetProperty) != 0 || (invokeAttr & BindingFlags.PutDispProperty) != 0)
-			{
-				if (argCount == 0)
-				{
-					if ((invokeAttr & BindingFlags.InvokeMethod) != 0)
-						return Com.ConvertToCOMType(Script.Invoke(target, name, usedArgs));
-					return null;
-				}
-				Script.SetPropertyValue(target, name, usedArgs[0]);
-				return null;
-			}
-
-			// method call
-			if ((invokeAttr & BindingFlags.InvokeMethod) != 0)
-			{
-				KeysharpFunc fo = null!;
-				object receiver = null!;   // the instance a by-name resolution bound the method to, if any
-				if (target is KeysharpFunc fo2 && name.Equals("Call", StringComparison.OrdinalIgnoreCase))
-				{
-					fo = fo2;
-				}
-				else
-				{
-					(object, object) mitup = (null!, null!);
-					if (target is ITuple otup && otup.Length > 1)
-					{
-						mitup = GetMethodOrProperty(otup, name, -1);
-					}
-					else
-					{
-						mitup = GetMethodOrProperty(target, name, -1);
-					}
-					if (mitup.Item2 is KeysharpFunc fo3)
-						fo = fo3;
-
-					receiver = mitup.Item1;
-				}
-				// Which argument slots does the callee write back through? A COM caller's VT_BYREF flags never
-				// reach here -- the CLR hands IReflect a null `modifiers` -- so the callee's own [ByRef] marks are
-				// the only thing that can answer it. Allocated on the first mark, because almost no call has one.
-				// Write-back closes over the original `args`, which the CLR copies back into the caller's VARIANTs,
-				// so a variadic tail expansion (which renumbers the slots) opts out.
-				bool[] byRefSlots = null!;
-
-				// An ObjBindMethod reference does not resolve its target until it runs, so its placeholder MPH
-				// carries no signature to read marks off -- KeysharpFunc.IsByRef answers false for the same reason.
-				if (fo?.Mph?.mi != null && ReferenceEquals(usedArgs, args))
-				{
-					var prms = fo.Mph.mi.GetParameters();
-					// A caller's argument slot is not a parameter index. Two things shift it: the receiver may be
-					// carried as parameters[0] (the explicit `object @this` a lowered class method declares), which
-					// is what ArgBase measures; and Bind may already have filled slots, which this call's arguments
-					// flow PAST rather than into, so the holes have to be walked exactly as BoundFunc.CreateArgs
-					// walks them when it merges the two. A method resolved by name carries no Inst of its own -- the
-					// receiver comes from the resolution, exactly as KeysharpFunc.CallInst takes `Inst ?? inst`.
-					var argBase = NamedArgBinder.ArgBase(fo.Mph, fo.Inst ?? receiver);
-					var boundargs = (fo as BoundFunc)?.boundargs;
-
-					for (int i = 0, slot = 0; i < args.Length; i++, slot++)
-					{
-						if (boundargs != null)
-							while (slot < boundargs.Length && boundargs[slot] != null)
-								slot++;
-
-						var p = slot - argBase;
-
-						if (p < 0)   // the caller prepended the receiver, which is never an out-parameter
-							continue;
-
-						if (p >= prms.Length)
-							break;
-
-						if (!prms[p].IsDefined(typeof(ByRefAttribute)))
-							continue;
-
-						byRefSlots ??= new bool[args.Length];
-
-						// A [ByRef] `params object[]` marks everything it absorbs, so the tail is all out-parameters
-						// from here on -- see Enumerator.Call, which stores each argument through __Value.
-						if (prms[p].IsDefined(typeof(ParamArrayAttribute), false))
-						{
-							for (int j = i; j < byRefSlots.Length; j++)
-								byRefSlots[j] = true;
-
-							break;
-						}
-
-						byRefSlots[i] = true;
-					}
-				}
-
-				if (byRefSlots != null)
-				{
-					usedArgs = (object[])args.Clone();
-
-					for (int i = 0; i < byRefSlots.Length; i++)
-					{
-						if (!byRefSlots[i])
-							continue;
-
-						var index = i;
-						usedArgs[i] = new VarRef(() => args[index], value => args[index] = value);
-					}
-
-					var result = Com.ConvertToCOMType(Script.Invoke(target, name, usedArgs));
-
-					for (int i = 0; i < byRefSlots.Length; i++)
-					{
-						if (byRefSlots[i])
-							args[i] = Com.ConvertToCOMType(args[i]);
-					}
-
-					return result;
-				}
-
-				return Com.ConvertToCOMType(Script.Invoke(target, name, usedArgs));
-			}
-
-			throw new MissingMemberException($"Member '{name}' not found");
 		}
 
-		System.Type IReflect.UnderlyingSystemType => typeof(KeysharpObject);
-		#endregion
-	}
+		// Whether a meta-function answers for a named member the object does not have; the default member has none.
+		private bool Answers(string? name, string meta) => name != null && Functions.HasMethod(this, meta) != 0L;
 
-	/// <summary>
-	/// A MethodInfo that delegates to an underlying MethodInfo
-	/// but returns a different Name.
-	/// </summary>
-	sealed class RenamedMethodInfo(MethodInfo inner, string fakeName) : MethodInfo
-	{
-		public override string Name => fakeName;
-
-		// everything else just delegates to _inner…
-		public override ICustomAttributeProvider ReturnTypeCustomAttributes
-		=> inner.ReturnTypeCustomAttributes;
-		public override MethodAttributes Attributes
-		=> inner.Attributes;
-		public override System.Type? DeclaringType
-		=> inner.DeclaringType;
-		public override RuntimeMethodHandle MethodHandle
-		=> inner.MethodHandle;
-		public override System.Type? ReflectedType
-		=> inner.ReflectedType;
-		public override MethodImplAttributes GetMethodImplementationFlags()
-		=> inner.GetMethodImplementationFlags();
-		public override ParameterInfo[] GetParameters()
-		=> inner.GetParameters();
-		public override object[] GetCustomAttributes(bool inherit)
-		=> inner.GetCustomAttributes(inherit);
-		public override object[] GetCustomAttributes(System.Type attrType, bool inherit)
-		=> inner.GetCustomAttributes(attrType, inherit);
-		public override bool IsDefined(System.Type attrType, bool inherit)
-		=> inner.IsDefined(attrType, inherit);
-		public override object? Invoke(object? obj, BindingFlags invokeAttr, Binder? binder, object?[]? parameters, CultureInfo? culture)
-		=> inner.Invoke(obj, invokeAttr, binder, parameters, culture);
-		public new object? Invoke(object obj, object[] parameters)
-		=> inner.Invoke(obj, parameters);
-		public override MethodInfo GetBaseDefinition()
-		=> inner.GetBaseDefinition();
-		public override System.Type ReturnType
-		=> inner.ReturnType;
-		public override MethodInfo MakeGenericMethod(params System.Type[] typeArguments)
-		=> inner.MakeGenericMethod(typeArguments);
-		public override bool ContainsGenericParameters
-		=> inner.ContainsGenericParameters;
-		public override bool IsGenericMethod
-		=> inner.IsGenericMethod;
-		public override bool IsGenericMethodDefinition
-		=> inner.IsGenericMethodDefinition;
-		public override System.Type[] GetGenericArguments()
-		=> inner.GetGenericArguments();
-	}
-
-	/// <summary>
-	/// A fake FieldInfo exposing only a name and treating everything as object.
-	/// </summary>
-	sealed class SimpleFieldInfo(string name) : FieldInfo
-	{
-		public override string Name => name;
-		public override System.Type FieldType => typeof(object);
-		public override object GetValue(object? obj) => Script.GetPropertyValue(obj, name);
-		public override void SetValue(object? obj, object? val, BindingFlags bindingFlags, Binder? binder, CultureInfo? ci)
-		=> Script.SetPropertyValue(obj, name, [val]);
-
-		#region All other members just delegate / throw NotSupported
-		public override FieldAttributes Attributes => FieldAttributes.Public;
-		public override RuntimeFieldHandle FieldHandle => throw new NotSupportedException();
-		public override System.Type DeclaringType => typeof(KeysharpObject);
-		public override object[] GetCustomAttributes(bool inherit) => [];
-		public override object[] GetCustomAttributes(System.Type attrType, bool inherit) => [];
-		public override bool IsDefined(System.Type attrType, bool inherit) => false;
-		public override System.Reflection.Module Module => typeof(KeysharpObject).Module;
-		public override System.Type ReflectedType => typeof(KeysharpObject);
-		#endregion
-	}
-
-	/// <summary>
-	/// A fake PropertyInfo exposing only name, read/write and delegating to Script.Get/SetPropertyValue.
-	/// </summary>
-	sealed class SimplePropertyInfo(string name, bool canRead, bool canWrite) : PropertyInfo
-	{
-		public override string Name => name;
-		public override bool CanRead => canRead;
-		public override bool CanWrite => canWrite;
-		public override System.Type PropertyType => typeof(object);
-		public override MethodInfo[] GetAccessors(bool nonPublic) => [];
-		public override MethodInfo? GetGetMethod(bool nonPublic) => null;
-		public override MethodInfo? GetSetMethod(bool nonPublic) => null;
-		public override object GetValue(object? obj, BindingFlags bindingFlags, Binder? binder, object?[]? index, CultureInfo? ci)
-		=> Script.GetPropertyValue(obj, name);
-		public override void SetValue(object? obj, object? value, BindingFlags bindingFlags, Binder? binder, object?[]? index, CultureInfo? ci)
-		=> Script.SetPropertyValue(obj, name, [value]);
-
-		#region Other members stubbed out
-		public override ParameterInfo[] GetIndexParameters() => [];
-		public override System.Type DeclaringType => typeof(KeysharpObject);
-		public override object[] GetCustomAttributes(bool inherit) => [];
-		public override object[] GetCustomAttributes(System.Type attrType, bool inherit) => [];
-		public override bool IsDefined(System.Type attrType, bool inherit) => false;
-		public override PropertyAttributes Attributes => PropertyAttributes.None;
-		public override System.Reflection.Module Module => typeof(KeysharpObject).Module;
-		public override System.Type ReflectedType => typeof(KeysharpObject);
-		#endregion
-	}
-
-	internal static class ByRefWrapper
-	{
-		/// <summary>
-		/// Given a MethodInfo whose parameters may be marked [ByRef],
-		/// returns a new MethodInfo (a DynamicMethod) whose signature
-		/// has those parameters as ref T instead of T.
-		/// The generated IL will dereference the ref args, call the original,
-		/// and return its result.
-		/// </summary>
-		public static MethodInfo Create(MethodInfo original)
+		// rgvarg runs right to left; a by-reference argument is read through, and remembered for the write back.
+		private static object?[] ReadArguments(ref DISPPARAMS dispParams, out VARIANT[]? byRefs)
 		{
-			var origParams = original.GetParameters();
-			bool isInstance = !original.IsStatic;
+			byRefs = null;
+			var count = dispParams.cArgs;
 
-			// 2) build the parameter-type list for the wrapper:
-			var wrapperParamTypes = origParams
-				.Select(p =>
-					p.GetCustomAttribute<ByRefAttribute>() != null
-						? p.ParameterType.MakeByRefType()
-						: p.ParameterType
-				).ToList();
+			if (count == 0)
+				return [];
 
-			// if instance, first param is the "this"
-			if (isInstance)
-				wrapperParamTypes.Insert(0, original.DeclaringType ?? throw new NullReferenceException());
+			var args = new object?[count];
+			var size = Marshal.SizeOf<VARIANT>();
 
-			// 3) create the DynamicMethod
-			var dm = new DynamicMethod(
-				name: original.Name + "_ByRefWrapper",
-				returnType: original.ReturnType,
-				parameterTypes: [.. wrapperParamTypes],
-				m: original?.DeclaringType?.Module ?? throw new NullReferenceException(),
-				skipVisibility: true
-			);
-
-			// 4) emit IL
-			var il = dm.GetILGenerator();
-
-			// load the 'this' if needed
-			int argIndex = 0;
-			if (isInstance)
+			for (var i = 0; i < count; i++)
 			{
-				il.Emit(OpCodes.Ldarg_0);
-				argIndex = 1;
-			}
+				var variant = Marshal.PtrToStructure<VARIANT>(dispParams.rgvarg + (i * size));
+				var index = count - 1 - i;
 
-			// for each original parameter:
-			for (int i = 0; i < origParams.Length; i++, argIndex++)
-			{
-				var pi = origParams[i];
-				bool byRef = pi.GetCustomAttribute<ByRefAttribute>() != null;
-
-				if (byRef)
+				if (((VarEnum)variant.vt & VarEnum.VT_BYREF) != 0)
 				{
-					// the wrapper param is a managed reference (object&),
-					// so ldarg loads the address, then ldind.ref derefs it
-					il.Emit(OpCodes.Ldarg, argIndex);
-					il.Emit(OpCodes.Ldind_Ref);
+					(byRefs ??= new VARIANT[count])[index] = variant;
+					args[index] = VariantHelper.ReadByRefVariant(variant);
 				}
 				else
-				{
-					il.Emit(OpCodes.Ldarg, argIndex);
-				}
+					args[index] = VariantHelper.ArgumentToValue(variant);
 			}
 
-			// call or callvirt as appropriate
-			il.EmitCall(
-				original.IsVirtual && !original.IsFinal
-					? OpCodes.Callvirt
-					: OpCodes.Call,
-				original,
-				null
-			);
+			return args;
+		}
 
-			// return whatever the original returned
-			il.Emit(OpCodes.Ret);
+		private object? DispatchCall(string? name, object?[] args, VARIANT[]? byRefs)
+		{
+			var slots = ByRefSlots(name, args.Length);
 
-			return dm;
+			if (slots == null)
+				return InvokeOrNull(this, name, args!);
+
+			for (var i = 0; i < slots.Length; i++)
+				if (slots[i])
+					args[i] = new VarRef(args[i]!);
+
+			var result = InvokeOrNull(this, name, args!);
+
+			// Only an argument the caller passed by reference has anywhere to be written back to.
+			for (var i = 0; i < slots.Length; i++)
+				if (slots[i] && byRefs != null && byRefs[i].vt != 0)
+					VariantHelper.WriteByRefVariant(byRefs[i], ((VarRef)args[i]!).__Value);
+
+			return result;
+		}
+
+		// Which argument slots the callee writes back through, or null when none. A caller's VT_BYREF alone does not
+		// say: VBScript passes every variable that way. The callee's own [ByRef] marks do, and a marked parameter gets
+		// a VarRef to write through whether or not the caller can receive the value.
+		private bool[]? ByRefSlots(string? name, int argCount)
+		{
+			KeysharpFunc? fo;
+			object? receiver = null;
+
+			if (argCount == 0)
+				return null;
+
+			if (name == null)
+				fo = this as KeysharpFunc;
+			else
+			{
+				var (owner, member) = GetMethodOrProperty(this, name, -1, checkBase: true, throwIfMissing: false, invokeMeta: false);
+				fo = member as KeysharpFunc;
+				receiver = owner;
+			}
+
+			// An ObjBindMethod reference does not resolve its target until it runs, so its placeholder MPH carries no
+			// signature to read marks off -- KeysharpFunc.IsByRef answers false for the same reason.
+			if (fo?.Mph?.mi == null)
+				return null;
+
+			var prms = fo.Mph.mi.GetParameters();
+			// A caller's argument slot is not a parameter index. Two things shift it: the receiver may be carried as
+			// parameters[0] (the explicit `object @this` a lowered class method declares), which is what ArgBase
+			// measures; and Bind may already have filled slots, which this call's arguments flow PAST rather than into,
+			// so the holes have to be walked exactly as BoundFunc.CreateArgs walks them when it merges the two. A method
+			// resolved by name carries no Inst of its own -- the receiver comes from the resolution, exactly as
+			// KeysharpFunc.CallInst takes `Inst ?? inst`.
+			var argBase = NamedArgBinder.ArgBase(fo.Mph, fo.Inst ?? receiver);
+			var boundargs = (fo as BoundFunc)?.boundargs;
+			bool[]? slots = null;
+
+			for (int i = 0, slot = 0; i < argCount; i++, slot++)
+			{
+				if (boundargs != null)
+					while (slot < boundargs.Length && boundargs[slot] != null)
+						slot++;
+
+				var p = slot - argBase;
+
+				if (p < 0)   // the caller prepended the receiver, which is never an out-parameter
+					continue;
+
+				if (p >= prms.Length)
+					break;
+
+				if (!prms[p].IsDefined(typeof(ByRefAttribute)))
+					continue;
+
+				slots ??= new bool[argCount];
+
+				// A [ByRef] `params object[]` marks everything it absorbs, so the tail is all out-parameters from here
+				// on -- see Enumerator.Call, which stores each argument through __Value.
+				if (prms[p].IsDefined(typeof(ParamArrayAttribute), false))
+				{
+					for (var j = i; j < slots.Length; j++)
+						slots[j] = true;
+
+					break;
+				}
+
+				slots[i] = true;
+			}
+
+			return slots;
+		}
+	}
+
+	/// <summary>
+	/// The DISPIDs handed out for member names, shared by every object as in AHK. A name keeps the case it was asked
+	/// for in, so that a meta-function or a new property sees it as written; finding the member ignores case anyway.
+	/// </summary>
+	internal static class ComDispatchNames
+	{
+		private static readonly Lock gate = new();
+		private static readonly Dictionary<string, int> ids = new(StringComparer.Ordinal);
+		private static readonly List<string> names = [];
+
+		internal static int IdOf(string name)
+		{
+			lock (gate)
+			{
+				if (!ids.TryGetValue(name, out var id))
+				{
+					names.Add(name);
+					ids[name] = id = names.Count;   // from 1, which keeps clear of DISPID_VALUE
+				}
+
+				return id;
+			}
+		}
+
+		internal static string? NameOf(int id)
+		{
+			lock (gate)
+				return id > 0 && id <= names.Count ? names[id - 1] : null;
+		}
+	}
+
+	[ComImport]
+	[Guid("00020404-0000-0000-C000-000000000046")]
+	[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	internal interface IEnumVariantRaw
+	{
+		[PreserveSig]
+		int Next(uint celt, nint rgVar, nint pCeltFetched);
+
+		[PreserveSig]
+		int Skip(uint celt);
+
+		[PreserveSig]
+		int Reset();
+
+		[PreserveSig]
+		int Clone(out nint ppEnum);
+	}
+
+	/// <summary>
+	/// A Keysharp enumerator as the IEnumVARIANT a client gets from an object's _NewEnum, which is what VBScript's
+	/// For Each and JScript's Enumerator drive. Each item is the enumerator's first variable, as in AHK.
+	/// </summary>
+	internal sealed class ComEnumerator(object enumerator) : IEnumVariantRaw
+	{
+		private const int S_FALSE = 1;
+		private const int E_NOTIMPL = unchecked((int)0x80004001);
+
+		internal VARIANT ToVariant() => new()
+		{
+			vt = (ushort)VarEnum.VT_UNKNOWN,
+			ptrVal = Marshal.GetComInterfaceForObject(this, typeof(IEnumVariantRaw))
+		};
+
+		public int Next(uint celt, nint rgVar, nint pCeltFetched)
+		{
+			var size = Marshal.SizeOf<VARIANT>();
+			uint fetched = 0;
+
+			try
+			{
+				using var caught = Keysharp.Runtime.Flow.EnterTry();
+
+				for (; fetched < celt && TryNext(out var item); fetched++)
+				{
+					var slot = rgVar + (nint)(fetched * size);
+					VariantHelper.VariantInit(slot);
+					Marshal.StructureToPtr(VariantHelper.ResultToVariant(item), slot, false);
+				}
+			}
+			catch (Exception)
+			{
+				// An enumerator that fails has nothing more to give, which is all this interface can say.
+			}
+
+			if (pCeltFetched != 0)
+				Marshal.WriteInt32(pCeltFetched, (int)fetched);
+
+			return fetched == celt ? 0 : S_FALSE;
+		}
+
+		public int Skip(uint celt)
+		{
+			try
+			{
+				using var caught = Keysharp.Runtime.Flow.EnterTry();
+
+				for (; celt > 0 && TryNext(out _); celt--)
+				{
+				}
+			}
+			catch (Exception)
+			{
+			}
+
+			return celt == 0 ? 0 : S_FALSE;
+		}
+
+		public int Reset() => E_NOTIMPL;
+
+		public int Clone(out nint ppEnum)
+		{
+			ppEnum = 0;
+			return E_NOTIMPL;
+		}
+
+		private bool TryNext(out object? item)
+		{
+			var variable = new VarRef((object)null!);
+			var more = ForceBool(InvokeOrNull(enumerator, null, variable));
+			item = more ? variable.__Value : null;
+			return more;
 		}
 	}
 }

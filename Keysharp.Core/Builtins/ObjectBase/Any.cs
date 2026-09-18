@@ -10,7 +10,7 @@ namespace Keysharp.Builtins
 	[Guid("98D592E1-0CE8-4892-82C5-F219B040A390")]
 	[ClassInterface(ClassInterfaceType.AutoDispatch)]
 	[ProgId("Keysharp.Script")]
-	public partial class Any : IReflect
+	public partial class Any
 #else
 	public class Any
 #endif

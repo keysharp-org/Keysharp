@@ -170,6 +170,9 @@ namespace Keysharp.Builtins.COM
 			_ = VariantClear(ref variant);
 		}
 
+		/// <summary>A result handed to a COM caller, which clears it: what a ComValue holds is copied for it.</summary>
+		internal static VARIANT ResultToVariant(object value) => value is ComValue cv ? cv.ToVariant(copy: true) : ValueToVariant(value);
+
 		internal static VARIANT ValueToVariant(object value)
 		{
 			if (value is ComValue co) return co.ToVariant();
@@ -181,9 +184,6 @@ namespace Keysharp.Builtins.COM
 				variant.vt = (ushort)VarEnum.VT_EMPTY;
 				return variant;
 			}
-			if (value is Array ksarr)
-				value = ksarr.array.ToArray();
-
 			switch (value)
 			{
 				case string s:
@@ -216,9 +216,12 @@ namespace Keysharp.Builtins.COM
 					variant.fltVal = f;
 					break;
 
+				// To a script a boolean is the integer 1 or 0, and so it goes to COM, as in AHK. VARIANT_TRUE belongs in a
+				// slot typed VT_BOOL -- a ComValue, a typed SAFEARRAY or by-reference slot, a parameter declared as one --
+				// and each of those has a writer of its own.
 				case bool b:
-					variant.vt = (ushort)VarEnum.VT_BOOL;
-					variant.boolVal = (short)(b ? -1 : 0);
+					variant.vt = (ushort)VarEnum.VT_I4;
+					variant.lVal = b ? 1 : 0;
 					break;
 
 				case short sh:
@@ -249,7 +252,7 @@ namespace Keysharp.Builtins.COM
 					try
 					{
 						variant.vt = (ushort)VarEnum.VT_DISPATCH;
-						variant.ptrVal = Marshal.GetIDispatchForObject(value);
+						variant.ptrVal = Com.DispatchPointer(value);
 					}
 					catch
 					{
@@ -261,6 +264,26 @@ namespace Keysharp.Builtins.COM
 
 			return variant;
 		}
+
+		/// <summary>
+		/// The elements of a Keysharp Array for a SAFEARRAY, those of nested Arrays included. An Array otherwise goes to
+		/// COM as the object it is, as in AHK; this is for a parameter declared as a SAFEARRAY, or a server that rejected
+		/// the object. An Array nested within itself stays the object where it recurs.
+		/// </summary>
+		internal static object[] SafeArrayElements(Array ksarr, HashSet<Array> enclosing = null)
+		{
+			var elements = ksarr.array.ToArray();
+
+			for (var i = 0; i < elements.Length; i++)
+				if (elements[i] is Array inner && (enclosing ??= new(ReferenceEqualityComparer.Instance) { ksarr }).Add(inner))
+				{
+					elements[i] = SafeArrayElements(inner, enclosing);
+					_ = enclosing.Remove(inner);
+				}
+
+			return elements;
+		}
+
 		private static VARIANT CreateVariantFromManagedArray(System.Array arr)
 		{
 			// Decide element VT from the CLR element type. Heterogenous/unknown → VARIANT.
@@ -319,7 +342,7 @@ namespace Keysharp.Builtins.COM
 								else if (v is nint ip) p = ip;
 								else if (v != null)
 								{
-									p = elemVt == VarEnum.VT_DISPATCH ? Marshal.GetIDispatchForObject(v) : Marshal.GetIUnknownForObject(v);
+									p = elemVt == VarEnum.VT_DISPATCH ? Com.DispatchPointer(v) : Marshal.GetIUnknownForObject(v);
 									rel = true; // we own this temp
 								}
 								try { hr = OleAuto.SafeArrayPutElementPtr(psa, idx, p); }
@@ -484,7 +507,7 @@ namespace Keysharp.Builtins.COM
 						else if (value is nint ip) p = ip;
 						else if (value != null)
 							p = baseVt == VarEnum.VT_DISPATCH
-								? Marshal.GetIDispatchForObject(value)
+								? Com.DispatchPointer(value)
 								: Marshal.GetIUnknownForObject(value);
 						Marshal.WriteIntPtr(cell, p);
 						break;
@@ -643,7 +666,7 @@ namespace Keysharp.Builtins.COM
 						}
 						else
 						{
-							newPtr = Marshal.GetIDispatchForObject(value);
+							newPtr = Com.DispatchPointer(value);
 						}
 
 						*p = newPtr;
@@ -806,6 +829,12 @@ namespace Keysharp.Builtins.COM
 			}
 		}
 
+		/// <summary>The value of an argument a COM caller passed: as VariantToValue gives it, an omitted one being unset.</summary>
+		internal static object ArgumentToValue(VARIANT variant) =>
+			(VarEnum)variant.vt == VarEnum.VT_ERROR && variant.lVal == unchecked((int)0x80020004) /*DISP_E_PARAMNOTFOUND*/
+			? null
+			: VariantToValue(variant);
+
 		internal static object VariantToValue(VARIANT variant)
 		{
 			var vt = (VarEnum)variant.vt;
@@ -855,6 +884,9 @@ namespace Keysharp.Builtins.COM
 				// If you already have typed BYREF readback elsewhere, you can keep this as-is.
 				return null;
 			}
+
+			if ((vt == VarEnum.VT_DISPATCH || vt == VarEnum.VT_UNKNOWN) && variant.ptrVal != 0 && Com.TryGetKeysharpObject(variant.ptrVal, out var own))
+				return own;
 
 			// ── Scalars / pointers ────────────────────────────────────────────────────
 			switch (vt)
@@ -1135,7 +1167,7 @@ namespace Keysharp.Builtins.COM
 						{
 							long ptr => (nint)ptr,
 							null => 0,
-							_ => vt == VarEnum.VT_DISPATCH ? Marshal.GetIDispatchForObject(value) : Marshal.GetIUnknownForObject(value)
+							_ => vt == VarEnum.VT_DISPATCH ? Com.DispatchPointer(value) : Marshal.GetIUnknownForObject(value)
 						};
 
 						Marshal.WriteIntPtr(dataPtr, newPtr);
@@ -1146,6 +1178,9 @@ namespace Keysharp.Builtins.COM
 					{
 						// 1) Choose the right VarEnum for "value"
 						VarEnum innerVt;
+
+						if (value is bool flag)
+							value = flag ? 1L : 0L;   // an integer in an untyped slot, as in ValueToVariant
 
 						if (value is string)
 						{
@@ -1473,10 +1508,13 @@ namespace Keysharp.Builtins.COM
 	}
 
 	/// <summary>
-	/// Contains P/Invoke declarations for OLE Automation SafeArray APIs.
+	/// Contains P/Invoke declarations for OLE Automation APIs.
 	/// </summary>
 	internal static partial class OleAuto
 	{
+		[LibraryImport(WindowsAPI.oleaut)]
+		internal static partial int LoadRegTypeLib(in Guid rguid, short wVerMajor, short wVerMinor, int lcid, out nint pptlib);
+
 		/// <summary>
 		/// Creates a new SafeArray of the specified variant type and dimensions.
 		/// </summary>

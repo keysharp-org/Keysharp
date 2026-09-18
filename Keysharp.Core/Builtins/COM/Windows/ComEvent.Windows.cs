@@ -87,25 +87,7 @@ namespace Keysharp.Builtins.COM
 					args[i] = ip.ToInt64();
 				else if (Marshal.IsComObject(arg))
 				{
-					if (arg is IDispatch)
-					{
-						var punk = Marshal.GetIDispatchForObject(arg);
-						args[i] =  new ComObject()
-						{
-							vt = VarEnum.VT_DISPATCH,
-							Ptr = punk
-						};
-					}
-					else
-					{
-						var punk = Marshal.GetIUnknownForObject(arg);
-						args[i] = new ComValue()
-						{
-							vt = VarEnum.VT_UNKNOWN,
-							Ptr = punk
-						};
-					}
-
+					args[i] = Com.WrapRcw(arg);
 					Marshal.ReleaseComObject(arg);
 				}
 			}
@@ -160,6 +142,8 @@ namespace Keysharp.Builtins.COM
 				var exit = new Threads.ExitState(Threads.Current);
 				using var caught = Keysharp.Runtime.Flow.EnterTry();
 				e.IsHandled = true;
+				// Entered from a message, so as with a callback the handler starts with a fresh peek interval.
+				owner.RecordMessageCheck();
 
 				try
 				{

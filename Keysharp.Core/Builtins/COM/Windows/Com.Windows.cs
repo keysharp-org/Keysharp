@@ -1,36 +1,11 @@
 #if WINDOWS
 namespace Keysharp.Builtins.COM
 {
-	internal class ComMethodData(Script script) : IDisposable
+	internal partial class ComMethodData(Script script) : IDisposable
 	{
 		private readonly Lock comEventGate = new();
 		private readonly HashSet<ComEvent> comEvents = [];
 		private bool disposed;
-		private ConcurrentLfu<nint, Dictionary<string, ComMethodInfo>> methodCache;
-
-		/// <summary>
-		/// Type info for COM members, keyed by interface pointer. Built on the first COM member call rather than
-		/// with the Script: it measures ~32KB, and most scripts never touch COM.
-		/// </summary>
-		internal ConcurrentLfu<nint, Dictionary<string, ComMethodInfo>> MethodCache
-		{
-			get
-			{
-				var current = methodCache;
-
-				if (current == null)
-				{
-					current = new(Caching.DefaultCacheCapacity);
-					current = Interlocked.CompareExchange(ref methodCache, current, null) ?? current;
-				}
-
-				return current;
-			}
-		}
-
-		/// <summary>Drops a released interface pointer's entry. Used from ComValue's dispose path, so it must not
-		/// build the cache just to find it empty.</summary>
-		internal void ForgetMethods(nint ptr) => methodCache?.TryRemove(ptr);
 
 		internal void Connect(ComObject comObject, object sink, bool log)
 		{
@@ -111,19 +86,18 @@ namespace Keysharp.Builtins.COM
 				comEvent.Unwire();
 				comEvent.dispatcher.Dispose();
 			}
-		}
-	}
 
-	internal class ComMethodInfo
-	{
-		internal Type[] expectedTypes;
-		internal ParameterModifier[] modifiers;
-		internal INVOKEKIND invokeKind;
+			if (libraries != null)
+				foreach (var library in libraries.Values)
+					library?.Release();
+		}
 	}
 
 	unsafe public static partial class Com
 	{
 		public const int variantTypeMask = 0xfff;
+		internal static readonly Guid IID_IUnknown = new("00000000-0000-0000-C000-000000000046");
+		internal static readonly Guid IID_IProvideClassInfo = typeof(IProvideClassInfo).GUID;
 		internal static Guid IID_IDispatch = new (0x00020400, 0x0000, 0x0000, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
 		internal static Guid IID_IServiceProvider = new ("6d5140c1-7436-11ce-8034-00aa006009fa");
 		internal const int CLSCTX_INPROC_SERVER = 0x1;
@@ -145,15 +119,39 @@ namespace Keysharp.Builtins.COM
 
 		public static object ComObjActive([UserDeclaredName("CLSID")] object clsid) => GetActiveObject(clsid.As());
 
-		internal static object ConvertToCOMType(object ret)
-		{
-			if (ret is long ll && ll < int.MaxValue)
-				ret = (int)ll;
-			else if (ret is bool bl)
-				ret = bl ? -1 : 0;
+		/// <summary>
+		/// An object a COM caller passed in, as a script sees COM objects: a ComObject for a dispatch object and a
+		/// ComValue for any other, holding a reference of its own.
+		/// </summary>
+		internal static object WrapRcw(object rcw) => rcw is IDispatch
+			? new ComObject { vt = VarEnum.VT_DISPATCH, Ptr = Marshal.GetIDispatchForObject(rcw) }
+			: new ComValue { vt = VarEnum.VT_UNKNOWN, Ptr = Marshal.GetIUnknownForObject(rcw) };
 
-			return ret;
+		// Answered only by a Keysharp object, so that one coming back from COM is recognized without wrapping it first.
+		internal static readonly Guid IID_KeysharpObject = new("3F2B9C64-7A1D-4E58-9B0A-6C4D21E8A5F7");
+
+		/// <summary>
+		/// The Keysharp object behind a COM reference, as AHK gives back its own objects rather than a ComObject around
+		/// them. A query another object simply refuses, which costs far less than wrapping it to find out.
+		/// </summary>
+		internal static bool TryGetKeysharpObject(nint punk, out object obj)
+		{
+			obj = null;
+
+			if (Marshal.QueryInterface(punk, in IID_KeysharpObject, out var marker) != 0)
+				return false;
+
+			_ = Marshal.Release(marker);
+			obj = Marshal.GetObjectForIUnknown(punk);
+			return true;
 		}
+
+		/// <summary>
+		/// An IDispatch reference to value: a Keysharp object's own implementation, or whatever another object exposes.
+		/// </summary>
+		internal static nint DispatchPointer(object value) => value is Any
+			? Marshal.GetComInterfaceForObject(value, typeof(IDispatch), CustomQueryInterfaceMode.Ignore)
+			: Marshal.GetIDispatchForObject(value);
 
 		public static object ComObjConnect(object comObj, object prefixOrSink = null, object debug = null)
 		{

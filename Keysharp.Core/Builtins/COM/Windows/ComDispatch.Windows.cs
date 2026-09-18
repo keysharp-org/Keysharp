@@ -359,15 +359,7 @@ namespace Keysharp.Builtins.COM
 				if (wantsResult)
 				{
 					VariantHelper.VariantInit(pVarResult);
-					if (result is Keysharp.Builtins.COM.ComValue cv)
-					{
-						var v = cv.ToVariant();
-						Marshal.StructureToPtr(v, pVarResult, false);
-					}
-					else
-					{
-						Marshal.GetNativeVariantForObject(result, pVarResult);
-					}
+					Marshal.StructureToPtr(VariantHelper.ResultToVariant(result), pVarResult, false);
 				}
 
 				return S_OK;

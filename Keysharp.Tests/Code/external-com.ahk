@@ -50,6 +50,12 @@ dict.Remove("Country")
 
 AssertEq(dict.Count, 3, A_LineNumber)
 
+; An Array argument reads the member's type info; none declares a SAFEARRAY here, so the Array goes as the object.
+pair := [1, 2]
+dict.Add(pair, "pair")
+AssertEq(dict.Item(pair), "pair", A_LineNumber)
+AssertEq(dict(pair), "pair", A_LineNumber)
+
 SIZEOF_VARIANT := 8 + (2 * A_PtrSize)
 var := Buffer(SIZEOF_VARIANT, 0)
 

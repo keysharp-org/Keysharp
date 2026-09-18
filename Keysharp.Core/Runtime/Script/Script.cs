@@ -415,7 +415,7 @@ namespace Keysharp.Runtime
 			}
 		}
 #if WINDOWS
-		/// <summary>COM event sinks and member type-info for this Script. Its cache is what costs; see MethodCache.</summary>
+		/// <summary>COM event sinks and member type info for this Script; see ComTypeScope.</summary>
 		internal ComMethodData ComMethodData { get; }
 #endif
 		internal DllData DllData => dllData ?? (dllData = new ());
