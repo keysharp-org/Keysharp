@@ -44,6 +44,14 @@ namespace Keysharp.Parsing.Lexing
 		// token text instead of the raw source span.
 		private string _strOverride;
 
+		// Each kind the operator scanner yields has one spelling, so its tokens share one string, cut from the source
+		// on first sight rather than listed here where it could drift from ScanOperator.
+		private static readonly string[] operatorText = new string[Enum.GetValues<TokenKind>().Length];
+
+		// Identifiers and numbers repeat throughout a file: one string per distinct spelling.
+		private Dictionary<string, string> _texts;
+		private Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>> _textLookup;
+
 		// Source file these tokens belong to; null when the caller did not supply a path. Stamped onto every token so
 		// diagnostics can be reported per file without a post-pass.
 		private readonly string _file;
@@ -236,14 +244,39 @@ namespace Keysharp.Parsing.Lexing
 					kind = k;
 				}
 
-				var text = _strOverride ?? _s.Substring(to, _pos - to);
-				_strOverride = null;
+				string text;
+
+				if (_strOverride != null) { text = _strOverride; _strOverride = null; }
+				else if (kind is TokenKind.Identifier or TokenKind.Number) text = Interned(to, _pos - to);
+				else if (kind is TokenKind.String or TokenKind.Unknown) text = _s.Substring(to, _pos - to);
+				else
+				{
+					text = operatorText[(int)kind] ??= _s.Substring(to, _pos - to);
+					System.Diagnostics.Debug.Assert(_s.AsSpan(to, _pos - to).SequenceEqual(text), "an operator kind has one spelling");
+				}
+
 				tokens.Add(Tok(kind, text, tl, tc, to, _pos - to, leadingWs));
 				leadingWs = false;
 			}
 
 			tokens.Add(Tok(TokenKind.EOF, "", _line, _col, _pos, 0, leadingWs));
 			return tokens;
+		}
+
+		private string Interned(int start, int length)
+		{
+			if (_texts == null)
+			{
+				_texts = new(StringComparer.Ordinal);
+				_textLookup = _texts.GetAlternateLookup<ReadOnlySpan<char>>();
+			}
+
+			var span = _s.AsSpan(start, length);
+
+			if (!_textLookup.TryGetValue(span, out var text))
+				_texts[text = span.ToString()] = text;
+
+			return text;
 		}
 
 		// `memberName`: the number sits in member position (`o.1`), where AHK scans the name with an identifier

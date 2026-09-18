@@ -936,10 +936,11 @@ namespace Keysharp.Parsing.Syntax
 		private List<Token> Preprocess(List<Token> src) => Preprocess(src, _includeDir, null);
 
 		// `includeDir` is the directory relative includes in THIS token stream resolve against (the main script dir, or
-		// an #included file's own dir for its nested includes).
-		private List<Token> Preprocess(List<Token> src, string includeDir, IReadOnlyList<string> lexDiagnostics)
+		// an #included file's own dir for its nested includes). An included file's tokens go straight into its host's
+		// `outp` rather than through a list per nesting level.
+		private List<Token> Preprocess(List<Token> src, string includeDir, IReadOnlyList<string> lexDiagnostics, List<Token> outp = null)
 		{
-			var outp = new List<Token>(src.Count);
+			outp ??= new List<Token>(src.Count);
 			var lexDiagnostic = lexDiagnostics?.FirstOrDefault();
 			var (diagnosticLine, diagnosticColumn) = LexDiagnosticPosition(lexDiagnostic);
 			var diagnosticFile = src.Count > 0 ? src[0].File : null;
@@ -990,7 +991,7 @@ namespace Keysharp.Parsing.Syntax
 						}
 					}
 					var included = ResolveAndLexInclude(fileToks, again, curDir, t, out var includedDir,
-						out var dirChange, out var includedDiagnostics);
+						out var includedPath, out var dirChange, out var includedDiagnostics);
 					// `#Include <dir>` names a directory rather than a file: it changes the base directory for the rest
 					// of THIS file's relative includes and splices no content. Otherwise recursively preprocess the
 					// included tokens against THEIR directory (so nested relative includes resolve correctly) and emit.
@@ -1002,7 +1003,8 @@ namespace Keysharp.Parsing.Syntax
 						if (++_includeDepth > MaxIncludeDepth)
 							throw new Keysharp.Builtins.ParseException(Diagnostic(t,
 								"Too many nested #include directives (possible circular #includeagain)"));
-						outp.AddRange(Preprocess(included, includedDir, includedDiagnostics));
+						outp.Add(new Token(TokenKind.Newline, "\n", 0, 0, 0, 0, true, includedPath));   // keep line separation from the host
+						_ = Preprocess(included, includedDir, includedDiagnostics, outp);
 						_includeDepth--;
 					}
 					i = j;
@@ -1107,9 +1109,10 @@ namespace Keysharp.Parsing.Syntax
 		// `#Include <dir>` directory form, and null for a deduped or *i-ignored file. A missing file/dir WITHOUT the
 		// *i flag throws, so a broken #include fails loudly instead of silently doing nothing.
 		private List<Token> ResolveAndLexInclude(List<Token> fileToks, bool again, string baseDir, Token directive,
-			out string includedDir, out string dirChange, out IReadOnlyList<string> lexDiagnostics)
+			out string includedDir, out string includedPath, out string dirChange, out IReadOnlyList<string> lexDiagnostics)
 		{
 			includedDir = baseDir;
+			includedPath = null;
 			dirChange = null;
 			lexDiagnostics = null;
 			if (fileToks.Count == 0) return null;
@@ -1155,12 +1158,12 @@ namespace Keysharp.Parsing.Syntax
 			else if (again) _included.Add(path);
 			if (!System.IO.File.Exists(path)) { if (ignoreMissing) return null; throw IncludeNotFound(directive, path); }
 			includedDir = System.IO.Path.GetDirectoryName(path);   // nested includes in this file resolve against its dir
+			includedPath = path;
 			// The lexer stamps each token with this file's full path for diagnostics and A_LineFile.
 			var lexer = new Lexing.Lexer(System.IO.File.ReadAllText(path), path);
 			var toks = LexForParsing(lexer);
 			lexDiagnostics = lexer.Diagnostics;
 			if (toks.Count > 0 && toks[^1].Kind == TokenKind.EOF) toks.RemoveAt(toks.Count - 1);   // drop the included EOF
-			toks.Insert(0, new Token(TokenKind.Newline, "\n", 0, 0, 0, 0, true, path));   // keep line separation from the host
 			return toks;
 		}
 

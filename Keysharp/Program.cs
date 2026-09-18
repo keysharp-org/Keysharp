@@ -85,16 +85,17 @@ namespace Keysharp.Main
 			}
 #endif
 
-			// Daemon fast path: a plain source run - or --validate, the same compile without the run - can offload
+			// Daemon fast path: a source run - or --validate, the same compile without the run - can offload
 			// compilation to the shared daemon, so this lean launcher never loads the parser/Roslyn.
 			// KEYSHARP_DAEMON forces it on/off; if unset, release builds use it and debug builds do not.
-			// --define is excluded explicitly, not merely via KeysharpArgs: the daemon is sent nothing but a script
-			// path, so it would compile with no symbols and silently resolve the #if branches the other way.
-			// Other compilation-altering switches go via the KeysharpArgs test (see ValidateWithDefaultCompilation).
+			// --define is excluded explicitly, not merely via DefaultCompilation: the daemon is sent nothing but a
+			// script path, so it would compile with no symbols and silently resolve the #if branches the other way.
+			// Other compilation-altering switches go via the switch count (see DefaultCompilation), and so does one
+			// the run itself reads, such as /force: the daemon path hands the runtime script no switches.
 			if (command.Kind == CliCommandKind.RunSource
 					&& !command.FromStdin
 					&& !command.Transpile
-					&& (command.KeysharpArgs.Length == 0 || command.ValidateWithDefaultCompilation)
+					&& command.DefaultCompilation
 					&& command.Defines.Length == 0
 					&& ShouldUseDaemon())
 			{

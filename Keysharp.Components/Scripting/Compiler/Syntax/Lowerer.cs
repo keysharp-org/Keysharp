@@ -4693,13 +4693,12 @@ namespace Keysharp.Compilation.Syntax
 				case ArrayExpr ar:
 					var arArgs = ar.Elements.Any(el => el.Spread)
 						? SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(SpreadParams(ar.Elements))))
-						: SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(LowerArgs(ar.Elements).Select(Arg)));
+						: ArgList(LowerArgs(ar.Elements));
 					return SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Builtins.Array")).WithArgumentList(arArgs);
 				case MapExpr mp:   // [k1: v1, k2: v2] -> new Map(k1, v1, k2, v2)
-					var mapArgs = new List<ExpressionSyntax>();
+					var mapArgs = new List<ExpressionSyntax>(mp.Entries.Count * 2);
 					foreach (var (k, v) in mp.Entries) { mapArgs.Add(LowerExpr(k)); mapArgs.Add(LowerExpr(v)); }
-					return SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Builtins.Map"))
-						.WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(mapArgs.Select(Arg))));
+					return SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Builtins.Map")).WithArgumentList(ArgList(mapArgs));
 				case ObjectExpr o: return LowerObject(o);
 				case FatArrowExpr fa: return LowerFatArrow(fa);
 				case DerefExpr dr:   // %name% read -> DerefGet(name); the maybe forms rewrite it to DerefGetOrNull
@@ -5144,12 +5143,11 @@ namespace Keysharp.Compilation.Syntax
 
 			// A member callee names the member to resolve; a bare callee is the call form `f(args)`, which the
 			// runtime distinguishes by a null name (see Script.InvokeOrNull).
-			List<ExpressionSyntax> args;
-			if (c.Callee is MemberExpr m) args = new() { LowerExpr(m.Target), Str(m.Name) };
-			else if (c.Callee is DynMemberExpr dm) args = new() { LowerExpr(dm.Target), LowerExpr(dm.NameExpr) };
-			else args = new() { LowerExpr(c.Callee), Null };
-			args.AddRange(CallArgs());
-			return Op(statement ? "InvokeOrNull" : "Invoke", args.ToArray());
+			ExpressionSyntax[] args;
+			if (c.Callee is MemberExpr m) args = Cons2(LowerExpr(m.Target), Str(m.Name), CallArgs());
+			else if (c.Callee is DynMemberExpr dm) args = Cons2(LowerExpr(dm.Target), LowerExpr(dm.NameExpr), CallArgs());
+			else args = Cons2(LowerExpr(c.Callee), Null, CallArgs());
+			return Op(statement ? "InvokeOrNull" : "Invoke", args);
 		}
 
 		private void TrackLoadPackageMember(MemberExpr member)
@@ -5221,7 +5219,7 @@ namespace Keysharp.Compilation.Syntax
 		// flattened index).
 		private ExpressionSyntax SpreadParams(List<Argument> args, ExpressionSyntax trailing = null)
 		{
-			var elems = new List<CollectionElementSyntax>();
+			var elems = new List<CollectionElementSyntax>(args.Count + 2);
 			var positional = SplitNamed(args, out var named);
 
 			foreach (var a in positional)
@@ -5240,7 +5238,7 @@ namespace Keysharp.Compilation.Syntax
 
 		private List<ExpressionSyntax> LowerArgs(List<Argument> args)
 		{
-			var list = new List<ExpressionSyntax>();
+			var list = new List<ExpressionSyntax>(args.Count + 1);
 			var positional = SplitNamed(args, out var named);
 
 			foreach (var a in positional)
@@ -7315,13 +7313,29 @@ namespace Keysharp.Compilation.Syntax
 		private static ArgumentSyntax Arg(ExpressionSyntax e) => SyntaxFactory.Argument(e);
 
 		private static InvocationExpressionSyntax Inv(ExpressionSyntax callee, params ExpressionSyntax[] args) =>
-			SyntaxFactory.InvocationExpression(callee, SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(args.Select(Arg))));
+			SyntaxFactory.InvocationExpression(callee, ArgList(args));
 
 		private static ExpressionSyntax New(string dottedType, params ExpressionSyntax[] args) =>
-			SyntaxFactory.ObjectCreationExpression(Ty(dottedType)).WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(args.Select(Arg))));
+			SyntaxFactory.ObjectCreationExpression(Ty(dottedType)).WithArgumentList(ArgList(args));
+
+		// Roslyn sizes its list builder from a collection but starts a lazy sequence at three and grows, so the
+		// arguments are wrapped into an array first.
+		private static ArgumentListSyntax ArgList(IReadOnlyList<ExpressionSyntax> args)
+		{
+			var nodes = new ArgumentSyntax[args.Count];
+
+			for (var i = 0; i < nodes.Length; i++)
+				nodes[i] = Arg(args[i]);
+
+			return SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(nodes));
+		}
+
+		// A Script helper is named on nearly every operation, so its access expression is built once per name; a
+		// detached syntax node is immutable and may be shared between trees.
+		private static readonly ConcurrentDictionary<string, ExpressionSyntax> scriptAccess = new(StringComparer.Ordinal);
 
 		private static ExpressionSyntax Op(string method, params ExpressionSyntax[] args) =>
-			Inv(Access("Keysharp.Runtime.Script." + method), args);
+			Inv(scriptAccess.GetOrAdd(method, static m => Access("Keysharp.Runtime.Script." + m)), args);
 
 		// A by-ref parameter is read and written through Refs rather than as a plain __Value property access, so a
 		// caller that passed something which is not a reference is named in the error instead of the write silently

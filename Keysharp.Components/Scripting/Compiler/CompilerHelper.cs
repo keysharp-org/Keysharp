@@ -1047,15 +1047,17 @@ namespace Keysharp.Compilation
 
 			// PrettyPrinter.Print walks the whole syntax tree and is comparatively expensive, so only
 			// generate the C# source when a caller actually wants it (emitCode, e.g. --codeout) or when a
-			// compile error occurs and we need it for diagnostics. Debug builds always produce it to
-			// validate PrettyPrinter against Roslyn's own normalizer.
+			// compile error occurs and we need it for diagnostics. Debug test runs also produce it to validate
+			// PrettyPrinter against Roslyn's own normalizer, which walks the tree twice more: seconds on a large script.
 			string code = null;
 			string GetCode() => code ??= PrettyPrinter.Print(unit);
 #if DEBUG
-			var normalized = unit.NormalizeWhitespace("\t", Environment.NewLine).ToString();
-			if (GetCode() != normalized)
+			if (Script.IsTestHost)
 			{
-				throw new Exception("Code formatting mismatch");
+				var normalized = unit.NormalizeWhitespace("\t", Environment.NewLine).ToString();
+
+				if (GetCode() != normalized)
+					throw new Exception("Code formatting mismatch");
 			}
 #endif
 

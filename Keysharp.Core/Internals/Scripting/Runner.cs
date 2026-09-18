@@ -44,10 +44,10 @@ namespace Keysharp.Internals.Scripting
 		internal string[] ExcludeComponents = [];
 		internal bool FromStdin;
 		internal bool Validate;
-		// --validate (or --iLib) was given and no switch present changes what gets compiled, so the compile
-		// daemon - which is sent a script path and nothing else - can serve it. Allowlisted, so a switch added
-		// later stays in-process until someone decides otherwise.
-		internal bool ValidateWithDefaultCompilation;
+		// No switch present changes what gets compiled (see compilationNeutralSwitchCount), so the compile daemon -
+		// which is sent a script path and nothing else - can serve the run or --validate. Allowlisted, so a switch
+		// added later stays in-process until someone decides otherwise.
+		internal bool DefaultCompilation;
 		internal bool SyntaxOnly;
 		internal bool Transpile;
 		internal bool MinimalExe;
@@ -454,7 +454,7 @@ namespace Keysharp.Internals.Scripting
 				ExcludeComponents = [.. excludeComponents],
 				FromStdin = fromstdin,
 				Validate = validate,
-				ValidateWithDefaultCompilation = validate && switchCount == compilationNeutralSwitchCount,
+				DefaultCompilation = switchCount == compilationNeutralSwitchCount,
 				SyntaxOnly = syntaxOnly,
 				Transpile = transpile,
 				MinimalExe = compileMinimalExe,
