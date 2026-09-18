@@ -30,7 +30,7 @@
     compute a coordinate of its own.
 
     Cross-platform: most of what was platform-specific here is now A_DirSeparator, a KS class that
-    knows the platform's answer (Font.Ui, Font.Emoji), or a builtin that branches internally
+    knows the platform's answer (Font.UiDefault, Font.Emoji), or a builtin that branches internally
     (Edit(), Gui "+Round"). Three #ifs remain: the Keyview executable name, the macOS .app bundle
     paths to search for it, and ShowFolder(), since Run() on Unix only shell-opens URL targets.
     Those are ordered OSX -> LINUX -> #else so a Windows host can syntax-check the other two
@@ -119,7 +119,7 @@ ClrFaint := "0xFF5A6478"
 ClrAccent := "0xFF82A7FF"
 ClrPrim := "0xFF212C46"
 ClrPrimHov := "0xFF2A3A5E"
-FontUi := Font.Ui.Name
+FontUi := Font.UiDefault.Name
 FontGlyph := Font.Emoji.Name
 
 W := 520
