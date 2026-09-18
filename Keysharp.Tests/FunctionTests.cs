@@ -39,6 +39,28 @@ namespace Keysharp.Tests
 			Assert.IsTrue(generated.Contains("\"<Hotkey>\"", StringComparison.Ordinal), generated);
 		}
 
+		// A nested function is a variable of the function declaring it, so any declaration of the same name conflicts with it.
+		[Test, Category("Function")]
+		public void NestedFunctionConflictsWithDeclaration()
+		{
+			foreach (var (source, line, existing) in new[]
+			{
+				("F() {\n\tstatic tick := 1\n\ttick() => 2\n}\n", 3, "static variable"),
+				("F() {\n\tstatic tick := 1\n\tstatic tick() => 2\n}\n", 3, "static variable"),
+				("F() {\n\tlocal tick := 1\n\ttick() => 2\n}\n", 3, "local variable"),
+				("F() {\n\tglobal tick\n\ttick() => 2\n}\n", 3, "global variable"),
+				("F(tick) {\n\tx := 1\n\ttick() => 2\n}\n", 3, "parameter"),
+				("F() {\n\ttick() => 1\n\ttick() => 2\n}\n", 3, "Func"),
+				("F() {\n\ttick() => 1\n\tf := tick() => 2\n}\n", 3, "Func"),
+				("tick() => 1\nf := tick() => 2\n", 2, "Func"),
+			})
+			{
+				var diagnostics = LoweringDiagnostics.Diagnostics(source);
+				Assert.IsTrue(System.Array.Exists(diagnostics, d => d.StartsWith($"{line}:") && d.EndsWith($"This function declaration conflicts with an existing {existing}: tick")),
+					source.Replace("\n", "\\n") + ": " + string.Join("; ", diagnostics));
+			}
+		}
+
 		[Test, Category("Function"), NonParallelizable]
 		public void CombinedParamsInFunc() => Assert.IsTrue(TestScript("func-combined-params", false));
 

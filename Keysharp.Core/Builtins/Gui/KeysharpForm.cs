@@ -22,7 +22,10 @@ namespace Keysharp.Builtins
 		internal bool roundedCorners;
 		private bool toolWindow;
 		private bool closingFromDestroy;
-#if !WINDOWS
+		private nint ownerHwnd;
+#if WINDOWS
+		private bool sizingBorder;
+#else
 		private long lastDpi = 96;
 #endif
 #if OSX
@@ -59,6 +62,12 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+
+				//The WS_EX_APPWINDOW WinForms adds would give a tool or owned window back the taskbar button it lacks; one the
+				//script asks for is kept.
+				if (!HasTaskbarButton)
+					cp.ExStyle &= ~WindowsAPI.WS_EX_APPWINDOW;
+
 				//cp.ExStyle |= 0x02000000; // Add WS_EX_COMPOSITED
 				cp.Style |= addStyle;
 				cp.ExStyle |= addExStyle;
@@ -67,15 +76,32 @@ namespace Keysharp.Builtins
 				if (toolWindow)
 					cp.ExStyle |= WindowsAPI.WS_EX_TOOLWINDOW;
 
+				//FormBorderStyle.None has no sizing border, which AHK keeps for "-Caption +Resize".
+				if (sizingBorder)
+					cp.Style |= WindowsAPI.WS_THICKFRAME;
+
 				cp.ExStyle &= ~removeExStyle;
 				return cp;
 			}
 		}
 
+		/// <summary>
+		/// Whether the window has a taskbar button, which a tool or owned window lacks, as in AutoHotkey. Derived from the
+		/// styles rather than set through ShowInTaskbar, whose setter recreates the window and changes the Gui's Hwnd.
+		/// </summary>
+		internal bool HasTaskbarButton => ShowInTaskbar && !toolWindow && ownerHwnd == 0;
+
+		internal void SetSizingBorder(bool enable) => SetStyleFlag(ref sizingBorder, enable);
+
 		protected override void CreateHandle()
 		{
 			if (IsDisposed || IsHandleCreated) return;
 			base.CreateHandle();
+
+			//Form.CreateHandle resets the owner to its own Owner, which a Gui never sets.
+			if (ownerHwnd != 0 && TopLevel)
+				_ = WindowsAPI.SetWindowLongPtr(Handle, WindowsAPI.GWLP_HWNDPARENT, ownerHwnd);
+
 			beenConstructed = true;
 		}
 
@@ -298,10 +324,39 @@ namespace Keysharp.Builtins
 
 		internal void SetToolWindow(bool enable)
 		{
-			if (toolWindow == enable)
+			SetStyleFlag(ref toolWindow, enable);
+#if !WINDOWS
+			UpdateTaskbarButton();
+#endif
+		}
+
+		/// <summary>Makes <paramref name="owner"/> own the window in place, or no window for 0, as AutoHotkey's +/-Owner does.</summary>
+		internal void SetOwnerWindow(nint owner)
+		{
+			ownerHwnd = owner;
+#if WINDOWS
+			if (IsHandleCreated)
+			{
+				UpdateStyles();
+				_ = WindowsAPI.SetWindowLongPtr(Handle, WindowsAPI.GWLP_HWNDPARENT, owner);
+			}
+#else
+			Owner = owner != 0 ? Forms.Control.FromHandle(owner) as Form : null;
+			UpdateTaskbarButton();
+#endif
+		}
+
+#if !WINDOWS
+		// A tool or owned window has no taskbar button, as in AutoHotkey.
+		private void UpdateTaskbarButton() => ShowInTaskbar = !toolWindow && ownerHwnd == 0;
+#endif
+
+		private void SetStyleFlag(ref bool flag, bool enable)
+		{
+			if (flag == enable)
 				return;
 
-			toolWindow = enable;
+			flag = enable;
 #if WINDOWS
 			if (IsHandleCreated)
 				UpdateStyles();
@@ -309,9 +364,8 @@ namespace Keysharp.Builtins
 		}
 
 #if WINDOWS
-		// The corner preference lives on the HWND, so every recreation drops it - and WinForms recreates the
-		// handle whenever a style-bearing property changes, which "-Caption" does. Riding HandleCreated
-		// catches all of them, including the ones after the window is already up.
+		// The corner preference lives on the HWND, so every recreation drops it (RecreateHandle, e.g. a title change under
+		// -SysMenu). Riding HandleCreated catches all of them, including the ones after the window is already up.
 		protected override void OnHandleCreated(EventArgs e)
 		{
 			base.OnHandleCreated(e);
@@ -519,8 +573,9 @@ namespace Keysharp.Builtins
 #else
 			if (e.Data.ContainsUris && Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
 			{
-				var coords = PointToGuiClient(e.Location);
-				var files = (string[])e.Data.Uris.Select(uri => uri.ToString());
+				// Eto reports the drop point in the window's own coordinates, which start above a menu bar.
+				var coords = PointToGuiClient(PointToScreen(e.Location));
+				var files = e.Data.Uris.Select(uri => uri.IsFile ? uri.LocalPath : uri.ToString()).ToArray();
 				dropFilesHandlers?.InvokeEventHandlers(g, sender, new Array(files), coords.X, coords.Y);
 			}
 #endif
@@ -584,7 +639,10 @@ namespace Keysharp.Builtins
 		{
 			//A right-click on a control reaches the control's MouseDown first, which raises the event for it.
 			if (e.Buttons == MouseButtons.Alternate && TryBeginContextMenu())
-				RaiseContextMenu(null, 0L, true, Convert.ToInt32(e.Location.X), Convert.ToInt32(e.Location.Y));
+			{
+				var client = PointToGuiClient(PointToScreen(e.Location));
+				RaiseContextMenu(null, 0L, true, client.X, client.Y);
+			}
 		}
 #endif
 

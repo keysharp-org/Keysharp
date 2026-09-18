@@ -571,20 +571,20 @@ namespace Keysharp.Tests
 				{
 					var exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
 					Assert.AreEqual(FormBorderStyle.None, gui.form.FormBorderStyle);
-					Assert.IsFalse(gui.form.ShowInTaskbar);
+					Assert.AreEqual(0L, exStyle & WindowsAPI.WS_EX_APPWINDOW);
 					Assert.AreNotEqual(0L, exStyle & WindowsAPI.WS_EX_TOOLWINDOW,
 						$"+ToolWindow must survive -Caption in either option order ({options})");
 
 					_ = gui.Opt("-ToolWindow");
 					exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
 					Assert.AreEqual(FormBorderStyle.None, gui.form.FormBorderStyle);
-					Assert.IsTrue(gui.form.ShowInTaskbar);
+					Assert.AreNotEqual(0L, exStyle & WindowsAPI.WS_EX_APPWINDOW, "-ToolWindow must restore the taskbar button in place");
 					Assert.AreEqual(0L, exStyle & WindowsAPI.WS_EX_TOOLWINDOW,
 						"-ToolWindow must remove the extended style from an existing captionless window");
 
 					_ = gui.Opt("+ToolWindow");
 					exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
-					Assert.IsFalse(gui.form.ShowInTaskbar);
+					Assert.AreEqual(0L, exStyle & WindowsAPI.WS_EX_APPWINDOW);
 					Assert.AreNotEqual(0L, exStyle & WindowsAPI.WS_EX_TOOLWINDOW,
 						"+ToolWindow must restore the extended style on an existing captionless window");
 				}
@@ -605,7 +605,7 @@ namespace Keysharp.Tests
 
 		[Test, Category("Gui"), NonParallelizable]
 		[Apartment(ApartmentState.STA)]
-		public void OwnerKeepsHwnd() => Assert.IsTrue(TestScript("gui-owner", false));
+		public void OptInPlace() => Assert.IsTrue(TestScript("gui-opt-in-place", false));
 
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]

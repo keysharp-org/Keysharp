@@ -333,7 +333,7 @@ namespace Keysharp.Builtins.COM
 				}
 				name ??= $"DISPID_{dispIdMember}";
 
-				// 3) Dispatch to the script, the event handler marshals to the main thread
+				// 3) Dispatch to the script: the sink runs the handler on the thread which connected it
 				var evt = new DispatcherEventArgs(dispIdMember, name, args);
 				OnEvent(this, evt);
 				object? result = evt.Result;
@@ -378,12 +378,12 @@ namespace Keysharp.Builtins.COM
 				if (pExcepInfo == 0)
 				{
 					_ = Errors.ReportUncaught(ex);
-					return DISP_E_EXCEPTION;
+					return unchecked((int)0x80004005);//E_FAIL
 				}
 
 				try
 				{
-					var ei = new EXCEPINFO { bstrDescription = ex.Message };
+					var ei = new EXCEPINFO { scode = DISP_E_EXCEPTION, bstrDescription = ex.Message };
 					Marshal.StructureToPtr(ei, pExcepInfo, false);
 				}
 				catch { }

@@ -128,7 +128,19 @@ DynUnsetLocal()
 {
 	local unsetLocal
 	name := "unsetLocal"
-	Throws(() => %name%, A_LineNumber, UnsetError)
+
+	try
+		read := %name%
+	catch as err
+		AssertEq(Type(err), "UnsetError", A_LineNumber)
+
+	; A closure's dynamic reference reaches only the enclosing variables it names, as in AutoHotkey.
+	try
+		read := (() => %name%)()
+	catch as err
+		AssertEq(Type(err) ": " err.Message, "Error: Variable not found.", A_LineNumber)
+
+	Assert(!IsSet(read), A_LineNumber)
 	AssertEq(IsSet(%name%), 0, A_LineNumber)
 	ref := &%name%
 	Assert(!IsSetRef(ref), A_LineNumber)
@@ -433,12 +445,12 @@ if 0
 	byRefUnset := 1
 AssertError(() => ByRefRead(&byRefUnset), "UnsetError: This parameter has not been assigned a value. [r]", A_LineNumber)
 
-; So is one a nested function reaches.
+; So is one a nested function reaches, which its dynamic reference finds when it names the variable, as in AutoHotkey.
 ByRefClosure(&r)
 {
 	read := () => r
 	write := (v) => r := v
-	dynamic := () => %"r"%
+	dynamic := () => (r, %"r"%)
 	before := read()
 	write(40)
 	return before " " r " " dynamic()

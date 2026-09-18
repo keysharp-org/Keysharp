@@ -7,6 +7,8 @@ exec := shell.Exec("Notepad.exe")
 exec := shell.Run("Notepad.exe")
 
 dict := ComObject("Scripting.Dictionary")
+; An interface queried from a COM object is a dispatch object, not an empty value.
+AssertEq(ComObjType(ComObjQuery(dict, "{00020400-0000-0000-C000-000000000046}")), 9, A_LineNumber)
 
 dict.Add("Name", "Alice")
 dict.Add("Age", 30)
@@ -137,7 +139,7 @@ script := "
 m := Map(1, "a", "2", "b", 3, 1, 4, 2)
 m.1 := 0
 ObjRegisterActive(m, "{6B39CAA1-A320-4CB0-8DB4-352AA81E460E}")
-pi := RunScript(script,,, "Keysharp.exe")
+pi := RunScript(script, false,,, "Keysharp.exe")
 
 Assert(m.1, A_LineNumber)
 

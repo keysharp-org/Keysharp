@@ -477,6 +477,15 @@ namespace Keysharp.Builtins
 		internal static string ReadOnlyMessage(string kind, VarUsage usage) =>
 			$"This {kind} cannot {usage switch { VarUsage.OutputVar => "be used as an output variable", VarUsage.Reference => "have its reference taken", _ => "be assigned a value" }}";
 
+		/// <summary>What an error calls a variable declared as <paramref name="kind"/>, as AutoHotkey words it.</summary>
+		internal static string DeclarationKind(VarKind kind) => kind switch
+		{
+			VarKind.Parameter => "parameter",
+			VarKind.Static or VarKind.ImplicitStatic => "static variable",
+			VarKind.Local or VarKind.ImplicitLocal => "local variable",
+			_ => "global variable"
+		};
+
 		/// <summary>What a read-only error calls a variable holding this value: a function, class or module by its type, and any other a built-in variable.</summary>
 		internal static string ConstantKind(object value) => value is KeysharpFunc or Class or Keysharp.Runtime.Module ? Types.Type(value) : "built-in variable";
 
@@ -506,13 +515,7 @@ namespace Keysharp.Builtins
 			if (name != null && scope != null && scope.TryGetDeclaration(name, out var declared))
 			{
 				name = declared.Name;
-				kind = declared.Kind switch
-				{
-					VarKind.Parameter => "parameter",
-					VarKind.Static or VarKind.ImplicitStatic => "static variable",
-					VarKind.Local or VarKind.ImplicitLocal => "local variable",
-					_ => "global variable"
-				};
+				kind = DeclarationKind(declared.Kind);
 
 				if (declared.Kind is VarKind.ImplicitLocal or VarKind.ImplicitStatic && TheScript.Vars.TryGetGlobal(TheScript.CurrentModuleType, name, out _))
 					hint = "\nA global declaration inside the function may be required.";

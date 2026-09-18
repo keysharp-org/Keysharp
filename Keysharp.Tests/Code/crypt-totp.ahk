@@ -9,10 +9,10 @@ Totp(Secret, UnixTime, Algorithm := "SHA1") {
     Loop 8
         NumPut("UChar", (steps >> ((8 - A_Index) * 8)) & 255, counter, A_Index - 1)
     digest := Hex.Decode(Crypt.Hmac(counter, Base32.Decode(Secret), Algorithm))
-    offset := NumGet(digest, digest.Size - 1, "UChar") & 15, number := 0
+    offset := NumGet(digest, digest.Size - 1, "UChar") & 15, code := 0
     Loop 4
-        number := (number << 8) | NumGet(digest, offset + A_Index - 1, "UChar")
-    return Format("{1:08d}", Mod(number & 0x7fffffff, 100000000))
+        code := (code << 8) | NumGet(digest, offset + A_Index - 1, "UChar")
+    return Format("{1:08d}", Mod(code & 0x7fffffff, 100000000))
 }
 
 ; RFC 6238 appendices A and B use 20, 32 and 64 byte secrets for SHA1, SHA256 and SHA512.

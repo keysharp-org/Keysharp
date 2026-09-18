@@ -2356,6 +2356,7 @@ namespace Keysharp.Parsing.Syntax
 			// Optional name for a named fn `name(params) => …` / `name(params) { … }`: captured so the body can recurse
 			// by that name (resolved to the lambda itself in the lowerer).
 			string faName = null;
+			var start = Current;
 			if (At(TokenKind.Identifier) && Peek(1).Kind == TokenKind.LParen && !Peek(1).LeadingWhitespace)
 			{ var fnTok = Current; faName = Advance().Text; RejectReservedName(faName, fnTok, "a function name"); }
 			List<Param> ps;
@@ -2364,9 +2365,9 @@ namespace Keysharp.Parsing.Syntax
 			else
 				ps = ParseParamList();
 			if (At(TokenKind.LBrace))   // anonymous block-bodied function `(params) { … }`
-				return new FatArrowExpr(ps, ParseBlock()) { Name = faName };
+				return new FatArrowExpr(ps, ParseBlock()) { Name = faName, Line = start.Line, Column = start.Column, File = start.File };
 			Expect(TokenKind.FatArrow, "fat-arrow function");
-			return new FatArrowExpr(ps, ParseExpression(1)) { Name = faName };
+			return new FatArrowExpr(ps, ParseExpression(1)) { Name = faName, Line = start.Line, Column = start.Column, File = start.File };
 		}
 
 		[GeneratedRegex("%([A-Za-z_][A-Za-z0-9_]*)%")]

@@ -136,7 +136,7 @@ namespace Keysharp.Internals
 				foreach (var gui in new HashSet<Keysharp.Builtins.Gui>(guis.Values))
 				{
 					if (gui?.form is Keysharp.Builtins.KeysharpForm f && !f.IsDisposed && f.IsHandleCreated
-							&& f.ShowInTaskbar && seen.Add(f.Handle))
+							&& f.HasTaskbarButton && seen.Add(f.Handle))
 						windows.Add(f.Handle);
 				}
 			}

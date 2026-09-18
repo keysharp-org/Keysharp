@@ -77,8 +77,7 @@ namespace Keysharp.Compilation.Syntax
 		private bool? _derefScope;
 		private int _lambdaCounter;
 		private readonly List<MemberDeclarationSyntax> _pendingLambdas = new();   // anonymous fat-arrow functions
-		// C# local functions emitted for fat-arrows in the current callable scope — flushed into that scope's body so
-		// they capture @this / enclosing locals via normal C# closure semantics (matches the canonical).
+		// The local functions of the current callable's fat arrows and nested functions, emitted at the end of its body.
 		private List<StatementSyntax> _pendingScopeFuncs = new();
 		// Local KeysharpFunc/Closure var declarations for NAMED nested functions, prepended to the scope body so the name is
 		// bound before any (possibly forward-referenced) call — AHK hoists nested functions.
@@ -86,6 +85,9 @@ namespace Keysharp.Compilation.Syntax
 		// SL_ static-local field name -> its index in _fieldDecls, so a constant-valued `static x := 1+2` can rewrite the
 		// field's initializer to the folded literal (`SL_… = 3L`) instead of a runtime InitStaticVariable.
 		private readonly Dictionary<string, int> _staticFieldDeclIdx = new(System.StringComparer.Ordinal);
+		// A parameter's default that LowerCallableBody lowered to a literal, which its declaration carries.
+		private readonly Dictionary<Param, LiteralExpressionSyntax> _literalDefaults = new(ReferenceEqualityComparer.Instance);
+		private readonly Dictionary<FatArrowExpr, FunctionDecl> _arrowDecls = new(ReferenceEqualityComparer.Instance);   // see ArrowDecl
 		private readonly HashSet<string> _emittedFuncImpls = new();   // guards against duplicate hoisted nested functions
 		private readonly List<Type> _wildcardModules = new();   // `#import "Mod" { * }` types, most recent first — members resolved on demand
 		// The variables the module being lowered declares or assigns at its top level, and those a function in it declares
@@ -162,8 +164,8 @@ namespace Keysharp.Compilation.Syntax
 
 		// Names provided at the module top-level. Keysharp resolves any bare name that isn't a local to a module-level
 		// global field (see LowerName's EnsureGlobalField fallback), so a top-level-assigned name is readable from EVERY
-		// nested scope — including class methods/properties, which do NOT inherit `outerProvided`. Threaded into every
-		// scope's `readable` set so a read of such a global isn't a false "never assigned" positive (null when VarUnset off).
+		// nested scope — including class methods/properties, which do NOT inherit `outerProvided`. CheckReadsExpr consults
+		// it for every scope so a read of such a global isn't a false "never assigned" positive (null when VarUnset off).
 		private HashSet<string> _warnGlobalReadable;
 		// The globals the module assigns, and the unset reads found, which are warned about once every assignment is known
 		// (see AnalyzeWarnings). Unheld is a read of a name the reading function holds no variable of, and Global one worded
@@ -189,9 +191,21 @@ namespace Keysharp.Compilation.Syntax
 		// the module's exports at body-lowering time (byName is otherwise a BuildMultiModule local). Null on the single-
 		// module path (which only ever sees built-in modules).
 		private Dictionary<string, ModInfo> _modulesByName;
-		// Set by NameRef when it resolves a captured enclosing local or `this`; read (scoped) by LowerFatArrow to pick
-		// Closure (capturing → `is Closure` true) vs Func (non-capturing) binding.
-		private bool _capturedInScope;
+		// Whether a fat arrow or nested function is a closure is known only once the outermost callable is lowered, as a
+		// function it refers to may be lowered later. Refs are the references to functions of enclosing callables, and Sites
+		// the nodes emitted for the closures known at the time, by their annotations, rewritten then if those changed.
+		private sealed class Settlement
+		{
+			public readonly List<FunctionRef> Refs = new();
+			public readonly Dictionary<SyntaxAnnotation, SettleSite> Sites = new();
+		}
+		// A reference from From to Target, a function declared in Owner, which reads Owner's frame if Target is a closure.
+		private readonly record struct FunctionRef(FunctionScope From, FunctionScope Owner, Func<FunctionScope> Target);
+		// Changed tells whether the closures a node was emitted for differ once settled: Settle then rewrites it, and
+		// otherwise Stands declares what the node as emitted relies on.
+		private readonly record struct SettleSite(Func<bool> Changed, Func<SyntaxNode, SyntaxNode> Settle, Action Stands = null);
+		private const string SettleAnnotation = "KsSettle";
+		private Settlement _settlement;
 		private int _tempCounter;
 		private List<string> _scopeTemps = new();   // object temps the current scope needs (declared at its top)
 
@@ -833,7 +847,7 @@ namespace Keysharp.Compilation.Syntax
 		private void ClearPerModuleState()
 		{
 			_experimentalTypes.Clear();
-			_fields.Clear(); _fieldDecls.Clear(); _staticFieldDeclIdx.Clear(); _userFuncByLower.Clear(); _userFuncDeclByLower.Clear(); _userClassByLower.Clear(); _userClassDeclByLower.Clear();
+			_fields.Clear(); _fieldDecls.Clear(); _staticFieldDeclIdx.Clear(); _literalDefaults.Clear(); _userFuncByLower.Clear(); _userFuncDeclByLower.Clear(); _userClassByLower.Clear(); _userClassDeclByLower.Clear();
 			_staticFieldSink = _fieldDecls;   // module scope until a class redirects it
 
 			_inlineAliases.Clear(); _wildcardModules.Clear(); _importMembers.Clear(); _classFieldIds.Clear(); _emittedFuncImpls.Clear();
@@ -1313,6 +1327,16 @@ namespace Keysharp.Compilation.Syntax
 				else if (s is ClassDecl cd) { RegisterClass(cd); }
 				else if (s is ImportDirective dir) RegisterImport(dir);
 			}
+			var moduleArrows = NamedArrows(body, null);
+			foreach (var fd in moduleArrows)
+			{
+				var lower = fd.Name.ToLowerInvariant();
+
+				if (_userFuncByLower.ContainsKey(lower) || _userClassDeclByLower.ContainsKey(lower))
+					Diag($"{NodeAnchor(fd)}This function declaration conflicts with an existing {(_userFuncByLower.ContainsKey(lower) ? "Func" : "Class")}: {fd.Name}");
+				else
+					(_userFuncByLower[lower], _userFuncDeclByLower[lower]) = (fd.Name, fd);
+			}
 			if (liftControlFlowImports)
 			{
 				// Imports inside a top-level control-flow block bind at module scope too (function/class bodies are
@@ -1339,6 +1363,9 @@ namespace Keysharp.Compilation.Syntax
 			_pendingScopeFuncs = new();
 			_pendingScopeClosureInits = new();
 			_labelScopes.Add(CollectDirectLabels(body));   // top-level labels (goto targets from auto-exec loops)
+			foreach (var fd in moduleArrows)
+				if (_userFuncDeclByLower.GetValueOrDefault(fd.Name.ToLowerInvariant()) == fd && _emittedFuncImpls.Add(NameMangler.FunctionMethod(fd.Name)))
+					members.Add(LowerFunction(fd));
 			for (int i = 0; i < body.Count; i++)
 			{
 				var s = body[i];
@@ -1542,6 +1569,18 @@ namespace Keysharp.Compilation.Syntax
 			public readonly FunctionScope Parent = parent;   // the enclosing callable of a fat arrow or nested function
 			public readonly bool IsStatic = isStatic;        // a `static` nested function
 			public bool AssumeGlobal;
+			// Inner marks a fat arrow or nested function, lowered to the C# local function Impl. It Captures when it or a
+			// callable within it reads an enclosing callable's frame, which makes it a closure; otherwise its function
+			// object is kept in the static Field.
+			public bool Inner, Captures;
+			public string Impl, Field;
+			// The scopes of the nested functions it declares, by name.
+			public Dictionary<string, FunctionScope> Functions;
+			// The enclosing callables' locals and nested functions it or a callable within it names, which are all of theirs
+			// a dynamic reference reaches, as in AutoHotkey.
+			public HashSet<string> UpVars;
+
+			public bool Reaches(ScopeVar v) => v.Owner == this || v.Storage is VarStorage.Static or VarStorage.Global || UpVars?.Contains(v.Key) == true;
 			// Lowercased names. Locals holds the parameters and every other local; ByRef is the by-ref parameters.
 			public readonly HashSet<string> ByRef = new(System.StringComparer.Ordinal), ExplicitLocals = new(System.StringComparer.Ordinal),
 				Locals = new(System.StringComparer.Ordinal), Globals = new(System.StringComparer.Ordinal), Closures = new(System.StringComparer.Ordinal);
@@ -2012,12 +2051,119 @@ namespace Keysharp.Compilation.Syntax
 
 		private ExpressionSyntax NameRef(string name) => NameRefLower(name.ToLowerInvariant());
 
-		// A closure reading an enclosing callable's local or by-ref parameter captures it, and so does a non-static one
-		// reading an enclosing static.
+		// Naming an enclosing callable's local, by-ref parameter or nested function reaches into its frame from every
+		// callable between the two, and a local or parameter is captured there. An enclosing static is shared state rather
+		// than a capture, as FindUpVar returns it directly.
 		private void MarkCapture(ScopeVar v)
 		{
-			if (v.Owner != _scope && (v.Storage is VarStorage.Local or VarStorage.ByRef || v.Storage == VarStorage.Static && !_scope.IsStatic))
-				_capturedInScope = true;
+			if (v.Storage is VarStorage.Local or VarStorage.ByRef or VarStorage.Closure)
+				for (var s = _scope; s != v.Owner; s = s.Parent)
+				{
+					(s.UpVars ??= new(System.StringComparer.Ordinal)).Add(v.Key);
+					s.Captures |= v.Storage != VarStorage.Closure;
+				}
+		}
+
+		// `this` is the receiver of the method the callable is nested in, which every callable between them captures.
+		private void CaptureThis()
+		{
+			for (var s = _scope; s is { Inner: true }; s = s.Parent)
+				s.Captures = true;
+		}
+
+		// A function an enclosing callable declares is read from that callable's frame only if it is a closure; otherwise it
+		// is named itself, which captures nothing.
+		private ExpressionSyntax NestedFunctionRef(ScopeVar v)
+		{
+			var local = Id(NameMangler.Escape(v.Key));
+
+			if (v.Owner == _scope)
+				return local;
+
+			FunctionScope Target() => v.Owner.Functions?.GetValueOrDefault(v.Key);
+			ExpressionSyntax Ref(bool declare) => Target() is { Captures: false } f ? FunctionObject(f, declare) : local;
+			_settlement.Refs.Add(new(_scope, v.Owner, Target));
+			var direct = Target() is { Captures: false };
+			return Unsettled(Ref(false), () => (Target() is { Captures: false }) != direct, _ => Ref(true),
+				direct ? () => DeclareFunctionField(Target()) : null);
+		}
+
+		// Marks a node emitted for the closures known now, rewritten if the outermost callable settles them differently.
+		private T Unsettled<T>(T node, Func<bool> changed, Func<SyntaxNode, SyntaxNode> settle, Action stands = null) where T : SyntaxNode
+		{
+			var annotation = new SyntaxAnnotation(SettleAnnotation);
+			_settlement.Sites.Add(annotation, new(changed, settle, stands));
+			return node.WithAdditionalAnnotations(annotation);
+		}
+
+		// A callable which refers to a closure reads its frame, which makes it and every callable between them closures too,
+		// as AutoHotkey counts upvars; repeated until nothing changes, and a function that was never lowered counts as one.
+		// A node emitted for other closures than those is then rewritten.
+		private BlockSyntax Settle(BlockSyntax block)
+		{
+			var settlement = _settlement;
+
+			for (var changed = true; changed;)
+			{
+				changed = false;
+
+				foreach (var r in settlement.Refs)
+					if (r.Target() is not { Captures: false })
+						for (var s = r.From; s != null && s != r.Owner; s = s.Parent)
+							if (!s.Captures)
+								s.Captures = changed = true;
+			}
+
+			// Most sites stand as emitted, and the body is only walked when one does not.
+			var stale = new HashSet<SyntaxAnnotation>();
+
+			foreach (var (annotation, site) in settlement.Sites)
+				if (site.Changed())
+					stale.Add(annotation);
+				else
+					site.Stands?.Invoke();
+
+			return stale.Count == 0 ? block : block.ReplaceNodes(
+				block.GetAnnotatedNodes(SettleAnnotation).Where(n => n.GetAnnotations(SettleAnnotation).Any(stale.Contains)),
+				(_, node) => settlement.Sites[node.GetAnnotations(SettleAnnotation).First()].Settle(node));
+		}
+
+		// A fat arrow's or nested function's local function, emitted static unless it is a closure, and its function object.
+		// Captures only ever becomes true, so one nothing encloses or which is a closure already is settled at once.
+		private ExpressionSyntax EmitClosure(FunctionScope scope, LocalFunctionStatementSyntax fn)
+		{
+			if (scope.Parent == null || scope.Captures)
+			{
+				_pendingScopeFuncs.Add(scope.Captures ? fn : fn.AddModifiers(StaticTok));
+				return FunctionObject(scope);
+			}
+
+			bool Changed() => scope.Captures;
+			_pendingScopeFuncs.Add(Unsettled(fn.AddModifiers(StaticTok), Changed, node => WithoutStatic((LocalFunctionStatementSyntax)node)));
+			return Unsettled(FunctionObject(scope, declare: false), Changed, _ => FunctionObject(scope), () => DeclareFunctionField(scope));
+		}
+
+		private static LocalFunctionStatementSyntax WithoutStatic(LocalFunctionStatementSyntax fn) =>
+			fn.WithModifiers(SyntaxFactory.TokenList(fn.Modifiers.Where(m => !m.IsKind(SyntaxKind.StaticKeyword))));
+
+		// Each evaluation creates a closure anew. A function which captures nothing is one object for the life of the
+		// script, kept in a static variable so that reaching it neither allocates nor looks it up; a site emitted before
+		// that is settled declares the variable only once it stands.
+		private ExpressionSyntax FunctionObject(FunctionScope scope, bool declare = true)
+		{
+			if (scope.Captures)
+				return ClosureBind(scope.Impl);
+
+			if (declare)
+				DeclareFunctionField(scope);
+
+			return SyntaxFactory.AssignmentExpression(SyntaxKind.CoalesceAssignmentExpression, Id(scope.Field), FuncBind(scope.Impl));
+		}
+
+		private void DeclareFunctionField(FunctionScope scope)
+		{
+			if (_staticFieldDeclIdx.TryAdd(scope.Field, _staticFieldSink.Count))
+				_staticFieldSink.Add(ObjField(scope.Field, Null));
 		}
 
 		private enum NameKind : byte { ScopeVariable, ScopedImport, InlineAlias, BuiltinProperty, RenamedClass, ModuleField }
@@ -2053,7 +2199,7 @@ namespace Keysharp.Compilation.Syntax
 
 		private ExpressionSyntax NameRefLower(string lower)
 		{
-			if (_inMethod && lower == "this") { _capturedInScope = true; return Id("@this"); }
+			if (_inMethod && lower == "this") { CaptureThis(); return Id("@this"); }
 
 			var binding = Bind(lower);
 
@@ -2067,6 +2213,7 @@ namespace Keysharp.Compilation.Syntax
 						VarStorage.ByRef => RefOp("GetValue", Id(NameMangler.Escape(lower)), Str(lower)),
 						VarStorage.Static => Id(v.Field),
 						VarStorage.Global => ModuleFieldRef(lower),
+						VarStorage.Closure => NestedFunctionRef(v),
 						_ => Id(NameMangler.Escape(lower)),
 					};
 				case NameKind.ScopedImport:
@@ -2136,7 +2283,7 @@ namespace Keysharp.Compilation.Syntax
 				case FunctionDecl fd:
 					// A function nested inside another is a uniquely named local function bound to a local var, so same-named
 					// nested functions in sibling scopes don't collide. Top-level functions are module-level methods.
-					if (_scope != null) return LowerNestedClosure(fd);
+					if (_scope != null) { _ = LowerNestedFunction(fd); return null; }
 					if (_emittedFuncImpls.Add(NameMangler.FunctionMethod(fd.Name))) _pendingLambdas.Add(LowerFunction(fd));
 					return null;
 				case DirectiveStmt dir: return LowerDirective(dir);   // value-setting directives; rest are no-ops here
@@ -4007,26 +4154,28 @@ namespace Keysharp.Compilation.Syntax
 				var provided = new HashSet<string>(paramLowers, System.StringComparer.OrdinalIgnoreCase);
 				if (body != null) foreach (var s in body) CollectProvided(s, provided);
 				if (arrow != null) CollectProvidedExpr(arrow, provided);
+				foreach (var fd in scope.Nested) provided.Add(fd.Name.ToLowerInvariant());   // named fat arrows among them
 				// What this function assigns while it is global lets a read of a global a function declares stand.
 				foreach (var n in assigned ?? [])
 					if (scope.Find(n).Storage == VarStorage.Global)
 						_warnAssignedGlobals.Add(n);
-				// The top-level scope's names are the module globals; capture them so every nested scope can read them
-				// (Keysharp resolves any non-local bare name to a global field, so such a read is never "unset").
+				// The top-level scope's names are the module globals, which every nested scope can read (Keysharp resolves
+				// any non-local bare name to a global field, so such a read is never "unset"). CheckReadsExpr consults them
+				// directly: copying them into each scope's set was quadratic in the number of callables.
 				if (topLevel) _warnGlobalReadable = provided;
-				// Names readable here = this scope's provided + everything from enclosing scopes (closure capture) + the
-				// module globals (always reachable, even from class methods/properties that don't inherit outer locals).
+				// Names readable here = this scope's provided + everything from enclosing scopes (closure capture).
 				var readable = provided;
 				// This scope's own `#import` names (control-flow-nested and direct) are readable here — a reference to an
 				// imported function/type/variable is not "never assigned". Class-body imports arrive via outerProvided.
 				var ownImports = new List<ImportDirective>();
 				if (body != null) foreach (var s in body) { if (s is ImportDirective id) ownImports.Add(id); else CollectNestedImports(s, ownImports); }
-				if (outerProvided != null || (!topLevel && _warnGlobalReadable != null) || ownImports.Count > 0)
+				HashSet<string> imported = null;
+				if (ownImports.Count > 0) AddImportProvidedNames(ownImports, imported = new(System.StringComparer.OrdinalIgnoreCase));
+				if (outerProvided != null || imported != null)
 				{
 					readable = new HashSet<string>(provided, System.StringComparer.OrdinalIgnoreCase);
 					if (outerProvided != null) readable.UnionWith(outerProvided);
-					if (!topLevel && _warnGlobalReadable != null) readable.UnionWith(_warnGlobalReadable);
-					if (ownImports.Count > 0) AddImportProvidedNames(ownImports, readable);
+					if (imported != null) readable.UnionWith(imported);
 				}
 				if (_warnVarUnset != null && !scope.AssumeGlobal)
 				{
@@ -4034,10 +4183,17 @@ namespace Keysharp.Compilation.Syntax
 					if (body != null) foreach (var s in body) CheckReadsStmt(s, readable, warned);
 					if (arrow != null) CheckReadsExpr(arrow, readable, warned);
 				}
-				// LocalSameAsGlobal compares only THIS scope's own locals (not inherited ones) against the globals.
-				if (_warnLocalSameAsGlobal != null && !topLevel && !scope.AssumeGlobal && globals != null)
-					foreach (var n in provided) if (scope.Find(n).Storage != VarStorage.Global && globals.Contains(n)) Warn(_warnLocalSameAsGlobal, 0, $"This local variable has the same name as a global variable: {n}.");
-				visible = readable;
+				// LocalSameAsGlobal compares only THIS scope's own undeclared locals against the globals: as in AHK, a
+				// parameter or a local or static declaration already says the name is meant to be local. A global is any
+				// name FindGlobalVar finds: one the module assigns or declares, its function, class or import, or a built-in
+				// function or class.
+				if (_warnLocalSameAsGlobal != null && !topLevel && globals != null)
+					foreach (var (n, kind) in scope.Kinds)
+						if (kind is VarKind.ImplicitLocal or VarKind.ImplicitStatic
+							&& (globals.Contains(n) || ResolveModuleName(n) is not { Function: null, Class: null, Import: null, Variable: null, Builtin: null }))
+							Warn(_warnLocalSameAsGlobal, 0, $"This local variable has the same name as a global variable: {n}.");
+				// The module globals reach nested scopes through _warnGlobalReadable, so the top level hands down its imports only.
+				visible = topLevel ? imported : readable;
 			}
 			// Recurse into nested scopes (their bodies are separate scopes), passing this scope's visible names down so
 			// closures over our locals aren't flagged.
@@ -4187,7 +4343,7 @@ namespace Keysharp.Compilation.Syntax
 			{
 				case NameExpr n:
 					var lo = n.Name.ToLowerInvariant();
-					if (!provided.Contains(lo) && !warned.Contains(lo) && IsUnsetCandidate(lo, out var moduleVariable))
+					if (!provided.Contains(lo) && _warnGlobalReadable?.Contains(lo) != true && !warned.Contains(lo) && IsUnsetCandidate(lo, out var moduleVariable))
 					{
 						warned.Add(lo);
 						// A function's read of a name it holds no variable of reaches a global, which is worded as one when the
@@ -5665,6 +5821,7 @@ namespace Keysharp.Compilation.Syntax
 			var savedThisFuncName = _currentThisFuncName;
 			_currentThisFuncName = ClassMemberFuncName("__Init", staticCtx);
 			var savedScopeFuncs = _pendingScopeFuncs; _pendingScopeFuncs = new();   // field-init fat-arrow local funcs
+			var savedClosureInits = _pendingScopeClosureInits; _pendingScopeClosureInits = new();
 			var savedTemps = _scopeTemps; _scopeTemps = new();
 			var savedScope = _scope; var savedDeref = _derefScope;
 			// AutoHotkey parses each field initializer as an expression statement inside __Init, so only the field's
@@ -5676,10 +5833,17 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var f in fieldList) if (f.Init != null) CollectAssignedExpr(f.Init, assignedOrdered, seen);
 			if (extraList != null) foreach (var st in extraList) CollectAssignedStmt(st, assignedOrdered, seen);
 			var scope = _scope = new FunctionScope(null);
+			var savedSettlement = _settlement; _settlement = new();
 			foreach (var n in assignedOrdered)
 				if (!TryScopedExplicit(n, out _))
 					scope.Locals.Add(n);
 			scope.Locals.Remove("this");
+			// A named fat arrow in an initializer is a function of __Init.
+			foreach (var fd in fieldList.SelectMany(f => NamedArrows(null, f.Init)).Concat(NamedArrows(extraList, null)))
+			{
+				scope.Nested.Add(fd);
+				_ = scope.Closures.Add(fd.Name.ToLowerInvariant());
+			}
 			bool InitHas(Func<Expr, bool> pred) =>
 				fieldList.Any(f => AnyExpr(f.Init, pred)) || (extraList != null && extraList.Any(s => AnyStmt(s, pred)));
 			// A `%name%` in an initializer must resolve against those locals, as in a function body. The scope is not published
@@ -5696,13 +5860,12 @@ namespace Keysharp.Compilation.Syntax
 				stmts.Add(ExprStmt(Op("Invoke", tuple, Str("__Init"))));
 			}
 			var declared = new List<string>();
-			foreach (var n in assignedOrdered)
-				if (scope.Locals.Contains(n))
-				{
-					var e = NameMangler.Escape(n);
-					declared.Add(e);
-					stmts.Add(DeclLocal(ObjType, e, Null));
-				}
+			foreach (var n in assignedOrdered.Where(scope.Locals.Contains).Concat(scope.Closures))
+			{
+				var e = NameMangler.Escape(n);
+				declared.Add(e);
+				stmts.Add(DeclLocal(ObjType, e, Null));
+			}
 			if (_derefScope != null)
 				stmts.Add(LocalDecl(Ty("Keysharp.Runtime.FuncScope"), "KS_scope", NewScope(_currentThisFuncName, _derefScope == true)));
 			var setupEnd = stmts.Count;
@@ -5721,19 +5884,25 @@ namespace Keysharp.Compilation.Syntax
 			for (int i = _scopeTemps.Count - 1; i >= 0; i--) stmts.Insert(0, DeclLocal(ObjType, _scopeTemps[i], Null));
 			execStart += _scopeTemps.Count; execEnd += _scopeTemps.Count;
 			stmts.AddRange(_pendingScopeFuncs);   // fat-arrow field values become local funcs that capture @this
+			stmts.InsertRange(setupEnd + _scopeTemps.Count, _pendingScopeClosureInits);
+			execStart += _pendingScopeClosureInits.Count; execEnd += _pendingScopeClosureInits.Count;
 			WrapBodyWithKeepAlive(stmts, declared, execStart, execEnd);
+			var block = Settle(SyntaxFactory.Block(stmts));
+			_settlement = savedSettlement;
 			_derefScope = savedDeref;
 			_scope = savedScope;
 			_scopeTemps = savedTemps;
 			_pendingScopeFuncs = savedScopeFuncs;
+			_pendingScopeClosureInits = savedClosureInits;
 			_currentThisFuncName = savedThisFuncName;
-			return ObjMethod(name, ParamThis(), SyntaxFactory.Block(stmts));
+			return ObjMethod(name, ParamThis(), block);
 		}
 
 		// `super` lowers to the tuple (object)(MainScript.Vars.{Prototypes|Statics}[typeof(Base)], @this); the runtime
 		// resolves a member/method against the base's prototype while keeping `this` bound to the current instance.
 		private ExpressionSyntax SuperTuple()
 		{
+			CaptureThis();
 			var baseType = _currentClassBase ?? "Keysharp.Builtins.KeysharpObject";
 			var table = _currentMethodStatic ? "MainScript.Vars.Statics" : "MainScript.Vars.Prototypes";
 			var proto = SyntaxFactory.ElementAccessExpression(Access(table))
@@ -5764,7 +5933,7 @@ namespace Keysharp.Compilation.Syntax
 			var savedCompat = _currentCompat;
 			_currentCompat = ScanRequires(m.Body?.Body) ?? _currentCompat;   // a `#Requires` in the method body sets its mode
 			var body = LowerCallableBody(paramLowers, m.Body, m.ArrowBody, implName,
-				thisFuncName, byRefParams, m.Params);
+				thisFuncName, out _, byRefParams, m.Params);
 			_inMethod = saved; _currentMethodStatic = savedStatic;
 			var attrs = new List<AttributeListSyntax>();
 			// Always stamped, not only when the mangler changed the spelling: the exact source case is what
@@ -5793,7 +5962,7 @@ namespace Keysharp.Compilation.Syntax
 				var thisFuncName = ClassMemberFuncName(pr.Name, pr.Static) + ".Get";
 				var savedM = _inMethod; var savedS = _currentMethodStatic; _inMethod = true; _currentMethodStatic = pr.Static;
 				var body = LowerCallableBody(new HashSet<string>(idxLowers), pr.GetBody, pr.GetArrow, getterName,
-					thisFuncName, byRefParams, pr.Params);
+					thisFuncName, out _, byRefParams, pr.Params);
 				_inMethod = savedM; _currentMethodStatic = savedS;
 				var ps = SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(Prepend(ThisParam(), IdxParams())));
 				result.Add(ObjMethod(getterName, ps, body, Attr("Keysharp.Runtime.UserDeclaredName", Str(pr.Name))));
@@ -5804,7 +5973,7 @@ namespace Keysharp.Compilation.Syntax
 				var setParams = new HashSet<string>(idxLowers) { "value" };
 				var savedM = _inMethod; var savedS = _currentMethodStatic; _inMethod = true; _currentMethodStatic = pr.Static;
 				var body = LowerCallableBody(setParams, pr.SetBody, pr.SetArrow, setterName,
-					thisFuncName, byRefParams, pr.Params);
+					thisFuncName, out _, byRefParams, pr.Params);
 				_inMethod = savedM; _currentMethodStatic = savedS;
 				var idx = IdxParams();
 				// `value` is always the LAST setter param, so a trailing `params object[]` index param drops `params`
@@ -5822,18 +5991,25 @@ namespace Keysharp.Compilation.Syntax
 
 		// ---- functions ----
 
-		// A fat-arrow used as a value: emit it as a C# LOCAL FUNCTION in the current callable scope and bind it as a
-		// KeysharpFunc via its method group (`Func((Delegate)FN)`). Because it's a local function it captures `@this` and
-		// the enclosing locals through normal C# closure semantics (matches the canonical — no Functions.Closure /
-		// top-level method needed). The local functions are flushed into the scope body by LowerCallableBody /
-		// InitMethod / the auto-exec assembly (C# hoists local functions, so forward references are fine).
+		// A fat arrow is a C# local function of the enclosing callable, bound as its function object (see EmitClosure).
 		private ExpressionSyntax LowerFatArrow(FatArrowExpr fa)
 		{
+			// A named one is a function of the callable holding it or of the module (see NamedArrows).
+			if (fa.Name != null)
+			{
+				var decl = ArrowDecl(fa);
+
+				if (_scope?.Nested.Contains(decl) == true)
+					return LowerNestedFunction(decl);
+
+				if (_scope == null && _userFuncDeclByLower.GetValueOrDefault(fa.Name.ToLowerInvariant()) == decl)
+					return NameRef(fa.Name);
+			}
+
 			var n = ++_lambdaCounter;
 			var implName = "FN_KS_AnonLambda_" + n;
 			var thisFuncName = fa.Name ?? "";
 			var (paramLowers, byRefParams) = ParamSets(fa.Params);
-			var savedCaptured = _capturedInScope; _capturedInScope = false;
 			// A named fn-expression `name(params) => …` can call itself: resolve `name` inside the body to a Func over
 			// this lambda's impl (the local function is hoisted, so a forward self-reference is fine). Save/restore any
 			// outer alias of the same name. Skip when the name is a real local/param (it shadows the self-reference).
@@ -5842,46 +6018,72 @@ namespace Keysharp.Compilation.Syntax
 				&& _scope?.Locals.Contains(selfName) != true;
 			System.Func<ExpressionSyntax> savedAlias = null;
 			bool hadAlias = aliasInBody && _inlineAliases.TryGetValue(selfName, out savedAlias);
-			if (aliasInBody) _inlineAliases[selfName] = () => FuncBind(implName);
+			if (aliasInBody) _inlineAliases[selfName] = () => ArrowSelfRef(implName);
 			var body = LowerCallableBody(paramLowers, fa.BlockBody, fa.BlockBody == null ? fa.Body : null, implName,
-				thisFuncName, byRefParams, fa.Params, capturing: true);
+				thisFuncName, out var scope, byRefParams, fa.Params, capturing: true);
 			if (aliasInBody) { if (hadAlias) _inlineAliases[selfName] = savedAlias; else _inlineAliases.Remove(selfName); }
-			bool captured = _capturedInScope; _capturedInScope = savedCaptured;
 			var localFunction = SyntaxFactory.LocalFunctionStatement(ObjType, SyntaxFactory.Identifier(implName))
 				.WithParameterList(ParamDecls(fa.Params, includeThis: false, wrapVariadics: true))
 				.WithBody(body);
 			// Always stamped, "" for an anonymous lambda: Roslyn renames a local function to `<Outer>g__name|n_m`,
 			// and the attribute is what spares the runtime having to read that scheme back.
 			localFunction = localFunction.AddAttributeLists(Attr("Keysharp.Runtime.UserDeclaredName", Str(fa.Name ?? "")));
-			_pendingScopeFuncs.Add(localFunction);
-			// A closure that captured `this`/an enclosing local binds as a Closure (so `x is Closure`); otherwise a Func.
-			return captured ? ClosureBind(implName) : FuncBind(implName);
+			return EmitClosure(scope, localFunction);
 		}
 
-		// A bare nested function: emit a capturing C# local function (like a fat-arrow) and bind its name to a local
-		// KeysharpFunc/Closure var (declared at this position) so `name(...)` calls it. Captures `@this`/enclosing locals.
-		private StatementSyntax LowerNestedClosure(FunctionDecl fd)
+		// A named fat arrow's own name reads nothing, but a callable within the arrow which reaches it captures whatever
+		// the arrow captures.
+		private ExpressionSyntax ArrowSelfRef(string implName)
+		{
+			var arrow = _scope;
+
+			while (arrow.Impl != implName)
+				arrow = arrow.Parent;
+
+			if (arrow != _scope)
+				_settlement.Refs.Add(new(_scope, arrow.Parent, () => arrow));
+
+			if (arrow.Captures)
+				return FunctionObject(arrow);
+
+			return Unsettled(FunctionObject(arrow, declare: false), () => arrow.Captures, _ => FunctionObject(arrow), () => DeclareFunctionField(arrow));
+		}
+
+		// A nested function, or a named fat arrow, is a C# local function whose object a local of the enclosing callable holds,
+		// which this returns.
+		private ExpressionSyntax LowerNestedFunction(FunctionDecl fd)
 		{
 			var nameLower = fd.Name.ToLowerInvariant();
+
+			// A nested function is a variable of the function declaring it, which no declaration may already name.
+			var existing = _scope.Functions?.ContainsKey(nameLower) == true ? "Func"
+				: _scope.Globals.Contains(nameLower) ? "global variable"
+				: _scope.Kinds.TryGetValue(nameLower, out var kind) && kind is VarKind.Parameter or VarKind.Local or VarKind.Static ? Keysharp.Builtins.Errors.DeclarationKind(kind)
+				: null;
+
+			if (existing != null)
+			{
+				Diag($"{NodeAnchor(fd)}This function declaration conflicts with an existing {existing}: {fd.Name}");
+				return Str("");
+			}
+
 			var implName = "FN_" + NameMangler.Escape(nameLower) + "_" + (++_lambdaCounter);
 			var (paramLowers, byRefParams) = ParamSets(fd.Params);
-			// The name is already a closure of the enclosing scope (pre-collected), so a recursive reference
-			// in the body resolves to this local closure var rather than a module field.
-			var savedCaptured = _capturedInScope; _capturedInScope = false;
 			var savedCompat = _currentCompat;
 			_currentCompat = ScanRequires(fd.Body?.Body) ?? _currentCompat;   // nested-function `#Requires` (restored after)
 			var body = LowerCallableBody(paramLowers, fd.Body, fd.ArrowBody, implName, fd.Name,
-				byRefParams, fd.Params, capturing: true, staticNested: fd.Static);
+				out var scope, byRefParams, fd.Params, capturing: true, staticNested: fd.Static);
 			_currentCompat = savedCompat;
-			bool captured = _capturedInScope; _capturedInScope = savedCaptured;
-			_pendingScopeFuncs.Add(SyntaxFactory.LocalFunctionStatement(ObjType, SyntaxFactory.Identifier(implName))
+			(_scope.Functions ??= new(System.StringComparer.Ordinal))[nameLower] = scope;
+			var fn = SyntaxFactory.LocalFunctionStatement(ObjType, SyntaxFactory.Identifier(implName))
 				.WithParameterList(ParamDecls(fd.Params, includeThis: false, wrapVariadics: true))
 				.WithBody(body)
-				.AddAttributeLists(Attr("Keysharp.Runtime.UserDeclaredName", Str(fd.Name))));
+				.AddAttributeLists(Attr("Keysharp.Runtime.UserDeclaredName", Str(fd.Name)));
 			// Assign (not declare — the var is hoisted) at the scope TOP so forward-referenced calls work and a
 			// self-recursive binding doesn't trip definite assignment; the delegate's captures read lazily.
-			_pendingScopeClosureInits.Add(ExprStmt(Assign(Id(NameMangler.Escape(nameLower)), captured ? ClosureBind(implName) : FuncBind(implName))));
-			return null;
+			var local = Id(NameMangler.Escape(nameLower));
+			_pendingScopeClosureInits.Add(ExprStmt(Assign(local, EmitClosure(scope, fn))));
+			return local;
 		}
 
 		// ---- hotkeys / hotstrings / remaps ----
@@ -5940,7 +6142,7 @@ namespace Keysharp.Compilation.Syntax
 			var ps = new List<Param> { new Param("thishotkey", null, false, false, false) };
 			// AutoHotkey builds every hotkey, hotstring and #HotIf body from one `<Hotkey>(ThisHotkey)` template
 			// (Script::CreateHotFunc), so that is the name A_ThisFunc reports inside all three.
-			var lowered = LowerCallableBody(new HashSet<string> { "thishotkey" }, body, null, name, "<Hotkey>");
+			var lowered = LowerCallableBody(new HashSet<string> { "thishotkey" }, body, null, name, "<Hotkey>", out _);
 			_hotMembers.Add(ObjMethod(name, ParamDecls(ps, includeThis: false), lowered));
 			return name;
 		}
@@ -6245,7 +6447,7 @@ namespace Keysharp.Compilation.Syntax
 			_currentCompat = ScanRequires(f.Body?.Body) ?? _currentCompat;   // a `#Requires` in the body sets this function's mode
 			var (paramLowers, byRefParams) = ParamSets(f.Params);
 			var implName = NameMangler.FunctionMethod(f.Name);
-			var body = LowerCallableBody(paramLowers, f.Body, f.ArrowBody, implName, f.Name, byRefParams, f.Params);
+			var body = LowerCallableBody(paramLowers, f.Body, f.ArrowBody, implName, f.Name, out _, byRefParams, f.Params);
 			var attrs = new List<AttributeListSyntax> { Attr("Keysharp.Runtime.UserDeclaredName", Str(f.Name)) };
 			attrs.AddRange(CompatAttr());
 			var method = ObjMethod(implName, ParamDecls(f.Params, includeThis: false, wrapVariadics: true), body, attrs.ToArray());
@@ -6289,12 +6491,11 @@ namespace Keysharp.Compilation.Syntax
 					// as required and rejects calls that omit them).
 					if (p.Default != null)
 					{
-						var d = LowerParamDefault(p.Default);
 						// A constant default goes straight into the attribute; a non-constant one defaults to null and gets a
 						// `param ??= <expr>` prologue. A by-ref default is ALWAYS declared null so an omitted `&p` arrives null
 						// (its default is substituted into the VarRef in LowerCallableBody, never via the attribute).
 						param = param.AddAttributeLists(Attr("System.Runtime.InteropServices.Optional"),
-													   Attr("System.Runtime.InteropServices.DefaultParameterValue", d is LiteralExpressionSyntax && !p.ByRef ? d : Null));
+													   Attr("System.Runtime.InteropServices.DefaultParameterValue", _literalDefaults.GetValueOrDefault(p) ?? Null));
 					}
 					else if (p.Optional) param = param.AddAttributeLists(Attr("System.Runtime.InteropServices.Optional"));
 				}
@@ -6313,9 +6514,10 @@ namespace Keysharp.Compilation.Syntax
 		}
 
 		// funcName is the mangled C# method name used for static-local field mangling. thisFuncName is the exact
-		// AHK-visible name used by A_ThisFunc and by an externally visible function scope.
+		// AHK-visible name used by A_ThisFunc and by an externally visible function scope. callableScope is the scope built
+		// for the callable's variables.
 		private BlockSyntax LowerCallableBody(HashSet<string> paramLowers, Block bodyBlock, Expr arrowBody, string funcName,
-			string thisFuncName, HashSet<string> byRefParams = null, List<Param> paramDefaults = null,
+			string thisFuncName, out FunctionScope callableScope, HashSet<string> byRefParams = null, List<Param> paramDefaults = null,
 			bool capturing = false, bool staticNested = false)
 		{
 			var savedThisFuncName = _currentThisFuncName;
@@ -6334,8 +6536,15 @@ namespace Keysharp.Compilation.Syntax
 			// Only a closure (fat arrow or nested function) sees the enclosing callable's variables.
 			var scope = ClassifyScope(capturing ? _scope : null, staticNested, paramLowers, byRefParams, bodyBlock?.Body, arrowBody, funcName, out var assignedOrdered);
 			scope.Params = paramDefaults;
+			(scope.Inner, scope.Impl) = (capturing, funcName);
+			// The object of a fat arrow or nested function which captures nothing is a static of its own, under a name no
+			// variable can have.
+			if (capturing) scope.Field = NameMangler.StaticLocalField(funcName, "");
+			callableScope = scope;
 			var savedScope = _scope;
 			_scope = scope;
+			var savedSettlement = _settlement;
+			if (scope.Parent == null) _settlement = new();
 
 			var body = new List<StatementSyntax>();
 			var hoisted = new HashSet<string>(paramLowers);
@@ -6366,13 +6575,8 @@ namespace Keysharp.Compilation.Syntax
 			// A writer is needed only when the body assigns a dynamic name (`%n% := v`, `%n%++`, `&%n%`). INVARIANT: IsDerefWrite
 			// must match every form the lowering emits a write or DerefRef for; RequireWriter reports a missed one.
 			_derefScope = BodyHas(bodyBlock, arrowBody, IsDeref) ? BodyHas(bodyBlock, arrowBody, IsDerefWrite) : null;
-			// A function calling ListVars publishes its scope too, and so does one calling RegExMatch/RegExReplace when it has
-			// closures a callout could resolve by name.
-			bool callsScopeApi = BodyHas(bodyBlock, arrowBody, IsListVarsTrigger)
-				|| (scope.Visible().Any(v => v.Storage == VarStorage.Closure) && BodyHas(bodyBlock, arrowBody, IsRegexTrigger));
-			if (_derefScope != null || callsScopeApi)
-				body.Add(LocalDecl(Ty("Keysharp.Runtime.FuncScope"), "KS_scope",
-					Op("EnterScope", NewScope(thisFuncName ?? "", _derefScope == true))));
+			// Declared here once the body is lowered, which shows the enclosing variables the scope reaches.
+			var scopeAt = body.Count;
 
 			// A by-ref param is read/written through its VarRef's __Value. Only when the caller OMITS an optional `&p`
 			// does it arrive null (by-ref defaults are declared as null, see ParamDecls) — substitute a VarRef holding
@@ -6397,7 +6601,9 @@ namespace Keysharp.Compilation.Syntax
 					if (!p.ByRef && !p.Variadic && p.Default != null)
 					{
 						var defaultExpr = LowerParamDefault(p.Default);
-						if (defaultExpr is not LiteralExpressionSyntax)
+						if (defaultExpr is LiteralExpressionSyntax literal)
+							_literalDefaults[p] = literal;
+						else
 							body.Add(ExprStmt(SyntaxFactory.AssignmentExpression(SyntaxKind.CoalesceAssignmentExpression,
 								Id(NameMangler.Escape(p.Name.ToLowerInvariant())), defaultExpr)));
 					}
@@ -6412,6 +6618,15 @@ namespace Keysharp.Compilation.Syntax
 			if (body.Count == 0 || body[^1] is not ReturnStatementSyntax)
 				body.Add(SyntaxFactory.ReturnStatement(DefaultReturnExpr()));
 
+			// A function calling ListVars publishes its scope too, and so does one calling RegExMatch/RegExReplace when it
+			// reaches closures a callout could resolve by name.
+			if (_derefScope != null || BodyHas(bodyBlock, arrowBody, IsListVarsTrigger)
+				|| (BodyHas(bodyBlock, arrowBody, IsRegexTrigger) && scope.Visible().Any(v => v.Storage == VarStorage.Closure && scope.Reaches(v))))
+			{
+				body.Insert(scopeAt, LocalDecl(Ty("Keysharp.Runtime.FuncScope"), "KS_scope", Op("EnterScope", NewScope(thisFuncName ?? "", _derefScope == true))));
+				setupEnd++;
+			}
+
 			int execStart = setupEnd, execEnd = body.Count;
 			// Declare any temps introduced by postfix ++/-- at the top of the scope.
 			for (int i = _scopeTemps.Count - 1; i >= 0; i--) body.Insert(0, DeclLocal(ObjType, _scopeTemps[i], Null));
@@ -6423,14 +6638,17 @@ namespace Keysharp.Compilation.Syntax
 			body.InsertRange(setupEnd + _scopeTemps.Count, _pendingScopeClosureInits);
 			execStart += _pendingScopeClosureInits.Count; execEnd += _pendingScopeClosureInits.Count;
 			WrapBodyWithKeepAlive(body, declared, execStart, execEnd);
+			var block = SyntaxFactory.Block(body);
+			if (scope.Parent == null) block = Settle(block);
 
+			_settlement = savedSettlement;
 			_derefScope = savedDeref;
 			_scope = savedScope;
 			_scopeTemps = savedTemps; _pendingScopeFuncs = savedScopeFuncs; _pendingScopeClosureInits = savedClosureInits;
 			_currentThisFuncName = savedThisFuncName;
 			_loweringParamDefault = savedLoweringParamDefault;
 			if (importFrame != null) _importScopes.RemoveAt(_importScopes.Count - 1);
-			return SyntaxFactory.Block(body);
+			return block;
 		}
 
 		private string ClassMemberFuncName(string memberName, bool isStatic) =>
@@ -6531,6 +6749,9 @@ namespace Keysharp.Compilation.Syntax
 			}
 			foreach (var v in _scope.Visible())
 			{
+				if (!_scope.Reaches(v))
+					continue;
+
 				var id = Id(NameMangler.Escape(v.Key));
 				// A captured variable is named by its capture rather than by how the enclosing callable declares it.
 				var own = v.Owner == _scope;
@@ -6551,7 +6772,7 @@ namespace Keysharp.Compilation.Syntax
 						break;
 					// A nested function is a constant, which a dynamic reference and a callout reach by name.
 					case VarStorage.Closure:
-						Arm(v.Key, id, null, v.Owner.Spelling(v.Key), VarKind.Constant);
+						Arm(v.Key, NestedFunctionRef(v), null, v.Owner.Spelling(v.Key), VarKind.Constant);
 						break;
 					default:
 						Var(v, id, own ? v.Owner.Kinds.GetValueOrDefault(v.Key, VarKind.ImplicitLocal) : VarKind.Local);
@@ -6697,6 +6918,8 @@ namespace Keysharp.Compilation.Syntax
 								}
 				});
 
+			scope.Nested.AddRange(NamedArrows(body, arrow));
+
 			foreach (var fd in scope.Nested)
 			{
 				var lower = fd.Name.ToLowerInvariant();
@@ -6739,6 +6962,36 @@ namespace Keysharp.Compilation.Syntax
 			}
 
 			return scope;
+		}
+
+		// A named fat arrow is a function definition in expression form, which AutoHotkey declares as a function of the
+		// callable holding it, or of the module outside any function: bound on entry, whether or not the expression runs.
+		private List<FunctionDecl> NamedArrows(IEnumerable<Stmt> body, Expr arrow)
+		{
+			var named = new List<FunctionDecl>();
+
+			bool Collect(Expr e)
+			{
+				if (e is FatArrowExpr { Name: not null } fa)
+					named.Add(ArrowDecl(fa));
+
+				return false;
+			}
+
+			foreach (var st in body ?? [])
+				_ = AnyStmt(st, Collect);
+
+			_ = AnyExpr(arrow, Collect);
+			return named;
+		}
+
+		// The one declaration a named fat arrow stands for, however often it is collected.
+		private FunctionDecl ArrowDecl(FatArrowExpr fa)
+		{
+			if (!_arrowDecls.TryGetValue(fa, out var fd))
+				_arrowDecls[fa] = fd = new(fa.Name, fa.Params, fa.BlockBody, fa.BlockBody == null ? fa.Body : null) { Line = fa.Line, Column = fa.Column, File = fa.File };
+
+			return fd;
 		}
 
 		// A static variable is backed by an SL_ field of the type holding the function, which a null funcName declares none of.

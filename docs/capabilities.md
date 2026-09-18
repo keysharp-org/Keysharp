@@ -82,7 +82,7 @@ Status legend:
 | [ ... ] / Map | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an Map literal. |
 | ^ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise XOR operator |
 | ^= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
-| __Await() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Lets a script object expose asynchronous work without inheriting from Task. The zero-argument method returns a Task, CLR Task or ValueTask, worker RealThread, or another __Await object; Await, Task(Value), either Then callback's direct return, Task.Create settlement and Task combinators consume it. |
+| __Await() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Lets a script object expose asynchronous work without inheriting from Task. The zero-argument method returns a Task, CLR Task or ValueTask, or another __Await object; Await, Task(Value), either Then callback's direct return, Task.Create settlement and Task combinators consume it. |
 | __Call | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when calling a missing method or property. |
 | __Delete | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when an object is being deleted. |
 | __Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns an enumerator for the object. |
@@ -307,20 +307,21 @@ Status legend:
 | Array.Contains() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Array method. Omitting the value searches for an element which has no value. |
 | Array.Default | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default value returned for missing indexes. |
 | Array.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the element at the specified index to null, returns the element at that index before it was cleared. |
-| Array.Filter() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a new array containing elements accepted by a callback predicate. An empty array returns empty without invoking the callback. |
-| Array.FindIndex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the first matching index, or 0. An empty array returns 0 without invoking the callback. |
+| Array.Filter() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns a new array containing elements accepted by a callback predicate. An empty array returns empty without invoking the callback. |
+| Array.FindIndex() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns the first matching index, or 0. An empty array returns 0 without invoking the callback. |
 | Array.Get() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the value at an index with optional fallback default. |
 | Array.Has() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether an array contains a non-empty value at the given index. |
-| Array.IndexOf() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the index of the first occurrence of a value. Omitting the value searches for an element which has no value. An out of bounds StartIndex (0, or an absolute value exceeding the length) throws an IndexError, like the sibling FindIndex; an empty array returns 0. |
+| Array.IndexOf() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns the index of the first occurrence of a value, or of the first element with no value when the value is omitted; 0 when none matches. |
 | Array.InsertAt() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inserts an element or range of elements at a given index. |
-| Array.Join() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Joins array elements into a string with a separator. |
+| Array.Join() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Joins array elements into a string with a separator. |
 | Array.Length | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets the logical length of the array. |
-| Array.Map() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a new array transformed by a callback. An empty array returns empty without invoking the callback. |
+| Array.Map() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns a new array transformed by a callback. An empty array returns empty without invoking the callback. |
 | Array.Pop() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Removes and returns the last element of an array. An exception is thrown if the array was empty. |
 | Array.Push() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Appends values to the end of an array. |
 | Array.Remove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Array method. Removes the first occurrence of the value and returns true if one was found and removed, else false. Omitting the value removes the first element which has no value. What counts as a match is IndexOf's rule, which Contains uses too. |
 | Array.RemoveAt() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Removes the element at a given index, plus optionally a length. Returns the removed item if no length was specified. Returns the null if a length was specified. |
-| Array.Sort() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sorts array elements, optionally using a custom comparer callback. |
+| Array.Sort() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Sorts array elements, optionally using a custom comparer callback. |
+| Array.ToString() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns a string representation of the array. |
 | Asin() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc sine. Throws an exception if the argument value is not between -1 and 1. |
 | Atan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc tangent. |
 | ATan2() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc tangent by using two numbers. |
@@ -333,11 +334,11 @@ Status legend:
 | Audio.Devices() / Audio.DefaultDevice() / Audio.Device | 🟢 Full | ⚪ Unknown | ⚪ Unknown | 🟠 Planned | Lists present input and output endpoints. Devices expose an opaque Id, Name, Kind, Status, IsRunning, IsDefault and Refresh(); selection uses the exact Id. |
 | Audio.Hooks | 🟢 Full | ⚪ Unknown | ⚪ Unknown | 🟠 Planned | An Array of every running Audio.OnDeviceChange hook, in start order, from every thread. A snapshot. |
 | Audio.Meter | 🟢 Full | ⚪ Unknown | ⚪ Unknown | 🟠 Planned | An explicit lifetime for observing a device or session level, because metering a target whose frames do not pass through Keysharp costs a live native stream on some backends. Peak is 0 through 100, or blank before any observation completed, so no data stays distinct from digital silence. Output, playback and recorder Peak need no meter, since Keysharp already owns those frames. |
-| Audio.OnDeviceChange() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | 🟠 Planned | Calls Callback(Hook, Change, Device) for Added, Removed, Changed or DefaultChanged. Returns a started Audio.DeviceHook that does not keep the script running. |
+| Audio.OnDeviceChange() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | 🟠 Planned | Calls Callback(Hook, Change, Device) with Change "Added", "Removed", "Changed" or "DefaultChanged". Returns a started Audio.DeviceHook that does not keep the script running. |
 | Audio.Output / Audio.Playback / Audio.Play() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | 🟠 Planned | Many sounds at once through one managed float32 mixer and one native stream, which is what SoundPlay cannot do. After Open() and Prepare() a play performs no decode, resample or blocking call, so it is safe from a frame timer. Each admitted play returns a stable Audio.Playback with Volume, Pan, Loop, Mute, PositionMilliseconds, Pause, Resume and Stop; a bounded refusal returns blank rather than raising. VoicePolicy is "Oldest", "RoundRobin" or "Reject". One script may hold 16 outputs open. |
 | Audio.Recorder / Audio.Recording | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | 🟠 Planned | Captures a microphone or what an output device is playing, to a WAV file or to memory. Configured first and started second so handlers can be registered before capture begins and a permission failure is observable. A recorder is single-use once capture is admitted, and every way it can end competes for one terminal transition, so exactly one reason and one result are published. Capture is gated on the AudioCapture permission strictly, rather than the usual log-and-continue. Implemented on all three backends but not yet exercised on hardware; macOS system-output capture is unsupported pending its process-tap spike. |
 | Audio.Sessions() / Audio.Session / Audio.SetApplicationVolume() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | 🔴 Unsupported | Per-application volume and mute. A session snapshot is generation-bound and expires rather than rebinding, so a handle kept across an application restart never silently controls the newcomer. One process routinely owns several sessions, so every match is returned and the bulk setters report how many they changed. macOS exposes no public per-application audio model and reports IsSessionControlSupported false. |
-| Await() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for a Task, a RealThread, a CLR task or value task, or an object implementing __Await(), and returns its value. Blocks the calling pseudo-thread while pumping everything else, like Sleep, so it is an interruption point rather than a suspension. Timing out does not cancel the work. |
+| Await() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for a Task, a CLR task or value task, or an __Await() object and returns its value; a RealThread is awaited through its Task or Terminated. Blocks the calling pseudo-thread while pumping everything else, like Sleep; a timeout does not cancel the work. |
 | Base | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the value's base object. |
 | Base32 | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Class methods Encode and Decode convert RFC 4648 Base32 text and raw bytes, including unpadded TOTP secrets. Windows verified; Linux and macOS unverified. |
 | Base32.Decode() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Decodes RFC 4648 Base32 to a Buffer; accepts lowercase and omitted padding, rejects malformed alphabet, padding and nonzero pad bits. Windows verified; Linux and macOS unverified. |
@@ -348,7 +349,7 @@ Status legend:
 | Boolean | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The type of a truth value, extending Integer, so it reads as 1 or 0 everywhere except a type test. Boolean(Value) converts a value the way `if` decides it. |
 | Break | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Exits the current loop. |
 | Buffer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Buffer object encapsulates a block of memory for use with advanced techniques such as DllCall, structures, StrPut and raw file I/O. |
-| Buffer.__Item[] | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer for reading/writing bytes in Buffer by offset. |
+| Buffer.__Item[] | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Indexer for reading/writing bytes in Buffer by offset. |
 | Buffer.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Constructs a new Buffer object. |
 | CallbackCreate() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. |
 | CallbackFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases a live address returned by CallbackCreate; an invalid or already-freed address raises ValueError. |
@@ -365,7 +366,7 @@ Status legend:
 | Clipboard.Hooks | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | An Array of every running Clipboard.OnChange hook, in start order, from every thread. A snapshot; OnClipboardChange handlers are not included. |
 | Clipboard.Html / Clipboard.Rtf | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | HTML is exchanged as the fragment: the Windows CF_HTML header is built on write and stripped on read, so the raw envelope is only visible through GetData("HTML Format"). RTF is the format's source text. |
 | Clipboard.Image | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Gets an Image or ""; the setter takes an Image, file path, bitmap handle or "HBITMAP:n". Replaces CopyImageToClipboard(), which only accepted a filename. Linux is partial: writing works, but reading an image back through Eto/GTK produced no pixbuf under Xvfb and needs a real desktop session to confirm. |
-| Clipboard.OnChange() | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Calls Callback(Hook, DataType), where DataType is 0 (empty), 1 (text or files) or 2 (other). Returns a started, persistent ClipboardHook independent of OnClipboardChange. |
+| Clipboard.OnChange() | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Calls Callback(Hook, DataType) with 0 (empty), 1 (text or files) or 2 (other). Returns a started ClipboardHook, independent of OnClipboardChange, that keeps the script running; native callbacks are unverified on macOS. |
 | Clipboard.Set() | 🟢 Full | 🟢 Full | 🟡 Partial | ⚪ Unknown | Publishes several formats in one transaction. Windows uses a single raw Win32 transaction, so one change notification; the Eto backends accumulate formats into one offer but publish per entry, so each raises a notification (GTK debounces them into one on Wayland). The Wayland shell-extension fallback can advertise only one MIME type and degrades to the most useful single representation, exactly as ClipboardAll() does there. |
 | Clipboard.Text / Clipboard.IsEmpty / Clipboard.Clear() | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Text get/set (identical to A_Clipboard), emptiness and clearing. IsEmpty is derived from the platform format enumeration, so private and registered formats count. macOS is unverified: the Eto/Cocoa backend has never been compiled from the development host. |
 | Clipboard.Wait() | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | ClipWait with the kind vocabulary added: 0/1 behave exactly as before, and "Text", "Any", "Image", "Files", "Html", "Rtf" are also accepted (by ClipWait too). |
@@ -381,12 +382,12 @@ Status legend:
 | Clr.ManagedAssembly | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent wrapper for a loaded managed assembly. |
 | Clr.ManagedInstance | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed object instance wrapper. |
 | Clr.ManagedInstance.__Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enumerates members exposed by the platform-independent managed instance wrapper. |
-| Clr.ManagedInstance.OnEvent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Subscribes Callback to an instance or static .NET event on the calling thread. Returns a started Clr.EventSubscription; Stop() detaches it and Start() reattaches it. It does not keep the script running. |
+| Clr.ManagedInstance.OnEvent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Subscribes Callback to an instance event, or a ManagedType's static event, and runs it on the subscribing thread. Returns a started Clr.EventSubscription that Stop() detaches and Start() re-attaches; it does not keep the script running. |
 | Clr.ManagedNamespace | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed namespace wrapper used for type resolution. |
 | Clr.ManagedType | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed type wrapper for reflection and invocation. |
 | Clr.Type() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Resolves managed types through the platform-independent CLR interop surface. |
 | Clr.Wrap() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | A value as an ordinary Ks.Clr object, so its own full CLR surface is reachable late-bound -- this is how an Array reaches its IList members and a Map its IDictionary ones. The result is always a view over the value itself; to reach the .NET object a builtin is a facade over, call that type's own ToClr(), which exists only on the types which have one. Wrapping something already wrapped is the identity. |
-| Collect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Forces garbage collection and finalizer processing. |
+| Collect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Requests a .NET garbage collection without waiting for finalizers, so __Delete can still run later. |
 | COM APIs | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Real COM on Windows; the same late-bound surface is backed by D-Bus on Linux and by Apple Events on macOS, so target strings and member names differ per platform. The macOS backend is implemented but not yet verified on hardware. Functions that need vtables, reference counts or raw pointers throw off Windows. |
 | ComCall() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComCall function calls a native COM interface method by index. A return type of 'void' means the call returns no value. |
 | ComObjActive() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The ComObjActive function retrieves a registered COM object. Attaches to a running D-Bus service on Linux and to a running application on macOS, never starting one; the macOS backend is not yet verified on hardware. |
@@ -495,11 +496,11 @@ Status legend:
 | EnvSet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the specified environment variable to the specified value. Using a value of null deletes the variable. |
 | EnvUpdate() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Windows broadcasts WM_SETTINGCHANGE. Linux publishes pending EnvSet changes to the D-Bus activation environment and systemd user manager; D-Bus deletions become empty values because its update API cannot unset them. macOS publishes pending changes to the current launchd session. Existing processes are unchanged and these updates are not persistent. |
 | Error | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
-| EventHook | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Base class of WinEvent, MonitorHook, ClipboardHook, Audio.DeviceHook, Clr.EventSubscription and InputHook. A running hook ends on Stop(), owner-thread exit or script exit. |
-| EventHook.EndReason | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | "" while running; otherwise "Stopped", "Exit" or "Failed". InputHook also uses its AutoHotkey end reasons. |
+| EventHook | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ks base class of WinEvent, MonitorHook, ClipboardHook, Audio.DeviceHook, Clr.EventSubscription and InputHook. A running hook lasts until Stop(), its thread ending or script exit, and only WinEvent, ClipboardHook and InputHook keep the script running. |
+| EventHook.EndReason | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | "" while the hook runs; otherwise "Stopped" (Stop() or never started), "Exit" (its thread or the script ended) or "Failed" (the event source could not be installed). |
 | EventHook.InProgress | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | 1 while the hook runs; 0 before its first Start() and after it ends. |
-| EventHook.Start() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Starts or restarts the hook with its callback and filter; does nothing while running. The calling thread owns the new run. |
-| EventHook.Stop() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ends the run with EndReason "Stopped"; Start() can begin another. Queued callbacks for the ended run are dropped. |
+| EventHook.Start() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Starts a stopped hook with its callback and filter, in a run owned by the calling thread; does nothing to a running hook. |
+| EventHook.Stop() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ends the run with EndReason "Stopped", discarding callbacks already queued while one already running finishes; Start() can begin another run. |
 | Exit | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Exits the current pseudo-thread immediately. Terminating a different pseudo-thread is Thread.Exit(ExitCode?) on a Thread object, reached through KS.A_Thread.Underlying or KS.A_RealThread.Threads[i] (1-based, oldest first). An underlying target exits at its next cooperative event/message check; later requests overwrite its pending exit code. As in AutoHotkey, the code is the process exit code if the script exits when that thread ends; the auto-execute section's stays pending until the next thread ends. |
 | ExitApp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ExitApp function terminates the script. |
 | Exp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes e raised to the nth power. |
@@ -560,16 +561,16 @@ Status legend:
 | Format() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text by substituting placeholders with argument values. |
 | FormatCs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text using C#-style format placeholders (1-based indexing adaptation). |
 | FormatTime | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats a datetime string according to the parameters. All C# formatting options are supported. Supports all V2 functionality except for the Dn and Tn options. If you want to specify a specific format, do it in the format parameter. |
-| Func | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Function object type. Callback parameters also accept other objects with a callable Call member; %"Name"% resolves a function name known only at run time. |
+| Func | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Function object type. A callback is passed as a function object, with %"Name"% resolving a name known only at run time to one. |
 | Func.IsBuiltIn | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the function object targets a built-in member. |
 | Func.IsByRef() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether any parameter, or the specified 1-based parameter, is ByRef. |
-| Func.IsClosure | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the function object represents a closure over captured locals. |
-| Func.IsMethod | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the function object requires a receiver. |
+| Func.IsClosure | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Whether the function object represents a closure over captured locals. |
+| Func.IsMethod | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Whether the function object requires a receiver. |
 | Func.IsOptional() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether any parameter, or the specified 1-based parameter, is optional. |
 | Func.IsVariadic | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the target has a variadic trailing parameter. |
 | Func.MaxParams | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Maximum number of positional arguments the function object currently accepts. |
 | Func.MinParams | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Minimum number of positional arguments the function object currently requires. |
-| Func.Params | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. An Array describing the parameters a function object accepts (Name, Index, IsOptional, IsByRef, IsVariadic, and Default when present). An unbound method includes its required this receiver; supplied or bound parameters are omitted. Other names match named-argument binding. Unset when the signature is unknown (ObjBindMethod). |
+| Func.Params | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. An Array describing the parameters a call can supply (Name, Index, IsOptional, IsByRef, IsVariadic, and Default when present), with an unbound method's this receiver included and bound ones excluded; unset when unknown (ObjBindMethod). |
 | FuncObj | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Managed function-object type name accepted by compatibility type checks alongside Func. |
 | GetKeyboardLayout() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a readable platform-native keyboard layout identifier, or an empty string when unavailable. |
 | GetKeyInfo() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns layout-aware portable VK, platform-native SC, key name, and modifier information on every platform. |
@@ -608,7 +609,7 @@ Status legend:
 | Gui.Control.Name | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Associated control name. |
 | Gui.Control.OnCommand() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Registers a WM_COMMAND callback for the control. WM_COMMAND is a Win32 concept; the non-Windows implementation accepts the call, registers nothing and never fires. |
 | Gui.Control.OnEvent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Registers a control event callback. |
-| Gui.Control.OnMessage() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Registers Callback(GuiCtrlObj, wParam, lParam, Msg) to run when the control receives the given window message, ahead of the WM_COMMAND/WM_NOTIFY reflection and default processing. Matches AHK: a non-empty return claims the message (it becomes the reply, the remaining handlers are skipped and default processing is suppressed), while an empty string or no return at all lets the next handler and then default handling run. An explicit 0 therefore claims the message and replies 0. AddRemove is 1 (append, default), -1 (prepend) or 0 (unregister); any other value is a ValueError. Window messages are a Win32 concept, so on Linux and macOS the registration is accepted but no handler is ever invoked. |
+| Gui.Control.OnMessage() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Registers Callback(GuiCtrlObj, wParam, lParam, Msg) for a window message the control receives, ahead of WM_COMMAND/WM_NOTIFY reflection and default processing; a non-empty return, 0 included, is the reply and ends the message's processing. On Linux and macOS the registration is accepted but never invoked. |
 | Gui.Control.OnNotify() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Registers a WM_NOTIFY callback for the control. WM_NOTIFY is a Win32 concept; the non-Windows implementation accepts the call, registers nothing and never fires. |
 | Gui.Control.Opt() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sets options for the control. Changing a ListView to a view other than Report (+Icon, +IconSmall, +Tile, +List) is not implemented on Linux or macOS and raises. Raw Win32 style options (+0x..., +E0x...) have no portable equivalent and are ignored. |
 | Gui.Control.Redraw() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Redraws the control. |
@@ -623,8 +624,8 @@ Status legend:
 | Gui.Flash() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Flashes the GUI window to attract attention. Backed by the Win32 FlashWindow API; the call is accepted and does nothing on Linux and macOS. |
 | Gui.FocusedCtrl | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Currently focused control in the GUI. |
 | Gui.Font | 🟡 Partial | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Detached Font snapshot; assignments apply only specified attributes. Weights map to normal or bold; non-default quality raises Error. |
-| Gui.FontHandle | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Read-only borrowed Win32 HFONT for the GUI's current default font. Repeated reads reuse the handle; font changes refresh it and GUI disposal releases it. Other platforms raise Error. |
-| Gui.GetClientPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the GUI client-area position and size. |
+| Gui.FontHandle | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Read-only borrowed native handle for the GUI's current default font: an HFONT on Windows, a PangoFontDescription* on Linux and an NSFont* on macOS, where it is unverified. |
+| Gui.GetClientPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the GUI client-area position and size, excluding the menu bar on every platform. |
 | Gui.GetPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the GUI window position and size. |
 | Gui.Hide() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Hides the GUI window. |
 | Gui.Hwnd | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Native window handle of the GUI. |
@@ -632,12 +633,12 @@ Status legend:
 | Gui.MarginX | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default horizontal margin for layout. |
 | Gui.MarginY | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default vertical margin for layout. |
 | Gui.Maximize() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Maximizes the GUI window. |
-| Gui.MenuBar | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the menu bar attached to the GUI. |
+| Gui.MenuBar | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the menu bar attached to the GUI; client coordinates and sizes exclude it. |
 | Gui.Minimize() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Minimizes the GUI window. |
 | Gui.Move() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | Moves and/or resizes the window. On Wayland a client cannot set its own position, so the move is routed through the compositor backend and needs KWin, GNOME or Cinnamon with the Keysharp extension; resizing works everywhere. |
 | Gui.Name | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Associated GUI name. |
 | Gui.OnEvent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Registers a GUI event callback. |
-| Gui.OnMessage() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Registers Callback(GuiObj, wParam, lParam, Msg) to run when the GUI window receives the given window message, ahead of the default window procedure. Matches AHK: a non-empty return claims the message (it becomes the reply, the remaining handlers are skipped and default processing is suppressed), while an empty string or no return at all lets the next handler and then the default window procedure run. An explicit 0 therefore claims the message and replies 0; a non-numeric value claims it and replies 0. AddRemove is 1 (append, default), -1 (prepend) or 0 (unregister); any other value is a ValueError. Off Windows the same synthesized input messages OnMessage() receives are delivered here, after the global monitors have had their turn; see that entry for which messages exist and what is missing. |
+| Gui.OnMessage() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Registers Callback(GuiObj, wParam, lParam, Msg) for a window message the GUI receives, ahead of the default window procedure; a non-empty return, 0 included, is the reply and ends the message's processing. Off Windows only the synthesized input messages OnMessage() receives are delivered, after the global monitors. |
 | Gui.Opt() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sets options for the window. Raw Win32 style and extended-style options (+0x..., +E0x...) have no portable equivalent and are ignored on Linux and macOS; the named options are honoured through the toolkit's own properties. The Theme option is unsupported on every platform. +Round rounds the window's outer corners, on Windows 11 only. |
 | Gui.Restore() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Restores the GUI window from minimized or maximized state. |
 | Gui.RichEdit | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The RichEdit control's own members: RichText, SelectedText/SelectedRichText, TextLength, LineCount, Modified, ReadOnly, WordWrap, DetectUrls, HideSelection and Zoom; SelectionStart/SelectionLength, CurrentLine/CurrentCol, FirstVisibleLine, Select, SelectAll and ScrollCaret; GetLine, LineLength, LineFromPos, PosFromLine, PosFromPoint and PointFromPos; CanUndo/CanRedo, Undo, Redo, ClearUndo, Cut, Copy, Paste, Append, Replace and Find; SetFormat/GetFormat, GetBackColor, SetParagraph/GetParagraph and the BeginUpdate/EndUpdate pair a highlighting pass wraps itself in; LoadFile/SaveFile; and the Change, SelectionChange and LinkClick events. Positions are 1-based and index the same text Value returns. Only the Win32 control serves all of it: off Windows there is no undo history, DetectUrls and HideSelection read back as false, Zoom scales the control font, GetFormat reports the start of the range rather than detecting variation, and SelectedRichText, the paragraph pair, the hit-testing pair and FirstVisibleLine raise. GTK has no RTF at all, so RichText and RTF files raise on Linux; colours, fonts and styles work everywhere. |
@@ -653,7 +654,7 @@ Status legend:
 | GuiCtrlFromHwnd() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The GuiCtrlFromHwnd function retrieves the GuiControl object of a GUI control associated with the specified window handle. |
 | GuiFromHwnd() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The GuiFromHwnd function retrieves the Gui object of a GUI window associated with the specified window handle. |
 | HasBase() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The HasBase function returns a non-zero number if the specified value is derived from the specified base object. |
-| HashMap | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific map class extending Map without sorted enumeration. |
+| HashMap | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific map class extending Map, with an unspecified enumeration order. |
 | HashMap.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific HashMap constructor (inherits Map methods/properties). |
 | HasMethod() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The HasMethod function returns a non-zero number if the specified value has a method by the specified name. |
 | HasProp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The HasProp function returns a non-zero number if the specified value has a property by the specified name. |
@@ -686,15 +687,15 @@ Status legend:
 | IniRead() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads a value, section or list of section names from a standard format.ini file. |
 | IniWrite() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a value or section to a standard format.ini file. |
 | InputBox() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InputBox function displays an input box to ask the user to enter a string. On Linux and macOS the dialog is built with Eto and honours only the Password option; the W, H, X, Y and T (timeout) options are ignored, so Result never returns "Timeout". |
-| InputHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Creates an AutoHotkey-compatible input collector. It derives from EventHook; callback properties validate arity and accept "" or unset to clear. |
+| InputHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Creates an object that collects or intercepts keyboard input, which in Keysharp is also an EventHook. A callback property rejects a callback that cannot take its arguments, and "" or unset clears it. |
 | InputHook.BackspaceIsUndo | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Treats Backspace as undo for collected input. |
-| InputHook.BeforeHotkeys | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether input is processed before hotkeys; fixed while running. |
+| InputHook.BeforeHotkeys | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether the input receives events before hotkeys; assigning it during an input raises a ValueError. |
 | InputHook.BufferLengthMax | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Maximum text buffer length before capture ends. |
 | InputHook.CaseSensitive | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether match checks are case-sensitive. |
 | InputHook.EndCharMode | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether termination characters remain in collected input. |
 | InputHook.EndKey | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Key that ended the input hook, or "" when it did not end by an EndKey. |
 | InputHook.EndMods | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Modifier-state snapshot when input ended. |
-| InputHook.EndReason | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Why the input ended: Stopped, Timeout, Match, EndKey, Max or Failed. It is "" while running and "Stopped" before the first Start(). |
+| InputHook.EndReason | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Why the input ended: Stopped, Timeout, Match, EndKey, Max or Failed (the hook could not be installed); "" while the input is in progress and "Stopped" before the first Start(). |
 | InputHook.FindAnywhere | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Matches phrases anywhere in the input buffer. |
 | InputHook.InProgress | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | 1 while the input is collecting; 0 before Start() and after it ends. |
 | InputHook.Input | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Text captured so far by the input hook. |
@@ -709,8 +710,8 @@ Status legend:
 | InputHook.OnMouseDown | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked on mouse-button press events. |
 | InputHook.OnMouseMove | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | OnMouseMove(hook, dx, dy) queues every move report, including (0, 0). Windows derives deltas from desktop-clamped hook positions, so outward movement at an edge can be zero; macOS uses Quartz deltas. Linux requires keysharp-input plus InputMonitoring and InputControl for the suppression-capable callback stream. Relative values are raw device-specific evdev counts, while physical absolute values are changes in normalized [0,65535] axes. Linux A_EventInfo includes DeviceId (0 synthetic, positive physical) and IsAbsolute; synthetic absolute deltas are zero because no relative sample exists. Windows and macOS instead provide global-screen X/Y when available and omit DeviceId; X/Y need not equal the prior position plus dx/dy, and macOS reports the frozen cursor position while movement is suppressed. |
 | InputHook.OnMouseUp | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Callback invoked on mouse-button release events. |
-| InputHook.Start() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Starts a new input with an empty buffer; does nothing while running. Linux and macOS require InputMonitoring and InputControl. |
-| InputHook.Stop() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Ends a running input with EndReason "Stopped" and calls OnEnd. Other queued input callbacks are dropped unless another run starts first. |
+| InputHook.Start() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Starts collecting input with an empty buffer; does nothing while the input is in progress. Linux and macOS require InputMonitoring and InputControl. |
+| InputHook.Stop() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Ends an input in progress with EndReason "Stopped" and calls OnEnd. Queued OnChar, OnKeyDown, OnKeyUp and mouse notifications are discarded unless the input restarts before they run. |
 | InputHook.Timeout | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Maximum capture duration in seconds. |
 | InputHook.TranscribeModifiedKeys | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether typed characters should reflect active modifier changes. |
 | InputHook.VisibleMouseMove | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether mouse movement remains visible while capture is active. |
@@ -796,6 +797,7 @@ Status legend:
 | Map.Get() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets a value by key with optional fallback default. |
 | Map.Has() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a dictionary contains a value, even an empty one, for the given key. |
 | Map.Set() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets zero or more items. |
+| Map.ToString() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns a string representation of the map. |
 | Max() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the larger of two numbers. If either is not numeric, the empty string is returned. The largest value of an array is computed if one is passed in. |
 | MemberError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | MemoryError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
@@ -841,7 +843,7 @@ Status legend:
 | Monitor.Hooks | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | An Array of every running Monitor.OnChange hook, in start order, from every thread. A snapshot. |
 | Monitor.IsBrightnessSupported | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether Brightness works for this monitor. This is a real probe of the device rather than a platform guess, so it costs one brightness read. |
 | Monitor.Model / .Manufacturer / .Serial / .Id | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Panel identity from EDID. Id survives reboots and re-plugging and is the value to persist (for example to restore a window layout per monitor set); panels that report no serial are disambiguated by connector, making Id stable per port rather than per panel. Windows reads the EDID Windows cached under the monitor's registry key; Linux reads /sys/class/drm/*/edid under both X11 and Wayland. macOS answers from CoreGraphics vendor/model/serial numbers and has no product-name API, so Model is always blank there. Every field is blank when the display reports nothing. |
-| Monitor.OnChange() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Calls Callback(Hook, Change), where Change is "Topology" or "Settings". Returns a started MonitorHook that does not keep the script running; unchanged snapshots are ignored. |
+| Monitor.OnChange() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Calls Callback(Hook, Change) with "Topology" or "Settings", ignoring notifications that change nothing. Returns a started MonitorHook that does not keep the script running; native callbacks are unverified on Linux and macOS. |
 | Monitor.Orientation | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Clockwise rotation of the desktop content in degrees: 0, 90, 180 or 270. |
 | Monitor.PhysicalWidth / .PhysicalHeight / .Dpi | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | The panel's physical size in millimetres, and the resulting dots per inch. Dpi is expressed in the same units as W and H, so it is a physical pixel density on Windows and X11 but a logical one on Wayland and macOS. Blank when the display reports no physical size. |
 | Monitor.Primary | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | The primary monitor. |
@@ -897,7 +899,7 @@ Status legend:
 | Overlay | 🟢 Full | 🟢 Full | 🟡 Partial | ⚪ Unknown | Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. Pointer event callbacks are owned by the registering real thread, as for Gui.OnEvent, and require ClickThrough := false. On GNOME/Cinnamon a click-through overlay is drawn inside the shell, so it is not a window and takes no taskbar entry; frames are transferred as bounded PNG data. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS. |
 | Parser and runtime execution | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Script execution is provided by Keysharp.Core. Source parsing is an optional Roslyn-free component; lowering and C# compilation are supplied by the optional compiler component. |
 | Pause() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Pause function pauses the script's current thread or sets the pause state of the underlying thread. |
-| Persistent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Prevents automatic script exit. Running WinEvent, ClipboardHook and InputHook objects are also persistent; MonitorHook, Audio.DeviceHook and CLR event hooks are not. |
+| Persistent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Prevents the script from exiting automatically when its last thread completes. A running WinEvent, Clipboard.OnChange hook or InputHook also keeps it running; Monitor.OnChange, Audio.OnDeviceChange and CLR event hooks do not. |
 | PixelGetColor() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Returns the pixel value at the specified coordinate as a hexadecimal string like 0x010203. Differs because the mode parameter is not supported because it is not needed. |
 | PixelSearch() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Searches a region of the screen for a pixel of the specified color. On no match it returns false and sets both output variables to blank. |
 | PostMessage() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The PostMessage function places a message in the message queue of a window or control. |
@@ -943,6 +945,7 @@ Status legend:
 | Screen capture and pixel/image functions | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Pixel/image search and screen capture depend on platform-specific backends. On Linux, keysharp-desktop provides authorized X11, Wayland compositor, and portal capture. |
 | Script-owned window management | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Creating and driving the script's own GUI windows. Built on WinForms (Windows) and Eto (Linux/macOS); the object model, events, controls, menus, ListView and TreeView all behave the same. Remaining differences: the ActiveX and Custom control types are Win32-only, ListView supports only the Report view off Windows, raw Win32 style options are ignored, the WebView control renders with whichever browser engine the platform provides, per-monitor DPI re-layout is Windows-only, and a client cannot position its own window on Wayland without a compositor backend. |
 | ScriptProcess | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The object RunScript returns: the child script process and its redirected standard-input, standard-output and standard-error streams. |
+| ScriptProcess.Close() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Closes the redirected streams, cancels any pending exit callback and releases process resources without terminating a running child. |
 | ScriptProcess.ExitCode | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the process exit code after termination, or an empty string while it is running. |
 | ScriptProcess.ExitTime | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the process exit time after termination, or an empty string while it is running. |
 | ScriptProcess.HasExited | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether the process has exited. |
@@ -986,15 +989,16 @@ Status legend:
 | SoundPlay() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Plays a sound file. The "*n" standard-sound syntax (*-1, *16, *32, *48, *64) works on every platform: Windows passes the number to MessageBeep, Linux uses the freedesktop sound theme and macOS /System/Library/Sounds, the latter two falling back to a synthesized beep when the desktop ships no such sound. Windows plays via MCI, so any format with an installed codec works (.wav, .mp3, .avi, ...); MCI limits paths to roughly 127 characters. macOS uses afplay (wav/aiff/caf/mp3/m4a). Linux picks the best installed player for the file type - paplay or aplay for uncompressed/libsndfile formats, otherwise ffplay, mpv, gst-play-1.0 or mpg123 - and raises an error naming them if none is present. On every platform, starting a new file stops the previous one, SoundPlay on a nonexistent file stops playback and raises, and playback stops when the script exits. |
 | SoundSetMute() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟢 Full | Changes a mute setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated 'Sound APIs'; per-function validation pending. |
 | SoundSetVolume() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟢 Full | Changes a volume setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated 'Sound APIs'; per-function validation pending. |
-| SplitPath() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Separates a file name or URL into its name, directory, extension, and drive. Differs in that instead of writing to ref arguments, it returns a structure whose fields are what the original input parameter names would have been. |
+| SplitPath() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Separates a file name or URL into its name, directory, extension, and drive. If all output variables are omitted, it returns an object with FileName, Dir, Extension, NameNoExt and Drive properties. |
 | Sqrt() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the square root of a number. Throws an exception if the argument is negative. |
 | StatusBarGetText() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves text from a native Win32 status bar control. No non-Windows status-bar accessibility backend is implemented. |
 | StatusBarWait() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Waits for native Win32 status-bar text and depends on StatusBarGetText; no non-Windows status-bar accessibility backend is implemented. |
 | StrCompare() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compares two strings alphabetically. Note this supports local, human readable comparison as well. |
 | StrGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a string from a memory address or buffer, optionally converting it from a given code page. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
 | String() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a value to a string. For an object, the result is whatever its ToString() returned, so a ToString() which returns no value makes String() return no value too rather than raising. |
-| String.EndsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a string ends with the specified suffix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given. |
-| String.StartsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a string starts with the specified prefix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given. |
+| String.EndsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns whether a string ends with the specified suffix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given. |
+| String.Length | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns the number of characters in the string. |
+| String.StartsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns whether a string starts with the specified prefix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given. |
 | StringBuffer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a mutable string buffer object. |
 | StrLen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the count of how many characters are in a string. |
 | StrLower() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a string to lowercase. |
@@ -1065,15 +1069,15 @@ Status legend:
 | WinActivateBottom() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinActivateBottom function is similar to the WinActivate function but it activates the bottommost matching window rather than the topmost. |
 | WinActive() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinActive function checks if the specified window is active and returns its unique ID (HWND). |
 | WinClose() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinClose function closes the specified window. |
-| WinEvent | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Cross-platform window events modeled on the AHK WinEvent library. Constructed idle with window criteria; its On* callbacks receive (Hook, Hwnd, Time). Windows uses SetWinEventHook, Linux keysharp-desktop, and macOS Accessibility observers. |
+| WinEvent | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ks class for cross-platform window events modeled on the AHK WinEvent library; its On* callbacks receive (Hook, Hwnd, Time), and a running WinEvent keeps the script running. Linux requires keysharp-desktop and macOS the Accessibility permission. |
 | WinEvent.Hooks | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | An Array of every running WinEvent, in start order, from every thread. A snapshot: iterate it to stop hooks in bulk. |
-| WinEvent.OnActive | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when a matching window becomes foreground or the foreground window is retitled into a match. The window active at Start() is not reported. |
-| WinEvent.OnCaretMove | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when an accessible text caret moves inside a matching window. Hwnd is the top-level window and A_EventInfo is the caret rectangle {X, Y, Width, Height} in screen coordinates. |
-| WinEvent.OnExist | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when a window enters the matching set. Existing matches at Start() are not reported; use WinGetList to enumerate them. |
+| WinEvent.OnActive | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when a matching window becomes the foreground window or the foreground window is retitled into a match. The window active at Start() is not reported. |
+| WinEvent.OnCaretMove | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when the text caret moves inside a matching window; Hwnd is its top-level window and A_EventInfo the caret rectangle { X, Y, Width, Height } in screen coordinates. Coverage matches CaretGetPos, so a caret not exposed to accessibility is not reported. |
+| WinEvent.OnExist | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when a window enters the matching set by being created, shown, restored or retitled, subject to the captured DetectHiddenWindows. Windows already matching at Start() are not reported; enumerate them with WinGetList. |
 | WinEvent.OnMinimize | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when a matching window is minimized or iconified. |
-| WinEvent.OnMove | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when a matching window moves or resizes. A_EventInfo is {X, Y, Width, Height}. |
-| WinEvent.OnNotActive | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when the foreground leaves the matching set or its title ceases to match. Hwnd is the previously active matching window. |
-| WinEvent.OnNotExist | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when a window leaves the matching set through destruction, hiding, cloaking or a title change. Hwnd may already be invalid. |
+| WinEvent.OnMove | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when a matching window moves or resizes, with A_EventInfo holding its { X, Y, Width, Height } at event time. On Linux a window's queued moves are merged. |
+| WinEvent.OnNotActive | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when the foreground moves from a matching window to a non-matching one, or the foreground window is retitled out of the match. Hwnd is the matching window last active, possibly one already active at Start(). |
+| WinEvent.OnNotExist | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when a window leaves the matching set by being destroyed, retitled, or hidden or cloaked while the captured DetectHiddenWindows is off. Hwnd may already be destroyed. |
 | WinEvent.OnRestore | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when a matching window is restored from a minimized state. |
 | WinEvent.OnTitleChange | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fires when a matching window's title changes. |
 | WinEvent.WinTitle / .WinText / .ExcludeTitle / .ExcludeText | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The criteria the hook was constructed with, read-only. |

@@ -6,8 +6,9 @@
 ; instead, where the tag locates it: pass A_LineNumber (folded to a literal at compile time) for the
 ; source line, or omit it to be tagged with the assertion's ordinal within the run.
 ;
-; Every name below is underscore-prefixed because these helpers are included into ~270 scripts and a plain
-; name here would shadow a same-named global in some of them, which #Warn LocalSameAsGlobal reports.
+; Every name below is underscore-prefixed because these helpers are included into ~270 scripts: a function name
+; must not collide with a script's own, and an undeclared local, such as a catch variable, named like a script's
+; global is reported by #Warn LocalSameAsGlobal.
 ;
 
 ; Writes "fail <tag>" unless _cond is truthy. A callable _cond is invoked first, so a condition that has to

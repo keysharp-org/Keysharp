@@ -836,6 +836,36 @@ namespace Keysharp.Tests
 			Assert.IsFalse(Warns("F() {\n\tglobal\n\tdeclaredOnly := 1\n}\nG() {\n\treturn declaredOnly\n}\n"));
 		}
 
+		// As in AutoHotkey, only an undeclared local is compared against the globals, which include the module's functions and
+		// classes and the built-in ones.
+		[Test, Category("Directives")]
+		public void WarnLocalSameAsGlobal()
+		{
+			static bool Warns(string source, string name = "g")
+			{
+				var (bytes, code, _) = new CompilerHelper().CompileCodeToByteArray("#Warn LocalSameAsGlobal, StdOut\ng := 1\n" + source, "warn-local-same-as-global", null, false, true);
+				Assert.IsNotNull(bytes, code);
+				return code.Contains($"same name as a global variable: {name}.");
+			}
+
+			Assert.IsTrue(Warns("UserFn() => 1\nF() {\n\tuserfn := 1\n}\n", "userfn"));
+			Assert.IsTrue(Warns("class UserCls {\n}\nF() {\n\tusercls := 1\n}\n", "usercls"));
+			Assert.IsTrue(Warns("F() {\n\tsort := 1\n}\n", "sort"));
+			Assert.IsTrue(Warns("F() {\n\tmap := 1\n}\n", "map"));
+			Assert.IsFalse(Warns("F() {\n\tunrelated := 1\n}\n", "unrelated"));
+
+			Assert.IsTrue(Warns("F() {\n\tg := 2\n}\n"));
+			Assert.IsTrue(Warns("F() {\n\tg += 1\n}\n"));
+			Assert.IsTrue(Warns("F() {\n\tfor g in [1]\n\t\treturn\n}\n"));
+			Assert.IsTrue(Warns("F() {\n\tstatic\n\tg := 2\n}\n"));
+			Assert.IsFalse(Warns("F(g) => g\n"));
+			Assert.IsFalse(Warns("F() => (g) => g\n"));
+			Assert.IsFalse(Warns("F() {\n\tg() => 1\n}\n"));
+			Assert.IsFalse(Warns("F() => IsSet(g)\n"));
+			Assert.IsFalse(Warns("F() {\n\tlocal g := 2\n}\n"));
+			Assert.IsFalse(Warns("F() {\n\tstatic g := 2\n}\n"));
+		}
+
 		[Test, Category("Directives"), NonParallelizable]
 		public void CSharpBlock() => Assert.IsTrue(TestScript("directive-csharp", true));
 

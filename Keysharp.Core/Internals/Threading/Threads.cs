@@ -227,7 +227,8 @@ namespace Keysharp.Internals.Threading
 			=> Keysharp.Builtins.KeysharpThread.Wrap(ThreadVariableManagerForCurrentThread, CurrentThread);
 
 		/// <summary>
-		/// An Exit inside an OnError callback ends only the callback (AHK EARLY_EXIT), so the thread takes back its exit state.
+		/// An Exit inside a callback run within another thread's call, such as an OnError callback or an inline COM event,
+		/// ends only the callback (AHK EARLY_EXIT), so the thread takes back its exit state.
 		/// </summary>
 		internal readonly struct ExitState
 		{

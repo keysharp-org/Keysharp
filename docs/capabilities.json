@@ -703,7 +703,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp extension. An Array describing the parameters a function object accepts (Name, Index, IsOptional, IsByRef, IsVariadic, and Default when present). An unbound method includes its required this receiver; supplied or bound parameters are omitted. Other names match named-argument binding. Unset when the signature is unknown (ObjBindMethod).",
+                     "notes":  "Keysharp extension. An Array describing the parameters a call can supply (Name, Index, IsOptional, IsByRef, IsVariadic, and Default when present), with an unbound method's this receiver included and bound ones excluded; unset when unknown (ObjBindMethod).",
                      "tested-by":  "func-named-params.ahk"
                  },
                  {
@@ -734,7 +734,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Whether the function object represents a closure over captured locals."
+                     "notes":  "Keysharp extension. Whether the function object represents a closure over captured locals."
                  },
                  {
                      "category":  "Core Language",
@@ -744,7 +744,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Whether the function object requires a receiver."
+                     "notes":  "Keysharp extension. Whether the function object requires a receiver."
                  },
                  {
                      "category":  "Core Language",
@@ -3183,7 +3183,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns a new array containing elements accepted by a callback predicate. An empty array returns empty without invoking the callback.",
+                     "notes":  "Keysharp extension. Returns a new array containing elements accepted by a callback predicate. An empty array returns empty without invoking the callback.",
                      "tested-by":  "collections-array.ahk"
                  },
                  {
@@ -3194,7 +3194,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the first matching index, or 0. An empty array returns 0 without invoking the callback.",
+                     "notes":  "Keysharp extension. Returns the first matching index, or 0. An empty array returns 0 without invoking the callback.",
                      "tested-by":  "collections-array.ahk"
                  },
                  {
@@ -3227,7 +3227,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the index of the first occurrence of a value. Omitting the value searches for an element which has no value. An out of bounds StartIndex (0, or an absolute value exceeding the length) throws an IndexError, like the sibling FindIndex; an empty array returns 0.",
+                     "notes":  "Keysharp extension. Returns the index of the first occurrence of a value, or of the first element with no value when the value is omitted; 0 when none matches.",
                      "tested-by":  "collections-array.ahk"
                  },
                  {
@@ -3249,7 +3249,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Joins array elements into a string with a separator.",
+                     "notes":  "Keysharp extension. Joins array elements into a string with a separator.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -3271,7 +3271,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns a new array transformed by a callback. An empty array returns empty without invoking the callback.",
+                     "notes":  "Keysharp extension. Returns a new array transformed by a callback. An empty array returns empty without invoking the callback.",
                      "tested-by":  "collections-array.ahk"
                  },
                  {
@@ -3326,7 +3326,18 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Sorts array elements, optionally using a custom comparer callback.",
+                     "notes":  "Keysharp extension. Sorts array elements, optionally using a custom comparer callback.",
+                     "tested-by":  "collections-array.ahk"
+                 },
+                 {
+                     "category":  "Collections",
+                     "feature":  "Array.ToString()",
+                     "syntax":  "text := arr.ToString()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp extension. Returns a string representation of the array.",
                      "tested-by":  "collections-array.ahk"
                  },
                  {
@@ -3468,7 +3479,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Indexer for reading/writing bytes in Buffer by offset.",
+                     "notes":  "Keysharp extension. Indexer for reading/writing bytes in Buffer by offset.",
                      "tested-by":  "collections-buffer.ahk"
                  },
                  {
@@ -3695,7 +3706,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unknown",
-                     "notes":  "Calls Callback(Hook, DataType), where DataType is 0 (empty), 1 (text or files) or 2 (other). Returns a started, persistent ClipboardHook independent of OnClipboardChange.",
+                     "notes":  "Calls Callback(Hook, DataType) with 0 (empty), 1 (text or files) or 2 (other). Returns a started ClipboardHook, independent of OnClipboardChange, that keeps the script running; native callbacks are unverified on macOS.",
                      "tested-by":  "clipboard-class.ahk; ClipboardTests.OnChangeHookSurface; EventHookTests.PersistenceFollowsTheFamily"
                  },
                  {
@@ -3822,7 +3833,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Subscribes Callback to an instance or static .NET event on the calling thread. Returns a started Clr.EventSubscription; Stop() detaches it and Start() reattaches it. It does not keep the script running.",
+                     "notes":  "Subscribes Callback to an instance event, or a ManagedType's static event, and runs it on the subscribing thread. Returns a started Clr.EventSubscription that Stop() detaches and Start() re-attaches; it does not keep the script running.",
                      "tested-by":  "directive-csharp-events.ahk"
                  },
                  {
@@ -3885,7 +3896,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Forces garbage collection and finalizer processing.",
+                     "notes":  "Requests a .NET garbage collection without waiting for finalizers, so __Delete can still run later.",
                      "tested-by":  "class-special-funcs.ahk"
                  },
                  {
@@ -5648,7 +5659,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Function object type. Callback parameters also accept other objects with a callable Call member; %\"Name\"% resolves a function name known only at run time.",
+                     "notes":  "Function object type. A callback is passed as a function object, with %\"Name\"% resolving a name known only at run time to one.",
                      "tested-by":  "assign-multiline.ahk; func-callable.ahk"
                  },
                  {
@@ -6037,7 +6048,7 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "Registers Callback(GuiCtrlObj, wParam, lParam, Msg) to run when the control receives the given window message, ahead of the WM_COMMAND/WM_NOTIFY reflection and default processing. Matches AHK: a non-empty return claims the message (it becomes the reply, the remaining handlers are skipped and default processing is suppressed), while an empty string or no return at all lets the next handler and then default handling run. An explicit 0 therefore claims the message and replies 0. AddRemove is 1 (append, default), -1 (prepend) or 0 (unregister); any other value is a ValueError. Window messages are a Win32 concept, so on Linux and macOS the registration is accepted but no handler is ever invoked.",
+                     "notes":  "Registers Callback(GuiCtrlObj, wParam, lParam, Msg) for a window message the control receives, ahead of WM_COMMAND/WM_NOTIFY reflection and default processing; a non-empty return, 0 included, is the reply and ends the message's processing. On Linux and macOS the registration is accepted but never invoked.",
                      "tested-by":  "GuiTests.MessageHandlers"
                  },
                  {
@@ -6176,10 +6187,10 @@
                      "feature":  "Gui.FontHandle",
                      "syntax":  "MyGui.FontHandle",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "Read-only borrowed Win32 HFONT for the GUI's current default font. Repeated reads reuse the handle; font changes refresh it and GUI disposal releases it. Other platforms raise Error.",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Read-only borrowed native handle for the GUI's current default font: an HFONT on Windows, a PangoFontDescription* on Linux and an NSFont* on macOS, where it is unverified.",
                      "tested-by":  "ks-font.ahk"
                  },
                  {
@@ -6190,7 +6201,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets the GUI client-area position and size."
+                     "notes":  "Gets the GUI client-area position and size, excluding the menu bar on every platform."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6274,7 +6285,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets or sets the menu bar attached to the GUI.",
+                     "notes":  "Gets or sets the menu bar attached to the GUI; client coordinates and sizes exclude it.",
                      "tested-by":  "ControlTests/menubar_ks_2.ahk"
                  },
                  {
@@ -6327,7 +6338,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Registers Callback(GuiObj, wParam, lParam, Msg) to run when the GUI window receives the given window message, ahead of the default window procedure. Matches AHK: a non-empty return claims the message (it becomes the reply, the remaining handlers are skipped and default processing is suppressed), while an empty string or no return at all lets the next handler and then the default window procedure run. An explicit 0 therefore claims the message and replies 0; a non-numeric value claims it and replies 0. AddRemove is 1 (append, default), -1 (prepend) or 0 (unregister); any other value is a ValueError. Off Windows the same synthesized input messages OnMessage() receives are delivered here, after the global monitors have had their turn; see that entry for which messages exist and what is missing.",
+                     "notes":  "Registers Callback(GuiObj, wParam, lParam, Msg) for a window message the GUI receives, ahead of the default window procedure; a non-empty return, 0 included, is the reply and ends the message's processing. Off Windows only the synthesized input messages OnMessage() receives are delivered, after the global monitors.",
                      "tested-by":  "GuiTests.MessageHandlers"
                  },
                  {
@@ -6489,7 +6500,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp-specific map class extending Map without sorted enumeration.",
+                     "notes":  "Keysharp-specific map class extending Map, with an unspecified enumeration order.",
                      "tested-by":  "collections-hashmap.ahk"
                  },
                  {
@@ -6778,7 +6789,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Creates an AutoHotkey-compatible input collector. It derives from EventHook; callback properties validate arity and accept \"\" or unset to clear.",
+                     "notes":  "Creates an object that collects or intercepts keyboard input, which in Keysharp is also an EventHook. A callback property rejects a callback that cannot take its arguments, and \"\" or unset clears it.",
                      "tested-by":  "InputHookTests.CallbackPropertiesValidateAndClear"
                  },
                  {
@@ -6799,7 +6810,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Whether input is processed before hotkeys; fixed while running."
+                     "notes":  "Whether the input receives events before hotkeys; assigning it during an input raises a ValueError."
                  },
                  {
                      "category":  "Input/Automation",
@@ -6859,7 +6870,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Why the input ended: Stopped, Timeout, Match, EndKey, Max or Failed. It is \"\" while running and \"Stopped\" before the first Start().",
+                     "notes":  "Why the input ended: Stopped, Timeout, Match, EndKey, Max or Failed (the hook could not be installed); \"\" while the input is in progress and \"Stopped\" before the first Start().",
                      "tested-by":  "InputHookTests.FreshHookReadsStopped; InputHookTests.RunningHookReportsNoEndReason"
                  },
                  {
@@ -7010,7 +7021,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Starts a new input with an empty buffer; does nothing while running. Linux and macOS require InputMonitoring and InputControl."
+                     "notes":  "Starts collecting input with an empty buffer; does nothing while the input is in progress. Linux and macOS require InputMonitoring and InputControl."
                  },
                  {
                      "category":  "Input/Automation",
@@ -7020,7 +7031,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Ends a running input with EndReason \"Stopped\" and calls OnEnd. Other queued input callbacks are dropped unless another run starts first.",
+                     "notes":  "Ends an input in progress with EndReason \"Stopped\" and calls OnEnd. Queued OnChar, OnKeyDown, OnKeyUp and mouse notifications are discarded unless the input restarts before they run.",
                      "tested-by":  "InputHookTests.QueuedNotificationsAreDiscardedAfterStop; InputHookTests.OnEndRunsForAnInputRestartedBeforeItsEnd"
                  },
                  {
@@ -7588,7 +7599,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Lets a script object expose asynchronous work without inheriting from Task. The zero-argument method returns a Task, CLR Task or ValueTask, worker RealThread, or another __Await object; Await, Task(Value), either Then callback's direct return, Task.Create settlement and Task combinators consume it.",
+                     "notes":  "Lets a script object expose asynchronous work without inheriting from Task. The zero-argument method returns a Task, CLR Task or ValueTask, or another __Await object; Await, Task(Value), either Then callback's direct return, Task.Create settlement and Task combinators consume it.",
                      "tested-by":  "directive-csharp-async.ahk"
                  },
                  {
@@ -7599,7 +7610,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Waits for a Task, a RealThread, a CLR task or value task, or an object implementing __Await(), and returns its value. Blocks the calling pseudo-thread while pumping everything else, like Sleep, so it is an interruption point rather than a suspension. Timing out does not cancel the work.",
+                     "notes":  "Waits for a Task, a CLR task or value task, or an __Await() object and returns its value; a RealThread is awaited through its Task or Terminated. Blocks the calling pseudo-thread while pumping everything else, like Sleep; a timeout does not cancel the work.",
                      "tested-by":  "directive-csharp-async.ahk"
                  },
                  {
@@ -7895,6 +7906,17 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Sets zero or more items.",
+                     "tested-by":  "collections-map.ahk"
+                 },
+                 {
+                     "category":  "Collections",
+                     "feature":  "Map.ToString()",
+                     "syntax":  "text := m.ToString()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp extension. Returns a string representation of the map.",
                      "tested-by":  "collections-map.ahk"
                  },
                  {
@@ -8326,7 +8348,7 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "planned",
-                     "notes":  "Calls Callback(Hook, Change, Device) for Added, Removed, Changed or DefaultChanged. Returns a started Audio.DeviceHook that does not keep the script running.",
+                     "notes":  "Calls Callback(Hook, Change, Device) with Change \"Added\", \"Removed\", \"Changed\" or \"DefaultChanged\". Returns a started Audio.DeviceHook that does not keep the script running.",
                      "tested-by":  "audio-class.ahk; EventHookTests.PersistenceFollowsTheFamily"
                  },
                  {
@@ -8546,7 +8568,7 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
-                     "notes":  "Calls Callback(Hook, Change), where Change is \"Topology\" or \"Settings\". Returns a started MonitorHook that does not keep the script running; unchanged snapshots are ignored.",
+                     "notes":  "Calls Callback(Hook, Change) with \"Topology\" or \"Settings\", ignoring notifications that change nothing. Returns a started MonitorHook that does not keep the script running; native callbacks are unverified on Linux and macOS.",
                      "tested-by":  "MonitorTests.cs; EventHookTests.PersistenceFollowsTheFamily"
                  },
                  {
@@ -9076,7 +9098,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
                      "notes":  "Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. Pointer event callbacks are owned by the registering real thread, as for Gui.OnEvent, and require ClickThrough := false. On GNOME/Cinnamon a click-through overlay is drawn inside the shell, so it is not a window and takes no taskbar entry; frames are transferred as bounded PNG data. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS.",
-                     "tested-by":  "overlay-canvas.ahk; GuiTests.ExplicitPresent; RealThreadTests.WorkerOwnership; OverlayLinuxTests.cs"
+                     "tested-by":  "overlay-canvas.ahk; GuiTests.ExplicitPresent; GuiTests.OverlayEventChainStopsOnNonEmptyReturn; RealThreadTests.WorkerOwnership; OverlayLinuxTests.cs"
                  },
                  {
                      "category":  "Core Language",
@@ -9130,7 +9152,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Prevents automatic script exit. Running WinEvent, ClipboardHook and InputHook objects are also persistent; MonitorHook, Audio.DeviceHook and CLR event hooks are not.",
+                     "notes":  "Prevents the script from exiting automatically when its last thread completes. A running WinEvent, Clipboard.OnChange hook or InputHook also keeps it running; Monitor.OnChange, Audio.OnDeviceChange and CLR event hooks do not.",
                      "tested-by":  "FlowTests.FlowExitRequests; EventHookTests.PersistenceFollowsTheFamily"
                  },
                  {
@@ -9221,7 +9243,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "ScriptProcess",
-                     "syntax":  "",
+                     "syntax":  "process := RunScript(Code)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9231,8 +9253,19 @@
                  },
                  {
                      "category":  "Automation",
+                     "feature":  "ScriptProcess.Close()",
+                     "syntax":  "process.Close()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Closes the redirected streams, cancels any pending exit callback and releases process resources without terminating a running child.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
+                 },
+                 {
+                     "category":  "Automation",
                      "feature":  "ScriptProcess.ExitCode",
-                     "syntax":  "",
+                     "syntax":  "code := process.ExitCode",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9243,7 +9276,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "ScriptProcess.ExitTime",
-                     "syntax":  "",
+                     "syntax":  "time := process.ExitTime",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9254,7 +9287,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "ScriptProcess.HasExited",
-                     "syntax":  "",
+                     "syntax":  "exited := process.HasExited",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9265,18 +9298,17 @@
                  {
                      "category":  "Automation",
                      "feature":  "ScriptProcess.Kill()",
-                     "syntax":  "",
+                     "syntax":  "process.Kill()",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Terminates the process.",
-                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
+                     "notes":  "Terminates the process."
                  },
                  {
                      "category":  "Automation",
                      "feature":  "ScriptProcess.StdErr",
-                     "syntax":  "",
+                     "syntax":  "stderr := process.StdErr",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9287,7 +9319,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "ScriptProcess.StdIn",
-                     "syntax":  "",
+                     "syntax":  "stdin := process.StdIn",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9298,7 +9330,7 @@
                  {
                      "category":  "Automation",
                      "feature":  "ScriptProcess.StdOut",
-                     "syntax":  "",
+                     "syntax":  "stdout := process.StdOut",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9412,7 +9444,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Cross-platform window events modeled on the AHK WinEvent library. Constructed idle with window criteria; its On* callbacks receive (Hook, Hwnd, Time). Windows uses SetWinEventHook, Linux keysharp-desktop, and macOS Accessibility observers.",
+                     "notes":  "Ks class for cross-platform window events modeled on the AHK WinEvent library; its On* callbacks receive (Hook, Hwnd, Time), and a running WinEvent keeps the script running. Linux requires keysharp-desktop and macOS the Accessibility permission.",
                      "tested-by":  "Gui/guitest.ks; EventHookTests.WinEventIsConstructedIdleAndStarted"
                  },
                  {
@@ -9434,7 +9466,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Fires when a matching window becomes foreground or the foreground window is retitled into a match. The window active at Start() is not reported.",
+                     "notes":  "Fires when a matching window becomes the foreground window or the foreground window is retitled into a match. The window active at Start() is not reported.",
                      "tested-by":  "Gui/guitest.ks; EventHookTests.WinEventIsConstructedIdleAndStarted; EventHookTests.ActiveAndNotActiveFollowTheForeground"
                  },
                  {
@@ -9445,7 +9477,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Fires when the foreground leaves the matching set or its title ceases to match. Hwnd is the previously active matching window.",
+                     "notes":  "Fires when the foreground moves from a matching window to a non-matching one, or the foreground window is retitled out of the match. Hwnd is the matching window last active, possibly one already active at Start().",
                      "tested-by":  "EventHookTests.ActiveAndNotActiveFollowTheForeground"
                  },
                  {
@@ -9456,7 +9488,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Fires when a window enters the matching set. Existing matches at Start() are not reported; use WinGetList to enumerate them.",
+                     "notes":  "Fires when a window enters the matching set by being created, shown, restored or retitled, subject to the captured DetectHiddenWindows. Windows already matching at Start() are not reported; enumerate them with WinGetList.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -9467,7 +9499,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Fires when a window leaves the matching set through destruction, hiding, cloaking or a title change. Hwnd may already be invalid.",
+                     "notes":  "Fires when a window leaves the matching set by being destroyed, retitled, or hidden or cloaked while the captured DetectHiddenWindows is off. Hwnd may already be destroyed.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -9478,7 +9510,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Fires when a matching window moves or resizes. A_EventInfo is {X, Y, Width, Height}.",
+                     "notes":  "Fires when a matching window moves or resizes, with A_EventInfo holding its { X, Y, Width, Height } at event time. On Linux a window's queued moves are merged.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -9522,7 +9554,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Fires when an accessible text caret moves inside a matching window. Hwnd is the top-level window and A_EventInfo is the caret rectangle {X, Y, Width, Height} in screen coordinates."
+                     "notes":  "Fires when the text caret moves inside a matching window; Hwnd is its top-level window and A_EventInfo the caret rectangle { X, Y, Width, Height } in screen coordinates. Coverage matches CaretGetPos, so a caret not exposed to accessibility is not reported."
                  },
                  {
                      "category":  "Automation",
@@ -9543,7 +9575,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Base class of WinEvent, MonitorHook, ClipboardHook, Audio.DeviceHook, Clr.EventSubscription and InputHook. A running hook ends on Stop(), owner-thread exit or script exit.",
+                     "notes":  "Ks base class of WinEvent, MonitorHook, ClipboardHook, Audio.DeviceHook, Clr.EventSubscription and InputHook. A running hook lasts until Stop(), its thread ending or script exit, and only WinEvent, ClipboardHook and InputHook keep the script running.",
                      "tested-by":  "EventHookTests.HookSurfaceIsIdenticalAcrossSources; EventHookTests.DeleteDoesNotStopTheSubscription; EventHookTests.PersistenceFollowsTheFamily; EventHookTests.RealThreadRootsFollowTheFamily"
                  },
                  {
@@ -9565,7 +9597,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "\"\" while running; otherwise \"Stopped\", \"Exit\" or \"Failed\". InputHook also uses its AutoHotkey end reasons.",
+                     "notes":  "\"\" while the hook runs; otherwise \"Stopped\" (Stop() or never started), \"Exit\" (its thread or the script ended) or \"Failed\" (the event source could not be installed).",
                      "tested-by":  "EventHookTests.HookSurfaceIsIdenticalAcrossSources; EventHookTests.RegisterEnumerateAndStopThroughTheManager"
                  },
                  {
@@ -9576,7 +9608,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Starts or restarts the hook with its callback and filter; does nothing while running. The calling thread owns the new run.",
+                     "notes":  "Starts a stopped hook with its callback and filter, in a run owned by the calling thread; does nothing to a running hook.",
                      "tested-by":  "EventHookTests.HookSurfaceIsIdenticalAcrossSources; EventHookTests.QueuedCallbacksAreDiscardedAfterStop; EventHookTests.WinEventIsConstructedIdleAndStarted"
                  },
                  {
@@ -9587,7 +9619,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Ends the run with EndReason \"Stopped\"; Start() can begin another. Queued callbacks for the ended run are dropped.",
+                     "notes":  "Ends the run with EndReason \"Stopped\", discarding callbacks already queued while one already running finishes; Start() can begin another run.",
                      "tested-by":  "EventHookTests.QueuedCallbacksAreDiscardedAfterStop"
                  },
                  {
@@ -9820,7 +9852,7 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "RunScript()",
-                     "syntax":  "",
+                     "syntax":  "RunScript(Code, Async := false, Callback?, Name := \"*\", Executable?, Options?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9842,7 +9874,7 @@
                  {
                      "category":  "Imaging",
                      "feature":  "Screen capture and pixel/image functions",
-                     "syntax":  "RunScript(Code, Async := false, Callback?, Name := \"*\", Executable?, Options?)",
+                     "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
@@ -10259,7 +10291,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Separates a file name or URL into its name, directory, extension, and drive. Differs in that instead of writing to ref arguments, it returns a structure whose fields are what the original input parameter names would have been.",
+                     "notes":  "Separates a file name or URL into its name, directory, extension, and drive. If all output variables are omitted, it returns an object with FileName, Dir, Extension, NameNoExt and Drive properties.",
                      "tested-by":  "file-filesplitpath.ahk"
                  },
                  {
@@ -10334,8 +10366,18 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns whether a string ends with the specified suffix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given.",
+                     "notes":  "Keysharp extension. Returns whether a string ends with the specified suffix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given.",
                      "tested-by":  "string-startsendswith.ahk"
+                 },
+                 {
+                     "category":  "Core Language",
+                     "feature":  "String.Length",
+                     "syntax":  "length := text.Length",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp extension. Returns the number of characters in the string."
                  },
                  {
                      "category":  "Core Language",
@@ -10345,7 +10387,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns whether a string starts with the specified prefix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given.",
+                     "notes":  "Keysharp extension. Returns whether a string starts with the specified prefix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given.",
                      "tested-by":  "string-startsendswith.ahk"
                  },
                  {

@@ -6,16 +6,19 @@ namespace Keysharp.Builtins.COM
 	internal class ComEvent
 	{
 		private readonly Script owner;
+		// The scheduler of the thread which connected the sink, which runs its events.
+		private readonly ScriptEventScheduler ownerScheduler;
 		internal Dispatcher dispatcher;
 		internal KeysharpObject sinkObj;
 		internal object[] thisArg;
 		private readonly bool logAll;
-		private readonly Dictionary<string, MethodPropertyHolder> methodMapper = new (10, StringComparer.OrdinalIgnoreCase);
+		private readonly Dictionary<string, KeysharpFunc> methodMapper = new (10, StringComparer.OrdinalIgnoreCase);
 		private readonly string prefix;
 
 		internal ComEvent(Script owner, Dispatcher disp, object sink, bool log)
 		{
 			this.owner = owner;
+			ownerScheduler = owner.EventScheduler;
 			dispatcher = disp;
 			thisArg = [disp.Co!];
 			logAll = log;
@@ -32,10 +35,8 @@ namespace Keysharp.Builtins.COM
 					if (string.Equals(kv.Key, AutoExecSectionName, StringComparison.OrdinalIgnoreCase))
 						continue;
 
-					if (kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-					{
-						methodMapper[kv.Key.Remove(0, prefix.Length)] = kv.Value.First().Value;
-					}
+					if (kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && Functions.MethodFunction(kv.Value.First().Value.mi) is { } fn)
+						methodMapper[kv.Key.Remove(0, prefix.Length)] = fn;
 				}
 
 				if (methodMapper.Count > 0)
@@ -121,34 +122,10 @@ namespace Keysharp.Builtins.COM
 
 			var thisObj = thisArg[0];
 
-			if (thisObj != null && methodMapper.TryGetValue(e.Name, out var mph))
+			if (thisObj != null && methodMapper.TryGetValue(e.Name, out var fn))
 			{
 				var args = e.Arguments.Concat(thisArg);
-				var moduleType = ResolveModuleType(mph.mi?.DeclaringType);
-				owner.Threads.LaunchThreadInMain(() =>
-				{
-					_ = Keysharp.Internals.Flow.TryCatch(() =>
-					{
-						e.IsHandled = true;
-						if (moduleType != null)
-						{
-							var prev = owner.CurrentModuleType;
-							owner.CurrentModuleType = moduleType;
-							try
-							{
-								e.Result = mph.CallFunc(null, args);
-							}
-							finally
-							{
-								owner.CurrentModuleType = prev;
-							}
-						}
-						else
-						{
-							e.Result = mph.CallFunc(null, args);
-						}
-					});
-				}, kind: ThreadKind.Com);
+				Raise(e, () => fn.Call(args));
 			}
 		}
 
@@ -168,26 +145,60 @@ namespace Keysharp.Builtins.COM
 			var allArgs = new object[e.Arguments.Length + 1];
 			System.Array.Copy(e.Arguments, allArgs, e.Arguments.Length);
 			allArgs[^1] = thisArg[0];
-
-			owner.Threads.LaunchThreadInMain(() =>
-			{
-				_ = Keysharp.Internals.Flow.TryCatch(() =>
-				{
-					e.IsHandled = true;
-					e.Result = Script.Invoke(sinkObj, e.Name, allArgs);
-				});
-			}, kind: ThreadKind.Com);
+			Raise(e, () => Script.Invoke(sinkObj, e.Name, allArgs));
 		}
 
-		private static Type ResolveModuleType(Type type)
+		/// <summary>
+		/// As for CLR events (ClrEventRegistration.Dispatch): on the owning thread the handler runs inside the raiser's call,
+		/// which gets its result and any error, as in AutoHotkey, so it can read state that lives only for the call, such as
+		/// window.event; from any other thread it is queued there as a new pseudo-thread.
+		/// </summary>
+		private void Raise(DispatcherEventArgs e, Func<object> handler)
 		{
-			for (var t = type; t != null; t = t.DeclaringType)
+			if (ownerScheduler.OwnsCurrentThread)
 			{
-				if (typeof(Keysharp.Runtime.Module).IsAssignableFrom(t))
-					return t;
+				var exit = new Threads.ExitState(Threads.Current);
+				using var caught = Keysharp.Runtime.Flow.EnterTry();
+				e.IsHandled = true;
+
+				try
+				{
+					e.Result = handler();
+				}
+				// Exit ends only the handler, which AutoHotkey reports to the raiser as success; ExitApp goes on unwinding.
+				catch (Exception ex) when (!owner.hasExited && Keysharp.Internals.Flow.TryGetException<Flow.UserRequestedExitException>(ex, out _))
+				{
+					exit.Restore();
+				}
+
+				return;
 			}
 
-			return null;
+			if (ownerScheduler.IsDisposed)
+				return;
+
+			_ = ownerScheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
+			{
+				// A sink disconnected while its event waited gets none.
+				if (thisArg[0] == null)
+					return ScriptEventExecutionResult.Dropped;
+
+				using var thread = ownerScheduler.StartPseudoThreadScope(0, false, false, false, ThreadKind.Com);
+
+				if (!thread.Started)
+					return thread.Result;
+
+				try
+				{
+					_ = handler();
+				}
+				catch (Exception ex)
+				{
+					_ = Errors.ReportUncaught(ex);
+				}
+
+				return ScriptEventExecutionResult.Executed;
+			});
 		}
 	}
 }

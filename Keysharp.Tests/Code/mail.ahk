@@ -157,24 +157,24 @@ Mail(["one@example.com", "two@example.com"], "Subject line", "Body text",
 		"replyto", "reply@example.com",
 		"headers", Map("X-Keysharp", "1")))
 
-log := Transcript()
+sent := Transcript()
 
-Assert(InStr(log, "MAIL FROM:<me@example.com>"), A_LineNumber)
-Assert(InStr(log, "RCPT TO:<one@example.com>"), A_LineNumber)
-Assert(InStr(log, "RCPT TO:<two@example.com>"), A_LineNumber)
-Assert(InStr(log, "RCPT TO:<three@example.com>"), A_LineNumber)
-Assert(InStr(log, "> Subject: Subject line"), A_LineNumber)
-Assert(InStr(log, "> Reply-To: reply@example.com"), A_LineNumber)
-Assert(InStr(log, "> X-Keysharp: 1"), A_LineNumber)
-Assert(InStr(log, "> Body text"), A_LineNumber)
+Assert(InStr(sent, "MAIL FROM:<me@example.com>"), A_LineNumber)
+Assert(InStr(sent, "RCPT TO:<one@example.com>"), A_LineNumber)
+Assert(InStr(sent, "RCPT TO:<two@example.com>"), A_LineNumber)
+Assert(InStr(sent, "RCPT TO:<three@example.com>"), A_LineNumber)
+Assert(InStr(sent, "> Subject: Subject line"), A_LineNumber)
+Assert(InStr(sent, "> Reply-To: reply@example.com"), A_LineNumber)
+Assert(InStr(sent, "> X-Keysharp: 1"), A_LineNumber)
+Assert(InStr(sent, "> Body text"), A_LineNumber)
 
 ; Bcc is an envelope recipient which must not appear in the headers.
 port2 := StartServer()
 Mail("one@example.com", "s", "b", Map("host", "127.0.0.1:" port2, "from", "me@example.com", "bcc", "hidden@example.com"))
-log := Transcript()
+sent := Transcript()
 
-Assert(InStr(log, "RCPT TO:<hidden@example.com>"), A_LineNumber)
-Assert(!InStr(log, "> Bcc:"), A_LineNumber)
+Assert(InStr(sent, "RCPT TO:<hidden@example.com>"), A_LineNumber)
+Assert(!InStr(sent, "> Bcc:"), A_LineNumber)
 
 ; ---- an unreachable server --------------------------------------------------------------------------
 

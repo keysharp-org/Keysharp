@@ -49,7 +49,6 @@ namespace Keysharp.Builtins
 #endif
 		internal MenuBar menuBar;
 		bool marginsInit = false;
-		internal nint owner = 0;
 		internal Size requestedSize = new(int.MinValue, int.MinValue);
 		internal Point requestedLocation = new(int.MinValue, int.MinValue);
 		// "+MinSize"/"+MaxSize" with no dimensions pins the limit to the window's size; if the window has not
@@ -137,6 +136,9 @@ namespace Keysharp.Builtins
 						f.caption = false;
 						f.form.FormBorderStyle = FormBorderStyle.None;
 					}
+#if WINDOWS
+					f.form.SetSizingBorder(!f.caption && f.resizable);
+#endif
 				}
 			},
 			{
@@ -206,21 +208,25 @@ namespace Keysharp.Builtins
 			{
 				"Owner", (f, o) =>
 				{
-					var s = o as string ?? "";
+					// -Owner passes null and leaves the window unowned, as in AHK.
 					nint ownerHandle = 0;
 
-					if (int.TryParse(s, out var hwnd))
-						ownerHandle = hwnd;
-					else if (Script.TheScript.mainWindow is Form mw)   // +Owner with no HWND => owned by the script's main window (AHK).
-						ownerHandle = mw.Handle;
+					if (o is string s)
+					{
+						if (s.Length == 0)   // +Owner with no HWND => owned by the script's main window (AHK).
+						{
+							if (Script.TheScript.mainWindow is Form mw)
+								ownerHandle = mw.Handle;
+						}
+						else if (!s.TryParseLong(out var hwnd) || !WindowQuery.IsWindow(ownerHandle = (nint)hwnd)
+								 || f.form.IsHandleCreated && ownerHandle == f.form.Handle)
+						{
+							_ = Errors.ValueErrorOccurred("Invalid or nonexistent owner or parent window.", s);
+							return;
+						}
+					}
 
-					f.owner = ownerHandle;   // applied at Show time on Windows; set on the form directly elsewhere.
-#if !WINDOWS
-					if (Forms.Control.FromHandle(ownerHandle) is Form theform)
-						f.form.Owner = theform;
-#endif
-					// An owned GUI has no taskbar button (matches AHK's +Owner behaviour).
-					f.form.ShowInTaskbar = false;
+					f.form.SetOwnerWindow(ownerHandle);
 				}
 			},
 #if WINDOWS
@@ -248,6 +254,9 @@ namespace Keysharp.Builtins
 
 						if (f.caption)
 							f.form.FormBorderStyle = b ? FormBorderStyle.Sizable : FormBorderStyle.FixedDialog;
+#if WINDOWS
+						f.form.SetSizingBorder(!f.caption && f.resizable);
+#endif
 
 						f.form.SizeGripStyle = b ? SizeGripStyle.Show : SizeGripStyle.Hide;
 						if (b)
@@ -274,8 +283,6 @@ namespace Keysharp.Builtins
 
 						if (f.caption)//Only change border if they haven't requested that there be no caption/border.
 							f.form.FormBorderStyle = f.resizable ? FormBorderStyle.SizableToolWindow : FormBorderStyle.FixedToolWindow;
-
-						f.form.ShowInTaskbar = false;
 					}
 					else
 					{
@@ -283,8 +290,6 @@ namespace Keysharp.Builtins
 
 						if (f.caption)
 							f.form.FormBorderStyle = f.resizable ? FormBorderStyle.Sizable : FormBorderStyle.FixedDialog;
-
-						f.form.ShowInTaskbar = true;
 					}
 				}
 			}
@@ -2754,9 +2759,9 @@ namespace Keysharp.Builtins
 					}
 					else if (str.StartsWith("Owner", StringComparison.OrdinalIgnoreCase))
 					{
-						// +Owner / +OwnerHWND adds an owner (a value of "" means owned by the script's main window).
-						if (add && showOptionsDkt.TryGetValue("Owner", out var func))
-							func(this, str.Substring(5));
+						// +Owner / +OwnerHWND adds an owner (a value of "" means owned by the script's main window); -Owner removes it.
+						if (showOptionsDkt.TryGetValue("Owner", out var func))
+							func(this, add ? str.Substring(5) : null);
 					}
 					else if (str.StartsWith("Parent", StringComparison.OrdinalIgnoreCase))
 					{
@@ -3384,16 +3389,6 @@ namespace Keysharp.Builtins
 
 			if (hide)
 				form.Hide();
-#if WINDOWS
-			else if (!form.BeenShown && owner != 0)
-			{
-				// Form.Show(IWin32Window) only reads owner.Handle, so a plain handle wrapper suffices —
-				// NativeWindow.AssignHandle would subclass the owner's wndproc, which fails (Win32Exception)
-				// for a window owned by another process, and +Owner explicitly supports foreign owners.
-				form.Show(new OwnerHandle(owner));
-				form.beenShown = true;
-			}
-#endif
 			else
 				form.Show();
 
@@ -3460,7 +3455,7 @@ namespace Keysharp.Builtins
 			//decorates a button rather than an application. Only on the FIRST show: a re-show must not undo a
 			//per-window Taskbar call made while the window was up. Windows-only, both because the other platforms
 			//decorate the application anyway and because form.Handle would force an X11 round trip here.
-			if (!hide && !taskbarDecorated && form.ShowInTaskbar)
+			if (!hide && !taskbarDecorated && form.HasTaskbarButton)
 			{
 				taskbarDecorated = true;
 				Keysharp.Internals.TaskbarService.ApplyAppDecoration(form.Handle);
@@ -4472,13 +4467,4 @@ namespace Keysharp.Builtins
 			}
 		}
 	}
-
-#if WINDOWS
-	/// <summary>Bare IWin32Window over a foreign handle for Form.Show(owner) — no subclassing.</summary>
-	internal sealed class OwnerHandle(nint handle) : IWin32Window
-	{
-		public nint Handle { get; } = handle;
-	}
-#endif
-
 }

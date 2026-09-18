@@ -113,10 +113,10 @@ catch Error as e
     identityCaught := e == mappedError
 Assert(identityCaught, A_LineNumber)                     ; Error and Await publish the same object
 
-thenCalls := 0
-failedChain := bad.Then(_ => thenCalls += 1)
+thenCalls := {n: 0}
+failedChain := bad.Then(_ => thenCalls.n += 1)
 Throws(() => Await(failedChain), A_LineNumber, Error)
-Assert(failedChain.IsFailed && thenCalls == 0 && failedChain.Error == bad.Error, A_LineNumber)
+Assert(failedChain.IsFailed && thenCalls.n == 0 && failedChain.Error == bad.Error, A_LineNumber)
 
 handledErrors := [], unexpectedSuccesses := []
 recovered := bad.Then(_ => unexpectedSuccesses.Push(1),
@@ -311,15 +311,15 @@ rejection := ValueError("nope")
 bad := Task.Create((Succeed, Fail) => Fail(Reason: rejection))
 AssertEq(bad.Error, rejection, A_LineNumber)
 
-canceledThenCalls := 0
+canceledThenCalls := {n: 0}
 canceledResults := []
 canceledSource := Task.Create((Succeed, Fail, Cancel) =>
     canceledResults.Push(Cancel(), Succeed(1), Fail("late")))
-canceledChain := canceledSource.Then(_ => canceledThenCalls += 1, _ => canceledThenCalls += 1)
+canceledChain := canceledSource.Then(_ => canceledThenCalls.n += 1, _ => canceledThenCalls.n += 1)
 Assert(canceledResults[1] && !canceledResults[2] && !canceledResults[3], A_LineNumber)
 Assert(!canceledSource.IsPending && !canceledSource.IsSucceeded
     && !canceledSource.IsFailed && canceledSource.IsCanceled, A_LineNumber)
-Assert(canceledChain.Wait(5000) && canceledChain.IsCanceled && canceledThenCalls == 0, A_LineNumber)
+Assert(canceledChain.Wait(5000) && canceledChain.IsCanceled && canceledThenCalls.n == 0, A_LineNumber)
 flattenedCancel := Immediate().Then(_ => canceledSource)
 Assert(flattenedCancel.Wait(5000) && flattenedCancel.IsCanceled, A_LineNumber)
 Throws(() => Await(canceledChain), A_LineNumber, Error)

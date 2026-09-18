@@ -19,6 +19,9 @@ namespace Keysharp.Internals.Os.Windows
 		internal const int GWL_STYLE = -16;
 
 		internal const int GWL_WNDPROC = -4;
+
+		internal const int GWLP_HWNDPARENT = -8;
+
 		internal const int DWLP_MSGRESULT = 0;
 
 		internal const int HWND_BOTTOM = 1;
