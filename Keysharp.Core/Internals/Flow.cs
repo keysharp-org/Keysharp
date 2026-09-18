@@ -372,13 +372,19 @@ namespace Keysharp.Internals
 		{
 			var start = yieldTick ? Environment.TickCount : default;
 			var script = scheduler?.Owner ?? Script.TheScript;
-			ThreadVariables currentThread = null;
+			var currentThread = script.Threads.CurrentThread;
+			// Stamped before the pump as well: a handler that a dispatched message runs inline (a COM event, a subclassed
+			// window procedure) starts a fresh interval, as AHK's MsgSleep resets mLastPeekTime on taking a message,
+			// instead of finding a check overdue on its first line and pumping again from inside this pump.
+			currentThread.lastPeekTick = Environment.TickCount;
 
 			try
 			{
 				// A disposed script (ExitApp disposes before the unwind reaches this pump) has no schedulers left;
 				// resolving one would throw and mask the exit propagation below.
-				if (!script.IsDisposed)
+				// Each pumped message may run a handler that pumps in turn, so without stack for another level the
+				// messages wait for this handler to return.
+				if (!script.IsDisposed && System.Runtime.CompilerServices.RuntimeHelpers.TryEnsureSufficientExecutionStack())
 				{
 					scheduler ??= script.EventScheduler;
 

@@ -27,13 +27,10 @@ namespace Keysharp.Internals.Strings
 				if (leftParenIndex == -1 || (leftParenIndex > parenIndex))//Make sure it was just a ) for settings and not a ().
 				{
 					var span = n.AsSpan(0, parenIndex);
-					var substr = n.Substring(parenIndex + 1);
+					// The A option is PCRE's anchored option and nothing more: it anchors the match at the starting
+					// position, where a \A in the pattern would anchor it at the start of the haystack.
 					settings = Conversions.ToRegexOptions(span);
-
-					if (span.Contains('A'))
-						substr = "\\A" + substr;
-
-					pattern = substr;
+					pattern = n.Substring(parenIndex + 1);
 				}
 			}
 

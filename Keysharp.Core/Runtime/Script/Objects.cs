@@ -548,21 +548,21 @@ namespace Keysharp.Runtime
 					if (item is string s)
 					{
 						int actual = position < 0 ? s.Length + position : position - 1;
-						return s[actual];
+						return (uint)actual < (uint)s.Length ? s[actual] : Errors.IndexErrorOccurred($"Invalid retrieval index of {position}.");
 					}
 
 					// Vararg array backing for params
 					if (item is object[] objarr)
 					{
 						int actual = position < 0 ? objarr.Length + position : position - 1;
-						return objarr[actual];
+						return (uint)actual < (uint)objarr.Length ? objarr[actual] : Errors.IndexErrorOccurred($"Invalid retrieval index of {position}.");
 					}
 
 					// CLR arrays
 					if (item is System.Array carr)
 					{
 						int actual = position < 0 ? carr.Length + position : position - 1;
-						return carr.GetValue(actual);
+						return (uint)actual < (uint)carr.Length ? carr.GetValue(actual) : Errors.IndexErrorOccurred($"Invalid retrieval index of {position}.");
 					}
 				}
 

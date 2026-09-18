@@ -154,16 +154,27 @@ namespace Keysharp.Builtins
 
 			var d1 = Conversions.ToDateTime(s1);
 
-			if (units.StartsWith("s", StringComparison.OrdinalIgnoreCase))
-				d1 = d1.AddSeconds(t);
-			else if (units.StartsWith("m", StringComparison.OrdinalIgnoreCase))
-				d1 = d1.AddMinutes(t);
-			else if (units.StartsWith("h", StringComparison.OrdinalIgnoreCase))
-				d1 = d1.AddHours(t);
-			else if (wasMs |= units.StartsWith("l", StringComparison.OrdinalIgnoreCase))
-				d1 = d1.AddMilliseconds(t);
-			else
-				d1 = d1.AddDays(t);
+			if (d1 == DateTime.MinValue)
+				return (string)Errors.ValueErrorOccurred("Parameter #1 of DateAdd is invalid.", dateTime, "");
+
+			try
+			{
+				if (units.StartsWith("s", StringComparison.OrdinalIgnoreCase))
+					d1 = d1.AddSeconds(t);
+				else if (units.StartsWith("m", StringComparison.OrdinalIgnoreCase))
+					d1 = d1.AddMinutes(t);
+				else if (units.StartsWith("h", StringComparison.OrdinalIgnoreCase))
+					d1 = d1.AddHours(t);
+				else if (wasMs |= units.StartsWith("l", StringComparison.OrdinalIgnoreCase))
+					d1 = d1.AddMilliseconds(t);
+				else
+					d1 = d1.AddDays(t);
+			}
+			catch (ArgumentException)
+			{
+				// AHK returns "" for a result outside the range a date can hold.
+				return "";
+			}
 
 			return wasMs ? Conversions.ToYYYYMMDDHH24MISSFFF(d1) : Conversions.ToYYYYMMDDHH24MISS(d1);
 		}
@@ -195,6 +206,13 @@ namespace Keysharp.Builtins
 
 			var d1 = Conversions.ToDateTime(s1);
 			var d2 = Conversions.ToDateTime(s2);
+
+			if (d2 == DateTime.MinValue)
+				return Errors.ValueErrorOccurred("Parameter #2 of DateDiff is invalid.", dateTime2);
+
+			if (d1 == DateTime.MinValue)
+				return Errors.ValueErrorOccurred("Parameter #1 of DateDiff is invalid.", dateTime1);
+
 			var diff = d1 - d2;
 
 			if (units.StartsWith("s", StringComparison.OrdinalIgnoreCase))

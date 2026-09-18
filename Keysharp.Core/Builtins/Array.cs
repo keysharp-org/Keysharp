@@ -676,7 +676,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	{
 		var o = args;
 
-		if (array.Count > 0 && o.Length > 0)
+		if (o.Length > 0)
 		{
 			var index = args[0].Ai(0);
 			int i;

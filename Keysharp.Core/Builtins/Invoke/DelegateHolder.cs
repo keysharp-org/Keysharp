@@ -384,6 +384,9 @@ namespace Keysharp.Builtins
 		{
 			object val = null;
 			var completed = false;
+			// As AHK's callback stub does, a callback starts with a fresh peek interval, so one a window message
+			// delivered (a subclass procedure) does not pump messages on its first loop and re-enter itself.
+			Script.TheScript.RecordMessageCheck();
 
 			try
 			{
