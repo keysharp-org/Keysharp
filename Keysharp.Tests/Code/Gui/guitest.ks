@@ -1,4 +1,4 @@
-#ErrorStdOut
+; #ErrorStdOut
 #Warn All, StdOut
 #Requires capability InputMonitoring, InputControl, WindowMonitoring, WindowControl, ScreenCapture, ClipboardMonitoring
 
