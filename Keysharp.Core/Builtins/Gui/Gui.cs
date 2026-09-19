@@ -394,17 +394,19 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public object ToClr() => ManagedInvoke.WrapManaged(form);
 
+		//The margins are kept in pixels, in form.Margin, and scaled by the Gui's DPI on the way in and out, as in AHK.
 		public long MarginX
 		{
 			get
 			{
 				EnsureDefaultMargins();
-				return form.Margin.Left;
+				return (long)Math.Round(form.Margin.Left / DpiScale, MidpointRounding.AwayFromZero);
 			}
 			set
 			{
 				EnsureDefaultMargins();
-				form.Margin = new Padding((int)value, form.Margin.Top, (int)value, form.Margin.Bottom);
+				var x = (int)Math.Round(value * DpiScale, MidpointRounding.AwayFromZero);
+				form.Margin = new Padding(x, form.Margin.Top, x, form.Margin.Bottom);
 			}
 		}
 
@@ -413,12 +415,13 @@ namespace Keysharp.Builtins
 			get
 			{
 				EnsureDefaultMargins();
-				return form.Margin.Top;
+				return (long)Math.Round(form.Margin.Top / DpiScale, MidpointRounding.AwayFromZero);
 			}
 			set
 			{
 				EnsureDefaultMargins();
-				form.Margin = new Padding(form.Margin.Left, (int)value, form.Margin.Right, (int)value);
+				var y = (int)Math.Round(value * DpiScale, MidpointRounding.AwayFromZero);
+				form.Margin = new Padding(form.Margin.Left, y, form.Margin.Right, y);
 			}
 		}
 
@@ -428,19 +431,26 @@ namespace Keysharp.Builtins
 
 			set
 			{
-#if WINDOWS
-				var previousClientSize = form.BeenShown ? form.GuiClientSize : (Size?)null;
-#endif
-				menuBar = (MenuBar)value;
-#if WINDOWS
-				form.TagAndAdd(menuBar.MenuStrip);
-				form.MainMenuStrip = menuBar.MenuStrip;
-				form.ContentContainer.BringToFront();//A frontmost fill panel is docked in the space left below the menu.
-				form.PerformLayout();
+				var bar = value as MenuBar;
 
-				if (previousClientSize is Size size)
-					form.GuiClientSize = size;
+				//A blank value or unset removes the menu bar.
+				if (bar == null && value is not (null or ""))
+				{
+					_ = Errors.ExpectedTypeErrorOccurred("MenuBar", value);
+					return;
+				}
+
+				menuBar = bar;
+#if WINDOWS
+				form.SetMenuStrip(bar?.MenuStrip);
 #else
+				if (bar == null)
+				{
+					form.Menu = null;
+					form.MainMenuStrip = null;
+					return;
+				}
+
 				menuBar.MenuStrip.SyncEtoMenuBar();
 				var systemItems = Eto.Forms.MenuBarSystemItems.None;
 
@@ -570,7 +580,7 @@ namespace Keysharp.Builtins
 				// Preserve prebuilt window content (e.g. main window tabs/menu container).
 				form.Content ??= new PixelLayout();
 #endif
-				LastContainer = form.ContentContainer;
+				LastContainer = form;
 				form.Register(this);//Calling handle forces the creation of the window.
 
 				if (lastfound)
@@ -630,7 +640,7 @@ namespace Keysharp.Builtins
 					// Ensure the Eto content container exists before we size it later.
 					form.Content ??= new PixelLayout();
 #endif
-					LastContainer = form.ContentContainer;
+					LastContainer = form;
 
 #if !WINDOWS
 					Keysharp.Internals.Window.Unix.EtoMessageSource.Attach(form);
@@ -648,11 +658,15 @@ namespace Keysharp.Builtins
 		void EnsureDefaultMargins()
 		{
 			if (marginsInit) return;
-			float dpi = (float)(DpiScale * 96.0);
-			float dpiinv = 96F / dpi;
-			float fh = form.Font.GetHeight(dpi) * dpiinv;
-			int mx = (int)Math.Ceiling(fh * 1.25f);
-			int my = (int)Math.Ceiling(fh * 0.75f);
+			//AHK's defaults, 1.25 and 0.75 times the font's point size, taken as it takes them from the font's pixel
+			//height: that follows the monitor's DPI even for a -DPIScale Gui, and the margins with it.
+#if WINDOWS
+			var em = Math.Round(form.Font.SizeInPoints * form.DeviceDpi / 72.0, MidpointRounding.AwayFromZero);
+#else
+			var em = Math.Round(form.Font.Size * 96 / 72.0, MidpointRounding.AwayFromZero);
+#endif
+			var mx = (int)Math.Round(em * 90 / 96, MidpointRounding.AwayFromZero);
+			var my = (int)Math.Round(em * 54 / 96, MidpointRounding.AwayFromZero);
 			form.Margin = new Padding(mx, my, mx, my);
 			marginsInit = true;
 		}
@@ -788,7 +802,10 @@ namespace Keysharp.Builtins
 					}
 
 					if (txt.Multiline && opts.tabstops.Any())
-						_ = WindowsAPI.SendMessage(txt.Handle, WindowsAPI.EM_SETTABSTOPS, opts.tabstops.Count, opts.tabstops.ToArray());
+					{
+						var stops = opts.tabstops.ToArray();
+						txt.WithHandle(h => WindowsAPI.SendMessage(h, WindowsAPI.EM_SETTABSTOPS, stops.Length, stops));
+					}
 
 					ctrl = txt;
 #else
@@ -966,7 +983,10 @@ namespace Keysharp.Builtins
 #if WINDOWS
 
 					if (txt.Multiline && opts.tabstops.Any())
-						_ = WindowsAPI.SendMessage(txt.Handle, WindowsAPI.EM_SETTABSTOPS, opts.tabstops.Count, opts.tabstops.ToArray());
+					{
+						var stops = opts.tabstops.ToArray();
+						txt.WithHandle(h => WindowsAPI.SendMessage(h, WindowsAPI.EM_SETTABSTOPS, stops.Length, stops));
+					}
 
 #endif
 					ctrl = txt;
@@ -1507,10 +1527,10 @@ namespace Keysharp.Builtins
 #if WINDOWS
 
 					if (opts.thick != int.MinValue)
-						_ = WindowsAPI.SendMessage(slider.Handle, WindowsAPI.TBM_SETTHUMBLENGTH, (uint)opts.thick, 0);
+						slider.WithHandle(h => WindowsAPI.SendMessage(h, WindowsAPI.TBM_SETTHUMBLENGTH, (uint)opts.thick, 0));
 
 					if (opts.tooltip)
-						_ = WindowsAPI.SendMessage(slider.Handle, WindowsAPI.TBM_SETTIPSIDE, (uint)opts.tooltipside, 0);
+						slider.WithHandle(h => WindowsAPI.SendMessage(h, WindowsAPI.TBM_SETTIPSIDE, (uint)opts.tooltipside, 0));
 
 #endif
 					slider.inverted = opts.invert.IsTrue();
@@ -1846,7 +1866,7 @@ namespace Keysharp.Builtins
 			}
 			else
 			{
-				var sizingParent = ctrl is KeysharpStatusStrip ? form.ContentContainer : isTabControl ? prevParent : LastContainer;
+				var sizingParent = ctrl is KeysharpStatusStrip ? form : isTabControl ? prevParent : LastContainer;
 				sizingParent.TagAndAdd(holder);
 			}
 
@@ -2299,14 +2319,14 @@ namespace Keysharp.Builtins
 				if (ktc.TabPages.Count > 0)
 					holder.UseTab(1);//Will set this object's CurrentTab value, as well as the LastContainer values.
 				else
-					LastContainer = ktc.Parent;
+					LastContainer = ktc.GetLogicalParent();
 
 				if (opts.bgtrans)
 					ktc.SetColor(Color.Transparent);
 				else if (opts.bgcolor.HasValue)
 					ktc.SetColor(opts.bgcolor.Value);
 
-				if (prevParent != form.ContentContainer)
+				if (prevParent != form)
 				{
 					var parentSize = prevParent.GetSize();
 					var ctrlRight = loc.X + finalWidth;
@@ -2358,6 +2378,9 @@ namespace Keysharp.Builtins
 
 			ctrl.SetLocation(loc);
 			holder.dpiResize = opts.dpiresize ?? defaultDpiResize;
+#if WINDOWS
+			ctrl.EnsureHandle();//Only now that it has its parent, whose window its notifications are to reach.
+#endif
 			controls[ctrl.Handle.ToInt64()] = holder;
 #if !WINDOWS
 			Keysharp.Internals.Window.Unix.EtoMessageSource.Attach(ctrl);
@@ -3224,7 +3247,7 @@ namespace Keysharp.Builtins
 				var maxx = 0;
 				var maxy = 0;
 
-				foreach (Forms.Control ctrl in form.ContentContainer.GetLayoutContainer().Controls)
+				foreach (Forms.Control ctrl in form.GetLayoutContainer().Controls)
 				{
 					if (ctrl != ss)
 					{
@@ -3250,7 +3273,7 @@ namespace Keysharp.Builtins
 			{
 				// Only the autosize path needs the status strip; computing it unconditionally allocated a status-strip
 				// array on every Show, including hot repeated repositions that pass an explicit size.
-				var status = form.ContentContainer.GetLayoutContainer().Controls.OfType<KeysharpStatusStrip>().ToArray();
+				var status = form.GetLayoutContainer().Controls.OfType<KeysharpStatusStrip>().ToArray();
 				KeysharpStatusStrip ss = null;
 
 				if (status.Length > 0)
@@ -3276,12 +3299,12 @@ namespace Keysharp.Builtins
 				if (requestedSize.Width != int.MinValue)
 					size.Width = (int)Math.Ceiling(requestedSize.Width * dpiscale);
 				else
-					size.Width = (int)(maxx + MarginX);
+					size.Width = maxx + form.Margin.Left;
 
 				if (requestedSize.Height != int.MinValue)
 					size.Height = (int)Math.Ceiling(requestedSize.Height * dpiscale);
 				else
-					size.Height = (int)(maxy + ssHeight + MarginY);
+					size.Height = maxy + ssHeight + form.Margin.Bottom;
 
 #if !WINDOWS
 				form.ClientSize = size;
@@ -3583,7 +3606,7 @@ namespace Keysharp.Builtins
 			if (groupBox is Gui.Control gctrl && gctrl.Ctrl is KeysharpGroupBox gb)
 				LastContainer = gb;
 			else
-				LastContainer = form.ContentContainer;
+				LastContainer = form;
 
 			return DefaultObject;
 		}
@@ -3873,8 +3896,8 @@ namespace Keysharp.Builtins
 				else if (Options.TryParse(opt, "yp", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.PreviousTopLeft; }
 				else if (Options.TryParse(opt, "xm", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Margin; }
 				else if (Options.TryParse(opt, "ym", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.Margin; }
-				else if (Options.TryParse(opt, "x+m", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.x = form.Margin.Left; options.xpos = GuiOptions.Positioning.PreviousBottomRight; }
-				else if (Options.TryParse(opt, "y+m", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.y = form.Margin.Bottom; options.ypos = GuiOptions.Positioning.PreviousBottomRight; }
+				else if (Options.TryParse(opt, "x+m", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.x += (int)MarginX; options.xpos = GuiOptions.Positioning.PreviousBottomRight; }
+				else if (Options.TryParse(opt, "y+m", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.y += (int)MarginY; options.ypos = GuiOptions.Positioning.PreviousBottomRight; }
 				else if (Options.TryParse(opt, "xs", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Section; }
 				else if (Options.TryParse(opt, "ys", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.Section; }
 				else if (Options.TryParse(opt, "xc", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Container; }

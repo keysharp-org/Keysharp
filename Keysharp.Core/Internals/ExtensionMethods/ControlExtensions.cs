@@ -110,11 +110,15 @@ namespace System.Windows.Forms
 #endif
 		}
 
+		/// <summary>
+		/// The container a control was added to, looking past the one which merely holds its children; see
+		/// <see cref="GetLayoutContainer"/>.
+		/// </summary>
 		internal static Control GetLogicalParent(this Control control)
 		{
 #if WINDOWS
 			var parent = control?.Parent;
-			return parent is KeysharpForm form && ReferenceEquals(control, form.ContentContainer) ? form : parent;
+			return parent is KeysharpContentPanel ? parent.Parent : parent;
 #else
 			var parent = control?.Parent;
 			while (parent is Layout layout && layout.Parent != null)
@@ -124,10 +128,14 @@ namespace System.Windows.Forms
 #endif
 		}
 
+		/// <summary>
+		/// Where the children of a container actually live. A Gui deals in the containers a script knows, a window, tab
+		/// page or group box, and this resolves the toolkit's own: the panel below a WinForms menu bar, an Eto layout.
+		/// </summary>
 		internal static Control GetLayoutContainer(this Control control)
 		{
 #if WINDOWS
-			return control;
+			return control is KeysharpForm form ? form.ContentContainer : control;
 #else
 			return control?.EnsureLayoutContainer();
 #endif
@@ -389,6 +397,31 @@ namespace System.Windows.Forms
 			message.Result = WindowsAPI.SendMessage(form.Handle, (uint)message.Msg, message.WParam, message.LParam);
 			return true;
 		}
+
+		/// <summary>
+		/// Applies a setting which is sent to the control's window: now if it has one, and whenever WinForms creates one.
+		/// Asking for the handle instead would create the window before the control has a parent, under WinForms'
+		/// parking window, and a native control keeps notifying the parent it was created under.
+		/// </summary>
+		internal static void WithHandle(this Control control, Action<nint> apply)
+		{
+			if (control.IsHandleCreated)
+				apply(control.Handle);
+
+			control.HandleCreated += (_, _) => apply(control.Handle);
+		}
+
+		/// <summary>
+		/// Creates the control's window, those of its parents first so that it is created under its own parent.
+		/// </summary>
+		internal static void EnsureHandle(this Control control)
+		{
+			if (control.IsHandleCreated)
+				return;
+
+			control.Parent?.EnsureHandle();
+			_ = control.Handle;
+		}
 #endif
 
 		/// <summary>
@@ -397,15 +430,8 @@ namespace System.Windows.Forms
 		/// <param name="control">The <see cref="Control"/> to get the location for.</param>
 		internal static Point GetLocationRelativeToForm(this Control control)
 		{
-			if (control is Form)
+			if (IsClientOrigin(control))
 				return Point.Empty;
-
-#if WINDOWS
-			var content = control.FindForm() is KeysharpForm keysharpForm ? keysharpForm.ContentContainer : null;
-
-			if (ReferenceEquals(control, content))
-				return Point.Empty;
-#endif
 
 #if !WINDOWS
 			Form form;
@@ -446,11 +472,7 @@ namespace System.Windows.Forms
 
 			// This is done like this because Control.PointToScreen and similar functions
 			// apparently don't always work correctly if the Form is hidden.
-			while (parent != null && parent is not Form
-#if WINDOWS
-				   && !ReferenceEquals(parent, content)
-#endif
-			)
+			while (parent != null && !IsClientOrigin(parent))
 			{
 				p.Offset(parent.GetLocation());
 				parent = parent.Parent;
@@ -458,6 +480,14 @@ namespace System.Windows.Forms
 
 			return p;
 		}
+
+		//Whether a Gui's client coordinates are measured from this control: its window, or the panel below a WinForms menu bar.
+		private static bool IsClientOrigin(Control control) =>
+#if WINDOWS
+			control is Form or KeysharpContentPanel;
+#else
+			control is Form;
+#endif
 
 		/// <summary>
 		/// Finds the right-most and bottom-most child controls.
@@ -667,9 +697,10 @@ namespace System.Windows.Forms
 		internal static void TagAndAdd(this Control control, Control add)
 		{
 #if WINDOWS
-			add.Tag = new GuiTag { Index = control.Controls.Count };
-			control.Controls.Add(add);
-			control.Controls.SetChildIndex(add, 0);//Required for proper Z ordering so that this control is on top.
+			var children = control.GetLayoutContainer().Controls;
+			add.Tag = new GuiTag { Index = children.Count };
+			children.Add(add);
+			children.SetChildIndex(add, 0);//Required for proper Z ordering so that this control is on top.
 			HFontCache.Inherit(control, add);
 #else
 			add.Tag = new GuiTag { Index = GetChildCount(control) };
@@ -689,7 +720,8 @@ namespace System.Windows.Forms
 		internal static void TagAndAdd(this Control control, Gui.Control add)
 		{
 #if WINDOWS
-			var childIndex = control.Controls.Count;
+			var children = control.GetLayoutContainer().Controls;
+			var childIndex = children.Count;
 #else
 			var childIndex = GetChildCount(control);
 #endif
@@ -702,8 +734,8 @@ namespace System.Windows.Forms
 				tag.Index = childIndex;
 			}
 #if WINDOWS
-			control.Controls.Add(add.Ctrl);
-			control.Controls.SetChildIndex(add.Ctrl, 0);//Required for proper Z ordering so that this control is on top.
+			children.Add(add.Ctrl);
+			children.SetChildIndex(add.Ctrl, 0);//Required for proper Z ordering so that this control is on top.
 			HFontCache.Inherit(control, add.Ctrl);
 #else
 			AddChildControl(control, add.Ctrl);

@@ -34,7 +34,52 @@ namespace Keysharp.Builtins
 		internal bool BeenShown => beenShown;
 
 #if WINDOWS
-		internal readonly Panel ContentContainer = new KeysharpContentPanel { Dock = DockStyle.Fill };
+		private KeysharpContentPanel contentPanel;
+
+		/// <summary>
+		/// What holds the window's controls and is the origin of its client coordinates: the window itself, as in
+		/// AutoHotkey, or the panel below a menu bar once it has had one. See <see cref="SetMenuStrip"/>.
+		/// </summary>
+		internal ScrollableControl ContentContainer => contentPanel ?? (ScrollableControl)this;
+
+		/// <summary>
+		/// Shows a menu bar in place of any other, or removes it given null. The window keeps its size and the menu bar
+		/// takes its height from the client area, as a native one does.
+		/// A WinForms menu bar is a control within the client area, so the first one moves the window's controls, with
+		/// their handles, into a panel docked below it, which from then on stands in for the client area.
+		/// </summary>
+		internal void SetMenuStrip(MenuStrip strip)
+		{
+			var clientSize = GuiClientSize;
+			SuspendLayout();
+
+			if (MainMenuStrip != strip)
+				Controls.Remove(MainMenuStrip);
+
+			MainMenuStrip = strip;
+
+			if (strip != null)
+			{
+				if (contentPanel == null)
+				{
+					var children = Controls.Cast<Control>().Where(c => c != strip).ToArray();
+					contentPanel = new KeysharpContentPanel { Dock = DockStyle.Fill, AutoScroll = AutoScroll };
+					AutoScroll = false;
+					Controls.Add(contentPanel);
+
+					foreach (var child in children)
+						contentPanel.Controls.Add(child);
+				}
+
+				Controls.Add(strip);
+				strip.SendToBack();//Docked first, so that the panel fills what is left below it.
+			}
+
+			ResumeLayout();
+
+			if (beenShown && GuiClientSize != clientSize)
+				OnResize(EventArgs.Empty);//The client area has changed size, though the window has not.
+		}
 
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		internal Size GuiClientSize
@@ -185,7 +230,6 @@ namespace Keysharp.Builtins
 			AutoScaleMode = AutoScaleMode.None;
 			//See Gui.Show() for where the remainder of the properties get set, such as scaling values.
 			Font = MainWindow.OurDefaultFont;
-			Controls.Add(ContentContainer);
 			StartPosition = FormStartPosition.CenterScreen;
 			KeyPreview = true;
 			DoubleBuffered = true;

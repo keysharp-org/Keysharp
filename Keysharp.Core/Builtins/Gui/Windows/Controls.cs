@@ -3,6 +3,9 @@ using Label = System.Windows.Forms.Label;
 
 namespace Keysharp.Builtins
 {
+	/// <summary>
+	/// Holds the controls of a Gui which has a menu bar; see <see cref="KeysharpForm.ContentContainer"/>.
+	/// </summary>
 	internal sealed class KeysharpContentPanel : Panel
 	{
 		protected override void WndProc(ref Message m)

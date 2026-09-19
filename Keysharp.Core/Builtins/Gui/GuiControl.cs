@@ -28,9 +28,6 @@ namespace Keysharp.Builtins
 #endif
 			//Run by KeysharpForm.RaiseContextMenu, ahead of the window's own.
 			internal CallbackRegistry contextMenuChangedHandlers;
-#if WINDOWS
-			private nint dummyHandle;
-#endif
 			private CallbackRegistry focusedItemChangedHandlers;
 			private CallbackRegistry focusHandlers;
 			private CallbackRegistry itemCheckHandlers;
@@ -441,7 +438,7 @@ namespace Keysharp.Builtins
 					else
 					{
 						tc.AdjustSize(((Gui)Gui).DpiScale, requestedSize);
-						g.LastContainer = tc.Parent;
+						g.LastContainer = tc.GetLogicalParent();
 					}
 
 					return DefaultObject;

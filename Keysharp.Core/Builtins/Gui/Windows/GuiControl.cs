@@ -397,7 +397,6 @@ namespace Keysharp.Builtins
 
 				_control.GotFocus += _control_GotFocus;
 				_control.LostFocus += _control_LostFocus;
-				dummyHandle = _control.Handle;//Force creation of the handle.
 			}
 
 			public object Add(params object[] obj)

@@ -1134,6 +1134,242 @@ namespace Keysharp.Tests
 			}
 		}
 
+		//As in AHK, the controls are children of the Gui window, which so gets their notifications and the mouse on its
+		//background: a -Caption window answering WM_NCHITTEST with HTCAPTION there is dragged, and OnMessage sees Gui.Hwnd.
+		//Only a menu bar, a control within the WinForms client area, moves them to a panel below it.
+		[Test, Category("Gui")]
+		[Apartment(ApartmentState.STA)]
+		public void ControlsParentIsGuiWindowUntilMenuBar()
+		{
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+
+			try
+			{
+				var button = (Gui.Control)gui.Add("Button", "x10 y10 w80 h24", "OK");
+				var edit = (Gui.Control)gui.Add("Edit", "x10 y40 w80 h24");
+				_ = gui.Show("NoActivate x-20000 y-20000 w200 h100");
+				var buttonHwnd = button.Ctrl.Handle;
+
+				Assert.AreSame(gui.form, gui.form.ContentContainer);
+				Assert.AreEqual(gui.form.Handle, WindowsAPI.GetParent(buttonHwnd));
+				var background = gui.form.PointToScreen(new Point(gui.form.ClientSize.Width - 2, gui.form.ClientSize.Height - 2));
+				Assert.AreEqual(gui.form.Handle, WindowsAPI.WindowFromPoint(new Keysharp.Internals.Window.POINT(background)), "the background");
+
+				//Assigned to a window whose controls have their handles.
+				var menu = NewMenuBar();
+				gui.MenuBar = menu;
+
+				Assert.AreNotSame(gui.form, gui.form.ContentContainer);
+				Assert.AreSame(gui.form.ContentContainer, button.Ctrl.Parent);
+				Assert.AreSame(gui, button.Parent);
+				Assert.AreEqual(buttonHwnd, button.Ctrl.Handle, "a moved control keeps its window");
+				Assert.AreEqual(gui.form.ContentContainer.Handle, WindowsAPI.GetParent(buttonHwnd));
+				Assert.AreEqual(menu.MenuStrip.Bottom, gui.form.ContentContainer.Top, "the content starts below the menu bar");
+				Assert.Less(gui.form.ContentContainer.Controls.GetChildIndex(edit.Ctrl), gui.form.ContentContainer.Controls.GetChildIndex(button.Ctrl), "the Z order is kept");
+
+				var y = new VarRef(null);
+				_ = button.GetPos(null, y, null, null);
+				Assert.AreEqual(10L, y.__Value);
+
+				var next = (Gui.Control)gui.Add("Button", "x10 y70 w80 h24", "Next");
+				Assert.AreSame(gui.form.ContentContainer, next.Ctrl.Parent);
+				_ = next.GetPos(null, y, null, null);
+				Assert.AreEqual(70L, y.__Value);
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
+		private static Keysharp.Builtins.MenuBar NewMenuBar()
+		{
+			var menu = new Keysharp.Builtins.MenuBar();
+			_ = menu.Add("File", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => "")));
+			return menu;
+		}
+
+		//The panel a menu bar puts the controls in is the toolkit's business: the margins, the section and the
+		//container the next control goes to are the Gui's, and carry on across it.
+		[Test, Category("Gui")]
+		[Apartment(ApartmentState.STA)]
+		public void MenuBarLeavesLayoutAlone()
+		{
+			static List<(long, long)> Build(bool menuFirst, bool menuBetween)
+			{
+				var gui = new Gui(System.Array.Empty<object>());
+				_ = gui.__New();
+
+				try
+				{
+					gui.MarginX = 30L;
+					gui.MarginY = 40L;
+					var controls = new List<Gui.Control>();
+
+					if (menuFirst)
+						gui.MenuBar = NewMenuBar();
+
+					controls.Add((Gui.Control)gui.Add("Button", "w80 h24", "By the margins"));
+					controls.Add((Gui.Control)gui.Add("Button", "x50 y90 w80 h24 Section", "Section"));
+
+					if (menuBetween)
+						gui.MenuBar = NewMenuBar();
+
+					controls.Add((Gui.Control)gui.Add("Button", "xs w80 h24", "xs"));
+					controls.Add((Gui.Control)gui.Add("Button", "ys w80 h24", "ys"));
+					controls.Add((Gui.Control)gui.Add("Button", "xm w80 h24", "xm"));
+					var tab = (Gui.Control)gui.Add("Tab3", "x10 y260 w200 h80", new Keysharp.Builtins.Array(["One", "Two"]));
+					controls.Add(tab);
+					controls.Add((Gui.Control)gui.Add("Button", "w60 h24", "In the tab"));
+					_ = tab.UseTab();
+					controls.Add((Gui.Control)gui.Add("Button", "xs w60 h24", "After the tab"));
+
+					return controls.Select(c =>
+					{
+						var x = new VarRef(null);
+						var y = new VarRef(null);
+						_ = c.GetPos(x, y, null, null);
+						return ((long)x.__Value, (long)y.__Value);
+					}).ToList();
+				}
+				finally
+				{
+					_ = gui.Destroy();
+				}
+			}
+
+			var plain = Build(false, false);
+			NUnit.Framework.Legacy.CollectionAssert.AreEqual(plain, Build(true, false), "a menu bar assigned first");
+			NUnit.Framework.Legacy.CollectionAssert.AreEqual(plain, Build(false, true), "a menu bar assigned between controls");
+		}
+
+		//A native control keeps notifying the parent it was created under, so its window is created only once it has been
+		//added to the Gui: OnMessage then sees an Edit's EN_CHANGE as in AHK, which WinForms' parking window would swallow.
+		[Test, Category("Gui")]
+		[Apartment(ApartmentState.STA)]
+		public void ControlNotifiesGuiWindow()
+		{
+			const long WM_COMMAND = 0x111, EN_CHANGE = 0x300;
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+
+			try
+			{
+				var edit = (Gui.Control)gui.Add("Edit", "w100 r1");
+				var codes = new List<long>();
+				_ = gui.OnMessage(WM_COMMAND, new KeysharpFunc((Func<object, object, object, object, object>)((_, wParam, lParam, _) =>
+				{
+					if ((long)lParam == edit.Hwnd)
+						codes.Add((long)wParam >> 16);
+
+					return "";
+				})));
+				_ = gui.Show("NoActivate x-20000 y-20000");
+
+				Assert.AreEqual(gui.form.Handle, WindowsAPI.GetParent(edit.Ctrl.Handle));
+				edit.Ctrl.Text = "changed";
+				NUnit.Framework.Legacy.CollectionAssert.Contains(codes, EN_CHANGE);
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
+		//As in AHK, MarginX/MarginY are in the units of a control's position whatever the DPI, and default to 1.25 and
+		//0.75 times the font's point size. The positions are the ones AHK gives for the same calls.
+		[Test, Category("Gui")]
+		[Apartment(ApartmentState.STA)]
+		public void MarginsFollowDpi()
+		{
+			static (long, long) Pos(object control)
+			{
+				var x = new VarRef(null);
+				var y = new VarRef(null);
+				_ = ((Gui.Control)control).GetPos(x, y, null, null);
+				return ((long)x.__Value, (long)y.__Value);
+			}
+
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+
+			try
+			{
+				Assert.AreEqual(10L, gui.MarginX, "the default for the 8 point font");
+				Assert.AreEqual(6L, gui.MarginY);
+				Assert.AreEqual((10L, 6L), Pos(gui.Add("Button", "w80 h24", "First")));
+
+				gui.MarginX = 30L;
+				gui.MarginY = 40L;
+				Assert.AreEqual(30L, gui.MarginX);
+				Assert.AreEqual(40L, gui.MarginY);
+				Assert.AreEqual((int)Math.Round(30 * gui.DpiScale, MidpointRounding.AwayFromZero), gui.form.Margin.Left, "kept in pixels");
+
+				Assert.AreEqual((10L, 70L), Pos(gui.Add("Button", "w80 h24", "Below")));
+				Assert.AreEqual((120L, 70L), Pos(gui.Add("Button", "x+m w80 h24", "x+m")));
+				Assert.AreEqual((30L, 134L), Pos(gui.Add("Button", "xm y+m w80 h24", "xm y+m")));
+				Assert.AreEqual((145L, 134L), Pos(gui.Add("Button", "x+m5 w80 h24", "x+m5")));
+
+				_ = gui.Show("NoActivate x-20000 y-20000");
+				var width = new VarRef(null);
+				var height = new VarRef(null);
+				_ = gui.GetClientPos(null, null, width, height);
+				Assert.AreEqual((255L, 198L), ((long)width.__Value, (long)height.__Value), "autosized to the controls plus a margin");
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
+		//As in AHK: a blank value removes the menu bar, anything else but a MenuBar is a TypeError, and the window keeps
+		//its size while the bar comes out of, and goes back into, its client area.
+		[Test, Category("Gui")]
+		[Apartment(ApartmentState.STA)]
+		public void MenuBarAssignment()
+		{
+			var gui = new Gui(System.Array.Empty<object>());
+			_ = gui.__New();
+
+			try
+			{
+				_ = gui.Add("Button", "x10 y10 w80 h24", "OK");
+				_ = gui.Show("NoActivate x-20000 y-20000 w200 h100");
+				System.Windows.Forms.Application.DoEvents();//The window counts as shown once its posted Shown event has run.
+				var windowSize = gui.form.Size;
+				var clientSize = gui.form.GuiClientSize;
+
+				var first = NewMenuBar();
+				gui.MenuBar = first;
+				Assert.AreSame(first, gui.MenuBar);
+				Assert.AreEqual(windowSize, gui.form.Size);
+				Assert.AreEqual(clientSize.Height - first.MenuStrip.Height, gui.form.GuiClientSize.Height);
+
+				var second = NewMenuBar();
+				gui.MenuBar = second;
+				Assert.AreSame(second, gui.MenuBar);
+				Assert.IsNull(first.MenuStrip.Parent, "the bar replaced leaves the window");
+				Assert.AreSame(second.MenuStrip, gui.form.MainMenuStrip);
+
+				var error = Assert.Throws<KeysharpException>(() => gui.MenuBar = 0L);
+				Assert.IsInstanceOf<TypeError>(error.UserError);
+				Assert.AreEqual("Expected a MenuBar but got an Integer.", error.UserError.Message);
+				Assert.AreSame(second, gui.MenuBar);
+
+				gui.MenuBar = "";
+				Assert.AreEqual("", gui.MenuBar);
+				Assert.IsNull(second.MenuStrip.Parent);
+				Assert.IsNull(gui.form.MainMenuStrip);
+				Assert.AreEqual(windowSize, gui.form.Size);
+				Assert.AreEqual(clientSize, gui.form.GuiClientSize);
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		}
+
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
 		public void ColumnedMenuSize()
