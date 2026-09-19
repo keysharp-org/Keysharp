@@ -223,16 +223,44 @@ namespace Keysharp.Tests
 				AssertCompileError(source, "reserved word");
 		}
 
-		// A leading comma continues the previous line. parser.ahk covers what the joined line MEANS; these are the
-		// shapes that used to fail to parse at all, chiefly a command-style call whose arguments continue.
+		// A line starting with an operator continues the previous line. parser.ahk covers what the joined line MEANS;
+		// these are the shapes that used to fail to parse at all, chiefly a statement form that ended at the break.
 		[Test, Category("Parser")]
-		public void LeadingCommaContinuation() => AssertCompiles(
-			"Loop 20\n\tMouseMove 10, 10, 20\n\t, Sleep 20\n",   // the reported case: braceless loop body
+		public void LeadingOperatorContinuation() => AssertCompiles(
+			"Loop 20\n\tMouseMove 10, 10, 20\n\t, Sleep 20\n",   // braceless loop body
 			"MsgBox \"a\", \"b\"\n, \"c\"\n, \"d\"\n",           // several continuation lines in a row
 			"MsgBox \"a\"\n, , \"c\"\n",                         // an omitted argument across the continuation
 			"MsgBox \"a\"\n\n, \"b\"\n",                         // a blank line between the two
 			"f() {\n\tMsgBox \"a\"\n\t, \"b\"\n}\n",             // last statement of a block, `}` after
-			"ExitApp\n, 1\n");                                   // zero-arg call statement + continuation
+			"ExitApp\n, 1\n",                                    // zero-arg call statement + continuation
+			"a := 1\na\n?? MsgBox()\n",                          // a name alone on its line is not a call when continued
+			"true\n\t? MsgBox()\n\t: \"\"\n",
+			"(()\n\t=> MsgBox())()\n",
+			"MsgBox\n.Call(\"x\")\n",
+			"#HotIf WinActive(\"a\")\n\tand WinActive(\"b\")\nx::y\n#HotIf\n",
+			"lbl:\n-1\n");                                       // a label ends its line
+
+		// Lines are merged after #Include has spliced its file in, and a line is never continued by one from another
+		// file: here merging would give x = 3 and y = 13.
+		[Test, Category("Parser"), Category("Internal")]
+		public void ContinuationStopsAtFileBoundary()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_include_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				File.WriteAllText(Path.Combine(dir, "Cont.ks"), "+ 2\ny := 10\n");
+				var emitted = EmitWithInclude("x := 1\n#include \"Cont.ks\"\n+ 3\n", dir);
+				Assert.IsNotNull(emitted.Bytes, emitted.Text);
+				StringAssert.Contains("x = 1L;", emitted.Text);
+				StringAssert.Contains("y = 10L;", emitted.Text);
+			}
+			finally
+			{
+				Directory.Delete(dir, true);
+			}
+		}
 
 		// A header expression that ends in `(…)` right before the body's `{` is the header, not an anonymous
 		// block-bodied function `(params) { … }`. `if`/`while`/`for` already parsed their header that way; the

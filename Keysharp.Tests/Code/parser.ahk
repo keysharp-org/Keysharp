@@ -109,6 +109,41 @@ LeadOmit
 , leadZero := 5
 Assert(leadZero == 5 && leadOmitLog.Length == 1 && leadOmitLog[1] == "-|5", A_LineNumber)
 
+; Any line starting with an operator continues the line above, whatever statement that line starts; a name alone on
+; its line would otherwise be a call statement. A trailing comma continues a command-style call's arguments.
+contHits := ""
+ContHit(s) {
+    global contHits .= s " "
+}
+ContPair(head, tail) => ContHit(head tail)
+ContCoalesce(v?) {
+    v
+    ?? ContHit("coalesce")
+}
+ContNegate(v) {
+    return
+        -v
+}
+
+ContCoalesce()
+true
+    ? ContHit("ternary")
+    : ContHit("wrong")
+(()
+    => ContHit("arrow"))()
+ContHit
+.Call("member")
+ContPair "trail",
+    "ing"
+contDouble := n
+    => n * 2
+contFlag := false
+    or true
+AssertEq(contHits, "coalesce ternary arrow member trailing ", A_LineNumber)
+AssertEq(ContNegate(2), -2, A_LineNumber)
+AssertEq(contDouble(3), 6, A_LineNumber)
+AssertEq(contFlag, true, A_LineNumber)
+
 escaped := "a`"b ; not comment"
 AssertEq(escaped, 'a"b ; not comment', A_LineNumber)
 Assert(0xFF == 255 && 0b1010 == 10 && 0o17 == 15 && 100_000 == 100000, A_LineNumber)

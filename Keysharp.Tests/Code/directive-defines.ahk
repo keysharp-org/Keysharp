@@ -249,4 +249,17 @@ x := false
 
 Assert(x, A_LineNumber)
 
+; Only the lines of the branch taken reach the parser, so a line in it or after the #endif which starts with an
+; operator continues the line above the #if.
+x := 10
+
+#if KEYSHARP
+	+ 5
+#else
+	+ 50
+#endif
+	* 2
+
+AssertEq(x, 20, A_LineNumber)
+
 FileAppend "pass", "*"

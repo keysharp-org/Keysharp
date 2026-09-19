@@ -81,8 +81,11 @@ namespace Keysharp.Parsing.Syntax
 				foreach (var d in defines) _ = _defines.Add(d);
 		}
 
-		private void LoadTokens(List<Token> tokens, IReadOnlyList<string> lexDiagnostics = null) =>
+		private void LoadTokens(List<Token> tokens, IReadOnlyList<string> lexDiagnostics = null)
+		{
 			_t = Preprocess(tokens, _includeDir, lexDiagnostics);
+			JoinContinuationLines(_t);
+		}
 
 		public static ProgramNode Parse(string source, string includeDir = null, string scriptFile = null) => ParseWithDiagnostics(source, includeDir, scriptFile).program;
 
@@ -349,25 +352,16 @@ namespace Keysharp.Parsing.Syntax
 			if (IsCommandStatement()) return ParseCommandCall();
 
 			var e = ParseExpression(1);
-			// A comma continues the statement as a sequence (`x := 1, y := 2`). The comma may also start the NEXT
-			// line — a leading comma is a line continuation — so look past newlines before each comma.
-			var commaSave = _pos;
-			SkipNewlines();
-			if (At(TokenKind.Comma))   // comma statement: `x := 1, y := 2` (possibly split across lines)
+			if (At(TokenKind.Comma))   // comma statement: `x := 1, y := 2`
 			{
 				var items = new List<Expr> { e };
-				while (true)
+				while (Match(TokenKind.Comma))
 				{
-					if (!Match(TokenKind.Comma)) break;
-					SkipNewlines();
+					SkipNewlines();   // a trailing comma continues onto the next line
 					items.Add(ParseExpression(1));
-					var s2 = _pos;
-					SkipNewlines();
-					if (!At(TokenKind.Comma)) { _pos = s2; break; }
 				}
 				return new ExpressionStmt(new SequenceExpr(items));
 			}
-			_pos = commaSave;
 			return new ExpressionStmt(e);
 		}
 
@@ -1181,6 +1175,75 @@ namespace Keysharp.Parsing.Syntax
 			return tokens;
 		}
 
+		/// <summary>
+		/// Merges a line that starts with an expression operator onto the line above it, as AutoHotkey does before it
+		/// parses (IsSOLContExpr), so `a` ⏎ `?? b` and `MsgBox` ⏎ `.Call(x)` read as one line in every statement form.
+		/// It runs on the preprocessed stream, so the lines of an #if block which is not taken, and the #if lines
+		/// themselves, are not there to separate a line from its continuation. Lines AutoHotkey never continues keep
+		/// their break: a line and one from another file, a directive other than #HotIf/#Import, a line ending in ':'
+		/// (a label or case; a ternary's ':' continues in the parser), and a hotkey, hotstring or remap line.
+		/// </summary>
+		private static void JoinContinuationLines(List<Token> tokens)
+		{
+			int w = 0, lineStart = 0;   // compacted in place: w is the write index, lineStart the current line's first token
+
+			for (var r = 0; r < tokens.Count; r++)
+			{
+				var t = tokens[r];
+
+				if (t.Kind == TokenKind.Newline)
+				{
+					var next = r + 1;
+					while (next < tokens.Count && tokens[next].Kind == TokenKind.Newline) next++;
+
+					if (w > lineStart && StartsContinuationLine(tokens, next) && tokens[next].File == tokens[w - 1].File
+						&& CanContinueLine(tokens, lineStart, w))
+					{
+						r = next - 1;
+						continue;
+					}
+
+					lineStart = w + 1;
+				}
+
+				tokens[w++] = t;
+			}
+
+			tokens.RemoveRange(w, tokens.Count - w);
+		}
+
+		// AutoHotkey's CONTINUATION_LINE_SYMBOLS less `++`, `--` and `::`, and the word operators unless something
+		// adjoins them (`and(x)` is a call). A word operator alone on its line, which AutoHotkey rejects, continues too.
+		private static bool StartsContinuationLine(List<Token> tokens, int i)
+		{
+			if (i >= tokens.Count)
+				return false;
+
+			var t = tokens[i];
+
+			return t.Kind switch
+			{
+				TokenKind.Identifier => continuationWords.Contains(t.Text) && i + 1 < tokens.Count
+					&& (tokens[i + 1].LeadingWhitespace || tokens[i + 1].Kind is TokenKind.Newline or TokenKind.EOF),
+				TokenKind.PlusPlus or TokenKind.MinusMinus or TokenKind.DoubleColon => false,
+				> TokenKind.Identifier and < TokenKind.HotkeyTrigger   // the punctuation and operator kinds
+					=> "<>=/|^,?:.+-*&!~".Contains(t.Text[0]),
+				_ => false
+			};
+		}
+
+		private static readonly HashSet<string> continuationWords =
+			new(System.StringComparer.OrdinalIgnoreCase) { "and", "or", "is", "in", "contains", "as" };
+
+		private static bool CanContinueLine(List<Token> tokens, int start, int end)
+		{
+			if (tokens[start].Kind == TokenKind.Hash)
+				return start + 1 < end && (tokens[start + 1].IsKeyword("hotif") || tokens[start + 1].IsKeyword("import"));
+
+			return tokens[end - 1].Kind is not (TokenKind.Colon or TokenKind.DoubleColon or TokenKind.HotstringExpansion
+				or TokenKind.RemapTargetKey or TokenKind.CSharpBlock);
+		}
+
 		// A "line:col: message" parse error for a #include whose target can't be found, attributed to the directive's
 		// position (ToCompilerError parses the line:col prefix so the user is pointed at the offending line).
 		private static Keysharp.Builtins.ParseException IncludeNotFound(Token directive, string target) =>
@@ -1440,16 +1503,13 @@ namespace Keysharp.Parsing.Syntax
 			// `static name(...) {…}` / `static name(...) => expr` is a (static, non-capturing) nested function definition.
 			if (IsFunctionDefinition()) return ParseFunctionDecl(isStatic: kw == "static");
 			var items = new List<Expr>();
-			// A decl list continues across lines on a comma — trailing (`X := 1,` ⏎ `Y`) OR leading (`X := 1` ⏎ `, Y`).
+			// A trailing comma continues a decl list onto the next line (`X := 1,` ⏎ `Y`).
 			// `global`/`local` alone (assume-global/local) has no items and must not eat the next statement.
 			while (!At(TokenKind.Newline) && !At(TokenKind.EOF) && !At(TokenKind.RBrace))
 			{
 				items.Add(ParseExpression(1));
-				var save = _pos;
+				if (!Match(TokenKind.Comma)) break;
 				SkipNewlines();
-				if (At(TokenKind.Comma)) { Advance(); SkipNewlines(); continue; }
-				_pos = save;
-				break;
 			}
 			return new DeclStmt(kw, items);
 		}
@@ -1533,7 +1593,7 @@ namespace Keysharp.Parsing.Syntax
 					// A single line may declare several comma-separated fields that share its static/instance
 					// scope, e.g. `a := 1, b := 2`, `static x := 1, y := 2`, or `x : Int32, y : Int32`. A `{…}`
 					// property body or `=>` shorthand getter is a complete member on its own and never continues
-					// past a comma. A leading comma on the next line continues the run (as with comma statements).
+					// past a comma.
 					while (true)
 					{
 						var fname = Advance().Text;
@@ -1577,11 +1637,9 @@ namespace Keysharp.Parsing.Syntax
 							Expr init = Match(TokenKind.Assign) ? ParseExpression(1) : null;
 							fields.Add(new ClassField(fname, init, isStatic));
 						}
-						// Another comma-separated field may follow on this or the next line (a leading comma
-						// continues the declaration). Look past newlines for the comma, then for the next name.
+						// Another comma-separated field may follow, after a trailing comma on the next line.
 						var commaSave = _pos;
-						SkipNewlines();
-						if (!Match(TokenKind.Comma)) { _pos = commaSave; break; }
+						if (!Match(TokenKind.Comma)) break;
 						SkipNewlines();
 						if (!At(TokenKind.Identifier)) { _pos = commaSave; break; }
 					}
@@ -1653,11 +1711,7 @@ namespace Keysharp.Parsing.Syntax
 			// (`ExitApp`, `obj.Method`). An index-access end (`arr[i]`) is an expression statement, not a call (mirrors
 			// the canonical isFunctionCallStatement, which rejects a trailing CloseBracket).
 			if (i >= _t.Count || _t[i].Kind == TokenKind.Newline || _t[i].Kind == TokenKind.EOF || _t[i].Kind == TokenKind.RBrace)
-			{
-				// A leading comma on a following line continues it: AutoHotkey joins the two lines with a SPACE
-				// between them, so `Name` + `, x := 1` is `Name , x := 1` — a call whose first argument is omitted.
 				return _t[i - 1].Kind != TokenKind.RBracket && (sawDot || _t[i - 1].Kind == TokenKind.Identifier);
-			}
 			var next = _t[i];
 			if (next.Kind == TokenKind.LParen && !next.LeadingWhitespace) return false;   // Name(...) call expression
 			// A command-call statement (`MsgBox "x", "y"`) requires the name/chain to be followed by whitespace (then an
@@ -1688,36 +1742,26 @@ namespace Keysharp.Parsing.Syntax
 			return new ExpressionStmt(new CallExpr(callee, ParseCommandArgs()));
 		}
 
-		// Comma-separated command arguments, ending at end of line / '}'. Supports omitted args.
+		// Comma-separated command arguments, ending at end of line / '}'. Supports omitted args. A trailing comma
+		// continues onto the next line.
 		private List<Argument> ParseCommandArgs()
 		{
 			var args = new List<Argument>();
 			var named = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-			// A leading comma on the FOLLOWING line continues this call, so step over the break to reach it — the
-			// loop then reads the comma as an omitted first argument, which is what AutoHotkey's join produces.
-			var lead = _pos;
-			SkipNewlines();
-			if (!At(TokenKind.Comma)) _pos = lead;
 			while (!At(TokenKind.Newline) && !At(TokenKind.EOF) && !At(TokenKind.RBrace))
 			{
 				if (At(TokenKind.Comma))
 				{
 					if (AnyNamed(args)) Error("an omitted argument cannot follow a named argument");
-					args.Add(new Argument(null, false)); Advance(); continue;
+					args.Add(new Argument(null, false)); Advance(); SkipNewlines(); continue;
 				}
 				var name = TryTakeArgName(null, named);   // `MsgBox "text", Options: "OK"`
 				var ex = ParseExpression(1);
 				var nameExpr = name == null ? TryTakeDynamicArgName(null, ref ex) : null;
 				var spread = Match(TokenKind.Star);
 				args.Add(NewArgSlot(ex, spread, name, nameExpr, args));
-				if (!Match(TokenKind.Comma))
-				{
-					// The comma may instead start the NEXT line — a leading comma is a line continuation, so look
-					// past newlines for it (as with comma statements).
-					var save = _pos;
-					SkipNewlines();
-					if (!Match(TokenKind.Comma)) { _pos = save; break; }
-				}
+				if (!Match(TokenKind.Comma)) break;
+				SkipNewlines();
 			}
 			return args;
 		}
@@ -1877,15 +1921,6 @@ namespace Keysharp.Parsing.Syntax
 				if (_groupDepth > 0) SkipNewlines();
 				var t = Current;
 
-				// Leading-operator line continuation: `expr`<newline>`<binary-op> ...` joins the lines.
-				if (t.Kind == TokenKind.Newline)
-				{
-					var save = _pos;
-					SkipNewlines();
-					if (GetInfix(Current).Prec > 0 || Current.Kind == TokenKind.Question) t = Current;   // ?: may continue a line
-					else _pos = save;
-				}
-
 				// Ternary `? :` (prec 2, right-assoc) and the maybe-operator `x?`.
 				if (t.Kind == TokenKind.Question)
 				{
@@ -1905,7 +1940,6 @@ namespace Keysharp.Parsing.Syntax
 						continue;
 					}
 					var then = ParseExpression(1);
-					SkipNewlines();   // the ':' arm may be on a continuation line
 					Expect(TokenKind.Colon, "ternary");
 					SkipNewlines();
 					var els = ParseExpression(1);
@@ -1994,19 +2028,6 @@ namespace Keysharp.Parsing.Syntax
 			while (true)
 			{
 				var t = Current;
-				// Leading-dot member-access continuation: `expr` ⏎ `.member` (a '.' on the next line immediately followed
-				// by the member name). This is method/member access, NOT concat (`expr` ⏎ `. member`, with a space after
-				// the dot, stays a concat handled by the infix loop).
-				if (t.Kind == TokenKind.Newline)
-				{
-					var save = _pos;
-					SkipNewlines();
-					if (At(TokenKind.Dot) && !Peek(1).LeadingWhitespace
-						&& Peek(1).Kind is TokenKind.Identifier or TokenKind.Number or TokenKind.Percent)
-					{ Advance(); e = MakeMember(e, false); continue; }
-					_pos = save;
-					break;
-				}
 				// Concatenation wants whitespace on BOTH sides of the dot, so a dot with a space on only one side is
 				// member access: `a .b` reads as `a.b`, the same as `a. b` does, while `a . b` concatenates. The
 				// member-name check keeps a trailing `.` continuation (`"a" .` ⏎ `"b"`) a concat.
