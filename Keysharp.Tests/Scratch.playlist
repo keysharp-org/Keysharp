@@ -72,6 +72,42 @@
                         <Property Name="DisplayName" Value="ScopedImport" />
                       </Rule>
                     </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ModuleTests.DynamicNames" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DynamicNames" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ModuleTests.Extends" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="Extends" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ModuleTests.ExtendsNeedsImport" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ExtendsNeedsImport" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ModuleTests.ModuleNameNeedsImport" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ModuleNameNeedsImport" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ModuleTests.ObjectMembers" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ObjectMembers" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ModuleTests.WildcardSkipsOwnVariables" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WildcardSkipsOwnVariables" />
+                      </Rule>
+                    </Rule>
                   </Rule>
                 </Rule>
                 <Rule Match="All">
@@ -153,6 +189,42 @@
                       <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ParserTests.ReservedNames" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="ReservedNames" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ParserTests.BooleanDirectiveArgs" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="BooleanDirectiveArgs" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ParserTests.CommandCommaErrors" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CommandCommaErrors" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ParserTests.CommandCommaExemptionsCompile" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CommandCommaExemptionsCompile" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ParserTests.ContinuationStopsAtFileBoundary" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ContinuationStopsAtFileBoundary" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ParserTests.IncludeFromMemoryWithoutIncludeDir" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="IncludeFromMemoryWithoutIncludeDir" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ParserTests.LeadingOperatorContinuation" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="LeadingOperatorContinuation" />
                       </Rule>
                     </Rule>
                   </Rule>
@@ -406,6 +478,36 @@
                         <Property Name="DisplayName" Value="WarningNonFatal" />
                       </Rule>
                     </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.DirectiveTests.CompileScriptCSharp" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CompileScriptCSharp" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.DirectiveTests.CSharpClrEvents" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CSharpClrEvents" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.DirectiveTests.WarnExperimental" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WarnExperimental" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.DirectiveTests.WarnLocalSameAsGlobal" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WarnLocalSameAsGlobal" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.DirectiveTests.WarnVarUnsetDeclaredGlobal" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WarnVarUnsetDeclaredGlobal" />
+                      </Rule>
+                    </Rule>
                   </Rule>
                 </Rule>
                 <Rule Match="All">
@@ -555,6 +657,24 @@
                         <Property Name="DisplayName" Value="FlowWorkerCriticalDispatch" />
                       </Rule>
                     </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FlowTests.FlowExitRequests" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FlowExitRequests" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FlowTests.FlowThreadPause" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FlowThreadPause" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FlowTests.FlowTryInterrupt" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FlowTryInterrupt" />
+                      </Rule>
+                    </Rule>
                   </Rule>
                 </Rule>
                 <Rule Match="All">
@@ -673,6 +793,12 @@
                         <Property Name="DisplayName" Value="PropsSpecialChars" />
                       </Rule>
                     </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.BuiltInVarsTests.PropsTrayMenuWithoutIcon" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PropsTrayMenuWithoutIcon" />
+                      </Rule>
+                    </Rule>
                   </Rule>
                 </Rule>
                 <Rule Match="All">
@@ -760,6 +886,12 @@
                       <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClassTests.StructPack" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="StructPack" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClassTests.InvalidBaseClass" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="InvalidBaseClass" />
                       </Rule>
                     </Rule>
                   </Rule>
@@ -915,6 +1047,24 @@
                       <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FunctionTests.VarParamsInFunc" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="VarParamsInFunc" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FunctionTests.ConstantAssignment" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ConstantAssignment" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FunctionTests.FunctionObjectsByMethod" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FunctionObjectsByMethod" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FunctionTests.NestedFunctionConflictsWithDeclaration" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="NestedFunctionConflictsWithDeclaration" />
                       </Rule>
                     </Rule>
                   </Rule>
@@ -1326,6 +1476,24 @@
                         <Property Name="DisplayName" Value="WarnNamedArgValid" />
                       </Rule>
                     </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.NamedArgTests.ConstructorWarningStaticNew" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ConstructorWarningStaticNew" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.NamedArgTests.WarnNamedArgImportedClass" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WarnNamedArgImportedClass" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.NamedArgTests.WarnNamedArgScriptModuleImport" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WarnNamedArgScriptModuleImport" />
+                      </Rule>
+                    </Rule>
                   </Rule>
                 </Rule>
                 <Rule Match="All">
@@ -1401,6 +1569,12 @@
                       <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MiscTests.SimplePass" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="SimplePass" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MiscTests.VarRefOutputs" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="VarRefOutputs" />
                       </Rule>
                     </Rule>
                   </Rule>
@@ -1675,6 +1849,12 @@
                       <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MonitorTests.RefreshMatching" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="RefreshMatching" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MonitorTests.MonitorVirtualScreen" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="MonitorVirtualScreen" />
                       </Rule>
                     </Rule>
                   </Rule>
@@ -2234,6 +2414,1293 @@
                       <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.OperatorTests.UnaryMinus" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="UnaryMinus" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="EventHookTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.ActiveAndNotActiveFollowTheForeground" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ActiveAndNotActiveFollowTheForeground" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.AnInstallThatThrowsEndsTheRunFailed" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="AnInstallThatThrowsEndsTheRunFailed" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.DeleteDoesNotStopTheSubscription" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DeleteDoesNotStopTheSubscription" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.HookSurfaceIsIdenticalAcrossSources" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="HookSurfaceIsIdenticalAcrossSources" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.PersistenceFollowsTheFamily" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PersistenceFollowsTheFamily" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.QueuedCallbacksAreDiscardedAfterStop" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="QueuedCallbacksAreDiscardedAfterStop" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.RealThreadRootsFollowTheFamily" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RealThreadRootsFollowTheFamily" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.RegisterEnumerateAndStopThroughTheManager" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RegisterEnumerateAndStopThroughTheManager" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.RetiredMembersAreGone" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RetiredMembersAreGone" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.StartAfterAnEndStillUnregisteringBeginsANewRun" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="StartAfterAnEndStillUnregisteringBeginsANewRun" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.StopRacingSlotRestartsLeavesTheHookStopped" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="StopRacingSlotRestartsLeavesTheHookStopped" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.UnusableCallbacksAreRefusedByTheFactory" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="UnusableCallbacksAreRefusedByTheFactory" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.WinEventIsConstructedIdleAndStarted" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WinEventIsConstructedIdleAndStarted" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="ClipboardTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.AllSavesAndRestores" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="AllSavesAndRestores" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.CfHtmlEnvelope" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CfHtmlEnvelope" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.CfHtmlOffsets" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CfHtmlOffsets" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.Clear" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="Clear" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.FilesRoundTrip" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FilesRoundTrip" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.Formats" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="Formats" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.HasKinds" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="HasKinds" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.HtmlFragment" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="HtmlFragment" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.ImageRoundTrip" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ImageRoundTrip" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.MissingContent" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="MissingContent" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.MultipleFormats" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="MultipleFormats" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.NonTextClipboard" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="NonTextClipboard" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.OnChangeHookDoesNotSuppressTheHandlerChain" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="OnChangeHookDoesNotSuppressTheHandlerChain" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.OnChangeHookOneShot" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="OnChangeHookOneShot" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.OnChangeHookSurface" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="OnChangeHookSurface" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.PrivateFormatRoundTrip" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PrivateFormatRoundTrip" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.ScriptSurface" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ScriptSurface" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.TextRoundTrip" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="TextRoundTrip" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.TextSetterReplacesExistingFormatsAndEmptyTextClears" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="TextSetterReplacesExistingFormatsAndEmptyTextClears" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.UriListParsing" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="UriListParsing" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.WaitAcceptsKindNames" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WaitAcceptsKindNames" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="EnumPolicyInternalsTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EnumPolicyInternalsTests.MessageBoxResultNames" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="MessageBoxResultNames" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="FileAndDirTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.DirCopy" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DirCopy" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.DirCopyArchive" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DirCopyArchive" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.DirCreate" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DirCreate" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.DirDelete" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DirDelete" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.DirExist" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DirExist" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.DirMove" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DirMove" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileAppend" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileAppend" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileCopy" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileCopy" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileCreateShortcut" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileCreateShortcut" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileCreateTemp" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileCreateTemp" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileDelete" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileDelete" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileEncoding" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileEncoding" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileExist" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileExist" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileGetAttrib" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileGetAttrib" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileGetShortcut" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileGetShortcut" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileGetSize" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileGetSize" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileGetTime" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileGetTime" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileGetVersion" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileGetVersion" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileInstall" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileInstall" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileInstallResources" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileInstallResources" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileMove" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileMove" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileOpen" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileOpen" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileRead" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileRead" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileRecycle" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileRecycle" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileRecycleEmpty" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileRecycleEmpty" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileSetAttrib" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileSetAttrib" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FileSetTime" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FileSetTime" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.FixFilters" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FixFilters" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.IniReadWriteDelete" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="IniReadWriteDelete" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.SetWorkingDir" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="SetWorkingDir" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.FileAndDirTests.SplitPath" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="SplitPath" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="CryptTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.CryptTests.Base32Vectors" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="Base32Vectors" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.CryptTests.HexVectors" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="HexVectors" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.CryptTests.HmacVectors" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="HmacVectors" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.CryptTests.ScriptSurface" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ScriptSurface" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.CryptTests.TotpVectors" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="TotpVectors" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="EnvTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EnvTests.ClipboardAll" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ClipboardAll" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EnvTests.ClipWait" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ClipWait" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EnvTests.EnvGet" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="EnvGet" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EnvTests.EnvSet" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="EnvSet" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EnvTests.EnvUpdate" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="EnvUpdate" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EnvTests.SysGet" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="SysGet" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="IconInternals" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.IconInternals.GuiIconRoundTripsThroughImage" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="GuiIconRoundTripsThroughImage" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.IconInternals.GuiSetIconRejectsABadSource" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="GuiSetIconRejectsABadSource" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.IconInternals.IconSetKeepsEveryFrameWhereLoadImageDoesNot" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="IconSetKeepsEveryFrameWhereLoadImageDoesNot" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.IconInternals.IconSetLoadsAtTheRequestedSize" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="IconSetLoadsAtTheRequestedSize" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.IconInternals.IconSetReturnsNullForABadSource" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="IconSetReturnsNullForABadSource" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.IconInternals.ModuleIconSurvivesTheHandleItWasExtractedFrom" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ModuleIconSurvivesTheHandleItWasExtractedFrom" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.IconInternals.ScriptSurfaceBinds" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ScriptSurfaceBinds" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.IconInternals.TaskbarRejectsAnEmptyHandle" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="TaskbarRejectsAnEmptyHandle" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.IconInternals.TaskbarRejectsAnUnknownProgressState" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="TaskbarRejectsAnUnknownProgressState" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.IconInternals.TraySetIconAppliesUnderNoTrayIcon" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="TraySetIconAppliesUnderNoTrayIcon" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="InputHookTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.BeforeHotkeysIsFixedWhileRunning" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="BeforeHotkeysIsFixedWhileRunning" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.CallbackPropertiesValidateAndClear" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CallbackPropertiesValidateAndClear" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.EndingWithoutOnEndStillReleases" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="EndingWithoutOnEndStillReleases" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.FirstEndWinsAndGivesBackTheBeforeHotkeysPlace" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FirstEndWinsAndGivesBackTheBeforeHotkeysPlace" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.FreshHookReadsStopped" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FreshHookReadsStopped" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.KeyboardHookNeed" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="KeyboardHookNeed" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.MatchListParsing" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="MatchListParsing" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.MouseEventPosition" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="MouseEventPosition" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.MouseHookNeed" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="MouseHookNeed" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.MouseMoveQueue" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="MouseMoveQueue" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.OnEndRunsForAnInputRestartedBeforeItsEnd" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="OnEndRunsForAnInputRestartedBeforeItsEnd" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.QueuedNotificationsAreDiscardedAfterStop" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="QueuedNotificationsAreDiscardedAfterStop" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.RestartBeforeTheEndKeepsTheRoots" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RestartBeforeTheEndKeepsTheRoots" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.RestartBeforeTheEndRunsStaysLinked" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RestartBeforeTheEndRunsStaysLinked" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.RunningHookReportsNoEndReason" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RunningHookReportsNoEndReason" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.TrailingNumericOption" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="TrailingNumericOption" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.InputHookTests.WaitTakesNoArgument" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WaitTakesNoArgument" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="MessageFilterTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.EmergencyLimit" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="EmergencyLimit" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.EmergencyReserve" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="EmergencyReserve" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.ClaimedMessageLeavesNoStash" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ClaimedMessageLeavesNoStash(32779)" />
+                        <Property Name="DisplayName" Value="ClaimedMessageLeavesNoStash(513)" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.OnMessageReturnControlsDispatch" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="OnMessageReturnControlsDispatch(&quot;blank&quot;,False,0L)" />
+                        <Property Name="DisplayName" Value="OnMessageReturnControlsDispatch(&quot;error&quot;,False,0L)" />
+                        <Property Name="DisplayName" Value="OnMessageReturnControlsDispatch(&quot;exit&quot;,False,0L)" />
+                        <Property Name="DisplayName" Value="OnMessageReturnControlsDispatch(&quot;integer&quot;,True,7L)" />
+                        <Property Name="DisplayName" Value="OnMessageReturnControlsDispatch(&quot;none&quot;,False,0L)" />
+                        <Property Name="DisplayName" Value="OnMessageReturnControlsDispatch(&quot;string&quot;,True,0L)" />
+                        <Property Name="DisplayName" Value="OnMessageReturnControlsDispatch(&quot;zero&quot;,True,0L)" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.PostedMessageClaimSkipsDispatch" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PostedMessageClaimSkipsDispatch(False)" />
+                        <Property Name="DisplayName" Value="PostedMessageClaimSkipsDispatch(True)" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.OnMessageBuffered" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="OnMessageBuffered" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.OnMessageEmergency" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="OnMessageEmergency" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.OnMessageLocalBlock" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="OnMessageLocalBlock" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.OnMessageUpdatesMaxThreadsInPlace" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="OnMessageUpdatesMaxThreadsInPlace" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.PostedMessageWhileUninterruptible" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PostedMessageWhileUninterruptible" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.PumpingCallbackRunsOnce" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PumpingCallbackRunsOnce" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.MessageFilterTests.RegistrationLimit" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RegistrationLimit" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="PackageDirectiveTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.AssetsFile" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="AssetsFile" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.BatchedRestore" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="BatchedRestore" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.CacheKey" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CacheKey" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.CompiledCksPackages" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CompiledCksPackages" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.CompiledCksUsesLauncherProviderWithoutSidecarCopy" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CompiledCksUsesLauncherProviderWithoutSidecarCopy" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.DuplicateBasenames" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DuplicateBasenames" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.DuplicatePackage" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DuplicatePackage" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.FailedRestoreCache" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="FailedRestoreCache" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.InlineCSharpPackage" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="InlineCSharpPackage" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.InvalidId" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="InvalidId" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.CompiledLoadPackageCarriesProvider" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CompiledLoadPackageCarriesProvider(&quot;exe-min&quot;)" />
+                        <Property Name="DisplayName" Value="CompiledLoadPackageCarriesProvider(&quot;exe&quot;)" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.CompiledPackages" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CompiledPackages(&quot;exe-min&quot;)" />
+                        <Property Name="DisplayName" Value="CompiledPackages(&quot;exe&quot;)" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.LazyDependency" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="LazyDependency" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.LoadPackage" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="LoadPackage" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.LoadPackageValidation" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="LoadPackageValidation" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.MalformedVersion" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="MalformedVersion" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.ManifestPinsFloatingRequest" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ManifestPinsFloatingRequest" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.MissingId" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="MissingId" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.MissingOptionalProviderIsOptional" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="MissingOptionalProviderIsOptional" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.NativeAliases" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="NativeAliases" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.NestedDuplicate" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="NestedDuplicate" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.NestedPackage" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="NestedPackage" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.OfflineRestore" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="OfflineRestore" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.OptionalManifest" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="OptionalManifest" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.PackageDeployment" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PackageDeployment" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.PackageLoadOrder" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PackageLoadOrder" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.PackageManifest" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PackageManifest" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.PackageRestore" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PackageRestore" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.ProviderAudit" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ProviderAudit" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.ProviderNativeAssets" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ProviderNativeAssets" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.ProviderQualification" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ProviderQualification" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.ProviderRestoreLockHonorsCancellation" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ProviderRestoreLockHonorsCancellation" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.ProviderSpecificIdsCannotCollideInDeploymentPaths" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ProviderSpecificIdsCannotCollideInDeploymentPaths" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.ProviderTargetSuppliedAssemblies" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ProviderTargetSuppliedAssemblies" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.ProviderVersionNormalization" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ProviderVersionNormalization" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.ProviderWarmCacheValidation" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ProviderWarmCacheValidation" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.RequiredPackageFailure" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RequiredPackageFailure" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.RequiresSeparation" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RequiresSeparation" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.RuntimeProviderMetadata" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RuntimeProviderMetadata" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.Specs" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="Specs" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.UnknownDirectives" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="UnknownDirectives" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.VersionConflict" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="VersionConflict" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.VersionRanges" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="VersionRanges" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.WarmCache" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WarmCache" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.PackageDirectiveTests.WinHotkeys" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WinHotkeys" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="ScriptingComponentTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.AppThemeIsolation" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="AppThemeIsolation" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.CksSidecar" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CksSidecar" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.CliPolicy" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CliPolicy" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.ComponentPolicy" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ComponentPolicy" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.ConsoleHost" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ConsoleHost" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.ContentAddressedCache" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ContentAddressedCache" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.DefaultRuntimeDirectory" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DefaultRuntimeDirectory" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.DeploymentPolicy" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DeploymentPolicy" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.DescriptorVersion" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DescriptorVersion" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.DiscoveryFallback" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DiscoveryFallback" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.EmbeddedCompiler" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="EmbeddedCompiler" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.EmbeddedCompilerProcess" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="EmbeddedCompilerProcess" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.ErrorStdOutIncludes" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ErrorStdOutIncludes" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.ErrorStdOutCompilation" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ErrorStdOutCompilation(&quot;#App { GuiTheme: \&quot;Bad\&quot; }\n#ErrorStdOut\n&quot;,&quot;GuiTheme&quot;,False)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutCompilation(&quot;#ErrorStdOut invalid\nx := 1\n&quot;,&quot;accepts no arguments&quot;,True)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutCompilation(&quot;#ErrorStdOut\n#App { GuiTheme: \&quot;Bad\&quot; }\n&quot;,&quot;GuiTheme&quot;,True)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutCompilation(&quot;#ErrorStdOut\nx := (\n&quot;,null,True)" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.ErrorStdOutOrder" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ErrorStdOutOrder(&quot;#EndIf\n#ErrorStdOut\n&quot;,False)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutOrder(&quot;#ErrorStdOut\n#EndIf\n&quot;,True)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutOrder(&quot;#ErrorStdOut\nx := (\n&quot;,True)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutOrder(&quot;#ErrorStdOut\nx := \&quot;unterminated\n&quot;,True)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutOrder(&quot;#if false\n#ErrorStdOut\n#else\n#ErrorStdOut\n#endif\nx := (\n&quot;,True)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutOrder(&quot;#if false\n#ErrorStdOut\n#endif\nx := (\n&quot;,False)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutOrder(&quot;#if false\nx := \&quot;unterminated\n#endif\n#ErrorStdOut\nx := (\n&quot;,True)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutOrder(&quot;text := \&quot;#ErrorStdOut\&quot;\n; #ErrorStdOut\nx := (\n&quot;,False)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutOrder(&quot;x := (\n#ErrorStdOut\n&quot;,False)" />
+                        <Property Name="DisplayName" Value="ErrorStdOutOrder(&quot;x := \&quot;unterminated\n#ErrorStdOut\n&quot;,False)" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.LeanExecutable" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="LeanExecutable" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.LoadableDiscovery" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="LoadableDiscovery" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.ParserOnly" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ParserOnly" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.ParserRequired" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ParserRequired" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.RoslynIsolation" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RoslynIsolation" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.RunScriptCks" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="RunScriptCks" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.SourceSelection" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="SourceSelection" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.StdoutSidecar" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="StdoutSidecar" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ScriptingComponentTests.WarningSuccess" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="WarningSuccess" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="ThreadTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ThreadTests.CriticalDefault" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CriticalDefault" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ThreadTests.CriticalDialog" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CriticalDialog" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ThreadTests.CriticalMinusOne" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CriticalMinusOne" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ThreadTests.DialogInterruption" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="DialogInterruption" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ThreadTests.InterruptDuration" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="InterruptDuration" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ThreadTests.NoTimersLocal" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="NoTimersLocal" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ThreadTests.NoTimersPrototype" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="NoTimersPrototype" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ThreadTests.PeekFrequency" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PeekFrequency" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ThreadTests.PriorityDrop" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="PriorityDrop" />
+                      </Rule>
+                    </Rule>
+                  </Rule>
+                </Rule>
+                <Rule Match="All">
+                  <Property Name="Class" Value="TimerSchedulerTests" />
+                  <Rule Match="Any">
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.TimerSchedulerTests.BlockedAdmission" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="BlockedAdmission" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.TimerSchedulerTests.BlockedTimer" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="BlockedTimer" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.TimerSchedulerTests.CallbackSleep" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="CallbackSleep" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.TimerSchedulerTests.LongTimerCoalescing" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="LongTimerCoalescing" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.TimerSchedulerTests.NotificationDuringPump" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="NotificationDuringPump" />
+                      </Rule>
+                    </Rule>
+                    <Rule Match="All">
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.TimerSchedulerTests.ShortTimerPeriod" />
+                      <Rule Match="Any">
+                        <Property Name="DisplayName" Value="ShortTimerPeriod" />
                       </Rule>
                     </Rule>
                   </Rule>

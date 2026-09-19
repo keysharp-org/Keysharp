@@ -3412,7 +3412,7 @@ namespace Keysharp.Compilation.Syntax
 			// Keep newlines and conditional trivia intact.
 			foreach (var directive in directives)
 				for (var i = directive.Span.Start; i < directive.Span.End; i++)
-					if (body[i] != '\n' && body[i] != '\r')
+					if (body[i] is not '\n' and not '\r')
 						body[i] = ' ';
 
 			return (usings, new string(body));
@@ -4677,16 +4677,16 @@ namespace Keysharp.Compilation.Syntax
 					// arguments do. `[]` takes no named arguments of its own (the parser rejects them); a container
 					// a spread source carries simply rides through as a value, like any other element.
 					List<ExpressionSyntax> IdxArgs() =>
-						ix.Args.Any(ia => ia.Spread) ? new() { SpreadParams(ix.Args) } : LowerArgs(ix.Args);
+						ix.Args.Any(ia => ia.Spread) ? [SpreadParams(ix.Args)] : LowerArgs(ix.Args);
 
 					if (!ix.NullConditional && ix.Target is MemberExpr { NullConditional: false } im)
 						return MayYieldUnset(im.Target)
-							? NullCondWrap(im.Target, tt => Op("GetPropertyValue", new[] { tt, Str(im.Name) }.Concat(IdxArgs()).ToArray()))
-							: Op("GetPropertyValue", new[] { LowerExpr(im.Target), Str(im.Name) }.Concat(IdxArgs()).ToArray());
+							? NullCondWrap(im.Target, tt => Op("GetPropertyValue", [ tt, Str(im.Name), ..IdxArgs() ]))
+							: Op("GetPropertyValue", [ LowerExpr(im.Target), Str(im.Name), ..IdxArgs() ]);
 					if (!ix.NullConditional && ix.Target is DynMemberExpr { NullConditional: false } idm)
 						return MayYieldUnset(idm.Target)
-							? NullCondWrap(idm.Target, tt => Op("GetPropertyValue", new[] { tt, LowerExpr(idm.NameExpr) }.Concat(IdxArgs()).ToArray()))
-							: Op("GetPropertyValue", new[] { LowerExpr(idm.Target), LowerExpr(idm.NameExpr) }.Concat(IdxArgs()).ToArray());
+							? NullCondWrap(idm.Target, tt => Op("GetPropertyValue", [ tt, LowerExpr(idm.NameExpr), ..IdxArgs()]))
+							: Op("GetPropertyValue", [ LowerExpr(idm.Target), LowerExpr(idm.NameExpr), ..IdxArgs()]);
 					return ix.NullConditional || MayYieldUnset(ix.Target)
 						? NullCondWrap(ix.Target, tt => Op("GetIndexOrNull", Cons(tt, IdxArgs())))
 						: Op("GetIndex", Cons(LowerExpr(ix.Target), IdxArgs()));
@@ -4775,10 +4775,8 @@ namespace Keysharp.Compilation.Syntax
 						// `x[idx*] := v`: the flattened index and the value share SetObject's params array, value last.
 						if (ie.Args.Any(x => x.Spread))
 							return Op("SetObject", target, SpreadParams(ie.Args, trailing: LowerExpr(a.Value)));
-						var argv = new List<ExpressionSyntax> { target };
-						argv.AddRange(LowerArgs(ie.Args));
-						argv.Add(LowerExpr(a.Value));
-						return Op("SetObject", argv.ToArray());
+						ExpressionSyntax[] argv = [ target, ..LowerArgs(ie.Args), LowerExpr(a.Value) ];
+						return Op("SetObject", argv);
 					}
 					return ie.NullConditional || MayYieldUnset(ie.Target)
 						? NullCondWrap(ie.Target, SetIndex)
@@ -4795,33 +4793,30 @@ namespace Keysharp.Compilation.Syntax
 					{
 						var lowered = LowerArgs(ie.Args);
 						var temps = lowered.Select(_ => NewTemp()).ToArray();
-						var ops = new List<ExpressionSyntax>();
+						var ops = new ExpressionSyntax[temps.Length + 1];
 						for (var k = 0; k < temps.Length; ++k)
-							ops.Add(Assign(Id(temps[k]), lowered[k]));
+							ops[k] = Assign(Id(temps[k]), lowered[k]);
 						var ids = temps.Select(name => (ExpressionSyntax)Id(name)).ToList();
 						var newValue = CompoundValue(a.Op[..^1], Op("GetIndex", Cons(target, ids)), LowerExpr(a.Value));
 						if (newValue == null)
 							return Str("");
-						var set = new List<ExpressionSyntax> { target };
-						set.AddRange(ids);
-						set.Add(newValue);
-						ops.Add(Op("SetObject", set.ToArray()));
-						return Op("MultiStatement", ops.ToArray());
+						ExpressionSyntax[] set = [ target, ..ids, newValue ];
+						ops[temps.Length] = Op("SetObject", set);
+						return Op("MultiStatement", ops);
 					});
 				// Compound: capture the target and each index once.
 				var tt = NewTemp();
 				var loweredArgs = LowerArgs(ie.Args);
 				var argTemps = loweredArgs.Select(_ => NewTemp()).ToArray();
-				var ops = new List<ExpressionSyntax> { Assign(Id(tt), LowerExpr(ie.Target)) };
-				for (int k = 0; k < argTemps.Length; k++) ops.Add(Assign(Id(argTemps[k]), loweredArgs[k]));
+				var ops = new ExpressionSyntax[argTemps.Length + 1];
+				ops[0] = Assign(Id(tt), LowerExpr(ie.Target));
+				for (int k = 0; k < argTemps.Length; k++) ops[k + 1] = Assign(Id(argTemps[k]), loweredArgs[k]);
 				var idxIds = argTemps.Select(n => (ExpressionSyntax)Id(n)).ToList();
 				var newVal = CompoundValue(a.Op[..^1], Op("GetIndex", Cons(Id(tt), idxIds)), LowerExpr(a.Value));
 				if (newVal == null) { Diag($"compound assignment to an index ('{a.Op}') not yet lowerable"); return Str(""); }
-				var setArgs = new List<ExpressionSyntax> { Id(tt) };
-				setArgs.AddRange(idxIds);
-				setArgs.Add(newVal);
-				ops.Add(Op("SetObject", setArgs.ToArray()));
-				return Op("MultiStatement", ops.ToArray());
+				ExpressionSyntax[] setArgs = [Id(tt), ..idxIds, newVal];
+				ops[^1] = Op("SetObject", setArgs);
+				return Op("MultiStatement", ops);
 			}
 			if (a.Target is not NameExpr tn)
 			{
@@ -4964,10 +4959,8 @@ namespace Keysharp.Compilation.Syntax
 					for (int k = 0; k < argTemps.Length; k++) setup.Add(Assign(Id(argTemps[k]), idx[k]));
 					var idxIds = argTemps.Select(n => (ExpressionSyntax)Id(n)).ToList();
 					read = Op("GetIndex", Cons(Id(it), idxIds));
-					var setArgs = new List<ExpressionSyntax> { Id(it) };
-					setArgs.AddRange(idxIds);
-					setArgs.Add(Op(op, Op("GetIndex", Cons(Id(it), idxIds)), Num("1")));
-					write = Op("SetObject", setArgs.ToArray());
+					ExpressionSyntax[] setArgs = [Id(it), .. idxIds, Op(op, Op("GetIndex", Cons(Id(it), idxIds)), Num("1"))];
+					write = Op("SetObject", setArgs);
 					break;
 				case DerefExpr dr:
 					return DerefUpdate(dr.Name, op, Num("1"), u.Postfix);
@@ -4977,12 +4970,12 @@ namespace Keysharp.Compilation.Syntax
 			if (u.Postfix)   // capture targets, read the OLD value into a temp, write, then yield the old value
 			{
 				var old = NewTemp();
-				var seq = new List<ExpressionSyntax>(setup) { Assign(Id(old), read), write, Id(old) };
-				return Op("MultiStatement", seq.ToArray());
+				ExpressionSyntax[] seq = [..setup, Assign(Id(old), read), write, Id(old) ];
+				return Op("MultiStatement", seq);
 			}
 			if (setup.Count == 0) return write;   // prefix on a plain name: the write expression yields the new value
-			var pre = new List<ExpressionSyntax>(setup) { write };
-			return Op("MultiStatement", pre.ToArray());
+			ExpressionSyntax[] pre = [ ..setup, write ];
+			return Op("MultiStatement", pre);
 		}
 
 		// IsSet(expr) must not throw when expr is an unset property/index/call: rewrite the argument's
@@ -5192,9 +5185,12 @@ namespace Keysharp.Compilation.Syntax
 
 		private ExpressionSyntax LowerObject(ObjectExpr o)
 		{
-			var args = new List<ExpressionSyntax> { Id(EnsureTypeField("Keysharp.Builtins.KeysharpObject", "Object")), Str("Call") };
-			foreach (var en in o.Entries) { args.Add(KeyToString(en.Key)); args.Add(LowerExpr(en.Value)); }
-			return Op("Invoke", args.ToArray());
+			var i = 2;
+			var args = new ExpressionSyntax[(o.Entries.Count * 2) + 2];
+			args[0] = Id(EnsureTypeField("Keysharp.Builtins.KeysharpObject", "Object"));
+			args[1] = Str("Call");
+			foreach (var en in o.Entries) { args[i++] = KeyToString(en.Key); args[i++] = LowerExpr(en.Value); }
+			return Op("Invoke", args);
 		}
 
 		// An object-literal key. A bare identifier and a string literal are literal property names; everything else
@@ -5278,17 +5274,18 @@ namespace Keysharp.Compilation.Syntax
 		// there. Lowered after the positional arguments so the call still evaluates left to right.
 		private ExpressionSyntax NamedArgsOf(List<Argument> named)
 		{
-			var nameValues = new List<ExpressionSyntax>(named.Count * 2);
+			var i = 0;
+			var nameValues = new ExpressionSyntax[named.Count * 2];
 
 			foreach (var a in named)
 			{
 				// A dynamic name (`%x%: v`) is lowered exactly as the same text lowers as an object-literal key, so
 				// the two forms cannot drift apart in what they compute or in how a non-string result is coerced.
-				nameValues.Add(a.Name != null ? Str(a.Name) : KeyToString(a.NameExpr));
-				nameValues.Add(LowerExpr(a.Value));
+				nameValues[i++] = a.Name != null ? Str(a.Name) : KeyToString(a.NameExpr);
+				nameValues[i++] = LowerExpr(a.Value);
 			}
 
-			return Op("NamedArgs", nameValues.ToArray());
+			return Op("NamedArgs", nameValues);
 		}
 
 		// ---- control flow ----
@@ -5473,7 +5470,6 @@ namespace Keysharp.Compilation.Syntax
 			}
 
 			var enumInit = Inv(Member(Inv(Access("Keysharp.Runtime.Loops.MakeEnumerable"), meArgs.ToArray()), "GetEnumerator"));
-
 			var frame = PushLoop(id);
 			var body = AsBlock(LowerStmt(fr.Body));
 			PopLoop();
@@ -5933,14 +5929,12 @@ namespace Keysharp.Compilation.Syntax
 			var body = LowerCallableBody(paramLowers, m.Body, m.ArrowBody, implName,
 				thisFuncName, out _, byRefParams, m.Params);
 			_inMethod = saved; _currentMethodStatic = savedStatic;
-			var attrs = new List<AttributeListSyntax>();
 			// Always stamped, not only when the mangler changed the spelling: the exact source case is what
 			// OwnProps() enumeration, case-sensitive (`==`/`!==`) comparisons and Func.Name all report, and a name
 			// carried in metadata is one the runtime never has to recover from the emitted identifier.
-			attrs.Add(Attr("Keysharp.Runtime.UserDeclaredName", Str(m.Name)));
-			attrs.AddRange(CompatAttr());
+			AttributeListSyntax[] attrs = [Attr("Keysharp.Runtime.UserDeclaredName", Str(m.Name)), .. CompatAttr()];
 			_currentCompat = savedCompat;
-			return ObjMethod(implName, ParamDecls(m.Params, includeThis: true, wrapVariadics: true), body, attrs.ToArray());
+			return ObjMethod(implName, ParamDecls(m.Params, includeThis: true, wrapVariadics: true), body, attrs);
 		}
 
 		private List<MemberDeclarationSyntax> LowerProperty(ClassProperty pr)
@@ -6373,18 +6367,29 @@ namespace Keysharp.Compilation.Syntax
 			downStatements.Add(SyntaxFactory.ReturnStatement(Str("")));
 			_hotMembers.Add(RemapCallback(downName, downStatements));
 
-			var upSendParts = new List<ExpressionSyntax> { Str($"{{Blind}}{{{remapDest} Up}}") };
+			ExpressionSyntax[] upSendParts;
 
 			if (explicitlyReleaseSourceModifiers)
-				foreach (var mod in restoredSourceModifiers)
-					upSendParts.Add(
-						SyntaxFactory.ParenthesizedExpression(SyntaxFactory.ConditionalExpression(
-							IfTest(Inv(Access("Keysharp.Builtins.Keyboard.GetKeyState"), Str(mod), Str("P"))),
-							Str($"{{{mod} DownR}}"), Str(""))));
+			{
+				upSendParts = new ExpressionSyntax[restoredSourceModifiers.Count + 1];
+				upSendParts[0] = Str($"{{Blind}}{{{remapDest} Up}}");
+				
+				for (int i = 0; i < restoredSourceModifiers.Count; i++)
+				{
+					var mod = restoredSourceModifiers[i];
+					upSendParts[i + 1] = SyntaxFactory.ParenthesizedExpression(SyntaxFactory.ConditionalExpression(
+						IfTest(Inv(Access("Keysharp.Builtins.Keyboard.GetKeyState"), Str(mod), Str("P"))),
+						Str($"{{{mod} DownR}}"), Str("")));
+				}
+			}
+			else
+			{
+				upSendParts = [Str($"{{Blind}}{{{remapDest} Up}}")];
+			}
 
-			var upSendText = upSendParts.Count == 1
+			var upSendText = upSendParts.Length == 1
 				? upSendParts[0]
-				: Inv(Access("System.String.Concat"), upSendParts.ToArray());
+				: Inv(Access("System.String.Concat"), upSendParts);
 
 			_hotMembers.Add(RemapCallback(upName, new List<StatementSyntax>
 				{ SetDelay(remapDestIsMouse), SendStmt(upSendText), SyntaxFactory.ReturnStatement(Str("")) }));
@@ -6446,9 +6451,8 @@ namespace Keysharp.Compilation.Syntax
 			var (paramLowers, byRefParams) = ParamSets(f.Params);
 			var implName = NameMangler.FunctionMethod(f.Name);
 			var body = LowerCallableBody(paramLowers, f.Body, f.ArrowBody, implName, f.Name, out _, byRefParams, f.Params);
-			var attrs = new List<AttributeListSyntax> { Attr("Keysharp.Runtime.UserDeclaredName", Str(f.Name)) };
-			attrs.AddRange(CompatAttr());
-			var method = ObjMethod(implName, ParamDecls(f.Params, includeThis: false, wrapVariadics: true), body, attrs.ToArray());
+			AttributeListSyntax[] attrs = [Attr("Keysharp.Runtime.UserDeclaredName", Str(f.Name)), ..CompatAttr()];
+			var method = ObjMethod(implName, ParamDecls(f.Params, includeThis: false, wrapVariadics: true), body, attrs);
 			_currentCompat = savedCompat;
 			return method;
 		}
@@ -7421,17 +7425,14 @@ namespace Keysharp.Compilation.Syntax
 				// `&obj.prop[i,j]` binds to the parameterized PROPERTY slot (obj.__Ref("prop", i, j)), re-reading the
 				// property each access — not to whatever array `obj.prop` currently resolves to.
 				case IndexExpr ie when ie.Target is MemberExpr ipm:
-					var pmArgs = new List<ExpressionSyntax> { LowerExpr(ipm.Target), Str("__Ref"), Str(ipm.Name) };
-					pmArgs.AddRange(LowerArgs(ie.Args));
-					return Op("Invoke", pmArgs.ToArray());
+					ExpressionSyntax[] pmArgs = [LowerExpr(ipm.Target), Str("__Ref"), Str(ipm.Name), ..LowerArgs(ie.Args)];
+					return Op("Invoke", pmArgs);
 				case IndexExpr ie when ie.Target is DynMemberExpr ipd:
-					var pdArgs = new List<ExpressionSyntax> { LowerExpr(ipd.Target), Str("__Ref"), LowerExpr(ipd.NameExpr) };
-					pdArgs.AddRange(LowerArgs(ie.Args));
-					return Op("Invoke", pdArgs.ToArray());
+					ExpressionSyntax[] pdArgs = [LowerExpr(ipd.Target), Str("__Ref"), LowerExpr(ipd.NameExpr), ..LowerArgs(ie.Args)];
+					return Op("Invoke", pdArgs);
 				case IndexExpr ie:   // &obj[i] (obj a plain value/var) -> obj.__Ref("__Item", i)
-					var refArgs = new List<ExpressionSyntax> { LowerExpr(ie.Target), Str("__Ref"), Str("__Item") };
-					refArgs.AddRange(LowerArgs(ie.Args));
-					return Op("Invoke", refArgs.ToArray());
+					ExpressionSyntax[] refArgs = [LowerExpr(ie.Target), Str("__Ref"), Str("__Item"), ..LowerArgs(ie.Args)];
+					return Op("Invoke", refArgs);
 				case DerefExpr dr:   // &%name% : ref bound to the variable the name finds when it is taken
 					return DerefRef(dr.Name);
 				case GroupExpr g:
