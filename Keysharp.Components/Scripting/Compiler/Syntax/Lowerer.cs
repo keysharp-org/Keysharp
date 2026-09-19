@@ -146,6 +146,8 @@ namespace Keysharp.Compilation.Syntax
 		// (Directives/Hotkeys/Hotstrings/Remaps registration calls) emitted into Program.AutoExecSection.
 		private readonly List<MemberDeclarationSyntax> _hotMembers = new();
 		private readonly List<StatementSyntax> _dhhr = new();
+		private readonly List<ExpressionSyntax> _operatorDeclarations = new();
+		private bool _hasOperatorDeclarations;
 		private bool _persistent;            // a hotkey/hotstring makes the script persistent
 		// #Warn config: per-type output mode ("MsgBox"/"StdOut"/"OutputDebug") or null when that warning is off.
 		// Matching AHK, VarUnset and Unreachable are ENABLED by default (MsgBox mode); LocalSameAsGlobal is off until a
@@ -291,15 +293,10 @@ namespace Keysharp.Compilation.Syntax
 			NullCondWrap(operand, operation);
 
 		// Case-insensitive so verbal operators carry any source casing (Is, AND, Or).
-		private static readonly Dictionary<string, string> BinOps = new(System.StringComparer.OrdinalIgnoreCase)
+		private static readonly Dictionary<string, string> BinOps = new(
+			Keysharp.Runtime.OperatorCatalog.All.Where(op => op.Arity == 2)
+				.ToDictionary(op => op.Symbol, op => op.Kind.ToString()), System.StringComparer.OrdinalIgnoreCase)
 		{
-			["+"] = "Add", ["-"] = "Subtract", ["*"] = "Multiply", ["/"] = "Divide",
-			["//"] = "FloorDivide", ["**"] = "Power", ["."] = "Concat",
-			["&"] = "BitwiseAnd", ["|"] = "BitwiseOr", ["^"] = "BitwiseXor",
-			["<<"] = "BitShiftLeft", [">>"] = "BitShiftRight", [">>>"] = "LogicalBitShiftRight",
-			["<"] = "LessThan", ["<="] = "LessThanOrEqual", [">"] = "GreaterThan", [">="] = "GreaterThanOrEqual",
-			["="] = "ValueEquality", ["=="] = "IdentityEquality", ["!="] = "ValueInequality", ["!=="] = "IdentityInequality",
-			["~="] = "RegEx", ["!~="] = "NotRegEx",
 			["&&"] = "BooleanAnd", ["||"] = "BooleanOr", ["and"] = "BooleanAnd", ["or"] = "BooleanOr",
 			["is"] = "Is",   // `??` / `??=` are lowered to C#'s short-circuiting null-coalescing operator, not a helper call.
 		};
@@ -4808,7 +4805,7 @@ namespace Keysharp.Compilation.Syntax
 				var tt = NewTemp();
 				var loweredArgs = LowerArgs(ie.Args);
 				var argTemps = loweredArgs.Select(_ => NewTemp()).ToArray();
-				var ops = new ExpressionSyntax[argTemps.Length + 1];
+				var ops = new ExpressionSyntax[argTemps.Length + 2];
 				ops[0] = Assign(Id(tt), LowerExpr(ie.Target));
 				for (int k = 0; k < argTemps.Length; k++) ops[k + 1] = Assign(Id(argTemps[k]), loweredArgs[k]);
 				var idxIds = argTemps.Select(n => (ExpressionSyntax)Id(n)).ToList();
@@ -4914,22 +4911,21 @@ namespace Keysharp.Compilation.Syntax
 			switch (u.Op)
 			{
 				case "!": case "not": return propagate ? PropagateUnary(u.Operand, value => Op("LogicalNot", value)) : Op("LogicalNot", LowerExpr(u.Operand));
-				case "-": return propagate ? PropagateUnary(u.Operand, value => Op("Subtract", Num("0"), value)) : Op("Subtract", Num("0"), LowerExpr(u.Operand));
-				case "+": return propagate ? PropagateUnary(u.Operand, value => value) : LowerExpr(u.Operand);
+				case "-": return propagate ? PropagateUnary(u.Operand, value => Op("Minus", value)) : Op("Minus", LowerExpr(u.Operand));
+				case "+": return propagate ? PropagateUnary(u.Operand, value => Op("Plus", value)) : Op("Plus", LowerExpr(u.Operand));
 				case "&": return MakeRefFor(u.Operand);
 				case "~": return propagate ? PropagateUnary(u.Operand, value => Op("BitwiseNot", value)) : Op("BitwiseNot", LowerExpr(u.Operand));
 				default: Diag($"unary '{u.Op}' not yet lowerable"); return Str("");
 			}
 		}
 
-		// ++/--. The write-back expression yields the NEW value. For the postfix form we capture the old value
-		// into a temp first: `x++` -> MultiStatement(KS_temp = x, x = Add(x,1), KS_temp), so `y := x++` sees the
-		// pre-increment value without re-deriving it (avoids a redundant op and any side effects).
+		// Postfix saves the value before applying the operator; receivers, indices and getters run once.
 		private ExpressionSyntax LowerIncDec(UnaryExpr u)
 		{
-			var op = u.Op == "++" ? "Add" : "Subtract";
+			var op = u.Op == "++" ? "Increment" : "Decrement";
 			var setup = new List<ExpressionSyntax>();   // temp captures so a member/index target runs exactly once
-			ExpressionSyntax read, write;
+			ExpressionSyntax read;
+			Func<ExpressionSyntax, ExpressionSyntax> write;
 			switch (u.Operand)
 			{
 				case NameExpr name:
@@ -4937,16 +4933,13 @@ namespace Keysharp.Compilation.Syntax
 						return Str("");
 
 					read = target.Read;
-					write = target.Write(Op(op, target.Read, Num("1")));
-					// An assignment is parenthesized to be an operand.
-					if (write is AssignmentExpressionSyntax)
-						write = SyntaxFactory.ParenthesizedExpression(write);
+					write = value => target.Write(value);
 					break;
 				case MemberExpr me:
 					var mt = NewTemp();
 					setup.Add(Assign(Id(mt), LowerExpr(me.Target)));
 					read = Op("GetPropertyValue", Id(mt), Str(me.Name));
-					write = Op("SetPropertyValue", Id(mt), Str(me.Name), Op(op, Op("GetPropertyValue", Id(mt), Str(me.Name)), Num("1")));
+					write = value => Op("SetPropertyValue", Id(mt), Str(me.Name), value);
 					break;
 				case IndexExpr ie:
 					if (ie.Args.Any(x => x.Spread))
@@ -4959,22 +4952,28 @@ namespace Keysharp.Compilation.Syntax
 					for (int k = 0; k < argTemps.Length; k++) setup.Add(Assign(Id(argTemps[k]), idx[k]));
 					var idxIds = argTemps.Select(n => (ExpressionSyntax)Id(n)).ToList();
 					read = Op("GetIndex", Cons(Id(it), idxIds));
-					ExpressionSyntax[] setArgs = [Id(it), .. idxIds, Op(op, Op("GetIndex", Cons(Id(it), idxIds)), Num("1"))];
-					write = Op("SetObject", setArgs);
+					write = value => Op("SetObject", [Id(it), .. idxIds, value]);
 					break;
 				case DerefExpr dr:
-					return DerefUpdate(dr.Name, op, Num("1"), u.Postfix);
+					var operation = SyntaxFactory.ParenthesizedLambdaExpression()
+						.WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(new[]
+						{ SyntaxFactory.Parameter(SyntaxFactory.Identifier("KS_operand")), SyntaxFactory.Parameter(SyntaxFactory.Identifier("KS_unused")) })))
+						.WithExpressionBody(Op(op, Id("KS_operand")));
+					return Op("DerefUpdate", DerefScope, DerefTarget(dr.Name), operation, Null, BoolLit(u.Postfix));
 				default:
 					Diag($"'{u.Op}' on {u.Operand.GetType().Name} not yet lowerable"); return Str("");
 			}
-			if (u.Postfix)   // capture targets, read the OLD value into a temp, write, then yield the old value
+			var old = u.Postfix ? NewTemp() : null;
+			var updated = write(Op(op, u.Postfix ? Id(old) : read));
+			if (updated is AssignmentExpressionSyntax)
+				updated = SyntaxFactory.ParenthesizedExpression(updated);
+			if (u.Postfix)
 			{
-				var old = NewTemp();
-				ExpressionSyntax[] seq = [..setup, Assign(Id(old), read), write, Id(old) ];
+				ExpressionSyntax[] seq = [..setup, Assign(Id(old), read), updated, Id(old)];
 				return Op("MultiStatement", seq);
 			}
-			if (setup.Count == 0) return write;   // prefix on a plain name: the write expression yields the new value
-			ExpressionSyntax[] pre = [ ..setup, write ];
+			if (setup.Count == 0) return updated;
+			ExpressionSyntax[] pre = [..setup, updated];
 			return Op("MultiStatement", pre);
 		}
 
@@ -5741,6 +5740,19 @@ namespace Keysharp.Compilation.Syntax
 			if (classFrame != null) _importScopes.Add(classFrame);
 			var members = new List<MemberDeclarationSyntax> { ClassCtor(typeName) };
 			foreach (var m in c.Methods) members.Add(LowerMethod(m, typeName));
+			var operatorType = "Program." + _currentModuleClass + "." + _currentClassPath;
+			var instanceOperators = new List<ExpressionSyntax>();
+			var staticOperators = new List<ExpressionSyntax>();
+			foreach (var method in c.Methods.Where(m => m.IsOperator))
+			{
+				_hasOperatorDeclarations = true;
+				var kind = ResolveOperator(method);
+				(method.Static ? staticOperators : instanceOperators).Add(
+					New("Keysharp.Runtime.OperatorDefinition", Access("Keysharp.Runtime.OperatorKind." + kind),
+						Access(operatorType + "." + OperatorMethodName(method.Static, kind))));
+			}
+			_operatorDeclarations.Add(New("Keysharp.Runtime.OperatorDeclaration", SyntaxFactory.TypeOfExpression(Ty(operatorType)),
+				OperatorDefinitions(instanceOperators), OperatorDefinitions(staticOperators)));
 			foreach (var pr in c.Properties) members.AddRange(LowerProperty(pr));
 			// Nested classes become nested C# types; the runtime registers them as static properties on the parent.
 			foreach (var nc in c.Nested) members.Add(LowerClass(nc));
@@ -5913,10 +5925,25 @@ namespace Keysharp.Compilation.Syntax
 			return ExprStmt(Op("SetPropertyValue", Id("@this"), Str(f.Name), v));
 		}
 
+		private static string OperatorMethodName(bool isStatic, Keysharp.Runtime.OperatorKind kind) =>
+			(isStatic ? "KS_StaticOperator" : "KS_Operator") + kind;
+
+		private static ExpressionSyntax OperatorDefinitions(IReadOnlyList<ExpressionSyntax> definitions) =>
+			definitions.Count == 0 ? Null : SyntaxFactory.ArrayCreationExpression(
+				ArrayOf(Ty("Keysharp.Runtime.OperatorDefinition")),
+				SyntaxFactory.InitializerExpression(SyntaxKind.ArrayInitializerExpression, SyntaxFactory.SeparatedList(definitions)));
+
+		private static Keysharp.Runtime.OperatorKind ResolveOperator(ClassMethod method)
+		{
+			if (method.IsOperator && Keysharp.Runtime.OperatorCatalog.TryResolve(method.Name, method.Params.Count + 1, out var kind))
+				return kind;
+			throw new InvalidOperationException($"Invalid operator AST '{method.Name}' with {method.Params.Count} explicit parameters.");
+		}
+
 		private MemberDeclarationSyntax LowerMethod(ClassMethod m, string classType)
 		{
 			var (paramLowers, byRefParams) = ParamSets(m.Params);
-			var implName = m.Static ? NameMangler.StaticMethod(m.Name) : NameMangler.Method(m.Name);
+			var implName = m.IsOperator ? OperatorMethodName(m.Static, ResolveOperator(m)) : m.Static ? NameMangler.StaticMethod(m.Name) : NameMangler.Method(m.Name);
 			var thisFuncName = ClassMemberFuncName(m.Name, m.Static);
 			// A method whose impl name collides with the enclosing type (or its constructor) must be renamed;
 			// the runtime still resolves it via the UserDeclaredName attribute.
@@ -5929,12 +5956,13 @@ namespace Keysharp.Compilation.Syntax
 			var body = LowerCallableBody(paramLowers, m.Body, m.ArrowBody, implName,
 				thisFuncName, out _, byRefParams, m.Params);
 			_inMethod = saved; _currentMethodStatic = savedStatic;
-			// Always stamped, not only when the mangler changed the spelling: the exact source case is what
-			// OwnProps() enumeration, case-sensitive (`==`/`!==`) comparisons and Func.Name all report, and a name
-			// carried in metadata is one the runtime never has to recover from the emitted identifier.
-			AttributeListSyntax[] attrs = [Attr("Keysharp.Runtime.UserDeclaredName", Str(m.Name)), .. CompatAttr()];
+			// Ordinary methods retain their source spelling; operator implementations are hidden from property lookup.
+			AttributeListSyntax[] attrs = [m.IsOperator ? Attr("Keysharp.Runtime.PublicHiddenFromUser") : Attr("Keysharp.Runtime.UserDeclaredName", Str(m.Name)), .. CompatAttr()];
 			_currentCompat = savedCompat;
-			return ObjMethod(implName, ParamDecls(m.Params, includeThis: true, wrapVariadics: true), body, attrs);
+			var parameters = ParamDecls(m.Params, includeThis: true, wrapVariadics: true);
+			if (m.IsOperator && m.Params.Count == 0)
+				parameters = parameters.AddParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("KS_operatorRight")).WithType(ObjType));
+			return ObjMethod(implName, parameters, body, attrs);
 		}
 
 		private List<MemberDeclarationSyntax> LowerProperty(ClassProperty pr)
@@ -7127,7 +7155,7 @@ namespace Keysharp.Compilation.Syntax
 			mm.AddRange(members);
 			if (lambdas != null) mm.AddRange(lambdas);
 			if (hotMembers != null) mm.AddRange(hotMembers);
-			mm.Add(ObjMethod("AutoExecSection", EmptyParams(), SyntaxFactory.Block(autoBody)));
+			mm.Add(ObjMethod(NameMangler.AutoExecMethod, EmptyParams(), SyntaxFactory.Block(autoBody)));
 			mm.Add(ClassCtor(csName));
 			var decl = SyntaxFactory.ClassDeclaration(csName)
 				.AddModifiers(PublicTok).WithBaseList(BaseList("Keysharp.Runtime.Module"))
@@ -7157,6 +7185,12 @@ namespace Keysharp.Compilation.Syntax
 				.AddModifiers(PrivateTok, StaticTok);
 
 			var programMembers = new List<MemberDeclarationSyntax> { BuildMain(name), mainScriptField };
+			if (_hasOperatorDeclarations)
+				programMembers.Add(SyntaxFactory.FieldDeclaration(
+					SyntaxFactory.VariableDeclaration(Ty("Keysharp.Runtime.OperatorManifest")).AddVariables(
+						SyntaxFactory.VariableDeclarator(NameMangler.OperatorManifestField).WithInitializer(
+							SyntaxFactory.EqualsValueClause(New("Keysharp.Runtime.OperatorManifest", _operatorDeclarations.ToArray())))))
+					.AddModifiers(PrivateTok, StaticTok, SyntaxFactory.Token(SyntaxKind.ReadOnlyKeyword)));
 			programMembers.AddRange(moduleClasses);
 			programMembers.Add(BuildOuterAuto(execOrder));
 
@@ -7229,7 +7263,7 @@ namespace Keysharp.Compilation.Syntax
 			// Load after runtime identity/error options, but before JITting auto-exec can resolve package-backed fields.
 			if (EmitPackageLoad() is StatementSyntax loadPackages) tryStmts.Add(loadPackages);
 
-			tryStmts.Add(ExprStmt(Inv(Member(Id("MainScript"), "RunMainWindow"), Access("Keysharp.Builtins.Accessors.A_ScriptName"), Id("AutoExecSection"), False)));
+			tryStmts.Add(ExprStmt(Inv(Member(Id("MainScript"), "RunMainWindow"), Access("Keysharp.Builtins.Accessors.A_ScriptName"), Id(NameMangler.AutoExecMethod), False)));
 			var catchStmts = new List<StatementSyntax>
 			{
 				SyntaxFactory.IfStatement(Op("ReportUncaught", Id("mainex")), SyntaxFactory.ReturnStatement(Access("System.Environment.ExitCode"))),
@@ -7242,7 +7276,7 @@ namespace Keysharp.Compilation.Syntax
 				SyntaxFactory.TryStatement().WithBlock(SyntaxFactory.Block(tryStmts)).WithCatches(SyntaxFactory.SingletonList(catchClause)),
 				SyntaxFactory.ReturnStatement(Access("System.Environment.ExitCode")));
 
-			return SyntaxFactory.MethodDeclaration(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.IntKeyword)), "Main")
+			return SyntaxFactory.MethodDeclaration(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.IntKeyword)), NameMangler.EntryPointMethod)
 				.AddModifiers(PublicTok, StaticTok)
 				.AddAttributeLists(Attr("System.STAThread"))
 				.WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SingletonSeparatedList(
@@ -7259,7 +7293,9 @@ namespace Keysharp.Compilation.Syntax
 			if (_capabilityRequirements.Count > 0)
 				stmts.Add(ExprStmt(Inv(Access("Keysharp.Runtime.Script.RequireCapabilities"),
 					_capabilityRequirements.Select(Str).ToArray())));
-			// DHHR: hotkey/hotstring/remap registration runs before the manifest, then Persistent() if any were defined.
+			// Resolve operators before any hook registration, class initialization or module auto-execution can use them.
+			if (_hasOperatorDeclarations)
+				stmts.Add(ExprStmt(Inv(Access("MainScript.Operators.Register"), Id(NameMangler.OperatorManifestField))));
 			stmts.AddRange(_dhhr);
 			if (_persistent) stmts.Add(CallStmt("Keysharp.Builtins.Flow.Persistent"));
 			stmts.Add(CallStmt("Keysharp.Runtime.Keyboard.HotkeyDefinition.ManifestAllHotkeysHotstringsHooks"));
@@ -7268,11 +7304,11 @@ namespace Keysharp.Compilation.Syntax
 			{
 				var modClass = NameMangler.ModuleClass(mod);
 				stmts.Add(ExprStmt(Assign(Member(Id("MainScript"), "CurrentModuleType"), SyntaxFactory.TypeOfExpression(Ty("Program." + modClass)))));
-				stmts.Add(CallStmt("Program." + modClass + ".AutoExecSection"));
+				stmts.Add(CallStmt("Program." + modClass + "." + NameMangler.AutoExecMethod));
 			}
 			stmts.Add(ExprStmt(Assign(Member(Id("MainScript"), "CurrentModuleType"), Null)));
 			stmts.Add(SyntaxFactory.ReturnStatement(Str("")));
-			return ObjMethod("AutoExecSection", EmptyParams(), SyntaxFactory.Block(stmts));
+			return ObjMethod(NameMangler.AutoExecMethod, EmptyParams(), SyntaxFactory.Block(stmts));
 		}
 
 		// ---- SyntaxFactory helpers ----

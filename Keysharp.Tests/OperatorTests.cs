@@ -11,6 +11,54 @@ namespace Keysharp.Tests
 		public void Add() => Assert.IsTrue(TestScript("op-add", false));
 
 		[Test, Category("Operator")]
+		public void Overloads() => Assert.IsTrue(TestScript("op-overloads", false));
+
+		[Test, Category("Operator")]
+		public void StaticOverloads() => Assert.IsTrue(TestScript("op-static-overloads", false));
+
+		private sealed class ConcatFunction : KeysharpFunc { }
+
+		[Test, Category("Operator"), Category("Internal")]
+		public void FunctionSubclassConcatOverload()
+		{
+			var manifest = new OperatorManifest(new OperatorDeclaration(typeof(ConcatFunction),
+				[new OperatorDefinition(OperatorKind.Concat, (_, right) => "func:" + right)]));
+			s.Operators.Register(manifest);
+			Assert.AreEqual("func:2", Script.Concat(new ConcatFunction(), 2L));
+		}
+
+		[Test, Category("Operator"), Category("Internal")]
+		public void LoweringUsesOperatorManifest()
+		{
+			var source = "class Child extends Parent { }\nclass Parent { +(Right) => Right\n -() => 1\n static +(Right) => Right }";
+			var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source);
+			Assert.IsEmpty(diagnostics);
+			var generated = new Keysharp.Compilation.Syntax.Lowerer().Build(program, "Test").ToFullString();
+			Assert.IsTrue(generated.Contains("OperatorManifest"));
+			Assert.IsFalse(generated.Contains("KS_Operators"));
+			Assert.IsFalse(generated.Contains("KS_StaticOperators"));
+			Assert.IsFalse(generated.Contains("new Keysharp.Runtime.OperatorTable"));
+			Assert.IsFalse(generated.Contains("=>Program."));
+			Assert.IsTrue(generated.Contains("KS_operatorRight"));
+
+			(program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("class Plain { }");
+			Assert.IsEmpty(diagnostics);
+			generated = new Keysharp.Compilation.Syntax.Lowerer().Build(program, "Plain").ToFullString();
+			Assert.IsFalse(generated.Contains("OperatorManifest"));
+			Assert.IsFalse(generated.Contains("Operators.Register"));
+		}
+
+		[TestCase("CompiledOperators"), TestCase("Main"), TestCase("AutoExecSection")]
+		[Category("Operator"), Category("Internal")]
+		public void GeneratedProgramMemberDoesNotCollideWithModule(string moduleName)
+		{
+			var source = $"#Module {moduleName}\nclass ManifestValue {{ +(Right) => Right }}\n"
+				+ $"#Module {moduleName}_KS\nclass LiteralSuffixValue {{ }}";
+			var (bytes, error, _) = new CompilerHelper().CompileCodeToByteArray(source, "generated-member-module");
+			Assert.IsNotNull(bytes, error);
+		}
+
+		[Test, Category("Operator")]
 		public void BetweenNumeric() => Assert.IsTrue(TestScript("op-between-numeric", true));
 
 		[Test, Category("Operator")]

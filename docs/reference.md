@@ -452,6 +452,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * AutoHotkey says about the inc/dec ++/-- operators on empty variables: "Due to backward compatibility, the operators ++ and -- treat blank variables as zero, but only when they are alone on a line".
 	+ Keysharp breaks this and will instead create a variable, initialize it to zero, then increment it.
 	+ For example, a file with nothing but the line `x++` in it, will end with a variable named x which has the value of 1.
+* Keysharp supports fixed [operator overloads](https://keysharp-org.github.io/KeysharpDocs/Objects.htm#Custom_Classes_operators) on classes and structs, including their class objects (`static +(Right)`). Unary and binary forms coexist; equality pairs must be declared together in the same scope. `?()` customizes truth testing, and `++()`/`--()` customize increment/decrement. Native numeric operations retain direct dispatch.
 * The concat-assign operator `.=` is not optimized to modify the left operand inplace, meaning calling it in a loop will be very slow. If many concats are required then use a `StringBuffer` instead.
 * Function objects behave mostly the same as in AutoHotkey.
 	+ The underlying function object class is named `KeysharpFunc`, instead of `Func`, because C# already contains a built in class named `Func`.
@@ -797,7 +798,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `Url.Decode(Text [, Encoding := "UTF-8"]) => String`: Resolves percent-escapes. A `%` which is not followed by two hexadecimal digits stands for itself, since a real URL commonly carries one, and `+` stands for itself for the same reason it is never produced.
 		+ There is no query-string builder: with these, one is `"?q=" Url.Encode(q)`.
 	+ `Boolean`: The type of a truth value, extending `Integer`. Available from the `KS` module.
-		+ Every operator that yields a truth value yields a `Boolean`: a comparison (`a > b`, `a = b`, `a != b`), a negation (`!a`), and `Map.Has()`. The `true` and `false` keywords are `Boolean` values too.
+		+ Every built-in operator that yields a truth value yields a `Boolean` (a custom operator may return any set value): a comparison (`a > b`, `a = b`, `a != b`), a negation (`!a`), and `Map.Has()`. The `true` and `false` keywords are `Boolean` values too.
 		+ It behaves as the Integer 1 or 0 everywhere: `Type()` reports `"Integer"`, `x is Integer` is true, it compares equal to 1 and 0, it does arithmetic as one, and it converts to `"1"` and `"0"`. AutoHotkey v2 has no boolean type and the global namespace is AutoHotkey's, which is why the name is in `KS` rather than global — but only the *name* needs the import, never the values.
 		+ `x is Boolean` is the only thing that distinguishes one from an ordinary Integer, and `Ks.Json.Encode` is the one place the distinction is visible in output: a `Boolean` is written as JSON `true`/`false` where the Integer 1 is written as `1`.
 			```

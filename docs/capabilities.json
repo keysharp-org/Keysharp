@@ -15,6 +15,17 @@
     "rows":  [
                  {
                      "category":  "Core Language",
+                     "feature":  "Operator overloads",
+                     "syntax":  "+(Right) => Expression / static +(Right) => Expression / ?() => Expression (inside a class or struct)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Fixed instance and static symbolic operators for classes and structs, with separate unary/binary slots and inheritance. Equality pairs must be declared together in the same class and scope. ?() converts its result recursively; ++()/--() fall back to +1/-1. No dynamic replacement or right-operand fallback. Native numeric paths and short-circuit semantics are preserved.",
+                     "tested-by":  "op-overloads.ahk; op-static-overloads.ahk; ParserTests.OperatorSignatures; ParserTests.OperatorEqualityPairs; ParserTests.StaticOperatorEqualityPairs"
+                 },
+                 {
+                     "category":  "Core Language",
                      "feature":  "-",
                      "syntax":  "x := a - b",
                      "windows":  "full",
@@ -32,8 +43,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Decrement operator",
-                     "tested-by":  "op-inc-dec.ahk"
+                     "notes":  "Decrement operator. Uses a declared --() overload, otherwise binary subtraction with one. Prefix yields the assigned result; postfix yields the old value/reference. Custom overloads and single-evaluation getters verified on Windows and Linux; macOS unverified for the extension.",
+                     "tested-by":  "op-inc-dec.ahk; op-overloads.ahk; op-static-overloads.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -1069,8 +1080,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Increment operator",
-                     "tested-by":  "op-inc-dec.ahk"
+                     "notes":  "Increment operator. Uses a declared ++() overload, otherwise binary addition with one. Prefix yields the assigned result; postfix yields the old value/reference.",
+                     "tested-by":  "op-inc-dec.ahk; op-overloads.ahk; op-static-overloads.ahk"
                  },
                  {
                      "category":  "Core Language",

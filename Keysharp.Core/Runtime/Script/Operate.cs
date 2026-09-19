@@ -3,22 +3,7 @@ namespace Keysharp.Runtime
 {
 	public partial class Script
 	{
-		const string Keyword_Addition = "addition";
-		const string Keyword_Divide = "division";
-		const string Keyword_Multiply = "multiplication";
-		const string Keyword_Subtraction = "subtraction";
-		const string Keyword_ArLeftShift = "arithmetic left shift";
-		const string Keyword_ArRightShift = "arithmetic right shift";
-		const string Keyword_LogicalRightShift = "logical right shift";
-		const string Keyword_BitwiseAnd = "bitwise and";
-		const string Keyword_BitwiseOr = "bitwise or";
-		const string Keyword_BitwiseXor = "bitwise xor";
-		const string Keyword_LessThan = "less than";
-		const string Keyword_LessThanOrEqual = "less than or equal";
-		const string Keyword_GreaterThan = "greater than";
-		const string Keyword_GreaterThanOrEqual = "greater than or equal";
 		const string Keyword_Modulo = "modulo";
-		const string Keyword_Power = "power";
 		const string Keyword_Between = "between";
 		const string Keyword_In = "in";
 		const string Keyword_Contains = "contains";
@@ -154,8 +139,8 @@ namespace Keysharp.Runtime
 						return false;
 					}
 
-                    //Traverse class hierarchy to see if there is a match.
-                    if (subject != null)
+					//Traverse class hierarchy to see if there is a match.
+					if (subject != null)
 					{
 						var type = subject.GetType();
 
@@ -197,139 +182,21 @@ namespace Keysharp.Runtime
 
 		//Binary operators
 
-		public static object Add(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_Addition, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-				{
-					if (secondIsDouble)
-						return firstd + secondd;
-					else
-						return firstd + secondl;
-				}
-				else
-				{
-					if (secondIsDouble)
-						return firstl + secondd;
-					else
-						return firstl + secondl;
-				}
-			}
+		public readonly OperatorRegistry Operators = new();
 
-			return DefaultObject;
-		}
+		public static object Add(object left, object right) => NumericOperators.Binary<NumericOperation.Add>(left, right);
 
-		public static object BitShiftLeft(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_ArLeftShift, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-					return Errors.TypeErrorOccurred(left, typeof(long));
+		public static object BitShiftLeft(object left, object right) => NumericOperators.Binary<NumericOperation.BitShiftLeft>(left, right);
 
-				if (secondIsDouble)
-					return Errors.TypeErrorOccurred(right, typeof(long));
+		public static object BitShiftRight(object left, object right) => NumericOperators.Binary<NumericOperation.BitShiftRight>(left, right);
 
-				var r = (int)secondl;
+		public static object LogicalBitShiftRight(object left, object right) => NumericOperators.Binary<NumericOperation.LogicalBitShiftRight>(left, right);
 
-				if (r < 0 || r > 63)
-					return Errors.ErrorOccurred($"Shift operand of {r} for arithmetic left shift was not in the range of [0-63].");
+		public static object BitwiseAnd(object left, object right) => NumericOperators.Binary<NumericOperation.BitwiseAnd>(left, right);
 
-				return firstl << r;
-			}
+		public static object BitwiseOr(object left, object right) => NumericOperators.Binary<NumericOperation.BitwiseOr>(left, right);
 
-			return DefaultObject;
-		}
-
-		public static object BitShiftRight(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_ArRightShift, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-					return Errors.TypeErrorOccurred(left, typeof(long));
-
-				if (secondIsDouble)
-					return Errors.TypeErrorOccurred(right, typeof(long));
-
-				var r = (int)secondl;
-
-				if (r < 0 || r > 63)
-					return Errors.ErrorOccurred($"Shift operand of {r} for arithmetic right shift was not in the range of [0-63].");
-
-				return firstl >> r;
-			}
-
-			return DefaultObject;
-		}
-
-		public static object LogicalBitShiftRight(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_LogicalRightShift, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-					return Errors.TypeErrorOccurred(left, typeof(long));
-
-				if (secondIsDouble)
-					return Errors.TypeErrorOccurred(right, typeof(long));
-
-				var r = (int)secondl;
-
-				if (r < 0 || r > 63)
-					return Errors.ErrorOccurred($"Shift operand of {r} for logical right shift was not in the range of [0-63].");
-
-				return (long)((ulong)firstl >> r);
-			}
-
-			return DefaultObject;
-		}
-
-		public static object BitwiseAnd(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_BitwiseAnd, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-					return Errors.TypeErrorOccurred(left, typeof(long));
-
-				if (secondIsDouble)
-					return Errors.TypeErrorOccurred(right, typeof(long));
-
-				return firstl & secondl;
-			}
-
-			return DefaultObject;
-		}
-
-		public static object BitwiseOr(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_BitwiseOr, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-					return Errors.TypeErrorOccurred(left, typeof(long));
-
-				if (secondIsDouble)
-					return Errors.TypeErrorOccurred(right, typeof(long));
-
-				return firstl | secondl;
-			}
-
-			return DefaultObject;
-		}
-
-		public static object BitwiseXor(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_BitwiseXor, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-					return Errors.TypeErrorOccurred(left, typeof(long));
-
-				if (secondIsDouble)
-					return Errors.TypeErrorOccurred(right, typeof(long));
-
-				return firstl ^ secondl;
-			}
-
-			return DefaultObject;
-		}
+		public static object BitwiseXor(object left, object right) => NumericOperators.Binary<NumericOperation.BitwiseXor>(left, right);
 		public static object BooleanAnd(object left, object right)
 		{
 			if (left == null)
@@ -364,94 +231,84 @@ namespace Keysharp.Runtime
 
 		public static object Concat(object left, object right)
 		{
+			if (left is string ls && right is string rs) return string.Concat(ls, rs);
 			//Do not check the left side for null, AHK allows it.
 			if (right == null)
 				return (bool)Errors.UnsetErrorOccurred($"Right side operand of concat", false);
 
-			// Guard agains accidental function object concatenation (likely used function call statement in an expression context)
+			if (left is Any && TheScript.Operators.TryInvoke(OperatorKind.Concat, left, right, out var result)) return result;
+
+			// Guard against accidental function object concatenation (likely a function-call statement used in an expression).
 			if (left is KeysharpFunc)
 				return Errors.TypeErrorOccurred(left, typeof(string));
 
 			return string.Concat(ForceString(left), ForceString(right));
 		}
 
-		public static object RegEx(object left, object right)
+		public static object RegEx(object left, object right) => RegexOperator(left, right, OperatorKind.RegEx);
+
+		private static object RegexOperator(object left, object right, OperatorKind kind)
 		{
+			object match;
 			if (left == null)
-				return (bool)Errors.UnsetErrorOccurred($"Left side operand of regular expression", false);
-
-			if (right == null)
-				return (bool)Errors.UnsetErrorOccurred($"Right side operand of regular expression", false);
-
-			return Builtins.RegEx.RegExMatch(ForceString(left), ForceString(right));
-		}
-
-		public static object NotRegEx(object left, object right) => !ForceBool(RegEx(left, right));
-
-		public static object FloorDivide(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_BitwiseOr, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
+				match = Errors.UnsetErrorOccurred("Left side operand of regular expression", false);
+			else if (right == null)
+				match = Errors.UnsetErrorOccurred("Right side operand of regular expression", false);
+			else
 			{
-				if (firstIsDouble)
-					return Errors.TypeErrorOccurred(left, typeof(long));
-
-				if (secondIsDouble)
-					return Errors.TypeErrorOccurred(right, typeof(long));
-
-				if (secondl == 0L)
-					return Errors.ZeroDivisionErrorOccurred("Right side operand of floor divide");
-
-				return firstl / secondl;
+				if (left is Any && TheScript.Operators.TryInvoke(kind, left, right, out var result)) return result;
+				match = Builtins.RegEx.RegExMatch(ForceString(left), ForceString(right));
 			}
-
-			return DefaultObject;
+			return kind == OperatorKind.NotRegEx ? !ForceBool(match) : match;
 		}
 
-		public static object IdentityInequality(object left, object right)
+		public static object NotRegEx(object left, object right) => RegexOperator(left, right, OperatorKind.NotRegEx);
+
+		public static object FloorDivide(object left, object right) => NumericOperators.Binary<NumericOperation.FloorDivide>(left, right);
+
+		public static object IdentityInequality(object left, object right) => Equality(left, right, OperatorKind.IdentityInequality);
+
+		public static object IdentityEquality(object left, object right) => Equality(left, right, OperatorKind.IdentityEquality);
+
+		public static object ValueEquality(object left, object right) => Equality(left, right, OperatorKind.ValueEquality);
+		public static object LessThan(object left, object right) => NumericOperators.Binary<NumericOperation.LessThan>(left, right);
+		public static object LessThanOrEqual(object left, object right) => NumericOperators.Binary<NumericOperation.LessThanOrEqual>(left, right);
+		public static object GreaterThan(object left, object right) => NumericOperators.Binary<NumericOperation.GreaterThan>(left, right);
+		public static object GreaterThanOrEqual(object left, object right) => NumericOperators.Binary<NumericOperation.GreaterThanOrEqual>(left, right);
+		public static object ValueInequality(object left, object right) => Equality(left, right, OperatorKind.ValueInequality);
+
+		private static object Equality(object left, object right, OperatorKind kind)
 		{
-			if (left == null)
-				return right != null;
-
-			if (right == null)
-				return left != null;
-
-			_ = MatchTypes(ref left, ref right);
-
-			if (left is string s1 && right is string s2)
-				return Strings.StrCmp(s1, s2, true) != 0;
-
-			return !left.Equals(right);
+			var negate = kind is OperatorKind.ValueInequality or OperatorKind.IdentityInequality;
+			if (left is long li)
+			{
+				if (right is long ri) return (li == ri) != negate;
+				if (right is double rd) return ((double)li).Equals(rd) != negate;
+			}
+			if (left is double ld)
+			{
+				if (right is double rd) return ld.Equals(rd) != negate;
+				if (right is long ri) return ld.Equals((double)ri) != negate;
+			}
+			if (left is string ls && right is string rs)
+				return (Strings.StrCmp(ls, rs, kind is OperatorKind.IdentityEquality or OperatorKind.IdentityInequality) == 0) != negate;
+			return EqualityOther(left, right, kind);
 		}
 
-		public static object IdentityEquality(object left, object right) //This is for a double equal sign in a conditional, and uses case sensitive comparison for strings.
+		private static object EqualityOther(object left, object right, OperatorKind kind)
 		{
-			if (left == null)
-				return right == null;
-
-			if (right == null)
-				return left == null;
-
+			var negate = kind is OperatorKind.ValueInequality or OperatorKind.IdentityInequality;
+			if (left == null || right == null) return (left == right) != negate;
+			if (left is Any && TheScript.Operators.TryInvoke(kind, left, right, out var result)) return result;
 			_ = MatchTypes(ref left, ref right);
-
-			if (left is string s1 && right is string s2)
-				return Strings.StrCmp(s1, s2, true) == 0;
-
-			return left.Equals(right);
+			if (left is string ls && right is string rs)
+				return (Strings.StrCmp(ls, rs, kind is OperatorKind.IdentityEquality or OperatorKind.IdentityInequality) == 0) != negate;
+			return (kind == OperatorKind.ValueEquality ? StructuralEquality(left, right) : Equals(left, right)) != negate;
 		}
 
-		public static object ValueEquality(object left, object right) //This is for a single equal sign in a conditional, and uses the case insensitive comparison type for strings.
+		private static bool StructuralEquality(object left, object right)
 		{
-			if (left == null)
-				return right == null;
-
-			if (right == null)
-				return left == null;
-
-			_ = MatchTypes(ref left, ref right);
-
-			if (left is string s1 && right is string s2)
-				return Strings.StrCmp(s1, s2, false) == 0;
-			else if (left is Builtins.Array al1 && right is Builtins.Array al2)
+			if (left is Builtins.Array al1 && right is Builtins.Array al2)
 			{
 				var len1 = (long)al1.Length;
 				var len2 = (long)al2.Length;
@@ -494,126 +351,6 @@ namespace Keysharp.Runtime
 			else
 				return left.Equals(right);//Will go here if both are double or decimal.
 		}
-		public static object LessThan(object left, object right)
-		{
-			if (left is string s1 && right is string s2)
-			{
-				return Strings.StrCmp(s1, s2, true) < 0;
-			}
-			else if (ParseNumericArgs(left, right, Keyword_LessThan, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-				{
-					if (secondIsDouble)
-						return firstd < secondd;
-					else
-						return firstd < secondl;
-				}
-				else
-				{
-					if (secondIsDouble)
-						return firstl < secondd;
-					else
-						return firstl < secondl;
-				}
-			}
-
-			return DefaultObject;
-		}
-		public static object LessThanOrEqual(object left, object right)
-		{
-			if (left is string s1 && right is string s2)
-			{
-				return Strings.StrCmp(s1, s2, true) <= 0;
-			}
-			else if (ParseNumericArgs(left, right, Keyword_LessThanOrEqual, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-				{
-					if (secondIsDouble)
-						return firstd <= secondd;
-					else
-						return firstd <= secondl;
-				}
-				else
-				{
-					if (secondIsDouble)
-						return firstl <= secondd;
-					else
-						return firstl <= secondl;
-				}
-			}
-
-			return DefaultObject;
-		}
-		public static object GreaterThan(object left, object right)
-		{
-			if (left is string s1 && right is string s2)
-			{
-				return Strings.StrCmp(s1, s2, true) > 0;
-			}
-			else if (ParseNumericArgs(left, right, Keyword_GreaterThan, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-				{
-					if (secondIsDouble)
-						return firstd > secondd;
-					else
-						return firstd > secondl;
-				}
-				else
-				{
-					if (secondIsDouble)
-						return firstl > secondd;
-					else
-						return firstl > secondl;
-				}
-			}
-
-			return DefaultObject;
-		}
-		public static object GreaterThanOrEqual(object left, object right)
-		{
-			if (left is string s1 && right is string s2)
-			{
-				return Strings.StrCmp(s1, s2, true) >= 0;
-			}
-			else if (ParseNumericArgs(left, right, Keyword_GreaterThanOrEqual, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-				{
-					if (secondIsDouble)
-						return firstd >= secondd;
-					else
-						return firstd >= secondl;
-				}
-				else
-				{
-					if (secondIsDouble)
-						return firstl >= secondd;
-					else
-						return firstl >= secondl;
-				}
-			}
-
-			return DefaultObject;
-		}
-		public static object ValueInequality(object left, object right)
-		{
-			if (left == null)
-				return right != null;
-
-			if (right == null)
-				return left != null;
-
-			_ = MatchTypes(ref left, ref right);
-
-			if (left is string s1 && right is string s2)
-				return Strings.StrCmp(s1, s2, false) != 0;
-			else
-				return left == null ? right != null : !left.Equals(right);//Will go here if both are double or decimal.
-		}
-
 		public static object Modulus(object left, object right)
 		{
 			if (ParseNumericArgs(left, right, Keyword_Modulo, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
@@ -637,118 +374,14 @@ namespace Keysharp.Runtime
 			return DefaultObject;
 		}
 
-		public static object Power(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_Power, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-				{
-					if (secondIsDouble)
-						return Math.Pow(firstd, secondd);
-					else
-						return Math.Pow(firstd, secondl);
-				}
-				else
-				{
-					if (secondIsDouble)
-						return Math.Pow(firstl, secondd);
-					else
-						return (long)Math.Pow(firstl, secondl);
-				}
-			}
+		public static object Power(object left, object right) => NumericOperators.Binary<NumericOperation.Power>(left, right);
 
-			return DefaultObject;
-		}
-
-		public static object Subtract(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_Subtraction, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-				{
-					if (secondIsDouble)
-						return firstd - secondd;
-					else
-						return firstd - secondl;
-				}
-				else
-				{
-					if (secondIsDouble)
-						return firstl - secondd;
-					else
-						return firstl - secondl;
-				}
-			}
-
-			return DefaultObject;
-		}
+		public static object Subtract(object left, object right) => NumericOperators.Binary<NumericOperation.Subtract>(left, right);
 		public static object Minus(object left, object right) => Subtract(left, right);
 
-		public static object Multiply(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_Multiply, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-				{
-					if (secondIsDouble)
-						return firstd * secondd;
-					else
-						return firstd * secondl;
-				}
-				else
-				{
-					if (secondIsDouble)
-						return firstl * secondd;
-					else
-						return firstl * secondl;
-				}
-			}
+		public static object Multiply(object left, object right) => NumericOperators.Binary<NumericOperation.Multiply>(left, right);
 
-			return DefaultObject;
-		}
-
-		public static object Divide(object left, object right)
-		{
-			if (ParseNumericArgs(left, right, Keyword_Divide, out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-			{
-				if (firstIsDouble)
-				{
-					if (secondIsDouble)
-					{
-						if (secondd == 0.0)
-							return Errors.ZeroDivisionErrorOccurred("Right side operand of floating point division");
-
-						return firstd / secondd;
-					}
-					else
-					{
-						if (secondl == 0)
-							return Errors.ZeroDivisionErrorOccurred("Right side operand of floating point division");
-
-						return firstd / secondl;
-					}
-				}
-				else
-				{
-					if (secondIsDouble)
-					{
-						if (secondd == 0.0)
-							return Errors.ZeroDivisionErrorOccurred("Right side operand of floating point division");
-
-						return firstl / secondd;
-					}
-					else
-					{
-						if (secondl == 0)
-							return Errors.ZeroDivisionErrorOccurred("Right side operand of floating point division");
-
-						return (double)firstl / secondl;
-					}
-				}
-			}
-
-			return DefaultObject;
-		}
+		public static object Divide(object left, object right) => NumericOperators.Binary<NumericOperation.Divide>(left, right);
 
 		public static object Is(object left, object right)
 		{
@@ -838,23 +471,23 @@ namespace Keysharp.Runtime
 		public static object OperateTernary(bool result, ExpressionDelegate x, ExpressionDelegate y) => result ? x() : y();
 
 		public static object MultiStatement(object arg1) => arg1;
-        public static object MultiStatement(object arg1, object arg2) => arg2;
-        public static object MultiStatement(object arg1, object arg2, object arg3) => arg3;
-        public static object MultiStatement(object arg1, object arg2, object arg3, object arg4) => arg4;
-        public static object MultiStatement(object arg1, object arg2, object arg3, object arg4, object arg5) => arg5;
-        public static object MultiStatement(object arg1, object arg2, object arg3, object arg4, object arg5, object arg6) => arg6;
-        public static object MultiStatement(object arg1, object arg2, object arg3, object arg4, object arg5, object arg6, object arg7) => arg7;
-        public static object MultiStatement(object arg1, object arg2, object arg3, object arg4, object arg5, object arg6, object arg7, object arg8) => arg8;
+		public static object MultiStatement(object arg1, object arg2) => arg2;
+		public static object MultiStatement(object arg1, object arg2, object arg3) => arg3;
+		public static object MultiStatement(object arg1, object arg2, object arg3, object arg4) => arg4;
+		public static object MultiStatement(object arg1, object arg2, object arg3, object arg4, object arg5) => arg5;
+		public static object MultiStatement(object arg1, object arg2, object arg3, object arg4, object arg5, object arg6) => arg6;
+		public static object MultiStatement(object arg1, object arg2, object arg3, object arg4, object arg5, object arg6, object arg7) => arg7;
+		public static object MultiStatement(object arg1, object arg2, object arg3, object arg4, object arg5, object arg6, object arg7, object arg8) => arg8;
 
-        public static object MultiStatement(params object[] args) => args[ ^ 1];
+		public static object MultiStatement(params object[] args) => args[ ^ 1];
 
-        public static void InitStaticVariable(ref object variable, string name, Func<object> initFunc)
-        {
-            if (Script.TheScript.FlowData.initializedUserStaticVariables.Contains(name))
-                return;
+		public static void InitStaticVariable(ref object variable, string name, Func<object> initFunc)
+		{
+			if (Script.TheScript.FlowData.initializedUserStaticVariables.Contains(name))
+				return;
 			Script.TheScript.FlowData.initializedUserStaticVariables.Add(name);
-            variable = initFunc();
-        }
+			variable = initFunc();
+		}
 
 		// Publishes a function's scope on the current pseudo-thread. KeysharpFunc.Call restores the previous one on return,
 		// so no matching leave call is emitted.
@@ -1038,40 +671,39 @@ namespace Keysharp.Runtime
 
 
 		// Unary operators
-		public static object Plus(object right) => right;
-
-		public static object Minus(object right)
+		public static object Increment(object value)
 		{
-			if (right == null)
-				return Errors.UnsetErrorOccurred($"Right side operand of subtraction or minus");
-
-			if (right is double rd)//Check non-string types first as a hot path.
-				return rd == 0d ? rd : -rd;
-			else if (right is long rl)
-				return -rl;
-			else if (right.TryParseLong(out long l))
-				return -l;
-			else if (right.TryParseDouble(out double d, true))
-				return d == 0d ? d : -d;
-			else
-				return Errors.TypeErrorOccurred(right, typeof(double));
+			if (value is long integer) return integer + 1L;
+			if (value is double floating) return floating + 1.0;
+			if (value is bool boolean) return boolean ? 2L : 1L;
+			return value is Any && TheScript.Operators.TryInvoke(OperatorKind.Increment, value, null, out var result) ? result : Add(value, 1L);
 		}
 
-		public static object LogicalNot(object right) => !IfTest(right);
-
-		public static object BitwiseNot(object right)
+		public static object Decrement(object value)
 		{
-			if (right == null)
-				return Errors.UnsetErrorOccurred($"Right side operand of bitwise not");
-
-			if (right is double)
-				return Errors.TypeErrorOccurred(right, typeof(long));
-
-			if (right.TryParseLong(out long l))
-				return ~l;
-
-			return Errors.TypeErrorOccurred(right, typeof(long));
+			if (value is long integer) return integer - 1L;
+			if (value is double floating) return floating - 1.0;
+			if (value is bool boolean) return boolean ? 0L : -1L;
+			return value is Any && TheScript.Operators.TryInvoke(OperatorKind.Decrement, value, null, out var result) ? result : Subtract(value, 1L);
 		}
+
+		public static object Plus(object right)
+		{
+			if (right is long or double or string or bool) return right;
+			return right is Any && TheScript.Operators.TryInvoke(OperatorKind.Plus, right, null, out var result) ? result : right;
+		}
+
+		public static object Minus(object right) => NumericOperators.Unary<NumericOperation.Negate>(right);
+
+		public static object LogicalNot(object right)
+		{
+			if (right is long integer) return integer == 0;
+			if (right is double floating) return floating == 0.0;
+			if (right is bool boolean) return !boolean;
+			return right is Any && TheScript.Operators.TryInvoke(OperatorKind.LogicalNot, right, null, out var result) ? result : !IfTest(right);
+		}
+
+		public static object BitwiseNot(object right) => NumericOperators.Unary<NumericOperation.Complement>(right);
 
 		public static int OperateZero(object expression) => 0;
 
@@ -1080,8 +712,8 @@ namespace Keysharp.Runtime
 
 		internal static bool IsFloat(object obj) =>
 		obj is double/* ||
-        obj is float ||
-        obj is decimal*/;
+		obj is float ||
+		obj is decimal*/;
 
 		internal static bool IsInteger(object obj) =>
 		obj is long

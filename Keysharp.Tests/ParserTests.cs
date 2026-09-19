@@ -35,6 +35,54 @@ namespace Keysharp.Tests
 		[Test, Category("Parser")]
 		public void Parser() => Assert.IsTrue(TestScript("parser", false));
 
+		[Test, Category("Parser")]
+		public void OperatorSignatures()
+		{
+			AssertCompileError("class Invalid {\n *(Left, Right) => 1\n}", "Operator '*' requires one parameter");
+			AssertCompileError("class Invalid {\n +(&Right) => Right\n}", "parameters cannot be optional, ByRef, variadic, or have defaults");
+			AssertCompileError("class Invalid {\n +(Right*) => Right\n}", "parameters cannot be optional, ByRef, variadic, or have defaults");
+			AssertCompileError("class Invalid {\n +(Right := 1) => Right\n}", "parameters cannot be optional, ByRef, variadic, or have defaults");
+			AssertCompileError("class Invalid {\n +(Right) => Right\n +(Right) => Right\n}", "Duplicate operator");
+			AssertCompileError("class Invalid {\n -() => 1\n -() => 2\n}", "Duplicate operator");
+			AssertCompileError("class Invalid {\n !(Right) => Right\n}", "Operator '!' requires no parameters");
+			AssertCompileError("class Invalid {\n *() => 1\n}", "Operator '*' requires one parameter");
+			AssertCompileError("class Invalid {\n ?(Right) => true\n}", "Operator '?' requires no parameters");
+			AssertCompileError("class Invalid {\n ?() => true\n ?() => false\n}", "Duplicate operator");
+			AssertCompileError("class Invalid {\n ++(Right) => Right\n}", "Operator '++' requires no parameters");
+			AssertCompileError("class Invalid {\n --(Right) => Right\n}", "Operator '--' requires no parameters");
+			AssertCompileError("class Invalid {\n --() => 1\n --() => 2\n}", "Duplicate operator");
+			AssertCompiles("class Valid {\n -() => 1\n -(Right) => Right\n +() => 2\n +(Right) => Right\n}");
+			AssertCompiles("class Valid {\n ++() => 1\n}", "class Valid {\n --() => 1\n}");
+			AssertCompiles("class Valid {\n static +(Right) => Right\n +(Right) => Right\n static +() => 1\n +() => 2\n static ?() => true\n static ++() => 1\n}");
+			AssertCompileError("class Invalid {\n static +(Right) => Right\n static +(Right) => Right\n}", "Duplicate static operator");
+			AssertCompileError("class Invalid {\n static ?(Right) => Right\n}", "Static operator '?' requires no parameters");
+			AssertCompileError("class Invalid {\n static +(Right := 1) => Right\n}", "Static operator '+' parameters cannot be optional, ByRef, variadic, or have defaults");
+		}
+
+		[TestCase("=", "!="), TestCase("!=", "="), TestCase("==", "!=="), TestCase("!==", "=="), Category("Parser")]
+		public void OperatorEqualityPairs(string symbol, string partner)
+		{
+			var expected = $"Operator '{symbol}' requires operator '{partner}' in the same class";
+			AssertCompileError($"class Invalid {{\n {symbol}(Right) => true\n}}", expected);
+			var parent = $"class Parent {{\n {symbol}(Right) => true\n {partner}(Right) => false\n}}\n";
+			AssertCompileError(parent + $"class Child extends Parent {{\n {symbol}(Right) => false\n}}", expected);
+			AssertCompiles(parent + "class Child extends Parent {\n}",
+				parent + $"class Child extends Parent {{\n {symbol}(Right) => false\n {partner}(Right) => true\n}}");
+		}
+
+		[TestCase("=", "!="), TestCase("!=", "="), TestCase("==", "!=="), TestCase("!==", "=="), Category("Parser")]
+		public void StaticOperatorEqualityPairs(string symbol, string partner)
+		{
+			var expected = $"Static operator '{symbol}' requires static operator '{partner}' in the same class";
+			AssertCompileError($"class Invalid {{\n static {symbol}(Right) => true\n {partner}(Right) => false\n}}", expected);
+			var parent = $"class Parent {{\n static {symbol}(Right) => true\n static {partner}(Right) => false\n}}\n";
+			AssertCompileError(parent + $"class Child extends Parent {{\n static {symbol}(Right) => false\n}}", expected);
+			AssertCompiles(parent + "class Child extends Parent {\n}",
+				parent + $"class Child extends Parent {{\n static {symbol}(Right) => false\n static {partner}(Right) => true\n}}");
+			AssertCompileError($"class Invalid {{\n {symbol}(Right) => true\n static {partner}(Right) => false\n}}",
+				$"Operator '{symbol}' requires operator '{partner}' in the same class");
+		}
+
 		// The included content lands in the emitted code, not in the returned Unit, so only the generated text can
 		// tell a resolved #Include from a skipped one. On failure Bytes is null and Text carries the diagnostics.
 		private static (byte[] Bytes, string Text) EmitWithInclude(string source, string includeDir = null)

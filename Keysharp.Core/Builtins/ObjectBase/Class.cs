@@ -4,6 +4,9 @@ namespace Keysharp.Builtins
 {
     public class Class(params object[] args) : KeysharpObject(args)
     {
+		// Fixed at construction, independently of the mutable Base and Prototype properties.
+		internal Type OperatorType;
+
 		public new static object staticCall(object @this, params object[] args)
         {
             if (args.Length == 0)
@@ -29,12 +32,16 @@ namespace Keysharp.Builtins
 			if (baseProto == null)
 				return Errors.ErrorOccurred("The base class must have a prototype");
 
-			var userType = Struct.IsStructType(baseProto.type)
-				? Struct.CreateDynamicStructType(name, baseProto.type)
-				: baseProto.type;
+			var baseType = baseProto.type;
+			var isStruct = Struct.IsStructType(baseType);
+			var userType = isStruct ? Struct.CreateDynamicStructType(name, baseType) : baseType;
+			if (isStruct)
+				TheScript.Operators.RegisterAlias(userType, baseType);
 			var staticType = baseClass.GetType();
 			Any staticInst = (Any)RuntimeHelpers.GetUninitializedObject(staticType);
 			staticInst.type = typeof(Class); staticInst.InitializePrivates();
+			if (staticInst is Class created && baseClass is Class original)
+				created.OperatorType = original.OperatorType;
 
 			staticInst.SetBaseInternal(baseClass);
             staticInst.type = userType;

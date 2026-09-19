@@ -10,8 +10,13 @@ namespace Keysharp.Runtime
 
 			if (input is bool b)
 				return b;
-			else if (input is Any a)
-				return true;
+			else if (input is Any)
+			{
+				if (!TheScript.Operators.TryInvoke(OperatorKind.TruthTest, input, null, out var result))
+					return true;
+
+				return result is bool value ? value : ForceBool(result);
+			}
 
 			if (input.TryParseBool(out bool pb))
 				return pb;

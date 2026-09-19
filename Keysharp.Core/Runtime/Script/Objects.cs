@@ -17,7 +17,7 @@ namespace Keysharp.Runtime
 				return;
 
 			Prototype proto = new Prototype(t);
-			Class staticInst = new Class();
+			Class staticInst = new Class { OperatorType = t };
 			var isModuleType = typeof(Module).IsAssignableFrom(t);
 
 			store.Statics.AddLazy(t, () =>

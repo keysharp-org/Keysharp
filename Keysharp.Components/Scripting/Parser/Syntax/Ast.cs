@@ -408,8 +408,9 @@ namespace Keysharp.Parsing.Syntax
 		public readonly Block Body;
 		public readonly Expr ArrowBody;
 		public readonly bool Static;
-		public ClassMethod(string name, List<Param> ps, Block body, Expr arrowBody, bool isStatic)
-		{ Name = name; Params = ps; Body = body; ArrowBody = arrowBody; Static = isStatic; }
+		public readonly bool IsOperator;
+		public ClassMethod(string name, List<Param> ps, Block body, Expr arrowBody, bool isStatic, bool isOperator = false)
+		{ Name = name; Params = ps; Body = body; ArrowBody = arrowBody; Static = isStatic; IsOperator = isOperator; }
 	}
 
 	internal sealed class ClassProperty

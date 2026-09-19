@@ -13,7 +13,7 @@ Status legend:
 | Capability | Windows | Linux (X11) | Linux (Wayland) | macOS | Notes |
 |---|---|---|---|---|---|
 | - | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Subtraction / unary minus operator |
-| -- | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Decrement operator |
+| -- | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Decrement operator. Uses a declared --() overload, otherwise binary subtraction with one. Prefix yields the assigned result; postfix yields the old value/reference. Custom overloads and single-evaluation getters verified on Windows and Linux; macOS unverified for the extension. |
 | ! | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical NOT operator |
 | !~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regular-expression not-match operator. |
 | != | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inequality operator |
@@ -100,7 +100,7 @@ Status legend:
 | ~ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise NOT operator |
 | ~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regex match operator |
 | + | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Addition / unary plus operator |
-| ++ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Increment operator |
+| ++ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Increment operator. Uses a declared ++() overload, otherwise binary addition with one. Prefix yields the assigned result; postfix yields the old value/reference. |
 | += | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
 | < | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comparison operator |
 | << | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Left shift operator |
@@ -891,6 +891,7 @@ Status legend:
 | OnError() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Registers callbacks for errors nothing catches. An error reaches them where it is raised, before the stack unwinds, or, once it passes a try statement with catches, in mode Exit after that statement's finally. |
 | OnExit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The OnExit function registers a function to be called automatically whenever the script exits. A failed auto-execute section reports Error. |
 | OnMessage() | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | The OnMessage function registers a function to be called automatically whenever the script receives the specified message. The first callback to return a non-empty value claims it; 0 claims with reply 0, while blank, an error or Exit continues the chain. Off Windows there is no native message queue, so the input messages are synthesized from the toolkit events raised by the script's own GUI: WM_MOUSEMOVE, the L/R/M button down, up and double-click messages, WM_MOUSEWHEEL, WM_KEYDOWN/UP, WM_SYSKEYDOWN/UP and WM_CHAR. As on Windows, the callback receives the CONTROL's handle and its thread's last-found window is the GUI the control belongs to. Anything outside that set is never delivered, and messages to windows the script does not own cannot be seen at all. Clicks on a single-line Edit are also missed, because GTK's entry consumes the button press before the toolkit raises its own event, and a press on a window's own background is delivered twice by the native event dispatch and de-duplicated here. Verified on X11 and Wayland; the macOS path shares the code but is untested. |
+| Operator overloads | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Fixed instance and static symbolic operators for classes and structs, with separate unary/binary slots and inheritance. Equality pairs must be declared together in the same class and scope. ?() converts its result recursively; ++()/--() fall back to +1/-1. No dynamic replacement or right-operand fallback. Native numeric paths and short-circuit semantics are preserved. |
 | or | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical OR operator. |
 | Ord() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the numeric two byte unicode value for the first character in a string. This differs from V2 in that it also takes an optional second parameter which specified the 1-based index in the string to return the numeric value for, rather than only doing it for the first character. |
 | OSError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |

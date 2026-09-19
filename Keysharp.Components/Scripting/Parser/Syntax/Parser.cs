@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Keysharp.Parsing.Lexing;
 
 namespace Keysharp.Parsing.Syntax
@@ -1186,10 +1186,16 @@ namespace Keysharp.Parsing.Syntax
 		private static void JoinContinuationLines(List<Token> tokens)
 		{
 			int w = 0, lineStart = 0;   // compacted in place: w is the write index, lineStart the current line's first token
+			var classBodies = new Stack<bool>();
+			var classHeader = false;
 
 			for (var r = 0; r < tokens.Count; r++)
 			{
 				var t = tokens[r];
+				if ((t.IsKeyword("class") || t.IsKeyword("struct")) && r + 1 < tokens.Count && tokens[r + 1].Kind == TokenKind.Identifier)
+					classHeader = true;
+				if (t.Kind == TokenKind.LBrace) { classBodies.Push(classHeader); classHeader = false; }
+				else if (t.Kind == TokenKind.RBrace && classBodies.Count > 0) classBodies.Pop();
 
 				if (t.Kind == TokenKind.Newline)
 				{
@@ -1197,6 +1203,7 @@ namespace Keysharp.Parsing.Syntax
 					while (next < tokens.Count && tokens[next].Kind == TokenKind.Newline) next++;
 
 					if (w > lineStart && StartsContinuationLine(tokens, next) && tokens[next].File == tokens[w - 1].File
+						&& !(classBodies.TryPeek(out var inClass) && inClass && StartsOperatorDeclaration(tokens, next))
 						&& CanContinueLine(tokens, lineStart, w))
 					{
 						r = next - 1;
@@ -1210,6 +1217,23 @@ namespace Keysharp.Parsing.Syntax
 			}
 
 			tokens.RemoveRange(w, tokens.Count - w);
+		}
+
+		private static bool StartsOperatorDeclaration(List<Token> tokens, int index)
+		{
+			if (index + 1 >= tokens.Count || !Keysharp.Runtime.OperatorCatalog.Supports(tokens[index].Text) || tokens[index + 1].Kind != TokenKind.LParen)
+				return false;
+			var depth = 0;
+			for (var i = index + 1; i < tokens.Count; i++)
+			{
+				if (tokens[i].Kind == TokenKind.LParen) depth++;
+				else if (tokens[i].Kind == TokenKind.RParen && --depth == 0)
+				{
+					while (++i < tokens.Count && tokens[i].Kind == TokenKind.Newline) { }
+					return i < tokens.Count && tokens[i].Kind is TokenKind.FatArrow or TokenKind.LBrace;
+				}
+			}
+			return false;
 		}
 
 		// AutoHotkey's CONTINUATION_LINE_SYMBOLS less `++`, `--` and `::`, and the word operators unless something
@@ -1533,6 +1557,7 @@ namespace Keysharp.Parsing.Syntax
 
 			var fields = new List<ClassField>();
 			var methods = new List<ClassMethod>();
+			var operatorTokens = new Dictionary<ClassMethod, Token>();
 			var properties = new List<ClassProperty>();
 			var nested = new List<ClassDecl>();
 			var staticInits = new List<Stmt>();     // `static x.y := z` member/index-target static initializers
@@ -1578,7 +1603,35 @@ namespace Keysharp.Parsing.Syntax
 				var isStatic = AtKeyword("static");
 				if (isStatic) Advance();
 
-				if (IsFunctionDefinition())
+				if (Keysharp.Runtime.OperatorCatalog.Supports(Peek(0).Text) && Peek(1).Kind == TokenKind.LParen)
+				{
+					var symbolToken = Advance();
+					var symbol = symbolToken.Text;
+					var ps = ParseParamList();
+					var label = isStatic ? "Static operator" : "Operator";
+					if (!Keysharp.Runtime.OperatorCatalog.TryResolve(symbol, ps.Count + 1, out _))
+					{
+						var counts = Keysharp.Runtime.OperatorCatalog.All.Where(op => op.Symbol == symbol).Select(op => op.Arity - 1).Order().ToArray();
+						var expected = counts.Length == 1 ? counts[0] == 0 ? "no parameters" : "one parameter" : "zero or one parameter";
+						ErrorAt(symbolToken, $"{label} '{symbol}' requires {expected}");
+					}
+					if (ps.Any(p => p.ByRef || p.Variadic || p.Optional || p.Default != null))
+						ErrorAt(symbolToken, $"{label} '{symbol}' parameters cannot be optional, ByRef, variadic, or have defaults");
+					if (methods.Any(m => m.IsOperator && m.Static == isStatic && m.Name == symbol && m.Params.Count == ps.Count))
+					{
+						var count = ps.Count == 1 ? "1 parameter" : $"{ps.Count} parameters";
+						ErrorAt(symbolToken, $"Duplicate {(isStatic ? "static " : "")}operator '{symbol}' with {count}");
+					}
+					SkipNewlines();
+					ClassMethod method;
+					if (Match(TokenKind.FatArrow))
+						method = new ClassMethod(symbol, ps, null, ParseExpression(1), isStatic, true);
+					else
+						method = new ClassMethod(symbol, ps, ParseBlock(), null, isStatic, true);
+					methods.Add(method);
+					operatorTokens.Add(method, symbolToken);
+				}
+				else if (IsFunctionDefinition())
 				{
 					var mname = Advance().Text;
 					var ps = ParseParamList();
@@ -1651,6 +1704,17 @@ namespace Keysharp.Parsing.Syntax
 
 				if (_pos == p) Advance();
 				SkipNewlines();
+			}
+			foreach (var method in methods.Where(m => m.IsOperator))
+			{
+				if (Keysharp.Runtime.OperatorCatalog.TryResolve(method.Name, method.Params.Count + 1, out var kind)
+					&& Keysharp.Runtime.OperatorCatalog.Get(kind).RequiredPartner is { } partner
+					&& !methods.Any(m => m.IsOperator && m.Static == method.Static && m.Name == partner))
+				{
+					var label = method.Static ? "Static operator" : "Operator";
+					var required = method.Static ? "static operator" : "operator";
+					ErrorAt(operatorTokens[method], $"{label} '{method.Name}' requires {required} '{partner}' in the same class");
+				}
 			}
 			Expect(TokenKind.RBrace, isStruct ? "struct body" : "class body");
 			return new ClassDecl(name, baseName, fields, methods, properties, nested, isStruct)

@@ -10,6 +10,15 @@ namespace Keysharp.Compilation.Syntax
 	/// </summary>
 	internal static class NameMangler
 	{
+		/// <summary>Generated program entry point.</summary>
+		public const string EntryPointMethod = "Main";
+
+		/// <summary>Generated program and module auto-execute method.</summary>
+		public const string AutoExecMethod = Keywords.AutoExecSectionName;
+
+		/// <summary>Generated program field containing the compiled script's operator manifest.</summary>
+		public const string OperatorManifestField = "CompiledOperators";
+
 		/// <summary>
 		/// A global slot — variable, function object, or class singleton: the lowercased identifier,
 		/// C#-escaped. AHK identifiers are case-insensitive, so every name canonicalizes to lower.
@@ -32,8 +41,10 @@ namespace Keysharp.Compilation.Syntax
 		{
 			if (moduleName == "__Main") return "__Main";
 			const string pathPrefix = "__KSPath";
-			if (!moduleName.Contains('/') && !moduleName.Contains('\\') && !moduleName.StartsWith(pathPrefix, System.StringComparison.Ordinal))
-				return AvoidReserved(moduleName);
+			if (!moduleName.Contains('/') && !moduleName.Contains('\\')
+				&& !moduleName.StartsWith(pathPrefix, System.StringComparison.Ordinal)
+				&& !ReservedTypeNames.Contains(moduleName))
+				return moduleName;
 
 			// Encode every UTF-16 code unit so path separators never reach Roslyn identifiers. Identifier modules using
 			// the reserved prefix are encoded too, preventing a literal module name from colliding with a path module.
@@ -43,12 +54,15 @@ namespace Keysharp.Compilation.Syntax
 			return encoded.ToString();
 		}
 
-		// Framework namespace roots (System, Keysharp) and generated structural identifiers (Program, MainScript, __Main)
-		// that the lowered code references by bare name. A user class/module of the same C# name would SHADOW them, so
-		// such names get a "_KS" suffix; the runtime maps the original AHK name back via [UserDeclaredName]. "_KS" is
-		// upper-cased, which TitleCase can never produce, so the suffixed name can't itself be a user class type name.
+		// Framework namespace roots and generated structural identifiers referenced by bare name. Conflicting class
+		// names get a "_KS" suffix, which TitleCase cannot produce. Modules preserve source case, so conflicts use the
+		// collision-resistant encoding in ModuleClass instead. [UserDeclaredName] retains the original AHK name.
 		private static readonly System.Collections.Generic.HashSet<string> ReservedTypeNames =
-			new(System.StringComparer.Ordinal) { "System", "Keysharp", "Program", "MainScript", "__Main" };
+			new(System.StringComparer.Ordinal)
+			{
+				"System", "Keysharp", "Program", "MainScript", "__Main",
+				EntryPointMethod, AutoExecMethod, OperatorManifestField
+			};
 		private static string AvoidReserved(string csName) => ReservedTypeNames.Contains(csName) ? csName + "_KS" : csName;
 
 		/// <summary>Class static method implementation: <c>static&lt;TitleCase&gt;</c>.</summary>
