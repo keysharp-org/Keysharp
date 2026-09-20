@@ -251,23 +251,39 @@ namespace Keysharp.Builtins
 		public static object Reload()
 		{
 			var script = Script.TheScript;
-			if (script.scriptPath == "*")
+
+			if (script.scriptPath == "*" || script.hasExited)
 				return DefaultObject;
+
 			//Just calling Application.Restart will not always trigger ExitAppInternal().
 			// The reason is published by ExitAppInternal once its OnExit callbacks decline to cancel — a Reload is
 			// vetoable like any other exit, so it must not be announced here, before they have run.
+			var decided = false;
 			script.PostToUIThread(() =>
 			{
+				try
+				{
+					// Exit first, restart second: a vetoing OnExit callback must leave the script running with no
+					// replacement spawned, and the hooks must be released before the new instance claims them.
+					// useThrow is false because this lambda is a posted UI callback (a GLib idle source on Linux):
+					// an exception escaping one is escalated by GLib.ExceptionManager, which kills the process.
+					if (Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Reload, null, false) || !script.hasExited)
+						return;
+
 #if WINDOWS
-				Application.Restart();//This will pass the same command line args to the new instance that were passed to this instance.
+					Application.Restart();//This will pass the same command line args to the new instance that were passed to this instance.
 #else
-				Application.Instance.Restart();
+					Application.Instance.Restart();
 #endif
-				Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Reload);
+				}
+				finally
+				{
+					Volatile.Write(ref decided, true);//A vetoed reload never sets hasExited, so end the wait below by hand.
+				}
 			});
 			var start = DateTime.UtcNow;
 
-			while (!script.hasExited && (DateTime.UtcNow - start).TotalSeconds < 5)
+			while (!script.hasExited && !Volatile.Read(ref decided) && (DateTime.UtcNow - start).TotalSeconds < 5)
 				_ = Sleep(500);
 
 			return DefaultObject;
