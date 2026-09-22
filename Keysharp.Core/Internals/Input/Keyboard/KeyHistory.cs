@@ -82,7 +82,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				}
 			}
 
-			return DefaultObject;
+			return "";
 		}
 
 		internal void UpdateKeyEventHistory(bool keyUp, uint vk, uint sc)

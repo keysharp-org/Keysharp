@@ -356,11 +356,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The ending character that was pressed by the user to trigger the most recent non-auto-replace hotstring. If no ending character was required (due to the * option), this variable will be blank.
 		/// </summary>
-		public static object A_EndChar
-		{
-			get;
-			internal set;
-		}
+		public static object A_EndChar { get; internal set; } = "";
 
 		/// <summary>
 		/// Contains event information from various commands.
@@ -673,26 +669,26 @@ namespace Keysharp.Builtins
 				var s = Loops.LoopStack;
 
 				if (s.Count == 0)
-					return DefaultObject;
+					return "";
 
 				foreach (var l in s)//Since loop is a stack, this goes in reverse order, which is what we want.
 				{
 					switch (l.type)
 					{
 						case LoopType.Parse:
-							return l.result;
+							return l.result ?? "";
 
 						case LoopType.Each:
 							{
 								if (!(l.result is object[] so))
-									return DefaultObject;
+									return "";
 
-								return so.Length > 0 ? so[1] : DefaultObject;
+								return so.Length > 0 ? (so[1] ?? "") : "";
 							}
 					}
 				}
 
-				return DefaultObject;
+				return "";
 			}
 		}
 
@@ -790,7 +786,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var file = Loops.GetDirLoopFilename();
-				return file != null ? Path.GetFileName(file) : "";
+				return file != null ? Path.GetFileName(file) ?? "" : "";
 			}
 		}
 
@@ -807,10 +803,10 @@ namespace Keysharp.Builtins
 				{
 					var fullpath = Path.GetFullPath(s);
 					var isrel = !Path.IsPathFullyQualified(loop.path);
-					return isrel ? Path.GetRelativePath(A_WorkingDir as string, fullpath) : fullpath;
+					return (isrel ? Path.GetRelativePath(A_WorkingDir as string, fullpath) : fullpath) ?? "";
 				}
 
-				return DefaultObject;
+				return "";
 			}
 		}
 
@@ -900,7 +896,7 @@ namespace Keysharp.Builtins
 				var s = Loops.LoopStack;
 
 				if (s.Count == 0)
-					return DefaultObject;
+					return "";
 
 				foreach (var l in s)
 				{
@@ -911,7 +907,7 @@ namespace Keysharp.Builtins
 					}
 				}
 
-				return DefaultObject;
+				return "";
 			}
 		}
 
@@ -928,18 +924,18 @@ namespace Keysharp.Builtins
 				var s = Loops.LoopStack;
 
 				if (s.Count == 0)
-					return DefaultObject;
+					return "";
 
 				foreach (var l in s)//Since loop is a stack, this goes in reverse order, which is what we want.
 				{
 					switch (l.type)
 					{
 						case LoopType.Registry:
-							return l.regKeyName;
+							return l.regKeyName ?? "";
 					}
 				}
 
-				return DefaultObject;
+				return "";
 			}
 		}
 
@@ -954,18 +950,18 @@ namespace Keysharp.Builtins
 				var s = Loops.LoopStack;
 
 				if (s.Count == 0)
-					return DefaultObject;
+					return "";
 
 				foreach (var l in s)
 				{
 					switch (l.type)
 					{
 						case LoopType.Registry:
-							return l.regName != "(Default)" ? l.regName : "";
+							return l.regName != "(Default)" ? l.regName ?? "" : "";
 					}
 				}
 
-				return DefaultObject;
+				return "";
 			}
 		}
 
@@ -980,18 +976,18 @@ namespace Keysharp.Builtins
 				var s = Loops.LoopStack;
 
 				if (s.Count == 0)
-					return DefaultObject;
+					return "";
 
 				foreach (var l in s)
 				{
 					switch (l.type)
 					{
 						case LoopType.Registry:
-							return l.regDate;
+							return l.regDate ?? "";
 					}
 				}
 
-				return DefaultObject;
+				return "";
 			}
 		}
 
@@ -1007,18 +1003,18 @@ namespace Keysharp.Builtins
 				var s = Loops.LoopStack;
 
 				if (s.Count == 0)
-					return DefaultObject;
+					return "";
 
 				foreach (var l in s)
 				{
 					switch (l.type)
 					{
 						case LoopType.Registry:
-							return l.regType;
+							return l.regType ?? "";
 					}
 				}
 
-				return DefaultObject;
+				return "";
 			}
 		}
 
@@ -1135,7 +1131,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The key name of the previously executed hotkey or hotstring.
 		/// </summary>
-		public static string A_PriorHotkey => Script.TheScript.priorHotkeyName;
+		public static string A_PriorHotkey => Script.TheScript.priorHotkeyName ?? "";
 
 
 		/// <summary>
@@ -1459,12 +1455,12 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Time in ms that have elapsed since <see cref="A_PriorHotkey"/> was pressed. It will be -1 whenever <see cref="A_PriorHotkey"/> is blank.
 		/// </summary>
-		public static long A_TimeSincePriorHotkey => string.IsNullOrEmpty(Script.TheScript.priorHotkeyName) ? -1L : (long)(DateTime.UtcNow - Script.TheScript.priorHotkeyStartTime).TotalMilliseconds;
+		public static object A_TimeSincePriorHotkey => string.IsNullOrEmpty(Script.TheScript.priorHotkeyName) ? "" : (long)(DateTime.UtcNow - Script.TheScript.priorHotkeyStartTime).TotalMilliseconds;
 
 		/// <summary>
 		/// Time in ms that have elapsed since <see cref="A_ThisHotkey"/> was pressed. It will be -1 whenever <see cref="A_ThisHotkey"/> is blank.
 		/// </summary>
-		public static long A_TimeSinceThisHotkey => string.IsNullOrEmpty(Script.TheScript.thisHotkeyName) ? -1L : (long)(DateTime.UtcNow - Script.TheScript.thisHotkeyStartTime).TotalMilliseconds;
+		public static object A_TimeSinceThisHotkey => string.IsNullOrEmpty(Script.TheScript.thisHotkeyName) ? "" : (long)(DateTime.UtcNow - Script.TheScript.thisHotkeyStartTime).TotalMilliseconds;
 
 		/// <summary>
 		/// The current mode set by <see cref="SetTitleMatchMode"/>: 1, 2, 3, or RegEx.

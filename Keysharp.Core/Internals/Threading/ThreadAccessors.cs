@@ -166,7 +166,7 @@ namespace Keysharp.Internals.Threading
 				if (ei is Func<object> factory)
 					tv.eventInfo = ei = factory();
 
-				return ei;
+				return ei ?? 0L;
 			}
 			set => Script.TheScript.Threads.CurrentThread.eventInfo = value;
 		}

@@ -887,10 +887,10 @@ namespace Keysharp.Runtime
 	public class LoopInfo
 	{
 		public object file;
-		public string filename = string.Empty;
+		public string filename = "";
 		public long index;
 		//public DateTime lastIter = DateTime.UtcNow;
-		public string line;
+		public string line = "";
 		public string path;
 		public object regDate;
 		public string regKeyName;
