@@ -97,6 +97,7 @@ namespace Keysharp.Builtins.COM
 	{
 		public const int variantTypeMask = 0xfff;
 		internal static readonly Guid IID_IUnknown = new("00000000-0000-0000-C000-000000000046");
+		internal static readonly Guid IID_IEnumVARIANT = typeof(IEnumVariantRaw).GUID;
 		internal static readonly Guid IID_IProvideClassInfo = typeof(IProvideClassInfo).GUID;
 		internal static Guid IID_IDispatch = new (0x00020400, 0x0000, 0x0000, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
 		internal static Guid IID_IServiceProvider = new ("6d5140c1-7436-11ce-8034-00aa006009fa");
@@ -109,6 +110,7 @@ namespace Keysharp.Builtins.COM
 		internal const int LOCALE_SYSTEM_DEFAULT = 0x800;
 		internal const int LOCALE_USER_DEFAULT = 0x400;
 		internal const int DISPID_PROPERTYPUT = -3;
+		internal const int DISPID_NEWENUM = -4;
 
 		[DllImport(WindowsAPI.ole32, CharSet = CharSet.Unicode)]
 		internal static extern int CoCreateInstance(ref Guid clsid,

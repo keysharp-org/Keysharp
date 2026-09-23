@@ -323,7 +323,7 @@ namespace Keysharp.Builtins.COM
 			}
 		}
 
-		private const int DISP_E_MEMBERNOTFOUND = unchecked((int)0x80020003);
+		internal const int DISP_E_MEMBERNOTFOUND = unchecked((int)0x80020003);
 		private const int DISP_E_PARAMNOTFOUND = unchecked((int)0x80020004);
 		private const int DISP_E_TYPEMISMATCH = unchecked((int)0x80020005);
 		private const int DISP_E_UNKNOWNNAME = unchecked((int)0x80020006);

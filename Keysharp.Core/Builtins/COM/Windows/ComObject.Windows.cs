@@ -3,9 +3,11 @@ using Keysharp.Builtins.COM;
 
 namespace Keysharp.Builtins.COM
 {
-	public unsafe class ComObject : ComValue, IDisposable//ComValue
+	public unsafe class ComObject : ComValue, I__Enum
 	{
 		public ComObject(params object[] args) : base(args) { }
+
+		KeysharpFunc I__Enum.__Enum(object count) => ComEnumeration.CreateEnumerator(this, count.Ai());
 
 		public static object staticCall(object @this, [UserDeclaredName("CLSID")] object clsid,
 			[UserDeclaredName("IID")] object iid = null)//progId, string iid)

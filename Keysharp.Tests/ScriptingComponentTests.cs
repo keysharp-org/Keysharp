@@ -821,8 +821,12 @@ namespace Keysharp.Tests
 			Assert.IsTrue(Directory.Exists(source), $"canonical {name} payload is missing at {source}");
 			var destination = ComponentDirectory(root, name);
 			Directory.CreateDirectory(destination);
-			foreach (var file in Directory.EnumerateFiles(source))
-				File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), true);
+			foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+			{
+				var copy = Path.Combine(destination, Path.GetRelativePath(source, file));
+				Directory.CreateDirectory(Path.GetDirectoryName(copy));
+				File.Copy(file, copy, true);
+			}
 		}
 	}
 }

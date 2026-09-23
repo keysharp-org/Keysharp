@@ -19,7 +19,7 @@ namespace Keysharp.Builtins.COM
 	// Derives from Any, not KeysharpObject, for the same reason the Windows ComValue does: Script.InvokeOrNull
 	// tests for KeysharpObject (a callable object) BEFORE IMetaObject, so a KeysharpObject-derived meta object
 	// is treated as callable and recurses until the stack is exhausted instead of dispatching by name.
-	public class ComObject : Any, IMetaObject
+	public class ComObject : Any, IMetaObject, I__Enum
 	{
 		internal AETarget target;
 		internal List<AESpecifierStep> steps;

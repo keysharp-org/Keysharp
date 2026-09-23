@@ -46,6 +46,21 @@ AssertEq(totalKeys, "NameAgeCountrynewval", A_LineNumber)
 
 AssertEq(totalVals, "Alice50USA75", A_LineNumber)
 
+enumeratedKeys := Map()
+for key in dict {
+	Assert(dict.Exists(key), A_LineNumber)
+	enumeratedKeys[key] := true
+}
+AssertEq(enumeratedKeys.Count, 4, A_LineNumber)
+
+typedKeys := Map()
+for key, type in dict {
+	Assert(enumeratedKeys.Has(key), A_LineNumber)
+	AssertEq(type, 8, A_LineNumber)
+	typedKeys[key] := true
+}
+AssertEq(typedKeys.Count, 4, A_LineNumber)
+
 dict.Remove("Country")
 
 AssertEq(dict.Count, 3, A_LineNumber)
@@ -55,6 +70,17 @@ pair := [1, 2]
 dict.Add(pair, "pair")
 AssertEq(dict.Item(pair), "pair", A_LineNumber)
 AssertEq(dict(pair), "pair", A_LineNumber)
+
+objectKeys := ComObject("Scripting.Dictionary")
+objectKeys.Add(ComObject("WScript.Shell"), 1)
+objectCount := 0
+for key, type in objectKeys {
+	AssertEq(type, 9, A_LineNumber)
+	AssertEq(ComObjType(key), 9, A_LineNumber)
+	AssertEq(key.ExpandEnvironmentStrings("Keysharp"), "Keysharp", A_LineNumber)
+	objectCount++
+}
+AssertEq(objectCount, 1, A_LineNumber)
 
 SIZEOF_VARIANT := 8 + (2 * A_PtrSize)
 var := Buffer(SIZEOF_VARIANT, 0)

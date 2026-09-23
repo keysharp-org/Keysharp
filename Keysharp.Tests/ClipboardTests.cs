@@ -438,7 +438,7 @@ namespace Keysharp.Tests
 				Assert.AreEqual(0L, calls[1][1]);
 				DispatchClipboardChange(2L);
 				Assert.AreEqual(2L, calls[2][1]);
-				Assert.IsNull(calls[2][3], "The change type is an argument, and A_EventInfo is left unset.");
+				Assert.AreEqual(0L, calls[2][3], "The change type is an argument, and A_EventInfo has its default value.");
 
 				var ownerThread = Environment.CurrentManagedThreadId;
 				var script = Script.TheScript;

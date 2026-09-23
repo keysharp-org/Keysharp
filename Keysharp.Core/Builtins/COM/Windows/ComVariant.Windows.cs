@@ -920,12 +920,11 @@ namespace Keysharp.Builtins.COM
 					if (variant.ptrVal != 0)
 					{
 						Guid IID__Object = new Guid("65074F7F-63C0-304E-AF0A-D51741CB4A8D");
-						Guid IID_IEnumVARIANT = new Guid("00020404-0000-0000-c000-000000000046");
 						if (Marshal.QueryInterface(variant.ptrVal, in Com.IID_IDispatch, out nint pDisp) == 0 && pDisp != 0)
 						{
 							return new ComObject { vt = VarEnum.VT_DISPATCH, Ptr = pDisp };
 						}
-						if (Marshal.QueryInterface(variant.ptrVal, in IID_IEnumVARIANT, out var pEnumVar) == 0)
+						if (Marshal.QueryInterface(variant.ptrVal, in Com.IID_IEnumVARIANT, out var pEnumVar) == 0)
 						{
 							return new ComObject { vt = VarEnum.VT_DISPATCH, Ptr = pEnumVar };
 						}
