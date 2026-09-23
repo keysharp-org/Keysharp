@@ -85,6 +85,30 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		/// <summary>Returns the parent process ID of the specified process.</summary>
+		/// <param name="pidOrName">A process ID or name. If omitted, uses the script's process.</param>
+		/// <returns>The parent process ID. Throws a TargetError if the process cannot be found, or an OSError if its parent cannot be retrieved.</returns>
+		public static long ProcessGetParent([UserDeclaredName("PIDOrName")] object pidOrName = null)
+		{
+			var name = pidOrName.As();
+
+			using var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name);
+
+			if (proc == null)
+				return (long)Errors.TargetErrorOccurred($"The specified process {pidOrName} was not found", DefaultErrorLong);
+
+			try
+			{
+				return Platform.Process.GetParentProcessId(proc.Id)
+					?? (long)Errors.TargetErrorOccurred($"The specified process {pidOrName} was not found", DefaultErrorLong);
+			}
+			catch (Exception ex) when (ex is Win32Exception or IOException or UnauthorizedAccessException)
+			{
+				ThreadAccessors.A_LastError = ex is Win32Exception nativeError ? nativeError.NativeErrorCode : Marshal.GetLastSystemError();
+				return (long)Errors.OSErrorOccurred(ex, $"Could not retrieve the parent process of {proc.Id}.", DefaultErrorLong);
+			}
+		}
+
 		/// <summary>
 		/// Returns the executable name of the specified process.
 		/// </summary>

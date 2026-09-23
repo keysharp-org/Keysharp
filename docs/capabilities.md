@@ -907,7 +907,7 @@ Status legend:
 | ProcessClose() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Forces the first matching process to close. |
 | ProcessExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks if the specified process exists. |
 | ProcessGetName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ProcessGetName and ProcessGetPath functions return the name or path of the specified process. |
-| ProcessGetParent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ProcessGetParent function returns the process ID (PID) of the process which created the specified process. |
+| ProcessGetParent() | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Returns the parent PID of the selected process, or of the script process if omitted. Throws TargetError if the process is missing and OSError if the parent cannot be queried. The macOS implementation is not yet runtime-verified. |
 | ProcessGetPath() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ProcessGetName and ProcessGetPath functions return the name or path of the specified process. |
 | ProcessSetPriority() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes the priority level of the first matching process. |
 | ProcessWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for the specified process to exist. |

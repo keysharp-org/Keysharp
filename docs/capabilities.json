@@ -9234,12 +9234,13 @@
                  {
                      "category":  "Core Language",
                      "feature":  "ProcessGetParent()",
-                     "syntax":  "",
+                     "syntax":  "parentPID := ProcessGetParent(PIDOrName?)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The ProcessGetParent function returns the process ID (PID) of the process which created the specified process."
+                     "macos":  "unknown",
+                     "notes":  "Returns the parent PID of the selected process, or of the script process if omitted. Throws TargetError if the process is missing and OSError if the parent cannot be queried. The macOS implementation is not yet runtime-verified.",
+                     "tested-by":  "ProcessTests.ProcessGetParent; process-get-parent.ahk"
                  },
                  {
                      "category":  "Core Language",

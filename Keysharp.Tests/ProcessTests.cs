@@ -8,6 +8,9 @@ namespace Keysharp.Tests
 		public void ProcessRunWaitClose() => Assert.IsTrue(TestScript("process-run-wait-close", false));
 
 		[Test, Category("Process")]
+		public void ProcessGetParent() => Assert.IsTrue(TestScript("process-get-parent", false));
+
+		[Test, Category("Process")]
 		public void ProcessRunScript()
 		{
 			Assert.IsTrue(TestScript("process-runscript", false));
