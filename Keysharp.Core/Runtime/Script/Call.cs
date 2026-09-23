@@ -236,6 +236,8 @@ namespace Keysharp.Runtime
 		}
 
 		// . strict base, strict result
+		public static object GetPropertyValue(object item, object name) =>
+			GetPropertyValueOrNull(item, name, System.Array.Empty<object>()) ?? MissingPropertyError(item, name);
 		public static object GetPropertyValue(object item, object name, params object[] args) =>
 			GetPropertyValueOrNull(item, name, args) ?? MissingPropertyError(item, name);
 
@@ -263,6 +265,7 @@ namespace Keysharp.Runtime
 			return Errors.MissingPropertyErrorOccurred(item, name);
 		}
 		// . in ?? context: strict base, allow null result
+		public static object GetPropertyValueOrNull(object item, object name) => GetPropertyValueOrNull(item, name, System.Array.Empty<object>());
 		public static object GetPropertyValueOrNull(object item, object name, params object[] args)
 		{
 			var namestr = name.ToString();
@@ -408,6 +411,10 @@ namespace Keysharp.Runtime
 			// Not found ? per docs, internal lifecycle invocation should be a no-op (no __Call).
 			return null;
 		}
+
+		// Avoid allocating an argument array for calls without arguments.
+		public static object Invoke(object obj, object meth) => Invoke(obj, meth, System.Array.Empty<object>());
+		public static object InvokeOrNull(object obj, object meth) => InvokeOrNull(obj, meth, System.Array.Empty<object>());
 
 		// . strict base, strict result
 		public static object Invoke(object obj, object meth, params object[] parameters) =>
@@ -660,8 +667,9 @@ namespace Keysharp.Runtime
 			return false;
 		}
 
+		public static object SetPropertyValue(object item, object name, object value) => SetPropertyValueCore(item, name, null, value, allowCreate: true);
 		public static object SetPropertyValue(object item, object name, params object[] args) =>
-			SetPropertyValueCore(item, name, args, allowCreate: true);
+			SetPropertyValueCore(item, name, args, args?.Length > 0 ? args[^1] : null, allowCreate: true);
 
 		/// <summary>
 		/// Writes a reference's <c>__Value</c> without letting the write define the property it did not find.
@@ -670,17 +678,15 @@ namespace Keysharp.Runtime
 		/// will ever read. This is AutoHotkey's <c>IF_NO_NEW_PROPS</c> for the same write.
 		/// </summary>
 		internal static object SetRefValue(object item, object value) =>
-			SetPropertyValueCore(item, Refs.ValueName, [value], allowCreate: false);
+			SetPropertyValueCore(item, Refs.ValueName, null, value, allowCreate: false);
 
-		private static object SetPropertyValueCore(object item, object name, object[] args, bool allowCreate)
+		private static object SetPropertyValueCore(object item, object name, object[] args, object value, bool allowCreate)
 		{
 			var namestr = name.ToString();
 			Any kso = null;
 
-			if (args == null) args = new object[] { null };
-			if (args.Length == 0) return Errors.ErrorOccurred($"Attempting to set property {namestr} on object {item} failed because no value was provided");
-
-			object value = args[^1];
+			var argCount = args?.Length ?? 1;
+			if (argCount == 0) return Errors.ErrorOccurred($"Attempting to set property {namestr} on object {item} failed because no value was provided");
 
 			try
 			{
@@ -700,14 +706,14 @@ namespace Keysharp.Runtime
 				}
 				else if (Builtins.Primitive.IsNative(item))
 				{
-					_ = SetPropertyValue((TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item), name, args);
+					_ = SetPropertyValue((TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item), name, Arguments());
 					return value;
 				}
 
 				// Keysharp object path
 				if (kso != null)
 				{
-					if (kso is Module module && module.TrySetProperty(namestr, args))
+					if (kso is Module module && module.TrySetProperty(namestr, Arguments()))
 						return value;
 
 					// Direct ownprop first
@@ -721,14 +727,14 @@ namespace Keysharp.Runtime
 						{
 							if (own.Set is KeysharpFunc f)
 							{
-								_ = args.Length > 1 && own.NoParamSet
-									? SetObject(f.Call(item), args)
-									: f.CallInst(item, args);
+								_ = argCount > 1 && own.NoParamSet
+									? SetObject(f.Call(item), Arguments())
+									: f.CallInst(item, Arguments());
 							}
 							else
 							{
 								// callable setter
-								_ = Invoke(own.Set, null, args.Prepend(item));
+								_ = Invoke(own.Set, null, Arguments().Prepend(item));
 							}
 							return value;
 						}
@@ -736,8 +742,8 @@ namespace Keysharp.Runtime
 						// Pure data property (no Call/Get)
 						if (own.Call == null && own.Get == null)
 						{
-							if (args.Length > 1)
-								_ = SetObject(own.Value, args);
+							if (argCount > 1)
+								_ = SetObject(own.Value, Arguments());
 							else
 								own.Value = value;
 
@@ -765,13 +771,13 @@ namespace Keysharp.Runtime
 
 						if (opm.Set is KeysharpFunc fset)
 						{
-							_ = args.Length > 1 && opm.NoParamSet
-								? SetObject(fset.Call(item), args)
-								: fset.CallInst(item, args);
+							_ = argCount > 1 && opm.NoParamSet
+								? SetObject(fset.Call(item), Arguments())
+								: fset.CallInst(item, Arguments());
 						}
 						else
 						{
-							_ = Invoke(opm.Set, null, item, args);
+							_ = Invoke(opm.Set, null, item, Arguments());
 						}
 						return value;
 					}
@@ -779,14 +785,14 @@ namespace Keysharp.Runtime
 					else if (TryGetOwnPropsMap(kso, namestr, out var opm2, searchBase: true,
 						type: OwnPropsMapType.Get | OwnPropsMapType.Value))
 					{
-						if (args.Length > 1)
+						if (argCount > 1)
 						{
 							object val = null;
 							if (opm2.Get != null)
 								val = Invoke(opm2.Get, null, item);
 							else
 								val = opm2.Value;
-							_ = SetPropertyValue(val, "__Item", args);
+							_ = SetPropertyValue(val, "__Item", Arguments());
 							return value;
 						}
 
@@ -802,20 +808,20 @@ namespace Keysharp.Runtime
 					else if (TryGetOwnPropsMap(kso, "__Set", out var protoSet) && (protoSet.Call ?? protoSet.Value) is object metaSet)
 					{
 						if (metaSet is KeysharpFunc f)
-							_ = f.Call(item, namestr, new Keysharp.Builtins.Array(GetIndexArgs(args)), value);
+							_ = f.Call(item, namestr, new Keysharp.Builtins.Array(GetIndexArgs()), value);
 						else
-							_ = Invoke(metaSet, null, item, namestr, new Keysharp.Builtins.Array(GetIndexArgs(args)), value);
+							_ = Invoke(metaSet, null, item, namestr, new Keysharp.Builtins.Array(GetIndexArgs()), value);
 						return value;
 					}
 
 					if (kso is IMetaObject mo)
 					{
-						mo.Set(namestr, GetIndexArgs(args), value);
+						mo.Set(namestr, GetIndexArgs(), value);
 						return value;
 					}
 
 					// Define new own data prop when target is a KeysharpObject and it's a simple assignment
-					if (allowCreate && args.Length == 1 && item is KeysharpObject ksoObj)
+					if (allowCreate && argCount == 1 && item is KeysharpObject ksoObj)
 					{
 						ksoObj.DefinePropInternal(namestr, new OwnPropsDesc(ksoObj, value));
 						return value;
@@ -834,12 +840,8 @@ namespace Keysharp.Runtime
 				   ? Errors.ErrorOccurred($"Attempting to set property {namestr} on object {item} to value {value} failed.")
 				   : Errors.MissingPropertyErrorOccurred(item, namestr);
 
-			static object[] GetIndexArgs(object[] a)
-			{
-				var res = new object[a.Length - 1];
-				System.Array.Copy(a, res, res.Length);
-				return res;
-			}
+			object[] Arguments() => args ??= [value];
+			object[] GetIndexArgs() => argCount == 1 ? System.Array.Empty<object>() : args[..^1];
 		}
 
 		public static void SetStaticMemberValueT<T>(object name, object value)

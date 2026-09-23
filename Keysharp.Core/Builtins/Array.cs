@@ -199,29 +199,30 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 		{
 			switch (args[0])
 			{
-				case object[] objarr:
-					array = new (objarr); // single copy
-					break;
-				case List<object> objlist:
-					array = new (objlist); // single copy
+				case ICollection<object> values:
+					Copy(values);
 					break;
 				case IEnumerable e when e is not string and not Any:
 					array = new (e.Cast<object>()); // enumerate once
+					if (array.Count < capacity) array.Capacity = capacity;
 					break;
 				default:
-					array = new (1) { args[0] };
+					array = new (Math.Max(capacity, 1)) { args[0] };
 					break;
 			}
-
-			if (array.Count < capacity) array.Capacity = capacity;
 		}
 		else
 		{
-			array = new (args); // single copy
-			if (array.Count < capacity) array.Capacity = capacity;
+			Copy(args);
 		}
 
 		return DefaultObject;
+
+		void Copy(ICollection<object> values)
+		{
+			array = new (Math.Max(capacity, values.Count));
+			array.AddRange(values);
+		}
 	}
 
 	internal override List<Any> GetEnumerableMembersOrEmpty()

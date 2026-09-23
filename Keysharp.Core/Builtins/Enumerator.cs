@@ -2,6 +2,8 @@ namespace Keysharp.Builtins
 {
 	public class Enumerator : KeysharpFunc, IEnumerator<object>, IEnumerator<(object, object)>, IDisposable
 	{
+		internal static readonly object True = true;
+		private static readonly object False = false;
 		private static MethodPropertyHolder callMethod;
 
 		private readonly Func<bool> moveNext;
@@ -117,11 +119,11 @@ namespace Keysharp.Builtins
 				if (!Advance(args?.Length ?? 0))
 				{
 					((IDisposable)this).Dispose();
-					return false;
+					return False;
 				}
 
 				if (args == null || args.Length == 0)
-					return true;
+					return True;
 
 				if (args.Length == 1)
 				{
@@ -134,7 +136,7 @@ namespace Keysharp.Builtins
 					Refs.SetValue(args[1], pair.Item2);
 				}
 
-				return true;
+				return True;
 			}
 			catch (KeysharpException)
 			{

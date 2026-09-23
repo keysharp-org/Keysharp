@@ -477,10 +477,7 @@ namespace Keysharp.Runtime
 				// declared in source or built at run time -- and keep the interface fast path only for what
 				// resolves to the registration-time built-in. Same test as the direct-Call shortcut in
 				// Script.InvokeOrNull, and it runs once per loop, not once per iteration.
-				if (ScriptEnum(obj) is KeysharpFunc over)
-					return NormalizeEnumerator(over.Call(obj, count), obj, ct);
-
-				return NormalizeEnumerator(ienum.__Enum(ct), obj, ct);
+				return MakeEnumerator(ienum, count, ct, ScriptEnum(obj));
 			}
 			//else if (obj is IEnumerable<(object, object)> ie0)
 			//  return ie0.GetEnumerator();
@@ -519,6 +516,9 @@ namespace Keysharp.Runtime
 			return default;
 		}
 
+		internal static Enumerator MakeEnumerator(I__Enum obj, object count, int arity, KeysharpFunc over) =>
+			NormalizeEnumerator(over != null ? over.Call(obj, count) : obj.__Enum(arity), obj, arity);
+
 		private static Enumerator NormalizeEnumerator(object obj, object source, int count)
 		{
 			if (obj is Enumerator enumerator)
@@ -552,7 +552,7 @@ namespace Keysharp.Runtime
 			else
 			{
 				while (ke.Call(args).IsCallbackResultNonEmpty())
-					yield return true;
+					yield return Enumerator.True;
 			}
         }
 

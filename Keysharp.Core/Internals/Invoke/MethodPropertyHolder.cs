@@ -11,33 +11,22 @@ namespace Keysharp.Internals.Invoke
 	internal class MethodPropertyHolder
 	{
 		public Func<object, object[], object> _callFunc;
-		public Func<object, object[], object> CallFunc
-        {
-            get
-            {
-                if (_callFunc != null)
-                    return _callFunc;
+		public Func<object, object[], object> CallFunc => _callFunc ??= CreateCallFunc();
 
-				var del = DelegateFactory.CreateDelegate(this);
-				var call = del;
+		// Isolate the GUI lambda's closure so a cached lookup does not allocate it.
+		private Func<object, object[], object> CreateCallFunc()
+		{
+			var del = DelegateFactory.CreateDelegate(this);
+			if (!isGuiType) return del;
 
-                if (isGuiType)
-                {
-                    call = (inst, args) =>
-                    {
-                        var ctrl = (inst ?? args[0]).GetControl();
-                        object ret = null;
-                        ctrl.CheckedInvoke(() =>
-                        {
-                            ret = del(inst, args);
-                        }, true);
-                        return ret;
-                    };
-                }
-
-                return _callFunc = call;
-			}
-        }
+			return (inst, args) =>
+			{
+				var ctrl = (inst ?? args[0]).GetControl();
+				object ret = null;
+				ctrl.CheckedInvoke(() => { ret = del(inst, args); }, true);
+				return ret;
+			};
+		}
 
 		internal MemberInfo memberInfo => ((MemberInfo)mi ?? pi) ?? fi;
 		internal readonly MethodInfo mi;
@@ -47,7 +36,6 @@ namespace Keysharp.Internals.Invoke
 		internal readonly Type moduleType;
 		internal readonly Semver.SemVersion compatibilityVersion;
 		internal readonly Action<object, object> SetProp;
-		protected readonly ConcurrentStackArrayPool<object> paramsPool;
 		internal readonly bool anyOptional;
 		internal readonly bool isGuiType;
 		internal readonly bool isSetter;
@@ -781,16 +769,14 @@ namespace Keysharp.Internals.Invoke
 				defaults[i] = soft ? MaterializeDefault(ps[i]) : null;
 			}
 
-			// Compile the small "core" once. The variadic index has to go along: by the time the core runs,
-			// NormalInvoke has already packed a real object[] into that slot, and it must not be coerced.
-			var core = CompileCore(mi, ps, isSoft, defaults, mph.variadicParamIndex);
+			// The core reads fixed arguments directly and constructs only the final variadic tail.
+			var core = CompileCore(mi, ps, isSoft, defaults, mph.variadicParamIndex, mph.isItemSetter);
 
 			return NormalInvoke;
 
 			// The returned delegate performs:
 			//  - exact arg-count validation
-			//  - instance splicing convention
-			//  - params packing (incl. set_Item)
+			//  - receiver selection without copying the arguments
 			//  - then calls the compiled core (which handles defaults & per-slot null checks)
 #if !INTERNALDEBUG
 			[DebuggerStepThrough]
@@ -827,123 +813,15 @@ namespace Keysharp.Internals.Invoke
 				if (!isVariadic && provided > mph.MaxParams)
 					throw new ValueError($"Too many arguments provided for function {mph.QualifiedName}");
 
-				// ---- instance splicing ----
-				object target;
-				int start = 0;
-				object[] working = args;
-
-				if (isInstance)
+				// A negative start supplies static parameter zero through target; positive start skips a CLR receiver.
+				if (isInstance && instance == null)
 				{
-					if (instance != null)
-					{
-						target = instance;
-					}
-					else
-					{
-						if (working.Length == 0)
-							throw new ValueError($"Too few arguments provided for function {mph.QualifiedName}");
-
-						target = working[0];
-						start = 1;
-					}
-				}
-				else
-				{
-					target = null;
-					if (instance != null)
-					{
-						var combined = new object[working.Length + 1];
-						combined[0] = instance;
-						System.Array.Copy(working, 0, combined, 1, working.Length);
-						working = combined;
-					}
+					if (args.Length == 0)
+						throw new ValueError($"Too few arguments provided for function {mph.QualifiedName}");
+					return core(args[0], args, 1);
 				}
 
-				int eff = Math.Max(0, working.Length - start);
-
-				// ---- params packing (if any) ----
-				if (isVariadic)
-				{
-					int k = mph.variadicParamIndex;
-
-					if (mph.isItemSetter)
-					{
-						// set_Item(params object[] keys, object value)
-						// formal shape: [ .. fixed .., k = keys[], k+1 = value ]
-						int needed = paramCount; // k + 2
-						if (eff >= needed)
-						{
-							// Already enough to rewrite in-place
-							if (!(eff == needed && working[start + k] is object[]))
-							{
-								int keyCount = eff - 1 - k;
-								var keys = keyCount <= 0 ? System.Array.Empty<object>() : new object[keyCount];
-								for (int j = 0; j < keyCount; j++)
-									keys[j] = working[start + k + j];
-
-								working[start + k] = keys;
-								working[start + k + 1] = working[start + eff - 1];
-							}
-
-							return core(target, working, start);
-						}
-						else
-						{
-							// Expand and synthesize keys[] + optional value
-							var expanded = new object[start + needed];
-							System.Array.Copy(working, 0, expanded, 0, Math.Min(working.Length, expanded.Length));
-
-							int avail = eff;
-							if (avail <= k)
-								throw new ArgumentError(); // missing required head
-
-							int keysAvail = Math.Max(0, avail - 1 - k);
-							var keys = keysAvail == 0 ? System.Array.Empty<object>() : new object[keysAvail];
-							for (int j = 0; j < keysAvail; j++)
-								keys[j] = working[start + k + j];
-
-							expanded[start + k] = keys;
-							expanded[start + k + 1] = (avail > k) ? working[start + avail - 1] : null;
-
-							return core(target, expanded, start);
-						}
-					}
-					else
-					{
-						// Normal params at [k]
-						int final = paramCount;
-
-						if (paramCount == 1 && start == 0)
-							return core(target, [working], start);
-
-						if (eff > final)
-						{
-							int tail = eff - k;
-							var packed = tail <= 0 ? System.Array.Empty<object>() : new object[tail];
-							for (int j = 0; j < tail; j++)
-								packed[j] = working[start + k + j];
-
-							working[start + k] = packed;
-							return core(target, working, start);
-						}
-
-						if (eff == final)
-						{
-							if (working[start + k] is not object[])
-								working[start + k] = new object[] { working[start + k] };
-							return core(target, working, start);
-						}
-
-						// eff < final → synthesize empty params
-						var expanded = new object[start + final];
-						System.Array.Copy(working, 0, expanded, 0, Math.Min(working.Length, expanded.Length));
-						expanded[start + k] = System.Array.Empty<object>();
-						return core(target, expanded, start);
-					}
-				}
-
-				// No params → just run the compiled core (which fills defaults & validates per-slot nulls).
-				return core(target, working, start);
+				return core(instance, args, !isInstance && instance != null ? -1 : 0);
 			};
 		}
 
@@ -954,7 +832,8 @@ namespace Keysharp.Internals.Invoke
 			ParameterInfo[] ps,
 			bool[] isSoft,
 			object[] defaults,
-			int variadicParamIndex = -1)
+			int variadicParamIndex,
+			bool isItemSetter)
 		{
 			var pTarget = Expression.Parameter(typeof(object), "target");
 			var pArgs = Expression.Parameter(typeof(object[]), "args");
@@ -968,10 +847,22 @@ namespace Keysharp.Internals.Invoke
 
 			for (int i = 0; i < ps.Length; i++)
 			{
-				var idx = Expression.Add(pStart, Expression.Constant(i));
+				if (i == variadicParamIndex)
+				{
+					a[i] = Expression.Convert(Expression.Call(typeof(DelegateFactory), nameof(PackVariadic), null,
+						pTarget, pArgs, pStart, Expression.Constant(i), Expression.Constant(ps.Length), Expression.Constant(isItemSetter)), ps[i].ParameterType);
+					continue;
+				}
+
+				var tailValue = isItemSetter && variadicParamIndex >= 0 && i == ps.Length - 1;
+				Expression idx = tailValue
+					? Expression.Subtract(argsLen, Expression.Constant(1))
+					: Expression.Add(pStart, Expression.Constant(i));
 				var inRange = Expression.LessThan(idx, argsLen);
 				var elem = Expression.ArrayIndex(pArgs, idx);
 				var valOrNull = Expression.Condition(inRange, elem, Expression.Constant(null, typeof(object)));
+				if (mi.IsStatic && (i == 0 || tailValue))
+					valOrNull = Expression.Condition(Expression.Equal(idx, Expression.Constant(-1)), pTarget, valOrNull);
 
 				Expression chosen;
 				if (isSoft[i])
@@ -999,11 +890,7 @@ namespace Keysharp.Internals.Invoke
 						valOrNull);
 				}
 
-				// The packed variadic slot is handed over as-is. Boundary coercion is selected only for inline C#;
-				// ordinary object parameters remain a direct cast, as they were before CLR proxy round-tripping.
-				a[i] = i == variadicParamIndex
-					   ? Expression.Convert(chosen, ps[i].ParameterType)
-					   : inlineMarked
+				a[i] = inlineMarked
 						   ? ArgCoercer.CoerceBoundary(chosen, ps[i].ParameterType)
 						   : ArgCoercer.Coerce(chosen, ps[i].ParameterType);
 			}
@@ -1043,6 +930,26 @@ namespace Keysharp.Internals.Invoke
 
 			return Expression.Lambda<Func<object, object[], int, object>>(body, pTarget, pArgs, pStart)
 							 .Compile();
+		}
+
+		// Preserve explicit packed arrays, but never rewrite the caller's slots while collecting a tail.
+		private static object[] PackVariadic(object target, object[] args, int start, int index, int paramCount, bool setter)
+		{
+			var count = args.Length - start;
+			if (setter && count <= index) throw new ArgumentError();
+			if (paramCount == 1 && start == 0) return args;
+			var offset = start + index;
+			if ((paramCount != 1 || start > 0) && count == paramCount
+				&& (offset < 0 ? target : args[offset]) is object[] packed)
+				return packed;
+
+			var length = Math.Max(0, count - index - (setter ? 1 : 0));
+			if (length == 0) return System.Array.Empty<object>();
+			var tail = new object[length];
+			var prefix = offset < 0 ? 1 : 0;
+			if (prefix != 0) tail[0] = target;
+			System.Array.Copy(args, Math.Max(0, offset), tail, prefix, length - prefix);
+			return tail;
 		}
 
 		private static Func<object, object[], object> CreateFieldDelegate(MethodPropertyHolder mph)

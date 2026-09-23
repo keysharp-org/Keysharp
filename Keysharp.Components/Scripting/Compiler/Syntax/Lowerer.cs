@@ -5249,6 +5249,9 @@ namespace Keysharp.Compilation.Syntax
 		// flattened index).
 		private ExpressionSyntax SpreadParams(List<Argument> args, ExpressionSyntax trailing = null)
 		{
+			if (trailing == null && args.Count == 1 && args[0].Spread)
+				return Op("FlattenValues", args[0].Value == null ? Null : LowerExpr(args[0].Value));
+
 			var elems = new List<CollectionElementSyntax>(args.Count + 2);
 			var positional = SplitNamed(args, out var named);
 

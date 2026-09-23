@@ -10,7 +10,16 @@ namespace Keysharp.Runtime
 		/// </summary>
 		public static object[] FlattenValues(object obj)
 		{
-			var ke = Loops.MakeEnumerator(obj, 1L);
+			Enumerator ke;
+			if (obj is Keysharp.Builtins.Array arr && obj.GetType() == typeof(Keysharp.Builtins.Array))
+			{
+				// Resolve once: a getter-backed __Enum can run script, even when it returns the built-in method.
+				var over = Loops.ScriptEnum(obj);
+				if (over == null) return arr.array.ToArray();
+				ke = Loops.MakeEnumerator(arr, 1L, 1, over);
+			}
+			else
+				ke = Loops.MakeEnumerator(obj, 1L);
 
 			if (ke is object && IsCallable(ke))
 			{
