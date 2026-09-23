@@ -698,7 +698,7 @@ Status legend:
 | InputHook.FindAnywhere | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Matches phrases anywhere in the input buffer. |
 | InputHook.InProgress | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | 1 while the input is collecting; 0 before Start() and after it ends. |
 | InputHook.Input | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Text captured so far by the input hook. |
-| InputHook.KeyOpt() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sets key-specific behavior options for the input hook. |
+| InputHook.KeyOpt() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | {All} stays keyboard-only. Keysharp adds composable {Keyboard} and {Mouse} (buttons and wheels). {Mouse} accepts E, S, V and Z; I and N raise ValueError. Movement uses VisibleMouseMove. |
 | InputHook.Match | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Phrase that matched and ended input, if any. |
 | InputHook.MinSendLevel | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Minimum SendLevel accepted by the hook. |
 | InputHook.NotifyNonText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether non-text key notifications are enabled. |
@@ -714,7 +714,7 @@ Status legend:
 | InputHook.Timeout | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Maximum capture duration in seconds. |
 | InputHook.TranscribeModifiedKeys | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether typed characters should reflect active modifier changes. |
 | InputHook.VisibleMouseMove | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether mouse movement remains visible while capture is active. |
-| InputHook.VisibleNonText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible non-text keys are collected. |
+| InputHook.VisibleNonText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Controls non-text keyboard visibility; mouse buttons and wheels pass through unless KeyOpt suppresses them. |
 | InputHook.VisibleText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Whether visible text characters are collected. |
 | InputHook.Wait() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Waits until capture ends or times out. |
 | InstallKeybdHook() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The InstallKeybdHook function installs or uninstalls the keyboard hook. |

@@ -730,6 +730,7 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ Throws an `IndexError` if the offset out of range.
 	+ `Func`:
 		+ `IsClosure`, `IsMethod` and `Params` expose Keysharp function metadata.
+	+ `InputHook.KeyOpt("{All}", ...)` affects keyboard input only. Keysharp adds composable `{Keyboard}` and `{Mouse}` (buttons and wheels); mouse movement uses `VisibleMouseMove`.
 	+ `Map`:
 		+ `ToString() => String`: Returns a string representation of the map.
 	+ `String`:

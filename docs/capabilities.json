@@ -6906,12 +6906,13 @@
                  {
                      "category":  "Input/Automation",
                      "feature":  "InputHook.KeyOpt()",
-                     "syntax":  "",
+                     "syntax":  "ih.KeyOpt(\"{Keyboard}{Mouse}\", \"S\")",
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Sets key-specific behavior options for the input hook."
+                     "notes":  "{All} stays keyboard-only. Keysharp adds composable {Keyboard} and {Mouse} (buttons and wheels). {Mouse} accepts E, S, V and Z; I and N raise ValueError. Movement uses VisibleMouseMove.",
+                     "tested-by":  "InputHookTests.KeyOptGroupSelectors"
                  },
                  {
                      "category":  "Input/Automation",
@@ -7082,7 +7083,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Whether visible non-text keys are collected."
+                     "notes":  "Controls non-text keyboard visibility; mouse buttons and wheels pass through unless KeyOpt suppresses them.",
+                     "tested-by":  "InputHookTests.MouseVisibilityDoesNotInheritVisibleNonText"
                  },
                  {
                      "category":  "Input/Automation",

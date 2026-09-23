@@ -3,7 +3,7 @@ using Keysharp.Runtime;
 namespace Keysharp.Builtins
 {
 	/// <summary>
-	/// Collects or intercepts keyboard input. Scripts construct one by calling the class, as AutoHotkey does:
+	/// Collects or intercepts keyboard and mouse input. Scripts construct one by calling the class, as AutoHotkey does:
 	/// <c>ih := InputHook("V")</c>.
 	/// <para>
 	/// It shares its lifecycle vocabulary with every Keysharp event hook and overrides its members, because it is
@@ -313,6 +313,7 @@ namespace Keysharp.Builtins
 			var keysVal = keys.As();
 			var options = keyOptions.As();
 			var adding = true;
+			var invalidMouseOption = '\0';
 			uint flag = 0U, addFlags = 0u, removeFlags = 0u;
 
 			for (var i = 0; i < options.Length; ++i)
@@ -327,9 +328,9 @@ namespace Keysharp.Builtins
 
 					case 'E': flag = HookThread.END_KEY_ENABLED; break;
 
-					case 'I': flag = HookThread.INPUT_KEY_IGNORE_TEXT; break;
+					case 'I': flag = HookThread.INPUT_KEY_IGNORE_TEXT; invalidMouseOption = 'I'; break;
 
-					case 'N': flag = HookThread.INPUT_KEY_NOTIFY; break;
+					case 'N': flag = HookThread.INPUT_KEY_NOTIFY; invalidMouseOption = 'N'; break;
 
 					case 'S':
 						flag = HookThread.INPUT_KEY_SUPPRESS;
@@ -365,20 +366,45 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			if (string.Compare(keysVal, "{All}", true) == 0)
+			var keyboardGroup = string.Equals(keysVal, "{All}", StringComparison.OrdinalIgnoreCase);
+			var mouseGroup = false;
+
+			for (var i = 0; i < keysVal.Length; ++i)
 			{
-				// Could optimize by using memset() when remove_flags == 0xFF, but that doesn't seem
-				// worthwhile since this mode is already faster than SetKeyFlags() with a single key.
-				for (var i = 0; i < input.keyVK.Length; ++i)
-					input.keyVK[i] = (input.keyVK[i] & ~removeFlags) | addFlags;
+				if (keysVal[i] != '{')
+					continue;
 
-				for (var i = 0; i < input.keySC.Length; ++i)
-					input.keySC[i] = (input.keySC[i] & ~removeFlags) | addFlags;
+				var end = keysVal.IndexOf('}', i + 1);
 
-				// AHK returns here; falling through to SetKeyFlags would re-parse the literal "{All}".
+				if (end < 0)
+					break;
+
+				var name = keysVal.AsSpan(i + 1, end - i - 1);
+				keyboardGroup |= name.Equals("Keyboard", StringComparison.OrdinalIgnoreCase);
+				mouseGroup |= name.Equals("Mouse", StringComparison.OrdinalIgnoreCase);
+				i = end;
 			}
-			else
-				input.SetKeyFlags(keysVal, false, removeFlags, addFlags);
+
+			if (mouseGroup && invalidMouseOption != '\0')
+				return Errors.ValueErrorOccurred($"Option {invalidMouseOption} is not supported for {{Mouse}}. Use E, S, V or Z.", options);
+
+			if (keyboardGroup || mouseGroup)
+			{
+				for (var i = 0u; i < input.keyVK.Length; ++i)
+				{
+					var isMouse = MouseUtils.IsMouseVK(i) || MouseUtils.IsWheelVK(i);
+
+					if (isMouse ? mouseGroup : keyboardGroup)
+						input.keyVK[i] = (input.keyVK[i] & ~removeFlags) | addFlags;
+				}
+
+				if (keyboardGroup)
+					for (var i = 0; i < input.keySC.Length; ++i)
+						input.keySC[i] = (input.keySC[i] & ~removeFlags) | addFlags;
+			}
+
+			// Group names have no VK or SC; the key parser ignores them.
+			input.SetKeyFlags(keysVal, false, removeFlags, addFlags);
 
 			if (input.InProgress())
 			{

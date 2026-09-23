@@ -1368,7 +1368,7 @@ namespace Keysharp.Internals.Input.Hooks
 		// Collects a mouse button (or wheel) event for any active InputHook(s). Mirrors the non-text
 		// path of CollectInputHook plus the DOWN_SUPPRESSED bookkeeping of CollectKeyUp, but dispatches
 		// the dedicated OnMouseDown/OnMouseUp callbacks. Mouse buttons are valid VKs (VK_LBUTTON, ...),
-		// so the existing keyVK[] suppression flags (KeyOpt +S/+V, VisibleNonText) apply unchanged.
+		// so the existing keyVK[] options apply to them.
 		// Like CollectInputHook/CollectKeyUp, 'early' partitions the input chain: the before-hotkeys pass
 		// (early=true) services H-option InputHooks so a button is seen BEFORE a hotkey can suppress it;
 		// the after-hotkeys pass (early=false, from AllowIt) services the rest. An input only ever matches
@@ -1396,10 +1396,7 @@ namespace Keysharp.Internals.Input.Hooks
 						input.EndByKey(vk, 0, false, shiftIsDown && !endIfShiftNotDown);
 				}
 
-				// Visibility / suppression mirrors keystrokes: explicit +S/+V wins, else VisibleNonText.
-				var visible = (keyFlags & INPUT_KEY_VISIBILITY_MASK) != 0
-							  ? (keyFlags & INPUT_KEY_VISIBLE) != 0
-							  : input.visibleNonText;
+				var visible = (keyFlags & INPUT_KEY_VISIBLE) != 0 || (keyFlags & INPUT_KEY_SUPPRESS) == 0;
 
 				// Notify (decoupled from suppression, per design): fire whenever the relevant callback is set.
 				var msg = keyUp ? UserMessages.AHK_INPUT_MOUSEUP : UserMessages.AHK_INPUT_MOUSEDOWN;

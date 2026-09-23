@@ -3,6 +3,7 @@ using Keysharp.Internals.Input;
 using Keysharp.Internals.Input.Hooks;
 using Keysharp.Internals.Threading;
 using Keysharp.Internals.Window;
+using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using Keyboard = Keysharp.Builtins.Keyboard;
 
@@ -69,6 +70,84 @@ namespace Keysharp.Tests
 				var sc = (int)Keyboard.GetKeySC(key);
 				Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS,
 					(named.input.keyVK[vk] | named.input.keySC[sc]) & HookThread.INPUT_KEY_SUPPRESS, $"{key} is suppressed");
+			}
+		}
+
+		[Test, Category("InputHook")]
+		public void KeyOptGroupSelectors()
+		{
+			var keyboardVk = (int)Keyboard.GetKeyVK("a");
+			var mouseVks = new[] { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2,
+				VK_WHEEL_LEFT, VK_WHEEL_RIGHT, VK_WHEEL_DOWN, VK_WHEEL_UP };
+			foreach (var (keys, keyboard, mouse) in new[]
+			{
+				("{All}", true, false), ("{Keyboard}", true, false),
+				("{Mouse}", false, true), ("{keyboard}{MOUSE}", true, true),
+				("{{Keyboard}}", false, false), ("{{Mouse}}", false, false)
+			})
+			{
+				var io = (InputHook)new InputHook("V");
+				io.KeyOpt(keys, "S");
+				var keyboardFlags = keyboard ? HookThread.INPUT_KEY_SUPPRESS : 0u;
+				var mouseFlags = mouse ? HookThread.INPUT_KEY_SUPPRESS : 0u;
+				Assert.AreEqual(keyboardFlags, io.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS, keys);
+				Assert.AreEqual(keyboardFlags, io.input.keyVK[VK_CANCEL] & HookThread.INPUT_KEY_SUPPRESS, keys);
+				Assert.AreEqual(keyboardFlags, io.input.keySC[0] & HookThread.INPUT_KEY_SUPPRESS, keys);
+				Assert.AreEqual(mouse, io.input.MouseIsNeeded, keys);
+
+				foreach (var vk in mouseVks)
+					Assert.AreEqual(mouseFlags, io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, $"{keys}: {vk:X2}");
+			}
+
+			var mixed = (InputHook)new InputHook("V");
+			mixed.KeyOpt("a{Mouse}", "S");
+			Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_SUPPRESS);
+			Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, mixed.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS);
+			mixed.KeyOpt("{All}", "Z");
+			Assert.AreEqual(0u, mixed.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS);
+			Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_SUPPRESS);
+			mixed.KeyOpt("{Mouse}", "E+V");
+			Assert.AreEqual(HookThread.END_KEY_ENABLED, mixed.input.keyVK[VK_LBUTTON] & HookThread.END_KEY_ENABLED);
+			Assert.AreEqual(HookThread.INPUT_KEY_VISIBLE, mixed.input.keyVK[VK_WHEEL_UP] & HookThread.INPUT_KEY_VISIBILITY_MASK);
+			mixed.KeyOpt("{Mouse}", "Z");
+			Assert.AreEqual(0u, mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_OPTION_MASK);
+
+			foreach (var option in new[] { "I", "-N" })
+			{
+				var rejected = (InputHook)new InputHook("V");
+				var error = Assert.Throws<KeysharpException>(() => rejected.KeyOpt("a{Keyboard}{Mouse}", $"S{option}"));
+				Assert.IsInstanceOf<ValueError>(error.UserError);
+				Assert.AreEqual(0u, rejected.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_OPTION_MASK, option);
+				Assert.AreEqual(0u, rejected.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_OPTION_MASK, option);
+			}
+		}
+
+		[Test, Category("InputHook")]
+		public void MouseVisibilityDoesNotInheritVisibleNonText()
+		{
+			foreach (var (option, visible) in new[] { ("", true), ("S", false) })
+			{
+				var io = (InputHook)new InputHook("V");
+				io.VisibleNonText = false;
+
+				if (option.Length != 0)
+					io.KeyOpt("{Mouse}", option);
+
+				var previous = s.input;
+				io.input.Start();
+				io.input.prev = previous;
+				s.input = io.input;
+
+				try
+				{
+					Assert.AreEqual(visible, s.HookThread.CollectMouseInput(0, VK_LBUTTON, false, 0, 0, null, false), $"Mouse down: {option}");
+					Assert.AreEqual(visible, s.HookThread.CollectMouseInput(0, VK_LBUTTON, true, 0, 0, null, false), $"Mouse up: {option}");
+				}
+				finally
+				{
+					s.input = previous;
+					io.input.prev = null;
+				}
 			}
 		}
 

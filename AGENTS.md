@@ -88,6 +88,8 @@ Build output lands in `bin/Debug/net10.0-windows/` (or the appropriate TFM subfo
 
 The test suite uses **NUnit 4** and is serialized (`LevelOfParallelism(1)`) because tests share `Script.TheScript` global state. Do not add `[Parallelizable]` attributes.
 
+In the restricted Windows sandbox, use `scripts/test-sandbox.ps1` below; direct `dotnet test` fails while NUnit searches above the checkout.
+
 ```bash
 # Run the curated subset (safe, no user-input required — matches CI)
 dotnet test Keysharp.Tests/Keysharp.Tests.csproj -c Debug --nologo \
