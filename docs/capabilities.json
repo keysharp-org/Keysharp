@@ -9023,8 +9023,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The OnExit function registers a function to be called automatically whenever the script exits. A failed auto-execute section reports Error.",
-                     "tested-by":  "Gui/guitest.ks; FlowTests.FlowExitRequests"
+                     "notes":  "Runs exit callbacks; auto-execute failures report Error. Linux/macOS SIGTERM reports Close, or Reload during a pending reload; a second signal during exit terminates immediately.",
+                     "tested-by":  "Gui/guitest.ks; FlowTests.FlowExitRequests; FlowTests.FlowPosixTerminationSignals"
                  },
                  {
                      "category":  "Core Language",
@@ -9795,7 +9795,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The Reload function replaces the currently running instance of the script with a new one.",
+                     "notes":  "Compiles a replacement before asking the old instance to exit via WM_CLOSE (Windows) or SIGTERM (Linux/macOS). OnExit may veto; Windows headless exits first.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {

@@ -252,39 +252,43 @@ namespace Keysharp.Builtins
 		{
 			var script = Script.TheScript;
 
-			if (script.scriptPath == "*" || script.hasExited)
+			if (script.scriptPath == "*" || script.hasExited)//A script read from stdin has no file to relaunch.
 				return DefaultObject;
 
-			//Just calling Application.Restart will not always trigger ExitAppInternal().
-			// The reason is published by ExitAppInternal once its OnExit callbacks decline to cancel — a Reload is
-			// vetoable like any other exit, so it must not be announced here, before they have run.
-			var decided = false;
-			script.PostToUIThread(() =>
-			{
-				try
-				{
-					// Exit first, restart second: a vetoing OnExit callback must leave the script running with no
-					// replacement spawned, and the hooks must be released before the new instance claims them.
-					// useThrow is false because this lambda is a posted UI callback (a GLib idle source on Linux):
-					// an exception escaping one is escalated by GLib.ExceptionManager, which kills the process.
-					if (Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Reload, null, false) || !script.hasExited)
-						return;
-
 #if WINDOWS
-					Application.Restart();//This will pass the same command line args to the new instance that were passed to this instance.
-#else
-					Application.Instance.Restart();
-#endif
-				}
-				finally
+			if (Script.IsHeadless || script.mainWindow == null)
+			{
+				script.PostToUIThread(() =>
 				{
-					Volatile.Write(ref decided, true);//A vetoed reload never sets hasExited, so end the wait below by hand.
-				}
-			});
-			var start = DateTime.UtcNow;
+					if (!Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Reload, null, false) && script.hasExited)
+						Application.Restart();
+				});
+				return DefaultObject;
+			}
+#endif
+			var fd = script.FlowData;
 
-			while (!script.hasExited && !Volatile.Read(ref decided) && (DateTime.UtcNow - start).TotalSeconds < 5)
-				_ = Sleep(500);
+			if (Interlocked.CompareExchange(ref fd.reloadPending, 1, 0) != 0)
+				return DefaultObject;
+
+			Process replacement = null;
+
+			try
+			{
+				replacement = ReloadHandshake.Start(script);
+				replacement.Exited += (_, _) =>
+				{
+					Volatile.Write(ref fd.reloadPending, 0);
+					replacement.Dispose();
+				};
+				replacement.EnableRaisingEvents = true;
+			}
+			catch (Exception ex)
+			{
+				Volatile.Write(ref fd.reloadPending, 0);
+				replacement?.Dispose();
+				return Errors.ErrorOccurred($"Reload failed: {ex.Message}");
+			}
 
 			return DefaultObject;
 		}
@@ -502,6 +506,9 @@ namespace Keysharp.Builtins
 		internal bool suspended;
 
 		internal ScriptTimerManager timers;
+
+		internal int reloadPending;
+		internal bool ReloadInProgress => Volatile.Read(ref reloadPending) != 0;
 
 		public void Dispose()
 		{

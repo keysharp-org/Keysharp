@@ -385,6 +385,10 @@ namespace Keysharp.Runtime
 		private ToolTipData toolTipData;
 		private Dictionary<string, WindowGroup> windowGroups;
 		private int disposeStarted;
+#if !WINDOWS
+		private PosixSignalRegistration sigtermRegistration;
+		private int acceptedTerminationSignal;
+#endif
 
 		/// <summary>
 		/// The one Script this process is currently running (one engine per process; a replacement overwrites
@@ -843,6 +847,11 @@ namespace Keysharp.Runtime
 				return false;
 
 			if (IsUiInitializationBlocked)
+				return false;
+
+			// A replacement launched by Reload retires the instance it replaces through the handshake, so the
+			// single-instance policy must not act on it as well: Prompt would ask about that very instance.
+			if (Environment.GetEnvironmentVariable(ReloadHandshake.PredecessorVar) != null)
 				return false;
 
 			if (Env.FindCommandLineArg("force") != null || Env.FindCommandLineArg("f") != null)
@@ -1361,17 +1370,55 @@ namespace Keysharp.Runtime
 			mainWindow.ShowInTaskbar = showInTaskbar;
 		}
 
+#if !WINDOWS
+		private void InstallTerminationSignal()
+		{
+			try
+			{
+				sigtermRegistration = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
+				{
+					if (IsDisposed || hasExited || Interlocked.Exchange(ref acceptedTerminationSignal, 1) != 0)
+						return;
+
+					context.Cancel = true;
+					var reason = FlowData.ReloadInProgress ? Keysharp.Builtins.Flow.ExitReasons.Reload : Keysharp.Builtins.Flow.ExitReasons.Close;
+					_ = mainEventScheduler.EnqueueCallback(() =>
+					{
+						try
+						{
+							if (!IsDisposed && !hasExited && FlowData.exitReason == null)
+								_ = Keysharp.Internals.Flow.ExitAppInternal(this, reason, null, false);
+						}
+						finally
+						{
+							if (!IsDisposed && !hasExited && FlowData.exitReason == null)
+								Volatile.Write(ref acceptedTerminationSignal, 0);
+						}
+					}, ScriptEventQueue.Interactive);
+				});
+			}
+			catch (Exception ex)
+			{
+				_ = Diagnostics.Debug.WriteLine($"Keysharp: could not register SIGTERM: {ex.Message}");
+			}
+		}
+#endif
+
 		public void RunMainWindow(string title, Func<object> userInit, bool _persistent)
 		{
-			if (IsUiInitializationBlocked || !HasAvailableDisplay() || IsHeadlessForced())
+			// Compiled and about to run is where AHK has a replacement retire the instance it replaces, late enough
+			// that a script which no longer compiles never costs the running one. Returning ends this process
+			// without running the script, because that instance declined to go.
+			if (!ReloadHandshake.AskPredecessorToExit())
+				return;
+
+			if (IsHeadless)
 			{
-				// Skip the native UI message loop when it cannot be driven:
-				//   IsUiInitializationBlocked — macOS testhost: AppKit requires OS thread 1, which
-				//     the NUnit adapter does not run on.
-				//   !HasAvailableDisplay()    — no display is attached (CI, SSH without X11, etc.)
-				//   IsHeadlessForced()        — KEYSHARP_FORCE_HEADLESS env var set explicitly.
-				// Note: #NoTrayIcon only suppresses tray chrome, not the loop — those scripts still
-				// need Application.Run for event handling.
+#if !WINDOWS
+				InstallTerminationSignal();
+#endif
+				// #NoTrayIcon only suppresses tray chrome, not the loop -- those scripts still need
+				// Application.Run for event handling.
 				SuppressErrorOccurredDialog = true;
 				// Give the main thread the same ambient context a RealThread worker gets, so main-thread CLR code
 				// which captures one (a Progress<T>, a TaskScheduler.FromCurrentSynchronizationContext) resumes on
@@ -1432,6 +1479,7 @@ namespace Keysharp.Runtime
 
 			app.AsyncInvoke(() => InitializeUnixMainWindow(app, title, userInit, _persistent));
 
+			InstallTerminationSignal();
 			app.Run();
 #endif
 		}
@@ -1585,6 +1633,9 @@ namespace Keysharp.Runtime
 			// dialog registries are process-static -- an abandoned entry there would outlive this engine.
 			Teardown(() => Dialogs.CloseDialogs(this));
 			Teardown(() => Dialogs.CloseToolTips(this));
+#if !WINDOWS
+			Teardown(() => sigtermRegistration?.Dispose());
+#endif
 			Teardown(DestructorPump.Stop);
 			Teardown(ShutdownEventSchedulers);
 			Teardown(() => HookThread?.Stop());

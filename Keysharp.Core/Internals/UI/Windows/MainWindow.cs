@@ -3,6 +3,7 @@ namespace Keysharp.Internals.UI.Windows
 {
 	public partial class MainWindow : KeysharpForm
 	{
+		private const int WmQueryEndSession = 0x0011;
 		public static Font OurDefaultFont = new ("MS Shell Dlg", 8F);
 		internal FormWindowState lastWindowState = FormWindowState.Normal;
 		private readonly bool clipSuccess;
@@ -177,6 +178,23 @@ namespace Keysharp.Internals.UI.Windows
 
 		protected override void WndProc(ref Message m)
 		{
+			// Script.Dispose closes the form by sending a nested WM_CLOSE after the exit is decided.
+			// Let WinForms finish that close; the outer request returns after disposal below.
+			if (m.Msg == WindowsAPI.WM_CLOSE && (OwnerScript.hasExited || OwnerScript.IsDisposed))
+			{
+				base.WndProc(ref m);
+				return;
+			}
+
+			var systemCommand = m.Msg == WindowsAPI.WM_SYSCOMMAND ? m.WParam.ToInt64() & 0xFFF0 : 0;
+
+			// These messages are handled here without reaching KeysharpForm.WndProc. A queued message has
+			// already visited the filter; a synchronous one still needs its OnMessage callbacks.
+			if ((m.Msg == WindowsAPI.WM_CLOSE || m.Msg == WmQueryEndSession || m.Msg == WindowsAPI.WM_ENDSESSION
+					|| systemCommand == WindowsAPI.SC_CLOSE)
+					&& MessageClaimedByOnMessage(ref m))
+				return;
+
 			switch (m.Msg)
 			{
 				case WindowsAPI.WM_CLIPBOARDUPDATE:
@@ -185,9 +203,37 @@ namespace Keysharp.Internals.UI.Windows
 
 					break;
 
+				case WmQueryEndSession:
+					// The session can still be cancelled by another application. Let Windows decide before exiting.
+					m.Result = 1;
+					return;
+
 				case WindowsAPI.WM_ENDSESSION:
-					_ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, (m.Msg & WindowsAPI.ENDSESSION_LOGOFF) != 0 ? Keysharp.Builtins.Flow.ExitReasons.Logoff : Keysharp.Builtins.Flow.ExitReasons.Shutdown, null, false);
-					break;
+					if (m.WParam != 0)
+						_ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript,
+							(m.LParam.ToInt64() & WindowsAPI.ENDSESSION_LOGOFF) != 0
+								? Keysharp.Builtins.Flow.ExitReasons.Logoff
+								: Keysharp.Builtins.Flow.ExitReasons.Shutdown, null, false);
+
+					m.Result = 0;
+					return;
+
+				// The user's close command hides the main window, as in AHK, leaving the
+				// script running. A direct WM_CLOSE still means a request to exit.
+				case WindowsAPI.WM_SYSCOMMAND when systemCommand == WindowsAPI.SC_CLOSE:
+					Hide();
+					m.Result = 0;
+					return;
+
+				// A close that did not come from the window's own chrome: a script's WinClose, a tool ending the
+				// task, or a Reload's replacement. As in AHK it exits, for the reason the sender put in wParam.
+				case WindowsAPI.WM_CLOSE:
+					_ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript,
+							m.WParam == ReloadHandshake.ExitByReload ? Keysharp.Builtins.Flow.ExitReasons.Reload : Keysharp.Builtins.Flow.ExitReasons.Close,
+							null, false);
+
+					m.Result = 0;
+					return;//A veto leaves it open; an accepted exit already closed it during Script.Dispose.
 
 				// WM_HOTKEY is delivery for OS-registered (RegisterHotKey) hotkeys, which is Windows-only. On Linux/macOS
 				// there is no equivalent OS facility; hotkeys are instead delivered through the keyboard hook (HookThread),
@@ -204,6 +250,19 @@ namespace Keysharp.Internals.UI.Windows
 			}
 
 			base.WndProc(ref m);
+		}
+
+		private bool MessageClaimedByOnMessage(ref Message m)
+		{
+			var filter = OwnerScript.msgFilter;
+
+			if (filter?.handledMsg == m)
+			{
+				filter.handledMsg = null;
+				return false;
+			}
+
+			return filter != null && filter.CallEventHandlers(ref m);
 		}
 
 		private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
@@ -274,7 +333,7 @@ namespace Keysharp.Internals.UI.Windows
 		/// <param name="e"></param>
 		private void MainWindow_FormClosing(object sender, FormClosingEventArgs e)
 		{
-			if (Script.TheScript?.FlowData?.exitReason == null && e.CloseReason == CloseReason.UserClosing)
+			if (!OwnerScript.IsDisposed && OwnerScript.FlowData.exitReason == null && e.CloseReason == CloseReason.UserClosing)
 			{
 				e.Cancel = true;
 				this.Hide();

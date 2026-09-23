@@ -78,6 +78,7 @@ namespace Keysharp.Internals.Scripting
 	internal class Runner
 	{
 		internal const string RunScriptAssemblyEnvironmentVariable = "KEYSHARP_RUNSCRIPT_ASSEMBLY";
+		private const int RetryCompilation = int.MinValue;
 		internal static CliCommand Parse(string[] args)
 		{
 			var asm = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
@@ -462,6 +463,20 @@ namespace Keysharp.Internals.Scripting
 		}
 
 		internal static int Execute(CliCommand command)
+		{
+			while (true)
+			{
+				var result = ExecuteOnce(command);
+
+				if (result != RetryCompilation || Environment.GetEnvironmentVariable(ReloadHandshake.PredecessorVar) == null)
+					return result;
+
+				if (command.Kind == CliCommandKind.Error)
+					command = Parse(Environment.GetCommandLineArgs().Skip(1).ToArray());
+			}
+		}
+
+		private static int ExecuteOnce(CliCommand command)
 		{
 			MethodInfo runtimeEntryPoint = null;
 			object[] runtimeEntryArgs = null;
@@ -1131,36 +1146,35 @@ namespace Keysharp.Internals.Scripting
 #endif
 		}
 
-		// Relaunches this process with the same arguments. Used when the user clicks "Reload" on a
-		// *compile-time* syntax-error dialog, which happens before the script ever runs. Flow.Reload() can't
-		// be used here: it posts the restart to the UI thread and waits for the running app to exit, but at
-		// this point the only message loop was the modal error dialog (now closed). This also re-passes the
-		// managed dll path when running as "dotnet Keysharp.dll <script>".
-		private static int RestartCurrentProcess()
+		internal static ProcessStartInfo CreateRestartStartInfo()
 		{
 			var processPath = Environment.ProcessPath;
 
 			if (processPath.IsNullOrEmpty())
-				return 1;
+				throw new InvalidOperationException("The running executable could not be identified.");
+
+			var args = Environment.GetCommandLineArgs();
+			var start = new ProcessStartInfo(processPath) { UseShellExecute = false };
+			var includeArg0 = args.Length > 0
+				&& Path.GetFileNameWithoutExtension(processPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
+				&& args[0].EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+
+			for (var i = includeArg0 ? 0 : 1; i < args.Length; i++)
+				start.ArgumentList.Add(args[i]);
+
+			return start;
+		}
+
+		// The compile-time error dialog can relaunch before a script exists to call Flow.Reload().
+		private static int RestartCurrentProcess()
+		{
+			// Recompile in the same process so a Reload replacement remains the outgoing script's child.
+			if (Environment.GetEnvironmentVariable(ReloadHandshake.PredecessorVar) != null)
+				return RetryCompilation;
 
 			try
 			{
-				var args = Environment.GetCommandLineArgs();
-				var start = new ProcessStartInfo
-				{
-					FileName = processPath,
-					UseShellExecute = false,
-				};
-				var processName = Path.GetFileNameWithoutExtension(processPath);
-				var includeArg0 = args.Length > 0
-					&& processName.Equals("dotnet", StringComparison.OrdinalIgnoreCase)
-					&& args[0].EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
-				var firstArg = includeArg0 ? 0 : 1;
-
-				for (var i = firstArg; i < args.Length; i++)
-					start.ArgumentList.Add(args[i]);
-
-				_ = Process.Start(start);
+				_ = Process.Start(CreateRestartStartInfo());
 				return 0;
 			}
 			catch (Exception ex)
