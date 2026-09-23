@@ -604,7 +604,7 @@ namespace Keysharp.Internals.Input
 						if (endPos == -1)
 							continue;  // Do nothing, just ignore the unclosed '{' and continue.
 
-						if ((keyTextLength = endPos - i - 1) == 0)
+						if ((keyTextLength = endPos) == 0)
 						{
 							if (sub.Length > 1 && sub[1] == '}') // The string "{}}" has been encountered, which is interpreted as a single "}".
 							{
@@ -623,6 +623,7 @@ namespace Keysharp.Internals.Input
 								// "{{}" and "{}}" can't be included without the extra braces.  {vkNN} can still be used
 								// to handle the key by VK instead of by character.
 								singleCharCount++;
+								i += endPos;
 								continue; // It will be processed by another section.
 							}
 
@@ -731,7 +732,7 @@ namespace Keysharp.Internals.Input
 				{
 					var ch = keys[i];
 
-					if (ch == '{' && i < keys.Length - 1)
+					if (ch == '{')
 					{
 						endPos = keys.IndexOf('}', i + 1);
 
@@ -743,10 +744,12 @@ namespace Keysharp.Internals.Input
 							if (endPos == i + 2)
 								endChars += keys[i + 1]; // Copy the single character from between the braces.
 
-							i = endPos; // Skip '{key'.  Loop does ++src to skip the '}'.
+							i = endPos; // The loop skips the closing brace.
 						}
+
+						continue;
 					}
-					else if (ch == '}')// Otherwise, just ignore the '{'.
+					else if (ch == '}')
 						continue;
 
 					endChars += keys[i];

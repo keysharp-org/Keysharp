@@ -23,6 +23,7 @@
 		<IsPackable>false</IsPackable>
 		<IsPublishable>false</IsPublishable>
 		<OutputType>WinExe</OutputType>
+		<VSTestResultsDirectory>$(MSBuildProjectDirectory)/TestResults</VSTestResultsDirectory>
 		<CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
 		<GenerateRuntimeConfigDevFile>true</GenerateRuntimeConfigDevFile>
 		<Authors>Matt Feemster</Authors>

@@ -66,3 +66,11 @@ Do not assert token sequences, AST printer output, generated C# text, reflected 
 ## Execution safety
 
 The full suite includes interactive and permission-sensitive fixtures. Run the curated filter from the repository `AGENTS.md`, a narrower category, or a specific test. Never add `[Parallelizable]`; the suite shares `Script.TheScript` state.
+
+On Windows in a restricted sandbox, run tests through `scripts/test-sandbox.ps1` from the repository root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-sandbox.ps1 -Filter 'FullyQualifiedName~InputHookTests.KeyOpt'
+```
+
+The filter is required. The script maps the checkout to a temporary free drive because NUnit scans parent directories of its assembly for extensions, and the normal checkout path can lead outside the sandbox. It runs `dotnet test` with shared compilation disabled, writes test results under `Keysharp.Tests/TestResults`, and removes the drive mapping when the command exits. Use the curated filter from `AGENTS.md` when running the wider safe subset.

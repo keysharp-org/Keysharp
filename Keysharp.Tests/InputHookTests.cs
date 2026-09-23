@@ -4,6 +4,7 @@ using Keysharp.Internals.Input.Hooks;
 using Keysharp.Internals.Threading;
 using Keysharp.Internals.Window;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
+using Keyboard = Keysharp.Builtins.Keyboard;
 
 namespace Keysharp.Tests
 {
@@ -32,6 +33,75 @@ namespace Keysharp.Tests
 			Assert.AreEqual("single,item", MatchListOf("single,,item"));     // doc example
 			Assert.AreEqual("string1,|string2", MatchListOf("string1,,,string2")); // doc example
 			Assert.AreEqual("btw|otoh|fl", MatchListOf("btw,otoh,fl"));
+		}
+
+		[Test, Category("InputHook")]
+		public void KeyOptParsesSingleCharacterBracedKeys()
+		{
+			foreach (var (keys, expected) in new[]
+			{
+				("{1}", "1"),
+				("{a}", "a"),
+				("{1}{2}{3}", "123"),
+				("{a}b{c}", "abc"),
+				("4{5}6", "456"),
+				("d{e}{f}", "def"),
+				("ghi", "ghi")
+			})
+			{
+				var io = (InputHook)new InputHook("V");
+				io.KeyOpt(keys, "S");
+
+				foreach (var key in expected)
+				{
+					var vk = (int)Keyboard.GetKeyVK(key.ToString());
+					Assert.AreNotEqual(0, vk, $"{keys}: {key} has a virtual key");
+					Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, $"{keys}: {key} is suppressed");
+				}
+			}
+
+			var named = (InputHook)new InputHook("V");
+			named.KeyOpt("{Delete}{Insert}{End}", "S");
+
+			foreach (var key in new[] { "Delete", "Insert", "End" })
+			{
+				var vk = (int)Keyboard.GetKeyVK(key);
+				var sc = (int)Keyboard.GetKeySC(key);
+				Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS,
+					(named.input.keyVK[vk] | named.input.keySC[sc]) & HookThread.INPUT_KEY_SUPPRESS, $"{key} is suppressed");
+			}
+		}
+
+		[Test, Category("InputHook")]
+		public void LiteralBraceKeyNames()
+		{
+			foreach (var (keys, expected) in new[]
+			{
+				("{{}", "{"),
+				("{}}", "}"),
+				("{{}{}}", "{}"),
+				("{1}{{}{}}{a}", "1{}a"),
+				("{{}}", "{"),
+				("{}", "")
+			})
+			{
+				var endKeys = (InputHook)new InputHook("E", keys);
+				Assert.AreEqual(expected, endKeys.input.endChars, $"{keys}: end characters");
+
+				var io = (InputHook)new InputHook("V");
+				io.KeyOpt(keys, "S");
+
+				foreach (var key in expected)
+				{
+					var vk = (int)Keyboard.GetKeyVK(key.ToString());
+
+					if (vk == 0 && (key == '{' || key == '}'))
+						continue;
+
+					Assert.AreNotEqual(0, vk, $"{keys}: {key} has a virtual key");
+					Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, $"{keys}: {key} is suppressed");
+				}
+			}
 		}
 
 		// Bug fix: a trailing I/L/T option (the last char of the options string) must not throw;

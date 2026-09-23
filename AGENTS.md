@@ -100,6 +100,14 @@ dotnet test Keysharp.Tests/Keysharp.Tests.csproj --filter "Category=Math"
 dotnet test Keysharp.Tests/Keysharp.Tests.csproj --filter "FullyQualifiedName~MathTests.Abs"
 ```
 
+In the restricted Windows sandbox, run a filtered test through the project-rooted drive wrapper instead:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-sandbox.ps1 -Filter "FullyQualifiedName~MathTests.Abs"
+```
+
+NUnit searches parent directories of its test engine for extensions. The wrapper keeps that search inside this checkout, disables the shared compiler for the mapped drive, and removes the drive mapping after the run. Test results are written to `Keysharp.Tests/TestResults/`.
+
 > **Important**: The full `dotnet test` run (without `--filter`) includes tests that require interactive GUI or elevated permissions and will block waiting for user input. Always use the curated filter above (or a narrower category filter) when running tests locally. The same filter is used in CI (`.github/workflows/curated-tests.yml`).
 
 > **Important**: Do not run commands to build parts of the project and run tests at the same time.

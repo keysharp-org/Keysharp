@@ -34,6 +34,7 @@ SignCert*
 .DS_Store
 demos/*.gif
 /BenchmarkDotNet.Artifacts
+/Keysharp.Tests/TestResults/
 
 # Design/working notes stay local; they are not part of what ships.
 /docs/design-*.md
