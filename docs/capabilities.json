@@ -10669,11 +10669,11 @@
                      "category":  "Core Language",
                      "feature":  "Throw",
                      "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Throws an Error, or another value wrapped as Error(Value). Without a value it rethrows the error an active catch handles, or raises the continuable Error(\"An exception was thrown.\").",
+                     "windows":  "partial",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Passes any value unchanged to catch; an uncaught non-Error value is wrapped for OnError and diagnostics. Without a value, it rethrows the value an active catch handles, or raises the continuable Error(\"An exception was thrown.\").",
                      "tested-by":  "flow-trycatch.ahk; flow-onerror.ahk"
                  },
                  {

@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
@@ -18,7 +20,7 @@ try
 {
 	throw "asdf"
 }
-catch
+catch Any
 	b := true
 
 AssertEq(b, true, A_LineNumber)
@@ -217,7 +219,7 @@ try
 {
 	throw 123
 }
-catch
+catch Any
 {
 	b := true
 }
@@ -516,7 +518,7 @@ AssertEq(Type(inner) " " inner.Message, "Error An exception was thrown.", A_Line
 
 ; Throw() with no value rethrows the error the catch is handling.
 caught := ValueError("rethrown by Throw()")
-outer := ""
+rethrowCaught := ""
 rethrow := () => Throw()
 
 try {
@@ -525,9 +527,9 @@ try {
 	catch ValueError
 		rethrow()
 }
-catch Error as outer
+catch Error as rethrowCaught
 	0
-Assert(outer == caught, A_LineNumber)
+Assert(rethrowCaught == caught, A_LineNumber)
 
 ; Outside a catch, Throw() with no value raises a new Error.
 outside := ""
@@ -541,5 +543,95 @@ AssertEq(Type(outside) " " outside.Message, "Error An exception was thrown.", A_
 
 ; An object message is empty text, whatever properties the object has.
 AssertEq(Error({ Message: "x" }).Message, "", A_LineNumber)
+
+class Outer {
+	class Inner {
+		Message {
+			get => Throw(Error("A caught object's Message getter must not run."))
+		}
+	}
+	class Deep {
+		class Leaf {
+		}
+	}
+}
+
+thrown := Outer.Inner()
+caught := ""
+try throw thrown
+catch Outer.Inner as caught
+	0
+Assert(caught == thrown, A_LineNumber)
+
+caught := ""
+try throw thrown
+catch Gui.Control
+	Assert(false, A_LineNumber)
+catch Outer.Inner as caught
+	0
+Assert(caught == thrown, A_LineNumber)
+
+thrown := Outer.Deep.Leaf()
+caught := ""
+try throw thrown
+catch (ValueError, Outer.Deep.Leaf as caught)
+	0
+Assert(caught == thrown, A_LineNumber)
+
+thrown := Outer.Inner()
+bareCaught := false
+caught := ""
+try {
+	try throw thrown
+	catch
+		bareCaught := true
+}
+catch Outer.Inner as caught
+	0
+AssertEq(bareCaught, false, A_LineNumber)
+Assert(caught == thrown, A_LineNumber)
+
+caught := ""
+try {
+	try throw thrown
+}
+catch Outer.Inner as caught
+	0
+Assert(caught == thrown, A_LineNumber)
+
+caught := ""
+try {
+	try throw thrown
+	catch Outer.Inner
+		throw
+}
+catch Outer.Inner as caught
+	0
+Assert(caught == thrown, A_LineNumber)
+
+caught := ""
+try throw 42
+catch Number as caught
+	0
+AssertEq(caught, 42, A_LineNumber)
+
+caught := ""
+try throw "text"
+catch String as caught
+	0
+AssertEq(caught, "text", A_LineNumber)
+
+caught := ""
+try throw thrown
+catch Any as caught
+	0
+Assert(caught == thrown, A_LineNumber)
+
+#Import AHK as CatchTypes
+caught := ""
+try throw ValueError("alias")
+catch CatchTypes.ValueError as caught
+	0
+AssertEq(caught.Message, "alias", A_LineNumber)
 
 FileAppend "pass", "*"

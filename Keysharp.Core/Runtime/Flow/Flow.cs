@@ -9,11 +9,11 @@ namespace Keysharp.Runtime
 		/// </summary>
 		public static ExceptionScope EnterTry() => new(Threads.Current, true, null);
 
-		/// <summary>Enters a catch body handling <paramref name="error"/>, which a bare throw in it re-raises.</summary>
-		public static ExceptionScope EnterCatch(Error error)
+		/// <summary>Enters a catch body handling <paramref name="exception"/>, which a bare throw in it re-raises.</summary>
+		public static ExceptionScope EnterCatch(KeysharpException exception)
 		{
 			var tv = Threads.Current;
-			return new(tv, tv.insideTry, error);
+			return new(tv, tv.insideTry, exception);
 		}
 
 		/// <summary>
@@ -27,21 +27,21 @@ namespace Keysharp.Runtime
 		{
 			private readonly ThreadVariables tv;
 			private readonly bool previousInsideTry;
-			private readonly Error previousCaughtError;
+			private readonly KeysharpException previousCaughtException;
 
-			internal ExceptionScope(ThreadVariables tv, bool insideTry, Error caughtError)
+			internal ExceptionScope(ThreadVariables tv, bool insideTry, KeysharpException caughtException)
 			{
 				this.tv = tv;
 				previousInsideTry = tv.insideTry;
-				previousCaughtError = tv.caughtError;
+				previousCaughtException = tv.caughtException;
 				tv.insideTry = insideTry;
-				tv.caughtError = caughtError;
+				tv.caughtException = caughtException;
 			}
 
 			public void Dispose()
 			{
 				tv.insideTry = previousInsideTry;
-				tv.caughtError = previousCaughtError;
+				tv.caughtException = previousCaughtException;
 			}
 		}
 
@@ -52,34 +52,39 @@ namespace Keysharp.Runtime
 		[StackTraceHidden]
 		public static void ReportPassed(KeysharpException ex)
 		{
-			if (ex.UserError is { } err)
+			if (ex.DiagnosticError is { } err)
 				_ = Errors.ErrorOccurred(err, ErrorMode.Exit);
 		}
 
 		/// <summary>
-		/// The exception a script's throw raises for <paramref name="value"/>: an Error as it is, anything else as
-		/// Error(value), whose message is the value's Message property when it has one. When no enclosing try catches
-		/// it, OnError and the default dialog handle it here, before the stack unwinds. A throw is never continuable.
+		/// The exception a script's throw raises for <paramref name="value"/>. The original value is retained for catch
+		/// filters and output variables; a non-Error value also has an Error wrapper for uncaught diagnostics.
+		/// When no enclosing try catches it, OnError and the default dialog handle it here, before the stack unwinds.
 		/// </summary>
 		[StackTraceHidden]
 		public static KeysharpException Throw(object value)
 		{
-			var err = value as Error ?? new Error(value is Any && Script.GetPropertyValueOrNull(value, "Message") is { } message ? message : value);
+			var message = value is Any { op: { } props } && props.TryGetValue("Message", out var property) ? property.Value : null;
+			var err = value as Error ?? new Error(message ?? value);
+			var exception = err.AsException(value);
 			// Each throw is a fresh raise, whatever became of the value before.
 			err.Reported = false;
 			_ = Errors.ErrorOccurred(err, ErrorMode.Exit);
-			return err.AsException();
+			return exception;
 		}
+
+		public static bool MatchesCatch(object value, Type type) =>
+			type == typeof(Any) || value != null && Types.HasBase(value, Script.TheScript.Vars.Prototypes[type]) != 0L;
 
 		/// <summary>Re-raises the innermost caught value, or raises the continuable bare-throw error outside a catch.</summary>
 		[StackTraceHidden]
 		public static object Rethrow()
 		{
-			if (Threads.Current.caughtError is not { } err)
+			if (Threads.Current.caughtException is not { } exception)
 				return Errors.ErrorOccurred("An exception was thrown.");
 
-			// Dispatched rather than thrown, so the error keeps the site it was first raised at.
-			ExceptionDispatchInfo.Throw(err.AsException());
+			// Dispatch preserves the exception's original raise site.
+			ExceptionDispatchInfo.Throw(exception);
 			return Script.DefaultObject;
 		}
 

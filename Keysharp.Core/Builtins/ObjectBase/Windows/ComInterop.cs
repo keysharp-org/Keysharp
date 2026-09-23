@@ -142,7 +142,7 @@ namespace Keysharp.Builtins
 				{
 					scode = DISP_E_EXCEPTION,
 					bstrDescription = error.Message,
-					bstrSource = (error as KeysharpException)?.UserError?.What ?? ""
+					bstrSource = (error as KeysharpException)?.DiagnosticError?.What ?? ""
 				};
 				Marshal.StructureToPtr(info, pExcepInfo, false);
 				return DISP_E_EXCEPTION;

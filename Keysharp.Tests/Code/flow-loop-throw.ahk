@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
@@ -16,7 +18,7 @@ try
 f1() {
 	Loop {
 		A_Index := 0 ; test premature exit from loop to ensure Pop() is still called.
-		throw 1
+		throw Error(1)
 	}
 }
 
@@ -36,7 +38,7 @@ f2() {
 	Loop {
 		Loop {
 			A_Index := 0
-			throw 1
+			throw Error(1)
 		}
 	}
 }
@@ -60,7 +62,7 @@ f3()
 	for (a in arr)
 	{
 		A_Index := 0
-		throw 1
+		throw Error(1)
 	}
 }
 
@@ -84,7 +86,7 @@ f4()
 		for (b in arr)
 		{
 			A_Index := 0
-			throw 1
+			throw Error(1)
 		}
 }
 
@@ -131,7 +133,7 @@ try
 tw1() {
 	while true {
 		A_Index := 0
-		throw 1
+		throw Error(1)
 	}
 }
 
@@ -151,7 +153,7 @@ tw2() {
 	while true {
 		while true {
 			A_Index := 0
-			throw 1
+			throw Error(1)
 		}
 	}
 }
@@ -170,7 +172,7 @@ ftc1() {
 		A_Index := 0
 		try
 		{
-			throw 1
+			throw Error(1)
 		}
 		break
 	}
@@ -191,7 +193,7 @@ ftc2() {
 			A_Index := 0
 			try
 			{
-				throw 1
+				throw Error(1)
 			}
 			break
 		}
@@ -216,7 +218,7 @@ ftc3()
 		A_Index := 0
 		try
 		{
-			throw 1
+			throw Error(1)
 		}
 	}
 }
@@ -240,7 +242,7 @@ ftc4()
 			A_Index := 0
 			try
 			{
-				throw 1
+				throw Error(1)
 			}
 		}
 }
@@ -259,7 +261,7 @@ wtc1() {
 		A_Index := 0
 		try
 		{
-			throw 1
+			throw Error(1)
 		}
 		break
 	}
@@ -280,7 +282,7 @@ wtc2() {
 			A_Index := 0
 			try
 			{
-				throw 1
+				throw Error(1)
 			}
 			break
 		}
@@ -303,7 +305,7 @@ try
 flut1() {
 	Loop {
 		A_Index := 0
-		throw 1
+		throw Error(1)
 	}
 	until false
 }
@@ -323,7 +325,7 @@ try
 fwut1() {
 	while true {
 		A_Index := 0
-		throw 1
+		throw Error(1)
 	}
 	until false
 }
@@ -347,7 +349,7 @@ ffu1()
 	for (a in arr)
 	{
 		A_Index := 0
-		throw 1
+		throw Error(1)
 	}
 	until false
 }
@@ -390,7 +392,7 @@ AssertEq(A_Index, 37, A_LineNumber)
 ; A loop's else runs only when the loop completes without an iteration: it may return, break or continue an outer
 ; loop, and it never runs after a break or while the loop's setup is failing.
 ForElseReturn() {
-	for value in []
+	for item in []
 		return "item"
 	else
 		return "none"

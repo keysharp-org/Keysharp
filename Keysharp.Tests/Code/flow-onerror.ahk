@@ -1,5 +1,7 @@
 #NoTrayIcon
 #ErrorStdOut
+#Warn All, StdOut
+#Warn Unreachable, Off ; OnError can resume a bare throw outside a catch.
 #import KS { A_Thread }
 #Include <assert>
 
@@ -312,7 +314,7 @@ AssertEq(bareOutside, "Error An exception was thrown. Return", A_LineNumber)
 OnError(BareOutsideHandler, 0)
 
 ; An uncaught explicit throw reaches the callbacks where it is thrown, before any finally block runs. A value which
-; is not an Error arrives as Error(Value), using its Message property when it has one.
+; is not an Error arrives as Error(Value), using its own Message value property when it has one.
 order := ""
 
 OrderHandler(exception, mode) {
@@ -331,9 +333,11 @@ ThrowThroughFinally(value) {
 		order .= "[finally]"
 }
 
+dynamicMessage := {}
+dynamicMessage.DefineProp("Message", { Get: (*) => Throw(Error("Message getter must not run.")) })
 OnError(OrderHandler)
 for thrown in [[Error("C3D38B48-order-error"), "C3D38B48-order-error"], ["C3D38B48-order-string", "C3D38B48-order-string"]
-	, [42, "42"], [{}, ""], [{ Message: "C3D38B48-order-object-message" }, "C3D38B48-order-object-message"]] {
+	, [42, "42"], [{}, ""], [dynamicMessage, ""], [{ Message: "C3D38B48-order-object-message" }, "C3D38B48-order-object-message"]] {
 	order := ""
 	RunThread(ThrowThroughFinally.Bind(thrown[1]))
 	AssertEq(order, "[Error " thrown[2] " Exit][finally]", A_LineNumber)
@@ -372,12 +376,12 @@ RethrowFromCatch() {
 		order .= "[finally]"
 }
 
-ThrowPastOtherClass() {
+ThrowPastOtherClass(value) {
 	global started, order
 	started := true
 
 	try
-		throw ValueError("C3D38B48-other-class")
+		throw value
 	catch TypeError
 		order .= "[wrong catch]"
 	finally
@@ -430,13 +434,13 @@ BareRethrowThroughFinally() {
 		order .= "[inner finally]"
 }
 
-BareRethrowFromCatch() {
+BareRethrowFromCatch(value) {
 	global started, order
 	started := true
 
 	try
-		throw Error("C3D38B48-bare-rethrow")
-	catch Error {
+		throw value
+	catch Any {
 		order .= "[catch]"
 		BareRethrowThroughFinally()
 	}
@@ -448,8 +452,11 @@ order := ""
 RunThread(RethrowFromCatch)
 AssertEq(order, "[catch][Error C3D38B48-catch-rethrow Exit][finally]", A_LineNumber)
 order := ""
-RunThread(ThrowPastOtherClass)
+RunThread(ThrowPastOtherClass.Bind(ValueError("C3D38B48-other-class")))
 AssertEq(order, "[finally][ValueError C3D38B48-other-class Exit]", A_LineNumber)
+order := ""
+RunThread(ThrowPastOtherClass.Bind("C3D38B48-other-class-string"))
+AssertEq(order, "[finally][Error C3D38B48-other-class-string Exit]", A_LineNumber)
 order := ""
 RunThread(BuiltinPastOtherClass)
 Assert(RegExMatch(order, "^\[finally\]\[TargetError .*C3D38B48-late-builtin.* Exit\]$"), A_LineNumber)
@@ -457,8 +464,11 @@ order := ""
 RunThread(PassOtherClassInCall)
 AssertEq(order, "[ValueError C3D38B48-nested-other-class Exit][caller finally]", A_LineNumber)
 order := ""
-RunThread(BareRethrowFromCatch)
+RunThread(BareRethrowFromCatch.Bind(Error("C3D38B48-bare-rethrow")))
 AssertEq(order, "[catch][inner finally][finally][Error C3D38B48-bare-rethrow Exit]", A_LineNumber)
+order := ""
+RunThread(BareRethrowFromCatch.Bind("C3D38B48-bare-rethrow-string"))
+AssertEq(order, "[catch][inner finally][finally][Error C3D38B48-bare-rethrow-string Exit]", A_LineNumber)
 
 ; A throw which an enclosing try catches never reaches the callbacks, however far up the try is.
 ThrowValue(value) {
@@ -474,7 +484,7 @@ catch Error
 
 try
 	ThrowValue("C3D38B48-caught-string")
-catch
+catch Any
 	order .= "[catch]"
 
 AssertEq(order, "[catch][catch]", A_LineNumber)

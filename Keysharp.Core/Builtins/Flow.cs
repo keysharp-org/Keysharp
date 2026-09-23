@@ -441,8 +441,8 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Throws the specified value, as the throw statement does.
 		/// </summary>
-		/// <param name="value">The value to throw, usually an <see cref="Error"/>. Anything else is thrown as Error(value).
-		/// If omitted, the error a catch is handling is rethrown, as a bare throw statement does.</param>
+		/// <param name="value">The value to throw, usually an <see cref="Error"/>.
+		/// If omitted, the value a catch is handling is rethrown, as a bare throw statement does.</param>
 		[StackTraceHidden]
 		public static object Throw(object value = null)
 			=> value == null ? Keysharp.Runtime.Flow.Rethrow() : throw Keysharp.Runtime.Flow.Throw(value);

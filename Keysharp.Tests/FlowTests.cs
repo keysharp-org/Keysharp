@@ -468,6 +468,23 @@ namespace Keysharp.Tests
         [Test, Category("Flow")]
         public void FlowTryCatch() => Assert.IsTrue(TestScript("flow-trycatch", false));
 
+        [Test, Category("Flow")]
+        public void InvalidCatchClass()
+        {
+            foreach (var (source, name) in new[]
+            {
+                ("try 0\ncatch MissingClass\n 0\n", "MissingClass"),
+                ("try 0\ncatch HashMap\n 0\n", "HashMap"),
+                ("F(Error) {\ntry 0\ncatch Error\n 0\n}\n", "Error"),
+                ("class C {\n}\nF(C) {\ntry 0\ncatch C\n 0\n}\n", "C"),
+            })
+            {
+                var diagnostics = LoweringDiagnostics.Diagnostics(source);
+                Assert.IsTrue(System.Array.Exists(diagnostics, d => d.EndsWith($"Invalid catch class: {name}")),
+                    $"Expected an invalid catch class diagnostic for {name}, got: " + string.Join("; ", diagnostics));
+            }
+        }
+
         [Test, Category("Flow"), NonParallelizable]
         public void FlowTryInterrupt() => Assert.IsTrue(TestScript("flow-try-interrupt", false));
 

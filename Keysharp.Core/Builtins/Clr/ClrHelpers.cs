@@ -1310,7 +1310,7 @@ namespace Keysharp.Builtins
 			// Already a script error, typically thrown by a script callback the CLR called back into. Re-wrapping
 			// would hide its type from `catch`.
 			if (ex is KeysharpException kse)
-				return kse.UserError ?? new Error(kse.Message);
+				return kse.DiagnosticError ?? new Error(kse.Message);
 
 			var msg = $"{what} threw {ex.GetType().Name}: {ex.Message}";
 			// Order matters: ArgumentOutOfRangeException derives from ArgumentException, so it has to be tested first.

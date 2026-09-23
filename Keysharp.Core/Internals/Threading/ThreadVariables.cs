@@ -119,8 +119,8 @@ namespace Keysharp.Internals.Threading
 		internal readonly Stack<Keysharp.Runtime.LoopInfo> loopStack = new ();
 		// A try, or a built-in standing in for one, catches what this pseudo-thread raises (AHK's EXCPTMODE_CATCH).
 		internal bool insideTry;
-		// The value the innermost active catch handles, which a bare throw re-raises.
-		internal Keysharp.Builtins.Error caughtError;
+		// The exception the innermost active catch handles, which a bare throw re-raises.
+		internal Keysharp.Builtins.KeysharpException caughtException;
 		// A_Index while no loop runs, which a script may assign.
 		internal long indexOutsideLoops;
 		internal object hotCriterion;
@@ -190,7 +190,7 @@ namespace Keysharp.Internals.Threading
 			executionScope = null;
 			loopStack.Clear();
 			insideTry = false;
-			caughtError = null;
+			caughtException = null;
 			indexOutsideLoops = 0;
 			hotCriterion = null;
 			hwndLastUsed = 0;

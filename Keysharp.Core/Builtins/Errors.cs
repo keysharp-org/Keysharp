@@ -130,7 +130,7 @@ namespace Keysharp.Builtins
 
 			try
 			{
-				var err = ex is KeysharpException kex ? kex.UserError : new Error(ex);
+				var err = ex is KeysharpException kex ? kex.DiagnosticError : new Error(ex);
 
 				if (err is { Reported: false })
 					_ = ErrorOccurred(err, ErrorMode.Exit);
@@ -589,16 +589,16 @@ namespace Keysharp.Builtins
 		{
 			Exception = ex;
 
-			if (ex is KeysharpException kex && kex.UserError != null)
+			if (ex is KeysharpException kex && kex.DiagnosticError != null)
 			{
-				var ue = kex.UserError;
-				_message = ue.Message;
-				_what = ue.What;
-				_extra = ue.Extra;
-				_file = ue.File;
-				_line = ue.Line;
-				_stack = ue.Stack;
-				Reported = ue.Reported;
+				var diagnostic = kex.DiagnosticError;
+				_message = diagnostic.Message;
+				_what = diagnostic.What;
+				_extra = diagnostic.Extra;
+				_file = diagnostic.File;
+				_line = diagnostic.Line;
+				_stack = diagnostic.Stack;
+				Reported = diagnostic.Reported;
 				_stackInitialized = true;
 				return;
 			}
@@ -741,9 +741,13 @@ namespace Keysharp.Builtins
 			return 1L;
 		}
 
-		/// <summary>The KeysharpException that carries this Error, which replaces a foreign exception this Error wraps.</summary>
-		internal KeysharpException AsException()
-			=> Exception is KeysharpException kex && kex.UserError == this ? kex : (KeysharpException)(Exception = new KeysharpException(this));
+		/// <summary>The exception associated with this Error, replacing a foreign exception it wraps.</summary>
+		internal KeysharpException AsException() => AsException(this);
+
+		internal KeysharpException AsException(object thrownValue)
+			=> Exception is KeysharpException kex && ReferenceEquals(kex.DiagnosticError, this) && ReferenceEquals(kex.ThrownValue, thrownValue)
+				? kex
+				: (KeysharpException)(Exception = new KeysharpException(this, thrownValue));
 
 		[PublicHiddenFromUser]
 		public static implicit operator Exception(Error err) => err.AsException();
@@ -804,7 +808,10 @@ namespace Keysharp.Builtins
 	/// </summary>
 	public class KeysharpException : Exception
 	{
-		public Error UserError;
+		public Error UserError => ThrownValue as Error;
+		public object ThrownValue { get; }
+		// Raw values still need an Error for OnError and uncaught diagnostics.
+		internal Error DiagnosticError { get; }
 
 		/// <summary>
 		/// Whether the stack trace has been constructed.
@@ -824,10 +831,13 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Initializes a new instance of the <see cref="KeysharpException"/> class.
 		/// </summary>
-		/// <param name="owner">The script-visible <see cref="Error"/> object this exception carries.</param>
-		internal KeysharpException(Error owner)
+		/// <param name="diagnosticError">The <see cref="Error"/> used for diagnostics.</param>
+		internal KeysharpException(Error diagnosticError) : this(diagnosticError, diagnosticError) { }
+
+		internal KeysharpException(Error diagnosticError, object thrownValue)
 		{
-			UserError = owner;
+			DiagnosticError = diagnosticError;
+			ThrownValue = thrownValue;
 		}
 
 		/// <summary>
@@ -965,12 +975,12 @@ namespace Keysharp.Builtins
 		/// <returns>A summary of the exception.</returns>
 		public override string ToString()
 		{
-			return UserError != null ? UserError.ToString() : base.ToString();
+			return DiagnosticError != null ? DiagnosticError.ToString() : base.ToString();
 		}
 
-		public override string Message => UserError?.Message ?? base.Message;
+		public override string Message => DiagnosticError?.Message ?? base.Message;
 
-		public static implicit operator Error(KeysharpException err) => err.UserError;
+		public static implicit operator Error(KeysharpException err) => err.DiagnosticError;
 	}
 
 	/// <summary>

@@ -598,7 +598,7 @@ namespace Keysharp.Parsing.Syntax
 				while (!At(TokenKind.RParen) && !At(TokenKind.EOF))
 				{
 					if (AtKeyword("as")) { Advance(); var = ExpectIdentifier("catch variable"); break; }
-					types.Add(ExpectIdentifier("catch type"));
+					types.Add(ParseCatchType());
 					if (AtKeyword("as")) { Advance(); var = ExpectIdentifier("catch variable"); break; }
 					if (!Match(TokenKind.Comma)) break;
 				}
@@ -606,8 +606,8 @@ namespace Keysharp.Parsing.Syntax
 			}
 			else if (At(TokenKind.Identifier) && !AtKeyword("as"))   // catch Type [, Type]* [as var | var]
 			{
-				types.Add(ExpectIdentifier("catch type"));
-				while (Match(TokenKind.Comma)) { if (AtKeyword("as")) break; types.Add(ExpectIdentifier("catch type")); }
+				types.Add(ParseCatchType());
+				while (Match(TokenKind.Comma)) { if (AtKeyword("as")) break; types.Add(ParseCatchType()); }
 			}
 			if (var == null)
 			{
@@ -615,6 +615,13 @@ namespace Keysharp.Parsing.Syntax
 				else if (At(TokenKind.Identifier)) var = ExpectIdentifier("catch variable");   // catch Type var (no 'as')
 			}
 			return new CatchBlock(types, var, ParseBodyStatement());
+		}
+
+		private string ParseCatchType()
+		{
+			var name = ExpectIdentifier("catch type");
+			while (Match(TokenKind.Dot)) name += "." + ExpectIdentifier("catch type");
+			return name;
 		}
 
 		// #DirectiveName trailing-args  — the trailing text is consumed raw (directives use unquoted args).

@@ -5643,11 +5643,16 @@ namespace Keysharp.Compilation.Syntax
 			var catches = new List<CatchClauseSyntax>();
 			foreach (var cb in catchBlocks)
 				catches.Add(LowerCatch(cb));
-			// Bare `try` (no catch, no finally) still swallows Keysharp exceptions to mirror AHK.
+			// Bare `try` has an implicit catch for Error values.
 			if (catches.Count == 0 && finallyBlock == null)
+			{
+				var ex = "KS_ex" + (++_flowCounter);
 				catches.Add(SyntaxFactory.CatchClause()
-					.WithDeclaration(SyntaxFactory.CatchDeclaration(Ty("Keysharp.Builtins.KeysharpException")))
+					.WithDeclaration(SyntaxFactory.CatchDeclaration(Ty("Keysharp.Builtins.KeysharpException"), SyntaxFactory.Identifier(ex)))
+					.WithFilter(SyntaxFactory.CatchFilterClause(
+						SyntaxFactory.IsPatternExpression(Member(Id(ex), "ThrownValue"), SyntaxFactory.TypePattern(Ty("Keysharp.Builtins.Error")))))
 					.WithBlock(SyntaxFactory.Block()));
+			}
 
 			// Errors raised in this body are caught here, so built-ins throw them instead of reporting them (AHK's EXCPTMODE_CATCH).
 			if (catches.Count > 0)
@@ -5659,43 +5664,38 @@ namespace Keysharp.Compilation.Syntax
 			return stmt;
 		}
 
-		// catch (KeysharpException ex) when (ex.UserError is Type1 || ...) { [var := ex.UserError;] body }
+		// Catch filters match the original value and bind it to the optional output variable.
 		private CatchClauseSyntax LowerCatch(CatchBlock cb)
 		{
 			var ex = "KS_ex" + (++_flowCounter);
-			var userErr = Member(Id(ex), "UserError");
+			var thrownValue = Member(Id(ex), "ThrownValue");
 			var block = AsBlock(LowerStmt(cb.Body));
 			if (cb.Var != null && ResolveWrite(StmtAnchor(cb.Body), cb.Var, VarUsage.OutputVar) is { } target)
-				block = block.WithStatements(block.Statements.Insert(0, ExprStmt(target.Write(userErr))));
+				block = block.WithStatements(block.Statements.Insert(0, ExprStmt(target.Write(thrownValue))));
 
 			ExpressionSyntax cond;
 			if (cb.Types.Count == 0)
-				cond = SyntaxFactory.IsPatternExpression(userErr, SyntaxFactory.TypePattern(Ty("Keysharp.Builtins.Error")));
+				cond = SyntaxFactory.IsPatternExpression(thrownValue, SyntaxFactory.TypePattern(Ty("Keysharp.Builtins.Error")));
 			else
 			{
 				cond = null;
 				foreach (var t in cb.Types)
 				{
-					var test = SyntaxFactory.IsPatternExpression(userErr, SyntaxFactory.TypePattern(Ty(ResolveErrorType(t))));
+					var type = ResolveBaseClass(t, out _);
+					if (type == null) Diag($"{StmtAnchor(cb.Body)}Invalid catch class: {t}");
+					var test = Inv(Access("Keysharp.Runtime.Flow.MatchesCatch"), thrownValue,
+						SyntaxFactory.TypeOfExpression(Ty(type ?? "Keysharp.Builtins.Any")));
 					cond = cond == null ? test : SyntaxFactory.BinaryExpression(SyntaxKind.LogicalOrExpression, cond, test);
 				}
 			}
 
 			block = SyntaxFactory.Block(SyntaxFactory.UsingStatement(null,
-				Inv(Access("Keysharp.Runtime.Flow.EnterCatch"), userErr), block));
+				Inv(Access("Keysharp.Runtime.Flow.EnterCatch"), Id(ex)), block));
 
 			return SyntaxFactory.CatchClause()
 				.WithDeclaration(SyntaxFactory.CatchDeclaration(Ty("Keysharp.Builtins.KeysharpException"), SyntaxFactory.Identifier(ex)))
 				.WithFilter(SyntaxFactory.CatchFilterClause(cond))
 				.WithBlock(block);
-		}
-
-		// Resolve a catch type name to a C# type: a user class, a known builtin, else Keysharp.Builtins.<name>.
-		private string ResolveErrorType(string name)
-		{
-			if (_userClassByLower.TryGetValue(name, out var ut)) return ut;
-			if (Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(name, out var type)) return type.FullName.Replace('+', '.');
-			return "Keysharp.Builtins." + name;
 		}
 
 		// A value is a new throw site. A bare throw re-raises the active catch value and therefore lets finally blocks
