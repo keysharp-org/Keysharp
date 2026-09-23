@@ -372,6 +372,104 @@ namespace Keysharp.Tests
 		public void Misc() => Assert.IsTrue(TestScript("directive-misc", false));
 
 		[Test, Category("Directives")]
+		public void SuspendExempt()
+		{
+			var scriptPath = Path.Combine(path, "directive-misc.ahk");
+			var compiler = new CompilerHelper();
+			var (assemblyBytes, diagnostics, _) = compiler.CompileCodeToByteArray(File.ReadAllText(scriptPath),
+				"directive-misc-suspend-exempt", defines: ["SUSPENDEXEMPT_INSPECT"], includeDirOverride: path);
+			Assert.IsNotNull(assemblyBytes, diagnostics);
+			ScriptExecutionState.Assembly = Assembly.Load(assemblyBytes);
+			var program = ScriptExecutionState.Assembly.GetType("Keysharp.CompiledMain.Program");
+			Assert.IsNotNull(program);
+			// Force the script singleton to exist before invoking the hoisted registration method directly.
+			_ = program.GetField("MainScript", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+			program.GetMethod("AutoExecSection").Invoke(null, null);
+			s = Script.TheScript;
+			hsm = s.HotstringManager;
+			Assert.IsTrue(s.FlowData.suspended);
+			Assert.AreEqual(6, s.HotkeyData.shk.Length);
+			Assert.AreEqual("F1", s.HotkeyData.shk[0].Name);
+			Assert.AreEqual("F2", s.HotkeyData.shk[1].Name);
+			Assert.AreEqual("F3", s.HotkeyData.shk[2].Name);
+			Assert.AreEqual("F4", s.HotkeyData.shk[3].Name);
+			Assert.AreEqual("F6", s.HotkeyData.shk[4].Name);
+			Assert.AreEqual("F5", s.HotkeyData.shk[5].Name);
+			Assert.IsTrue(s.HotkeyData.shk[0].firstVariant.suspendExempt);
+			Assert.IsTrue(s.HotkeyData.shk[1].firstVariant.suspendExempt);
+			Assert.IsFalse(s.HotkeyData.shk[2].firstVariant.suspendExempt);
+			Assert.IsTrue(s.HotkeyData.shk[3].firstVariant.suspendExempt);
+			Assert.IsTrue(s.HotkeyData.shk[4].firstVariant.suspendExempt);
+			Assert.IsFalse(s.HotkeyData.shk[5].firstVariant.suspendExempt);
+			Assert.AreEqual(10, hsm.shs.Count);
+			Assert.IsTrue(hsm.shs[0].SuspendExempt);
+			Assert.IsTrue(hsm.shs[1].SuspendExempt);
+			Assert.IsFalse(hsm.shs[2].SuspendExempt);
+			Assert.IsFalse(hsm.shs[3].SuspendExempt);
+			Assert.IsTrue(hsm.shs[4].SuspendExempt);
+			Assert.IsTrue(hsm.shs[5].SuspendExempt);
+			Assert.IsTrue(hsm.shs[6].SuspendExempt);
+			Assert.IsFalse(hsm.shs[7].SuspendExempt);
+			Assert.AreEqual(0, hsm.shs[0].suspended);
+			Assert.AreEqual(0, hsm.shs[1].suspended);
+			Assert.AreNotEqual(0, hsm.shs[2].suspended);
+			Assert.AreNotEqual(0, hsm.shs[3].suspended);
+			Assert.AreEqual(0, hsm.shs[4].suspended);
+			Assert.AreEqual(0, hsm.shs[5].suspended);
+			Assert.AreEqual(0, hsm.shs[6].suspended);
+			Assert.AreNotEqual(0, hsm.shs[7].suspended);
+			Assert.IsTrue(hsm.shs[8].SuspendExempt);
+			Assert.AreEqual(0, hsm.shs[8].suspended);
+			Assert.IsFalse(hsm.shs[9].SuspendExempt);
+			Assert.AreNotEqual(0, hsm.shs[9].suspended);
+			Assert.AreEqual(6, hsm.enabledCount);
+			Keysharp.Builtins.Keyboard.Hotstring(":S:dynamic");
+			Assert.AreEqual(0, hsm.shs[7].suspended);
+			Assert.AreEqual(7, hsm.enabledCount);
+			Keysharp.Builtins.Keyboard.Hotstring(":S0:dynamic");
+			Assert.AreNotEqual(0, hsm.shs[7].suspended);
+			Assert.AreEqual(6, hsm.enabledCount);
+#if WINDOWS
+			using var suspendItem = new ToolStripMenuItem();
+			s.suspendMenuItem = suspendItem;
+			try
+			{
+				Keysharp.Builtins.Flow.Suspend(0);
+				Assert.IsFalse(suspendItem.Checked);
+				Keysharp.Builtins.Flow.Suspend(1);
+				Assert.IsTrue(suspendItem.Checked);
+			}
+			finally
+			{
+				s.suspendMenuItem = null;
+			}
+#endif
+		}
+
+		[Test, Category("Directives")]
+		public void SuspendExemptModuleOrder()
+		{
+			const string source = "#ErrorStdOut\n#Warn All, StdOut\n#NoTrayIcon\n#SuspendExempt false\nF1::return\n"
+				+ "#import \"module_suspend_exempt_target\"\n#Module Tail\nF3::return\n";
+			var compiler = new CompilerHelper();
+			var (assemblyBytes, diagnostics, _) = compiler.CompileCodeToByteArray(source,
+				"directive-suspend-exempt-modules", includeDirOverride: path);
+			Assert.IsNotNull(assemblyBytes, diagnostics);
+			ScriptExecutionState.Assembly = Assembly.Load(assemblyBytes);
+			var program = ScriptExecutionState.Assembly.GetType("Keysharp.CompiledMain.Program");
+			Assert.IsNotNull(program);
+			_ = program.GetField("MainScript", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+			program.GetMethod("AutoExecSection").Invoke(null, null);
+			var hotkeys = Script.TheScript.HotkeyData.shk;
+			Assert.AreEqual(4, hotkeys.Length);
+			var exemptByName = hotkeys.ToDictionary(hotkey => hotkey.Name, hotkey => hotkey.firstVariant.suspendExempt);
+			Assert.IsFalse(exemptByName["F1"]);
+			Assert.IsFalse(exemptByName["F3"]);
+			Assert.IsTrue(exemptByName["F2"]);
+			Assert.IsFalse(exemptByName["F4"]);
+		}
+
+		[Test, Category("Directives")]
 		public void ConditionalErrors()
 		{
 			// Every case below used to be accepted silently, and each one silently changed which code compiled:

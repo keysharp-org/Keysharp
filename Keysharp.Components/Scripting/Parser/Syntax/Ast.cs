@@ -18,7 +18,11 @@ namespace Keysharp.Parsing.Syntax
 	}
 
 	internal abstract class Expr : Node { }
-	internal abstract class Stmt : Node { }
+	internal abstract class Stmt : Node
+	{
+		// Order in the expanded source, including directives in nested bodies.
+		public long SourceOrder;
+	}
 
 	internal enum LiteralKind { Number, String }
 
@@ -311,9 +315,6 @@ namespace Keysharp.Parsing.Syntax
 	{
 		public readonly string Name;
 		public readonly string Args;
-		// Monotonic within one parsed source program (including recursively expanded #Includes). Load-time directive
-		// prescans use this instead of AST traversal order, which may group class members or lower an else branch first.
-		public long SourceOrder;
 		public DirectiveStmt(string name, string args) { Name = name; Args = args; }
 	}
 

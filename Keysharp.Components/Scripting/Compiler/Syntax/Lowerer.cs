@@ -142,10 +142,18 @@ namespace Keysharp.Compilation.Syntax
 		private Semver.SemVersion _currentCompat = Keysharp.Runtime.Script.DefaultCompatibilityVersion;  // current scope's mode
 		private string _currentModuleClass = "__Main";   // the module class being lowered — used to qualify module-level
 														 // field references from inside a (nested) class method (`Program.<Mod>.field`)
-		// Hotkey/hotstring/remap support: extra __Main methods (the trigger callbacks) and the DHHR list
+		// Hotkey/hotstring/remap support: callbacks in their declaring module and the DHHR list
 		// (Directives/Hotkeys/Hotstrings/Remaps registration calls) emitted into Program.AutoExecSection.
 		private readonly List<MemberDeclarationSyntax> _hotMembers = new();
 		private readonly List<StatementSyntax> _dhhr = new();
+		private readonly List<(long SourceOrder, StatementSyntax Statement)> _moduleDhhr = new();
+		private readonly List<StatementSyntax> _dhhrPrelude = new();
+		private const string DeclarationSuspendExemptVariable = "__suspendExempt";
+		private void AddDhhr(Stmt source, StatementSyntax statement)
+		{
+			if (statement != null)
+				_moduleDhhr.Add((source.SourceOrder, statement));
+		}
 		private readonly List<ExpressionSyntax> _operatorDeclarations = new();
 		private bool _hasOperatorDeclarations;
 		private bool _persistent;            // a hotkey/hotstring makes the script persistent
@@ -848,7 +856,7 @@ namespace Keysharp.Compilation.Syntax
 			_staticFieldSink = _fieldDecls;   // module scope until a class redirects it
 
 			_inlineAliases.Clear(); _wildcardModules.Clear(); _importMembers.Clear(); _classFieldIds.Clear(); _emittedFuncImpls.Clear();
-			_pendingLambdas.Clear(); _inlineFuncNames?.Clear(); _scopeTemps.Clear(); _tempCounter = 0;
+			_pendingLambdas.Clear(); _hotMembers.Clear(); _inlineFuncNames?.Clear(); _scopeTemps.Clear(); _tempCounter = 0;
 			_importScopes.Clear();   // class/function import frames never straddle a module boundary
 		}
 
@@ -896,7 +904,7 @@ namespace Keysharp.Compilation.Syntax
 				var (members, auto) = LowerProgramBody(m.Body);
 				if (Diagnostics.Count > 0) return null;
 				moduleClasses.Add(BuildModuleClass(m.Name, _fieldDecls, members, _pendingLambdas,
-					m.Name == "__Main" ? _hotMembers : null, auto, importMembers, _moduleCompat));
+					_hotMembers, auto, importMembers, _moduleCompat));
 			}
 			return AssembleProgram(name, moduleClasses, execOrder);
 		}
@@ -1305,6 +1313,7 @@ namespace Keysharp.Compilation.Syntax
 		// The multi-module path leaves this off: EmitImports already bound its ModuleBindings before this runs.
 		private (List<MemberDeclarationSyntax> members, List<StatementSyntax> auto) LowerProgramBody(List<Stmt> body, bool liftControlFlowImports = false)
 		{
+			_moduleDhhr.Clear();
 			foreach (var s in body)
 			{
 				// Only TOP-LEVEL functions are module-global. Nested functions (static or not) are scoped to their
@@ -1363,6 +1372,30 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var fd in moduleArrows)
 				if (_userFuncDeclByLower.GetValueOrDefault(fd.Name.ToLowerInvariant()) == fd && _emittedFuncImpls.Add(NameMangler.FunctionMethod(fd.Name)))
 					members.Add(LowerFunction(fd));
+			var registrationDirectives = new List<DirectiveStmt>();
+			foreach (var statement in body)
+				CollectStatements(statement, registrationDirectives);
+			var activeErrorStdOut = _errorStdOutActive;
+			var errorStdOutBeforeDirective = activeErrorStdOut;
+			foreach (var directive in registrationDirectives.OrderBy(directive => directive.SourceOrder))
+			{
+				var directiveName = directive.Name.ToUpperInvariant();
+				if (directiveName == "ERRORSTDOUT")
+				{
+					errorStdOutBeforeDirective = true;
+					continue;
+				}
+				if (directiveName is not ("SUSPENDEXEMPT" or "HOTSTRING" or "HOTIF"))
+					continue;
+				_errorStdOutActive = errorStdOutBeforeDirective;
+				switch (directiveName)
+				{
+					case "SUSPENDEXEMPT": AddDhhr(directive, LowerDirective(directive)); break;
+					case "HOTSTRING": LowerHotstringDirective(directive); break;
+					case "HOTIF": LowerHotIf(directive); break;
+				}
+			}
+			_errorStdOutActive = activeErrorStdOut;
 			for (int i = 0; i < body.Count; i++)
 			{
 				var s = body[i];
@@ -1377,10 +1410,6 @@ namespace Keysharp.Compilation.Syntax
 				else if (s is HotkeyDef hk) LowerHotkey(hk);
 				else if (s is HotstringDef hs) LowerHotstring(hs);
 				else if (s is RemapDef rm) LowerRemap(rm);
-				else if (s is DirectiveStmt hd && hd.Name.Equals("Hotstring", System.StringComparison.OrdinalIgnoreCase)) LowerHotstringDirective(hd);
-				// `#HotIf <expr>` sets the context for the hotkeys/hotstrings that follow it; a bare `#HotIf` clears it.
-				// Emitted into the DHHR in SOURCE ORDER so it brackets the AddHotkey calls (matches the canonical).
-				else if (s is DirectiveStmt hi && hi.Name.Equals("HotIf", System.StringComparison.OrdinalIgnoreCase)) LowerHotIf(hi);
 				else
 				{
 					// A `name:` label immediately before a top-level loop becomes that loop's break/continue target.
@@ -1396,6 +1425,7 @@ namespace Keysharp.Compilation.Syntax
 				foreach (var type in _experimentalTypes)
 					if (_experimentalWarned.Add(type))
 						CompileWarnings.Add($"0:0: {Script.GetUserDeclaredName(type) ?? type.Name} is experimental and may change or be removed without deprecation.");
+			_dhhr.AddRange(_moduleDhhr.OrderBy(item => item.SourceOrder).Select(item => item.Statement));
 			return (members, auto);
 		}
 
@@ -2283,6 +2313,10 @@ namespace Keysharp.Compilation.Syntax
 					if (_scope != null) { _ = LowerNestedFunction(fd); return null; }
 					if (_emittedFuncImpls.Add(NameMangler.FunctionMethod(fd.Name))) _pendingLambdas.Add(LowerFunction(fd));
 					return null;
+				case DirectiveStmt dir when dir.Name.Equals("SuspendExempt", System.StringComparison.OrdinalIgnoreCase)
+					|| dir.Name.Equals("Hotstring", System.StringComparison.OrdinalIgnoreCase)
+					|| dir.Name.Equals("HotIf", System.StringComparison.OrdinalIgnoreCase):
+					return null;
 				case DirectiveStmt dir: return LowerDirective(dir);   // value-setting directives; rest are no-ops here
 				// A hotkey/hotstring/remap inside a plain block — the `{ … }` commonly used to group a `#HotIf`
 				// section — still registers globally at load; only a function or class body forbids one.
@@ -2326,7 +2360,8 @@ namespace Keysharp.Compilation.Syntax
 				case "HOTIFTIMEOUT": return Set("Keysharp.Builtins.Ks.A_HotIfTimeout",
 						NumArg(Keysharp.Builtins.Accessors.DefaultHotIfTimeout));
 				case "INPUTLEVEL": return Set("Keysharp.Builtins.Ks.A_InputLevel", NumArg(0));   // setter validates 0..100
-				case "SUSPENDEXEMPT": return Set("Keysharp.Builtins.Ks.A_SuspendExempt", BoolNum());   // on Ks; setter ForceBools
+				case "SUSPENDEXEMPT":
+					return Set(DeclarationSuspendExemptVariable, BoolArg() ? True : False);
 				case "MAXTHREADSBUFFER":
 					return Set("Keysharp.Builtins.Ks.A_MaxThreadsBuffer", BoolNum());
 				case "MAXTHREADSPERHOTKEY":
@@ -6156,7 +6191,7 @@ namespace Keysharp.Compilation.Syntax
 			return text;
 		}
 
-		// Emits a callback method (`public static object <name>(object thishotkey) { … }`) onto __Main and returns its name.
+		// Emits a callback method (`public static object <name>(object thishotkey) { … }`) in the declaring module.
 		private string EmitHotCallback(Block body, string name)
 		{
 			var ps = new List<Param> { new Param("thishotkey", null, false, false, false) };
@@ -6184,8 +6219,8 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var trig in hk.Triggers)
 			{
 				var text = ExpandCopilotDeclarationAlias(ProcessTriggerText(trig), out _);
-				_dhhr.Add(ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotkeyDefinition.AddHotkey"),
-					FuncBind("__Main." + fnName), UintZero, Str(text))));
+				AddDhhr(hk, ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotkeyDefinition.AddHotkey"),
+					FuncBind(_currentModuleClass + "." + fnName), UintZero, Str(text), Id(DeclarationSuspendExemptVariable))));
 			}
 		}
 
@@ -6208,7 +6243,7 @@ namespace Keysharp.Compilation.Syntax
 					var block = hs.Body as Block ?? new Block(new List<Stmt> { hs.Body ?? new Block(new List<Stmt>()) });
 					fnName = EmitHotCallback(block, "__Hotstring_" + (++_hotCount));
 				}
-				funcArg = FuncBind("__Main." + fnName);
+				funcArg = FuncBind(_currentModuleClass + "." + fnName);
 			}
 			foreach (var trig in hs.Triggers)
 			{
@@ -6216,8 +6251,9 @@ namespace Keysharp.Compilation.Syntax
 				var colon = name.IndexOf(':', 1);
 				var options = colon > 0 ? name.Substring(1, colon - 1) : "";
 				var key = colon > 0 ? name.Substring(colon + 1) : name;
-				_dhhr.Add(ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotstringManager.AddHotstring"),
-					Str(name), funcArg, Str($"{options}:{key}"), Str(key), Str(expansionText), False)));
+				AddDhhr(hs, ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotstringManager.AddHotstring"),
+					Str(name), funcArg, Str($"{options}:{key}"), Str(key), Str(expansionText), False,
+					Id(DeclarationSuspendExemptVariable))));
 			}
 		}
 
@@ -6310,8 +6346,9 @@ namespace Keysharp.Compilation.Syntax
 			var altTabAction = HotkeyDefinition.ConvertAltTab(targetKey, false);
 			if (altTabAction != 0)
 			{
-				_dhhr.Add(ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotkeyDefinition.AddHotkey"),
-					Null, SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(altTabAction)), Str(hotName))));
+				AddDhhr(rm, ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotkeyDefinition.AddHotkey"),
+					Null, SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(altTabAction)), Str(hotName),
+					Id(DeclarationSuspendExemptVariable))));
 				return;
 			}
 
@@ -6422,10 +6459,10 @@ namespace Keysharp.Compilation.Syntax
 			_hotMembers.Add(RemapCallback(upName, new List<StatementSyntax>
 				{ SetDelay(remapDestIsMouse), SendStmt(upSendText), SyntaxFactory.ReturnStatement(Str("")) }));
 
-			_dhhr.Add(ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotkeyDefinition.AddHotkey"),
-				FuncBind("__Main." + downName), UintZero, Str(remapSource))));
-			_dhhr.Add(ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotkeyDefinition.AddHotkey"),
-				FuncBind("__Main." + upName), UintZero, Str(remapSource + " up"))));
+			AddDhhr(rm, ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotkeyDefinition.AddHotkey"),
+				FuncBind(_currentModuleClass + "." + downName), UintZero, Str(remapSource), Id(DeclarationSuspendExemptVariable))));
+			AddDhhr(rm, ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotkeyDefinition.AddHotkey"),
+				FuncBind(_currentModuleClass + "." + upName), UintZero, Str(remapSource + " up"), Id(DeclarationSuspendExemptVariable))));
 		}
 
 		// `#Hotstring` directive: sets default options (`#Hotstring X`), end chars, or mouse-reset for subsequent
@@ -6434,12 +6471,12 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var args = (d.Args ?? "").Trim();
 			if (args.StartsWith("NoMouse", System.StringComparison.OrdinalIgnoreCase))
-				_dhhr.Insert(0, CallStmt("Keysharp.Builtins.Keyboard.Hotstring", Str("MouseReset"), False));
+				_dhhrPrelude.Add(CallStmt("Keysharp.Builtins.Keyboard.Hotstring", Str("MouseReset"), False));
 			else if (args.StartsWith("EndChars", System.StringComparison.OrdinalIgnoreCase))
-				_dhhr.Insert(0, CallStmt("Keysharp.Builtins.Keyboard.Hotstring", Str("EndChars"),
+				_dhhrPrelude.Add(CallStmt("Keysharp.Builtins.Keyboard.Hotstring", Str("EndChars"),
 					Str(Keysharp.Parsing.Parser.EscapedString(args.Substring("EndChars".Length).Trim().Trim('"', '\''), false))));
 			else
-				_dhhr.Add(CallStmt("Keysharp.Builtins.Keyboard.Hotstring", Str(args.Trim('"', '\''))));
+				AddDhhr(d, CallStmt("Keysharp.Builtins.Keyboard.Hotstring", Str(args.Trim('"', '\''))));
 		}
 
 		// `#HotIf <expr>` registers a hot-criterion: the condition becomes a callback (called with the hotkey name,
@@ -6450,13 +6487,13 @@ namespace Keysharp.Compilation.Syntax
 			var args = (d.Args ?? "").Trim();
 			if (args.Length == 0)
 			{
-				_dhhr.Add(ExprStmt(Inv(Access("Keysharp.Builtins.Keyboard.HotIf"), Str(""))));
+				AddDhhr(d, ExprStmt(Inv(Access("Keysharp.Builtins.Keyboard.HotIf"), Str(""))));
 				return;
 			}
 			var cond = ParseExprFragment(args, out var err);
 			if (cond == null) { Diag($"#HotIf condition is not a valid expression: '{args}'{(err == null ? "" : $" ({err})")}"); return; }
 			var fnName = EmitHotCallback(new Block(new List<Stmt> { new ReturnStmt(cond) }), "__HotIf_" + (++_hotCount));
-			_dhhr.Add(ExprStmt(Inv(Access("Keysharp.Builtins.Keyboard.HotIf"), FuncBind("__Main." + fnName))));
+			AddDhhr(d, ExprStmt(Inv(Access("Keysharp.Builtins.Keyboard.HotIf"), FuncBind(_currentModuleClass + "." + fnName))));
 		}
 
 		// Re-parses a directive's reconstructed expression argument (e.g. a `#HotIf` condition) back into an Expr,
@@ -7296,6 +7333,10 @@ namespace Keysharp.Compilation.Syntax
 			// Resolve operators before any hook registration, class initialization or module auto-execution can use them.
 			if (_hasOperatorDeclarations)
 				stmts.Add(ExprStmt(Inv(Access("MainScript.Operators.Register"), Id(NameMangler.OperatorManifestField))));
+			if (_dhhr.Count > 0)
+				stmts.Add(DeclLocal(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.BoolKeyword)),
+					DeclarationSuspendExemptVariable, False));
+			stmts.AddRange(_dhhrPrelude);
 			stmts.AddRange(_dhhr);
 			if (_persistent) stmts.Add(CallStmt("Keysharp.Builtins.Flow.Persistent"));
 			stmts.Add(CallStmt("Keysharp.Runtime.Keyboard.HotkeyDefinition.ManifestAllHotkeysHotstringsHooks"));

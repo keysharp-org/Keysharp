@@ -44,18 +44,15 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// Caller has also ensured that aHotstring is not blank.
 		/// </summary>
 		public object AddHotstring(string _name, object _funcObj, ReadOnlySpan<char> _options, string _hotstring
-								   , string _replacement, bool _hasContinuationSection, int _suspend = 0)
+								   , string _replacement, bool _hasContinuationSection, int _suspend = 0, bool declarationSuspendExempt = false)
 		{
-			var hs = new HotstringDefinition(script, _name, _funcObj, _options, _hotstring, _replacement, _hasContinuationSection, _suspend);
+			var hs = new HotstringDefinition(script, _name, _funcObj, _options, _hotstring, _replacement, _hasContinuationSection, _suspend, declarationSuspendExempt);
 
 			if (!hs.constructedOK)
 				return Errors.ValueErrorOccurred($"Invalid hotstring: {_name}.");
 
 			shs.Add(hs);
 			shsDkt.GetOrAdd(_hotstring[0]).Add(hs);
-
-			if (!script.IsReadyToExecute) // Caller is LoadIncludedFile(); allow BIF_Hotstring to manage this at runtime.
-				++enabledCount; // This works because the script can't be suspended during startup (aSuspend is always FALSE).
 
 			return hs;
 		}

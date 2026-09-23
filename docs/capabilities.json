@@ -436,13 +436,13 @@
                  {
                      "category":  "Environment/System",
                      "feature":  "#SuspendExempt",
-                     "syntax":  "",
+                     "syntax":  "#SuspendExempt [Setting]",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #SuspendExempt directive exempts subsequent hotkeys and hotstrings from suspension.",
-                     "tested-by":  "directive-misc.ahk"
+                     "notes":  "Exempts physically subsequent hotkey and hotstring declarations from suspension. It does not affect Hotkey() or Hotstring() calls made while the script runs.",
+                     "tested-by":  "directive-misc.ahk; DirectiveTests.SuspendExempt; DirectiveTests.SuspendExemptModuleOrder"
                   },
                   {
                      "category":  "Environment/System",
@@ -2765,17 +2765,6 @@
                      "macos":  "full",
                      "notes":  "Toggles whether the state of CapsLock is restored after a Send.",
                      "tested-by":  "props-script-settings.ahk"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_SuspendExempt",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Gets/sets whether current thread is exempt from Suspend.",
-                     "tested-by":  "directive-misc.ahk"
                  },
                  {
                      "category":  "Environment/System",

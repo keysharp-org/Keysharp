@@ -133,21 +133,26 @@ namespace Keysharp.Runtime
 			}
 		}
 
-			internal static void SuspendHotkeys()
+		internal void SetSuspended(bool suspended)
+		{
+			InvokeOnUIThread(() =>
 			{
-				var script = Script.TheScript;
-				script.InvokeOnUIThread(() =>
-				{
-					var suspended = script.flowData.suspended = !script.flowData.suspended;
-					script.HotstringManager.SuspendAll(suspended);//Must do this prior to ManifestAllHotkeysHotstringsHooks() to avoid incorrect removal of hook.
-					_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(script); //Update the state of all hotkeys based on the complex interdependencies hotkeys have with each another.
+				flowData.suspended = suspended;
+				HotstringManager.SuspendAll(suspended); // Update hotstrings before recalculating the hooks they need.
+				_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(this);
 
-					script.suspendMenuItem?.Checked = suspended;
-					script.mainWindow?.SuspendHotkeysToolStripMenuItem.Checked = suspended;
-					if (!(bool)A_IconFrozen)
-						script.Tray?.Icon = suspended ? script.suspendedIcon : script.trayDefaultIcon;
-				});
-			}
+				suspendMenuItem?.Checked = suspended;
+				mainWindow?.SuspendHotkeysToolStripMenuItem.Checked = suspended;
+				if (!(bool)A_IconFrozen && !NoTrayIcon && EnsureTrayIcon())
+					Tray.Icon = suspended ? suspendedIcon : trayDefaultIcon;
+			});
+		}
+
+		internal static void SuspendHotkeys()
+		{
+			var script = TheScript;
+			script.SetSuspended(!script.flowData.suspended);
+		}
 
 		/// <summary>
 		/// Whether a tray mouse event came from the primary (left) button.

@@ -2077,15 +2077,6 @@ namespace Keysharp.Builtins
 		public static string A_NowUTCMs => Conversions.ToYYYYMMDDHH24MISSFFF(DateTime.UtcNow);
 
 		/// <summary>
-		/// Whether the script is exempt from being able to be suspended.
-		/// </summary>
-		public static object A_SuspendExempt
-		{
-			get => Script.TheScript.HotstringManager.hsSuspendExempt;
-			set => Script.TheScript.HotstringManager.hsSuspendExempt = ForceBool(value);
-		}
-
-		/// <summary>
 		/// Whether #WinActivateForce was specified.
 		/// </summary>
 		public static bool A_WinActivateForce => Script.TheScript.WinActivateForce;

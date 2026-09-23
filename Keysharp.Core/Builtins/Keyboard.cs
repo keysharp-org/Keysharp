@@ -419,7 +419,6 @@ break_twice:;
 			{
 				wasAlreadyEnabled = existing.suspended == 0;
 				var mutatingAction = ifunc != null || !string.IsNullOrEmpty(action);
-				var originalSuspended = existing.suspended;
 
 				// Update the replacement string or function, if specified.
 				if (mutatingAction)
@@ -443,7 +442,9 @@ break_twice:;
 				// This is done after the above to avoid *partial* updates in the event of a failure.
 				existing.ParseOptions(hotstringOptions);
 
-				var newSuspended = existing.suspended;
+				var newSuspended = A_IsSuspended && !existing.suspendExempt
+					? existing.suspended | HotstringDefinition.HS_SUSPENDED
+					: existing.suspended & ~HotstringDefinition.HS_SUSPENDED;
 
 				switch (toggle)
 				{
@@ -485,6 +486,8 @@ break_twice:;
 					return addResult;
 
 				existing = hm.shs[hm.shs.Count - 1];
+				if (A_IsSuspended && existing.suspendExempt)
+					existing.SetSuspended(existing.suspended & ~HotstringDefinition.HS_SUSPENDED);
 				wasAlreadyEnabled = false; // Because it didn't exist.
 			}
 

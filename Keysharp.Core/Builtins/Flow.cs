@@ -399,10 +399,7 @@ namespace Keysharp.Builtins
 			var state = Conversions.ConvertOnOffToggle(newState.As());
 			var script = Script.TheScript;
 			var fd = script.FlowData;
-			fd.suspended = state == ToggleValueType.Toggle ? !fd.suspended : (state == ToggleValueType.On);
-
-			if (!(bool)A_IconFrozen && !script.NoTrayIcon && script.EnsureTrayIcon())
-				script.Tray.Icon = fd.suspended ? script.suspendedIcon : script.trayDefaultIcon;
+			script.SetSuspended(state == ToggleValueType.Toggle ? !fd.suspended : state == ToggleValueType.On);
 
 			return DefaultObject;
 		}

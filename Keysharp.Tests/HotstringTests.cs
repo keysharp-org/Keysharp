@@ -201,19 +201,19 @@ namespace Keysharp.Tests
 			Assert.AreEqual("", oldVal);
 			//Exempt from suspend.
 			newVal = true;
-			origVal = A_SuspendExempt.Ab();
+			origVal = hsm.hsSuspendExempt;
 			Assert.AreEqual(origVal, !newVal);
 			oldVal = Keyboard.Hotstring("S");
-			Assert.AreNotEqual(origVal, A_SuspendExempt.Ab());
-			Assert.AreEqual(A_SuspendExempt.Ab(), newVal);
+			Assert.AreNotEqual(origVal, hsm.hsSuspendExempt);
+			Assert.AreEqual(hsm.hsSuspendExempt, newVal);
 			Assert.AreEqual("", oldVal);
 			//Remove suspend exempt.
 			newVal = false;
-			origVal = A_SuspendExempt.Ab();
+			origVal = hsm.hsSuspendExempt;
 			Assert.AreEqual(origVal, !newVal);
 			oldVal = Keyboard.Hotstring("S0");
-			Assert.AreNotEqual(origVal, A_SuspendExempt.Ab());
-			Assert.AreEqual(A_SuspendExempt.Ab(), newVal);
+			Assert.AreNotEqual(origVal, hsm.hsSuspendExempt);
+			Assert.AreEqual(hsm.hsSuspendExempt, newVal);
 			Assert.AreEqual("", oldVal);
 			//Reset on trigger.
 			newVal = true;
@@ -321,7 +321,7 @@ namespace Keysharp.Tests
 			origVal = A_DefaultHotstringOmitEndChar;
 			Assert.AreEqual(origVal, false);
 			_ = Keyboard.Hotstring("S0");
-			origVal = A_SuspendExempt.Ab();
+			origVal = hsm.hsSuspendExempt;
 			Assert.AreEqual(origVal, false);
 			_ = Keyboard.Hotstring("Z0");
 			origVal = A_DefaultHotstringDoReset;
@@ -343,7 +343,7 @@ namespace Keysharp.Tests
 			Assert.AreEqual(A_DefaultHotstringCaseSensitive, true);
 			Assert.AreEqual(A_DefaultHotstringDoBackspace, false);
 			Assert.AreEqual(A_DefaultHotstringOmitEndChar, true);
-			Assert.AreEqual(A_SuspendExempt, true);
+			Assert.AreEqual(hsm.hsSuspendExempt, true);
 			Assert.AreEqual(A_DefaultHotstringDoReset, true);
 			Assert.AreEqual(A_DefaultHotstringSendRaw, SendRawModes.Raw.ToString());
 			Assert.AreEqual(A_DefaultHotstringKeyDelay, 123L);
@@ -530,6 +530,9 @@ namespace Keysharp.Tests
 		public void HotstringDirectives()
 		{
 			Assert.IsTrue(TestScript("hotstring-directives", false));
+			Assert.AreEqual(2, hsm.shs.Count);
+			Assert.IsTrue(hsm.shs[0].SuspendExempt);
+			Assert.IsFalse(hsm.shs[1].SuspendExempt);
 		}
 
 		[Test, Category("Hotstring"), NonParallelizable]

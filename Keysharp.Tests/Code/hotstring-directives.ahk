@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 
 #import KS { * }
@@ -132,29 +134,10 @@ AssertEq(origVal, A_DefaultHotstringOmitEndChar, A_LineNumber)
 
 AssertEq(newVal, A_DefaultHotstringOmitEndChar, A_LineNumber)
 
-; Exempt from suspend.
-newVal := true
-origVal := A_SuspendExempt
-
-AssertEq(origVal, newVal, A_LineNumber)
-
 #Hotstring S
-
-AssertEq(origVal, A_SuspendExempt, A_LineNumber)
-
-AssertEq(newVal, A_SuspendExempt, A_LineNumber)
-
-
-; Remove suspend exempt.
+:*:suspenddefault::ok
 Hotstring("S0")
-newVal := false
-origVal := A_SuspendExempt
-
-AssertEq(origVal, newVal, A_LineNumber)
-
-AssertEq(origVal, A_SuspendExempt, A_LineNumber)
-
-AssertEq(newVal, A_SuspendExempt, A_LineNumber)
+Hotstring("::suspenddynamic", "ok")
 
 ; Reset on trigger.
 newVal := true

@@ -50,7 +50,7 @@ Status legend:
 | #Requires | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Requires directive displays an error and quits if a version requirement is not met. |
 | #SingleInstance | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #SingleInstance directive determines whether a script is allowed to run again when it is already running. |
 | #StructPack | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the maximum alignment for subsequent typed struct fields. |
-| #SuspendExempt | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #SuspendExempt directive exempts subsequent hotkeys and hotstrings from suspension. |
+| #SuspendExempt | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Exempts physically subsequent hotkey and hotstring declarations from suspension. It does not affect Hotkey() or Hotstring() calls made while the script runs. |
 | #TrayIcon | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Keysharp-only standalone directive that selects the script's embedded tray default; #TrayIcon and #NoTrayIcon apply in source order, and bare #TrayIcon restores the #App Icon or Keysharp default. FileName is main-script-relative; omitted, positive, negative and quoted-string selectors mean the first group, a 1-based group, a native resource ID or a managed resource name, respectively, and native-module selection is Windows-only. |
 | #Undef | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Undefines a conditional compilation symbol. |
 | #UseHook | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #UseHook directive forces the use of the hook to implement all or some keyboard hotkeys. |
@@ -265,7 +265,6 @@ Status legend:
 | A_Startup | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_StartupCommon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_StoreCapsLockMode | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles whether the state of CapsLock is restored after a Send. |
-| A_SuspendExempt | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets whether current thread is exempt from Suspend. |
 | A_Tab | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | String containing a single tab. |
 | A_Temp | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_ThisFunc | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The name of the function. If called outside of a function, empty string is returned. |

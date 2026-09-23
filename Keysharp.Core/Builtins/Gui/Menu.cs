@@ -539,6 +539,7 @@ namespace Keysharp.Builtins
 
 			_ = menu.Items.Add(new ToolStripSeparator());
 			script.suspendMenuItem = (ToolStripMenuItem)Add("&Suspend Hotkeys", new KeysharpFunc(suspend.Method, suspend.Target));
+			script.suspendMenuItem.Checked = script.FlowData.suspended;
 			_ = Add("E&xit", new KeysharpFunc(exitfunc.Method, exitfunc.Target));
 			return DefaultObject;
 		}

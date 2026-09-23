@@ -93,7 +93,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		}
 
 		internal HotstringDefinition(Script script, string _name, object _funcObj, ReadOnlySpan<char> _options, string _hotstring, string _replacement
-									 , bool _hasContinuationSection, int _suspend)
+									 , bool _hasContinuationSection, int _suspend, bool declarationSuspendExempt)
 
 		{
 			var hm = script.HotstringManager;
@@ -114,7 +114,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			detectWhenInsideWord = hm.hsDetectWhenInsideWord;
 			doReset = hm.hsDoReset;
 			inputLevel = script.AccessorData.inputLevel;
-			suspendExempt = hm.hsSuspendExempt;
+			suspendExempt = hm.hsSuspendExempt || declarationSuspendExempt;
 			constructedOK = false;
 			var unusedX = false; // do not assign  mReplacement if execute_action is true.
 			ParseOptions(_options, ref priority, ref keyDelay, ref sendMode, ref caseSensitive, ref conformToCase, ref doBackspace

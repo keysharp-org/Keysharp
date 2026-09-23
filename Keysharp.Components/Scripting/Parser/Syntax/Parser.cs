@@ -19,7 +19,7 @@ namespace Keysharp.Parsing.Syntax
 	{
 		private List<Token> _t = [];
 		private int _pos;
-		private long _nextDirectiveOrder;
+		private long _nextSourceOrder;
 		private bool _errorStdOut;
 		private int _groupDepth;   // >0 inside ()/[] — newlines are insignificant
 		private int _exprDepth;    // recursion guard for ParseExpression (defensive cap against malformed/unsupported input)
@@ -311,8 +311,10 @@ namespace Keysharp.Parsing.Syntax
 			SkipNewlines();
 			int line = Current.Line, col = Current.Column;
 			var file = Current.File;
+			var sourceOrder = ++_nextSourceOrder;
 			var s = ParseStatementCore(programScope);
 			if (s != null && s.Line == 0) { s.Line = line; s.Column = col; s.File = file; }
+			if (s != null && s.SourceOrder == 0) s.SourceOrder = sourceOrder;
 			return s;
 		}
 
@@ -623,7 +625,7 @@ namespace Keysharp.Parsing.Syntax
 			var dirToken = Current;
 			int dirLine = Current.Line, dirCol = Current.Column;
 			var dirFile = Current.File;
-			var sourceOrder = ++_nextDirectiveOrder;
+			var sourceOrder = ++_nextSourceOrder;
 			Advance(); // #
 			var name = At(TokenKind.Identifier) ? Advance().Text : "";
 			if (name.Equals("errorstdout", System.StringComparison.OrdinalIgnoreCase))

@@ -765,7 +765,6 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ These can be used with `DateAdd()`/`DateDiff()` using `"L"` for the `TimeUnits` parameter.
 	+ `A_RealThread` is the real OS thread the current pseudo-thread runs on, as a `RealThread` object.
 		+ On the main thread it is literally the same object as `RealThread.Main`, so `A_RealThread == RealThread.Main` is the test for "am I on the main thread". See the `RealThread` class under *New classes*.
-	+ `A_SuspendExempt` returns whether subsequent hotkeys and hotstrings will be exmpt from suspension because `#SuspendExempt true` was specified.
 	+ `A_Thread` is the current pseudo-thread as a `Thread` object.
 		+ Every per-pseudo-thread fact is a property on the object rather than its own importable global, so the surface extends without new names. See the `Thread` class under *New classes*.
 		+ There is exactly one object per pseudo-thread, so "is this the one I am in" is `thr == A_Thread`.

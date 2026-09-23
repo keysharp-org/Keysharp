@@ -108,7 +108,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			Enabled = true;
 		}
 
-		internal HotkeyDefinition(Script owner, uint _id, object callback, uint _hookAction, string _name, uint _noSuppress)
+		internal HotkeyDefinition(Script owner, uint _id, object callback, uint _hookAction, string _name, uint _noSuppress, bool declarationSuspendExempt = false)
 		{
 			this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
 			hookAction = _hookAction;
@@ -315,7 +315,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			// If mKeybdHookMandatory==true, ManifestAllHotkeysHotstringsHooks() will set mType to HK_KEYBD_HOOK for us.
 			Name = _name;
-			_ = AddVariant(callback, _noSuppress);
+			_ = AddVariant(callback, _noSuppress, declarationSuspendExempt);
 			// Above has ensured that both mFirstVariant and mLastVariant are non-NULL, so callers can rely on that.
 			// Always assign the ID last, right before a successful return, so that the caller is notified
 			// that the constructor succeeded:
@@ -330,10 +330,10 @@ namespace Keysharp.Internals.Input.Keyboard
 			_ = Unregister();
 		}
 
-		internal static HotkeyDefinition AddHotkey(Script script, object _callback, uint _hookAction, string _name)
+		internal static HotkeyDefinition AddHotkey(Script script, object _callback, uint _hookAction, string _name, bool declarationSuspendExempt = false)
 		{
 			var b = 0u;
-			return AddHotkey(script, _callback, _hookAction, _name, ref b);
+			return AddHotkey(script, _callback, _hookAction, _name, ref b, declarationSuspendExempt);
 		}
 
 		/// <summary>
@@ -770,7 +770,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// Returns the address of the new hotkey on success, or NULL otherwise.
 		/// The caller is responsible for calling ManifestAllHotkeysHotstringsHooks(), if appropriate.
 		/// </summary>
-		internal static HotkeyDefinition AddHotkey(Script script, object _callback, uint _hookAction, string _name, ref uint _noSuppress)
+		internal static HotkeyDefinition AddHotkey(Script script, object _callback, uint _hookAction, string _name, ref uint _noSuppress, bool declarationSuspendExempt = false)
 		{
 			HotkeyDefinition hk;
 			var hookIsMandatory = false;
@@ -801,7 +801,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 					if (existingVariant != null)
 						existingVariant.SetBinding(script.EventScheduler, _callback, null);
-					else if (hk.AddVariant(_callback, _noSuppress) == null)
+					else if (hk.AddVariant(_callback, _noSuppress, declarationSuspendExempt) == null)
 						return null;// ScriptError(ERR_OUTOFMEM, buf);
 
 					if (hookIsMandatory || script.ForceKeybdHook)
@@ -818,7 +818,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			else
 			{
 				var hkd = script.HotkeyData;
-				hk = new HotkeyDefinition(script, (uint)hkd.shk.Length, _callback, _hookAction, _name, _noSuppress);
+				hk = new HotkeyDefinition(script, (uint)hkd.shk.Length, _callback, _hookAction, _name, _noSuppress, declarationSuspendExempt);
 
 				if (hk.constructedOK)
 				{
@@ -2196,7 +2196,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// <param name="_callback"></param>
 		/// <param name="_suffixHasTilde"></param>
 		/// <returns></returns>
-		internal HotkeyVariant AddVariant(object _callback, uint _noSuppress)
+		internal HotkeyVariant AddVariant(object _callback, uint _noSuppress, bool declarationSuspendExempt = false)
 		{
 			var vp = new HotkeyVariant
 			{
@@ -2208,7 +2208,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				maxThreadsBuffer = owner.AccessorData.maxThreadsBuffer,
 				inputLevel = owner.AccessorData.inputLevel,
 				hotCriterion = owner.Threads.CurrentThread.hotCriterion, // If this hotkey is an alt-tab one (mHookAction), this is stored but ignored until/unless the Hotkey command converts it into a non-alt-tab hotkey.
-				suspendExempt = owner.HotstringManager.hsSuspendExempt,
+				suspendExempt = declarationSuspendExempt,
 				noSuppress = _noSuppress,
 			};
 

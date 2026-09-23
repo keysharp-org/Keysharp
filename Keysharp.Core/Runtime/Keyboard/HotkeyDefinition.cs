@@ -6,7 +6,10 @@ namespace Keysharp.Runtime.Keyboard
 	public static class HotkeyDefinition
 	{
 		public static object AddHotkey(KeysharpFunc callback, uint hookAction, string name)
-			=> Keysharp.Internals.Input.Keyboard.HotkeyDefinition.AddHotkey(Script.TheScript, callback, hookAction, name);
+			=> AddHotkey(callback, hookAction, name, false);
+
+		public static object AddHotkey(KeysharpFunc callback, uint hookAction, string name, bool suspendExempt)
+			=> Keysharp.Internals.Input.Keyboard.HotkeyDefinition.AddHotkey(Script.TheScript, callback, hookAction, name, suspendExempt);
 
 		public static object ManifestAllHotkeysHotstringsHooks()
 			=> Keysharp.Internals.Input.Keyboard.HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(Script.TheScript);
