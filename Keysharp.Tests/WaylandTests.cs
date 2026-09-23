@@ -35,6 +35,27 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
+		public void ShellExtensionMembersDispatchThroughWaylandInterface()
+		{
+			using var cinnamon = new CinnamonBackend();
+			IWaylandBackend backend = cinnamon;
+			Assert.That(LinuxImageOverlayBacking.ShouldAttemptCompositor(backend), Is.True);
+
+			var mapping = typeof(CinnamonBackend).GetInterfaceMap(typeof(IWaylandBackend));
+
+			foreach (var name in new[]
+			{
+				"get_SupportsImageOverlay", "get_CanAttemptImageOverlay", "TryShowImageOverlay",
+				"TryMoveImageOverlay", "TryHideImageOverlay", "SubscribeClipboardAvailability"
+			})
+			{
+				var index = System.Array.FindIndex(mapping.InterfaceMethods, method => method.Name == name);
+				Assert.That(index, Is.GreaterThanOrEqualTo(0), name);
+				Assert.That(mapping.TargetMethods[index].DeclaringType, Is.EqualTo(typeof(ShellExtensionBackend)), name);
+			}
+		}
+
+		[Test]
 		public void BridgeDiagnostics()
 		{
 			var throttle = new WaylandDiagnosticThrottle(5000);

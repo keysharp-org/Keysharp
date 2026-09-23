@@ -221,14 +221,15 @@ namespace Keysharp.Builtins
 
 			// Dedupe (matches the Windows branch): identical call = no-op; same text at a new position
 			// on a display with the same scale and canvas density = byte-free Move instead of re-render + re-upload.
-			if (data.overlayTooltipStates[id] is { } last && overlays[id] is { } live && last.text == text
+			if (data.overlayTooltipStates[id] is { } last && overlays[id] is { } live
+				&& live.IsVisible is true && last.text == text
 					&& Math.Abs(last.displayScale - displayScale) < 0.001
 					&& last.pixelW == geometry.Pixels.Width && last.pixelH == geometry.Pixels.Height)
 			{
 				if (last.x == sx && last.y == sy)
 					return live.Hwnd;
 
-				_ = live.IsVisible is true ? live.Move(sx, sy) : live.Show(sx, sy);
+				_ = live.Move(sx, sy);
 				data.overlayTooltipStates[id] = (text, sx, sy, displayScale, geometry.Pixels.Width, geometry.Pixels.Height);
 				return live.Hwnd;
 			}
@@ -245,7 +246,9 @@ namespace Keysharp.Builtins
 			if (overlay.IsVisible is not true)
 				_ = overlay.Show();
 
-			data.overlayTooltipStates[id] = (text, sx, sy, displayScale, geometry.Pixels.Width, geometry.Pixels.Height);
+			data.overlayTooltipStates[id] = overlay.IsVisible is true
+				? (text, sx, sy, displayScale, geometry.Pixels.Width, geometry.Pixels.Height)
+				: null;
 			return overlay.Hwnd;
 		}
 

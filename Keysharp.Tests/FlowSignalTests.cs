@@ -22,10 +22,7 @@ namespace Keysharp.Tests
 			var readyPath = Path.Combine(directory, "ready");
 			var exitsPath = Path.Combine(directory, "exits");
 			var vetoPath = Path.Combine(directory, "veto-complete");
-			File.WriteAllText(scriptPath, """
-				#ErrorStdOut
-				#Warn All, StdOut
-				#NoTrayIcon
+			File.WriteAllText(scriptPath, "#ErrorStdOut\n#Warn All, StdOut\n#NoTrayIcon" + """
 				exitCount := 0
 				OnExit(Exiting)
 				FileAppend('ready', A_ScriptDir '/ready')

@@ -1,8 +1,9 @@
 #if LINUX
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
+	// DesktopBackend already implements IWaylandBackend, so it must be redeclared here to map the shell members.
 	/// <summary>keysharp-desktop backend augmented by a compositor shell extension.</summary>
-	internal class ShellExtensionBackend : DesktopBackend, IDisposable
+	internal class ShellExtensionBackend : DesktopBackend, IWaylandBackend, IDisposable
 	{
 		private readonly ShellExtensionBridge bridge;
 
