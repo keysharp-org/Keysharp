@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 
 #import KS { StringBuffer }
 #Include <assert>
@@ -90,6 +92,29 @@ str2 := "world"
 DllCall("msvcrt.dll\_wcsrev", "Str", &str2)
 
 AssertEq(str2, "dlrow", A_LineNumber)
+
+output := "0000000000"
+DllCall("msvcrt\wcscpy", "Str", &output, "Str", "Cthulhu")
+AssertEq(output, "Cthulhu", A_LineNumber)
+AssertEq(StrLen(output), 7, A_LineNumber)
+AssertEq(output "123", "Cthulhu123", A_LineNumber)
+
+bufferedOutput := StringBuffer("0000000000")
+DllCall("msvcrt\wcscpy", "Str", bufferedOutput, "Str", "Cthulhu")
+AssertEq(StrLen(bufferedOutput), 10, A_LineNumber)
+bufferedOutput.Seek(-1)
+AssertEq(bufferedOutput, "Cthulhu", A_LineNumber)
+AssertEq(bufferedOutput "123", "Cthulhu123", A_LineNumber)
+
+embeddedNull := "A" Chr(0) "B"
+embeddedBuffer := StringBuffer(embeddedNull)
+AssertEq(DllCall("msvcrt\wcslen", "Str", embeddedBuffer, "Ptr"), 1, A_LineNumber)
+AssertEq(StrLen(embeddedBuffer), 3, A_LineNumber)
+
+ansiOutput := "0000000000"
+DllCall("msvcrt\strcpy", "AStr", &ansiOutput, "AStr", "Cthulhu")
+AssertEq(ansiOutput, "Cthulhu", A_LineNumber)
+AssertEq(ansiOutput "123", "Cthulhu123", A_LineNumber)
 
 code := Buffer(64)
 NumPut(
@@ -214,11 +239,11 @@ Base64ToString(Base64)
 	if !(DllCall("crypt32\CryptStringToBinaryW", "Str", Base64, "UInt", 0, "UInt", CRYPT_STRING_BASE64, "Ptr", 0, "UInt*", &Size := 0, "Ptr", 0, "Ptr", 0))
 		throw OSError()
 
-	String := Buffer(Size)
-	if !(DllCall("crypt32\CryptStringToBinaryW", "Str", Base64, "UInt", 0, "UInt", CRYPT_STRING_BASE64, "Ptr", String, "UInt*", Size, "Ptr", 0, "Ptr", 0))
+	resultBuffer := Buffer(Size)
+	if !(DllCall("crypt32\CryptStringToBinaryW", "Str", Base64, "UInt", 0, "UInt", CRYPT_STRING_BASE64, "Ptr", resultBuffer, "UInt*", Size, "Ptr", 0, "Ptr", 0))
 		throw OSError()
 
-	return StrGet(String, "UTF-8")
+	return StrGet(resultBuffer, "UTF-8")
 }
 
 str := Base64ToString("VGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZw==")

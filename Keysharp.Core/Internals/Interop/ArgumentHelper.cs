@@ -470,8 +470,12 @@ namespace Keysharp.Internals.Interop
 
 				if (parameters[pi] is StringBuffer sb)
 				{
-					sb.UpdateEntangledStringFromBuffer();
-					parameters[pi] = sb.EntangledString;
+					if (sb.EntangledString != null)
+					{
+						sb.Seek(-1);
+						sb.UpdateEntangledStringFromBuffer();
+						parameters[pi] = sb.EntangledString;
+					}
 				}
 				else if (slot.Kind == OutputTarget.Ptr && parameters[pi] is Any kso)
 					_ = Script.SetPropertyValue(kso, "ptr", NativeType.ReadMemory(slot.Code, address));

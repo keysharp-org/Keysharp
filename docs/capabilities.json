@@ -4735,8 +4735,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Calls a native shared-library function on every platform. Numeric type classes can replace built-in type names, and a \u0027void\u0027 return type yields no value.",
-                     "tested-by":  "external-callbackcreate.ahk"
+                     "notes":  "Calls a native shared-library function on every platform. Numeric type classes can replace built-in type names, and a \u0027void\u0027 return type yields no value. A variable reference allows writable Str or AStr output to be copied back through the first null terminator.",
+                     "tested-by":  "external-dllcall.ahk"
                  },
                  {
                      "category":  "FileSystem",

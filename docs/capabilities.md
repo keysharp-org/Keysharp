@@ -466,7 +466,7 @@ Status legend:
 | DirExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for the existence of a folder and returns its attributes. |
 | DirMove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves a folder along with all its sub-folders and files. It can also rename a folder. |
 | DirSelect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Displays the native folder-selection dialog on every platform. Some legacy Windows folder-dialog option flags have no portable equivalent. |
-| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls a native shared-library function on every platform. Numeric type classes can replace built-in type names, and a 'void' return type yields no value. |
+| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls a native shared-library function on every platform. Numeric type classes can replace built-in type names, and a 'void' return type yields no value. A variable reference allows writable Str or AStr output to be copied back through the first null terminator. |
 | Download() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Downloads a resource to a file over http, https or ftp, streamed rather than buffered, waiting while pumping so timers and the GUI stay alive. Only the *0 cache flag is supported. An FTP login is anonymous unless the URL carries userinfo credentials, and a directory URL saves the server LIST output. A gopher URL raises a ValueError. |
 | DriveEject() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Ejects or retracts the tray of the specified CD/DVD drive. |
 | DriveGetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the total capacity of the drive which contains the specified path, in megabytes. |

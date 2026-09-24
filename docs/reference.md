@@ -480,6 +480,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * `DirCopy()` extracts archives with .NET rather than the OS shell, so the supported formats are the same on every platform: `.zip`, `.tar`, `.tar.gz` and `.tgz` are extracted into *Dest* as a folder. AutoHotkey's format list instead depends on the Windows version (and RAR/7z are not supported at all here).
 	+ A plain `.gz` holds a single compressed file rather than an archive of entries, so *Dest* names the decompressed **file** and its parent folder is created if needed. This is the one case where *Dest* is not a directory.
 * `DllCall()` has the following caveats:
+	+ Pass `&Variable` for a writable `Str`, `WStr` or `AStr` argument when the native function can shorten its value. The copied-back string ends at the first null terminator. Passing a plain `Str` value lets native code write directly into the .NET string, whose old length remains and whose contents may be shared with a literal.
 	+ Use `Ptr` and `StringBuffer` for double pointer parameters such as `LPTSTR*`. This is recommended over the use of `StrPtr()`.
 	+ A call may pass at most 63 arguments.
 	+ A `Float` value read back out of a call — a `Float` return value or a `Float*` output variable — widens to the shortest Float that round-trips, so `1.2345` stays `1.2345`. `NumGet` widens the same way, where AutoHotkey carries the binary error of the narrower type into the decimal digits (`1.2344999313354492`).
