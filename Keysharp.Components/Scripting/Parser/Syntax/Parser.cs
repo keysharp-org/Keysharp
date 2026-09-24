@@ -59,7 +59,11 @@ namespace Keysharp.Parsing.Syntax
 		public readonly List<string> Diagnostics = new();
 
 		private readonly string _includeDir;   // directory used to resolve relative #include paths (null => disabled)
-		private readonly HashSet<string> _included = new(System.StringComparer.OrdinalIgnoreCase);   // #include dedup
+		// The default Windows and macOS file systems ignore case; Linux paths are case-sensitive.
+		internal static readonly System.StringComparer SourcePathComparer =
+			System.OperatingSystem.IsWindows() || System.OperatingSystem.IsMacOS() ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
+		private readonly HashSet<string> _included = new(SourcePathComparer);   // #include dedup
+		private readonly Dictionary<string, string> _includedSources = new(SourcePathComparer);
 		private int _includeDepth;             // current #include nesting depth (guards against circular #includeagain)
 		private const int MaxIncludeDepth = 100;
 
@@ -108,6 +112,7 @@ namespace Keysharp.Parsing.Syntax
 				// Publish the parser-owned final symbol set without another copy.
 				prog.Defines = parser._defines;
 				prog.ErrorStdOut = parser._errorStdOut;
+				prog.IncludedSources = parser._includedSources;
 				return (prog, parser.Diagnostics);
 			}
 			catch (Keysharp.Builtins.ParseException ex)
@@ -121,18 +126,26 @@ namespace Keysharp.Parsing.Syntax
 		// entry point: at statement level a trailing primary chain such as `obj.Member` is a zero-arg call
 		// statement, so a criterion would be invoked rather than read. Returns null, with diagnostics, unless the
 		// text is exactly one expression. It takes no preprocessor symbols because a directive argument is rebuilt
-		// from already-preprocessed tokens.
-		internal static (Expr expr, List<string> diagnostics) ParseExpressionWithDiagnostics(string source)
+		// from already-preprocessed tokens. File and startingLine place the expression's nodes in the source script.
+		internal static (Expr expr, List<string> diagnostics) ParseExpressionWithDiagnostics(string source, string file = null, int startingLine = 1)
 		{
 			var diags = new List<string>();
 
 			try
 			{
-				var lexer = new Lexer(source, null);
+				var lexer = new Lexer(source, file);
 				var tokens = LexForParsing(lexer);
 
 				if (lexer.Diagnostics.Count > 0)
 					throw new Keysharp.Builtins.ParseException(lexer.Diagnostics[0]);
+
+				if (startingLine > 1)
+					for (var i = 0; i < tokens.Count; i++)
+					{
+						var token = tokens[i];
+						tokens[i] = new Token(token.Kind, token.Text, token.Line + startingLine - 1, token.Column,
+							token.Offset, token.Length, token.LeadingWhitespace, token.File);
+					}
 
 				var parser = new Parser();
 				parser.LoadTokens(tokens);
@@ -369,6 +382,7 @@ namespace Keysharp.Parsing.Syntax
 
 		private Block ParseBlock()
 		{
+			var brace = Current;
 			Expect(TokenKind.LBrace, "block");
 			var body = new List<Stmt>();
 			SkipNewlines();
@@ -384,7 +398,7 @@ namespace Keysharp.Parsing.Syntax
 				SkipNewlines();
 			}
 			Expect(TokenKind.RBrace, "block");
-			return new Block(body);
+			return new Block(body) { Line = brace.Line, Column = brace.Column, File = brace.File };
 		}
 
 		private Stmt ParseBodyStatement()
@@ -1163,7 +1177,7 @@ namespace Keysharp.Parsing.Syntax
 			includedDir = System.IO.Path.GetDirectoryName(path);   // nested includes in this file resolve against its dir
 			includedPath = path;
 			// The lexer stamps each token with this file's full path for diagnostics and A_LineFile.
-			var lexer = new Lexing.Lexer(System.IO.File.ReadAllText(path), path);
+			var lexer = new Lexing.Lexer(_includedSources[path] = System.IO.File.ReadAllText(path), path);
 			var toks = LexForParsing(lexer);
 			lexDiagnostics = lexer.Diagnostics;
 			if (toks.Count > 0 && toks[^1].Kind == TokenKind.EOF) toks.RemoveAt(toks.Count - 1);   // drop the included EOF
@@ -1306,19 +1320,7 @@ namespace Keysharp.Parsing.Syntax
 			if (!string.IsNullOrEmpty(scriptDir))
 				libDirs.Add(System.IO.Path.Combine(scriptDir, "Lib"));
 
-			string docs = null, exeDir = null;
-			// The accessor, not GetFolderPath: an unverified Documents path still counts (see A_MyDocuments).
-			try { docs = Keysharp.Builtins.Accessors.A_MyDocuments; } catch { }
-			try { exeDir = System.IO.Path.GetDirectoryName(Environment.ProcessPath); } catch { }
-
-			if (!string.IsNullOrEmpty(docs))
-			{
-				libDirs.Add(System.IO.Path.Combine(docs, "Keysharp", "Lib"));
-				libDirs.Add(System.IO.Path.Combine(docs, "AutoHotkey", "Lib"));
-			}
-
-			if (!string.IsNullOrEmpty(exeDir))
-				libDirs.Add(System.IO.Path.Combine(exeDir, "Lib"));
+			libDirs.AddRange(SharedLibraryDirs().Select(lib => lib.Dir));
 
 			// AHK searches every Lib dir for the full name before falling back to the underscore-truncated name.
 			var candidates = new List<string> { name };
@@ -1340,6 +1342,25 @@ namespace Keysharp.Parsing.Syntax
 					}
 
 			return null;
+		}
+
+		// The Lib folders searched after the script's own: the user libraries, then the standard library beside the
+		// executable. Compiled output names a file in one by its marker rather than by its path.
+		internal static IEnumerable<(string Dir, string Marker)> SharedLibraryDirs()
+		{
+			string docs = null, exeDir = null;
+			// The accessor, not GetFolderPath: an unverified Documents path still counts (see A_MyDocuments).
+			try { docs = Keysharp.Builtins.Accessors.A_MyDocuments; } catch { }
+			try { exeDir = System.IO.Path.GetDirectoryName(Environment.ProcessPath); } catch { }
+
+			if (!string.IsNullOrEmpty(docs))
+			{
+				yield return (System.IO.Path.Combine(docs, "Keysharp", "Lib"), "<UserLib>/");
+				yield return (System.IO.Path.Combine(docs, "AutoHotkey", "Lib"), "<UserLib>/");
+			}
+
+			if (!string.IsNullOrEmpty(exeDir))
+				yield return (System.IO.Path.Combine(exeDir, "Lib"), "<StdLib>/");
 		}
 
 		// Built-in variables AutoHotkey permits inside an #include path (the compile-time set). Restricting to this
@@ -1658,7 +1679,8 @@ namespace Keysharp.Parsing.Syntax
 					// past a comma.
 					while (true)
 					{
-						var fname = Advance().Text;
+						var nameToken = Advance();
+						var fname = nameToken.Text;
 						var indexParams = At(TokenKind.LBracket) ? ParseParamList(TokenKind.LBracket, TokenKind.RBracket) : new List<Param>();
 						var save = _pos;
 						SkipNewlines();
@@ -1672,7 +1694,10 @@ namespace Keysharp.Parsing.Syntax
 						{
 							var target = ParsePostfix(new MemberExpr(new NameExpr("this"), fname, false));
 							if (!Match(TokenKind.Assign)) Error($"expected ':=' in class member initializer but found {Got()}");
-							var stmt = new ExpressionStmt(new AssignExpr(":=", target, ParseExpression(1)));
+							var stmt = new ExpressionStmt(new AssignExpr(":=", target, ParseExpression(1)))
+							{
+								Line = nameToken.Line, Column = nameToken.Column, File = nameToken.File
+							};
 							(isStatic ? staticInits : instanceInits).Add(stmt);
 						}
 						else if (Match(TokenKind.FatArrow))
@@ -1981,7 +2006,15 @@ namespace Keysharp.Parsing.Syntax
 				return new NameExpr("«error»");
 			}
 			_exprDepth++;
-			try { return ParseExpressionCore(minPrec); }
+			// Positioned like a statement, so code the lowering runs outside any statement, such as a case value or a
+			// field initializer, still has a line to report.
+			var start = Current;
+			try
+			{
+				var e = ParseExpressionCore(minPrec);
+				if (e != null && e.Line == 0) (e.Line, e.Column, e.File) = (start.Line, start.Column, start.File);
+				return e;
+			}
 			finally { _exprDepth--; }
 		}
 

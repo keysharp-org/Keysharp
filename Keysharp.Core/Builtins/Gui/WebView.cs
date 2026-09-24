@@ -183,7 +183,7 @@ namespace Keysharp.Builtins
 					case "messagereceived": hub = ref messageReceivedHandlers; break;
 				}
 
-				hub ??= new(CallbackStop.NonEmpty);
+				hub ??= new(CallbackStop.NonEmpty, "Gui");
 				_ = hub.ModifyEventHandlers(del, addRemove);
 
 				if (addRemove != 0 && (attachedEvents ??= []).Add(e))

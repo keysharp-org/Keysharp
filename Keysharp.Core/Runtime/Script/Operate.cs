@@ -489,9 +489,9 @@ namespace Keysharp.Runtime
 			variable = initFunc();
 		}
 
-		// Publishes a function's scope on the current pseudo-thread. KeysharpFunc.Call restores the previous one on return,
+		// Publishes a function's scope in its call stack frame. The dispatcher clears it when the frame is popped,
 		// so no matching leave call is emitted.
-		public static FuncScope EnterScope(FuncScope scope) => Threads.Current.executionScope = scope;
+		public static FuncScope EnterScope(FuncScope scope) => CallStack.Current.EnterScope(scope);
 
 		// `%name%`. `scope` is the executing function's, or null at module level. A reference operand (`r := &x`, then `%r%`)
 		// reaches its target.

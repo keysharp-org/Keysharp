@@ -3077,6 +3077,17 @@
                      "tested-by":  "assign-multiline.ahk"
                  },
                  {
+                     "category":  "Errors",
+                     "feature":  "ArgumentError",
+                     "syntax":  "ArgumentError(Message?, What?, Extra?)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp-specific Error subclass raised when a call omits a required parameter or passes it as unset.",
+                     "tested-by":  "flow-trycatch.ahk"
+                 },
+                 {
                      "category":  "Collections",
                      "feature":  "Array",
                      "syntax":  "",
@@ -5031,8 +5042,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Built-in error class.",
-                     "tested-by":  "collections-array.ahk"
+                     "notes":  "Built-in error class. What, File, Line and Stack are recorded when it is constructed, and its properties are own value properties, as in AutoHotkey v2.1.",
+                     "tested-by":  "collections-array.ahk; flow-trycatch.ahk; FlowTests.ForeignExceptionStack; FlowTests.ErrorDialogExcerpt; ParserTests.CompiledSources; InputSchedulerTests.ThreadNames"
                  },
                  {
                      "category":  "Core Language",
@@ -7341,7 +7352,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Built-in error class for missing keys/items.",
+                     "notes":  "Keysharp-specific Error subclass raised for a .NET KeyNotFoundException from Ks.Clr or inline C#.",
                      "tested-by":  "flow-trycatch.ahk"
                  },
                  {
@@ -7874,8 +7885,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Deletes a key/value pair out of a map if the key exists, else throws an exception.",
-                     "tested-by":  "collections-map.ahk"
+                     "notes":  "Deletes a key/value pair and returns its value. A missing key raises UnsetItemError, or returns unset in v2.1 compatibility mode.",
+                     "tested-by":  "collections-map.ahk; flow-trycatch.ahk; module-compatibility-mode.ahk"
                  },
                  {
                      "category":  "Collections",
@@ -9067,8 +9078,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Built-in error class.",
-                     "tested-by":  "external-dllcall.ahk"
+                     "notes":  "Built-in error class. OSError(Code) records the code as its own Number property and uses the operating system's message; a nonnumeric string is the Message and leaves Number unset. Without an argument, it uses the last operating-system error.",
+                     "tested-by":  "external-dllcall.ahk; flow-trycatch.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -10295,8 +10306,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Separates a file name or URL into its name, directory, extension, and drive. If all output variables are omitted, it returns an object with FileName, Dir, Extension, NameNoExt and Drive properties.",
-                     "tested-by":  "file-filesplitpath.ahk"
+                     "notes":  "Separates a file name or URL into its name, directory, extension, and drive. If all output variables are omitted, it returns an object with FileName, Dir, Extension, NameNoExt and Drive properties. An empty path sets requested outputs to empty strings, including in v2.1 compatibility mode.",
+                     "tested-by":  "file-filesplitpath.ahk; module-compatibility-mode.ahk"
                  },
                  {
                      "category":  "Core Language",

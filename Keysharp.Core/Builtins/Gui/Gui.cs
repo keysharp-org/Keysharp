@@ -2709,7 +2709,7 @@ namespace Keysharp.Builtins
 
 			var msg = (int)msgNumber.Al();
 			messageHandlers ??= new();
-			_ = messageHandlers.GetOrAdd(msg, static _ => new(CallbackStop.NonEmpty)).ModifyEventHandlers(del, addremove);
+			_ = messageHandlers.GetOrAdd(msg, static _ => new(CallbackStop.NonEmpty, "Gui")).ModifyEventHandlers(del, addremove);
 #if !WINDOWS
 
 			//Pointer motion is only watched for while something is listening; see SyncMotionHooks().

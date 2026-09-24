@@ -823,12 +823,12 @@ namespace Keysharp.Builtins
 
 			var registry = e switch
 			{
-				"close" => closedHandlers ??= new(CallbackStop.NonEmpty),
-				"contextmenu" => contextMenuChangedHandlers ??= new(CallbackStop.NonEmpty),
-				"dropfiles" => dropFilesHandlers ??= new(CallbackStop.NonEmpty),
-				"dpichanged" => dpiChangeHandlers ??= new(CallbackStop.NonEmpty),
-				"escape" => escapeHandlers ??= new(CallbackStop.NonEmpty),
-				_ => sizeHandlers ??= new(CallbackStop.NonEmpty)
+				"close" => closedHandlers ??= new(CallbackStop.NonEmpty, "Gui"),
+				"contextmenu" => contextMenuChangedHandlers ??= new(CallbackStop.NonEmpty, "Gui"),
+				"dropfiles" => dropFilesHandlers ??= new(CallbackStop.NonEmpty, "Gui"),
+				"dpichanged" => dpiChangeHandlers ??= new(CallbackStop.NonEmpty, "Gui"),
+				"escape" => escapeHandlers ??= new(CallbackStop.NonEmpty, "Gui"),
+				_ => sizeHandlers ??= new(CallbackStop.NonEmpty, "Gui")
 			};
 
 			_ = registry.ModifyEventHandlers(del, i);

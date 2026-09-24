@@ -69,6 +69,7 @@ public sealed class CompilerComponent : IScriptCompiler
 		private readonly ScriptCompileRequest request;
 		private readonly string runtimeDirectory;
 		private readonly ScriptCompilationResult compilation;
+		private string compiledCode;
 
 		internal CompilationResult(ScriptCompileRequest request, string runtimeDirectory, byte[] bytes, string text,
 			ScriptCompilationResult compilation)
@@ -85,6 +86,7 @@ public sealed class CompilerComponent : IScriptCompiler
 		public bool Success => AssemblyBytes != null;
 		public byte[] AssemblyBytes { get; }
 		public string GeneratedCode { get; }
+		public string CompiledCode => Success ? compiledCode ??= PrettyPrinter.Print(compilation.Unit, locations: true) : null;
 		public string ErrorText { get; }
 		public string WarningText => compilation?.Warnings;
 		public string InlineCode => compilation?.InlineCode;

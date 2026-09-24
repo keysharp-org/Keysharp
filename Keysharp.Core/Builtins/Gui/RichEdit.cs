@@ -1027,7 +1027,7 @@ namespace Keysharp.Builtins
 			{
 				var link = e == "linkclick";
 				ref var hub = ref link ? ref linkClickHandlers : ref selectionChangeHandlers;
-				hub ??= new(CallbackStop.NonEmpty);
+				hub ??= new(CallbackStop.NonEmpty, "Gui");
 				_ = hub.ModifyEventHandlers(del, addRemove);
 
 				if (addRemove == 0 || Rt is not { } rt)

@@ -978,7 +978,7 @@ internal bool HasBlockedQueuedWork
 							btv.eventInfo = callback;
 							_ = Script.InvokeOrNull(callback, null);
 						}
-						catch (Exception ex)
+						catch (Exception ex) when (CallStack.Remember(ex))
 						{
 							_ = Errors.ReportUncaught(ex);
 						}

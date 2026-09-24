@@ -81,10 +81,12 @@ Described(_err) => Type(_err) . ": " . _err.Message . " [" . _err.Extra . "]"
 ; error.
 AssertError(_cb, _expected, _line?)
 {
+	_described := "none"
+
 	try
 		_cb()
 	catch Any as _err
-		return AssertEq(Described(_err), _expected, _line?)
+		_described := Described(_err)
 
-	AssertEq("none", _expected, _line?)
+	AssertEq(_described, _expected, _line?)
 }

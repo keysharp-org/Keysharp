@@ -369,8 +369,8 @@ reqErr := ""
 try
 	f3(c: "Z")
 catch as e
-	reqErr := e.Message
-Assert(InStr(reqErr, "'a'") && InStr(reqErr, "required"), A_LineNumber)
+	reqErr := Described(e)
+AssertEq(reqErr, "ArgumentError: Missing a required parameter. [a]", A_LineNumber)
 
 ; ---------------------------------------------------------------- non-ASCII identifiers
 ; The emitted C# parameter is lower-cased and matched case-insensitively, which works for identifiers

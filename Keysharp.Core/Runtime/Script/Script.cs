@@ -190,7 +190,7 @@ namespace Keysharp.Runtime
 		[ThreadStatic]
 		private static bool currentCompatibilityReturnsUnsetByDefault;
 		internal Semver.SemVersion CurrentCompatibilityVersion => currentCompatibilityVersion ?? DefaultCompatibilityVersion;
-		internal CallbackRegistry ClipFunctions = new();
+		internal CallbackRegistry ClipFunctions = new(threadName: "OnClipboardChange");
 		internal List<object> hotCriterions = [];
 		internal List<object> hotExprs = [];
 		internal InputType input;
@@ -252,7 +252,7 @@ namespace Keysharp.Runtime
 		internal int pendingMsgBoxShows;
 #endif
 		internal CallbackRegistry onErrorHandlers = new();
-		internal CallbackRegistry onExitHandlers = new();
+		internal CallbackRegistry onExitHandlers = new(threadName: "OnExit");
 		private Icon _normalIcon = null;
 		public Icon normalIcon
 		{
@@ -342,7 +342,6 @@ namespace Keysharp.Runtime
 		internal string thisHotkeyName, priorHotkeyName;
 		internal DateTime thisHotkeyStartTime;
 		internal ThreadLocal<Threads> threads;
-		internal readonly ThreadLocal<ModuleData> moduleData = new ();
 		internal DateTime timeLastInputKeyboard;
 		internal DateTime timeLastInputMouse;
 		internal DateTime timeLastInputPhysical = DateTime.UtcNow;
@@ -974,45 +973,18 @@ namespace Keysharp.Runtime
 			return string.Join(' ', hs);
 		}
 
-		public ModuleData ModuleData
-		{
-			get
-			{
-				if (moduleData.Value == null)
-				{
-					var defaultType = Vars?.DefaultModuleType;
-					if (defaultType != null)
-					{
-						moduleData.Value = ModuleData.GetOrCreate(defaultType);
-						SetCurrentCompatibilityVersion(moduleData.Value.CompatibilityVersion);
-					}
-				}
+		public ModuleData ModuleData => CallStack.Current.ModuleOrDefault(this);
 
-				return moduleData.Value;
-			}
-		}
+		private string[] sourceFiles;
+		private string[][] sourceLines;
 
-		public Type CurrentModuleType
-		{
-			get => ModuleData?.ModuleType;
-			set
-			{
-				if (value == null)
-				{
-					moduleData.Value = null;
-					SetCurrentCompatibilityVersion(null);
-					return;
-				}
-				else if (ModuleData?.ModuleType == value)
-					return;
+		/// <summary>The files a call stack location's file index names, the main script first.</summary>
+		internal string[] SourceFiles => sourceFiles ??= ProgramType?.GetCustomAttribute<SourceFilesAttribute>()?.Files ?? [];
 
-				if (!typeof(Keysharp.Runtime.Module).IsAssignableFrom(value))
-					return;
+		/// <summary>The lines of each of those files, when the script was compiled to run from its source.</summary>
+		internal string[][] SourceLines => sourceLines ??= SourceText.Lines(ProgramType?.Assembly);
 
-				moduleData.Value = ModuleData.GetOrCreate(value);
-				SetCurrentCompatibilityVersion(moduleData.Value.CompatibilityVersion);
-			}
-		}
+		public Type CurrentModuleType => ModuleData?.ModuleType;
 
 		internal static bool ReturnsUnsetByDefault(Semver.SemVersion version) =>
 			version?.Major > 2 || (version?.Major == 2 && version.Minor >= 1);
@@ -1856,6 +1828,7 @@ namespace Keysharp.Runtime
 			// the options that distinguish between (for example) :c:ahk:: and ::ahk::
 			thisHotkeyName = name;
 			thisHotkeyStartTime = DateTime.UtcNow; // Fixed for v1.0.35.10 to not happen for GUI
+			CallStack.Current.NameThread(name);
 		}
 
 		private HookThread CreateHookThread(string mutexName)

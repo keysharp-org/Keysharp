@@ -297,6 +297,7 @@ Status legend:
 | and | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical AND operator. |
 | Any | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Special type value that can match any type. |
 | App | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The running application as a class: Name, Title, Description, Configuration, Company, Product, Copyright, Trademark and Version report the assembly metadata the matching #App key sets, CommandLine reports the process command line, and ExitReason/ExitCode report an exit in progress to code that is not an OnExit callback. Every member is read-only, and an undeclared key reads as an empty string in both compatibility modes. Replaces the removed A_Assembly*, A_CommandLine and A_HasExited variables. |
+| ArgumentError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Error subclass raised when a call omits a required parameter or passes it as unset. |
 | Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ordered collection object. |
 | Array.__Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enumerates array elements. |
 | Array.__Item | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer property for getting or setting array elements. |
@@ -494,7 +495,7 @@ Status legend:
 | EnvGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the value of the specified environment variable if it exists, else it returns an empty string. |
 | EnvSet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the specified environment variable to the specified value. Using a value of null deletes the variable. |
 | EnvUpdate() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Windows broadcasts WM_SETTINGCHANGE. Linux publishes pending EnvSet changes to the D-Bus activation environment and systemd user manager; D-Bus deletions become empty values because its update API cannot unset them. macOS publishes pending changes to the current launchd session. Existing processes are unchanged and these updates are not persistent. |
-| Error | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
+| Error | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. What, File, Line and Stack are recorded when it is constructed, and its properties are own value properties, as in AutoHotkey v2.1. |
 | EventHook | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ks base class of WinEvent, MonitorHook, ClipboardHook, Audio.DeviceHook, Clr.EventSubscription and InputHook. A running hook lasts until Stop(), its thread ending or script exit, and only WinEvent, ClipboardHook and InputHook keep the script running. |
 | EventHook.EndReason | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | "" while the hook runs; otherwise "Stopped" (Stop() or never started), "Exit" (its thread or the script ended) or "Failed" (the event source could not be installed). |
 | EventHook.InProgress | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | 1 while the hook runs; 0 before its first Start() and after it ends. |
@@ -746,7 +747,7 @@ Status legend:
 | IsXDigit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a string contains only hexadecimal digits. |
 | Json | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Encodes script values as JSON and decodes JSON into script values. Indent pretty-prints, CaseSense sets the key comparison of every decoded Map, and a JSON null decodes to unset unless NullValue names a stand-in for it. A Boolean is written as true/false where the Integer 1 is written as 1. |
 | Keyboard/Mouse send (synthetic input) | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Requires platform permissions on macOS. |
-| KeyError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class for missing keys/items. |
+| KeyError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Error subclass raised for a .NET KeyNotFoundException from Ks.Clr or inline C#. |
 | KeyHistory() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Displays script info and a history of the most recent keystrokes and mouse clicks. MaxEvents must be from 0 through 500; another value raises ValueError. |
 | KeyWait() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The KeyWait function waits for a key or mouse/controller button to be released or pressed down. |
 | ListHotkeys() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The ListHotkeys function displays the hotkeys in use by the current script, whether their subroutines are currently running, and whether they use a hook. |
@@ -792,7 +793,7 @@ Status legend:
 | Map.Clone() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a shallow copy of all of the values and keys of the map. |
 | Map.Count | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Number of key/value pairs in the map. |
 | Map.Default | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default value returned for missing keys. |
-| Map.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes a key/value pair out of a map if the key exists, else throws an exception. |
+| Map.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes a key/value pair and returns its value. A missing key raises UnsetItemError, or returns unset in v2.1 compatibility mode. |
 | Map.Get() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets a value by key with optional fallback default. |
 | Map.Has() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a dictionary contains a value, even an empty one, for the given key. |
 | Map.Set() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets zero or more items. |
@@ -893,7 +894,7 @@ Status legend:
 | Operator overloads | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Fixed instance and static symbolic operators for classes and structs, with separate unary/binary slots and inheritance. Equality pairs must be declared together in the same class and scope. ?() converts its result recursively; ++()/--() fall back to +1/-1. No dynamic replacement or right-operand fallback. Native numeric paths and short-circuit semantics are preserved. |
 | or | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical OR operator. |
 | Ord() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the numeric two byte unicode value for the first character in a string. This differs from V2 in that it also takes an optional second parameter which specified the 1-based index in the string to return the numeric value for, rather than only doing it for the first character. |
-| OSError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
+| OSError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. OSError(Code) records the code as its own Number property and uses the operating system's message; a nonnumeric string is the Message and leaves Number unset. Without an argument, it uses the last operating-system error. |
 | OutputDebug() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The OutputDebug function sends a string to the debugger (if any) for display. Ks.OutputDebugLine additionally takes a flag to clear the debug output. |
 | OutputDebugLine() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a debug line with newline terminator. |
 | Overlay | 🟢 Full | 🟢 Full | 🟡 Partial | ⚪ Unknown | Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. Pointer event callbacks are owned by the registering real thread, as for Gui.OnEvent, and require ClickThrough := false. On GNOME/Cinnamon a click-through overlay is drawn inside the shell, so it is not a window and takes no taskbar entry; frames are transferred as bounded PNG data. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS. |
@@ -989,7 +990,7 @@ Status legend:
 | SoundPlay() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Plays a sound file. The "*n" standard-sound syntax (*-1, *16, *32, *48, *64) works on every platform: Windows passes the number to MessageBeep, Linux uses the freedesktop sound theme and macOS /System/Library/Sounds, the latter two falling back to a synthesized beep when the desktop ships no such sound. Windows plays via MCI, so any format with an installed codec works (.wav, .mp3, .avi, ...); MCI limits paths to roughly 127 characters. macOS uses afplay (wav/aiff/caf/mp3/m4a). Linux picks the best installed player for the file type - paplay or aplay for uncompressed/libsndfile formats, otherwise ffplay, mpv, gst-play-1.0 or mpg123 - and raises an error naming them if none is present. On every platform, starting a new file stops the previous one, SoundPlay on a nonexistent file stops playback and raises, and playback stops when the script exits. |
 | SoundSetMute() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟢 Full | Changes a mute setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated 'Sound APIs'; per-function validation pending. |
 | SoundSetVolume() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟢 Full | Changes a volume setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated 'Sound APIs'; per-function validation pending. |
-| SplitPath() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Separates a file name or URL into its name, directory, extension, and drive. If all output variables are omitted, it returns an object with FileName, Dir, Extension, NameNoExt and Drive properties. |
+| SplitPath() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Separates a file name or URL into its name, directory, extension, and drive. If all output variables are omitted, it returns an object with FileName, Dir, Extension, NameNoExt and Drive properties. An empty path sets requested outputs to empty strings, including in v2.1 compatibility mode. |
 | Sqrt() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the square root of a number. Throws an exception if the argument is negative. |
 | StatusBarGetText() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves text from a native Win32 status bar control. No non-Windows status-bar accessibility backend is implemented. |
 | StatusBarWait() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Waits for native Win32 status-bar text and depends on StatusBarGetText; no non-Windows status-bar accessibility backend is implemented. |

@@ -1468,7 +1468,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				{
 					return EvaluateCriterion(script, criterion, criterionType, hotkeyName, eventInfo);
 				}
-				catch (Exception ex)
+				catch (Exception ex) when (CallStack.Remember(ex))
 				{
 					ReportCriterionError(script, ex);
 					return 0L;
@@ -1532,6 +1532,8 @@ namespace Keysharp.Internals.Input.Keyboard
 				script.Threads.EnsureCurrentThreadVariables();
 				var tv = script.Threads.CurrentThread;
 				var oldEventInfo = tv.eventInfo;
+				var stack = CallStack.Current;
+				var depth = stack.PushBoundary("#HotIf");
 				try
 				{
 					tv.eventInfo = eventInfo;
@@ -1553,6 +1555,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				}
 				finally
 				{
+					stack.Pop(depth);
 					tv.eventInfo = oldEventInfo;
 				}
 			}
@@ -2425,7 +2428,7 @@ namespace Keysharp.Internals.Input.Keyboard
 						_ = Interlocked.Decrement(ref binding.ExistingThreads);
 					}
 				}
-				catch (Exception ex)
+				catch (Exception ex) when (CallStack.Remember(ex))
 				{
 					_ = Errors.ReportUncaught(ex);
 				}

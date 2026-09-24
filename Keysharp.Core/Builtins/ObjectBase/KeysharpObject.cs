@@ -95,14 +95,9 @@ namespace Keysharp.Builtins
 				return dynProp.GetDesc();
 			}
 
-			try
-			{
-				var val = Script.GetPropertyValue(obj, nameVal);
+			// Read without raising: an error raised and caught here would already have reached OnError.
+			if (Script.GetPropertyValueOrNull(obj, nameVal) is { } val)
 				return KeysharpObject.staticCall(TheScript.Vars.Statics[typeof(KeysharpObject)], ["value", val]);
-			}
-			catch
-			{
-			}
 
 			return Script.CompatReturnsUnsetForMissing ? null
 				: Errors.PropertyErrorOccurred($"Object did not have an OwnProp named {nameVal}.");

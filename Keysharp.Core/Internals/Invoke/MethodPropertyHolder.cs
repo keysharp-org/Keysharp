@@ -22,10 +22,51 @@ namespace Keysharp.Internals.Invoke
 			return (inst, args) =>
 			{
 				var ctrl = (inst ?? args[0]).GetControl();
-				object ret = null;
-				ctrl.CheckedInvoke(() => { ret = del(inst, args); }, true);
-				return ret;
+				var caller = CallStack.Current;
+				var callerThread = Environment.CurrentManagedThreadId;
+				var compatibility = TheScript.CurrentCompatibilityVersion;
+				return ctrl.CheckedInvoke(() => Environment.CurrentManagedThreadId == callerThread
+					? del(inst, args)
+					: CallStack.InvokeIn(caller.Copy(), compatibility, del, inst, args), true);
 			};
+		}
+
+		// Frames name their function by this id rather than by reference, so a push needs no GC write barrier.
+		private static MethodPropertyHolder[] registry = new MethodPropertyHolder[256];
+		private static int registered;
+		private static readonly object registryLock = new();
+
+		/// <summary>This function's id in call stack frames; 0 for a holder that is never called through a frame.</summary>
+		internal readonly int Id;
+
+		/// <summary>Whether this is declared in a script's module, whose module and compatibility version it runs under.</summary>
+		internal readonly bool InScriptModule;
+
+		/// <summary>Whether this is a script function, which records its locations in its frame, rather than a builtin.</summary>
+		internal readonly bool IsScript;
+
+		internal static MethodPropertyHolder FromId(int id)
+		{
+			var all = Volatile.Read(ref registry);
+			return (uint)id < (uint)all.Length ? all[id] : null;
+		}
+
+		private static int Register(MethodPropertyHolder holder)
+		{
+			lock (registryLock)
+			{
+				var id = ++registered;
+
+				if (id >= registry.Length)
+				{
+					var grown = new MethodPropertyHolder[registry.Length * 2];
+					System.Array.Copy(registry, grown, registry.Length);
+					Volatile.Write(ref registry, grown);
+				}
+
+				registry[id] = holder;
+				return id;
+			}
 		}
 
 		internal MemberInfo memberInfo => ((MemberInfo)mi ?? pi) ?? fi;
@@ -285,7 +326,7 @@ namespace Keysharp.Internals.Invoke
 			return scan;
 		}
 
-		private string ScriptParameterName(ParameterInfo parameter)
+		internal string ScriptParameterName(ParameterInfo parameter)
 		{
 			var declared = parameter.GetCustomAttribute<Keysharp.Runtime.UserDeclaredNameAttribute>()?.Name;
 			var name = declared ?? parameter.Name ?? "";
@@ -411,6 +452,12 @@ namespace Keysharp.Internals.Invoke
 			mi = m;
 			compatibilityVersion = mi.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>()?.Version;
 			moduleType = ResolveModuleType(mi.DeclaringType);
+			// Ks and Ahk derive from Module so #import has something to bind against, but their members are builtins.
+			InScriptModule = moduleType != null && moduleType.Assembly != typeof(Keysharp.Runtime.Module).Assembly;
+			var inlineMarked = MethodPropertyHolder.IsInlineBoundary(mi);
+			// A script's inline C# records no locations, so on the call stack it is a builtin.
+			IsScript = InScriptModule && !inlineMarked;
+			Id = Register(this);
 
             IsStatic = mi.IsStatic;
 			IsStaticFunc = mi.Attributes.HasFlag(MethodAttributes.Static);
@@ -424,7 +471,6 @@ namespace Keysharp.Internals.Invoke
 
 			parameters = mi.GetParameters();
 			ParamLength = parameters.Length;
-			var inlineMarked = MethodPropertyHolder.IsInlineBoundary(mi);
 
 			// Determine if the method is a set_Item overload.
 			isSetter = mi.Name.StartsWith(setterPrefix) || mi.Name.StartsWith(classSetterPrefix);
@@ -746,31 +792,17 @@ namespace Keysharp.Internals.Invoke
 			if (mph.fi != null)
 				return CreateFieldDelegate(mph);
 
-			var mi = mph.mi ?? throw new ArgumentNullException(nameof(mph.mi));
-			var ps = mph.parameters;
 			var isInstance = !mph.IsStatic;
 			var isCompilerGenerated = mph.IsCompilerGenerated;
 			var isVariadic = mph.IsVariadic;
-			int paramCount = ps.Length;
-
-			// Precompute "soft optional" + boxed defaults once.
-			var isSoft = new bool[paramCount];
-			var defaults = new object[paramCount];
-
-			for (int i = 0; i < paramCount; i++)
-			{
-				// Treat the final "value" of any setter (including set_Item) as soft-optional
-				bool soft =
-					ps[i].IsOptional ||
-					ps[i].HasDefaultValue ||
-					(mph.isSetter && i == paramCount - 1);
-
-				isSoft[i] = soft;
-				defaults[i] = soft ? MaterializeDefault(ps[i]) : null;
-			}
 
 			// The core reads fixed arguments directly and constructs only the final variadic tail.
-			var core = CompileCore(mi, ps, isSoft, defaults, mph.variadicParamIndex, mph.isItemSetter);
+			var core = CompileCore(mph);
+			var id = mph.Id;
+			// A script function runs under its own module and compatibility version; a builtin keeps its caller's.
+			var module = mph.InScriptModule ? ModuleData.GetOrCreate(mph.moduleType) : null;
+			var compatibility = mph.compatibilityVersion;
+			var scoped = module != null || compatibility != null;
 
 			return NormalInvoke;
 
@@ -807,34 +839,75 @@ namespace Keysharp.Internals.Invoke
 					else break;
 				}
 
-				if (provided < mph.MinParams)
-					throw new ValueError($"Too few arguments provided for function {mph.QualifiedName}");
+				// As AutoHotkey reports them: a builtin given too few arguments names itself, while a script function names
+				// the first parameter it lacks, which binding the arguments finds.
+				if (provided < mph.MinParams && !mph.IsScript)
+					throw new ArgumentError("Too few parameters passed to function.", null, mph.QualifiedName);
 
 				if (!isVariadic && provided > mph.MaxParams)
-					throw new ValueError($"Too many arguments provided for function {mph.QualifiedName}");
+					throw new Error("Too many parameters passed to function.", null, mph.QualifiedName);
 
 				// A negative start supplies static parameter zero through target; positive start skips a CLR receiver.
+				object target;
+				int start;
+
 				if (isInstance && instance == null)
 				{
 					if (args.Length == 0)
-						throw new ValueError($"Too few arguments provided for function {mph.QualifiedName}");
-					return core(args[0], args, 1);
+						throw new ArgumentError("Too few parameters passed to function.", null, mph.QualifiedName);
+					(target, start) = (args[0], 1);
+				}
+				else
+					(target, start) = (instance, !isInstance && instance != null ? -1 : 0);
+
+				// The frame goes on once the argument count is accepted, so a count error is the caller's, as in AutoHotkey.
+				var stack = CallStack.Current;
+				var depth = stack.Push(id);
+				ModuleData previousModule = null;
+				Semver.SemVersion previousCompatibility = null;
+				var switched = false;
+
+				if (scoped)
+				{
+					previousModule = stack.ModuleOrDefault(TheScript);
+					switched = module != null && !ReferenceEquals(previousModule, module);
+					previousCompatibility = switched || compatibility != null ? TheScript.CurrentCompatibilityVersion : null;
+
+					if (switched)
+						stack.Module = module;
+
+					if (switched || compatibility != null)
+						TheScript.SetCurrentCompatibilityVersion(compatibility ?? module.CompatibilityVersion);
 				}
 
-				return core(instance, args, !isInstance && instance != null ? -1 : 0);
+				try
+				{
+					return core(target, args, start);
+				}
+				catch (Exception ex) when (CallStack.Remember(ex))
+				{
+					throw;
+				}
+				finally
+				{
+					stack.Pop(depth);
+
+					if (switched)
+						stack.Module = previousModule;
+					if (previousCompatibility != null)
+						TheScript.SetCurrentCompatibilityVersion(previousCompatibility);
+				}
 			};
 		}
 
 		// ----------------- Expression core -----------------
 
-		private static Func<object, object[], int, object> CompileCore(
-			MethodInfo mi,
-			ParameterInfo[] ps,
-			bool[] isSoft,
-			object[] defaults,
-			int variadicParamIndex,
-			bool isItemSetter)
+		private static Func<object, object[], int, object> CompileCore(MethodPropertyHolder holder)
 		{
+			var mi = holder.mi ?? throw new ArgumentNullException(nameof(holder.mi));
+			var ps = holder.parameters;
+			var variadicParamIndex = holder.variadicParamIndex;
+			var isItemSetter = holder.isItemSetter;
 			var pTarget = Expression.Parameter(typeof(object), "target");
 			var pArgs = Expression.Parameter(typeof(object[]), "args");
 			var pStart = Expression.Parameter(typeof(int), "start");
@@ -850,7 +923,8 @@ namespace Keysharp.Internals.Invoke
 				if (i == variadicParamIndex)
 				{
 					a[i] = Expression.Convert(Expression.Call(typeof(DelegateFactory), nameof(PackVariadic), null,
-						pTarget, pArgs, pStart, Expression.Constant(i), Expression.Constant(ps.Length), Expression.Constant(isItemSetter)), ps[i].ParameterType);
+						pTarget, pArgs, pStart, Expression.Constant(i), Expression.Constant(ps.Length), Expression.Constant(isItemSetter),
+						Expression.Constant(holder.Id), Expression.Constant(holder.IsScript ? holder.ScriptParameterName(ps[^1]) : "")), ps[i].ParameterType);
 					continue;
 				}
 
@@ -864,31 +938,15 @@ namespace Keysharp.Internals.Invoke
 				if (mi.IsStatic && (i == 0 || tailValue))
 					valOrNull = Expression.Condition(Expression.Equal(idx, Expression.Constant(-1)), pTarget, valOrNull);
 
-				Expression chosen;
-				if (isSoft[i])
-				{
-					chosen = Expression.Condition(
-						Expression.Equal(valOrNull, Expression.Constant(null, typeof(object))),
-						Expression.Constant(defaults[i], typeof(object)),
-						valOrNull);
-				}
-				else
-				{
-					// Throw for non-optional missing/null via a C# helper rather than Expression.Throw.
-					// An expression-tree throw emits a raw IL throw that bypasses the user-defined Error->Exception
-					// operator, so the CLR would wrap the non-Exception Error in a RuntimeWrappedException. Going
-					// through ThrowMissingArgument() lets the C# compiler apply the operator normally; the resulting
-					// KeysharpException carries the ArgumentError as its UserError and surfaces as a normal Keysharp error.
-					// The 1-based position and parameter name are baked in per slot so the message points at the culprit.
-					var throwArgErr = Expression.Call(throwMissingArgumentMethod,
-						Expression.Constant(i + 1),
-						Expression.Constant(ps[i].Name, typeof(string)));
-
-					chosen = Expression.Condition(
-						Expression.Equal(valOrNull, Expression.Constant(null, typeof(object))),
-						throwArgErr,
-						valOrNull);
-				}
+				// An optional parameter, or a setter's final value (set_Item's too), takes its default when missing; a required
+				// one throws, naming the parameter only for a script function, as AutoHotkey does.
+				var soft = ps[i].IsOptional || ps[i].HasDefaultValue || holder.isSetter && i == ps.Length - 1;
+				Expression chosen = Expression.Condition(
+					Expression.Equal(valOrNull, Expression.Constant(null, typeof(object))),
+					soft ? (Expression)Expression.Constant(MaterializeDefault(ps[i]), typeof(object))
+						: Expression.Call(throwMissingArgumentMethod, Expression.Constant(holder.Id),
+							Expression.Constant(holder.IsScript ? holder.ScriptParameterName(ps[i]) : "")),
+					valOrNull);
 
 				if (ps[i].IsDefined(typeof(Keysharp.Runtime.ByRefAttribute), false))
 				{
@@ -937,7 +995,7 @@ namespace Keysharp.Internals.Invoke
 						   Expression.Convert(body, typeof(object)),
 						   Expression.Catch(ex,
 											Expression.Call(typeof(Keysharp.Runtime.Script), nameof(Keysharp.Runtime.Script.MapInlineError),
-															[typeof(object)], ex, Expression.Constant(mi.Name))));
+															[typeof(object)], ex, Expression.Constant(holder.QualifiedName is { Length: > 0 } name ? name : mi.Name))));
 			}
 
 			return Expression.Lambda<Func<object, object[], int, object>>(body, pTarget, pArgs, pStart)
@@ -945,10 +1003,11 @@ namespace Keysharp.Internals.Invoke
 		}
 
 		// Preserve explicit packed arrays, but never rewrite the caller's slots while collecting a tail.
-		private static object[] PackVariadic(object target, object[] args, int start, int index, int paramCount, bool setter)
+		private static object[] PackVariadic(object target, object[] args, int start, int index, int paramCount, bool setter, int function, string valueName)
 		{
 			var count = args.Length - start;
-			if (setter && count <= index) throw new ArgumentError();
+			if (setter && count <= index)
+				return (object[])ThrowMissingArgument(function, valueName);
 			if (paramCount == 1 && start == 0) return args;
 			var offset = start + index;
 			if ((paramCount != 1 || start > 0) && count == paramCount
@@ -1005,10 +1064,14 @@ namespace Keysharp.Internals.Invoke
 			typeof(Refs).GetMethod(nameof(Refs.Demand), [typeof(object), typeof(bool), typeof(string)]);
 
 		// Thrown from the compiled core when a required parameter is missing or unset. Declared in C# (not via
-		// Expression.Throw) so the Error->Exception operator is applied and the error surfaces normally.
+		// Expression.Throw) so the Error->Exception operator is applied and the error surfaces normally. The function's
+		// body has not started, so the error is its caller's, as AutoHotkey reports it.
 		[StackTraceHidden]
-		private static object ThrowMissingArgument(int position, string name)
-			=> throw new ArgumentError($"Parameter #{position}{(string.IsNullOrEmpty(name) ? "" : $" ('{name}')")} is required but was omitted or unset.");
+		private static object ThrowMissingArgument(int function, string name)
+		{
+			CallStack.Current.PopUnstarted(function);
+			throw new ArgumentError("Missing a required parameter.", null, name);
+		}
 	}
 
 #if !INTERNALDEBUG

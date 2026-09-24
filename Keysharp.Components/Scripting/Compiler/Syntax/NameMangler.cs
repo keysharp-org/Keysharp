@@ -98,7 +98,8 @@ namespace Keysharp.Compilation.Syntax
 			return $"{Keywords.StaticLocalFieldPrefix}{funcKey.Length}_{funcKey}_{varName.ToLowerInvariant()}";
 		}
 
-		/// <summary>Escapes a C# (contextual) keyword by prefixing '@' (e.g. <c>class</c> -> <c>@class</c>). Non-ASCII
+		/// <summary>Escapes a C# (contextual) keyword by prefixing '@' (e.g. <c>class</c> -> <c>@class</c>). Only a whole
+		/// identifier needs it: '@' is valid only at the start, and a prefixed name such as <c>FN_class</c> is no keyword. Non-ASCII
 		/// AHK identifier characters (including emoji/symbols) are emitted verbatim: the lowered syntax tree is built
 		/// programmatically so it compiles, even though the emitted C# *text* is then not directly re-parseable.</summary>
 		public static string Escape(string ident) =>

@@ -785,7 +785,7 @@ namespace Keysharp.Builtins
 
 					//Captured rather than let through, which Array.Sort would wrap in an InvalidOperationException.
 					try { value = Script.InvokeOrNull(function, null, args); }
-					catch (Exception e)
+					catch (Exception e) when (CallStack.Remember(e))
 					{
 						failure = ExceptionDispatchInfo.Capture(e);
 						return 0;

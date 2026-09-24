@@ -88,9 +88,7 @@ namespace Keysharp.CompiledMain
 		public static object AutoExecSection()
 		{
 			Keysharp.Runtime.Keyboard.HotkeyDefinition.ManifestAllHotkeysHotstringsHooks();
-			MainScript.CurrentModuleType = typeof(Program.__Main);
-			__Main.AutoExecSection();
-			MainScript.CurrentModuleType = null;
+			Keysharp.Runtime.CallStack.RunModule(typeof(Program.__Main), __Main.AutoExecSection);
 			return "";
 		}
 	}

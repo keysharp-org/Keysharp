@@ -100,6 +100,10 @@ class Meas
     public long WriteOnly { private get; set; } = 22;
 
     public long InitOnly { get; init; } = 23;
+
+    public string Label { get; set; } = "";
+
+    public object Fail() => throw new System.ArgumentException("class-member-failure");
     #EndCSharp
 }
 
@@ -215,17 +219,29 @@ Assert(moduleGetFailed, A_LineNumber)
 
 ; Class-body members cross the same boundary: an instance property and a [receiver] method.
 m := Meas()
+m.Label := 5
+AssertEq(m.Label, "5", A_LineNumber)
+m.Label := A_IsSuspended
+AssertEq(m.Label, "0", A_LineNumber)
+try
+    memberLine := A_LineNumber, m.Fail()
+catch ValueError as e
+{
+    AssertEq(e.What, "Meas.Prototype.Fail", A_LineNumber)
+    AssertEq(e.Line, memberLine, A_LineNumber)
+    Assert(InStr(e.Stack, "[" e.What "]"), A_LineNumber)
+}
 AssertEq(m.Taken.Year, 2021, A_LineNumber)
 AssertEq(m.Tags().Count, 2, A_LineNumber)
 AssertEq(m.Tags()[0], "t1", A_LineNumber)
 AssertEq(m.Locked, 21, A_LineNumber)
 
-classSetFailed := false
+classSetFailed := ""
 try
     m.Locked := 99
-catch PropertyError
-    classSetFailed := true
-Assert(classSetFailed, A_LineNumber)
+catch as e
+    classSetFailed := Described(e)
+AssertEq(classSetFailed, "Error: Property is read-only. [Locked]", A_LineNumber)
 
 m.WriteOnly := 25
 classGetFailed := false
@@ -236,12 +252,12 @@ catch Error
 Assert(classGetFailed, A_LineNumber)
 
 AssertEq(m.InitOnly, 23, A_LineNumber)
-initSetFailed := false
+initSetFailed := ""
 try
     m.InitOnly := 99
-catch PropertyError
-    initSetFailed := true
-Assert(initSetFailed, A_LineNumber)
+catch as e
+    initSetFailed := Described(e)
+AssertEq(initSetFailed, "Error: Property is read-only. [InitOnly]", A_LineNumber)
 
 ; A Map is itself a CLR IDictionary, so a member declaring one receives the live map, not a copy.
 dict := Map("a", 1, "b", 2)

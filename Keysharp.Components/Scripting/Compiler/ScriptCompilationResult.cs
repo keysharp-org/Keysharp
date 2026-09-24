@@ -34,6 +34,9 @@ namespace Keysharp.Compilation
 
 		internal PackageManifest Packages { get; set; }
 
+		/// <summary>The text of each source file by file index, which a compile that is about to run embeds; null otherwise.</summary>
+		internal IReadOnlyList<string> SourceTexts { get; set; }
+
 		/// <summary>Formatted script and inline-C# warnings.</summary>
 		public string Warnings { get; internal set; }
 

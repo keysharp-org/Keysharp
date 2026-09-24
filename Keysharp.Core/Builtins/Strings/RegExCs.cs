@@ -52,7 +52,7 @@ namespace Keysharp.Builtins
 						}
 						catch (Exception ex)
 						{
-							return (long)Errors.ErrorOccurred("Regular expression compile error", "", ex.Message, DefaultErrorLong);
+							return (long)Errors.ErrorOccurred("Regular expression compile error", null, ex.Message, DefaultErrorLong);
 						}
 
 						exp.tag = str;
@@ -82,7 +82,7 @@ namespace Keysharp.Builtins
 				}
 				catch (Exception ex)
 				{
-					return (long)Errors.ErrorOccurred("Regular expression execution error", "", ex.Message, DefaultErrorLong);
+					return (long)Errors.ErrorOccurred("Regular expression execution error", null, ex.Message, DefaultErrorLong);
 				}
 			}
 
@@ -147,7 +147,7 @@ namespace Keysharp.Builtins
 						}
 						catch (ArgumentException ex)
 						{
-							return (string)Errors.ErrorOccurred("Regular expression compile error", "", ex.Message, DefaultErrorString);
+							return (string)Errors.ErrorOccurred("Regular expression compile error", null, ex.Message, DefaultErrorString);
 						}
 
 						exp.tag = str;
@@ -185,7 +185,7 @@ namespace Keysharp.Builtins
 				}
 				catch (Exception ex)
 				{
-					return (string)Errors.ErrorOccurred("Regular expression execution error", "", ex.Message, DefaultErrorString);
+					return (string)Errors.ErrorOccurred("Regular expression execution error", null, ex.Message, DefaultErrorString);
 				}
 			}
 		}

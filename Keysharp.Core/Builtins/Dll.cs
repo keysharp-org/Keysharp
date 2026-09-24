@@ -110,7 +110,7 @@ namespace Keysharp.Builtins
 			}
 			catch (Exception ex)
 			{
-				return Errors.ErrorOccurred($"An error occurred when calling {function}(): {ex.Message}", "", "0x" + ThreadAccessors.A_LastError.ToString("X"));
+				return Errors.ErrorOccurred($"An error occurred when calling {function}(): {ex.Message}", null, "0x" + ThreadAccessors.A_LastError.ToString("X"));
 			}
 			finally
 			{

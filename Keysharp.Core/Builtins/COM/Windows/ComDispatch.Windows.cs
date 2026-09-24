@@ -364,7 +364,7 @@ namespace Keysharp.Builtins.COM
 
 				return S_OK;
 			}
-			catch (Exception ex)
+			catch (Exception ex) when (CallStack.Remember(ex))
 			{
 				//As in AutoHotkey, a caller which takes no exception information cannot pass the error on, so it is reported.
 				if (pExcepInfo == 0)

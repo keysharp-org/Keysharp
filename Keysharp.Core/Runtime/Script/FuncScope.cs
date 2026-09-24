@@ -15,8 +15,8 @@ namespace Keysharp.Runtime
 
 	/// <summary>
 	/// The variables of an executing user function, for dynamic references, A_ThisFunc, ListVars and closures resolved by
-	/// name. <see cref="Script.EnterScope"/> publishes it on the current pseudo-thread, and KeysharpFunc.Call restores the
-	/// previous one on return, so the scope visible at any point is the nearest enclosing user function's.
+	/// name. <see cref="Script.EnterScope"/> publishes it in the executing function's call stack frame, so the scope
+	/// visible at any point is the nearest enclosing user function's.
 	/// </summary>
 	public sealed class FuncScope
 	{

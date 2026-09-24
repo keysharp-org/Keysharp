@@ -355,7 +355,7 @@ namespace Keysharp.Internals
 				action();
 				return true;
 			}
-			catch (Exception mainex)
+			catch (Exception mainex) when (CallStack.Remember(mainex))
 			{
 				return Errors.ReportUncaught(mainex);
 			}

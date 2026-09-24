@@ -132,7 +132,8 @@ namespace Keysharp.Internals.Threading
 			tv.task = false;
 
 			var autoExecute = tv.kind == ThreadKind.Auto;         // read before the pop recycles the slot
-
+			var stack = CallStack.Current;
+			stack.Pop(Math.Min(stack.Depth, tv.callStackDepth));
 			PopThreadVariables(tv, checkThread);
 			var remaining = Interlocked.Decrement(ref script.totalExistingThreads);
 
@@ -181,6 +182,7 @@ namespace Keysharp.Internals.Threading
 			}
 
 			current = tv;
+			tv.callStackDepth = CallStack.Current.PushThread(kind);
 
 			//We successfully pushed—and if inc == true, we’ve already counted it
 			tv.task = true;

@@ -2015,7 +2015,7 @@ namespace Keysharp.Tests
 			{
 				Ks.A_GuiTheme = "Dark";
 				using var dialog = new ErrorDialog(
-					$"Message: test{Environment.NewLine}What: test{Environment.NewLine}Stack:{Environment.NewLine}\ttest",
+					$"Message: test{Environment.NewLine}What: test{Environment.NewLine}Stack:{Environment.NewLine}▶test",
 					allowContinue: true);
 				var mainPanel = (TableLayoutPanel)dialog.Controls[0];
 				var paddingPanel = (Panel)mainPanel.GetControlFromPosition(0, 0);

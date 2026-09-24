@@ -14,8 +14,8 @@ namespace Keysharp.Builtins
 		{
 			private string typename;
 			private WeakReference<Gui> gui;
-			private readonly CallbackRegistry clickHandlers = new(CallbackStop.NonEmpty);
-			private readonly CallbackRegistry doubleClickHandlers = new(CallbackStop.NonEmpty);
+			private readonly CallbackRegistry clickHandlers = new(CallbackStop.NonEmpty, "Gui");
+			private readonly CallbackRegistry doubleClickHandlers = new(CallbackStop.NonEmpty, "Gui");
 			internal bool DpiScaling => ((Gui)Gui).DpiScale != 1.0;
 			private Forms.Control _control;
 
@@ -166,7 +166,7 @@ namespace Keysharp.Builtins
 				else if (e == "change")
 				{
 					if (changeHandlers == null)
-						changeHandlers = new(CallbackStop.NonEmpty);
+						changeHandlers = new(CallbackStop.NonEmpty, "Gui");
 
 					changeHandlers.ModifyEventHandlers(del, i);
 				}
@@ -201,63 +201,63 @@ namespace Keysharp.Builtins
 				else if (e == "focus")
 				{
 					if (focusHandlers == null)
-						focusHandlers = new(CallbackStop.NonEmpty);
+						focusHandlers = new(CallbackStop.NonEmpty, "Gui");
 
 					focusHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "losefocus")
 				{
 					if (lostFocusHandlers == null)
-						lostFocusHandlers = new(CallbackStop.NonEmpty);
+						lostFocusHandlers = new(CallbackStop.NonEmpty, "Gui");
 
 					lostFocusHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "colclick")
 				{
 					if (columnClickHandlers == null)
-						columnClickHandlers = new(CallbackStop.NonEmpty);
+						columnClickHandlers = new(CallbackStop.NonEmpty, "Gui");
 
 					columnClickHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemcheck")
 				{
 					if (itemCheckHandlers == null)
-						itemCheckHandlers = new(CallbackStop.NonEmpty);
+						itemCheckHandlers = new(CallbackStop.NonEmpty, "Gui");
 
 					itemCheckHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemedit")
 				{
 					if (itemEditHandlers == null)
-						itemEditHandlers = new(CallbackStop.NonEmpty);
+						itemEditHandlers = new(CallbackStop.NonEmpty, "Gui");
 
 					itemEditHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemexpand")
 				{
 					if (itemExpandHandlers == null)
-						itemExpandHandlers = new(CallbackStop.NonEmpty);
+						itemExpandHandlers = new(CallbackStop.NonEmpty, "Gui");
 
 					itemExpandHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemfocus")
 				{
 					if (focusedItemChangedHandlers == null)
-						focusedItemChangedHandlers = new(CallbackStop.NonEmpty);
+						focusedItemChangedHandlers = new(CallbackStop.NonEmpty, "Gui");
 
 					focusedItemChangedHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "itemselect")
 				{
 					if (selectedItemChangedHandlers == null)
-						selectedItemChangedHandlers = new(CallbackStop.NonEmpty);
+						selectedItemChangedHandlers = new(CallbackStop.NonEmpty, "Gui");
 
 					selectedItemChangedHandlers.ModifyEventHandlers(del, i);
 				}
 				else if (e == "contextmenu")
 				{
 					if (contextMenuChangedHandlers == null)
-						contextMenuChangedHandlers = new(CallbackStop.NonEmpty);
+						contextMenuChangedHandlers = new(CallbackStop.NonEmpty, "Gui");
 
 					contextMenuChangedHandlers.ModifyEventHandlers(del, i);
 				}
@@ -305,7 +305,7 @@ namespace Keysharp.Builtins
 				if (handlers == null)
 					handlers = new();
 
-				var h = handlers.GetOrAdd((int)code, static _ => new(CallbackStop.NonEmpty));
+				var h = handlers.GetOrAdd((int)code, static _ => new(CallbackStop.NonEmpty, "Gui"));
 				h.ModifyEventHandlers(del, addremove);
 				return DefaultObject;
 			}

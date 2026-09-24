@@ -201,6 +201,29 @@ namespace Keysharp.Tests
 			Assert.AreEqual(hostTheme, s.AccessorData.guiTheme);
 		}
 
+		// Keyview's full view shows the code as compiled, while the readable lowering, which --transpile prints, leaves the
+		// location stamps out and stays parseable as C#: names that are C# keywords end up inside generated identifiers (a
+		// nested function's FN_add_1, a label's KS_lbl_fixed), where '@' is not allowed.
+		[Test]
+		public void GeneratedCode()
+		{
+			var result = new CompilerComponent().Compile(new ScriptCompileRequest
+			{
+				SourceText = "Outer() {\n\tadd(x) => x + 1\n\tlock(x) {\n\t\treturn x * 2\n\t}\n\tGoto fixed\nfixed:\n\treturn lock(add(1))\n}\nOuter()\nswitch 2 {\ncase Outer(): y := 1\n}\n",
+				CompilationName = "generated-code",
+				Output = ScriptCompilationOutput.InMemory,
+				EmitGeneratedCode = true,
+			});
+
+			Assert.IsTrue(result.Success, result.ErrorText);
+			StringAssert.Contains("KS_line", result.CompiledCode);
+			StringAssert.DoesNotContain("KS_line", result.GeneratedCode);
+			StringAssert.Contains(".Equals(", result.GeneratedCode);
+			var errors = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(result.GeneratedCode).GetDiagnostics()
+				.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error).ToList();
+			Assert.IsEmpty(errors, string.Join("\n", errors));
+		}
+
 		[Test]
 		public void DefaultRuntimeDirectory()
 		{

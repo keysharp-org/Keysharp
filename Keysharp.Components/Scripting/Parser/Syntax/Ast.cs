@@ -34,6 +34,8 @@ namespace Keysharp.Parsing.Syntax
 		public IReadOnlyCollection<string> Defines = [];
 		/// <summary>Whether an active #ErrorStdOut was encountered before parsing stopped.</summary>
 		public bool ErrorStdOut;
+		/// <summary>The text of each #included file as it was lexed, by full path.</summary>
+		public IReadOnlyDictionary<string, string> IncludedSources = new Dictionary<string, string>();
 		public ProgramNode(List<Stmt> body) => Body = body;
 	}
 

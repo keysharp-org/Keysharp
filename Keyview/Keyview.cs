@@ -2493,30 +2493,29 @@ namespace Keyview
 					EmitGeneratedCode = true,
 					AllowPackageRestore = false,
 				})).ConfigureAwait(true);
-				var code = result.GeneratedCode ?? result.ErrorText ?? "Compilation failed.";
-
 				// Show the separate inline tree without pretending the two sources form one valid C# unit.
-				if (result.InlineCode is { Length: > 0 } inlineCode)
-					code += Environment.NewLine + Environment.NewLine
-							+ "// ---- #CSharp (compiled as a separate file) ----" + Environment.NewLine + Environment.NewLine
-							+ inlineCode;
+				var inline = result.InlineCode is { Length: > 0 } inlineCode
+					? Environment.NewLine + Environment.NewLine
+					  + "// ---- #CSharp (compiled as a separate file) ----" + Environment.NewLine + Environment.NewLine
+					  + inlineCode
+					: "";
+				var code = (result.GeneratedCode ?? result.ErrorText ?? "Compilation failed.") + inline;
 
 				if (result.Success)
 				{
 					setSuccess?.Invoke((DateTime.UtcNow - startTime).TotalSeconds);
-					setFullCode(code);
 
 					// Load the compiled assembly and re-enable the Run button as soon as the script is
-					// actually runnable, before the (potentially slow) trimming and C# syntax highlighting
-					// below. Otherwise the button stays greyed out for a second or two after the compile
-					// has really finished, just while the generated code is being highlighted.
+					// actually runnable, before the (potentially slow) printing, trimming and C# syntax
+					// highlighting below. Otherwise the button stays greyed out for a second or two after the
+					// compile has really finished, just while the generated code is being highlighted.
 					_ = Assembly.Load(result.AssemblyBytes);
 					setCompiledBytes(result.AssemblyBytes);
 					enableRunButton?.Invoke();
 
-					// Trimming the generated code is pure string work over the whole file; do it on a
-					// background thread so the UI thread is not blocked between compile and display.
-					var trimmedCode = await Task.Run(() =>
+					// The full view is the code as compiled, location stamps included, and the trimmed view the readable
+					// lowering. Both are string work over the whole file, so they are built off the UI thread.
+					var (fullCode, trimmedCode) = await Task.Run(() =>
 					{
 						var token = "[System.STAThread]";
 						var start = code.IndexOf(token);
@@ -2526,12 +2525,13 @@ namespace Keyview
 						foreach (var line in display.SplitLines())
 							_ = sb.AppendLine(line.TrimNofAnyFromStart(trimstr, 2));
 
-						return sb.ToString().TrimEnd(trimend);
+						return (result.CompiledCode is { } compiled ? compiled + inline : code, sb.ToString().TrimEnd(trimend));
 					}).ConfigureAwait(true);
 
+					setFullCode(fullCode);
 					setTrimmedCode(trimmedCode);
 					beforeOutput?.Invoke();
-					setOutput?.Invoke(useFullCode() ? code : trimmedCode);
+					setOutput?.Invoke(useFullCode() ? fullCode : trimmedCode);
 					afterOutput?.Invoke();
 					writeLastRun?.Invoke();
 				}

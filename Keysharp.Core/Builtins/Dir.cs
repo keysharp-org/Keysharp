@@ -294,13 +294,13 @@ namespace Keysharp.Builtins
 			}
 			else
 			{
-				var input = p == "" ? DefaultObject : Path.GetFullPath(p);
+				var input = p == "" ? "" : Path.GetFullPath(p);
 
-				fileName?.Set(Path.GetFileName(input) ?? DefaultObject);
-				extension?.Set(Path.GetExtension(input)?.Trim('.') ?? DefaultObject);
-				nameNoExt?.Set(Path.GetFileNameWithoutExtension(input) ?? DefaultObject);
-				dir?.Set(Path.GetDirectoryName(input)?.TrimEnd('\\') ?? DefaultObject);
-				drive?.Set(Path.GetPathRoot(input)?.TrimEnd('\\') ?? DefaultObject);
+				fileName?.Set(Path.GetFileName(input));
+				extension?.Set(Path.GetExtension(input).Trim('.'));
+				nameNoExt?.Set(Path.GetFileNameWithoutExtension(input));
+				dir?.Set(Path.GetDirectoryName(input)?.TrimEnd('\\') ?? "");
+				drive?.Set(Path.GetPathRoot(input)?.TrimEnd('\\') ?? "");
 			}
 
 			return (object)result ?? DefaultObject;

@@ -1,8 +1,10 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 
 #Requires AutoHotkey v2.1-alpha
 #import Compat21 { NoReturn21, EmptyReturn21, ReturnNoReturn21, ReturnMaybeNoReturn21, PropertyNoReturn21, PropertyMaybeNoReturn21, NestedDefault20, NestedDefault21, NestedRestore21, RuntimeDefault20 }
-#import Compat20 { NoReturn20 }
+#import Compat20 { NoReturn20, OverrideAfterModuleCall }
 #import InheritMain { NoReturnInherited }
 #import ClassMode { ClassNoReturn }
 #Include <assert>
@@ -37,6 +39,9 @@ Assert(!IsSet(x), A_LineNumber)
 
 x := NoReturn20()
 Assert(IsSet(x) && x == "", A_LineNumber)
+
+; The caller's function override survives a call into another module, even when its module defaults to v2.0.
+Assert(OverrideAfterModuleCall(), A_LineNumber)
 
 threw := false
 try
@@ -161,6 +166,8 @@ Assert(threw, A_LineNumber)
 arr := [1, , 3]
 x := (arr.Get(2)?)
 Assert(!IsSet(x), A_LineNumber)
+x := (arr[2]?)
+Assert(!IsSet(x), A_LineNumber)
 
 ; An out-of-range index still throws IndexError in both modes (only absent *items* become unset).
 threw := false
@@ -178,6 +185,9 @@ x := (m.Get("nope")?)
 Assert(!IsSet(x), A_LineNumber)
 
 x := (m.Delete("nope")?)
+Assert(!IsSet(x), A_LineNumber)
+m["nope"] := unset
+x := (m["nope"]?)
 Assert(!IsSet(x), A_LineNumber)
 
 obj := {}
@@ -247,6 +257,26 @@ CallbackFree(voidCb)
 
 Assert(!IsSet(x), A_LineNumber)
 
+; An item with no value is reported by the expression reading it, naming the index as written. A fat arrow passes on a
+; call's missing value, but an item read in one still raises.
+unsetMap := Map(), unsetArray := [1, , 3]
+readHole := () => unsetArray[2]
+AssertError(() => unsetMap["k"], 'UnsetItemError: Item has no value. [["k"]]', A_LineNumber)
+AssertError(readHole, "UnsetItemError: Item has no value. [[2]]", A_LineNumber)
+
+try
+	readHole()
+catch UnsetItemError as err
+	AssertEq(err.What, "", A_LineNumber)
+
+; SplitPath gives each output variable an empty string for an empty path, as AutoHotkey v2.1 does.
+SplitPath("", &outName, &outDir, &outExtension, &outNameNoExt, &outDrive)
+AssertEq(outName?, "", A_LineNumber)
+AssertEq(outDir?, "", A_LineNumber)
+AssertEq(outExtension?, "", A_LineNumber)
+AssertEq(outNameNoExt?, "", A_LineNumber)
+AssertEq(outDrive?, "", A_LineNumber)
+
 FileAppend "pass", "*"
 
 #Module Compat21
@@ -308,7 +338,14 @@ NestedRestore21() {
 #Module Compat20
 #Requires AutoHotkey v2.1-alpha
 #Requires AutoHotkey v2.0
+#import Compat21 { NoReturn21 }
 NoReturn20() {
+}
+OverrideAfterModuleCall() {
+	#Requires AutoHotkey v2.1-alpha
+	NoReturn21()
+	x := (Map().Delete("absent")?)
+	return !IsSet(x)
 }
 
 #Module InheritMain

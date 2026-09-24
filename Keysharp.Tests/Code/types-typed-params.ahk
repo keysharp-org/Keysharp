@@ -1,5 +1,12 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
+#Import Ks { StringBuffer }
 #Include <assert>
+
+#CSharp
+public static long IdentityLong(long value) => value;
+#EndCSharp
 
 ; Regression tests for typed CLR parameters and properties reached through the dynamic-invoke path.
 ;
@@ -35,8 +42,22 @@ catch
 	Assert(false, A_LineNumber)
 
 ; -- long property, reflection-set (Map.Capacity) --------------------------------------
-; Capacity reads back rounded up to the underlying Dictionary's bucket count, so these assert a
-; floor rather than an exact value; OSError.Number below pins the arithmetic exactly.
+; Capacity reads back rounded up to the underlying Dictionary's prime bucket count, so these assert a
+; floor rather than an exact value. A fresh map set to 7.9 pins the arithmetic: 7 is prime, where a
+; value rounded up to 8 would read back as 11.
+fresh := Map()
+
+; A typed long parameter confirms truncation toward zero in the negative direction without requiring a GUI.
+AssertEq(IdentityLong(-7.9), -7, A_LineNumber)
+
+try
+{
+	fresh.Capacity := 7.9       ; Float truncates toward zero in an integer context
+	AssertEq(fresh.Capacity, 7, A_LineNumber)
+}
+catch
+	Assert(false, A_LineNumber)
+
 m := Map()
 
 try
@@ -63,13 +84,13 @@ catch TypeError
 	caught := true
 Assert(caught, A_LineNumber)
 
-; -- string property (Error.What) ------------------------------------------------------
-err := Error("msg")
+; -- string parameter (StringBuffer.Append) --------------------------------------------
+sb := StringBuffer()
 
 try
 {
-	err.What := 5
-	AssertEq(err.What, "5", A_LineNumber)
+	sb.Append(5)
+	AssertEq(String(sb), "5", A_LineNumber)
 }
 catch
 	Assert(false, A_LineNumber)
@@ -80,40 +101,12 @@ catch
 ; would render "1" either way, which is why it does not pin anything.
 try
 {
-	err.What := A_IsSuspended
-	AssertEq(err.What, "0", A_LineNumber)
+	sb.Clear()
+	sb.Append(A_IsSuspended)
+	AssertEq(String(sb), "0", A_LineNumber)
 }
 catch
 	Assert(false, A_LineNumber)
-
-; -- long property (OSError.Number) ----------------------------------------------------
-oserr := OSError(5)
-
-try
-{
-	oserr.Number := "7"
-	AssertEq(oserr.Number, 7, A_LineNumber)
-}
-catch
-	Assert(false, A_LineNumber)
-
-; truncation is toward zero, not toward negative infinity, in both directions
-try
-{
-	oserr.Number := 7.9
-	AssertEq(oserr.Number, 7, A_LineNumber)
-	oserr.Number := -7.9
-	AssertEq(oserr.Number, -7, A_LineNumber)
-}
-catch
-	Assert(false, A_LineNumber)
-
-caught := false
-try
-	oserr.Number := "nope"
-catch TypeError
-	caught := true
-Assert(caught, A_LineNumber)
 
 ; -- the packed variadic slot must NOT be coerced --------------------------------------
 ; `params object[]` members are filled by the caller before the compiled core runs; coercing

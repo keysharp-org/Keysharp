@@ -357,14 +357,15 @@ for badType in ["i32", 4] {
 #if WINDOWS
 {
     pt3 := POINT()
-    Assert(!(!DllCall("GetCursorPos", POINT.Ptr, pt3)), A_LineNumber)
+    ; The counter writes eight bytes and is available without access to an input desktop.
+    Assert(!(!DllCall("QueryPerformanceCounter", POINT.Ptr, pt3)), A_LineNumber)
 
     Assert(!(!IsNumber(pt3.x) || !IsNumber(pt3.y)), A_LineNumber)
 
     hwnd := DllCall("WindowFromPoint", POINT, pt3, "ptr")
 
     pt4 := unset
-    Assert(!(!DllCall("GetCursorPos", POINT.Ptr, &pt4)), A_LineNumber)
+    Assert(!(!DllCall("QueryPerformanceCounter", POINT.Ptr, &pt4)), A_LineNumber)
 
     Assert(!(!(pt4 is POINT)), A_LineNumber)
 
@@ -373,7 +374,7 @@ for badType in ["i32", 4] {
     pp := POINT.Ptr()
     pp.__Value := pt3
 
-    Assert(!(!DllCall("GetCursorPos", POINT.Ptr, pp)), A_LineNumber)
+    Assert(!(!DllCall("QueryPerformanceCounter", POINT.Ptr, pp)), A_LineNumber)
 
     threw := false
     try

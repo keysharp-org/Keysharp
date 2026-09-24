@@ -1125,7 +1125,7 @@ namespace Keysharp.Builtins
 
 	public class KeysharpToolStripStatusLabel : ToolStripStatusLabel
 	{
-		internal readonly CallbackRegistry doubleClickHandlers = new(CallbackStop.NonEmpty);
+		internal readonly CallbackRegistry doubleClickHandlers = new(CallbackStop.NonEmpty, "Gui");
 		//No WndProc method to override because TSSL is not a Control.
 
 		public KeysharpToolStripStatusLabel(string text = "")

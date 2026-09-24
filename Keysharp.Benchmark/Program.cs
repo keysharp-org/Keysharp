@@ -44,6 +44,13 @@ public sealed class Program
 		config.UnionRule = ConfigUnionRule.AlwaysUseGlobal; // Overriding the default
 #endif
 
+		// Arguments select benchmarks the BenchmarkDotNet way, such as --filter *CallStackBench*.
+		if (args.Length > 0)
+		{
+			_ = BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, config);
+			return;
+		}
+
 		//Uncomment the tests you want to run.
 		//summary = BenchmarkRunner.Run<MapReadBenchmark>(config);
 		//MarkdownExporter.Console.ExportToLog(summary, logger);

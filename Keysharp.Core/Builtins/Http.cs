@@ -617,7 +617,7 @@ namespace Keysharp.Builtins
 							: completion.TrySetException(
 								(Exception)new Error("The Http OnData callback could not run, so the transfer stopped."));
 					}
-					catch (Exception ex)
+					catch (Exception ex) when (CallStack.Remember(ex))
 					{
 						// An Exit or ExitApp inside the callback ends that thread rather than becoming the
 						// transfer's failure, so the wait is canceled and the exception left to unwind the pump.

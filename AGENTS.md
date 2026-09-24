@@ -137,7 +137,7 @@ See `Keysharp.Tests/TESTING.md` for the test-boundary, naming, and category conv
 5. The compiled assembly is loaded and its entry point is invoked.
 6. At runtime, AHK built-ins dispatch to the static methods in `Keysharp.Core/Builtins/`.
 
-Use `--transpile` to see the exact C# that step 3 produces — this is the fastest way to debug lowering issues.
+Use `--transpile` to see the C# that step 3 produces — this is the fastest way to debug lowering issues. It leaves out the per-statement location stamps (`KS_line = N;`), which the compiled tree carries for `Error.Stack` and `Line`; Keyview's Full code view shows them.
 
 ## Platform-specific code
 

@@ -478,7 +478,7 @@ namespace Keysharp.Builtins
 						eventHandlers ??= new Dictionary<string, CallbackRegistry>();
 
 						if (!eventHandlers.TryGetValue(name, out registry))
-							eventHandlers[name] = registry = new (CallbackStop.NonEmpty);
+							eventHandlers[name] = registry = new(CallbackStop.NonEmpty, "Gui");
 
 						modified = registry.ModifyEventHandlers(fo, mode);
 						anyLeft = eventHandlers.Values.Any(r => !r.IsEmpty);

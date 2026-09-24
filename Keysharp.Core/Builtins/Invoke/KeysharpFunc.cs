@@ -235,7 +235,6 @@ namespace Keysharp.Builtins
 	{
 		protected MethodInfo mi;
 		internal MethodPropertyHolder mph;
-		private readonly Type moduleType;
 
 		internal static KeysharpFunc PrototypeCall = null;
 
@@ -401,11 +400,6 @@ namespace Keysharp.Builtins
 		{
 			mph = m;
 			mi = m?.mi;
-			// Only a script-compiled module brackets a call. Ks and Ahk derive from Module so #import has something
-			// to bind against, but their members are builtins with no script scope of their own -- making one the
-			// current module would resolve a callback name, a global or the compatibility version against Keysharp's
-			// own module rather than the caller's.
-			moduleType = mph?.moduleType is Type mt && mt.Assembly != typeof(Keysharp.Runtime.Module).Assembly ? mt : null;
 
 			if (mph != null)
 			{
@@ -432,92 +426,12 @@ namespace Keysharp.Builtins
 		public virtual KeysharpFunc Bind(params object[] args)
 		=> new BoundFunc(mph, args, Inst);
 
-		public virtual object Call(params object[] obj)
-		{
-			var compatibilityVersion = mph.compatibilityVersion;
-
-			if (moduleType == null && compatibilityVersion == null)
-				return mph.CallFunc(Inst, obj);
-
-			var script = Script.TheScript;
-			var md = moduleType != null ? script.ModuleData as ModuleData : null;
-			var moduleChanged = false;
-			var previousModule = md != null ? md.Push(moduleType, out moduleChanged) : null;
-			var previousCompatibility = compatibilityVersion != null ? script.CurrentCompatibilityVersion : null;
-
-			// A user function (moduleType != null) brackets the executing-function scope on the call stack: clear on
-			// entry so a non-deref callee never inherits the caller's scope (a deref callee's prologue, Script.EnterScope,
-			// reinstalls its own), restore on return. Builtins take the fast path above and keep the caller's scope, so
-			// RegExMatch and its callouts resolve the calling function's closures by name.
-			var tv = moduleType != null ? Threads.Current : null;
-			var previousScope = tv?.executionScope;
-
-			if (tv != null)
-				tv.executionScope = null;
-
-			if (compatibilityVersion != null)
-				script.SetCurrentCompatibilityVersion(compatibilityVersion);
-
-			try
-			{
-				return mph.CallFunc(Inst, obj);
-			}
-			finally
-			{
-				if (tv != null)
-					tv.executionScope = previousScope;
-
-				if (compatibilityVersion != null)
-					script.SetCurrentCompatibilityVersion(previousCompatibility);
-
-				if (md != null)
-					md.Pop(previousModule, moduleChanged);
-			}
-		}
+		// The call's frame, module and compatibility version are the dispatcher's, which every path to a function shares.
+		public virtual object Call(params object[] obj) => mph.CallFunc(Inst, obj);
 
 		[PublicHiddenFromUser]
 		public virtual object CallInst(object inst, params object[] args)
-		{
-			var compatibilityVersion = mph.compatibilityVersion;
-			var callInst = Inst ?? inst;
-			var callArgs = Inst == null ? args : args.Prepend(inst);
-
-			if (moduleType == null && compatibilityVersion == null)
-				return mph.CallFunc(callInst, callArgs);
-
-			var script = Script.TheScript;
-			var md = moduleType != null ? script.ModuleData as ModuleData : null;
-			var moduleChanged = false;
-			var previousModule = md != null ? md.Push(moduleType, out moduleChanged) : null;
-			var previousCompatibility = compatibilityVersion != null ? script.CurrentCompatibilityVersion : null;
-
-			// See Call: bracket the executing-function scope for a user function (its prologue reinstalls one if it
-			// derefs); leave it intact for builtins so callouts can read the calling function's closures.
-			var tv = moduleType != null ? Threads.Current : null;
-			var previousScope = tv?.executionScope;
-
-			if (tv != null)
-				tv.executionScope = null;
-
-			if (compatibilityVersion != null)
-				script.SetCurrentCompatibilityVersion(compatibilityVersion);
-
-			try
-			{
-				return mph.CallFunc(callInst, callArgs);
-			}
-			finally
-			{
-				if (tv != null)
-					tv.executionScope = previousScope;
-
-				if (compatibilityVersion != null)
-					script.SetCurrentCompatibilityVersion(previousCompatibility);
-
-				if (md != null)
-					md.Pop(previousModule, moduleChanged);
-			}
-		}
+			=> mph.CallFunc(Inst ?? inst, Inst == null ? args : args.Prepend(inst));
 
 		[PublicHiddenFromUser]
 		public override bool Equals(object obj)

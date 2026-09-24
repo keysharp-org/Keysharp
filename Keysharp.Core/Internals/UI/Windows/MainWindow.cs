@@ -107,9 +107,9 @@ namespace Keysharp.Internals.UI.Windows
 
 		internal object ShowInternalVars(bool showTab)
 		{
-			// Snapshot the running function's locals on THIS (script) thread before the async UI hop; the scope is
-			// pseudo-thread local, so the UI thread would otherwise see no executing-function scope.
-			var execScope = Threads.Current.executionScope;
+			// Snapshot the running function's locals on this (script) thread before the async UI hop; the scope lives on
+			// this thread's call stack, so the UI thread would otherwise see no executing-function scope.
+			var execScope = CallStack.Current.ExecutionScope;
 			var execLocals = execScope?.Enumerate().ToList();
 			var execName = execScope?.Name;
 			_ = this.BeginInvoke(() =>

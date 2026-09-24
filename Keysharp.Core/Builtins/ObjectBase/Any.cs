@@ -136,12 +136,6 @@ namespace Keysharp.Builtins
 		[PublicHiddenFromUser]
 		public virtual object static__Delete() => "";
 
-		private static System.Type GetCallingType()
-		{
-			var frame = new System.Diagnostics.StackTrace().GetFrame(2); // Get the caller two levels up
-			return frame?.GetMethod()?.DeclaringType;
-		}
-
 		public static object GetMethod(object @this, object name = null, object paramCount = null) => Functions.GetMethod(@this, name, paramCount);
 
 		public static long HasBase(object @this, object baseObj) => Types.HasBase(@this, baseObj);

@@ -276,22 +276,22 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if Index is out of range.</exception>
 	public object Delete(object index)
 	{
-		var i = index.Ai() - 1;
+		var i = TranslateIndex(index.Ai());
 
-		if (i < array.Count)
+		if (i != -1)
 		{
 			var ob = array[i];
 			array[i] = null;
 			return ob ?? DefaultObject;
 		}
 		else
-			return Errors.ValueErrorOccurred($"Invalid deletion index of {index.Ai()}.");
+			return Errors.InvalidParameterErrorOccurred(1, "Array.Prototype.Delete", index);
 	}
 
 	/// <summary>
 	/// Wraps an element callback so it receives only the arguments it declares. Filter, FindIndex and Map all
 	/// document their callback as taking <c>(Value, Index)</c> where it "may declare only the parameters it
-	/// needs", but passing both unconditionally fails a one-parameter callback with "Too many arguments".
+	/// needs", but passing both unconditionally fails a one-parameter callback with "Too many parameters passed to function."
 	/// <para>
 	/// The arity is resolved once per operation rather than per element, and the returned delegate closes over
 	/// it. <c>Script.ResolveDirectCallTarget</c> likewise decides once whether the callback can be entered
@@ -446,7 +446,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 		if ((i = TranslateIndex(i)) != -1)
 			val = array[i];
 		else
-			return Errors.IndexErrorOccurred($"Invalid retrieval index of {i}.");
+			return Errors.InvalidIndexErrorOccurred(index);
 
 		if (val != null)
 			return val;
@@ -459,7 +459,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 			return fallback;
 		else
 			return Script.CompatReturnsUnsetForMissing ? null
-				: Errors.UnsetItemErrorOccurred($"array[{i}], default and Default were all unset/null.");
+				: Errors.UnsetItemErrorOccurred(index);
 	}
 
 	/// <summary>
@@ -556,7 +556,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 				index = array.Count + i;
 			else
 			{
-				_ = Errors.ValueErrorOccurred($"Invalid insertion index of {i}.");
+				_ = Errors.InvalidParameterErrorOccurred(1, "Array.Prototype.InsertAt", i);
 				return DefaultObject;
 			}
 
@@ -683,16 +683,16 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 			int i;
 
 			if ((i = TranslateIndex(index)) == -1)
-				return Errors.ValueErrorOccurred($"Invalid removal index of {index}.");
+				return Errors.InvalidParameterErrorOccurred(1, "Array.Prototype.RemoveAt", index);
 
 			if (o.Length > 1 && o[1] != null)
 			{
 				var len = o[1].Ai(1);
 
-				if (i + len <= array.Count)
+				if (len >= 0 && len <= array.Count - i)
 					array.RemoveRange(i, len);
 				else
-					return Errors.ValueErrorOccurred($"Invalid removal index of and range of {index} and {len} exceeds array length of {array.Count}.");
+					return Errors.InvalidParameterErrorOccurred(2, "Array.Prototype.RemoveAt", len);
 			}
 			else if (i < array.Count)
 			{
@@ -794,11 +794,12 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 			if ((i = TranslateIndex(i)) != -1)
 				// A Default the script defined stands in for an element that has no value, for __Item exactly as
 				// for Get. It cannot rescue an out-of-range index below: that still throws, as AutoHotkey documents.
-				return array[i] ?? Script.GetPropertyValueOrNull(this, "Default");
+				return array[i] ?? Script.GetPropertyValueOrNull(this, "Default")
+					?? (Script.CompatReturnsUnsetForMissing ? null : Errors.UnsetItemErrorOccurred(index));
 			else
 				// An out-of-range index always throws IndexError, in both v2.0 and v2.1 mode (AHK alpha.30 Array::Invoke);
 				// only an in-range-but-unset *element* yields unset in v2.1 — see Array.Get.
-				return Errors.IndexErrorOccurred($"Invalid retrieval index of {index} on an array with length {array.Count}.");
+				return Errors.InvalidIndexErrorOccurred(index);
 		}
 		set
 		{
@@ -807,7 +808,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 			if ((i = TranslateIndex(i)) != -1)
 				array[i] = value;
 			else
-				_ = Errors.IndexErrorOccurred($"Invalid set index of {index} on an array with length {array.Count}.");
+				_ = Errors.InvalidIndexErrorOccurred(index, "Array.Prototype.__Item.Set");
 		}
 	}
 

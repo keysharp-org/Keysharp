@@ -338,7 +338,7 @@ namespace Keysharp.Compilation
 				var tree = SyntaxFactory.SyntaxTree(compilation.Unit, parseOptions);
 				return CompileFromTree(tree, outputname, currentDir, minimalexeout, BuildInlineTrees(compilation, parseOptions),
 					diagnoseSink, compilation.Packages, compilation.RequiredProviders, compilation.RequiredComponents,
-					compilation.Manifest, win32Resources);
+					compilation.Manifest, win32Resources, compilation.SourceTexts);
 			}
 			catch (Exception e)
 			{
@@ -439,7 +439,7 @@ namespace Keysharp.Compilation
 			return ([.. diags], ex);
 		}
 
-		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null, IReadOnlyCollection<string> requiredProviders = null, IReadOnlyCollection<string> requiredComponents = null, Keysharp.Internals.Scripting.AppManifest appManifest = null, bool win32Resources = true)
+		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null, IReadOnlyCollection<string> requiredProviders = null, IReadOnlyCollection<string> requiredComponents = null, Keysharp.Internals.Scripting.AppManifest appManifest = null, bool win32Resources = true, IReadOnlyList<string> sourceTexts = null)
 		{
 			IEnumerable<ResourceDescription> resourceDescriptions = null;
 			HashSet<string> allDependencies = null;
@@ -704,6 +704,11 @@ namespace Keysharp.Compilation
 							() => File.OpenRead(source), true));
 			}
 
+			if (sourceTexts != null)
+				resourceDescriptions = (resourceDescriptions ?? []).Append(
+					new ResourceDescription(Keysharp.Runtime.SourceText.ResourceName,
+						() => new MemoryStream(Keysharp.Runtime.SourceText.Pack(sourceTexts), writable: false), true));
+
 			var ms = new MemoryStream();
 			// AnyCpu, like the rest of Keysharp: the script assembly is loaded into this very process (or one
 			// built the same way), and the CLR rejects an assembly whose machine type doesn't match the
@@ -899,6 +904,7 @@ namespace Keysharp.Compilation
 					compilation.RequiredProviders = lowerer.RequiredProviders;
 					compilation.RequiredComponents = lowerer.RequiredComponents;
 					compilation.ErrorStdOut = lowerer.ErrorStdOut;
+					compilation.SourceTexts = lowerer.SourceTexts;
 
 					if (compilation.Unit == null || lowerer.Diagnostics.Count > 0)
 						foreach (var d in lowerer.Diagnostics)
@@ -1056,7 +1062,7 @@ namespace Keysharp.Compilation
 			{
 				var normalized = unit.NormalizeWhitespace("\t", Environment.NewLine).ToString();
 
-				if (GetCode() != normalized)
+				if (PrettyPrinter.Print(unit, locations: true) != normalized)
 					throw new Exception("Code formatting mismatch");
 			}
 #endif

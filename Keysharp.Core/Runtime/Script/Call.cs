@@ -135,7 +135,6 @@ namespace Keysharp.Runtime
 			bool throwIfMissing = true,
 			bool invokeMeta = true)
 		{
-			Error err;
 			Any kso = null;
 
 			try
@@ -170,8 +169,8 @@ namespace Keysharp.Runtime
 						if (opm.Get != null) return (item, Invoke(opm.Get, null, item)); // getter call, no params
 						if (opm.Value != null) return (item, opm.Value);
 
-						return Errors.ErrorOccurred(err = new Error($"Attempting to get method or property {key} on object {Errors.Describe(opm)} failed."))
-							   ? throw err : (null, null);
+						_ = Errors.MissingMethodErrorOccurred(item, key);
+						return (null, null);
 					}
 
 					// --- Meta fallbacks ---
@@ -230,7 +229,7 @@ namespace Keysharp.Runtime
 			}
 
 			if (throwIfMissing)
-				_ = Errors.ErrorOccurred($"Attempting to get method or property {key} on object {Errors.Describe(item)} failed.");
+				_ = Errors.MissingMethodErrorOccurred(item, key);
 
 			return (null, null);
 		}
@@ -418,9 +417,10 @@ namespace Keysharp.Runtime
 
 		// . strict base, strict result
 		public static object Invoke(object obj, object meth, params object[] parameters) =>
-			InvokeOrNull(obj, meth, parameters) ?? Errors.UnsetErrorOccurred(meth == null
-					? $"Call result of function {obj}"
-					: $"Invoke result of method {meth} on function {obj}");
+			InvokeOrNull(obj, meth, parameters) ?? Errors.ErrorOccurred(
+				new UnsetError("No value was returned.", null,
+					meth == null ? (obj is KeysharpFunc { Name: { Length: > 0 } name } ? name : Errors.Describe(obj)) : meth.As()),
+				DefaultObject);
 		// . in ?? context: strict base, allow null result
 		public static object InvokeOrNull(object obj, object meth, params object[] parameters)
 		{
@@ -752,7 +752,7 @@ namespace Keysharp.Runtime
 							return value;
 						}
 
-						return Errors.PropertyErrorOccurred($"Property {namestr} on object {item} is read-only.");
+						return Errors.ReadOnlyPropertyErrorOccurred(namestr);
 					}
 
 					// special base
@@ -797,12 +797,12 @@ namespace Keysharp.Runtime
 						}
 
 						if (opm2.Get != null)
-							return Errors.PropertyErrorOccurred($"Property {namestr} on object {item} is read-only.");
+							return Errors.ReadOnlyPropertyErrorOccurred(namestr);
 					}
 					// A name that resolves to a method (Call) without a Set is a read-only property.
 					else if (TryGetOwnPropsMap(kso, namestr, out _, searchBase: true, type: OwnPropsMapType.Call))
 					{
-						return Errors.PropertyErrorOccurred($"Property {namestr} on object {item} is read-only.");
+						return Errors.ReadOnlyPropertyErrorOccurred(namestr);
 					}
 					// __Set meta (function or callable object), only if no Set/Get/Value is found
 					else if (TryGetOwnPropsMap(kso, "__Set", out var protoSet) && (protoSet.Call ?? protoSet.Value) is object metaSet)

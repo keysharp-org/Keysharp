@@ -487,7 +487,7 @@ namespace Keysharp.Tests
 			Assert.IsTrue(runWindow >= 0, "expected Main to start the script via RunMainWindow; generated:\n" + code);
 			Assert.Less(load, runWindow, "packages must load before RunMainWindow JITs the auto-exec; generated:\n" + code);
 			// …and so before any module's own auto-exec statements.
-			var firstAutoExec = System.Text.RegularExpressions.Regex.Match(code, @"Program\.\w+\.AutoExecSection\(\)");
+			var firstAutoExec = System.Text.RegularExpressions.Regex.Match(code, @"Program\.\w+\.AutoExecSection\b");
 			Assert.IsTrue(firstAutoExec.Success, "expected the outer auto-exec to drive each module; generated:\n" + code);
 			Assert.Less(load, firstAutoExec.Index,
 						"packages must load before the first module auto-exec; generated:\n" + code);

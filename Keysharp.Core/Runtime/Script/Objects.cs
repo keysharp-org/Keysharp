@@ -471,7 +471,14 @@ namespace Keysharp.Runtime
 		// raises this for (an array hole, a missing map key), and a script catching `UnsetItemError` has to
 		// see it. It derives from UnsetError, so anything catching the broader type still catches it.
 		public static object GetIndex(object item, params object[] index) =>
-			GetIndexOrNull(item, index) ?? Errors.UnsetItemErrorOccurred($"Index {(index.Length > 0 ? index[0] : "[]")} of {item} has no value.");
+			GetIndexOrNull(item, index) ?? UnsetIndexErrorOccurred(index);
+
+		// An item with no value, as AutoHotkey reports it. In v2.1 the expression reading it raises the error, with the index
+		// in brackets as Extra, which AutoHotkey takes from the source and this from the values; before that, the
+		// collection's own getter raised it with the key.
+		private static object UnsetIndexErrorOccurred(object[] index) => CompatReturnsUnsetForMissing
+			? Errors.UnsetItemErrorOccurred($"[{string.Join(", ", index.Select(key => key is string s ? $"\"{s}\"" : key is Any ? Types.Type(key) : key.As()))}]")
+			: Errors.UnsetItemErrorOccurred(index.Length > 0 ? index[0] : "");
 		// . in ?? context: strict base, allow null result
 		public static object GetIndexOrNull(object item, params object[] index)
 		{
@@ -548,21 +555,21 @@ namespace Keysharp.Runtime
 					if (item is string s)
 					{
 						int actual = position < 0 ? s.Length + position : position - 1;
-						return (uint)actual < (uint)s.Length ? s[actual] : Errors.IndexErrorOccurred($"Invalid retrieval index of {position}.");
+						return (uint)actual < (uint)s.Length ? s[actual] : Errors.InvalidIndexErrorOccurred(position);
 					}
 
 					// Vararg array backing for params
 					if (item is object[] objarr)
 					{
 						int actual = position < 0 ? objarr.Length + position : position - 1;
-						return (uint)actual < (uint)objarr.Length ? objarr[actual] : Errors.IndexErrorOccurred($"Invalid retrieval index of {position}.");
+						return (uint)actual < (uint)objarr.Length ? objarr[actual] : Errors.InvalidIndexErrorOccurred(position);
 					}
 
 					// CLR arrays
 					if (item is System.Array carr)
 					{
 						int actual = position < 0 ? carr.Length + position : position - 1;
-						return (uint)actual < (uint)carr.Length ? carr.GetValue(actual) : Errors.IndexErrorOccurred($"Invalid retrieval index of {position}.");
+						return (uint)actual < (uint)carr.Length ? carr.GetValue(actual) : Errors.InvalidIndexErrorOccurred(position);
 					}
 				}
 

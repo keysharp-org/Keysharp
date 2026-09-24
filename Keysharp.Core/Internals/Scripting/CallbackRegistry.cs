@@ -44,9 +44,16 @@ namespace Keysharp.Internals.Scripting
 		private TRegistration[] snapshot = [];
 		private bool snapshotDirty = true;
 		private readonly Func<object, bool> stopRule;
+		private readonly string threadName;
 
 		/// <param name="stopRule">The <see cref="CallbackStop"/> rule that ends this family's chain; NonZero when omitted.</param>
-		internal CallbackRegistry(Func<object, bool> stopRule = null) => this.stopRule = stopRule ?? CallbackStop.NonZero;
+		/// <param name="threadName">What Error.Stack calls a thread a handler runs in, as AutoHotkey calls it, such as Gui;
+		/// <c>Event</c> when omitted.</param>
+		internal CallbackRegistry(Func<object, bool> stopRule = null, string threadName = null)
+		{
+			this.stopRule = stopRule ?? CallbackStop.NonZero;
+			this.threadName = threadName;
+		}
 
 		internal int Count
 		{
@@ -366,6 +373,9 @@ namespace Keysharp.Internals.Scripting
 				if (!thread.Started)
 					return thread.Result;
 
+				if (threadName != null)
+					CallStack.Current.NameThread(threadName);
+
 				try
 				{
 					var tv = thread.ThreadVariables;
@@ -377,7 +387,7 @@ namespace Keysharp.Internals.Scripting
 
 					chainResult = Script.InvokeOrNull(handler, null, args);
 				}
-				catch (Exception ex)
+				catch (Exception ex) when (CallStack.Remember(ex))
 				{
 					chainResult = null;
 					// ReportUncaught is true only for Exit; anything else is an uncaught error which ended the thread.
@@ -515,7 +525,7 @@ namespace Keysharp.Internals.Scripting
 	/// </summary>
 	internal sealed class CallbackRegistry : CallbackRegistry<CallbackRegistration>
 	{
-		internal CallbackRegistry(Func<object, bool> stopRule = null) : base(stopRule) { }
+		internal CallbackRegistry(Func<object, bool> stopRule = null, string threadName = null) : base(stopRule, threadName) { }
 
 		internal bool ModifyEventHandlers(object callback, long addRemove, bool matchCurrentSchedulerOnRemove = true)
 		{

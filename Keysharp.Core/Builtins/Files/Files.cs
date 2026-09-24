@@ -427,7 +427,7 @@ namespace Keysharp.Builtins
 			}
 
 			if (failures > 0)
-				return Errors.ErrorOccurred($"Failed {failures} times moving or copying files.", "", failures);
+				return Errors.ErrorOccurred($"Failed {failures} times moving or copying files.", null, failures);
 
 			return DefaultObject;
 		}
@@ -1430,7 +1430,7 @@ namespace Keysharp.Builtins
 			if (failures != 0)
 			{
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-				return Errors.ErrorOccurred($"Failed {failures} times setting file attributes.", "", failures);
+				return Errors.ErrorOccurred($"Failed {failures} times setting file attributes.", null, failures);
 			}
 
 			return DefaultObject;
@@ -1524,7 +1524,7 @@ namespace Keysharp.Builtins
 			if (failures != 0)
 			{
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-				return Errors.ErrorOccurred($"Failed {failures} times setting file time.", "", failures);
+				return Errors.ErrorOccurred($"Failed {failures} times setting file time.", null, failures);
 			}
 
 			return DefaultObject;
@@ -1691,7 +1691,7 @@ namespace Keysharp.Builtins
 			if (failures > 0)
 			{
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-				_ = Errors.ErrorOccurred($"Failed {failures} times moving or copying files.", "", failures);
+				_ = Errors.ErrorOccurred($"Failed {failures} times moving or copying files.", null, failures);
 				return;
 			}
 		}

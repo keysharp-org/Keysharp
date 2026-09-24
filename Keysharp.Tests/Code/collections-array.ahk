@@ -1,4 +1,7 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
+#Warn LocalSameAsGlobal, Off
 #Include <assert>
 
 arr := [10, 20, 30]
@@ -42,7 +45,7 @@ len := arr.Length
 
 AssertEq(len, 126, A_LineNumber)
 
-Assert(arr[126] is unset, A_LineNumber)
+Assert(!arr.Has(126), A_LineNumber)
 
 arr := [1, 2, 3]
 arr.Length := 2
@@ -168,15 +171,15 @@ AssertEq(cap, 200, A_LineNumber)
 arr := [1, 2, 3]
 arr.Length := 5
 
-Assert(arr[4] is unset && arr[5] is unset && arr.Length == 5, A_LineNumber)
+Assert(!arr.Has(4) && !arr.Has(5) && arr.Length == 5, A_LineNumber)
 
 arr.Capacity := 5
 
-Assert(arr[4] is unset && arr[5] is unset && arr.Length == 5 && arr.Capacity == 5, A_LineNumber)
+Assert(!arr.Has(4) && !arr.Has(5) && arr.Length == 5 && arr.Capacity == 5, A_LineNumber)
 
 arr.Capacity := 10
 
-Assert(arr[4] is unset && arr[5] is unset && arr.Length == 5 && arr.Capacity == 10, A_LineNumber)
+Assert(!arr.Has(4) && !arr.Has(5) && arr.Length == 5 && arr.Capacity == 10, A_LineNumber)
 
 arr.Capacity := 2
 
@@ -553,13 +556,13 @@ a := [1,,3]
 
 AssertEq(a.Length, 3, A_LineNumber)
 
-Assert(a[1] == 1 && a[2] is unset && a[3] == 3, A_LineNumber)
+Assert(a[1] == 1 && !a.Has(2) && a[3] == 3, A_LineNumber)
 
 a := [,2,]
 
 AssertEq(a.Length, 2, A_LineNumber)
 
-Assert(a[1] is unset && a[2] == 2, A_LineNumber)
+Assert(!a.Has(1) && a[2] == 2, A_LineNumber)
 
 func1()
 {

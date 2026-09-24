@@ -997,7 +997,7 @@ namespace Keysharp.Builtins
 					// set its Priority — the priority then travels with the registration to the launch. It replaces
 					// the item's handler, as AHK's ModifyItem replaces mCallback, rather than running beside it.
 					clickReg = new Keysharp.Internals.Scripting.CallbackRegistration(callback, Script.TheScript.EventScheduler, true);
-					var handlers = clickHandlers.GetOrAdd(item, static _ => new());
+					var handlers = clickHandlers.GetOrAdd(item, static _ => new(threadName: "Menu"));
 					handlers.Clear();
 					_ = handlers.Add(clickReg);
 				}

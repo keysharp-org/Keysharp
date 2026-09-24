@@ -310,7 +310,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="key">They key to remove</param>
 		/// <returns>The removed value if found.</returns>
-		/// <exception cref="KeyError">An <see cref="KeyError"/> exception is thrown if they key was not found.</exception>
+		/// <exception cref="UnsetItemError">An <see cref="UnsetItemError"/> exception is thrown if the key was not found.</exception>
 		public object Delete(object key)
 		{
 			if (map.Remove(key, out var val))
@@ -322,7 +322,7 @@ namespace Keysharp.Builtins
 			}
 
 			return Script.CompatReturnsUnsetForMissing ? null
-				: Errors.KeyErrorOccurred($"Key {key} was not present in the map.");
+				: Errors.UnsetItemErrorOccurred(key);
 		}
 
 		/// <summary>
@@ -354,7 +354,7 @@ namespace Keysharp.Builtins
 				return fallback;
 
 			return Script.CompatReturnsUnsetForMissing ? null
-				: Errors.UnsetItemErrorOccurred($"Key {k} was not present in the map.");
+				: Errors.UnsetItemErrorOccurred(k);
 		}
 
 		/// <summary>
@@ -594,7 +594,7 @@ namespace Keysharp.Builtins
 					return val;
 
 				return Script.GetPropertyValueOrNull(this, "Default") ?? (Script.CompatReturnsUnsetForMissing ? null
-					: Errors.UnsetItemErrorOccurred($"Key {key} was not present in the map."));
+					: Errors.UnsetItemErrorOccurred(key));
 			}
 			set
 			{
@@ -603,8 +603,8 @@ namespace Keysharp.Builtins
 
 				if (value == null)
 				{
-					if (!map.Remove(key))
-						_ = Errors.UnsetItemErrorOccurred("Item has no value.");
+					if (!map.Remove(key) && !Script.CompatReturnsUnsetForMissing)
+						_ = Errors.UnsetItemErrorOccurred(key);
 
 					return;
 				}

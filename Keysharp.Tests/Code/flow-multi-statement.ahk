@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 x := 1
@@ -121,11 +123,11 @@ Assert(arr.Length == 2 && arr[1] == 6 && arr[2] == 12, A_LineNumber)
 	
 arr := [func3(1, 2, 3),, func3(3, 4, 5)]
 
-Assert(arr.Length == 3 && arr[1] == 6 && arr[2] is unset && arr[3] == 12, A_LineNumber)
+Assert(arr.Length == 3 && arr[1] == 6 && !arr.Has(2) && arr[3] == 12, A_LineNumber)
 
 arr := [,func3(1, 2, 3),]
 
-Assert(arr.Length == 2 && arr[1] is unset && arr[2] == 6, A_LineNumber)
+Assert(arr.Length == 2 && !arr.Has(1) && arr[2] == 6, A_LineNumber)
 
 ; Dummy test that does nothing but test a very complex ternary.
 class Toggle {

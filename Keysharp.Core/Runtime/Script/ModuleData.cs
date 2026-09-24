@@ -19,42 +19,7 @@ namespace Keysharp.Runtime
 			Vars = new ModuleVars(ModuleType);
 		}
 
-		internal static ModuleData GetOrCreate(System.Type moduleType)
-		{
-			if (moduleType == null)
-				return null;
-
-			return cache.GetOrAdd(moduleType, static t => new ModuleData(t));
-		}
-
-		internal ModuleData Push(System.Type moduleType, out bool changed)
-		{
-			changed = false;
-			var script = Script.TheScript;
-			var prev = script.moduleData.Value;
-
-			if (moduleType == null || prev.ModuleType == moduleType || !typeof(Keysharp.Runtime.Module).IsAssignableFrom(moduleType))
-				return prev;
-
-			var next = GetOrCreate(moduleType);
-			if (!ReferenceEquals(prev, next))
-			{
-				script.moduleData.Value = next;
-				script.SetCurrentCompatibilityVersion(next.CompatibilityVersion);
-				changed = true;
-			}
-
-			return prev;
-		}
-
-		internal void Pop(ModuleData previous, bool changed)
-		{
-			if (changed)
-			{
-				Script.TheScript.moduleData.Value = previous;
-				Script.TheScript.SetCurrentCompatibilityVersion(previous?.CompatibilityVersion);
-			}
-		}
+		internal static ModuleData GetOrCreate(System.Type moduleType) => cache.GetOrAdd(moduleType, static t => new ModuleData(t));
 	}
 
 	public sealed class ModuleVars

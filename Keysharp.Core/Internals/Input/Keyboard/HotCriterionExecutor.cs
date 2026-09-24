@@ -259,7 +259,7 @@ namespace Keysharp.Internals.Input.Keyboard
 								owner, currentCriterion, currentCriterionType, currentHotkeyName, currentEventInfo);
 						}
 					}
-					catch (Exception ex)
+					catch (Exception ex) when (CallStack.Remember(ex))
 					{
 						evaluationError = ex;
 					}

@@ -8,6 +8,7 @@ namespace Keysharp.Compilation
 	internal class PrettyPrinter : CSharpSyntaxWalker
 	{
 		readonly StringBuilder _sb;
+		bool _locations;
 		int _indent;
 
 		public PrettyPrinter(int initialIndent = 0)
@@ -17,12 +18,24 @@ namespace Keysharp.Compilation
 			_indent = initialIndent;
 		}
 
-		public static string Print(SyntaxNode node, int indent = 0)
+		// The location stamps the lowering adds for Error.Stack are left out unless locations asks for them.
+		public static string Print(SyntaxNode node, int indent = 0, bool locations = false)
 		{
-			var printer = new PrettyPrinter(indent);
+			var printer = new PrettyPrinter(indent) { _locations = locations };
 			printer.Visit(node);
 			printer.TrimTrailingNewLine();
 			return printer._sb.ToString();
+		}
+
+		bool Hidden(SyntaxNode node) => !_locations && node.HasAnnotation(Syntax.Lowerer.LocationAnnotation);
+
+		public override void Visit(SyntaxNode node)
+		{
+			if (node != null && !Hidden(node))
+				base.Visit(node);
+			// A case guard which records a location prints as its test alone.
+			else if (node is BinaryExpressionSyntax guard)
+				Visit(guard.Right);
 		}
 
 		// helper to emit current indent
@@ -438,19 +451,18 @@ namespace Keysharp.Compilation
 
 			// body
 			_indent++;
-			var stmts = block.Statements;
-			for (int i = 0; i < stmts.Count; i++)
-			{
-				var stmt = stmts[i];
-				Visit(stmt);
+			StatementSyntax previous = null;
 
-				if (i < stmts.Count - 1)
-				{
-					// if this statement “ends with” its own block, and there is another one after it,
-					// emit an extra blank line.
-					if (EndsWithBlock(stmt))
-						_sb.AppendLine();
-				}
+			foreach (var stmt in block.Statements)
+			{
+				if (Hidden(stmt))
+					continue;
+
+				if (previous != null && EndsWithBlock(previous))
+					_sb.AppendLine();
+
+				Visit(stmt);
+				previous = stmt;
 			}
 			_indent--;
 

@@ -161,5 +161,30 @@ namespace Keysharp.Tests
 
 			Assert.That(order, Is.EqualTo(new[] { "hotkey", "hotstring", "normal-1", "normal-2" }));
 		}
+
+		// Error.Stack names a hotkey's or hotstring's thread by the hotkey, and an event handler's by its registry, such as
+		// Menu, as AutoHotkey does.
+		[Test, Category("Threading")]
+		public void ThreadNames()
+		{
+			var context = UseQueuedMainContext();
+			var stacks = new List<string>();
+			void Probe() => stacks.Add(new Error("probe").Stack);
+			var handler = new KeysharpFunc((Func<object, object>)(_ =>
+			{
+				Probe();
+				return 0L;
+			}));
+			var hs = new HotstringDefinition(s, "::abc", "") { Name = "::abc", funcObj = handler, maxThreads = 1, priority = 0 };
+			var registry = new CallbackRegistry(threadName: "Menu");
+			_ = registry.ModifyEventHandlers(handler, 1);
+
+			CreateHotkey("F1").PerformInNewThreadMadeByCallerAsync(CreateHotkeyVariant(Probe), 0, 0);
+			_ = hs.PerformInNewThreadMadeByCaller(0, CaseConformModes.None, ' ', 0, false);
+			registry.InvokeEventHandlers("item");
+			context.DrainAll();
+
+			Assert.That(stacks.Select(stack => stack.TrimEnd().Split(Environment.NewLine)[^1]), Is.EquivalentTo(new[] { "> F1", "> ::abc", "> Menu" }));
+		}
 	}
 }

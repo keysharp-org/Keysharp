@@ -197,7 +197,7 @@ namespace Keysharp.Internals.DBus
 				{
 					handler(n.Value);
 				}
-				catch (Exception ex)
+				catch (Exception ex) when (CallStack.Remember(ex))
 				{
 					// An exception escaping here kills the connection's entire dispatch loop — every later call and
 					// every other subscription goes silently dead — so even the reporting is guarded.

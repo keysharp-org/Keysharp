@@ -55,7 +55,7 @@ namespace Keysharp.Internals.Window
 				tv.hwndLastUsed = hwnd;
 				result = Script.InvokeOrNull(registration.Callback, null, args);
 			}
-			catch (Exception ex)
+			catch (Exception ex) when (CallStack.Remember(ex))
 			{
 				// Errors and Exit leave the message unclaimed.
 				_ = Errors.ReportUncaught(ex);

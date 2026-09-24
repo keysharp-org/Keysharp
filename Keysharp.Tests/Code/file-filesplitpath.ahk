@@ -33,7 +33,7 @@ AssertEq(namenoext, "file1", A_LineNumber)
 #if WINDOWS
 	AssertEq("Keysharp.Tests\Code\DirCopy", SubStr(dir, -StrLen("Keysharp.Tests\Code\DirCopy")), A_LineNumber)
 
-	Assert(StrLower("C:") == StrLower(drive) || StrLower("D:") == StrLower(drive), A_LineNumber)
+	AssertEq(StrLower(SubStr(A_ScriptDir, 1, 2)), StrLower(drive), A_LineNumber)
 
 	SplitPath("C:\Windows", &filename, &dir, &ext, &namenoext, &drive)
 

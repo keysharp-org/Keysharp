@@ -114,7 +114,8 @@ namespace Keysharp.Internals.Threading
 		// rarely read, so parking a factory lets producers (hook events, PCRE callouts) skip constructing the
 		// value unless the script actually inspects it. Use SetEventInfo to park a lazy value.
 		internal object eventInfo;
-		internal Keysharp.Runtime.FuncScope executionScope;
+		// The call stack depth below this pseudo-thread's boundary frame, which its end restores.
+		internal int callStackDepth;
 		// A pseudo-thread owns its flow state, so an interrupt starts outside the interrupted thread's loops and catches.
 		internal readonly Stack<Keysharp.Runtime.LoopInfo> loopStack = new ();
 		// A try, or a built-in standing in for one, catches what this pseudo-thread raises (AHK's EXCPTMODE_CATCH).
@@ -187,7 +188,6 @@ namespace Keysharp.Internals.Threading
 			defaultGui = null;
 			dialogOwner = null;
 			eventInfo = null;
-			executionScope = null;
 			loopStack.Clear();
 			insideTry = false;
 			caughtException = null;

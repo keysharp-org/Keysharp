@@ -258,7 +258,7 @@ AssertEq(raised, "OSError Return;", A_LineNumber)
 location := ""
 
 LocationHandler(exception, mode) {
-	global location := { Stack: exception.Stack, Line: exception.Line, What: exception.What }
+	global location := { Stack: exception.Stack, Line: exception.Line, What: exception.What, File: exception.File }
 	return -1
 }
 
@@ -269,8 +269,10 @@ RaiseLocatedBuiltin() {
 OnError(LocationHandler, -1)
 RaiseLocatedBuiltin()
 OnError(LocationHandler, 0)
-Assert(InStr(location.Stack, "RaiseLocatedBuiltin()") && !InStr(location.Stack, "LocationHandler()"), A_LineNumber)
-Assert(location.Line > 0 && location.What != "" && !InStr(location.What, "LocationHandler()"), A_LineNumber)
+Assert(InStr(location.Stack, "[WinActivate]") && InStr(location.Stack, "[RaiseLocatedBuiltin]") && !InStr(location.Stack, "LocationHandler"), A_LineNumber)
+AssertEq(location.What, "WinActivate", A_LineNumber)
+AssertEq(location.File, A_LineFile, A_LineNumber)
+Assert(location.Line > 0, A_LineNumber)
 
 ; A callback which an earlier one removes during the same error is not called.
 calls := ""
@@ -496,7 +498,7 @@ ThrowToDialog() {
 	started := true
 
 	try
-		throw Error("C3D38B48-dialog-at-throw")
+		throw Error("C3D38B48-dialog-at-throw", , "C3D38B48-extra")
 	finally
 		FileAppend("C3D38B48-finally-after-dialog`n", "**")
 }

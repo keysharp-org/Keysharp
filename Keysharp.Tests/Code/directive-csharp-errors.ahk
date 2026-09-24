@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 #CSharp
@@ -16,6 +18,15 @@ public static object Risky => throw new System.InvalidOperationException("risky"
 
 public static object NeedsDate(System.DateTime value) => value.Year;
 #EndCSharp
+
+try
+	moduleLine := A_LineNumber, Boom(5)
+catch IndexError as e
+{
+	AssertEq(e.What, "Boom", A_LineNumber)
+	AssertEq(e.Line, moduleLine, A_LineNumber)
+	Assert(InStr(e.Stack, "[" e.What "]"), A_LineNumber)
+}
 
 caught := ""
 try

@@ -1,4 +1,5 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
+using StringAssert = NUnit.Framework.Legacy.StringAssert;
 
 namespace Keysharp.Tests
 {
@@ -410,6 +411,13 @@ namespace Keysharp.Tests
 					 "removed-callback", "located-builtin", "order-", "catch-rethrow", "bare-rethrow", "other-class", "caught", "late-builtin", "nested-other-class" })
 				Assert.AreEqual(0, Count(marker), $"{marker} must get no dialog. stderr:\n{shown}");
 
+			var outputLines = shown.Replace("\r\n", "\n").Split('\n');
+			var dialogIndex = System.Array.FindIndex(outputLines, line => line.Contains("C3D38B48-dialog-at-throw", StringComparison.Ordinal));
+			Assert.GreaterOrEqual(dialogIndex, 0, shown);
+			var expectedFile = System.Text.RegularExpressions.Regex.Escape(Path.Combine(path, "flow-onerror.ahk"));
+			StringAssert.IsMatch($"^{expectedFile} \\(\\d+\\) : ==> C3D38B48-dialog-at-throw$", outputLines[dialogIndex]);
+			Assert.AreEqual("     Specifically: C3D38B48-extra", outputLines[dialogIndex + 1]);
+
 			// A throw nothing catches gets its dialog before the stack unwinds, so ahead of the finally block's line.
 			Assert.Less(shown.IndexOf("C3D38B48-dialog-at-throw"), shown.IndexOf("C3D38B48-finally-after-dialog"), $"The dialog must precede the finally block. stderr:\n{shown}");
 		}
@@ -467,6 +475,67 @@ namespace Keysharp.Tests
 
         [Test, Category("Flow")]
         public void FlowTryCatch() => Assert.IsTrue(TestScript("flow-trycatch", false));
+
+        // An event's launch catch filter copies the frames before the finally blocks which pop them run.
+        [Test, Category("Flow"), Category("Internal")]
+        public void ForeignExceptionStack()
+        {
+            var context = UseQueuedMainContext();
+            Error err = null;
+            var onError = new KeysharpFunc((Func<object, object, object>)((error, _) =>
+            {
+                err = (Error)error;
+                return 1L;
+            }));
+            _ = Errors.OnError(onError);
+            var registry = new CallbackRegistry(threadName: "Event");
+            _ = registry.ModifyEventHandlers(Functions.Func((Delegate)(Func<object, object>)ThrowForeign), 1);
+            registry.InvokeEventHandlers(0L);
+            context.DrainAll();
+
+            Assert.IsNotNull(err);
+            Assert.AreEqual("C3D38B48-foreign", err.Message);
+            Assert.IsTrue(err.What.EndsWith(nameof(ThrowForeign), StringComparison.Ordinal), err.What);
+            Assert.AreEqual(typeof(InvalidOperationException).FullName, err.Extra);
+            Assert.IsTrue(err.Stack.StartsWith($"[{err.What}]", StringComparison.Ordinal), err.Stack);
+            Assert.IsFalse(err.Stack.Contains(typeof(InvalidOperationException).FullName, StringComparison.Ordinal), err.Stack);
+            StringAssert.Contains("> Event", err.Stack);
+
+            var inner = new InvalidOperationException();
+            var stack = CallStack.Current;
+            var depth = stack.PushBoundary("Origin");
+            CallStack.Remember(inner);
+            stack.Pop(depth);
+            CallStack.Remember(new ApplicationException("wrapper", inner));
+            StringAssert.Contains("> Origin", CallStack.Recall(inner).Stack);
+        }
+
+        private static object ThrowForeign(object _) => throw new InvalidOperationException("C3D38B48-foreign");
+
+        [Test, Category("Flow"), Category("Internal")]
+        public void HotIfStackBoundary()
+        {
+            var stack = "";
+            var criterion = new KeysharpFunc((Func<object, object>)(_ =>
+            {
+                stack = new Error("probe").Stack;
+                return 1L;
+            }));
+
+            Assert.AreEqual(1L, HotkeyDefinition.EvaluateCriterion(s, criterion, HotCriterionEnum.IfCallback, "F1", null));
+            StringAssert.Contains("> #HotIf", stack);
+        }
+
+        // The error dialog quotes the two lines before the error and the two after, skipping blank and comment lines.
+        [Test, Category("Flow"), Category("Internal")]
+        public void ErrorDialogExcerpt()
+        {
+            var lines = "x := 1\n\n; a comment\n\ty := 2\nz := 3\nw := 4\n\nv := 5\nu := 6".Split('\n');
+            var nl = Environment.NewLine;
+            Assert.AreEqual($"\t001: x := 1{nl}\t004: y := 2{nl}▶\t005: z := 3{nl}\t006: w := 4{nl}\t008: v := 5{nl}", CallStack.Excerpt(lines, 5));
+            Assert.AreEqual($"▶\t001: x := 1{nl}\t004: y := 2{nl}\t005: z := 3{nl}", CallStack.Excerpt(lines, 1));
+            Assert.AreEqual($"\t006: w := 4{nl}\t008: v := 5{nl}▶\t009: u := 6{nl}", CallStack.Excerpt(lines, 9));
+        }
 
         [Test, Category("Flow")]
         public void InvalidCatchClass()

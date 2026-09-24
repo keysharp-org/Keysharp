@@ -170,6 +170,17 @@ namespace Keysharp.Runtime
 		public UserDeclaredNameAttribute(string name) => Name = name;
 	}
 
+	/// <summary>
+	/// The source files a script was compiled from, the main script first, as the file index of a call stack location
+	/// numbers them. A script run from source names them by full path, and compiled output never does.
+	/// </summary>
+	[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+	public sealed class SourceFilesAttribute : Attribute
+	{
+		public string[] Files { get; }
+		public SourceFilesAttribute(params string[] files) => Files = files;
+	}
+
 	public enum eScriptInstance
 	{
 		Force,

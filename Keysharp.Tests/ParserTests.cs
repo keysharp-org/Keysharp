@@ -1,5 +1,6 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using StringAssert = NUnit.Framework.Legacy.StringAssert;
+using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
 
 namespace Keysharp.Tests
 {
@@ -307,6 +308,99 @@ namespace Keysharp.Tests
 			finally
 			{
 				Directory.Delete(dir, true);
+			}
+		}
+
+		// Compiles a script file with its includes, returning the image and the source files its locations index.
+		private static (byte[] Bytes, Assembly Assembly, string[] Files) CompileFile(string main, bool compileToFile = false, string includeDir = null)
+		{
+			var (bytes, error, _) = new CompilerHelper().CompileCodeToByteArray(main, "sources_" + Guid.NewGuid().ToString("N"),
+				compileToFile: compileToFile, includeDirOverride: includeDir, sourceIsFile: true);
+			Assert.IsNotNull(bytes, error);
+			var assembly = Assembly.Load(bytes);
+			return (bytes, assembly, assembly.GetType(MainNamespaceName + ".Program").GetCustomAttribute<SourceFilesAttribute>().Files);
+		}
+
+		// Compiled output names its source files by where they resolved and never by full path, carries none of their
+		// text, and A_LineFile in an #included file reports the running executable, as AutoHotkey reports it for a
+		// compiled script, which also keeps an explicit What such as -1 as given. A compile that is about to run carries
+		// the text of every file, by the index locations use.
+		[Test, Category("Parser")]
+		public void CompiledSources()
+		{
+			var root = Path.Combine(Path.GetTempPath(), "ks_sources_" + Guid.NewGuid().ToString("N"));
+			var app = Path.Combine(root, "app");
+			_ = Directory.CreateDirectory(Path.Combine(app, "Lib"));
+			_ = Directory.CreateDirectory(Path.Combine(root, "shared"));
+			_ = Directory.CreateDirectory(Path.Combine(root, "other"));
+
+			try
+			{
+				File.WriteAllText(Path.Combine(app, "Lib", "InLib.ahk"), "InLib() => A_LineFile\n");
+				File.WriteAllText(Path.Combine(root, "shared", "Helper.ahk"), "Helper() => A_LineFile\n");
+				File.WriteAllText(Path.Combine(root, "other", "Helper.ahk"), "OtherHelper() => A_LineFile\n");
+				var main = Path.Combine(app, "main.ahk");
+				File.WriteAllText(main, "#ErrorStdOut\n#Warn All, StdOut\n#Include Lib\\InLib.ahk\n#Include ..\\shared\\Helper.ahk\n#Include ..\\other\\Helper.ahk\nx := InLib() Helper() OtherHelper()\nExplicitWhat() => Error(\"x\", -1)\n");
+				var (bytes, compiled, compiledFiles) = CompileFile(main, compileToFile: true, includeDir: app);
+				CollectionAssert.AreEqual(new[] { "./main.ahk", "./Lib/InLib.ahk", "<External>/Helper.ahk", "<External>/Helper (2).ahk" }, compiledFiles);
+
+				// String literals are UTF-16 in the assembly and attribute arguments UTF-8.
+				foreach (var encoding in new[] { Encoding.UTF8, Encoding.Unicode })
+					Assert.AreEqual(-1, bytes.AsSpan().IndexOf(encoding.GetBytes(root)), encoding.EncodingName);
+
+				var program = compiled.GetType(MainNamespaceName + ".Program");
+				s.Dispose();
+				s = null;
+				System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(program.TypeHandle);
+				s = Script.TheScript;
+				Assert.AreEqual(program, s.ProgramType);
+				Assert.IsEmpty(s.SourceLines);
+				s.SetName(main);
+				var module = compiled.GetType(MainNamespaceName + ".Program+__Main");
+				object Call(string name) => Keysharp.Internals.Invoke.MethodPropertyHolder.GetOrAdd(module.GetMethods(BindingFlags.Public | BindingFlags.Static)
+					.Single(method => method.GetCustomAttribute<UserDeclaredNameAttribute>()?.Name == name)).CallFunc(null, []);
+
+				foreach (var name in new[] { "InLib", "Helper", "OtherHelper" })
+					Assert.AreEqual(A_ScriptFullPath, Call(name), name);
+
+				var error = (Error)Call("ExplicitWhat");
+				StringAssert.Contains("[ExplicitWhat]", error.Stack);
+				Assert.AreEqual("-1", error.What);
+
+				var (_, running, files) = CompileFile(main, includeDir: app);
+				Assert.AreEqual(4, files.Length);
+				Assert.That(SourceText.Lines(running), Is.EqualTo(files.Select(file => File.ReadAllText(file).Split('\n')).ToArray()));
+			}
+			finally
+			{
+				Directory.Delete(root, true);
+			}
+		}
+
+		[Test, Category("Parser")]
+		public void DistinctCaseSourceFilesOnLinux()
+		{
+			if (!OperatingSystem.IsLinux())
+				Assert.Ignore("This test needs a case-sensitive filesystem.");
+
+			var root = Path.Combine(Path.GetTempPath(), "ks_case_sources_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(root);
+
+			try
+			{
+				var main = Path.Combine(root, "Foo.ahk");
+				var included = Path.Combine(root, "foo.ahk");
+				File.WriteAllText(main, "#Include foo.ahk\nvalue := GetValue()\n");
+				File.WriteAllText(included, "GetValue() => 42\n");
+				var (_, assembly, files) = CompileFile(main);
+				CollectionAssert.AreEqual(new[] { main, included }, files);
+				var lines = SourceText.Lines(assembly);
+				Assert.AreEqual("#Include foo.ahk", lines[0][0]);
+				Assert.AreEqual("GetValue() => 42", lines[1][0]);
+			}
+			finally
+			{
+				Directory.Delete(root, true);
 			}
 		}
 

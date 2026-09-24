@@ -1384,32 +1384,11 @@ namespace Keysharp.Builtins
 		/// The name of the function currently being executed.
 		/// <para>
 		/// A lowered script body never reaches here: the Lowerer knows the name at the emission site and folds it
-		/// to a literal. This serves the reflected callers that have no such site — chiefly a <c>#CSharp</c> member
-		/// — so both fallbacks are approximations. The scope is the innermost <em>scope-publishing</em> ancestor,
-		/// which is the executing function whenever one published a scope, and <c>NoInlining</c> is what makes
-		/// <c>StackTrace(1, …)</c> skip this getter rather than the caller it is meant to name.
+		/// to a literal. This serves the reflected callers that have no such site, chiefly a <c>#CSharp</c> member,
+		/// which the call stack names like any other script function.
 		/// </para>
 		/// </summary>
-		public static string A_ThisFunc
-		{
-			[MethodImpl(MethodImplOptions.NoInlining)]
-			get
-			{
-				if (Threads.Current.executionScope is { } scope)
-					return scope.Name;
-
-				foreach (var frame in new StackTrace(1, false).GetFrames())
-				{
-					if (frame.GetMethod() is not MethodInfo method
-							|| method.DeclaringType?.Namespace != Keywords.MainNamespaceName)
-						continue;
-
-					return MethodPropertyHolder.GetOrAdd(method).QualifiedName;
-				}
-
-				return "";
-			}
-		}
+		public static string A_ThisFunc => CallStack.Current.FunctionName;
 
 		/// <summary>
 		/// The key name of the most recently executed hotkey or hotstring.

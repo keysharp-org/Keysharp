@@ -202,6 +202,14 @@ namespace Keysharp.Builtins
 			Call = set_Call;
 		}
 
+		// A value property, the state the constructor above reaches for one, without running each accessor's setter.
+		internal OwnPropsDesc(Any kso, object value)
+		{
+			Parent = kso;
+			_value = value;
+			Type = value != null ? OwnPropsMapType.Value : OwnPropsMapType.None;
+		}
+
 		public bool IsEmpty
 		{
 			get => Type == OwnPropsMapType.None;

@@ -43,14 +43,13 @@ namespace Keysharp.Builtins
 					exitThread = retval > 0L || mode != ErrorMode.Return;
 				else if (script.ErrorStdOut)
 				{
-					System.Console.Error.WriteLine(err.Message);
+					// AutoHotkey's standard error form, which editors can jump to the line from.
+					var text = err.File.Length != 0 ? $"{err.File} ({err.Line}) : ==> {err.Message}" : err.Message;
+					System.Console.Error.WriteLine(string.IsNullOrEmpty(err.Extra) ? text : $"{text}{Environment.NewLine}     Specifically: {err.Extra}");
 					return true;
 				}
 				else if (!script.SuppressErrorOccurredDialog)
-				{
-					err.EnsureStackInfo();
 					return ErrorDialog.Show(err, mode == ErrorMode.Return) != ErrorDialog.ErrorDialogResult.Continue;
-				}
 			}
 
 			if (mode == ErrorMode.ExitApp)
@@ -72,8 +71,6 @@ namespace Keysharp.Builtins
 				return 0L;
 
 			var exit = new Threads.ExitState(Threads.Current);
-			// The callback may read Stack, Line or What before the exception has ever been thrown.
-			err.EnsureStackInfo();
 			manager.onErrorRunning = true;
 
 			try
@@ -99,7 +96,7 @@ namespace Keysharp.Builtins
 
 						exit.Restore();
 					}
-					catch (Exception ex)
+					catch (Exception ex) when (CallStack.Remember(ex))
 					{
 						// The callback's own error gets the default dialog, never these callbacks, and the error they
 						// were called for is dropped.
@@ -130,13 +127,13 @@ namespace Keysharp.Builtins
 
 			try
 			{
-				var err = ex is KeysharpException kex ? kex.DiagnosticError : new Error(ex);
+				var err = ex is KeysharpException { DiagnosticError: { } diagnostic } ? diagnostic : new Error(ex);
 
-				if (err is { Reported: false })
+				if (!err.Reported)
 					_ = ErrorOccurred(err, ErrorMode.Exit);
 
-				if (err is not { Reported: true } && !Script.TheScript.SuppressErrorOccurredDialog)
-					ShowUncaughtErrorDialog(ex);
+				if (!err.Reported && !Script.TheScript.SuppressErrorOccurredDialog)
+					ShowUncaughtErrorDialog(err);
 
 				return false;
 			}
@@ -147,13 +144,13 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		private static void ShowUncaughtErrorDialog(Exception ex)
+		private static void ShowUncaughtErrorDialog(Error err)
 		{
 			var script = Script.TheScript;
 			var scheduler = script.CurrentSchedulerIfCreated ?? script.EventScheduler;
 
-			if (scheduler.TryExecuteThreadLaunch(0, false, false, _ => ErrorDialog.Show(ex, false)) != ScriptEventExecutionResult.Executed)
-				_ = ErrorDialog.Show(ex, false);
+			if (scheduler.TryExecuteThreadLaunch(0, false, false, _ => ErrorDialog.Show(err, false)) != ScriptEventExecutionResult.Executed)
+				_ = ErrorDialog.Show(err, false);
 		}
 
 		/// <summary>
@@ -278,16 +275,6 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Internal helper to handle key errors. Throws a <see cref="KeyError"/> or returns <see cref="DefaultObject"/>.
-		/// </summary>
-		[StackTraceHidden]
-		internal static object KeyErrorOccurred(string text, object ret = null)
-		{
-			Error err;
-			return ErrorOccurred(err = new KeyError(text)) ? throw err : ret ?? DefaultObject;
-		}
-
-		/// <summary>
 		/// Internal helper to handle method errors. Throws a <see cref="MethodError"/> or returns <see cref="DefaultObject"/>.
 		/// </summary>
 		[StackTraceHidden]
@@ -304,7 +291,7 @@ namespace Keysharp.Builtins
 		internal static object OSErrorOccurred(object obj, string text = "", object ret = null)
 		{
 			Error err;
-			return ErrorOccurred(err = new OSError(obj, text)) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new OSError(obj, null, text)) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -334,7 +321,7 @@ namespace Keysharp.Builtins
 				return ret ?? (long)hr;
 
 			Error err;
-			return ErrorOccurred(err = new OSError(Marshal.GetExceptionForHR(hr), "")) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new OSError(Marshal.GetExceptionForHR(hr))) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -396,14 +383,16 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Internal helper to handle type errors. Throws a <see cref="TypeError"/> or returns <see cref="DefaultObject"/>.
+		/// Internal helper for a value which cannot be converted to <paramref name="targetType"/>, worded as AutoHotkey words it:
+		/// "Expected a Number but got an Object.". Throws a <see cref="TypeError"/> or returns <see cref="DefaultObject"/>.
 		/// </summary>
 		[StackTraceHidden]
-		internal static object TypeErrorOccurred(object sourceValue, Type targetType, object ret = null)
-		{
-			Error err;
-			return ErrorOccurred(err = new TypeError($"Cannot convert an object of type {(sourceValue != null ? Types.Type(sourceValue) : "no type/unset")} with value {Describe(sourceValue)} to type {Types.TypeName(targetType)}.")) ? throw err : ret ?? DefaultObject;
-		}
+		internal static object TypeErrorOccurred(object sourceValue, Type targetType, object ret = null) =>
+			// AutoHotkey expects a Number wherever a value is converted to one, whatever its CLR type.
+			ExpectedTypeErrorOccurred(targetType == typeof(string) || targetType == typeof(char) ? "String"
+				: targetType.IsPrimitive || targetType == typeof(decimal) ? "Number"
+				: targetType == typeof(object) || targetType == typeof(Any) || targetType == typeof(KeysharpObject) ? "Object"
+				: Types.TypeName(targetType), sourceValue, ret);
 
 		/// <summary>
 		/// Internal helper to handle type errors whose message says more than a conversion pair can.
@@ -470,13 +459,36 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Internal helper to handle unset item errors. Throws a <see cref="UnsetItemError"/> or returns <see cref="DefaultObject"/>.
+		/// Internal helper for an item which has no value, as AutoHotkey reports it, with its key or index as Extra.
+		/// Throws an <see cref="UnsetItemError"/> or returns <see cref="DefaultObject"/>.
 		/// </summary>
 		[StackTraceHidden]
-		internal static object UnsetItemErrorOccurred(string text, object ret = null)
+		internal static object UnsetItemErrorOccurred(object key, string what = null, object ret = null)
 		{
 			Error err;
-			return ErrorOccurred(err = new UnsetItemError(text)) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new UnsetItemError("Item has no value.", what, key is Any ? "" : key.As())) ? throw err : ret ?? DefaultObject;
+		}
+
+		/// <summary>
+		/// Internal helper for an index outside what a collection holds, as AutoHotkey reports it, with the index as Extra.
+		/// Throws an <see cref="IndexError"/> or returns <see cref="DefaultObject"/>.
+		/// </summary>
+		[StackTraceHidden]
+		internal static object InvalidIndexErrorOccurred(object index, string what = null, object ret = null)
+		{
+			Error err;
+			return ErrorOccurred(err = new IndexError("Invalid index.", what, index is Any ? "" : index.As())) ? throw err : ret ?? DefaultObject;
+		}
+
+		/// <summary>
+		/// Internal helper for an argument a built-in function cannot use, as AutoHotkey reports it, with the value as Extra.
+		/// Throws a <see cref="ValueError"/> or returns <see cref="DefaultObject"/>.
+		/// </summary>
+		[StackTraceHidden]
+		internal static object InvalidParameterErrorOccurred(int position, string function, object value, object ret = null)
+		{
+			Error err;
+			return ErrorOccurred(err = new ValueError($"Parameter #{position} of {function} is invalid.", null, value is Any ? "" : value.As())) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -486,7 +498,7 @@ namespace Keysharp.Builtins
 		internal static object ValueErrorOccurred(string text, object val = null, object ret = null)
 		{
 			Error err;
-			return ErrorOccurred(err = new ValueError(text, val)) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new ValueError(text, null, val)) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -550,6 +562,10 @@ namespace Keysharp.Builtins
 		internal static object MissingPropertyErrorOccurred(object target, object name) =>
 			PropertyErrorOccurred($"This value of type \"{Types.Type(target)}\" has no property named \"{name}\".");
 
+		/// <summary>Internal helper for assigning a property which has no setter, raised as AutoHotkey raises it. Throws an <see cref="Error"/> or returns <see cref="DefaultObject"/>.</summary>
+		[StackTraceHidden]
+		internal static object ReadOnlyPropertyErrorOccurred(string name) => ErrorOccurred("Property is read-only.", null, name);
+
 		/// <summary>Internal helper for a value which lacks a method. Throws a <see cref="MethodError"/> or returns <see cref="DefaultObject"/>.</summary>
 		[StackTraceHidden]
 		internal static object MissingMethodErrorOccurred(object target, string name) =>
@@ -567,160 +583,93 @@ namespace Keysharp.Builtins
 	}
 
 	/// <summary>
-	/// A general exception object.
+	/// A general exception object. Its Message, What, Extra, File, Line and Stack are own value properties, as AutoHotkey
+	/// gives them, which a script may reassign or delete; the properties here read them for Keysharp's own use.
 	/// </summary>
 	public class Error : KeysharpObject
 	{
-		private Exception Exception;
-		private string _message;
-		private string _what;
-		private string _extra;
-		private string _file;
-		private long _line = long.MinValue;
-		private string _stack;
-		private bool _stackInitialized;
+		private KeysharpException Exception;
+
 		/// <summary>
 		/// Initializes a new instance of the <see cref="Error"/> class.
 		/// </summary>
 		/// <param name="args">The parameters to pass to the base.</param>
 		public Error(params object[] args) : base(args) { }
 
+		/// <summary>Reports an exception C# code threw, from the frames the unwind left when it began.</summary>
 		internal Error(Exception ex) : base(null)
 		{
-			Exception = ex;
-
-			if (ex is KeysharpException kex && kex.DiagnosticError != null)
-			{
-				var diagnostic = kex.DiagnosticError;
-				_message = diagnostic.Message;
-				_what = diagnostic.What;
-				_extra = diagnostic.Extra;
-				_file = diagnostic.File;
-				_line = diagnostic.Line;
-				_stack = diagnostic.Stack;
-				Reported = diagnostic.Reported;
-				_stackInitialized = true;
-				return;
-			}
-
-			_message = ex?.Message ?? GetType().Name;
-			_what = ex?.Source ?? "";
-			_stack = KeysharpException.FormatFilteredStack(ex);
-			_stackInitialized = true;
+			// The type tells an exception apart from another with the same message.
+			SetProperties(ex.Message, CallStack.Recall(ex), ex.GetType().FullName);
 		}
 
 		// Declared `new` with the real signature, not `override` of the `params object[]` base: construction
 		// dispatches by NAME, most-derived first (Class.Call for scripts, Any's constructor for C#), so the
 		// signature is free to be the documented one and arity/defaults/named binding all come from it directly.
 		// The parameters are PascalCase on purpose: these names ARE script-facing API (`Error(Message: "x")`).
-		public object __New(object message = null, object what = null, object extra = null)
-		{
+		public object __New(object message = null, object what = null, object extra = null) =>
 			// An object message is empty text, not its ToString result.
-			_message = message == null ? GetType().Name : message is Any ? "" : message.As();
-			_what = what.As();
-			_extra = extra.As();
-			Exception = new KeysharpException(this);
+			Construct(message == null ? GetType().Name : message is Any ? "" : message.As(), what, extra);
+
+		/// <summary>Describes an error constructed now from the call stack, which is what every constructor comes down to.</summary>
+		private protected object Construct(string message, object what, object extra, object number = null)
+		{
+			SetProperties(message, CallStack.Current.Capture(GetType(), what), extra.As(), number);
 			return DefaultObject;
 		}
 
-		/// <summary>
-		/// Gets or sets the extra text.
-		/// </summary>
-		public string Extra { get => _extra; internal set => _extra = value; }
-
-		/// <summary>
-		/// Gets or sets the file the exception occurred in.
-		/// </summary>
-		public string File
+		// Sets the own properties, in the order AutoHotkey lists them.
+		private void SetProperties(string message, CallStack.Report report, string extra, object number = null)
 		{
-			get
-			{
-				EnsureStackInfo();
-				// Always a string, like AHK: no PDB is emitted for script code, so a frame often has no file.
-				return _file ?? "";
-			}
+			var props = op ??= new Dictionary<string, OwnPropsDesc>(number == null ? 6 : 7, StringComparer.OrdinalIgnoreCase);
+			props["Extra"] = new OwnPropsDesc(this, extra);
+			props["File"] = new OwnPropsDesc(this, report.File);
+			props["Line"] = new OwnPropsDesc(this, report.Line);
+			props["Message"] = new OwnPropsDesc(this, message);
 
-			internal set => _file = value;
+			if (number != null)
+				props["Number"] = new OwnPropsDesc(this, number);
+
+			props["Stack"] = new OwnPropsDesc(this, report.Stack);
+			props["What"] = new OwnPropsDesc(this, report.What);
 		}
 
-		/// <summary>
-		/// Gets or sets the line the exception occured on.
-		/// </summary>
-		public long Line
-		{
-			get
-			{
-				EnsureStackInfo();
-				// The unset sentinel never reaches a script: a frame with no line reads as 0, as it does in AHK.
-				return _line == long.MinValue ? 0 : _line;
-			}
+		private protected object Own(string name) => op != null && op.TryGetValue(name, out var desc) ? desc.Value : null;
 
-			internal set => _line = value;
-		}
+		private protected void SetOwn(string name, object value) => EnsureOwnProps()[name] = new OwnPropsDesc(this, value);
 
-		/// <summary>
-		/// Gets or sets the message.
-		/// Must be done this way, else the reflection dictionary sees it as a dupe from the base.
-		/// </summary>
-		public string Message
-		{
-			get => _message;
-			internal set => _message = value;
-		}
+		[PublicHiddenFromUser]
+		public string Extra { get => Own("Extra").As(); internal set => SetOwn("Extra", value); }
+
+		[PublicHiddenFromUser]
+		public string File => Own("File").As();
+
+		[PublicHiddenFromUser]
+		public long Line => Own("Line").ParseLong() ?? 0;
+
+		[PublicHiddenFromUser]
+		public string Message { get => Own("Message").As(); internal set => SetOwn("Message", value); }
 
 		/// <summary>OnError and the default dialog have dealt with this raise.</summary>
 		internal bool Reported { get; set; }
 
-		/// <summary>
-		/// Gets or sets the stack trace of where the exception occurred.
-		/// </summary>
-		public string Stack
-		{
-			get
-			{
-				EnsureStackInfo();
-				return _stack ?? "";
-			}
+		[PublicHiddenFromUser]
+		public string Stack => Own("Stack").As();
 
-			internal set => _stack = value;
-		}
+		[PublicHiddenFromUser]
+		public string What => Own("What").As();
+
+		/// <summary>The Hint a script gave the error for the default dialog, or null when it gave none.</summary>
+		internal string Hint => Own("Hint")?.As();
+
+		public override string ToString() => Describe(false);
 
 		/// <summary>
-		/// Gets or sets the description of the error that happened.
+		/// The error's text, which for the default dialog adds the lines around the error when the script carries its
+		/// source, and marks with ▶ the line the error names, or lacking those, the first frame of the stack.
 		/// </summary>
-		public string What
+		internal string Describe(bool dialog)
 		{
-			get
-			{
-				if (_what.IsNullOrEmpty())
-					EnsureStackInfo();
-				return _what;
-			}
-			set => _what = value;
-		}
-
-		internal void EnsureStackInfo()
-		{
-			if (_stackInitialized || Exception == null)
-				return;
-
-			_stackInitialized = true;
-			if (Exception is not KeysharpException ksEx)
-				return;
-
-			var info = ksEx.CaptureStackInfo(_what);
-			_stack ??= info.Stack;
-			if (_file == null)
-				_file = info.File;
-			if (_line == long.MinValue)
-				_line = info.Line;
-			if (_what.IsNullOrEmpty())
-				_what = info.What;
-		}
-
-		public override string ToString()
-		{
-			EnsureStackInfo();
 			var sb = new StringBuilder(512);
 			_ = sb.AppendLine($"Exception: {GetType().Name}");
 			_ = sb.AppendLine($"Message: {Message}");
@@ -728,26 +677,41 @@ namespace Keysharp.Builtins
 			_ = sb.AppendLine($"Extra/Code: {Extra}");
 			_ = sb.AppendLine($"File: {File}");
 			_ = sb.AppendLine($"Line: {Line}");
-			_ = sb.AppendLine($"Stack:{Environment.NewLine}\t{Stack}");
-			return sb.ToString();
+			// Found from File and Line, as AutoHotkey finds them, so a script that changes them changes what is quoted.
+			var excerpt = dialog ? CallStack.Excerpt(File, Line) : null;
+
+			if (excerpt != null)
+				_ = sb.AppendLine().Append(excerpt).AppendLine();
+
+			_ = sb.AppendLine("Stack:");
+
+			if (dialog && excerpt == null)
+				_ = sb.Append('▶');
+
+			return sb.Append(Stack).ToString();
 		}
 
 		public long Show(object mode = null)
 		{
 			string modeStr = mode.As("Return").Trim();
 			bool allowContinue = modeStr.Equals("return", StringComparison.OrdinalIgnoreCase) || modeStr.Equals("warn", StringComparison.OrdinalIgnoreCase);
-			var result = ErrorDialog.Show(AsException(), allowContinue);
+			var result = ErrorDialog.Show(this, allowContinue);
+
+			// A critical error ends the script however its dialog was closed, as in AutoHotkey.
+			if (modeStr.Equals("ExitApp", StringComparison.OrdinalIgnoreCase) && result is ErrorDialog.ErrorDialogResult.Abort or ErrorDialog.ErrorDialogResult.Continue)
+				_ = Keysharp.Internals.Flow.ExitAppInternal(Script.TheScript, Flow.ExitReasons.Critical, 2L, true);
+
 			if (result == ErrorDialog.ErrorDialogResult.Continue) return -1L;
 			return 1L;
 		}
 
-		/// <summary>The exception associated with this Error, replacing a foreign exception it wraps.</summary>
+		/// <summary>The exception thrown for this Error, reused when the thrown value matches.</summary>
 		internal KeysharpException AsException() => AsException(this);
 
 		internal KeysharpException AsException(object thrownValue)
-			=> Exception is KeysharpException kex && ReferenceEquals(kex.DiagnosticError, this) && ReferenceEquals(kex.ThrownValue, thrownValue)
+			=> Exception is { } kex && ReferenceEquals(kex.ThrownValue, thrownValue)
 				? kex
-				: (KeysharpException)(Exception = new KeysharpException(this, thrownValue));
+				: (Exception = new KeysharpException(this, thrownValue));
 
 		[PublicHiddenFromUser]
 		public static implicit operator Exception(Error err) => err.AsException();
@@ -814,21 +778,6 @@ namespace Keysharp.Builtins
 		internal Error DiagnosticError { get; }
 
 		/// <summary>
-		/// Whether the stack trace has been constructed.
-		/// </summary>
-		private bool _isInitialized = false;
-
-		/// <summary>
-		/// Stack info captured on demand.
-		/// </summary>
-		private string _stack = null;
-
-		/// <summary>
-		/// Stack frames for mostly user-accessible functions (excludes C# built-in methods, some of our helpers etc).
-		/// </summary>
-		private IEnumerable<StackFrame> _stackFrames;
-
-		/// <summary>
 		/// Initializes a new instance of the <see cref="KeysharpException"/> class.
 		/// </summary>
 		/// <param name="diagnosticError">The <see cref="Error"/> used for diagnostics.</param>
@@ -845,129 +794,6 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="message">A message describing the error that occurred.</param>
 		public KeysharpException(string message = null) : base(message ?? string.Empty) { }
-
-		internal struct StackInfo
-		{
-			public string Stack;
-			public string File;
-			public long Line;
-			public string What;
-		}
-
-		internal StackInfo CaptureStackInfo(string currentWhat)
-		{
-			EnsureInitialized();
-			var frames = _stackFrames ?? System.Array.Empty<StackFrame>();
-			var topFrame = frames.FirstOrDefault() ?? new StackFrame(1, true);
-			MethodBase method;
-			var what = currentWhat;
-
-			if (what.IsNullOrEmpty() && (method = topFrame.GetMethod()) != null)
-				what = $"{method.DeclaringType.FullName}.{method.Name}()";
-
-			return new StackInfo
-			{
-				Stack = _stack ??= FormatStack(frames),
-				File = topFrame.GetFileName(),
-				Line = topFrame.GetFileLineNumber(),
-				What = what
-			};
-		}
-
-		private void EnsureInitialized()
-		{
-			if (_isInitialized) return;
-
-			_isInitialized = true;
-			var st = new StackTrace(this, true);
-			var frames = (st.FrameCount == 0 ? new StackTrace(1, true) : st).GetFrames();
-			_stackFrames = FilterUserFrames(frames);
-		}
-
-		/// <summary>
-		/// Helper function to filter out functions from the stack trace which are not exposed to the user.
-		/// </summary>
-		/// <returns>A filtered stack trace.</returns>
-		private static IEnumerable<StackFrame> FilterUserFrames(StackFrame[] frames)
-		{
-			var builtins = TheScript.ReflectionsData.flatPublicStaticMethods;
-
-			foreach (var frame in frames)
-			{
-				var method = frame.GetMethod();
-				var type = method?.DeclaringType;
-
-				if (type == null || type.IsSubclassOf(typeof(Exception)) || typeof(Error).IsAssignableFrom(type))
-					continue;
-
-				string fullName = type.FullName ?? "";
-
-				//Ignore any built-in C# functions
-				if (!fullName.StartsWith("Keysharp."))
-					continue;
-
-#if !DEBUG
-
-				//Ignore most of our internal functions
-				if ((fullName.StartsWith("Keysharp.Internals") || fullName.StartsWith("Keysharp.Runtime")
-						|| fullName.StartsWith("Keysharp.Parsing") || fullName.StartsWith("Keysharp.Compilation"))
-						&& method is MethodInfo mi && mi != null && !builtins.ContainsValue(mi))
-					continue;
-
-#endif
-
-				//Ignore functions marked to be hidden from the stack trace
-				if (method.GetCustomAttributes(typeof(StackTraceHiddenAttribute)).Any())
-					continue;
-
-				if (IsFunctionObjectDispatchFrame(type, method))
-					continue;
-
-				yield return frame;
-
-				//If we reached the auto-execute section function then don't go further
-				if (method.Name == Keywords.AutoExecSectionName)
-					break;
-			}
-		}
-
-		private static bool IsFunctionObjectDispatchFrame(Type type, MethodBase method)
-			=> typeof(KeysharpFunc).IsAssignableFrom(type)
-			   && (method.Name == nameof(KeysharpFunc.Call) || method.Name == nameof(KeysharpFunc.CallInst));
-
-		/// <summary>
-		/// Builds a filtered, formatted stack string for an arbitrary exception. Used for plain .NET
-		/// exceptions (e.g. an InvalidCastException raised inside a callback trampoline) that are shown
-		/// to the user without ever being wrapped in a <see cref="KeysharpException"/>: they must have
-		/// their Keysharp-internal frames stripped in Release builds just like our own exceptions do.
-		/// </summary>
-		/// <returns>The filtered stack, or an empty string if the exception carries no captured trace.</returns>
-		internal static string FormatFilteredStack(Exception ex)
-		{
-			if (ex == null)
-				return string.Empty;
-
-			var st = new StackTrace(ex, true);
-			return st.FrameCount == 0 ? string.Empty : FormatStack(FilterUserFrames(st.GetFrames()));
-		}
-
-		/// <summary>
-		/// Helper function to convert the filtered stack trace into a formatted string.
-		/// </summary>
-		/// <returns>A summary of the stack trace.</returns>
-		private static string FormatStack(IEnumerable<StackFrame> frames)
-		{
-			return string.Join($"{Environment.NewLine}\t", frames.Select(f =>
-			{
-				var m = f.GetMethod();
-				var file = f.GetFileName();
-				var line = f.GetFileLineNumber();
-				var location = !string.IsNullOrEmpty(file)
-							   ? $" in {Path.GetFileName(file)}, line {line}"
-							   : "";
-				return $"at {m.DeclaringType.FullName}.{m.Name}(){location}";
-			}));
-		}
 
 		/// <summary>
 		/// Returns a string representation of the details of the exception.
@@ -1033,10 +859,9 @@ namespace Keysharp.Builtins
 	/// </summary>
 	public class OSError : Error
 	{
-		/// <summary>
-		/// Gets or sets the OS-specific number that corresponds to the error.
-		/// </summary>
-		public long Number { get; set; }
+		/// <summary>The Number property: the operating system's code for the error, or 0.</summary>
+		[PublicHiddenFromUser]
+		public long Number => Own("Number").ParseLong() ?? 0;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="OSError"/> class.
@@ -1044,32 +869,33 @@ namespace Keysharp.Builtins
 		/// <param name="args">The parameters to pass to the base.</param>
 		public OSError(params object[] args) : base(args) { }
 
+		/// <summary>
+		/// Given a code, or none for the last error the operating system reported, the error takes it as Number and the
+		/// system's text for it as Message, as AutoHotkey's does. Any other value is the Message, with no Number.
+		/// </summary>
 		public new object __New(object errorNumber = null, object what = null, object extra = null)
 		{
-			_ = base.__New(errorNumber, what, extra);
-#if WINDOWS
-			var e = errorNumber as Exception;
-			Win32Exception w32ex = null;
-
-			if ((w32ex = e as Win32Exception) == null && e != null)
+			if (errorNumber is Exception e)
 			{
-				if (e.HResult < 0)
-				{
-					Number = e.HResult;
-					Message = $"(0x{e.HResult.ToString("X2")}): {e.Message}";
-					return DefaultObject;
-				}
-
-				w32ex = e.InnerException as Win32Exception;
+				if ((e as Win32Exception ?? e.InnerException as Win32Exception) is { } w32)
+					return Numbered(w32.NativeErrorCode, what, extra);
+				return e.HResult < 0 ? Construct($"(0x{e.HResult:X}) {e.Message}", what, extra, (long)(uint)e.HResult) : Numbered(LastError(), what, extra);
 			}
 
-			Number = w32ex != null ? w32ex.ErrorCode : Marshal.GetLastPInvokeError();
-			Message = new Win32Exception((int)Number).Message;
-#else
-			Number = (long)A_LastError;
-#endif
-			return DefaultObject;
+			return errorNumber == null ? Numbered(LastError(), what, extra)
+				: errorNumber is not Any && errorNumber.ParseLong() is { } code ? Numbered(code, what, extra)
+				: Construct(errorNumber is Any ? "" : errorNumber.As(), what, extra);
 		}
+
+		// A code whose 32-bit value is negative is shown in hexadecimal; Number keeps the unsigned DWORD.
+		private object Numbered(long code, object what, object extra)
+		{
+			var error = (uint)code;
+			return Construct(error == 0 ? "(0) " : $"({((int)error < 0 ? $"0x{error:X}" : error.ToString())}) {Marshal.GetPInvokeErrorMessage((int)error).TrimEnd()}",
+				what, extra, (long)error);
+		}
+
+		private static long LastError() => (uint)ThreadAccessors.A_LastError;
 	}
 
 	/// <summary>
@@ -1548,9 +1374,9 @@ namespace Keysharp.Builtins
 		internal ErrorDialogResult Result { get; private set; } = ErrorDialogResult.Exit;
 
 		/// <summary>
-		/// Displays an error dialog for the given exception and returns whether execution should abort.
+		/// Displays an error dialog for the given error and returns whether execution should abort.
 		/// </summary>
-		/// <param name="ex">The exception to show.</param>
+		/// <param name="err">The error to show.</param>
 		/// <param name="allowContinue">
 		/// If <c>true</c>, the dialog offers a “Continue” button. Otherwise, only Abort/Exit/Reload options are shown.
 		/// </param>
@@ -1558,16 +1384,9 @@ namespace Keysharp.Builtins
 		/// The ErrorDialogResult value corresponding to the option the user chose.
 		/// </returns>
 		[StackTraceHidden]
-		internal static ErrorDialogResult Show(Exception ex, bool allowContinue)
+		internal static ErrorDialogResult Show(Error err, bool allowContinue)
 		{
-			KeysharpException kex = ex as KeysharpException;
-			// A plain .NET exception (never wrapped in a KeysharpException) still needs its internal frames
-			// stripped, and the "Stack:\n\t" framing so the dialog marks the causing frame with ▶ the same way
-			// it does for our own exceptions. kex.ToString() already emits a filtered trace in this format.
-			string msg = kex != null
-				? kex.ToString()
-				: $"Message: {ex.Message}{Environment.NewLine}Stack:{Environment.NewLine}\t{KeysharpException.FormatFilteredStack(ex)}";
-			using var dlg = new ErrorDialog(msg, ErrorDialogKind.RuntimeError, allowContinue);
+			using var dlg = new ErrorDialog(err.Describe(true), ErrorDialogKind.RuntimeError, allowContinue, err.Hint);
 			using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
 				dlg.ShowDialog();
 
@@ -1598,10 +1417,11 @@ namespace Keysharp.Builtins
 #if WINDOWS
 	internal partial class ErrorDialog : Form
 	{
-		internal ErrorDialog(string errorText, ErrorDialogKind kind = ErrorDialogKind.RuntimeError, bool allowContinue = false, string exitMessage = null, string fileToEdit = null)
+		internal ErrorDialog(string errorText, ErrorDialogKind kind = ErrorDialogKind.RuntimeError, bool allowContinue = false, string footer = null, string fileToEdit = null)
 		{
-			if (!allowContinue)
-				errorText += $"{Environment.NewLine}{exitMessage ?? "The current thread will exit."}";
+			// The footer is the text given, which may be empty, or else says that the thread will exit when it does.
+			if ((footer ?? (allowContinue ? null : "The current thread will exit.")) is { Length: > 0 } footerText)
+				errorText += $"{Environment.NewLine}{footerText}";
 
 			var scale = Keysharp.Internals.ScaleFactor.PrimaryScale;
 			this.AutoScaleMode = AutoScaleMode.Dpi;
@@ -1629,7 +1449,7 @@ namespace Keysharp.Builtins
 			};
 			var richBox = new RichTextBox
 			{
-				Text = errorText.Replace(Environment.NewLine, "\n").Replace("Stack:\n", "Stack:\n▶"),
+				Text = errorText.Replace(Environment.NewLine, "\n"),
 				ReadOnly = true,
 				Multiline = true,
 				ScrollBars = RichTextBoxScrollBars.Both,
@@ -1796,8 +1616,8 @@ namespace Keysharp.Builtins
 				box.SelectionColor = Color.DarkOrange;
 			}
 
-			// Highlight the causing line yellow. It is marked with ▶ in both an error stack ("Stack:\n▶<frame>") and a
-			// #Warn dialog ("▶<line>: <source>"), so keying off the marker covers both cases.
+			// Highlight the causing line yellow. The text marks it with ▶: a source line, which the error and #Warn dialogs
+			// quote when they can, or the first frame of an error's stack.
 			int arrowIndex = text.IndexOf('▶');
 
 			if (arrowIndex >= 0)
@@ -1818,16 +1638,17 @@ namespace Keysharp.Builtins
 #else
 	internal partial class ErrorDialog : Eto.Forms.Dialog
 	{
-		internal ErrorDialog(string errorText, ErrorDialogKind kind = ErrorDialogKind.RuntimeError, bool allowContinue = false, string exitMessage = null, string fileToEdit = null)
+		internal ErrorDialog(string errorText, ErrorDialogKind kind = ErrorDialogKind.RuntimeError, bool allowContinue = false, string footer = null, string fileToEdit = null)
 		{
-			if (!allowContinue)
-				errorText += $"{Environment.NewLine}{exitMessage ?? "The current thread will exit."}";
+			// The footer is the text given, which may be empty, or else says that the thread will exit when it does.
+			if ((footer ?? (allowContinue ? null : "The current thread will exit.")) is { Length: > 0 } footerText)
+				errorText += $"{Environment.NewLine}{footerText}";
 
 			Title = A_ScriptName ?? "Keysharp";
 			Resizable = true;
 			Topmost = true;
 
-			var contentText = errorText.Replace(Environment.NewLine, "\n").Replace("Stack:\n", "Stack:\n▶");
+			var contentText = errorText.Replace(Environment.NewLine, "\n");
 			var richText = new Eto.Forms.RichTextArea
 			{
 				Text = contentText,
@@ -1986,8 +1807,8 @@ namespace Keysharp.Builtins
 				box.SelectionForeground = Eto.Drawing.Colors.DarkOrange;
 			}
 
-			// Highlight the causing line yellow. It is marked with ▶ in both an error stack ("Stack:\n▶<frame>") and a
-			// #Warn dialog ("▶<line>: <source>"), so keying off the marker covers both cases.
+			// Highlight the causing line yellow. The text marks it with ▶: a source line, which the error and #Warn dialogs
+			// quote when they can, or the first frame of an error's stack.
 			int arrowIndex = text.IndexOf('▶');
 
 			if (arrowIndex >= 0)

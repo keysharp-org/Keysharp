@@ -36,7 +36,7 @@ namespace Keysharp.Builtins
 				return null;
 
 			// A closure is a variable of the executing function, created per call, so it is never cached.
-			if (Threads.Current.executionScope is { } scope && scope.TryGetValue(s, out var own) && own is KeysharpFunc { IsValid: true } closure)
+			if (CallStack.Current.ExecutionScope is { } scope && scope.TryGetValue(s, out var own) && own is KeysharpFunc { IsValid: true } closure)
 				return closure;
 
 			var script = Script.TheScript;

@@ -312,25 +312,24 @@ namespace Keysharp.Compilation.Syntax
 		// The compiled script's full path ("*" for a from-string compile) and the caller-supplied startup name; used to
 		// emit `MainScript.SetName(...)` so A_ScriptName/A_ScriptFullPath are correct.
 		private string _scriptPath = "*";
-		private string[] _sourceLines;   // raw MAIN-script lines, for embedding the offending line text in #Warn dialogs
-		// The same, per #included file (full path -> lines, null when unreadable); filled on demand by IncludedSourceLines.
-		private readonly Dictionary<string, string[]> _includedSourceLines = new(System.StringComparer.OrdinalIgnoreCase);
+		private readonly Dictionary<string, string[]> _sourceLines = new(SourcePathComparer);   // cached by SourceLines
 		private string _startupName;
 		private string _includeDir;   // directory for resolving file-based `#import "name"` module imports
 		// This compilation's caller-supplied preprocessor symbols (null when there are none), forwarded to the separate
 		// parse that each imported module file gets so its #if branches resolve as they do in the main script.
 		private IEnumerable<string> _defines;
-		private bool _compileToFile;   // emitting an artifact: relativize #include paths and attach declared file payloads
+		private bool _compileToFile;   // emitting an artifact: keep full source paths out of it and attach declared file payloads
 
 		public CompilationUnitSyntax Build(ProgramNode prog, string name, string scriptPath = "*", string startupName = null, string includeDir = null, string source = null, bool compileToFile = false, IEnumerable<string> defines = null)
 		{
 			_scriptPath = scriptPath ?? "*";
+			_sourceFiles.Add(_scriptPath, source);
+			AddSourceTexts(_scriptPath, source, prog);
 			_compileToFile = compileToFile;
 			_defines = defines;
 			// Include predefined, command-line and script symbols.
 			_inlineDefines = prog.Defines is { Count: > 0 } ? prog.Defines : [.. defines ?? []];
 			_staticFieldSink = _fieldDecls;   // module scope by default (the single-module path skips ClearPerModuleState)
-			_sourceLines = source?.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
 			_startupName = startupName;
 			_includeDir = includeDir;
 			// Package requirements are program-wide, so they are gathered before either lowering path runs. Scanning
@@ -430,6 +429,7 @@ namespace Keysharp.Compilation.Syntax
 							continue;
 						}
 						fileProg = p;
+						AddSourceTexts(file, moduleSource, p);
 					}
 					catch (System.Exception ex) { Diag($"#Import: failed to read module '{modName}' from {fileName}: {ex.Message}"); continue; }
 					// The file's own segments: its `__Main` (top-level) becomes the imported module `modName`; any inner
@@ -1405,6 +1405,7 @@ namespace Keysharp.Compilation.Syntax
 					members.Add(LowerClass(cd));
 					// AHK initializes a class when execution reaches its declaration — model that by referencing the
 					// class slot at that point in the auto-exec, which triggers the lazy Statics[typeof(Class)] init.
+					auto.Add(Stamp(cd));
 					auto.Add(ExprStmt(Op("MultiStatement", Id(_fields[cd.Name]))));
 				}
 				else if (s is HotkeyDef hk) LowerHotkey(hk);
@@ -1414,7 +1415,7 @@ namespace Keysharp.Compilation.Syntax
 				{
 					// A `name:` label immediately before a top-level loop becomes that loop's break/continue target.
 					if (s is LabelStmt ll && i + 1 < body.Count && IsLoopStmt(body[i + 1])) _pendingLoopLabel = ll.Name;
-					var st = LowerStmt(s); if (st != null) auto.Add(st);
+					AddStmt(auto, s);
 				}
 			}
 			_labelScopes.RemoveAt(_labelScopes.Count - 1);
@@ -2066,26 +2067,6 @@ namespace Keysharp.Compilation.Syntax
 				: MakeVarRefGS(target.Read, target.Write(Id("KS_value")), declaredName);
 		}
 
-		// The baked A_LineFile value for an #included line. Running/transpiling keeps the include's full path;
-		// compiling to a distributable .cks/.exe relativizes it to the main script's directory (so a local
-		// "Lib\Foo.ks" stays "Lib\Foo.ks") and never bakes an absolute path - falling back to the bare file name
-		// when there is no main-script directory (a from-"*" compile) or the include resolves onto another root.
-		private string IncludeLineFile(string includeFull)
-		{
-			if (!_compileToFile)
-				return includeFull;
-
-			if (_scriptPath != "*" && !string.IsNullOrEmpty(_includeDir))
-			{
-				var rel = System.IO.Path.GetRelativePath(_includeDir, includeFull);
-
-				if (!System.IO.Path.IsPathRooted(rel))
-					return rel;
-			}
-
-			return System.IO.Path.GetFileName(includeFull);
-		}
-
 		private ExpressionSyntax NameRef(string name) => NameRefLower(name.ToLowerInvariant());
 
 		// Naming an enclosing callable's local, by-ref parameter or nested function reaches into its frame from every
@@ -2304,8 +2285,8 @@ namespace Keysharp.Compilation.Syntax
 				case Block b:
 					return SyntaxFactory.Block(LowerStmtList(b.Body));
 				case IfStmt iff:
-					var elseClause = iff.Else != null ? SyntaxFactory.ElseClause(AsBlock(LowerStmt(iff.Else))) : null;
-					return SyntaxFactory.IfStatement(IfTest(LowerExpr(iff.Cond)), AsBlock(LowerStmt(iff.Then)), elseClause);
+					var elseClause = iff.Else != null ? SyntaxFactory.ElseClause(LowerBody(iff.Else)) : null;
+					return SyntaxFactory.IfStatement(IfTest(LowerExpr(iff.Cond)), LowerBody(iff.Then), elseClause);
 				case WhileStmt w: return LowerWhile(w);
 				case DeclStmt d: return LowerDecl(d);
 				case LoopStmt lp: return LowerLoop(lp);
@@ -3552,10 +3533,6 @@ namespace Keysharp.Compilation.Syntax
 		private static bool IsScriptVisible(MemberDeclarationSyntax m) =>
 			m.Modifiers.Any(t => t.IsKind(SyntaxKind.PublicKeyword));
 
-		private static bool ReferencesThisFunc(MemberDeclarationSyntax m) =>
-			m.DescendantNodes().OfType<IdentifierNameSyntax>()
-			 .Any(n => n.Identifier.ValueText.Equals("A_ThisFunc", System.StringComparison.OrdinalIgnoreCase));
-
 		private static AttributeSyntax InlineExportAttribute(MemberDeclarationSyntax member) =>
 			member.AttributeLists.SelectMany(list => list.Attributes).FirstOrDefault(attr =>
 				attr.Name.ToString() is "Export" or "Keysharp.Runtime.Export" or "global::Keysharp.Runtime.Export");
@@ -3836,10 +3813,6 @@ namespace Keysharp.Compilation.Syntax
 					{
 						var isFunction = classPath == null && m is MethodDeclarationSyntax me && IsScriptVisible(me)
 									   && me.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword));
-						// A_ThisFunc has no emission site to fold in inline C#, so it falls back to a stack walk --
-						// which finds nothing if the JIT inlined the very member it is meant to name. Methods only:
-						// MethodImpl is legal on nothing else, and a property or class would fail to compile.
-						var needsThisFuncFrame = m is MethodDeclarationSyntax && ReferencesThisFunc(m);
 						var startLine = m.GetLocation().GetLineSpan().StartLinePosition.Line - wrapperOffset;
 						var at = $"{System.IO.Path.GetFileName(rawFile)}:{lineOffset + startLine + 1}:1: ";
 
@@ -3884,8 +3857,6 @@ namespace Keysharp.Compilation.Syntax
 								|| m is MethodDeclarationSyntax
 								|| classPath == null && m is FieldDeclarationSyntax))
 							_ = body.AppendLine("[Keysharp.Runtime.InlineCSharp]");
-						if (needsThisFuncFrame)
-							_ = body.AppendLine("[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]");
 
 						_ = body.AppendLine(FreezeConditionals(m).ToString());
 
@@ -3902,8 +3873,6 @@ namespace Keysharp.Compilation.Syntax
 							_ = body.AppendLine("[Keysharp.Runtime.PublicHiddenFromUser]");
 							_ = body.AppendLine("[Keysharp.Runtime.InlineCSharp]");
 							_ = body.AppendLine($"[Keysharp.Runtime.UserDeclaredName(\"{em.Identifier.ValueText}\")]");
-							if (needsThisFuncFrame)
-								_ = body.AppendLine("[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]");
 							_ = body.AppendLine(
 									$"public static {em.ReturnType} {NameMangler.FunctionMethod(em.Identifier.Text)}"
 									+ $"{em.ParameterList} {{ {fwdBody} }}");
@@ -4561,7 +4530,7 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var (mode, line, desc, nodeFile) in _warnings)
 			{
 				// Main-script nodes carry no file, or the main path itself; only a genuine #include needs naming.
-				var file = string.IsNullOrEmpty(nodeFile) || string.Equals(nodeFile, _scriptPath, StringComparison.OrdinalIgnoreCase) ? null : nodeFile;
+				var file = string.IsNullOrEmpty(nodeFile) || SourcePathComparer.Equals(nodeFile, _scriptPath) ? null : nodeFile;
 				// Every mode names the #included file a warning came from: its line number counts from that file's
 				// first line, so on its own it points at an unrelated line of the main script.
 				var where = line > 0 && file != null ? $" of {System.IO.Path.GetFileName(file)}" : "";
@@ -4587,7 +4556,7 @@ namespace Keysharp.Compilation.Syntax
 			if (line <= 0)
 				return "";
 
-			var lines = file == null ? _sourceLines : IncludedSourceLines(file);
+			var lines = SourceLines(file ?? _scriptPath);
 
 			if (lines == null || line > lines.Length)
 				return $"\n\nLine: {line}{where}";
@@ -4609,17 +4578,13 @@ namespace Keysharp.Compilation.Syntax
 			return sb.ToString();
 		}
 
-		// Lines of an #included file, re-read (and cached) only when a warning actually needs to quote one. Null when
-		// the file can no longer be read — the caller then falls back to a bare line number rather than misquoting.
-		private string[] IncludedSourceLines(string file)
+		// Lines of a source file, split (and cached) only when a warning actually needs to quote one. Null when its text is
+		// unknown — the caller then falls back to a bare line number rather than misquoting.
+		private string[] SourceLines(string file)
 		{
-			if (_includedSourceLines.TryGetValue(file, out var lines))
-				return lines;
+			if (!_sourceLines.TryGetValue(file, out var lines))
+				_sourceLines[file] = lines = _sourceTexts.GetValueOrDefault(file)?.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
 
-			try { lines = System.IO.File.ReadAllText(file).Replace("\r\n", "\n").Replace("\r", "\n").Split('\n'); }
-			catch { lines = null; }
-
-			_includedSourceLines[file] = lines;
 			return lines;
 		}
 
@@ -4647,12 +4612,11 @@ namespace Keysharp.Compilation.Syntax
 				case "a_linenumber" when !IsScopeVariable("a_linenumber"): return Num(n.Line.ToString());
 				case "a_linefile" when !IsScopeVariable("a_linefile"):
 					// A main-script line's file IS the running script, so fold to the A_ScriptFullPath accessor
-					// (n.File unset, or stamped with the main path _scriptPath). This keeps A_LineFile ==
-					// A_ScriptFullPath true whether the main script runs as source (.ks) or compiled (.cks/.exe,
-					// whose runtime path differs from the baked source name). Only #included files bake a path.
-					return string.IsNullOrEmpty(n.File) || string.Equals(n.File, _scriptPath, StringComparison.OrdinalIgnoreCase)
+					// (n.File unset, or stamped with the main path _scriptPath). Compiled output (.cks/.exe) folds every
+					// line to it, as AutoHotkey reports the executable for a compiled script's #included lines too.
+					return _compileToFile || string.IsNullOrEmpty(n.File) || SourcePathComparer.Equals(n.File, _scriptPath)
 						   ? Access("Keysharp.Builtins.Accessors.A_ScriptFullPath")
-						   : Str(IncludeLineFile(n.File));
+						   : Str(n.File);
 				// AutoHotkey evaluates a parameter default in the CALLER's frame, so A_ThisFunc there names
 				// the caller -- a name this lowering cannot know, since the default runs in the callee's
 				// prologue. Fold it to "", AutoHotkey's own answer for a top-level call, rather than leave
@@ -5035,14 +4999,10 @@ namespace Keysharp.Compilation.Syntax
 		{ { "GetPropertyValue", "GetPropertyValueOrNull" }, { "GetIndex", "GetIndexOrNull" }, { "Invoke", "InvokeOrNull" },
 		  { "DerefGet", "DerefGetOrNull" } };
 
-		// The same rewrite for a fat-arrow body, minus the property read. GetPropertyValueOrNull reports a member
-		// which does not exist and one which resolved to no value both as a null, so rewriting the read made
-		// `() => obj.NoSuchProperty` raise or not depending on whether the caller used what it returned - and an
-		// expression cannot depend on that. Left as the raising form, an arrow body reads a property exactly as a
-		// block body does, which is also what AutoHotkey v2.1 does with both. The two rewrites which remain are
-		// the ones that behave: GetIndexOrNull and InvokeOrNull still raise for an index or method that is absent.
+		// The same rewrite for a fat-arrow body, for its outermost call alone. AutoHotkey v2.1 lets a fat arrow return
+		// the no value a call gave it, and raises for an item or property read which has none, as a block body does.
 		private static readonly Dictionary<string, string> ArrowOrNull = new(System.StringComparer.Ordinal)
-		{ { "GetIndex", "GetIndexOrNull" }, { "Invoke", "InvokeOrNull" } };
+		{ { "Invoke", "InvokeOrNull" } };
 
 		private static ExpressionSyntax RewriteToOrNull(ExpressionSyntax e, Dictionary<string, string> map = null)
 		{
@@ -5350,9 +5310,9 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var id = ++_flowCounter;
 			var frame = PushLoop(id);
-			var body = AsBlock(LowerStmt(w.Body));
+			var body = LowerBody(w.Body);
 			body = body.WithStatements(body.Statements.Insert(0, CallStmt("Keysharp.Runtime.Loops.Inc")));
-			body = WrapLoopBody(body, w.Until, frame);
+			body = WrapLoopBody(body, w.Until, frame, w);
 			PopLoop();
 			var loop = SyntaxFactory.WhileStatement(
 						   Inv(Access("Keysharp.Runtime.Flow.IsTrueAndRunning"), LowerExpr(w.Cond)), body);
@@ -5369,7 +5329,7 @@ namespace Keysharp.Compilation.Syntax
 			var enumInit = Inv(Member(Inv(Access("Keysharp.Runtime.Loops.Loop"), countExpr), "GetEnumerator"));
 			var cond = Inv(Access("Keysharp.Runtime.Flow.IsTrueAndRunning"), Inv(Member(Id(ev), "MoveNext")));
 			var frame = PushLoop(id);
-			var body = WrapLoopBody(AsBlock(LowerStmt(lp.Body)), lp.Until, frame);
+			var body = WrapLoopBody(LowerBody(lp.Body), lp.Until, frame, lp);
 			PopLoop();
 			var loop = SyntaxFactory.WhileStatement(cond, body);
 			return LoopBlock(id, frame, "Normal", SyntaxFactory.Block(LocalDeclVar(ev, enumInit), loop), lp.Else);
@@ -5395,7 +5355,7 @@ namespace Keysharp.Compilation.Syntax
 			var enumInit = Inv(Member(Inv(Access("Keysharp.Runtime.Loops." + method), argExprs), "GetEnumerator"));
 			var cond = Inv(Access("Keysharp.Runtime.Flow.IsTrueAndRunning"), Inv(Member(Id(ev), "MoveNext")));
 			var frame = PushLoop(id);
-			var body = WrapLoopBody(AsBlock(LowerStmt(sl.Body)), sl.Until, frame);
+			var body = WrapLoopBody(LowerBody(sl.Body), sl.Until, frame, sl);
 			PopLoop();
 			var loop = SyntaxFactory.WhileStatement(cond, body);
 			return LoopBlock(id, frame, loopType, SyntaxFactory.Block(LocalDeclVar(ev, enumInit), loop), sl.Else);
@@ -5416,16 +5376,17 @@ namespace Keysharp.Compilation.Syntax
 		private static StatementSyntax NextLabel(int id) => SyntaxFactory.LabeledStatement("KS_e" + id + "_next", SyntaxFactory.EmptyStatement());
 		private static StatementSyntax EndLabel(int id) => SyntaxFactory.LabeledStatement("KS_e" + id + "_end", SyntaxFactory.EmptyStatement());
 		// A user label `name:` / goto target -> a mangled, collision-free C# label identifier.
-		private static string UserLabelId(string name) => "KS_lbl_" + NameMangler.Escape(name.ToLowerInvariant());
+		private static string UserLabelId(string name) => "KS_lbl_" + name.ToLowerInvariant();
 
-		// Appends the trailing `Until` break and, when a level/label continue targeted this loop, the `_next:` label.
-		private BlockSyntax WrapLoopBody(BlockSyntax body, Expr until, LoopFrame frame)
+		// Appends the trailing `Until` break and, when a level/label continue targeted this loop, the `_next:` label. Every
+		// iteration then records the loop's own location, as its condition or enumerator runs next.
+		private BlockSyntax WrapLoopBody(BlockSyntax body, Expr until, LoopFrame frame, Stmt loop)
 		{
 			if (until != null)
-				body = body.WithStatements(body.Statements.Add(SyntaxFactory.IfStatement(IfTest(LowerExpr(until)), SyntaxFactory.BreakStatement())));
+				body = body.AddStatements(Stamp(until), SyntaxFactory.IfStatement(IfTest(LowerExpr(until)), SyntaxFactory.BreakStatement()));
 			if (frame.NeedsNext)
 				body = body.WithStatements(body.Statements.Add(NextLabel(frame.Id)));
-			return body;
+			return body.AddStatements(Stamp(loop));
 		}
 
 		// break/continue always `goto`s the target loop's `_end`/`_next` label (never native C# break/continue): AHK
@@ -5466,8 +5427,7 @@ namespace Keysharp.Compilation.Syntax
 			for (int i = 0; i < stmts.Count; i++)
 			{
 				if (stmts[i] is LabelStmt ll && i + 1 < stmts.Count && IsLoopStmt(stmts[i + 1])) _pendingLoopLabel = ll.Name;
-				var ls = LowerStmt(stmts[i]);
-				if (ls != null) result.Add(ls);
+				AddStmt(result, stmts[i]);
 			}
 			_labelScopes.RemoveAt(_labelScopes.Count - 1);
 			return result;
@@ -5490,7 +5450,7 @@ namespace Keysharp.Compilation.Syntax
 			if (elseStmt != null)
 				block.Add(SyntaxFactory.IfStatement(
 					SyntaxFactory.BinaryExpression(SyntaxKind.EqualsExpression, Member(Id(info), "index"), Num("0")),
-					AsBlock(LowerStmt(elseStmt))));
+					LowerBody(elseStmt)));
 			if (frame.NeedsEnd) block.Add(EndLabel(id));
 			return SyntaxFactory.Block(block);
 		}
@@ -5523,11 +5483,11 @@ namespace Keysharp.Compilation.Syntax
 
 			var enumInit = Inv(Member(Inv(Access("Keysharp.Runtime.Loops.MakeEnumerable"), meArgs.ToArray()), "GetEnumerator"));
 			var frame = PushLoop(id);
-			var body = AsBlock(LowerStmt(fr.Body));
+			var body = LowerBody(fr.Body);
 			PopLoop();
 			body = body.WithStatements(body.Statements.Insert(0, CallStmt("Keysharp.Runtime.Loops.Inc")));
 			var cond = Inv(Access("Keysharp.Runtime.Flow.IsTrueAndRunning"), Inv(Member(Id(ev), "MoveNext")));
-			var loop = SyntaxFactory.WhileStatement(cond, WrapLoopBody(body, fr.Until, frame));
+			var loop = SyntaxFactory.WhileStatement(cond, WrapLoopBody(body, fr.Until, frame, fr));
 			return LoopBlock(id, frame, "Normal", SyntaxFactory.Block(LocalDeclVar(ev, enumInit), loop), fr.Else, saves, restores);
 		}
 
@@ -5555,7 +5515,7 @@ namespace Keysharp.Compilation.Syntax
 				if (valueless)
 					return SyntaxFactory.CasePatternSwitchLabel(
 						SyntaxFactory.ConstantPattern(SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression)),
-						SyntaxFactory.WhenClause(IfTest(LowerExpr(v))), SyntaxFactory.Token(SyntaxKind.ColonToken));
+						SyntaxFactory.WhenClause(CaseGuard(v, IfTest(LowerExpr(v)))), SyntaxFactory.Token(SyntaxKind.ColonToken));
 				var pv = "KS_sw" + (++_flowCounter);
 				var pattern = SyntaxFactory.DeclarationPattern(
 					SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.StringKeyword)),
@@ -5563,7 +5523,7 @@ namespace Keysharp.Compilation.Syntax
 				var guard = insensitive
 					? Inv(Member(Id(pv), "Equals"), CaseValueString(v), Access("System.StringComparison.OrdinalIgnoreCase"))
 					: Inv(Member(Id(pv), "Equals"), CaseValueString(v));
-				return SyntaxFactory.CasePatternSwitchLabel(pattern, SyntaxFactory.WhenClause(guard), SyntaxFactory.Token(SyntaxKind.ColonToken));
+				return SyntaxFactory.CasePatternSwitchLabel(pattern, SyntaxFactory.WhenClause(CaseGuard(v, guard)), SyntaxFactory.Token(SyntaxKind.ColonToken));
 			}
 
 			SwitchSectionSyntax Section(IEnumerable<SwitchLabelSyntax> labels, List<StatementSyntax> body)
@@ -5623,8 +5583,8 @@ namespace Keysharp.Compilation.Syntax
 
 		private StatementSyntax LowerTry(TryStmt tr)
 		{
-			var body = AsBlock(LowerStmt(tr.Body));
-			var finallyBlock = tr.Finally != null ? AsBlock(LowerStmt(tr.Finally)) : null;
+			var body = LowerBody(tr.Body);
+			var finallyBlock = tr.Finally != null ? LowerBody(tr.Finally) : null;
 			StatementSyntax stmt;
 
 			// try/catch/else: the else body runs only if the try completed without an exception — guard with a flag.
@@ -5635,7 +5595,7 @@ namespace Keysharp.Compilation.Syntax
 				var inner = BuildTry(body, tr.Catches, null);
 				var elseBlock = SyntaxFactory.Block(
 					LocalDecl(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.BoolKeyword)), ok, SyntaxFactory.LiteralExpression(SyntaxKind.FalseLiteralExpression)),
-					inner, SyntaxFactory.IfStatement(Id(ok), AsBlock(LowerStmt(tr.Else))));
+					inner, SyntaxFactory.IfStatement(Id(ok), LowerBody(tr.Else)));
 				stmt = finallyBlock == null ? elseBlock : SyntaxFactory.TryStatement().WithBlock(elseBlock).WithFinally(SyntaxFactory.FinallyClause(finallyBlock));
 			}
 			else
@@ -5687,7 +5647,7 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var ex = "KS_ex" + (++_flowCounter);
 			var thrownValue = Member(Id(ex), "ThrownValue");
-			var block = AsBlock(LowerStmt(cb.Body));
+			var block = LowerBody(cb.Body);
 			if (cb.Var != null && ResolveWrite(StmtAnchor(cb.Body), cb.Var, VarUsage.OutputVar) is { } target)
 				block = block.WithStatements(block.Statements.Insert(0, ExprStmt(target.Write(thrownValue))));
 
@@ -5875,6 +5835,7 @@ namespace Keysharp.Compilation.Syntax
 		private MemberDeclarationSyntax InitMethod(string name, string baseProtoType, IEnumerable<ClassField> fields,
 			IEnumerable<StatementSyntax> prologue = null, IEnumerable<Stmt> extra = null, bool staticCtx = false)
 		{
+			var savedStamped = _stamped; _stamped = false;
 			var fieldList = fields as IList<ClassField> ?? fields.ToList();
 			var extraList = extra as IList<Stmt> ?? extra?.ToList();
 			var savedThisFuncName = _currentThisFuncName;
@@ -5905,8 +5866,7 @@ namespace Keysharp.Compilation.Syntax
 			}
 			bool InitHas(Func<Expr, bool> pred) =>
 				fieldList.Any(f => AnyExpr(f.Init, pred)) || (extraList != null && extraList.Any(s => AnyStmt(s, pred)));
-			// A `%name%` in an initializer must resolve against those locals, as in a function body. The scope is not published
-			// (Script.EnterScope): __Init is not entered through KeysharpFunc.Call, which is what restores the ambient scope.
+			// A `%name%` in an initializer must resolve against those locals, as in a function body.
 			_derefScope = InitHas(IsDeref) ? InitHas(IsDerefWrite) : null;
 			var stmts = new List<StatementSyntax>();
 			if (prologue != null) stmts.AddRange(prologue);
@@ -5927,13 +5887,17 @@ namespace Keysharp.Compilation.Syntax
 			if (_derefScope != null)
 				stmts.Add(LocalDecl(Ty("Keysharp.Runtime.FuncScope"), "KS_scope", NewScope(_currentThisFuncName, _derefScope == true)));
 			var setupEnd = stmts.Count;
-			foreach (var f in fieldList) stmts.Add(FieldSet(f));
+			foreach (var f in fieldList)
+			{
+				if (f.Init != null) stmts.Add(Stamp(f.Init));
+				stmts.Add(FieldSet(f));
+			}
 			// Member/index-target initializers (`static x.y := z`) run after the plain field sets, with `this` bound to
 			// the class object (static) or instance.
 			if (extraList != null && extraList.Count > 0)
 			{
 				var savedM = _inMethod; var savedS = _currentMethodStatic; _inMethod = true; _currentMethodStatic = staticCtx;
-				foreach (var st in extraList) { var ls = LowerStmt(st); if (ls != null) stmts.Add(ls); }
+				foreach (var st in extraList) AddStmt(stmts, st);
 				_inMethod = savedM; _currentMethodStatic = savedS;
 			}
 			stmts.Add(SyntaxFactory.ReturnStatement(Str("")));
@@ -5947,6 +5911,7 @@ namespace Keysharp.Compilation.Syntax
 			declared.Add(Receiver());
 			WrapBodyWithKeepAlive(stmts, declared, execStart, execEnd);
 			InitializeParameters(stmts, [Receiver()]);
+			if (_stamped) stmts.Insert(0, LocationDecl);
 			var block = Settle(SyntaxFactory.Block(stmts));
 			_settlement = savedSettlement;
 			_derefScope = savedDeref;
@@ -5955,6 +5920,7 @@ namespace Keysharp.Compilation.Syntax
 			_pendingScopeFuncs = savedScopeFuncs;
 			_pendingScopeClosureInits = savedClosureInits;
 			_currentThisFuncName = savedThisFuncName;
+			_stamped = savedStamped;
 			return ObjMethod(name, ParamThis(), block);
 		}
 
@@ -6140,7 +6106,7 @@ namespace Keysharp.Compilation.Syntax
 				return Str("");
 			}
 
-			var implName = "FN_" + NameMangler.Escape(nameLower) + "_" + (++_lambdaCounter);
+			var implName = "FN_" + nameLower + "_" + (++_lambdaCounter);
 			var (paramLowers, byRefParams) = ParamSets(fd.Params);
 			var savedCompat = _currentCompat;
 			_currentCompat = ScanRequires(fd.Body?.Body) ?? _currentCompat;   // nested-function `#Requires` (restored after)
@@ -6508,20 +6474,22 @@ namespace Keysharp.Compilation.Syntax
 				AddDhhr(d, ExprStmt(Inv(Access("Keysharp.Builtins.Keyboard.HotIf"), Str(""))));
 				return;
 			}
-			var cond = ParseExprFragment(args, out var err);
+			var cond = ParseExprFragment(args, d, out var err);
 			if (cond == null) { Diag($"#HotIf condition is not a valid expression: '{args}'{(err == null ? "" : $" ({err})")}"); return; }
-			var fnName = EmitHotCallback(new Block(new List<Stmt> { new ReturnStmt(cond) }), "__HotIf_" + (++_hotCount));
+			var fnName = EmitHotCallback(new Block(new List<Stmt>
+			{
+				new ReturnStmt(cond) { Line = d.Line, Column = d.Column, File = d.File }
+			}), "__HotIf_" + (++_hotCount));
 			AddDhhr(d, ExprStmt(Inv(Access("Keysharp.Builtins.Keyboard.HotIf"), FuncBind(_currentModuleClass + "." + fnName))));
 		}
 
 		// Re-parses a directive's reconstructed expression argument (e.g. a `#HotIf` condition) back into an Expr,
-		// or null if it is not exactly one expression. `error` is positioned within the fragment rather than the
-		// script, so the caller folds it into its own message instead of reporting it as a diagnostic.
-		private static Expr ParseExprFragment(string text, out string error)
+		// or null if it is not exactly one expression. The caller folds parse errors into its own diagnostic.
+		private static Expr ParseExprFragment(string text, DirectiveStmt directive, out string error)
 		{
 			error = null;
 			if (string.IsNullOrWhiteSpace(text)) return null;
-			var (expr, diags) = Keysharp.Parsing.Syntax.Parser.ParseExpressionWithDiagnostics(text);
+			var (expr, diags) = Keysharp.Parsing.Syntax.Parser.ParseExpressionWithDiagnostics(text, directive.File, directive.Line);
 			if (diags.Count == 0) return expr;
 			error = diags[0];
 			return null;
@@ -6605,6 +6573,7 @@ namespace Keysharp.Compilation.Syntax
 			string thisFuncName, out FunctionScope callableScope, HashSet<string> byRefParams = null, List<Param> paramDefaults = null,
 			bool capturing = false, bool staticNested = false)
 		{
+			var savedStamped = _stamped; _stamped = false;
 			var savedThisFuncName = _currentThisFuncName;
 			var savedLoweringParamDefault = _loweringParamDefault;
 			_currentThisFuncName = thisFuncName;
@@ -6672,6 +6641,7 @@ namespace Keysharp.Compilation.Syntax
 					{
 						var rid = LocalValue(scope.Find(p.Name.ToLowerInvariant()));
 						var deflt = p.Default != null ? LowerParamDefault(p.Default) : Null;
+						if (p.Default != null) body.Add(Stamp(p.Default));
 						body.Add(ExprStmt(SyntaxFactory.AssignmentExpression(SyntaxKind.CoalesceAssignmentExpression, rid,
 							SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Builtins.VarRef"))
 								.WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(deflt)))))));
@@ -6687,15 +6657,17 @@ namespace Keysharp.Compilation.Syntax
 						if (defaultExpr is LiteralExpressionSyntax literal)
 							_literalDefaults[p] = literal;
 						else
+						{
+							body.Add(Stamp(p.Default));
 							body.Add(ExprStmt(SyntaxFactory.AssignmentExpression(SyntaxKind.CoalesceAssignmentExpression,
 								LocalValue(scope.Find(p.Name.ToLowerInvariant())), defaultExpr)));
+						}
 					}
 
-			// A fat-arrow `=> expr` propagates an unset result rather than raising (unlike an explicit `return f()`),
-			// so its outermost call or index uses the non-raising *OrNull form. Its property read does not - see
-			// ArrowOrNull.
+			// A fat-arrow `=> expr` propagates the unset result of a call rather than raising (unlike an explicit
+			// `return f()`), so its outermost call uses the non-raising *OrNull form - see ArrowOrNull.
 			var setupEnd = body.Count;   // boundary after local hoists + param setup, before the executable body
-			if (arrowBody != null) body.Add(SyntaxFactory.ReturnStatement(RewriteToOrNull(LowerExpr(arrowBody), ArrowOrNull)));
+			if (arrowBody != null) body.AddRange([Stamp(arrowBody), SyntaxFactory.ReturnStatement(RewriteToOrNull(LowerExpr(arrowBody), ArrowOrNull))]);
 			else if (bodyBlock != null) body.AddRange(LowerStmtList(bodyBlock.Body));
 
 			if (body.Count == 0 || body[^1] is not ReturnStatementSyntax)
@@ -6724,6 +6696,7 @@ namespace Keysharp.Compilation.Syntax
 			WrapBodyWithKeepAlive(body, declared, execStart, execEnd);
 			InitializeParameters(body, paramLowers.Select(scope.Find));
 			if (_inMethod && !capturing) InitializeParameters(body, [Receiver()]);
+			if (_stamped) body.Insert(0, LocationDecl);
 			var block = SyntaxFactory.Block(body);
 			if (scope.Parent == null) block = Settle(block);
 
@@ -6733,6 +6706,7 @@ namespace Keysharp.Compilation.Syntax
 			_scopeTemps = savedTemps; _pendingScopeFuncs = savedScopeFuncs; _pendingScopeClosureInits = savedClosureInits;
 			_currentThisFuncName = savedThisFuncName;
 			_loweringParamDefault = savedLoweringParamDefault;
+			_stamped = savedStamped;
 			if (importFrame != null) _importScopes.RemoveAt(_importScopes.Count - 1);
 			return block;
 		}
@@ -7196,7 +7170,7 @@ namespace Keysharp.Compilation.Syntax
 			// The C# class name is the module name, disambiguated if it shadows a framework/structural root; the runtime
 			// resolves the original AHK module name back through [UserDeclaredName] (Reflections keys stringToTypes by it).
 			var csName = NameMangler.ModuleClass(moduleName);
-			var autoBody = new List<StatementSyntax>(autoStmts) { SyntaxFactory.ReturnStatement(Str("")) };
+			StatementSyntax[] autoBody = [LocationDecl, .. autoStmts, SyntaxFactory.ReturnStatement(Str(""))];
 			var mm = new List<MemberDeclarationSyntax>();
 			if (importMembers != null) mm.AddRange(importMembers);
 			mm.AddRange(fieldDecls);
@@ -7251,7 +7225,8 @@ namespace Keysharp.Compilation.Syntax
 			InlineSources = BuildInlineSources();
 			InlineSource = InlineSources.Count == 0 ? null
 				: string.Join(System.Environment.NewLine + System.Environment.NewLine, InlineSources.Select(source => source.Code));
-			var programClass = SyntaxFactory.ClassDeclaration("Program").AddModifiers(PublicTok).WithMembers(SyntaxFactory.List(programMembers));
+			var programClass = SyntaxFactory.ClassDeclaration("Program").AddModifiers(PublicTok).WithMembers(SyntaxFactory.List(programMembers))
+				.AddAttributeLists(SourceFilesAttribute());
 			if (_inlineBlocks != null) programClass = programClass.AddModifiers(PartialTok);
 			var ns = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.QualifiedName(Id("Keysharp"), Id("CompiledMain"))).AddMembers(programClass);
 			// No using directives: generated code uses clean, fully-qualified framework names (Keysharp.Runtime.Script.*,
@@ -7357,14 +7332,13 @@ namespace Keysharp.Compilation.Syntax
 			stmts.AddRange(_dhhr);
 			if (_persistent) stmts.Add(CallStmt("Keysharp.Builtins.Flow.Persistent"));
 			stmts.Add(CallStmt("Keysharp.Runtime.Keyboard.HotkeyDefinition.ManifestAllHotkeysHotstringsHooks"));
-			// Run each module's auto-exec in dependency order, scoping CurrentModuleType to that module.
+			// Run each module's auto-exec in dependency order, in a call stack frame of its own and under that module.
 			foreach (var mod in execOrder)
 			{
 				var modClass = NameMangler.ModuleClass(mod);
-				stmts.Add(ExprStmt(Assign(Member(Id("MainScript"), "CurrentModuleType"), SyntaxFactory.TypeOfExpression(Ty("Program." + modClass)))));
-				stmts.Add(CallStmt("Program." + modClass + "." + NameMangler.AutoExecMethod));
+				stmts.Add(ExprStmt(Inv(Access("Keysharp.Runtime.CallStack.RunModule"),
+					SyntaxFactory.TypeOfExpression(Ty("Program." + modClass)), Access("Program." + modClass + "." + NameMangler.AutoExecMethod))));
 			}
-			stmts.Add(ExprStmt(Assign(Member(Id("MainScript"), "CurrentModuleType"), Null)));
 			stmts.Add(SyntaxFactory.ReturnStatement(Str("")));
 			return ObjMethod(NameMangler.AutoExecMethod, EmptyParams(), SyntaxFactory.Block(stmts));
 		}

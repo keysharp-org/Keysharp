@@ -229,7 +229,14 @@ public interface IScriptCompilationResult
 {
 	bool Success { get; }
 	byte[] AssemblyBytes { get; }
+
+	/// <summary>The lowered C#, without the location stamps the compiler adds to every statement for Error.Stack.</summary>
 	string GeneratedCode { get; }
+
+	/// <summary>The C# exactly as it is compiled, location stamps included, or null when compilation failed. The default
+	/// keeps older compiler components binary-compatible with this additive contract member.</summary>
+	string CompiledCode => null;
+
 	string ErrorText { get; }
 	string WarningText { get; }
 	string InlineCode { get; }
