@@ -55,7 +55,7 @@ namespace Keysharp.Runtime
 		internal bool RequireWritable(VarUsage usage, string name)
 		{
 			// A module constant is a readonly field or a property without a setter, so it has no SetProp.
-			if (builtin != null ? MethodPropertyHolder.HasScriptSetter(builtin) : holder?.SetProp != null)
+			if (builtin != null ? MethodPropertyHolder.HasScriptSetter(builtin) : holder?.HasSetter == true)
 				return true;
 
 			// A #CSharp module member without a public setter is a read-only property rather than a read-only variable.

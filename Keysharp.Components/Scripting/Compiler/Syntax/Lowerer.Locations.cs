@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Keysharp.Components.Scripting;
 using Keysharp.Parsing.Syntax;
 
 namespace Keysharp.Compilation.Syntax
@@ -31,7 +32,7 @@ namespace Keysharp.Compilation.Syntax
 		private bool _stamped;
 
 		/// <summary>The text of each file a script run from source was compiled from, by file index; null for compiled output.</summary>
-		public IReadOnlyList<string> SourceTexts => _compileToFile ? null : [.. _sourceFiles.Values];
+		public IReadOnlyList<string> SourceTexts => _output != ScriptCompilationOutput.InMemory ? null : [.. _sourceFiles.Values];
 
 		private void AddSourceTexts(string file, string text, ProgramNode prog)
 		{
@@ -125,7 +126,7 @@ namespace Keysharp.Compilation.Syntax
 		// folder, other files inside the script's folder relative to it, and remaining files by name alone.
 		private string SourceName(string file)
 		{
-			if (!_compileToFile || file == "*")
+			if (_output == ScriptCompilationOutput.InMemory || file == "*")
 				return file;
 
 			foreach (var (dir, marker) in Parser.SharedLibraryDirs())

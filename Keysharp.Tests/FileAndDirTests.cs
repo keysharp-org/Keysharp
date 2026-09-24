@@ -1,5 +1,6 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using Keysharp.Builtins;
+using Keysharp.Components.Scripting;
 
 namespace Keysharp.Tests
 {
@@ -157,7 +158,7 @@ namespace Keysharp.Tests
 			var scriptPath = Path.Combine(path, "file-fileinstall.ahk");
 			var helper = new CompilerHelper();
 			var (memoryBytes, memoryError, memoryCompilation) = helper.CompileCodeToByteArray(
-				scriptPath, "file-install-memory", compileToFile: false, sourceIsFile: true);
+				scriptPath, "file-install-memory", output: ScriptCompilationOutput.InMemory, sourceIsFile: true);
 			Assert.IsNotNull(memoryBytes, memoryError);
 			NUnit.Framework.Legacy.CollectionAssert.AreEqual(
 				new[] { "file-fileinstall.ahk", "Gui/monkey.ico" }, memoryCompilation.Manifest.Files);
@@ -167,7 +168,7 @@ namespace Keysharp.Tests
 			Assert.IsFalse(memoryAssembly.GetManifestResourceNames().Any(n => n.StartsWith(resourcePrefix, StringComparison.Ordinal)));
 
 			var (artifactBytes, artifactError, artifactCompilation) = helper.CompileCodeToByteArray(
-				scriptPath, "file-install-artifact", compileToFile: true, sourceIsFile: true);
+				scriptPath, "file-install-artifact", output: ScriptCompilationOutput.Assembly, sourceIsFile: true);
 			Assert.IsNotNull(artifactBytes, artifactError);
 			Assert.AreEqual(2, artifactCompilation.Manifest.FileSources.Count);
 			var artifactAssembly = Assembly.Load(artifactBytes);

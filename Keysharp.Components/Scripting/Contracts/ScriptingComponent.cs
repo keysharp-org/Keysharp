@@ -221,6 +221,8 @@ public sealed class ScriptCompileRequest
 	public IReadOnlyCollection<string> AdditionalComponents { get; init; } = Array.Empty<string>();
 	public IReadOnlyCollection<string> ExcludedComponents { get; init; } = Array.Empty<string>();
 	public ScriptCompilationOutput Output { get; init; }
+	/// <summary>Directory where an Assembly output will be written, for resolving included file paths at runtime.</summary>
+	public string OutputDirectory { get; init; }
 	public bool EmitGeneratedCode { get; init; }
 	public bool AllowPackageRestore { get; init; } = true;
 }

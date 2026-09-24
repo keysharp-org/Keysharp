@@ -1,6 +1,8 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using StringAssert = NUnit.Framework.Legacy.StringAssert;
 using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
+using Keysharp.Components.Scripting;
+using Keysharp.Components.Scripting.Compiler;
 
 namespace Keysharp.Tests
 {
@@ -312,19 +314,17 @@ namespace Keysharp.Tests
 		}
 
 		// Compiles a script file with its includes, returning the image and the source files its locations index.
-		private static (byte[] Bytes, Assembly Assembly, string[] Files) CompileFile(string main, bool compileToFile = false, string includeDir = null)
+		private static (byte[] Bytes, Assembly Assembly, string[] Files) CompileFile(string main, ScriptCompilationOutput output = ScriptCompilationOutput.InMemory, string includeDir = null)
 		{
 			var (bytes, error, _) = new CompilerHelper().CompileCodeToByteArray(main, "sources_" + Guid.NewGuid().ToString("N"),
-				compileToFile: compileToFile, includeDirOverride: includeDir, sourceIsFile: true);
+				output: output, includeDirOverride: includeDir, sourceIsFile: true);
 			Assert.IsNotNull(bytes, error);
 			var assembly = Assembly.Load(bytes);
 			return (bytes, assembly, assembly.GetType(MainNamespaceName + ".Program").GetCustomAttribute<SourceFilesAttribute>().Files);
 		}
 
-		// Compiled output names its source files by where they resolved and never by full path, carries none of their
-		// text, and A_LineFile in an #included file reports the running executable, as AutoHotkey reports it for a
-		// compiled script, which also keeps an explicit What such as -1 as given. A compile that is about to run carries
-		// the text of every file, by the index locations use.
+		// Executable output names source files without full paths or source text, and A_LineFile on an included line
+		// reports the executable. A source run carries every file's text for its indexed locations.
 		[Test, Category("Parser")]
 		public void CompiledSources()
 		{
@@ -341,7 +341,7 @@ namespace Keysharp.Tests
 				File.WriteAllText(Path.Combine(root, "other", "Helper.ahk"), "OtherHelper() => A_LineFile\n");
 				var main = Path.Combine(app, "main.ahk");
 				File.WriteAllText(main, "#ErrorStdOut\n#Warn All, StdOut\n#Include Lib\\InLib.ahk\n#Include ..\\shared\\Helper.ahk\n#Include ..\\other\\Helper.ahk\nx := InLib() Helper() OtherHelper()\nExplicitWhat() => Error(\"x\", -1)\n");
-				var (bytes, compiled, compiledFiles) = CompileFile(main, compileToFile: true, includeDir: app);
+				var (bytes, compiled, compiledFiles) = CompileFile(main, output: ScriptCompilationOutput.Executable, includeDir: app);
 				CollectionAssert.AreEqual(new[] { "./main.ahk", "./Lib/InLib.ahk", "<External>/Helper.ahk", "<External>/Helper (2).ahk" }, compiledFiles);
 
 				// String literals are UTF-16 in the assembly and attribute arguments UTF-8.
@@ -370,6 +370,57 @@ namespace Keysharp.Tests
 				var (_, running, files) = CompileFile(main, includeDir: app);
 				Assert.AreEqual(4, files.Length);
 				Assert.That(SourceText.Lines(running), Is.EqualTo(files.Select(file => File.ReadAllText(file).Split('\n')).ToArray()));
+			}
+			finally
+			{
+				Directory.Delete(root, true);
+			}
+		}
+
+		[Test, Category("Parser"), Category("Internal")]
+		public void AssemblyIncludedLineFileLocatesAssets()
+		{
+			var root = Path.Combine(Path.GetTempPath(), "ks_assembly_sources_" + Guid.NewGuid().ToString("N"));
+			var app = Path.Combine(root, "app");
+			var lib = Path.Combine(root, "lib");
+			var output = Path.Combine(root, "out", "nested");
+			_ = Directory.CreateDirectory(app);
+			_ = Directory.CreateDirectory(lib);
+			_ = Directory.CreateDirectory(output);
+
+			try
+			{
+				var included = Path.Combine(lib, "Theme.ahk");
+				File.WriteAllText(included, "class IncludedAsset {\n static SourceFile := A_LineFile\n static Read() {\n  SplitPath(IncludedAsset.SourceFile, , &dir)\n  return FileRead(dir \"/base.css\", \"UTF-8\")\n }\n}\nAssetPath() => IncludedAsset.SourceFile\nAssetText() => IncludedAsset.Read()\n");
+				File.WriteAllText(Path.Combine(lib, "base.css"), "body { color: red; }");
+				var main = Path.Combine(app, "Showcase.ahk");
+				File.WriteAllText(main, "#ErrorStdOut\n#Warn All, StdOut\n#Include ..\\lib\\Theme.ahk\n");
+				var result = new CompilerComponent().Compile(new ScriptCompileRequest
+				{
+					ScriptPath = main,
+					CompilationName = "showcase_" + Guid.NewGuid().ToString("N"),
+					OutputDirectory = output,
+					Output = ScriptCompilationOutput.Assembly,
+				});
+				Assert.IsTrue(result.Success, result.ErrorText);
+				foreach (var encoding in new[] { Encoding.UTF8, Encoding.Unicode })
+					Assert.AreEqual(-1, result.AssemblyBytes.AsSpan().IndexOf(encoding.GetBytes(root)), encoding.EncodingName);
+
+				var artifact = Path.Combine(output, "Showcase.cks");
+				File.WriteAllBytes(artifact, result.AssemblyBytes);
+				var assembly = Assembly.Load(result.AssemblyBytes);
+				var program = assembly.GetType(MainNamespaceName + ".Program");
+				s.Dispose();
+				s = null;
+				System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(program.TypeHandle);
+				s = Script.TheScript;
+				s.SetName(artifact);
+				var module = assembly.GetType(MainNamespaceName + ".Program+__Main");
+				object Call(string name) => Keysharp.Internals.Invoke.MethodPropertyHolder.GetOrAdd(module.GetMethods(BindingFlags.Public | BindingFlags.Static)
+					.Single(method => method.GetCustomAttribute<UserDeclaredNameAttribute>()?.Name == name)).CallFunc(null, []);
+
+				Assert.AreEqual(included, Call("AssetPath"));
+				Assert.AreEqual("body { color: red; }", Call("AssetText"));
 			}
 			finally
 			{

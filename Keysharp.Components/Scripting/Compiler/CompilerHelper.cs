@@ -1,4 +1,5 @@
 ﻿using Keysharp.Builtins;
+using Keysharp.Components.Scripting;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
@@ -837,7 +838,7 @@ namespace Keysharp.Compilation
 			script.Threads.EnsureCurrentThreadVariables();
 		}
 
-		public ScriptCompilationResult CreateCompilationUnitFromFile(string fileName, string name = null, bool compileToFile = false, string includeDirOverride = null, IEnumerable<string> defines = null, bool allowPackageRestore = true, bool? sourceIsFile = null)
+		public ScriptCompilationResult CreateCompilationUnitFromFile(string fileName, string name = null, ScriptCompilationOutput output = ScriptCompilationOutput.InMemory, string includeDirOverride = null, IEnumerable<string> defines = null, bool allowPackageRestore = true, bool? sourceIsFile = null, string outputDirectory = null)
 		{
 			var compilation = new ScriptCompilationResult();
 			var errors = compilation.Errors;
@@ -896,7 +897,7 @@ namespace Keysharp.Compilation
 				else
 				{
 					var lowerer = new Syntax.Lowerer();
-					compilation.Unit = lowerer.Build(prog, buildName, scriptPath, startupName, includeDir, source, compileToFile, defines);
+					compilation.Unit = lowerer.Build(prog, buildName, scriptPath, startupName, includeDir, source, output, defines, outputDirectory);
 					compilation.Manifest = lowerer.Manifest;
 					compilation.InlineCode = lowerer.InlineSource;
 					compilation.InlineSources = lowerer.InlineSources;
@@ -1018,11 +1019,12 @@ namespace Keysharp.Compilation
 
 		// `defines` are the preprocessor symbols for THIS compilation — from `--define:NAME`, or from a caller such as
 		// Ks.RunScript. They are per-compilation rather than ambient so a nested compile can choose its own.
-		public (byte[] Bytes, string Text, ScriptCompilationResult Compilation) CompileCodeToByteArray(string fileName, string nameNoExt, string exeDir = null, bool minimalexeout = false, bool emitCode = false, bool compileToFile = false, IEnumerable<string> defines = null, bool allowPackageRestore = true, IEnumerable<string> includeComponents = null, string includeDirOverride = null, IEnumerable<string> excludeComponents = null, bool? sourceIsFile = null)
+		public (byte[] Bytes, string Text, ScriptCompilationResult Compilation) CompileCodeToByteArray(string fileName, string nameNoExt, string exeDir = null, bool minimalexeout = false, bool emitCode = false, ScriptCompilationOutput output = ScriptCompilationOutput.InMemory, IEnumerable<string> defines = null, bool allowPackageRestore = true, IEnumerable<string> includeComponents = null, string includeDirOverride = null, IEnumerable<string> excludeComponents = null, bool? sourceIsFile = null, string outputDirectory = null)
 		{
 			var asm = Assembly.GetExecutingAssembly();
 			exeDir ??= Path.GetFullPath(Path.GetDirectoryName(asm.Location.IsNullOrEmpty() ? Environment.ProcessPath : asm.Location));
-			var compilation = CreateCompilationUnitFromFile(fileName, nameNoExt, compileToFile, includeDirOverride, defines, allowPackageRestore, sourceIsFile);
+			var writesArtifact = output != ScriptCompilationOutput.InMemory;
+			var compilation = CreateCompilationUnitFromFile(fileName, nameNoExt, output, includeDirOverride, defines, allowPackageRestore, sourceIsFile, outputDirectory);
 			if (includeComponents != null)
 				compilation.RequiredComponents = compilation.RequiredComponents.Concat(includeComponents)
 					.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -1070,7 +1072,7 @@ namespace Keysharp.Compilation
 			if (emitCode)
 				_ = GetCode();
 
-			var (results, ms, compileexc) = Compile(compilation, assemblyName, exeDir, minimalexeout, win32Resources: compileToFile);
+			var (results, ms, compileexc) = Compile(compilation, assemblyName, exeDir, minimalexeout, win32Resources: writesArtifact);
 
 			try
 			{

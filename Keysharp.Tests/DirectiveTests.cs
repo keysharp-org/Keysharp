@@ -1,5 +1,7 @@
 ﻿using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
+using Keysharp.Components.Scripting;
+
 namespace Keysharp.Tests
 {
 	public class DirectiveTests : TestRunner
@@ -206,7 +208,7 @@ namespace Keysharp.Tests
 				+ "#App { Title: \"third\", Title: true . false . -2, Version: \"0.65534.2.3\", DesktopEntry: \"example.product\" }\n"
 				+ "x := 1\n";
 			var (arrLast, codeLast, lastCompilation) = ch.CompileCodeToByteArray(lastWinsSource, "app-last",
-				emitCode: true, compileToFile: true, includeDirOverride: path);
+				emitCode: true, output: ScriptCompilationOutput.Executable, includeDirOverride: path);
 			Assert.IsNotNull(arrLast, codeLast);
 			Assert.IsEmpty(lastCompilation.Manifest.FileSources);
 			Assert.AreEqual("example.product", lastCompilation.Manifest.DesktopEntry);
@@ -684,7 +686,7 @@ namespace Keysharp.Tests
 			// firing a hotkey needs the hook and focus.
 			static string Compile(string src)
 			{
-				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(src, "hotiftest", null, false, true, false);
+				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(src, "hotiftest", null, false, true, ScriptCompilationOutput.InMemory);
 				Assert.IsNotNull(arr, code);
 				return code;
 			}
@@ -718,7 +720,7 @@ namespace Keysharp.Tests
 			// generated C# (emitCode: true) so nothing has to run.
 			static string Compile(string src, params string[] defines)
 			{
-				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(src, "definetest", null, false, true, false, defines);
+				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(src, "definetest", null, false, true, ScriptCompilationOutput.InMemory, defines);
 				Assert.IsNotNull(arr, code);
 				return code;
 			}
@@ -806,7 +808,7 @@ namespace Keysharp.Tests
 
 				string Compile(params string[] defines)
 				{
-					var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(main, "defmain", null, false, true, false, defines);
+					var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(main, "defmain", null, false, true, ScriptCompilationOutput.InMemory, defines);
 					Assert.IsNotNull(arr, code);
 					return code;
 				}

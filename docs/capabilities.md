@@ -188,7 +188,7 @@ Status legend:
 | A_KsVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the Keysharp runtime version. |
 | A_Language | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_LastError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
-| A_LineFile | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The full path and name of the file to which A_LineNumber belongs, which will be the same as A_ScriptFullPath unless the line belongs to one of a non-compiled script's #Include files. |
+| A_LineFile | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The full path of the current source file. Source runs retain #Include paths. A .cks resolves each included file relative to its assembly output directory, then from its runtime directory; an include on another drive falls back to A_ScriptFullPath. Main-script lines and all lines in a standalone compiled executable use A_ScriptFullPath. |
 | A_LineNumber | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The exact line number in the script, including comment lines. |
 | A_ListLines | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable controlling/listing script line logging behavior. |
 | A_LoopField | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |

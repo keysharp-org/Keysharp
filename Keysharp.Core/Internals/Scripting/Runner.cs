@@ -619,6 +619,7 @@ namespace Keysharp.Internals.Scripting
 				return Message($"Could not find the script file {scriptPath}.", true);
 
 			var (nameNoExt, scriptDir, outPath) = GetScriptOutputPaths(scriptPath ?? command.ScriptName, scriptPath == null);
+			var asmPath = ResolveCompileAsmOutput(command.DestPath, scriptDir, nameNoExt);
 			var compilation = compiler.Compile(new Keysharp.Components.Scripting.ScriptCompileRequest
 			{
 				SourceText = scriptPath == null ? command.ScriptName : null,
@@ -629,6 +630,7 @@ namespace Keysharp.Internals.Scripting
 				AdditionalComponents = command.IncludeComponents,
 				ExcludedComponents = command.ExcludeComponents,
 				Output = Keysharp.Components.Scripting.ScriptCompilationOutput.Assembly,
+				OutputDirectory = asmPath == "*" ? null : Path.GetDirectoryName(Path.GetFullPath(asmPath)),
 				EmitGeneratedCode = command.Transpile,
 				AllowPackageRestore = !command.Validate,
 			});
@@ -642,8 +644,6 @@ namespace Keysharp.Internals.Scripting
 
 			if (command.Transpile && WriteTranspiledCode(compilation, compilation.GeneratedCode, outPath) is { } transpileErr)
 				return Message(transpileErr, true);
-
-			var asmPath = ResolveCompileAsmOutput(command.DestPath, scriptDir, nameNoExt);
 
 			if (asmPath == "*" && compilation.RequiredComponents.Count != 0)
 				return Message("--dest * cannot emit an assembly which requires sidecar scripting components. Write it to a file or exclude those components.", true);

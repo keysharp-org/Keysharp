@@ -318,14 +318,16 @@ namespace Keysharp.Compilation.Syntax
 		// This compilation's caller-supplied preprocessor symbols (null when there are none), forwarded to the separate
 		// parse that each imported module file gets so its #if branches resolve as they do in the main script.
 		private IEnumerable<string> _defines;
-		private bool _compileToFile;   // emitting an artifact: keep full source paths out of it and attach declared file payloads
+		private ScriptCompilationOutput _output;
+		private string _outputDirectory;
 
-		public CompilationUnitSyntax Build(ProgramNode prog, string name, string scriptPath = "*", string startupName = null, string includeDir = null, string source = null, bool compileToFile = false, IEnumerable<string> defines = null)
+		public CompilationUnitSyntax Build(ProgramNode prog, string name, string scriptPath = "*", string startupName = null, string includeDir = null, string source = null, ScriptCompilationOutput output = ScriptCompilationOutput.InMemory, IEnumerable<string> defines = null, string outputDirectory = null)
 		{
 			_scriptPath = scriptPath ?? "*";
 			_sourceFiles.Add(_scriptPath, source);
 			AddSourceTexts(_scriptPath, source, prog);
-			_compileToFile = compileToFile;
+			_output = output;
+			_outputDirectory = outputDirectory;
 			_defines = defines;
 			// Include predefined, command-line and script symbols.
 			_inlineDefines = prog.Defines is { Count: > 0 } ? prog.Defines : [.. defines ?? []];
@@ -3051,7 +3053,7 @@ namespace Keysharp.Compilation.Syntax
 				{
 					_manifest.Files.Add(rel);
 
-					if (_compileToFile)
+					if (_output != ScriptCompilationOutput.InMemory)
 						_manifest.FileSources.Add((rel, path));
 				}
 			}
@@ -4605,18 +4607,14 @@ namespace Keysharp.Compilation.Syntax
 				case "false": return BoolLit(false);
 				case "unset": return Null;
 				case "super": return SuperTuple();
-				// A_LineNumber folds to a compile-time literal (the source line). A_LineFile inside an #included
-				// file is that file's path (a literal stamped on the node); for a main-script line it equals
-				// A_ScriptFullPath and is emitted as the runtime accessor, so it reflects where the script actually
-				// runs and never bakes the compile-time path into the assembly.
+				// A_LineNumber folds to a compile-time literal. A_LineFile for a main-script line follows the
+				// running script path; an included line follows the include for source and .cks runs.
 				case "a_linenumber" when !IsScopeVariable("a_linenumber"): return Num(n.Line.ToString());
 				case "a_linefile" when !IsScopeVariable("a_linefile"):
-					// A main-script line's file IS the running script, so fold to the A_ScriptFullPath accessor
-					// (n.File unset, or stamped with the main path _scriptPath). Compiled output (.cks/.exe) folds every
-					// line to it, as AutoHotkey reports the executable for a compiled script's #included lines too.
-					return _compileToFile || string.IsNullOrEmpty(n.File) || SourcePathComparer.Equals(n.File, _scriptPath)
-						   ? Access("Keysharp.Builtins.Accessors.A_ScriptFullPath")
-						   : Str(n.File);
+					if (string.IsNullOrEmpty(n.File) || SourcePathComparer.Equals(n.File, _scriptPath)
+						|| _output is ScriptCompilationOutput.Executable or ScriptCompilationOutput.MinimalExecutable)
+						return Access("Keysharp.Builtins.Accessors.A_ScriptFullPath");
+					return _output == ScriptCompilationOutput.Assembly ? AssemblyLineFile(n.File) : Str(n.File);
 				// AutoHotkey evaluates a parameter default in the CALLER's frame, so A_ThisFunc there names
 				// the caller -- a name this lowering cannot know, since the default runs in the callee's
 				// prologue. Fold it to "", AutoHotkey's own answer for a top-level call, rather than leave
@@ -4626,6 +4624,20 @@ namespace Keysharp.Compilation.Syntax
 			}
 
 			return NameRefLower(lower);
+		}
+
+		private ExpressionSyntax AssemblyLineFile(string file)
+		{
+			var directory = _outputDirectory ?? _includeDir;
+			if (string.IsNullOrEmpty(directory))
+				return Access("Keysharp.Builtins.Accessors.A_ScriptFullPath");
+
+			var relative = System.IO.Path.GetRelativePath(directory, file);
+			if (System.IO.Path.IsPathRooted(relative))
+				return Access("Keysharp.Builtins.Accessors.A_ScriptFullPath");
+
+			return Inv(Access("System.IO.Path.GetFullPath"),
+				Inv(Access("System.IO.Path.Combine"), Access("Keysharp.Builtins.Accessors.A_ScriptDir"), Str(relative)));
 		}
 
 		private ExpressionSyntax LowerExpr(Expr e)

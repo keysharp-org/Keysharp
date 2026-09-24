@@ -2055,8 +2055,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The full path and name of the file to which A_LineNumber belongs, which will be the same as A_ScriptFullPath unless the line belongs to one of a non-compiled script\u0027s #Include files.",
-                     "tested-by":  "props-linefile.ahk"
+                     "notes":  "The full path of the current source file. Source runs retain #Include paths. A .cks resolves each included file relative to its assembly output directory, then from its runtime directory; an include on another drive falls back to A_ScriptFullPath. Main-script lines and all lines in a standalone compiled executable use A_ScriptFullPath.",
+                     "tested-by":  "props-linefile.ahk; ParserTests.AssemblyIncludedLineFileLocatesAssets; ParserTests.CompiledSources"
                  },
                  {
                      "category":  "Environment/System",

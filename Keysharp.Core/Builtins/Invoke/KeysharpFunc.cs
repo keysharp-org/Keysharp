@@ -267,7 +267,7 @@ namespace Keysharp.Builtins
 		public bool IsClosure => Inst != null && mi != null && mi.DeclaringType?.DeclaringType == Inst.GetType();
 		public bool IsMethod => mi != null && (!mi.IsStatic || mph.receiverInCounts);
 		public virtual bool IsBuiltIn => mi != null && mi.DeclaringType.Namespace != TheScript.ProgramType.Namespace;
-		internal virtual bool IsValid => (mi != null && mph != null && mph.CallFunc != null) || (Inst is Any && mph.memberInfo == null);
+		internal virtual bool IsValid => mph != null && (mi != null || Inst is Any && mph.memberInfo == null);
 
 		/// <summary>
 		/// Whether a plain call can run <see cref="mph"/> directly, as <see cref="Call"/> does: the class's Call is this

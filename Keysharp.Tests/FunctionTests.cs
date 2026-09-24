@@ -93,6 +93,55 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Function"), Category("Internal")]
+		public void CallbackValidationDefersCompilation()
+		{
+			var method = typeof(FunctionTests).GetMethod(nameof(LazyCallback), BindingFlags.NonPublic | BindingFlags.Static);
+			var holder = new Keysharp.Internals.Invoke.MethodPropertyHolder(method);
+			var callback = new KeysharpFunc(holder);
+
+			Assert.IsTrue(callback.IsValid);
+			Assert.AreSame(callback, Functions.ToCallback(callback));
+			Assert.IsNull(holder._callFunc);
+			Assert.AreEqual(7L, callback.Call(7L));
+			Assert.IsNotNull(holder._callFunc);
+			Assert.IsFalse(new KeysharpFunc((Keysharp.Internals.Invoke.MethodPropertyHolder)null).IsValid);
+		}
+
+		private static object LazyCallback(object value) => value;
+
+		[Test, Category("Function"), Category("Internal")]
+		public void FieldWritabilityDefersCompilation()
+		{
+			var field = typeof(LazyFields).GetField(nameof(LazyFields.Value));
+			var holder = new Keysharp.Internals.Invoke.MethodPropertyHolder(field);
+			var cachedSetter = typeof(Keysharp.Internals.Invoke.MethodPropertyHolder).GetField("setProp", BindingFlags.NonPublic | BindingFlags.Instance);
+
+			// Compilation timing cannot be asserted deterministically through a script.
+			Assert.IsNull(cachedSetter.GetValue(holder));
+			Assert.IsTrue(holder.HasSetter);
+			Assert.IsTrue(Keysharp.Runtime.ScriptVar.Of(holder).RequireWritable(Keysharp.Runtime.VarUsage.Assign, "Value"));
+			Assert.IsNull(cachedSetter.GetValue(holder));
+
+			var target = new LazyFields();
+			holder.SetProp(target, 7.9);
+			Assert.AreEqual(7L, target.Value);
+			var setter = holder.SetProp;
+			holder.SetProp(target, 8L);
+			Assert.AreEqual(8L, target.Value);
+			Assert.AreSame(setter, holder.SetProp);
+
+			var readOnly = new Keysharp.Internals.Invoke.MethodPropertyHolder(typeof(LazyFields).GetField(nameof(LazyFields.ReadOnly)));
+			Assert.IsFalse(readOnly.HasSetter);
+			Assert.IsNull(readOnly.SetProp);
+		}
+
+		private sealed class LazyFields
+		{
+			public long Value = 0;
+			public readonly long ReadOnly = 1;
+		}
+
+		[Test, Category("Function"), Category("Internal")]
 		public void CachedCallDelegateDoesNotAllocate()
 		{
 			var holder = Keysharp.Internals.Invoke.MethodPropertyHolder.GetOrAdd(s.ReflectionsData.flatPublicStaticMethods["StrLen"]);

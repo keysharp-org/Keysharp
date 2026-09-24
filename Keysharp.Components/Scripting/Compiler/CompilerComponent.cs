@@ -27,11 +27,10 @@ public sealed class CompilerComponent : IScriptCompiler
 			? AppContext.BaseDirectory
 			: request.RuntimeDirectory;
 		var minimal = request.Output == ScriptCompilationOutput.MinimalExecutable;
-		var writesArtifact = request.Output != ScriptCompilationOutput.InMemory;
 		var (bytes, text, compilation) = helper.CompileCodeToByteArray(
 			hasPath ? request.ScriptPath : request.SourceText, request.CompilationName, runtimeDirectory, minimal,
-			request.EmitGeneratedCode, writesArtifact, request.Defines, request.AllowPackageRestore,
-			additionalComponents, request.IncludeDirectory, excludedComponents, hasPath);
+			request.EmitGeneratedCode, request.Output, request.Defines, request.AllowPackageRestore,
+			additionalComponents, request.IncludeDirectory, excludedComponents, hasPath, request.OutputDirectory);
 		return new CompilationResult(request, runtimeDirectory, bytes, text, compilation);
 	}
 

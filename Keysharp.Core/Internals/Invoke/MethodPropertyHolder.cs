@@ -87,7 +87,14 @@ namespace Keysharp.Internals.Invoke
 		internal readonly FieldInfo fi;
 		internal readonly Type moduleType;
 		internal readonly Semver.SemVersion compatibilityVersion;
-		internal readonly Action<object, object> SetProp;
+		private Action<object, object> setProp;
+		internal Action<object, object> SetProp
+		{
+			get => setProp ??= HasSetter ? CreateFieldSetter() : null;
+			private set => setProp = value;
+		}
+		// Checking writability must not compile accessors while discovering module variables.
+		internal bool HasSetter => fi != null ? !fi.IsInitOnly && !fi.IsLiteral : setProp != null;
 		internal readonly bool anyOptional;
 		internal readonly bool isGuiType;
 		internal readonly bool isSetter;
@@ -645,11 +652,8 @@ namespace Keysharp.Internals.Invoke
 							_callFunc = (inst, obj) => pi.GetValueUnwrapped(inst);
 					}
 
-					// Deliberately still reflection, unlike the compiled setter the FieldInfo constructor builds:
-					// FindAndCacheProperty creates an MPH for EVERY property of a type the first time any one of
-					// them is named, so compiling here would pay an Expression.Compile per property of every type a
-					// script touches -- for a delegate that is usually never called, since an Any-derived builtin
-					// resolves an assignment through its prototype's set_X accessor and never reaches SetProp.
+					// Property lookup collects every property of a type. Reflection avoids compiling setters
+					// that an Any-derived builtin's prototype dispatch may never use.
 					if (canWrite)
 						SetProp = coerce
 							? inlineMarked
@@ -697,23 +701,23 @@ namespace Keysharp.Internals.Invoke
 			parameters = System.Array.Empty<ParameterInfo>();
 			ParamLength = 0;
 			MinParams = MaxParams = 0;
+		}
 
-			if (!fi.IsInitOnly && !fi.IsLiteral)
-			{
-				var instParam = Expression.Parameter(typeof(object), "inst");
-				var valParam = Expression.Parameter(typeof(object), "value");
-				Expression assignExpr;
-				// Same conversion policy as parameters and properties: a script assigning to a typed field must
-				// not be able to raise an uncatchable InvalidCastException out of the compiled setter.
-				var coercedVal = fi.IsDefined(typeof(InlineCSharpAttribute), false)
-					? ArgCoercer.CoerceBoundary(valParam, fi.FieldType)
-					: ArgCoercer.Coerce(valParam, fi.FieldType);
-				if (fi.IsStatic)
-					assignExpr = Expression.Assign(Expression.Field(null, fi), coercedVal);
-				else
-					assignExpr = Expression.Assign(Expression.Field(Expression.Convert(instParam, fi.DeclaringType), fi), coercedVal);
-				SetProp = Expression.Lambda<Action<object, object>>(assignExpr, instParam, valParam).Compile();
-			}
+		private Action<object, object> CreateFieldSetter()
+		{
+			var instParam = Expression.Parameter(typeof(object), "inst");
+			var valParam = Expression.Parameter(typeof(object), "value");
+			Expression assignExpr;
+			// Same conversion policy as parameters and properties: a script assigning to a typed field must
+			// not be able to raise an uncatchable InvalidCastException out of the compiled setter.
+			var coercedVal = fi.IsDefined(typeof(InlineCSharpAttribute), false)
+				? ArgCoercer.CoerceBoundary(valParam, fi.FieldType)
+				: ArgCoercer.Coerce(valParam, fi.FieldType);
+			if (fi.IsStatic)
+				assignExpr = Expression.Assign(Expression.Field(null, fi), coercedVal);
+			else
+				assignExpr = Expression.Assign(Expression.Field(Expression.Convert(instParam, fi.DeclaringType), fi), coercedVal);
+			return Expression.Lambda<Action<object, object>>(assignExpr, instParam, valParam).Compile();
 		}
 
 		// Allow creating a "fake" MPH for ObjBindMethod: it names a member to resolve on the receiver at call time,
