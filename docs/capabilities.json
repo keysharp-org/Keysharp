@@ -549,8 +549,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "VarRef/address-of operator",
-                     "tested-by":  "func-ref-params.ahk"
+                     "notes":  "VarRef/address-of operator. VarRef.Name exposes the referenced variable or property name when available.",
+                     "tested-by":  "func-ref-params.ahk; func-storage-lifetime.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -9388,12 +9388,13 @@
                  {
                      "category":  "Core Language",
                      "feature":  "PropRef",
-                     "syntax":  "",
+                     "syntax":  "ref.Name",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Property-reference object type."
+                     "notes":  "Property-reference object type. Inherits the read-only VarRef.Name property, which contains the referenced property name.",
+                     "tested-by":  "misc-prop-ref.ahk"
                  },
                  {
                      "category":  "Core Language",

@@ -1,3 +1,4 @@
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests
@@ -8,7 +9,83 @@ namespace Keysharp.Tests
 	public class FunctionTests : TestRunner
 	{
 		[Test, Category("Function")]
+		public void StorageLifetime() => Assert.IsTrue(TestScript("func-storage-lifetime", false));
+
+		[Test, Category("Function")]
 		public void ArgumentPacking() => Assert.IsTrue(TestScript("func-argument-packing", false));
+
+		[Test, Category("Function"), Category("Internal")]
+		public void AddressTakenLocalShape()
+		{
+			const string source = "Plain() {\nplain := 1\nreturn plain\n}\n"
+							  + "Addressed() {\nVaLuE := 1\nfirst := &VALUE\nsecond := &value\nreturn [first, second]\n}\n";
+			var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source);
+			Assert.IsEmpty(diagnostics, string.Join("; ", diagnostics));
+			var generated = new Keysharp.Compilation.Syntax.Lowerer().Build(program, "Test");
+			var methods = generated.DescendantNodes().OfType<MethodDeclarationSyntax>()
+				.Where(method => method.Identifier.ValueText is "FN_Plain" or "FN_Addressed")
+				.ToDictionary(method => method.Identifier.ValueText);
+
+			var plain = methods["FN_Plain"];
+			var plainLocal = plain.DescendantNodes().OfType<VariableDeclaratorSyntax>()
+				.Single(variable => variable.Identifier.ValueText == "plain");
+			Assert.AreEqual("object", ((VariableDeclarationSyntax)plainLocal.Parent).Type.ToString());
+
+			var addressed = methods["FN_Addressed"];
+			var boxes = addressed.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
+				.Where(creation => creation.Type.ToString() == "System.Runtime.CompilerServices.StrongBox<object>").ToArray();
+			Assert.AreEqual(1, boxes.Length);
+			var boxName = boxes[0].Ancestors().OfType<VariableDeclaratorSyntax>().Single().Identifier.ValueText;
+
+			var references = addressed.DescendantNodes().OfType<InvocationExpressionSyntax>()
+				.Where(call => call.Expression is MemberAccessExpressionSyntax member && member.Name.Identifier.ValueText == "MakeVarRef")
+				.ToArray();
+			Assert.AreEqual(2, references.Length);
+			Assert.IsTrue(references.All(reference => reference.ArgumentList.Arguments[0].Expression is IdentifierNameSyntax identifier
+				&& identifier.Identifier.ValueText == boxName));
+			Assert.IsTrue(references.All(reference => reference.ArgumentList.Arguments[1].Expression is LiteralExpressionSyntax literal
+				&& literal.Token.ValueText == "VaLuE"));
+			Assert.IsFalse(generated.ToFullString().Contains("FuncScope.Layout", StringComparison.Ordinal));
+		}
+
+		[Test, Category("Function"), Category("Internal")]
+		public void ByRefLoweringShape()
+		{
+			const string source = "Required(&b) {\nb := 2\n}\nOptional(&b?) {\nreturn IsSet(b)\n}\n";
+			var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source);
+			Assert.IsEmpty(diagnostics, string.Join("; ", diagnostics));
+			var generated = new Keysharp.Compilation.Syntax.Lowerer().Build(program, "Test");
+			var methods = generated.DescendantNodes().OfType<MethodDeclarationSyntax>()
+				.Where(method => method.Identifier.ValueText is "FN_Required" or "FN_Optional")
+				.ToDictionary(method => method.Identifier.ValueText);
+
+			var required = methods["FN_Required"];
+			Assert.IsFalse(required.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
+				.Any(creation => creation.Type.ToString() == "Keysharp.Builtins.VarRef"));
+			Assert.IsTrue(required.DescendantNodes().OfType<InvocationExpressionSyntax>()
+				.Any(call => call.Expression.ToString() == "Keysharp.Builtins.Refs.SetValue"));
+
+			var optionalRef = methods["FN_Optional"].DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
+				.Single(creation => creation.Type.ToString() == "Keysharp.Builtins.VarRef");
+			Assert.AreEqual("null", optionalRef.ArgumentList.Arguments.Single().Expression.ToString());
+		}
+
+		[Test, Category("Function"), Category("Internal")]
+		public void BoxedVarRefsShareStorage()
+		{
+			var box = new System.Runtime.CompilerServices.StrongBox<object>(1L);
+			var first = (VarRef)Misc.MakeVarRef(box, "value");
+			var second = (VarRef)Misc.MakeVarRef(box, "VALUE");
+
+			first.__Value = 2L;
+			Assert.AreEqual(2L, second.__Value);
+			Assert.AreEqual("value", first.Name);
+			Assert.AreEqual("VALUE", second.Name);
+			Assert.IsTrue(typeof(VarRef).GetProperty(nameof(VarRef.Name)).SetMethod.IsAssembly);
+
+			box.Value = first;
+			Assert.AreSame(first, Misc.MakeVarRef(box, "alias"));
+		}
 
 		[Test, Category("Function"), NonParallelizable]
 		public void AllGlobalInFunc() => Assert.IsTrue(TestScript("func-all-global", false));

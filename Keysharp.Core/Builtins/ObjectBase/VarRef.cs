@@ -2,8 +2,10 @@ namespace Keysharp.Builtins
 {
 	public class VarRef : Any
 	{
+		private readonly StrongBox<object> box;
 		protected Func<object> Get;
 		protected Action<object> Set;
+		public string Name { get; internal set; } = "";
 
 		public static VarRef Empty = new VarRef(() => null, x => x = null);
 
@@ -11,20 +13,34 @@ namespace Keysharp.Builtins
 
 		public VarRef(object x) : base(null)
 		{
-			Get = () => x;
-			Set = (value) => x = value;
+			box = new(x);
 		}
 
-		public VarRef(Func<object> getter, Action<object> setter) : base()
+		public VarRef(Func<object> getter, Action<object> setter) : this(getter, setter, "") { }
+
+		internal VarRef(Func<object> getter, Action<object> setter, string name) : base()
 		{
 			Get = getter;
 			Set = setter;
+			Name = name ?? "";
+		}
+
+		internal VarRef(StrongBox<object> box, string name) : base(null)
+		{
+			this.box = box;
+			Name = name ?? "";
 		}
 
 		public object __Value
 		{
-			get => Get();
-			set => Set(value);
+			get => box != null ? box.Value : Get();
+			set
+			{
+				if (box != null)
+					box.Value = value;
+				else
+					Set(value);
+			}
 		}
 
 		/// <summary>

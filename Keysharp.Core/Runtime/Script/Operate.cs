@@ -598,12 +598,14 @@ namespace Keysharp.Runtime
 		public static object DerefRef(FuncScope scope, object name)
 		{
 			if (Refs.DeclaresValue(name))
-				return Misc.MakeVarRef(() => Refs.GetValueOrNull(name), value => Refs.SetValue(name, value));
+				return Misc.MakeVarRef(() => Refs.GetValueOrNull(name), value => Refs.SetValue(name, value),
+					(name as VarRef)?.Name ?? "");
 
 			if (DerefKey(name) is not { } key || !TryFindWrite(scope, key, VarUsage.Reference, out var v))
 				return DefaultObject;
 
-			return v.Exists ? v.MakeRef() : Misc.MakeVarRef(() => scope.Read(key), value => scope.Write(key, value));
+			var declaredName = scope != null && scope.TryGetDeclaration(key, out var declaration) ? declaration.Name : key;
+			return v.Exists ? v.MakeRef(key) : Misc.MakeVarRef(() => scope.Read(key), value => scope.Write(key, value), declaredName);
 		}
 
 		// What a read of a name finds among the function's own variables, or FuncScope.Global at module level.

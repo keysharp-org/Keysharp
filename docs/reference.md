@@ -1386,9 +1386,9 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `newref := theobj ; adds 1 to the reference count`
 		+ `newref := "" ; subtracts 1 from the reference count`
 	+ When passing `"Interrupt"` as the first argument to `Thread()`, the third argument for `LineCount` is not supported because Keysharp does not support line level awareness.
-* Syntax:
+	* Syntax:
 	+ The address of a variable cannot be taken using the reference operator.
-		+ It returns a VarRef object as in AutoHotkey.
+		+ It returns a VarRef object as in AutoHotkey. Its read-only `Name` property contains the referenced variable or property name when one is available.
 * Miscellaneous behavior:
 	+ Pausing the whole *script* is not supported, because a Keysharp script is actually a running program.
 		+ The tray menu's Pause item has been removed. `Pause()` and `A_IsPaused` remain and act on pseudo-threads, as in AHK: `Pause()` suspends the calling pseudo-thread until something clears its flag, and `Pause(1|0|-1)` sets, clears or toggles the flag on the *underlying* thread, which observes it when it resumes.

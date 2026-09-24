@@ -1,6 +1,14 @@
 #NoTrayIcon
 #Include <assert>
 
+optionalrefstate(&value?) => IsSet(value)
+optionalrefdefault(&value := "") => IsSet(value) && value == ""
+
+AssertEq(optionalrefstate(), 0, A_LineNumber)
+provided := ""
+AssertEq(optionalrefstate(&provided), 1, A_LineNumber)
+Assert(optionalrefdefault(), A_LineNumber)
+
 optreffunc(a?, &b?)
 {
 	b := a

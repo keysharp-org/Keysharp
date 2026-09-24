@@ -890,6 +890,18 @@ namespace Keysharp.Internals.Invoke
 						valOrNull);
 				}
 
+				if (ps[i].IsDefined(typeof(Keysharp.Runtime.ByRefAttribute), false))
+				{
+					var reference = Expression.Variable(typeof(object), "reference");
+					var name = ps[i].GetCustomAttribute<Keysharp.Runtime.UserDeclaredNameAttribute>()?.Name
+							   ?? ps[i].Name?.TrimStart('@');
+					chosen = Expression.Block([reference],
+						Expression.Assign(reference, chosen),
+						Expression.IfThen(Expression.NotEqual(reference, Expression.Constant(null)),
+							Expression.Call(demandReferenceMethod, reference, Expression.Constant(false), Expression.Constant(name, typeof(string)))),
+						reference);
+				}
+
 				a[i] = inlineMarked
 						   ? ArgCoercer.CoerceBoundary(chosen, ps[i].ParameterType)
 						   : ArgCoercer.Coerce(chosen, ps[i].ParameterType);
@@ -989,6 +1001,8 @@ namespace Keysharp.Internals.Invoke
 
 		private static readonly MethodInfo throwMissingArgumentMethod =
 			typeof(DelegateFactory).GetMethod(nameof(ThrowMissingArgument), BindingFlags.NonPublic | BindingFlags.Static);
+		private static readonly MethodInfo demandReferenceMethod =
+			typeof(Refs).GetMethod(nameof(Refs.Demand), [typeof(object), typeof(bool), typeof(string)]);
 
 		// Thrown from the compiled core when a required parameter is missing or unset. Declared in C# (not via
 		// Expression.Throw) so the Error->Exception operator is applied and the error surfaces normally.

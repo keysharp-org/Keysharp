@@ -16,7 +16,6 @@ namespace Keysharp.Builtins
 	public class PropRef : VarRef
 	{
 		public object Target { get; private set; }
-		public object Name { get; private set; }
 		public object[] Args { get; private set; } = null;
 
 		public PropRef() : base() { }
@@ -31,7 +30,7 @@ namespace Keysharp.Builtins
 			var refArgs = args.Length > 2 ? args[2..] : [];
 
 			Target = target;
-			Name = name;
+			Name = name.ToString();
 			Args = refArgs;
 			Get = () => Script.GetPropertyValue(Target, Name, Args);
 			Set = v => Script.SetPropertyValue(Target, Name, [.. Args, v]);

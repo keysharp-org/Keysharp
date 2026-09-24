@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
@@ -57,9 +59,26 @@ AssertEq(v2.__Value, "written", A_LineNumber)
 Throws(() => Fill(5), A_LineNumber, TypeError)
 Throws(() => Fill(Map()), A_LineNumber, TypeError)
 
+Ignore(&p) => 1
+Throws(() => Ignore(5), A_LineNumber, TypeError)
+
 m2 := Map()
 try Fill(m2)
 Assert(!m2.HasOwnProp("__Value"), A_LineNumber)
+
+class InheritedRef {}
+InheritedRef.Prototype.DefineProp("__Value", {Value: "original"})
+inherited := InheritedRef()
+Throws(() => Fill(inherited), A_LineNumber, PropertyError)
+Assert(!inherited.HasOwnProp("__Value"), A_LineNumber)
+AssertEq(inherited.__Value, "original", A_LineNumber)
+
+FillDynamic(&slot) {
+	name := "slot"
+	%name% := "written"
+}
+Throws(() => FillDynamic(inherited), A_LineNumber, PropertyError)
+Assert(!inherited.HasOwnProp("__Value"), A_LineNumber)
 
 ; Compound assignment and ++ through a &param go through the same write.
 Bump(&n)

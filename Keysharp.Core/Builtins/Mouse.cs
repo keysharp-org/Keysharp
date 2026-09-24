@@ -1,4 +1,3 @@
-using static Keysharp.Builtins.Misc;
 #if !WINDOWS
 using System.Linq;
 using Eto.Forms;

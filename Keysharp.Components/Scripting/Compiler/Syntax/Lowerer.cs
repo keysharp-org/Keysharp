@@ -25,7 +25,7 @@ namespace Keysharp.Compilation.Syntax
 	/// by the lowercased identifier. Locals (params + names assigned in a function) become hoisted
 	/// method locals; names go through <see cref="NameMangler"/>.
 	/// </summary>
-	internal sealed class Lowerer
+	internal sealed partial class Lowerer
 	{
 		public readonly List<string> Diagnostics = new();
 		// Non-fatal compiler messages (#Warning and #Warn Experimental). Entries in Diagnostics abort
@@ -219,7 +219,7 @@ namespace Keysharp.Compilation.Syntax
 		private int _tempCounter;
 		private List<string> _scopeTemps = new();   // object temps the current scope needs (declared at its top)
 
-		private string NewTemp() { var n = "KS_temp" + (++_tempCounter); _scopeTemps.Add(n); return n; }
+		private string NewTemp(bool hoist = true) { var n = "KS_temp" + (++_tempCounter); if (hoist) _scopeTemps.Add(n); return n; }
 
 		// Null-conditional access `target?.<access>`: evaluate target once into a temp; if it is unset (null),
 		// short-circuit the whole access (and any nested args/calls) to C# null — which reads back as unset —
@@ -1593,7 +1593,9 @@ namespace Keysharp.Compilation.Syntax
 		// The variables of one callable, searched outward through the callables enclosing a closure as FindUpVar does.
 		private sealed class FunctionScope(FunctionScope parent, bool isStatic = false)
 		{
+			public readonly Dictionary<string, LocalStorage> Variables = new(System.StringComparer.Ordinal);
 			public readonly FunctionScope Parent = parent;   // the enclosing callable of a fat arrow or nested function
+			public FunctionScope Root => Parent?.Root ?? this;
 			public readonly bool IsStatic = isStatic;        // a `static` nested function
 			public bool AssumeGlobal;
 			// Inner marks a fat arrow or nested function, lowered to the C# local function Impl. It Captures when it or a
@@ -1992,8 +1994,9 @@ namespace Keysharp.Compilation.Syntax
 				// A by-ref parameter's value lives in its VarRef, which is not a C# lvalue.
 				case NameKind.ScopeVariable when v.Storage == VarStorage.ByRef:
 					MarkCapture(v);
-					var reference = Id(NameMangler.Escape(lower));
-					return new(RefOp("GetValue", reference, Str(lower)), value => RefOp("SetValue", reference, value, Str(lower)));
+					var reference = LocalValue(v);
+					return new(Op("GetPropertyValue", reference, Str("__Value")),
+						value => RefSet(reference, value, v.Owner.Spelling(v.Key)));
 				// A nested function is a constant of the function it is declared in.
 				case NameKind.ScopeVariable when v.Storage == VarStorage.Closure:
 					(constant, declared) = ("Func", v.Owner.Spelling(lower));
@@ -2048,13 +2051,20 @@ namespace Keysharp.Compilation.Syntax
 		// A reference to a bare name's variable, or "" (with the error reported) when it cannot be written.
 		private ExpressionSyntax VariableRef(Node at, string name, VarUsage use)
 		{
-			return ResolveWrite(at, name, use) is { } target ? VariableRef(name.ToLowerInvariant(), target) : Str("");
+			return ResolveWrite(at, name, use) is { } target ? VariableRef(name.ToLowerInvariant(), target, name) : Str("");
 		}
 
 		// A reference to the variable ResolveWrite found. A by-ref parameter already holds a reference to the caller's
 		// variable, which is forwarded rather than wrapped.
-		private ExpressionSyntax VariableRef(string lower, WriteTarget target) =>
-			_scope?.Find(lower) is { Storage: VarStorage.ByRef } ? Id(NameMangler.Escape(lower)) : MakeVarRefGS(target.Read, target.Write(Id("KS_value")));
+		private ExpressionSyntax VariableRef(string lower, WriteTarget target, string name)
+		{
+			var variable = _inMethod && lower == "this" ? Receiver() : _scope?.Find(lower) ?? default;
+			if (variable.Storage == VarStorage.ByRef) return LocalValue(variable);
+			var declaredName = lower == "this" ? "this" : variable.Owner?.Spelling(lower) ?? name;
+			return variable.Storage == VarStorage.Local
+				? Inv(Access("Keysharp.Builtins.Misc.MakeVarRef"), LocalBox(variable), Str(declaredName))
+				: MakeVarRefGS(target.Read, target.Write(Id("KS_value")), declaredName);
+		}
 
 		// The baked A_LineFile value for an #included line. Running/transpiling keeps the include's full path;
 		// compiling to a distributable .cks/.exe relativizes it to the main script's directory (so a local
@@ -2102,7 +2112,7 @@ namespace Keysharp.Compilation.Syntax
 		// is named itself, which captures nothing.
 		private ExpressionSyntax NestedFunctionRef(ScopeVar v)
 		{
-			var local = Id(NameMangler.Escape(v.Key));
+			var local = LocalValue(v);
 
 			if (v.Owner == _scope)
 				return local;
@@ -2152,7 +2162,12 @@ namespace Keysharp.Compilation.Syntax
 
 			return stale.Count == 0 ? block : block.ReplaceNodes(
 				block.GetAnnotatedNodes(SettleAnnotation).Where(n => n.GetAnnotations(SettleAnnotation).Any(stale.Contains)),
-				(_, node) => settlement.Sites[node.GetAnnotations(SettleAnnotation).First()].Settle(node));
+				(_, node) =>
+				{
+					while (node.GetAnnotations(SettleAnnotation).LastOrDefault(stale.Contains) is { } annotation)
+						node = settlement.Sites[annotation].Settle(node).WithoutAnnotations(annotation);
+					return node;
+				});
 		}
 
 		// A fat arrow's or nested function's local function, emitted static unless it is a closure, and its function object.
@@ -2226,7 +2241,7 @@ namespace Keysharp.Compilation.Syntax
 
 		private ExpressionSyntax NameRefLower(string lower)
 		{
-			if (_inMethod && lower == "this") { CaptureThis(); return Id("@this"); }
+			if (_inMethod && lower == "this") { CaptureThis(); return LocalValue(Receiver()); }
 
 			var binding = Bind(lower);
 
@@ -2237,10 +2252,11 @@ namespace Keysharp.Compilation.Syntax
 					MarkCapture(v);
 					return v.Storage switch
 					{
-						VarStorage.ByRef => RefOp("GetValue", Id(NameMangler.Escape(lower)), Str(lower)),
+						VarStorage.ByRef => Op("GetPropertyValue", LocalValue(v), Str("__Value")),
 						VarStorage.Static => Id(v.Field),
 						VarStorage.Global => ModuleFieldRef(lower),
 						VarStorage.Closure => NestedFunctionRef(v),
+						VarStorage.Local => LocalValue(v),
 						_ => Id(NameMangler.Escape(lower)),
 					};
 				case NameKind.ScopedImport:
@@ -4751,7 +4767,7 @@ namespace Keysharp.Compilation.Syntax
 				// `%name% ??= v` finds its target once, into temps, and evaluates v and assigns only when it has no value.
 				if (a.Op == "??=")
 				{
-					var (current, found) = (NewTemp(), NewTemp());
+					var (current, found) = (NewTemp(false), NewTemp(false));
 					return SyntaxFactory.ParenthesizedExpression(SyntaxFactory.ConditionalExpression(DerefGetForWrite(dt.Name, current, found),
 						Op("DerefSetFound", DerefScope, Id(found), LowerExpr(a.Value)), Id(current)));
 				}
@@ -5017,7 +5033,6 @@ namespace Keysharp.Compilation.Syntax
 		// then IsSet's plain null-check works. Mirrors the canonical RewriteIsSetArgumentList.
 		private static readonly Dictionary<string, string> IsSetOrNull = new(System.StringComparer.Ordinal)
 		{ { "GetPropertyValue", "GetPropertyValueOrNull" }, { "GetIndex", "GetIndexOrNull" }, { "Invoke", "InvokeOrNull" },
-		  { "GetValue", "GetValueOrNull" },  // Refs.GetValue: a by-ref parameter read (see RefOp)
 		  { "DerefGet", "DerefGetOrNull" } };
 
 		// The same rewrite for a fat-arrow body, minus the property read. GetPropertyValueOrNull reports a member
@@ -5498,7 +5513,7 @@ namespace Keysharp.Compilation.Syntax
 				else if (ResolveWrite(fr, v, VarUsage.OutputVar) is { } target)
 				{
 					var backup = NewTemp();
-					meArgs.Add(VariableRef(v.ToLowerInvariant(), target));
+					meArgs.Add(VariableRef(v.ToLowerInvariant(), target, v));
 					saves.Add(ExprStmt(Assign(Id(backup), target.Read)));
 					restores.Add(ExprStmt(target.Write(Id(backup))));
 				}
@@ -5903,12 +5918,11 @@ namespace Keysharp.Compilation.Syntax
 					SyntaxFactory.TupleExpression(SyntaxFactory.SeparatedList(new[] { Arg(proto), Arg(Id("@this")) })));
 				stmts.Add(ExprStmt(Op("Invoke", tuple, Str("__Init"))));
 			}
-			var declared = new List<string>();
+			var declared = new List<ScopeVar>();
 			foreach (var n in assignedOrdered.Where(scope.Locals.Contains).Concat(scope.Closures))
 			{
-				var e = NameMangler.Escape(n);
-				declared.Add(e);
-				stmts.Add(DeclLocal(ObjType, e, Null));
+				declared.Add(scope.Find(n));
+				stmts.Add(DeclareVariable(scope, n, Null));
 			}
 			if (_derefScope != null)
 				stmts.Add(LocalDecl(Ty("Keysharp.Runtime.FuncScope"), "KS_scope", NewScope(_currentThisFuncName, _derefScope == true)));
@@ -5930,7 +5944,9 @@ namespace Keysharp.Compilation.Syntax
 			stmts.AddRange(_pendingScopeFuncs);   // fat-arrow field values become local funcs that capture @this
 			stmts.InsertRange(setupEnd + _scopeTemps.Count, _pendingScopeClosureInits);
 			execStart += _pendingScopeClosureInits.Count; execEnd += _pendingScopeClosureInits.Count;
+			declared.Add(Receiver());
 			WrapBodyWithKeepAlive(stmts, declared, execStart, execEnd);
+			InitializeParameters(stmts, [Receiver()]);
 			var block = Settle(SyntaxFactory.Block(stmts));
 			_settlement = savedSettlement;
 			_derefScope = savedDeref;
@@ -5946,13 +5962,12 @@ namespace Keysharp.Compilation.Syntax
 		// resolves a member/method against the base's prototype while keeping `this` bound to the current instance.
 		private ExpressionSyntax SuperTuple()
 		{
-			CaptureThis();
 			var baseType = _currentClassBase ?? "Keysharp.Builtins.KeysharpObject";
 			var table = _currentMethodStatic ? "MainScript.Vars.Statics" : "MainScript.Vars.Prototypes";
 			var proto = SyntaxFactory.ElementAccessExpression(Access(table))
 				.WithArgumentList(SyntaxFactory.BracketedArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(SyntaxFactory.TypeOfExpression(Ty(baseType))))));
 			return SyntaxFactory.CastExpression(ObjType,
-				SyntaxFactory.TupleExpression(SyntaxFactory.SeparatedList(new[] { Arg(proto), Arg(Id("@this")) })));
+				SyntaxFactory.TupleExpression(SyntaxFactory.SeparatedList(new[] { Arg(proto), Arg(NameRefLower("this")) })));
 		}
 
 		private StatementSyntax FieldSet(ClassField f)
@@ -5960,7 +5975,7 @@ namespace Keysharp.Compilation.Syntax
 			var saved = _inMethod; _inMethod = true;
 			var v = LowerExpr(f.Init);
 			_inMethod = saved;
-			return ExprStmt(Op("SetPropertyValue", Id("@this"), Str(f.Name), v));
+			return ExprStmt(Op("SetPropertyValue", LocalValue(Receiver()), Str(f.Name), v));
 		}
 
 		private static string OperatorMethodName(bool isStatic, Keysharp.Runtime.OperatorKind kind) =>
@@ -6139,7 +6154,7 @@ namespace Keysharp.Compilation.Syntax
 				.AddAttributeLists(Attr("Keysharp.Runtime.UserDeclaredName", Str(fd.Name)));
 			// Assign (not declare — the var is hoisted) at the scope TOP so forward-referenced calls work and a
 			// self-recursive binding doesn't trip definite assignment; the delegate's captures read lazily.
-			var local = Id(NameMangler.Escape(nameLower));
+			var local = LocalValue(_scope.Find(nameLower));
 			_pendingScopeClosureInits.Add(ExprStmt(Assign(local, EmitClosure(scope, fn))));
 			return local;
 		}
@@ -6618,14 +6633,15 @@ namespace Keysharp.Compilation.Syntax
 
 			var body = new List<StatementSyntax>();
 			var hoisted = new HashSet<string>(paramLowers);
-			// Emitted names whose managed lifetime must span the scope.
-			var declared = new List<string>();
-			void Hoist(string n) { if (scope.Locals.Contains(n) && hoisted.Add(n)) { var e = NameMangler.Escape(n); declared.Add(e); body.Add(DeclLocal(ObjType, e, Null)); } }
+			// Variables whose managed lifetime must span the scope.
+			var declared = new List<ScopeVar>();
+			if (_inMethod && !capturing) declared.Add(Receiver());
+			void Hoist(string n) { if (scope.Locals.Contains(n) && hoisted.Add(n)) { declared.Add(scope.Find(n)); body.Add(DeclareVariable(scope, n, Null)); } }
 			foreach (var n in assignedOrdered) Hoist(n);
 			foreach (var n in scope.ExplicitLocals) Hoist(n);
 			// Declare this scope's nested-closure vars up front (`object f = null;`) so a self-/mutually-recursive binding
 			// `f = Closure(FN_f)` (where FN_f captures f) satisfies C# definite assignment.
-			foreach (var n in scope.Closures) if (hoisted.Add(n)) { var e = NameMangler.Escape(n); declared.Add(e); body.Add(DeclLocal(ObjType, e, Null)); }
+			foreach (var n in scope.Closures) if (hoisted.Add(n)) { declared.Add(scope.Find(n)); body.Add(DeclareVariable(scope, n, Null)); }
 
 			// Expose a variadic param to the body as an AHK Array: `object <name> = new Array(KS_<name>)` (matches the
 			// canonical). The raw `params object[]` keeps the `KS_`-prefixed signature name (see ParamDecls). Declared
@@ -6635,7 +6651,7 @@ namespace Keysharp.Compilation.Syntax
 					if (p.Variadic)
 					{
 						var lower = p.Name.ToLowerInvariant();
-						body.Add(LocalDecl(ObjType, NameMangler.Escape(lower),
+						body.Add(DeclareVariable(scope, lower,
 							SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Builtins.Array"))
 								.WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(Id("KS_" + lower)))))));
 					}
@@ -6648,17 +6664,14 @@ namespace Keysharp.Compilation.Syntax
 			// Declared here once the body is lowered, which shows the enclosing variables the scope reaches.
 			var scopeAt = body.Count;
 
-			// A by-ref param is read/written through its VarRef's __Value. Only when the caller OMITS an optional `&p`
-			// does it arrive null (by-ref defaults are declared as null, see ParamDecls) — substitute a VarRef holding
-			// the declared default (or "") so __Value access behaves like a local. A passed argument is left untouched:
-			// it may be a real VarRef OR a "virtual reference" (an object exposing `.Value`/`__Value` but not derived
-			// from VarRef) — re-wrapping the latter in a new VarRef would sever it from its backing store.
+			// An omitted optional by-ref parameter acts as a normal local. Its CLR default is null, so give it a private
+			// reference initialized to the declared default, or leave its value unset when the declaration used `?`.
 			if (paramDefaults != null)
 				foreach (var p in paramDefaults)
-					if (p.ByRef && !p.Variadic)
+					if (p.ByRef && !p.Variadic && (p.Optional || p.Default != null))
 					{
-						var rid = Id(NameMangler.Escape(p.Name.ToLowerInvariant()));
-						var deflt = p.Default != null ? LowerParamDefault(p.Default) : Str("");
+						var rid = LocalValue(scope.Find(p.Name.ToLowerInvariant()));
+						var deflt = p.Default != null ? LowerParamDefault(p.Default) : Null;
 						body.Add(ExprStmt(SyntaxFactory.AssignmentExpression(SyntaxKind.CoalesceAssignmentExpression, rid,
 							SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Builtins.VarRef"))
 								.WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(deflt)))))));
@@ -6675,7 +6688,7 @@ namespace Keysharp.Compilation.Syntax
 							_literalDefaults[p] = literal;
 						else
 							body.Add(ExprStmt(SyntaxFactory.AssignmentExpression(SyntaxKind.CoalesceAssignmentExpression,
-								Id(NameMangler.Escape(p.Name.ToLowerInvariant())), defaultExpr)));
+								LocalValue(scope.Find(p.Name.ToLowerInvariant())), defaultExpr)));
 					}
 
 			// A fat-arrow `=> expr` propagates an unset result rather than raising (unlike an explicit `return f()`),
@@ -6707,7 +6720,10 @@ namespace Keysharp.Compilation.Syntax
 			// a closure is converted to a delegate — C# CS0165) but above the body (so forward-referenced calls work).
 			body.InsertRange(setupEnd + _scopeTemps.Count, _pendingScopeClosureInits);
 			execStart += _pendingScopeClosureInits.Count; execEnd += _pendingScopeClosureInits.Count;
+			declared.AddRange(paramLowers.Select(scope.Find));
 			WrapBodyWithKeepAlive(body, declared, execStart, execEnd);
+			InitializeParameters(body, paramLowers.Select(scope.Find));
+			if (_inMethod && !capturing) InitializeParameters(body, [Receiver()]);
 			var block = SyntaxFactory.Block(body);
 			if (scope.Parent == null) block = Settle(block);
 
@@ -6726,15 +6742,13 @@ namespace Keysharp.Compilation.Syntax
 
 		// AHK keeps locals alive to scope exit; the JIT may otherwise collect a Buffer after its last managed
 		// read while native code still uses its Ptr. KeepAlive restores that lifetime on every exit path.
-		private static void WrapBodyWithKeepAlive(List<StatementSyntax> body, List<string> declared, int execStart, int execEnd)
+		private static void WrapBodyWithKeepAlive(List<StatementSyntax> body, List<ScopeVar> declared, int execStart, int execEnd)
 		{
 			if (declared.Count == 0 || execEnd <= execStart)
 				return;
 
-			var keep = new List<StatementSyntax>(declared.Count);
-
-			foreach (var n in declared)
-				keep.Add(ExprStmt(Inv(Access("System.GC.KeepAlive"), Id(n))));
+			var keep = declared.Select(LifetimeRoot).Chunk(8).Select(roots =>
+				ExprStmt(Inv(Access(roots.Length == 1 ? "System.GC.KeepAlive" : "Keysharp.Runtime.Lifetime.KeepAlive"), roots)));
 
 			var inner = body.GetRange(execStart, execEnd - execStart);
 			body.RemoveRange(execStart, execEnd - execStart);
@@ -6777,8 +6791,8 @@ namespace Keysharp.Compilation.Syntax
 			SyntaxFactory.InvocationExpression(Access("Keysharp.Runtime.Script.DerefGetForWrite"), SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(new[]
 			{
 				Arg(DerefScope), Arg(LowerExpr(RequireWriter(name))),
-				Arg(Id(current)).WithRefKindKeyword(SyntaxFactory.Token(SyntaxKind.OutKeyword)),
-				Arg(Id(target)).WithRefKindKeyword(SyntaxFactory.Token(SyntaxKind.OutKeyword))
+				Arg(SyntaxFactory.DeclarationExpression(Ty("var"), SyntaxFactory.SingleVariableDesignation(SyntaxFactory.Identifier(current)))).WithRefKindKeyword(SyntaxFactory.Token(SyntaxKind.OutKeyword)),
+				Arg(SyntaxFactory.DeclarationExpression(Ty("var"), SyntaxFactory.SingleVariableDesignation(SyntaxFactory.Identifier(target)))).WithRefKindKeyword(SyntaxFactory.Token(SyntaxKind.OutKeyword))
 			})));
 		// The target of a dynamic write, found before its value is evaluated.
 		private ExpressionSyntax DerefTarget(Expr name) => Op("DerefTarget", DerefScope, LowerExpr(RequireWriter(name)));
@@ -6822,7 +6836,6 @@ namespace Keysharp.Compilation.Syntax
 				if (!_scope.Reaches(v))
 					continue;
 
-				var id = Id(NameMangler.Escape(v.Key));
 				// A captured variable is named by its capture rather than by how the enclosing callable declares it.
 				var own = v.Owner == _scope;
 
@@ -6830,7 +6843,9 @@ namespace Keysharp.Compilation.Syntax
 				{
 					// A by-ref parameter's variable is its reference's target.
 					case VarStorage.ByRef:
-						Arm(v.Key, RefOp("GetValueOrNull", id, Str(v.Key)), RefOp("SetValue", id, Id("KS_val"), Str(v.Key)), v.Owner.Spelling(v.Key), VarKind.Parameter);
+						var reference = LocalValue(v);
+						Arm(v.Key, Op("GetPropertyValueOrNull", reference, Str("__Value")),
+							RefSet(reference, Id("KS_val"), v.Owner.Spelling(v.Key)), v.Owner.Spelling(v.Key), VarKind.Parameter);
 						break;
 					case VarStorage.Static:
 						Var(v, Id(v.Field), own ? v.Owner.Kinds[v.Key] : VarKind.Static);
@@ -6845,7 +6860,7 @@ namespace Keysharp.Compilation.Syntax
 						Arm(v.Key, NestedFunctionRef(v), null, v.Owner.Spelling(v.Key), VarKind.Constant);
 						break;
 					default:
-						Var(v, id, own ? v.Owner.Kinds.GetValueOrDefault(v.Key, VarKind.ImplicitLocal) : VarKind.Local);
+						Var(v, LocalValue(v), own ? v.Owner.Kinds.GetValueOrDefault(v.Key, VarKind.ImplicitLocal) : VarKind.Local);
 						break;
 				}
 			}
@@ -6885,7 +6900,6 @@ namespace Keysharp.Compilation.Syntax
 				SyntaxFactory.ArrayCreationExpression(ArrayOf(Ty("Keysharp.Runtime.FuncScope.Declaration")),
 					SyntaxFactory.InitializerExpression(SyntaxKind.ArrayInitializerExpression, SyntaxFactory.SeparatedList(
 						arms.Where(a => a.Name != null).Select(a => New("Keysharp.Runtime.FuncScope.Declaration", Str(a.Name), Access("Keysharp.Runtime.VarKind." + a.Kind)))))));
-
 		// Generic "does any node in this scope's OWN body satisfy <pred>?" walk, shared by the deref / scope-trigger /
 		// deref-write checks below. It walks control flow and the whole expression tree but NOT into nested
 		// functions/closures (no FatArrowExpr / FunctionDecl cases) — a nested construct belongs to that nested scope,
@@ -7421,11 +7435,8 @@ namespace Keysharp.Compilation.Syntax
 		private static ExpressionSyntax Op(string method, params ExpressionSyntax[] args) =>
 			Inv(scriptAccess.GetOrAdd(method, static m => Access("Keysharp.Runtime.Script." + m)), args);
 
-		// A by-ref parameter is read and written through Refs rather than as a plain __Value property access, so a
-		// caller that passed something which is not a reference is named in the error instead of the write silently
-		// defining a __Value on it. The parameter's own name is passed along for that message.
-		private static ExpressionSyntax RefOp(string method, params ExpressionSyntax[] args) =>
-			Inv(Access("Keysharp.Builtins.Refs." + method), args);
+		private static ExpressionSyntax RefSet(ExpressionSyntax reference, ExpressionSyntax value, string name) =>
+			Inv(Access("Keysharp.Builtins.Refs.SetValue"), reference, value, Str(name));
 
 		// AHK's `??` / `??=`: yield the left operand if it is set (non-null), otherwise the right. Lowered to C#'s native
 		// null-coalescing operator so the right operand is NOT evaluated when the left is set (true short-circuit) — a plain
@@ -7475,12 +7486,13 @@ namespace Keysharp.Compilation.Syntax
 				.WithArgumentList(SyntaxFactory.BracketedArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(SyntaxFactory.TypeOfExpression(Ty(typeFullName))))));
 
 		// Keysharp.Builtins.Misc.MakeVarRef(() => getter, (KS_value) => setter)
-		private static ExpressionSyntax MakeVarRefGS(ExpressionSyntax getter, ExpressionSyntax setter) =>
+		private static ExpressionSyntax MakeVarRefGS(ExpressionSyntax getter, ExpressionSyntax setter, string name) =>
 			Inv(Access("Keysharp.Builtins.Misc.MakeVarRef"),
 				SyntaxFactory.ParenthesizedLambdaExpression().WithExpressionBody(getter),
 				SyntaxFactory.ParenthesizedLambdaExpression()
 					.WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SingletonSeparatedList(SyntaxFactory.Parameter(SyntaxFactory.Identifier("KS_value")))))
-					.WithExpressionBody(setter));
+					.WithExpressionBody(setter),
+				Str(name));
 
 		// A VarRef that ignores writes — used for omitted for-loop variables (`for (, v in arr)`).
 		private static ExpressionSyntax DiscardVarRef() =>

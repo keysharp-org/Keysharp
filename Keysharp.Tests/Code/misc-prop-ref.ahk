@@ -8,12 +8,14 @@ m := { a: 1, b: "x" }
 r := &m.a
 Assert(r is PropRef, A_LineNumber)
 Assert(r is VarRef, A_LineNumber)                 ; PropRef is a VarRef-compatible virtual reference.
+AssertEq(r.Name, "a", A_LineNumber)
 AssertEq(r.__Value, 1, A_LineNumber)
 r.__Value := 42
 AssertEq(m.a, 42, A_LineNumber)
 
 ; --- 2. PropRef directly ------------------------------------------
 r2 := PropRef(m, "b")
+AssertEq(r2.Name, "b", A_LineNumber)
 AssertEq(r2.__Value, "x", A_LineNumber)
 r2.__Value := "y"
 AssertEq(m.b, "y", A_LineNumber)
@@ -22,6 +24,7 @@ AssertEq(m.b, "y", A_LineNumber)
 arr := [10, 20, 30]
 rix := &arr[2]
 Assert(rix is PropRef, A_LineNumber)
+AssertEq(rix.Name, "__Item", A_LineNumber)
 AssertEq(rix.__Value, 20, A_LineNumber)
 rix.__Value := 200
 AssertEq(arr[2], 200, A_LineNumber)

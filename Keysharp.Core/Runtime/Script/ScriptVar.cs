@@ -81,10 +81,10 @@ namespace Keysharp.Runtime
 				holder.SetProp(null, value);
 		}
 
-		internal object MakeRef()
+		internal object MakeRef(string writtenName)
 		{
 			var self = this;
-			return Misc.MakeVarRef(() => self.Get(), value => self.Set(value));
+			return Misc.MakeVarRef(() => self.Get(), value => self.Set(value), DeclaredName(writtenName));
 		}
 	}
 }

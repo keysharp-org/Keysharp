@@ -60,7 +60,7 @@ Status legend:
 | #WinActivateForce | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #WinActivateForce directive skips the gentle method of activating a window and goes straight to the forceful method. |
 | %...% / Dereference | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Resolves an existing variable, function or class by a run-time name, including imported names. Blank and unknown names raise Error, as do assigning a function, class or read-only built-in variable and assigning a global a function has not declared; reading an unset variable raises UnsetError except in optional-value contexts. |
 | & | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise AND operator |
-| & (VarRef) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | VarRef/address-of operator |
+| & (VarRef) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | VarRef/address-of operator. VarRef.Name exposes the referenced variable or property name when available. |
 | && | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical AND operator |
 | &= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
 | * | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Multiplication operator |
@@ -912,7 +912,7 @@ Status legend:
 | ProcessWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for the specified process to exist. |
 | ProcessWaitClose() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for all matching processes to close. |
 | PropertyError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
-| PropRef | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Property-reference object type. |
+| PropRef | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Property-reference object type. Inherits the read-only VarRef.Name property, which contains the referenced property name. |
 | Props | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Helper for creating property definitions. |
 | Random() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes a random number in the range of x to y. |
 | RandomSeed() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets seed for the pseudo-random generator used by Random(). |
