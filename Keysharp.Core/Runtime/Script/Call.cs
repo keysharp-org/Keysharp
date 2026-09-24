@@ -137,95 +137,88 @@ namespace Keysharp.Runtime
 		{
 			Any kso = null;
 
-			try
+			// Most common case
+			if (item is Any a1)
 			{
-				// Most common case
-				if (item is Any a1)
+				kso = a1;
+			}
+			// Special super/”query-from” tuple form: (Any proto, actual-this)
+			else if (item is ITuple t2 && t2.Length > 1 && t2[0] is Any a0)
+			{
+				kso = a0;
+				item = t2[1];
+			}
+			else if (Builtins.Primitive.IsNative(item))
+			{
+				// Map native (string/int/…) to its prototype + actual value tuple
+				return GetMethodOrProperty((TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item),
+										   key, paramCount, checkBase, throwIfMissing, invokeMeta);
+			}
+
+			// ---------- Keysharp object (Any) path ----------
+			if (kso != null)
+			{
+				// Own props: prefer Call > Get > Value. A setter is never a method, so a setter-only descriptor
+				// does not end the search — the method may still be defined further up the chain.
+				if (TryGetOwnPropsMap(kso, key, out var opm, searchBase: checkBase,
+									  type: OwnPropsMapType.Call | OwnPropsMapType.Get | OwnPropsMapType.Value))
 				{
-					kso = a1;
-				}
-				// Special super/”query-from” tuple form: (Any proto, actual-this)
-				else if (item is ITuple t2 && t2.Length > 1 && t2[0] is Any a0)
-				{
-					kso = a0;
-					item = t2[1];
-				}
-				else if (Builtins.Primitive.IsNative(item))
-				{
-					// Map native (string/int/…) to its prototype + actual value tuple
-					return GetMethodOrProperty((TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item),
-											   key, paramCount, checkBase, throwIfMissing, invokeMeta);
+					if (opm.Call != null) return (item, opm.Call); // (this, …)
+					if (opm.Get != null) return (item, Invoke(opm.Get, null, item)); // getter call, no params
+					if (opm.Value != null) return (item, opm.Value);
+
+					_ = Errors.MissingMethodErrorOccurred(item, key);
+					return (null, null);
 				}
 
-				// ---------- Keysharp object (Any) path ----------
-				if (kso != null)
+				// --- Meta fallbacks ---
+				if (invokeMeta)
 				{
-					// Own props: prefer Call > Get > Value. A setter is never a method, so a setter-only descriptor
-					// does not end the search — the method may still be defined further up the chain.
-					if (TryGetOwnPropsMap(kso, key, out var opm, searchBase: checkBase,
-										  type: OwnPropsMapType.Call | OwnPropsMapType.Get | OwnPropsMapType.Value))
+					// __Call can be either a function OR a callable object.
+					if (TryGetOwnPropsMap(kso, "__Call", out var protoCall, searchBase: checkBase))
 					{
-						if (opm.Call != null) return (item, opm.Call); // (this, …)
-						if (opm.Get != null) return (item, Invoke(opm.Get, null, item)); // getter call, no params
-						if (opm.Value != null) return (item, opm.Value);
+						// Prefer the "Call" slot, else fall back to value (callable object).
+						var metaTarget = protoCall.Call ?? protoCall.Value;
 
-						_ = Errors.MissingMethodErrorOccurred(item, key);
-						return (null, null);
-					}
-
-					// --- Meta fallbacks ---
-					if (invokeMeta)
-					{
-						// __Call can be either a function OR a callable object.
-						if (TryGetOwnPropsMap(kso, "__Call", out var protoCall, searchBase: checkBase))
+						if (metaTarget != null)
 						{
-							// Prefer the "Call" slot, else fall back to value (callable object).
-							var metaTarget = protoCall.Call ?? protoCall.Value;
-
-							if (metaTarget != null)
-							{
-								// Mark meta by returning Item1 == null.
-								return (null, metaTarget);
-							}
+							// Mark meta by returning Item1 == null.
+							return (null, metaTarget);
 						}
-
-						// IMetaObject support
-						if (kso is IMetaObject mo)
-							return (null, mo);
 					}
-				}
 
-				// ---------- Null target: look for built-ins by name ----------
-				if (item == null)
-				{
-					if (Reflections.FindMethod(key, paramCount) is MethodPropertyHolder mph0)
-						return (null, mph0);
-				}
-				else if (item is not Any)
-				{
-					// ---------- Non-Keysharp object path (CLR / COM RCW) ----------
-					// Cache type once
-					var typetouse = item.GetType();
-
-					// Method first
-					if (Reflections.FindAndCacheInstanceMethod(typetouse, key, paramCount) is MethodPropertyHolder mphInst)
-						return (item, mphInst);
-
-					// Then property (non-indexer)
-					if (Reflections.FindAndCacheProperty(typetouse, key, paramCount) is MethodPropertyHolder mphProp)
-						return (item, mphProp);
-
-					// Last-ditch: indexer as map (get_Item)
-					if (Reflections.FindAndCacheInstanceMethod(typetouse, "get_Item", 1) is MethodPropertyHolder mphIndex)
-					{
-						var val = mphIndex.CallFunc(item, new object[] { key });
-						return (item, val);
-					}
+					// IMetaObject support
+					if (kso is IMetaObject mo)
+						return (null, mo);
 				}
 			}
-			catch (Exception e) when (e.InnerException is KeysharpException ke)
+
+			// ---------- Null target: look for built-ins by name ----------
+			if (item == null)
 			{
-				ExceptionDispatchInfo.Throw(ke);
+				if (Reflections.FindMethod(key, paramCount) is MethodPropertyHolder mph0)
+					return (null, mph0);
+			}
+			else if (item is not Any)
+			{
+				// ---------- Non-Keysharp object path (CLR / COM RCW) ----------
+				// Cache type once
+				var typetouse = item.GetType();
+
+				// Method first
+				if (Reflections.FindAndCacheInstanceMethod(typetouse, key, paramCount) is MethodPropertyHolder mphInst)
+					return (item, mphInst);
+
+				// Then property (non-indexer)
+				if (Reflections.FindAndCacheProperty(typetouse, key, paramCount) is MethodPropertyHolder mphProp)
+					return (item, mphProp);
+
+				// Last-ditch: indexer as map (get_Item)
+				if (Reflections.FindAndCacheInstanceMethod(typetouse, "get_Item", 1) is MethodPropertyHolder mphIndex)
+				{
+					var val = mphIndex.CallFunc(item, new object[] { key });
+					return (item, val);
+				}
 			}
 
 			if (throwIfMissing)
@@ -271,94 +264,87 @@ namespace Keysharp.Runtime
 			if (item == null) return Errors.UnsetErrorOccurred($"The base for property {name} access");
 			if (args == null) throw new UnsetError("Unexpected null arguments in GetPropertyValue");
 
-			try
+			// VarRef fast-path: only for a ref that is exactly a VarRef (see VarRef.IsPlain). A subclass may
+			// declare its own __Value, so it resolves through ordinary dispatch below, which is the point of it
+			// being a property. Refs holds the same shortcut for the same reason; this one covers a ref reached
+			// as an ordinary property access rather than through Refs.
+			if (item is VarRef vr && vr.IsPlain && namestr.Equals("__Value", StringComparison.OrdinalIgnoreCase))
 			{
-				// VarRef fast-path: only for a ref that is exactly a VarRef (see VarRef.IsPlain). A subclass may
-				// declare its own __Value, so it resolves through ordinary dispatch below, which is the point of it
-				// being a property. Refs holds the same shortcut for the same reason; this one covers a ref reached
-				// as an ordinary property access rather than through Refs.
-				if (item is VarRef vr && vr.IsPlain && namestr.Equals("__Value", StringComparison.OrdinalIgnoreCase))
-				{
-					return vr.__Value;
-				}
-
-				// Unwrap (proto, this) tuple
-				Any kso = null;
-				if (item is Any a2)
-				{
-					kso = a2;
-				}
-				else if (item is ITuple tup && tup.Length > 1 && tup[0] is Any a)
-				{
-					kso = a; item = tup[1];
-				}
-				else if (Builtins.Primitive.IsNative(item))
-				{
-					return GetPropertyValueOrNull(
-						(TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item),
-						name, args);
-				}
-
-				// Keysharp object path
-				if (kso != null)
-				{
-					if (kso is Module module && module.TryGetProperty(namestr, args, out var moduleValue))
-						return moduleValue;
-
-					if (TryGetGettableProp(kso, namestr, out var opm))
-					{
-						if (opm.StructField != null && item is Struct getStruct)
-						{
-							// `s.field[i]` folds to GetPropertyValue(s, "field", i); apply any trailing index to the field
-							// value (e.g. a structured-array field element) rather than dropping it.
-							var fieldValue = getStruct.GetFieldValue(opm.StructField);
-							return args.Length > 0 ? GetIndexOrNull(fieldValue, args) : fieldValue;
-						}
-
-						if (opm.Value != null)
-						{
-							return args.Length > 0 ? GetIndexOrNull(opm.Value, args) : opm.Value;
-						}
-
-						if (opm.Get != null)
-						{
-							// Allow function or callable object
-							if (opm.Get is KeysharpFunc ifo)
-								return args.Length > 0 && opm.NoParamGet ? GetIndexOrNull(ifo.Call(item), args) : ifo.CallInst(item, args);
-							else
-								return Invoke(opm.Get, null, item, args);
-						}
-
-						if (opm.Call != null)
-						{
-							return opm.Call; // expose function object
-						}
-
-						return null;   // `base` with no base: the synthetic descriptor carries a null Value
-					}
-
-					// __Get meta (function or callable object), only queried for Call and Value (but not Get)
-					if (TryGetOwnPropsMap(kso, "__Get", out var protoGet) && (protoGet.Call ?? protoGet.Value) is object metaGet)
-					{
-						return InvokeOrNull(metaGet, null, item, namestr, new Keysharp.Builtins.Array(args));
-					}
-
-					if (kso is IMetaObject mo)
-					{
-						return mo.Get(namestr, args);
-					}
-				}
-
-				// Nothing follows the Any and primitive paths above. Every value a script can hold arrives as one of
-				// them -- a COM object is wrapped as ComObject/ComValue and a CLR object as a Clr instance, both of
-				// which are Any -- so a reflection or IDispatch fallback here could only serve a value that should
-				// never have reached a script unwrapped, at the cost of making whatever CLR member a name happened
-				// to match look like part of the language.
+				return vr.__Value;
 			}
-			catch (Exception e) when (e.InnerException is KeysharpException ke)
+
+			// Unwrap (proto, this) tuple
+			Any kso = null;
+			if (item is Any a2)
 			{
-				ExceptionDispatchInfo.Throw(ke);
+				kso = a2;
 			}
+			else if (item is ITuple tup && tup.Length > 1 && tup[0] is Any a)
+			{
+				kso = a; item = tup[1];
+			}
+			else if (Builtins.Primitive.IsNative(item))
+			{
+				return GetPropertyValueOrNull(
+					(TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item),
+					name, args);
+			}
+
+			// Keysharp object path
+			if (kso != null)
+			{
+				if (kso is Module module && module.TryGetProperty(namestr, args, out var moduleValue))
+					return moduleValue;
+
+				if (TryGetGettableProp(kso, namestr, out var opm))
+				{
+					if (opm.StructField != null && item is Struct getStruct)
+					{
+						// `s.field[i]` folds to GetPropertyValue(s, "field", i); apply any trailing index to the field
+						// value (e.g. a structured-array field element) rather than dropping it.
+						var fieldValue = getStruct.GetFieldValue(opm.StructField);
+						return args.Length > 0 ? GetIndexOrNull(fieldValue, args) : fieldValue;
+					}
+
+					if (opm.Value != null)
+					{
+						return args.Length > 0 ? GetIndexOrNull(opm.Value, args) : opm.Value;
+					}
+
+					if (opm.Get != null)
+					{
+						// Allow function or callable object
+						if (opm.Get is KeysharpFunc ifo)
+							return args.Length > 0 && opm.NoParamGet ? GetIndexOrNull(ifo.Call(item), args) : ifo.CallInst(item, args);
+						else
+							return Invoke(opm.Get, null, item, args);
+					}
+
+					if (opm.Call != null)
+					{
+						return opm.Call; // expose function object
+					}
+
+					return null;   // `base` with no base: the synthetic descriptor carries a null Value
+				}
+
+				// __Get meta (function or callable object), only queried for Call and Value (but not Get)
+				if (TryGetOwnPropsMap(kso, "__Get", out var protoGet) && (protoGet.Call ?? protoGet.Value) is object metaGet)
+				{
+					return InvokeOrNull(metaGet, null, item, namestr, new Keysharp.Builtins.Array(args));
+				}
+
+				if (kso is IMetaObject mo)
+				{
+					return mo.Get(namestr, args);
+				}
+			}
+
+			// Nothing follows the Any and primitive paths above. Every value a script can hold arrives as one of
+			// them -- a COM object is wrapped as ComObject/ComValue and a CLR object as a Clr instance, both of
+			// which are Any -- so a reflection or IDispatch fallback here could only serve a value that should
+			// never have reached a script unwrapped, at the cost of making whatever CLR member a name happened
+			// to match look like part of the language.
 
 			return null;
 		}
@@ -368,44 +354,37 @@ namespace Keysharp.Runtime
 			if (obj == null)
 				return Errors.ErrorOccurred(new UnsetError("Cannot invoke property on an unset variable"), DefaultObject);
 
-			try
+			var methName = (string)meth;
+
+			// Handle (proto, this) 'super' tuple transparently.
+			bool isSuper = obj is ITuple superT && superT.Length > 1 && superT[0] is Any;
+			object actualThis = isSuper ? ((ITuple)obj)[1] : obj;
+
+			// Extract Any (prototype) only to search direct members; do NOT enable meta here.
+			Any kso = isSuper ? (Any)((ITuple)obj)[0] : obj as Any;
+
+			// ---------- Don't call metas for non-Any objects ----------
+			if (kso == null) return null;
+
+			// Only accept direct Call or direct Value (callable) for the lifecycle name.
+			if (TryGetOwnPropsMap(kso, methName, out var opm, searchBase: true,
+				type: OwnPropsMapType.Call | OwnPropsMapType.Value))
 			{
-				var methName = (string)meth;
+				var target = opm.Call ?? opm.Value;
 
-				// Handle (proto, this) 'super' tuple transparently.
-				bool isSuper = obj is ITuple superT && superT.Length > 1 && superT[0] is Any;
-				object actualThis = isSuper ? ((ITuple)obj)[1] : obj;
-
-				// Extract Any (prototype) only to search direct members; do NOT enable meta here.
-				Any kso = isSuper ? (Any)((ITuple)obj)[0] : obj as Any;
-
-				// ---------- Don't call metas for non-Any objects ----------
-				if (kso == null) return null;
-
-				// Only accept direct Call or direct Value (callable) for the lifecycle name.
-				if (TryGetOwnPropsMap(kso, methName, out var opm, searchBase: true,
-					type: OwnPropsMapType.Call | OwnPropsMapType.Value))
+				if (target is KeysharpFunc f)
 				{
-					var target = opm.Call ?? opm.Value;
-
-					if (target is KeysharpFunc f)
-					{
-						// Direct lifecycle method
-						return parameters == null ? f.Call(actualThis) : f.CallInst(actualThis, parameters);
-					}
-					else if (target != null)
-					{
-						// Callable object (has its own Call). Explicitly call "Call" (still NOT meta).
-						return Invoke(target, null, parameters.Prepend(actualThis));
-					}
-
-					// Found a member but it's not callable.
-					return null;
+					// Direct lifecycle method
+					return parameters == null ? f.Call(actualThis) : f.CallInst(actualThis, parameters);
 				}
-			}
-			catch (Exception e) when (e.InnerException is KeysharpException ke)
-			{
-				ExceptionDispatchInfo.Throw(ke);
+				else if (target != null)
+				{
+					// Callable object (has its own Call). Explicitly call "Call" (still NOT meta).
+					return Invoke(target, null, parameters.Prepend(actualThis));
+				}
+
+				// Found a member but it's not callable.
+				return null;
 			}
 			// Not found ? per docs, internal lifecycle invocation should be a no-op (no __Call).
 			return null;
@@ -416,96 +395,104 @@ namespace Keysharp.Runtime
 		public static object InvokeOrNull(object obj, object meth) => InvokeOrNull(obj, meth, System.Array.Empty<object>());
 
 		// . strict base, strict result
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public static object Invoke(object obj, object meth, params object[] parameters) =>
-			InvokeOrNull(obj, meth, parameters) ?? Errors.ErrorOccurred(
-				new UnsetError("No value was returned.", null,
-					meth == null ? (obj is KeysharpFunc { Name: { Length: > 0 } name } ? name : Errors.Describe(obj)) : meth.As()),
+			InvokeOrNull(obj, meth, parameters) ?? UnsetResultErrorOccurred(obj, meth);
+
+		/// <summary>
+		/// Calls <paramref name="meth"/> on <paramref name="obj"/>, in ?? context: strict base, allow null result. A null
+		/// name is the call form <c>f(args)</c>, as opposed to the member form <c>f.Call(args)</c>. A plain function
+		/// called that way runs directly, outside the general dispatch, whose frames every error unwinding through the
+		/// call would pay for.
+		/// </summary>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static object InvokeOrNull(object obj, object meth, params object[] parameters) =>
+			meth == null && obj is KeysharpFunc { IsPlainCall: true } fn
+				? fn.mph.CallFunc(fn.Inst, parameters)
+				: DispatchCall(obj, meth, parameters);
+
+		[MethodImpl(MethodImplOptions.NoInlining)]
+		private static object UnsetResultErrorOccurred(object obj, object meth) =>
+			Errors.ErrorOccurred(new UnsetError("No value was returned.", null,
+				meth == null ? (obj is KeysharpFunc { Name: { Length: > 0 } name } ? name : Errors.Describe(obj)) : meth.As()),
 				DefaultObject);
-		// . in ?? context: strict base, allow null result
-		public static object InvokeOrNull(object obj, object meth, params object[] parameters)
+
+		private static object DispatchCall(object obj, object meth, object[] parameters)
 		{
 			if (obj == null) return Errors.UnsetErrorOccurred(meth == null ? "The function being called" : $"The base object of method {meth}");
 
-			try
-			{
-				// A null name is the call form `f(args)`, as opposed to the member form `f.Call(args)`. AutoHotkey
-				// calls a function directly only while it has no own properties. Once it has any, even an unrelated
-				// one, Call resolves through the ordinary prototype path below. Other callable objects and COM objects
-				// always take that path too.
-				var nameless = meth == null;
+			// AutoHotkey calls a function directly only while it has no own properties. Once it has any, even an
+			// unrelated one, Call resolves through the ordinary prototype path below. Other callable objects and COM
+			// objects always take that path too.
+			var nameless = meth == null;
 
-				if (nameless)
-				{
-					if (obj is KeysharpFunc fnObj && (fnObj.op == null || fnObj.op.Count == 0))
-						return fnObj.Call(parameters);
+			if (nameless)
+			{
+				if (obj is KeysharpFunc fnObj && (fnObj.op == null || fnObj.op.Count == 0))
+					return fnObj.Call(parameters);
 #if WINDOWS
-					// A COM object's nameless call is its default member, DISPID_VALUE, as in AHK; "Call" would be a
-					// member name of its own.
-					if (obj is ComValue com)
-						return com.RawInvokeMethod(null, parameters);
+				// A COM object's nameless call is its default member, DISPID_VALUE, as in AHK; "Call" would be a
+				// member name of its own.
+				if (obj is ComValue com)
+					return com.RawInvokeMethod(null, parameters);
 #endif
-					meth = "Call";
-				}
-
-				var methName = (string)meth;
-
-				if (obj is Module module && module is IMetaObject imo)
-					return imo.Call(methName, parameters);
-
-				// Track real receiver (handles the (proto, this) "super" tuple)
-				bool isSuper = obj is ITuple superT && superT.Length > 1 && superT[0] is Any;
-				object actualThis = isSuper ? ((ITuple)obj)[1] : obj;
-
-				var mitup = GetMethodOrProperty(obj, methName, -1, checkBase: true, throwIfMissing: !nameless, invokeMeta: true);
-
-				// An object called which cannot be: AHK's MethodError, as a callback site reports it.
-				if (nameless && mitup.Item2 == null)
-					return Errors.MissingMethodErrorOccurred(actualThis, "Call");
-
-				switch (mitup.Item2)
-				{
-					case KeysharpFunc fn:
-						// Meta-call marker: Item1 == null ? this is __Call
-						if (mitup.Item1 == null)
-							// Any named arguments ride into the Params Array as an ordinary trailing element, so a
-							// __Call handler that forwards them relays them intact.
-							return fn.Call(actualThis, methName, new Keysharp.Builtins.Array(parameters));
-
-						// Regular callable
-						if (parameters == null)
-							return fn.Call(mitup.Item1);
-						return fn.CallInst(mitup.Item1, parameters);
-
-					case KeysharpObject callable:
-						// Callable object meta: Call(receiver, name, ParamsArray). Named arguments ride into the
-						// Params Array as an ordinary trailing element.
-						if (mitup.Item1 == null)
-							return InvokeOrNull(callable, null, actualThis, methName, new Keysharp.Builtins.Array(parameters));
-
-						// Normal callable object: Call(receiver, ...args). Prepending keeps any named arguments
-						// trailing, so they bind against the object's own Call method further down.
-						return InvokeOrNull(callable, null, parameters.Prepend(actualThis));
-
-					case IMetaObject mo:
-						// Every IMetaObject resolves named arguments itself (COM via DISPIDs, Clr via reflection,
-						// Module by forwarding verbatim) -- that is part of the interface contract, see IMetaObject.
-						return mo.Call(methName, parameters);
-
-					case MethodPropertyHolder mph:
-						// A CLR type can have real overloads, and dynamic dispatch picked one without knowing the
-						// argument names. If that pick cannot take them, look for a sibling overload that can rather
-						// than failing on an arbitrary choice. Costs nothing unless the first pick is already wrong.
-						_ = NamedArgBinder.SplitAt(parameters, out var named);
-
-						if (named != null && !NamedArgBinder.Accepts(mph, named))
-							mph = Reflections.FindOverloadForNamedArgs((mitup.Item1 ?? actualThis)?.GetType(), methName, named) ?? mph;
-
-						return mph.CallFunc(mitup.Item1, parameters);
-				}
+				meth = "Call";
 			}
-			catch (Exception e) when (e.InnerException is KeysharpException ke)
+
+			var methName = (string)meth;
+
+			if (obj is Module module && module is IMetaObject imo)
+				return imo.Call(methName, parameters);
+
+			// Track real receiver (handles the (proto, this) "super" tuple)
+			bool isSuper = obj is ITuple superT && superT.Length > 1 && superT[0] is Any;
+			object actualThis = isSuper ? ((ITuple)obj)[1] : obj;
+
+			var mitup = GetMethodOrProperty(obj, methName, -1, checkBase: true, throwIfMissing: !nameless, invokeMeta: true);
+
+			// An object called which cannot be: AHK's MethodError, as a callback site reports it.
+			if (nameless && mitup.Item2 == null)
+				return Errors.MissingMethodErrorOccurred(actualThis, "Call");
+
+			switch (mitup.Item2)
 			{
-				ExceptionDispatchInfo.Throw(ke);
+				case KeysharpFunc fn:
+					// Meta-call marker: Item1 == null ? this is __Call
+					if (mitup.Item1 == null)
+						// Any named arguments ride into the Params Array as an ordinary trailing element, so a
+						// __Call handler that forwards them relays them intact.
+						return fn.Call(actualThis, methName, new Keysharp.Builtins.Array(parameters));
+
+					// Regular callable
+					if (parameters == null)
+						return fn.Call(mitup.Item1);
+					return fn.CallInst(mitup.Item1, parameters);
+
+				case KeysharpObject callable:
+					// Callable object meta: Call(receiver, name, ParamsArray). Named arguments ride into the
+					// Params Array as an ordinary trailing element.
+					if (mitup.Item1 == null)
+						return InvokeOrNull(callable, null, actualThis, methName, new Keysharp.Builtins.Array(parameters));
+
+					// Normal callable object: Call(receiver, ...args). Prepending keeps any named arguments
+					// trailing, so they bind against the object's own Call method further down.
+					return InvokeOrNull(callable, null, parameters.Prepend(actualThis));
+
+				case IMetaObject mo:
+					// Every IMetaObject resolves named arguments itself (COM via DISPIDs, Clr via reflection,
+					// Module by forwarding verbatim) -- that is part of the interface contract, see IMetaObject.
+					return mo.Call(methName, parameters);
+
+				case MethodPropertyHolder mph:
+					// A CLR type can have real overloads, and dynamic dispatch picked one without knowing the
+					// argument names. If that pick cannot take them, look for a sibling overload that can rather
+					// than failing on an arbitrary choice. Costs nothing unless the first pick is already wrong.
+					_ = NamedArgBinder.SplitAt(parameters, out var named);
+
+					if (named != null && !NamedArgBinder.Accepts(mph, named))
+						mph = Reflections.FindOverloadForNamedArgs((mitup.Item1 ?? actualThis)?.GetType(), methName, named) ?? mph;
+
+					return mph.CallFunc(mitup.Item1, parameters);
 			}
 
 			return Errors.ErrorOccurred(new MemberError($"Attempting to invoke method or property {meth} failed."), (object)null);
@@ -549,10 +536,8 @@ namespace Keysharp.Runtime
 
 		/// <summary>
 		/// Decides once whether a callback can be called straight through <see cref="KeysharpFunc.Call"/>, which
-		/// saves resolving "Call" by name on every single invocation. This applies the same test
-		/// <see cref="InvokeOrNull"/> applies per call, so that a receiver whose own Call shadows the built-in one
-		/// keeps going through the by-name path and still reaches its override. Returns null when the shortcut does
-		/// not apply.
+		/// saves resolving "Call" by name on every invocation. The shortcut applies when that member resolves to
+		/// the built-in Call; a script override keeps going through the by-name path. Returns null otherwise.
 		/// <para>
 		/// Callers are expected to cache the result for the lifetime of whatever they are driving, so redefining
 		/// Call on the target afterwards does not change how an already-resolved caller reaches it.
@@ -688,151 +673,144 @@ namespace Keysharp.Runtime
 			var argCount = args?.Length ?? 1;
 			if (argCount == 0) return Errors.ErrorOccurred($"Attempting to set property {namestr} on object {item} failed because no value was provided");
 
-			try
-			{
-				// VarRef fast-path: same guard as GetPropertyValue's (VarRef.IsPlain); anything else dispatches so an
-				// override is honored.
-				if (item is VarRef vr && vr.IsPlain && namestr.Equals("__Value", StringComparison.OrdinalIgnoreCase))
-					return vr.__Value = value;
+			// VarRef fast-path: same guard as GetPropertyValue's (VarRef.IsPlain); anything else dispatches so an
+			// override is honored.
+			if (item is VarRef vr && vr.IsPlain && namestr.Equals("__Value", StringComparison.OrdinalIgnoreCase))
+				return vr.__Value = value;
 
-				if (item is Any a2)
+			if (item is Any a2)
+			{
+				kso = a2;
+			}
+			// Unwrap (proto, this) tuple
+			else if (item is ITuple tup && tup.Length > 1 && tup[0] is Any a)
+			{
+				kso = a; item = tup[1];
+			}
+			else if (Builtins.Primitive.IsNative(item))
+			{
+				_ = SetPropertyValue((TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item), name, Arguments());
+				return value;
+			}
+
+			// Keysharp object path
+			if (kso != null)
+			{
+				if (kso is Module module && module.TrySetProperty(namestr, Arguments()))
+					return value;
+
+				// Direct ownprop first
+				if (kso.op != null && kso.op.TryGetValue(namestr, out var own))
 				{
-					kso = a2;
+					if (own.StructField != null && item is Struct setStruct)
+						return setStruct.SetFieldValue(own.StructField, value);
+
+					// Setter function or callable object
+					if (own.Set != null)
+					{
+						if (own.Set is KeysharpFunc f)
+						{
+							_ = argCount > 1 && own.NoParamSet
+								? SetObject(f.Call(item), Arguments())
+								: f.CallInst(item, Arguments());
+						}
+						else
+						{
+							// callable setter
+							_ = Invoke(own.Set, null, Arguments().Prepend(item));
+						}
+						return value;
+					}
+
+					// Pure data property (no Call/Get)
+					if (own.Call == null && own.Get == null)
+					{
+						if (argCount > 1)
+							_ = SetObject(own.Value, Arguments());
+						else
+							own.Value = value;
+
+						if (value == null && own.IsEmpty) kso.op.Remove(namestr);
+
+						return value;
+					}
+
+					return Errors.ReadOnlyPropertyErrorOccurred(namestr);
 				}
-				// Unwrap (proto, this) tuple
-				else if (item is ITuple tup && tup.Length > 1 && tup[0] is Any a)
+
+				// special base
+				if (namestr.Equals("base", StringComparison.OrdinalIgnoreCase))
 				{
-					kso = a; item = tup[1];
-				}
-				else if (Builtins.Primitive.IsNative(item))
-				{
-					_ = SetPropertyValue((TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item), name, Arguments());
+					_ = Objects.ObjSetBase(kso, value);
 					return value;
 				}
 
-				// Keysharp object path
-				if (kso != null)
+				// First try to find Set
+				if (TryGetOwnPropsMap(kso, namestr, out var opm, searchBase: true,
+					type: OwnPropsMapType.Set))
 				{
-					if (kso is Module module && module.TrySetProperty(namestr, Arguments()))
-						return value;
+					if (opm.StructField != null && item is Struct setStruct)
+						return setStruct.SetFieldValue(opm.StructField, value);
 
-					// Direct ownprop first
-					if (kso.op != null && kso.op.TryGetValue(namestr, out var own))
+					if (opm.Set is KeysharpFunc fset)
 					{
-						if (own.StructField != null && item is Struct setStruct)
-							return setStruct.SetFieldValue(own.StructField, value);
-
-						// Setter function or callable object
-						if (own.Set != null)
-						{
-							if (own.Set is KeysharpFunc f)
-							{
-								_ = argCount > 1 && own.NoParamSet
-									? SetObject(f.Call(item), Arguments())
-									: f.CallInst(item, Arguments());
-							}
-							else
-							{
-								// callable setter
-								_ = Invoke(own.Set, null, Arguments().Prepend(item));
-							}
-							return value;
-						}
-
-						// Pure data property (no Call/Get)
-						if (own.Call == null && own.Get == null)
-						{
-							if (argCount > 1)
-								_ = SetObject(own.Value, Arguments());
-							else
-								own.Value = value;
-
-							if (value == null && own.IsEmpty) kso.op.Remove(namestr);
-
-							return value;
-						}
-
-						return Errors.ReadOnlyPropertyErrorOccurred(namestr);
+						_ = argCount > 1 && opm.NoParamSet
+							? SetObject(fset.Call(item), Arguments())
+							: fset.CallInst(item, Arguments());
 					}
-
-					// special base
-					if (namestr.Equals("base", StringComparison.OrdinalIgnoreCase))
+					else
 					{
-						_ = Objects.ObjSetBase(kso, value);
-						return value;
+						_ = Invoke(opm.Set, null, item, Arguments());
 					}
-
-					// First try to find Set
-					if (TryGetOwnPropsMap(kso, namestr, out var opm, searchBase: true,
-						type: OwnPropsMapType.Set))
+					return value;
+				}
+				// Next try to find Get/Value and set __Item[]
+				else if (TryGetOwnPropsMap(kso, namestr, out var opm2, searchBase: true,
+					type: OwnPropsMapType.Get | OwnPropsMapType.Value))
+				{
+					if (argCount > 1)
 					{
-						if (opm.StructField != null && item is Struct setStruct)
-							return setStruct.SetFieldValue(opm.StructField, value);
-
-						if (opm.Set is KeysharpFunc fset)
-						{
-							_ = argCount > 1 && opm.NoParamSet
-								? SetObject(fset.Call(item), Arguments())
-								: fset.CallInst(item, Arguments());
-						}
-						else
-						{
-							_ = Invoke(opm.Set, null, item, Arguments());
-						}
-						return value;
-					}
-					// Next try to find Get/Value and set __Item[]
-					else if (TryGetOwnPropsMap(kso, namestr, out var opm2, searchBase: true,
-						type: OwnPropsMapType.Get | OwnPropsMapType.Value))
-					{
-						if (argCount > 1)
-						{
-							object val = null;
-							if (opm2.Get != null)
-								val = Invoke(opm2.Get, null, item);
-							else
-								val = opm2.Value;
-							_ = SetPropertyValue(val, "__Item", Arguments());
-							return value;
-						}
-
+						object val = null;
 						if (opm2.Get != null)
-							return Errors.ReadOnlyPropertyErrorOccurred(namestr);
-					}
-					// A name that resolves to a method (Call) without a Set is a read-only property.
-					else if (TryGetOwnPropsMap(kso, namestr, out _, searchBase: true, type: OwnPropsMapType.Call))
-					{
-						return Errors.ReadOnlyPropertyErrorOccurred(namestr);
-					}
-					// __Set meta (function or callable object), only if no Set/Get/Value is found
-					else if (TryGetOwnPropsMap(kso, "__Set", out var protoSet) && (protoSet.Call ?? protoSet.Value) is object metaSet)
-					{
-						if (metaSet is KeysharpFunc f)
-							_ = f.Call(item, namestr, new Keysharp.Builtins.Array(GetIndexArgs()), value);
+							val = Invoke(opm2.Get, null, item);
 						else
-							_ = Invoke(metaSet, null, item, namestr, new Keysharp.Builtins.Array(GetIndexArgs()), value);
+							val = opm2.Value;
+						_ = SetPropertyValue(val, "__Item", Arguments());
 						return value;
 					}
 
-					if (kso is IMetaObject mo)
-					{
-						mo.Set(namestr, GetIndexArgs(), value);
-						return value;
-					}
-
-					// Define new own data prop when target is a KeysharpObject and it's a simple assignment
-					if (allowCreate && argCount == 1 && item is KeysharpObject ksoObj)
-					{
-						ksoObj.DefinePropInternal(namestr, new OwnPropsDesc(ksoObj, value));
-						return value;
-					}
+					if (opm2.Get != null)
+						return Errors.ReadOnlyPropertyErrorOccurred(namestr);
+				}
+				// A name that resolves to a method (Call) without a Set is a read-only property.
+				else if (TryGetOwnPropsMap(kso, namestr, out _, searchBase: true, type: OwnPropsMapType.Call))
+				{
+					return Errors.ReadOnlyPropertyErrorOccurred(namestr);
+				}
+				// __Set meta (function or callable object), only if no Set/Get/Value is found
+				else if (TryGetOwnPropsMap(kso, "__Set", out var protoSet) && (protoSet.Call ?? protoSet.Value) is object metaSet)
+				{
+					if (metaSet is KeysharpFunc f)
+						_ = f.Call(item, namestr, new Keysharp.Builtins.Array(GetIndexArgs()), value);
+					else
+						_ = Invoke(metaSet, null, item, namestr, new Keysharp.Builtins.Array(GetIndexArgs()), value);
+					return value;
 				}
 
+				if (kso is IMetaObject mo)
+				{
+					mo.Set(namestr, GetIndexArgs(), value);
+					return value;
+				}
+
+				// Define new own data prop when target is a KeysharpObject and it's a simple assignment
+				if (allowCreate && argCount == 1 && item is KeysharpObject ksoObj)
+				{
+					ksoObj.DefinePropInternal(namestr, new OwnPropsDesc(ksoObj, value));
+					return value;
+				}
 			}
-			catch (Exception e) when (e.InnerException is KeysharpException ke)
-			{
-				ExceptionDispatchInfo.Throw(ke);
-			}
+
 
 			// A reference write reaching here found no property to write, which under allowCreate would have
 			// defined one; say what is actually wrong instead of reporting a failed assignment.
@@ -848,22 +826,15 @@ namespace Keysharp.Runtime
 		{
 			var namestr = name.ToString();
 
-			try
+			if (Reflections.FindAndCacheField(typeof(T), namestr) is FieldInfo fi && fi.IsStatic)
 			{
-				if (Reflections.FindAndCacheField(typeof(T), namestr) is FieldInfo fi && fi.IsStatic)
-				{
-					fi.SetValue(null, value);
-					return;
-				}
-				else if (Reflections.FindAndCacheProperty(typeof(T), namestr, 0) is MethodPropertyHolder mph && mph.IsStaticProp)
-				{
-					mph.SetProp(null, value);
-					return;
-				}
+				fi.SetValue(null, value);
+				return;
 			}
-			catch (Exception e) when (e.InnerException is KeysharpException ke)
+			else if (Reflections.FindAndCacheProperty(typeof(T), namestr, 0) is MethodPropertyHolder mph && mph.IsStaticProp)
 			{
-				ExceptionDispatchInfo.Throw(ke);
+				mph.SetProp(null, value);
+				return;
 			}
 
 			_ = Errors.ErrorOccurred($"Attempting to set static property or field {namestr} to value {value} failed.");
@@ -873,24 +844,17 @@ namespace Keysharp.Runtime
 		{
 			var namestr = name.ToString();
 
-			try
+			if (Reflections.FindAndCacheField(typeof(T), namestr) is FieldInfo fi && fi.IsStatic)
 			{
-				if (Reflections.FindAndCacheField(typeof(T), namestr) is FieldInfo fi && fi.IsStatic)
-				{
-					return fi.GetValue(null);
-				}
-				else if (Reflections.FindAndCacheProperty(typeof(T), namestr, 0) is MethodPropertyHolder mph && mph.IsStaticProp)
-				{
-					return mph.CallFunc(null, null);
-				}
-				else if (name is Delegate d)
-				{
-					return Functions.Func(d);
-				}
+				return fi.GetValue(null);
 			}
-			catch (Exception e) when (e.InnerException is KeysharpException ke)
+			else if (Reflections.FindAndCacheProperty(typeof(T), namestr, 0) is MethodPropertyHolder mph && mph.IsStaticProp)
 			{
-				ExceptionDispatchInfo.Throw(ke);
+				return mph.CallFunc(null, null);
+			}
+			else if (name is Delegate d)
+			{
+				return Functions.Func(d);
 			}
 
 			return Errors.ErrorOccurred($"Attempting to get static property or field {namestr} failed.");

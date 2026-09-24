@@ -31,6 +31,17 @@ namespace Keysharp.Internals.Invoke
 			};
 		}
 
+		// A property sent to the UI thread must report its caller's stack and compatibility mode.
+		private static object InvokeGuiProperty(Control ctrl, Func<object> work)
+		{
+			var caller = CallStack.Current;
+			var callerThread = Environment.CurrentManagedThreadId;
+			var compatibility = TheScript.CurrentCompatibilityVersion;
+			return ctrl.CheckedInvoke(() => Environment.CurrentManagedThreadId == callerThread
+				? work()
+				: CallStack.InvokeIn(caller.Copy(), compatibility, static (target, _) => ((Func<object>)target)(), work, null), true);
+		}
+
 		// Frames name their function by this id rather than by reference, so a push needs no GC write barrier.
 		private static MethodPropertyHolder[] registry = new MethodPropertyHolder[256];
 		private static int registered;
@@ -561,12 +572,8 @@ namespace Keysharp.Internals.Invoke
 					{
 						_callFunc = (inst, obj) =>//Gui calls aren't worth optimizing further.
 						{
-							object ret = null;
 							var ctrl = (inst ?? obj[0]).GetControl();//If it's a gui control, then invoke on the gui thread.
-							ctrl.CheckedInvoke(() =>
-							{
-								ret = pi.GetValue(null);
-							}, true);//This can be null if called before a Gui object is fully initialized.
+							var ret = InvokeGuiProperty(ctrl, () => pi.GetValueUnwrapped(null));
 
 							return normalize ? ArgCoercer.NormalizeScalar(ret) : ret;
 						};
@@ -577,20 +584,12 @@ namespace Keysharp.Internals.Invoke
 					// not a KeysharpException and so killed the process past any try/catch.
 					if (canWrite)
 					{
-						if (inlineMarked)
-							SetProp = (inst, arg) =>
-							{
-								arg = ArgCoercer.CoerceBoundaryValue(arg, pi.PropertyType);
-								var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
-								ctrl.CheckedInvoke(() => pi.SetValue(null, arg), true);//This can be null if called before a Gui object is fully initialized.
-							};
-						else
-							SetProp = (inst, arg) =>
-							{
-								arg = ArgCoercer.CoerceValue(arg, pi.PropertyType);
-								var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
-								ctrl.CheckedInvoke(() => pi.SetValue(null, arg), true);//This can be null if called before a Gui object is fully initialized.
-							};
+						SetProp = (inst, arg) =>
+						{
+							arg = inlineMarked ? ArgCoercer.CoerceBoundaryValue(arg, pi.PropertyType) : ArgCoercer.CoerceValue(arg, pi.PropertyType);
+							var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
+							_ = InvokeGuiProperty(ctrl, () => { pi.SetValueUnwrapped(null, arg); return null; });
+						};
 					}
 				}
 				else
@@ -598,17 +597,17 @@ namespace Keysharp.Internals.Invoke
 					if (canRead)
 					{
 						if (normalize)
-							_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValue(null));
+							_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValueUnwrapped(null));
 						else
-							_callFunc = (inst, obj) => pi.GetValue(null);
+							_callFunc = (inst, obj) => pi.GetValueUnwrapped(null);
 					}
 
 					if (canWrite)
 						SetProp = coerce
 							? inlineMarked
-								? (inst, obj) => pi.SetValue(null, ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType))
-								: (inst, obj) => pi.SetValue(null, ArgCoercer.CoerceValue(obj, pi.PropertyType))
-							: (inst, obj) => pi.SetValue(null, obj);
+								? (inst, obj) => pi.SetValueUnwrapped(null, ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType))
+								: (inst, obj) => pi.SetValueUnwrapped(null, ArgCoercer.CoerceValue(obj, pi.PropertyType))
+							: (inst, obj) => pi.SetValueUnwrapped(null, obj);
 				}
 			}
 			else
@@ -619,12 +618,8 @@ namespace Keysharp.Internals.Invoke
 					{
 						_callFunc = (inst, args) =>
 						{
-							object ret = null;
 							var ctrl = (inst ?? args[0]).GetControl();//If it's a gui control, then invoke on the gui thread.
-							ctrl.CheckedInvoke(() =>
-							{
-								ret = pi.GetValue(inst ?? args[0]);
-							}, true);//This can be null if called before a Gui object is fully initialized.
+							var ret = InvokeGuiProperty(ctrl, () => pi.GetValueUnwrapped(inst ?? args[0]));
 
 							return normalize ? ArgCoercer.NormalizeScalar(ret) : ret;
 						};
@@ -632,20 +627,12 @@ namespace Keysharp.Internals.Invoke
 					// See the static branch above for why the coercion happens here rather than inside CheckedInvoke.
 					if (canWrite)
 					{
-						if (inlineMarked)
-							SetProp = (inst, obj) =>
-							{
-								obj = ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType);
-								var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
-								ctrl.CheckedInvoke(() => pi.SetValue(inst, obj), true);//This can be null if called before a Gui object is fully initialized.
-							};
-						else
-							SetProp = (inst, obj) =>
-							{
-								obj = ArgCoercer.CoerceValue(obj, pi.PropertyType);
-								var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
-								ctrl.CheckedInvoke(() => pi.SetValue(inst, obj), true);//This can be null if called before a Gui object is fully initialized.
-							};
+						SetProp = (inst, obj) =>
+						{
+							obj = inlineMarked ? ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType) : ArgCoercer.CoerceValue(obj, pi.PropertyType);
+							var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
+							_ = InvokeGuiProperty(ctrl, () => { pi.SetValueUnwrapped(inst, obj); return null; });
+						};
 					}
 				}
 				else
@@ -653,9 +640,9 @@ namespace Keysharp.Internals.Invoke
 					if (canRead)
 					{
 						if (normalize)
-							_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValue(inst));
+							_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValueUnwrapped(inst));
 						else
-							_callFunc = (inst, obj) => pi.GetValue(inst);
+							_callFunc = (inst, obj) => pi.GetValueUnwrapped(inst);
 					}
 
 					// Deliberately still reflection, unlike the compiled setter the FieldInfo constructor builds:
@@ -666,9 +653,9 @@ namespace Keysharp.Internals.Invoke
 					if (canWrite)
 						SetProp = coerce
 							? inlineMarked
-								? (inst, obj) => pi.SetValue(inst, ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType))
-								: (inst, obj) => pi.SetValue(inst, ArgCoercer.CoerceValue(obj, pi.PropertyType))
-							: pi.SetValue;
+								? (inst, obj) => pi.SetValueUnwrapped(inst, ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType))
+								: (inst, obj) => pi.SetValueUnwrapped(inst, ArgCoercer.CoerceValue(obj, pi.PropertyType))
+							: pi.SetValueUnwrapped;
 				}
 			}
 

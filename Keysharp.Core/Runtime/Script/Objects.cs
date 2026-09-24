@@ -336,124 +336,117 @@ namespace Keysharp.Runtime
 
 			object value = args[^1];
 
-			try
+			if (item is ITuple otup && otup.Length > 1)
 			{
-				if (item is ITuple otup && otup.Length > 1)
+				if (otup[0] is Type t && otup[1] is object o0)
 				{
-					if (otup[0] is Type t && otup[1] is object o0)
-					{
-						typetouse = t; item = o0;
-					} else if (otup[0] is Any a && otup[1] is object o1)
-					{
-                        item = o1; typetouse = a.type;
-                    }
-				}
-				else if (item != null)
-					typetouse = item.GetType();
-
-				if (args.Length == 2)
+					typetouse = t; item = o0;
+				} else if (otup[0] is Any a && otup[1] is object o1)
 				{
-					key = args[0];
-
-					try
-					{
-						//This excludes types derived from Array so that super can be used.
-						if (typetouse == typeof(Keysharp.Builtins.Array))
-						{
-							((Keysharp.Builtins.Array)item)[key] = value;
-							return value;
-						}
-						else if (typetouse == typeof(Keysharp.Builtins.Map))
-						{
-							((Keysharp.Builtins.Map)item)[key] = value;
-							return value;
-						}
-
-						var position = key.Ai();
-
-						if (item is object[] objarr)
-						{
-							var actualindex = position < 0 ? objarr.Length + position : position - 1;
-							objarr[actualindex] = value;
-							return value;
-						}
-						else if (item is System.Array array)
-						{
-							var actualindex = position < 0 ? array.Length + position : position - 1;
-							array.SetValue(value, actualindex);
-							return value;
-						}
-						else if (item == null)
-						{
-							return Errors.UnsetErrorOccurred("Object");
-						}
-					}
-					catch (IndexOutOfRangeException)
-					{
-						return Errors.ValueErrorOccurred($"Index {key} out of range.");
-					}
-				}
-
-				if (item is Any kso)
-				{
-					if (TryGetOwnPropsMap(kso, "__Item", out var opm, true,
-						OwnPropsMapType.Set | OwnPropsMapType.Call | OwnPropsMapType.Value))
-					{
-						if (opm.Set != null)
-						{
-							if (opm.Set is KeysharpFunc fset)
-							{
-								// For index setters, just pass the full arglist to the setter
-								_ = fset.CallInst(kso, args);
-							}
-							else
-							{
-								// Callable object setter
-								_ = Invoke(opm.Set, null, kso, args);
-							}
-							return value;
-						}
-						if (opm.Call != null)
-						{
-							if (opm.Call is KeysharpFunc fcall)
-								_ = fcall.CallInst(kso, args);
-							else
-								_ = Invoke(opm.Call, null, kso, args);
-							return value;
-						}
-						if (opm.Value != null)
-						{
-							return SetPropertyValue(opm.Value, "__Item", args);
-						}
-					}
-					if (kso is IMetaObject mo)
-					{
-						mo.set_Item(GetIndices(), value);
-						return value;
-					}
+                    item = o1; typetouse = a.type;
                 }
-				else if (Builtins.Primitive.IsNative(item))
-				{
-					SetObject((TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item), args);
-					return value;
-				}
+			}
+			else if (item != null)
+				typetouse = item.GetType();
 
-				var il1 = args.Length;
+			if (args.Length == 2)
+			{
+				key = args[0];
 
-				if (item is not Any && item != null && typetouse != null && Reflections.FindAndCacheInstanceMethod(typetouse, "set_Item", il1) is MethodPropertyHolder mph2)
+				try
 				{
-					if (il1 == mph2.ParamLength || mph2.IsVariadic)
+					//This excludes types derived from Array so that super can be used.
+					if (typetouse == typeof(Keysharp.Builtins.Array))
 					{
-						_ = mph2.CallFunc(item, args);
+						((Keysharp.Builtins.Array)item)[key] = value;
 						return value;
 					}
-					else
-						return Errors.ValueErrorOccurred($"{il1} arguments were passed to a set indexer which only accepts {mph2.ParamLength}.");
+					else if (typetouse == typeof(Keysharp.Builtins.Map))
+					{
+						((Keysharp.Builtins.Map)item)[key] = value;
+						return value;
+					}
+
+					var position = key.Ai();
+
+					if (item is object[] objarr)
+					{
+						var actualindex = position < 0 ? objarr.Length + position : position - 1;
+						objarr[actualindex] = value;
+						return value;
+					}
+					else if (item is System.Array array)
+					{
+						var actualindex = position < 0 ? array.Length + position : position - 1;
+						array.SetValue(value, actualindex);
+						return value;
+					}
+					else if (item == null)
+					{
+						return Errors.UnsetErrorOccurred("Object");
+					}
+				}
+				catch (IndexOutOfRangeException)
+				{
+					return Errors.ValueErrorOccurred($"Index {key} out of range.");
 				}
 			}
-			catch (Exception e) when (e.InnerException is KeysharpException ke)
+
+			if (item is Any kso)
 			{
-				ExceptionDispatchInfo.Throw(ke);
+				if (TryGetOwnPropsMap(kso, "__Item", out var opm, true,
+					OwnPropsMapType.Set | OwnPropsMapType.Call | OwnPropsMapType.Value))
+				{
+					if (opm.Set != null)
+					{
+						if (opm.Set is KeysharpFunc fset)
+						{
+							// For index setters, just pass the full arglist to the setter
+							_ = fset.CallInst(kso, args);
+						}
+						else
+						{
+							// Callable object setter
+							_ = Invoke(opm.Set, null, kso, args);
+						}
+						return value;
+					}
+					if (opm.Call != null)
+					{
+						if (opm.Call is KeysharpFunc fcall)
+							_ = fcall.CallInst(kso, args);
+						else
+							_ = Invoke(opm.Call, null, kso, args);
+						return value;
+					}
+					if (opm.Value != null)
+					{
+						return SetPropertyValue(opm.Value, "__Item", args);
+					}
+				}
+				if (kso is IMetaObject mo)
+				{
+					mo.set_Item(GetIndices(), value);
+					return value;
+				}
+            }
+			else if (Builtins.Primitive.IsNative(item))
+			{
+				SetObject((TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item), args);
+				return value;
+			}
+
+			var il1 = args.Length;
+
+			if (item is not Any && item != null && typetouse != null && Reflections.FindAndCacheInstanceMethod(typetouse, "set_Item", il1) is MethodPropertyHolder mph2)
+			{
+				if (il1 == mph2.ParamLength || mph2.IsVariadic)
+				{
+					_ = mph2.CallFunc(item, args);
+					return value;
+				}
+				else
+					return Errors.ValueErrorOccurred($"{il1} arguments were passed to a set indexer which only accepts {mph2.ParamLength}.");
 			}
 
 			return Errors.ErrorOccurred($"Attempting to set index {key} of object {item} to value {value} failed.");
@@ -489,103 +482,96 @@ namespace Keysharp.Runtime
 			int len = index.Length;
 			object firstKey = index[0];
 
-			try
+			// Unwrap possible (Type|Any, instance) super tuple
+			Any proto = null;
+			Type typetouse = null;
+
+			if (item is Any a2)
 			{
-				// Unwrap possible (Type|Any, instance) super tuple
-				Any proto = null;
-				Type typetouse = null;
+				proto = a2;
+			}
+			else if (item is ITuple otup && otup.Length > 1)
+			{
+				if (otup[0] is Type t && otup[1] is object o0)
+				{
+					typetouse = t; item = o0;
+				}
+				else if (otup[0] is Any a && otup[1] is object o1)
+				{
+					proto = a; typetouse = a.type; item = o1;
+				}
+				else
+					return Errors.ErrorOccurred("Unknown tuple passed to indexer");
+			}
+			else if (item != null)
+			{
+				typetouse = item.GetType();
+			}
 
-				if (item is Any a2)
+			// Keysharp Any path: __Item Get or Value indirection
+			if (proto != null)
+			{
+				if (TryGetOwnPropsMap(proto, "__Item", out var opm, searchBase: true,
+					type: OwnPropsMapType.Get | OwnPropsMapType.Value))
 				{
-					proto = a2;
-				}
-				else if (item is ITuple otup && otup.Length > 1)
-				{
-					if (otup[0] is Type t && otup[1] is object o0)
+					if (opm.Get != null)
 					{
-						typetouse = t; item = o0;
-					}
-					else if (otup[0] is Any a && otup[1] is object o1)
-					{
-						proto = a; typetouse = a.type; item = o1;
-					}
-					else
-						return Errors.ErrorOccurred("Unknown tuple passed to indexer");
-				}
-				else if (item != null)
-				{
-					typetouse = item.GetType();
-				}
-
-				// Keysharp Any path: __Item Get or Value indirection
-				if (proto != null)
-				{
-					if (TryGetOwnPropsMap(proto, "__Item", out var opm, searchBase: true,
-						type: OwnPropsMapType.Get | OwnPropsMapType.Value))
-					{
-						if (opm.Get != null)
+						if (opm.Get is KeysharpFunc fget)
 						{
-							if (opm.Get is KeysharpFunc fget)
-							{
-								return fget.CallInst(item, index);
-							} else
-								// Callable object getter
-								return InvokeOrNull(opm.Get, null, item, index);
-						}
-						if (opm.Value != null)
-						{
-							return GetIndexOrNull(opm.Value, index);
-						}
+							return fget.CallInst(item, index);
+						} else
+							// Callable object getter
+							return InvokeOrNull(opm.Get, null, item, index);
 					}
-
-					if (proto is IMetaObject mo)
-						return mo.get_Item(index);
-				}
-				else if (Builtins.Primitive.IsNative(item))
-				{
-					return GetIndexOrNull((TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item), index);
-				}
-
-				// Single-argument index fast paths
-				if (len == 1)
-				{
-					int position = firstKey.Ai();
-
-					// Strings
-					if (item is string s)
+					if (opm.Value != null)
 					{
-						int actual = position < 0 ? s.Length + position : position - 1;
-						return (uint)actual < (uint)s.Length ? s[actual] : Errors.InvalidIndexErrorOccurred(position);
-					}
-
-					// Vararg array backing for params
-					if (item is object[] objarr)
-					{
-						int actual = position < 0 ? objarr.Length + position : position - 1;
-						return (uint)actual < (uint)objarr.Length ? objarr[actual] : Errors.InvalidIndexErrorOccurred(position);
-					}
-
-					// CLR arrays
-					if (item is System.Array carr)
-					{
-						int actual = position < 0 ? carr.Length + position : position - 1;
-						return (uint)actual < (uint)carr.Length ? carr.GetValue(actual) : Errors.InvalidIndexErrorOccurred(position);
+						return GetIndexOrNull(opm.Value, index);
 					}
 				}
 
-				// CLR indexer: get_Item(index...)
-				if (item != null && item is not Any)
+				if (proto is IMetaObject mo)
+					return mo.get_Item(index);
+			}
+			else if (Builtins.Primitive.IsNative(item))
+			{
+				return GetIndexOrNull((TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(item)], item), index);
+			}
+
+			// Single-argument index fast paths
+			if (len == 1)
+			{
+				int position = firstKey.Ai();
+
+				// Strings
+				if (item is string s)
 				{
-					var t = typetouse ?? item.GetType();
-					if (Reflections.FindAndCacheInstanceMethod(t, "get_Item", len) is MethodPropertyHolder mph)
-					{
-						return mph.CallFunc(item, index);
-					}
+					int actual = position < 0 ? s.Length + position : position - 1;
+					return (uint)actual < (uint)s.Length ? s[actual] : Errors.InvalidIndexErrorOccurred(position);
+				}
+
+				// Vararg array backing for params
+				if (item is object[] objarr)
+				{
+					int actual = position < 0 ? objarr.Length + position : position - 1;
+					return (uint)actual < (uint)objarr.Length ? objarr[actual] : Errors.InvalidIndexErrorOccurred(position);
+				}
+
+				// CLR arrays
+				if (item is System.Array carr)
+				{
+					int actual = position < 0 ? carr.Length + position : position - 1;
+					return (uint)actual < (uint)carr.Length ? carr.GetValue(actual) : Errors.InvalidIndexErrorOccurred(position);
 				}
 			}
-			catch (Exception e) when (e.InnerException is KeysharpException ke)
+
+			// CLR indexer: get_Item(index...)
+			if (item != null && item is not Any)
 			{
-				ExceptionDispatchInfo.Throw(ke);
+				var t = typetouse ?? item.GetType();
+				if (Reflections.FindAndCacheInstanceMethod(t, "get_Item", len) is MethodPropertyHolder mph)
+				{
+					return mph.CallFunc(item, index);
+				}
 			}
 
 			return null;

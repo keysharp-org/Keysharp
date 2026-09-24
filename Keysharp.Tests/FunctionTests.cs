@@ -14,6 +14,11 @@ namespace Keysharp.Tests
 		[Test, Category("Function")]
 		public void ArgumentPacking() => Assert.IsTrue(TestScript("func-argument-packing", false));
 
+		// A plain call runs a Closure's function without its Call, which is right only while Closure inherits that Call.
+		[Test, Category("Function"), Category("Internal")]
+		public void ClosureCallInherited() =>
+			Assert.AreEqual(typeof(KeysharpFunc), typeof(Closure).GetMethod(nameof(KeysharpFunc.Call), [typeof(object[])]).DeclaringType);
+
 		[Test, Category("Function"), Category("Internal")]
 		public void AddressTakenLocalShape()
 		{
@@ -85,6 +90,25 @@ namespace Keysharp.Tests
 
 			box.Value = first;
 			Assert.AreSame(first, Misc.MakeVarRef(box, "alias"));
+		}
+
+		[Test, Category("Function"), Category("Internal")]
+		public void CachedCallDelegateDoesNotAllocate()
+		{
+			var holder = Keysharp.Internals.Invoke.MethodPropertyHolder.GetOrAdd(s.ReflectionsData.flatPublicStaticMethods["StrLen"]);
+			var cached = holder.CallFunc;
+
+			for (var i = 0; i < 128; i++)
+				GC.KeepAlive(holder.CallFunc);
+
+			var before = GC.GetAllocatedBytesForCurrentThread();
+
+			for (var i = 0; i < 1024; i++)
+				GC.KeepAlive(holder.CallFunc);
+
+			var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+			Assert.AreEqual(0L, allocated);
+			Assert.AreSame(cached, holder.CallFunc);
 		}
 
 		[Test, Category("Function"), NonParallelizable]

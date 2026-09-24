@@ -344,4 +344,11 @@ catch Any as operandErr
 	operandError := Described(operandErr)
 AssertEq(operandError, "UnsetError: Operand of dereference was unset. []", A_LineNumber)
 
+; A built-in variable reached by name raises its errors to a try, as it does when named directly.
+try
+	%"A_TitleMatchMode"% := "bogus"
+catch Any as builtinErr
+	builtinError := Type(builtinErr)
+AssertEq(builtinError, "ValueError", A_LineNumber)
+
 FileAppend "pass", "*"

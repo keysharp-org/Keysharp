@@ -48,7 +48,7 @@ namespace Keysharp.Runtime
 
 		internal object Get() =>
 			holder != null ? holder.CallFunc(null, null)
-			: builtin != null ? builtin.GetValue(null)
+			: builtin != null ? builtin.GetValueUnwrapped(null)
 			: constant;
 
 		/// <summary>True when the variable takes a write; otherwise raises the read-only error.</summary>
@@ -76,7 +76,7 @@ namespace Keysharp.Runtime
 		internal void Set(object value)
 		{
 			if (builtin != null)
-				builtin.SetValue(null, ArgCoercer.CoerceValue(value, builtin.PropertyType));
+				builtin.SetValueUnwrapped(null, ArgCoercer.CoerceValue(value, builtin.PropertyType));
 			else
 				holder.SetProp(null, value);
 		}

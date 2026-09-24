@@ -27,6 +27,18 @@ namespace System.Reflection
 		}
 
 		internal static bool IsVariadic(this ParameterInfo pi) => pi != null && pi.CustomAttributes.Any(cad => cad.AttributeType == typeof(ParamArrayAttribute));
+
+		/// <summary>
+		/// Reads a property as <see cref="PropertyInfo.GetValue(object)"/> does, except that an exception the getter throws
+		/// propagates as thrown. Reflection would wrap it in a <see cref="TargetInvocationException"/>, which no script
+		/// catch matches.
+		/// </summary>
+		internal static object GetValueUnwrapped(this PropertyInfo pi, object inst) =>
+			pi.GetValue(inst, BindingFlags.DoNotWrapExceptions, null, null, null);
+
+		/// <summary>Writes a property with the exception behavior of <see cref="GetValueUnwrapped"/>.</summary>
+		internal static void SetValueUnwrapped(this PropertyInfo pi, object inst, object value) =>
+			pi.SetValue(inst, value, BindingFlags.DoNotWrapExceptions, null, null, null);
 		//public static async Task<object> InvokeAsync(this MethodInfo mi, object inst, params object[] parameters)
 		//{
 		//  var tsk = mi.Invoke(inst, parameters);
