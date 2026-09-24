@@ -7,6 +7,9 @@ namespace Keysharp.Tests
 	/// </summary>
 	public class FunctionTests : TestRunner
 	{
+		[Test, Category("Function")]
+		public void ArgumentPacking() => Assert.IsTrue(TestScript("func-argument-packing", false));
+
 		[Test, Category("Function"), NonParallelizable]
 		public void AllGlobalInFunc() => Assert.IsTrue(TestScript("func-all-global", false));
 

@@ -849,12 +849,7 @@ namespace Keysharp.Builtins
 			var timeout = 0.0;
 
 			if (caption?.Length == 0)
-			{
 				caption = A_ScriptName;
-
-				if (txt?.Length == 0 && options == null)
-					txt = "Press OK to continue.";
-			}
 
 			void HandleNumericOptions(int itemp)
 			{
@@ -1074,6 +1069,9 @@ namespace Keysharp.Builtins
 					break;
 			}
 #endif
+
+			if (text == null && buttons == MessageBoxButtons.OK)
+				txt = "Press OK to continue.";
 
 #if WINDOWS
 			var result = RunInterruptibleUIDialog(() =>
