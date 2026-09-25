@@ -79,7 +79,7 @@ write_deb_control "${control_root}/DEBIAN/control"
 dpkg-deb --build --root-owner-group "${control_root}" \
   "${temporary}/control-package.deb" >/dev/null
 recommends="$(dpkg-deb -f "${temporary}/control-package.deb" Recommends)"
-expected_recommends="keysharp-input-client-abi-0 (>= 0.2), keysharp-desktop-client-abi-0 (>= 0.8), libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37"
+expected_recommends="keysharp-input-client-abi-0 (>= 0.4), keysharp-desktop-client-abi-0 (>= 0.8), libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37"
 [[ "${recommends}" == "${expected_recommends}" ]] \
   || fail "generated Debian Recommends is not the two exact client ABIs and WebKitGTK: ${recommends}"
 

@@ -149,16 +149,28 @@ chmod 0755 "${fixture}/bin/keysharp-input"
 (
   is_protected_path() { return 0; }
   component_candidates() { printf '%s\n' "${fixture}/bin/keysharp-input"; }
+  service_active=true
+  service_enabled=enabled
   systemctl() {
-    case "$1" in
-      show) echo loaded ;;
-      is-active) return 0 ;;
-      is-failed) return 1 ;;
+    case "$1:${3:-}" in
+      show:*) echo loaded ;;
+      is-active:*.service) "$service_active" ;;
+      is-active:*) return 0 ;;
+      is-failed:*) return 1 ;;
+      is-enabled:*) echo "$service_enabled" ;;
     esac
   }
   inspect_component keysharp-input 0 1
   [[ "$component_path" == "${fixture}/bin/keysharp-input" && "$component_health" == ready ]] \
     || fail "an explicit installed path outside PATH was not discovered"
+  service_enabled=disabled
+  inspect_component keysharp-input 0 1
+  [[ "$component_health" == disabled-service ]] \
+    || fail "a disabled input service was accepted as ready"
+  service_active=false service_enabled=enabled
+  inspect_component keysharp-input 0 1
+  [[ "$component_health" == inactive-service ]] \
+    || fail "an inactive input service behind an active socket was accepted"
   inspect_component keysharp-input 0 2
   [[ "$component_compatible" == false && "$component_health" == incompatible-abi ]] \
     || fail "a client below the minimum ABI minor was accepted"
