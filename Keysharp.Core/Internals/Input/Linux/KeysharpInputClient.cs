@@ -28,6 +28,17 @@ namespace Keysharp.Internals.Input.Linux
 		private static readonly Native.DeviceVisitor GamepadVisitorThunk = CollectGamepad;
 		private static readonly uint NativeServiceInfoStructSize =
 			checked((uint)sizeof(NativeServiceInfo));
+		private static readonly Lazy<uint> libraryAbiMinor = new(() =>
+		{
+			try
+			{
+				return Native.ksi_client_abi_minor();
+			}
+			catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+			{
+				return 0u;
+			}
+		});
 
 		internal enum ConnectionRole : uint
 		{
@@ -224,6 +235,10 @@ namespace Keysharp.Internals.Input.Linux
 		}
 		internal Operations AvailableOperations { get; }
 		internal bool IsConnected => !disposePending && Volatile.Read(ref connection) != 0;
+
+		/// <summary>The loaded library's client ABI minor version, or 0 when the library cannot be loaded.
+		/// Newer entry points are gated on it because a missing export only fails when first called.</summary>
+		internal static uint LibraryAbiMinor => libraryAbiMinor.Value;
 
 		internal static string DefaultSocketPath
 		{
@@ -476,22 +491,35 @@ namespace Keysharp.Internals.Input.Linux
 			return required;
 		}
 
-		internal KeyStateSnapshot QueryKeyState()
+		internal bool TryQueryKeyState(uint deviceID, out KeyStateSnapshot state)
 		{
 			RequireOperations(Operations.QueryKeyState);
+			state = default;
+
 			lock (nativeLock)
 			{
 				ThrowIfDisposed();
-				Native.ksi_key_state_init(out var state);
+				Native.ksi_key_state_init(out var native);
 				Native.ksi_error_init(out var error);
-				ThrowIfFailed((NativeClientStatus)Native.ksi_get_key_state(
-					connection, ref state, ref error), "query key state", error);
+				var status = deviceID == 0
+					? Native.ksi_get_key_state(connection, ref native, ref error)
+					: Native.ksi_get_device_key_state(connection, deviceID, ref native, ref error);
+
+				if ((NativeClientStatus)status == NativeClientStatus.NotFound)
+					return false;
+
+				// A service older than ABI 0.4 rejects the device ID as a malformed request.
+				if (deviceID != 0 && (NativeClientStatus)status == NativeClientStatus.InvalidRequest)
+					throw new DeviceKeyStateUnsupportedException();
+
+				ThrowIfFailed((NativeClientStatus)status, "query key state", error);
 				var logical = new byte[KeyStateBitmapBytes];
 				var physical = new byte[KeyStateBitmapBytes];
-				new ReadOnlySpan<byte>(state.LogicalKeys, KeyStateBitmapBytes).CopyTo(logical);
-				new ReadOnlySpan<byte>(state.PhysicalKeys, KeyStateBitmapBytes).CopyTo(physical);
-				return new(state.ModifiersLR, state.CapsLock != 0, state.NumLock != 0,
-					state.ScrollLock != 0, logical, physical);
+				new ReadOnlySpan<byte>(native.LogicalKeys, KeyStateBitmapBytes).CopyTo(logical);
+				new ReadOnlySpan<byte>(native.PhysicalKeys, KeyStateBitmapBytes).CopyTo(physical);
+				state = new(native.ModifiersLR, native.CapsLock != 0, native.NumLock != 0,
+					native.ScrollLock != 0, logical, physical);
+				return true;
 			}
 		}
 
@@ -1313,6 +1341,8 @@ namespace Keysharp.Internals.Input.Linux
 				NativeError* error);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksi_client_abi_minor();
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksi_connect_options_init(out NativeConnectOptions options);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksi_service_info_init(out NativeServiceInfo info);
@@ -1373,6 +1403,9 @@ namespace Keysharp.Internals.Input.Linux
 				ref NativePointerPosition position, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_get_key_state(nint connection,
+				ref NativeKeyState state, ref NativeError error);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksi_get_device_key_state(nint connection, uint deviceID,
 				ref NativeKeyState state, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_get_pointer_buttons(nint connection,

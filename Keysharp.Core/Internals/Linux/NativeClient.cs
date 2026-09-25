@@ -32,6 +32,9 @@ namespace Keysharp.Internals.Linux
 		Internal = 255,
 	}
 
+	/// <summary>The keysharp-input service predates per-device key state (client ABI 0.4).</summary>
+	internal sealed class DeviceKeyStateUnsupportedException : Exception { }
+
 	internal sealed class NativeClientException : IOException
 	{
 		internal NativeClientStatus Status { get; }

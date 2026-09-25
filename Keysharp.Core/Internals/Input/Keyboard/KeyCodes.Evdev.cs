@@ -18,6 +18,15 @@ namespace Keysharp.Internals.Input.Keyboard
 	/// </summary>
 	internal static partial class KeyCodes
 	{
+		// BTN_* from input-event-codes.h, which key-state bitmaps index alongside the KEY_* codes below.
+		internal const uint EvdevButtonLeft = 0x110u;
+		internal const uint EvdevButtonRight = 0x111u;
+		internal const uint EvdevButtonMiddle = 0x112u;
+		internal const uint EvdevButtonSide = 0x113u;
+		internal const uint EvdevButtonExtra = 0x114u;
+		internal const uint EvdevButtonForward = 0x115u;
+		internal const uint EvdevButtonBack = 0x116u;
+
 		internal static uint VkToEvdev(uint vk, bool returnSecondary = false)
 		{
 			// Only VK_RETURN has two AHK key names: the main Enter (KEY_ENTER = 28) and NumpadEnter

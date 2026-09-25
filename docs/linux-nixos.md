@@ -2,7 +2,7 @@
 
 NixOS packaging and COSMIC session support are experimental. For every other distribution see the "Installing on Linux" section of [reference.md](reference.md).
 
-NixOS should use flakes rather than the tarball installer: systemd, polkit, udev and compositor integration belong in the system configuration. Keysharp, `keysharp-input`, and `keysharp-desktop` remain separate flake inputs and modules. Pin native revisions whose client ABIs satisfy Keysharp's current minimums (input 0.2+ and desktop 0.8+); until compatible release tags exist, use reviewed branch revisions and commit `flake.lock`. Product versions do not need to match across the three projects.
+NixOS should use flakes rather than the tarball installer: systemd, polkit, udev and compositor integration belong in the system configuration. Keysharp, `keysharp-input`, and `keysharp-desktop` remain separate flake inputs and modules. Pin native revisions whose client ABIs satisfy Keysharp's current minimums (input 0.4+ and desktop 0.8+); until compatible release tags exist, use reviewed branch revisions and commit `flake.lock`. Product versions do not need to match across the three projects.
 
 Add the input and module to the host flake:
 

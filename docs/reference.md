@@ -440,6 +440,8 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ As an alternative it's recommended to use [AtSpi.ks](https://github.com/keysharp-org/Keysharp/blob/master/Keysharp/Scripts/AtSpi.ks): running it directly displays AtSpiViewer which can be used to inspect windows, and it also contains methods to manipulate windows and controls similarly to Acc/UIA in Windows.
 	+ GUI support is mostly implemented, but some controls are missing or incomplete.
 	+ Registry functions are not supported. The COM functions are, but they address D-Bus rather than COM — see [ComObject off Windows](#comobject-off-windows).
+	+ Physical key and mouse-button state (`GetKeyState()` with `P`, and `KeyWait()` without `L`) comes from keysharp-input whether or not a hook is installed, so an artificial press or release by `Send` or `Click` never counts as physical, where AutoHotkey without a hook falls back to the logical state.
+	+ `Send` always types through keysharp-input's virtual keyboard, and while a keyboard hook or `BlockInput` is active every keyboard's keys pass through it too, so the desktop receives them in the order they happened, as Windows does. Desktop settings made for one particular keyboard, such as a per-device layout on Sway or Hyprland, do not apply to its keys during that time. A hooked mouse keeps its name and IDs, so settings matched by those carry over, but settings applied at runtime to that one device, such as `xinput set-prop`, do not.
 * Keysharp follows the .NET memory model.
 	+ There is no variable caching with strings vs numbers. All variables are C# objects.
 	+ Values not stored in variables are like regular variables, only eligible to be freed once they go out of scope.
@@ -578,6 +580,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Targeting an underlying pseudo-thread marks it to exit when it next resumes and reaches a cooperative event/message check (`TryDoEvents`). It does not asynchronously abort managed code.
 		+ A later request made before the target exits replaces its pending exit code.
 	+ `FileGetSize()` supports `G` and `T` for gigabytes and terabytes.
+	+ `GetKeyState()` on Linux also accepts a device ID (`A_EventInfo.DeviceId` from a hook callback) as `Mode`, reading that one device's physical state; this requires keysharp-input client ABI 0.4 or newer and InputMonitoring.
 	+ `ImageSearch()` takes an options string as a fifth parameter, rather than inserted in the string before the `ImageFile` parameter.
 	+ `Log(Number, Base := 10)` is by default base 10, but it can accept a double as the second parameter to specify a custom base.
 		+ In `SetTimer()`:

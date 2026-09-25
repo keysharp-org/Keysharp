@@ -5701,8 +5701,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns logical, physical, and toggle state. Polling an arbitrary key or mouse button requires InputMonitoring. Modifier state and CapsLock/NumLock/ScrollLock toggle state are ungated; polling whether a lock key is physically down still requires InputMonitoring. Linux uses keysharp-input without installing a hook and fails closed for arbitrary state if its authority is unavailable or revokes access; The keysharp-desktop X11 fallback is limited to ungated modifier and lock-toggle snapshots. Joystick controls (Joy1, JoyX, JoyPOV, JoyName, ...) read the winmm joystick API on Windows and keysharp-input's ungated gamepad path on Linux, which needs neither a grant nor `input` group membership; buttons are numbered as the kernel's joydev driver numbers them and controllers are ordered by device node. macOS has no joystick backend and reports every joystick control as unavailable.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Returns logical, physical, and toggle state. Polling an arbitrary key or mouse button requires InputMonitoring. Modifier state and CapsLock/NumLock/ScrollLock toggle state are ungated; polling whether a lock key is physically down still requires InputMonitoring. Linux uses keysharp-input without installing a hook and fails closed for arbitrary state if its authority is unavailable or revokes access; The keysharp-desktop X11 fallback is limited to ungated modifier and lock-toggle snapshots. Joystick controls (Joy1, JoyX, JoyPOV, JoyName, ...) read the winmm joystick API on Windows and keysharp-input's ungated gamepad path on Linux, which needs neither a grant nor `input` group membership; buttons are numbered as the kernel's joydev driver numbers them and controllers are ordered by device node. macOS has no joystick backend and reports every joystick control as unavailable. Mode follows AutoHotkey: it is ignored for controller controls, only its first letter (L, P or T) is significant, and anything else raises ValueError, including an explicit empty string; omitting Mode reads logical state, as L does. On Linux, Mode may instead be a device ID from a hook callback's `A_EventInfo.DeviceId`, which reads that one device's physical state through a keysharp-input client library and service of ABI 0.4 or newer, and raises ValueError with an older one; it always requires InputMonitoring, including for modifiers and lock keys, and an unknown ID reads 0. Windows and macOS raise ValueError for a device ID.",
+                     "tested-by":  "Gui/guitest.ks; misc-get-key-state-device.ahk; LinuxInputManagerTests.DeviceBitmapAliases"
                  },
                  {
                      "category":  "Input/Automation",
@@ -7373,7 +7373,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The KeyWait function waits for a key or mouse/controller button to be released or pressed down.",
+                     "notes":  "The KeyWait function waits for a key or mouse/controller button to be released or pressed down. It waits for physical state unless the L option is given, and, as with GetKeyState(), waiting for a key or mouse button other than a modifier requires InputMonitoring. On Linux, physical state for keys and mouse buttons comes from keysharp-input whether or not a hook is installed, so an artificial press or release by Send or Click never counts, and a key held on two keyboards is released only once both release it; when keysharp-input cannot answer, the logical state is used.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
