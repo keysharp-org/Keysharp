@@ -1,0 +1,45 @@
+{
+  "nodes": {
+    "eto": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788973465,
+        "narHash": "sha256-1lfSAcpuChbe15Y8iIi0BJ/KGo+omNvjKInUA9FfGkA=",
+        "owner": "keysharp-org",
+        "repo": "Eto",
+        "rev": "14d5d69dd4948b9e56e1b524532d7897bc8317e5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "keysharp-org",
+        "ref": "Keysharp",
+        "repo": "Eto",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1786862985,
+        "narHash": "sha256-FBJRXmbGXiSUDvYEbfLYRkckayyZ6SK1UEqhCrIZ2Cs=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "e5bdc4a41d4c072fe1e3787eaa0320a384741d44",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "e5bdc4a41d4c072fe1e3787eaa0320a384741d44",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "eto": "eto",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
