@@ -604,6 +604,17 @@ namespace Keysharp.Builtins.COM
 			public delegate* unmanaged[Stdcall]<nint, nint /*ptsi*/, nint /*pbNamingContainer*/,
 				int> GetNameSpaceParent;
 		}
+
+		// Pointer fields keep EXCEPINFO blittable; the caller owns the returned BSTRs.
+		[StructLayout(LayoutKind.Sequential)]
+		private struct NativeExceptionInfo
+		{
+			internal ushort Code, Reserved;
+			internal nint Source, Description, HelpFile;
+			internal uint HelpContext;
+			internal nint ReservedPointer, DeferredFillIn;
+			internal int Status;
+		}
 #pragma warning restore 0649
 
 		internal static readonly Guid IID_IDispatchEx = new("A6EF9860-C720-11D0-9337-00A0C90DCAA9");
@@ -675,11 +686,12 @@ namespace Keysharp.Builtins.COM
 			nint ptr = new((long)Ptr);
 
 			Guid iidNull = Guid.Empty;
-			nint strPtrName = Marshal.StringToCoTaskMemUni(name);
 			nint bstrName = 0;
 
+			fixed (char* pName = name)
 			try
 			{
+				nint strPtrName = (nint)pName;
 				fixed (int* dispIdPtr = &dispId)
 				{
 					// Call IDispatch::GetIDsOfNames
@@ -716,7 +728,6 @@ namespace Keysharp.Builtins.COM
 			}
 			finally
 			{
-				if (strPtrName != 0) Marshal.FreeCoTaskMem(strPtrName);
 				if (bstrName != 0) WindowsAPI.SysFreeString(bstrName);
 			}
 		}
@@ -755,35 +766,26 @@ namespace Keysharp.Builtins.COM
 			bool wantsResult = (flags & (INVOKEKIND.INVOKE_PROPERTYGET | INVOKEKIND.INVOKE_FUNC)) != 0
 				   && (flags & (INVOKEKIND.INVOKE_PROPERTYPUT | INVOKEKIND.INVOKE_PROPERTYPUTREF)) == 0;
 
-			nint pArgs = 0;
-			nint pDispParams = Marshal.AllocHGlobal(Marshal.SizeOf<DISPPARAMS>());
-			// Zeroed IMMEDIATELY: the finally below reads DISPPARAMS back from this block to free the variants, and
-			// any throw before the real StructureToPtr (argument conversion, the named+PROPERTYPUT guard) would
-			// otherwise have it walk a garbage cArgs over wild rgvarg pointers.
-			Marshal.StructureToPtr(new DISPPARAMS(), pDispParams, false);
-			nint pResult = wantsResult ? Marshal.AllocHGlobal(Marshal.SizeOf<VARIANT>()) : 0;
-			nint pExcepInfo = Marshal.AllocHGlobal(Marshal.SizeOf<EXCEPINFO>());
-			nint pArgErr = Marshal.AllocHGlobal(sizeof(uint));
-			nint pNamed = 0;
-
-			if (pResult != 0)
-				VariantHelper.VariantInit(pResult);
-			Marshal.StructureToPtr(new EXCEPINFO(), pExcepInfo, false);
-			Marshal.WriteInt32(pArgErr, 0);
-
+			DISPPARAMS dispParams = default;
+			VARIANT resultVariant = default;
+			NativeExceptionInfo exception = default;
+			uint argError = 0;
+			int propertyPutId = Com.DISPID_PROPERTYPUT;
 			int argCount = args?.Length ?? 0;
-			var allocatedByRef = argCount > 0 ? new bool[argCount] : [];   // we allocated temp BYREF storage?
-			var suppressWriteback = argCount > 0 ? new bool[argCount] : []; // skip writeback for ComValue BYREFs
+			const int stackArgumentLimit = 16;
+			const byte ownsByRef = 1, suppressWriteback = 2;
+			Span<VARIANT> variants = argCount <= stackArgumentLimit ? stackalloc VARIANT[argCount] : new VARIANT[argCount];
+			Span<byte> argumentState = argCount <= stackArgumentLimit ? stackalloc byte[argCount] : new byte[argCount];
+			argumentState.Clear();
+			int initializedCount = 0;
 
+			fixed (VARIANT* pArgs = variants)
+			fixed (int* pNamed = namedDispIds)
 			try
 			{
-				var dispParams = new DISPPARAMS();
-
 				// Convert arguments to VARIANTs (in reverse order for IDispatch)
 				if (argCount > 0)
 				{
-					pArgs = Marshal.AllocHGlobal(argCount * Marshal.SizeOf<VARIANT>());
-
 					for (int i = 0; i < argCount; i++)
 					{
 						// IDispatch expects arguments in reverse order
@@ -796,7 +798,6 @@ namespace Keysharp.Builtins.COM
 
 						bool isByRef = IsByRef(byRefs, sourceIndex);
 
-						nint variantPtr = pArgs + (i * Marshal.SizeOf<VARIANT>());
 						VARIANT variant;
 
 						if (arg is ComValue cv)
@@ -805,8 +806,8 @@ namespace Keysharp.Builtins.COM
 							if (isByRef || (cv.vt & VarEnum.VT_BYREF) != 0)
 							{
 								variant = cv.ToVariant();
-								suppressWriteback[sourceIndex] = (cv.vt & VarEnum.VT_BYREF) != 0; // we're not supposed to overwrite the wrapper object
-																								  // allocatedByRef[i] remains false
+								if ((cv.vt & VarEnum.VT_BYREF) != 0)
+									argumentState[i] = suppressWriteback;
 							}
 							else
 							{
@@ -835,7 +836,7 @@ namespace Keysharp.Builtins.COM
 										  : VariantHelper.CreateByRefVariant(arg);
 
 							}
-							allocatedByRef[i] = true; // we own the temp buffer
+							argumentState[i] = ownsByRef;
 						}
 						else
 						{
@@ -844,59 +845,27 @@ namespace Keysharp.Builtins.COM
 									  ? VariantHelper.CreateVariantFromBool(flag)
 									  : VariantHelper.ValueToVariant(arg);
 						}
-						Marshal.StructureToPtr(variant, variantPtr, false);
+						variants[i] = variant;
+						initializedCount++;
 					}
 
-					dispParams.rgvarg = pArgs;
+					dispParams.rgvarg = (nint)pArgs;
 					dispParams.cArgs = argCount;
 				}
 
-				dispParams.rgdispidNamedArgs = 0;
-				dispParams.cNamedArgs = 0;
-
-				// ---- Named arguments (`obj.Method(Key: v)`) ----
-				// rgvarg is filled in reverse above, so the trailing named values landed at its front, which is
-				// exactly where DISPPARAMS requires the named ones; namedDispIds is already reversed to match.
+				// Named IDs already follow the reversed argument order.
 				if (namedDispIds != null && namedDispIds.Length > 0)
 				{
-					pNamed = Marshal.AllocHGlobal(sizeof(int) * namedDispIds.Length);
-
-					for (var i = 0; i < namedDispIds.Length; i++)
-						Marshal.WriteInt32(pNamed, i * sizeof(int), namedDispIds[i]);
-
-					dispParams.rgdispidNamedArgs = pNamed;
+					dispParams.rgdispidNamedArgs = (nint)pNamed;
 					dispParams.cNamedArgs = namedDispIds.Length;
 				}
 
-				// ---- SPECIAL: PROPERTYPUT / PROPERTYPUTREF ----
 				if (isPut || isPutRef)
 				{
-					// A property put owns rgdispidNamedArgs for DISPID_PROPERTYPUT, so it cannot also carry
-					// per-parameter named DISPIDs. Nothing forwards both today; assert rather than leak the block
-					// allocated above and silently discard the names if a future caller tries.
-					// Must provide one named arg: DISPID_PROPERTYPUT
-					pNamed = Marshal.AllocHGlobal(sizeof(int));
-					Marshal.WriteInt32(pNamed, Com.DISPID_PROPERTYPUT);
-					dispParams.rgdispidNamedArgs = pNamed;
+					// The assigned value is the last source argument and therefore rgvarg[0].
+					dispParams.rgdispidNamedArgs = (nint)(&propertyPutId);
 					dispParams.cNamedArgs = 1;
-
-					// Also ensure rgvarg[0] is the VALUE, rgvarg[1..] are the indexers.
-					// The code above already wrote args reversed (last source arg first).
-					// For a set like dict.Item(key) = value, caller should pass args = [key, value].
-					// Reversed becomes [value, key] which is exactly what IDispatch requires.
 				}
-
-				Marshal.StructureToPtr(dispParams, pDispParams, false);
-
-				/*
-				for (int i = 0; i < argCount; i++)
-				{
-					int src = argCount - 1 - i; // due to reverse packing
-					VARIANT v = Marshal.PtrToStructure<VARIANT>(pArgs + i * Marshal.SizeOf<VARIANT>());
-					System.Diagnostics.Debug.WriteLine($"arg#{src}: vt=0x{v.vt:X} {(VarEnum)v.vt}, ptr=0x{(long)v.llVal:X}");
-					ComDebug.DumpVariant($"arg[{src}]", v);
-				}
-				*/
 
 				// Call IDispatch::Invoke
 				int hr = vtbl->Invoke(
@@ -905,17 +874,16 @@ namespace Keysharp.Builtins.COM
 					&iidNull,
 					Com.LOCALE_USER_DEFAULT,
 					(ushort)flags,
-					pDispParams,
-					pResult,
-					pExcepInfo,
-					pArgErr);
+					(nint)(&dispParams),
+					wantsResult ? (nint)(&resultVariant) : 0,
+					(nint)(&exception),
+					(nint)(&argError));
 
 				if (hr >= 0)
 				{
 					if (wantsResult)
 					{
 						// Extract result
-						var resultVariant = Marshal.PtrToStructure<VARIANT>(pResult);
 						var resultVt = (VarEnum)resultVariant.vt & ~VarEnum.VT_BYREF;
 						result = (resultVt == VarEnum.VT_NULL || resultVt == VarEnum.VT_EMPTY)
 							? DefaultObject
@@ -923,18 +891,17 @@ namespace Keysharp.Builtins.COM
 					}
 
 					// Handle byref out parameters
-					if (byRefs != null && pArgs != 0)
+					if (byRefs != null)
 					{
 						for (int i = 0; i < argCount; i++)
 						{
 							int sourceIndex = argCount - 1 - i;
 							if (IsByRef(byRefs, sourceIndex))
 							{
-								nint variantPtr = pArgs + (i * Marshal.SizeOf<VARIANT>());
-								var variant = Marshal.PtrToStructure<VARIANT>(variantPtr);
+								var variant = variants[i];
 
 								// If it's VT_BYREF, read the value back
-								if (((VarEnum)variant.vt & VarEnum.VT_BYREF) != 0 && !suppressWriteback[sourceIndex])
+								if (((VarEnum)variant.vt & VarEnum.VT_BYREF) != 0 && (argumentState[i] & suppressWriteback) == 0)
 								{
 									args[sourceIndex] = VariantHelper.ReadByRefVariant(variant);
 								}
@@ -951,10 +918,9 @@ namespace Keysharp.Builtins.COM
 					else
 					{
 						// Handle exception info
-						var excepInfo = Marshal.PtrToStructure<EXCEPINFO>(pExcepInfo);
-						if (excepInfo.bstrDescription != null)
+						if (exception.Description != 0)
 						{
-							result = $"{excepInfo.bstrDescription}";
+							result = Marshal.PtrToStringBSTR(exception.Description);
 						}
 						else
 						{
@@ -967,35 +933,19 @@ namespace Keysharp.Builtins.COM
 			}
 			finally
 			{
-				if (pArgs != 0)
+				// Conversion can throw partway through packing; only completed variants own resources.
+				for (int i = 0; i < initializedCount; i++)
 				{
-					// Clean up variants
-					var dispParams = Marshal.PtrToStructure<DISPPARAMS>(pDispParams);
-					for (int i = 0; i < dispParams.cArgs; i++)
-					{
-						int sourceIndex = dispParams.cArgs - 1 - i;
-						nint variantPtr = pArgs + (i * Marshal.SizeOf<VARIANT>());
-						var variant = Marshal.PtrToStructure<VARIANT>(variantPtr);
-
-						// Free temp BYREF storage only if we allocated it
-						if (((VarEnum)variant.vt & VarEnum.VT_BYREF) != 0 && allocatedByRef[i])
-							VariantHelper.CleanupByRefVariant(variant);
-
-						_ = VariantHelper.VariantClear(variantPtr);
-					}
-					Marshal.FreeHGlobal(pArgs);
+					if ((argumentState[i] & ownsByRef) != 0)
+						VariantHelper.CleanupByRefVariant(variants[i]);
+					_ = VariantHelper.VariantClear((nint)(pArgs + i));
 				}
 
-				if (wantsResult && pResult != 0)
-				{
-					_ = VariantHelper.VariantClear(pResult);
-					Marshal.FreeHGlobal(pResult);
-				}
-				Marshal.FreeHGlobal(pDispParams);
-				Marshal.FreeHGlobal(pExcepInfo);
-				Marshal.FreeHGlobal(pArgErr);
-				if (pNamed != 0)
-					Marshal.FreeHGlobal(pNamed);
+				if (wantsResult)
+					_ = VariantHelper.VariantClear(ref resultVariant);
+				if (exception.Source != 0) WindowsAPI.SysFreeString(exception.Source);
+				if (exception.Description != 0) WindowsAPI.SysFreeString(exception.Description);
+				if (exception.HelpFile != 0) WindowsAPI.SysFreeString(exception.HelpFile);
 			}
 		}
 

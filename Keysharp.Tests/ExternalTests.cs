@@ -47,6 +47,25 @@ namespace Keysharp.Tests
 		[Test, Category("External")]
 		public void COMEvents() => Assert.IsTrue(TestScript("external-com-events", false));
 
+		[Test, Category("External")]
+		public void COMInvoke() => Assert.IsTrue(TestScript("external-com-invoke", false));
+
+		// Native reference counts expose leaks when argument conversion fails before invoking the server.
+		[Test, Category("External"), Category("Internal")]
+		public void ComPackingFailure()
+		{
+			using var target = (Keysharp.Builtins.COM.ComObject)Keysharp.Builtins.COM.ComObject.staticCall(null, "Scripting.Dictionary");
+			using var invalid = new Keysharp.Builtins.COM.ComValue { vt = VarEnum.VT_CY, item = 1.0e30 };
+			var pointer = (nint)(long)target.Ptr;
+			_ = Marshal.AddRef(pointer);
+			var before = Marshal.Release(pointer);
+
+			// The interface is copied first because COM arguments are packed in reverse order.
+			Assert.Throws<OverflowException>(() => target.RawInvoke(1, ComTypes.INVOKEKIND.INVOKE_FUNC, [invalid, target], out _));
+			_ = Marshal.AddRef(pointer);
+			Assert.AreEqual(before, Marshal.Release(pointer));
+		}
+
 		// Scripting.Dictionary's own interface supplies its members, a nameless lookup finds its default member, and
 		// every object of the type shares one scope.
 		[Test, Category("External"), Category("Internal")]
