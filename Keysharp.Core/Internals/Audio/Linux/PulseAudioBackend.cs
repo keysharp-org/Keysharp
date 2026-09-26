@@ -11,8 +11,8 @@ namespace Keysharp.Internals.Audio
 	/// <c>DllImportResolver</c> is installed here: <c>Keysharp.Core</c> already owns the single one.
 	/// </para>
 	/// <para>
-	/// All work goes through one <c>pa_threaded_mainloop</c> and one <c>pa_context</c>. Management callers hold
-	/// the mainloop lock across every <c>pa_*</c> call and wait on <c>pa_threaded_mainloop_wait</c>; Pulse
+	/// All work goes through one <c>pa_mainloop</c> on a managed thread and one <c>pa_context</c>. Management callers hold
+	/// the mainloop lock across every <c>pa_*</c> call and wait on a condition variable; Pulse
 	/// callbacks already run on the mainloop thread with that lock held, so they only copy borrowed data and
 	/// signal. The render write callback additionally allocates nothing and touches no managed lock.
 	/// </para>
@@ -176,6 +176,9 @@ namespace Keysharp.Internals.Audio
 		// ---- instance state --------------------------------------------------------------------
 
 		private readonly object sync = new ();
+		private readonly object mainloopGate = new ();
+		private readonly PollCb onPoll;
+		private Thread mainloopThread;
 		private readonly List<PulseOutputStream> streams = [];
 		private readonly List<PulseInputStream> inputs = [];
 		private readonly List<PulseMeter> meters = [];
@@ -241,6 +244,7 @@ namespace Keysharp.Internals.Audio
 
 		internal PulseAudioBackend()
 		{
+			onPoll = OnPoll;
 			onContextState = OnContextState;
 			onSinkInfo = OnSinkInfo;
 			onSourceInfo = OnSourceInfo;
@@ -613,21 +617,15 @@ namespace Keysharp.Internals.Audio
 
 				if (mainloop != 0)
 				{
-					if (context != 0)
-					{
-						Pa.ThreadedMainloopLock(mainloop);
-						Pa.SetSubscribeCallback(context, null, 0);
-						Pa.SetContextStateCallback(context, null, 0);
-						Pa.ContextDisconnect(context);
-						Pa.ContextUnref(context);
-						context = 0;
-						Pa.ThreadedMainloopUnlock(mainloop);
-					}
+					TeardownContext();
 
 					// Stopping before freeing is what makes the callbacks quiescent, which is the only point at
 					// which the rooted delegates above stop being reachable from native code.
-					Pa.ThreadedMainloopStop(mainloop);
-					Pa.ThreadedMainloopFree(mainloop);
+					lock (mainloopGate)
+						Pa.MainloopQuit(mainloop, 0);
+
+					mainloopThread.Join();
+					Pa.MainloopFree(mainloop);
 					mainloop = 0;
 				}
 
@@ -707,7 +705,7 @@ namespace Keysharp.Internals.Audio
 
 			if (mainloop == 0)
 			{
-				mainloop = Pa.ThreadedMainloopNew();
+				mainloop = Pa.MainloopNew();
 
 				if (mainloop == 0)
 				{
@@ -715,21 +713,33 @@ namespace Keysharp.Internals.Audio
 					return false;
 				}
 
-				if (Pa.ThreadedMainloopStart(mainloop) < 0)
+				// PulseAudio's threaded loop masks signals before callbacks, including the debugger's SIGTRAP.
+				Pa.MainloopSetPollFunc(mainloop, onPoll, 0);
+				mainloopThread = new Thread(() =>
 				{
-					Pa.ThreadedMainloopFree(mainloop);
+					lock (mainloopGate)
+						_ = Pa.MainloopRun(mainloop, 0);
+				}) { IsBackground = true, Name = "Keysharp audio" };
+
+				try
+				{
+					mainloopThread.Start();
+				}
+				catch (Exception ex)
+				{
+					Pa.MainloopFree(mainloop);
 					mainloop = 0;
-					reason = "PulseAudio could not start its client mainloop thread.";
+					reason = $"PulseAudio could not start its client mainloop thread: {ex.Message}";
 					return false;
 				}
 			}
 
 			var name = Marshal.StringToCoTaskMemUTF8("Keysharp");
-			Pa.ThreadedMainloopLock(mainloop);
+			LockMainloop();
 
 			try
 			{
-				context = Pa.ContextNew(Pa.ThreadedMainloopGetApi(mainloop), name);
+				context = Pa.ContextNew(Pa.MainloopGetApi(mainloop), name);
 
 				if (context == 0)
 				{
@@ -750,7 +760,7 @@ namespace Keysharp.Internals.Audio
 
 				int state;
 
-				// Bounded by polling rather than by pa_threaded_mainloop_wait: a server that accepts the socket and
+				// Bounded by polling rather than a condition wait: a server that accepts the socket and
 				// then stalls in AUTHORIZING signals nothing, and an unbounded wait here parks the calling script
 				// thread for good. The lock is released around the sleep so the mainloop can make progress.
 				var deadline = Environment.TickCount64 + ConnectTimeoutMs;
@@ -760,9 +770,7 @@ namespace Keysharp.Internals.Audio
 					if (Environment.TickCount64 >= deadline)
 						break;
 
-					Pa.ThreadedMainloopUnlock(mainloop);
-					Thread.Sleep(ConnectPollMs);
-					Pa.ThreadedMainloopLock(mainloop);
+					PollWait(ConnectPollMs);
 				}
 
 				if (state != ContextReady)
@@ -794,7 +802,7 @@ namespace Keysharp.Internals.Audio
 			}
 			finally
 			{
-				Pa.ThreadedMainloopUnlock(mainloop);
+				UnlockMainloop();
 				Marshal.FreeCoTaskMem(name);
 			}
 		}
@@ -822,9 +830,9 @@ namespace Keysharp.Internals.Audio
 				return;
 			}
 
-			Pa.ThreadedMainloopLock(mainloop);
+			LockMainloop();
 			TeardownContextLocked();
-			Pa.ThreadedMainloopUnlock(mainloop);
+			UnlockMainloop();
 		}
 
 		private void TeardownContextLocked()
@@ -845,9 +853,9 @@ namespace Keysharp.Internals.Audio
 
 		internal nint Context => context;
 
-		internal void LockMainloop() => Pa.ThreadedMainloopLock(mainloop);
+		internal void LockMainloop() => System.Threading.Monitor.Enter(mainloopGate);
 
-		internal void UnlockMainloop() => Pa.ThreadedMainloopUnlock(mainloop);
+		internal void UnlockMainloop() => System.Threading.Monitor.Exit(mainloopGate);
 
 		/// <summary>
 		/// Releases the mainloop lock for a moment instead of waiting to be signalled. Used where the thing being
@@ -855,12 +863,27 @@ namespace Keysharp.Internals.Audio
 		/// </summary>
 		internal void PollWait(int milliseconds)
 		{
-			Pa.ThreadedMainloopUnlock(mainloop);
+			UnlockMainloop();
 			Thread.Sleep(milliseconds);
-			Pa.ThreadedMainloopLock(mainloop);
+			LockMainloop();
 		}
 
-		internal void Signal() => Pa.ThreadedMainloopSignal(mainloop, 0);
+		internal void Signal() => System.Threading.Monitor.PulseAll(mainloopGate);
+
+		private int OnPoll(nint descriptors, nuint count, int timeout, nint userData)
+		{
+			UnlockMainloop();
+
+			try
+			{
+				var result = Poll(descriptors, count, timeout);
+				return result < 0 && Marshal.GetLastPInvokeError() == 4 ? 0 : result; // EINTR
+			}
+			finally
+			{
+				LockMainloop();
+			}
+		}
 
 		internal void Forget(PulseOutputStream stream)
 		{
@@ -871,7 +894,7 @@ namespace Keysharp.Internals.Audio
 		/// <summary>Runs one management body with the mainloop locked; the body performs its own operation waits.</summary>
 		private bool RunLocked(Func<bool> body)
 		{
-			Pa.ThreadedMainloopLock(mainloop);
+			LockMainloop();
 
 			try
 			{
@@ -883,7 +906,7 @@ namespace Keysharp.Internals.Audio
 			}
 			finally
 			{
-				Pa.ThreadedMainloopUnlock(mainloop);
+				UnlockMainloop();
 			}
 		}
 
@@ -912,7 +935,7 @@ namespace Keysharp.Internals.Audio
 				if (Pa.ContextGetState(context) != ContextReady)
 					break;
 
-				Pa.ThreadedMainloopWait(mainloop);
+				_ = System.Threading.Monitor.Wait(mainloopGate);
 			}
 
 			var done = Pa.OperationGetState(operation) == OperationDone;
@@ -1119,7 +1142,7 @@ namespace Keysharp.Internals.Audio
 		{
 			try
 			{
-				Pa.ThreadedMainloopSignal(mainloop, 0);
+				Signal();
 			}
 			catch (Exception)
 			{
@@ -1137,7 +1160,7 @@ namespace Keysharp.Internals.Audio
 				if (eol != 0)
 				{
 					scratchOutcome = eol > 0 ? 1 : -1;
-					Pa.ThreadedMainloopSignal(mainloop, 0);
+					Signal();
 					return;
 				}
 
@@ -1155,7 +1178,7 @@ namespace Keysharp.Internals.Audio
 			catch (Exception)
 			{
 				scratchOutcome = -1;
-				Pa.ThreadedMainloopSignal(mainloop, 0);
+				Signal();
 			}
 		}
 
@@ -1173,13 +1196,13 @@ namespace Keysharp.Internals.Audio
 			{
 			}
 
-			Pa.ThreadedMainloopSignal(mainloop, 0);
+			Signal();
 		}
 
 		private void OnSuccess(nint c, int success, nint userData)
 		{
 			scratchSuccess = success;
-			Pa.ThreadedMainloopSignal(mainloop, 0);
+			Signal();
 		}
 
 		private void OnSubscribe(nint c, uint eventType, uint index, nint userData)
@@ -2089,7 +2112,7 @@ namespace Keysharp.Internals.Audio
 				if (eol != 0)
 				{
 					scratchOutcome = eol > 0 ? 1 : -1;
-					Pa.ThreadedMainloopSignal(mainloop, 0);
+					Signal();
 					return;
 				}
 
@@ -2107,7 +2130,7 @@ namespace Keysharp.Internals.Audio
 			catch (Exception)
 			{
 				scratchOutcome = -1;
-				Pa.ThreadedMainloopSignal(mainloop, 0);
+				Signal();
 			}
 		}
 
@@ -3688,6 +3711,12 @@ namespace Keysharp.Internals.Audio
 
 		// ---- native declarations ---------------------------------------------------------------
 
+		[DllImport("libc", EntryPoint = "poll", SetLastError = true)]
+		private static extern int Poll(nint descriptors, nuint count, int timeout);
+
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+		private delegate int PollCb(nint descriptors, nuint count, int timeout, nint userData);
+
 		[StructLayout(LayoutKind.Sequential)]
 		private struct PaSampleSpec
 		{
@@ -3762,6 +3791,8 @@ namespace Keysharp.Internals.Audio
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate nint FnNew();
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void FnVoidP(nint p);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int FnIntP(nint p);
+			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int FnIntPP(nint p, nint result);
+			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void FnSetPollFunc(nint p, PollCb poll, nint userData);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate nint FnPtrP(nint p);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void FnVoidPI(nint p, int i);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate nint FnStrError(int error);
@@ -3799,15 +3830,12 @@ namespace Keysharp.Internals.Audio
 
 			internal static FnNew GetLibraryVersionRaw;
 			internal static FnStrError StrError;
-			internal static FnNew ThreadedMainloopNew;
-			internal static FnVoidP ThreadedMainloopFree;
-			internal static FnIntP ThreadedMainloopStart;
-			internal static FnVoidP ThreadedMainloopStop;
-			internal static FnVoidP ThreadedMainloopLock;
-			internal static FnVoidP ThreadedMainloopUnlock;
-			internal static FnVoidP ThreadedMainloopWait;
-			internal static FnVoidPI ThreadedMainloopSignal;
-			internal static FnPtrP ThreadedMainloopGetApi;
+			internal static FnNew MainloopNew;
+			internal static FnVoidP MainloopFree;
+			internal static FnIntPP MainloopRun;
+			internal static FnVoidPI MainloopQuit;
+			internal static FnPtrP MainloopGetApi;
+			internal static FnSetPollFunc MainloopSetPollFunc;
 			internal static FnContextNew ContextNew;
 			internal static FnVoidP ContextUnref;
 			internal static FnContextConnect ContextConnect;
@@ -3897,15 +3925,12 @@ namespace Keysharp.Internals.Audio
 					string missing = null;
 					GetLibraryVersionRaw = Bind<FnNew>("pa_get_library_version", ref missing);
 					StrError = Bind<FnStrError>("pa_strerror", ref missing);
-					ThreadedMainloopNew = Bind<FnNew>("pa_threaded_mainloop_new", ref missing);
-					ThreadedMainloopFree = Bind<FnVoidP>("pa_threaded_mainloop_free", ref missing);
-					ThreadedMainloopStart = Bind<FnIntP>("pa_threaded_mainloop_start", ref missing);
-					ThreadedMainloopStop = Bind<FnVoidP>("pa_threaded_mainloop_stop", ref missing);
-					ThreadedMainloopLock = Bind<FnVoidP>("pa_threaded_mainloop_lock", ref missing);
-					ThreadedMainloopUnlock = Bind<FnVoidP>("pa_threaded_mainloop_unlock", ref missing);
-					ThreadedMainloopWait = Bind<FnVoidP>("pa_threaded_mainloop_wait", ref missing);
-					ThreadedMainloopSignal = Bind<FnVoidPI>("pa_threaded_mainloop_signal", ref missing);
-					ThreadedMainloopGetApi = Bind<FnPtrP>("pa_threaded_mainloop_get_api", ref missing);
+					MainloopNew = Bind<FnNew>("pa_mainloop_new", ref missing);
+					MainloopFree = Bind<FnVoidP>("pa_mainloop_free", ref missing);
+					MainloopRun = Bind<FnIntPP>("pa_mainloop_run", ref missing);
+					MainloopQuit = Bind<FnVoidPI>("pa_mainloop_quit", ref missing);
+					MainloopGetApi = Bind<FnPtrP>("pa_mainloop_get_api", ref missing);
+					MainloopSetPollFunc = Bind<FnSetPollFunc>("pa_mainloop_set_poll_func", ref missing);
 					ContextNew = Bind<FnContextNew>("pa_context_new", ref missing);
 					ContextUnref = Bind<FnVoidP>("pa_context_unref", ref missing);
 					ContextConnect = Bind<FnContextConnect>("pa_context_connect", ref missing);

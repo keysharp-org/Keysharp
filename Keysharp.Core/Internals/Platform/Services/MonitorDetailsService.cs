@@ -483,11 +483,9 @@ namespace Keysharp.Internals
 
 			try
 			{
-				// /sys/class/drm/card0-DP-1/device is the PCI device; its driver entry is a symlink whose TARGET
-				// directory is named after the module. Only the resolved link says anything: the literal path ends
-				// in "driver", so falling back to it would report the adapter as "driver".
-				var driver = Path.Combine(DrmRoot, connector, "device", "driver");
-				var target = Directory.ResolveLinkTarget(driver, true);
+				// The connector belongs to a DRM card; the card's device link leads to the GPU.
+				var driver = Path.Combine(DrmRoot, connector[..connector.IndexOf('-')], "device", "driver");
+				var target = Directory.Exists(driver) ? Directory.ResolveLinkTarget(driver, true) : null;
 				return target != null ? Path.GetFileName(target.FullName.TrimEnd(Path.DirectorySeparatorChar)) : "";
 			}
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
