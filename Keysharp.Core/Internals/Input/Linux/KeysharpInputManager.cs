@@ -9,17 +9,16 @@ namespace Keysharp.Internals.Input.Linux
 	{
 		private static readonly Lock gate = new();
 		private static readonly Lock authorizationGate = new();
-		private static readonly Lock queryGate = new();
 		private static readonly HashSet<Script> owners = new();
 		private static readonly RetryGate connectionRetries = new(maximumAttempts: 3,
 			initialRetryDelay: TimeSpan.FromMilliseconds(250), maximumRetryDelay: TimeSpan.FromSeconds(2));
-		private static readonly RetryGate queryRetries = new(maximumAttempts: 3,
-			initialRetryDelay: TimeSpan.FromMilliseconds(100), maximumRetryDelay: TimeSpan.FromSeconds(1));
 
-		// Hook callbacks use their callback connection; other calls share queryClient.
+		// Hook callbacks use their callback connection; other calls share these. A Send waits for every hook,
+		// so it has its own, leaving queries free for the #HotIf criteria a hook may wait on meanwhile.
+		private static readonly SharedConnection queries = new("query"), sends = new("synthesis");
+		private static readonly Lazy<BlockingCollection<Action>> mainThreadSends = new(StartSendThread);
 		// Volatile lets reachability checks avoid blocking behind a prompt.
 		private static volatile KeysharpInputClient client;
-		private static KeysharpInputClient queryClient;
 		private static KeysharpInputClient blockClient;
 		private static Timer blockHeartbeat;
 		private static Script blockOwner;
@@ -31,6 +30,29 @@ namespace Keysharp.Internals.Input.Linux
 			IReadOnlyList<KeysharpInputClient.Input> inputs,
 			KeysharpInputClient.SynthFlags flags = KeysharpInputClient.SynthFlags.None)
 		{
+			try
+			{
+				SendInputOnce(inputs, flags);
+			}
+			// The cached grant was revoked: ask for it again, as a check before each Send would,
+			// and send once more if it is back. A hook callback cannot wait on a prompt.
+			catch (NativeClientException ex)
+				when (ex.Status is NativeClientStatus.Denied or NativeClientStatus.Revoked
+					&& !Keysharp.Internals.Input.Hooks.Linux.LinuxHookThread.IsInHookCallback)
+			{
+				InvalidateScopesAfterQueryDenial(KeysharpInputClient.RequiredSynthesisOperations(inputs));
+
+				if (!Script.TheScript.Permissions.EnsureInputControl(operation: "input synthesis").IsGranted)
+					throw;
+
+				SendInputOnce(inputs, flags);
+			}
+		}
+
+		private static void SendInputOnce(
+			IReadOnlyList<KeysharpInputClient.Input> inputs,
+			KeysharpInputClient.SynthFlags flags)
+		{
 			var hookClient = Keysharp.Internals.Input.Hooks.Linux.LinuxHookThread.CurrentHookClient;
 
 			if (hookClient != null)
@@ -41,13 +63,69 @@ namespace Keysharp.Internals.Input.Linux
 				return;
 			}
 
-			if (!TryUseQueryClient(qc =>
+			void Send()
 			{
-				EnsureSynthesisCapabilityNoPrompt(qc, inputs, "query");
-				qc.SendInput(inputs, flags);
-				return true;
-			}))
-				throw new InvalidOperationException("keysharp-input query channel is unavailable for synthesis.");
+				if (!sends.TryUse(sc =>
+				{
+					EnsureSynthesisCapabilityNoPrompt(sc, inputs, "synthesis");
+					sc.SendInput(inputs, flags);
+					return true;
+				}))
+					throw new InvalidOperationException("keysharp-input synthesis channel is unavailable.");
+			}
+
+			// This process's own hook sees the input before the Send returns, and may need the main thread
+			// meanwhile, as a #HotIf criterion reading a control does. The hook thread sends only inside its
+			// callbacks, above, since a Send from it would wait on its own hook.
+			var script = Script.TheScript;
+
+			if ((flags & KeysharpInputClient.SynthFlags.BypassHook) == 0
+				&& script is { IsOnMainThread: true } && script.HookThread?.HasEitherHook() == true)
+				SendServicingMainThread(Send);
+			else
+				Send();
+		}
+
+		/// <summary>
+		/// Makes a Send on the Send thread, started by the first such Send, while the main thread waits the way
+		/// Windows' keybd_event does, serving what a hook may wait on without starting new threads.
+		/// </summary>
+		private static void SendServicingMainThread(Action send)
+		{
+			var done = new ManualResetEventSlim();
+			Exception error = null;
+			mainThreadSends.Value.Add(() =>
+			{
+				try
+				{
+					send();
+				}
+				catch (Exception ex)
+				{
+					error = ex;
+				}
+
+				done.Set();
+			});
+
+			while (!done.Wait(1))
+				Keysharp.Internals.Flow.SleepWithoutInterruption(-1);
+
+			if (error != null)
+				System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(error);
+		}
+
+		// A dedicated thread, because a busy thread pool can be slow to add one.
+		private static BlockingCollection<Action> StartSendThread()
+		{
+			var queue = new BlockingCollection<Action>();
+			new Thread(() =>
+			{
+				foreach (var send in queue.GetConsumingEnumerable())
+					send();
+			})
+			{ IsBackground = true, Name = "keysharp-input Send" }.Start();
+			return queue;
 		}
 
 		private static void EnsureSynthesisCapabilityNoPrompt(KeysharpInputClient connectedClient,
@@ -319,82 +397,21 @@ namespace Keysharp.Internals.Input.Linux
 				client?.InvalidateScopes(KeysharpInputClient.RequiredScopes(required));
 		}
 
-		private static KeysharpInputClient GetOrCreateQueryClient()
+		private static bool TryUseQueryClient(Func<KeysharpInputClient, bool> action)
 		{
 			var hookClient = Keysharp.Internals.Input.Hooks.Linux.LinuxHookThread.CurrentHookClient;
 
-			if (hookClient != null)
-				return hookClient;
+			if (hookClient == null)
+				return queries.TryUse(action);
 
-			lock (queryGate)
+			try
 			{
-				if (queryClient != null && queryClient.IsConnected)
-					return queryClient;
-
-				if (queryClient != null)
-				{
-					try { queryClient.Dispose(); } catch { }
-					queryClient = null;
-					queryRetries.Rearm();
-				}
-
-				using var attempt = queryRetries.TryBegin();
-
-				if (attempt == null)
-					return null;
-
-				try
-				{
-					queryClient = KeysharpInputClient.Connect();
-					attempt.Succeed();
-				}
-				catch (Exception ex) when (IsConnectException(ex))
-				{
-					attempt.Fail(ex);
-				}
-
-				return queryClient;
+				return action(hookClient);
 			}
-		}
-
-		private static bool TryUseQueryClient(Func<KeysharpInputClient, bool> action)
-		{
-			var qc = GetOrCreateQueryClient();
-
-			if (qc == null)
+			catch (Exception ex) when (IsTransportException(ex))
+			{
+				Diagnostics.Debug.WriteLine($"keysharp-input hook channel lost: {ex.Message}");
 				return false;
-
-			if (ReferenceEquals(qc,
-				Keysharp.Internals.Input.Hooks.Linux.LinuxHookThread.CurrentHookClient))
-			{
-				try
-				{
-					return action(qc);
-				}
-				catch (Exception ex) when (IsTransportException(ex))
-				{
-					Diagnostics.Debug.WriteLine($"keysharp-input hook channel lost: {ex.Message}");
-					return false;
-				}
-			}
-
-			lock (queryGate)
-			{
-				if (!ReferenceEquals(qc, queryClient))
-					return false;
-
-				try
-				{
-					return action(qc);
-				}
-				catch (Exception ex) when (IsTransportException(ex))
-				{
-					Diagnostics.Debug.WriteLine($"keysharp-input query channel lost: {ex.Message}");
-					try { queryClient?.Dispose(); } catch { }
-					queryClient = null;
-					queryRetries.Rearm();
-					return false;
-				}
 			}
 		}
 
@@ -569,6 +586,14 @@ namespace Keysharp.Internals.Input.Linux
 		private static PermissionResult EnsureAuthorization(LinuxPermissionScope required,
 			KeysharpInputClient.Operations operations, string operation, bool forcePrompt, bool checkOnly)
 		{
+			// keysharp-input enforces every grant, so one already held stands until it refuses something,
+			// which drops it (see SendInputViaSynthesisChannel and TryQuery) and brings the next call here.
+			if (!forcePrompt && client is { IsConnected: true } held
+				&& (operations != KeysharpInputClient.Operations.None
+					? held.HasOperations(operations)
+					: required != LinuxPermissionScope.None && (held.GrantedScopes & required) == required))
+				return new PermissionResult(PermissionStatus.Granted);
+
 			checkOnly |= Script.IsHeadless;
 			lock (authorizationGate)
 			{
@@ -657,7 +682,8 @@ namespace Keysharp.Internals.Input.Linux
 				client = KeysharpInputClient.Connect(
 					requestTimeoutMs: KeysharpInputClient.AuthorizationTimeoutMs);
 				attempt.Succeed();
-				queryRetries.Rearm();
+				queries.Rearm();
+				sends.Rearm();
 				status = PermissionStatus.Granted;
 				message = string.Empty;
 
@@ -698,14 +724,14 @@ namespace Keysharp.Internals.Input.Linux
 		{
 			try { client?.Dispose(); } catch { }
 			client = null;
-			DisposeQueryClient();
+			queries.Dispose();
+			sends.Dispose();
 		}
 
 		private static void HandleConnectionLost()
 		{
 			DisposeClient();
 			connectionRetries.Rearm();
-			queryRetries.Rearm();
 		}
 
 		internal static void RegisterOwner(Script owner)
@@ -747,17 +773,69 @@ namespace Keysharp.Internals.Input.Linux
 				DisposeClient();
 				declinedScopes = LinuxPermissionScope.None;
 				connectionRetries.Rearm();
-				queryRetries.Rearm();
 			}
 		}
 
-		private static void DisposeQueryClient()
+		/// <summary>A connection threads share one request at a time, reconnecting in bursts after a loss.</summary>
+		private sealed class SharedConnection(string channel)
 		{
-			lock (queryGate)
+			private readonly Lock gate = new();
+			private readonly RetryGate retries = new(maximumAttempts: 3,
+				initialRetryDelay: TimeSpan.FromMilliseconds(100), maximumRetryDelay: TimeSpan.FromSeconds(1));
+			private KeysharpInputClient current;
+
+			internal bool TryUse(Func<KeysharpInputClient, bool> action)
 			{
-				try { queryClient?.Dispose(); } catch { }
-				queryClient = null;
-				queryRetries.Rearm();
+				lock (gate)
+				{
+					if (current is not { IsConnected: true })
+					{
+						if (current != null)
+							DisposeLocked();
+
+						using var attempt = retries.TryBegin();
+
+						if (attempt == null)
+							return false;
+
+						try
+						{
+							current = KeysharpInputClient.Connect();
+							attempt.Succeed();
+						}
+						catch (Exception ex) when (IsConnectException(ex))
+						{
+							attempt.Fail(ex);
+							return false;
+						}
+					}
+
+					try
+					{
+						return action(current);
+					}
+					catch (Exception ex) when (IsTransportException(ex))
+					{
+						Diagnostics.Debug.WriteLine($"keysharp-input {channel} channel lost: {ex.Message}");
+						DisposeLocked();
+						return false;
+					}
+				}
+			}
+
+			internal void Rearm() => retries.Rearm();
+
+			internal void Dispose()
+			{
+				lock (gate)
+					DisposeLocked();
+			}
+
+			private void DisposeLocked()
+			{
+				try { current?.Dispose(); } catch { }
+				current = null;
+				retries.Rearm();
 			}
 		}
 

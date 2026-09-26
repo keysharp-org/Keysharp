@@ -202,7 +202,106 @@ namespace Keysharp.Internals.Input.Hooks
 		protected internal virtual nint CallNextHook(HookEventArgs e) => nint.Zero;
 		internal HotCriterionExecutor HotCriterionExecutor => hotCriterionExecutor;
 		protected internal virtual bool IsMouseMenuVisible() => false;
-		protected internal virtual void UpdateForegroundWindowData(KeyHistoryItem item, KeyHistory history) { }
+#if !WINDOWS
+		private static int windowLookupRunning;
+
+#endif
+		/// <summary>
+		/// Records the window a key went to on its history item, with the title only where the window changes, as
+		/// AutoHotkey's key history shows it. Static, so a Send records its keys the same way while no hook sees them.
+		/// </summary>
+		internal static void UpdateForegroundWindowData(Script script, KeyHistoryItem item, KeyHistory history)
+		{
+#if WINDOWS
+			var hwnd = WindowQuery.GetForegroundWindowHandle();
+
+			if (hwnd != 0)
+			{
+				if (hwnd != history.HistoryHwndPrev)
+				{
+					script.mainWindow.CheckedBeginInvoke(() => item.targetWindow = Keysharp.Internals.Os.Windows.WindowsAPI.GetWindowText(hwnd), false, false);
+
+					// v1.0.44.12: The reason for the above is that clicking a window's close or minimize button
+					// (and possibly other types of title bar clicks) causes a delay for the following window, at least
+					// when XP Theme (but not classic theme) is in effect:
+					//#InstallMouseHook
+					//Gui, +AlwaysOnTop
+					//Gui, Show, w200 h100
+					//return
+					// The problem came about from the following sequence of events:
+					// 1) User clicks the one of the script's window's title bar's close, minimize, or maximize button.
+					// 2) WM_NCLBUTTONDOWN is sent to the window's window proc, which then passes it on to
+					//    DefWindowProc or DefDlgProc, which then apparently enters a loop in which no messages
+					//    (or a very limited subset) are pumped.
+					// 3) If anyone sends a message to that window (such as GetWindowText(), which sends a message
+					//    in cases where it doesn't have the title pre-cached), the message will not receive a reply
+					//    until after the mouse button is released.
+					// 4) But the hook is the very thing that's supposed to release the mouse button, and it can't
+					//    until a reply is received.
+					// 5) Thus, a deadlock occurs.  So after a short but noticeable delay, the OS sees the hook as
+					//    unresponsive and bypasses it, sending the click through normally, which breaks the deadlock.
+					// 6) A similar situation might arise when a right-click-down is sent to the title bar or
+					//    sys-menu-icon.
+					//
+					// SOLUTION:
+					// Post the message to our main thread to have it do the GetWindowText call.  That way, if
+					// the target window is one of the main thread's own window's, there's no chance it can be
+					// in an unresponsive state like the deadlock described above.  In addition, do this for ALL
+					// windows because its simpler, more maintainable, and especially might solve other hook
+					// performance problems if GetWindowText() has other situations where it is slow to return
+					// (which seems likely).
+					// Although the above solution could create rare situations where there's a lag before window text
+					// is updated, that seems unlikely to be common or have significant consequences.  Furthermore,
+					// it has the advantage of improving hook performance by avoiding the call to GetWindowText (which
+					// incidentally might solve hotkey lag problems that have been observed while the active window
+					// is momentarily busy/unresponsive -- but maybe not because the main thread would then be lagged
+					// instead of the hook thread, which is effectively the same result from user's POV).
+					// Note: It seems best not to post the message to the hook thread because if LButton is down,
+					// the hook's main event loop would be sending a message to an unresponsive thread (our main thread),
+					// which would create the same deadlock.
+					// ALTERNATE SOLUTIONS:
+					// - #1: Avoid calling GetWindowText at all when LButton or RButton is in a logically-down state.
+					// - Same as #1, but do so only if one of the main thread's target windows is known to be in a tight loop (might be too unreliable to detect all such cases).
+					// - Same as #1 but less rigorous and more catch-all, such as by checking if the active window belongs to our thread.
+					// - Avoid calling GetWindowText at all upon release of LButton.
+					// - Same, but only if the window to have text retrieved belongs to our process.
+					// - Same, but only if the mouse is inside the close/minimize/etc. buttons of the active window.
+				}
+				else // i.e. where possible, avoid the overhead of the call to GetWindowText().
+					item.targetWindow = "";
+			}
+			else
+				item.targetWindow = "N/A";// Due to AHK_GETWINDOWTEXT, this could collide with main thread's writing to same string; but in addition to being extremely rare, it would likely be inconsequential.
+
+			history.HistoryHwndPrev = hwnd;  // Updated unconditionally in case hwnd is NULL.
+#else
+			// Recording a key must not wait on the compositor, so its window is looked up afterwards, one lookup at
+			// a time, and keys recorded meanwhile show none. The title is fetched only when the window changes, as
+			// Windows does.
+			item.targetWindow = "";
+
+			if (Interlocked.Exchange(ref windowLookupRunning, 1) != 0)
+				return;
+
+			_ = Task.Run(() =>
+			{
+				try
+				{
+					var hwnd = script.WinEventManager.ForegroundWindowHandle;
+
+					if (hwnd != history.HistoryHwndPrev)
+						item.targetWindow = hwnd != 0 ? Keysharp.Internals.Platform.Window.GetTitle(hwnd) : "N/A";
+
+					history.HistoryHwndPrev = hwnd;
+				}
+				catch { }
+				finally
+				{
+					Volatile.Write(ref windowLookupRunning, 0);
+				}
+			});
+#endif
+		}
 
 		/// <summary>
 		/// Gives all #HotIf evaluations performed by one native hook callback a single monotonic deadline.
@@ -1811,6 +1910,35 @@ namespace Keysharp.Internals.Input.Hooks
 
 		internal virtual bool IsKeyDownLogical(uint vk) => QueryKeyDownLogical(vk);
 
+		/// <summary>The modifiers <see cref="IsKeyDownLogical"/> reports down.</summary>
+		internal virtual uint GetModifierLRStateLogical()
+		{
+			// Very old comment:
+			// Use GetKeyState() rather than GetKeyboardState() because it's the only way to get
+			// accurate key state when a console window is active, it seems.  I've also seen other
+			// cases where GetKeyboardState() is incorrect (at least under WinXP) when GetKeyState(),
+			// in its place, yields the correct info.  Very strange.
+			var modifiersLR = 0u;
+
+			if (IsKeyDownLogical(VK_LSHIFT)) modifiersLR |= MOD_LSHIFT;
+
+			if (IsKeyDownLogical(VK_RSHIFT)) modifiersLR |= MOD_RSHIFT;
+
+			if (IsKeyDownLogical(VK_LCONTROL)) modifiersLR |= MOD_LCONTROL;
+
+			if (IsKeyDownLogical(VK_RCONTROL)) modifiersLR |= MOD_RCONTROL;
+
+			if (IsKeyDownLogical(VK_LMENU)) modifiersLR |= MOD_LALT;
+
+			if (IsKeyDownLogical(VK_RMENU)) modifiersLR |= MOD_RALT;
+
+			if (IsKeyDownLogical(VK_LWIN)) modifiersLR |= MOD_LWIN;
+
+			if (IsKeyDownLogical(VK_RWIN)) modifiersLR |= MOD_RWIN;
+
+			return modifiersLR;
+		}
+
 		internal abstract bool IsKeyToggledOn(uint vk);
 
 		internal virtual bool IsHookThreadRunning() => false;
@@ -2111,7 +2239,7 @@ namespace Keysharp.Internals.Input.Hooks
 				keyHistoryCurr.vk = vk; // aSC is done later below.
 				keyHistoryCurr.keyUp = keyUp;
 
-				UpdateForegroundWindowData(keyHistoryCurr, kh);
+				UpdateForegroundWindowData(script, keyHistoryCurr, kh);
 			}
 
 			// Keep the following flush with the above to indicate that they're related.

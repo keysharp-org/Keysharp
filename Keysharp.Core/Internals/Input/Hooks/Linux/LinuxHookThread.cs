@@ -58,10 +58,12 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 		protected override KeyboardMouseSender CreateKbdMsSender()
 			=> new LinuxKeyboardMouseSender(script);
 
-		// Hook events keep modifier state current locally, avoiding IPC on the hotkey path.
+		// Keyboard hook events keep modifier state current locally, avoiding IPC on the hotkey path.
+		private bool TracksModifiers => usingInputServiceHooks && HasKbdHook();
+
 		internal override bool IsKeyDownLogical(uint vk)
 		{
-			if (usingInputServiceHooks)
+			if (TracksModifiers)
 			{
 				var modMask = ModifierLRMaskFromVK(vk);
 
@@ -71,6 +73,12 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 			return base.IsKeyDownLogical(vk);
 		}
+
+		// One keysharp-input query answers all modifiers, where IsKeyDownLogical would make one per key.
+		internal override uint GetModifierLRStateLogical()
+			=> TracksModifiers
+				? kbdMsSender.modifiersLRLogical
+				: Keysharp.Internals.Platform.Keyboard.TryGetModifierLRStateLogical(out var mods) ? mods : 0u;
 
 		protected override void StopPlatformHookCore(bool dispose)
 		{

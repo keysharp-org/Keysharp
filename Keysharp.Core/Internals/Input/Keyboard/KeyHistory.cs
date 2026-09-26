@@ -85,6 +85,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			return "";
 		}
 
+		/// <summary>Records a key a Send made while no hook sees it, against the window the hook would record.</summary>
 		internal void UpdateKeyEventHistory(bool keyUp, uint vk, uint sc)
 		{
 			if (keyHistory.Count == 0)//Don't update if the count is 0, meaning key history is disabled.
@@ -95,15 +96,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			item.vk = vk;
 			item.sc = sc;
 			item.eventType = 'i'; // Callers all want this.
-			var win = WindowQuery.ActiveWindow;
-			var forewin = win.Handle;
-
-			if (forewin != 0)
-				item.targetWindow = forewin != HistoryHwndPrev ? win.Title : "";
-			else
-				item.targetWindow = "N/A";
-
-			HistoryHwndPrev = forewin; // Update unconditionally in case it's NULL.
+			HookThread.UpdateForegroundWindowData(Script.TheScript, item, this);
 		}
 
 		private void UpdateTimestamp(KeyHistoryItem item)

@@ -118,12 +118,12 @@ namespace Keysharp.Internals.Window
 
 		// ---- foreground tracking -----------------------------------------------------------
 
-		/// <summary>The last foreground handle observed while the input hook requests tracking.</summary>
+		/// <summary>The foreground handle, as events keep it while they track it and otherwise queried.</summary>
 		internal nint ForegroundWindowHandle
 		{
 			get
 			{
-				if (foregroundTracking && !foregroundEvents)
+				if (!foregroundEvents)
 					try { return WindowQuery.GetForegroundWindowHandle(); }
 					catch { }
 
@@ -354,7 +354,7 @@ namespace Keysharp.Internals.Window
 							foregroundGeneration++;
 							Volatile.Write(ref foregroundWindowHandle, raw.Hwnd);
 						}
-						else if (ForegroundWindowHandle == raw.Hwnd)
+						else if (foregroundWindowHandle == raw.Hwnd)
 						{
 							foregroundGeneration++;
 							Volatile.Write(ref foregroundWindowHandle, 0);

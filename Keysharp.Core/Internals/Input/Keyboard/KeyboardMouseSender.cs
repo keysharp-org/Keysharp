@@ -450,28 +450,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (ht.HasKbdHook() && !explicitlyGet)
 				return modifiersLRLogical;
 
-			// Very old comment:
-			// Use GetKeyState() rather than GetKeyboardState() because it's the only way to get
-			// accurate key state when a console window is active, it seems.  I've also seen other
-			// cases where GetKeyboardState() is incorrect (at least under WinXP) when GetKeyState(),
-			// in its place, yields the correct info.  Very strange.
-			var modifiersLR = 0u;  // Allows all to default to up/off to simplify the below.
-
-			if (ht.IsKeyDownLogical(VK_LSHIFT)) modifiersLR |= MOD_LSHIFT;
-
-			if (ht.IsKeyDownLogical(VK_RSHIFT)) modifiersLR |= MOD_RSHIFT;
-
-			if (ht.IsKeyDownLogical(VK_LCONTROL)) modifiersLR |= MOD_LCONTROL;
-
-			if (ht.IsKeyDownLogical(VK_RCONTROL)) modifiersLR |= MOD_RCONTROL;
-
-			if (ht.IsKeyDownLogical(VK_LMENU)) modifiersLR |= MOD_LALT;
-
-			if (ht.IsKeyDownLogical(VK_RMENU)) modifiersLR |= MOD_RALT;
-
-			if (ht.IsKeyDownLogical(VK_LWIN)) modifiersLR |= MOD_LWIN;
-
-			if (ht.IsKeyDownLogical(VK_RWIN)) modifiersLR |= MOD_RWIN;
+			var modifiersLR = ht.GetModifierLRStateLogical();
 
 			// Thread-safe: The following section isn't thread-safe because either the hook thread
 			// or the main thread can be calling it.  However, given that anything dealing with
