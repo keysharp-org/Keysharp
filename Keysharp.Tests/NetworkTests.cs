@@ -25,7 +25,7 @@ namespace Keysharp.Tests
 		public void NetDownload()
 		{
 			var filename = @"./download-target.txt";
-			_ = Files.FileDelete(filename);
+			File.Delete(filename);
 			Assert.IsInstanceOf<ValueError>(ScriptError(() => Download("not-a-url", filename)));
 			Assert.IsInstanceOf<ValueError>(ScriptError(() => Download("gopher://example.com/x", filename)));
 			Assert.IsInstanceOf<ValueError>(ScriptError(() => Download("*1 http://127.0.0.1/x", filename)));

@@ -5163,7 +5163,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Deletes one or more files.",
-                     "tested-by":  "assign-multiline.ahk"
+                     "tested-by":  "file-filedelete.ahk"
                  },
                  {
                      "category":  "FileSystem",

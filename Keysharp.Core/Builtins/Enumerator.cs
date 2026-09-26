@@ -145,7 +145,7 @@ namespace Keysharp.Builtins
 				// the loop.
 				throw;
 			}
-			catch (Exception e)
+			catch (Exception e) when (!Keysharp.Internals.Flow.TryGetException<Flow.UserRequestedExitException>(e, out _))
 			{
 				return Errors.ErrorOccurred(e.Message);
 			}

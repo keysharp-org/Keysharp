@@ -147,4 +147,12 @@ RegDelete("HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub2", "bin1")
 RegDeleteKey("HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub2")
 RegDeleteKey("HKEY_CURRENT_USER\SOFTWARE\KeysharpTest")
 
+; As in AutoHotkey, a missing subkey runs no iterations.
+i := 0
+
+Loop Reg "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest"
+	i++
+
+AssertEq(i, 0, A_LineNumber)
+
 FileAppend "pass", "*"

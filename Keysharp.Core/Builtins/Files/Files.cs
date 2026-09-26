@@ -13,6 +13,8 @@ namespace Keysharp.Builtins
 	public static class Files
 	{
 		private static readonly SearchValues<char> wildcardsSv = SearchValues.Create("*?");
+		// The default overload's matching, which includes hidden files, but skipping a folder that cannot be read.
+		private static readonly System.IO.EnumerationOptions deleteEnumeration = new() { AttributesToSkip = 0, IgnoreInaccessible = true, MatchType = MatchType.Win32 };
 #if OSX
 		private static readonly char[] dirSeparators = [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar];
 #endif
@@ -408,26 +410,49 @@ namespace Keysharp.Builtins
 		public static object FileDelete(object filePattern)
 		{
 			var s = filePattern.As();
-			EnsureFilePermission(s, FilePermissionAccess.Write, "FileDelete");
-			var path = Path.GetDirectoryName(s);
-			var dir = new DirectoryInfo(path?.Length == 0 ? "./" : path);
-			var filename = Path.GetFileName(s);
-			var failures = 0;
 
-			foreach (var file in dir.EnumerateFiles(filename))
+			if (s.Length == 0)
+				return Errors.InvalidParameterErrorOccurred(1, "FileDelete", s);
+
+			EnsureFilePermission(s, FilePermissionAccess.Write, "FileDelete");
+
+			if (s.AsSpan().IndexOfAny(wildcardsSv) == -1)
 			{
 				try
 				{
-					file.Delete();
+					// File.Delete ignores a missing file, which AutoHotkey reports.
+					_ = File.GetAttributes(s);
+					File.Delete(s);
+					return DefaultObject;
 				}
-				catch
+				catch (Exception ex)
 				{
-					failures++;
+					return Errors.OSErrorOccurred(ex, $"Error deleting file {s}");
+				}
+			}
+
+			var path = Path.GetDirectoryName(s);
+			var dir = new DirectoryInfo(string.IsNullOrEmpty(path) ? "./" : path);
+			var failures = 0;
+
+			// As in AutoHotkey, a folder which is missing or cannot be read has no matches.
+			if (dir.Exists)
+			{
+				foreach (var file in dir.EnumerateFiles(Path.GetFileName(s), deleteEnumeration))
+				{
+					try
+					{
+						file.Delete();
+					}
+					catch
+					{
+						failures++;
+					}
 				}
 			}
 
 			if (failures > 0)
-				return Errors.ErrorOccurred($"Failed {failures} times moving or copying files.", null, failures);
+				return Errors.ErrorOccurred($"Failed {failures} times deleting files.", null, failures);
 
 			return DefaultObject;
 		}

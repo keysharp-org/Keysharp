@@ -283,4 +283,12 @@ Loop 1 * 2 * 3
 
 AssertEq(x, 6, A_LineNumber)
 
+; As in AutoHotkey, an empty pattern matches nothing.
+x := 0
+
+Loop Files ""
+	x++
+
+AssertEq(x, 0, A_LineNumber)
+
 FileAppend "pass", "*"

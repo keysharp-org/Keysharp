@@ -53,7 +53,7 @@ arr := [
   "item 2",
 ]
 
-FileDelete("./multilines.txt")
+try FileDelete("./multilines.txt")
 FileAppend( "
 (
 Line 1 of the text.

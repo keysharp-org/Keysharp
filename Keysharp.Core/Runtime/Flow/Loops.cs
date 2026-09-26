@@ -114,6 +114,10 @@ namespace Keysharp.Runtime
 			//Dialogs.MsgBox(Path.GetFullPath(path));
 			//Dialogs.MsgBox(Accessors.A_WorkingDir);
 
+			// As in AutoHotkey, an empty pattern matches nothing.
+			if (path.Length == 0)
+				yield break;
+
 			//Convert something like "*.txt" to "./*.txt".
 			if (!path.StartsWith("\\\\") && !char.IsLetter(path[0]) && path[0] != '.' && path[0] != '/')
 				path = "." + Path.DirectorySeparatorChar + path;
@@ -299,7 +303,19 @@ namespace Keysharp.Runtime
 			if (!File.Exists(input))
 				yield break;
 
-			using (var reader = File.OpenText(input))
+			StreamReader reader;
+
+			try
+			{
+				reader = File.OpenText(input);
+			}
+			catch (Exception ex)
+			{
+				_ = Errors.OSErrorOccurred(ex, $"Error opening file {input}");
+				yield break;
+			}
+
+			using (reader)
 			{
 				string line;
 
@@ -353,7 +369,12 @@ namespace Keysharp.Runtime
 				info.regName = reg.Name;
 				info.regKeyName = keyname;
 				info.regType = Keyword_Key;
-				var subkey = reg.OpenSubKey(key, false);
+				using var subkey = reg.OpenSubKey(key, false);
+
+				// As in AutoHotkey, a missing subkey runs no iterations.
+				if (subkey == null)
+					yield break;
+
 				var l = QueryInfoKey(subkey);
 				var dt = DateTime.FromFileTimeUtc(l);
 				var script = Script.TheScript;
@@ -487,6 +508,11 @@ namespace Keysharp.Runtime
 			//  return ie.Cast<object>().Select(o => (o, o)).GetEnumerator();
 			else if (obj is object[] oa)
 				return (Enumerator)new Keysharp.Builtins.Array(oa).__Enum(count.Ai());
+			else if (obj is null)
+			{
+				_ = Errors.UnsetErrorOccurred("object");
+				return default;
+			}
 			else if (Reflections.FindAndCacheMethod(obj.GetType(), "__Enum", -1) is MethodPropertyHolder mph)
 			{
 				return NormalizeEnumerator(mph.CallFunc(obj, [count]), obj, ct);
@@ -509,9 +535,6 @@ namespace Keysharp.Runtime
 			}
 
 #endif
-			else if (obj is null)
-				_ = Errors.UnsetErrorOccurred("object");
-
 			_ = Errors.TypeErrorOccurred(obj, typeof(Enumerator));
 			return default;
 		}

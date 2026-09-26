@@ -13,7 +13,7 @@ Loop Read "../../../Keysharp.Tests/Code/test-text-file.txt"
 AssertEq(x, "this is line 1another lineline 3", A_LineNumber)
 
 x := ""
-FileDelete "../../../Keysharp.Tests/Code/test-text-file-out.txt"
+try FileDelete "../../../Keysharp.Tests/Code/test-text-file-out.txt"
 
 Loop Read "../../../Keysharp.Tests/Code/test-text-file.txt", "../../../Keysharp.Tests/Code/test-text-file-out.txt" ; this is a comment
 {
