@@ -73,7 +73,7 @@ Linux support is in active development. The following table summarises what work
 
 Keysharp runs on its own. Two standalone system components, [`keysharp-input`](https://github.com/keysharp-org/keysharp-input) and [`keysharp-desktop`](https://github.com/keysharp-org/keysharp-desktop), add the privileged input and desktop features listed in the table above; see [System components](#system-components).
 
-On NixOS, use the flake rather than the steps below — see [Keysharp on NixOS and COSMIC](linux-nixos.md). On Arch-based systems Keysharp is also available as an [AUR package](https://aur.archlinux.org/packages/keysharp-git).
+On NixOS, use the [NixOS guide](linux-nixos.md). For COSMIC-specific setup and limitations, see [Keysharp on COSMIC](linux-cosmic.md). On Arch-based systems Keysharp is also available as an [AUR package](https://aur.archlinux.org/packages/keysharp-git).
 
 #### All three projects at once
 

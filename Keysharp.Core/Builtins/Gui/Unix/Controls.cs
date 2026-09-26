@@ -2194,6 +2194,10 @@ namespace Keysharp.Builtins
 			addExStyle = _addExStyle;
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
+#if LINUX
+			if (this.ToNative() is Gtk.Notebook notebook)
+				notebook.Scrollable = true;
+#endif
 		}
 
 		internal static string DisplayText(string text)

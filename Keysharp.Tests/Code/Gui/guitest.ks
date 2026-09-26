@@ -4746,8 +4746,8 @@ RunOcrTest() {
 	SetStatus("ocr_main", "OCR status: " (ok ? "PASS - methods ran, expected words present" : "CHECK - inspect text below"))
 
 	output := ""
-	for ln in report
-		output .= ln "`r`n"
+	for reportLine in report
+		output .= reportLine "`r`n"
 	gOcrResultEdit.Value := output
 	AppendLog("OCR probe " (ok ? "passed" : "ran (CHECK)") ": " res.Lines.Length " lines, " res.Words.Length " words.")
 }

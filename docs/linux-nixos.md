@@ -1,20 +1,16 @@
-# Keysharp on NixOS and COSMIC
+# Keysharp on NixOS
 
-NixOS packaging and COSMIC support are experimental. Use the NixOS modules for Keysharp and its two optional helpers. The Linux release installer is for other distributions; see [Installing on Linux](reference.md#installing-on-linux).
+Use the NixOS modules for Keysharp and its optional input and desktop helpers. NixOS packaging is experimental.
 
-## Enable flakes
+## Install
 
-If flakes are not enabled, add this to `/etc/nixos/configuration.nix`:
+If flakes are not enabled, add this to `/etc/nixos/configuration.nix` and run `sudo nixos-rebuild switch`:
 
 ```nix
 nix.settings.experimental-features = [ "nix-command" "flakes" ];
 ```
 
-Apply it with `sudo nixos-rebuild switch` before using the flake below.
-
-## Install on a host that has `configuration.nix`
-
-Keep the existing `/etc/nixos/configuration.nix`. Create `/etc/nixos/flake.nix` below. The output name is fixed, and NixOS reads the architecture from `hardware-configuration.nix`. The example uses NixOS 26.05. For another release, run `nixos-version` and use its first two numbers in the Nixpkgs URL (for example, `nixos-25.11`). If you already have a host flake, add these inputs and modules to it.
+Keep your existing `configuration.nix` and `hardware-configuration.nix`. Create `/etc/nixos/flake.nix`:
 
 ```nix
 {
@@ -30,34 +26,28 @@ Keep the existing `/etc/nixos/configuration.nix`. Create `/etc/nixos/flake.nix` 
         keysharp.nixosModules.default
         keysharp-input.nixosModules.default
         keysharp-desktop.nixosModules.default
-        ({ pkgs, ... }: {
+        {
           programs.keysharp.enable = true;
           services.keysharp-input.enable = true;
-          services.keysharp-input.package =
-            keysharp-input.packages.${pkgs.stdenv.hostPlatform.system}.default;
           services.keysharp-desktop.enable = true;
-        })
+        }
       ];
     };
   };
 }
 ```
 
-Keep the `services.keysharp-input.package` line; the input module currently requires it. Keysharp needs keysharp-input client ABI 0.4 or newer and keysharp-desktop client ABI 0.8 or newer. Keep the generated `/etc/nixos/flake.lock`; it pins the exact revisions used for rebuilds.
+Use the NixOS release reported by `nixos-version` in the Nixpkgs URL; the example uses 26.05. The architecture comes from your hardware configuration, and `default` is a fixed configuration name.
 
-If updating an existing host flake, refresh the application inputs before switching:
-
-```sh
-sudo nix flake update keysharp keysharp-input keysharp-desktop --flake /etc/nixos
-```
-
-Apply the configuration:
+For an existing host flake, add the three Keysharp inputs, module imports and enable settings, keeping its Nixpkgs input and configuration name. If `/etc/nixos` is tracked by Git, add the new `flake.nix` before rebuilding.
 
 ```sh
 sudo nixos-rebuild switch --flake /etc/nixos#default
 ```
 
-Log out and back in after switching so GNOME refreshes its app search and shows Keysharp and Keyview. The desktop module enables the GNOME or Cinnamon extension once for each user on their first graphical login. Check all three components as your desktop user:
+Log out and back in. The desktop module automatically enables its GNOME or Cinnamon extension on the first graphical login; later user changes are preserved. Keysharp and Keyview should appear in app search.
+
+Check the installation as your desktop user:
 
 ```sh
 env -u DISPLAY -u WAYLAND_DISPLAY keysharp --version
@@ -66,79 +56,63 @@ keysharp-input probe
 keysharp-desktop probe
 ```
 
-The `env` command makes the version print in the terminal instead of an informational dialog. `keysharp-input info` should report `client_abi_minor=4` or higher. A first permission-scoped action may prompt for polkit authorization. Enable `services.desktopManager.cosmic.enable = true` only on a COSMIC host.
+The first command prints the version without a dialog. Keysharp requires input client ABI 0.4+ and desktop client ABI 0.8+. The first permission-scoped action may prompt for authorization.
 
-## What the modules install
+## Update
 
-`programs.keysharp.enable` installs the .NET application and its ordinary runtime libraries. It also enables AT-SPI support and, by default, the `i2c-dev` module and display-controller-only DDC/CI uaccess rule for external monitor brightness and VCP control. The two service options separately install:
+Keep `/etc/nixos/flake.lock`; it records the exact revisions installed. To update the applications:
 
-- `services.keysharp-input`, which provides `keysharp-input.service`, its client library, evdev/uinput setup, polkit action, and access to the shared permission namespace.
-- `services.keysharp-desktop`, which provides the system `keysharp-desktop-authority.socket`, the supervised per-user `keysharp-desktop.service`, compositor providers, one-time extension setup on GNOME and Cinnamon, its polkit action, and access to the same shared permission namespace.
-
-The service settings are independent of `programs.keysharp.enable`. Removing Keysharp does not remove a service that another module still enables.
-
-Individual privileged facilities can be disabled when they are not needed:
-
-```nix
-services.keysharp-input.enable = false;
-services.keysharp-desktop.enable = false;
-programs.keysharp.monitorControl.enable = false;
+```sh
+sudo nix flake update keysharp keysharp-input keysharp-desktop --flake /etc/nixos
+sudo nixos-rebuild switch --flake /etc/nixos#default
 ```
 
-Disabling `services.keysharp-desktop` removes its compositor providers and permission authority. Direct helper-backed desktop operations then fail closed. Screenshot-portal fallback remains available where the desktop portal permits it and follows the portal's own policy.
+Use your existing configuration name instead of `default` if you already had a host flake.
 
-## COSMIC-specific setup
+## Optional features
 
-The standard NixOS COSMIC desktop module already enables the desktop portal and supplies both `xdg-desktop-portal-cosmic` and `xdg-desktop-portal-gtk`. A custom COSMIC setup which does not use that module needs the equivalent configuration:
+| Setting | Default |
+| --- | --- |
+| `programs.keysharp.audio.enable` | Includes audio clients when the host enables PulseAudio or PipeWire's PulseAudio support |
+| `programs.keysharp.monitorControl.enable` | `true`; loads `i2c-dev` and installs the DDC/CI access rule |
+| `services.keysharp-desktop.autoEnableExtension` | `true`; enables the GNOME or Cinnamon extension once |
 
-```nix
-xdg.portal = {
-  enable = true;
-  extraPortals = with pkgs; [
-    xdg-desktop-portal-cosmic
-    xdg-desktop-portal-gtk
-  ];
-  configPackages = [ pkgs.xdg-desktop-portal-cosmic ];
-};
-```
+Set either helper's `enable` option to `false` to omit it. Input hooks and synthesis need keysharp-input; supported desktop capture, window and clipboard operations use keysharp-desktop. See the [Linux support matrix](reference.md#linux-platform-support).
 
-On COSMIC, Keysharp first probes the staging `ext-image-copy-capture` and output-source protocols. When available, it requests the screen-capture capability from `keysharp-desktop`, captures each intersecting output, and composes the requested region while accounting for output scale and rotation. An explicit denial is authoritative and is not bypassed through the portal. If the native protocol is absent or cannot be opened, Keysharp falls back to the portal's Screenshot interface; that request follows the portal's policy rather than the `keysharp-desktop` grant.
+Both X11 and Wayland clients are included; you do not select a session type. Keysharp does not enable a compositor or audio server. For custom packages, see [package overrides](../nix/README.md#package-overrides).
 
-The currently supported COSMIC portal has no RemoteDesktop path for Keysharp's global input work, so installing the portal packages does not replace `keysharp-input`. XWayland can help X11 applications run inside the session, but does not turn the COSMIC session into X11 or bypass its Wayland restrictions.
+For COSMIC, use NixOS's standard `services.desktopManager.cosmic.enable` module, which configures its portals. See [COSMIC setup and limitations](linux-cosmic.md).
 
-## Build from a local source checkout
+## Build and develop
 
-For a local source checkout:
+From a Keysharp checkout:
 
 ```sh
 nix build .#keysharp
 nix run .#keysharp -- hello.ks
 nix develop
+dotnet restore Keysharp.sln
+dotnet build Keysharp/Keysharp.csproj -c Debug --no-restore
 ```
 
-The checkout's committed `flake.lock` pins Eto and Nixpkgs. Run `nix flake update --refresh eto` only when deliberately updating the Eto revision, then commit the revised lock file. The development shell supplies .NET 10 and the managed application's Linux development/runtime libraries, and puts a writable copy of the resolved Keysharp Eto fork in the user cache, exported through `EtoRoot`. MSBuild writes `obj` data beside Eto's project files while flake inputs themselves are immutable. Native component development uses the shells in the two standalone repositories.
+The development shell supplies .NET, native libraries (including audio clients), and a writable copy of the pinned Eto source. The standalone package omits audio clients by default; [package overrides](../nix/README.md#package-overrides) can enable them.
 
-### Launch the GUI test from VS Code
+### VS Code / F5
 
-The workspace's **C#: Keysharp** F5 configuration builds Keysharp and runs `Keysharp.Tests/Code/Gui/guitest.ks`. The Microsoft C# extension's debugger uses a generic Linux executable, so enable NixOS's compatibility loader in your host configuration:
+The Microsoft C# debugger needs NixOS's compatibility loader and ICU. Add this to your host configuration and rebuild:
 
 ```nix
-programs.nix-ld.enable = true;
+programs.nix-ld = {
+  enable = true;
+  libraries = [ pkgs.icu ];
+};
 ```
 
-Apply the host configuration and log out and back in so VS Code receives the loader environment. Quit all existing VS Code windows, then start it from the development shell so Keysharp can find GTK and X11 libraries:
+Log out and back in after enabling the loader. Quit all VS Code windows, then launch from the checkout:
 
 ```sh
+nix develop --command dotnet restore Keysharp.sln
 nix develop --command code .
 ```
 
-Select **C#: Keysharp** in Run and Debug, then press F5. Starting `code .` while another VS Code process is running can reuse that process without the development shell environment.
-
-Real-machine COSMIC smoke test:
-
-1. Apply the host configuration, then run `keysharp-input probe` and confirm `systemctl status keysharp-input.socket keysharp-input.service keysharp-desktop-authority.socket` succeeds.
-2. In the COSMIC session, confirm the portal services with `systemctl --user status xdg-desktop-portal.service xdg-desktop-portal-cosmic.service`, then run a script using `PixelGetColor` or `Image.FromDesktop`. After the first request, confirm `systemctl --user status keysharp-desktop.service`. With the direct protocol available, authenticate the first `keysharp-desktop` grant and check regions spanning outputs with different scales or rotations. On a session without the native protocol, confirm the portal fallback follows the portal's policy.
-3. Run the Dash and Window Spy against a disposable application window. Check title, active state, geometry, activation, maximize/minimize, and close; protocol capability advertisements decide which actions COSMIC accepts.
-4. Run a simple global `F12` hotkey, complete the first `keysharp-input` polkit authentication, then test `SendText` into a disposable editor. Inspect `journalctl -u keysharp-input.service` if either fails. Avoid testing `BlockInput` until the hook is stable; `Backspace+Escape+Enter` is the daemon's native panic chord.
-
-Remaining COSMIC limitations are the absence of compositor protocols for authoritative global cursor position, window stacking order (overlapping background windows are ambiguous), foreign-process identity, reserved work-area bounds, and general foreign-window move/resize/always-on-top operations. Control discovery remains best-effort through AT-SPI. Mouse hooks intentionally avoid raw-grabbing touchpads, touchscreens, and tablets because replaying their evdev stream would bypass COSMIC/libinput gesture processing; `BlockInput` can still grab them when explicitly requested. The portal fallback is a whole-desktop round trip and is slower than direct image-copy capture. Multi-output composition and scale/rotation handling in the direct path are implemented but remain unverified on real COSMIC hardware. All COSMIC-specific behavior remains provisional until exercised on a real session.
+Select **C#: Keysharp** and press F5 to run `guitest.ks`. After changing development dependencies, quit all VS Code windows and launch this way again. Local Nix edits need no flake update; updating an upstream input does.

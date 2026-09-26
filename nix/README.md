@@ -33,3 +33,49 @@ nix build .#keysharp
 ```
 
 `docs/linux-nixos.md` covers installing and running Keysharp on NixOS.
+
+## Package overrides
+
+The package accepts these `.override` arguments:
+
+| Argument | Default | Includes |
+| --- | --- | --- |
+| `audioSupport` | `false` | PulseAudio client library and tools, also usable with PipeWire |
+| `x11Support` | `true` | X11 client libraries and `xinput` |
+| `waylandSupport` | `true` | Wayland client library |
+
+The NixOS module selects audio support from the host's PulseAudio/PipeWire settings;
+`programs.keysharp.audio.enable` overrides that choice. The development shell includes
+audio support. Display support is selected at runtime. These flags do not enable a server
+or compositor. Disabling a flag removes Keysharp's direct dependency; GTK may retain it
+transitively.
+
+For a custom package, add a module like this to your host flake's `modules` list:
+
+```nix
+({ pkgs, ... }: {
+  programs.keysharp.package =
+    keysharp.packages.${pkgs.stdenv.hostPlatform.system}.default.override {
+      audioSupport = true;
+    };
+})
+```
+
+An explicit `programs.keysharp.package` takes precedence over the module's audio selection.
+The helpers have equivalent `services.keysharp-input.package` and
+`services.keysharp-desktop.package` options.
+
+## Local Eto development
+
+The development shell uses the locked Eto revision by default. To build against an editable
+sibling checkout instead:
+
+```sh
+EtoRoot="$PWD/../Eto" nix develop
+```
+
+For a Nix package build against that checkout without updating the committed lock:
+
+```sh
+nix build .#keysharp --override-input eto path:../Eto --no-write-lock-file
+```

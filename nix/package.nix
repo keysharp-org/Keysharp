@@ -9,6 +9,7 @@
   pango,
   at-spi2-core,
   libnotify,
+  libayatana-appindicator,
   libgdiplus,
   libxkbcommon,
   libx11,
@@ -35,6 +36,9 @@
   xinput,
   src,
   etoSrc,
+  audioSupport ? false,
+  x11Support ? true,
+  waylandSupport ? true,
 }:
 
 let
@@ -46,9 +50,13 @@ let
     pango
     at-spi2-core
     libnotify
+    libayatana-appindicator
     libgdiplus
     libxkbcommon
-    wayland
+  ]
+  ++ lib.optional audioSupport pulseaudio
+  ++ lib.optional waylandSupport wayland
+  ++ lib.optionals x11Support [
     libx11
     libxtst
     libxinerama
@@ -70,12 +78,12 @@ let
     glib
     gnugrep
     iproute2
-    pulseaudio
     systemd
     util-linux
     xdg-utils
-    xinput
-  ];
+  ]
+  ++ lib.optional audioSupport pulseaudio
+  ++ lib.optional x11Support xinput;
 
   versionMatch = builtins.match ".*<KeysharpVersion[^>]*>([0-9.]+)</KeysharpVersion>.*" (
     builtins.readFile (src + "/Directory.Build.props")
@@ -92,10 +100,7 @@ buildDotnetModule rec {
 
   inherit src;
 
-  # Eto's T4 outputs are committed beside their templates, and its Transform target is incremental. The
-  # copy gives every file the same fresh timestamp, so whether the target reruns comes down to which file
-  # cp happened to touch last - and rerunning it means `dotnet tool restore`, which the sandbox has no
-  # network for. Making each output newer than its template keeps the committed source, deterministically.
+  # Keep Eto's committed T4 outputs newer than their templates to avoid an offline tool restore.
   postPatch = ''
     cp -R ${etoSrc} ../Eto
     chmod -R u+w ../Eto
@@ -111,9 +116,7 @@ buildDotnetModule rec {
     "Keysharp/Keysharp.csproj"
     "Keyview/Keyview.csproj"
   ];
-  # Restored and built but not published: the scripting components are loaded at runtime, so nothing
-  # references them at compile time and restoring the two apps never reaches them. Publishing Keysharp
-  # still builds them (Directory.Build.targets stages their payload), which fails offline without this.
+  # Runtime-loaded components need an explicit restore before the offline publish builds them.
   testProjectFile = [
     "Keysharp.Components/Scripting/Compiler/Keysharp.Components.Scripting.Compiler.csproj"
     "Keysharp.Components/Scripting/Parser/Keysharp.Components.Scripting.Parser.csproj"
@@ -122,8 +125,7 @@ buildDotnetModule rec {
   dotnet-sdk = dotnetCorePackages.sdk_10_0;
   dotnet-runtime = dotnet-sdk.runtime;
 
-  # Without this buildDotnetModule restores with --disable-parallel and builds at -maxcpucount:1, which
-  # serialises a nine-project graph over one core.
+  # buildDotnetModule otherwise limits MSBuild to one worker.
   enableParallelBuilding = true;
 
   nativeBuildInputs = [ wrapGAppsHook3 ];
@@ -131,9 +133,7 @@ buildDotnetModule rec {
   # buildDotnetModule's own wrapper already applies gappsWrapperArgs.
   dontWrapGApps = true;
 
-  # The payload step runs the host just published here, so it needs both the GTK libraries and a writable
-  # HOME. Its kpm download has no network in the sandbox; that is a warning by design and costs the
-  # bundled package manager, not the build.
+  # Payload staging runs Keysharp and needs GTK and a writable home. Its optional kpm download is offline.
   postInstall = ''
     export LD_LIBRARY_PATH="${lib.makeLibraryPath runtimeLibraries}:''${LD_LIBRARY_PATH:-}"
     HOME=$(mktemp -d) dotnet msbuild Keysharp.Install/payload/Keysharp.Payload.proj \
@@ -183,7 +183,7 @@ buildDotnetModule rec {
   doCheck = false;
 
   passthru = {
-    inherit runtimeLibraries runtimePrograms;
+    inherit audioSupport x11Support waylandSupport runtimeLibraries runtimePrograms;
   };
 
   meta = {

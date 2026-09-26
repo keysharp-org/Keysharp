@@ -1,8 +1,8 @@
-{ keysharpPackage }:
 {
   config,
   lib,
   pkgs,
+  keysharpPackage,
   ...
 }:
 
@@ -17,9 +17,17 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = keysharpPackage;
-      defaultText = lib.literalExpression "inputs.keysharp.packages.${pkgs.stdenv.hostPlatform.system}.default";
+      default = keysharpPackage.override { audioSupport = cfg.audio.enable; };
+      defaultText = lib.literalExpression "keysharpPackage.override { audioSupport = config.programs.keysharp.audio.enable; }";
       description = "Keysharp package to install.";
+    };
+
+    audio.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = config.services.pulseaudio.enable
+        || (config.services.pipewire.enable && config.services.pipewire.pulse.enable);
+      defaultText = lib.literalExpression "config.services.pulseaudio.enable || (config.services.pipewire.enable && config.services.pipewire.pulse.enable)";
+      description = "Include audio client libraries and tools in the default Keysharp package.";
     };
 
     monitorControl.enable = lib.mkOption {
