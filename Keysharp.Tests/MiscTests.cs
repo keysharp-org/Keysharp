@@ -43,6 +43,9 @@ namespace Keysharp.Tests
 		public void KeyboardLayout() => Assert.IsTrue(TestScript("misc-keyboard-layout", true));
 
 		[Test, Category("Misc"), NonParallelizable]
+		public void GetKeyStateDeviceArguments() => Assert.IsTrue(TestScript("misc-get-key-state-device", true));
+
+		[Test, Category("Misc"), NonParallelizable]
 		public void MiscTimer()
 		{
 			Assert.IsTrue(TestScript("misc-timer", false));

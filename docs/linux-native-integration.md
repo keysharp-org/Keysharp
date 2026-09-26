@@ -9,7 +9,7 @@ foreign window, capture, pointer and keyboard queries use the component librarie
 
 | Component | Responsibility |
 | --- | --- |
-| `keysharp-input` (client ABI 0.2+) | Suppressible hooks, passive observers, synthesis, state/idle queries, device metadata and raw device observation |
+| `keysharp-input` (client ABI 0.4+) | Suppressible hooks, passive observers, synthesis, state/idle queries, device metadata and raw device observation |
 | `keysharp-desktop` (client ABI 0.8+) | Window queries/actions/events, capture, pointer positioning, display topology, keyboard keymaps and compositor integration |
 | `keysharp-permissions` | Shared source library for identity and durable grants; bundled into the two services |
 

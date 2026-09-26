@@ -16,7 +16,7 @@ DESKTOP_REPOSITORY=keysharp-org/keysharp-desktop
 # A component needs this ABI major and at least this additive minor.
 # Product versions select artifacts; the client ABI decides compatibility.
 INPUT_CLIENT_ABI_MAJOR=0
-INPUT_CLIENT_ABI_MINOR=2
+INPUT_CLIENT_ABI_MINOR=4
 DESKTOP_CLIENT_ABI_MAJOR=0
 DESKTOP_CLIENT_ABI_MINOR=8
 
@@ -262,6 +262,12 @@ inspect_component() {
     systemctl is-active --quiet "$component_socket" || return 0
     component_health=failed-service
     if systemctl is-failed --quiet "${component_socket%.socket}.service"; then return 0; fi
+    if [ "$component_name" = keysharp-input ]; then
+        component_health=inactive-service
+        systemctl is-active --quiet "${component_socket%.socket}.service" || return 0
+        component_health=disabled-service
+        [ "$(systemctl is-enabled "${component_socket%.socket}.service" 2>/dev/null)" = enabled ] || return 0
+    fi
     if [ "$component_name" = keysharp-desktop ]; then
         component_health=disabled-session-service
         [ "$(systemctl --global is-enabled keysharp-desktop.service 2>/dev/null)" = enabled ] || return 0
@@ -304,7 +310,7 @@ report_component() {
     case "$2" in
         ready|skipped) ;;
         missing) printf '%s\n' "    Run setup to install it." ;;
-        inactive-socket|failed-service|disabled-session-service)
+        inactive-socket|failed-service|inactive-service|disabled-service|disabled-session-service)
             printf '%s\n' "    Repair through the existing installer, or inspect systemctl status $1*." ;;
         *) printf '%s\n' "    Repair through the owning install channel before using this component." ;;
     esac

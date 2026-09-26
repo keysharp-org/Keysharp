@@ -12,6 +12,26 @@ namespace Keysharp.Tests
 		public void X11UsesSnapshotWindowEvents()
 			=> Assert.That(DesktopBackend.X11.SupportsPushWindowEvents, Is.False);
 
+		/// <summary>A broker left running by a previous X11 login reports that session, not this one. The
+		/// selection only runs on a Wayland session, so an X11 report is a contradiction rather than an
+		/// answer, and must not be cached as this script's backend for the rest of its life.</summary>
+		[Test]
+		public void StaleX11BrokerReportIsRefusedOnWayland()
+			=> Assert.That(WaylandBackend.Select(DesktopClient.Backend.X11), Is.Null);
+
+		[TestCase((int)DesktopClient.Backend.Kwin, "kwin")]
+		[TestCase((int)DesktopClient.Backend.Gnome, "gnome")]
+		[TestCase((int)DesktopClient.Backend.Cinnamon, "cinnamon")]
+		[TestCase((int)DesktopClient.Backend.Generic, "generic")]
+		public void ReportedBackendSelectsItsHandler(int reported, string expectedKey)
+		{
+			var backend = WaylandBackend.Select((DesktopClient.Backend)reported);
+
+			Assert.That(backend, Is.Not.Null);
+			Assert.That(backend.BackendKey, Is.EqualTo(expectedKey));
+			(backend as IDisposable)?.Dispose();
+		}
+
 		[TestCase((int)NativeClientStatus.Ok, 0, false, false, true)]
 		[TestCase((int)NativeClientStatus.Unavailable, 0, true, false, false)]
 		[TestCase((int)NativeClientStatus.Timeout, 110, true, false, false)]

@@ -408,14 +408,15 @@ namespace Keysharp.Internals
 	/// <summary>Live OS/session keyboard state query surface.</summary>
 	internal interface IKeyboard
 	{
+		/// <summary>Reads one source's physical state in AHK's unified key namespace, including mouse-button VKs.</summary>
+		bool TryGetDeviceKeyState(uint vk, uint deviceID, out bool isDown)
+		{
+			isDown = false;
+			return false;
+		}
+
 		/// <summary>Current logical modifier state, represented with Keysharp MOD_* left/right bits.</summary>
 		bool TryGetModifierLRStateLogical(out uint mods, byte[] keymapBuffer = null);
-
-		/// <summary>Current authoritative physical/device modifier state, represented with Keysharp MOD_*
-		/// left/right bits. Returns false when the platform cannot distinguish physical from logical state, or
-		/// when only some keys could be probed; mods is then partial rather than meaningful, so callers must
-		/// discard it and fall back rather than treat the missing bits as "up".</summary>
-		bool TryGetModifierLRStatePhysical(out uint mods);
 
 		/// <summary>Current OS/session logical down/up state for the given VK. On Windows this intentionally
 		/// models Win32 GetAsyncKeyState-style current state, not GetKeyState's thread-message-queue state.</summary>

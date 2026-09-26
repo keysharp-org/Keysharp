@@ -12,12 +12,6 @@ namespace Keysharp.Internals
 			return false;
 		}
 
-		public bool TryGetModifierLRStatePhysical(out uint mods)
-		{
-			mods = 0u;
-			return false;
-		}
-
 		public bool TryGetKeyStateLogical(uint vk, out bool isDown)
 		{
 			isDown = false;
@@ -53,12 +47,6 @@ namespace Keysharp.Internals
 			if (TryGetKeyStateLogical(VK_LWIN, out down) && down) mods |= MOD_LWIN;
 			if (TryGetKeyStateLogical(VK_RWIN, out down) && down) mods |= MOD_RWIN;
 			return true;
-		}
-
-		public bool TryGetModifierLRStatePhysical(out uint mods)
-		{
-			mods = 0u;
-			return false;
 		}
 
 		public bool TryGetKeyStateLogical(uint vk, out bool isDown)
@@ -105,6 +93,9 @@ namespace Keysharp.Internals
 	{
 		private readonly NativeInputKeyboard nativeInput = new();
 
+		public bool TryGetDeviceKeyState(uint vk, uint deviceID, out bool isDown)
+			=> nativeInput.TryGetDeviceKeyState(vk, deviceID, out isDown);
+
 		public bool TryGetModifierLRStateLogical(out uint mods, byte[] keymapBuffer = null)
 		{
 			if (nativeInput.TryGetModifierLRStateLogical(out mods, keymapBuffer))
@@ -112,18 +103,6 @@ namespace Keysharp.Internals
 
 			if (fallback != null)
 				return fallback.TryGetModifierLRStateLogical(out mods, keymapBuffer);
-
-			mods = 0u;
-			return false;
-		}
-
-		public bool TryGetModifierLRStatePhysical(out uint mods)
-		{
-			if (nativeInput.TryGetModifierLRStatePhysical(out mods))
-				return true;
-
-			if (fallback != null)
-				return fallback.TryGetModifierLRStatePhysical(out mods);
 
 			mods = 0u;
 			return false;
@@ -179,42 +158,20 @@ namespace Keysharp.Internals
 		private static bool indicatorSnapshotNum;
 		private static bool indicatorSnapshotScroll;
 
+		public bool TryGetDeviceKeyState(uint vk, uint deviceID, out bool isDown)
+			=> TryGetBitmapKeyState(vk, physical: true, deviceID, out isDown);
+
 		public bool TryGetModifierLRStateLogical(out uint mods, byte[] keymapBuffer = null)
 			=> Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
 				out mods, out _, out _, out _, out _);
 
-		public bool TryGetModifierLRStatePhysical(out uint mods)
-			=> Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
-				out _, out mods, out _, out _, out _);
-
 		public bool TryGetKeyStateLogical(uint vk, out bool isDown)
-		{
-			isDown = false;
-
-			if (vk == 0)
-				return false;
-
-			var modifierMask = ModifierLRMaskFromVK(vk);
-
-			if (modifierMask != 0)
-			{
-				if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
-						out var modifierState, out _, out _, out _, out _))
-					return false;
-
-				isDown = (modifierState & modifierMask) != 0;
-				return true;
-			}
-
-			if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetKeyState(
-				out var mods, out _, out var numLock, out _, out var logicalKeys, out _))
-				return false;
-
-			var shiftDown = (mods & (MOD_LSHIFT | MOD_RSHIFT)) != 0;
-			return TryGetVkFromEvdevBitmap(vk, logicalKeys, numLock, shiftDown, out isDown);
-		}
+			=> TryGetKeyState(vk, physical: false, out isDown);
 
 		public bool TryGetKeyStatePhysical(uint vk, out bool isDown)
+			=> TryGetKeyState(vk, physical: true, out isDown);
+
+		private static bool TryGetKeyState(uint vk, bool physical, out bool isDown)
 		{
 			isDown = false;
 
@@ -226,19 +183,28 @@ namespace Keysharp.Internals
 			if (modifierMask != 0)
 			{
 				if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
-						out _, out var modifierState, out _, out _, out _))
+						out var logicalMods, out var physicalMods, out _, out _, out _))
 					return false;
 
-				isDown = (modifierState & modifierMask) != 0;
+				isDown = ((physical ? physicalMods : logicalMods) & modifierMask) != 0;
 				return true;
 			}
 
+			return TryGetBitmapKeyState(vk, physical, 0, out isDown);
+		}
+
+		// A device reply's bitmaps describe that device alone, but its modifier mask and NumLock describe the
+		// seat, so keypad names fold exactly as the hook names them.
+		private static bool TryGetBitmapKeyState(uint vk, bool physical, uint deviceID, out bool isDown)
+		{
+			isDown = false;
+
 			if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetKeyState(
-				out var mods, out _, out var numLock, out _, out _, out var physicalKeys))
+				out var mods, out _, out var numLock, out _, out var logicalKeys, out var physicalKeys, deviceID))
 				return false;
 
 			var shiftDown = (mods & (MOD_LSHIFT | MOD_RSHIFT)) != 0;
-			return TryGetVkFromEvdevBitmap(vk, physicalKeys, numLock, shiftDown, out isDown);
+			return TryGetVkFromEvdevBitmap(vk, physical ? physicalKeys : logicalKeys, numLock, shiftDown, out isDown);
 		}
 
 		public bool TryGetIndicatorStatesLogical(out bool capsOn, out bool numOn, out bool scrollOn)
@@ -287,7 +253,7 @@ namespace Keysharp.Internals
 			return true;
 		}
 
-		private static bool TryGetVkFromEvdevBitmap(
+		internal static bool TryGetVkFromEvdevBitmap(
 			uint vk,
 			byte[] keys,
 			bool numLockOn,
@@ -296,8 +262,22 @@ namespace Keysharp.Internals
 		{
 			isDown = false;
 
+			// A missing bitmap is not a valid all-keys-up snapshot.
+			if (keys == null || keys.Length == 0)
+				return false;
+
 			switch (vk)
 			{
+				case VK_LBUTTON: return TryGetEvdevBit(keys, KeyCodes.EvdevButtonLeft, out isDown);
+				case VK_RBUTTON: return TryGetEvdevBit(keys, KeyCodes.EvdevButtonRight, out isDown);
+				case VK_MBUTTON: return TryGetEvdevBit(keys, KeyCodes.EvdevButtonMiddle, out isDown);
+				// Mice report the X buttons as BTN_SIDE/BTN_EXTRA or as BTN_BACK/BTN_FORWARD.
+				case VK_XBUTTON1:
+					isDown = AnyEvdevBitSet(keys, [KeyCodes.EvdevButtonSide, KeyCodes.EvdevButtonBack]);
+					return true;
+				case VK_XBUTTON2:
+					isDown = AnyEvdevBitSet(keys, [KeyCodes.EvdevButtonExtra, KeyCodes.EvdevButtonForward]);
+					return true;
 				case VK_SHIFT:
 					if (!TryGetEvdevBit(keys, KeyCodes.VkToEvdev(VK_LSHIFT), out var lShift)
 						|| !TryGetEvdevBit(keys, KeyCodes.VkToEvdev(VK_RSHIFT), out var rShift))
@@ -317,10 +297,6 @@ namespace Keysharp.Internals
 					isDown = lAlt || rAlt;
 					return true;
 			}
-
-			// A missing bitmap is not a valid all-keys-up snapshot.
-			if (keys == null || keys.Length == 0)
-				return false;
 
 			// A VK can be produced by several evdev codes (KEY_COMPOSE/KEY_MENU both mean VK_APPS), so every code
 			// that maps back to it is checked rather than just the canonical one.
@@ -357,12 +333,6 @@ namespace Keysharp.Internals
 			var snapshot = Keysharp.Internals.Input.Linux.DesktopKeyboardState.X11.Get();
 			mods = snapshot?.Modifiers ?? 0;
 			return snapshot?.ModifiersKnown ?? false;
-		}
-
-		public bool TryGetModifierLRStatePhysical(out uint mods)
-		{
-			mods = 0;
-			return false;
 		}
 
 		public bool TryGetKeyStateLogical(uint vk, out bool isDown)
@@ -416,9 +386,6 @@ namespace Keysharp.Internals
 
 		public bool TryGetModifierLRStateLogical(out uint mods, byte[] keymapBuffer = null)
 			=> TryQueryModifierLRStateForSource(Keysharp.Internals.Input.MacOS.MacNativeInput.kCGEventSourceStateCombinedSessionState, out mods);
-
-		public bool TryGetModifierLRStatePhysical(out uint mods)
-			=> TryQueryModifierLRStateForSource(Keysharp.Internals.Input.MacOS.MacNativeInput.kCGEventSourceStateHIDSystemState, out mods);
 
 		public bool TryGetKeyStateLogical(uint vk, out bool isDown)
 			=> TryQueryMacKeyState(vk, Keysharp.Internals.Input.MacOS.MacNativeInput.kCGEventSourceStateCombinedSessionState, useIndicators: true, out isDown);

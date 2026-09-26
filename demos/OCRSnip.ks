@@ -111,8 +111,8 @@ class OCRSnip {
         ; and Active — otherwise an exception during setup could leave the left mouse button globally suppressed.
         try {
             ; Block the left mouse button (down AND up) from the app for the duration of the snip, so dragging
-            ; the selection rectangle doesn't also select text/objects under the click-through overlay. This
-            ; installs the mouse hook, which also makes GetKeyState("LButton","P") read the hook's tracked state.
+            ; the selection rectangle doesn't also select text/objects under the click-through overlay.
+            ; GetKeyState("LButton","P") still reports the blocked button.
             this.SetButtonBlock(true)
 
             this.ClearWordOverlays(false)

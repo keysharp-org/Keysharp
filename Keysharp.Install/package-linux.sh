@@ -7,7 +7,7 @@ ASSETS_DIR="${ROOT}/Keysharp.Install/linux"
 CONFIG="${CONFIG:-Release}"
 # The client ABI capabilities the Debian package recommends. Each component
 # provides its own capability; Keysharp only names them.
-INPUT_CLIENT_ABI_PACKAGE="keysharp-input-client-abi-0 (>= 0.2)"
+INPUT_CLIENT_ABI_PACKAGE="keysharp-input-client-abi-0 (>= 0.4)"
 DESKTOP_CLIENT_ABI_PACKAGE="keysharp-desktop-client-abi-0 (>= 0.8)"
 
 usage() {

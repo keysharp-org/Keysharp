@@ -162,25 +162,18 @@ namespace Keysharp.Builtins
 		/// Known limitation: This function cannot differentiate between two keys which share the same<br/>
 		/// virtual key code, such as Left and NumpadLeft.
 		/// </param>
-		/// <param name="mode"></param>
+		/// <param name="mode">Ignored for controller controls. Otherwise only the first letter is significant:<br/>
+		/// L or omitted for logical state, P for physical state, T for toggle state.<br/>
+		/// On Linux, a device ID from 1 to 4294967295 reads that one device's physical state.
+		/// </param>
 		public static object GetKeyState(object keyName, object mode = null)
 		{
 			var keyname = keyName.As();
-			var modeVal = mode.As();
 			var script = Script.TheScript;
 			var ht = script.HookThread;
 			JoyControls joy;
 			uint? joystickid = 0u;
 			uint? dummy = null;
-			KeyStateTypes keystatetype;
-
-			if (string.Compare(modeVal, "T", true) == 0)
-				keystatetype = KeyStateTypes.Toggle;//Whether a toggleable key such as CapsLock is currently turned on.
-			else if (string.Compare(modeVal, "P", true) == 0)
-				keystatetype = KeyStateTypes.Physical;//Physical state of key.
-			else
-				keystatetype = KeyStateTypes.Logical;
-
 			var vk = ht.TextToVK(keyname, ref dummy, layout: null); // Returns 0 if keyname is not a valid key name or virtual key code.
 
 			if (vk == 0)
@@ -192,7 +185,47 @@ namespace Keysharp.Builtins
 			}
 
 			// Since above didn't return: There is a virtual key (not a joystick control).
-			return ScriptGetKeyState(vk, keystatetype); // 1 for down and 0 for up.
+			var modeVal = mode.As();
+			var deviceID = 0u;
+			KeyStateTypes keystatetype;
+
+			// As in AutoHotkey, only an omitted Mode means logical; an explicit "" is invalid.
+			switch (mode == null ? 'L' : modeVal.Length == 0 ? '\0' : char.ToUpperInvariant(modeVal[0]))
+			{
+				case 'L': keystatetype = KeyStateTypes.Logical; break;
+				case 'P': keystatetype = KeyStateTypes.Physical; break;
+				case 'T': keystatetype = KeyStateTypes.Toggle; break; // Whether a toggleable key such as CapsLock is currently turned on.
+
+				default:
+#if LINUX
+					if (!mode.TryParseLong(out var parsedDeviceID) || parsedDeviceID <= 0 || parsedDeviceID > uint.MaxValue)
+						return Errors.ValueErrorOccurred($"Unknown key state mode \"{Errors.Describe(mode)}\". Expected L, P, T or a device ID from 1 to 4294967295.", mode);
+
+					if (Keysharp.Internals.Input.Linux.KeysharpInputClient.LibraryAbiMinor < 4)
+						return Errors.ValueErrorOccurred("Reading one device's key state requires keysharp-input client ABI 0.4 or newer.", mode);
+
+					deviceID = (uint)parsedDeviceID;
+					keystatetype = KeyStateTypes.Physical;
+					break;
+#else
+					return Errors.ValueErrorOccurred(mode.TryParseLong(out var parsedDeviceID) && parsedDeviceID > 0 && parsedDeviceID <= uint.MaxValue
+						? "Reading one device's key state is supported only on Linux."
+						: $"Unknown key state mode \"{Errors.Describe(mode)}\". Expected L, P or T.", mode);
+#endif
+			}
+
+#if LINUX
+			try
+			{
+				return ScriptGetKeyState(vk, keystatetype, deviceID); // 1 for down and 0 for up.
+			}
+			catch (Keysharp.Internals.Linux.DeviceKeyStateUnsupportedException)
+			{
+				return Errors.ValueErrorOccurred("Reading one device's key state requires a keysharp-input service from client ABI 0.4 or newer.", mode);
+			}
+#else
+			return ScriptGetKeyState(vk, keystatetype, deviceID); // 1 for down and 0 for up.
+#endif
 		}
 
 		/// <summary>
@@ -1132,16 +1165,16 @@ break_twice:;
 		/// <remarks>Arbitrary key and button polling acquires InputMonitoring here. Modifier and lock-toggle
 		/// snapshots are ungated, and keeping the check at the script boundary prevents Send's modifier reads
 		/// from requesting monitoring access.</remarks>
-		private static void EnsureKeyStateQueryPermission(uint vk, KeyStateTypes keyStateType)
+		private static void EnsureKeyStateQueryPermission(uint vk, KeyStateTypes keyStateType, bool perDevice = false)
 		{
 			var lockToggle = keyStateType == KeyStateTypes.Toggle
 				&& vk is VirtualKeys.VK_CAPITAL or VirtualKeys.VK_NUMLOCK or VirtualKeys.VK_SCROLL;
 
-			if (lockToggle || KeyboardUtils.IsModifierVk(vk))
+			if (!perDevice && (lockToggle || KeyboardUtils.IsModifierVk(vk)))
 				return;
 
 #if LINUX
-			var required = MouseUtils.IsMouseVK(vk)
+			var required = !perDevice && MouseUtils.IsMouseVK(vk)
 				? Keysharp.Internals.Input.Linux.KeysharpInputClient.Operations.QueryPointerButtons
 				: Keysharp.Internals.Input.Linux.KeysharpInputClient.Operations.QueryKeyState;
 
@@ -1152,7 +1185,7 @@ break_twice:;
 		}
 #endif
 
-		internal static bool ScriptGetKeyState(uint vk, KeyStateTypes keyStateType)
+		internal static bool ScriptGetKeyState(uint vk, KeyStateTypes keyStateType, uint deviceID = 0)
 		{
 			var ht = Script.TheScript.HookThread;
 			var kbdMouseSender = ht.kbdMsSender;
@@ -1161,7 +1194,22 @@ break_twice:;
 				return false;
 
 #if LINUX || OSX
-			EnsureKeyStateQueryPermission(vk, keyStateType);
+			EnsureKeyStateQueryPermission(vk, keyStateType, deviceID != 0);
+#endif
+			if (deviceID != 0)
+				return Platform.Keyboard.TryGetDeviceKeyState(vk, deviceID, out var deviceDown) && deviceDown;
+
+#if LINUX
+			// keysharp-input aggregates independent devices, while the hook's single VK table and modifier
+			// mask cannot represent overlapping holds on two keyboards or mice.
+			if (keyStateType == KeyStateTypes.Physical
+				&& (MouseUtils.IsMouseVK(vk)
+					? Platform.Mouse.TryGetButtonStatePhysical(vk, out var isDown)
+					: Platform.Keyboard.TryGetKeyStatePhysical(vk, out isDown)))
+				return isDown;
+
+			if (keyStateType != KeyStateTypes.Toggle)
+				return HookThread.QueryKeyDownLogical(vk);
 #endif
 
 			switch (keyStateType)
@@ -1198,7 +1246,7 @@ break_twice:;
 					}
 
 					// Some platforms expose authoritative physical device state without requiring this
-					// process to install a hook (input service and macOS HID state). If they do not, explicitly
+					// process to install a hook (macOS HID state). If they do not, explicitly
 					// fall through to the logical/live query below, as AutoHotkey does without a hook.
 					if (!isMouse
 						&& Keysharp.Internals.Platform.Keyboard.TryGetKeyStatePhysical(vk, out var physicalDown))

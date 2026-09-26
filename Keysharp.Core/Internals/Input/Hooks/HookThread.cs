@@ -1803,25 +1803,13 @@ namespace Keysharp.Internals.Input.Hooks
 
 		#endregion
 
-		internal bool TryGetTrackedModifierLRStatePhysical(out uint modifiersLR)
-		{
-			if (HasKbdHook())
-			{
-				// The hook already maintains all left/right physical modifier bits as one snapshot, but it can
-				// have missed an up-event (see GetModifierLRState()), so correct it first exactly as the
-				// per-key physical path in ScriptGetKeyState() does before reading physicalKeyState.
-				_ = kbdMsSender.GetModifierLRState(true);
-				modifiersLR = kbdMsSender.modifiersLRPhysical;
-				return true;
-			}
-
-			return Keysharp.Internals.Platform.Keyboard.TryGetModifierLRStatePhysical(out modifiersLR);
-		}
-
-		internal virtual bool IsKeyDownLogical(uint vk)
+		/// <summary>The live platform query, without the hook-tracked state an override may answer from.</summary>
+		internal static bool QueryKeyDownLogical(uint vk)
 			=> MouseUtils.IsMouseVK(vk)
 				? Keysharp.Internals.Platform.Mouse.TryGetButtonStateLogical(vk, out var mouseDown) && mouseDown
 				: Keysharp.Internals.Platform.Keyboard.TryGetKeyStateLogical(vk, out var keyDown) && keyDown;
+
+		internal virtual bool IsKeyDownLogical(uint vk) => QueryKeyDownLogical(vk);
 
 		internal abstract bool IsKeyToggledOn(uint vk);
 

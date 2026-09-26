@@ -114,7 +114,7 @@ namespace Keysharp.Internals.Input.Linux
 		}
 
 		/// <summary>Queries logical and physical keyboard state. This full bitmap is input-monitoring data.</summary>
-		internal static bool TryGetKeyState(out uint modifiersLR, out bool capsLock, out bool numLock, out bool scrollLock, out byte[] logicalKeys, out byte[] physicalKeys)
+		internal static bool TryGetKeyState(out uint modifiersLR, out bool capsLock, out bool numLock, out bool scrollLock, out byte[] logicalKeys, out byte[] physicalKeys, uint deviceID = 0)
 		{
 			modifiersLR = 0;
 			capsLock = false;
@@ -126,7 +126,7 @@ namespace Keysharp.Internals.Input.Linux
 			// Full key state is monitoring data. Use an existing grant and never prompt here.
 			if (!TryQuery(
 					KeysharpInputClient.Operations.QueryKeyState,
-					qc => (true, qc.QueryKeyState()),
+					qc => qc.TryQueryKeyState(deviceID, out var state) ? (true, state) : (false, default),
 					out KeysharpInputClient.KeyStateSnapshot state,
 					"key state query"))
 				return false;
@@ -304,7 +304,7 @@ namespace Keysharp.Internals.Input.Linux
 
 				return false;
 			}
-			catch (Exception ex)
+			catch (Exception ex) when (ex is not DeviceKeyStateUnsupportedException)
 			{
 				if (failureContext != null)
 					Diagnostics.Debug.WriteLine($"keysharp-input: {failureContext} failed: {ex.Message}");

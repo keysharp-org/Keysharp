@@ -49,7 +49,7 @@ Prebuilt packages are on the [Releases](https://github.com/keysharp-org/Keysharp
 
 ### Linux
 
-- Download `keysharp-linux-setup.sh` from a [release](https://github.com/keysharp-org/Keysharp/releases), then run:
+- On distributions other than NixOS, download `keysharp-linux-setup.sh` from a [release](https://github.com/keysharp-org/Keysharp/releases), then run:
   ```sh
   sudo sh ./keysharp-linux-setup.sh
   ```
@@ -60,8 +60,9 @@ Setup adds the optional `keysharp-input` and `keysharp-desktop` services and kee
 healthy compatible installations. [Linux installation](docs/install-linux.md) covers
 updates, optional components, diagnosis, portable installs, removal and VS Code.
 
-For experimental NixOS and COSMIC support, including flake configuration and
-source-build commands, see the [NixOS/COSMIC guide](docs/linux-nixos.md).
+On NixOS, use the [NixOS guide](docs/linux-nixos.md) for a flake-based installation,
+GNOME or COSMIC setup, and source-build commands. The release installer does not
+configure NixOS services.
 
 ### macOS
 
