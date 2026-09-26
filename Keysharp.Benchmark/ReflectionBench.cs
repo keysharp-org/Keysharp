@@ -6,11 +6,11 @@ public class ReflectionBench : BaseTest
 {
 	public class Target
 	{
-		public int Method0() => 0;
-		public int Method1(int a) => a;
-		public int Method5(int a, int b, int c, int d, int e) => a + b + c + d + e;
-		public int Method10(int a, int b, int c, int d, int e,
-							int f, int g, int h, int i, int j)
+		public long Method0() => 0L;
+		public long Method1(long a) => a;
+		public long Method5(long a, long b, long c, long d, long e) => a + b + c + d + e;
+		public long Method10(long a, long b, long c, long d, long e,
+							long f, long g, long h, long i, long j)
 			=> a + b + c + d + e + f + g + h + i + j;
 
 		// The typed methods above measure only the coercing path. Almost every member a script can
@@ -56,9 +56,9 @@ public class ReflectionBench : BaseTest
 		_odel10 = DelegateFactory.CreateDelegate(t.GetMethod(nameof(Target.ObjMethod10)) ?? throw new NullReferenceException());
 
 		_args0 = [];
-		_args1 = [1];
-		_args5 = [1, 2, 3, 4, 5];
-		_args10 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+		_args1 = [1L];
+		_args5 = [1L, 2L, 3L, 4L, 5L];
+		_args10 = [1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L];
 	}
 
 	private object _sink = default!; // prevent JIT from optimizing away the call
