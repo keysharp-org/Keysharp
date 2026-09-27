@@ -11072,7 +11072,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Returns the window handle at screen coordinates and requires WindowMonitoring. Omitting the coordinates uses the current cursor position, which is not separately permission-gated."
+                     "notes":  "Returns the window handle at screen coordinates and requires WindowMonitoring. Omitting the coordinates uses the current cursor position, which is not separately permission-gated.",
+                     "tested-by":  "DesktopBrokerTests.WindowAtPreference; DesktopBrokerTests.WindowAtExclusions"
                  },
                  {
                      "category":  "Windowing/GUI",

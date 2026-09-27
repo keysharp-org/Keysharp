@@ -159,6 +159,36 @@ namespace Keysharp.Tests
 			});
 		}
 
+		[TestCase("generic", "focused")]
+		[TestCase("gnome", "background")]
+		public void WindowAtPreference(string key, string expected)
+		{
+			const string json = """
+				{"ok":true,"windows":[
+				{"id":"focused","active":true,"frame":{"x":0,"y":0,"width":100,"height":100},"validFields":["active","frame"]},
+				{"id":"background","frame":{"x":-50,"y":-50,"width":200,"height":200},"validFields":["frame"]}]}
+				""";
+			var backend = new DesktopBackend(key, key);
+			Assert.That(backend.TryParseWindowList(Encoding.UTF8.GetBytes(json), out var windows), Is.True);
+			Assert.That(backend.FindWindowAt(windows, 20, 20)?.CompositorId, Is.EqualTo(expected));
+			Assert.That(backend.FindWindowAt(windows, -20, -20)?.CompositorId, Is.EqualTo("background"));
+			Assert.That(backend.FindWindowAt(windows, 500, 500), Is.Null);
+		}
+
+		[Test]
+		public void WindowAtExclusions([Values("generic", "gnome")] string key,
+			[Values("minimized", "hidden", "other-workspace", "unknown-frame")] string state)
+		{
+			var bounds = new Rectangle(0, 0, 100, 100);
+			var visible = new WaylandWindowInfo(new nint(1), frameGeometry: bounds, visible: true);
+			var excluded = new WaylandWindowInfo(new nint(2), frameGeometry: bounds, active: true,
+				minimized: state == "minimized", visible: state != "hidden", onCurrentWorkspace: state != "other-workspace",
+				knownFields: state == "unknown-frame" ? WaylandWindowFields.All & ~WaylandWindowFields.Frame : WaylandWindowFields.All);
+			var backend = new DesktopBackend(key, key);
+			Assert.That(backend.FindWindowAt([visible, excluded], 20, 20), Is.SameAs(visible));
+			Assert.That(backend.FindWindowAt([excluded], 20, 20), Is.Null);
+		}
+
 		[TestCase("null")]
 		[TestCase("[]")]
 		[TestCase("{\"ok\":false,\"windows\":[]}")]

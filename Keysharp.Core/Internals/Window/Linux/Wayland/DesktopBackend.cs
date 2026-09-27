@@ -116,17 +116,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (TryParseWindow(DesktopClient.QueryWindowAt(x, y, deepest), out window))
 				return true;
 
-			if (TryListWindows(false, out var windows))
-			{
-				window = windows.LastOrDefault(candidate => candidate.Visible
-					&& candidate.OnCurrentWorkspace
-					&& candidate.HasKnownField(WaylandWindowFields.Frame)
-					&& candidate.FrameGeometry.Contains(x, y));
-				return window != null;
-			}
+			window = TryListWindows(false, out var windows) ? FindWindowAt(windows, x, y) : null;
+			return window != null;
+		}
 
-			window = null;
-			return false;
+		internal WaylandWindowInfo FindWindowAt(IReadOnlyList<WaylandWindowInfo> windows, int x, int y)
+		{
+			bool Contains(WaylandWindowInfo candidate) => candidate.Visible && !candidate.Minimized
+				&& candidate.OnCurrentWorkspace
+				&& candidate.HasKnownField(WaylandWindowFields.Frame)
+				&& candidate.FrameGeometry.Contains(x, y);
+			// Generic toplevel lists have no stacking order; prefer the focused window when it contains the point.
+			var focused = BackendKey == "generic" ? windows.LastOrDefault(candidate => candidate.Active && Contains(candidate)) : null;
+			return focused ?? windows.LastOrDefault(Contains);
 		}
 
 		public bool IsKnown(nint handle)
