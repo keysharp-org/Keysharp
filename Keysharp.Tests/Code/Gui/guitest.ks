@@ -5580,7 +5580,7 @@ RunWindowCaptureTest() {
 		if (result[1] != "PASS" && result[1] != "FAIL")
 			throw Error("Capture process returned an invalid status.")
 		AddWindowResult("Capture", "Image.FromWindow", result[1],
-			"Image larger than 100x100 with coordinate mapping", result[2])
+			"Image larger than 100x100 with coordinate mapping and both fixture colours", result[2])
 	} catch as err
 		AddWindowError("Capture", "Image.FromWindow", err)
 	finally {

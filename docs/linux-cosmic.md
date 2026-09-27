@@ -19,6 +19,8 @@ xdg.portal = {
 
 On COSMIC, Keysharp first probes the staging `ext-image-copy-capture` and output-source protocols. When available, it requests the screen-capture capability from `keysharp-desktop`, captures each intersecting output, and composes the requested region while accounting for output scale and rotation. An explicit denial is authoritative and is not bypassed through the portal. If the native protocol is absent or cannot be opened, Keysharp falls back to the portal's Screenshot interface; that request follows the portal's policy rather than the `keysharp-desktop` grant.
 
+When the compositor also exposes the foreign-toplevel capture-source protocol, `Image.FromWindow` captures the window directly, including pixels covered by another window. The compositor chooses the capture extent; `Decorations` does not change it on this backend.
+
 The currently supported COSMIC portal has no RemoteDesktop path for Keysharp's global input work, so installing the portal packages does not replace `keysharp-input`. XWayland can help X11 applications run inside the session, but does not turn the COSMIC session into X11 or bypass its Wayland restrictions.
 
 ## Tray icons

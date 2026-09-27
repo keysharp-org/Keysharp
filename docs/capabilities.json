@@ -9894,7 +9894,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Pixel/image search and screen capture depend on platform-specific backends. On Linux, keysharp-desktop provides authorized X11, Wayland compositor, and portal capture."
+                     "notes":  "Pixel/image search and screen capture depend on platform-specific backends. On Linux, keysharp-desktop provides authorized X11, Wayland compositor, and portal capture.",
+                     "tested-by":  "Gui/guitest.ks; Gui/window-fixture.ks; DesktopBrokerTests.CaptureIdsFollowWindowLifetime"
                  },
                  {
                      "category":  "Windowing/GUI",

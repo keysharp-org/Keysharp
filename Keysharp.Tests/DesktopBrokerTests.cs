@@ -237,6 +237,24 @@ namespace Keysharp.Tests
 				Assert.That(windows[0].ClassName, Is.EqualTo("example.editor"));
 			});
 		}
+
+		[TestCase("generic", "c811cb87-a9bf-4207-bfd6-382d9c0b74f9")]
+		[TestCase("kwin", "{c811cb87-a9bf-4207-bfd6-382d9c0b74f9}")]
+		public void CaptureIdsFollowWindowLifetime(string key, string expected)
+		{
+			const string json = """
+				{"ok":true,"windows":[{"id":"24","captureId":"c811cb87-a9bf-4207-bfd6-382d9c0b74f9",
+				"validFields":["id","captureId"]}]}
+				""";
+			var backend = key == "kwin" ? new KWinBrokerBackend() : new DesktopBackend(key, key);
+			Assert.That(backend.TryParseWindowList(Encoding.UTF8.GetBytes(json), out var windows), Is.True);
+			var handle = windows[0].Handle;
+			Assert.That(backend.TryGetNativeWindowId(handle, out var captureId), Is.True);
+			Assert.That(captureId, Is.EqualTo(expected));
+			Assert.That(windows[0].CompositorId, Is.EqualTo("24"));
+			Assert.That(backend.TryParseWindowList(Encoding.UTF8.GetBytes("{\"ok\":true,\"windows\":[]}"), out _), Is.True);
+			Assert.That(backend.TryGetNativeWindowId(handle, out _), Is.False);
+		}
 	}
 }
 #endif

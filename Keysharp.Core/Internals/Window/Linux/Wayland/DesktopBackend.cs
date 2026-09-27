@@ -10,6 +10,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		private readonly object windowListSync = new();
 		private readonly SyntheticWindowHandleMap<string> handles = new();
+		private readonly Dictionary<nint, string> captureIds = [];
 		private readonly bool nativeHandles;
 		private readonly bool usePushWindowEvents;
 
@@ -133,13 +134,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		public virtual bool TryGetNativeWindowId(nint handle, out string id)
 		{
-			if (nativeHandles && IsKnown(handle))
+			lock (windowListSync)
 			{
-				id = ((ulong)handle).ToString(CultureInfo.InvariantCulture);
-				return true;
-			}
+				if (captureIds.TryGetValue(handle, out id))
+					return true;
 
-			return handles.TryGetValue(handle, out id);
+				if (nativeHandles && IsKnown(handle))
+				{
+					id = ((ulong)handle).ToString(CultureInfo.InvariantCulture);
+					return true;
+				}
+
+				return handles.TryGetValue(handle, out id);
+			}
 		}
 
 		internal bool TryChildren(nint handle, out IReadOnlyList<nint> children)
@@ -311,14 +318,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			Action<Exception> onError = null)
 			=> handler == null ? null : DesktopClient.WatchClipboardChanges(handler, onError);
 
-		protected virtual void WindowsChanged(IReadOnlyList<WaylandWindowInfo> windows,
-			IReadOnlyList<nint> removed) { }
-
 		private void RememberWindows(IReadOnlyList<WaylandWindowInfo> windows, bool complete)
 		{
 			var removed = complete && !nativeHandles
 				? handles.Retain(windows.Select(window => window.Handle)) : [];
-			WindowsChanged(windows, removed);
+			foreach (var handle in removed)
+				_ = captureIds.Remove(handle);
+
+			foreach (var window in windows)
+				if (string.IsNullOrEmpty(window.CaptureId))
+					_ = captureIds.Remove(window.Handle);
+				else
+					captureIds[window.Handle] = window.CaptureId;
 		}
 
 		private bool TryParseWindow(ReadOnlyMemory<byte> json, out WaylandWindowInfo window)

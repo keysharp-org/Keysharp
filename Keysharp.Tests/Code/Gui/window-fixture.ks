@@ -38,6 +38,7 @@ CaptureFixtureWindow(title) {
 		try {
 			ok := img.Width > 100 && img.Height > 100
 				&& IsNumber(img.OriginX) && IsNumber(img.OriginY) && img.ScaleX > 0 && img.ScaleY > 0
+				&& IsObject(img.SearchPixel(0xCC5533)) && IsObject(img.SearchPixel(0x2A9D8F))
 			result := (ok ? "PASS" : "FAIL") "`n" img.Width "x" img.Height
 				" origin=" img.OriginX "," img.OriginY " scale=" img.ScaleX "," img.ScaleY
 		} finally
