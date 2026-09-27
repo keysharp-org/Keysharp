@@ -167,7 +167,15 @@ namespace Keysharp.Builtins.COM
 			var hits = Candidates.Where(i => i.Methods.ContainsKey(name)).ToList();
 
 			if (hits.Count == 0)
-				return false;
+			{
+				// Container nodes can answer Introspect with only child nodes, without declaring the interface.
+				if (name != "Introspect" || (iface != null && iface != DBusCalls.IntrospectableInterface))
+					return false;
+
+				owner = new DBusInterfaceInfo { Name = DBusCalls.IntrospectableInterface };
+				method = new DBusMethodInfo { Name = name, InSignature = "", OutSignature = "s", OutArgNames = [""] };
+				return true;
+			}
 
 			if (hits.Count > 1)
 				throw new AmbiguousMatchException($"'{name}' is defined on more than one interface ({string.Join(", ", hits.Select(h => h.Name))}); pass the interface to ComObject or use ComObjQuery.");

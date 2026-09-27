@@ -3974,7 +3974,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
                      "notes":  "The ComObject function creates a COM object. On Linux the target is a D-Bus service name; on macOS it is an application (bundle id, name, path or a pid), and the second parameter selects an interface or a suite. The macOS backend is not yet verified on hardware.",
-                     "tested-by":  "external-com.ahk"
+                     "tested-by":  "external-com.ahk; dbus-discovery.ahk"
                  },
                  {
                      "category":  "COM",

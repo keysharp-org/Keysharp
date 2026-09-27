@@ -1,4 +1,5 @@
 #ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 bus := ComObject("org.freedesktop.DBus")
@@ -38,5 +39,17 @@ while pos := RegExMatch(rootXml, '<node name="([^"]+)"', &m, pos)
     pos += m.Len
 }
 Assert(kids > 0, A_LineNumber)
+
+; The test peer supplies a container with child nodes but no declared interfaces.
+container := ComObject("io.keysharp.CoreTest:/io/keysharp")
+containerXml := container.Introspect()
+Assert(!InStr(containerXml, "<interface"), A_LineNumber)
+Assert(InStr(containerXml, '<node name="CoreTest"'), A_LineNumber)
+peer := container["CoreTest"]
+AssertEq(peer.Echo("child"), "echo:child", A_LineNumber)
+Assert(InStr(peer.Introspect(), '<interface name="io.keysharp.CoreTest"'), A_LineNumber)
+pinned := ComObjQuery(peer, "io.keysharp.CoreTest")
+Throws(() => pinned.Introspect(), A_LineNumber, MethodError)
+Throws(() => container.MissingMethod(), A_LineNumber, MethodError)
 
 FileAppend("pass`n", "*")

@@ -29,6 +29,7 @@ namespace Keysharp.Tests
 				server = new DBusConnection(DBusAddresses.Session);
 				server.ConnectAsync().AsTask().GetAwaiter().GetResult();
 				server.AddMethodHandler(new TestPeer());
+				server.AddMethodHandler(new TestPeer(container: true));
 				server.RequestNameAsync(ServiceName, default).GetAwaiter().GetResult();
 				busAvailable = true;
 			}
@@ -369,9 +370,9 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>The peer under test. HandleMethodAsync delegates to a sync frame because Reader is a ref struct.</summary>
-		private sealed class TestPeer : IPathMethodHandler
+		private sealed class TestPeer(bool container = false) : IPathMethodHandler
 		{
-			public string Path => ObjPath;
+			public string Path => container ? "/io/keysharp" : ObjPath;
 			public bool HandlesChildPaths => false;
 
 			public ValueTask HandleMethodAsync(MethodContext context)
@@ -380,7 +381,7 @@ namespace Keysharp.Tests
 				return default;
 			}
 
-			private static void Handle(MethodContext context)
+			private void Handle(MethodContext context)
 			{
 				var req = context.Request;
 
@@ -389,7 +390,7 @@ namespace Keysharp.Tests
 					case ("org.freedesktop.DBus.Introspectable", "Introspect"):
 					{
 						var w = context.CreateReplyWriter("s");
-						w.WriteString("""
+						w.WriteString(container ? """<node><node name="CoreTest"/></node>""" : """
 							<node>
 							  <interface name="io.keysharp.CoreTest">
 							    <method name="Echo"><arg direction="in" type="s"/><arg direction="out" type="s"/></method>
