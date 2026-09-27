@@ -6415,7 +6415,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "full",
-                     "notes":  "Displays the window. Explicit X/Y placement on Wayland goes through the compositor backend (KWin, GNOME or Cinnamon with the Keysharp extension) because a client cannot position its own top-level; size, state and centring work everywhere.",
+                     "notes":  "Displays the window. Explicit X/Y placement on Wayland requires a compositor backend (KWin, GNOME or Cinnamon with the Keysharp extension). In the tested COSMIC 1.2.0 session, GTK ignores resize requests for already shown windows; initial sizing, maximize and restore work.",
                      "tested-by":  "ControlTests/control_add_delete_item.ahk"
                  },
                  {
@@ -9897,7 +9897,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Pixel/image search and screen capture depend on platform-specific backends. On Linux, keysharp-desktop provides authorized X11, Wayland compositor, and portal capture.",
-                     "tested-by":  "Gui/guitest.ks; Gui/window-fixture.ks; DesktopBrokerTests.CaptureIdsFollowWindowLifetime"
+                     "tested-by":  "screen-imagesearch.ahk;screen-pixelgetcolor.ahk;screen-pixelsearch.ahk;Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11206,7 +11206,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetPID function returns the Process ID (PID) of the specified window."
+                     "notes":  "Returns the process ID of the specified window. Returns 0 when the window backend does not report a PID, including foreign windows on COSMIC and generic wlroots Wayland sessions. An app ID is not a process ID.",
+                     "tested-by":  "DesktopBrokerTests.ProviderSnapshotsDeclareEveryValueTheyEmit; Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11227,7 +11228,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetProcessName function returns the name of the process that owns the specified window."
+                     "notes":  "Returns the name of the process that owns the specified window. Empty when its PID is unavailable, including foreign windows on COSMIC and generic wlroots Wayland sessions."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11237,7 +11238,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetProcessPath function returns the full path and name of the process that owns the specified window."
+                     "notes":  "Returns the executable path of the process that owns the specified window. Empty when its PID is unavailable, including foreign windows on COSMIC and generic wlroots Wayland sessions, or the process path cannot be read."
                  },
                  {
                      "category":  "Windowing/GUI",

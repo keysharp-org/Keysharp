@@ -165,7 +165,8 @@ MyGui.MenuBar := MyMenuBar
 ; ┌──────────────┐
 ; │  Status Bar  │
 ; └──────────────┘
-MySB := MyGui.Add("StatusBar", "h36", "                       ")
+; Keep the verdict color demonstration readable with either desktop theme.
+MySB := MyGui.Add("StatusBar", "h36 cBlack BackgroundWhite", "                       ")
 
 ; ┌─────────────┐
 ; │  Start TAB  │
@@ -179,7 +180,7 @@ Tab.UseTab("Lists, Menus & Styles")
 ; │  Create the window:  │
 ; └──────────────────────┘
 
-MyGui.SetFont("cBlack s8", "Arial")
+MyGui.SetFont("s8", "Arial")
 TEST_HEADER := MyGui.Add("Text", "s20 w1200","Keysharp GUI Tests")
 
 ; ┌────────────────────────────────────┐
@@ -218,9 +219,9 @@ MyGui.UseGroup(gb1_TabOne)
 ; │  Double-click activates tooltip  │
 ; └──────────────────────────────────┘
 LV_Label := MyGui.Add("Text", "w300 h20 xc+10 y+20","Create listview with tooltip - double-click row")
-LV_Label.SetFont("cBlue s10")
+LV_Label.SetFont("s10")
 ; Create the ListView with two columns, Name and Size:
-LV := MyGui.Add("ListView", "r9 w300 xc+10 y+5 BackgroundTeal", ["Name","Size (KB)"])
+LV := MyGui.Add("ListView", "r9 w300 xc+10 y+5 cWhite BackgroundTeal", ["Name","Size (KB)"])
 
 ; ┌────────────────────────────────────────────────────────────┐
 ; │  Notify the script whenever the user double clicks a row:  │
@@ -252,7 +253,7 @@ LV.ModifyCol(2, "Integer")  ; For sorting purposes, indicate that column 2 is an
 ; └─────────────────────┘
 
 RadioText := MyGui.Add("Text", "w200 h20 xc+10", "Radio group tests")
-RadioText.SetFont("cBlue s10")
+RadioText.SetFont("s10")
 RadioOne := MyGui.Add("Radio", "vMyRadioGroup", "Change header font (alternate)")
 RadioOne.OnEvent("Click", ChangeFont)
 RadioTwo := MyGui.Add("Radio", "vMyRadioGroup", "Restore header font (alternate)")
@@ -265,7 +266,7 @@ RadioThree.OnEvent("Click", RadioThreeClicked)
 ; └──────────────────┘
 
 CheckBoxText := MyGui.Add("Text", "w200 h20", "Checkbox test")
-CheckBoxText.SetFont("cBlue s10")
+CheckBoxText.SetFont("s10")
 CheckBoxOne := MyGui.Add("CheckBox", "w200 xc+10 yp+20", "If this text is long, it will wrap automatically")
 CheckBoxOne.OnEvent("Click", CheckBoxOneClicked)
 
@@ -276,7 +277,7 @@ CheckBoxOne.OnEvent("Click", CheckBoxOneClicked)
 ; Give this header an explicit height: SetFont() enlarges the text to s14 after the control was already
 ; auto-sized at the GUI's default (s8) font, so without a reserved height the next control would overlap it.
 Menu_Label := MyGui.Add("Text", "w400 h28 xc+10 y+10","Press Win-Z to see popup menu")
-Menu_Label.SetFont("cBlue s14")
+Menu_Label.SetFont("s14")
 
 checkBtn := MyGui.Add("Button", "xc+10 y+3", "ControlSetChecked")
 checkBtn.OnEvent("Click", SetChecked)
@@ -300,27 +301,27 @@ MyGui.UseGroup(gb2_TabOne)
 ; │  Tab One, Group Two controls  │
 ; └───────────────────────────────┘
 
-g2Label1 := MyGui.Add("Text", "w200 cBlue S10", "Click buttons to set and reset style")
+g2Label1 := MyGui.Add("Text", "w200 S10", "Click buttons to set and reset style")
 g2Label2 := MyGui.Add("Text", "xc+10", "Keep an eye on the title bar!")
 
 g2Btn1 := MyGui.Add("Button", "xc+10 y+10", "Set")
-g2Btn1.SetFont("s10 cBlue")
+g2Btn1.SetFont("s10")
 g2Btn2 := MyGui.Add("Button", "xc+100 yp", "Reset")
-g2Btn2.SetFont("s10 cBlue")
+g2Btn2.SetFont("s10")
 
 g2Btn1.OnEvent("Click", Set_Style)
 g2Btn2.OnEvent("Click", Reset_Style)
 
-g2Label3 := MyGui.Add("Text", "xc+10 w200 cBlue S10", "Click buttons to alter Edit style")
+g2Label3 := MyGui.Add("Text", "xc+10 w200 S10", "Click buttons to alter Edit style")
 g2Label4 := MyGui.Add("Text", "xc+10", "Uppercase - restrict or reset")
 
 MyEdit2 := MyGui.Add("Edit", "xc+10 w300 h55")
 HwndMyEdit := MyEdit2.Hwnd
 
 g2Btn3 := MyGui.Add("Button", "xc+10 y+10", "Uppercase")
-g2Btn3.SetFont("s8 cBlue")
+g2Btn3.SetFont("s8")
 g2Btn4 := MyGui.Add("Button", "xc+100 yp", "Unrestrict")
-g2Btn4.SetFont("s8 cBlue")
+g2Btn4.SetFont("s8")
 
 g2Btn3.OnEvent("Click", Set_Edit_Style)
 g2Btn4.OnEvent("Click", Reset_Edit_Style)
@@ -347,7 +348,7 @@ MyGui.UseGroup(gb1_TabTwo)
 ; │  Edit  │
 ; └────────┘
 SecondEdit := MyGui.Add("Edit", "xc+10 yc+20 w300 h110")
-SecondEditText := MyGui.Add("Text", "cBlue s10 w200", "ControlSetText Test")
+SecondEditText := MyGui.Add("Text", "s10 w200", "ControlSetText Test")
 HwndSecondEdit := SecondEdit.Hwnd
 EditBtn1 := MyGui.Add("Button", "xp y+10", "Text -> Edit")
 EditBtn1.OnEvent("Click", SendTextToEdit)
@@ -360,7 +361,7 @@ EditHwndBtn.OnEvent("Click", ShowEditHwnd)
 ; │  RichEdit  │
 ; └────────────┘
 SecondRichEdit := MyGui.Add("RichEdit", "xc+10 w250 h90", "Try pasting rich text and/or images here!")
-SecondRichEditText := MyGui.Add("Text", "cBlue s10 w200", "ControlSetText Test (RichEdit)")
+SecondRichEditText := MyGui.Add("Text", "s10 w200", "ControlSetText Test (RichEdit)")
 RichEditBtn1 := MyGui.Add("Button", "xc+10 y+10", "Send Text to RichEdit")
 RichEditBtn1.OnEvent("Click", SendTextToRichEdit)
 RichEditBtn2 := MyGui.Add("Button", "x+5 yp", "Send Rtf to RichEdit")
@@ -373,7 +374,7 @@ LinesBtn.OnEvent("Click", GetLineCount)
 ; ┌────────────┐
 ; │  TreeView  │
 ; └────────────┘
-TreeViewText := MyGui.Add("Text", "xc+10 cBlue s10 w200", "TreeView Test")
+TreeViewText := MyGui.Add("Text", "xc+10 s10 w200", "TreeView Test")
 TV := MyGui.Add("TreeView", "xp w200 y+5 -ReadOnly") ; Need to work on -ReadOnly
 TV.OnEvent("ItemEdit", MyTreeView_Edit)
 TreeParentOne := TV.Add("First parent")
@@ -386,7 +387,7 @@ P2C2C1 := TV.Add("Child 2's first child", P2C2)
 ; ┌──────────────────────────┐
 ; │  Text to show Mouse Pos  │
 ; └──────────────────────────┘
-MousePosText := MyGui.Add("Text", "xc+10 y+10 cBlue s10 w200", "Uses SetTimer to show mouse position")
+MousePosText := MyGui.Add("Text", "xc+10 y+10 s10 w200", "Uses SetTimer to show mouse position")
 ; The size/weight are set directly in the Add options (s16 bold) so the control is created at its final font
 ; and autosizes to the real 16pt line height on every platform; the enclosing groupbox (which autosizes to
 ; its children) then reserves enough room. Enlarging the font afterwards via SetFont would be too late - the
@@ -407,18 +408,18 @@ MyGui.UseGroup(gb2_TabTwo)
 ; ┌─────────┐
 ; │  Edits  │
 ; └─────────┘
-t2g2t1 := MyGui.Add("Text", "xc+10 yc+20 w200 cBlue", "Password entry")
+t2g2t1 := MyGui.Add("Text", "xc+10 yc+20 w200", "Password entry")
 t2g2t1.SetFont("s10")
 e1 := MyGui.Add("Edit", "w200 xp y+10 +0x20")
 e1.SetCue("Password cue text", 1) ; Does not disappear when control has keyboard focus
-t2g2t2 := MyGui.Add("Text", "xp y+10 w250 cBlue s10", "Alternate password entry (*)")
+t2g2t2 := MyGui.Add("Text", "xp y+10 w250 s10", "Alternate password entry (*)")
 t2g2t2.SetFont("s10")
 e2 := MyGui.Add("Edit", "w200 xp y+10 Password*")
 
 #if WINDOWS
-	t2g2t3 := MyGui.Add("Text", "xp y+10 w250 cBlue", "Uppercase - ControlSetStyle")
+	t2g2t3 := MyGui.Add("Text", "xp y+10 w250", "Uppercase - ControlSetStyle")
 #else
-	t2g2t3 := MyGui.Add("Text", "xp y+10 w250 cBlue", "Uppercase - Opt(`"+Uppercase`")")
+	t2g2t3 := MyGui.Add("Text", "xp y+10 w250", "Uppercase - Opt(`"+Uppercase`")")
 #endif
 
 t2g2t3.SetFont("s10")
@@ -432,9 +433,9 @@ MyGui.UseGroup(gb2_TabTwo)
 #endif
 
 #if WINDOWS
-	t2g2t4 := MyGui.Add("Text", "xp y+10 w250 cBlue", "Uppercase - +0x8")
+	t2g2t4 := MyGui.Add("Text", "xp y+10 w250", "Uppercase - +0x8")
 #else
-	t2g2t4 := MyGui.Add("Text", "xp y+10 w250 cBlue", "Uppercase - Constructor")
+	t2g2t4 := MyGui.Add("Text", "xp y+10 w250", "Uppercase - Constructor")
 #endif
 
 t2g2t4.SetFont("s10")
@@ -450,15 +451,15 @@ e3Btn := MyGui.Add("Button", "xp y+10", "Toggle ControlSetStyle Edit")
 e3Btn.OnEvent("Click", ShowE3Hwnd)
 
 numericText := MyGui.Add("Text", "xc+10 y+10 Autosize", "The text box below should be numeric only")
-numericText.SetFont("s10 cBlue")
+numericText.SetFont("s10")
 numericEdit := MyGui.Add("Edit", "w200 xp y+10 number")
 
 setNumericBtn := MyGui.Add("Button", "x+10 yp", "Num")
-setNumericBtn.SetFont("s8 cBlue")
+setNumericBtn.SetFont("s8")
 setNumericBtn.OnEvent("Click", SetNumeric)
 
 resetNumericBtn := MyGui.Add("Button", "x+10 yp", "Unr")
-resetNumericBtn.SetFont("s8 cBlue")
+resetNumericBtn.SetFont("s8")
 resetNumericBtn.OnEvent("Click", ClearNumeric)
 
 SetNumeric(*)
@@ -507,7 +508,7 @@ gb1_TabThree := MyGui.Add("GroupBox", "xc+10 yc+10 w325", "Tab Three - Group One
 MyGui.UseGroup(gb1_TabThree)
 
 ;Placeholder ThirdText1
-ThirdText1 := MyGui.Add("Text", "xc+10 yc+20 cBlue s10", "ListBox Test")
+ThirdText1 := MyGui.Add("Text", "xc+10 yc+20 s10", "ListBox Test")
 ; ┌────────────────┐
 ; │  ListBox test  │
 ; └────────────────┘
@@ -544,21 +545,21 @@ AddWhite(*) {
 ; No Y coordinate: this positions the label beneath all controls in the group (i.e. below the listbox
 ; above it). Using y+ here would measure from the buttons beside the listbox, which sit at its top, so
 ; the gap wouldn't account for the listbox height (which differs across platforms/fonts).
-ThirdText2 := MyGui.Add("Text", "xc+10 cBlue s10", "ListBox Test (Multi-Select)")
+ThirdText2 := MyGui.Add("Text", "xc+10 s10", "ListBox Test (Multi-Select)")
 MyMultiLB := MyGui.Add("ListBox", "+Multi r3 w110 xc+10 y+10", ["Reactionary Red","Garish Green","Beastly Blue","Banal Black","Washed-out White"])
 MyMultiLB.OnEvent("Change", MultiLBClicked)
 
 ; ┌─────────────┐
 ; │  Drop-Down  │
 ; └─────────────┘
-ThirdText3 := MyGui.Add("Text", "xc+10 y+10 cBlue s10", "Drop-down List with 5 rows")
+ThirdText3 := MyGui.Add("Text", "xc+10 y+10 s10", "Drop-down List with 5 rows")
 MyDDL := MyGui.Add("DropDownList", "xc+10 y+10 r3", ["Orange","Purple","Fuchsia","Lime","Aqua"])
 MyDDL.OnEvent("Change", DDLClicked)
 
 ; ┌─────────────┐
 ; │  Combo Box  │
 ; └─────────────┘
-ThirdText4 := MyGui.Add("Text", "xc+10 cBlue s10", "ComboBox with 3 rows")
+ThirdText4 := MyGui.Add("Text", "xc+10 s10", "ComboBox with 3 rows")
 MyCB := MyGui.Add("ComboBox", "xc+10 y+10 r3", ["Orange","Purple","Fuchsia"])
 CB_Button := MyGui.Add("Button", "h25 w80 xc+10 y+10", "CB Selection")
 CB_AddBtn := MyGui.Add("Button", "h25 w80 xc+90 yp", "Add Yellow")
@@ -590,7 +591,7 @@ DeleteYellow(*) {
 ; │  Slider  │
 ; └──────────┘
 
-ThirdText5 := MyGui.Add("Text", "xc+10 cBlue s10", "Moving slider shows position below")
+ThirdText5 := MyGui.Add("Text", "xc+10 s10", "Moving slider shows position below")
 MySlider := MyGui.Add("Slider", "xc+10 y+10 +AltSubmit TickInterval10 Page10", 100)
 MySlider.OnEvent("Change", SliderPos)
 MySliderPos := MyGui.Add("Text", "xc+10 y+5","")
@@ -605,14 +606,14 @@ SliderPos(*) {
 ; ┌────────────────┐
 ; │  Progress Bar  │
 ; └────────────────┘
-ThirdText6 := MyGui.Add("Text", "xc+10 cBlue s10", "Progress bar - click buttons to move")
+ThirdText6 := MyGui.Add("Text", "xc+10 s10", "Progress bar - click buttons to move")
 MyProgress := MyGui.Add("Progress", "xc+10 y+10 cRed BackgroundGreen Smooth", 50)
 MyProgress.GetPos(&px, &py, &pw, &ph)
 MyVertProgress := MyGui.Add("Progress", "cRed BackgroundGreen Smooth x+70 yp-" . (pw - ph) . " Vertical w" . ph . " h" . pw, 50) ; Swap width and height.
 
 Pbtn1 := MyGui.Add("Button", "s8 xc+10 y+5", "Lower")
 Pbtn2 := MyGui.Add("Button", "s8 xc+100 yp", "Higher")
-ProgressStatusText := MyGui.Add("Text", "x+5 yp cBlue s10 Autosize", "Value: ")
+ProgressStatusText := MyGui.Add("Text", "x+5 yp s10 Autosize", "Value: ")
 Pbtn1.OnEvent("Click", Pbtn1Clicked)
 Pbtn2.OnEvent("Click", Pbtn2Clicked)
 
@@ -636,17 +637,17 @@ MyGui.UseGroup(gb2_TabThree)
 ; └────────────────┘
 
 InfoText3 := MyGui.Add("Text", "xc+10 yc+20 w200", "Sliding text. Move Slider.")
-InfoText3.SetFont("cBlue s8")
+InfoText3.SetFont("s8")
 MyText := MyGui.Add("Text", "xc+10 y+10 w300 h30")
-MyText.SetFont("cTeal Consolas Bold")
+MyText.SetFont("Consolas Bold")
 HwndMyText := MyText.Hwnd
 
 MySlider2 := MyGui.Add("Slider", "Range0-80 +AltSubmit TickInterval10 Page10 ToolTip", 10)
 MySlider2.Value := 10
-mybtn := MyGui.Add("Button", "w100 s8 cBlue", "Sliding Test")
+mybtn := MyGui.Add("Button", "w100 s8", "Sliding Test")
 mybtn.OnEvent("Click", STest)
 FakeSep := MyGui.Add("Text", "xc+10 y+10", "__________________________________________________")
-FakeSep.SetFont("cTeal Bold")
+FakeSep.SetFont("Bold")
 
 STest(*) {
 	Loop(MySlider2.Value) {
@@ -665,11 +666,11 @@ STest(*) {
 }
 
 MyLinkText := MyGui.Add("Text", "xc+10 y+5", "Link test")
-MyLinkText.SetFont("cBlue s8")
+MyLinkText.SetFont("s8")
 MyLink := MyGui.Add("Link", "xc+10 y+5", 'Click this <a href="https://www.autohotkey.com">link to AHK page</a>')
 
 MyHkInfoText := MyGui.Add("Text", "xc+10 y+5 w200", "Define Hotkey test`nFocus Edit and click hotkey(s)")
-MyHkInfoText.SetFont("cBlue s8")
+MyHkInfoText.SetFont("s8")
 MyHotkey := MyGui.Add("Hotkey", "xc+10 y+5")
 MyHotkey.OnEvent("Change", UpdateHK)
 MyHkText := MyGui.Add("Text", "xc+10 y+5 w200" , MyHotkey.Value)
@@ -680,7 +681,7 @@ UpdateHK(*) {
 }
 
 FakeSep2 := MyGui.Add("Text", "xc+10 y+5", "__________________________________________________")
-FakeSep2.SetFont("cTeal Bold")
+FakeSep2.SetFont("Bold")
 
 MyGui.Add("Text", "xc+10 y+5", "UpDown: Range 1-10, `ninc 1 (mouse 8), def 5.")
 nud := MyGui.Add("UpDown", "xc+10 y+5 h25 vMyNud Range1-10", 5)
@@ -711,9 +712,9 @@ NudChange(*)
 Tab.UseTab("Pickers & Sliders")
 gb3_TabThree := MyGui.Add("GroupBox", "xc+690 yc+10 w330", "Tab Three - Dates")
 MyGui.UseGroup(gb3_TabThree)
-ThirdText7 := MyGui.Add("Text", "xc+16 yc+24 cBlue s10", "DateTime Test")
+ThirdText7 := MyGui.Add("Text", "xc+16 yc+24 s10", "DateTime Test")
 MyDateTime := MyGui.Add("DateTime", "s8 xc+16 y+8 w200", "LongDate")
-ThirdText8 := MyGui.Add("Text", "xc+16 y+12 cBlue s10", "MonthCal Test")
+ThirdText8 := MyGui.Add("Text", "xc+16 y+12 s10", "MonthCal Test")
 MyMonthCal := MyGui.Add("MonthCal", "xc+16 y+5")
 MC_Btn := MyGui.Add("Button", "s8 xc+16 y+8", "Change Cal Colors (not implemented)")
 MC_Btn.OnEvent("Click", MC_Colors)
@@ -724,7 +725,7 @@ MyGui.UseGroup()
 	gb3_CZ := MyGui.Add("GroupBox", "xc+880 yc+10 w350", "Image Copy & Send-to-Control")
 	MyGui.UseGroup(gb3_CZ)
 	CpText := MyGui.Add("Text", "xc+16 yc+24 w310", "Image copy — Paste Pic / Paste from file share this edit:")
-	CpText.SetFont("s8 cBlue")
+	CpText.SetFont("s8")
 	MyRE := MyGui.Add("RichEdit", "xc+16 y+8 w310 h120")
 	MySecondPic := LoadPicture(A_WorkingDir . A_DirSeparator . "Robin.png")
 	Clipboard.Image := "HBITMAP:" MySecondPic
@@ -751,7 +752,7 @@ CopyPicFromFile(*) {
 	}
 }
 	gb3Label := MyGui.Add("Text", "xc+16 y+14 w310", "Send text to this edit (buttons below):")
-	gb3Label.SetFont("s8 cBlue")
+	gb3Label.SetFont("s8")
 	gb3Edit := MyGui.Add("Edit", "xc+16 y+8 w310 h130")
 	gb3Hwnd := gb3Edit.Hwnd
 	gb3Edit.OnEvent("Focus", StartEditTooltip)
@@ -826,25 +827,24 @@ Tab.UseTab("ControlZoo")
 gb1_CZ := MyGui.Add("GroupBox", "xc+10 yc+10 w460", "ControlZoo - Group One")
 MyGui.UseGroup(gb1_CZ)
 CZ_Text1 := MyGui.Add("Text", "xc+10 yc+20", "Control Functions testing")
-CZ_Text1.SetFont("s10 CBlue")
+CZ_Text1.SetFont("s10")
 CZ_Text2 := MyGui.Add("Text", "xc+10 y+10 w300 h30 Wrap Border", "For the controls on this tab, we'll add, delete, click, focus and perform other control functions.")
-CZ_Text2.SetFont("CTeal")
 
 CZ_Text2a := MyGui.Add("Text", "xc+10 y+5", "ListBox control testing")
-CZ_Text2a.SetFont("s8 CBlue")
+CZ_Text2a.SetFont("s8")
 
 CZ_ListBox := MyGui.Add("ListBox", "xc+10 h120 w160 Section", ["Red","Green","Blue","Black","White", "Maroon"
 	, "Purple", "Color de gos com fuig", "Weiß", "Amarillo", "красный"
 	, "朱红"])
 
 CZ_Text3 := MyGui.Add("Text", "xc+10 y+5", "Edit control testing")
-CZ_Text3.SetFont("s8 CBlue")
+CZ_Text3.SetFont("s8")
 
 CZ_Edit1 := MyGui.Add("Edit", "xc+10 y+5 w160 h60")
 ;CZ_Edit1.SetCue("Multi-line edit control cue text")
 
 CZ_SeparatorText1 := MyGui.Add("Text", "xc+10 y+8 w160", "ListView content tests")
-CZ_SeparatorText1.SetFont("s8 CBlue")
+CZ_SeparatorText1.SetFont("s8")
 
 LV2 := MyGui.Add("ListView", "r4 w160 xc+10 y+5", ["Name","KB"])
 
@@ -944,7 +944,7 @@ CZ_LbBtn18.OnEvent("Click", EditPaster)
 
 #if WINDOWS
 customText := MyGui.Add("Text", "xc+10", "Custom controls:")
-customText.SetFont("s8 CBlue")
+customText.SetFont("s8")
 
 IP := MyGui.Add("Custom", "ClassSysIPAddress32 r1 w150")
 IP.OnCommand(0x300, IP_EditChange)
@@ -1009,7 +1009,7 @@ MyGui.UseGroup(gb2_CZ)
 ;Reserved4 := MyGui.Add("Text", "xc+10 yc+20 w325", "Reserved for Future Testing")
 ;Reserved4.SetFont("s12 CBlue")
 gb2_CZ_Text1 := MyGui.Add("Text", "xc+10 yc+20 w325", "ComboBox Control Tests")
-gb2_CZ_Text1.SetFont("s8 cBlue")
+gb2_CZ_Text1.SetFont("s8")
 
 gb2_CZ_CB := MyGui.Add("ComboBox", "xc+10 y+10 r5 Limit", ["Orange","Purple","Fuchsia","Lime","Aqua"])
 #if WINDOWS
@@ -1038,7 +1038,7 @@ gb2_CZ_Btn8 := MyGui.Add("Button", "x+5 yp", "Hide ComboBox dropdown")
 gb2_CZ_Btn8.OnEvent("Click", Click_CB_Hide_Dropdown)
 
 gb2_CZ_Text2 := MyGui.Add("Text", "xc+10 y+10 w325", "Move mouse to color. Press Ctrl+Alt+9.")
-gb2_CZ_Text2.SetFont("s8 cBlue")
+gb2_CZ_Text2.SetFont("s8")
 
 MyColorLabel := MyGui.Add("Text", "xc+10 y+10 w200", "Empty text below:")
 MyColorText := MyGui.Add("Text", "w200 xc+10 y+10", "")
@@ -1676,9 +1676,7 @@ GetPix(*) {
 	MyColorText.SetFont(ColorString)
 }
 
-; PixelGetColor / PixelSearch against the on-tab colour swatch (Image tab). No helper window: the swatch's
-; own control Hwnd gives the screen bounds, so PixelGetColor reads its centre and PixelSearch re-finds that
-; exact colour inside those bounds — self-consistent regardless of the rendered shade.
+; Check the swatch's known colour so an incorrect control origin cannot pass by sampling the background.
 RunPixelGetColorTest() {
 	global pixelSwatch
 
@@ -1688,6 +1686,8 @@ RunPixelGetColorTest() {
 		cx := sx + sw // 2
 		cy := sy + sh // 2
 		color := PixelGetColor(cx, cy)
+		if color != 0xCC5533
+			throw Error("Expected swatch colour 0xCC5533 at " cx "," cy "; got " color)
 		SetStatus("pixel_main", "Pixel status: PASS - PixelGetColor read " color " at swatch centre (" cx "," cy ")")
 		AppendLog("PixelGetColor sampled (" cx "," cy ") -> " color)
 	} catch as err {
@@ -1702,9 +1702,7 @@ RunPixelSearchTest() {
 	try {
 		CoordMode("Pixel", "Screen")   ; WinGetPos returns screen coords, so search pixels in screen space too
 		WinGetPos(&sx, &sy, &sw, &sh, "ahk_id " pixelSwatch.Hwnd)
-		cx := sx + sw // 2
-		cy := sy + sh // 2
-		color := PixelGetColor(cx, cy)
+		color := 0xCC5533
 		if PixelSearch(&fx, &fy, sx, sy, sx + sw - 1, sy + sh - 1, color, 4) {
 			SetStatus("pixel_main", "Pixel status: PASS - PixelSearch found " color " at " fx "," fy)
 			AppendLog("PixelSearch found colour " color " at " fx "," fy " within the swatch bounds.")
@@ -1991,7 +1989,7 @@ ShowFileSelectResult(fsResult)
 ChangeFont(*)
 {
 	global TEST_HEADER
-	TEST_HEADER.SetFont("cBlue s14", "Comic Sans MS")
+	TEST_HEADER.SetFont("s14", "Comic Sans MS")
 }
 ; ┌────────────────┐
 ; │  Restore font  │
@@ -1999,7 +1997,7 @@ ChangeFont(*)
 
 ChangeFontBack(*)
 {
-	TEST_HEADER.SetFont("cBlack s8", "Arial")
+	TEST_HEADER.SetFont("cDefault s8", "Arial")
 	MsgBox("Done", "Restoring Font")
 }
 ; ┌───────────────────────────┐
@@ -2552,53 +2550,28 @@ Reset_Edit_Style(*)
 ; │  Image Search functions  │
 ; └──────────────────────────┘
 
-; Checks that a live screen capture agrees with the Gui's own coordinate system. That is the one thing the
-; headless tests cannot reach: ImageTests (ImageSearchFindsSubImage and friends) already cover the matcher
-; against rich pixel content in memory, and ScreenTests.ImageSearch already covers capturing a region and
-; finding it again, so neither is repeated here.
-;
-; The needle is authored below rather than loaded from killbill.png, and it is deliberately a block of one
-; colour. A Picture control does NOT put an image file's own pixels on screen: macOS renders the image at
-; the display's backing scale and converts it into the display's colour profile (Wayland scales it too), so
-; a needle read from the file can never match its own on-screen rendering - not at any variation, and not
-; with *w/*h scaling. Gui-drawn solid colours do survive the capture byte-for-byte, and a solid block stays
-; solid however the display scales it, so this needle is valid at 1x, 2x and fractional scaling without the
-; script having to know the scale.
+; A solid-colour needle survives display scaling without knowing the monitor scale.
 ImgSrch(*) {
 	global MyGui, pixelSwatch
 
-	CoordMode("Pixel", "Screen")  ; the rects below come from WinGetPos, which reports screen coordinates
-
-	; Every rectangle here comes from WinGetPos, so window, swatch and search result are all in ONE
-	; coordinate space - the platform's screen space, which is what ImageSearch reports in too. Mixing in
-	; Gui.GetClientPos / Control.GetPos does not work: those return the control's authored position in the
-	; window's DPI-LOGICAL units (and GetClientPos likewise reports a logical size next to a physical
-	; origin), so on a scaled Windows display a screen origin plus a logical offset lands far from the
-	; control - and a logical width shrinks the search rectangle to a fraction of the window.
+	CoordMode("Pixel", "Screen")
 	try {
 		WinGetPos(&winX, &winY, &winW, &winH, MyGui)
 		WinGetPos(&swatchX, &swatchY, &swatchW, &swatchH, "ahk_id " pixelSwatch.Hwnd)
 
-		needle := Image.Create(8, 8, 0xCC5533).ToBitmap()
+		needle := Image.Create(8, 8, 0xCC5533)
 		resultX := "", resultY := ""
 
-		; Bounded to the window rather than the whole desktop, so a same-coloured pixel in some other
-		; window cannot win the top-left-first scan. It also exercises the search-rectangle path.
-		if !ImageSearch(&resultX, &resultY, winX, winY, winX + winW, winY + winH, "HBITMAP:" needle) {
+		; Bound the search to the fixture so another window's matching colour cannot pass.
+		if !ImageSearch(&resultX, &resultY, winX, winY, winX + winW - 1, winY + winH - 1, "HBITMAP:" needle.ToBitmap()) {
 			SetStatus("image_main", "Image status: FAIL - colour swatch not found inside the window")
-			AppendLog("ImageSearch did not find the swatch fixture within the Gui window rect.")
+			AppendLog("ImageSearch did not find the swatch fixture in the search rectangle.")
 			return
 		}
 
-		; Two independent checks on the reported position. It must be the swatch's own top-left corner as
-		; the window functions report it, and reading that point back must give the colour searched for -
-		; PixelGetColor maps screen->pixel where ImageSearch mapped pixel->screen, so a HiDPI scale slip
-		; breaks one or both. The swatch is drawn with a border, whose width is the platform's business
-		; (none on some, a pixel or two on others), so the solid block starts just inside the control's
-		; rect: allow that inset rather than hard-coding a border width. A coordinate-space slip misses by
-		; far more than a few pixels, so the check stays meaningful.
+		; A fractional-scale edge can share a logical pixel with the background; sample inside the matched needle.
 		inset := 4
-		colour := PixelGetColor(resultX, resultY)
+		colour := PixelGetColor(resultX + 2, resultY + 2)
 		atCornerX := resultX >= swatchX && resultX <= swatchX + inset
 		atCornerY := resultY >= swatchY && resultY <= swatchY + inset
 
@@ -2612,6 +2585,9 @@ ImgSrch(*) {
 	} catch as e {
 		SetStatus("image_main", "Image status: FAIL - ImageSearch error: " e.Message)
 		AppendLog("ImageSearch threw: " e.Message)
+	} finally {
+		if IsSet(needle)
+			needle.Dispose()
 	}
 }
 
@@ -2648,7 +2624,7 @@ F1 up::
 MyGui.UseGroup()
 Tab.UseTab("Dll && COM")
 
-hideCursorDllLabel := MyGui.Add("Text", "w400 xc+10 y+10 cBlue S10","Press Win+C to hide the cursor, and press again to restore it.")
+hideCursorDllLabel := MyGui.Add("Text", "w400 xc+10 y+10 S10","Press Win+C to hide the cursor, and press again to restore it.")
 
 dllMsgBoxBtn := MyGui.Add("Button", "xc+10 y+10", "Dll MsgBox()")
 dllMsgBoxBtn.OnEvent("Click", DllMsgBox)
@@ -2689,7 +2665,7 @@ comShellExecNotepad.OnEvent("Click", ComExecNotepadShell)
 comFakeComCall := MyGui.Add("Button", "xc+10 y+10", "Fake COM call (hello)")
 comFakeComCall.OnEvent("Click", FakeComCall)
 
-_ := MyGui.Add("Text", "xc+10 y+10 cBlue S10", "An animated Odie should appear below using ActiveX.")
+_ := MyGui.Add("Text", "xc+10 y+10 S10", "An animated Odie should appear below using ActiveX.")
 
 axPic := "http://www.animatedgif.net/cartoons/A_5odie_e0.gif"
 axText := "mshtml:<img src='" . axPic . "' />"
@@ -2972,7 +2948,7 @@ MyGui.UseGroup(audioDevGroup)
 MyGui.AddText("xc+16 yc+24 w528 h30", "Every output and input endpoint this host reports. Select one to see what it reports about itself; a fact the backend cannot determine is shown as (cannot determine) rather than guessed at.")
 gAudioList := MyGui.Add("ListBox", "xc+16 y+8 w528 r6")
 gAudioList.OnEvent("Change", (*) => ShowSelectedAudioDevice())
-gAudioSummary := MyGui.AddText("xc+16 y+8 w528 h20 cBlue", "Selected: none")
+gAudioSummary := MyGui.AddText("xc+16 y+8 w528 h20", "Selected: none")
 btnAudioRefresh := MyGui.AddButton("xc+16 y+8 w170 h28", "Refresh Devices")
 btnAudioRefresh.OnEvent("Click", (*) => RefreshAudioDevices(true))
 btnAudioDefault := MyGui.AddButton("x+8 yp w170 h28", "Select Default Output")
@@ -2981,7 +2957,7 @@ btnAudioRefreshObj := MyGui.AddButton("x+8 yp w170 h28", "Refresh() Selected")
 btnAudioRefreshObj.OnEvent("Click", (*) => RefreshSelectedAudioDevice())
 gAudioDetails := MyGui.AddEdit("xc+16 y+10 w528 h140 +ReadOnly -Wrap", "")
 
-MyGui.AddText("xc+16 y+10 w528 h20 cBlue", "Dragging the slider sets the selected device's own volume:")
+MyGui.AddText("xc+16 y+10 w528 h20", "Dragging the slider sets the selected device's own volume:")
 gAudioVolSlider := MyGui.Add("Slider", "xc+16 y+6 w528 +AltSubmit Page10 ToolTip Range0-100", 50)
 gAudioVolSlider.OnEvent("Change", (*) => AudioVolumeSliderMoved())
 btnAudioMute := MyGui.AddButton("xc+16 y+10 w170 h28", "Mute Selected")
@@ -3670,7 +3646,7 @@ btnReadBrightness := MyGui.AddButton("xc+16 y+8 w170 h28", "Read Brightness")
 btnReadBrightness.OnEvent("Click", (*) => ReadSelectedBrightness())
 btnHasBrightness := MyGui.AddButton("x+10 yp w170 h28", "Probe IsBrightnessSupported")
 btnHasBrightness.OnEvent("Click", (*) => ProbeSelectedBrightnessSupport())
-MyGui.AddText("xc+16 y+10 w508 h20 cBlue", "Dragging the slider changes the selected monitor's brightness:")
+MyGui.AddText("xc+16 y+10 w508 h20", "Dragging the slider changes the selected monitor's brightness:")
 gBrightnessSlider := MyGui.Add("Slider", "xc+16 y+6 w508 +AltSubmit Page10 ToolTip Range0-100", 50)
 gBrightnessSlider.OnEvent("Change", (*) => BrightnessSliderMoved())
 brightnessStatus := MyGui.AddText("xc+16 y+10 w508 h24", "Brightness: not read")
@@ -3752,7 +3728,7 @@ btnProgClear := MyGui.AddButton("xc+748 y+8 w170 h26", "Clear Progress")
 btnProgClear.OnEvent("Click", (*) => ClearTaskbarProgress())
 
 ; Read from the class rather than restated here, so this line is the running platform's own answer.
-MyGui.AddText("xc+16 yc+222 w1082 h20 cBlue", "Taskbar.IsBadgeIconSupported: " (Taskbar.IsBadgeIconSupported ? "yes" : "no, the badge shows its Text instead") "      Taskbar.IsPerWindow: " (Taskbar.IsPerWindow ? "yes" : "no, every target decorates the whole application"))
+MyGui.AddText("xc+16 yc+222 w1082 h20", "Taskbar.IsBadgeIconSupported: " (Taskbar.IsBadgeIconSupported ? "yes" : "no, the badge shows its Text instead") "      Taskbar.IsPerWindow: " (Taskbar.IsPerWindow ? "yes" : "no, every target decorates the whole application"))
 iconTaskbarStatus := MyGui.AddText("xc+16 y+6 w1082 h34", "Window icon / Taskbar: not run")
 gStatus["window_taskbar"] := iconTaskbarStatus
 MyGui.UseGroup()
@@ -5275,7 +5251,8 @@ StartWindowFixture() {
 
 	try {
 		LaunchWindowFixture(&gWindowFixturePid, token, gWindowFixtureCommandPath)
-		ok := WaitForWindow(FixtureWindowsReady, 20000, gWindowFixturePid)
+		; A cold child compiles its script before it can create either window.
+		ok := WaitForWindow(FixtureWindowsReady, 60000, gWindowFixturePid)
 		AddWindowResult("Fixture", "Launch", ok ? "PASS" : "FAIL",
 			"Two foreign windows from a live child process",
 			"PID=" gWindowFixturePid " alive=" ProcessExist(gWindowFixturePid)
@@ -5839,9 +5816,13 @@ ShowExternalWindowInfo(hwnd, heading := "") {
 	WinGetClientPos(&clientX, &clientY, &clientWidth, &clientHeight, hwnd)
 	alpha := WinGetTransparent(hwnd)
 	title := WinGetTitle(hwnd)
+	pid := WinGetPID(hwnd)
+	processName := pid ? WinGetProcessName(hwnd) : "<unavailable: window backend did not report a PID>"
+	processPath := pid ? WinGetProcessPath(hwnd) : "<unavailable: window backend did not report a PID>"
 	report := heading (heading = "" ? "" : "`r`n") "Title: " title "`r`nClass/AppId: " WinGetClass(hwnd)
-	report .= "`r`nHandle: " hwnd "    PID: " WinGetPID(hwnd)
-	report .= "`r`nProcess: " WinGetProcessName(hwnd) "`r`nPath: " WinGetProcessPath(hwnd)
+	report .= "`r`nHandle: " hwnd "    PID: " (pid ? pid : "<not reported>")
+	report .= "`r`nProcess: " (processName != "" ? processName : "<unavailable>")
+		"`r`nPath: " (processPath != "" ? processPath : "<unavailable>")
 	report .= "`r`nFrame: " x "," y "  " width "x" height
 	report .= "`r`nClient: " clientX "," clientY "  " clientWidth "x" clientHeight
 	report .= "`r`nState: " WinGetMinMax(hwnd) "    Enabled: " WinGetEnabled(hwnd)
