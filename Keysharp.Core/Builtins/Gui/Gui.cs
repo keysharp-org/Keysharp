@@ -1789,8 +1789,14 @@ namespace Keysharp.Builtins
 
 			if (opts.c.HasValue)
 				ctrl.ForeColor = opts.c.Value;
+#if WINDOWS
 			else
 				ctrl.ForeColor = form.ForeColor;
+#else
+			// Inherit explicit colors; leave defaults under theme control.
+			else if (form.Properties.Get<Color?>("ForeColor") is { } color)
+				ctrl.ForeColor = color;
+#endif
 
 #if WINDOWS
 			if (opts.tabstop.HasValue)

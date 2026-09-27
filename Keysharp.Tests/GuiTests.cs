@@ -2004,6 +2004,75 @@ namespace Keysharp.Tests
 #endif
 		}
 
+#if LINUX
+		[Test, Category("Gui")]
+		public void ThemeForegroundTransitions()
+		{
+			SkipIfUiInitializationBlocked("Theme colors require an Eto application.");
+			var originalTheme = Ks.A_GuiTheme;
+			var app = Application.Instance;
+			var originalEtoTheme = app.Theme;
+			string[] types = ["Text", "Button", "CheckBox", "Radio", "Edit", "GroupBox", "Link"];
+			Gui gui = null;
+
+			try
+			{
+				s.InvokeOnUIThread(() =>
+				{
+					Ks.A_GuiTheme = "Classic";
+					gui = new Gui(System.Array.Empty<object>());
+					_ = gui.__New();
+					_ = gui.SetFont("s10", "Arial");
+					var controls = types.Select(type => (Gui.Control)gui.Add(type, "w200 h30", type)).ToArray();
+					var lightText = controls[0].Ctrl.ForeColor;
+					var explicitBlack = (Gui.Control)gui.Add("Text", "cBlack", "Explicit black");
+					var pinnedByOpt = (Gui.Control)gui.Add("Text", null, "Fixed current color");
+					var pinnedColor = pinnedByOpt.Ctrl.ForeColor;
+					_ = pinnedByOpt.Opt("c" + pinnedColor.ToHex(false));
+					_ = gui.SetFont("cRed");
+					var inheritedRed = (Gui.Control)gui.Add("Button", null, "Inherited red");
+
+					foreach (var theme in new[] { "Dark", "Classic" })
+					{
+						Ks.A_GuiTheme = theme;
+						app.RunIteration();
+						var comparison = new Gui(System.Array.Empty<object>());
+						_ = comparison.__New();
+
+						try
+						{
+							for (var i = 0; i < types.Length; i++)
+							{
+								var fresh = (Gui.Control)comparison.Add(types[i], "w200 h30", types[i]);
+								Assert.AreEqual(fresh.Ctrl.ForeColor, controls[i].Ctrl.ForeColor, $"{types[i]} follows {theme} after creation");
+							}
+
+							if (theme == "Dark")
+								Assert.AreNotEqual(lightText, controls[0].Ctrl.ForeColor, "the theme must change the text color");
+
+							Assert.AreEqual(Colors.Black, explicitBlack.Ctrl.ForeColor);
+							Assert.AreEqual(pinnedColor.ToArgb(), pinnedByOpt.Ctrl.ForeColor.ToArgb(), "Opt must pin a color even when it matches the current theme");
+							Assert.AreEqual(Colors.Red, inheritedRed.Ctrl.ForeColor);
+						}
+						finally
+						{
+							_ = comparison.Destroy();
+						}
+					}
+				});
+			}
+			finally
+			{
+				s.InvokeOnUIThread(() =>
+				{
+					_ = gui?.Destroy();
+					Ks.A_GuiTheme = originalTheme;
+					app.Theme = originalEtoTheme;
+				});
+			}
+		}
+#endif
+
 #if WINDOWS
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]

@@ -597,12 +597,21 @@ namespace Keysharp.Builtins
 		private readonly int addExStyle, removeExStyle;
 		private string text = "";
 		private Font font;
+		private Color? textColor;
 		private (float left, float right)[] linkBounds;//Cached x-extent of each link, parallel to links.
 		private bool cursorOverLink;
 		private readonly bool transparent;//True when the native widget is windowless and the form shows through.
 
 		public bool AutoSize { get; set; }
-		public Color TextColor { get; set; } = SystemColors.ControlText;
+		public Color TextColor
+		{
+			get => textColor ?? SystemColors.ControlText;
+			set
+			{
+				textColor = value;
+				Invalidate();
+			}
+		}
 
 		public string Text
 		{

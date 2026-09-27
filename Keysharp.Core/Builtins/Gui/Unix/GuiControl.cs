@@ -1332,7 +1332,7 @@ namespace Keysharp.Builtins
 				{
 					if (_control is KeysharpProgressBar pb)
 						pb.BarColor = opts.c.Value;
-					else if (opts.c.Value != _control.ForeColor)
+					else
 						_control.ForeColor = opts.c.Value;
 				}
 
