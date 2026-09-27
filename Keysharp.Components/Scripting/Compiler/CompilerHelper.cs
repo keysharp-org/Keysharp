@@ -134,12 +134,13 @@ namespace Keysharp.Compilation
 			return Path.Combine(depsDir, Path.GetFileName(assetPath));
 		}
 
-		public HashSet<string> GetCompiledScriptDependencies(string depsJson)
+		public HashSet<string> GetCompiledScriptDependencies(string depsJson, string rootLibrary = null)
 		{
-			if (!_compiledScriptDependencies.TryGetValue(depsJson, out var deps))
+			if (rootLibrary != null || !_compiledScriptDependencies.TryGetValue(depsJson, out var deps))
 			{
 				deps = new (StringComparer.OrdinalIgnoreCase);
-				_compiledScriptDependencies[depsJson] = deps;
+				if (rootLibrary == null)
+					_compiledScriptDependencies[depsJson] = deps;
 
 				// 2) load and parse
 				using var doc = JsonDocument.Parse(File.ReadAllText(depsJson));
@@ -150,9 +151,27 @@ namespace Keysharp.Compilation
 
 				foreach (var target in targets.EnumerateObject())
 				{
+					HashSet<string> included = null;
+					if (rootLibrary != null)
+					{
+						included = new(StringComparer.Ordinal);
+						var pending = new Stack<string>(target.Value.EnumerateObject()
+							.Where(library => library.Name.StartsWith(rootLibrary + "/", StringComparison.Ordinal)).Select(library => library.Name));
+						while (pending.TryPop(out var name))
+						{
+							if (!included.Add(name) || !target.Value.TryGetProperty(name, out var library)
+								|| !library.TryGetProperty("dependencies", out var dependencies))
+								continue;
+							foreach (var dependency in dependencies.EnumerateObject())
+								pending.Push(dependency.Name + "/" + dependency.Value.GetString());
+						}
+					}
+
 					foreach (var library in target.Value.EnumerateObject())
 					{
 						var name = library.Name;
+						if (included != null && !included.Contains(name))
+							continue;
 						var info = library.Value;
 
 						// managed assemblies

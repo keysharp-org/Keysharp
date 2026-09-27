@@ -1249,7 +1249,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		- `--transpile`
 		  Outputs the generated .cs file shown in Keyview without running the script. A script using `#CSharp` also gets a `Scriptname.inline.cs` tooling view of its inline units.
 		- `--compile exe [--dest <path>] <script>`
-		  Outputs a standalone .exe that still requires .NET 10. `--dest` accepts a file or folder. Package files are copied beside the output. The script is not run.
+		  Outputs a standalone executable that still requires .NET 10 (`.exe` on Windows, no extension on Linux and macOS). `--dest` accepts a file or folder. Runtime and package dependencies are copied beside the output. The script is not run.
 		- `--compile exe-min [--dest <path>] <script>`
 		  Like `exe`, but embeds package files in Scriptname.dll. The script is not run.
 		- `--compile <script>`

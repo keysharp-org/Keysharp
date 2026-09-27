@@ -145,6 +145,17 @@ public sealed class CompilerComponent : IScriptCompiler
 
 			try
 			{
+				if (request.Output != ScriptCompilationOutput.MinimalExecutable)
+				{
+					// Runtime dependencies include the GUI backend; the compiler's metadata references are a smaller set.
+					var manifest = Path.Combine(sourceRoot, "Keysharp.Core.deps.json");
+					if (!File.Exists(manifest))
+						manifest = Path.Combine(sourceRoot, "Keysharp.deps.json");
+					if (File.Exists(manifest))
+						dependencies = dependencies.Concat(new CompilerHelper().GetCompiledScriptDependencies(manifest, "Keysharp.Core")
+							.Select(path => Path.GetRelativePath(sourceRoot, path))).Distinct(StringComparer.OrdinalIgnoreCase);
+				}
+
 				foreach (var dependency in dependencies)
 				{
 					var source = CompilerHelper.requiredNativeDependencies.Contains(Path.GetFileName(dependency), StringComparer.OrdinalIgnoreCase)

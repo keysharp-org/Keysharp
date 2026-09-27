@@ -828,17 +828,17 @@ namespace Keysharp.Tests
 			// Driven through the real launcher rather than TestRunner's exeout: that path emits a bare assembly with
 			// no runtimeconfig.json (fine for the reflection AsmInfo does, not runnable), and running it is the whole
 			// point here.
-			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+			var launcher = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Keysharp.exe" : "Keysharp");
 
 			if (!File.Exists(launcher))
 				Assert.Ignore($"launcher not built at {launcher}");
 
 			var dir = FixedTestDirectory(nameof(CompiledPackages), mode);
 			var script = Path.Combine(dir, "compiled.ks");
-			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Package Newtonsoft.Json 13.0.3\n#import \"Ks\" { Clr }\n"
+			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Package Newtonsoft.Json 13.0.3\n#import \"Ks\" { Clr }\n"
 									  + "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([1, 2, 3]), \"*\")\nExitApp()\n");
 			Assert.AreEqual(0, Run(launcher, $"--errorstdout --compile {mode} \"{script}\"", out _, out var cerr), "compile failed: " + cerr);
-			var exe = Path.ChangeExtension(script, ".exe");
+			var exe = Path.ChangeExtension(script, OperatingSystem.IsWindows() ? ".exe" : null);
 			Assert.IsTrue(File.Exists(exe), $"compile produced no exe at {exe}");
 
 			// Each mode must work for its own reason: embedded resources versus private deployed assets.
@@ -882,7 +882,7 @@ namespace Keysharp.Tests
 					"every manifest asset must be present at its collision-free deployed path");
 			}
 
-			_ = Run(exe, "", out var stdout, out var stderr);
+			Assert.AreEqual(0, Run(exe, "", out var stdout, out var stderr), stderr);
 			Assert.AreEqual("[1,2,3]", stdout.Trim(), "stderr: " + stderr);
 			try { Directory.Delete(dir, true); } catch { }
 		}
@@ -895,7 +895,7 @@ namespace Keysharp.Tests
 		[TestCase("exe"), TestCase("exe-min"), Category("NuGet"), NonParallelizable]
 		public void CompiledLoadPackageCarriesProvider(string mode)
 		{
-			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+			var launcher = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Keysharp.exe" : "Keysharp");
 
 			if (!File.Exists(launcher))
 				Assert.Ignore($"launcher not built at {launcher}");
@@ -905,13 +905,13 @@ namespace Keysharp.Tests
 			try
 			{
 				var script = Path.Combine(dir, "runtime-provider.ks");
-				File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Import Ks { Clr }\n"
+				File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Import Ks { Clr }\n"
 					+ "Clr.LoadPackage(\"Newtonsoft.Json\", \"v13.0.3\")\n"
 					+ "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([4, 5]), \"*\")\nExitApp()\n");
 				Assert.AreEqual(0, Run(launcher, $"--errorstdout --compile {mode} \"{script}\"", out _, out var compileError),
 					"compile failed: " + compileError);
 
-				var exe = Path.ChangeExtension(script, ".exe");
+				var exe = Path.ChangeExtension(script, OperatingSystem.IsWindows() ? ".exe" : null);
 				var assembly = Assembly.Load(File.ReadAllBytes(Path.ChangeExtension(script, ".dll")));
 				var resources = assembly.GetManifestResourceNames();
 				Assert.IsFalse(Directory.GetFiles(dir, "NuGet*.dll", SearchOption.TopDirectoryOnly).Any(),
@@ -986,7 +986,7 @@ namespace Keysharp.Tests
 		[Test, Category("NuGet"), NonParallelizable]
 		public void CompiledCksUsesLauncherProviderWithoutSidecarCopy()
 		{
-			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+			var launcher = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Keysharp.exe" : "Keysharp");
 
 			if (!File.Exists(launcher))
 				Assert.Ignore($"launcher not built at {launcher}");
@@ -996,7 +996,7 @@ namespace Keysharp.Tests
 			try
 			{
 				var script = Path.Combine(dir, "provider-sidecar.ks");
-				File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Import Ks { Clr }\n"
+				File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Import Ks { Clr }\n"
 					+ "Clr.LoadPackage(\"nuget:Newtonsoft.Json\", \"v13.0.3\")\n"
 					+ "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([6, 7]), \"*\")\nExitApp()\n");
 				Assert.AreEqual(0, Run(launcher, $"--errorstdout --compile asm \"{script}\"", out _, out var error), error);

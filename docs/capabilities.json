@@ -9124,7 +9124,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Script execution is provided by Keysharp.Core. Source parsing is an optional Roslyn-free component; lowering and C# compilation are supplied by the optional compiler component.",
-                     "tested-by":  "misc-pass.ahk"
+                     "tested-by":  "misc-pass.ahk; DirectiveTests.CompiledCSharp; PackageDirectiveTests.CompiledPackages"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

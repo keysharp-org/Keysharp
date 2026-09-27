@@ -1206,7 +1206,7 @@ namespace Keysharp.Tests
 		[Test, Category("Directives"), NonParallelizable]
 		public void TranspileInlineCSharp()
 		{
-			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+			var launcher = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Keysharp.exe" : "Keysharp");
 
 			if (!File.Exists(launcher))
 				Assert.Ignore($"launcher not built at {launcher}");
@@ -1217,7 +1217,7 @@ namespace Keysharp.Tests
 			try
 			{
 				var script = Path.Combine(dir, "t.ks");
-				File.WriteAllText(script, "#NoTrayIcon\n#CSharp\nusing System.Text;\npublic static object Marker() => new StringBuilder(\"m\").ToString();\n#EndCSharp\nx := Marker()\n");
+				File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#CSharp\nusing System.Text;\npublic static object Marker() => new StringBuilder(\"m\").ToString();\n#EndCSharp\nx := Marker()\n");
 				using var proc = Process.Start(new ProcessStartInfo(launcher, $"--errorstdout --transpile \"{script}\"")
 				{
 					RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true
@@ -1245,7 +1245,7 @@ namespace Keysharp.Tests
 		[Test, Category("Directives"), NonParallelizable]
 		public void CompiledCSharp()
 		{
-			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+			var launcher = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Keysharp.exe" : "Keysharp");
 
 			if (!File.Exists(launcher))
 				Assert.Ignore($"launcher not built at {launcher}");
@@ -1257,7 +1257,7 @@ namespace Keysharp.Tests
 			{
 				var script = Path.Combine(dir, "csart.ks");
 				File.WriteAllText(script,
-								  "#NoTrayIcon\n#ErrorStdOut\n"
+								  "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n"
 								  + "#CSharp\npublic static object Marker() => \"mod\";\n#EndCSharp\n"
 								  + "class C {\n#CSharp\n"
 								  + "[Keysharp.Runtime.Static] public static object Tag(object @this) => \"cls\";\n"
@@ -1267,9 +1267,15 @@ namespace Keysharp.Tests
 								  + "FileAppend(Marker() \"-\" C.Tag() \"-\" caught, \"*\")\nExitApp()\n");
 				var (compileExit, _, compileErr) = Run(launcher, $"--errorstdout --compile exe \"{script}\"");
 				Assert.AreEqual(0, compileExit, "compile failed: " + compileErr);
-				var exe = Path.ChangeExtension(script, ".exe");
+				var exe = Path.ChangeExtension(script, OperatingSystem.IsWindows() ? ".exe" : null);
 				Assert.IsTrue(File.Exists(exe), $"compile produced no exe at {exe}");
+#if LINUX
+				Assert.IsTrue(File.Exists(Path.Combine(dir, "Eto.Gtk.dll")), "the executable must carry its GUI backend");
+				Assert.IsTrue(File.Exists(Path.Combine(dir, "GtkSharp.dll")), "the backend's runtime dependencies must be deployed");
+#endif
+				Assert.IsFalse(Directory.Exists(Path.Combine(dir, "components", "scripting")), "this script needs no parser or compiler");
 				var (runExit, stdout, stderr) = Run(exe, "");
+				Assert.AreEqual(0, runExit, stderr);
 				Assert.AreEqual("mod-cls-caught", stdout.Trim(),
 								$"exit {runExit}, stderr: {stderr}");
 			}
@@ -1313,7 +1319,7 @@ namespace Keysharp.Tests
 		[Test, Category("Directives"), NonParallelizable]
 		public void ValidateCSharp()
 		{
-			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+			var launcher = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Keysharp.exe" : "Keysharp");
 
 			if (!File.Exists(launcher))
 				Assert.Ignore($"launcher not built at {launcher}");
@@ -1324,14 +1330,14 @@ namespace Keysharp.Tests
 			try
 			{
 				var bad = Path.Combine(dir, "bad.ks");
-				File.WriteAllText(bad, "#NoTrayIcon\n#CSharp\npublic static object F() => new NoSuchType();\n#EndCSharp\nF()\n");
+				File.WriteAllText(bad, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#CSharp\npublic static object F() => new NoSuchType();\n#EndCSharp\nF()\n");
 				var (badExit, badOut, badErr) = Run(launcher, $"--errorstdout --validate \"{bad}\"");
 				Assert.AreNotEqual(0, badExit, "an unknown type in a #CSharp block must fail --validate");
 				Assert.IsTrue((badOut + badErr).Contains("NoSuchType"),
 							  $"the failure should name the offending code; stdout:\n{badOut}\nstderr:\n{badErr}");
 
 				var good = Path.Combine(dir, "good.ks");
-				File.WriteAllText(good, "#NoTrayIcon\n#CSharp\npublic static object F() => 42L;\n#EndCSharp\nF()\n");
+				File.WriteAllText(good, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#CSharp\npublic static object F() => 42L;\n#EndCSharp\nF()\n");
 				var (goodExit, goodOut, goodErr) = Run(launcher, $"--errorstdout --validate \"{good}\"");
 				Assert.AreEqual(0, goodExit, $"a valid script must pass --validate; stdout:\n{goodOut}\nstderr:\n{goodErr}");
 			}
