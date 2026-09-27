@@ -465,7 +465,7 @@ class AtSpi {
         base:this.Enumeration.Prototype
     }
 
-    static __HighlightGuis := Map()
+    static __Highlights := Map()
 
     ; Applications (keyed by PID) whose AT-SPI client-side cache has already been enabled, so the
     ; mask is set at most once each. See __EnableAppCache.
@@ -513,10 +513,8 @@ class AtSpi {
      * Removes all highlights created by Accessible.Highlight().
      */
     static ClearAllHighlights() {
-        for _, guis in AtSpi.__HighlightGuis
-            for _, g in guis
-                try g.Destroy()
-        AtSpi.__HighlightGuis := Map()
+        for element in this.__Highlights
+            element.ClearHighlight()
     }
 
     static __ReadGArrayStrings(pArray) {
@@ -2981,41 +2979,27 @@ class AtSpi {
          * @returns {AtSpi.Accessible}
          */
         Highlight(showTime:=unset, color:="Red", d:=2) {
-            if !AtSpi.__HighlightGuis.Has(this)
-                AtSpi.__HighlightGuis[this] := []
-            if (!IsSet(showTime) && AtSpi.__HighlightGuis[this].Length) || (IsSet(showTime) && showTime = "clear") {
-                for _, r in AtSpi.__HighlightGuis[this]
-                    try r.Destroy()
-                AtSpi.__HighlightGuis[this] := []
-                return this
-            } else if !IsSet(showTime)
+            if (!IsSet(showTime) && AtSpi.__Highlights.Has(this)) || (IsSet(showTime) && showTime = "clear")
+                return this.ClearHighlight()
+            if !IsSet(showTime)
                 showTime := 2000
             try loc := this.Location
             if !IsSet(loc) || !IsObject(loc) || loc.Width < 1 || loc.Height < 1 || loc.X == -2147483648 || loc.Y == -2147483648
-                return this
-            ; Draw the border as four separate thin edge windows (top/bottom/left/right) and leave the element's
-            ; CENTRE clear. A single window spanning the whole rect (even one with a transparent middle) gets picked
-            ; up by the live inspector's at-point lookup - WinFromPoint and atspi_get_accessible_at_point both return
-            ; the topmost window/accessible over the cursor - so the Viewer would highlight its own overlay, fail the
-            ; IsEqual check on every 200 ms capture tick, and destroy/recreate the overlay each time. That window
-            ; churn flickered the highlight and crashed Cinnamon. Four edge windows keep the centre clear, so the
-            ; at-point lookup returns the real element underneath and the highlight stays put.
-            Loop 4
-                AtSpi.__HighlightGuis[this].Push(Gui("+AlwaysOnTop +ClickThrough -Caption +ToolWindow -DPIScale +E0x08000000"))
-            Loop 4 {
-                i := A_Index
-                x1 := (i=2 ? loc.X+loc.Width : loc.X-d)
-                y1 := (i=3 ? loc.Y+loc.Height : loc.Y-d)
-                w1 := (i=1 or i=3 ? loc.Width+2*d : d)
-                h1 := (i=2 or i=4 ? loc.Height+2*d : d)
-                AtSpi.__HighlightGuis[this][i].BackColor := color
-                AtSpi.__HighlightGuis[this][i].Show("NA x" . x1 . " y" . y1 . " w" . w1 . " h" . h1)
-            }
+                return this.ClearHighlight()
+
+            ; Highlight owns the click-through surface and selects layer-shell on supported Wayland desktops.
+            if !AtSpi.__Highlights.Has(this)
+                AtSpi.__Highlights[this] := {Frame: Highlight(), Clear: ObjBindMethod(this, "ClearHighlight")}
+            state := AtSpi.__Highlights[this]
+            SetTimer(state.Clear, 0)
+            state.Frame.Color := color
+            state.Frame.Thickness := d
+            state.Frame.Show(loc.X, loc.Y, loc.Width, loc.Height)
             if showTime > 0 {
                 Sleep(showTime)
-                this.Highlight()
+                this.ClearHighlight()
             } else if showTime < 0
-                SetTimer(ObjBindMethod(this, "Highlight", "clear"), -Abs(showTime))
+                SetTimer(state.Clear, -Abs(showTime))
             return this
         }
 
@@ -3023,7 +3007,15 @@ class AtSpi {
          * Clears the highlight for this element.
          * @returns {AtSpi.Accessible}
          */
-        ClearHighlight() => this.Highlight("clear")
+        ClearHighlight() {
+            if AtSpi.__Highlights.Has(this) {
+                state := AtSpi.__Highlights[this]
+                SetTimer(state.Clear, 0)
+                try state.Frame.Destroy()
+                AtSpi.__Highlights.Delete(this)
+            }
+            return this
+        }
 
         /**
          * Clicks the center of the element.
@@ -3188,6 +3180,8 @@ class AtSpi {
                 return
             }
             if this.Stored.HasOwnProp("oContext") && oContext.IsEqual(this.Stored.oContext) {
+                this.Stored.oContext.__CoordContext := oContext.__CoordContext
+                this.Stored.oContext.Highlight(0)
                 if this.FoundTime != 0 && ((A_TickCount - this.FoundTime) > 1000) {
                     if (mX == this.Stored.mX) && (mY == this.Stored.mY)
                         this.ConstructTreeView(), this.FoundTime := 0
@@ -3213,7 +3207,7 @@ class AtSpi {
             this.LVWin.Delete()
             WinGetPos(&mwX, &mwY, &mwW, &mwH, mwId)
             propsOrder := ["Title", "Text", "Id", "Location", "Class(NN)", "Process", "PID"]
-            props := Map("Title", WinGetTitle(mwId), "Text", WinGetText(mwId), "Id", mwId, "Location", "x: " mwX " y: " mwY " w: " mwW " h: " mwH, "Class(NN)", WinGetClass(mwId), "Process", WinGetProcessName(mwId), "PID", WinGetPID(mwId))
+            local props := Map("Title", WinGetTitle(mwId), "Text", WinGetText(mwId), "Id", mwId, "Location", "x: " mwX " y: " mwY " w: " mwW " h: " mwH, "Class(NN)", WinGetClass(mwId), "Process", WinGetProcessName(mwId), "PID", WinGetPID(mwId))
             for propName in propsOrder
                 this.LVWin.Add(,propName,props[propName])
         }
