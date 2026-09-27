@@ -106,37 +106,26 @@ TryUpdate() {
     MouseGetPos &msX, &msY, &msWin, &msCtrl, 2 ; get ClassNN and hWindow
     actWin := WinExist("A")
 
-    if (Ctrl_FollowMouse) {
-        curWin := msWin, curCtrl := msCtrl
-        WinExist("ahk_id " curWin) ; updating LastWindowFound?
-    } else {
-        curWin := actWin
-        curCtrl := ControlGetFocus() ; get focused control hwnd from active win
-    }
-    curCtrlClassNN := ""
-    Try curCtrlClassNN := ControlGetClassNN(curCtrl)
-
+    curWin := Ctrl_FollowMouse ? msWin : actWin
     targetWin := "ahk_id " curWin
-    t1 := WinGetTitle(targetWin), t2 := WinGetClass(targetWin)
+    t2 := ""
+    if (curWin)
+        Try t2 := WinGetClass(targetWin)
     if (curWin = oGui.hwnd || t2 = "MultitaskingViewFrame") { ; Our Gui || Alt-tab
         UpdateText("Ctrl_Freeze", oGui.txtFrozen)
         return
     }
 
     UpdateText("Ctrl_Freeze", oGui.txtNotFrozen)
-    t3 := WinGetProcessName(targetWin), t4 := WinGetPID(targetWin)
-
-    WinDataText := t1 "`n" ; ZZZ
-                 . "ahk_class " t2 "`n"
-                 . "ahk_exe " t3 "`n"
-                 . "ahk_pid " t4 "`n"
-                 . "ahk_id " curWin
-
-    UpdateText("Ctrl_Title", WinDataText)
-    CoordMode "Mouse", "Window"
-    MouseGetPos &mrX, &mrY
-    CoordMode "Mouse", "Client"
-    MouseGetPos &mcX, &mcY
+    mrX := "", mrY := "", mcX := "", mcY := ""
+    if (actWin) {
+        Try {
+            CoordMode "Mouse", "Window"
+            MouseGetPos &mrX, &mrY
+            CoordMode "Mouse", "Client"
+            MouseGetPos &mcX, &mcY
+        }
+    }
     try mClr := PixelGetColor(msX,msY,"RGB")
     catch
         mClr := ""
@@ -149,6 +138,32 @@ TryUpdate() {
 
     UpdateText("Ctrl_MousePos", mpText)
     UpdateText("Ctrl_CtrlLabel", (Ctrl_FollowMouse ? oGui.txtMouseCtrl : oGui.txtFocusCtrl) ":")
+
+    ; The desktop and compositor surfaces may have no window handle.
+    if (!curWin) {
+        Loop Parse "Title,Ctrl,Pos,SBText,VisText,AllText", ","
+            UpdateText("Ctrl_" A_LoopField, "")
+        return
+    }
+
+    WinExist(targetWin)
+    t1 := WinGetTitle(targetWin)
+    t3 := WinGetProcessName(targetWin), t4 := WinGetPID(targetWin)
+    WinDataText := t1 "`n"
+                 . "ahk_class " t2 "`n"
+                 . "ahk_exe " t3 "`n"
+                 . "ahk_pid " t4 "`n"
+                 . "ahk_id " curWin
+    UpdateText("Ctrl_Title", WinDataText)
+
+    curCtrl := msCtrl
+    if (!Ctrl_FollowMouse) {
+        curCtrl := ""
+        Try curCtrl := ControlGetFocus()
+    }
+    curCtrlClassNN := ""
+    if (curCtrl)
+        Try curCtrlClassNN := ControlGetClassNN(curCtrl)
 
     if (curCtrl) {
         ctrlTxt := ControlGetText(curCtrl)
