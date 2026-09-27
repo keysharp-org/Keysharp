@@ -59,6 +59,10 @@ class AtSpi {
     static LibAtSpi  := "libatspi"
     static LibGlib   := "libglib-2.0.so.0"
     static LibGObj   := "libgobject-2.0.so.0"
+    ; ATK uses G_MININT when a screen position is unavailable.
+    static __UnavailableCoordinate := -2147483648
+    ; Integer bounds from different providers can round either edge independently.
+    static __CoordinateTolerance := 2
     /**
      * Maximum depth for recursive viewer/tree operations.
      */
@@ -584,7 +588,7 @@ class AtSpi {
     }
 
     /**
-     * Finds an accessible at the given screen coordinates, with a handle-based fallback.
+     * Finds an accessible at the given screen coordinates.
      * @param x Screen X coordinate.
      * @param y Screen Y coordinate.
      * @returns {AtSpi.Accessible|0}
@@ -606,20 +610,11 @@ class AtSpi {
         hWnd := WinFromPoint(x, y)
         root := hWnd ? this.ElementFromHandle(hWnd) : 0
 
-        ; Preferred path: resolve the window's accessible, then return the SMALLEST element whose
-        ; extents contain the point. A plain "deepest by bounds" walk fails on two common cases:
-        ; (a) tab pages, where a `page tab` advertises only its label rectangle while its child holds
-        ; the page content, and (b) Chromium/Electron apps (e.g. VS Code), where many nested
-        ; containers all report the full-window rectangle and only the real leaf is small. Picking
-        ; the smallest-area containing element - and descending through page tabs - resolves both.
-        if root {
-            best := this.__SmallestAccessibleAtPoint(root, x, y)
-            if best
-                return best
-        }
+        ; An inaccessible native window must not fall through to a background application's tree.
+        if hWnd
+            return root ? this.__SmallestAccessibleAtPoint(root, x, y) : 0
 
-        ; Fallback: no resolvable window, or it wasn't found in the AT-SPI tree. Hit-test from the
-        ; desktop component and refine the result downward the same way.
+        ; Without a native window, hit-test the desktop and refine the result downward.
         desktop := this.GetRootElement()
         if desktop {
             pComp := DllCall(this.__Sym(this.LibAtSpi, "atspi_accessible_get_component_iface")
@@ -642,8 +637,6 @@ class AtSpi {
                     this.__FreeGError(err)
                 } else if pHit {
                     acc := AtSpi.Accessible(pHit)
-                    if root
-                        acc.__CoordContext := root.__CoordContext
                     best := this.__SmallestAccessibleAtPoint(acc, x, y)
                     return best ? best : acc
                 }
@@ -702,11 +695,48 @@ class AtSpi {
             return false
     }
 
-    static __NewCoordinateContext(hwnd := 0) => { hwnd: hwnd, dx: 0, dy: 0, rootPtr: 0, rx: 0, ry: 0, rw: 0, rh: 0 }
+    static __NewCoordinateContext(hwnd := 0) => { hwnd: hwnd, dx: 0, dy: 0, scale: 1, chromium: false,
+        documentPtr: 0, rootPtr: 0, rx: 0, ry: 0, rw: 0, rh: 0 }
 
-    static __BuildCoordinateContext(win, hWnd) {
+    static __ChildCoordinateContext(parent, child) {
+        ctx := parent.__CoordContext
+        if !ctx.chromium || ctx.documentPtr
+            return ctx
+        documentCtx := ctx
+        try {
+            if child.RoleId != this.Role.DocumentWeb
+                return ctx
+            documentCtx := {base: ctx, documentPtr: child.Ptr}
+            ; Chromium's top-level document bounds describe the viewport, even when its contents scroll.
+            ; Only reconcile that viewport with its native host; nested documents inherit the conversion.
+            if parent.RoleId != this.Role.Panel
+                return documentCtx
+            native := parent.RawLocation, document := child.RawLocation
+            if !this.__HasValidExtents(native) || !this.__HasValidExtents(document)
+                return documentCtx
+            tol := this.__CoordinateTolerance
+            if Abs(document.X - native.X) > tol || Abs(document.Y - native.Y) > tol
+                return documentCtx
+            if Abs(document.Width - native.Width) <= tol && Abs(document.Height - native.Height) <= tol
+                return documentCtx
+            scale := native.Width >= native.Height ? document.Width / native.Width : document.Height / native.Height
+            if Abs(document.Width - native.Width * scale) <= tol
+                && Abs(document.Height - native.Height * scale) <= tol {
+                documentCtx.scale := scale
+                documentCtx.dx := ctx.dx + native.X - document.X / scale
+                documentCtx.dy := ctx.dy + native.Y - document.Y / scale
+            }
+            return documentCtx
+        }
+        return documentCtx
+    }
+
+    static __BuildCoordinateContext(win, hWnd, wx, wy, ww, wh) {
         ctx := this.__NewCoordinateContext(hWnd)
-        try raw := win.RawLocation, WinGetPos(&wx, &wy, &ww, &wh, hWnd)
+        session := EnvGet("XDG_SESSION_TYPE")
+        if session != "wayland" && (session != "" || EnvGet("WAYLAND_DISPLAY") = "")
+            return ctx
+        try raw := win.RawLocation
         catch
             return ctx
         if !hWnd || ww < 1 || wh < 1 || !this.__HasValidExtents(raw)
@@ -714,36 +744,34 @@ class AtSpi {
 
         ctx.rootPtr := win.Ptr
         ctx.rx := wx, ctx.ry := wy, ctx.rw := ww, ctx.rh := wh
+        try ctx.chromium := win.ToolkitName = "Chromium"
 
-        tol := 8
-
-        if Abs(raw.X - wx) <= tol && Abs(raw.Y - wy) <= tol
-            return ctx
-        if !(Abs(raw.X) <= tol && Abs(raw.Y) <= tol)
+        if raw.X != 0 || raw.Y != 0
             return ctx
 
-        if Abs(raw.Width - ww) <= tol * 2 && Abs(raw.Height - wh) <= tol * 2 {
+        tol := this.__CoordinateTolerance
+        if Abs(raw.Width - ww) <= tol && Abs(raw.Height - wh) <= tol {
             ctx.dx := wx, ctx.dy := wy
             return ctx
         }
-        if this.__FindFrameSurfaceInset(win, ww, wh, tol, &ix, &iy) {
+        if this.__FindFrameSurfaceInset(win, raw, ww, wh, &ix, &iy) {
             ctx.dx := wx - ix, ctx.dy := wy - iy
             return ctx
         }
         try {
             WinGetClientPos(&cx, &cy, &cw, &ch, hWnd)
-            if cw > 0 && ch > 0 && Abs(raw.Width - cw) <= tol * 2 && Abs(raw.Height - ch) <= tol * 2 {
+            if cw > 0 && ch > 0 && Abs(raw.Width - cw) <= tol && Abs(raw.Height - ch) <= tol {
                 ctx.dx := cx, ctx.dy := cy
-                return ctx
             }
         }
-
-        ctx.dx := wx, ctx.dy := wy
         return ctx
     }
 
-    static __FindFrameSurfaceInset(win, ww, wh, tol, &x, &y) {
+    static __FindFrameSurfaceInset(win, surface, ww, wh, &x, &y, refresh := true) {
         x := 0, y := 0
+        tol := this.__CoordinateTolerance
+        haveBounds := false
+        children := Map()
         try count := win.ChildCount
         catch
             return 0
@@ -751,22 +779,47 @@ class AtSpi {
         Loop count {
             try {
                 child := win.GetNthChild(A_Index)
+                if children.Has(child.Ptr) {
+                    if !refresh
+                        return false
+                    ; A stale child cache can duplicate content and hide the title bar.
+                    try DllCall(this.__Sym(this.LibAtSpi, "atspi_accessible_clear_cache_single"), "Ptr", win.Ptr, "Void")
+                    catch
+                        DllCall(this.__Sym(this.LibAtSpi, "atspi_accessible_clear_cache"), "Ptr", win.Ptr, "Void")
+                    return this.__FindFrameSurfaceInset(win, surface, ww, wh, &x, &y, false)
+                }
+                children[child.Ptr] := true
                 cr := child.RawLocation
             } catch
-                continue
+                return false
 
-            if this.__HasValidExtents(cr)
-                && cr.X >= 0 && cr.Y >= 0 && cr.X <= 128 && cr.Y <= 128
-                && Abs(cr.Width - ww) <= tol * 2 && Abs(cr.Height - wh) <= tol * 2 {
-                x := cr.X, y := cr.Y
-                return true
+            if !this.__HasValidExtents(cr)
+                continue
+            if cr.X < surface.X || cr.Y < surface.Y
+                || cr.X + cr.Width > surface.X + surface.Width + tol
+                || cr.Y + cr.Height > surface.Y + surface.Height + tol
+                return false
+            if !haveBounds {
+                left := cr.X, top := cr.Y, right := cr.X + cr.Width, bottom := cr.Y + cr.Height
+                haveBounds := true
+            } else {
+                left := Min(left, cr.X), top := Min(top, cr.Y)
+                right := Max(right, cr.X + cr.Width), bottom := Max(bottom, cr.Y + cr.Height)
             }
+        }
+
+        ; GTK can expose the title bar and content as separate children inside the surface shadow.
+        if haveBounds
+            && Abs(right - left - ww) <= tol && Abs(bottom - top - wh) <= tol {
+            x := left, y := top
+            return true
         }
 
         return false
     }
 
-    static __HasValidExtents(r) => IsObject(r) && r.Width > 0 && r.Height > 0 && Abs(r.X) < 100000 && Abs(r.Y) < 100000
+    static __HasValidExtents(r) => IsObject(r) && r.Width > 0 && r.Height > 0
+        && r.X != this.__UnavailableCoordinate && r.Y != this.__UnavailableCoordinate
 
     /**
      * Finds an accessible matching a window handle by PID/title/geometry heuristics.
@@ -785,13 +838,13 @@ class AtSpi {
         if !desktop
             return 0
 
-        best := this.__FindBestInDesktop(desktop, wTitle, wx, wy, ww, wh, wPid)
+        best := this.__FindBestInDesktop(desktop, wTitle, wx, wy, ww, wh, wPid, WinActive(hWnd))
         if best
-            best.__CoordContext := this.__BuildCoordinateContext(best, hWnd)
+            best.__CoordContext := this.__BuildCoordinateContext(best, hWnd, wx, wy, ww, wh)
         return best
     }
 
-    static __FindBestInDesktop(desktop, wTitle, wx, wy, ww, wh, pidFilter) {
+    static __FindBestInDesktop(desktop, wTitle, wx, wy, ww, wh, pidFilter, active) {
         best := 0
         bestScore := -1
 
@@ -825,7 +878,7 @@ class AtSpi {
                 catch
                     break
 
-                s := this.__ScoreWindowCandidate(win, wTitle, wx, wy, ww, wh)
+                s := this.__ScoreWindowCandidate(win, wTitle, wx, wy, ww, wh, active, !pidFilter)
                 if (s > bestScore) {
                     best := win
                     bestScore := s
@@ -851,26 +904,43 @@ class AtSpi {
         try DllCall(this.__Sym(this.LibAtSpi, "atspi_accessible_set_cache_mask"), "Ptr", app.Ptr, "Int", 0x3FFFFFFF)
     }
 
-    static __ScoreWindowCandidate(win, wTitle, wx, wy, ww, wh) {
+    static __ScoreWindowCandidate(win, wTitle, wx, wy, ww, wh, active := false, requireTitle := false) {
         ; Must have extents for geometry matching. Use raw AT-SPI coordinates here;
         ; the window candidate does not have coordinate context yet.
         try r := win.RawLocation
         catch
             return -1
+        if !this.__HasValidExtents(r)
+            return -1
 
         score := 0
 
-        ; Title score (Name vs WinGetTitle)
+        ; A matching title must outweigh geometry: Wayland applications can all report origin (0, 0).
         name := ""
         try name := win.Name
-        catch 
 
         if (wTitle != "" && name != "") {
             nl := StrLower(name), tl := StrLower(wTitle)
             if (nl = tl)
-                score += 200
+                score += 8000
             else if (InStr(nl, tl) || InStr(tl, nl))
-                score += 120
+                score += 4000
+        }
+
+        ; Without a PID, geometry alone cannot identify a window whose AT-SPI origin is surface-local.
+        if requireTitle && !score
+            return -1
+
+        ; Equal titles can belong to different windows; preserve the native active-window choice.
+        if active {
+            try {
+                for state in win.StateIds {
+                    if state = this.StateType.Active {
+                        score += 2000
+                        break
+                    }
+                }
+            }
         }
 
         ; Role hint (light)
@@ -909,12 +979,27 @@ class AtSpi {
         __Delete() => AtSpi.__Unref(this.__ptr)
 
         /**
-         * Coordinate context for this accessible: {hwnd, dx, dy}.
-         * Raw AT-SPI extents become screen coordinates by adding (dx, dy).
+         * Conversion from the provider's coordinates to native screen coordinates.
          */
         __CoordContext {
             get => this.__ccx
             set => this.__ccx := IsObject(value) ? value : AtSpi.__NewCoordinateContext()
+        }
+
+        __ScreenRect(rect) {
+            if rect.Width < 0 || rect.Height < 0 || (rect.Width = 0 && rect.Height = 0)
+                || rect.X = AtSpi.__UnavailableCoordinate || rect.Y = AtSpi.__UnavailableCoordinate
+                return rect
+            ctx := this.__ccx
+            x := Round(rect.X / ctx.scale + ctx.dx), y := Round(rect.Y / ctx.scale + ctx.dy)
+            return {X: x, Y: y,
+                Width: Round((rect.X + rect.Width) / ctx.scale + ctx.dx) - x,
+                Height: Round((rect.Y + rect.Height) / ctx.scale + ctx.dy) - y}
+        }
+
+        __RawPoint(&x, &y) {
+            ctx := this.__ccx
+            x := Round((x - ctx.dx) * ctx.scale), y := Round((y - ctx.dy) * ctx.scale)
         }
 
         /**
@@ -1040,7 +1125,12 @@ class AtSpi {
                     AtSpi.__FreeGError(err)
                     return 0
                 }
-                return p ? AtSpi.Accessible(p, this.__CoordContext) : 0
+                ctx := this.__CoordContext
+                if this.Ptr == ctx.documentPtr
+                    ctx := ctx.base
+                if this.Ptr == ctx.rootPtr
+                    ctx := AtSpi.__NewCoordinateContext()
+                return p ? AtSpi.Accessible(p, ctx) : 0
             }
         }
 
@@ -1114,7 +1204,9 @@ class AtSpi {
             }
             if !pChild
                 throw Error("Child not found at index " index)
-            return AtSpi.Accessible(pChild, this.__CoordContext)
+            child := AtSpi.Accessible(pChild, this.__CoordContext)
+            child.__CoordContext := AtSpi.__ChildCoordinateContext(this, child)
+            return child
         }
 
         /**
@@ -1305,7 +1397,7 @@ class AtSpi {
                     AtSpi.__FreeGError(err)
                     return 0
                 }
-                return p ? AtSpi.Accessible(p, this.__CoordContext) : 0
+                return p ? AtSpi.Accessible(p) : 0
             }
         }
 
@@ -1621,9 +1713,8 @@ class AtSpi {
         }
 
         /**
-         * Screen coordinates of the element. On Wayland, AT-SPI sometimes returns
-         * coordinates relative to the owning window; those are normalized here via
-         * the CoordContext delta.
+         * Screen coordinates of the element, normalized for the owning Wayland window
+         * and Chromium's native/web coordinate boundary when available.
          * @returns {{X:Integer,Y:Integer,Width:Integer,Height:Integer}}
          */
         Location {
@@ -1634,12 +1725,15 @@ class AtSpi {
                 raw := this.RawLocation
                 if !AtSpi.__HasValidExtents(raw)
                     return raw
-                return { X: raw.X + ctx.dx, Y: raw.Y + ctx.dy, Width: raw.Width, Height: raw.Height }
+                return this.__ScreenRect(raw)
             }
             set {
                 if !IsObject(value)
                     throw TypeError("Location must be an object with x,y,w,h", -1)
-                ctx := this.__ccx
+                x := value.X, y := value.Y
+                right := x + value.Width, bottom := y + value.Height
+                this.__RawPoint(&x, &y)
+                this.__RawPoint(&right, &bottom)
                 pComp := DllCall(AtSpi.__Sym(AtSpi.LibAtSpi, "atspi_accessible_get_component_iface")
                                , "Ptr", this.__ptr
                                , "Ptr")
@@ -1648,10 +1742,10 @@ class AtSpi {
                 err := 0
                 ok := DllCall(AtSpi.__Sym(AtSpi.LibAtSpi, "atspi_component_set_extents")
                             , "Ptr", pComp
-                            , "Int", value.X - ctx.dx
-                            , "Int", value.Y - ctx.dy
-                            , "Int", value.Width
-                            , "Int", value.Height
+                            , "Int", x
+                            , "Int", y
+                            , "Int", right - x
+                            , "Int", bottom - y
                             , "Int", AtSpi.CoordType.Screen
                             , "Ptr*", &err
                             , "Int")
@@ -1727,12 +1821,12 @@ class AtSpi {
             if !pComp
                 return Error("Component interface not available")
             err := 0
-            ctx := this.__ccx
+            this.__RawPoint(&x, &y)
             ok := DllCall(AtSpi.__Sym(AtSpi.LibAtSpi, "atspi_component_scroll_to_point")
                         , "Ptr", pComp
                         , "Int", AtSpi.CoordType.Screen
-                        , "Int", x - ctx.dx
-                        , "Int", y - ctx.dy
+                        , "Int", x
+                        , "Int", y
                         , "Ptr*", &err
                         , "Int")
             AtSpi.__Unref(pComp)
@@ -2325,10 +2419,8 @@ class AtSpi {
                 throw Error("Text interface not available")
             if !IsInteger(coordType)
                 coordType := AtSpi.CoordType.%coordType%
-            if coordType = AtSpi.CoordType.Screen {
-                ctx := this.__ccx
-                x -= ctx.dx, y -= ctx.dy
-            }
+            if coordType = AtSpi.CoordType.Screen
+                this.__RawPoint(&x, &y)
             err := 0
             offset := DllCall(AtSpi.__Sym(AtSpi.LibAtSpi, "atspi_text_get_offset_at_point")
                             , "Ptr", pText
@@ -2381,11 +2473,7 @@ class AtSpi {
             rh := NumGet(pRect, 12, "Int")
             DllCall(AtSpi.__Sym(AtSpi.LibGlib, "g_free"), "Ptr", pRect)
             rect := {X: rx, Y: ry, Width: rw, Height: rh}
-            if coordType = AtSpi.CoordType.Screen && AtSpi.__HasValidExtents(rect) {
-                ctx := this.__ccx
-                rect.X += ctx.dx, rect.Y += ctx.dy
-            }
-            return rect
+            return coordType = AtSpi.CoordType.Screen ? this.__ScreenRect(rect) : rect
         }
 
         /**
@@ -2426,11 +2514,7 @@ class AtSpi {
             rh := NumGet(pRect, 12, "Int")
             DllCall(AtSpi.__Sym(AtSpi.LibGlib, "g_free"), "Ptr", pRect)
             rect := {X: rx, Y: ry, Width: rw, Height: rh}
-            if coordType = AtSpi.CoordType.Screen && AtSpi.__HasValidExtents(rect) {
-                ctx := this.__ccx
-                rect.X += ctx.dx, rect.Y += ctx.dy
-            }
-            return rect
+            return coordType = AtSpi.CoordType.Screen ? this.__ScreenRect(rect) : rect
         }
 
         /**
@@ -2481,10 +2565,8 @@ class AtSpi {
                 throw Error("Text interface not available")
             if !IsInteger(coordType)
                 coordType := AtSpi.CoordType.%coordType%
-            if coordType = AtSpi.CoordType.Screen {
-                ctx := this.__ccx
-                x -= ctx.dx, y -= ctx.dy
-            }
+            if coordType = AtSpi.CoordType.Screen
+                this.__RawPoint(&x, &y)
             err := 0
             ok := DllCall(AtSpi.__Sym(AtSpi.LibAtSpi, "atspi_text_scroll_substring_to_point")
                         , "Ptr", pText
