@@ -2030,7 +2030,6 @@ namespace Keysharp.Builtins
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
 			Items = new StatusStripItemCollection(this);
-			BackgroundColor = Colors.LightGrey;
 		}
 
 		/// <summary>
@@ -2119,7 +2118,8 @@ namespace Keysharp.Builtins
 		private Control BuildPartControl(KeysharpToolStripStatusLabel item, int index)
 		{
 			var back = item.BackColor.A > 0 ? item.BackColor : BackgroundColor;
-			Control textLayout = BuildTextLayout(item.Text ?? string.Empty, item.Font ?? this.Font, back, this.ForeColor);
+			var fore = Properties.Get<Color?>("ForeColor") ?? Colors.Transparent;
+			Control textLayout = BuildTextLayout(item.Text ?? string.Empty, item.Font ?? this.Font, back, fore);
 
 			if (item.Image != null)
 			{
@@ -2157,9 +2157,7 @@ namespace Keysharp.Builtins
 			var center = segments.Length > 1 ? segments[1] : string.Empty;
 			var right = segments.Length > 2 ? segments[2] : string.Empty;
 
-			// SetFont on a status bar parses "cRed"/"cGreen" into the strip's ForeColor, but the part labels
-			// are rebuilt here from scratch, so carry that color through as the label TextColor (otherwise the
-			// PASS/FAIL verdict text stays the default color on Linux).
+			// Copy explicit text colors; default labels follow the native theme.
 			var leftLabel = new Forms.Label { Text = left, Font = font, BackgroundColor = back, TextAlignment = Forms.TextAlignment.Left, VerticalAlignment = Forms.VerticalAlignment.Center };
 			var centerLabel = new Forms.Label { Text = center, Font = font, BackgroundColor = back, TextAlignment = Forms.TextAlignment.Center, VerticalAlignment = Forms.VerticalAlignment.Center };
 			var rightLabel = new Forms.Label { Text = right, Font = font, BackgroundColor = back, TextAlignment = Forms.TextAlignment.Right, VerticalAlignment = Forms.VerticalAlignment.Center };
