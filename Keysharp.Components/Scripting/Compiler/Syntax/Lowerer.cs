@@ -4434,6 +4434,8 @@ namespace Keysharp.Compilation.Syntax
 			switch (s)
 			{
 				case FunctionDecl fd: AnalyzeScope(fd.Body?.Body, fd.ArrowBody, fd.Params.Select(p => p.Name), globals, topLevel: false, outerProvided, fd.Static); break;
+				case HotkeyDef hk: AnalyzeHotCallback(hk.Body, hk.Func, globals, outerProvided); break;
+				case HotstringDef hs: AnalyzeHotCallback(hs.Body, hs.Func, globals, outerProvided); break;
 				case ClassDecl cd:
 					// Class-body `#import` names are visible to every method/property/nested class of the class — pass them
 					// down as the "outer provided" set (combined with any enclosing class's imports) so VarUnset doesn't
@@ -4470,6 +4472,15 @@ namespace Keysharp.Compilation.Syntax
 				case ReturnStmt r: if (r.Value != null) RecurseScopesExpr(r.Value, globals, outerProvided); break;
 				case DeclStmt d: foreach (var item in d.Items) RecurseScopesExpr(item, globals, outerProvided); break;
 			}
+		}
+
+		private void AnalyzeHotCallback(Stmt body, FunctionDecl function, HashSet<string> globals, HashSet<string> outerProvided)
+		{
+			if (function != null)
+				RecurseScopes(function, globals, outerProvided);
+			else if (body != null)
+				// Anonymous callbacks receive ThisHotkey, just as EmitHotCallback declares it.
+				AnalyzeScope(body is Block block ? block.Body : [body], null, ["ThisHotkey"], globals, topLevel: false, outerProvided);
 		}
 
 		private void RecurseScopesExpr(Expr e, HashSet<string> globals, HashSet<string> outerProvided = null)

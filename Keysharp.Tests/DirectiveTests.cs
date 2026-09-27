@@ -936,6 +936,58 @@ namespace Keysharp.Tests
 			Assert.IsFalse(Warns("F() {\n\tglobal\n\tdeclaredOnly := 1\n}\nG() {\n\treturn declaredOnly\n}\n"));
 		}
 
+		[Test, Category("Directives")]
+		[TestCase("F1::", false)]
+		[TestCase("F1::", true)]
+		[TestCase("::trigger::", false)]
+		[TestCase("::trigger::", true)]
+		public void WarnHotCallbacks(string trigger, bool named)
+		{
+			var parameter = named ? "KeyName" : "ThisHotkey";
+			string Compiled(string body)
+			{
+				var source = "#ErrorStdOut\n#Warn All, StdOut\nReadShared() => sharedValue\n"
+					+ trigger + "\n" + (named ? $"Handler({parameter})\n" : "") + "{\n" + body + "\n}\n";
+				var (bytes, code, _) = new CompilerHelper().CompileCodeToByteArray(source, "warn-hot-callbacks", null, false, true);
+				Assert.IsNotNull(bytes, code);
+				return code;
+			}
+
+			// Compile only: registering these callbacks would install input hooks.
+			Assert.IsFalse(Compiled($"global sharedValue := {parameter}\nNested() => sharedValue . {parameter}")
+				.Contains("Warning:"));
+			Assert.IsFalse(Compiled($"global\nNested() => sharedValue := {parameter}")
+				.Contains("Warning:"));
+			Assert.IsTrue(Compiled("global sharedValue")
+				.Contains("appears to never be assigned a value: sharedValue."));
+			Assert.IsTrue(Compiled($"sharedValue := {parameter}")
+				.Contains("appears to never be assigned a value: sharedValue."));
+			var warned = Compiled($"global sharedValue := {parameter}\nlocalValue := missingValue\nreturn\nlocalValue := 2");
+			Assert.IsTrue(warned.Contains("This local variable appears to never be assigned a value: missingValue."));
+			Assert.IsTrue(warned.Contains("This line will never be executed."));
+		}
+
+		[TestCase("F1:: result := ThisHotkey . missingValue"), Category("Directives")]
+		[TestCase(":X:trigger:: result := ThisHotkey . missingValue")]
+		[TestCase("F1::\nHandler(KeyName) => KeyName . missingValue")]
+		[TestCase("::trigger::\nHandler(KeyName) => KeyName . missingValue")]
+		public void WarnHotCallbackExpressions(string source)
+		{
+			string Compiled(string mode)
+			{
+				var (bytes, code, _) = new CompilerHelper().CompileCodeToByteArray(
+					$"#ErrorStdOut\n#Warn All, {mode}\n" + source, "warn-hot-expressions", null, false, true);
+				Assert.IsNotNull(bytes, code);
+				return code;
+			}
+
+			var warned = Compiled("StdOut");
+			Assert.IsTrue(warned.Contains("This local variable appears to never be assigned a value: missingValue."));
+			Assert.IsFalse(warned.Contains("appears to never be assigned a value: ThisHotkey."));
+			Assert.IsFalse(warned.Contains("appears to never be assigned a value: KeyName."));
+			Assert.IsFalse(Compiled("Off").Contains("Warning:"));
+		}
+
 		// As in AutoHotkey, only an undeclared local is compared against the globals, which include the module's functions and
 		// classes and the built-in ones.
 		[Test, Category("Directives")]
