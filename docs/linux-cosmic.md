@@ -21,6 +21,16 @@ On COSMIC, Keysharp first probes the staging `ext-image-copy-capture` and output
 
 The currently supported COSMIC portal has no RemoteDesktop path for Keysharp's global input work, so installing the portal packages does not replace `keysharp-input`. XWayland can help X11 applications run inside the session, but does not turn the COSMIC session into X11 or bypass its Wayland restrictions.
 
+## Tray icons
+
+Keysharp publishes its tray image and menu through AppIndicator. The image, menu callbacks, menu-triggered exit, and native item disposal have been verified on COSMIC 1.2.0.
+
+COSMIC 1.2.0 can retain stale entries when a process with several tray items exits: its [watcher removes only the first matching entry](https://github.com/pop-os/cosmic-applets/blob/epoch-1.2.0/cosmic-applet-status-area/src/subscriptions/status_notifier_watcher/server.rs). Dead entries can appear as gear icons with no working menu. Keysharp's test host therefore builds menus without publishing desktop icons. To clear entries already retained by the desktop, restart the watcher:
+
+```sh
+systemctl --user restart com.system76.CosmicStatusNotifierWatcher.service
+```
+
 ## Real-machine smoke test
 
 1. Apply the host configuration, then run `keysharp-input probe` and confirm `systemctl status keysharp-input.socket keysharp-input.service keysharp-desktop-authority.socket` succeeds.

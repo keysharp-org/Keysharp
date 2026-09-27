@@ -53,7 +53,7 @@ namespace Keysharp.Internals.Window.Unix
 
 		public bool Visible
 		{
-			get => indicator.Visible;
+			get => !disposed && indicator.Visible;
 			set
 			{
 				if (disposed)
@@ -81,15 +81,24 @@ namespace Keysharp.Internals.Window.Unix
 			if (disposed)
 				return;
 
-			indicator.Activated -= Indicator_Activated;
-			indicator.Menu = null;
-			indicator.Image = null;
-			Tag = null;
-			contextMenuStrip = null;
-			icon = null;
-			text = "";
 			disposed = true;
-			indicator.Dispose();
+			indicator.Activated -= Indicator_Activated;
+			try
+			{
+				// Withdraw the item before releasing its image and menu; an empty image becomes a fallback icon.
+				indicator.Hide();
+			}
+			finally
+			{
+				try { indicator.Dispose(); }
+				finally
+				{
+					Tag = null;
+					contextMenuStrip = null;
+					icon = null;
+					text = "";
+				}
+			}
 		}
 
 		public void ShowBalloonTip(int timeout, string title, string text, object icon)

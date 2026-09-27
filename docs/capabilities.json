@@ -1803,7 +1803,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets whether the system tray icon is hidden. 1 for hidden, 0 for visible.",
+                     "notes":  "Gets or sets tray icon visibility: 1 hides it, 0 shows it. Hiding retains the icon image and menu; icon changes made while hidden are retained when shown again. Visibility depends on the desktop tray host honoring the request.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -10718,7 +10718,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Tray icon, its menu and TrayTip notifications. On Linux the tray depends on the desktop providing a StatusNotifier/AppIndicator host - some environments need an extension before an icon appears at all - and notifications go through the desktop notification service. macOS uses a status item in the menu bar."
+                     "notes":  "Tray icon, its menu and TrayTip notifications. On Linux the tray depends on the desktop providing a StatusNotifier/AppIndicator host - some environments need an extension before an icon appears at all - and notifications go through the desktop notification service. macOS uses a status item in the menu bar.",
+                     "tested-by":  "docs/linux-cosmic.md (native tray smoke check)"
                  },
                  {
                      "category":  "Core Language",

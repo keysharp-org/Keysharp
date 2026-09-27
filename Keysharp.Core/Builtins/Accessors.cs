@@ -23,11 +23,6 @@ namespace Keysharp.Builtins
 		internal long hotIfTimeout = Accessors.DefaultHotIfTimeout;
 		internal bool maxThreadsBuffer;
 		internal uint maxThreadsPerHotkey = 1u;
-#if WINDOWS
-		internal Icon prevTrayIcon;
-#else
-		internal Image prevTrayIcon;
-#endif
 		internal ThreadConfigData threadConfigDataPrototype = new(); // Used (and set by) the auto-execute section
 	}
 
@@ -457,8 +452,7 @@ namespace Keysharp.Builtins
 					{
 						if (script.EnsureTrayIcon())
 						{
-							script.Tray.Icon = script.AccessorData.prevTrayIcon;
-							script.AccessorData.prevTrayIcon = null;
+							script.Tray.Visible = true;
 							script.AccessorData.iconHidden = val.Value;
 						}
 					}
@@ -466,8 +460,7 @@ namespace Keysharp.Builtins
 					{
 						if (script.Tray != null)
 						{
-							script.AccessorData.prevTrayIcon = script.Tray.Icon;
-							script.Tray.Icon = null;
+							script.Tray.Visible = false;
 							script.AccessorData.iconHidden = val.Value;
 						}
 					}

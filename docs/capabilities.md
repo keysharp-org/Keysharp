@@ -167,7 +167,7 @@ Status legend:
 | A_HotkeyModifierTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_Hour | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The current 2 digit hour 00 - 23. |
 | A_IconFile | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The full path of a runtime custom tray icon selected by TraySetIcon; blank while the script's embedded/default tray icon is active, including one selected by #TrayIcon. |
-| A_IconHidden | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets whether the system tray icon is hidden. 1 for hidden, 0 for visible. |
+| A_IconHidden | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets tray icon visibility: 1 hides it, 0 shows it. Hiding retains the icon image and menu; icon changes made while hidden are retained when shown again. Visibility depends on the desktop tray host honoring the request. |
 | A_IconNumber | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The selector of a runtime custom tray icon. Reads 1 while the script's embedded/default tray icon is active, including one selected by #TrayIcon, and when TraySetIcon omits its selector. |
 | A_IconTip | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the tool tip text of the system tray icon. |
 | A_Index | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The current loop iteration. Outside a loop it is a value of the current pseudo-thread, 0 when it starts, which a script may assign. |

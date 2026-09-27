@@ -504,6 +504,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `StrPtr(variable)` returns a custom `StringBuffer` object which is entangled with the original string. When this object is used with DllCall, NumPut etc, then the `StringBuffer` is used as the pointer, and the entangled string is updated after the function call.
 	+ `StrPtr("literal")` with a literal string will pin the string from garbage collection and return the actual address of the string. This string must not be modified, and should be freed after use with `ObjFree()`.
 	+ Instead of `StrPtr` it is recommended to use a `StringBuffer` instance instead.
+* `A_IconHidden` changes tray visibility without clearing its image or menu. An icon selected while hidden is retained when shown again. Linux tray hosts must honor the AppIndicator status for hiding to take effect.
 * `TrayTip()` functions slightly differently.
 	+ Muting the sound played by the tip is not supported with the `Mute` option. The sound will be whatever the user has configured in their system settings.
 	+ The option `4` to use the program's tray icon is not supported. It is always shown in the title of the tip.

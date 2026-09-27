@@ -93,7 +93,8 @@ namespace Keysharp.Runtime
 				}
 			}
 
-			if (NoTrayIcon || IsHeadless)
+			// Tests share a process and need the menu model, but must not publish icons on the user's desktop.
+			if (Tray != null || NoTrayIcon || IsHeadless || IsTestHost)
 				return;
 
 			NotifyIcon trayIcon;
