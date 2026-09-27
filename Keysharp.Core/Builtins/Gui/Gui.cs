@@ -3911,6 +3911,7 @@ namespace Keysharp.Builtins
 				else if (Word(opt, "AltSubmit")) { options.altsubmit = adding; }
 				else if (Word(opt, "Section")) { options.section = true; }//AHK treats adding and removing the same here.
 				else if (Word(opt, "Tabstop")) { options.tabstop = adding; }
+				else if (Word(opt, "NoTab")) { options.tabstop = !adding; }
 				else if (Word(opt, "Wrap")) { options.wordwrap = adding; }
 				else if (Word(opt, "VScroll")) { options.vscroll = adding; }
 				//The optional number after HScroll is the horizontal scrolling width (ListBox only).
