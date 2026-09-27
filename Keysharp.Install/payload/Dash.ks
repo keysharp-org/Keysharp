@@ -1,6 +1,7 @@
 #Requires Keysharp v2.0
 #SingleInstance Force
 #import KS { A_DirSeparator, A_KsVersion, Font, Image, Monitor, WinFromPoint }
+#App { GuiTheme: "Dark" }
 
 /*
     Keysharp Dash - the launcher a bare, script-less start opens: the Start-menu tile, a
@@ -13,10 +14,9 @@
     cannot run on AutoHotkey at all, so claiming otherwise would be a lie. The v2.0 line is
     the compatibility mode, unchanged.
 
-    The UI is deliberately NOT native controls: the whole window is one Image-rendered
-    surface (the same drawing layer the demos' Shell.ks cards use) inside a borderless Gui,
-    with hover, clicks and dragging handled by a mouse poll. That is what a modern launcher
-    look costs on WinForms - and rendering it with Keysharp's own Image class is the point:
+    The UI is one Image-rendered surface (the same drawing layer the demos' Shell.ks cards
+    use) inside a dark Gui with a native title bar. Hover and clicks use a mouse poll;
+    the title bar handles dragging and closing. Rendering with Keysharp's own Image class is the point:
     the Dash is itself a demo of what a Keysharp script can draw. The cost is accessibility:
     a bitmap has no focusable controls, so there is no keyboard navigation and nothing for a
     screen reader (Escape and the window Close still work). Fixing that properly means real
@@ -31,8 +31,8 @@
 
     Cross-platform: most of what was platform-specific here is now A_DirSeparator, a KS class that
     knows the platform's answer (Font.UiDefault, Font.Emoji), or a builtin that branches internally
-    (Edit(), Gui "+Round"). Three #ifs remain: the Keyview executable name, the macOS .app bundle
-    paths to search for it, and ShowFolder(), since Run() on Unix only shell-opens URL targets.
+    (Edit()). Platform branches select the Keyview executable name, the macOS .app bundle paths,
+    and ShowFolder(), since Run() on Unix only shell-opens URL targets.
     Those are ordered OSX -> LINUX -> #else so a Windows host can syntax-check the other two
     branches with --define:OSX / --define:LINUX, which is otherwise impossible - the platform
     symbol is baked into the parser when it is built, and only the #else is unreachable that
@@ -131,7 +131,7 @@ InnerW := W - Pad * 2
 ; SyncScale.
 Scale := Monitor.Primary.Scale
 
-PollFast := 25    ; cursor over the window: hover, click and drag pickup must feel immediate
+PollFast := 25    ; cursor over the window: hover and clicks must feel immediate
 PollSlow := 150   ; cursor elsewhere: only has to notice it coming back
 
 ; ---------------------------------------------------------------------------
@@ -181,7 +181,6 @@ H := FooterY + 30
 
 ; header
 Add("header", 0, 0, W, HeaderH, DrawHeader)
-Add("close", W - 44, 14, 30, 30, DrawClose, (*) => ExitApp())
 ; primary cards
 Add("new", Pad, PrimY, PrimW, PrimH,
     DrawPrimary.Bind("+", "New script", "start from a template"), NewScript)
@@ -202,7 +201,7 @@ Add("footer", 0, FooterY, W, 30, DrawFooter)
 ; ---------------------------------------------------------------------------
 ; window
 ; ---------------------------------------------------------------------------
-Dash := Gui("-Caption +Border +Round", "Keysharp Dash")
+Dash := Gui("+Caption +Border", "Keysharp Dash")
 Dash.BackColor := "151922"
 Dash.MarginX := 0
 Dash.MarginY := 0
@@ -213,11 +212,6 @@ Pic := Dash.AddPicture("x0 y0 w" W " h" H)
 Render()
 Dash.Show("w" W " h" H)
 
-; Interaction is a poll, not window messages: the WM_NCLBUTTONDOWN/HTCAPTION drag trick dies
-; under the WinForms Picture control's mouse capture, and message-hook routing over a child
-; control proved unreliable to pin down - while MouseGetPos + WinGetClientPos + GetKeyState
-; edge detection needs no plumbing at all and is verified end-to-end with injected input
-; (hover, click, drag). PollMouse itself switches between PollFast and PollSlow.
 SetTimer(PollMouse, PollFast)
 
 ; ---------------------------------------------------------------------------
@@ -248,15 +242,6 @@ DrawHeader(img, m, hov) {
     img.DrawLine(Pad, m.Height, m.Width - Pad, m.Height, ClrEdge, 1)
 }
 
-DrawClose(img, m, hov) {
-    if hov
-        img.FillRoundRect(m.X, m.Y, m.Width, m.Height, 8, ClrCardHov)
-    Glyph := Chr(0x2715)
-    Gm := img.MeasureText(Glyph, "s10", FontUi)
-    img.DrawText(Glyph, m.X + Round((m.Width - Gm.Width) / 2), m.Y + Round((m.Height - Gm.Height) / 2),
-        hov ? ClrText : ClrFaint, "s10", FontUi)
-}
-
 DrawPrimary(glyph, label, sub, img, m, hov) {
     img.FillRoundRect(m.X, m.Y, m.Width, m.Height, 10, hov ? ClrPrimHov : ClrPrim)
     img.DrawRoundRect(m.X, m.Y, m.Width, m.Height, 10, hov ? ClrAccent : "0xFF33415F", 1)
@@ -281,8 +266,6 @@ DrawFooter(img, m, hov) {
 ; ---------------------------------------------------------------------------
 ; interaction
 ; ---------------------------------------------------------------------------
-; Decorative entries (the header rule and footer) carry no cb and are skipped, so the area they
-; cover still drags the window, exactly as it did when only clickables were modelled.
 HitTest(px, py) {
     ; physical client px -> authored units
     Ax := px / Scale
@@ -330,14 +313,11 @@ PollMouse() {
         HoverId := NewId
         Render()
     }
-    if Down && !PrevDown && Inside {
+    if Down && !PrevDown && M != "" {
         PrevDown := true
         Busy := true
         try {
-            if M != ""
-                M.cb.Call()
-            else
-                DragWindow()   ; any empty area drags the borderless window
+            M.cb.Call()
         } finally {
             Busy := false
         }
@@ -356,29 +336,6 @@ SyncScale() {
     if Now != Scale {
         Scale := Now
         Render()
-    }
-}
-
-; The classic ReleaseCapture + WM_NCLBUTTONDOWN(HTCAPTION) trick does not work here (the
-; WinForms Picture control owns the mouse), so dragging is a polling loop like the demos'
-; Shell.ks card. SetWinDelay(-1) is load-bearing: WinMove otherwise sleeps A_WinDelay
-; (default 100 ms) after EVERY move, i.e. one choppy update per hundred milliseconds.
-; It is thread-local, so setting it here scopes the change to the drag.
-DragWindow() {
-    SetWinDelay(-1)
-    CoordMode("Mouse", "Screen")
-    MouseGetPos(&Sx, &Sy)
-    WinGetPos(&Wx0, &Wy0, , , "ahk_id " Dash.Hwnd)
-    Lx := Sx
-    Ly := Sy
-    while GetKeyState("LButton", "P") {
-        MouseGetPos(&Mx, &My)
-        if Mx != Lx || My != Ly {
-            Lx := Mx
-            Ly := My
-            WinMove(Wx0 + Mx - Sx, Wy0 + My - Sy, , , "ahk_id " Dash.Hwnd)
-        }
-        Sleep 8
     }
 }
 
