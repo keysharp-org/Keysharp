@@ -8006,7 +8006,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Adds standard tray menu items."
+                     "notes":  "Adds standard tray menu items.",
+                     "tested-by":  "ScriptingComponentTests.InspectorProcess"
                  },
                  {
                      "category":  "Windowing/GUI",

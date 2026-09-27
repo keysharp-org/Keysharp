@@ -499,7 +499,8 @@ namespace Keysharp.Builtins
 					return DefaultObject;
 				}
 
-				Ks.RunScript(spy, true);//Run async so the calling script isn't blocked while Window Spy is open.
+				// Compile source in the child so the menu host can finish dismissing its popup.
+				using var process = Process.Start(Runner.CreateRestartStartInfo(["--script", Path.GetFullPath(spy)]));
 				return DefaultObject;
 			};
 			_ = Add("&Window Spy", new KeysharpFunc(windowSpyFunc.Method, windowSpyFunc.Target));
@@ -519,7 +520,7 @@ namespace Keysharp.Builtins
 					return DefaultObject;
 				}
 
-				Ks.RunScript(spy, true);
+				using var process = Process.Start(Runner.CreateRestartStartInfo(["--script", Path.GetFullPath(spy)]));
 				return DefaultObject;
 			};
 			_ = Add($"&Accessibility Spy", new KeysharpFunc(accessibilitySpyFunc.Method, accessibilitySpyFunc.Target));

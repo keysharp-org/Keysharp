@@ -677,12 +677,14 @@ namespace Keysharp.Internals.Scripting
 			ScriptExecutionState.SourcePath = command.FromStdin ? null : command.ScriptName;
 			var start = DateTime.UtcNow;
 
+			// Resolve embedded components before the temporary Script replaces the compiled host's identity.
+			var hasCompiler = ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var componentFailure);
 			using var script = new Script();
 			script.ValidateThenExit = command.Validate;
 			script.ScriptArgs = command.ScriptArgs;
 			script.KeysharpArgs = command.KeysharpArgs;
 			// Validation reports unrestored packages; runs and builds may fetch them.
-			if (!ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var componentFailure))
+			if (!hasCompiler)
 				return Message(componentFailure, true);
 
 			var compilation = compiler.Compile(new Keysharp.Components.Scripting.ScriptCompileRequest
@@ -1146,21 +1148,22 @@ namespace Keysharp.Internals.Scripting
 #endif
 		}
 
-		internal static ProcessStartInfo CreateRestartStartInfo()
+		internal static ProcessStartInfo CreateRestartStartInfo(string[] args = null)
 		{
 			var processPath = Environment.ProcessPath;
 
 			if (processPath.IsNullOrEmpty())
 				throw new InvalidOperationException("The running executable could not be identified.");
 
-			var args = Environment.GetCommandLineArgs();
-			var start = new ProcessStartInfo(processPath) { UseShellExecute = false };
-			var includeArg0 = args.Length > 0
+			var currentArgs = Environment.GetCommandLineArgs();
+			var start = new ProcessStartInfo(processPath) { UseShellExecute = false, CreateNoWindow = args != null };
+			if (currentArgs.Length > 0
 				&& Path.GetFileNameWithoutExtension(processPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
-				&& args[0].EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+				&& currentArgs[0].EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+				start.ArgumentList.Add(currentArgs[0]);
 
-			for (var i = includeArg0 ? 0 : 1; i < args.Length; i++)
-				start.ArgumentList.Add(args[i]);
+			foreach (var arg in args ?? currentArgs.Skip(1))
+				start.ArgumentList.Add(arg);
 
 			return start;
 		}

@@ -576,6 +576,71 @@ namespace Keysharp.Tests
 			}
 		}
 
+		[TestCase("apphost"), TestCase("dotnet"), TestCase("compiled")]
+		public void InspectorProcess(string host)
+		{
+			var root = Path.Combine(Path.GetTempPath(), "ks-inspector-" + Guid.NewGuid().ToString("N"));
+			Directory.CreateDirectory(root);
+
+			try
+			{
+				var helper = Path.Combine(root, "inspector helper.ks");
+				File.WriteAllText(helper, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n"
+					+ "FileAppend('helper-pass:' A_Args.Length, '*')\nExitApp()\n");
+				var compile = RunLauncher(["--errorstdout", "--compile", "asm", helper]);
+				Assert.AreEqual(0, compile.ExitCode, compile.StdErr);
+				var parent = Path.Combine(root, "inspector parent.ks");
+				File.WriteAllText(parent, """
+					#NoTrayIcon
+					#ErrorStdOut
+					#Warn All, StdOut
+					#CSharp
+					public static object LaunchInspector(object target)
+					{
+						var runner = typeof(Keysharp.Runtime.Script).Assembly.GetType("Keysharp.Internals.Scripting.Runner", true);
+						var method = runner.GetMethod("CreateRestartStartInfo", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+						var start = (System.Diagnostics.ProcessStartInfo)method.Invoke(null, new object[] { new string[] { "--script", (string)target } });
+						start.RedirectStandardOutput = true;
+						start.RedirectStandardError = true;
+						using var child = System.Diagnostics.Process.Start(start);
+						var output = child.StandardOutput.ReadToEndAsync();
+						var error = child.StandardError.ReadToEndAsync();
+						if (!child.WaitForExit(60000))
+						{
+							child.Kill(true);
+							throw new System.TimeoutException("Inspector helper did not exit.");
+						}
+						if (child.ExitCode != 0)
+							throw new System.Exception(error.GetAwaiter().GetResult());
+						return output.GetAwaiter().GetResult();
+					}
+					#EndCSharp
+					FileAppend(LaunchInspector(A_Args[1]), '*')
+					ExitApp()
+					""");
+				var executable = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Keysharp.exe" : "Keysharp");
+				if (host == "compiled")
+				{
+					compile = RunLauncher(["--errorstdout", "--compile", "exe-min", "--with-compiler", parent]);
+					Assert.AreEqual(0, compile.ExitCode, compile.StdErr);
+					executable = Path.ChangeExtension(parent, OperatingSystem.IsWindows() ? ".exe" : null);
+				}
+
+				foreach (var target in new[] { helper, Path.ChangeExtension(helper, ".cks") })
+				{
+					string[] arguments = host == "compiled" ? [target, "parent-only"] : [parent, target, "parent-only"];
+					var run = host == "dotnet"
+						? RunLauncher(arguments) : RunProcess(executable, arguments);
+					Assert.AreEqual(0, run.ExitCode, run.StdErr);
+					Assert.AreEqual("helper-pass:0", run.StdOut.Trim(), target + ": " + run.StdErr);
+				}
+			}
+			finally
+			{
+				try { Directory.Delete(root, true); } catch { }
+			}
+		}
+
 		[Test, NonParallelizable]
 		public void EmbeddedCompilerProcess()
 		{
