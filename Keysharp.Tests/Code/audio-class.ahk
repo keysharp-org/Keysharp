@@ -209,7 +209,9 @@ if (Audio.IsPlaybackSupported && Audio.IsOutputAvailable) {
 
         ; A short clip reaches its own end, and the natural reason wins over a later Stop.
         short := o.Play(clip)
-        Sleep(120)
+        deadline := A_TickCount + 5000
+        while short.IsPlaying && A_TickCount < deadline
+            Sleep(20)
         AssertEq(short.Status, "Ended", A_LineNumber)
         short.Stop()
         AssertEq(short.Status, "Ended", A_LineNumber)

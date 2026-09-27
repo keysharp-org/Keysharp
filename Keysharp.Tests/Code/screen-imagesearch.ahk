@@ -1,19 +1,23 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
-
 #import KS { Image }
 #Include <assert>
-x :=
-y := 0
-CoordMode("Pixel", "Screen")
-hbitmap := Image.FromRect(100, 100, 500, 500).ToBitmap()
+#Include <screen-fixture>
 
-l :=
-t :=
-r :=
-b := 0
-monget := MonitorGetWorkArea(, &l, &t, &r, &b)
-ImageSearch(&x, &y, 0, 0, r, b, "HBITMAP:" hbitmap)
-
-Assert(x == 100 && y == 100, A_LineNumber)
+fixture := ScreenTestFixture()
+try {
+    CoordMode("Pixel", "Screen")
+    needle := Image.Create(8, 8, 0xCC5533)
+    bitmap := needle.ToBitmap()
+    WinGetPos(&left, &top, &width, &height, fixture.Window)
+    AssertEq(ImageSearch(&x, &y, left, top, left + width - 1, top + height - 1, "HBITMAP:" bitmap), 1, A_LineNumber)
+    Assert(Abs(x - fixture.X) <= 2 && Abs(y - fixture.Y) <= 2, A_LineNumber)
+    AssertEq(PixelGetColor(x + 4, y + 4), "0xCC5533", A_LineNumber)
+} finally {
+    if IsSet(needle)
+        needle.Dispose()
+    fixture.Window.Destroy()
+}
 
 FileAppend "pass", "*"

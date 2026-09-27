@@ -2,44 +2,21 @@
 #Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#Include <screen-fixture>
 
-CoordMode("Pixel", "Screen")
-MonitorGet(MonitorGetPrimary(), &left, &top, &right, &bottom)
-
-; A sparse grid over the whole primary monitor stays fast yet reaches past a solid black or white area.
-stepX := Max(1, (right - left) // 32)
-stepY := Max(1, (bottom - top) // 32)
-found := ""
-foundX := foundY := 0
-py := top
-
-while (found = "" && py < bottom)
-{
-	px := left
-
-	while (px < right)
-	{
-		pix := PixelGetColor(px, py)
-
-		if (pix != "0xFFFFFF" && pix != "0x000000")
-		{
-			found := pix, foundX := px, foundY := py
-			break
-		}
-
-		px += stepX
-	}
-
-	py += stepY
-}
-
-Assert(found != "", A_LineNumber)
-
-if (found != "")
-{
-	AssertEq(PixelSearch(&outX, &outY, foundX, foundY, foundX + 1, foundY + 1, found), 1, A_LineNumber)
-	AssertEq(outX, foundX, A_LineNumber)
-	AssertEq(outY, foundY, A_LineNumber)
-}
+fixture := ScreenTestFixture()
+try {
+    CoordMode("Pixel", "Screen")
+    left := fixture.X + 5, top := fixture.Y + 5
+    right := fixture.X + fixture.Width - 6, bottom := fixture.Y + fixture.Height - 6
+    AssertEq(PixelSearch(&x, &y, left, top, right, bottom, 0xCC5533), 1, A_LineNumber)
+    AssertEq(x, left, A_LineNumber)
+    AssertEq(y, top, A_LineNumber)
+    AssertEq(PixelSearch(&x, &y, right, bottom, left, top, 0xCC5533), 1, A_LineNumber)
+    AssertEq(x, right, A_LineNumber)
+    AssertEq(y, bottom, A_LineNumber)
+    AssertEq(PixelSearch(&x, &y, left, top, right, bottom, 0x112233), 0, A_LineNumber)
+} finally
+    fixture.Window.Destroy()
 
 FileAppend "pass", "*"

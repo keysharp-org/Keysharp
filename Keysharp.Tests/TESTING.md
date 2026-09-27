@@ -67,6 +67,8 @@ Do not assert token sequences, AST printer output, generated C# text, reflected 
 
 Run native tray checks in a separate, self-terminating process; the test host does not publish icons.
 
+For nested Wayland tests, point both Keysharp and keysharp-desktop at the nested display. Verify with `keysharp-desktop probe`, then restore the outer desktop's service afterwards.
+
 The full suite includes interactive and permission-sensitive fixtures. Run the curated filter from the repository `AGENTS.md`, a narrower category, or a specific test. Never add `[Parallelizable]`; the suite shares `Script.TheScript` state.
 
 On Windows in a restricted sandbox, run tests through `scripts/test-sandbox.ps1` from the repository root:

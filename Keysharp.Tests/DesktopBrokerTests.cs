@@ -146,6 +146,8 @@ namespace Keysharp.Tests
 				Assert.That(window.Title, Is.EqualTo("Editor"));
 				Assert.That(window.ClassName, Is.EqualTo("Example.Editor"));
 				Assert.That(window.PID, Is.Zero);
+				Assert.That(window.ProcessName, Is.Empty);
+				Assert.That(window.Path, Is.Empty);
 				Assert.That(window.Bounds, Is.EqualTo(Rectangle.Empty));
 				Assert.That(window.ClientBounds, Is.EqualTo(Rectangle.Empty));
 				Assert.That(window.SurfaceGeometry, Is.EqualTo(Rectangle.Empty));

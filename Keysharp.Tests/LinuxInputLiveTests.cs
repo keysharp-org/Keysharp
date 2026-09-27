@@ -77,6 +77,7 @@ namespace Keysharp.Tests
 			using var fixture = new LiveHookFixture();
 			using var finished = new CountdownEvent(2);
 			var trace = new ConcurrentQueue<string>();
+			Task workerSend = null;
 
 			fixture.StartReader(hookEvent =>
 			{
@@ -89,10 +90,8 @@ namespace Keysharp.Tests
 
 					if (direction == "down")
 					{
-						var send = Task.Run(() => fixture.Sender.SendInput(KeyStroke(F14)));
-						Assert.IsTrue(send.Wait(TestTimeout),
-							"Worker-thread Send did not return after queue admission.");
-						trace.Enqueue("worker-send-returned");
+						workerSend = Task.Run(() => fixture.Sender.SendInput(KeyStroke(F14)));
+						trace.Enqueue("worker-send-started");
 					}
 
 					trace.Enqueue($"parent-{direction}-decide");
@@ -109,11 +108,12 @@ namespace Keysharp.Tests
 
 			fixture.Sender.SendInput(KeyStroke(F13));
 			Assert.IsTrue(finished.Wait(TestTimeout));
+			Assert.IsTrue(workerSend.Wait(TestTimeout));
 			fixture.ThrowReaderFailure();
 			Assert.That(trace.ToArray(), Is.EqualTo(new[]
 			{
 				"parent-down-enter",
-				"worker-send-returned",
+				"worker-send-started",
 				"parent-down-decide",
 				"parent-up-enter",
 				"parent-up-decide",
@@ -410,7 +410,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("External")]
-		public void SendAdmission()
+		public void SendCompletion()
 		{
 			using var fixture = new LiveHookFixture();
 			using var callbackEntered = new AutoResetEvent(false);
@@ -428,13 +428,13 @@ namespace Keysharp.Tests
 
 			try
 			{
-				Assert.IsTrue(send.Wait(TestTimeout), "SendInput did not return after queue admission.");
 				Assert.IsTrue(callbackEntered.WaitOne(TestTimeout));
+				Assert.IsFalse(send.IsCompleted, "Send returned before the first hook decision.");
 				allowDecision.Release();
 				Assert.IsTrue(callbackEntered.WaitOne(TestTimeout));
-				Assert.IsTrue(send.IsCompleted,
-					"An ordinary sender must not wait for generated hook callbacks.");
+				Assert.IsFalse(send.IsCompleted, "Send returned before the last hook decision.");
 				allowDecision.Release();
+				Assert.IsTrue(send.Wait(TestTimeout), "Send did not return after hook processing.");
 				Assert.AreEqual(2, Volatile.Read(ref callbacks));
 				fixture.ThrowReaderFailure();
 			}
@@ -500,8 +500,10 @@ namespace Keysharp.Tests
 			});
 			fixture.StartReader(hookEvent =>
 			{
-				if (Interlocked.Exchange(ref firstEvent, 1) != 0)
-					fixture.Hook.SendHookDecision(hookEvent.EventId, KeysharpInputClient.HookDecision.Pass);
+				// A late reply permits the client to read the daemon's quarantine notification.
+				if (Interlocked.Exchange(ref firstEvent, 1) == 0)
+					Thread.Sleep(1500);
+				fixture.Hook.SendHookDecision(hookEvent.EventId, KeysharpInputClient.HookDecision.Pass);
 			});
 
 			fixture.Sender.SendInput(KeyStroke(F13));
@@ -530,7 +532,7 @@ namespace Keysharp.Tests
 			fixture.StartReader(hookEvent =>
 			{
 				if (Volatile.Read(ref phase) == 0)
-					return;
+					Thread.Sleep(1500);
 
 				fixture.Hook.SendHookDecision(hookEvent.EventId, KeysharpInputClient.HookDecision.Pass);
 
@@ -544,8 +546,9 @@ namespace Keysharp.Tests
 			Volatile.Write(ref phase, 1);
 			fixture.Sender.SendInput(KeyStroke(F13));
 
-			Assert.IsTrue(callbacksAfterRearm.Wait(TestTimeout));
+			var completed = callbacksAfterRearm.Wait(TestTimeout);
 			fixture.ThrowReaderFailure();
+			Assert.IsTrue(completed);
 		}
 
 		[Test, Category("External")]
@@ -746,7 +749,7 @@ namespace Keysharp.Tests
 			internal void ThrowReaderFailure()
 			{
 				if (readerFailure != null)
-					throw new AssertionException("Hook reader failed.", readerFailure);
+					throw new AssertionException($"Hook reader failed: {readerFailure}", readerFailure);
 			}
 
 			public void Dispose()

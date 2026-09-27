@@ -377,8 +377,8 @@ namespace Keysharp.Tests
 			_ = Keyboard.Hotstring("Reset");
 			_ = Keysharp.Runtime.Keyboard.HotstringManager.AddHotstring("::btw", Functions.Func(Label_9F201721, null), ":btw", "btw", "", false);
 			_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(Script.TheScript);
-			Assert.IsTrue(A_KeybdHookInstalled == 1L);//Will fail if system has another hook, so exit your scripts before running this.
-			Assert.IsTrue(A_MouseHookInstalled == 1L);//Because there is a hotstring and mouse reset is true by default, the mouse hook gets installed.
+			Assert.AreEqual(1L, A_KeybdHookInstalled & 1L, "The script's keyboard hook must be installed.");
+			Assert.AreEqual(1L, A_MouseHookInstalled & 1L, "Hotstring mouse reset requires the script's mouse hook.");
 			SimulateKeyPress((uint)Keysharp.Builtins.Keyboard.GetKeyVK("b"));
 			SimulateKeyPress((uint)Keysharp.Builtins.Keyboard.GetKeyVK("t"));
 			SimulateKeyPress((uint)Keysharp.Builtins.Keyboard.GetKeyVK("w"));

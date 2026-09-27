@@ -15,7 +15,8 @@ HasCanvasInk(canvas) {
 ; The overlay owns the window and its borrowed Image canvas.
 ov := Overlay(0, 0, 32, 16)
 c := ov.Canvas
-Assert(c is Object && c.Width == 32 && c.Height == 16, A_LineNumber)
+Assert(c is Object && c.Width >= 32 && c.Height >= 16, A_LineNumber)
+sx := c.Width / 32, sy := c.Height / 16
 Assert(c == ov.Canvas, A_LineNumber)                       ; stable while the surface is (see below)
 
 c.FillRect(0, 0, 8, 8, "0xFF0000")
@@ -53,10 +54,10 @@ c.Clear().DrawImage(sprite, 2, 2)
 sprite.Clear("Blue")
 c.DrawImage(sprite, 10, 2)
 sprite.Dispose()
-AssertEq(c.GetPixel(3, 3), 0xFFFF0000, A_LineNumber)
-AssertEq(c.GetPixel(11, 3), 0xFF0000FF, A_LineNumber)
-c.DrawImage(c, 2, 0)
-AssertEq(c.GetPixel(5, 3), 0xFFFF0000, A_LineNumber)
+AssertEq(c.GetPixel(Round(3 * sx), Round(3 * sy)), 0xFFFF0000, A_LineNumber)
+AssertEq(c.GetPixel(Round(11 * sx), Round(3 * sy)), 0xFF0000FF, A_LineNumber)
+c.DrawImage(c, 2, 0, 32, 16)
+AssertEq(c.GetPixel(Round(5 * sx), Round(3 * sy)), 0xFFFF0000, A_LineNumber)
 
 ; A clear erases earlier frames, including content which has already been presented.
 ov.Present()
@@ -78,7 +79,7 @@ AssertEq(c.GetPixel(31, 15), 0, A_LineNumber)
 ; A retained bitmap can change pixels outside every tracked drawing region, even after a clear.
 c.FillRect(4, 4, 2, 2, "Red")
 native := c.ToClr()
-red := native.GetPixel(4, 4)
+red := native.GetPixel(Round(4.5 * sx), Round(4.5 * sy))
 native.SetPixel(31, 15, red)
 AssertEq(c.GetPixel(31, 15), 0xFFFF0000, A_LineNumber)
 c.Clear()

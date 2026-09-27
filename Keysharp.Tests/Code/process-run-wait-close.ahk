@@ -42,7 +42,8 @@ AssertEq(pid, "", A_LineNumber)
 	}
 #else
 	pid := 0
-	Run("/usr/bin/sleep", "", "max", &pid, "60")
+	Run("sleep", "", "max", &pid, "60")
+	Assert(pid > 0, A_LineNumber)
 	ProcessWait(pid, 2)
 
 	; Priority is not raised here: only root can raise it above normal.
@@ -53,7 +54,7 @@ AssertEq(pid, "", A_LineNumber)
 	}
 
 	AssertEq(ProcessExist(pid), 0, A_LineNumber)
-	AssertEq(RunWait("/usr/bin/true", "", "max"), 0, A_LineNumber)
+	AssertEq(RunWait("true", "", "max"), 0, A_LineNumber)
 
 	; A quoted program is how a path with spaces can still carry arguments. exec looks the name up
 	; verbatim, so a stray quote would break it. A link lends the target's executable bit.

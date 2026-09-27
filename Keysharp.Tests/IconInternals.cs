@@ -125,9 +125,12 @@ namespace Keysharp.Tests
 		/// because the getter hands back an Image the setter accepts, which is the whole reason for that type.
 		/// </summary>
 		[Test, Category("Gui"), Category("Curated")]
+#if WINDOWS
 		[Apartment(ApartmentState.STA)]
+#endif
 		public void GuiIconRoundTripsThroughImage()
 		{
+			SkipIfUiInitializationBlocked("Reading a window icon requires a constructed Gui.");
 			var first = new Gui(System.Array.Empty<object>());
 			_ = first.__New();
 			var second = new Gui(System.Array.Empty<object>());
@@ -159,9 +162,12 @@ namespace Keysharp.Tests
 		/// A source that cannot be read is a ValueError naming it, not whatever the decoder happened to throw.
 		/// </summary>
 		[Test, Category("Gui"), Category("Curated")]
+#if WINDOWS
 		[Apartment(ApartmentState.STA)]
+#endif
 		public void GuiSetIconRejectsABadSource()
 		{
+			SkipIfUiInitializationBlocked("Setting a window icon requires a constructed Gui.");
 			var gui = new Gui(System.Array.Empty<object>());
 			_ = gui.__New();
 
