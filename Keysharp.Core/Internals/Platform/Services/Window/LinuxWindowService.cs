@@ -236,8 +236,8 @@ namespace Keysharp.Internals
 		{
 			var frame = own.FrameGeometry;
 
-			if (TryGetSurfaceOrigin(own, out var surface)
-					&& TryOwnControl(h, out var ctrl) && ctrl is Form form && form.Content is Control content)
+			if (TryOwnControl(h, out var ctrl) && ctrl is Form form && form.Content is Control content
+					&& WaylandOwnToplevels.TryGetSurfaceOrigin(form, own, out var surface))
 			{
 				var offset = content.PointToScreen(Point.Empty);   // surface-relative, which is what we correct
 				var size = form.ClientSize;
@@ -262,15 +262,6 @@ namespace Keysharp.Internals
 
 			return own.ClientGeometry.Width > 0 && own.ClientGeometry.Height > 0 ? own.ClientGeometry : frame;
 		}
-
-		/// <summary>The origin a Wayland client's own coordinates are relative to, when the compositor reports it.</summary>
-		private static bool TryGetSurfaceOrigin(WaylandWindowInfo own, out Point origin)
-		{
-			var surface = own.SurfaceGeometry;
-			origin = new Point(surface.X, surface.Y);
-			return surface.Width > 0 && surface.Height > 0;
-		}
-
 
 		public override bool TryGetParent(nint h, out nint parent)
 		{

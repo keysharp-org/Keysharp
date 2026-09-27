@@ -11104,7 +11104,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetClientPos function retrieves the position and size of the specified window\u0027s client area."
+                     "notes":  "The WinGetClientPos function retrieves the position and size of the specified window\u0027s client area.",
+                     "tested-by":  "GuiTests.WaylandSurfaceOrigin"
                  },
                  {
                      "category":  "Windowing/GUI",

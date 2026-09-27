@@ -2,6 +2,9 @@ using System.Collections.Concurrent;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using Keysharp.Internals;
 using Keysharp.Internals.Images;
+#if LINUX
+using Keysharp.Internals.Window.Linux.Wayland;
+#endif
 #if OSX
 using AppKit = MonoMac.AppKit;
 #endif
@@ -245,6 +248,55 @@ namespace Keysharp.Tests
 
 			Assert.IsTrue(TestScript("overlay-canvas", false));
 		}
+
+#if LINUX
+		[TestCase(true), TestCase(false), Category("Gui")]
+		public void WaylandSurfaceOrigin(bool decorated)
+		{
+			SkipIfUiInitializationBlocked("Surface coordinates require a GTK window.");
+			s.InvokeOnUIThread(() =>
+			{
+				var frame = new Rectangle(-240, 180, 300, 200);
+				var info = new WaylandWindowInfo(1, frameGeometry: frame);
+				var reported = new WaylandWindowInfo(1,
+					frameGeometry: frame, surfaceGeometry: new Rectangle(-252, 168, 324, 224));
+				Assert.IsTrue(WaylandOwnToplevels.TryGetSurfaceOrigin(null, reported, out var origin));
+				Assert.AreEqual(new Point(-252, 168), origin);
+				Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(null, info, out _));
+				using var form = new Eto.Forms.Form
+				{
+					Content = new PixelLayout(), ClientSize = new Size(300, 200),
+					WindowStyle = decorated ? WindowStyle.Default : WindowStyle.None
+				};
+				var native = (Gtk.Window)form.ToNative();
+				// An empty title bar leaves the content origin at the frame's top-left.
+				if (decorated)
+					native.Titlebar = new Gtk.Box(Gtk.Orientation.Horizontal, 0);
+				Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _));
+				form.Show();
+				Application.Instance.RunIteration();
+				Assert.IsTrue(native.IsMapped);
+
+				if (!GLib.GType.FromName("GdkWaylandWindow").IsInstance(native.Window.Handle))
+				{
+					Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _));
+					return;
+				}
+
+				Assert.IsTrue(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out origin));
+				var content = form.Content.PointToScreen(Point.Empty);
+				Assert.AreEqual(new Point(frame.X - (int)content.X, frame.Y - (int)content.Y), origin);
+				Assert.IsFalse(System.Threading.Tasks.Task.Run(() =>
+					WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _)).GetAwaiter().GetResult());
+				native.Gravity = Gdk.Gravity.Center;
+				Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _));
+				native.Gravity = Gdk.Gravity.NorthWest;
+				form.Hide();
+				Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _));
+			});
+		}
+
+#endif
 
 		// The canvas is the backing's presentable memory (on Windows the DIB the compositor reads), so no
 		// operation may swap or free that bitmap out from under it.

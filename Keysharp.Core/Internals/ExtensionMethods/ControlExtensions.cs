@@ -845,9 +845,7 @@ namespace System.Windows.Forms
 			var point = control.PointToScreen(Point.Empty);
 #if LINUX
 
-			//Both terms are logical pixels at scale 1, the only scale GTK3 and the compositor are known to agree
-			//on: GTK3 renders at an integer scale and the compositor downscales, so a fractional scale makes them
-			//diverge with distance from the window.
+			// GTK offsets and compositor geometry both use logical coordinates.
 			if (control.FindForm() is Forms.Form form)
 			{
 				var found = global::Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.TryGetSurfaceOrigin(form, out var origin);

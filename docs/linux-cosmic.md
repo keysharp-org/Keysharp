@@ -21,6 +21,8 @@ On COSMIC, Keysharp first probes the staging `ext-image-copy-capture` and output
 
 When the compositor also exposes the foreign-toplevel capture-source protocol, `Image.FromWindow` captures the window directly, including pixels covered by another window. The compositor chooses the capture extent; `Decorations` does not change it on this backend.
 
+For Keysharp-owned GTK windows, screen coordinates use the compositor's frame geometry and GTK's shadow inset when the surface rectangle is unavailable.
+
 The currently supported COSMIC portal has no RemoteDesktop path for Keysharp's global input work, so installing the portal packages does not replace `keysharp-input`. XWayland can help X11 applications run inside the session, but does not turn the COSMIC session into X11 or bypass its Wayland restrictions.
 
 ## Tray icons

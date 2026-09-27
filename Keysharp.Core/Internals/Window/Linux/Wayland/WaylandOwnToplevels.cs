@@ -328,12 +328,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			var backend = WaylandBackend.Current;
 			var known = false;
 
-			if (compositorHandle != 0 && backend != null && backend.TryGetWindow(compositorHandle, out var info)
-					&& info.SurfaceGeometry.Width > 0 && info.SurfaceGeometry.Height > 0)
-			{
-				origin = new Point(info.SurfaceGeometry.X, info.SurfaceGeometry.Y);
-				known = true;
-			}
+			if (compositorHandle != 0 && backend != null && backend.TryGetWindow(compositorHandle, out var info))
+				known = TryGetSurfaceOrigin(form, info, out origin);
 
 			lock (sync)
 			{
@@ -348,6 +344,28 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 
 			return known;
+		}
+
+		internal static bool TryGetSurfaceOrigin(Eto.Forms.Form form, WaylandWindowInfo info, out Point origin)
+		{
+			var surface = info?.SurfaceGeometry ?? Rectangle.Empty;
+			origin = new Point(surface.X, surface.Y);
+
+			if (surface.Width > 0 && surface.Height > 0)
+				return true;
+
+			if (info?.HasKnownField(WaylandWindowFields.Frame) != true
+				|| info.FrameGeometry.Width <= 0 || info.FrameGeometry.Height <= 0
+				|| form is not { IsDisposed: false } || Eto.Forms.Application.Instance?.IsUIThread != true
+				|| form.ToNative() is not Gtk.Window { IsMapped: true } gtkWindow
+				|| gtkWindow.Gravity != Gdk.Gravity.NorthWest
+				|| !GLib.GType.FromName("GdkWaylandWindow").IsInstance(gtkWindow.Window.Handle))
+				return false;
+
+			// GTK's Wayland position is the frame's shadow inset within the surface.
+			gtkWindow.GetPosition(out var x, out var y);
+			origin = new Point(info.FrameGeometry.X - x, info.FrameGeometry.Y - y);
+			return true;
 		}
 
 		/// <summary>
@@ -1076,10 +1094,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		private static void SetSurfaceOriginLocked(FormState state, WaylandWindowInfo info)
 		{
-			var surface = info?.SurfaceGeometry ?? Rectangle.Empty;
-			state.SurfaceKnown = surface.Width > 0 && surface.Height > 0;
-			state.SurfaceOrigin = state.SurfaceKnown ? new Point(surface.X, surface.Y) : default;
-			state.SurfaceTick = Environment.TickCount64;
+			state.SurfaceKnown = TryGetSurfaceOrigin(state.Form, info, out state.SurfaceOrigin);
+			// A worker cannot read GTK's inset; let the next UI query fill the cache.
+			state.SurfaceTick = state.SurfaceKnown ? Environment.TickCount64 : 0;
 		}
 
 		private static bool TrySetAppIdOnUiThread(Eto.Forms.Form form, string appId)
