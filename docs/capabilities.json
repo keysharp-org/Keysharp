@@ -8961,8 +8961,8 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "Returns the raw pointer address of an object.",
-                     "tested-by":  "external-com.ahk"
+                     "notes":  "Returns an Integer containing the object's IUnknown address without adding a native reference. Keep the object alive while using the pointer.",
+                     "tested-by":  "misc-object.ahk; external-com.ahk; external-chrome.ahk"
                  },
                  {
                      "category":  "Core Language",

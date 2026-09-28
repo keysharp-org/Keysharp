@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
@@ -52,17 +54,24 @@ AssertEq(plainObj.Base.Base, Any.Prototype, A_LineNumber)
 #if WINDOWS
 obj := Map(1, "a", "b", 2)
 punk := ObjPtr(obj)
+AssertEq(Type(punk), "Integer", A_LineNumber)
+AssertEq(ObjPtr(obj), punk, A_LineNumber)
+context := Buffer(A_PtrSize)
+NumPut("Ptr", punk, context)
+contexts := Map(punk, obj)
+Assert(contexts.Has(NumGet(context, "Ptr")), A_LineNumber)
+AssertEq(ObjFromPtrAddRef(NumGet(context, "Ptr")), obj, A_LineNumber)
 ObjAddRef(punk), count := ObjRelease(punk)
 
-AssertEq(count, 1, A_LineNumber)
+AssertEq(count, 0, A_LineNumber)
 
-got := ObjFromPtr(punk)
+got := ObjFromPtrAddRef(punk)
 
 Assert(got is Map, A_LineNumber)
 
 ObjAddRef(punk), count := ObjRelease(punk)
 
-AssertEq(count, 1, A_LineNumber)
+AssertEq(count, 0, A_LineNumber)
 
 obj2 := Map(1, "a", "b", 2)
 punk := ObjPtrAddRef(obj2) ; returns a raw pointer with the ref count being 1 initially
@@ -74,6 +83,8 @@ punk2 := ObjPtrAddRef(obj2)
 ObjAddRef(punk2), count := ObjRelease(punk2)
 
 AssertEq(count, 2, A_LineNumber)
+ObjRelease(punk2)
+ObjRelease(punk)
 
 obj3 := Map(1, "a", "b", 2)
 punk3 := ObjPtrAddRef(obj3)

@@ -46,7 +46,7 @@ touch core subsystems, so care is needed.
 
 ### Linux
 
-- [ ] **WinEvent caret events.** `WinEvent.CaretMove` comes from the AT-SPI `object:text-caret-moved`
+- [ ] **WinEvent caret events.** `WinEvent.OnCaretMove` comes from the AT-SPI `object:text-caret-moved`
   signal, shared by both Linux backends (accessibility is display-server agnostic). Verify that events
   arrive while typing in GTK and Qt text widgets, that the reported handle is the caret owner's
   top-level window, and that the `A_EventInfo` rectangle is in screen coordinates for a native Wayland
@@ -75,8 +75,8 @@ on real hardware and under real permission grants, not that they are missing.
 - [ ] **Hook snapshot fallback for key state.** `Keysharp.Core/Internals/Input/Hooks/MacOS/MacHookThread.cs:123`
   Falls back to hook snapshots when the native key-state query is unavailable — verify accuracy.
 
-- [ ] **WinEvent caret events.** `WinEvent.CaretMove` registers `AXSelectedTextChanged` on each
-  application element (only while a subscription exists). Verify that events arrive while typing,
+- [ ] **WinEvent caret events.** `WinEvent.OnCaretMove` registers `AXSelectedTextChanged` on each
+  application element (only while a WinEvent with an OnCaretMove slot runs). Verify that events arrive while typing,
   that the reported handle is the window containing the edited element (`AXWindow`, falling back to
   the app's focused window), and that the `A_EventInfo` rectangle agrees with `CaretGetPos`.
 

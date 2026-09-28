@@ -882,7 +882,7 @@ Status legend:
 | ObjHasOwnProp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether the object defines the specified own property name. |
 | ObjOwnPropCount() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the number of own properties currently defined on the object. |
 | ObjOwnProps | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enumerates an object's own properties. |
-| ObjPtr() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Returns the raw pointer address of an object. |
+| ObjPtr() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Returns an Integer containing the object's IUnknown address without adding a native reference. Keep the object alive while using the pointer. |
 | ObjPtrAddRef() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Returns object pointer address and increments its reference count. |
 | ObjRelease() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ObjAddRef and ObjRelease functions increment or decrement an object's reference count. |
 | ObjSetBase() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets an object's base object. The native type cannot change and the base chain may not become circular. Neither object may have typed properties, since those fix the memory layout; a prototype which has none is writable. |
