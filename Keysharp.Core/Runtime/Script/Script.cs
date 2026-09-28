@@ -1891,20 +1891,28 @@ namespace Keysharp.Runtime
 			if (window == null)
 				return;
 
-			PostToUIThread(() =>
-			{
-				if (window.IsClosing)
-					return;
+			// On the UI thread this installs inline: a native source only reports changes made after it exists, so
+			// deferring it would drop a copy made right after OnClipboardChange, which AHK reports. A post from another
+			// thread re-reads what is wanted when it runs, so it cannot undo a newer inline change.
+			if (IsOnMainThread)
+				InstallClipboardMonitoring(window, enabled);
+			else
+				PostToUIThread(() => InstallClipboardMonitoring(window, ClipboardMonitoringWanted));
+		}
 
-				window.ClipboardUpdate -= PrivateClipboardUpdate;
+		private void InstallClipboardMonitoring(MainWindow window, bool enabled)
+		{
+			if (window.IsClosing)
+				return;
 
-				if (enabled)
-					window.ClipboardUpdate += PrivateClipboardUpdate;
+			window.ClipboardUpdate -= PrivateClipboardUpdate;
+
+			if (enabled)
+				window.ClipboardUpdate += PrivateClipboardUpdate;
 
 #if !WINDOWS
-				window.SetClipboardMonitoringEnabled(enabled);
+			window.SetClipboardMonitoringEnabled(enabled);
 #endif
-			});
 		}
 	}
 }
