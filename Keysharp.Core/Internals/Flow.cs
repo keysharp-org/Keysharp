@@ -5,8 +5,6 @@ namespace Keysharp.Internals
 {
 	internal static class Flow
 	{
-		internal const int IntervalUnspecified = int.MinValue + 303;
-
 		private sealed class DialogInterruptibilityScope : IDisposable
 		{
 			private readonly ThreadVariables threadVariables;
@@ -280,7 +278,7 @@ namespace Keysharp.Internals
 			}
 		}
 
-		internal static void SleepWithoutInterruption(int duration = IntervalUnspecified)
+		internal static void SleepWithoutInterruption(int duration = -1)
 		{
 			var fd = Script.TheScript.FlowData;
 			var allowInterruptionPrev = fd.allowInterruption;   // save/restore (matches AHK's g_AllowInterruption_prev)

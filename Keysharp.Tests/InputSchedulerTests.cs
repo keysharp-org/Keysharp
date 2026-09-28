@@ -86,6 +86,16 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Threading")]
+		public void UninterruptiblePump()
+		{
+			_ = UseQueuedMainContext();
+			var calls = 0;
+			s.EventScheduler.EnqueueCallback(() => calls++, ScriptEventQueue.Normal, false);
+			Keysharp.Internals.Flow.SleepWithoutInterruption();
+			Assert.AreEqual(1, calls, "an uninterruptible wait with no interval must still pump once");
+		}
+
+		[Test, Category("Threading")]
 		public void HotkeyBufferedRetry()
 		{
 			var context = UseQueuedMainContext();

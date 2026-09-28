@@ -803,7 +803,7 @@ namespace Keysharp.Internals.Input.Windows
 			// and it didn't perform any better:
 			// GetMessage(&msg, NULL, WM_CANCELJOURNAL, WM_CANCELJOURNAL);
 			while (script.playbackHook != 0)
-				Keysharp.Internals.Flow.SleepWithoutInterruption(Keysharp.Internals.Flow.IntervalUnspecified); // For maintainability, macro is used rather than optimizing/splitting the code it contains.
+				Keysharp.Internals.Flow.SleepWithoutInterruption(); // For maintainability, macro is used rather than optimizing/splitting the code it contains.
 
 			ht.blockWinKeys = false;
 

@@ -1568,7 +1568,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 					if (waitForWinKeyRelease)
 						while (ht.IsKeyDownLogical(VK_LWIN) || ht.IsKeyDownLogical(VK_RWIN)) // Even if the keyboard hook is installed, it seems best to use IsKeyDownLogical() vs. g_PhysicalKeyState[] because it's more likely to produce consistent behavior.
-							Keysharp.Internals.Flow.SleepWithoutInterruption(Keysharp.Internals.Flow.IntervalUnspecified); // Seems best not to allow other threads to launch, for maintainability and because SendKeys() isn't designed to be interruptible.
+							Keysharp.Internals.Flow.SleepWithoutInterruption(); // Seems best not to allow other threads to launch, for maintainability and because SendKeys() isn't designed to be interruptible.
 				}
 
 				// v1.0.44.03: The following change is meaningful only to people who use more than one keyboard layout.
