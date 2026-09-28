@@ -801,7 +801,19 @@ namespace Keysharp.Builtins
 			});
 
 			if (unsupported)
+			{
+#if LINUX
+				if (Platform.Desktop.IsWaylandSession)
+				{
+					if (Keysharp.Internals.Window.Linux.Wayland.DesktopClient.TryProbeWindowSupport(out _, out var visibility)
+						&& !visibility)
+						return Errors.UnsupportedErrorOccurred("WinHide is unavailable: the desktop service does not support changing foreign-window visibility.");
+
+					return Errors.OSErrorOccurredWithMessage("WinHide failed for a matching window.");
+				}
+#endif
 				return WindowOperationUnsupported(nameof(WinHide));
+			}
 
 			return DefaultObject;
 		}

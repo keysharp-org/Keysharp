@@ -2583,7 +2583,8 @@ ImgSrch(*) {
 			AppendLog("ImageSearch reported " resultX "," resultY " but the swatch's screen rect starts at " swatchX "," swatchY "; PixelGetColor there reads " colour ".")
 		}
 	} catch as e {
-		SetStatus("image_main", "Image status: FAIL - ImageSearch error: " e.Message)
+		verdict := IsUnsupportedDesktopError(e) ? "SKIP" : "FAIL"
+		SetStatus("image_main", "Image status: " verdict " - ImageSearch error: " e.Message)
 		AppendLog("ImageSearch threw: " e.Message)
 	} finally {
 		if IsSet(needle)
@@ -3526,7 +3527,7 @@ DoWav(*)
 Tab.UseTab("Image")
 imgGroup := MyGui.AddGroupBox("xc+10 yc+10 w500", "Images (Picture / ImageSearch / ScreenClip)")
 MyGui.UseGroup(imgGroup)
-MyGui.AddText("xc+16 yc+24 w468 h44", "Display loads monkey/icon/svg Picture controls then destroys them; ImageSearch locates the colour swatch on screen and checks the coordinates against the swatch's own screen rect; ScreenClip captures a region and shows it. Pictures render on this tab.")
+MyGui.AddText("xc+16 yc+24 w468 h44", "Display loads Picture controls; ImageSearch checks the swatch colour and position when global window geometry is available. ScreenClip captures a region and shows it.")
 imgDisplayBtn := MyGui.AddButton("xc+16 y+10 w150 h28", "Display Pictures")
 imgDisplayBtn.OnEvent("Click", LoadPic)
 #if WINDOWS
@@ -5207,10 +5208,12 @@ AddWindowResult(area, testName, result, expected, actual) {
 AddWindowError(area, testName, err) {
 	message := err.Message
 	lower := StrLower(message)
-	result := InStr(lower, "permission") || InStr(lower, "authorization") ? "BLOCKED"
-		: (InStr(lower, "is not implemented on") ? "SKIP" : "FAIL")
+	result := IsUnsupportedDesktopError(err) ? "SKIP"
+		: (InStr(lower, "permission") || InStr(lower, "authorization") ? "BLOCKED" : "FAIL")
 	AddWindowResult(area, testName, result, "Operation succeeds", message)
 }
+
+IsUnsupportedDesktopError(err) => err is UnsupportedError
 
 UpdateWindowSuiteSummary(final := false) {
 	global gWindowResultRows, gWindowSummary
@@ -5494,13 +5497,19 @@ RunForeignWindowQueries(captureReady) {
 
 	try {
 		WinGetPos(&x, &y, &width, &height, gWindowPrimaryHwnd)
-		WinGetClientPos(&clientX, &clientY, &clientWidth, &clientHeight, gWindowPrimaryHwnd)
-		ok := width > 0 && height > 0 && clientWidth > 0 && clientHeight > 0
-		AddWindowResult("Info", "Frame and client geometry", ok ? "PASS" : "FAIL",
-			"Positive frame and client sizes",
-			x "," y " " width "x" height " | " clientX "," clientY " " clientWidth "x" clientHeight)
+		ok := width > 0 && height > 0
+		AddWindowResult("Info", "Frame geometry", ok ? "PASS" : "FAIL",
+			"Positive frame size", x "," y " " width "x" height)
 	} catch as err
-		AddWindowError("Info", "Frame and client geometry", err)
+		AddWindowError("Info", "Frame geometry", err)
+
+	try {
+		WinGetClientPos(&clientX, &clientY, &clientWidth, &clientHeight, gWindowPrimaryHwnd)
+		ok := clientWidth > 0 && clientHeight > 0
+		AddWindowResult("Info", "Client geometry", ok ? "PASS" : "FAIL",
+			"Positive client size", clientX "," clientY " " clientWidth "x" clientHeight)
+	} catch as err
+		AddWindowError("Info", "Client geometry", err)
 
 	try {
 		alpha := WinGetTransparent(gWindowPrimaryHwnd)
@@ -5554,6 +5563,11 @@ RunWindowCaptureTest() {
 			throw Error("Capture process returned an incomplete result.")
 		if (result[1] = "ERROR")
 			throw Error(result[2])
+		if (result[1] = "UNSUPPORTED") {
+			AddWindowResult("Capture", "Image.FromWindow", "SKIP",
+				"Window capture or screen geometry is exposed", result[2])
+			return
+		}
 		if (result[1] != "PASS" && result[1] != "FAIL")
 			throw Error("Capture process returned an invalid status.")
 		AddWindowResult("Capture", "Image.FromWindow", result[1],

@@ -458,10 +458,18 @@ namespace Keysharp.Builtins
 
 				var win = WindowSearch.SearchWindow(winTitle, winText, excludeTitle, excludeText, true);
 
-				if (win is not WindowInfoBase w)
-					return Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText);
+			if (win is not WindowInfoBase w)
+				return Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText);
 
-				// Whether to capture the title bar/borders. The default (false) captures only the client area
+#if LINUX
+			if (w is Keysharp.Internals.Window.Linux.Wayland.WaylandWindowInfo wayland
+				&& !wayland.HasKnownField(Keysharp.Internals.Window.Linux.Wayland.WaylandWindowFields.Frame)
+				&& Keysharp.Internals.Window.Linux.Wayland.DesktopClient.TryProbeWindowSupport(out var capture, out _)
+				&& !capture)
+				return Errors.UnsupportedErrorOccurred("Image.FromWindow is unavailable: the desktop service provides neither window capture nor global window geometry.");
+#endif
+
+			// Whether to capture the title bar/borders. The default (false) captures only the client area
 				// where the backend supports it (KWin); excluding decorations avoids the shadow-padded buffer whose
 				// margin can't be mapped back to screen reliably. Honored only on KWin; on Windows/macOS/GNOME/X11
 				// each backend captures a fixed extent and the flag is ignored.

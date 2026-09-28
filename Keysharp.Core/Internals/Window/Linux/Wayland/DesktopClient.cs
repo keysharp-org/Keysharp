@@ -266,6 +266,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal static bool ProviderSupportsWindowKill()
 			=> ProviderSupports(Operation.WindowKill);
 
+		internal static bool TryProbeWindowSupport(out bool capture, out bool visibility)
+		{
+			capture = visibility = false;
+
+			if (!sessions[LinuxPermissionScope.None].TryGetOperations(out var operations))
+				return false;
+
+			capture = (operations & Operation.CaptureWindow) != 0;
+			visibility = (operations & Operation.WindowSetVisible) != 0;
+			return true;
+		}
+
 		internal static bool ProviderSupportsClipboard()
 			=> ProviderSupports(
 				Operation.ClipboardMimetypes | Operation.ClipboardContent
@@ -760,6 +772,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				lock (sync)
 					return TryProbeLocked(out backend, out _);
+			}
+
+			internal bool TryGetOperations(out Operation operations)
+			{
+				lock (sync)
+					return TryProbeLocked(out _, out operations);
 			}
 
 			private bool TryProbeLocked(out Backend backend, out Operation operations)

@@ -6680,7 +6680,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Captures, loads, creates, edits and searches images. Search methods return match objects. FromWindow Mode and search Direction use string names instead of numeric codes. Supports saving and CLR bitmap access. Full on Windows, partial on Linux (X11); Wayland and macOS are unverified.",
+                     "notes":  "Captures, loads, creates, edits and searches images. Search methods return match objects. FromWindow Mode and search Direction use string names instead of numeric codes. Supports saving and CLR bitmap access. Image.FromWindow raises UnsupportedError on Wayland when neither window capture nor global frame geometry is available. Full on Windows, partial on Linux (X11); Wayland and macOS are unverified.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -10957,6 +10957,17 @@
                      "tested-by":  "collections-array.ahk"
                  },
                  {
+                     "category":  "Errors",
+                     "feature":  "UnsupportedError",
+                     "syntax":  "throw UnsupportedError(Message)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Built-in OSError subclass for an operation the active platform or backend cannot provide. Catch UnsupportedError for this case specifically; a broad OSError handler still catches it.",
+                     "tested-by":  "flow-trycatch.ahk; Gui/guitest.ks"
+                 },
+                 {
                      "category":  "Core Language",
                      "feature":  "Until",
                      "syntax":  "",
@@ -11018,7 +11029,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinActivate function activates the specified window.",
+                     "notes":  "The WinActivate function activates the specified window. An unimplemented backend operation raises UnsupportedError.",
                      "tested-by":  "directive-misc.ahk"
                  },
                  {
@@ -11029,7 +11040,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinActivateBottom function is similar to the WinActivate function but it activates the bottommost matching window rather than the topmost."
+                     "notes":  "The WinActivateBottom function is similar to the WinActivate function but it activates the bottommost matching window rather than the topmost. An unimplemented backend operation raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11050,7 +11061,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinClose function closes the specified window.",
+                     "notes":  "The WinClose function closes the specified window. An unimplemented backend operation raises UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11104,7 +11115,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetClientPos function retrieves the position and size of the specified window\u0027s client area.",
+                     "notes":  "Retrieves the specified window\u0027s client-area position and size. On Wayland, a matched window whose compositor does not report client geometry raises UnsupportedError instead of returning zero coordinates. A window that does not match still returns zero coordinates.",
                      "tested-by":  "GuiTests.WaylandSurfaceOrigin"
                  },
                  {
@@ -11217,7 +11228,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetPos function retrieves the position and size of the specified window.",
+                     "notes":  "Retrieves the specified window\u0027s frame position and size. On Wayland, a matched window whose compositor does not report frame geometry raises UnsupportedError instead of returning zero coordinates. A window that does not match still returns zero coordinates.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11300,7 +11311,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinHide function hides the specified window. On macOS, windows owned by the calling process are hidden individually; for windows owned by other applications, macOS provides no per-window hide API, so the entire owning application is hidden instead."
+                     "notes":  "Hides the specified window. On Wayland, raises UnsupportedError when the desktop service confirms that foreign-window visibility control is unavailable; an attempted hide that fails for another reason raises OSError. On macOS, windows owned by the calling process are hidden individually; for windows owned by other applications, macOS provides no per-window hide API, so the entire owning application is hidden instead."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11321,7 +11332,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMaximize function enlarges the specified window to its maximum size.",
+                     "notes":  "The WinMaximize function enlarges the specified window to its maximum size. An unimplemented backend operation raises UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11332,7 +11343,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMinimize function collapses the specified window into a button on the task bar.",
+                     "notes":  "The WinMinimize function collapses the specified window into a button on the task bar. An unimplemented backend operation raises UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11343,7 +11354,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Minimizes all windows; Windows follows Explorer's exemptions.",
+                     "notes":  "Minimizes all windows; Windows follows Explorer's exemptions. An unimplemented backend operation raises UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11354,7 +11365,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Unminimizes top-level windows without clearing maximization; respects DetectHiddenWindows. Live Linux/macOS behavior remains unverified.",
+                     "notes":  "Unminimizes top-level windows without clearing maximization; respects DetectHiddenWindows. Live Linux/macOS behavior remains unverified. An unimplemented backend operation raises UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks (manual)"
                  },
                  {
@@ -11365,7 +11376,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMove function changes the position and/or size of the specified window.",
+                     "notes":  "The WinMove function changes the position and/or size of the specified window. An unimplemented backend operation raises UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11376,7 +11387,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMoveBottom function sends the specified window to the bottom of stack; that is, beneath all other windows. On Wayland this is provided by the Keysharp KWin provider or the GNOME/Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.orderBack(); macOS provides no API to lower another process\u0027s window.",
+                     "notes":  "The WinMoveBottom function sends the specified window to the bottom of stack; that is, beneath all other windows. On Wayland this is provided by the Keysharp KWin provider or the GNOME/Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.orderBack(); macOS provides no API to lower another process\u0027s window. An unimplemented backend operation raises UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11387,7 +11398,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "full",
-                     "notes":  "The WinMoveTop function brings the specified window to the top of the stack without explicitly activating it. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS this is done via the Accessibility AXRaise action, which raises the window within its owning application without activating that application."
+                     "notes":  "The WinMoveTop function brings the specified window to the top of the stack without explicitly activating it. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS this is done via the Accessibility AXRaise action, which raises the window within its owning application without activating that application. An unimplemented backend operation raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11397,7 +11408,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unsupported",
-                     "notes":  "Redraws a window. Own windows are invalidated through the toolkit on every platform. For a foreign window X11 approximates it with XClearWindow, Wayland has no equivalent and raises an OSError, and macOS reports success without doing anything because AppKit owns repainting."
+                     "notes":  "Redraws a window. Own windows are invalidated through the toolkit on every platform. For a foreign window X11 approximates it with XClearWindow, Wayland has no equivalent and raises an OSError, and macOS reports success without doing anything because AppKit owns repainting. An unimplemented backend operation raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11407,7 +11418,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Restores minimized windows to their prior state and maximized windows to normal. Live Linux/macOS behavior remains unverified.",
+                     "notes":  "Restores minimized windows to their prior state and maximized windows to normal. Live Linux/macOS behavior remains unverified. An unimplemented backend operation raises UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks (manual)"
                  },
                  {
@@ -11418,7 +11429,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinSetAlwaysOnTop function makes the specified window stay on top of all other windows (except other always-on-top windows). On macOS, only supported for windows owned by the calling process; macOS provides no API to change another process\u0027s window level, and raising it via Accessibility would require repeatedly stealing focus, so it is a no-op for windows owned by other applications."
+                     "notes":  "The WinSetAlwaysOnTop function makes the specified window stay on top of all other windows (except other always-on-top windows). On macOS, only supported for windows owned by the calling process; macOS provides no API to change another process\u0027s window level, and raising it via Accessibility would require repeatedly stealing focus, so it is a no-op for windows owned by other applications. An unimplemented backend operation raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11428,7 +11439,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unsupported",
-                     "notes":  "Enables or disables the specified window. Linux supports script-owned windows, but neither X11 nor Wayland has a faithful equivalent of Win32 EnableWindow for another application's window, so a foreign target raises OSError. macOS has no faithful public equivalent and is intentionally unsupported."
+                     "notes":  "Enables or disables the specified window. Linux supports script-owned windows, but neither X11 nor Wayland has a faithful equivalent of Win32 EnableWindow for another application's window, so a foreign target raises UnsupportedError. macOS has no faithful public equivalent and is intentionally unsupported."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11438,7 +11449,7 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "Changes the extended style of the specified window. Neither X11, Wayland nor macOS has an equivalent of Win32 extended window styles. On a script-owned window the call is accepted and does nothing; on a foreign window it raises an OSError."
+                     "notes":  "Changes the extended style of the specified window. Neither X11, Wayland nor macOS has an equivalent of Win32 extended window styles. On a script-owned window the call is accepted and does nothing; on a foreign window it raises an OSError. An unimplemented backend operation raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11458,7 +11469,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unsupported",
-                     "notes":  "Changes the style of the specified window. X11 and Wayland map WS_CAPTION to the desktop provider decoration state for foreign windows; other native Win32 style bits have no equivalent. Script-owned windows use toolkit behavior. macOS has no equivalent.",
+                     "notes":  "Changes the style of the specified window. X11 and Wayland map WS_CAPTION to the desktop provider decoration state for foreign windows; other native Win32 style bits have no equivalent. Script-owned windows use toolkit behavior. macOS has no equivalent. An unimplemented backend operation raises UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11469,7 +11480,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinSetTitle function changes the title of the specified window. On Wayland, script-owned titles can be changed but no supported compositor backend exposes title mutation for another application, so a foreign target raises OSError. On macOS, windows owned by the calling process have their title set directly; for windows owned by other applications, setting AXTitle via the Accessibility API is attempted, but most applications treat it as read-only and the call has no effect."
+                     "notes":  "The WinSetTitle function changes the title of the specified window. On Wayland, script-owned titles can be changed but no supported compositor backend exposes title mutation for another application, so a foreign target raises OSError. On macOS, windows owned by the calling process have their title set directly; for windows owned by other applications, setting AXTitle via the Accessibility API is attempted, but most applications treat it as read-only and the call has no effect. An unimplemented backend operation raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11479,7 +11490,7 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "Makes all pixels of the chosen colour invisible. No non-Windows backend implements a per-colour transparency key; X11, Wayland and macOS raise an OSError. Whole-window opacity via WinSetTransparent is supported instead."
+                     "notes":  "Makes all pixels of the chosen colour invisible. No non-Windows backend implements a per-colour transparency key; X11, Wayland and macOS raise an OSError. Whole-window opacity via WinSetTransparent is supported instead. An unimplemented backend operation raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11489,7 +11500,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Makes the specified window semi-transparent. N must be blank, Off or from 0 through 255; another value raises ValueError. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.alphaValue; macOS provides no public API to change another process\u0027s window opacity."
+                     "notes":  "Makes the specified window semi-transparent. N must be blank, Off or from 0 through 255; another value raises ValueError. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.alphaValue; macOS provides no public API to change another process\u0027s window opacity. An unimplemented backend operation raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11499,7 +11510,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinShow function unhides the specified window. On macOS, windows owned by the calling process are restored individually; for windows owned by other applications, the entire owning application is unhidden (the inverse of WinHide\u0027s fallback)."
+                     "notes":  "The WinShow function unhides the specified window. On macOS, windows owned by the calling process are restored individually; for windows owned by other applications, the entire owning application is unhidden (the inverse of WinHide\u0027s fallback). An unimplemented backend operation raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",

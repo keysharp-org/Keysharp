@@ -65,7 +65,7 @@ Do not assert token sequences, AST printer output, generated C# text, reflected 
 
 ## Execution safety
 
-Run native tray checks in a separate, self-terminating process; the test host does not publish icons.
+`Code/Gui/guitest.ks` is interactive and skips operations the compositor reports as unsupported. Run native tray checks in a separate, self-terminating process; the test host does not publish icons.
 
 For nested Wayland tests, point both Keysharp and keysharp-desktop at the nested display. Verify with `keysharp-desktop probe`, then restore the outer desktop's service afterwards.
 

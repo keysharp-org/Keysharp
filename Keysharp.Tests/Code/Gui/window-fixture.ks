@@ -44,7 +44,7 @@ CaptureFixtureWindow(title) {
 		} finally
 			img.Dispose()
 	} catch as err
-		result := "ERROR`n" err.Message
+		result := (err is UnsupportedError ? "UNSUPPORTED" : "ERROR") "`n" err.Message
 	FileAppend(result, fixtureCommandPath, "UTF-8-RAW")
 }
 

@@ -309,6 +309,13 @@ namespace Keysharp.Builtins
 			return ErrorOccurred(err) ? throw err : ret ?? DefaultObject;
 		}
 
+		[StackTraceHidden]
+		internal static object UnsupportedErrorOccurred(string message, object ret = null)
+		{
+			var err = new UnsupportedError(message);
+			return ErrorOccurred(err) ? throw err : ret ?? DefaultObject;
+		}
+
 		/// <summary>
 		/// Internal helper to conditionally throw/handle an <see cref="OSError"/> for a given HR.
 		/// If HR is 0 or positive then returns <see cref="ret"/> or <see cref="hr"/> (cast to long).
@@ -852,6 +859,14 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+	}
+
+	/// <summary>An exception class for an operation the active platform cannot provide.</summary>
+	public class UnsupportedError : OSError
+	{
+		/// <summary>Initializes a new instance of the <see cref="UnsupportedError"/> class.</summary>
+		/// <param name="args">The parameters to pass to the base.</param>
+		public UnsupportedError(params object[] args) : base(args) { }
 	}
 
 	/// <summary>
