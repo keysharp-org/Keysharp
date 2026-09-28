@@ -333,23 +333,21 @@ namespace Keysharp.Builtins
 		}
 #if WINDOWS
 		/// <summary>
-		/// Returns an IUnknown `ComObject` wrapping the pointer to the given object.
-		/// The resulting GCHandle is allocated with GCHandleType.Normal,
-		/// so it must be freed later to avoid a leak.
+		/// Returns the object's IUnknown address without adding a native reference.
+		/// The caller must keep the object alive while using this borrowed pointer.
 		/// </summary>
-		public static object ObjPtr(object obj)
+		public static long ObjPtr(object obj)
 		{
 			if (obj == null)
 				return 0;
 
 			var punk = Marshal.GetIUnknownForObject(obj);
-			return ComValue.staticCall(obj, 13L, (long)punk);
+			_ = Marshal.Release(punk);
+			return punk;
 		}
 
 		/// <summary>
-		/// Returns a pointer to the given object (not wrapped in `ComObject`) and increases the reference count.
-		/// The resulting GCHandle is allocated with GCHandleType.Normal,
-		/// so it must be freed later to avoid a leak.
+		/// Returns the object's IUnknown address and adds a native reference, released with ObjRelease.
 		/// </summary>
 		public static long ObjPtrAddRef(object obj)
 		{
