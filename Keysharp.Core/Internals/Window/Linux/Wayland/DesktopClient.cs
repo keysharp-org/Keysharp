@@ -4,7 +4,6 @@ using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Text;
 using System.Threading;
-using System.Threading.Channels;
 using Eto.Drawing;
 using Keysharp.Internals.Linux;
 using Keysharp.Internals.Os;
@@ -509,7 +508,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			try
 			{
-				// Status queries do not need a lease and should not queue behind its blocking revocation poll.
+				// Status queries do not need a lease and should not queue behind a prompt in flight on it.
 				using var connection = DesktopConnection.Connect(ConnectionRole.Rpc,
 					AuthorizationCheckTimeoutMs);
 				var result = connection.Authorize(requestedScopes,
@@ -612,10 +611,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (created)
 				{
 					lock (authorizationSync)
-					{
 						authorizationLease = lease;
-						lease.Start();
-					}
 				}
 
 				lock (authorizationSync)
@@ -648,8 +644,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		private static void PruneAuthorizationLeaseLocked()
 		{
-			if (authorizationLease?.IsAlive == false)
+			if (authorizationLease is { } lease && !lease.Refresh())
+			{
+				lease.Dispose();
 				authorizationLease = null;
+			}
 		}
 
 		private static PermissionResult PermissionFailure(in CallResult result)
@@ -907,14 +906,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
+		/// <summary>
+		/// The connection that holds this process's desktop grants. Revocations are read when the grants are
+		/// consulted, which is before every operation that needs one, so nothing has to wait on the lease.
+		/// </summary>
 		private sealed class AuthorizationLease : IDisposable
 		{
 			private readonly DesktopConnection connection;
-			private readonly Channel<AuthorizationRequest> requests = Channel.CreateUnbounded<AuthorizationRequest>();
-			private Task reader;
 			private uint scopes;
 			private int disposed;
-			private int readerThreadId;
 
 			internal AuthorizationLease(DesktopConnection connection)
 				=> this.connection = connection;
@@ -922,13 +922,29 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal LinuxPermissionScope Scopes
 				=> (LinuxPermissionScope)Volatile.Read(ref scopes);
 
-			internal bool IsAlive
-				=> Volatile.Read(ref disposed) == 0
-					&& Scopes != LinuxPermissionScope.None
-					&& reader?.IsCompleted != true;
+			/// <summary>
+			/// Applies the revocations the service has sent and reports whether the lease still holds anything.
+			/// Never waits: while a request is in flight on the lease, that request applies them itself, so the
+			/// scopes already known stand.
+			/// </summary>
+			internal bool Refresh()
+			{
+				if (Volatile.Read(ref disposed) != 0)
+					return false;
 
-			internal void Start()
-				=> reader = Task.Run(ReadEvents);
+				if (connection.TryLeaseRefresh(out var result, out var granted))
+				{
+					if (!result.IsSuccess)
+					{
+						DebugLine($"keysharp-desktop authorization lease ended: {result.Message}");
+						return false;
+					}
+
+					Volatile.Write(ref scopes, (uint)granted);
+				}
+
+				return Scopes != LinuxPermissionScope.None;
+			}
 
 			internal CallResult Authorize(LinuxPermissionScope requestedScopes,
 				AuthorizationMode mode, out LinuxPermissionScope granted)
@@ -936,100 +952,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (Volatile.Read(ref disposed) != 0)
 					throw new ObjectDisposedException(nameof(AuthorizationLease));
 
-				if (reader == null)
-				{
-					var result = connection.Authorize(requestedScopes, mode, out granted);
+				var result = connection.Authorize(requestedScopes, mode, out granted);
 
-					if (result.IsSuccess)
-						Volatile.Write(ref scopes, (uint)granted);
+				if (result.IsSuccess)
+					Volatile.Write(ref scopes, (uint)granted);
 
-					return result;
-				}
-
-				var request = new AuthorizationRequest(requestedScopes, mode);
-
-				if (!requests.Writer.TryWrite(request))
-					throw new ObjectDisposedException(nameof(AuthorizationLease));
-
-				var response = request.Completion.Task.WaitAsync(TimeSpan.FromMilliseconds(
-					AuthorizationTimeoutMs + EventPollTimeoutMs * 2)).GetAwaiter().GetResult();
-				granted = response.Granted;
-				return response.Result;
-			}
-
-			private void ReadEvents()
-			{
-				Volatile.Write(ref readerThreadId, Environment.CurrentManagedThreadId);
-				Exception failure = null;
-
-				try
-				{
-					while (Volatile.Read(ref disposed) == 0)
-					{
-						DrainAuthorizationRequests();
-
-						if (Volatile.Read(ref disposed) != 0)
-							break;
-
-						var result = connection.LeaseNext(EventPollTimeoutMs, out var revoked);
-
-						if (result.IsExpectedPollTimeout)
-							continue;
-
-						if (!result.IsSuccess && result.Status != NativeClientStatus.Revoked)
-							throw result.Exception;
-
-						if (revoked != LinuxPermissionScope.None)
-							Volatile.Write(ref scopes,
-								Volatile.Read(ref scopes) & ~(uint)revoked);
-
-						if (Scopes == LinuxPermissionScope.None)
-							break;
-					}
-				}
-				catch (Exception exception) when (Volatile.Read(ref disposed) == 0)
-				{
-					failure = exception;
-					DebugLine($"keysharp-desktop authorization lease ended: {exception.Message}");
-				}
-				finally
-				{
-					Interlocked.Exchange(ref disposed, 1);
-					Volatile.Write(ref scopes, 0);
-
-					CloseRequests(failure
-						?? new ObjectDisposedException(nameof(AuthorizationLease)));
-
-					connection.Dispose();
-				}
-			}
-
-			private void DrainAuthorizationRequests()
-			{
-				while (requests.Reader.TryRead(out var request))
-				{
-					try
-					{
-						var result = connection.Authorize(request.Scopes, request.Mode,
-							out var granted);
-
-						if (result.IsSuccess)
-							Volatile.Write(ref scopes, (uint)granted);
-
-						request.Completion.TrySetResult(new(result, granted));
-					}
-					catch (Exception exception)
-					{
-						request.Completion.TrySetException(exception);
-					}
-				}
-			}
-
-			private void CloseRequests(Exception failure)
-			{
-				requests.Writer.TryComplete();
-				while (requests.Reader.TryRead(out var request))
-					request.Completion.TrySetException(failure);
+				return result;
 			}
 
 			public void Dispose()
@@ -1038,35 +966,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					return;
 
 				Volatile.Write(ref scopes, 0);
-				CloseRequests(new ObjectDisposedException(nameof(AuthorizationLease)));
-
-				if (reader == null)
-				{
-					connection.Dispose();
-					return;
-				}
-
-				if (Volatile.Read(ref readerThreadId) != Environment.CurrentManagedThreadId)
-					try { reader.Wait(EventPollTimeoutMs * 2); } catch { }
+				connection.Dispose();
 			}
-
-			private sealed class AuthorizationRequest
-			{
-				internal AuthorizationRequest(LinuxPermissionScope scopes,
-					AuthorizationMode mode)
-				{
-					Scopes = scopes;
-					Mode = mode;
-				}
-
-				internal LinuxPermissionScope Scopes { get; }
-				internal AuthorizationMode Mode { get; }
-				internal TaskCompletionSource<AuthorizationResponse> Completion { get; }
-					= new(TaskCreationOptions.RunContinuationsAsynchronously);
-			}
-
-			private readonly record struct AuthorizationResponse(
-				CallResult Result, LinuxPermissionScope Granted);
 		}
 
 		private sealed class DesktopSubscription : IDisposable
@@ -1274,10 +1175,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						? reportedBackend : Backend.Generic;
 					var operations = (Operation)info.AvailableOperations;
 
-					if (info.ClientAbiMajor != 0 || info.ClientAbiMinor < 8)
+					if (info.ClientAbiMajor != 0 || info.ClientAbiMinor < 9)
 						throw new InvalidDataException(
 							$"libkeysharp-desktop client ABI {info.ClientAbiMajor}.{info.ClientAbiMinor} "
-							+ "is incompatible; Keysharp requires ABI 0.8 or later.");
+							+ "is incompatible; Keysharp requires ABI 0.9 or later.");
 
 					var connection = new DesktopConnection(nativeHandle, backend, operations);
 					nativeHandle = IntPtr.Zero;
@@ -1301,16 +1202,34 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return result;
 			}
 
-			internal CallResult LeaseNext(int timeoutMs,
-				out LinuxPermissionScope revoked)
+			/// <summary>
+			/// Refreshes an authorization lease without waiting. Returns false, and leaves the caller with the scopes
+			/// it already knows, while another call holds the connection, since a request in flight applies any
+			/// revocation itself, and once the lease has been disposed on another thread, which clears them.
+			/// </summary>
+			internal bool TryLeaseRefresh(out CallResult result, out LinuxPermissionScope granted)
 			{
-				uint nativeRevoked = 0;
-				var result = Invoke("wait for authorization revocation",
-					(IntPtr connection, ref NativeError error)
-						=> Native.ksd_lease_next(connection, checked((uint)timeoutMs),
-							out nativeRevoked, ref error));
-				revoked = (LinuxPermissionScope)nativeRevoked;
-				return result;
+				result = default;
+				granted = LinuxPermissionScope.None;
+
+				if (!Monitor.TryEnter(gate))
+					return false;
+
+				try
+				{
+					if (handle == IntPtr.Zero)
+						return false;
+
+					var error = new NativeError { StructSize = NativeErrorStructSize };
+					var status = (NativeClientStatus)Native.ksd_lease_refresh(handle, out var nativeGranted, ref error);
+					result = Result(status, in error, "refresh authorization lease");
+					granted = (LinuxPermissionScope)nativeGranted;
+					return true;
+				}
+				finally
+				{
+					Monitor.Exit(gate);
+				}
 			}
 
 			internal CallResult CaptureArea(int x, int y, uint width, uint height,
@@ -2080,8 +1999,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal static extern uint ksd_connection_granted_scopes(IntPtr connection);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksd_lease_next(IntPtr connection, uint timeoutMs,
-				out uint revokedScopes, ref NativeError error);
+			internal static extern uint ksd_lease_refresh(IntPtr connection,
+				out uint grantedScopes, ref NativeError error);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_capture_area(IntPtr connection,

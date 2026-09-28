@@ -1258,6 +1258,10 @@ namespace Keysharp.Runtime
 
 		private void RunAutoExecSection(Func<object> userInit)
 		{
+			// Work posted before the loop existed is waiting for a pump, and until one runs, every later request for
+			// one, timers included, is taken as already posted.
+			Keysharp.Internals.Flow.TryDoEvents(EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+
 			var autoExecResult = false;
 			var executionResult = EventScheduler.TryExecuteThreadLaunch(0, false, false, tv =>
 			{
