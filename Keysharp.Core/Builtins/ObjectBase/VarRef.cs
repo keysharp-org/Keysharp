@@ -2,7 +2,11 @@ namespace Keysharp.Builtins
 {
 	public class VarRef : Any
 	{
-		private readonly StrongBox<object> box;
+		// The value of a reference without a getter, such as a compiled local's, which lives in its reference.
+		private object stored;
+		private readonly bool variable;
+		// The memory the variable keeps for native code, on the variable's one reference (see StringMemory.Of).
+		internal StringMemory Memory;
 		protected Func<object> Get;
 		protected Action<object> Set;
 		public string Name { get; internal set; } = "";
@@ -13,31 +17,33 @@ namespace Keysharp.Builtins
 
 		public VarRef(object x) : base(null)
 		{
-			box = new(x);
+			stored = x;
+			variable = true;
 		}
 
 		public VarRef(Func<object> getter, Action<object> setter) : this(getter, setter, "") { }
 
-		internal VarRef(Func<object> getter, Action<object> setter, string name) : base()
+		internal VarRef(Func<object> getter, Action<object> setter, string name, bool variable = false) : base()
 		{
 			Get = getter;
 			Set = setter;
 			Name = name ?? "";
+			this.variable = variable;
 		}
 
-		internal VarRef(StrongBox<object> box, string name) : base(null)
-		{
-			this.box = box;
-			Name = name ?? "";
-		}
+		// A variable's one reference, which can keep its memory for native code: one holding the value itself, as a
+		// compiled local's and a script's VarRef(Value) do, or the one Misc.FieldRef keeps for a variable in a static
+		// field. A reference made afresh each time it is taken keeps none, nor does a script subclass, which stores its
+		// value where its own __Value says.
+		internal bool IsVariable => variable && GetType() == typeof(VarRef);
 
 		public object __Value
 		{
-			get => box != null ? box.Value : Get();
+			get => Get == null ? stored : Get();
 			set
 			{
-				if (box != null)
-					box.Value = value;
+				if (Get == null)
+					stored = value;
 				else
 					Set(value);
 			}

@@ -8,9 +8,10 @@ namespace Keysharp.Internals.Interop
 	/// </summary>
 	internal enum OutputTarget : byte
 	{
-		Value,  //The __Value of the reference that was passed, or the parameter itself.
-		Ptr,    //The Ptr property of an object that was passed by its address.
-		Struct  //A struct pointer argument, whose value the Struct machinery reads back itself.
+		Value,   //The __Value of the reference that was passed, or the parameter itself.
+		Ptr,     //The Ptr property of an object that was passed by its address.
+		Struct,  //A struct pointer argument, whose value the Struct machinery reads back itself.
+		Text     //Memory a string reference was given (see StringMemory), whose text it takes if the call changed it.
 	}
 
 	/// <summary>
@@ -22,9 +23,10 @@ namespace Keysharp.Internals.Interop
 		internal long Storage;
 		internal GCHandle Handle;
 		internal nint Bstr;
+		internal GCHandle Text;
 		//The parameter to write back to. A value never sits at index 0 (the list is type/value pairs), so 0 means
-		//none -- which, like the two handle fields below, depends on the slots arriving zeroed. They do, because
-		//they are stackalloc'd in a method the compiler emits localsinit for. Do NOT apply [SkipLocalsInit] to
+		//none -- which, like the two handles and the BSTR, depends on the slots arriving zeroed. They do, because
+		//they are stackalloc'd in a method the compiler emits localsinit for. Do not apply [SkipLocalsInit] to
 		//this assembly without giving the two callers an explicit clear: garbage here writes back to arbitrary
 		//parameter slots and frees garbage handles.
 		internal int OutputParam;
@@ -104,6 +106,9 @@ namespace Keysharp.Internals.Interop
 
 				if (slot.Handle.IsAllocated)
 					slot.Handle.Free();
+
+				if (slot.Text.IsAllocated)
+					slot.Text.Free();
 
 				if (slot.Bstr != 0)
 					Marshal.FreeBSTR(slot.Bstr);
@@ -268,12 +273,15 @@ namespace Keysharp.Internals.Interop
 				}
 
 				//The argument's own slot holds the value, seeded with whatever came in so that an in/out
-				//parameter carries it, and the call is handed that slot's address to write through.
+				//parameter carries it, and the call is handed that slot's address to write through. A string's
+				//slot points to its characters, which the call may replace with another string's (see CopyBack).
 				ref var slot = ref slots[n];
 				slot.Storage = code switch
 				{
 					NativeTypeCode.Float => BitConverter.SingleToInt32Bits(p.Af()),
 					NativeTypeCode.Double => BitConverter.DoubleToInt64Bits(p.Ad()),
+					NativeTypeCode.Str or NativeTypeCode.WStr => Pin(n, p.As()),
+					NativeTypeCode.AStr => Pin(n, AnsiCopy(p.As())),
 					_ => p.Al()
 				};
 				args[n] = (nint)Unsafe.AsPointer(ref slot.Storage);
@@ -340,9 +348,10 @@ namespace Keysharp.Internals.Interop
 		}
 
 		/// <summary>
-		/// Passes a string argument. A script's own string is passed by its characters, pinned for the duration
-		/// of the call; one that has to survive being written into is entangled with a <see cref="StringBuffer"/>
-		/// which owns the memory and hands the result back afterwards.
+		/// Passes a string argument. A value is passed by its own characters, pinned for the duration of the call, or for
+		/// AStr by a copy in the ANSI code page. A Str or WStr reference stands for a variable native code may write to: it
+		/// is passed the variable's memory (see <see cref="StringMemory"/>), and takes the result up to its first null if
+		/// the call changed it, as AutoHotkey takes a variable's length from its contents.
 		/// </summary>
 		private bool ConvertString(object[] parameters, int paramIndex, int n, NativeTypeCode code, object p)
 		{
@@ -361,15 +370,23 @@ namespace Keysharp.Internals.Interop
 			else if (Refs.DeclaresValue(p))
 			{
 				var inner = Refs.GetValueOrNull(p) ?? "";
-				AddOutput(n, paramIndex, NativeTypeCode.Ptr, OutputTarget.Value);
 
-				if (inner is string entangled)
+				//A variable holding a number passes its string form, as AutoHotkey's does.
+				if (inner is long or double && p is VarRef { IsPlain: true })
+					inner = inner.As();
+
+				//A variable is passed its own memory, which it takes its length from afterwards, as in AutoHotkey, which
+				//discards an AStr copy.
+				if (inner is string text && code != NativeTypeCode.AStr)
 				{
-					var buffer = code == NativeTypeCode.AStr ? new StringBuffer(entangled, null, "ANSI") : new StringBuffer(entangled);
-					slots[n].Handle = GCHandle.Alloc(buffer, GCHandleType.Normal);
-					buffer.EntangledString = p;
-					parameters[paramIndex] = buffer;
-					args[n] = buffer.Ptr;
+					var memory = StringMemory.Of(p);
+
+					//A reference keeping no memory, such as to a property, is given some which only its slot holds.
+					if (memory == null)
+						slots[n].Text = GCHandle.Alloc(memory = new StringMemory());
+
+					args[n] = Pin(n, memory.Load(text));
+					AddOutput(n, paramIndex, code, OutputTarget.Text);
 					return true;
 				}
 
@@ -378,24 +395,14 @@ namespace Keysharp.Internals.Interop
 
 			if (p is string s)
 			{
-				if (code == NativeTypeCode.AStr)
-				{
-					//A .NET string is already NUL terminated internally, so only the narrowed copy needs one added.
-					var ansi = new byte[Encoding.ASCII.GetByteCount(s) + 1];
-					_ = Encoding.ASCII.GetBytes(s, ansi);
-					args[n] = Pin(n, ansi);
-				}
-				else
-					args[n] = Pin(n, s);
-
+				args[n] = code == NativeTypeCode.AStr ? Pin(n, AnsiCopy(s)) : Pin(n, s);
 				return true;
 			}
 
-			if (p is StringBuffer sb)
+			//A StringBuffer holds UTF-16 text, which neither an ANSI string nor a BSTR is.
+			if (p is StringBuffer sb && code is NativeTypeCode.Str or NativeTypeCode.WStr)
 			{
-				parameters[paramIndex] = sb;
-				sb.UpdateBufferFromEntangledString();
-				args[n] = sb.Ptr;
+				ConvertPtr(n, sb);
 				return true;
 			}
 
@@ -425,6 +432,14 @@ namespace Keysharp.Internals.Interop
 #endif
 			else
 				args[n] = Pin(n, p);
+		}
+
+		// A .NET string is already NUL terminated internally, so only the narrowed copy needs one added.
+		private static byte[] AnsiCopy(string s)
+		{
+			var ansi = new byte[NativeType.AnsiEncoding.GetMaxByteCount(s.Length) + 1];
+			_ = NativeType.EncodeAnsi(s, ansi);
+			return ansi;
 		}
 
 		/// <summary>
@@ -466,18 +481,24 @@ namespace Keysharp.Internals.Interop
 					continue;
 				}
 
+				if (slot.Kind == OutputTarget.Text)
+				{
+					var memory = slot.Text.IsAllocated ? (StringMemory)slot.Text.Target : StringMemory.Of(parameters[pi]);
+
+					if (memory.Written() is { } text)
+						_ = Refs.SetValue(parameters[pi], text);
+
+					continue;
+				}
+
 				var address = (nint)args[i];
 
-				if (parameters[pi] is StringBuffer sb)
-				{
-					if (sb.EntangledString != null)
-					{
-						sb.Seek(-1);
-						sb.UpdateEntangledStringFromBuffer();
-						parameters[pi] = sb.EntangledString;
-					}
-				}
-				else if (slot.Kind == OutputTarget.Ptr && parameters[pi] is Any kso)
+				//A StringBuffer's address is its own, fixed memory, so a Ptr* argument has nothing to write back to it,
+				//and a string whose pointer the call left alone leaves the variable as it was, as in AutoHotkey.
+				if (parameters[pi] is StringBuffer || slot.Handle.IsAllocated && slot.Storage == slot.Handle.AddrOfPinnedObject())
+					continue;
+
+				if (slot.Kind == OutputTarget.Ptr && parameters[pi] is Any kso)
 					_ = Script.SetPropertyValue(kso, "ptr", NativeType.ReadMemory(slot.Code, address));
 				else if (parameters[pi] is Any)
 					_ = Refs.SetValue(parameters[pi], NativeType.ReadMemory(slot.Code, address));
@@ -532,19 +553,15 @@ namespace Keysharp.Internals.Interop
 
 				case NativeTypeCode.Double: return BitConverter.Int64BitsToDouble(value);
 
+				//The callee owns a string it returns, which is read and left alone, and null is empty, as in AutoHotkey.
 				case NativeTypeCode.AStr:
-				{
-					var ansi = (nint)value;
-					var str = Marshal.PtrToStringAnsi(ansi);
-					Marshal.FreeHGlobal(ansi);
-					return str;
-				}
+					return value == 0 ? "" : NativeType.AnsiEncoding.GetString(MemoryMarshal.CreateReadOnlySpanFromNullTerminated((byte*)value));
 
 				case NativeTypeCode.Str:
 				case NativeTypeCode.WStr:
 				case NativeTypeCode.BStr:
 				{
-					var str = Marshal.PtrToStringUni((nint)value);
+					var str = value == 0 ? "" : Marshal.PtrToStringUni((nint)value);
 					_ = Objects.ObjFree(value);//If this string came from us, it will be freed, else no action.
 					return str;
 				}

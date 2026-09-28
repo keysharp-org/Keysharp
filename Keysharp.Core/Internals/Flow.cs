@@ -169,30 +169,16 @@ namespace Keysharp.Internals
 			script.onExitHandlers.Clear();
 			script.SuppressErrorOccurredDialog = true;
 
-			// A blocking full collection costs in proportion to the whole heap, so pay it only when something can be found.
-			if (script.DestructorPump.HasRegistrations)
+			ReleaseVariables(script);
+
+			// A blocking full collection costs in proportion to the whole heap, so pay it only when something can be found,
+			// and again while a __Delete leaves more unreferenced.
+			for (var pass = 0; pass < 4 && script.DestructorPump.HasRegistrations; pass++)
+			{
 				GC.Collect();
 
-			GC.WaitForPendingFinalizers();
-			script.DestructorPump.RunPendingDestructors();
-
-			foreach (var t in Reflections.GetNestedTypes([script.ProgramType]).OrderBy(Reflections.GetInheritanceDepth))
-			{
-				// [PublicHiddenFromUser] fields are not part of the script's variable space, so reading them here
-				// would force an initializer to run at exit for a field the script could never have touched.
-				var fields = t.GetFields(BindingFlags.Static | BindingFlags.Public)
-							  .Where(f => f.GetCustomAttribute<PublicHiddenFromUser>() == null);
-
-				foreach (var val in fields.Select(f => f.GetValue(null)))
-				{
-					if (val is Any kso)
-						CallDeleteSilent(kso);
-				}
-
-				if (script.Vars.Statics.IsInitialized(t)
-					&& script.Vars.Statics.TryGetValue(t, out Class kso2)
-					&& kso2.HasOwnPropInternal("__Delete"))
-					CallDeleteSilent(kso2);
+				if (!script.DestructorPump.RunPendingDestructors(exiting: true))
+					break;
 			}
 
 			script.hasExited = true;
@@ -210,6 +196,7 @@ namespace Keysharp.Internals
 			script.FlowData.timers.Clear();
 
 			Gui.DestroyAll(script);
+			KeysharpFile.FlushAll(script);
 			script.Dispose();
 
 #if !WINDOWS
@@ -220,18 +207,35 @@ namespace Keysharp.Internals
 				throw new Keysharp.Builtins.Flow.UserRequestedExitException();
 
 			return false;
+		}
 
-			void CallDeleteSilent(Any kso)
+		// As in AutoHotkey, the script's global and static variables holding an object are released, leaving them unset,
+		// and what that leaves unreferenced, such as a File in an Array, is given its __Delete and freed by the collections
+		// which follow, in no particular order. Any other value stays for a __Delete to read. A class object lives on in the
+		// script's registry, so a class's own __Delete is called here. A method of its own, as a frame which read the values
+		// can keep them reachable until it returns.
+		[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+		private static void ReleaseVariables(Script script)
+		{
+			foreach (var t in Reflections.GetNestedTypes([script.ProgramType]).OrderBy(Reflections.GetInheritanceDepth))
 			{
-				try
+				// [PublicHiddenFromUser] fields are not part of the script's variable space, and a read-only one holds a
+				// function, which no variable does.
+				foreach (var f in t.GetFields(BindingFlags.Static | BindingFlags.Public))
+					if (!f.IsInitOnly && !f.IsLiteral && f.GetCustomAttribute<PublicHiddenFromUser>() == null && f.GetValue(null) is Any)
+						f.SetValue(null, null);
+
+				if (script.Vars.Statics.IsInitialized(t) && script.Vars.Statics.TryGetValue(t, out Class cls) && cls.HasOwnPropInternal("__Delete"))
 				{
-					kso.HasFinalizer = false;
-					Script.InvokeMeta(kso, "__Delete");
-					if (kso is IDisposable dis)
-						dis.Dispose();
-				}
-				catch
-				{
+					cls.HasFinalizer = false;
+
+					try
+					{
+						_ = Script.InvokeMeta(cls, "__Delete");
+					}
+					catch
+					{
+					}
 				}
 			}
 		}

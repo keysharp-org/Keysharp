@@ -8,6 +8,7 @@ using Keysharp.Parsing.Syntax;
 using Keysharp.Runtime;
 using Keysharp.Internals.Input.Keyboard;
 using Keysharp.Internals.Input.Mouse;
+using Keysharp.Internals.Interop;
 
 namespace Keysharp.Compilation.Syntax
 {
@@ -39,6 +40,8 @@ namespace Keysharp.Compilation.Syntax
 		// Names resolved INLINE to a fresh expression each reference (e.g. `#import __Main` self-import → `new __Main()`).
 		private readonly Dictionary<string, System.Func<ExpressionSyntax>> _inlineAliases = new(System.StringComparer.Ordinal);
 		private readonly List<MemberDeclarationSyntax> _fieldDecls = new();
+		// The references NativeStringArguments makes for naked variables (see VariableRef).
+		private readonly HashSet<Expr> _implicitRefs = new(ReferenceEqualityComparer.Instance);
 		// Where a static-LOCAL variable's backing field is emitted: a function's static-locals live in the C# type that
 		// holds the function's impl, so a method's `static x` goes in its CLASS (not flat in __Main, where two same-named
 		// methods in different classes would collide). Defaults to _fieldDecls (module class); LowerClass redirects it to
@@ -2052,21 +2055,48 @@ namespace Keysharp.Compilation.Syntax
 		}
 
 		// A reference to a bare name's variable, or "" (with the error reported) when it cannot be written.
-		private ExpressionSyntax VariableRef(Node at, string name, VarUsage use)
-		{
-			return ResolveWrite(at, name, use) is { } target ? VariableRef(name.ToLowerInvariant(), target, name) : Str("");
-		}
+		private ExpressionSyntax VariableRef(Node at, string name, VarUsage use, bool naked = false) =>
+			ResolveWrite(at, name, use) is { } target ? VariableRef(name.ToLowerInvariant(), target, name, naked) : Str("");
 
 		// A reference to the variable ResolveWrite found. A by-ref parameter already holds a reference to the caller's
-		// variable, which is forwarded rather than wrapped.
-		private ExpressionSyntax VariableRef(string lower, WriteTarget target, string name)
+		// variable, which is forwarded rather than wrapped. A local whose reference is taken lives in that reference (see
+		// LocalBox), and a variable in a static field has one the runtime keeps (see StaticField). A naked variable
+		// NativeStringArguments passes on goes through Misc.RefIfSet.
+		private ExpressionSyntax VariableRef(string lower, WriteTarget target, string name, bool naked = false)
 		{
 			var variable = _inMethod && lower == "this" ? Receiver() : _scope?.Find(lower) ?? default;
-			if (variable.Storage == VarStorage.ByRef) return LocalValue(variable);
-			var declaredName = lower == "this" ? "this" : variable.Owner?.Spelling(lower) ?? name;
-			return variable.Storage == VarStorage.Local
-				? Inv(Access("Keysharp.Builtins.Misc.MakeVarRef"), LocalBox(variable), Str(declaredName))
+			var refIfSet = Access("Keysharp.Builtins.Misc.RefIfSet");
+			if (variable.Storage == VarStorage.ByRef) return naked ? Inv(refIfSet, LocalValue(variable)) : LocalValue(variable);
+			var field = variable.Storage == VarStorage.Local || lower == "this" ? null : StaticField(lower, variable);
+			var own = variable.Storage == VarStorage.Local ? LocalBox(variable)
+				: field is { } f ? FieldRefGS(f.Type, f.Field, target.Read, target.Write(Id("KS_value"))) : null;
+			var declaredName = field?.Name ?? (lower == "this" ? "this" : variable.Owner?.Spelling(lower) ?? name);
+			//IsNativeStringVariable passes on only a variable with a reference of its own.
+			if (naked) return own != null ? Inv(refIfSet, own) : target.Read;
+			return own != null ? Inv(Access("Keysharp.Builtins.Misc.MakeVarRef"), own, Str(declaredName))
 				: MakeVarRefGS(target.Read, target.Write(Id("KS_value")), declaredName);
+		}
+
+		// The C# static field holding a global, a static or the variable a script module declares and an import binds, as
+		// the type declaring it, the field's name and the variable's declared name. It keys the variable's one reference
+		// (see Misc.FieldRef), which, like a local's, keeps memory for native code, so only such a variable is passed naked.
+		private (string Type, string Field, string Name)? StaticField(string lower, ScopeVar variable)
+		{
+			if (variable.Storage == VarStorage.Static)
+				return variable.Field == null ? null : ("Program." + CurrentTypePath, variable.Field, variable.Owner.Spelling(lower));
+
+			var binding = Bind(lower);
+
+			if (variable.Storage is not (VarStorage.Global or VarStorage.None) || binding.Kind is not (NameKind.ScopeVariable or NameKind.ModuleField or NameKind.ScopedImport))
+				return null;
+
+			if ((binding.Kind == NameKind.ScopedImport ? binding.Import.Bound : ResolveModuleName(lower).Import) is not { } import)
+				return ("Program." + _currentModuleClass, EnsureGlobalField(lower), _moduleOwnVars.TryGetValue(lower, out var spelled) ? spelled : null);
+
+			// A built-in module's member is no variable, and one a module passes on from another is read as a value.
+			return _modulesByName?.TryGetValue(import.Module, out var module) == true && module.DirectVariables.TryGetValue(import.Member, out var declared)
+				? ("Program." + NameMangler.ModuleClass(module.Name), NameMangler.Global(import.Member), declared)
+				: null;
 		}
 
 		private ExpressionSyntax NameRef(string name) => NameRefLower(name.ToLowerInvariant());
@@ -4408,13 +4438,15 @@ namespace Keysharp.Compilation.Syntax
 			}
 		}
 
+		private static bool IsValueKeyword(string lower) => lower is "this" or "true" or "false" or "unset" or "super";
+
 		// True when a bare name has no binding (so a read of it is statically unset): not a builtin var/func/type, a
 		// user func/class, a value keyword, or a wildcard/inline alias. `moduleVariable` is a variable the module declares or
 		// assigns, whose read is settled once every assignment is known.
 		private bool IsUnsetCandidate(string lower, out bool moduleVariable)
 		{
 			moduleVariable = false;
-			if (lower is "this" or "true" or "false" or "unset" or "super") return false;
+			if (IsValueKeyword(lower)) return false;
 			if (lower.StartsWith("a_", System.StringComparison.Ordinal)) return false;   // built-in vars (A_*) — be conservative
 			if (_userFuncByLower.ContainsKey(lower) || _userClassByLower.ContainsKey(lower)) return false;
 			if (_inlineAliases.ContainsKey(lower)) return false;
@@ -4951,7 +4983,7 @@ namespace Keysharp.Compilation.Syntax
 				case "!": case "not": return propagate ? PropagateUnary(u.Operand, value => Op("LogicalNot", value)) : Op("LogicalNot", LowerExpr(u.Operand));
 				case "-": return propagate ? PropagateUnary(u.Operand, value => Op("Minus", value)) : Op("Minus", LowerExpr(u.Operand));
 				case "+": return propagate ? PropagateUnary(u.Operand, value => Op("Plus", value)) : Op("Plus", LowerExpr(u.Operand));
-				case "&": return MakeRefFor(u.Operand);
+				case "&": return MakeRefFor(u.Operand, _implicitRefs.Contains(u));
 				case "~": return propagate ? PropagateUnary(u.Operand, value => Op("BitwiseNot", value)) : Op("BitwiseNot", LowerExpr(u.Operand));
 				default: Diag($"unary '{u.Op}' not yet lowerable"); return Str("");
 			}
@@ -5150,12 +5182,13 @@ namespace Keysharp.Compilation.Syntax
 			// IsSet(member/index/call) must not throw on an unset target — rewrite the arg to its *OrNull form.
 			bool isSet = c.Callee is NameExpr ne && ne.Name.Equals("IsSet", System.StringComparison.OrdinalIgnoreCase)
 				&& c.Args.Count == 1 && c.Args[0].Value != null && !c.Args[0].Spread;
+			var callArguments = NativeStringArguments(c);
 
 			// The call arguments (shared by both the normal and the null-conditional path).
 			List<ExpressionSyntax> CallArgs() =>
-				c.Args.Any(a => a.Spread) ? new() { SpreadParams(c.Args) }
+				callArguments.Any(a => a.Spread) ? new() { SpreadParams(callArguments) }
 				: isSet ? new() { RewriteToOrNull(LowerExpr(c.Args[0].Value)) }
-				: LowerArgs(c.Args);
+				: LowerArgs(callArguments);
 
 			// `obj?.M(args)` (null-conditional method) / `obj?.()` (null-conditional call): evaluate the target once;
 			// if unset, short-circuit to null without evaluating the call (or its args). Matches the canonical chain.
@@ -5173,6 +5206,74 @@ namespace Keysharp.Compilation.Syntax
 			else if (c.Callee is DynMemberExpr dm) args = Cons2(LowerExpr(dm.Target), LowerExpr(dm.NameExpr), CallArgs());
 			else args = Cons2(LowerExpr(c.Callee), Null, CallArgs());
 			return Op(statement ? "InvokeOrNull" : "Invoke", args);
+		}
+
+		// AutoHotkey hands DllCall and ComCall a naked variable itself where a Str or WStr type precedes it, and StrPtr
+		// likewise, so native code can write to the variable: those arguments are passed by reference. The type is known
+		// here only where it is written as a literal.
+		private List<Argument> NativeStringArguments(CallExpr call)
+		{
+			// Only a lone argument, as StrPtr takes, or one a literal Str or WStr type precedes can qualify, which rules out
+			// most calls before their callee is resolved.
+			if (!call.Args.Where((a, i) => NakedVariable(a.Value) != null && (call.Args.Count == 1 || i > 0 && IsLiteralStringType(call.Args[i - 1].Value))).Any())
+				return call.Args;
+
+			var method = NativeCallTarget(call.Callee)?.Builtin;
+			// Where the type/value pairs begin, or 0 for StrPtr's one argument.
+			var pairs = method?.Name switch
+			{
+				"DllCall" when method.DeclaringType == typeof(Keysharp.Builtins.Dll) => 1,
+				"ComCall" when method.DeclaringType == typeof(Keysharp.Builtins.COM.Com) => 2,
+				"StrPtr" when method.DeclaringType == typeof(Keysharp.Builtins.Strings) && call.Args.Count == 1 => 0,
+				_ => -1
+			};
+			if (pairs < 0) return call.Args;
+
+			List<Argument> result = null;
+			for (var i = 0; i < call.Args.Count; i++)
+			{
+				var arg = call.Args[i];
+				// A spread makes subsequent type/value positions unknowable until runtime.
+				if (arg.Spread || (arg.IsNamed && !(pairs == 0 && string.Equals(arg.Name, "Value", System.StringComparison.OrdinalIgnoreCase)))) break;
+				if (pairs != 0 && (i <= pairs || ((i - pairs) & 1) == 0 || !IsLiteralStringType(call.Args[i - 1].Value))) continue;
+				if (!IsNativeStringVariable(arg.Value)) continue;
+
+				var reference = new UnaryExpr("&", arg.Value, false) { Line = arg.Value.Line, Column = arg.Value.Column, File = arg.Value.File };
+				_ = _implicitRefs.Add(reference);
+				result ??= new(call.Args);
+				result[i] = new(reference, false, arg.Name, arg.NameExpr);
+			}
+			return result ?? call.Args;
+		}
+
+		private static bool IsLiteralStringType(Expr type) => type is LiteralExpr { Kind: LiteralKind.String } literal
+			&& NativeType.Parse(DecodeString(literal.Raw).AsSpan().Trim()) is NativeTypeCode.Str or NativeTypeCode.WStr;
+
+		// The name a naked variable, a parenthesized one or an assignment to one gives, before it is bound.
+		private static NameExpr NakedVariable(Expr value) => value switch
+		{
+			NameExpr name => name,
+			GroupExpr group => NakedVariable(group.Inner),
+			AssignExpr assignment => NakedVariable(assignment.Target),
+			_ => null
+		};
+
+		// Resolve the built-in itself so shadowing names or methods retain their parameter contracts.
+		private NameTarget NativeCallTarget(Expr callee) => callee switch
+		{
+			NameExpr name => ResolveTarget(name.Name.ToLowerInvariant()),
+			MemberExpr member => MemberTarget(NativeCallTarget(member.Target), member.Name),
+			GroupExpr group => NativeCallTarget(group.Inner),
+			_ => null
+		};
+
+		private bool IsNativeStringVariable(Expr value)
+		{
+			if (NakedVariable(value) is not { } name) return false;
+			var lower = name.Name.ToLowerInvariant();
+			if (IsValueKeyword(lower) || ResolveWrite(name, name.Name, VarUsage.Reference, maybe: true) is not { Write: not null }) return false;
+			var variable = _scope?.Find(lower) ?? default;
+			return variable.Storage is VarStorage.Local or VarStorage.ByRef || StaticField(lower, variable) != null;
 		}
 
 		private void TrackLoadPackageMember(MemberExpr member)
@@ -5776,7 +5877,7 @@ namespace Keysharp.Compilation.Syntax
 			if (classFrame != null) _importScopes.Add(classFrame);
 			var members = new List<MemberDeclarationSyntax> { ClassCtor(typeName) };
 			foreach (var m in c.Methods) members.Add(LowerMethod(m, typeName));
-			var operatorType = "Program." + _currentModuleClass + "." + _currentClassPath;
+			var operatorType = "Program." + CurrentTypePath;
 			var instanceOperators = new List<ExpressionSyntax>();
 			var staticOperators = new List<ExpressionSyntax>();
 			foreach (var method in c.Methods.Where(m => m.IsOperator))
@@ -7482,14 +7583,20 @@ namespace Keysharp.Compilation.Syntax
 			SyntaxFactory.ElementAccessExpression(Access("MainScript.Vars.Statics"))
 				.WithArgumentList(SyntaxFactory.BracketedArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(SyntaxFactory.TypeOfExpression(Ty(typeFullName))))));
 
-		// Keysharp.Builtins.Misc.MakeVarRef(() => getter, (KS_value) => setter)
+		// Keysharp.Builtins.Misc.MakeVarRef(() => getter, (KS_value) => setter, name)
 		private static ExpressionSyntax MakeVarRefGS(ExpressionSyntax getter, ExpressionSyntax setter, string name) =>
-			Inv(Access("Keysharp.Builtins.Misc.MakeVarRef"),
-				SyntaxFactory.ParenthesizedLambdaExpression().WithExpressionBody(getter),
-				SyntaxFactory.ParenthesizedLambdaExpression()
-					.WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SingletonSeparatedList(SyntaxFactory.Parameter(SyntaxFactory.Identifier("KS_value")))))
-					.WithExpressionBody(setter),
-				Str(name));
+			Inv(Access("Keysharp.Builtins.Misc.MakeVarRef"), SyntaxFactory.ParenthesizedLambdaExpression().WithExpressionBody(getter), SetterLambda(setter), Str(name));
+
+		// Keysharp.Builtins.Misc.FieldRef(typeof(type), "field", () => getter, (KS_value) => setter)
+		private static ExpressionSyntax FieldRefGS(string type, string field, ExpressionSyntax getter, ExpressionSyntax setter) =>
+			Inv(Access("Keysharp.Builtins.Misc.FieldRef"), SyntaxFactory.TypeOfExpression(Ty(type)), Str(field),
+				SyntaxFactory.ParenthesizedLambdaExpression().WithExpressionBody(getter), SetterLambda(setter));
+
+		// (KS_value) => body
+		private static ExpressionSyntax SetterLambda(ExpressionSyntax body) =>
+			SyntaxFactory.ParenthesizedLambdaExpression()
+				.WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SingletonSeparatedList(SyntaxFactory.Parameter(SyntaxFactory.Identifier("KS_value")))))
+				.WithExpressionBody(body);
 
 		// A VarRef that ignores writes — used for omitted for-loop variables (`for (, v in arr)`).
 		private static ExpressionSyntax DiscardVarRef() =>
@@ -7499,13 +7606,14 @@ namespace Keysharp.Compilation.Syntax
 					.WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SingletonSeparatedList(SyntaxFactory.Parameter(SyntaxFactory.Identifier("KS_value")))))
 					.WithBlock(SyntaxFactory.Block()));
 
-		// &lvalue : a VarRef whose getter reads and whose setter writes the lvalue (variable, member or index).
-		private ExpressionSyntax MakeRefFor(Expr lvalue)
+		// &lvalue : a VarRef whose getter reads and whose setter writes the lvalue (variable, member or index). A naked
+		// variable is one NativeStringArguments passes by reference (see VariableRef).
+		private ExpressionSyntax MakeRefFor(Expr lvalue, bool naked = false)
 		{
 			switch (lvalue)
 			{
 				case NameExpr n:
-					return VariableRef(n, n.Name, VarUsage.Reference);
+					return VariableRef(n, n.Name, VarUsage.Reference, naked);
 				// `&obj.prop` / `&obj[i]` produce a v2.1 PropRef bound to the property slot, via obj.__Ref(name[, args]).
 				case MemberExpr me:
 					return Op("Invoke", LowerExpr(me.Target), Str("__Ref"), Str(me.Name));
@@ -7525,13 +7633,16 @@ namespace Keysharp.Compilation.Syntax
 				case DerefExpr dr:   // &%name% : ref bound to the variable the name finds when it is taken
 					return DerefRef(dr.Name);
 				case GroupExpr g:
-					return MakeRefFor(g.Inner);
+					return MakeRefFor(g.Inner, naked);
 				case AssignExpr a:   // &(x := v): perform the assignment, then yield a ref to its target.
-					return Op("MultiStatement", LowerAssign(a), MakeRefFor(a.Target));
+					return Op("MultiStatement", LowerAssign(a), MakeRefFor(a.Target, naked));
 				default:
 					Diag($"'&' on {lvalue.GetType().Name} is not yet lowerable"); return Str("");
 			}
 		}
+
+		// The C# type being lowered, below Program: the module class, then the nested class path within it.
+		private string CurrentTypePath => _currentClassPath == null ? _currentModuleClass : _currentModuleClass + "." + _currentClassPath;
 
 		// Keysharp.Runtime.Script.InitStaticVariable(ref <field>, "<scope>_<field>", () => <init>) — the second arg is a
 		// GLOBAL one-time-init guard key, so it must be unique per field LOCATION. The field name alone isn't: a class
@@ -7539,7 +7650,7 @@ namespace Keysharp.Compilation.Syntax
 		// type (module class, plus the nested class path for a class member). Module-level statics keep "__Main_<field>".
 		private ExpressionSyntax InitStatic(string field, ExpressionSyntax init)
 		{
-			var scope = _currentClassPath == null ? _currentModuleClass : _currentModuleClass + "." + _currentClassPath;
+			var scope = CurrentTypePath;
 			return SyntaxFactory.InvocationExpression(Access("Keysharp.Runtime.Script.InitStaticVariable"),
 				SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(new[]
 				{

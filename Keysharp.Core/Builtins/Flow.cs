@@ -495,6 +495,8 @@ namespace Keysharp.Builtins
 		// The reason for the exit in progress, null while none is certain. Set once the OnExit callbacks have all
 		// declined to cancel, and left set through teardown so Ks.App.ExitReason answers from a __Delete too.
 		internal Flow.ExitReasons? exitReason;
+		// Every File whose writes are buffered, which exit flushes as AutoHotkey does, whatever still holds it.
+		internal readonly ConditionalWeakTable<KeysharpFile, object> openFiles = new();
 		internal Timer1 mainTimer;
 		internal int NoSleep = -1;
 		internal bool persistentValueSetByUser;

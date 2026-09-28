@@ -51,7 +51,8 @@ namespace Keysharp.Builtins
 		private static readonly Dictionary<(Type element, long length), Type> arrayTypes = new();
 		private static int dynamicTypeId;
 
-		private NativeMemoryHandle ownedHandle;
+		// Memory of its own, which only Dispose frees, so that a __Delete run when the struct is collected still reads it.
+		private nint owned;
 		private long borrowedPtr;
 		private bool isPointerView;
 		private bool disposed;
@@ -85,8 +86,12 @@ namespace Keysharp.Builtins
 
 		private Type StructType => type ?? GetType();
 
-		public long Ptr => ownedHandle?.DangerousGetHandle().ToInt64() ?? borrowedPtr;
+		public long Ptr => owned != 0 ? owned : borrowedPtr;
 		internal bool IsPointerView => isPointerView;
+
+		// As in AutoHotkey, a view of other memory is given no __Delete call.
+		internal override bool HasDeleteCall => !isPointerView
+			&& (HasOwnPropInternal("__Delete") || _base is KeysharpObject { HasDeleteInChain: true });
 
 		// Resolved from the receiver rather than declared as an instance property, so that it also answers on a
 		// struct class's Prototype: the prototype defines the layout but is not itself a Struct. A prototype
@@ -373,10 +378,8 @@ namespace Keysharp.Builtins
 			if (Ptr != 0 || info.Size == 0)
 				return;
 
-			var handle = Marshal.AllocHGlobal((nint)info.Size);
-			unsafe { Unsafe.InitBlockUnaligned((void*)handle, 0, (uint)info.Size); }
-
-			ownedHandle = new NativeMemoryHandle(handle);
+			owned = Marshal.AllocHGlobal((nint)info.Size);
+			unsafe { Unsafe.InitBlockUnaligned((void*)owned, 0, (uint)info.Size); }
 			isPointerView = false;
 		}
 
@@ -1002,6 +1005,8 @@ namespace Keysharp.Builtins
 			instance.type = viewType;
 			instance.SetBaseInternal(proto);
 			instance.BindToPointer(address);
+			//A view owns nothing, and as in AutoHotkey is given no __Delete call.
+			instance.HasFinalizer = false;
 			return instance;
 		}
 
@@ -1028,8 +1033,8 @@ namespace Keysharp.Builtins
 
 		private void ReleaseOwnedStorage()
 		{
-			ownedHandle?.Dispose();
-			ownedHandle = null;
+			Marshal.FreeHGlobal(owned);
+			owned = 0;
 		}
 
 		private static void UpdateLayout(Type type, StructInfo info, bool lockFields)

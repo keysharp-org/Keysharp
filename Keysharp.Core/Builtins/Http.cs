@@ -146,7 +146,6 @@ namespace Keysharp.Builtins
 				unusable ??= "This Http session has been closed.";
 				client?.Dispose();
 				client = null;
-				HasFinalizer = false;
 				return DefaultObject;
 			}
 

@@ -39,7 +39,6 @@ namespace Keysharp.Builtins
 				TheScript.Operators.RegisterAlias(userType, baseType);
 			var staticType = baseClass.GetType();
 			Any staticInst = (Any)RuntimeHelpers.GetUninitializedObject(staticType);
-			staticInst.type = typeof(Class); staticInst.InitializePrivates();
 			if (staticInst is Class created && baseClass is Class original)
 				created.OperatorType = original.OperatorType;
 

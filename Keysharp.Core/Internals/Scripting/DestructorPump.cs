@@ -1,27 +1,43 @@
 using Keysharp.Builtins;
-#if WINDOWS
-using Keysharp.Builtins.COM;
-#endif
 namespace Keysharp.Internals.Scripting
 {
+	/// <summary>
+	/// The finalizer of an <see cref="Any"/> which needs cleanup when it is collected (see <see cref="Any.HasFinalizer"/>).
+	/// It and its owner refer to each other, so they become unreachable together, and its finalizer brings the owner back
+	/// for the pump.
+	/// </summary>
+	internal sealed class GCCleanupSentinel(Any owner, bool again = false)
+	{
+		internal Any Owner = owner;
+		// The owner was collected before and given its __Delete then (see Any.ArmAgain).
+		internal readonly bool Again = again;
+
+		~GCCleanupSentinel() => Owner?.Collected(this);
+	}
+
 	internal sealed class DestructorPump
 	{
 		private readonly Script owner;
 		private readonly Lock runGate = new();
 		private readonly Lock _lock = new();
-		private readonly Queue<Any> _q = new();       // enqueued by finalizers (strong refs -> resurrection)
+		private readonly Queue<(Any Owner, bool Again)> _q = new();       // enqueued by finalizers (strong refs -> resurrection)
 		private bool _pending = false;
 		private bool stopped;
-		private int registrations;
+		private bool registered;
 
 		internal DestructorPump(Script owner) => this.owner = owner;
 
 		/// <summary>Whether any object ever enabled GC-time cleanup, i.e. whether exit needs a collection to find them.</summary>
-		internal bool HasRegistrations => Volatile.Read(ref registrations) != 0;
+		internal bool HasRegistrations => Volatile.Read(ref registered);
 
-		internal void NoteRegistration() => Interlocked.Increment(ref registrations);
+		// Read first, so the objects armed after the first leave the shared flag's cache line alone.
+		internal void NoteRegistration()
+		{
+			if (!registered)
+				Volatile.Write(ref registered, true);
+		}
 
-		public void Enqueue(Any obj)
+		public void Enqueue(Any obj, bool again = false)
 		{
 			bool post;
 			bool disposeOnly;
@@ -36,7 +52,7 @@ namespace Keysharp.Internals.Scripting
 				}
 				else
 				{
-					_q.Enqueue(obj);     // keep strong ref: prevents collection until processed
+					_q.Enqueue((obj, again));     // keep strong ref: prevents collection until processed
 					// Claim the right to post from inside the lock. Enqueue runs on the GC finalizer thread, so the
 					// old unsynchronized check-then-set let two threads both observe false and post twice. Worse, a
 					// _pending stuck at true -- because its post targeted a scheduler that died with the previous
@@ -69,45 +85,58 @@ namespace Keysharp.Internals.Scripting
 
 		// Called on the script's logical main thread via its dispatch context, but also directly from
 		// ExitAppInternal, so runGate serializes the two: overlapping drains would otherwise split one batch
-		// between them and double-invoke (or lose) __Delete.
-		public void RunPendingDestructors()
+		// between them and double-invoke (or lose) __Delete. Returns whether there was anything to run.
+		public bool RunPendingDestructors(bool exiting = false)
 		{
+			// A collection hands over what it found through many finalizers. Letting them all finish first keeps an object
+			// with __Delete in one batch with what it holds, none of which may be disposed before that __Delete ran.
+			GC.WaitForPendingFinalizers();
+
 			lock (runGate)
 			{
 				var batch = Drain();
 
-				if (batch.Count == 0) return;
+				if (batch.Count == 0) return false;
 
 				if (stopped || owner.IsDisposed)
 				{
-					foreach (var any in batch)
+					foreach (var (any, _) in batch)
 						DisposeNative(any);
 
-					return;
+					return true;
 				}
 
-				// Sort for outside-in (parents before children)
-				var ordered = OrderOutsideIn(batch);
+				var deleted = false;
 
-				// Now call __Delete in that order
-				foreach (var any in ordered)
+				// Outside-in (parents before children), and each object's __Delete only the first time it is collected.
+				foreach (var any in OrderOutsideIn([.. batch.Where(entry => !entry.Again).Select(entry => entry.Owner)]))
 				{
+					if (!any.HasDeleteCall)
+						continue;
+
+					deleted = true;
+
 					try
 					{
-						// Important: call script hook first, then native frees if you have any.
-#if WINDOWS
-						if (any is not ComValue)
-#endif
-							// A drain can run inside a pumping call made in a try, whose catch must not swallow this error.
-							using (Keysharp.Runtime.Flow.EnterUnguarded())
-								InvokeMeta(any, "__Delete");
-						if (any is IDisposable idisp) idisp.Dispose();
+						// A drain can run inside a pumping call made in a try, whose catch must not swallow this error.
+						using (Keysharp.Runtime.Flow.EnterUnguarded())
+							InvokeMeta(any, "__Delete");
 					}
 					catch { /* swallow per destructor semantics */ }
 				}
 
-				// Drop strong refs so GC can actually collect
-				batch.Clear();
+				// Only then is anything disposed, as a __Delete may use what another object of the batch holds. A __Delete
+				// may also have stored its object or another of the batch, as AutoHotkey allows, so after one ran the
+				// batch is disposed once it is collected again, unless the script is exiting.
+				foreach (var (any, again) in batch)
+				{
+					if (deleted && !again && !exiting && any is IDisposable)
+						any.ArmAgain();
+					else
+						DisposeNative(any);
+				}
+
+				return true;
 			}
 		}
 
@@ -115,7 +144,7 @@ namespace Keysharp.Internals.Scripting
 		{
 			lock (runGate)
 			{
-				List<Any> batch;
+				List<(Any Owner, bool Again)> batch;
 
 				lock (_lock)
 				{
@@ -123,20 +152,20 @@ namespace Keysharp.Internals.Scripting
 					batch = DrainUnsafe();
 				}
 
-				foreach (var any in batch)
+				foreach (var (any, _) in batch)
 					DisposeNative(any);
 			}
 		}
 
-		private List<Any> Drain()
+		private List<(Any Owner, bool Again)> Drain()
 		{
 			lock (_lock)
 				return DrainUnsafe();
 		}
 
-		private List<Any> DrainUnsafe()
+		private List<(Any Owner, bool Again)> DrainUnsafe()
 		{
-			var batch = new List<Any>(_q.Count);
+			var batch = new List<(Any Owner, bool Again)>(_q.Count);
 
 			while (_q.Count > 0)
 				batch.Add(_q.Dequeue());

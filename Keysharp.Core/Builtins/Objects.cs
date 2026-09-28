@@ -242,7 +242,7 @@ namespace Keysharp.Builtins
 			else
 				op[nameVal] = currProp = new OwnPropsDesc(target, value, get, set, call);
 
-			target.OnPropertyChanged(nameVal, currProp.Type);
+			target.OnPropertyChanged(nameVal);
 
 			return target;
 		}

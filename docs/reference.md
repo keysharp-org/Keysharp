@@ -451,8 +451,9 @@ Controlling another application needs **Automation** permission, granted per tar
 		FileOpen("test.txt", "w").Write("hello") ; The temporary file object does not get deleted at the end of the line, only possibly at the end of the current scope.
 		```
 	+ Object destructors/finalizers run at an unpredictable point after the object becomes unreachable. `Collect()` does not wait for finalizers, so free a resource that must be released promptly with an explicit method.
-	+ Object destructors (`__Delete()`) are implemented with C# finalizers, which are quite heavy-weight and are not automatically present for all objects. The finalizer state is determined at object creation based on whether `__Delete()` is present in the prototype chain, or at the point `__Delete()` is defined. If `__Delete()` is defined later in the prototype chain then instance finalizers are not automatically activated; the activation can be forced manually by temporarily reassigning a different base for the instance.
-	+ On script exit all non-local variables are enumerated, finalizers disabled, and `__Delete()` called if present. This also includes class static variables.
+	+ Object destructors (`__Delete()`) are implemented with C# finalizers, which are quite heavy-weight and are not automatically present for all objects. As in AutoHotkey, only an Object or a Struct with memory of its own is given a `__Delete()` call, so a `VarRef`, a `ComValue`, a view made by `Struct.At` or a prototype is not. The finalizer state is determined at object creation based on whether `__Delete()` is present in the prototype chain, or at the point `__Delete()` is defined. If `__Delete()` is defined later in the prototype chain then instance finalizers are not automatically activated; the activation can be forced manually by temporarily reassigning a different base for the instance.
+	+ `__Delete()` runs on the script's thread before anything collected along with its object is freed, so the object's own memory and that of a `Buffer`, `Struct` or `File` it holds are still intact. An object `__Delete()` stores somewhere stays usable and is freed once it is unreachable again, without a second `__Delete()` call, where AutoHotkey calls it again.
+	+ On script exit the global and static variables holding an object are released, as in AutoHotkey, and whatever that leaves unreferenced, such as a `File` in an `Array`, is given its `__Delete()` and freed. Every `File` still open, such as one a class's static property holds, is then flushed. A class's own `__Delete()` is also called, where AutoHotkey, which never releases a class, does not call it.
 * AutoHotkey says about the inc/dec ++/-- operators on empty variables: "Due to backward compatibility, the operators ++ and -- treat blank variables as zero, but only when they are alone on a line".
 	+ Keysharp breaks this and will instead create a variable, initialize it to zero, then increment it.
 	+ For example, a file with nothing but the line `x++` in it, will end with a variable named x which has the value of 1.
@@ -482,15 +483,16 @@ Controlling another application needs **Automation** permission, granted per tar
 * `Map` internally uses a real hashmap, which means item access, insertions and removals are faster, which is especially true for larger datasets. To keep at least partial compatibility with AutoHotkey the `Map` object is copied and sorted before enumeration, which means modifying the `Map` during enumeration will not have the same effect as in AutoHotkey.
 * `AddStandard()` detects menu items by string, instead of ID, because WinForms doesn't expose the ID.
 * `CallbackCreate()` does not support the `CDecl/C` option because the program will be run in 64-bit mode.
-	+ Passing string pointers to `DllCall()` when passing a created callback is recommended against. See explanation above under `StrPtr()`.
 	+ Usage of the created callback will be inefficient, so usage of `CallbackCreate()` is discouraged.
 	+ `CallbackFree()` raises `ValueError` for an invalid or already-freed address; AutoHotkey leaves most invalid addresses undefined.
 * `ControlMove()` and `ControlSetPos()` operate relative to their immediate parent, which may not be the main window if they are contained in a nested control.
 * `DirCopy()` extracts archives with .NET rather than the OS shell, so the supported formats are the same on every platform: `.zip`, `.tar`, `.tar.gz` and `.tgz` are extracted into *Dest* as a folder. AutoHotkey's format list instead depends on the Windows version (and RAR/7z are not supported at all here).
 	+ A plain `.gz` holds a single compressed file rather than an archive of entries, so *Dest* names the decompressed **file** and its parent folder is created if needed. This is the one case where *Dest* is not a directory.
 * `DllCall()` has the following caveats:
-	+ Pass `&Variable` for a writable `Str`, `WStr` or `AStr` argument when the native function can shorten its value. The copied-back string ends at the first null terminator. Passing a plain `Str` value lets native code write directly into the .NET string, whose old length remains and whose contents may be shared with a literal.
-	+ Use `Ptr` and `StringBuffer` for double pointer parameters such as `LPTSTR*`. This is recommended over the use of `StrPtr()`.
+	+ A naked variable is passed as itself to a `Str` or `WStr` argument only where the type is written as a literal in a direct call. An indirect call, a computed type name or an argument supplied by a spread passes the variable's value, and `&Variable` passes the variable there. A built-in variable passes its value, also when an import names it, and so does a variable one module imports from another and passes on. `ComCall()` follows the same rule.
+	+ A plain `Str` or `WStr` value, such as a literal or an expression's result, is passed by its own characters, so native code which writes to it writes into a .NET string whose length stays the same and whose characters may be shared with other values. A variable is passed its own memory, the memory `StrPtr()` returns, and a property reference such as `&obj.prop` a copy; afterward either takes its text up to the first null when that differs from its value.
+	+ `AStr` is input only, as in AutoHotkey, and uses the system ANSI code page, the encoding `StrPut()` calls `CP0`; to receive ANSI text, pass a `Buffer` as `Ptr` and read it with `StrGet(Buf, "CP0")`.
+	+ For a double pointer such as `LPTSTR*`, pass `"Ptr*", &P` and read the string with `StrGet(P)`; a `StringBuffer` passed as `Ptr*` does not receive the pointer.
 	+ A call may pass at most 63 arguments.
 	+ A `Float` value read back out of a call — a `Float` return value or a `Float*` output variable — widens to the shortest Float that round-trips, so `1.2345` stays `1.2345`. `NumGet` widens the same way, where AutoHotkey carries the binary error of the narrower type into the decimal digits (`1.2344999313354492`).
 * Encoding names — wherever one is accepted: `FileEncoding`, `A_FileEncoding`, `FileRead`, `FileOpen`, `File.Encoding`, `StrGet`, `StrPut`, `Base64.Encode`, `Url.Encode`, `Url.Decode` and the `Crypt` class — take AutoHotkey's `UTF-8`, `UTF-8-RAW`, `UTF-16`, `UTF-16-RAW`, `CPnnn` and `nnn`, and additionally `ASCII` and any name .NET knows, such as `windows-1252`. A name which cannot be resolved raises a `ValueError`; it is never quietly substituted, since that would silently read or write the wrong bytes. An empty name means the native UTF-16 encoding, where AutoHotkey uses the active ANSI code page (CP0).
@@ -502,17 +504,18 @@ Controlling another application needs **Automation** permission, granted per tar
 * `Sleep()` works, but uses `Application.DoEvents()` internally which is not a good programming practice and can lead to hard to solve bugs.
 	+ For this reason, it's recommended that users use timers for repeated execution rather than a loop with calls to `Sleep()`.
 	+ It will not do any sleeping if shutdown has been initiated.
-* `StrPtr()` works slightly differently because C# strings are constant.
-	+ `StrPtr(variable)` returns a custom `StringBuffer` object which is entangled with the original string. When this object is used with DllCall, NumPut etc, then the `StringBuffer` is used as the pointer, and the entangled string is updated after the function call.
-	+ `StrPtr("literal")` with a literal string will pin the string from garbage collection and return the actual address of the string. This string must not be modified, and should be freed after use with `ObjFree()`.
-	+ Instead of `StrPtr` it is recommended to use a `StringBuffer` instance instead.
+* `StrPtr(Var)` returns the address of memory `Var` keeps for native code, because .NET strings are immutable.
+	+ `StrPtr(Var)` and a `Str` argument copy `Var`'s value into that memory only when `Var` holds a different string than the memory last did, so what native code wrote there survives another `StrPtr(Var)`. Assigning the very string `Var` holds does not count: after `Var := ""` on a variable already empty, as right after `VarSetStrCapacity()`, the memory keeps what native code wrote, where AutoHotkey would clear it.
+	+ The memory starts with room for 259 characters, MAX_PATH with the terminator, unless `VarSetStrCapacity()` sized it. Its address stays the same while the variable exists and its value fits.
+	+ What native code writes there reaches `Var`, up to the first null, at `VarSetStrCapacity(&Var, -1)` or when `Var` is next passed as a `Str` or `WStr` argument, unless `Var` was assigned a different string since. AutoHotkey shows a write which keeps the length at once, as with `DllCall("CharUpper", "Ptr", StrPtr(Var))`; pass `Var` as `Str` there instead.
+	+ A literal, an expression's result, a property's value, the value of another object with `__Value`, a function's own local or static reached through `&%name%`, or a variable one module passes on from another is copied to pinned memory instead, which stays valid until `ObjFree()` releases it.
 * `A_IconHidden` changes tray visibility without clearing its image or menu. An icon selected while hidden is retained when shown again. Linux tray hosts must honor the AppIndicator status for hiding to take effect.
 * `TrayTip()` functions slightly differently.
 	+ Muting the sound played by the tip is not supported with the `Mute` option. The sound will be whatever the user has configured in their system settings.
 	+ The option `4` to use the program's tray icon is not supported. It is always shown in the title of the tip.
 	+ The option `32` to use the large version of the program's tray icon is not supported. Windows will always show the small version.
-* Pointers returned by `StrPtr()` must be freed by passing the value to a new function named `ObjFree()`.
-	+ `StrPtr()` does not return the address of the string, instead it returns the address of a copy of the bytes of the string.
+* `VarSetStrCapacity()` sizes the memory `StrPtr()` returns for a variable and a `Str` argument receives, while the variable itself holds an ordinary string, so the capacity has no effect on concatenation.
+	+ A reference is the same `VarRef` each time for a local, a global, a static and a variable a module imports directly, as in AutoHotkey. A function's own local or static or an imported variable reached through `%name%`, and a variable one module passes on from another, get a new reference each time, which keeps no memory: sizing one above 0 raises a `TypeError`.
 * Deleting a tab via `GuiCtrl.Delete()` does not reassociate the controls that it contains with the next tab. Instead, they are all deleted.
 * The size and positioning of some GUI components will be slightly different than AutoHotkey because WinForms uses different defaults.
 	+ There is an additional positioning option `xc` and `yc` which position the control relative to the container. For example inside a tab `xc+10` would position the control 10 pixels from the left side of the tab control.
@@ -741,6 +744,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `Buffer`:
 		+ `__Item[]`: Indexer which can be used to read a byte at a 1-based offset.
 			+ Throws an `IndexError` if the offset out of range.
+		+ `Clone() => Buffer`: Returns a buffer of the same class and size holding a copy of the bytes, where AutoHotkey raises a `TypeError`.
 	+ `Func`:
 		+ `IsClosure`, `IsMethod` and `Params` expose Keysharp function metadata.
 	+ `InputHook.KeyOpt("{All}", ...)` affects keyboard input only. Keysharp adds composable `{Keyboard}` and `{Mouse}` (buttons and wheels); mouse movement uses `VisibleMouseMove`.
@@ -970,8 +974,9 @@ Controlling another application needs **Automation** permission, granted per tar
 			Json.Encode(Map("a", NULL), , NULL)    ; {"a":null}
 			```	+ `StringBuffer`: Can be used for passing string memory to `DllCall()` which will be written to inside of the call.
 		+ There are two methods for creating a `StringBuffer`:
-			+ `StringBuffer(str := "") => StringBuffer`: Creates a `StringBuffer` with a string of `str` and a capacity of 256.
-			+ `StringBuffer(str, capacity) => StringBuffer`: Creates a `StringBuffer` with a string of `str` and a capacity of `Max(16, capacity)`.
+			+ `StringBuffer(str := "") => StringBuffer`: Creates a `StringBuffer` with a string of `str` and a capacity of at least 256.
+			+ `StringBuffer(str, capacity) => StringBuffer`: Creates a `StringBuffer` with a string of `str` and a capacity of `capacity`, grown to fit `str` if it is longer. A negative capacity raises a `ValueError`.
+		+ `StringBuffer` holds UTF-16 text, and may be passed as `Ptr`, `Str` or `WStr`; as `AStr` or `BStr` it raises a `TypeError`.
 		+ `StringBuffer` is implicitly castable to `String`.
 			```
 			sb := StringBuffer("hello")
@@ -991,7 +996,6 @@ Controlling another application needs **Automation** permission, granted per tar
 				DllCall("wsprintf", "Ptr", sb, "Str", "%010d", "Int", 432, "Cdecl")
 				MsgBox(sb) ; No need to use StrGet() anymore.
 				```
-		+ `StringBuffer` internally uses a `StringBuilder` which is how C# P/Invoke handles string pointers.
 	+ `Thread`: The current pseudo-thread, obtained from `A_Thread`.
 		+ `Thread` is a **class**, not a function, and calling it runs the AHK sub-functions unchanged — `Thread "NoTimers"`, `Thread "Priority", n`, `Thread "Interrupt", n`. One name therefore covers the thread settings and the thread object, which is what lets `A_Thread`'s type simply be `Thread`. It stays a global name (no import needed for `thr is Thread`) because `Thread` was already global as a function; the consequence is that `Thread is Func` is now false.
 			```

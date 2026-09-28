@@ -21,6 +21,10 @@ namespace Keysharp.Builtins
 		// Any stream, not just a FileStream: a File can also be opened over memory a script already holds.
 		private Stream fs;
 
+		// Keeps a FileStream reachable until Dispose, as its own finalizer would otherwise close the file in the same
+		// collection as this File, before a __Delete which may still write to it.
+		private GCHandle streamRoot;
+
 		// The object whose memory a memory-backed file is reading and writing. Held so that it cannot be
 		// collected while this File still points into it; null for a path-backed file.
 		private object memorySource;
@@ -87,6 +91,7 @@ namespace Keysharp.Builtins
 		{
 			tw = sw;
 			enc = sw.Encoding;
+			FlushAtExit();
 		}
 
 		public KeysharpFile(StreamReader sr) : base(null)
@@ -168,6 +173,9 @@ namespace Keysharp.Builtins
 
 					fs = new FileStream(filename, m, a, s);
 				}
+
+				streamRoot = GCHandle.Alloc(fs);
+				FlushAtExit();
 
 				if ((a & FileAccess.Read) == FileAccess.Read)
 					br = new BinaryReader(fs, enc);
@@ -278,8 +286,6 @@ namespace Keysharp.Builtins
 
 		internal KeysharpFile(string filename, FileMode mode, FileAccess access, FileShare share, Encoding encoding, long eol) : base(filename, mode, access, share, encoding, eol) { }
 
-		~KeysharpFile() => Dispose(false);
-
 		public object Close()
 		{
 			Dispose(false);
@@ -297,6 +303,25 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
+		private void FlushAtExit() => _ = Script.TheScript.FlowData.openFiles.TryAdd(this, null);
+
+		// As AutoHotkey does at exit, flushes every File still open, such as one only a class's static property holds,
+		// since nothing does once the process ends.
+		internal static void FlushAll(Script script)
+		{
+			foreach (var (file, _) in script.FlowData.openFiles)
+			{
+				try
+				{
+					if (!file.disposed)
+						_ = file.Flush();
+				}
+				catch
+				{
+				}
+			}
+		}
+
 		internal virtual void Dispose(bool disposing)
 		{
 			if (!disposed)
@@ -306,6 +331,10 @@ namespace Keysharp.Builtins
 				tr?.Close();
 				tw?.Close();
 				fs?.Close();
+
+				if (streamRoot.IsAllocated)
+					streamRoot.Free();
+
 				disposed = true;
 			}
 		}

@@ -588,22 +588,6 @@ namespace Keysharp.Builtins
 			});
 		}
 
-		~Gui()
-		{
-			//Re-check persistence when a Gui is collected, since it may have been the only thing keeping the
-			//script alive. This runs on the GC finalizer thread, so it must never take the inline path:
-			//ExitIfNotPersistent posts to the UI thread, but PostToUIThread falls back to running the action
-			//inline when no UI context is bound, which would drive ExitAppInternal -- and its
-			//GC.WaitForPendingFinalizers() -- from the finalizer thread and deadlock. Skip once the script has
-			//exited too, because a late collection must not run exit logic against a retired owner.
-			var script = Script.TheScript;
-
-			if (script == null || script.hasExited || script.UIThreadContext == null)
-				return;
-
-			script.ExitIfNotPersistent();
-		}
-
 		public KeysharpFunc __Enum(object count) => CreateEnumerator(count.Ai());
 
 		public object __New(object options = null, object title = null, object eventObj = null)

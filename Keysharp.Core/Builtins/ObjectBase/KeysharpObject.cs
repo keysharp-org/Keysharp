@@ -15,7 +15,32 @@ namespace Keysharp.Builtins
 	[UserDeclaredName("Object")]
 	public class KeysharpObject : Any
 	{
+		// Whether this object or its base chain defines __Delete. As in AutoHotkey, only an Object and a Struct with memory
+		// of its own are given a __Delete call, the Struct through the pump that disposes it.
+		private bool hasDeleteInChain;
+
 		public KeysharpObject(params object[] args) : base(args) { }
+
+		internal bool HasDeleteInChain => hasDeleteInChain;
+
+		// A prototype is not, as in AutoHotkey, which skips an object with an own __Class.
+		internal override bool HasDeleteCall => hasDeleteInChain && !HasOwnPropInternal("__Class");
+
+		internal override void MaybeActivateFinalizer() => HasFinalizer = DisposesWhenCollected || hasDeleteInChain;
+
+		internal override void OnPropertyChanged(string name)
+		{
+			if (!name.Equals("__Delete", StringComparison.OrdinalIgnoreCase) && !name.Equals("base", StringComparison.OrdinalIgnoreCase))
+				return;
+
+			hasDeleteInChain = HasOwnPropInternal("__Delete") || _base is KeysharpObject { hasDeleteInChain: true };
+			MaybeActivateFinalizer();
+
+			//Prototypes derived from this one follow the change.
+			if (children != null)
+				foreach (var child in children.GetLiveItems())
+					child.OnPropertyChanged(name);
+		}
 
 		/// <summary>
 		/// Creates a new <see cref="KeysharpObject"/> object.
@@ -68,15 +93,13 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Return a cloned copy of the object.
-		/// Just calling MemberwiseClone() is sufficient to clone all of the properties as well
-		/// as the OwnProps object op.
+		/// Returns a copy of the object, with its own copy of each own property. As in AutoHotkey, an object of a built-in
+		/// type holding a native resource raises a TypeError instead, since both copies would release it.
 		/// </summary>
 		/// <returns>A cloned copy of the object.</returns>
-		public new object Clone()
-		{
-			return MemberwiseClone();
-		}
+		public object Clone() => this is IDisposable
+			? Errors.TypeErrorOccurred("An object holding a native resource cannot be cloned.")
+			: MemberwiseClone();
 
 		public static object DefineProp(object @this, object name, object descriptor) => Objects.DefineProp(@this, name, descriptor);
 

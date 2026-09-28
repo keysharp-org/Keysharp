@@ -1,9 +1,9 @@
 #NoTrayIcon
 
 #import __Main
-#import KS { Collect }
+#import KS { Collect, StringBuffer }
 #Include <assert>
-gval := 0
+gval := 0, gtext := "", gdefined := 0, gclones := 0, gvarref := 0, gstructs := 0, gheld := 0, gkept := ""
 
 class testclass
 {
@@ -30,6 +30,82 @@ while (gval != 999 && A_TickCount < timeout)
 }
 
 AssertEq(gval, 999, A_LineNumber)
+
+; A built-in type's subclass is collected the same way, and its __Delete, or that of an object holding it, still reads
+; its memory. A __Delete defined on an object at run time counts too, and so does a clone, as a separate object. Only an
+; Object or a Struct with memory of its own is given a __Delete call, as in AutoHotkey, so neither a VarRef, a view of
+; another Struct's memory nor a prototype is, whatever defines it. An object its __Delete keeps stays usable.
+class DeletedBuffer extends Buffer
+{
+	__Delete() => __Main.gval := NumGet(this, 0, "UChar")
+}
+
+class HoldsBuffer
+{
+	__New() => this.held := Buffer(8, 7)
+	__Delete() => __Main.gheld := NumGet(this.held, 0, "UChar")
+}
+
+class KeepsItself extends Buffer
+{
+	__Delete() => __Main.gkept := this
+}
+
+class DeletedText extends StringBuffer
+{
+	__Delete() => __Main.gtext := String(this)
+}
+
+class DeletedTwice
+{
+	__Delete() => __Main.gclones += 1
+}
+
+struct DeletedStruct
+{
+	x : Int32
+	__Delete() => __Main.gstructs += 1
+}
+
+MakeCollectable()
+{
+	DeletedBuffer(16, 42)
+	HoldsBuffer()
+	KeepsItself(4, 9)
+	DeletedText("kept")
+	defined := {}
+	defined.DefineProp("__Delete", {Call: (*) => __Main.gdefined := 1})
+	DeletedTwice().Clone()
+	Class("DroppedClass", DeletedTwice)
+	VarRef(1)
+	owner := DeletedStruct()
+	DeletedStruct.At(owner.Ptr)
+}
+
+gval := 0
+Object.Prototype.DefineProp.Call(VarRef.Prototype, "__Delete", {Call: (*) => __Main.gvarref := 1})
+MakeCollectable()
+timeout := A_TickCount + 2000
+
+while ((gval != 42 || gheld != 7 || !IsObject(gkept) || gtext != "kept" || gdefined != 1 || gclones != 2 || gstructs != 1) && A_TickCount < timeout)
+{
+	Sleep(100)
+	Collect()
+}
+
+; What should not be called gets the time a later collection would have taken to call it.
+Loop 3
+	Sleep(100), Collect()
+
+AssertEq(gval, 42, A_LineNumber)
+AssertEq(gheld, 7, A_LineNumber)
+AssertEq(NumGet(gkept, 0, "UChar"), 9, A_LineNumber)
+AssertEq(gtext, "kept", A_LineNumber)
+AssertEq(gdefined, 1, A_LineNumber)
+AssertEq(gclones, 2, A_LineNumber)
+AssertEq(gstructs, 1, A_LineNumber)
+AssertEq(gvarref, 0, A_LineNumber)
+Object.Prototype.DeleteProp.Call(VarRef.Prototype, "__Delete")
 
 class enumclass
 {
@@ -86,6 +162,20 @@ AssertEq(cloneobj.a, 1, A_LineNumber)
 AssertEq(cloneobj.b, 2, A_LineNumber)
 
 AssertEq(cloneobj.c, 3, A_LineNumber)
+
+; A clone has its own copy of each own property, and a Buffer's or StringBuffer's its own copy of the memory. A File
+; holds a handle, which cannot be copied, so cloning one raises a TypeError, as in AutoHotkey.
+cloneobj.a := 10
+cloneobj.DefineProp("d", {Value: 4})
+AssertEq(testclassobj.a, 1, A_LineNumber)
+Assert(!testclassobj.HasOwnProp("d"), A_LineNumber)
+bufOriginal := Buffer(4, 7), bufCopy := bufOriginal.Clone()
+NumPut("UChar", 9, bufCopy)
+AssertEq(NumGet(bufOriginal, "UChar") " " NumGet(bufCopy, "UChar") " " bufCopy.Size, "7 9 4", A_LineNumber)
+textOriginal := StringBuffer("abc"), textCopy := textOriginal.Clone()
+textCopy.Append("d")
+AssertEq(String(textOriginal) " " String(textCopy), "abc abcd", A_LineNumber)
+Throws(() => FileOpen(A_ScriptFullPath, "r").Clone(), A_LineNumber, TypeError)
 
 class testclass3 {
 	static Call(a) {

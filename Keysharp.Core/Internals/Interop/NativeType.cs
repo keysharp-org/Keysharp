@@ -21,6 +21,23 @@ namespace Keysharp.Internals.Interop
 	/// </summary>
 	internal static class NativeType
 	{
+		private static Encoding ansiEncoding;
+
+		/// <summary>
+		/// What AStr is encoded in: the system's ANSI code page, as AutoHotkey's CP_ACP is,
+		/// or UTF-8 on a system without one. Resolved on first use, which is after the script registered the code pages.
+		/// </summary>
+		internal static Encoding AnsiEncoding => ansiEncoding ??= Encoding.GetEncoding(0);
+
+		// Every ANSI code page and UTF-8 encode ASCII as itself, and narrowing it directly is many times faster.
+		internal static int EncodeAnsi(ReadOnlySpan<char> text, Span<byte> destination) =>
+			System.Text.Ascii.FromUtf16(text, destination, out var written) == System.Buffers.OperationStatus.Done
+			? written : AnsiEncoding.GetBytes(text, destination);
+
+		// Text native code left in memory: up to the first null, where AutoHotkey takes a string's length from.
+		internal static ReadOnlySpan<char> UpToNull(ReadOnlySpan<char> memory) =>
+			memory.IndexOf('\0') is var end and >= 0 ? memory[..end] : memory;
+
 		internal static NativeTypeCode Parse(ReadOnlySpan<char> tag) => tag.Length switch
 		{
 			3 => Is(tag, "int") ? NativeTypeCode.Int

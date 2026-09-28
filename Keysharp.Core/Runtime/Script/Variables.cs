@@ -16,6 +16,8 @@ namespace Keysharp.Runtime
 		internal List<(string, bool)> preloadedDlls = [];
 		internal DateTime startTime = DateTime.UtcNow;
 		private readonly ConcurrentDictionary<Type, ModuleScope> modules = new();
+		// The one reference to each variable held in a static field, by its declaring type and field (see Misc.FieldRef).
+		internal readonly ConcurrentDictionary<(Type, string), VarRef> FieldRefs = new();
 		private readonly Type[] programModules;
 		// Defensive fallback for a script with no modules at all (the generated program always has the main module,
 		// so this is effectively never used).

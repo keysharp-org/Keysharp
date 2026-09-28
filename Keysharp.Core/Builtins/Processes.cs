@@ -804,8 +804,6 @@ namespace Keysharp.Builtins
 			WatchForExit();
 		}
 
-		~ScriptProcess() => Dispose(false);
-
 		public long HasExited => process.HasExited ? 1L : 0L;
 		public object ExitCode => process.HasExited ? (long)process.ExitCode : "";
 		/// <summary>
@@ -840,8 +838,6 @@ namespace Keysharp.Builtins
 		public object Close()
 		{
 			Dispose(true);
-			GC.SuppressFinalize(this);
-			HasFinalizer = false;
 			return DefaultObject;
 		}
 
@@ -984,10 +980,10 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		// Collection and exit only stop the exit callback: the streams it handed out may still be in use.
 		void IDisposable.Dispose()
 		{
-			Dispose(true);
-			GC.SuppressFinalize(this);
+			Dispose(false);
 			HasFinalizer = false;
 		}
 	}

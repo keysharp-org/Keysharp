@@ -144,20 +144,12 @@ namespace Keysharp.Builtins.COM
 		/// <summary>
 		/// Returns a new wrapper around a copy of this SafeArray.
 		/// </summary>
-		public new object Clone()
+		public object Clone()
 		{
 			int hr = OleAuto.SafeArrayCopy(_psa, out nint psaCopy);
 			if (hr < 0)
 				return Errors.OSErrorOccurred(hr);
-			var copy = (ComObjArray)RuntimeHelpers
-					   .GetUninitializedObject(typeof(ComObjArray));
-			copy.vt = this.vt;
-			copy.Flags = this.Flags;
-			copy._dimensions = this._dimensions;
-			copy._baseType = this._baseType;
-			copy._psa = psaCopy;
-			copy.Ptr = psaCopy.ToInt64();
-			return copy;
+			return new ComObjArray(_baseType, psaCopy, takeOwnership: true);
 		}
 
 		[PublicHiddenFromUser]

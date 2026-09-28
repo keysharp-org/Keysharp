@@ -3484,6 +3484,17 @@
                      "tested-by":  "collections-buffer.ahk"
                  },
                  {
+                     "category":  "Interop/Memory",
+                     "feature":  "Buffer.Clone()",
+                     "syntax":  "buf.Clone()",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp extension. Returns a buffer of the same class and size holding a copy of the bytes, where AutoHotkey raises a TypeError.",
+                     "tested-by":  "class-special-funcs.ahk"
+                 },
+                 {
                      "category":  "Core Language",
                      "feature":  "Buffer.__Item[]",
                      "syntax":  "",
@@ -3929,8 +3940,8 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "The ComCall function calls a native COM interface method by index. A return type of \u0027void\u0027 means the call returns no value.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "The ComCall function calls a native COM interface method by index. A return type of \u0027void\u0027 means the call returns no value, and string arguments behave as for DllCall.",
+                     "tested-by":  "Gui/guitest.ks; external-dllcall.ahk"
                  },
                  {
                      "category":  "COM",
@@ -4747,7 +4758,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Calls a native shared-library function on every platform. Numeric type classes can replace built-in type names, and a \u0027void\u0027 return type yields no value. A variable reference allows writable Str or AStr output to be copied back through the first null terminator.",
+                     "notes":  "Calls a native shared-library function on every platform, accepting numeric type classes and a \u0027void\u0027 return type; reference.md lists how string arguments differ from AutoHotkey.",
                      "tested-by":  "external-dllcall.ahk"
                  },
                  {
@@ -10471,8 +10482,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The StrPtr function returns the current memory address of a string.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Returns the address of memory a variable keeps for native code, stable while its value fits, or of a pinned copy of any other string, which ObjFree releases.",
+                     "tested-by":  "external-dllcall.ahk"
                  },
                  {
                      "category":  "Interop/Memory",
@@ -10997,7 +11008,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Does nothing because the.NET runtime manages all memory."
+                     "notes":  "Sizes the memory a variable keeps for StrPtr and Str arguments, emptying the variable, and -1 sets the variable to what native code wrote there, up to the first null.",
+                     "tested-by":  "external-dllcall.ahk"
                  },
                  {
                      "category":  "Core Language",

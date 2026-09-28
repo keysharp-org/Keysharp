@@ -1039,38 +1039,40 @@ namespace Keysharp.Builtins
 		public static string StrLower(object @string) => @string.As().ToLowerInvariant();
 
 		/// <summary>
-		/// Returns the current memory address of a string.
-		/// Note, this does not actually point to the string. Instead, it
-		/// points to a copy of the bytes of the string.
-		/// Note, the caller will have to manually free the returned pointer by calling ObjFree.
+		/// Returns the address of a string. A variable, which a direct call passes by reference, has memory of its own,
+		/// which takes the variable's value here when the variable holds a different string than the memory last did: the
+		/// same string assigned again, such as "" to a variable already empty, leaves what native code wrote there. That
+		/// reaches the variable at VarSetStrCapacity(&amp;v, -1) or its next Str argument, and the address stays the same
+		/// while the variable exists and its value fits. Any other string is copied to pinned memory, which ObjFree releases.
 		/// </summary>
-		/// <param name="value">The string to return a pointer to.</param>
-		/// <returns>The memory address of a copy of the string bytes.</returns>
+		/// <param name="value">A string, a reference to a variable holding one, or a StringBuffer.</param>
+		/// <returns>The address.</returns>
 		public static object StrPtr(object value)
 		{
-			if (value is StringBuffer sb) {
-				return sb.Ptr;
-			}
-			//A reference is entangled with a buffer so a native call can write back through it. Nothing declares this
-			//parameter a reference, so an object only takes that path if it provably carries a __Value.
-			else if (Refs.DeclaresValue(value))
+			//Nothing declares this parameter a reference, so an object only takes this path if it provably carries a
+			//__Value. An unset variable referred to explicitly is empty, as an output variable starts out. A reference to
+			//anything but a variable, such as a property, keeps no memory, so its value is copied as any other is.
+			if (Refs.DeclaresValue(value))
 			{
-				var str = Refs.GetValue(value);
-				if (str is StringBuffer sb2)
-					return sb2.Ptr;
-				var sbr = new StringBuffer(str);
-				sbr.EntangledString = value;
-				return sbr;
+				var inner = Refs.GetValueOrNull(value) ?? "";
+
+				if (inner is string text && StringMemory.Of(value) is { } own)
+					return own.AddressOf(text);
+
+				value = inner;
 			}
-			value = Encoding.Unicode.GetBytes(value.ToString());
-			var gch = GCHandle.Alloc(value, GCHandleType.Pinned);
+
+			if (value is StringBuffer sb)
+				return sb.Ptr;
+
+			if (value is not string str)
+				return Errors.TypeErrorOccurred(value, typeof(string), 0L);
+
+			var copy = new char[str.Length + 1];//The last element stays zero: the terminator a native reader looks for.
+			str.CopyTo(copy);
+			var gch = GCHandle.Alloc(copy, GCHandleType.Pinned);
 			var ptr = gch.AddrOfPinnedObject();
-			var script = Script.TheScript;
-
-			if (script.StringsData.gcHandles.Remove(ptr, out var oldGch))
-				oldGch.Free();
-
-			script.StringsData.gcHandles[ptr] = gch;
+			Script.TheScript.StringsData.gcHandles[ptr] = gch;
 			return (long)ptr;
 		}
 
@@ -1469,49 +1471,51 @@ namespace Keysharp.Builtins
 		public static string Trim(object @string, object omitChars = null) => @string.As().Trim(omitChars.As(" \t").ToCharArray());
 
 		/// <summary>
-		/// Sets a string capacity by replacing it with a StringBuffer instance.
+		/// Enlarges a variable's capacity or frees its memory, as AutoHotkey does. The capacity belongs to the memory the
+		/// variable keeps for native code (see <see cref="StrPtr"/>), while the variable itself holds an ordinary string.
 		/// </summary>
-		/// <param name="targetVar">The string to wrap</param>
-		/// <param name="requestedCapacity">Capacity for the StringBuffer. If this is -1 then
-		/// <paramref name="targetVar"/> contents are replaced with the content of the StringBuffer.</param>
-		/// <returns>StringBuffer</returns>
+		/// <param name="targetVar">A reference to the variable.</param>
+		/// <param name="requestedCapacity">If omitted, the capacity is returned and the variable is left as it is. Otherwise
+		/// the variable becomes empty, whatever it held, with room for this many characters, excluding the null terminator;
+		/// 0 frees that room. -1 instead sets the variable to its contents up to the first null character: what native code
+		/// wrote to its memory, unless the variable was assigned since.</param>
+		/// <returns>The capacity, or for -1 the variable's new length.</returns>
 		public static object VarSetStrCapacity([ByRef] object targetVar, object requestedCapacity = null)
 		{
 			Refs.Demand(targetVar);
-			var target = Refs.GetValueOrNull(targetVar) ?? "";
-			int capacity;
-			if (target is string targetStr)
-			{
-				if (requestedCapacity == null)
-					return (long)targetStr.Length;
-				capacity = requestedCapacity.Ai();
-				if (capacity < 0)
-					return (long)targetStr.Length;
-                var sbr = new StringBuffer(targetStr, capacity);
-				Refs.SetValue(targetVar, sbr);
-				return (long)capacity;
-			}
-			else if (target is StringBuffer sbr)
-			{
-				if (requestedCapacity == null)
-					return sbr.Capacity;
+			var capacity = requestedCapacity == null ? 0 : requestedCapacity.Al();
+			var memory = (targetVar as VarRef)?.Memory;
 
-				capacity = requestedCapacity.Ai();
-				if (capacity == -1)
-				{
-					var str = sbr.ToString();
-					Refs.SetValue(targetVar, str);
-					return (long)str.Length;
-				}
-				else
-				{
-					sbr.Capacity = capacity;
-					return sbr.Capacity;
-				}
+			if (requestedCapacity == null || capacity == -1)
+			{
+				var value = Refs.GetValueOrNull(targetVar);
+
+				//As in AutoHotkey, -1 measures a number by its string form, while a query needs a string.
+				if ((value ?? "") is not string text)
+					return value is long or double && requestedCapacity != null ? (long)value.As().Length : Errors.TypeErrorOccurred(value, typeof(string), 0L);
+
+				if (requestedCapacity == null)
+					return (long)Math.Max(memory?.Room ?? 0, text.Length);
+
+				var written = memory?.Written(text) ?? (text.IndexOf('\0') is var end and >= 0 ? text[..end] : text);
+
+				if (!ReferenceEquals(written, text))
+					_ = Refs.SetValue(targetVar, written);
+
+				return (long)written.Length;
 			}
 
-			return Errors.TypeErrorOccurred($"Expected referred argument of type string or StringBuffer, but received {target.GetType()}");
-        }
+			if (capacity is < 0 or >= int.MaxValue)
+				return Errors.ValueErrorOccurred($"Invalid capacity {capacity}.", requestedCapacity, 0L);
+
+			//As in AutoHotkey, only a variable has memory to size; a property would report room it never keeps.
+			if (capacity != 0 && (memory ??= StringMemory.Of(targetVar)) == null)
+				return Errors.TypeErrorOccurred("Only a variable's own reference has memory to size, not a property's or one made afresh, such as for a function's own variable through %name%.", 0L);
+
+			_ = Refs.SetValue(targetVar, "");
+			memory?.Reserve((int)capacity);
+			return (long)(memory?.Room ?? 0);
+		}
 
 		/// <summary>
 		/// Compares two version strings.

@@ -20,43 +20,80 @@ namespace Keysharp.Builtins
 		internal WeakCollection<Any> children = null;
 		internal bool isPrototype = false;
 
-		// Does THIS node define __Delete (own, not inherited)?
-		private volatile bool _ownHasDelete = false;
-
-		// Does this node's base chain include __Delete (self or inherited)?
-		private bool _hasDeleteInChain = false;
-
-		// Tracks whether finalization is enabled; toggles GC finalizer registration.
-		private bool _hasFinalizer;
+		// Only an object needing cleanup when collected carries a sentinel, since a type with a finalizer allocates far more
+		// slowly even when it is suppressed.
+		private GCCleanupSentinel sentinel;
 		protected internal bool HasFinalizer
 		{
-			get => _hasFinalizer;
+			get => sentinel != null;
 			set
 			{
-				if (_hasFinalizer != value)
+				if (value)
 				{
-					_hasFinalizer = value;
-					if (_hasFinalizer)
+					if (sentinel == null)
 					{
-						GC.ReRegisterForFinalize(this);
+						sentinel = new(this);
 						TheScript?.DestructorPump.NoteRegistration();
 					}
-					else
-						GC.SuppressFinalize(this);
+				}
+				//The finalizer thread may be clearing it at the same time (see Collected).
+				else if (sentinel != null && Interlocked.Exchange(ref sentinel, null) is { } detached)
+				{
+					detached.Owner = null;
+					GC.SuppressFinalize(detached);
 				}
 			}
+		}
+
+		// Whether the object has something to release when collected, so it needs a sentinel even without a __Delete.
+		internal virtual bool DisposesWhenCollected => this is IDisposable;
+
+		// Whether collecting the object calls its __Delete (see KeysharpObject and Struct).
+		internal virtual bool HasDeleteCall => false;
+
+		// The owner is being collected: its sentinel's finalizer hands it to the pump for __Delete and Dispose. A sentinel
+		// a concurrent arming replaced is collected while its owner lives on, so it hands over nothing.
+		internal void Collected(GCCleanupSentinel collected)
+		{
+			if (Interlocked.CompareExchange(ref sentinel, null, collected) == collected)
+				TheScript?.DestructorPump.Enqueue(this, collected.Again);
+		}
+
+		// A __Delete ran while the object was being collected and may have kept it, so it is disposed only once it is
+		// collected again, without a second __Delete.
+		internal void ArmAgain()
+		{
+			if (Interlocked.Exchange(ref sentinel, new(this, true)) is { } replaced)
+			{
+				replaced.Owner = null;
+				GC.SuppressFinalize(replaced);
+			}
+		}
+
+		// A copy has own properties and a sentinel of its own, as sharing either would change or clean up only one of the
+		// two, and is no prototype. It hides object's, so every copy a subclass makes goes through it.
+		protected new object MemberwiseClone()
+		{
+			var copy = (Any)base.MemberwiseClone();
+			copy.sentinel = null;
+			copy.children = null;
+			copy.isPrototype = false;
+
+			if (op != null)
+			{
+				copy.op = new(op.Count, StringComparer.OrdinalIgnoreCase);
+
+				foreach (var (name, desc) in op)
+					copy.op[name] = desc.Clone();
+			}
+
+			copy.MaybeActivateFinalizer();
+			return copy;
 		}
 
 		internal Dictionary<string, OwnPropsDesc> EnsureOwnProps()
 		{
 			return op ??= new Dictionary<string, OwnPropsDesc>(StringComparer.OrdinalIgnoreCase);
-		}
-
-		internal void InitializePrivates()
-		{
-			_hasFinalizer = true;
-			HasFinalizer = false; // Otherwise if the constructor throws then the destructor is called
-			type = GetType();
 		}
 
 		internal void InitializeBase(System.Type t)
@@ -77,8 +114,8 @@ namespace Keysharp.Builtins
 		// If args is null then native initialization logic is skipped, and it's assumed that __Init and __New will be called manually elsewhere (eg from a static factory method)
 		public Any(params object[] args)
 		{
-			InitializePrivates();
-			InitializeBase(GetType());
+			type = GetType();
+			InitializeBase(type);
 
 			// Initialization stays in ONE place, but resolves __New the same way script construction does --
 			// by NAME, most-derived first -- instead of through the virtual slot. That difference mattered: a
@@ -115,13 +152,6 @@ namespace Keysharp.Builtins
 				return mi == null || mi.DeclaringType == typeof(Any) ? null : MethodPropertyHolder.GetOrAdd(mi);
 			}, name);
 
-		// This finalizer is only called if __Delete exists in the prototype chain or the object is IDisposable
-		~Any()
-		{
-			HasFinalizer = false;
-			TheScript?.DestructorPump.Enqueue(this);
-		}
-
 		// These must be visible such that user classes can call base.__Init() without errors, and AHK also exposes them
 		public virtual object __Init() => "";
 		public virtual object static__Init() => "";
@@ -145,11 +175,6 @@ namespace Keysharp.Builtins
 		public static long HasProp(object @this, object name) => Functions.HasProp(@this, name);
 
 		//public virtual string tostring() => ToString();
-
-		internal virtual object Clone()
-		{
-			return MemberwiseClone();
-		}
 
 		internal virtual List<Any> GetEnumerableMembersOrEmpty()
 		{
@@ -176,13 +201,13 @@ namespace Keysharp.Builtins
 			else
 				op[name] = desc;
 
-			OnPropertyChanged(name, desc.Type);
+			OnPropertyChanged(name);
 		}
 		internal object DeleteOwnPropInternal(string name)
 		{
 			if (op is null || !op.Remove(name, out var map)) return DefaultObject;
 			if (op.Count == 0) op = null;
-			OnPropertyChanged(name, OwnPropsMapType.None);
+			OnPropertyChanged(name);
 			return map.Value;
 		}
 
@@ -201,7 +226,7 @@ namespace Keysharp.Builtins
 				_base.children.Add(this);
 			}
 
-			OnPropertyChanged("base", OwnPropsMapType.Value);
+			OnPropertyChanged("base");
 		}
 
 		internal void ActivatePrototype()
@@ -216,19 +241,7 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		internal void MaybeActivateFinalizer()
-		{
-			if (this is IDisposable)
-			{
-				HasFinalizer = true; return;
-			}
-			HasFinalizer = _hasDeleteInChain;
-		}
-
-		private void UpdateHasDeleteInChain()
-		{
-			_hasDeleteInChain = _ownHasDelete || (_base?._hasDeleteInChain ?? false);
-		}
+		internal virtual void MaybeActivateFinalizer() => HasFinalizer = DisposesWhenCollected;
 
 		internal bool HasOwnPropInternal(string name) => op != null && op.ContainsKey(name);
 
@@ -244,40 +257,12 @@ namespace Keysharp.Builtins
 			&& m.DeclaringType.Namespace != TheScript?.ProgramType?.Namespace
 			&& m.DeclaringType.IsAssignableFrom(instanceType);
 
-		// Internal method to notify of a property change, and to handle __Delete logic
-		internal virtual void OnPropertyChanged(string name, OwnPropsMapType type, bool selfChange = true, bool childHasOverride = false)
+		// A property or the base changed. Only an Object's __Delete depends on either (see KeysharpObject); anything else
+		// needs cleanup only if it is disposable, which is settled once it has its base.
+		internal virtual void OnPropertyChanged(string name)
 		{
-			bool refreshDeleteChain = false;
-
-			if (name.Equals("__Delete", StringComparison.OrdinalIgnoreCase))
-			{
-				if (selfChange)
-				{
-					bool nowHasDelete = type != OwnPropsMapType.None;
-					if (nowHasDelete != _ownHasDelete)
-					{
-						_ownHasDelete = nowHasDelete;
-					}
-				}
-				refreshDeleteChain = true;
-			}
-			else if (name.Equals("base", StringComparison.OrdinalIgnoreCase))
-			{
-				refreshDeleteChain = true;
-			}
-
-			if (refreshDeleteChain)
-			{
-				UpdateHasDeleteInChain();
+			if (name == "base")
 				MaybeActivateFinalizer();
-
-				if (children == null) return;
-
-				foreach (var child in children.GetLiveItems())
-				{
-					child.OnPropertyChanged(name, type, false, childHasOverride);
-				}
-			}
 		}
 	}
 }

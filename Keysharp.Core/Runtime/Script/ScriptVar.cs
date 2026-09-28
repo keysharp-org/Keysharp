@@ -84,7 +84,9 @@ namespace Keysharp.Runtime
 		internal object MakeRef(string writtenName)
 		{
 			var self = this;
-			return Misc.MakeVarRef(() => self.Get(), value => self.Set(value), DeclaredName(writtenName));
+			return holder?.memberInfo is FieldInfo field
+				? Misc.MakeVarRef(Misc.FieldRef(field.DeclaringType, field.Name, () => self.Get(), value => self.Set(value)), DeclaredName(writtenName))
+				: Misc.MakeVarRef(() => self.Get(), value => self.Set(value), DeclaredName(writtenName));
 		}
 	}
 }

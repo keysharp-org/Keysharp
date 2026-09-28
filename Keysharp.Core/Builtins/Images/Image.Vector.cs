@@ -401,12 +401,6 @@ namespace Keysharp.Builtins
 
 				void IDisposable.Dispose()
 				{
-					DisposePath();
-					GC.SuppressFinalize(this);
-				}
-
-				private void DisposePath()
-				{
 					try { geometry?.Dispose(); } catch { }
 					geometry = null;
 				}

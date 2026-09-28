@@ -2,265 +2,112 @@ namespace Keysharp.Builtins
 {
 	public partial class Ks
 	{
-		unsafe public class StringBuffer : KeysharpObject, IPointable
+		/// <summary>
+		/// Text in memory native code can write to: a function's output is received into one passed as Ptr, and text is
+		/// built in one without copying. It is a script's name for a <see cref="StringMemory"/> and holds no logic of its
+		/// own: each member forwards to the memory, adding only the errors a script sees.
+		/// </summary>
+		public class StringBuffer : KeysharpObject, IPointable
 		{
-			/// <summary>
-			/// Pointer to the unmanaged memory holding the buffer contents.
-			/// </summary>
-			private byte* _buffer;
-			/// <summary>
-			/// Capacity of the buffer in character units (not bytes).
-			/// Does not include null terminator.
-			/// </summary>
-			private long _capacity = 0;
-			/// <summary>
-			/// Current write position (in character units) within the buffer.
-			/// </summary>
-			private long _position = 0;
-			private Encoding _encoding;
-			private int _bytesPerChar;
-			internal object EntangledString { get; set; }
+			private StringMemory memory = new();
 
 			public StringBuffer(params object[] args) : base(args) { }
 
-			~StringBuffer()
+			/// <summary>
+			/// Returns a copy with memory of its own holding the same text, capacity and position.
+			/// </summary>
+			public new object Clone()
 			{
-				if (_buffer != null)
-					NativeMemory.Free(_buffer);
+				var copy = (StringBuffer)MemberwiseClone();
+				copy.memory = memory.Copy();
+				return copy;
 			}
 
 			public static implicit operator string(StringBuffer s) => s.ToString();
 
-			/// <summary>
-			/// Initializes the buffer. All parameters are optional:
-			/// <list type="bullet">
-			///   <item><description><c>args[0]</c> (optional): initial string content; defaults to empty.</description></item>
-			///   <item><description><c>args[1]</c> (optional): initial capacity in characters (excluding null terminator); defaults to larger of 256 or provided string length.</description></item>
-			///   <item><description><c>args[2]</c> (optional): encoding specifier; pass "ANSI" (case-insensitive) for system ANSI encoding, otherwise defaults to Unicode.</description></item>
-			/// </list>
-			/// </summary>
-			//`new`, not `override`: construction dispatches by name, so the real signature can be declared here
-			//and MinParams/MaxParams/named binding follow from it (see Buffer.__New and Any's constructor).
-			//The type is fully qualified below because the parameter deliberately shadows it: these names are
-			//script-facing API (`StringBuffer(Encoding: "ANSI")`), so they must read as AutoHotkey spells them.
-			public object __New(object initialValue = null, object capacity = null, object encoding = null)
+			public object __New(object initialValue = null, object capacity = null)
 			{
-				var str = initialValue != null ? initialValue.ToString() : "";
-				var capacityValue = capacity != null ? capacity.Ai() + 1 : Math.Max(str.Length + 1, 256);
-				_encoding = encoding.As().Equals("ANSI", StringComparison.OrdinalIgnoreCase) ? System.Text.Encoding.Default : System.Text.Encoding.Unicode;
-				_bytesPerChar = _encoding == System.Text.Encoding.Unicode ? sizeof(char) : 1;
-				_capacity = capacityValue;
-				_buffer = (byte*)NativeMemory.Alloc((nuint)(_capacity * _bytesPerChar));
-				_ = Append(str);
+				var text = initialValue.As();
+				var room = capacity?.Al() ?? Math.Max(text.Length, 256);
+
+				if (room is < 0 or >= int.MaxValue)
+					return Errors.ValueErrorOccurred($"Invalid capacity {room}.", capacity);
+
+				memory.SetRoom((int)room);
+				_ = memory.Append(text);
 				return DefaultObject;
 			}
 
 			/// <summary>
-			/// Gets the raw pointer address (as a long) to the unmanaged buffer.
+			/// The address of the memory, which stays the same while the text fits.
 			/// </summary>
-			public long Ptr => (long)_buffer;
+			public long Ptr => memory.Address;
 
 			/// <summary>
-			/// The size in bytes, excluding the null terminator: <see cref="Capacity"/> multiplied by the
-			/// size of a character in the buffer's encoding.
+			/// The size in bytes, excluding the null terminator.
 			/// </summary>
-			public long Size => _capacity * _bytesPerChar;
+			public long Size => (long)memory.Room * sizeof(char);
 
 			/// <summary>
-			/// Gets or sets the current write/read position in character units.
+			/// The write position, in characters (see <see cref="Seek"/>).
 			/// </summary>
 			public long Pos
 			{
-				get => _position;
-				set => Seek(value);
+				get => memory.Position;
+				set => memory.Seek(value);
 			}
 
 			/// <summary>
-			/// Gets or sets the buffer capacity (in chars). Expands or shrinks the unmanaged block.
-			/// Shrinking the capacity causes a null-terminator to be added to the end.
+			/// The capacity in characters, excluding the null terminator. Assigning it keeps the text which fits.
 			/// </summary>
 			public object Capacity
 			{
-				get => _capacity;
+				get => (long)memory.Room;
 
 				set
 				{
-					var newCapacity = (long)value;
-					// ReAllocHGlobal will preserve existing bytes up to the new size
-					_buffer = (byte*)NativeMemory.Realloc(_buffer, (nuint)((newCapacity + 1) * _bytesPerChar));
+					var capacity = value.Al();
 
-					if (newCapacity < _capacity)
-					{
-						NativeMemory.Clear(_buffer + (newCapacity * _bytesPerChar), (nuint)_bytesPerChar);
-					}
-
-					_capacity = newCapacity;
+					if (capacity is < 0 or >= int.MaxValue)
+						_ = Errors.ValueErrorOccurred($"Invalid capacity {capacity}.", value);
+					else
+						memory.SetRoom((int)capacity);
 				}
 			}
 
-			internal object UpdateEntangledStringFromBuffer() => EntangledString != null ? Refs.SetValue(EntangledString, ToString()) : null;
-			internal object UpdateBufferFromEntangledString()
-			{
-				if (EntangledString == null)
-					return null;
-				var str = Refs.GetValue(EntangledString) as string;
-				str ??= "";
-				var requiredCapacity = Math.Max(_capacity, str.Length);
-				EnsureCapacity(requiredCapacity);
-				Clear();
-				Append(str);
-				return str;
-			}
-
 			/// <summary>
-			/// Appends <paramref name="text"/> to the buffer,
-			/// expanding capacity if needed, and null-terminates.
-			/// Returns the new position (in chars).
+			/// Appends <paramref name="text"/> at the position, growing the capacity as needed, and returns the new position.
 			/// </summary>
 			public object Append(string text)
 			{
-				if (text == null) return Errors.ErrorOccurred("String cannot be unset");
+				if (text == null)
+					return Errors.ErrorOccurred("String cannot be unset");
 
-				int len = text.Length;
-				EnsureCapacity(_position + len);
-
-				if (_bytesPerChar == 1)
-				{
-					byte[] bytes = _encoding.GetBytes(text);
-
-					fixed (byte* src = bytes)
-					{
-						NativeMemory.Copy(src, _buffer + _position, (nuint)bytes.Length);
-					}
-
-					_position += len;
-					_buffer[_position] = 0;
-				}
-				else
-				{
-					// Copy chars
-					char[] bytes = text.ToCharArray();
-
-					fixed (char* src = bytes)
-					{
-						NativeMemory.Copy(src, _buffer + (nint)_position * _bytesPerChar, (nuint)(bytes.Length * _bytesPerChar));
-					}
-
-					_position += len;
-					*((char*)(_buffer + _position * _bytesPerChar)) = '\0';
-				}
-
-				return _position;
+				return memory.Append(text);
 			}
 
-			/// <summary>
-			/// Appends <paramref name="text"/> followed by a newline.
-			/// Returns the new position (in chars).
-			/// </summary>
 			public object AppendLine(string text = "")
 			{
 				_ = Append(text);
-				return Append(DefaultNewLine);
+				return memory.Append(DefaultNewLine);
 			}
 
-			/// <summary>
-			/// Clears the buffer contents and resets position to zero.
-			/// </summary>
 			public object Clear()
 			{
-				_position = 0;
-
-				if (_bytesPerChar == 1)
-					_buffer[0] = 0;
-				else
-					*((char*)_buffer) = '\0';
-
+				memory.Clear();
 				return DefaultObject;
 			}
 
 			/// <summary>
-			/// Seeks to <paramref name="position"/> (clamped to capacity),
-			/// or if negative, finds the current string length by scanning for a null terminator.
-			/// Returns the new position.
+			/// Moves the position, clamped to the capacity, or for a negative value to the first null, which is where a
+			/// function's output ends. Returns the new position.
 			/// </summary>
-			public object Seek(object position)
-			{
-				long pos = position.Al();
-
-				if (pos < 0)
-				{
-					if (_bytesPerChar == 1)
-					{
-						// Find length up to first 0 byte
-						byte* p = _buffer;
-						_position = 0;
-
-						while (p[_position] != 0)
-							_position++;
-					}
-					else
-					{
-						// Find length up to first 0 wchar
-						char* p = (char*)_buffer;
-						_position = 0;
-
-						while (p[_position] != '\0')
-							_position++;
-					}
-				}
-				else
-				{
-					_position = Math.Min(_capacity, pos);
-				}
-
-				return _position;
-			}
+			public object Seek(object position) => memory.Seek(position.Al());
 
 			/// <summary>
-			/// Ensures the buffer can hold <paramref name="requiredCapacity"/> characters.
-			/// If <paramref name="exact"/> is false then the maximum of <paramref name="requiredCapacity"/>
-			/// and double the current capacity is used.
+			/// The text up to the first null or the position, whichever is further.
 			/// </summary>
-			private void EnsureCapacity(long requiredCapacity, bool exact = false)
-			{
-				if (requiredCapacity > _capacity)
-					Capacity = exact ? requiredCapacity : Math.Max(requiredCapacity, _capacity * 2);
-			}
-
-			/// <summary>
-			/// Reads the current buffer contents up to the null-terminator or current position (whichever is larger)
-			/// and returns as a managed string.
-			/// </summary>
-			public override string ToString()
-			{
-				if (_buffer == null)
-					return DefaultErrorString;
-
-				if (_bytesPerChar == 1)
-				{
-					// Find length up to first 0 byte
-					byte* p = _buffer;
-					int len = 0;
-
-					while (p[len] != 0)
-						len++;
-
-					// Decode exactly that many ANSI bytes
-					return _encoding.GetString(new ReadOnlySpan<byte>(_buffer, Math.Max(len, (int)_position)));
-				}
-				else
-				{
-					// Find length up to first 0 wchar
-					char* p = (char*)_buffer;
-					int len = 0;
-
-					while (p[len] != '\0')
-						len++;
-
-					// Construct a managed string from that many chars
-					return new string(p, 0, Math.Max(len, (int)_position));
-				}
-			}
+			public override string ToString() => memory.ToString();
 		}
 	}
 }

@@ -18,19 +18,14 @@ namespace Keysharp.Builtins
 		/// </summary>
 		internal long size;
 
-		/// <summary>
-		/// SafeHandle wrapper for the native memory pointer.
-		/// </summary>
-		private NativeMemoryHandle _ptr;
+		// The memory, which only Dispose frees: a __Delete run when the buffer, or an object holding it, is collected
+		// still reads it.
+		private nint ptr;
 
 		/// <summary>
 		/// Gets the pointer to the memory.
 		/// </summary>
-		public long Ptr
-		{
-			get => _ptr?.DangerousGetHandle() ?? 0L;
-			private set => _ptr = new NativeMemoryHandle((nint)value);
-		}
+		public long Ptr => ptr;
 
 		/// <summary>
 		/// Gets or sets the size of the buffer.<br/>
@@ -50,20 +45,17 @@ namespace Keysharp.Builtins
 				{
 					var newptr = Marshal.AllocHGlobal((nint)val);
 
-					if (_ptr != null)
+					if (ptr != 0)
 					{
 						unsafe
 						{
-							var src = (byte*)_ptr.DangerousGetHandle();
-							var dst = (byte*)newptr.ToPointer();
-							System.Buffer.MemoryCopy(src, dst, val, size);
+							System.Buffer.MemoryCopy((void*)ptr, (void*)newptr, val, size);
 						}
-						var old = _ptr;
-						_ptr = new NativeMemoryHandle(newptr);
-						old.Dispose();
+
+						Marshal.FreeHGlobal(ptr);
 					}
-					else
-						_ptr = new NativeMemoryHandle(newptr);
+
+					ptr = newptr;
 				}
 
 				size = val;
@@ -106,7 +98,7 @@ namespace Keysharp.Builtins
 				Size = bytearray.Length;//Performs the allocation.
 
 				if (size > 0)
-					Marshal.Copy(bytearray, 0, _ptr.DangerousGetHandle(), Math.Min((int)size, bytearray.Length));
+					Marshal.Copy(bytearray, 0, ptr, Math.Min((int)size, bytearray.Length));
 			}
 			else//This will be called by the user.
 			{
@@ -117,11 +109,26 @@ namespace Keysharp.Builtins
 				if (bytecount > 0)
 				{
 					byte val = fill != long.MinValue ? (byte)(fill & 255) : (byte)0;
-					Unsafe.InitBlockUnaligned((void*)_ptr.DangerousGetHandle(), val, (uint)bytecount);
+					Unsafe.InitBlockUnaligned((void*)ptr, val, (uint)bytecount);
 				}
 			}
 
 			return DefaultObject;
+		}
+
+		/// <summary>
+		/// Returns a copy of the buffer: an object of the same class and size, holding a copy of the bytes in memory of
+		/// its own, and its own copy of each own property.
+		/// </summary>
+		public new object Clone()
+		{
+			var copy = (Buffer)MemberwiseClone();
+			copy.ptr = 0;
+			copy.size = 0;
+			copy.disposed = false;
+			copy.Size = size;
+			AsSpan().CopyTo(copy.AsSpan());
+			return copy;
 		}
 
 		/// <summary>
@@ -132,8 +139,9 @@ namespace Keysharp.Builtins
 		{
 			if (!disposed)
 			{
-				_ptr?.Dispose();
-				Size = 0;
+				Marshal.FreeHGlobal(ptr);
+				ptr = 0;
+				size = 0;
 				disposed = true;
 			}
 			return DefaultObject;
@@ -157,7 +165,7 @@ namespace Keysharp.Builtins
 			byte[] dataArray = new byte[size];
 
 			if (size > 0)
-				Marshal.Copy(_ptr.DangerousGetHandle(), dataArray, 0, size);
+				Marshal.Copy(ptr, dataArray, 0, size);
 
 			return dataArray;
 		}
@@ -165,7 +173,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Returns a mutable Span wrapper for the raw buffer.
 		/// </summary>
-		internal unsafe Span<byte> AsSpan() => size == 0 ? Span<byte>.Empty : new Span<byte>((byte*)_ptr.DangerousGetHandle(), (int)size);
+		internal unsafe Span<byte> AsSpan() => size == 0 ? Span<byte>.Empty : new Span<byte>((byte*)ptr, (int)size);
 
 		/// <summary>
 		/// Indexer which retrieves or sets the value of an array element.
@@ -181,44 +189,12 @@ namespace Keysharp.Builtins
 				{
 					unsafe
 					{
-						var ptr = (byte*)_ptr.DangerousGetHandle();
-						return ptr[index - 1];
+						return ((byte*)ptr)[index - 1];
 					}
 				}
 				else
 					return (long)Errors.IndexErrorOccurred($"Invalid index of {index} for buffer of size {Size}.", DefaultErrorLong);
 			}
-		}
-	}
-
-	/// <summary>
-	/// Wrapper for native memory pointers. It's used for two reasons: firstly, classes derived from
-	/// CriticalFinalizerObject (like SafeHandle) are guaranteed to have finalizers executed so
-	/// this prevents memory leaks if the assembly is unexpectedly unloaded. Second, critical finalizers
-	/// are ran after regular ones which gives user-code time to run any __Delete methods before the
-	/// memory is released. This is important in cases like an object holding a Buffer with the destructor
-	/// set up to clean resources up (eg VariantClear). Without using SafeHandle the Buffer finalizer
-	/// may be called first causing the resource-cleanup to fail.
-	/// </summary>
-	sealed class NativeMemoryHandle : SafeHandle
-	{
-		public NativeMemoryHandle()
-			: base(invalidHandleValue: 0, ownsHandle: true)
-		{
-		}
-
-		public NativeMemoryHandle(nint handle, bool ownsHandle = true)
-			: base(invalidHandleValue: 0, ownsHandle: ownsHandle)
-		{
-			SetHandle(handle);
-		}
-
-		public override bool IsInvalid => handle == -1 || handle == 0;
-
-		protected override bool ReleaseHandle()
-		{
-			Marshal.FreeHGlobal(handle);
-			return true;
 		}
 	}
 }

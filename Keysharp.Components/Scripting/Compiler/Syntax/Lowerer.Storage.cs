@@ -7,7 +7,7 @@ namespace Keysharp.Compilation.Syntax
 	internal sealed partial class Lowerer
 	{
 		private int _boxCounter;
-		private static readonly TypeSyntax BoxType = SyntaxFactory.ParseTypeName("System.Runtime.CompilerServices.StrongBox<object>");
+		private static readonly TypeSyntax BoxType = SyntaxFactory.ParseTypeName("Keysharp.Builtins.VarRef");
 		private static ExpressionSyntax NewBox(ExpressionSyntax value) =>
 			SyntaxFactory.ObjectCreationExpression(BoxType).WithArgumentList(
 				SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(value))));
@@ -17,7 +17,7 @@ namespace Keysharp.Compilation.Syntax
 			public string Box;
 			private ExpressionSyntax value;
 			public ExpressionSyntax Read(Lowerer lowerer, string name) => value ??= lowerer.Unsettled(Id(NameMangler.Escape(name)),
-				() => Box != null, _ => Member(Id(Box), "Value"));
+				() => Box != null, _ => Member(Id(Box), "__Value"));
 		}
 
 		private LocalStorage Storage(ScopeVar variable) => variable.Owner.Variables.GetOrAdd(variable.Key);

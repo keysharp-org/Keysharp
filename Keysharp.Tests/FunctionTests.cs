@@ -38,7 +38,7 @@ namespace Keysharp.Tests
 
 			var addressed = methods["FN_Addressed"];
 			var boxes = addressed.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
-				.Where(creation => creation.Type.ToString() == "System.Runtime.CompilerServices.StrongBox<object>").ToArray();
+				.Where(creation => creation.Type.ToString() == "Keysharp.Builtins.VarRef").ToArray();
 			Assert.AreEqual(1, boxes.Length);
 			var boxName = boxes[0].Ancestors().OfType<VariableDeclaratorSyntax>().Single().Identifier.ValueText;
 
@@ -73,23 +73,6 @@ namespace Keysharp.Tests
 			var optionalRef = methods["FN_Optional"].DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
 				.Single(creation => creation.Type.ToString() == "Keysharp.Builtins.VarRef");
 			Assert.AreEqual("null", optionalRef.ArgumentList.Arguments.Single().Expression.ToString());
-		}
-
-		[Test, Category("Function"), Category("Internal")]
-		public void BoxedVarRefsShareStorage()
-		{
-			var box = new System.Runtime.CompilerServices.StrongBox<object>(1L);
-			var first = (VarRef)Misc.MakeVarRef(box, "value");
-			var second = (VarRef)Misc.MakeVarRef(box, "VALUE");
-
-			first.__Value = 2L;
-			Assert.AreEqual(2L, second.__Value);
-			Assert.AreEqual("value", first.Name);
-			Assert.AreEqual("VALUE", second.Name);
-			Assert.IsTrue(typeof(VarRef).GetProperty(nameof(VarRef.Name)).SetMethod.IsAssembly);
-
-			box.Value = first;
-			Assert.AreSame(first, Misc.MakeVarRef(box, "alias"));
 		}
 
 		[Test, Category("Function"), Category("Internal")]

@@ -50,8 +50,10 @@ namespace Keysharp.Builtins
 			Source = source;
 			Count = Math.Max(1, count);
 			Inst = this;
-			HasFinalizer = false;
 		}
+
+		// Its Dispose serves the loop running it, which calls it; collection has nothing to release.
+		internal override bool DisposesWhenCollected => false;
 
 		internal Enumerator(
 			object source,

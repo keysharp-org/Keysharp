@@ -2,6 +2,9 @@
 #Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#Import RefFirst
+#Import RefFirst { a as firstA }
+#Import RefSecond
 
 ; What may stand in for a variable reference, and what a reference does when read or written through.
 ; A VarRef always works; so does any object declaring __Value ("virtual reference"). Anything else handed to
@@ -30,7 +33,7 @@ AssertEq(f, "b.txt", A_LineNumber)
 vr := VRef()
 SplitPath("C:/a/b.txt", vr)
 AssertEq(vr.__Value, "b.txt", A_LineNumber)
-AssertEq(VarSetStrCapacity(VRef(), 100), 100, A_LineNumber)
+Throws(() => VarSetStrCapacity(VRef(), 100), A_LineNumber, TypeError)  ; only a variable has memory to size, as in AutoHotkey
 
 ; --- 3. Anything else is a TypeError, not a silently absorbed output ----------
 Throws(() => SplitPath("C:/a/b.txt", Map()), A_LineNumber, TypeError)
@@ -114,4 +117,62 @@ h := Holder()
 SplitPath("C:/a/b.txt", &h.p)
 AssertEq(h.p, "b.txt", A_LineNumber)
 
+; --- 8. A variable has one reference --------------------------------------------
+Assert(&k == &k, A_LineNumber)
+refName := "k"
+Assert(&%refName% == &k, A_LineNumber)
+
+; So does a function's local, one a nested function captures, and a static.
+LocalIdentity() {
+	static kept := ""
+	own := 1
+	Inner() => &own
+	return (&own == &own) . (Inner() == &own) . (&kept == &kept)
+}
+AssertEq(LocalIdentity(), "111", A_LineNumber)
+
+; Functions importing different variables under one alias each reach their own.
+FillFirst() {
+	#Import RefFirst { a as x }
+	Fill(&x)
+}
+FillFirst()
+AssertEq(RefFirst.a, "written", A_LineNumber)
+AssertEq(RefSecond.b, "b0", A_LineNumber)
+SecondRef() {
+	#Import RefSecond { b as x }
+	return &x
+}
+secondB := SecondRef()
+Assert(secondB != &firstA, A_LineNumber)
+Fill(secondB)
+AssertEq(RefSecond.b, "written", A_LineNumber)
+
+; A name C# reserves still has one reference.
+out := "x"
+Assert(&out == &%"out"%, A_LineNumber)
+
+; The room a module gives its variable is the room an importer sees.
+ImportedCapacity() {
+	#Import RefFirst { a as shared }
+	return VarSetStrCapacity(&shared)
+}
+AssertEq(RefFirst.Reserve(), 260, A_LineNumber)
+AssertEq(ImportedCapacity(), 260, A_LineNumber)
+Assert(&firstA == RefFirst.ARef(), A_LineNumber)
+
 FileAppend "pass", "*"
+
+#Module RefFirst
+a := "a0"
+Reserve() {
+	global a
+	return VarSetStrCapacity(&a, 260)
+}
+ARef() {
+	global a
+	return &a
+}
+
+#Module RefSecond
+b := "b0"

@@ -25,10 +25,11 @@ namespace Keysharp.Builtins
 		/// If this parameter is an object, the value of the object's Ptr property is used. If no such property exists, a <see cref="PropertyError"/> is thrown.
 		/// As an alternative to passing a <see cref="Buffer"/> object with type Ptr to a function which will allocate and place string data into the buffer, pass <see cref="StringBuffer"/> object to hold the new string.
 		///     This relieves the caller of having to call <see cref="StrGet"/> on the new string data.
-		/// Also use Ptr and <see cref="StringBuffer"/> for double pointer parameters such as LPTSTR*.
-		/// When using type Str for string data the function will modify, but not reallocate, the passed in string argument must be<br/>
-		/// passed by <![CDATA[&]]> reference.<br/>
-		///     This is also supported for strings passed as AStr.
+		/// For a double pointer parameter such as LPTSTR*, pass "Ptr*" and a reference, and read the string with <see cref="StrGet"/>.
+		/// Direct script calls with a literal Str or WStr type automatically pass a naked variable or an assignment to a variable by reference.<br/>
+		/// Use an explicit <![CDATA[&]]> reference for writable strings in indirect calls or with computed type names.<br/>
+		/// A variable passed by reference as Str or WStr is passed its own memory (see <see cref="Strings.StrPtr"/>), and receives
+		/// the result up to the first null terminator if the call changed it. AStr is input only.
 		/// <see cref="StrGet"/> must be called to retrieve any memory allocated and returned inside of function.
 		/// </param>
 		/// <param name="parameters">Type1, Arg1<br/>
@@ -61,9 +62,14 @@ namespace Keysharp.Builtins
 				// A LoadLibrary-family Win32 function takes a DLL path as its first argument, bound straight for
 				// the OS module loader, which only accepts '\' separators (see NormalizeLoaderPath). Keysharp
 				// encourages '/' as a cross-platform separator, so normalize that argument just-in-time.
-				if (parameters.Length >= 2 && parameters[1] is string libArg
+				if (parameters.Length >= 2
 						&& path.AsSpan(path.AsSpan().LastIndexOfAny('\\', '/') + 1).StartsWith("LoadLibrary", StringComparison.OrdinalIgnoreCase))
-					parameters[1] = NativeLibraryResolver.NormalizeLoaderPath(libArg);
+				{
+					// Loader paths are input-only; normalization must not change the caller's variable.
+					var library = Refs.DeclaresValue(parameters[1]) ? Refs.GetValueOrNull(parameters[1]) : parameters[1];
+					if (library is string libArg)
+						parameters[1] = NativeLibraryResolver.NormalizeLoaderPath(libArg);
+				}
 
 #endif
 				var procAddressCache = TheScript.DllData.procAddressCache;
