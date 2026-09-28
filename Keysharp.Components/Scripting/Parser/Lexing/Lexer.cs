@@ -1184,6 +1184,8 @@ namespace Keysharp.Parsing.Lexing
 			if (opts.StartsWith("NoMouse", System.StringComparison.OrdinalIgnoreCase)) return;
 			for (int k = 0; k < opts.Length; k++)
 			{
+				// The options end where a comment begins, as in `#Hotstring C ; runs first`.
+				if (opts[k] == ';' && (k == 0 || opts[k - 1] is ' ' or '\t')) break;
 				if (opts[k] is 'x' or 'X') _hsExecuteDefault = !(k + 1 < opts.Length && opts[k + 1] == '0');
 				else if (opts[k] is 't' or 'T' or 'r' or 'R') _hsRawDefault = !(k + 1 < opts.Length && opts[k + 1] == '0');
 			}
