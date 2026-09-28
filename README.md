@@ -109,6 +109,7 @@ See [building and packaging](docs/building.md) for the commands and prerequisite
 
 - [Detailed reference](docs/reference.md) — full setup, permissions, command-line switches, building from source, and AutoHotkey v2 differences
 - [Capability matrix](docs/capabilities.md) — per-feature, per-platform status
+- [Privacy policy](PRIVACY.md) — local data, scripts, and network services
 - [AutoHotkey v2 docs](https://www.autohotkey.com/docs/v2/) — the language Keysharp implements
 
 ## Acknowledgements

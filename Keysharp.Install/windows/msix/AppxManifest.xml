@@ -40,9 +40,9 @@
             ProcessorArchitecture="__ARCH__" />
 
   <Properties>
-    <DisplayName>Keysharp</DisplayName>
+    <DisplayName>Keysharp Store Edition</DisplayName>
     <PublisherDisplayName>__PUBLISHER_DISPLAY__</PublisherDisplayName>
-    <Description>Keysharp - AutoHotkey v2-compatible automation and scripting for .NET</Description>
+    <Description>Automate repetitive tasks, create custom hotkeys, and build desktop tools with Keysharp.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
     <uap10:PackageIntegrity>
       <uap10:Content Enforcement="on" />

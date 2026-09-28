@@ -238,7 +238,7 @@ DrawHeader(img, m, hov) {
         TitleX := Pad + 46
     }
     img.DrawText("Keysharp", TitleX, 12, ClrText, "s15 bold", FontUi)
-    img.DrawText("v" A_KsVersion "   |   AutoHotkey v2 compatible", TitleX, 40, ClrDim, "s8", FontUi)
+    img.DrawText("v" A_KsVersion "   |   Desktop automation and scripting", TitleX, 40, ClrDim, "s8", FontUi)
     img.DrawLine(Pad, m.Height, m.Width - Pad, m.Height, ClrEdge, 1)
 }
 
@@ -258,7 +258,7 @@ DrawTool(tool, img, m, hov) {
 
 DrawFooter(img, m, hov) {
     img.DrawText(StatusMsg, Pad, m.Y + 6, ClrFaint, "s8", FontUi)
-    Hint := "Ctrl+Alt+Shift+Q exits a demo"
+    Hint := "Turn everyday tasks into simple scripts."
     Hw := img.MeasureText(Hint, "s8", FontUi).Width
     img.DrawText(Hint, m.Width - Pad - Hw, m.Y + 6, ClrFaint, "s8", FontUi)
 }
