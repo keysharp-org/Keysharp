@@ -23,17 +23,18 @@ public class BaseTest
 
 public sealed class Program
 {
+	private static BenchmarkDotNet.Reports.Summary? summary;
+	private static readonly BenchmarkDotNet.Loggers.ILogger logger = ConsoleLogger.Default;
+
 	[System.STAThreadAttribute()]
 	public static void Main(string[] args)
 	{
-		BenchmarkDotNet.Reports.Summary summary;
-		var logger = ConsoleLogger.Default;
 #if DEBUG
 		var config = new BenchmarkDotNet.Configs.DebugInProcessConfig();
 #else
 		var config = new ManualConfig();
 #endif
-		_ = config.AddLogger(logger);   // ManualConfig has none, so without this a run prints nothing until it ends
+		//_ = config.AddLogger(logger);   // ManualConfig has none, so without this a run prints nothing until it ends
 		_ = config.AddColumnProvider([.. DefaultConfig.Instance.GetColumnProviders()]);
 		_ = config.AddExporter([.. DefaultConfig.Instance.GetExporters()]);
 		_ = config.AddDiagnoser([.. DefaultConfig.Instance.GetDiagnosers()]);
@@ -70,11 +71,27 @@ public sealed class Program
 		//MarkdownExporter.Console.ExportToLog(summary, logger);
 		//summary = BenchmarkRunner.Run<DllBench>();
 		//MarkdownExporter.Console.ExportToLog(summary, logger);
-		summary = BenchmarkRunner.Run<FuncBench>(config);
-		MarkdownExporter.Console.ExportToLog(summary, logger);
+		//summary = BenchmarkRunner.Run<FuncBench>(config);
+		//MarkdownExporter.Console.ExportToLog(summary, logger);
+		RunReflectionBenchmarks(config);
 
 		//ConclusionHelper.Print(logger, summary.BenchmarksCases.First().Config.GetCompositeAnalyser().Analyse(summary).ToList());
 		_ = Console.ReadLine();
+	}
+
+	private static void RunReflectionBenchmarks(ManualConfig config)
+	{
+		summary = BenchmarkRunner.Run<ReflectionBench0Params>(config);
+		MarkdownExporter.Console.ExportToLog(summary, logger);
+
+		summary = BenchmarkRunner.Run<ReflectionBench1Param>(config);
+		MarkdownExporter.Console.ExportToLog(summary, logger);
+
+		summary = BenchmarkRunner.Run<ReflectionBench5Params>(config);
+		MarkdownExporter.Console.ExportToLog(summary, logger);
+
+		summary = BenchmarkRunner.Run<ReflectionBench10Params>(config);
+		MarkdownExporter.Console.ExportToLog(summary, logger);
 	}
 }
 
