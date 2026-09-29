@@ -62,7 +62,19 @@ namespace Keysharp.Runtime
 		/// through untouched; they are folded into positional slots where the callee's parameter list is finally
 		/// known.
 		/// </summary>
-		public static object NamedArgs(params object[] nameValuePairs) => new Ks.NamedArgs(nameValuePairs);
+		// A call's named arguments. A dynamic name arrives as the value it evaluated to, and is converted here.
+		public static object NamedArgs(params object[] nameValuePairs)
+		{
+			for (var i = 0; i < nameValuePairs.Length; i += 2)
+			{
+				if (!nameValuePairs[i].CoerceString(out var name))
+					return DefaultObject;
+
+				nameValuePairs[i] = name;
+			}
+
+			return new Ks.NamedArgs(nameValuePairs);
+		}
 
 		public static object Parameter(object[] values, object def, int index) => index < values.Length ? values[index] : def;
 

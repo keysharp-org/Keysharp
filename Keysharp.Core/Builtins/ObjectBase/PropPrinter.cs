@@ -239,7 +239,7 @@ namespace Keysharp.Builtins
 			return temp.Sb.ToString().TrimEnd(CrLf);
 		}
 
-		/// <summary>Returns the inline token for a non-object value: a quoted string, "null", or ToString().</summary>
+		/// <summary>Returns the inline token for a non-object value: a quoted string, "null", or its canonical text.</summary>
 		private static string LeafToken(object val)
 		{
 			if (val is null)
@@ -248,7 +248,7 @@ namespace Keysharp.Builtins
 			if (val is string s)
 				return "\"" + s + "\"";//Built piecemeal because the AStyle formatter misinterprets interpolated quotes.
 
-			return val.ToString();
+			return Errors.Describe(val);
 		}
 
 		/// <summary>Writes the header line for an object: <c>name: (Type)</c>, or <c> (Type)</c> when unnamed.</summary>
@@ -272,16 +272,11 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// The display type name: the name a script knows the value's type by, so that this listing names
-		/// types the same way <see cref="Types.Type"/> does rather than exposing internal CLR names.
+		/// The declared type name, without evaluating a custom __Class getter.
 		/// Empty for an unset value, which drops the type suffix.
 		/// </summary>
-		private static string TypeName(object val) => val == null ? "" : Types.Type(val);
+		private static string TypeName(object val) => val == null ? "" : Types.TypeName(val.GetType());
 
-		private static string SafeToString(object val)
-		{
-			try { return val?.ToString() ?? "null"; }
-			catch (Exception ex) { return $"<error: {ex.Message}>"; }
-		}
+		private static string SafeToString(object val) => val == null ? "null" : Errors.Describe(val);
 	}
 }

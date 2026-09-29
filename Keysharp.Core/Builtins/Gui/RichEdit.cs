@@ -79,15 +79,18 @@ namespace Keysharp.Builtins
 		/// <param name="options">The font and background options, or a Ks.Font.</param>
 		/// <param name="fontName">The family name, which the option vocabulary has no token for.</param>
 		/// <param name="error">Set to the first option that was not recognised, else left alone.</param>
-		internal static RichEditFormat Parse(object options, object fontName, ref string error)
+		/// <param name="format">The formatting read, or null when the script continued a conversion error.</param>
+		internal static bool TryParse(object options, object fontName, ref string error, out RichEditFormat format)
 		{
+			format = null;
 			var fmt = new RichEditFormat();
 
 			if (options is Ks.Font f)
 				fmt.TakeFont(f.fontOptions);
 			else
 			{
-				var opts = options.As();
+				if (!options.CoerceString(out var opts))
+					return false;
 
 				if (opts.Length > 0)
 				{
@@ -121,14 +124,17 @@ namespace Keysharp.Builtins
 			if (fontName is Any)
 			{
 				_ = Errors.TypeErrorOccurred(fontName, typeof(string));
-				return fmt;
+				return false;
 			}
-			var n = fontName.As();
+
+			if (!fontName.CoerceString(out var n))
+				return false;
 
 			if (n.Length > 0)
 				fmt.name = n;
 
-			return fmt;
+			format = fmt;
+			return true;
 		}
 
 		//Copied out rather than held onto: a Ks.Font a script passed is its own object, and the family name
@@ -283,12 +289,12 @@ namespace Keysharp.Builtins
 						return;
 					}
 
-					if (Unsupported(RichEditGaps.Rtf, "RichText") != null)
+					if (Unsupported(RichEditGaps.Rtf, "RichText") != null || !value.CoerceString(out var rtf))
 						return;
 
 					cachedText = null;
 
-					try { rt.Rtf = value.As(); }
+					try { rt.Rtf = rtf; }
 					catch (Exception ex) { _ = Errors.ValueErrorOccurred($"The text is not valid RTF: {ex.Message}"); }
 				}
 			}
@@ -305,8 +311,11 @@ namespace Keysharp.Builtins
 						return;
 					}
 
+					if (!value.CoerceString(out var text))
+						return;
+
 					cachedText = null;
-					rt.SelectedText = value.As();
+					rt.SelectedText = text;
 				}
 			}
 
@@ -331,12 +340,12 @@ namespace Keysharp.Builtins
 						return;
 					}
 
-					if (Unsupported(RichEditGaps.RtfSelection, "SelectedRichText") != null)
+					if (Unsupported(RichEditGaps.RtfSelection, "SelectedRichText") != null || !value.CoerceString(out var rtf))
 						return;
 
 					cachedText = null;
 
-					try { rt.SelectedRtf = value.As(); }
+					try { rt.SelectedRtf = rtf; }
 					catch (Exception ex) { _ = Errors.ValueErrorOccurred($"The text is not valid RTF: {ex.Message}"); }
 				}
 			}
@@ -449,7 +458,8 @@ namespace Keysharp.Builtins
 						return;
 					}
 
-					var z = value.Ad(1.0);
+					if (!value.CoerceDouble(out var z, 1.0))
+						return;
 
 					//The widget's own range. A zoom outside it is refused rather than clamped, since a zoom of
 					//zero cannot be undone by dividing by it.
@@ -468,10 +478,16 @@ namespace Keysharp.Builtins
 				get => Rt is { } rt ? (object)(long)(rt.SelectionStart + 1) : NoControl();
 				set
 				{
-					if (Rt is { } rt)
-						rt.SelectRange(ClampPos(rt, value.Al()), 0);
-					else
+					if (Rt is not { } rt)
+					{
 						_ = NoControl();
+						return;
+					}
+
+					if (!value.CoerceLong(out var pos))
+						return;
+
+					rt.SelectRange(ClampPos(rt, pos), 0);
 				}
 			}
 
@@ -487,8 +503,11 @@ namespace Keysharp.Builtins
 						return;
 					}
 
+					if (!value.CoerceLong(out var length))
+						return;
+
 					var start = rt.SelectionStart;
-					rt.SelectRange(start, ClampLength(rt, start, value.Al()));
+					rt.SelectRange(start, ClampLength(rt, start, length));
 				}
 			}
 
@@ -529,8 +548,13 @@ namespace Keysharp.Builtins
 						return;
 					}
 
-					if (Unsupported(RichEditGaps.ScrollPosition, "FirstVisibleLine") == null)
-						rt.TopPos = lineStarts[ClampLine(rt, value.Al())];
+					if (Unsupported(RichEditGaps.ScrollPosition, "FirstVisibleLine") != null)
+						return;
+
+					if (!value.CoerceLong(out var line))
+						return;
+
+					rt.TopPos = lineStarts[ClampLine(rt, line)];
 				}
 			}
 
@@ -543,8 +567,11 @@ namespace Keysharp.Builtins
 				if (Rt is not { } rt)
 					return NoControl();
 
-				var s = ClampPos(rt, start.Al());
-				rt.SelectRange(s, ClampLength(rt, s, length.Al()));
+				if (!start.CoerceLong(out var startVal) || !length.CoerceLong(out var lengthVal))
+					return DefaultObject;
+
+				var s = ClampPos(rt, startVal);
+				rt.SelectRange(s, ClampLength(rt, s, lengthVal));
 				return DefaultObject;
 			}
 
@@ -576,8 +603,11 @@ namespace Keysharp.Builtins
 				if (Rt is not { } rt)
 					return NoControl();
 
+				if (!line.CoerceLong(out var lineVal))
+					return DefaultObject;
+
 				var text = Lines(rt);
-				var n = ClampLine(rt, line.Al());
+				var n = ClampLine(rt, lineVal);
 				var start = lineStarts[n];
 				var end = n + 1 < lineStarts.Length ? lineStarts[n + 1] - 1 : text.Length;
 				return text[start..end];
@@ -592,7 +622,10 @@ namespace Keysharp.Builtins
 				if (Rt is not { } rt)
 					return NoControl();
 
-				return (long)(LineOf(rt, ClampPos(rt, pos.Al())) + 1);
+				if (!pos.CoerceLong(out var p))
+					return DefaultObject;
+
+				return (long)(LineOf(rt, ClampPos(rt, p)) + 1);
 			}
 
 			/// <summary>The 1-based position of the first character of the 1-based <paramref name="line"/>.</summary>
@@ -601,7 +634,10 @@ namespace Keysharp.Builtins
 				if (Rt is not { } rt)
 					return NoControl();
 
-				return (long)(lineStarts[ClampLine(rt, line.Al())] + 1);
+				if (!line.CoerceLong(out var lineVal))
+					return DefaultObject;
+
+				return (long)(lineStarts[ClampLine(rt, lineVal)] + 1);
 			}
 
 			/// <summary>
@@ -616,8 +652,11 @@ namespace Keysharp.Builtins
 				if (Unsupported(RichEditGaps.HitTest, "PosFromPoint") is { } err)
 					return err;
 
+				if (!x.CoerceDouble(out var xVal) || !y.CoerceDouble(out var yVal))
+					return DefaultObject;
+
 				var scale = ((Gui)Gui).DpiScale;
-				return (long)(rt.PosFromPointCore((int)Math.Round(x.Ad() * scale), (int)Math.Round(y.Ad() * scale)) + 1);
+				return (long)(rt.PosFromPointCore((int)Math.Round(xVal * scale), (int)Math.Round(yVal * scale)) + 1);
 			}
 
 			/// <summary>
@@ -633,7 +672,10 @@ namespace Keysharp.Builtins
 				if (Unsupported(RichEditGaps.HitTest, "PointFromPos") is { } err)
 					return err;
 
-				rt.PointFromPosCore(ClampPos(rt, pos.Al()), out var x, out var y);
+				if (!pos.CoerceLong(out var p))
+					return DefaultObject;
+
+				rt.PointFromPosCore(ClampPos(rt, p), out var x, out var y);
 				var scale = ((Gui)Gui).DpiScale;
 				var o = new KeysharpObject();
 				o.DefinePropInternal("X", new OwnPropsDesc(o, (long)Math.Round(x / scale)));
@@ -718,8 +760,11 @@ namespace Keysharp.Builtins
 				if (Rt is not { } rt)
 					return NoControl();
 
+				if (!text.CoerceString(out var str))
+					return DefaultObject;
+
 				cachedText = null;
-				rt.AppendText(text.As());
+				rt.AppendText(str);
 				return DefaultObject;
 			}
 
@@ -733,10 +778,15 @@ namespace Keysharp.Builtins
 				if (Rt is not { } rt)
 					return NoControl();
 
-				var s = ClampPos(rt, start.Al());
-				rt.SelectRange(s, ClampLength(rt, s, length.Al()));
+				if (!start.CoerceLong(out var startVal) || !length.CoerceLong(out var lengthVal) || !text.CoerceString(out var str))
+					return DefaultObject;
+
+				var s = ClampPos(rt, startVal);
+				var len = ClampLength(rt, s, lengthVal);
+
+				rt.SelectRange(s, len);
 				cachedText = null;
-				rt.SelectedText = text.As();
+				rt.SelectedText = str;
 				return DefaultObject;
 			}
 
@@ -753,18 +803,33 @@ namespace Keysharp.Builtins
 				if (Rt is not { } rt)
 					return NoControl();
 
-				var what = needle.As();
+				if (!needle.CoerceString(out var what))
+					return DefaultObject;
 
 				if (what.Length == 0)
 					return 0L;
 
-				var (matchCase, wholeWord, reverse, bad) = ParseFindOptions(options.As());
+				if (!options.CoerceString(out var opts))
+					return DefaultObject;
+
+				var (matchCase, wholeWord, reverse, bad) = ParseFindOptions(opts);
 
 				if (bad != null)
 					return Errors.ValueErrorOccurred($"Unrecognized Find option \"{bad}\".");
 
 				var text = Lines(rt);
-				var from = start == null ? (reverse ? text.Length : 0) : ClampPos(rt, start.Al());
+				int from;
+
+				if (start == null)
+					from = reverse ? text.Length : 0;
+				else
+				{
+					if (!start.CoerceLong(out var startVal))
+						return DefaultObject;
+
+					from = ClampPos(rt, startVal);
+				}
+
 				var comp = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
 				while (true)
@@ -816,7 +881,9 @@ namespace Keysharp.Builtins
 					return NoControl();
 
 				string error = null;
-				var fmt = RichEditFormat.Parse(options, fontName, ref error);
+
+				if (!RichEditFormat.TryParse(options, fontName, ref error, out var fmt))
+					return DefaultObject;
 
 				if (error != null)
 					return Errors.ValueErrorOccurred($"Unrecognized formatting option \"{error}\".");
@@ -824,7 +891,9 @@ namespace Keysharp.Builtins
 				if (fmt.IsEmpty)
 					return DefaultObject;
 
-				var (s, len) = Range(rt, start, length);
+				if (!TryRange(rt, start, length, out var s, out var len))
+					return DefaultObject;
+
 				//Formatting a range moves the selection there, so a call outside a Begin/EndUpdate pair puts it
 				//back itself; inside one, the pair does it once for the whole batch.
 				var batched = updateDepth > 0;
@@ -851,7 +920,9 @@ namespace Keysharp.Builtins
 				if (Rt is not { } rt)
 					return NoControl();
 
-				var (s, len) = Range(rt, start, length);
+				if (!TryRange(rt, start, length, out var s, out var len))
+					return DefaultObject;
+
 				return rt.ReadFormat(s, len).ToFont();
 			}
 
@@ -865,7 +936,9 @@ namespace Keysharp.Builtins
 				if (Rt is not { } rt)
 					return NoControl();
 
-				var (s, len) = Range(rt, start, length);
+				if (!TryRange(rt, start, length, out var s, out var len))
+					return DefaultObject;
+
 				var back = rt.ReadFormat(s, len).back;
 				return back.HasValue ? (back.Value.ToArgb() & 0x00FFFFFF).ToString("X6") : "";
 			}
@@ -885,8 +958,11 @@ namespace Keysharp.Builtins
 				if (Unsupported(RichEditGaps.Paragraph, "SetParagraph") is { } err)
 					return err;
 
+				if (!options.CoerceString(out var opts))
+					return DefaultObject;
+
 				string error = null;
-				var para = RichEditParagraph.Parse(options.As(), ref error);
+				var para = RichEditParagraph.Parse(opts, ref error);
 
 				if (error != null)
 					return Errors.ValueErrorOccurred($"Unrecognized paragraph option \"{error}\".");
@@ -895,7 +971,10 @@ namespace Keysharp.Builtins
 					return DefaultObject;
 
 				Scale(para, ((Gui)Gui).DpiScale, true);
-				var (s, len) = Range(rt, start, length);
+
+				if (!TryRange(rt, start, length, out var s, out var len))
+					return DefaultObject;
+
 				var batched = updateDepth > 0;
 
 				if (!batched)
@@ -922,7 +1001,9 @@ namespace Keysharp.Builtins
 				if (Unsupported(RichEditGaps.Paragraph, "GetParagraph") is { } err)
 					return err;
 
-				var (s, _) = Range(rt, start, length);
+				if (!TryRange(rt, start, length, out var s, out _))
+					return DefaultObject;
+
 				var para = rt.ReadParagraph(s);
 				Scale(para, ((Gui)Gui).DpiScale, false);
 				return para.ToOptions();
@@ -977,10 +1058,11 @@ namespace Keysharp.Builtins
 				if (Rt is not { } rt)
 					return NoControl();
 
-				var file = path.As();
+				if (!path.CoerceString(out var file) || !format.CoerceString(out var fmt))
+					return DefaultObject;
 
-				if (!ParseFormat(format, file, out var rtf))
-					return Errors.ValueErrorOccurred($"Unrecognized rich text format \"{format.As()}\". Expected RTF, Text, or an empty string to infer the format from the file extension.");
+				if (!ParseFormat(fmt, file, out var rtf))
+					return Errors.ValueErrorOccurred($"Unrecognized rich text format \"{Errors.Describe(format)}\". Expected RTF, Text, or an empty string to infer the format from the file extension.");
 
 				if (rtf && Unsupported(RichEditGaps.Rtf, "LoadFile in RTF") is { } err)
 					return err;
@@ -1000,10 +1082,11 @@ namespace Keysharp.Builtins
 				if (Rt is not { } rt)
 					return NoControl();
 
-				var file = path.As();
+				if (!path.CoerceString(out var file) || !format.CoerceString(out var fmt))
+					return DefaultObject;
 
-				if (!ParseFormat(format, file, out var rtf))
-					return Errors.ValueErrorOccurred($"Unrecognized rich text format \"{format.As()}\". Expected RTF, Text, or an empty string to infer the format from the file extension.");
+				if (!ParseFormat(fmt, file, out var rtf))
+					return Errors.ValueErrorOccurred($"Unrecognized rich text format \"{Errors.Describe(format)}\". Expected RTF, Text, or an empty string to infer the format from the file extension.");
 
 				if (rtf && Unsupported(RichEditGaps.Rtf, "SaveFile in RTF") is { } err)
 					return err;
@@ -1144,17 +1227,26 @@ namespace Keysharp.Builtins
 
 			/// <summary>
 			/// The 0-based range a start/length pair names, where a start of 0 or an omitted one means the
-			/// range currently selected.
+			/// range currently selected. False when either argument does not convert, and the script continued
+			/// the resulting TypeError; the caller must then return its own empty value at once.
 			/// </summary>
-			private (int start, int length) Range(KeysharpRichEdit rt, object start, object length)
+			private bool TryRange(KeysharpRichEdit rt, object start, object length, out int s, out int len)
 			{
-				var s = start.Al();
+				s = rt.SelectionStart;
+				len = rt.SelectionLength;
 
-				if (s <= 0)
-					return (rt.SelectionStart, rt.SelectionLength);
+				if (!start.CoerceLong(out var startVal))
+					return false;
 
-				var from = ClampPos(rt, s);
-				return (from, ClampLength(rt, from, length.Al()));
+				if (startVal <= 0)
+					return true;
+
+				if (!length.CoerceLong(out var lengthVal))
+					return false;
+
+				s = ClampPos(rt, startVal);
+				len = ClampLength(rt, s, lengthVal);
+				return true;
 			}
 
 			/// <summary>
@@ -1175,10 +1267,8 @@ namespace Keysharp.Builtins
 				if (p.rightIndent is int r) p.rightIndent = (int)Math.Round(r * f);
 			}
 
-			private static bool ParseFormat(object format, string path, out bool rtf)
+			private static bool ParseFormat(string f, string path, out bool rtf)
 			{
-				var f = format.As();
-
 				if (f.Length == 0)
 				{
 					rtf = path.EndsWith(".rtf", StringComparison.OrdinalIgnoreCase);

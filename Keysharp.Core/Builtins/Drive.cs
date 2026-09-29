@@ -18,7 +18,10 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if any failure is detected.</exception>
 		public static object DriveEject(object drive = null)
 		{
-			_ = DriveHelper(drive.As(), true);
+			if (!drive.CoerceString(out var text))
+				return DefaultObject;
+
+			_ = DriveHelper(text, true);
 			return DefaultObject;
 		}
 
@@ -30,13 +33,16 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if the drive could not be accessed.</exception>
 		public static object DriveGetCapacity(object path)
 		{
+			if (!path.CoerceString(out var text))
+				return DefaultObject;
+
 			try
 			{
-				return new DriveInfo(path.As()).TotalSize / 1024 / 1024;
+				return new DriveInfo(text).TotalSize / 1024 / 1024;
 			}
 			catch (Exception ex)
 			{
-				return Errors.OSErrorOccurred(ex, $"Failed to get capacity for drive {path.As()}.");
+				return Errors.OSErrorOccurred(ex, $"Failed to get capacity for drive {text}.");
 			}
 		}
 
@@ -51,13 +57,16 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if the drive could not be accessed.</exception>
 		public static object DriveGetFileSystem(object drive)
 		{
+			if (!drive.CoerceString(out var text))
+				return DefaultObject;
+
 			try
 			{
-				return new DriveInfo(drive.As()).DriveFormat;
+				return new DriveInfo(text).DriveFormat;
 			}
 			catch (Exception ex)
 			{
-				return Errors.OSErrorOccurred(ex, $"Failed to get file system for drive {drive.As()}.");
+				return Errors.OSErrorOccurred(ex, $"Failed to get file system for drive {text}.");
 			}
 		}
 
@@ -69,13 +78,16 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if the drive could not be accessed.</exception>
 		public static object DriveGetLabel(object drive)
 		{
+			if (!drive.CoerceString(out var text))
+				return DefaultObject;
+
 			try
 			{
-				return new DriveInfo(drive.As()).VolumeLabel;
+				return new DriveInfo(text).VolumeLabel;
 			}
 			catch (Exception ex)
 			{
-				return Errors.OSErrorOccurred(ex, $"Failed to get label for drive {drive.As()}.");
+				return Errors.OSErrorOccurred(ex, $"Failed to get label for drive {text}.");
 			}
 		}
 
@@ -88,7 +100,9 @@ namespace Keysharp.Builtins
 		/// <returns>The drive letters in the system, depending on DriveType. For example: ACDEZ.</returns>
 		public static string DriveGetList(object driveType = null)
 		{
-			var drivetype = driveType.As();
+			if (!driveType.CoerceString(out var drivetype))
+				return "";
+
 			DriveType? type = null;
 
 			if (!string.IsNullOrEmpty(drivetype))
@@ -147,13 +161,16 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if the drive could not be accessed.</exception>
 		public static object DriveGetSerial(object drive)
 		{
+			if (!drive.CoerceString(out var text))
+				return DefaultObject;
+
 			try
 			{
-				return Platform.Drive.CreateDrive(new DriveInfo(drive.As())).Serial;
+				return Platform.Drive.CreateDrive(new DriveInfo(text)).Serial;
 			}
 			catch (Exception ex)
 			{
-				return Errors.OSErrorOccurred(ex, $"Failed to get serial number for drive {drive.As()}.");
+				return Errors.OSErrorOccurred(ex, $"Failed to get serial number for drive {text}.");
 			}
 		}
 
@@ -165,13 +182,16 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if the drive could not be accessed.</exception>
 		public static object DriveGetSpaceFree(object path)
 		{
+			if (!path.CoerceString(out var text))
+				return DefaultObject;
+
 			try
 			{
-				return new DriveInfo(path.As()).TotalFreeSpace / (1024 * 1024);
+				return new DriveInfo(text).TotalFreeSpace / (1024 * 1024);
 			}
 			catch (Exception ex)
 			{
-				return Errors.OSErrorOccurred(ex, $"Failed to get free space for drive containing {path.As()}.");
+				return Errors.OSErrorOccurred(ex, $"Failed to get free space for drive containing {text}.");
 			}
 		}
 
@@ -188,9 +208,12 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if any failure is detected.</exception>
 		public static string DriveGetStatus(object path)
 		{
+			if (!path.CoerceString(out var text))
+				return "";
+
 			try
 			{
-				var drv = new DriveInfo(path.As().TrimEnd('\\'));
+				var drv = new DriveInfo(text.TrimEnd('\\'));
 				var val = drv.DriveFormat;//Will throw DriveNotFoundException on invalid paths.
 				return drv.IsReady ? "Ready" : "NotReady";
 			}
@@ -215,9 +238,12 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if any failure is detected.</exception>
 		public static string DriveGetStatusCD(object drive = null)
 		{
+			if (!drive.CoerceString(out var text))
+				return "";
+
 			try
 			{
-				var d = GetRemovableDrive(drive.As().TrimEnd('\\'));
+				var d = GetRemovableDrive(text.TrimEnd('\\'));
 				return d.StatusCD;
 			}
 			catch (Exception e)
@@ -236,9 +262,12 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static string DriveGetType(object path)
 		{
+			if (!path.CoerceString(out var text))
+				return "";
+
 			try
 			{
-				return Script.TheScript.DriveTypeMapper.LookUpKeysharpType(new DriveInfo(path.As()).DriveType);
+				return Script.TheScript.DriveTypeMapper.LookUpKeysharpType(new DriveInfo(text).DriveType);
 			}
 			catch
 			{
@@ -253,7 +282,10 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if any failure is detected.</exception>
 		public static object DriveLock(object drive)
 		{
-			Platform.Drive.CreateDrive(new DriveInfo(drive.As())).Lock();
+			if (!drive.CoerceString(out var text))
+				return DefaultObject;
+
+			Platform.Drive.CreateDrive(new DriveInfo(text)).Lock();
 			return DefaultObject;
 		}
 
@@ -269,7 +301,10 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if any failure is detected.</exception>
 		public static object DriveRetract(object drive)
 		{
-			_ = DriveHelper(drive.As(), false);
+			if (!drive.CoerceString(out var text))
+				return DefaultObject;
+
+			_ = DriveHelper(text, false);
 			return DefaultObject;
 		}
 		/// <summary>
@@ -281,11 +316,11 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if any failure is detected.</exception>
 		public static object DriveSetLabel(object drive, object newLabel = null)
 		{
-			var driveName = drive.As();
+			if (!drive.CoerceString(out var driveName) || !newLabel.CoerceString(out var label))
+				return DefaultObject;
 
 			try
 			{
-				var label = newLabel.As();
 				var d = Platform.Drive.CreateDrive(new DriveInfo(driveName));
 				d.SetLabel(label);
 				return DefaultObject;
@@ -302,7 +337,10 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if any failure is detected.</exception>
 		public static object DriveUnlock(object drive)
 		{
-			Platform.Drive.CreateDrive(new DriveInfo(drive.As())).UnLock();
+			if (!drive.CoerceString(out var text))
+				return DefaultObject;
+
+			Platform.Drive.CreateDrive(new DriveInfo(text)).UnLock();
 			return DefaultObject;
 		}
 

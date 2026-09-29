@@ -25,14 +25,31 @@ namespace Keysharp.Builtins
 		/// <returns>The result of converting value to a string, or value itself if it was a string.<br/>
 		/// If value's ToString() returns no value, so does this. [v2.1-alpha.30+]
 		/// </returns>
-		public static object staticCall(object @this, object value) => value.As(DefaultObject);
+		// As AHK's String, an object's ToString is called explicitly: one without it raises a MethodError, and the result is
+		// returned as it is.
+		public static object staticCall(object @this, object value)
+		{
+			if (value is Any)
+				return Script.InvokeOrNull(value, "ToString");
+
+			if (!value.CoerceString(out var text, DefaultObject))
+				return DefaultObject;
+
+			return text;
+		}
 
 		/// <summary>
 		/// The number of characters in a string, the same count <see cref="Strings.StrLen"/> returns.
 		/// </summary>
 		/// <param name="this">The string to measure.</param>
 		/// <returns>The length of the string.</returns>
-		public static long get_Length(object @this) => @this.As().Length;
+		public static long get_Length(object @this)
+		{
+			if (!@this.CoerceString(out var text))
+				return 0L;
+
+			return text.Length;
+		}
 
 		/// <summary>
 		/// Determines whether a string starts with a given string.
@@ -45,8 +62,13 @@ namespace Keysharp.Builtins
 		///     Locale: case-insensitive, compared according to the current user's locale.
 		/// </param>
 		/// <returns>1 if the string started with <paramref name="token"/>, else 0.</returns>
-		public static long StartsWith(object @this, object token, object caseSense = null) =>
-			@this.As().StartsWith(token.As(), CaseSenseComparison(caseSense)) ? 1L : 0L;
+		public static long StartsWith(object @this, object token, object caseSense = null)
+		{
+			if (!@this.CoerceString(out var text) || !token.CoerceString(out var tokenText) || !TryCaseSenseComparison(caseSense, out var comparison))
+				return 0L;
+
+			return text.StartsWith(tokenText, comparison) ? 1L : 0L;
+		}
 
 		/// <summary>
 		/// Determines whether a string ends with a given string.
@@ -55,18 +77,26 @@ namespace Keysharp.Builtins
 		/// <param name="token">The string to search for.</param>
 		/// <param name="caseSense">See <see cref="StartsWith"/>.</param>
 		/// <returns>1 if the string ended with <paramref name="token"/>, else 0.</returns>
-		public static long EndsWith(object @this, object token, object caseSense = null) =>
-			@this.As().EndsWith(token.As(), CaseSenseComparison(caseSense)) ? 1L : 0L;
+		public static long EndsWith(object @this, object token, object caseSense = null)
+		{
+			if (!@this.CoerceString(out var text) || !token.CoerceString(out var tokenText) || !TryCaseSenseComparison(caseSense, out var comparison))
+				return 0L;
+
+			return text.EndsWith(tokenText, comparison) ? 1L : 0L;
+		}
 
 		/// <summary>
 		/// The comparison mode for a <c>CaseSense</c> argument, routed through the same helper InStr and StrCompare
 		/// use rather than inventing a second convention: omitted or Off is case-insensitive and On/1/True is
 		/// case-sensitive, both Ordinal. Locale is case-insensitive one character at a time, as AutoHotkey's searches are.
 		/// </summary>
-		private static StringComparison CaseSenseComparison(object caseSense)
+		private static bool TryCaseSenseComparison(object caseSense, out StringComparison comparison)
 		{
-			var opt = caseSense.As();
-			return opt.Length != 0 ? CaseCompare.ForSearch(Conversions.ParseComparisonOption(opt)) : StringComparison.OrdinalIgnoreCase;
+			if (!Conversions.TryParseComparisonOption(caseSense, out comparison))
+				return false;
+
+			comparison = CaseCompare.ForSearch(comparison);
+			return true;
 		}
 	}
 
@@ -86,9 +116,12 @@ namespace Keysharp.Builtins
 				return l;
 			else if (value is double d)
 				return d;
+			else if (value is Any)
+				return Errors.TypeErrorOccurred(value, typeof(double));
 			else
 			{
-				var s = value.As();
+				if (!value.CoerceString(out var s))
+					return DefaultObject;
 
 				if (!s.Contains('.') && s.TryParseLong(out long ll))
 					return ll;
@@ -109,7 +142,13 @@ namespace Keysharp.Builtins
 		/// <param name="value">The object to be converted</param>
 		/// <returns>The converted value as a long.</returns>
 		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if the conversion failed.</exception>
-		public new static object staticCall(object @this, object value) => value.ToLong();
+		public new static object staticCall(object @this, object value)
+		{
+			if (!value.CoerceLong(out var l))
+				return DefaultObject;
+
+			return l;
+		}
 	}
 
 	public class Float : Number
@@ -120,7 +159,13 @@ namespace Keysharp.Builtins
 		/// <param name="value">The object to be converted</param>
 		/// <returns>The converted value as a double.</returns>
 		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if the conversion failed.</exception>
-		public new static object staticCall(object @this, object value) => value.ToDouble();
+		public new static object staticCall(object @this, object value)
+		{
+			if (!value.CoerceDouble(out var d))
+				return DefaultObject;
+
+			return d;
+		}
 	}
 
 	public partial class Ks

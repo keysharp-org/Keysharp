@@ -32,6 +32,9 @@ namespace Keysharp.Internals.Invoke
 	/// of an uncatchable <see cref="InvalidCastException"/>. Unset passes through as null.</item>
 	/// </list>
 	///
+	/// <para>A conversion error the script continues stops the call, as it stops an AutoHotkey built-in: each
+	/// conversion returns false for it, and the member does not run.</para>
+	///
 	/// <para>Ordinary dispatch is deliberately narrow: only the types <see cref="KindOf"/> claims are intercepted.
 	/// Anything else keeps its previous raw-unbox behavior. An explicitly marked inline-C# boundary additionally
 	/// unwraps a managed proxy when its payload fits the declared target.</para>
@@ -100,7 +103,7 @@ namespace Keysharp.Internals.Invoke
 		internal static bool IsNarrow(Kind k) => k >= Kind.Int;
 
 		/// <summary>The <see cref="Kind.Cast"/> conversion used by ordinary script calls.</summary>
-		internal static object CoerceCast(object value, Type target)
+		internal static bool TryCoerceCast(object value, Type target, out object result)
 		{
 			if (target == typeof(byte[]))
 			{
@@ -109,48 +112,61 @@ namespace Keysharp.Internals.Invoke
 
 				if (value is Keysharp.Builtins.Buffer
 					|| value is Any any && Reflections.TryGetPtrProperty(any, out _) && Reflections.TryGetSizeProperty(any, out _))
-					return Conversions.ToByteArray(value);
+				{
+					result = Conversions.ToByteArray(value);
+					return true;
+				}
 			}
 
 			if (value == null || target.IsInstanceOfType(value))
-				return value;
+			{
+				result = value;
+				return true;
+			}
 
-			// TypeErrorOccurred returns its fallback instead of throwing when an OnError handler suppresses the
-			// error, and that fallback is DefaultObject ("" or null), which would then fail the cast this feeds.
-			// Null is the only value assignable to every reference target, so normalize to it.
-			var fallback = Errors.TypeErrorOccurred(value, target);
-			return target.IsInstanceOfType(fallback) ? fallback : null;
+			_ = Errors.TypeErrorOccurred(value, target);
+			result = null;
+			return false;
 		}
 
 		internal static bool IsByteSpan(Type type) => type == typeof(Span<byte>) || type == typeof(ReadOnlySpan<byte>);
 
-		internal static unsafe Span<byte> CoerceByteSpan(object value)
+		internal static unsafe bool TryCoerceByteSpan(object value, out Span<byte> result)
 		{
 			if (value is Ks.Clr.ManagedInstance mi)
 				value = mi._instance;
 
+			result = default;
+
 			if (value is Keysharp.Builtins.Buffer buffer)
-				return buffer.AsSpan();
-
-			if (value is byte[] bytes)
-				return bytes;
-
-			if (value is Any any && Reflections.TryGetPtrProperty(any, out var ptr) && Reflections.TryGetSizeProperty(any, out var size))
+				result = buffer.AsSpan();
+			else if (value is byte[] bytes)
+				result = bytes;
+			else if (value is Any any && Reflections.TryGetPtrProperty(any, out var ptr) && Reflections.TryGetSizeProperty(any, out var size))
 			{
 				if (size < 0 || size > int.MaxValue)
 				{
 					_ = Errors.ValueErrorOccurred($"Byte source Size must be between 0 and {int.MaxValue}.", size);
-					return [];
+					return false;
 				}
 
-				return new Span<byte>((void*)(nint)ptr, (int)size);
+				result = new Span<byte>((void*)(nint)ptr, (int)size);
+			}
+			else
+			{
+				_ = Errors.TypeErrorOccurred(value, typeof(Span<byte>));
+				return false;
 			}
 
-			_ = Errors.TypeErrorOccurred(value, typeof(Span<byte>));
-			return [];
+			return true;
 		}
 
-		internal static ReadOnlySpan<byte> CoerceReadOnlyByteSpan(object value) => CoerceByteSpan(value);
+		internal static bool TryCoerceReadOnlyByteSpan(object value, out ReadOnlySpan<byte> result)
+		{
+			var ok = TryCoerceByteSpan(value, out var span);
+			result = span;
+			return ok;
+		}
 
 		/// <summary>
 		/// The <see cref="Kind.Enum"/> conversion. AutoHotkey has no enum type, so a script names a member of one
@@ -162,147 +178,128 @@ namespace Keysharp.Internals.Invoke
 		/// script Integers are Int64 while nearly every .NET enum is Int32-backed — so without this the common case
 		/// is the one that fails.</para>
 		/// </summary>
-		internal static object CoerceEnum(object value, Type target)
+		internal static bool TryCoerceEnum(object value, Type target, out object result)
 		{
 			// A proxy can only have been meant as its payload here. This is not the boundary-only unwrapping
-			// CoerceBoundaryCast does: an enum parameter, unlike an `object` or reference one, has no reading in
+			// TryCoerceBoundaryCast does: an enum parameter, unlike an `object` or reference one, has no reading in
 			// which a ManagedInstance is itself the argument.
 			if (value is Ks.Clr.ManagedInstance mi)
 				value = mi._instance;
 
 			if (target.IsInstanceOfType(value))
-				return value;
+			{
+				result = value;
+				return true;
+			}
 
 			// A boxed enum of some other type converts by value, like the Integer it stands for. Its own underlying
-			// type is the only lossless stop on the way there: `.ToLong()` would fall through to ToString(), which
+			// type is the only lossless stop on the way there: ToLong would fall through to ToString(), which
 			// yields the member NAME for a named value and the number only for an unnamed one.
 			if (value is Enum e)
-				return Enum.ToObject(target, Convert.ChangeType(e, Enum.GetUnderlyingType(e.GetType()), CultureInfo.InvariantCulture));
+			{
+				result = Enum.ToObject(target, Convert.ChangeType(e, Enum.GetUnderlyingType(e.GetType()), CultureInfo.InvariantCulture));
+				return true;
+			}
 
 			// Everything else takes the numeric policy the integral kinds take: a numeric string converts, a Float
 			// truncates, and anything else raises the TypeError `Integer("abc")` raises. Out-of-range bits are
 			// dropped rather than throwing, matching the unchecked casts those kinds use.
-			return Enum.ToObject(target, value.ToLong());
+			var ok = TryLong(value, out var l);
+			result = Enum.ToObject(target, l);
+			return ok;
+		}
+
+		// The scalar conversions shared by the expression trees and TryCoerceValue. False means the script continued
+		// the conversion's error, and the call they feed must not run.
+		private static bool TryLong(object value, out long result) => value.CoerceLong(out result);
+
+		private static bool TryDouble(object value, out double result) => value.CoerceDouble(out result);
+
+		private static bool TryText(object value, out string result) => value.CoerceString(out result);
+
+		// ForceBool raises only for an unset value, so returning from it with one means the script continued that error.
+		private static bool TryBool(object value, out bool result)
+		{
+			result = ForceBool(value);
+			return value != null;
 		}
 
 		/// <summary>Unwraps managed proxies at an explicit CLR boundary.</summary>
-		internal static object CoerceBoundaryCast(object value, Type target)
+		internal static bool TryCoerceBoundaryCast(object value, Type target, out object result)
 		{
 			// ManagedInstance represents its payload even for an object slot. ManagedType remains a script object for
 			// object, matching Ks.Clr, and unwraps only for Type-compatible targets.
 			if (value is Ks.Clr.ManagedInstance mi && (target == typeof(object) || target.IsInstanceOfType(mi._instance)))
-				return mi._instance;
-
-			if (value == null || target.IsInstanceOfType(value))
-				return value;
-
+				result = mi._instance;
+			else if (value == null || target.IsInstanceOfType(value))
+				result = value;
 			// Ks.Task is the script's face on a CLR Task, so an inline member declaring a Task parameter must
 			// receive the task itself. `object` deliberately keeps the wrapper -- the same call ManagedInstance
 			// makes above is reversed here, because a Ks.Task is itself a script object while a ManagedInstance is only
 			// a view of one.
-			if (value is Ks.KeysharpTask kt && target.IsInstanceOfType(kt.Underlying))
-				return kt.Underlying;
+			else if (value is Ks.KeysharpTask kt && target.IsInstanceOfType(kt.Underlying))
+				result = kt.Underlying;
+			else if (value is Ks.Clr.ManagedType mt && target.IsInstanceOfType(mt._type))
+				result = mt._type;
+			else
+			{
+				_ = Errors.TypeErrorOccurred(value, target);
+				result = null;
+				return false;
+			}
 
-			if (value is Ks.Clr.ManagedType mt && target.IsInstanceOfType(mt._type))
-				return mt._type;
-
-			var fallback = Errors.TypeErrorOccurred(value, target);
-			return target.IsInstanceOfType(fallback)
-				? fallback
-				: target.IsValueType && Nullable.GetUnderlyingType(target) == null
-					? Activator.CreateInstance(target)
-					: null;
+			return true;
 		}
 
 		/// <summary>
-		/// Wraps <paramref name="value"/> (an <c>object</c> expression) so it yields <paramref name="target"/>.
+		/// Runtime counterpart of <see cref="ArgumentSteps.Coerce"/>, for the paths that never build an expression
+		/// tree: the Clr boundary, the reserved-variable (A_*) setters, and every reflection-based property setter.
+		/// Gives a value boxed as exactly <paramref name="target"/>. False when the script continued the conversion's
+		/// error, so the member must not be given <paramref name="result"/>, which is then the target's empty value.
 		/// </summary>
-		internal static Expression Coerce(Expression value, Type target)
-		{
-			switch (KindOf(target))
-			{
-				case Kind.None: return Expression.Convert(value, target);
-
-				case Kind.Long: return AsLong();
-
-				case Kind.Double: return AsDouble();
-
-				case Kind.Bool: return Expression.Call(forceBoolMethod, value);
-
-				case Kind.Str: return Expression.Call(asStringMethod, value, emptyString);
-
-				case Kind.Cast:
-					return Expression.Convert(Expression.Call(coerceCastMethod, value, Expression.Constant(target, typeof(Type))), target);
-
-				case Kind.Enum:
-					return Expression.Convert(Expression.Call(coerceEnumMethod, value, Expression.Constant(target, typeof(Type))), target);
-
-				case Kind.Single: return Expression.Convert(AsDouble(), target);
-
-				// There is no Int64 -> UIntPtr coercion operator, so nuint alone needs the ulong stepping stone.
-				case Kind.NUInt: return Expression.Convert(Expression.Convert(AsLong(), typeof(ulong)), target);
-
-				default: return Expression.Convert(AsLong(), target);//The narrow integral kinds. Expression.Convert is unchecked.
-			}
-
-			Expression AsLong() => Expression.Call(toLongMethod, value, allowFloat);
-			Expression AsDouble() => Expression.Call(toDoubleMethod, value);
-		}
-
-		/// <summary>Builds the input conversion for a member explicitly marked as a CLR boundary.</summary>
-		internal static Expression CoerceBoundary(Expression value, Type target)
-		{
-			if (target == typeof(Span<byte>))
-				return Expression.Call(coerceByteSpanMethod, value);
-
-			if (target == typeof(ReadOnlySpan<byte>))
-				return Expression.Call(coerceReadOnlyByteSpanMethod, value);
-
-			var kind = KindOf(target);
-
-			if (NeedsBoundaryCast(target, kind))
-				return Expression.Convert(Expression.Call(coerceBoundaryCastMethod, value, Expression.Constant(target, typeof(Type))), target);
-
-			return Coerce(value, target);
-		}
-
-		/// <summary>
-		/// Runtime counterpart of <see cref="Coerce"/>, for the paths that never build an expression tree: the Clr
-		/// boundary, the reserved-variable (A_*) setters, and every reflection-based property setter.
-		/// Returns a value boxed as exactly <paramref name="target"/>.
-		/// </summary>
-		internal static object CoerceValue(object value, Type target)
-		{
-			switch (KindOf(target))
-			{
-				case Kind.Long: return value.ToLong();
-				case Kind.Double: return value.ToDouble();
-				case Kind.Bool: return ForceBool(value);
-				case Kind.Str: return value.As();
-				case Kind.Cast: return CoerceCast(value, target);
-				case Kind.Enum: return CoerceEnum(value, target);
-				case Kind.Int: return unchecked((int)value.ToLong());
-				case Kind.UInt: return unchecked((uint)value.ToLong());
-				case Kind.Short: return unchecked((short)value.ToLong());
-				case Kind.UShort: return unchecked((ushort)value.ToLong());
-				case Kind.Byte: return unchecked((byte)value.ToLong());
-				case Kind.SByte: return unchecked((sbyte)value.ToLong());
-				case Kind.ULong: return unchecked((ulong)value.ToLong());
-				case Kind.NInt: return unchecked((nint)value.ToLong());
-				case Kind.NUInt: return unchecked((nuint)value.ToLong());
-				case Kind.Single: return (float)value.ToDouble();
-				default: return value;
-			}
-		}
-
-		/// <summary>Runtime counterpart of <see cref="CoerceBoundary"/>.</summary>
-		internal static object CoerceBoundaryValue(object value, Type target)
+		internal static bool TryCoerceValue(object value, Type target, bool boundary, out object result)
 		{
 			var kind = KindOf(target);
 
-			return NeedsBoundaryCast(target, kind)
-				? CoerceBoundaryCast(value, target)
-				: CoerceValue(value, target);
+			if (boundary && NeedsBoundaryCast(target, kind))
+				return TryCoerceBoundaryCast(value, target, out result);
+
+			var ok = true;
+
+			switch (kind)
+			{
+				case Kind.Long: result = AsLong(); break;
+				case Kind.Double: result = AsDouble(); break;
+				case Kind.Bool: ok = TryBool(value, out var b); result = b; break;
+				case Kind.Str: ok = TryText(value, out var s); result = s; break;
+				case Kind.Cast: return TryCoerceCast(value, target, out result);
+				case Kind.Enum: return TryCoerceEnum(value, target, out result);
+				case Kind.Int: result = unchecked((int)AsLong()); break;
+				case Kind.UInt: result = unchecked((uint)AsLong()); break;
+				case Kind.Short: result = unchecked((short)AsLong()); break;
+				case Kind.UShort: result = unchecked((ushort)AsLong()); break;
+				case Kind.Byte: result = unchecked((byte)AsLong()); break;
+				case Kind.SByte: result = unchecked((sbyte)AsLong()); break;
+				case Kind.ULong: result = unchecked((ulong)AsLong()); break;
+				case Kind.NInt: result = unchecked((nint)AsLong()); break;
+				case Kind.NUInt: result = unchecked((nuint)AsLong()); break;
+				case Kind.Single: result = (float)AsDouble(); break;
+				default: result = value; break;
+			}
+
+			return ok;
+
+			long AsLong()
+			{
+				ok = TryLong(value, out var l);
+				return l;
+			}
+
+			double AsDouble()
+			{
+				ok = TryDouble(value, out var d);
+				return d;
+			}
 		}
 
 		private static bool NeedsBoundaryCast(Type target, Kind kind) =>
@@ -311,14 +308,101 @@ namespace Keysharp.Internals.Invoke
 			// leaving a non-variadic object[] free to use the normal CLR-boundary conversion here.
 			|| kind == Kind.None && (target == typeof(object) || target == typeof(object[]) || target.IsValueType);
 
-		/// <summary>Whether an ordinary property assignment needs script scalar conversion.</summary>
-		internal static bool NeedsCoercion(Type target) => KindOf(target) != Kind.None;
+		/// <summary>
+		/// Whether a value for <paramref name="target"/> needs conversion: script scalar conversion, and at a CLR
+		/// boundary also proxy unwrapping.
+		/// </summary>
+		internal static bool NeedsCoercion(Type target, bool boundary) => TryConverter(target, boundary) != null;
 
-		/// <summary>Whether a CLR-boundary property assignment needs scalar conversion or proxy unwrapping.</summary>
-		internal static bool NeedsBoundaryCoercion(Type target)
+		// The Try conversion a compiled argument for target takes, or null when the argument is only unboxed or cast.
+		// Its last parameter is the out slot its temporary fills; one with three also takes the target type.
+		private static MethodInfo TryConverter(Type target, bool boundary)
 		{
+			if (boundary && target == typeof(Span<byte>))
+				return tryCoerceByteSpanMethod;
+
+			if (boundary && target == typeof(ReadOnlySpan<byte>))
+				return tryCoerceReadOnlyByteSpanMethod;
+
 			var kind = KindOf(target);
-			return kind != Kind.None || NeedsBoundaryCast(target, kind);
+
+			if (boundary && NeedsBoundaryCast(target, kind))
+				return tryCoerceBoundaryCastMethod;
+
+			return kind switch
+			{
+				Kind.None => null,
+				Kind.Double or Kind.Single => tryDoubleMethod,
+				Kind.Bool => tryBoolMethod,
+				Kind.Str => tryTextMethod,
+				Kind.Cast => tryCoerceCastMethod,
+				Kind.Enum => tryCoerceEnumMethod,
+				_ => tryLongMethod,//Long and the narrow integral kinds, which the argument narrows unchecked.
+			};
+		}
+
+		/// <summary>
+		/// The statements a compiled call runs before it: its arguments evaluated into temporaries, in order. A
+		/// conversion error the script continued leaves through the stop label with the stop value before the member
+		/// runs, and with nothing on the evaluation stack to jump over.
+		/// </summary>
+		internal sealed class ArgumentSteps
+		{
+			private readonly List<ParameterExpression> variables = [];
+			private readonly List<Expression> steps = [];
+			private readonly LabelTarget stop;
+			private readonly Expression stopValue;
+
+			/// <param name="stopValue">What the block yields when a conversion stops it; null for a block without a value.</param>
+			internal ArgumentSteps(Expression stopValue)
+			{
+				this.stopValue = stopValue;
+				stop = Expression.Label(stopValue?.Type ?? typeof(void), "stop");
+			}
+
+			/// <summary>
+			/// Converts <paramref name="value"/> (an <c>object</c> expression) to <paramref name="target"/> in a step of
+			/// its own, and returns the argument that step leaves.
+			/// </summary>
+			internal Expression Coerce(Expression value, Type target, bool boundary)
+			{
+				var converter = TryConverter(target, boundary);
+
+				if (converter == null)
+					return Hold(Expression.Convert(value, target));
+
+				var ps = converter.GetParameters();
+				var temp = Expression.Variable(ps[^1].ParameterType.GetElementType()!);
+				variables.Add(temp);
+				var converted = ps.Length == 3
+					? Expression.Call(converter, value, Expression.Constant(target, typeof(Type)), temp)
+					: Expression.Call(converter, value, temp);
+				steps.Add(Expression.IfThen(Expression.Not(converted), Expression.Return(stop, stopValue)));
+
+				return temp.Type == target ? (Expression)temp
+					// There is no Int64 -> UIntPtr coercion operator, so nuint alone needs the ulong stepping stone.
+					: target == typeof(nuint) ? Expression.Convert(Expression.Convert(temp, typeof(ulong)), target)
+					: Expression.Convert(temp, target);//Expression.Convert is unchecked.
+			}
+
+			/// <summary>Evaluates an argument needing no conversion in a step of its own, keeping the arguments' order.</summary>
+			internal Expression Hold(Expression value)
+			{
+				var temp = Expression.Variable(value.Type);
+				variables.Add(temp);
+				steps.Add(Expression.Assign(temp, value));
+				return temp;
+			}
+
+			/// <summary>Runs the steps and then <paramref name="body"/>, which the stop value replaces when a conversion stops the call.</summary>
+			internal Expression Wrap(Expression body)
+			{
+				steps.Add(body);
+				var block = Expression.Block(variables, steps);
+
+				// A jump carrying a value may only leave for a label that encloses it, so the label wraps the whole block.
+				return stop.Type == typeof(void) ? Expression.Block(block, Expression.Label(stop)) : Expression.Label(stop, block);
+			}
 		}
 
 		/// <summary>
@@ -387,26 +471,26 @@ namespace Keysharp.Internals.Invoke
 		internal static Expression ConvertOut(Expression value) =>
 			Expression.Call(convertOutMethod, Expression.Convert(value, typeof(object)));
 
-		private static readonly Expression allowFloat = Expression.Constant(true);
-		private static readonly Expression emptyString = Expression.Constant("", typeof(string));
-
 		// Bound once, and loudly: a signature change would otherwise leave a null MethodInfo that only surfaces as
 		// an ArgumentNullException from inside expression building, far from the cause.
 		private static MethodInfo Bind(Type t, string name, params Type[] args) =>
 			t.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, args)
 			?? throw new MissingMethodException(t.FullName, name);
 
-		private static readonly MethodInfo toLongMethod = Bind(typeof(ObjectExtensions), nameof(ObjectExtensions.ToLong), typeof(object), typeof(bool));
-		private static readonly MethodInfo toDoubleMethod = Bind(typeof(ObjectExtensions), nameof(ObjectExtensions.ToDouble), typeof(object));
-		private static readonly MethodInfo forceBoolMethod = Bind(typeof(Script), nameof(Script.ForceBool), typeof(object));
-		// `.As()`, not Script.ForceString: it honors a script class's own ToString() override, which is what
-		// AutoHotkey does where a string is expected, and it is what the Clr boundary already used.
-		private static readonly MethodInfo asStringMethod = Bind(typeof(ObjectExtensions), nameof(ObjectExtensions.As), typeof(object), typeof(string));
-		private static readonly MethodInfo coerceCastMethod = Bind(typeof(ArgCoercer), nameof(CoerceCast), typeof(object), typeof(Type));
-		private static readonly MethodInfo coerceEnumMethod = Bind(typeof(ArgCoercer), nameof(CoerceEnum), typeof(object), typeof(Type));
-		private static readonly MethodInfo coerceBoundaryCastMethod = Bind(typeof(ArgCoercer), nameof(CoerceBoundaryCast), typeof(object), typeof(Type));
-		private static readonly MethodInfo coerceByteSpanMethod = Bind(typeof(ArgCoercer), nameof(CoerceByteSpan), typeof(object));
-		private static readonly MethodInfo coerceReadOnlyByteSpanMethod = Bind(typeof(ArgCoercer), nameof(CoerceReadOnlyByteSpan), typeof(object));
+		private static readonly MethodInfo tryLongMethod = Bind(typeof(ArgCoercer), nameof(TryLong), typeof(object), typeof(long).MakeByRefType());
+		private static readonly MethodInfo tryDoubleMethod = Bind(typeof(ArgCoercer), nameof(TryDouble), typeof(object), typeof(double).MakeByRefType());
+		private static readonly MethodInfo tryBoolMethod = Bind(typeof(ArgCoercer), nameof(TryBool), typeof(object), typeof(bool).MakeByRefType());
+		private static readonly MethodInfo tryTextMethod = Bind(typeof(ArgCoercer), nameof(TryText), typeof(object), typeof(string).MakeByRefType());
+		private static readonly MethodInfo tryCoerceCastMethod = Bind(typeof(ArgCoercer), nameof(TryCoerceCast), typeof(object), typeof(Type), typeof(object).MakeByRefType());
+		private static readonly MethodInfo tryCoerceEnumMethod = Bind(typeof(ArgCoercer), nameof(TryCoerceEnum), typeof(object), typeof(Type), typeof(object).MakeByRefType());
+		private static readonly MethodInfo tryCoerceBoundaryCastMethod = Bind(typeof(ArgCoercer), nameof(TryCoerceBoundaryCast), typeof(object), typeof(Type), typeof(object).MakeByRefType());
+		private static readonly MethodInfo tryCoerceByteSpanMethod = Bind(typeof(ArgCoercer), nameof(TryCoerceByteSpan), typeof(object), typeof(Span<byte>).MakeByRefType());
+		private static readonly MethodInfo tryCoerceReadOnlyByteSpanMethod = Bind(typeof(ArgCoercer), nameof(TryCoerceReadOnlyByteSpan), typeof(object), typeof(ReadOnlySpan<byte>).MakeByRefType());
 		private static readonly MethodInfo convertOutMethod = Bind(typeof(ManagedInvoke), nameof(ManagedInvoke.ConvertOut), typeof(object));
+
+		/// <summary>What a compiled call a conversion stopped returns: <see cref="Script.DefaultObject"/>, read when it stops.</summary>
+		internal static readonly Expression DefaultObjectResult = Expression.Convert(Expression.Property(null,
+			typeof(Script).GetProperty(nameof(Script.DefaultObject), BindingFlags.NonPublic | BindingFlags.Static)
+			?? throw new MissingMemberException(typeof(Script).FullName, nameof(Script.DefaultObject))), typeof(object));
 	}
 }

@@ -42,7 +42,8 @@ namespace Keysharp.Builtins
 		/// <returns>The Process ID (PID) of the specified process. If a matching process is not found or cannot be manipulated, zero is returned.</returns>
 		public static long ProcessClose([UserDeclaredName("PIDOrName")] object pidOrName)
 		{
-			var name = pidOrName.As(); //Will handle name string or pid int.
+			if (!pidOrName.CoerceString(out var name)) //Will handle name string or pid int.
+				return 0L;
 
 			using (var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name))
 			{
@@ -77,7 +78,8 @@ namespace Keysharp.Builtins
 		/// <returns>The Process ID (PID) of the specified process. If there is no matching process, zero is returned.</returns>
 		public static long ProcessExist([UserDeclaredName("PIDOrName")] object pidOrName = null)
 		{
-			var name = pidOrName.As();
+			if (!pidOrName.CoerceString(out var name))
+				return 0L;
 
 			using (var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name))
 			{
@@ -90,7 +92,8 @@ namespace Keysharp.Builtins
 		/// <returns>The parent process ID. Throws a TargetError if the process cannot be found, or an OSError if its parent cannot be retrieved.</returns>
 		public static long ProcessGetParent([UserDeclaredName("PIDOrName")] object pidOrName = null)
 		{
-			var name = pidOrName.As();
+			if (!pidOrName.CoerceString(out var name))
+				return 0L;
 
 			using var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name);
 
@@ -125,7 +128,8 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static string ProcessGetName([UserDeclaredName("PIDOrName")] object pidOrName = null)
 		{
-			var name = pidOrName.As();
+			if (!pidOrName.CoerceString(out var name))
+				return "";
 
 			using (var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name))
 			{
@@ -161,7 +165,8 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static string ProcessGetPath([UserDeclaredName("PIDOrName")] object pidOrName = null)
 		{
-			var name = pidOrName.As();
+			if (!pidOrName.CoerceString(out var name))
+				return "";
 
 			using (var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name))
 			{
@@ -202,8 +207,9 @@ namespace Keysharp.Builtins
 		/// <returns>Returns the Process ID (PID) of the specified process. If a matching process is not found or cannot be manipulated, zero is returned.</returns>
 		public static long ProcessSetPriority(object level, [UserDeclaredName("PIDOrName")] object pidOrName = null)
 		{
-			var lvl = level.As();
-			var name = pidOrName.As();
+			if (!level.CoerceString(out var lvl) || !pidOrName.CoerceString(out var name))
+				return 0L;
+
 			ProcessPriorityClass? priority = lvl.ToLowerInvariant() switch
 			{
 				"l" or Keyword_Low => ProcessPriorityClass.Idle,
@@ -252,8 +258,12 @@ namespace Keysharp.Builtins
 		/// <returns>The Process ID (PID) of the discovered process. If the function times out, zero is returned.</returns>
 		public static long ProcessWait([UserDeclaredName("PIDOrName")] object pidOrName, object timeout = null)
 		{
-			var name = pidOrName.As();
-			var time = timeout.Ad(-1.0);
+			if (!pidOrName.CoerceString(out var name))
+				return 0L;
+
+			if (!timeout.CoerceDouble(out var time, -1.0))
+				return 0L;
+
 			var t = time;
 			Process proc;
 
@@ -299,8 +309,11 @@ namespace Keysharp.Builtins
 		/// <returns></returns>
 		public static long ProcessWaitClose([UserDeclaredName("PIDOrName")] object pidOrName, object timeout = null)
 		{
-			var name = pidOrName.As();
-			var time = timeout.Ad(-1.0);
+			if (!pidOrName.CoerceString(out var name))
+				return 0L;
+
+			if (!timeout.CoerceDouble(out var time, -1.0))
+				return 0L;
 
 			using (var proc = FindProcess(name))
 			{
@@ -341,7 +354,10 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static long Run(object target, object workingDir = null, object options = null, [ByRef] object outputVarPID = null, object args = null)
 		{
-			return RunInternal(target.As(), workingDir.As(), options.As(), outputVarPID, args.As());
+			if (!target.CoerceString(out var targetText) || !workingDir.CoerceString(out var dir) || !options.CoerceString(out var opts) || !args.CoerceString(out var argsText))
+				return 0L;
+
+			return RunInternal(targetText, dir, opts, outputVarPID, argsText);
 		}
 
 		/// <summary>
@@ -356,9 +372,9 @@ namespace Keysharp.Builtins
 		/// <param name="domain">If blank or omitted, a local account will be used. Otherwise, specify User's domain. If that fails to work, try using @YourComputerName.</param>
 		public static object RunAs(object user = null, object password = null, object domain = null)
 		{
-			var u = user.As();
-			var p = password.As();
-			var d = domain.As();
+			if (!user.CoerceString(out var u) || !password.CoerceString(out var p) || !domain.CoerceString(out var d))
+				return DefaultObject;
+
 			var script = Script.TheScript;
 			script.ProcessesData.runUser = u;
 			script.ProcessesData.runDomain = d;
@@ -388,7 +404,10 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static long RunWait(object target, object workingDir = null, object options = null, [ByRef] object outputVarPID = null, object args = null)
 		{
-			return RunInternal(target.As(), workingDir.As(), options.As(), outputVarPID, args.As(), true);
+			if (!target.CoerceString(out var targetText) || !workingDir.CoerceString(out var dir) || !options.CoerceString(out var opts) || !args.CoerceString(out var argsText))
+				return 0L;
+
+			return RunInternal(targetText, dir, opts, outputVarPID, argsText, true);
 		}
 
 		/// <summary>
@@ -408,7 +427,10 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object Shutdown(object flags)
 		{
-			_ = Platform.Session.ExitProgram((uint)flags.Al(), 0);
+			if (!flags.CoerceInt(out var f))
+				return DefaultObject;
+
+			_ = Platform.Session.ExitProgram(unchecked((uint)f), 0);
 			return DefaultObject;
 		}
 

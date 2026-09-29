@@ -528,7 +528,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Resolves an existing variable, function or class by a run-time name, including imported names. Blank and unknown names raise Error, as do assigning a function, class or read-only built-in variable and assigning a global a function has not declared; reading an unset variable raises UnsetError except in optional-value contexts.",
+                     "notes":  "Resolves an existing variable, function or class by a run-time name, including imported names. Blank and unknown names raise Error, as do assigning a function, class or read-only built-in variable and assigning a global a function has not declared; reading an unset variable raises UnsetError except in optional-value contexts. An object other than a VarRef stands for a temporary variable holding it, as in AutoHotkey.",
                      "tested-by":  "op-dereference.ahk; assign-dyn-var.ahk; func-dyn-vars.ahk; module-dynamic-names.ahk"
                  },
                  {
@@ -3349,7 +3349,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp extension. Returns a string representation of the array.",
+                     "notes":  "Keysharp extension. Returns the array as [a, b, c], with strings quoted, a missing element as unset, an object element as its ToString result or type name, and an array that contains itself as [...] where it recurs.",
                      "tested-by":  "collections-array.ahk"
                  },
                  {
@@ -7941,7 +7941,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp extension. Returns a string representation of the map.",
+                     "notes":  "Keysharp extension. Returns the map as [key: value, ...], formatted as Array.ToString() formats its elements.",
                      "tested-by":  "collections-map.ahk"
                  },
                  {
@@ -10384,8 +10384,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Converts a value to a string. For an object, the result is whatever its ToString() returned, so a ToString() which returns no value makes String() return no value too rather than raising.",
-                     "tested-by":  "assign-multiline.ahk"
+                     "notes":  "For an object, returns its ToString() result unchanged, including an object or no value; a missing method raises MethodError. Implicit string conversion in builtin arguments and concatenation requires a scalar result and otherwise raises TypeError. Errors raised by ToString propagate.",
+                     "tested-by":  "string-string.ahk; types-conversions.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -10931,8 +10931,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The Type function returns the class name of a value.",
-                     "tested-by":  "class.ahk"
+                     "notes":  "Returns the class name of a value, honoring an inherited custom __Class getter on a script object.",
+                     "tested-by":  "class.ahk; string-string.ahk"
                  },
                  {
                      "category":  "Errors",

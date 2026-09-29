@@ -120,7 +120,13 @@ namespace Keysharp.Builtins.COM
 		public long VarType
 		{
 			get => (long)vt;
-			set => vt = (VarEnum)value.Ai();
+			set
+			{
+				if (!value.CoerceInt(out var vtValue))
+					return;
+
+				vt = (VarEnum)vtValue;
+			}
 		}
 		internal long Flags { get; set; }
 
@@ -128,11 +134,22 @@ namespace Keysharp.Builtins.COM
 		{
 			if (args.Length == 0 || args[0] == null) return;
 			var value = args[1];
-			//Internal callers pass a VarEnum, which the script-integer coercion in Al() does not recognize.
-			vt = args[0] is VarEnum ve ? ve : (VarEnum)args[0].Al();
+
+			//Internal callers pass a VarEnum, which the script-integer coercion in CoerceLong() does not recognize.
+			if (args[0] is VarEnum ve)
+				vt = ve;
+			else if (!args[0].CoerceLong(out var vtValue))
+				return;
+			else
+				vt = (VarEnum)vtValue;
+
 			Ptr = value;
 			var flags = args.Length > 2 ? args[2] : null;
-			Flags = flags != null ? flags.Al() : 0L;
+
+			if (!flags.CoerceLong(out var flagsValue))
+				return;
+
+			Flags = flagsValue;
 
 			if (this.vt == VarEnum.VT_BSTR && value is not long)
 				Flags |= F_OWNVALUE;
@@ -140,7 +157,10 @@ namespace Keysharp.Builtins.COM
 
 		public static object staticCall(object @this, object varType, object value, object flags = null)
 		{
-			var vt = (VarEnum)varType.Al();
+			if (!varType.CoerceLong(out var vtValue))
+				return DefaultObject;
+
+			var vt = (VarEnum)vtValue;
 			if ((vt & VarEnum.VT_ARRAY) != 0)
 			{
 				Reflections.TryGetPtrProperty(value, out var psaAddr);
@@ -165,14 +185,20 @@ namespace Keysharp.Builtins.COM
 		public object get_Item(params object[] args)
 		{
 			if (args.Length == 0 && (vt & VarEnum.VT_BYREF) != 0)
-				return VariantHelper.ReadVariant(Ptr.Al(), vt);
+			{
+				_ = Ptr.TryCoerceLong(out var ptr);
+				return VariantHelper.ReadVariant(ptr, vt);
+			}
 
 			return RawInvokeMethod("Item", args);
 		}
 		public object set_Item(object[] args, object value)
 		{
 			if (args.Length == 0 && (vt & VarEnum.VT_BYREF) != 0)
-				VariantHelper.WriteVariant(Ptr.Al(), vt, value);
+			{
+				_ = Ptr.TryCoerceLong(out var ptr);
+				VariantHelper.WriteVariant(ptr, vt, value);
+			}
 			else
 			{
 				RawSetProperty("Item", args, value);
@@ -354,7 +380,11 @@ namespace Keysharp.Builtins.COM
 
 			for (var i = 0; i < args.Length && i < types.Length; i++)
 				if (args[i] is Array ksarr && types[i].IsArray)
-					(passed ??= (object[])args.Clone())[i] = ConvertArgumentToExpectedType(ksarr, types[i]);
+				{
+					// Only an Array's non-object elements are converted, and only an object's conversion can fail.
+					_ = TryConvertArgument(ksarr, types[i], out var converted);
+					(passed ??= (object[])args.Clone())[i] = converted;
+				}
 
 			return passed ?? args;
 		}
@@ -793,8 +823,9 @@ namespace Keysharp.Builtins.COM
 						var arg = args[sourceIndex];
 
 						// Apply type conversion if we have type info
-						if (expectedTypes != null && sourceIndex < expectedTypes.Length && arg is not ComValue)
-							arg = ConvertArgumentToExpectedType(arg, expectedTypes[sourceIndex]);
+						if (expectedTypes != null && sourceIndex < expectedTypes.Length && arg is not ComValue
+								&& !TryConvertArgument(arg, expectedTypes[sourceIndex], out arg))
+							return -1;
 
 						bool isByRef = IsByRef(byRefs, sourceIndex);
 
@@ -949,20 +980,28 @@ namespace Keysharp.Builtins.COM
 			}
 		}
 
-		private static object ConvertArgumentToExpectedType(object arg, Type expectedType)
+		// False when the script continued the error of an argument that must be text but does not convert.
+		private static bool TryConvertArgument(object arg, Type expectedType, out object result)
 		{
+			result = arg;
+
 			if (arg == null)
-				return expectedType == typeof(string) ? "" : null;
+			{
+				result = expectedType == typeof(string) ? "" : null;
+				return true;
+			}
 
 			var currentType = arg.GetType();
 			if (currentType == expectedType)
-				return arg;
+				return true;
 
 			if (arg is ComValue cv)
 			{
 				if ((cv.vt & VarEnum.VT_BYREF) != 0)
-					return arg;
-				arg = VariantHelper.ReadVariant(cv.Ptr.Al(), cv.vt);
+					return true;
+
+				_ = cv.Ptr.TryCoerceLong(out var cvPtr);
+				result = arg = VariantHelper.ReadVariant(cvPtr, cv.vt);
 			}
 
 			// SAFEARRAY parameters become CLR arrays in our surface types.
@@ -972,70 +1011,123 @@ namespace Keysharp.Builtins.COM
 				if (arg is not System.Array arr)
 					arr = arg is Array ksarr ? VariantHelper.SafeArrayElements(ksarr) : new object[] { arg };
 
+				result = arr;
+
 				// If the expected element type is not object, coerce each element when possible.
 				var elemClr = expectedType.GetElementType() ?? typeof(object);
-				if (elemClr == typeof(object)) return arr; // leave heterogenous as-is (will become VT_ARRAY|VT_VARIANT)
+				if (elemClr == typeof(object)) return true; // leave heterogenous as-is (will become VT_ARRAY|VT_VARIANT)
 
 				int n = arr.Length;
 				var coerced = System.Array.CreateInstance(elemClr, n);
 				for (int i = 0; i < n; i++)
 				{
 					var value = arr.GetValue(i);
+					object element = null;
+
 					// The numeric conversions give 0 for what is not a number, and none gives a nested array or an object its own value.
-					var element = value is not (System.Array or Any) && (!elemClr.IsPrimitive || elemClr == typeof(bool) || value.TryCoerceLong(out _))
-						? ConvertArgumentToExpectedType(value, elemClr)
-						: null;
+					if (value is not (System.Array or Any) && (!elemClr.IsPrimitive || elemClr == typeof(bool) || value.TryCoerceLong(out _))
+							&& !TryConvertArgument(value, elemClr, out element))
+						return false;
 
 					// A string parameter takes an integer as it is, but a SAFEARRAY(BSTR) element must be a string.
 					if (element is long && elemClr == typeof(string))
-						element = element.As();
+					{
+						if (!element.CoerceString(out var text))
+							return false;
+
+						element = text;
+					}
 
 					// An element that does not convert leaves the array as VARIANTs, for the server to judge.
 					if (!elemClr.IsInstanceOfType(element))
-						return arr;
+						return true;
 
 					coerced.SetValue(element, i);
 				}
-				return coerced;
+				result = coerced;
+				return true;
 			}
 
 			// No scalar conversion gives an array its own value, so a scalar parameter's server judges it as it is.
 			if (arg is System.Array)
-				return arg;
+				return true;
+
+			// Outside the try below, which would swallow the TypeError a value that is not text raises.
+			if (expectedType == typeof(string))
+			{
+				if (arg is long)
+					return true;
+
+				if (!arg.CoerceString(out var text))
+					return false;
+
+				result = text;
+				return true;
+			}
 
 			try
 			{
-				if (expectedType == typeof(string))
-					return arg is long l ? l : arg.As();
-				else if (expectedType == typeof(int))
-					return arg.Ai();
+				if (expectedType == typeof(int))
+				{
+					_ = arg.TryCoerceLong(out var l);
+					result = unchecked((int)l);
+				}
 				else if (expectedType == typeof(uint))
-					return arg.Aui();
+				{
+					_ = arg.TryCoerceLong(out var l);
+					result = unchecked((uint)l);
+				}
 				else if (expectedType == typeof(long))
-					return arg.Al();
+				{
+					_ = arg.TryCoerceLong(out var l);
+					result = l;
+				}
 				else if (expectedType == typeof(ulong))
-					return (ulong)arg.Al();
+				{
+					_ = arg.TryCoerceLong(out var l);
+					result = unchecked((ulong)l);
+				}
 				else if (expectedType == typeof(double))
-					return arg.Ad();
+				{
+					_ = arg.TryCoerceDouble(out var d);
+					result = d;
+				}
 				else if (expectedType == typeof(float))
-					return (float)arg.Ad();
+				{
+					_ = arg.TryCoerceDouble(out var d);
+					result = (float)d;
+				}
 				else if (expectedType == typeof(short))
-					return (short)arg.Al();
+				{
+					_ = arg.TryCoerceLong(out var l);
+					result = (short)l;
+				}
 				else if (expectedType == typeof(ushort))
-					return (ushort)arg.Aui();
+				{
+					_ = arg.TryCoerceLong(out var l);
+					result = unchecked((ushort)l);
+				}
 				else if (expectedType == typeof(bool))
-					return ForceBool(arg);
+					result = ForceBool(arg);
 				else if (expectedType == typeof(sbyte))
-					return (sbyte)arg.Ai();
+				{
+					_ = arg.TryCoerceLong(out var l);
+					result = (sbyte)l;
+				}
 				else if (expectedType == typeof(byte))
-					return (byte)arg.Aui();
+				{
+					_ = arg.TryCoerceLong(out var l);
+					result = unchecked((byte)l);
+				}
 				else
-					return Convert.ChangeType(arg, expectedType, CultureInfo.CurrentCulture);
+					result = Convert.ChangeType(arg, expectedType, CultureInfo.CurrentCulture);
 			}
 			catch
 			{
-				return arg; // Return original if conversion fails
+				result = arg; // Return original if conversion fails
 			}
+
+			return true;
 		}
 
 		internal nint GetIUnknownPtr() => Ptr is nint ip ? ip : new nint((long)Ptr);

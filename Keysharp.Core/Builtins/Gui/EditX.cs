@@ -29,13 +29,19 @@ namespace Keysharp.Builtins
 										 object winTitle = null,
 										 object winText = null,
 										 object excludeTitle = null,
-										 object excludeText = null) => Platform.Control.EditGetLine(
-											 n.Ai(),
-											 controlID,
-											 winTitle,
-											 winText,
-											 excludeTitle,
-											 excludeText);
+										 object excludeText = null)
+		{
+			if (!n.CoerceInt(out var index))
+				return "";
+
+			return Platform.Control.EditGetLine(
+					   index,
+					   controlID,
+					   winTitle,
+					   winText,
+					   excludeTitle,
+					   excludeText);
+		}
 
 		public static long EditGetLineCount(object controlID,
 											object winTitle = null,
@@ -66,8 +72,11 @@ namespace Keysharp.Builtins
 									   object excludeTitle = null,
 									   object excludeText = null)
 		{
+			if (!@string.CoerceString(out var text))
+				return DefaultObject;
+
 			Platform.Control.EditPaste(
-				@string.As(),
+				text,
 				controlID,
 				winTitle,
 				winText,

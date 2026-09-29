@@ -49,8 +49,8 @@ namespace Keysharp.Builtins
 				if (Ctrl is not KeysharpListView lv)
 					return Errors.ErrorOccurred("GUI control is no longer available.");
 
-				var rowNumber = row.Al();
-				var columnNumber = column is null ? 0 : column.Al();
+				if (!row.CoerceLong(out var rowNumber) || !column.CoerceLong(out var columnNumber, 0))
+					return DefaultObject;
 
 				if (rowNumber < 1 || rowNumber > lv.Items.Count)
 					return Errors.ValueErrorOccurred($"Invalid ListView row {rowNumber}; expected 1 through {lv.Items.Count}.");
@@ -96,7 +96,13 @@ namespace Keysharp.Builtins
 					return false;
 				}
 
-				color = Color.FromArgb((int)(value.Al() | 0xFF000000));
+				if (!value.CoerceLong(out var raw))
+				{
+					color = null;
+					return false;
+				}
+
+				color = Color.FromArgb((int)(raw | 0xFF000000));
 				return true;
 			}
 		}

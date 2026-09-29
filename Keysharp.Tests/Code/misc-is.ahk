@@ -1,4 +1,5 @@
 #NoTrayIcon
+#Import Ks { StringBuffer }
 #Include <assert>
 
 x := 1
@@ -131,9 +132,12 @@ AssertEq(IsDigit("A1"), 0, A_LineNumber)
 
 AssertEq(IsDigit("0x01"), 0, A_LineNumber)
 
-AssertEq(IsDigit(a), 0, A_LineNumber)
+Throws(() => IsDigit(a), A_LineNumber, TypeError)
 
-AssertEq(IsDigit(m), 0, A_LineNumber)
+Throws(() => IsDigit(m), A_LineNumber, TypeError)
+
+; A StringBuffer is checked as its text, as it is used wherever a string is.
+AssertEq(IsDigit(StringBuffer("123")), 1, A_LineNumber)
 
 AssertEq(IsXDigit(1), 1, A_LineNumber)
 
@@ -149,9 +153,9 @@ AssertEq(IsXDigit("0x01ABCdef"), 1, A_LineNumber)
 
 AssertEq(IsXDigit("0xg"), 0, A_LineNumber)
 
-AssertEq(IsXDigit(a), 0, A_LineNumber)
+Throws(() => IsXDigit(a), A_LineNumber, TypeError)
 
-AssertEq(IsXDigit(m), 0, A_LineNumber)
+Throws(() => IsXDigit(m), A_LineNumber, TypeError)
 
 AssertEq(IsAlpha(1), 0, A_LineNumber)
 
@@ -169,9 +173,9 @@ AssertEq(IsAlpha("ABC123"), 0, A_LineNumber)
 
 AssertEq(IsAlpha("."), 0, A_LineNumber)
 
-AssertEq(IsAlpha(a), 0, A_LineNumber)
+Throws(() => IsAlpha(a), A_LineNumber, TypeError)
 
-AssertEq(IsAlpha(m), 0, A_LineNumber)
+Throws(() => IsAlpha(m), A_LineNumber, TypeError)
 
 AssertEq(IsUpper(1), 0, A_LineNumber)
 
@@ -189,9 +193,9 @@ AssertEq(IsUpper("AbC123"), 0, A_LineNumber)
 
 AssertEq(IsUpper("."), 0, A_LineNumber)
 
-AssertEq(IsUpper(a), 0, A_LineNumber)
+Throws(() => IsUpper(a), A_LineNumber, TypeError)
 
-AssertEq(IsUpper(m), 0, A_LineNumber)
+Throws(() => IsUpper(m), A_LineNumber, TypeError)
 
 AssertEq(IsLower(1), 0, A_LineNumber)
 
@@ -209,9 +213,9 @@ AssertEq(IsLower("AbC123"), 0, A_LineNumber)
 
 AssertEq(IsLower("."), 0, A_LineNumber)
 
-AssertEq(IsLower(a), 0, A_LineNumber)
+Throws(() => IsLower(a), A_LineNumber, TypeError)
 
-AssertEq(IsLower(m), 0, A_LineNumber)
+Throws(() => IsLower(m), A_LineNumber, TypeError)
 
 AssertEq(IsAlnum(1), 1, A_LineNumber)
 
@@ -229,9 +233,9 @@ AssertEq(IsAlnum("AbC123"), 1, A_LineNumber)
 
 AssertEq(IsAlnum("."), 0, A_LineNumber)
 
-AssertEq(IsAlnum(a), 0, A_LineNumber)
+Throws(() => IsAlnum(a), A_LineNumber, TypeError)
 
-AssertEq(IsAlnum(m), 0, A_LineNumber)
+Throws(() => IsAlnum(m), A_LineNumber, TypeError)
 
 AssertEq(IsSpace(1), 0, A_LineNumber)
 
@@ -253,9 +257,9 @@ AssertEq(IsSpace(" 123"), 0, A_LineNumber)
 
 AssertEq(IsSpace(" `t`n`r`v`f"), 1, A_LineNumber)
 
-AssertEq(IsSpace(a), 0, A_LineNumber)
+Throws(() => IsSpace(a), A_LineNumber, TypeError)
 
-AssertEq(IsSpace(m), 0, A_LineNumber)
+Throws(() => IsSpace(m), A_LineNumber, TypeError)
 
 AssertEq(IsTime("2021"), 1, A_LineNumber)
 
@@ -279,8 +283,8 @@ AssertEq(IsTime("20211215203522"), 1, A_LineNumber)
 
 AssertEq(IsTime("20211215203599"), 0, A_LineNumber)
 
-AssertEq(IsTime(a), 0, A_LineNumber)
+Throws(() => IsTime(a), A_LineNumber, TypeError)
 
-AssertEq(IsTime(m), 0, A_LineNumber)
+Throws(() => IsTime(m), A_LineNumber, TypeError)
 
 FileAppend "pass", "*"

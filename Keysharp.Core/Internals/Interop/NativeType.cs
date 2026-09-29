@@ -165,24 +165,50 @@ namespace Keysharp.Internals.Interop
 			else if (!number.TryCoerceLong(out _))
 				return false;
 
+			// number already passed TryCoerceLong above, so every arm below is re-deriving a view of a value
+			// already known to convert; a failure here cannot happen and is not worth a second error path.
 			switch (code)
 			{
-				case NativeTypeCode.Int: Unsafe.WriteUnaligned(p, number.Ai()); break;
+				case NativeTypeCode.Int:
+					_ = number.TryCoerceInt(out var i);
+					Unsafe.WriteUnaligned(p, i);
+					break;
 
-				case NativeTypeCode.UInt: Unsafe.WriteUnaligned(p, number.Aui()); break;
+				case NativeTypeCode.UInt:
+					_ = number.TryCoerceLong(out var ui);
+					Unsafe.WriteUnaligned(p, unchecked((uint)ui));
+					break;
 
-				case NativeTypeCode.Float: Unsafe.WriteUnaligned(p, number.Af()); break;
+				case NativeTypeCode.Float:
+					_ = number.TryCoerceDouble(out var f);
+					Unsafe.WriteUnaligned(p, (float)f);
+					break;
 
-				case NativeTypeCode.Short: Unsafe.WriteUnaligned(p, unchecked((short)number.Ai())); break;
+				case NativeTypeCode.Short:
+					_ = number.TryCoerceInt(out var sh);
+					Unsafe.WriteUnaligned(p, unchecked((short)sh));
+					break;
 
-				case NativeTypeCode.UShort: Unsafe.WriteUnaligned(p, unchecked((ushort)number.Aui())); break;
+				case NativeTypeCode.UShort:
+					_ = number.TryCoerceLong(out var ush);
+					Unsafe.WriteUnaligned(p, unchecked((ushort)ush));
+					break;
 
 				case NativeTypeCode.Char:
-				case NativeTypeCode.UChar: Unsafe.WriteUnaligned(p, unchecked((byte)number.Ai())); break;
+				case NativeTypeCode.UChar:
+					_ = number.TryCoerceInt(out var ch);
+					Unsafe.WriteUnaligned(p, unchecked((byte)ch));
+					break;
 
-				case NativeTypeCode.Double: Unsafe.WriteUnaligned(p, number.Ad()); break;
+				case NativeTypeCode.Double:
+					_ = number.TryCoerceDouble(out var d);
+					Unsafe.WriteUnaligned(p, d);
+					break;
 
-				default: Unsafe.WriteUnaligned(p, number.Al()); break;//Int64, UInt64, Ptr and UPtr.
+				default://Int64, UInt64, Ptr and UPtr.
+					_ = number.TryCoerceLong(out var l);
+					Unsafe.WriteUnaligned(p, l);
+					break;
 			}
 
 			return true;

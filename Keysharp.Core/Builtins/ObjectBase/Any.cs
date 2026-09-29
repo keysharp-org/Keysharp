@@ -20,6 +20,11 @@ namespace Keysharp.Builtins
 		internal WeakCollection<Any> children = null;
 		internal bool isPrototype = false;
 
+		// C# code's text for a script object, as in an interpolated error message: its type, without running script code,
+		// such as a __Class getter, which Types.Type would.
+		[PublicHiddenFromUser]
+		public override string ToString() => Types.TypeName(GetType());
+
 		// Only an object needing cleanup when collected carries a sentinel, since a type with a finalizer allocates far more
 		// slowly even when it is suppressed.
 		private GCCleanupSentinel sentinel;

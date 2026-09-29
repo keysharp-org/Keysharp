@@ -92,10 +92,12 @@ namespace Keysharp.Builtins
 				// Any other count is still OnEvent, so it is refused as such rather than reported as a missing member.
 				if (args.Length != 2)
 					result = Errors.ValueErrorOccurred("OnEvent takes (EventName, Callback). End a subscription with the Stop() of the object OnEvent returned.");
-				else if (type.GetEvent(args[0].As(), EventFlags) is EventInfo ev)
+				else if (!args[0].CoerceString(out var eventText))
+					result = DefaultObject;
+				else if (type.GetEvent(eventText, EventFlags) is EventInfo ev)
 					result = Subscribe(instance, type, scriptTarget, ev, args[1]);
 				else
-					result = Errors.ValueErrorOccurred($"Event '{args[0].As()}' not found on {type.FullName}.");
+					result = Errors.ValueErrorOccurred($"Event '{Errors.Describe(args[0])}' not found on {type.FullName}.");
 
 				return true;
 			}

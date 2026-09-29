@@ -56,7 +56,9 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if any errors occur.</exception>
 		public static object FileAppend(object text, object filename = null, object options = null)
 		{
-			var file = filename.As();
+			if (!filename.CoerceString(out var file))
+				return DefaultObject;
+
 			EnsureFilePermission(file, FilePermissionAccess.Append, "FileAppend");
 			ThreadAccessors.A_LastError = 0;
 
@@ -66,15 +68,28 @@ namespace Keysharp.Builtins
 			//if (text.ToString() != "pass")
 			//  Console.WriteLine(text);
 
+			if (!options.CoerceString(out var opts))
+				return DefaultObject;
+
+			var t = text;
+
+			// Converted before any file is opened, so that returning on a continued error leaves none open.
+			if (t is not (string or Buffer or byte[]))
+			{
+				if (!t.CoerceString(out var converted))
+					return DefaultObject;
+
+				t = converted;
+			}
+
 			try
 			{
-				var t = text;
 				var encoding = ThreadAccessors.A_FileEncodingRaw;
 				var raw = false;
 				var crlf = false;
 				TextWriter tw = null;
 
-				if (options.As() is string opts)
+				if (opts.Length > 0)
 				{
 					foreach (Range r in opts.AsSpan().SplitAny(SpaceTabSv))
 					{
@@ -175,9 +190,11 @@ namespace Keysharp.Builtins
 						else if (t is byte[] ib)
 							sw.BaseStream.Write(ib);
 					}
-					else if (t != null)//A non-string, non-binary value (e.g. a number): write its string form.
+					else if (t != null)//A Buffer or byte[] for a standard stream, which takes only text, so a TypeError.
 					{
-						var str = Script.ForceString(t);
+						if (!t.CoerceString(out var str))
+							return DefaultObject;
+
 						tw.Write(crlf ? str.ReplaceLineEndings("\r\n") : str);
 					}
 
@@ -212,9 +229,12 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="OSError"/> exception is thrown if any errors occur.</exception>
 		public static object FileCopy(object sourcePattern, object destPattern, object overwrite = null)
 		{
-			EnsureFilePermission(sourcePattern.As(), FilePermissionAccess.Read, "FileCopy source");
-			EnsureFilePermission(destPattern.As(), FilePermissionAccess.Write, "FileCopy destination");
-			FileCopyMove(sourcePattern.As(), destPattern.As(), overwrite.Ab(), false);
+			if (!sourcePattern.CoerceString(out var source) || !destPattern.CoerceString(out var dest))
+				return DefaultObject;
+
+			EnsureFilePermission(source, FilePermissionAccess.Read, "FileCopy source");
+			EnsureFilePermission(dest, FilePermissionAccess.Write, "FileCopy destination");
+			FileCopyMove(source, dest, overwrite.Ab(), false);
 			return DefaultObject;
 		}
 
@@ -286,12 +306,10 @@ namespace Keysharp.Builtins
 #endif
 												object iconNumber = null, object runState = null)
 		{
-			var t = target.As();
-			var l = linkFile.As();
-			var w = workingDir.As();
-			var a = args.As();
-			var d = description.As();
-			var icon = iconFile.As();
+			if (!target.CoerceString(out var t) || !linkFile.CoerceString(out var l) || !workingDir.CoerceString(out var w)
+					|| !args.CoerceString(out var a) || !description.CoerceString(out var d) || !iconFile.CoerceString(out var icon))
+				return DefaultObject;
+
 			EnsureFilePermission(t, FilePermissionAccess.Read, "FileCreateShortcut target");
 			EnsureFilePermission(l, FilePermissionAccess.Write, "FileCreateShortcut link");
 
@@ -301,7 +319,8 @@ namespace Keysharp.Builtins
 			t = Path.GetFullPath(t);
 
 #if !WINDOWS
-			var type = shortcutType.As();
+			if (!shortcutType.CoerceString(out var type))
+				return DefaultObject;
 
 			if (w != "" || a != "" || d != "" || icon != "")
 			{
@@ -348,9 +367,14 @@ namespace Keysharp.Builtins
 			}
 
 #elif WINDOWS
-			var sc = shortcutKey.As();
-			var iconNum = iconNumber.Ai(0);
-			var state = runState.Ai(1);
+			if (!shortcutKey.CoerceString(out var sc))
+				return DefaultObject;
+
+			if (!iconNumber.CoerceInt(out var iconNum))
+				return DefaultObject;
+
+			if (!runState.CoerceInt(out var state, 1))
+				return DefaultObject;
 			var shellLink = (WindowsAPI.IShellLinkW)new WindowsAPI.ShellLink();
 			var persistFile = (IPersistFile)shellLink;
 			iconNum -= iconNum > 0 ? 1 : 0; // Convert 1-based index to 0-based, but leave negative resource IDs as-is.
@@ -402,7 +426,8 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if any errors occur.</exception>
 		public static object FileDelete(object filePattern)
 		{
-			var s = filePattern.As();
+			if (!filePattern.CoerceString(out var s))
+				return DefaultObject;
 
 			if (s.Length == 0)
 				return Errors.InvalidParameterErrorOccurred(1, "FileDelete", s);
@@ -465,10 +490,17 @@ namespace Keysharp.Builtins
 		public static object FileEncoding(object encoding = null)
 		{
 			var prev = A_FileEncoding;
-			var s = encoding.As();
+
+			if (!encoding.CoerceString(out var s))
+				return DefaultObject;
 
 			if (s != "")
-				A_FileEncoding = s;
+			{
+				if (!TryGetEncoding(s, out var enc))
+					return DefaultObject;
+
+				ThreadAccessors.A_FileEncoding = enc;
+			}
 
 			return prev;
 		}
@@ -496,7 +528,8 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static string FileExist(object filePattern)
 		{
-			var s = filePattern.As();
+			if (!filePattern.CoerceString(out var s))
+				return "";
 
 			try
 			{
@@ -537,7 +570,9 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if any errors occur.</exception>
 		public static string FileGetAttrib(object filename)
 		{
-			var s = filename.As();
+			if (!filename.CoerceString(out var s))
+				return "";
+
 			ThreadAccessors.A_LastError = 0;
 
 			try
@@ -631,10 +666,13 @@ namespace Keysharp.Builtins
 #endif
 											 [ByRef] object outRunState = null)
 		{
+			if (!linkFile.CoerceString(out var linkText))
+				return DefaultObject;
+
 			string link = null;
 			try
 			{
-				link = Path.GetFullPath(linkFile.As());
+				link = Path.GetFullPath(linkText);
 #if !WINDOWS
 				var linkInfo = new FileInfo(link);
 				var resolved = linkInfo.ResolveLinkTarget(true);
@@ -766,8 +804,10 @@ namespace Keysharp.Builtins
 		public static long FileGetSize(object filename = null, object units = null)
 		{
 			long result;
-			var file = filename.As();
-			var u = units.As();
+
+			if (!filename.CoerceString(out var file) || !units.CoerceString(out var u))
+				return 0L;
+
 			ThreadAccessors.A_LastError = 0;
 
 			if (file?.Length == 0)
@@ -831,13 +871,16 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static string FileGetTime(object filename = null, object whichTime = null)
 		{
-			var file = filename.As();
+			if (!filename.CoerceString(out var file))
+				return "";
+
 			ThreadAccessors.A_LastError = 0;
+
+			if (!whichTime.CoerceString(out var time, "M"))
+				return "";
 
 			try
 			{
-				var time = whichTime.As("M");
-
 				if (file?.Length == 0)
 					file = A_LoopFileFullPath;
 
@@ -873,7 +916,9 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static string FileGetVersion(object filename)
 		{
-			var file = filename.As();
+			if (!filename.CoerceString(out var file))
+				return "";
+
 			ThreadAccessors.A_LastError = 0;
 
 			try
@@ -902,7 +947,9 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> is thrown on failure.</exception>
 		public static object FileInstall(object source, object dest, object overwrite = null)
 		{
-			var src = source.As();
+			if (!source.CoerceString(out var src) || !dest.CoerceString(out var destText))
+				return DefaultObject;
+
 			var asm = Accessors.GetAssembly();
 			var resourceKey = AppResourcePath.Normalize(src);
 			var wanted = resourceKey != null ? AppManifest.FileResourceName(resourceKey) : null;
@@ -921,7 +968,7 @@ namespace Keysharp.Builtins
 			if (stream == null)
 			{
 				var sourcePath = AppResourcePath.ToFileSystemPath(src);
-				var destPath = AppResourcePath.ToFileSystemPath(dest.As());
+				var destPath = AppResourcePath.ToFileSystemPath(destText);
 
 				try
 				{
@@ -945,7 +992,7 @@ namespace Keysharp.Builtins
 
 			using (stream)
 			{
-				var dst = AppResourcePath.ToFileSystemPath(dest.As());
+				var dst = AppResourcePath.ToFileSystemPath(destText);
 				EnsureFilePermission(dst, FilePermissionAccess.Write, "FileInstall destination");
 
 				try
@@ -983,9 +1030,12 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object FileMove(object sourcePattern, object destPattern, object overwrite = null)
 		{
-			EnsureFilePermission(sourcePattern.As(), FilePermissionAccess.ReadWrite, "FileMove source");
-			EnsureFilePermission(destPattern.As(), FilePermissionAccess.ReadWrite, "FileMove destination");
-			FileCopyMove(sourcePattern.As(), destPattern.As(), overwrite.Ab(), true);
+			if (!sourcePattern.CoerceString(out var source) || !destPattern.CoerceString(out var dest))
+				return DefaultObject;
+
+			EnsureFilePermission(source, FilePermissionAccess.ReadWrite, "FileMove source");
+			EnsureFilePermission(dest, FilePermissionAccess.ReadWrite, "FileMove destination");
+			FileCopyMove(source, dest, overwrite.Ab(), true);
 			return DefaultObject;
 		}
 
@@ -1012,10 +1062,9 @@ namespace Keysharp.Builtins
 		public static object FileOpen(object filename, object flags, object encoding = null)
 		{
 			ThreadAccessors.A_LastError = 0;
-			var file = filename.As();
-			var f = flags.As();
-			var e = encoding.As();
-			var enc = e.Length != 0 ? GetEncoding(e) : ThreadAccessors.A_FileEncodingRaw;
+
+			if (!filename.CoerceString(out var file) || !flags.CoerceString(out var f) || !TryGetEncoding(encoding, ThreadAccessors.A_FileEncodingRaw, out var enc))
+				return DefaultObject;
 
 			var mode = FileMode.Open;
 			var access = FileAccess.ReadWrite;
@@ -1171,9 +1220,15 @@ namespace Keysharp.Builtins
 		public static object FileRead(object filename, object options = null)
 		{
 			object output = null;
-			var file = filename.As();
+
+			if (!filename.CoerceString(out var file))
+				return DefaultObject;
+
 			EnsureFilePermission(file, FilePermissionAccess.Read, "FileRead");
-			var opts = options.As();
+
+			if (!options.CoerceString(out var opts))
+				return DefaultObject;
+
 			var enc = ThreadAccessors.A_FileEncodingRaw;
 			ThreadAccessors.A_LastError = 0;
 
@@ -1198,8 +1253,8 @@ namespace Keysharp.Builtins
 							binary = true;
 						else if (split[0] == '\n')
 							nocrlf = true;
-						else
-							enc = GetEncoding(split.ToString());//Will internally convert to string.
+						else if (!TryGetEncoding(split.ToString(), out enc))
+							return DefaultObject;
 					}
 				}
 			}
@@ -1269,7 +1324,9 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static object FileRecycle(object filePattern)
 		{
-			var s = filePattern.As();
+			if (!filePattern.CoerceString(out var s))
+				return DefaultObject;
+
 			EnsureFilePermission(s, FilePermissionAccess.Write, "FileRecycle");
 			ThreadAccessors.A_LastError = 0;
 
@@ -1312,7 +1369,8 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static object FileRecycleEmpty(object driveLetter = null)
 		{
-			var s = driveLetter.As();
+			if (!driveLetter.CoerceString(out var s))
+				return DefaultObject;
 
 			try
 			{
@@ -1413,9 +1471,10 @@ namespace Keysharp.Builtins
 		public static object FileSetAttrib(object attributes, object filePattern = null, object mode = null)
 		{
 			ThreadAccessors.A_LastError = 0;
-			var attr = attributes.As();
-			var file = filePattern.As(A_LoopFileFullPath);
-			var m = mode.As();
+
+			if (!attributes.CoerceString(out var attr) || !filePattern.CoerceString(out var file, A_LoopFileFullPath) || !mode.CoerceString(out var m))
+				return DefaultObject;
+
 			var dodirs = m.Contains('d', StringComparison.OrdinalIgnoreCase);
 			var dofiles = m.Contains('f', StringComparison.OrdinalIgnoreCase);
 			var recurse = m.Contains('r', StringComparison.OrdinalIgnoreCase);
@@ -1488,10 +1547,11 @@ namespace Keysharp.Builtins
 			object filePattern = null, object whichTime = null, object mode = null)
 		{
 			ThreadAccessors.A_LastError = 0;
-			var timestamp = yyyymmddhh24miss.As();
-			var file = filePattern.As();
-			var whichtime = whichTime.As("M");
-			var m = mode.As();
+
+			if (!yyyymmddhh24miss.CoerceString(out var timestamp) || !filePattern.CoerceString(out var file)
+					|| !whichTime.CoerceString(out var whichtime, "M") || !mode.CoerceString(out var m))
+				return DefaultObject;
+
 			var dodirs = m.Contains('d', StringComparison.OrdinalIgnoreCase);
 			var dofiles = m.Contains('f', StringComparison.OrdinalIgnoreCase);
 			var recurse = m.Contains('r', StringComparison.OrdinalIgnoreCase);
@@ -1555,55 +1615,53 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Resolves an encoding name, falling back to the caller's default when the script named none.
+		/// As <see cref="TryGetEncoding(object, Encoding, out Encoding)"/>, with empty or unset meaning the native UTF-16
+		/// encoding.
 		/// </summary>
-		/// <param name="s">An encoding name as <see cref="GetEncoding"/> takes, or empty.</param>
-		/// <param name="def">The encoding to use when no name was given.</param>
-		/// <returns>The corresponding <see cref="Encoding"/>.</returns>
-		/// <exception cref="ValueError">Thrown if a name was given and cannot be resolved.</exception>
-		internal static Encoding GetEncodingOrDefault(object s, Encoding def)
-		{
-			var name = s.As();
-			return name.Length == 0 ? def : GetEncoding(name);
-		}
+		internal static bool TryGetEncoding(object s, out Encoding encoding) => TryGetEncoding(s, Encoding.Unicode, out encoding);
 
 		/// <summary>
-		/// Resolves an encoding name to an <see cref="Encoding"/>.
+		/// Resolves an encoding name to an <see cref="Encoding"/>, falling back to the caller's default when the script
+		/// named none.
 		/// </summary>
 		/// <param name="s">The encoding name: UTF-8, UTF-8-RAW, UTF-16, UTF-16-RAW, ASCII, a code page written
 		/// either as CPnnn or as the bare number, or any other name .NET knows such as windows-1252. Empty or
-		/// unset means the native UTF-16 encoding.</param>
-		/// <returns>The corresponding <see cref="Encoding"/>.</returns>
+		/// unset means <paramref name="def"/>.</param>
+		/// <param name="def">The encoding to use when no name was given.</param>
+		/// <param name="encoding">The corresponding <see cref="Encoding"/>.</param>
+		/// <returns>False if the script continued the error raised for the name, and the caller then returns at once.</returns>
+		/// <exception cref="TypeError">Thrown if the name does not convert to a string.</exception>
 		/// <exception cref="ValueError">Thrown if the name is not one of those, or names a code page this system
 		/// does not have.</exception>
 		/// <remarks>A name which cannot be resolved is never quietly substituted: the caller would then read or
 		/// write the wrong bytes and have no way to notice.</remarks>
-		internal static Encoding GetEncoding(object s)
+		internal static bool TryGetEncoding(object s, Encoding def, out Encoding encoding)
 		{
-			var val = s.As().ToLowerInvariant();
+			encoding = null;
 
-			if (val.Length == 0)
-				return Encoding.Unicode;
+			if (!s.CoerceString(out var name))
+				return false;
 
-			switch (val)
+			if (name.Length == 0)
 			{
-				case "ascii":
-				case "us-ascii":
-					return Encoding.ASCII;
-
-				case "utf-8":
-					return Encoding.UTF8;
-
-				case "utf-8-raw":
-					return new UTF8Encoding(false);//No byte order mark.
-
-				case "utf-16":
-				case "unicode":
-					return Encoding.Unicode;
-
-				case "utf-16-raw":
-					return new UnicodeEncoding(false, false);//Little endian, no byte order mark.
+				encoding = def;
+				return true;
 			}
+
+			var val = name.ToLowerInvariant();
+
+			encoding = val switch
+			{
+				"ascii" or "us-ascii" => Encoding.ASCII,
+				"utf-8" => Encoding.UTF8,
+				"utf-8-raw" => new UTF8Encoding(false),//No byte order mark.
+				"utf-16" or "unicode" => Encoding.Unicode,
+				"utf-16-raw" => new UnicodeEncoding(false, false),//Little endian, no byte order mark.
+				_ => null
+			};
+
+			if (encoding != null)
+				return true;
 
 			// Anything else which happens to start with "cp" falls through to the name lookup below.
 			var number = val.StartsWith("cp") ? val.AsSpan(2) : val.AsSpan();
@@ -1612,23 +1670,27 @@ namespace Keysharp.Builtins
 			{
 				try
 				{
-					return Encoding.GetEncoding(cp);
+					encoding = Encoding.GetEncoding(cp);
+					return true;
 				}
 				catch
 				{
-					return (Encoding)Errors.ValueErrorOccurred($"Code page {cp} is not available on this system.", val, Encoding.Unicode);
+					_ = Errors.ValueErrorOccurred($"Code page {cp} is not available on this system.", val);
+					return false;
 				}
 			}
 
 			try
 			{
-				return Encoding.GetEncoding(val);
+				encoding = Encoding.GetEncoding(val);
+				return true;
 			}
 			catch
 			{
 			}
 
-			return (Encoding)Errors.ValueErrorOccurred("Unknown encoding. Specify UTF-8, UTF-8-RAW, UTF-16, UTF-16-RAW, ASCII, a code page as CPnnn or nnn, or a name .NET recognizes.", val, Encoding.Unicode);
+			_ = Errors.ValueErrorOccurred("Unknown encoding. Specify UTF-8, UTF-8-RAW, UTF-16, UTF-16-RAW, ASCII, a code page as CPnnn or nnn, or a name .NET recognizes.", val);
+			return false;
 		}
 
 		/// <summary>
@@ -1728,7 +1790,13 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="filename">The filename to examine.</param>
 		/// <returns>The full path to filename.</returns>
-		public static string FileFullPath(object filename) => Path.GetFullPath(filename.As());
+		public static string FileFullPath(object filename)
+		{
+			if (!filename.CoerceString(out var file))
+				return "";
+
+			return Path.GetFullPath(file);
+		}
 
 		/// <summary>
 		/// Creates an empty temporary file and returns its full path.

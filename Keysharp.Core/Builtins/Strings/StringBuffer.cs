@@ -10,6 +10,7 @@ namespace Keysharp.Builtins
 		public class StringBuffer : KeysharpObject, IPointable
 		{
 			private StringMemory memory = new();
+			internal string Text => memory.ToString();
 
 			public StringBuffer(params object[] args) : base(args) { }
 
@@ -27,8 +28,11 @@ namespace Keysharp.Builtins
 
 			public object __New(object initialValue = null, object capacity = null)
 			{
-				var text = initialValue.As();
-				var room = capacity?.Al() ?? Math.Max(text.Length, 256);
+				if (!initialValue.CoerceString(out var text))
+					return DefaultObject;
+
+				if (!capacity.CoerceLong(out var room, Math.Max(text.Length, 256)))
+					return DefaultObject;
 
 				if (room is < 0 or >= int.MaxValue)
 					return Errors.ValueErrorOccurred($"Invalid capacity {room}.", capacity);
@@ -66,7 +70,8 @@ namespace Keysharp.Builtins
 
 				set
 				{
-					var capacity = value.Al();
+					if (!value.CoerceLong(out var capacity))
+						return;
 
 					if (capacity is < 0 or >= int.MaxValue)
 						_ = Errors.ValueErrorOccurred($"Invalid capacity {capacity}.", value);
@@ -102,12 +107,18 @@ namespace Keysharp.Builtins
 			/// Moves the position, clamped to the capacity, or for a negative value to the first null, which is where a
 			/// function's output ends. Returns the new position.
 			/// </summary>
-			public object Seek(object position) => memory.Seek(position.Al());
+			public object Seek(object position)
+			{
+				if (!position.CoerceLong(out var pos))
+					return DefaultObject;
+
+				return memory.Seek(pos);
+			}
 
 			/// <summary>
 			/// The text up to the first null or the position, whichever is further.
 			/// </summary>
-			public override string ToString() => memory.ToString();
+			public override string ToString() => Text;
 		}
 	}
 }

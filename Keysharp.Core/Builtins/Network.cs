@@ -246,8 +246,9 @@ namespace Keysharp.Builtins
 		/// cache flag other than <c>*0</c> was given.</exception>
 		public static object Download([UserDeclaredName("URL")] object url, object filename)
 		{
-			var address = url.As();
-			var file = filename.As();
+			if (!url.CoerceString(out var address) || !filename.CoerceString(out var file))
+				return DefaultObject;
+
 			var noCache = true;
 
 			if (address.StartsWith('*'))

@@ -3,10 +3,17 @@ namespace Keysharp.Internals.Os
 {
 	internal abstract class ControlManagerBase
 	{
-		internal static ToolStripMenuItem GetMenuItem(MenuStrip strip, params object[] items)
+		/// <summary>
+		/// The item a MenuSelect path names, or null in <paramref name="menuItem"/> when there is none. False when
+		/// an error was raised and the script continued it, and the caller then returns at once without raising
+		/// another.
+		/// </summary>
+		internal static bool TryGetMenuItem(MenuStrip strip, out ToolStripMenuItem menuItem, params object[] items)
 		{
-			var topLevel = items[0].As();
-			ToolStripMenuItem menuItem = null;
+			menuItem = null;
+
+			if (!items[0].CoerceString(out var topLevel))
+				return false;
 
 			//First get the top level menu.
 			if (topLevel.EndsWith('&') && int.TryParse(topLevel.AsSpan().Trim('&'), out var n) && n > 0)
@@ -18,7 +25,7 @@ namespace Keysharp.Internals.Os
 				else
 				{
 					_ = Errors.ValueErrorOccurred($"Index {n + 1} was outside the menu length of {strip.Items.Count}.", topLevel);
-					return default;
+					return false;
 				}
 			}
 			else
@@ -35,9 +42,13 @@ namespace Keysharp.Internals.Os
 
 			for (var i = 1; i < items.Length && menuItem != null; i++)
 			{
-				var item = items[i].As();
+				if (!items[i].CoerceString(out var item))
+				{
+					menuItem = null;
+					return false;
+				}
 
-				if (item == null || item.Length == 0)
+				if (item.Length == 0)
 					continue;
 
 				if (item.EndsWith('&') && int.TryParse(item.AsSpan().Trim('&'), out n) && n > 0)
@@ -52,7 +63,8 @@ namespace Keysharp.Internals.Os
 					else
 					{
 						_ = Errors.ValueErrorOccurred($"Index {n + 1} was outside the menu length of {menuItem.DropDownItems.Count}.", item);
-						return default;
+						menuItem = null;
+						return false;
 					}
 				}
 				else
@@ -68,7 +80,7 @@ namespace Keysharp.Internals.Os
 				}
 			}
 
-			return menuItem;
+			return true;
 		}
 
 		internal static bool MenuMatchHelper(string menuText, string match)

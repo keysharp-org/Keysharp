@@ -110,7 +110,13 @@ namespace Keysharp.Builtins
 		public long Capacity
 		{
 			get => map != null ? map.Capacity : 0L;
-			set => map?.EnsureCapacity(value.Ai());
+			set
+			{
+				if (!value.CoerceInt(out var capacity))
+					return;
+
+				map?.EnsureCapacity(capacity);
+			}
 		}
 
 		/// <summary>
@@ -226,7 +232,11 @@ namespace Keysharp.Builtins
 		///     2: Return the key in the first element, and the value in the second.
 		/// </param>
 		/// <returns><see cref="Enumerator"/></returns>
-		public KeysharpFunc __Enum(object count) => CreateEnumerator(count.Ai());
+		public KeysharpFunc __Enum(object count)
+		{
+			_ = count.TryCoerceInt(out var c);
+			return CreateEnumerator(c);
+		}
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="Map"/> class.
@@ -460,44 +470,7 @@ namespace Keysharp.Builtins
 		/// Returns the string representation of all elements in the map.
 		/// </summary>
 		/// <returns>The string representation.</returns>
-		public override string ToString()
-		{
-			if (map.Count > 0)
-			{
-				var sb = new StringBuilder(map.Count * 10);
-				_ = sb.Append('{');
-				var i = 0;
-
-				foreach (var kv in EnumerableMap)
-				{
-					string key;
-
-					if (kv.Key is string ks)
-						key = "\"" + ks + "\"";//Can't use interpolated string here because the AStyle formatter misinterprets it.
-					else
-						key = kv.Key.ToString();
-
-					string val;
-
-					if (kv.Value is string vs)
-						val = "\"" + vs + "\"";//Can't use interpolated string here because the AStyle formatter misinterprets it.
-					else
-						val = kv.Value.ToString();
-
-					if (i < map.Count - 1)
-						_ = sb.Append($"{key}: {val}, ");
-					else
-						_ = sb.Append($"{key}: {val}");
-
-					i++;
-				}
-
-				_ = sb.Append('}');
-				return sb.ToString();
-			}
-			else
-				return "{}";
-		}
+		public override string ToString() => Script.FormatCollection(this, true);
 
 		/// <summary>
 		/// The implementation for <see cref="IEnumerable.GetEnumerator"/> which just calls <see cref="__Enum"/>.

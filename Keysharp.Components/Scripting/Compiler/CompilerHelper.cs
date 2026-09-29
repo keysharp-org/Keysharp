@@ -945,7 +945,8 @@ namespace Keysharp.Compilation
 			}
 			catch (ParseException e)
 			{
-				_ = errors.Add(new CompilerError(e.File, e.Line.Ai(), e.Column, "0", e.Message));
+				_ = e.Line.TryCoerceInt(out var line);
+				_ = errors.Add(new CompilerError(e.File, line, e.Column, "0", e.Message));
 			}
 			catch (Exception e)
 			{

@@ -35,8 +35,8 @@ namespace Keysharp.Builtins
 		/// <param name="duration">If omitted, it defaults to 150. Otherwise, specify the duration of the sound, in milliseconds.</param>
 		public static object SoundBeep(object frequency = null, object duration = null)
 		{
-			var freq = frequency.Ai(523);
-			var time = duration.Ai(150);
+			if (!frequency.CoerceInt(out var freq, 523) || !duration.CoerceInt(out var time, 150))
+				return DefaultObject;
 
 			if (freq is < SoundPlayback.MinFrequency or > SoundPlayback.MaxFrequency)
 				return Errors.ValueErrorOccurred($"Frequency must be from {SoundPlayback.MinFrequency} through {SoundPlayback.MaxFrequency}.", frequency);
@@ -129,8 +129,9 @@ namespace Keysharp.Builtins
 		public static object SoundPlay(object filename, object wait = null)
 		{
 			var script = Script.TheScript;
-			var file = filename.As();
-			var w = wait.As();
+
+			if (!filename.CoerceString(out var file) || !wait.CoerceString(out var w))
+				return DefaultObject;
 
 			// "*n" selects a standard system sound. Wait has no effect in this mode (as documented).
 			if (file.Length > 1 && file[0] == '*')
@@ -239,7 +240,12 @@ namespace Keysharp.Builtins
 			var settingScalar = 0.0;
 
 			if (soundSet)
-				settingScalar = Math.Clamp(obj0.Ad() * 0.01 * 65536.0, -65536.0, 65536.0);//pactl uses a range of 0-65536.
+			{
+				if (!obj0.CoerceDouble(out var settingPercent))
+					return DefaultObject;
+
+				settingScalar = Math.Clamp(settingPercent * 0.01 * 65536.0, -65536.0, 65536.0);//pactl uses a range of 0-65536.
+			}
 
 			var valStr = obj0 == null ? "" : obj0.ToString();
 			var adjust = valStr.Length > 0 && (valStr[0] == '-' || valStr[0] == '+');
@@ -355,7 +361,8 @@ namespace Keysharp.Builtins
 				{
 					if (adjust)
 					{
-						var currentVolume = SoundGetVolume(obj0, obj1).Ad() * 0.01 * 65536.0;
+						_ = SoundGetVolume(obj0, obj1).TryCoerceDouble(out var currentVolumePercent);
+						var currentVolume = currentVolumePercent * 0.01 * 65536.0;
 						settingScalar = Math.Clamp(currentVolume + settingScalar, 0.0, 65536.0);
 					}
 
@@ -421,7 +428,10 @@ namespace Keysharp.Builtins
 					break;
 
 				case SoundControlType.IID:
-					search.targetIid = new Guid(obj0.As());
+					if (!obj0.CoerceString(out var iid))
+						return DefaultObject;
+
+					search.targetIid = new Guid(iid);
 					comp = obj1;
 					dev = obj2;
 					break;
@@ -430,7 +440,12 @@ namespace Keysharp.Builtins
 			var settingScalar = 0.0f;
 
 			if (soundSet)
-				settingScalar = Math.Clamp((float)(obj0.Ad() * 0.01), -1.0f, 1.0f);
+			{
+				if (!obj0.CoerceDouble(out var settingPercent))
+					return DefaultObject;
+
+				settingScalar = Math.Clamp((float)(settingPercent * 0.01), -1.0f, 1.0f);
+			}
 
 			var resultFloat = 0.0f;
 			var resultBool = false;
@@ -535,7 +550,8 @@ namespace Keysharp.Builtins
 					if (colon != -1)
 					{
 						search.targetName = cs[..colon];
-						search.targetInstance = cs[(colon + 1)..].Ai();
+						_ = cs[(colon + 1)..].TryCoerceInt(out var instanceIdx);
+						search.targetInstance = instanceIdx;
 					}
 					else
 					{
@@ -861,7 +877,8 @@ namespace Keysharp.Builtins
 				if (colon != -1)
 				{
 					targetName = ds[..colon];
-					targetIndex = ds[(colon + 1)..].Ai() - 1;
+					_ = ds[(colon + 1)..].TryCoerceInt(out targetIndex);
+					--targetIndex;
 				}
 				else if (int.TryParse(ds, out targetIndex))
 				{
@@ -1365,11 +1382,17 @@ namespace Keysharp.Builtins
 						if (rc != 0)
 							return Errors.OSErrorOccurred("", $"Failed to query current volume (CoreAudio error 0x{(uint)rc:X8}).");
 
-						newVol = Math.Clamp(currentVol + (float)(obj0.Ad() * 0.01), 0f, 1f);
+						if (!obj0.CoerceDouble(out var settingPercent))
+							return DefaultObject;
+
+						newVol = Math.Clamp(currentVol + (float)(settingPercent * 0.01), 0f, 1f);
 					}
 					else
 					{
-						newVol = Math.Clamp((float)(obj0.Ad() * 0.01), 0f, 1f);
+						if (!obj0.CoerceDouble(out var settingPercent))
+							return DefaultObject;
+
+						newVol = Math.Clamp((float)(settingPercent * 0.01), 0f, 1f);
 					}
 
 					var setRc = SetDeviceVolume(deviceId, newVol);

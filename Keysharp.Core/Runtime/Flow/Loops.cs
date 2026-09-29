@@ -38,7 +38,8 @@ namespace Keysharp.Runtime
 				return System.Array.Empty<object>();
 
 			// A negative count runs no iterations, which leaves -1 to mean the infinite form of Loop().
-			var n = Math.Max(obj.Al(), 0L);
+			_ = obj.TryCoerceLong(out var count);
+			var n = Math.Max(count, 0L);
 			var info = Peek(LoopType.Normal); // The calling code must have called Push() with this type.
 			return new NormalLoopEnumerable(info, n);
 		}
@@ -116,8 +117,9 @@ namespace Keysharp.Runtime
 		{
 			bool d = false, f = true, r = false;
 			var info = Peek(LoopType.Directory);//The calling code must have called Push() with this type.
-			var path = filePattern.As();
-			var m = mode.As();
+
+			if (!filePattern.CoerceString(out var path) || !mode.CoerceString(out var m))
+				yield break;
 
 			// As in AutoHotkey, an empty pattern matches nothing.
 			if (path.Length == 0)
@@ -165,9 +167,9 @@ namespace Keysharp.Runtime
 		/// <returns>Yield return an <see cref="IEnumerable"/> for each string so the caller can run the loop.</returns>
 		public static IEnumerable LoopParse(object input, object delimiterChars = null, object omitChars = null)
 		{
-			var i = input.As();
-			var delimiters = delimiterChars.As();
-			var omit = omitChars.As();
+			if (!input.CoerceString(out var i) || !delimiterChars.CoerceString(out var delimiters) || !omitChars.CoerceString(out var omit))
+				yield break;
+
 			var info = Peek(LoopType.Parse);//The calling code must have called Push() with this type.
 			var script = Script.TheScript;
 
@@ -311,8 +313,9 @@ namespace Keysharp.Runtime
 		/// <returns>Yield return an <see cref="IEnumerable"/> for each line in the input file so the caller can run the loop.</returns>
 		public static IEnumerable LoopRead(object inputFile, object outputFile = null, bool hasElse = false)
 		{
-			var input = inputFile.As();
-			var output = outputFile.As();
+			if (!inputFile.CoerceString(out var input) || !outputFile.CoerceString(out var output))
+				yield break;
+
 			var info = Peek(LoopType.File);//The calling code must have called Push() with this type.
 
 			if (output.Length > 0)
@@ -366,8 +369,9 @@ namespace Keysharp.Runtime
 		public static IEnumerable LoopRegistry(object keyName, object mode = null)
 		{
 			bool k = false, v = true, r = false;
-			var keyname = keyName.As();
-			var m = mode.As();
+
+			if (!keyName.CoerceString(out var keyname) || !mode.CoerceString(out var m))
+				yield break;
 
 			if (!string.IsNullOrEmpty(m))
 			{
@@ -458,7 +462,7 @@ namespace Keysharp.Runtime
 		/// <exception cref="UnsetError">An <see cref="UnsetError"/> exception is thrown if the object is null.</exception>
 		public static Enumerator MakeEnumerator(object obj, object count)
 		{
-			var ct = count.Ai();
+			_ = count.TryCoerceInt(out var ct);
 
 			if (obj is Enumerator enumerator)
 				return enumerator;
@@ -483,7 +487,7 @@ namespace Keysharp.Runtime
 			//else if (obj is IEnumerable ie)
 			//  return ie.Cast<object>().Select(o => (o, o)).GetEnumerator();
 			else if (obj is object[] oa)
-				return (Enumerator)new Keysharp.Builtins.Array(oa).__Enum(count.Ai());
+				return (Enumerator)new Keysharp.Builtins.Array(oa).__Enum(ct);
 			else if (obj is null)
 			{
 				_ = Errors.UnsetErrorOccurred("object");

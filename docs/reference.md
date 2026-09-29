@@ -458,7 +458,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ Keysharp breaks this and will instead create a variable, initialize it to zero, then increment it.
 	+ For example, a file with nothing but the line `x++` in it, will end with a variable named x which has the value of 1.
 * Keysharp supports fixed [operator overloads](https://keysharp-org.github.io/KeysharpDocs/Objects.htm#Custom_Classes_operators) on classes and structs, including their class objects (`static +(Right)`). Unary and binary forms coexist; equality pairs must be declared together in the same scope. `?()` customizes truth testing, and `++()`/`--()` customize increment/decrement. Native numeric operations retain direct dispatch.
-* Concatenating an object raises a `TypeError` in AutoHotkey. In Keysharp, an object with a `ToString` method, such as an `Array`, `Map` or a class that defines one, concatenates as the string that method returns, as `String(obj)` gives it; any other object raises a `TypeError`.
+* An object where a string is expected, such as an operand of concatenation or the argument of `StrLen()`, raises a `TypeError` in AutoHotkey. In Keysharp, an object with a `ToString` method, such as an `Array`, a `Map`, a .NET object or a class or module that defines one or answers it through `__Call`, is converted through that method. A missing method or an object result raises `TypeError`; an error raised by the method propagates. Explicit `String(obj)` returns the method result unchanged, including an object or no value, and a missing method raises `MethodError`. Use `Type(obj)` to obtain a class name; it still honors a custom inherited `__Class` getter. The character-class `Is` functions, such as `IsDigit()`, raise a `TypeError` for an object other than a `StringBuffer`, whose text they check, as AutoHotkey raises for any object, and check a number as its decimal text, where AutoHotkey raises a `TypeError`.
 * The concat-assign operator `.=` is not optimized to modify the left operand inplace, meaning calling it in a loop will be very slow. If many concats are required then use a `StringBuffer` instead.
 * Function objects behave mostly the same as in AutoHotkey.
 	+ The underlying function object class is named `KeysharpFunc`, instead of `Func`, because C# already contains a built in class named `Func`.
@@ -474,6 +474,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * Linux/macOS `SIGTERM` runs `OnExit` with `Close` (`Reload` during a pending reload); a second signal during exit forces termination. On Windows, title-bar close hides the main window; external `WM_CLOSE` exits.
 * `A_Args` is a built-in variable which every module and function shares and a script may assign any value, unset included. In AutoHotkey it is a variable of the main module only, so another module has its own, and assigning it in a function without a global declaration creates a local variable.
 * `throw` and `Throw()` pass any value unchanged to `catch`, including an instance of a class which does not extend `Error`. A bare `catch` matches only `Error` values; `catch Any` matches every value. An uncaught non-`Error` value is still wrapped as `Error(Value)` for `OnError` and the default diagnostic, while AutoHotkey passes the original value to `OnError`. An object's own `Message` value property supplies the wrapper's message; inherited properties and getters are ignored.
+* A built-in whose error the script continues, as `OnError` returning -1 or the error dialog's Continue button does, returns at once, as in AutoHotkey, and the call yields an empty string. A built-in which returns a number yields 0, and one which returns an object yields no value.
 * An exception which is not a Keysharp error, such as a .NET exception escaping a built-in function, ends its thread and reaches `OnError` as an `Error` describing it, or its inner exception when it wraps one. Its `Extra` is the exception's .NET type, and its `What`, `File`, `Line` and `Stack` describe where it was thrown.
 * `Loop Read` over an input file which does not exist runs no iterations, where AutoHotkey raises `OSError` unless the loop has an `Else`.
 * An `Error` records where it came from when it is constructed, as AutoHotkey v2.1 records it: `What`, `File`, `Line` and `Stack` follow the same rules, and `Stack` has the same form. Keysharp keeps the call stack this needs itself, so it does not depend on debug information or on what the .NET JIT compiler inlines.
@@ -743,7 +744,7 @@ Controlling another application needs **Automation** permission, granted per tar
 			```
 		+ `Remove(Value) => Boolean`: Removes the first occurrence of `Value` and returns `true` if one was found and removed, else `false`. Omitting `Value` removes the first element which has no value. A match is decided by `IndexOf`'s rule, which `Contains` uses too.
 		+ `Sort(Callback: (a, b) => Integer) => this`: Sorts the array in place. The callback should use the usual logic of returning -1 when `a < b`, 0 when `a == b` and 1 otherwise.
-		+ `ToString() => String`: Returns a string representation of the array.
+		+ `ToString() => String`: Returns the array as `[a, b, c]`, with strings quoted, a missing element as `unset` and an object element as the string its `ToString` method returns or, without one, its type name, and one whose `ToString` raises as `<ERROR>`, the error contained.
 	+ `Buffer`:
 		+ `__Item[]`: Indexer which can be used to read a byte at a 1-based offset.
 			+ Throws an `IndexError` if the offset out of range.
@@ -752,7 +753,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `IsClosure`, `IsMethod` and `Params` expose Keysharp function metadata.
 	+ `InputHook.KeyOpt("{All}", ...)` affects keyboard input only. Keysharp adds composable `{Keyboard}` and `{Mouse}` (buttons and wheels); mouse movement uses `VisibleMouseMove`.
 	+ `Map`:
-		+ `ToString() => String`: Returns a string representation of the map.
+		+ `ToString() => String`: Returns the map as `[key: value, ...]`, its keys and values formatted as `Array.ToString()` formats elements.
 	+ `String`:
 		+ `Length`: The number of characters in the string.
 		+ `StartsWith(Token [, CaseSense]) => Boolean` and `EndsWith(Token [, CaseSense]) => Boolean`: Determines whether the string begins or ends with a given string.

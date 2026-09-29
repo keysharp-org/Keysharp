@@ -184,7 +184,11 @@ namespace Keysharp.Builtins
 		public static object A_ControlDelay
 		{
 			get => ThreadAccessors.A_ControlDelay;
-			set => ThreadAccessors.A_ControlDelay = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					ThreadAccessors.A_ControlDelay = l;
+			}
 		}
 
 		/// <summary>
@@ -295,7 +299,11 @@ namespace Keysharp.Builtins
 		public static object A_DefaultMouseSpeed
 		{
 			get => ThreadAccessors.A_DefaultMouseSpeed;
-			set => ThreadAccessors.A_DefaultMouseSpeed = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					ThreadAccessors.A_DefaultMouseSpeed = l;
+			}
 		}
 
 		/// <summary>
@@ -371,7 +379,9 @@ namespace Keysharp.Builtins
 			get => (long)ThreadAccessors.A_LastError;
 			set
 			{
-				var val = value.ToInt();
+				if (!value.CoerceInt(out var val))
+					return;
+
 				Marshal.SetLastSystemError(val);
 				ThreadAccessors.A_LastError = val;
 			}
@@ -386,8 +396,8 @@ namespace Keysharp.Builtins
 
 			set
 			{
-				var val = Files.GetEncoding(value.ToString());
-				ThreadAccessors.A_FileEncoding = val;
+				if (Files.TryGetEncoding(value, out var val))
+					ThreadAccessors.A_FileEncoding = val;
 			}
 		}
 
@@ -403,7 +413,11 @@ namespace Keysharp.Builtins
 		public static object A_HotkeyInterval
 		{
 			get => Script.TheScript.AccessorData.hotkeyThrottleInterval;
-			set => Script.TheScript.AccessorData.hotkeyThrottleInterval = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					Script.TheScript.AccessorData.hotkeyThrottleInterval = l;
+			}
 		}
 
 		/// <summary>
@@ -413,7 +427,11 @@ namespace Keysharp.Builtins
 		public static object A_HotkeyModifierTimeout
 		{
 			get => Script.TheScript.AccessorData.hotkeyModifierTimeout;
-			set => Script.TheScript.AccessorData.hotkeyModifierTimeout = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					Script.TheScript.AccessorData.hotkeyModifierTimeout = l;
+			}
 		}
 
 		/// <summary>
@@ -500,12 +518,15 @@ namespace Keysharp.Builtins
 			}
 			set
 			{
+				if (!value.CoerceLong(out var index))
+					return;
+
 				var tv = Threads.Current;
 
 				if (tv.loopStack.TryPeek(out var loop))
-					loop.index = value.ToLong();
+					loop.index = index;
 				else
-					tv.indexOutsideLoops = value.ToLong();
+					tv.indexOutsideLoops = index;
 			}
 		}
 
@@ -611,7 +632,11 @@ namespace Keysharp.Builtins
 		public static object A_KeyDelay
 		{
 			get => ThreadAccessors.A_KeyDelay;
-			set => ThreadAccessors.A_KeyDelay = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					ThreadAccessors.A_KeyDelay = l;
+			}
 		}
 
 		/// <summary>
@@ -620,7 +645,11 @@ namespace Keysharp.Builtins
 		public static object A_KeyDelayPlay
 		{
 			get => ThreadAccessors.A_KeyDelayPlay;
-			set => ThreadAccessors.A_KeyDelayPlay = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					ThreadAccessors.A_KeyDelayPlay = l;
+			}
 		}
 
 		/// <summary>
@@ -629,7 +658,11 @@ namespace Keysharp.Builtins
 		public static object A_KeyDuration
 		{
 			get => ThreadAccessors.A_KeyDuration;
-			set => ThreadAccessors.A_KeyDuration = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					ThreadAccessors.A_KeyDuration = l;
+			}
 		}
 
 		/// <summary>
@@ -638,7 +671,11 @@ namespace Keysharp.Builtins
 		public static object A_KeyDurationPlay
 		{
 			get => ThreadAccessors.A_KeyDurationPlay;
-			set => ThreadAccessors.A_KeyDurationPlay = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					ThreadAccessors.A_KeyDurationPlay = l;
+			}
 		}
 
 
@@ -1019,7 +1056,11 @@ namespace Keysharp.Builtins
 		public static object A_MaxHotkeysPerInterval
 		{
 			get => Script.TheScript.AccessorData.maxHotkeysPerInterval;
-			set => Script.TheScript.AccessorData.maxHotkeysPerInterval = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					Script.TheScript.AccessorData.maxHotkeysPerInterval = l;
+			}
 		}
 
 
@@ -1069,7 +1110,11 @@ namespace Keysharp.Builtins
 		public static object A_MouseDelay
 		{
 			get => ThreadAccessors.A_MouseDelay;
-			set => ThreadAccessors.A_MouseDelay = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					ThreadAccessors.A_MouseDelay = l;
+			}
 		}
 
 		/// <summary>
@@ -1078,7 +1123,11 @@ namespace Keysharp.Builtins
 		public static object A_MouseDelayPlay
 		{
 			get => ThreadAccessors.A_MouseDelayPlay;
-			set => ThreadAccessors.A_MouseDelayPlay = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					ThreadAccessors.A_MouseDelayPlay = l;
+			}
 		}
 
 		/// <summary>
@@ -1164,7 +1213,16 @@ namespace Keysharp.Builtins
 
 			set
 			{
-				var val = value is string s && s.Equals("default", StringComparison.CurrentCultureIgnoreCase) ? 64L : value.Al() == 32L ? 32L : 64L;
+				long val;
+
+				if (value is string s && s.Equals("default", StringComparison.CurrentCultureIgnoreCase))
+					val = 64L;
+				else
+				{
+					_ = value.TryCoerceLong(out var v);
+					val = v == 32L ? 32L : 64L;
+				}
+
 				ThreadAccessors.A_RegView = val;
 			}
 		}
@@ -1284,7 +1342,8 @@ namespace Keysharp.Builtins
 			get => ThreadAccessors.A_SendLevel;
 			set
 			{
-				var level = value.ToLong();
+				if (!value.CoerceLong(out var level))
+					return;
 
 				if (level is >= 0 and <= 100)
 					ThreadAccessors.A_SendLevel = level;
@@ -1303,7 +1362,9 @@ namespace Keysharp.Builtins
 
 			set
 			{
-				var text = value.As();
+				if (!value.CoerceString(out var text))
+					return;
+
 				var mode = text.Equals("Event", StringComparison.OrdinalIgnoreCase) ? SendModes.Event
 						   : text.Equals("Input", StringComparison.OrdinalIgnoreCase) ? SendModes.Input
 						   : text.Equals("Play", StringComparison.OrdinalIgnoreCase) ? SendModes.Play
@@ -1446,7 +1507,10 @@ namespace Keysharp.Builtins
 			}
 			set
 			{
-				var val = value.As().ToLowerInvariant() switch
+				if (!value.CoerceString(out var text))
+					return;
+
+				var val = text.ToLowerInvariant() switch
 				{
 					"1" => 1L,
 					"2" => 2L,
@@ -1474,7 +1538,9 @@ namespace Keysharp.Builtins
 
 			set
 			{
-				var text = value.As();
+				if (!value.CoerceString(out var text))
+					return;
+
 				bool? fast = text.Equals("Fast", StringComparison.OrdinalIgnoreCase) ? true
 							 : text.Equals("Slow", StringComparison.OrdinalIgnoreCase) ? false : null;
 
@@ -1517,7 +1583,11 @@ namespace Keysharp.Builtins
 		public static object A_WinDelay
 		{
 			get => ThreadAccessors.A_WinDelay;
-			set => ThreadAccessors.A_WinDelay = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					ThreadAccessors.A_WinDelay = l;
+			}
 		}
 
 #if WINDOWS
@@ -1655,7 +1725,12 @@ namespace Keysharp.Builtins
 				mode = typed;
 			else
 			{
-				var text = value.As();
+				if (!value.CoerceString(out var text))
+				{
+					mode = default;
+					return false;
+				}
+
 				mode = text.Equals("Screen", StringComparison.OrdinalIgnoreCase) ? CoordModeType.Screen
 					 : text.Equals("Window", StringComparison.OrdinalIgnoreCase) ? CoordModeType.Window
 					 : text.Equals("Client", StringComparison.OrdinalIgnoreCase) ? CoordModeType.Client
@@ -1692,7 +1767,11 @@ namespace Keysharp.Builtins
 		public static object A_ClipboardTimeout
 		{
 			get => Script.TheScript.AccessorData.clipboardTimeout;
-			set => Script.TheScript.AccessorData.clipboardTimeout = value.Al();
+			set
+			{
+				if (value.CoerceLong(out var v))
+					Script.TheScript.AccessorData.clipboardTimeout = v;
+			}
 		}
 
 		/// <summary>
@@ -1701,7 +1780,11 @@ namespace Keysharp.Builtins
 		public static object A_HotIfTimeout
 		{
 			get => Script.TheScript.AccessorData.hotIfTimeout;
-			set => Script.TheScript.AccessorData.hotIfTimeout = value.Al();
+			set
+			{
+				if (value.CoerceLong(out var v))
+					Script.TheScript.AccessorData.hotIfTimeout = v;
+			}
 		}
 
 		/// <summary>
@@ -1712,7 +1795,8 @@ namespace Keysharp.Builtins
 			get => Script.TheScript.AccessorData.inputLevel;
 			set
 			{
-				var level = value.ToLong();
+				if (!value.CoerceLong(out var level))
+					return;
 
 				if (level is >= 0 and <= 100)
 					Script.TheScript.AccessorData.inputLevel = level;
@@ -1780,7 +1864,11 @@ namespace Keysharp.Builtins
 		public static object A_MaxThreadsPerHotkey
 		{
 			get => Script.TheScript.AccessorData.maxThreadsPerHotkey;
-			set => Script.TheScript.AccessorData.maxThreadsPerHotkey = value.Aui();
+			set
+			{
+				if (value.CoerceLong(out var v))
+					Script.TheScript.AccessorData.maxThreadsPerHotkey = unchecked((uint)v);
+			}
 		}
 
 		/// <summary>
@@ -1794,7 +1882,11 @@ namespace Keysharp.Builtins
 		public static object A_PeekFrequency
 		{
 			get => ThreadAccessors.A_PeekFrequency;
-			set => ThreadAccessors.A_PeekFrequency = value.ToLong();
+			set
+			{
+				if (value.CoerceLong(out var l))
+					ThreadAccessors.A_PeekFrequency = l;
+			}
 		}
 
 		/// <summary>

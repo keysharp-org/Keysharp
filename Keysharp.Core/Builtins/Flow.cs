@@ -30,11 +30,22 @@ namespace Keysharp.Builtins
 			script.FlowData.callingCritical = true;
 			var tv = script.Threads.CurrentThread;
 			var on = setting.IsNullOrEmpty();
-			var freq = on ? ThreadVariables.DefaultUninterruptiblePeekFrequency : setting.Al();
+			long freq;
+
+			if (on)
+				freq = ThreadVariables.DefaultUninterruptiblePeekFrequency;
+			else
+				_ = setting.TryCoerceLong(out freq);
 
 			if (!on)
 			{
-				var b = Options.OnOff(setting.As());
+				if (!setting.CoerceString(out var settingText))
+				{
+					script.FlowData.callingCritical = false;
+					return DefaultObject;
+				}
+
+				var b = Options.OnOff(settingText);
 
 				if (b != null)
 				{
@@ -106,9 +117,12 @@ namespace Keysharp.Builtins
 		/// <c>A_RealThread.Threads[1].Exit()</c>).</returns>
 		public static object Exit(object exitCode = null)
 		{
+			if (!exitCode.CoerceInt(out var ec))
+				return DefaultObject;
+
 			// Requesting an exit on the current pseudo-thread throws, so this never returns normally unless there is
 			// no pseudo-thread to exit at all.
-			return Script.TheScript.Threads.RequestExit(exitCode.Ai());
+			return Script.TheScript.Threads.RequestExit(ec);
 		}
 
 		/// <summary>
@@ -120,6 +134,9 @@ namespace Keysharp.Builtins
 		/// This code is accessible to any program that spawned the script, such as another script (via RunWait) or a batch (.bat) file.</param>
 		public static object ExitApp(object exitCode = null)
 		{
+			if (!exitCode.CoerceInt(out var ec))
+				return DefaultObject;
+
 			var script = Script.TheScript;
 
 			if (!script.hasExited)//This can be called multiple times, so ensure it only runs through once.
@@ -129,9 +146,9 @@ namespace Keysharp.Builtins
 				try
 				{
 					if (script.mainWindow != null)
-						script.InvokeOnUIThread(() => vetoed = Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Exit, exitCode, true));
+						script.InvokeOnUIThread(() => vetoed = Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Exit, (long)ec, true));
 					else
-						vetoed = Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Exit, exitCode, true);
+						vetoed = Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Exit, (long)ec, true);
 				}
 				catch (Exception ex) when (Keysharp.Internals.Flow.TryGetException(ex, out UserRequestedExitException userExit))
 				{
@@ -140,7 +157,7 @@ namespace Keysharp.Builtins
 
 				// An OnExit callback that vetoes the exit ends the calling thread instead, as AHK's EARLY_EXIT does.
 				if (vetoed)
-					return script.Threads.RequestExit(exitCode.Ai());
+					return script.Threads.RequestExit(ec);
 			}
 
 			return DefaultObject;
@@ -184,8 +201,12 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object OnMessage(object msgNumber, object callback, object maxThreads = null)
 		{
-			var msg = msgNumber.Al();
-			var mt = maxThreads.Al(1);
+			if (!msgNumber.CoerceLong(out var msg))
+				return DefaultObject;
+
+			if (!maxThreads.CoerceLong(out var mt, 1))
+				return DefaultObject;
+
 			var script = Script.TheScript;
 			var gd = script.GuiData;
 
@@ -320,8 +341,13 @@ namespace Keysharp.Builtins
 		public static object SetTimer(object function = null, object period = null, object priority = null)
 		{
 			var f = function;
-			var p = period.Al(long.MaxValue);
-			var pri = priority.Al();
+
+			if (!period.CoerceLong(out var p, long.MaxValue))
+				return DefaultObject;
+
+			if (!priority.CoerceLong(out var pri))
+				return DefaultObject;
+
 			var once = p < 0;
 			object func = null;
 			var script = Script.TheScript;
@@ -387,7 +413,10 @@ namespace Keysharp.Builtins
 		/// <param name="delay">The amount of time to pause in milliseconds.</param>
 		public static object Sleep(object delay = null)
 		{
-			Keysharp.Internals.Flow.Sleep(delay.Ai(-1));
+			if (!delay.CoerceInt(out var ms, -1))
+				return DefaultObject;
+
+			Keysharp.Internals.Flow.Sleep(ms);
 			return DefaultObject;
 		}
 
@@ -403,10 +432,13 @@ namespace Keysharp.Builtins
 		public static object Suspend(object newState = null)
 		{
 			// As in AHK, an omitted NewState toggles, like -1.
-			var state = Conversions.ConvertOnOffToggle(newState.As(), ToggleValueType.Invalid);
+			if (!newState.CoerceString(out var text))
+				return DefaultObject;
+
+			var state = Conversions.ConvertOnOffToggle(text, ToggleValueType.Invalid);
 
 			if (state == ToggleValueType.Invalid)
-				return Errors.ValueErrorOccurred($"Invalid NewState \"{newState.As()}\". Expected 1, 0 or -1.");
+				return Errors.ValueErrorOccurred($"Invalid NewState \"{text}\". Expected 1, 0 or -1.");
 
 			var script = Script.TheScript;
 			var fd = script.FlowData;

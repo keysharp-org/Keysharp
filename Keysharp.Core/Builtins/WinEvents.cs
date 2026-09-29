@@ -48,8 +48,10 @@ namespace Keysharp.Builtins
 
 				static bool Blank(object value) => value is string { Length: 0 };
 
-				if (!Blank(this.winTitle) || !Blank(this.winText) || !Blank(this.excludeTitle) || !Blank(this.excludeText))
-					criteria = SearchCriteria.FromString(this.winTitle, this.winText, this.excludeTitle, this.excludeText);
+				// After a continued error the criteria match no window, since null would match every one.
+				if ((!Blank(this.winTitle) || !Blank(this.winText) || !Blank(this.excludeTitle) || !Blank(this.excludeText))
+						&& !SearchCriteria.TryFromString(this.winTitle, this.winText, this.excludeTitle, this.excludeText, out criteria))
+					criteria = new SearchCriteria();
 
 				options = WinEventRegistration.CaptureSearchOptions(Script.TheScript);
 				return DefaultObject;

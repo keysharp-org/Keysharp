@@ -827,7 +827,9 @@ namespace Keysharp.Runtime
 		/// <returns>An empty value once every capability is granted.</returns>
 		public static object RequireCapabilities(params object[] capabilities)
 		{
-			var requested = CapabilityRequests.ParseRequested(capabilities);
+			if (CapabilityRequests.ParseRequested(capabilities) is not { } requested)
+				return DefaultObject;
+
 			CapabilityRequests.RequestBatched(requested);
 
 			var denied = new List<string>();

@@ -116,7 +116,7 @@ namespace Keysharp.Internals.Window
 			if (claim == null)
 				return false;
 
-			reply = claim.Al();
+			_ = claim.TryCoerceLong(out reply);
 			return true;
 		}
 
@@ -132,7 +132,7 @@ namespace Keysharp.Internals.Window
 			if (claim == null)
 				return false;
 
-			reply = claim.Al();
+			_ = claim.TryCoerceLong(out reply);
 			return true;
 		}
 	}

@@ -28,7 +28,9 @@ namespace Keysharp.Runtime
 			ReadOnlySpan<char> varspan = null;
 			if (op != Keyword_Is)
 			{
-				variable = ForceString(subject);
+				if (!subject.CoerceString(out variable))
+					return false;
+
 				varspan = variable.AsSpan();
 			}
 			var ret = false;
@@ -50,7 +52,7 @@ namespace Keysharp.Runtime
 
 						if (double.TryParse(test.AsSpan(0, z), out var low) && double.TryParse(test.AsSpan(z + Keyword_And.Length), out var high))
 						{
-							var d = subject.Ad();
+							_ = subject.TryCoerceDouble(out var d);
 							ret = d >= low && d <= high;
 						}
 						else if (subject is string s)
@@ -238,14 +240,11 @@ namespace Keysharp.Runtime
 
 			if (left is Any && TheScript.Operators.TryInvoke(OperatorKind.Concat, left, right, out var result)) return result;
 
-			// Unlike AHK, which raises for any object, an object with a ToString method concatenates as String(obj) gives it.
-			if (left is Any && Functions.HasMethod(left, "ToString") == 0L)
-				return Errors.TypeErrorOccurred(left, typeof(string));
+			// AutoHotkey concatenation uses an object's ToString and raises for objects without a text form.
+			if (!left.CoerceString(out var leftText) || !right.CoerceString(out var rightText))
+				return DefaultObject;
 
-			if (right is Any && Functions.HasMethod(right, "ToString") == 0L)
-				return Errors.TypeErrorOccurred(right, typeof(string));
-
-			return string.Concat(left is Any ? left.As() : ForceString(left), right is Any ? right.As() : ForceString(right));
+			return string.Concat(leftText, rightText);
 		}
 
 		public static object RegEx(object left, object right) => RegexOperator(left, right, OperatorKind.RegEx);
@@ -260,7 +259,8 @@ namespace Keysharp.Runtime
 			else
 			{
 				if (left is Any && TheScript.Operators.TryInvoke(kind, left, right, out var result)) return result;
-				match = Builtins.RegEx.RegExMatch(ForceString(left), ForceString(right));
+				if (!left.CoerceString(out var haystack) || !right.CoerceString(out var needle)) return DefaultObject;
+				match = Builtins.RegEx.RegExMatch(haystack, needle);
 			}
 			return kind == OperatorKind.NotRegEx ? !ForceBool(match) : match;
 		}
@@ -320,7 +320,7 @@ namespace Keysharp.Runtime
 			if (left == null || right == null)
 				return left == right;
 
-			_ = MatchTypes(ref left, ref right);
+			MatchTypes(ref left, ref right);
 
 			if (left is string a && right is string b)
 				return Strings.StrCmp(a, b, identity) == 0;
@@ -335,13 +335,16 @@ namespace Keysharp.Runtime
 				return number is long l ? l == sl : (double)number == sl;
 			if (s.TryParseDouble(out double sd, true))
 				return number is long l ? l == sd : (double)number == sd;
-			return Strings.StrCmp(ForceString(number), s, identity) == 0;
+			_ = number.TryCoerceString(out var text);
+			return Strings.StrCmp(text, s, identity) == 0;
 		}
 
 		/// <summary>
-		/// The value of a <c>switch</c> and how its cases compare, which AHK settles once for the whole switch.
+		/// The value of a <c>switch</c> and how its cases compare, which AHK settles once for the whole switch. With a
+		/// CaseSense, the value is its text. Failed means the switch raised an error the script continued, and the lowered
+		/// switch then skips its body, as AHK does.
 		/// </summary>
-		public readonly record struct SwitchValue(object Value, StringComparison? Comparison);
+		public readonly record struct SwitchValue(object Value, StringComparison? Comparison, bool Failed = false);
 
 		public static SwitchValue Switch(object value) => new(SwitchText(value), null);
 
@@ -349,12 +352,18 @@ namespace Keysharp.Runtime
 		public static SwitchValue Switch(object value, object caseSense)
 		{
 			value = SwitchText(value);
-			var comparison = Conversions.ParseComparisonOption(caseSense);
+
+			if (!Conversions.TryParseComparisonOption(caseSense, out var comparison))
+				return new(null, null, true);
 
 			if (value is Any)
+			{
 				_ = Errors.TypeErrorOccurred(value, typeof(string));
+				return new(null, null, true);
+			}
 
-			return new(value, comparison);
+			_ = value.TryCoerceString(out var text);
+			return new(text, comparison);
 		}
 
 		// AHK's EvaluateSwitchCase: without CaseSense a case matches as `==` would, but never through an operator overload.
@@ -364,9 +373,13 @@ namespace Keysharp.Runtime
 			caseValue = SwitchText(caseValue);
 
 			if (sw.Comparison is { } comparison)
-				return caseValue is Any
-					? (bool)Errors.TypeErrorOccurred(caseValue, typeof(string), false)
-					: CaseCompare.Equals(ForceString(value), ForceString(caseValue), comparison);
+			{
+				if (caseValue is Any)
+					return (bool)Errors.TypeErrorOccurred(caseValue, typeof(string), false);
+
+				_ = caseValue.TryCoerceString(out var caseText);
+				return CaseCompare.Equals((string)value, caseText, comparison);
+			}
 
 			return AreEqual(value, caseValue, true);
 		}
@@ -573,6 +586,8 @@ namespace Keysharp.Runtime
 		// reaches its target.
 		public static object DerefGet(FuncScope scope, object name)
 		{
+			name = DerefOperand(name);
+
 			if (Refs.DeclaresValue(name))
 				return Refs.GetValueOrNull(name) ?? Errors.VarUnsetErrorOccurred(null, null);
 
@@ -593,6 +608,8 @@ namespace Keysharp.Runtime
 		// blank name or an unset operand.
 		public static object DerefGetOrNull(FuncScope scope, object name)
 		{
+			name = DerefOperand(name);
+
 			if (Refs.DeclaresValue(name))
 				return Refs.GetValueOrNull(name);
 
@@ -610,6 +627,8 @@ namespace Keysharp.Runtime
 		// resolves it: a reference, the function's own name, a global's holder or property, or Raised.
 		public static object DerefTarget(FuncScope scope, object name)
 		{
+			name = DerefOperand(name);
+
 			if (Refs.DeclaresValue(name))
 				return name;
 
@@ -623,6 +642,8 @@ namespace Keysharp.Runtime
 		{
 			target = Raised;
 			current = DefaultObject;
+
+			name = DerefOperand(name);
 
 			if (Refs.DeclaresValue(name))
 			{
@@ -673,6 +694,8 @@ namespace Keysharp.Runtime
 		// (VARREF_REF), so neither a later change to the name nor the module it is used from redirects it.
 		public static object DerefRef(FuncScope scope, object name)
 		{
+			name = DerefOperand(name);
+
 			if (Refs.DeclaresValue(name))
 				return Misc.MakeVarRef(() => Refs.GetValueOrNull(name), value => Refs.SetValue(name, value),
 					(name as VarRef)?.Name ?? "");
@@ -717,15 +740,22 @@ namespace Keysharp.Runtime
 			return false;
 		}
 
-		// The name a dynamic reference looks up, or null once it has raised for an unset or blank name.
+		// AHK's `%obj%` for an object that is not a reference: a temporary variable holding the object, so a read yields
+		// the object and a write goes to that variable.
+		private static object DerefOperand(object name) => name is Any && !Refs.DeclaresValue(name) ? new VarRef(name) : name;
+
+		// The name a dynamic reference looks up, or null once it has raised for an unset, non-text or blank name.
 		private static string DerefKey(object name)
 		{
 			if (name == null)
 				_ = Errors.UnsetErrorOccurred("Operand of dereference");
-			else if (ForceString(name) is { Length: > 0 } key)
-				return key;
-			else
+			else if (name.CoerceString(out var key))
+			{
+				if (key.Length > 0)
+					return key;
+
 				_ = Errors.ErrorOccurred("This dynamic variable is blank.");
+			}
 
 			return null;
 		}

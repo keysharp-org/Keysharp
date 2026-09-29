@@ -21,7 +21,9 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object Encode(object @this, object value, object encoding = null)
 			{
-				var enc = Files.GetEncodingOrDefault(encoding, System.Text.Encoding.UTF8);//Resolved first, so a misspelled name is reported even where no string is being converted.
+				//Resolved first, so a misspelled name is reported even where no string is being converted.
+				if (!Files.TryGetEncoding(encoding, System.Text.Encoding.UTF8, out var enc))
+					return DefaultObject;
 
 				//A Buffer encodes straight out of its own memory; the general byte conversion would copy the whole of it first.
 				if (value is Buffer b)
@@ -41,7 +43,8 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object Decode(object @this, object text)
 			{
-				var s = text.As();
+				if (!text.CoerceString(out var s))
+					return DefaultObject;
 
 				try
 				{

@@ -54,19 +54,38 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object staticCall(object @this, object subFunction, object value1 = null, object value2 = null)
 		{
-			var sf = subFunction.As();
+			if (!subFunction.CoerceString(out var sf))
+				return DefaultObject;
+
 			var script = Script.TheScript;
 
 			// As AHK's Thread: NoTimers without a value disallows timers, and an omitted value leaves a setting as it was.
 			if (string.Compare(sf, "notimers", true) == 0)
-				script.Threads.AllowTimers = value1 != null && value1.Al() == 0;
+			{
+				var v1 = 0L;
+
+				if (value1 != null && !value1.CoerceLong(out v1))
+					return DefaultObject;
+
+				script.Threads.AllowTimers = value1 != null && v1 == 0;
+			}
 			else if (string.Compare(sf, "priority", true) == 0)
 			{
 				if (value1 != null)
-					script.Threads.SetPriority(script.Threads.CurrentThread, value1.Al());
+				{
+					if (!value1.CoerceLong(out var v1))
+						return DefaultObject;
+
+					script.Threads.SetPriority(script.Threads.CurrentThread, v1);
+				}
 			}
 			else if (string.Compare(sf, "interrupt", true) == 0)
-				script.uninterruptibleTime = value1.Ai(script.uninterruptibleTime);
+			{
+				if (!value1.CoerceInt(out var v1, script.uninterruptibleTime))
+					return DefaultObject;
+
+				script.uninterruptibleTime = v1;
+			}
 			else
 				return Errors.ValueErrorOccurred($"Invalid sub-function \"{sf}\". Expected NoTimers, Priority or Interrupt.");
 
@@ -124,7 +143,13 @@ namespace Keysharp.Builtins
 		public object Priority
 		{
 			get => Live().priority;
-			set => manager.Owner.Threads.SetPriority(Mutable(), value.Al());
+			set
+			{
+				var target = Mutable();
+
+				if (value.CoerceLong(out var v))
+					manager.Owner.Threads.SetPriority(target, v);
+			}
 		}
 
 		/// <summary>
@@ -225,7 +250,15 @@ namespace Keysharp.Builtins
 		/// <param name="exitCode">The code the thread ends with: its <see cref="ExitCode"/>, and the process exit code if
 		/// the script exits when this thread ends. Default: 0.</param>
 		/// <returns>This thread's ID.</returns>
-		public object Exit(object exitCode = null) => manager.Owner.Threads.RequestExit(Mutable(), exitCode.Ai());
+		public object Exit(object exitCode = null)
+		{
+			var target = Mutable();
+
+			if (!exitCode.CoerceInt(out var ec))
+				return DefaultObject;
+
+			return manager.Owner.Threads.RequestExit(target, ec);
+		}
 
 		/// <summary>The code this thread's <c>Exit</c> ended it with, readable from any thread from the start of its
 		/// unwind; an empty string while it runs or when it ended some other way.</summary>
@@ -233,6 +266,7 @@ namespace Keysharp.Builtins
 
 		internal object RecordedExitCode { get => exitCode; set => exitCode = value; }
 
+		[PublicHiddenFromUser]
 		public override string ToString() => $"Thread {id}";
 
 		/// <summary>Wraps <paramref name="tv"/>, reusing the wrapper already cached on it when there is one.</summary>

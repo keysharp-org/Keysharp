@@ -72,7 +72,7 @@ Assert(val = 3, A_LineNumber)
 
 str := m.ToString()
 
-AssertEq(str, '{"one": 1, "three": 3, "two": 2}', A_LineNumber)
+AssertEq(str, '["one": 1, "three": 3, "two": 2]', A_LineNumber)
 
 m := Map(123, 456, "two", 2, "three", 3 )
 val := m[123]

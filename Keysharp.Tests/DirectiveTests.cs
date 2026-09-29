@@ -769,8 +769,13 @@ namespace Keysharp.Tests
 			// The string form of RunScript's Options: double quotes group and are removed, so a switch value containing
 			// spaces survives as ONE argument. Split on whitespace alone, `--include "My include.ahk"` becomes
 			// `--include`, `"My`, `include.ahk"` — three broken arguments carrying literal quotes.
-			var split = typeof(Keysharp.Builtins.Ks).GetMethod("SplitCommandLine", BindingFlags.NonPublic | BindingFlags.Static);
-			List<string> Args(object o) => (List<string>)split.Invoke(null, [o]);
+			var split = typeof(Keysharp.Builtins.Ks).GetMethod("TrySplitCommandLine", BindingFlags.NonPublic | BindingFlags.Static);
+			List<string> Args(object o)
+			{
+				object[] parameters = [o, null];
+				Assert.IsTrue((bool)split.Invoke(null, parameters));
+				return (List<string>)parameters[1];
+			}
 
 			NUnit.Framework.Legacy.CollectionAssert.AreEqual(
 				new[] { "--define:FEATURE_X", "--include", "My include.ahk", "--force" },

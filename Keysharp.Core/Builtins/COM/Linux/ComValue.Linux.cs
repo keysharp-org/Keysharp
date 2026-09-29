@@ -26,7 +26,14 @@ namespace Keysharp.Builtins.COM
 			set
 			{
 				DBusSignature = ResolveSignature(value);
-				varType = value is string ? value : value.Al();
+
+				if (value is string)
+					varType = value;
+				else
+				{
+					_ = value.TryCoerceLong(out var vt);
+					varType = vt;
+				}
 			}
 		}
 
@@ -35,6 +42,7 @@ namespace Keysharp.Builtins.COM
 		public static object staticCall(object @this, object varType, object value = null, object flags = null)
 			=> new ComValue(varType, value);
 
+		[PublicHiddenFromUser]
 		public override string ToString() => Value?.ToString() ?? "";
 
 		private void Init(object[] args)
@@ -55,7 +63,7 @@ namespace Keysharp.Builtins.COM
 			// A number is a Windows VT_* constant; only the unambiguous ones carry over.
 			if (varType is not string)
 			{
-				var vt = varType.Al();
+				_ = varType.TryCoerceLong(out var vt);
 				return vt switch
 				{
 					2 => "n",       // VT_I2

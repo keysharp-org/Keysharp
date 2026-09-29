@@ -367,16 +367,16 @@ namespace Keysharp.Runtime
 						return value;
 					}
 
-					var position = key.Ai();
-
 					if (item is object[] objarr)
 					{
+						if (!key.CoerceInt(out var position)) return DefaultObject;
 						var actualindex = position < 0 ? objarr.Length + position : position - 1;
 						objarr[actualindex] = value;
 						return value;
 					}
 					else if (item is System.Array array)
 					{
+						if (!key.CoerceInt(out var position)) return DefaultObject;
 						var actualindex = position < 0 ? array.Length + position : position - 1;
 						array.SetValue(value, actualindex);
 						return value;
@@ -470,7 +470,7 @@ namespace Keysharp.Runtime
 		// in brackets as Extra, which AutoHotkey takes from the source and this from the values; before that, the
 		// collection's own getter raised it with the key.
 		private static object UnsetIndexErrorOccurred(object[] index) => CompatReturnsUnsetForMissing
-			? Errors.UnsetItemErrorOccurred($"[{string.Join(", ", index.Select(key => key is string s ? $"\"{s}\"" : key is Any ? Types.Type(key) : key.As()))}]")
+			? Errors.UnsetItemErrorOccurred($"[{string.Join(", ", index.Select(key => key is string s ? $"\"{s}\"" : Errors.Describe(key)))}]")
 			: Errors.UnsetItemErrorOccurred(index.Length > 0 ? index[0] : "");
 		// . in ?? context: strict base, allow null result
 		public static object GetIndexOrNull(object item, params object[] index)
@@ -538,9 +538,9 @@ namespace Keysharp.Runtime
 			}
 
 			// Single-argument index fast paths
-			if (len == 1)
+			if (len == 1 && item is string or System.Array)
 			{
-				int position = firstKey.Ai();
+				if (!firstKey.CoerceInt(out int position)) return DefaultObject;
 
 				// Strings
 				if (item is string s)

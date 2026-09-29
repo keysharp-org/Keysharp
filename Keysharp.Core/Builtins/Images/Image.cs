@@ -430,7 +430,12 @@ namespace Keysharp.Builtins
 			/// (<c>FromDesktop</c>, <c>FromMonitor</c>, <c>FromWindow</c>), which are all absolute.
 			/// </summary>
 			[Static] public static object FromRect(object @this, object x, object y, object width, object height)
-				=> CaptureRect(x.Ai(), y.Ai(), width.Ai(), height.Ai(), "Capturing the screen rectangle failed.");
+			{
+				if (!x.CoerceInt(out var ix) || !y.CoerceInt(out var iy) || !width.CoerceInt(out var iw) || !height.CoerceInt(out var ih))
+					return DefaultObject;
+
+				return CaptureRect(ix, iy, iw, ih, "Capturing the screen rectangle failed.");
+			}
 
 			/// <summary>
 			/// Captures the whole window (title bar and borders included) matched by the usual WinTitle
@@ -451,15 +456,15 @@ namespace Keysharp.Builtins
 			/// </summary>
 			[Static] public static object FromWindow(object @this, object winTitle = null, object options = null, object winText = null, object excludeTitle = null, object excludeText = null)
 			{
-				var mode = ParseCaptureMode(options, out var modeName);
+				if (!ParseCaptureMode(options, out var mode, out var modeName))
+					return DefaultObject;
 
 				if (mode < 0)
 					return Errors.ValueErrorOccurred($"Unknown Mode \"{modeName}\". Expected BitBlt, BitBltOpaque, PrintWindow, PrintWindowOpaque or FullContent.", options);
 
-				var win = WindowSearch.SearchWindow(winTitle, winText, excludeTitle, excludeText, true);
-
-			if (win is not WindowInfoBase w)
-				return Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText);
+				// Null only after SearchWindow's own error, or a parameter's, was continued.
+				if (WindowSearch.SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is not WindowInfoBase w)
+					return DefaultObject;
 
 #if LINUX
 			if (w is Keysharp.Internals.Window.Linux.Wayland.WaylandWindowInfo wayland
@@ -550,11 +555,17 @@ namespace Keysharp.Builtins
 				return Wrap(bmp, sx, sy, originX: bounds.X, originY: bounds.Y);
 			}
 
-			private static int ParseCaptureMode(object options, out string modeName)
+			private static bool ParseCaptureMode(object options, out int mode, out string modeName)
 			{
-				var mode = options is KeysharpObject ? Script.GetPropertyValueOrNull(options, "Mode") : options;
-				modeName = mode.As("FullContent");
-				return modeName.ToLowerInvariant() switch
+				var value = options is KeysharpObject ? Script.GetPropertyValueOrNull(options, "Mode") : options;
+
+				if (!value.CoerceString(out modeName, "FullContent"))
+				{
+					mode = -1;
+					return false;
+				}
+
+				mode = modeName.ToLowerInvariant() switch
 				{
 					"bitblt" => 0,
 					"bitbltopaque" => 1,
@@ -563,6 +574,7 @@ namespace Keysharp.Builtins
 					"fullcontent" => 4,
 					_ => -1
 				};
+				return true;
 			}
 
 			// Whether the capture should include the window's title bar/borders, read from an options object's
@@ -585,16 +597,20 @@ namespace Keysharp.Builtins
 			/// </summary>
 			[Static] public static object FromFile(object @this, object path, object width = null, object height = null, object iconNumber = null)
 			{
-				var f = path.As();
+				if (!path.CoerceString(out var f))
+					return DefaultObject;
 
 				if (f.Length == 0)
 					return Errors.ValueErrorOccurred("A file name is required.");
+
+				if (!width.CoerceInt(out var w, 0) || !height.CoerceInt(out var h, 0))
+					return DefaultObject;
 
 				Bitmap bmp;
 
 				try
 				{
-					bmp = ImageHelper.LoadImage(f, width.Ai(0), height.Ai(0), iconNumber == null ? 0L : ImageHelper.PrepareIconNumber(iconNumber), exactPixels: true).Item1;
+					bmp = ImageHelper.LoadImage(f, w, h, iconNumber == null ? 0L : ImageHelper.PrepareIconNumber(iconNumber), exactPixels: true).Item1;
 				}
 				catch (Exception ex)
 				{
@@ -639,9 +655,8 @@ namespace Keysharp.Builtins
 			/// </summary>
 			[Static] public static object Create(object @this, object width, object height, object background = null, object scale = null)
 			{
-				var w = width.Ai();
-				var h = height.Ai();
-				var s = scale.Ad(1.0);
+				if (!width.CoerceInt(out var w) || !height.CoerceInt(out var h) || !scale.CoerceDouble(out var s, 1.0))
+					return DefaultObject;
 
 				if (w <= 0 || h <= 0)
 					return Errors.ValueErrorOccurred("Image.Create width and height must be positive.");
@@ -656,10 +671,12 @@ namespace Keysharp.Builtins
 						|| pwValue < 1 || phValue < 1 || pwValue > int.MaxValue || phValue > int.MaxValue)
 					return Errors.ValueErrorOccurred("Image.Create scaled dimensions exceed the supported bitmap range.");
 
+				if (!TryParseColorArg(background, out var bg))
+					return DefaultObject;
+
 				var pw = (int)pwValue;
 				var ph = (int)phValue;
 				var bmp = ImageHelper.NewArgbCanvas(pw, ph);
-				var bg = ParseColorArg(background, 0, allowTransparentEmpty: true);
 
 				if (((uint)bg >> 24) != 0)
 				{
@@ -694,8 +711,8 @@ namespace Keysharp.Builtins
 				if (!Reflections.TryGetPtrProperty(data, out long addr) || !Reflections.TryGetSizeProperty(data, out long have))
 					return Errors.ValueErrorOccurred("FromBuffer requires a Buffer or an object with Ptr and Size properties.");
 
-				int w = width.Ai(), h = height.Ai();
-				var bpp = (int)(bytesPerPixel == null ? 4L : bytesPerPixel.Al());
+				if (!width.CoerceInt(out var w) || !height.CoerceInt(out var h) || !bytesPerPixel.CoerceInt(out var bpp, 4))
+					return DefaultObject;
 
 				if (bpp != 1 && bpp != 4)
 					return Errors.ValueErrorOccurred("FromBuffer supports only 1 (grayscale) or 4 (RGBA) bytes per pixel.");
@@ -728,8 +745,14 @@ namespace Keysharp.Builtins
 			public object Scale(object factor, object factorY = null)
 			{
 				ThrowIfDisposed();
-				var sx = factor.Ad();
-				var sy = factorY == null ? sx : factorY.Ad();
+
+				if (!factor.CoerceDouble(out var sx))
+					return this;
+
+				var sy = sx;
+
+				if (factorY != null && !factorY.CoerceDouble(out sy))
+					return this;
 
 				if (sx <= 0 || sy <= 0)
 					return Errors.ValueErrorOccurred("Scale factors must be positive.");
@@ -763,8 +786,13 @@ namespace Keysharp.Builtins
 			public object Rotate(object angle, object background = null)
 			{
 				ThrowIfDisposed();
-				var deg = angle.Ad();
-				var bg = ParseColorArg(background);
+
+				if (!angle.CoerceDouble(out var deg))
+					return this;
+
+				if (!TryParseColorArg(background, out var bg))
+					return this;
+
 				if (!QueueTransform(b => ImageHelper.RotateBitmap(b, deg, bg)))
 					return this;
 
@@ -796,7 +824,9 @@ namespace Keysharp.Builtins
 			public object Crop(object x, object y, object width, object height)
 			{
 				ThrowIfDisposed();
-				int cx = x.Ai(), cy = y.Ai(), cw = width.Ai(), ch = height.Ai();
+
+				if (!x.CoerceInt(out var cx) || !y.CoerceInt(out var cy) || !width.CoerceInt(out var cw) || !height.CoerceInt(out var ch))
+					return this;
 
 				if (cw <= 0 || ch <= 0)
 					return Errors.ValueErrorOccurred("Crop width and height must be positive.");
@@ -823,7 +853,9 @@ namespace Keysharp.Builtins
 			public object Resize(object width, object height)
 			{
 				ThrowIfDisposed();
-				int tw = width.Ai(), th = height.Ai();
+
+				if (!width.CoerceInt(out var tw) || !height.CoerceInt(out var th))
+					return this;
 
 				if (tw == 0 || th == 0 || (tw < 0 && th < 0))
 					return Errors.ValueErrorOccurred("Resize requires a positive width or height (a single negative value keeps the aspect ratio).");
@@ -857,7 +889,9 @@ namespace Keysharp.Builtins
 			public object Clear(object color = null)
 			{
 				ThrowIfDisposed();
-				var argb = ParseColorArg(color, 0, allowTransparentEmpty: true);
+
+				if (!TryParseColorArg(color, out var argb))
+					return this;
 
 				// A live surface must retain bitmap identity. Clearing in place also avoids a canvas-sized
 				// allocation on every animation frame.
@@ -942,9 +976,17 @@ namespace Keysharp.Builtins
 			public object DrawLine(object x1, object y1, object x2, object y2, object color = null, object thickness = null)
 			{
 				ThrowIfDisposed();
-				var (px1, py1, px2, py2) = (x1.Ad(), y1.Ad(), x2.Ad(), y2.Ad());
-				var argb = ParseColorArg(color, unchecked((int)0xFF000000u), allowTransparentEmpty: false);
-				var t = Math.Max(0.0, thickness.Ad(1.0));
+
+				if (!x1.CoerceDouble(out var px1) || !y1.CoerceDouble(out var py1) || !x2.CoerceDouble(out var px2) || !y2.CoerceDouble(out var py2))
+					return this;
+
+				if (!TryParseColorArg(color, out var argb, unchecked((int)0xFF000000u), allowTransparentEmpty: false))
+					return this;
+
+				if (!thickness.CoerceDouble(out var tRaw, 1.0))
+					return this;
+
+				var t = Math.Max(0.0, tRaw);
 
 				if (t == 0 || ((uint)argb >> 24) == 0)
 					return this;
@@ -966,9 +1008,19 @@ namespace Keysharp.Builtins
 			public object DrawRect(object x, object y, object width, object height, object color = null, object thickness = null)
 			{
 				ThrowIfDisposed();
-				var rect = MakeRectF(x.Ad(), y.Ad(), width.Ad(), height.Ad());
-				var argb = ParseColorArg(color, unchecked((int)0xFF000000u), allowTransparentEmpty: false);
-				var t = Math.Max(0.0, thickness.Ad(1.0));
+
+				if (!x.CoerceDouble(out var rx) || !y.CoerceDouble(out var ry) || !width.CoerceDouble(out var rw) || !height.CoerceDouble(out var rh))
+					return this;
+
+				var rect = MakeRectF(rx, ry, rw, rh);
+
+				if (!TryParseColorArg(color, out var argb, unchecked((int)0xFF000000u), allowTransparentEmpty: false))
+					return this;
+
+				if (!thickness.CoerceDouble(out var tRaw, 1.0))
+					return this;
+
+				var t = Math.Max(0.0, tRaw);
 
 				if (rect.Width <= 0 || rect.Height <= 0 || t == 0 || ((uint)argb >> 24) == 0)
 					return this;
@@ -996,8 +1048,14 @@ namespace Keysharp.Builtins
 			public object FillRect(object x, object y, object width, object height, object color = null)
 			{
 				ThrowIfDisposed();
-				var rect = MakeRectF(x.Ad(), y.Ad(), width.Ad(), height.Ad());
-				var argb = ParseColorArg(color, unchecked((int)0xFF000000u), allowTransparentEmpty: false);
+
+				if (!x.CoerceDouble(out var rx) || !y.CoerceDouble(out var ry) || !width.CoerceDouble(out var rw) || !height.CoerceDouble(out var rh))
+					return this;
+
+				var rect = MakeRectF(rx, ry, rw, rh);
+
+				if (!TryParseColorArg(color, out var argb, unchecked((int)0xFF000000u), allowTransparentEmpty: false))
+					return this;
 
 				if (rect.Width <= 0 || rect.Height <= 0 || ((uint)argb >> 24) == 0)
 					return this;
@@ -1020,9 +1078,19 @@ namespace Keysharp.Builtins
 			public object DrawEllipse(object x, object y, object width, object height, object color = null, object thickness = null)
 			{
 				ThrowIfDisposed();
-				var rect = MakeRectF(x.Ad(), y.Ad(), width.Ad(), height.Ad());
-				var argb = ParseColorArg(color, unchecked((int)0xFF000000u), allowTransparentEmpty: false);
-				var t = Math.Max(0.0, thickness.Ad(1.0));
+
+				if (!x.CoerceDouble(out var rx) || !y.CoerceDouble(out var ry) || !width.CoerceDouble(out var rw) || !height.CoerceDouble(out var rh))
+					return this;
+
+				var rect = MakeRectF(rx, ry, rw, rh);
+
+				if (!TryParseColorArg(color, out var argb, unchecked((int)0xFF000000u), allowTransparentEmpty: false))
+					return this;
+
+				if (!thickness.CoerceDouble(out var tRaw, 1.0))
+					return this;
+
+				var t = Math.Max(0.0, tRaw);
 
 				if (rect.Width <= 0 || rect.Height <= 0 || t == 0 || ((uint)argb >> 24) == 0)
 					return this;
@@ -1044,8 +1112,14 @@ namespace Keysharp.Builtins
 			public object FillEllipse(object x, object y, object width, object height, object color = null)
 			{
 				ThrowIfDisposed();
-				var rect = MakeRectF(x.Ad(), y.Ad(), width.Ad(), height.Ad());
-				var argb = ParseColorArg(color, unchecked((int)0xFF000000u), allowTransparentEmpty: false);
+
+				if (!x.CoerceDouble(out var rx) || !y.CoerceDouble(out var ry) || !width.CoerceDouble(out var rw) || !height.CoerceDouble(out var rh))
+					return this;
+
+				var rect = MakeRectF(rx, ry, rw, rh);
+
+				if (!TryParseColorArg(color, out var argb, unchecked((int)0xFF000000u), allowTransparentEmpty: false))
+					return this;
 
 				if (rect.Width <= 0 || rect.Height <= 0 || ((uint)argb >> 24) == 0)
 					return this;
@@ -1068,10 +1142,20 @@ namespace Keysharp.Builtins
 			public object DrawRoundRect(object x, object y, object width, object height, object radius, object color = null, object thickness = null)
 			{
 				ThrowIfDisposed();
-				var rect = MakeRectF(x.Ad(), y.Ad(), width.Ad(), height.Ad());
-				var r = (float)Math.Max(0.0, radius.Ad());
-				var argb = ParseColorArg(color, unchecked((int)0xFF000000u), allowTransparentEmpty: false);
-				var t = Math.Max(0.0, thickness.Ad(1.0));
+
+				if (!x.CoerceDouble(out var rx) || !y.CoerceDouble(out var ry) || !width.CoerceDouble(out var rw) || !height.CoerceDouble(out var rh) || !radius.CoerceDouble(out var radiusRaw))
+					return this;
+
+				var rect = MakeRectF(rx, ry, rw, rh);
+				var r = (float)Math.Max(0.0, radiusRaw);
+
+				if (!TryParseColorArg(color, out var argb, unchecked((int)0xFF000000u), allowTransparentEmpty: false))
+					return this;
+
+				if (!thickness.CoerceDouble(out var tRaw, 1.0))
+					return this;
+
+				var t = Math.Max(0.0, tRaw);
 
 				if (rect.Width <= 0 || rect.Height <= 0 || t == 0 || ((uint)argb >> 24) == 0)
 					return this;
@@ -1094,9 +1178,15 @@ namespace Keysharp.Builtins
 			public object FillRoundRect(object x, object y, object width, object height, object radius, object color = null)
 			{
 				ThrowIfDisposed();
-				var rect = MakeRectF(x.Ad(), y.Ad(), width.Ad(), height.Ad());
-				var r = (float)Math.Max(0.0, radius.Ad());
-				var argb = ParseColorArg(color, unchecked((int)0xFF000000u), allowTransparentEmpty: false);
+
+				if (!x.CoerceDouble(out var rx) || !y.CoerceDouble(out var ry) || !width.CoerceDouble(out var rw) || !height.CoerceDouble(out var rh) || !radius.CoerceDouble(out var radiusRaw))
+					return this;
+
+				var rect = MakeRectF(rx, ry, rw, rh);
+				var r = (float)Math.Max(0.0, radiusRaw);
+
+				if (!TryParseColorArg(color, out var argb, unchecked((int)0xFF000000u), allowTransparentEmpty: false))
+					return this;
 
 				if (rect.Width <= 0 || rect.Height <= 0 || ((uint)argb >> 24) == 0)
 					return this;
@@ -1145,9 +1235,8 @@ namespace Keysharp.Builtins
 			public object DrawText(object text, object x, object y, object color = null, object options = null, object fontName = null)
 			{
 				ThrowIfDisposed();
-				var s = text.As();
 
-				if (string.IsNullOrEmpty(s))
+				if (!text.CoerceString(out var s) || string.IsNullOrEmpty(s))
 					return this;
 
 				if (!TryVectorPoint(x, y, out var textOrigin))
@@ -1155,9 +1244,12 @@ namespace Keysharp.Builtins
 
 				var px = textOrigin.X;
 				var py = textOrigin.Y;
+
+				if (!SplitFontArgs(options, fontName, out var fontOptions, out var fontFamily))
+					return this;
+
 				//A Ks.Font in the options slot carries its own colour, which is the one thing the option string
 				//cannot express here, so it seeds the colour argument when that was left out.
-				var (fontOptions, fontFamily) = SplitFontArgs(options, fontName);
 				var defaultArgb = options is Font sf && sf.fontOptions.color.HasValue
 					? sf.fontOptions.color.Value.ToArgb() : unchecked((int)0xFF000000u);
 				if (!TryVectorPaint(color, defaultArgb, out var paint))
@@ -1229,8 +1321,11 @@ namespace Keysharp.Builtins
 			public object MeasureText(object text, object options = null, object fontName = null)
 			{
 				ThrowIfDisposed();
-				var (o, n) = SplitFontArgs(options, fontName);
-				var (w, h) = MeasureTextCore(text.As(), o, n);
+
+				if (!SplitFontArgs(options, fontName, out var o, out var n) || !text.CoerceString(out var s))
+					return DefaultObject;
+
+				var (w, h) = MeasureTextCore(s, o, n);
 				return MakeSize(w, h);
 			}
 
@@ -1238,19 +1333,29 @@ namespace Keysharp.Builtins
 			/// Normalizes a <see cref="Ks.Font"/> in the options position into options and family.
 			/// An explicit fontName overrides the object's family.
 			/// </summary>
-			internal static (string options, string name) SplitFontArgs(object options, object fontName)
+			internal static bool SplitFontArgs(object options, object fontName, out string fontOptions, out string fontFamily)
 			{
+				fontOptions = "";
+
 				if (fontName is Any)
 				{
+					fontFamily = "";
 					_ = Errors.TypeErrorOccurred(fontName, typeof(string));
-					return ("", "");
+					return false;
 				}
-				var name = fontName.As();
+
+				if (!fontName.CoerceString(out fontFamily))
+					return false;
 
 				if (options is not Font f)
-					return (options.As(), name);
+					return options.CoerceString(out fontOptions);
 
-				return (f.fontOptions.OptionsNoColor, name.Length > 0 ? name : f.fontOptions.name ?? "");
+				fontOptions = f.fontOptions.OptionsNoColor;
+
+				if (fontFamily.Length == 0)
+					fontFamily = f.fontOptions.name ?? "";
+
+				return true;
 			}
 
 			// Pixel size of text in the given font, measured on a throwaway 96-DPI surface so it matches
@@ -1295,10 +1400,20 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					var px = x.Ad(0.0);
-					var py = y.Ad(0.0);
-					var requestedW = width == null ? source.Width : width.Ad();
-					var requestedH = height == null ? source.Height : height.Ad();
+					if (!x.CoerceDouble(out var px, 0.0) || !y.CoerceDouble(out var py, 0.0))
+						return this;
+
+					double requestedW, requestedH;
+
+					if (width == null)
+						requestedW = source.Width;
+					else if (!width.CoerceDouble(out requestedW))
+						return this;
+
+					if (height == null)
+						requestedH = source.Height;
+					else if (!height.CoerceDouble(out requestedH))
+						return this;
 
 					if (requestedW <= 0 || requestedH <= 0)
 						return this;
@@ -1357,7 +1472,11 @@ namespace Keysharp.Builtins
 			public object Alpha(object factor)
 			{
 				ThrowIfDisposed();
-				var f = Math.Clamp(factor.Ad(), 0.0, 1.0);
+
+				if (!factor.CoerceDouble(out var fRaw))
+					return this;
+
+				var f = Math.Clamp(fRaw, 0.0, 1.0);
 				if (!QueueTransform(b => ImageHelper.MapPixelsArgb(b, p =>
 				{
 					var a = (uint)Math.Clamp((int)Math.Round(((p >> 24) & 0xFF) * f), 0, 255);
@@ -1375,7 +1494,11 @@ namespace Keysharp.Builtins
 			public object Brightness(object amount)
 			{
 				ThrowIfDisposed();
-				var amt = Math.Clamp(amount.Ad(), -1.0, 1.0);
+
+				if (!amount.CoerceDouble(out var amtRaw))
+					return this;
+
+				var amt = Math.Clamp(amtRaw, -1.0, 1.0);
 				var delta = (int)Math.Round(amt * 255);
 				if (!QueueTransform(b => ImageHelper.MapPixelsArgb(b, p =>
 				{
@@ -1398,7 +1521,11 @@ namespace Keysharp.Builtins
 			public object Contrast(object amount)
 			{
 				ThrowIfDisposed();
-				var amt = Math.Clamp(amount.Ad(), -1.0, 1.0);
+
+				if (!amount.CoerceDouble(out var amtRaw))
+					return this;
+
+				var amt = Math.Clamp(amtRaw, -1.0, 1.0);
 				var factor = 1.0 + amt;
 				if (!QueueTransform(b => ImageHelper.MapPixelsArgb(b, p =>
 				{
@@ -1460,7 +1587,8 @@ namespace Keysharp.Builtins
 				if (bmp == null)
 					return Errors.ValueErrorOccurred("There is no image to save.");
 
-				var f = filename.As();
+				if (!filename.CoerceString(out var f))
+					return DefaultObject;
 
 				try
 				{
@@ -1522,12 +1650,15 @@ namespace Keysharp.Builtins
 				// Invalidate() in between it returns the same cached bitmap, so imgW/imgH match the shown handle.
 				int imgW = bmp.Width, imgH = bmp.Height;
 
+				// Converted before the handle is made, which returning early would otherwise leave behind.
+				if (!title.CoerceString(out var baseTitle, "Image"))
+					return DefaultObject;
+
 				if (ToBitmap() is not long handle || handle == 0)
 					return Errors.ValueErrorOccurred("Could not prepare the image for display.");
 
 				// Caption shows the image's true pixel size and capture scale as a percentage
 				// (e.g. "Image  3840 x 2160 @ 200%").
-				var baseTitle = title == null ? "Image" : title.As();
 				var caption = $"{baseTitle}  {imgW} x {imgH} @ {FormatScalePercent(scaleX, scaleY)}";
 
 				// Construct the Gui through the runtime's Class.Call (the path scripts use); calling the
@@ -1617,14 +1748,29 @@ namespace Keysharp.Builtins
 			public object SetOrigin(object x, object y, object scaleX = null, object scaleY = null)
 			{
 				ThrowIfDisposed();
-				originX = x.Ai();
-				originY = y.Ai();
-				originValid = true;
+
+				if (!x.CoerceInt(out var ox) || !y.CoerceInt(out var oy))
+					return this;
 
 				if (scaleX != null || scaleY != null)
 				{
-					var sx = scaleX != null ? scaleX.Ad() : this.scaleX;
-					var sy = scaleY != null ? scaleY.Ad() : sx;
+					double sx, sy;
+
+					if (scaleX != null)
+					{
+						if (!scaleX.CoerceDouble(out sx))
+							return this;
+					}
+					else
+						sx = this.scaleX;
+
+					if (scaleY != null)
+					{
+						if (!scaleY.CoerceDouble(out sy))
+							return this;
+					}
+					else
+						sy = sx;
 
 					if (!double.IsFinite(sx) || sx <= 0 || !double.IsFinite(sy) || sy <= 0)
 						return Errors.ValueErrorOccurred("SetOrigin scale factors must be finite positive numbers.");
@@ -1633,6 +1779,10 @@ namespace Keysharp.Builtins
 					this.scaleY = sy;
 					scaleValid = true;
 				}
+
+				originX = ox;
+				originY = oy;
+				originValid = true;
 
 				return this;
 			}
@@ -1648,7 +1798,8 @@ namespace Keysharp.Builtins
 				if (bmp == null)
 					return Errors.ValueErrorOccurred("There is no image to read.");
 
-				int px = x.Ai(), py = y.Ai();
+				if (!x.CoerceInt(out var px) || !y.CoerceInt(out var py))
+					return DefaultObject;
 
 				if (px < 0 || py < 0 || px >= bmp.Width || py >= bmp.Height)
 					return Errors.ValueErrorOccurred($"Pixel ({px}, {py}) is out of range.");
@@ -1666,12 +1817,16 @@ namespace Keysharp.Builtins
 				if (bmp == null)
 					return Errors.ValueErrorOccurred("There is no image to write.");
 
-				int px = x.Ai(), py = y.Ai();
+				if (!x.CoerceInt(out var px) || !y.CoerceInt(out var py))
+					return DefaultObject;
 
 				if (px < 0 || py < 0 || px >= bmp.Width || py >= bmp.Height)
 					return Errors.ValueErrorOccurred($"Pixel ({px}, {py}) is out of range.");
 
-				bmp.SetPixel(px, py, ImageHelper.ArgbToColor(ParseColorArg(color)));
+				if (!TryParseColorArg(color, out var argb))
+					return this;
+
+				bmp.SetPixel(px, py, ImageHelper.ArgbToColor(argb));
 				// Persist the edit: bake the materialized result in as the new base so it survives a later
 				// Invalidate() (a no-op when there were no queued ops and `bmp` is the base, edited in place).
 				Bake();
@@ -1709,7 +1864,8 @@ namespace Keysharp.Builtins
 				if (needle == null)
 					return Errors.ValueErrorOccurred("Search requires a needle image.");
 
-				var dir = ParseSearchDirection(direction);
+				if (!ParseSearchDirection(direction, out var dir))
+					return DefaultObject;
 
 				if (dir < 1)
 					return Errors.ValueErrorOccurred($"Unknown Direction \"{Errors.Describe(direction)}\". Expected TopLeft, TopRight, BottomLeft, BottomRight, LeftTop, LeftBottom, RightTop, RightBottom or Center.", direction);
@@ -1731,7 +1887,11 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					(surface, var offX, var offY, ownedSurface) = ResolveRegion(haystack, x, y, width, height);
+					if (!CoerceOptionalRegionArg(x, out var xi) || !CoerceOptionalRegionArg(y, out var yi) ||
+							!CoerceOptionalRegionArg(width, out var wi) || !CoerceOptionalRegionArg(height, out var hi))
+						return DefaultObject;
+
+					(surface, var offX, var offY, ownedSurface) = ResolveRegion(haystack, xi, yi, wi, hi);
 
 					// Empty region -> zero pixels -> no match.
 					if (surface == null)
@@ -1740,9 +1900,17 @@ namespace Keysharp.Builtins
 					var transColor = -1L;
 
 					if (trans != null && trans is not string { Length: 0 })
-						transColor = ParseColorArg(trans) & 0xFFFFFF;
+					{
+						if (!TryParseColorArg(trans, out var transArgb))
+							return DefaultObject;
 
-					var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variation?.Al() ?? 0L, 0, 255) };
+						transColor = transArgb & 0xFFFFFF;
+					}
+
+					if (!variation.CoerceLong(out var variationL, 0))
+						return DefaultObject;
+
+					var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
 					var loc = finder.Find(needleBmp, transColor, dir);
 					return loc.HasValue ? MakePoint(loc.Value.X + offX, loc.Value.Y + offY) : "";
 				}
@@ -1772,7 +1940,8 @@ namespace Keysharp.Builtins
 				if (needle == null)
 					return Errors.ValueErrorOccurred("SearchAll requires a needle image.");
 
-				var dir = ParseSearchDirection(direction);
+				if (!ParseSearchDirection(direction, out var dir))
+					return DefaultObject;
 
 				if (dir < 1)
 					return Errors.ValueErrorOccurred($"Unknown Direction \"{Errors.Describe(direction)}\". Expected TopLeft, TopRight, BottomLeft, BottomRight, LeftTop, LeftBottom, RightTop, RightBottom or Center.", direction);
@@ -1795,7 +1964,11 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					(surface, var offX, var offY, ownedSurface) = ResolveRegion(haystack, x, y, width, height);
+					if (!CoerceOptionalRegionArg(x, out var xi) || !CoerceOptionalRegionArg(y, out var yi) ||
+							!CoerceOptionalRegionArg(width, out var wi) || !CoerceOptionalRegionArg(height, out var hi))
+						return DefaultObject;
+
+					(surface, var offX, var offY, ownedSurface) = ResolveRegion(haystack, xi, yi, wi, hi);
 
 					// Empty region -> zero pixels -> no matches.
 					if (surface == null)
@@ -1804,9 +1977,17 @@ namespace Keysharp.Builtins
 					var transColor = -1L;
 
 					if (trans != null && trans is not string { Length: 0 })
-						transColor = ParseColorArg(trans) & 0xFFFFFF;
+					{
+						if (!TryParseColorArg(trans, out var transArgb))
+							return DefaultObject;
 
-					var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variation?.Al() ?? 0L, 0, 255) };
+						transColor = transArgb & 0xFFFFFF;
+					}
+
+					if (!variation.CoerceLong(out var variationL, 0))
+						return DefaultObject;
+
+					var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
 					var found = finder.FindAll(needleBmp, transColor, dir);
 
 					foreach (var p in found)
@@ -1845,7 +2026,8 @@ namespace Keysharp.Builtins
 				if (color == null)
 					return Errors.ValueErrorOccurred("SearchPixel requires a color.");
 
-				var dir = ParseSearchDirection(direction);
+				if (!ParseSearchDirection(direction, out var dir))
+					return DefaultObject;
 
 				if (dir < 1 || dir > 4)
 					return Errors.ValueErrorOccurred($"Unknown Direction \"{Errors.Describe(direction)}\". Expected TopLeft, TopRight, BottomLeft or BottomRight.", direction);
@@ -1860,15 +2042,24 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					(surface, var offX, var offY, ownedSurface) = ResolveRegion(haystack, x, y, width, height);
+					if (!CoerceOptionalRegionArg(x, out var xi) || !CoerceOptionalRegionArg(y, out var yi) ||
+							!CoerceOptionalRegionArg(width, out var wi) || !CoerceOptionalRegionArg(height, out var hi))
+						return DefaultObject;
+
+					(surface, var offX, var offY, ownedSurface) = ResolveRegion(haystack, xi, yi, wi, hi);
 
 					// Empty region -> zero pixels -> no match (and avoids reading a phantom pixel off-image).
 					if (surface == null)
 						return "";
 
-					var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variation?.Al() ?? 0L, 0, 255) };
-					var loc = finder.Find(ImageHelper.ArgbToColor(ParseColorArg(color, unchecked((int)0xFF000000), allowTransparentEmpty: false)),
-						ltr: dir is 1 or 3, ttb: dir is 1 or 2);
+					if (!TryParseColorArg(color, out var target, unchecked((int)0xFF000000), allowTransparentEmpty: false))
+						return DefaultObject;
+
+					if (!variation.CoerceLong(out var variationL, 0))
+						return DefaultObject;
+
+					var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
+					var loc = finder.Find(ImageHelper.ArgbToColor(target), ltr: dir is 1 or 3, ttb: dir is 1 or 2);
 
 					if (loc.HasValue)
 					{
@@ -1887,19 +2078,50 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			private static int ParseSearchDirection(object direction) => direction.As("TopLeft").ToLowerInvariant() switch
+			private static bool ParseSearchDirection(object direction, out int dir)
 			{
-				"topleft" => 1,
-				"topright" => 2,
-				"bottomleft" => 3,
-				"bottomright" => 4,
-				"lefttop" => 5,
-				"leftbottom" => 6,
-				"righttop" => 7,
-				"rightbottom" => 8,
-				"center" => 9,
-				_ => 0
-			};
+				if (!direction.CoerceString(out var name, "TopLeft"))
+				{
+					dir = 0;
+					return false;
+				}
+
+				dir = name.ToLowerInvariant() switch
+				{
+					"topleft" => 1,
+					"topright" => 2,
+					"bottomleft" => 3,
+					"bottomright" => 4,
+					"lefttop" => 5,
+					"leftbottom" => 6,
+					"righttop" => 7,
+					"rightbottom" => 8,
+					"center" => 9,
+					_ => 0
+				};
+				return true;
+			}
+
+			// Coerces an optional region argument (Search/SearchAll/SearchPixel's x/y/width/height) to an int,
+			// leaving null when the script omitted it so ResolveRegion applies its own default. False means the
+			// value raised a TypeError the script continued, and the caller must return at once.
+			private static bool CoerceOptionalRegionArg(object obj, out int? value)
+			{
+				if (obj == null)
+				{
+					value = null;
+					return true;
+				}
+
+				if (!obj.CoerceInt(out var v))
+				{
+					value = null;
+					return false;
+				}
+
+				value = v;
+				return true;
+			}
 
 			// Resolves the optional (x, y, width, height) region arguments into the bitmap the finder scans: the
 			// full materialized haystack when all four are omitted, else a clamped crop (each argument defaults
@@ -1911,16 +2133,16 @@ namespace Keysharp.Builtins
 			// canvas the finder would spuriously match (which would then throw when read back at absolute
 			// coordinates off the image).
 			private static (Bitmap surface, int offX, int offY, bool owned) ResolveRegion(Bitmap haystack,
-				object x, object y, object width, object height)
+				int? x, int? y, int? width, int? height)
 			{
 				if (x == null && y == null && width == null && height == null)
 					return (haystack, 0, 0, false);
 
 				// Match CropBitmap's clamping so the offset we add back equals the crop's real origin.
-				int rx = Math.Clamp(x?.Ai() ?? 0, 0, haystack.Width);
-				int ry = Math.Clamp(y?.Ai() ?? 0, 0, haystack.Height);
-				int rw = Math.Clamp(width != null ? width.Ai() : haystack.Width - rx, 0, haystack.Width - rx);
-				int rh = Math.Clamp(height != null ? height.Ai() : haystack.Height - ry, 0, haystack.Height - ry);
+				int rx = Math.Clamp(x ?? 0, 0, haystack.Width);
+				int ry = Math.Clamp(y ?? 0, 0, haystack.Height);
+				int rw = Math.Clamp(width ?? haystack.Width - rx, 0, haystack.Width - rx);
+				int rh = Math.Clamp(height ?? haystack.Height - ry, 0, haystack.Height - ry);
 
 				if (rw <= 0 || rh <= 0)
 					return (null, 0, 0, false);
@@ -1976,7 +2198,9 @@ namespace Keysharp.Builtins
 			public object GetPixelData(object bytesPerPixel = null, object buffer = null)
 			{
 				ThrowIfDisposed();
-				var bpp = (int)(bytesPerPixel == null ? 4L : bytesPerPixel.Al());
+
+				if (!bytesPerPixel.CoerceInt(out var bpp, 4))
+					return DefaultObject;
 
 				if (bpp != 1 && bpp != 4)
 					return Errors.ValueErrorOccurred("GetPixelData supports only 1 (grayscale) or 4 (RGBA) bytes per pixel.");
@@ -2050,7 +2274,8 @@ namespace Keysharp.Builtins
 				if (!Reflections.TryGetPtrProperty(data, out long addr) || !Reflections.TryGetSizeProperty(data, out long have))
 					return Errors.ValueErrorOccurred("SetPixelData requires a Buffer or an object with Ptr and Size properties.");
 
-				var bpp = (int)(bytesPerPixel == null ? 4L : bytesPerPixel.Al());
+				if (!bytesPerPixel.CoerceInt(out var bpp, 4))
+					return DefaultObject;
 
 				if (bpp != 1 && bpp != 4)
 					return Errors.ValueErrorOccurred("SetPixelData supports only 1 (grayscale) or 4 (RGBA) bytes per pixel.");
@@ -2252,8 +2477,10 @@ namespace Keysharp.Builtins
 				if (source is Bitmap bitmap)
 					return (new Bitmap(bitmap), 1.0, 1.0);
 
-				// Treat anything else as a native bitmap handle.
-				var handle = (nint)source.Al();
+				// Treat anything else as a native bitmap handle. Lenient: a non-numeric source just yields a null
+				// handle, which the caller reports through its own "could not create an image" ValueError.
+				_ = source.TryCoerceLong(out var handleValue);
+				var handle = (nint)handleValue;
 
 				if (handle != 0)
 				{
@@ -2577,7 +2804,7 @@ namespace Keysharp.Builtins
 
 			private static (NativeFont, int?) CreateFontUncached(string options, string name)
 			{
-				var fontOptions = Conversions.ParseFontOptions(options, name, strict: true);
+				var fontOptions = Conversions.ParseFontOptions(options, name, strict: true) ?? new FontOptions();//Both are strings, which always convert.
 				if (fontOptions.color.HasValue)
 					_ = Errors.ValueErrorOccurred("Font colour belongs in DrawText's color argument, not in the font options.");
 #if WINDOWS
@@ -2621,35 +2848,41 @@ namespace Keysharp.Builtins
 			// so a transparent color (alpha 0) cannot be expressed numerically — it would read as opaque RRGGBB.
 			// Use "", the color name "Transparent" (KnownColor.Transparent parses to alpha 0 via TryParseColor),
 			// or an 8-hex-digit STRING (e.g. "0x80FF0000") when you need a non-opaque alpha.
-			private static int ParseColorArg(object o)
-				=> ParseColorArg(o, 0, allowTransparentEmpty: true);
-
-			private static int ParseColorArg(object o, int defaultArgb, bool allowTransparentEmpty)
+			// False when the argument raised a TypeError the script continued, and the caller then returns at once.
+			private static bool TryParseColorArg(object o, out int argb, int defaultArgb = 0, bool allowTransparentEmpty = true)
 			{
+				argb = 0;
+
 				if (o == null)
-					return allowTransparentEmpty ? 0 : defaultArgb;
+				{
+					argb = allowTransparentEmpty ? 0 : defaultArgb;
+					return true;
+				}
 
 				if (o is long or int or double)
 				{
-					var raw = (uint)o.Al();
-					return unchecked((int)(raw > 0xFFFFFFu ? raw : 0xFF000000u | (raw & 0xFFFFFFu)));
+					_ = o.TryCoerceLong(out var rawLong);
+					var raw = (uint)rawLong;
+					argb = unchecked((int)(raw > 0xFFFFFFu ? raw : 0xFF000000u | (raw & 0xFFFFFFu)));
+					return true;
 				}
 
-				var s = o.As();
+				if (!o.CoerceString(out var s))
+					return false;
 
 				if (s.Length == 0)
-					return allowTransparentEmpty ? 0 : defaultArgb;
+					argb = allowTransparentEmpty ? 0 : defaultArgb;
+				else if (Conversions.TryParseColor(s, out var c))
+					argb = c.ToArgb();
+				else if (s.ParseLong() is long v)
+				{
+					var parsed = (uint)v;
+					argb = unchecked((int)(parsed > 0xFFFFFFu ? parsed : 0xFF000000u | (parsed & 0xFFFFFFu)));
+				}
+				else
+					argb = defaultArgb;
 
-				if (Conversions.TryParseColor(s, out var c))
-					return c.ToArgb();
-
-				var v = s.ParseLong();
-
-				if (!v.HasValue)
-					return defaultArgb;
-
-				var parsed = (uint)v.Value;
-				return unchecked((int)(parsed > 0xFFFFFFu ? parsed : 0xFF000000u | (parsed & 0xFFFFFFu)));
+				return true;
 			}
 
 			private void DisposePendingResources()

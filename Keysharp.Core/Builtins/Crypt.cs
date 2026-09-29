@@ -103,14 +103,16 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object Hash(object @this, object value, object algorithm = null, object encoding = null)
 			{
-				var name = Named(algorithm, DefaultAlgorithm);
+				if (!Named(algorithm, DefaultAlgorithm, out var name))
+					return DefaultObject;
+
 				var alg = CreateAlgorithm(name);
 
 				if (alg == null)
 					return UnknownAlgorithm(name);
 
 				using (alg)
-					return Digest(value, alg, ResolveEncoding(encoding));
+					return TryResolveEncoding(encoding, out var enc) ? Digest(value, alg, enc) : DefaultObject;
 			}
 
 			/// <summary>
@@ -127,8 +129,9 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object HashFile(object @this, object path, object algorithm = null)
 			{
-				var file = path.As();
-				var name = Named(algorithm, DefaultAlgorithm);
+				if (!path.CoerceString(out var file) || !Named(algorithm, DefaultAlgorithm, out var name))
+					return DefaultObject;
+
 				var alg = CreateAlgorithm(name);
 
 				if (alg == null)
@@ -171,12 +174,15 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object Hmac(object @this, object value, object key, object algorithm = null, object encoding = null)
 			{
-				var name = Named(algorithm, DefaultAlgorithm);
+				if (!Named(algorithm, DefaultAlgorithm, out var name))
+					return DefaultObject;
 
 				if (!TryFind(name, out var entry) || entry.Authenticate == null)
 					return Errors.ValueErrorOccurred($"Unknown HMAC algorithm \"{name}\". Expected {string.Join(", ", algorithms.Where(a => a.Authenticate != null).Select(a => a.Name))}.", name, "");
 
-				var enc = ResolveEncoding(encoding);
+				if (!TryResolveEncoding(encoding, out var enc))
+					return DefaultObject;
+
 				var keyValue = Conversions.ToByteArray(key, enc);
 
 				if (keyValue == null)
@@ -217,9 +223,13 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object PBKDF2(object @this, object password, object salt, object iterations = null, object length = null, object algorithm = null, object encoding = null)
 			{
-				var rounds = iterations == null ? DefaultIterations : iterations.Al();
-				var size = length == null ? DefaultKeyLength : length.Al();
-				var derived = DeriveKey(password, salt, rounds, size, Named(algorithm, DefaultAlgorithm), ResolveEncoding(encoding));
+				if (!iterations.CoerceLong(out var rounds, DefaultIterations) || !length.CoerceLong(out var size, DefaultKeyLength))
+					return DefaultObject;
+
+				if (!Named(algorithm, DefaultAlgorithm, out var name) || !TryResolveEncoding(encoding, out var enc))
+					return DefaultObject;
+
+				var derived = DeriveKey(password, salt, rounds, size, name, enc);
 				return derived == null ? "" : new Buffer(derived);
 			}
 
@@ -233,7 +243,8 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object RandomBytes(object @this, object count)
 			{
-				var n = count.Al();
+				if (!count.CoerceLong(out var n))
+					return "";
 
 				if (n < 0 || n > System.Array.MaxLength)
 					return Errors.ValueErrorOccurred($"Crypt.RandomBytes requires a count between 0 and {System.Array.MaxLength}.", count, "");
@@ -259,8 +270,16 @@ namespace Keysharp.Builtins
 			{
 				if (min is double || max is double)
 				{
-					var minVal = min.Ad(double.MinValue);
-					var maxVal = max.Ad(double.MaxValue);
+					var minVal = double.MinValue;
+
+					if (min is not null && !min.CoerceDouble(out minVal))
+						return DefaultObject;
+
+					var maxVal = double.MaxValue;
+
+					if (max is not null && !max.CoerceDouble(out maxVal))
+						return DefaultObject;
+
 					var diff = Math.Abs(minVal - maxVal);
 
 					if (diff == 0 && !(minVal == 0 && maxVal == 0))
@@ -282,8 +301,15 @@ namespace Keysharp.Builtins
 					return minVal + (unit * diff);
 				}
 
-				var minInt = (min is null ? int.MinValue : min.ToInt());
-				var maxInt = (max is null ? int.MaxValue : max.ToInt());
+				var minInt = int.MinValue;
+
+				if (min is not null && !min.CoerceInt(out minInt))
+					return DefaultObject;
+
+				var maxInt = int.MaxValue;
+
+				if (max is not null && !max.CoerceInt(out maxInt))
+					return DefaultObject;
 
 				if (minInt == maxInt)
 					return (long)minInt;
@@ -542,14 +568,19 @@ namespace Keysharp.Builtins
 			/// transform was rejected and errors are not being thrown.</returns>
 			private static object Cipher(object value, object key, bool decrypt, object algorithm, object mode, object iv, object encoding)
 			{
-				var enc = ResolveEncoding(encoding);
+				if (!TryResolveEncoding(encoding, out var enc))
+					return DefaultObject;
+
 				byte[] ivBytes = null;
 
 				if (!(iv is null || (iv is string s && s.Length == 0)))
 					if ((ivBytes = Conversions.ToByteArray(iv, enc)) == null)
 						return "";
 
-				var result = Transform(value, key, decrypt, Named(algorithm, DefaultCipher), Named(mode, DefaultCipherMode), ivBytes, enc);
+				if (!Named(algorithm, DefaultCipher, out var cipherName) || !Named(mode, DefaultCipherMode, out var modeName))
+					return "";
+
+				var result = Transform(value, key, decrypt, cipherName, modeName, ivBytes, enc);
 				return result == null ? "" : new Buffer(result);
 			}
 
@@ -676,10 +707,15 @@ namespace Keysharp.Builtins
 			/// Resolves a name a script may have left blank, since an omitted argument reaches here as the empty
 			/// string as readily as it does unset.
 			/// </summary>
-			private static string Named(object value, string def)
+			private static bool Named(object value, string def, out string name)
 			{
-				var name = value.As();
-				return name.Length == 0 ? def : name;
+				if (!value.CoerceString(out name))
+					return false;
+
+				if (name.Length == 0)
+					name = def;
+
+				return true;
 			}
 
 			/// <summary>
@@ -702,9 +738,10 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Resolves the encoding a string value is taken in, defaulting to UTF-8.
+			/// Resolves the encoding a string value is taken in, defaulting to UTF-8. False means the script continued the
+			/// error raised for the name, and the caller then returns at once.
 			/// </summary>
-			private static Encoding ResolveEncoding(object encoding) => Files.GetEncodingOrDefault(encoding, Encoding.UTF8);
+			private static bool TryResolveEncoding(object encoding, out Encoding enc) => Files.TryGetEncoding(encoding, Encoding.UTF8, out enc);
 
 			/// <summary>
 			/// Encrypts or decrypts with a symmetric cipher, dispatching on the mode: the authenticated one is a

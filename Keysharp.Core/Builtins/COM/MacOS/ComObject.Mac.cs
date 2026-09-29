@@ -59,9 +59,15 @@ namespace Keysharp.Builtins.COM
 		/// <summary>ComObject("bundle.id" | "Name" | "/path/App.app" | "pid:123", "optional suite").</summary>
 		public static object staticCall(object @this, [UserDeclaredName("CLSID")] object target,
 			[UserDeclaredName("IID")] object suite = null)
-			=> Create(target.As(), suite.As(), activate: true);
+		{
+			if (!target.CoerceString(out var targetText) || !suite.CoerceString(out var suiteName))
+				return DefaultObject;
+
+			return Create(targetText, suiteName, activate: true);
+		}
 
 		// Addresses nothing until Create fills it in, which is the state a prototype instance stays in.
+		[PublicHiddenFromUser]
 		public override string ToString() => target == null ? "" : AESpecifiers.Render(steps, target.ToString());
 
 		internal static object Create(string targetText, string suiteName, bool activate)
@@ -264,9 +270,12 @@ namespace Keysharp.Builtins.COM
 			}
 			else
 			{
+				if (!args[0].CoerceLong(out var index))
+					return DefaultObject;
+
 				// Apple events count from one and read a negative index from the end, matching Keysharp's Array.
 				step.Kind = AESpecifierKind.ElementByIndex;
-				step.Index = args[0].Al();
+				step.Index = index;
 			}
 
 			return Narrow(step);
@@ -378,7 +387,8 @@ namespace Keysharp.Builtins.COM
 
 				foreach (var kv in named.map)
 				{
-					var name = kv.Key.As();
+					if (!kv.Key.CoerceString(out var name))
+						return DefaultObject;
 
 					if (!command.TryGetParameter(AESdef.Key(name), out var parameter))
 						return Errors.ValueErrorOccurred(

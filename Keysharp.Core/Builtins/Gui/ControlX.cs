@@ -19,8 +19,12 @@ namespace Keysharp.Builtins
 										  object excludeText = null)
 		{
 			EnsureControlPermission("ControlAddItem");
+
+			if (!@string.CoerceString(out var str))
+				return 0L;
+
 			return Platform.Control.ControlAddItem(
-											  @string.As(),
+											  str,
 											  controlID,
 											  winTitle,
 											  winText,
@@ -36,8 +40,12 @@ namespace Keysharp.Builtins
 												object excludeText = null)
 		{
 			EnsureControlPermission("ControlChooseIndex");
+
+			if (!n.CoerceInt(out var index))
+				return DefaultObject;
+
 			Platform.Control.ControlChooseIndex(
-				n.Ai(),
+				index,
 				controlID,
 				winTitle,
 				winText,
@@ -54,8 +62,12 @@ namespace Keysharp.Builtins
 											   object excludeText = null)
 		{
 			EnsureControlPermission("ControlChooseString");
+
+			if (!@string.CoerceString(out var str))
+				return 0L;
+
 			return Platform.Control.ControlChooseString(
-													   @string.As(),
+													   str,
 													   controlID,
 													   winTitle,
 													   winText,
@@ -74,13 +86,20 @@ namespace Keysharp.Builtins
 		{
 			EnsureControlPermission("ControlClick");
 			EnsureControlInputPermission("ControlClick");
+
+			if (!whichButton.CoerceString(out var button) || !options.CoerceString(out var opts))
+				return DefaultObject;
+
+			if (!clickCount.CoerceInt(out var count, 1))
+				return DefaultObject;
+
 			Platform.Control.ControlClick(
 				controlOrPos,
 				winTitle,
 				winText,
-				whichButton.As(),
-				clickCount.Ai(1),
-				options.As(),
+				button,
+				count,
+				opts,
 				excludeTitle,
 				excludeText);
 			return DefaultObject;
@@ -94,8 +113,12 @@ namespace Keysharp.Builtins
 											   object excludeText = null)
 		{
 			EnsureControlPermission("ControlDeleteItem");
+
+			if (!n.CoerceInt(out var index))
+				return DefaultObject;
+
 			Platform.Control.ControlDeleteItem(
-				n.Ai(),
+				index,
 				controlID,
 				winTitle,
 				winText,
@@ -112,8 +135,12 @@ namespace Keysharp.Builtins
 										   object excludeText = null)
 		{
 			EnsureControlMonitoringPermission("ControlFindItem");
+
+			if (!@string.CoerceString(out var str))
+				return 0L;
+
 			return Platform.Control.ControlFindItem(
-											   @string.As(),
+											   str,
 											   controlID,
 											   winTitle,
 											   winText,
@@ -387,11 +414,19 @@ namespace Keysharp.Builtins
 										 object excludeText = null)
 		{
 			EnsureControlPermission("ControlMove");
+			int xVal = int.MinValue, yVal = int.MinValue, widthVal = int.MinValue, heightVal = int.MinValue;
+
+			if ((x is not null && !x.CoerceInt(out xVal))
+					|| (y is not null && !y.CoerceInt(out yVal))
+					|| (width is not null && !width.CoerceInt(out widthVal))
+					|| (height is not null && !height.CoerceInt(out heightVal)))
+				return DefaultObject;
+
 			Platform.Control.ControlMove(
-				(x is null ? int.MinValue : x.ToInt()),
-				(y is null ? int.MinValue : y.ToInt()),
-				(width is null ? int.MinValue : width.ToInt()),
-				(height is null ? int.MinValue : height.ToInt()),
+				xVal,
+				yVal,
+				widthVal,
+				heightVal,
 				controlID,
 				winTitle,
 				winText,
@@ -409,8 +444,12 @@ namespace Keysharp.Builtins
 		{
 			EnsureControlPermission("ControlSend");
 			EnsureControlInputPermission("ControlSend");
+
+			if (!keys.CoerceString(out var keysText))
+				return DefaultObject;
+
 			Platform.Control.ControlSend(
-				keys.As(),
+				keysText,
 				controlID,
 				winTitle,
 				winText,
@@ -428,8 +467,12 @@ namespace Keysharp.Builtins
 		{
 			EnsureControlPermission("ControlSendText");
 			EnsureControlInputPermission("ControlSendText");
+
+			if (!keys.CoerceString(out var keysText))
+				return DefaultObject;
+
 			Platform.Control.ControlSendText(
-				keys.As(),
+				keysText,
 				controlID,
 				winTitle,
 				winText,
@@ -518,8 +561,12 @@ namespace Keysharp.Builtins
 											object excludeText = null)
 		{
 			EnsureControlPermission("ControlSetText");
+
+			if (!newText.CoerceString(out var text))
+				return DefaultObject;
+
 			Platform.Control.ControlSetText(
-				newText.As(),
+				text,
 				controlID,
 				winTitle,
 				winText,

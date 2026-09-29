@@ -24,7 +24,11 @@ internal class KeysharpFuncComparer : IComparer<object>
 	/// <param name="left">The left object to compare.</param>
 	/// <param name="right">The right object to compare.</param>
 	/// <returns>An <see cref="int"/>-1 if left is less than right, 0 if left equals right, otherwise 1.</returns>
-	public int Compare(object left, object right) => Script.InvokeOrNull(ifo, null, left, right).Ai();
+	public int Compare(object left, object right)
+	{
+		_ = Script.InvokeOrNull(ifo, null, left, right).TryCoerceInt(out var result);
+		return result;
+	}
 }
 
 /// <summary>
@@ -53,7 +57,8 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 
 		set
 		{
-			var val = value.Ai();
+			if (!value.CoerceInt(out var val))
+				return;
 
 			if (array != null)
 			{
@@ -89,7 +94,8 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 
 		set
 		{
-			var i = value.Ai();
+			if (!value.CoerceInt(out var i))
+				return;
 
 			if (array != null)
 			{
@@ -174,7 +180,11 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	///     2: Return the index in the first element, and the value in the second.
 	/// </param>
 	/// <returns><see cref="Enumerator"/></returns>
-	public KeysharpFunc __Enum(object count) => CreateEnumerator(count.Ai());
+	public KeysharpFunc __Enum(object count)
+	{
+		_ = count.TryCoerceInt(out var c);
+		return CreateEnumerator(c);
+	}
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="Array"/> class.
@@ -276,7 +286,8 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if Index is out of range.</exception>
 	public object Delete(object index)
 	{
-		var i = TranslateIndex(index.Ai());
+		_ = index.TryCoerceInt(out var ii);
+		var i = TranslateIndex(ii);
 
 		if (i != -1)
 		{
@@ -335,7 +346,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if callback is not of type <see cref="KeysharpFunc"/>.</exception>
 	public object Filter(object callback, object startIndex = null)
 	{
-		var index = startIndex.Ai(1);
+		_ = startIndex.TryCoerceInt(out var index, 1);
 
 		if (callback is Any fo)
 		{
@@ -378,7 +389,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if callback is not of type <see cref="KeysharpFunc"/>.</exception>
 	public long FindIndex(object callback, object startIndex = null)
 	{
-		var index = startIndex.Ai(1);
+		_ = startIndex.TryCoerceInt(out var index, 1);
 
 		if (callback is Any fo)
 		{
@@ -406,7 +417,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 					return 0L;
 				}
 				else
-					return (long)Errors.IndexErrorOccurred($"Invalid find start index of {startIndex.Ai(1)}.", DefaultErrorLong);
+					return (long)Errors.IndexErrorOccurred($"Invalid find start index of {index}.", DefaultErrorLong);
 			}
 			else
 			{
@@ -441,7 +452,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	public object Get(object index, object @default = null)
 	{
 		object val;
-		var i = index.Ai(1);
+		_ = index.TryCoerceInt(out var i, 1);
 
 		if ((i = TranslateIndex(i)) != -1)
 			val = array[i];
@@ -481,7 +492,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <returns>1 if the index is valid and there is a valid value stored there, else 0.</returns>
 	public long Has(object index)
 	{
-		var i = index.Ai(1);
+		_ = index.TryCoerceInt(out var i, 1);
 
 		if ((i = TranslateIndex(i)) != -1)
 			return array[i] != null ? 1L : 0L;
@@ -514,7 +525,8 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 		if (array.Count == 0)
 		return 0L;
 
-		long i = startIndex.Ai(1);//long, so that a startIndex of int.MinValue cannot overflow Math.Abs().
+		//long, so that a startIndex of int.MinValue cannot overflow Math.Abs().
+		_ = startIndex.TryCoerceLong(out long i, 1);
 
 		//An out of bounds start index is an error rather than a silent 0, which is how the sibling searches
 		//FindIndex() and Filter() already treat one. Don't use TranslateIndex() here because it would do the
@@ -546,7 +558,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 		if (o.Length > 1)
 		{
 			int index;
-			var i = o.I1();
+			_ = o[0].TryCoerceInt(out var i);
 
 			if (i == 0)//Can't use TranslateIndex() here because the index is slightly different for inserting.
 				index = array.Count;
@@ -572,7 +584,26 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// </summary>
 	/// <param name="separator">The separator to use. Default: comma.</param>
 	/// <returns>A string consisting of the string representation of all array elements, separated by separator.</returns>
-	public string Join(object separator = null) => string.Join(separator.As(","), array);
+	public string Join(object separator = null)
+	{
+		if (!separator.CoerceString(out var sep, ","))
+			return "";
+
+		var sb = new StringBuilder();
+
+		for (var i = 0; i < array.Count; i++)
+		{
+			if (!array[i].CoerceString(out var text))
+				return "";
+
+			if (i > 0)
+				_ = sb.Append(sep);
+
+			_ = sb.Append(text);
+		}
+
+		return sb.ToString();
+	}
 
 	/// <summary>
 	/// Maps each element of the array into a new array, where the mapping performs some operation.
@@ -589,7 +620,8 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 			if (array.Count == 0)
 				return new Array();
 
-			var index = TranslateIndex(startIndex.Ai(1));
+			_ = startIndex.TryCoerceInt(out var startIndexValue, 1);
+			var index = TranslateIndex(startIndexValue);
 
 			if (index >= 0 && index < array.Count)
 			{
@@ -602,7 +634,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 				return new Array(list);
 			}
 			else
-				return Errors.IndexErrorOccurred($"Invalid mapping start index of {startIndex.Ai(1)}.");
+				return Errors.IndexErrorOccurred($"Invalid mapping start index of {startIndexValue}.");
 		}
 
 		return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc), DefaultObject);
@@ -679,7 +711,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 
 		if (o.Length > 0)
 		{
-			var index = args[0].Ai(0);
+			_ = args[0].TryCoerceInt(out var index);
 			int i;
 
 			if ((i = TranslateIndex(index)) == -1)
@@ -687,7 +719,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 
 			if (o.Length > 1 && o[1] != null)
 			{
-				var len = o[1].Ai(1);
+				_ = o[1].TryCoerceInt(out var len, 1);
 
 				if (len >= 0 && len <= array.Count - i)
 					array.RemoveRange(i, len);
@@ -728,35 +760,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// Returns the string representation of all elements in the array.
 	/// </summary>
 	/// <returns>The string representation.</returns>
-	public override string ToString()
-	{
-		if (array.Count > 0)
-		{
-			var sb = new StringBuilder(array.Count * 10);
-			_ = sb.Append('[');
-
-			for (var i = 0; i < array.Count; i++)
-			{
-				string str;
-				var val = array[i];
-
-				if (val is string vs)
-					str = "\"" + vs + "\"";//Can't use interpolated string here because the AStyle formatter misinterprets it.
-				else
-					str = val?.ToString() ?? "unset";
-
-				if (i < array.Count - 1)
-					_ = sb.Append($"{str}, ");
-				else
-					_ = sb.Append($"{str}");
-			}
-
-			_ = sb.Append(']');
-			return sb.ToString();
-		}
-		else
-			return "[]";
-	}
+	public override string ToString() => Script.FormatCollection(this, true);
 
 	/// <summary>
 	/// The implementation for <see cref="ICollection.CopyTo"/> which copies the elements<br/>
@@ -789,7 +793,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	{
 		get
 		{
-			var i = index.Ai();
+			_ = index.TryCoerceInt(out var i);
 
 			if ((i = TranslateIndex(i)) != -1)
 				// A Default the script defined stands in for an element that has no value, for __Item exactly as
@@ -803,7 +807,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 		}
 		set
 		{
-			var i = index.Ai();
+			_ = index.TryCoerceInt(out var i);
 
 			if ((i = TranslateIndex(i)) != -1)
 				array[i] = value;

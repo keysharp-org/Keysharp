@@ -11,10 +11,12 @@ namespace Keysharp.Builtins.COM
 	public static class Com
 	{
 		/// <summary>Connects to a service that is already on the bus; unlike ComObject it never activates one.</summary>
-		public static object ComObjActive([UserDeclaredName("CLSID")] object name) => ComObject.Create(name.As(), "", activate: false);
+		public static object ComObjActive([UserDeclaredName("CLSID")] object name) =>
+			name.CoerceString(out var target) ? ComObject.Create(target, "", activate: false) : DefaultObject;
 
 		/// <summary>On D-Bus there are no monikers, so this is ComObjActive: attach to a running service.</summary>
-		public static object ComObjGet(object name) => ComObject.Create(name.As(), "", activate: false);
+		public static object ComObjGet(object name) =>
+			name.CoerceString(out var target) ? ComObject.Create(target, "", activate: false) : DefaultObject;
 
 		/// <summary>Selects a different interface on the same object — the D-Bus counterpart of QueryInterface.</summary>
 		public static object ComObjQuery(object comObj, [UserDeclaredName("SID")] object sid = null,
@@ -23,7 +25,8 @@ namespace Keysharp.Builtins.COM
 			if (comObj is not ComObject co)
 				return Errors.TypeErrorOccurred(comObj, typeof(ComObject));
 
-			var wanted = (iid ?? sid).As();
+			if (!(iid ?? sid).CoerceString(out var wanted))
+				return DefaultObject;
 
 			if (wanted.Length == 0)
 				return Errors.ValueErrorOccurred("ComObjQuery needs an interface name.");
@@ -45,7 +48,8 @@ namespace Keysharp.Builtins.COM
 			if (comObj is not ComObject co)
 				return Errors.TypeErrorOccurred(comObj, typeof(ComObject));
 
-			var what = infoType.As();
+			if (!infoType.CoerceString(out var what))
+				return DefaultObject;
 
 			if (what.Length == 0 || string.Equals(what, "IID", StringComparison.OrdinalIgnoreCase))
 			{

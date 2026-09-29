@@ -44,4 +44,10 @@ AssertEq(StrGet({Ptr: duckBuf.Ptr, Size: 6}), "duc", A_LineNumber)
 
 AssertEq(StrGet(duckBuf), "duck!", A_LineNumber)
 
+; The text converts as any string argument does: a number as its text, an object through its ToString method or else
+; a TypeError.
+StrPut(1.0, duckBuf)
+AssertEq(StrGet(duckBuf), "1.0", A_LineNumber)
+Throws(() => StrPut({}, duckBuf), A_LineNumber, TypeError)
+
 FileAppend "pass", "*"

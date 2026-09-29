@@ -179,7 +179,8 @@ namespace Keysharp.Internals.Os.Unix
 			}
 			else if (!posoverride)
 			{
-				item = WindowSearch.SearchControl(ctrlorpos, title, text, excludeTitle, excludeText, false);
+				if (!WindowSearch.TrySearchControl(ctrlorpos, title, text, excludeTitle, excludeText, out item))
+					return;
 
 				if (item == null)
 				{
@@ -549,7 +550,7 @@ namespace Keysharp.Internals.Os.Unix
 					if (Options.TryParse(s, "+", ref temp)) { ex |= temp; }
 					else if (Options.TryParse(s, "-", ref temp)) { ex &= ~temp; }
 					else if (Options.TryParse(s, "^", ref temp)) { ex ^= temp; }
-					else ex = val.Al();
+					else _ = val.TryCoerceLong(out ex);
 				}
 
 				item.SetExStyle(ex);   // Eto controls have no Win32 ex-style word → accepted no-op
@@ -763,7 +764,10 @@ namespace Keysharp.Internals.Os.Unix
 				{
 					if (form.MainMenuStrip is MenuStrip strip)
 					{
-						if (GetMenuItem(strip, menu, sub1, sub2, sub3, sub4, sub5, sub6) is ToolStripMenuItem item)
+						if (!TryGetMenuItem(strip, out var item, menu, sub1, sub2, sub3, sub4, sub5, sub6))
+							return;
+
+						if (item != null)
 							item.PerformClick();
 						else
 							_ = Errors.ValueErrorOccurred($"Could not find menu.", $"{title}, {text}, {menu}, {sub1}, {sub2}, {sub3}, {sub4}, {sub5}, {sub6}, {excludeTitle}, {excludeText}");
@@ -779,7 +783,10 @@ namespace Keysharp.Internals.Os.Unix
 
 		internal override long SendMessage(uint msg, object wparam, object lparam, object ctrl, object title, object text, object excludeTitle, object excludeText, int timeout)
 		{
-			return TryDispatchWindowMessage(msg, wparam.Ai(), lparam.Ai(), ctrl, title, text, excludeTitle, excludeText, false) ? 1L : 0L;
+			if (!wparam.CoerceInt(out var wp) || !lparam.CoerceInt(out var lp))
+				return 0L;
+
+			return TryDispatchWindowMessage(msg, wp, lp, ctrl, title, text, excludeTitle, excludeText, false) ? 1L : 0L;
 		}
 
 		private static bool TryDispatchWindowMessage(uint msg, nint wparam, nint lparam, object ctrl, object title, object text, object excludeTitle, object excludeText, bool post)

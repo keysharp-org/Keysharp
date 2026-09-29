@@ -112,11 +112,14 @@ namespace Keysharp.Builtins
 						return Errors.ValueErrorOccurred($"Unknown CaseSense \"{Errors.Describe(caseSense)}\". Expected On, Off, Locale, true, false, 1 or 0.");
 				}
 
+				if (!jsonText.CoerceString(out var text))
+					return DefaultObject;
+
 				try
 				{
 					// Trailing commas and comments are accepted because hand-written configuration files
 					// commonly carry them; everything else follows the JSON grammar.
-					using var doc = JsonDocument.Parse(jsonText.As(), new JsonDocumentOptions
+					using var doc = JsonDocument.Parse(text, new JsonDocumentOptions
 					{
 						AllowTrailingCommas = true,
 						CommentHandling = JsonCommentHandling.Skip,

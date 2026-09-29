@@ -67,8 +67,10 @@ namespace Keysharp.Builtins.COM
 
 		public static object staticCall(object @this, object varType, object count1, params object[] args)
 		{
-			var vt = (VarEnum)varType.Ai();
-			var dim1Size = count1.Ai();
+			if (!varType.CoerceInt(out var vtRaw) || !count1.CoerceInt(out var dim1Size))
+				return DefaultObject;
+
+			var vt = (VarEnum)vtRaw;
 			var lengths = new int[args != null ? args.Length + 1 : 1];
 			var t = typeof(object);
 
@@ -78,12 +80,21 @@ namespace Keysharp.Builtins.COM
 			lengths[0] = dim1Size;
 
 			for (var i = 0; i < args.Length; i++)
-				lengths[i + 1] = args[i].Ai();
+			{
+				if (!args[i].CoerceInt(out var len))
+					return DefaultObject;
+
+				lengths[i + 1] = len;
+			}
 
 			return new ComObjArray(vt, lengths);
 		}
 
-		public KeysharpFunc __Enum(object count) => CreateEnumerator(count.Ai());
+		public KeysharpFunc __Enum(object count)
+		{
+			_ = count.TryCoerceInt(out var c);
+			return CreateEnumerator(c);
+		}
 
 		IEnumerator<object> IEnumerable<object>.GetEnumerator() => CreateEnumerator(1);
 
@@ -94,7 +105,8 @@ namespace Keysharp.Builtins.COM
 		/// </summary>
 		public object MaxIndex(object dim = null)
 		{
-			int d = dim.Ai(1);
+			if (!dim.CoerceInt(out var d, 1))
+				return DefaultObject;
 
 			if (d < 1 || d > _dimensions)
 				return Errors.ValueErrorOccurred($"Argument out of range.");
@@ -108,7 +120,8 @@ namespace Keysharp.Builtins.COM
 		/// </summary>
 		public object MinIndex(object dim = null)
 		{
-			int d = dim.Ai(1);
+			if (!dim.CoerceInt(out var d, 1))
+				return DefaultObject;
 
 			if (d < 1 || d > _dimensions)
 				return Errors.ValueErrorOccurred($"Argument out of range.");
@@ -136,8 +149,8 @@ namespace Keysharp.Builtins.COM
 				int[] idx = ConvertIndices(indices);
 				if (idx == null)
 					return;
-				int hr = PutElementAtIndices(idx, value!);
-				_ = Errors.OSErrorOccurredForHR(hr);
+				if (TryPutElementAtIndices(idx, value!, out var hr))
+					_ = Errors.OSErrorOccurredForHR(hr);
 			}
 		}
 
@@ -180,7 +193,8 @@ namespace Keysharp.Builtins.COM
 
 			for (int i = 0; i < idx.Length; i++)
 			{
-				int temp = indices[i].Ai();
+				if (!indices[i].CoerceInt(out var temp))
+					return null;
 
 				int lb = (int)(long)MinIndex(i + 1); // SAFEARRAY is 1-based for the dim parameter
 				int ub = (int)(long)MaxIndex(i + 1);
@@ -328,7 +342,8 @@ namespace Keysharp.Builtins.COM
 			return VariantHelper.ValueToVariant(value);
 		}
 
-		internal int PutElementAtIndices(int[] idx, object value)
+		// False when the script continued the error of a BSTR element which does not convert.
+		internal bool TryPutElementAtIndices(int[] idx, object value, out int hr)
 		{
 			// VT_VARIANT arrays, let the marshaller coerce the type
 			if (_baseType == VarEnum.VT_VARIANT)
@@ -336,14 +351,14 @@ namespace Keysharp.Builtins.COM
 				unsafe
 				{
 					VARIANT v = BuildVariantForElement(value, out bool canClear);
-					int hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, (nint)(&v));
+					hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, (nint)(&v));
 
 					// Only clear when safe: never clear a VARIANT that aliases a caller-owned SAFEARRAY.
 					if (canClear)
 						_ = VariantHelper.VariantClear((nint)(&v));
 
 					_ = Errors.OSErrorOccurredForHR(hr);
-					return hr;
+					return true;
 				}
 			}
 
@@ -373,9 +388,9 @@ namespace Keysharp.Builtins.COM
 
 				try
 				{
-					int hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, pIface);
+					hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, pIface);
 					_ = Errors.OSErrorOccurredForHR(hr);
-					return hr;
+					return true;
 				}
 				finally
 				{
@@ -388,11 +403,19 @@ namespace Keysharp.Builtins.COM
 
 			if (_baseType == VarEnum.VT_BSTR)
 			{
+				string text = null;
+
+				if (value != null && !value.CoerceString(out text))
+				{
+					hr = 0;
+					return false;
+				}
+
 				// For BSTR, pass the BSTR pointer directly; the array will own & free it.
-				nint bstr = value == null ? 0 : Marshal.StringToBSTR(value.As());
-				int hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, bstr);
+				nint bstr = text == null ? 0 : Marshal.StringToBSTR(text);
+				hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, bstr);
 				_ = Errors.OSErrorOccurredForHR(hr);
-				return hr;
+				return true;
 			}
 
 			// All other (non-pointer) element types need to be put in a temporary buffer
@@ -402,9 +425,9 @@ namespace Keysharp.Builtins.COM
 			try
 			{
 				WriteValueToBuffer(pv, _baseType, value);
-				int hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, pv);
+				hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, pv);
 				_ = Errors.OSErrorOccurredForHR(hr);
-				return hr;
+				return true;
 			}
 			finally
 			{

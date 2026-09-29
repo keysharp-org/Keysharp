@@ -82,8 +82,12 @@ namespace Keysharp.Builtins
 		/// <returns>On success, it returns the new icon's index (1 is the first icon, 2 is the second, and so on), else 0.</returns>
 		public static long IL_Add(object imageListID, object picFileName, object maskColor = null, object resize = null)
 		{
-			var id = imageListID.Al();
-			var filename = picFileName.As();
+			if (!imageListID.CoerceLong(out var id))
+				return 0L;
+
+			if (!picFileName.CoerceString(out var filename))
+				return 0L;
+
 			var iconnumber = ImageHelper.PrepareIconNumber(maskColor);
 			var resizeNonIcon = resize.Ab();
 
@@ -97,7 +101,10 @@ namespace Keysharp.Builtins
 			{
 				if (!ImageHelper.IsIcon(filename))
 				{
-					var color = Color.FromArgb(maskColor.Ai());
+					if (!maskColor.CoerceInt(out var maskColorInt))
+						return 0L;
+
+					var color = Color.FromArgb(maskColorInt);
 
 					if (!resizeNonIcon)
 					{
@@ -139,7 +146,13 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="imageListID">The <see cref="ImageList"/> ID.</param>
 		/// <returns>On success, it function returns 1, else 0.</returns>
-		public static long IL_Destroy(object imageListID) => Script.TheScript.ImageListData.imageLists.TryRemove(imageListID.Al(), out _) ? 1L : 0L;
+		public static long IL_Destroy(object imageListID)
+		{
+			if (!imageListID.CoerceLong(out var id))
+				return 0L;
+
+			return Script.TheScript.ImageListData.imageLists.TryRemove(id, out _) ? 1L : 0L;
+		}
 
 		/// <summary>
 		/// Internal helper which gets an <see cref="ImageList"/> based on the ID that was returned when it was created.

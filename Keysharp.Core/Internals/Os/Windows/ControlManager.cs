@@ -229,7 +229,8 @@ namespace Keysharp.Internals.Os.Windows
 			}
 			else if (!posoverride)//Don't override, so try ctrlorpos first, and if it doesn't work, then try as an x/y.
 			{
-				item = WindowSearch.SearchControl(ctrlorpos, title, text, excludeTitle, excludeText, false);
+				if (!WindowSearch.TrySearchControl(ctrlorpos, title, text, excludeTitle, excludeText, out item))
+					return;
 
 				if (item == null)
 				{
@@ -250,6 +251,10 @@ namespace Keysharp.Internals.Os.Windows
 			if (getctrlbycoords)
 			{
 				item = WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
+
+				if (item == null)
+					return;
+
 				var rect = new POINT(winx, winy);
 				_ = WindowsAPI.ClientToScreen(item.Handle, ref rect);
 				var pah = new PointAndHwnd(rect);
@@ -705,7 +710,7 @@ namespace Keysharp.Internals.Os.Windows
 					if (Options.TryParse(s, "+", ref temp)) { exStyle |= temp; }
 					else if (Options.TryParse(s, "-", ref temp)) { exStyle &= ~temp; }
 					else if (Options.TryParse(s, "^", ref temp)) { exStyle ^= temp; }
-					else exStyle = val.Al();
+					else _ = val.TryCoerceLong(out exStyle);
 				}
 
 				_ = Platform.Window.TrySetExStyle(item.Handle, exStyle);
@@ -1130,14 +1135,19 @@ namespace Keysharp.Internals.Os.Windows
 		{
 			if (WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
-				var menuStr = menu.As();
+				if (!menu.CoerceString(out var menuStr))
+					return;
+
 				var sysMenu = menuStr == "0&";
 
 				if (!sysMenu && Control.FromHandle(win.Handle) is Form form)//Winforms needs special treatment because it doesn't use an actual native main menu.
 				{
 					if (form.MainMenuStrip is MenuStrip strip)
 					{
-						if (GetMenuItem(strip, menu, sub1, sub2, sub3, sub4, sub5, sub6) is ToolStripMenuItem item)
+						if (!TryGetMenuItem(strip, out var item, menu, sub1, sub2, sub3, sub4, sub5, sub6))
+							return;
+
+						if (item != null)
 							item.PerformClick();
 						else
 							_ = Errors.ValueErrorOccurred($"Could not find menu.", $"{title}, {text}, {menu}, {sub1}, {sub2}, {sub3}, {sub4}, {sub5}, {sub6}, {excludeTitle}, {excludeText}");
@@ -1145,7 +1155,8 @@ namespace Keysharp.Internals.Os.Windows
 				}
 				else if (win != null && win.Handle != 0)
 				{
-					var menuId = GetNativeMenuItemId(win.Handle, menu, sub1, sub2, sub3, sub4, sub5, sub6);
+					if (!TryGetNativeMenuItemId(win.Handle, out var menuId, menu, sub1, sub2, sub3, sub4, sub5, sub6))
+						return;
 
 					if (menuId != 0xFFFFFFFF)
 					{
@@ -1158,16 +1169,20 @@ namespace Keysharp.Internals.Os.Windows
 			}
 		}
 
-		private static uint GetNativeMenuItemId(nint handle, params object[] items)
+		private static bool TryGetNativeMenuItemId(nint handle, out uint menuid, params object[] items)
 		{
+			menuid = 0xFFFFFFFF;
+
 			if (handle == 0)
-				return 0xFFFFFFFF;
+				return true;
 
 			var i1 = 0;
-			var menuid = 0xFFFFFFFF;
 			nint menu;
 
-			if (items[0].As() == "0&")
+			if (!items[0].CoerceString(out var first))
+				return false;
+
+			if (first == "0&")
 			{
 				menu = WindowsAPI.GetSystemMenu(handle, false);
 				i1 = 1;
@@ -1176,13 +1191,14 @@ namespace Keysharp.Internals.Os.Windows
 				menu = WindowsAPI.GetMenu(handle);
 
 			if (menu == 0 || WindowsAPI.GetMenuItemCount(menu) == 0)
-				return 0xFFFFFFFF;
+				return true;
 
 			for (; i1 < items.Length; i1++)
 			{
-				var item = items[i1].As();
+				if (!items[i1].CoerceString(out var item))
+					return false;
 
-				if (item == null || item.Length == 0)
+				if (item.Length == 0)
 					continue;
 
 				if (item.EndsWith('&') && int.TryParse(item.Trim('&'), out var n) && n > 0)
@@ -1217,7 +1233,7 @@ namespace Keysharp.Internals.Os.Windows
 				}
 			}
 
-			return menuid;
+			return true;
 		}
 
 		internal void NotifyParent(nint handle, uint x_msg, uint y_msg)
@@ -1279,6 +1295,10 @@ namespace Keysharp.Internals.Os.Windows
 			var item = ctrl != null
 					   ? WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText)
 					   : WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
+
+			if (item == null)
+				return 0L;
+
 			var thehandle = item.Handle;
 
 			if (lparam is string s)

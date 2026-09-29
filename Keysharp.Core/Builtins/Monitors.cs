@@ -90,7 +90,12 @@ namespace Keysharp.Builtins
 			/// gap between monitors (script: <c>Monitor.FromPoint(x, y)</c>).</summary>
 			[Static]
 			public static object FromPoint(object @this, object x, object y)
-				=> From(Monitor.ResolveDisplayForPoint(x.Ai(), y.Ai()));
+			{
+				if (!x.CoerceInt(out var px) || !y.CoerceInt(out var py))
+					return DefaultObject;
+
+				return From(Monitor.ResolveDisplayForPoint(px, py));
+			}
 
 			/// <summary>The monitor the mouse cursor is on (script: <c>Monitor.FromMouse()</c>).</summary>
 			[Static]
@@ -108,7 +113,7 @@ namespace Keysharp.Builtins
 				object excludeTitle = null, object excludeText = null)
 			{
 				// SearchWindow reports its own TargetError when nothing matches; a null here only happens when the
-				// script's OnError handler swallowed that, in which case there is no monitor to report.
+				// script continued that or a parameter's error, in which case there is no monitor to report.
 				if (WindowSearch.SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is not
 						Keysharp.Internals.Window.WindowInfoBase win)
 					return DefaultObject;
@@ -126,7 +131,8 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object FromId(object @this, object id)
 			{
-				var wanted = id.As();
+				if (!id.CoerceString(out var wanted))
+					return DefaultObject;
 
 				if (wanted.Length == 0)
 					return "";
@@ -343,7 +349,8 @@ namespace Keysharp.Builtins
 					: Errors.OSErrorOccurredWithMessage(BrightnessError("read"));
 				set
 				{
-					var requested = value.Al();
+					if (!value.CoerceLong(out var requested))
+						return;
 
 					if (requested is < 0 or > 100)
 					{
@@ -370,7 +377,8 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public object GetVCP(object code)
 			{
-				var c = code.Al();
+				if (!code.CoerceLong(out var c))
+					return DefaultObject;
 
 				if (c is < 0 or > byte.MaxValue)
 					return Errors.ValueErrorOccurred("VCP code must be from 0 through 255.", code);
@@ -397,12 +405,14 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public object SetVCP(object code, object value)
 			{
-				var c = code.Al();
+				if (!code.CoerceLong(out var c))
+					return DefaultObject;
 
 				if (c is < 0 or > byte.MaxValue)
 					return Errors.ValueErrorOccurred("VCP code must be from 0 through 255.", code);
 
-				var v = value.Al();
+				if (!value.CoerceLong(out var v))
+					return DefaultObject;
 
 				if (v is < 0 or > ushort.MaxValue)
 					return Errors.ValueErrorOccurred("VCP value must be from 0 through 65535.", value);

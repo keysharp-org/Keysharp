@@ -69,6 +69,7 @@ namespace Keysharp.Internals.Os
 			};
 		}
 
+		// Null means the script continued an error in the names, and the caller then returns at once.
 		internal static List<KeysharpCapability> ParseRequested(object[] capabilities)
 		{
 			var names = new List<string>();
@@ -79,24 +80,34 @@ namespace Keysharp.Internals.Os
 				{
 					foreach (var item in arr)
 					{
-						var name = item.As();
+						if (!item.CoerceString(out var name))
+							return null;
 
 						if (!string.IsNullOrWhiteSpace(name))
 							names.Add(name.Trim());
 					}
 				}
 				else
-					names.AddRange(cap.As().Split([' ', '\t', '\r', '\n', ',', ';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+				{
+					if (!cap.CoerceString(out var text))
+						return null;
+
+					names.AddRange(text.Split([' ', '\t', '\r', '\n', ',', ';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+				}
 			}
 
 			var requested = new List<KeysharpCapability>();
 
 			if (names.Count == 0)
-				return Errors.ErrorOccurred(new ValueError("At least one capability name is required."), requested);
+				return Errors.ErrorOccurred(new ValueError("At least one capability name is required."), (List<KeysharpCapability>)null);
 
 			foreach (var name in names)
-				if (ParseName(name) is { } capability)
-					_ = requested.AddUnique(capability);
+			{
+				if (ParseName(name) is not { } capability)
+					return null;
+
+				_ = requested.AddUnique(capability);
+			}
 
 			return requested;
 		}

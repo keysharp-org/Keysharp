@@ -7,7 +7,9 @@ namespace Keysharp.Builtins
 		{
 			public static object staticLoad(object @this, object assemblyOrPath)
 			{
-				var s = assemblyOrPath.As();
+				if (!assemblyOrPath.CoerceString(out var s))
+					return DefaultObject;
+
 				Assembly asm;
 
 				// A miss used to throw FileNotFoundException straight out of here, past any script try/catch, killing
@@ -54,8 +56,10 @@ namespace Keysharp.Builtins
 			/// <c>#Requires AutoHotkey v2.0</c>) when an optional package was unavailable.</returns>
 			public static object staticLoadPackage(object @this, object name, object version = null, object optional = null)
 			{
-				var id = name.As();
-				var asms = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne(id, version.As(), optional.Ab(), out var error);
+				if (!name.CoerceString(out var id) || !version.CoerceString(out var ver))
+					return DefaultObject;
+
+				var asms = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne(id, ver, optional.Ab(), out var error);
 
 				if (error != null)
 					return Errors.ErrorOccurred(error);
@@ -68,7 +72,9 @@ namespace Keysharp.Builtins
 
 			public static object static__Get(object @this, object name, object args)
 			{
-				var namestr = name.As();
+				if (!name.CoerceString(out var namestr))
+					return DefaultObject;
+
 				var type = TypeResolver.Resolve(namestr);
 
 				if (type != null)
@@ -83,7 +89,9 @@ namespace Keysharp.Builtins
 			// Still keep these for direct access if someone prefers:
 			public static object staticType(object @this, object value)
 			{
-				var name = value.As();
+				if (!value.CoerceString(out var name))
+					return DefaultObject;
+
 				var t = TypeResolver.Resolve(name);
 				if (t == null)
 					return Errors.ErrorOccurred($"Type not found: {name}");
@@ -243,7 +251,12 @@ namespace Keysharp.Builtins
 						{
 							try
 							{
-								var typeArgs = args.Select(TypeResolver.ResolveTypeArg).ToArray();
+								var typeArgs = new Type[args.Length];
+
+								for (var i = 0; i < args.Length; i++)
+									if (!TypeResolver.TryResolveTypeArg(args[i], out typeArgs[i]))
+										return DefaultObject;
+
 								var closed = genDef.MakeGenericType(typeArgs);
 								return new ManagedType(closed);
 							}
@@ -313,10 +326,7 @@ namespace Keysharp.Builtins
 					if (t.IsValueType)
 					{
 						if (args.Length == 1)
-						{
-							var boxed = ManagedInvoke.CoerceToType(args[0], t);
-							return new ManagedInstance(t, boxed);
-						}
+							return ManagedInvoke.TryCoerceToType(args[0], t, out var boxed) ? new ManagedInstance(t, boxed) : DefaultObject;
 					}
 
 					return Errors.ErrorOccurred($"Constructor on type '{t.FullName}' not found for {args.Length} argument(s).");
@@ -374,7 +384,7 @@ namespace Keysharp.Builtins
 									return new ManagedInstance(_type, Activator.CreateInstance(_type)); // default(T)
 
 								if (args.Length == 1)
-									return new ManagedInstance(_type, ManagedInvoke.CoerceToType(args[0], _type));
+									return ManagedInvoke.TryCoerceToType(args[0], _type, out var boxed) ? new ManagedInstance(_type, boxed) : DefaultObject;
 							}
 							return Errors.ErrorOccurred($"Constructor on type '{_type.FullName}' not found for {args.Length} argument(s).");
 						}
@@ -403,7 +413,13 @@ namespace Keysharp.Builtins
 
 					try
 					{
-						var closed = _type.MakeGenericType(typeArgs.Select(TypeResolver.ResolveTypeArg).ToArray());
+						var types = new Type[typeArgs.Length];
+
+						for (var i = 0; i < typeArgs.Length; i++)
+							if (!TypeResolver.TryResolveTypeArg(typeArgs[i], out types[i]))
+								return DefaultObject;
+
+						var closed = _type.MakeGenericType(types);
 						return new ManagedType(closed);
 					}
 					catch (ArgumentException ex)
@@ -457,7 +473,7 @@ namespace Keysharp.Builtins
 				/// </summary>
 				public KeysharpFunc __Enum(object argCount)
 				{
-					var c = argCount.Ai(1);
+					_ = argCount.TryCoerceInt(out var c, 1);
 					if (c < 1) c = 1;
 
 					return CreateEnumerator(this, c);

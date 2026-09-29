@@ -140,7 +140,9 @@ namespace Keysharp.Internals.Window.Unix
 				var bounds = screen.Bounds;
 				var x = bounds.X + (bounds.Width - Size.Width) / 2;
 				var y = bounds.Y + (bounds.Height - Size.Height) / 2;
-				Location = new Point(x.Ai(), y.Ai());
+				_ = x.TryCoerceInt(out var px);
+				_ = y.TryCoerceInt(out var py);
+				Location = new Point(px, py);
 			} catch {}
 		}
 	}

@@ -563,9 +563,7 @@ namespace Keysharp.Internals.Invoke
 			var normalize = ArgCoercer.IsNarrow(kind);
 			var inlineMarked = pi.DeclaringType?.Namespace == Keywords.MainNamespaceName
 				&& pi.IsDefined(typeof(InlineCSharpAttribute), false);
-			var coerce = inlineMarked
-				? ArgCoercer.NeedsBoundaryCoercion(pi.PropertyType)
-				: ArgCoercer.NeedsCoercion(pi.PropertyType);
+			var coerce = ArgCoercer.NeedsCoercion(pi.PropertyType, inlineMarked);
 			var canRead = HasScriptGetter(pi);
 			var canWrite = HasScriptSetter(pi);
 
@@ -593,7 +591,9 @@ namespace Keysharp.Internals.Invoke
 					{
 						SetProp = (inst, arg) =>
 						{
-							arg = inlineMarked ? ArgCoercer.CoerceBoundaryValue(arg, pi.PropertyType) : ArgCoercer.CoerceValue(arg, pi.PropertyType);
+							if (!ArgCoercer.TryCoerceValue(arg, pi.PropertyType, inlineMarked, out arg))
+								return;
+
 							var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
 							_ = InvokeGuiProperty(ctrl, () => { pi.SetValueUnwrapped(null, arg); return null; });
 						};
@@ -611,9 +611,11 @@ namespace Keysharp.Internals.Invoke
 
 					if (canWrite)
 						SetProp = coerce
-							? inlineMarked
-								? (inst, obj) => pi.SetValueUnwrapped(null, ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType))
-								: (inst, obj) => pi.SetValueUnwrapped(null, ArgCoercer.CoerceValue(obj, pi.PropertyType))
+							? (inst, obj) =>
+							{
+								if (ArgCoercer.TryCoerceValue(obj, pi.PropertyType, inlineMarked, out var value))
+									pi.SetValueUnwrapped(null, value);
+							}
 							: (inst, obj) => pi.SetValueUnwrapped(null, obj);
 				}
 			}
@@ -636,7 +638,9 @@ namespace Keysharp.Internals.Invoke
 					{
 						SetProp = (inst, obj) =>
 						{
-							obj = inlineMarked ? ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType) : ArgCoercer.CoerceValue(obj, pi.PropertyType);
+							if (!ArgCoercer.TryCoerceValue(obj, pi.PropertyType, inlineMarked, out obj))
+								return;
+
 							var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
 							_ = InvokeGuiProperty(ctrl, () => { pi.SetValueUnwrapped(inst, obj); return null; });
 						};
@@ -656,9 +660,11 @@ namespace Keysharp.Internals.Invoke
 					// that an Any-derived builtin's prototype dispatch may never use.
 					if (canWrite)
 						SetProp = coerce
-							? inlineMarked
-								? (inst, obj) => pi.SetValueUnwrapped(inst, ArgCoercer.CoerceBoundaryValue(obj, pi.PropertyType))
-								: (inst, obj) => pi.SetValueUnwrapped(inst, ArgCoercer.CoerceValue(obj, pi.PropertyType))
+							? (inst, obj) =>
+							{
+								if (ArgCoercer.TryCoerceValue(obj, pi.PropertyType, inlineMarked, out var value))
+									pi.SetValueUnwrapped(inst, value);
+							}
 							: pi.SetValueUnwrapped;
 				}
 			}
@@ -710,14 +716,14 @@ namespace Keysharp.Internals.Invoke
 			Expression assignExpr;
 			// Same conversion policy as parameters and properties: a script assigning to a typed field must
 			// not be able to raise an uncatchable InvalidCastException out of the compiled setter.
-			var coercedVal = fi.IsDefined(typeof(InlineCSharpAttribute), false)
-				? ArgCoercer.CoerceBoundary(valParam, fi.FieldType)
-				: ArgCoercer.Coerce(valParam, fi.FieldType);
+			var boundary = fi.IsDefined(typeof(InlineCSharpAttribute), false);
+			var steps = ArgCoercer.NeedsCoercion(fi.FieldType, boundary) ? new ArgCoercer.ArgumentSteps(null) : null;
+			var coercedVal = steps?.Coerce(valParam, fi.FieldType, boundary) ?? Expression.Convert(valParam, fi.FieldType);
 			if (fi.IsStatic)
 				assignExpr = Expression.Assign(Expression.Field(null, fi), coercedVal);
 			else
 				assignExpr = Expression.Assign(Expression.Field(Expression.Convert(instParam, fi.DeclaringType), fi), coercedVal);
-			return Expression.Lambda<Action<object, object>>(assignExpr, instParam, valParam).Compile();
+			return Expression.Lambda<Action<object, object>>(steps?.Wrap(assignExpr) ?? assignExpr, instParam, valParam).Compile();
 		}
 
 		// Allow creating a "fake" MPH for ObjBindMethod: it names a member to resolve on the receiver at call time,
@@ -908,6 +914,11 @@ namespace Keysharp.Internals.Invoke
 			var inlineMarked = MethodPropertyHolder.IsInlineBoundary(mi);
 
 			var a = new Expression[ps.Length];
+			// A conversion the script continued has to stop the call, so once any argument needs one, every argument
+			// is evaluated ahead of the call, in order, where a stop leaves nothing on the evaluation stack.
+			var steps = ps.Where((p, i) => i != variadicParamIndex).Any(p => ArgCoercer.NeedsCoercion(p.ParameterType, inlineMarked))
+				? new ArgCoercer.ArgumentSteps(ArgCoercer.DefaultObjectResult)
+				: null;
 
 			for (int i = 0; i < ps.Length; i++)
 			{
@@ -916,6 +927,7 @@ namespace Keysharp.Internals.Invoke
 					a[i] = Expression.Convert(Expression.Call(typeof(DelegateFactory), nameof(PackVariadic), null,
 						pTarget, pArgs, pStart, Expression.Constant(i), Expression.Constant(ps.Length), Expression.Constant(isItemSetter),
 						Expression.Constant(holder.Id), Expression.Constant(holder.IsScript ? holder.ScriptParameterName(ps[^1]) : "")), ps[i].ParameterType);
+					a[i] = steps?.Hold(a[i]) ?? a[i];
 					continue;
 				}
 
@@ -951,9 +963,7 @@ namespace Keysharp.Internals.Invoke
 						reference);
 				}
 
-				a[i] = inlineMarked
-						   ? ArgCoercer.CoerceBoundary(chosen, ps[i].ParameterType)
-						   : ArgCoercer.Coerce(chosen, ps[i].ParameterType);
+				a[i] = steps?.Coerce(chosen, ps[i].ParameterType, inlineMarked) ?? Expression.Convert(chosen, ps[i].ParameterType);
 			}
 
 			Expression call;
@@ -978,6 +988,9 @@ namespace Keysharp.Internals.Invoke
 					: inlineMarked && ArgCoercer.CanLeakClrValue(mi.ReturnType)
 						? ArgCoercer.ConvertOut(call)
 						: ArgCoercer.NormalizeReturn(call, mi.ReturnType);
+
+			if (steps != null)
+				body = steps.Wrap(body);
 
 			if (inlineMarked)
 			{

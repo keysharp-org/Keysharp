@@ -517,7 +517,8 @@ namespace Keysharp.Internals.Scripting
 #if DEBUG
 				Diagnostics.Debug.WriteLine("Running compiled code.");
 #endif
-				return runtimeEntryPoint.Invoke(null, runtimeEntryArgs).Ai();
+				_ = runtimeEntryPoint.Invoke(null, runtimeEntryArgs).TryCoerceInt(out var exitCode);
+			return exitCode;
 			}
 			catch (Exception ex)
 			{
@@ -734,7 +735,8 @@ namespace Keysharp.Internals.Scripting
 #if DEBUG
 			Diagnostics.Debug.WriteLine("Running compiled code.");
 #endif
-			return main.Invoke(null, [command.ScriptArgs]).Ai();
+			_ = main.Invoke(null, [command.ScriptArgs]).TryCoerceInt(out var exitCode);
+			return exitCode;
 		}
 
 		private static int ValidateSyntax(CliCommand command)

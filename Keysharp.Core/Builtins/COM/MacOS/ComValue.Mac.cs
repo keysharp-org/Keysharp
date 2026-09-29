@@ -28,7 +28,10 @@ namespace Keysharp.Builtins.COM
 			set
 			{
 				DescType = ResolveType(value);
-				varType = value is string ? value : value.Al();
+
+				// The value already converted successfully inside ResolveType above.
+				_ = value.TryCoerceLong(out var vt);
+				varType = value is string ? value : vt;
 			}
 		}
 
@@ -37,6 +40,7 @@ namespace Keysharp.Builtins.COM
 		public static object staticCall(object @this, object varType, object value = null, object flags = null)
 			=> new ComValue(varType, value);
 
+		[PublicHiddenFromUser]
 		public override string ToString() => Value?.ToString() ?? "";
 
 		private void Init(object[] args)
@@ -57,7 +61,7 @@ namespace Keysharp.Builtins.COM
 			// A number is a Windows VT_* constant; only the unambiguous ones carry over.
 			if (varType is not string)
 			{
-				var vt = varType.Al();
+				_ = varType.CoerceLong(out var vt);
 				return vt switch
 				{
 					2 => "shor",     // VT_I2

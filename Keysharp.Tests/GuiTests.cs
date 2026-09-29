@@ -859,7 +859,7 @@ namespace Keysharp.Tests
 				var ctrlHandler = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { ctrlHits++; return 3L; }));
 				_ = control.OnMessage(msgId, ctrlHandler);
 				var cm = Message.Create(control.Ctrl.Handle, msgId, 0, 0);
-				Assert.AreEqual(1L, control.InvokeMessageHandlers(ref cm).Al());
+				Assert.IsTrue(control.InvokeMessageHandlers(ref cm).TryCoerceLong(out var handled) && handled == 1L);
 				Assert.AreEqual(1, ctrlHits);
 				Assert.AreEqual(3, cm.Result.ToInt64());
 			}
@@ -1643,7 +1643,8 @@ namespace Keysharp.Tests
 			Exception callbackFailure = null;
 			var initHandler = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, hwndArg) =>
 			{
-				var hwnd = unchecked((nint)hwndArg.Al());
+				_ = hwndArg.TryCoerceLong(out var hwndValue);
+				var hwnd = unchecked((nint)hwndValue);
 
 				try
 				{
@@ -1668,7 +1669,8 @@ namespace Keysharp.Tests
 			}));
 			var probeHandler = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, hwndArg) =>
 			{
-				var hwnd = unchecked((nint)hwndArg.Al());
+				_ = hwndArg.TryCoerceLong(out var hwndValue);
+				var hwnd = unchecked((nint)hwndValue);
 
 				if (hwnd == dialogHandle)
 				{
@@ -1726,7 +1728,7 @@ namespace Keysharp.Tests
 		}
 
 		private static string InputBoxProperty(KeysharpObject result, string property)
-			=> Script.GetPropertyValue(result, property).As();
+			=> Script.GetPropertyValue(result, property).TryCoerceString(out var text) ? text : "";
 #endif
 
 #if LINUX

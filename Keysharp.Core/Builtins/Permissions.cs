@@ -27,7 +27,9 @@ namespace Keysharp.Builtins
 
 			if (capabilities.Length > 0)
 			{
-				requested = CapabilityRequests.ParseRequested(capabilities);
+				if ((requested = CapabilityRequests.ParseRequested(capabilities)) == null)
+					return null;
+
 				CapabilityRequests.RequestBatched(requested);
 			}
 

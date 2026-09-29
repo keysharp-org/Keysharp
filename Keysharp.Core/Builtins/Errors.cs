@@ -83,7 +83,7 @@ namespace Keysharp.Builtins
 
 					try
 					{
-						var retval = Script.InvokeOrNull(registration.Callback, null, err, mode.ToString()).Al();
+						_ = Script.InvokeOrNull(registration.Callback, null, err, mode.ToString()).TryCoerceLong(out var retval);
 
 						if (retval != 0L)
 							return retval;
@@ -162,7 +162,7 @@ namespace Keysharp.Builtins
 		public static object ShowWarning(object text)
 		{
 			var script = Script.TheScript;
-			var msg = text.As();
+			var msg = Describe(text);
 
 			if (script == null || script.SuppressErrorOccurredDialog)
 			{
@@ -424,8 +424,8 @@ namespace Keysharp.Builtins
 			{
 				null => ("unset", ""),
 				"" => ("empty string", ""),
-				string or long or double or bool => (Types.Type(value), value.As()),
-				_ => (Types.Type(value), "")
+				string or long or double or bool => (Types.Type(value), Describe(value)),
+				_ => (Types.TypeName(value.GetType()), "")
 			};
 			Error err;
 			return ErrorOccurred(err = new TypeError($"Expected {An(expectedType)}{expectedType} but got {An(actualType)}{actualType}.", null, extra))
@@ -433,26 +433,26 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Renders a value for an error message: its own text when it has any, else the name the script knows
-		/// its type by. An object that does not override ToString would otherwise print its CLR type name.
-		/// Never throws.
+		/// Renders a value for diagnostics without invoking its script or CLR conversion hooks.
 		/// </summary>
 		/// <param name="value">The value to describe.</param>
 		/// <returns>Text naming the value.</returns>
-		internal static string Describe(object value)
+		internal static string Describe(object value) => value switch
 		{
-			if (value == null)
-				return "unset";
+			null => "unset",
+			string or char or bool or byte or sbyte or short or ushort or int or uint or long or ulong
+				or float or double or decimal or Enum => ScalarText(value),
+			Array or Map => Script.FormatCollection(value, false),
+			KeysharpFunc { Name.Length: > 0 } f => f.Name,
+			Ks.StringBuffer sb => sb.Text,
+			_ => Types.TypeName(value.GetType())
+		};
 
-			try
-			{
-				var text = value.ToString();
-				return text == value.GetType().FullName ? Types.Type(value) : text;
-			}
-			catch (Exception)
-			{
-				return Types.Type(value);
-			}
+		// Never raises: Describe must not either, whatever the scalar's own ToString does.
+		private static string ScalarText(object value)
+		{
+			_ = value.TryCoerceString(out var text);
+			return text;
 		}
 
 		/// <summary>
@@ -473,7 +473,7 @@ namespace Keysharp.Builtins
 		internal static object UnsetItemErrorOccurred(object key, string what = null, object ret = null)
 		{
 			Error err;
-			return ErrorOccurred(err = new UnsetItemError("Item has no value.", what, key is Any ? "" : key.As())) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new UnsetItemError("Item has no value.", what, Error.FieldText(key))) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -484,7 +484,7 @@ namespace Keysharp.Builtins
 		internal static object InvalidIndexErrorOccurred(object index, string what = null, object ret = null)
 		{
 			Error err;
-			return ErrorOccurred(err = new IndexError("Invalid index.", what, index is Any ? "" : index.As())) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new IndexError("Invalid index.", what, Error.FieldText(index))) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -495,7 +495,7 @@ namespace Keysharp.Builtins
 		internal static object InvalidParameterErrorOccurred(int position, string function, object value, object ret = null)
 		{
 			Error err;
-			return ErrorOccurred(err = new ValueError($"Parameter #{position} of {function} is invalid.", null, value is Any ? "" : value.As())) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new ValueError($"Parameter #{position} of {function} is invalid.", null, Error.FieldText(value))) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -526,7 +526,7 @@ namespace Keysharp.Builtins
 		};
 
 		/// <summary>What a read-only error calls a variable holding this value: a function, class or module by its type, and any other a built-in variable.</summary>
-		internal static string ConstantKind(object value) => value is KeysharpFunc or Class or Keysharp.Runtime.Module ? Types.Type(value) : "built-in variable";
+		internal static string ConstantKind(object value) => value is KeysharpFunc or Class or Keysharp.Runtime.Module ? Types.TypeName(value.GetType()) : "built-in variable";
 
 		/// <summary>
 		/// Internal helper for writing a variable which takes no write, <paramref name="kind"/> being what it is, as
@@ -567,7 +567,7 @@ namespace Keysharp.Builtins
 		/// <summary>Internal helper for a value which lacks a property. Throws a <see cref="PropertyError"/> or returns <see cref="DefaultObject"/>.</summary>
 		[StackTraceHidden]
 		internal static object MissingPropertyErrorOccurred(object target, object name) =>
-			PropertyErrorOccurred($"This value of type \"{Types.Type(target)}\" has no property named \"{name}\".");
+			PropertyErrorOccurred($"This value of type \"{Types.TypeName(target?.GetType())}\" has no property named \"{Describe(name)}\".");
 
 		/// <summary>Internal helper for assigning a property which has no setter, raised as AutoHotkey raises it. Throws an <see cref="Error"/> or returns <see cref="DefaultObject"/>.</summary>
 		[StackTraceHidden]
@@ -576,7 +576,7 @@ namespace Keysharp.Builtins
 		/// <summary>Internal helper for a value which lacks a method. Throws a <see cref="MethodError"/> or returns <see cref="DefaultObject"/>.</summary>
 		[StackTraceHidden]
 		internal static object MissingMethodErrorOccurred(object target, string name) =>
-			MethodErrorOccurred($"This value of type \"{Types.Type(target)}\" has no method named \"{name}\".");
+			MethodErrorOccurred($"This value of type \"{Types.TypeName(target?.GetType())}\" has no method named \"{name}\".");
 
 		/// <summary>
 		/// Internal helper to handle zero division errors. Throws a <see cref="ZeroDivisionError"/> or returns <see cref="DefaultObject"/>.
@@ -616,12 +616,12 @@ namespace Keysharp.Builtins
 		// The parameters are PascalCase on purpose: these names ARE script-facing API (`Error(Message: "x")`).
 		public object __New(object message = null, object what = null, object extra = null) =>
 			// An object message is empty text, not its ToString result.
-			Construct(message == null ? GetType().Name : message is Any ? "" : message.As(), what, extra);
+			Construct(message == null ? GetType().Name : FieldText(message), what, extra);
 
 		/// <summary>Describes an error constructed now from the call stack, which is what every constructor comes down to.</summary>
 		private protected object Construct(string message, object what, object extra, object number = null)
 		{
-			SetProperties(message, CallStack.Current.Capture(GetType(), what), extra.As(), number);
+			SetProperties(message, CallStack.Current.Capture(GetType(), what), FieldText(extra), number);
 			return DefaultObject;
 		}
 
@@ -645,30 +645,35 @@ namespace Keysharp.Builtins
 
 		private protected void SetOwn(string name, object value) => EnsureOwnProps()[name] = new OwnPropsDesc(this, value);
 
-		[PublicHiddenFromUser]
-		public string Extra { get => Own("Extra").As(); internal set => SetOwn("Extra", value); }
+		// A field as text for describing the error, which must not raise or run script code: an object is empty, as AHK's
+		// TokenToString makes it.
+		internal static string FieldText(object value) => value is null or Any ? "" : Errors.Describe(value);
 
 		[PublicHiddenFromUser]
-		public string File => Own("File").As();
+		public string Extra { get => FieldText(Own("Extra")); internal set => SetOwn("Extra", value); }
+
+		[PublicHiddenFromUser]
+		public string File => FieldText(Own("File"));
 
 		[PublicHiddenFromUser]
 		public long Line => Own("Line").ParseLong() ?? 0;
 
 		[PublicHiddenFromUser]
-		public string Message { get => Own("Message").As(); internal set => SetOwn("Message", value); }
+		public string Message { get => FieldText(Own("Message")); internal set => SetOwn("Message", value); }
 
 		/// <summary>OnError and the default dialog have dealt with this raise.</summary>
 		internal bool Reported { get; set; }
 
 		[PublicHiddenFromUser]
-		public string Stack => Own("Stack").As();
+		public string Stack => FieldText(Own("Stack"));
 
 		[PublicHiddenFromUser]
-		public string What => Own("What").As();
+		public string What => FieldText(Own("What"));
 
 		/// <summary>The Hint a script gave the error for the default dialog, or null when it gave none.</summary>
-		internal string Hint => Own("Hint")?.As();
+		internal string Hint => Own("Hint") is { } hint ? FieldText(hint) : null;
 
+		[PublicHiddenFromUser]
 		public override string ToString() => Describe(false);
 
 		/// <summary>
@@ -700,7 +705,10 @@ namespace Keysharp.Builtins
 
 		public long Show(object mode = null)
 		{
-			string modeStr = mode.As("Return").Trim();
+			if (!mode.CoerceString(out var modeText, "Return"))
+				return 0L;
+
+			var modeStr = modeText.Trim();
 			bool allowContinue = modeStr.Equals("return", StringComparison.OrdinalIgnoreCase) || modeStr.Equals("warn", StringComparison.OrdinalIgnoreCase);
 			var result = ErrorDialog.Show(this, allowContinue);
 
@@ -899,7 +907,7 @@ namespace Keysharp.Builtins
 
 			return errorNumber == null ? Numbered(LastError(), what, extra)
 				: errorNumber is not Any && errorNumber.ParseLong() is { } code ? Numbered(code, what, extra)
-				: Construct(errorNumber is Any ? "" : errorNumber.As(), what, extra);
+				: Construct(FieldText(errorNumber), what, extra);
 		}
 
 		// A code whose 32-bit value is negative is shown in hexadecimal; Number keeps the unsigned DWORD.

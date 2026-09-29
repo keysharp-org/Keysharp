@@ -12,7 +12,12 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
-			string fileName = filename == null ? A_ScriptFullPath : filename.As();
+			string fileName;
+
+			if (filename == null)
+				fileName = A_ScriptFullPath;
+			else if (!filename.CoerceString(out fileName))
+				return DefaultObject;
 
 			//Raise the window an editor already has it open in. Only searchable by A_ScriptName, so it can
 			//only answer for the script itself; any other file skips it and gets opened.
@@ -267,7 +272,13 @@ namespace Keysharp.Builtins
 		/// Sends a string to the debugger (if any) for display.
 		/// </summary>
 		/// <param name="text">The text to send to the debugger for display.</param>
-		public static object OutputDebug(object text) => OutputDebugCommon(text.As());
+		public static object OutputDebug(object text)
+		{
+			if (!text.CoerceString(out var s))
+				return DefaultObject;
+
+			return OutputDebugCommon(s);
+		}
 
 		/// <summary>
 		/// Internal helper to send a string to the debugger (if any) for display.

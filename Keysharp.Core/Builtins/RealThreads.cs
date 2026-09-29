@@ -277,7 +277,9 @@ namespace Keysharp.Builtins
 				if (scheduler == null)//Already gone: shutting down what has shut down is not an error.
 					return terminatedTask;
 
-				var code = exitCode.Ai();
+				if (!exitCode.CoerceInt(out var code))
+					return DefaultObject;
+
 				scheduler.RequestWorkerExit();
 				var mgr = scheduler.threadManager;
 
@@ -301,8 +303,6 @@ namespace Keysharp.Builtins
 
 				return terminatedTask;
 			}
-
-			public override string ToString() => "RealThread";
 
 			// ---- worker plumbing ------------------------------------------------------------------------------
 

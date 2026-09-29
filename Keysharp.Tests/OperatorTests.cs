@@ -16,6 +16,22 @@ namespace Keysharp.Tests
 		[Test, Category("Operator")]
 		public void StaticOverloads() => Assert.IsTrue(TestScript("op-static-overloads", false));
 
+		[Test, Category("Operator"), Category("Internal"), Category("Curated")]
+		public void FailedClrCoercionDoesNotEqualScalarDefaults()
+		{
+			var value = new ClrValueWithoutText();
+			Assert.AreEqual(false, Script.ValueEquality(0L, value));
+			Assert.AreEqual(false, Script.ValueEquality(value, 0.0));
+			Assert.AreEqual(false, Script.ValueEquality("", value));
+			Assert.AreEqual(true, Script.ValueEquality(true, "1.0"));
+			Assert.AreEqual(false, Script.ValueEquality(false, "0.5"));
+		}
+
+		private sealed class ClrValueWithoutText
+		{
+			public override string ToString() => null;
+		}
+
 		private sealed class ConcatFunction : KeysharpFunc { }
 
 		[Test, Category("Operator"), Category("Internal")]

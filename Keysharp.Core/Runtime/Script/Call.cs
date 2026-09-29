@@ -250,7 +250,9 @@ namespace Keysharp.Runtime
 				item = tup[1];
 			}
 
-			if (searched is Any any && TryGetOwnPropsMap(any, name.ToString(), out var desc)
+			_ = name.TryCoerceString(out var nameStr);
+
+			if (searched is Any any && TryGetOwnPropsMap(any, nameStr, out var desc)
 					&& (desc.Type == OwnPropsMapType.None || (desc.Type & (OwnPropsMapType.Value | OwnPropsMapType.Get)) != 0))
 				return Errors.UnsetErrorOccurred($"Property {name} of {item}");
 
@@ -260,7 +262,7 @@ namespace Keysharp.Runtime
 		public static object GetPropertyValueOrNull(object item, object name) => GetPropertyValueOrNull(item, name, System.Array.Empty<object>());
 		public static object GetPropertyValueOrNull(object item, object name, params object[] args)
 		{
-			var namestr = name.ToString();
+			if (!name.CoerceString(out var namestr)) return DefaultObject;
 			if (item == null) return Errors.UnsetErrorOccurred($"The base for property {name} access");
 			if (args == null) throw new UnsetError("Unexpected null arguments in GetPropertyValue");
 
@@ -354,7 +356,7 @@ namespace Keysharp.Runtime
 			if (obj == null)
 				return Errors.ErrorOccurred(new UnsetError("Cannot invoke property on an unset variable"), DefaultObject);
 
-			var methName = (string)meth;
+			if (meth is not string methName && !meth.CoerceString(out methName)) return DefaultObject;
 
 			// Handle (proto, this) 'super' tuple transparently.
 			bool isSuper = obj is ITuple superT && superT.Length > 1 && superT[0] is Any;
@@ -414,10 +416,29 @@ namespace Keysharp.Runtime
 		[MethodImpl(MethodImplOptions.NoInlining)]
 		private static object UnsetResultErrorOccurred(object obj, object meth) =>
 			Errors.ErrorOccurred(new UnsetError("No value was returned.", null,
-				meth == null ? (obj is KeysharpFunc { Name: { Length: > 0 } name } ? name : Errors.Describe(obj)) : meth.As()),
+				meth == null ? (obj is KeysharpFunc { Name: { Length: > 0 } name } ? name : Errors.Describe(obj)) : Errors.Describe(meth)),
 				DefaultObject);
 
-		private static object DispatchCall(object obj, object meth, object[] parameters)
+		// What DispatchCall returns, when it is not to raise for one, for a member the value does not have.
+		private static readonly object NoMember = new ();
+
+		/// <summary>
+		/// Calls method <paramref name="name"/> without arguments if <paramref name="obj"/> has it, found as an ordinary
+		/// call finds it, and returns whether it did. An implicit ToString calls this way, so a value without the method
+		/// is the conversion's TypeError rather than a MethodError.
+		/// </summary>
+		internal static bool TryInvoke(object obj, string name, out object result)
+		{
+			result = DispatchCall(obj, name, System.Array.Empty<object>(), optional: true);
+
+			if (!ReferenceEquals(result, NoMember))
+				return true;
+
+			result = null;
+			return false;
+		}
+
+		private static object DispatchCall(object obj, object meth, object[] parameters, bool optional = false)
 		{
 			if (obj == null) return Errors.UnsetErrorOccurred(meth == null ? "The function being called" : $"The base object of method {meth}");
 
@@ -439,20 +460,20 @@ namespace Keysharp.Runtime
 				meth = "Call";
 			}
 
-			var methName = (string)meth;
+			if (meth is not string methName && !meth.CoerceString(out methName)) return DefaultObject;
 
-			if (obj is Module module && module is IMetaObject imo)
-				return imo.Call(methName, parameters);
+			if (obj is Module module)
+				return module.TryCall(methName, parameters, out var found) ? found : optional ? NoMember : Errors.MissingMethodErrorOccurred(module, methName);
 
 			// Track real receiver (handles the (proto, this) "super" tuple)
 			bool isSuper = obj is ITuple superT && superT.Length > 1 && superT[0] is Any;
 			object actualThis = isSuper ? ((ITuple)obj)[1] : obj;
 
-			var mitup = GetMethodOrProperty(obj, methName, -1, checkBase: true, throwIfMissing: !nameless, invokeMeta: true);
+			var mitup = GetMethodOrProperty(obj, methName, -1, checkBase: true, throwIfMissing: !nameless && !optional, invokeMeta: true);
 
 			// An object called which cannot be: AHK's MethodError, as a callback site reports it.
-			if (nameless && mitup.Item2 == null)
-				return Errors.MissingMethodErrorOccurred(actualThis, "Call");
+			if (mitup.Item2 == null && (nameless || optional))
+				return optional ? NoMember : Errors.MissingMethodErrorOccurred(actualThis, "Call");
 
 			switch (mitup.Item2)
 			{
@@ -667,7 +688,8 @@ namespace Keysharp.Runtime
 
 		private static object SetPropertyValueCore(object item, object name, object[] args, object value, bool allowCreate)
 		{
-			var namestr = name.ToString();
+			if (!name.CoerceString(out var namestr)) return DefaultObject;
+			var target = item;
 			Any kso = null;
 
 			var argCount = args?.Length ?? 1;

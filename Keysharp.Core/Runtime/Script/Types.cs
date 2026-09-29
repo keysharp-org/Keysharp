@@ -23,7 +23,7 @@ namespace Keysharp.Runtime
 			return false;
 		}
 
-		private static Type MatchTypes(ref object left, ref object right)
+		private static void MatchTypes(ref object left, ref object right)
 		{
 			if (left is bool bl)
 				left = bl ? 1L : 0L;
@@ -37,58 +37,58 @@ namespace Keysharp.Runtime
 			var lt = left.GetType();
 			var rt = right.GetType();
 			if (lt == rt)
-				return lt;
+				return;
 
-			if (left is Any)
-				return lt;
-			else if (right is Any)
-				return rt;
+			if (left is Any || right is Any)
+				return;
 
 			if (ParseNumericArgs(left, right, "value compare", out bool leftIsDouble, out bool rightIsDouble, out double leftd, out long leftl, out double rightd, out long rightl, false))
 			{
 				if (leftIsDouble && rightIsDouble)
 				{
 					left = leftd; right = rightd;
-					return typeof(double);
+					return;
 				}
 				else if (!leftIsDouble && !rightIsDouble)
 				{
 					left = leftl; right = rightl;
-					return typeof(long);
+					return;
 				}
 				else if (!leftIsDouble)
 				{
-					left = leftl.Ad(); right = rightd;
-					return typeof(double);
+					left = (double)leftl; right = rightd;
+					return;
 				}
 				else if (!rightIsDouble)
 				{
-					left = leftd; right = rightl.Ad();
-					return typeof(double);
+					left = leftd; right = (double)rightl;
+					return;
 				}
 			}
 
 			if (left is string || right is string)
 			{
-				left = ForceString(left);
-				right = ForceString(right);
-				return typeof(string);
+				if (!left.TryCoerceString(out var leftText) || !right.TryCoerceString(out var rightText))
+					return;
+				left = leftText;
+				right = rightText;
+				return;
 			}
 			else if (left is double || right is double)
 			{
-				left = left.Ad();
-				right = right.Ad();
-				return typeof(double);
+				if (!left.TryCoerceDouble(out var leftAsDouble) || !right.TryCoerceDouble(out var rightAsDouble))
+					return;
+				left = leftAsDouble;
+				right = rightAsDouble;
+				return;
 			}
 			else if (left is long || right is long)
 			{
-				left = left.Al();
-				right = right.Al();
-				return typeof(long);
-			}
-			else
-			{
-				return null;
+				if (!left.TryCoerceLong(out var leftAsLong) || !right.TryCoerceLong(out var rightAsLong))
+					return;
+				left = leftAsLong;
+				right = rightAsLong;
+				return;
 			}
 		}
 	}

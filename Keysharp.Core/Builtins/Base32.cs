@@ -21,7 +21,8 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object Encode(object @this, object value, object encoding = null)
 			{
-				var enc = Files.GetEncodingOrDefault(encoding, System.Text.Encoding.UTF8);
+				if (!Files.TryGetEncoding(encoding, System.Text.Encoding.UTF8, out var enc))
+					return DefaultObject;
 
 				// A Buffer can be encoded without copying its memory to a managed byte array.
 				if (value is Buffer b)
@@ -42,7 +43,8 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object Decode(object @this, object text)
 			{
-				var s = text.As();
+				if (!text.CoerceString(out var s))
+					return DefaultObject;
 
 				try
 				{

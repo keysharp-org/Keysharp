@@ -81,7 +81,8 @@ namespace Keysharp.Internals.AppleEvents
 				Context = context,
 				TimeoutMs = timeoutMs
 			});
-			return result?.Al() ?? 0L;
+			_ = result.TryCoerceLong(out var count);
+			return count;
 		}
 
 		/// <summary>
@@ -168,14 +169,23 @@ namespace Keysharp.Internals.AppleEvents
 			using var address = request.Target.MakeAddress();
 			using var @event = AE.NewEvent(request.EventClass, request.EventId, address);
 
+			// A null descriptor means the script continued a conversion error, and the event is not sent.
 			if (request.DirectSpecifier != null)
 			{
 				using var specifier = AESpecifiers.Build(request.DirectSpecifier);
+
+				if (specifier == null)
+					return Script.DefaultObject;
+
 				AE.PutParam(@event, AE.KeyDirectObject, specifier);
 			}
 			else if (request.HasDirectValue)
 			{
 				using var direct = AEMarshal.ToDescriptor(request.DirectValue, request.Context, request.DirectTypeName);
+
+				if (direct == null)
+					return Script.DefaultObject;
+
 				AE.PutParam(@event, AE.KeyDirectObject, direct);
 			}
 
@@ -183,6 +193,10 @@ namespace Keysharp.Internals.AppleEvents
 				foreach (var (keyword, value, typeName) in request.Parameters)
 				{
 					using var parameter = AEMarshal.ToDescriptor(value, request.Context, typeName);
+
+					if (parameter == null)
+						return Script.DefaultObject;
+
 					AE.PutParam(@event, keyword, parameter);
 				}
 

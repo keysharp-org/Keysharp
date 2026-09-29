@@ -27,7 +27,9 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object BlockInput(object onOff)
 		{
-			var mode = onOff.As();
+			if (!onOff.CoerceString(out var mode))
+				return DefaultObject;
+
 			var toggle = ConvertBlockInput(mode);
 
 			if (toggle == ToggleValueType.On)
@@ -135,7 +137,7 @@ namespace Keysharp.Builtins
 		/// Note that these codes must be in hexadecimal.
 		/// </param>
 		/// <returns>The name of the specified key, or blank if the key is invalid or unnamed.</returns>
-		public static string GetKeyName(object keyName) => GetKeyNamePrivate(keyName.As(), 0) as string;
+		public static string GetKeyName(object keyName) => keyName.CoerceString(out var name) ? GetKeyNamePrivate(name, 0) as string : "";
 
 		/// <summary>
 		/// Retrieves the scan code of a key.
@@ -146,7 +148,7 @@ namespace Keysharp.Builtins
 		/// or a combination of VK and SC (in that order) such as vk1Bsc001.Note that these codes must be in hexadecimal.
 		/// </param>
 		/// <returns>Returns the scan code of the specified key, or 0 if the key is invalid or has no scan code.</returns>
-		public static long GetKeySC(object keyName) => Convert.ToInt64(GetKeyNamePrivate(keyName.As(), 1));
+		public static long GetKeySC(object keyName) => keyName.CoerceString(out var name) ? Convert.ToInt64(GetKeyNamePrivate(name, 1)) : 0L;
 
 		/// <summary>
 		/// Returns 1 (true) or 0 (false) depending on whether the specified keyboard key or mouse/controller<br/>
@@ -168,7 +170,9 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object GetKeyState(object keyName, object mode = null)
 		{
-			var keyname = keyName.As();
+			if (!keyName.CoerceString(out var keyname))
+				return DefaultObject;
+
 			var script = Script.TheScript;
 			var ht = script.HookThread;
 			JoyControls joy;
@@ -185,7 +189,9 @@ namespace Keysharp.Builtins
 			}
 
 			// Since above didn't return: There is a virtual key (not a joystick control).
-			var modeVal = mode.As();
+			if (!mode.CoerceString(out var modeVal))
+				return DefaultObject;
+
 			var deviceID = 0u;
 			KeyStateTypes keystatetype;
 
@@ -238,7 +244,7 @@ namespace Keysharp.Builtins
 		/// Note that these codes must be in hexadecimal.
 		/// </param>
 		/// <returns>The virtual key code of the specified key, or 0 if the key is invalid or has no virtual key code.</returns>
-		public static long GetKeyVK(object keyName) => Convert.ToInt64(GetKeyNamePrivate(keyName.As(), 2));
+		public static long GetKeyVK(object keyName) => keyName.CoerceString(out var name) ? Convert.ToInt64(GetKeyNamePrivate(name, 2)) : 0L;
 
 		/// <summary>
 		/// Creates, modifies, enables, or disables a hotkey while the script is running.
@@ -265,9 +271,14 @@ namespace Keysharp.Builtins
 		public static object Hotkey(object keyName, object action = null, object options = null)
 		{
 			var script = Script.TheScript;
-			var keyname = keyName.As();
-			var label = action.As();
-			var opt = options.As();
+			if (!keyName.CoerceString(out var keyname))
+				return DefaultObject;
+
+			var label = action as string ?? "";
+
+			if (!options.CoerceString(out var opt))
+				return DefaultObject;
+
 			object fo = null;
 			var hook_action = 0u;
 
@@ -342,14 +353,20 @@ break_twice:;
 		/// <exception cref="TargetError">A <see cref="TargetError"/> exception is thrown if the hotstring cannot be found.</exception>
 		public static object Hotstring(object @string, object replacement = null, object onOffToggle = null)
 		{
-			var name = @string.As();
+			if (!@string.CoerceString(out var name))
+				return DefaultObject;
+
 			var replacementVal = replacement;
 			var script = Script.TheScript;
 			var ht = script.HookThread;
 			var kbdMouseSender = ht.kbdMsSender;
 			var xOption = false;
 			// Any object is the callback, which AHK's Hotstring takes unchecked; anything else, a number too, is text.
-			var action = replacementVal is Any or Delegate ? null : replacementVal?.As();
+			string action = null;
+
+			if (replacementVal is not (null or Any or Delegate) && !replacementVal.CoerceString(out action))
+				return DefaultObject;
+
 			var hm = script.HotstringManager;
 
 			if (string.Compare(name, "EndChars", true) == 0) // Equivalent to #Hotstring EndChars <action>
@@ -571,7 +588,8 @@ break_twice:;
 
 			if (maxEvents != null)
 			{
-				var max = maxEvents.Al();
+				if (!maxEvents.CoerceLong(out var max))
+					return DefaultObject;
 
 				if (max is < 0 or > 500)
 					return Errors.ValueErrorOccurred("MaxEvents must be from 0 through 500.", maxEvents);
@@ -621,8 +639,9 @@ break_twice:;
 		/// <exception cref="ValueError">Throws a <see cref="ValueError"/> exception if an invalid joystick button is specified.</exception>
 		public static object KeyWait(object keyName, object options = null)
 		{
-			var keyname = keyName.As();
-			var opts = options.As();
+			if (!keyName.CoerceString(out var keyname) || !options.CoerceString(out var opts))
+				return DefaultObject;
+
 			bool waitIndefinitely;
 			int sleepDuration;
 			DateTime startTime;
@@ -714,7 +733,11 @@ break_twice:;
 		public static object Send(object keys)
 		{
 			var script = Script.TheScript;
-			script.HookThread.kbdMsSender.SendKeys(keys.As(), SendRawModes.NotRaw, ThreadAccessors.A_SendMode, 0);
+
+			if (!keys.CoerceString(out var keysText))
+				return DefaultObject;
+
+			script.HookThread.kbdMsSender.SendKeys(keysText, SendRawModes.NotRaw, ThreadAccessors.A_SendMode, 0);
 			return DefaultObject;
 		}
 
@@ -722,11 +745,11 @@ break_twice:;
 		//The state of those threads needs to be preserved, but invoking will overwrite that state by putting the call on the main GUI thread.
 		//This is unlikely to be true anymore since we implemented the pseudo-thread functionality of AHK.
 		//So put them back to just straight calls, revisit if cross threading bugs occur.
-		//public static void SendEvent(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.As(), SendRawModes.NotRaw, SendModes.Event, 0), true, true);
-		//public static void Send(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.As(), SendRawModes.NotRaw, Accessors.SendMode, 0), true, true);
-		//public static void SendInput(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.As(), SendRawModes.NotRaw, Accessors.SendMode == SendModes.InputThenPlay ? SendModes.InputThenPlay : SendModes.Input, 0), true, true);
-		//public static void SendPlay(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.As(), SendRawModes.NotRaw, SendModes.Play, 0), true, true);
-		//public static void SendText(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.As(), SendRawModes.RawText, Accessors.SendMode, 0), true, true);
+		//public static void SendEvent(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.ToText(), SendRawModes.NotRaw, SendModes.Event, 0), true, true);
+		//public static void Send(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.ToText(), SendRawModes.NotRaw, Accessors.SendMode, 0), true, true);
+		//public static void SendInput(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.ToText(), SendRawModes.NotRaw, Accessors.SendMode == SendModes.InputThenPlay ? SendModes.InputThenPlay : SendModes.Input, 0), true, true);
+		//public static void SendPlay(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.ToText(), SendRawModes.NotRaw, SendModes.Play, 0), true, true);
+		//public static void SendText(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.ToText(), SendRawModes.RawText, Accessors.SendMode, 0), true, true);
 
 		/// <summary>
 		/// SendEvent sends keystrokes using the Windows keybd_event function (search Microsoft Docs for details).<br/>
@@ -736,7 +759,11 @@ break_twice:;
 		public static object SendEvent(object keys)
 		{
 			var script = Script.TheScript;
-			script.HookThread.kbdMsSender.SendKeys(keys.As(), SendRawModes.NotRaw, SendModes.Event, 0);
+
+			if (!keys.CoerceString(out var keysText))
+				return DefaultObject;
+
+			script.HookThread.kbdMsSender.SendKeys(keysText, SendRawModes.NotRaw, SendModes.Event, 0);
 			return DefaultObject;
 		}
 
@@ -749,7 +776,11 @@ break_twice:;
 		public static object SendInput(object keys)
 		{
 			var script = Script.TheScript;
-			script.HookThread.kbdMsSender.SendKeys(keys.As(), SendRawModes.NotRaw, ThreadAccessors.A_SendMode == SendModes.InputThenPlay ? SendModes.InputThenPlay : SendModes.Input, 0);
+
+			if (!keys.CoerceString(out var keysText))
+				return DefaultObject;
+
+			script.HookThread.kbdMsSender.SendKeys(keysText, SendRawModes.NotRaw, ThreadAccessors.A_SendMode == SendModes.InputThenPlay ? SendModes.InputThenPlay : SendModes.Input, 0);
 			return DefaultObject;
 		}
 
@@ -761,7 +792,7 @@ break_twice:;
 		public static object SendLevel(object level)
 		{
 			var old = A_SendLevel;
-			A_SendLevel = level.Al();
+			A_SendLevel = level;
 			return old;
 		}
 
@@ -787,7 +818,11 @@ break_twice:;
 		public static object SendPlay(object keys)
 		{
 			var script = Script.TheScript;
-			script.HookThread.kbdMsSender.SendKeys(keys.As(), SendRawModes.NotRaw, SendModes.Play, 0);
+
+			if (!keys.CoerceString(out var keysText))
+				return DefaultObject;
+
+			script.HookThread.kbdMsSender.SendKeys(keysText, SendRawModes.NotRaw, SendModes.Play, 0);
 			return DefaultObject;
 		}
 
@@ -797,7 +832,11 @@ break_twice:;
 		public static object SendText(object keys)
 		{
 			var script = Script.TheScript;
-			script.HookThread.kbdMsSender.SendKeys(keys.As(), SendRawModes.RawText, ThreadAccessors.A_SendMode, 0);
+
+			if (!keys.CoerceString(out var keysText))
+				return DefaultObject;
+
+			script.HookThread.kbdMsSender.SendKeys(keysText, SendRawModes.RawText, ThreadAccessors.A_SendMode, 0);
 			return DefaultObject;
 		}
 
@@ -815,7 +854,10 @@ break_twice:;
 		public static object SetCapsLockState(object state = null)
 		{
 			// Keys is a cross-platform alias (see GlobalUsings); this is a standard VK code handled by the platform-specific ToggleKeyState.
-			SetToggleState((uint)Keys.Capital, ref Script.TheScript.KeyboardData.toggleStates.forceCapsLock, state.As());
+			if (!state.CoerceString(out var stateText))
+				return DefaultObject;
+
+			SetToggleState((uint)Keys.Capital, ref Script.TheScript.KeyboardData.toggleStates.forceCapsLock, stateText);
 			return DefaultObject;
 		}
 
@@ -840,15 +882,14 @@ break_twice:;
 		/// </param>
 		public static object SetKeyDelay(object delay = null, object pressDuration = null, object play = null)
 		{
-			var isPlay = play.As().Equals("play", StringComparison.OrdinalIgnoreCase);
-			var del = isPlay ? A_KeyDelayPlay : A_KeyDelay;
-			var dur = isPlay ? A_KeyDurationPlay : A_KeyDuration;
+			if (!play.CoerceString(out var playText))
+				return DefaultObject;
 
-			if (delay != null)
-				del = delay.Al();
+			var isPlay = playText.Equals("play", StringComparison.OrdinalIgnoreCase);
 
-			if (pressDuration != null)
-				dur = pressDuration.Al();
+			if (!delay.CoerceLong(out var del, isPlay ? ThreadAccessors.A_KeyDelayPlay : ThreadAccessors.A_KeyDelay)
+				|| !pressDuration.CoerceLong(out var dur, isPlay ? ThreadAccessors.A_KeyDurationPlay : ThreadAccessors.A_KeyDuration))
+				return DefaultObject;
 
 			if (isPlay)
 			{
@@ -870,7 +911,10 @@ break_twice:;
 		public static object SetNumLockState(object state = null)
 		{
 			// Keys is a cross-platform alias (see GlobalUsings); this is a standard VK code handled by the platform-specific ToggleKeyState.
-			SetToggleState((uint)Keys.NumLock, ref Script.TheScript.KeyboardData.toggleStates.forceNumLock, state.As());
+			if (!state.CoerceString(out var stateText))
+				return DefaultObject;
+
+			SetToggleState((uint)Keys.NumLock, ref Script.TheScript.KeyboardData.toggleStates.forceNumLock, stateText);
 			return DefaultObject;
 		}
 
@@ -880,7 +924,10 @@ break_twice:;
 		public static object SetScrollLockState(object state = null)
 		{
 			// Keys is a cross-platform alias (see GlobalUsings); this is a standard VK code handled by the platform-specific ToggleKeyState.
-			SetToggleState((uint)Keys.Scroll, ref Script.TheScript.KeyboardData.toggleStates.forceScrollLock, state.As());
+			if (!state.CoerceString(out var stateText))
+				return DefaultObject;
+
+			SetToggleState((uint)Keys.Scroll, ref Script.TheScript.KeyboardData.toggleStates.forceScrollLock, stateText);
 			return DefaultObject;
 		}
 
@@ -1411,8 +1458,19 @@ break_twice:;
 		public static object GetKeyInfo(object keyName, object layout = null)
 		{
 			var script = Script.TheScript;
-			var keyname = keyName.As();
-			var keybdLayout = layout.IsNullOrEmpty() ? 0 : Platform.Keys.ResolveKeyboardLayout(layout.As());
+			if (!keyName.CoerceString(out var keyname))
+				return DefaultObject;
+
+			var keybdLayout = nint.Zero;
+
+			if (!layout.IsNullOrEmpty())
+			{
+				if (!layout.CoerceString(out var layoutText))
+					return DefaultObject;
+
+				keybdLayout = Platform.Keys.ResolveKeyboardLayout(layoutText);
+			}
+
 			var ht = script.HookThread;
 			var vk = 0u;
 			var sc = 0u;

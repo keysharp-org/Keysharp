@@ -638,7 +638,7 @@ namespace Keysharp.Builtins
 					var result = closedHandlers?.InvokeSynchronousEventHandlers(g);
 					e.Cancel = true;
 
-					if (result.Al() != 0L)
+					if (result.IsCallbackResultNonEmpty())
 						return;
 
 					this.Hide();
@@ -767,7 +767,8 @@ namespace Keysharp.Builtins
 				return Functions.ToCallback(handler);
 
 			// As AHK: a number names a method as its text does, and without a sink neither names anything.
-			var name = handler.As();
+			if (!handler.CoerceString(out var name))
+				return null;
 
 			if (eventObj != null && name.Length > 0)
 				return new KeysharpFunc(name, eventObj);
@@ -796,7 +797,10 @@ namespace Keysharp.Builtins
 
 		internal object OnEvent(object obj0, object obj1, object obj2 = null)
 		{
-			var e = obj0.As().ToLowerInvariant();
+			if (!obj0.CoerceString(out var eventName))
+				return DefaultObject;
+
+			var e = eventName.ToLowerInvariant();
 
 			// The arguments each event passes its callback.
 			var argCount = e switch

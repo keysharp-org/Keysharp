@@ -21,48 +21,52 @@ namespace Keysharp.Internals.Window
 		internal string Text { get; set; }
 		internal string Title { get; set; }
 
-		internal static SearchCriteria FromString(object obj)
+		/// <summary>
+		/// Parses a WinTitle. False when reading an object's Hwnd raised an error the script continued, and the
+		/// caller then returns its empty value at once.
+		/// </summary>
+		internal static bool TryFromString(object obj, out SearchCriteria criteria)
 		{
-			var criteria = new SearchCriteria();
+			criteria = new SearchCriteria();
 
 			if (obj == null)
-				return criteria;
+				return true;
 
 			if (obj is long l)
 			{
 				criteria.ID = new nint(l);
 				criteria.IsPureID = true;
-				return criteria;
+				return true;
 			}
 			else if (obj is not string)
 			{
 				var hwnd = Script.GetPropertyValueOrNull(obj, "Hwnd");
+				criteria = null;
 
 				if (hwnd == null)
 				{
 					_ = Errors.PropertyErrorOccurred($"Object did not have an Hwnd property.");
-					return criteria;
+					return false;
 				}
 
 				if (hwnd is long ll)
 				{
-					criteria.ID = new nint(ll);
-					criteria.IsPureID = true;
-					return criteria;
+					criteria = new SearchCriteria { ID = new nint(ll), IsPureID = true };
+					return true;
 				}
 
 				_ = Errors.TypeErrorOccurred(hwnd, typeof(long));
-				return criteria;
+				return false;
 			}
 
 			var mixed = obj.ToString();
 
 			if (!mixed.Contains(Keyword_ahk, StringComparison.OrdinalIgnoreCase))
 			{
-				if (string.Equals(mixed, "A", StringComparison.OrdinalIgnoreCase))
-					return new SearchCriteria { Active = true };
-
-				return new SearchCriteria { Title = mixed };
+				criteria = string.Equals(mixed, "A", StringComparison.OrdinalIgnoreCase)
+					? new SearchCriteria { Active = true }
+					: new SearchCriteria { Title = mixed };
+				return true;
 			}
 
 			var i = 0;
@@ -155,27 +159,35 @@ namespace Keysharp.Internals.Window
 			}
 
 			if (!foundFirstCriterion)
-				return new SearchCriteria { Title = mixed };
-
-			if (invalidCriteria)
-				return new SearchCriteria();
-
-			if (string.Equals(criteria.Title, "A", StringComparison.OrdinalIgnoreCase))
+				criteria = new SearchCriteria { Title = mixed };
+			else if (invalidCriteria)
+				criteria = new SearchCriteria();
+			else if (string.Equals(criteria.Title, "A", StringComparison.OrdinalIgnoreCase))
 			{
 				criteria.Active = true;
 				criteria.Title = null;
 			}
 
-			return criteria;
+			return true;
 		}
 
-		internal static SearchCriteria FromString(object title, object text, object excludeTitle, object excludeText)
+		/// <summary>
+		/// As <see cref="TryFromString(object, out SearchCriteria)"/>, with the window text and exclusions. False
+		/// also when one of those raised a TypeError the script continued.
+		/// </summary>
+		internal static bool TryFromString(object title, object text, object excludeTitle, object excludeText, out SearchCriteria criteria)
 		{
-			var criteria = FromString(title);
-			criteria.Text = text.As();
-			criteria.ExcludeTitle = excludeTitle.As();
-			criteria.ExcludeText = excludeText.As();
-			return criteria;
+			if (!TryFromString(title, out criteria)
+					|| !text.CoerceString(out var t) || !excludeTitle.CoerceString(out var exclTitle) || !excludeText.CoerceString(out var exclText))
+			{
+				criteria = null;
+				return false;
+			}
+
+			criteria.Text = t;
+			criteria.ExcludeTitle = exclTitle;
+			criteria.ExcludeText = exclText;
+			return true;
 		}
 
 		private static int FindNextCriterionStart(string value, int startIndex)

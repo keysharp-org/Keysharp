@@ -19,6 +19,6 @@ namespace Keysharp.Internals.Diagnostics
 		/// <param name="text">The text to send to the debugger for display.</param>
 		/// <param name="clear">True to first clear the display, else false to append.</param>
 		internal static object WriteLine(object text, object clear = null) =>
-			Keysharp.Builtins.Debug.OutputDebugCommon($"{text.As()}{Environment.NewLine}", clear.Ab());
+			Keysharp.Builtins.Debug.OutputDebugCommon($"{Keysharp.Builtins.Errors.Describe(text)}{Environment.NewLine}", clear.Ab());
 	}
 }

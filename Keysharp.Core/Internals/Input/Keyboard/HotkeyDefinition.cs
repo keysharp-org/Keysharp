@@ -2714,17 +2714,31 @@ namespace Keysharp.Internals.Input.Keyboard
 			return null;
 		}
 
-		private static long HotIfWinActivePrivate(object title, object text, object hotkey)
+		// The HotIfWin* criteria go through these, which are null when a parameter raised an error the script
+		// continued, so that such a criterion is satisfied by neither the plain form nor its negation.
+		private static long? HotIfWinActiveHwnd(object title, object text)
 		{
-			var criteria = SearchCriteria.FromString(title, text, null, null);
+			if (!SearchCriteria.TryFromString(title, text, null, null, out var criteria))
+				return null;
+
 			return WindowSearch.SearchActiveWindow(criteria, true) is WindowInfoBase win ? hotExprLastFoundHwnd = win.Handle.ToInt64() : 0L;
 		}
 
-		private static long HotIfWinExistPrivate(object title, object text, object hotkey) => WindowSearch.SearchWindow(title, text, null, null, false) is WindowInfoBase win && win.Exists ? hotExprLastFoundHwnd = win.Handle.ToInt64() : 0L;
+		private static long? HotIfWinExistHwnd(object title, object text)
+		{
+			if (!WindowSearch.TrySearchWindow(title, text, null, null, out var win))
+				return null;
 
-		private static long HotIfWinNotActivePrivate(object title, object text, object hotkey) => HotIfWinActivePrivate(title, text, hotkey) == 0L ? 1L : 0L;
+			return win != null && win.Exists ? hotExprLastFoundHwnd = win.Handle.ToInt64() : 0L;
+		}
 
-		private static long HotIfWinNotExistPrivate(object title, object text, object hotkey) => HotIfWinExistPrivate(title, text, hotkey) == 0L ? 1L : 0L;
+		private static long HotIfWinActivePrivate(object title, object text, object hotkey) => HotIfWinActiveHwnd(title, text) ?? 0L;
+
+		private static long HotIfWinExistPrivate(object title, object text, object hotkey) => HotIfWinExistHwnd(title, text) ?? 0L;
+
+		private static long HotIfWinNotActivePrivate(object title, object text, object hotkey) => HotIfWinActiveHwnd(title, text) == 0L ? 1L : 0L;
+
+		private static long HotIfWinNotExistPrivate(object title, object text, object hotkey) => HotIfWinExistHwnd(title, text) == 0L ? 1L : 0L;
 
 		internal static object SetupHotIfWin(string funcname, object obj0 = null, object obj1 = null)
 		{

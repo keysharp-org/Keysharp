@@ -30,9 +30,7 @@ namespace Keysharp.Builtins
 		[PublicHiddenFromUser]
 		public static KeysharpFunc GetKeysharpFuncByName(object name)
 		{
-			var s = name.As();
-
-			if (s.Length == 0)
+			if (!name.CoerceString(out var s) || s.Length == 0)
 				return null;
 
 			// A closure is a variable of the executing function, created per call, so it is never cached.
@@ -153,7 +151,8 @@ namespace Keysharp.Builtins
 		/// <summary>Validates an event registration's AddRemove value.</summary>
 		internal static bool TryAddRemove(object value, out long addRemove)
 		{
-			addRemove = value.Al(1L);
+			if (!value.CoerceLong(out addRemove, 1L))
+				return false;
 
 			if (addRemove is >= -1 and <= 1)
 				return true;
@@ -310,11 +309,16 @@ namespace Keysharp.Builtins
 		public static object GetMethod(object value, object name = null, object paramCount = null)
 		{
 			var v = value;
-			var n = name.As();
-			var count = paramCount.Ai(-1);
+
+			if (!name.CoerceString(out var n))
+				return DefaultObject;
+
+			if (!paramCount.CoerceInt(out var count, -1))
+				return DefaultObject;
+
 			var mph = Reflections.FindAndCacheMethod(v.GetType(), n.Length > 0 ? n : "Call", count);
 
-			if (mph != null && mph.mi != null)
+			if (mph?.mi is { } method && method.GetCustomAttribute<PublicHiddenFromUser>() == null)
 				return new KeysharpFunc(mph.mi, null);
 
 			return Script.CompatReturnsUnsetForMissing ? null
@@ -332,9 +336,10 @@ namespace Keysharp.Builtins
 		/// <returns>1 if the method was found on the object, else 0.</returns>
 		public static long HasMethod(object value, object name = null, object paramCount = null)
 		{
-			var n = name.As();
+			if (!name.CoerceString(out var n)) return 0L;
 			if (n == "") n = "Call";
-			var count = paramCount.Ai(-1);
+			if (!paramCount.CoerceInt(out var count, -1))
+				return 0L;
 
 			var mitup = GetMethodOrProperty(value, n, count, checkBase: true, throwIfMissing: false, invokeMeta: false);
 			if (mitup.Item2 == null) return 0L;
@@ -367,8 +372,13 @@ namespace Keysharp.Builtins
 		public static long HasProp(object value, object name, object paramCount = null, bool checkBase = true)
 		{
 			var val = value;
-			var n = name.As();
-			var count = paramCount.Ai(-1);
+
+			if (!name.CoerceString(out var n))
+				return 0L;
+
+			if (!paramCount.CoerceInt(out var count, -1))
+				return 0L;
+
 			Any nextBase = null;
 
 			if (value is Any kso)
@@ -404,7 +414,9 @@ namespace Keysharp.Builtins
 		public static object ObjBindMethod(object obj, object method = null, params object[] args)
 		{
 			var o = obj;
-			var n = method.As("Call");
+
+			if (!method.CoerceString(out var n, "Call"))
+				return DefaultObject;
 
 			if (obj is Any)
 				return new BoundFunc(new MethodPropertyHolder(n), args, o);

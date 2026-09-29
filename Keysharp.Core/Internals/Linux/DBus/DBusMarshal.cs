@@ -16,7 +16,9 @@ namespace Keysharp.Internals.DBus
 
 		// ---- writing ---------------------------------------------------------------------------
 
-		internal static void WriteArguments(ref MessageWriter writer, DBusSigNode[] sig, object[] args)
+		// False means a conversion's error was continued by the script: the message is incomplete, and the caller must not
+		// send it.
+		internal static bool TryWriteArguments(ref MessageWriter writer, DBusSigNode[] sig, object[] args)
 		{
 			var supplied = args?.Length ?? 0;
 
@@ -24,67 +26,121 @@ namespace Keysharp.Internals.DBus
 				throw new ArgumentException($"Expected {sig.Length} argument(s) for signature, got {supplied}.");
 
 			for (var i = 0; i < sig.Length; i++)
-				Write(ref writer, sig[i], args[i]);
+				if (!TryWrite(ref writer, sig[i], args[i]))
+					return false;
+
+			return true;
 		}
 
-		internal static void Write(ref MessageWriter writer, DBusSigNode node, object value)
+		// False means a conversion's error was continued by the script, and the caller stops writing.
+		internal static bool TryWrite(ref MessageWriter writer, DBusSigNode node, object value)
 		{
 			// A ComValue carries an explicit wire type; honour it wherever the target is a variant, and otherwise
 			// just unwrap it (the declared type still has to match the signature the peer published).
 			if (value is ComValue cv && node.Code != DBusTypeCode.Variant)
 				value = cv.Value;
 
+			string text = null;
+
+			if (node.Code is DBusTypeCode.String or DBusTypeCode.ObjectPath or DBusTypeCode.Signature && !value.CoerceString(out text))
+				return false;
+
 			switch (node.Code)
 			{
-				case DBusTypeCode.Byte: writer.WriteByte(checked((byte)ToLong(value))); break;
-				case DBusTypeCode.Boolean: writer.WriteBool(ToBool(value)); break;
-				case DBusTypeCode.Int16: writer.WriteInt16(checked((short)ToLong(value))); break;
-				case DBusTypeCode.UInt16: writer.WriteUInt16(checked((ushort)ToLong(value))); break;
-				case DBusTypeCode.Int32: writer.WriteInt32(checked((int)ToLong(value))); break;
-				case DBusTypeCode.UInt32: writer.WriteUInt32(checked((uint)ToLong(value))); break;
-				case DBusTypeCode.Int64: writer.WriteInt64(ToLong(value)); break;
-				case DBusTypeCode.UInt64: writer.WriteUInt64(unchecked((ulong)ToLong(value))); break;
-				case DBusTypeCode.Double: writer.WriteDouble(ToDouble(value)); break;
-				case DBusTypeCode.String: writer.WriteString(value.As()); break;
-				case DBusTypeCode.ObjectPath: writer.WriteObjectPath(ValidatePath(value.As())); break;
-				case DBusTypeCode.Signature: writer.WriteSignature(value.As()); break;
+				case DBusTypeCode.Byte:
+					if (!ToLong(value, out var byteVal)) return false;
+
+					writer.WriteByte(checked((byte)byteVal));
+					break;
+
+				case DBusTypeCode.Boolean:
+					if (!ToBool(value, out var boolVal)) return false;
+
+					writer.WriteBool(boolVal);
+					break;
+
+				case DBusTypeCode.Int16:
+					if (!ToLong(value, out var int16Val)) return false;
+
+					writer.WriteInt16(checked((short)int16Val));
+					break;
+
+				case DBusTypeCode.UInt16:
+					if (!ToLong(value, out var uint16Val)) return false;
+
+					writer.WriteUInt16(checked((ushort)uint16Val));
+					break;
+
+				case DBusTypeCode.Int32:
+					if (!ToLong(value, out var int32Val)) return false;
+
+					writer.WriteInt32(checked((int)int32Val));
+					break;
+
+				case DBusTypeCode.UInt32:
+					if (!ToLong(value, out var uint32Val)) return false;
+
+					writer.WriteUInt32(checked((uint)uint32Val));
+					break;
+
+				case DBusTypeCode.Int64:
+					if (!ToLong(value, out var int64Val)) return false;
+
+					writer.WriteInt64(int64Val);
+					break;
+
+				case DBusTypeCode.UInt64:
+					if (!ToLong(value, out var uint64Val)) return false;
+
+					writer.WriteUInt64(unchecked((ulong)uint64Val));
+					break;
+
+				case DBusTypeCode.Double:
+					if (!ToDouble(value, out var doubleVal)) return false;
+
+					writer.WriteDouble(doubleVal);
+					break;
+
+				case DBusTypeCode.String: writer.WriteString(text); break;
+				case DBusTypeCode.ObjectPath: writer.WriteObjectPath(ValidatePath(text)); break;
+				case DBusTypeCode.Signature: writer.WriteSignature(text); break;
 
 				case DBusTypeCode.UnixFd:
 					throw new NotSupportedException("Passing file descriptors ('h') to D-Bus is not supported.");
 
 				case DBusTypeCode.Variant:
-					WriteVariant(ref writer, value);
-					break;
+					return WriteVariant(ref writer, value);
 
 				case DBusTypeCode.Array when node.IsDictArray:
-					WriteDictionary(ref writer, node, value);
-					break;
+					return WriteDictionary(ref writer, node, value);
 
 				case DBusTypeCode.Array:
-					WriteArray(ref writer, node, value);
-					break;
+					return WriteArray(ref writer, node, value);
 
 				case DBusTypeCode.Struct:
-					WriteStruct(ref writer, node, value);
-					break;
+					return WriteStruct(ref writer, node, value);
 
 				default:
 					throw new NotSupportedException($"Cannot write D-Bus type '{node.Text}'.");
 			}
+
+			return true;
 		}
 
-		private static void WriteArray(ref MessageWriter writer, DBusSigNode node, object value)
+		private static bool WriteArray(ref MessageWriter writer, DBusSigNode node, object value)
 		{
 			var items = ToList(value, node.Text);
 			var start = writer.WriteArrayStart(DBusSignature.ToDBusType(node.Element));
 
 			foreach (var item in items)
-				Write(ref writer, node.Element, item);
+				if (!TryWrite(ref writer, node.Element, item))
+					return false;
 
 			writer.WriteArrayEnd(start);
+			return true;
 		}
 
-		private static void WriteDictionary(ref MessageWriter writer, DBusSigNode node, object value)
+		private static bool WriteDictionary(ref MessageWriter writer, DBusSigNode node, object value)
 		{
 			var entry = node.Element;   // the {kv}
 			var start = writer.WriteDictionaryStart();
@@ -92,14 +148,16 @@ namespace Keysharp.Internals.DBus
 			foreach (var (k, v) in ToPairs(value, node.Text))
 			{
 				writer.WriteDictionaryEntryStart();
-				Write(ref writer, entry.Key, k);
-				Write(ref writer, entry.Element, v);
+
+				if (!TryWrite(ref writer, entry.Key, k) || !TryWrite(ref writer, entry.Element, v))
+					return false;
 			}
 
 			writer.WriteDictionaryEnd(start);
+			return true;
 		}
 
-		private static void WriteStruct(ref MessageWriter writer, DBusSigNode node, object value)
+		private static bool WriteStruct(ref MessageWriter writer, DBusSigNode node, object value)
 		{
 			var items = ToList(value, node.Text);
 
@@ -109,14 +167,17 @@ namespace Keysharp.Internals.DBus
 			writer.WriteStructureStart();
 
 			for (var i = 0; i < node.Fields.Length; i++)
-				Write(ref writer, node.Fields[i], items[i]);
+				if (!TryWrite(ref writer, node.Fields[i], items[i]))
+					return false;
+
+			return true;
 		}
 
 		/// <summary>
 		/// A variant carries its own signature, so the type has to come from the value. ComValue states it
 		/// explicitly; anything else is inferred (see InferVariantSignature).
 		/// </summary>
-		private static void WriteVariant(ref MessageWriter writer, object value)
+		private static bool WriteVariant(ref MessageWriter writer, object value)
 		{
 			string sigText;
 
@@ -134,7 +195,7 @@ namespace Keysharp.Internals.DBus
 				throw new ArgumentException($"A variant needs exactly one complete type, got '{sigText}'.");
 
 			writer.WriteSignature(sigText);
-			Write(ref writer, nodes[0], value);
+			return TryWrite(ref writer, nodes[0], value);
 		}
 
 		/// <summary>
@@ -150,7 +211,7 @@ namespace Keysharp.Internals.DBus
 			double or float or decimal => "d",
 			Keysharp.Builtins.Map => "a{sv}",
 			Keysharp.Builtins.Array => "av",
-			_ when IsIntegral(value) => ToLong(value) is var l && l >= int.MinValue && l <= int.MaxValue ? DefaultIntegerVariantSignature : "x",
+			_ when IsIntegral(value) => ToLong(value, out var l) && l >= int.MinValue && l <= int.MaxValue ? DefaultIntegerVariantSignature : "x",
 			_ => throw new ArgumentException($"Cannot infer a D-Bus type for a value of type '{value.GetType().Name}'; wrap it in ComValue.")
 		};
 
@@ -287,21 +348,50 @@ namespace Keysharp.Internals.DBus
 		private static bool IsIntegral(object value) =>
 			value is long or int or short or sbyte or byte or ushort or uint or ulong;
 
-		private static long ToLong(object value) => value switch
+		// False means a conversion's error was continued by the script: the caller must not write the value.
+		// An unset value is a programming error rather than something a script can continue past, so it still throws.
+		private static bool ToLong(object value, out long result)
 		{
-			null => throw new ArgumentException("Cannot write an unset value to D-Bus."),
-			bool b => b ? 1L : 0L,
-			_ => value.Al()
-		};
+			if (value is null)
+				throw new ArgumentException("Cannot write an unset value to D-Bus.");
 
-		private static double ToDouble(object value) => value?.Ad() ?? throw new ArgumentException("Cannot write an unset value to D-Bus.");
+			if (value is bool b)
+			{
+				result = b ? 1L : 0L;
+				return true;
+			}
 
-		private static bool ToBool(object value) => value switch
+			return value.CoerceLong(out result);
+		}
+
+		private static bool ToDouble(object value, out double result)
 		{
-			null => throw new ArgumentException("Cannot write an unset value to D-Bus."),
-			bool b => b,
-			_ => value.Al() != 0L
-		};
+			if (value is null)
+				throw new ArgumentException("Cannot write an unset value to D-Bus.");
+
+			return value.CoerceDouble(out result);
+		}
+
+		private static bool ToBool(object value, out bool result)
+		{
+			if (value is null)
+				throw new ArgumentException("Cannot write an unset value to D-Bus.");
+
+			if (value is bool b)
+			{
+				result = b;
+				return true;
+			}
+
+			if (!value.CoerceLong(out var l))
+			{
+				result = false;
+				return false;
+			}
+
+			result = l != 0L;
+			return true;
+		}
 
 		private static string ValidatePath(string path)
 		{

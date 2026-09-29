@@ -131,7 +131,10 @@ namespace Keysharp.Builtins
 				if (IsCurrentRealThreadTask(task))
 					return Errors.TargetErrorOccurred("A real thread cannot wait on itself.", false);
 
-				return Keysharp.Internals.Flow.WaitForCompletion(task, timeout.Ai(-1));
+				if (!timeout.CoerceInt(out var timeoutMs, -1))
+					return DefaultObject;
+
+				return Keysharp.Internals.Flow.WaitForCompletion(task, timeoutMs);
 			}
 
 			// ---- continuation -----------------------------------------------------------------------------
@@ -262,8 +265,6 @@ namespace Keysharp.Builtins
 				return Wrap(source.Task);
 			}
 
-			public override string ToString() => "Task";
-
 			// ---- internals --------------------------------------------------------------------------------
 
 			private static async Task<object> CompleteAll(Task[] tasks)
@@ -308,7 +309,7 @@ namespace Keysharp.Builtins
 							Error e => e.AsException(),
 							Exception ex => ex,
 							null => new Error("The task failed.").AsException(),
-							_ => new Error(Reason.As()).AsException()
+							_ => new Error(Errors.Describe(Reason)).AsException()
 						});
 					}
 					catch (Exception ex) when (TryGetUserExit(ex, out var exit))

@@ -42,7 +42,7 @@ namespace Keysharp.Builtins
 				}
 				set
 				{
-					if (Web != null && ToNavigableUri(value.As()) is { } uri)
+					if (Web != null && value.CoerceString(out var text) && ToNavigableUri(text) is { } uri)
 						Web.Url = uri;
 				}
 			}
@@ -121,18 +121,32 @@ namespace Keysharp.Builtins
 			/// Runs JavaScript in the current page and returns its result as a string.
 			/// </summary>
 			/// <param name="script">The script to run. It runs as a function body, so it may use <c>return</c>.</param>
-			public object ExecuteScript(object script) =>
-				Web is { } web ? web.ExecuteScript(script.As()) : Errors.ErrorOccurred("GUI control is no longer available.");
+			public object ExecuteScript(object script)
+			{
+				if (Web is not { } web)
+					return Errors.ErrorOccurred("GUI control is no longer available.");
+
+				if (!script.CoerceString(out var text))
+					return DefaultObject;
+
+				return web.ExecuteScript(text);
+			}
 
 			/// <summary>
 			/// The same as <see cref="ExecuteScript"/>, but returns a Task carrying the result rather than
 			/// waiting for it.
 			/// </summary>
 			/// <param name="script">The script to run. It runs as a function body, so it may use <c>return</c>.</param>
-			public object ExecuteScriptAsync(object script) =>
-				Web is { } web
-				? Ks.KeysharpTask.Wrap(web.ExecuteScriptAsync(script.As()))
-				: Errors.ErrorOccurred("GUI control is no longer available.");
+			public object ExecuteScriptAsync(object script)
+			{
+				if (Web is not { } web)
+					return Errors.ErrorOccurred("GUI control is no longer available.");
+
+				if (!script.CoerceString(out var text))
+					return DefaultObject;
+
+				return Ks.KeysharpTask.Wrap(web.ExecuteScriptAsync(text));
+			}
 
 			/// <summary>
 			/// Shows an HTML string instead of navigating to a URL.
@@ -145,7 +159,10 @@ namespace Keysharp.Builtins
 				if (Web == null)
 					return Errors.ErrorOccurred("GUI control is no longer available.");
 
-				Web.LoadHtml(html.As(), ToNavigableUri(baseUrl.As()));
+				if (!html.CoerceString(out var htmlText) || !baseUrl.CoerceString(out var baseText))
+					return DefaultObject;
+
+				Web.LoadHtml(htmlText, ToNavigableUri(baseText));
 				return DefaultObject;
 			}
 

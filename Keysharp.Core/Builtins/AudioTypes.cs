@@ -32,8 +32,6 @@ namespace Keysharp.Builtins
 
 				/// <summary>The samples' original format: "Unsigned8", "Signed16", "Signed24", "Signed32" or "Float32".</summary>
 				public string SampleFormat => Data.SampleFormat;
-
-				public override string ToString() => "Audio.Clip";
 			}
 
 			/// <summary>
@@ -213,6 +211,7 @@ namespace Keysharp.Builtins
 					return backend;
 				}
 
+				[PublicHiddenFromUser]
 				public override string ToString() => Name;
 			}
 
@@ -238,12 +237,14 @@ namespace Keysharp.Builtins
 				/// </summary>
 				public object __New(object device = null, object voiceLimit = null, object voicePolicy = null, object latencyMilliseconds = null)
 				{
-					var voices = voiceLimit == null ? 16L : voiceLimit.Al();
+					if (!voiceLimit.CoerceLong(out var voices, 16L))
+						return DefaultObject;
 
 					if (voices < 1 || voices > 256)
 						return Errors.ValueErrorOccurred("VoiceLimit must be from 1 through 256.", voiceLimit);
 
-					var policy = voicePolicy.As();
+					if (!voicePolicy.CoerceString(out var policy))
+						return DefaultObject;
 
 					if (policy.Length == 0)
 						policy = Engine.AudioMixer.PolicyOldest;
@@ -256,14 +257,19 @@ namespace Keysharp.Builtins
 					if (policy == null)
 						return Errors.ValueErrorOccurred($"Unknown VoicePolicy \"{Errors.Describe(voicePolicy)}\". Expected Oldest, RoundRobin or Reject.", voicePolicy);
 
-					var latency = latencyMilliseconds == null ? 20.0 : latencyMilliseconds.Ad();
+					if (!latencyMilliseconds.CoerceDouble(out var latency, 20.0))
+						return DefaultObject;
 
 					if (!double.IsFinite(latency) || latency < 5 || latency > 500)
 						return Errors.ValueErrorOccurred("LatencyMilliseconds must be a finite number from 5 through 500.", latencyMilliseconds);
 
 					var deviceId = "";
+					var deviceText = "";
 
-					if (device is Ks.Audio.Device || device.As().Length > 0)
+					if (device is not Ks.Audio.Device && !device.CoerceString(out deviceText))
+						return DefaultObject;
+
+					if (device is Ks.Audio.Device || deviceText.Length > 0)
 					{
 						if (!TryResolveDevice(device, Engine.AudioDeviceKind.Output, true, out var resolved, out var failure))
 							return failure;
@@ -367,7 +373,9 @@ namespace Keysharp.Builtins
 
 					set
 					{
-						var text = value.As();
+						if (!value.CoerceString(out var text))
+							return;
+
 						var policy = string.Equals(text, Engine.AudioMixer.PolicyOldest, StringComparison.OrdinalIgnoreCase) ? Engine.AudioMixer.PolicyOldest
 									 : string.Equals(text, Engine.AudioMixer.PolicyRoundRobin, StringComparison.OrdinalIgnoreCase) ? Engine.AudioMixer.PolicyRoundRobin
 									 : string.Equals(text, Engine.AudioMixer.PolicyReject, StringComparison.OrdinalIgnoreCase) ? Engine.AudioMixer.PolicyReject
@@ -472,7 +480,8 @@ namespace Keysharp.Builtins
 					if (!TryPan(pan == null ? 0L : pan, out var panValue, out failure))
 						return failure;
 
-					var startMs = startMilliseconds == null ? 0.0 : startMilliseconds.Ad();
+					if (!startMilliseconds.CoerceDouble(out var startMs, 0.0))
+						return DefaultObject;
 
 					if (!double.IsFinite(startMs) || startMs < 0)
 						return Errors.ValueErrorOccurred("StartMilliseconds must be a finite number of 0 or more.", startMilliseconds);
@@ -531,8 +540,6 @@ namespace Keysharp.Builtins
 
 					return DefaultObject;
 				}
-
-				public override string ToString() => "Audio.Output";
 			}
 
 			/// <summary>
@@ -624,7 +631,9 @@ namespace Keysharp.Builtins
 							return;
 						}
 
-						var ms = value.Ad();
+						if (!value.CoerceDouble(out var ms))
+							return;
+
 						var duration = source?.DurationMilliseconds ?? 0;
 
 						if (!double.IsFinite(ms) || ms < 0 || (duration > 0 && ms >= duration))
@@ -694,8 +703,6 @@ namespace Keysharp.Builtins
 					_ = control?.TryFinish(Engine.AudioPlaybackState.Stopped);
 					return DefaultObject;
 				}
-
-				public override string ToString() => "Audio.Playback";
 			}
 		}
 	}

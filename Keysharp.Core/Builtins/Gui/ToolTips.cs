@@ -52,10 +52,14 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static object ToolTip(object text = null, object x = null, object y = null, object whichToolTip = null)
 		{
-			var t = text.As();
-			var _x = (x is null ? int.MinValue : x.ToInt());
-			var _y = (y is null ? int.MinValue : y.ToInt());
-			var id = (whichToolTip is null ? 1 : whichToolTip.ToInt());
+			int _x = int.MinValue, _y = int.MinValue, id = 1;
+
+			if (!text.CoerceString(out var t)
+					|| (x is not null && !x.CoerceInt(out _x))
+					|| (y is not null && !y.CoerceInt(out _y))
+					|| (whichToolTip is not null && !whichToolTip.CoerceInt(out id)))
+				return DefaultObject;
+
 			var script = Script.TheScript;
 
 			if (id < 1 || id > ToolTipData.MaxToolTips)
@@ -335,7 +339,9 @@ namespace Keysharp.Builtins
 		/// <returns>Ignored.</returns>
 		public static object TraySetIcon(object fileName = null, object iconNumber = null, object freeze = null)
 		{
-			var filename = fileName.As();
+			if (!fileName.CoerceString(out var filename))
+				return DefaultObject;
+
 			var iconnumber = ImageHelper.PrepareIconNumber(iconNumber);
 			var script = Script.TheScript;
 
@@ -402,8 +408,9 @@ namespace Keysharp.Builtins
 		/// <returns>Ignored.</returns>
 		public static object TrayTip(object text = null, object title = null, object options = null)
 		{
-			var _text = text.As();
-			var _title = title.As();
+			if (!text.CoerceString(out var _text) || !title.CoerceString(out var _title))
+				return DefaultObject;
+
 			var opts = options;
 			var script = Script.TheScript;
 

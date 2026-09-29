@@ -1,4 +1,4 @@
-﻿using Keysharp.Runtime;
+using Keysharp.Runtime;
 
 namespace Keysharp.Builtins
 {
@@ -397,7 +397,10 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
-			return AddOrInsert("", menuItemName.As(), callbackOrSubmenu, options.As(), false);
+			if (!menuItemName.CoerceString(out var name) || !options.CoerceString(out var opts))
+				return DefaultObject;
+
+			return AddOrInsert("", name, callbackOrSubmenu, opts, false);
 		}
 
 		/// <summary>
@@ -550,7 +553,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new check state as a boolean.</returns>
-		public bool Check(object menuItemName) => Check(menuItemName.As(), eCheckToggle.Check);
+		public bool Check(object menuItemName) => menuItemName.CoerceString(out var name) && Check(name, eCheckToggle.Check);
 
 		/// <summary>
 		/// Deletes one or all menu items.
@@ -560,7 +563,8 @@ namespace Keysharp.Builtins
 		/// </param>
 		public object Delete(object menuItemName = null)
 		{
-			var s = menuItemName.As();
+			if (!menuItemName.CoerceString(out var s))
+				return DefaultObject;
 
 			if (s?.Length == 0)
 			{
@@ -594,21 +598,21 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new enabled state as a boolean.</returns>
-		public bool Disable(object menuItemName) => Enable(menuItemName.As(), eCheckToggle.Uncheck);
+		public bool Disable(object menuItemName) => menuItemName.CoerceString(out var name) && Enable(name, eCheckToggle.Uncheck);
 
 		/// <summary>
 		/// Allows the user to once again select a menu item if it was previously disabled (grayed out).
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new enabled state as a boolean.</returns>
-		public bool Enable(object menuItemName) => Enable(menuItemName.As(), eCheckToggle.Check);
+		public bool Enable(object menuItemName) => menuItemName.CoerceString(out var name) && Enable(name, eCheckToggle.Check);
 
 		/// <summary>
 		/// Hides a menu item.
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new visibility state as a boolean.</returns>
-		public bool HideItem(object menuItemName) => MakeVisible(menuItemName.As(), eCheckToggle.Uncheck);
+		public bool HideItem(object menuItemName) => menuItemName.CoerceString(out var name) && MakeVisible(name, eCheckToggle.Uncheck);
 
 		/// <summary>
 		/// Inserts a new item before the specified item.<br/>
@@ -622,14 +626,20 @@ namespace Keysharp.Builtins
 		/// <param name="callbackOrSubmenu">See the <see cref="Add"/> method's callbackOrSubmenu parameter.</param>
 		/// <param name="options">See the <see cref="Add"/> method's options parameter.</param>
 		/// <returns>The newly create <see cref="ToolStripMenuItem"/>.</returns>
-		public object Insert(object menuItemName = null, object itemToInsert = null, object callbackOrSubmenu = null, object options = null) => AddOrInsert(menuItemName.As(), itemToInsert.As(), callbackOrSubmenu, options.As(), true);
+		public object Insert(object menuItemName = null, object itemToInsert = null, object callbackOrSubmenu = null, object options = null)
+		{
+			if (!menuItemName.CoerceString(out var insertBefore) || !itemToInsert.CoerceString(out var name) || !options.CoerceString(out var opts))
+				return DefaultObject;
+
+			return AddOrInsert(insertBefore, name, callbackOrSubmenu, opts, true);
+		}
 
 		/// <summary>
 		/// Gets the name of a menu item.
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The name of the retrieved menu item if found, else empty string.</returns>
-		public string MenuItemName(object menuItemName) => GetMenuItem(menuItemName.As()) is ToolStripMenuItem tsmi ? tsmi.Name : "";
+		public string MenuItemName(object menuItemName) => menuItemName.CoerceString(out var name) && GetMenuItem(name) is ToolStripMenuItem tsmi ? tsmi.Name : "";
 
 		/// <summary>
 		/// Renames a menu item.
@@ -640,8 +650,9 @@ namespace Keysharp.Builtins
 		/// </param>
 		public object Rename(object menuItemName, object newName = null)
 		{
-			var name = menuItemName.As();
-			var newname = newName.As("-");
+			if (!menuItemName.CoerceString(out var name) || !newName.CoerceString(out var newname, "-"))
+				return DefaultObject;
+
 			var item = GetExistingMenuItem(name);
 
 			if (item is ToolStripSeparator tss)
@@ -670,7 +681,13 @@ namespace Keysharp.Builtins
 		/// If true, the color will be applied to all of the menu's submenus.<br/>
 		/// If false, the color will be applied to the menu only.
 		/// </param>
-		public object SetColor(object colorValue = null, object applyToSubmenus = null) => HandleColor(GetMenu(), colorValue.As(), applyToSubmenus.Ab(true), true);
+		public object SetColor(object colorValue = null, object applyToSubmenus = null)
+		{
+			if (!colorValue.CoerceString(out var color))
+				return DefaultObject;
+
+			return HandleColor(GetMenu(), color, applyToSubmenus.Ab(true), true);
+		}
 
 		/// <summary>
 		/// Changes the foreground (text) color of the menu.
@@ -683,7 +700,13 @@ namespace Keysharp.Builtins
 		/// If true, the color will be applied to all of the menu's submenus.<br/>
 		/// If false, the color will be applied to the menu only.
 		/// </param>
-		public object SetForeColor(object colorValue = null, object applyToSubmenus = null) => HandleColor(GetMenu(), colorValue.As(), applyToSubmenus.Ab(true), false);
+		public object SetForeColor(object colorValue = null, object applyToSubmenus = null)
+		{
+			if (!colorValue.CoerceString(out var color))
+				return DefaultObject;
+
+			return HandleColor(GetMenu(), color, applyToSubmenus.Ab(true), false);
+		}
 
 		/// <summary>
 		/// Sets the icon to be displayed next to a menu item.
@@ -704,10 +727,13 @@ namespace Keysharp.Builtins
 		/// </param>
 		public object SetIcon(object menuItemName, object fileName, object iconNumber = null, object iconWidth = null)
 		{
-			var name = menuItemName.As();
-			var filename = fileName.As();
+			if (!menuItemName.CoerceString(out var name) || !fileName.CoerceString(out var filename))
+				return DefaultObject;
+
 			var iconnumber = ImageHelper.PrepareIconNumber(iconNumber);
-			var width = iconWidth.Ai();
+
+			if (!iconWidth.CoerceInt(out var width))
+				return DefaultObject;
 
 			if (GetExistingMenuItem(name) is ToolStripItem tsmi)
 			{
@@ -731,6 +757,9 @@ namespace Keysharp.Builtins
 			if (this is MenuBar)
 				return Errors.ValueErrorOccurred("MenuBar objects cannot be shown as popup menus.");
 
+			if (!x.CoerceInt(out var xVal) || !y.CoerceInt(out var yVal))
+				return DefaultObject;
+
 			// Keysharp menus do not expose the native MNS_MODELESS style, so an omitted Wait has the standard-menu
 			// default of true (AHK's aWait.value_or(temp_modeless)). Passing false retains the non-blocking form.
 			var shouldWait = wait.Ab(true);
@@ -738,8 +767,8 @@ namespace Keysharp.Builtins
 			Script.TheScript.InvokeOnUIThread(() =>
 			{
 				_ = GetCursorPos(out POINT def);
-				var _x = x.Ai();
-				var _y = y.Ai();
+				var _x = xVal;
+				var _y = yVal;
 				if (x != null || y != null) CoordToScreen(ref _x, ref _y, Builtins.CoordMode.Menu);
 				if (x == null) _x = def.X;
 				if (y == null) _y = def.Y;
@@ -786,35 +815,35 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new visibility state as a boolean.</returns>
-		public bool ShowItem(object menuItemName) => MakeVisible(menuItemName.As(), eCheckToggle.Check);
+		public bool ShowItem(object menuItemName) => menuItemName.CoerceString(out var name) && MakeVisible(name, eCheckToggle.Check);
 
 		/// <summary>
 		/// Adds a checkmark if there wasn't one; otherwise, removes it.
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new check state as a boolean.</returns>
-		public bool ToggleCheck(object menuItemName) => Check(menuItemName.As(), eCheckToggle.Toggle);
+		public bool ToggleCheck(object menuItemName) => menuItemName.CoerceString(out var name) && Check(name, eCheckToggle.Toggle);
 
 		/// <summary>
 		/// Disables a menu item if it was previously enabled; otherwise, enables it.
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new enabled state as a boolean.</returns>
-		public bool ToggleEnable(object menuItemName) => Enable(menuItemName.As(), eCheckToggle.Toggle);
+		public bool ToggleEnable(object menuItemName) => menuItemName.CoerceString(out var name) && Enable(name, eCheckToggle.Toggle);
 
 		/// <summary>
 		/// Toggles the visibility of a menu item.
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new visibility state as a boolean.</returns>
-		public bool ToggleItemVis(object menuItemName) => MakeVisible(menuItemName.As(), eCheckToggle.Toggle);
+		public bool ToggleItemVis(object menuItemName) => menuItemName.CoerceString(out var name) && MakeVisible(name, eCheckToggle.Toggle);
 
 		/// <summary>
 		/// Removes the checkmark (if there is one) from a menu item.
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new check state as a boolean.</returns>
-		public bool UnCheck(object menuItemName) => Check(menuItemName.As(), eCheckToggle.Uncheck);
+		public bool UnCheck(object menuItemName) => menuItemName.CoerceString(out var name) && Check(name, eCheckToggle.Uncheck);
 
 		internal void Tsmi_Click(object sender, EventArgs e)
 		{

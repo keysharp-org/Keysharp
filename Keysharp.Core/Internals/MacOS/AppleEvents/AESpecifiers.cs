@@ -30,7 +30,10 @@ namespace Keysharp.Internals.AppleEvents
 	/// </summary>
 	internal static class AESpecifiers
 	{
-		/// <summary>Builds the descriptor for a chain. The caller owns the result.</summary>
+		/// <summary>
+		/// Builds the descriptor for a chain, or null when the script continued the conversion error of an element ID.
+		/// The caller owns the result.
+		/// </summary>
 		internal static AEValue Build(IReadOnlyList<AESpecifierStep> steps)
 		{
 			// The empty container is the application the event is addressed to; every step hangs off it.
@@ -42,6 +45,13 @@ namespace Keysharp.Internals.AppleEvents
 					foreach (var step in steps)
 					{
 						using var keyData = MakeKeyData(step);
+
+						if (keyData == null)
+						{
+							container.Dispose();
+							return null;
+						}
+
 						var next = AE.MakeSpecifier(DesiredClass(step), container, KeyForm(step), keyData);
 						container.Dispose();
 						container = next;

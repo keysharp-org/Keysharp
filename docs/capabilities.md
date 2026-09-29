@@ -92,7 +92,7 @@ Status legend:
 | #Warn NamedArg | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Checks a named argument against the callee's signature at build time when the callee is a bare name. On by default; dispatch is by value at run time so it is a warning, and the binder re-checks and throws. |
 | #Warning | 🟠 Planned | 🟠 Planned | 🟠 Planned | 🟠 Planned | Intended to emit a compile-time warning message. No handler exists, so using it is a load-time error. Distinct from #Warn, which is implemented. |
 | #WinActivateForce | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #WinActivateForce directive skips the gentle method of activating a window and goes straight to the forceful method. |
-| %...% / Dereference | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Resolves an existing variable, function or class by a run-time name, including imported names. Blank and unknown names raise Error, as do assigning a function, class or read-only built-in variable and assigning a global a function has not declared; reading an unset variable raises UnsetError except in optional-value contexts. |
+| %...% / Dereference | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Resolves an existing variable, function or class by a run-time name, including imported names. Blank and unknown names raise Error, as do assigning a function, class or read-only built-in variable and assigning a global a function has not declared; reading an unset variable raises UnsetError except in optional-value contexts. An object other than a VarRef stands for a temporary variable holding it, as in AutoHotkey. |
 | ^ | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Bitwise XOR operator |
 | ^= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
 | + | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Addition / unary plus operator |
@@ -321,7 +321,7 @@ Status legend:
 | Array.Remove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Array method. Removes the first occurrence of the value and returns true if one was found and removed, else false. Omitting the value removes the first element which has no value. What counts as a match is IndexOf's rule, which Contains uses too. |
 | Array.RemoveAt() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Removes the element at a given index, plus optionally a length. Returns the removed item if no length was specified. Returns the null if a length was specified. |
 | Array.Sort() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Sorts array elements, optionally using a custom comparer callback. |
-| Array.ToString() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns a string representation of the array. |
+| Array.ToString() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns the array as [a, b, c], with strings quoted, a missing element as unset, an object element as its ToString result or type name, and an array that contains itself as [...] where it recurs. |
 | Asin() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc sine. Throws an exception if the argument value is not between -1 and 1. |
 | Atan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc tangent. |
 | ATan2() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the arc tangent by using two numbers. |
@@ -798,7 +798,7 @@ Status legend:
 | Map.Get() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets a value by key with optional fallback default. |
 | Map.Has() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a dictionary contains a value, even an empty one, for the given key. |
 | Map.Set() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets zero or more items. |
-| Map.ToString() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns a string representation of the map. |
+| Map.ToString() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns the map as [key: value, ...], formatted as Array.ToString() formats its elements. |
 | Max() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the larger of two numbers. If either is not numeric, the empty string is returned. The largest value of an array is computed if one is passed in. |
 | MemberError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | MemoryError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
@@ -1000,7 +1000,7 @@ Status legend:
 | String.EndsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns whether a string ends with the specified suffix. The CaseSense parameter matches InStr's, so Locale folds case one character at a time. |
 | String.Length | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns the number of characters in the string. |
 | String.StartsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns whether a string starts with the specified prefix. The CaseSense parameter matches InStr's, so Locale folds case one character at a time. |
-| String() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a value to a string. For an object, the result is whatever its ToString() returned, so a ToString() which returns no value makes String() return no value too rather than raising. |
+| String() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | For an object, returns its ToString() result unchanged, including an object or no value; a missing method raises MethodError. Implicit string conversion in builtin arguments and concatenation requires a scalar result and otherwise raises TypeError. Errors raised by ToString propagate. |
 | StringBuffer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a mutable string buffer object. |
 | StrLen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the count of how many characters are in a string. |
 | StrLower() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a string to lowercase. |
@@ -1053,7 +1053,7 @@ Status legend:
 | Trim() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Trims characters from the beginning and end of a string. |
 | True | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Boolean true constant. |
 | Try | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Starts exception-handling scope for statements that may throw. |
-| Type | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Type function returns the class name of a value. |
+| Type | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the class name of a value, honoring an inherited custom __Class getter on a script object. |
 | TypeError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | UInt16 | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Predefined numeric struct type for typed fields and native calls. |
 | UInt32 | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Predefined numeric struct type for typed fields and native calls. |

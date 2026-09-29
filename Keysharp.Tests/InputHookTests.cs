@@ -266,7 +266,9 @@ namespace Keysharp.Tests
 			var io = (InputHook)new InputHook("");
 			io.OnMouseMove = new KeysharpFunc((Func<object, object, object, object>)((_, dx, dy) =>
 			{
-				calls.Add((dx.Al(), dy.Al(), ThreadAccessors.A_EventInfo));
+				_ = dx.TryCoerceLong(out var x);
+				_ = dy.TryCoerceLong(out var y);
+				calls.Add((x, y, ThreadAccessors.A_EventInfo));
 				return 0L;
 			}));
 

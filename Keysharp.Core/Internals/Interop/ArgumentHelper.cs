@@ -228,8 +228,7 @@ namespace Keysharp.Internals.Interop
 			else if (Struct.TryResolvePointerClass(rawTag, out var pointerType, out var targetType))
 			{
 				//A struct pointer class passes the address of the struct value, materializing one when needed.
-				ConvertPtr(n, NormalizeStructPointerArg(parameters, p, n, valueIndex, pointerType, targetType));
-				return true;
+				return ConvertPtr(n, NormalizeStructPointerArg(parameters, p, n, valueIndex, pointerType, targetType));
 			}
 			else if (Struct.TryResolveClass(rawTag, out var structType))
 			{
@@ -275,15 +274,39 @@ namespace Keysharp.Internals.Interop
 				//The argument's own slot holds the value, seeded with whatever came in so that an in/out
 				//parameter carries it, and the call is handed that slot's address to write through. A string's
 				//slot points to its characters, which the call may replace with another string's (see CopyBack).
+				string text = null;
+
+				if ((code is NativeTypeCode.Str or NativeTypeCode.WStr or NativeTypeCode.AStr) && !p.CoerceString(out text))
+					return false;
+
 				ref var slot = ref slots[n];
-				slot.Storage = code switch
+
+				if (code == NativeTypeCode.Float)
 				{
-					NativeTypeCode.Float => BitConverter.SingleToInt32Bits(p.Af()),
-					NativeTypeCode.Double => BitConverter.DoubleToInt64Bits(p.Ad()),
-					NativeTypeCode.Str or NativeTypeCode.WStr => Pin(n, p.As()),
-					NativeTypeCode.AStr => Pin(n, AnsiCopy(p.As())),
-					_ => p.Al()
-				};
+					if (!p.CoerceDouble(out var f))
+						return false;
+
+					slot.Storage = BitConverter.SingleToInt32Bits((float)f);
+				}
+				else if (code == NativeTypeCode.Double)
+				{
+					if (!p.CoerceDouble(out var d))
+						return false;
+
+					slot.Storage = BitConverter.DoubleToInt64Bits(d);
+				}
+				else if (code is NativeTypeCode.Str or NativeTypeCode.WStr)
+					slot.Storage = Pin(n, text);
+				else if (code == NativeTypeCode.AStr)
+					slot.Storage = Pin(n, AnsiCopy(text));
+				else
+				{
+					if (!p.CoerceLong(out var l))
+						return false;
+
+					slot.Storage = l;
+				}
+
 				args[n] = (nint)Unsafe.AsPointer(ref slot.Storage);
 				AddOutput(n, valueIndex, code, isPtrObject ? OutputTarget.Ptr : OutputTarget.Value);
 				return true;
@@ -293,51 +316,82 @@ namespace Keysharp.Internals.Interop
 			{
 				case NativeTypeCode.Ptr:
 				case NativeTypeCode.UPtr:
-					ConvertPtr(n, p);
+					if (!ConvertPtr(n, p))
+						return false;
+
 					break;
 
 				case NativeTypeCode.Int:
 				case NativeTypeCode.HResult:
-					args[n] = p.Ai();
+					if (!p.CoerceInt(out var i))
+						return false;
+
+					args[n] = i;
 					break;
 
 				case NativeTypeCode.UInt:
-					args[n] = p.Aui();
+					if (!p.CoerceLong(out var ui))
+						return false;
+
+					args[n] = unchecked((uint)ui);
 					break;
 
 				case NativeTypeCode.Int64:
 				case NativeTypeCode.UInt64:
-					args[n] = p.Al();
+					if (!p.CoerceLong(out var l64))
+						return false;
+
+					args[n] = l64;
 					break;
 
 				case NativeTypeCode.Short:
-					args[n] = unchecked((short)p.Al());
+					if (!p.CoerceLong(out var lShort))
+						return false;
+
+					args[n] = unchecked((short)lShort);
 					break;
 
 				case NativeTypeCode.UShort:
-					args[n] = unchecked((ushort)p.Al());
+					if (!p.CoerceLong(out var lUShort))
+						return false;
+
+					args[n] = unchecked((ushort)lUShort);
 					break;
 
 				case NativeTypeCode.Char:
-					args[n] = unchecked((sbyte)p.Al());
+					if (!p.CoerceLong(out var lChar))
+						return false;
+
+					args[n] = unchecked((sbyte)lChar);
 					break;
 
 				case NativeTypeCode.UChar:
-					args[n] = unchecked((byte)p.Al());
+					if (!p.CoerceLong(out var lUChar))
+						return false;
+
+					args[n] = unchecked((byte)lUChar);
 					break;
 
 				case NativeTypeCode.Float:
 					floatingTypeMask |= 1UL << n;
+
 					//Deliberately the 32-bit pattern in the low half of the slot, NOT a double. The generated
 					//call loads every floating slot as a double, so these eight bytes reach the callee's XMM
 					//register verbatim -- and a float parameter is read from that register's low 32 bits, which
 					//is exactly where they are. Widening to a double here would move them and pass garbage.
-					args[n] = BitConverter.SingleToInt32Bits(p.Af());
+					if (!p.CoerceDouble(out var pf))
+						return false;
+
+					args[n] = BitConverter.SingleToInt32Bits((float)pf);
 					break;
 
 				case NativeTypeCode.Double:
 					floatingTypeMask |= 1UL << n;
-					args[n] = BitConverter.DoubleToInt64Bits(p.Ad());
+
+					if (!p.CoerceDouble(out var pd))
+						return false;
+
+					args[n] = BitConverter.DoubleToInt64Bits(pd);
 					break;
 
 				default:
@@ -373,7 +427,12 @@ namespace Keysharp.Internals.Interop
 
 				//A variable holding a number passes its string form, as AutoHotkey's does.
 				if (inner is long or double && p is VarRef { IsPlain: true })
-					inner = inner.As();
+				{
+					if (!inner.CoerceString(out var numText))
+						return false;
+
+					inner = numText;
+				}
 
 				//A variable is passed its own memory, which it takes its length from afterwards, as in AutoHotkey, which
 				//discards an AStr copy.
@@ -401,25 +460,32 @@ namespace Keysharp.Internals.Interop
 
 			//A StringBuffer holds UTF-16 text, which neither an ANSI string nor a BSTR is.
 			if (p is StringBuffer sb && code is NativeTypeCode.Str or NativeTypeCode.WStr)
-			{
-				ConvertPtr(n, sb);
-				return true;
-			}
+				return ConvertPtr(n, sb);
 
 			_ = Errors.TypeErrorOccurred(p, typeof(string));
 			return false;
 		}
 
-		private void ConvertPtr(int n, object p)
+		private bool ConvertPtr(int n, object p)
 		{
 			if (p is long lptr)
 				args[n] = lptr;
 			else if (p is string s)
-				args[n] = s.Al();
+			{
+				if (!s.CoerceLong(out var sl))
+					return false;
+
+				args[n] = sl;
+			}
 			else if (p is IPointable ip)//Before the Any test: a Buffer is both, and this reads the long without boxing it.
 				args[n] = ip.Ptr;
 			else if (p is Any kso && Script.GetPropertyValueOrNull(kso, "ptr") is object kptr)
-				args[n] = kptr.Al();
+			{
+				if (!kptr.CoerceLong(out var kl))
+					return false;
+
+				args[n] = kl;
+			}
 
 #if WINDOWS
 			else if (Marshal.IsComObject(p))
@@ -432,6 +498,8 @@ namespace Keysharp.Internals.Interop
 #endif
 			else
 				args[n] = Pin(n, p);
+
+			return true;
 		}
 
 		// A .NET string is already NUL terminated internally, so only the narrowed copy needs one added.

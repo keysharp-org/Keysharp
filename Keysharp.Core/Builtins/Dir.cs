@@ -20,8 +20,15 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if any failure happens while attempting to perform the operation.</exception>
 		public static object DirCopy(object source, object dest, object overwrite = null)
 		{
-			var s = Path.GetFullPath(source.As());
-			var d = Path.GetFullPath(dest.As());
+			if (!source.CoerceString(out var sourceText))
+				return DefaultObject;
+
+			var s = Path.GetFullPath(sourceText);
+
+			if (!dest.CoerceString(out var destText))
+				return DefaultObject;
+
+			var d = Path.GetFullPath(destText);
 			var o = overwrite.Ab();
 			CopyDirectory(s, d, o);
 			return DefaultObject;
@@ -36,9 +43,13 @@ namespace Keysharp.Builtins
 		public static object DirCreate(object dirName)
 		{
 			ThreadAccessors.A_LastError = 0;
+
+			if (!dirName.CoerceString(out var dir))
+				return DefaultObject;
+
 			try
 			{
-				_ = Directory.CreateDirectory(dirName.As());
+				_ = Directory.CreateDirectory(dir);
 				return DefaultObject;
 			}
 			catch (Exception ex)
@@ -60,9 +71,13 @@ namespace Keysharp.Builtins
 		public static object DirDelete(object dirName, object recurse = null)
 		{
 			ThreadAccessors.A_LastError = 0;
+
+			if (!dirName.CoerceString(out var dir))
+				return DefaultObject;
+
 			try
 			{
-				Directory.Delete(dirName.As(), recurse.Ab());
+				Directory.Delete(dir, recurse.Ab());
 				return DefaultObject;
 			}
 			catch (Exception ex)
@@ -90,9 +105,12 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static string DirExist(object filePattern)
 		{
+			if (!filePattern.CoerceString(out var pattern))
+				return DefaultErrorString;
+
 			try//This can throw if the directory doesn't exist.
 			{
-				foreach (var file in Drive.Glob(filePattern.As()))
+				foreach (var file in Drive.Glob(pattern))
 					return Conversions.FromFileAttribs(File.GetAttributes(file));
 			}
 			catch (Exception)
@@ -125,9 +143,10 @@ namespace Keysharp.Builtins
 		public static object DirMove(object source, object dest, object overwriteOrRename = null)
 		{
 			ThreadAccessors.A_LastError = 0;
-			var s = source.As();
-			var d = dest.As();
-			var flag = overwriteOrRename.As();
+
+			if (!source.CoerceString(out var s) || !dest.CoerceString(out var d) || !overwriteOrRename.CoerceString(out var flag))
+				return DefaultObject;
+
 			var rename = false;
 			var movein = false;
 
@@ -202,7 +221,10 @@ namespace Keysharp.Builtins
 		/// <param name="dirName">The name of the new working directory, which is assumed to be a subfolder of the current <see cref="A_WorkingDir"/> if an absolute path isn't specified.</param>
 		public static object SetWorkingDir(object dirName)
 		{
-			A_WorkingDir = dirName.As();
+			if (!dirName.CoerceString(out var dir))
+				return DefaultObject;
+
+			A_WorkingDir = dir;
 			return DefaultObject;
 		}
 
@@ -232,7 +254,9 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object SplitPath(object path, [ByRef] object outFileName = null, [ByRef] object outDir = null, [ByRef] object outExtension = null, [ByRef] object outNameNoExt = null, [ByRef] object outDrive = null)
 		{
-			var p = path.As();
+			if (!path.CoerceString(out var p))
+				return DefaultObject;
+
 			var result = (outFileName ?? outDir ?? outExtension ?? outNameNoExt ?? outDrive) == null
 				? new KeysharpObject()
 				: null;

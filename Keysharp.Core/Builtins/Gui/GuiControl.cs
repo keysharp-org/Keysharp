@@ -137,7 +137,10 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public object OnEvent(object eventName, object callback, object addRemove = null)
 			{
-				var e = eventName.As().ToLower();
+				if (!eventName.CoerceString(out var eventText))
+					return DefaultObject;
+
+				var e = eventText.ToLower();
 
 				if (gui == null || !gui.TryGetTarget(out var g))
 					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
@@ -149,7 +152,7 @@ namespace Keysharp.Builtins
 						"ItemCheck", "ItemEdit", "ItemSelect", "ItemExpand", "ItemFocus", "SelectionChange", "LinkClick",
 						"Navigated", "DocumentLoaded", "DocumentLoading", "OpenNewWindow", "DocumentTitleChanged", "MessageReceived"];
 					var supported = string.Join(", ", eventNames.Where(name => SupportsEvent(name.ToLowerInvariant())));
-					return Errors.ValueErrorOccurred($"A {Type} control does not support the {eventName.As()} event. Expected {supported}.");
+					return Errors.ValueErrorOccurred($"A {Type} control does not support the {Errors.Describe(eventName)} event. Expected {supported}.");
 				}
 
 				if (KeysharpForm.CheckedHandler(callback, g.form.eventObj, addRemove, EventArgCount(e), out var i) is not { } del)
@@ -280,7 +283,9 @@ namespace Keysharp.Builtins
 			/// </remarks>
 			public object OnMessage(object msgNumber, object callback, object addRemove = null)
 			{
-				var msg = msgNumber.Al();
+				if (!msgNumber.CoerceLong(out var msg))
+					return DefaultObject;
+
 				var result = HandleOnCommandNotify(msg, callback, addRemove, 4, ref messageHandlers);
 #if !WINDOWS
 
@@ -336,7 +341,8 @@ namespace Keysharp.Builtins
 
 					if (CallbackStop.NonEmpty(msgResult))
 					{
-						m.Result = (nint)msgResult.Al();
+						_ = msgResult.TryCoerceLong(out var resultCode);
+						m.Result = (nint)resultCode;
 						return true;
 					}
 				}
@@ -390,8 +396,8 @@ namespace Keysharp.Builtins
 						if (Conversions.TryParseColor(s, out var c))
 							_control.BackColor = c;
 					}
-					else
-						_control.BackColor = Color.FromArgb((int)(value.Al() | 0xFF000000));
+					else if (value.CoerceLong(out var l))
+						_control.BackColor = Color.FromArgb((int)(l | 0xFF000000));
 
 					if (ParentForm.Visible == true)
 						_control.Refresh();
@@ -423,7 +429,7 @@ namespace Keysharp.Builtins
 					}
 					else if (val != null)
 					{
-						var i = (int)val.Al();
+						_ = val.TryCoerceInt(out var i);
 						i--;
 
 						if (i >= 0 && i < tc.TabPages.Count)
@@ -452,7 +458,8 @@ namespace Keysharp.Builtins
 				//The documentation says "Unlike ControlChooseIndex, this method does not raise a Change or DoubleClick event."
 				//But we don't raise click events anyway here, so it shouldn't matter.
 				var s = value as string;
-				var i = value.Ai() - 1;
+				_ = value.TryCoerceInt(out var i);
+				i--;
 
 				if (_control is KeysharpTabControl tc)
 				{
@@ -499,8 +506,13 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpTreeView tv)
 				{
-					var id = itemID.Al();
-					var attr = attribute.As().Trim();
+					if (!itemID.CoerceLong(out var id))
+						return 0L;
+
+					if (!attribute.CoerceString(out var attrText))
+						return 0L;
+
+					var attr = attrText.Trim();
 
 					if (attr.Length > 0 && TreeViewHelper.TV_FindNode(tv, id) is TreeNode node)
 					{
@@ -520,7 +532,9 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpTreeView tv)
 				{
-					var id = itemID.Al();
+					if (!itemID.CoerceLong(out var id))
+						return 0L;
+
 					var node = TreeViewHelper.TV_FindNode(tv, id);
 					return node == null ? 0 : node.Nodes.Count == 0 ? 0L : node.FirstNode.Handle.ToInt64();
 				}
@@ -541,7 +555,9 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpTreeView tv)
 				{
-					var id = itemID.Al();
+					if (!itemID.CoerceLong(out var id))
+						return DefaultObject;
+
 					return TreeViewHelper.TV_FindNode(tv, id);
 				}
 
@@ -552,7 +568,9 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpTreeView tv)
 				{
-					var id = itemID.Al();
+					if (!itemID.CoerceLong(out var id))
+						return DefaultErrorLong;
+
 					var node = TreeViewHelper.TV_FindNode(tv, id);
 					return node == null || node.Parent == null ? 0L : (node.Parent is TreeNode tn ? tn.Handle.ToInt64() : 0L);
 				}
@@ -573,7 +591,9 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpTreeView tv)
 				{
-					var id = itemID.Al();
+					if (!itemID.CoerceLong(out var id))
+						return DefaultErrorLong;
+
 					var node = TreeViewHelper.TV_FindNode(tv, id);
 					return node == null || node.PrevNode == null ? 0L : node.PrevNode.Handle.ToInt64();
 				}
@@ -587,7 +607,9 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpTreeView tv)
 				{
-					var id = rowNumber.Al();
+					if (!rowNumber.CoerceLong(out var id))
+						return DefaultErrorString;
+
 					var node = TreeViewHelper.TV_FindNode(tv, id);
 
 					if (node != null)
@@ -595,8 +617,12 @@ namespace Keysharp.Builtins
 				}
 				else if (_control is KeysharpListView lv)
 				{
-					var row = rowNumber.Ai();
-					var col = columnNumber.Ai(1);
+					if (!rowNumber.CoerceInt(out var row))
+						return DefaultErrorString;
+
+					if (!columnNumber.CoerceInt(out var col, 1))
+						return DefaultErrorString;
+
 					row--;
 					col = Math.Max(col - 1, 0);
 
@@ -627,7 +653,9 @@ namespace Keysharp.Builtins
 
 			public object SetFont(object options = null, object fontName = null)
 			{
-				_control.SetFont(Conversions.ParseFontOptions(options is Ks.Font f ? f.fontOptions : options, fontName));
+				if (Conversions.ParseFontOptions(options is Ks.Font f ? f.fontOptions : options, fontName) is { } fontOptions)
+					_control.SetFont(fontOptions);
+
 				return DefaultObject;
 			}
 

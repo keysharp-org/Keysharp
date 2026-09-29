@@ -23,8 +23,9 @@ namespace Keysharp.Builtins
 		public static object RegDelete(object keyName = null, object valueName = null)
 		{
 			ThreadAccessors.A_LastError = 0;
-			var keyname = keyName.As();
-			var valname = valueName.As();
+			if (!keyName.CoerceString(out var keyname) || !valueName.CoerceString(out var valname))
+				return DefaultObject;
+
 			var valtype = "";
 
 			try
@@ -66,7 +67,9 @@ namespace Keysharp.Builtins
 		public static object RegDeleteKey(object keyName = null)
 		{
 			ThreadAccessors.A_LastError = 0;
-			var keyname = keyName.As();
+			if (!keyName.CoerceString(out var keyname))
+				return DefaultObject;
+
 			string valname = "", valtype = "";
 
 			try
@@ -118,8 +121,9 @@ namespace Keysharp.Builtins
 		public static object RegRead(object keyName = null, object valueName = null, object @default = null)
 		{
 			ThreadAccessors.A_LastError = 0;
-			var keyname = keyName.As();
-			var valname = valueName.As();
+			if (!keyName.CoerceString(out var keyname) || !valueName.CoerceString(out var valname))
+				return DefaultObject;
+
 			var valtype = "";
 
 			try
@@ -178,9 +182,9 @@ namespace Keysharp.Builtins
 		{
 			ThreadAccessors.A_LastError = 0;
 			var val = value;
-			var valtype = valueType.As();
-			var keyname = keyName.As();
-			var valname = valueName.As();
+
+			if (!valueType.CoerceString(out var valtype) || !keyName.CoerceString(out var keyname) || !valueName.CoerceString(out var valname))
+				return DefaultObject;
 
 			try
 			{
@@ -231,7 +235,11 @@ namespace Keysharp.Builtins
 		/// Internal helper to return the registry view for the currently selected mode, 32 or 64 bit.
 		/// </summary>
 		/// <returns>The <see cref="RegistryView"> for the currently selected mode.</returns>
-		internal static RegistryView GetRegView() => ThreadAccessors.A_RegView.Al() == 32L ? RegistryView.Registry32 : RegistryView.Registry64;
+		internal static RegistryView GetRegView()
+		{
+			_ = ThreadAccessors.A_RegView.TryCoerceLong(out var view);
+			return view == 32L ? RegistryView.Registry32 : RegistryView.Registry64;
+		}
 
 		/// <summary>
 		/// With KeyName omitted inside a registry loop, the key the loop's current item names, as in AutoHotkey: a subkey

@@ -35,8 +35,12 @@ namespace Keysharp.Internals.DBus
 		{
 			var inNodes = DBusSignature.Parse(inSignature);
 			var outNodes = DBusSignature.Parse(outSignature);
+
+			if (BuildCall(connection, destination, path, iface, member, inSignature, inNodes, args) is not { } message)
+				return null;
+
 			var task = connection.CallMethodAsync(
-						   BuildCall(connection, destination, path, iface, member, inSignature, inNodes, args),
+						   message,
 						   static (DBusMessage m, object state) =>
 			{
 				var reader = m.GetBodyReader();
@@ -51,8 +55,12 @@ namespace Keysharp.Internals.DBus
 		{
 			var connection = DBusConnections.Get(bus);
 			var inNodes = DBusSignature.Parse(inSignature);
+
+			if (BuildCall(connection, destination, path, iface, member, inSignature, inNodes, args) is not { } message)
+				return null;
+
 			var task = connection.CallMethodAsync(
-						   BuildCall(connection, destination, path, iface, member, inSignature, inNodes, args),
+						   message,
 						   static (DBusMessage m, object state) =>
 			{
 				var reader = m.GetBodyReader();
@@ -75,8 +83,9 @@ namespace Keysharp.Internals.DBus
 					@interface: iface,
 					member: member,
 					signature: string.IsNullOrEmpty(inSignature) ? null : inSignature);
-				DBusMarshal.WriteArguments(ref writer, inNodes, args);
-				return writer.CreateMessage();
+
+				// Null when the script continued a conversion error, so no call is made.
+				return DBusMarshal.TryWriteArguments(ref writer, inNodes, args) ? writer.CreateMessage() : null;
 			}
 			finally
 			{
@@ -111,7 +120,10 @@ namespace Keysharp.Internals.DBus
 			if (valueNodes.Length != 1)
 				throw new ArgumentException($"Property '{name}' has an unusable type '{type}'.");
 
-			var task = connection.CallMethodAsync(Build());
+			if (Build() is not { } message)
+				return;
+
+			var task = connection.CallMethodAsync(message);
 			_ = Await(task, timeoutMs, $"{PropertiesInterface}.Set({name})");
 
 			MessageBuffer Build()
@@ -126,8 +138,7 @@ namespace Keysharp.Internals.DBus
 					writer.WriteString(iface);
 					writer.WriteString(name);
 					writer.WriteSignature(type);
-					DBusMarshal.Write(ref writer, valueNodes[0], value);
-					return writer.CreateMessage();
+					return DBusMarshal.TryWrite(ref writer, valueNodes[0], value) ? writer.CreateMessage() : null;
 				}
 				finally
 				{

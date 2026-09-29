@@ -44,7 +44,10 @@ namespace Keysharp.Builtins
 				return Errors.TargetErrorOccurred(
 						"Cannot await work posted to this same real thread while the current thread is uninterruptible.");
 
-			if (!Keysharp.Internals.Flow.WaitForCompletion(task, timeout.Ai(-1)))
+			if (!timeout.CoerceInt(out var timeoutMs, -1))
+				return DefaultObject;
+
+			if (!Keysharp.Internals.Flow.WaitForCompletion(task, timeoutMs))
 				return Errors.TimeoutErrorOccurred("Await timed out.");
 
 			if (task.IsCanceled)

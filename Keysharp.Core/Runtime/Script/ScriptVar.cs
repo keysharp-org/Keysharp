@@ -76,7 +76,10 @@ namespace Keysharp.Runtime
 		internal void Set(object value)
 		{
 			if (builtin != null)
-				builtin.SetValueUnwrapped(null, ArgCoercer.CoerceValue(value, builtin.PropertyType));
+			{
+				if (ArgCoercer.TryCoerceValue(value, builtin.PropertyType, boundary: false, out var coerced))
+					builtin.SetValueUnwrapped(null, coerced);
+			}
 			else
 				holder.SetProp(null, value);
 		}

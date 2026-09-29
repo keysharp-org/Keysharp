@@ -31,34 +31,41 @@ namespace Keysharp.Builtins
 #endif
 		}
 
-		internal static (bool, nint) CtrlTonint(object ctrl)
+		/// <summary>
+		/// The handle a Control parameter gives, directly or as an object's Hwnd; <paramref name="parsed"/> is false
+		/// for a ClassNN or text. False when reading the Hwnd raised an error the script continued.
+		/// </summary>
+		internal static bool TryCtrlTonint(object ctrl, out bool parsed, out nint handle)
 		{
-			if (ctrl == null)
+			parsed = false;
+			handle = 0;
+
+			if (ctrl is long l)
 			{
-				return (false, 0);
+				parsed = true;
+				handle = new nint(l);
 			}
-			else if (ctrl is long l)
-			{
-				return (true, new nint(l));
-			}
-			else if (!(ctrl is string))
+			else if (ctrl != null && ctrl is not string)
 			{
 				var hwnd = Script.GetPropertyValueOrNull(ctrl, "Hwnd");
 
 				if (hwnd == null)
 				{
 					_ = Errors.PropertyErrorOccurred($"Object did not have an Hwnd property.");
-					return (false, 0);
+					return false;
 				}
 
-				if (hwnd is long ll)
-					return (true, new nint(ll));
+				if (hwnd is not long ll)
+				{
+					_ = Errors.TypeErrorOccurred(hwnd, typeof(long));
+					return false;
+				}
 
-				_ = Errors.TypeErrorOccurred(hwnd, typeof(long));
-				return (false, 0);
+				parsed = true;
+				handle = new nint(ll);
 			}
 
-			return (false, 0);
+			return true;
 		}
 
 		internal static void DoDelayedAction(Action act)
@@ -164,7 +171,7 @@ namespace Keysharp.Builtins
 						if (Options.TryParse(s, "+", ref temp)) { exVal |= temp; }
 						else if (Options.TryParse(s, "-", ref temp)) { exVal &= ~temp; }
 						else if (Options.TryParse(s, "^", ref temp)) { exVal ^= temp; }
-						else exVal = val.Al();
+						else _ = val.TryCoerceLong(out exVal);
 					}
 
 					if (!Platform.Window.TrySetExStyle(win.Handle, exVal))

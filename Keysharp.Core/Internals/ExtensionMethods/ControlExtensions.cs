@@ -613,7 +613,9 @@ namespace System.Windows.Forms
 		/// <param name="format">The format to use, such as "shortdate", "longdate", "time" or "".</param>
 		internal static void SetFormat(this DateTimePicker dtp, object format)
 		{
-			var fmt = format.As();
+			if (!format.CoerceString(out var fmt))
+				return;
+
 #if WINDOWS
 			if (string.Compare(fmt, "shortdate", true) == 0)
 				dtp.Format = DateTimePickerFormat.Short;

@@ -18,7 +18,7 @@ namespace Keysharp.Builtins
 		/// <param name="str">The format string.</param>
 		/// <param name="args">The arguments to pass to the format string.</param>
 		/// <returns>The newly formatted string.</returns>
-		public static string FormatCs(object str, params object[] args) => string.Format(str.As(), nullPlaceholder.Concat(args));
+		public static string FormatCs(object str, params object[] args) => str.CoerceString(out var format) ? string.Format(format, nullPlaceholder.Concat(args)) : "";
 
 		/// <summary>
 		/// Makes all line endings in a string match the value passed in, or the default newline (DefaultNewLine).
@@ -26,7 +26,8 @@ namespace Keysharp.Builtins
 		/// <param name="str">The string whose line endings will be normalized.</param>
 		/// <param name="endOfLine">The line ending character to use. Default: DefaultNewLine.</param>
 		/// <returns>A new copy of the string with all line endings set to the specified value.</returns>
-		public static string ReplaceLineEndings(object str, object endOfLine = null) => Conversions.ReplaceLineEndings(str, endOfLine);
+		public static string ReplaceLineEndings(object str, object endOfLine = null) =>
+			str.CoerceString(out var text) && endOfLine.CoerceString(out var newLine, DefaultNewLine) ? Conversions.ReplaceLineEndings(text, newLine) : "";
 	}
 
 	internal class StringsData
@@ -54,7 +55,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="number">A Unicode value.</param>
 		/// <returns>The string corresponding to number. This is always a single Unicode character.</returns>
-		public static string Chr(object number) => char.ConvertFromUtf32(number.Ai());
+		public static string Chr(object number) => number.CoerceInt(out var n) ? char.ConvertFromUtf32(n) : "";
 
 		/// <summary>
 		/// Formats a string using a format string containing placeholders (e.g. "{1:05d}" or "{}")
@@ -65,7 +66,9 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static string Format(object formatStr, params object[] args)
 		{
-			string format = formatStr.As();
+			if (!formatStr.CoerceString(out var format))
+				return "";
+
 			StringBuilder result = new StringBuilder();
 			int pos = 0;
 			int nextArg = 0; // if no explicit index is given, use the next argument.
@@ -222,8 +225,12 @@ namespace Keysharp.Builtins
 				}
 
 				pos++; // skip the closing '}'
+
 				// --- Format the argument according to the parsed specifier ---
-				string formattedArg = FormatArgument(args[argIndex], spec);
+				if (!TryCoerceArgument(args[argIndex], spec.Type, out var arg))
+					return "";
+
+				string formattedArg = FormatArgument(arg, spec);
 
 				// If a custom string–transformation was requested (U, L, or T), apply it.
 				if (spec.CustomFormat != '\0' && spec.Type == 's')
@@ -328,8 +335,9 @@ namespace Keysharp.Builtins
 		/// <returns>The formatted date/time string</returns>
 		public static string FormatTime([UserDeclaredName("YYYYMMDDHH24MISS")] object timestamp = null, object format = null)
 		{
-			var s = timestamp.As();
-			var f = format.As();
+			if (!timestamp.CoerceString(out var s) || !format.CoerceString(out var f))
+				return "";
+
 			DateTime time;
 			var output = string.Empty;
 			var splits = s.Split(' ');
@@ -484,20 +492,22 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static long InStr(object haystack, object needle, object caseSense = null, object startingPos = null, object occurrence = null)
 		{
-			var input = haystack.As();
-			var n = needle.As();
-			var comp = caseSense.As();
+			if (!haystack.CoerceString(out var input) || !needle.CoerceString(out var n) || !caseSense.CoerceString(out var comp))
+				return 0L;
 
 			if (string.IsNullOrEmpty(n))
 				return (long)Errors.ValueErrorOccurred("Search string was empty", null, DefaultErrorLong);
 
-			var offset = startingPos == null ? 1L : startingPos.Al();
-			var o = occurrence == null ? 1 : occurrence.Ai();
+			if (!startingPos.CoerceLong(out var offset, 1L) || !occurrence.CoerceInt(out var o, 1))
+				return 0L;
 
 			if (offset == 0 || o == 0)
 				return (long)Errors.ValueErrorOccurred("StartingPos and Occurrence must be non-zero", null, DefaultErrorLong);
 
-			var cs = comp != "" ? CaseCompare.ForSearch(Conversions.ParseComparisonOption(comp)) : StringComparison.OrdinalIgnoreCase;
+			if (!Conversions.TryParseComparisonOption(comp, out var cs))
+				return 0L;
+
+			cs = CaseCompare.ForSearch(cs);
 
 			// As AHK's BIF_InStr: a negative StartingPos counts from the end and, with Occurrence omitted, searches right
 			// to left. A position outside the string is clamped to it, and occurrences never overlap. Right to left, a
@@ -542,7 +552,8 @@ namespace Keysharp.Builtins
 		/// Otherwise, specify a list of characters (case-sensitive) to exclude from the beginning of the specified string.
 		/// </param>
 		/// <returns>Returns the trimmed version of the specified string.</returns>
-		public static string LTrim(object @string, object omitChars = null) => @string.As().TrimStart(omitChars.As(" \t").ToCharArray());
+		public static string LTrim(object @string, object omitChars = null) =>
+		@string.CoerceString(out var s) && omitChars.CoerceString(out var omit, " \t") ? s.TrimStart(omit.ToCharArray()) : "";
 
 		/// <summary>
 		/// Returns the ordinal value (numeric character code) of the first character in the specified string.
@@ -555,7 +566,9 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static long Ord(object @string)
 		{
-			var s = @string.As();
+			if (!@string.CoerceString(out var s))
+				return 0L;
+
 			return !string.IsNullOrEmpty(s) ? char.ConvertToUtf32(s, 0) : 0L;
 		}
 
@@ -567,7 +580,8 @@ namespace Keysharp.Builtins
 		/// Otherwise, specify a list of characters (case-sensitive) to exclude from the endof the specified string.
 		/// </param>
 		/// <returns>Returns the trimmed version of the specified string.</returns>
-		public static string RTrim(object @string, object omitChars = null) => @string.As().TrimEnd(omitChars.As(" \t").ToCharArray());
+		public static string RTrim(object @string, object omitChars = null) =>
+		@string.CoerceString(out var s) && omitChars.CoerceString(out var omit, " \t") ? s.TrimEnd(omit.ToCharArray()) : "";
 
 		/// <summary>
 		/// Arranges a variable's contents in alphabetical, numerical, or random order (optionally removing duplicates).
@@ -654,8 +668,10 @@ namespace Keysharp.Builtins
 		public static string Sort(object @string, object options = null, object callback = null)
 		{
 			object function = null;
-			var input = @string.As();
-			var opts = options.As();
+
+			if (!@string.CoerceString(out var input) || !options.CoerceString(out var opts))
+				return "";
+
 			var splits = opts.Split(' ');
 			var numeric = false;
 			var random = false;
@@ -926,14 +942,16 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static long StrCompare(object string1, object string2, object caseSense = null)
 		{
-			var s1 = string1.As();
-			var s2 = string2.As();
-			var s3 = caseSense.As();
+			if (!string1.CoerceString(out var s1) || !string2.CoerceString(out var s2) || !caseSense.CoerceString(out var s3))
+				return 0L;
 
 			if (s3.Equals("Logical", StringComparison.OrdinalIgnoreCase))
 				return NaturalComparer.NaturalCompare(s1, s2);
 
-			return CaseCompare.Compare(s1, s2, Conversions.ParseComparisonOption(s3, additionalDiagnosticChoice: "Logical"));
+			if (!Conversions.TryParseComparisonOption(s3, out var comparison, additionalDiagnosticChoice: "Logical"))
+				return 0L;
+
+			return CaseCompare.Compare(s1, s2, comparison);
 		}
 
 		/// <summary>
@@ -961,8 +979,8 @@ namespace Keysharp.Builtins
 
 			if (hasThree)
 			{
-				len = (length is null ? long.MinValue : length.ToLong());
-				enc = Files.GetEncoding(encoding.As());
+				if ((length is not null && !length.CoerceLong(out len)) || !Files.TryGetEncoding(encoding, out enc))
+					return "";
 			}
 			else//Second argument could have been either length or encoding.
 			{
@@ -971,7 +989,10 @@ namespace Keysharp.Builtins
 				if (l != null)
 					len = l.Value;
 				else if (length is string encstr)
-					enc = Files.GetEncoding(encstr);
+				{
+					if (!Files.TryGetEncoding(encstr, out enc))
+						return "";
+				}
 				else
 					enc = Encoding.Unicode;
 			}
@@ -1044,14 +1065,14 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="string">The string whose contents will be measured.</param>
 		/// <returns>The length of the specified string.</returns>
-		public static long StrLen(object @string) => @string.As().Length;
+		public static long StrLen(object @string) => @string.CoerceString(out var s) ? s.Length : 0L;
 
 		/// <summary>
 		/// Converts a string to lowercase.
 		/// </summary>
 		/// <param name="string">The string to convert to lowercase.</param>
 		/// <returns>The newly converted version of the string.</returns>
-		public static string StrLower(object @string) => @string.As().ToLowerInvariant();
+		public static string StrLower(object @string) => @string.CoerceString(out var s) ? s.ToLowerInvariant() : "";
 
 		/// <summary>
 		/// Returns the address of a string. A variable, which a direct call passes by reference, has memory of its own,
@@ -1115,7 +1136,9 @@ namespace Keysharp.Builtins
 			if (obj.Length > 0 && obj[0] != null)
 			{
 				// Raw string (no terminator here; we handle it explicitly below).
-				var s = obj.As(0);
+				if (!obj[0].CoerceString(out var s))
+					return 0L;
+
 				var len = long.MinValue;
 				var encoding = Encoding.Unicode;
 				nint ptr = 0;
@@ -1137,7 +1160,9 @@ namespace Keysharp.Builtins
 						ptr = new nint(l);
 					else if (obj[1] is string ec)
 					{
-						var enc = Files.GetEncoding(ec);
+						if (!Files.TryGetEncoding(ec, out var enc))
+							return 0L;
+
 						return enc.GetByteCount(s) + enc.GetByteCount("\0");
 					}
 				}
@@ -1149,8 +1174,10 @@ namespace Keysharp.Builtins
 				{
 					if (obj.Length == 4)
 					{
-						encoding = Files.GetEncoding(obj[3]);
-						var lengthChars = obj[2].Al(0);
+						if (!Files.TryGetEncoding(obj[3], out encoding))
+							return 0L;
+
+						_ = obj[2].TryCoerceLong(out var lengthChars, 0);
 						lengthProvided = true;
 
 						if (lengthChars <= 0)
@@ -1175,7 +1202,9 @@ namespace Keysharp.Builtins
 					// 3-parameter with Encoding (String, Target, Encoding)
 					else
 					{
-						encoding = Files.GetEncoding(obj[2]);
+						if (!Files.TryGetEncoding(obj[2], out encoding))
+							return 0L;
+
 						len = long.MinValue;
 					}
 				}
@@ -1286,12 +1315,17 @@ namespace Keysharp.Builtins
 		/// <returns>The newly modified string.</returns>
 		public static string StrReplace(object haystack, object needle, object replaceText = null, object caseSense = null, [ByRef] object outputVarCount = null, object limit = null)
 		{
-			var input = haystack.As();
-			var search = needle.As();
-			var replace = replaceText.As();
-			var comp = caseSense.As("Off");
-			var lim = limit.Al(-1);
-			var compare = CaseCompare.ForSearch(Conversions.ParseComparisonOption(comp));
+			if (!haystack.CoerceString(out var input) || !needle.CoerceString(out var search) || !replaceText.CoerceString(out var replace)
+					|| !caseSense.CoerceString(out var comp, "Off"))
+				return "";
+
+			if (!limit.CoerceLong(out var lim, -1))
+				return "";
+
+			if (!Conversions.TryParseComparisonOption(comp, out var compare))
+				return "";
+
+			compare = CaseCompare.ForSearch(compare);
 			var z = input.Length == 0 || search.Length == 0 || lim == 0 ? -1 : input.IndexOf(search, compare);
 
 			if (z < 0)
@@ -1349,72 +1383,96 @@ namespace Keysharp.Builtins
 		public static Array StrSplit(object @string, object delimiters = null, object omitChars = null, object maxParts = null)
 		{
 			List<string> del = new ();
-			string trim = string.Empty;
 
-			if (@string is string input)
+			if (!@string.CoerceString(out var input))
+				return null;
+
+			if (!maxParts.CoerceInt(out var count, -1))
+				return null;
+
+			if (delimiters is IList il)
 			{
-				var count = maxParts.Ai(-1);
+				foreach (var id in il.Flatten(false))
+				{
+					if (!id.CoerceString(out var delimiter))
+						return null;
 
-				if (delimiters is string d)
+					del.Add(delimiter);
+				}
+			}
+			else
+			{
+				if (!delimiters.CoerceString(out var d))
+					return null;
+
+				if (d.Length > 0)
 					del.Add(d);
-				else if (delimiters is IList il)
-					foreach (var id in il.Flatten(false))
-						del.Add(id.ToString());
-
-				if (omitChars is string t)
-					trim = t;
-				else if (omitChars is IList il)
-					foreach (var id in il.Flatten(false))
-						trim += id.ToString();
-
-				if (del.Count == 0)
-				{
-					var list = new List<string>(input.Length);
-
-					if (count > 0)
-					{
-						int i = 0, ct = 0;
-
-						for (; ct < count - 1 && i < input.Length; i++)
-						{
-							var ch = input[i];
-
-							if (!trim.Contains(ch))
-							{
-								list.Add(ch.ToString());
-								ct++;
-							}
-						}
-
-						if (ct < input.Length && i < input.Length)
-						{
-							list.Add(input.Substring(i));
-						}
-					}
-					else
-					{
-						foreach (var letter in input)
-							if (!trim.Contains(letter))
-								list.Add(letter.ToString());
-					}
-
-					return new Array(list.Cast<object>());
-				}
-
-				var output = count > 0 ? input.Split(del.ToArray(), count, StringSplitOptions.None) : input.Split(del.ToArray(), StringSplitOptions.None);
-
-				if (trim.Length != 0)
-				{
-					var omit = trim.ToCharArray();
-
-					for (var i = 0; i < output.Length; i++)
-						output[i] = output[i].Trim(omit);
-				}
-
-				return new Array(output.Cast<object>());
 			}
 
-			return [];
+			string trim;
+
+			if (omitChars is IList ol)
+			{
+				var sb = new StringBuilder();
+
+				foreach (var id in ol.Flatten(false))
+				{
+					if (!id.CoerceString(out var chars))
+						return null;
+
+					_ = sb.Append(chars);
+				}
+
+				trim = sb.ToString();
+			}
+			else if (!omitChars.CoerceString(out trim))
+				return null;
+
+			if (del.Count == 0)
+			{
+				var list = new List<string>(input.Length);
+
+				if (count > 0)
+				{
+					int i = 0, ct = 0;
+
+					for (; ct < count - 1 && i < input.Length; i++)
+					{
+						var ch = input[i];
+
+						if (!trim.Contains(ch))
+						{
+							list.Add(ch.ToString());
+							ct++;
+						}
+					}
+
+					if (ct < input.Length && i < input.Length)
+					{
+						list.Add(input.Substring(i));
+					}
+				}
+				else
+				{
+					foreach (var letter in input)
+						if (!trim.Contains(letter))
+							list.Add(letter.ToString());
+				}
+
+				return new Array(list.Cast<object>());
+			}
+
+			var output = count > 0 ? input.Split(del.ToArray(), count, StringSplitOptions.None) : input.Split(del.ToArray(), StringSplitOptions.None);
+
+			if (trim.Length != 0)
+			{
+				var omit = trim.ToCharArray();
+
+				for (var i = 0; i < output.Length; i++)
+					output[i] = output[i].Trim(omit);
+			}
+
+			return new Array(output.Cast<object>());
 		}
 
 		/// <summary>
@@ -1422,14 +1480,14 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="string">The string to convert to title case.</param>
 		/// <returns>The newly converted version of the string.</returns>
-		public static string StrTitle(object @string) => CultureInfo.CurrentCulture.TextInfo.ToTitleCase(@string.As());
+		public static string StrTitle(object @string) => @string.CoerceString(out var s) ? CultureInfo.CurrentCulture.TextInfo.ToTitleCase(s) : "";
 
 		/// <summary>
 		/// Converts a string to uppercase.
 		/// </summary>
 		/// <param name="string">The string to convert to uppercase.</param>
 		/// <returns>The newly converted version of the string.</returns>
-		public static string StrUpper(object @string) => @string.As().ToUpperInvariant();
+		public static string StrUpper(object @string) => @string.CoerceString(out var s) ? s.ToUpperInvariant() : "";
 
 		/// <summary>
 		/// Retrieves one or more characters from the specified position in a string.
@@ -1449,9 +1507,11 @@ namespace Keysharp.Builtins
 		/// <returns>This function returns the requested substring of the specified string.</returns>
 		public static string SubStr(object @string, object startingPos = null, object length = null)
 		{
-			var input = @string.As();
-			var index = startingPos.Ai(1);
-			var len = length.Ai(int.MaxValue);
+			if (!@string.CoerceString(out var input))
+				return "";
+
+			if (!startingPos.CoerceInt(out var index, 1) || !length.CoerceInt(out var len, int.MaxValue))
+				return "";
 
 			if (string.IsNullOrEmpty(input) || len == 0 || index == 0 || index > input.Length)
 				return DefaultErrorString;
@@ -1486,7 +1546,8 @@ namespace Keysharp.Builtins
 		/// Otherwise, specify a list of characters (case-sensitive) to exclude from the beginning and end of the specified string.
 		/// </param>
 		/// <returns>Returns the trimmed version of the specified string.</returns>
-		public static string Trim(object @string, object omitChars = null) => @string.As().Trim(omitChars.As(" \t").ToCharArray());
+		public static string Trim(object @string, object omitChars = null) =>
+		@string.CoerceString(out var s) && omitChars.CoerceString(out var omit, " \t") ? s.Trim(omit.ToCharArray()) : "";
 
 		/// <summary>
 		/// Enlarges a variable's capacity or frees its memory, as AutoHotkey does. The capacity belongs to the memory the
@@ -1501,7 +1562,7 @@ namespace Keysharp.Builtins
 		public static object VarSetStrCapacity([ByRef] object targetVar, object requestedCapacity = null)
 		{
 			Refs.Demand(targetVar);
-			var capacity = requestedCapacity == null ? 0 : requestedCapacity.Al();
+			_ = requestedCapacity.TryCoerceLong(out var capacity, 0);
 			var memory = (targetVar as VarRef)?.Memory;
 
 			if (requestedCapacity == null || capacity == -1)
@@ -1510,7 +1571,12 @@ namespace Keysharp.Builtins
 
 				//As in AutoHotkey, -1 measures a number by its string form, while a query needs a string.
 				if ((value ?? "") is not string text)
-					return value is long or double && requestedCapacity != null ? (long)value.As().Length : Errors.TypeErrorOccurred(value, typeof(string), 0L);
+				{
+					if (value is not (long or double) || requestedCapacity == null)
+						return Errors.TypeErrorOccurred(value, typeof(string), 0L);
+
+					return value.CoerceString(out var number) ? (long)number.Length : DefaultObject;
+				}
 
 				if (requestedCapacity == null)
 					return (long)Math.Max(memory?.Room ?? 0, text.Length);
@@ -1571,8 +1637,11 @@ namespace Keysharp.Builtins
 				return version.Contains('.') ? version : version + ".0";
 			}
 
-			var v1 = TrimVersionPrefix(versionA.As().Trim());
-			var v2 = versionB.As().Trim();
+			if (!versionA.CoerceString(out var versionAText) || !versionB.CoerceString(out var versionBText))
+				return 0L;
+
+			var v1 = TrimVersionPrefix(versionAText.Trim());
+			var v2 = versionBText.Trim();
 			Exception ex = null;
 
 			//SemVer cannot parse a C# style version string with 4 numbers.
@@ -1801,7 +1870,11 @@ namespace Keysharp.Builtins
 		/// u, o, x, X and p. A negative value is its two's complement, the way AutoHotkey formats one, so
 		/// <c>Format("{:X}", -1)</c> is FFFFFFFFFFFFFFFF and a handle whose high bit is set keeps all 64 bits.
 		/// </summary>
-		private static ulong ToUnsignedBits(object arg) => unchecked((ulong)arg.Al());
+		private static ulong ToUnsignedBits(object arg)
+		{
+			_ = arg.TryCoerceLong(out var l);
+			return unchecked((ulong)l);
+		}
 
 		/// <summary>
 		/// Whether a conversion takes a number, which is every one of them except s.
@@ -1835,24 +1908,48 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Formats one argument according to the given SpecInfo.
+		/// Converts a Format() argument to what its conversion takes: a number for a numeric one, which AutoHotkey
+		/// rejects rather than substituting a value the script did not supply, and text for s. Coercing it here also
+		/// spares each case of <see cref="FormatArgument"/> a second parse. False once the script continued the error.
+		/// </summary>
+		private static bool TryCoerceArgument(object arg, char type, out object value)
+		{
+			value = arg;
+
+			if (!IsNumericSpec(type))
+			{
+				if (!arg.CoerceString(out var text))
+					return false;
+
+				value = text;
+			}
+			else if (IsFloatSpec(type))
+			{
+				if (arg is not double)
+				{
+					if (!arg.CoerceDouble(out var d))
+						return false;
+
+					value = d;
+				}
+			}
+			else if (arg is not long)
+			{
+				if (!arg.CoerceLong(out var l))
+					return false;
+
+				value = l;
+			}
+
+			return true;
+		}
+
+		/// <summary>
+		/// Formats one argument, as <see cref="TryCoerceArgument"/> converted it, according to the given SpecInfo.
 		/// (This method “emulates” many of the printf–style conversions.)
 		/// </summary>
 		private static string FormatArgument(object arg, SpecInfo spec)
 		{
-			// A numeric conversion requires a number, which AutoHotkey rejects rather than substituting a value
-			// the script did not supply. Coercing it here also spares each case below a second parse.
-			if (IsNumericSpec(spec.Type))
-			{
-				if (IsFloatSpec(spec.Type))
-				{
-					if (arg is not double)
-						arg = arg.ToDouble();
-				}
-				else if (arg is not long)
-					arg = arg.ToLong();
-			}
-
 			switch (spec.Type)
 			{
 				// Integer formats – d or i.
@@ -2111,7 +2208,7 @@ namespace Keysharp.Builtins
 				case 's':
 				default:
 				{
-					string s = arg?.ToString() ?? "";
+					var s = (string)arg;
 
 					// If a precision is given, use it as the maximum number of characters.
 					if (spec.Precision.HasValue && s.Length > spec.Precision.Value)

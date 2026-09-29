@@ -17,9 +17,9 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if any file errors occur.</exception>
 		public static object IniDelete(object filename, object section, object key = null)
 		{
-			var file = filename.As();
-			var s = section.As();
-			var k = key.As();
+			if (!filename.CoerceString(out var file) || !section.CoerceString(out var s) || !key.CoerceString(out var k))
+				return DefaultObject;
+
 			file = Path.GetFullPath(file);
 
 			if (!File.Exists(file))
@@ -113,10 +113,9 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if the key can't be found and no default is supplied.</exception>
 		public static object IniRead(object filename, object section = null, object key = null, object @default = null)
 		{
-			var file = filename.As();
-			var s = section.As();
-			var k = key.As();
-			var def = @default.As();
+			if (!filename.CoerceString(out var file) || !section.CoerceString(out var s) || !key.CoerceString(out var k) || !@default.CoerceString(out var def))
+				return DefaultObject;
+
 			var result = "";
 			file = Path.GetFullPath(file);
 
@@ -271,10 +270,9 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static object IniWrite(object value, object filename, object section, object key = null)
 		{
-			var v = value.As();
-			var file = filename.As();
-			var s = section.As();
-			var k = key.As();
+			if (!value.CoerceString(out var v) || !filename.CoerceString(out var file) || !section.CoerceString(out var s) || !key.CoerceString(out var k))
+				return DefaultObject;
+
 #if WINDOWS
 			// On Windows use the native INI APIs directly:
 			file = Path.GetFullPath(file);
@@ -417,13 +415,12 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="filename">The name of the .ini file, which is assumed to be in <see cref="A_WorkingDir"/> if an absolute path isn't specified.</param>
 		/// <returns>An <see cref="OrderedDictionary"/> with all of the file data in it.</returns>
-		private static OrderedDictionary IniLoad(object filename)
+		private static OrderedDictionary IniLoad(string filename)
 		{
-			var f = filename.As();
 			OrderedDictionary kvdkt = null;
 			var inidkt = new OrderedDictionary(StringComparer.CurrentCultureIgnoreCase);
 
-			foreach (var line in File.ReadLines(f))
+			foreach (var line in File.ReadLines(filename))
 			{
 				var ln = line.Trim(TrimLine);
 

@@ -59,12 +59,11 @@ namespace Keysharp.Builtins
 			public object __New(object x = null, object y = null, object width = null, object height = null,
 									object color = null, object thickness = null)
 			{
-				if (x != null) rx = x.Ai();
-				if (y != null) ry = y.Ai();
-				if (width != null) rw = width.Ai();
-				if (height != null) rh = height.Ai();
+				if (!SetRect(x, y, width, height))
+					return DefaultObject;
+
 				if (color != null) this.color = NormalizeColor(color);
-				if (thickness != null) this.thickness = Math.Max(0, thickness.Ai());
+				if (thickness.CoerceInt(out var t, this.thickness)) this.thickness = Math.Max(0, t);
 
 				return DefaultObject;
 			}
@@ -72,23 +71,23 @@ namespace Keysharp.Builtins
 			#region Properties
 
 			/// <summary>Left edge of the outlined rectangle, in screen pixels. Updates live while shown.</summary>
-			public object X { get => (long)rx; set { rx = value.Ai(); Refresh(); } }
+			public object X { get => (long)rx; set { if (value.CoerceInt(out rx, rx)) Refresh(); } }
 
 			/// <summary>Top edge of the outlined rectangle, in screen pixels. Updates live while shown.</summary>
-			public object Y { get => (long)ry; set { ry = value.Ai(); Refresh(); } }
+			public object Y { get => (long)ry; set { if (value.CoerceInt(out ry, ry)) Refresh(); } }
 
 			/// <summary>Width of the outlined rectangle, in pixels. Updates live while shown.</summary>
-			public object Width { get => (long)rw; set { rw = value.Ai(); Refresh(); } }
+			public object Width { get => (long)rw; set { if (value.CoerceInt(out rw, rw)) Refresh(); } }
 
 			/// <summary>Height of the outlined rectangle, in pixels. Updates live while shown.</summary>
-			public object Height { get => (long)rh; set { rh = value.Ai(); Refresh(); } }
+			public object Height { get => (long)rh; set { if (value.CoerceInt(out rh, rh)) Refresh(); } }
 
 			/// <summary>Border color: set with a color name ("Red"), a 0xRRGGBB integer, or a hex string; it is
 			/// normalized to and read back as a 6-hex-digit string (e.g. "FF0000"). Updates live while shown.</summary>
 			public object Color { get => color; set { color = NormalizeColor(value); Refresh(); } }
 
 			/// <summary>Border thickness in pixels (0 hides the border). Updates live while shown.</summary>
-			public object Thickness { get => (long)thickness; set { thickness = Math.Max(0, value.Ai()); Refresh(); } }
+			public object Thickness { get => (long)thickness; set { if (value.CoerceInt(out var t, thickness)) { thickness = Math.Max(0, t); Refresh(); } } }
 
 			/// <summary>Whether the overlay is currently on screen.</summary>
 			public object IsVisible => shown;
@@ -105,10 +104,9 @@ namespace Keysharp.Builtins
 			/// rectangle first, so Show doubles as move/resize.</summary>
 			public object Show(object x = null, object y = null, object width = null, object height = null)
 			{
-				if (x != null) rx = x.Ai();
-				if (y != null) ry = y.Ai();
-				if (width != null) rw = width.Ai();
-				if (height != null) rh = height.Ai();
+				if (!SetRect(x, y, width, height))
+					return DefaultObject;
+
 				visible = true;
 				Refresh();
 				return this;
@@ -119,10 +117,8 @@ namespace Keysharp.Builtins
 			/// geometry for the next <c>Show</c>. All args optional, so <c>Move(, , Width, Height)</c> resizes only.</summary>
 			public object Move(object x = null, object y = null, object width = null, object height = null)
 			{
-				if (x != null) rx = x.Ai();
-				if (y != null) ry = y.Ai();
-				if (width != null) rw = width.Ai();
-				if (height != null) rh = height.Ai();
+				if (!SetRect(x, y, width, height))
+					return DefaultObject;
 
 				if (shown)
 					Refresh();
@@ -158,6 +154,11 @@ namespace Keysharp.Builtins
 			public override object __Delete() => Destroy();
 
 			#endregion
+
+			// Each field is its own default, so an omitted value, or one whose error the script continues, leaves the
+			// field as it was.
+			private bool SetRect(object x, object y, object width, object height) =>
+				x.CoerceInt(out rx, rx) && y.CoerceInt(out ry, ry) && width.CoerceInt(out rw, rw) && height.CoerceInt(out rh, rh);
 
 			// Applies the current rectangle/style. Repaints the frame only on a size/thickness/colour change;
 			// otherwise a pure move just repositions the overlay. A no-op when hidden; hides when the rect is empty.
@@ -246,8 +247,8 @@ namespace Keysharp.Builtins
 				if (color is string s && Conversions.TryParseColor(s, out var c))
 					return (c.ToArgb() & 0xFFFFFF).ToString("X6");
 
-				if (color is long || color is int || color is double)
-					return (color.Al() & 0xFFFFFF).ToString("X6");
+				if (color is long or int or double && color.TryCoerceLong(out var l))
+					return (l & 0xFFFFFF).ToString("X6");
 
 				return "FF0000";
 			}

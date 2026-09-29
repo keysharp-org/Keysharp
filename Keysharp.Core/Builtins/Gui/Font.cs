@@ -40,12 +40,14 @@ namespace Keysharp.Builtins
 			{
 				if (options is Any || name is Any)
 					return Errors.TypeErrorOccurred(options is Any ? options : name, typeof(string));
-				var n = name.As();
+
+				if (!name.CoerceString(out var n) || !options.CoerceString(out var opts))
+					return DefaultObject;
 
 				if (n.Length > 0)
 					fontOptions.name = n;
 
-				fontOptions.Parse(options.As(), tok => Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\"."));
+				fontOptions.Parse(opts, tok => Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\"."));
 				return DefaultObject;
 			}
 
@@ -108,7 +110,10 @@ namespace Keysharp.Builtins
 						_ = Errors.TypeErrorOccurred(value, typeof(string));
 						return;
 					}
-					var s = value.As();
+
+					if (!value.CoerceString(out var s))
+						return;
+
 					fontOptions.name = s.Length > 0 ? s : null;
 				}
 			}
@@ -147,7 +152,7 @@ namespace Keysharp.Builtins
 					}
 					else
 					{
-						//Al() would quietly read anything else as 0, i.e. silently black.
+						// Reject invalid colors so a typo cannot silently select black.
 						_ = Errors.ValueErrorOccurred($"Invalid font color {value}");
 					}
 				}
@@ -231,7 +236,9 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object Exists(object @this, object name)
 			{
-				var n = name.As();
+				if (!name.CoerceString(out var n))
+					return DefaultObject;
+
 				return n.Length > 0 && Families.Contains(n);
 			}
 
@@ -287,6 +294,7 @@ namespace Keysharp.Builtins
 						fontOptions.name == null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(fontOptions.name), fontOptions.size,
 						fontOptions.color?.ToArgb(), fontOptions.weight, fontOptions.quality, fontOptions.italic, fontOptions.underline, fontOptions.strike);
 
+			[PublicHiddenFromUser]
 			public override string ToString() => fontOptions.name is string n && n.Length > 0
 					? $"{n} {Options}".TrimEnd()
 					: Options.ToString();
@@ -322,8 +330,7 @@ namespace Keysharp.Builtins
 
 			/// <summary>
 			/// Reads a numeric property value, with "" or unset meaning "clear it". Returns false, having
-			/// raised, when the value is not a number - Ad() would quietly hand back 0 instead, which would
-			/// turn a typo into a size of zero.
+			/// raised, when the value is not a number, so a typo cannot become a size of zero.
 			/// </summary>
 			private static bool TryOptionalDouble(object value, out double? result)
 			{

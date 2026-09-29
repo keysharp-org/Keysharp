@@ -75,7 +75,12 @@ namespace Keysharp.Builtins
 				return Errors.ValueErrorOccurred("Object() requires an even number of name/value parameters.");
 
 			for (var i = 0; i < positional; i += 2)
-				DefineOne(kso, args[i].ToString(), args[i + 1]);
+			{
+				if (!args[i].CoerceString(out var propName))
+					return DefaultObject;
+
+				DefineOne(kso, propName, args[i + 1]);
+			}
 
 			if (named != null)
 				foreach (var (name, value) in named.Entries())
@@ -103,15 +108,24 @@ namespace Keysharp.Builtins
 
 		public static object DefineProp(object @this, object name, object descriptor) => Objects.DefineProp(@this, name, descriptor);
 
-		public static object DeleteProp(object @this, object name) =>
-			@this is Any target ? target.DeleteOwnPropInternal(name.As()) : Errors.TypeErrorOccurred(@this, typeof(Any));
+		public static object DeleteProp(object @this, object name)
+		{
+			if (@this is not Any target)
+				return Errors.TypeErrorOccurred(@this, typeof(Any));
+
+			if (!name.CoerceString(out var nameVal))
+				return DefaultObject;
+
+			return target.DeleteOwnPropInternal(nameVal);
+		}
 
 		public static object GetOwnPropDesc(object @this, object name)
 		{
 			if (@this is not Any obj)
 				return Errors.TypeErrorOccurred(@this, typeof(Any));
 
-			var nameVal = name.As();
+			if (!name.CoerceString(out var nameVal))
+				return DefaultObject;
 
 			if (obj.op != null && obj.op.TryGetValue(nameVal, out var dynProp))
 			{
@@ -143,7 +157,8 @@ namespace Keysharp.Builtins
 			if (@this is not Any obj)
 				return (long)Errors.TypeErrorOccurred(@this, typeof(Any), 0L);
 
-			var nameVal = name.As();
+			if (!name.CoerceString(out var nameVal))
+				return 0L;
 
 			if (obj.op != null && obj.op.ContainsKey(nameVal))
 				return 1L;

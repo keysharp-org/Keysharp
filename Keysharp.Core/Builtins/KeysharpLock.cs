@@ -33,7 +33,9 @@ namespace Keysharp.Builtins
 			/// <returns>True if the lock was acquired, false if the timeout elapsed first.</returns>
 			public object Acquire(object timeout = null)
 			{
-				var timeoutVal = timeout.Ai(-1);
+				if (!timeout.CoerceInt(out var timeoutVal, -1))
+					return DefaultObject;
+
 				return System.Threading.Monitor.TryEnter(this, timeoutVal < 0 ? Timeout.Infinite : timeoutVal);
 			}
 
@@ -49,8 +51,6 @@ namespace Keysharp.Builtins
 				System.Threading.Monitor.Exit(this);
 				return DefaultObject;
 			}
-
-			public override string ToString() => "Lock";
 		}
 	}
 }

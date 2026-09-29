@@ -18,162 +18,201 @@ namespace Keysharp.Internals.ExtensionMethods
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public static bool Ab(this object obj, bool def = default) => obj.TryParseBool(out var b) ? b : def;
 
-		/// <summary>
-		/// Converts an object to a double.
-		/// </summary>
-		/// <param name="obj">The object to convert.</param>
-		/// <param name="def">A default value to use if obj is null or the conversion fails.</param>
-		/// <returns>The object as a double if conversion succeeded, else def.</returns>
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static double Ad(this object obj, double def = default) => obj is double d ? d : obj.TryParseDouble(out double dd) ? dd : def;
+		// Two families convert a value. TryCoerce* never raises: false means no value or one which does not convert. Coerce*
+		// takes a built-in's parameter: no value gives the default, and a value which does not convert raises a TypeError,
+		// returning false when the script continues it, and the caller then returns at once, as an AutoHotkey built-in does.
+		// Both leave def in the out value whenever they return false.
 
 		/// <summary>
-		/// Converts an object to a float.
+		/// Converts a value to an Integer, truncating a Float (or float string) toward zero as AutoHotkey does, unless
+		/// <paramref name="allowFloat"/> is false. Never raises.
+		/// The leading type tests intentionally duplicate those inside the TryParse* primitives: they keep the hottest cases
+		/// (long and double objects) free of any call into the larger, non-inlinable parsing methods.
 		/// </summary>
-		/// <param name="obj">The object to convert.</param>
-		/// <param name="def">A default value to use if obj is null or the conversion fails.</param>
-		/// <returns>The object as a float if conversion succeeded, else def.</returns>
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static float Af(this object obj, float def = default) => obj.TryParseDouble(out double d) ? unchecked((float)d) : def;
-
-		/// <summary>
-		/// Converts an object to an int, truncating a Float toward zero to match AutoHotkey.
-		/// </summary>
-		/// <param name="obj">The object to convert.</param>
-		/// <param name="def">A default value to use if obj is null or the conversion fails.</param>
-		/// <returns>The object as an int if conversion succeeded, else def.</returns>
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static int Ai(this object obj, int def = default) => obj.TryCoerceLong(out long l) ? unchecked((int)l) : def;
-
-		/// <summary>
-		/// Converts an object to a long, truncating a Float toward zero to match AutoHotkey.
-		/// </summary>
-		/// <param name="obj">The object to convert.</param>
-		/// <param name="def">A default value to use if obj is null or the conversion fails.</param>
-		/// <returns>The object as a long if conversion succeeded, else def.</returns>
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static long Al(this object obj, long def = default) => obj.TryCoerceLong(out long l) ? l : def;
-
-		/// <summary>
-		/// Coerces an object to a long for use in an integer context. This is the single place where
-		/// the long/double composition lives: it is the backing logic for <see cref="Ai"/>, <see cref="Al"/>,
-		/// <see cref="Aui"/> and the throwing To* converters. A Float (or float string) is truncated
-		/// toward zero to match AutoHotkey, unless allowFloat is false.
-		/// The leading type tests intentionally duplicate those inside the TryParse* primitives:
-		/// they keep the hottest cases (long and double objects) free of any call into the larger,
-		/// non-inlinable parsing methods.
-		/// </summary>
-		/// <param name="obj">The object to convert.</param>
-		/// <param name="outvar">The resulting long.</param>
-		/// <param name="allowFloat">True to truncate a Float (or float string) toward zero, false to reject it. Default: true.</param>
-		/// <returns>True if the object yielded a numeric value, else false.</returns>
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		internal static bool TryCoerceLong(this object obj, out long outvar, bool allowFloat = true)
+		internal static bool TryCoerceLong(this object obj, out long value, long def = 0L, bool allowFloat = true)
 		{
 			if (obj is long l)//Hottest path: script integers.
 			{
-				outvar = l;
+				value = l;
 				return true;
 			}
 
 			if (obj is double d)//Second hottest: arithmetic results such as mW / 3.
 			{
-				if (allowFloat)
+				value = allowFloat ? unchecked((long)d) : def;
+				return allowFloat;
+			}
+
+			if (obj is not null)
+			{
+				if (obj is not (string or bool or int or Any))
 				{
-					outvar = (long)d;
-					return true;
+					if (!obj.TryCoerceString(out var text))
+					{
+						value = def;
+						return false;
+					}
+
+					obj = text;
 				}
 
-				outvar = 0L;
-				return false;
+				if (obj.TryParseLong(out value))//Handles bool/int and integer/hex strings.
+					return true;
+
+				if (allowFloat && obj.TryParseDouble(out double dd))//Only reached for float strings such as "426.67".
+				{
+					value = unchecked((long)dd);
+					return true;
+				}
 			}
 
-			if (obj is null)
+			value = def;
+			return false;
+		}
+
+		/// <summary>As <see cref="TryCoerceLong"/>, for an int.</summary>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		internal static bool TryCoerceInt(this object obj, out int value, int def = 0, bool allowFloat = true)
+		{
+			var ok = obj.TryCoerceLong(out var l, def, allowFloat);
+			value = unchecked((int)l);
+			return ok;
+		}
+
+		/// <summary>Converts a value to a number. Never raises.</summary>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		internal static bool TryCoerceDouble(this object obj, out double value, double def = 0.0)
+		{
+			if (obj is double d)
 			{
-				outvar = 0L;
-				return false;
+				value = d;
+				return true;
 			}
 
-			if (obj.TryParseLong(out outvar))//Handles bool/int and integer/hex strings.
+			if (obj is not null and not (string or long or int or bool or Any))
+			{
+				if (!obj.TryCoerceString(out var text))
+				{
+					value = def;
+					return false;
+				}
+
+				obj = text;
+			}
+
+			if (obj.TryParseDouble(out value))
 				return true;
 
-			if (allowFloat && obj.TryParseDouble(out double dd))//Only reached for float strings such as "426.67".
-			{
-				outvar = (long)dd;
-				return true;
-			}
-
-			outvar = 0L;
+			value = def;
 			return false;
 		}
 
 		/// <summary>
-		/// Converts an object to a string.
+		/// Converts a scalar, or an object through one ToString call, to text. Never raises: what a ToString raises is
+		/// contained, unreported, as a try contains it, and only a script exit propagates. A ToString which returns no value
+		/// gives no text.
 		/// </summary>
-		/// <param name="obj">The object to convert.</param>
-		/// <param name="def">A default value to use if obj is null, or its ToString() returns no value.</param>
-		/// <returns>The object as a string if it was not null, else def.</returns>
-		public static string As(this object obj, string def = "")
+		internal static bool TryCoerceString(this object obj, out string value, string def = "")
 		{
-			if (obj is string s)
-				return s;
+			bool ok;
 
-			//Canonical formatting for the two types whose ToString() does not match AutoHotkey: a Float keeps its
-			//point (380.0 => "380.0", not "380"), and a Boolean is an Integer to a script (true => "1", not "True").
-			//The Boolean case only fires for a CLR bool -- a script's own `true`/`false` lower to the Integer
-			//literals 1 and 0 (Lowerer: `case "true": return Num("1")`) and were always rendered "1"/"0". So this
-			//reaches values that ORIGINATE in the CLR: a `bool` accessor such as A_IsSuspended assigned into a
-			//string context, and anything coming back through the Ks.Clr boundary.
-			if (obj is double or bool)
-				return Script.ForceString(obj);
+			if (obj is null or string or long or double or bool)
+				ok = ToStringCore(obj, out value);
+			else
+			{
+				try
+				{
+					if (Script.TheScript == null)
+						ok = ToStringCore(obj, out value);
+					else
+					{
+						using var scope = Keysharp.Runtime.Flow.EnterTry();
+						ok = ToStringCore(obj, out value);
+					}
+				}
+				catch (Exception ex) when (!Internals.Flow.TryGetException<Builtins.Flow.UserRequestedExitException>(ex, out _))
+				{
+					ok = false;
+					value = null;
+				}
+			}
 
-			//A ToString() which returns no value yields def, rather than raising an UnsetError. [v2.1-alpha.30+]
-			//A module object calls ToString as it calls any member, so one which declares none raises a MethodError.
-			return (obj is Any kso && (kso is Module || Functions.HasMethod(kso, "ToString") != 0L) ? Script.InvokeOrNull(kso, "ToString")?.ToString() : obj?.ToString()) ?? def;
+			if (ok && value != null)
+				return true;
+
+			value = def ?? "";
+			return false;
 		}
 
 		/// <summary>
-		/// Converts an object to an unsigned int, truncating a Float toward zero to match AutoHotkey.
+		/// Converts a built-in's Integer parameter: see <see cref="TryCoerceLong"/>, and the family comment above.
 		/// </summary>
-		/// <param name="obj">The object to convert.</param>
-		/// <param name="def">A default value to use if obj is null or the conversion fails.</param>
-		/// <returns>The object as an unsigned int if conversion succeeded, else def.</returns>
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static uint Aui(this object obj, uint def = default) => obj.TryCoerceLong(out long l) ? unchecked((uint)l) : def;
+		internal static bool CoerceLong(this object obj, out long value, long def = 0L, bool allowFloat = true) =>
+			obj.TryCoerceLong(out value, def, allowFloat) || obj == null || RaiseTypeError(obj, typeof(long));
+
+		/// <summary>As <see cref="CoerceLong"/>, for an int.</summary>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		internal static bool CoerceInt(this object obj, out int value, int def = 0, bool allowFloat = true)
+		{
+			var ok = obj.CoerceLong(out var l, def, allowFloat);
+			value = unchecked((int)l);
+			return ok;
+		}
+
+		/// <summary>Converts a built-in's number parameter: see the family comment above.</summary>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		internal static bool CoerceDouble(this object obj, out double value, double def = 0.0) =>
+			obj.TryCoerceDouble(out value, def) || obj == null || RaiseTypeError(obj, typeof(double));
 
 		/// <summary>
-		/// Converts an object to a long for a context where a number is required, throwing a
-		/// <see cref="TypeError"/> if the object is not numeric. A Float (or float string) is
-		/// truncated toward zero to match AutoHotkey, unless allowFloat is false, in which case
-		/// any Float input throws.
+		/// Converts a built-in's String parameter: see the family comment above. What an object's ToString raises
+		/// propagates, and a ToString which returns no value gives <paramref name="def"/>.
 		/// </summary>
-		/// <param name="obj">The object to convert.</param>
-		/// <param name="allowFloat">True to truncate a Float toward zero, false to reject it. Default: true.</param>
-		/// <returns>The object as a long.</returns>
-		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if the conversion failed.</exception>
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static long ToLong(this object obj, bool allowFloat = true) => obj.TryCoerceLong(out long l, allowFloat) ? l : (long)Errors.TypeErrorOccurred(obj, typeof(long), 0L);
+		internal static bool CoerceString(this object obj, out string value, string def = "")
+		{
+			if (ToStringCore(obj, out value))
+			{
+				value ??= def ?? "";
+				return true;
+			}
 
-		/// <summary>
-		/// Converts an object to an int for a context where a number is required, throwing a
-		/// <see cref="TypeError"/> if the object is not numeric. See <see cref="ToLong"/>.
-		/// </summary>
-		/// <param name="obj">The object to convert.</param>
-		/// <param name="allowFloat">True to truncate a Float toward zero, false to reject it. Default: true.</param>
-		/// <returns>The object as an int.</returns>
-		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if the conversion failed.</exception>
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static int ToInt(this object obj, bool allowFloat = true) => unchecked((int)obj.ToLong(allowFloat));
+			_ = Errors.TypeErrorOccurred(obj, typeof(string));
+			value = def ?? "";
+			return false;
+		}
 
-		/// <summary>
-		/// Converts an object to a double for a context where a number is required, throwing a
-		/// <see cref="TypeError"/> if the object is not numeric.
-		/// </summary>
-		/// <param name="obj">The object to convert.</param>
-		/// <returns>The object as a double.</returns>
-		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if the conversion failed.</exception>
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static double ToDouble(this object obj) => obj is double d ? d : obj.TryParseDouble(out double dd) ? dd : (double)Errors.TypeErrorOccurred(obj, typeof(double), 0.0);
+		// A scalar's text, or the scalar result of an object's ToString. False when the value has no text form; null text
+		// for no value. What the ToString raises propagates.
+		private static bool ToStringCore(object obj, out string text)
+		{
+			if (obj is Any && (!Script.TryInvoke(obj, "ToString", out obj) || obj is Any))
+			{
+				text = null;
+				return false;
+			}
+
+			text = obj switch
+			{
+				null => null,
+				string s => s,
+				long l => l.ToString(CultureInfo.InvariantCulture),
+				double d => Script.FormatFloat(d),
+				bool b => b ? "1" : "0",
+				_ => obj.ToString()
+			};
+			return true;
+		}
+
+		// Raises the TypeError of a failed conversion, and returns false for a caller to return at once when the script
+		// continues it.
+		[MethodImpl(MethodImplOptions.NoInlining)]
+		private static bool RaiseTypeError(object obj, Type type)
+		{
+			_ = Errors.TypeErrorOccurred(obj, type);
+			return false;
+		}
 
 		/// <summary>
 		/// Attempts to convert an object to a <see cref="Control"/>.
@@ -478,12 +517,5 @@ namespace Keysharp.Internals.ExtensionMethods
 			outvar = 0L;
 			return false;
 		}
-
-		/// <summary>
-		/// Returns the string representation of an object.
-		/// </summary>
-		/// <param name="obj">The object to examine.</param>
-		/// <returns>If obj is not null, the result of calling obj.ToString(), else empty string.</returns>
-		public static string Str(this object obj) => obj != null ? obj.ToString() : "";
 	}
 }

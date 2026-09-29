@@ -81,7 +81,7 @@ internal static class NumericOperation
 		}
 
 		private static object Undefined(object left, object right) =>
-			Errors.ErrorOccurred($"{Script.ForceString(left)} ** {Script.ForceString(right)} is undefined.");
+			Errors.ErrorOccurred($"{Errors.Describe(left)} ** {Errors.Describe(right)} is undefined.");
 	}
 
 	internal readonly struct BitwiseAnd : INumericOperator

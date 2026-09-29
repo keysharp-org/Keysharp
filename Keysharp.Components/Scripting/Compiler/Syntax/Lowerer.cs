@@ -3616,7 +3616,7 @@ namespace Keysharp.Compilation.Syntax
 
 		// A returned Task<T> reaches the script as a Ks.Task whose Result is T, so T crosses the boundary too and
 		// has to answer the same question -- otherwise every rejected return type is reachable again just by
-		// wrapping it. A Task<T> parameter crosses nothing: CoerceBoundaryCast hands over the task itself, so T
+		// wrapping it. A Task<T> parameter crosses nothing: the boundary cast hands over the task itself, so T
 		// is never converted and the rule does not apply there.
 		private static bool IsUnsupportedBoundaryReturn(TypeSyntax type)
 		{
@@ -5332,19 +5332,20 @@ namespace Keysharp.Compilation.Syntax
 			var args = new ExpressionSyntax[(o.Entries.Count * 2) + 2];
 			args[0] = Id(EnsureTypeField("Keysharp.Builtins.KeysharpObject", "Object"));
 			args[1] = Str("Call");
-			foreach (var en in o.Entries) { args[i++] = KeyToString(en.Key); args[i++] = LowerExpr(en.Value); }
+			foreach (var en in o.Entries) { args[i++] = LiteralKey(en.Key); args[i++] = LowerExpr(en.Value); }
 			return Op("Invoke", args);
 		}
 
-		// An object-literal key. A bare identifier and a string literal are literal property names; everything else
-		// (`%x%` deref, `(expr)`, numbers) is a DYNAMIC key — evaluated and forced to a string at runtime.
-		private ExpressionSyntax KeyToString(Expr key) => key switch
+		// An object-literal key or argument name. A bare identifier and a string literal are literal names; everything else
+		// (`%x%` deref, `(expr)`, numbers) is a DYNAMIC key, evaluated here and converted to a string by the object or
+		// NamedArgs it names.
+		private ExpressionSyntax LiteralKey(Expr key) => key switch
 		{
 			NameExpr n => Str(n.Name),
 			LiteralExpr l when l.Kind == LiteralKind.String => Str(DecodeString(l.Raw)),
 			// `{ %x% : v }`: the key is the VALUE of x (a dynamic property name), not a variable deref of x's value.
-			DerefExpr d => Op("ForceString", LowerExpr(d.Name)),
-			_ => Op("ForceString", LowerExpr(key))
+			DerefExpr d => LowerExpr(d.Name),
+			_ => LowerExpr(key)
 		};
 
 		// Builds a collection expression for an argument list containing a spread.
@@ -5427,7 +5428,7 @@ namespace Keysharp.Compilation.Syntax
 			{
 				// A dynamic name (`%x%: v`) is lowered exactly as the same text lowers as an object-literal key, so
 				// the two forms cannot drift apart in what they compute or in how a non-string result is coerced.
-				nameValues[i++] = a.Name != null ? Str(a.Name) : KeyToString(a.NameExpr);
+				nameValues[i++] = a.Name != null ? Str(a.Name) : LiteralKey(a.NameExpr);
 				nameValues[i++] = LowerExpr(a.Value);
 			}
 
@@ -5710,8 +5711,13 @@ namespace Keysharp.Compilation.Syntax
 			if (switchValue == null)
 				return sw;
 
-			var value = s.CaseSense == null ? Op("Switch", LowerExpr(s.Value)) : Op("Switch", LowerExpr(s.Value), LowerExpr(s.CaseSense));
-			return SyntaxFactory.Block(LocalDeclVar(switchValue, value), sw);
+			if (s.CaseSense == null)
+				return SyntaxFactory.Block(LocalDeclVar(switchValue, Op("Switch", LowerExpr(s.Value))), sw);
+
+			// A continued CaseSense error skips the switch body.
+			var run = SyntaxFactory.IfStatement(
+				SyntaxFactory.PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, Member(Id(switchValue), "Failed")), sw);
+			return SyntaxFactory.Block(LocalDeclVar(switchValue, Op("Switch", LowerExpr(s.Value), LowerExpr(s.CaseSense))), run);
 		}
 
 		private StatementSyntax LowerTry(TryStmt tr)
@@ -6995,7 +7001,7 @@ namespace Keysharp.Compilation.Syntax
 			return arms;
 		}
 
-		private static ExpressionSyntax LowerKey() => Inv(Member(Op("ForceString", Id("KS_name")), "ToLowerInvariant"));
+		private static ExpressionSyntax LowerKey() => Inv(Member(Id("KS_name"), "ToLowerInvariant"));
 
 		private static ParameterSyntax Param(string name, TypeSyntax type) =>
 			SyntaxFactory.Parameter(SyntaxFactory.Identifier(name)).WithType(type);
@@ -7753,7 +7759,7 @@ namespace Keysharp.Compilation.Syntax
 			if (op == ".")
 			{
 				if (TryGetConcatLit(le, out var lv) && TryGetConcatLit(re, out var rv) && rv != null)   // Concat() raises on null right
-					return Str(Keysharp.Runtime.Script.ForceString(lv) + Keysharp.Runtime.Script.ForceString(rv));
+					return Str((lv.TryCoerceString(out var ls) ? ls : "") + (rv.TryCoerceString(out var rs) ? rs : ""));
 				return null;
 			}
 			if (!TryGetNumLit(le, out var lD, out var ld, out var ll) || !TryGetNumLit(re, out var rD, out var rd, out var rl))

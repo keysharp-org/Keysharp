@@ -119,7 +119,13 @@ namespace Keysharp.Builtins.COM
 				ref Guid uuid,
 				[MarshalAs(UnmanagedType.IUnknown)] out object rReturnedComObject);
 
-		public static object ComObjActive([UserDeclaredName("CLSID")] object clsid) => GetActiveObject(clsid.As());
+		public static object ComObjActive([UserDeclaredName("CLSID")] object clsid)
+		{
+			if (!clsid.CoerceString(out var text))
+				return DefaultObject;
+
+			return GetActiveObject(text);
+		}
 
 		/// <summary>
 		/// An object a COM caller passed in, as a script sees COM objects: a ComObject for a dispatch object and a
@@ -176,8 +182,11 @@ namespace Keysharp.Builtins.COM
 		{
 			if (comObj is ComObject co)
 			{
-				var flags = newFlags != null ? newFlags.Al() : 0L;
-				var m = mask != null ? mask.Al() : 0L;
+				if (!newFlags.CoerceLong(out var flags))
+					return DefaultObject;
+
+				if (!mask.CoerceLong(out var m))
+					return DefaultObject;
 
 				if (newFlags == null && mask == null)
 				{
@@ -207,7 +216,10 @@ namespace Keysharp.Builtins.COM
 
 		public static object ComObjGet(object name)
 		{
-			var com = Marshal.BindToMoniker(name.As());
+			if (!name.CoerceString(out var text))
+				return DefaultObject;
+
+			var com = Marshal.BindToMoniker(text);
 			if (com is IDispatch id)
 			{
 				var ptr = Marshal.GetIDispatchForObject(id);
@@ -248,8 +260,8 @@ namespace Keysharp.Builtins.COM
 
 			if (sid != null && iid != null)
 			{
-				var sidstr = sid.As();
-				var iidstr = iid.As();
+				if (!sid.CoerceString(out var sidstr) || !iid.CoerceString(out var iidstr))
+					return DefaultObject;
 
 				if (CLSIDFromString(sidstr, out var sidGuid) >= 0 && CLSIDFromString(iidstr, out id) >= 0)
 				{
@@ -267,7 +279,8 @@ namespace Keysharp.Builtins.COM
 			}
 			else if (sid != null)
 			{
-				var iidstr = sid.As();
+				if (!sid.CoerceString(out var iidstr))
+					return DefaultObject;
 
 				if (CLSIDFromString(iidstr, out id) >= 0)
 				{
@@ -286,7 +299,10 @@ namespace Keysharp.Builtins.COM
 
 		public static object ComObjType(object comObj, object infoType = null)
 		{
-			var s = infoType.As().ToLower();
+			if (!infoType.CoerceString(out var infoText))
+				return DefaultObject;
+
+			var s = infoText.ToLower();
 			var co = comObj as ComObject;
 
 			if (s == "" && co != null)
@@ -445,7 +461,8 @@ namespace Keysharp.Builtins.COM
 		/// </summary>
 		public static object ComCall(object index, object comObj, params object[] parameters)
 		{
-			var idx = index.Ai();
+			if (!index.CoerceInt(out var idx))
+				return DefaultObject;
 
 			if (idx < 0)
 				return Errors.ValueErrorOccurred($"Index value of {idx} was less than zero.");

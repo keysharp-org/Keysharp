@@ -59,7 +59,11 @@ namespace Keysharp.Builtins
 		public object Encoding
 		{
 			get => enc.BodyName;
-			set => enc = Files.GetEncoding(value);
+			set
+			{
+				if (Files.TryGetEncoding(value, out var e))
+					enc = e;
+			}
 		}
 
 		// Only a file on disk has an OS handle; a memory-backed file reports 0, as an unopened one does.
@@ -68,7 +72,11 @@ namespace Keysharp.Builtins
 		public object Length
 		{
 			get => fs != null ? fs.Length : 0L;
-			set => fs?.SetLength(value.Al());
+			set
+			{
+				if (!value.CoerceLong(out var len)) return;
+				fs?.SetLength(len);
+			}
 		}
 
 		public object Pos
@@ -128,12 +136,15 @@ namespace Keysharp.Builtins
 			if (args.Length < 6 || args[1] is not FileMode)
 				return NewOverMemory(args);
 
-			var filename = args[0].As();
+			if (!args[0].CoerceString(out var filename))
+				return DefaultObject;
+
 			var m = (FileMode)args[1];
 			var a = (FileAccess)args[2];
 			var s = (FileShare)args[3];
 			enc = (Encoding)args[4];
-			eolconv = (int)args[5].Al();
+			_ = args[5].TryCoerceLong(out var eol);
+			eolconv = (int)eol;
 
 			if (filename == "*")
 			{
@@ -232,7 +243,12 @@ namespace Keysharp.Builtins
 				return Errors.TypeErrorOccurred(source, typeof(Buffer));
 
 			// Qualified: this class has an Encoding property, which shadows the type name here.
-			enc = args.Length > 1 && args[1] != null ? Files.GetEncoding(args[1]) : System.Text.Encoding.UTF8;
+			var encoding = System.Text.Encoding.UTF8;
+
+			if (args.Length > 1 && args[1] != null && !Files.TryGetEncoding(args[1], out encoding))
+				return DefaultObject;
+
+			enc = encoding;
 			// Hold the source so its memory cannot be reclaimed while this File still points into it.
 			memorySource = source;
 
@@ -342,7 +358,11 @@ namespace Keysharp.Builtins
 		public object RawRead(object buffer, object bytes = null)
 		{
 			var buf = buffer;
-			var count = (bytes is null ? long.MinValue : bytes.ToLong());
+			var count = long.MinValue;
+
+			if (bytes is not null && !bytes.CoerceLong(out count))
+				return DefaultObject;
+
 			int len = 0;
 
 			if (br != null)
@@ -374,7 +394,11 @@ namespace Keysharp.Builtins
 		public long RawWrite(object data, object bytes = null)
 		{
 			var buf = data;
-			var count = (bytes is null ? long.MinValue : bytes.ToLong());
+			var count = long.MinValue;
+
+			if (bytes is not null && !bytes.CoerceLong(out count))
+				return 0L;
+
 			var len = 0;
 
 			if (bw != null)
@@ -414,7 +438,9 @@ namespace Keysharp.Builtins
 		{
 			var s = "";
 			var readAll = characters is null;
-			var count = characters.Al();
+
+			if (!characters.CoerceLong(out var count))
+				return "";
 
 			if (count < 0)
 				return (string)Errors.ValueErrorOccurred("Invalid character count", count, DefaultObject);
@@ -492,8 +518,14 @@ namespace Keysharp.Builtins
 
 		public object Seek(object distance, object origin = null)
 		{
-			var distanceVal = distance.ToLong();
-			var originVal = (origin is null ? long.MinValue : origin.ToLong());
+			if (!distance.CoerceLong(out var distanceVal))
+				return DefaultObject;
+
+			var originVal = long.MinValue;
+
+			if (origin is not null && !origin.CoerceLong(out originVal))
+				return DefaultObject;
+
 			SeekOrigin so;
 
 			if (originVal == 0)
@@ -517,7 +549,9 @@ namespace Keysharp.Builtins
 
 		public long Write(object @string)
 		{
-			var s = @string.As();
+			if (!@string.CoerceString(out var s))
+				return 0L;
+
 			var len = 0L;
 
 			if (bw != null)
@@ -538,9 +572,12 @@ namespace Keysharp.Builtins
 
 		public long WriteChar(object num)
 		{
+			if (!num.CoerceLong(out var n))
+				return 0L;
+
 			if (bw != null)
 			{
-				bw.Write((byte)num.Al());//Char in this case is meant to be 1 byte, according to the AHK DllCall() documentation.
+				bw.Write((byte)n);//Char in this case is meant to be 1 byte, according to the AHK DllCall() documentation.
 				return 1L;
 			}
 			else
@@ -549,9 +586,12 @@ namespace Keysharp.Builtins
 
 		public long WriteDouble(object num)
 		{
+			if (!num.CoerceDouble(out var d))
+				return 0L;
+
 			if (bw != null)
 			{
-				bw.Write(num.Ad());
+				bw.Write(d);
 				return 8L;
 			}
 			else
@@ -560,9 +600,12 @@ namespace Keysharp.Builtins
 
 		public long WriteFloat(object num)
 		{
+			if (!num.CoerceDouble(out var d))
+				return 0L;
+
 			if (bw != null)
 			{
-				bw.Write((float)num.Ad());
+				bw.Write((float)d);
 				return 4L;
 			}
 			else
@@ -571,9 +614,12 @@ namespace Keysharp.Builtins
 
 		public long WriteInt(object num)
 		{
+			if (!num.CoerceInt(out var n))
+				return 0L;
+
 			if (bw != null)
 			{
-				bw.Write(num.Ai());
+				bw.Write(n);
 				return 4L;
 			}
 			else
@@ -582,9 +628,12 @@ namespace Keysharp.Builtins
 
 		public long WriteInt64(object num)
 		{
+			if (!num.CoerceLong(out var n))
+				return 0L;
+
 			if (bw != null)
 			{
-				bw.Write(num.Al());
+				bw.Write(n);
 				return 8L;
 			}
 			else
@@ -593,7 +642,9 @@ namespace Keysharp.Builtins
 
 		public long WriteLine(object @string)
 		{
-			var s = @string.As();
+			if (!@string.CoerceString(out var s))
+				return 0L;
+
 			byte[] bytes;
 			var len = 0L;
 
@@ -619,9 +670,12 @@ namespace Keysharp.Builtins
 
 		public long WriteShort(object num)
 		{
+			if (!num.CoerceLong(out var n))
+				return 0L;
+
 			if (bw != null)
 			{
-				bw.Write((short)num.Al());
+				bw.Write((short)n);
 				return 2L;
 			}
 			else
@@ -630,9 +684,12 @@ namespace Keysharp.Builtins
 
 		public long WriteUChar(object num)
 		{
+			if (!num.CoerceLong(out var n))
+				return 0L;
+
 			if (bw != null)
 			{
-				bw.Write((byte)num.Al());
+				bw.Write((byte)n);
 				return 1L;
 			}
 			else
@@ -641,9 +698,12 @@ namespace Keysharp.Builtins
 
 		public long WriteUInt(object num)
 		{
+			if (!num.CoerceLong(out var n))
+				return 0L;
+
 			if (bw != null)
 			{
-				bw.Write((uint)num.Al());
+				bw.Write((uint)n);
 				return 4L;
 			}
 			else
@@ -652,9 +712,12 @@ namespace Keysharp.Builtins
 
 		public long WriteUShort(object num)
 		{
+			if (!num.CoerceLong(out var n))
+				return 0L;
+
 			if (bw != null)
 			{
-				bw.Write((ushort)num.Al());
+				bw.Write((ushort)n);
 				return 2L;
 			}
 			else

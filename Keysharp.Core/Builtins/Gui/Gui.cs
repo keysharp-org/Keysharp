@@ -484,7 +484,11 @@ namespace Keysharp.Builtins
 		public object Title
 		{
 			get => form.Text;
-			set => form.Text = value.As();
+			set
+			{
+				if (value.CoerceString(out var text))
+					form.Text = text;
+			}
 		}
 
 		public object Visible
@@ -587,16 +591,23 @@ namespace Keysharp.Builtins
 			});
 		}
 
-		public KeysharpFunc __Enum(object count) => CreateEnumerator(count.Ai());
+		public KeysharpFunc __Enum(object count)
+		{
+			_ = count.TryCoerceInt(out var c);
+			return CreateEnumerator(c);
+		}
 
 		public object __New(object options = null, object title = null, object eventObj = null)
 		{
 			if (form == null)//Don't allow derived classes to init twice.
 			{
+				string optionsText = null, caption = null;
+
+				if ((options != null && !options.CoerceString(out optionsText)) || (title != null && !title.CoerceString(out caption)))
+					return DefaultObject;
+
 				Script.TheScript.InvokeOnUIThread(() =>
 				{
-					var optionsText = options != null ? options.As() : null;
-					var caption = title != null ? title.As() : null;
 					var eventObjValue = eventObj;
 					var script = Script.TheScript;
 					var newCount = Interlocked.Increment(ref script.GuiData.windowCount);
@@ -677,8 +688,30 @@ namespace Keysharp.Builtins
 #endif
 		}
 
+		/// <summary>
+		/// The items of the array passed to <see cref="Add"/> as text. False means the script continued the TypeError of
+		/// an item, and <see cref="Add"/> then returns at once.
+		/// </summary>
+		private static bool TryGetItemTexts(Array al, out List<string> texts)
+		{
+			texts = [];
+
+			foreach (var item in al)
+			{
+				if (!item.CoerceString(out var text))
+					return false;
+
+				texts.Add(text);
+			}
+
+			return true;
+		}
+
 		public object Add(object controlType, object options = null, object text = null)
 		{
+			if (!controlType.CoerceString(out var typeo) || !options.CoerceString(out var optionsStr))
+				return DefaultObject;
+
 			EnsureDefaultMargins();
 
 			//Only a window nobody is looking at yet may defer its layout. Adding to a window already on screen
@@ -692,8 +725,6 @@ namespace Keysharp.Builtins
 				form.SuspendLayout();
 			}
 
-			var typeo = controlType.As();
-			var optionsStr = options.As();
 			var o = text;//The third argument needs to account for being an array in the case of combo/list boxes.
 			var type = typeo.ToLowerInvariant();
 			Control holder = null;
@@ -1005,12 +1036,18 @@ namespace Keysharp.Builtins
 
 #if WINDOWS
 					if (text != null)
-						nud.Value = (decimal)text.Ad();
+					{
+						_ = text.TryCoerceDouble(out var nudValue);
+						nud.Value = (decimal)nudValue;
+					}
 					else
 						nud.Value = Math.Min(nud.Minimum, 0m);
 #else
 					if (text != null)
-						nud.Value = text.Ad();
+					{
+						_ = text.TryCoerceDouble(out var nudValue);
+						nud.Value = nudValue;
+					}
 					else
 						nud.Value = Math.Min(nud.Minimum, 0d);
 #endif
@@ -1165,7 +1202,12 @@ namespace Keysharp.Builtins
 					}
 
 					if (al != null)
-						ddl.Items.AddRange(al.Cast<(object, object)>().Select(x => x.Item2).Select(x => opts.lowercase.IsTrue() ? x.Str().ToLower() : opts.uppercase.IsTrue() ? x.Str().ToUpper() : x.Str()).ToArray());
+					{
+						if (!TryGetItemTexts(al, out var items))
+							return DefaultObject;
+
+						ddl.Items.AddRange(items.Select(x => opts.lowercase.IsTrue() ? x.ToLower() : opts.uppercase.IsTrue() ? x.ToUpper() : x).ToArray());
+					}
 
 					if (opts.choose.Any())
 						ddl.SelectedIndex = opts.choose[0];
@@ -1199,7 +1241,12 @@ namespace Keysharp.Builtins
 					};
 
 					if (al != null)
-						lb.Items.AddRange(al.Cast<(object, object)>().Select(x => x.Item2).Select(x => opts.lowercase.IsTrue() ? x.Str().ToLower() : opts.uppercase.IsTrue() ? x.Str().ToUpper() : x.Str()).ToArray());
+					{
+						if (!TryGetItemTexts(al, out var items))
+							return DefaultObject;
+
+						lb.Items.AddRange(items.Select(x => opts.lowercase.IsTrue() ? x.ToLower() : opts.uppercase.IsTrue() ? x.ToUpper() : x).ToArray());
+					}
 
 					if (opts.vscroll.HasValue)
 						lb.ScrollAlwaysVisible = opts.vscroll.Value;
@@ -1243,7 +1290,13 @@ namespace Keysharp.Builtins
 						Font = Conversions.ConvertFont(form.Font)
 					};
 					if (al != null)
-						lv.Columns.AddRange(al.Cast<(object, object)>().Select(x => x.Item2).Select(x => new ColumnHeader { Text = x.Str() }).ToArray());
+					{
+						if (!TryGetItemTexts(al, out var items))
+							return DefaultObject;
+
+						lv.Columns.AddRange(items.Select(x => new ColumnHeader { Text = x }).ToArray());
+					}
+
 					lv.CheckBoxes = opts.ischecked.HasValue && opts.ischecked.Value > 0;
 					lv.GridLines = opts.grid.IsTrue();
 					lv.LabelEdit = opts.rdonly.IsFalse();
@@ -1487,7 +1540,10 @@ namespace Keysharp.Builtins
 					}
 
 					if (o != null)
-						slider.Value = o.Ai();
+					{
+						_ = o.TryCoerceInt(out var sliderValue);
+						slider.Value = sliderValue;
+					}
 
 					if (opts.halign.HasValue && opts.halign.Value == GuiOptions.HorizontalAlignment.Center)
 						slider.TickStyle = TickStyle.Both;
@@ -1586,12 +1642,14 @@ namespace Keysharp.Builtins
 						Font = Conversions.ConvertFont(form.Font)
 					};//This will also support image lists just like TreeView for setting icons on tabs, instead of using SendMessage().
 					if (al != null)
-#if WINDOWS
-						kstc.TabPages.AddRange(al.Cast<(object, object)>().Select(x => x.Item2).Select(x => new TabPage(x.Str())).ToArray());
-#else
 					{
-						var pages = al.Cast<(object, object)>()
-							.Select(x => x.Item2.Str())
+						if (!TryGetItemTexts(al, out var items))
+							return DefaultObject;
+
+#if WINDOWS
+						kstc.TabPages.AddRange(items.Select(x => new TabPage(x)).ToArray());
+#else
+						var pages = items
 							.Select(pageText => new TabPage
 							{
 								Text = KeysharpTabControl.DisplayText(pageText),
@@ -1599,8 +1657,9 @@ namespace Keysharp.Builtins
 							})
 							.ToArray();
 						kstc.TabPages.AddRange(pages);
-					}
 #endif
+					}
+
 					if (opts.halign.HasValue)
 					{
 						if (opts.halign.Value == GuiOptions.HorizontalAlignment.Left)
@@ -1796,8 +1855,8 @@ namespace Keysharp.Builtins
 			// Apply per-control font overrides (sN / bold / italic / strike / underline / norm parsed from the
 			// options string) on top of the inherited GUI font. Done before the control is attached and sized so
 			// the PreferredSize/autosize logic below reflects the final font.
-			if (!string.IsNullOrEmpty(opts.fontstyles))
-				ctrl.SetFont(Conversions.ParseFontOptions(opts.fontstyles));
+			if (!string.IsNullOrEmpty(opts.fontstyles) && Conversions.ParseFontOptions(opts.fontstyles) is { } fontStyles)
+				ctrl.SetFont(fontStyles);
 
 #if WINDOWS
 			HFontCache.Inherit(form, ctrl);
@@ -2115,7 +2174,7 @@ namespace Keysharp.Builtins
 #if WINDOWS
 							ctrlheight += ctrl.GetSize().Height - ctrl.ClientSize.Height;//Account for the border.
 #endif
-							finalHeight = ctrlheight.Ai();
+							finalHeight = ctrlheight;
 						}
 					}
 				}
@@ -2640,10 +2699,12 @@ namespace Keysharp.Builtins
 
 		public object Move(object x = null, object y = null, object width = null, object height = null)
 		{
-			var xVal = (x is null ? int.MinValue : x.ToInt());
-			var yVal = (y is null ? int.MinValue : y.ToInt());
-			var widthVal = (width is null ? int.MinValue : width.ToInt());
-			var heightVal = (height is null ? int.MinValue : height.ToInt());
+			int xVal = int.MinValue, yVal = int.MinValue, widthVal = int.MinValue, heightVal = int.MinValue;
+
+			if ((x is not null && !x.CoerceInt(out xVal)) || (y is not null && !y.CoerceInt(out yVal))
+					|| (width is not null && !width.CoerceInt(out widthVal)) || (height is not null && !height.CoerceInt(out heightVal)))
+				return DefaultObject;
+
 			var scale = DpiScale;
 			var formLoc = form.GetLocation();
 			var formSize = form.GetSize();
@@ -2703,7 +2764,9 @@ namespace Keysharp.Builtins
 			if (KeysharpForm.CheckedHandler(callback, form.eventObj, addRemove, 4, out var addremove) is not { } del)
 				return DefaultObject;
 
-			var msg = (int)msgNumber.Al();
+			if (!msgNumber.CoerceInt(out var msg))
+				return DefaultObject;
+
 			messageHandlers ??= new();
 			_ = messageHandlers.GetOrAdd(msg, static _ => new(CallbackStop.NonEmpty, "Gui")).ModifyEventHandlers(del, addremove);
 #if !WINDOWS
@@ -2745,13 +2808,15 @@ namespace Keysharp.Builtins
 			if (!CallbackStop.NonEmpty(result))
 				return false;
 
-			m.Result = (nint)result.Al();
+			_ = result.TryCoerceLong(out var resultLong);
+			m.Result = (nint)resultLong;
 			return true;
 		}
 
 		public object Opt(object options)
 		{
-			var optionsVal = options.As();
+			if (!options.CoerceString(out var optionsVal))
+				return DefaultObject;
 
 			foreach (var split in Options.ParseOptions(optionsVal))
 			{
@@ -3014,7 +3079,9 @@ namespace Keysharp.Builtins
 
 		public object SetFont(object options = null, object fontName = null)
 		{
-			form.SetFont(Conversions.ParseFontOptions(options is Ks.Font f ? f.fontOptions : options, fontName));
+			if (Conversions.ParseFontOptions(options is Ks.Font f ? f.fontOptions : options, fontName) is { } fontOptions)
+				form.SetFont(fontOptions);
+
 			return DefaultObject;
 		}
 
@@ -3086,7 +3153,9 @@ namespace Keysharp.Builtins
 		/// <returns>Ignored.</returns>
 		public object SetIcon(object fileName, object iconNumber = null, object options = null)
 		{
-			var opts = options.As();
+			if (!options.CoerceString(out var opts))
+				return DefaultObject;
+
 			var width = 0;
 
 			foreach (Range r in opts.AsSpan().SplitAny(Spaces))
@@ -3109,7 +3178,8 @@ namespace Keysharp.Builtins
 			}
 			else
 			{
-				var file = fileName.As();
+				if (!fileName.CoerceString(out var file))
+					return DefaultObject;
 
 				if (file is "*" or "")
 				{
@@ -3143,7 +3213,10 @@ namespace Keysharp.Builtins
 		{
 			ResumeAddLayout();
 			EnsureDefaultMargins();
-			var s = options.As();
+
+			if (!options.CoerceString(out var s))
+				return DefaultObject;
+
 			bool /*center = false, cX = false, cY = false,*/ auto = false, min = false, max = false, restore = true, hide = false, cX = false, cY = false;
 			var dpiscale = DpiScale;
 			// Per call: a Show without X or Y leaves a shown window where it is, as in AHK.
@@ -4152,16 +4225,15 @@ namespace Keysharp.Builtins
 #endif
 		}
 
-		private static void Opt(object obj, ref int addStyle, ref int addExStyle, ref int removeStyle, ref int removeExStyle)
+		private static void Opt(string options, ref int addStyle, ref int addExStyle, ref int removeStyle, ref int removeExStyle)
 		{
 #if WINDOWS
-			var options = obj.As();
 			var tempbool = false;
 
 			// These are raw Win32 WS_/WS_EX_ style bits (e.g. +E0x8) with no portable equivalent, so this method is
 			// a no-op on non-Windows; portable window attributes are expressed through Eto's typed properties
 			// rather than raw style numbers.
-			foreach (var raw in Options.ParseOptions(options))
+			foreach (var raw in Options.ParseOptions(options ?? ""))
 			{
 				// An option with no leading +/- means + (add), per AHK. Normalize so the sign-aware checks below see an
 				// explicit sign; otherwise a no-sign flag like "AlwaysOnTop" parses as false (empty suffix => default) and

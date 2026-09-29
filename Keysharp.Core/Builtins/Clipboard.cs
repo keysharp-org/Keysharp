@@ -89,7 +89,8 @@ namespace Keysharp.Builtins
 				return files == null || files.Length == 0 ? "" : new Array(files);
 			}
 
-			public static object staticset_Files(object @this, object value) => WriteOne(ClipboardKind.Files, ToPaths(value));
+			public static object staticset_Files(object @this, object value) =>
+				TryGetPaths(value, out var paths) ? WriteOne(ClipboardKind.Files, paths) : DefaultObject;
 
 			/// <summary>The clipboard's HTML markup, or "" when it holds none. This is the FRAGMENT: on Windows the
 			/// CF_HTML header is added on write and stripped on read, so what a script sets is what other applications
@@ -100,7 +101,8 @@ namespace Keysharp.Builtins
 				return Platform.Clipboard.GetKindText(ClipboardKind.Html);
 			}
 
-			public static object staticset_Html(object @this, object value) => WriteOne(ClipboardKind.Html, value.As());
+			public static object staticset_Html(object @this, object value) =>
+				value.CoerceString(out var html) ? WriteOne(ClipboardKind.Html, html) : DefaultObject;
 
 			/// <summary>The clipboard's RTF source, or "" when it holds none.</summary>
 			public static object staticget_Rtf(object @this)
@@ -109,7 +111,8 @@ namespace Keysharp.Builtins
 				return Platform.Clipboard.GetKindText(ClipboardKind.Rtf);
 			}
 
-			public static object staticset_Rtf(object @this, object value) => WriteOne(ClipboardKind.Rtf, value.As());
+			public static object staticset_Rtf(object @this, object value) =>
+				value.CoerceString(out var rtf) ? WriteOne(ClipboardKind.Rtf, rtf) : DefaultObject;
 
 			#endregion
 
@@ -141,7 +144,8 @@ namespace Keysharp.Builtins
 			/// </summary>
 			[Static] public static object Has(object @this, object kind)
 			{
-				var name = kind.As();
+				if (!kind.CoerceString(out var name))
+					return DefaultObject;
 
 				if (name.Length == 0)
 					return false;
@@ -169,7 +173,8 @@ namespace Keysharp.Builtins
 			/// </summary>
 			[Static] public static object GetData(object @this, object format)
 			{
-				var name = format.As();
+				if (!format.CoerceString(out var name))
+					return DefaultObject;
 
 				if (name.Length == 0)
 					return Errors.ValueErrorOccurred("A clipboard format name is required.");
@@ -295,13 +300,34 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>An Array of paths, a single path, or "" (none) as a plain string array.</summary>
-			private static string[] ToPaths(object value)
+			private static bool TryGetPaths(object value, out string[] paths)
 			{
-				if (value is Array arr)
-					return [.. arr.Cast<object>().Select(o => o.As()).Where(s => s.Length != 0)];
+				paths = [];
 
-				var single = value.As();
-				return single.Length == 0 ? [] : [single];
+				if (value is Array arr)
+				{
+					var list = new List<string>();
+
+					foreach (var o in arr.Cast<object>())
+					{
+						if (!o.CoerceString(out var s))
+							return false;
+
+						if (s.Length != 0)
+							list.Add(s);
+					}
+
+					paths = [.. list];
+					return true;
+				}
+
+				if (!value.CoerceString(out var single))
+					return false;
+
+				if (single.Length != 0)
+					paths = [single];
+
+				return true;
 			}
 
 			/// <summary>
@@ -318,12 +344,28 @@ namespace Keysharp.Builtins
 
 				if (Conversions.ConvertClipboardKind(name) is { } kind)
 				{
-					object payload = kind switch
+					object payload;
+
+					switch (kind)
 					{
-						ClipboardKind.Files => ToPaths(value),
-						ClipboardKind.Image => ImageBitmapOrNull(value),
-						_ => value.As(),
-					};
+						case ClipboardKind.Files:
+							if (!TryGetPaths(value, out var paths))
+								return false;
+
+							payload = paths;
+							break;
+
+						case ClipboardKind.Image:
+							payload = ImageBitmapOrNull(value);
+							break;
+
+						default:
+							if (!value.CoerceString(out var text))
+								return false;
+
+							payload = text;
+							break;
+					}
 
 					if (kind == ClipboardKind.Image && payload == null)
 					{
@@ -335,7 +377,10 @@ namespace Keysharp.Builtins
 					return true;
 				}
 
-				entries.Add(ClipboardEntry.Raw(name, ToBytes(value)));
+				if (!TryGetBytes(value, out var bytes))
+					return false;
+
+				entries.Add(ClipboardEntry.Raw(name, bytes));
 				return true;
 			}
 
@@ -345,13 +390,32 @@ namespace Keysharp.Builtins
 				return bmp;
 			}
 
-			private static byte[] ToBytes(object value) => value switch
+			private static bool TryGetBytes(object value, out byte[] bytes)
 			{
-				Buffer buf => buf.ToByteArray(),
-				byte[] raw => raw,
-				null => System.Array.Empty<byte>(),
-				_ => Encoding.UTF8.GetBytes(value.As()),
-			};
+				switch (value)
+				{
+					case Buffer buf:
+						bytes = buf.ToByteArray();
+						return true;
+
+					case byte[] raw:
+						bytes = raw;
+						return true;
+
+					case null:
+						bytes = System.Array.Empty<byte>();
+						return true;
+				}
+
+				if (!value.CoerceString(out var text))
+				{
+					bytes = System.Array.Empty<byte>();
+					return false;
+				}
+
+				bytes = Encoding.UTF8.GetBytes(text);
+				return true;
+			}
 
 			#endregion
 		}

@@ -550,7 +550,7 @@ namespace Keysharp.Tests
 
 			KeysharpFunc Record(string slot) => new((Func<object, object, object, object>)((hook, hwnd, time) =>
 			{
-				if (watched.Contains(hwnd.Al()))
+				if (hwnd.TryCoerceLong(out var h) && watched.Contains(h))
 					log.Add($"{slot} {hwnd}");
 
 				return "";

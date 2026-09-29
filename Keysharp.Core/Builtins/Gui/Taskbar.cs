@@ -38,7 +38,8 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public object __New(object hwnd)
 			{
-				var handle = hwnd.Al();
+				if (!hwnd.CoerceLong(out var handle))
+					return DefaultObject;
 
 				if (handle == 0)
 					return Errors.ValueErrorOccurred("Hwnd must name a window.", hwnd);
@@ -83,9 +84,12 @@ namespace Keysharp.Builtins
 			/// <param name="window">The button to decorate, or null for the application's own.</param>
 			private static object Badge(nint? window, object source, object iconNumber, object text)
 			{
-				var caption = text.As();
+				if (!text.CoerceString(out var caption))
+					return DefaultObject;
+
 #if WINDOWS
-				var file = source.As();
+				if (!source.CoerceString(out var file))
+					return DefaultObject;
 
 				//Loading is Windows-only work: no other shell draws an icon badge, so elsewhere the file would be
 				//decoded and thrown away.
@@ -136,9 +140,17 @@ namespace Keysharp.Builtins
 			/// <param name="window">The button to fill, or null for the application's own.</param>
 			private static object Progress(nint? window, object value, object maximum)
 			{
-				var total = maximum == null ? 100L : maximum.Al();
-				var blank = value == null || value.As().Length == 0 || total <= 0;
-				var requested = blank ? 0L : value.Al();
+				if (!maximum.CoerceLong(out var total, 100L))
+					return DefaultObject;
+
+				if (!value.CoerceString(out var valueText))
+					return DefaultObject;
+
+				var blank = valueText.Length == 0 || total <= 0;
+				long requested = 0L;
+
+				if (!blank && !value.CoerceLong(out requested))
+					return DefaultObject;
 
 				if (!blank && (requested < 0 || requested > total))
 					return Errors.ValueErrorOccurred($"Value must be from 0 through {total}.", value);
@@ -172,7 +184,9 @@ namespace Keysharp.Builtins
 			/// <param name="window">The button to set, or null for the application's own.</param>
 			private static object ProgressState(nint? window, object state)
 			{
-				var name = state.As();
+				if (!state.CoerceString(out var name))
+					return DefaultObject;
+
 				//Matched by name rather than through Enum.TryParse, which would also accept "8" and "Normal,Error"
 				//and would tie the script's vocabulary to whatever the internal enum members happen to be called.
 				var parsed = name.ToLowerInvariant() switch

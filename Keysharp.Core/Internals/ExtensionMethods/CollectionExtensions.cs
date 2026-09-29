@@ -29,36 +29,6 @@ namespace Keysharp.Internals.ExtensionMethods
 		public static bool Ab(this IList obj, int index, bool def = default) => obj.Count > index ? obj[index].Ab(def) : def;
 
 		/// <summary>
-		/// Converts an element of an <see cref="IList"/> to a double.<br/>
-		/// If the conversion fails, obj[index] is null or the index is out of bounds, def is returned.
-		/// </summary>
-		/// <param name="obj">The list whose element will be converted.</param>
-		/// <param name="index">The index in the list to convert.</param>
-		/// <param name="def">A default value to return if the conversion failed, the item is null or the index is out of bounds. Default: 0.</param>
-		/// <returns>The element at the specified list index as a double.</returns>
-		public static double Ad(this IList obj, int index, double def = default) => obj.Count > index ? obj[index].Ad(def) : def;
-
-		/// <summary>
-		/// Converts an element of an <see cref="IList"/> to a int.<br/>
-		/// If the conversion fails, obj[index] is null or the index is out of bounds, def is returned.
-		/// </summary>
-		/// <param name="obj">The list whose element will be converted.</param>
-		/// <param name="index">The index in the list to convert.</param>
-		/// <param name="def">A default value to return if the conversion failed, the item is null or the index is out of bounds. Default: 0.</param>
-		/// <returns>The element at the specified list index as a int.</returns>
-		public static int Ai(this IList obj, int index, int def = default) => obj.Count > index ? obj[index].Ai(def) : def;
-
-		/// <summary>
-		/// Converts an element of an <see cref="IList"/> to a long.<br/>
-		/// If the conversion fails, obj[index] is null or the index is out of bounds, def is returned.
-		/// </summary>
-		/// <param name="obj">The list whose element will be converted.</param>
-		/// <param name="index">The index in the list to convert.</param>
-		/// <param name="def">A default value to return if the conversion failed, the item is null or the index is out of bounds. Default: 0.</param>
-		/// <returns>The element at the specified list index as a long.</returns>
-		public static long Al(this IList obj, int index, long def = default) => obj.Count > index ? obj[index].Al(def) : def;
-
-		/// <summary>
 		/// Retrieves the element of an <see cref="IList"/> if index is in bounds, else def.
 		/// </summary>
 		/// <param name="obj">The list whose element will be retrieved.</param>
@@ -66,16 +36,6 @@ namespace Keysharp.Internals.ExtensionMethods
 		/// <param name="def">A default value to return if the index is out of bounds. Default: null.</param>
 		/// <returns>The element at the specified list index.</returns>
 		public static object Ao(this IList obj, int index, object def = null) => obj.Count > index ? obj[index] : def;
-
-		/// <summary>
-		/// Converts an element of an <see cref="IList"/> to a string.<br/>
-		/// If obj[index] is null or the index is out of bounds, def is returned.
-		/// </summary>
-		/// <param name="obj">The list whose element will be converted.</param>
-		/// <param name="index">The index in the list to convert.</param>
-		/// <param name="def">A default value to return if the item is null or the index is out of bounds. Default: "".</param>
-		/// <returns>The element at the specified list index as a string.</returns>
-		public static string As(this IList obj, int index, string def = "") => obj.Count > index && obj[index] != null ? obj[index].ToString() : def;
 
 		/// <summary>
 		/// Concatenates one array of type <typeparamref name="T"/> to another.
@@ -183,14 +143,6 @@ namespace Keysharp.Internals.ExtensionMethods
 				}
 			}
 		}
-
-		/// <summary>
-		/// Converts the first element of an <see cref="IList"/> to an integer.
-		/// </summary>
-		/// <param name="obj">The list to retrieve the element from.</param>
-		/// <param name="def">A default value to return if the retrieval fails.</param>
-		/// <returns>The first element of the list as an integer, else def</returns>
-		public static int I1(this IList obj, int def = 0) => obj.Ai(0, def);
 
 		/// <summary>
 		/// Converts the first 5 elements of an <see cref="IList"/> to an int, object, string, string, string tuple.
@@ -571,14 +523,6 @@ namespace Keysharp.Internals.ExtensionMethods
 		//public static IList Pl(this object[] args) => args.Select(x => x).ToList();
 
 		/// <summary>
-		/// Converts the first element of an <see cref="IList"/> to a string.
-		/// </summary>
-		/// <param name="obj">The list to retrieve the element from.</param>
-		/// <param name="def">Default string.</param>
-		/// <returns>A string.</returns>
-		public static string S1(this IList obj, string def = "") => obj.As(0, def);
-
-		/// <summary>
 		/// Converts the first 8 elements of an <see cref="IList"/> to an string, double, int, object, string, int, string, string tuple.
 		/// </summary>
 		/// <param name="obj">The list to retrieve the elements from.</param>
@@ -659,38 +603,6 @@ namespace Keysharp.Internals.ExtensionMethods
 		//  var r2 = obj.As(1, def2);
 		//  return (r1, r2);
 		//}
-
-		/// <summary>
-		/// Converts the first 3 elements of an <see cref="IList"/> to a string, string, string tuple.
-		/// </summary>
-		/// <param name="obj">The list to retrieve the elements from.</param>
-		/// <param name="def1">Default string.</param>
-		/// <param name="def2">Default string.</param>
-		/// <param name="def3">Default string.</param>
-		/// <returns>A string, string, string tuple.</returns>
-		public static (string, string, string) S3(this IList obj, string def1 = "", string def2 = "", string def3 = "")
-		{
-			var r1 = obj.As(0, def1);
-			var r2 = obj.As(1, def2);
-			var r3 = obj.As(2, def3);
-			return (r1, r2, r3);
-		}
-
-		/// <summary>
-		/// Converts the first 3 elements of an <see cref="IList"/> to a string, long, string tuple.
-		/// </summary>
-		/// <param name="obj">The list to retrieve the elements from.</param>
-		/// <param name="def1">Default string.</param>
-		/// <param name="def2">Default long.</param>
-		/// <param name="def3">Default string.</param>
-		/// <returns>A string, long, string tuple.</returns>
-		public static (string, long, string) Sls(this IList obj, string def1 = "", long def2 = default, string def3 = "")
-		{
-			var r1 = obj.As(0, def1);
-			var r2 = obj.Al(1, def2);
-			var r3 = obj.As(2, def3);
-			return (r1, r2, r3);
-		}
 
 		public static Stack<T> Clone<T>(this Stack<T> stack)
 		{

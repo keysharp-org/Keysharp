@@ -30,7 +30,11 @@ namespace Keysharp.Internals.Scripting
 	/// </summary>
 	internal static class CallbackStop
 	{
-		internal static readonly Func<object, bool> NonZero = static r => r.Al() != 0L;
+		internal static readonly Func<object, bool> NonZero = static r =>
+		{
+			_ = r.TryCoerceLong(out var l);
+			return l != 0L;
+		};
 		internal static readonly Func<object, bool> NonEmpty = static r => !r.IsNullOrEmpty();
 	}
 

@@ -39,7 +39,8 @@ namespace Keysharp.Builtins
 
 			set
 			{
-				var val = value.Al();
+				if (!value.CoerceLong(out var val))
+					return;
 
 				if (val > size)
 				{
@@ -102,8 +103,14 @@ namespace Keysharp.Builtins
 			}
 			else//This will be called by the user.
 			{
-				var bytecount = byteCount.ToLong();
-				var fill = fillByte is not null ? fillByte.ToLong() : long.MinValue;
+				if (!byteCount.CoerceLong(out var bytecount))
+					return DefaultObject;
+
+				var fill = long.MinValue;
+
+				if (fillByte is not null && !fillByte.CoerceLong(out fill))
+					return DefaultObject;
+
 				Size = bytecount;
 
 				if (bytecount > 0)

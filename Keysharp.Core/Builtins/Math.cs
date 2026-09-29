@@ -8,14 +8,14 @@ namespace Keysharp.Builtins
 		/// <param name="y">A number representing the Y value.</param>
 		/// <param name="x">A number representing the X value.</param>
 		/// <returns>An angle, θ, measured in radians, such that -(y/x)/2 ≤ θ ≤ (y/x)/2.</returns>
-		public static object ATan2(object y, object x) => Math.Atan2(y.ToDouble(), x.ToDouble());
+		public static object ATan2(object y, object x) => y.CoerceDouble(out var yd) && x.CoerceDouble(out var xd) ? Math.Atan2(yd, xd) : DefaultObject;
 
 		/// <summary>
 		/// Returns the hyperbolic cosine of the specified angle.
 		/// </summary>
 		/// <param name="number">An angle, measured in radians.</param>
 		/// <returns>The hyperbolic cosine of <paramref name="number"/>.</returns>
-		public static object Cosh(object number) => Math.Cosh(number.ToDouble());
+		public static object Cosh(object number) => number.CoerceDouble(out var n) ? Math.Cosh(n) : DefaultObject;
 
 		/// <summary>
 		/// Reinitializes the random number generator for the current thread with the specified numerical seed.
@@ -23,7 +23,10 @@ namespace Keysharp.Builtins
 		/// <param name="integer">The numerical seed to create the random number generator with.</param>
 		public static object RandomSeed(object integer)
 		{
-			Script.TheScript.Threads.CurrentThread.RandomGenerator = new Random(integer.ToInt());
+			if (!integer.CoerceInt(out var seed))
+				return DefaultObject;
+
+			Script.TheScript.Threads.CurrentThread.RandomGenerator = new Random(seed);
 			return DefaultObject;
 		}
 
@@ -32,21 +35,20 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="number">An angle, measured in radians.</param>
 		/// <returns>The hyperbolic sine of <paramref name="number"/>.</returns>
-		public static object Sinh(object number) => Math.Sinh(number.ToDouble());
+		public static object Sinh(object number) => number.CoerceDouble(out var n) ? Math.Sinh(n) : DefaultObject;
 
 		/// <summary>
 		/// Returns the hyperbolic tangent of the specified angle.
 		/// </summary>
 		/// <param name="number">An angle, measured in radians.</param>
 		/// <returns>The hyperbolic tangent of <paramref name="number"/>.</returns>
-		public static object Tanh(object number) => Math.Tanh(number.ToDouble());
+		public static object Tanh(object number) => number.CoerceDouble(out var n) ? Math.Tanh(n) : DefaultObject;
 	}
 
 	/// <summary>
 	/// Public interface for math-related functions.
 	/// Most functions here do not take variadic parameters so they can run as fast as possible.
-	/// Also, an attempt to cast the object argument to a double is made first because it's the
-	/// most common and fastest case. If it's not a double, Ad() is used.
+	/// Numeric arguments use CoerceDouble, which handles doubles directly before parsing other values.
 	/// </summary>
 	public static class Maths
 	{
@@ -81,7 +83,8 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the argument was not between -1 and 1.</exception>
 		public static object ACos(object number)
 		{
-			var n = number.ToDouble();
+			if (!number.CoerceDouble(out var n))
+				return DefaultObject;
 
 			if (n < -1 || n > 1)
 				return Errors.ErrorOccurred($"ACos() argument of {n} was not between -1 and 1.");
@@ -97,7 +100,8 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the argument was not between -1 and 1.</exception>
 		public static object ASin(object number)
 		{
-			var n = number.ToDouble();
+			if (!number.CoerceDouble(out var n))
+				return DefaultObject;
 
 			if (n < -1 || n > 1)
 				return Errors.ErrorOccurred($"ASin() argument of {n} was not between -1 and 1.");
@@ -110,7 +114,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="number">A number representing a tangent.</param>
 		/// <returns>An angle, θ, measured in radians, such that -π/2 ≤ θ ≤ π/2.</returns>
-		public static object ATan(object number) => Math.Atan(number.ToDouble());
+		public static object ATan(object number) => number.CoerceDouble(out var n) ? Math.Atan(n) : DefaultObject;
 
 		/// <summary>
 		/// Returns the angle whose tangent is the y/x number.
@@ -118,21 +122,21 @@ namespace Keysharp.Builtins
 		/// <param name="y">A number representing the Y value.</param>
 		/// <param name="x">A number representing the X value.</param>
 		/// <returns>An angle, θ, measured in radians, such that -π ≤ θ ≤ π.</returns>
-		public static object ATan2(object y, object x) => Math.Atan2(y.ToDouble(), x.ToDouble());
+		public static object ATan2(object y, object x) => y.CoerceDouble(out var yd) && x.CoerceDouble(out var xd) ? Math.Atan2(yd, xd) : DefaultObject;
 
 		/// <summary>
 		/// Returns the specified number rounded up to the nearest integer.
 		/// </summary>
 		/// <param name="number">A number.</param>
 		/// <returns>The smallest integer greater than or equal to <paramref name="n"/>.</returns>
-		public static object Ceil(object number) => (long)Math.Ceiling(number.ToDouble());
+		public static object Ceil(object number) => number.CoerceDouble(out var n) ? (long)Math.Ceiling(n) : DefaultObject;
 
 		/// <summary>
 		/// Returns the cosine of the specified angle.
 		/// </summary>
 		/// <param name="number">An angle, measured in radians.</param>
 		/// <returns>The cosine of <paramref name="n"/>.</returns>
-		public static object Cos(object number) => Math.Cos(number.ToDouble());
+		public static object Cos(object number) => number.CoerceDouble(out var n) ? Math.Cos(n) : DefaultObject;
 
 		/// <summary>
 		/// Adds or subtracts time from a date-time value.
@@ -144,9 +148,9 @@ namespace Keysharp.Builtins
 		/// and the YYYYMMDDHH24MISS.FFF format if timeUnits was "L".</returns>
 		public static string DateAdd(object dateTime, object time, object timeUnits)
 		{
-			var s1 = dateTime.As();
-			var t = time.ToDouble();
-			var units = timeUnits.As();
+			if (!dateTime.CoerceString(out var s1) || !time.CoerceDouble(out var t) || !timeUnits.CoerceString(out var units))
+				return "";
+
 			var wasMs = s1.Contains('.');
 
 			if (s1.Length == 0)
@@ -194,9 +198,8 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static object DateDiff(object dateTime1, object dateTime2, object timeUnits)
 		{
-			var s1 = dateTime1.As();
-			var s2 = dateTime2.As();
-			var units = timeUnits.As();
+			if (!dateTime1.CoerceString(out var s1) || !dateTime2.CoerceString(out var s2) || !timeUnits.CoerceString(out var units))
+				return DefaultObject;
 
 			if (s1.Length == 0)
 				s1 = Conversions.ToYYYYMMDDHH24MISSFFF(DateTime.Now);
@@ -232,14 +235,14 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="n">A number specifying a power.</param>
 		/// <returns>The number <c>e</c> raised to the power <paramref name="n"/>.</returns>
-		public static object Exp(object n) => Math.Exp(n.ToDouble());
+		public static object Exp(object n) => n.CoerceDouble(out var d) ? Math.Exp(d) : DefaultObject;
 
 		/// <summary>
 		/// Returns the largest integer less than or equal to the specified double number.
 		/// </summary>
 		/// <param name="number">A number.</param>
 		/// <returns>The largest integer less than or equal to <paramref name="n"/>.</returns>
-		public static object Floor(object number) => (long)Math.Floor(number.ToDouble());
+		public static object Floor(object number) => number.CoerceDouble(out var n) ? (long)Math.Floor(n) : DefaultObject;
 
 		/// <summary>
 		/// Returns the natural (base e) logarithm of a specified number.
@@ -249,10 +252,11 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the argument was negative.</exception>
 		public static object Ln(object number)
 		{
-			var n = number.ToDouble();
+			if (!number.CoerceDouble(out var n))
+				return DefaultObject;
 
 			if (n < 0)
-				return Errors.ErrorOccurred($"Ln() argument {n} was negative.");
+				return Errors.ErrorOccurred($"Ln()argument {n} was negative.");
 
 			return Math.Log(n);
 		}
@@ -266,18 +270,19 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the argument was negative.</exception>
 		public static object Log(object number, object @base = null)
 		{
-			var n = number.Ad(double.MinValue);
-			var b = @base.Ad(double.MinValue);
+			if (!number.CoerceDouble(out var n))
+				return DefaultObject;
 
 			if (n < 0)
 				return Errors.ErrorOccurred($"Log() argument {n} was negative.");
 
-			if (b != double.MinValue)
-				return b == 10 ? Math.Log10(n) : Math.Log(n, b);
-			else if (n != double.MinValue)
+			if (@base == null)
 				return Math.Log10(n);
 
-			return 0.0;
+			if (!@base.CoerceDouble(out var b))
+				return DefaultObject;
+
+			return b == 10 ? Math.Log10(n) : Math.Log(n, b);
 		}
 
 		/// <summary>
@@ -440,8 +445,13 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static object Round(object number, object n = null)
 		{
-			var num = number.ToDouble();
-			var places = n is null ? 0L : n.ToLong();
+			if (!number.CoerceDouble(out var num))
+				return DefaultObject;
+
+			var places = 0L;
+
+			if (n is not null && !n.CoerceLong(out places))
+				return DefaultObject;
 
 			if (places == 0L)
 				//Convert.ToInt64 rounds a midpoint to even; AutoHotkey rounds it away from zero, the same
@@ -457,7 +467,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="number">An angle, measured in radians.</param>
 		/// <returns>The sine of <paramref name="n"/>.</returns>
-		public static object Sin(object number) => Math.Sin(number.ToDouble());
+		public static object Sin(object number) => number.CoerceDouble(out var n) ? Math.Sin(n) : DefaultObject;
 
 		/// <summary>
 		/// Returns the square root of a specified number.
@@ -467,7 +477,8 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the value is negative.</exception>
 		public static object Sqrt(object number)
 		{
-			var n = number.ToDouble();
+			if (!number.CoerceDouble(out var n))
+				return DefaultObject;
 
 			if (n < 0)
 				return Errors.ErrorOccurred($"Sqrt() argument of {n} was negative.");
@@ -480,6 +491,6 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="number">An angle, measured in radians.</param>
 		/// <returns>The tangent of <paramref name="n"/>.</returns>
-		public static object Tan(object number) => Math.Tan(number.ToDouble());
+		public static object Tan(object number) => number.CoerceDouble(out var n) ? Math.Tan(n) : DefaultObject;
 	}
 }

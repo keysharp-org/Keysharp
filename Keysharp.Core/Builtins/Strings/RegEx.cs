@@ -63,9 +63,12 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown on failure.</exception>
 		public static long RegExMatch(object haystack, object needleRegEx, [ByRef] object outputVar = null, object startingPos = null)
 		{
-			var input = haystack.As();
-			var n = needleRegEx.As();
-			var index = startingPos.Ai(1);
+			if (!haystack.CoerceString(out var input) || !needleRegEx.CoerceString(out var n))
+				return 0L;
+
+			if (!startingPos.CoerceInt(out var index, 1))
+				return 0L;
+
 			KeysharpFunc callout = null;
 			RegexHolder exp;
 			var script = Script.TheScript;
@@ -124,12 +127,13 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					int result = callout.Call(
-									 new RegExMatchInfo(pcre_callout.Match, exp),
-									 (long)pcre_callout.Number,
-									 (long)pcre_callout.StartOffset + 1, // FoundPos: 1-based offset in haystack where the current match attempt started (AHK's cb->start_match + 1).
-									 haystack,
-									 needleRegEx).Ai();
+					var callResult = callout.Call(
+										  new RegExMatchInfo(pcre_callout.Match, exp),
+										  (long)pcre_callout.Number,
+										  (long)pcre_callout.StartOffset + 1, // FoundPos: 1-based offset in haystack where the current match attempt started (AHK's cb->start_match + 1).
+										  haystack,
+										  needleRegEx);
+					_ = callResult.TryCoerceInt(out var result);
 
 					if (result > 1)
 						result = 1;
@@ -203,8 +207,9 @@ namespace Keysharp.Builtins
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown on failure.</exception>
 		public static string RegExReplace(object haystack, object needleRegEx, object replacement = null, [ByRef] object outputVarCount = null, object limit = null, object startingPos = null)
 		{
-			var input = haystack.As();
-			var needle = needleRegEx.As();
+			if (!haystack.CoerceString(out var input) || !needleRegEx.CoerceString(out var needle))
+				return DefaultErrorString;
+
 			var rd = TheScript.RegExData;
 			object callout = null;
 			string replace = null;
@@ -218,12 +223,15 @@ namespace Keysharp.Builtins
 			}
 			else
 			{
-				replace = replacement.As();
+				if (!replacement.CoerceString(out replace))
+					return DefaultErrorString;
+
 				replaceParser = rd.ReplacementCache.GetOrAdd(replace, rd.ParseReplace);
 			}
 
-			var l = limit.Ai(-1);
-			var index = startingPos.Ai(1);
+			if (!limit.CoerceInt(out var l, -1) || !startingPos.CoerceInt(out var index, 1))
+				return DefaultErrorString;
+
 			int n = 0;
 			RegexHolder exp;
 			var regdkt = rd.regdkt;
@@ -263,12 +271,24 @@ namespace Keysharp.Builtins
 			else
 				index = Math.Min(Math.Max(0, index - 1), input.Length);
 
+			// The callout cannot stop PCRE's Replace, so a continued TypeError skips the remaining calls instead.
+			var aborted = false;
+
 			string CalloutHandler(PcreMatch match)
 			{
+				if (aborted)
+					return "";
+
 				n++;
 
 				if (callout != null)
-					return Script.InvokeOrNull(callout, null, new RegExMatchInfo(match, exp)).As();
+				{
+					if (Script.InvokeOrNull(callout, null, new RegExMatchInfo(match, exp)).CoerceString(out var text))
+						return text;
+
+					aborted = true;
+					return "";
+				}
 
 				return replaceParser(match);
 			}
@@ -276,6 +296,10 @@ namespace Keysharp.Builtins
 			try
 			{
 				string result = exp.regex.Replace(input, CalloutHandler, l, index);
+
+				if (aborted)
+					return DefaultErrorString;
+
 				if (outputVarCount != null)
 					Refs.SetValue(outputVarCount, (long)n);
 				return result;

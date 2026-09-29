@@ -20,7 +20,10 @@ namespace Keysharp.Internals.Mapper.Linux
 					var components = serial.Split('=');
 
 					if (components.Length >= 2)
-						return components[1].Al();
+					{
+						_ = components[1].TryCoerceLong(out var value);
+						return value;
+					}
 				}
 
 				return 0L;

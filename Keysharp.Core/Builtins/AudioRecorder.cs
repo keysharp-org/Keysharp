@@ -37,7 +37,9 @@ namespace Keysharp.Builtins
 									object chunkMilliseconds = null, object maximumDurationMilliseconds = null)
 				{
 					service = Service;
-					var sourceText = source.As();
+
+					if (!source.CoerceString(out var sourceText))
+						return DefaultObject;
 
 					if (sourceText.Length == 0 || string.Equals(sourceText, "Microphone", StringComparison.OrdinalIgnoreCase))
 						this.source = Engine.AudioCaptureSource.Microphone;
@@ -46,7 +48,10 @@ namespace Keysharp.Builtins
 					else
 						return Errors.ValueErrorOccurred($"Unknown Source \"{sourceText}\". Expected Microphone or SystemOutput.");
 
-					configuredPath = path.As();
+					if (!path.CoerceString(out var pathText))
+						return DefaultObject;
+
+					configuredPath = pathText;
 
 					if (configuredPath.Contains('\0'))
 						return Errors.ValueErrorOccurred("Path must not contain an embedded NUL.");
@@ -66,17 +71,24 @@ namespace Keysharp.Builtins
 						}
 					}
 
-					rate = (int)(sampleRate == null ? 48000L : sampleRate.Al());
+					if (!sampleRate.CoerceLong(out var rateLong, 48000L))
+						return DefaultObject;
+
+					rate = (int)rateLong;
 
 					if (!Engine.AudioFormats.IsValidSampleRate(rate))
 						return Errors.ValueErrorOccurred($"SampleRate must be from {Engine.AudioFormats.MinSampleRate} through {Engine.AudioFormats.MaxSampleRate}.", sampleRate);
 
-					this.channels = (int)(channels == null ? 1L : channels.Al());
+					if (!channels.CoerceLong(out var channelsLong, 1L))
+						return DefaultObject;
+
+					this.channels = (int)channelsLong;
 
 					if (!Engine.AudioFormats.IsValidChannels(this.channels))
 						return Errors.ValueErrorOccurred("Channels must be 1 or 2.", channels);
 
-					var formatToken = sampleFormat.As();
+					if (!sampleFormat.CoerceString(out var formatToken))
+						return DefaultObject;
 
 					if (formatToken.Length == 0)
 						formatToken = Engine.AudioFormats.Signed16;
@@ -84,17 +96,24 @@ namespace Keysharp.Builtins
 					if (!Engine.AudioFormats.TryResolve(formatToken, out format, out _))
 						return Errors.ValueErrorOccurred($"Unknown SampleFormat \"{formatToken}\". Expected Unsigned8, Signed16, Signed24, Signed32 or Float32.");
 
-					chunkMs = chunkMilliseconds == null ? 100L : chunkMilliseconds.Al();
+					if (!chunkMilliseconds.CoerceLong(out chunkMs, 100L))
+						return DefaultObject;
 
 					if (chunkMs < 10 || chunkMs > 1000)
 						return Errors.ValueErrorOccurred("ChunkMilliseconds must be from 10 through 1000.", chunkMilliseconds);
 
-					maximumMs = maximumDurationMilliseconds == null ? 0L : maximumDurationMilliseconds.Al();
+					if (!maximumDurationMilliseconds.CoerceLong(out maximumMs, 0L))
+						return DefaultObject;
 
 					if (maximumMs < 0 || maximumMs > 86_400_000)
 						return Errors.ValueErrorOccurred("MaximumDurationMilliseconds must be 0 for unbounded, or 1 through 86400000.", maximumDurationMilliseconds);
 
-					if (device is Ks.Audio.Device || device.As().Length > 0)
+					var deviceText = "";
+
+					if (device is not Ks.Audio.Device && !device.CoerceString(out deviceText))
+						return DefaultObject;
+
+					if (device is Ks.Audio.Device || deviceText.Length > 0)
 					{
 						var kind = this.source == Engine.AudioCaptureSource.Microphone ? Engine.AudioDeviceKind.Input : Engine.AudioDeviceKind.Output;
 
@@ -273,8 +292,6 @@ namespace Keysharp.Builtins
 					EnsureResult();
 					return DefaultObject;
 				}
-
-				public override string ToString() => "Audio.Recorder";
 			}
 
 			/// <summary>
@@ -323,8 +340,6 @@ namespace Keysharp.Builtins
 
 				/// <summary>"Float32" for an in-memory result; otherwise the recorder's configured SampleFormat.</summary>
 				public string SampleFormat => format;
-
-				public override string ToString() => "Audio.Recording";
 			}
 		}
 	}

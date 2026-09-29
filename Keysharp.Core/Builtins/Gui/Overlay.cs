@@ -60,6 +60,21 @@ namespace Keysharp.Builtins
 				=> (authoredW > 0 ? authoredW : Math.Max(0, imageW),
 					authoredH > 0 ? authoredH : Math.Max(0, imageH));
 
+			// Coerces the optional X/Y/Width/Height quartet shared by Redraw, SetImage, Show and Move: an
+			// omitted argument keeps the current value, a supplied one must convert.
+			private bool TryResolveOptionalGeometry(object x, object y, object width, object height,
+				out int nextX, out int nextY, out int nextW, out int nextH)
+			{
+				nextX = this.x;
+				nextY = this.y;
+				nextW = w;
+				nextH = h;
+				return (x == null || x.CoerceInt(out nextX)) &&
+					(y == null || y.CoerceInt(out nextY)) &&
+					(width == null || width.CoerceInt(out nextW)) &&
+					(height == null || height.CoerceInt(out nextH));
+			}
+
 			public KeysharpOverlay(params object[] args) : base(args) { }
 
 			/// <summary>
@@ -76,10 +91,9 @@ namespace Keysharp.Builtins
 				if (x == null || y == null || width == null || height == null)
 					return Errors.ValueErrorOccurred("Overlay requires either no arguments or X, Y, Width and Height.");
 
-				var nextX = x.Ai();
-				var nextY = y.Ai();
-				var nextW = width.Ai();
-				var nextH = height.Ai();
+				if (!x.CoerceInt(out var nextX) || !y.CoerceInt(out var nextY) ||
+					!width.CoerceInt(out var nextW) || !height.CoerceInt(out var nextH))
+					return DefaultObject;
 
 				if (nextW <= 0 || nextH <= 0)
 					return Errors.ValueErrorOccurred("Overlay Width and Height must be positive.");
@@ -104,8 +118,28 @@ namespace Keysharp.Builtins
 
 			#region Properties
 
-			public object X { get => (long)x; set { if (RejectRedrawMutation()) return; x = value.Ai(); MoveLive(false); } }
-			public object Y { get => (long)y; set { if (RejectRedrawMutation()) return; y = value.Ai(); MoveLive(false); } }
+			public object X
+			{
+				get => (long)x;
+				set
+				{
+					if (RejectRedrawMutation()) return;
+					if (!value.CoerceInt(out var next)) return;
+					x = next;
+					MoveLive(false);
+				}
+			}
+			public object Y
+			{
+				get => (long)y;
+				set
+				{
+					if (RejectRedrawMutation()) return;
+					if (!value.CoerceInt(out var next)) return;
+					y = next;
+					MoveLive(false);
+				}
+			}
 
 			/// <summary>Width in native screen units. Resizing keeps and scales the canvas; use
 			/// <see cref="Redraw"/> when its raster size should change.</summary>
@@ -121,7 +155,7 @@ namespace Keysharp.Builtins
 				set
 				{
 					if (RejectRedrawMutation()) return;
-					var next = value.Ai();
+					if (!value.CoerceInt(out var next)) return;
 
 					if (next < 0)
 					{
@@ -152,7 +186,7 @@ namespace Keysharp.Builtins
 				set
 				{
 					if (RejectRedrawMutation()) return;
-					var next = value.Ai();
+					if (!value.CoerceInt(out var next)) return;
 
 					if (next < 0)
 					{
@@ -177,7 +211,8 @@ namespace Keysharp.Builtins
 				set
 				{
 					if (RejectRedrawMutation()) return;
-					var v = Math.Clamp(value.Al(), 0L, 255L);
+					if (!value.CoerceLong(out var raw)) return;
+					var v = Math.Clamp(raw, 0L, 255L);
 
 					if (v == opacity)
 						return;
@@ -230,10 +265,9 @@ namespace Keysharp.Builtins
 				if (Functions.CheckedCallback(callback, 1) is not { } f)
 					return this;
 
-				var nextX = x != null ? x.Ai() : this.x;
-				var nextY = y != null ? y.Ai() : this.y;
-				var nextW = width != null ? width.Ai() : w;
-				var nextH = height != null ? height.Ai() : h;
+				if (!TryResolveOptionalGeometry(x, y, width, height, out var nextX, out var nextY, out var nextW, out var nextH))
+					return this;
+
 				var oldGeometry = CurrentGeometry;
 
 				if (nextW < 0 || nextH < 0)
@@ -339,10 +373,8 @@ namespace Keysharp.Builtins
 				object height = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				var nextX = x != null ? x.Ai() : this.x;
-				var nextY = y != null ? y.Ai() : this.y;
-				var nextW = width != null ? width.Ai() : w;
-				var nextH = height != null ? height.Ai() : h;
+				if (!TryResolveOptionalGeometry(x, y, width, height, out var nextX, out var nextY, out var nextW, out var nextH))
+					return this;
 
 				if (nextW < 0 || nextH < 0)
 					return Errors.ValueErrorOccurred("Overlay SetImage Width and Height cannot be negative.");
@@ -451,8 +483,7 @@ namespace Keysharp.Builtins
 			/// <see cref="Destroy"/> removes them all.</para></summary>
 			public object OnEvent(object eventName, object callback, object addRemove = null)
 			{
-				if (RejectRedrawMutation()) return this;
-				var rawName = eventName.As();
+				if (RejectRedrawMutation() || !eventName.CoerceString(out var rawName)) return this;
 				var name = rawName.ToLowerInvariant();
 
 				if (System.Array.IndexOf(supportedEvents, name) < 0)
@@ -622,10 +653,8 @@ namespace Keysharp.Builtins
 			public object Show(object x = null, object y = null, object width = null, object height = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				var nextX = x != null ? x.Ai() : this.x;
-				var nextY = y != null ? y.Ai() : this.y;
-				var nextW = width != null ? width.Ai() : w;
-				var nextH = height != null ? height.Ai() : h;
+				if (!TryResolveOptionalGeometry(x, y, width, height, out var nextX, out var nextY, out var nextW, out var nextH))
+					return this;
 
 				if (nextW < 0 || nextH < 0)
 					return Errors.ValueErrorOccurred("Overlay Show Width and Height cannot be negative.");
@@ -652,10 +681,8 @@ namespace Keysharp.Builtins
 			public object Move(object x = null, object y = null, object width = null, object height = null)
 			{
 				if (RejectRedrawMutation()) return this;
-				var nextX = x != null ? x.Ai() : this.x;
-				var nextY = y != null ? y.Ai() : this.y;
-				var nextW = width != null ? width.Ai() : w;
-				var nextH = height != null ? height.Ai() : h;
+				if (!TryResolveOptionalGeometry(x, y, width, height, out var nextX, out var nextY, out var nextW, out var nextH))
+					return this;
 
 				if (nextW < 0 || nextH < 0)
 					return Errors.ValueErrorOccurred("Overlay Move Width and Height cannot be negative.");

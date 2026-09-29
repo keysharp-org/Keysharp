@@ -441,7 +441,7 @@ namespace Keysharp.Builtins
 			long l => l,
 			double d => (long)d,
 			bool b => b ? 1L : 0L,
-			_ => val.Al()// string -> numeric value; object/unset -> 0
+			_ => val.TryCoerceLong(out var l) ? l : 0L// string -> numeric value; object/unset -> 0
 		};
 
 		internal static void DisposeOwnedByScheduler(ScriptEventScheduler scheduler)

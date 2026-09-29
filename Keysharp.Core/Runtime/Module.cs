@@ -59,23 +59,31 @@ namespace Keysharp.Runtime
 				_ = Errors.MissingPropertyErrorOccurred(this, name);
 		}
 
-		object IMetaObject.Call(string name, object[] args)
+		object IMetaObject.Call(string name, object[] args) => TryCall(name, args, out var result) ? result : Errors.MissingMethodErrorOccurred(this, name);
+
+		/// <summary>Calls <paramref name="name"/> if the module declares it or its prototype has it, and returns whether it did.</summary>
+		internal bool TryCall(string name, object[] args, out object result)
 		{
 			args ??= System.Array.Empty<object>();
 
 			if (TryGetMember(name, out var m))
 			{
 				var target = m.Get();
-				return target is KeysharpFunc fn ? fn.Call(args)
-					   : target == null ? Errors.VarUnsetErrorOccurred(null, m.DeclaredName(name))
-					   : Script.Invoke(target, null, args);
+				result = target is KeysharpFunc fn ? fn.Call(args)
+						 : target == null ? Errors.VarUnsetErrorOccurred(null, m.DeclaredName(name))
+						 : Script.Invoke(target, null, args);
+				return true;
 			}
 
 			// The methods every value has, such as HasProp, come from the prototype.
 			if (Script.GetMethodOrProperty(this, name, -1, throwIfMissing: false, invokeMeta: false).Item2 is KeysharpFunc method)
-				return method.CallInst(this, args);
+			{
+				result = method.CallInst(this, args);
+				return true;
+			}
 
-			return Errors.MissingMethodErrorOccurred(this, name);
+			result = null;
+			return false;
 		}
 
 		object IMetaObject.get_Item(object[] indexArgs) => Errors.MissingPropertyErrorOccurred(this, "__Item");

@@ -210,7 +210,8 @@ namespace Keysharp.Builtins
 			if (obj is not Any target)
 				return Errors.ArgumentErrorOccurred(obj, 1);
 
-			var nameVal = name.As();
+			if (!name.CoerceString(out var nameVal))
+				return DefaultObject;
 
 			if (Struct.TryDefineFieldOnPrototype(target, nameVal, descriptor, out var structResult))
 				return structResult ?? Errors.ValueErrorOccurred("Type is only valid for struct fields.");
@@ -253,7 +254,10 @@ namespace Keysharp.Builtins
 			if (obj0 is not Any target)
 				return Errors.ArgumentErrorOccurred(obj0, 1);
 
-			var result = Struct.DefineFieldOnPrototype(target, obj1.As(), type, 0, null, true);
+			if (!obj1.CoerceString(out var fieldName))
+				return DefaultObject;
+
+			var result = Struct.DefineFieldOnPrototype(target, fieldName, type, 0, null, true);
 			return result ?? Errors.ValueErrorOccurred("Type is only valid for struct fields.");
 		}
 
@@ -263,7 +267,10 @@ namespace Keysharp.Builtins
 			if (obj0 is not Any target)
 				return Errors.ArgumentErrorOccurred(obj0, 1);
 
-			var result = Struct.DefineFieldOnPrototype(target, obj1.As(),
+			if (!obj1.CoerceString(out var fieldName))
+				return DefaultObject;
+
+			var result = Struct.DefineFieldOnPrototype(target, fieldName,
 						 Struct.TryResolveClass(type, out var resolved) ? resolved : null, 0, null, true);
 			return result ?? Errors.ValueErrorOccurred("Type is only valid for struct fields.");
 		}
@@ -275,7 +282,10 @@ namespace Keysharp.Builtins
 			if (obj0 is not Any target)
 				return Errors.ArgumentErrorOccurred(obj0, 1);
 
-			var result = Struct.DefineFieldOnPrototype(target, obj1.As(), type, pack, null, true);
+			if (!obj1.CoerceString(out var fieldName))
+				return DefaultObject;
+
+			var result = Struct.DefineFieldOnPrototype(target, fieldName, type, pack, null, true);
 			return result ?? Errors.ValueErrorOccurred("Type is only valid for struct fields.");
 		}
 
@@ -285,7 +295,10 @@ namespace Keysharp.Builtins
 			if (obj0 is not Any target)
 				return Errors.ArgumentErrorOccurred(obj0, 1);
 
-			var result = Struct.DefineFieldOnPrototype(target, obj1.As(),
+			if (!obj1.CoerceString(out var fieldName))
+				return DefaultObject;
+
+			var result = Struct.DefineFieldOnPrototype(target, fieldName,
 						 Struct.TryResolveClass(type, out var resolved) ? resolved : null, pack, null, true);
 			return result ?? Errors.ValueErrorOccurred("Type is only valid for struct fields.");
 		}
@@ -310,7 +323,10 @@ namespace Keysharp.Builtins
 			if (!st.IsPointerView)
 				return Errors.ErrorOccurred("Operation failed.");
 
-			st.SetDataPtr(ptr.Al());
+			if (!ptr.CoerceLong(out var ptrVal))
+				return DefaultObject;
+
+			st.SetDataPtr(ptrVal);
 			return Script.DefaultObject;
 		}
 
@@ -324,7 +340,9 @@ namespace Keysharp.Builtins
 		{
 			if (obj is KeysharpObject kso)
 			{
-				var capacity = maxProps.Ai();
+				if (!maxProps.CoerceInt(out var capacity))
+					return DefaultObject;
+
 				capacity = kso.EnsureOwnProps().EnsureCapacity(capacity);
 				return (long)capacity;
 			}

@@ -37,14 +37,18 @@ namespace Keysharp.Builtins
 			if (type == null)
 			{
 				off = 0;
-				t = offset.As("UInt");
+
+				if (!offset.CoerceString(out t, "UInt"))
+					return DefaultObject;
 			}
 			else
 			{
 				//Read as a long, not an int: a truncated offset can come back negative, which would slip past
 				//the bounds check below and read far outside the buffer.
-				off = offset.Al();
-				t = type.As("UInt");
+				_ = offset.TryCoerceLong(out off);
+
+				if (!type.CoerceString(out t, "UInt"))
+					return DefaultObject;
 			}
 
 			var code = NativeType.Parse(t);
@@ -87,7 +91,7 @@ namespace Keysharp.Builtins
 			{
 				lastPairIndex = obj.Length - 4;
 				//A long, not an int: a truncated offset can come back negative and slip past the bounds check.
-				offset = obj.Al(obj.Length - 1);
+				_ = obj[obj.Length - 1].TryCoerceLong(out offset);
 				target = obj[obj.Length - 2];
 			}
 			else
@@ -168,7 +172,8 @@ namespace Keysharp.Builtins
 		{
 			if (source is object[] objarr && objarr.Length > 0)
 			{
-				addr = (nint)objarr[0].Al();
+				_ = objarr[0].TryCoerceLong(out var a);
+				addr = (nint)a;
 				return true;
 			}
 

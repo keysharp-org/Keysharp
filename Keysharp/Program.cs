@@ -467,7 +467,8 @@ namespace Keysharp.Main
 #if DEBUG
 				Ks.OutputDebugLine("Running compiled code (daemon).");
 #endif
-				Environment.ExitCode = main.Invoke(null, [scriptArgs]).Ai();
+				_ = main.Invoke(null, [scriptArgs]).TryCoerceInt(out var exitCode);
+				Environment.ExitCode = exitCode;
 			}
 			catch (Exception ex)
 			{

@@ -69,7 +69,7 @@ public class MathBench : BaseTest
 		for (var i = 0; i < Size; i++)
 		{
 			var val = Maths.Random();
-			var d = val.Ad();
+			_ = val.TryCoerceDouble(out var d);
 			vals.Add(d);
 			objvals.Add(val);
 			totalCos += Math.Cos(d);

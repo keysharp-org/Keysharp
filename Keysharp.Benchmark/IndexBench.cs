@@ -138,7 +138,7 @@ e4:
 		for (var i = 0; i < Size; i++)
 		{
 			var val = Maths.Random();
-			var d = val.Ad();
+			_ = val.TryCoerceDouble(out var d);
 			nativearray[i] = d;
 			nativedoublearray[i] = d;
 			_ = ((System.Collections.IList)keysharparray).Add(d);

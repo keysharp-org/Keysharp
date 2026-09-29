@@ -335,8 +335,8 @@ namespace Keysharp.Runtime
 					: "";
 			else
 			{
-				resolvedWhat = what.As();
-				var offset = what.TryCoerceLong(out var number) ? (int)number : 0;
+				resolvedWhat = Error.FieldText(what);
+				var offset = resolvedWhat.TryCoerceLong(out var number) ? (int)number : 0;
 
 				// An emitted artifact has no source-text resource. AutoHotkey leaves an explicit What there as given.
 				for (var i = TheScript?.SourceLines.Length is > 0 ? start : -1; i >= 0; i--)

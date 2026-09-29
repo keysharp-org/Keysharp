@@ -239,8 +239,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		public bool TrySetTransparency(nint handle, object alpha)
 		{
-			var opacity = alpha is string value && value.Equals("off", StringComparison.OrdinalIgnoreCase)
-				? 255 : Math.Clamp((int)alpha.Al(), 0, 255);
+			int opacity;
+
+			if (alpha is string value && value.Equals("off", StringComparison.OrdinalIgnoreCase))
+				opacity = 255;
+			else
+			{
+				_ = alpha.TryCoerceInt(out var a);
+				opacity = Math.Clamp(a, 0, 255);
+			}
 			return TryGetServiceHandle(handle, out var id)
 				&& DesktopClient.SetWindowOpacity(id, opacity);
 		}

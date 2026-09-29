@@ -58,7 +58,11 @@ namespace Keysharp.Builtins
 		public object BufferLengthMax
 		{
 			get => input.bufferLengthMax;
-			set => input.bufferLengthMax = value.Ai();
+			set
+			{
+				if (value.CoerceInt(out var v))
+					input.bufferLengthMax = v;
+			}
 		}
 
 		public object CaseSensitive
@@ -137,7 +141,8 @@ namespace Keysharp.Builtins
 
 			set
 			{
-				var val = value.Al();
+				if (!value.CoerceLong(out var val))
+					return;
 
 				if (val < 0 || val > 101)
 				{
@@ -304,14 +309,23 @@ namespace Keysharp.Builtins
 		/// <returns>An empty value; the constructed object is the instance being initialized.</returns>
 		public object __New(object options = null, object endKeys = null, object matchList = null)
 		{
-			input = new InputType(this, options.As(), endKeys.As(), matchList.As());
+			// The object is returned whatever __New returns, so a continued conversion error still leaves it an input, one
+			// with no options.
+			if (!options.CoerceString(out var optionsText) || !endKeys.CoerceString(out var endKeysText) || !matchList.CoerceString(out var matchListText))
+			{
+				input = new InputType(this, "", "", "");
+				return DefaultObject;
+			}
+
+			input = new InputType(this, optionsText, endKeysText, matchListText);
 			return DefaultObject;
 		}
 
 		public object KeyOpt(object keys, object keyOptions)
 		{
-			var keysVal = keys.As();
-			var options = keyOptions.As();
+			if (!keys.CoerceString(out var keysVal) || !keyOptions.CoerceString(out var options))
+				return DefaultObject;
+
 			var adding = true;
 			var invalidMouseOption = '\0';
 			uint flag = 0U, addFlags = 0u, removeFlags = 0u;
@@ -442,7 +456,10 @@ namespace Keysharp.Builtins
 
 		public object Wait(object maxTime = null)
 		{
-			var ms = maxTime.Ad(double.MaxValue) * 1000.0;
+			if (!maxTime.CoerceDouble(out var ms, double.MaxValue))
+				return DefaultObject;
+
+			ms *= 1000.0;
 			var tickStart = DateTime.UtcNow;
 
 			while (input.InProgress() && (DateTime.UtcNow - tickStart).TotalMilliseconds < ms)

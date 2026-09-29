@@ -703,18 +703,98 @@ namespace Keysharp.Builtins.COM
 
 				// ---- Numerics & logicals ----
 				case VarEnum.VT_BOOL: unsafe { if (byrefVar.ptrVal == 0) return; *((short*)byrefVar.ptrVal) = (short)(Script.ForceBool(value) ? -1 : 0); } return;
-				case VarEnum.VT_I1: unsafe { if (byrefVar.ptrVal == 0) return; *((sbyte*)byrefVar.ptrVal) = (sbyte)value.Al(); } return;
-				case VarEnum.VT_UI1: unsafe { if (byrefVar.ptrVal == 0) return; *((byte*)byrefVar.ptrVal) = (byte)value.Aui(); } return;
-				case VarEnum.VT_I2: unsafe { if (byrefVar.ptrVal == 0) return; *((short*)byrefVar.ptrVal) = (short)value.Al(); } return;
-				case VarEnum.VT_UI2: unsafe { if (byrefVar.ptrVal == 0) return; *((ushort*)byrefVar.ptrVal) = (ushort)value.Aui(); } return;
+
+				case VarEnum.VT_I1:
+					unsafe
+					{
+						if (byrefVar.ptrVal == 0) return;
+						if (!value.CoerceLong(out var v)) return;
+						*((sbyte*)byrefVar.ptrVal) = (sbyte)v;
+					}
+					return;
+
+				case VarEnum.VT_UI1:
+					unsafe
+					{
+						if (byrefVar.ptrVal == 0) return;
+						if (!value.CoerceLong(out var v)) return;
+						*((byte*)byrefVar.ptrVal) = unchecked((byte)v);
+					}
+					return;
+
+				case VarEnum.VT_I2:
+					unsafe
+					{
+						if (byrefVar.ptrVal == 0) return;
+						if (!value.CoerceLong(out var v)) return;
+						*((short*)byrefVar.ptrVal) = (short)v;
+					}
+					return;
+
+				case VarEnum.VT_UI2:
+					unsafe
+					{
+						if (byrefVar.ptrVal == 0) return;
+						if (!value.CoerceLong(out var v)) return;
+						*((ushort*)byrefVar.ptrVal) = unchecked((ushort)v);
+					}
+					return;
+
 				case VarEnum.VT_I4:
-				case VarEnum.VT_INT: unsafe { if (byrefVar.ptrVal == 0) return; *((int*)byrefVar.ptrVal) = (int)value.Al(); } return;
+				case VarEnum.VT_INT:
+					unsafe
+					{
+						if (byrefVar.ptrVal == 0) return;
+						if (!value.CoerceInt(out var v)) return;
+						*((int*)byrefVar.ptrVal) = v;
+					}
+					return;
+
 				case VarEnum.VT_UI4:
-				case VarEnum.VT_UINT: unsafe { if (byrefVar.ptrVal == 0) return; *((uint*)byrefVar.ptrVal) = (uint)value.Aui(); } return;
-				case VarEnum.VT_I8: unsafe { if (byrefVar.ptrVal == 0) return; *((long*)byrefVar.ptrVal) = value.Al(); } return;
-				case VarEnum.VT_UI8: unsafe { if (byrefVar.ptrVal == 0) return; *((ulong*)byrefVar.ptrVal) = (ulong)value.Al(); } return;
-				case VarEnum.VT_R4: unsafe { if (byrefVar.ptrVal == 0) return; *((float*)byrefVar.ptrVal) = (float)value.Ad(); } return;
-				case VarEnum.VT_R8: unsafe { if (byrefVar.ptrVal == 0) return; *((double*)byrefVar.ptrVal) = value.Ad(); } return;
+				case VarEnum.VT_UINT:
+					unsafe
+					{
+						if (byrefVar.ptrVal == 0) return;
+						if (!value.CoerceLong(out var v)) return;
+						*((uint*)byrefVar.ptrVal) = unchecked((uint)v);
+					}
+					return;
+
+				case VarEnum.VT_I8:
+					unsafe
+					{
+						if (byrefVar.ptrVal == 0) return;
+						if (!value.CoerceLong(out var v)) return;
+						*((long*)byrefVar.ptrVal) = v;
+					}
+					return;
+
+				case VarEnum.VT_UI8:
+					unsafe
+					{
+						if (byrefVar.ptrVal == 0) return;
+						if (!value.CoerceLong(out var v)) return;
+						*((ulong*)byrefVar.ptrVal) = unchecked((ulong)v);
+					}
+					return;
+
+				case VarEnum.VT_R4:
+					unsafe
+					{
+						if (byrefVar.ptrVal == 0) return;
+						if (!value.CoerceDouble(out var d)) return;
+						*((float*)byrefVar.ptrVal) = (float)d;
+					}
+					return;
+
+				case VarEnum.VT_R8:
+					unsafe
+					{
+						if (byrefVar.ptrVal == 0) return;
+						if (!value.CoerceDouble(out var d)) return;
+						*((double*)byrefVar.ptrVal) = d;
+					}
+					return;
 
 				case VarEnum.VT_CY:
 					unsafe

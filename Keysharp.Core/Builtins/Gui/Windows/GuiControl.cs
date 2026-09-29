@@ -65,7 +65,8 @@ namespace Keysharp.Builtins
 				}
 				set
 				{
-					var s = value.As();
+					if (!value.CoerceString(out var s))
+						return;
 
 					if (_control is KeysharpListBox lb)
 					{
@@ -178,14 +179,15 @@ namespace Keysharp.Builtins
 				}
 				set
 				{
-					var val = value != null ? value.ToString() : "";
-					var ival = value.Ai();
+					if (!value.CoerceString(out var val))
+						return;
 
 					if (_control is KeysharpNumericUpDown nud)
 						nud.Value = (decimal)value.ParseDouble().Value;
 					else if (_control is KeysharpCheckBox cb)
 					{
-						var cbstate = ival;
+						if (!value.CoerceInt(out var cbstate))
+							return;
 
 						if (cbstate == -1)
 							cb.CheckState = CheckState.Indeterminate;
@@ -195,7 +197,12 @@ namespace Keysharp.Builtins
 					else if (_control is KeysharpRadioButton rb)
 						rb.Checked = Options.OnOff(value) ?? false;
 					else if (_control is KeysharpComboBox cmb)
+					{
+						if (!value.CoerceInt(out var ival))
+							return;
+
 						cmb.SelectedIndex = ival - 1;
+					}
 					else if (_control is KeysharpListBox lb)
 					{
 						if (value is Array ar)
@@ -203,10 +210,20 @@ namespace Keysharp.Builtins
 							lb.ClearSelected();
 
 							foreach (var arval in ar)
-								lb.SetSelected(arval.Ai() - 1, true);
+							{
+								if (!arval.CoerceInt(out var arIndex))
+									return;
+
+								lb.SetSelected(arIndex - 1, true);
+							}
 						}
 						else
+						{
+							if (!value.CoerceInt(out var ival))
+								return;
+
 							lb.SelectedIndex = ival - 1;
+						}
 					}
 					else if (_control is KeysharpDateTimePicker dtp)
 					{
@@ -228,11 +245,26 @@ namespace Keysharp.Builtins
 						mc.SelectionRange = new SelectionRange(dtlow, dthigh);
 					}
 					else if (_control is KeysharpTrackBar tb)
+					{
+						if (!value.CoerceInt(out var ival))
+							return;
+
 						tb.Value = ival;
+					}
 					else if (_control is KeysharpProgressBar pb)
+					{
+						if (!value.CoerceInt(out var ival))
+							return;
+
 						pb.Value = Math.Clamp(ival, pb.Minimum, pb.Maximum);
+					}
 					else if (_control is KeysharpTabControl tc)
+					{
+						if (!value.CoerceInt(out var ival))
+							return;
+
 						tc.SelectedIndex = ival - 1;
+					}
 					else if (_control is KeysharpStatusStrip ss)
 						ss.Text = val;
 					else if (_control is KeysharpPictureBox pic)
@@ -408,7 +440,15 @@ namespace Keysharp.Builtins
 				{
 					if (_control is KeysharpTreeView tv)
 					{
-						var (name, parent, options) = obj.Sls();
+						if (!obj.Ao(0).CoerceString(out var name))
+							return DefaultObject;
+
+						if (!(obj.Length > 1 ? obj[1] : null).CoerceLong(out var parent))
+							return DefaultObject;
+
+						if (!obj.Ao(2).CoerceString(out var options))
+							return DefaultObject;
+
 						var first = false;
 						var n = int.MinValue;
 						TreeNode node;
@@ -451,20 +491,26 @@ namespace Keysharp.Builtins
 					else if (_control is KeysharpListView lv)
 					{
 						var lvo = obj.Length > 0 && obj[0] is string options && options.Length > 0 ? ListViewHelper.ParseListViewOptions(options) : new ListViewHelper.ListViewOptions();
-						var strs = obj.Cast<object>().Skip(1).Select(x => x.Str()).ToList();
+
+						if (!TryTexts(obj, 1, out var strs))
+							return DefaultObject;
+
 						result = ListViewHelper.AddOrInsertListViewItem(lv, lvo, strs, int.MinValue);
 					}
-					else
+					else if (_control is KeysharpListBox or KeysharpComboBox or KeysharpTabControl)
 					{
 						if (obj.Length > 0 && obj[0] is Array arr)
 							obj = arr.array.ToArray();
 
+						if (!TryTexts(obj, 0, out var texts))
+							return DefaultObject;
+
 						if (_control is KeysharpListBox lb)//Using AddRange() relieves the caller of having to set -Redraw first.
-							lb.Items.AddRange(obj.Cast<object>().Select(x => x.Str()).ToArray());
+							lb.Items.AddRange(texts.ToArray());
 						else if (_control is KeysharpComboBox cb)
-							cb.Items.AddRange(obj.Cast<object>().Select(x => x.Str()).ToArray());
+							cb.Items.AddRange(texts.ToArray());
 						else if (_control is KeysharpTabControl tc)
-							tc.TabPages.AddRange(obj.Cast<object>().Select(x => new TabPage(x.Str())).ToArray());
+							tc.TabPages.AddRange(texts.Select(x => new TabPage(x)).ToArray());
 					}
 				}
 				finally
@@ -476,6 +522,25 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
+			/// The items from <paramref name="start"/> on as text. False means one raised a TypeError which the script
+			/// continued, and the caller then returns at once.
+			/// </summary>
+			private static bool TryTexts(object[] items, int start, out List<string> texts)
+			{
+				texts = new List<string>(Math.Max(0, items.Length - start));
+
+				for (var i = start; i < items.Length; i++)
+				{
+					if (!items[i].CoerceString(out var text))
+						return false;
+
+					texts.Add(text);
+				}
+
+				return true;
+			}
+
+			/// <summary>
 			/// Deletes the specified entry or all entries of a ListBox, DropDownList, ComboBox, or Tab control.
 			/// Note this differs from AHK in that deleting a tab fully removes the tab, and does not associate the controls
 			/// of an existing tab to the tab at the index that was deleted.
@@ -483,7 +548,10 @@ namespace Keysharp.Builtins
 			/// <param name="value"></param>
 			public long Delete(object value = null)
 			{
-				var index = value.Ai() - 1;
+				if (!value.CoerceInt(out var index))
+					return 0L;
+
+				index--;
 
 				switch (_control)
 				{
@@ -524,7 +592,10 @@ namespace Keysharp.Builtins
 
 					case KeysharpTreeView tv:
 					{
-						var id = (value is null ? long.MinValue : value.ToLong());
+						var id = long.MinValue;
+
+						if (value is not null && !value.CoerceLong(out id))
+							return 0L;
 
 						if (id == long.MinValue)
 						{
@@ -564,7 +635,10 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpListView lv)
 				{
-					var index = column.Ai() - 1;
+					if (!column.CoerceInt(out var index))
+						return 0L;
+
+					index--;
 
 					if (index >= 0 && index < lv.Columns.Count)
 					{
@@ -581,7 +655,8 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpListView lv)
 				{
-					var m = mode.As();
+					if (!mode.CoerceString(out var m))
+						return 0L;
 
 					if (m?.Length == 0)
 						return lv.Items.Count;
@@ -598,8 +673,11 @@ namespace Keysharp.Builtins
 
 			public long GetNext(object startingRowNumber = null, object rowType = null)
 			{
-				var id = startingRowNumber.Al();
-				var mode = rowType.As();
+				if (!startingRowNumber.CoerceLong(out var id))
+					return 0L;
+
+				if (!rowType.CoerceString(out var mode))
+					return 0L;
 
 				if (_control is KeysharpTreeView tv)
 				{
@@ -664,14 +742,19 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpListView lv)//Note that this index might not actually be where the row is shown, due to sorting.
 				{
-					var rownumber = rowNumber.Ai();
+					if (!rowNumber.CoerceInt(out var rownumber))
+						return 0L;
+
 					string opts = null;
 
-					if (obj.Length > 0)
-						opts = obj[0].As();
+					if (obj.Length > 0 && !obj[0].CoerceString(out opts))
+						return 0L;
 
 					var lvo = opts is string options ? ListViewHelper.ParseListViewOptions(options) : new ListViewHelper.ListViewOptions();
-					var strs = obj.Length > 1 ? obj.Cast<object>().Skip(1).Select(x => x.Str()).ToList() : [];
+
+					if (!TryTexts(obj, 1, out var strs))
+						return 0L;
+
 					_ = (this as ListView)?.ClearColors();
 					return ListViewHelper.AddOrInsertListViewItem(lv, lvo, strs, rownumber - 1) + 1;
 				}
@@ -683,9 +766,12 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpListView lv)
 				{
-					var index = columnNumber.Ai(int.MaxValue);
-					var opts = options.As();
-					var title = columnTitle.As();
+					if (!columnNumber.CoerceInt(out var index, int.MaxValue))
+						return 0L;
+
+					if (!options.CoerceString(out var opts) || !columnTitle.CoerceString(out var title))
+						return 0L;
+
 					index--;
 					var header = new ColumnHeader
 					{
@@ -734,13 +820,20 @@ namespace Keysharp.Builtins
 
 			public long Modify(object rowNumber, object options = null, params object[] obj)
 			{
-				var opts = options == null ? null : options.ToString();
-				var rownumber = rowNumber.Al();
+				string opts = null;
+
+				if (options != null && !options.CoerceString(out opts))
+					return 0L;
+
+				if (!rowNumber.CoerceLong(out var rownumber))
+					return 0L;
 
 				if (_control is KeysharpTreeView tv)
 				{
 					var id = rownumber;
-					var name = obj.S1();
+
+					if (!obj.Ao(0).CoerceString(out var name))
+						return 0L;
 
 					if (TreeViewHelper.TV_FindNode(tv, id) is TreeNode node)
 					{
@@ -762,7 +855,10 @@ namespace Keysharp.Builtins
 						if (rownumber < lv.Items.Count)
 						{
 							var lvo = opts is string o ? ListViewHelper.ParseListViewOptions(o) : new ListViewHelper.ListViewOptions();
-							var strs = obj.Length > 0 ? obj.Cast<object>().Select(x => x.Str()).ToList() : [];
+
+							if (!TryTexts(obj, 0, out var strs))
+								return 0L;
+
 							var start = Math.Max(0, rownumber - 1);
 							var end = rownumber == 0 ? lv.Items.Count : Math.Min(rownumber, lv.Items.Count);
 
@@ -791,9 +887,11 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpListView lv)
 				{
-					var colnumber = columnNumber.Ai();
-					var opts = options.As();
-					var coltitle = columnTitle.As();
+					if (!columnNumber.CoerceInt(out var colnumber))
+						return 0L;
+
+					if (!options.CoerceString(out var opts) || !columnTitle.CoerceString(out var coltitle))
+						return 0L;
 
 					if (opts?.Length == 0 && coltitle?.Length == 0)
 					{
@@ -828,10 +926,17 @@ namespace Keysharp.Builtins
 
 			public object Move(object x = null, object y = null, object width = null, object height = null)
 			{
-				var _x = (x is null ? long.MinValue : x.ToLong());
-				var _y = (y is null ? long.MinValue : y.ToLong());
-				var w = (width is null ? long.MinValue : width.ToLong());
-				var h = (height is null ? long.MinValue : height.ToLong());
+				var _x = long.MinValue;
+				var _y = long.MinValue;
+				var w = long.MinValue;
+				var h = long.MinValue;
+
+				if ((x is not null && !x.CoerceLong(out _x))
+						|| (y is not null && !y.CoerceLong(out _y))
+						|| (width is not null && !width.CoerceLong(out w))
+						|| (height is not null && !height.CoerceLong(out h)))
+					return DefaultObject;
+
 				var scale = ((Gui)Gui).DpiScale;
 				var hasScrollBars = _control is KeysharpTextBox || _control is KeysharpRichEdit;//Reflections.SafeHasProperty(_control, "ScrollBars") || Reflections.SafeHasProperty(_control, "HorizontalScrollbar") || Reflections.SafeHasProperty(_control, "Scrollable")
 				Point offset = Parent == null || Parent.GetControl() is Form ? Point.Empty : Parent.GetControl().GetLocationRelativeToForm();
@@ -882,13 +987,19 @@ namespace Keysharp.Builtins
 
 			public object OnCommand(object notifyCode, object callback, object addRemove = null)
 			{
-				return HandleOnCommandNotify(notifyCode.Al(), callback, addRemove, 1, ref commandHandlers);
+				if (!notifyCode.CoerceLong(out var code))
+					return DefaultObject;
+
+				return HandleOnCommandNotify(code, callback, addRemove, 1, ref commandHandlers);
 			}
 
 
 			public object OnNotify(object notifyCode, object callback, object addRemove = null)
 			{
-				return HandleOnCommandNotify(notifyCode.Al(), callback, addRemove, 2, ref notifyHandlers);
+				if (!notifyCode.CoerceLong(out var code))
+					return DefaultObject;
+
+				return HandleOnCommandNotify(code, callback, addRemove, 2, ref notifyHandlers);
 			}
 
 			public object Opt(object options)
@@ -896,7 +1007,10 @@ namespace Keysharp.Builtins
 				if (gui == null || !gui.TryGetTarget(out var g))
 					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
 
-				var opts = g.ParseOpt(typename, _control.Text, options.As());
+				if (!options.CoerceString(out var optionText))
+					return DefaultObject;
+
+				var opts = g.ParseOpt(typename, _control.Text, optionText);
 
 				if (opts.dpiresize.HasValue)
 					dpiResize = opts.dpiresize.Value;
@@ -1244,9 +1358,14 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpStatusStrip ss)
 				{
-					var filename = fileName.As();
+					if (!fileName.CoerceString(out var filename))
+						return 0;
+
 					var iconnumber = ImageHelper.PrepareIconNumber(iconNumber);
-					var part = partNumber.Ai(1);
+
+					if (!partNumber.CoerceInt(out var part, 1))
+						return 0;
+
 					part--;
 					(Bitmap, object) ret;
 
@@ -1262,8 +1381,12 @@ namespace Keysharp.Builtins
 
 			public long SetImageList(object imageListID, object iconType = null)
 			{
-				var id = imageListID.Al();
-				var type = iconType.Al(-1);
+				if (!imageListID.CoerceLong(out var id))
+					return 0L;
+
+				if (!iconType.CoerceLong(out var type, -1))
+					return 0L;
+
 				var oldil = 0L;
 
 				if (ImageLists.IL_Get(id) is ImageList il)
@@ -1304,7 +1427,9 @@ namespace Keysharp.Builtins
 
 								default:
 								{
-									if (il.ImageSize.Width > Env.SysGet(SystemMetric.SM_CXSMICON).Al())
+									_ = Env.SysGet(SystemMetric.SM_CXSMICON).TryCoerceLong(out var cxSmIcon);
+
+									if (il.ImageSize.Width > cxSmIcon)
 									{
 										oldil = ImageLists.IL_GetId(lv.LargeImageList);
 										lv.LargeImageList = newil;
@@ -1334,25 +1459,32 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpStatusStrip ss)
 				{
+					var parts = new List<(int width, int index)>();
+
+					for (var i = 0; i < (widths?.Length ?? 0) - 1; i++)
+					{
+						if (widths[i] == null)
+							continue;
+
+						if (!widths[i].CoerceInt(out var width))
+							return DefaultObject;
+
+						parts.Add((width, i + 1));
+					}
+
 					KeysharpToolStripStatusLabel tssl = null;
 					ss.Items.Clear();
 
-					for (var i = 0; i < widths.Length - 1; i++)
+					foreach (var (width, index) in parts)
 					{
-						var part = widths[i];
-
-						if (part != null)
+						tssl = new KeysharpToolStripStatusLabel
 						{
-							var width = part.Ai();
-							tssl = new KeysharpToolStripStatusLabel
-							{
-								AutoSize = false,
-								Name = $"tss{width}_{i + 1}",
-								Width = width,
-								Alignment = ToolStripItemAlignment.Left
-							};
-							_ = ss.Items.Add(tssl);
-						}
+							AutoSize = false,
+							Name = $"tss{width}_{index}",
+							Width = width,
+							Alignment = ToolStripItemAlignment.Left
+						};
+						_ = ss.Items.Add(tssl);
 					}
 
 					tssl = new KeysharpToolStripStatusLabel
@@ -1371,8 +1503,11 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpTabControl tc)
 				{
-					var tabindex = tabIndex.Ai();
-					var imageindex = imageIndex.Ai();
+					if (!tabIndex.CoerceInt(out var tabindex))
+						return DefaultObject;
+
+					if (!imageIndex.CoerceInt(out var imageindex))
+						return DefaultObject;
 
 					if (tabindex < tc.TabCount && tc.ImageList != null && imageindex < tc.ImageList.Images.Count)
 						tc.TabPages[tabindex].ImageIndex = imageindex;
@@ -1387,9 +1522,15 @@ namespace Keysharp.Builtins
 			{
 				if (_control is KeysharpStatusStrip ss)
 				{
-					var text = newText.As();
-					var part = partNumber.Ai(1);
-					var s = style.Al(-1);
+					if (!newText.CoerceString(out var text))
+						return false;
+
+					if (!partNumber.CoerceInt(out var part, 1))
+						return false;
+
+					if (!style.CoerceLong(out var s, -1))
+						return false;
+
 					part--;
 
 					if (part < ss.Items.Count)
@@ -1549,7 +1690,8 @@ namespace Keysharp.Builtins
 
 						if (CallbackStop.NonEmpty(ret))
 						{
-							m.Result = (nint)ret.Al();
+							_ = ret.TryCoerceLong(out var resultCode);
+							m.Result = (nint)resultCode;
 							return true;
 						}
 					}
@@ -1582,7 +1724,8 @@ namespace Keysharp.Builtins
 						if (commandHandlers.TryGetValue(val, out var handler))
 						{
 							var ret = handler?.InvokeSynchronousEventHandlers(this);
-							m.Result = (nint)ret.Al();
+							_ = ret.TryCoerceLong(out var resultCode);
+							m.Result = (nint)resultCode;
 							return true;
 						}
 					}

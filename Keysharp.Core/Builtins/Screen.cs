@@ -71,13 +71,15 @@ namespace Keysharp.Builtins
 		/// <exception cref="ValueError ">A <see cref="ValueError "/> exception thrown if an invalid parameter was detected or the image could not be loaded.</exception>
 		public static object ImageSearch([ByRef][Optional] object outputVarX, [ByRef][Optional] object outputVarY, object x1, object y1, object x2, object y2, object imageFile)
 		{
-			var _x1 = x1.Ai();
-			var _y1 = y1.Ai();
-			var _x2 = x2.Ai();
-			var _y2 = y2.Ai();
+			if (!x1.CoerceInt(out var _x1) || !y1.CoerceInt(out var _y1) ||
+				!x2.CoerceInt(out var _x2) || !y2.CoerceInt(out var _y2))
+				return DefaultObject;
+
 			// As in AHK, options are specified as a series of *-prefixed tokens immediately
 			// preceding the file name/handle within the same string, e.g. "*2 *w100 *h-1 C:\Main Logo.bmp".
-			var spec = imageFile.As();
+			if (!imageFile.CoerceString(out var spec))
+				return DefaultObject;
+
 			var idx = 0;
 
 			while (idx < spec.Length)
@@ -213,8 +215,9 @@ namespace Keysharp.Builtins
 		public static string PixelGetColor(object x, object y, object mode = null)
 		{
 			int pixel;
-			var _x = x.Ai();
-			var _y = y.Ai();
+
+			if (!x.CoerceInt(out var _x) || !y.CoerceInt(out var _y))
+				return "";
 
 			try
 			{
@@ -264,12 +267,11 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if an internal function call fails.</exception>
 		public static long PixelSearch([ByRef][Optional] object outputVarX, [ByRef][Optional] object outputVarY, object x1, object y1, object x2, object y2, object colorID, object variation = null)
 		{
-			var x1v = x1.Ai();
-			var y1v = y1.Ai();
-			var x2v = x2.Ai();
-			var y2v = y2.Ai();
-			var colorIDv = colorID.Al();
-			var variationv = variation.Al();
+			if (!x1.CoerceInt(out var x1v) || !y1.CoerceInt(out var y1v) ||
+				!x2.CoerceInt(out var x2v) || !y2.CoerceInt(out var y2v) ||
+				!colorID.CoerceLong(out var colorIDv) || !variation.CoerceLong(out var variationv))
+				return 0L;
+
 			variationv = Math.Clamp(variationv, byte.MinValue, byte.MaxValue);
 
 			int px1 = x1v, py1 = y1v;
@@ -402,10 +404,9 @@ namespace Keysharp.Builtins
 			if (x1 == null || y1 == null || x2 == null || y2 == null)
 				return Errors.ValueErrorOccurred("ClipCursor requires either zero or four coordinates.");
 
-			var px1 = x1.Ai();
-			var py1 = y1.Ai();
-			var px2 = x2.Ai();
-			var py2 = y2.Ai();
+			if (!x1.CoerceInt(out var px1) || !y1.CoerceInt(out var py1) ||
+				!x2.CoerceInt(out var px2) || !y2.CoerceInt(out var py2))
+				return DefaultObject;
 
 			ht.SetCursorClip(px1, py1, px2, py2);
 			return DefaultObject;

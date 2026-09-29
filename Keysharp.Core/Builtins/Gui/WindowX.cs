@@ -20,7 +20,11 @@ namespace Keysharp.Builtins
 				GetCursorPos(out var point);
 				x ??= point.X; y ??= point.Y;
 			}
-			return WindowQuery.WindowFromPoint(new POINT(x.Ai(), y.Ai()))?.Handle ?? 0L;
+
+			if (!x.CoerceInt(out var xi) || !y.CoerceInt(out var yi))
+				return 0L;
+
+			return WindowQuery.WindowFromPoint(new POINT(xi, yi))?.Handle ?? 0L;
 		}
 	}
 
@@ -43,16 +47,17 @@ namespace Keysharp.Builtins
 		public static long GroupActivate(object groupName, object mode = null)
 		{
 			EnsureWindowControlPermission("GroupActivate");
-			var name = groupName.As().ToLowerInvariant();
-			var m = mode.As();
+
+			if (!groupName.CoerceString(out var name) || !mode.CoerceString(out var m))
+				return 0L;
+
+			name = name.ToLowerInvariant();
 			var script = Script.TheScript;
 
 			if (script.WindowGroups.TryGetValue(name, out var group))
 			{
-				if (group.sc.Count == 0)
+				if (group.sc.Count == 0 || !TrySearchWindows($"ahk_group {name}", null, null, null, out var windows))
 					return 0L;
-
-				var windows = SearchWindows($"ahk_group {name}");
 
 				if (windows.Count != 0 && windows.Count == group.activated.Count)
 					group.activated.Clear();
@@ -87,19 +92,25 @@ namespace Keysharp.Builtins
 									  object excludeTitle = null,
 									  object excludeText = null)
 		{
-			var name = groupName.As();
+			if (!groupName.CoerceString(out var name))
+				return DefaultObject;
+
 			var windowGroups = TheScript.WindowGroups;
 
 			if (string.IsNullOrEmpty(name))
 				return Errors.ValueErrorOccurred("Group name must not be empty.");
 
-			if (!windowGroups.ContainsKey(name))
-				windowGroups.Add(name, new WindowGroup());
+			SearchCriteria criteria = null;
 
-			if (name != "AllWindows")
+			if (name != "AllWindows" && !SearchCriteria.TryFromString(winTitle, winText, excludeTitle, excludeText, out criteria))
+				return DefaultObject;
+
+			if (!windowGroups.TryGetValue(name, out var group))
+				windowGroups.Add(name, group = new WindowGroup());
+
+			if (criteria != null)
 			{
-				var group = windowGroups[name];
-				group.sc.Add(SearchCriteria.FromString(winTitle, winText, excludeTitle, excludeText));
+				group.sc.Add(criteria);
 				group.activated.Clear();
 				group.deactivated.Clear();
 			}
@@ -110,17 +121,19 @@ namespace Keysharp.Builtins
 		public static object GroupClose(object groupName, object mode = null)
 		{
 			EnsureWindowControlPermission("GroupClose");
-			var name = groupName.As().ToLowerInvariant();
-			var m = mode.As();
+
+			if (!groupName.CoerceString(out var name) || !mode.CoerceString(out var m))
+				return DefaultObject;
+
+			name = name.ToLowerInvariant();
 			var windowGroups = Script.TheScript.WindowGroups;
 
 			if (windowGroups.TryGetValue(name, out var group))
 			{
-				if (group.sc.Count == 0)
+				if (group.sc.Count == 0 || !TrySearchWindows($"ahk_group {name}", null, null, null, out var windows))
 					return DefaultObject;
 
 				var stack = group.lastWasDeactivate ? group.deactivated : group.activated;
-				var windows = SearchWindows($"ahk_group {name}");
 
 				switch (m)
 				{
@@ -163,17 +176,19 @@ namespace Keysharp.Builtins
 		public static object GroupDeactivate(object groupName, object mode = null)
 		{
 			EnsureWindowControlPermission("GroupDeactivate");
-			var name = groupName.As().ToLowerInvariant();
-			var m = mode.As();
+
+			if (!groupName.CoerceString(out var name) || !mode.CoerceString(out var m))
+				return DefaultObject;
+
+			name = name.ToLowerInvariant();
 			var script = Script.TheScript;
 			var windowGroups = script.WindowGroups;
 
 			if (windowGroups.TryGetValue(name, out var group))
 			{
-				if (group.sc.Count == 0)
+				if (group.sc.Count == 0 || !TrySearchWindows($"ahk_group {name}", null, null, null, out var windows))
 					return DefaultObject;
 
-				var windows = SearchWindows($"ahk_group {name}");
 				var allwindows = WindowQuery.FilterForGroups(WindowQuery.AllWindows.Where(w => !windows.Any(ww => ww.Handle.ToInt64() == w.Handle.ToInt64()))).ToList();
 
 				if (allwindows.Count != 0 && windows.Count == group.deactivated.Count)
@@ -208,13 +223,19 @@ namespace Keysharp.Builtins
 												object winTitle = null,
 												object winText = null,
 												object excludeTitle = null,
-												object excludeText = null) => Platform.Control.ListViewGetContent(
-														options.As(),
-														controlID,
-														winTitle,
-														winText,
-														excludeTitle,
-														excludeText);
+												object excludeText = null)
+		{
+			if (!options.CoerceString(out var opts))
+				return DefaultObject;
+
+			return Platform.Control.ListViewGetContent(
+					   opts,
+					   controlID,
+					   winTitle,
+					   winText,
+					   excludeTitle,
+					   excludeText);
+		}
 
 		public static object MenuSelect(object winTitle,
 										object winText,
@@ -254,15 +275,22 @@ namespace Keysharp.Builtins
 										 object excludeText = null)
 		{
 			EnsureWindowControlPermission("PostMessage");
+
+			if (!winText.CoerceString(out var text) || !excludeTitle.CoerceString(out var exTitle) || !excludeText.CoerceString(out var exText))
+				return DefaultObject;
+
+			if (!msgNumber.CoerceLong(out var msg) || !wParam.CoerceInt(out var wp) || !lParam.CoerceInt(out var lp))
+				return DefaultObject;
+
 			Platform.Control.PostMessage(
-				msgNumber.Aui(),
-				wParam.Ai(),
-				lParam.Ai(),
+				unchecked((uint)msg),
+				wp,
+				lp,
 				controlID,
 				winTitle,
-				winText.As(),
-				excludeTitle.As(),
-				excludeText.As());
+				text,
+				exTitle,
+				exText);
 			return DefaultObject;
 		}
 
@@ -277,16 +305,23 @@ namespace Keysharp.Builtins
 									   object timeout = null)
 		{
 			EnsureWindowControlPermission("SendMessage");
+
+			if (!winText.CoerceString(out var text) || !excludeTitle.CoerceString(out var exTitle) || !excludeText.CoerceString(out var exText))
+				return 0L;
+
+			if (!msgNumber.CoerceLong(out var msg) || !timeout.CoerceInt(out var timeoutMs, 5000))
+				return 0L;
+
 			return Platform.Control.SendMessage(
-										   msgNumber.Aui(),
+										   unchecked((uint)msg),
 										   wParam,
 										   lParam,
 										   controlID,
 										   winTitle,
-										   winText.As(),
-										   excludeTitle.As(),
-										   excludeText.As(),
-										   timeout.Ai(5000));
+										   text,
+										   exTitle,
+										   exText,
+										   timeoutMs);
 		}
 
 		public static object SetControlDelay(object delay)
@@ -331,7 +366,9 @@ namespace Keysharp.Builtins
 		public static object SetTitleMatchMode(object matchMode)
 		{
 			object oldVal = null;
-			var val = matchMode.As();
+
+			if (!matchMode.CoerceString(out var val))
+				return DefaultObject;
 
 			if (string.Compare(val, "fast", true) == 0 || string.Compare(val, "slow", true) == 0)
 			{
@@ -378,15 +415,20 @@ namespace Keysharp.Builtins
 											  object excludeTitle = null,
 											  object excludeText = null)
 		{
-			var part = Math.Max(0, partNumber.Ai(1) - 1);
-			var text = winText.As();
-			var title = excludeTitle.As();
-			var exclude = excludeText.As();
+			if (!partNumber.CoerceInt(out var partN, 1))
+				return DefaultObject;
+
+			var part = Math.Max(0, partN - 1);
+
+			if (!winText.CoerceString(out var text) || !excludeTitle.CoerceString(out var title) || !excludeText.CoerceString(out var exclude))
+				return DefaultObject;
+
 #if WINDOWS
 			// Standard Win32 common-control status bar (class "msctls_statusbar32", first instance).
-			WindowInfoBase ctrl;
+			if (!TrySearchControl("msctls_statusbar321", winTitle, text, title, exclude, out var ctrl))
+				return DefaultObject;
 
-			if ((ctrl = SearchControl("msctls_statusbar321", winTitle, text, title, exclude, false)) != null)
+			if (ctrl != null)
 			{
 				var sb = Platform.StatusBar.CreateStatusBar(ctrl.Handle);
 
@@ -397,8 +439,10 @@ namespace Keysharp.Builtins
 			}
 
 			// Keysharp / WinForms StatusStrip fallback (same process).
-			if ((ctrl = SearchControl("WindowsForms10.Window.8.app.0.2b89eaa_r3_ad1", winTitle, text, title, exclude, false)) != null
-				&& Control.FromHandle(ctrl.Handle) is StatusStrip ss)
+			if (!TrySearchControl("WindowsForms10.Window.8.app.0.2b89eaa_r3_ad1", winTitle, text, title, exclude, out ctrl))
+				return DefaultObject;
+
+			if (ctrl != null && Control.FromHandle(ctrl.Handle) is StatusStrip ss)
 			{
 				if (part < ss.Items.Count)
 					return ss.Items[part].Text;
@@ -439,9 +483,13 @@ namespace Keysharp.Builtins
 										 object excludeTitle = null,
 										 object excludeText = null)
 		{
-			var bartext = barText.As();
-			var seconds = timeout.Ai();
-			var intvl = interval.Ai();
+			// The window text parameters are converted once, so a continued TypeError does not repeat on every poll.
+			if (!barText.CoerceString(out var bartext) || !winText.CoerceString(out var text) || !excludeTitle.CoerceString(out var title) || !excludeText.CoerceString(out var exclude))
+				return 0L;
+
+			if (!timeout.CoerceInt(out var seconds) || !partNumber.CoerceInt(out var part, 1) || !interval.CoerceInt(out var intvl))
+				return 0L;
+
 			var start = DateTime.UtcNow;
 			var matchfound = false;
 
@@ -450,7 +498,7 @@ namespace Keysharp.Builtins
 
 			do
 			{
-				var sbtext = StatusBarGetText(partNumber, winTitle, winText, excludeTitle, excludeText);
+				var sbtext = StatusBarGetText((long)part, winTitle, text, title, exclude);
 
 				if (sbtext == bartext)
 				{
@@ -461,7 +509,7 @@ namespace Keysharp.Builtins
 				if (seconds != 0 && (DateTime.UtcNow - start).TotalSeconds >= seconds)
 					break;
 
-				_ = Flow.Sleep(interval);
+				_ = Flow.Sleep((long)intvl);
 			} while (true);
 
 			WindowInfoBase.DoWinDelay();
@@ -513,7 +561,9 @@ namespace Keysharp.Builtins
 									 object excludeTitle = null,
 									 object excludeText = null)
 		{
-			var criteria = SearchCriteria.FromString(winTitle, winText, excludeTitle, excludeText);
+			if (!SearchCriteria.TryFromString(winTitle, winText, excludeTitle, excludeText, out var criteria))
+				return 0L;
+
 			var window = SearchActiveWindow(criteria, true);
 			return window != null ? window.Handle.ToInt64() : 0L;
 		}
@@ -533,9 +583,14 @@ namespace Keysharp.Builtins
 									  object excludeText = null)
 		{
 			EnsureWindowControlPermission("WinClose");
-			var seconds = secondsToWait.Ad(double.MinValue);
+
+			if (!secondsToWait.CoerceDouble(out var seconds, double.MinValue))
+				return DefaultObject;
+
 			var script = Script.TheScript;
-			var (windows, crit) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
+
+			if (!WindowQuery.TryFindWindowGroup(winTitle, winText, excludeTitle, excludeText, out var windows, out var crit))
+				return DefaultObject;
 
 			if (crit != null && string.IsNullOrEmpty(crit.Group) && windows.Count == 0 && !script.IsTearingDown)
 				return Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText);
@@ -617,7 +672,7 @@ namespace Keysharp.Builtins
 									   object winText = null,
 									   object excludeTitle = null,
 									   object excludeText = null) =>
-		SearchWindows(winTitle, winText, excludeTitle, excludeText).Count;
+		TrySearchWindows(winTitle, winText, excludeTitle, excludeText, out var windows) ? windows.Count : 0L;
 
 		public static long WinGetExStyle(object winTitle = null,
 										 object winText = null,
@@ -638,9 +693,11 @@ namespace Keysharp.Builtins
 		{
 			EnsureWindowMonitoringPermission("WinGetIDLast");
 			var script = Script.TheScript;
-			var (windows, criteria) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText, true);
 
-			if (windows != null && windows.Count > 0)
+			if (!WindowQuery.TryFindWindowGroup(winTitle, winText, excludeTitle, excludeText, out var windows, out _, true))
+				return 0L;
+
+			if (windows.Count > 0)
 			{
 				return windows[^1].Handle.ToInt64();
 			}
@@ -656,13 +713,19 @@ namespace Keysharp.Builtins
 									   object excludeText = null)
 		{
 			EnsureWindowMonitoringPermission("WinGetList");
-			return new Array((
-					  winTitle.IsNullOrEmpty()
-					  && winText.IsNullOrEmpty()
-					  && excludeTitle.IsNullOrEmpty()
-					  && excludeText.IsNullOrEmpty()
-					  ? WindowQuery.AllWindows
-					  : SearchWindows(winTitle, winText, excludeTitle, excludeText)).Select(item => item.Handle.ToInt64()).ToList());
+			IEnumerable<WindowInfoBase> windows;
+
+			if (winTitle.IsNullOrEmpty()
+					&& winText.IsNullOrEmpty()
+					&& excludeTitle.IsNullOrEmpty()
+					&& excludeText.IsNullOrEmpty())
+				windows = WindowQuery.AllWindows;
+			else if (TrySearchWindows(winTitle, winText, excludeTitle, excludeText, out var matches))
+				windows = matches;
+			else
+				return null;
+
+			return new Array(windows.Select(item => item.Handle.ToInt64()).ToList());
 		}
 
 		public static long WinGetMinMax(object winTitle = null,
@@ -748,7 +811,8 @@ namespace Keysharp.Builtins
 		{
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
-				var color = (int)win.TransparentColor.Al();
+				_ = win.TransparentColor.TryCoerceLong(out var colorLong);
+				var color = (int)colorLong;
 				var tempbgr = Color.FromArgb(color);
 #if WINDOWS
 				color = Color.FromArgb(tempbgr.A, tempbgr.B, tempbgr.G, tempbgr.R).ToArgb();
@@ -768,7 +832,7 @@ namespace Keysharp.Builtins
 		{
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
-				var color = win.Transparency.Al();
+				_ = win.Transparency.TryCoerceLong(out var color);
 				return color != -1 ? color : "";
 			}
 
@@ -793,7 +857,8 @@ namespace Keysharp.Builtins
 			var unsupported = false;
 			DoDelayedAction(() =>
 			{
-				var matches = SearchWindows(winTitle, winText, excludeTitle, excludeText);
+				if (!TrySearchWindows(winTitle, winText, excludeTitle, excludeText, out var matches))
+					return;
 
 				foreach (var win in matches)
 					if (!Platform.Window.TryHide(win.Handle))
@@ -825,9 +890,14 @@ namespace Keysharp.Builtins
 									 object excludeText = null)
 		{
 			EnsureWindowControlPermission("WinKill");
-			var seconds = secondsToWait.Ad(double.MinValue);
+
+			if (!secondsToWait.CoerceDouble(out var seconds, double.MinValue))
+				return DefaultObject;
+
 			var script = Script.TheScript;
-			var (windows, crit) = WindowQuery.FindWindowGroup(winTitle, winText, excludeTitle, excludeText);
+
+			if (!WindowQuery.TryFindWindowGroup(winTitle, winText, excludeTitle, excludeText, out var windows, out var crit))
+				return DefaultObject;
 
 			if (crit != null && string.IsNullOrEmpty(crit.Group) && windows.Count == 0 && !script.IsTearingDown)
 				return Errors.TargetErrorOccurred(winTitle, winText, excludeTitle, excludeText, DefaultErrorLong);
@@ -854,7 +924,10 @@ namespace Keysharp.Builtins
 			var unsupported = false;
 			DoDelayedAction(() =>
 			{
-				foreach (var win in SearchWindows(winTitle, winText, excludeTitle, excludeText))
+				if (!TrySearchWindows(winTitle, winText, excludeTitle, excludeText, out var matches))
+					return;
+
+				foreach (var win in matches)
 					if (!Platform.Window.TrySetState(win.Handle, FormWindowState.Maximized))
 						unsupported = true;
 			});
@@ -873,7 +946,10 @@ namespace Keysharp.Builtins
 			var unsupported = false;
 			DoDelayedAction(() =>
 			{
-				foreach (var win in SearchWindows(winTitle, winText, excludeTitle, excludeText))
+				if (!TrySearchWindows(winTitle, winText, excludeTitle, excludeText, out var matches))
+					return;
+
+				foreach (var win in matches)
 					if (!Platform.Window.TrySetState(win.Handle, FormWindowState.Minimized))
 						unsupported = true;
 			});
@@ -927,10 +1003,13 @@ namespace Keysharp.Builtins
 									 object excludeText = null)
 		{
 			EnsureWindowControlPermission("WinMove");
-			var _x = (x is null ? int.MinValue : x.ToInt());
-			var _y = (y is null ? int.MinValue : y.ToInt());
-			var w = (width is null ? int.MinValue : width.ToInt());
-			var h = (height is null ? int.MinValue : height.ToInt());
+			int _x = int.MinValue, _y = int.MinValue, w = int.MinValue, h = int.MinValue;
+
+			if ((x is not null && !x.CoerceInt(out _x))
+					|| (y is not null && !y.CoerceInt(out _y))
+					|| (width is not null && !width.CoerceInt(out w))
+					|| (height is not null && !height.CoerceInt(out h)))
+				return DefaultObject;
 
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
@@ -1001,7 +1080,10 @@ namespace Keysharp.Builtins
 			var unsupported = false;
 			DoDelayedAction(() =>
 			{
-				foreach (var win in SearchWindows(winTitle, winText, excludeTitle, excludeText))
+				if (!TrySearchWindows(winTitle, winText, excludeTitle, excludeText, out var matches))
+					return;
+
+				foreach (var win in matches)
 					if (!Platform.Window.TryRestore(win.Handle))
 						unsupported = true;
 			});
@@ -1050,7 +1132,9 @@ namespace Keysharp.Builtins
 										  object excludeText = null)
 		{
 			EnsureWindowControlPermission("WinSetRegion");
-			var opts = options.As();
+
+			if (!options.CoerceString(out var opts))
+				return DefaultObject;
 
 			if (!(SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win))
 				return DefaultObject;
@@ -1153,7 +1237,10 @@ namespace Keysharp.Builtins
 			EnsureWindowControlPermission("WinSetTitle");
 			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 			{
-				if (!Platform.Window.TrySetTitle(win.Handle, newTitle.As()))
+				if (!newTitle.CoerceString(out var title))
+					return DefaultObject;
+
+				if (!Platform.Window.TrySetTitle(win.Handle, title))
 					return WindowOperationUnsupported(nameof(WinSetTitle));
 
 				// No A_WinDelay: AHK's WinSetTitle does not call DoWinDelay.
@@ -1186,7 +1273,8 @@ namespace Keysharp.Builtins
 											   object excludeTitle = null,
 											   object excludeText = null)
 		{
-			var alphaText = n.As();
+			if (!n.CoerceString(out var alphaText))
+				return DefaultObject;
 
 			// AHK removes transparency for a blank N exactly as for Off, so backends only ever see Off.
 			if (alphaText.Length == 0)
@@ -1224,7 +1312,10 @@ namespace Keysharp.Builtins
 			tv.detectHiddenWindows = true;
 			try
 			{
-				foreach (var win in SearchWindows(winTitle, winText, excludeTitle, excludeText))
+				if (!TrySearchWindows(winTitle, winText, excludeTitle, excludeText, out var matches))
+					return DefaultObject;
+
+				foreach (var win in matches)
 					if (!Platform.Window.TryShow(win.Handle))
 						unsupported = true;
 			}
@@ -1246,10 +1337,15 @@ namespace Keysharp.Builtins
 								   object excludeText = null)
 		{
 			EnsureWindowMonitoringPermission("WinWait");
-			var seconds = timeout.Ad();
+
+			if (!timeout.CoerceDouble(out var seconds))
+				return 0L;
+
 			WindowInfoBase win;
 			var start = DateTime.UtcNow;
-			var criteria = WindowQuery.ToCriteria(winTitle, winText, excludeTitle, excludeText);
+
+			if (!WindowQuery.TryToCriteria(winTitle, winText, excludeTitle, excludeText, out var criteria))
+				return 0L;
 
 			//As in WinWaitClose: a handle is a search criterion here, not a direct address, so the wait
 			//respects DetectHiddenWindows and waits for a hidden window to become visible.
@@ -1283,9 +1379,15 @@ namespace Keysharp.Builtins
 		{
 			EnsureWindowMonitoringPermission("WinWaitActive");
 			var b = false;
-			var seconds = timeout.Ad();
+
+			if (!timeout.CoerceDouble(out var seconds))
+				return 0L;
+
 			var start = DateTime.UtcNow;
-			var criteria = SearchCriteria.FromString(winTitle, winText, excludeTitle, excludeText);
+
+			if (!SearchCriteria.TryFromString(winTitle, winText, excludeTitle, excludeText, out var criteria))
+				return 0L;
+
 			var hwnd = 0L;
 
 			while (!b && (seconds == 0 || (DateTime.UtcNow - start).TotalSeconds < seconds))
@@ -1326,9 +1428,15 @@ namespace Keysharp.Builtins
 										object excludeText = null)
 		{
 			EnsureWindowMonitoringPermission("WinWaitClose");
-			var seconds = timeout.Ad();
+
+			if (!timeout.CoerceDouble(out var seconds))
+				return 0L;
+
 			var start = DateTime.UtcNow;
-			var criteria = SearchCriteria.FromString(winTitle, winText, excludeTitle, excludeText);
+
+			if (!SearchCriteria.TryFromString(winTitle, winText, excludeTitle, excludeText, out var criteria))
+				return 0L;
+
 			long result = 0L;
 			//A handle is a search criterion here, not a direct address: AHK makes the wait family respect
 			//DetectHiddenWindows so a GUI that hides rather than destroys on close ends the wait.
@@ -1362,9 +1470,14 @@ namespace Keysharp.Builtins
 		{
 			EnsureWindowMonitoringPermission("WinWaitNotActive");
 			var b = false;
-			var seconds = timeout.Ad();
+
+			if (!timeout.CoerceDouble(out var seconds))
+				return 0L;
+
 			var start = DateTime.UtcNow;
-			var criteria = SearchCriteria.FromString(winTitle, winText, excludeTitle, excludeText);
+
+			if (!SearchCriteria.TryFromString(winTitle, winText, excludeTitle, excludeText, out var criteria))
+				return 0L;
 
 			if (criteria.IsEmpty)
 			{

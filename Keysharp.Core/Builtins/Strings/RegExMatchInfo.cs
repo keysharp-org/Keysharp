@@ -40,7 +40,11 @@ namespace Keysharp.Builtins
 
 		public object __Get(object name, object args) => name is string s && s.TryParseLong(out long l) && l >= 0 && l <= GroupCount ? this[l] : this[name];
 
-		public KeysharpFunc __Enum(object count) => CreateEnumerator(count.Ai());
+		public KeysharpFunc __Enum(object count)
+		{
+			_ = count.TryCoerceInt(out var c);
+			return CreateEnumerator(c);
+		}
 
 		IEnumerator<(object, object)> IEnumerable<(object, object)>.GetEnumerator() => CreateEnumerator(2);
 
@@ -64,6 +68,7 @@ namespace Keysharp.Builtins
 			return g.Success ? g.Index + 1 : 0;
 		}
 
+		[PublicHiddenFromUser]
 		public override string ToString() => Pos().ToString();
 
 		public string this[params object[] obj] => GetGroup(obj.Length == 0 ? null : obj[0]).Value;

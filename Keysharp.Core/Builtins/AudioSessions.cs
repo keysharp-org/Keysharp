@@ -29,7 +29,7 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object Sessions(object @this, [UserDeclaredName("PIDOrName")] object pidOrName = null, object device = null)
 			{
-				if (!TryValidateSelector(pidOrName, out var selectorFailure))
+				if (!TryValidateSelector(pidOrName, out var selector, out var selectorFailure))
 					return selectorFailure;
 
 				var result = new Array();
@@ -39,8 +39,12 @@ namespace Keysharp.Builtins
 					return result;
 
 				var deviceId = "";
+				string deviceText = null;
 
-				if (device is Ks.Audio.Device || device.As().Length > 0)
+				if (device is not Ks.Audio.Device && !device.CoerceString(out deviceText))
+					return DefaultObject;
+
+				if (device is Ks.Audio.Device || deviceText.Length > 0)
 				{
 					if (!TryResolveDeviceAnyKind(device, out var resolved, out var failure))
 						return failure;
@@ -49,7 +53,7 @@ namespace Keysharp.Builtins
 				}
 
 				foreach (var s in backend.EnumerateSessions(deviceId))
-					if (Matches(s, pidOrName))
+					if (Matches(s, selector))
 						_ = result.Push(Session.Wrap(Service, s));
 
 				return result;
@@ -70,7 +74,7 @@ namespace Keysharp.Builtins
 
 			private static object ApplyToSessions(object pidOrName, object device, object value, bool isVolume)
 			{
-				if (!TryValidateSelector(pidOrName, out var selectorFailure))
+				if (!TryValidateSelector(pidOrName, out var selector, out var selectorFailure))
 					return selectorFailure;
 
 				var backend = Service.Backend;
@@ -84,8 +88,12 @@ namespace Keysharp.Builtins
 					return failure;
 
 				var deviceId = "";
+				string deviceText = null;
 
-				if (device is Ks.Audio.Device || device.As().Length > 0)
+				if (device is not Ks.Audio.Device && !device.CoerceString(out deviceText))
+					return DefaultObject;
+
+				if (device is Ks.Audio.Device || deviceText.Length > 0)
 				{
 					if (!TryResolveDeviceAnyKind(device, out var resolved, out var deviceFailure))
 						return deviceFailure;
@@ -101,7 +109,7 @@ namespace Keysharp.Builtins
 
 				foreach (var s in backend.EnumerateSessions(deviceId))
 				{
-					if (!Matches(s, pidOrName))
+					if (!Matches(s, selector))
 						continue;
 
 					matched++;
@@ -127,10 +135,15 @@ namespace Keysharp.Builtins
 			/// make a malformed argument depend on how many sessions happen to exist, so a host with none would
 			/// silently accept it.
 			/// </summary>
-			internal static bool TryValidateSelector(object pidOrName, out object failure)
+			internal static bool TryValidateSelector(object pidOrName, out string text, out object failure)
 			{
 				failure = null;
-				var text = pidOrName.As();
+
+				if (!pidOrName.CoerceString(out text))
+				{
+					failure = DefaultObject;
+					return false;
+				}
 
 				if (text.Contains('\\') || text.Contains('/'))
 				{
@@ -141,10 +154,8 @@ namespace Keysharp.Builtins
 				return true;
 			}
 
-			private static bool Matches(in Engine.AudioSessionDescriptor s, object pidOrName)
+			private static bool Matches(in Engine.AudioSessionDescriptor s, string text)
 			{
-				var text = pidOrName.As();
-
 				if (text.Length == 0)
 					return true;
 
@@ -383,7 +394,12 @@ namespace Keysharp.Builtins
 					return backend;
 				}
 
-				public override string ToString() => ProcessName.As().Length > 0 ? ProcessName.As() : Id;
+				[PublicHiddenFromUser]
+				public override string ToString()
+				{
+					_ = ProcessName.TryCoerceString(out var name);
+					return name.Length > 0 ? name : Id;
+				}
 			}
 
 			/// <summary>
@@ -413,7 +429,9 @@ namespace Keysharp.Builtins
 				public object __New(object target = null, object intervalMilliseconds = null)
 				{
 					service = Service;
-					var interval = intervalMilliseconds == null ? 50L : intervalMilliseconds.Al();
+
+					if (!intervalMilliseconds.CoerceLong(out var interval, 50L))
+						return DefaultObject;
 
 					if (interval < 20 || interval > 1000)
 						return Errors.ValueErrorOccurred("IntervalMilliseconds must be from 20 through 1000.", intervalMilliseconds);
@@ -428,7 +446,12 @@ namespace Keysharp.Builtins
 						return DefaultObject;
 					}
 
-					if (target is Ks.Audio.Device || target.As().Length > 0)
+					string targetText = null;
+
+					if (target is not Ks.Audio.Device && !target.CoerceString(out targetText))
+						return DefaultObject;
+
+					if (target is Ks.Audio.Device || targetText.Length > 0)
 					{
 						if (!TryResolveDeviceAnyKind(target, out var d, out var failure))
 							return failure;
@@ -549,8 +572,6 @@ namespace Keysharp.Builtins
 					status = "Disposed";
 					return DefaultObject;
 				}
-
-				public override string ToString() => "Audio.Meter";
 			}
 		}
 	}

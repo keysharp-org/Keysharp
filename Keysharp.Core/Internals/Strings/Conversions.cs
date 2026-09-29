@@ -204,8 +204,7 @@ namespace Keysharp.Internals.Strings
 		/// </summary>
 		/// <param name="str">The string whose line endings will be normalized.</param>
 		/// <param name="endOfLine">The line ending character to use. Default: DefaultNewLine.</param>
-		internal static string ReplaceLineEndings(object str, object endOfLine = null) =>
-			str.As().ReplaceLineEndings(endOfLine.As(DefaultNewLine));
+		internal static string ReplaceLineEndings(string str, string endOfLine = DefaultNewLine) => (str ?? "").ReplaceLineEndings(endOfLine);
 
 		internal static string FromFileAttribs(FileAttributes attribs)
 		{
@@ -335,35 +334,62 @@ namespace Keysharp.Internals.Strings
 			_ => CaseCompare.LocaleComparer,
 		};
 
-		internal static StringComparison ParseComparisonOption(object option, string additionalDiagnosticChoice = null)
+		/// <summary>
+		/// Parses a CaseSense argument: On, Off or Locale, with 1, 0, True, False and an empty string as their synonyms.
+		/// False means the script continued the error raised for the argument, and the caller then returns at once.
+		/// </summary>
+		/// <param name="option">The option as the script supplied it.</param>
+		/// <param name="comparison">Ordinal for On, OrdinalIgnoreCase for Off and CurrentCultureIgnoreCase for Locale.</param>
+		/// <param name="additionalDiagnosticChoice">A further choice the caller accepts itself, listed in the error.</param>
+		internal static bool TryParseComparisonOption(object option, out StringComparison comparison, string additionalDiagnosticChoice = null)
 		{
-			var text = option.As().AsSpan().Trim();
+			comparison = default;
+
+			if (!option.CoerceString(out var optionText))
+				return false;
+
+			var text = optionText.AsSpan().Trim();
 
 			if (text.Equals("1", StringComparison.Ordinal) || text.Equals(TrueTxt, StringComparison.OrdinalIgnoreCase)
 					|| text.Equals(Keyword_On, StringComparison.OrdinalIgnoreCase))
-				return StringComparison.Ordinal;
-
-			if (text.IsEmpty || text.Equals("0", StringComparison.Ordinal) || text.Equals(FalseTxt, StringComparison.OrdinalIgnoreCase)
+				comparison = StringComparison.Ordinal;
+			else if (text.IsEmpty || text.Equals("0", StringComparison.Ordinal) || text.Equals(FalseTxt, StringComparison.OrdinalIgnoreCase)
 					|| text.Equals(Keyword_Off, StringComparison.OrdinalIgnoreCase))
-				return StringComparison.OrdinalIgnoreCase;
+				comparison = StringComparison.OrdinalIgnoreCase;
+			else if (text.Equals(Keyword_Locale, StringComparison.OrdinalIgnoreCase))
+				comparison = StringComparison.CurrentCultureIgnoreCase;
+			else
+			{
+				var additional = additionalDiagnosticChoice == null ? "" : $", {additionalDiagnosticChoice}";
+				_ = Errors.ValueErrorOccurred($"Unknown CaseSense \"{Errors.Describe(option)}\". Expected On, Off, Locale{additional}, 1, 0, True, False or an empty string.", option);
+				return false;
+			}
 
-			if (text.Equals(Keyword_Locale, StringComparison.OrdinalIgnoreCase))
-				return StringComparison.CurrentCultureIgnoreCase;
-
-			var additional = additionalDiagnosticChoice == null ? "" : $", {additionalDiagnosticChoice}";
-			_ = Errors.ValueErrorOccurred($"Unknown CaseSense \"{Errors.Describe(option)}\". Expected On, Off, Locale{additional}, 1, 0, True, False or an empty string.", option);
-			return StringComparison.OrdinalIgnoreCase;
+			return true;
 		}
 
-		internal static FontOptions ParseFontOptions(object options, object family = null, bool strict = false)
+		// Null means the script continued a TypeError in the arguments, and the caller then stops at once.
+		internal static FontOptions? ParseFontOptions(object options, object family = null, bool strict = false)
 		{
 			var fontOptions = options is FontOptions f ? f : new FontOptions();
 			if (options is not FontOptions)
-				fontOptions.Parse(options.As(), strict ? tok => Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\".") : null);
+			{
+				if (!options.CoerceString(out var optionsText))
+					return null;
+
+				fontOptions.Parse(optionsText, strict ? tok => Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\".") : null);
+			}
 
 			if (family is Any)
+			{
 				_ = Errors.TypeErrorOccurred(family, typeof(string));
-			else if (family.As() is string name && name.Length > 0)
+				return null;
+			}
+
+			if (!family.CoerceString(out var name))
+				return null;
+
+			if (name.Length > 0)
 				fontOptions.name = name;
 			return fontOptions;
 		}
@@ -442,7 +468,7 @@ namespace Keysharp.Internals.Strings
 			return result;
 		}
 		internal static Font ParseFont(Font standard, string styles, string family = null)
-			=> Conversions.ApplyFont(standard, Conversions.ParseFontOptions(styles, family));
+			=> Conversions.ParseFontOptions(styles, family) is { } fontOptions ? Conversions.ApplyFont(standard, fontOptions) : standard;
 
 		internal static List<int> ParseRange(string[] splits)
 		{

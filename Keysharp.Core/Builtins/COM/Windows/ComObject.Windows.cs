@@ -7,13 +7,18 @@ namespace Keysharp.Builtins.COM
 	{
 		public ComObject(params object[] args) : base(args) { }
 
-		KeysharpFunc I__Enum.__Enum(object count) => ComEnumeration.CreateEnumerator(this, count.Ai());
+		KeysharpFunc I__Enum.__Enum(object count)
+		{
+			_ = count.TryCoerceInt(out var c);
+			return ComEnumeration.CreateEnumerator(this, c);
+		}
 
 		public static object staticCall(object @this, [UserDeclaredName("CLSID")] object clsid,
 			[UserDeclaredName("IID")] object iid = null)//progId, string iid)
 		{
-			var cls = clsid.As();
-			var iidStr = iid.As();
+			if (!clsid.CoerceString(out var cls) || !iid.CoerceString(out var iidStr))
+				return DefaultObject;
+
 			var hr = 0;
 			var clsId = Guid.Empty;
 			var id = Guid.Empty;

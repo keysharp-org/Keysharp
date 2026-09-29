@@ -206,7 +206,8 @@ namespace Keysharp.Internals.Threading
 			}
 			set
 			{
-				Script.TheScript.Threads.CurrentThread.configData.fileEncoding = value is Encoding enc ? enc : Files.GetEncoding(value.ToString());
+				if (value is Encoding enc || Files.TryGetEncoding(value, out enc))
+					Script.TheScript.Threads.CurrentThread.configData.fileEncoding = enc;
 			}
 		}
 

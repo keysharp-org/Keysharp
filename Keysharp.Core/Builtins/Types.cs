@@ -26,6 +26,20 @@ namespace Keysharp.Builtins
 			return 0L;
         }
 
+		// An object is a TypeError, even one with a ToString method, as in AutoHotkey, while a StringBuffer is its text, as
+		// elsewhere. A number is checked as its text, where AutoHotkey raises.
+		private static bool CharTestText(object value, out string text)
+		{
+			if (value is Any and not Ks.StringBuffer)
+			{
+				text = "";
+				_ = Errors.TypeErrorOccurred(value, typeof(string));
+				return false;
+			}
+
+			return value.CoerceString(out text);
+		}
+
 		/// <summary>
 		/// Same as <see cref="IsAlpha"/> except that integers and characters 0 through 9 are also allowed.
 		/// </summary>
@@ -34,8 +48,10 @@ namespace Keysharp.Builtins
 		/// <returns>1 if the object was a string which contained all alpha numeric characters, else 0.</returns>
 		public static long IsAlnum(object value, object locale = null)
 		{
-			var s = value.As();
-			Func<char, bool> predicate = locale != null && locale.As().Equals("locale", StringComparison.OrdinalIgnoreCase) ? char.IsLetterOrDigit : char.IsAsciiLetterOrDigit;
+			if (!CharTestText(value, out var s) || !locale.CoerceString(out var localeText))
+				return 0L;
+
+			Func<char, bool> predicate = localeText.Equals("locale", StringComparison.OrdinalIgnoreCase) ? char.IsLetterOrDigit : char.IsAsciiLetterOrDigit;
 			return s?.Length == 0 || s.All(predicate) ? 1L : 0L;
 		}
 
@@ -50,8 +66,10 @@ namespace Keysharp.Builtins
 		/// <returns>1 if the object was a string which contained all alpha characters, else 0.</returns>
 		public static long IsAlpha(object value, object locale = null)
 		{
-			var s = value.As();
-			Func<char, bool> predicate = locale != null && locale.As().Equals("locale", StringComparison.OrdinalIgnoreCase) ? char.IsLetter : char.IsAsciiLetter;
+			if (!CharTestText(value, out var s) || !locale.CoerceString(out var localeText))
+				return 0L;
+
+			Func<char, bool> predicate = localeText.Equals("locale", StringComparison.OrdinalIgnoreCase) ? char.IsLetter : char.IsAsciiLetter;
 			return s?.Length == 0 || s.All(predicate) ? 1L : 0L;
 		}
 
@@ -63,7 +81,9 @@ namespace Keysharp.Builtins
 		/// <returns>1 if the object was a string of digits, else 0.</returns>
 		public static long IsDigit(object value)
 		{
-			var s = value.As();
+			if (!CharTestText(value, out var s))
+				return 0L;
+
 			return s?.Length == 0 || s.All(char.IsDigit) ? 1L : 0L;
 		}
 
@@ -135,8 +155,10 @@ namespace Keysharp.Builtins
 		/// <returns>1 if value contained all lowercase characters, else 0.</returns>
 		public static long IsLower(object value, object locale = null)
 		{
-			var s = value.As();
-			if (locale != null && locale.As().Equals("locale", StringComparison.OrdinalIgnoreCase))
+			if (!CharTestText(value, out var s) || !locale.CoerceString(out var localeText))
+				return 0L;
+
+			if (localeText.Equals("locale", StringComparison.OrdinalIgnoreCase))
 			{
 				foreach (var ch in s)
 					if (!char.IsLower(ch))
@@ -189,7 +211,13 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="value">The object to examine.</param>
 		/// <returns>1 if only spaces are found, else 0.</returns>
-		public static long IsSpace(object value) => value.ToString().AsSpan().IndexOfAnyExcept(SpacesSv) != -1 ? 0L : 1L;
+		public static long IsSpace(object value)
+		{
+			if (!CharTestText(value, out var s))
+				return 0L;
+
+			return s.AsSpan().IndexOfAnyExcept(SpacesSv) != -1 ? 0L : 1L;
+		}
 
 		/// <summary>
 		/// 1 if value is a valid date-time stamp, which can be all or just the leading part of the YYYYMMDDHH24MISS format.<br/>
@@ -202,7 +230,9 @@ namespace Keysharp.Builtins
 		/// <returns>1 if value is a valid date-time stamp, else 0.</returns>
 		public static long IsTime(object value)
 		{
-			var s = value.As();
+			if (!CharTestText(value, out var s))
+				return 0L;
+
 			DateTime dt;
 
 			try
@@ -233,8 +263,10 @@ namespace Keysharp.Builtins
 		/// <returns>1 if value contained all uppercase characters, else 0.</returns>
 		public static long IsUpper(object value, object locale = null)
 		{
-			var s = value.As();
-			if (locale != null && locale.As().Equals("locale", StringComparison.OrdinalIgnoreCase))
+			if (!CharTestText(value, out var s) || !locale.CoerceString(out var localeText))
+				return 0L;
+
+			if (localeText.Equals("locale", StringComparison.OrdinalIgnoreCase))
 			{
 				foreach (var ch in s)
 					if (!char.IsUpper(ch))
@@ -256,7 +288,9 @@ namespace Keysharp.Builtins
 		/// <returns>1 if value contains only valid hexadecimal characters (optionally including the 0x prefix), else 0.</returns>
 		public static long IsXDigit(object value)
 		{
-			var s = value.As();
+			if (!CharTestText(value, out var s))
+				return 0L;
+
 			var sp = s.AsSpan();
 
 			if (sp.StartsWith("0x", StringComparison.OrdinalIgnoreCase))

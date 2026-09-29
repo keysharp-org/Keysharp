@@ -164,6 +164,7 @@ namespace Keysharp.Builtins
 			/// The names it carries, in the order it enumerates them -- which is Map's, sorted, not the order the
 			/// call site wrote them. This is what a variadic built-in prints when it collects one.
 			/// </summary>
+			[PublicHiddenFromUser]
 			public override string ToString()
 			{
 				var sb = new StringBuilder();

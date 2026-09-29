@@ -113,7 +113,7 @@ namespace Keysharp.Builtins
 			public object BaseUrl
 			{
 				get => session.BaseUrl ?? "";
-				set => session.BaseUrl = value.As();
+				set { if (value.CoerceString(out var text)) session.BaseUrl = text; }
 			}
 
 			/// <summary>
@@ -179,7 +179,7 @@ namespace Keysharp.Builtins
 			/// <param name="options">Per-request options, merged over the session's.</param>
 			/// <inheritdoc cref="Get"/>
 			public object Request(object @method, object url, object body = null, object options = null)
-				=> Run(@method.As(), url, body, options, async: false);
+				=> @method.CoerceString(out var methodName) ? Run(methodName, url, body, options, async: false) : DefaultObject;
 
 			/// <summary>The same as <see cref="Get"/>, but returns a <c>Task</c> rather than waiting.</summary>
 			public object GetAsync(object url, object options = null) => Run("GET", url, null, options, async: true);
@@ -189,7 +189,7 @@ namespace Keysharp.Builtins
 
 			/// <summary>The same as <see cref="Request"/>, but returns a <c>Task</c> rather than waiting.</summary>
 			public object RequestAsync(object @method, object url, object body = null, object options = null)
-				=> Run(@method.As(), url, body, options, async: true);
+				=> @method.CoerceString(out var methodName) ? Run(methodName, url, body, options, async: true) : DefaultObject;
 
 			/// <summary>Fetches a URL straight to a file, without it ever being a script value.</summary>
 			/// <param name="url">Absolute, or relative to <see cref="BaseUrl"/>.</param>
@@ -200,11 +200,11 @@ namespace Keysharp.Builtins
 			/// <returns>The <see cref="Response"/>, whose <c>Body</c> is empty because the file took it.</returns>
 			/// <inheritdoc cref="Get"/>
 			public object Download(object url, object path, object options = null)
-				=> Run("GET", url, null, options, async: false, path: path.As());
+				=> path.CoerceString(out var pathText) ? Run("GET", url, null, options, async: false, path: pathText) : DefaultObject;
 
 			/// <summary>The same as <see cref="Download"/>, but returns a <c>Task</c> rather than waiting.</summary>
 			public object DownloadAsync(object url, object path, object options = null)
-				=> Run("GET", url, null, options, async: true, path: path.As());
+				=> path.CoerceString(out var pathText) ? Run("GET", url, null, options, async: true, path: pathText) : DefaultObject;
 
 			// ---- stateless shortcuts -------------------------------------------------------------------------
 
@@ -221,7 +221,7 @@ namespace Keysharp.Builtins
 			/// <summary>Sends any method on the shared stateless client and waits for the response.</summary>
 			/// <inheritdoc cref="Request"/>
 			public static object staticRequest(object @this, object @method, object url, object body = null, object options = null)
-				=> RunShared(@method.As(), url, body, options, async: false);
+				=> @method.CoerceString(out var methodName) ? RunShared(methodName, url, body, options, async: false) : DefaultObject;
 
 			/// <summary>The same as <c>Http.Get</c>, but returns a <c>Task</c> rather than waiting.</summary>
 			public static object staticGetAsync(object @this, object url, object options = null)
@@ -233,16 +233,16 @@ namespace Keysharp.Builtins
 
 			/// <summary>The same as <c>Http.Request</c>, but returns a <c>Task</c> rather than waiting.</summary>
 			public static object staticRequestAsync(object @this, object @method, object url, object body = null, object options = null)
-				=> RunShared(@method.As(), url, body, options, async: true);
+				=> @method.CoerceString(out var methodName) ? RunShared(methodName, url, body, options, async: true) : DefaultObject;
 
 			/// <summary>Fetches a URL straight to a file on the shared stateless client.</summary>
 			/// <inheritdoc cref="Download"/>
 			public static object staticDownload(object @this, object url, object path, object options = null)
-				=> RunShared("GET", url, null, options, async: false, path: path.As());
+				=> path.CoerceString(out var pathText) ? RunShared("GET", url, null, options, async: false, path: pathText) : DefaultObject;
 
 			/// <summary>The same as <c>Http.Download</c>, but returns a <c>Task</c> rather than waiting.</summary>
 			public static object staticDownloadAsync(object @this, object url, object path, object options = null)
-				=> RunShared("GET", url, null, options, async: true, path: path.As());
+				=> path.CoerceString(out var pathText) ? RunShared("GET", url, null, options, async: true, path: pathText) : DefaultObject;
 
 			// ---- dispatch ------------------------------------------------------------------------------------
 
@@ -287,7 +287,10 @@ namespace Keysharp.Builtins
 												ReadBufferSize, FileOptions.Asynchronous);
 				}
 
-				if (!TryBuildRequest(merged, method, url.As(), out var message, out var error))
+				if (!url.CoerceString(out var urlText))
+					return DefaultObject;
+
+				if (!TryBuildRequest(merged, method, urlText, out var message, out var error))
 					return error.Length == 0 ? DefaultObject : Errors.ValueErrorOccurred(error);
 
 				// Captured on the calling script thread: OnData runs there, at the priority of the thread that
@@ -375,12 +378,23 @@ namespace Keysharp.Builtins
 					return false;
 				}
 				else if (options.Body is Buffer buf)
-					content = new ByteArrayContent(buf.Size.Al() == 0 ? [] : buf.ToByteArray())
 				{
-					Headers = { ContentType = new MediaTypeHeaderValue("application/octet-stream") }
-				};
+					_ = buf.Size.TryCoerceLong(out var bodySize);
+					content = new ByteArrayContent(bodySize == 0 ? [] : buf.ToByteArray())
+					{
+						Headers = { ContentType = new MediaTypeHeaderValue("application/octet-stream") }
+					};
+				}
 				else if (options.Body != null)
-					content = new StringContent(options.Body.As(), Encoding.UTF8, "text/plain");
+				{
+					if (!options.Body.CoerceString(out var bodyText))
+					{
+						error = "";
+						return false;
+					}
+
+					content = new StringContent(bodyText, Encoding.UTF8, "text/plain");
+				}
 
 				message = new HttpRequestMessage(new HttpMethod(method.ToUpperInvariant()), uri) { Content = content };
 				error = ApplyHeaders(message, options.Headers);
@@ -738,9 +752,9 @@ namespace Keysharp.Builtins
 				new[] { "Expires", "Last-Modified", "Allow" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
 			/// <summary>
-			/// Applies header entries, returning a message for the first value that cannot be sent. A value of
-			/// <c>""</c> removes a header a session had set. Content headers belong to the content, which is also
-			/// why a response merges the two collections back together.
+			/// Applies header entries, returning a message for the first value that cannot be sent, or "" for one
+			/// whose error has already been raised. A value of <c>""</c> removes a header a session had set. Content
+			/// headers belong to the content, which is also why a response merges the two collections back together.
 			/// </summary>
 			private static string ApplyHeaders(HttpRequestMessage request, Map headers)
 			{
@@ -750,8 +764,8 @@ namespace Keysharp.Builtins
 				{
 					foreach (var (key, val) in (IEnumerable<(object, object)>)headers)
 					{
-						var name = key.As();
-						var value = val.As();
+						if (!key.CoerceString(out var name) || !val.CoerceString(out var value))
+							return "";
 
 						if (name.Length == 0)
 							return "A header name cannot be empty.";
@@ -881,7 +895,8 @@ namespace Keysharp.Builtins
 
 				internal static double? ParseTimeout(object value)
 				{
-					var seconds = value.Ad(double.NaN);
+					if (!value.CoerceDouble(out var seconds, double.NaN))
+						return null;
 
 					if (double.IsNaN(seconds) || (seconds <= 0 && seconds != -1))
 					{
@@ -957,8 +972,11 @@ namespace Keysharp.Builtins
 					if (options == null)
 						return parsed;
 
-					foreach (var (key, value) in Entries(options))
+					foreach (var (entryKey, value) in Entries(options))
 					{
+						if (!entryKey.CoerceString(out var key))
+							return null;
+
 						var name = key.ToLowerInvariant();
 
 						// Each message names the reason rather than only the rule, which looks arbitrary alone.
@@ -1013,7 +1031,10 @@ namespace Keysharp.Builtins
 								break;
 
 							case "baseurl":
-								parsed.BaseUrl = value.As();
+								if (!value.CoerceString(out var baseUrl))
+									return null;
+
+								parsed.BaseUrl = baseUrl;
 								break;
 
 							case "auth":
@@ -1023,7 +1044,7 @@ namespace Keysharp.Builtins
 								break;
 
 							case "proxy":
-								if (!ParseProxy(parsed, value.As()))
+								if (!value.CoerceString(out var proxy) || !ParseProxy(parsed, proxy))
 									return null;
 
 								break;
@@ -1067,11 +1088,17 @@ namespace Keysharp.Builtins
 				{
 					if (value is Array pair && pair.Count == 2)
 					{
-						parsed.Credentials = new NetworkCredential(pair[1L].As(), pair[2L].As());
+						if (!pair[1L].CoerceString(out var user) || !pair[2L].CoerceString(out var password))
+							return false;
+
+						parsed.Credentials = new NetworkCredential(user, password);
 						return true;
 					}
 
-					if (value.As().Equals("Default", StringComparison.OrdinalIgnoreCase))
+					if (!value.CoerceString(out var text))
+						return false;
+
+					if (text.Equals("Default", StringComparison.OrdinalIgnoreCase))
 					{
 						parsed.Credentials = CredentialCache.DefaultNetworkCredentials;
 						return true;
@@ -1099,12 +1126,12 @@ namespace Keysharp.Builtins
 					return true;
 				}
 
-				private static IEnumerable<(string, object)> Entries(object options)
+				private static IEnumerable<(object, object)> Entries(object options)
 				{
 					if (options is Map map)
 					{
-						foreach (var (key, value) in (IEnumerable<(object, object)>)map)
-							yield return (key.As(), value);
+						foreach (var entry in (IEnumerable<(object, object)>)map)
+							yield return entry;
 
 						yield break;
 					}

@@ -787,7 +787,8 @@ namespace Keysharp.Builtins
 						return false;
 					}
 
-					var raw = (uint)value.Al();
+					_ = value.TryCoerceLong(out var rawLong);
+					var raw = (uint)rawLong;
 					argb = unchecked((int)(raw > 0xFFFFFFu ? raw : 0xFF000000u | (raw & 0xFFFFFFu)));
 					return true;
 				}
@@ -801,10 +802,7 @@ namespace Keysharp.Builtins
 					}
 
 					if (text.ParseLong().HasValue)
-					{
-						argb = ParseColorArg(text);
-						return true;
-					}
+						return TryParseColorArg(text, out argb);
 				}
 
 				_ = Errors.ValueErrorOccurred($"{name} must be a valid color.", value);
@@ -827,7 +825,13 @@ namespace Keysharp.Builtins
 					return true;
 				}
 
-				paint = new VectorPaint(ParseColorArg(value, defaultColor, allowTransparentEmpty: false), null);
+				if (!TryParseColorArg(value, out var argb, defaultColor, allowTransparentEmpty: false))
+				{
+					paint = default;
+					return false;
+				}
+
+				paint = new VectorPaint(argb, null);
 				return true;
 			}
 

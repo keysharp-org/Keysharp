@@ -120,7 +120,10 @@ namespace Keysharp.Builtins
 			if (Script.GetPropertyValueOrNull(cls, "Prototype") is not Any proto)
 				return Errors.PropertyErrorOccurred("Struct class does not have a prototype.");
 
-			return CreatePointerView(proto.type, proto, address.Al());
+			if (!address.CoerceLong(out var addr))
+				return DefaultObject;
+
+			return CreatePointerView(proto.type, proto, addr);
 		}
 
 		// Base class for structured arrays (fixed-size, single element type). `Int32[10]` etc. are subclasses of this.
@@ -142,7 +145,8 @@ namespace Keysharp.Builtins
 			if (elementType == null)
 				return Errors.TypeErrorOccurred(@this, typeof(Struct));
 
-			var length = index.Al();
+			if (!index.CoerceLong(out var length))
+				return DefaultObject;
 
 			if (length <= 0)
 				return Errors.ValueErrorOccurred("Struct array length must be a positive integer.");
@@ -424,7 +428,14 @@ namespace Keysharp.Builtins
 				return true;
 			}
 
-			var pack = TryGetDescriptorValue(descriptor, "pack", out var packValue) ? packValue.Al() : 0;
+			var pack = 0L;
+
+			if (TryGetDescriptorValue(descriptor, "pack", out var packValue) && !packValue.CoerceLong(out pack))
+			{
+				result = DefaultObject;
+				return true;
+			}
+
 			var offsetSpec = TryGetDescriptorValue(descriptor, "offset", out var offsetValue) ? offsetValue : null;
 			result = DefineFieldOnPrototype(proto, fieldName, ResolveFieldType(typeValue), pack, offsetSpec);
 			return true;
@@ -466,7 +477,7 @@ namespace Keysharp.Builtins
 
 			if (pointerTargets.TryGetValue(field.FieldType, out var targetType))
 			{
-				var ptr = ReadPrimitive(StructPrimitiveKind.Ptr, address).Al();
+				_ = ReadPrimitive(StructPrimitiveKind.Ptr, address).TryCoerceLong(out var ptr);
 				return CreatePointerValue(targetType, ptr);
 			}
 
@@ -711,21 +722,25 @@ namespace Keysharp.Builtins
 			return GetOutputValue(result);
 		}
 
-		// Converts a callback's return value to the raw bits its declared type leaves in the return register.
+		// Converts a callback's return value to the raw bits its declared type leaves in the return register. Leniently, as
+		// AutoHotkey reads a callback's result: a raised error here would unwind into the native caller.
 		internal static long ConvertCallbackReturn(in CallbackConversion conversion, object value)
 		{
+			long l;
+			double d;
+
 			switch (conversion.Kind)
 			{
-				case StructPrimitiveKind.Int8: return (sbyte)value.Al();
-				case StructPrimitiveKind.UInt8: return (byte)value.Al();
-				case StructPrimitiveKind.Int16: return (short)value.Al();
-				case StructPrimitiveKind.UInt16: return (ushort)value.Al();
-				case StructPrimitiveKind.Int32: return value.Ai();
-				case StructPrimitiveKind.UInt32: return value.Aui();
-				case StructPrimitiveKind.Float32: return BitConverter.SingleToInt32Bits((float)value.Ad());
-				case StructPrimitiveKind.Float64: return BitConverter.DoubleToInt64Bits(value.Ad());
+				case StructPrimitiveKind.Int8: return value.TryCoerceLong(out l) ? (sbyte)l : 0L;
+				case StructPrimitiveKind.UInt8: return value.TryCoerceLong(out l) ? (byte)l : 0L;
+				case StructPrimitiveKind.Int16: return value.TryCoerceLong(out l) ? (short)l : 0L;
+				case StructPrimitiveKind.UInt16: return value.TryCoerceLong(out l) ? (ushort)l : 0L;
+				case StructPrimitiveKind.Int32: return value.TryCoerceInt(out var i) ? i : 0L;
+				case StructPrimitiveKind.UInt32: return value.TryCoerceLong(out l) ? unchecked((uint)l) : 0L;
+				case StructPrimitiveKind.Float32: return value.TryCoerceDouble(out d) ? BitConverter.SingleToInt32Bits((float)d) : 0L;
+				case StructPrimitiveKind.Float64: return value.TryCoerceDouble(out d) ? BitConverter.DoubleToInt64Bits(d) : 0L;
 				case StructPrimitiveKind.Int64:
-				case StructPrimitiveKind.Ptr: return value.Al();
+				case StructPrimitiveKind.Ptr: return value.TryCoerceLong(out l) ? l : 0L;
 			}
 
 			if (!IsStructInstance(value, conversion.Aggregate))
@@ -798,10 +813,14 @@ namespace Keysharp.Builtins
 			return false;
 		}
 
-		internal object GetValue() =>
-			pointerTargets.TryGetValue(StructType, out var targetType)
-				? CreatePointerValue(targetType, GetPrimitiveValue().Al())
-				: GetPrimitiveValue();
+		internal object GetValue()
+		{
+			if (!pointerTargets.TryGetValue(StructType, out var targetType))
+				return GetPrimitiveValue();
+
+			_ = GetPrimitiveValue().TryCoerceLong(out var ptr);
+			return CreatePointerValue(targetType, ptr);
+		}
 
 		internal object GetPrimitiveValue()
 		{
@@ -836,7 +855,10 @@ namespace Keysharp.Builtins
 				if (indexArgs == null || indexArgs.Length != 1)
 					return Errors.PropertyErrorOccurred("Structured array access requires exactly one index.");
 
-				return GetArrayElement(info, indexArgs[0].Al());
+				if (!indexArgs[0].CoerceLong(out var index))
+					return DefaultObject;
+
+				return GetArrayElement(info, index);
 			}
 
 			return indexArgs == null || indexArgs.Length == 0
@@ -853,7 +875,10 @@ namespace Keysharp.Builtins
 				if (keys == null || keys.Length != 1)
 					return Errors.PropertyErrorOccurred("Structured array assignment requires exactly one index.");
 
-				return SetArrayElement(info, keys[0].Al(), value);
+				if (!keys[0].CoerceLong(out var index))
+					return DefaultObject;
+
+				return SetArrayElement(info, index, value);
 			}
 
 			if (keys != null && keys.Length != 0)
@@ -1172,7 +1197,8 @@ namespace Keysharp.Builtins
 				return true;
 			}
 
-			offset = offsetSpec.Al();
+			if (!offsetSpec.CoerceLong(out offset))
+				return false;
 
 			if (offset < 0)
 				throw new InvalidOperationException("Struct field Offset must not be negative.");
@@ -1225,19 +1251,50 @@ namespace Keysharp.Builtins
 		private static unsafe void WritePrimitive(StructPrimitiveKind kind, long address, object value)
 		{
 			var ptr = (void*)address;
+			long l;
+			double d;
 
 			switch (kind)
 			{
-				case StructPrimitiveKind.Int8: Unsafe.WriteUnaligned(ptr, unchecked((sbyte)value.Al())); break;
-				case StructPrimitiveKind.UInt8: Unsafe.WriteUnaligned(ptr, unchecked((byte)value.Al())); break;
-				case StructPrimitiveKind.Int16: Unsafe.WriteUnaligned(ptr, unchecked((short)value.Al())); break;
-				case StructPrimitiveKind.UInt16: Unsafe.WriteUnaligned(ptr, unchecked((ushort)value.Al())); break;
-				case StructPrimitiveKind.Int32: Unsafe.WriteUnaligned(ptr, unchecked((int)value.Al())); break;
-				case StructPrimitiveKind.UInt32: Unsafe.WriteUnaligned(ptr, unchecked((uint)value.Al())); break;
-				case StructPrimitiveKind.Int64: Unsafe.WriteUnaligned(ptr, value.Al()); break;
-				case StructPrimitiveKind.Ptr: Unsafe.WriteUnaligned(ptr, (nint)value.Al()); break;
-				case StructPrimitiveKind.Float32: Unsafe.WriteUnaligned(ptr, value.Af()); break;
-				case StructPrimitiveKind.Float64: Unsafe.WriteUnaligned(ptr, value.Ad()); break;
+				case StructPrimitiveKind.Int8:
+					if (value.CoerceLong(out l)) Unsafe.WriteUnaligned(ptr, unchecked((sbyte)l));
+					break;
+
+				case StructPrimitiveKind.UInt8:
+					if (value.CoerceLong(out l)) Unsafe.WriteUnaligned(ptr, unchecked((byte)l));
+					break;
+
+				case StructPrimitiveKind.Int16:
+					if (value.CoerceLong(out l)) Unsafe.WriteUnaligned(ptr, unchecked((short)l));
+					break;
+
+				case StructPrimitiveKind.UInt16:
+					if (value.CoerceLong(out l)) Unsafe.WriteUnaligned(ptr, unchecked((ushort)l));
+					break;
+
+				case StructPrimitiveKind.Int32:
+					if (value.CoerceLong(out l)) Unsafe.WriteUnaligned(ptr, unchecked((int)l));
+					break;
+
+				case StructPrimitiveKind.UInt32:
+					if (value.CoerceLong(out l)) Unsafe.WriteUnaligned(ptr, unchecked((uint)l));
+					break;
+
+				case StructPrimitiveKind.Int64:
+					if (value.CoerceLong(out l)) Unsafe.WriteUnaligned(ptr, l);
+					break;
+
+				case StructPrimitiveKind.Ptr:
+					if (value.CoerceLong(out l)) Unsafe.WriteUnaligned(ptr, (nint)l);
+					break;
+
+				case StructPrimitiveKind.Float32:
+					if (value.CoerceDouble(out d)) Unsafe.WriteUnaligned(ptr, (float)d);
+					break;
+
+				case StructPrimitiveKind.Float64:
+					if (value.CoerceDouble(out d)) Unsafe.WriteUnaligned(ptr, d);
+					break;
 			}
 		}
 

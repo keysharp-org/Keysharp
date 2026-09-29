@@ -55,7 +55,12 @@ namespace Keysharp.Builtins
 			var repeatCount = 0L;
 			var moveOffset = false;
 			var ht = script.HookThread;
-			var opts = $"{options.As()} {coords.As()} {whichButton.As()} {clickCount.As()} {downOrUp.As()} {relative.As()}";
+
+			if (!options.CoerceString(out var optionsText) || !coords.CoerceString(out var coordsText) || !whichButton.CoerceString(out var buttonText)
+					|| !clickCount.CoerceString(out var countText) || !downOrUp.CoerceString(out var downUpText) || !relative.CoerceString(out var relativeText))
+				return DefaultObject;
+
+			var opts = $"{optionsText} {coordsText} {buttonText} {countText} {downUpText} {relativeText}";
 			ht.ParseClickOptions(opts, ref x, ref y, ref vk, ref eventType, ref repeatCount, ref moveOffset);
 			//Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() =>
 			ht.kbdMsSender.PerformMouseCommon(repeatCount < 1 ? Actions.ACT_MOUSEMOVE : Actions.ACT_MOUSECLICK // Treat repeat-count<1 as a move (like {click}).
@@ -83,8 +88,9 @@ namespace Keysharp.Builtins
 		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if targetType or relativeTo do not contain a valid values.</exception>
 		public static object CoordMode(object targetType, object relativeTo = null)
 		{
-			var target = targetType.As();
-			var mode = relativeTo.As(Keyword_Screen);
+			if (!targetType.CoerceString(out var target) || !relativeTo.CoerceString(out var mode, Keyword_Screen))
+				return DefaultObject;
+
 			CoordModeType rel;
 
 			if (relativeTo is CoordModeType cmt)
@@ -164,13 +170,17 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object MouseClick(object whichButton = null, object x = null, object y = null, object clickCount = null, object speed = null, object downOrUp = null, object relative = null)
 		{
-			var wb = whichButton.As();
-			var ix = x.Ai(KeyboardMouseSender.CoordUnspecified);// If no starting coords are specified, mark it as "use the current mouse position".
-			var iy = y.Ai(KeyboardMouseSender.CoordUnspecified);
-			var repeatCount = clickCount.Al(1);
-			var ispeed = (int)speed.Al(ThreadAccessors.A_DefaultMouseSpeed);
-			var du = downOrUp.As();
-			var rel = relative.As();
+			if (!whichButton.CoerceString(out var wb)
+			// If no starting coords are specified, mark it as "use the current mouse position".
+			|| !x.CoerceInt(out var ix, KeyboardMouseSender.CoordUnspecified)
+			|| !y.CoerceInt(out var iy, KeyboardMouseSender.CoordUnspecified)
+			|| !clickCount.CoerceLong(out var repeatCount, 1)
+			|| !speed.CoerceLong(out var speedRaw, ThreadAccessors.A_DefaultMouseSpeed)
+			|| !downOrUp.CoerceString(out var du) || !relative.CoerceString(out var rel))
+				return DefaultObject;
+
+			var ispeed = (int)speedRaw;
+
 			//Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() =>
 			PerformMouse(Actions.ACT_MOUSECLICK, wb, ix, iy, KeyboardMouseSender.CoordUnspecified, KeyboardMouseSender.CoordUnspecified,
 						 ispeed, rel, repeatCount, du);//, true, true);
@@ -204,13 +214,30 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object MouseClickDrag(object whichButton, object x1, object y1, object x2, object y2, object speed = null, object relative = null)
 		{
-			var wb = whichButton.As();
-			var ix1 = x1.Ai(KeyboardMouseSender.CoordUnspecified);//If no starting coords are specified, mark it as "use the current mouse position".
-			var iy1 = y1.Ai(KeyboardMouseSender.CoordUnspecified);
-			var ix2 = x2.Ai(KeyboardMouseSender.CoordUnspecified);
-			var iy2 = y2.Ai(KeyboardMouseSender.CoordUnspecified);
-			var ispeed = (int)speed.Al(ThreadAccessors.A_DefaultMouseSpeed);
-			var rel = relative.As();
+			if (!whichButton.CoerceString(out var wb))
+				return DefaultObject;
+
+			//If no starting coords are specified, mark it as "use the current mouse position".
+			if (!x1.CoerceInt(out var ix1, KeyboardMouseSender.CoordUnspecified))
+				return DefaultObject;
+
+			if (!y1.CoerceInt(out var iy1, KeyboardMouseSender.CoordUnspecified))
+				return DefaultObject;
+
+			if (!x2.CoerceInt(out var ix2, KeyboardMouseSender.CoordUnspecified))
+				return DefaultObject;
+
+			if (!y2.CoerceInt(out var iy2, KeyboardMouseSender.CoordUnspecified))
+				return DefaultObject;
+
+			if (!speed.CoerceLong(out var speedRaw, ThreadAccessors.A_DefaultMouseSpeed))
+				return DefaultObject;
+
+			var ispeed = (int)speedRaw;
+
+			if (!relative.CoerceString(out var rel))
+				return DefaultObject;
+
 			//Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() =>
 			PerformMouse(Actions.ACT_MOUSECLICKDRAG, wb, ix1, iy1, ix2, iy2,
 						 ispeed, rel, 1, "");//, true, true);
@@ -243,7 +270,9 @@ namespace Keysharp.Builtins
 										 [ByRef] object outputVarControl = null,
 										 object flag = null)
 		{
-			var mode = flag.Al(0L);
+			if (!flag.CoerceLong(out var mode))
+				return DefaultObject;
+
 			GetCursorPos(out POINT pos);
 			var aX = 0;
 			var aY = 0;
@@ -352,10 +381,20 @@ namespace Keysharp.Builtins
 		{
 			var script = Script.TheScript;
 			_ = script.Permissions.EnsureInputControl(operation: "MouseMove");
-			var ix = x.Ai(KeyboardMouseSender.CoordUnspecified);
-			var iy = y.Ai(KeyboardMouseSender.CoordUnspecified);
-			var s = (int)speed.Al(ThreadAccessors.A_DefaultMouseSpeed);
-			var r = relative.As();
+			if (!x.CoerceInt(out var ix, KeyboardMouseSender.CoordUnspecified))
+				return DefaultObject;
+
+			if (!y.CoerceInt(out var iy, KeyboardMouseSender.CoordUnspecified))
+				return DefaultObject;
+
+			if (!speed.CoerceLong(out var speedRaw, ThreadAccessors.A_DefaultMouseSpeed))
+				return DefaultObject;
+
+			var s = (int)speedRaw;
+
+			if (!relative.CoerceString(out var r))
+				return DefaultObject;
+
 			//Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() =>
 			PerformMouse(Actions.ACT_MOUSEMOVE, "", ix, iy, KeyboardMouseSender.CoordUnspecified, KeyboardMouseSender.CoordUnspecified,
 						 s, r, 1, "");
@@ -383,11 +422,13 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object SetMouseDelay(object delay, object play = null)
 		{
-			var isplay = play.As().Equals("play", StringComparison.OrdinalIgnoreCase);
-			var del = isplay ? A_MouseDelayPlay : A_MouseDelay;
+			if (!play.CoerceString(out var playText))
+				return DefaultObject;
 
-			if (delay != null)
-				del = delay.Al();
+			var isplay = playText.Equals("play", StringComparison.OrdinalIgnoreCase);
+
+			if (!delay.CoerceLong(out var del, isplay ? ThreadAccessors.A_MouseDelayPlay : ThreadAccessors.A_MouseDelay))
+				return DefaultObject;
 
 			if (isplay)
 				A_MouseDelayPlay = del;

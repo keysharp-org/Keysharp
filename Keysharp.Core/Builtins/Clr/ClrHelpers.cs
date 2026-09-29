@@ -261,16 +261,36 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		internal static Type ResolveTypeArg(object o)
+		// False when the script continued the error of a type name which does not convert to text.
+		internal static bool TryResolveTypeArg(object o, out Type type)
 		{
-			return o switch
+			switch (o)
 			{
-				Clr.ManagedType mt => mt._type,
-				Clr.ManagedInstance mi => mi._type,
-				Type t => t,
-				string s => ResolveByNameOrAlias(s),
-				_ => ResolveByNameOrAlias(o.As())
-			};
+				case Clr.ManagedType mt:
+					type = mt._type;
+					return true;
+
+				case Clr.ManagedInstance mi:
+					type = mi._type;
+					return true;
+
+				case Type t:
+					type = t;
+					return true;
+
+				case string s:
+					type = ResolveByNameOrAlias(s);
+					return true;
+			}
+
+			if (!o.CoerceString(out var name))
+			{
+				type = null;
+				return false;
+			}
+
+			type = ResolveByNameOrAlias(name);
+			return true;
 		}
 
 		internal static Type ResolveByNameOrAlias(string name)
@@ -535,14 +555,18 @@ namespace Keysharp.Builtins
 		internal static readonly ConcurrentDictionary<(Type t, string name), MemberSet> MemberCache = new();
 		internal static readonly ConcurrentDictionary<(Type t, string name, bool idxOnly), PropertyInfo[]> PropertyCache = new();
 		internal static readonly ConcurrentDictionary<(Type t, string name), FieldInfo> FieldCache = new();
-		private static readonly ConcurrentDictionary<MethodInfo, Func<object, object[], object>> ByteSpanInvokerCache = new();
+		private static readonly ConcurrentDictionary<MethodInfo, ByteSpanInvoker> ByteSpanInvokerCache = new();
+
+		// False, without calling the method, when the script continued the conversion error of a byte-span argument.
+		private delegate bool ByteSpanInvoker(object instance, object[] args, out object result);
 
 		// -------- Public entry points (used by proxies) --------
 
 		// Constructors
 		internal static object[] ConvertInArgs(Type context, object[] args)
 		{
-			var (inArgs, _) = ConvertIn(args, context, null, out _);
+			// Untyped slots take any value, so nothing here can stop the conversion.
+			_ = TryConvertIn(args, null, out var inArgs, out _);
 			return inArgs;
 		}
 
@@ -644,7 +668,9 @@ namespace Keysharp.Builtins
 			{
 				if (isSet)
 				{
-					var val = ConvertScalarToCLR(value, fi.FieldType);
+					if (!TryConvertScalarToCLR(value, fi.FieldType, out var val))
+						return Stopped(out result);
+
 					fi.SetValue(fi.IsStatic ? null : instance, val);
 					result = value;
 				}
@@ -735,7 +761,9 @@ namespace Keysharp.Builtins
 					foreach (var p in idxCandidates)
 					{
 						var idx = p.GetIndexParameters();
-						var (inArgs, boxes) = ConvertIn(args, p.DeclaringType, idx.Select(x => x.ParameterType).ToArray(), out _);
+						if (!TryConvertIn(args, idx.Select(x => x.ParameterType).ToArray(), out var inArgs, out var boxes))
+							return Stopped(out result);
+
 						var val = p.GetValue(p.GetMethod.IsStatic ? null : instance, inArgs);
 						WriteBackRefs(args, boxes);
 						result = ConvertOut(val);
@@ -769,7 +797,9 @@ namespace Keysharp.Builtins
 					foreach (var p in idxCandidates)
 					{
 						var idx = p.GetIndexParameters();
-						var (inArgs, boxes) = ConvertIn(args, p.DeclaringType, idx.Select(x => x.ParameterType).ToArray(), out _);
+						if (!TryConvertIn(args, idx.Select(x => x.ParameterType).ToArray(), out var inArgs, out var boxes))
+							return Stopped(out result);
+
 						var val = p.GetValue(p.GetMethod.IsStatic ? null : instance, inArgs);
 						WriteBackRefs(args, boxes);
 						result = ConvertOut(val);
@@ -806,8 +836,10 @@ namespace Keysharp.Builtins
 					foreach (var p in idxCandidates)
 					{
 						var idx = p.GetIndexParameters();
-						var (inArgs, boxes) = ConvertIn(args, p.DeclaringType, idx.Select(x => x.ParameterType).ToArray(), out _);
-						var v = ConvertScalarToCLR(putValue, p.PropertyType);
+						if (!TryConvertIn(args, idx.Select(x => x.ParameterType).ToArray(), out var inArgs, out var boxes)
+							|| !TryConvertScalarToCLR(putValue, p.PropertyType, out var v))
+							return Stopped(out result);
+
 						p.SetValue(p.SetMethod.IsStatic ? null : instance, v, inArgs);
 						WriteBackRefs(args, boxes);
 						result = putValue;
@@ -840,8 +872,10 @@ namespace Keysharp.Builtins
 					foreach (var p in idxCandidates)
 					{
 						var idx = p.GetIndexParameters();
-						var (inArgs, boxes) = ConvertIn(args, p.DeclaringType, idx.Select(x => x.ParameterType).ToArray(), out _);
-						var v = ConvertScalarToCLR(putValue, p.PropertyType);
+						if (!TryConvertIn(args, idx.Select(x => x.ParameterType).ToArray(), out var inArgs, out var boxes)
+							|| !TryConvertScalarToCLR(putValue, p.PropertyType, out var v))
+							return Stopped(out result);
+
 						p.SetValue(p.SetMethod.IsStatic ? null : instance, v, inArgs);
 						WriteBackRefs(args, boxes);
 						result = putValue;
@@ -856,7 +890,9 @@ namespace Keysharp.Builtins
 					foreach (var p in simpleProp)
 					{
 						if (!p.CanWrite) continue;
-						var v = ConvertScalarToCLR(putValue, p.PropertyType);
+						if (!TryConvertScalarToCLR(putValue, p.PropertyType, out var v))
+							return Stopped(out result);
+
 						p.SetValue(p.SetMethod.IsStatic ? null : instance, v);
 						result = putValue;
 						return true;
@@ -943,16 +979,23 @@ namespace Keysharp.Builtins
 				object[] inArgs;
 				List<(int, object)> boxes;
 
-				if (!TryBuildArguments(callArgs, ps, out inArgs, out boxes))
+				if (!TryBuildArguments(callArgs, ps, out inArgs, out boxes, out var stop))
+				{
+					if (stop)
+						return Stopped(out result);
+
 					continue;
+				}
 
 				var usesByteSpan = ps.Any(p => ArgCoercer.IsByteSpan(p.ParameterType));
 				object callResult;
 				try
 				{
-					callResult = usesByteSpan
-						? ByteSpanInvokerCache.GetOrAdd(m, CreateByteSpanInvoker)(instance, inArgs)
-						: m.Invoke(m.IsStatic ? null : instance, inArgs);
+					if (!usesByteSpan)
+						callResult = m.Invoke(m.IsStatic ? null : instance, inArgs);
+					else if (!ByteSpanInvokerCache.GetOrAdd(m, CreateByteSpanInvoker)(instance, inArgs, out callResult))
+						return Stopped(out result);
+
 					if (m.ReturnType == typeof(void))
 						callResult = DefaultObject;
 				}
@@ -978,15 +1021,17 @@ namespace Keysharp.Builtins
 			return false;
 		}
 
-		private static Func<object, object[], object> CreateByteSpanInvoker(MethodInfo method)
+		private static ByteSpanInvoker CreateByteSpanInvoker(MethodInfo method)
 		{
 			var instance = Expression.Parameter(typeof(object), "instance");
 			var args = Expression.Parameter(typeof(object[]), "args");
+			var result = Expression.Parameter(typeof(object).MakeByRefType(), "result");
 			var parameters = method.GetParameters();
 			var callArgs = new Expression[parameters.Length];
 			var variables = new List<ParameterExpression>();
 			var before = new List<Expression>();
 			var after = new List<Expression>();
+			var steps = new ArgCoercer.ArgumentSteps(Expression.Constant(false));
 
 			for (var i = 0; i < parameters.Length; i++)
 			{
@@ -1005,26 +1050,24 @@ namespace Keysharp.Builtins
 				}
 
 				callArgs[i] = ArgCoercer.IsByteSpan(type)
-					? ArgCoercer.CoerceBoundary(value, type)
+					? steps.Coerce(value, type, boundary: true)
 					: Expression.Convert(value, type);
 			}
 
 			var call = method.IsStatic
 				? Expression.Call(method, callArgs)
 				: Expression.Call(Expression.Convert(instance, method.DeclaringType!), method, callArgs);
-			var body = new List<Expression>(before) { call };
-			body.AddRange(after);
-			body.Add(Expression.Constant(null, typeof(object)));
-
-			if (method.ReturnType != typeof(void))
+			var invoke = new List<Expression>
 			{
-				var result = Expression.Variable(method.ReturnType);
-				variables.Add(result);
-				body[before.Count] = Expression.Assign(result, call);
-				body[^1] = Expression.Convert(result, typeof(object));
-			}
+				Expression.Assign(result, method.ReturnType == typeof(void)
+					? Expression.Block(call, Expression.Constant(null))
+					: (Expression)Expression.Convert(call, typeof(object)))
+			};
+			invoke.AddRange(after);
+			invoke.Add(Expression.Constant(true));
+			before.Add(steps.Wrap(Expression.Block(invoke)));
 
-			return Expression.Lambda<Func<object, object[], object>>(Expression.Block(variables, body), instance, args).Compile();
+			return Expression.Lambda<ByteSpanInvoker>(Expression.Block(variables, before), instance, args, result).Compile();
 		}
 
 		private static bool CanAcceptArgCount(ParameterInfo[] ps, int argc)
@@ -1062,10 +1105,12 @@ namespace Keysharp.Builtins
 		private static bool CanAcceptArgCount(PropertyInfo p, int argc) => CanAcceptArgCount(p.GetIndexParameters(), argc);
 
 
-		// Build full argument array for MethodInfo.Invoke, handling optionals and params arrays.
+		// Build full argument array for MethodInfo.Invoke, handling optionals and params arrays. False when this overload
+		// cannot take the arguments, or with stop set when the script continued a conversion error, which ends the call.
 		private static bool TryBuildArguments(object[] src, ParameterInfo[] ps, out object[] finalArgs,
-											 out List<(int, object)> boxes)
+											 out List<(int, object)> boxes, out bool stop)
 		{
+			stop = false;
 			src ??= System.Array.Empty<object>();
 			var argc = src.Length;
 
@@ -1090,8 +1135,12 @@ namespace Keysharp.Builtins
 				if (i < argc)
 				{
 					// Convert single arg to this parameter type
-					var (arr, bx) = ConvertIn(new object[] { src[i] }, ps[i].Member.DeclaringType,
-											  new[] { ps[i].ParameterType }, out _);
+					if (!TryConvertIn(new object[] { src[i] }, new[] { ps[i].ParameterType }, out var arr, out var bx))
+					{
+						stop = true;
+						return false;
+					}
+
 					if (bx != null)
 					{
 						boxes ??= new();
@@ -1125,8 +1174,12 @@ namespace Keysharp.Builtins
 					var packed = System.Array.CreateInstance(paramsElemType, tail);
 					for (int k = 0; k < tail; k++)
 					{
-						var (arr2, bx2) = ConvertIn(new object[] { src[fixedCount + k] }, ps[^1].Member.DeclaringType,
-													new[] { paramsElemType }, out _);
+						if (!TryConvertIn(new object[] { src[fixedCount + k] }, new[] { paramsElemType }, out var arr2, out var bx2))
+						{
+							stop = true;
+							return false;
+						}
+
 						if (bx2 != null)
 						{
 							boxes ??= new();
@@ -1222,7 +1275,7 @@ namespace Keysharp.Builtins
 				{
 					if (pt == typeof(Type) || pt.IsAssignableFrom(typeof(Type))) { score += 0; continue; }
 				}
-				// Overload selection happens before ConvertScalarToCLR unwraps, so without this a Ks.Task scores
+				// Overload selection happens before TryConvertScalarToCLR unwraps, so without this a Ks.Task scores
 				// as an unrelated object and ties with every candidate -- Task.WhenAny(t) would pick the
 				// IEnumerable<Task> overload and fail at Invoke.
 				if (arg is Ks.KeysharpTask kt && kt.Underlying is { } ktask)
@@ -1362,14 +1415,18 @@ namespace Keysharp.Builtins
 
 		// -------- Conversions (Keysharp <-> CLR) --------
 
-		private static (object[] converted, List<(int i, object box)> boxes) ConvertIn(
-			object[] src, Type declaringType, Type[] desired, out bool[] byRefMask)
+		/// <summary>False when the script continued a conversion error, so the member must not run.</summary>
+		private static bool TryConvertIn(object[] src, Type[] desired, out object[] converted, out List<(int i, object box)> boxes)
 		{
-			byRefMask = null;
-			if (src == null || src.Length == 0) return (System.Array.Empty<object>(), null);
+			boxes = null;
 
-			object[] dst = new object[src.Length];
-			var boxes = new List<(int, object)>();
+			if (src == null || src.Length == 0)
+			{
+				converted = System.Array.Empty<object>();
+				return true;
+			}
+
+			converted = new object[src.Length];
 
 			for (int i = 0; i < src.Length; i++)
 			{
@@ -1381,14 +1438,17 @@ namespace Keysharp.Builtins
 				// any less a reference, though: the call is what fills it in, so the shape decides, not the value.
 				if (Refs.DeclaresValue(s))
 				{
-					boxes.Add((i, s));
+					(boxes ??= []).Add((i, s));
 					s = Refs.GetValueOrNull(s);
 				}
 
 				var want = desired != null && i < desired.Length ? desired[i] : null;
-				dst[i] = ConvertScalarToCLR(s, want);
+
+				if (!TryConvertScalarToCLR(s, want, out converted[i]))
+					return false;
 			}
-			return (dst, boxes.Count > 0 ? boxes : null);
+
+			return true;
 		}
 
 		private static void WriteBackRefs(object[] original, List<(int i, object box)> boxes)
@@ -1398,21 +1458,31 @@ namespace Keysharp.Builtins
 				Refs.SetValue(kso, original[i]);
 		}
 
-		internal static object CoerceToType(object value, Type target) => ConvertScalarToCLR(value, target);
+		internal static object CoerceToType(object value, Type target)
+		{
+			// A continued conversion error leaves the target's empty value, which a delegate's return value needs, having
+			// no call to stop.
+			_ = TryConvertScalarToCLR(value, target, out var result);
+			return result;
+		}
 
-		private static object ConvertScalarToCLR(object value, Type target)
+		/// <summary>As <see cref="CoerceToType"/>, but false when the script continued a conversion error.</summary>
+		internal static bool TryCoerceToType(object value, Type target, out object result) => TryConvertScalarToCLR(value, target, out result);
+
+		/// <summary>False when the script continued a conversion error, so the member must not run.</summary>
+		private static bool TryConvertScalarToCLR(object value, Type target, out object result)
 		{
 			// unwrap our proxies when targeting CLR
 			if (value is Clr.ManagedType mt)
 			{
 				if (target == null || target == typeof(Type) || target.IsByRef && target.GetElementType() == typeof(Type))
-					return mt._type;
+					return Converted(mt._type, out result);
 			}
 			if (value is Clr.ManagedInstance mi)
 			{
-				if (target == null) return mi._instance;
-				if (target.IsByRef) return ConvertScalarToCLR(mi._instance, target.GetElementType());
-				return ConvertScalarToCLR(mi._instance, target);
+				if (target == null) return Converted(mi._instance, out result);
+				if (target.IsByRef) return TryConvertScalarToCLR(mi._instance, target.GetElementType(), out result);
+				return TryConvertScalarToCLR(mi._instance, target, out result);
 			}
 			// A Ks.Task hands its underlying task to a Task-shaped parameter, so a script task can go back into
 			// Task.WhenAll and friends. Unlike ManagedInstance it stays wrapped for an untyped slot: a Ks.Task
@@ -1422,67 +1492,77 @@ namespace Keysharp.Builtins
 				var want = target.IsByRef ? target.GetElementType() : target;
 
 				if (want != typeof(object) && want.IsInstanceOfType(kst.Underlying))
-					return kst.Underlying;
+					return Converted(kst.Underlying, out result);
 			}
 #if WINDOWS
 			if (value is ComValue cv) // allow COM pointer to be passed on
-				return cv.Ptr;
+				return Converted(cv.Ptr, out result);
 #endif
 
 			if (target != null && typeof(Delegate).IsAssignableFrom(target))
 			{
-				if (value is null) return null;
+				if (value is null) return Converted(null, out result);
 				// value is a Keysharp callable (KeysharpFunc, KeysharpObject, etc.)
-				return ClrDelegateMarshaler.FromKeysharpFunc(target, value);
+				return Converted(ClrDelegateMarshaler.FromKeysharpFunc(target, value), out result);
 			}
 
 			// If value is already of the desired reference type, keep it.
 			if (target != null && value != null && target.IsInstanceOfType(value))
-				return value;
+				return Converted(value, out result);
 
 			if (target == null)
 			{
-				if (value is double d0) return d0;
-				if (value is long l0) return l0 >= int.MinValue && l0 <= int.MaxValue ? (object)(int)l0 : l0;
-				if (value is bool b0) return b0;
-				if (value is string s0) return s0;
-				return value;
+				if (value is long l0 && l0 >= int.MinValue && l0 <= int.MaxValue)
+					return Converted((int)l0, out result);
+
+				return Converted(value, out result);
 			}
 
 			if (ArgCoercer.IsByteSpan(target))
-				return value;
+				return Converted(value, out result);
 
 			if (value is string && (target == typeof(char[]) || target.FullName == "System.ReadOnlySpan`1[System.Char]"))
-				return value;
+				return Converted(value, out result);
 
-			// Scalars go through the ONE conversion policy the dynamic-invoke path uses (ArgCoercer), so the two
+			// Scalars go through the conversion policy the dynamic-invoke path uses (ArgCoercer), so the two
 			// CLR boundaries cannot disagree on the same input. It is deliberately outside the try below: these
 			// raise a TypeError for a genuinely non-numeric value, and that is the answer, not something to
-			// swallow and retry. (Before this, `.Al()`/`.Ad()` returned 0 for "abc" and the call proceeded with a
-			// silently wrong argument.) Numeric strings still convert, matching `"1" == 1`.
-			// NOTE: this can throw from inside the candidate loop in InvokeMethod, which uses a false return from
-			// TryBuildArguments as its "this overload does not fit, try the next" signal, so a throw here skips the
-			// remaining candidates. Nothing is lost as things stand: TryBuildArguments only ever returns false for a
+			// swallow and retry. Numeric strings still convert, matching `"1" == 1`.
+			// A conversion error here, thrown or continued, ends the candidate loop in TryMethod rather than trying
+			// the next overload. Nothing is lost as things stand: TryBuildArguments rejects a candidate only for a
 			// missing required argument, which is an arity question a conversion could not have answered anyway. If
-			// it ever learns to reject a candidate on argument TYPE, this has to move inside the try below.
+			// it ever learns to reject a candidate on argument type, this has to move inside the try below.
 			if (target == typeof(byte[]))
-				return ArgCoercer.CoerceCast(value, target);
+				return ArgCoercer.TryCoerceCast(value, target, out result);
 
 			var kind = ArgCoercer.KindOf(target);
 
 			if (kind != ArgCoercer.Kind.None && kind != ArgCoercer.Kind.Cast)
-				return ArgCoercer.CoerceValue(value, target);
+				return ArgCoercer.TryCoerceValue(value, target, boundary: false, out result);
 
 			try
 			{
-				if (target.IsByRef) return ConvertScalarToCLR(value, target.GetElementType());
+				if (target.IsByRef) return TryConvertScalarToCLR(value, target.GetElementType(), out result);
 
-				return Convert.ChangeType(value, target, CultureInfo.InvariantCulture);
+				return Converted(Convert.ChangeType(value, target, CultureInfo.InvariantCulture), out result);
 			}
 			catch
 			{
-				return value; // let Invoke surface mismatch
+				return Converted(value, out result); // let Invoke surface mismatch
 			}
+		}
+
+		private static bool Converted(object value, out object result)
+		{
+			result = value;
+			return true;
+		}
+
+		// A conversion error the script continued ends the access with the empty value, before the member runs.
+		private static bool Stopped(out object result)
+		{
+			result = DefaultObject;
+			return true;
 		}
 
 		/// <summary>

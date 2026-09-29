@@ -116,7 +116,7 @@ namespace Keysharp.Parsing.Syntax
 		public MemberExpr(Expr target, string name, bool nullConditional) { Target = target; Name = name; NullConditional = nullConditional; }
 	}
 
-	// Dynamic member access: `obj.%nameExpr%` — the member name is computed at runtime (ForceString'd).
+	// Dynamic member access: `obj.%nameExpr%` — the member name is computed at runtime (ToText'd).
 	internal sealed class DynMemberExpr : Expr
 	{
 		public readonly Expr Target;

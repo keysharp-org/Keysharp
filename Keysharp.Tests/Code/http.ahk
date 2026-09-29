@@ -484,7 +484,7 @@ Throws(() => Http({Handler: handler, Auth: ["u", "p"]}), A_LineNumber, ValueErro
 Throws(() => Http({Handler: handler, Proxy: ""}), A_LineNumber, ValueError)
 AssertEq(Http({Handler: handler}).Get(root "/text").Text, "hello", A_LineNumber)
 Throws(() => Http.Request("bad method", root "/text"), A_LineNumber, ValueError)
-Throws(() => Http.Get(root "/text", {Timeout: "soon"}), A_LineNumber, ValueError)
+Throws(() => Http.Get(root "/text", {Timeout: "soon"}), A_LineNumber, TypeError)
 Throws(() => Http.Get(root "/text", {Timeout: 0}), A_LineNumber, ValueError)
 Throws(() => Http({BaseUrl: "not a url"}).Get("text"), A_LineNumber, ValueError)
 

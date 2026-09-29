@@ -370,20 +370,29 @@ namespace Keysharp.Builtins
 			   ? (Functions.ValidateFunctor(function, -1) ? Functions.ObjBindMethod(function) : DefaultObject)
 			   : Functions.GetKeysharpFunc(function, obj, obj != null);
 
+		// paramCount disambiguates an overload; omitted or not a number means "use the first match".
+		private static int ToParamCount(object paramCount)
+		{
+			_ = paramCount.TryCoerceInt(out var count, -1);
+			return count;
+		}
+
         private static MethodInfo GetMethodInfo(string s, object o, object paramCount)
         {
+			var count = ToParamCount(paramCount);
+
             if (o != null)
             {
 				if (o is not Type)
 				{
-					var mitup = Script.GetMethodOrProperty(o, s, paramCount.Ai(-1));
+					var mitup = Script.GetMethodOrProperty(o, s, count);
 					if (mitup.Item2 is KeysharpFunc fo)
 						return fo.mph.mi;
 					else if (mitup.Item2 is MethodPropertyHolder mph)
 						return mph.mi;
 				}
                 // Try to find and cache the method
-                var method = Reflections.FindAndCacheMethod((o as Type) ?? o.GetType(), s, paramCount.Ai(-1));
+                var method = Reflections.FindAndCacheMethod((o as Type) ?? o.GetType(), s, count);
                 if (method != null)
                     return method.mi;
 
@@ -391,16 +400,16 @@ namespace Keysharp.Builtins
             }
 
             // Fallback to finding the method without an object
-            return Reflections.FindMethod(s, paramCount.Ai(-1))?.mi;
+            return Reflections.FindMethod(s, count)?.mi;
         }
 
         internal KeysharpFunc(string s, string t, object paramCount = null)
-		: this(Reflections.FindAndCacheMethod(Script.TheScript.ReflectionsData.stringToTypes[t], s, paramCount.Ai(-1)))
+		: this(Reflections.FindAndCacheMethod(Script.TheScript.ReflectionsData.stringToTypes[t], s, ToParamCount(paramCount)))
         {
         }
 
         internal KeysharpFunc(string s, Type t, object paramCount = null)
-		: this(Reflections.FindAndCacheMethod(t, s, paramCount.Ai(-1)))
+		: this(Reflections.FindAndCacheMethod(t, s, ToParamCount(paramCount)))
         {
         }
 
@@ -465,7 +474,7 @@ namespace Keysharp.Builtins
 			if (mi == null)
 				return false;
 
-			var index = paramIndex.Ai();
+			_ = paramIndex.TryCoerceInt(out var index);
 			var funcParams = mi.GetParameters();
 
 			if (index > 0)
@@ -499,7 +508,7 @@ namespace Keysharp.Builtins
 			if (mi == null)
 				return true;
 
-			var index = paramIndex.Ai();
+			_ = paramIndex.TryCoerceInt(out var index);
 			var funcParams = mi.GetParameters();
 
 			if (index > 0)

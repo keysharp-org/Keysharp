@@ -272,9 +272,16 @@ namespace Keysharp.Internals
 				return false;
 			}
 
+			double a;
+
 			// Off restores the opaque window; converting it as a number would make the window invisible instead.
-			var a = alpha is string text && text.Equals("off", StringComparison.OrdinalIgnoreCase)
-				? 1.0 : Math.Clamp(alpha.Al(), 0, 255) / 255.0;
+			if (alpha is string text && text.Equals("off", StringComparison.OrdinalIgnoreCase))
+				a = 1.0;
+			else
+			{
+				_ = alpha.TryCoerceLong(out var raw);
+				a = Math.Clamp(raw, 0, 255) / 255.0;
+			}
 
 			if (!MacNativeWindows.TrySetOwnWindowAlpha(native.WindowNumber, a))
 				Diagnostics.Debug.WriteLine("Opacity control failed for this macOS window.");

@@ -46,7 +46,12 @@ namespace Keysharp.Builtins
 			{
 				scalar = 0f;
 				failure = null;
-				var d = value.Ad();
+
+				if (!value.CoerceDouble(out var d))
+				{
+					failure = DefaultObject;
+					return false;
+				}
 
 				if (!double.IsFinite(d) || d < 0 || d > 100)
 				{
@@ -69,7 +74,12 @@ namespace Keysharp.Builtins
 			{
 				pan = 0f;
 				failure = null;
-				var d = value.Ad();
+
+				if (!value.CoerceDouble(out var d))
+				{
+					failure = DefaultObject;
+					return false;
+				}
 
 				if (!double.IsFinite(d) || d < -100 || d > 100)
 				{
@@ -113,7 +123,11 @@ namespace Keysharp.Builtins
 					return true;
 				}
 
-				var text = selector.As();
+				if (!selector.CoerceString(out var text))
+				{
+					failure = DefaultObject;
+					return false;
+				}
 
 				if (text.Length == 0)
 				{
@@ -160,7 +174,12 @@ namespace Keysharp.Builtins
 				kind = Engine.AudioDeviceKind.Output;
 				all = false;
 				failure = null;
-				var text = value.As();
+
+				if (!value.CoerceString(out var text))
+				{
+					failure = DefaultObject;
+					return false;
+				}
 
 				if (text.Length == 0)
 					text = fallback;
@@ -203,7 +222,10 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object IsFormatSupported(object @this, object format)
 			{
-				var text = format.As().TrimStart('.');
+				if (!format.CoerceString(out var formatText))
+					return DefaultObject;
+
+				var text = formatText.TrimStart('.');
 
 				// The managed WAV reader ships unconditionally; everything else depends on a codec the host
 				// already has, so the answer is whatever that host's decoder actually initialized with.
@@ -229,7 +251,8 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object Load(object @this, object path)
 			{
-				var pathText = path.As();
+				if (!path.CoerceString(out var pathText))
+					return DefaultObject;
 
 				if (pathText.Length == 0 || pathText.Contains('\0'))
 					return Errors.ValueErrorOccurred("Path must be a non-empty file path without embedded NUL.");
@@ -298,9 +321,11 @@ namespace Keysharp.Builtins
 				if (data is not Buffer buffer)
 					return Errors.TypeErrorOccurred(data, typeof(Buffer));
 
-				var rate = sampleRate.Al();
-				var channelCount = channels == null ? 1L : channels.Al();
-				var formatToken = sampleFormat.As();
+				if (!sampleRate.CoerceLong(out var rate) || !channels.CoerceLong(out var channelCount, 1L))
+					return DefaultObject;
+
+				if (!sampleFormat.CoerceString(out var formatToken))
+					return DefaultObject;
 
 				if (formatToken.Length == 0)
 					formatToken = Engine.AudioFormats.Signed16;
@@ -317,7 +342,7 @@ namespace Keysharp.Builtins
 				// The size is checked before the bytes are read: an empty Buffer has no allocation behind it, so
 				// reading it first would fail natively instead of raising the ValueError this contract promises.
 				var frameSize = (int)channelCount * bytesPerSample;
-				var byteCount = buffer.Size.Al();
+				_ = buffer.Size.TryCoerceLong(out var byteCount);
 
 				if (byteCount <= 0 || byteCount % frameSize != 0)
 					return Errors.ValueErrorOccurred($"Data must hold a whole number of {frameSize}-byte frames; it holds {byteCount} bytes.");
@@ -381,7 +406,10 @@ namespace Keysharp.Builtins
 					// A path played repeatedly is decoded once. Beyond saving the read and the decode, this keeps the
 					// clip identity stable, which is what lets the output's prepared cache hit instead of growing an
 					// entry per call until nothing can play at all.
-					var full = FullPathOrEmpty(source.As());
+					if (!source.CoerceString(out var sourceText))
+						return DefaultObject;
+
+					var full = FullPathOrEmpty(sourceText);
 
 					if (full.Length > 0 && Service.TryGetDecoded(full, out var cached))
 					{
@@ -408,14 +436,20 @@ namespace Keysharp.Builtins
 					return failure;
 
 				var loopValue = loop.Ab();
-				var startMs = startMilliseconds == null ? 0.0 : startMilliseconds.Ad();
+
+				if (!startMilliseconds.CoerceDouble(out var startMs, 0.0))
+					return DefaultObject;
 
 				if (!double.IsFinite(startMs) || startMs < 0)
 					return Errors.ValueErrorOccurred("StartMilliseconds must be a finite number of 0 or more.", startMilliseconds);
 
 				string deviceId = "";
+				string deviceText = null;
 
-				if (device is Device || device.As().Length > 0)
+				if (device is not Device && !device.CoerceString(out deviceText))
+					return DefaultObject;
+
+				if (device is Device || deviceText.Length > 0)
 				{
 					if (!TryResolveDevice(device, Engine.AudioDeviceKind.Output, true, out var resolved, out failure))
 						return failure;

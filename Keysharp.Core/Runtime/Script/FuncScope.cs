@@ -21,10 +21,10 @@ namespace Keysharp.Runtime
 	public sealed class FuncScope
 	{
 		/// <summary>Returns the value of one of the function's variables (null when it has none), <see cref="Undeclared"/> or <see cref="Global"/>.</summary>
-		public delegate object Reader(object name);
+		public delegate object Reader(string name);
 
 		/// <summary>Assigns one of the function's variables and returns the value, or returns <see cref="Undeclared"/> or <see cref="Global"/>.</summary>
-		public delegate object Writer(object name, object value);
+		public delegate object Writer(string name, object value);
 
 		private sealed class Marker { }
 
@@ -73,7 +73,7 @@ namespace Keysharp.Runtime
 		internal bool TryGetDeclaration(string key, out Declaration declaration) => Declarations.ByName.TryGetValue(key, out declaration);
 
 		/// <summary>True (with <paramref name="value"/> set) when <paramref name="name"/> is one of this function's variables.</summary>
-		internal bool TryGetValue(object name, out object value)
+		internal bool TryGetValue(string name, out object value)
 		{
 			value = Read(name);
 

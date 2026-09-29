@@ -60,7 +60,10 @@ namespace Keysharp.Builtins
 		public static bool ClipWait(object timeout = null, object waitFor = null)
 		{
 			ClipboardPermission.EnsureMonitoring("ClipWait");
-			var to = timeout.Ad(double.MinValue);
+
+			if (!timeout.CoerceDouble(out var to, double.MinValue))
+				return false;
+
 			var condition = ParseWaitCondition(waitFor);
 			var checktime = to != double.MinValue;
 			long frequency = 100;
@@ -115,7 +118,13 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="envVar">The name of the environment variable to retrieve.</param>
 		/// <returns>The value of the specified environment variable if it exists, else empty string.</returns>
-		public static string EnvGet(object envVar) => Environment.GetEnvironmentVariable(envVar.As()) ?? string.Empty;
+		public static string EnvGet(object envVar)
+		{
+			if (!envVar.CoerceString(out var name))
+				return "";
+
+			return Environment.GetEnvironmentVariable(name) ?? string.Empty;
+		}
 
 		/// <summary>
 		/// Writes a value to the specified environment variable.
@@ -125,9 +134,12 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if any failure is detected.</exception>
 		public static object EnvSet(object envVar, object value = null)
 		{
+			// Converted outside the try so a TypeError is not reported as an OSError.
+			if (!envVar.CoerceString(out var variableName))
+				return DefaultObject;
+
 			try
 			{
-				var variableName = envVar.As();
 				var variableValue = value as string;
 				Environment.SetEnvironmentVariable(variableName, variableValue);
 #if !WINDOWS
@@ -292,7 +304,18 @@ namespace Keysharp.Builtins
 		public static object SysGet(object property)
 		{
 #if !WINDOWS
-			var sm = property is Keysharp.Internals.Os.SystemMetric en ? en : (SystemMetric)property.Ai();
+			SystemMetric sm;
+
+			if (property is Keysharp.Internals.Os.SystemMetric en)
+				sm = en;
+			else
+			{
+				if (!property.CoerceInt(out var propertyInt))
+					return DefaultObject;
+
+				sm = (SystemMetric)propertyInt;
+			}
+
 			var (screenWidth, screenHeight) = Monitor.GetPrimaryScreenSize();
 			var (workWidth, workHeight) = Monitor.GetPrimaryWorkAreaSize();
 
@@ -367,7 +390,10 @@ namespace Keysharp.Builtins
 			if (property is SystemMetric en)
 				return (long)WindowsAPI.GetSystemMetrics(en);
 
-			return (long)WindowsAPI.GetSystemMetrics((SystemMetric)property.Ai());
+			if (!property.CoerceInt(out var propertyInt))
+				return DefaultObject;
+
+			return (long)WindowsAPI.GetSystemMetrics((SystemMetric)propertyInt);
 #else
 			return 0L;
 #endif
@@ -575,9 +601,14 @@ namespace Keysharp.Builtins
 			if (data == null)
 				ClipboardPermission.EnsureMonitoring("ClipboardAll");
 
+			var sizeValue = long.MinValue;
+
+			if (data != null && size is not null && !size.CoerceLong(out sizeValue))
+				return DefaultObject;
+
 			var bytes = data == null
 						? Platform.Clipboard.CaptureAll()
-						: Env.ExtractClipboardAllBytes(data, size is not null ? size.ToLong() : long.MinValue);
+						: Env.ExtractClipboardAllBytes(data, sizeValue);
 
 			//Passed as the single ByteCount argument, not wrapped in an object[]: Buffer.__New now declares real
 			//parameters, so the byte[] must arrive as the argument itself (it has a dedicated branch there).
@@ -592,7 +623,10 @@ namespace Keysharp.Builtins
 		/// <summary>Returns whether an optional scripting capability is installed or embedded.</summary>
 		public static object IsComponentAvailable(object capability)
 		{
-			var name = capability.As().Replace("-", "", StringComparison.Ordinal)
+			if (!capability.CoerceString(out var text))
+				return DefaultObject;
+
+			var name = text.Replace("-", "", StringComparison.Ordinal)
 				.Replace("_", "", StringComparison.Ordinal).ToUpperInvariant();
 			var parsed = name switch
 			{
@@ -614,20 +648,28 @@ namespace Keysharp.Builtins
 		/// deliberately just "quotes group, and are removed"; anything needing more should use the Array form, where
 		/// each element is one argument and nothing has to be escaped at all.
 		/// </summary>
-		private static List<string> SplitCommandLine(object options)
+		private static bool TrySplitCommandLine(object options, out List<string> args)
 		{
-			var args = new List<string>();
+			args = [];
 
 			// Looped rather than LINQ: Keysharp's Array implements two IEnumerable<T> instantiations, so Select is
 			// ambiguous on it (see the note on Array.GetEnumerator).
 			if (options is Array arr)
 			{
 				foreach (var v in arr)
-					if (v?.As() is { Length: > 0 } s)
-						args.Add(s);
+				{
+					if (!v.CoerceString(out var s))
+						return false;
 
-				return args;
+					if (s.Length > 0)
+						args.Add(s);
+				}
+
+				return true;
 			}
+
+			if (!options.CoerceString(out var text))
+				return false;
 
 			var sb = new StringBuilder();
 			var quoted = false;
@@ -635,7 +677,7 @@ namespace Keysharp.Builtins
 			// it the empty one is silently dropped and every later argument shifts up one position.
 			var started = false;
 
-			foreach (var c in options.As())
+			foreach (var c in text)
 			{
 				if (c == '"') { quoted = !quoted; started = true; }
 				else if (quoted || !char.IsWhiteSpace(c)) { _ = sb.Append(c); started = true; }
@@ -646,7 +688,7 @@ namespace Keysharp.Builtins
 			if (started)
 				args.Add(sb.ToString());
 
-			return args;
+			return true;
 		}
 
 		/// <summary>
@@ -671,21 +713,33 @@ namespace Keysharp.Builtins
 		public static object RunScript(object code, [UserDeclaredName("Async")] object asyncValue = null,
 			object callback = null, object name = null, object executable = null, object options = null)
 		{
-			string script = code.As();
+			if (!code.CoerceString(out var script))
+				return DefaultObject;
+
 			var runAsync = ForceBool(asyncValue ?? false);
 			var cb = callback == null ? null : Functions.CheckedCallback(callback, 1);
 
 			if (callback != null && cb == null)
 				return DefaultObject;
 
-			string nameVal = name?.As();
+			string nameVal = null;
+
+			if (name != null && !name.CoerceString(out nameVal))
+				return DefaultObject;
+
 			// --define selects which code is COMPILED, and that happens here — the launched process only ever receives
 			// already-compiled bytes, so a define forwarded to it would arrive too late to mean anything. Every other
 			// argument is genuinely the launched process's, and is passed along below.
 			List<string> defineNames = null, forwardedArgs = null;
 
-			if (options != null && Runner.SplitDefines(SplitCommandLine(options), out defineNames, out forwardedArgs) is string badDefine)
-				return Errors.ValueErrorOccurred(badDefine);
+			if (options != null)
+			{
+				if (!TrySplitCommandLine(options, out var optionArgs))
+					return DefaultObject;
+
+				if (Runner.SplitDefines(optionArgs, out defineNames, out forwardedArgs) is string badDefine)
+					return Errors.ValueErrorOccurred(badDefine);
+			}
 
 			string result = null;
 			byte[] compiledBytes = null;
@@ -732,7 +786,9 @@ namespace Keysharp.Builtins
 			// Keysharp's args to dotnet makes it exit without reading stdin -- so the pipe write below
 			// would time out. Prefer the native apphost that sits beside the entry assembly; fall back to
 			// "dotnet <entry.dll>", and finally to ProcessPath (single-file publish has no separate dll).
-			string launcher = executable?.As();
+			if (!executable.CoerceString(out var launcher))
+				return DefaultObject;
+
 			// The caller's arguments go BEFORE "--script --assembly *": the command line is read as switches, then the
 			// script, then the script's own arguments, so anything after the script marker would be taken for the
 			// latter. Collected as a LIST, not joined into one string: ProcessStartInfo.ArgumentList applies the
@@ -850,7 +906,9 @@ namespace Keysharp.Builtins
 			if (!ScriptingComponentRegistry.TryGetSyntaxValidator(out var validator, out var failure))
 				return Errors.ErrorOccurred(failure);
 
-			var text = code.As();
+			if (!code.CoerceString(out var text))
+				return DefaultObject;
+
 			var isFile = File.Exists(text);
 			var result = validator.ValidateSyntax(new Keysharp.Components.Scripting.ScriptSyntaxValidationRequest
 			{
@@ -888,7 +946,9 @@ namespace Keysharp.Builtins
 			if (!ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var failure))
 				return Errors.ErrorOccurred(failure);
 
-			var source = code.As();
+			if (!code.CoerceString(out var source))
+				return DefaultObject;
+
 			var isFile = File.Exists(source);
 			var result = compiler.Compile(new Keysharp.Components.Scripting.ScriptCompileRequest
 			{

@@ -310,9 +310,15 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static string DirSelect(object startingFolder = null, object options = null, object prompt = null)
 		{
-			var folder = startingFolder.As();
-			var opts = options.Al();
-			var p = prompt.As();
+			if (!startingFolder.CoerceString(out var folder))
+				return "";
+
+			if (!options.CoerceInt(out var opts))
+				return "";
+
+			if (!prompt.CoerceString(out var p))
+				return "";
+
 			var str = "";
 #if WINDOWS
 			var owner = GuiHelper.DialogOwner;
@@ -432,10 +438,10 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static object FileSelect(object options = null, object rootDirFilename = null, object title = null, object filter = null)
 		{
-			var opts = options.As();
-			var rootdir = rootDirFilename.As();
-			var t = title.As();
-			var f = FixFilters(filter.As());
+			if (!options.CoerceString(out var opts) || !rootDirFilename.CoerceString(out var rootdir) || !title.CoerceString(out var t) || !filter.CoerceString(out var filterText))
+				return DefaultObject;
+
+			var f = FixFilters(filterText);
 			bool save = false, multi = false, dir = false;
 #if WINDOWS
 			var owner = GuiHelper.DialogOwner;
@@ -679,10 +685,9 @@ namespace Keysharp.Builtins
 #if WINDOWS
 		public static KeysharpObject InputBox(object prompt = null, object title = null, object options = null, object @default = null)
 		{
-			var p = prompt.As();
-			var t = title.As();
-			var opts = options.As();
-			var def = @default.As();
+			if (!prompt.CoerceString(out var p) || !title.CoerceString(out var t) || !options.CoerceString(out var opts) || !@default.CoerceString(out var def))
+				return null;
+
 			var w = int.MinValue;
 			var h = int.MinValue;
 			var x = int.MinValue;
@@ -732,10 +737,9 @@ namespace Keysharp.Builtins
 #else
 		public static KeysharpObject InputBox(object prompt = null, object title = null, object options = null, object @default = null)
 		{
-			var p = prompt.As();
-			var t = title.As();
-			var opts = options.As();
-			var def = @default.As();
+			if (!prompt.CoerceString(out var p) || !title.CoerceString(out var t) || !options.CoerceString(out var opts) || !@default.CoerceString(out var def))
+				return null;
+
 			var pw = "";
 			var passwordSpecified = false;
 
@@ -832,8 +836,11 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static string MsgBox(object text = null, object title = null, object options = null)
 		{
-			var txt = text.As().Truncate(8192); // 8192 is AHK MSGBOX_TEXT_SIZE
-			var caption = title.As().Truncate(1024); // 1024 is AHK DIALOG_TITLE_SIZE
+			if (!text.CoerceString(out var txt) || !title.CoerceString(out var caption))
+				return "";
+
+			txt = txt.Truncate(8192); // 8192 is AHK MSGBOX_TEXT_SIZE
+			caption = caption.Truncate(1024); // 1024 is AHK DIALOG_TITLE_SIZE
 			var buttons = MessageBoxButtons.OK;
 			var script = Script.TheScript;
 #if WINDOWS
@@ -915,11 +922,14 @@ namespace Keysharp.Builtins
 
 			if (Script.IsNumeric(options))
 			{
-				HandleNumericOptions(options.Ai());
+				_ = options.TryCoerceInt(out var itemp);
+				HandleNumericOptions(itemp);
 			}
 			else
 			{
-				var opts = options.As();
+				if (!options.CoerceString(out var opts))
+					return "";
+
 				var iopt = 0;
 				var hadNumeric = false;
 

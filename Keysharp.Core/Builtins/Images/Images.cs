@@ -26,8 +26,9 @@ namespace Keysharp.Builtins
 		/// <returns>A bitmap or icon handle depending on whether a picture or icon is specified and whether the &outImageType parameter is present or not.</returns>
 		public static object LoadPicture(object filename, object options = null, [ByRef] object outImageType = null)
 		{
-			var file = filename.As();
-			var opts = options.As();
+			if (!filename.CoerceString(out var file) || !options.CoerceString(out var opts))
+				return DefaultObject;
+
 			var width = int.MinValue;
 			var height = int.MinValue;
 			var icon = "";

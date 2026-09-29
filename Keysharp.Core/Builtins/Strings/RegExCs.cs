@@ -33,9 +33,13 @@ namespace Keysharp.Builtins
 			public static long RegExMatchCs(object haystack, object needle, [ByRef] object outputVar = null, object startingPos = null)
 			{
 				outputVar ??= VarRef.Empty;
-				var input = haystack.As();
-				var n = needle.As();
-				var index = startingPos.Ai(1);
+
+				if (!haystack.CoerceString(out var input) || !needle.CoerceString(out var n))
+					return 0L;
+
+				if (!startingPos.CoerceInt(out var index, 1))
+					return 0L;
+
 				var reverse = index < 1;
 				var str = n + reverse;
 				RegexWithTag exp = null;
@@ -124,12 +128,14 @@ namespace Keysharp.Builtins
 			/// <exception cref="Error">An <see cref="Error"/> exception is thrown on failure.</exception>
 			public static string RegExReplaceCs(object haystack, object needleRegEx, object replacement = null, [ByRef] object outputVarCount = null, object limit = null, object startingPos = null)
 			{
-				var input = haystack.As();
-				var needle = needleRegEx.As();
-				var replace = replacement.As();
+				if (!haystack.CoerceString(out var input) || !needleRegEx.CoerceString(out var needle) || !replacement.CoerceString(out var replace))
+					return "";
+
 				outputVarCount ??= VarRef.Empty;
-				var l = limit.Ai(-1);
-				var index = startingPos.Ai(1);
+
+				if (!limit.CoerceInt(out var l, -1) || !startingPos.CoerceInt(out var index, 1))
+					return "";
+
 				var n = 0;
 				var reverse = index < 1;
 				var str = needle + reverse;

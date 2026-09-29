@@ -4,6 +4,7 @@
 #Import Members
 #Import Members { StrReplace as MembersStrReplace }
 #Import AHK
+#Import Printable
 #Include <assert>
 
 ; A module object answers for the module's names: a variable it reads and assigns, and a function or class, which is a
@@ -17,6 +18,9 @@ Throws(() => Members.NoSuch, A_LineNumber, PropertyError)
 Throws(() => Members[1], A_LineNumber, PropertyError)
 Throws(() => Members.NoSuch(), A_LineNumber, MethodError)
 Throws(() => String(Members), A_LineNumber, MethodError)
+; Where a string is expected, a module is what its ToString function returns, and one without that function a TypeError.
+Throws(() => "" Members, A_LineNumber, TypeError)
+AssertEq("<" Printable ">", "<printable>", A_LineNumber)
 AssertError(() => Members.Unassigned, "UnsetError: This global variable has not been assigned a value. [Unassigned]", A_LineNumber)
 AssertError(() => Members.UNASSIGNED, "UnsetError: This global variable has not been assigned a value. [Unassigned]", A_LineNumber)
 AssertError(() => Members.F := 1, "Error: This Func cannot be assigned a value. [F]", A_LineNumber)
@@ -55,3 +59,6 @@ ReadOk() => %"mb_OK"%
 Base := 1
 HasProp := 5
 GetMethod() => "mine"
+
+#Module Printable
+ToString() => "printable"

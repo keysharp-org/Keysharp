@@ -31,8 +31,8 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object Encode(object @this, object text, object encoding = null)
 			{
-				var s = text.As();
-				var enc = Files.GetEncodingOrDefault(encoding, System.Text.Encoding.UTF8);
+				if (!text.CoerceString(out var s) || !Files.TryGetEncoding(encoding, System.Text.Encoding.UTF8, out var enc))
+					return DefaultObject;
 
 				if (s.Length == 0)
 					return "";
@@ -94,8 +94,8 @@ namespace Keysharp.Builtins
 			[Static]
 			public static object Decode(object @this, object text, object encoding = null)
 			{
-				var s = text.As();
-				var enc = Files.GetEncodingOrDefault(encoding, System.Text.Encoding.UTF8);
+				if (!text.CoerceString(out var s) || !Files.TryGetEncoding(encoding, System.Text.Encoding.UTF8, out var enc))
+					return DefaultObject;
 
 				if (s.IndexOf('%') < 0)
 					return s;

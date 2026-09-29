@@ -26,7 +26,8 @@ namespace Keysharp.Internals.AppleEvents
 
 		/// <summary>
 		/// Builds the descriptor for one script value. <paramref name="typeName"/> is the sdef type declared for
-		/// the slot, which is what lets a bare string become an enumerator rather than text.
+		/// the slot, which is what lets a bare string become an enumerator rather than text. Null means the script
+		/// continued the TypeError of a value which does not convert, and the caller then stops at once.
 		/// </summary>
 		internal static AEValue ToDescriptor(object value, AEContext context, string typeName)
 		{
@@ -65,7 +66,12 @@ namespace Keysharp.Internals.AppleEvents
 				}
 
 				case double or float or decimal:
-					return AE.FromDouble(value.Ad());
+				{
+					if (!value.CoerceDouble(out var d))
+						return null;
+
+					return AE.FromDouble(d);
+				}
 
 				case Keysharp.Builtins.Array arr:
 					return ToList(arr, context, typeName);
@@ -76,7 +82,9 @@ namespace Keysharp.Internals.AppleEvents
 				default:
 					if (IsIntegral(value))
 					{
-						var l = value.Al();
+						if (!value.CoerceLong(out var l))
+							return null;
+
 						return l >= int.MinValue && l <= int.MaxValue ? AE.FromInt32((int)l) : AE.FromInt64(l);
 					}
 
@@ -92,34 +100,68 @@ namespace Keysharp.Internals.AppleEvents
 			// The declared type says how to lay the bytes out; the ones with a fixed width are built directly and
 			// anything else is written naturally and then coerced, which is what the application would do anyway.
 			if (type == AE.TypeSInt32)
-				return AE.FromInt32(checked((int)value.Al()));
+			{
+				if (!value.CoerceLong(out var v32))
+					return null;
+
+				return AE.FromInt32(checked((int)v32));
+			}
 
 			if (type == AE.TypeSInt16)
-				return AE.FromBytes(AE.TypeSInt16, BitConverter.GetBytes(checked((short)value.Al())));
+			{
+				if (!value.CoerceLong(out var v16))
+					return null;
+
+				return AE.FromBytes(AE.TypeSInt16, BitConverter.GetBytes(checked((short)v16)));
+			}
 
 			if (type == AE.TypeSInt64)
-				return AE.FromInt64(value.Al());
+			{
+				if (!value.CoerceLong(out var v64))
+					return null;
+
+				return AE.FromInt64(v64);
+			}
 
 			if (type == AE.TypeUInt32)
-				return AE.FromBytes(AE.TypeUInt32, BitConverter.GetBytes(unchecked((uint)value.Al())));
+			{
+				if (!value.CoerceLong(out var vu32))
+					return null;
+
+				return AE.FromBytes(AE.TypeUInt32, BitConverter.GetBytes(unchecked((uint)vu32)));
+			}
 
 			if (type == AE.TypeIEEE64BitFloatingPoint)
-				return AE.FromDouble(value.Ad());
+			{
+				if (!value.CoerceDouble(out var d64))
+					return null;
+
+				return AE.FromDouble(d64);
+			}
 
 			if (type == AE.TypeBoolean)
-				return AE.FromBool(value is bool b ? b : value.Al() != 0L);
+			{
+				if (value is bool b)
+					return AE.FromBool(b);
+
+				if (!value.CoerceLong(out var vb))
+					return null;
+
+				return AE.FromBool(vb != 0L);
+			}
 
 			if (type == AE.TypeUnicodeText)
-				return AE.FromString(value.As());
+				return value.CoerceString(out var unicodeText) ? AE.FromString(unicodeText) : null;
 
 			if (type == AE.TypeUTF8Text)
-				return AE.FromBytes(AE.TypeUTF8Text, Encoding.UTF8.GetBytes(value.As()));
+				return value.CoerceString(out var utf8Text) ? AE.FromBytes(AE.TypeUTF8Text, Encoding.UTF8.GetBytes(utf8Text)) : null;
 
 			if (type == AE.TypeType || type == AE.TypeEnumerated)
 			{
 				// A name the dictionary knows wins over reading the text as a literal code, because plenty of
 				// terms are themselves four characters long ("open", "name") and the name is what a script means.
-				var text = value.As();
+				if (!value.CoerceString(out var text))
+					return null;
 
 				if (type == AE.TypeEnumerated && TryResolveEnumerator(context?.Dictionary, null, text, out var code))
 					return AE.FromCode(type, code);
@@ -134,16 +176,19 @@ namespace Keysharp.Internals.AppleEvents
 			}
 
 			if (type == AE.TypeFileURL || type == AE.TypeAlias)
-				return FromFilePath(value.As(), type);
+				return value.CoerceString(out var path) ? FromFilePath(path, type) : null;
 
 			if (type == AE.TypeLongDateTime)
-				return FromTimestamp(value.As());
+				return value.CoerceString(out var timestamp) ? FromTimestamp(timestamp) : null;
 
 			if (type == AE.TypeNull)
 				return AE.Null();
 
 			// Anything else: write the value in its natural shape and let the Apple Event Manager coerce it.
 			using var natural = ToDescriptor(value, context, null);
+
+			if (natural == null)
+				return null;
 
 			if (AE.TryCoerce(ref natural.Desc, type, out var coerced))
 				return coerced;
@@ -162,6 +207,13 @@ namespace Keysharp.Internals.AppleEvents
 					foreach (var item in arr.array)
 					{
 						using var element = ToDescriptor(item, context, typeName);
+
+						if (element == null)
+						{
+							list.Dispose();
+							return null;
+						}
+
 						AE.Append(list, element);
 					}
 			}
@@ -188,8 +240,19 @@ namespace Keysharp.Internals.AppleEvents
 				if (map.map != null)
 					foreach (var kv in map.map)
 					{
-						var name = kv.Key.As();
+						if (!kv.Key.CoerceString(out var name))
+						{
+							record.Dispose();
+							return null;
+						}
+
 						using var value = ToDescriptor(kv.Value, context, null);
+
+						if (value == null)
+						{
+							record.Dispose();
+							return null;
+						}
 
 						if (context?.Dictionary != null
 								&& context.Dictionary.PropertyCodesByKey.TryGetValue(AESdef.Key(name), out var code))

@@ -466,9 +466,9 @@ namespace Keysharp.Internals.Invoke
 			else if (item is IPointable buf)//Put Buffer, StringBuffer etc check first because it's faster and more likely.
 				addr = buf.Ptr;
 			else if (item is Any kso && Script.GetPropertyValueOrNull(kso, "ptr") is object p)
-				addr = p.Al();
+				_ = p.TryCoerceLong(out addr);
 			else
-				addr = item.Al();//A numeric value is a raw address; a non-pointer object yields 0.
+				_ = item.TryCoerceLong(out addr);//A numeric value is a raw address; a non-pointer object yields 0.
 
 			return addr != 0L;
 		}
@@ -484,7 +484,7 @@ namespace Keysharp.Internals.Invoke
 		{
 			if (item is Keysharp.Builtins.Buffer buf) { size = buf.size; return true; }//Buffer exposes Size directly; fast and the common case.
 
-			if (item is Any kso && Script.GetPropertyValueOrNull(kso, "size") is object p) { size = p.Al(); return true; }
+			if (item is Any kso && Script.GetPropertyValueOrNull(kso, "size") is object p) { _ = p.TryCoerceLong(out size); return true; }
 
 			size = 0L;
 			return false;              // no Size property present (raw address/anything else)

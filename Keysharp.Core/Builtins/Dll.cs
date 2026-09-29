@@ -157,7 +157,9 @@ namespace Keysharp.Builtins
 			if (Functions.ToCallback(function) is not Any fo)
 				return DefaultObject;
 
-			var o = options.As();
+			if (!options.CoerceString(out var o))
+				return DefaultObject;
+
 			bool fast = o.Contains('f', StringComparison.OrdinalIgnoreCase);
 			bool reference = o.Contains('&');
 			bool cdecl = o.Contains('c', StringComparison.OrdinalIgnoreCase);
@@ -218,7 +220,7 @@ namespace Keysharp.Builtins
 			long arity;
 
 			if (paramSpec != null)
-				arity = paramSpec.Al();
+				_ = paramSpec.TryCoerceLong(out arity);// Already confirmed numeric above.
 			else if (reference)
 				arity = DelegateHolder.MaxArity;              // the native arguments the one address covers
 			else if (!Functions.TryMinParams(fo, out arity))  // as AHK: the callback's MinParams is the count

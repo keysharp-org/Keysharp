@@ -305,7 +305,7 @@ namespace Keysharp.Internals.Images
 #if WINDOWS
 						else
 						{
-							var idx = iconindex.Ai();
+							_ = iconindex.TryCoerceInt(out var idx);
 							ico = ExtractIconWithSizeFromModule(filename, idx, w, h) ?? GuiHelper.GetIcon(filename, idx);
 						}
 
@@ -352,7 +352,7 @@ namespace Keysharp.Internals.Images
 						}
 						else
 						{
-							var iconint = iconindex.Ai(int.MaxValue);
+							_ = iconindex.TryCoerceInt(out var iconint, int.MaxValue);
 
 							if (iconint < icos.Count)
 							{
@@ -388,7 +388,7 @@ namespace Keysharp.Internals.Images
 								}
 								else
 								{
-									var iconint = iconindex.Ai(int.MaxValue);
+									_ = iconindex.TryCoerceInt(out var iconint, int.MaxValue);
 									frame = iconint >= 0 && iconint < frames.Count ? frames[iconint] : frames[0];
 								}
 

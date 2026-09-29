@@ -544,7 +544,8 @@ namespace Keysharp.Internals
 			}
 			else
 			{
-				var alpha = Math.Clamp((int)value.Al(), 0, 255);
+				_ = value.TryCoerceInt(out var v);
+				var alpha = Math.Clamp(v, 0, 255);
 
 				if (WindowsAPI.SetWindowLongPtr(h, WindowsAPI.GWL_EXSTYLE, new nint(exstyle | WindowsAPI.WS_EX_LAYERED)) == 0 ||
 					!WindowsAPI.SetLayeredWindowAttributes(h, 0, (byte)alpha, WindowsAPI.LWA_ALPHA))
@@ -554,7 +555,10 @@ namespace Keysharp.Internals
 
 		private static void SetTransparentColor(nint h, object value)
 		{
-			var splits = value.As().Split(SpaceTab, StringSplitOptions.RemoveEmptyEntries);
+			if (!value.CoerceString(out var text))
+				return;
+
+			var splits = text.Split(SpaceTab, StringSplitOptions.RemoveEmptyEntries);
 			var colorstr = splits[0];
 			var exstyle = WindowsAPI.GetWindowLongPtr(h, WindowsAPI.GWL_EXSTYLE);
 
@@ -572,7 +576,9 @@ namespace Keysharp.Internals
 				{
 					if (splits.Length > 1)
 					{
-						val = splits[1].Al();
+						if (!splits[1].CoerceLong(out val))
+							return;
+
 						flags |= WindowsAPI.LWA_ALPHA;
 					}
 

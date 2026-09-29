@@ -147,37 +147,51 @@ namespace Keysharp.Internals.Window
 			return found;
 		}
 
-		public static WindowInfoBase FindWindow(object winTitle, object winText, object excludeTitle, object excludeText, bool last = false)
+		/// <summary>
+		/// The window a search names, or null in <paramref name="found"/> when none matches. False when a parameter
+		/// raised an error the script continued, and the caller then returns its empty value at once without
+		/// reporting the window as missing.
+		/// </summary>
+		public static bool TryFindWindow(object winTitle, object winText, object excludeTitle, object excludeText, out WindowInfoBase found, bool last = false)
 		{
 			if (winTitle is Gui gui)
-				return LastFound = CreateWindow((nint)gui.Hwnd);
+			{
+				found = LastFound = CreateWindow((nint)gui.Hwnd);
+				return true;
+			}
 
-			var criteria = ToCriteria(winTitle, winText, excludeTitle, excludeText);
-			var foundWindow = criteria == null ? LastFound : FindWindow(criteria, last);
+			found = null;
 
-			if (foundWindow != null && foundWindow.IsSpecified)
-				LastFound = foundWindow;
+			if (!TryToCriteria(winTitle, winText, excludeTitle, excludeText, out var criteria))
+				return false;
 
-			return foundWindow;
+			found = criteria == null ? LastFound : FindWindow(criteria, last);
+
+			if (found != null && found.IsSpecified)
+				LastFound = found;
+
+			return true;
 		}
 
 		/// <summary>
 		/// The object form of a search resolved to criteria, or null when nothing was specified at all — which
-		/// means the last-found window rather than a search, as AHK's WinExist does.
+		/// means the last-found window rather than a search, as AHK's WinExist does. False means a parameter
+		/// raised an error which the script continued, and the caller then returns at once.
 		/// </summary>
-		internal static SearchCriteria ToCriteria(object winTitle, object winText, object excludeTitle, object excludeText)
+		internal static bool TryToCriteria(object winTitle, object winText, object excludeTitle, object excludeText, out SearchCriteria criteria)
 		{
-			var text = winText.As();
-			var exclTitle = excludeTitle.As();
-			var exclText = excludeText.As();
+			criteria = null;
+
+			if (!winText.CoerceString(out var text) || !excludeTitle.CoerceString(out var exclTitle) || !excludeText.CoerceString(out var exclText))
+				return false;
 
 			if ((winTitle == null || winTitle is string s && string.IsNullOrEmpty(s))
 					&& string.IsNullOrEmpty(text)
 					&& string.IsNullOrEmpty(exclTitle)
 					&& string.IsNullOrEmpty(exclText))
-				return null;
+				return true;
 
-			return SearchCriteria.FromString(winTitle, text, excludeTitle, excludeText);
+			return SearchCriteria.TryFromString(winTitle, text, exclTitle, exclText, out criteria);
 		}
 
 		public static List<WindowInfoBase> FindWindowGroup(SearchCriteria criteria, bool forceAll = false)
@@ -232,17 +246,29 @@ namespace Keysharp.Internals.Window
 			return found;
 		}
 
-		public static (List<WindowInfoBase>, SearchCriteria) FindWindowGroup(object winTitle,
+		/// <summary>
+		/// The windows a search names, with its criteria, which are null for the last-found window. False, with
+		/// both null, when a parameter raised an error the script continued, and the caller then returns its empty
+		/// value at once without reporting the window as missing.
+		/// </summary>
+		public static bool TryFindWindowGroup(object winTitle,
 				object winText,
 				object excludeTitle,
 				object excludeText,
+				out List<WindowInfoBase> foundWindows,
+				out SearchCriteria criteria,
 				bool forceAll = false)
 		{
-			var foundWindows = new List<WindowInfoBase>();
-			var criteria = ToCriteria(winTitle, winText, excludeTitle, excludeText);
+			if (!TryToCriteria(winTitle, winText, excludeTitle, excludeText, out criteria))
+			{
+				foundWindows = null;
+				return false;
+			}
 
 			if (criteria == null)
 			{
+				foundWindows = [];
+
 				if (LastFound != null)
 					foundWindows.Add(LastFound);
 			}
@@ -250,11 +276,11 @@ namespace Keysharp.Internals.Window
 			{
 				foundWindows = FindWindowGroup(criteria, forceAll);
 
-				if (foundWindows != null && foundWindows.Count > 0 && foundWindows[0].IsSpecified)
+				if (foundWindows.Count > 0 && foundWindows[0].IsSpecified)
 					LastFound = foundWindows[0];
 			}
 
-			return (foundWindows, criteria);
+			return true;
 		}
 
 		internal static bool ShouldDetectHiddenWindows(SearchCriteria criteria, WindowSearchOptions inheritedOptions = null)

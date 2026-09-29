@@ -30,147 +30,86 @@ namespace Keysharp.Runtime
 			return true;//Any non-null, non-empty string is considered true.
 		}
 
-		// An Array or Map that contains itself prints "[...]" where it recurs instead of recursing until the stack overflows.
-		private static string FormatCollection(object collection, HashSet<object> open)
+		// AHK's FTOA: 17 significant digits, and ".0" on a finite number which prints with neither a point nor an exponent.
+		internal static string FormatFloat(double d)
 		{
-			open ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+			var str = d.ToString("G17", CultureInfo.InvariantCulture).Replace('E', 'e');
+			return double.IsFinite(d) && str.AsSpan().IndexOfAny('.', 'e') < 0 ? str + ".0" : str;
+		}
 
-			if (!open.Add(collection))
+		// Per thread, since a nested collection's own ToString is reached through script dispatch.
+		[ThreadStatic]
+		private static HashSet<object> formattingCollections;
+
+		/// <summary>
+		/// An Array as [a, b] and a Map as [key: value], with strings quoted and a collection that contains itself shown as
+		/// [...] where it recurs. The collections' own ToString passes <paramref name="callToString"/>, so an element with a
+		/// ToString method shows its result, as String gives it; the diagnostic form runs no script code. Neither raises,
+		/// since C# code, error messages included, formats a collection through its ToString too.
+		/// </summary>
+		internal static string FormatCollection(object collection, bool callToString)
+		{
+			var formatting = formattingCollections ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+
+			if (!formatting.Add(collection))
 				return "[...]";
 
-			string Element(object v) => v is Map or Builtins.Array ? FormatCollection(v, open) : ForceString(v);
-			var buffer = new StringBuilder();
-			var first = true;
+			var buffer = new StringBuilder("[");
 
 			try
 			{
 				if (collection is Map map)
 				{
-					_ = buffer.Append(BlockOpen);
+					var first = true;
 
 					foreach (var (k, v) in map)
 					{
-						if (first)
-							first = false;
-						else
-							_ = buffer.Append(DefaultMulticast);
-
-						_ = buffer.Append(DoubleQuote).Append(ForceString(k)).Append(DoubleQuote).Append(AssignPre);
-
-						if (v == null)
-						{
-							_ = buffer.Append(NullTxt);
-							continue;
-						}
-
-						var obj = v is System.Array || v is Map || v is KeysharpFunc;
-
-						if (!obj)
-							_ = buffer.Append(DoubleQuote);
-
-						_ = buffer.Append(Element(v));
-
-						if (!obj)
-							_ = buffer.Append(DoubleQuote);
+						_ = buffer.Append(first ? "" : ", ").Append(Element(k)).Append(": ").Append(Element(v));
+						first = false;
 					}
-
-					_ = buffer.Append(BlockClose);
 				}
 				else
 				{
-					_ = buffer.Append(ArrayOpen);
+					// By index, since an element's ToString may change the array.
+					var items = ((Builtins.Array)collection).array;
 
-					foreach (var item in (Builtins.Array)collection)
-					{
-						if (first)
-							first = false;
-						else
-							_ = buffer.Append(DefaultMulticast);
-
-						_ = buffer.Append(Element(item));
-					}
-
-					_ = buffer.Append(ArrayClose);
+					for (var i = 0; i < items.Count; i++)
+						_ = buffer.Append(i > 0 ? ", " : "").Append(Element(items[i]));
 				}
 			}
 			finally
 			{
-				_ = open.Remove(collection);
+				_ = formatting.Remove(collection);
 			}
 
-			return buffer.ToString();
+			return buffer.Append(']').ToString();
+
+			string Element(object v) => v switch
+			{
+				null => "unset",
+				string s => "\"" + s + "\"",
+				Any any when callToString => ElementText(any),
+				Builtins.Array or Map => FormatCollection(v, callToString),
+				_ => Errors.Describe(v)
+			};
 		}
 
-		public static string ForceString(object input)
+		// An element's ToString result, or its type without one. What the element raises is contained as a try contains it,
+		// unreported, and shown as <ERROR>; an Exit still ends the thread.
+		private static string ElementText(Any element)
 		{
-			if (input == null)
-				return string.Empty;
-			else if (input is string s)
-				return s;
-			else if (input is bool b)
-				return b ? "1" : "0";
-			else if (input is long l)
-				return l.ToString();
-			else if (input is double dd)
+			try
 			{
-				// AHK's FTOA: 17 significant digits, and ".0" on a finite number which prints with neither a point nor an exponent.
-				var str = dd.ToString("G17", CultureInfo.InvariantCulture).Replace('E', 'e');
-				return double.IsFinite(dd) && str.AsSpan().IndexOfAny('.', 'e') < 0 ? str + ".0" : str;
+				using var _ = Flow.EnterTry();
+				if (!TryInvoke(element, "ToString", out var text))
+					return Types.Type(element);
+
+				return text is Any || !text.CoerceString(out var str) ? "<ERROR>" : str;
 			}
-			else if (input is Any)
+			catch (Exception ex) when (!Internals.Flow.TryGetException<Builtins.Flow.UserRequestedExitException>(ex, out _))
 			{
-				if (input is Map or Builtins.Array)
-					return FormatCollection(input, null);
-				else if (input is KeysharpFunc fo)
-					return fo.Name;
-				else
-					return input.ToString();
+				return "<ERROR>";
 			}
-			else if (input is char c)
-				return c.ToString();
-			else if (input is byte[] arr)
-				return Encoding.Unicode.GetString(arr);
-			else if (input is decimal m)
-				return m.ToString();
-			else if (IsNumeric(input))
-			{
-				var t = input.GetType();
-				var simple = t == typeof(int) || t == typeof(uint) || t == typeof(long) || t == typeof(byte) || t == typeof(char);
-				var integer = simple || (t == typeof(double) && Math.IEEERemainder((double)input, 1) == 0);
-				var format = "f";
-				var hex = false;// format.Contains('x');
-				const string hexpre = "0x";
-
-				if (integer)
-				{
-					if (!hex)
-						format = "d";
-
-					var result = simple ? Convert.ToInt64(input).ToString(format) : ((int)(double)input).ToString("d");
-
-					if (hex)
-						result = hexpre + result;
-
-					return result;
-				}
-
-				var d = (double)input;
-
-				if (hex)
-				{
-					var result = d.ToString("X");
-					return hexpre + result;
-				}
-
-				return d.ToString(format).TrimEnd(zerochars);//Remove trailing zeroes for string compare.
-			}
-			else if (input.GetType().GetMethods(BindingFlags.Static | BindingFlags.Public) is MethodInfo[] mis)
-			{
-				foreach (var mi in mis)
-					if (mi.Name == "op_Implicit" && mi.ReturnType == typeof(string))
-						return (string)mi.Invoke(input, [input]);
-			}
-			return input.ToString();
 		}
 	}
 }

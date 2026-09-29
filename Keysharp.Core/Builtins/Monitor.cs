@@ -54,7 +54,8 @@ namespace Keysharp.Builtins
 		/// </summary>
 		internal static (DisplayInfo Display, long MonitorIndex) ResolveDisplay(object n, DisplayInfo[] displays)
 		{
-			var monitorIndex = n.Al(0L);
+			if (!n.CoerceLong(out var monitorIndex, 0L))
+				return default;
 
 			if (monitorIndex > 0 && monitorIndex <= displays.Length)
 				return (displays[monitorIndex - 1], monitorIndex);

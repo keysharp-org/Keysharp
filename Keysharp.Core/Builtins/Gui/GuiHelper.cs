@@ -37,7 +37,10 @@ namespace Keysharp.Builtins
 
 		public static object GuiCtrlFromHwnd(object hwnd)
 		{
-			if (Control.FromHandle(new nint(hwnd.Al())) is Control c)
+			if (!hwnd.CoerceLong(out var hwndVal))
+				return DefaultObject;
+
+			if (Control.FromHandle(new nint(hwndVal)) is Control c)
 				if (c.GetGuiControl() is Gui.Control gui)
 					return gui;
 
@@ -46,7 +49,9 @@ namespace Keysharp.Builtins
 
 		public static object GuiFromHwnd(object hwnd, object recurseParent = null)
 		{
-			var hwndVal = hwnd.Al();
+			if (!hwnd.CoerceLong(out var hwndVal))
+				return DefaultObject;
+
 			var recurse = recurseParent.Ab();
 			var allGuiHwnds = Script.TheScript.GuiData.allGuiHwnds;
 
@@ -83,7 +88,10 @@ namespace Keysharp.Builtins
 
 		public static object MenuFromHandle(object handle)
 		{
-			return (object)Control.FromHandle(new nint(handle.Al())) ?? DefaultObject;
+			if (!handle.CoerceLong(out var handleVal))
+				return DefaultObject;
+
+			return (object)Control.FromHandle(new nint(handleVal)) ?? DefaultObject;
 		}
 
 		internal static bool CallMessageHandler(Control control, ref Message m)
@@ -93,8 +101,9 @@ namespace Keysharp.Builtins
 				if (control.GetGuiControl() is Gui.Control ctrl)
 				{
 					var ret = ctrl.InvokeMessageHandlers(ref m);
+					_ = ret.TryCoerceLong(out var retVal);
 
-					if (ret.Al() != 0L)
+					if (retVal != 0L)
 						return true;
 				}
 			}

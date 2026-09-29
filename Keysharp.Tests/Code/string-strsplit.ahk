@@ -72,4 +72,11 @@ exp := [ "a", "b", "c" ]
 
 Assert(exp = y, A_LineNumber)
 
+; The string, delimiters and omit characters convert as any string argument does: a number as its text, an object
+; through its ToString method or else a TypeError.
+Assert(StrSplit(12345, 3) = ["12", "45"], A_LineNumber)
+Assert(StrSplit("a1.0b", [1.0]) = ["a", "b"], A_LineNumber)
+Assert(StrSplit("1x1", ",", 1) = ["x"], A_LineNumber)
+Throws(() => StrSplit({}), A_LineNumber, TypeError)
+
 FileAppend "pass", "*"

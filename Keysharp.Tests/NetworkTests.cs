@@ -13,7 +13,7 @@ namespace Keysharp.Tests
 			var addresses = SysGetIPAddresses();
 
 			foreach (var address in addresses)
-				Assert.IsTrue(IPAddress.TryParse(address.As(), out var ip) && ip.AddressFamily == AddressFamily.InterNetwork);
+				Assert.IsTrue(address.TryCoerceString(out var text) && IPAddress.TryParse(text, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork);
 		}
 
 		/// <summary>

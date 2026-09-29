@@ -111,7 +111,7 @@ namespace Keysharp.Internals
 			if (reasonName.Length == 0)
 				return false;
 
-			var ec = exitCode.Ai();
+			_ = exitCode.TryCoerceInt(out var ec);
 			var threads = script.Threads;
 			var allowInterruptionPrev = threads.allowInterruption;
 			threads.allowInterruption = false;
@@ -150,7 +150,9 @@ namespace Keysharp.Internals
 				return false;
 			}
 
-			if (exitReason >= Keysharp.Builtins.Flow.ExitReasons.None && result.Al() != 0L)
+			_ = result.TryCoerceLong(out var resultCode);
+
+			if (exitReason >= Keysharp.Builtins.Flow.ExitReasons.None && resultCode != 0L)
 			{
 				threads.allowInterruption = allowInterruptionPrev;
 				return true;
