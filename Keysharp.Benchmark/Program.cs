@@ -74,12 +74,13 @@ public sealed class Program
 		//summary = BenchmarkRunner.Run<FuncBench>(config);
 		//MarkdownExporter.Console.ExportToLog(summary, logger);
 		RunReflectionBenchmarks(config);
+		RunReflectionRefBenchmarks(config);
 
 		//ConclusionHelper.Print(logger, summary.BenchmarksCases.First().Config.GetCompositeAnalyser().Analyse(summary).ToList());
 		_ = Console.ReadLine();
 	}
 
-	private static void RunReflectionBenchmarks(ManualConfig config)
+	private static void RunReflectionBenchmarks(IConfig config)
 	{
 		summary = BenchmarkRunner.Run<ReflectionBench0Params>(config);
 		MarkdownExporter.Console.ExportToLog(summary, logger);
@@ -91,6 +92,16 @@ public sealed class Program
 		MarkdownExporter.Console.ExportToLog(summary, logger);
 
 		summary = BenchmarkRunner.Run<ReflectionBench10Params>(config);
+		MarkdownExporter.Console.ExportToLog(summary, logger);
+	}
+
+	private static void RunReflectionRefBenchmarks(IConfig config)
+	{
+		summary = BenchmarkRunner.Run<ReflectionBench1RefParam>(config);
+		MarkdownExporter.Console.ExportToLog(summary, logger);
+		summary = BenchmarkRunner.Run<ReflectionBench2RefParam>(config);
+		MarkdownExporter.Console.ExportToLog(summary, logger);
+		summary = BenchmarkRunner.Run<ReflectionBench5RefParam>(config);
 		MarkdownExporter.Console.ExportToLog(summary, logger);
 	}
 }
