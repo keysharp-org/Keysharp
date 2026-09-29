@@ -238,11 +238,14 @@ namespace Keysharp.Runtime
 
 			if (left is Any && TheScript.Operators.TryInvoke(OperatorKind.Concat, left, right, out var result)) return result;
 
-			// Guard against accidental function object concatenation (likely a function-call statement used in an expression).
-			if (left is KeysharpFunc)
+			// Unlike AHK, which raises for any object, an object with a ToString method concatenates as String(obj) gives it.
+			if (left is Any && Functions.HasMethod(left, "ToString") == 0L)
 				return Errors.TypeErrorOccurred(left, typeof(string));
 
-			return string.Concat(ForceString(left), ForceString(right));
+			if (right is Any && Functions.HasMethod(right, "ToString") == 0L)
+				return Errors.TypeErrorOccurred(right, typeof(string));
+
+			return string.Concat(left is Any ? left.As() : ForceString(left), right is Any ? right.As() : ForceString(right));
 		}
 
 		public static object RegEx(object left, object right) => RegexOperator(left, right, OperatorKind.RegEx);
@@ -283,16 +286,33 @@ namespace Keysharp.Runtime
 			if (left is long li)
 			{
 				if (right is long ri) return (li == ri) != negate;
-				if (right is double rd) return ((double)li).Equals(rd) != negate;
+				if (right is double rd) return (li == rd) != negate;
 			}
 			if (left is double ld)
 			{
-				if (right is double rd) return ld.Equals(rd) != negate;
-				if (right is long ri) return ld.Equals((double)ri) != negate;
+				if (right is double rd) return (ld == rd) != negate;
+				if (right is long ri) return (ld == ri) != negate;
 			}
-			if (left is string ls && right is string rs)
-				return (Strings.StrCmp(ls, rs, kind is OperatorKind.IdentityEquality or OperatorKind.IdentityInequality) == 0) != negate;
+			if (left is string ls)
+			{
+				if (right is string rs)
+					return (Strings.StrCmp(ls, rs, kind is OperatorKind.IdentityEquality or OperatorKind.IdentityInequality) == 0) != negate;
+				if (right is long or double)
+					return NumberStringEquality(right, ls, kind) != negate;
+			}
+			else if (right is string rs && left is long or double)
+				return NumberStringEquality(left, rs, kind) != negate;
 			return EqualityOther(left, right, kind);
+		}
+
+		// MatchTypes' outcome for a number and a string, without writing boxed operands back.
+		private static bool NumberStringEquality(object number, string s, OperatorKind kind)
+		{
+			if (s.TryParseLong(out long sl))
+				return number is long l ? l == sl : (double)number == sl;
+			if (s.TryParseDouble(out double sd, true))
+				return number is long l ? l == sd : (double)number == sd;
+			return Strings.StrCmp(ForceString(number), s, kind is OperatorKind.IdentityEquality or OperatorKind.IdentityInequality) == 0;
 		}
 
 		private static object EqualityOther(object left, object right, OperatorKind kind)
@@ -303,11 +323,16 @@ namespace Keysharp.Runtime
 			_ = MatchTypes(ref left, ref right);
 			if (left is string ls && right is string rs)
 				return (Strings.StrCmp(ls, rs, kind is OperatorKind.IdentityEquality or OperatorKind.IdentityInequality) == 0) != negate;
-			return (kind == OperatorKind.ValueEquality ? StructuralEquality(left, right) : Equals(left, right)) != negate;
+			return (kind is OperatorKind.ValueEquality or OperatorKind.ValueInequality ? StructuralEquality(left, right) : Equals(left, right)) != negate;
 		}
 
+		// Keysharp's `=` and `!=` compare Arrays and Buffers by content, elements with `=` in turn; unset elements are
+		// equal only to each other.
 		private static bool StructuralEquality(object left, object right)
 		{
+			if (ReferenceEquals(left, right))
+				return true;
+
 			if (left is Builtins.Array al1 && right is Builtins.Array al2)
 			{
 				var len1 = (long)al1.Length;
@@ -316,17 +341,11 @@ namespace Keysharp.Runtime
 				if (len1 != len2)
 					return false;
 
-				for (var i = 1; i <= len1; i++)
+				for (var i = 0; i < len1; i++)
 				{
-					if (IsNumeric(al1[i]) && IsNumeric(al2[i]))
-					{
-						var d1 = Convert.ToDouble(al1[i]);
-						var d2 = Convert.ToDouble(al2[i]);
+					var (e1, e2) = (al1.array[i], al2.array[i]);
 
-						if (d1 != d2)
-							return false;
-					}
-					else if (!al1[i].Equals(al2[i]))
+					if (e1 == null || e2 == null ? e1 != e2 : !ForceBool(Equality(e1, e2, OperatorKind.ValueEquality)))
 						return false;
 				}
 
@@ -694,11 +713,8 @@ namespace Keysharp.Runtime
 			return value is Any && TheScript.Operators.TryInvoke(OperatorKind.Decrement, value, null, out var result) ? result : Subtract(value, 1L);
 		}
 
-		public static object Plus(object right)
-		{
-			if (right is long or double or string or bool) return right;
-			return right is Any && TheScript.Operators.TryInvoke(OperatorKind.Plus, right, null, out var result) ? result : right;
-		}
+		// As AHK's unary plus, a conversion to a number, which a number passes through unchanged.
+		public static object Plus(object right) => right is long or double ? right : NumericOperators.Unary<NumericOperation.Identity>(right);
 
 		public static object Minus(object right) => NumericOperators.Unary<NumericOperation.Negate>(right);
 

@@ -204,4 +204,8 @@ catch (Error as exc)
 
 AssertEq(b, true, A_LineNumber)
 
+; The shift count is checked as a 64-bit value.
+x := 4294967297
+Throws(() => 1 << x, A_LineNumber, Error)
+
 FileAppend "pass", "*"

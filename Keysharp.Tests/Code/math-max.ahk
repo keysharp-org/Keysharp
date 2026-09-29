@@ -63,4 +63,10 @@ AssertEq(Type(Max(-1.0, 1)), "Integer", A_LineNumber)
 	
 AssertEq(Type(Max(1.0, -1)), "Float", A_LineNumber)
 
+AssertEq(Max(5), 5, A_LineNumber)
+AssertEq(Max("3", "10"), 10, A_LineNumber)
+AssertEq(Type(Max(2, 2.0)), "Float", A_LineNumber)
+Throws(() => Max(1, "x"), A_LineNumber, TypeError)
+
+
 FileAppend "pass", "*"

@@ -283,143 +283,45 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Returns the greatest of a list of numbers.
 		/// </summary>
-		/// <param name="dividend">The first number to compare.</param>
-		/// <param name="divisor">The second number to compare.</param>
-		/// <returns>The larger of the two numbers, or the empty string if either number is not numeric.</returns>
-		public static object Max(params object[] obj)
-		{
-			var o = obj.L();//Flatten here to find the max of anything contained in any sub item.
-
-			if (o.Count > 1)
-			{
-				object max = double.MinValue;
-
-				for (var i = 1; i < o.Count; ++i)
-				{
-					var left = o[i - 1];
-					var right = o[i];
-
-					if (Script.ParseNumericArgs(left, right, "Max", out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-					{
-						if (firstIsDouble)
-						{
-							if (secondIsDouble)
-							{
-								var tempd = Math.Max(firstd, secondd);
-
-								if (tempd > max.Ad())
-									max = tempd;
-							}
-							else
-							{
-								if (firstd > secondl)
-								{
-									if (firstd > max.Ad())
-										max = firstd;
-								}
-								else if (secondl > max.Ad())
-									max = secondl;
-							}
-						}
-						else
-						{
-							if (secondIsDouble)
-							{
-								if (firstl > secondd)
-								{
-									if (firstl > max.Ad())
-										max = firstl;
-								}
-								else if (secondd > max.Ad())
-									max = secondd;
-							}
-							else
-							{
-								var templ = Math.Max(firstl, secondl);
-
-								if (templ > max.Ad())
-									max = templ;
-							}
-						}
-					}
-				}
-
-				if (max.Ad() != double.MinValue)
-					return max;
-			}
-
-			return DefaultObject;
-		}
+		/// <param name="obj">The numbers to compare. The numbers in an Array passed here are compared as well.</param>
+		/// <returns>The greatest number, as the Integer or Float it was given as.</returns>
+		public static object Max(params object[] obj) => MinMax(obj, false);
 
 		/// <summary>
 		/// Returns the least of a list of numbers.
 		/// </summary>
-		/// <param name="dividend">The first number to compare.</param>
-		/// <param name="divisor">The second number to compare.</param>
-		/// <returns>The lesser of the two numbers, or the empty string if either number is not numeric.</returns>
-		public static object Min(params object[] obj)
+		/// <param name="obj">The numbers to compare. The numbers in an Array passed here are compared as well.</param>
+		/// <returns>The least number, as the Integer or Float it was given as.</returns>
+		public static object Min(params object[] obj) => MinMax(obj, true);
+
+		// AHK's BIF_MinMax: the best Integer and the best Float are kept apart and compared at the end, so the result
+		// keeps its type, and anything that is not a number is a TypeError.
+		private static object MinMax(object[] args, bool isMin)
 		{
-			var o = obj.L();//Flatten here to find the max of anything contained in any sub item.
+			long bestInt = 0;
+			var bestFloat = 0.0;
+			bool haveInt = false, haveFloat = false;
 
-			if (o.Count > 1)
+			foreach (var value in args.Flatten(true))
 			{
-				object min = double.MaxValue;
-
-				for (var i = 1; i < o.Count; ++i)
+				if (value.TryParseLong(out var l))
 				{
-					var left = o[i - 1];
-					var right = o[i];
-
-					if (Script.ParseNumericArgs(left, right, "Min", out var firstIsDouble, out var secondIsDouble, out var firstd, out var firstl, out var secondd, out var secondl))
-					{
-						if (firstIsDouble)
-						{
-							if (secondIsDouble)
-							{
-								var tempd = Math.Min(firstd, secondd);
-
-								if (tempd < min.Ad())
-									min = tempd;
-							}
-							else
-							{
-								if (firstd < secondl)
-								{
-									if (firstd < min.Ad())
-										min = firstd;
-								}
-								else if (secondl < min.Ad())
-									min = secondl;
-							}
-						}
-						else
-						{
-							if (secondIsDouble)
-							{
-								if (firstl < secondd)
-								{
-									if (firstl < min.Ad())
-										min = firstl;
-								}
-								else if (secondd < min.Ad())
-									min = secondd;
-							}
-							else
-							{
-								var templ = Math.Min(firstl, secondl);
-
-								if (templ < min.Ad())
-									min = templ;
-							}
-						}
-					}
+					if (!haveInt || (isMin ? l < bestInt : l > bestInt))
+						(bestInt, haveInt) = (l, true);
 				}
-
-				if (min.Ad() != double.MaxValue)
-					return min;
+				else if (value is not Any && value.TryParseDouble(out var d, value is not double))
+				{
+					if (!haveFloat || (isMin ? d < bestFloat : d > bestFloat))
+						(bestFloat, haveFloat) = (d, true);
+				}
+				else
+					return Errors.TypeErrorOccurred(value, typeof(double));
 			}
 
-			return DefaultObject;
+			if (!haveInt && !haveFloat)
+				return DefaultObject;
+
+			return !haveFloat || (haveInt && (isMin ? bestInt < bestFloat : bestInt > bestFloat)) ? (object)bestInt : bestFloat;
 		}
 
 		/// <summary>

@@ -154,4 +154,22 @@ x := unset
 x := func6()
 AssertEq(x, 3, A_LineNumber)
 
+; A static initializer that throws runs again on the next call.
+attempts := 0
+
+StaticRetry() {
+	static value := Initial()
+	return value
+}
+
+Initial() {
+	global attempts
+	if (++attempts = 1)
+		throw Error("first attempt")
+	return "second"
+}
+
+try StaticRetry()
+AssertEq(StaticRetry(), "second", A_LineNumber)
+
 FileAppend "pass", "*"

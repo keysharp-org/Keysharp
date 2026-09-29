@@ -336,21 +336,78 @@ namespace Keysharp.Internals.ExtensionMethods
 				return false;
 			}
 
-			var s = (obj as string ?? obj.ToString()).AsSpan().Trim();
-
-			if (s.Length == 0)
+			if (!ScanNumber((obj as string ?? obj.ToString()).AsSpan(), out var s, out var isFloat, out var isHex) || (requireDot && !isFloat))
 			{
 				outvar = 0.0D;
 				return false;
 			}
 
-			if (requireDot && !s.Contains('.'))
+			if (isHex)
 			{
-				outvar = 0.0D;
-				return false;
+				var parsed = TryParseHex(s, out var l2);
+				outvar = l2;
+				return parsed;
 			}
 
-			return double.TryParse(s, out outvar);
+			return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out outvar);
+		}
+
+		/// <summary>
+		/// AutoHotkey's numeric string grammar: optional spaces and tabs around an optional sign, then 0x and hex digits,
+		/// or decimal digits with at most one '.' and an optional exponent such as e-5. A '.' or an exponent makes the
+		/// string a Float. <paramref name="number"/> is the string without the surrounding spaces and tabs.
+		/// </summary>
+		internal static bool ScanNumber(ReadOnlySpan<char> s, out ReadOnlySpan<char> number, out bool isFloat, out bool isHex)
+		{
+			number = s = s.Trim(" \t");
+			isFloat = isHex = false;
+			bool digits = false, exponent = false;
+			var i = s.Length > 0 && (s[0] == '-' || s[0] == '+') ? 1 : 0;
+
+			if (i + 1 < s.Length && s[i] == '0' && (s[i + 1] | 0x20) == 'x')
+			{
+				isHex = true;
+				i += 2;
+			}
+
+			for (; i < s.Length; i++)
+			{
+				var c = s[i];
+
+				if (isHex ? char.IsAsciiHexDigit(c) : char.IsAsciiDigit(c))
+					digits = true;
+				else if (c == '.' && !isHex && !isFloat)
+					isFloat = true;
+				else if ((c | 0x20) == 'e' && !isHex && digits && !exponent)
+				{
+					if (i + 1 < s.Length && (s[i + 1] == '-' || s[i + 1] == '+'))
+						i++;
+
+					if (i + 1 >= s.Length || !char.IsAsciiDigit(s[i + 1]))
+						return false;
+
+					exponent = isFloat = true;
+				}
+				else
+					return false;
+			}
+
+			return digits;
+		}
+
+		// A signed 0x number, which wraps to a negative Integer above 0x7FFFFFFFFFFFFFFF as in AutoHotkey.
+		private static bool TryParseHex(ReadOnlySpan<char> s, out long value)
+		{
+			var neg = s[0] == '-';
+			var digits = s.Slice(s[0] is '-' or '+' ? 3 : 2);
+
+			if (!long.TryParse(digits, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out value))
+				return false;
+
+			if (neg)
+				value = unchecked(-value);
+
+			return true;
 		}
 
 		/// <summary>
@@ -399,44 +456,23 @@ namespace Keysharp.Internals.ExtensionMethods
 				return false;
 			}
 
-			ReadOnlySpan<char> s = (obj as string ?? obj.ToString()).AsSpan().Trim();
+			var text = (obj as string ?? obj.ToString()).AsSpan();
 
-			if (s.Length == 0)
+			if (ScanNumber(text, out var s, out var isFloat, out var isHex) && !isFloat)
+				return isHex ? TryParseHex(s, out outvar) : long.TryParse(s, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out outvar);
+
+			if (donoprefixhex)
 			{
-				outvar = 0L;
-				return false;
-			}
+				s = text.Trim(" \t");
+				var neg = s.Length > 0 && s[0] == Keywords.Minus;
 
-			if (long.TryParse(s, out l))
-			{
-				outvar = l;
-				return true;
-			}
+				if (long.TryParse(neg ? s.Slice(1) : s, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out outvar))
+				{
+					if (neg)
+						outvar = -outvar;
 
-			var neg = false;
-
-			if (s[0] == Keywords.Minus)
-			{
-				neg = true;
-				s = s.Slice(1);
-			}
-
-			if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase) &&
-					long.TryParse(s.Slice(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out outvar))
-			{
-				if (neg)
-					outvar = -outvar;
-
-				return true;
-			}
-
-			if (donoprefixhex &&
-					long.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out outvar))
-			{
-				if (neg)
-					outvar = -outvar;
-
-				return true;
+					return true;
+				}
 			}
 
 			outvar = 0L;

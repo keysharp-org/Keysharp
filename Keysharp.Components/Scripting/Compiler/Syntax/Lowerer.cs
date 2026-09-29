@@ -4981,7 +4981,15 @@ namespace Keysharp.Compilation.Syntax
 			switch (u.Op)
 			{
 				case "!": case "not": return propagate ? PropagateUnary(u.Operand, value => Op("LogicalNot", value)) : Op("LogicalNot", LowerExpr(u.Operand));
-				case "-": return propagate ? PropagateUnary(u.Operand, value => Op("Minus", value)) : Op("Minus", LowerExpr(u.Operand));
+				case "-":
+					if (propagate) return PropagateUnary(u.Operand, value => Op("Minus", value));
+					// A negative number is a constant, which static initializers and default parameters can then see.
+					return LowerExpr(u.Operand) switch
+					{
+						LiteralExpressionSyntax { Token.Value: long l } => NumLit(unchecked(-l)),
+						LiteralExpressionSyntax { Token.Value: double d } => NumLit(-d),
+						var operand => Op("Minus", operand)
+					};
 				case "+": return propagate ? PropagateUnary(u.Operand, value => Op("Plus", value)) : Op("Plus", LowerExpr(u.Operand));
 				case "&": return MakeRefFor(u.Operand, _implicitRefs.Contains(u));
 				case "~": return propagate ? PropagateUnary(u.Operand, value => Op("BitwiseNot", value)) : Op("BitwiseNot", LowerExpr(u.Operand));
@@ -7799,8 +7807,12 @@ namespace Keysharp.Compilation.Syntax
 				case "-": return useD ? NumLit(L() - R()) : NumLit(ll - rl);
 				case "*": return useD ? NumLit(L() * R()) : NumLit(ll * rl);
 				case "/": return R() == 0 ? null : NumLit(L() / R());
-				case "//": return useD || rl == 0 ? null : NumLit(ll / rl);
-				case "**": return useD ? NumLit(System.Math.Pow(L(), R())) : NumLit((long)System.Math.Pow(ll, rl));
+				case "//": return useD || rl == 0 ? null : NumLit(rl == -1 ? unchecked(-ll) : ll / rl);
+				// Only what is always defined folds; the runtime raises for the rest.
+				case "**":
+					if (useD)
+						return L() > 0 ? NumLit(System.Math.Pow(L(), R())) : null;
+					return rl < 0 || (ll == 0 && rl == 0) ? null : NumLit((long)Keysharp.Runtime.Script.Power(ll, rl));
 				case "<<": return useD || rl < 0 || rl > 63 ? null : NumLit(ll << (int)rl);
 				case ">>": return useD || rl < 0 || rl > 63 ? null : NumLit(ll >> (int)rl);
 				case ">>>": return useD || rl < 0 || rl > 63 ? null : NumLit((long)((ulong)ll >> (int)rl));

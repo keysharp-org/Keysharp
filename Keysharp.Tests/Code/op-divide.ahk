@@ -107,4 +107,8 @@ catch (TypeError as exc)
 
 AssertEq(res, true, A_LineNumber)
 
+; Floor division of the least Integer by -1 wraps like the other integer operators.
+x := -9223372036854775807 - 1, y := -1
+AssertEq(x // y, -9223372036854775807 - 1, A_LineNumber)
+
 FileAppend "pass", "*"

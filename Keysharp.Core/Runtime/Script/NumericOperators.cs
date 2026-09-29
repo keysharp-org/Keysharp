@@ -6,10 +6,8 @@ internal interface INumericOperator
 {
 	static abstract OperatorKind Kind { get; }
 	static virtual bool IntegerOnly => false;
-	static virtual bool CompareStrings => false;
 	static abstract object Apply(long left, long right);
 	static virtual object Apply(double left, double right) => throw new InvalidOperationException();
-	static virtual object Compare(string left, string right) => throw new InvalidOperationException();
 }
 
 internal interface IUnaryNumericOperator
@@ -54,16 +52,6 @@ internal static class NumericOperators
 	{
 		if (right == null) return Unset(T.Kind, "Right");
 		if (right is bool boolean) return ApplyRight<T, TLeft>(left, boolean ? 1L : 0L);
-		if (right is string text)
-		{
-			var span = text.AsSpan().Trim();
-			if (long.TryParse(span, out var integer)) return ApplyRight<T, TLeft>(left, integer);
-			if (span.Contains('.'))
-			{
-				if (double.TryParse(span, out var floating)) return ApplyRight<T, TLeft>(left, floating);
-				return Errors.TypeErrorOccurred(right, typeof(double), Script.DefaultObject);
-			}
-		}
 		if (right.TryParseLong(out var integerValue)) return ApplyRight<T, TLeft>(left, integerValue);
 		if (right.TryParseDouble(out var floatValue, true)) return ApplyRight<T, TLeft>(left, floatValue);
 		return Errors.TypeErrorOccurred(right, typeof(double), Script.DefaultObject);
@@ -80,7 +68,6 @@ internal static class NumericOperators
 	{
 		if (left == null) return Unset(T.Kind, "Left");
 		if (right == null) return Unset(T.Kind, "Right");
-		if (T.CompareStrings && left is string ls && right is string rs) return T.Compare(ls, rs);
 		if (left is Any) return Script.TheScript.Operators.Invoke(T.Kind, left, right);
 		if (left.TryParseLong(out var integer)) return Integer<T>(integer, right);
 		if (left.TryParseDouble(out var floating, true)) return Float<T>(floating, right);

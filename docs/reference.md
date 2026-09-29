@@ -458,6 +458,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ Keysharp breaks this and will instead create a variable, initialize it to zero, then increment it.
 	+ For example, a file with nothing but the line `x++` in it, will end with a variable named x which has the value of 1.
 * Keysharp supports fixed [operator overloads](https://keysharp-org.github.io/KeysharpDocs/Objects.htm#Custom_Classes_operators) on classes and structs, including their class objects (`static +(Right)`). Unary and binary forms coexist; equality pairs must be declared together in the same scope. `?()` customizes truth testing, and `++()`/`--()` customize increment/decrement. Native numeric operations retain direct dispatch.
+* Concatenating an object raises a `TypeError` in AutoHotkey. In Keysharp, an object with a `ToString` method, such as an `Array`, `Map` or a class that defines one, concatenates as the string that method returns, as `String(obj)` gives it; any other object raises a `TypeError`.
 * The concat-assign operator `.=` is not optimized to modify the left operand inplace, meaning calling it in a loop will be very slow. If many concats are required then use a `StringBuffer` instead.
 * Function objects behave mostly the same as in AutoHotkey.
 	+ The underlying function object class is named `KeysharpFunc`, instead of `Func`, because C# already contains a built in class named `Func`.

@@ -205,7 +205,7 @@ AssertEq("0x10" + 1, 17, A_LineNumber)
 AssertEq(Type("0x10" + 1), "Integer", A_LineNumber)
 AssertEq("1.0e2" + 1, 101.0, A_LineNumber)
 AssertEq(Type("1.0e2" + 1), "Float", A_LineNumber)
-Throws(() => numbers[3] + "1e3", A_LineNumber, TypeError)
+AssertEq(numbers[3] + "1e3", 1001.0, A_LineNumber)
 Throws(() => numbers[3] + "0x1.0", A_LineNumber, TypeError)
 
 class Counter {

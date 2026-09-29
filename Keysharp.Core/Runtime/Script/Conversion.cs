@@ -30,6 +30,77 @@ namespace Keysharp.Runtime
 			return true;//Any non-null, non-empty string is considered true.
 		}
 
+		// An Array or Map that contains itself prints "[...]" where it recurs instead of recursing until the stack overflows.
+		private static string FormatCollection(object collection, HashSet<object> open)
+		{
+			open ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+
+			if (!open.Add(collection))
+				return "[...]";
+
+			string Element(object v) => v is Map or Builtins.Array ? FormatCollection(v, open) : ForceString(v);
+			var buffer = new StringBuilder();
+			var first = true;
+
+			try
+			{
+				if (collection is Map map)
+				{
+					_ = buffer.Append(BlockOpen);
+
+					foreach (var (k, v) in map)
+					{
+						if (first)
+							first = false;
+						else
+							_ = buffer.Append(DefaultMulticast);
+
+						_ = buffer.Append(DoubleQuote).Append(ForceString(k)).Append(DoubleQuote).Append(AssignPre);
+
+						if (v == null)
+						{
+							_ = buffer.Append(NullTxt);
+							continue;
+						}
+
+						var obj = v is System.Array || v is Map || v is KeysharpFunc;
+
+						if (!obj)
+							_ = buffer.Append(DoubleQuote);
+
+						_ = buffer.Append(Element(v));
+
+						if (!obj)
+							_ = buffer.Append(DoubleQuote);
+					}
+
+					_ = buffer.Append(BlockClose);
+				}
+				else
+				{
+					_ = buffer.Append(ArrayOpen);
+
+					foreach (var item in (Builtins.Array)collection)
+					{
+						if (first)
+							first = false;
+						else
+							_ = buffer.Append(DefaultMulticast);
+
+						_ = buffer.Append(Element(item));
+					}
+
+					_ = buffer.Append(ArrayClose);
+				}
+			}
+			finally
+			{
+				_ = open.Remove(collection);
+			}
+
+			return buffer.ToString();
+		}
+
 		public static string ForceString(object input)
 		{
 			if (input == null)
@@ -42,72 +113,14 @@ namespace Keysharp.Runtime
 				return l.ToString();
 			else if (input is double dd)
 			{
-				var str = dd.ToString();
-
-				if (double.IsFinite(dd) && dd == Math.Truncate(dd) && str.IndexOf('E') < 0 && str.IndexOf('e') < 0)
-					return str + ".0";
-
-				return str;
+				// AHK's FTOA: 17 significant digits, and ".0" on a finite number which prints with neither a point nor an exponent.
+				var str = dd.ToString("G17", CultureInfo.InvariantCulture).Replace('E', 'e');
+				return double.IsFinite(dd) && str.AsSpan().IndexOfAny('.', 'e') < 0 ? str + ".0" : str;
 			}
 			else if (input is Any)
 			{
-				if (input is Map map)
-				{
-					var buffer = new StringBuilder();
-					_ = buffer.Append(BlockOpen);
-					var first = true;
-
-					foreach (var (k, v) in map)
-					{
-						if (first)
-							first = false;
-						else
-							_ = buffer.Append(DefaultMulticast);
-
-						_ = buffer.Append(DoubleQuote);
-						_ = buffer.Append(ForceString(k));
-						_ = buffer.Append(DoubleQuote);
-						_ = buffer.Append(AssignPre);
-
-						if (v == null)
-						{
-							_ = buffer.Append(NullTxt);
-							continue;
-						}
-
-						var obj = v is System.Array || v is Map || v is KeysharpFunc;// Delegate;
-
-						if (!obj)
-							_ = buffer.Append(DoubleQuote);
-
-						_ = buffer.Append(ForceString(v));
-
-						if (!obj)
-							_ = buffer.Append(DoubleQuote);
-					}
-
-					_ = buffer.Append(BlockClose);
-					return buffer.ToString();
-				}
-				else if (input is Builtins.Array array)
-				{
-					var buffer = new StringBuilder();
-					_ = buffer.Append(ArrayOpen);
-					var first = true;
-
-					foreach (var item in array)
-					{
-						if (first)
-							first = false;
-						else
-							_ = buffer.Append(DefaultMulticast);
-
-						_ = buffer.Append(ForceString(item));
-					}
-
-					_ = buffer.Append(ArrayClose);
-					return buffer.ToString();
-				}
+				if (input is Map or Builtins.Array)
+					return FormatCollection(input, null);
 				else if (input is KeysharpFunc fo)
 					return fo.Name;
 				else

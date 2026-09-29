@@ -89,4 +89,22 @@ z := 0.5**0.5
 
 Assert(z = "0.70710678118654757", A_LineNumber)
 
+; An Integer to a negative power is a Float, zero to a negative power divides by zero, and 0 ** 0 and a negative
+; base with a fractional exponent are undefined.
+x := 2, y := -1
+AssertEq(x ** y, 0.5, A_LineNumber)
+x := -2
+AssertEq(x ** y, -0.5, A_LineNumber)
+x := 3, y := 39
+AssertEq(String(x ** y), "4052555153018976267", A_LineNumber)
+AssertEq(Type(2 ** 10), "Integer", A_LineNumber)
+x := 0, y := -1
+Throws(() => x ** y, A_LineNumber, ZeroDivisionError)
+x := 0.0
+Throws(() => x ** y, A_LineNumber, ZeroDivisionError)
+x := 0, y := 0
+Throws(() => x ** y, A_LineNumber, Error)
+x := -8, y := 1 / 3
+Throws(() => x ** y, A_LineNumber, Error)
+
 FileAppend "pass", "*"

@@ -173,26 +173,20 @@ Assert(!(!(x < y)), A_LineNumber)
 
 Assert(!(x > y), A_LineNumber)
 	
-x := "a"
-y := "a"
-
-Assert(!(x < y), A_LineNumber)
-
-Assert(!(x > y), A_LineNumber)
-
-Assert(!(x < y), A_LineNumber)
-
-Assert(!(x > y), A_LineNumber)
-	
+; As in AutoHotkey, relational operators compare numbers only: two strings that are not numeric are a TypeError.
 x := "a"
 y := "b"
 
-Assert(x < y, A_LineNumber)
+Throws(() => x < y, A_LineNumber, TypeError)
 
-Assert(!(x > y), A_LineNumber)
+Throws(() => x > y, A_LineNumber, TypeError)
 
-Assert(!(!(x < y)), A_LineNumber)
-
-Assert(!(x > y), A_LineNumber)
+; Two numeric strings compare as numbers, and a string that is not numeric is a TypeError against a number too.
+x := "10", y := "9"
+Assert(x > y, A_LineNumber)
+x := "0x10"
+Assert(x > 15, A_LineNumber)
+y := "abc"
+Throws(() => x < y, A_LineNumber, TypeError)
 
 FileAppend "pass", "*"

@@ -61,4 +61,9 @@ AssertEq(Type(Min(-1.0, 1)), "Float", A_LineNumber)
 	
 AssertEq(Type(Min(1.0, -1)), "Integer", A_LineNumber)
 
+AssertEq(Min(-2.5), -2.5, A_LineNumber)
+AssertEq(Min("3", "10"), 3, A_LineNumber)
+Throws(() => Min(1, "x"), A_LineNumber, TypeError)
+
+
 FileAppend "pass", "*"

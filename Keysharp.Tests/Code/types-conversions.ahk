@@ -80,7 +80,7 @@ AssertEq(String(0.0), "0.0", A_LineNumber)
 
 AssertEq(String(0 * 5), "0", A_LineNumber)
 
-AssertEq("" (1280 / 3), "426.6666666666667", A_LineNumber)
+AssertEq("" (1280 / 3), "426.66666666666669", A_LineNumber)
 
 ; Fractional Floats stay truthy.
 
@@ -120,5 +120,21 @@ Assert(HasBase(ClipboardAll.Prototype, Object.Prototype), A_LineNumber)
 AssertEq(Type(0), "Integer", A_LineNumber)
 AssertEq(Type(1.2), "Float", A_LineNumber)
 AssertEq(Type({}), "Object", A_LineNumber)
+
+; Numeric strings follow AutoHotkey's grammar: an exponent needs no '.', and a thousands separator is not numeric.
+x := "1e3"
+AssertEq(x + 0, 1000.0, A_LineNumber)
+Assert(IsFloat(x) && !IsInteger(x), A_LineNumber)
+AssertEq(Number(x), 1000.0, A_LineNumber)
+x := " 1.5E-1 "
+AssertEq(x * 10, 1.5, A_LineNumber)
+x := "+7"
+AssertEq(x + 0, 7, A_LineNumber)
+
+for x in ["1,000.5", "1e", "NaN"]
+	Throws(() => x + 0, A_LineNumber, TypeError)
+
+; A Float whose string form has an exponent reads back as a number.
+AssertEq(String(1e-5) + 0, 1e-5, A_LineNumber)
 
 FileAppend "pass", "*"
